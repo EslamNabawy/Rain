@@ -63,6 +63,14 @@ class OfflineQueueStore {
     return (await query.get()).map(_mapQueuedMessage).toList(growable: false);
   }
 
+  Future<QueuedEnvelope?> loadById(String id) async {
+    final query = _database.select(_database.queuedMessages)
+      ..where((QueuedMessages row) => row.id.equals(id))
+      ..limit(1);
+    final row = await query.getSingleOrNull();
+    return row == null ? null : _mapQueuedMessage(row);
+  }
+
   Future<void> enqueue(MessageEnvelope envelope) {
     return _database.into(_database.queuedMessages).insertOnConflictUpdate(
       QueuedMessagesCompanion.insert(

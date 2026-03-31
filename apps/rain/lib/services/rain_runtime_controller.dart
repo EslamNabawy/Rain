@@ -22,6 +22,8 @@ class RainRuntimeController {
   final MessageStore messageStore;
   final OfflineQueueStore offlineQueueStore;
   final MessageDeliveryService messageDeliveryService;
+  final Map<String, StreamSubscription<bool>> _presenceSubscriptions =
+      <String, StreamSubscription<bool>>{};
 
   final List<StreamSubscription<dynamic>> _subscriptions =
       <StreamSubscription<dynamic>>[];
@@ -50,6 +52,7 @@ class RainRuntimeController {
 
     final existingFriends = await friendStore.loadFriends();
     for (final friend in existingFriends) {
+      _watchPresence(friend.username);
       if (friend.state == FriendState.friend) {
         await brain?.registerPeer(friend.username);
       }
@@ -57,12 +60,19 @@ class RainRuntimeController {
 
     _subscriptions.add(
       adapter.onFriendRequest(selfIdentity.username).listen((String from) async {
-        await friendStore.upsertFriend(
-          username: from,
-          displayName: from,
-          state: FriendState.pendingIncoming,
-          addedAt: DateTime.now().millisecondsSinceEpoch,
-        );
+        final existing = await friendStore.loadFriend(from);
+        if (existing?.state == FriendState.pendingOutgoing ||
+            existing?.state == FriendState.friend) {
+          await friendStore.markAccepted(from, displayName: existing?.displayName ?? from);
+        } else if (existing?.state != FriendState.blocked) {
+          await friendStore.upsertFriend(
+            username: from,
+            displayName: existing?.displayName ?? from,
+            state: FriendState.pendingIncoming,
+            addedAt: existing?.addedAt ?? DateTime.now().millisecondsSinceEpoch,
+          );
+        }
+        _watchPresence(from);
         await brain?.registerPeer(from);
       }),
     );
@@ -110,11 +120,23 @@ class RainRuntimeController {
   Future<void> acceptFriend(String username) async {
     await adapter.writeFriendRequest(username, selfIdentity.username);
     await friendStore.markAccepted(username, displayName: username);
+    _watchPresence(username);
     await brain?.registerPeer(username);
+  }
+
+  Future<void> blockFriend(String username) async {
+    await friendStore.block(username);
+    await brain?.disconnect(username);
   }
 
   Future<void> connectPeer(String username) async {
     if (brain == null) {
+      return;
+    }
+    final current = brain!.getSession(username);
+    if (current?.state == SessionState.connected ||
+        current?.state == SessionState.connecting ||
+        current?.state == SessionState.reconnecting) {
       return;
     }
     await brain!.registerPeer(username);
@@ -126,6 +148,39 @@ class RainRuntimeController {
     for (final subscription in _subscriptions) {
       await subscription.cancel();
     }
+    for (final subscription in _presenceSubscriptions.values) {
+      await subscription.cancel();
+    }
+  }
+
+  Future<void> markConversationRead(String username) {
+    return friendStore.clearUnread(username);
+  }
+
+  Future<void> rejectFriend(String username) {
+    return friendStore.reject(username);
+  }
+
+  Future<void> resendMessage(String messageId) async {
+    final queued = await offlineQueueStore.loadById(messageId);
+    if (queued == null) {
+      return;
+    }
+
+    final envelope = queued.toEnvelope(from: selfIdentity.username);
+    final session = brain?.getSession(queued.to);
+    await messageStore.markMessageStatus(messageId, MessageStatus.queued);
+    await offlineQueueStore.markStatus(messageId, QueuedMessageStatus.queued);
+
+    if (brain == null || session?.state != SessionState.connected) {
+      await connectPeer(queued.to);
+      return;
+    }
+
+    await messageDeliveryService.sendEnvelope(
+      envelope,
+      sendChat: (String payload) async => session!.send(payload),
+    );
   }
 
   Future<void> sendFriendRequest(String username) async {
@@ -136,6 +191,7 @@ class RainRuntimeController {
       state: FriendState.pendingOutgoing,
       addedAt: DateTime.now().millisecondsSinceEpoch,
     );
+    _watchPresence(username);
     await brain?.registerPeer(username);
   }
 
@@ -161,5 +217,21 @@ class RainRuntimeController {
       sendChat: (String payload) async => session!.send(payload),
     );
     await friendStore.clearUnread(peerId);
+  }
+
+  void _watchPresence(String username) {
+    if (_presenceSubscriptions.containsKey(username)) {
+      return;
+    }
+
+    _presenceSubscriptions[username] = adapter.watchPresence(username).listen((
+      bool isOnline,
+    ) async {
+      await friendStore.updatePresence(username, isOnline);
+      final friend = await friendStore.loadFriend(username);
+      if (isOnline && friend?.state == FriendState.friend) {
+        await connectPeer(username);
+      }
+    });
   }
 }

@@ -64,6 +64,8 @@ class MessageDeliveryService {
     MessageEnvelope envelope, {
     required Future<void> Function(String payload) sendChat,
   }) async {
+    await _offlineQueueStore.enqueue(envelope);
+    await _offlineQueueStore.markStatus(envelope.id, QueuedMessageStatus.sending);
     await _messageStore.storeOutgoingEnvelope(
       envelope,
       status: MessageStatus.sent,

@@ -52,6 +52,14 @@ class FriendStore {
     return (await query.get()).map(_mapRecord).toList(growable: false);
   }
 
+  Future<FriendRecord?> loadFriend(String username) async {
+    final query = _database.select(_database.friends)
+      ..where((Friends row) => row.username.equals(username))
+      ..limit(1);
+    final row = await query.getSingleOrNull();
+    return row == null ? null : _mapRecord(row);
+  }
+
   Future<void> upsertFriend({
     required String username,
     required String displayName,
@@ -83,6 +91,12 @@ class FriendStore {
             ),
           );
     });
+  }
+
+  Future<void> reject(String username) {
+    return (_database.delete(_database.friends)
+          ..where((Friends row) => row.username.equals(username)))
+        .go();
   }
 
   Future<void> block(String username) {
@@ -154,4 +168,3 @@ class FriendStore {
     );
   }
 }
-

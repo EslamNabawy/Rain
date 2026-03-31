@@ -51,6 +51,12 @@ class ProtocolBrainImpl implements ProtocolBrain {
   Future<Session> connect(String peerId) async {
     await registerPeer(peerId);
     final active = await _ensureSession(peerId);
+    if (active.bound &&
+        (active.snapshot.state == SessionState.connected ||
+            active.snapshot.state == SessionState.connecting ||
+            active.snapshot.state == SessionState.reconnecting)) {
+      return active.snapshot;
+    }
     await _startOffer(active, isRetry: false);
     return active.snapshot;
   }
@@ -58,6 +64,7 @@ class ProtocolBrainImpl implements ProtocolBrain {
   @override
   Future<void> disconnect(String peerId) async {
     final active = _sessions.remove(peerId);
+    active?.shouldReconnect = false;
     await active?.dispose();
   }
 
@@ -152,6 +159,9 @@ class ProtocolBrainImpl implements ProtocolBrain {
 
     active.subscriptions.add(
       active.peer.onDisconnected.listen((_) {
+        if (!active.shouldReconnect) {
+          return;
+        }
         _peerDisconnectedController.add(active.peerId);
         unawaited(_scheduleReconnect(active.peerId));
       }),
@@ -160,6 +170,10 @@ class ProtocolBrainImpl implements ProtocolBrain {
 
   Future<void> _handleIncomingOffer(String peerId, SDPPayload offer) async {
     final active = await _ensureSession(peerId);
+    if (active.peer.state != PeerState.ready &&
+        active.peer.state != PeerState.failed) {
+      await _recreatePeer(active);
+    }
     await _bindPeerCore(active, IceRole.callee);
     active.remoteIceCache.clear();
     _updateSession(
@@ -200,7 +214,7 @@ class ProtocolBrainImpl implements ProtocolBrain {
 
   Future<void> _scheduleReconnect(String peerId) async {
     final active = _sessions[peerId];
-    if (active == null) {
+    if (active == null || !active.shouldReconnect) {
       return;
     }
     if (active.retryAttempt >= maxRetries) {
@@ -211,6 +225,11 @@ class ProtocolBrainImpl implements ProtocolBrain {
       return;
     }
 
+    if (active.usedCachedReconnect) {
+      await _recordConnectionFailure(peerId);
+      active.usedCachedReconnect = false;
+    }
+
     _updateSession(
       peerId,
       active.snapshot.copyWith(state: SessionState.reconnecting),
@@ -219,6 +238,10 @@ class ProtocolBrainImpl implements ProtocolBrain {
     final delayMs = retryDelays[active.retryAttempt.clamp(0, retryDelays.length - 1)];
     active.retryAttempt += 1;
     await Future<void>.delayed(Duration(milliseconds: delayMs));
+    if (!_sessions.containsKey(peerId) || !active.shouldReconnect) {
+      return;
+    }
+    await _recreatePeer(active);
     await _startOffer(active, isRetry: true);
   }
 
@@ -228,9 +251,9 @@ class ProtocolBrainImpl implements ProtocolBrain {
       return existing;
     }
 
-    final peer = peerFactory();
-    await peer.init(peerConfig);
-    final active = _ActiveSession(
+    late final _ActiveSession active;
+    final peer = await _newPeer();
+    active = _ActiveSession(
       peerId: peerId,
       roomId: roomId(selfUsername, peerId),
       peer: peer,
@@ -238,7 +261,7 @@ class ProtocolBrainImpl implements ProtocolBrain {
         peerId: peerId,
         state: SessionState.connecting,
         connectionType: ConnectionType.signaling,
-        sender: (String data) => peer.send(PeerChannels.chat, data),
+        sender: (String data) => active.peer.send(PeerChannels.chat, data),
       ),
     );
     _sessions[peerId] = active;
@@ -246,6 +269,10 @@ class ProtocolBrainImpl implements ProtocolBrain {
   }
 
   Future<void> _startOffer(_ActiveSession active, {required bool isRetry}) async {
+    if (active.peer.state != PeerState.ready &&
+        active.peer.state != PeerState.failed) {
+      await _recreatePeer(active);
+    }
     await _bindPeerCore(active, IceRole.caller);
     _updateSession(
       active.peerId,
@@ -254,8 +281,19 @@ class ProtocolBrainImpl implements ProtocolBrain {
       ),
     );
 
-    final memory = await connectionMemoryStore.read(active.peerId);
-    if (memory != null && memory.isUsable && active.retryAttempt < cachedIceAttempts) {
+    var memory = await connectionMemoryStore.read(active.peerId);
+    if (memory != null && memory.isExpired) {
+      await connectionMemoryStore.delete(active.peerId);
+      memory = null;
+    }
+
+    final useCachedReconnect = isRetry &&
+        memory != null &&
+        memory.isUsable &&
+        active.retryAttempt <= cachedIceAttempts;
+    active.usedCachedReconnect = useCachedReconnect;
+
+    if (useCachedReconnect) {
       for (final candidate in memory.cachedIce) {
         await active.peer.addIceCandidate(candidate);
       }
@@ -268,6 +306,39 @@ class ProtocolBrainImpl implements ProtocolBrain {
       active.roomId,
       SDPPayload(sdp: offer, ts: DateTime.now().millisecondsSinceEpoch),
     );
+  }
+
+  Future<PeerCore> _newPeer() async {
+    final peer = peerFactory();
+    await peer.init(peerConfig);
+    return peer;
+  }
+
+  Future<void> _recordConnectionFailure(String peerId) async {
+    final existing = await connectionMemoryStore.read(peerId);
+    if (existing == null) {
+      return;
+    }
+
+    final nextFailures = existing.consecutiveFailures + 1;
+    if (nextFailures >= maxCacheFailures || existing.isExpired) {
+      await connectionMemoryStore.delete(peerId);
+      return;
+    }
+
+    await connectionMemoryStore.write(
+      existing.copyWith(consecutiveFailures: nextFailures),
+    );
+  }
+
+  Future<void> _recreatePeer(_ActiveSession active) async {
+    await active.disposePeerBindings();
+    await active.peer.destroy();
+    active.peer = await _newPeer();
+    active.bound = false;
+    active.remoteIceCache.clear();
+    active.answerSubscription = null;
+    active.iceSubscriptions.clear();
   }
 
   void _updateSession(String peerId, Session session) {
@@ -289,7 +360,7 @@ class _ActiveSession {
 
   final String peerId;
   final String roomId;
-  final PeerCore peer;
+  PeerCore peer;
   final List<StreamSubscription<dynamic>> subscriptions =
       <StreamSubscription<dynamic>>[];
   final Map<IceRole, StreamSubscription<RTCIceCandidate>> iceSubscriptions =
@@ -299,16 +370,26 @@ class _ActiveSession {
   Session snapshot;
   bool bound = false;
   int retryAttempt = 0;
+  bool usedCachedReconnect = false;
+  bool shouldReconnect = true;
   StreamSubscription<SDPPayload>? answerSubscription;
 
   Future<void> dispose() async {
+    shouldReconnect = false;
+    await disposePeerBindings();
+    await peer.destroy();
+  }
+
+  Future<void> disposePeerBindings() async {
     await answerSubscription?.cancel();
+    answerSubscription = null;
     for (final subscription in subscriptions) {
       await subscription.cancel();
     }
+    subscriptions.clear();
     for (final subscription in iceSubscriptions.values) {
       await subscription.cancel();
     }
-    await peer.destroy();
+    iceSubscriptions.clear();
   }
 }

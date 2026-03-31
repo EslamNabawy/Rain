@@ -76,15 +76,22 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
                             return _FriendTile(
                               friend: friend,
                               selected: selected,
-                              onTap: () {
+                              onTap: () async {
                                 setState(() => _selectedPeerId = friend.username);
+                                await runtime?.markConversationRead(friend.username);
                                 if (friend.state == FriendState.friend) {
-                                  runtime?.connectPeer(friend.username);
+                                  await runtime?.connectPeer(friend.username);
                                 }
                               },
                               onAccept: friend.state == FriendState.pendingIncoming
                                   ? () => runtime?.acceptFriend(friend.username)
                                   : null,
+                              onReject: friend.state == FriendState.pendingIncoming
+                                  ? () => runtime?.rejectFriend(friend.username)
+                                  : null,
+                              onBlock: friend.state == FriendState.blocked
+                                  ? null
+                                  : () => runtime?.blockFriend(friend.username),
                             );
                           },
                         ),
@@ -154,12 +161,16 @@ class _FriendTile extends ConsumerWidget {
     required this.selected,
     required this.onTap,
     this.onAccept,
+    this.onReject,
+    this.onBlock,
   });
 
   final FriendRecord friend;
   final bool selected;
   final VoidCallback onTap;
   final VoidCallback? onAccept;
+  final VoidCallback? onReject;
+  final VoidCallback? onBlock;
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {
@@ -209,6 +220,26 @@ class _FriendTile extends ConsumerWidget {
                 FilledButton.tonal(
                   onPressed: onAccept,
                   child: const Text('Accept'),
+                ),
+                const SizedBox(width: 8),
+                TextButton(
+                  onPressed: onReject,
+                  child: const Text('Reject'),
+                ),
+              ] else if (onBlock != null) ...<Widget>[
+                const SizedBox(width: 8),
+                PopupMenuButton<String>(
+                  onSelected: (String value) {
+                    if (value == 'block') {
+                      onBlock?.call();
+                    }
+                  },
+                  itemBuilder: (BuildContext context) => const <PopupMenuEntry<String>>[
+                    PopupMenuItem<String>(
+                      value: 'block',
+                      child: Text('Block'),
+                    ),
+                  ],
                 ),
               ],
             ],
@@ -301,11 +332,25 @@ class _ChatPanelState extends ConsumerState<_ChatPanel> {
                         Text(message.content, style: TextStyle(color: textColor)),
                         const SizedBox(height: 8),
                         Text(
-                          '${message.status.name} · ${TimeOfDay.fromDateTime(DateTime.fromMillisecondsSinceEpoch(message.sentAt)).format(context)}',
+                          '${message.status.name} | ${TimeOfDay.fromDateTime(DateTime.fromMillisecondsSinceEpoch(message.sentAt)).format(context)}',
                           style: Theme.of(context).textTheme.labelSmall?.copyWith(
                             color: textColor.withValues(alpha: 0.78),
                           ),
                         ),
+                        if (message.isOutgoing &&
+                            message.status == MessageStatus.failed) ...<Widget>[
+                          const SizedBox(height: 8),
+                          TextButton(
+                            onPressed: () => runtime?.resendMessage(message.id),
+                            style: TextButton.styleFrom(
+                              padding: EdgeInsets.zero,
+                              minimumSize: const Size(0, 0),
+                              tapTargetSize: MaterialTapTargetSize.shrinkWrap,
+                              foregroundColor: textColor,
+                            ),
+                            child: const Text('Retry'),
+                          ),
+                        ],
                       ],
                     ),
                   ),
