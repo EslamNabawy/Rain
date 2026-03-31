@@ -18,5 +18,42 @@ void main() {
 
     expect(memory.isUsable, isFalse);
   });
-}
 
+  test('backend identity serializes separately for firebase and supabase', () {
+    const identity = BackendIdentity(
+      username: 'alice',
+      uid: 'uid-1',
+      displayName: 'Alice',
+      registeredAt: 1,
+      lastSeen: 2,
+      lastHeartbeat: 3,
+      online: true,
+    );
+
+    expect(
+      identity.toFirebaseJson(),
+      <String, Object?>{
+        'username': 'alice',
+        'displayName': 'Alice',
+        'registeredAt': 1,
+        'lastSeen': 2,
+        'lastHeartbeat': 3,
+        'online': true,
+        'uid': 'uid-1',
+      },
+    );
+
+    expect(
+      identity.toSupabaseJson(),
+      <String, Object?>{
+        'username': 'alice',
+        'display_name': 'Alice',
+        'registered_at': 1,
+        'last_seen': 2,
+        'last_heartbeat': 3,
+        'online': true,
+        'uid': 'uid-1',
+      },
+    );
+  });
+}

@@ -1,6 +1,7 @@
 import 'dart:io';
 
 import 'package:firebase_core/firebase_core.dart';
+import 'package:firebase_database/firebase_database.dart';
 import 'package:firebase_remote_config/firebase_remote_config.dart';
 import 'package:protocol_brain/protocol_brain.dart';
 import 'package:rain_core/rain_core.dart';
@@ -9,6 +10,7 @@ import 'package:tray_manager/tray_manager.dart';
 import 'package:window_manager/window_manager.dart';
 
 import '../config/app_environment.dart';
+import '../firebase_options.dart';
 import '../services/background_services.dart';
 import '../services/force_update_service.dart';
 import '../services/noop_signaling_adapter.dart';
@@ -32,12 +34,16 @@ class AppBootstrapper {
     final database = RainDatabase();
 
     FirebaseRemoteConfig? remoteConfig;
-    if (environment.isFirebaseConfigured) {
-      await Firebase.initializeApp(options: environment.firebaseOptions!);
+    if (environment.backend == RainBackend.firebase &&
+        environment.supportsFirebasePlatform) {
+      await Firebase.initializeApp(
+        options: DefaultFirebaseOptions.currentPlatform,
+      );
       remoteConfig = FirebaseRemoteConfig.instance;
     }
 
-    if (environment.isSupabaseConfigured) {
+    if (environment.backend == RainBackend.supabase &&
+        environment.isSupabaseConfigured) {
       await Supabase.initialize(
         url: environment.supabaseUrl,
         anonKey: environment.supabaseAnonKey,
@@ -50,7 +56,12 @@ class AppBootstrapper {
     final adapter = environment.shouldUseFallbackAdapter
         ? NoopSignalingAdapter()
         : switch (environment.backend) {
-            RainBackend.firebase => FirebaseSignalingAdapter(),
+            RainBackend.firebase => FirebaseSignalingAdapter(
+                database: FirebaseDatabase.instanceFor(
+                  app: Firebase.app(),
+                  databaseURL: environment.firebaseDatabaseUrl,
+                ),
+              ),
             RainBackend.supabase => SupabaseSignalingAdapter(),
             RainBackend.noop => NoopSignalingAdapter(),
           };

@@ -102,8 +102,9 @@ class _OnboardingScreenState extends ConsumerState<OnboardingScreen> {
 
     try {
       await adapter.ensureAuthenticated();
-      final available = await adapter.isUsernameAvailable(username);
-      if (!available) {
+      final currentUid = await adapter.currentUid();
+      final existing = await adapter.fetchIdentity(username);
+      if (existing != null && existing.uid != currentUid) {
         setState(() {
           _error = 'That username is already taken.';
           _submitting = false;
@@ -120,7 +121,7 @@ class _OnboardingScreenState extends ConsumerState<OnboardingScreen> {
       await adapter.upsertIdentity(
         BackendIdentity(
           username: username,
-          uid: await adapter.currentUid(),
+          uid: currentUid,
           displayName: displayName,
           registeredAt: now,
           lastSeen: now,

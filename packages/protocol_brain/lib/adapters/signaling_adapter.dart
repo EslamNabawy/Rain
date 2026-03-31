@@ -72,15 +72,24 @@ class BackendIdentity {
   final int lastHeartbeat;
   final bool online;
 
-  Map<String, Object?> toJson() {
+  Map<String, Object?> toFirebaseJson() {
     return <String, Object?>{
       'username': username,
       'displayName': displayName,
       'registeredAt': registeredAt,
-      'registered_at': registeredAt,
       'lastSeen': lastSeen,
-      'last_seen': lastSeen,
       'lastHeartbeat': lastHeartbeat,
+      'online': online,
+      'uid': uid,
+    };
+  }
+
+  Map<String, Object?> toSupabaseJson() {
+    return <String, Object?>{
+      'username': username,
+      'display_name': displayName,
+      'registered_at': registeredAt,
+      'last_seen': lastSeen,
       'last_heartbeat': lastHeartbeat,
       'online': online,
       'uid': uid,

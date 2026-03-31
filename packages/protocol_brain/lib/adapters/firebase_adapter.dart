@@ -64,7 +64,11 @@ class FirebaseSignalingAdapter implements SignalingAdapter {
   Future<bool> isUsernameAvailable(String username) async {
     await ensureAuthenticated();
     final snapshot = await _root.child('users/$username').get();
-    return !snapshot.exists;
+    if (!snapshot.exists || snapshot.value is! Map<Object?, Object?>) {
+      return true;
+    }
+    final value = snapshot.value! as Map<Object?, Object?>;
+    return value['uid'] == _auth.currentUser?.uid;
   }
 
   @override
@@ -123,7 +127,7 @@ class FirebaseSignalingAdapter implements SignalingAdapter {
   @override
   Future<void> upsertIdentity(BackendIdentity identity) async {
     await ensureAuthenticated();
-    await _root.child('users/${identity.username}').set(identity.toJson());
+    await _root.child('users/${identity.username}').set(identity.toFirebaseJson());
   }
 
   @override

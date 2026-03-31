@@ -1,6 +1,6 @@
 import 'dart:convert';
 
-import 'package:firebase_core/firebase_core.dart';
+import 'package:flutter/foundation.dart';
 
 enum RainBackend { noop, firebase, supabase }
 
@@ -38,7 +38,7 @@ class AppEnvironment {
   factory AppEnvironment.fromEnvironment() {
     final backend = switch (const String.fromEnvironment(
       'RAIN_BACKEND',
-      defaultValue: 'noop',
+      defaultValue: 'firebase',
     )) {
       'firebase' => RainBackend.firebase,
       'supabase' => RainBackend.supabase,
@@ -68,7 +68,10 @@ class AppEnvironment {
         'FIREBASE_MESSAGING_SENDER_ID',
       ),
       firebaseProjectId: const String.fromEnvironment('FIREBASE_PROJECT_ID'),
-      firebaseDatabaseUrl: const String.fromEnvironment('FIREBASE_DATABASE_URL'),
+      firebaseDatabaseUrl: const String.fromEnvironment(
+        'FIREBASE_DATABASE_URL',
+        defaultValue: 'https://rain-8fb4b-default-rtdb.firebaseio.com',
+      ),
       firebaseStorageBucket: const String.fromEnvironment('FIREBASE_STORAGE_BUCKET'),
       firebaseAuthDomain: const String.fromEnvironment('FIREBASE_AUTH_DOMAIN'),
       firebaseMeasurementId: const String.fromEnvironment(
@@ -79,28 +82,14 @@ class AppEnvironment {
     );
   }
 
-  FirebaseOptions? get firebaseOptions {
-    if (!isFirebaseConfigured) {
-      return null;
-    }
-    return FirebaseOptions(
-      apiKey: firebaseApiKey,
-      appId: firebaseAppId,
-      messagingSenderId: firebaseMessagingSenderId,
-      projectId: firebaseProjectId,
-      databaseURL: firebaseDatabaseUrl,
-      storageBucket: firebaseStorageBucket.isEmpty ? null : firebaseStorageBucket,
-      authDomain: firebaseAuthDomain.isEmpty ? null : firebaseAuthDomain,
-      measurementId: firebaseMeasurementId.isEmpty ? null : firebaseMeasurementId,
-    );
-  }
+  bool get supportsFirebasePlatform =>
+      !kIsWeb &&
+      (defaultTargetPlatform == TargetPlatform.android ||
+          defaultTargetPlatform == TargetPlatform.macOS ||
+          defaultTargetPlatform == TargetPlatform.windows);
 
   bool get isFirebaseConfigured =>
-      firebaseApiKey.isNotEmpty &&
-      firebaseAppId.isNotEmpty &&
-      firebaseMessagingSenderId.isNotEmpty &&
-      firebaseProjectId.isNotEmpty &&
-      firebaseDatabaseUrl.isNotEmpty;
+      supportsFirebasePlatform && firebaseDatabaseUrl.isNotEmpty;
 
   bool get isSupabaseConfigured =>
       supabaseUrl.isNotEmpty && supabaseAnonKey.isNotEmpty;
@@ -123,7 +112,9 @@ class AppEnvironment {
     RainBackend.noop =>
       'Running with the local demo adapter. Identities, friends, and queues work locally, but peer signaling is disabled until you choose Firebase or Supabase.',
     RainBackend.firebase =>
-      'Firebase is selected but the required FIREBASE dart-defines are missing, so Rain is using the local demo adapter.',
+      !supportsFirebasePlatform
+          ? 'Firebase signaling is configured only for Android, macOS, and Windows in this build, so Rain is using the local demo adapter on this platform.'
+          : 'Firebase is selected, but FIREBASE_DATABASE_URL is missing, so Rain is using the local demo adapter until the Realtime Database instance is configured.',
     RainBackend.supabase =>
       'Supabase is selected but SUPABASE_URL and SUPABASE_ANON_KEY are missing, so Rain is using the local demo adapter.',
   };

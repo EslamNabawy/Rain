@@ -58,9 +58,13 @@ class SupabaseSignalingAdapter implements SignalingAdapter {
   Future<bool> isUsernameAvailable(String username) async {
     await ensureAuthenticated();
     final rows =
-        (await _client.from('users').select('username').eq('username', username))
+        (await _client.from('users').select('username, uid').eq('username', username))
             as List<dynamic>;
-    return rows.isEmpty;
+    if (rows.isEmpty) {
+      return true;
+    }
+    final row = Map<String, dynamic>.from(rows.first as Map);
+    return row['uid'] == _client.auth.currentUser?.id;
   }
 
   @override
@@ -138,15 +142,7 @@ class SupabaseSignalingAdapter implements SignalingAdapter {
   @override
   Future<void> upsertIdentity(BackendIdentity identity) async {
     await ensureAuthenticated();
-    await _client.from('users').upsert(<String, Object?>{
-      'username': identity.username,
-      'display_name': identity.displayName,
-      'registered_at': identity.registeredAt,
-      'last_seen': identity.lastSeen,
-      'last_heartbeat': identity.lastHeartbeat,
-      'online': identity.online,
-      'uid': identity.uid,
-    });
+    await _client.from('users').upsert(identity.toSupabaseJson());
   }
 
   @override

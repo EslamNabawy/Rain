@@ -32,37 +32,31 @@ melos run test
 
 ## Run Locally
 
-The app can run in a local demo mode with no backend:
+Firebase is the default signaling backend for this app. Copy the example defines file and run the app:
 
 ```powershell
 cd apps/rain
-flutter run -d windows --dart-define=RAIN_BACKEND=noop
-```
-
-For Firebase or Supabase, copy the example defines file and fill in real values:
-
-```powershell
 Copy-Item tool/dart_defines.example.json tool/dart_defines.local.json
 flutter run -d windows --dart-define-from-file=tool/dart_defines.local.json
 ```
 
 Do not commit `tool/dart_defines.local.json`; it is gitignored because it holds secrets.
 
+If you want the local demo mode with no backend, run:
+
+```powershell
+cd apps/rain
+flutter run -d windows --dart-define=RAIN_BACKEND=noop
+```
+
 ## Dart Defines
 
 The app reads compile-time configuration from `apps/rain/tool/dart_defines.local.json`. The supported keys are:
 
-- `RAIN_BACKEND`: `noop`, `firebase`, or `supabase`
+- `RAIN_BACKEND`: `firebase`, `noop`, or `supabase`
 - `RAIN_ICE_SERVERS`: JSON array of WebRTC ICE server objects
 - `RAIN_UPDATE_URL`: fallback update page used by the force-update gate
-- `FIREBASE_API_KEY`
-- `FIREBASE_APP_ID`
-- `FIREBASE_MESSAGING_SENDER_ID`
-- `FIREBASE_PROJECT_ID`
 - `FIREBASE_DATABASE_URL`
-- `FIREBASE_STORAGE_BUCKET`
-- `FIREBASE_AUTH_DOMAIN`
-- `FIREBASE_MEASUREMENT_ID`
 - `SUPABASE_URL`
 - `SUPABASE_ANON_KEY`
 
@@ -74,9 +68,11 @@ The app reads compile-time configuration from `apps/rain/tool/dart_defines.local
    - Anonymous Authentication
    - Realtime Database
    - Remote Config
-2. Deploy the Realtime Database rules from [backend/firebase/database.rules.json](backend/firebase/database.rules.json).
-3. Deploy the cleanup functions from [backend/firebase/functions/index.js](backend/firebase/functions/index.js).
-4. Set the Remote Config keys:
+2. Run `flutterfire configure --project=rain-8fb4b` inside `apps/rain`. This repo already includes the generated [apps/rain/lib/firebase_options.dart](apps/rain/lib/firebase_options.dart) for project `rain-8fb4b`.
+3. Create or verify the Realtime Database instance and set `FIREBASE_DATABASE_URL`. The current project URL is `https://rain-8fb4b-default-rtdb.firebaseio.com`.
+4. Deploy the Realtime Database rules from [backend/firebase/database.rules.json](backend/firebase/database.rules.json).
+5. Deploy the cleanup functions from [backend/firebase/functions/index.js](backend/firebase/functions/index.js).
+6. Set the Remote Config keys:
    - `min_required_version`
    - `update_url` (optional; overrides `RAIN_UPDATE_URL`)
 

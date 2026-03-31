@@ -2,14 +2,7 @@
   "RAIN_BACKEND": "firebase",
   "RAIN_ICE_SERVERS": "[{\"urls\":\"stun:stun.l.google.com:19302\"},{\"urls\":\"stun:stun1.l.google.com:19302\"},{\"urls\":\"turn:openrelay.metered.ca:80\",\"username\":\"openrelayproject\",\"credential\":\"openrelayproject\"}]",
   "RAIN_UPDATE_URL": "https://github.com/EslamNabawy/Rain/releases",
-  "FIREBASE_API_KEY": "",
-  "FIREBASE_APP_ID": "",
-  "FIREBASE_MESSAGING_SENDER_ID": "",
-  "FIREBASE_PROJECT_ID": "",
-  "FIREBASE_DATABASE_URL": "",
-  "FIREBASE_STORAGE_BUCKET": "",
-  "FIREBASE_AUTH_DOMAIN": "",
-  "FIREBASE_MEASUREMENT_ID": "",
+  "FIREBASE_DATABASE_URL": "https://rain-8fb4b-default-rtdb.firebaseio.com",
   "SUPABASE_URL": "",
   "SUPABASE_ANON_KEY": ""
 }
