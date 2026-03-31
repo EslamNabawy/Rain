@@ -33,9 +33,13 @@ class BackgroundServices {
       androidConfiguration: AndroidConfiguration(
         onStart: onRainBackgroundServiceStart,
         isForegroundMode: true,
-        notificationChannelId: 'rain_background',
+        autoStartOnBoot: false,
         initialNotificationTitle: 'Rain is running',
         initialNotificationContent: 'Keeping your connection alive',
+        foregroundServiceTypes: <AndroidForegroundType>[
+          AndroidForegroundType.dataSync,
+          AndroidForegroundType.remoteMessaging,
+        ],
       ),
       iosConfiguration: IosConfiguration(autoStart: false),
     );
