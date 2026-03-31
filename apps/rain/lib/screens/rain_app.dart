@@ -10,23 +10,48 @@ class RainApp extends StatelessWidget {
   Widget build(BuildContext context) {
     final base = ThemeData(
       colorScheme: ColorScheme.fromSeed(
-        seedColor: const Color(0xFF0B6E7A),
-        brightness: Brightness.light,
+        seedColor: const Color(0xFF2BA7B8),
+        brightness: Brightness.dark,
       ),
-      scaffoldBackgroundColor: const Color(0xFFF1F5F4),
+      scaffoldBackgroundColor: const Color(0xFF07131A),
       useMaterial3: true,
     );
 
     return MaterialApp(
       title: 'Rain',
       debugShowCheckedModeBanner: false,
+      themeMode: ThemeMode.dark,
       theme: base.copyWith(
         textTheme: GoogleFonts.spaceGroteskTextTheme(base.textTheme),
         colorScheme: base.colorScheme.copyWith(
-          primary: const Color(0xFF0B6E7A),
-          secondary: const Color(0xFFF4A261),
-          surface: Colors.white,
+          primary: const Color(0xFF2BA7B8),
+          secondary: const Color(0xFFFF9F6E),
+          surface: const Color(0xFF11222B),
+          surfaceContainerHighest: const Color(0xFF18313D),
         ),
+        cardColor: const Color(0xFF11222B),
+        dialogTheme: const DialogThemeData(
+          backgroundColor: Color(0xFF11222B),
+        ),
+        inputDecorationTheme: InputDecorationTheme(
+          filled: true,
+          fillColor: const Color(0xFF0C1B22),
+          border: OutlineInputBorder(
+            borderRadius: BorderRadius.circular(18),
+            borderSide: const BorderSide(color: Color(0xFF28424D)),
+          ),
+          enabledBorder: OutlineInputBorder(
+            borderRadius: BorderRadius.circular(18),
+            borderSide: const BorderSide(color: Color(0xFF28424D)),
+          ),
+          focusedBorder: OutlineInputBorder(
+            borderRadius: BorderRadius.circular(18),
+            borderSide: const BorderSide(color: Color(0xFF2BA7B8), width: 1.4),
+          ),
+        ),
+      ),
+      darkTheme: base.copyWith(
+        textTheme: GoogleFonts.spaceGroteskTextTheme(base.textTheme),
       ),
       home: const RootScreen(),
     );

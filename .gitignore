@@ -5,6 +5,7 @@ build/
 coverage/
 melos_tool/
 apps/rain/tool/dart_defines.local.json
+final product/
 backend/firebase/.firebase/
 backend/firebase/functions/node_modules/
 backend/firebase/functions/.runtimeconfig.json

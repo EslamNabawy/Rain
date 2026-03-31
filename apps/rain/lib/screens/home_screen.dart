@@ -25,12 +25,12 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
         padding: const EdgeInsets.all(20),
         child: Container(
           decoration: BoxDecoration(
-            color: Colors.white.withValues(alpha: 0.92),
+            color: const Color(0xFF0C1820).withValues(alpha: 0.94),
             borderRadius: BorderRadius.circular(32),
             boxShadow: const <BoxShadow>[
               BoxShadow(
                 blurRadius: 36,
-                color: Color(0x1A0F4C5C),
+                color: Color(0x33000000),
                 offset: Offset(0, 20),
               ),
             ],
@@ -178,7 +178,7 @@ class _FriendTile extends ConsumerWidget {
     final isOnline = presence.valueOrNull ?? friend.isOnline;
 
     return Material(
-      color: selected ? const Color(0xFFF0FAF9) : Colors.transparent,
+      color: selected ? const Color(0xFF122934) : Colors.transparent,
       child: InkWell(
         onTap: onTap,
         child: Padding(
@@ -190,7 +190,7 @@ class _FriendTile extends ConsumerWidget {
                 height: 12,
                 decoration: BoxDecoration(
                   shape: BoxShape.circle,
-                  color: isOnline ? const Color(0xFF1D9A6C) : const Color(0xFFD6DBD9),
+                  color: isOnline ? const Color(0xFF2DD4A3) : const Color(0xFF52646D),
                 ),
               ),
               const SizedBox(width: 14),
@@ -312,9 +312,9 @@ class _ChatPanelState extends ConsumerState<_ChatPanel> {
                     ? Alignment.centerRight
                     : Alignment.centerLeft;
                 final bubbleColor = message.isOutgoing
-                    ? const Color(0xFF0B6E7A)
-                    : const Color(0xFFF1F4F4);
-                final textColor = message.isOutgoing ? Colors.white : Colors.black87;
+                    ? const Color(0xFF1D7E8E)
+                    : const Color(0xFF18262E);
+                final textColor = Colors.white;
 
                 return Align(
                   alignment: align,
@@ -408,7 +408,7 @@ class _EmptyConversation extends StatelessWidget {
             Icon(
               Icons.water_drop_outlined,
               size: 52,
-              color: Theme.of(context).colorScheme.primary,
+              color: Theme.of(context).colorScheme.secondary,
             ),
             const SizedBox(height: 16),
             Text(

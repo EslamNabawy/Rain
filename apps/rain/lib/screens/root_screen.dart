@@ -27,9 +27,9 @@ class RootScreen extends ConsumerWidget {
           begin: Alignment.topLeft,
           end: Alignment.bottomRight,
           colors: <Color>[
-            Color(0xFFE0F4F1),
-            Color(0xFFF8F7F3),
-            Color(0xFFFFF1E6),
+            Color(0xFF061017),
+            Color(0xFF0A1E26),
+            Color(0xFF10141E),
           ],
         ),
       ),
