@@ -9,11 +9,23 @@ class MessageDeliveryService {
   MessageDeliveryService({
     required MessageStore messageStore,
     required OfflineQueueStore offlineQueueStore,
+    Duration ackTimeout = const Duration(milliseconds: ackTimeoutMs),
+    Duration gapWait = const Duration(milliseconds: gapWaitMs),
+    Duration flushDelay = const Duration(milliseconds: 10),
+    int autoResendLimit = maxAutoResends,
   }) : _messageStore = messageStore,
-       _offlineQueueStore = offlineQueueStore;
+       _offlineQueueStore = offlineQueueStore,
+       _ackTimeout = ackTimeout,
+       _gapWait = gapWait,
+       _flushDelay = flushDelay,
+       _autoResendLimit = autoResendLimit;
 
   final MessageStore _messageStore;
   final OfflineQueueStore _offlineQueueStore;
+  final Duration _ackTimeout;
+  final Duration _gapWait;
+  final Duration _flushDelay;
+  final int _autoResendLimit;
   final Map<String, _AckTracker> _ackTrackers = <String, _AckTracker>{};
   final Map<String, Map<int, _BufferedEnvelope>> _gapBuffers =
       <String, Map<int, _BufferedEnvelope>>{};
@@ -81,11 +93,25 @@ class MessageDeliveryService {
   }) async {
     final queued = await _offlineQueueStore.loadQueue(peerId);
     for (final message in queued) {
-      await Future<void>.delayed(const Duration(milliseconds: 10));
+      await Future<void>.delayed(_flushDelay);
       await _offlineQueueStore.markStatus(message.id, QueuedMessageStatus.sending);
       final envelope = message.toEnvelope(from: selfUsername);
       await sendEnvelope(envelope, sendChat: sendChat);
     }
+  }
+
+  void dispose() {
+    for (final tracker in _ackTrackers.values) {
+      tracker.timer.cancel();
+    }
+    _ackTrackers.clear();
+
+    for (final byPeer in _gapBuffers.values) {
+      for (final pending in byPeer.values) {
+        pending.timer.cancel();
+      }
+    }
+    _gapBuffers.clear();
   }
 
   void _armAckTimer(
@@ -96,7 +122,7 @@ class MessageDeliveryService {
     _ackTrackers[envelope.id] = _AckTracker(
       envelope: envelope,
       retries: 0,
-      timer: Timer(Duration(milliseconds: ackTimeoutMs), () async {
+      timer: Timer(_ackTimeout, () async {
         await _handleAckTimeout(envelope.id, sendChat);
       }),
     );
@@ -121,7 +147,7 @@ class MessageDeliveryService {
     byPeer[envelope.seq] = _BufferedEnvelope(
       envelope: envelope,
       receivedAt: receivedAt,
-      timer: Timer(Duration(milliseconds: gapWaitMs), () async {
+      timer: Timer(_gapWait, () async {
         final pending = byPeer.remove(envelope.seq);
         if (pending == null) {
           return;
@@ -174,7 +200,7 @@ class MessageDeliveryService {
     if (tracker == null) {
       return;
     }
-    if (tracker.retries >= maxAutoResends) {
+    if (tracker.retries >= _autoResendLimit) {
       _ackTrackers.remove(messageId)?.timer.cancel();
       await _messageStore.markMessageStatus(messageId, MessageStatus.failed);
       await _offlineQueueStore.markStatus(messageId, QueuedMessageStatus.failed);
@@ -185,7 +211,7 @@ class MessageDeliveryService {
     await sendChat(tracker.envelope.toWireString());
     _ackTrackers[messageId] = tracker.copyWith(
       retries: tracker.retries + 1,
-      timer: Timer(Duration(milliseconds: ackTimeoutMs), () async {
+      timer: Timer(_ackTimeout, () async {
         await _handleAckTimeout(messageId, sendChat);
       }),
     );

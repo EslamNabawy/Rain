@@ -1,6 +1,5 @@
 import 'dart:async';
 
-import 'package:peer_core/peer_core.dart';
 import 'package:protocol_brain/protocol_brain.dart';
 import 'package:rain_core/rain_core.dart';
 

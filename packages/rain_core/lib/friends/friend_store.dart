@@ -94,9 +94,11 @@ class FriendStore {
   }
 
   Future<void> reject(String username) {
-    return (_database.delete(_database.friends)
-          ..where((Friends row) => row.username.equals(username)))
-        .go();
+    return _database.transaction(() async {
+      await (_database.delete(_database.friends)
+            ..where((Friends row) => row.username.equals(username)))
+          .go();
+    });
   }
 
   Future<void> block(String username) {
@@ -143,11 +145,13 @@ class FriendStore {
   }
 
   Future<void> clearUnread(String username) {
-    return (_database.update(_database.friends)
-          ..where((Friends row) => row.username.equals(username)))
-        .write(
-          const FriendsCompanion(unreadCount: Value<int>(0)),
-        );
+    return _database.transaction(() async {
+      await (_database.update(_database.friends)
+            ..where((Friends row) => row.username.equals(username)))
+          .write(
+            const FriendsCompanion(unreadCount: Value<int>(0)),
+          );
+    });
   }
 
   FriendRecord _mapRecord(Friend row) {

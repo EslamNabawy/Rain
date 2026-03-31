@@ -1,7 +1,6 @@
 import 'dart:async';
 
 import 'package:flutter_riverpod/flutter_riverpod.dart';
-import 'package:peer_core/peer_core.dart';
 import 'package:protocol_brain/protocol_brain.dart';
 import 'package:rain_core/rain_core.dart';
 
@@ -49,12 +48,14 @@ final connectionMemoryStoreProvider = Provider(
   (Ref ref) => DriftConnectionMemoryStore(ref.watch(databaseProvider)),
 );
 
-final messageDeliveryServiceProvider = Provider(
-  (Ref ref) => MessageDeliveryService(
+final messageDeliveryServiceProvider = Provider((Ref ref) {
+  final service = MessageDeliveryService(
     messageStore: ref.watch(messageStoreProvider),
     offlineQueueStore: ref.watch(offlineQueueStoreProvider),
-  ),
-);
+  );
+  ref.onDispose(service.dispose);
+  return service;
+});
 
 final identityProvider = StreamProvider<RainIdentity?>(
   (Ref ref) => ref.watch(identityRepositoryProvider).watchIdentity(),
@@ -90,14 +91,10 @@ final brainProvider = Provider<ProtocolBrain?>((Ref ref) {
     return null;
   }
 
-  final brain = ProtocolBrainImpl(
+  final brain = createDefaultProtocolBrain(
     selfUsername: identity.username,
     adapter: ref.watch(adapterProvider),
-    peerConfig: PeerConfig(
-      iceServers: environment.iceServers,
-      platform: FlutterWebRTCBridge(),
-    ),
-    peerFactory: DefaultPeerCore.new,
+    iceServers: environment.iceServers,
     connectionMemoryStore: ref.watch(connectionMemoryStoreProvider),
   );
 

@@ -72,30 +72,36 @@ class OfflineQueueStore {
   }
 
   Future<void> enqueue(MessageEnvelope envelope) {
-    return _database.into(_database.queuedMessages).insertOnConflictUpdate(
-      QueuedMessagesCompanion.insert(
-        id: envelope.id,
-        to: envelope.to,
-        content: envelope.content,
-        sentAt: envelope.sentAt,
-        seq: envelope.seq,
-        status: QueuedMessageStatus.queued.name,
-      ),
-    );
+    return _database.transaction(() async {
+      await _database.into(_database.queuedMessages).insertOnConflictUpdate(
+        QueuedMessagesCompanion.insert(
+          id: envelope.id,
+          to: envelope.to,
+          content: envelope.content,
+          sentAt: envelope.sentAt,
+          seq: envelope.seq,
+          status: QueuedMessageStatus.queued.name,
+        ),
+      );
+    });
   }
 
   Future<void> markStatus(String id, QueuedMessageStatus status) {
-    return (_database.update(_database.queuedMessages)
-          ..where((QueuedMessages row) => row.id.equals(id)))
-        .write(
-          QueuedMessagesCompanion(status: Value<String>(status.name)),
-        );
+    return _database.transaction(() async {
+      await (_database.update(_database.queuedMessages)
+            ..where((QueuedMessages row) => row.id.equals(id)))
+          .write(
+            QueuedMessagesCompanion(status: Value<String>(status.name)),
+          );
+    });
   }
 
   Future<void> remove(String id) {
-    return (_database.delete(_database.queuedMessages)
-          ..where((QueuedMessages row) => row.id.equals(id)))
-        .go();
+    return _database.transaction(() async {
+      await (_database.delete(_database.queuedMessages)
+            ..where((QueuedMessages row) => row.id.equals(id)))
+          .go();
+    });
   }
 
   QueuedEnvelope _mapQueuedMessage(QueuedMessage row) {
