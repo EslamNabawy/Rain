@@ -1,0 +1,15 @@
+name: rain
+
+packages:
+  - apps/**
+  - packages/**
+
+command:
+  bootstrap:
+    usePubspecOverrides: true
+
+scripts:
+  pub:get: melos exec -- flutter pub get
+  analyze: melos exec -- flutter analyze
+  test: melos exec -- flutter test
+

@@ -1,0 +1,17 @@
+.dart_tool/
+.idea/
+.vscode/
+build/
+coverage/
+melos_tool/
+
+**/.dart_tool/
+**/.idea/
+**/.packages
+**/build/
+**/generated_plugin_registrant.dart
+**/GeneratedPluginRegistrant.*
+**/flutter_export_environment.sh
+**/.flutter-plugins
+**/.flutter-plugins-dependencies
+

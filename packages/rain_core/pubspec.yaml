@@ -1,0 +1,31 @@
+name: rain_core
+description: Storage models and application-layer services for Rain.
+publish_to: none
+version: 0.1.0
+
+environment:
+  sdk: ^3.10.4
+  flutter: ">=3.24.0"
+
+dependencies:
+  flutter:
+    sdk: flutter
+  collection: ^1.19.1
+  drift: ^2.28.2
+  drift_flutter: ^0.2.5
+  path: ^1.9.1
+  path_provider: ^2.1.5
+  protocol_brain:
+    path: ../protocol_brain
+  sqlite3_flutter_libs: ^0.5.39
+  uuid: ^4.5.1
+
+dev_dependencies:
+  build_runner: ^2.5.4
+  drift_dev: ^2.28.1
+  flutter_lints: ^6.0.0
+  flutter_test:
+    sdk: flutter
+
+flutter:
+

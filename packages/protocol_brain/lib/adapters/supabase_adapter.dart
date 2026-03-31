@@ -1,0 +1,217 @@
+import 'dart:async';
+
+import 'package:flutter_webrtc/flutter_webrtc.dart';
+import 'package:supabase_flutter/supabase_flutter.dart';
+
+import 'signaling_adapter.dart';
+
+class SupabaseSignalingAdapter implements SignalingAdapter {
+  SupabaseSignalingAdapter({SupabaseClient? client})
+    : _client = client ?? Supabase.instance.client;
+
+  final SupabaseClient _client;
+
+  @override
+  Future<void> deleteRoom(String roomId) async {
+    await ensureAuthenticated();
+    await _client.from('rooms').delete().eq('room_id', roomId);
+  }
+
+  @override
+  Future<void> dispose() async {}
+
+  @override
+  Future<void> ensureAuthenticated() async {
+    if (_client.auth.currentSession != null) {
+      return;
+    }
+    await _client.auth.signInAnonymously();
+  }
+
+  @override
+  Future<String> currentUid() async {
+    await ensureAuthenticated();
+    return _client.auth.currentUser?.id ?? '';
+  }
+
+  @override
+  Future<BackendIdentity?> fetchIdentity(String username) async {
+    await ensureAuthenticated();
+    final rows = (await _client.from('users').select().eq('username', username).limit(1))
+        as List<dynamic>;
+    if (rows.isEmpty) {
+      return null;
+    }
+    final row = Map<String, dynamic>.from(rows.first as Map);
+    return BackendIdentity(
+      username: row['username'] as String,
+      uid: row['uid'] as String? ?? '',
+      displayName: row['display_name'] as String? ?? row['username'] as String,
+      registeredAt: (row['registered_at'] as num?)?.toInt() ?? 0,
+      lastSeen: (row['last_seen'] as num?)?.toInt() ?? 0,
+      lastHeartbeat: (row['last_heartbeat'] as num?)?.toInt() ?? 0,
+      online: row['online'] as bool? ?? false,
+    );
+  }
+
+  @override
+  Future<bool> isUsernameAvailable(String username) async {
+    await ensureAuthenticated();
+    final rows =
+        (await _client.from('users').select('username').eq('username', username))
+            as List<dynamic>;
+    return rows.isEmpty;
+  }
+
+  @override
+  Stream<SDPPayload> onAnswer(String roomId) {
+    return _client.from('rooms').stream(primaryKey: <String>['room_id']).eq('room_id', roomId).map((
+      List<Map<String, dynamic>> rows,
+    ) {
+      if (rows.isEmpty || rows.first['answer'] == null) {
+        throw const _SkipStreamValue();
+      }
+      return SDPPayload.fromJson(rows.first['answer'] as Map<Object?, Object?>);
+    }).where((_) => true).handleError((_) {}, test: (_) => true);
+  }
+
+  @override
+  Stream<String> onFriendRequest(String username) {
+    return _client
+        .from('friend_requests')
+        .stream(primaryKey: <String>['from_user', 'to_user'])
+        .eq('to_user', username)
+        .map(
+          (List<Map<String, dynamic>> rows) => rows.map((Map<String, dynamic> row) {
+            return row['from_user'] as String;
+          }).toList(),
+        )
+        .expand((List<String> rows) => rows);
+  }
+
+  @override
+  Stream<RTCIceCandidate> onICE(String roomId, IceRole role) {
+    final field = role == IceRole.caller ? 'caller_ice' : 'callee_ice';
+    final seen = <String>{};
+    return _client.from('rooms').stream(primaryKey: <String>['room_id']).eq('room_id', roomId).expand((
+      List<Map<String, dynamic>> rows,
+    ) sync* {
+      if (rows.isEmpty) {
+        return;
+      }
+      final raw = rows.first[field];
+      final values = raw is List ? raw.cast<Map<String, dynamic>>() : const <Map<String, dynamic>>[];
+      for (final value in values) {
+        final key = '${value['candidate']}:${value['sdpMid']}:${value['sdpMLineIndex']}';
+        if (seen.add(key)) {
+          yield iceCandidateFromJson(value);
+        }
+      }
+    });
+  }
+
+  @override
+  Stream<SDPPayload> onOffer(String roomId) {
+    return _client.from('rooms').stream(primaryKey: <String>['room_id']).eq('room_id', roomId).map((
+      List<Map<String, dynamic>> rows,
+    ) {
+      if (rows.isEmpty || rows.first['offer'] == null) {
+        throw const _SkipStreamValue();
+      }
+      return SDPPayload.fromJson(rows.first['offer'] as Map<Object?, Object?>);
+    }).where((_) => true).handleError((_) {}, test: (_) => true);
+  }
+
+  @override
+  Future<void> setPresence(String username, bool online) async {
+    await ensureAuthenticated();
+    final now = DateTime.now().millisecondsSinceEpoch;
+    await _client.from('users').upsert(<String, Object?>{
+      'username': username,
+      'online': online,
+      'last_seen': now,
+      'last_heartbeat': now,
+      'uid': _client.auth.currentUser?.id ?? '',
+    });
+  }
+
+  @override
+  Future<void> upsertIdentity(BackendIdentity identity) async {
+    await ensureAuthenticated();
+    await _client.from('users').upsert(<String, Object?>{
+      'username': identity.username,
+      'display_name': identity.displayName,
+      'registered_at': identity.registeredAt,
+      'last_seen': identity.lastSeen,
+      'last_heartbeat': identity.lastHeartbeat,
+      'online': identity.online,
+      'uid': identity.uid,
+    });
+  }
+
+  @override
+  Stream<bool> watchPresence(String username) {
+    return _client
+        .from('users')
+        .stream(primaryKey: <String>['username'])
+        .eq('username', username)
+        .map((List<Map<String, dynamic>> rows) {
+          if (rows.isEmpty) {
+            return false;
+          }
+          return rows.first['online'] as bool? ?? false;
+        });
+  }
+
+  @override
+  Future<void> writeAnswer(String roomId, SDPPayload answer) async {
+    await ensureAuthenticated();
+    await _client.from('rooms').upsert(<String, Object?>{
+      'room_id': roomId,
+      'answer': answer.toJson(),
+      'created_at': DateTime.now().millisecondsSinceEpoch,
+    });
+  }
+
+  @override
+  Future<void> writeFriendRequest(String to, String from) async {
+    await ensureAuthenticated();
+    await _client.from('friend_requests').upsert(<String, Object?>{
+      'from_user': from,
+      'to_user': to,
+      'sent_at': DateTime.now().millisecondsSinceEpoch,
+    });
+  }
+
+  @override
+  Future<void> writeICE(String roomId, IceRole role, RTCIceCandidate candidate) async {
+    await ensureAuthenticated();
+    final field = role == IceRole.caller ? 'caller_ice' : 'callee_ice';
+    final rows =
+        (await _client.from('rooms').select(field).eq('room_id', roomId).limit(1))
+            as List<dynamic>;
+    final current = rows.isNotEmpty && (rows.first as Map)[field] is List
+        ? List<Map<String, Object?>>.from((rows.first as Map)[field] as List)
+        : <Map<String, Object?>>[];
+    current.add(iceCandidateToJson(candidate));
+    await _client.from('rooms').upsert(<String, Object?>{
+      'room_id': roomId,
+      field: current,
+      'created_at': DateTime.now().millisecondsSinceEpoch,
+    });
+  }
+
+  @override
+  Future<void> writeOffer(String roomId, SDPPayload offer) async {
+    await ensureAuthenticated();
+    await _client.from('rooms').upsert(<String, Object?>{
+      'room_id': roomId,
+      'offer': offer.toJson(),
+      'created_at': DateTime.now().millisecondsSinceEpoch,
+    });
+  }
+}
+
+class _SkipStreamValue implements Exception {
+  const _SkipStreamValue();
+}
