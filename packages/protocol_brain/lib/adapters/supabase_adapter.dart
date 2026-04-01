@@ -35,10 +35,16 @@ class SupabaseSignalingAdapter implements SignalingAdapter {
   }
 
   @override
+  Future<void> signOut() {
+    return _client.auth.signOut();
+  }
+
+  @override
   Future<BackendIdentity?> fetchIdentity(String username) async {
     await ensureAuthenticated();
-    final rows = (await _client.from('users').select().eq('username', username).limit(1))
-        as List<dynamic>;
+    final rows =
+        (await _client.from('users').select().eq('username', username).limit(1))
+            as List<dynamic>;
     if (rows.isEmpty) {
       return null;
     }
@@ -58,7 +64,10 @@ class SupabaseSignalingAdapter implements SignalingAdapter {
   Future<bool> isUsernameAvailable(String username) async {
     await ensureAuthenticated();
     final rows =
-        (await _client.from('users').select('username, uid').eq('username', username))
+        (await _client
+                .from('users')
+                .select('username, uid')
+                .eq('username', username))
             as List<dynamic>;
     if (rows.isEmpty) {
       return true;
@@ -69,14 +78,20 @@ class SupabaseSignalingAdapter implements SignalingAdapter {
 
   @override
   Stream<SDPPayload> onAnswer(String roomId) {
-    return _client.from('rooms').stream(primaryKey: <String>['room_id']).eq('room_id', roomId).map((
-      List<Map<String, dynamic>> rows,
-    ) {
-      if (rows.isEmpty || rows.first['answer'] == null) {
-        throw const _SkipStreamValue();
-      }
-      return SDPPayload.fromJson(rows.first['answer'] as Map<Object?, Object?>);
-    }).where((_) => true).handleError((_) {}, test: (_) => true);
+    return _client
+        .from('rooms')
+        .stream(primaryKey: <String>['room_id'])
+        .eq('room_id', roomId)
+        .map((List<Map<String, dynamic>> rows) {
+          if (rows.isEmpty || rows.first['answer'] == null) {
+            throw const _SkipStreamValue();
+          }
+          return SDPPayload.fromJson(
+            rows.first['answer'] as Map<Object?, Object?>,
+          );
+        })
+        .where((_) => true)
+        .handleError((_) {}, test: (_) => true);
   }
 
   @override
@@ -86,9 +101,10 @@ class SupabaseSignalingAdapter implements SignalingAdapter {
         .stream(primaryKey: <String>['from_user', 'to_user'])
         .eq('to_user', username)
         .map(
-          (List<Map<String, dynamic>> rows) => rows.map((Map<String, dynamic> row) {
-            return row['from_user'] as String;
-          }).toList(),
+          (List<Map<String, dynamic>> rows) =>
+              rows.map((Map<String, dynamic> row) {
+                return row['from_user'] as String;
+              }).toList(),
         )
         .expand((List<String> rows) => rows);
   }
@@ -97,33 +113,44 @@ class SupabaseSignalingAdapter implements SignalingAdapter {
   Stream<RTCIceCandidate> onICE(String roomId, IceRole role) {
     final field = role == IceRole.caller ? 'caller_ice' : 'callee_ice';
     final seen = <String>{};
-    return _client.from('rooms').stream(primaryKey: <String>['room_id']).eq('room_id', roomId).expand((
-      List<Map<String, dynamic>> rows,
-    ) sync* {
-      if (rows.isEmpty) {
-        return;
-      }
-      final raw = rows.first[field];
-      final values = raw is List ? raw.cast<Map<String, dynamic>>() : const <Map<String, dynamic>>[];
-      for (final value in values) {
-        final key = '${value['candidate']}:${value['sdpMid']}:${value['sdpMLineIndex']}';
-        if (seen.add(key)) {
-          yield iceCandidateFromJson(value);
-        }
-      }
-    });
+    return _client
+        .from('rooms')
+        .stream(primaryKey: <String>['room_id'])
+        .eq('room_id', roomId)
+        .expand((List<Map<String, dynamic>> rows) sync* {
+          if (rows.isEmpty) {
+            return;
+          }
+          final raw = rows.first[field];
+          final values = raw is List
+              ? raw.cast<Map<String, dynamic>>()
+              : const <Map<String, dynamic>>[];
+          for (final value in values) {
+            final key =
+                '${value['candidate']}:${value['sdpMid']}:${value['sdpMLineIndex']}';
+            if (seen.add(key)) {
+              yield iceCandidateFromJson(value);
+            }
+          }
+        });
   }
 
   @override
   Stream<SDPPayload> onOffer(String roomId) {
-    return _client.from('rooms').stream(primaryKey: <String>['room_id']).eq('room_id', roomId).map((
-      List<Map<String, dynamic>> rows,
-    ) {
-      if (rows.isEmpty || rows.first['offer'] == null) {
-        throw const _SkipStreamValue();
-      }
-      return SDPPayload.fromJson(rows.first['offer'] as Map<Object?, Object?>);
-    }).where((_) => true).handleError((_) {}, test: (_) => true);
+    return _client
+        .from('rooms')
+        .stream(primaryKey: <String>['room_id'])
+        .eq('room_id', roomId)
+        .map((List<Map<String, dynamic>> rows) {
+          if (rows.isEmpty || rows.first['offer'] == null) {
+            throw const _SkipStreamValue();
+          }
+          return SDPPayload.fromJson(
+            rows.first['offer'] as Map<Object?, Object?>,
+          );
+        })
+        .where((_) => true)
+        .handleError((_) {}, test: (_) => true);
   }
 
   @override
@@ -180,11 +207,19 @@ class SupabaseSignalingAdapter implements SignalingAdapter {
   }
 
   @override
-  Future<void> writeICE(String roomId, IceRole role, RTCIceCandidate candidate) async {
+  Future<void> writeICE(
+    String roomId,
+    IceRole role,
+    RTCIceCandidate candidate,
+  ) async {
     await ensureAuthenticated();
     final field = role == IceRole.caller ? 'caller_ice' : 'callee_ice';
     final rows =
-        (await _client.from('rooms').select(field).eq('room_id', roomId).limit(1))
+        (await _client
+                .from('rooms')
+                .select(field)
+                .eq('room_id', roomId)
+                .limit(1))
             as List<dynamic>;
     final current = rows.isNotEmpty && (rows.first as Map)[field] is List
         ? List<Map<String, Object?>>.from((rows.first as Map)[field] as List)

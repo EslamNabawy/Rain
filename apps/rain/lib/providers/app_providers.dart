@@ -117,6 +117,7 @@ final runtimeControllerProvider = Provider<RainRuntimeController?>((Ref ref) {
     selfIdentity: identity,
     adapter: ref.watch(adapterProvider),
     brain: ref.watch(brainProvider),
+    database: ref.watch(databaseProvider),
     friendStore: ref.watch(friendStoreProvider),
     messageStore: ref.watch(messageStoreProvider),
     offlineQueueStore: ref.watch(offlineQueueStoreProvider),

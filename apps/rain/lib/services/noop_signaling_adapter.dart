@@ -31,6 +31,9 @@ class NoopSignalingAdapter implements SignalingAdapter {
   Future<void> ensureAuthenticated() async {}
 
   @override
+  Future<void> signOut() async {}
+
+  @override
   Future<BackendIdentity?> fetchIdentity(String username) async {
     return _identities[username];
   }
@@ -41,7 +44,8 @@ class NoopSignalingAdapter implements SignalingAdapter {
   }
 
   @override
-  Stream<SDPPayload> onAnswer(String roomId) => const Stream<SDPPayload>.empty();
+  Stream<SDPPayload> onAnswer(String roomId) =>
+      const Stream<SDPPayload>.empty();
 
   @override
   Stream<String> onFriendRequest(String username) async* {
@@ -82,7 +86,11 @@ class NoopSignalingAdapter implements SignalingAdapter {
   }
 
   @override
-  Future<void> writeICE(String roomId, IceRole role, RTCIceCandidate candidate) async {}
+  Future<void> writeICE(
+    String roomId,
+    IceRole role,
+    RTCIceCandidate candidate,
+  ) async {}
 
   @override
   Future<void> writeOffer(String roomId, SDPPayload offer) async {}

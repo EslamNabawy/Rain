@@ -3,6 +3,7 @@ import 'package:flutter_webrtc/flutter_webrtc.dart';
 abstract class SignalingAdapter {
   Future<void> ensureAuthenticated();
   Future<String> currentUid();
+  Future<void> signOut();
 
   Future<void> writeOffer(String roomId, SDPPayload offer);
   Future<void> writeAnswer(String roomId, SDPPayload answer);
@@ -42,7 +43,8 @@ class SDPPayload {
   }
 
   static SDPPayload fromJson(Map<Object?, Object?> json) {
-    final sdpMap = (json['sdp'] as Map<Object?, Object?>?) ?? <Object?, Object?>{};
+    final sdpMap =
+        (json['sdp'] as Map<Object?, Object?>?) ?? <Object?, Object?>{};
     return SDPPayload(
       sdp: RTCSessionDescription(
         sdpMap['sdp'] as String?,

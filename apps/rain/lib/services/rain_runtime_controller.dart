@@ -8,6 +8,7 @@ class RainRuntimeController {
     required this.selfIdentity,
     required this.adapter,
     required this.brain,
+    required this.database,
     required this.friendStore,
     required this.messageStore,
     required this.offlineQueueStore,
@@ -17,6 +18,7 @@ class RainRuntimeController {
   final RainIdentity selfIdentity;
   final SignalingAdapter adapter;
   final ProtocolBrain? brain;
+  final RainDatabase database;
   final FriendStore friendStore;
   final MessageStore messageStore;
   final OfflineQueueStore offlineQueueStore;
@@ -27,6 +29,7 @@ class RainRuntimeController {
   final List<StreamSubscription<dynamic>> _subscriptions =
       <StreamSubscription<dynamic>>[];
   bool _started = false;
+  bool _shutDown = false;
 
   Future<void> start() async {
     if (_started) {
@@ -58,11 +61,16 @@ class RainRuntimeController {
     }
 
     _subscriptions.add(
-      adapter.onFriendRequest(selfIdentity.username).listen((String from) async {
+      adapter.onFriendRequest(selfIdentity.username).listen((
+        String from,
+      ) async {
         final existing = await friendStore.loadFriend(from);
         if (existing?.state == FriendState.pendingOutgoing ||
             existing?.state == FriendState.friend) {
-          await friendStore.markAccepted(from, displayName: existing?.displayName ?? from);
+          await friendStore.markAccepted(
+            from,
+            displayName: existing?.displayName ?? from,
+          );
         } else if (existing?.state != FriendState.blocked) {
           await friendStore.upsertFriend(
             username: from,
@@ -143,13 +151,15 @@ class RainRuntimeController {
   }
 
   Future<void> dispose() async {
-    await adapter.setPresence(selfIdentity.username, false);
-    for (final subscription in _subscriptions) {
-      await subscription.cancel();
-    }
-    for (final subscription in _presenceSubscriptions.values) {
-      await subscription.cancel();
-    }
+    await _shutdown(
+      markOffline: true,
+      signOut: false,
+      clearLocalSession: false,
+    );
+  }
+
+  Future<void> logOut() async {
+    await _shutdown(markOffline: true, signOut: true, clearLocalSession: true);
   }
 
   Future<void> markConversationRead(String username) {
@@ -232,5 +242,44 @@ class RainRuntimeController {
         await connectPeer(username);
       }
     });
+  }
+
+  Future<void> _shutdown({
+    required bool markOffline,
+    required bool signOut,
+    required bool clearLocalSession,
+  }) async {
+    if (_shutDown) {
+      return;
+    }
+    _shutDown = true;
+
+    if (markOffline && _started) {
+      await adapter.setPresence(selfIdentity.username, false);
+    }
+
+    if (brain != null) {
+      for (final session in brain!.getSessions()) {
+        await brain!.disconnect(session.peerId);
+      }
+    }
+
+    for (final subscription in _subscriptions) {
+      await subscription.cancel();
+    }
+    _subscriptions.clear();
+
+    for (final subscription in _presenceSubscriptions.values) {
+      await subscription.cancel();
+    }
+    _presenceSubscriptions.clear();
+
+    if (signOut) {
+      await adapter.signOut();
+    }
+
+    if (clearLocalSession) {
+      await database.clearSessionData();
+    }
   }
 }

@@ -7,11 +7,9 @@ import 'package:flutter_webrtc/flutter_webrtc.dart';
 import 'signaling_adapter.dart';
 
 class FirebaseSignalingAdapter implements SignalingAdapter {
-  FirebaseSignalingAdapter({
-    FirebaseAuth? auth,
-    FirebaseDatabase? database,
-  }) : _auth = auth ?? FirebaseAuth.instance,
-       _database = database ?? FirebaseDatabase.instance;
+  FirebaseSignalingAdapter({FirebaseAuth? auth, FirebaseDatabase? database})
+    : _auth = auth ?? FirebaseAuth.instance,
+      _database = database ?? FirebaseDatabase.instance;
 
   final FirebaseAuth _auth;
   final FirebaseDatabase _database;
@@ -39,6 +37,11 @@ class FirebaseSignalingAdapter implements SignalingAdapter {
   Future<String> currentUid() async {
     await ensureAuthenticated();
     return _auth.currentUser?.uid ?? '';
+  }
+
+  @override
+  Future<void> signOut() {
+    return _auth.signOut();
   }
 
   @override
@@ -73,41 +76,49 @@ class FirebaseSignalingAdapter implements SignalingAdapter {
 
   @override
   Stream<SDPPayload> onAnswer(String roomId) {
-    return _root.child('rooms/$roomId/answer').onValue
+    return _root
+        .child('rooms/$roomId/answer')
+        .onValue
         .map((DatabaseEvent event) => event.snapshot.value)
         .where((Object? value) => value is Map<Object?, Object?>)
         .map(
-          (Object? value) => SDPPayload.fromJson(
-            value! as Map<Object?, Object?>,
-          ),
+          (Object? value) =>
+              SDPPayload.fromJson(value! as Map<Object?, Object?>),
         );
   }
 
   @override
   Stream<String> onFriendRequest(String username) {
-    return _root.child('friendRequests/$username').onChildAdded.map(
-      (DatabaseEvent event) => event.snapshot.key ?? '',
-    ).where((String value) => value.isNotEmpty);
+    return _root
+        .child('friendRequests/$username')
+        .onChildAdded
+        .map((DatabaseEvent event) => event.snapshot.key ?? '')
+        .where((String value) => value.isNotEmpty);
   }
 
   @override
   Stream<RTCIceCandidate> onICE(String roomId, IceRole role) {
     final path = role == IceRole.caller ? 'callerICE' : 'calleeICE';
-    return _root.child('rooms/$roomId/$path').onChildAdded.map((DatabaseEvent event) {
-      final value = event.snapshot.value as Map<Object?, Object?>? ?? <Object?, Object?>{};
+    return _root.child('rooms/$roomId/$path').onChildAdded.map((
+      DatabaseEvent event,
+    ) {
+      final value =
+          event.snapshot.value as Map<Object?, Object?>? ??
+          <Object?, Object?>{};
       return iceCandidateFromJson(value);
     });
   }
 
   @override
   Stream<SDPPayload> onOffer(String roomId) {
-    return _root.child('rooms/$roomId/offer').onValue
+    return _root
+        .child('rooms/$roomId/offer')
+        .onValue
         .map((DatabaseEvent event) => event.snapshot.value)
         .where((Object? value) => value is Map<Object?, Object?>)
         .map(
-          (Object? value) => SDPPayload.fromJson(
-            value! as Map<Object?, Object?>,
-          ),
+          (Object? value) =>
+              SDPPayload.fromJson(value! as Map<Object?, Object?>),
         );
   }
 
@@ -127,12 +138,16 @@ class FirebaseSignalingAdapter implements SignalingAdapter {
   @override
   Future<void> upsertIdentity(BackendIdentity identity) async {
     await ensureAuthenticated();
-    await _root.child('users/${identity.username}').set(identity.toFirebaseJson());
+    await _root
+        .child('users/${identity.username}')
+        .set(identity.toFirebaseJson());
   }
 
   @override
   Stream<bool> watchPresence(String username) {
-    return _root.child('users/$username/online').onValue.map((DatabaseEvent event) {
+    return _root.child('users/$username/online').onValue.map((
+      DatabaseEvent event,
+    ) {
       return event.snapshot.value as bool? ?? false;
     });
   }
@@ -152,10 +167,17 @@ class FirebaseSignalingAdapter implements SignalingAdapter {
   }
 
   @override
-  Future<void> writeICE(String roomId, IceRole role, RTCIceCandidate candidate) async {
+  Future<void> writeICE(
+    String roomId,
+    IceRole role,
+    RTCIceCandidate candidate,
+  ) async {
     await ensureAuthenticated();
     final path = role == IceRole.caller ? 'callerICE' : 'calleeICE';
-    await _root.child('rooms/$roomId/$path').push().set(iceCandidateToJson(candidate));
+    await _root
+        .child('rooms/$roomId/$path')
+        .push()
+        .set(iceCandidateToJson(candidate));
   }
 
   @override
