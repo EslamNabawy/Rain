@@ -6,6 +6,7 @@ import 'package:protocol_brain/protocol_brain.dart';
 class NoopSignalingAdapter implements SignalingAdapter {
   final Map<String, BackendIdentity> _identities = <String, BackendIdentity>{};
   final Map<String, bool> _presence = <String, bool>{};
+  final Set<String> _friendRequests = <String>{};
   final Map<String, StreamController<bool>> _presenceControllers =
       <String, StreamController<bool>>{};
   final Map<String, StreamController<String>> _friendRequestControllers =
@@ -84,6 +85,11 @@ class NoopSignalingAdapter implements SignalingAdapter {
   Future<void> addToUserSearch(String username) async {}
 
   @override
+  Future<void> deleteFriendRequest(String to, String from) async {
+    _friendRequests.remove('$from->$to');
+  }
+
+  @override
   Future<bool> isUsernameAvailable(String username) async {
     return !_identities.containsKey(username);
   }
@@ -126,6 +132,7 @@ class NoopSignalingAdapter implements SignalingAdapter {
 
   @override
   Future<void> writeFriendRequest(String to, String from) async {
+    _friendRequests.add('$from->$to');
     _friendRequestController(to).add(from);
   }
 

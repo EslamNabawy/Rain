@@ -27,6 +27,7 @@ abstract class SignalingAdapter {
   Future<List<BackendIdentity>> searchUsers(String query);
 
   Future<void> writeFriendRequest(String to, String from);
+  Future<void> deleteFriendRequest(String to, String from);
   Stream<String> onFriendRequest(String username);
 
   Future<void> deleteRoom(String roomId);

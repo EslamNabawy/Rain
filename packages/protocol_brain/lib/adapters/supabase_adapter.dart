@@ -10,6 +10,7 @@ class SupabaseSignalingAdapter implements SignalingAdapter {
     : _client = client ?? Supabase.instance.client;
 
   final SupabaseClient _client;
+  static const int _presenceTimeoutMs = 7 * 60 * 1000;
 
   @override
   Future<void> deleteRoom(String roomId) async {
@@ -41,6 +42,27 @@ class SupabaseSignalingAdapter implements SignalingAdapter {
 
   String _emailFromUsername(String username) {
     return '$username@rain.local';
+  }
+
+  List<String> _roomUsers(String roomId) {
+    final parts = roomId.split(':');
+    if (parts.length != 2) {
+      throw ArgumentError.value(roomId, 'roomId', 'Expected exactly two peers');
+    }
+    return parts;
+  }
+
+  Map<String, Object?> _roomParticipants(String roomId) {
+    final users = _roomUsers(roomId);
+    return <String, Object?>{
+      'user_a': users[0],
+      'user_b': users[1],
+    };
+  }
+
+  bool _isFreshPresence(bool online, int lastHeartbeat) {
+    final age = DateTime.now().millisecondsSinceEpoch - lastHeartbeat;
+    return online && age < _presenceTimeoutMs;
   }
 
   @override
@@ -102,6 +124,7 @@ class SupabaseSignalingAdapter implements SignalingAdapter {
       return null;
     }
     final row = Map<String, dynamic>.from(rows.first as Map);
+    final lastHeartbeat = (row['last_heartbeat'] as num?)?.toInt() ?? 0;
     return BackendIdentity(
       username: row['username'] as String,
       uid: row['uid'] as String? ?? '',
@@ -109,8 +132,8 @@ class SupabaseSignalingAdapter implements SignalingAdapter {
       gender: row['gender'] as String?,
       registeredAt: (row['registered_at'] as num?)?.toInt() ?? 0,
       lastSeen: (row['last_seen'] as num?)?.toInt() ?? 0,
-      lastHeartbeat: (row['last_heartbeat'] as num?)?.toInt() ?? 0,
-      online: row['online'] as bool? ?? false,
+      lastHeartbeat: lastHeartbeat,
+      online: _isFreshPresence(row['online'] as bool? ?? false, lastHeartbeat),
     );
   }
 
@@ -130,8 +153,9 @@ class SupabaseSignalingAdapter implements SignalingAdapter {
     final result = <BackendIdentity>[];
     for (final row in rows as List<dynamic>) {
       final map = Map<String, dynamic>.from(row as Map);
+      final lastHeartbeat = (map['last_heartbeat'] as num?)?.toInt() ?? 0;
       result.add(
-          BackendIdentity(
+        BackendIdentity(
           username: map['username'] as String,
           uid: map['uid'] as String? ?? '',
           displayName:
@@ -139,8 +163,11 @@ class SupabaseSignalingAdapter implements SignalingAdapter {
           gender: map['gender'] as String?,
           registeredAt: (map['registered_at'] as num?)?.toInt() ?? 0,
           lastSeen: (map['last_seen'] as num?)?.toInt() ?? 0,
-          lastHeartbeat: (map['last_heartbeat'] as num?)?.toInt() ?? 0,
-          online: map['online'] as bool? ?? false,
+          lastHeartbeat: lastHeartbeat,
+          online: _isFreshPresence(
+            map['online'] as bool? ?? false,
+            lastHeartbeat,
+          ),
         ),
       );
     }
@@ -150,7 +177,16 @@ class SupabaseSignalingAdapter implements SignalingAdapter {
   @override
   Future<void> addToUserSearch(String username) async {
     await ensureAuthenticated();
-    await _client.from('user_search').upsert({'username': username});
+  }
+
+  @override
+  Future<void> deleteFriendRequest(String to, String from) async {
+    await ensureAuthenticated();
+    await _client
+        .from('friend_requests')
+        .delete()
+        .eq('from_user', from)
+        .eq('to_user', to);
   }
 
   @override
@@ -171,35 +207,51 @@ class SupabaseSignalingAdapter implements SignalingAdapter {
 
   @override
   Stream<SDPPayload> onAnswer(String roomId) {
+    int? lastTs;
     return _client
         .from('rooms')
         .stream(primaryKey: <String>['room_id'])
         .eq('room_id', roomId)
-        .map((List<Map<String, dynamic>> rows) {
-          if (rows.isEmpty || rows.first['answer'] == null) {
-            throw const _SkipStreamValue();
+        .expand((List<Map<String, dynamic>> rows) sync* {
+          if (rows.isEmpty) {
+            return;
           }
-          return SDPPayload.fromJson(
-            rows.first['answer'] as Map<Object?, Object?>,
+          final raw = rows.first['answer'];
+          if (raw is! Map) {
+            return;
+          }
+          final payload = SDPPayload.fromJson(
+            Map<Object?, Object?>.from(raw),
           );
-        })
-        .where((_) => true)
-        .handleError((_) {}, test: (_) => true);
+          if (payload.ts == lastTs) {
+            return;
+          }
+          lastTs = payload.ts;
+          yield payload;
+        });
   }
 
   @override
   Stream<String> onFriendRequest(String username) {
+    final seen = <String>{};
     return _client
         .from('friend_requests')
         .stream(primaryKey: <String>['from_user', 'to_user'])
         .eq('to_user', username)
-        .map(
-          (List<Map<String, dynamic>> rows) =>
-              rows.map((Map<String, dynamic> row) {
-                return row['from_user'] as String;
-              }).toList(),
-        )
-        .expand((List<String> rows) => rows);
+        .expand((List<Map<String, dynamic>> rows) sync* {
+          for (final row in rows) {
+            final from = row['from_user'] as String?;
+            final to = row['to_user'] as String?;
+            final sentAt = (row['sent_at'] as num?)?.toInt() ?? 0;
+            if (from == null || to != username) {
+              continue;
+            }
+            final key = '$from:$to:$sentAt';
+            if (seen.add(key)) {
+              yield from;
+            }
+          }
+        });
   }
 
   @override
@@ -230,33 +282,44 @@ class SupabaseSignalingAdapter implements SignalingAdapter {
 
   @override
   Stream<SDPPayload> onOffer(String roomId) {
+    int? lastTs;
     return _client
         .from('rooms')
         .stream(primaryKey: <String>['room_id'])
         .eq('room_id', roomId)
-        .map((List<Map<String, dynamic>> rows) {
-          if (rows.isEmpty || rows.first['offer'] == null) {
-            throw const _SkipStreamValue();
+        .expand((List<Map<String, dynamic>> rows) sync* {
+          if (rows.isEmpty) {
+            return;
           }
-          return SDPPayload.fromJson(
-            rows.first['offer'] as Map<Object?, Object?>,
+          final raw = rows.first['offer'];
+          if (raw is! Map) {
+            return;
+          }
+          final payload = SDPPayload.fromJson(
+            Map<Object?, Object?>.from(raw),
           );
-        })
-        .where((_) => true)
-        .handleError((_) {}, test: (_) => true);
+          if (payload.ts == lastTs) {
+            return;
+          }
+          lastTs = payload.ts;
+          yield payload;
+        });
   }
 
   @override
   Future<void> setPresence(String username, bool online) async {
     await ensureAuthenticated();
     final now = DateTime.now().millisecondsSinceEpoch;
+    final existing = await fetchIdentity(username);
     await _client.from('users').upsert(<String, Object?>{
       'username': username,
+      'display_name': existing?.displayName ?? username,
       'online': online,
+      'registered_at': existing?.registeredAt ?? now,
       'last_seen': now,
       'last_heartbeat': now,
-      'uid': _client.auth.currentUser?.id ?? '',
-      'gender': (await fetchIdentity(username))?.gender,
+      'uid': _client.auth.currentUser?.id ?? existing?.uid ?? '',
+      'gender': existing?.gender,
     });
   }
 
@@ -276,7 +339,10 @@ class SupabaseSignalingAdapter implements SignalingAdapter {
           if (rows.isEmpty) {
             return false;
           }
-          return rows.first['online'] as bool? ?? false;
+          final row = rows.first;
+          final online = row['online'] as bool? ?? false;
+          final lastHeartbeat = (row['last_heartbeat'] as num?)?.toInt() ?? 0;
+          return _isFreshPresence(online, lastHeartbeat);
         });
   }
 
@@ -285,6 +351,7 @@ class SupabaseSignalingAdapter implements SignalingAdapter {
     await ensureAuthenticated();
     await _client.from('rooms').upsert(<String, Object?>{
       'room_id': roomId,
+      ..._roomParticipants(roomId),
       'answer': answer.toJson(),
       'created_at': DateTime.now().millisecondsSinceEpoch,
     });
@@ -321,6 +388,7 @@ class SupabaseSignalingAdapter implements SignalingAdapter {
     current.add(iceCandidateToJson(candidate));
     await _client.from('rooms').upsert(<String, Object?>{
       'room_id': roomId,
+      ..._roomParticipants(roomId),
       field: current,
       'created_at': DateTime.now().millisecondsSinceEpoch,
     });
@@ -331,12 +399,9 @@ class SupabaseSignalingAdapter implements SignalingAdapter {
     await ensureAuthenticated();
     await _client.from('rooms').upsert(<String, Object?>{
       'room_id': roomId,
+      ..._roomParticipants(roomId),
       'offer': offer.toJson(),
       'created_at': DateTime.now().millisecondsSinceEpoch,
     });
   }
-}
-
-class _SkipStreamValue implements Exception {
-  const _SkipStreamValue();
 }

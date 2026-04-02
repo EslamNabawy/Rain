@@ -153,34 +153,37 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
     if (rawUsername == null) {
       return;
     }
+    if (!mounted) {
+      return;
+    }
 
+    final messenger = ScaffoldMessenger.of(context);
+    final errorColor = Theme.of(context).colorScheme.error;
     final username = InputValidator.normalizeUsername(rawUsername);
     final error = InputValidator.usernameError(username);
     if (error != null) {
-      if (context.mounted) {
-        ScaffoldMessenger.of(
-          context,
-        ).showSnackBar(SnackBar(content: Text(error)));
-      }
+      messenger.showSnackBar(SnackBar(content: Text(error)));
       return;
     }
 
     try {
       await runtime?.sendFriendRequest(username);
-      if (context.mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(content: Text('Friend request sent to @$username')),
-        );
+      if (!mounted) {
+        return;
       }
+      messenger.showSnackBar(
+        SnackBar(content: Text('Friend request sent to @$username')),
+      );
     } catch (e) {
-      if (context.mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(
-            content: Text('Error: $e'),
-            backgroundColor: Theme.of(context).colorScheme.error,
-          ),
-        );
+      if (!mounted) {
+        return;
       }
+      messenger.showSnackBar(
+        SnackBar(
+          content: Text('Error: $e'),
+          backgroundColor: errorColor,
+        ),
+      );
     }
   }
 
@@ -189,6 +192,7 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
     if (runtime == null) {
       return;
     }
+    final messenger = ScaffoldMessenger.of(context);
 
     final shouldLogOut = await showAppConfirmDialog(
       context: context,
@@ -208,9 +212,9 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
       if (!mounted) {
         return;
       }
-      ScaffoldMessenger.of(
-        context,
-      ).showSnackBar(SnackBar(content: Text('Could not log out: $error')));
+      messenger.showSnackBar(
+        SnackBar(content: Text('Could not log out: $error')),
+      );
     }
   }
 

@@ -39,7 +39,7 @@ class SettingsScreen extends ConsumerWidget {
                 [
                   '@${identity?.username ?? 'unknown'}',
                   _genderLabel(identity?.gender),
-                ].join(' • '),
+                ].join(' | '),
               ),
               trailing: PopupMenuButton<_ProfileAction>(
                 onSelected: (value) {
@@ -187,21 +187,23 @@ class SettingsScreen extends ConsumerWidget {
           content: Column(
             mainAxisSize: MainAxisSize.min,
             children: <Widget>[
-              RadioListTile<RainGender>(
-                value: RainGender.male,
-                groupValue: identity.gender,
-                onChanged: (RainGender? value) {
-                  Navigator.of(context).pop(value);
-                },
+              ListTile(
+                leading: Icon(
+                  identity.gender == RainGender.male
+                      ? Icons.check_circle
+                      : Icons.circle_outlined,
+                ),
                 title: const Text('Male'),
+                onTap: () => Navigator.of(context).pop(RainGender.male),
               ),
-              RadioListTile<RainGender>(
-                value: RainGender.female,
-                groupValue: identity.gender,
-                onChanged: (RainGender? value) {
-                  Navigator.of(context).pop(value);
-                },
+              ListTile(
+                leading: Icon(
+                  identity.gender == RainGender.female
+                      ? Icons.check_circle
+                      : Icons.circle_outlined,
+                ),
                 title: const Text('Female'),
+                onTap: () => Navigator.of(context).pop(RainGender.female),
               ),
             ],
           ),

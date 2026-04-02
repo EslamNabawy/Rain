@@ -1,11 +1,9 @@
 import 'package:drift/native.dart';
 import 'package:firebase_core/firebase_core.dart';
+import 'package:rain/firebase_options.dart';
+import 'package:rain/services/rain_runtime_controller.dart';
 import 'package:rain_core/rain_core.dart';
 import 'package:protocol_brain/protocol_brain.dart';
-
-import '../../lib/firebase_options.dart';
-import '../../lib/services/firebase/firebase_signaling_adapter.dart';
-import '../../lib/services/rain_runtime_controller.dart';
 
 class TwoDeviceHarness {
   Future<bool> run() async {

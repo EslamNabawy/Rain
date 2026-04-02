@@ -35,12 +35,26 @@ $$;
 
 create table if not exists public.rooms (
   room_id text primary key,
+  user_a text references public.users (username) on delete cascade,
+  user_b text references public.users (username) on delete cascade,
   offer jsonb,
   answer jsonb,
   caller_ice jsonb not null default '[]'::jsonb,
   callee_ice jsonb not null default '[]'::jsonb,
   created_at bigint not null default 0
 );
+
+alter table public.rooms
+  add column if not exists user_a text references public.users (username) on delete cascade;
+
+alter table public.rooms
+  add column if not exists user_b text references public.users (username) on delete cascade;
+
+update public.rooms
+   set user_a = split_part(room_id, ':', 1),
+       user_b = split_part(room_id, ':', 2)
+ where (user_a is null or user_b is null)
+   and position(':' in room_id) > 0;
 
 create table if not exists public.friend_requests (
   from_user text not null references public.users (username) on delete cascade,
@@ -98,29 +112,64 @@ create policy "rooms_select_authenticated"
 on public.rooms
 for select
 to authenticated
-using (true);
+using (
+  exists (
+    select 1
+    from public.users participant
+    where participant.uid = auth.uid()::text
+      and participant.username in (rooms.user_a, rooms.user_b)
+  )
+);
 
 drop policy if exists "rooms_insert_authenticated" on public.rooms;
 create policy "rooms_insert_authenticated"
 on public.rooms
 for insert
 to authenticated
-with check (auth.uid() is not null);
+with check (
+  exists (
+    select 1
+    from public.users participant
+    where participant.uid = auth.uid()::text
+      and participant.username in (rooms.user_a, rooms.user_b)
+  )
+);
 
 drop policy if exists "rooms_update_authenticated" on public.rooms;
 create policy "rooms_update_authenticated"
 on public.rooms
 for update
 to authenticated
-using (auth.uid() is not null)
-with check (auth.uid() is not null);
+using (
+  exists (
+    select 1
+    from public.users participant
+    where participant.uid = auth.uid()::text
+      and participant.username in (rooms.user_a, rooms.user_b)
+  )
+)
+with check (
+  exists (
+    select 1
+    from public.users participant
+    where participant.uid = auth.uid()::text
+      and participant.username in (rooms.user_a, rooms.user_b)
+  )
+);
 
 drop policy if exists "rooms_delete_authenticated" on public.rooms;
 create policy "rooms_delete_authenticated"
 on public.rooms
 for delete
 to authenticated
-using (auth.uid() is not null);
+using (
+  exists (
+    select 1
+    from public.users participant
+    where participant.uid = auth.uid()::text
+      and participant.username in (rooms.user_a, rooms.user_b)
+  )
+);
 
 drop policy if exists "friend_requests_select_sender_or_recipient" on public.friend_requests;
 create policy "friend_requests_select_sender_or_recipient"

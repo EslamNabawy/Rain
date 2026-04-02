@@ -2,11 +2,9 @@ import 'package:drift/native.dart';
 import 'package:firebase_core/firebase_core.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:protocol_brain/protocol_brain.dart';
+import 'package:rain/firebase_options.dart';
+import 'package:rain/services/rain_runtime_controller.dart';
 import 'package:rain_core/rain_core.dart';
-
-import '../lib/firebase_options.dart';
-import '../lib/services/firebase/firebase_signaling_adapter.dart';
-import '../lib/services/rain_runtime_controller.dart';
 
 const bool runIntegrationTests =
     bool.fromEnvironment('RUN_RAIN_INTEGRATION_TESTS');

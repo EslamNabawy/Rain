@@ -2,10 +2,9 @@ import 'dart:async';
 
 import 'package:drift/native.dart';
 import 'package:flutter_test/flutter_test.dart';
+import 'package:rain/services/noop_signaling_adapter.dart';
+import 'package:rain/services/rain_runtime_controller.dart';
 import 'package:rain_core/rain_core.dart';
-
-import '../lib/services/noop_signaling_adapter.dart';
-import '../lib/services/rain_runtime_controller.dart';
 
 void main() {
   TestWidgetsFlutterBinding.ensureInitialized();

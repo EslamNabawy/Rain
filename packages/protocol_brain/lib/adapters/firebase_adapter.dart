@@ -129,22 +129,15 @@ class FirebaseSignalingAdapter implements SignalingAdapter {
   @override
   Future<String> login(String username, String password) async {
     await _configureEmulatorsIfNeeded();
-    await ensureAuthenticated();
-
-    final snapshot = await _root.child('users/$username').get();
-    if (!snapshot.exists || snapshot.value is! Map<Object?, Object?>) {
-      throw Exception('User "$username" not found');
+    final email = _emailFromUsername(username);
+    final result = await _auth.signInWithEmailAndPassword(
+      email: email,
+      password: password,
+    );
+    final uid = result.user?.uid ?? _auth.currentUser?.uid ?? '';
+    if (uid.isEmpty) {
+      throw Exception('Failed to sign in Firebase user');
     }
-
-    final value = snapshot.value! as Map<Object?, Object?>;
-    final storedHash = value['passwordHash'] as String? ?? '';
-    final inputHash = _hashPassword(password);
-
-    if (storedHash != inputHash) {
-      throw Exception('Invalid password');
-    }
-
-    final uid = value['uid'] as String? ?? _auth.currentUser?.uid ?? '';
     return uid;
   }
 
@@ -243,6 +236,12 @@ class FirebaseSignalingAdapter implements SignalingAdapter {
   Future<void> addToUserSearch(String username) async {
     await ensureAuthenticated();
     await _root.child('userSearch/$username').set(true);
+  }
+
+  @override
+  Future<void> deleteFriendRequest(String to, String from) async {
+    await ensureAuthenticated();
+    await _root.child('friendRequests/$to/$from').remove();
   }
 
   @override

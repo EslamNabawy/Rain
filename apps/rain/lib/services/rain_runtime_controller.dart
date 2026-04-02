@@ -73,15 +73,17 @@ class RainRuntimeController {
         String from,
       ) async {
         final existing = await friendStore.loadFriend(from);
-        print(
-          '[RainRuntime] Received friend request from: $from, existingState=${existing?.state}',
-        );
+        if (existing?.state == FriendState.blocked) {
+          await adapter.deleteFriendRequest(selfIdentity.username, from);
+          return;
+        }
         if (existing?.state == FriendState.pendingOutgoing ||
             existing?.state == FriendState.friend) {
           await friendStore.markAccepted(
             from,
             displayName: existing?.displayName ?? from,
           );
+          await adapter.deleteFriendRequest(selfIdentity.username, from);
         } else if (existing?.state != FriendState.blocked) {
           await friendStore.upsertFriend(
             username: from,
@@ -136,6 +138,7 @@ class RainRuntimeController {
   }
 
   Future<void> acceptFriend(String username) async {
+    await adapter.deleteFriendRequest(selfIdentity.username, username);
     await adapter.writeFriendRequest(username, selfIdentity.username);
     // Prefer using an existing displayName if available to preserve
     // the user's chosen display name instead of falling back to the username.
@@ -147,6 +150,7 @@ class RainRuntimeController {
   }
 
   Future<void> blockFriend(String username) async {
+    await _clearFriendRequests(username);
     await friendStore.block(username);
     await brain?.disconnect(username);
   }
@@ -186,8 +190,14 @@ class RainRuntimeController {
     return friendStore.clearUnread(username);
   }
 
-  Future<void> rejectFriend(String username) {
-    return friendStore.reject(username);
+  Future<void> rejectFriend(String username) async {
+    final existing = await friendStore.loadFriend(username);
+    if (existing?.state == FriendState.pendingIncoming) {
+      await adapter.deleteFriendRequest(selfIdentity.username, username);
+    } else if (existing?.state == FriendState.pendingOutgoing) {
+      await adapter.deleteFriendRequest(username, selfIdentity.username);
+    }
+    await friendStore.reject(username);
   }
 
   Future<void> resendMessage(String messageId) async {
@@ -229,8 +239,6 @@ class RainRuntimeController {
       );
     }
 
-    // Debug: log intent to send
-    print('[RainRuntime] Sending friend request to: $username');
     await adapter.writeFriendRequest(username, selfIdentity.username);
     await friendStore.upsertFriend(
       username: username,
@@ -329,5 +337,10 @@ class RainRuntimeController {
     if (clearLocalSession) {
       await database.clearSessionData();
     }
+  }
+
+  Future<void> _clearFriendRequests(String username) async {
+    await adapter.deleteFriendRequest(selfIdentity.username, username);
+    await adapter.deleteFriendRequest(username, selfIdentity.username);
   }
 }

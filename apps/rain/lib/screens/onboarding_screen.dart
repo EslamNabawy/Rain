@@ -111,29 +111,33 @@ class _OnboardingScreenState extends ConsumerState<OnboardingScreen> {
                             maxLength: InputValidator.displayNameMaxLength,
                           ),
                           const SizedBox(height: 16),
-                          DropdownButtonFormField<RainGender>(
-                            value: _gender,
-                            decoration: const InputDecoration(
-                              labelText: 'Gender',
-                            ),
-                            items: const <DropdownMenuItem<RainGender>>[
-                              DropdownMenuItem<RainGender>(
-                                value: RainGender.male,
-                                child: Text('Male'),
+                          Column(
+                            crossAxisAlignment: CrossAxisAlignment.start,
+                            children: <Widget>[
+                              Text(
+                                'Gender',
+                                style: Theme.of(context).textTheme.bodyMedium,
                               ),
-                              DropdownMenuItem<RainGender>(
-                                value: RainGender.female,
-                                child: Text('Female'),
+                              const SizedBox(height: 8),
+                              SegmentedButton<RainGender>(
+                                segments: const <ButtonSegment<RainGender>>[
+                                  ButtonSegment<RainGender>(
+                                    value: RainGender.male,
+                                    label: Text('Male'),
+                                  ),
+                                  ButtonSegment<RainGender>(
+                                    value: RainGender.female,
+                                    label: Text('Female'),
+                                  ),
+                                ],
+                                selected: <RainGender>{_gender},
+                                onSelectionChanged: (Set<RainGender> selection) {
+                                  setState(() {
+                                    _gender = selection.first;
+                                  });
+                                },
                               ),
                             ],
-                            onChanged: (RainGender? value) {
-                              if (value == null) {
-                                return;
-                              }
-                              setState(() {
-                                _gender = value;
-                              });
-                            },
                           ),
                         ],
                         const SizedBox(height: 16),
