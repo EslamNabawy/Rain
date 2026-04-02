@@ -164,6 +164,7 @@ class _OnboardingScreenState extends ConsumerState<OnboardingScreen> {
           online: true,
         ),
       );
+      await adapter.addToUserSearch(username);
       await identityRepository.saveIdentity(identity);
       await adapter.setPresence(username, true);
     } catch (error) {

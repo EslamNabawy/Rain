@@ -93,6 +93,12 @@ class SupabaseSignalingAdapter implements SignalingAdapter {
   }
 
   @override
+  Future<void> addToUserSearch(String username) async {
+    await ensureAuthenticated();
+    await _client.from('user_search').upsert({'username': username});
+  }
+
+  @override
   Future<bool> isUsernameAvailable(String username) async {
     await ensureAuthenticated();
     final rows =

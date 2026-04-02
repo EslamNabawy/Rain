@@ -52,6 +52,9 @@ class NoopSignalingAdapter implements SignalingAdapter {
   }
 
   @override
+  Future<void> addToUserSearch(String username) async {}
+
+  @override
   Future<bool> isUsernameAvailable(String username) async {
     return !_identities.containsKey(username);
   }

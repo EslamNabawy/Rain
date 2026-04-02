@@ -95,6 +95,12 @@ class FirebaseSignalingAdapter implements SignalingAdapter {
   }
 
   @override
+  Future<void> addToUserSearch(String username) async {
+    await ensureAuthenticated();
+    await _root.child('userSearch/$username').set(true);
+  }
+
+  @override
   Future<bool> isUsernameAvailable(String username) async {
     await ensureAuthenticated();
     final snapshot = await _root.child('users/$username').get();
