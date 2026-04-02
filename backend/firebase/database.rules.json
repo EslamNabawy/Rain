@@ -2,15 +2,9 @@
   "rules": {
     ".read": false,
     ".write": false,
-    "userSearch": {
+    "users": {
       ".read": "auth != null",
       "$username": {
-        ".write": "auth != null"
-      }
-    },
-    "users": {
-      "$username": {
-        ".read": "auth != null",
         ".write": "auth != null && ((!data.exists() && newData.child('uid').val() === auth.uid) || (data.exists() && data.child('uid').val() === auth.uid && newData.child('uid').val() === auth.uid))",
         "username": {
           ".validate": "newData.isString() && newData.val() === $username"
