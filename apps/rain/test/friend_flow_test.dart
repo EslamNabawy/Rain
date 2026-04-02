@@ -1,10 +1,11 @@
-import 'package:flutter_test/flutter_test.dart';
+import 'dart:async';
+
 import 'package:drift/native.dart';
+import 'package:flutter_test/flutter_test.dart';
 import 'package:rain_core/rain_core.dart';
 
-import '../lib/services/rain_runtime_controller.dart';
 import '../lib/services/noop_signaling_adapter.dart';
-// Uses rain_core exports for database and stores
+import '../lib/services/rain_runtime_controller.dart';
 
 void main() {
   TestWidgetsFlutterBinding.ensureInitialized();
@@ -20,6 +21,10 @@ void main() {
         displayName: 'Alice',
         createdAt: 0,
       );
+    });
+
+    tearDown(() async {
+      await db.close();
     });
 
     test(
@@ -40,15 +45,10 @@ void main() {
           ),
         );
 
-        // Listen for the inbound friend request event for 'bob' before sending
-        // to validate that the adapter emits correctly.
-        final stream = adapter.onFriendRequest('bob');
-        final sendFuture = runtime.sendFriendRequest('bob');
-        await sendFuture;
+        final requestReceived = _nextString(adapter.onFriendRequest('bob'));
+        await runtime.sendFriendRequest('bob');
+        expect(await requestReceived, 'alice');
 
-        // Expect the event to carry the from-username 'alice'
-        await expectLater(stream, emits('alice'));
-        // Also verify that a pendingOutgoing row is inserted for bob
         final rows = await db.select(db.friends).get();
         final hasBob = rows.any(
           (r) => r.username == 'bob' && r.state == 'pendingOutgoing',
@@ -61,7 +61,6 @@ void main() {
       'acceptFriend updates state to Friend and uses existing displayName',
       () async {
         final adapter = NoopSignalingAdapter();
-        // Pre-insert an existing friend row for bob with a displayName of 'Bob'
         await db
             .into(db.friends)
             .insert(
@@ -87,12 +86,10 @@ void main() {
           ),
         );
 
-        // Listen for the adapter action when accepting a friend
-        final stream = adapter.onFriendRequest('bob');
+        final requestReceived = _nextString(adapter.onFriendRequest('bob'));
         await runtime.acceptFriend('bob');
-        await expectLater(stream, emits('alice'));
+        expect(await requestReceived, 'alice');
 
-        // Verify the database updated row
         final rows = await db.select(db.friends).get();
         final hasBobFriend = rows.any(
           (r) =>
@@ -119,12 +116,13 @@ void main() {
           offlineQueueStore: OfflineQueueStore(db),
         ),
       );
+
       await runtime.start();
 
-      // Simulate an inbound friend request from 'charlie' to 'alice'
+      final inboundRequest = _nextString(adapter.onFriendRequest('alice'));
       await adapter.writeFriendRequest('alice', 'charlie');
-      // Allow the runtime to process the inbound event
-      await Future<void>.delayed(const Duration(milliseconds: 50));
+      expect(await inboundRequest, 'charlie');
+      await _waitForFriendState(db, 'charlie', FriendState.pendingIncoming);
 
       final rows = await db.select(db.friends).get();
       final hasCharlie = rows.any(
@@ -137,7 +135,6 @@ void main() {
       'inbound acceptance signals outcome and results in friend state',
       () async {
         final adapter = NoopSignalingAdapter();
-        // preload an inbound candidate to Charlie
         await db
             .into(db.friends)
             .insert(
@@ -164,9 +161,11 @@ void main() {
         );
         await runtime.start();
 
-        final inboundStream = adapter.onFriendRequest('charlie');
+        final inboundRequest =
+            _nextString(adapter.onFriendRequest('charlie'));
         await runtime.acceptFriend('charlie');
-        await expectLater(inboundStream, emits('alice'));
+        expect(await inboundRequest, 'alice');
+        await _waitForFriendState(db, 'charlie', FriendState.friend);
 
         final rows = await db.select(db.friends).get();
         final isFriend = rows.any(
@@ -194,4 +193,45 @@ void main() {
       expect(runtime.sendFriendRequest('alice'), throwsA(isA<Exception>()));
     });
   });
+}
+
+Future<void> _waitForFriendState(
+  RainDatabase db,
+  String username,
+  FriendState expectedState,
+) async {
+  final deadline = DateTime.now().add(const Duration(seconds: 2));
+  while (DateTime.now().isBefore(deadline)) {
+    final rows = await db.select(db.friends).get();
+    final match = rows.any(
+      (row) => row.username == username && row.state == expectedState.name,
+    );
+    if (match) {
+      return;
+    }
+    await Future<void>.delayed(const Duration(milliseconds: 20));
+  }
+
+  fail('Timed out waiting for @$username to become ${expectedState.name}.');
+}
+
+Future<String> _nextString(Stream<String> stream) {
+  final completer = Completer<String>();
+  late final StreamSubscription<String> subscription;
+
+  subscription = stream.listen(
+    (String value) async {
+      if (!completer.isCompleted) {
+        completer.complete(value);
+      }
+      await subscription.cancel();
+    },
+    onError: (Object error, StackTrace stackTrace) {
+      if (!completer.isCompleted) {
+        completer.completeError(error, stackTrace);
+      }
+    },
+  );
+
+  return completer.future;
 }

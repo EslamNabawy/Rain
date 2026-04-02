@@ -92,9 +92,8 @@ class NoopSignalingAdapter implements SignalingAdapter {
       const Stream<SDPPayload>.empty();
 
   @override
-  Stream<String> onFriendRequest(String username) async* {
-    yield* _friendRequestController(username).stream;
-  }
+  Stream<String> onFriendRequest(String username) =>
+      _friendRequestController(username).stream;
 
   @override
   Stream<RTCIceCandidate> onICE(String roomId, IceRole role) =>
