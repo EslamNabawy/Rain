@@ -5,6 +5,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:protocol_brain/protocol_brain.dart';
 
 import '../providers/app_providers.dart';
+import '../widgets/app_components.dart';
 
 class SearchScreen extends ConsumerStatefulWidget {
   const SearchScreen({super.key});
@@ -24,7 +25,7 @@ class _SearchScreenState extends ConsumerState<SearchScreen> {
     super.dispose();
   }
 
-  void _onSearchChanged(String query) {
+  void _onSearchChanged(String _) {
     _debounce?.cancel();
     _debounce = Timer(const Duration(milliseconds: 300), () {
       setState(() {});
@@ -43,23 +44,23 @@ class _SearchScreenState extends ConsumerState<SearchScreen> {
         children: <Widget>[
           Padding(
             padding: const EdgeInsets.all(16),
-            child: TextField(
+            child: AppTextInputField(
               controller: _controller,
+              labelText: 'Search',
+              hintText: 'Search by username...',
               onChanged: _onSearchChanged,
-              decoration: InputDecoration(
-                hintText: 'Search by username...',
-                prefixIcon: const Icon(Icons.search),
-                suffixIcon: _controller.text.isNotEmpty
-                    ? IconButton(
-                        icon: const Icon(Icons.clear),
-                        onPressed: () {
-                          _controller.clear();
-                          setState(() {});
-                        },
-                      )
-                    : null,
-              ),
               autofocus: true,
+              prefixIcon: const Icon(Icons.search),
+              suffixIcon: _controller.text.isNotEmpty
+                  ? IconButton(
+                      icon: const Icon(Icons.clear),
+                      onPressed: () {
+                        _debounce?.cancel();
+                        _controller.clear();
+                        setState(() {});
+                      },
+                    )
+                  : null,
             ),
           ),
           Expanded(
@@ -98,7 +99,12 @@ class _SearchScreenState extends ConsumerState<SearchScreen> {
                       },
                     ),
                     error: (Object error, StackTrace stackTrace) =>
-                        Center(child: Text('Error: $error')),
+                        AppStateMessage(
+                          icon: Icons.error_outline,
+                          title: 'Search failed',
+                          message: error.toString(),
+                          iconColor: Theme.of(context).colorScheme.error,
+                        ),
                     loading: () =>
                         const Center(child: CircularProgressIndicator()),
                   ),
@@ -114,37 +120,11 @@ class _SearchHint extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    return Center(
-      child: Padding(
-        padding: const EdgeInsets.all(32),
-        child: Column(
-          mainAxisSize: MainAxisSize.min,
-          children: <Widget>[
-            Icon(
-              Icons.search,
-              size: 64,
-              color: Theme.of(
-                context,
-              ).colorScheme.secondary.withValues(alpha: 0.5),
-            ),
-            const SizedBox(height: 16),
-            Text(
-              'Search for users by username',
-              style: Theme.of(context).textTheme.titleMedium,
-              textAlign: TextAlign.center,
-            ),
-            const SizedBox(height: 8),
-            Text(
-              'Enter at least 2 characters to search',
-              style: Theme.of(context).textTheme.bodyMedium?.copyWith(
-                color: Theme.of(
-                  context,
-                ).colorScheme.onSurface.withValues(alpha: 0.6),
-              ),
-              textAlign: TextAlign.center,
-            ),
-          ],
-        ),
+    return const Center(
+      child: AppStateMessage(
+        icon: Icons.search,
+        title: 'Search for users',
+        message: 'Enter at least 2 characters to search by username.',
       ),
     );
   }
@@ -164,37 +144,11 @@ class _SearchResults extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     if (results.isEmpty) {
-      return Center(
-        child: Padding(
-          padding: const EdgeInsets.all(32),
-          child: Column(
-            mainAxisSize: MainAxisSize.min,
-            children: <Widget>[
-              Icon(
-                Icons.person_off_outlined,
-                size: 64,
-                color: Theme.of(
-                  context,
-                ).colorScheme.secondary.withValues(alpha: 0.5),
-              ),
-              const SizedBox(height: 16),
-              Text(
-                'No users found',
-                style: Theme.of(context).textTheme.titleMedium,
-                textAlign: TextAlign.center,
-              ),
-              const SizedBox(height: 8),
-              Text(
-                'Try a different search term',
-                style: Theme.of(context).textTheme.bodyMedium?.copyWith(
-                  color: Theme.of(
-                    context,
-                  ).colorScheme.onSurface.withValues(alpha: 0.6),
-                ),
-                textAlign: TextAlign.center,
-              ),
-            ],
-          ),
+      return const Center(
+        child: AppStateMessage(
+          icon: Icons.person_off_outlined,
+          title: 'No users found',
+          message: 'Try a different search term.',
         ),
       );
     }

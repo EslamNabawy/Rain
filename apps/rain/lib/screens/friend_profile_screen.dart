@@ -3,6 +3,8 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:rain_core/rain_core.dart';
 
 import '../providers/app_providers.dart';
+import '../widgets/app_components.dart';
+import '../widgets/app_dialogs.dart';
 
 class FriendProfileScreen extends ConsumerWidget {
   const FriendProfileScreen({super.key, required this.friend});
@@ -186,24 +188,12 @@ class FriendProfileScreen extends ConsumerWidget {
   }
 
   Future<void> _confirmUnfriend(BuildContext context, WidgetRef ref) async {
-    final confirmed = await showDialog<bool>(
+    final confirmed = await showAppConfirmDialog(
       context: context,
-      builder: (BuildContext context) => AlertDialog(
-        title: const Text('Remove friend?'),
-        content: Text(
+      title: 'Remove friend?',
+      message:
           'Are you sure you want to remove @${friend.username} from your friends?',
-        ),
-        actions: <Widget>[
-          TextButton(
-            onPressed: () => Navigator.of(context).pop(false),
-            child: const Text('Cancel'),
-          ),
-          FilledButton(
-            onPressed: () => Navigator.of(context).pop(true),
-            child: const Text('Remove'),
-          ),
-        ],
-      ),
+      confirmLabel: 'Remove',
     );
 
     if (confirmed == true) {
@@ -215,26 +205,14 @@ class FriendProfileScreen extends ConsumerWidget {
   }
 
   Future<void> _confirmBlock(BuildContext context, WidgetRef ref) async {
-    final confirmed = await showDialog<bool>(
+    final confirmed = await showAppConfirmDialog(
       context: context,
-      builder: (BuildContext context) => AlertDialog(
-        title: const Text('Block user?'),
-        content: Text(
+      title: 'Block user?',
+      message:
           'Blocking @${friend.username} will remove them from your friends and prevent them from sending you messages or friend requests.',
-        ),
-        actions: <Widget>[
-          TextButton(
-            onPressed: () => Navigator.of(context).pop(false),
-            child: const Text('Cancel'),
-          ),
-          FilledButton(
-            onPressed: () => Navigator.of(context).pop(true),
-            style: FilledButton.styleFrom(
-              backgroundColor: Theme.of(context).colorScheme.error,
-            ),
-            child: const Text('Block'),
-          ),
-        ],
+      confirmLabel: 'Block',
+      confirmStyle: FilledButton.styleFrom(
+        backgroundColor: Theme.of(context).colorScheme.error,
       ),
     );
 
@@ -247,24 +225,12 @@ class FriendProfileScreen extends ConsumerWidget {
   }
 
   Future<void> _confirmUnblock(BuildContext context, WidgetRef ref) async {
-    final confirmed = await showDialog<bool>(
+    final confirmed = await showAppConfirmDialog(
       context: context,
-      builder: (BuildContext context) => AlertDialog(
-        title: const Text('Unblock user?'),
-        content: Text(
+      title: 'Unblock user?',
+      message:
           'Unblocking @${friend.username} will allow them to send you friend requests again.',
-        ),
-        actions: <Widget>[
-          TextButton(
-            onPressed: () => Navigator.of(context).pop(false),
-            child: const Text('Cancel'),
-          ),
-          FilledButton(
-            onPressed: () => Navigator.of(context).pop(true),
-            child: const Text('Unblock'),
-          ),
-        ],
-      ),
+      confirmLabel: 'Unblock',
     );
 
     if (confirmed == true) {
@@ -287,16 +253,8 @@ class _InfoSection extends StatelessWidget {
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: <Widget>[
-        Padding(
-          padding: const EdgeInsets.only(left: 4, bottom: 8),
-          child: Text(
-            title,
-            style: Theme.of(context).textTheme.titleMedium?.copyWith(
-              color: Theme.of(context).colorScheme.primary,
-            ),
-          ),
-        ),
-        Card(child: Column(children: children)),
+        AppSectionTitle(title: title),
+        AppSectionCard(child: Column(children: children)),
       ],
     );
   }

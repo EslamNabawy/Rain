@@ -6,19 +6,8 @@ import 'package:rain_core/rain_core.dart';
 import '../providers/app_providers.dart';
 import '../navigation/app_routes.dart';
 import '../services/rain_runtime_controller.dart';
-
-class LowerCaseTextFormatter extends TextInputFormatter {
-  @override
-  TextEditingValue formatEditUpdate(
-    TextEditingValue oldValue,
-    TextEditingValue newValue,
-  ) {
-    return TextEditingValue(
-      text: newValue.text.toLowerCase(),
-      selection: newValue.selection,
-    );
-  }
-}
+import '../widgets/app_components.dart';
+import '../widgets/app_dialogs.dart';
 
 class HomeScreen extends ConsumerStatefulWidget {
   const HomeScreen({super.key});
@@ -123,7 +112,11 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
         const VerticalDivider(width: 1),
         Expanded(
           child: _selectedPeerId == null
-              ? const _EmptyConversation()
+              ? AppStateMessage(
+                  icon: Icons.water_drop_outlined,
+                  title: 'Choose a friend',
+                  message: 'Open a conversation to start chatting.',
+                )
               : _ChatPanel(peerId: _selectedPeerId!),
         ),
       ],
@@ -142,72 +135,53 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
   }
 
   Future<void> _showAddFriendDialog() async {
-    final controller = TextEditingController();
     final runtime = ref.read(runtimeControllerProvider);
-
-    await showDialog<void>(
+    final rawUsername = await showAppTextInputDialog(
       context: context,
-      builder: (BuildContext context) {
-        return AlertDialog(
-          title: const Text('Add friend'),
-          content: TextField(
-            controller: controller,
-            decoration: InputDecoration(
-              hintText: 'username',
-              helperText: '3-24 lowercase letters, numbers, underscores',
-              counterText: '',
-            ),
-            maxLength: InputValidator.usernameMaxLength,
-            inputFormatters: [
-              FilteringTextInputFormatter.allow(RegExp(r'[a-z0-9_]')),
-              LowerCaseTextFormatter(),
-            ],
-          ),
-          actions: <Widget>[
-            TextButton(
-              onPressed: () => Navigator.of(context).pop(),
-              child: const Text('Cancel'),
-            ),
-            FilledButton(
-              onPressed: () async {
-                final username = InputValidator.normalizeUsername(
-                  controller.text,
-                );
-                final error = InputValidator.usernameError(username);
-                if (error != null) {
-                  ScaffoldMessenger.of(
-                    context,
-                  ).showSnackBar(SnackBar(content: Text(error)));
-                  return;
-                }
-                Navigator.of(context).pop();
-                try {
-                  await runtime?.sendFriendRequest(username);
-                  if (context.mounted) {
-                    ScaffoldMessenger.of(context).showSnackBar(
-                      SnackBar(
-                        content: Text('Friend request sent to @$username'),
-                      ),
-                    );
-                  }
-                } catch (e) {
-                  if (context.mounted) {
-                    ScaffoldMessenger.of(context).showSnackBar(
-                      SnackBar(
-                        content: Text('Error: $e'),
-                        backgroundColor: Theme.of(context).colorScheme.error,
-                      ),
-                    );
-                  }
-                }
-              },
-              child: const Text('Send request'),
-            ),
-          ],
-        );
-      },
+      title: 'Add friend',
+      confirmLabel: 'Send request',
+      labelText: 'Username',
+      hintText: 'username',
+      helperText: '3-24 lowercase letters, numbers, underscores',
+      maxLength: InputValidator.usernameMaxLength,
+      inputFormatters: <TextInputFormatter>[
+        FilteringTextInputFormatter.allow(RegExp(r'[a-z0-9_]')),
+        const AppLowerCaseTextFormatter(),
+      ],
     );
-    controller.dispose();
+
+    if (rawUsername == null) {
+      return;
+    }
+
+    final username = InputValidator.normalizeUsername(rawUsername);
+    final error = InputValidator.usernameError(username);
+    if (error != null) {
+      if (context.mounted) {
+        ScaffoldMessenger.of(
+          context,
+        ).showSnackBar(SnackBar(content: Text(error)));
+      }
+      return;
+    }
+
+    try {
+      await runtime?.sendFriendRequest(username);
+      if (context.mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(content: Text('Friend request sent to @$username')),
+        );
+      }
+    } catch (e) {
+      if (context.mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text('Error: $e'),
+            backgroundColor: Theme.of(context).colorScheme.error,
+          ),
+        );
+      }
+    }
   }
 
   Future<void> _confirmLogOut() async {
@@ -216,26 +190,12 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
       return;
     }
 
-    final shouldLogOut = await showDialog<bool>(
+    final shouldLogOut = await showAppConfirmDialog(
       context: context,
-      builder: (BuildContext context) {
-        return AlertDialog(
-          title: const Text('Log out'),
-          content: const Text(
-            'This will sign you out and clear the local Rain session on this device.',
-          ),
-          actions: <Widget>[
-            TextButton(
-              onPressed: () => Navigator.of(context).pop(false),
-              child: const Text('Cancel'),
-            ),
-            FilledButton(
-              onPressed: () => Navigator.of(context).pop(true),
-              child: const Text('Log out'),
-            ),
-          ],
-        );
-      },
+      title: 'Log out',
+      message:
+          'This will sign you out and clear the local Rain session on this device.',
+      confirmLabel: 'Log out',
     );
 
     if (shouldLogOut != true) {
@@ -403,7 +363,13 @@ class _FriendsListView extends StatelessWidget {
     return friends.when(
       data: (List<FriendRecord> items) {
         if (items.isEmpty) {
-          return _EmptyFriendsState(compact: compact);
+          return AppStateMessage(
+            icon: Icons.group_outlined,
+            title: 'No friends yet',
+            message:
+                'Add a friend to start chatting and testing the peer connection flow.',
+            iconSize: compact ? 46 : 52,
+          );
         }
 
         return ListView.builder(
@@ -420,11 +386,11 @@ class _FriendsListView extends StatelessWidget {
           },
         );
       },
-      error: (Object error, StackTrace stackTrace) => Center(
-        child: Padding(
-          padding: const EdgeInsets.all(24),
-          child: Text(error.toString()),
-        ),
+      error: (Object error, StackTrace stackTrace) => AppStateMessage(
+        icon: Icons.error_outline,
+        title: 'Could not load friends',
+        message: error.toString(),
+        iconColor: Theme.of(context).colorScheme.error,
       ),
       loading: () => const Center(child: CircularProgressIndicator()),
     );
@@ -576,9 +542,32 @@ class _ChatPanelState extends ConsumerState<_ChatPanel> {
   bool _isSending = false;
 
   @override
+  void initState() {
+    super.initState();
+    _composerController.addListener(_handleComposerChanged);
+  }
+
+  @override
+  void didUpdateWidget(covariant _ChatPanel oldWidget) {
+    super.didUpdateWidget(oldWidget);
+    if (oldWidget.peerId != widget.peerId) {
+      _composerController.clear();
+      _isConnecting = false;
+      _isSending = false;
+    }
+  }
+
+  @override
   void dispose() {
+    _composerController.removeListener(_handleComposerChanged);
     _composerController.dispose();
     super.dispose();
+  }
+
+  void _handleComposerChanged() {
+    if (mounted) {
+      setState(() {});
+    }
   }
 
   @override
@@ -672,7 +661,12 @@ class _ChatPanelState extends ConsumerState<_ChatPanel> {
               child: messages.when(
                 data: (List<StoredMessage> items) {
                   if (items.isEmpty) {
-                    return const _EmptyMessageState();
+                    return AppStateMessage(
+                      icon: Icons.water_drop_outlined,
+                      title: 'No messages yet',
+                      message:
+                          'Messages will appear here once the conversation starts.',
+                    );
                   }
 
                   return ListView.builder(
@@ -758,21 +752,18 @@ class _ChatPanelState extends ConsumerState<_ChatPanel> {
               child: isNarrow
                   ? Column(
                       children: <Widget>[
-                        TextField(
+                        AppTextInputField(
                           controller: _composerController,
+                          hintText: 'Write a message',
                           minLines: 1,
                           maxLines: 5,
                           maxLength: InputValidator.messageMaxLength,
-                          decoration: InputDecoration(
-                            hintText: 'Write a message',
-                            counterText: '',
-                            suffixIcon: _composerController.text.length > 3800
-                                ? Icon(
-                                    Icons.warning_amber_rounded,
-                                    color: Theme.of(context).colorScheme.error,
-                                  )
-                                : null,
-                          ),
+                          suffixIcon: _composerController.text.length > 3800
+                              ? Icon(
+                                  Icons.warning_amber_rounded,
+                                  color: Theme.of(context).colorScheme.error,
+                                )
+                              : null,
                         ),
                         const SizedBox(height: 12),
                         SizedBox(
@@ -788,23 +779,18 @@ class _ChatPanelState extends ConsumerState<_ChatPanel> {
                   : Row(
                       children: <Widget>[
                         Expanded(
-                          child: TextField(
+                          child: AppTextInputField(
                             controller: _composerController,
+                            hintText: 'Write a message',
                             minLines: 1,
                             maxLines: 5,
                             maxLength: InputValidator.messageMaxLength,
-                            decoration: InputDecoration(
-                              hintText: 'Write a message',
-                              counterText: '',
-                              suffixIcon: _composerController.text.length > 3800
-                                  ? Icon(
-                                      Icons.warning_amber_rounded,
-                                      color: Theme.of(
-                                        context,
-                                      ).colorScheme.error,
-                                    )
-                                  : null,
-                            ),
+                            suffixIcon: _composerController.text.length > 3800
+                                ? Icon(
+                                    Icons.warning_amber_rounded,
+                                    color: Theme.of(context).colorScheme.error,
+                                  )
+                                : null,
                           ),
                         ),
                         const SizedBox(width: 12),
@@ -878,84 +864,5 @@ class _ChatPanelState extends ConsumerState<_ChatPanel> {
         setState(() => _isConnecting = false);
       }
     }
-  }
-}
-
-class _EmptyConversation extends StatelessWidget {
-  const _EmptyConversation();
-
-  @override
-  Widget build(BuildContext context) {
-    return const Center(
-      child: Padding(
-        padding: EdgeInsets.all(32),
-        child: Column(
-          mainAxisSize: MainAxisSize.min,
-          children: <Widget>[
-            Icon(Icons.water_drop_outlined, size: 52),
-            SizedBox(height: 16),
-            Text(
-              'Choose a friend to open the conversation.',
-              textAlign: TextAlign.center,
-            ),
-          ],
-        ),
-      ),
-    );
-  }
-}
-
-class _EmptyFriendsState extends StatelessWidget {
-  const _EmptyFriendsState({required this.compact});
-
-  final bool compact;
-
-  @override
-  Widget build(BuildContext context) {
-    return Center(
-      child: Padding(
-        padding: EdgeInsets.all(compact ? 24 : 32),
-        child: Column(
-          mainAxisSize: MainAxisSize.min,
-          children: <Widget>[
-            Icon(
-              Icons.group_outlined,
-              size: compact ? 46 : 52,
-              color: Theme.of(context).colorScheme.secondary,
-            ),
-            const SizedBox(height: 16),
-            Text(
-              'No friends yet',
-              style: Theme.of(context).textTheme.titleMedium,
-              textAlign: TextAlign.center,
-            ),
-            const SizedBox(height: 8),
-            Text(
-              'Add a friend to start chatting and testing the peer connection flow.',
-              style: Theme.of(context).textTheme.bodyMedium,
-              textAlign: TextAlign.center,
-            ),
-          ],
-        ),
-      ),
-    );
-  }
-}
-
-class _EmptyMessageState extends StatelessWidget {
-  const _EmptyMessageState();
-
-  @override
-  Widget build(BuildContext context) {
-    return Center(
-      child: Padding(
-        padding: const EdgeInsets.all(24),
-        child: Text(
-          'Messages will appear here once the conversation starts.',
-          style: Theme.of(context).textTheme.bodyMedium,
-          textAlign: TextAlign.center,
-        ),
-      ),
-    );
   }
 }

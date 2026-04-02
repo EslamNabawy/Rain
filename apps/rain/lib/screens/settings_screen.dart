@@ -3,6 +3,8 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:rain_core/rain_core.dart';
 
 import '../providers/app_providers.dart';
+import '../widgets/app_components.dart';
+import '../widgets/app_dialogs.dart';
 
 class SettingsScreen extends ConsumerWidget {
   const SettingsScreen({super.key});
@@ -18,8 +20,8 @@ class SettingsScreen extends ConsumerWidget {
       body: ListView(
         padding: const EdgeInsets.all(16),
         children: <Widget>[
-          _SectionHeader(title: 'Profile'),
-          Card(
+          const AppSectionTitle(title: 'Profile'),
+          AppSectionCard(
             child: ListTile(
               leading: CircleAvatar(
                 backgroundColor: Theme.of(context).colorScheme.primary,
@@ -40,8 +42,8 @@ class SettingsScreen extends ConsumerWidget {
             ),
           ),
           const SizedBox(height: 24),
-          _SectionHeader(title: 'Appearance'),
-          Card(
+          const AppSectionTitle(title: 'Appearance'),
+          AppSectionCard(
             child: Column(
               children: <Widget>[
                 ListTile(
@@ -102,7 +104,7 @@ class SettingsScreen extends ConsumerWidget {
             ),
           ),
           const SizedBox(height: 24),
-          _SectionHeader(title: 'Blocked Users'),
+          const AppSectionTitle(title: 'Blocked Users'),
           _BlockedUsersList(),
         ],
       ),
@@ -116,28 +118,12 @@ class SettingsScreen extends ConsumerWidget {
   ) async {
     if (identity == null) return;
 
-    final controller = TextEditingController(text: identity.displayName);
-
-    final newName = await showDialog<String>(
+    final newName = await showAppTextInputDialog(
       context: context,
-      builder: (BuildContext context) => AlertDialog(
-        title: const Text('Edit Display Name'),
-        content: TextField(
-          controller: controller,
-          decoration: const InputDecoration(labelText: 'Display name'),
-          autofocus: true,
-        ),
-        actions: <Widget>[
-          TextButton(
-            onPressed: () => Navigator.of(context).pop(),
-            child: const Text('Cancel'),
-          ),
-          FilledButton(
-            onPressed: () => Navigator.of(context).pop(controller.text.trim()),
-            child: const Text('Save'),
-          ),
-        ],
-      ),
+      title: 'Edit display name',
+      confirmLabel: 'Save',
+      initialValue: identity.displayName,
+      labelText: 'Display name',
     );
 
     if (newName != null &&
@@ -146,27 +132,6 @@ class SettingsScreen extends ConsumerWidget {
       final repo = ref.read(identityRepositoryProvider);
       await repo.updateDisplayName(newName);
     }
-
-    controller.dispose();
-  }
-}
-
-class _SectionHeader extends StatelessWidget {
-  const _SectionHeader({required this.title});
-
-  final String title;
-
-  @override
-  Widget build(BuildContext context) {
-    return Padding(
-      padding: const EdgeInsets.only(left: 4, bottom: 8),
-      child: Text(
-        title,
-        style: Theme.of(context).textTheme.titleMedium?.copyWith(
-          color: Theme.of(context).colorScheme.primary,
-        ),
-      ),
-    );
   }
 }
 
@@ -182,7 +147,7 @@ class _BlockedUsersList extends ConsumerWidget {
             .toList();
 
         if (blocked.isEmpty) {
-          return Card(
+          return AppSectionCard(
             child: ListTile(
               leading: const Icon(Icons.check_circle_outline),
               title: const Text('No blocked users'),
@@ -191,7 +156,7 @@ class _BlockedUsersList extends ConsumerWidget {
           );
         }
 
-        return Card(
+        return AppSectionCard(
           child: ListView.separated(
             shrinkWrap: true,
             physics: const NeverScrollableScrollPhysics(),
@@ -221,7 +186,7 @@ class _BlockedUsersList extends ConsumerWidget {
           ),
         );
       },
-      error: (Object error, StackTrace stackTrace) => Card(
+      error: (Object error, StackTrace stackTrace) => AppSectionCard(
         child: ListTile(
           leading: Icon(
             Icons.error_outline,
@@ -231,7 +196,7 @@ class _BlockedUsersList extends ConsumerWidget {
           subtitle: Text(error.toString()),
         ),
       ),
-      loading: () => const Card(
+      loading: () => const AppSectionCard(
         child: ListTile(
           leading: CircularProgressIndicator(),
           title: Text('Loading...'),
@@ -245,24 +210,12 @@ class _BlockedUsersList extends ConsumerWidget {
     WidgetRef ref,
     FriendRecord friend,
   ) async {
-    final confirmed = await showDialog<bool>(
+    final confirmed = await showAppConfirmDialog(
       context: context,
-      builder: (BuildContext context) => AlertDialog(
-        title: const Text('Unblock user?'),
-        content: Text(
+      title: 'Unblock user?',
+      message:
           'Unblocking @${friend.username} will allow them to send you friend requests again.',
-        ),
-        actions: <Widget>[
-          TextButton(
-            onPressed: () => Navigator.of(context).pop(false),
-            child: const Text('Cancel'),
-          ),
-          FilledButton(
-            onPressed: () => Navigator.of(context).pop(true),
-            child: const Text('Unblock'),
-          ),
-        ],
-      ),
+      confirmLabel: 'Unblock',
     );
 
     if (confirmed == true) {

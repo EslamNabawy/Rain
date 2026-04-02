@@ -9,15 +9,25 @@ class AppRoutes {
   const AppRoutes._();
 
   static Route<void> settings() {
-    return MaterialPageRoute<void>(builder: (_) => const SettingsScreen());
+    return MaterialPageRoute<void>(
+      settings: const RouteSettings(name: '/settings'),
+      maintainState: false,
+      builder: (_) => const SettingsScreen(),
+    );
   }
 
   static Route<void> search() {
-    return MaterialPageRoute<void>(builder: (_) => const SearchScreen());
+    return MaterialPageRoute<void>(
+      settings: const RouteSettings(name: '/search'),
+      maintainState: false,
+      builder: (_) => const SearchScreen(),
+    );
   }
 
   static Route<void> friendProfile(FriendRecord friend) {
     return MaterialPageRoute<void>(
+      settings: RouteSettings(name: '/friend/${friend.username}'),
+      maintainState: false,
       builder: (_) => FriendProfileScreen(friend: friend),
     );
   }

@@ -4,6 +4,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:rain_core/rain_core.dart';
 
 import '../providers/app_providers.dart';
+import '../widgets/app_components.dart';
 
 enum _AuthMode { register, login }
 
@@ -29,6 +30,20 @@ class _OnboardingScreenState extends ConsumerState<OnboardingScreen> {
     _displayNameController.dispose();
     _passwordController.dispose();
     super.dispose();
+  }
+
+  void _setMode(_AuthMode mode) {
+    if (_mode == mode) {
+      return;
+    }
+
+    setState(() {
+      _mode = mode;
+      _error = null;
+      if (mode == _AuthMode.login) {
+        _displayNameController.clear();
+      }
+    });
   }
 
   @override
@@ -72,56 +87,47 @@ class _OnboardingScreenState extends ConsumerState<OnboardingScreen> {
                         const SizedBox(height: 24),
                         _buildModeToggle(),
                         const SizedBox(height: 20),
-                        TextField(
+                        AppTextInputField(
                           controller: _usernameController,
-                          textInputAction: TextInputAction.next,
+                          labelText: 'Username',
+                          hintText: 'lowercase, numbers, underscores',
                           maxLength: InputValidator.usernameMaxLength,
+                          textInputAction: TextInputAction.next,
                           inputFormatters: [
                             FilteringTextInputFormatter.allow(
                               RegExp(r'[a-z0-9_]'),
                             ),
-                            LowerCaseTextFormatter(),
+                            const AppLowerCaseTextFormatter(),
                           ],
-                          decoration: InputDecoration(
-                            labelText: 'Username',
-                            hintText: 'lowercase, numbers, underscores',
-                            counterText: '',
-                          ),
                         ),
                         if (_mode == _AuthMode.register) ...<Widget>[
                           const SizedBox(height: 16),
-                          TextField(
+                          AppTextInputField(
                             controller: _displayNameController,
+                            labelText: 'Display name',
                             textInputAction: TextInputAction.next,
                             maxLength: InputValidator.displayNameMaxLength,
-                            decoration: InputDecoration(
-                              labelText: 'Display name',
-                              counterText: '',
-                            ),
                           ),
                         ],
                         const SizedBox(height: 16),
-                        TextField(
+                        AppTextInputField(
                           controller: _passwordController,
+                          labelText: 'Password',
+                          hintText: 'at least 6 characters',
                           obscureText: _obscurePassword,
                           textInputAction: TextInputAction.done,
                           maxLength: 50,
-                          decoration: InputDecoration(
-                            labelText: 'Password',
-                            hintText: 'at least 6 characters',
-                            counterText: '',
-                            suffixIcon: IconButton(
-                              icon: Icon(
-                                _obscurePassword
-                                    ? Icons.visibility_off
-                                    : Icons.visibility,
-                              ),
-                              onPressed: () {
-                                setState(() {
-                                  _obscurePassword = !_obscurePassword;
-                                });
-                              },
+                          suffixIcon: IconButton(
+                            icon: Icon(
+                              _obscurePassword
+                                  ? Icons.visibility_off
+                                  : Icons.visibility,
                             ),
+                            onPressed: () {
+                              setState(() {
+                                _obscurePassword = !_obscurePassword;
+                              });
+                            },
                           ),
                         ),
                         if (_error != null) ...<Widget>[
@@ -174,7 +180,7 @@ class _OnboardingScreenState extends ConsumerState<OnboardingScreen> {
         children: <Widget>[
           Expanded(
             child: GestureDetector(
-              onTap: () => setState(() => _mode = _AuthMode.register),
+              onTap: () => _setMode(_AuthMode.register),
               child: Container(
                 padding: const EdgeInsets.symmetric(vertical: 12),
                 decoration: BoxDecoration(
@@ -196,7 +202,7 @@ class _OnboardingScreenState extends ConsumerState<OnboardingScreen> {
           ),
           Expanded(
             child: GestureDetector(
-              onTap: () => setState(() => _mode = _AuthMode.login),
+              onTap: () => _setMode(_AuthMode.login),
               child: Container(
                 padding: const EdgeInsets.symmetric(vertical: 12),
                 decoration: BoxDecoration(
@@ -295,18 +301,5 @@ class _OnboardingScreenState extends ConsumerState<OnboardingScreen> {
         setState(() => _submitting = false);
       }
     }
-  }
-}
-
-class LowerCaseTextFormatter extends TextInputFormatter {
-  @override
-  TextEditingValue formatEditUpdate(
-    TextEditingValue oldValue,
-    TextEditingValue newValue,
-  ) {
-    return TextEditingValue(
-      text: newValue.text.toLowerCase(),
-      selection: newValue.selection,
-    );
   }
 }
