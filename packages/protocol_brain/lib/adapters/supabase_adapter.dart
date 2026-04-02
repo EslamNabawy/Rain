@@ -39,6 +39,68 @@ class SupabaseSignalingAdapter implements SignalingAdapter {
     return _client.auth.signOut();
   }
 
+  String _hashPassword(String password) {
+    int hash = 0;
+    for (int i = 0; i < password.length; i++) {
+      hash = ((hash << 5) - hash) + password.codeUnitAt(i);
+      hash = hash & 0xFFFFFFFF;
+    }
+    return hash.toRadixString(16).padLeft(8, '0');
+  }
+
+  @override
+  Future<String> register(String username, String password) async {
+    await ensureAuthenticated();
+
+    final existing = await fetchIdentity(username);
+    if (existing != null && existing.uid.isNotEmpty) {
+      throw Exception('Username "$username" is already taken');
+    }
+
+    if (password.length < 6) {
+      throw Exception('Password must be at least 6 characters');
+    }
+
+    final uid = _client.auth.currentUser?.id ?? '';
+    final now = DateTime.now().millisecondsSinceEpoch;
+    final passwordHash = _hashPassword(password);
+
+    await _client.from('users').upsert({
+      'username': username,
+      'uid': uid,
+      'display_name': username,
+      'registered_at': now,
+      'last_seen': now,
+      'last_heartbeat': now,
+      'online': true,
+      'password_hash': passwordHash,
+    });
+
+    return uid;
+  }
+
+  @override
+  Future<String> login(String username, String password) async {
+    await ensureAuthenticated();
+
+    final rows =
+        (await _client.from('users').select().eq('username', username).limit(1))
+            as List<dynamic>;
+    if (rows.isEmpty) {
+      throw Exception('User "$username" not found');
+    }
+
+    final value = Map<String, dynamic>.from(rows.first as Map);
+    final storedHash = value['password_hash'] as String? ?? '';
+    final inputHash = _hashPassword(password);
+
+    if (storedHash != inputHash) {
+      throw Exception('Invalid password');
+    }
+
+    return value['uid'] as String? ?? _client.auth.currentUser?.id ?? '';
+  }
+
   @override
   Future<BackendIdentity?> fetchIdentity(String username) async {
     await ensureAuthenticated();

@@ -43,11 +43,72 @@ class FirebaseSignalingAdapter implements SignalingAdapter {
     if (_auth.currentUser != null) {
       return;
     }
-
     final result = await _auth.signInAnonymously();
     if (result.user == null) {
       throw Exception('Failed to authenticate with Firebase');
     }
+  }
+
+  String _hashPassword(String password) {
+    int hash = 0;
+    for (int i = 0; i < password.length; i++) {
+      hash = ((hash << 5) - hash) + password.codeUnitAt(i);
+      hash = hash & 0xFFFFFFFF;
+    }
+    return hash.toRadixString(16).padLeft(8, '0');
+  }
+
+  @override
+  Future<String> register(String username, String password) async {
+    await ensureAuthenticated();
+
+    final existing = await fetchIdentity(username);
+    if (existing != null && existing.uid.isNotEmpty) {
+      throw Exception('Username "$username" is already taken');
+    }
+
+    if (password.length < 6) {
+      throw Exception('Password must be at least 6 characters');
+    }
+
+    final uid = _auth.currentUser?.uid ?? '';
+    final now = DateTime.now().millisecondsSinceEpoch;
+    final passwordHash = _hashPassword(password);
+
+    await _root.child('users/$username').set(<String, Object?>{
+      'uid': uid,
+      'displayName': username,
+      'registeredAt': now,
+      'lastSeen': now,
+      'lastHeartbeat': now,
+      'online': true,
+      'username': username,
+      'passwordHash': passwordHash,
+    });
+
+    await _root.child('userSearch/$username').set(true);
+    return uid;
+  }
+
+  @override
+  Future<String> login(String username, String password) async {
+    await ensureAuthenticated();
+
+    final snapshot = await _root.child('users/$username').get();
+    if (!snapshot.exists || snapshot.value is! Map<Object?, Object?>) {
+      throw Exception('User "$username" not found');
+    }
+
+    final value = snapshot.value! as Map<Object?, Object?>;
+    final storedHash = value['passwordHash'] as String? ?? '';
+    final inputHash = _hashPassword(password);
+
+    if (storedHash != inputHash) {
+      throw Exception('Invalid password');
+    }
+
+    final uid = value['uid'] as String? ?? _auth.currentUser?.uid ?? '';
+    return uid;
   }
 
   @override
@@ -84,9 +145,7 @@ class FirebaseSignalingAdapter implements SignalingAdapter {
 
   @override
   Future<List<BackendIdentity>> searchUsers(String query) async {
-    if (query.length < 2) {
-      return [];
-    }
+    if (query.length < 2) return [];
 
     await ensureAuthenticated();
     final queryLower = query.toLowerCase();
@@ -222,14 +281,13 @@ class FirebaseSignalingAdapter implements SignalingAdapter {
     await ensureAuthenticated();
     await _root
         .child('users/${identity.username}')
-        .set(identity.toFirebaseJson());
+        .update(identity.toFirebaseJson());
     await _root.child('userSearch/${identity.username}').set(true);
   }
 
   @override
   Stream<bool> watchPresence(String username) {
     final controller = StreamController<bool>.broadcast();
-
     final onlineRef = _root.child('users/$username/online');
     final lastHeartbeatRef = _root.child('users/$username/lastHeartbeat');
 
@@ -280,15 +338,6 @@ class FirebaseSignalingAdapter implements SignalingAdapter {
   @override
   Future<void> writeFriendRequest(String to, String from) async {
     await ensureAuthenticated();
-    final currentUid = _auth.currentUser?.uid ?? '';
-
-    // Verify the sender's uid matches the auth uid
-    final fromSnapshot = await _root.child('users/$from/uid').get();
-    final storedUid = fromSnapshot.value as String?;
-    if (storedUid == null || storedUid != currentUid) {
-      throw Exception('Authentication mismatch. Please restart the app.');
-    }
-
     await _root.child('friendRequests/$to/$from').set(<String, Object?>{
       'sentAt': DateTime.now().millisecondsSinceEpoch,
     });

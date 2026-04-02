@@ -5,6 +5,9 @@ abstract class SignalingAdapter {
   Future<String> currentUid();
   Future<void> signOut();
 
+  Future<String> register(String username, String password);
+  Future<String> login(String username, String password);
+
   Future<void> writeOffer(String roomId, SDPPayload offer);
   Future<void> writeAnswer(String roomId, SDPPayload answer);
   Future<void> writeICE(String roomId, IceRole role, RTCIceCandidate candidate);

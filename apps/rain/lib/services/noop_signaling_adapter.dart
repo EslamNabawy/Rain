@@ -34,6 +34,34 @@ class NoopSignalingAdapter implements SignalingAdapter {
   Future<void> signOut() async {}
 
   @override
+  Future<String> register(String username, String password) async {
+    if (_identities.containsKey(username)) {
+      throw Exception('Username "$username" is already taken');
+    }
+    final uid = 'local-${DateTime.now().millisecondsSinceEpoch}';
+    _identities[username] = BackendIdentity(
+      username: username,
+      uid: uid,
+      displayName: username,
+      registeredAt: DateTime.now().millisecondsSinceEpoch,
+      lastSeen: DateTime.now().millisecondsSinceEpoch,
+      lastHeartbeat: DateTime.now().millisecondsSinceEpoch,
+      online: true,
+    );
+    _presence[username] = true;
+    return uid;
+  }
+
+  @override
+  Future<String> login(String username, String password) async {
+    final identity = _identities[username];
+    if (identity == null) {
+      throw Exception('User "$username" not found');
+    }
+    return identity.uid;
+  }
+
+  @override
   Future<BackendIdentity?> fetchIdentity(String username) async {
     return _identities[username];
   }
