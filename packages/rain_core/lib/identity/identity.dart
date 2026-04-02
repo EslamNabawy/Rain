@@ -2,20 +2,38 @@ import 'package:drift/drift.dart';
 
 import '../database/rain_database.dart';
 
+enum RainGender { male, female }
+
 class RainIdentity {
   const RainIdentity({
     required this.username,
     required this.displayName,
     required this.createdAt,
+    required this.gender,
   });
 
   final String username;
   final String displayName;
   final int createdAt;
+  final RainGender? gender;
 
   static final RegExp _usernamePattern = RegExp(r'^[a-z0-9_]{3,24}$');
 
   static bool isValidUsername(String value) => _usernamePattern.hasMatch(value);
+
+  RainIdentity copyWith({
+    String? username,
+    String? displayName,
+    int? createdAt,
+    RainGender? gender,
+  }) {
+    return RainIdentity(
+      username: username ?? this.username,
+      displayName: displayName ?? this.displayName,
+      createdAt: createdAt ?? this.createdAt,
+      gender: gender ?? this.gender,
+    );
+  }
 }
 
 class IdentityRepository {
@@ -43,6 +61,7 @@ class IdentityRepository {
           username: identity.username,
           displayName: identity.displayName,
           createdAt: identity.createdAt,
+          gender: Value<String?>(identity.gender?.name),
         ),
       );
     });
@@ -61,6 +80,19 @@ class IdentityRepository {
     });
   }
 
+  Future<void> updateGender(RainGender? gender) {
+    return _database.transaction(() async {
+      await (_database.update(_database.identityTable)..where(
+            (IdentityTable table) => table.id.isBiggerThanValue(0),
+          ))
+          .write(
+            IdentityTableCompanion(
+              gender: Value<String?>(gender?.name),
+            ),
+          );
+    });
+  }
+
   RainIdentity? _mapIdentity(IdentityTableData? data) {
     if (data == null) {
       return null;
@@ -69,6 +101,7 @@ class IdentityRepository {
       username: data.username,
       displayName: data.displayName,
       createdAt: data.createdAt,
+      gender: data.gender == null ? null : RainGender.values.byName(data.gender!),
     );
   }
 }

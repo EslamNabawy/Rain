@@ -53,11 +53,13 @@ class TwoDeviceHarness {
         username: 'alice',
         displayName: 'Alice',
         createdAt: 0,
+        gender: null,
       );
       final bobIdentity = RainIdentity(
         username: 'bob',
         displayName: 'Bob',
         createdAt: 0,
+        gender: null,
       );
 
       final runtimeAlice = RainRuntimeController(

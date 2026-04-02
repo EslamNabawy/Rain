@@ -1769,8 +1769,23 @@ class $IdentityTableTable extends IdentityTable
     type: DriftSqlType.int,
     requiredDuringInsert: true,
   );
+  static const VerificationMeta _genderMeta = const VerificationMeta('gender');
   @override
-  List<GeneratedColumn> get $columns => [id, username, displayName, createdAt];
+  late final GeneratedColumn<String> gender = GeneratedColumn<String>(
+    'gender',
+    aliasedName,
+    true,
+    type: DriftSqlType.string,
+    requiredDuringInsert: false,
+  );
+  @override
+  List<GeneratedColumn> get $columns => [
+    id,
+    username,
+    displayName,
+    createdAt,
+    gender,
+  ];
   @override
   String get aliasedName => _alias ?? actualTableName;
   @override
@@ -1813,6 +1828,12 @@ class $IdentityTableTable extends IdentityTable
     } else if (isInserting) {
       context.missing(_createdAtMeta);
     }
+    if (data.containsKey('gender')) {
+      context.handle(
+        _genderMeta,
+        gender.isAcceptableOrUnknown(data['gender']!, _genderMeta),
+      );
+    }
     return context;
   }
 
@@ -1838,6 +1859,10 @@ class $IdentityTableTable extends IdentityTable
         DriftSqlType.int,
         data['${effectivePrefix}created_at'],
       )!,
+      gender: attachedDatabase.typeMapping.read(
+        DriftSqlType.string,
+        data['${effectivePrefix}gender'],
+      ),
     );
   }
 
@@ -1853,11 +1878,13 @@ class IdentityTableData extends DataClass
   final String username;
   final String displayName;
   final int createdAt;
+  final String? gender;
   const IdentityTableData({
     required this.id,
     required this.username,
     required this.displayName,
     required this.createdAt,
+    this.gender,
   });
   @override
   Map<String, Expression> toColumns(bool nullToAbsent) {
@@ -1866,6 +1893,9 @@ class IdentityTableData extends DataClass
     map['username'] = Variable<String>(username);
     map['display_name'] = Variable<String>(displayName);
     map['created_at'] = Variable<int>(createdAt);
+    if (!nullToAbsent || gender != null) {
+      map['gender'] = Variable<String>(gender);
+    }
     return map;
   }
 
@@ -1875,6 +1905,9 @@ class IdentityTableData extends DataClass
       username: Value(username),
       displayName: Value(displayName),
       createdAt: Value(createdAt),
+      gender: gender == null && nullToAbsent
+          ? const Value.absent()
+          : Value(gender),
     );
   }
 
@@ -1888,6 +1921,7 @@ class IdentityTableData extends DataClass
       username: serializer.fromJson<String>(json['username']),
       displayName: serializer.fromJson<String>(json['displayName']),
       createdAt: serializer.fromJson<int>(json['createdAt']),
+      gender: serializer.fromJson<String?>(json['gender']),
     );
   }
   @override
@@ -1898,6 +1932,7 @@ class IdentityTableData extends DataClass
       'username': serializer.toJson<String>(username),
       'displayName': serializer.toJson<String>(displayName),
       'createdAt': serializer.toJson<int>(createdAt),
+      'gender': serializer.toJson<String?>(gender),
     };
   }
 
@@ -1906,11 +1941,13 @@ class IdentityTableData extends DataClass
     String? username,
     String? displayName,
     int? createdAt,
+    Value<String?> gender = const Value.absent(),
   }) => IdentityTableData(
     id: id ?? this.id,
     username: username ?? this.username,
     displayName: displayName ?? this.displayName,
     createdAt: createdAt ?? this.createdAt,
+    gender: gender.present ? gender.value : this.gender,
   );
   IdentityTableData copyWithCompanion(IdentityTableCompanion data) {
     return IdentityTableData(
@@ -1920,6 +1957,7 @@ class IdentityTableData extends DataClass
           ? data.displayName.value
           : this.displayName,
       createdAt: data.createdAt.present ? data.createdAt.value : this.createdAt,
+      gender: data.gender.present ? data.gender.value : this.gender,
     );
   }
 
@@ -1929,13 +1967,14 @@ class IdentityTableData extends DataClass
           ..write('id: $id, ')
           ..write('username: $username, ')
           ..write('displayName: $displayName, ')
-          ..write('createdAt: $createdAt')
+          ..write('createdAt: $createdAt, ')
+          ..write('gender: $gender')
           ..write(')'))
         .toString();
   }
 
   @override
-  int get hashCode => Object.hash(id, username, displayName, createdAt);
+  int get hashCode => Object.hash(id, username, displayName, createdAt, gender);
   @override
   bool operator ==(Object other) =>
       identical(this, other) ||
@@ -1943,7 +1982,8 @@ class IdentityTableData extends DataClass
           other.id == this.id &&
           other.username == this.username &&
           other.displayName == this.displayName &&
-          other.createdAt == this.createdAt);
+          other.createdAt == this.createdAt &&
+          other.gender == this.gender);
 }
 
 class IdentityTableCompanion extends UpdateCompanion<IdentityTableData> {
@@ -1951,17 +1991,20 @@ class IdentityTableCompanion extends UpdateCompanion<IdentityTableData> {
   final Value<String> username;
   final Value<String> displayName;
   final Value<int> createdAt;
+  final Value<String?> gender;
   const IdentityTableCompanion({
     this.id = const Value.absent(),
     this.username = const Value.absent(),
     this.displayName = const Value.absent(),
     this.createdAt = const Value.absent(),
+    this.gender = const Value.absent(),
   });
   IdentityTableCompanion.insert({
     this.id = const Value.absent(),
     required String username,
     required String displayName,
     required int createdAt,
+    this.gender = const Value.absent(),
   }) : username = Value(username),
        displayName = Value(displayName),
        createdAt = Value(createdAt);
@@ -1970,12 +2013,14 @@ class IdentityTableCompanion extends UpdateCompanion<IdentityTableData> {
     Expression<String>? username,
     Expression<String>? displayName,
     Expression<int>? createdAt,
+    Expression<String>? gender,
   }) {
     return RawValuesInsertable({
       if (id != null) 'id': id,
       if (username != null) 'username': username,
       if (displayName != null) 'display_name': displayName,
       if (createdAt != null) 'created_at': createdAt,
+      if (gender != null) 'gender': gender,
     });
   }
 
@@ -1984,12 +2029,14 @@ class IdentityTableCompanion extends UpdateCompanion<IdentityTableData> {
     Value<String>? username,
     Value<String>? displayName,
     Value<int>? createdAt,
+    Value<String?>? gender,
   }) {
     return IdentityTableCompanion(
       id: id ?? this.id,
       username: username ?? this.username,
       displayName: displayName ?? this.displayName,
       createdAt: createdAt ?? this.createdAt,
+      gender: gender ?? this.gender,
     );
   }
 
@@ -2008,6 +2055,9 @@ class IdentityTableCompanion extends UpdateCompanion<IdentityTableData> {
     if (createdAt.present) {
       map['created_at'] = Variable<int>(createdAt.value);
     }
+    if (gender.present) {
+      map['gender'] = Variable<String>(gender.value);
+    }
     return map;
   }
 
@@ -2017,7 +2067,8 @@ class IdentityTableCompanion extends UpdateCompanion<IdentityTableData> {
           ..write('id: $id, ')
           ..write('username: $username, ')
           ..write('displayName: $displayName, ')
-          ..write('createdAt: $createdAt')
+          ..write('createdAt: $createdAt, ')
+          ..write('gender: $gender')
           ..write(')'))
         .toString();
   }
@@ -3190,6 +3241,7 @@ typedef $$IdentityTableTableCreateCompanionBuilder =
       required String username,
       required String displayName,
       required int createdAt,
+      Value<String?> gender,
     });
 typedef $$IdentityTableTableUpdateCompanionBuilder =
     IdentityTableCompanion Function({
@@ -3197,6 +3249,7 @@ typedef $$IdentityTableTableUpdateCompanionBuilder =
       Value<String> username,
       Value<String> displayName,
       Value<int> createdAt,
+      Value<String?> gender,
     });
 
 class $$IdentityTableTableFilterComposer
@@ -3225,6 +3278,11 @@ class $$IdentityTableTableFilterComposer
 
   ColumnFilters<int> get createdAt => $composableBuilder(
     column: $table.createdAt,
+    builder: (column) => ColumnFilters(column),
+  );
+
+  ColumnFilters<String> get gender => $composableBuilder(
+    column: $table.gender,
     builder: (column) => ColumnFilters(column),
   );
 }
@@ -3257,6 +3315,11 @@ class $$IdentityTableTableOrderingComposer
     column: $table.createdAt,
     builder: (column) => ColumnOrderings(column),
   );
+
+  ColumnOrderings<String> get gender => $composableBuilder(
+    column: $table.gender,
+    builder: (column) => ColumnOrderings(column),
+  );
 }
 
 class $$IdentityTableTableAnnotationComposer
@@ -3281,6 +3344,9 @@ class $$IdentityTableTableAnnotationComposer
 
   GeneratedColumn<int> get createdAt =>
       $composableBuilder(column: $table.createdAt, builder: (column) => column);
+
+  GeneratedColumn<String> get gender =>
+      $composableBuilder(column: $table.gender, builder: (column) => column);
 }
 
 class $$IdentityTableTableTableManager
@@ -3322,11 +3388,13 @@ class $$IdentityTableTableTableManager
                 Value<String> username = const Value.absent(),
                 Value<String> displayName = const Value.absent(),
                 Value<int> createdAt = const Value.absent(),
+                Value<String?> gender = const Value.absent(),
               }) => IdentityTableCompanion(
                 id: id,
                 username: username,
                 displayName: displayName,
                 createdAt: createdAt,
+                gender: gender,
               ),
           createCompanionCallback:
               ({
@@ -3334,11 +3402,13 @@ class $$IdentityTableTableTableManager
                 required String username,
                 required String displayName,
                 required int createdAt,
+                Value<String?> gender = const Value.absent(),
               }) => IdentityTableCompanion.insert(
                 id: id,
                 username: username,
                 displayName: displayName,
                 createdAt: createdAt,
+                gender: gender,
               ),
           withReferenceMapper: (p0) => p0
               .map((e) => (e.readTable(table), BaseReferences(db, table, e)))

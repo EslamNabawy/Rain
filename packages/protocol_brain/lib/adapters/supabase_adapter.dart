@@ -25,7 +25,7 @@ class SupabaseSignalingAdapter implements SignalingAdapter {
     if (_client.auth.currentSession != null) {
       return;
     }
-    await _client.auth.signInAnonymously();
+    throw StateError('Supabase session is not available');
   }
 
   @override
@@ -39,66 +39,57 @@ class SupabaseSignalingAdapter implements SignalingAdapter {
     return _client.auth.signOut();
   }
 
-  String _hashPassword(String password) {
-    int hash = 0;
-    for (int i = 0; i < password.length; i++) {
-      hash = ((hash << 5) - hash) + password.codeUnitAt(i);
-      hash = hash & 0xFFFFFFFF;
-    }
-    return hash.toRadixString(16).padLeft(8, '0');
+  String _emailFromUsername(String username) {
+    return '$username@rain.local';
   }
 
   @override
   Future<String> register(String username, String password) async {
-    await ensureAuthenticated();
-
-    final existing = await fetchIdentity(username);
-    if (existing != null && existing.uid.isNotEmpty) {
-      throw Exception('Username "$username" is already taken');
-    }
-
     if (password.length < 6) {
       throw Exception('Password must be at least 6 characters');
     }
 
-    final uid = _client.auth.currentUser?.id ?? '';
+    final email = _emailFromUsername(username);
+    final authResponse = await _client.auth.signUp(
+      email: email,
+      password: password,
+    );
+    final uid = authResponse.user?.id ?? _client.auth.currentUser?.id ?? '';
+    if (uid.isEmpty) {
+      throw Exception('Failed to authenticate Supabase user');
+    }
     final now = DateTime.now().millisecondsSinceEpoch;
-    final passwordHash = _hashPassword(password);
 
     await _client.from('users').upsert({
       'username': username,
       'uid': uid,
       'display_name': username,
+      'gender': null,
       'registered_at': now,
       'last_seen': now,
       'last_heartbeat': now,
       'online': true,
-      'password_hash': passwordHash,
     });
+
+    if (_client.auth.currentSession == null) {
+      await _client.auth.signInWithPassword(email: email, password: password);
+    }
 
     return uid;
   }
 
   @override
   Future<String> login(String username, String password) async {
-    await ensureAuthenticated();
-
-    final rows =
-        (await _client.from('users').select().eq('username', username).limit(1))
-            as List<dynamic>;
-    if (rows.isEmpty) {
-      throw Exception('User "$username" not found');
+    final email = _emailFromUsername(username);
+    final authResponse = await _client.auth.signInWithPassword(
+      email: email,
+      password: password,
+    );
+    final uid = authResponse.user?.id ?? _client.auth.currentUser?.id ?? '';
+    if (uid.isEmpty) {
+      throw Exception('Failed to authenticate Supabase user');
     }
-
-    final value = Map<String, dynamic>.from(rows.first as Map);
-    final storedHash = value['password_hash'] as String? ?? '';
-    final inputHash = _hashPassword(password);
-
-    if (storedHash != inputHash) {
-      throw Exception('Invalid password');
-    }
-
-    return value['uid'] as String? ?? _client.auth.currentUser?.id ?? '';
+    return uid;
   }
 
   @override
@@ -115,6 +106,7 @@ class SupabaseSignalingAdapter implements SignalingAdapter {
       username: row['username'] as String,
       uid: row['uid'] as String? ?? '',
       displayName: row['display_name'] as String? ?? row['username'] as String,
+      gender: row['gender'] as String?,
       registeredAt: (row['registered_at'] as num?)?.toInt() ?? 0,
       lastSeen: (row['last_seen'] as num?)?.toInt() ?? 0,
       lastHeartbeat: (row['last_heartbeat'] as num?)?.toInt() ?? 0,
@@ -139,11 +131,12 @@ class SupabaseSignalingAdapter implements SignalingAdapter {
     for (final row in rows as List<dynamic>) {
       final map = Map<String, dynamic>.from(row as Map);
       result.add(
-        BackendIdentity(
+          BackendIdentity(
           username: map['username'] as String,
           uid: map['uid'] as String? ?? '',
           displayName:
               map['display_name'] as String? ?? map['username'] as String,
+          gender: map['gender'] as String?,
           registeredAt: (map['registered_at'] as num?)?.toInt() ?? 0,
           lastSeen: (map['last_seen'] as num?)?.toInt() ?? 0,
           lastHeartbeat: (map['last_heartbeat'] as num?)?.toInt() ?? 0,
@@ -263,6 +256,7 @@ class SupabaseSignalingAdapter implements SignalingAdapter {
       'last_seen': now,
       'last_heartbeat': now,
       'uid': _client.auth.currentUser?.id ?? '',
+      'gender': (await fetchIdentity(username))?.gender,
     });
   }
 

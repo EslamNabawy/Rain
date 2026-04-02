@@ -58,6 +58,7 @@ class IdentityTable extends Table {
   TextColumn get username => text()();
   TextColumn get displayName => text()();
   IntColumn get createdAt => integer()();
+  TextColumn get gender => text().nullable()();
 }
 
 class MessageSeqTracker extends Table {
@@ -83,7 +84,19 @@ class RainDatabase extends _$RainDatabase {
     : super(executor ?? driftDatabase(name: 'rain'));
 
   @override
-  int get schemaVersion => 1;
+  int get schemaVersion => 2;
+
+  @override
+  MigrationStrategy get migration => MigrationStrategy(
+    onCreate: (Migrator m) async {
+      await m.createAll();
+    },
+    onUpgrade: (Migrator m, int from, int to) async {
+      if (from < 2) {
+        await m.addColumn(identityTable, identityTable.gender);
+      }
+    },
+  );
 
   Future<void> clearSessionData() {
     return transaction(() async {

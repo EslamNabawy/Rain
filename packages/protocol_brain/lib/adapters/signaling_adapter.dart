@@ -66,6 +66,7 @@ class BackendIdentity {
     required this.username,
     required this.uid,
     required this.displayName,
+    required this.gender,
     required this.registeredAt,
     required this.lastSeen,
     required this.lastHeartbeat,
@@ -75,6 +76,7 @@ class BackendIdentity {
   final String username;
   final String uid;
   final String displayName;
+  final String? gender;
   final int registeredAt;
   final int lastSeen;
   final int lastHeartbeat;
@@ -84,6 +86,7 @@ class BackendIdentity {
     return <String, Object?>{
       'username': username,
       'displayName': displayName,
+      'gender': gender,
       'registeredAt': registeredAt,
       'lastSeen': lastSeen,
       'lastHeartbeat': lastHeartbeat,
@@ -96,6 +99,7 @@ class BackendIdentity {
     return <String, Object?>{
       'username': username,
       'display_name': displayName,
+      'gender': gender,
       'registered_at': registeredAt,
       'last_seen': lastSeen,
       'last_heartbeat': lastHeartbeat,

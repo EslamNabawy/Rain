@@ -20,6 +20,7 @@ void main() {
         username: 'alice',
         displayName: 'Alice',
         createdAt: 0,
+        gender: RainGender.female,
       );
     });
 

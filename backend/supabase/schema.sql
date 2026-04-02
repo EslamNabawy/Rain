@@ -12,12 +12,26 @@ create table if not exists public.users (
   username text primary key check (username ~ '^[a-z0-9_]{3,20}$'),
   uid text not null unique check (uid <> ''),
   display_name text not null default '',
+  gender text check (gender in ('male', 'female')),
   registered_at bigint not null default 0,
   last_seen bigint not null default 0,
   last_heartbeat bigint not null default 0,
   online boolean not null default false,
   updated_at timestamptz not null default timezone('utc', now())
 );
+
+alter table public.users
+  add column if not exists gender text;
+
+do $$
+begin
+  alter table public.users
+    add constraint users_gender_check
+    check (gender is null or gender in ('male', 'female'));
+exception
+  when duplicate_object then null;
+end
+$$;
 
 create table if not exists public.rooms (
   room_id text primary key,

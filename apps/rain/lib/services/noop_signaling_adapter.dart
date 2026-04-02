@@ -43,6 +43,7 @@ class NoopSignalingAdapter implements SignalingAdapter {
       username: username,
       uid: uid,
       displayName: username,
+      gender: null,
       registeredAt: DateTime.now().millisecondsSinceEpoch,
       lastSeen: DateTime.now().millisecondsSinceEpoch,
       lastHeartbeat: DateTime.now().millisecondsSinceEpoch,

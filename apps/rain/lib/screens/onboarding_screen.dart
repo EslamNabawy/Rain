@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
+import 'package:protocol_brain/protocol_brain.dart';
 import 'package:rain_core/rain_core.dart';
 
 import '../providers/app_providers.dart';
@@ -20,6 +21,7 @@ class _OnboardingScreenState extends ConsumerState<OnboardingScreen> {
   final TextEditingController _displayNameController = TextEditingController();
   final TextEditingController _passwordController = TextEditingController();
   _AuthMode _mode = _AuthMode.register;
+  RainGender _gender = RainGender.male;
   bool _submitting = false;
   bool _obscurePassword = true;
   String? _error;
@@ -107,6 +109,31 @@ class _OnboardingScreenState extends ConsumerState<OnboardingScreen> {
                             labelText: 'Display name',
                             textInputAction: TextInputAction.next,
                             maxLength: InputValidator.displayNameMaxLength,
+                          ),
+                          const SizedBox(height: 16),
+                          DropdownButtonFormField<RainGender>(
+                            value: _gender,
+                            decoration: const InputDecoration(
+                              labelText: 'Gender',
+                            ),
+                            items: const <DropdownMenuItem<RainGender>>[
+                              DropdownMenuItem<RainGender>(
+                                value: RainGender.male,
+                                child: Text('Male'),
+                              ),
+                              DropdownMenuItem<RainGender>(
+                                value: RainGender.female,
+                                child: Text('Female'),
+                              ),
+                            ],
+                            onChanged: (RainGender? value) {
+                              if (value == null) {
+                                return;
+                              }
+                              setState(() {
+                                _gender = value;
+                              });
+                            },
                           ),
                         ],
                         const SizedBox(height: 16),
@@ -255,7 +282,6 @@ class _OnboardingScreenState extends ConsumerState<OnboardingScreen> {
     });
 
     try {
-      await adapter.ensureAuthenticated();
       late RainIdentity identity;
       late String displayName;
 
@@ -277,8 +303,8 @@ class _OnboardingScreenState extends ConsumerState<OnboardingScreen> {
           username: username,
           displayName: displayName,
           createdAt: now,
+          gender: _gender,
         );
-        await adapter.setPresence(username, true);
       } else {
         await adapter.login(username, password);
         final existing = await adapter.fetchIdentity(username);
@@ -288,12 +314,27 @@ class _OnboardingScreenState extends ConsumerState<OnboardingScreen> {
           displayName: displayName,
           createdAt:
               existing?.registeredAt ?? DateTime.now().millisecondsSinceEpoch,
+          gender: existing?.gender == null
+              ? null
+              : RainGender.values.byName(existing!.gender!),
         );
-        await adapter.setPresence(username, true);
       }
 
       await adapter.addToUserSearch(username);
       await identityRepository.saveIdentity(identity);
+      await adapter.upsertIdentity(
+        BackendIdentity(
+          username: identity.username,
+          uid: await adapter.currentUid(),
+          displayName: identity.displayName,
+          gender: identity.gender?.name,
+          registeredAt: identity.createdAt,
+          lastSeen: DateTime.now().millisecondsSinceEpoch,
+          lastHeartbeat: DateTime.now().millisecondsSinceEpoch,
+          online: true,
+        ),
+      );
+      await adapter.setPresence(username, true);
     } catch (error) {
       setState(() => _error = error.toString());
     } finally {

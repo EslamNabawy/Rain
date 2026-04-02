@@ -8,7 +8,12 @@ void main() {
     addTearDown(database.close);
 
     await IdentityRepository(database).saveIdentity(
-      const RainIdentity(username: 'alice', displayName: 'Alice', createdAt: 1),
+      const RainIdentity(
+        username: 'alice',
+        displayName: 'Alice',
+        createdAt: 1,
+        gender: RainGender.male,
+      ),
     );
 
     await database

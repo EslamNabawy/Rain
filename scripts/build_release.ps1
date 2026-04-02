@@ -9,12 +9,20 @@ Use from repo root:
 param(
   [ValidateSet('all', 'windows', 'android')]
   [string]$Platform = 'all',
-  [string]$RepoRoot = (Resolve-Path (Join-Path $PSScriptRoot '..')).Path,
-  [string]$OutputDir = (Join-Path (Resolve-Path (Join-Path $PSScriptRoot '..')).Path 'final product'),
+  [string]$RepoRoot = '',
+  [string]$OutputDir = '',
   [switch]$Clean
 )
 
 $ErrorActionPreference = 'Stop'
+
+if ([string]::IsNullOrWhiteSpace($RepoRoot)) {
+  $RepoRoot = (Resolve-Path (Join-Path $PSScriptRoot '..')).Path
+}
+
+if ([string]::IsNullOrWhiteSpace($OutputDir)) {
+  $OutputDir = Join-Path $RepoRoot 'final product'
+}
 
 function Write-Step([string]$Message) {
   Write-Host "`n[build_release] $Message"
@@ -33,6 +41,19 @@ function Invoke-InDir([string]$Path, [scriptblock]$Script) {
   } finally {
     Pop-Location
   }
+}
+
+function Get-DartDefineArgs([string]$FlutterProjectRoot) {
+  $localDefines = Join-Path $FlutterProjectRoot 'tool\dart_defines.local.json'
+  if (Test-Path $localDefines) {
+    return @("--dart-define-from-file=tool/dart_defines.local.json")
+  }
+
+  return @()
+}
+
+function Invoke-FlutterBuild([string[]]$Arguments) {
+  & flutter @Arguments | Out-Host
 }
 
 $repoRoot = $RepoRoot
@@ -55,13 +76,14 @@ New-Item -ItemType Directory -Force -Path $releaseRoot | Out-Null
 Write-Step "Bootstrapping dependencies"
 Invoke-InDir $repoRoot {
   dart pub global activate melos | Out-Host
-  melos bootstrap | Out-Host
+  dart pub global run melos bootstrap | Out-Host
 }
 
 if ($Platform -in @('all', 'windows')) {
   Write-Step "Building Windows release"
+  $flutterArgs = @('build', 'windows', '--release') + (Get-DartDefineArgs $appsRoot)
   Invoke-InDir $appsRoot {
-    flutter build windows --release | Out-Host
+    Invoke-FlutterBuild $flutterArgs
   }
 
   $windowsReleaseDir = Join-Path $appsRoot 'build\windows\x64\runner\Release'
@@ -81,8 +103,9 @@ if ($Platform -in @('all', 'windows')) {
 
 if ($Platform -in @('all', 'android')) {
   Write-Step "Building Android release APK"
+  $flutterArgs = @('build', 'apk', '--release') + (Get-DartDefineArgs $appsRoot)
   Invoke-InDir $appsRoot {
-    flutter build apk --release | Out-Host
+    Invoke-FlutterBuild $flutterArgs
   }
 
   $apkSource = Join-Path $appsRoot 'build\app\outputs\flutter-apk\app-release.apk'

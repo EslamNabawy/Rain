@@ -22,6 +22,7 @@ The schema creates:
 - `public.rooms`
 - `public.friend_requests`
 - row-level security policies that keep `users.uid` as the ownership source of truth
+- optional user profile metadata such as gender, kept on the `users` row
 - a `cleanup_backend_state()` RPC used by the scheduled Edge Function
 
 ## Deploy The Cleanup Function

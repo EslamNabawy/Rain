@@ -45,6 +45,7 @@ class RainRuntimeController {
         username: selfIdentity.username,
         uid: await adapter.currentUid(),
         displayName: selfIdentity.displayName,
+        gender: selfIdentity.gender?.name,
         registeredAt: selfIdentity.createdAt,
         lastSeen: now,
         lastHeartbeat: now,

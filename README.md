@@ -32,7 +32,7 @@ melos run test
 
 ## Run Locally
 
-Firebase is the default signaling backend for this app. Copy the example defines file and run the app:
+Supabase is the default signaling backend for this app. Copy the example defines file and run the app:
 
 ```powershell
 cd apps/rain
@@ -84,7 +84,7 @@ Navigation behavior inside the shell is intentionally compact:
 
 The app reads compile-time configuration from `apps/rain/tool/dart_defines.local.json`. The supported keys are:
 
-- `RAIN_BACKEND`: `firebase`, `noop`, or `supabase`
+- `RAIN_BACKEND`: `supabase`, `firebase`, or `noop`
 - `RAIN_ICE_SERVERS`: JSON array of WebRTC ICE server objects
 - `RAIN_UPDATE_URL`: fallback update page used by the force-update gate
 - `FIREBASE_DATABASE_URL`
@@ -92,6 +92,15 @@ The app reads compile-time configuration from `apps/rain/tool/dart_defines.local
 - `SUPABASE_ANON_KEY`
 
 ## Backend Setup
+
+### Supabase
+
+1. Create a Supabase project and enable anonymous sign-in.
+2. Apply [backend/supabase/schema.sql](backend/supabase/schema.sql).
+3. Deploy [backend/supabase/functions/presence-cleanup/index.ts](backend/supabase/functions/presence-cleanup/index.ts) with `--no-verify-jwt`.
+4. Schedule the function every 3 minutes so stale users are marked offline after 7 minutes without heartbeat.
+
+Detailed Supabase instructions live in [backend/supabase/README.md](backend/supabase/README.md).
 
 ### Firebase
 
@@ -108,15 +117,6 @@ The app reads compile-time configuration from `apps/rain/tool/dart_defines.local
    - `update_url` (optional; overrides `RAIN_UPDATE_URL`)
 
 Detailed Firebase instructions live in [backend/firebase/README.md](backend/firebase/README.md).
-
-### Supabase
-
-1. Create a Supabase project and enable anonymous sign-in.
-2. Apply [backend/supabase/schema.sql](backend/supabase/schema.sql).
-3. Deploy [backend/supabase/functions/presence-cleanup/index.ts](backend/supabase/functions/presence-cleanup/index.ts) with `--no-verify-jwt`.
-4. Schedule the function every 3 minutes so stale users are marked offline after 7 minutes without heartbeat.
-
-Detailed Supabase instructions live in [backend/supabase/README.md](backend/supabase/README.md).
 
 ## Verification
 

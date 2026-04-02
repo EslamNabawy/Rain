@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
+import 'package:protocol_brain/protocol_brain.dart';
 import 'package:rain_core/rain_core.dart';
 
 import '../providers/app_providers.dart';
@@ -34,10 +35,34 @@ class SettingsScreen extends ConsumerWidget {
                 ),
               ),
               title: Text(identity?.displayName ?? 'Unknown'),
-              subtitle: Text('@${identity?.username ?? 'unknown'}'),
-              trailing: IconButton(
-                icon: const Icon(Icons.edit),
-                onPressed: () => _showEditDisplayName(context, ref, identity),
+              subtitle: Text(
+                [
+                  '@${identity?.username ?? 'unknown'}',
+                  _genderLabel(identity?.gender),
+                ].join(' • '),
+              ),
+              trailing: PopupMenuButton<_ProfileAction>(
+                onSelected: (value) {
+                  switch (value) {
+                    case _ProfileAction.editDisplayName:
+                      _showEditDisplayName(context, ref, identity);
+                      break;
+                    case _ProfileAction.editGender:
+                      _showEditGender(context, ref, identity);
+                      break;
+                  }
+                },
+                itemBuilder: (BuildContext context) =>
+                    const <PopupMenuEntry<_ProfileAction>>[
+                      PopupMenuItem<_ProfileAction>(
+                        value: _ProfileAction.editDisplayName,
+                        child: Text('Edit display name'),
+                      ),
+                      PopupMenuItem<_ProfileAction>(
+                        value: _ProfileAction.editGender,
+                        child: Text('Edit gender'),
+                      ),
+                    ],
               ),
             ),
           ),
@@ -130,10 +155,95 @@ class SettingsScreen extends ConsumerWidget {
         newName.isNotEmpty &&
         newName != identity.displayName) {
       final repo = ref.read(identityRepositoryProvider);
-      await repo.updateDisplayName(newName);
+      final updated = identity.copyWith(displayName: newName);
+      await repo.saveIdentity(updated);
+      await ref.read(adapterProvider).upsertIdentity(
+            BackendIdentity(
+              username: updated.username,
+              uid: await ref.read(adapterProvider).currentUid(),
+              displayName: updated.displayName,
+              gender: updated.gender?.name,
+              registeredAt: updated.createdAt,
+              lastSeen: DateTime.now().millisecondsSinceEpoch,
+              lastHeartbeat: DateTime.now().millisecondsSinceEpoch,
+              online: true,
+            ),
+          );
     }
   }
+
+  Future<void> _showEditGender(
+    BuildContext context,
+    WidgetRef ref,
+    RainIdentity? identity,
+  ) async {
+    if (identity == null) return;
+
+    final selected = await showDialog<RainGender>(
+      context: context,
+      builder: (BuildContext context) {
+        return AlertDialog(
+          title: const Text('Edit gender'),
+          content: Column(
+            mainAxisSize: MainAxisSize.min,
+            children: <Widget>[
+              RadioListTile<RainGender>(
+                value: RainGender.male,
+                groupValue: identity.gender,
+                onChanged: (RainGender? value) {
+                  Navigator.of(context).pop(value);
+                },
+                title: const Text('Male'),
+              ),
+              RadioListTile<RainGender>(
+                value: RainGender.female,
+                groupValue: identity.gender,
+                onChanged: (RainGender? value) {
+                  Navigator.of(context).pop(value);
+                },
+                title: const Text('Female'),
+              ),
+            ],
+          ),
+          actions: <Widget>[
+            TextButton(
+              onPressed: () => Navigator.of(context).pop(),
+              child: const Text('Cancel'),
+            ),
+          ],
+        );
+      },
+    );
+
+    if (selected == null || selected == identity.gender) {
+      return;
+    }
+
+    final repo = ref.read(identityRepositoryProvider);
+    final updated = identity.copyWith(gender: selected);
+    await repo.saveIdentity(updated);
+    await ref.read(adapterProvider).upsertIdentity(
+          BackendIdentity(
+            username: updated.username,
+            uid: await ref.read(adapterProvider).currentUid(),
+            displayName: updated.displayName,
+            gender: updated.gender?.name,
+            registeredAt: updated.createdAt,
+            lastSeen: DateTime.now().millisecondsSinceEpoch,
+            lastHeartbeat: DateTime.now().millisecondsSinceEpoch,
+            online: true,
+          ),
+        );
+  }
+
+  String _genderLabel(RainGender? gender) => switch (gender) {
+    RainGender.male => 'Male',
+    RainGender.female => 'Female',
+    null => 'Gender not set',
+  };
 }
+
+enum _ProfileAction { editDisplayName, editGender }
 
 class _BlockedUsersList extends ConsumerWidget {
   @override

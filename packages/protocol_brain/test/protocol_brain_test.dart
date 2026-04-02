@@ -24,6 +24,7 @@ void main() {
       username: 'alice',
       uid: 'uid-1',
       displayName: 'Alice',
+      gender: null,
       registeredAt: 1,
       lastSeen: 2,
       lastHeartbeat: 3,
@@ -35,6 +36,7 @@ void main() {
       <String, Object?>{
         'username': 'alice',
         'displayName': 'Alice',
+        'gender': null,
         'registeredAt': 1,
         'lastSeen': 2,
         'lastHeartbeat': 3,
@@ -48,6 +50,7 @@ void main() {
       <String, Object?>{
         'username': 'alice',
         'display_name': 'Alice',
+        'gender': null,
         'registered_at': 1,
         'last_seen': 2,
         'last_heartbeat': 3,

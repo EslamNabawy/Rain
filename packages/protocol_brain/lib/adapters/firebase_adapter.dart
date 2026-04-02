@@ -110,6 +110,7 @@ class FirebaseSignalingAdapter implements SignalingAdapter {
     await _root.child('users/$username').set(<String, Object?>{
       'uid': uid,
       'displayName': username,
+      'gender': null,
       'registeredAt': now,
       'lastSeen': now,
       'lastHeartbeat': now,
@@ -171,6 +172,7 @@ class FirebaseSignalingAdapter implements SignalingAdapter {
       username: username,
       uid: value['uid'] as String? ?? '',
       displayName: value['displayName'] as String? ?? username,
+      gender: value['gender'] as String?,
       registeredAt: (value['registeredAt'] as num?)?.toInt() ?? 0,
       lastSeen: (value['lastSeen'] as num?)?.toInt() ?? 0,
       lastHeartbeat: (value['lastHeartbeat'] as num?)?.toInt() ?? 0,
@@ -198,15 +200,16 @@ class FirebaseSignalingAdapter implements SignalingAdapter {
       for (final entry in usersData.entries) {
         final username = entry.key as String?;
         if (username != null && entry.value is Map<Object?, Object?>) {
-          final value = entry.value as Map<Object?, Object?>;
-          _identityCache[username] = BackendIdentity(
-            username: username,
-            uid: value['uid'] as String? ?? '',
-            displayName: value['displayName'] as String? ?? username,
-            registeredAt: (value['registeredAt'] as num?)?.toInt() ?? 0,
-            lastSeen: (value['lastSeen'] as num?)?.toInt() ?? 0,
-            lastHeartbeat: (value['lastHeartbeat'] as num?)?.toInt() ?? 0,
-            online: value['online'] as bool? ?? false,
+            final value = entry.value as Map<Object?, Object?>;
+            _identityCache[username] = BackendIdentity(
+              username: username,
+              uid: value['uid'] as String? ?? '',
+              displayName: value['displayName'] as String? ?? username,
+              gender: value['gender'] as String?,
+              registeredAt: (value['registeredAt'] as num?)?.toInt() ?? 0,
+              lastSeen: (value['lastSeen'] as num?)?.toInt() ?? 0,
+              lastHeartbeat: (value['lastHeartbeat'] as num?)?.toInt() ?? 0,
+              online: value['online'] as bool? ?? false,
           );
         }
       }
@@ -220,10 +223,11 @@ class FirebaseSignalingAdapter implements SignalingAdapter {
         )
         .take(_searchLimit)
         .map(
-          (identity) => BackendIdentity(
+      (identity) => BackendIdentity(
             username: identity.username,
             uid: identity.uid,
             displayName: identity.displayName,
+            gender: identity.gender,
             registeredAt: identity.registeredAt,
             lastSeen: identity.lastSeen,
             lastHeartbeat: identity.lastHeartbeat,

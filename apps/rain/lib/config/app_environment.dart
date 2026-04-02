@@ -38,7 +38,7 @@ class AppEnvironment {
   factory AppEnvironment.fromEnvironment() {
     final backend = switch (const String.fromEnvironment(
       'RAIN_BACKEND',
-      defaultValue: 'firebase',
+      defaultValue: 'supabase',
     )) {
       'firebase' => RainBackend.firebase,
       'supabase' => RainBackend.supabase,

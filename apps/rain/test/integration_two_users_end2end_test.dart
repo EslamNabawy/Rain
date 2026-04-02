@@ -39,11 +39,13 @@ void main() {
           username: 'alice',
           displayName: 'Alice',
           createdAt: DateTime.now().millisecondsSinceEpoch,
+          gender: RainGender.female,
         );
         final bobIdentity = RainIdentity(
           username: 'bob',
           displayName: 'Bob',
           createdAt: DateTime.now().millisecondsSinceEpoch,
+          gender: RainGender.male,
         );
 
         final runtimeAlice = RainRuntimeController(

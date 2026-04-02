@@ -178,6 +178,8 @@ class _SearchResults extends StatelessWidget {
             children: <Widget>[
               Text('@${user.username}'),
               const SizedBox(width: 8),
+              Text(_genderLabel(user.gender)),
+              const SizedBox(width: 8),
               Container(
                 width: 8,
                 height: 8,
@@ -205,4 +207,10 @@ class _SearchResults extends StatelessWidget {
       },
     );
   }
+
+  String _genderLabel(String? gender) => switch (gender) {
+    'male' => 'Male',
+    'female' => 'Female',
+    _ => 'Gender not set',
+  };
 }

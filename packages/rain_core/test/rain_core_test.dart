@@ -1,4 +1,5 @@
 import 'package:flutter_test/flutter_test.dart';
+import 'package:drift/native.dart';
 import 'package:rain_core/rain_core.dart';
 
 void main() {
@@ -21,5 +22,22 @@ void main() {
 
     final receipt = DateTime.now();
     expect(displayTime(envelope, receipt), receipt);
+  });
+
+  test('identity repository preserves gender', () async {
+    final database = RainDatabase(NativeDatabase.memory());
+    addTearDown(database.close);
+
+    await IdentityRepository(database).saveIdentity(
+      const RainIdentity(
+        username: 'alice',
+        displayName: 'Alice',
+        createdAt: 1,
+        gender: RainGender.female,
+      ),
+    );
+
+    final loaded = await IdentityRepository(database).loadIdentity();
+    expect(loaded?.gender, RainGender.female);
   });
 }

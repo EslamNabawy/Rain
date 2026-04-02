@@ -1,5 +1,5 @@
 {
-  "RAIN_BACKEND": "firebase",
+  "RAIN_BACKEND": "supabase",
   "RAIN_ICE_SERVERS": "[{\"urls\":\"stun:stun.l.google.com:19302\"},{\"urls\":\"stun:stun1.l.google.com:19302\"},{\"urls\":\"turn:openrelay.metered.ca:80\",\"username\":\"openrelayproject\",\"credential\":\"openrelayproject\"}]",
   "RAIN_UPDATE_URL": "https://github.com/EslamNabawy/Rain/releases",
   "FIREBASE_DATABASE_URL": "https://rain-8fb4b-default-rtdb.firebaseio.com",
