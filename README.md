@@ -96,6 +96,16 @@ cd apps/rain
 flutter build windows --debug --no-pub
 ```
 
+## Local Testing
+- Quick per-package tests:
+  - In each Flutter package (rain_core, peer_core): flutter pub get && flutter test
+- Full monorepo tests via Melos:
+  - melos bootstrap
+  - melos test
+- Cross-platform local testing:
+  - Windows: powershell -ExecutionPolicy Bypass -File scripts/test_all.ps1
+  - macOS/Linux: melos test (or implement test_all.sh if desired)
+
 ## MVP Notes
 
 - Signaling data never stores message bodies in Firebase or Supabase.

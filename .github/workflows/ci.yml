@@ -23,6 +23,10 @@ jobs:
 
       - name: Get dependencies
         run: melos bootstrap
+      - name: Start Firebase Emulators and Run Firebase Tests
+        run: bash scripts/ci_run_firebase_emulators.sh
+        env:
+          RUN_TESTS: true
 
       - name: Analyze
         run: melos exec -- flutter analyze

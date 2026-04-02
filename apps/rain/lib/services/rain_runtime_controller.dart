@@ -72,6 +72,9 @@ class RainRuntimeController {
         String from,
       ) async {
         final existing = await friendStore.loadFriend(from);
+        print(
+          '[RainRuntime] Received friend request from: $from, existingState=${existing?.state}',
+        );
         if (existing?.state == FriendState.pendingOutgoing ||
             existing?.state == FriendState.friend) {
           await friendStore.markAccepted(
@@ -133,7 +136,11 @@ class RainRuntimeController {
 
   Future<void> acceptFriend(String username) async {
     await adapter.writeFriendRequest(username, selfIdentity.username);
-    await friendStore.markAccepted(username, displayName: username);
+    // Prefer using an existing displayName if available to preserve
+    // the user's chosen display name instead of falling back to the username.
+    final existing = await friendStore.loadFriend(username);
+    final displayName = existing?.displayName ?? username;
+    await friendStore.markAccepted(username, displayName: displayName);
     _watchPresence(username);
     await brain?.registerPeer(username);
   }
@@ -214,11 +221,15 @@ class RainRuntimeController {
         (existing.state == FriendState.friend ||
             existing.state == FriendState.pendingOutgoing ||
             existing.state == FriendState.pendingIncoming)) {
+      // If a relationship already exists, fail fast with a clear message
+      // to avoid confusing the user.
       throw Exception(
         'Friend request already exists or you are already friends',
       );
     }
 
+    // Debug: log intent to send
+    print('[RainRuntime] Sending friend request to: $username');
     await adapter.writeFriendRequest(username, selfIdentity.username);
     await friendStore.upsertFriend(
       username: username,

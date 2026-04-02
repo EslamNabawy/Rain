@@ -7,12 +7,35 @@ import 'package:flutter_webrtc/flutter_webrtc.dart';
 import 'signaling_adapter.dart';
 
 class FirebaseSignalingAdapter implements SignalingAdapter {
-  FirebaseSignalingAdapter({FirebaseAuth? auth, FirebaseDatabase? database})
-    : _auth = auth ?? FirebaseAuth.instance,
-      _database = database ?? FirebaseDatabase.instance;
+  FirebaseSignalingAdapter({
+    FirebaseAuth? auth,
+    FirebaseDatabase? database,
+    bool useEmulator = false,
+  }) : _auth = auth ?? FirebaseAuth.instance,
+       _database = database ?? FirebaseDatabase.instance,
+       _useEmulator = useEmulator;
 
   final FirebaseAuth _auth;
   final FirebaseDatabase _database;
+  final bool _useEmulator;
+  bool _emulatorsConfigured = false;
+  String _emailFromUsername(String username) => '$username@rain.local';
+
+  Future<void> _configureEmulatorsIfNeeded() async {
+    if (!_useEmulator || _emulatorsConfigured) return;
+    try {
+      // Prefer localhost emulators in CI/dev environments.
+      const String host = 'localhost';
+      const int authPort = 9099; // Firebase Auth emulator default
+      const int dbPort = 9000; // Firebase Realtime Database emulator default
+      // Configure auth and database emulators. These calls are idempotent.
+      _auth.useAuthEmulator(host, authPort);
+      _database.useDatabaseEmulator(host, dbPort);
+    } catch (_) {
+      // If emulators are not available, fall back gracefully.
+    }
+    _emulatorsConfigured = true;
+  }
 
   DatabaseReference get _root => _database.ref();
 
@@ -31,6 +54,7 @@ class FirebaseSignalingAdapter implements SignalingAdapter {
 
   @override
   Future<void> deleteRoom(String roomId) async {
+    await _configureEmulatorsIfNeeded();
     await ensureAuthenticated();
     await _root.child('rooms/$roomId').remove();
   }
@@ -40,6 +64,7 @@ class FirebaseSignalingAdapter implements SignalingAdapter {
 
   @override
   Future<void> ensureAuthenticated() async {
+    await _configureEmulatorsIfNeeded();
     if (_auth.currentUser != null) {
       return;
     }
@@ -60,7 +85,9 @@ class FirebaseSignalingAdapter implements SignalingAdapter {
 
   @override
   Future<String> register(String username, String password) async {
-    await ensureAuthenticated();
+    await _configureEmulatorsIfNeeded();
+    // Do not call ensureAuthenticated() here; register creates a new account
+    // and then we sign in as that user.
 
     final existing = await fetchIdentity(username);
     if (existing != null && existing.uid.isNotEmpty) {
@@ -71,7 +98,12 @@ class FirebaseSignalingAdapter implements SignalingAdapter {
       throw Exception('Password must be at least 6 characters');
     }
 
-    final uid = _auth.currentUser?.uid ?? '';
+    final email = _emailFromUsername(username);
+    final userCredential = await _auth.createUserWithEmailAndPassword(
+      email: email,
+      password: password,
+    );
+    final uid = userCredential.user?.uid ?? '';
     final now = DateTime.now().millisecondsSinceEpoch;
     final passwordHash = _hashPassword(password);
 
@@ -87,11 +119,15 @@ class FirebaseSignalingAdapter implements SignalingAdapter {
     });
 
     await _root.child('userSearch/$username').set(true);
+    // Ensure subsequent operations use this user context
+    // by signing in the new user.
+    await _auth.signInWithEmailAndPassword(email: email, password: password);
     return uid;
   }
 
   @override
   Future<String> login(String username, String password) async {
+    await _configureEmulatorsIfNeeded();
     await ensureAuthenticated();
 
     final snapshot = await _root.child('users/$username').get();
@@ -113,6 +149,7 @@ class FirebaseSignalingAdapter implements SignalingAdapter {
 
   @override
   Future<String> currentUid() async {
+    await _configureEmulatorsIfNeeded();
     await ensureAuthenticated();
     return _auth.currentUser?.uid ?? '';
   }

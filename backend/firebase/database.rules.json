@@ -3,9 +3,9 @@
     ".read": false,
     ".write": false,
     "users": {
-      ".read": "auth != null",
       "$username": {
-        ".write": "auth != null",
+        ".read": "auth != null",
+        ".write": "auth != null && newData.child('uid').val() === auth.uid",
         "username": {
           ".validate": "newData.isString() && newData.val() === $username"
         },
