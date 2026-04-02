@@ -70,17 +70,30 @@ class _SearchScreenState extends ConsumerState<SearchScreen> {
                       results: results,
                       currentUsername: identity?.username,
                       onSendRequest: (String username) async {
-                        await ref
-                            .read(runtimeControllerProvider)
-                            ?.sendFriendRequest(username);
-                        if (context.mounted) {
-                          ScaffoldMessenger.of(context).showSnackBar(
-                            SnackBar(
-                              content: Text(
-                                'Friend request sent to @$username',
+                        try {
+                          await ref
+                              .read(runtimeControllerProvider)
+                              ?.sendFriendRequest(username);
+                          if (context.mounted) {
+                            ScaffoldMessenger.of(context).showSnackBar(
+                              SnackBar(
+                                content: Text(
+                                  'Friend request sent to @$username',
+                                ),
                               ),
-                            ),
-                          );
+                            );
+                          }
+                        } catch (e) {
+                          if (context.mounted) {
+                            ScaffoldMessenger.of(context).showSnackBar(
+                              SnackBar(
+                                content: Text('Error: $e'),
+                                backgroundColor: Theme.of(
+                                  context,
+                                ).colorScheme.error,
+                              ),
+                            );
+                          }
                         }
                       },
                     ),

@@ -38,13 +38,20 @@
     "friendRequests": {
       "$to": {
         ".read": "auth != null && root.child('users/' + $to + '/uid').val() === auth.uid",
+        ".write": "auth != null",
         "$from": {
-          ".write": "auth != null && (root.child('users/' + $to + '/uid').val() === auth.uid || root.child('users/' + $from + '/uid').val() === auth.uid)",
+          ".write": "auth != null",
           ".validate": "!newData.exists() || (newData.hasChildren(['sentAt']) && newData.child('sentAt').isNumber())",
           "$other": {
             ".validate": false
           }
         }
+      }
+    },
+    "userSearch": {
+      "$username": {
+        ".read": "auth != null",
+        ".write": "auth != null"
       }
     },
     "rooms": {

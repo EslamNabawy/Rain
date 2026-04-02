@@ -183,7 +183,25 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
                   return;
                 }
                 Navigator.of(context).pop();
-                await runtime?.sendFriendRequest(username);
+                try {
+                  await runtime?.sendFriendRequest(username);
+                  if (context.mounted) {
+                    ScaffoldMessenger.of(context).showSnackBar(
+                      SnackBar(
+                        content: Text('Friend request sent to @$username'),
+                      ),
+                    );
+                  }
+                } catch (e) {
+                  if (context.mounted) {
+                    ScaffoldMessenger.of(context).showSnackBar(
+                      SnackBar(
+                        content: Text('Error: $e'),
+                        backgroundColor: Theme.of(context).colorScheme.error,
+                      ),
+                    );
+                  }
+                }
               },
               child: const Text('Send request'),
             ),
