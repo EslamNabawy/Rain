@@ -281,12 +281,20 @@ class RainRuntimeController {
     _shutDown = true;
 
     if (markOffline && _started) {
-      await adapter.setPresence(selfIdentity.username, false);
+      try {
+        await adapter.setPresence(selfIdentity.username, false);
+      } catch (error) {
+        // Ignore permission errors during logout
+      }
     }
 
     if (brain != null) {
       for (final session in brain!.getSessions()) {
-        await brain!.disconnect(session.peerId);
+        try {
+          await brain!.disconnect(session.peerId);
+        } catch (error) {
+          // Ignore errors during cleanup
+        }
       }
     }
 

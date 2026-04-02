@@ -43,7 +43,11 @@ class FirebaseSignalingAdapter implements SignalingAdapter {
     if (_auth.currentUser != null) {
       return;
     }
-    await _auth.signInAnonymously();
+
+    final result = await _auth.signInAnonymously();
+    if (result.user == null) {
+      throw Exception('Failed to authenticate with Firebase');
+    }
   }
 
   @override
@@ -276,6 +280,15 @@ class FirebaseSignalingAdapter implements SignalingAdapter {
   @override
   Future<void> writeFriendRequest(String to, String from) async {
     await ensureAuthenticated();
+    final currentUid = _auth.currentUser?.uid ?? '';
+
+    // Verify the sender's uid matches the auth uid
+    final fromSnapshot = await _root.child('users/$from/uid').get();
+    final storedUid = fromSnapshot.value as String?;
+    if (storedUid == null || storedUid != currentUid) {
+      throw Exception('Authentication mismatch. Please restart the app.');
+    }
+
     await _root.child('friendRequests/$to/$from').set(<String, Object?>{
       'sentAt': DateTime.now().millisecondsSinceEpoch,
     });
