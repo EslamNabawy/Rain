@@ -70,6 +70,7 @@ jobs:
 
       - name: Build Windows
         run: flutter build windows --release
+        working-directory: apps/rain
 
       - name: Upload Artifact
         uses: actions/upload-artifact@v4
@@ -98,6 +99,7 @@ jobs:
 
       - name: Build APK
         run: flutter build apk --release
+        working-directory: apps/rain
 
       - name: Upload Artifact
         uses: actions/upload-artifact@v4
