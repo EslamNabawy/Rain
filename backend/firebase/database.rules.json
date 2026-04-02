@@ -5,12 +5,12 @@
     "users": {
       ".read": "auth != null",
       "$username": {
-        ".write": "auth != null && ((!data.exists() && newData.child('uid').val() === auth.uid) || (data.exists() && data.child('uid').val() === auth.uid && newData.child('uid').val() === auth.uid))",
+        ".write": "auth != null",
         "username": {
           ".validate": "newData.isString() && newData.val() === $username"
         },
         "uid": {
-          ".validate": "newData.isString() && newData.val() === auth.uid"
+          ".validate": "newData.isString()"
         },
         "displayName": {
           ".validate": "newData.isString() && newData.val().length > 0 && newData.val().length <= 64"
@@ -26,6 +26,9 @@
         },
         "online": {
           ".validate": "newData.isBoolean()"
+        },
+        "passwordHash": {
+          ".validate": "newData.isString() && newData.val().length >= 8"
         },
         "$other": {
           ".validate": false
