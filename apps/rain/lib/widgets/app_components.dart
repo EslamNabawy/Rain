@@ -7,15 +7,18 @@ class AppSectionCard extends StatelessWidget {
     required this.child,
     this.padding = EdgeInsets.zero,
     this.margin,
+    this.elevation = 0,
   });
 
   final Widget child;
   final EdgeInsetsGeometry padding;
   final EdgeInsetsGeometry? margin;
+  final double elevation;
 
   @override
   Widget build(BuildContext context) {
     return Card(
+      elevation: elevation,
       margin: margin,
       child: Padding(padding: padding, child: child),
     );
@@ -36,25 +39,6 @@ class AppSectionTitle extends StatelessWidget {
   Widget build(BuildContext context) {
     return Padding(
       padding: padding,
-      child: Text(
-        title,
-        style: Theme.of(context).textTheme.titleMedium?.copyWith(
-          color: Theme.of(context).colorScheme.primary,
-        ),
-      ),
-    );
-  }
-}
-
-class AppSectionHeader extends StatelessWidget {
-  const AppSectionHeader({super.key, required this.title});
-
-  final String title;
-
-  @override
-  Widget build(BuildContext context) {
-    return Padding(
-      padding: const EdgeInsets.only(left: 4, bottom: 8),
       child: Text(
         title,
         style: Theme.of(context).textTheme.titleMedium?.copyWith(
@@ -121,40 +105,6 @@ class AppStateMessage extends StatelessWidget {
           ],
         ),
       ),
-    );
-  }
-}
-
-class AppDialogActions extends StatelessWidget {
-  const AppDialogActions({
-    super.key,
-    required this.cancelLabel,
-    required this.confirmLabel,
-    required this.onCancel,
-    required this.onConfirm,
-    this.confirmStyle,
-  });
-
-  final String cancelLabel;
-  final String confirmLabel;
-  final VoidCallback onCancel;
-  final VoidCallback onConfirm;
-  final ButtonStyle? confirmStyle;
-
-  @override
-  Widget build(BuildContext context) {
-    return Wrap(
-      spacing: 12,
-      runSpacing: 8,
-      alignment: WrapAlignment.end,
-      children: <Widget>[
-        TextButton(onPressed: onCancel, child: Text(cancelLabel)),
-        FilledButton(
-          onPressed: onConfirm,
-          style: confirmStyle,
-          child: Text(confirmLabel),
-        ),
-      ],
     );
   }
 }
