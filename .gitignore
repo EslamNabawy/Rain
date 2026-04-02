@@ -4,6 +4,13 @@
 build/
 coverage/
 melos_tool/
+apps/rain/tool/dart_defines.local.json
+final product/
+backend/firebase/.firebase/
+backend/firebase/functions/node_modules/
+backend/firebase/functions/.runtimeconfig.json
+backend/supabase/.branches/
+backend/supabase/.temp/
 
 **/.dart_tool/
 **/.idea/
@@ -14,4 +21,3 @@ melos_tool/
 **/flutter_export_environment.sh
 **/.flutter-plugins
 **/.flutter-plugins-dependencies
-

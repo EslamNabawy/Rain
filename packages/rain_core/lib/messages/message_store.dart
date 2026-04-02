@@ -172,11 +172,13 @@ class MessageStore {
   }
 
   Future<void> markMessageStatus(String id, MessageStatus status) {
-    return (_database.update(_database.messages)
-          ..where((Messages row) => row.id.equals(id)))
-        .write(
-          MessagesCompanion(status: Value<String>(status.name)),
-        );
+    return _database.transaction(() async {
+      await (_database.update(_database.messages)
+            ..where((Messages row) => row.id.equals(id)))
+          .write(
+            MessagesCompanion(status: Value<String>(status.name)),
+          );
+    });
   }
 
   Future<int> lastIncomingSeq(String peerId) {
@@ -184,7 +186,9 @@ class MessageStore {
   }
 
   Future<void> setIncomingSeq(String peerId, int seq) {
-    return _upsertTrackedSeq(_incomingSeqKey(peerId), seq);
+    return _database.transaction(() async {
+      await _upsertTrackedSeq(_incomingSeqKey(peerId), seq);
+    });
   }
 
   Future<int> _loadTrackedSeq(String peerId) async {
@@ -249,4 +253,3 @@ class MessageStore {
   String _incomingSeqKey(String peerId) => 'in:$peerId';
   String _outgoingSeqKey(String peerId) => 'out:$peerId';
 }
-

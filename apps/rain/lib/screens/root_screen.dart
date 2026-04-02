@@ -5,6 +5,7 @@ import 'package:url_launcher/url_launcher_string.dart';
 import '../providers/app_providers.dart';
 import '../services/force_update_service.dart';
 import '../widgets/backend_banner.dart';
+import '../widgets/rain_backdrop.dart';
 import 'home_screen.dart';
 import 'onboarding_screen.dart';
 
@@ -21,18 +22,7 @@ class RootScreen extends ConsumerWidget {
       ref.watch(runtimeControllerProvider);
     }
 
-    return DecoratedBox(
-      decoration: const BoxDecoration(
-        gradient: LinearGradient(
-          begin: Alignment.topLeft,
-          end: Alignment.bottomRight,
-          colors: <Color>[
-            Color(0xFFE0F4F1),
-            Color(0xFFF8F7F3),
-            Color(0xFFFFF1E6),
-          ],
-        ),
-      ),
+    return RainBackdrop(
       child: forceUpdate.when(
         data: (result) {
           if (result.requiresUpdate) {
@@ -88,7 +78,9 @@ class _ForceUpdateGate extends StatelessWidget {
         constraints: const BoxConstraints(maxWidth: 520),
         child: Card(
           elevation: 18,
-          shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(28)),
+          shape: RoundedRectangleBorder(
+            borderRadius: BorderRadius.circular(28),
+          ),
           child: Padding(
             padding: const EdgeInsets.all(32),
             child: Column(

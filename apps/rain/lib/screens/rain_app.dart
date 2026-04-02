@@ -1,33 +1,25 @@
 import 'package:flutter/material.dart';
-import 'package:google_fonts/google_fonts.dart';
+import 'package:flutter_riverpod/flutter_riverpod.dart';
 
+import '../providers/app_providers.dart';
+import '../theme/rain_theme.dart';
 import 'root_screen.dart';
 
-class RainApp extends StatelessWidget {
+class RainApp extends ConsumerWidget {
   const RainApp({super.key});
 
   @override
-  Widget build(BuildContext context) {
-    final base = ThemeData(
-      colorScheme: ColorScheme.fromSeed(
-        seedColor: const Color(0xFF0B6E7A),
-        brightness: Brightness.light,
-      ),
-      scaffoldBackgroundColor: const Color(0xFFF1F5F4),
-      useMaterial3: true,
-    );
+  Widget build(BuildContext context, WidgetRef ref) {
+    ref.watch(themeModeProvider);
+
+    final notifier = ref.read(themeModeProvider.notifier);
 
     return MaterialApp(
       title: 'Rain',
       debugShowCheckedModeBanner: false,
-      theme: base.copyWith(
-        textTheme: GoogleFonts.spaceGroteskTextTheme(base.textTheme),
-        colorScheme: base.colorScheme.copyWith(
-          primary: const Color(0xFF0B6E7A),
-          secondary: const Color(0xFFF4A261),
-          surface: Colors.white,
-        ),
-      ),
+      themeMode: notifier.themeMode,
+      theme: RainTheme.light(),
+      darkTheme: RainTheme.dark(),
       home: const RootScreen(),
     );
   }

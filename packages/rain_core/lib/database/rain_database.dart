@@ -46,7 +46,8 @@ class ConnectionMemoryTable extends Table {
   IntColumn get lastConnectedAt => integer()();
   TextColumn get cachedIce => text()();
   TextColumn get fingerprint => text()();
-  IntColumn get consecutiveFailures => integer().withDefault(const Constant(0))();
+  IntColumn get consecutiveFailures =>
+      integer().withDefault(const Constant(0))();
 
   @override
   Set<Column<Object>> get primaryKey => <Column<Object>>{peerId};
@@ -83,5 +84,15 @@ class RainDatabase extends _$RainDatabase {
 
   @override
   int get schemaVersion => 1;
-}
 
+  Future<void> clearSessionData() {
+    return transaction(() async {
+      await delete(messages).go();
+      await delete(friends).go();
+      await delete(queuedMessages).go();
+      await delete(connectionMemoryTable).go();
+      await delete(identityTable).go();
+      await delete(messageSeqTracker).go();
+    });
+  }
+}

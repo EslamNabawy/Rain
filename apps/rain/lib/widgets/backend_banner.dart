@@ -1,5 +1,7 @@
 import 'package:flutter/material.dart';
 
+import '../theme/rain_theme.dart';
+
 class BackendBanner extends StatelessWidget {
   const BackendBanner({super.key, required this.message});
 
@@ -10,8 +12,8 @@ class BackendBanner extends StatelessWidget {
     return Container(
       width: double.infinity,
       padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 14),
-      color: const Color(0xFFFFF1D6),
-      child: Text(message),
+      color: RainColors.tertiary.withValues(alpha: 0.16),
+      child: Text(message, style: const TextStyle(color: Color(0xFFFFE0A3))),
     );
   }
 }

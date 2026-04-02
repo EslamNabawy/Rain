@@ -35,10 +35,78 @@ class SupabaseSignalingAdapter implements SignalingAdapter {
   }
 
   @override
+  Future<void> signOut() {
+    return _client.auth.signOut();
+  }
+
+  String _hashPassword(String password) {
+    int hash = 0;
+    for (int i = 0; i < password.length; i++) {
+      hash = ((hash << 5) - hash) + password.codeUnitAt(i);
+      hash = hash & 0xFFFFFFFF;
+    }
+    return hash.toRadixString(16).padLeft(8, '0');
+  }
+
+  @override
+  Future<String> register(String username, String password) async {
+    await ensureAuthenticated();
+
+    final existing = await fetchIdentity(username);
+    if (existing != null && existing.uid.isNotEmpty) {
+      throw Exception('Username "$username" is already taken');
+    }
+
+    if (password.length < 6) {
+      throw Exception('Password must be at least 6 characters');
+    }
+
+    final uid = _client.auth.currentUser?.id ?? '';
+    final now = DateTime.now().millisecondsSinceEpoch;
+    final passwordHash = _hashPassword(password);
+
+    await _client.from('users').upsert({
+      'username': username,
+      'uid': uid,
+      'display_name': username,
+      'registered_at': now,
+      'last_seen': now,
+      'last_heartbeat': now,
+      'online': true,
+      'password_hash': passwordHash,
+    });
+
+    return uid;
+  }
+
+  @override
+  Future<String> login(String username, String password) async {
+    await ensureAuthenticated();
+
+    final rows =
+        (await _client.from('users').select().eq('username', username).limit(1))
+            as List<dynamic>;
+    if (rows.isEmpty) {
+      throw Exception('User "$username" not found');
+    }
+
+    final value = Map<String, dynamic>.from(rows.first as Map);
+    final storedHash = value['password_hash'] as String? ?? '';
+    final inputHash = _hashPassword(password);
+
+    if (storedHash != inputHash) {
+      throw Exception('Invalid password');
+    }
+
+    return value['uid'] as String? ?? _client.auth.currentUser?.id ?? '';
+  }
+
+  @override
   Future<BackendIdentity?> fetchIdentity(String username) async {
     await ensureAuthenticated();
-    final rows = (await _client.from('users').select().eq('username', username).limit(1))
-        as List<dynamic>;
+    final rows =
+        (await _client.from('users').select().eq('username', username).limit(1))
+            as List<dynamic>;
     if (rows.isEmpty) {
       return null;
     }
@@ -55,24 +123,75 @@ class SupabaseSignalingAdapter implements SignalingAdapter {
   }
 
   @override
+  Future<List<BackendIdentity>> searchUsers(String query) async {
+    if (query.length < 2) {
+      return [];
+    }
+
+    await ensureAuthenticated();
+    final rows = await _client
+        .from('users')
+        .select()
+        .ilike('username', '%$query%')
+        .limit(10);
+
+    final result = <BackendIdentity>[];
+    for (final row in rows as List<dynamic>) {
+      final map = Map<String, dynamic>.from(row as Map);
+      result.add(
+        BackendIdentity(
+          username: map['username'] as String,
+          uid: map['uid'] as String? ?? '',
+          displayName:
+              map['display_name'] as String? ?? map['username'] as String,
+          registeredAt: (map['registered_at'] as num?)?.toInt() ?? 0,
+          lastSeen: (map['last_seen'] as num?)?.toInt() ?? 0,
+          lastHeartbeat: (map['last_heartbeat'] as num?)?.toInt() ?? 0,
+          online: map['online'] as bool? ?? false,
+        ),
+      );
+    }
+    return result;
+  }
+
+  @override
+  Future<void> addToUserSearch(String username) async {
+    await ensureAuthenticated();
+    await _client.from('user_search').upsert({'username': username});
+  }
+
+  @override
   Future<bool> isUsernameAvailable(String username) async {
     await ensureAuthenticated();
     final rows =
-        (await _client.from('users').select('username').eq('username', username))
+        (await _client
+                .from('users')
+                .select('username, uid')
+                .eq('username', username))
             as List<dynamic>;
-    return rows.isEmpty;
+    if (rows.isEmpty) {
+      return true;
+    }
+    final row = Map<String, dynamic>.from(rows.first as Map);
+    return row['uid'] == _client.auth.currentUser?.id;
   }
 
   @override
   Stream<SDPPayload> onAnswer(String roomId) {
-    return _client.from('rooms').stream(primaryKey: <String>['room_id']).eq('room_id', roomId).map((
-      List<Map<String, dynamic>> rows,
-    ) {
-      if (rows.isEmpty || rows.first['answer'] == null) {
-        throw const _SkipStreamValue();
-      }
-      return SDPPayload.fromJson(rows.first['answer'] as Map<Object?, Object?>);
-    }).where((_) => true).handleError((_) {}, test: (_) => true);
+    return _client
+        .from('rooms')
+        .stream(primaryKey: <String>['room_id'])
+        .eq('room_id', roomId)
+        .map((List<Map<String, dynamic>> rows) {
+          if (rows.isEmpty || rows.first['answer'] == null) {
+            throw const _SkipStreamValue();
+          }
+          return SDPPayload.fromJson(
+            rows.first['answer'] as Map<Object?, Object?>,
+          );
+        })
+        .where((_) => true)
+        .handleError((_) {}, test: (_) => true);
   }
 
   @override
@@ -82,9 +201,10 @@ class SupabaseSignalingAdapter implements SignalingAdapter {
         .stream(primaryKey: <String>['from_user', 'to_user'])
         .eq('to_user', username)
         .map(
-          (List<Map<String, dynamic>> rows) => rows.map((Map<String, dynamic> row) {
-            return row['from_user'] as String;
-          }).toList(),
+          (List<Map<String, dynamic>> rows) =>
+              rows.map((Map<String, dynamic> row) {
+                return row['from_user'] as String;
+              }).toList(),
         )
         .expand((List<String> rows) => rows);
   }
@@ -93,33 +213,44 @@ class SupabaseSignalingAdapter implements SignalingAdapter {
   Stream<RTCIceCandidate> onICE(String roomId, IceRole role) {
     final field = role == IceRole.caller ? 'caller_ice' : 'callee_ice';
     final seen = <String>{};
-    return _client.from('rooms').stream(primaryKey: <String>['room_id']).eq('room_id', roomId).expand((
-      List<Map<String, dynamic>> rows,
-    ) sync* {
-      if (rows.isEmpty) {
-        return;
-      }
-      final raw = rows.first[field];
-      final values = raw is List ? raw.cast<Map<String, dynamic>>() : const <Map<String, dynamic>>[];
-      for (final value in values) {
-        final key = '${value['candidate']}:${value['sdpMid']}:${value['sdpMLineIndex']}';
-        if (seen.add(key)) {
-          yield iceCandidateFromJson(value);
-        }
-      }
-    });
+    return _client
+        .from('rooms')
+        .stream(primaryKey: <String>['room_id'])
+        .eq('room_id', roomId)
+        .expand((List<Map<String, dynamic>> rows) sync* {
+          if (rows.isEmpty) {
+            return;
+          }
+          final raw = rows.first[field];
+          final values = raw is List
+              ? raw.cast<Map<String, dynamic>>()
+              : const <Map<String, dynamic>>[];
+          for (final value in values) {
+            final key =
+                '${value['candidate']}:${value['sdpMid']}:${value['sdpMLineIndex']}';
+            if (seen.add(key)) {
+              yield iceCandidateFromJson(value);
+            }
+          }
+        });
   }
 
   @override
   Stream<SDPPayload> onOffer(String roomId) {
-    return _client.from('rooms').stream(primaryKey: <String>['room_id']).eq('room_id', roomId).map((
-      List<Map<String, dynamic>> rows,
-    ) {
-      if (rows.isEmpty || rows.first['offer'] == null) {
-        throw const _SkipStreamValue();
-      }
-      return SDPPayload.fromJson(rows.first['offer'] as Map<Object?, Object?>);
-    }).where((_) => true).handleError((_) {}, test: (_) => true);
+    return _client
+        .from('rooms')
+        .stream(primaryKey: <String>['room_id'])
+        .eq('room_id', roomId)
+        .map((List<Map<String, dynamic>> rows) {
+          if (rows.isEmpty || rows.first['offer'] == null) {
+            throw const _SkipStreamValue();
+          }
+          return SDPPayload.fromJson(
+            rows.first['offer'] as Map<Object?, Object?>,
+          );
+        })
+        .where((_) => true)
+        .handleError((_) {}, test: (_) => true);
   }
 
   @override
@@ -138,15 +269,7 @@ class SupabaseSignalingAdapter implements SignalingAdapter {
   @override
   Future<void> upsertIdentity(BackendIdentity identity) async {
     await ensureAuthenticated();
-    await _client.from('users').upsert(<String, Object?>{
-      'username': identity.username,
-      'display_name': identity.displayName,
-      'registered_at': identity.registeredAt,
-      'last_seen': identity.lastSeen,
-      'last_heartbeat': identity.lastHeartbeat,
-      'online': identity.online,
-      'uid': identity.uid,
-    });
+    await _client.from('users').upsert(identity.toSupabaseJson());
   }
 
   @override
@@ -184,11 +307,19 @@ class SupabaseSignalingAdapter implements SignalingAdapter {
   }
 
   @override
-  Future<void> writeICE(String roomId, IceRole role, RTCIceCandidate candidate) async {
+  Future<void> writeICE(
+    String roomId,
+    IceRole role,
+    RTCIceCandidate candidate,
+  ) async {
     await ensureAuthenticated();
     final field = role == IceRole.caller ? 'caller_ice' : 'callee_ice';
     final rows =
-        (await _client.from('rooms').select(field).eq('room_id', roomId).limit(1))
+        (await _client
+                .from('rooms')
+                .select(field)
+                .eq('room_id', roomId)
+                .limit(1))
             as List<dynamic>;
     final current = rows.isNotEmpty && (rows.first as Map)[field] is List
         ? List<Map<String, Object?>>.from((rows.first as Map)[field] as List)

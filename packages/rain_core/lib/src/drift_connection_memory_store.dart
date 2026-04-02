@@ -12,9 +12,11 @@ class DriftConnectionMemoryStore implements ConnectionMemoryStore {
 
   @override
   Future<void> delete(String peerId) {
-    return (_database.delete(_database.connectionMemoryTable)
-          ..where((ConnectionMemoryTable row) => row.peerId.equals(peerId)))
-        .go();
+    return _database.transaction(() async {
+      await (_database.delete(_database.connectionMemoryTable)
+            ..where((ConnectionMemoryTable row) => row.peerId.equals(peerId)))
+          .go();
+    });
   }
 
   @override
@@ -41,16 +43,18 @@ class DriftConnectionMemoryStore implements ConnectionMemoryStore {
 
   @override
   Future<void> write(ConnectionMemory memory) {
-    return _database.into(_database.connectionMemoryTable).insertOnConflictUpdate(
-      ConnectionMemoryTableCompanion.insert(
-        peerId: memory.peerId,
-        lastConnectedAt: memory.lastConnectedAt,
-        cachedIce: jsonEncode(
-          memory.cachedIce.map(iceCandidateToJson).toList(growable: false),
+    return _database.transaction(() async {
+      await _database.into(_database.connectionMemoryTable).insertOnConflictUpdate(
+        ConnectionMemoryTableCompanion.insert(
+          peerId: memory.peerId,
+          lastConnectedAt: memory.lastConnectedAt,
+          cachedIce: jsonEncode(
+            memory.cachedIce.map(iceCandidateToJson).toList(growable: false),
+          ),
+          fingerprint: memory.fingerprint,
+          consecutiveFailures: Value<int>(memory.consecutiveFailures),
         ),
-        fingerprint: memory.fingerprint,
-        consecutiveFailures: Value<int>(memory.consecutiveFailures),
-      ),
-    );
+      );
+    });
   }
 }

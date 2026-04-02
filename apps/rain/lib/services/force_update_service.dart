@@ -36,18 +36,20 @@ class ForceUpdateService {
     }
 
     await _remoteConfig.fetchAndActivate();
-    final minVersion = _remoteConfig.getString('min_required_version');
+    final minVersion = _remoteConfig.getString('min_required_version').trim();
+    final remoteUpdateUrl = _remoteConfig.getString('update_url').trim();
     return ForceUpdateResult(
-      requiresUpdate: !_isVersionAtLeast(info.version, minVersion),
+      requiresUpdate:
+          minVersion.isNotEmpty && !_isVersionAtLeast(info.version, minVersion),
       currentVersion: info.version,
-      minVersion: minVersion,
-      updateUrl: updateUrl,
+      minVersion: minVersion.isEmpty ? info.version : minVersion,
+      updateUrl: remoteUpdateUrl.isEmpty ? updateUrl : remoteUpdateUrl,
     );
   }
 
   bool _isVersionAtLeast(String current, String minimum) {
-    final currentParts = current.split('.').map(int.parse).toList(growable: false);
-    final minimumParts = minimum.split('.').map(int.parse).toList(growable: false);
+    final currentParts = current.split('.').map(_parseVersionPart).toList(growable: false);
+    final minimumParts = minimum.split('.').map(_parseVersionPart).toList(growable: false);
     final length = currentParts.length > minimumParts.length
         ? currentParts.length
         : minimumParts.length;
@@ -63,5 +65,9 @@ class ForceUpdateService {
       }
     }
     return true;
+  }
+
+  int _parseVersionPart(String value) {
+    return int.tryParse(value) ?? 0;
   }
 }

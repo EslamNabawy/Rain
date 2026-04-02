@@ -7,3 +7,4 @@ export 'messages/message_envelope.dart';
 export 'messages/message_store.dart';
 export 'messages/offline_queue.dart';
 export 'src/drift_connection_memory_store.dart';
+export 'src/input_validator.dart';

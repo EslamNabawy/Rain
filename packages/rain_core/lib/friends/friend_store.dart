@@ -2,12 +2,7 @@ import 'package:drift/drift.dart';
 
 import '../database/rain_database.dart';
 
-enum FriendState {
-  pendingOutgoing,
-  pendingIncoming,
-  friend,
-  blocked,
-}
+enum FriendState { pendingOutgoing, pendingIncoming, friend, blocked }
 
 class FriendRecord {
   const FriendRecord({
@@ -52,6 +47,14 @@ class FriendStore {
     return (await query.get()).map(_mapRecord).toList(growable: false);
   }
 
+  Future<FriendRecord?> loadFriend(String username) async {
+    final query = _database.select(_database.friends)
+      ..where((Friends row) => row.username.equals(username))
+      ..limit(1);
+    final row = await query.getSingleOrNull();
+    return row == null ? null : _mapRecord(row);
+  }
+
   Future<void> upsertFriend({
     required String username,
     required String displayName,
@@ -59,53 +62,73 @@ class FriendStore {
     int? addedAt,
   }) {
     return _database.transaction(() async {
-      await _database.into(_database.friends).insertOnConflictUpdate(
-        FriendsCompanion.insert(
-          username: username,
-          displayName: displayName,
-          state: state.name,
-          addedAt: addedAt ?? DateTime.now().millisecondsSinceEpoch,
-        ),
-      );
+      await _database
+          .into(_database.friends)
+          .insertOnConflictUpdate(
+            FriendsCompanion.insert(
+              username: username,
+              displayName: displayName,
+              state: state.name,
+              addedAt: addedAt ?? DateTime.now().millisecondsSinceEpoch,
+            ),
+          );
     });
   }
 
   Future<void> markAccepted(String username, {String? displayName}) {
     return _database.transaction(() async {
-      await (_database.update(_database.friends)
-            ..where((Friends row) => row.username.equals(username)))
-          .write(
-            FriendsCompanion(
-              displayName: displayName == null
-                  ? const Value<String>.absent()
-                  : Value<String>(displayName),
-              state: Value<String>(FriendState.friend.name),
-            ),
-          );
+      await (_database.update(
+        _database.friends,
+      )..where((Friends row) => row.username.equals(username))).write(
+        FriendsCompanion(
+          displayName: displayName == null
+              ? const Value<String>.absent()
+              : Value<String>(displayName),
+          state: Value<String>(FriendState.friend.name),
+        ),
+      );
+    });
+  }
+
+  Future<void> reject(String username) {
+    return _database.transaction(() async {
+      await (_database.delete(
+        _database.friends,
+      )..where((Friends row) => row.username.equals(username))).go();
     });
   }
 
   Future<void> block(String username) {
     return _database.transaction(() async {
-      await (_database.update(_database.friends)
-            ..where((Friends row) => row.username.equals(username)))
-          .write(
-            FriendsCompanion(state: Value<String>(FriendState.blocked.name)),
-          );
+      await (_database.update(
+        _database.friends,
+      )..where((Friends row) => row.username.equals(username))).write(
+        FriendsCompanion(state: Value<String>(FriendState.blocked.name)),
+      );
+    });
+  }
+
+  Future<void> unblock(String username) {
+    return _database.transaction(() async {
+      await (_database.update(
+        _database.friends,
+      )..where((Friends row) => row.username.equals(username))).write(
+        FriendsCompanion(state: Value<String>(FriendState.friend.name)),
+      );
     });
   }
 
   Future<void> updatePresence(String username, bool isOnline) {
     return _database.transaction(() async {
-      await (_database.update(_database.friends)
-            ..where((Friends row) => row.username.equals(username)))
-          .write(
-            FriendsCompanion(
-              lastOnlineAt: Value<int?>(
-                isOnline ? DateTime.now().millisecondsSinceEpoch : null,
-              ),
-            ),
-          );
+      await (_database.update(
+        _database.friends,
+      )..where((Friends row) => row.username.equals(username))).write(
+        FriendsCompanion(
+          lastOnlineAt: Value<int?>(
+            isOnline ? DateTime.now().millisecondsSinceEpoch : null,
+          ),
+        ),
+      );
     });
   }
 
@@ -118,27 +141,26 @@ class FriendStore {
       if (existing == null) {
         return;
       }
-      await (_database.update(_database.friends)
-            ..where((Friends row) => row.username.equals(username)))
-          .write(
-            FriendsCompanion(
-              unreadCount: Value<int>(existing.unreadCount + 1),
-            ),
-          );
+      await (_database.update(
+        _database.friends,
+      )..where((Friends row) => row.username.equals(username))).write(
+        FriendsCompanion(unreadCount: Value<int>(existing.unreadCount + 1)),
+      );
     });
   }
 
   Future<void> clearUnread(String username) {
-    return (_database.update(_database.friends)
-          ..where((Friends row) => row.username.equals(username)))
-        .write(
-          const FriendsCompanion(unreadCount: Value<int>(0)),
-        );
+    return _database.transaction(() async {
+      await (_database.update(_database.friends)
+            ..where((Friends row) => row.username.equals(username)))
+          .write(const FriendsCompanion(unreadCount: Value<int>(0)));
+    });
   }
 
   FriendRecord _mapRecord(Friend row) {
     final lastOnlineAt = row.lastOnlineAt;
-    final isOnline = lastOnlineAt != null &&
+    final isOnline =
+        lastOnlineAt != null &&
         DateTime.now().difference(
               DateTime.fromMillisecondsSinceEpoch(lastOnlineAt),
             ) <
@@ -154,4 +176,3 @@ class FriendStore {
     );
   }
 }
-

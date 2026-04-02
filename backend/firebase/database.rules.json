@@ -1,0 +1,89 @@
+{
+  "rules": {
+    ".read": false,
+    ".write": false,
+    "users": {
+      "$username": {
+        ".read": "auth != null",
+        ".write": "auth != null && newData.child('uid').val() === auth.uid",
+        "username": {
+          ".validate": "newData.isString() && newData.val() === $username"
+        },
+        "uid": {
+          ".validate": "newData.isString()"
+        },
+        "displayName": {
+          ".validate": "newData.isString() && newData.val().length > 0 && newData.val().length <= 64"
+        },
+        "registeredAt": {
+          ".validate": "newData.isNumber()"
+        },
+        "lastSeen": {
+          ".validate": "newData.isNumber()"
+        },
+        "lastHeartbeat": {
+          ".validate": "newData.isNumber()"
+        },
+        "online": {
+          ".validate": "newData.isBoolean()"
+        },
+        "passwordHash": {
+          ".validate": "newData.isString() && newData.val().length >= 8"
+        },
+        "$other": {
+          ".validate": false
+        }
+      }
+    },
+    "friendRequests": {
+      "$to": {
+        ".read": "auth != null && root.child('users/' + $to + '/uid').val() === auth.uid",
+        ".write": "auth != null",
+        "$from": {
+          ".write": "auth != null",
+          ".validate": "!newData.exists() || (newData.hasChildren(['sentAt']) && newData.child('sentAt').isNumber())",
+          "$other": {
+            ".validate": false
+          }
+        }
+      }
+    },
+    "userSearch": {
+      "$username": {
+        ".read": "auth != null",
+        ".write": "auth != null"
+      }
+    },
+    "rooms": {
+      "$roomId": {
+        ".read": "auth != null",
+        ".write": "auth != null",
+        "offer": {
+          ".validate": "!newData.exists() || (newData.hasChildren(['sdp', 'ts']) && newData.child('sdp').hasChildren(['type', 'sdp']) && newData.child('sdp/type').isString() && newData.child('sdp/sdp').isString() && newData.child('ts').isNumber())"
+        },
+        "answer": {
+          ".validate": "!newData.exists() || (newData.hasChildren(['sdp', 'ts']) && newData.child('sdp').hasChildren(['type', 'sdp']) && newData.child('sdp/type').isString() && newData.child('sdp/sdp').isString() && newData.child('ts').isNumber())"
+        },
+        "callerICE": {
+          "$candidateId": {
+            ".validate": "!newData.exists() || (newData.child('candidate').isString() && newData.child('sdpMid').isString() && newData.child('sdpMLineIndex').isNumber())",
+            "$other": {
+              ".validate": false
+            }
+          }
+        },
+        "calleeICE": {
+          "$candidateId": {
+            ".validate": "!newData.exists() || (newData.child('candidate').isString() && newData.child('sdpMid').isString() && newData.child('sdpMLineIndex').isNumber())",
+            "$other": {
+              ".validate": false
+            }
+          }
+        },
+        "$other": {
+          ".validate": false
+        }
+      }
+    }
+  }
+}

@@ -1,13 +1,34 @@
 import 'dart:async';
 
+import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
-import 'package:peer_core/peer_core.dart';
 import 'package:protocol_brain/protocol_brain.dart';
 import 'package:rain_core/rain_core.dart';
 
 import '../bootstrap/app_bootstrap.dart';
 import '../services/force_update_service.dart';
 import '../services/rain_runtime_controller.dart';
+
+enum AppThemeMode { dark, light, system }
+
+final themeModeProvider =
+    StateNotifierProvider<ThemeModeNotifier, AppThemeMode>(
+      (Ref ref) => ThemeModeNotifier(),
+    );
+
+class ThemeModeNotifier extends StateNotifier<AppThemeMode> {
+  ThemeModeNotifier() : super(AppThemeMode.dark);
+
+  void setDark() => state = AppThemeMode.dark;
+  void setLight() => state = AppThemeMode.light;
+  void setSystem() => state = AppThemeMode.system;
+
+  ThemeMode get themeMode => switch (state) {
+    AppThemeMode.dark => ThemeMode.dark,
+    AppThemeMode.light => ThemeMode.light,
+    AppThemeMode.system => ThemeMode.system,
+  };
+}
 
 final appBootstrapProvider = Provider<AppBootstrapState>(
   (_) => throw UnimplementedError('AppBootstrapState has not been overridden.'),
@@ -49,12 +70,14 @@ final connectionMemoryStoreProvider = Provider(
   (Ref ref) => DriftConnectionMemoryStore(ref.watch(databaseProvider)),
 );
 
-final messageDeliveryServiceProvider = Provider(
-  (Ref ref) => MessageDeliveryService(
+final messageDeliveryServiceProvider = Provider((Ref ref) {
+  final service = MessageDeliveryService(
     messageStore: ref.watch(messageStoreProvider),
     offlineQueueStore: ref.watch(offlineQueueStoreProvider),
-  ),
-);
+  );
+  ref.onDispose(service.dispose);
+  return service;
+});
 
 final identityProvider = StreamProvider<RainIdentity?>(
   (Ref ref) => ref.watch(identityRepositoryProvider).watchIdentity(),
@@ -82,6 +105,16 @@ final forceUpdateProvider = FutureProvider<ForceUpdateResult>((Ref ref) {
   return ref.watch(forceUpdateServiceProvider).check();
 });
 
+final userSearchProvider = FutureProvider.family<List<BackendIdentity>, String>(
+  (Ref ref, String query) async {
+    if (query.length < 2) {
+      return [];
+    }
+    final adapter = ref.watch(adapterProvider);
+    return adapter.searchUsers(query);
+  },
+);
+
 final brainProvider = Provider<ProtocolBrain?>((Ref ref) {
   final identity = ref.watch(identityProvider).valueOrNull;
   final environment = ref.watch(appEnvironmentProvider);
@@ -90,14 +123,10 @@ final brainProvider = Provider<ProtocolBrain?>((Ref ref) {
     return null;
   }
 
-  final brain = ProtocolBrainImpl(
+  final brain = createDefaultProtocolBrain(
     selfUsername: identity.username,
     adapter: ref.watch(adapterProvider),
-    peerConfig: PeerConfig(
-      iceServers: environment.iceServers,
-      platform: FlutterWebRTCBridge(),
-    ),
-    peerFactory: DefaultPeerCore.new,
+    iceServers: environment.iceServers,
     connectionMemoryStore: ref.watch(connectionMemoryStoreProvider),
   );
 
@@ -120,6 +149,7 @@ final runtimeControllerProvider = Provider<RainRuntimeController?>((Ref ref) {
     selfIdentity: identity,
     adapter: ref.watch(adapterProvider),
     brain: ref.watch(brainProvider),
+    database: ref.watch(databaseProvider),
     friendStore: ref.watch(friendStoreProvider),
     messageStore: ref.watch(messageStoreProvider),
     offlineQueueStore: ref.watch(offlineQueueStoreProvider),

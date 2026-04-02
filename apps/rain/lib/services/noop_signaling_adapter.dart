@@ -31,9 +31,56 @@ class NoopSignalingAdapter implements SignalingAdapter {
   Future<void> ensureAuthenticated() async {}
 
   @override
+  Future<void> signOut() async {}
+
+  @override
+  Future<String> register(String username, String password) async {
+    if (_identities.containsKey(username)) {
+      throw Exception('Username "$username" is already taken');
+    }
+    final uid = 'local-${DateTime.now().millisecondsSinceEpoch}';
+    _identities[username] = BackendIdentity(
+      username: username,
+      uid: uid,
+      displayName: username,
+      registeredAt: DateTime.now().millisecondsSinceEpoch,
+      lastSeen: DateTime.now().millisecondsSinceEpoch,
+      lastHeartbeat: DateTime.now().millisecondsSinceEpoch,
+      online: true,
+    );
+    _presence[username] = true;
+    return uid;
+  }
+
+  @override
+  Future<String> login(String username, String password) async {
+    final identity = _identities[username];
+    if (identity == null) {
+      throw Exception('User "$username" not found');
+    }
+    return identity.uid;
+  }
+
+  @override
   Future<BackendIdentity?> fetchIdentity(String username) async {
     return _identities[username];
   }
+
+  @override
+  Future<List<BackendIdentity>> searchUsers(String query) async {
+    if (query.length < 2) {
+      return [];
+    }
+    final queryLower = query.toLowerCase();
+    return _identities.values
+        .where(
+          (identity) => identity.username.toLowerCase().contains(queryLower),
+        )
+        .toList();
+  }
+
+  @override
+  Future<void> addToUserSearch(String username) async {}
 
   @override
   Future<bool> isUsernameAvailable(String username) async {
@@ -41,12 +88,12 @@ class NoopSignalingAdapter implements SignalingAdapter {
   }
 
   @override
-  Stream<SDPPayload> onAnswer(String roomId) => const Stream<SDPPayload>.empty();
+  Stream<SDPPayload> onAnswer(String roomId) =>
+      const Stream<SDPPayload>.empty();
 
   @override
-  Stream<String> onFriendRequest(String username) async* {
-    yield* _friendRequestController(username).stream;
-  }
+  Stream<String> onFriendRequest(String username) =>
+      _friendRequestController(username).stream;
 
   @override
   Stream<RTCIceCandidate> onICE(String roomId, IceRole role) =>
@@ -82,7 +129,11 @@ class NoopSignalingAdapter implements SignalingAdapter {
   }
 
   @override
-  Future<void> writeICE(String roomId, IceRole role, RTCIceCandidate candidate) async {}
+  Future<void> writeICE(
+    String roomId,
+    IceRole role,
+    RTCIceCandidate candidate,
+  ) async {}
 
   @override
   Future<void> writeOffer(String roomId, SDPPayload offer) async {}

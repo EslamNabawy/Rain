@@ -3,6 +3,10 @@ import 'package:flutter_webrtc/flutter_webrtc.dart';
 abstract class SignalingAdapter {
   Future<void> ensureAuthenticated();
   Future<String> currentUid();
+  Future<void> signOut();
+
+  Future<String> register(String username, String password);
+  Future<String> login(String username, String password);
 
   Future<void> writeOffer(String roomId, SDPPayload offer);
   Future<void> writeAnswer(String roomId, SDPPayload answer);
@@ -18,6 +22,9 @@ abstract class SignalingAdapter {
   Future<bool> isUsernameAvailable(String username);
   Future<void> upsertIdentity(BackendIdentity identity);
   Future<BackendIdentity?> fetchIdentity(String username);
+
+  Future<void> addToUserSearch(String username);
+  Future<List<BackendIdentity>> searchUsers(String query);
 
   Future<void> writeFriendRequest(String to, String from);
   Stream<String> onFriendRequest(String username);
@@ -42,7 +49,8 @@ class SDPPayload {
   }
 
   static SDPPayload fromJson(Map<Object?, Object?> json) {
-    final sdpMap = (json['sdp'] as Map<Object?, Object?>?) ?? <Object?, Object?>{};
+    final sdpMap =
+        (json['sdp'] as Map<Object?, Object?>?) ?? <Object?, Object?>{};
     return SDPPayload(
       sdp: RTCSessionDescription(
         sdpMap['sdp'] as String?,
@@ -72,15 +80,24 @@ class BackendIdentity {
   final int lastHeartbeat;
   final bool online;
 
-  Map<String, Object?> toJson() {
+  Map<String, Object?> toFirebaseJson() {
     return <String, Object?>{
       'username': username,
       'displayName': displayName,
       'registeredAt': registeredAt,
-      'registered_at': registeredAt,
       'lastSeen': lastSeen,
-      'last_seen': lastSeen,
       'lastHeartbeat': lastHeartbeat,
+      'online': online,
+      'uid': uid,
+    };
+  }
+
+  Map<String, Object?> toSupabaseJson() {
+    return <String, Object?>{
+      'username': username,
+      'display_name': displayName,
+      'registered_at': registeredAt,
+      'last_seen': lastSeen,
       'last_heartbeat': lastHeartbeat,
       'online': online,
       'uid': uid,

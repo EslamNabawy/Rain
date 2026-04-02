@@ -49,14 +49,16 @@ class IdentityRepository {
   }
 
   Future<void> updateDisplayName(String displayName) {
-    return (_database.update(_database.identityTable)..where(
-          (IdentityTable table) => table.id.isBiggerThanValue(0),
-        ))
-        .write(
-          IdentityTableCompanion(
-            displayName: Value<String>(displayName),
-          ),
-        );
+    return _database.transaction(() async {
+      await (_database.update(_database.identityTable)..where(
+            (IdentityTable table) => table.id.isBiggerThanValue(0),
+          ))
+          .write(
+            IdentityTableCompanion(
+              displayName: Value<String>(displayName),
+            ),
+          );
+    });
   }
 
   RainIdentity? _mapIdentity(IdentityTableData? data) {

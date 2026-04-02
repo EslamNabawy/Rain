@@ -10,9 +10,9 @@ environment:
 dependencies:
   flutter:
     sdk: flutter
-  collection: ^1.19.1
   firebase_auth: ^6.1.1
   firebase_database: ^12.0.4
+  collection: ^1.19.1
   flutter_webrtc: ^0.14.2
   peer_core:
     path: ../peer_core
