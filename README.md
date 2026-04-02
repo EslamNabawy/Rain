@@ -49,6 +49,37 @@ cd apps/rain
 flutter run -d windows --dart-define=RAIN_BACKEND=noop
 ```
 
+## UI And Navigation
+
+Rain uses a simple gated entry flow:
+
+```mermaid
+flowchart TD
+  A["App start"] --> B["Force update check"]
+  B -->|update required| C["Update gate"]
+  B -->|identity missing| D["Onboarding"]
+  B -->|identity present| E["Home"]
+  D --> E
+  E --> F["Search users"]
+  E --> G["Settings"]
+  E --> H["Friend profile"]
+  E --> I["Chat panel"]
+```
+
+- `RootScreen` decides whether the app shows the update gate, onboarding, or the main shell.
+- `OnboardingScreen` creates or logs in the local identity, then saves it to Drift.
+- `HomeScreen` is the main hub. It shows the friend list, conversation panel, and the top-bar actions.
+- `SearchScreen` is used to find users and send friend requests.
+- `SettingsScreen` handles display name changes, theme selection, and blocked users.
+- `FriendProfileScreen` exposes the same friend actions from a detail view.
+
+Navigation behavior inside the shell is intentionally compact:
+
+- Selecting a friend opens the chat panel.
+- On narrow widths, the chat panel replaces the friend list and uses an in-panel back button.
+- Long-pressing a friend opens the profile page.
+- The add-friend, search, settings, and logout actions all live in the `HomeScreen` header.
+
 ## Dart Defines
 
 The app reads compile-time configuration from `apps/rain/tool/dart_defines.local.json`. The supported keys are:

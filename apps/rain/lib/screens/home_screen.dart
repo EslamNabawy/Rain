@@ -4,10 +4,8 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:rain_core/rain_core.dart';
 
 import '../providers/app_providers.dart';
+import '../navigation/app_routes.dart';
 import '../services/rain_runtime_controller.dart';
-import 'friend_profile_screen.dart';
-import 'search_screen.dart';
-import 'settings_screen.dart';
 
 class LowerCaseTextFormatter extends TextInputFormatter {
   @override
@@ -257,15 +255,11 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
   }
 
   void _openSettings() {
-    Navigator.of(
-      context,
-    ).push(MaterialPageRoute(builder: (_) => const SettingsScreen()));
+    Navigator.of(context).push(AppRoutes.settings());
   }
 
   void _openSearch() {
-    Navigator.of(
-      context,
-    ).push(MaterialPageRoute(builder: (_) => const SearchScreen()));
+    Navigator.of(context).push(AppRoutes.search());
   }
 }
 
@@ -459,9 +453,7 @@ class _FriendTile extends ConsumerWidget {
     final isOnline = presence.valueOrNull ?? friend.isOnline;
 
     void openProfile() {
-      Navigator.of(context).push(
-        MaterialPageRoute(builder: (_) => FriendProfileScreen(friend: friend)),
-      );
+      Navigator.of(context).push(AppRoutes.friendProfile(friend));
     }
 
     return Material(
