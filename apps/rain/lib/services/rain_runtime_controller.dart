@@ -61,7 +61,7 @@ class RainRuntimeController {
       }
     }
 
-    _heartbeatTimer = Timer.periodic(const Duration(minutes: 2), (Timer timer) {
+    _heartbeatTimer = Timer.periodic(const Duration(minutes: 3), (Timer timer) {
       if (!_shutDown && _started) {
         adapter.setPresence(selfIdentity.username, true);
       }

@@ -12,6 +12,8 @@ String roomId(String a, String b) {
   return sorted.join(':');
 }
 
+const Duration _handshakeTimeout = Duration(seconds: 30);
+
 class ProtocolBrainImpl implements ProtocolBrain {
   ProtocolBrainImpl({
     required this.selfUsername,
@@ -51,6 +53,7 @@ class ProtocolBrainImpl implements ProtocolBrain {
   Future<Session> connect(String peerId) async {
     await registerPeer(peerId);
     final active = await _ensureSession(peerId);
+    active.shouldReconnect = true;
     if (active.bound &&
         (active.snapshot.state == SessionState.connected ||
             active.snapshot.state == SessionState.connecting ||
@@ -130,6 +133,7 @@ class ProtocolBrainImpl implements ProtocolBrain {
 
     active.subscriptions.add(
       active.peer.onConnected.listen((_) {
+        active.cancelHandshakeTimeout();
         active.retryAttempt = 0;
         final connectedAt = DateTime.now().millisecondsSinceEpoch;
         _updateSession(
@@ -196,6 +200,7 @@ class ProtocolBrainImpl implements ProtocolBrain {
     active.answerSubscription = adapter.onAnswer(active.roomId).listen((
       SDPPayload payload,
     ) async {
+      active.cancelHandshakeTimeout();
       await active.peer.setAnswer(payload.sdp);
     });
   }
@@ -274,6 +279,9 @@ class ProtocolBrainImpl implements ProtocolBrain {
       await _recreatePeer(active);
     }
     await _bindPeerCore(active, IceRole.caller);
+    active.startHandshakeTimeout(
+      () => _handleHandshakeTimeout(active.peerId),
+    );
     _updateSession(
       active.peerId,
       active.snapshot.copyWith(
@@ -348,6 +356,28 @@ class ProtocolBrainImpl implements ProtocolBrain {
     }
     active.snapshot = session;
   }
+
+  Future<void> _handleHandshakeTimeout(String peerId) async {
+    final active = _sessions[peerId];
+    if (active == null) {
+      return;
+    }
+    if (active.snapshot.state == SessionState.connected) {
+      return;
+    }
+
+    await active.disposePeerBindings();
+    await active.peer.destroy();
+    active.bound = false;
+    active.remoteIceCache.clear();
+    active.answerSubscription = null;
+    active.iceSubscriptions.clear();
+    active.retryAttempt = 0;
+    _updateSession(
+      peerId,
+      active.snapshot.copyWith(state: SessionState.failed),
+    );
+  }
 }
 
 class _ActiveSession {
@@ -373,6 +403,7 @@ class _ActiveSession {
   bool usedCachedReconnect = false;
   bool shouldReconnect = true;
   StreamSubscription<SDPPayload>? answerSubscription;
+  Timer? handshakeTimeoutTimer;
 
   Future<void> dispose() async {
     shouldReconnect = false;
@@ -381,6 +412,7 @@ class _ActiveSession {
   }
 
   Future<void> disposePeerBindings() async {
+    cancelHandshakeTimeout();
     await answerSubscription?.cancel();
     answerSubscription = null;
     for (final subscription in subscriptions) {
@@ -391,5 +423,17 @@ class _ActiveSession {
       await subscription.cancel();
     }
     iceSubscriptions.clear();
+  }
+
+  void startHandshakeTimeout(Future<void> Function() onTimeout) {
+    cancelHandshakeTimeout();
+    handshakeTimeoutTimer = Timer(_handshakeTimeout, () {
+      unawaited(onTimeout());
+    });
+  }
+
+  void cancelHandshakeTimeout() {
+    handshakeTimeoutTimer?.cancel();
+    handshakeTimeoutTimer = null;
   }
 }
