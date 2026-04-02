@@ -28,6 +28,7 @@ class RainRuntimeController {
 
   final List<StreamSubscription<dynamic>> _subscriptions =
       <StreamSubscription<dynamic>>[];
+  Timer? _heartbeatTimer;
   bool _started = false;
   bool _shutDown = false;
 
@@ -59,6 +60,12 @@ class RainRuntimeController {
         await brain?.registerPeer(friend.username);
       }
     }
+
+    _heartbeatTimer = Timer.periodic(const Duration(minutes: 2), (Timer timer) {
+      if (!_shutDown && _started) {
+        adapter.setPresence(selfIdentity.username, true);
+      }
+    });
 
     _subscriptions.add(
       adapter.onFriendRequest(selfIdentity.username).listen((
@@ -282,6 +289,8 @@ class RainRuntimeController {
         await brain!.disconnect(session.peerId);
       }
     }
+
+    _heartbeatTimer?.cancel();
 
     for (final subscription in _subscriptions) {
       await subscription.cancel();

@@ -118,14 +118,24 @@ class _OnboardingScreenState extends ConsumerState<OnboardingScreen> {
   Future<void> _submit() async {
     final adapter = ref.read(adapterProvider);
     final identityRepository = ref.read(identityRepositoryProvider);
-    final username = _usernameController.text.trim().toLowerCase();
-    final displayName = _displayNameController.text.trim().isEmpty
+    final username = InputValidator.normalizeUsername(_usernameController.text);
+    final rawDisplayName = _displayNameController.text.trim();
+    final displayName = rawDisplayName.isEmpty
         ? username
-        : _displayNameController.text.trim();
+        : InputValidator.normalizeDisplayName(rawDisplayName);
 
-    if (!RainIdentity.isValidUsername(username)) {
+    final usernameError = InputValidator.usernameError(username);
+    if (usernameError != null) {
       setState(() {
-        _error = 'Use 3-24 lowercase letters, numbers, or underscores.';
+        _error = usernameError;
+      });
+      return;
+    }
+
+    final displayNameError = InputValidator.displayNameError(displayName);
+    if (displayNameError != null) {
+      setState(() {
+        _error = displayNameError;
       });
       return;
     }

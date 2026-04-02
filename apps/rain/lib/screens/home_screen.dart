@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:rain_core/rain_core.dart';
 
@@ -7,6 +8,19 @@ import '../services/rain_runtime_controller.dart';
 import 'friend_profile_screen.dart';
 import 'search_screen.dart';
 import 'settings_screen.dart';
+
+class LowerCaseTextFormatter extends TextInputFormatter {
+  @override
+  TextEditingValue formatEditUpdate(
+    TextEditingValue oldValue,
+    TextEditingValue newValue,
+  ) {
+    return TextEditingValue(
+      text: newValue.text.toLowerCase(),
+      selection: newValue.selection,
+    );
+  }
+}
 
 class HomeScreen extends ConsumerStatefulWidget {
   const HomeScreen({super.key});
@@ -140,7 +154,16 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
           title: const Text('Add friend'),
           content: TextField(
             controller: controller,
-            decoration: const InputDecoration(hintText: 'username'),
+            decoration: InputDecoration(
+              hintText: 'username',
+              helperText: '3-24 lowercase letters, numbers, underscores',
+              counterText: '',
+            ),
+            maxLength: InputValidator.usernameMaxLength,
+            inputFormatters: [
+              FilteringTextInputFormatter.allow(RegExp(r'[a-z0-9_]')),
+              LowerCaseTextFormatter(),
+            ],
           ),
           actions: <Widget>[
             TextButton(
@@ -149,10 +172,18 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
             ),
             FilledButton(
               onPressed: () async {
-                Navigator.of(context).pop();
-                await runtime?.sendFriendRequest(
-                  controller.text.trim().toLowerCase(),
+                final username = InputValidator.normalizeUsername(
+                  controller.text,
                 );
+                final error = InputValidator.usernameError(username);
+                if (error != null) {
+                  ScaffoldMessenger.of(
+                    context,
+                  ).showSnackBar(SnackBar(content: Text(error)));
+                  return;
+                }
+                Navigator.of(context).pop();
+                await runtime?.sendFriendRequest(username);
               },
               child: const Text('Send request'),
             ),
@@ -531,6 +562,8 @@ class _ChatPanel extends ConsumerStatefulWidget {
 
 class _ChatPanelState extends ConsumerState<_ChatPanel> {
   final TextEditingController _composerController = TextEditingController();
+  bool _isConnecting = false;
+  bool _isSending = false;
 
   @override
   void dispose() {
@@ -606,11 +639,21 @@ class _ChatPanelState extends ConsumerState<_ChatPanel> {
                           ),
                         ),
                         FilledButton.tonalIcon(
-                          onPressed: runtime == null
+                          onPressed: runtime == null || _isConnecting
                               ? null
-                              : () => runtime.connectPeer(widget.peerId),
-                          icon: const Icon(Icons.wifi_tethering),
-                          label: const Text('Connect'),
+                              : () => _connectToPeer(runtime),
+                          icon: _isConnecting
+                              ? const SizedBox(
+                                  width: 16,
+                                  height: 16,
+                                  child: CircularProgressIndicator(
+                                    strokeWidth: 2,
+                                  ),
+                                )
+                              : const Icon(Icons.wifi_tethering),
+                          label: Text(
+                            _isConnecting ? 'Connecting...' : 'Connect',
+                          ),
                         ),
                       ],
                     ),
@@ -709,8 +752,16 @@ class _ChatPanelState extends ConsumerState<_ChatPanel> {
                           controller: _composerController,
                           minLines: 1,
                           maxLines: 5,
-                          decoration: const InputDecoration(
+                          maxLength: InputValidator.messageMaxLength,
+                          decoration: InputDecoration(
                             hintText: 'Write a message',
+                            counterText: '',
+                            suffixIcon: _composerController.text.length > 3800
+                                ? Icon(
+                                    Icons.warning_amber_rounded,
+                                    color: Theme.of(context).colorScheme.error,
+                                  )
+                                : null,
                           ),
                         ),
                         const SizedBox(height: 12),
@@ -731,8 +782,18 @@ class _ChatPanelState extends ConsumerState<_ChatPanel> {
                             controller: _composerController,
                             minLines: 1,
                             maxLines: 5,
-                            decoration: const InputDecoration(
+                            maxLength: InputValidator.messageMaxLength,
+                            decoration: InputDecoration(
                               hintText: 'Write a message',
+                              counterText: '',
+                              suffixIcon: _composerController.text.length > 3800
+                                  ? Icon(
+                                      Icons.warning_amber_rounded,
+                                      color: Theme.of(
+                                        context,
+                                      ).colorScheme.error,
+                                    )
+                                  : null,
                             ),
                           ),
                         ),
@@ -785,12 +846,28 @@ class _ChatPanelState extends ConsumerState<_ChatPanel> {
 
   Future<void> _sendMessage(RainRuntimeController? runtime) async {
     final text = _composerController.text.trim();
-    if (text.isEmpty) {
+    if (text.isEmpty || _isSending) {
       return;
     }
 
+    setState(() => _isSending = true);
     _composerController.clear();
     await runtime?.sendMessage(widget.peerId, text);
+    if (mounted) {
+      setState(() => _isSending = false);
+    }
+  }
+
+  Future<void> _connectToPeer(RainRuntimeController? runtime) async {
+    if (runtime == null || _isConnecting) return;
+    setState(() => _isConnecting = true);
+    try {
+      await runtime.connectPeer(widget.peerId);
+    } finally {
+      if (mounted) {
+        setState(() => _isConnecting = false);
+      }
+    }
   }
 }
 

@@ -16,6 +16,19 @@ class FirebaseSignalingAdapter implements SignalingAdapter {
 
   DatabaseReference get _root => _database.ref();
 
+  static const int _presenceTimeoutMs = 7 * 60 * 1000;
+  static const int _searchLimit = 10;
+
+  final Map<String, BackendIdentity> _identityCache =
+      <String, BackendIdentity>{};
+  int _cacheTimestamp = 0;
+  static const int _cacheMaxAgeMs = 30 * 1000;
+
+  bool _isCacheValid() {
+    return DateTime.now().millisecondsSinceEpoch - _cacheTimestamp <
+        _cacheMaxAgeMs;
+  }
+
   @override
   Future<void> deleteRoom(String roomId) async {
     await ensureAuthenticated();
@@ -52,7 +65,7 @@ class FirebaseSignalingAdapter implements SignalingAdapter {
       return null;
     }
     final value = snapshot.value! as Map<Object?, Object?>;
-    return BackendIdentity(
+    final identity = BackendIdentity(
       username: username,
       uid: value['uid'] as String? ?? '',
       displayName: value['displayName'] as String? ?? username,
@@ -61,6 +74,8 @@ class FirebaseSignalingAdapter implements SignalingAdapter {
       lastHeartbeat: (value['lastHeartbeat'] as num?)?.toInt() ?? 0,
       online: value['online'] as bool? ?? false,
     );
+    _identityCache[username] = identity;
+    return identity;
   }
 
   @override
@@ -72,26 +87,52 @@ class FirebaseSignalingAdapter implements SignalingAdapter {
     await ensureAuthenticated();
     final queryLower = query.toLowerCase();
 
-    final snapshot = await _root.child('users').get();
-    if (!snapshot.exists || snapshot.value is! Map<Object?, Object?>) {
-      return [];
-    }
+    if (!_isCacheValid()) {
+      final snapshot = await _root.child('users').get();
+      if (!snapshot.exists || snapshot.value is! Map<Object?, Object?>) {
+        return [];
+      }
 
-    final results = <BackendIdentity>[];
-    final usersData = snapshot.value! as Map<Object?, Object?>;
-
-    for (final entry in usersData.entries) {
-      final username = entry.key as String?;
-      if (username != null && username.toLowerCase().contains(queryLower)) {
-        final identity = await fetchIdentity(username);
-        if (identity != null) {
-          results.add(identity);
+      _identityCache.clear();
+      final usersData = snapshot.value! as Map<Object?, Object?>;
+      for (final entry in usersData.entries) {
+        final username = entry.key as String?;
+        if (username != null && entry.value is Map<Object?, Object?>) {
+          final value = entry.value as Map<Object?, Object?>;
+          _identityCache[username] = BackendIdentity(
+            username: username,
+            uid: value['uid'] as String? ?? '',
+            displayName: value['displayName'] as String? ?? username,
+            registeredAt: (value['registeredAt'] as num?)?.toInt() ?? 0,
+            lastSeen: (value['lastSeen'] as num?)?.toInt() ?? 0,
+            lastHeartbeat: (value['lastHeartbeat'] as num?)?.toInt() ?? 0,
+            online: value['online'] as bool? ?? false,
+          );
         }
       }
-      if (results.length >= 10) break;
+      _cacheTimestamp = DateTime.now().millisecondsSinceEpoch;
     }
 
-    return results;
+    final now = DateTime.now().millisecondsSinceEpoch;
+    return _identityCache.values
+        .where(
+          (identity) => identity.username.toLowerCase().contains(queryLower),
+        )
+        .take(_searchLimit)
+        .map(
+          (identity) => BackendIdentity(
+            username: identity.username,
+            uid: identity.uid,
+            displayName: identity.displayName,
+            registeredAt: identity.registeredAt,
+            lastSeen: identity.lastSeen,
+            lastHeartbeat: identity.lastHeartbeat,
+            online:
+                identity.online &&
+                (now - identity.lastHeartbeat < _presenceTimeoutMs),
+          ),
+        )
+        .toList();
   }
 
   @override
@@ -167,7 +208,7 @@ class FirebaseSignalingAdapter implements SignalingAdapter {
     await _root.child('users/$username').update(<String, Object?>{
       'uid': uid,
       'online': online,
-      'lastSeen': now,
+      'lastSeen': online ? now : null,
       'lastHeartbeat': now,
     });
   }
@@ -178,15 +219,52 @@ class FirebaseSignalingAdapter implements SignalingAdapter {
     await _root
         .child('users/${identity.username}')
         .set(identity.toFirebaseJson());
+    await _root.child('userSearch/${identity.username}').set(true);
   }
 
   @override
   Stream<bool> watchPresence(String username) {
-    return _root.child('users/$username/online').onValue.map((
-      DatabaseEvent event,
-    ) {
-      return event.snapshot.value as bool? ?? false;
+    final controller = StreamController<bool>.broadcast();
+
+    final onlineRef = _root.child('users/$username/online');
+    final lastHeartbeatRef = _root.child('users/$username/lastHeartbeat');
+
+    late StreamSubscription<DatabaseEvent> onlineSub;
+    late StreamSubscription<DatabaseEvent> heartbeatSub;
+
+    bool? currentOnline;
+    int? currentHeartbeat;
+
+    void checkPresence() {
+      if (currentOnline == null || currentHeartbeat == null) return;
+      final now = DateTime.now().millisecondsSinceEpoch;
+      final isActuallyOnline =
+          currentOnline! && (now - currentHeartbeat! < _presenceTimeoutMs);
+      controller.add(isActuallyOnline);
+    }
+
+    onlineSub = onlineRef.onValue.listen((DatabaseEvent event) {
+      currentOnline = event.snapshot.value as bool? ?? false;
+      checkPresence();
     });
+
+    heartbeatSub = lastHeartbeatRef.onValue.listen((DatabaseEvent event) {
+      currentHeartbeat = (event.snapshot.value as num?)?.toInt();
+      checkPresence();
+    });
+
+    controller.onCancel = () {
+      onlineSub.cancel();
+      heartbeatSub.cancel();
+    };
+
+    return controller.stream;
+  }
+
+  Future<void> sendHeartbeat(String username) async {
+    await ensureAuthenticated();
+    final now = DateTime.now().millisecondsSinceEpoch;
+    await _root.child('users/$username/lastHeartbeat').set(now);
   }
 
   @override
