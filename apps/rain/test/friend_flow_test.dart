@@ -134,7 +134,7 @@ void main() {
     test(
       'inbound acceptance signals outcome and results in friend state',
       () async {
-        final adapter = NoopSignalingAdapter();
+        final adapter = RecordingNoopSignalingAdapter();
         await db
             .into(db.friends)
             .insert(
@@ -172,6 +172,8 @@ void main() {
           (r) => r.username == 'charlie' && r.state == 'friend',
         );
         expect(isFriend, isTrue);
+        expect(adapter.deletedRequests, contains('charlie->alice'));
+        expect(adapter.writtenRequests, contains('alice->charlie'));
       },
     );
 
@@ -191,6 +193,65 @@ void main() {
         ),
       );
       expect(runtime.sendFriendRequest('alice'), throwsA(isA<Exception>()));
+    });
+
+    test('blockFriend clears backend requests in both directions', () async {
+      final adapter = RecordingNoopSignalingAdapter();
+      final runtime = RainRuntimeController(
+        selfIdentity: alice,
+        adapter: adapter,
+        brain: null,
+        database: db,
+        friendStore: FriendStore(db),
+        messageStore: MessageStore(db),
+        offlineQueueStore: OfflineQueueStore(db),
+        messageDeliveryService: MessageDeliveryService(
+          messageStore: MessageStore(db),
+          offlineQueueStore: OfflineQueueStore(db),
+        ),
+      );
+
+      await runtime.blockFriend('bob');
+
+      expect(
+        adapter.deletedRequests,
+        containsAll(<String>['bob->alice', 'alice->bob']),
+      );
+    });
+
+    test('blocked inbound request is deleted from the backend flow', () async {
+      final adapter = RecordingNoopSignalingAdapter();
+      await db
+          .into(db.friends)
+          .insert(
+            FriendsCompanion.insert(
+              username: 'charlie',
+              displayName: 'Charlie',
+              state: 'blocked',
+              addedAt: 0,
+            ),
+          );
+
+      final runtime = RainRuntimeController(
+        selfIdentity: alice,
+        adapter: adapter,
+        brain: null,
+        database: db,
+        friendStore: FriendStore(db),
+        messageStore: MessageStore(db),
+        offlineQueueStore: OfflineQueueStore(db),
+        messageDeliveryService: MessageDeliveryService(
+          messageStore: MessageStore(db),
+          offlineQueueStore: OfflineQueueStore(db),
+        ),
+      );
+
+      await runtime.start();
+      await adapter.writeFriendRequest('alice', 'charlie');
+      await _waitForDeletedRequest(adapter, 'charlie->alice');
+
+      final friend = await FriendStore(db).loadFriend('charlie');
+      expect(friend?.state, FriendState.blocked);
     });
   });
 }
@@ -234,4 +295,36 @@ Future<String> _nextString(Stream<String> stream) {
   );
 
   return completer.future;
+}
+
+Future<void> _waitForDeletedRequest(
+  RecordingNoopSignalingAdapter adapter,
+  String requestKey,
+) async {
+  final deadline = DateTime.now().add(const Duration(seconds: 2));
+  while (DateTime.now().isBefore(deadline)) {
+    if (adapter.deletedRequests.contains(requestKey)) {
+      return;
+    }
+    await Future<void>.delayed(const Duration(milliseconds: 20));
+  }
+
+  fail('Timed out waiting for backend request cleanup: $requestKey.');
+}
+
+class RecordingNoopSignalingAdapter extends NoopSignalingAdapter {
+  final List<String> deletedRequests = <String>[];
+  final List<String> writtenRequests = <String>[];
+
+  @override
+  Future<void> deleteFriendRequest(String to, String from) async {
+    deletedRequests.add('$from->$to');
+    await super.deleteFriendRequest(to, from);
+  }
+
+  @override
+  Future<void> writeFriendRequest(String to, String from) async {
+    writtenRequests.add('$from->$to');
+    await super.writeFriendRequest(to, from);
+  }
 }
