@@ -31,4 +31,4 @@ firebase --config "$FIREBASE_CONFIG" emulators:exec \
   --project rain-8fb4b \
   --only auth,database \
   --non-interactive \
-  "melos bootstrap && melos test"
+  "melos bootstrap && melos run test"
