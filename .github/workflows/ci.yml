@@ -71,18 +71,17 @@ jobs:
       - name: Get dependencies
         run: melos bootstrap
 
-      - name: Build Windows
-        run: flutter build windows --release
-        working-directory: apps/rain
+      - name: Build Portable Windows Release
+        run: pwsh -File scripts/build_release.ps1 -Platform windows -OutputDir artifacts -Clean
 
-      - name: Zip Build Output
-        run: Compress-Archive -Path "apps\rain\build\windows\x64\runner\Release\*" -DestinationPath "rain-windows.zip"
+      - name: Verify Windows Artifact
+        run: Get-ChildItem artifacts
 
       - name: Upload Artifact
         uses: actions/upload-artifact@v4
         with:
           name: windows-build
-          path: rain-windows.zip
+          path: artifacts/Rain-windows-portable.zip
 
   build-android:
     name: Build Android
@@ -103,15 +102,14 @@ jobs:
       - name: Get dependencies
         run: melos bootstrap
 
-      - name: Build APK
-        run: flutter build apk --release
-        working-directory: apps/rain
+      - name: Build Android Release APK
+        run: pwsh -File scripts/build_release.ps1 -Platform android -OutputDir artifacts -Clean
 
       - name: Upload Artifact
         uses: actions/upload-artifact@v4
         with:
           name: android-apk
-          path: apps/rain/build/app/outputs/flutter-apk/app-release.apk
+          path: artifacts/Rain-release-android.apk
 
   release:
     name: Create Release
