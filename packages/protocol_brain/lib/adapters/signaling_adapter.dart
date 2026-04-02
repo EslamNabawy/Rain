@@ -20,6 +20,8 @@ abstract class SignalingAdapter {
   Future<void> upsertIdentity(BackendIdentity identity);
   Future<BackendIdentity?> fetchIdentity(String username);
 
+  Future<List<BackendIdentity>> searchUsers(String query);
+
   Future<void> writeFriendRequest(String to, String from);
   Stream<String> onFriendRequest(String username);
 

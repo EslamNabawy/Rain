@@ -4,6 +4,7 @@ import 'package:rain_core/rain_core.dart';
 
 import '../providers/app_providers.dart';
 import '../services/rain_runtime_controller.dart';
+import 'search_screen.dart';
 import 'settings_screen.dart';
 
 class HomeScreen extends ConsumerStatefulWidget {
@@ -53,6 +54,7 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
                     onLogOut: _confirmLogOut,
                     isCompact: isCompact,
                     onOpenSettings: _openSettings,
+                    onSearch: _openSearch,
                   ),
                   const Divider(height: 1),
                   Expanded(
@@ -209,6 +211,12 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
       context,
     ).push(MaterialPageRoute(builder: (_) => const SettingsScreen()));
   }
+
+  void _openSearch() {
+    Navigator.of(
+      context,
+    ).push(MaterialPageRoute(builder: (_) => const SearchScreen()));
+  }
 }
 
 class _ShellHeader extends StatelessWidget {
@@ -219,6 +227,7 @@ class _ShellHeader extends StatelessWidget {
     required this.onLogOut,
     required this.isCompact,
     required this.onOpenSettings,
+    required this.onSearch,
   });
 
   final RainIdentity? identity;
@@ -227,6 +236,7 @@ class _ShellHeader extends StatelessWidget {
   final VoidCallback onLogOut;
   final bool isCompact;
   final VoidCallback onOpenSettings;
+  final VoidCallback onSearch;
 
   @override
   Widget build(BuildContext context) {
@@ -238,6 +248,11 @@ class _ShellHeader extends StatelessWidget {
       builder: (BuildContext context, BoxConstraints constraints) {
         final stackActions = isCompact || constraints.maxWidth < 560;
         final actionChildren = <Widget>[
+          IconButton(
+            icon: const Icon(Icons.search),
+            tooltip: 'Search users',
+            onPressed: onSearch,
+          ),
           FilledButton.tonalIcon(
             onPressed: onAddFriend,
             icon: const Icon(Icons.person_add_alt_1),

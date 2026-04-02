@@ -64,6 +64,37 @@ class FirebaseSignalingAdapter implements SignalingAdapter {
   }
 
   @override
+  Future<List<BackendIdentity>> searchUsers(String query) async {
+    if (query.length < 2) {
+      return [];
+    }
+
+    await ensureAuthenticated();
+    final queryLower = query.toLowerCase();
+
+    final snapshot = await _root.child('userSearch').get();
+    if (!snapshot.exists || snapshot.value is! Map<Object?, Object?>) {
+      return [];
+    }
+
+    final results = <BackendIdentity>[];
+    final searchData = snapshot.value! as Map<Object?, Object?>;
+
+    for (final entry in searchData.entries) {
+      final username = entry.key as String?;
+      if (username != null && username.toLowerCase().contains(queryLower)) {
+        final identity = await fetchIdentity(username);
+        if (identity != null) {
+          results.add(identity);
+        }
+      }
+      if (results.length >= 10) break;
+    }
+
+    return results;
+  }
+
+  @override
   Future<bool> isUsernameAvailable(String username) async {
     await ensureAuthenticated();
     final snapshot = await _root.child('users/$username').get();

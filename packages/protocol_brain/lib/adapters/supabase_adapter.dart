@@ -61,6 +61,38 @@ class SupabaseSignalingAdapter implements SignalingAdapter {
   }
 
   @override
+  Future<List<BackendIdentity>> searchUsers(String query) async {
+    if (query.length < 2) {
+      return [];
+    }
+
+    await ensureAuthenticated();
+    final rows = await _client
+        .from('users')
+        .select()
+        .ilike('username', '%$query%')
+        .limit(10);
+
+    final result = <BackendIdentity>[];
+    for (final row in rows as List<dynamic>) {
+      final map = Map<String, dynamic>.from(row as Map);
+      result.add(
+        BackendIdentity(
+          username: map['username'] as String,
+          uid: map['uid'] as String? ?? '',
+          displayName:
+              map['display_name'] as String? ?? map['username'] as String,
+          registeredAt: (map['registered_at'] as num?)?.toInt() ?? 0,
+          lastSeen: (map['last_seen'] as num?)?.toInt() ?? 0,
+          lastHeartbeat: (map['last_heartbeat'] as num?)?.toInt() ?? 0,
+          online: map['online'] as bool? ?? false,
+        ),
+      );
+    }
+    return result;
+  }
+
+  @override
   Future<bool> isUsernameAvailable(String username) async {
     await ensureAuthenticated();
     final rows =

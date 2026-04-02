@@ -39,6 +39,19 @@ class NoopSignalingAdapter implements SignalingAdapter {
   }
 
   @override
+  Future<List<BackendIdentity>> searchUsers(String query) async {
+    if (query.length < 2) {
+      return [];
+    }
+    final queryLower = query.toLowerCase();
+    return _identities.values
+        .where(
+          (identity) => identity.username.toLowerCase().contains(queryLower),
+        )
+        .toList();
+  }
+
+  @override
   Future<bool> isUsernameAvailable(String username) async {
     return !_identities.containsKey(username);
   }

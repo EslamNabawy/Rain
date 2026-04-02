@@ -105,6 +105,16 @@ final forceUpdateProvider = FutureProvider<ForceUpdateResult>((Ref ref) {
   return ref.watch(forceUpdateServiceProvider).check();
 });
 
+final userSearchProvider = FutureProvider.family<List<BackendIdentity>, String>(
+  (Ref ref, String query) async {
+    if (query.length < 2) {
+      return [];
+    }
+    final adapter = ref.watch(adapterProvider);
+    return adapter.searchUsers(query);
+  },
+);
+
 final brainProvider = Provider<ProtocolBrain?>((Ref ref) {
   final identity = ref.watch(identityProvider).valueOrNull;
   final environment = ref.watch(appEnvironmentProvider);
