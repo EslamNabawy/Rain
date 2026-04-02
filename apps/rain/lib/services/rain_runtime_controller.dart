@@ -136,6 +136,11 @@ class RainRuntimeController {
     await brain?.disconnect(username);
   }
 
+  Future<void> unblockFriend(String username) async {
+    await friendStore.unblock(username);
+    await brain?.registerPeer(username);
+  }
+
   Future<void> connectPeer(String username) async {
     if (brain == null) {
       return;
@@ -193,6 +198,20 @@ class RainRuntimeController {
   }
 
   Future<void> sendFriendRequest(String username) async {
+    if (username == selfIdentity.username) {
+      throw Exception('Cannot send friend request to yourself');
+    }
+
+    final existing = await friendStore.loadFriend(username);
+    if (existing != null &&
+        (existing.state == FriendState.friend ||
+            existing.state == FriendState.pendingOutgoing ||
+            existing.state == FriendState.pendingIncoming)) {
+      throw Exception(
+        'Friend request already exists or you are already friends',
+      );
+    }
+
     await adapter.writeFriendRequest(username, selfIdentity.username);
     await friendStore.upsertFriend(
       username: username,

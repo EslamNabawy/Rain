@@ -4,6 +4,7 @@ import 'package:rain_core/rain_core.dart';
 
 import '../providers/app_providers.dart';
 import '../services/rain_runtime_controller.dart';
+import 'settings_screen.dart';
 
 class HomeScreen extends ConsumerStatefulWidget {
   const HomeScreen({super.key});
@@ -51,6 +52,7 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
                     onAddFriend: runtime == null ? null : _showAddFriendDialog,
                     onLogOut: _confirmLogOut,
                     isCompact: isCompact,
+                    onOpenSettings: _openSettings,
                   ),
                   const Divider(height: 1),
                   Expanded(
@@ -201,6 +203,12 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
       ).showSnackBar(SnackBar(content: Text('Could not log out: $error')));
     }
   }
+
+  void _openSettings() {
+    Navigator.of(
+      context,
+    ).push(MaterialPageRoute(builder: (_) => const SettingsScreen()));
+  }
 }
 
 class _ShellHeader extends StatelessWidget {
@@ -210,6 +218,7 @@ class _ShellHeader extends StatelessWidget {
     required this.onAddFriend,
     required this.onLogOut,
     required this.isCompact,
+    required this.onOpenSettings,
   });
 
   final RainIdentity? identity;
@@ -217,6 +226,7 @@ class _ShellHeader extends StatelessWidget {
   final VoidCallback? onAddFriend;
   final VoidCallback onLogOut;
   final bool isCompact;
+  final VoidCallback onOpenSettings;
 
   @override
   Widget build(BuildContext context) {
@@ -232,6 +242,11 @@ class _ShellHeader extends StatelessWidget {
             onPressed: onAddFriend,
             icon: const Icon(Icons.person_add_alt_1),
             label: const Text('Add'),
+          ),
+          IconButton(
+            icon: const Icon(Icons.settings),
+            tooltip: 'Settings',
+            onPressed: onOpenSettings,
           ),
           PopupMenuButton<_HeaderAction>(
             tooltip: 'Open account menu',

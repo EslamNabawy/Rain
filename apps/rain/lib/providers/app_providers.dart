@@ -1,5 +1,6 @@
 import 'dart:async';
 
+import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:protocol_brain/protocol_brain.dart';
 import 'package:rain_core/rain_core.dart';
@@ -7,6 +8,27 @@ import 'package:rain_core/rain_core.dart';
 import '../bootstrap/app_bootstrap.dart';
 import '../services/force_update_service.dart';
 import '../services/rain_runtime_controller.dart';
+
+enum AppThemeMode { dark, light, system }
+
+final themeModeProvider =
+    StateNotifierProvider<ThemeModeNotifier, AppThemeMode>(
+      (Ref ref) => ThemeModeNotifier(),
+    );
+
+class ThemeModeNotifier extends StateNotifier<AppThemeMode> {
+  ThemeModeNotifier() : super(AppThemeMode.dark);
+
+  void setDark() => state = AppThemeMode.dark;
+  void setLight() => state = AppThemeMode.light;
+  void setSystem() => state = AppThemeMode.system;
+
+  ThemeMode get themeMode => switch (state) {
+    AppThemeMode.dark => ThemeMode.dark,
+    AppThemeMode.light => ThemeMode.light,
+    AppThemeMode.system => ThemeMode.system,
+  };
+}
 
 final appBootstrapProvider = Provider<AppBootstrapState>(
   (_) => throw UnimplementedError('AppBootstrapState has not been overridden.'),
