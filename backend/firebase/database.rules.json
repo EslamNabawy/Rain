@@ -2,6 +2,12 @@
   "rules": {
     ".read": false,
     ".write": false,
+    "userSearch": {
+      ".read": "auth != null",
+      "$username": {
+        ".write": "auth != null"
+      }
+    },
     "users": {
       "$username": {
         ".read": "auth != null",
