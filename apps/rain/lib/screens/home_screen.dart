@@ -637,7 +637,7 @@ class _ChatPanelState extends ConsumerState<_ChatPanel> {
                               ),
                               const SizedBox(height: 8),
                               Text(
-                                '${message.status.name} | ${TimeOfDay.fromDateTime(DateTime.fromMillisecondsSinceEpoch(message.sentAt)).format(context)}',
+                                _formatMessageTime(message.sentAt),
                                 style: Theme.of(context).textTheme.labelSmall
                                     ?.copyWith(
                                       color: textColor.withValues(alpha: 0.78),
@@ -726,6 +726,38 @@ class _ChatPanelState extends ConsumerState<_ChatPanel> {
         );
       },
     );
+  }
+
+  String _formatMessageTime(int timestamp) {
+    final date = DateTime.fromMillisecondsSinceEpoch(timestamp);
+    final now = DateTime.now();
+    final today = DateTime(now.year, now.month, now.day);
+    final messageDay = DateTime(date.year, date.month, date.day);
+
+    final time = TimeOfDay.fromDateTime(date).format(context);
+
+    if (messageDay == today) {
+      return time;
+    } else if (messageDay == today.subtract(const Duration(days: 1))) {
+      return 'Yesterday $time';
+    } else if (now.difference(messageDay).inDays < 7) {
+      return '${_weekdayName(date.weekday)} $time';
+    } else {
+      return '${date.day}/${date.month}/${date.year} $time';
+    }
+  }
+
+  String _weekdayName(int weekday) {
+    return switch (weekday) {
+      1 => 'Mon',
+      2 => 'Tue',
+      3 => 'Wed',
+      4 => 'Thu',
+      5 => 'Fri',
+      6 => 'Sat',
+      7 => 'Sun',
+      _ => '',
+    };
   }
 
   Future<void> _sendMessage(RainRuntimeController? runtime) async {
