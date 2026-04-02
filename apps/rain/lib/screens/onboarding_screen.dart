@@ -1,7 +1,6 @@
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
-import 'package:protocol_brain/protocol_brain.dart';
 import 'package:rain_core/rain_core.dart';
 
 import '../providers/app_providers.dart';
@@ -251,7 +250,6 @@ class _OnboardingScreenState extends ConsumerState<OnboardingScreen> {
 
     try {
       await adapter.ensureAuthenticated();
-      late String uid;
       late RainIdentity identity;
       late String displayName;
 
@@ -267,26 +265,16 @@ class _OnboardingScreenState extends ConsumerState<OnboardingScreen> {
           return;
         }
 
-        uid = await adapter.register(username, password);
+        await adapter.register(username, password);
         final now = DateTime.now().millisecondsSinceEpoch;
         identity = RainIdentity(
           username: username,
           displayName: displayName,
           createdAt: now,
         );
-        await adapter.upsertIdentity(
-          BackendIdentity(
-            username: username,
-            uid: uid,
-            displayName: displayName,
-            registeredAt: now,
-            lastSeen: now,
-            lastHeartbeat: now,
-            online: true,
-          ),
-        );
+        await adapter.setPresence(username, true);
       } else {
-        uid = await adapter.login(username, password);
+        await adapter.login(username, password);
         final existing = await adapter.fetchIdentity(username);
         displayName = existing?.displayName ?? username;
         identity = RainIdentity(
