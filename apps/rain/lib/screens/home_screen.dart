@@ -4,6 +4,7 @@ import 'package:rain_core/rain_core.dart';
 
 import '../providers/app_providers.dart';
 import '../services/rain_runtime_controller.dart';
+import 'friend_profile_screen.dart';
 import 'search_screen.dart';
 import 'settings_screen.dart';
 
@@ -408,10 +409,17 @@ class _FriendTile extends ConsumerWidget {
     final presence = ref.watch(presenceProvider(friend.username));
     final isOnline = presence.valueOrNull ?? friend.isOnline;
 
+    void openProfile() {
+      Navigator.of(context).push(
+        MaterialPageRoute(builder: (_) => FriendProfileScreen(friend: friend)),
+      );
+    }
+
     return Material(
       color: selected ? const Color(0xFF122934) : Colors.transparent,
       child: InkWell(
         onTap: onTap,
+        onLongPress: openProfile,
         child: Padding(
           padding: EdgeInsets.symmetric(
             horizontal: compact ? 16 : 18,
