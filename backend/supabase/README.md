@@ -22,8 +22,13 @@ The schema creates:
 - `public.rooms`
 - `public.friend_requests`
 - row-level security policies that keep `users.uid` as the ownership source of truth
+- indexes for username search, room participant lookups, stale presence cleanup, and friend-request inbox reads
 - optional user profile metadata such as gender, kept on the `users` row
 - a `cleanup_backend_state()` RPC used by the scheduled Edge Function
+
+After the schema is applied, run [verify.sql](verify.sql) in the SQL editor to confirm the expected tables, indexes, policies, publication entries, and cleanup RPC are present.
+
+For a live deployment walkthrough with exact commands and expected results, use [DEPLOYMENT_RUNBOOK.md](DEPLOYMENT_RUNBOOK.md).
 
 Rain keeps the current username/password UX in the app. On Supabase, the adapter authenticates with a derived alias email in the form `<username>@rain.local`, so the Email provider must be enabled and email confirmation must stay off for these app-managed accounts.
 
@@ -46,6 +51,9 @@ Schedule it every 3 minutes from the Supabase dashboard. The function calls `cle
 
 - marks users offline when `last_heartbeat` is older than 7 minutes
 - deletes signaling rooms that have been untouched for 15 minutes
+- runs with the service role so it can bypass RLS safely for maintenance
+
+If you change the function or schema, rerun `verify.sql` so the database contract stays aligned with the app.
 
 ## Suggested Validation
 

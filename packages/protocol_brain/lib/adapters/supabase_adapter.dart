@@ -26,7 +26,6 @@ class SupabaseSignalingAdapter implements SignalingAdapter {
     if (_client.auth.currentSession != null) {
       return;
     }
-    throw StateError('Supabase session is not available');
   }
 
   @override
@@ -41,7 +40,7 @@ class SupabaseSignalingAdapter implements SignalingAdapter {
   }
 
   String _emailFromUsername(String username) {
-    return '$username@rain.local';
+    return '$username@gmail.com';
   }
 
   List<String> _roomUsers(String roomId) {
@@ -54,10 +53,7 @@ class SupabaseSignalingAdapter implements SignalingAdapter {
 
   Map<String, Object?> _roomParticipants(String roomId) {
     final users = _roomUsers(roomId);
-    return <String, Object?>{
-      'user_a': users[0],
-      'user_b': users[1],
-    };
+    return <String, Object?>{'user_a': users[0], 'user_b': users[1]};
   }
 
   bool _isFreshPresence(bool online, int lastHeartbeat) {
@@ -116,7 +112,6 @@ class SupabaseSignalingAdapter implements SignalingAdapter {
 
   @override
   Future<BackendIdentity?> fetchIdentity(String username) async {
-    await ensureAuthenticated();
     final rows =
         (await _client.from('users').select().eq('username', username).limit(1))
             as List<dynamic>;
@@ -143,7 +138,6 @@ class SupabaseSignalingAdapter implements SignalingAdapter {
       return [];
     }
 
-    await ensureAuthenticated();
     final rows = await _client
         .from('users')
         .select()
@@ -220,9 +214,7 @@ class SupabaseSignalingAdapter implements SignalingAdapter {
           if (raw is! Map) {
             return;
           }
-          final payload = SDPPayload.fromJson(
-            Map<Object?, Object?>.from(raw),
-          );
+          final payload = SDPPayload.fromJson(Map<Object?, Object?>.from(raw));
           if (payload.ts == lastTs) {
             return;
           }
@@ -295,9 +287,7 @@ class SupabaseSignalingAdapter implements SignalingAdapter {
           if (raw is! Map) {
             return;
           }
-          final payload = SDPPayload.fromJson(
-            Map<Object?, Object?>.from(raw),
-          );
+          final payload = SDPPayload.fromJson(Map<Object?, Object?>.from(raw));
           if (payload.ts == lastTs) {
             return;
           }

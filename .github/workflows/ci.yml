@@ -1,6 +1,7 @@
 name: CI/CD
 
 on:
+  workflow_dispatch:
   push:
     branches: [ main, codex/* ]
     tags: [ 'v*' ]
@@ -100,7 +101,15 @@ jobs:
         run: melos bootstrap
 
       - name: Build Android Release APK
-        run: pwsh -File scripts/build_release.ps1 -Platform android -OutputDir artifacts -Clean
+        run: |
+          cd apps/rain
+          flutter build apk --release
+
+      - name: Prepare Artifact Directory
+        run: mkdir -p artifacts
+
+      - name: Move Android APK
+        run: cp apps/rain/build/app/outputs/flutter-apk/app-release.apk artifacts/Rain-release-android.apk
 
       - name: Upload Artifact
         uses: actions/upload-artifact@v6

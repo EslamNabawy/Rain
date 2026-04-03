@@ -96,12 +96,13 @@ The app reads compile-time configuration from `apps/rain/tool/dart_defines.local
 ### Supabase
 
 1. Create a Supabase project and enable the Email provider for Auth.
-2. Disable email confirmation for the project, because Rain signs users in with a username-derived alias in the form `<username>@rain.local`.
+2. Disable email confirmation for the project, because Rain signs users in with a username-derived alias email.
 3. Apply [backend/supabase/schema.sql](backend/supabase/schema.sql).
 4. Deploy [backend/supabase/functions/presence-cleanup/index.ts](backend/supabase/functions/presence-cleanup/index.ts) with `--no-verify-jwt`.
 5. Schedule the function every 3 minutes so stale users are marked offline after 7 minutes without heartbeat.
 
 Detailed Supabase instructions live in [backend/supabase/README.md](backend/supabase/README.md).
+For a step-by-step live deployment runbook with exact commands and expected results, see [backend/supabase/DEPLOYMENT_RUNBOOK.md](backend/supabase/DEPLOYMENT_RUNBOOK.md).
 
 ### Firebase
 
