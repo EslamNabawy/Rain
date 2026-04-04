@@ -1,6 +1,12 @@
 {
   "$schema": "https://opencode.ai/config.json",
-  "model": "anthropic/claude-sonnet-4-5",
-  "small_model": "anthropic/claude-haiku-4-5",
-  "plugin": ["ecc-universal"]
+  "model": "opencode/qwen3.6-plus-free",
+  "instructions": [
+    "skills/tdd-workflow/SKILL.md",
+    "skills/security-review/SKILL.md",
+    "skills/backend-patterns/SKILL.md",
+    "skills/coding-standards/SKILL.md",
+    "skills/verification-loop/SKILL.md",
+    "skills/api-design/SKILL.md"
+  ]
 }
