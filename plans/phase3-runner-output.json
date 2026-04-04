@@ -1,0 +1,46 @@
+{
+  "timestamp": "2026-04-04T03:09:33.209Z",
+  "summary": {
+    "total": 6,
+    "completed": 6,
+    "failed": 0
+  },
+  "details": [
+    {
+      "unit": "unit-01",
+      "name": "Planner Decomposition",
+      "status": "COMPLETED",
+      "reason": ""
+    },
+    {
+      "unit": "unit-02",
+      "name": "Architect Interfaces",
+      "status": "COMPLETED",
+      "reason": ""
+    },
+    {
+      "unit": "unit-03",
+      "name": "Backend Skeleton",
+      "status": "COMPLETED",
+      "reason": ""
+    },
+    {
+      "unit": "unit-04",
+      "name": "Frontend Skeleton",
+      "status": "COMPLETED",
+      "reason": ""
+    },
+    {
+      "unit": "unit-05",
+      "name": "Database Skeleton",
+      "status": "COMPLETED",
+      "reason": ""
+    },
+    {
+      "unit": "unit-06",
+      "name": "Gatekeeping & Evaluation",
+      "status": "COMPLETED",
+      "reason": ""
+    }
+  ]
+}
