@@ -38,7 +38,9 @@ class RainRuntimeController {
     }
     _started = true;
 
-    await adapter.ensureAuthenticated();
+    try {
+      await adapter.ensureAuthenticated();
+    } catch (_) {}
     final now = DateTime.now().millisecondsSinceEpoch;
     await adapter.upsertIdentity(
       BackendIdentity(
@@ -138,13 +140,13 @@ class RainRuntimeController {
   }
 
   Future<void> acceptFriend(String username) async {
-    await adapter.deleteFriendRequest(selfIdentity.username, username);
-    await adapter.writeFriendRequest(username, selfIdentity.username);
     // Prefer using an existing displayName if available to preserve
     // the user's chosen display name instead of falling back to the username.
     final existing = await friendStore.loadFriend(username);
     final displayName = existing?.displayName ?? username;
     await friendStore.markAccepted(username, displayName: displayName);
+    await adapter.deleteFriendRequest(selfIdentity.username, username);
+    await adapter.writeFriendRequest(username, selfIdentity.username);
     _watchPresence(username);
     await brain?.registerPeer(username);
   }
@@ -239,13 +241,13 @@ class RainRuntimeController {
       );
     }
 
-    await adapter.writeFriendRequest(username, selfIdentity.username);
     await friendStore.upsertFriend(
       username: username,
       displayName: username,
       state: FriendState.pendingOutgoing,
       addedAt: DateTime.now().millisecondsSinceEpoch,
     );
+    await adapter.writeFriendRequest(username, selfIdentity.username);
     _watchPresence(username);
     await brain?.registerPeer(username);
   }

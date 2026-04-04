@@ -1,6 +1,12 @@
 name: CI/CD
 
 on:
+  workflow_dispatch:
+    inputs:
+      run_mode:
+        description: 'Run mode: quick, standard, full'
+        required: true
+        default: 'full'
   push:
     branches: [ main, codex/* ]
     tags: [ 'v*' ]
@@ -21,6 +27,13 @@ jobs:
 
       - name: Install Melos
         run: dart pub global activate melos
+      - name: Cache Pub Cache
+        uses: actions/cache@v4
+        with:
+          path: ~/.pub-cache
+          key: ${{ runner.os }}-pub-cache-${{ hashFiles('**/pubspec.lock') }}
+          restore-keys: |
+            ${{ runner.os }}-pub-cache-
 
       - name: Get dependencies
         run: melos bootstrap
@@ -46,14 +59,23 @@ jobs:
       - name: Get dependencies
         run: melos bootstrap
 
-      - name: Test
-        run: melos exec -- flutter test
+      - name: Verify Supabase credentials
+        run: |
+          if [ -z "${{ secrets.SUPABASE_URL }}" ] || [ -z "${{ secrets.SUPABASE_ANON_KEY }}" ]; then
+            echo "Missing SUPABASE_URL or SUPABASE_ANON_KEY. Please set repository secrets.";
+            exit 1;
+          fi
+      - name: Run tests
+        env:
+          SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
+          SUPABASE_ANON_KEY: ${{ secrets.SUPABASE_ANON_KEY }}
+        run: melos exec -- flutter test --dart-define SUPABASE_URL=$SUPABASE_URL --dart-define SUPABASE_ANON_KEY=$SUPABASE_ANON_KEY
 
   build-windows:
     name: Build Windows
     runs-on: windows-latest
     needs: [analyze, test]
-    if: github.ref == 'refs/heads/main' || startsWith(github.ref, 'refs/heads/codex/') || startsWith(github.ref, 'refs/tags/v')
+    if: ${{ (github.event_name != 'workflow_dispatch' && (github.ref == 'refs/heads/main' || startsWith(github.ref, 'refs/heads/codex/') || startsWith(github.ref, 'refs/tags/v'))) || (github.event_name == 'workflow_dispatch' && (github.event.inputs.run_mode != 'quick')) }}
     steps:
       - uses: actions/checkout@v5
 
@@ -84,7 +106,7 @@ jobs:
     name: Build Android
     runs-on: ubuntu-latest
     needs: [analyze, test]
-    if: github.ref == 'refs/heads/main' || startsWith(github.ref, 'refs/heads/codex/') || startsWith(github.ref, 'refs/tags/v')
+    if: ${{ (github.event_name != 'workflow_dispatch' && (github.ref == 'refs/heads/main' || startsWith(github.ref, 'refs/heads/codex/') || startsWith(github.ref, 'refs/tags/v'))) || (github.event_name == 'workflow_dispatch' && (github.event.inputs.run_mode != 'quick')) }}
     steps:
       - uses: actions/checkout@v5
 
@@ -100,7 +122,15 @@ jobs:
         run: melos bootstrap
 
       - name: Build Android Release APK
-        run: pwsh -File scripts/build_release.ps1 -Platform android -OutputDir artifacts -Clean
+        run: |
+          cd apps/rain
+          flutter build apk --release
+
+      - name: Prepare Artifact Directory
+        run: mkdir -p artifacts
+
+      - name: Move Android APK
+        run: cp apps/rain/build/app/outputs/flutter-apk/app-release.apk artifacts/Rain-release-android.apk
 
       - name: Upload Artifact
         uses: actions/upload-artifact@v6
@@ -112,7 +142,7 @@ jobs:
     name: Create Release
     runs-on: ubuntu-latest
     needs: [build-windows, build-android]
-    if: startsWith(github.ref, 'refs/tags/v')
+    if: ${{ (github.event_name != 'workflow_dispatch' && startsWith(github.ref, 'refs/tags/v')) || (github.event_name == 'workflow_dispatch' && (github.event.inputs.run_mode != 'quick')) }}
     permissions:
       contents: write
     steps:

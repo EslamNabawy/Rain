@@ -8,8 +8,10 @@ begin
 end;
 $$;
 
+create extension if not exists pg_trgm;
+
 create table if not exists public.users (
-  username text primary key check (username ~ '^[a-z0-9_]{3,20}$'),
+  username text primary key check (username ~ '^[a-z0-9_]{3,24}$'),
   uid text not null unique check (uid <> ''),
   display_name text not null default '',
   gender text check (gender in ('male', 'female')),
@@ -64,6 +66,26 @@ create table if not exists public.friend_requests (
   constraint friend_requests_not_self check (from_user <> to_user)
 );
 
+create index if not exists users_username_trgm_idx
+  on public.users
+  using gin (username gin_trgm_ops);
+
+create index if not exists users_online_last_heartbeat_idx
+  on public.users (last_heartbeat)
+  where online = true;
+
+create index if not exists rooms_user_a_idx
+  on public.rooms (user_a);
+
+create index if not exists rooms_user_b_idx
+  on public.rooms (user_b);
+
+create index if not exists rooms_created_at_idx
+  on public.rooms (created_at);
+
+create index if not exists friend_requests_to_user_idx
+  on public.friend_requests (to_user);
+
 drop trigger if exists users_set_updated_at on public.users;
 create trigger users_set_updated_at
 before update on public.users
@@ -90,22 +112,22 @@ create policy "users_insert_own_identity"
 on public.users
 for insert
 to authenticated
-with check (uid = auth.uid()::text);
+with check (uid = (select auth.uid())::text);
 
 drop policy if exists "users_update_own_identity" on public.users;
 create policy "users_update_own_identity"
 on public.users
 for update
 to authenticated
-using (uid = auth.uid()::text)
-with check (uid = auth.uid()::text);
+using (uid = (select auth.uid())::text)
+with check (uid = (select auth.uid())::text);
 
 drop policy if exists "users_delete_own_identity" on public.users;
 create policy "users_delete_own_identity"
 on public.users
 for delete
 to authenticated
-using (uid = auth.uid()::text);
+using (uid = (select auth.uid())::text);
 
 drop policy if exists "rooms_select_authenticated" on public.rooms;
 create policy "rooms_select_authenticated"
@@ -116,7 +138,7 @@ using (
   exists (
     select 1
     from public.users participant
-    where participant.uid = auth.uid()::text
+    where participant.uid = (select auth.uid())::text
       and participant.username in (rooms.user_a, rooms.user_b)
   )
 );
@@ -130,7 +152,7 @@ with check (
   exists (
     select 1
     from public.users participant
-    where participant.uid = auth.uid()::text
+    where participant.uid = (select auth.uid())::text
       and participant.username in (rooms.user_a, rooms.user_b)
   )
 );
@@ -144,7 +166,7 @@ using (
   exists (
     select 1
     from public.users participant
-    where participant.uid = auth.uid()::text
+    where participant.uid = (select auth.uid())::text
       and participant.username in (rooms.user_a, rooms.user_b)
   )
 )
@@ -152,7 +174,7 @@ with check (
   exists (
     select 1
     from public.users participant
-    where participant.uid = auth.uid()::text
+    where participant.uid = (select auth.uid())::text
       and participant.username in (rooms.user_a, rooms.user_b)
   )
 );
@@ -166,7 +188,7 @@ using (
   exists (
     select 1
     from public.users participant
-    where participant.uid = auth.uid()::text
+    where participant.uid = (select auth.uid())::text
       and participant.username in (rooms.user_a, rooms.user_b)
   )
 );
@@ -181,13 +203,13 @@ using (
     select 1
     from public.users sender
     where sender.username = friend_requests.from_user
-      and sender.uid = auth.uid()::text
+      and sender.uid = (select auth.uid())::text
   )
   or exists (
     select 1
     from public.users recipient
     where recipient.username = friend_requests.to_user
-      and recipient.uid = auth.uid()::text
+      and recipient.uid = (select auth.uid())::text
   )
 );
 
@@ -201,7 +223,29 @@ with check (
     select 1
     from public.users sender
     where sender.username = friend_requests.from_user
-      and sender.uid = auth.uid()::text
+      and sender.uid = (select auth.uid())::text
+  )
+);
+
+drop policy if exists "friend_requests_update_sender" on public.friend_requests;
+create policy "friend_requests_update_sender"
+on public.friend_requests
+for update
+to authenticated
+using (
+  exists (
+    select 1
+    from public.users sender
+    where sender.username = friend_requests.from_user
+      and sender.uid = (select auth.uid())::text
+  )
+)
+with check (
+  exists (
+    select 1
+    from public.users sender
+    where sender.username = friend_requests.from_user
+      and sender.uid = (select auth.uid())::text
   )
 );
 
@@ -215,13 +259,13 @@ using (
     select 1
     from public.users sender
     where sender.username = friend_requests.from_user
-      and sender.uid = auth.uid()::text
+      and sender.uid = (select auth.uid())::text
   )
   or exists (
     select 1
     from public.users recipient
     where recipient.username = friend_requests.to_user
-      and recipient.uid = auth.uid()::text
+      and recipient.uid = (select auth.uid())::text
   )
 );
 

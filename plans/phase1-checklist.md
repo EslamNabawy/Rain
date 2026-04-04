@@ -1,0 +1,13 @@
+# Phase 1 Checklist
+- [x] opencode.json references validated against six SKILL.md files
+- [x] The six skill SKILL.md files exist at:
+  - skills/tdd-workflow/SKILL.md
+  - skills/security-review/SKILL.md
+  - skills/backend-patterns/SKILL.md
+  - skills/coding-standards/SKILL.md
+  - skills/verification-loop/SKILL.md
+  - skills/api-design/SKILL.md
+- [x] Front-matter validation checks added (name/description) for each skill
+- [ ] Architecture doc drafted (plans/phase1-architecture.md)
+- [ ] Dependency graph drafted (plans/dependency-graph.json)
+- [ ] Plan for Phase 2 with per-unit done criteria drafted (plans/open-code-integration-plan.md updated)
