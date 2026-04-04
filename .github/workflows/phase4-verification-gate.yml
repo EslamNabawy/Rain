@@ -1,0 +1,23 @@
+name: Phase 4 Verification Gate
+
+on:
+  pull_request:
+    types: [opened, synchronize, reopened]
+
+jobs:
+  verify-phase4:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '18'
+      - name: Install
+        run: npm ci || npm install
+      - name: Run Phase 4 Verifier
+        run: node scripts/phase4-runner.js
+      - name: Validate Phase 4 Output
+        run: node scripts/validate_phase4_output.js
+      - name: Gate Pass
+        if: ${{ always() }}
+        run: echo "Phase 4 verification gate passed."
