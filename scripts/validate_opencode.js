@@ -28,20 +28,41 @@ function readFirstLine(p) {
   }
 }
 
+function parseFrontMatter(abs) {
+  try {
+    const text = fs.readFileSync(abs, 'utf8');
+    const lines = text.split(/\r?\n/);
+    const start = lines.indexOf('---');
+    if (start >= 0) {
+      const endIdx = lines.indexOf('---', start + 1);
+      if (endIdx > start) {
+        const block = lines.slice(start + 1, endIdx).join('\n');
+        const map = {};
+        block.split(/\n/).forEach(l => {
+          const m = l.match(/^(\s*\w+)\s*:\s*(.*)$/);
+          if (m) {
+            map[m[1].trim()] = m[2].trim();
+          }
+        });
+        return map;
+      }
+    }
+  } catch {
+    // ignore
+  }
+  return null;
+}
+
 function validateSkillPath(skillPath) {
   const abs = path.resolve(__dirname, '..', skillPath);
   if (!fileExists(abs)) {
     return { ok: false, reason: `Missing skill file: ${abs}` };
   }
-  // Quick sanity: ensure it's a SKILL.md-ish file
-  const extOk = /SKILL\.md$/i.test(abs);
-  if (!_extOk) {
-    // We don't fail hard on extension, but log a warning
-  }
-  // Basic content check: expect a 'name:' header somewhere
-  const content = readFirstLine(abs);
-  const hasName = /name\s*:/i.test(content) || /#\s*Skill|Description:/i.test(content);
-  return { ok: true, path: skillPath, hasName };
+  const fm = parseFrontMatter(abs);
+  const hasName = !!(fm && fm.name);
+  const hasDescription = !!(fm && fm.description);
+  // Return both flags for a richer report (but keep compatibility)
+  return { ok: true, path: skillPath, hasName, hasDescription };
 }
 
 function main() {
@@ -72,7 +93,13 @@ function main() {
 
   const results = instructions.map((p) => validateSkillPath(p));
   results.forEach((r) => {
-    if (!r.ok) issues.push(r.reason);
+    if (!r.ok) {
+      issues.push(r.reason);
+    } else {
+      if (!r.hasName || !r.hasDescription) {
+        issues.push(`Skill file ${r.path} missing required front-matter (name/description)`);
+      }
+    }
   });
 
   // Summary

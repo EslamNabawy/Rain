@@ -1,0 +1,28 @@
+{
+  "name": "OpenCode Multi-Agent Integration",
+  "phase": 1,
+  "nodes": [
+    {"id": "planner", "label": "Planner (Sonnet)"},
+    {"id": "architect", "label": "Architect (Opus)"},
+    {"id": "backend", "label": "Backend Agent (Sonnet)"},
+    {"id": "frontend", "label": "Frontend Agent (Sonnet)"},
+    {"id": "db", "label": "Database Agent (Sonnet)"},
+    {"id": "code-reviewer", "label": "Code Reviewer (Haiku)"},
+    {"id": "security-reviewer", "label": "Security Reviewer (Sonnet)"},
+    {"id": "e2e", "label": "E2E Runner (Haiku)"},
+    {"id": "verification", "label": "Verification (Sonnet)"}
+  ],
+  "edges": [
+    {"from": "planner", "to": "architect"},
+    {"from": "architect", "to": "backend"},
+    {"from": "architect", "to": "frontend"},
+    {"from": "architect", "to": "db"},
+    {"from": "backend", "to": "code-reviewer"},
+    {"from": "frontend", "to": "code-reviewer"},
+    {"from": "db", "to": "code-reviewer"},
+    {"from": "backend", "to": "security-reviewer"},
+    {"from": "frontend", "to": "security-reviewer"},
+    {"from": "db", "to": "security-reviewer"},
+    {"from": "e2e", "to": "verification"}
+  ]
+}
