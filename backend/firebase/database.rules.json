@@ -5,7 +5,7 @@
     "users": {
       "$username": {
         ".read": "auth != null",
-        ".write": "auth != null && ((!data.exists() && auth.token.email === $username + '@rain.local' && newData.child('uid').val() === auth.uid) || (data.exists() && data.child('uid').val() === auth.uid && newData.child('uid').val() === data.child('uid').val()))",
+        ".write": "auth != null && auth.token.iat >= 1778964868 && ((!data.exists() && auth.token.email === $username + '@rain.local' && newData.child('uid').val() === auth.uid) || (data.exists() && data.child('uid').val() === auth.uid && newData.child('uid').val() === data.child('uid').val()))",
         "username": {
           ".validate": "newData.isString() && newData.val() === $username"
         },
@@ -29,7 +29,7 @@
     "presence": {
       "$username": {
         ".read": "auth != null",
-        ".write": "auth != null && root.child('users/' + $username + '/uid').val() === auth.uid && newData.child('uid').val() === auth.uid",
+        ".write": "auth != null && auth.token.iat >= 1778964868 && root.child('users/' + $username + '/uid').val() === auth.uid && newData.child('uid').val() === auth.uid",
         ".validate": "!newData.exists() || (newData.hasChildren(['uid', 'online', 'lastHeartbeat', 'lastSeen', 'updatedAt', 'sessionId', 'platform']) && newData.child('uid').isString() && newData.child('online').isBoolean() && newData.child('lastHeartbeat').isNumber() && newData.child('lastSeen').isNumber() && newData.child('updatedAt').isNumber() && newData.child('sessionId').isString() && newData.child('sessionId').val().length > 0 && newData.child('sessionId').val().length <= 96 && newData.child('platform').isString() && newData.child('platform').val().length > 0 && newData.child('platform').val().length <= 32)",
         "uid": {
           ".validate": "newData.isString()"
@@ -61,7 +61,7 @@
       "$to": {
         ".read": "auth != null && root.child('users/' + $to + '/uid').val() === auth.uid",
         "$from": {
-          ".write": "auth != null && $from !== $to && ((!newData.exists() && (root.child('users/' + $from + '/uid').val() === auth.uid || root.child('users/' + $to + '/uid').val() === auth.uid)) || (newData.exists() && root.child('users/' + $from + '/uid').val() === auth.uid))",
+          ".write": "auth != null && auth.token.iat >= 1778964868 && $from !== $to && ((!newData.exists() && (root.child('users/' + $from + '/uid').val() === auth.uid || root.child('users/' + $to + '/uid').val() === auth.uid)) || (newData.exists() && root.child('users/' + $from + '/uid').val() === auth.uid))",
           ".validate": "!newData.exists() || (newData.hasChildren(['sentAt']) && newData.child('sentAt').isNumber())",
           "$other": {
             ".validate": false
@@ -73,7 +73,7 @@
       "$from": {
         ".read": "auth != null && root.child('users/' + $from + '/uid').val() === auth.uid",
         "$to": {
-          ".write": "auth != null && $from !== $to && ((!newData.exists() && (root.child('users/' + $from + '/uid').val() === auth.uid || root.child('users/' + $to + '/uid').val() === auth.uid)) || (newData.exists() && root.child('users/' + $from + '/uid').val() === auth.uid))",
+          ".write": "auth != null && auth.token.iat >= 1778964868 && $from !== $to && ((!newData.exists() && (root.child('users/' + $from + '/uid').val() === auth.uid || root.child('users/' + $to + '/uid').val() === auth.uid)) || (newData.exists() && root.child('users/' + $from + '/uid').val() === auth.uid))",
           ".validate": "!newData.exists() || (newData.hasChildren(['sentAt']) && newData.child('sentAt').isNumber())",
           "$other": {
             ".validate": false
@@ -85,7 +85,7 @@
       "$username": {
         ".read": "auth != null && root.child('users/' + $username + '/uid').val() === auth.uid",
         "$friend": {
-          ".write": "auth != null && $username !== $friend && ((!newData.exists() && (root.child('users/' + $username + '/uid').val() === auth.uid || root.child('users/' + $friend + '/uid').val() === auth.uid)) || (newData.exists() && data.exists() && (root.child('users/' + $username + '/uid').val() === auth.uid || root.child('users/' + $friend + '/uid').val() === auth.uid)) || (newData.exists() && !data.exists() && ((root.child('users/' + $username + '/uid').val() === auth.uid && root.child('friendRequests/' + $username + '/' + $friend).exists()) || (root.child('users/' + $friend + '/uid').val() === auth.uid && root.child('friendRequests/' + $friend + '/' + $username).exists()))))",
+          ".write": "auth != null && auth.token.iat >= 1778964868 && $username !== $friend && ((!newData.exists() && (root.child('users/' + $username + '/uid').val() === auth.uid || root.child('users/' + $friend + '/uid').val() === auth.uid)) || (newData.exists() && data.exists() && (root.child('users/' + $username + '/uid').val() === auth.uid || root.child('users/' + $friend + '/uid').val() === auth.uid)) || (newData.exists() && !data.exists() && ((root.child('users/' + $username + '/uid').val() === auth.uid && root.child('friendRequests/' + $username + '/' + $friend).exists()) || (root.child('users/' + $friend + '/uid').val() === auth.uid && root.child('friendRequests/' + $friend + '/' + $username).exists()))))",
           ".validate": "!newData.exists() || (newData.hasChildren(['acceptedAt']) && newData.child('acceptedAt').isNumber())",
           "$other": {
             ".validate": false
@@ -96,14 +96,14 @@
     "userSearch": {
       "$username": {
         ".read": "auth != null",
-        ".write": "auth != null && root.child('users/' + $username + '/uid').val() === auth.uid"
+        ".write": "auth != null && auth.token.iat >= 1778964868 && root.child('users/' + $username + '/uid').val() === auth.uid"
       }
     },
     "rooms": {
       ".indexOn": ["expiresAt"],
       "$roomId": {
         ".read": "auth != null && (!data.exists() || root.child('users/' + data.child('userA').val() + '/uid').val() === auth.uid || root.child('users/' + data.child('userB').val() + '/uid').val() === auth.uid)",
-        ".write": "auth != null && ((!data.exists() && !newData.exists()) || (!data.exists() && newData.exists() && newData.child('userA').val() < newData.child('userB').val() && newData.child('userA').val() + ':' + newData.child('userB').val() === $roomId && (root.child('users/' + newData.child('userA').val() + '/uid').val() === auth.uid || root.child('users/' + newData.child('userB').val() + '/uid').val() === auth.uid)) || (data.exists() && !newData.exists() && (root.child('users/' + data.child('userA').val() + '/uid').val() === auth.uid || root.child('users/' + data.child('userB').val() + '/uid').val() === auth.uid)) || (data.exists() && newData.exists() && newData.child('userA').val() === data.child('userA').val() && newData.child('userB').val() === data.child('userB').val() && data.child('userA').val() < data.child('userB').val() && data.child('userA').val() + ':' + data.child('userB').val() === $roomId && (root.child('users/' + data.child('userA').val() + '/uid').val() === auth.uid || root.child('users/' + data.child('userB').val() + '/uid').val() === auth.uid)))",
+        ".write": "auth != null && auth.token.iat >= 1778964868 && ((!data.exists() && !newData.exists()) || (!data.exists() && newData.exists() && newData.child('userA').val() < newData.child('userB').val() && newData.child('userA').val() + ':' + newData.child('userB').val() === $roomId && (root.child('users/' + newData.child('userA').val() + '/uid').val() === auth.uid || root.child('users/' + newData.child('userB').val() + '/uid').val() === auth.uid)) || (data.exists() && !newData.exists() && (root.child('users/' + data.child('userA').val() + '/uid').val() === auth.uid || root.child('users/' + data.child('userB').val() + '/uid').val() === auth.uid)) || (data.exists() && newData.exists() && newData.child('userA').val() === data.child('userA').val() && newData.child('userB').val() === data.child('userB').val() && data.child('userA').val() < data.child('userB').val() && data.child('userA').val() + ':' + data.child('userB').val() === $roomId && (root.child('users/' + data.child('userA').val() + '/uid').val() === auth.uid || root.child('users/' + data.child('userB').val() + '/uid').val() === auth.uid)))",
         ".validate": "!newData.exists() || (newData.hasChildren(['userA', 'userB', 'updatedAt', 'expiresAt']) && newData.child('userA').isString() && newData.child('userB').isString() && newData.child('userA').val() < newData.child('userB').val() && newData.child('userA').val() + ':' + newData.child('userB').val() === $roomId && newData.child('updatedAt').isNumber() && newData.child('expiresAt').isNumber() && (!newData.child('attemptId').exists() || newData.child('attemptId').isString()) && (!newData.child('createdAt').exists() || newData.child('createdAt').isNumber()))",
         "userA": {
           ".validate": "newData.isString()"
