@@ -6,7 +6,7 @@ import 'package:drift/native.dart';
 import 'package:flutter/widgets.dart';
 import 'package:protocol_brain/protocol_brain.dart';
 import 'package:protocol_brain/testing.dart';
-import 'package:rain/services/rain_runtime_controller.dart';
+import 'package:rain/application/runtime/rain_runtime_controller.dart';
 import 'package:rain_core/rain_core.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
 

@@ -29,10 +29,7 @@ class StoredMessage {
 }
 
 class IncomingMessageResult {
-  const IncomingMessageResult({
-    required this.disposition,
-    this.message,
-  });
+  const IncomingMessageResult({required this.disposition, this.message});
 
   final IncomingMessageDisposition disposition;
   final StoredMessage? message;
@@ -52,7 +49,8 @@ class MessageStore {
         (Messages row) => OrderingTerm.asc(row.seq),
       ]);
     return query.watch().map(
-      (List<Message> rows) => rows.map(_mapStoredMessage).toList(growable: false),
+      (List<Message> rows) =>
+          rows.map(_mapStoredMessage).toList(growable: false),
     );
   }
 
@@ -82,7 +80,7 @@ class MessageStore {
   }
 
   Future<int> nextOutgoingSeq(String peerId) {
-    return _database.transaction(() async {
+    return _database.serializedTransaction(() async {
       final key = _outgoingSeqKey(peerId);
       final current = await _loadTrackedSeq(key);
       final next = current + 1;
@@ -95,7 +93,7 @@ class MessageStore {
     MessageEnvelope envelope, {
     required DateTime receivedAt,
   }) {
-    return _database.transaction(() async {
+    return _database.serializedTransaction(() async {
       if (await containsMessage(envelope.id)) {
         return const IncomingMessageResult(
           disposition: IncomingMessageDisposition.duplicate,
@@ -130,7 +128,7 @@ class MessageStore {
     MessageEnvelope envelope, {
     required DateTime receivedAt,
   }) {
-    return _database.transaction(() async {
+    return _database.serializedTransaction(() async {
       final message = await _persistIncoming(
         envelope,
         sentAt: displayTime(envelope, receivedAt).millisecondsSinceEpoch,
@@ -144,7 +142,7 @@ class MessageStore {
     MessageEnvelope envelope, {
     MessageStatus status = MessageStatus.sent,
   }) {
-    return _database.transaction(() async {
+    return _database.serializedTransaction(() async {
       final message = StoredMessage(
         id: envelope.id,
         peerId: envelope.to,
@@ -155,29 +153,29 @@ class MessageStore {
         status: status,
         isOutgoing: true,
       );
-      await _database.into(_database.messages).insertOnConflictUpdate(
-        MessagesCompanion.insert(
-          id: message.id,
-          peerId: message.peerId,
-          content: message.content,
-          sentAt: message.sentAt,
-          seq: message.seq,
-          type: message.type.name,
-          status: message.status.name,
-          isOutgoing: message.isOutgoing,
-        ),
-      );
+      await _database
+          .into(_database.messages)
+          .insertOnConflictUpdate(
+            MessagesCompanion.insert(
+              id: message.id,
+              peerId: message.peerId,
+              content: message.content,
+              sentAt: message.sentAt,
+              seq: message.seq,
+              type: message.type.name,
+              status: message.status.name,
+              isOutgoing: message.isOutgoing,
+            ),
+          );
       return message;
     });
   }
 
   Future<void> markMessageStatus(String id, MessageStatus status) {
-    return _database.transaction(() async {
+    return _database.serializedTransaction(() async {
       await (_database.update(_database.messages)
             ..where((Messages row) => row.id.equals(id)))
-          .write(
-            MessagesCompanion(status: Value<String>(status.name)),
-          );
+          .write(MessagesCompanion(status: Value<String>(status.name)));
     });
   }
 
@@ -186,7 +184,7 @@ class MessageStore {
   }
 
   Future<void> setIncomingSeq(String peerId, int seq) {
-    return _database.transaction(() async {
+    return _database.serializedTransaction(() async {
       await _upsertTrackedSeq(_incomingSeqKey(peerId), seq);
     });
   }
@@ -213,28 +211,29 @@ class MessageStore {
       status: MessageStatus.delivered,
       isOutgoing: false,
     );
-    await _database.into(_database.messages).insert(
-      MessagesCompanion.insert(
-        id: message.id,
-        peerId: message.peerId,
-        content: message.content,
-        sentAt: message.sentAt,
-        seq: message.seq,
-        type: message.type.name,
-        status: message.status.name,
-        isOutgoing: message.isOutgoing,
-      ),
-    );
+    await _database
+        .into(_database.messages)
+        .insert(
+          MessagesCompanion.insert(
+            id: message.id,
+            peerId: message.peerId,
+            content: message.content,
+            sentAt: message.sentAt,
+            seq: message.seq,
+            type: message.type.name,
+            status: message.status.name,
+            isOutgoing: message.isOutgoing,
+          ),
+        );
     return message;
   }
 
   Future<void> _upsertTrackedSeq(String peerId, int seq) {
-    return _database.into(_database.messageSeqTracker).insertOnConflictUpdate(
-      MessageSeqTrackerCompanion.insert(
-        peerId: peerId,
-        lastSeq: seq,
-      ),
-    );
+    return _database
+        .into(_database.messageSeqTracker)
+        .insertOnConflictUpdate(
+          MessageSeqTrackerCompanion.insert(peerId: peerId, lastSeq: seq),
+        );
   }
 
   StoredMessage _mapStoredMessage(Message row) {

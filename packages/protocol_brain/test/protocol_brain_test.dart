@@ -4,6 +4,7 @@ import 'package:flutter_webrtc/flutter_webrtc.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:peer_core/peer_core.dart';
 import 'package:protocol_brain/adapters/supabase_auth_error.dart';
+import 'package:protocol_brain/adapters/supabase_identity_error.dart';
 import 'package:protocol_brain/protocol_brain.dart';
 import 'package:supabase_flutter/supabase_flutter.dart' hide Session;
 
@@ -31,6 +32,21 @@ void main() {
       ).toString(),
       contains('requires email confirmation'),
     );
+  });
+
+  test('supabase uid conflicts reset mismatched local identity', () {
+    final normalized = normalizeSupabaseIdentityWriteError(
+      const PostgrestException(
+        message:
+            'duplicate key value violates unique constraint "users_uid_key"',
+        code: '23505',
+        details: 'Conflict',
+      ),
+      username: 'alice',
+    );
+
+    expect(normalized, isA<SignalingSessionExpiredException>());
+    expect(normalized.toString(), contains('@alice'));
   });
 
   test('supabase auth aliases derive from the project host', () {

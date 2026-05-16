@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
+import 'package:flutter_svg/flutter_svg.dart';
 import 'package:flutter_test/flutter_test.dart';
-import 'package:rain/widgets/rain_command_widgets.dart';
+import 'package:rain/presentation/widgets/rain_command_widgets.dart';
 
 void main() {
   testWidgets('RainLiveLinkBar renders link state and strength', (
@@ -44,6 +45,32 @@ void main() {
     );
 
     expect(find.text('N'), findsOneWidget);
+  });
+
+  testWidgets('RainAvatar uses gender assets when gender is known', (
+    WidgetTester tester,
+  ) async {
+    await tester.pumpWidget(
+      const MaterialApp(
+        home: Scaffold(
+          body: Row(
+            children: <Widget>[
+              RainAvatar(name: 'Nora', gender: 'female'),
+              RainAvatar(name: 'Omar', gender: 'male'),
+            ],
+          ),
+        ),
+      ),
+    );
+
+    expect(find.byType(SvgPicture), findsNWidgets(2));
+    for (final widget in tester.widgetList<SvgPicture>(
+      find.byType(SvgPicture),
+    )) {
+      expect(widget.fit, BoxFit.contain);
+    }
+    expect(find.text('N'), findsNothing);
+    expect(find.text('O'), findsNothing);
   });
 
   testWidgets('RainMessageBubble renders delivery state and retry action', (

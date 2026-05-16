@@ -51,13 +51,28 @@ class OfflineQueueStore {
         (QueuedMessages row) => OrderingTerm.asc(row.sentAt),
       ]);
     return query.watch().map(
-      (List<QueuedMessage> rows) => rows.map(_mapQueuedMessage).toList(growable: false),
+      (List<QueuedMessage> rows) =>
+          rows.map(_mapQueuedMessage).toList(growable: false),
     );
   }
 
   Future<List<QueuedEnvelope>> loadQueue(String peerId) async {
     final query = _database.select(_database.queuedMessages)
       ..where((QueuedMessages row) => row.to.equals(peerId))
+      ..orderBy(<OrderingTerm Function(QueuedMessages)>[
+        (QueuedMessages row) => OrderingTerm.asc(row.seq),
+        (QueuedMessages row) => OrderingTerm.asc(row.sentAt),
+      ]);
+    return (await query.get()).map(_mapQueuedMessage).toList(growable: false);
+  }
+
+  Future<List<QueuedEnvelope>> loadPendingQueue(String peerId) async {
+    final query = _database.select(_database.queuedMessages)
+      ..where(
+        (QueuedMessages row) =>
+            row.to.equals(peerId) &
+            row.status.equals(QueuedMessageStatus.queued.name),
+      )
       ..orderBy(<OrderingTerm Function(QueuedMessages)>[
         (QueuedMessages row) => OrderingTerm.asc(row.seq),
         (QueuedMessages row) => OrderingTerm.asc(row.sentAt),
@@ -74,35 +89,64 @@ class OfflineQueueStore {
   }
 
   Future<void> enqueue(MessageEnvelope envelope) {
-    return _database.transaction(() async {
-      await _database.into(_database.queuedMessages).insertOnConflictUpdate(
-        QueuedMessagesCompanion.insert(
-          id: envelope.id,
-          to: envelope.to,
-          content: envelope.content,
-          sentAt: envelope.sentAt,
-          seq: envelope.seq,
-          status: QueuedMessageStatus.queued.name,
-        ),
-      );
-    });
-  }
-
-  Future<void> markStatus(String id, QueuedMessageStatus status) {
-    return _database.transaction(() async {
-      await (_database.update(_database.queuedMessages)
-            ..where((QueuedMessages row) => row.id.equals(id)))
-          .write(
-            QueuedMessagesCompanion(status: Value<String>(status.name)),
+    return _database.serializedTransaction(() async {
+      await _database
+          .into(_database.queuedMessages)
+          .insertOnConflictUpdate(
+            QueuedMessagesCompanion.insert(
+              id: envelope.id,
+              to: envelope.to,
+              content: envelope.content,
+              sentAt: envelope.sentAt,
+              seq: envelope.seq,
+              status: QueuedMessageStatus.queued.name,
+            ),
           );
     });
   }
 
-  Future<void> remove(String id) {
-    return _database.transaction(() async {
-      await (_database.delete(_database.queuedMessages)
+  Future<int> recoverInFlightMessages({String? peerId}) {
+    return _database.serializedTransaction(() async {
+      final query = _database.select(_database.queuedMessages)
+        ..where((QueuedMessages row) {
+          final status = row.status.equals(QueuedMessageStatus.sending.name);
+          if (peerId == null) {
+            return status;
+          }
+          return status & row.to.equals(peerId);
+        });
+      final rows = await query.get();
+      for (final row in rows) {
+        await (_database.update(
+          _database.queuedMessages,
+        )..where((QueuedMessages table) => table.id.equals(row.id))).write(
+          QueuedMessagesCompanion(
+            status: Value<String>(QueuedMessageStatus.queued.name),
+          ),
+        );
+        await (_database.update(
+          _database.messages,
+        )..where((Messages table) => table.id.equals(row.id))).write(
+          MessagesCompanion(status: Value<String>(MessageStatus.queued.name)),
+        );
+      }
+      return rows.length;
+    });
+  }
+
+  Future<void> markStatus(String id, QueuedMessageStatus status) {
+    return _database.serializedTransaction(() async {
+      await (_database.update(_database.queuedMessages)
             ..where((QueuedMessages row) => row.id.equals(id)))
-          .go();
+          .write(QueuedMessagesCompanion(status: Value<String>(status.name)));
+    });
+  }
+
+  Future<void> remove(String id) {
+    return _database.serializedTransaction(() async {
+      await (_database.delete(
+        _database.queuedMessages,
+      )..where((QueuedMessages row) => row.id.equals(id))).go();
     });
   }
 

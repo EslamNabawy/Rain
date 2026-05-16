@@ -12,10 +12,10 @@ class DriftConnectionMemoryStore implements ConnectionMemoryStore {
 
   @override
   Future<void> delete(String peerId) {
-    return _database.transaction(() async {
-      await (_database.delete(_database.connectionMemoryTable)
-            ..where((ConnectionMemoryTable row) => row.peerId.equals(peerId)))
-          .go();
+    return _database.serializedTransaction(() async {
+      await (_database.delete(
+        _database.connectionMemoryTable,
+      )..where((ConnectionMemoryTable row) => row.peerId.equals(peerId))).go();
     });
   }
 
@@ -34,7 +34,10 @@ class DriftConnectionMemoryStore implements ConnectionMemoryStore {
       peerId: row.peerId,
       lastConnectedAt: row.lastConnectedAt,
       cachedIce: json
-          .map((dynamic item) => iceCandidateFromJson(item as Map<Object?, Object?>))
+          .map(
+            (dynamic item) =>
+                iceCandidateFromJson(item as Map<Object?, Object?>),
+          )
           .toList(growable: false),
       fingerprint: row.fingerprint,
       consecutiveFailures: row.consecutiveFailures,
@@ -43,18 +46,22 @@ class DriftConnectionMemoryStore implements ConnectionMemoryStore {
 
   @override
   Future<void> write(ConnectionMemory memory) {
-    return _database.transaction(() async {
-      await _database.into(_database.connectionMemoryTable).insertOnConflictUpdate(
-        ConnectionMemoryTableCompanion.insert(
-          peerId: memory.peerId,
-          lastConnectedAt: memory.lastConnectedAt,
-          cachedIce: jsonEncode(
-            memory.cachedIce.map(iceCandidateToJson).toList(growable: false),
-          ),
-          fingerprint: memory.fingerprint,
-          consecutiveFailures: Value<int>(memory.consecutiveFailures),
-        ),
-      );
+    return _database.serializedTransaction(() async {
+      await _database
+          .into(_database.connectionMemoryTable)
+          .insertOnConflictUpdate(
+            ConnectionMemoryTableCompanion.insert(
+              peerId: memory.peerId,
+              lastConnectedAt: memory.lastConnectedAt,
+              cachedIce: jsonEncode(
+                memory.cachedIce
+                    .map(iceCandidateToJson)
+                    .toList(growable: false),
+              ),
+              fingerprint: memory.fingerprint,
+              consecutiveFailures: Value<int>(memory.consecutiveFailures),
+            ),
+          );
     });
   }
 }

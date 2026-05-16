@@ -5,12 +5,12 @@ import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:protocol_brain/protocol_brain.dart';
-import 'package:rain/bootstrap/app_bootstrap.dart';
-import 'package:rain/config/app_environment.dart';
-import 'package:rain/providers/app_providers.dart';
-import 'package:rain/screens/search_screen.dart';
-import 'package:rain/services/force_update_service.dart';
-import 'package:rain/services/noop_signaling_adapter.dart';
+import 'package:rain/application/bootstrap/app_bootstrap.dart';
+import 'package:rain/core/config/app_environment.dart';
+import 'package:rain/application/state/app_providers.dart';
+import 'package:rain/presentation/screens/search_screen.dart';
+import 'package:rain/infrastructure/services/force_update_service.dart';
+import 'package:rain/infrastructure/signaling/noop_signaling_adapter.dart';
 import 'package:rain_core/rain_core.dart';
 
 void main() {
@@ -64,6 +64,24 @@ void main() {
     expect(state?.results.single.username, 'bob');
   });
 
+  test('refreshCurrent reruns the latest active query', () async {
+    final adapter = _CountingSearchAdapter();
+    final db = RainDatabase(NativeDatabase.memory());
+    addTearDown(db.close);
+    final container = ProviderContainer(
+      overrides: <Override>[
+        appBootstrapProvider.overrideWithValue(_bootstrap(adapter, db)),
+      ],
+    );
+    addTearDown(container.dispose);
+
+    final notifier = container.read(userSearchProvider.notifier);
+    await notifier.search('bo');
+    await notifier.refreshCurrent();
+
+    expect(adapter.queries, <String>['bo', 'bo']);
+  });
+
   testWidgets('Find result rows stay usable on narrow mobile width', (
     WidgetTester tester,
   ) async {
@@ -102,6 +120,68 @@ void main() {
     await tester.pump();
     await tester.pump();
     await tester.pump();
+  });
+
+  testWidgets('Find does not autofocus and shows memory-only recent searches', (
+    WidgetTester tester,
+  ) async {
+    final adapter = _ImmediateSearchAdapter();
+    final db = RainDatabase(NativeDatabase.memory());
+    addTearDown(db.close);
+
+    await tester.pumpWidget(
+      ProviderScope(
+        overrides: <Override>[
+          appBootstrapProvider.overrideWithValue(_bootstrap(adapter, db)),
+          identityProvider.overrideWith(_NoIdentityController.new),
+        ],
+        child: const MaterialApp(home: Scaffold(body: SearchScreen())),
+      ),
+    );
+    await tester.pumpAndSettle();
+
+    final field = tester.widget<TextField>(find.byType(TextField));
+    expect(field.autofocus, isFalse);
+
+    await tester.enterText(find.byType(TextField), 'long');
+    await tester.pump(const Duration(milliseconds: 350));
+    await tester.pumpAndSettle();
+    await tester.tap(find.byTooltip('Clear'));
+    await tester.pumpAndSettle();
+
+    expect(find.text('Recent searches'), findsOneWidget);
+    expect(find.text('@long'), findsOneWidget);
+  });
+
+  testWidgets('Find input guidance is short and readable on mobile', (
+    WidgetTester tester,
+  ) async {
+    tester.view.physicalSize = const Size(320, 640);
+    tester.view.devicePixelRatio = 1;
+    addTearDown(tester.view.resetPhysicalSize);
+    addTearDown(tester.view.resetDevicePixelRatio);
+
+    final adapter = _ImmediateSearchAdapter();
+    final db = RainDatabase(NativeDatabase.memory());
+    addTearDown(db.close);
+
+    await tester.pumpWidget(
+      ProviderScope(
+        overrides: <Override>[
+          appBootstrapProvider.overrideWithValue(_bootstrap(adapter, db)),
+          identityProvider.overrideWith(_NoIdentityController.new),
+        ],
+        child: const MaterialApp(home: Scaffold(body: SearchScreen())),
+      ),
+    );
+    await tester.pumpAndSettle();
+
+    expect(
+      find.text('Type handle, press Add, or pick from results'),
+      findsNothing,
+    );
+    expect(find.text('Type @handle. Tap + to add.'), findsOneWidget);
+    expect(tester.takeException(), isNull);
   });
 }
 
@@ -151,6 +231,16 @@ class _ImmediateSearchAdapter extends NoopSignalingAdapter {
         online: false,
       ),
     ];
+  }
+}
+
+class _CountingSearchAdapter extends NoopSignalingAdapter {
+  final List<String> queries = <String>[];
+
+  @override
+  Future<List<BackendIdentity>> searchUsers(String query) async {
+    queries.add(query);
+    return const <BackendIdentity>[];
   }
 }
 

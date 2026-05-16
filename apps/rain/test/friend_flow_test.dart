@@ -3,8 +3,8 @@ import 'dart:async';
 import 'package:drift/native.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:protocol_brain/protocol_brain.dart';
-import 'package:rain/services/noop_signaling_adapter.dart';
-import 'package:rain/services/rain_runtime_controller.dart';
+import 'package:rain/infrastructure/signaling/noop_signaling_adapter.dart';
+import 'package:rain/application/runtime/rain_runtime_controller.dart';
 import 'package:rain_core/rain_core.dart';
 
 void main() {
@@ -580,6 +580,169 @@ void main() {
       );
       expect(await db.select(db.messages).get(), isEmpty);
       expect(await db.select(db.queuedMessages).get(), isEmpty);
+    });
+
+    test(
+      'sendMessage queues while disconnected without registering or connecting',
+      () async {
+        final adapter = NoopSignalingAdapter();
+        final brain = TestSessionManager();
+        await adapter.register('bob', 'bobpw');
+        await db
+            .into(db.friends)
+            .insert(
+              FriendsCompanion.insert(
+                username: 'bob',
+                displayName: 'Bob',
+                state: 'friend',
+                addedAt: 0,
+              ),
+            );
+        final messageStore = MessageStore(db);
+        final offlineQueueStore = OfflineQueueStore(db);
+        final runtime = RainRuntimeController(
+          selfIdentity: alice,
+          adapter: adapter,
+          brain: brain,
+          database: db,
+          friendStore: FriendStore(db),
+          messageStore: messageStore,
+          offlineQueueStore: offlineQueueStore,
+          messageDeliveryService: MessageDeliveryService(
+            messageStore: messageStore,
+            offlineQueueStore: offlineQueueStore,
+          ),
+        );
+
+        await runtime.sendMessage('bob', 'hello while offline');
+
+        expect(brain.registeredPeers, isEmpty);
+        expect(brain.connectedPeers, isEmpty);
+        final messages = await db.select(db.messages).get();
+        expect(messages, hasLength(1));
+        expect(messages.single.status, MessageStatus.queued.name);
+        final queued = await db.select(db.queuedMessages).get();
+        expect(queued, hasLength(1));
+        expect(queued.single.status, QueuedMessageStatus.queued.name);
+      },
+    );
+
+    test('resendMessage stays queued while disconnected', () async {
+      final adapter = NoopSignalingAdapter();
+      final brain = TestSessionManager();
+      await adapter.register('bob', 'bobpw');
+      await db
+          .into(db.friends)
+          .insert(
+            FriendsCompanion.insert(
+              username: 'bob',
+              displayName: 'Bob',
+              state: 'friend',
+              addedAt: 0,
+            ),
+          );
+      final messageStore = MessageStore(db);
+      final offlineQueueStore = OfflineQueueStore(db);
+      final deliveryService = MessageDeliveryService(
+        messageStore: messageStore,
+        offlineQueueStore: offlineQueueStore,
+      );
+      final envelope = await messageStore.composeOutgoingEnvelope(
+        from: 'alice',
+        to: 'bob',
+        content: 'retry later',
+      );
+      await deliveryService.queueOutgoing(envelope);
+      final runtime = RainRuntimeController(
+        selfIdentity: alice,
+        adapter: adapter,
+        brain: brain,
+        database: db,
+        friendStore: FriendStore(db),
+        messageStore: messageStore,
+        offlineQueueStore: offlineQueueStore,
+        messageDeliveryService: deliveryService,
+      );
+
+      await runtime.resendMessage(envelope.id);
+
+      expect(brain.registeredPeers, isEmpty);
+      expect(brain.connectedPeers, isEmpty);
+      final message = (await db.select(db.messages).get()).single;
+      expect(message.status, MessageStatus.queued.name);
+      final queued = (await db.select(db.queuedMessages).get()).single;
+      expect(queued.status, QueuedMessageStatus.queued.name);
+    });
+
+    test(
+      'start, presence, and refresh do not open peer links automatically',
+      () async {
+        final adapter = NoopSignalingAdapter();
+        final brain = TestSessionManager();
+        await adapter.register('bob', 'bobpw');
+        await adapter.upsertFriendship('alice', 'bob');
+        final runtime = RainRuntimeController(
+          selfIdentity: alice,
+          adapter: adapter,
+          brain: brain,
+          database: db,
+          friendStore: FriendStore(db),
+          messageStore: MessageStore(db),
+          offlineQueueStore: OfflineQueueStore(db),
+          messageDeliveryService: MessageDeliveryService(
+            messageStore: MessageStore(db),
+            offlineQueueStore: OfflineQueueStore(db),
+          ),
+          friendRequestRefreshInterval: Duration.zero,
+        );
+
+        await runtime.start();
+        await Future<void>.delayed(const Duration(milliseconds: 50));
+        await adapter.setPresence('bob', true);
+        await Future<void>.delayed(const Duration(milliseconds: 50));
+        await runtime.refreshRelationships();
+        await runtime.refreshRelationships(onlyUsername: 'bob');
+
+        expect(brain.registeredPeers, isEmpty);
+        expect(brain.connectedPeers, isEmpty);
+        await runtime.dispose();
+      },
+    );
+
+    test('disconnectPeer unregisters the peer session', () async {
+      final adapter = NoopSignalingAdapter();
+      final brain = TestSessionManager();
+      await adapter.register('bob', 'bobpw');
+      await db
+          .into(db.friends)
+          .insert(
+            FriendsCompanion.insert(
+              username: 'bob',
+              displayName: 'Bob',
+              state: 'friend',
+              addedAt: 0,
+            ),
+          );
+      final runtime = RainRuntimeController(
+        selfIdentity: alice,
+        adapter: adapter,
+        brain: brain,
+        database: db,
+        friendStore: FriendStore(db),
+        messageStore: MessageStore(db),
+        offlineQueueStore: OfflineQueueStore(db),
+        messageDeliveryService: MessageDeliveryService(
+          messageStore: MessageStore(db),
+          offlineQueueStore: OfflineQueueStore(db),
+        ),
+      );
+
+      await runtime.connectPeer('bob', interactive: true);
+      await runtime.disconnectPeer('bob');
+
+      expect(brain.disconnectedPeers, <String>['bob']);
+      expect(brain.unregisteredPeers, <String>['bob']);
+      expect(brain.getSession('bob'), isNull);
     });
 
     test('connectPeer interactive rejects pending relationships', () async {

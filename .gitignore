@@ -1,3 +1,12 @@
 .opencode/
 .skills/
 ecc-temp/
+.dart_tool/
+**/build/
+backend/firebase/functions/node_modules/
+final product/*
+!final product/README.txt
+final product/archive/
+final product_old/
+test_extract/
+test_run/

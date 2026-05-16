@@ -42,54 +42,46 @@ class IdentityRepository {
   final RainDatabase _database;
 
   Stream<RainIdentity?> watchIdentity() {
-    final query = _database.select(_database.identityTable)
-      ..limit(1);
+    final query = _database.select(_database.identityTable)..limit(1);
     return query.watchSingleOrNull().map(_mapIdentity);
   }
 
   Future<RainIdentity?> loadIdentity() async {
-    final query = _database.select(_database.identityTable)
-      ..limit(1);
+    final query = _database.select(_database.identityTable)..limit(1);
     return _mapIdentity(await query.getSingleOrNull());
   }
 
   Future<void> saveIdentity(RainIdentity identity) {
-    return _database.transaction(() async {
+    return _database.serializedTransaction(() async {
       await _database.delete(_database.identityTable).go();
-      await _database.into(_database.identityTable).insert(
-        IdentityTableCompanion.insert(
-          username: identity.username,
-          displayName: identity.displayName,
-          createdAt: identity.createdAt,
-          gender: Value<String?>(identity.gender?.name),
-        ),
-      );
+      await _database
+          .into(_database.identityTable)
+          .insert(
+            IdentityTableCompanion.insert(
+              username: identity.username,
+              displayName: identity.displayName,
+              createdAt: identity.createdAt,
+              gender: Value<String?>(identity.gender?.name),
+            ),
+          );
     });
   }
 
   Future<void> updateDisplayName(String displayName) {
-    return _database.transaction(() async {
-      await (_database.update(_database.identityTable)..where(
-            (IdentityTable table) => table.id.isBiggerThanValue(0),
-          ))
-          .write(
-            IdentityTableCompanion(
-              displayName: Value<String>(displayName),
-            ),
-          );
+    return _database.serializedTransaction(() async {
+      await (_database.update(
+        _database.identityTable,
+      )..where((IdentityTable table) => table.id.isBiggerThanValue(0))).write(
+        IdentityTableCompanion(displayName: Value<String>(displayName)),
+      );
     });
   }
 
   Future<void> updateGender(RainGender? gender) {
-    return _database.transaction(() async {
-      await (_database.update(_database.identityTable)..where(
-            (IdentityTable table) => table.id.isBiggerThanValue(0),
-          ))
-          .write(
-            IdentityTableCompanion(
-              gender: Value<String?>(gender?.name),
-            ),
-          );
+    return _database.serializedTransaction(() async {
+      await (_database.update(_database.identityTable)
+            ..where((IdentityTable table) => table.id.isBiggerThanValue(0)))
+          .write(IdentityTableCompanion(gender: Value<String?>(gender?.name)));
     });
   }
 
@@ -101,7 +93,9 @@ class IdentityRepository {
       username: data.username,
       displayName: data.displayName,
       createdAt: data.createdAt,
-      gender: data.gender == null ? null : RainGender.values.byName(data.gender!),
+      gender: data.gender == null
+          ? null
+          : RainGender.values.byName(data.gender!),
     );
   }
 }

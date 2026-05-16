@@ -1,5 +1,5 @@
 import 'package:flutter_test/flutter_test.dart';
-import 'package:rain/config/app_environment.dart';
+import 'package:rain/core/config/app_environment.dart';
 
 void main() {
   test('firebase is the default backend when no define overrides it', () {

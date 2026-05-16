@@ -72,7 +72,7 @@ class FirebaseSignalingAdapter implements SignalingAdapter {
 
   DatabaseReference get _root => _database.ref();
 
-  static const int _presenceTimeoutMs = 7 * 60 * 1000;
+  static const int _presenceTimeoutMs = 90 * 1000;
   static const int _searchLimit = 10;
 
   final Map<String, BackendIdentity> _identityCache =
@@ -191,6 +191,11 @@ class FirebaseSignalingAdapter implements SignalingAdapter {
       return null;
     }
     final value = snapshot.value! as Map<Object?, Object?>;
+    final lastHeartbeat = (value['lastHeartbeat'] as num?)?.toInt() ?? 0;
+    final online =
+        (value['online'] as bool? ?? false) &&
+        DateTime.now().millisecondsSinceEpoch - lastHeartbeat <
+            _presenceTimeoutMs;
     final identity = BackendIdentity(
       username: username,
       uid: value['uid'] as String? ?? '',
@@ -198,8 +203,8 @@ class FirebaseSignalingAdapter implements SignalingAdapter {
       gender: value['gender'] as String?,
       registeredAt: (value['registeredAt'] as num?)?.toInt() ?? 0,
       lastSeen: (value['lastSeen'] as num?)?.toInt() ?? 0,
-      lastHeartbeat: (value['lastHeartbeat'] as num?)?.toInt() ?? 0,
-      online: value['online'] as bool? ?? false,
+      lastHeartbeat: lastHeartbeat,
+      online: online,
     );
     _identityCache[username] = identity;
     return identity;
@@ -435,16 +440,26 @@ class FirebaseSignalingAdapter implements SignalingAdapter {
 
     late StreamSubscription<DatabaseEvent> onlineSub;
     late StreamSubscription<DatabaseEvent> heartbeatSub;
+    Timer? expiryTimer;
 
     bool? currentOnline;
     int? currentHeartbeat;
+    bool? lastEmitted;
 
     void checkPresence() {
+      expiryTimer?.cancel();
+      expiryTimer = null;
       if (currentOnline == null || currentHeartbeat == null) return;
       final now = DateTime.now().millisecondsSinceEpoch;
-      final isActuallyOnline =
-          currentOnline! && (now - currentHeartbeat! < _presenceTimeoutMs);
-      controller.add(isActuallyOnline);
+      final expiresIn = _presenceTimeoutMs - (now - currentHeartbeat!);
+      final isActuallyOnline = currentOnline! && expiresIn > 0;
+      if (lastEmitted != isActuallyOnline && !controller.isClosed) {
+        lastEmitted = isActuallyOnline;
+        controller.add(isActuallyOnline);
+      }
+      if (isActuallyOnline) {
+        expiryTimer = Timer(Duration(milliseconds: expiresIn), checkPresence);
+      }
     }
 
     onlineSub = onlineRef.onValue.listen((DatabaseEvent event) {
@@ -458,6 +473,7 @@ class FirebaseSignalingAdapter implements SignalingAdapter {
     });
 
     controller.onCancel = () {
+      expiryTimer?.cancel();
       onlineSub.cancel();
       heartbeatSub.cancel();
     };
@@ -560,6 +576,25 @@ class FirebaseSignalingAdapter implements SignalingAdapter {
       'operation-not-allowed' => Exception(
         'Enable Email/Password sign-in in Firebase Console > Authentication > Sign-in method.',
       ),
+      'invalid-credential' || 'wrong-password' => Exception(
+        'Wrong password. Check the password and try again.',
+      ),
+      'user-not-found' => Exception(
+        'Unknown user. Check the unique username or create an account.',
+      ),
+      'email-already-in-use' => Exception(
+        'Username is already taken. Choose another unique username.',
+      ),
+      'user-disabled' => Exception(
+        'This account is disabled. Contact the project owner.',
+      ),
+      'network-request-failed' => Exception(
+        'Network connection failed. Check your internet and try again.',
+      ),
+      'too-many-requests' => Exception(
+        'Too many attempts. Wait a moment, then try again.',
+      ),
+      'weak-password' => Exception('Password must be at least 6 characters.'),
       _ => Exception(error.message ?? error.code),
     };
   }

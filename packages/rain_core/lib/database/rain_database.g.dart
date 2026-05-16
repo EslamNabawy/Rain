@@ -528,6 +528,15 @@ class $FriendsTable extends Friends with TableInfo<$FriendsTable, Friend> {
     type: DriftSqlType.string,
     requiredDuringInsert: true,
   );
+  static const VerificationMeta _genderMeta = const VerificationMeta('gender');
+  @override
+  late final GeneratedColumn<String> gender = GeneratedColumn<String>(
+    'gender',
+    aliasedName,
+    true,
+    type: DriftSqlType.string,
+    requiredDuringInsert: false,
+  );
   static const VerificationMeta _stateMeta = const VerificationMeta('state');
   @override
   late final GeneratedColumn<String> state = GeneratedColumn<String>(
@@ -588,6 +597,7 @@ class $FriendsTable extends Friends with TableInfo<$FriendsTable, Friend> {
   List<GeneratedColumn> get $columns => [
     username,
     displayName,
+    gender,
     state,
     addedAt,
     lastOnlineAt,
@@ -624,6 +634,12 @@ class $FriendsTable extends Friends with TableInfo<$FriendsTable, Friend> {
       );
     } else if (isInserting) {
       context.missing(_displayNameMeta);
+    }
+    if (data.containsKey('gender')) {
+      context.handle(
+        _genderMeta,
+        gender.isAcceptableOrUnknown(data['gender']!, _genderMeta),
+      );
     }
     if (data.containsKey('state')) {
       context.handle(
@@ -682,6 +698,10 @@ class $FriendsTable extends Friends with TableInfo<$FriendsTable, Friend> {
         DriftSqlType.string,
         data['${effectivePrefix}display_name'],
       )!,
+      gender: attachedDatabase.typeMapping.read(
+        DriftSqlType.string,
+        data['${effectivePrefix}gender'],
+      ),
       state: attachedDatabase.typeMapping.read(
         DriftSqlType.string,
         data['${effectivePrefix}state'],
@@ -714,6 +734,7 @@ class $FriendsTable extends Friends with TableInfo<$FriendsTable, Friend> {
 class Friend extends DataClass implements Insertable<Friend> {
   final String username;
   final String displayName;
+  final String? gender;
   final String state;
   final int addedAt;
   final int? lastOnlineAt;
@@ -722,6 +743,7 @@ class Friend extends DataClass implements Insertable<Friend> {
   const Friend({
     required this.username,
     required this.displayName,
+    this.gender,
     required this.state,
     required this.addedAt,
     this.lastOnlineAt,
@@ -733,6 +755,9 @@ class Friend extends DataClass implements Insertable<Friend> {
     final map = <String, Expression>{};
     map['username'] = Variable<String>(username);
     map['display_name'] = Variable<String>(displayName);
+    if (!nullToAbsent || gender != null) {
+      map['gender'] = Variable<String>(gender);
+    }
     map['state'] = Variable<String>(state);
     map['added_at'] = Variable<int>(addedAt);
     if (!nullToAbsent || lastOnlineAt != null) {
@@ -747,6 +772,9 @@ class Friend extends DataClass implements Insertable<Friend> {
     return FriendsCompanion(
       username: Value(username),
       displayName: Value(displayName),
+      gender: gender == null && nullToAbsent
+          ? const Value.absent()
+          : Value(gender),
       state: Value(state),
       addedAt: Value(addedAt),
       lastOnlineAt: lastOnlineAt == null && nullToAbsent
@@ -765,6 +793,7 @@ class Friend extends DataClass implements Insertable<Friend> {
     return Friend(
       username: serializer.fromJson<String>(json['username']),
       displayName: serializer.fromJson<String>(json['displayName']),
+      gender: serializer.fromJson<String?>(json['gender']),
       state: serializer.fromJson<String>(json['state']),
       addedAt: serializer.fromJson<int>(json['addedAt']),
       lastOnlineAt: serializer.fromJson<int?>(json['lastOnlineAt']),
@@ -778,6 +807,7 @@ class Friend extends DataClass implements Insertable<Friend> {
     return <String, dynamic>{
       'username': serializer.toJson<String>(username),
       'displayName': serializer.toJson<String>(displayName),
+      'gender': serializer.toJson<String?>(gender),
       'state': serializer.toJson<String>(state),
       'addedAt': serializer.toJson<int>(addedAt),
       'lastOnlineAt': serializer.toJson<int?>(lastOnlineAt),
@@ -789,6 +819,7 @@ class Friend extends DataClass implements Insertable<Friend> {
   Friend copyWith({
     String? username,
     String? displayName,
+    Value<String?> gender = const Value.absent(),
     String? state,
     int? addedAt,
     Value<int?> lastOnlineAt = const Value.absent(),
@@ -797,6 +828,7 @@ class Friend extends DataClass implements Insertable<Friend> {
   }) => Friend(
     username: username ?? this.username,
     displayName: displayName ?? this.displayName,
+    gender: gender.present ? gender.value : this.gender,
     state: state ?? this.state,
     addedAt: addedAt ?? this.addedAt,
     lastOnlineAt: lastOnlineAt.present ? lastOnlineAt.value : this.lastOnlineAt,
@@ -809,6 +841,7 @@ class Friend extends DataClass implements Insertable<Friend> {
       displayName: data.displayName.present
           ? data.displayName.value
           : this.displayName,
+      gender: data.gender.present ? data.gender.value : this.gender,
       state: data.state.present ? data.state.value : this.state,
       addedAt: data.addedAt.present ? data.addedAt.value : this.addedAt,
       lastOnlineAt: data.lastOnlineAt.present
@@ -826,6 +859,7 @@ class Friend extends DataClass implements Insertable<Friend> {
     return (StringBuffer('Friend(')
           ..write('username: $username, ')
           ..write('displayName: $displayName, ')
+          ..write('gender: $gender, ')
           ..write('state: $state, ')
           ..write('addedAt: $addedAt, ')
           ..write('lastOnlineAt: $lastOnlineAt, ')
@@ -839,6 +873,7 @@ class Friend extends DataClass implements Insertable<Friend> {
   int get hashCode => Object.hash(
     username,
     displayName,
+    gender,
     state,
     addedAt,
     lastOnlineAt,
@@ -851,6 +886,7 @@ class Friend extends DataClass implements Insertable<Friend> {
       (other is Friend &&
           other.username == this.username &&
           other.displayName == this.displayName &&
+          other.gender == this.gender &&
           other.state == this.state &&
           other.addedAt == this.addedAt &&
           other.lastOnlineAt == this.lastOnlineAt &&
@@ -861,6 +897,7 @@ class Friend extends DataClass implements Insertable<Friend> {
 class FriendsCompanion extends UpdateCompanion<Friend> {
   final Value<String> username;
   final Value<String> displayName;
+  final Value<String?> gender;
   final Value<String> state;
   final Value<int> addedAt;
   final Value<int?> lastOnlineAt;
@@ -870,6 +907,7 @@ class FriendsCompanion extends UpdateCompanion<Friend> {
   const FriendsCompanion({
     this.username = const Value.absent(),
     this.displayName = const Value.absent(),
+    this.gender = const Value.absent(),
     this.state = const Value.absent(),
     this.addedAt = const Value.absent(),
     this.lastOnlineAt = const Value.absent(),
@@ -880,6 +918,7 @@ class FriendsCompanion extends UpdateCompanion<Friend> {
   FriendsCompanion.insert({
     required String username,
     required String displayName,
+    this.gender = const Value.absent(),
     required String state,
     required int addedAt,
     this.lastOnlineAt = const Value.absent(),
@@ -893,6 +932,7 @@ class FriendsCompanion extends UpdateCompanion<Friend> {
   static Insertable<Friend> custom({
     Expression<String>? username,
     Expression<String>? displayName,
+    Expression<String>? gender,
     Expression<String>? state,
     Expression<int>? addedAt,
     Expression<int>? lastOnlineAt,
@@ -903,6 +943,7 @@ class FriendsCompanion extends UpdateCompanion<Friend> {
     return RawValuesInsertable({
       if (username != null) 'username': username,
       if (displayName != null) 'display_name': displayName,
+      if (gender != null) 'gender': gender,
       if (state != null) 'state': state,
       if (addedAt != null) 'added_at': addedAt,
       if (lastOnlineAt != null) 'last_online_at': lastOnlineAt,
@@ -915,6 +956,7 @@ class FriendsCompanion extends UpdateCompanion<Friend> {
   FriendsCompanion copyWith({
     Value<String>? username,
     Value<String>? displayName,
+    Value<String?>? gender,
     Value<String>? state,
     Value<int>? addedAt,
     Value<int?>? lastOnlineAt,
@@ -925,6 +967,7 @@ class FriendsCompanion extends UpdateCompanion<Friend> {
     return FriendsCompanion(
       username: username ?? this.username,
       displayName: displayName ?? this.displayName,
+      gender: gender ?? this.gender,
       state: state ?? this.state,
       addedAt: addedAt ?? this.addedAt,
       lastOnlineAt: lastOnlineAt ?? this.lastOnlineAt,
@@ -942,6 +985,9 @@ class FriendsCompanion extends UpdateCompanion<Friend> {
     }
     if (displayName.present) {
       map['display_name'] = Variable<String>(displayName.value);
+    }
+    if (gender.present) {
+      map['gender'] = Variable<String>(gender.value);
     }
     if (state.present) {
       map['state'] = Variable<String>(state.value);
@@ -969,6 +1015,7 @@ class FriendsCompanion extends UpdateCompanion<Friend> {
     return (StringBuffer('FriendsCompanion(')
           ..write('username: $username, ')
           ..write('displayName: $displayName, ')
+          ..write('gender: $gender, ')
           ..write('state: $state, ')
           ..write('addedAt: $addedAt, ')
           ..write('lastOnlineAt: $lastOnlineAt, ')
@@ -2621,6 +2668,7 @@ typedef $$FriendsTableCreateCompanionBuilder =
     FriendsCompanion Function({
       required String username,
       required String displayName,
+      Value<String?> gender,
       required String state,
       required int addedAt,
       Value<int?> lastOnlineAt,
@@ -2632,6 +2680,7 @@ typedef $$FriendsTableUpdateCompanionBuilder =
     FriendsCompanion Function({
       Value<String> username,
       Value<String> displayName,
+      Value<String?> gender,
       Value<String> state,
       Value<int> addedAt,
       Value<int?> lastOnlineAt,
@@ -2656,6 +2705,11 @@ class $$FriendsTableFilterComposer
 
   ColumnFilters<String> get displayName => $composableBuilder(
     column: $table.displayName,
+    builder: (column) => ColumnFilters(column),
+  );
+
+  ColumnFilters<String> get gender => $composableBuilder(
+    column: $table.gender,
     builder: (column) => ColumnFilters(column),
   );
 
@@ -2704,6 +2758,11 @@ class $$FriendsTableOrderingComposer
     builder: (column) => ColumnOrderings(column),
   );
 
+  ColumnOrderings<String> get gender => $composableBuilder(
+    column: $table.gender,
+    builder: (column) => ColumnOrderings(column),
+  );
+
   ColumnOrderings<String> get state => $composableBuilder(
     column: $table.state,
     builder: (column) => ColumnOrderings(column),
@@ -2746,6 +2805,9 @@ class $$FriendsTableAnnotationComposer
     column: $table.displayName,
     builder: (column) => column,
   );
+
+  GeneratedColumn<String> get gender =>
+      $composableBuilder(column: $table.gender, builder: (column) => column);
 
   GeneratedColumn<String> get state =>
       $composableBuilder(column: $table.state, builder: (column) => column);
@@ -2797,6 +2859,7 @@ class $$FriendsTableTableManager
               ({
                 Value<String> username = const Value.absent(),
                 Value<String> displayName = const Value.absent(),
+                Value<String?> gender = const Value.absent(),
                 Value<String> state = const Value.absent(),
                 Value<int> addedAt = const Value.absent(),
                 Value<int?> lastOnlineAt = const Value.absent(),
@@ -2806,6 +2869,7 @@ class $$FriendsTableTableManager
               }) => FriendsCompanion(
                 username: username,
                 displayName: displayName,
+                gender: gender,
                 state: state,
                 addedAt: addedAt,
                 lastOnlineAt: lastOnlineAt,
@@ -2817,6 +2881,7 @@ class $$FriendsTableTableManager
               ({
                 required String username,
                 required String displayName,
+                Value<String?> gender = const Value.absent(),
                 required String state,
                 required int addedAt,
                 Value<int?> lastOnlineAt = const Value.absent(),
@@ -2826,6 +2891,7 @@ class $$FriendsTableTableManager
               }) => FriendsCompanion.insert(
                 username: username,
                 displayName: displayName,
+                gender: gender,
                 state: state,
                 addedAt: addedAt,
                 lastOnlineAt: lastOnlineAt,

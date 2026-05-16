@@ -1,6 +1,7 @@
 import 'package:drift/drift.dart';
 
 import '../database/rain_database.dart';
+import '../identity/identity.dart';
 
 enum FriendState { pendingOutgoing, pendingIncoming, friend, blocked }
 
@@ -13,6 +14,7 @@ class FriendRecord {
     required this.lastOnlineAt,
     required this.isOnline,
     required this.unreadCount,
+    required this.gender,
   });
 
   final String username;
@@ -22,6 +24,7 @@ class FriendRecord {
   final int? lastOnlineAt;
   final bool isOnline;
   final int unreadCount;
+  final RainGender? gender;
 }
 
 class FriendStore {
@@ -60,8 +63,16 @@ class FriendStore {
     required String displayName,
     required FriendState state,
     int? addedAt,
+    RainGender? gender,
   }) {
-    return _database.transaction(() async {
+    return _database.serializedTransaction(() async {
+      final existing =
+          await (_database.select(_database.friends)
+                ..where((Friends row) => row.username.equals(username))
+                ..limit(1))
+              .getSingleOrNull();
+      final effectiveGender = gender ?? _genderFromName(existing?.gender);
+
       await _database
           .into(_database.friends)
           .insertOnConflictUpdate(
@@ -70,13 +81,20 @@ class FriendStore {
               displayName: displayName,
               state: state.name,
               addedAt: addedAt ?? DateTime.now().millisecondsSinceEpoch,
+              gender: effectiveGender == null
+                  ? const Value<String?>.absent()
+                  : Value<String?>(effectiveGender.name),
             ),
           );
     });
   }
 
-  Future<void> markAccepted(String username, {String? displayName}) {
-    return _database.transaction(() async {
+  Future<void> markAccepted(
+    String username, {
+    String? displayName,
+    RainGender? gender,
+  }) {
+    return _database.serializedTransaction(() async {
       await (_database.update(
         _database.friends,
       )..where((Friends row) => row.username.equals(username))).write(
@@ -85,13 +103,16 @@ class FriendStore {
               ? const Value<String>.absent()
               : Value<String>(displayName),
           state: Value<String>(FriendState.friend.name),
+          gender: gender == null
+              ? const Value<String?>.absent()
+              : Value<String?>(gender.name),
         ),
       );
     });
   }
 
   Future<void> reject(String username) {
-    return _database.transaction(() async {
+    return _database.serializedTransaction(() async {
       await (_database.delete(
         _database.friends,
       )..where((Friends row) => row.username.equals(username))).go();
@@ -99,7 +120,7 @@ class FriendStore {
   }
 
   Future<void> block(String username) {
-    return _database.transaction(() async {
+    return _database.serializedTransaction(() async {
       await (_database.update(
         _database.friends,
       )..where((Friends row) => row.username.equals(username))).write(
@@ -109,7 +130,7 @@ class FriendStore {
   }
 
   Future<void> unblock(String username) {
-    return _database.transaction(() async {
+    return _database.serializedTransaction(() async {
       await (_database.delete(
         _database.friends,
       )..where((Friends row) => row.username.equals(username))).go();
@@ -117,7 +138,7 @@ class FriendStore {
   }
 
   Future<void> updatePresence(String username, bool isOnline) {
-    return _database.transaction(() async {
+    return _database.serializedTransaction(() async {
       final now = DateTime.now().millisecondsSinceEpoch;
       await (_database.update(
         _database.friends,
@@ -131,7 +152,7 @@ class FriendStore {
   }
 
   Future<void> incrementUnread(String username) {
-    return _database.transaction(() async {
+    return _database.serializedTransaction(() async {
       final query = _database.select(_database.friends)
         ..where((Friends row) => row.username.equals(username))
         ..limit(1);
@@ -148,7 +169,7 @@ class FriendStore {
   }
 
   Future<void> clearUnread(String username) {
-    return _database.transaction(() async {
+    return _database.serializedTransaction(() async {
       await (_database.update(_database.friends)
             ..where((Friends row) => row.username.equals(username)))
           .write(const FriendsCompanion(unreadCount: Value<int>(0)));
@@ -164,6 +185,20 @@ class FriendStore {
       lastOnlineAt: row.lastOnlineAt,
       isOnline: row.online,
       unreadCount: row.unreadCount,
+      gender: _genderFromName(row.gender),
     );
+  }
+
+  RainGender? _genderFromName(String? value) {
+    final normalized = value?.trim().toLowerCase();
+    if (normalized == null || normalized.isEmpty) {
+      return null;
+    }
+    for (final gender in RainGender.values) {
+      if (gender.name == normalized) {
+        return gender;
+      }
+    }
+    return null;
   }
 }

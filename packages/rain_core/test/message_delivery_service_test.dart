@@ -86,7 +86,9 @@ void main() {
       seq2,
       receivedAt: DateTime.now(),
       sendAck: (String rawAck) async {
-        ackedIds.add((jsonDecode(rawAck) as Map<String, dynamic>)['ackId'] as String);
+        ackedIds.add(
+          (jsonDecode(rawAck) as Map<String, dynamic>)['ackId'] as String,
+        );
       },
     );
 
@@ -97,7 +99,9 @@ void main() {
       seq1,
       receivedAt: DateTime.now(),
       sendAck: (String rawAck) async {
-        ackedIds.add((jsonDecode(rawAck) as Map<String, dynamic>)['ackId'] as String);
+        ackedIds.add(
+          (jsonDecode(rawAck) as Map<String, dynamic>)['ackId'] as String,
+        );
       },
     );
 
@@ -105,11 +109,15 @@ void main() {
     expect(await messageStore.containsMessage(seq2.id), isTrue);
     expect(ackedIds, <String>['msg-1', 'msg-2']);
 
-    final rows = await (database.select(database.messages)
-          ..where((tbl) => tbl.peerId.equals('alice'))
-          ..orderBy([(tbl) => OrderingTerm.asc(tbl.seq)]))
-        .get();
-    expect(rows.map((row) => row.id).toList(growable: false), <String>['msg-1', 'msg-2']);
+    final rows =
+        await (database.select(database.messages)
+              ..where((tbl) => tbl.peerId.equals('alice'))
+              ..orderBy([(tbl) => OrderingTerm.asc(tbl.seq)]))
+            .get();
+    expect(rows.map((row) => row.id).toList(growable: false), <String>[
+      'msg-1',
+      'msg-2',
+    ]);
     service.dispose();
   });
 
@@ -202,18 +210,153 @@ void main() {
 
     expect(sentPayloads.length, 2);
 
-    final messageRow = await (database.select(database.messages)
-          ..where((tbl) => tbl.id.equals(envelope.id))
-          ..limit(1))
-        .getSingle();
+    final messageRow =
+        await (database.select(database.messages)
+              ..where((tbl) => tbl.id.equals(envelope.id))
+              ..limit(1))
+            .getSingle();
     expect(messageRow.status, MessageStatus.failed.name);
 
-    final queuedRow = await (database.select(database.queuedMessages)
-          ..where((tbl) => tbl.id.equals(envelope.id))
-          ..limit(1))
-        .getSingle();
+    final queuedRow =
+        await (database.select(database.queuedMessages)
+              ..where((tbl) => tbl.id.equals(envelope.id))
+              ..limit(1))
+            .getSingle();
     expect(queuedRow.status, QueuedMessageStatus.failed.name);
     service.dispose();
+  });
+
+  test('send failure keeps the outgoing message locally queued', () async {
+    final service = MessageDeliveryService(
+      messageStore: messageStore,
+      offlineQueueStore: offlineQueueStore,
+    );
+
+    final envelope = MessageEnvelope(
+      id: 'out-send-fails',
+      from: 'alice',
+      to: 'bob',
+      content: 'send this later',
+      sentAt: DateTime.now().millisecondsSinceEpoch,
+      seq: 1,
+      type: MessageType.text,
+    );
+
+    final sent = await service.sendEnvelope(
+      envelope,
+      sendChat: (_) => throw StateError('data channel closed'),
+    );
+    expect(sent, isFalse);
+
+    final messageRow =
+        await (database.select(database.messages)
+              ..where((tbl) => tbl.id.equals(envelope.id))
+              ..limit(1))
+            .getSingle();
+    expect(messageRow.status, MessageStatus.queued.name);
+
+    final queuedRow =
+        await (database.select(database.queuedMessages)
+              ..where((tbl) => tbl.id.equals(envelope.id))
+              ..limit(1))
+            .getSingle();
+    expect(queuedRow.status, QueuedMessageStatus.queued.name);
+    service.dispose();
+  });
+
+  test(
+    'flushQueue sends queued messages but leaves failed ones for manual retry',
+    () async {
+      final service = MessageDeliveryService(
+        messageStore: messageStore,
+        offlineQueueStore: offlineQueueStore,
+        flushDelay: Duration.zero,
+      );
+
+      await offlineQueueStore.enqueue(
+        MessageEnvelope(
+          id: 'queued-1',
+          from: 'alice',
+          to: 'bob',
+          content: 'queued',
+          sentAt: 1,
+          seq: 1,
+          type: MessageType.text,
+        ),
+      );
+      await offlineQueueStore.enqueue(
+        MessageEnvelope(
+          id: 'failed-1',
+          from: 'alice',
+          to: 'bob',
+          content: 'failed',
+          sentAt: 2,
+          seq: 2,
+          type: MessageType.text,
+        ),
+      );
+      await offlineQueueStore.markStatus(
+        'failed-1',
+        QueuedMessageStatus.failed,
+      );
+
+      final sentPayloads = <String>[];
+      await service.flushQueue(
+        'alice',
+        'bob',
+        sendChat: (String payload) async => sentPayloads.add(payload),
+      );
+
+      expect(sentPayloads, hasLength(1));
+      final sentEnvelope = MessageEnvelope.fromWireString(sentPayloads.single);
+      expect(sentEnvelope.id, 'queued-1');
+
+      final failedRow =
+          await (database.select(database.queuedMessages)
+                ..where((tbl) => tbl.id.equals('failed-1'))
+                ..limit(1))
+              .getSingle();
+      expect(failedRow.status, QueuedMessageStatus.failed.name);
+      service.dispose();
+    },
+  );
+
+  test('in-flight queued messages recover to queued after restart', () async {
+    final envelope = MessageEnvelope(
+      id: 'stuck-sending',
+      from: 'alice',
+      to: 'bob',
+      content: 'recover me',
+      sentAt: DateTime.now().millisecondsSinceEpoch,
+      seq: 1,
+      type: MessageType.text,
+    );
+    await messageStore.storeOutgoingEnvelope(
+      envelope,
+      status: MessageStatus.sent,
+    );
+    await offlineQueueStore.enqueue(envelope);
+    await offlineQueueStore.markStatus(
+      envelope.id,
+      QueuedMessageStatus.sending,
+    );
+
+    final recovered = await offlineQueueStore.recoverInFlightMessages();
+
+    expect(recovered, 1);
+    final messageRow =
+        await (database.select(database.messages)
+              ..where((tbl) => tbl.id.equals(envelope.id))
+              ..limit(1))
+            .getSingle();
+    expect(messageRow.status, MessageStatus.queued.name);
+
+    final queuedRow =
+        await (database.select(database.queuedMessages)
+              ..where((tbl) => tbl.id.equals(envelope.id))
+              ..limit(1))
+            .getSingle();
+    expect(queuedRow.status, QueuedMessageStatus.queued.name);
   });
 
   test('offline queue is loaded in seq order', () async {
@@ -242,7 +385,9 @@ void main() {
 
     final queued = await offlineQueueStore.loadQueue('bob');
     expect(
-      queued.map((QueuedEnvelope message) => message.id).toList(growable: false),
+      queued
+          .map((QueuedEnvelope message) => message.id)
+          .toList(growable: false),
       <String>['msg-1', 'msg-2'],
     );
   });

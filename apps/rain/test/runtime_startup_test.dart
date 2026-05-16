@@ -1,11 +1,11 @@
 import 'package:drift/native.dart';
 import 'package:flutter_test/flutter_test.dart';
-import 'package:rain/bootstrap/app_bootstrap.dart';
-import 'package:rain/config/app_environment.dart';
+import 'package:rain/application/bootstrap/app_bootstrap.dart';
+import 'package:rain/core/config/app_environment.dart';
 import 'package:rain/main.dart' as rain_app;
 import 'package:protocol_brain/protocol_brain.dart';
-import 'package:rain/services/noop_signaling_adapter.dart';
-import 'package:rain/services/rain_runtime_controller.dart';
+import 'package:rain/infrastructure/signaling/noop_signaling_adapter.dart';
+import 'package:rain/application/runtime/rain_runtime_controller.dart';
 import 'package:rain_core/rain_core.dart';
 
 class _FailingBootstrapper extends AppBootstrapper {
@@ -82,6 +82,64 @@ void main() {
         ),
       ),
     );
+  });
+
+  test('runtime startup recovers stuck offline sends to queued', () async {
+    final db = RainDatabase(NativeDatabase.memory());
+    addTearDown(db.close);
+    const identity = RainIdentity(
+      username: 'alice',
+      displayName: 'Alice',
+      createdAt: 0,
+      gender: RainGender.female,
+    );
+    final messageStore = MessageStore(db);
+    final offlineQueueStore = OfflineQueueStore(db);
+    final envelope = await messageStore.composeOutgoingEnvelope(
+      from: 'alice',
+      to: 'bob',
+      content: 'still needs delivery',
+    );
+    await messageStore.storeOutgoingEnvelope(
+      envelope,
+      status: MessageStatus.sent,
+    );
+    await offlineQueueStore.enqueue(envelope);
+    await offlineQueueStore.markStatus(
+      envelope.id,
+      QueuedMessageStatus.sending,
+    );
+
+    final runtime = RainRuntimeController(
+      selfIdentity: identity,
+      adapter: NoopSignalingAdapter(),
+      brain: null,
+      database: db,
+      friendStore: FriendStore(db),
+      messageStore: messageStore,
+      offlineQueueStore: offlineQueueStore,
+      messageDeliveryService: MessageDeliveryService(
+        messageStore: messageStore,
+        offlineQueueStore: offlineQueueStore,
+      ),
+      friendRequestRefreshInterval: Duration.zero,
+    );
+    addTearDown(runtime.dispose);
+
+    await runtime.start();
+
+    final messageRow =
+        await (db.select(db.messages)
+              ..where((tbl) => tbl.id.equals(envelope.id))
+              ..limit(1))
+            .getSingle();
+    expect(messageRow.status, MessageStatus.queued.name);
+    final queuedRow =
+        await (db.select(db.queuedMessages)
+              ..where((tbl) => tbl.id.equals(envelope.id))
+              ..limit(1))
+            .getSingle();
+    expect(queuedRow.status, QueuedMessageStatus.queued.name);
   });
 
   test(

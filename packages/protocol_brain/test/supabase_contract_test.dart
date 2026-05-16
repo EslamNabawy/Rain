@@ -33,7 +33,9 @@ void main() {
       workspaceRoot.uri.resolve('apps/rain/tool/live_supabase_smoke.dart'),
     );
     final validatorFile = File.fromUri(
-      workspaceRoot.uri.resolve('packages/rain_core/lib/src/input_validator.dart'),
+      workspaceRoot.uri.resolve(
+        'packages/rain_core/lib/src/input_validator.dart',
+      ),
     );
 
     final schema = schemaFile.readAsStringSync();
@@ -55,7 +57,8 @@ void main() {
     expect(
       schema,
       contains('create table if not exists public.app_config'),
-      reason: 'Supabase should expose an app_config row for the force-update gate.',
+      reason:
+          'Supabase should expose an app_config row for the force-update gate.',
     );
     expect(
       schema,
@@ -75,7 +78,8 @@ void main() {
     expect(
       schema,
       contains('create extension if not exists pg_trgm;'),
-      reason: 'Username substring search should use pg_trgm instead of seq scans.',
+      reason:
+          'Username substring search should use pg_trgm instead of seq scans.',
     );
     expect(
       schema,
@@ -110,12 +114,14 @@ void main() {
     expect(
       schema,
       contains('create index if not exists users_online_last_heartbeat_idx'),
-      reason: 'Presence cleanup should use an index on the heartbeat timestamp.',
+      reason:
+          'Presence cleanup should use an index on the heartbeat timestamp.',
     );
     expect(
       schema,
       contains('create or replace function public.canonical_room_id'),
-      reason: 'Room rows should be normalized through a canonical room id helper.',
+      reason:
+          'Room rows should be normalized through a canonical room id helper.',
     );
     expect(
       schema,
@@ -130,27 +136,32 @@ void main() {
     expect(
       schema,
       contains('guard_immutable_user_identity_fields'),
-      reason: 'Username ownership fields should remain immutable after registration.',
+      reason:
+          'Username ownership fields should remain immutable after registration.',
     );
     expect(
       schema,
       contains('uid = (select auth.uid())::text'),
-      reason: 'RLS policies should cache auth.uid() instead of recomputing per row.',
+      reason:
+          'RLS policies should cache auth.uid() instead of recomputing per row.',
     );
     expect(
       schema,
       contains('participant.uid = (select auth.uid())::text'),
-      reason: 'Room policies should cache auth.uid() inside the EXISTS subquery.',
+      reason:
+          'Room policies should cache auth.uid() inside the EXISTS subquery.',
     );
     expect(
       backendReadme,
       contains('<username>@auth.<your-project-host>'),
-      reason: 'The backend runbook should document the auth alias used by the app.',
+      reason:
+          'The backend runbook should document the auth alias used by the app.',
     );
     expect(
       alias,
       contains("return 'auth.\$host';"),
-      reason: 'The app-managed alias should derive from the Supabase project host.',
+      reason:
+          'The app-managed alias should derive from the Supabase project host.',
     );
     expect(
       adapter,
@@ -160,37 +171,44 @@ void main() {
     expect(
       androidSmoke,
       contains('supabasePreferredEmailFromUsername'),
-      reason: 'The Android presence smoke should authenticate with the same alias as the app.',
+      reason:
+          'The Android presence smoke should authenticate with the same alias as the app.',
     );
     expect(
       alias,
       contains('@example.com'),
-      reason: 'The shared alias helper should retain the previous alias as a login fallback.',
+      reason:
+          'The shared alias helper should retain the previous alias as a login fallback.',
     );
     expect(
       alias,
       contains('@rain.local'),
-      reason: 'The Supabase adapter should retain the previous invalid alias as a login fallback while existing local state is migrated.',
+      reason:
+          'The Supabase adapter should retain the previous invalid alias as a login fallback while existing local state is migrated.',
     );
     expect(
       alias,
       contains('@gmail.com'),
-      reason: 'The Supabase adapter should retain the legacy alias fallback for existing accounts.',
+      reason:
+          'The Supabase adapter should retain the legacy alias fallback for existing accounts.',
     );
     expect(
       androidSmoke,
       contains('supabaseLoginEmailsFromUsername'),
-      reason: 'The Android presence smoke should be able to authenticate legacy accounts before it provisions new ones.',
+      reason:
+          'The Android presence smoke should be able to authenticate legacy accounts before it provisions new ones.',
     );
     expect(
       liveSmoke,
       contains('SupabaseSignalingAdapter'),
-      reason: 'The live Supabase smoke should reuse the shared Supabase adapter auth path.',
+      reason:
+          'The live Supabase smoke should reuse the shared Supabase adapter auth path.',
     );
     expect(
       liveSmoke,
       isNot(contains('expectedSupabaseAnonKey')),
-      reason: 'Live smoke tooling should not hardcode a specific publishable key.',
+      reason:
+          'Live smoke tooling should not hardcode a specific publishable key.',
     );
     expect(
       verify,
@@ -210,12 +228,14 @@ void main() {
     expect(
       verify,
       contains("to_regclass('public.friend_requests') is not null as exists"),
-      reason: 'The verification script should check the live friend_requests table.',
+      reason:
+          'The verification script should check the live friend_requests table.',
     );
     expect(
       verify,
       contains("to_regclass('public.friendships') is not null as exists"),
-      reason: 'The verification script should check the live friendships table.',
+      reason:
+          'The verification script should check the live friendships table.',
     );
     expect(
       verify,
@@ -233,7 +253,8 @@ void main() {
       );
       final offenders = <String>[];
 
-      for (final file in supabaseDir.listSync(recursive: true).whereType<File>()) {
+      for (final file
+          in supabaseDir.listSync(recursive: true).whereType<File>()) {
         if (!file.path.endsWith('.sql')) {
           continue;
         }
@@ -267,19 +288,26 @@ void main() {
     expect(schema, contains('existing_friendship.user_b = rooms.user_b'));
   });
 
-  test('Supabase ICE writes use append RPC instead of client read-modify-write', () {
-    final workspaceRoot = Directory.current.parent.parent;
-    final schema = File.fromUri(
-      workspaceRoot.uri.resolve('backend/supabase/schema.sql'),
-    ).readAsStringSync().toLowerCase();
-    final adapter = File.fromUri(
-      workspaceRoot.uri.resolve(
-        'packages/protocol_brain/lib/adapters/supabase_adapter.dart',
-      ),
-    ).readAsStringSync();
+  test(
+    'Supabase ICE writes use append RPC instead of client read-modify-write',
+    () {
+      final workspaceRoot = Directory.current.parent.parent;
+      final schema = File.fromUri(
+        workspaceRoot.uri.resolve('backend/supabase/schema.sql'),
+      ).readAsStringSync().toLowerCase();
+      final adapter = File.fromUri(
+        workspaceRoot.uri.resolve(
+          'packages/protocol_brain/lib/adapters/supabase_adapter.dart',
+        ),
+      ).readAsStringSync();
 
-    expect(schema, contains('create or replace function public.append_room_ice'));
-    expect(adapter, contains(".rpc('append_room_ice'"));
-    expect(adapter, isNot(contains('.select(field)')));
-  });
+      expect(
+        schema,
+        contains('create or replace function public.append_room_ice'),
+      );
+      expect(adapter, contains("'append_room_ice'"));
+      expect(adapter, contains('.rpc('));
+      expect(adapter, isNot(contains('.select(field)')));
+    },
+  );
 }

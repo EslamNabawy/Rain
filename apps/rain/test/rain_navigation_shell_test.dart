@@ -1,7 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:go_router/go_router.dart';
-import 'package:rain/navigation/rain_navigation_shell.dart';
+import 'package:rain/presentation/navigation/rain_navigation_shell.dart';
 
 void main() {
   TestWidgetsFlutterBinding.ensureInitialized();

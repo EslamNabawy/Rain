@@ -1,11 +1,11 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
-import 'bootstrap/app_bootstrap.dart';
-import 'config/app_environment.dart';
-import 'providers/app_providers.dart';
-import 'screens/rain_app.dart';
-import 'screens/splash_screen.dart';
+import 'application/bootstrap/app_bootstrap.dart';
+import 'core/config/app_environment.dart';
+import 'application/state/app_providers.dart';
+import 'presentation/screens/rain_app.dart';
+import 'presentation/screens/splash_screen.dart';
 
 Future<void> main() async {
   await runRainApp();

@@ -1,6 +1,6 @@
 import 'package:flutter_test/flutter_test.dart';
 import 'package:package_info_plus/package_info_plus.dart';
-import 'package:rain/services/force_update_service.dart';
+import 'package:rain/infrastructure/services/force_update_service.dart';
 
 void main() {
   test('custom config loader enforces the Supabase min version', () async {

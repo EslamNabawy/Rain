@@ -1,6 +1,6 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
-import 'package:rain/widgets/app_components.dart';
+import 'package:rain/presentation/widgets/app_components.dart';
 
 void main() {
   TestWidgetsFlutterBinding.ensureInitialized();

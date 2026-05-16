@@ -230,9 +230,15 @@ function Assert-ReleaseDartDefines([string]$Path, [switch]$AllowPublicTurnForDem
   }
 
   try {
-    $iceServers = @($rawIceServers | ConvertFrom-Json -ErrorAction Stop)
+    $parsedIceServers = ConvertFrom-Json -InputObject $rawIceServers -ErrorAction Stop
   } catch {
     throw "RAIN_ICE_SERVERS must be a JSON array of ICE server objects."
+  }
+
+  $iceServers = if ($parsedIceServers -is [System.Array]) {
+    @($parsedIceServers)
+  } else {
+    @($parsedIceServers)
   }
 
   if ($iceServers.Count -eq 0) {
@@ -522,11 +528,6 @@ if ($Platform -in @('all', 'android')) {
 
   Copy-Item -LiteralPath $apkSource -Destination $apkDestination -Force
   Copy-Item -LiteralPath $apkSource -Destination $universalApkDestination -Force
-
-  Write-Step "Resetting Android build state before per-ABI APKs"
-  Stop-GradleDaemons $appsRoot
-  Start-Sleep -Seconds 5
-  Clean-FlutterProject $appsRoot
 
   Write-Step "Building Android per-ABI release APKs"
   $splitFlutterArgs = @('build', 'apk', '--release', '--split-per-abi') + $dartDefineArgs

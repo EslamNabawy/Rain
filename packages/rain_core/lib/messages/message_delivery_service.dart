@@ -76,18 +76,32 @@ class MessageDeliveryService {
     await _offlineQueueStore.enqueue(envelope);
   }
 
-  Future<void> sendEnvelope(
+  Future<bool> sendEnvelope(
     MessageEnvelope envelope, {
     required Future<void> Function(String payload) sendChat,
   }) async {
     await _offlineQueueStore.enqueue(envelope);
-    await _offlineQueueStore.markStatus(envelope.id, QueuedMessageStatus.sending);
+    await _offlineQueueStore.markStatus(
+      envelope.id,
+      QueuedMessageStatus.sending,
+    );
     await _messageStore.storeOutgoingEnvelope(
       envelope,
-      status: MessageStatus.sent,
+      status: MessageStatus.sending,
     );
-    await sendChat(envelope.toWireString());
+    try {
+      await sendChat(envelope.toWireString());
+    } catch (_) {
+      await _messageStore.markMessageStatus(envelope.id, MessageStatus.queued);
+      await _offlineQueueStore.markStatus(
+        envelope.id,
+        QueuedMessageStatus.queued,
+      );
+      return false;
+    }
+    await _messageStore.markMessageStatus(envelope.id, MessageStatus.sent);
     _armAckTimer(envelope, sendChat);
+    return true;
   }
 
   Future<void> flushQueue(
@@ -95,12 +109,15 @@ class MessageDeliveryService {
     String peerId, {
     required Future<void> Function(String payload) sendChat,
   }) async {
-    final queued = await _offlineQueueStore.loadQueue(peerId);
+    await _offlineQueueStore.recoverInFlightMessages(peerId: peerId);
+    final queued = await _offlineQueueStore.loadPendingQueue(peerId);
     for (final message in queued) {
       await Future<void>.delayed(_flushDelay);
-      await _offlineQueueStore.markStatus(message.id, QueuedMessageStatus.sending);
       final envelope = message.toEnvelope(from: selfUsername);
-      await sendEnvelope(envelope, sendChat: sendChat);
+      final sent = await sendEnvelope(envelope, sendChat: sendChat);
+      if (!sent) {
+        break;
+      }
     }
   }
 
@@ -215,7 +232,10 @@ class MessageDeliveryService {
     if (tracker.retries >= _autoResendLimit) {
       _ackTrackers.remove(messageId)?.timer.cancel();
       await _messageStore.markMessageStatus(messageId, MessageStatus.failed);
-      await _offlineQueueStore.markStatus(messageId, QueuedMessageStatus.failed);
+      await _offlineQueueStore.markStatus(
+        messageId,
+        QueuedMessageStatus.failed,
+      );
       return;
     }
 

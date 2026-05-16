@@ -6,6 +6,7 @@ import 'package:supabase_flutter/supabase_flutter.dart';
 import 'signaling_adapter.dart';
 import 'supabase_auth_alias.dart';
 import 'supabase_auth_error.dart';
+import 'supabase_identity_error.dart';
 
 class SupabaseSignalingAdapter implements SignalingAdapter {
   SupabaseSignalingAdapter({required String projectUrl, SupabaseClient? client})
@@ -14,7 +15,7 @@ class SupabaseSignalingAdapter implements SignalingAdapter {
 
   final SupabaseClient _client;
   final String _projectUrl;
-  static const int _presenceTimeoutMs = 7 * 60 * 1000;
+  static const int _presenceTimeoutMs = 90 * 1000;
 
   @override
   Future<void> deleteRoom(String roomId) async {
@@ -517,24 +518,61 @@ class SupabaseSignalingAdapter implements SignalingAdapter {
   @override
   Future<void> upsertIdentity(BackendIdentity identity) async {
     await ensureAuthenticated();
-    await _client.from('users').upsert(identity.toSupabaseJson());
+    try {
+      await _client.from('users').upsert(identity.toSupabaseJson());
+    } catch (error) {
+      throw normalizeSupabaseIdentityWriteError(
+        error,
+        username: identity.username,
+      );
+    }
   }
 
   @override
   Stream<bool> watchPresence(String username) {
-    return _client
+    final controller = StreamController<bool>.broadcast();
+    Timer? expiryTimer;
+    bool? lastEmitted;
+
+    void emitPresence(bool online, int lastHeartbeat) {
+      expiryTimer?.cancel();
+      expiryTimer = null;
+      final now = DateTime.now().millisecondsSinceEpoch;
+      final expiresIn = _presenceTimeoutMs - (now - lastHeartbeat);
+      final freshOnline = online && expiresIn > 0;
+      if (lastEmitted != freshOnline && !controller.isClosed) {
+        lastEmitted = freshOnline;
+        controller.add(freshOnline);
+      }
+      if (freshOnline) {
+        expiryTimer = Timer(Duration(milliseconds: expiresIn), () {
+          emitPresence(online, lastHeartbeat);
+        });
+      }
+    }
+
+    late final StreamSubscription<List<Map<String, dynamic>>> subscription;
+    subscription = _client
         .from('users')
         .stream(primaryKey: <String>['username'])
         .eq('username', username)
-        .map((List<Map<String, dynamic>> rows) {
+        .listen((List<Map<String, dynamic>> rows) {
           if (rows.isEmpty) {
-            return false;
+            emitPresence(false, 0);
+            return;
           }
           final row = rows.first;
           final online = row['online'] as bool? ?? false;
           final lastHeartbeat = (row['last_heartbeat'] as num?)?.toInt() ?? 0;
-          return _isFreshPresence(online, lastHeartbeat);
+          emitPresence(online, lastHeartbeat);
         });
+
+    controller.onCancel = () {
+      expiryTimer?.cancel();
+      subscription.cancel();
+    };
+
+    return controller.stream;
   }
 
   @override
@@ -590,9 +628,10 @@ class SupabaseSignalingAdapter implements SignalingAdapter {
       final requestFrom = currentUsername == normalizedFirstUser
           ? normalizedSecondUser
           : normalizedFirstUser;
-      await _client.rpc('accept_friend_request', params: <String, Object?>{
-        'request_from': requestFrom,
-      });
+      await _client.rpc(
+        'accept_friend_request',
+        params: <String, Object?>{'request_from': requestFrom},
+      );
     } catch (error) {
       if (!_isMissingFriendshipsTableError(error)) {
         rethrow;
@@ -608,11 +647,14 @@ class SupabaseSignalingAdapter implements SignalingAdapter {
     RTCIceCandidate candidate,
   ) async {
     await ensureAuthenticated();
-    await _client.rpc('append_room_ice', params: <String, Object?>{
-      'target_room_id': roomId,
-      'target_role': role == IceRole.caller ? 'caller' : 'callee',
-      'target_candidate': iceCandidateToJson(candidate),
-    });
+    await _client.rpc(
+      'append_room_ice',
+      params: <String, Object?>{
+        'target_room_id': roomId,
+        'target_role': role == IceRole.caller ? 'caller' : 'callee',
+        'target_candidate': iceCandidateToJson(candidate),
+      },
+    );
   }
 
   @override

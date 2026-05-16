@@ -2,7 +2,7 @@ import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_test/flutter_test.dart';
-import 'package:rain/widgets/chat_composer.dart';
+import 'package:rain/presentation/widgets/chat_composer.dart';
 
 void main() {
   TestWidgetsFlutterBinding.ensureInitialized();
