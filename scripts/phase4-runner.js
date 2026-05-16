@@ -1,48 +1,113 @@
 #!/usr/bin/env node
-/* Phase 4 Runner: Lightweight verification for Phase 3 integration.
- * Usage: node scripts/phase4-runner.js
- * Produces plans/phase4-runner-output.json
- */
 const fs = require('fs');
 const path = require('path');
-function sleep(ms){ return new Promise(r => setTimeout(r, ms)); }
+const { spawnSync } = require('child_process');
 
-async function main(){
-  console.log('[Phase 4 Runner] Starting verification of Phase 3 results...');
-  // Load Phase 3 artifacts if present
-  let phase3Ok = false;
-  try {
-    const p3 = require(path.resolve(process.cwd(), 'plans', 'phase3-runner-output.json'));
-    phase3Ok = p3?.summary?.completed === p3?.summary?.total;
-  } catch {
-    phase3Ok = false;
-  }
+const repoRoot = path.resolve(__dirname, '..');
+const outputPath = path.join(repoRoot, 'plans', 'phase4-runner-output.json');
 
-  // Simulated checks
-  const checks = [
-    { name: 'Build', status: phase3Ok ? 'PASS' : 'FAIL' },
-    { name: 'Analyze', status: 'PASS' },
-    { name: 'Unit Tests', status: 'PASS' },
-    { name: 'Lint', status: 'PASS' },
-    { name: 'Security', status: 'PASS' },
-  ];
-  // Simulate some delay
-  await sleep(200);
+const checks = [
+  {
+    name: 'Flutter analyze app',
+    command: 'flutter',
+    args: ['analyze'],
+    cwd: 'apps/rain',
+  },
+  {
+    name: 'App tests',
+    command: 'flutter',
+    args: ['test'],
+    cwd: 'apps/rain',
+  },
+  {
+    name: 'Peer core tests',
+    command: 'flutter',
+    args: ['test'],
+    cwd: 'packages/peer_core',
+  },
+  {
+    name: 'Protocol brain tests',
+    command: 'flutter',
+    args: ['test'],
+    cwd: 'packages/protocol_brain',
+  },
+  {
+    name: 'Rain core tests',
+    command: 'flutter',
+    args: ['test'],
+    cwd: 'packages/rain_core',
+  },
+];
 
-  const summary = {
-    total: checks.length,
-    passed: checks.filter(c => c.status === 'PASS').length,
-    failed: checks.filter(c => c.status === 'FAIL').length,
+function resolveWindowsFlutterCommand(args) {
+  const whereResult = spawnSync('where.exe', ['flutter'], {
+    encoding: 'utf8',
+  });
+  const candidates = whereResult.stdout
+    .split(/\r?\n/)
+    .map((line) => line.trim())
+    .filter(Boolean);
+  const flutterPath = candidates.find((line) => line.toLowerCase().endsWith('.bat'))
+    || candidates[0]
+    || 'flutter.bat';
+  return {
+    command: 'powershell.exe',
+    args: [
+      '-NoProfile',
+      '-ExecutionPolicy',
+      'Bypass',
+      '-Command',
+      `& "${flutterPath}" ${args.join(' ')}`,
+    ],
   };
-  const details = checks;
+}
+
+function runCheck(check) {
+  const cwd = path.join(repoRoot, check.cwd);
+  const commandLine = [check.command, ...check.args].join(' ');
+  const resolved = process.platform === 'win32' && check.command === 'flutter'
+    ? resolveWindowsFlutterCommand(check.args)
+    : { command: check.command, args: check.args };
+  console.log(`[Phase 4 Runner] ${check.name}: ${commandLine} (${check.cwd})`);
+
+  const result = spawnSync(resolved.command, resolved.args, {
+    cwd,
+    stdio: 'inherit',
+  });
+  const exitCode = typeof result.status === 'number' ? result.status : 1;
+  const passed = exitCode === 0;
+
+  return {
+    name: check.name,
+    command: commandLine,
+    cwd: check.cwd,
+    status: passed ? 'PASS' : 'FAIL',
+    exitCode,
+    error: result.error ? result.error.message : '',
+  };
+}
+
+function main() {
+  console.log('[Phase 4 Runner] Starting real Flutter verification.');
+  const details = checks.map(runCheck);
+  const summary = {
+    total: details.length,
+    passed: details.filter((check) => check.status === 'PASS').length,
+    failed: details.filter((check) => check.status === 'FAIL').length,
+  };
   const artifact = {
     timestamp: new Date().toISOString(),
     summary,
-    details
+    details,
   };
-  const outPath = path.resolve(process.cwd(), 'plans', 'phase4-runner-output.json');
-  fs.writeFileSync(outPath, JSON.stringify(artifact, null, 2));
-  console.log(`Phase 4 run artifact written to ${outPath}`);
+
+  fs.mkdirSync(path.dirname(outputPath), { recursive: true });
+  fs.writeFileSync(outputPath, `${JSON.stringify(artifact, null, 2)}\n`);
+  console.log(`[Phase 4 Runner] Artifact written to ${outputPath}`);
+
+  if (summary.failed > 0) {
+    process.exit(1);
+  }
 }
 
 main();
