@@ -22,6 +22,22 @@ void main() {
         'Release builds require -DartDefinesFile with project-owned TURN servers.',
       ),
     );
+    expect(
+      script,
+      contains(
+        'RAIN_SIGNALING_ENCRYPTION_KEY is required in release dart defines.',
+      ),
+    );
+    expect(
+      script,
+      contains('RAIN_SIGNALING_ENCRYPTION_KEY must be at least 32 characters.'),
+    );
+    expect(
+      script,
+      contains(
+        'Production release builds must not use the demo signaling encryption key.',
+      ),
+    );
     expect(script, contains('Assert-ReleaseDartDefines -Path \$resolved'));
     expect(
       script,
@@ -101,15 +117,82 @@ void main() {
     expect(workflow, contains('RAIN_RELEASE_STORE_FILE'));
   });
 
+  test('demo dart defines include signaling encryption key', () {
+    final defines = _repoFile('apps/rain/tool/dart_defines.example.json');
+
+    expect(defines, contains('RAIN_SIGNALING_ENCRYPTION_KEY'));
+    expect(
+      defines,
+      contains('rain-demo-signaling-encryption-key-v1-change-me'),
+    );
+  });
+
   test('release script packages universal and per-ABI Android APKs', () {
     final script = _repoFile('scripts/build_release.ps1');
 
     expect(script, contains('--split-per-abi'));
     expect(script, contains('Rain-release'));
-    expect(script, contains('Rain-openrelay-demo'));
+    expect(script, contains('Rain-Demo'));
+    expect(script, contains('ARMv8/ARMv9 devices'));
+    expect(script, contains('Rain-Demo-Android-Universal-Build.apk'));
+    expect(script, contains('Rain-Demo-Android-ARM-v8-v9-Build.apk'));
+    expect(script, contains('Rain-Demo-Android-ARM-v7-Build.apk'));
+    expect(script, contains('Rain-Demo-Android-x86_64-Build.apk'));
+    expect(script, contains('Rain-Demo-Windows-x64-Build'));
     expect(script, contains('\$androidArtifactPrefix-android-universal.apk'));
     expect(script, contains('\$androidArtifactPrefix-android-arm64-v8a.apk'));
     expect(script, contains('\$androidArtifactPrefix-android-armeabi-v7a.apk'));
     expect(script, contains('\$androidArtifactPrefix-android-x86_64.apk'));
   });
+
+  test('artifact workflows verify every Android APK architecture', () {
+    final workflows = <String>[
+      _repoFile('.github/workflows/ci.yml'),
+      _repoFile('.github/workflows/build-artifacts.yml'),
+      _repoFile('.github/workflows/release.yml'),
+    ];
+
+    for (final workflow in workflows) {
+      expect(workflow, contains('Android ARM v7 APK (armeabi-v7a)'));
+      expect(workflow, contains('Android ARM v8/v9 APK (arm64-v8a)'));
+      expect(workflow, contains('Android x86_64 APK'));
+      expect(
+        workflow,
+        anyOf(
+          contains('-android-armeabi-v7a.apk'),
+          contains('Rain-Demo-Android-ARM-v7-Build.apk'),
+        ),
+      );
+      expect(
+        workflow,
+        anyOf(
+          contains('-android-arm64-v8a.apk'),
+          contains('Rain-Demo-Android-ARM-v8-v9-Build.apk'),
+        ),
+      );
+      expect(
+        workflow,
+        anyOf(
+          contains('-android-x86_64.apk'),
+          contains('Rain-Demo-Android-x86_64-Build.apk'),
+        ),
+      );
+    }
+  });
+
+  test(
+    'CI demo artifacts use concise names and upload only the Windows zip',
+    () {
+      final workflow = _repoFile('.github/workflows/ci.yml');
+
+      expect(workflow, contains('Rain-Demo-Windows-x64-Build.zip'));
+      expect(workflow, contains('Rain-Demo-Android-ARM-v7-Build.apk'));
+      expect(workflow, contains('Rain-Demo-Android-ARM-v8-v9-Build.apk'));
+      expect(workflow, contains('Rain-Demo-Android-x86_64-Build.apk'));
+      expect(
+        workflow,
+        isNot(contains('artifacts/Rain-Demo-Windows-x64-Build/**')),
+      );
+    },
+  );
 }

@@ -32,7 +32,7 @@ jobs:
   dependency-review:
     name: Dependency Review
     runs-on: ubuntu-latest
-    if: github.event_name == 'pull_request'
+    if: ${{ github.event_name == 'pull_request' && github.event.repository.security_and_analysis.dependency_graph.status == 'enabled' }}
     permissions:
       contents: read
       pull-requests: write
@@ -54,7 +54,7 @@ jobs:
         with:
           fetch-depth: 0
 
-      - uses: actions/setup-java@v4
+      - uses: actions/setup-java@v5
         with:
           distribution: temurin
           java-version: ${{ env.JAVA_VERSION }}
@@ -131,7 +131,7 @@ jobs:
 
       - name: Upload release guard diagnostics
         if: failure()
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v7
         with:
           name: release-guard-diagnostics
           path: ${{ runner.temp }}/release-guard.log
@@ -157,7 +157,7 @@ jobs:
     steps:
       - uses: actions/checkout@v5
 
-      - uses: actions/setup-java@v4
+      - uses: actions/setup-java@v5
         with:
           distribution: temurin
           java-version: ${{ env.JAVA_VERSION }}
@@ -195,7 +195,7 @@ jobs:
     steps:
       - uses: actions/checkout@v5
 
-      - uses: actions/setup-java@v4
+      - uses: actions/setup-java@v5
         with:
           distribution: temurin
           java-version: ${{ env.JAVA_VERSION }}
@@ -219,7 +219,7 @@ jobs:
 
       - name: Upload coverage
         if: always()
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v7
         with:
           name: coverage-${{ matrix.id }}
           path: ${{ matrix.path }}/coverage/lcov.info
@@ -233,7 +233,7 @@ jobs:
     steps:
       - uses: actions/checkout@v5
 
-      - uses: actions/setup-node@v4
+      - uses: actions/setup-node@v6
         with:
           node-version: ${{ env.NODE_VERSION }}
           cache: npm
@@ -265,7 +265,7 @@ jobs:
     steps:
       - uses: actions/checkout@v5
 
-      - uses: actions/setup-java@v4
+      - uses: actions/setup-java@v5
         with:
           distribution: temurin
           java-version: ${{ env.JAVA_VERSION }}
@@ -292,7 +292,7 @@ jobs:
         run: flutter build apk --debug --dart-define-from-file="${GITHUB_WORKSPACE}/${RAIN_DART_DEFINES_FILE}"
 
       - name: Upload debug APK
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v7
         with:
           name: rain-debug-apk
           path: apps/rain/build/app/outputs/flutter-apk/app-debug.apk
@@ -301,7 +301,7 @@ jobs:
 
       - name: Upload Android failure diagnostics
         if: failure()
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v7
         with:
           name: android-build-diagnostics
           path: |
@@ -333,7 +333,7 @@ jobs:
 
   release-artifacts:
     name: Build EXE and APK Artifacts
-    runs-on: windows-latest
+    runs-on: windows-2022
     timeout-minutes: 120
     if: ${{ always() && needs.test-gates.result == 'success' }}
     needs:
@@ -343,7 +343,7 @@ jobs:
     steps:
       - uses: actions/checkout@v5
 
-      - uses: actions/setup-java@v4
+      - uses: actions/setup-java@v5
         with:
           distribution: temurin
           java-version: ${{ env.JAVA_VERSION }}
@@ -380,40 +380,38 @@ jobs:
         shell: pwsh
         run: |
           $expected = @(
-            'artifacts\Rain-openrelay-demo-windows-portable\rain.exe',
-            'artifacts\Rain-openrelay-demo-windows-portable.zip',
-            'artifacts\Rain-openrelay-demo-android.apk',
-            'artifacts\Rain-openrelay-demo-android-universal.apk',
-            'artifacts\Rain-openrelay-demo-android-arm64-v8a.apk',
-            'artifacts\Rain-openrelay-demo-android-armeabi-v7a.apk',
-            'artifacts\Rain-openrelay-demo-android-x86_64.apk'
+            @{ Label = 'Windows portable EXE'; Path = 'artifacts\Rain-Demo-Windows-x64-Build\rain.exe' },
+            @{ Label = 'Windows portable zip'; Path = 'artifacts\Rain-Demo-Windows-x64-Build.zip' },
+            @{ Label = 'Android universal APK'; Path = 'artifacts\Rain-Demo-Android-Universal-Build.apk' },
+            @{ Label = 'Android ARM v7 APK (armeabi-v7a)'; Path = 'artifacts\Rain-Demo-Android-ARM-v7-Build.apk' },
+            @{ Label = 'Android ARM v8/v9 APK (arm64-v8a)'; Path = 'artifacts\Rain-Demo-Android-ARM-v8-v9-Build.apk' },
+            @{ Label = 'Android x86_64 APK'; Path = 'artifacts\Rain-Demo-Android-x86_64-Build.apk' }
           )
-          foreach ($path in $expected) {
+          foreach ($artifact in $expected) {
+            $path = $artifact.Path
             if (-not (Test-Path -LiteralPath $path)) {
-              throw "Missing expected artifact: $path"
+              throw "Missing expected artifact for $($artifact.Label): $path"
             }
+            Write-Host "Verified $($artifact.Label): $path"
           }
 
       - name: Upload Windows portable EXE bundle
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v7
         with:
-          name: rain-windows-exe-portable
-          path: |
-            artifacts/Rain-openrelay-demo-windows-portable/**
-            artifacts/Rain-openrelay-demo-windows-portable.zip
+          name: Rain-Demo-Windows-x64-Build
+          path: artifacts/Rain-Demo-Windows-x64-Build.zip
           if-no-files-found: error
           retention-days: ${{ env.ARTIFACT_RETENTION_RELEASE }}
 
       - name: Upload Android APKs all architectures
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v7
         with:
-          name: rain-android-apks-all-architectures
+          name: Rain-Demo-Android-Builds
           path: |
-            artifacts/Rain-openrelay-demo-android.apk
-            artifacts/Rain-openrelay-demo-android-universal.apk
-            artifacts/Rain-openrelay-demo-android-arm64-v8a.apk
-            artifacts/Rain-openrelay-demo-android-armeabi-v7a.apk
-            artifacts/Rain-openrelay-demo-android-x86_64.apk
+            artifacts/Rain-Demo-Android-Universal-Build.apk
+            artifacts/Rain-Demo-Android-ARM-v8-v9-Build.apk
+            artifacts/Rain-Demo-Android-ARM-v7-Build.apk
+            artifacts/Rain-Demo-Android-x86_64-Build.apk
           if-no-files-found: error
           retention-days: ${{ env.ARTIFACT_RETENTION_RELEASE }}
 

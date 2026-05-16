@@ -4,6 +4,8 @@ import 'package:flutter/widgets.dart';
 import 'package:protocol_brain/protocol_brain.dart';
 import 'package:rain_core/rain_core.dart';
 
+import 'serialized_runtime_mutations.dart';
+
 enum FriendRequestResult { sent, acceptedExisting }
 
 class RainRuntimeController with WidgetsBindingObserver {
@@ -17,7 +19,7 @@ class RainRuntimeController with WidgetsBindingObserver {
     required this.offlineQueueStore,
     required this.messageDeliveryService,
     this.heartbeatInterval = const Duration(minutes: 3),
-    this.friendRequestRefreshInterval = const Duration(seconds: 5),
+    this.friendRequestRefreshInterval = Duration.zero,
   });
 
   final RainIdentity selfIdentity;
@@ -41,6 +43,8 @@ class RainRuntimeController with WidgetsBindingObserver {
   Timer? _backgroundOfflineTimer;
   bool _started = false;
   bool _shutDown = false;
+  final SerializedRuntimeMutations _localMutations =
+      SerializedRuntimeMutations();
 
   String _normalizedUsername(String username) {
     return username.trim().toLowerCase();
@@ -91,7 +95,7 @@ class RainRuntimeController with WidgetsBindingObserver {
         stackTrace,
       );
     }
-    await offlineQueueStore.recoverInFlightMessages();
+    await _localMutations.run(offlineQueueStore.recoverInFlightMessages);
     await _syncRelationships();
 
     final existingFriends = await friendStore.loadFriends();
@@ -108,7 +112,7 @@ class RainRuntimeController with WidgetsBindingObserver {
 
     _heartbeatTimer = Timer.periodic(heartbeatInterval, (_) {
       if (!_shutDown && _started) {
-        adapter.setPresence(selfIdentity.username, true);
+        adapter.sendHeartbeat(selfIdentity.username);
       }
     });
 
@@ -131,10 +135,12 @@ class RainRuntimeController with WidgetsBindingObserver {
           if (_manualDisconnectedPeers.contains(session.peerId)) {
             return;
           }
-          await messageDeliveryService.flushQueue(
-            selfIdentity.username,
-            session.peerId,
-            sendChat: (String payload) async => session.send(payload),
+          await _localMutations.run(
+            () => messageDeliveryService.flushQueue(
+              selfIdentity.username,
+              session.peerId,
+              sendChat: (String payload) async => session.send(payload),
+            ),
           );
         }),
       );
@@ -148,24 +154,28 @@ class RainRuntimeController with WidgetsBindingObserver {
           }
 
           if (message.channel == SessionChannel.control) {
-            await messageDeliveryService.handleControlMessage(text);
+            await _localMutations.run(
+              () => messageDeliveryService.handleControlMessage(text),
+            );
             return;
           }
 
           if (message.channel == SessionChannel.chat) {
-            final friend = await friendStore.loadFriend(peerId);
-            if (friend?.state != FriendState.friend) {
-              return;
-            }
-            final envelope = MessageEnvelope.fromWireString(text);
-            await messageDeliveryService.handleIncomingEnvelope(
-              envelope,
-              receivedAt: message.receivedAt,
-              sendAck: (String rawAck) async {
-                brain!.sendControl(peerId, rawAck);
-              },
-              onStored: (_) => friendStore.incrementUnread(peerId),
-            );
+            await _localMutations.run(() async {
+              final friend = await friendStore.loadFriend(peerId);
+              if (friend?.state != FriendState.friend) {
+                return;
+              }
+              final envelope = MessageEnvelope.fromWireString(text);
+              await messageDeliveryService.handleIncomingEnvelope(
+                envelope,
+                receivedAt: message.receivedAt,
+                sendAck: (String rawAck) async {
+                  brain!.sendControl(peerId, rawAck);
+                },
+                onStored: (_) => friendStore.incrementUnread(peerId),
+              );
+            });
           }
         }),
       );
@@ -177,7 +187,9 @@ class RainRuntimeController with WidgetsBindingObserver {
     // Prefer using an existing displayName if available to preserve
     // the user's chosen display name instead of falling back to the username.
     await _syncRelationships(onlyUsername: normalizedUsername);
-    final existing = await friendStore.loadFriend(normalizedUsername);
+    final existing = await _localMutations.run(
+      () => friendStore.loadFriend(normalizedUsername),
+    );
     if (existing?.state != FriendState.pendingIncoming &&
         existing?.state != FriendState.pendingOutgoing &&
         existing?.state != FriendState.friend) {
@@ -187,10 +199,12 @@ class RainRuntimeController with WidgetsBindingObserver {
     }
     final displayName = existing?.displayName ?? normalizedUsername;
     await adapter.upsertFriendship(selfIdentity.username, normalizedUsername);
-    await friendStore.markAccepted(
-      normalizedUsername,
-      displayName: displayName,
-      gender: existing?.gender,
+    await _localMutations.run(
+      () => friendStore.markAccepted(
+        normalizedUsername,
+        displayName: displayName,
+        gender: existing?.gender,
+      ),
     );
     _watchPresence(normalizedUsername);
   }
@@ -198,24 +212,26 @@ class RainRuntimeController with WidgetsBindingObserver {
   Future<void> blockFriend(String username) async {
     await _clearFriendRequests(username);
     await adapter.deleteFriendship(selfIdentity.username, username);
-    await friendStore.block(username);
+    await _localMutations.run(() => friendStore.block(username));
     await _stopTrackingPeer(username);
   }
 
   Future<void> unblockFriend(String username) async {
-    await friendStore.unblock(username);
+    await _localMutations.run(() => friendStore.unblock(username));
   }
 
   Future<void> unfriend(String username) async {
     final normalizedUsername = _normalizedUsername(username);
-    final existing = await friendStore.loadFriend(normalizedUsername);
+    final existing = await _localMutations.run(
+      () => friendStore.loadFriend(normalizedUsername),
+    );
     if (existing?.state != FriendState.friend) {
       await rejectFriend(normalizedUsername);
       return;
     }
 
     await adapter.deleteFriendship(selfIdentity.username, normalizedUsername);
-    await friendStore.reject(normalizedUsername);
+    await _localMutations.run(() => friendStore.reject(normalizedUsername));
     await _stopTrackingPeer(normalizedUsername);
   }
 
@@ -232,10 +248,14 @@ class RainRuntimeController with WidgetsBindingObserver {
       }
       return;
     }
-    var friend = await friendStore.loadFriend(normalizedUsername);
+    var friend = await _localMutations.run(
+      () => friendStore.loadFriend(normalizedUsername),
+    );
     if (friend?.state != FriendState.friend) {
       await _syncRelationships(onlyUsername: normalizedUsername);
-      friend = await friendStore.loadFriend(normalizedUsername);
+      friend = await _localMutations.run(
+        () => friendStore.loadFriend(normalizedUsername),
+      );
     }
     if (friend?.state != FriendState.friend) {
       if (interactive) {
@@ -271,7 +291,9 @@ class RainRuntimeController with WidgetsBindingObserver {
     }
     final backendIdentity = await adapter.fetchIdentity(normalizedUsername);
     final isOnline = backendIdentity?.online ?? friend?.isOnline ?? false;
-    await friendStore.updatePresence(normalizedUsername, isOnline);
+    await _localMutations.run(
+      () => friendStore.updatePresence(normalizedUsername, isOnline),
+    );
     if (!isOnline) {
       if (interactive) {
         throw StateError(
@@ -318,7 +340,7 @@ class RainRuntimeController with WidgetsBindingObserver {
   }
 
   Future<void> markConversationRead(String username) {
-    return friendStore.clearUnread(username);
+    return _localMutations.run(() => friendStore.clearUnread(username));
   }
 
   Future<void> refreshRelationships({String? onlyUsername}) {
@@ -335,7 +357,9 @@ class RainRuntimeController with WidgetsBindingObserver {
 
   Future<void> rejectFriend(String username) async {
     final normalizedUsername = _normalizedUsername(username);
-    final existing = await friendStore.loadFriend(normalizedUsername);
+    final existing = await _localMutations.run(
+      () => friendStore.loadFriend(normalizedUsername),
+    );
     if (existing?.state == FriendState.friend) {
       await unfriend(normalizedUsername);
       return;
@@ -351,34 +375,47 @@ class RainRuntimeController with WidgetsBindingObserver {
         selfIdentity.username,
       );
     }
-    await friendStore.reject(normalizedUsername);
+    await _localMutations.run(() => friendStore.reject(normalizedUsername));
     await _stopTrackingPeer(normalizedUsername);
   }
 
   Future<void> resendMessage(String messageId) async {
-    final queued = await offlineQueueStore.loadById(messageId);
+    final queued = await _localMutations.run(
+      () => offlineQueueStore.loadById(messageId),
+    );
     if (queued == null) {
       return;
     }
-    final friend = await friendStore.loadFriend(queued.to);
+    final friend = await _localMutations.run(
+      () => friendStore.loadFriend(queued.to),
+    );
     if (friend?.state != FriendState.friend) {
-      await messageStore.markMessageStatus(messageId, MessageStatus.failed);
-      await offlineQueueStore.markStatus(messageId, QueuedMessageStatus.failed);
+      await _localMutations.run(() async {
+        await messageStore.markMessageStatus(messageId, MessageStatus.failed);
+        await offlineQueueStore.markStatus(
+          messageId,
+          QueuedMessageStatus.failed,
+        );
+      });
       return;
     }
 
     final envelope = queued.toEnvelope(from: selfIdentity.username);
     final session = brain?.getSession(queued.to);
-    await messageStore.markMessageStatus(messageId, MessageStatus.queued);
-    await offlineQueueStore.markStatus(messageId, QueuedMessageStatus.queued);
+    await _localMutations.run(() async {
+      await messageStore.markMessageStatus(messageId, MessageStatus.queued);
+      await offlineQueueStore.markStatus(messageId, QueuedMessageStatus.queued);
+    });
 
     if (brain == null || session?.state != SessionState.connected) {
       return;
     }
 
-    await messageDeliveryService.sendEnvelope(
-      envelope,
-      sendChat: (String payload) async => session!.send(payload),
+    await _localMutations.run(
+      () => messageDeliveryService.sendEnvelope(
+        envelope,
+        sendChat: (String payload) async => session!.send(payload),
+      ),
     );
   }
 
@@ -391,7 +428,9 @@ class RainRuntimeController with WidgetsBindingObserver {
 
     await _syncRelationships(onlyUsername: targetUsername);
 
-    final existing = await friendStore.loadFriend(targetUsername);
+    final existing = await _localMutations.run(
+      () => friendStore.loadFriend(targetUsername),
+    );
     if (existing != null) {
       switch (existing.state) {
         case FriendState.friend:
@@ -416,45 +455,55 @@ class RainRuntimeController with WidgetsBindingObserver {
     }
 
     await adapter.writeFriendRequest(targetUsername, selfIdentity.username);
-    await friendStore.upsertFriend(
-      username: targetUsername,
-      displayName: targetIdentity.displayName.isEmpty
-          ? targetUsername
-          : targetIdentity.displayName,
-      state: FriendState.pendingOutgoing,
-      addedAt: DateTime.now().millisecondsSinceEpoch,
-      gender: _backendGender(targetIdentity.gender),
+    await _localMutations.run(
+      () => friendStore.upsertFriend(
+        username: targetUsername,
+        displayName: targetIdentity.displayName.isEmpty
+            ? targetUsername
+            : targetIdentity.displayName,
+        state: FriendState.pendingOutgoing,
+        addedAt: DateTime.now().millisecondsSinceEpoch,
+        gender: _backendGender(targetIdentity.gender),
+      ),
     );
     _watchPresence(targetUsername);
     return FriendRequestResult.sent;
   }
 
   Future<void> sendMessage(String peerId, String content) async {
-    var friend = await friendStore.loadFriend(peerId);
+    var friend = await _localMutations.run(
+      () => friendStore.loadFriend(peerId),
+    );
     if (friend?.state != FriendState.friend) {
       await _syncRelationships(onlyUsername: peerId);
-      friend = await friendStore.loadFriend(peerId);
+      friend = await _localMutations.run(() => friendStore.loadFriend(peerId));
     }
     if (friend?.state != FriendState.friend) {
       throw StateError('Only friends can chat.');
     }
-    final envelope = await messageStore.composeOutgoingEnvelope(
-      from: selfIdentity.username,
-      to: peerId,
-      content: content,
+    final envelope = await _localMutations.run(
+      () => messageStore.composeOutgoingEnvelope(
+        from: selfIdentity.username,
+        to: peerId,
+        content: content,
+      ),
     );
 
     final session = brain?.getSession(peerId);
     if (brain == null || session?.state != SessionState.connected) {
-      await messageDeliveryService.queueOutgoing(envelope);
+      await _localMutations.run(
+        () => messageDeliveryService.queueOutgoing(envelope),
+      );
       return;
     }
 
-    await messageDeliveryService.sendEnvelope(
-      envelope,
-      sendChat: (String payload) async => session!.send(payload),
+    await _localMutations.run(
+      () => messageDeliveryService.sendEnvelope(
+        envelope,
+        sendChat: (String payload) async => session!.send(payload),
+      ),
     );
-    await friendStore.clearUnread(peerId);
+    await _localMutations.run(() => friendStore.clearUnread(peerId));
   }
 
   void _watchPresence(String username) {
@@ -469,7 +518,9 @@ class RainRuntimeController with WidgetsBindingObserver {
         return;
       }
       try {
-        await friendStore.updatePresence(username, isOnline);
+        await _localMutations.run(
+          () => friendStore.updatePresence(username, isOnline),
+        );
       } catch (_) {
         // Ignore late presence callbacks during shutdown or store teardown.
       }
@@ -490,13 +541,22 @@ class RainRuntimeController with WidgetsBindingObserver {
       case AppLifecycleState.inactive:
       case AppLifecycleState.hidden:
       case AppLifecycleState.paused:
-      case AppLifecycleState.detached:
         _backgroundOfflineTimer?.cancel();
         _backgroundOfflineTimer = Timer(const Duration(seconds: 30), () {
           if (_started && !_shutDown) {
             unawaited(adapter.setPresence(selfIdentity.username, false));
           }
         });
+        break;
+      case AppLifecycleState.detached:
+        _backgroundOfflineTimer?.cancel();
+        unawaited(
+          _shutdown(
+            markOffline: true,
+            signOut: false,
+            clearLocalSession: false,
+          ),
+        );
         break;
     }
   }
@@ -551,7 +611,7 @@ class RainRuntimeController with WidgetsBindingObserver {
     }
 
     if (clearLocalSession) {
-      await database.clearSessionData();
+      await _localMutations.run(database.clearSessionData);
     }
   }
 
@@ -568,8 +628,19 @@ class RainRuntimeController with WidgetsBindingObserver {
   }
 
   Future<void> _processIncomingFriendRequest(String from) async {
+    if (_shutDown) {
+      return;
+    }
     final normalizedFrom = _normalizedUsername(from);
-    final existing = await friendStore.loadFriend(normalizedFrom);
+    final existing = await _localMutations.run(() {
+      if (_shutDown) {
+        return Future<FriendRecord?>.value();
+      }
+      return friendStore.loadFriend(normalizedFrom);
+    });
+    if (_shutDown) {
+      return;
+    }
     BackendIdentity? backendIdentity;
     try {
       backendIdentity = await adapter.fetchIdentity(normalizedFrom);
@@ -581,6 +652,9 @@ class RainRuntimeController with WidgetsBindingObserver {
         ? backendDisplayName
         : (existing?.displayName ?? normalizedFrom);
     final gender = _backendGender(backendIdentity?.gender) ?? existing?.gender;
+    if (_shutDown) {
+      return;
+    }
     if (existing?.state == FriendState.blocked) {
       await _clearFriendRequests(normalizedFrom);
       await adapter.deleteFriendship(selfIdentity.username, normalizedFrom);
@@ -590,19 +664,29 @@ class RainRuntimeController with WidgetsBindingObserver {
     if (existing?.state == FriendState.pendingOutgoing ||
         existing?.state == FriendState.friend) {
       await adapter.upsertFriendship(selfIdentity.username, normalizedFrom);
-      await friendStore.markAccepted(
-        normalizedFrom,
-        displayName: displayName,
-        gender: gender,
-      );
+      await _localMutations.run(() {
+        if (_shutDown) {
+          return Future<void>.value();
+        }
+        return friendStore.markAccepted(
+          normalizedFrom,
+          displayName: displayName,
+          gender: gender,
+        );
+      });
     } else if (existing?.state != FriendState.blocked) {
-      await friendStore.upsertFriend(
-        username: normalizedFrom,
-        displayName: displayName,
-        state: FriendState.pendingIncoming,
-        addedAt: existing?.addedAt ?? DateTime.now().millisecondsSinceEpoch,
-        gender: gender,
-      );
+      await _localMutations.run(() {
+        if (_shutDown) {
+          return Future<void>.value();
+        }
+        return friendStore.upsertFriend(
+          username: normalizedFrom,
+          displayName: displayName,
+          state: FriendState.pendingIncoming,
+          addedAt: existing?.addedAt ?? DateTime.now().millisecondsSinceEpoch,
+          gender: gender,
+        );
+      });
     }
     _watchPresence(normalizedFrom);
   }
@@ -626,7 +710,12 @@ class RainRuntimeController with WidgetsBindingObserver {
         return;
       }
       if (session?.state == SessionState.failed) {
-        throw StateError('Could not connect to @$username.');
+        final detail = session?.error ?? session?.detail;
+        throw StateError(
+          detail == null || detail.isEmpty
+              ? 'Could not connect to @$username.'
+              : 'Could not connect to @$username. $detail',
+        );
       }
       await Future<void>.delayed(const Duration(milliseconds: 200));
     }
@@ -639,12 +728,12 @@ class RainRuntimeController with WidgetsBindingObserver {
       await brain?.disconnect(username);
     } catch (_) {}
     throw StateError(
-      'Connection to @$username timed out. Ask them to keep Rain open and try again.',
+      'Connection to @$username timed out. Ask them to keep Rain open; in manual mode both users must press Connect.',
     );
   }
 
   Future<void> _syncRelationships({String? onlyUsername}) async {
-    final existingFriends = await friendStore.loadFriends();
+    final existingFriends = await _localMutations.run(friendStore.loadFriends);
     final existingByUsername = <String, FriendRecord>{
       for (final friend in existingFriends) friend.username: friend,
     };
@@ -700,7 +789,7 @@ class RainRuntimeController with WidgetsBindingObserver {
 
       if (nextState == null) {
         if (existing != null && existing.state != FriendState.blocked) {
-          await friendStore.reject(username);
+          await _localMutations.run(() => friendStore.reject(username));
           await _stopTrackingPeer(username);
         }
         continue;
@@ -719,23 +808,27 @@ class RainRuntimeController with WidgetsBindingObserver {
           _backendGender(backendIdentity?.gender) ?? existing?.gender;
 
       if (nextState == FriendState.friend) {
-        await friendStore.upsertFriend(
-          username: username,
-          displayName: displayName,
-          state: FriendState.friend,
-          addedAt: existing?.addedAt ?? DateTime.now().millisecondsSinceEpoch,
-          gender: gender,
+        await _localMutations.run(
+          () => friendStore.upsertFriend(
+            username: username,
+            displayName: displayName,
+            state: FriendState.friend,
+            addedAt: existing?.addedAt ?? DateTime.now().millisecondsSinceEpoch,
+            gender: gender,
+          ),
         );
         _watchPresence(username);
         continue;
       }
 
-      await friendStore.upsertFriend(
-        username: username,
-        displayName: displayName,
-        state: nextState,
-        addedAt: existing?.addedAt ?? DateTime.now().millisecondsSinceEpoch,
-        gender: gender,
+      await _localMutations.run(
+        () => friendStore.upsertFriend(
+          username: username,
+          displayName: displayName,
+          state: nextState,
+          addedAt: existing?.addedAt ?? DateTime.now().millisecondsSinceEpoch,
+          gender: gender,
+        ),
       );
       _watchPresence(username);
     }

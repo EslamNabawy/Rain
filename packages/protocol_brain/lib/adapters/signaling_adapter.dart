@@ -17,6 +17,7 @@ abstract class SignalingAdapter {
   Stream<SDPPayload> onOffer(String roomId);
 
   Future<void> setPresence(String username, bool online);
+  Future<void> sendHeartbeat(String username);
   Stream<bool> watchPresence(String username);
 
   Future<bool> isUsernameAvailable(String username);

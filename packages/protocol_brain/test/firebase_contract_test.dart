@@ -47,6 +47,16 @@ void main() {
     );
   });
 
+  test('Firebase relationship payload fields are explicitly allowed', () {
+    final rules = _repoFile('backend/firebase/database.rules.json');
+
+    expect(rules, contains('"sentAt"'));
+    expect(rules, contains('newData.child(\'sentAt\').isNumber()'));
+    expect(rules, contains('newData.isNumber()'));
+    expect(rules, contains('"acceptedAt"'));
+    expect(rules, contains('newData.child(\'acceptedAt\').isNumber()'));
+  });
+
   test('Firebase user ownership is immutable and tied to auth email', () {
     final rules = _repoFile('backend/firebase/database.rules.json');
 
@@ -92,6 +102,80 @@ void main() {
     expect(rules, contains('!data.exists() && !newData.exists()'));
     expect(adapter, contains("'userA':"));
     expect(adapter, contains("'userB':"));
+  });
+
+  test('Firebase signaling room payloads are encrypted envelopes', () {
+    final rules = _repoFile('backend/firebase/database.rules.json');
+    final adapter = _repoFile(
+      'packages/protocol_brain/lib/adapters/firebase_adapter.dart',
+    );
+
+    expect(rules, contains('A256GCM-HKDF-SHA256'));
+    expect(rules, contains("'nonce', 'ciphertext', 'mac'"));
+    expect(rules, contains("newData.child('ciphertext').isString()"));
+    expect(rules, contains("newData.child('mac').isString()"));
+    expect(rules, isNot(contains("newData.hasChildren(['sdp', 'ts'])")));
+    expect(rules, isNot(contains("newData.child('candidate').isString()")));
+    expect(adapter, contains('SignalingCipher'));
+    expect(adapter, contains('encryptPayload'));
+    expect(adapter, contains('decryptPayload'));
+    expect(adapter, isNot(contains("'offer': offer.toJson()")));
+    expect(adapter, isNot(contains("'answer': answer.toJson()")));
+    expect(
+      adapter,
+      isNot(contains(r"'$path/$candidateKey': iceCandidateToJson(candidate)")),
+    );
+  });
+
+  test('Firebase search uses bounded handle prefix lookups', () {
+    final adapter = _repoFile(
+      'packages/protocol_brain/lib/adapters/firebase_adapter.dart',
+    );
+
+    expect(adapter, contains("child('userSearch')"));
+    expect(adapter, contains('orderByKey()'));
+    expect(adapter, contains('limitToFirst(_searchLimit)'));
+    expect(adapter, isNot(contains("child('users').get()")));
+  });
+
+  test('Firebase presence lives in a dedicated lightweight node', () {
+    final rules = _repoFile('backend/firebase/database.rules.json');
+    final adapter = _repoFile(
+      'packages/protocol_brain/lib/adapters/firebase_adapter.dart',
+    );
+    final functions = _repoFile('backend/firebase/functions/index.js');
+
+    expect(rules, contains('"presence"'));
+    expect(adapter, contains("child('presence/\$username')"));
+    expect(adapter, contains("'lastHeartbeat': now"));
+    expect(adapter, isNot(contains("child('users/\$username/online')")));
+    expect(functions, contains('.ref("presence")'));
+    expect(functions, isNot(contains('.ref("users")')));
+  });
+
+  test('Firebase rooms carry explicit lifecycle metadata', () {
+    final rules = _repoFile('backend/firebase/database.rules.json');
+    final adapter = _repoFile(
+      'packages/protocol_brain/lib/adapters/firebase_adapter.dart',
+    );
+    final functions = _repoFile('backend/firebase/functions/index.js');
+
+    expect(rules, contains('"attemptId"'));
+    expect(rules, contains('"createdAt"'));
+    expect(rules, contains('"updatedAt"'));
+    expect(rules, contains('"expiresAt"'));
+    expect(rules, contains('".indexOn": ["expiresAt"]'));
+    expect(adapter, contains("'attemptId':"));
+    expect(adapter, contains("'expiresAt':"));
+    expect(functions, contains('.orderByChild("expiresAt")'));
+    expect(functions, contains('.endAt(now)'));
+  });
+
+  test('Firebase rules do not expose unused push notification surface', () {
+    final rules = _repoFile('backend/firebase/database.rules.json');
+
+    expect(rules, isNot(contains('"notificationTokens"')));
+    expect(rules, isNot(contains('"messagePings"')));
   });
 
   test('Firebase friendships require a pending request before creation', () {

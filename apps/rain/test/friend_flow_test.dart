@@ -872,6 +872,63 @@ void main() {
       },
     );
 
+    test(
+      'connectPeer waitForConnected surfaces session failure detail',
+      () async {
+        final adapter = NoopSignalingAdapter();
+        final brain = TestSessionManager();
+        await adapter.register('bob', 'bobpw');
+        await db
+            .into(db.friends)
+            .insert(
+              FriendsCompanion.insert(
+                username: 'bob',
+                displayName: 'Bob',
+                state: 'friend',
+                addedAt: 0,
+              ),
+            );
+
+        final runtime = RainRuntimeController(
+          selfIdentity: alice,
+          adapter: adapter,
+          brain: brain,
+          database: db,
+          friendStore: FriendStore(db),
+          messageStore: MessageStore(db),
+          offlineQueueStore: OfflineQueueStore(db),
+          messageDeliveryService: MessageDeliveryService(
+            messageStore: MessageStore(db),
+            offlineQueueStore: OfflineQueueStore(db),
+          ),
+        );
+
+        final connectFuture = runtime.connectPeer(
+          'bob',
+          interactive: true,
+          waitForConnected: true,
+          connectionTimeout: const Duration(seconds: 1),
+        );
+
+        await Future<void>.delayed(const Duration(milliseconds: 100));
+        brain.markFailed(
+          'bob',
+          'Encrypted signaling data could not be read. Use the same latest build.',
+        );
+
+        await expectLater(
+          connectFuture,
+          throwsA(
+            isA<StateError>().having(
+              (StateError error) => error.toString(),
+              'message',
+              contains('Encrypted signaling data could not be read'),
+            ),
+          ),
+        );
+      },
+    );
+
     test('connectPeer interactive rejects offline friends', () async {
       final adapter = NoopSignalingAdapter();
       final brain = TestSessionManager();
@@ -958,7 +1015,7 @@ void main() {
             isA<StateError>().having(
               (StateError error) => error.toString(),
               'message',
-              contains('timed out'),
+              allOf(contains('timed out'), contains('both users')),
             ),
           ),
         );
@@ -1262,5 +1319,20 @@ class TestSessionManager implements SessionManager {
     _sessions[peerId] = session;
     _sessionChangedController.add(session);
     _peerConnectedController.add(session);
+  }
+
+  void markFailed(String peerId, String error) {
+    final existing = _sessions[peerId];
+    if (existing == null) {
+      return;
+    }
+    final session = existing.copyWith(
+      state: SessionState.failed,
+      phase: SessionPhase.failed,
+      detail: 'Failed',
+      error: error,
+    );
+    _sessions[peerId] = session;
+    _sessionChangedController.add(session);
   }
 }

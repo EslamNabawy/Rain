@@ -4,6 +4,7 @@ import 'package:flutter_webrtc/flutter_webrtc.dart';
 import 'package:peer_core/peer_core.dart';
 
 import '../adapters/signaling_adapter.dart';
+import '../adapters/signaling_cipher.dart';
 import 'connection_memory.dart';
 import 'session_manager.dart';
 
@@ -113,14 +114,19 @@ class ProtocolBrainImpl implements ProtocolBrain {
       return;
     }
     final shouldHandleIncomingOffers = !_isOfferOwner(peerId);
-    final subscription = adapter.onOffer(roomId(selfUsername, peerId)).listen((
-      SDPPayload offer,
-    ) {
-      if (!shouldHandleIncomingOffers) {
-        return;
-      }
-      unawaited(_handleIncomingOffer(peerId, offer));
-    });
+    final subscription = adapter
+        .onOffer(roomId(selfUsername, peerId))
+        .listen(
+          (SDPPayload offer) {
+            if (!shouldHandleIncomingOffers) {
+              return;
+            }
+            unawaited(_handleIncomingOffer(peerId, offer));
+          },
+          onError: (Object error, StackTrace stackTrace) {
+            _handleSignalingStreamError(peerId, error, source: 'offer');
+          },
+        );
     _offerSubscriptions[peerId] = subscription;
   }
 
@@ -309,24 +315,30 @@ class ProtocolBrainImpl implements ProtocolBrain {
     if (active.answerSubscription != null) {
       return;
     }
-    active.answerSubscription = adapter.onAnswer(active.roomId).listen((
-      SDPPayload payload,
-    ) async {
-      if (active.snapshot.state == SessionState.connected ||
-          active.peer.state != PeerState.offering ||
-          (active.lastAnswerTs != null && payload.ts <= active.lastAnswerTs!)) {
-        return;
-      }
-      active.lastAnswerTs = payload.ts;
-      _markPhase(
-        active,
-        SessionPhase.openingDataChannels,
-        'Received answer. Opening data channels.',
-      );
-      await active.peer.setAnswer(payload.sdp);
-      await active.answerSubscription?.cancel();
-      active.answerSubscription = null;
-    });
+    active.answerSubscription = adapter
+        .onAnswer(active.roomId)
+        .listen(
+          (SDPPayload payload) async {
+            if (active.snapshot.state == SessionState.connected ||
+                active.peer.state != PeerState.offering ||
+                (active.lastAnswerTs != null &&
+                    payload.ts <= active.lastAnswerTs!)) {
+              return;
+            }
+            active.lastAnswerTs = payload.ts;
+            _markPhase(
+              active,
+              SessionPhase.openingDataChannels,
+              'Received answer. Opening data channels.',
+            );
+            await active.peer.setAnswer(payload.sdp);
+            await active.answerSubscription?.cancel();
+            active.answerSubscription = null;
+          },
+          onError: (Object error, StackTrace stackTrace) {
+            _handleSignalingStreamError(active.peerId, error, source: 'answer');
+          },
+        );
   }
 
   void _listenForRemoteIce(_ActiveSession active, IceRole remoteRole) {
@@ -335,15 +347,24 @@ class ProtocolBrainImpl implements ProtocolBrain {
     }
     active.iceSubscriptions[remoteRole] = adapter
         .onICE(active.roomId, remoteRole)
-        .listen((RTCIceCandidate candidate) async {
-          active.remoteIceCache.add(candidate);
-          _markPhase(
-            active,
-            SessionPhase.exchangingIce,
-            'Received remote ICE candidate.',
-          );
-          await active.peer.addIceCandidate(candidate);
-        });
+        .listen(
+          (RTCIceCandidate candidate) async {
+            active.remoteIceCache.add(candidate);
+            _markPhase(
+              active,
+              SessionPhase.exchangingIce,
+              'Received remote ICE candidate.',
+            );
+            await active.peer.addIceCandidate(candidate);
+          },
+          onError: (Object error, StackTrace stackTrace) {
+            _handleSignalingStreamError(
+              active.peerId,
+              error,
+              source: '${remoteRole.name} ICE',
+            );
+          },
+        );
   }
 
   Future<void> _scheduleReconnect(
@@ -654,6 +675,36 @@ class ProtocolBrainImpl implements ProtocolBrain {
         isOfferOwner: _isOfferOwner(active.peerId),
       ),
     );
+  }
+
+  void _handleSignalingStreamError(
+    String peerId,
+    Object error, {
+    required String source,
+  }) {
+    final active = _sessions[peerId];
+    if (active == null) {
+      return;
+    }
+    active.stopReconnecting();
+    unawaited(active.disposePeerBindings());
+    _updateSession(
+      peerId,
+      active.snapshot.copyWith(
+        state: SessionState.failed,
+        phase: SessionPhase.failed,
+        detail: 'Signaling failed while reading $source data.',
+        updatedAt: DateTime.now().millisecondsSinceEpoch,
+        error: _signalingFailureMessage(error),
+      ),
+    );
+  }
+
+  String _signalingFailureMessage(Object error) {
+    if (error is SignalingEncryptionException) {
+      return 'Encrypted signaling data could not be read. Make sure both devices use the same latest build and signaling encryption key, then clear stale Firebase rooms before retrying.';
+    }
+    return 'Peer signaling data could not be read: $error';
   }
 
   Future<void> _handleHandshakeTimeout(String peerId) async {

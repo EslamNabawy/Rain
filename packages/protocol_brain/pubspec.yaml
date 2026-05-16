@@ -17,6 +17,7 @@ dependencies:
   peer_core:
     path: ../peer_core
   supabase_flutter: ^2.10.3
+  cryptography: ^2.9.0
 
 dev_dependencies:
   flutter_lints: ^6.0.0

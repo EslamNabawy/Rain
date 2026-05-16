@@ -274,6 +274,64 @@ void main() {
     await brain.disconnect('bob');
   });
 
+  test(
+    'answer stream errors fail the owner session with signaling guidance',
+    () async {
+      final adapter = _RecordingSignalingAdapter();
+      final brain = ProtocolBrainImpl(
+        selfUsername: 'alice',
+        adapter: adapter,
+        peerConfig: _fakePeerConfig(),
+        peerFactory: _FakePeerCore.new,
+        connectionMemoryStore: _MemoryConnectionStore(),
+      );
+
+      await brain.connect('bob');
+      adapter.emitAnswerError(
+        'alice:bob',
+        const SignalingEncryptionException('Unable to decrypt answer payload.'),
+      );
+      await pumpEventQueue();
+
+      final session = brain.getSession('bob');
+      expect(session?.state, SessionState.failed);
+      expect(session?.phase, SessionPhase.failed);
+      expect(session?.error, contains('signaling data'));
+      expect(session?.detail, contains('Signaling failed'));
+
+      await brain.disconnect('bob');
+    },
+  );
+
+  test(
+    'offer stream errors fail the answerer session with signaling guidance',
+    () async {
+      final adapter = _RecordingSignalingAdapter();
+      final brain = ProtocolBrainImpl(
+        selfUsername: 'bob',
+        adapter: adapter,
+        peerConfig: _fakePeerConfig(),
+        peerFactory: _FakePeerCore.new,
+        connectionMemoryStore: _MemoryConnectionStore(),
+      );
+
+      await brain.connect('alice');
+      adapter.emitOfferError(
+        'alice:bob',
+        const SignalingEncryptionException('Unable to decrypt offer payload.'),
+      );
+      await pumpEventQueue();
+
+      final session = brain.getSession('alice');
+      expect(session?.state, SessionState.failed);
+      expect(session?.phase, SessionPhase.failed);
+      expect(session?.error, contains('signaling data'));
+      expect(session?.detail, contains('Signaling failed'));
+
+      await brain.disconnect('alice');
+    },
+  );
+
   test('connection memory usability respects cache rules', () {
     final memory = ConnectionMemory(
       peerId: 'bob',
@@ -405,8 +463,23 @@ class _RecordingSignalingAdapter implements SignalingAdapter {
         .add(answer);
   }
 
+  void emitOfferError(String roomId, Object error) {
+    _offerControllers
+        .putIfAbsent(roomId, () => StreamController<SDPPayload>.broadcast())
+        .addError(error);
+  }
+
+  void emitAnswerError(String roomId, Object error) {
+    _answerControllers
+        .putIfAbsent(roomId, () => StreamController<SDPPayload>.broadcast())
+        .addError(error);
+  }
+
   @override
   Future<void> setPresence(String username, bool online) async {}
+
+  @override
+  Future<void> sendHeartbeat(String username) async {}
 
   @override
   Stream<bool> watchPresence(String username) => Stream<bool>.value(true);

@@ -4,17 +4,23 @@ import 'package:flutter_webrtc/flutter_webrtc.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
 
 import 'signaling_adapter.dart';
+import 'signaling_cipher.dart';
 import 'supabase_auth_alias.dart';
 import 'supabase_auth_error.dart';
 import 'supabase_identity_error.dart';
 
 class SupabaseSignalingAdapter implements SignalingAdapter {
-  SupabaseSignalingAdapter({required String projectUrl, SupabaseClient? client})
-    : _projectUrl = projectUrl,
-      _client = client ?? Supabase.instance.client;
+  SupabaseSignalingAdapter({
+    required String projectUrl,
+    SupabaseClient? client,
+    SignalingCipher? signalingCipher,
+  }) : _projectUrl = projectUrl,
+       _client = client ?? Supabase.instance.client,
+       _signalingCipher = signalingCipher ?? SignalingCipher.demo();
 
   final SupabaseClient _client;
   final String _projectUrl;
+  final SignalingCipher _signalingCipher;
   static const int _presenceTimeoutMs = 90 * 1000;
 
   @override
@@ -408,7 +414,7 @@ class SupabaseSignalingAdapter implements SignalingAdapter {
         .from('rooms')
         .stream(primaryKey: <String>['room_id'])
         .eq('room_id', roomId)
-        .expand((List<Map<String, dynamic>> rows) sync* {
+        .asyncExpand((List<Map<String, dynamic>> rows) async* {
           if (rows.isEmpty) {
             return;
           }
@@ -416,7 +422,12 @@ class SupabaseSignalingAdapter implements SignalingAdapter {
           if (raw is! Map) {
             return;
           }
-          final payload = SDPPayload.fromJson(Map<Object?, Object?>.from(raw));
+          final decrypted = await _signalingCipher.decryptPayload(
+            roomId: roomId,
+            purpose: SignalingCipher.answerPurpose,
+            payload: Map<Object?, Object?>.from(raw),
+          );
+          final payload = SDPPayload.fromJson(decrypted);
           if (payload.ts == lastTs) {
             return;
           }
@@ -451,24 +462,32 @@ class SupabaseSignalingAdapter implements SignalingAdapter {
   @override
   Stream<RTCIceCandidate> onICE(String roomId, IceRole role) {
     final field = role == IceRole.caller ? 'caller_ice' : 'callee_ice';
+    final purpose = role == IceRole.caller
+        ? SignalingCipher.callerIcePurpose
+        : SignalingCipher.calleeIcePurpose;
     final seen = <String>{};
     return _client
         .from('rooms')
         .stream(primaryKey: <String>['room_id'])
         .eq('room_id', roomId)
-        .expand((List<Map<String, dynamic>> rows) sync* {
+        .asyncExpand((List<Map<String, dynamic>> rows) async* {
           if (rows.isEmpty) {
             return;
           }
           final raw = rows.first[field];
-          final values = raw is List
-              ? raw.cast<Map<String, dynamic>>()
-              : const <Map<String, dynamic>>[];
-          for (final value in values) {
-            final key =
-                '${value['candidate']}:${value['sdpMid']}:${value['sdpMLineIndex']}';
+          final values = raw is List ? raw.whereType<Map>() : const <Map>[];
+          for (final rawValue in values) {
+            final value = Map<Object?, Object?>.from(rawValue);
+            final key = SignalingCipher.isEncryptedEnvelope(value)
+                ? '${value['ts']}:${value['nonce']}:${value['mac']}'
+                : '${value['candidate']}:${value['sdpMid']}:${value['sdpMLineIndex']}';
             if (seen.add(key)) {
-              yield iceCandidateFromJson(value);
+              final decrypted = await _signalingCipher.decryptPayload(
+                roomId: roomId,
+                purpose: purpose,
+                payload: value,
+              );
+              yield iceCandidateFromJson(decrypted);
             }
           }
         });
@@ -481,7 +500,7 @@ class SupabaseSignalingAdapter implements SignalingAdapter {
         .from('rooms')
         .stream(primaryKey: <String>['room_id'])
         .eq('room_id', roomId)
-        .expand((List<Map<String, dynamic>> rows) sync* {
+        .asyncExpand((List<Map<String, dynamic>> rows) async* {
           if (rows.isEmpty) {
             return;
           }
@@ -489,7 +508,12 @@ class SupabaseSignalingAdapter implements SignalingAdapter {
           if (raw is! Map) {
             return;
           }
-          final payload = SDPPayload.fromJson(Map<Object?, Object?>.from(raw));
+          final decrypted = await _signalingCipher.decryptPayload(
+            roomId: roomId,
+            purpose: SignalingCipher.offerPurpose,
+            payload: Map<Object?, Object?>.from(raw),
+          );
+          final payload = SDPPayload.fromJson(decrypted);
           if (payload.ts == lastTs) {
             return;
           }
@@ -513,6 +537,20 @@ class SupabaseSignalingAdapter implements SignalingAdapter {
       'uid': _client.auth.currentUser?.id ?? existing?.uid ?? '',
       'gender': existing?.gender,
     });
+  }
+
+  @override
+  Future<void> sendHeartbeat(String username) async {
+    await ensureAuthenticated();
+    final now = DateTime.now().millisecondsSinceEpoch;
+    await _client
+        .from('users')
+        .update(<String, Object?>{
+          'online': true,
+          'last_heartbeat': now,
+          'last_seen': now,
+        })
+        .eq('username', username);
   }
 
   @override
@@ -578,10 +616,16 @@ class SupabaseSignalingAdapter implements SignalingAdapter {
   @override
   Future<void> writeAnswer(String roomId, SDPPayload answer) async {
     await ensureAuthenticated();
+    final encryptedAnswer = await _signalingCipher.encryptPayload(
+      roomId: roomId,
+      purpose: SignalingCipher.answerPurpose,
+      timestamp: answer.ts,
+      payload: answer.toJson(),
+    );
     await _client.from('rooms').upsert(<String, Object?>{
       'room_id': roomId,
       ..._roomParticipants(roomId),
-      'answer': answer.toJson(),
+      'answer': encryptedAnswer,
       'created_at': DateTime.now().millisecondsSinceEpoch,
     });
   }
@@ -647,12 +691,20 @@ class SupabaseSignalingAdapter implements SignalingAdapter {
     RTCIceCandidate candidate,
   ) async {
     await ensureAuthenticated();
+    final encryptedCandidate = await _signalingCipher.encryptPayload(
+      roomId: roomId,
+      purpose: role == IceRole.caller
+          ? SignalingCipher.callerIcePurpose
+          : SignalingCipher.calleeIcePurpose,
+      timestamp: DateTime.now().millisecondsSinceEpoch,
+      payload: iceCandidateToJson(candidate),
+    );
     await _client.rpc(
       'append_room_ice',
       params: <String, Object?>{
         'target_room_id': roomId,
         'target_role': role == IceRole.caller ? 'caller' : 'callee',
-        'target_candidate': iceCandidateToJson(candidate),
+        'target_candidate': encryptedCandidate,
       },
     );
   }
@@ -660,10 +712,16 @@ class SupabaseSignalingAdapter implements SignalingAdapter {
   @override
   Future<void> writeOffer(String roomId, SDPPayload offer) async {
     await ensureAuthenticated();
+    final encryptedOffer = await _signalingCipher.encryptPayload(
+      roomId: roomId,
+      purpose: SignalingCipher.offerPurpose,
+      timestamp: offer.ts,
+      payload: offer.toJson(),
+    );
     await _client.from('rooms').upsert(<String, Object?>{
       'room_id': roomId,
       ..._roomParticipants(roomId),
-      'offer': offer.toJson(),
+      'offer': encryptedOffer,
       'created_at': DateTime.now().millisecondsSinceEpoch,
     });
   }

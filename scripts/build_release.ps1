@@ -19,6 +19,7 @@ param(
 )
 
 $ErrorActionPreference = 'Stop'
+$DemoSignalingEncryptionKey = 'rain-demo-signaling-encryption-key-v1-change-me'
 
 if ([string]::IsNullOrWhiteSpace($RepoRoot)) {
   $RepoRoot = (Resolve-Path (Join-Path $PSScriptRoot '..')).Path
@@ -182,6 +183,12 @@ function New-DemoDartDefinesFile([string]$Path, [string]$RepoRoot) {
     $defines.RAIN_ALLOW_PUBLIC_TURN = 'true'
   }
 
+  if ($null -eq $defines.PSObject.Properties['RAIN_SIGNALING_ENCRYPTION_KEY']) {
+    $defines | Add-Member -NotePropertyName 'RAIN_SIGNALING_ENCRYPTION_KEY' -NotePropertyValue $script:DemoSignalingEncryptionKey
+  } elseif ([string]::IsNullOrWhiteSpace([string]$defines.RAIN_SIGNALING_ENCRYPTION_KEY)) {
+    $defines.RAIN_SIGNALING_ENCRYPTION_KEY = $script:DemoSignalingEncryptionKey
+  }
+
   $tmpDir = Get-ReleaseTempDir $RepoRoot
   $demoDefinesPath = Join-Path $tmpDir 'rain-openrelay-demo-defines.generated.json'
   $defines | ConvertTo-Json -Depth 20 | Set-Content -LiteralPath $demoDefinesPath -Encoding utf8
@@ -217,6 +224,25 @@ function Assert-ReleaseDartDefines([string]$Path, [switch]$AllowPublicTurnForDem
     $defines = Get-Content -Raw -LiteralPath $Path | ConvertFrom-Json -ErrorAction Stop
   } catch {
     throw "Release dart defines file must be valid JSON: $Path"
+  }
+
+  $signalingEncryptionKey = Get-JsonPropertyValue $defines 'RAIN_SIGNALING_ENCRYPTION_KEY'
+  if ([string]::IsNullOrWhiteSpace($signalingEncryptionKey)) {
+    if (-not $AllowPublicTurnForDemo) {
+      throw "RAIN_SIGNALING_ENCRYPTION_KEY is required in release dart defines."
+    }
+    Write-Warning "RAIN_SIGNALING_ENCRYPTION_KEY is missing; demo release artifacts will use the bundled demo signaling key."
+  } else {
+    $signalingEncryptionKey = $signalingEncryptionKey.Trim()
+    if ($signalingEncryptionKey.Length -lt 32) {
+      throw "RAIN_SIGNALING_ENCRYPTION_KEY must be at least 32 characters."
+    }
+    if (
+      -not $AllowPublicTurnForDemo -and
+      $signalingEncryptionKey.Equals($script:DemoSignalingEncryptionKey, [System.StringComparison]::Ordinal)
+    ) {
+      throw "Production release builds must not use the demo signaling encryption key."
+    }
   }
 
   $rawIceServers = Get-JsonPropertyValue $defines 'RAIN_ICE_SERVERS'
@@ -401,8 +427,8 @@ if ($UseDemoAndroidSigningKey -and -not $isOpenRelayDemoBuild) {
   throw "Demo Android signing is only allowed with -AllowPublicTurnForDemo."
 }
 
-$androidArtifactPrefix = if ($isOpenRelayDemoBuild) { 'Rain-openrelay-demo' } else { 'Rain-release' }
-$windowsPortableName = if ($isOpenRelayDemoBuild) { 'Rain-openrelay-demo-windows-portable' } else { 'Rain-windows-portable' }
+$androidArtifactPrefix = if ($isOpenRelayDemoBuild) { 'Rain-Demo' } else { 'Rain-release' }
+$windowsPortableName = if ($isOpenRelayDemoBuild) { 'Rain-Demo-Windows-x64-Build' } else { 'Rain-windows-portable' }
 $dartDefineArgs = Get-DartDefineArgs $appsRoot $DartDefinesFile $repoRoot $isOpenRelayDemoBuild
 if ($Platform -in @('all', 'android')) {
   if ($UseDemoAndroidSigningKey) {
@@ -519,27 +545,41 @@ if ($Platform -in @('all', 'android')) {
   }
 
   $apkSource = Join-Path $appsRoot 'build\app\outputs\flutter-apk\app-release.apk'
-  $apkDestination = Join-Path $releaseRoot "$androidArtifactPrefix-android.apk"
-  $universalApkDestination = Join-Path $releaseRoot "$androidArtifactPrefix-android-universal.apk"
+  $apkDestination = if ($isOpenRelayDemoBuild) { '' } else { Join-Path $releaseRoot "$androidArtifactPrefix-android.apk" }
+  $universalApkDestination = if ($isOpenRelayDemoBuild) {
+    Join-Path $releaseRoot 'Rain-Demo-Android-Universal-Build.apk'
+  } else {
+    Join-Path $releaseRoot "$androidArtifactPrefix-android-universal.apk"
+  }
 
   if (-not (Test-Path $apkSource)) {
     throw "Android release APK not found: $apkSource"
   }
 
-  Copy-Item -LiteralPath $apkSource -Destination $apkDestination -Force
+  if (-not [string]::IsNullOrWhiteSpace($apkDestination)) {
+    Copy-Item -LiteralPath $apkSource -Destination $apkDestination -Force
+  }
   Copy-Item -LiteralPath $apkSource -Destination $universalApkDestination -Force
 
-  Write-Step "Building Android per-ABI release APKs"
+  Write-Step "Building Android per-ABI release APKs: armeabi-v7a, arm64-v8a (ARMv8/ARMv9 devices), x86_64"
   $splitFlutterArgs = @('build', 'apk', '--release', '--split-per-abi') + $dartDefineArgs
   Invoke-InDir $appsRoot {
     Invoke-FlutterBuild $splitFlutterArgs
   }
 
-  $abiApks = @(
-    @{ Source = 'app-arm64-v8a-release.apk'; Destination = "$androidArtifactPrefix-android-arm64-v8a.apk" },
-    @{ Source = 'app-armeabi-v7a-release.apk'; Destination = "$androidArtifactPrefix-android-armeabi-v7a.apk" },
-    @{ Source = 'app-x86_64-release.apk'; Destination = "$androidArtifactPrefix-android-x86_64.apk" }
-  )
+  $abiApks = if ($isOpenRelayDemoBuild) {
+    @(
+      @{ Label = 'ARM v8/v9 devices (arm64-v8a)'; Source = 'app-arm64-v8a-release.apk'; Destination = 'Rain-Demo-Android-ARM-v8-v9-Build.apk' },
+      @{ Label = 'ARM v7 devices (armeabi-v7a)'; Source = 'app-armeabi-v7a-release.apk'; Destination = 'Rain-Demo-Android-ARM-v7-Build.apk' },
+      @{ Label = 'x86_64 devices'; Source = 'app-x86_64-release.apk'; Destination = 'Rain-Demo-Android-x86_64-Build.apk' }
+    )
+  } else {
+    @(
+      @{ Label = 'ARM v8/v9 devices (arm64-v8a)'; Source = 'app-arm64-v8a-release.apk'; Destination = "$androidArtifactPrefix-android-arm64-v8a.apk" },
+      @{ Label = 'ARM v7 devices (armeabi-v7a)'; Source = 'app-armeabi-v7a-release.apk'; Destination = "$androidArtifactPrefix-android-armeabi-v7a.apk" },
+      @{ Label = 'x86_64 devices'; Source = 'app-x86_64-release.apk'; Destination = "$androidArtifactPrefix-android-x86_64.apk" }
+    )
+  }
 
   foreach ($abiApk in $abiApks) {
     $abiApkSource = Join-Path $appsRoot "build\app\outputs\flutter-apk\$($abiApk.Source)"
@@ -550,6 +590,7 @@ if ($Platform -in @('all', 'android')) {
     }
 
     Copy-Item -LiteralPath $abiApkSource -Destination $abiApkDestination -Force
+    Write-Step "Packaged Android APK for $($abiApk.Label): $abiApkDestination"
   }
 }
 
@@ -574,13 +615,22 @@ if ($Platform -in @('all', 'windows')) {
 }
 
 if ($Platform -in @('all', 'android')) {
-  $expectedApks = @(
-    "$androidArtifactPrefix-android.apk",
-    "$androidArtifactPrefix-android-universal.apk",
-    "$androidArtifactPrefix-android-arm64-v8a.apk",
-    "$androidArtifactPrefix-android-armeabi-v7a.apk",
-    "$androidArtifactPrefix-android-x86_64.apk"
-  )
+  $expectedApks = if ($isOpenRelayDemoBuild) {
+    @(
+      'Rain-Demo-Android-Universal-Build.apk',
+      'Rain-Demo-Android-ARM-v8-v9-Build.apk',
+      'Rain-Demo-Android-ARM-v7-Build.apk',
+      'Rain-Demo-Android-x86_64-Build.apk'
+    )
+  } else {
+    @(
+      "$androidArtifactPrefix-android.apk",
+      "$androidArtifactPrefix-android-universal.apk",
+      "$androidArtifactPrefix-android-arm64-v8a.apk",
+      "$androidArtifactPrefix-android-armeabi-v7a.apk",
+      "$androidArtifactPrefix-android-x86_64.apk"
+    )
+  }
 
   foreach ($apkName in $expectedApks) {
     $apkDestination = Join-Path $releaseRoot $apkName
