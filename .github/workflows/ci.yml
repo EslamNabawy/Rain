@@ -114,6 +114,7 @@ jobs:
         shell: pwsh
         run: |
           $ErrorActionPreference = 'Continue'
+          $PSNativeCommandUseErrorActionPreference = $false
           $logPath = Join-Path $env:RUNNER_TEMP 'release-guard.log'
           $output = & pwsh -NoProfile -File scripts/build_release.ps1 -Platform android -OutputDir (Join-Path $env:RUNNER_TEMP 'release-guard-output') 2>&1
           $exitCode = $LASTEXITCODE
