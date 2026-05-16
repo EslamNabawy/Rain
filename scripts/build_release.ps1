@@ -376,21 +376,13 @@ function Clean-FlutterProject([string]$ProjectRoot) {
   )
 
   if (Test-Path $buildDir) {
-    try {
-      Remove-Item -LiteralPath $buildDir -Recurse -Force -ErrorAction Stop
-    } catch {
-      Write-Warning "Could not remove build directory '$buildDir': $($_.Exception.Message)"
-    }
+    Remove-PathWithRetries -Path $buildDir -Attempts 10 -DelayMilliseconds 2000 -AllowFailure | Out-Null
   }
 
   foreach ($relativePath in $ephemeralDirs) {
     $ephemeralDir = Join-Path $ProjectRoot $relativePath
     if (Test-Path $ephemeralDir) {
-      try {
-        Remove-Item -LiteralPath $ephemeralDir -Recurse -Force -ErrorAction Stop
-      } catch {
-        Write-Warning "Could not remove ephemeral directory '$ephemeralDir': $($_.Exception.Message)"
-      }
+      Remove-PathWithRetries -Path $ephemeralDir -Attempts 10 -DelayMilliseconds 2000 -AllowFailure | Out-Null
     }
   }
 }
@@ -530,6 +522,11 @@ if ($Platform -in @('all', 'android')) {
 
   Copy-Item -LiteralPath $apkSource -Destination $apkDestination -Force
   Copy-Item -LiteralPath $apkSource -Destination $universalApkDestination -Force
+
+  Write-Step "Resetting Android build state before per-ABI APKs"
+  Stop-GradleDaemons $appsRoot
+  Start-Sleep -Seconds 5
+  Clean-FlutterProject $appsRoot
 
   Write-Step "Building Android per-ABI release APKs"
   $splitFlutterArgs = @('build', 'apk', '--release', '--split-per-abi') + $dartDefineArgs
