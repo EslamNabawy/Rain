@@ -1,4 +1,7 @@
+import 'dart:io';
+
 import 'package:drift/native.dart';
+import 'package:flutter/widgets.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:rain/application/bootstrap/app_bootstrap.dart';
 import 'package:rain/core/config/app_environment.dart';
@@ -26,6 +29,16 @@ class _ExpiredSessionAdapter extends NoopSignalingAdapter {
   @override
   Future<void> ensureAuthenticated() async {
     throw const SignalingSessionExpiredException('sign in again');
+  }
+}
+
+class _RecordingPresenceAdapter extends NoopSignalingAdapter {
+  final List<bool> presenceWrites = <bool>[];
+
+  @override
+  Future<void> setPresence(String username, bool online) async {
+    presenceWrites.add(online);
+    await super.setPresence(username, online);
   }
 }
 
@@ -244,5 +257,50 @@ void main() {
     await runtime.logOut();
 
     expect(await IdentityRepository(db).loadIdentity(), isNull);
+  });
+
+  test('runtime marks the user offline immediately when app detaches', () async {
+    final db = RainDatabase(NativeDatabase.memory());
+    addTearDown(db.close);
+    const identity = RainIdentity(
+      username: 'alice',
+      displayName: 'Alice',
+      createdAt: 0,
+      gender: RainGender.female,
+    );
+    final adapter = _RecordingPresenceAdapter();
+    final runtime = RainRuntimeController(
+      selfIdentity: identity,
+      adapter: adapter,
+      brain: null,
+      database: db,
+      friendStore: FriendStore(db),
+      messageStore: MessageStore(db),
+      offlineQueueStore: OfflineQueueStore(db),
+      messageDeliveryService: MessageDeliveryService(
+        messageStore: MessageStore(db),
+        offlineQueueStore: OfflineQueueStore(db),
+      ),
+      friendRequestRefreshInterval: Duration.zero,
+    );
+    addTearDown(runtime.dispose);
+
+    await runtime.start();
+    runtime.didChangeAppLifecycleState(AppLifecycleState.detached);
+    await Future<void>.delayed(const Duration(milliseconds: 20));
+
+    expect(adapter.presenceWrites.last, isFalse);
+  });
+
+  test('desktop shell close policy exits instead of hiding to tray', () {
+    final source = File(
+      '../../apps/rain/lib/application/bootstrap/app_bootstrap.dart',
+    ).readAsStringSync().replaceAll('\r\n', '\n');
+
+    expect(source, contains('windowManager.setPreventClose(false)'));
+    expect(source, contains('windowManager.destroy()'));
+    expect(source, isNot(contains('windowManager.setPreventClose(true)')));
+    expect(source, isNot(contains('windowManager.hide()')));
+    expect(source, isNot(contains('trayManager')));
   });
 }

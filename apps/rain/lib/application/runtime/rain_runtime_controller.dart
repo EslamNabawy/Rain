@@ -541,13 +541,22 @@ class RainRuntimeController with WidgetsBindingObserver {
       case AppLifecycleState.inactive:
       case AppLifecycleState.hidden:
       case AppLifecycleState.paused:
-      case AppLifecycleState.detached:
         _backgroundOfflineTimer?.cancel();
         _backgroundOfflineTimer = Timer(const Duration(seconds: 30), () {
           if (_started && !_shutDown) {
             unawaited(adapter.setPresence(selfIdentity.username, false));
           }
         });
+        break;
+      case AppLifecycleState.detached:
+        _backgroundOfflineTimer?.cancel();
+        unawaited(
+          _shutdown(
+            markOffline: true,
+            signOut: false,
+            clearLocalSession: false,
+          ),
+        );
         break;
     }
   }

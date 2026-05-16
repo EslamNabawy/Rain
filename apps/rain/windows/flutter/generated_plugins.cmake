@@ -12,7 +12,6 @@ list(APPEND FLUTTER_PLUGIN_LIST
   flutter_webrtc
   screen_retriever_windows
   sqlite3_flutter_libs
-  tray_manager
   url_launcher_windows
   window_manager
 )

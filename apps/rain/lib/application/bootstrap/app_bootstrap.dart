@@ -7,7 +7,6 @@ import 'package:flutter/foundation.dart';
 import 'package:protocol_brain/protocol_brain.dart';
 import 'package:rain_core/rain_core.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
-import 'package:tray_manager/tray_manager.dart';
 import 'package:window_manager/window_manager.dart';
 
 import 'package:rain/core/config/app_environment.dart';
@@ -176,8 +175,9 @@ Future<void> _seedSmokeIdentity({
   await adapter.setPresence(username, true);
 }
 
-class _DesktopShellController with WindowListener, TrayListener {
+class _DesktopShellController with WindowListener {
   bool _initialized = false;
+  bool _closing = false;
 
   Future<void> initialize() async {
     if (_initialized) {
@@ -190,51 +190,20 @@ class _DesktopShellController with WindowListener, TrayListener {
 
     await windowManager.ensureInitialized();
     windowManager.addListener(this);
-    await windowManager.setPreventClose(true);
+    await windowManager.setPreventClose(false);
     await windowManager.waitUntilReadyToShow(const WindowOptions(), () async {
       await windowManager.show();
       await windowManager.focus();
     });
-
-    if (Platform.isWindows) {
-      const iconPath = 'windows/runner/resources/app_icon.ico';
-      if (File(iconPath).existsSync()) {
-        trayManager.addListener(this);
-        await trayManager.setIcon(iconPath);
-        await trayManager.setToolTip('Rain');
-        await trayManager.setContextMenu(
-          Menu(
-            items: <MenuItem>[
-              MenuItem(key: 'show', label: 'Show Rain'),
-              MenuItem.separator(),
-              MenuItem(key: 'exit', label: 'Exit'),
-            ],
-          ),
-        );
-      }
-    }
-  }
-
-  @override
-  Future<void> onTrayIconMouseDown() async {
-    await windowManager.show();
-    await windowManager.focus();
-  }
-
-  @override
-  Future<void> onTrayMenuItemClick(MenuItem item) async {
-    switch (item.key) {
-      case 'show':
-        await windowManager.show();
-        await windowManager.focus();
-      case 'exit':
-        await windowManager.destroy();
-        exit(0);
-    }
   }
 
   @override
   Future<void> onWindowClose() async {
-    await windowManager.hide();
+    if (_closing) {
+      return;
+    }
+    _closing = true;
+    await windowManager.setPreventClose(false);
+    await windowManager.destroy();
   }
 }
