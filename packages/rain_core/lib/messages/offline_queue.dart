@@ -47,6 +47,7 @@ class OfflineQueueStore {
     final query = _database.select(_database.queuedMessages)
       ..where((QueuedMessages row) => row.to.equals(peerId))
       ..orderBy(<OrderingTerm Function(QueuedMessages)>[
+        (QueuedMessages row) => OrderingTerm.asc(row.seq),
         (QueuedMessages row) => OrderingTerm.asc(row.sentAt),
       ]);
     return query.watch().map(
@@ -58,6 +59,7 @@ class OfflineQueueStore {
     final query = _database.select(_database.queuedMessages)
       ..where((QueuedMessages row) => row.to.equals(peerId))
       ..orderBy(<OrderingTerm Function(QueuedMessages)>[
+        (QueuedMessages row) => OrderingTerm.asc(row.seq),
         (QueuedMessages row) => OrderingTerm.asc(row.sentAt),
       ]);
     return (await query.get()).map(_mapQueuedMessage).toList(growable: false);

@@ -113,6 +113,65 @@ void main() {
     service.dispose();
   });
 
+  test('onStored callback runs only when a message is persisted', () async {
+    final service = MessageDeliveryService(
+      messageStore: messageStore,
+      offlineQueueStore: offlineQueueStore,
+      gapWait: const Duration(milliseconds: 100),
+    );
+
+    final storedIds = <String>[];
+    final seq2 = MessageEnvelope(
+      id: 'msg-2',
+      from: 'alice',
+      to: 'bob',
+      content: 'second',
+      sentAt: DateTime.now().millisecondsSinceEpoch,
+      seq: 2,
+      type: MessageType.text,
+    );
+    final seq1 = MessageEnvelope(
+      id: 'msg-1',
+      from: 'alice',
+      to: 'bob',
+      content: 'first',
+      sentAt: DateTime.now().millisecondsSinceEpoch,
+      seq: 1,
+      type: MessageType.text,
+    );
+
+    await service.handleIncomingEnvelope(
+      seq2,
+      receivedAt: DateTime.now(),
+      sendAck: (_) async {},
+      onStored: (MessageEnvelope envelope) {
+        storedIds.add(envelope.id);
+      },
+    );
+    expect(storedIds, isEmpty);
+
+    await service.handleIncomingEnvelope(
+      seq1,
+      receivedAt: DateTime.now(),
+      sendAck: (_) async {},
+      onStored: (MessageEnvelope envelope) {
+        storedIds.add(envelope.id);
+      },
+    );
+    expect(storedIds, <String>['msg-1', 'msg-2']);
+
+    await service.handleIncomingEnvelope(
+      seq1,
+      receivedAt: DateTime.now(),
+      sendAck: (_) async {},
+      onStored: (MessageEnvelope envelope) {
+        storedIds.add(envelope.id);
+      },
+    );
+    expect(storedIds, <String>['msg-1', 'msg-2']);
+    service.dispose();
+  });
+
   test('ack timeout retries once and then marks the message failed', () async {
     final service = MessageDeliveryService(
       messageStore: messageStore,
@@ -155,5 +214,36 @@ void main() {
         .getSingle();
     expect(queuedRow.status, QueuedMessageStatus.failed.name);
     service.dispose();
+  });
+
+  test('offline queue is loaded in seq order', () async {
+    await offlineQueueStore.enqueue(
+      MessageEnvelope(
+        id: 'msg-2',
+        from: 'alice',
+        to: 'bob',
+        content: 'second',
+        sentAt: 1,
+        seq: 2,
+        type: MessageType.text,
+      ),
+    );
+    await offlineQueueStore.enqueue(
+      MessageEnvelope(
+        id: 'msg-1',
+        from: 'alice',
+        to: 'bob',
+        content: 'first',
+        sentAt: 2,
+        seq: 1,
+        type: MessageType.text,
+      ),
+    );
+
+    final queued = await offlineQueueStore.loadQueue('bob');
+    expect(
+      queued.map((QueuedEnvelope message) => message.id).toList(growable: false),
+      <String>['msg-1', 'msg-2'],
+    );
   });
 }

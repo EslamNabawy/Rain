@@ -4,12 +4,16 @@ import 'package:flutter_webrtc/flutter_webrtc.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
 
 import 'signaling_adapter.dart';
+import 'supabase_auth_alias.dart';
+import 'supabase_auth_error.dart';
 
 class SupabaseSignalingAdapter implements SignalingAdapter {
-  SupabaseSignalingAdapter({SupabaseClient? client})
-    : _client = client ?? Supabase.instance.client;
+  SupabaseSignalingAdapter({required String projectUrl, SupabaseClient? client})
+    : _projectUrl = projectUrl,
+      _client = client ?? Supabase.instance.client;
 
   final SupabaseClient _client;
+  final String _projectUrl;
   static const int _presenceTimeoutMs = 7 * 60 * 1000;
 
   @override
@@ -23,15 +27,19 @@ class SupabaseSignalingAdapter implements SignalingAdapter {
 
   @override
   Future<void> ensureAuthenticated() async {
-    if (_client.auth.currentSession != null) {
-      return;
+    if (_client.auth.currentSession == null) {
+      throw Exception('Supabase session is missing. Sign in again.');
     }
   }
 
   @override
   Future<String> currentUid() async {
     await ensureAuthenticated();
-    return _client.auth.currentUser?.id ?? '';
+    final uid = _client.auth.currentUser?.id;
+    if (uid == null || uid.isEmpty) {
+      throw Exception('Supabase user id is unavailable.');
+    }
+    return uid;
   }
 
   @override
@@ -39,14 +47,82 @@ class SupabaseSignalingAdapter implements SignalingAdapter {
     return _client.auth.signOut();
   }
 
-  String _emailFromUsername(String username) {
-    return '$username@gmail.com';
+  List<String> _loginEmailsFromUsername(String username) {
+    return supabaseLoginEmailsFromUsername(username, projectUrl: _projectUrl);
+  }
+
+  Future<String> _signInWithEmail(String email, String password) async {
+    final authResponse = await _client.auth.signInWithPassword(
+      email: email,
+      password: password,
+    );
+    final uid = authResponse.user?.id ?? _client.auth.currentUser?.id ?? '';
+    if (uid.isEmpty) {
+      throw Exception('Failed to authenticate Supabase user');
+    }
+    return uid;
+  }
+
+  String _canonicalRoomId(String firstUser, String secondUser) {
+    final users = <String>[firstUser, secondUser]..sort();
+    return users.join(':');
+  }
+
+  List<String> _canonicalUserPair(String firstUser, String secondUser) {
+    final users = <String>[firstUser, secondUser]..sort();
+    return users;
+  }
+
+  Future<String> _currentUsername() async {
+    final uid = await currentUid();
+    final rows =
+        (await _client.from('users').select('username').eq('uid', uid).limit(1))
+            as List<dynamic>;
+    if (rows.isEmpty) {
+      throw Exception('Supabase user identity is missing.');
+    }
+    final row = Map<String, dynamic>.from(rows.first as Map);
+    final username = row['username'] as String? ?? '';
+    if (username.isEmpty) {
+      throw Exception('Supabase username is unavailable.');
+    }
+    return username;
+  }
+
+  String _normalizedUsername(String username) {
+    return username.trim().toLowerCase();
+  }
+
+  bool _isMissingFriendshipsTableError(Object error) {
+    if (error is! PostgrestException || error.code != 'PGRST205') {
+      return false;
+    }
+    final combined =
+        '${error.message} ${error.details ?? ''} ${error.hint ?? ''}'
+            .toLowerCase();
+    return combined.contains('friendships');
+  }
+
+  Future<void> _deleteFriendRequestsForPair(
+    String firstUser,
+    String secondUser,
+  ) async {
+    await deleteFriendRequest(firstUser, secondUser);
+    await deleteFriendRequest(secondUser, firstUser);
   }
 
   List<String> _roomUsers(String roomId) {
     final parts = roomId.split(':');
-    if (parts.length != 2) {
+    if (parts.length != 2 || parts.any((String value) => value.isEmpty)) {
       throw ArgumentError.value(roomId, 'roomId', 'Expected exactly two peers');
+    }
+    final canonical = _canonicalRoomId(parts[0], parts[1]);
+    if (canonical != roomId) {
+      throw ArgumentError.value(
+        roomId,
+        'roomId',
+        'Expected canonical room id ordering',
+      );
     }
     return parts;
   }
@@ -61,53 +137,88 @@ class SupabaseSignalingAdapter implements SignalingAdapter {
     return online && age < _presenceTimeoutMs;
   }
 
+  Exception _normalizeFriendRequestWriteError(
+    Object error, {
+    required String to,
+    required String from,
+  }) {
+    if (error is! PostgrestException || error.code != '23503') {
+      return Exception(error.toString());
+    }
+
+    final details = '${error.details ?? ''}'.toLowerCase();
+    if (details.contains('friend_requests_to_user_fkey')) {
+      return Exception(
+        'User "@$to" was not found. Ask them to create an account first.',
+      );
+    }
+    if (details.contains('friend_requests_from_user_fkey')) {
+      return Exception(
+        'Your Rain identity is missing from Supabase. Sign out and sign in again before sending friend requests.',
+      );
+    }
+
+    return Exception(
+      'Rain could not send the friend request from "@$from" to "@$to".',
+    );
+  }
+
   @override
   Future<String> register(String username, String password) async {
     if (password.length < 6) {
       throw Exception('Password must be at least 6 characters');
     }
 
-    final email = _emailFromUsername(username);
-    final authResponse = await _client.auth.signUp(
-      email: email,
-      password: password,
+    final email = supabasePreferredEmailFromUsername(
+      username,
+      projectUrl: _projectUrl,
     );
-    final uid = authResponse.user?.id ?? _client.auth.currentUser?.id ?? '';
-    if (uid.isEmpty) {
-      throw Exception('Failed to authenticate Supabase user');
+    try {
+      final authResponse = await _client.auth.signUp(
+        email: email,
+        password: password,
+      );
+      final uid = authResponse.user?.id ?? _client.auth.currentUser?.id ?? '';
+      if (uid.isEmpty) {
+        throw Exception('Failed to authenticate Supabase user');
+      }
+      final now = DateTime.now().millisecondsSinceEpoch;
+
+      await _client.from('users').upsert({
+        'username': username,
+        'uid': uid,
+        'display_name': username,
+        'gender': null,
+        'registered_at': now,
+        'last_seen': now,
+        'last_heartbeat': now,
+        'online': true,
+      });
+
+      if (_client.auth.currentSession == null) {
+        await _client.auth.signInWithPassword(email: email, password: password);
+      }
+
+      return uid;
+    } catch (error) {
+      throw normalizeSupabaseAuthError(error, duringRegistration: true);
     }
-    final now = DateTime.now().millisecondsSinceEpoch;
-
-    await _client.from('users').upsert({
-      'username': username,
-      'uid': uid,
-      'display_name': username,
-      'gender': null,
-      'registered_at': now,
-      'last_seen': now,
-      'last_heartbeat': now,
-      'online': true,
-    });
-
-    if (_client.auth.currentSession == null) {
-      await _client.auth.signInWithPassword(email: email, password: password);
-    }
-
-    return uid;
   }
 
   @override
   Future<String> login(String username, String password) async {
-    final email = _emailFromUsername(username);
-    final authResponse = await _client.auth.signInWithPassword(
-      email: email,
-      password: password,
-    );
-    final uid = authResponse.user?.id ?? _client.auth.currentUser?.id ?? '';
-    if (uid.isEmpty) {
-      throw Exception('Failed to authenticate Supabase user');
+    Object? lastError;
+    for (final email in _loginEmailsFromUsername(username)) {
+      try {
+        return await _signInWithEmail(email, password);
+      } catch (error) {
+        lastError = error;
+      }
     }
-    return uid;
+    throw normalizeSupabaseAuthError(
+      lastError ?? Exception('Failed to authenticate Supabase user'),
+      duringRegistration: false,
+    );
   }
 
   @override
@@ -176,11 +287,101 @@ class SupabaseSignalingAdapter implements SignalingAdapter {
   @override
   Future<void> deleteFriendRequest(String to, String from) async {
     await ensureAuthenticated();
+    final normalizedTo = _normalizedUsername(to);
+    final normalizedFrom = _normalizedUsername(from);
     await _client
         .from('friend_requests')
         .delete()
-        .eq('from_user', from)
-        .eq('to_user', to);
+        .eq('from_user', normalizedFrom)
+        .eq('to_user', normalizedTo);
+  }
+
+  @override
+  Future<void> deleteFriendship(String firstUser, String secondUser) async {
+    await ensureAuthenticated();
+    final users = _canonicalUserPair(
+      _normalizedUsername(firstUser),
+      _normalizedUsername(secondUser),
+    );
+    try {
+      await _client
+          .from('friendships')
+          .delete()
+          .eq('user_a', users[0])
+          .eq('user_b', users[1]);
+    } catch (error) {
+      if (!_isMissingFriendshipsTableError(error)) {
+        rethrow;
+      }
+    }
+    await _deleteFriendRequestsForPair(users[0], users[1]);
+  }
+
+  @override
+  Future<List<String>> loadAcceptedFriends(String username) async {
+    await ensureAuthenticated();
+    final normalizedUsername = _normalizedUsername(username);
+    try {
+      final rows = await _client
+          .from('friendships')
+          .select('user_a, user_b')
+          .or('user_a.eq.$normalizedUsername,user_b.eq.$normalizedUsername');
+
+      final friends = <String>[];
+      for (final row in rows as List<dynamic>) {
+        final map = Map<String, dynamic>.from(row as Map);
+        final userA = map['user_a'] as String?;
+        final userB = map['user_b'] as String?;
+        if (userA == null || userB == null) {
+          continue;
+        }
+        friends.add(userA == normalizedUsername ? userB : userA);
+      }
+      return friends.toSet().toList(growable: false);
+    } catch (error) {
+      if (!_isMissingFriendshipsTableError(error)) {
+        rethrow;
+      }
+    }
+
+    final incoming = await loadIncomingFriendRequests(normalizedUsername);
+    final outgoing = await loadOutgoingFriendRequests(normalizedUsername);
+    return incoming
+        .toSet()
+        .intersection(outgoing.toSet())
+        .toList(growable: false);
+  }
+
+  @override
+  Future<List<String>> loadIncomingFriendRequests(String username) async {
+    await ensureAuthenticated();
+    final normalizedUsername = _normalizedUsername(username);
+    final rows = await _client
+        .from('friend_requests')
+        .select('from_user')
+        .eq('to_user', normalizedUsername);
+
+    return (rows as List<dynamic>)
+        .map((dynamic row) => Map<String, dynamic>.from(row as Map))
+        .map((Map<String, dynamic> row) => row['from_user'] as String?)
+        .whereType<String>()
+        .toList(growable: false);
+  }
+
+  @override
+  Future<List<String>> loadOutgoingFriendRequests(String username) async {
+    await ensureAuthenticated();
+    final normalizedUsername = _normalizedUsername(username);
+    final rows = await _client
+        .from('friend_requests')
+        .select('to_user')
+        .eq('from_user', normalizedUsername);
+
+    return (rows as List<dynamic>)
+        .map((dynamic row) => Map<String, dynamic>.from(row as Map))
+        .map((Map<String, dynamic> row) => row['to_user'] as String?)
+        .whereType<String>()
+        .toList(growable: false);
   }
 
   @override
@@ -350,11 +551,54 @@ class SupabaseSignalingAdapter implements SignalingAdapter {
   @override
   Future<void> writeFriendRequest(String to, String from) async {
     await ensureAuthenticated();
-    await _client.from('friend_requests').upsert(<String, Object?>{
-      'from_user': from,
-      'to_user': to,
-      'sent_at': DateTime.now().millisecondsSinceEpoch,
-    });
+    final normalizedTo = _normalizedUsername(to);
+    final normalizedFrom = _normalizedUsername(from);
+    if (normalizedTo == normalizedFrom) {
+      throw Exception('Cannot send friend request to yourself');
+    }
+    try {
+      await _client.from('friend_requests').upsert(<String, Object?>{
+        'from_user': normalizedFrom,
+        'to_user': normalizedTo,
+        'sent_at': DateTime.now().millisecondsSinceEpoch,
+      });
+    } catch (error) {
+      throw _normalizeFriendRequestWriteError(
+        error,
+        to: normalizedTo,
+        from: normalizedFrom,
+      );
+    }
+  }
+
+  @override
+  Future<void> upsertFriendship(String firstUser, String secondUser) async {
+    await ensureAuthenticated();
+    final normalizedFirstUser = _normalizedUsername(firstUser);
+    final normalizedSecondUser = _normalizedUsername(secondUser);
+    if (normalizedFirstUser == normalizedSecondUser) {
+      throw Exception('Cannot create friendship with yourself');
+    }
+
+    try {
+      final currentUsername = await _currentUsername();
+      if (currentUsername != normalizedFirstUser &&
+          currentUsername != normalizedSecondUser) {
+        throw Exception('Current user is not part of this friendship.');
+      }
+
+      final requestFrom = currentUsername == normalizedFirstUser
+          ? normalizedSecondUser
+          : normalizedFirstUser;
+      await _client.rpc('accept_friend_request', params: <String, Object?>{
+        'request_from': requestFrom,
+      });
+    } catch (error) {
+      if (!_isMissingFriendshipsTableError(error)) {
+        rethrow;
+      }
+      await writeFriendRequest(normalizedSecondUser, normalizedFirstUser);
+    }
   }
 
   @override
@@ -364,23 +608,10 @@ class SupabaseSignalingAdapter implements SignalingAdapter {
     RTCIceCandidate candidate,
   ) async {
     await ensureAuthenticated();
-    final field = role == IceRole.caller ? 'caller_ice' : 'callee_ice';
-    final rows =
-        (await _client
-                .from('rooms')
-                .select(field)
-                .eq('room_id', roomId)
-                .limit(1))
-            as List<dynamic>;
-    final current = rows.isNotEmpty && (rows.first as Map)[field] is List
-        ? List<Map<String, Object?>>.from((rows.first as Map)[field] as List)
-        : <Map<String, Object?>>[];
-    current.add(iceCandidateToJson(candidate));
-    await _client.from('rooms').upsert(<String, Object?>{
-      'room_id': roomId,
-      ..._roomParticipants(roomId),
-      field: current,
-      'created_at': DateTime.now().millisecondsSinceEpoch,
+    await _client.rpc('append_room_ice', params: <String, Object?>{
+      'target_room_id': roomId,
+      'target_role': role == IceRole.caller ? 'caller' : 'callee',
+      'target_candidate': iceCandidateToJson(candidate),
     });
   }
 

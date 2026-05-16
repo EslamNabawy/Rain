@@ -6,8 +6,9 @@ import 'package:rain/firebase_options.dart';
 import 'package:rain/services/rain_runtime_controller.dart';
 import 'package:rain_core/rain_core.dart';
 
-const bool runIntegrationTests =
-    bool.fromEnvironment('RUN_RAIN_INTEGRATION_TESTS');
+const bool runIntegrationTests = bool.fromEnvironment(
+  'RUN_RAIN_INTEGRATION_TESTS',
+);
 
 void main() {
   TestWidgetsFlutterBinding.ensureInitialized();
@@ -58,6 +59,7 @@ void main() {
             messageStore: MessageStore(dbAlice),
             offlineQueueStore: OfflineQueueStore(dbAlice),
           ),
+          friendRequestRefreshInterval: const Duration(milliseconds: 50),
         );
         final runtimeBob = RainRuntimeController(
           selfIdentity: bobIdentity,
@@ -71,6 +73,7 @@ void main() {
             messageStore: MessageStore(dbBob),
             offlineQueueStore: OfflineQueueStore(dbBob),
           ),
+          friendRequestRefreshInterval: const Duration(milliseconds: 50),
         );
 
         await runtimeAlice.start();
@@ -82,6 +85,8 @@ void main() {
         expect(inbound, 'alice');
 
         await runtimeBob.acceptFriend('alice');
+
+        await Future<void>.delayed(const Duration(milliseconds: 250));
 
         final aliceBob = await runtimeAlice.friendStore.loadFriend('bob');
         final bobAlice = await runtimeBob.friendStore.loadFriend('alice');

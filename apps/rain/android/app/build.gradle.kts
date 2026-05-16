@@ -8,6 +8,32 @@ plugins {
     id("dev.flutter.flutter-gradle-plugin")
 }
 
+fun releaseProperty(name: String): String? =
+    (project.findProperty(name) as String?) ?: System.getenv(name)
+
+val isReleaseBuild = gradle.startParameter.taskNames.any {
+    it.lowercase().contains("release")
+}
+val releaseStoreFile = releaseProperty("RAIN_RELEASE_STORE_FILE")
+val releaseStorePassword = releaseProperty("RAIN_RELEASE_STORE_PASSWORD")
+val releaseKeyAlias = releaseProperty("RAIN_RELEASE_KEY_ALIAS")
+val releaseKeyPassword = releaseProperty("RAIN_RELEASE_KEY_PASSWORD")
+
+if (isReleaseBuild) {
+    require(!releaseStoreFile.isNullOrBlank()) {
+        "RAIN_RELEASE_STORE_FILE is required for release signing"
+    }
+    require(!releaseStorePassword.isNullOrBlank()) {
+        "RAIN_RELEASE_STORE_PASSWORD is required for release signing"
+    }
+    require(!releaseKeyAlias.isNullOrBlank()) {
+        "RAIN_RELEASE_KEY_ALIAS is required for release signing"
+    }
+    require(!releaseKeyPassword.isNullOrBlank()) {
+        "RAIN_RELEASE_KEY_PASSWORD is required for release signing"
+    }
+}
+
 android {
     namespace = "com.rainapp.rain"
     compileSdk = flutter.compileSdkVersion
@@ -33,11 +59,18 @@ android {
         versionName = flutter.versionName
     }
 
+    signingConfigs {
+        create("release") {
+            storeFile = releaseStoreFile?.takeIf { it.isNotBlank() }?.let { file(it) }
+            storePassword = releaseStorePassword
+            keyAlias = releaseKeyAlias
+            keyPassword = releaseKeyPassword
+        }
+    }
+
     buildTypes {
         release {
-            // TODO: Add your own signing config for the release build.
-            // Signing with the debug keys for now, so `flutter run --release` works.
-            signingConfig = signingConfigs.getByName("debug")
+            signingConfig = signingConfigs.getByName("release")
         }
     }
 }

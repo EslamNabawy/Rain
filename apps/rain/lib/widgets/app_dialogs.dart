@@ -44,6 +44,7 @@ Future<String?> showAppTextInputDialog({
   bool obscureText = false,
   bool autofocus = true,
   TextInputAction textInputAction = TextInputAction.done,
+  TextCapitalization textCapitalization = TextCapitalization.none,
   List<TextInputFormatter>? inputFormatters,
   int? minLines,
   int? maxLines,
@@ -63,6 +64,7 @@ Future<String?> showAppTextInputDialog({
         obscureText: obscureText,
         autofocus: autofocus,
         textInputAction: textInputAction,
+        textCapitalization: textCapitalization,
         inputFormatters: inputFormatters,
         minLines: minLines,
         maxLines: maxLines,
@@ -84,6 +86,7 @@ class _AppTextInputDialog extends StatefulWidget {
     required this.obscureText,
     required this.autofocus,
     required this.textInputAction,
+    required this.textCapitalization,
     required this.inputFormatters,
     required this.minLines,
     required this.maxLines,
@@ -100,6 +103,7 @@ class _AppTextInputDialog extends StatefulWidget {
   final bool obscureText;
   final bool autofocus;
   final TextInputAction textInputAction;
+  final TextCapitalization textCapitalization;
   final List<TextInputFormatter>? inputFormatters;
   final int? minLines;
   final int? maxLines;
@@ -112,9 +116,24 @@ class _AppTextInputDialogState extends State<_AppTextInputDialog> {
   late final TextEditingController _controller = TextEditingController(
     text: widget.initialValue ?? '',
   );
+  late final FocusNode _focusNode = FocusNode();
+
+  @override
+  void initState() {
+    super.initState();
+    if (widget.autofocus) {
+      WidgetsBinding.instance.addPostFrameCallback((_) {
+        if (!mounted) {
+          return;
+        }
+        _focusNode.requestFocus();
+      });
+    }
+  }
 
   @override
   void dispose() {
+    _focusNode.dispose();
     _controller.dispose();
     super.dispose();
   }
@@ -125,13 +144,21 @@ class _AppTextInputDialogState extends State<_AppTextInputDialog> {
       title: Text(widget.title),
       content: TextField(
         controller: _controller,
+        focusNode: _focusNode,
         autofocus: widget.autofocus,
         obscureText: widget.obscureText,
         textInputAction: widget.textInputAction,
+        textCapitalization: widget.textCapitalization,
         inputFormatters: widget.inputFormatters,
         minLines: widget.minLines,
         maxLines: widget.maxLines,
         maxLength: widget.maxLength,
+        mouseCursor: SystemMouseCursors.text,
+        onTap: () {
+          if (!_focusNode.hasFocus) {
+            _focusNode.requestFocus();
+          }
+        },
         decoration: InputDecoration(
           labelText: widget.labelText,
           hintText: widget.hintText,

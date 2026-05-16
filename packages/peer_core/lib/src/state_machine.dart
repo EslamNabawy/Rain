@@ -4,26 +4,28 @@ class PeerStateMachine {
   PeerStateMachine([PeerState initialState = PeerState.idle])
     : _state = initialState;
 
-  static const Map<PeerState, Set<PeerState>> _transitions = <PeerState, Set<PeerState>>{
-    PeerState.idle: <PeerState>{PeerState.ready},
-    PeerState.ready: <PeerState>{PeerState.offering, PeerState.answering, PeerState.idle},
-    PeerState.offering: <PeerState>{PeerState.connecting, PeerState.idle},
-    PeerState.answering: <PeerState>{PeerState.connecting, PeerState.idle},
-    PeerState.connecting: <PeerState>{
-      PeerState.connected,
-      PeerState.reconnecting,
-      PeerState.failed,
-      PeerState.idle,
-    },
-    PeerState.connected: <PeerState>{PeerState.reconnecting, PeerState.idle},
-    PeerState.reconnecting: <PeerState>{
-      PeerState.connecting,
-      PeerState.connected,
-      PeerState.failed,
-      PeerState.idle,
-    },
-    PeerState.failed: <PeerState>{PeerState.idle, PeerState.ready},
-  };
+  static const Map<PeerState, Set<PeerState>> _transitions =
+      <PeerState, Set<PeerState>>{
+        PeerState.idle: <PeerState>{PeerState.ready},
+        PeerState.ready: <PeerState>{
+          PeerState.offering,
+          PeerState.answering,
+          PeerState.idle,
+        },
+        PeerState.offering: <PeerState>{PeerState.connecting, PeerState.idle},
+        PeerState.answering: <PeerState>{PeerState.connecting, PeerState.idle},
+        PeerState.connecting: <PeerState>{PeerState.connected, PeerState.idle},
+        PeerState.connected: <PeerState>{
+          PeerState.reconnecting,
+          PeerState.idle,
+        },
+        PeerState.reconnecting: <PeerState>{
+          PeerState.connected,
+          PeerState.failed,
+          PeerState.idle,
+        },
+        PeerState.failed: <PeerState>{PeerState.idle},
+      };
 
   PeerState _state;
 
@@ -44,4 +46,3 @@ class PeerStateMachine {
     return _state;
   }
 }
-

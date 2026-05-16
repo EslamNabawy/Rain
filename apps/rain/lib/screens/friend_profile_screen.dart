@@ -7,14 +7,41 @@ import '../widgets/app_components.dart';
 import '../widgets/app_dialogs.dart';
 
 class FriendProfileScreen extends ConsumerWidget {
-  const FriendProfileScreen({super.key, required this.friend});
+  const FriendProfileScreen({
+    super.key,
+    required this.username,
+    this.initialFriend,
+  });
 
-  final FriendRecord friend;
+  final String username;
+  final FriendRecord? initialFriend;
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {
-    final presence = ref.watch(presenceProvider(friend.username));
-    final isOnline = presence.valueOrNull ?? friend.isOnline;
+    final friends = ref.watch(friendsProvider).valueOrNull;
+    FriendRecord? currentFriend = initialFriend;
+    for (final friend in friends ?? const <FriendRecord>[]) {
+      if (friend.username == username) {
+        currentFriend = friend;
+        break;
+      }
+    }
+
+    if (currentFriend == null) {
+      return Scaffold(
+        appBar: AppBar(title: const Text('Friend Profile')),
+        body: const Center(
+          child: AppStateMessage(
+            icon: Icons.person_off_outlined,
+            title: 'Friend not found',
+            message: 'This profile is not available right now.',
+          ),
+        ),
+      );
+    }
+
+    final friend = currentFriend;
+    final isOnline = friend.isOnline;
 
     return Scaffold(
       appBar: AppBar(title: const Text('Friend Profile')),
@@ -100,13 +127,13 @@ class FriendProfileScreen extends ConsumerWidget {
           const SizedBox(height: 24),
           if (friend.state == FriendState.friend) ...<Widget>[
             FilledButton.icon(
-              onPressed: () => _confirmUnfriend(context, ref),
+              onPressed: () => _confirmUnfriend(context, ref, friend),
               icon: const Icon(Icons.person_remove),
-              label: const Text('Remove Friend'),
+              label: const Text('Unfriend'),
             ),
             const SizedBox(height: 12),
             OutlinedButton.icon(
-              onPressed: () => _confirmBlock(context, ref),
+              onPressed: () => _confirmBlock(context, ref, friend),
               icon: const Icon(Icons.block),
               label: const Text('Block'),
               style: OutlinedButton.styleFrom(
@@ -118,8 +145,8 @@ class FriendProfileScreen extends ConsumerWidget {
             FilledButton.icon(
               onPressed: () async {
                 await ref
-                    .read(runtimeControllerProvider)
-                    ?.acceptFriend(friend.username);
+                    .read(friendsProvider.notifier)
+                    .accept(friend.username);
                 if (context.mounted) {
                   Navigator.of(context).pop();
                 }
@@ -131,8 +158,8 @@ class FriendProfileScreen extends ConsumerWidget {
             OutlinedButton.icon(
               onPressed: () async {
                 await ref
-                    .read(runtimeControllerProvider)
-                    ?.rejectFriend(friend.username);
+                    .read(friendsProvider.notifier)
+                    .reject(friend.username);
                 if (context.mounted) {
                   Navigator.of(context).pop();
                 }
@@ -153,8 +180,8 @@ class FriendProfileScreen extends ConsumerWidget {
             OutlinedButton.icon(
               onPressed: () async {
                 await ref
-                    .read(runtimeControllerProvider)
-                    ?.rejectFriend(friend.username);
+                    .read(friendsProvider.notifier)
+                    .reject(friend.username);
                 if (context.mounted) {
                   Navigator.of(context).pop();
                 }
@@ -165,7 +192,7 @@ class FriendProfileScreen extends ConsumerWidget {
           ],
           if (friend.state == FriendState.blocked) ...<Widget>[
             FilledButton.icon(
-              onPressed: () => _confirmUnblock(context, ref),
+              onPressed: () => _confirmUnblock(context, ref, friend),
               icon: const Icon(Icons.check),
               label: const Text('Unblock'),
             ),
@@ -187,24 +214,35 @@ class FriendProfileScreen extends ConsumerWidget {
     return '${date.day}/${date.month}/${date.year}';
   }
 
-  Future<void> _confirmUnfriend(BuildContext context, WidgetRef ref) async {
+  Future<void> _confirmUnfriend(
+    BuildContext context,
+    WidgetRef ref,
+    FriendRecord friend,
+  ) async {
     final confirmed = await showAppConfirmDialog(
       context: context,
-      title: 'Remove friend?',
+      title: 'Unfriend?',
       message:
-          'Are you sure you want to remove @${friend.username} from your friends?',
-      confirmLabel: 'Remove',
+          'Remove @${friend.username} from your friends and close the peer connection?',
+      confirmLabel: 'Unfriend',
+      confirmStyle: FilledButton.styleFrom(
+        backgroundColor: Theme.of(context).colorScheme.error,
+      ),
     );
 
     if (confirmed == true) {
-      await ref.read(runtimeControllerProvider)?.rejectFriend(friend.username);
+      await ref.read(friendsProvider.notifier).unfriend(friend.username);
       if (context.mounted) {
         Navigator.of(context).pop();
       }
     }
   }
 
-  Future<void> _confirmBlock(BuildContext context, WidgetRef ref) async {
+  Future<void> _confirmBlock(
+    BuildContext context,
+    WidgetRef ref,
+    FriendRecord friend,
+  ) async {
     final confirmed = await showAppConfirmDialog(
       context: context,
       title: 'Block user?',
@@ -217,14 +255,18 @@ class FriendProfileScreen extends ConsumerWidget {
     );
 
     if (confirmed == true) {
-      await ref.read(runtimeControllerProvider)?.blockFriend(friend.username);
+      await ref.read(friendsProvider.notifier).block(friend.username);
       if (context.mounted) {
         Navigator.of(context).pop();
       }
     }
   }
 
-  Future<void> _confirmUnblock(BuildContext context, WidgetRef ref) async {
+  Future<void> _confirmUnblock(
+    BuildContext context,
+    WidgetRef ref,
+    FriendRecord friend,
+  ) async {
     final confirmed = await showAppConfirmDialog(
       context: context,
       title: 'Unblock user?',
@@ -234,7 +276,7 @@ class FriendProfileScreen extends ConsumerWidget {
     );
 
     if (confirmed == true) {
-      await ref.read(runtimeControllerProvider)?.unblockFriend(friend.username);
+      await ref.read(friendsProvider.notifier).unblock(friend.username);
       if (context.mounted) {
         Navigator.of(context).pop();
       }

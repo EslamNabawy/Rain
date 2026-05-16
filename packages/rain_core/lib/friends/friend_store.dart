@@ -110,23 +110,21 @@ class FriendStore {
 
   Future<void> unblock(String username) {
     return _database.transaction(() async {
-      await (_database.update(
+      await (_database.delete(
         _database.friends,
-      )..where((Friends row) => row.username.equals(username))).write(
-        FriendsCompanion(state: Value<String>(FriendState.friend.name)),
-      );
+      )..where((Friends row) => row.username.equals(username))).go();
     });
   }
 
   Future<void> updatePresence(String username, bool isOnline) {
     return _database.transaction(() async {
+      final now = DateTime.now().millisecondsSinceEpoch;
       await (_database.update(
         _database.friends,
       )..where((Friends row) => row.username.equals(username))).write(
         FriendsCompanion(
-          lastOnlineAt: Value<int?>(
-            isOnline ? DateTime.now().millisecondsSinceEpoch : null,
-          ),
+          online: Value<bool>(isOnline),
+          lastOnlineAt: isOnline ? const Value.absent() : Value<int?>(now),
         ),
       );
     });
@@ -158,20 +156,13 @@ class FriendStore {
   }
 
   FriendRecord _mapRecord(Friend row) {
-    final lastOnlineAt = row.lastOnlineAt;
-    final isOnline =
-        lastOnlineAt != null &&
-        DateTime.now().difference(
-              DateTime.fromMillisecondsSinceEpoch(lastOnlineAt),
-            ) <
-            const Duration(minutes: 7);
     return FriendRecord(
       username: row.username,
       displayName: row.displayName,
       state: FriendState.values.byName(row.state),
       addedAt: row.addedAt,
       lastOnlineAt: row.lastOnlineAt,
-      isOnline: isOnline,
+      isOnline: row.online,
       unreadCount: row.unreadCount,
     );
   }

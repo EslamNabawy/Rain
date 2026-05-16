@@ -48,8 +48,8 @@ class MessageStore {
     final query = _database.select(_database.messages)
       ..where((Messages row) => row.peerId.equals(peerId))
       ..orderBy(<OrderingTerm Function(Messages)>[
-        (Messages row) => OrderingTerm.asc(row.seq),
         (Messages row) => OrderingTerm.asc(row.sentAt),
+        (Messages row) => OrderingTerm.asc(row.seq),
       ]);
     return query.watch().map(
       (List<Message> rows) => rows.map(_mapStoredMessage).toList(growable: false),

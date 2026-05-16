@@ -2,8 +2,9 @@ import 'package:flutter_test/flutter_test.dart';
 
 import 'utils/two_device_harness.dart';
 
-const bool runIntegrationTests =
-    bool.fromEnvironment('RUN_RAIN_INTEGRATION_TESTS');
+const bool runIntegrationTests = bool.fromEnvironment(
+  'RUN_RAIN_INTEGRATION_TESTS',
+);
 
 void main() {
   test(

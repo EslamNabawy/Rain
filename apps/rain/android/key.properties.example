@@ -1,0 +1,8 @@
+# Example release signing values.
+# Put real values in CI secrets, ~/.gradle/gradle.properties, or pass them with -P.
+# Do not commit real keystores or passwords.
+
+RAIN_RELEASE_STORE_FILE=C:\\path\\to\\rain-release.jks
+RAIN_RELEASE_STORE_PASSWORD=change-me
+RAIN_RELEASE_KEY_ALIAS=rain-release
+RAIN_RELEASE_KEY_PASSWORD=change-me

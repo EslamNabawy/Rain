@@ -21,6 +21,39 @@ class FirebaseSignalingAdapter implements SignalingAdapter {
   bool _emulatorsConfigured = false;
   String _emailFromUsername(String username) => '$username@rain.local';
 
+  String _normalizedUsername(String username) {
+    return username.trim().toLowerCase();
+  }
+
+  String _canonicalRoomId(String firstUser, String secondUser) {
+    final users = <String>[
+      _normalizedUsername(firstUser),
+      _normalizedUsername(secondUser),
+    ]..sort();
+    return '${users[0]}:${users[1]}';
+  }
+
+  List<String> _roomUsers(String roomId) {
+    final parts = roomId.split(':');
+    if (parts.length != 2 || parts.any((String value) => value.isEmpty)) {
+      throw ArgumentError.value(roomId, 'roomId', 'Expected exactly two peers');
+    }
+    final canonical = _canonicalRoomId(parts[0], parts[1]);
+    if (canonical != roomId) {
+      throw ArgumentError.value(
+        roomId,
+        'roomId',
+        'Expected canonical room id ordering',
+      );
+    }
+    return parts;
+  }
+
+  Map<String, Object?> _roomParticipants(String roomId) {
+    final users = _roomUsers(roomId);
+    return <String, Object?>{'userA': users[0], 'userB': users[1]};
+  }
+
   Future<void> _configureEmulatorsIfNeeded() async {
     if (!_useEmulator || _emulatorsConfigured) return;
     try {
@@ -65,63 +98,55 @@ class FirebaseSignalingAdapter implements SignalingAdapter {
   @override
   Future<void> ensureAuthenticated() async {
     await _configureEmulatorsIfNeeded();
-    if (_auth.currentUser != null) {
+    final user = _auth.currentUser;
+    if (user != null && !user.isAnonymous) {
       return;
     }
-    final result = await _auth.signInAnonymously();
-    if (result.user == null) {
-      throw Exception('Failed to authenticate with Firebase');
+    if (user?.isAnonymous ?? false) {
+      await _auth.signOut();
     }
-  }
-
-  String _hashPassword(String password) {
-    int hash = 0;
-    for (int i = 0; i < password.length; i++) {
-      hash = ((hash << 5) - hash) + password.codeUnitAt(i);
-      hash = hash & 0xFFFFFFFF;
-    }
-    return hash.toRadixString(16).padLeft(8, '0');
+    throw const SignalingSessionExpiredException(
+      'Firebase sign-in required. Sign in again to continue chatting.',
+    );
   }
 
   @override
   Future<String> register(String username, String password) async {
     await _configureEmulatorsIfNeeded();
-    // Do not call ensureAuthenticated() here; register creates a new account
-    // and then we sign in as that user.
-
-    final existing = await fetchIdentity(username);
-    if (existing != null && existing.uid.isNotEmpty) {
-      throw Exception('Username "$username" is already taken');
-    }
+    final normalizedUsername = _normalizedUsername(username);
 
     if (password.length < 6) {
       throw Exception('Password must be at least 6 characters');
     }
 
-    final email = _emailFromUsername(username);
-    final userCredential = await _auth.createUserWithEmailAndPassword(
-      email: email,
-      password: password,
-    );
+    final email = _emailFromUsername(normalizedUsername);
+    final UserCredential userCredential;
+    try {
+      userCredential = await _auth.createUserWithEmailAndPassword(
+        email: email,
+        password: password,
+      );
+    } on FirebaseAuthException catch (error) {
+      if (error.code == 'email-already-in-use') {
+        throw Exception('Username "$normalizedUsername" is already taken');
+      }
+      throw _normalizeFirebaseAuthException(error);
+    }
     final uid = userCredential.user?.uid ?? '';
     final now = DateTime.now().millisecondsSinceEpoch;
-    final passwordHash = _hashPassword(password);
 
-    await _root.child('users/$username').set(<String, Object?>{
+    await _root.child('users/$normalizedUsername').set(<String, Object?>{
       'uid': uid,
-      'displayName': username,
+      'displayName': normalizedUsername,
       'gender': null,
       'registeredAt': now,
       'lastSeen': now,
       'lastHeartbeat': now,
       'online': true,
-      'username': username,
-      'passwordHash': passwordHash,
+      'username': normalizedUsername,
     });
 
-    await _root.child('userSearch/$username').set(true);
-    // Ensure subsequent operations use this user context
-    // by signing in the new user.
+    await _root.child('userSearch/$normalizedUsername').set(true);
     await _auth.signInWithEmailAndPassword(email: email, password: password);
     return uid;
   }
@@ -130,10 +155,15 @@ class FirebaseSignalingAdapter implements SignalingAdapter {
   Future<String> login(String username, String password) async {
     await _configureEmulatorsIfNeeded();
     final email = _emailFromUsername(username);
-    final result = await _auth.signInWithEmailAndPassword(
-      email: email,
-      password: password,
-    );
+    final UserCredential result;
+    try {
+      result = await _auth.signInWithEmailAndPassword(
+        email: email,
+        password: password,
+      );
+    } on FirebaseAuthException catch (error) {
+      throw _normalizeFirebaseAuthException(error);
+    }
     final uid = result.user?.uid ?? _auth.currentUser?.uid ?? '';
     if (uid.isEmpty) {
       throw Exception('Failed to sign in Firebase user');
@@ -193,16 +223,16 @@ class FirebaseSignalingAdapter implements SignalingAdapter {
       for (final entry in usersData.entries) {
         final username = entry.key as String?;
         if (username != null && entry.value is Map<Object?, Object?>) {
-            final value = entry.value as Map<Object?, Object?>;
-            _identityCache[username] = BackendIdentity(
-              username: username,
-              uid: value['uid'] as String? ?? '',
-              displayName: value['displayName'] as String? ?? username,
-              gender: value['gender'] as String?,
-              registeredAt: (value['registeredAt'] as num?)?.toInt() ?? 0,
-              lastSeen: (value['lastSeen'] as num?)?.toInt() ?? 0,
-              lastHeartbeat: (value['lastHeartbeat'] as num?)?.toInt() ?? 0,
-              online: value['online'] as bool? ?? false,
+          final value = entry.value as Map<Object?, Object?>;
+          _identityCache[username] = BackendIdentity(
+            username: username,
+            uid: value['uid'] as String? ?? '',
+            displayName: value['displayName'] as String? ?? username,
+            gender: value['gender'] as String?,
+            registeredAt: (value['registeredAt'] as num?)?.toInt() ?? 0,
+            lastSeen: (value['lastSeen'] as num?)?.toInt() ?? 0,
+            lastHeartbeat: (value['lastHeartbeat'] as num?)?.toInt() ?? 0,
+            online: value['online'] as bool? ?? false,
           );
         }
       }
@@ -216,7 +246,7 @@ class FirebaseSignalingAdapter implements SignalingAdapter {
         )
         .take(_searchLimit)
         .map(
-      (identity) => BackendIdentity(
+          (identity) => BackendIdentity(
             username: identity.username,
             uid: identity.uid,
             displayName: identity.displayName,
@@ -241,7 +271,79 @@ class FirebaseSignalingAdapter implements SignalingAdapter {
   @override
   Future<void> deleteFriendRequest(String to, String from) async {
     await ensureAuthenticated();
-    await _root.child('friendRequests/$to/$from').remove();
+    final normalizedTo = _normalizedUsername(to);
+    final normalizedFrom = _normalizedUsername(from);
+    await _root.update(<String, Object?>{
+      'friendRequests/$normalizedTo/$normalizedFrom': null,
+      'outgoingFriendRequests/$normalizedFrom/$normalizedTo': null,
+    });
+  }
+
+  @override
+  Future<void> deleteFriendship(String firstUser, String secondUser) async {
+    await ensureAuthenticated();
+    final normalizedFirstUser = _normalizedUsername(firstUser);
+    final normalizedSecondUser = _normalizedUsername(secondUser);
+    await _root
+        .child('friendships/$normalizedFirstUser/$normalizedSecondUser')
+        .remove();
+    await _root
+        .child('friendships/$normalizedSecondUser/$normalizedFirstUser')
+        .remove();
+    await deleteFriendRequest(normalizedFirstUser, normalizedSecondUser);
+    await deleteFriendRequest(normalizedSecondUser, normalizedFirstUser);
+  }
+
+  @override
+  Future<List<String>> loadAcceptedFriends(String username) async {
+    await ensureAuthenticated();
+    final normalizedUsername = _normalizedUsername(username);
+    final snapshot = await _root.child('friendships/$normalizedUsername').get();
+    if (!snapshot.exists || snapshot.value is! Map<Object?, Object?>) {
+      return const <String>[];
+    }
+
+    final values = snapshot.value! as Map<Object?, Object?>;
+    return values.keys
+        .whereType<String>()
+        .where((String value) => value.isNotEmpty)
+        .toList(growable: false);
+  }
+
+  @override
+  Future<List<String>> loadIncomingFriendRequests(String username) async {
+    await ensureAuthenticated();
+    final normalizedUsername = _normalizedUsername(username);
+    final snapshot = await _root
+        .child('friendRequests/$normalizedUsername')
+        .get();
+    if (!snapshot.exists || snapshot.value is! Map<Object?, Object?>) {
+      return const <String>[];
+    }
+
+    final values = snapshot.value! as Map<Object?, Object?>;
+    return values.keys
+        .whereType<String>()
+        .where((String value) => value.isNotEmpty)
+        .toList(growable: false);
+  }
+
+  @override
+  Future<List<String>> loadOutgoingFriendRequests(String username) async {
+    await ensureAuthenticated();
+    final normalizedUsername = _normalizedUsername(username);
+    final snapshot = await _root
+        .child('outgoingFriendRequests/$normalizedUsername')
+        .get();
+    if (!snapshot.exists || snapshot.value is! Map<Object?, Object?>) {
+      return const <String>[];
+    }
+
+    final values = snapshot.value! as Map<Object?, Object?>;
+    return values.keys
+        .whereType<String>()
+        .where((String value) => value.isNotEmpty)
+        .toList(growable: false);
   }
 
   @override
@@ -305,7 +407,7 @@ class FirebaseSignalingAdapter implements SignalingAdapter {
 
   @override
   Future<void> setPresence(String username, bool online) async {
-    await ensureAuthenticated();
+    await _ensureSignedInAsUsername(username);
     final now = DateTime.now().millisecondsSinceEpoch;
     final uid = _auth.currentUser?.uid ?? '';
     await _root.child('users/$username').update(<String, Object?>{
@@ -318,7 +420,7 @@ class FirebaseSignalingAdapter implements SignalingAdapter {
 
   @override
   Future<void> upsertIdentity(BackendIdentity identity) async {
-    await ensureAuthenticated();
+    await _ensureSignedInAsUsername(identity.username);
     await _root
         .child('users/${identity.username}')
         .update(identity.toFirebaseJson());
@@ -372,15 +474,45 @@ class FirebaseSignalingAdapter implements SignalingAdapter {
   @override
   Future<void> writeAnswer(String roomId, SDPPayload answer) async {
     await ensureAuthenticated();
-    await _root.child('rooms/$roomId/answer').set(answer.toJson());
+    await _root.child('rooms/$roomId').update(<String, Object?>{
+      ..._roomParticipants(roomId),
+      'answer': answer.toJson(),
+    });
   }
 
   @override
   Future<void> writeFriendRequest(String to, String from) async {
     await ensureAuthenticated();
-    await _root.child('friendRequests/$to/$from').set(<String, Object?>{
+    final normalizedTo = _normalizedUsername(to);
+    final normalizedFrom = _normalizedUsername(from);
+    if (normalizedTo == normalizedFrom) {
+      throw Exception('Cannot send friend request to yourself');
+    }
+    final payload = <String, Object?>{
       'sentAt': DateTime.now().millisecondsSinceEpoch,
+    };
+    await _root.update(<String, Object?>{
+      'friendRequests/$normalizedTo/$normalizedFrom': payload,
+      'outgoingFriendRequests/$normalizedFrom/$normalizedTo': payload,
     });
+  }
+
+  @override
+  Future<void> upsertFriendship(String firstUser, String secondUser) async {
+    await ensureAuthenticated();
+    final normalizedFirstUser = _normalizedUsername(firstUser);
+    final normalizedSecondUser = _normalizedUsername(secondUser);
+    final payload = <String, Object?>{
+      'acceptedAt': DateTime.now().millisecondsSinceEpoch,
+    };
+    await _root
+        .child('friendships/$normalizedFirstUser/$normalizedSecondUser')
+        .set(payload);
+    await _root
+        .child('friendships/$normalizedSecondUser/$normalizedFirstUser')
+        .set(payload);
+    await deleteFriendRequest(normalizedFirstUser, normalizedSecondUser);
+    await deleteFriendRequest(normalizedSecondUser, normalizedFirstUser);
   }
 
   @override
@@ -391,15 +523,44 @@ class FirebaseSignalingAdapter implements SignalingAdapter {
   ) async {
     await ensureAuthenticated();
     final path = role == IceRole.caller ? 'callerICE' : 'calleeICE';
-    await _root
-        .child('rooms/$roomId/$path')
-        .push()
-        .set(iceCandidateToJson(candidate));
+    final candidateRef = _root.child('rooms/$roomId/$path').push();
+    final candidateKey = candidateRef.key;
+    if (candidateKey == null || candidateKey.isEmpty) {
+      throw Exception('Failed to allocate ICE candidate key');
+    }
+    await _root.child('rooms/$roomId').update(<String, Object?>{
+      ..._roomParticipants(roomId),
+      '$path/$candidateKey': iceCandidateToJson(candidate),
+    });
   }
 
   @override
   Future<void> writeOffer(String roomId, SDPPayload offer) async {
     await ensureAuthenticated();
-    await _root.child('rooms/$roomId/offer').set(offer.toJson());
+    await _root.child('rooms/$roomId').update(<String, Object?>{
+      ..._roomParticipants(roomId),
+      'offer': offer.toJson(),
+    });
+  }
+
+  Future<void> _ensureSignedInAsUsername(String username) async {
+    await ensureAuthenticated();
+    final expectedEmail = _emailFromUsername(_normalizedUsername(username));
+    final actualEmail = _auth.currentUser?.email?.toLowerCase();
+    if (actualEmail != expectedEmail) {
+      await _auth.signOut();
+      throw SignalingSessionExpiredException(
+        'Firebase is signed in as ${actualEmail ?? 'another account'}; sign in as @$username to continue.',
+      );
+    }
+  }
+
+  Exception _normalizeFirebaseAuthException(FirebaseAuthException error) {
+    return switch (error.code) {
+      'operation-not-allowed' => Exception(
+        'Enable Email/Password sign-in in Firebase Console > Authentication > Sign-in method.',
+      ),
+      _ => Exception(error.message ?? error.code),
+    };
   }
 }

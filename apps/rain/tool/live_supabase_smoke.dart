@@ -1,21 +1,45 @@
-import 'dart:convert';
 import 'dart:async';
 import 'dart:io';
 
+import 'package:drift/drift.dart';
 import 'package:drift/native.dart';
-import 'package:flutter_webrtc/flutter_webrtc.dart';
-import 'package:peer_core/peer_core.dart';
+import 'package:flutter/widgets.dart';
 import 'package:protocol_brain/protocol_brain.dart';
+import 'package:protocol_brain/testing.dart';
 import 'package:rain/services/rain_runtime_controller.dart';
 import 'package:rain_core/rain_core.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
 
-const String supabaseUrl = String.fromEnvironment('SUPABASE_URL');
-const String supabaseAnonKey = String.fromEnvironment('SUPABASE_ANON_KEY');
-const String expectedSupabaseAnonKey =
-    'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6Im9teGdvbWZzZGdmaWR6ZnlkdGpkIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NzUxNTcwMDQsImV4cCI6MjA5MDczMzAwNH0.xtranl425vN_Nc2EZLRXgQuoFODPmXEAFPJGazBYu4E';
+const String _definedSupabaseUrl = String.fromEnvironment('SUPABASE_URL');
+const String _definedSupabaseAnonKey = String.fromEnvironment(
+  'SUPABASE_ANON_KEY',
+);
+const String _definedSmokeUsername = String.fromEnvironment(
+  'RAIN_SMOKE_USERNAME',
+);
+const String _definedSmokePassword = String.fromEnvironment(
+  'RAIN_SMOKE_PASSWORD',
+);
+const String _definedSmokePeerUsername = String.fromEnvironment(
+  'RAIN_SMOKE_PEER_USERNAME',
+);
+const String _definedSmokePeerPassword = String.fromEnvironment(
+  'RAIN_SMOKE_PEER_PASSWORD',
+);
+const String _definedSmokeSkipConnect = String.fromEnvironment(
+  'RAIN_SMOKE_SKIP_CONNECT',
+);
+
+String _readSetting(String name, String fallback) {
+  final runtime = Platform.environment[name]?.trim();
+  if (runtime != null && runtime.isNotEmpty) {
+    return runtime;
+  }
+  return fallback.trim();
+}
 
 Future<void> main() async {
+  WidgetsFlutterBinding.ensureInitialized();
   try {
     await runLiveSupabaseSmoke();
     stdout.writeln('LIVE_SUPABASE_SMOKE=PASS');
@@ -30,94 +54,65 @@ Future<void> main() async {
 }
 
 Future<void> runLiveSupabaseSmoke() async {
-  if (supabaseUrl.isEmpty || supabaseAnonKey.isEmpty) {
-    throw StateError('Missing SUPABASE_URL or SUPABASE_ANON_KEY dart define');
-  }
-  stdout.writeln('SUPABASE_ANON_KEY_LEN=${supabaseAnonKey.length}');
-  stdout.writeln(
-    'SUPABASE_ANON_KEY_HEAD=${supabaseAnonKey.substring(0, supabaseAnonKey.length < 16 ? supabaseAnonKey.length : 16)}',
-  );
-  stdout.writeln(
-    'SUPABASE_ANON_KEY_TAIL=${supabaseAnonKey.substring(supabaseAnonKey.length < 16 ? 0 : supabaseAnonKey.length - 16)}',
-  );
-  final keyChecksum = supabaseAnonKey.codeUnits.fold<int>(
-    0,
-    (int total, int unit) => (total + unit) % 0x7fffffff,
-  );
-  stdout.writeln('SUPABASE_ANON_KEY_SUM=$keyChecksum');
-  if (supabaseAnonKey != expectedSupabaseAnonKey) {
-    final maxLen = supabaseAnonKey.length < expectedSupabaseAnonKey.length
-        ? supabaseAnonKey.length
-        : expectedSupabaseAnonKey.length;
-    for (var i = 0; i < maxLen; i++) {
-      if (supabaseAnonKey.codeUnitAt(i) != expectedSupabaseAnonKey.codeUnitAt(i)) {
-        stdout.writeln(
-          'SUPABASE_ANON_KEY_DIFF index=$i app=${supabaseAnonKey.codeUnitAt(i)} expected=${expectedSupabaseAnonKey.codeUnitAt(i)}',
-        );
-        break;
-      }
-    }
-    stdout.writeln(
-      'SUPABASE_ANON_KEY_EQUAL=false expected_len=${expectedSupabaseAnonKey.length}',
-    );
-  } else {
-    stdout.writeln('SUPABASE_ANON_KEY_EQUAL=true');
-  }
-
-  const aliceUsername = 'rainuser1';
-  const bobUsername = 'rainuser2';
-  const password = 'rain1234';
-  final roomId = _roomId(aliceUsername, bobUsername);
+  final config = _LiveSmokeConfig.fromEnvironment();
+  final roomId = _roomId(config.primaryUsername, config.peerUsername);
+  driftRuntimeOptions.dontWarnAboutMultipleDatabases = true;
 
   final aliceClient = SupabaseClient(
-    supabaseUrl,
-    supabaseAnonKey,
+    config.supabaseUrl,
+    config.supabaseAnonKey,
     authOptions: const AuthClientOptions(
       authFlowType: AuthFlowType.implicit,
       autoRefreshToken: false,
     ),
   );
   final bobClient = SupabaseClient(
-    supabaseUrl,
-    supabaseAnonKey,
+    config.supabaseUrl,
+    config.supabaseAnonKey,
     authOptions: const AuthClientOptions(
       authFlowType: AuthFlowType.implicit,
       autoRefreshToken: false,
     ),
   );
 
-  final aliceAdapter = SupabaseSignalingAdapter(client: aliceClient);
-  final bobAdapter = SupabaseSignalingAdapter(client: bobClient);
+  final aliceAdapter = SupabaseSignalingAdapter(
+    projectUrl: config.supabaseUrl,
+    client: aliceClient,
+  );
+  final bobAdapter = SupabaseSignalingAdapter(
+    projectUrl: config.supabaseUrl,
+    client: bobClient,
+  );
 
   final aliceDb = RainDatabase(NativeDatabase.memory());
   final bobDb = RainDatabase(NativeDatabase.memory());
 
   final aliceIdentity = RainIdentity(
-    username: aliceUsername,
-    displayName: aliceUsername,
+    username: config.primaryUsername,
+    displayName: config.primaryUsername,
     createdAt: DateTime.now().millisecondsSinceEpoch,
     gender: null,
   );
   final bobIdentity = RainIdentity(
-    username: bobUsername,
-    displayName: bobUsername,
+    username: config.peerUsername,
+    displayName: config.peerUsername,
     createdAt: DateTime.now().millisecondsSinceEpoch,
     gender: null,
   );
 
   final aliceBrain = createDefaultProtocolBrain(
-    selfUsername: aliceUsername,
+    selfUsername: config.primaryUsername,
     adapter: aliceAdapter,
     iceServers: const <Map<String, dynamic>>[],
     connectionMemoryStore: DriftConnectionMemoryStore(aliceDb),
-    peerFactory: _LiveSmokePeerCore.new,
+    peerFactory: createLiveSmokePeerCore,
   );
   final bobBrain = createDefaultProtocolBrain(
-    selfUsername: bobUsername,
+    selfUsername: config.peerUsername,
     adapter: bobAdapter,
     iceServers: const <Map<String, dynamic>>[],
     connectionMemoryStore: DriftConnectionMemoryStore(bobDb),
-    peerFactory: _LiveSmokePeerCore.new,
+    peerFactory: createLiveSmokePeerCore,
   );
 
   final runtimeAlice = RainRuntimeController(
@@ -148,23 +143,70 @@ Future<void> runLiveSupabaseSmoke() async {
   );
 
   try {
-    await _loginWithPasswordGrant(aliceClient, aliceUsername, password);
-    await _loginWithPasswordGrant(bobClient, bobUsername, password);
+    await _authenticateSmokeUser(
+      aliceAdapter,
+      config.primaryUsername,
+      config.primaryPassword,
+    );
+    await _authenticateSmokeUser(
+      bobAdapter,
+      config.peerUsername,
+      config.peerPassword,
+    );
+
+    await aliceAdapter.deleteRoom(roomId).catchError((_) {});
+    await aliceAdapter
+        .deleteFriendship(config.primaryUsername, config.peerUsername)
+        .catchError((_) {});
 
     await runtimeAlice.start();
     await runtimeBob.start();
 
-    final friendRequestFuture = bobAdapter.onFriendRequest(bobUsername).first;
-    await runtimeAlice.sendFriendRequest(bobUsername);
-    final inboundFriendRequest = await friendRequestFuture;
-    if (inboundFriendRequest != aliceUsername) {
-      throw StateError('Expected bob to receive a friend request from alice');
+    await runtimeAlice.sendFriendRequest(config.peerUsername);
+    await _waitUntil(() async {
+      final friend = await runtimeBob.friendStore.loadFriend(
+        config.primaryUsername,
+      );
+      return friend?.state == FriendState.pendingIncoming;
+    }, description: 'bob inbound friend request');
+
+    await runtimeBob.acceptFriend(config.primaryUsername);
+
+    await _waitUntil(() async {
+      final aliceFriend = await runtimeAlice.friendStore.loadFriend(
+        config.peerUsername,
+      );
+      final bobFriend = await runtimeBob.friendStore.loadFriend(
+        config.primaryUsername,
+      );
+      return aliceFriend?.state == FriendState.friend &&
+          bobFriend?.state == FriendState.friend;
+    }, description: 'friend acceptance reconciliation');
+
+    if (config.skipConnect) {
+      await runtimeAlice.dispose();
+      await runtimeBob.dispose();
+
+      await _waitUntil(() async {
+        final identity = await aliceAdapter.fetchIdentity(
+          config.primaryUsername,
+        );
+        return identity != null && identity.online == false;
+      }, description: 'alice offline cleanup');
+      await _waitUntil(() async {
+        final identity = await bobAdapter.fetchIdentity(config.peerUsername);
+        return identity != null && identity.online == false;
+      }, description: 'bob offline cleanup');
+
+      stdout.writeln('LIVE_SUPABASE_SMOKE_DETAILS');
+      stdout.writeln('  mode=friend-only');
+      stdout.writeln('  alice=${config.primaryUsername}');
+      stdout.writeln('  bob=${config.peerUsername}');
+      return;
     }
 
-    await runtimeBob.acceptFriend(aliceUsername);
-
     final aliceConnected = aliceBrain.onPeerConnected.first;
-    await runtimeAlice.connectPeer(bobUsername);
+    await runtimeAlice.connectPeer(config.peerUsername);
 
     await _waitUntil(
       () async => (await _roomRows(aliceClient, roomId)).isNotEmpty,
@@ -182,17 +224,17 @@ Future<void> runLiveSupabaseSmoke() async {
     await runtimeBob.dispose();
 
     await _waitUntil(() async {
-      final identity = await aliceAdapter.fetchIdentity(aliceUsername);
+      final identity = await aliceAdapter.fetchIdentity(config.primaryUsername);
       return identity != null && identity.online == false;
     }, description: 'alice offline cleanup');
     await _waitUntil(() async {
-      final identity = await bobAdapter.fetchIdentity(bobUsername);
+      final identity = await bobAdapter.fetchIdentity(config.peerUsername);
       return identity != null && identity.online == false;
     }, description: 'bob offline cleanup');
 
     stdout.writeln('LIVE_SUPABASE_SMOKE_DETAILS');
-    stdout.writeln('  alice=$aliceUsername');
-    stdout.writeln('  bob=$bobUsername');
+    stdout.writeln('  alice=${config.primaryUsername}');
+    stdout.writeln('  bob=${config.peerUsername}');
     stdout.writeln('  room=$roomId');
   } finally {
     await runtimeAlice.dispose();
@@ -201,10 +243,22 @@ Future<void> runLiveSupabaseSmoke() async {
       await aliceAdapter.deleteRoom(roomId);
     } catch (_) {}
     try {
-      await aliceAdapter.deleteFriendRequest(bobUsername, aliceUsername);
+      await aliceAdapter.deleteFriendship(
+        config.primaryUsername,
+        config.peerUsername,
+      );
     } catch (_) {}
     try {
-      await aliceAdapter.deleteFriendRequest(aliceUsername, bobUsername);
+      await aliceAdapter.deleteFriendRequest(
+        config.peerUsername,
+        config.primaryUsername,
+      );
+    } catch (_) {}
+    try {
+      await aliceAdapter.deleteFriendRequest(
+        config.primaryUsername,
+        config.peerUsername,
+      );
     } catch (_) {}
     await aliceAdapter.signOut();
     await bobAdapter.signOut();
@@ -213,6 +267,94 @@ Future<void> runLiveSupabaseSmoke() async {
     await aliceClient.dispose();
     await bobClient.dispose();
   }
+}
+
+class _LiveSmokeConfig {
+  const _LiveSmokeConfig({
+    required this.supabaseUrl,
+    required this.supabaseAnonKey,
+    required this.primaryUsername,
+    required this.primaryPassword,
+    required this.peerUsername,
+    required this.peerPassword,
+    required this.skipConnect,
+  });
+
+  final String supabaseUrl;
+  final String supabaseAnonKey;
+  final String primaryUsername;
+  final String primaryPassword;
+  final String peerUsername;
+  final String peerPassword;
+  final bool skipConnect;
+
+  factory _LiveSmokeConfig.fromEnvironment() {
+    final supabaseUrl = _readSetting('SUPABASE_URL', _definedSupabaseUrl);
+    final supabaseAnonKey = _readSetting(
+      'SUPABASE_ANON_KEY',
+      _definedSupabaseAnonKey,
+    );
+    final primaryUsername = _readSetting(
+      'RAIN_SMOKE_USERNAME',
+      _definedSmokeUsername,
+    ).toLowerCase();
+    final primaryPassword = _readSetting(
+      'RAIN_SMOKE_PASSWORD',
+      _definedSmokePassword,
+    );
+    final peerUsernameSetting = _readSetting(
+      'RAIN_SMOKE_PEER_USERNAME',
+      _definedSmokePeerUsername,
+    ).toLowerCase();
+    final peerPasswordSetting = _readSetting(
+      'RAIN_SMOKE_PEER_PASSWORD',
+      _definedSmokePeerPassword,
+    );
+    final skipConnect =
+        _readSetting(
+          'RAIN_SMOKE_SKIP_CONNECT',
+          _definedSmokeSkipConnect,
+        ).toLowerCase() ==
+        'true';
+
+    if (supabaseUrl.isEmpty || supabaseAnonKey.isEmpty) {
+      throw StateError('SUPABASE_URL and SUPABASE_ANON_KEY are required');
+    }
+    if (primaryUsername.isEmpty || primaryPassword.isEmpty) {
+      throw StateError(
+        'RAIN_SMOKE_USERNAME and RAIN_SMOKE_PASSWORD are required',
+      );
+    }
+
+    final peerUsername = peerUsernameSetting.isEmpty
+        ? _derivePeerUsername(primaryUsername)
+        : peerUsernameSetting;
+    if (peerUsername == primaryUsername) {
+      throw StateError(
+        'RAIN_SMOKE_PEER_USERNAME must be different from RAIN_SMOKE_USERNAME',
+      );
+    }
+
+    return _LiveSmokeConfig(
+      supabaseUrl: supabaseUrl,
+      supabaseAnonKey: supabaseAnonKey,
+      primaryUsername: primaryUsername,
+      primaryPassword: primaryPassword,
+      peerUsername: peerUsername,
+      peerPassword: peerPasswordSetting.isEmpty
+          ? primaryPassword
+          : peerPasswordSetting,
+      skipConnect: skipConnect,
+    );
+  }
+}
+
+String _derivePeerUsername(String primaryUsername) {
+  const suffix = '_peer';
+  if (primaryUsername.length + suffix.length <= 24) {
+    return '$primaryUsername$suffix';
+  }
+  return '${primaryUsername.substring(0, 24 - suffix.length)}$suffix';
 }
 
 String _roomId(String a, String b) {
@@ -248,161 +390,14 @@ Future<void> _waitUntil(
   }
 }
 
-Future<void> _loginWithPasswordGrant(
-  SupabaseClient client,
+Future<void> _authenticateSmokeUser(
+  SupabaseSignalingAdapter adapter,
   String username,
   String password,
 ) async {
-  final email = '$username@gmail.com';
-  final apiKey = supabaseAnonKey.trim();
-  final bodyJson = jsonEncode(<String, String>{
-    'email': email,
-    'password': password,
-  });
-  final script = '''
-\$headers = @{
-  apikey = '$apiKey'
-  Authorization = 'Bearer $apiKey'
-  'Content-Type' = 'application/json'
-}
-\$body = '$bodyJson'
-Invoke-RestMethod -Uri '$supabaseUrl/auth/v1/token?grant_type=password' -Headers \$headers -Method Post -Body \$body | ConvertTo-Json -Depth 6
-''';
-  final result = await Process.run(
-    'powershell.exe',
-    <String>['-NoProfile', '-Command', script],
-    runInShell: false,
-  );
-  final body = (result.stdout as String?)?.trim().isNotEmpty == true
-      ? (result.stdout as String).trim()
-      : (result.stderr as String?)?.trim() ?? '';
-  if (result.exitCode != 0) {
-    throw StateError(
-      'Password grant failed for $email: ${result.exitCode} $body',
-    );
-  }
-
-  final decoded = jsonDecode(body) as Map<String, dynamic>;
-  final refreshToken = decoded['refresh_token'] as String?;
-  if (refreshToken == null || refreshToken.isEmpty) {
-    throw StateError('Password grant response missing refresh token for $email');
-  }
-
-  await client.auth.setSession(refreshToken);
-}
-
-class _LiveSmokePeerCore implements PeerCore {
-  _LiveSmokePeerCore({
-    Duration connectDelay = const Duration(milliseconds: 800),
-  }) : _connectDelay = connectDelay;
-
-  final Duration _connectDelay;
-
-  final StreamController<RTCIceCandidate> _iceController =
-      StreamController<RTCIceCandidate>.broadcast();
-  final StreamController<void> _connectedController =
-      StreamController<void>.broadcast();
-  final StreamController<void> _disconnectedController =
-      StreamController<void>.broadcast();
-  final StreamController<PeerMessage> _messageController =
-      StreamController<PeerMessage>.broadcast();
-  final StreamController<String> _channelOpenController =
-      StreamController<String>.broadcast();
-  final StreamController<String> _channelCloseController =
-      StreamController<String>.broadcast();
-  final StreamController<PeerState> _stateController =
-      StreamController<PeerState>.broadcast();
-
-  Timer? _connectTimer;
-  PeerState _state = PeerState.idle;
-  bool _connectedFired = false;
-
-  @override
-  Stream<RTCIceCandidate> get onIceCandidate => _iceController.stream;
-
-  @override
-  Stream<void> get onConnected => _connectedController.stream;
-
-  @override
-  Stream<void> get onDisconnected => _disconnectedController.stream;
-
-  @override
-  Stream<PeerMessage> get onMessage => _messageController.stream;
-
-  @override
-  Stream<String> get onChannelOpen => _channelOpenController.stream;
-
-  @override
-  Stream<String> get onChannelClose => _channelCloseController.stream;
-
-  @override
-  Stream<PeerState> get onStateChange => _stateController.stream;
-
-  @override
-  PeerState get state => _state;
-
-  @override
-  Future<void> addIceCandidate(RTCIceCandidate candidate) async {}
-
-  @override
-  Future<void> closeChannel(String channelId) async {}
-
-  @override
-  Future<RTCSessionDescription> createOffer() async {
-    _transition(PeerState.offering);
-    return RTCSessionDescription('fake-offer', 'offer');
-  }
-
-  @override
-  Future<void> destroy() async {
-    _connectTimer?.cancel();
-    _connectTimer = null;
-    if (_state != PeerState.idle) {
-      _transition(PeerState.idle);
-    }
-  }
-
-  @override
-  List<RTCIceCandidate> getLocalCandidates() => const <RTCIceCandidate>[];
-
-  @override
-  Future<void> init(PeerConfig config) async {
-    _transition(PeerState.ready);
-  }
-
-  @override
-  Future<void> openChannel(
-    String channelId, {
-    RTCDataChannelInit? opts,
-  }) async {}
-
-  @override
-  void send(String channelId, dynamic data) {}
-
-  @override
-  Future<void> setAnswer(RTCSessionDescription answer) async {
-    _transition(PeerState.connected);
-    _connectTimer?.cancel();
-    _connectTimer = Timer(_connectDelay, () {
-      if (_connectedFired || _state == PeerState.idle) {
-        return;
-      }
-      _connectedFired = true;
-      _connectedController.add(null);
-    });
-  }
-
-  @override
-  Future<RTCSessionDescription> setOffer(RTCSessionDescription offer) async {
-    _transition(PeerState.answering);
-    return RTCSessionDescription('fake-answer', 'answer');
-  }
-
-  void _transition(PeerState next) {
-    if (_state == next) {
-      return;
-    }
-    _state = next;
-    _stateController.add(next);
+  try {
+    await adapter.login(username, password);
+  } catch (_) {
+    await adapter.register(username, password);
   }
 }

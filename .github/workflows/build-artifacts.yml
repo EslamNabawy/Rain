@@ -1,0 +1,175 @@
+name: Build Rain Apps
+
+on:
+  push:
+    branches:
+      - main
+      - 'codex/**'
+  workflow_dispatch:
+    inputs:
+      platform:
+        description: Platform artifacts to build
+        required: true
+        default: all
+        type: choice
+        options:
+          - all
+          - android
+          - windows
+      build_profile:
+        description: Demo uses OpenRelay/demo signing; production requires release secrets
+        required: true
+        default: demo
+        type: choice
+        options:
+          - demo
+          - production
+
+permissions:
+  contents: read
+
+concurrency:
+  group: build-rain-${{ github.workflow }}-${{ github.ref }}-${{ github.event_name == 'workflow_dispatch' && inputs.platform || 'all' }}
+  cancel-in-progress: true
+
+env:
+  FLUTTER_VERSION: '3.38.5'
+  BUILD_PROFILE: ${{ github.event_name == 'workflow_dispatch' && inputs.build_profile || 'demo' }}
+
+jobs:
+  build-windows:
+    name: Build Windows
+    runs-on: windows-latest
+    if: ${{ github.event_name != 'workflow_dispatch' || inputs.platform == 'all' || inputs.platform == 'windows' }}
+    timeout-minutes: 60
+    steps:
+      - uses: actions/checkout@v5
+
+      - uses: subosito/flutter-action@v2
+        with:
+          flutter-version: ${{ env.FLUTTER_VERSION }}
+          channel: stable
+
+      - name: Prepare dart defines
+        shell: pwsh
+        env:
+          RAIN_RELEASE_DART_DEFINES_JSON: ${{ secrets.RAIN_RELEASE_DART_DEFINES_JSON }}
+        run: |
+          $definesPath = Join-Path $env:RUNNER_TEMP 'rain-defines.json'
+          if ($env:BUILD_PROFILE -eq 'production') {
+            if ([string]::IsNullOrWhiteSpace($env:RAIN_RELEASE_DART_DEFINES_JSON)) {
+              throw "RAIN_RELEASE_DART_DEFINES_JSON secret is required for production builds."
+            }
+            Set-Content -LiteralPath $definesPath -Value $env:RAIN_RELEASE_DART_DEFINES_JSON -Encoding utf8NoBOM
+          } else {
+            Copy-Item -LiteralPath 'apps\rain\tool\dart_defines.example.json' -Destination $definesPath -Force
+          }
+          "RAIN_DART_DEFINES_FILE=$definesPath" | Out-File -FilePath $env:GITHUB_ENV -Encoding utf8 -Append
+
+      - name: Build Windows artifact
+        shell: pwsh
+        run: |
+          $args = @(
+            '-NoProfile',
+            '-File',
+            'scripts\build_release.ps1',
+            '-Platform',
+            'windows',
+            '-OutputDir',
+            'artifacts',
+            '-DartDefinesFile',
+            $env:RAIN_DART_DEFINES_FILE,
+            '-Clean'
+          )
+          if ($env:BUILD_PROFILE -eq 'demo') {
+            $args += '-AllowPublicTurnForDemo'
+          }
+          pwsh @args
+
+      - name: Upload Windows artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: rain-windows-${{ env.BUILD_PROFILE }}
+          path: artifacts/*.zip
+          if-no-files-found: error
+
+  build-android:
+    name: Build Android APKs
+    runs-on: windows-latest
+    if: ${{ github.event_name != 'workflow_dispatch' || inputs.platform == 'all' || inputs.platform == 'android' }}
+    timeout-minutes: 90
+    steps:
+      - uses: actions/checkout@v5
+
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '17'
+
+      - uses: subosito/flutter-action@v2
+        with:
+          flutter-version: ${{ env.FLUTTER_VERSION }}
+          channel: stable
+
+      - name: Prepare dart defines and signing
+        shell: pwsh
+        env:
+          RAIN_RELEASE_DART_DEFINES_JSON: ${{ secrets.RAIN_RELEASE_DART_DEFINES_JSON }}
+          RAIN_RELEASE_KEYSTORE_BASE64: ${{ secrets.RAIN_RELEASE_KEYSTORE_BASE64 }}
+          RAIN_RELEASE_STORE_PASSWORD: ${{ secrets.RAIN_RELEASE_STORE_PASSWORD }}
+          RAIN_RELEASE_KEY_ALIAS: ${{ secrets.RAIN_RELEASE_KEY_ALIAS }}
+          RAIN_RELEASE_KEY_PASSWORD: ${{ secrets.RAIN_RELEASE_KEY_PASSWORD }}
+        run: |
+          $definesPath = Join-Path $env:RUNNER_TEMP 'rain-defines.json'
+          if ($env:BUILD_PROFILE -eq 'production') {
+            foreach ($required in @(
+              'RAIN_RELEASE_DART_DEFINES_JSON',
+              'RAIN_RELEASE_KEYSTORE_BASE64',
+              'RAIN_RELEASE_STORE_PASSWORD',
+              'RAIN_RELEASE_KEY_ALIAS',
+              'RAIN_RELEASE_KEY_PASSWORD'
+            )) {
+              if ([string]::IsNullOrWhiteSpace([Environment]::GetEnvironmentVariable($required))) {
+                throw "$required secret is required for production Android builds."
+              }
+            }
+
+            Set-Content -LiteralPath $definesPath -Value $env:RAIN_RELEASE_DART_DEFINES_JSON -Encoding utf8NoBOM
+            $keystorePath = Join-Path $env:RUNNER_TEMP 'rain-release.jks'
+            [IO.File]::WriteAllBytes($keystorePath, [Convert]::FromBase64String($env:RAIN_RELEASE_KEYSTORE_BASE64))
+            "RAIN_RELEASE_STORE_FILE=$keystorePath" | Out-File -FilePath $env:GITHUB_ENV -Encoding utf8 -Append
+            "RAIN_RELEASE_STORE_PASSWORD=$env:RAIN_RELEASE_STORE_PASSWORD" | Out-File -FilePath $env:GITHUB_ENV -Encoding utf8 -Append
+            "RAIN_RELEASE_KEY_ALIAS=$env:RAIN_RELEASE_KEY_ALIAS" | Out-File -FilePath $env:GITHUB_ENV -Encoding utf8 -Append
+            "RAIN_RELEASE_KEY_PASSWORD=$env:RAIN_RELEASE_KEY_PASSWORD" | Out-File -FilePath $env:GITHUB_ENV -Encoding utf8 -Append
+          } else {
+            Copy-Item -LiteralPath 'apps\rain\tool\dart_defines.example.json' -Destination $definesPath -Force
+          }
+          "RAIN_DART_DEFINES_FILE=$definesPath" | Out-File -FilePath $env:GITHUB_ENV -Encoding utf8 -Append
+
+      - name: Build Android APK artifacts
+        shell: pwsh
+        run: |
+          $args = @(
+            '-NoProfile',
+            '-File',
+            'scripts\build_release.ps1',
+            '-Platform',
+            'android',
+            '-OutputDir',
+            'artifacts',
+            '-DartDefinesFile',
+            $env:RAIN_DART_DEFINES_FILE,
+            '-Clean'
+          )
+          if ($env:BUILD_PROFILE -eq 'demo') {
+            $args += '-AllowPublicTurnForDemo'
+            $args += '-UseDemoAndroidSigningKey'
+          }
+          pwsh @args
+
+      - name: Upload Android APK artifacts
+        uses: actions/upload-artifact@v4
+        with:
+          name: rain-android-${{ env.BUILD_PROFILE }}
+          path: artifacts/*.apk
+          if-no-files-found: error

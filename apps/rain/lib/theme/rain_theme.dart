@@ -19,9 +19,11 @@ class RainColors {
 }
 
 class RainMotion {
-  static const Duration quick = Duration(milliseconds: 160);
-  static const Duration standard = Duration(milliseconds: 240);
-  static const Duration slow = Duration(milliseconds: 340);
+  static const Duration quick = Duration(milliseconds: 110);
+  static const Duration standard = Duration(milliseconds: 150);
+  static const Duration slow = Duration(milliseconds: 220);
+  static const Duration page = Duration(milliseconds: 130);
+  static const Duration pageReverse = Duration(milliseconds: 95);
 }
 
 class RainTheme {
@@ -296,7 +298,7 @@ class RainTheme {
     return const PageTransitionsTheme(
       builders: <TargetPlatform, PageTransitionsBuilder>{
         TargetPlatform.android: _RainPageTransitionsBuilder(),
-        TargetPlatform.iOS: CupertinoPageTransitionsBuilder(),
+        TargetPlatform.iOS: _RainPageTransitionsBuilder(),
         TargetPlatform.macOS: _RainPageTransitionsBuilder(),
         TargetPlatform.windows: _RainPageTransitionsBuilder(),
         TargetPlatform.linux: _RainPageTransitionsBuilder(),
@@ -320,11 +322,22 @@ class _RainPageTransitionsBuilder extends PageTransitionsBuilder {
       return child;
     }
 
-    final fade = CurvedAnimation(parent: animation, curve: Curves.easeOutCubic);
-    final slide = Tween<Offset>(
-      begin: const Offset(0.02, 0.015),
-      end: Offset.zero,
-    ).animate(CurvedAnimation(parent: animation, curve: Curves.easeOutCubic));
+    final fade = CurvedAnimation(
+      parent: animation,
+      curve: Curves.easeOutCubic,
+      reverseCurve: Curves.easeInCubic,
+    );
+    final slide =
+        Tween<Offset>(
+          begin: const Offset(0.012, 0.008),
+          end: Offset.zero,
+        ).animate(
+          CurvedAnimation(
+            parent: animation,
+            curve: Curves.easeOutCubic,
+            reverseCurve: Curves.easeInCubic,
+          ),
+        );
 
     return FadeTransition(
       opacity: fade,

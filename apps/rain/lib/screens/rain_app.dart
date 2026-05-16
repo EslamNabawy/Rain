@@ -1,26 +1,25 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
+import '../navigation/app_routes.dart';
 import '../providers/app_providers.dart';
 import '../theme/rain_theme.dart';
-import 'root_screen.dart';
 
 class RainApp extends ConsumerWidget {
   const RainApp({super.key});
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {
-    ref.watch(themeModeProvider);
+    final themeMode = ref.watch(themeModeProvider);
+    final router = ref.watch(appRouterProvider);
 
-    final notifier = ref.read(themeModeProvider.notifier);
-
-    return MaterialApp(
+    return MaterialApp.router(
       title: 'Rain',
       debugShowCheckedModeBanner: false,
-      themeMode: notifier.themeMode,
+      themeMode: themeMode.themeMode,
       theme: RainTheme.light(),
       darkTheme: RainTheme.dark(),
-      home: const RootScreen(),
+      routerConfig: router,
     );
   }
 }

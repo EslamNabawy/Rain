@@ -91,6 +91,19 @@ class TwoDeviceHarness {
       await runtimeAlice.start();
       await runtimeBob.start();
 
+      await FriendStore(aliceDb).upsertFriend(
+        username: 'bob',
+        displayName: 'Bob',
+        state: FriendState.friend,
+        addedAt: 0,
+      );
+      await FriendStore(bobDb).upsertFriend(
+        username: 'alice',
+        displayName: 'Alice',
+        state: FriendState.friend,
+        addedAt: 0,
+      );
+
       await runtimeAlice.connectPeer('bob');
       await runtimeBob.connectPeer('alice');
 

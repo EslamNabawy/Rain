@@ -32,11 +32,14 @@ class DefaultPeerCore implements PeerCore {
       StreamController<PeerState>.broadcast();
 
   final Map<String, RTCDataChannel> _channels = <String, RTCDataChannel>{};
-  final Map<String, _ChunkAccumulator> _chunkBuffers = <String, _ChunkAccumulator>{};
+  final Set<String> _openChannels = <String>{};
+  final Map<String, _ChunkAccumulator> _chunkBuffers =
+      <String, _ChunkAccumulator>{};
   final List<RTCIceCandidate> _localCandidates = <RTCIceCandidate>[];
 
   RTCPeerConnection? _peerConnection;
   PeerConfig? _config;
+  bool _destroying = false;
 
   @override
   Stream<RTCIceCandidate> get onIceCandidate => _iceController.stream;
@@ -76,7 +79,7 @@ class DefaultPeerCore implements PeerCore {
 
   @override
   Future<RTCSessionDescription> createOffer() async {
-    _ensureState(<PeerState>{PeerState.ready, PeerState.failed});
+    _ensureState(<PeerState>{PeerState.ready});
     await openChannel(PeerChannels.chat);
     await openChannel(PeerChannels.control);
     final offer = await _requirePeerConnection().createOffer();
@@ -87,10 +90,16 @@ class DefaultPeerCore implements PeerCore {
 
   @override
   Future<void> destroy() async {
-    for (final channel in _channels.values.toList()) {
-      await channel.close();
+    _destroying = true;
+    try {
+      for (final channel in _channels.values.toList()) {
+        await channel.close();
+      }
+    } finally {
+      _destroying = false;
     }
     _channels.clear();
+    _openChannels.clear();
     await _peerConnection?.close();
     _peerConnection = null;
     _localCandidates.clear();
@@ -139,6 +148,9 @@ class DefaultPeerCore implements PeerCore {
     if (channel == null) {
       throw StateError('Channel $channelId is not open.');
     }
+    if (channel.state != RTCDataChannelState.RTCDataChannelOpen) {
+      throw StateError('Channel $channelId is not ready.');
+    }
 
     if (channelId == PeerChannels.chat) {
       _sendChunkedIfNeeded(channel, data);
@@ -155,14 +167,14 @@ class DefaultPeerCore implements PeerCore {
 
   @override
   Future<void> setAnswer(RTCSessionDescription answer) async {
-    _ensureState(<PeerState>{PeerState.offering, PeerState.reconnecting});
+    _ensureState(<PeerState>{PeerState.offering});
     await _requirePeerConnection().setRemoteDescription(answer);
     _transition(PeerState.connecting);
   }
 
   @override
   Future<RTCSessionDescription> setOffer(RTCSessionDescription offer) async {
-    _ensureState(<PeerState>{PeerState.ready, PeerState.failed});
+    _ensureState(<PeerState>{PeerState.ready});
     await _requirePeerConnection().setRemoteDescription(offer);
     _transition(PeerState.answering);
     final answer = await _requirePeerConnection().createAnswer();
@@ -174,12 +186,25 @@ class DefaultPeerCore implements PeerCore {
     _channels[channelId] = channel;
     channel.onDataChannelState = (RTCDataChannelState state) {
       if (state == RTCDataChannelState.RTCDataChannelOpen) {
+        _openChannels.add(channelId);
         _channelOpenController.add(channelId);
+        _markConnectedIfDataChannelsReady();
       } else if (state == RTCDataChannelState.RTCDataChannelClosed) {
         _channels.remove(channelId);
+        _openChannels.remove(channelId);
         _channelCloseController.add(channelId);
+        if (!_destroying &&
+            _isRequiredDataChannel(channelId) &&
+            this.state == PeerState.connected) {
+          _transition(PeerState.reconnecting);
+          _disconnectedController.add(null);
+        }
       }
     };
+    if (channel.state == RTCDataChannelState.RTCDataChannelOpen) {
+      _openChannels.add(channelId);
+      _markConnectedIfDataChannelsReady();
+    }
     channel.onMessage = (RTCDataChannelMessage message) {
       final payload = message.isBinary
           ? Uint8List.fromList(message.binary)
@@ -283,6 +308,28 @@ class DefaultPeerCore implements PeerCore {
     _stateController.add(next);
   }
 
+  bool get _requiredDataChannelsOpen {
+    return _openChannels.contains(PeerChannels.chat) &&
+        _openChannels.contains(PeerChannels.control);
+  }
+
+  bool _isRequiredDataChannel(String channelId) {
+    return channelId == PeerChannels.chat || channelId == PeerChannels.control;
+  }
+
+  void _markConnectedIfDataChannelsReady() {
+    if (!_requiredDataChannelsOpen || state == PeerState.connected) {
+      return;
+    }
+    if (state == PeerState.offering || state == PeerState.answering) {
+      _transition(PeerState.connecting);
+    }
+    if (state == PeerState.connecting || state == PeerState.reconnecting) {
+      _transition(PeerState.connected);
+      _connectedController.add(null);
+    }
+  }
+
   void _wirePeerConnection(RTCPeerConnection connection) {
     connection.onDataChannel = (RTCDataChannel channel) {
       _attachChannel(channel.label ?? 'rain.remote', channel);
@@ -299,11 +346,14 @@ class DefaultPeerCore implements PeerCore {
     connection.onConnectionState = (RTCPeerConnectionState state) {
       switch (state) {
         case RTCPeerConnectionState.RTCPeerConnectionStateConnected:
-          _transition(PeerState.connected);
-          _connectedController.add(null);
+          if (this.state == PeerState.offering ||
+              this.state == PeerState.answering) {
+            _transition(PeerState.connecting);
+          }
+          _markConnectedIfDataChannelsReady();
           break;
         case RTCPeerConnectionState.RTCPeerConnectionStateConnecting:
-          if (this.state != PeerState.connecting) {
+          if (this.state == PeerState.answering) {
             _transition(PeerState.connecting);
           }
           break;
@@ -314,7 +364,11 @@ class DefaultPeerCore implements PeerCore {
           }
           break;
         case RTCPeerConnectionState.RTCPeerConnectionStateFailed:
-          _transition(PeerState.failed);
+          if (this.state == PeerState.reconnecting) {
+            _transition(PeerState.failed);
+          } else if (this.state == PeerState.connected) {
+            _transition(PeerState.reconnecting);
+          }
           _disconnectedController.add(null);
           break;
         case RTCPeerConnectionState.RTCPeerConnectionStateClosed:
@@ -330,7 +384,8 @@ class DefaultPeerCore implements PeerCore {
 }
 
 class _ChunkAccumulator {
-  _ChunkAccumulator(this.total, this.isBinary) : _parts = List<Uint8List?>.filled(total, null);
+  _ChunkAccumulator(this.total, this.isBinary)
+    : _parts = List<Uint8List?>.filled(total, null);
 
   final int total;
   final bool isBinary;
@@ -346,7 +401,10 @@ class _ChunkAccumulator {
 
   Uint8List join() {
     final parts = _parts.nonNulls.toList(growable: false);
-    final totalBytes = parts.fold<int>(0, (int value, Uint8List part) => value + part.length);
+    final totalBytes = parts.fold<int>(
+      0,
+      (int value, Uint8List part) => value + part.length,
+    );
     final bytes = Uint8List(totalBytes);
     var offset = 0;
     for (final part in parts) {

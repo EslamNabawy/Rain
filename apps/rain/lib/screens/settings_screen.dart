@@ -1,11 +1,23 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
-import 'package:protocol_brain/protocol_brain.dart';
+import 'package:go_router/go_router.dart';
 import 'package:rain_core/rain_core.dart';
 
+import '../navigation/app_routes.dart';
 import '../providers/app_providers.dart';
 import '../widgets/app_components.dart';
 import '../widgets/app_dialogs.dart';
+
+String _formatSettingsError(Object error) {
+  final raw = error.toString().trim();
+  const prefixes = <String>['Exception: ', 'Bad state: ', 'StateError: '];
+  for (final prefix in prefixes) {
+    if (raw.startsWith(prefix)) {
+      return raw.substring(prefix.length).trim();
+    }
+  }
+  return raw;
+}
 
 class SettingsScreen extends ConsumerWidget {
   const SettingsScreen({super.key});
@@ -13,12 +25,14 @@ class SettingsScreen extends ConsumerWidget {
   @override
   Widget build(BuildContext context, WidgetRef ref) {
     final identity = ref.watch(identityProvider).valueOrNull;
+    final runtime = ref.watch(runtimeControllerProvider).valueOrNull;
     final themeMode = ref.watch(themeModeProvider);
-    final notifier = ref.read(themeModeProvider.notifier);
+    final themeController = ref.read(themeModeProvider.notifier);
 
-    return Scaffold(
-      appBar: AppBar(title: const Text('Settings')),
-      body: ListView(
+    return AppPageFrame(
+      title: 'Settings',
+      icon: Icons.tune,
+      child: ListView(
         padding: const EdgeInsets.all(16),
         children: <Widget>[
           const AppSectionTitle(title: 'Profile'),
@@ -67,6 +81,21 @@ class SettingsScreen extends ConsumerWidget {
             ),
           ),
           const SizedBox(height: 24),
+          const AppSectionTitle(title: 'Session'),
+          AppSectionCard(
+            child: ListTile(
+              leading: Icon(
+                Icons.logout,
+                color: Theme.of(context).colorScheme.error,
+              ),
+              title: const Text('Log out'),
+              subtitle: const Text('Clear Rain session on this device'),
+              onTap: runtime == null
+                  ? null
+                  : () => _confirmLogOut(context, ref),
+            ),
+          ),
+          const SizedBox(height: 24),
           const AppSectionTitle(title: 'Appearance'),
           AppSectionCard(
             child: Column(
@@ -87,7 +116,7 @@ class SettingsScreen extends ConsumerWidget {
                           color: Theme.of(context).colorScheme.primary,
                         )
                       : null,
-                  onTap: () => notifier.setDark(),
+                  onTap: () => themeController.setDark(),
                 ),
                 ListTile(
                   title: const Text('Light'),
@@ -105,7 +134,7 @@ class SettingsScreen extends ConsumerWidget {
                           color: Theme.of(context).colorScheme.primary,
                         )
                       : null,
-                  onTap: () => notifier.setLight(),
+                  onTap: () => themeController.setLight(),
                 ),
                 ListTile(
                   title: const Text('System'),
@@ -123,14 +152,14 @@ class SettingsScreen extends ConsumerWidget {
                           color: Theme.of(context).colorScheme.primary,
                         )
                       : null,
-                  onTap: () => notifier.setSystem(),
+                  onTap: () => themeController.setSystem(),
                 ),
               ],
             ),
           ),
           const SizedBox(height: 24),
           const AppSectionTitle(title: 'Blocked Users'),
-          _BlockedUsersList(),
+          const _BlockedUsersList(),
         ],
       ),
     );
@@ -149,26 +178,49 @@ class SettingsScreen extends ConsumerWidget {
       confirmLabel: 'Save',
       initialValue: identity.displayName,
       labelText: 'Display name',
+      maxLength: InputValidator.displayNameMaxLength,
+      textCapitalization: TextCapitalization.words,
     );
 
     if (newName != null &&
         newName.isNotEmpty &&
         newName != identity.displayName) {
-      final repo = ref.read(identityRepositoryProvider);
-      final updated = identity.copyWith(displayName: newName);
-      await repo.saveIdentity(updated);
-      await ref.read(adapterProvider).upsertIdentity(
-            BackendIdentity(
-              username: updated.username,
-              uid: await ref.read(adapterProvider).currentUid(),
-              displayName: updated.displayName,
-              gender: updated.gender?.name,
-              registeredAt: updated.createdAt,
-              lastSeen: DateTime.now().millisecondsSinceEpoch,
-              lastHeartbeat: DateTime.now().millisecondsSinceEpoch,
-              online: true,
-            ),
-          );
+      await ref.read(identityProvider.notifier).updateDisplayName(newName);
+    }
+  }
+
+  Future<void> _confirmLogOut(BuildContext context, WidgetRef ref) async {
+    final messenger = ScaffoldMessenger.of(context);
+    final errorColor = Theme.of(context).colorScheme.error;
+
+    final shouldLogOut = await showAppConfirmDialog(
+      context: context,
+      title: 'Log out',
+      message:
+          'This will sign you out and clear the local Rain session on this device.',
+      confirmLabel: 'Log out',
+    );
+
+    if (shouldLogOut != true) {
+      return;
+    }
+
+    try {
+      await ref.read(runtimeControllerProvider.notifier).logOut();
+      if (!context.mounted) {
+        return;
+      }
+      context.goNamed(AppRoutes.home);
+    } catch (error) {
+      if (!context.mounted) {
+        return;
+      }
+      messenger.showSnackBar(
+        SnackBar(
+          content: Text('Could not log out: ${_formatSettingsError(error)}'),
+          backgroundColor: errorColor,
+        ),
+      );
     }
   }
 
@@ -221,21 +273,7 @@ class SettingsScreen extends ConsumerWidget {
       return;
     }
 
-    final repo = ref.read(identityRepositoryProvider);
-    final updated = identity.copyWith(gender: selected);
-    await repo.saveIdentity(updated);
-    await ref.read(adapterProvider).upsertIdentity(
-          BackendIdentity(
-            username: updated.username,
-            uid: await ref.read(adapterProvider).currentUid(),
-            displayName: updated.displayName,
-            gender: updated.gender?.name,
-            registeredAt: updated.createdAt,
-            lastSeen: DateTime.now().millisecondsSinceEpoch,
-            lastHeartbeat: DateTime.now().millisecondsSinceEpoch,
-            online: true,
-          ),
-        );
+    await ref.read(identityProvider.notifier).updateGender(selected);
   }
 
   String _genderLabel(RainGender? gender) => switch (gender) {
@@ -248,6 +286,8 @@ class SettingsScreen extends ConsumerWidget {
 enum _ProfileAction { editDisplayName, editGender }
 
 class _BlockedUsersList extends ConsumerWidget {
+  const _BlockedUsersList();
+
   @override
   Widget build(BuildContext context, WidgetRef ref) {
     final friends = ref.watch(friendsProvider);
@@ -331,7 +371,7 @@ class _BlockedUsersList extends ConsumerWidget {
     );
 
     if (confirmed == true) {
-      await ref.read(runtimeControllerProvider)?.unblockFriend(friend.username);
+      await ref.read(friendsProvider.notifier).unblock(friend.username);
     }
   }
 }

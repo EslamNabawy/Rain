@@ -1,5 +1,6 @@
 import 'package:drift/drift.dart';
 import 'package:drift_flutter/drift_flutter.dart';
+import 'package:sqlite3/common.dart';
 
 part 'rain_database.g.dart';
 
@@ -23,6 +24,7 @@ class Friends extends Table {
   TextColumn get state => text()();
   IntColumn get addedAt => integer()();
   IntColumn get lastOnlineAt => integer().nullable()();
+  BoolColumn get online => boolean().withDefault(const Constant(false))();
   IntColumn get unreadCount => integer().withDefault(const Constant(0))();
 
   @override
@@ -81,10 +83,10 @@ class MessageSeqTracker extends Table {
 )
 class RainDatabase extends _$RainDatabase {
   RainDatabase([QueryExecutor? executor])
-    : super(executor ?? driftDatabase(name: 'rain'));
+    : super(executor ?? _openRainDatabase());
 
   @override
-  int get schemaVersion => 2;
+  int get schemaVersion => 3;
 
   @override
   MigrationStrategy get migration => MigrationStrategy(
@@ -94,6 +96,9 @@ class RainDatabase extends _$RainDatabase {
     onUpgrade: (Migrator m, int from, int to) async {
       if (from < 2) {
         await m.addColumn(identityTable, identityTable.gender);
+      }
+      if (from < 3) {
+        await m.addColumn(friends, friends.online);
       }
     },
   );
@@ -108,4 +113,21 @@ class RainDatabase extends _$RainDatabase {
       await delete(messageSeqTracker).go();
     });
   }
+}
+
+QueryExecutor _openRainDatabase() {
+  return driftDatabase(
+    name: 'rain',
+    native: const DriftNativeOptions(
+      shareAcrossIsolates: true,
+      setup: configureRainSqliteConnection,
+    ),
+  );
+}
+
+void configureRainSqliteConnection(CommonDatabase db) {
+  db.execute('PRAGMA busy_timeout = 5000;');
+  db.execute('PRAGMA journal_mode = WAL;');
+  db.execute('PRAGMA synchronous = NORMAL;');
+  db.execute('PRAGMA foreign_keys = ON;');
 }

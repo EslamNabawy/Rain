@@ -559,6 +559,19 @@ class $FriendsTable extends Friends with TableInfo<$FriendsTable, Friend> {
     type: DriftSqlType.int,
     requiredDuringInsert: false,
   );
+  static const VerificationMeta _onlineMeta = const VerificationMeta('online');
+  @override
+  late final GeneratedColumn<bool> online = GeneratedColumn<bool>(
+    'online',
+    aliasedName,
+    false,
+    type: DriftSqlType.bool,
+    requiredDuringInsert: false,
+    defaultConstraints: GeneratedColumn.constraintIsAlways(
+      'CHECK ("online" IN (0, 1))',
+    ),
+    defaultValue: const Constant(false),
+  );
   static const VerificationMeta _unreadCountMeta = const VerificationMeta(
     'unreadCount',
   );
@@ -578,6 +591,7 @@ class $FriendsTable extends Friends with TableInfo<$FriendsTable, Friend> {
     state,
     addedAt,
     lastOnlineAt,
+    online,
     unreadCount,
   ];
   @override
@@ -636,6 +650,12 @@ class $FriendsTable extends Friends with TableInfo<$FriendsTable, Friend> {
         ),
       );
     }
+    if (data.containsKey('online')) {
+      context.handle(
+        _onlineMeta,
+        online.isAcceptableOrUnknown(data['online']!, _onlineMeta),
+      );
+    }
     if (data.containsKey('unread_count')) {
       context.handle(
         _unreadCountMeta,
@@ -674,6 +694,10 @@ class $FriendsTable extends Friends with TableInfo<$FriendsTable, Friend> {
         DriftSqlType.int,
         data['${effectivePrefix}last_online_at'],
       ),
+      online: attachedDatabase.typeMapping.read(
+        DriftSqlType.bool,
+        data['${effectivePrefix}online'],
+      )!,
       unreadCount: attachedDatabase.typeMapping.read(
         DriftSqlType.int,
         data['${effectivePrefix}unread_count'],
@@ -693,6 +717,7 @@ class Friend extends DataClass implements Insertable<Friend> {
   final String state;
   final int addedAt;
   final int? lastOnlineAt;
+  final bool online;
   final int unreadCount;
   const Friend({
     required this.username,
@@ -700,6 +725,7 @@ class Friend extends DataClass implements Insertable<Friend> {
     required this.state,
     required this.addedAt,
     this.lastOnlineAt,
+    required this.online,
     required this.unreadCount,
   });
   @override
@@ -712,6 +738,7 @@ class Friend extends DataClass implements Insertable<Friend> {
     if (!nullToAbsent || lastOnlineAt != null) {
       map['last_online_at'] = Variable<int>(lastOnlineAt);
     }
+    map['online'] = Variable<bool>(online);
     map['unread_count'] = Variable<int>(unreadCount);
     return map;
   }
@@ -725,6 +752,7 @@ class Friend extends DataClass implements Insertable<Friend> {
       lastOnlineAt: lastOnlineAt == null && nullToAbsent
           ? const Value.absent()
           : Value(lastOnlineAt),
+      online: Value(online),
       unreadCount: Value(unreadCount),
     );
   }
@@ -740,6 +768,7 @@ class Friend extends DataClass implements Insertable<Friend> {
       state: serializer.fromJson<String>(json['state']),
       addedAt: serializer.fromJson<int>(json['addedAt']),
       lastOnlineAt: serializer.fromJson<int?>(json['lastOnlineAt']),
+      online: serializer.fromJson<bool>(json['online']),
       unreadCount: serializer.fromJson<int>(json['unreadCount']),
     );
   }
@@ -752,6 +781,7 @@ class Friend extends DataClass implements Insertable<Friend> {
       'state': serializer.toJson<String>(state),
       'addedAt': serializer.toJson<int>(addedAt),
       'lastOnlineAt': serializer.toJson<int?>(lastOnlineAt),
+      'online': serializer.toJson<bool>(online),
       'unreadCount': serializer.toJson<int>(unreadCount),
     };
   }
@@ -762,6 +792,7 @@ class Friend extends DataClass implements Insertable<Friend> {
     String? state,
     int? addedAt,
     Value<int?> lastOnlineAt = const Value.absent(),
+    bool? online,
     int? unreadCount,
   }) => Friend(
     username: username ?? this.username,
@@ -769,6 +800,7 @@ class Friend extends DataClass implements Insertable<Friend> {
     state: state ?? this.state,
     addedAt: addedAt ?? this.addedAt,
     lastOnlineAt: lastOnlineAt.present ? lastOnlineAt.value : this.lastOnlineAt,
+    online: online ?? this.online,
     unreadCount: unreadCount ?? this.unreadCount,
   );
   Friend copyWithCompanion(FriendsCompanion data) {
@@ -782,6 +814,7 @@ class Friend extends DataClass implements Insertable<Friend> {
       lastOnlineAt: data.lastOnlineAt.present
           ? data.lastOnlineAt.value
           : this.lastOnlineAt,
+      online: data.online.present ? data.online.value : this.online,
       unreadCount: data.unreadCount.present
           ? data.unreadCount.value
           : this.unreadCount,
@@ -796,6 +829,7 @@ class Friend extends DataClass implements Insertable<Friend> {
           ..write('state: $state, ')
           ..write('addedAt: $addedAt, ')
           ..write('lastOnlineAt: $lastOnlineAt, ')
+          ..write('online: $online, ')
           ..write('unreadCount: $unreadCount')
           ..write(')'))
         .toString();
@@ -808,6 +842,7 @@ class Friend extends DataClass implements Insertable<Friend> {
     state,
     addedAt,
     lastOnlineAt,
+    online,
     unreadCount,
   );
   @override
@@ -819,6 +854,7 @@ class Friend extends DataClass implements Insertable<Friend> {
           other.state == this.state &&
           other.addedAt == this.addedAt &&
           other.lastOnlineAt == this.lastOnlineAt &&
+          other.online == this.online &&
           other.unreadCount == this.unreadCount);
 }
 
@@ -828,6 +864,7 @@ class FriendsCompanion extends UpdateCompanion<Friend> {
   final Value<String> state;
   final Value<int> addedAt;
   final Value<int?> lastOnlineAt;
+  final Value<bool> online;
   final Value<int> unreadCount;
   final Value<int> rowid;
   const FriendsCompanion({
@@ -836,6 +873,7 @@ class FriendsCompanion extends UpdateCompanion<Friend> {
     this.state = const Value.absent(),
     this.addedAt = const Value.absent(),
     this.lastOnlineAt = const Value.absent(),
+    this.online = const Value.absent(),
     this.unreadCount = const Value.absent(),
     this.rowid = const Value.absent(),
   });
@@ -845,6 +883,7 @@ class FriendsCompanion extends UpdateCompanion<Friend> {
     required String state,
     required int addedAt,
     this.lastOnlineAt = const Value.absent(),
+    this.online = const Value.absent(),
     this.unreadCount = const Value.absent(),
     this.rowid = const Value.absent(),
   }) : username = Value(username),
@@ -857,6 +896,7 @@ class FriendsCompanion extends UpdateCompanion<Friend> {
     Expression<String>? state,
     Expression<int>? addedAt,
     Expression<int>? lastOnlineAt,
+    Expression<bool>? online,
     Expression<int>? unreadCount,
     Expression<int>? rowid,
   }) {
@@ -866,6 +906,7 @@ class FriendsCompanion extends UpdateCompanion<Friend> {
       if (state != null) 'state': state,
       if (addedAt != null) 'added_at': addedAt,
       if (lastOnlineAt != null) 'last_online_at': lastOnlineAt,
+      if (online != null) 'online': online,
       if (unreadCount != null) 'unread_count': unreadCount,
       if (rowid != null) 'rowid': rowid,
     });
@@ -877,6 +918,7 @@ class FriendsCompanion extends UpdateCompanion<Friend> {
     Value<String>? state,
     Value<int>? addedAt,
     Value<int?>? lastOnlineAt,
+    Value<bool>? online,
     Value<int>? unreadCount,
     Value<int>? rowid,
   }) {
@@ -886,6 +928,7 @@ class FriendsCompanion extends UpdateCompanion<Friend> {
       state: state ?? this.state,
       addedAt: addedAt ?? this.addedAt,
       lastOnlineAt: lastOnlineAt ?? this.lastOnlineAt,
+      online: online ?? this.online,
       unreadCount: unreadCount ?? this.unreadCount,
       rowid: rowid ?? this.rowid,
     );
@@ -909,6 +952,9 @@ class FriendsCompanion extends UpdateCompanion<Friend> {
     if (lastOnlineAt.present) {
       map['last_online_at'] = Variable<int>(lastOnlineAt.value);
     }
+    if (online.present) {
+      map['online'] = Variable<bool>(online.value);
+    }
     if (unreadCount.present) {
       map['unread_count'] = Variable<int>(unreadCount.value);
     }
@@ -926,6 +972,7 @@ class FriendsCompanion extends UpdateCompanion<Friend> {
           ..write('state: $state, ')
           ..write('addedAt: $addedAt, ')
           ..write('lastOnlineAt: $lastOnlineAt, ')
+          ..write('online: $online, ')
           ..write('unreadCount: $unreadCount, ')
           ..write('rowid: $rowid')
           ..write(')'))
@@ -2577,6 +2624,7 @@ typedef $$FriendsTableCreateCompanionBuilder =
       required String state,
       required int addedAt,
       Value<int?> lastOnlineAt,
+      Value<bool> online,
       Value<int> unreadCount,
       Value<int> rowid,
     });
@@ -2587,6 +2635,7 @@ typedef $$FriendsTableUpdateCompanionBuilder =
       Value<String> state,
       Value<int> addedAt,
       Value<int?> lastOnlineAt,
+      Value<bool> online,
       Value<int> unreadCount,
       Value<int> rowid,
     });
@@ -2622,6 +2671,11 @@ class $$FriendsTableFilterComposer
 
   ColumnFilters<int> get lastOnlineAt => $composableBuilder(
     column: $table.lastOnlineAt,
+    builder: (column) => ColumnFilters(column),
+  );
+
+  ColumnFilters<bool> get online => $composableBuilder(
+    column: $table.online,
     builder: (column) => ColumnFilters(column),
   );
 
@@ -2665,6 +2719,11 @@ class $$FriendsTableOrderingComposer
     builder: (column) => ColumnOrderings(column),
   );
 
+  ColumnOrderings<bool> get online => $composableBuilder(
+    column: $table.online,
+    builder: (column) => ColumnOrderings(column),
+  );
+
   ColumnOrderings<int> get unreadCount => $composableBuilder(
     column: $table.unreadCount,
     builder: (column) => ColumnOrderings(column),
@@ -2698,6 +2757,9 @@ class $$FriendsTableAnnotationComposer
     column: $table.lastOnlineAt,
     builder: (column) => column,
   );
+
+  GeneratedColumn<bool> get online =>
+      $composableBuilder(column: $table.online, builder: (column) => column);
 
   GeneratedColumn<int> get unreadCount => $composableBuilder(
     column: $table.unreadCount,
@@ -2738,6 +2800,7 @@ class $$FriendsTableTableManager
                 Value<String> state = const Value.absent(),
                 Value<int> addedAt = const Value.absent(),
                 Value<int?> lastOnlineAt = const Value.absent(),
+                Value<bool> online = const Value.absent(),
                 Value<int> unreadCount = const Value.absent(),
                 Value<int> rowid = const Value.absent(),
               }) => FriendsCompanion(
@@ -2746,6 +2809,7 @@ class $$FriendsTableTableManager
                 state: state,
                 addedAt: addedAt,
                 lastOnlineAt: lastOnlineAt,
+                online: online,
                 unreadCount: unreadCount,
                 rowid: rowid,
               ),
@@ -2756,6 +2820,7 @@ class $$FriendsTableTableManager
                 required String state,
                 required int addedAt,
                 Value<int?> lastOnlineAt = const Value.absent(),
+                Value<bool> online = const Value.absent(),
                 Value<int> unreadCount = const Value.absent(),
                 Value<int> rowid = const Value.absent(),
               }) => FriendsCompanion.insert(
@@ -2764,6 +2829,7 @@ class $$FriendsTableTableManager
                 state: state,
                 addedAt: addedAt,
                 lastOnlineAt: lastOnlineAt,
+                online: online,
                 unreadCount: unreadCount,
                 rowid: rowid,
               ),

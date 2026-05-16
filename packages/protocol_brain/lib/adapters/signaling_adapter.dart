@@ -28,10 +28,24 @@ abstract class SignalingAdapter {
 
   Future<void> writeFriendRequest(String to, String from);
   Future<void> deleteFriendRequest(String to, String from);
+  Future<List<String>> loadIncomingFriendRequests(String username);
+  Future<List<String>> loadOutgoingFriendRequests(String username);
+  Future<List<String>> loadAcceptedFriends(String username);
+  Future<void> upsertFriendship(String firstUser, String secondUser);
+  Future<void> deleteFriendship(String firstUser, String secondUser);
   Stream<String> onFriendRequest(String username);
 
   Future<void> deleteRoom(String roomId);
   Future<void> dispose();
+}
+
+class SignalingSessionExpiredException implements Exception {
+  const SignalingSessionExpiredException(this.message);
+
+  final String message;
+
+  @override
+  String toString() => message;
 }
 
 enum IceRole { caller, callee }

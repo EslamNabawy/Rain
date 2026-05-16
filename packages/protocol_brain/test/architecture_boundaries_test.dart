@@ -6,12 +6,15 @@ void main() {
   test('apps and rain_core do not import peer_core directly', () {
     final workspaceRoot = Directory.current.parent.parent;
     final appLib = Directory.fromUri(workspaceRoot.uri.resolve('apps/rain/lib/'));
+    final appTool = Directory.fromUri(
+      workspaceRoot.uri.resolve('apps/rain/tool/'),
+    );
     final rainCoreLib = Directory.fromUri(
       workspaceRoot.uri.resolve('packages/rain_core/lib/'),
     );
 
     final offenders = <String>[];
-    for (final directory in <Directory>[appLib, rainCoreLib]) {
+    for (final directory in <Directory>[appLib, appTool, rainCoreLib]) {
       for (final file in directory.listSync(recursive: true).whereType<File>()) {
         if (!file.path.endsWith('.dart')) {
           continue;

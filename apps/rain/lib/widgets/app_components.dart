@@ -49,6 +49,88 @@ class AppSectionTitle extends StatelessWidget {
   }
 }
 
+class AppPageFrame extends StatelessWidget {
+  const AppPageFrame({
+    super.key,
+    required this.title,
+    required this.icon,
+    required this.child,
+    this.actions = const <Widget>[],
+  });
+
+  final String title;
+  final IconData icon;
+  final Widget child;
+  final List<Widget> actions;
+
+  @override
+  Widget build(BuildContext context) {
+    final scheme = Theme.of(context).colorScheme;
+    final isDark = scheme.brightness == Brightness.dark;
+
+    return LayoutBuilder(
+      builder: (BuildContext context, BoxConstraints constraints) {
+        final isCompact = constraints.maxWidth < 700;
+        final padding = EdgeInsets.all(isCompact ? 12 : 20);
+
+        return SafeArea(
+          child: Padding(
+            padding: padding,
+            child: Container(
+              clipBehavior: Clip.antiAlias,
+              decoration: BoxDecoration(
+                color: isDark
+                    ? const Color(0xFF0C1820).withValues(alpha: 0.94)
+                    : scheme.surface.withValues(alpha: 0.96),
+                borderRadius: BorderRadius.circular(isCompact ? 24 : 32),
+                border: Border.all(
+                  color: scheme.outlineVariant.withValues(
+                    alpha: isDark ? 0.18 : 0.55,
+                  ),
+                ),
+                boxShadow: <BoxShadow>[
+                  BoxShadow(
+                    blurRadius: isDark ? 32 : 18,
+                    color: Colors.black.withValues(alpha: isDark ? 0.20 : 0.08),
+                    offset: const Offset(0, 16),
+                  ),
+                ],
+              ),
+              child: Column(
+                children: <Widget>[
+                  Padding(
+                    padding: EdgeInsets.fromLTRB(
+                      isCompact ? 18 : 24,
+                      isCompact ? 18 : 24,
+                      isCompact ? 18 : 24,
+                      14,
+                    ),
+                    child: Row(
+                      children: <Widget>[
+                        Icon(icon, color: scheme.primary),
+                        const SizedBox(width: 12),
+                        Expanded(
+                          child: Text(
+                            title,
+                            style: Theme.of(context).textTheme.headlineSmall,
+                          ),
+                        ),
+                        ...actions,
+                      ],
+                    ),
+                  ),
+                  const Divider(height: 1),
+                  Expanded(child: child),
+                ],
+              ),
+            ),
+          ),
+        );
+      },
+    );
+  }
+}
+
 class AppStateMessage extends StatelessWidget {
   const AppStateMessage({
     super.key,
@@ -124,7 +206,7 @@ class AppLowerCaseTextFormatter extends TextInputFormatter {
   }
 }
 
-class AppTextInputField extends StatelessWidget {
+class AppTextInputField extends StatefulWidget {
   const AppTextInputField({
     super.key,
     required this.controller,
@@ -143,6 +225,12 @@ class AppTextInputField extends StatelessWidget {
     this.onSubmitted,
     this.minLines,
     this.maxLines,
+    this.focusNode,
+    this.textCapitalization = TextCapitalization.none,
+    this.autofillHints,
+    this.autocorrect = true,
+    this.enableSuggestions = true,
+    this.scrollPadding = const EdgeInsets.all(20),
   });
 
   final TextEditingController controller;
@@ -161,28 +249,75 @@ class AppTextInputField extends StatelessWidget {
   final ValueChanged<String>? onSubmitted;
   final int? minLines;
   final int? maxLines;
+  final FocusNode? focusNode;
+  final TextCapitalization textCapitalization;
+  final Iterable<String>? autofillHints;
+  final bool autocorrect;
+  final bool enableSuggestions;
+  final EdgeInsets scrollPadding;
+
+  @override
+  State<AppTextInputField> createState() => _AppTextInputFieldState();
+}
+
+class _AppTextInputFieldState extends State<AppTextInputField> {
+  FocusNode? _internalFocusNode;
+
+  FocusNode get _focusNode => widget.focusNode ?? _internalFocusNode!;
+
+  @override
+  void initState() {
+    super.initState();
+    _internalFocusNode = widget.focusNode == null ? FocusNode() : null;
+    if (widget.autofocus) {
+      WidgetsBinding.instance.addPostFrameCallback((_) {
+        if (!mounted) {
+          return;
+        }
+        _focusNode.requestFocus();
+      });
+    }
+  }
+
+  @override
+  void dispose() {
+    _internalFocusNode?.dispose();
+    super.dispose();
+  }
 
   @override
   Widget build(BuildContext context) {
     return TextField(
-      controller: controller,
-      autofocus: autofocus,
-      obscureText: obscureText,
-      textInputAction: textInputAction,
-      keyboardType: textInputType,
-      inputFormatters: inputFormatters,
-      minLines: minLines,
-      maxLines: maxLines,
-      maxLength: maxLength,
-      onChanged: onChanged,
-      onSubmitted: onSubmitted,
+      controller: widget.controller,
+      focusNode: _focusNode,
+      autofocus: widget.autofocus,
+      obscureText: widget.obscureText,
+      textInputAction: widget.textInputAction,
+      keyboardType: widget.textInputType,
+      inputFormatters: widget.inputFormatters,
+      minLines: widget.minLines,
+      maxLines: widget.obscureText ? 1 : widget.maxLines,
+      maxLength: widget.maxLength,
+      textCapitalization: widget.textCapitalization,
+      autofillHints: widget.autofillHints,
+      autocorrect: widget.autocorrect,
+      enableSuggestions: widget.enableSuggestions,
+      scrollPadding: widget.scrollPadding,
+      onChanged: widget.onChanged,
+      onSubmitted: widget.onSubmitted,
+      mouseCursor: SystemMouseCursors.text,
+      onTap: () {
+        if (!_focusNode.hasFocus) {
+          _focusNode.requestFocus();
+        }
+      },
       decoration: InputDecoration(
-        labelText: labelText,
-        hintText: hintText,
-        helperText: helperText,
+        labelText: widget.labelText,
+        hintText: widget.hintText,
+        helperText: widget.helperText,
         counterText: '',
-        prefixIcon: prefixIcon,
-        suffixIcon: suffixIcon,
+        prefixIcon: widget.prefixIcon,
+        suffixIcon: widget.suffixIcon,
       ),
     );
   }

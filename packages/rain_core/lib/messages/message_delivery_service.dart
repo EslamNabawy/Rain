@@ -34,6 +34,7 @@ class MessageDeliveryService {
     MessageEnvelope envelope, {
     required DateTime receivedAt,
     required FutureOr<void> Function(String rawAck) sendAck,
+    FutureOr<void> Function(MessageEnvelope envelope)? onStored,
   }) async {
     final result = await _messageStore.storeIncomingEnvelope(
       envelope,
@@ -46,11 +47,14 @@ class MessageDeliveryService {
         await sendAck(_encodeAck(envelope.id));
         break;
       case IncomingMessageDisposition.gap:
-        _bufferGap(envelope, receivedAt, sendAck);
+        _bufferGap(envelope, receivedAt, sendAck, onStored);
         break;
       case IncomingMessageDisposition.stored:
+        if (onStored != null) {
+          await onStored(envelope);
+        }
         await sendAck(_encodeAck(envelope.id));
-        await _flushBuffered(envelope.from, sendAck);
+        await _flushBuffered(envelope.from, sendAck, onStored);
         break;
     }
   }
@@ -139,6 +143,7 @@ class MessageDeliveryService {
     MessageEnvelope envelope,
     DateTime receivedAt,
     FutureOr<void> Function(String rawAck) sendAck,
+    FutureOr<void> Function(MessageEnvelope envelope)? onStored,
   ) {
     final byPeer = _gapBuffers.putIfAbsent(
       envelope.from,
@@ -156,8 +161,11 @@ class MessageDeliveryService {
           pending.envelope,
           receivedAt: pending.receivedAt,
         );
+        if (onStored != null) {
+          await onStored(pending.envelope);
+        }
         await sendAck(_encodeAck(pending.envelope.id));
-        await _flushBuffered(pending.envelope.from, sendAck);
+        await _flushBuffered(pending.envelope.from, sendAck, onStored);
       }),
     );
   }
@@ -169,6 +177,7 @@ class MessageDeliveryService {
   Future<void> _flushBuffered(
     String peerId,
     FutureOr<void> Function(String rawAck) sendAck,
+    FutureOr<void> Function(MessageEnvelope envelope)? onStored,
   ) async {
     final byPeer = _gapBuffers[peerId];
     if (byPeer == null || byPeer.isEmpty) {
@@ -183,6 +192,9 @@ class MessageDeliveryService {
         pending.envelope,
         receivedAt: pending.receivedAt,
       );
+      if (onStored != null) {
+        await onStored(pending.envelope);
+      }
       await sendAck(_encodeAck(pending.envelope.id));
       expected += 1;
     }

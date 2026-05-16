@@ -1,23 +1,111 @@
-import 'package:flutter/widgets.dart';
+import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import 'bootstrap/app_bootstrap.dart';
 import 'config/app_environment.dart';
 import 'providers/app_providers.dart';
 import 'screens/rain_app.dart';
+import 'screens/splash_screen.dart';
 
 Future<void> main() async {
+  await runRainApp();
+}
+
+@visibleForTesting
+Future<void> runRainApp({
+  AppEnvironment? environment,
+  AppBootstrapper? bootstrapper,
+}) async {
   WidgetsFlutterBinding.ensureInitialized();
 
-  final environment = AppEnvironment.fromEnvironment();
-  final bootstrap = await AppBootstrapper().bootstrap(environment);
-
   runApp(
-    ProviderScope(
-      overrides: <Override>[
-        appBootstrapProvider.overrideWithValue(bootstrap),
-      ],
-      child: const RainApp(),
+    RainStartupApp(
+      environment: environment ?? AppEnvironment.fromEnvironment(),
+      bootstrapper: bootstrapper ?? AppBootstrapper(),
     ),
   );
+}
+
+@visibleForTesting
+class RainStartupApp extends StatefulWidget {
+  const RainStartupApp({
+    required this.environment,
+    required this.bootstrapper,
+    super.key,
+  });
+
+  final AppEnvironment environment;
+  final AppBootstrapper bootstrapper;
+
+  @override
+  State<RainStartupApp> createState() => _RainStartupAppState();
+}
+
+class _RainStartupAppState extends State<RainStartupApp> {
+  late Future<AppBootstrapState> _bootstrapFuture;
+  Object? _loggedBootstrapError;
+
+  @override
+  void initState() {
+    super.initState();
+    _bootstrapFuture = widget.bootstrapper.bootstrap(widget.environment);
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return FutureBuilder<AppBootstrapState>(
+      future: _bootstrapFuture,
+      builder: (context, snapshot) {
+        if (snapshot.hasError) {
+          final error = snapshot.error!;
+          _logBootstrapError(error, snapshot.stackTrace);
+          return BootstrapFailureApp(error: error);
+        }
+
+        final bootstrap = snapshot.data;
+        if (bootstrap == null) {
+          return const MaterialApp(
+            title: 'Rain',
+            debugShowCheckedModeBanner: false,
+            home: RainSplashScreen(),
+          );
+        }
+
+        return ProviderScope(
+          overrides: <Override>[
+            appBootstrapProvider.overrideWithValue(bootstrap),
+          ],
+          child: const RainApp(),
+        );
+      },
+    );
+  }
+
+  void _logBootstrapError(Object error, StackTrace? stackTrace) {
+    if (identical(_loggedBootstrapError, error)) {
+      return;
+    }
+    _loggedBootstrapError = error;
+    debugPrint('Rain bootstrap failed: $error');
+    if (stackTrace != null) {
+      debugPrintStack(stackTrace: stackTrace);
+    }
+  }
+}
+
+@visibleForTesting
+class BootstrapFailureApp extends StatelessWidget {
+  const BootstrapFailureApp({required this.error, super.key});
+
+  final Object error;
+
+  @override
+  Widget build(BuildContext context) {
+    return MaterialApp(
+      title: 'Rain',
+      debugShowCheckedModeBanner: false,
+      theme: ThemeData.dark(useMaterial3: true),
+      home: RainStartupFailureScreen(error: error),
+    );
+  }
 }
