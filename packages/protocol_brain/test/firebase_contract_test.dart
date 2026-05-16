@@ -47,6 +47,16 @@ void main() {
     );
   });
 
+  test('Firebase relationship payload fields are explicitly allowed', () {
+    final rules = _repoFile('backend/firebase/database.rules.json');
+
+    expect(rules, contains('"sentAt"'));
+    expect(rules, contains('newData.child(\'sentAt\').isNumber()'));
+    expect(rules, contains('newData.isNumber()'));
+    expect(rules, contains('"acceptedAt"'));
+    expect(rules, contains('newData.child(\'acceptedAt\').isNumber()'));
+  });
+
   test('Firebase user ownership is immutable and tied to auth email', () {
     final rules = _repoFile('backend/firebase/database.rules.json');
 
