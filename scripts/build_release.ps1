@@ -561,6 +561,10 @@ if ($Platform -in @('all', 'android')) {
   }
   Copy-Item -LiteralPath $apkSource -Destination $universalApkDestination -Force
 
+  Write-Step "Resetting Android build state before per-ABI release APKs"
+  Stop-GradleDaemons $appsRoot
+  Clean-FlutterProject $appsRoot
+
   Write-Step "Building Android per-ABI release APKs: armeabi-v7a, arm64-v8a (ARMv8/ARMv9 devices), x86_64"
   $splitFlutterArgs = @('build', 'apk', '--release', '--split-per-abi') + $dartDefineArgs
   Invoke-InDir $appsRoot {
