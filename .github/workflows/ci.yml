@@ -335,7 +335,7 @@ jobs:
     name: Build EXE and APK Artifacts
     runs-on: windows-latest
     timeout-minutes: 120
-    if: ${{ needs.test-gates.result == 'success' }}
+    if: ${{ always() && needs.test-gates.result == 'success' }}
     needs:
       - test-gates
     env:
