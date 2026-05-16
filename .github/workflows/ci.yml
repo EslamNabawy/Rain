@@ -127,6 +127,7 @@ jobs:
             Write-Host $text
             throw 'Release guard failed, but not with the expected missing dart defines message.'
           }
+          exit 0
 
       - name: Upload release guard diagnostics
         if: failure()
