@@ -259,38 +259,41 @@ void main() {
     expect(await IdentityRepository(db).loadIdentity(), isNull);
   });
 
-  test('runtime marks the user offline immediately when app detaches', () async {
-    final db = RainDatabase(NativeDatabase.memory());
-    addTearDown(db.close);
-    const identity = RainIdentity(
-      username: 'alice',
-      displayName: 'Alice',
-      createdAt: 0,
-      gender: RainGender.female,
-    );
-    final adapter = _RecordingPresenceAdapter();
-    final runtime = RainRuntimeController(
-      selfIdentity: identity,
-      adapter: adapter,
-      brain: null,
-      database: db,
-      friendStore: FriendStore(db),
-      messageStore: MessageStore(db),
-      offlineQueueStore: OfflineQueueStore(db),
-      messageDeliveryService: MessageDeliveryService(
+  test(
+    'runtime marks the user offline immediately when app detaches',
+    () async {
+      final db = RainDatabase(NativeDatabase.memory());
+      addTearDown(db.close);
+      const identity = RainIdentity(
+        username: 'alice',
+        displayName: 'Alice',
+        createdAt: 0,
+        gender: RainGender.female,
+      );
+      final adapter = _RecordingPresenceAdapter();
+      final runtime = RainRuntimeController(
+        selfIdentity: identity,
+        adapter: adapter,
+        brain: null,
+        database: db,
+        friendStore: FriendStore(db),
         messageStore: MessageStore(db),
         offlineQueueStore: OfflineQueueStore(db),
-      ),
-      friendRequestRefreshInterval: Duration.zero,
-    );
-    addTearDown(runtime.dispose);
+        messageDeliveryService: MessageDeliveryService(
+          messageStore: MessageStore(db),
+          offlineQueueStore: OfflineQueueStore(db),
+        ),
+        friendRequestRefreshInterval: Duration.zero,
+      );
+      addTearDown(runtime.dispose);
 
-    await runtime.start();
-    runtime.didChangeAppLifecycleState(AppLifecycleState.detached);
-    await Future<void>.delayed(const Duration(milliseconds: 20));
+      await runtime.start();
+      runtime.didChangeAppLifecycleState(AppLifecycleState.detached);
+      await Future<void>.delayed(const Duration(milliseconds: 20));
 
-    expect(adapter.presenceWrites.last, isFalse);
-  });
+      expect(adapter.presenceWrites.last, isFalse);
+    },
+  );
 
   test('desktop shell close policy exits instead of hiding to tray', () {
     final source = File(
