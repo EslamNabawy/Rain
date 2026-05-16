@@ -555,16 +555,16 @@ if ($Platform -in @('all', 'android')) {
   Copy-Item -LiteralPath $apkSource -Destination $apkDestination -Force
   Copy-Item -LiteralPath $apkSource -Destination $universalApkDestination -Force
 
-  Write-Step "Building Android per-ABI release APKs"
+  Write-Step "Building Android per-ABI release APKs: armeabi-v7a, arm64-v8a (ARMv8/ARMv9 devices), x86_64"
   $splitFlutterArgs = @('build', 'apk', '--release', '--split-per-abi') + $dartDefineArgs
   Invoke-InDir $appsRoot {
     Invoke-FlutterBuild $splitFlutterArgs
   }
 
   $abiApks = @(
-    @{ Source = 'app-arm64-v8a-release.apk'; Destination = "$androidArtifactPrefix-android-arm64-v8a.apk" },
-    @{ Source = 'app-armeabi-v7a-release.apk'; Destination = "$androidArtifactPrefix-android-armeabi-v7a.apk" },
-    @{ Source = 'app-x86_64-release.apk'; Destination = "$androidArtifactPrefix-android-x86_64.apk" }
+    @{ Label = 'ARM v8/v9 devices (arm64-v8a)'; Source = 'app-arm64-v8a-release.apk'; Destination = "$androidArtifactPrefix-android-arm64-v8a.apk" },
+    @{ Label = 'ARM v7 devices (armeabi-v7a)'; Source = 'app-armeabi-v7a-release.apk'; Destination = "$androidArtifactPrefix-android-armeabi-v7a.apk" },
+    @{ Label = 'x86_64 devices'; Source = 'app-x86_64-release.apk'; Destination = "$androidArtifactPrefix-android-x86_64.apk" }
   )
 
   foreach ($abiApk in $abiApks) {
@@ -576,6 +576,7 @@ if ($Platform -in @('all', 'android')) {
     }
 
     Copy-Item -LiteralPath $abiApkSource -Destination $abiApkDestination -Force
+    Write-Step "Packaged Android APK for $($abiApk.Label): $abiApkDestination"
   }
 }
 

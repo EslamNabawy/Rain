@@ -133,9 +133,27 @@ void main() {
     expect(script, contains('--split-per-abi'));
     expect(script, contains('Rain-release'));
     expect(script, contains('Rain-openrelay-demo'));
+    expect(script, contains('ARMv8/ARMv9 devices'));
     expect(script, contains('\$androidArtifactPrefix-android-universal.apk'));
     expect(script, contains('\$androidArtifactPrefix-android-arm64-v8a.apk'));
     expect(script, contains('\$androidArtifactPrefix-android-armeabi-v7a.apk'));
     expect(script, contains('\$androidArtifactPrefix-android-x86_64.apk'));
+  });
+
+  test('artifact workflows verify every Android APK architecture', () {
+    final workflows = <String>[
+      _repoFile('.github/workflows/ci.yml'),
+      _repoFile('.github/workflows/build-artifacts.yml'),
+      _repoFile('.github/workflows/release.yml'),
+    ];
+
+    for (final workflow in workflows) {
+      expect(workflow, contains('Android ARM v7 APK (armeabi-v7a)'));
+      expect(workflow, contains('Android ARM v8/v9 APK (arm64-v8a)'));
+      expect(workflow, contains('Android x86_64 APK'));
+      expect(workflow, contains('-android-armeabi-v7a.apk'));
+      expect(workflow, contains('-android-arm64-v8a.apk'));
+      expect(workflow, contains('-android-x86_64.apk'));
+    }
   });
 }

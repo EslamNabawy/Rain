@@ -380,18 +380,20 @@ jobs:
         shell: pwsh
         run: |
           $expected = @(
-            'artifacts\Rain-openrelay-demo-windows-portable\rain.exe',
-            'artifacts\Rain-openrelay-demo-windows-portable.zip',
-            'artifacts\Rain-openrelay-demo-android.apk',
-            'artifacts\Rain-openrelay-demo-android-universal.apk',
-            'artifacts\Rain-openrelay-demo-android-arm64-v8a.apk',
-            'artifacts\Rain-openrelay-demo-android-armeabi-v7a.apk',
-            'artifacts\Rain-openrelay-demo-android-x86_64.apk'
+            @{ Label = 'Windows portable EXE'; Path = 'artifacts\Rain-openrelay-demo-windows-portable\rain.exe' },
+            @{ Label = 'Windows portable zip'; Path = 'artifacts\Rain-openrelay-demo-windows-portable.zip' },
+            @{ Label = 'Android universal APK'; Path = 'artifacts\Rain-openrelay-demo-android-universal.apk' },
+            @{ Label = 'Android default/universal APK alias'; Path = 'artifacts\Rain-openrelay-demo-android.apk' },
+            @{ Label = 'Android ARM v7 APK (armeabi-v7a)'; Path = 'artifacts\Rain-openrelay-demo-android-armeabi-v7a.apk' },
+            @{ Label = 'Android ARM v8/v9 APK (arm64-v8a)'; Path = 'artifacts\Rain-openrelay-demo-android-arm64-v8a.apk' },
+            @{ Label = 'Android x86_64 APK'; Path = 'artifacts\Rain-openrelay-demo-android-x86_64.apk' }
           )
-          foreach ($path in $expected) {
+          foreach ($artifact in $expected) {
+            $path = $artifact.Path
             if (-not (Test-Path -LiteralPath $path)) {
-              throw "Missing expected artifact: $path"
+              throw "Missing expected artifact for $($artifact.Label): $path"
             }
+            Write-Host "Verified $($artifact.Label): $path"
           }
 
       - name: Upload Windows portable EXE bundle

@@ -167,6 +167,24 @@ jobs:
           }
           pwsh @args
 
+      - name: Verify Android APK ABI set
+        shell: pwsh
+        run: |
+          $prefix = if ($env:BUILD_PROFILE -eq 'demo') { 'Rain-openrelay-demo' } else { 'Rain-release' }
+          $expected = @(
+            @{ Label = 'Android universal APK'; Path = "artifacts\$prefix-android-universal.apk" },
+            @{ Label = 'Android default/universal APK alias'; Path = "artifacts\$prefix-android.apk" },
+            @{ Label = 'Android ARM v7 APK (armeabi-v7a)'; Path = "artifacts\$prefix-android-armeabi-v7a.apk" },
+            @{ Label = 'Android ARM v8/v9 APK (arm64-v8a)'; Path = "artifacts\$prefix-android-arm64-v8a.apk" },
+            @{ Label = 'Android x86_64 APK'; Path = "artifacts\$prefix-android-x86_64.apk" }
+          )
+          foreach ($artifact in $expected) {
+            if (-not (Test-Path -LiteralPath $artifact.Path)) {
+              throw "Missing expected artifact for $($artifact.Label): $($artifact.Path)"
+            }
+            Write-Host "Verified $($artifact.Label): $($artifact.Path)"
+          }
+
       - name: Upload Android APK artifacts
         uses: actions/upload-artifact@v4
         with:
