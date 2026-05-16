@@ -5,7 +5,7 @@
     "users": {
       "$username": {
         ".read": "auth != null",
-        ".write": "auth != null && newData.child('uid').val() === auth.uid",
+        ".write": "auth != null && ((!data.exists() && auth.token.email === $username + '@rain.local' && newData.child('uid').val() === auth.uid) || (data.exists() && data.child('uid').val() === auth.uid && newData.child('uid').val() === data.child('uid').val()))",
         "username": {
           ".validate": "newData.isString() && newData.val() === $username"
         },
@@ -15,20 +15,20 @@
         "displayName": {
           ".validate": "newData.isString() && newData.val().length > 0 && newData.val().length <= 64"
         },
+        "gender": {
+          ".validate": "!newData.exists() || newData.isString()"
+        },
         "registeredAt": {
           ".validate": "newData.isNumber()"
         },
         "lastSeen": {
-          ".validate": "newData.isNumber()"
+          ".validate": "!newData.exists() || newData.isNumber()"
         },
         "lastHeartbeat": {
           ".validate": "newData.isNumber()"
         },
         "online": {
           ".validate": "newData.isBoolean()"
-        },
-        "passwordHash": {
-          ".validate": "newData.isString() && newData.val().length >= 8"
         },
         "$other": {
           ".validate": false
@@ -38,10 +38,33 @@
     "friendRequests": {
       "$to": {
         ".read": "auth != null && root.child('users/' + $to + '/uid').val() === auth.uid",
-        ".write": "auth != null",
         "$from": {
-          ".write": "auth != null",
+          ".write": "auth != null && $from !== $to && ((!newData.exists() && (root.child('users/' + $from + '/uid').val() === auth.uid || root.child('users/' + $to + '/uid').val() === auth.uid)) || (newData.exists() && root.child('users/' + $from + '/uid').val() === auth.uid))",
           ".validate": "!newData.exists() || (newData.hasChildren(['sentAt']) && newData.child('sentAt').isNumber())",
+          "$other": {
+            ".validate": false
+          }
+        }
+      }
+    },
+    "outgoingFriendRequests": {
+      "$from": {
+        ".read": "auth != null && root.child('users/' + $from + '/uid').val() === auth.uid",
+        "$to": {
+          ".write": "auth != null && $from !== $to && ((!newData.exists() && (root.child('users/' + $from + '/uid').val() === auth.uid || root.child('users/' + $to + '/uid').val() === auth.uid)) || (newData.exists() && root.child('users/' + $from + '/uid').val() === auth.uid))",
+          ".validate": "!newData.exists() || (newData.hasChildren(['sentAt']) && newData.child('sentAt').isNumber())",
+          "$other": {
+            ".validate": false
+          }
+        }
+      }
+    },
+    "friendships": {
+      "$username": {
+        ".read": "auth != null && root.child('users/' + $username + '/uid').val() === auth.uid",
+        "$friend": {
+          ".write": "auth != null && $username !== $friend && ((!newData.exists() && (root.child('users/' + $username + '/uid').val() === auth.uid || root.child('users/' + $friend + '/uid').val() === auth.uid)) || (newData.exists() && data.exists() && (root.child('users/' + $username + '/uid').val() === auth.uid || root.child('users/' + $friend + '/uid').val() === auth.uid)) || (newData.exists() && !data.exists() && ((root.child('users/' + $username + '/uid').val() === auth.uid && root.child('friendRequests/' + $username + '/' + $friend).exists()) || (root.child('users/' + $friend + '/uid').val() === auth.uid && root.child('friendRequests/' + $friend + '/' + $username).exists()))))",
+          ".validate": "!newData.exists() || (newData.hasChildren(['acceptedAt']) && newData.child('acceptedAt').isNumber())",
           "$other": {
             ".validate": false
           }
@@ -51,13 +74,62 @@
     "userSearch": {
       "$username": {
         ".read": "auth != null",
-        ".write": "auth != null"
+        ".write": "auth != null && root.child('users/' + $username + '/uid').val() === auth.uid"
+      }
+    },
+    "notificationTokens": {
+      "$username": {
+        ".read": "auth != null && root.child('users/' + $username + '/uid').val() === auth.uid",
+        "$tokenKey": {
+          ".write": "auth != null && root.child('users/' + $username + '/uid').val() === auth.uid",
+          ".validate": "!newData.exists() || (newData.hasChildren(['token', 'platform', 'updatedAt']) && newData.child('token').isString() && newData.child('token').val().length > 20 && newData.child('token').val().length <= 4096 && newData.child('platform').isString() && newData.child('platform').val().length > 0 && newData.child('platform').val().length <= 24 && newData.child('updatedAt').isNumber())",
+          "token": {
+            ".validate": "newData.isString()"
+          },
+          "platform": {
+            ".validate": "newData.isString()"
+          },
+          "updatedAt": {
+            ".validate": "newData.isNumber()"
+          },
+          "$other": {
+            ".validate": false
+          }
+        }
+      }
+    },
+    "messagePings": {
+      "$to": {
+        ".read": "auth != null && root.child('users/' + $to + '/uid').val() === auth.uid",
+        "$pingId": {
+          ".write": "auth != null && ((!newData.exists() && (root.child('users/' + $to + '/uid').val() === auth.uid || root.child('users/' + data.child('from').val() + '/uid').val() === auth.uid)) || (newData.exists() && newData.hasChildren(['from', 'messageId', 'createdAt']) && newData.child('from').isString() && newData.child('from').val() !== $to && root.child('users/' + newData.child('from').val() + '/uid').val() === auth.uid && root.child('friendships/' + newData.child('from').val() + '/' + $to).exists() && root.child('friendships/' + $to + '/' + newData.child('from').val()).exists()))",
+          ".validate": "!newData.exists() || (newData.child('messageId').isString() && newData.child('messageId').val().length > 0 && newData.child('messageId').val().length <= 128 && newData.child('createdAt').isNumber())",
+          "from": {
+            ".validate": "newData.isString()"
+          },
+          "messageId": {
+            ".validate": "newData.isString()"
+          },
+          "createdAt": {
+            ".validate": "newData.isNumber()"
+          },
+          "$other": {
+            ".validate": false
+          }
+        }
       }
     },
     "rooms": {
       "$roomId": {
-        ".read": "auth != null",
-        ".write": "auth != null",
+        ".read": "auth != null && (!data.exists() || root.child('users/' + data.child('userA').val() + '/uid').val() === auth.uid || root.child('users/' + data.child('userB').val() + '/uid').val() === auth.uid)",
+        ".write": "auth != null && ((!data.exists() && !newData.exists()) || (!data.exists() && newData.exists() && newData.child('userA').val() < newData.child('userB').val() && newData.child('userA').val() + ':' + newData.child('userB').val() === $roomId && (root.child('users/' + newData.child('userA').val() + '/uid').val() === auth.uid || root.child('users/' + newData.child('userB').val() + '/uid').val() === auth.uid)) || (data.exists() && !newData.exists() && (root.child('users/' + data.child('userA').val() + '/uid').val() === auth.uid || root.child('users/' + data.child('userB').val() + '/uid').val() === auth.uid)) || (data.exists() && newData.exists() && newData.child('userA').val() === data.child('userA').val() && newData.child('userB').val() === data.child('userB').val() && data.child('userA').val() < data.child('userB').val() && data.child('userA').val() + ':' + data.child('userB').val() === $roomId && (root.child('users/' + data.child('userA').val() + '/uid').val() === auth.uid || root.child('users/' + data.child('userB').val() + '/uid').val() === auth.uid)))",
+        ".validate": "!newData.exists() || (newData.hasChildren(['userA', 'userB']) && newData.child('userA').isString() && newData.child('userB').isString() && newData.child('userA').val() < newData.child('userB').val() && newData.child('userA').val() + ':' + newData.child('userB').val() === $roomId)",
+        "userA": {
+          ".validate": "newData.isString()"
+        },
+        "userB": {
+          ".validate": "newData.isString()"
+        },
         "offer": {
           ".validate": "!newData.exists() || (newData.hasChildren(['sdp', 'ts']) && newData.child('sdp').hasChildren(['type', 'sdp']) && newData.child('sdp/type').isString() && newData.child('sdp/sdp').isString() && newData.child('ts').isNumber())"
         },
