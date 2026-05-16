@@ -8,6 +8,21 @@ void main() {
     );
 
     expect(environment.backend, RainBackend.firebase);
+    expect(environment.signalingEncryptionKey, demoSignalingEncryptionKey);
+  });
+
+  test('runtime environment can configure signaling encryption key', () {
+    final environment = AppEnvironment.fromEnvironment(
+      runtimeEnvironment: const <String, String>{
+        'RAIN_SIGNALING_ENCRYPTION_KEY':
+            'rain-project-owned-signaling-key-material',
+      },
+    );
+
+    expect(
+      environment.signalingEncryptionKey,
+      'rain-project-owned-signaling-key-material',
+    );
   });
 
   test('runtime environment can configure Supabase on desktop launches', () {

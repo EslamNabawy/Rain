@@ -1,5 +1,6 @@
 export 'adapters/firebase_adapter.dart';
 export 'adapters/signaling_adapter.dart';
+export 'adapters/signaling_cipher.dart';
 export 'adapters/supabase_auth_alias.dart';
 export 'adapters/supabase_adapter.dart';
 export 'src/connection_memory.dart';

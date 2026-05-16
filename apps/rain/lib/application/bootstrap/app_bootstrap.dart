@@ -65,14 +65,19 @@ class AppBootstrapper {
         forceUpdateConfigLoader = _loadSupabaseForceUpdateConfig;
       }
 
+      final signalingCipher = SignalingCipher.fromKeyMaterial(
+        effectiveEnvironment.signalingEncryptionKey,
+      );
       final adapter = effectiveEnvironment.shouldUseFallbackAdapter
           ? NoopSignalingAdapter()
           : switch (effectiveEnvironment.backend) {
               RainBackend.firebase => FirebaseSignalingAdapter(
                 database: firebaseDatabase!,
+                signalingCipher: signalingCipher,
               ),
               RainBackend.supabase => SupabaseSignalingAdapter(
                 projectUrl: effectiveEnvironment.supabaseUrl,
+                signalingCipher: signalingCipher,
               ),
               RainBackend.noop => NoopSignalingAdapter(),
             };

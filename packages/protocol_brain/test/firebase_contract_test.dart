@@ -94,6 +94,29 @@ void main() {
     expect(adapter, contains("'userB':"));
   });
 
+  test('Firebase signaling room payloads are encrypted envelopes', () {
+    final rules = _repoFile('backend/firebase/database.rules.json');
+    final adapter = _repoFile(
+      'packages/protocol_brain/lib/adapters/firebase_adapter.dart',
+    );
+
+    expect(rules, contains('A256GCM-HKDF-SHA256'));
+    expect(rules, contains("'nonce', 'ciphertext', 'mac'"));
+    expect(rules, contains("newData.child('ciphertext').isString()"));
+    expect(rules, contains("newData.child('mac').isString()"));
+    expect(rules, isNot(contains("newData.hasChildren(['sdp', 'ts'])")));
+    expect(rules, isNot(contains("newData.child('candidate').isString()")));
+    expect(adapter, contains('SignalingCipher'));
+    expect(adapter, contains('encryptPayload'));
+    expect(adapter, contains('decryptPayload'));
+    expect(adapter, isNot(contains("'offer': offer.toJson()")));
+    expect(adapter, isNot(contains("'answer': answer.toJson()")));
+    expect(
+      adapter,
+      isNot(contains(r"'$path/$candidateKey': iceCandidateToJson(candidate)")),
+    );
+  });
+
   test('Firebase friendships require a pending request before creation', () {
     final rules = _repoFile('backend/firebase/database.rules.json');
 

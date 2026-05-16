@@ -27,6 +27,7 @@ class AppEnvironment {
     required this.firebaseMeasurementId,
     required this.supabaseUrl,
     required this.supabaseAnonKey,
+    required this.signalingEncryptionKey,
   });
 
   final RainBackend backend;
@@ -48,6 +49,7 @@ class AppEnvironment {
   final String firebaseMeasurementId;
   final String supabaseUrl;
   final String supabaseAnonKey;
+  final String signalingEncryptionKey;
 
   factory AppEnvironment.fromEnvironment({
     Map<String, String>? runtimeEnvironment,
@@ -215,6 +217,13 @@ class AppEnvironment {
         'SUPABASE_ANON_KEY',
         compileTimeValue: const String.fromEnvironment('SUPABASE_ANON_KEY'),
       ),
+      signalingEncryptionKey: readString(
+        'RAIN_SIGNALING_ENCRYPTION_KEY',
+        compileTimeValue: const String.fromEnvironment(
+          'RAIN_SIGNALING_ENCRYPTION_KEY',
+        ),
+        defaultValue: demoSignalingEncryptionKey,
+      ),
     );
   }
 
@@ -309,6 +318,7 @@ class AppEnvironment {
       firebaseMeasurementId: firebaseMeasurementId,
       supabaseUrl: supabaseUrl,
       supabaseAnonKey: supabaseAnonKey,
+      signalingEncryptionKey: signalingEncryptionKey,
     );
   }
 
@@ -367,6 +377,9 @@ const releaseDefaultIceServers = <Map<String, dynamic>>[
   <String, dynamic>{'urls': 'stun:stun.l.google.com:19302'},
   <String, dynamic>{'urls': 'stun:stun1.l.google.com:19302'},
 ];
+
+const demoSignalingEncryptionKey =
+    'rain-demo-signaling-encryption-key-v1-change-me';
 
 const defaultIceServers = <Map<String, dynamic>>[
   <String, dynamic>{'urls': 'stun:stun.l.google.com:19302'},

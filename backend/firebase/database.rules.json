@@ -131,14 +131,74 @@
           ".validate": "newData.isString()"
         },
         "offer": {
-          ".validate": "!newData.exists() || (newData.hasChildren(['sdp', 'ts']) && newData.child('sdp').hasChildren(['type', 'sdp']) && newData.child('sdp/type').isString() && newData.child('sdp/sdp').isString() && newData.child('ts').isNumber())"
+          ".validate": "!newData.exists() || (newData.hasChildren(['v', 'alg', 'ts', 'nonce', 'ciphertext', 'mac']) && newData.child('v').isNumber() && newData.child('v').val() === 1 && newData.child('alg').isString() && newData.child('alg').val() === 'A256GCM-HKDF-SHA256' && newData.child('ts').isNumber() && newData.child('nonce').isString() && newData.child('nonce').val().length > 0 && newData.child('nonce').val().length <= 96 && newData.child('ciphertext').isString() && newData.child('ciphertext').val().length > 0 && newData.child('ciphertext').val().length <= 262144 && newData.child('mac').isString() && newData.child('mac').val().length > 0 && newData.child('mac').val().length <= 96)",
+          "v": {
+            ".validate": "newData.isNumber() && newData.val() === 1"
+          },
+          "alg": {
+            ".validate": "newData.isString() && newData.val() === 'A256GCM-HKDF-SHA256'"
+          },
+          "ts": {
+            ".validate": "newData.isNumber()"
+          },
+          "nonce": {
+            ".validate": "newData.isString()"
+          },
+          "ciphertext": {
+            ".validate": "newData.isString()"
+          },
+          "mac": {
+            ".validate": "newData.isString()"
+          },
+          "$other": {
+            ".validate": false
+          }
         },
         "answer": {
-          ".validate": "!newData.exists() || (newData.hasChildren(['sdp', 'ts']) && newData.child('sdp').hasChildren(['type', 'sdp']) && newData.child('sdp/type').isString() && newData.child('sdp/sdp').isString() && newData.child('ts').isNumber())"
+          ".validate": "!newData.exists() || (newData.hasChildren(['v', 'alg', 'ts', 'nonce', 'ciphertext', 'mac']) && newData.child('v').isNumber() && newData.child('v').val() === 1 && newData.child('alg').isString() && newData.child('alg').val() === 'A256GCM-HKDF-SHA256' && newData.child('ts').isNumber() && newData.child('nonce').isString() && newData.child('nonce').val().length > 0 && newData.child('nonce').val().length <= 96 && newData.child('ciphertext').isString() && newData.child('ciphertext').val().length > 0 && newData.child('ciphertext').val().length <= 262144 && newData.child('mac').isString() && newData.child('mac').val().length > 0 && newData.child('mac').val().length <= 96)",
+          "v": {
+            ".validate": "newData.isNumber() && newData.val() === 1"
+          },
+          "alg": {
+            ".validate": "newData.isString() && newData.val() === 'A256GCM-HKDF-SHA256'"
+          },
+          "ts": {
+            ".validate": "newData.isNumber()"
+          },
+          "nonce": {
+            ".validate": "newData.isString()"
+          },
+          "ciphertext": {
+            ".validate": "newData.isString()"
+          },
+          "mac": {
+            ".validate": "newData.isString()"
+          },
+          "$other": {
+            ".validate": false
+          }
         },
         "callerICE": {
           "$candidateId": {
-            ".validate": "!newData.exists() || (newData.child('candidate').isString() && newData.child('sdpMid').isString() && newData.child('sdpMLineIndex').isNumber())",
+            ".validate": "!newData.exists() || (newData.hasChildren(['v', 'alg', 'ts', 'nonce', 'ciphertext', 'mac']) && newData.child('v').isNumber() && newData.child('v').val() === 1 && newData.child('alg').isString() && newData.child('alg').val() === 'A256GCM-HKDF-SHA256' && newData.child('ts').isNumber() && newData.child('nonce').isString() && newData.child('nonce').val().length > 0 && newData.child('nonce').val().length <= 96 && newData.child('ciphertext').isString() && newData.child('ciphertext').val().length > 0 && newData.child('ciphertext').val().length <= 32768 && newData.child('mac').isString() && newData.child('mac').val().length > 0 && newData.child('mac').val().length <= 96)",
+            "v": {
+              ".validate": "newData.isNumber() && newData.val() === 1"
+            },
+            "alg": {
+              ".validate": "newData.isString() && newData.val() === 'A256GCM-HKDF-SHA256'"
+            },
+            "ts": {
+              ".validate": "newData.isNumber()"
+            },
+            "nonce": {
+              ".validate": "newData.isString()"
+            },
+            "ciphertext": {
+              ".validate": "newData.isString()"
+            },
+            "mac": {
+              ".validate": "newData.isString()"
+            },
             "$other": {
               ".validate": false
             }
@@ -146,7 +206,25 @@
         },
         "calleeICE": {
           "$candidateId": {
-            ".validate": "!newData.exists() || (newData.child('candidate').isString() && newData.child('sdpMid').isString() && newData.child('sdpMLineIndex').isNumber())",
+            ".validate": "!newData.exists() || (newData.hasChildren(['v', 'alg', 'ts', 'nonce', 'ciphertext', 'mac']) && newData.child('v').isNumber() && newData.child('v').val() === 1 && newData.child('alg').isString() && newData.child('alg').val() === 'A256GCM-HKDF-SHA256' && newData.child('ts').isNumber() && newData.child('nonce').isString() && newData.child('nonce').val().length > 0 && newData.child('nonce').val().length <= 96 && newData.child('ciphertext').isString() && newData.child('ciphertext').val().length > 0 && newData.child('ciphertext').val().length <= 32768 && newData.child('mac').isString() && newData.child('mac').val().length > 0 && newData.child('mac').val().length <= 96)",
+            "v": {
+              ".validate": "newData.isNumber() && newData.val() === 1"
+            },
+            "alg": {
+              ".validate": "newData.isString() && newData.val() === 'A256GCM-HKDF-SHA256'"
+            },
+            "ts": {
+              ".validate": "newData.isNumber()"
+            },
+            "nonce": {
+              ".validate": "newData.isString()"
+            },
+            "ciphertext": {
+              ".validate": "newData.isString()"
+            },
+            "mac": {
+              ".validate": "newData.isString()"
+            },
             "$other": {
               ".validate": false
             }

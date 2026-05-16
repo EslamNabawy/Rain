@@ -5,18 +5,22 @@ import 'package:firebase_database/firebase_database.dart';
 import 'package:flutter_webrtc/flutter_webrtc.dart';
 
 import 'signaling_adapter.dart';
+import 'signaling_cipher.dart';
 
 class FirebaseSignalingAdapter implements SignalingAdapter {
   FirebaseSignalingAdapter({
     FirebaseAuth? auth,
     FirebaseDatabase? database,
+    SignalingCipher? signalingCipher,
     bool useEmulator = false,
   }) : _auth = auth ?? FirebaseAuth.instance,
        _database = database ?? FirebaseDatabase.instance,
+       _signalingCipher = signalingCipher ?? SignalingCipher.demo(),
        _useEmulator = useEmulator;
 
   final FirebaseAuth _auth;
   final FirebaseDatabase _database;
+  final SignalingCipher _signalingCipher;
   final bool _useEmulator;
   bool _emulatorsConfigured = false;
   String _emailFromUsername(String username) => '$username@rain.local';
@@ -369,10 +373,14 @@ class FirebaseSignalingAdapter implements SignalingAdapter {
         .onValue
         .map((DatabaseEvent event) => event.snapshot.value)
         .where((Object? value) => value is Map<Object?, Object?>)
-        .map(
-          (Object? value) =>
-              SDPPayload.fromJson(value! as Map<Object?, Object?>),
-        );
+        .asyncMap((Object? value) async {
+          final payload = await _signalingCipher.decryptPayload(
+            roomId: roomId,
+            purpose: SignalingCipher.answerPurpose,
+            payload: value! as Map<Object?, Object?>,
+          );
+          return SDPPayload.fromJson(payload);
+        });
   }
 
   @override
@@ -387,14 +395,22 @@ class FirebaseSignalingAdapter implements SignalingAdapter {
   @override
   Stream<RTCIceCandidate> onICE(String roomId, IceRole role) {
     final path = role == IceRole.caller ? 'callerICE' : 'calleeICE';
-    return _root.child('rooms/$roomId/$path').onChildAdded.map((
-      DatabaseEvent event,
-    ) {
-      final value =
-          event.snapshot.value as Map<Object?, Object?>? ??
-          <Object?, Object?>{};
-      return iceCandidateFromJson(value);
-    });
+    final purpose = role == IceRole.caller
+        ? SignalingCipher.callerIcePurpose
+        : SignalingCipher.calleeIcePurpose;
+    return _root
+        .child('rooms/$roomId/$path')
+        .onChildAdded
+        .map((DatabaseEvent event) => event.snapshot.value)
+        .where((Object? value) => value is Map<Object?, Object?>)
+        .asyncMap((Object? value) async {
+          final payload = await _signalingCipher.decryptPayload(
+            roomId: roomId,
+            purpose: purpose,
+            payload: value! as Map<Object?, Object?>,
+          );
+          return iceCandidateFromJson(payload);
+        });
   }
 
   @override
@@ -404,10 +420,14 @@ class FirebaseSignalingAdapter implements SignalingAdapter {
         .onValue
         .map((DatabaseEvent event) => event.snapshot.value)
         .where((Object? value) => value is Map<Object?, Object?>)
-        .map(
-          (Object? value) =>
-              SDPPayload.fromJson(value! as Map<Object?, Object?>),
-        );
+        .asyncMap((Object? value) async {
+          final payload = await _signalingCipher.decryptPayload(
+            roomId: roomId,
+            purpose: SignalingCipher.offerPurpose,
+            payload: value! as Map<Object?, Object?>,
+          );
+          return SDPPayload.fromJson(payload);
+        });
   }
 
   @override
@@ -490,9 +510,15 @@ class FirebaseSignalingAdapter implements SignalingAdapter {
   @override
   Future<void> writeAnswer(String roomId, SDPPayload answer) async {
     await ensureAuthenticated();
+    final encryptedAnswer = await _signalingCipher.encryptPayload(
+      roomId: roomId,
+      purpose: SignalingCipher.answerPurpose,
+      timestamp: answer.ts,
+      payload: answer.toJson(),
+    );
     await _root.child('rooms/$roomId').update(<String, Object?>{
       ..._roomParticipants(roomId),
-      'answer': answer.toJson(),
+      'answer': encryptedAnswer,
     });
   }
 
@@ -544,18 +570,32 @@ class FirebaseSignalingAdapter implements SignalingAdapter {
     if (candidateKey == null || candidateKey.isEmpty) {
       throw Exception('Failed to allocate ICE candidate key');
     }
+    final encryptedCandidate = await _signalingCipher.encryptPayload(
+      roomId: roomId,
+      purpose: role == IceRole.caller
+          ? SignalingCipher.callerIcePurpose
+          : SignalingCipher.calleeIcePurpose,
+      timestamp: DateTime.now().millisecondsSinceEpoch,
+      payload: iceCandidateToJson(candidate),
+    );
     await _root.child('rooms/$roomId').update(<String, Object?>{
       ..._roomParticipants(roomId),
-      '$path/$candidateKey': iceCandidateToJson(candidate),
+      '$path/$candidateKey': encryptedCandidate,
     });
   }
 
   @override
   Future<void> writeOffer(String roomId, SDPPayload offer) async {
     await ensureAuthenticated();
+    final encryptedOffer = await _signalingCipher.encryptPayload(
+      roomId: roomId,
+      purpose: SignalingCipher.offerPurpose,
+      timestamp: offer.ts,
+      payload: offer.toJson(),
+    );
     await _root.child('rooms/$roomId').update(<String, Object?>{
       ..._roomParticipants(roomId),
-      'offer': offer.toJson(),
+      'offer': encryptedOffer,
     });
   }
 

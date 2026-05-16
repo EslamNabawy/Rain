@@ -19,6 +19,7 @@ param(
 )
 
 $ErrorActionPreference = 'Stop'
+$DemoSignalingEncryptionKey = 'rain-demo-signaling-encryption-key-v1-change-me'
 
 if ([string]::IsNullOrWhiteSpace($RepoRoot)) {
   $RepoRoot = (Resolve-Path (Join-Path $PSScriptRoot '..')).Path
@@ -182,6 +183,12 @@ function New-DemoDartDefinesFile([string]$Path, [string]$RepoRoot) {
     $defines.RAIN_ALLOW_PUBLIC_TURN = 'true'
   }
 
+  if ($null -eq $defines.PSObject.Properties['RAIN_SIGNALING_ENCRYPTION_KEY']) {
+    $defines | Add-Member -NotePropertyName 'RAIN_SIGNALING_ENCRYPTION_KEY' -NotePropertyValue $script:DemoSignalingEncryptionKey
+  } elseif ([string]::IsNullOrWhiteSpace([string]$defines.RAIN_SIGNALING_ENCRYPTION_KEY)) {
+    $defines.RAIN_SIGNALING_ENCRYPTION_KEY = $script:DemoSignalingEncryptionKey
+  }
+
   $tmpDir = Get-ReleaseTempDir $RepoRoot
   $demoDefinesPath = Join-Path $tmpDir 'rain-openrelay-demo-defines.generated.json'
   $defines | ConvertTo-Json -Depth 20 | Set-Content -LiteralPath $demoDefinesPath -Encoding utf8
@@ -217,6 +224,25 @@ function Assert-ReleaseDartDefines([string]$Path, [switch]$AllowPublicTurnForDem
     $defines = Get-Content -Raw -LiteralPath $Path | ConvertFrom-Json -ErrorAction Stop
   } catch {
     throw "Release dart defines file must be valid JSON: $Path"
+  }
+
+  $signalingEncryptionKey = Get-JsonPropertyValue $defines 'RAIN_SIGNALING_ENCRYPTION_KEY'
+  if ([string]::IsNullOrWhiteSpace($signalingEncryptionKey)) {
+    if (-not $AllowPublicTurnForDemo) {
+      throw "RAIN_SIGNALING_ENCRYPTION_KEY is required in release dart defines."
+    }
+    Write-Warning "RAIN_SIGNALING_ENCRYPTION_KEY is missing; demo release artifacts will use the bundled demo signaling key."
+  } else {
+    $signalingEncryptionKey = $signalingEncryptionKey.Trim()
+    if ($signalingEncryptionKey.Length -lt 32) {
+      throw "RAIN_SIGNALING_ENCRYPTION_KEY must be at least 32 characters."
+    }
+    if (
+      -not $AllowPublicTurnForDemo -and
+      $signalingEncryptionKey.Equals($script:DemoSignalingEncryptionKey, [System.StringComparison]::Ordinal)
+    ) {
+      throw "Production release builds must not use the demo signaling encryption key."
+    }
   }
 
   $rawIceServers = Get-JsonPropertyValue $defines 'RAIN_ICE_SERVERS'

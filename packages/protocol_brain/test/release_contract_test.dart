@@ -22,6 +22,22 @@ void main() {
         'Release builds require -DartDefinesFile with project-owned TURN servers.',
       ),
     );
+    expect(
+      script,
+      contains(
+        'RAIN_SIGNALING_ENCRYPTION_KEY is required in release dart defines.',
+      ),
+    );
+    expect(
+      script,
+      contains('RAIN_SIGNALING_ENCRYPTION_KEY must be at least 32 characters.'),
+    );
+    expect(
+      script,
+      contains(
+        'Production release builds must not use the demo signaling encryption key.',
+      ),
+    );
     expect(script, contains('Assert-ReleaseDartDefines -Path \$resolved'));
     expect(
       script,
@@ -99,6 +115,16 @@ void main() {
     expect(workflow, contains('RAIN_RELEASE_DART_DEFINES_JSON'));
     expect(workflow, contains('-DartDefinesFile'));
     expect(workflow, contains('RAIN_RELEASE_STORE_FILE'));
+  });
+
+  test('demo dart defines include signaling encryption key', () {
+    final defines = _repoFile('apps/rain/tool/dart_defines.example.json');
+
+    expect(defines, contains('RAIN_SIGNALING_ENCRYPTION_KEY'));
+    expect(
+      defines,
+      contains('rain-demo-signaling-encryption-key-v1-change-me'),
+    );
   });
 
   test('release script packages universal and per-ABI Android APKs', () {
