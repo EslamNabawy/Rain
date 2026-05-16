@@ -58,6 +58,6 @@ void main() {
     expect(ciWorkflow, contains('actions/setup-node@v6'));
     expect(ciWorkflow, contains('actions/setup-java@v5'));
     expect(ciWorkflow, contains('actions/upload-artifact@v7'));
-    expect(ciWorkflow, contains('runs-on: windows-2025'));
+    expect(ciWorkflow, contains('runs-on: windows-2022'));
   });
 }

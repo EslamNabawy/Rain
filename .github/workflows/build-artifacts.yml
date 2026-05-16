@@ -39,7 +39,7 @@ env:
 jobs:
   build-windows:
     name: Build Windows
-    runs-on: windows-2025
+    runs-on: windows-2022
     if: ${{ github.event_name != 'workflow_dispatch' || inputs.platform == 'all' || inputs.platform == 'windows' }}
     timeout-minutes: 60
     steps:
@@ -95,7 +95,7 @@ jobs:
 
   build-android:
     name: Build Android APKs
-    runs-on: windows-2025
+    runs-on: windows-2022
     if: ${{ github.event_name != 'workflow_dispatch' || inputs.platform == 'all' || inputs.platform == 'android' }}
     timeout-minutes: 90
     steps:
