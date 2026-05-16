@@ -39,4 +39,16 @@ void main() {
     expect(workflow, isNot(contains('melos exec -- flutter analyze')));
     expect(workflow, isNot(contains('melos exec -- flutter test')));
   });
+
+  test('GitHub workflows avoid deprecated setup-node action runtime', () {
+    final workflows = <String>[
+      _repoFile('.github/workflows/ci.yml'),
+      _repoFile('.github/workflows/phase4-verification-gate.yml'),
+    ];
+
+    for (final workflow in workflows) {
+      expect(workflow, contains('actions/setup-node@v6'));
+      expect(workflow, isNot(contains('actions/setup-node@v4')));
+    }
+  });
 }
