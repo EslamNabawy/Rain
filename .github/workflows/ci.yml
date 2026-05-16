@@ -107,7 +107,7 @@ jobs:
 
       - name: Require generated code artifacts
         run: |
-          test -s apps/rain/lib/providers/app_state.freezed.dart
+          test -s apps/rain/lib/application/state/app_state.freezed.dart
           test -s packages/rain_core/lib/database/rain_database.g.dart
 
       - name: Verify release guard fails closed
