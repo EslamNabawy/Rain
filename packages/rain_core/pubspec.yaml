@@ -17,6 +17,7 @@ dependencies:
   path_provider: ^2.1.5
   protocol_brain:
     path: ../protocol_brain
+  sqlite3: ^2.9.4
   sqlite3_flutter_libs: ^0.5.39
   uuid: ^4.5.1
 
@@ -28,4 +29,3 @@ dev_dependencies:
     sdk: flutter
 
 flutter:
-
