@@ -2,14 +2,7 @@ import 'dart:convert';
 
 enum MessageType { text, system }
 
-enum MessageStatus {
-  queued,
-  sending,
-  sent,
-  pendingAck,
-  delivered,
-  failed,
-}
+enum MessageStatus { queued, sending, sent, pendingAck, delivered, failed }
 
 class MessageEnvelope {
   const MessageEnvelope({
@@ -70,4 +63,3 @@ DateTime displayTime(MessageEnvelope envelope, DateTime receivedAt) {
       ? receivedAt
       : sentAt;
 }
-

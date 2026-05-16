@@ -21,7 +21,9 @@ void main() {
   });
 
   test('Phase 4 workflow does not install nonexistent npm dependencies', () {
-    final workflow = _repoFile('.github/workflows/phase4-verification-gate.yml');
+    final workflow = _repoFile(
+      '.github/workflows/phase4-verification-gate.yml',
+    );
 
     expect(workflow, contains('subosito/flutter-action'));
     expect(workflow, contains('node scripts/phase4-runner.js'));

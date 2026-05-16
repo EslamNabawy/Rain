@@ -5,7 +5,9 @@ import 'package:flutter_test/flutter_test.dart';
 void main() {
   test('apps and rain_core do not import peer_core directly', () {
     final workspaceRoot = Directory.current.parent.parent;
-    final appLib = Directory.fromUri(workspaceRoot.uri.resolve('apps/rain/lib/'));
+    final appLib = Directory.fromUri(
+      workspaceRoot.uri.resolve('apps/rain/lib/'),
+    );
     final appTool = Directory.fromUri(
       workspaceRoot.uri.resolve('apps/rain/tool/'),
     );
@@ -15,7 +17,8 @@ void main() {
 
     final offenders = <String>[];
     for (final directory in <Directory>[appLib, appTool, rainCoreLib]) {
-      for (final file in directory.listSync(recursive: true).whereType<File>()) {
+      for (final file
+          in directory.listSync(recursive: true).whereType<File>()) {
         if (!file.path.endsWith('.dart')) {
           continue;
         }
@@ -26,7 +29,11 @@ void main() {
       }
     }
 
-    expect(offenders, isEmpty, reason: 'Direct peer_core imports found: $offenders');
+    expect(
+      offenders,
+      isEmpty,
+      reason: 'Direct peer_core imports found: $offenders',
+    );
   });
 
   test('peer_core stays isolated from higher layers and backends', () {
@@ -42,7 +49,8 @@ void main() {
     ];
 
     final offenders = <String>[];
-    for (final file in peerCoreLib.listSync(recursive: true).whereType<File>()) {
+    for (final file
+        in peerCoreLib.listSync(recursive: true).whereType<File>()) {
       if (!file.path.endsWith('.dart')) {
         continue;
       }
@@ -52,14 +60,21 @@ void main() {
       }
     }
 
-    expect(offenders, isEmpty, reason: 'Forbidden peer_core imports found: $offenders');
+    expect(
+      offenders,
+      isEmpty,
+      reason: 'Forbidden peer_core imports found: $offenders',
+    );
   });
 
   test('protocol_brain backend imports stay inside adapters', () {
-    final protocolBrainLib = Directory.fromUri(Directory.current.uri.resolve('lib/'));
+    final protocolBrainLib = Directory.fromUri(
+      Directory.current.uri.resolve('lib/'),
+    );
     final offenders = <String>[];
 
-    for (final file in protocolBrainLib.listSync(recursive: true).whereType<File>()) {
+    for (final file
+        in protocolBrainLib.listSync(recursive: true).whereType<File>()) {
       if (!file.path.endsWith('.dart')) {
         continue;
       }

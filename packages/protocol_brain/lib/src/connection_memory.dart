@@ -25,7 +25,9 @@ class ConnectionMemory {
       DateTime.now().millisecondsSinceEpoch - lastConnectedAt > cacheExpiryMs;
 
   bool get isUsable =>
-      !isExpired && consecutiveFailures < maxCacheFailures && cachedIce.isNotEmpty;
+      !isExpired &&
+      consecutiveFailures < maxCacheFailures &&
+      cachedIce.isNotEmpty;
 
   ConnectionMemory copyWith({
     int? lastConnectedAt,
@@ -48,4 +50,3 @@ abstract class ConnectionMemoryStore {
   Future<void> write(ConnectionMemory memory);
   Future<void> delete(String peerId);
 }
-

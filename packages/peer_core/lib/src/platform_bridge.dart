@@ -26,7 +26,9 @@ class MemoryStorageBackend implements StorageBackend {
 }
 
 abstract class PlatformBridge {
-  Future<webrtc.RTCPeerConnection> createPeerConnection(Map<String, dynamic> config);
+  Future<webrtc.RTCPeerConnection> createPeerConnection(
+    Map<String, dynamic> config,
+  );
   Future<webrtc.RTCDataChannel> createDataChannel(
     webrtc.RTCPeerConnection pc,
     String label,
@@ -51,7 +53,9 @@ class FlutterWebRTCBridge implements PlatformBridge {
   }
 
   @override
-  Future<webrtc.RTCPeerConnection> createPeerConnection(Map<String, dynamic> config) {
+  Future<webrtc.RTCPeerConnection> createPeerConnection(
+    Map<String, dynamic> config,
+  ) {
     return webrtc.createPeerConnection(config);
   }
 

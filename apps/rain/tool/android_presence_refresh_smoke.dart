@@ -62,7 +62,9 @@ Future<void> runAndroidPresenceRefreshSmoke() async {
     stdout.writeln('  username=${config.username}');
     stdout.writeln('  initialHeartbeat=$initialHeartbeat');
     stdout.writeln('  updatedHeartbeat=$updatedHeartbeat');
-    stdout.writeln('  heartbeatIntervalSeconds=${config.heartbeatInterval.inSeconds}');
+    stdout.writeln(
+      '  heartbeatIntervalSeconds=${config.heartbeatInterval.inSeconds}',
+    );
   } finally {
     await _forceStop(config.serial, _appPackage);
     await probe.dispose();
@@ -93,7 +95,9 @@ Future<void> _buildAndInstallApk(_SmokeConfig config) async {
   stdout.write(build.stdout);
   stderr.write(build.stderr);
   if (build.exitCode != 0) {
-    throw StateError('flutter build apk failed with exit code ${build.exitCode}');
+    throw StateError(
+      'flutter build apk failed with exit code ${build.exitCode}',
+    );
   }
 
   final apkPath = File(
@@ -103,17 +107,13 @@ Future<void> _buildAndInstallApk(_SmokeConfig config) async {
     throw StateError('Expected debug apk was not produced at ${apkPath.path}');
   }
 
-  final install = await Process.run(
-    'adb',
-    <String>[
-      if (config.serial != null) '-s',
-      if (config.serial != null) config.serial!,
-      'install',
-      '-r',
-      apkPath.path,
-    ],
-    workingDirectory: appRoot.path,
-  );
+  final install = await Process.run('adb', <String>[
+    if (config.serial != null) '-s',
+    if (config.serial != null) config.serial!,
+    'install',
+    '-r',
+    apkPath.path,
+  ], workingDirectory: appRoot.path);
   stdout.write(install.stdout);
   stderr.write(install.stderr);
   if (install.exitCode != 0) {
@@ -130,10 +130,12 @@ Directory _appRootDirectory() {
 }
 
 Future<void> _clearAppData(String? serial, String packageName) async {
-  final result = await _adb(
-    serial,
-    <String>['shell', 'pm', 'clear', packageName],
-  );
+  final result = await _adb(serial, <String>[
+    'shell',
+    'pm',
+    'clear',
+    packageName,
+  ]);
   if (result.trim() != 'Success') {
     throw StateError('adb pm clear failed: $result');
   }
@@ -148,15 +150,16 @@ Future<void> _goHome(String? serial) async {
 }
 
 Future<void> _launchApp(String? serial, String packageName) async {
-  final resolved = await _adb(
-    serial,
-    <String>['shell', 'cmd', 'package', 'resolve-activity', '--brief', packageName],
-  );
+  final resolved = await _adb(serial, <String>[
+    'shell',
+    'cmd',
+    'package',
+    'resolve-activity',
+    '--brief',
+    packageName,
+  ]);
   final activity = _parseResolvedActivity(resolved, packageName);
-  await _adb(
-    serial,
-    <String>['shell', 'am', 'start', '-n', activity],
-  );
+  await _adb(serial, <String>['shell', 'am', 'start', '-n', activity]);
 }
 
 Future<void> _requireAndroidDevice(String? serial) async {
@@ -172,7 +175,9 @@ Future<void> _requireAndroidDevice(String? serial) async {
 
   if (serial != null && serial.isNotEmpty) {
     if (!attached.contains(serial)) {
-      throw StateError('ADB_SERIAL=$serial is not attached. Connected devices: $attached');
+      throw StateError(
+        'ADB_SERIAL=$serial is not attached. Connected devices: $attached',
+      );
     }
     return;
   }
@@ -270,7 +275,8 @@ Future<int> _waitForHeartbeat(
     if (identity != null) {
       final heartbeat = (identity['lastHeartbeat'] as num?)?.toInt() ?? 0;
       final online = identity['online'] as bool? ?? false;
-      if (online && (minimumHeartbeat == null || heartbeat >= minimumHeartbeat)) {
+      if (online &&
+          (minimumHeartbeat == null || heartbeat >= minimumHeartbeat)) {
         return heartbeat;
       }
     }
@@ -350,15 +356,11 @@ class _SmokeConfig {
   final Duration heartbeatInterval;
   final String? serial;
 
-  String get preferredSupabaseEmail => supabasePreferredEmailFromUsername(
-    username,
-    projectUrl: supabaseUrl,
-  );
+  String get preferredSupabaseEmail =>
+      supabasePreferredEmailFromUsername(username, projectUrl: supabaseUrl);
 
-  List<String> get loginEmails => supabaseLoginEmailsFromUsername(
-    username,
-    projectUrl: supabaseUrl,
-  );
+  List<String> get loginEmails =>
+      supabaseLoginEmailsFromUsername(username, projectUrl: supabaseUrl);
 
   factory _SmokeConfig.fromEnvironment() {
     final supabaseUrl = Platform.environment['SUPABASE_URL'] ?? '';
@@ -367,7 +369,8 @@ class _SmokeConfig {
     final password = Platform.environment['RAIN_SMOKE_PASSWORD'] ?? '';
     final displayName =
         Platform.environment['RAIN_SMOKE_DISPLAY_NAME'] ?? username;
-    final heartbeatSeconds = int.tryParse(
+    final heartbeatSeconds =
+        int.tryParse(
           Platform.environment['RAIN_BACKGROUND_HEARTBEAT_SECONDS'] ?? '5',
         ) ??
         5;
@@ -376,7 +379,9 @@ class _SmokeConfig {
       throw StateError('SUPABASE_URL and SUPABASE_ANON_KEY are required');
     }
     if (username.isEmpty || password.isEmpty) {
-      throw StateError('RAIN_SMOKE_USERNAME and RAIN_SMOKE_PASSWORD are required');
+      throw StateError(
+        'RAIN_SMOKE_USERNAME and RAIN_SMOKE_PASSWORD are required',
+      );
     }
 
     return _SmokeConfig(

@@ -9,4 +9,3 @@ class FriendRequest {
   final String to;
   final int sentAt;
 }
-
