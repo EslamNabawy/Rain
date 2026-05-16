@@ -39,7 +39,7 @@ env:
 jobs:
   build-windows:
     name: Build Windows
-    runs-on: windows-latest
+    runs-on: windows-2025
     if: ${{ github.event_name != 'workflow_dispatch' || inputs.platform == 'all' || inputs.platform == 'windows' }}
     timeout-minutes: 60
     steps:
@@ -87,7 +87,7 @@ jobs:
           pwsh @args
 
       - name: Upload Windows artifact
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v7
         with:
           name: ${{ env.BUILD_PROFILE == 'demo' && 'Rain-Demo-Windows-x64-Build' || 'Rain-Release-Windows-x64-Build' }}
           path: artifacts/*.zip
@@ -95,13 +95,13 @@ jobs:
 
   build-android:
     name: Build Android APKs
-    runs-on: windows-latest
+    runs-on: windows-2025
     if: ${{ github.event_name != 'workflow_dispatch' || inputs.platform == 'all' || inputs.platform == 'android' }}
     timeout-minutes: 90
     steps:
       - uses: actions/checkout@v5
 
-      - uses: actions/setup-java@v4
+      - uses: actions/setup-java@v5
         with:
           distribution: temurin
           java-version: '17'
@@ -195,7 +195,7 @@ jobs:
           }
 
       - name: Upload Android APK artifacts
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v7
         with:
           name: ${{ env.BUILD_PROFILE == 'demo' && 'Rain-Demo-Android-Builds' || 'Rain-Release-Android-Builds' }}
           path: artifacts/*.apk
