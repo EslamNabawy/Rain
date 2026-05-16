@@ -540,6 +540,20 @@ class SupabaseSignalingAdapter implements SignalingAdapter {
   }
 
   @override
+  Future<void> sendHeartbeat(String username) async {
+    await ensureAuthenticated();
+    final now = DateTime.now().millisecondsSinceEpoch;
+    await _client
+        .from('users')
+        .update(<String, Object?>{
+          'online': true,
+          'last_heartbeat': now,
+          'last_seen': now,
+        })
+        .eq('username', username);
+  }
+
+  @override
   Future<void> upsertIdentity(BackendIdentity identity) async {
     await ensureAuthenticated();
     try {

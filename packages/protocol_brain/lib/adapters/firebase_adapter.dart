@@ -22,6 +22,9 @@ class FirebaseSignalingAdapter implements SignalingAdapter {
   final FirebaseDatabase _database;
   final SignalingCipher _signalingCipher;
   final bool _useEmulator;
+  final String _sessionId = DateTime.now().microsecondsSinceEpoch.toRadixString(
+    36,
+  );
   bool _emulatorsConfigured = false;
   String _emailFromUsername(String username) => '$username@rain.local';
 
@@ -77,16 +80,60 @@ class FirebaseSignalingAdapter implements SignalingAdapter {
   DatabaseReference get _root => _database.ref();
 
   static const int _presenceTimeoutMs = 90 * 1000;
+  static const int _roomTtlMs = 15 * 60 * 1000;
   static const int _searchLimit = 10;
 
-  final Map<String, BackendIdentity> _identityCache =
-      <String, BackendIdentity>{};
-  int _cacheTimestamp = 0;
-  static const int _cacheMaxAgeMs = 30 * 1000;
+  Map<String, Object?> _identityJson({
+    required String username,
+    required String uid,
+    required String displayName,
+    required String? gender,
+    required int registeredAt,
+  }) {
+    return <String, Object?>{
+      'uid': uid,
+      'displayName': displayName,
+      'gender': gender,
+      'registeredAt': registeredAt,
+      'username': username,
+    };
+  }
 
-  bool _isCacheValid() {
-    return DateTime.now().millisecondsSinceEpoch - _cacheTimestamp <
-        _cacheMaxAgeMs;
+  Map<String, Object?> _presenceJson({
+    required String uid,
+    required bool online,
+    required int now,
+  }) {
+    return <String, Object?>{
+      'uid': uid,
+      'online': online,
+      'lastHeartbeat': now,
+      'lastSeen': now,
+      'updatedAt': now,
+      'sessionId': _sessionId,
+      'platform': 'flutter',
+    };
+  }
+
+  Map<String, Object?> _roomLifecycle({
+    required String roomId,
+    required int timestamp,
+    bool newAttempt = false,
+  }) {
+    return <String, Object?>{
+      if (newAttempt) ...<String, Object?>{
+        'attemptId': '$roomId:$timestamp',
+        'createdAt': timestamp,
+      },
+      'updatedAt': timestamp,
+      'expiresAt': timestamp + _roomTtlMs,
+    };
+  }
+
+  bool _isFreshPresence(bool online, int lastHeartbeat) {
+    return online &&
+        DateTime.now().millisecondsSinceEpoch - lastHeartbeat <
+            _presenceTimeoutMs;
   }
 
   @override
@@ -139,18 +186,20 @@ class FirebaseSignalingAdapter implements SignalingAdapter {
     final uid = userCredential.user?.uid ?? '';
     final now = DateTime.now().millisecondsSinceEpoch;
 
-    await _root.child('users/$normalizedUsername').set(<String, Object?>{
-      'uid': uid,
-      'displayName': normalizedUsername,
-      'gender': null,
-      'registeredAt': now,
-      'lastSeen': now,
-      'lastHeartbeat': now,
-      'online': true,
-      'username': normalizedUsername,
-    });
+    await _root
+        .child('users/$normalizedUsername')
+        .set(
+          _identityJson(
+            username: normalizedUsername,
+            uid: uid,
+            displayName: normalizedUsername,
+            gender: null,
+            registeredAt: now,
+          ),
+        );
 
     await _root.child('userSearch/$normalizedUsername').set(true);
+    await setPresence(normalizedUsername, true);
     await _auth.signInWithEmailAndPassword(email: email, password: password);
     return uid;
   }
@@ -195,22 +244,25 @@ class FirebaseSignalingAdapter implements SignalingAdapter {
       return null;
     }
     final value = snapshot.value! as Map<Object?, Object?>;
-    final lastHeartbeat = (value['lastHeartbeat'] as num?)?.toInt() ?? 0;
-    final online =
-        (value['online'] as bool? ?? false) &&
-        DateTime.now().millisecondsSinceEpoch - lastHeartbeat <
-            _presenceTimeoutMs;
+    final presenceSnapshot = await _root.child('presence/$username').get();
+    final presence = presenceSnapshot.value is Map<Object?, Object?>
+        ? presenceSnapshot.value! as Map<Object?, Object?>
+        : const <Object?, Object?>{};
+    final lastHeartbeat = (presence['lastHeartbeat'] as num?)?.toInt() ?? 0;
+    final online = _isFreshPresence(
+      presence['online'] as bool? ?? false,
+      lastHeartbeat,
+    );
     final identity = BackendIdentity(
       username: username,
       uid: value['uid'] as String? ?? '',
       displayName: value['displayName'] as String? ?? username,
       gender: value['gender'] as String?,
       registeredAt: (value['registeredAt'] as num?)?.toInt() ?? 0,
-      lastSeen: (value['lastSeen'] as num?)?.toInt() ?? 0,
+      lastSeen: (presence['lastSeen'] as num?)?.toInt() ?? 0,
       lastHeartbeat: lastHeartbeat,
       online: online,
     );
-    _identityCache[username] = identity;
     return identity;
   }
 
@@ -220,55 +272,40 @@ class FirebaseSignalingAdapter implements SignalingAdapter {
 
     await ensureAuthenticated();
     final queryLower = query.toLowerCase();
-
-    if (!_isCacheValid()) {
-      final snapshot = await _root.child('users').get();
-      if (!snapshot.exists || snapshot.value is! Map<Object?, Object?>) {
-        return [];
-      }
-
-      _identityCache.clear();
-      final usersData = snapshot.value! as Map<Object?, Object?>;
-      for (final entry in usersData.entries) {
-        final username = entry.key as String?;
-        if (username != null && entry.value is Map<Object?, Object?>) {
-          final value = entry.value as Map<Object?, Object?>;
-          _identityCache[username] = BackendIdentity(
-            username: username,
-            uid: value['uid'] as String? ?? '',
-            displayName: value['displayName'] as String? ?? username,
-            gender: value['gender'] as String?,
-            registeredAt: (value['registeredAt'] as num?)?.toInt() ?? 0,
-            lastSeen: (value['lastSeen'] as num?)?.toInt() ?? 0,
-            lastHeartbeat: (value['lastHeartbeat'] as num?)?.toInt() ?? 0,
-            online: value['online'] as bool? ?? false,
-          );
-        }
-      }
-      _cacheTimestamp = DateTime.now().millisecondsSinceEpoch;
+    final snapshot = await _root
+        .child('userSearch')
+        .orderByKey()
+        .startAt(queryLower)
+        .endAt('$queryLower\uf8ff')
+        .limitToFirst(_searchLimit)
+        .get();
+    if (!snapshot.exists) {
+      return const <BackendIdentity>[];
     }
 
-    final now = DateTime.now().millisecondsSinceEpoch;
-    return _identityCache.values
-        .where(
-          (identity) => identity.username.toLowerCase().contains(queryLower),
-        )
-        .take(_searchLimit)
-        .map(
-          (identity) => BackendIdentity(
-            username: identity.username,
-            uid: identity.uid,
-            displayName: identity.displayName,
-            gender: identity.gender,
-            registeredAt: identity.registeredAt,
-            lastSeen: identity.lastSeen,
-            lastHeartbeat: identity.lastHeartbeat,
-            online:
-                identity.online &&
-                (now - identity.lastHeartbeat < _presenceTimeoutMs),
-          ),
-        )
-        .toList();
+    final usernames = <String>{};
+    for (final child in snapshot.children) {
+      final key = child.key;
+      if (key != null && key.isNotEmpty) {
+        usernames.add(key);
+      }
+    }
+    if (usernames.isEmpty && snapshot.value is Map<Object?, Object?>) {
+      for (final key in (snapshot.value! as Map<Object?, Object?>).keys) {
+        if (key is String && key.isNotEmpty) {
+          usernames.add(key);
+        }
+      }
+    }
+
+    final identities = <BackendIdentity>[];
+    for (final username in usernames.take(_searchLimit)) {
+      final identity = await fetchIdentity(username);
+      if (identity != null) {
+        identities.add(identity);
+      }
+    }
+    return identities;
   }
 
   @override
@@ -435,12 +472,9 @@ class FirebaseSignalingAdapter implements SignalingAdapter {
     await _ensureSignedInAsUsername(username);
     final now = DateTime.now().millisecondsSinceEpoch;
     final uid = _auth.currentUser?.uid ?? '';
-    await _root.child('users/$username').update(<String, Object?>{
-      'uid': uid,
-      'online': online,
-      'lastSeen': online ? now : null,
-      'lastHeartbeat': now,
-    });
+    await _root
+        .child('presence/$username')
+        .update(_presenceJson(uid: uid, online: online, now: now));
   }
 
   @override
@@ -448,76 +482,91 @@ class FirebaseSignalingAdapter implements SignalingAdapter {
     await _ensureSignedInAsUsername(identity.username);
     await _root
         .child('users/${identity.username}')
-        .update(identity.toFirebaseJson());
+        .update(
+          _identityJson(
+            username: identity.username,
+            uid: identity.uid,
+            displayName: identity.displayName,
+            gender: identity.gender,
+            registeredAt: identity.registeredAt,
+          ),
+        );
     await _root.child('userSearch/${identity.username}').set(true);
   }
 
   @override
   Stream<bool> watchPresence(String username) {
     final controller = StreamController<bool>.broadcast();
-    final onlineRef = _root.child('users/$username/online');
-    final lastHeartbeatRef = _root.child('users/$username/lastHeartbeat');
+    final presenceRef = _root.child('presence/$username');
 
-    late StreamSubscription<DatabaseEvent> onlineSub;
-    late StreamSubscription<DatabaseEvent> heartbeatSub;
+    late StreamSubscription<DatabaseEvent> presenceSub;
     Timer? expiryTimer;
 
-    bool? currentOnline;
-    int? currentHeartbeat;
     bool? lastEmitted;
 
-    void checkPresence() {
+    void emitPresence(bool online, int lastHeartbeat) {
       expiryTimer?.cancel();
       expiryTimer = null;
-      if (currentOnline == null || currentHeartbeat == null) return;
       final now = DateTime.now().millisecondsSinceEpoch;
-      final expiresIn = _presenceTimeoutMs - (now - currentHeartbeat!);
-      final isActuallyOnline = currentOnline! && expiresIn > 0;
+      final expiresIn = _presenceTimeoutMs - (now - lastHeartbeat);
+      final isActuallyOnline = online && expiresIn > 0;
       if (lastEmitted != isActuallyOnline && !controller.isClosed) {
         lastEmitted = isActuallyOnline;
         controller.add(isActuallyOnline);
       }
       if (isActuallyOnline) {
-        expiryTimer = Timer(Duration(milliseconds: expiresIn), checkPresence);
+        expiryTimer = Timer(
+          Duration(milliseconds: expiresIn),
+          () => emitPresence(online, lastHeartbeat),
+        );
       }
     }
 
-    onlineSub = onlineRef.onValue.listen((DatabaseEvent event) {
-      currentOnline = event.snapshot.value as bool? ?? false;
-      checkPresence();
-    });
-
-    heartbeatSub = lastHeartbeatRef.onValue.listen((DatabaseEvent event) {
-      currentHeartbeat = (event.snapshot.value as num?)?.toInt();
-      checkPresence();
+    presenceSub = presenceRef.onValue.listen((DatabaseEvent event) {
+      if (event.snapshot.value is! Map<Object?, Object?>) {
+        emitPresence(false, 0);
+        return;
+      }
+      final value = event.snapshot.value! as Map<Object?, Object?>;
+      emitPresence(
+        value['online'] as bool? ?? false,
+        (value['lastHeartbeat'] as num?)?.toInt() ?? 0,
+      );
     });
 
     controller.onCancel = () {
       expiryTimer?.cancel();
-      onlineSub.cancel();
-      heartbeatSub.cancel();
+      presenceSub.cancel();
     };
 
     return controller.stream;
   }
 
+  @override
   Future<void> sendHeartbeat(String username) async {
-    await ensureAuthenticated();
+    await _ensureSignedInAsUsername(username);
     final now = DateTime.now().millisecondsSinceEpoch;
-    await _root.child('users/$username/lastHeartbeat').set(now);
+    final uid = _auth.currentUser?.uid ?? '';
+    await _root
+        .child('presence/$username')
+        .update(_presenceJson(uid: uid, online: true, now: now));
   }
 
   @override
   Future<void> writeAnswer(String roomId, SDPPayload answer) async {
     await ensureAuthenticated();
+    final timestamp = answer.ts == 0
+        ? DateTime.now().millisecondsSinceEpoch
+        : answer.ts;
     final encryptedAnswer = await _signalingCipher.encryptPayload(
       roomId: roomId,
       purpose: SignalingCipher.answerPurpose,
-      timestamp: answer.ts,
+      timestamp: timestamp,
       payload: answer.toJson(),
     );
     await _root.child('rooms/$roomId').update(<String, Object?>{
       ..._roomParticipants(roomId),
+      ..._roomLifecycle(roomId: roomId, timestamp: timestamp),
       'answer': encryptedAnswer,
     });
   }
@@ -564,6 +613,7 @@ class FirebaseSignalingAdapter implements SignalingAdapter {
     RTCIceCandidate candidate,
   ) async {
     await ensureAuthenticated();
+    final timestamp = DateTime.now().millisecondsSinceEpoch;
     final path = role == IceRole.caller ? 'callerICE' : 'calleeICE';
     final candidateRef = _root.child('rooms/$roomId/$path').push();
     final candidateKey = candidateRef.key;
@@ -575,11 +625,12 @@ class FirebaseSignalingAdapter implements SignalingAdapter {
       purpose: role == IceRole.caller
           ? SignalingCipher.callerIcePurpose
           : SignalingCipher.calleeIcePurpose,
-      timestamp: DateTime.now().millisecondsSinceEpoch,
+      timestamp: timestamp,
       payload: iceCandidateToJson(candidate),
     );
     await _root.child('rooms/$roomId').update(<String, Object?>{
       ..._roomParticipants(roomId),
+      ..._roomLifecycle(roomId: roomId, timestamp: timestamp),
       '$path/$candidateKey': encryptedCandidate,
     });
   }
@@ -587,14 +638,18 @@ class FirebaseSignalingAdapter implements SignalingAdapter {
   @override
   Future<void> writeOffer(String roomId, SDPPayload offer) async {
     await ensureAuthenticated();
+    final timestamp = offer.ts == 0
+        ? DateTime.now().millisecondsSinceEpoch
+        : offer.ts;
     final encryptedOffer = await _signalingCipher.encryptPayload(
       roomId: roomId,
       purpose: SignalingCipher.offerPurpose,
-      timestamp: offer.ts,
+      timestamp: timestamp,
       payload: offer.toJson(),
     );
     await _root.child('rooms/$roomId').update(<String, Object?>{
       ..._roomParticipants(roomId),
+      ..._roomLifecycle(roomId: roomId, timestamp: timestamp, newAttempt: true),
       'offer': encryptedOffer,
     });
   }

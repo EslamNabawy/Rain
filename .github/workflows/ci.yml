@@ -380,13 +380,12 @@ jobs:
         shell: pwsh
         run: |
           $expected = @(
-            @{ Label = 'Windows portable EXE'; Path = 'artifacts\Rain-openrelay-demo-windows-portable\rain.exe' },
-            @{ Label = 'Windows portable zip'; Path = 'artifacts\Rain-openrelay-demo-windows-portable.zip' },
-            @{ Label = 'Android universal APK'; Path = 'artifacts\Rain-openrelay-demo-android-universal.apk' },
-            @{ Label = 'Android default/universal APK alias'; Path = 'artifacts\Rain-openrelay-demo-android.apk' },
-            @{ Label = 'Android ARM v7 APK (armeabi-v7a)'; Path = 'artifacts\Rain-openrelay-demo-android-armeabi-v7a.apk' },
-            @{ Label = 'Android ARM v8/v9 APK (arm64-v8a)'; Path = 'artifacts\Rain-openrelay-demo-android-arm64-v8a.apk' },
-            @{ Label = 'Android x86_64 APK'; Path = 'artifacts\Rain-openrelay-demo-android-x86_64.apk' }
+            @{ Label = 'Windows portable EXE'; Path = 'artifacts\Rain-Demo-Windows-x64-Build\rain.exe' },
+            @{ Label = 'Windows portable zip'; Path = 'artifacts\Rain-Demo-Windows-x64-Build.zip' },
+            @{ Label = 'Android universal APK'; Path = 'artifacts\Rain-Demo-Android-Universal-Build.apk' },
+            @{ Label = 'Android ARM v7 APK (armeabi-v7a)'; Path = 'artifacts\Rain-Demo-Android-ARM-v7-Build.apk' },
+            @{ Label = 'Android ARM v8/v9 APK (arm64-v8a)'; Path = 'artifacts\Rain-Demo-Android-ARM-v8-v9-Build.apk' },
+            @{ Label = 'Android x86_64 APK'; Path = 'artifacts\Rain-Demo-Android-x86_64-Build.apk' }
           )
           foreach ($artifact in $expected) {
             $path = $artifact.Path
@@ -399,23 +398,20 @@ jobs:
       - name: Upload Windows portable EXE bundle
         uses: actions/upload-artifact@v4
         with:
-          name: rain-windows-exe-portable
-          path: |
-            artifacts/Rain-openrelay-demo-windows-portable/**
-            artifacts/Rain-openrelay-demo-windows-portable.zip
+          name: Rain-Demo-Windows-x64-Build
+          path: artifacts/Rain-Demo-Windows-x64-Build.zip
           if-no-files-found: error
           retention-days: ${{ env.ARTIFACT_RETENTION_RELEASE }}
 
       - name: Upload Android APKs all architectures
         uses: actions/upload-artifact@v4
         with:
-          name: rain-android-apks-all-architectures
+          name: Rain-Demo-Android-Builds
           path: |
-            artifacts/Rain-openrelay-demo-android.apk
-            artifacts/Rain-openrelay-demo-android-universal.apk
-            artifacts/Rain-openrelay-demo-android-arm64-v8a.apk
-            artifacts/Rain-openrelay-demo-android-armeabi-v7a.apk
-            artifacts/Rain-openrelay-demo-android-x86_64.apk
+            artifacts/Rain-Demo-Android-Universal-Build.apk
+            artifacts/Rain-Demo-Android-ARM-v8-v9-Build.apk
+            artifacts/Rain-Demo-Android-ARM-v7-Build.apk
+            artifacts/Rain-Demo-Android-x86_64-Build.apk
           if-no-files-found: error
           retention-days: ${{ env.ARTIFACT_RETENTION_RELEASE }}
 

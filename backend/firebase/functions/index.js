@@ -5,7 +5,6 @@ const logger = require("firebase-functions/logger");
 admin.initializeApp();
 
 const HEARTBEAT_STALE_MS = 7 * 60 * 1000;
-const ROOM_TTL_MS = 15 * 60 * 1000;
 
 exports.cleanupPresence = onSchedule(
   {
@@ -17,7 +16,7 @@ exports.cleanupPresence = onSchedule(
     const cutoff = now - HEARTBEAT_STALE_MS;
     const snapshot = await admin
       .database()
-      .ref("users")
+      .ref("presence")
       .orderByChild("lastHeartbeat")
       .endAt(cutoff)
       .get();
@@ -35,6 +34,7 @@ exports.cleanupPresence = onSchedule(
       if (value.online === true) {
         updates[`${child.key}/online`] = false;
         updates[`${child.key}/lastSeen`] = now;
+        updates[`${child.key}/updatedAt`] = now;
         affectedUsers += 1;
       }
       return false;
@@ -45,7 +45,7 @@ exports.cleanupPresence = onSchedule(
       return;
     }
 
-    await admin.database().ref("users").update(updates);
+    await admin.database().ref("presence").update(updates);
     logger.info("Marked stale users offline.", { affectedUsers });
   },
 );
@@ -56,8 +56,13 @@ exports.cleanupRooms = onSchedule(
     timeZone: "Etc/UTC",
   },
   async () => {
-    const cutoff = Date.now() - ROOM_TTL_MS;
-    const snapshot = await admin.database().ref("rooms").get();
+    const now = Date.now();
+    const snapshot = await admin
+      .database()
+      .ref("rooms")
+      .orderByChild("expiresAt")
+      .endAt(now)
+      .get();
 
     if (!snapshot.exists()) {
       logger.info("No rooms found for cleanup.");
@@ -68,15 +73,8 @@ exports.cleanupRooms = onSchedule(
     let deletedRooms = 0;
 
     snapshot.forEach((child) => {
-      const room = child.val() || {};
-      const offerTs = typeof room.offer?.ts === "number" ? room.offer.ts : 0;
-      const answerTs = typeof room.answer?.ts === "number" ? room.answer.ts : 0;
-      const lastActivity = Math.max(offerTs, answerTs);
-
-      if (lastActivity === 0 || lastActivity < cutoff) {
-        updates[child.key] = null;
-        deletedRooms += 1;
-      }
+      updates[child.key] = null;
+      deletedRooms += 1;
       return false;
     });
 

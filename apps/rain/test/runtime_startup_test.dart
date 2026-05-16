@@ -84,6 +84,32 @@ void main() {
     );
   });
 
+  test('runtime does not poll friend relationships by default', () {
+    final db = RainDatabase(NativeDatabase.memory());
+    addTearDown(db.close);
+    final runtime = RainRuntimeController(
+      selfIdentity: const RainIdentity(
+        username: 'alice',
+        displayName: 'Alice',
+        createdAt: 0,
+        gender: RainGender.female,
+      ),
+      adapter: NoopSignalingAdapter(),
+      brain: null,
+      database: db,
+      friendStore: FriendStore(db),
+      messageStore: MessageStore(db),
+      offlineQueueStore: OfflineQueueStore(db),
+      messageDeliveryService: MessageDeliveryService(
+        messageStore: MessageStore(db),
+        offlineQueueStore: OfflineQueueStore(db),
+      ),
+    );
+    addTearDown(runtime.dispose);
+
+    expect(runtime.friendRequestRefreshInterval, Duration.zero);
+  });
+
   test('runtime startup recovers stuck offline sends to queued', () async {
     final db = RainDatabase(NativeDatabase.memory());
     addTearDown(db.close);

@@ -132,8 +132,13 @@ void main() {
 
     expect(script, contains('--split-per-abi'));
     expect(script, contains('Rain-release'));
-    expect(script, contains('Rain-openrelay-demo'));
+    expect(script, contains('Rain-Demo'));
     expect(script, contains('ARMv8/ARMv9 devices'));
+    expect(script, contains('Rain-Demo-Android-Universal-Build.apk'));
+    expect(script, contains('Rain-Demo-Android-ARM-v8-v9-Build.apk'));
+    expect(script, contains('Rain-Demo-Android-ARM-v7-Build.apk'));
+    expect(script, contains('Rain-Demo-Android-x86_64-Build.apk'));
+    expect(script, contains('Rain-Demo-Windows-x64-Build'));
     expect(script, contains('\$androidArtifactPrefix-android-universal.apk'));
     expect(script, contains('\$androidArtifactPrefix-android-arm64-v8a.apk'));
     expect(script, contains('\$androidArtifactPrefix-android-armeabi-v7a.apk'));
@@ -151,9 +156,43 @@ void main() {
       expect(workflow, contains('Android ARM v7 APK (armeabi-v7a)'));
       expect(workflow, contains('Android ARM v8/v9 APK (arm64-v8a)'));
       expect(workflow, contains('Android x86_64 APK'));
-      expect(workflow, contains('-android-armeabi-v7a.apk'));
-      expect(workflow, contains('-android-arm64-v8a.apk'));
-      expect(workflow, contains('-android-x86_64.apk'));
+      expect(
+        workflow,
+        anyOf(
+          contains('-android-armeabi-v7a.apk'),
+          contains('Rain-Demo-Android-ARM-v7-Build.apk'),
+        ),
+      );
+      expect(
+        workflow,
+        anyOf(
+          contains('-android-arm64-v8a.apk'),
+          contains('Rain-Demo-Android-ARM-v8-v9-Build.apk'),
+        ),
+      );
+      expect(
+        workflow,
+        anyOf(
+          contains('-android-x86_64.apk'),
+          contains('Rain-Demo-Android-x86_64-Build.apk'),
+        ),
+      );
     }
   });
+
+  test(
+    'CI demo artifacts use concise names and upload only the Windows zip',
+    () {
+      final workflow = _repoFile('.github/workflows/ci.yml');
+
+      expect(workflow, contains('Rain-Demo-Windows-x64-Build.zip'));
+      expect(workflow, contains('Rain-Demo-Android-ARM-v7-Build.apk'));
+      expect(workflow, contains('Rain-Demo-Android-ARM-v8-v9-Build.apk'));
+      expect(workflow, contains('Rain-Demo-Android-x86_64-Build.apk'));
+      expect(
+        workflow,
+        isNot(contains('artifacts/Rain-Demo-Windows-x64-Build/**')),
+      );
+    },
+  );
 }

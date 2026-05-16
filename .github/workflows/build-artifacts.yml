@@ -89,7 +89,7 @@ jobs:
       - name: Upload Windows artifact
         uses: actions/upload-artifact@v4
         with:
-          name: rain-windows-${{ env.BUILD_PROFILE }}
+          name: ${{ env.BUILD_PROFILE == 'demo' && 'Rain-Demo-Windows-x64-Build' || 'Rain-Release-Windows-x64-Build' }}
           path: artifacts/*.zip
           if-no-files-found: error
 
@@ -170,14 +170,23 @@ jobs:
       - name: Verify Android APK ABI set
         shell: pwsh
         run: |
-          $prefix = if ($env:BUILD_PROFILE -eq 'demo') { 'Rain-openrelay-demo' } else { 'Rain-release' }
-          $expected = @(
-            @{ Label = 'Android universal APK'; Path = "artifacts\$prefix-android-universal.apk" },
-            @{ Label = 'Android default/universal APK alias'; Path = "artifacts\$prefix-android.apk" },
-            @{ Label = 'Android ARM v7 APK (armeabi-v7a)'; Path = "artifacts\$prefix-android-armeabi-v7a.apk" },
-            @{ Label = 'Android ARM v8/v9 APK (arm64-v8a)'; Path = "artifacts\$prefix-android-arm64-v8a.apk" },
-            @{ Label = 'Android x86_64 APK'; Path = "artifacts\$prefix-android-x86_64.apk" }
-          )
+          if ($env:BUILD_PROFILE -eq 'demo') {
+            $expected = @(
+              @{ Label = 'Android universal APK'; Path = 'artifacts\Rain-Demo-Android-Universal-Build.apk' },
+              @{ Label = 'Android ARM v7 APK (armeabi-v7a)'; Path = 'artifacts\Rain-Demo-Android-ARM-v7-Build.apk' },
+              @{ Label = 'Android ARM v8/v9 APK (arm64-v8a)'; Path = 'artifacts\Rain-Demo-Android-ARM-v8-v9-Build.apk' },
+              @{ Label = 'Android x86_64 APK'; Path = 'artifacts\Rain-Demo-Android-x86_64-Build.apk' }
+            )
+          } else {
+            $prefix = 'Rain-release'
+            $expected = @(
+              @{ Label = 'Android universal APK'; Path = "artifacts\$prefix-android-universal.apk" },
+              @{ Label = 'Android default/universal APK alias'; Path = "artifacts\$prefix-android.apk" },
+              @{ Label = 'Android ARM v7 APK (armeabi-v7a)'; Path = "artifacts\$prefix-android-armeabi-v7a.apk" },
+              @{ Label = 'Android ARM v8/v9 APK (arm64-v8a)'; Path = "artifacts\$prefix-android-arm64-v8a.apk" },
+              @{ Label = 'Android x86_64 APK'; Path = "artifacts\$prefix-android-x86_64.apk" }
+            )
+          }
           foreach ($artifact in $expected) {
             if (-not (Test-Path -LiteralPath $artifact.Path)) {
               throw "Missing expected artifact for $($artifact.Label): $($artifact.Path)"
@@ -188,6 +197,6 @@ jobs:
       - name: Upload Android APK artifacts
         uses: actions/upload-artifact@v4
         with:
-          name: rain-android-${{ env.BUILD_PROFILE }}
+          name: ${{ env.BUILD_PROFILE == 'demo' && 'Rain-Demo-Android-Builds' || 'Rain-Release-Android-Builds' }}
           path: artifacts/*.apk
           if-no-files-found: error

@@ -205,6 +205,11 @@ class NoopSignalingAdapter implements SignalingAdapter {
   }
 
   @override
+  Future<void> sendHeartbeat(String username) async {
+    await setPresence(username, true);
+  }
+
+  @override
   Future<void> upsertIdentity(BackendIdentity identity) async {
     _identities[identity.username] = identity;
     _presence[identity.username] = identity.online;
@@ -252,14 +257,14 @@ class NoopSignalingAdapter implements SignalingAdapter {
   StreamController<String> _friendRequestController(String username) {
     return _friendRequestControllers.putIfAbsent(
       username,
-      () => StreamController<String>.broadcast(),
+      () => StreamController<String>.broadcast(sync: true),
     );
   }
 
   StreamController<bool> _presenceController(String username) {
     return _presenceControllers.putIfAbsent(
       username,
-      () => StreamController<bool>.broadcast(),
+      () => StreamController<bool>.broadcast(sync: true),
     );
   }
 
