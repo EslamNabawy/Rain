@@ -55,6 +55,8 @@ void main() {
     expect(rules, contains('newData.isNumber()'));
     expect(rules, contains('"acceptedAt"'));
     expect(rules, contains('newData.child(\'acceptedAt\').isNumber()'));
+    expect(rules, contains('"blockedAt"'));
+    expect(rules, contains('newData.child(\'blockedAt\').isNumber()'));
   });
 
   test('Firebase user ownership is immutable and tied to auth email', () {
@@ -201,6 +203,37 @@ void main() {
       rules,
       contains("root.child('users/' + \$friend + '/uid').val() === auth.uid"),
     );
+  });
+
+  test('Firebase blocks are mirrored and reject blocked relationships', () {
+    final rules = _repoFile('backend/firebase/database.rules.json');
+    final adapter = _repoFile(
+      'packages/protocol_brain/lib/adapters/firebase_adapter.dart',
+    );
+
+    expect(rules, contains('"blocks"'));
+    expect(rules, contains('"blockedBy"'));
+    expect(
+      rules,
+      contains("root.child('blocks/' + \$to + '/' + \$from).exists()"),
+    );
+    expect(
+      rules,
+      contains("root.child('blocks/' + \$from + '/' + \$to).exists()"),
+    );
+    expect(
+      rules,
+      contains("root.child('blocks/' + \$username + '/' + \$friend).exists()"),
+    );
+    expect(
+      adapter,
+      contains("'blocks/\$normalizedBlocker/\$normalizedBlocked'"),
+    );
+    expect(
+      adapter,
+      contains("'blockedBy/\$normalizedBlocked/\$normalizedBlocker'"),
+    );
+    expect(adapter, contains('onRelationshipChanged'));
   });
 
   test('Firebase relationship rules reject self relationships', () {

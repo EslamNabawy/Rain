@@ -110,6 +110,16 @@ class SupabaseSignalingAdapter implements SignalingAdapter {
     return combined.contains('friendships');
   }
 
+  bool _isMissingUserBlocksTableError(Object error) {
+    if (error is! PostgrestException || error.code != 'PGRST205') {
+      return false;
+    }
+    final combined =
+        '${error.message} ${error.details ?? ''} ${error.hint ?? ''}'
+            .toLowerCase();
+    return combined.contains('user_blocks');
+  }
+
   Future<void> _deleteFriendRequestsForPair(
     String firstUser,
     String secondUser,
@@ -360,6 +370,50 @@ class SupabaseSignalingAdapter implements SignalingAdapter {
   }
 
   @override
+  Future<List<String>> loadBlockedUsers(String username) async {
+    await ensureAuthenticated();
+    final normalizedUsername = _normalizedUsername(username);
+    try {
+      final rows = await _client
+          .from('user_blocks')
+          .select('blocked')
+          .eq('blocker', normalizedUsername);
+      return (rows as List<dynamic>)
+          .map((dynamic row) => Map<String, dynamic>.from(row as Map))
+          .map((Map<String, dynamic> row) => row['blocked'] as String?)
+          .whereType<String>()
+          .toList(growable: false);
+    } catch (error) {
+      if (_isMissingUserBlocksTableError(error)) {
+        return const <String>[];
+      }
+      rethrow;
+    }
+  }
+
+  @override
+  Future<List<String>> loadUsersBlocking(String username) async {
+    await ensureAuthenticated();
+    final normalizedUsername = _normalizedUsername(username);
+    try {
+      final rows = await _client
+          .from('user_blocks')
+          .select('blocker')
+          .eq('blocked', normalizedUsername);
+      return (rows as List<dynamic>)
+          .map((dynamic row) => Map<String, dynamic>.from(row as Map))
+          .map((Map<String, dynamic> row) => row['blocker'] as String?)
+          .whereType<String>()
+          .toList(growable: false);
+    } catch (error) {
+      if (_isMissingUserBlocksTableError(error)) {
+        return const <String>[];
+      }
+      rethrow;
+    }
+  }
+
+  @override
   Future<List<String>> loadIncomingFriendRequests(String username) async {
     await ensureAuthenticated();
     final normalizedUsername = _normalizedUsername(username);
@@ -457,6 +511,82 @@ class SupabaseSignalingAdapter implements SignalingAdapter {
             }
           }
         });
+  }
+
+  @override
+  Stream<String> onRelationshipChanged(String username) {
+    final normalizedUsername = _normalizedUsername(username);
+    late final StreamController<String> controller;
+    final subscriptions = <StreamSubscription<List<Map<String, dynamic>>>>[];
+
+    void emit(String peerUsername) {
+      if (peerUsername.isNotEmpty &&
+          peerUsername != normalizedUsername &&
+          !controller.isClosed) {
+        controller.add(peerUsername);
+      }
+    }
+
+    controller = StreamController<String>.broadcast(
+      onListen: () {
+        subscriptions.add(
+          _client
+              .from('friend_requests')
+              .stream(primaryKey: <String>['from_user', 'to_user'])
+              .listen((List<Map<String, dynamic>> rows) {
+                for (final row in rows) {
+                  final from = row['from_user'] as String?;
+                  final to = row['to_user'] as String?;
+                  if (to == normalizedUsername && from != null) {
+                    emit(from);
+                  } else if (from == normalizedUsername && to != null) {
+                    emit(to);
+                  }
+                }
+              }),
+        );
+        subscriptions.add(
+          _client
+              .from('friendships')
+              .stream(primaryKey: <String>['user_a', 'user_b'])
+              .listen((List<Map<String, dynamic>> rows) {
+                for (final row in rows) {
+                  final userA = row['user_a'] as String?;
+                  final userB = row['user_b'] as String?;
+                  if (userA == normalizedUsername && userB != null) {
+                    emit(userB);
+                  } else if (userB == normalizedUsername && userA != null) {
+                    emit(userA);
+                  }
+                }
+              }),
+        );
+        subscriptions.add(
+          _client
+              .from('user_blocks')
+              .stream(primaryKey: <String>['blocker', 'blocked'])
+              .listen((List<Map<String, dynamic>> rows) {
+                for (final row in rows) {
+                  final blocker = row['blocker'] as String?;
+                  final blocked = row['blocked'] as String?;
+                  if (blocker == normalizedUsername && blocked != null) {
+                    emit(blocked);
+                  } else if (blocked == normalizedUsername && blocker != null) {
+                    emit(blocker);
+                  }
+                }
+              }),
+        );
+      },
+      onCancel: () async {
+        for (final subscription in subscriptions) {
+          await subscription.cancel();
+        }
+        subscriptions.clear();
+      },
+    );
+
+    return controller.stream;
   }
 
   @override
@@ -650,6 +780,47 @@ class SupabaseSignalingAdapter implements SignalingAdapter {
         to: normalizedTo,
         from: normalizedFrom,
       );
+    }
+  }
+
+  @override
+  Future<void> blockUser(String blocker, String blocked) async {
+    await ensureAuthenticated();
+    final normalizedBlocker = _normalizedUsername(blocker);
+    final normalizedBlocked = _normalizedUsername(blocked);
+    if (normalizedBlocker == normalizedBlocked) {
+      throw Exception('Cannot block yourself');
+    }
+    try {
+      await _client.from('user_blocks').upsert(<String, Object?>{
+        'blocker': normalizedBlocker,
+        'blocked': normalizedBlocked,
+        'blocked_at': DateTime.now().millisecondsSinceEpoch,
+      });
+    } catch (error) {
+      if (!_isMissingUserBlocksTableError(error)) {
+        rethrow;
+      }
+    }
+    await deleteFriendship(normalizedBlocker, normalizedBlocked);
+    await _deleteFriendRequestsForPair(normalizedBlocker, normalizedBlocked);
+  }
+
+  @override
+  Future<void> unblockUser(String blocker, String blocked) async {
+    await ensureAuthenticated();
+    final normalizedBlocker = _normalizedUsername(blocker);
+    final normalizedBlocked = _normalizedUsername(blocked);
+    try {
+      await _client
+          .from('user_blocks')
+          .delete()
+          .eq('blocker', normalizedBlocker)
+          .eq('blocked', normalizedBlocked);
+    } catch (error) {
+      if (!_isMissingUserBlocksTableError(error)) {
+        rethrow;
+      }
     }
   }
 

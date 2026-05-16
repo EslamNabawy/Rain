@@ -719,7 +719,8 @@ class _FriendTile extends ConsumerWidget {
                       ),
                     ),
                     if (friend.state != FriendState.pendingIncoming &&
-                        friend.state != FriendState.blocked) ...<Widget>[
+                        friend.state != FriendState.blocked &&
+                        friend.state != FriendState.blockedByPeer) ...<Widget>[
                       const SizedBox(width: 4),
                       PopupMenuButton<String>(
                         tooltip: 'Open peer actions',
@@ -809,6 +810,7 @@ class _FriendTile extends ConsumerWidget {
       FriendState.pendingIncoming => const Color(0xFF7DD3FC),
       FriendState.pendingOutgoing => const Color(0xFFFBBF24),
       FriendState.blocked => const Color(0xFFFF6B6B),
+      FriendState.blockedByPeer => const Color(0xFFFF6B6B),
     };
   }
 
@@ -817,6 +819,7 @@ class _FriendTile extends ConsumerWidget {
     FriendState.pendingIncoming => 'Incoming',
     FriendState.friend => 'Friend',
     FriendState.blocked => 'Blocked',
+    FriendState.blockedByPeer => 'Blocked you',
   };
 }
 
@@ -1588,12 +1591,14 @@ class _ChatPanelState extends ConsumerState<_ChatPanel> {
       FriendState.pendingIncoming => Icons.mark_email_unread_outlined,
       FriendState.pendingOutgoing => Icons.hourglass_top_rounded,
       FriendState.blocked => Icons.block_outlined,
+      FriendState.blockedByPeer => Icons.block_outlined,
       FriendState.friend => Icons.wifi_tethering,
     };
     final title = switch (friend.state) {
       FriendState.pendingIncoming => 'Incoming friend request',
       FriendState.pendingOutgoing => 'Request pending',
       FriendState.blocked => 'User blocked',
+      FriendState.blockedByPeer => 'Blocked by peer',
       FriendState.friend => 'Ready to chat',
     };
     final message = switch (friend.state) {
@@ -1603,6 +1608,8 @@ class _ChatPanelState extends ConsumerState<_ChatPanel> {
         'You can connect after @${friend.username} accepts your friend request.',
       FriendState.blocked =>
         'Unblock @${friend.username} before connecting or sending messages.',
+      FriendState.blockedByPeer =>
+        '@${friend.username} blocked you. You cannot connect or send messages right now.',
       FriendState.friend => 'Rain is ready to connect to @${friend.username}.',
     };
 

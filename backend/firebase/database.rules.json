@@ -61,7 +61,7 @@
       "$to": {
         ".read": "auth != null && root.child('users/' + $to + '/uid').val() === auth.uid",
         "$from": {
-          ".write": "auth != null && !root.child('security/blockedUids/' + auth.uid).exists() && $from !== $to && ((!newData.exists() && (root.child('users/' + $from + '/uid').val() === auth.uid || root.child('users/' + $to + '/uid').val() === auth.uid)) || (newData.exists() && root.child('users/' + $from + '/uid').val() === auth.uid))",
+          ".write": "auth != null && !root.child('security/blockedUids/' + auth.uid).exists() && $from !== $to && (!newData.exists() || (!root.child('blocks/' + $to + '/' + $from).exists() && !root.child('blocks/' + $from + '/' + $to).exists())) && ((!newData.exists() && (root.child('users/' + $from + '/uid').val() === auth.uid || root.child('users/' + $to + '/uid').val() === auth.uid)) || (newData.exists() && root.child('users/' + $from + '/uid').val() === auth.uid))",
           ".validate": "!newData.exists() || (newData.hasChildren(['sentAt']) && newData.child('sentAt').isNumber())",
           "sentAt": {
             ".validate": "newData.isNumber()"
@@ -76,7 +76,7 @@
       "$from": {
         ".read": "auth != null && root.child('users/' + $from + '/uid').val() === auth.uid",
         "$to": {
-          ".write": "auth != null && !root.child('security/blockedUids/' + auth.uid).exists() && $from !== $to && ((!newData.exists() && (root.child('users/' + $from + '/uid').val() === auth.uid || root.child('users/' + $to + '/uid').val() === auth.uid)) || (newData.exists() && root.child('users/' + $from + '/uid').val() === auth.uid))",
+          ".write": "auth != null && !root.child('security/blockedUids/' + auth.uid).exists() && $from !== $to && (!newData.exists() || (!root.child('blocks/' + $to + '/' + $from).exists() && !root.child('blocks/' + $from + '/' + $to).exists())) && ((!newData.exists() && (root.child('users/' + $from + '/uid').val() === auth.uid || root.child('users/' + $to + '/uid').val() === auth.uid)) || (newData.exists() && root.child('users/' + $from + '/uid').val() === auth.uid))",
           ".validate": "!newData.exists() || (newData.hasChildren(['sentAt']) && newData.child('sentAt').isNumber())",
           "sentAt": {
             ".validate": "newData.isNumber()"
@@ -91,9 +91,39 @@
       "$username": {
         ".read": "auth != null && root.child('users/' + $username + '/uid').val() === auth.uid",
         "$friend": {
-          ".write": "auth != null && !root.child('security/blockedUids/' + auth.uid).exists() && $username !== $friend && ((!newData.exists() && (root.child('users/' + $username + '/uid').val() === auth.uid || root.child('users/' + $friend + '/uid').val() === auth.uid)) || (newData.exists() && data.exists() && (root.child('users/' + $username + '/uid').val() === auth.uid || root.child('users/' + $friend + '/uid').val() === auth.uid)) || (newData.exists() && !data.exists() && ((root.child('users/' + $username + '/uid').val() === auth.uid && root.child('friendRequests/' + $username + '/' + $friend).exists()) || (root.child('users/' + $friend + '/uid').val() === auth.uid && root.child('friendRequests/' + $friend + '/' + $username).exists()))))",
+          ".write": "auth != null && !root.child('security/blockedUids/' + auth.uid).exists() && $username !== $friend && (!newData.exists() || (!root.child('blocks/' + $username + '/' + $friend).exists() && !root.child('blocks/' + $friend + '/' + $username).exists())) && ((!newData.exists() && (root.child('users/' + $username + '/uid').val() === auth.uid || root.child('users/' + $friend + '/uid').val() === auth.uid)) || (newData.exists() && data.exists() && (root.child('users/' + $username + '/uid').val() === auth.uid || root.child('users/' + $friend + '/uid').val() === auth.uid)) || (newData.exists() && !data.exists() && ((root.child('users/' + $username + '/uid').val() === auth.uid && root.child('friendRequests/' + $username + '/' + $friend).exists()) || (root.child('users/' + $friend + '/uid').val() === auth.uid && root.child('friendRequests/' + $friend + '/' + $username).exists()))))",
           ".validate": "!newData.exists() || (newData.hasChildren(['acceptedAt']) && newData.child('acceptedAt').isNumber())",
           "acceptedAt": {
+            ".validate": "newData.isNumber()"
+          },
+          "$other": {
+            ".validate": false
+          }
+        }
+      }
+    },
+    "blocks": {
+      "$blocker": {
+        ".read": "auth != null && root.child('users/' + $blocker + '/uid').val() === auth.uid",
+        "$blocked": {
+          ".write": "auth != null && !root.child('security/blockedUids/' + auth.uid).exists() && $blocker !== $blocked && root.child('users/' + $blocker + '/uid').val() === auth.uid",
+          ".validate": "!newData.exists() || (newData.hasChildren(['blockedAt']) && newData.child('blockedAt').isNumber())",
+          "blockedAt": {
+            ".validate": "newData.isNumber()"
+          },
+          "$other": {
+            ".validate": false
+          }
+        }
+      }
+    },
+    "blockedBy": {
+      "$blocked": {
+        ".read": "auth != null && root.child('users/' + $blocked + '/uid').val() === auth.uid",
+        "$blocker": {
+          ".write": "auth != null && !root.child('security/blockedUids/' + auth.uid).exists() && $blocker !== $blocked && root.child('users/' + $blocker + '/uid').val() === auth.uid",
+          ".validate": "!newData.exists() || (newData.hasChildren(['blockedAt']) && newData.child('blockedAt').isNumber())",
+          "blockedAt": {
             ".validate": "newData.isNumber()"
           },
           "$other": {

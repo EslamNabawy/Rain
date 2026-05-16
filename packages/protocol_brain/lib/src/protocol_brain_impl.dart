@@ -94,6 +94,9 @@ class ProtocolBrainImpl implements ProtocolBrain {
       );
     }
     _sessions.remove(peerId);
+    if (active != null) {
+      await _deleteRoomSilently(active);
+    }
     await active?.dispose();
     _peerDisconnectedController.add(peerId);
   }
@@ -223,6 +226,7 @@ class ProtocolBrainImpl implements ProtocolBrain {
             );
             break;
           case PeerState.failed:
+            unawaited(_deleteRoomSilently(active));
             _markPhase(
               active,
               SessionPhase.failed,
@@ -381,6 +385,7 @@ class ProtocolBrainImpl implements ProtocolBrain {
     }
     if (active.retryAttempt >= maxRetries) {
       active.stopReconnecting();
+      await _deleteRoomSilently(active);
       _updateSession(
         peerId,
         active.snapshot.copyWith(
@@ -687,6 +692,7 @@ class ProtocolBrainImpl implements ProtocolBrain {
       return;
     }
     active.stopReconnecting();
+    unawaited(_deleteRoomSilently(active));
     unawaited(active.disposePeerBindings());
     _updateSession(
       peerId,
@@ -718,6 +724,7 @@ class ProtocolBrainImpl implements ProtocolBrain {
 
     await active.disposePeerBindings();
     await active.peer.destroy();
+    await _deleteRoomSilently(active);
     active.bound = false;
     active.remoteIceCache.clear();
     active.answerSubscription = null;
@@ -739,6 +746,7 @@ class ProtocolBrainImpl implements ProtocolBrain {
 
     if (active.retryAttempt >= maxRetries) {
       active.stopReconnecting();
+      await _deleteRoomSilently(active);
       _updateSession(
         peerId,
         active.snapshot.copyWith(
@@ -753,6 +761,14 @@ class ProtocolBrainImpl implements ProtocolBrain {
     }
 
     unawaited(_scheduleReconnect(peerId));
+  }
+
+  Future<void> _deleteRoomSilently(_ActiveSession active) async {
+    try {
+      await adapter.deleteRoom(active.roomId);
+    } catch (_) {
+      // Room cleanup is best-effort; connection state still reports failure.
+    }
   }
 }
 

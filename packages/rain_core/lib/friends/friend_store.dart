@@ -3,7 +3,13 @@ import 'package:drift/drift.dart';
 import '../database/rain_database.dart';
 import '../identity/identity.dart';
 
-enum FriendState { pendingOutgoing, pendingIncoming, friend, blocked }
+enum FriendState {
+  pendingOutgoing,
+  pendingIncoming,
+  friend,
+  blocked,
+  blockedByPeer,
+}
 
 class FriendRecord {
   const FriendRecord({
@@ -121,12 +127,35 @@ class FriendStore {
 
   Future<void> block(String username) {
     return _database.serializedTransaction(() async {
-      await (_database.update(
-        _database.friends,
-      )..where((Friends row) => row.username.equals(username))).write(
-        FriendsCompanion(state: Value<String>(FriendState.blocked.name)),
-      );
+      await _upsertBlockedState(username, FriendState.blocked);
     });
+  }
+
+  Future<void> markBlockedByPeer(String username) {
+    return _database.serializedTransaction(() async {
+      await _upsertBlockedState(username, FriendState.blockedByPeer);
+    });
+  }
+
+  Future<void> _upsertBlockedState(String username, FriendState state) async {
+    final existing =
+        await (_database.select(_database.friends)
+              ..where((Friends row) => row.username.equals(username))
+              ..limit(1))
+            .getSingleOrNull();
+    await _database
+        .into(_database.friends)
+        .insertOnConflictUpdate(
+          FriendsCompanion.insert(
+            username: username,
+            displayName: existing?.displayName ?? username,
+            state: state.name,
+            addedAt: existing?.addedAt ?? DateTime.now().millisecondsSinceEpoch,
+            gender: existing?.gender == null
+                ? const Value<String?>.absent()
+                : Value<String?>(existing!.gender),
+          ),
+        );
   }
 
   Future<void> unblock(String username) {
