@@ -129,6 +129,17 @@ function Invoke-InDir([string]$Path, [scriptblock]$Script) {
   }
 }
 
+function Get-ReleaseTempDir([string]$RepoRoot) {
+  $baseDir = [System.Environment]::GetEnvironmentVariable('RUNNER_TEMP')
+  if ([string]::IsNullOrWhiteSpace($baseDir)) {
+    $baseDir = [System.IO.Path]::GetTempPath()
+  }
+
+  $tmpDir = Join-Path $baseDir 'rain-release'
+  New-Item -ItemType Directory -Force -Path $tmpDir | Out-Null
+  return $tmpDir
+}
+
 function Get-DartDefineArgs(
   [string]$FlutterProjectRoot,
   [string]$DartDefinesFile,
@@ -171,9 +182,7 @@ function New-DemoDartDefinesFile([string]$Path, [string]$RepoRoot) {
     $defines.RAIN_ALLOW_PUBLIC_TURN = 'true'
   }
 
-  $tmpDir = Join-Path $RepoRoot 'artifacts\tmp'
-  New-Item -ItemType Directory -Force -Path $tmpDir | Out-Null
-
+  $tmpDir = Get-ReleaseTempDir $RepoRoot
   $demoDefinesPath = Join-Path $tmpDir 'rain-openrelay-demo-defines.generated.json'
   $defines | ConvertTo-Json -Depth 20 | Set-Content -LiteralPath $demoDefinesPath -Encoding utf8
   return $demoDefinesPath
@@ -302,9 +311,7 @@ function Use-DemoAndroidSigningKey([string]$RepoRoot) {
   [System.Environment]::SetEnvironmentVariable('JAVA_HOME', $jdkRoot, 'Process')
   $env:PATH = "$(Join-Path $jdkRoot 'bin');$env:PATH"
 
-  $tmpDir = Join-Path $RepoRoot 'artifacts\tmp'
-  New-Item -ItemType Directory -Force -Path $tmpDir | Out-Null
-
+  $tmpDir = Get-ReleaseTempDir $RepoRoot
   $keyPath = Join-Path $tmpDir 'rain-openrelay-demo-release.jks'
   $password = 'rain-openrelay-demo'
   $alias = 'rain-openrelay-demo'
