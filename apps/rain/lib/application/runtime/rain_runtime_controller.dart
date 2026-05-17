@@ -24,7 +24,10 @@ class RainRuntimeController with WidgetsBindingObserver {
     FileTransferStore? fileTransferStore,
     this.heartbeatInterval = const Duration(minutes: 3),
     this.friendRequestRefreshInterval = Duration.zero,
-  }) : fileTransferStore = fileTransferStore ?? FileTransferStore(database);
+    Future<Directory> Function()? documentsDirectoryProvider,
+  }) : fileTransferStore = fileTransferStore ?? FileTransferStore(database),
+       _documentsDirectoryProvider =
+           documentsDirectoryProvider ?? getApplicationDocumentsDirectory;
 
   final RainIdentity selfIdentity;
   final SignalingAdapter adapter;
@@ -37,12 +40,14 @@ class RainRuntimeController with WidgetsBindingObserver {
   final FileTransferStore fileTransferStore;
   final Duration heartbeatInterval;
   final Duration friendRequestRefreshInterval;
+  final Future<Directory> Function() _documentsDirectoryProvider;
   final Set<String> _manualDisconnectedPeers = <String>{};
   final Set<String> _unblockingPeers = <String>{};
   final Map<String, StreamSubscription<bool>> _presenceSubscriptions =
       <String, StreamSubscription<bool>>{};
   final Map<String, FileTransferFrame> _pendingFileChunks =
       <String, FileTransferFrame>{};
+  final Map<String, Future<void>> _fileMessageQueues = <String, Future<void>>{};
   final Map<String, _OutgoingFileSource> _outgoingFileSources =
       <String, _OutgoingFileSource>{};
   final Set<String> _canceledTransfers = <String>{};
@@ -224,7 +229,7 @@ class RainRuntimeController with WidgetsBindingObserver {
           }
 
           if (message.channel == SessionChannel.file) {
-            await _handleFileChannelMessage(peerId, message);
+            unawaited(_enqueueFileChannelMessage(peerId, message));
           }
         }),
       );
@@ -782,6 +787,32 @@ class RainRuntimeController with WidgetsBindingObserver {
     }
   }
 
+  Future<void> _enqueueFileChannelMessage(
+    String peerId,
+    SessionMessage message,
+  ) {
+    final previous = _fileMessageQueues[peerId] ?? Future<void>.value();
+    late final Future<void> queued;
+    queued = previous
+        .catchError((Object error, StackTrace stackTrace) {})
+        .then((_) => _handleFileChannelMessage(peerId, message))
+        .catchError((Object error, StackTrace stackTrace) async {
+          await _failActiveTransfersForPeer(
+            peerId,
+            _formatTransferError(error),
+          );
+        });
+    _fileMessageQueues[peerId] = queued;
+    unawaited(
+      queued.whenComplete(() {
+        if (identical(_fileMessageQueues[peerId], queued)) {
+          _fileMessageQueues.remove(peerId);
+        }
+      }),
+    );
+    return queued;
+  }
+
   Future<void> _handleFileFrame(
     String peerId,
     FileTransferFrame frame, {
@@ -990,6 +1021,25 @@ class RainRuntimeController with WidgetsBindingObserver {
     }
     final tempFile = File(transfer.tempPath!);
     if (!await tempFile.exists()) {
+      if (transfer.fileSize == 0) {
+        final finalFile = File(transfer.localPath!);
+        await finalFile.parent.create(recursive: true);
+        if (await finalFile.exists()) {
+          await finalFile.delete();
+        }
+        await finalFile.create();
+        await fileTransferStore.markState(
+          transfer.id,
+          FileTransferState.completed,
+          bytesTransferred: 0,
+          localPath: finalFile.path,
+        );
+        _sendFileControlIfConnected(
+          peerId,
+          FileTransferFrame.received(transfer.id),
+        );
+        return;
+      }
       await _markTransferFailed(transfer.id, 'Received file is missing.');
       _sendFileControlIfConnected(
         peerId,
@@ -1300,7 +1350,7 @@ class RainRuntimeController with WidgetsBindingObserver {
   Future<_ReceivePaths> _prepareReceivePaths(
     FileTransferRecord transfer,
   ) async {
-    final documents = await getApplicationDocumentsDirectory();
+    final documents = await _documentsDirectoryProvider();
     final directory = Directory(
       [
         documents.path,
