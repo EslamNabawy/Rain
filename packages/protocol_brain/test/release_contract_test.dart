@@ -180,19 +180,22 @@ void main() {
     }
   });
 
-  test(
-    'CI demo artifacts use concise names and upload only the Windows zip',
-    () {
-      final workflow = _repoFile('.github/workflows/ci.yml');
+  test('CI demo artifacts upload one portable Windows archive', () {
+    final workflow = _repoFile('.github/workflows/ci.yml');
 
-      expect(workflow, contains('Rain-Demo-Windows-x64-Build.zip'));
-      expect(workflow, contains('Rain-Demo-Android-ARM-v7-Build.apk'));
-      expect(workflow, contains('Rain-Demo-Android-ARM-v8-v9-Build.apk'));
-      expect(workflow, contains('Rain-Demo-Android-x86_64-Build.apk'));
-      expect(
-        workflow,
-        isNot(contains('artifacts/Rain-Demo-Windows-x64-Build/**')),
-      );
-    },
-  );
+    expect(workflow, contains('path: artifacts/Rain-Demo-Windows-x64-Build'));
+    expect(
+      workflow,
+      contains(
+        'Windows portable upload folder must not contain nested archives',
+      ),
+    );
+    expect(
+      workflow,
+      isNot(contains('path: artifacts/Rain-Demo-Windows-x64-Build.zip')),
+    );
+    expect(workflow, contains('Rain-Demo-Android-ARM-v7-Build.apk'));
+    expect(workflow, contains('Rain-Demo-Android-ARM-v8-v9-Build.apk'));
+    expect(workflow, contains('Rain-Demo-Android-x86_64-Build.apk'));
+  });
 }
