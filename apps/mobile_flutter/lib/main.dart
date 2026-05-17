@@ -9,7 +9,7 @@ void main() {
 }
 
 class RainApp extends StatelessWidget {
-  const RainApp({Key? key}) : super(key: key);
+  const RainApp({super.key});
 
   @override
   Widget build(BuildContext context) {
