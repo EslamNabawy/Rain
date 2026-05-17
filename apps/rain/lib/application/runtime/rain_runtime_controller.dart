@@ -1,6 +1,9 @@
 import 'dart:async';
+import 'dart:io';
+import 'dart:typed_data';
 
 import 'package:flutter/widgets.dart';
+import 'package:path_provider/path_provider.dart';
 import 'package:protocol_brain/protocol_brain.dart';
 import 'package:rain_core/rain_core.dart';
 
@@ -18,9 +21,10 @@ class RainRuntimeController with WidgetsBindingObserver {
     required this.messageStore,
     required this.offlineQueueStore,
     required this.messageDeliveryService,
+    FileTransferStore? fileTransferStore,
     this.heartbeatInterval = const Duration(minutes: 3),
     this.friendRequestRefreshInterval = Duration.zero,
-  });
+  }) : fileTransferStore = fileTransferStore ?? FileTransferStore(database);
 
   final RainIdentity selfIdentity;
   final SignalingAdapter adapter;
@@ -30,12 +34,18 @@ class RainRuntimeController with WidgetsBindingObserver {
   final MessageStore messageStore;
   final OfflineQueueStore offlineQueueStore;
   final MessageDeliveryService messageDeliveryService;
+  final FileTransferStore fileTransferStore;
   final Duration heartbeatInterval;
   final Duration friendRequestRefreshInterval;
   final Set<String> _manualDisconnectedPeers = <String>{};
   final Set<String> _unblockingPeers = <String>{};
   final Map<String, StreamSubscription<bool>> _presenceSubscriptions =
       <String, StreamSubscription<bool>>{};
+  final Map<String, FileTransferFrame> _pendingFileChunks =
+      <String, FileTransferFrame>{};
+  final Map<String, _OutgoingFileSource> _outgoingFileSources =
+      <String, _OutgoingFileSource>{};
+  final Set<String> _canceledTransfers = <String>{};
 
   final List<StreamSubscription<dynamic>> _subscriptions =
       <StreamSubscription<dynamic>>[];
@@ -167,14 +177,23 @@ class RainRuntimeController with WidgetsBindingObserver {
       );
 
       _subscriptions.add(
+        brain!.onPeerDisconnected.listen((String peerId) {
+          unawaited(_failActiveTransfersForPeer(peerId, 'Peer disconnected.'));
+        }),
+      );
+
+      _subscriptions.add(
         brain!.onPeerMessage.listen((SessionMessage message) async {
           final peerId = message.peerId;
-          final text = message.text;
-          if (peerId == null || text == null) {
+          if (peerId == null) {
             return;
           }
 
           if (message.channel == SessionChannel.control) {
+            final text = message.text;
+            if (text == null) {
+              return;
+            }
             await _localMutations.run(
               () => messageDeliveryService.handleControlMessage(text),
             );
@@ -182,6 +201,10 @@ class RainRuntimeController with WidgetsBindingObserver {
           }
 
           if (message.channel == SessionChannel.chat) {
+            final text = message.text;
+            if (text == null) {
+              return;
+            }
             await _localMutations.run(() async {
               final friend = await friendStore.loadFriend(peerId);
               if (friend?.state != FriendState.friend) {
@@ -197,6 +220,11 @@ class RainRuntimeController with WidgetsBindingObserver {
                 onStored: (_) => friendStore.incrementUnread(peerId),
               );
             });
+            return;
+          }
+
+          if (message.channel == SessionChannel.file) {
+            await _handleFileChannelMessage(peerId, message);
           }
         }),
       );
@@ -232,6 +260,10 @@ class RainRuntimeController with WidgetsBindingObserver {
 
   Future<void> blockFriend(String username) async {
     final normalizedUsername = _normalizedUsername(username);
+    await _failActiveTransfersForPeer(
+      normalizedUsername,
+      'Transfer canceled because the peer was blocked.',
+    );
     await adapter.blockUser(selfIdentity.username, normalizedUsername);
     await _clearFriendRequests(normalizedUsername);
     await adapter.deleteFriendship(selfIdentity.username, normalizedUsername);
@@ -253,6 +285,10 @@ class RainRuntimeController with WidgetsBindingObserver {
 
   Future<void> unfriend(String username) async {
     final normalizedUsername = _normalizedUsername(username);
+    await _failActiveTransfersForPeer(
+      normalizedUsername,
+      'Transfer canceled because the peer was removed.',
+    );
     final existing = await _localMutations.run(
       () => friendStore.loadFriend(normalizedUsername),
     );
@@ -349,6 +385,10 @@ class RainRuntimeController with WidgetsBindingObserver {
   Future<void> disconnectPeer(String username) async {
     final normalizedUsername = _normalizedUsername(username);
     _manualDisconnectedPeers.add(normalizedUsername);
+    await _failActiveTransfersForPeer(
+      normalizedUsername,
+      'Transfer canceled because the peer link was disconnected.',
+    );
     await brain?.disconnect(normalizedUsername);
     await brain?.unregisterPeer(normalizedUsername);
   }
@@ -390,6 +430,10 @@ class RainRuntimeController with WidgetsBindingObserver {
 
   Future<void> rejectFriend(String username) async {
     final normalizedUsername = _normalizedUsername(username);
+    await _failActiveTransfersForPeer(
+      normalizedUsername,
+      'Transfer canceled because the relationship changed.',
+    );
     final existing = await _localMutations.run(
       () => friendStore.loadFriend(normalizedUsername),
     );
@@ -543,6 +587,772 @@ class RainRuntimeController with WidgetsBindingObserver {
     await _localMutations.run(() => friendStore.clearUnread(peerId));
   }
 
+  Future<void> sendFile({
+    required String peerId,
+    required String fileName,
+    required int fileSize,
+    required Stream<List<int>> Function() openRead,
+    String? localPath,
+    String? mimeType,
+  }) async {
+    final normalizedPeerId = _normalizedUsername(peerId);
+    if (fileSize > maxFileTransferBytes) {
+      throw StateError(
+        'Files are limited to ${formatFileTransferSize(maxFileTransferBytes)}.',
+      );
+    }
+    if (fileSize < 0) {
+      throw StateError('File size is invalid.');
+    }
+
+    await _assertCanTransferFile(normalizedPeerId);
+    final session = _connectedSession(normalizedPeerId);
+    if (session == null) {
+      throw StateError('Connect first.');
+    }
+    if (await fileTransferStore.hasActiveTransferForPeer(normalizedPeerId)) {
+      throw StateError('Finish the active file transfer first.');
+    }
+    await _ensureFileChannelReady(normalizedPeerId);
+
+    final safeName = sanitizeFileName(fileName);
+    final transferEnvelope = await _localMutations.run(
+      () => messageStore.composeOutgoingEnvelope(
+        from: selfIdentity.username,
+        to: normalizedPeerId,
+        content: FileMessageContent(
+          transferId: '',
+          fileName: safeName,
+          fileSize: fileSize,
+          mimeType: mimeType,
+        ).encode(),
+        type: MessageType.file,
+        trackSequence: false,
+      ),
+    );
+    final transferId = transferEnvelope.id;
+    final content = FileMessageContent(
+      transferId: transferId,
+      fileName: safeName,
+      fileSize: fileSize,
+      mimeType: mimeType,
+    ).encode();
+    final envelope = MessageEnvelope(
+      id: transferEnvelope.id,
+      from: transferEnvelope.from,
+      to: transferEnvelope.to,
+      content: content,
+      sentAt: transferEnvelope.sentAt,
+      seq: transferEnvelope.seq,
+      type: MessageType.file,
+    );
+    final now = DateTime.now().millisecondsSinceEpoch;
+    _outgoingFileSources[transferId] = _OutgoingFileSource(
+      openRead: openRead,
+      localPath: localPath,
+    );
+
+    await _localMutations.run(() async {
+      await messageStore.storeOutgoingEnvelope(
+        envelope,
+        status: MessageStatus.sending,
+      );
+      await fileTransferStore.upsert(
+        FileTransferRecord(
+          id: transferId,
+          peerId: normalizedPeerId,
+          messageId: envelope.id,
+          direction: FileTransferDirection.outgoing,
+          fileName: safeName,
+          fileSize: fileSize,
+          mimeType: mimeType,
+          localPath: localPath,
+          bytesTransferred: 0,
+          state: FileTransferState.offered,
+          createdAt: now,
+          updatedAt: now,
+        ),
+      );
+    });
+
+    final offer = FileTransferFrame.offer(
+      transferId: transferId,
+      messageId: envelope.id,
+      fileName: safeName,
+      fileSize: fileSize,
+      mimeType: mimeType,
+      sentAt: envelope.sentAt,
+      seq: envelope.seq,
+    );
+    try {
+      brain!.send(normalizedPeerId, SessionChannel.file, offer.encode());
+      await messageStore.markMessageStatus(envelope.id, MessageStatus.sent);
+    } catch (error) {
+      await _markTransferFailed(transferId, 'File offer failed: $error');
+      rethrow;
+    }
+  }
+
+  Future<void> acceptFileTransfer(String transferId) async {
+    final transfer = await fileTransferStore.loadById(transferId);
+    if (transfer == null) {
+      throw StateError('File transfer not found.');
+    }
+    if (transfer.direction != FileTransferDirection.incoming ||
+        transfer.state != FileTransferState.offered) {
+      throw StateError('This file transfer cannot be accepted.');
+    }
+    await _assertCanTransferFile(transfer.peerId);
+    if (_connectedSession(transfer.peerId) == null) {
+      throw StateError('Connect first.');
+    }
+    await _ensureFileChannelReady(transfer.peerId);
+    final paths = await _prepareReceivePaths(transfer);
+    await fileTransferStore.markState(
+      transfer.id,
+      FileTransferState.receiving,
+      bytesTransferred: 0,
+      localPath: paths.finalPath,
+      tempPath: paths.tempPath,
+    );
+    brain!.send(
+      transfer.peerId,
+      SessionChannel.file,
+      FileTransferFrame.accept(transfer.id).encode(),
+    );
+  }
+
+  Future<void> rejectFileTransfer(String transferId) async {
+    final transfer = await fileTransferStore.loadById(transferId);
+    if (transfer == null) {
+      return;
+    }
+    await fileTransferStore.markState(
+      transfer.id,
+      FileTransferState.rejected,
+      error: 'Rejected.',
+    );
+    _sendFileControlIfConnected(
+      transfer.peerId,
+      FileTransferFrame.reject(transfer.id, 'Rejected.'),
+    );
+  }
+
+  Future<void> cancelFileTransfer(String transferId) async {
+    final transfer = await fileTransferStore.loadById(transferId);
+    if (transfer == null) {
+      return;
+    }
+    _canceledTransfers.add(transfer.id);
+    await _deleteTempFile(transfer);
+    await fileTransferStore.markState(
+      transfer.id,
+      FileTransferState.canceled,
+      error: 'Canceled.',
+    );
+    _sendFileControlIfConnected(
+      transfer.peerId,
+      FileTransferFrame.cancel(transfer.id, 'Canceled.'),
+    );
+  }
+
+  Future<void> _handleFileChannelMessage(
+    String peerId,
+    SessionMessage message,
+  ) async {
+    final text = message.text;
+    if (text != null) {
+      FileTransferFrame frame;
+      try {
+        frame = FileTransferFrame.parse(text);
+      } on FormatException catch (error) {
+        _sendFileControlIfConnected(
+          peerId,
+          FileTransferFrame.fail('unknown', error.message),
+        );
+        return;
+      }
+      await _handleFileFrame(peerId, frame, receivedAt: message.receivedAt);
+      return;
+    }
+
+    final binary = message.binary;
+    if (binary != null) {
+      await _handleFileChunkBytes(peerId, binary);
+    }
+  }
+
+  Future<void> _handleFileFrame(
+    String peerId,
+    FileTransferFrame frame, {
+    required DateTime receivedAt,
+  }) async {
+    switch (frame.type) {
+      case FileTransferFrame.offerType:
+        await _handleFileOffer(peerId, frame, receivedAt: receivedAt);
+        break;
+      case FileTransferFrame.acceptType:
+        await _handleFileAccept(peerId, frame.transferId);
+        break;
+      case FileTransferFrame.rejectType:
+        await _handleFileTerminalFrame(
+          frame.transferId,
+          FileTransferState.rejected,
+          frame.reason ?? 'Rejected.',
+        );
+        break;
+      case FileTransferFrame.chunkType:
+        _pendingFileChunks[peerId] = frame;
+        break;
+      case FileTransferFrame.completeType:
+        await _handleFileComplete(peerId, frame.transferId);
+        break;
+      case FileTransferFrame.receivedType:
+        await _handleFileReceived(frame.transferId);
+        break;
+      case FileTransferFrame.cancelType:
+        await _handleFileTerminalFrame(
+          frame.transferId,
+          FileTransferState.canceled,
+          frame.reason ?? 'Canceled.',
+        );
+        break;
+      case FileTransferFrame.failType:
+        await _handleFileTerminalFrame(
+          frame.transferId,
+          FileTransferState.failed,
+          frame.reason ?? 'Transfer failed.',
+        );
+        break;
+    }
+  }
+
+  Future<void> _handleFileOffer(
+    String peerId,
+    FileTransferFrame frame, {
+    required DateTime receivedAt,
+  }) async {
+    final messageId = frame.messageId;
+    final fileName = frame.fileName;
+    final fileSize = frame.fileSize;
+    final sentAt = frame.sentAt;
+    final seq = frame.seq;
+    if (messageId == null ||
+        fileName == null ||
+        fileSize == null ||
+        sentAt == null ||
+        seq == null) {
+      _sendFileControlIfConnected(
+        peerId,
+        FileTransferFrame.reject(frame.transferId, 'Malformed file offer.'),
+      );
+      return;
+    }
+
+    final existing = await fileTransferStore.loadById(frame.transferId);
+    if (existing != null) {
+      return;
+    }
+
+    final friend = await _localMutations.run(
+      () => friendStore.loadFriend(peerId),
+    );
+    if (friend?.state != FriendState.friend) {
+      _sendFileControlIfConnected(
+        peerId,
+        FileTransferFrame.reject(
+          frame.transferId,
+          'Only friends can send files.',
+        ),
+      );
+      return;
+    }
+    if (fileSize > maxFileTransferBytes) {
+      _sendFileControlIfConnected(
+        peerId,
+        FileTransferFrame.reject(
+          frame.transferId,
+          'Files are limited to ${formatFileTransferSize(maxFileTransferBytes)}.',
+        ),
+      );
+      return;
+    }
+    if (await fileTransferStore.hasActiveTransferForPeer(peerId)) {
+      _sendFileControlIfConnected(
+        peerId,
+        FileTransferFrame.reject(
+          frame.transferId,
+          'Finish the active file transfer first.',
+        ),
+      );
+      return;
+    }
+
+    final safeName = sanitizeFileName(fileName);
+    final content = FileMessageContent(
+      transferId: frame.transferId,
+      fileName: safeName,
+      fileSize: fileSize,
+      mimeType: frame.mimeType,
+    ).encode();
+    final envelope = MessageEnvelope(
+      id: messageId,
+      from: peerId,
+      to: selfIdentity.username,
+      content: content,
+      sentAt: sentAt,
+      seq: seq,
+      type: MessageType.file,
+    );
+    final now = DateTime.now().millisecondsSinceEpoch;
+
+    await _localMutations.run(() async {
+      if (!await messageStore.containsMessage(messageId)) {
+        await messageStore.forceStoreIncomingEnvelope(
+          envelope,
+          receivedAt: receivedAt,
+          trackSequence: false,
+        );
+        await friendStore.incrementUnread(peerId);
+      }
+      await fileTransferStore.upsert(
+        FileTransferRecord(
+          id: frame.transferId,
+          peerId: peerId,
+          messageId: messageId,
+          direction: FileTransferDirection.incoming,
+          fileName: safeName,
+          fileSize: fileSize,
+          mimeType: frame.mimeType,
+          bytesTransferred: 0,
+          state: FileTransferState.offered,
+          createdAt: now,
+          updatedAt: now,
+        ),
+      );
+    });
+  }
+
+  Future<void> _handleFileAccept(String peerId, String transferId) async {
+    final transfer = await fileTransferStore.loadById(transferId);
+    if (transfer == null ||
+        transfer.peerId != peerId ||
+        transfer.direction != FileTransferDirection.outgoing ||
+        transfer.state != FileTransferState.offered) {
+      return;
+    }
+    await fileTransferStore.markState(transferId, FileTransferState.accepted);
+    unawaited(_sendTransferBytes(transferId));
+  }
+
+  Future<void> _handleFileChunkBytes(String peerId, Uint8List bytes) async {
+    final frame = _pendingFileChunks.remove(peerId);
+    if (frame == null) {
+      return;
+    }
+    final transfer = await fileTransferStore.loadById(frame.transferId);
+    if (transfer == null ||
+        transfer.peerId != peerId ||
+        transfer.direction != FileTransferDirection.incoming ||
+        transfer.state != FileTransferState.receiving) {
+      return;
+    }
+    if (frame.offset != transfer.bytesTransferred ||
+        frame.byteCount != bytes.lengthInBytes ||
+        transfer.tempPath == null) {
+      await _markTransferFailed(transfer.id, 'Received an invalid file chunk.');
+      _sendFileControlIfConnected(
+        peerId,
+        FileTransferFrame.fail(transfer.id, 'Received an invalid file chunk.'),
+      );
+      return;
+    }
+
+    final tempFile = File(transfer.tempPath!);
+    await tempFile.parent.create(recursive: true);
+    final sink = tempFile.openWrite(mode: FileMode.append);
+    sink.add(bytes);
+    await sink.close();
+    await fileTransferStore.markProgress(
+      transfer.id,
+      transfer.bytesTransferred + bytes.lengthInBytes,
+    );
+  }
+
+  Future<void> _handleFileComplete(String peerId, String transferId) async {
+    final transfer = await fileTransferStore.loadById(transferId);
+    if (transfer == null ||
+        transfer.peerId != peerId ||
+        transfer.direction != FileTransferDirection.incoming ||
+        transfer.tempPath == null ||
+        transfer.localPath == null) {
+      return;
+    }
+    final tempFile = File(transfer.tempPath!);
+    if (!await tempFile.exists()) {
+      await _markTransferFailed(transfer.id, 'Received file is missing.');
+      _sendFileControlIfConnected(
+        peerId,
+        FileTransferFrame.fail(transfer.id, 'Received file is missing.'),
+      );
+      return;
+    }
+    final actualBytes = await tempFile.length();
+    if (actualBytes != transfer.fileSize) {
+      await _markTransferFailed(
+        transfer.id,
+        'Received file size did not match the offer.',
+      );
+      _sendFileControlIfConnected(
+        peerId,
+        FileTransferFrame.fail(
+          transfer.id,
+          'Received file size did not match the offer.',
+        ),
+      );
+      return;
+    }
+
+    final finalFile = File(transfer.localPath!);
+    await finalFile.parent.create(recursive: true);
+    if (await finalFile.exists()) {
+      await finalFile.delete();
+    }
+    await tempFile.rename(finalFile.path);
+    await fileTransferStore.markState(
+      transfer.id,
+      FileTransferState.completed,
+      bytesTransferred: transfer.fileSize,
+      localPath: finalFile.path,
+    );
+    _sendFileControlIfConnected(
+      peerId,
+      FileTransferFrame.received(transfer.id),
+    );
+  }
+
+  Future<void> _handleFileReceived(String transferId) async {
+    final transfer = await fileTransferStore.loadById(transferId);
+    if (transfer == null ||
+        transfer.direction != FileTransferDirection.outgoing) {
+      return;
+    }
+    _outgoingFileSources.remove(transferId);
+    _canceledTransfers.remove(transferId);
+    await _localMutations.run(() async {
+      await fileTransferStore.markState(
+        transferId,
+        FileTransferState.completed,
+        bytesTransferred: transfer.fileSize,
+      );
+      await messageStore.markMessageStatus(
+        transfer.messageId,
+        MessageStatus.delivered,
+      );
+    });
+  }
+
+  Future<void> _handleFileTerminalFrame(
+    String transferId,
+    FileTransferState state,
+    String reason,
+  ) async {
+    final transfer = await fileTransferStore.loadById(transferId);
+    if (transfer == null) {
+      return;
+    }
+    _outgoingFileSources.remove(transferId);
+    _canceledTransfers.add(transferId);
+    await _deleteTempFile(transfer);
+    await _localMutations.run(() async {
+      await fileTransferStore.markState(transferId, state, error: reason);
+      if (transfer.direction == FileTransferDirection.outgoing) {
+        await messageStore.markMessageStatus(
+          transfer.messageId,
+          MessageStatus.failed,
+        );
+      }
+    });
+  }
+
+  Future<void> _sendTransferBytes(String transferId) async {
+    var transfer = await fileTransferStore.loadById(transferId);
+    if (transfer == null) {
+      return;
+    }
+    final source = _outgoingFileSources[transferId];
+    if (source == null && transfer.localPath == null) {
+      await _markTransferFailed(
+        transferId,
+        'Original file is no longer available.',
+      );
+      return;
+    }
+
+    try {
+      final initialPeerId = transfer.peerId;
+      final initialMessageId = transfer.messageId;
+      await _ensureFileChannelReady(initialPeerId);
+      await _localMutations.run(() async {
+        await fileTransferStore.markState(
+          transferId,
+          FileTransferState.sending,
+          bytesTransferred: 0,
+        );
+        await messageStore.markMessageStatus(
+          initialMessageId,
+          MessageStatus.sending,
+        );
+      });
+      transfer = await fileTransferStore.loadById(transferId);
+      if (transfer == null) {
+        return;
+      }
+      final activeTransfer = transfer;
+      final peerId = activeTransfer.peerId;
+      final messageId = activeTransfer.messageId;
+      final fileSize = activeTransfer.fileSize;
+
+      final openRead =
+          source?.openRead ?? () => File(activeTransfer.localPath!).openRead();
+      var offset = 0;
+      var index = 0;
+      final pending = <int>[];
+      await for (final bytes in openRead()) {
+        pending.addAll(bytes);
+        while (pending.length >= fileTransferChunkBytes) {
+          final chunk = Uint8List.fromList(
+            pending.take(fileTransferChunkBytes).toList(growable: false),
+          );
+          pending.removeRange(0, fileTransferChunkBytes);
+          await _sendFileChunk(transferId, peerId, chunk, index, offset);
+          offset += chunk.lengthInBytes;
+          index += 1;
+        }
+      }
+      if (pending.isNotEmpty) {
+        final chunk = Uint8List.fromList(pending);
+        await _sendFileChunk(transferId, peerId, chunk, index, offset);
+        offset += chunk.lengthInBytes;
+      }
+      if (_canceledTransfers.contains(transferId)) {
+        return;
+      }
+      if (offset != fileSize) {
+        throw StateError('File changed while sending.');
+      }
+      brain!.send(
+        peerId,
+        SessionChannel.file,
+        FileTransferFrame.complete(transferId).encode(),
+      );
+      await messageStore.markMessageStatus(messageId, MessageStatus.pendingAck);
+    } catch (error) {
+      final reason = _formatTransferError(error);
+      await _markTransferFailed(transferId, reason);
+      final latest = await fileTransferStore.loadById(transferId);
+      if (latest != null) {
+        _sendFileControlIfConnected(
+          latest.peerId,
+          FileTransferFrame.fail(transferId, reason),
+        );
+      }
+    }
+  }
+
+  Future<void> _sendFileChunk(
+    String transferId,
+    String peerId,
+    Uint8List chunk,
+    int index,
+    int offset,
+  ) async {
+    if (_canceledTransfers.contains(transferId)) {
+      throw StateError('Transfer canceled.');
+    }
+    if (_connectedSession(peerId) == null) {
+      throw StateError('Peer disconnected.');
+    }
+    await _waitForFileBuffer(peerId);
+    brain!.send(
+      peerId,
+      SessionChannel.file,
+      FileTransferFrame.chunk(
+        transferId: transferId,
+        index: index,
+        offset: offset,
+        byteCount: chunk.lengthInBytes,
+      ).encode(),
+    );
+    brain!.send(peerId, SessionChannel.file, chunk);
+    await fileTransferStore.markProgress(
+      transferId,
+      offset + chunk.lengthInBytes,
+    );
+  }
+
+  Future<void> _waitForFileBuffer(String peerId) async {
+    final deadline = DateTime.now().add(const Duration(seconds: 30));
+    while (DateTime.now().isBefore(deadline)) {
+      if (_connectedSession(peerId) == null) {
+        throw StateError('Peer disconnected.');
+      }
+      final buffered = await brain!.bufferedAmount(peerId, SessionChannel.file);
+      if (buffered <= fileTransferLowWatermarkBytes) {
+        return;
+      }
+      await Future<void>.delayed(const Duration(milliseconds: 25));
+    }
+    throw StateError('File channel is congested. Try again.');
+  }
+
+  Future<void> _assertCanTransferFile(String peerId) async {
+    var friend = await _localMutations.run(
+      () => friendStore.loadFriend(peerId),
+    );
+    if (friend?.state != FriendState.friend) {
+      await _syncRelationships(onlyUsername: peerId);
+      friend = await _localMutations.run(() => friendStore.loadFriend(peerId));
+    }
+    if (friend?.state != FriendState.friend) {
+      throw StateError('Only friends can exchange files.');
+    }
+  }
+
+  Session? _connectedSession(String peerId) {
+    final session = brain?.getSession(peerId);
+    return session?.state == SessionState.connected ? session : null;
+  }
+
+  Future<void> _ensureFileChannelReady(String peerId) async {
+    if (brain == null) {
+      throw StateError('Peer connection is unavailable right now.');
+    }
+    if (_connectedSession(peerId) == null) {
+      throw StateError('Connect first.');
+    }
+    await brain!.openChannel(peerId, SessionChannel.file);
+    final deadline = DateTime.now().add(const Duration(seconds: 5));
+    while (DateTime.now().isBefore(deadline)) {
+      if (_connectedSession(peerId) == null) {
+        throw StateError('Connect first.');
+      }
+      if (brain!.isChannelOpen(peerId, SessionChannel.file)) {
+        return;
+      }
+      await Future<void>.delayed(const Duration(milliseconds: 50));
+    }
+    throw StateError('File channel did not open. Reconnect and try again.');
+  }
+
+  void _sendFileControlIfConnected(String peerId, FileTransferFrame frame) {
+    if (_connectedSession(peerId) == null ||
+        !(brain?.isChannelOpen(peerId, SessionChannel.file) ?? false)) {
+      return;
+    }
+    try {
+      brain!.send(peerId, SessionChannel.file, frame.encode());
+    } catch (_) {
+      // Best effort: terminal file controls should not crash the runtime.
+    }
+  }
+
+  Future<void> _markTransferFailed(String transferId, String reason) async {
+    final transfer = await fileTransferStore.loadById(transferId);
+    if (transfer == null) {
+      return;
+    }
+    _outgoingFileSources.remove(transferId);
+    _canceledTransfers.add(transferId);
+    await _deleteTempFile(transfer);
+    await _localMutations.run(() async {
+      await fileTransferStore.markState(
+        transferId,
+        FileTransferState.failed,
+        error: reason,
+      );
+      if (transfer.direction == FileTransferDirection.outgoing) {
+        await messageStore.markMessageStatus(
+          transfer.messageId,
+          MessageStatus.failed,
+        );
+      }
+    });
+  }
+
+  Future<void> _failActiveTransfersForPeer(String peerId, String reason) async {
+    List<FileTransferRecord> active;
+    try {
+      active = await fileTransferStore.loadActiveTransfers(peerId: peerId);
+    } catch (_) {
+      return;
+    }
+    for (final transfer in active) {
+      try {
+        await _markTransferFailed(transfer.id, reason);
+      } catch (_) {
+        // Transfer cleanup is best effort during shutdown and relationship churn.
+      }
+    }
+    _pendingFileChunks.remove(peerId);
+  }
+
+  Future<_ReceivePaths> _prepareReceivePaths(
+    FileTransferRecord transfer,
+  ) async {
+    final documents = await getApplicationDocumentsDirectory();
+    final directory = Directory(
+      [
+        documents.path,
+        'received-files',
+        sanitizeFileName(transfer.peerId),
+      ].join(Platform.pathSeparator),
+    );
+    await directory.create(recursive: true);
+
+    final safeName = sanitizeFileName(transfer.fileName);
+    final dot = safeName.lastIndexOf('.');
+    final hasExtension = dot > 0 && dot < safeName.length - 1;
+    final stem = hasExtension ? safeName.substring(0, dot) : safeName;
+    final extension = hasExtension ? safeName.substring(dot) : '';
+    var candidate = File('${directory.path}${Platform.pathSeparator}$safeName');
+    var suffix = 1;
+    while (await candidate.exists()) {
+      candidate = File(
+        '${directory.path}${Platform.pathSeparator}$stem ($suffix)$extension',
+      );
+      suffix += 1;
+    }
+    final tempPath = '${candidate.path}.part-${transfer.id}';
+    final tempFile = File(tempPath);
+    if (await tempFile.exists()) {
+      await tempFile.delete();
+    }
+    return _ReceivePaths(finalPath: candidate.path, tempPath: tempPath);
+  }
+
+  Future<void> _deleteTempFile(FileTransferRecord transfer) async {
+    final tempPath = transfer.tempPath;
+    if (tempPath == null || tempPath.isEmpty) {
+      return;
+    }
+    final tempFile = File(tempPath);
+    if (await tempFile.exists()) {
+      await tempFile.delete();
+    }
+  }
+
+  String _formatTransferError(Object error) {
+    final raw = error.toString();
+    const prefixes = <String>['Exception: ', 'Bad state: ', 'StateError: '];
+    for (final prefix in prefixes) {
+      if (raw.startsWith(prefix)) {
+        return raw.substring(prefix.length);
+      }
+    }
+    return raw;
+  }
+
   void _watchPresence(String username) {
     if (_presenceSubscriptions.containsKey(username)) {
       return;
@@ -620,6 +1430,10 @@ class RainRuntimeController with WidgetsBindingObserver {
     if (brain != null) {
       for (final session in brain!.getSessions()) {
         try {
+          await _failActiveTransfersForPeer(
+            session.peerId,
+            'Transfer canceled because Rain is closing.',
+          );
           await brain!.disconnect(session.peerId);
           await brain!.unregisterPeer(session.peerId);
         } catch (error) {
@@ -928,6 +1742,10 @@ class RainRuntimeController with WidgetsBindingObserver {
 
   Future<void> _stopTrackingPeer(String username) async {
     final normalizedUsername = _normalizedUsername(username);
+    await _failActiveTransfersForPeer(
+      normalizedUsername,
+      'Transfer canceled because the peer link closed.',
+    );
     await _presenceSubscriptions.remove(normalizedUsername)?.cancel();
     _manualDisconnectedPeers.remove(normalizedUsername);
     await brain?.disconnect(normalizedUsername);
@@ -937,4 +1755,18 @@ class RainRuntimeController with WidgetsBindingObserver {
   bool _isBlockedState(FriendState? state) {
     return state == FriendState.blocked || state == FriendState.blockedByPeer;
   }
+}
+
+class _OutgoingFileSource {
+  const _OutgoingFileSource({required this.openRead, this.localPath});
+
+  final Stream<List<int>> Function() openRead;
+  final String? localPath;
+}
+
+class _ReceivePaths {
+  const _ReceivePaths({required this.finalPath, required this.tempPath});
+
+  final String finalPath;
+  final String tempPath;
 }

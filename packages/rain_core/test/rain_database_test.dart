@@ -78,8 +78,12 @@ void main() {
     expect(columns.map((row) => row.data['name']), contains('online'));
     expect(columns.map((row) => row.data['name']), contains('gender'));
     expect(
+      await database.customSelect('PRAGMA table_info(file_transfers);').get(),
+      isNotEmpty,
+    );
+    expect(
       await database.customSelect('PRAGMA user_version;').getSingle(),
-      isA<QueryRow>().having((row) => row.data.values.single, 'version', 4),
+      isA<QueryRow>().having((row) => row.data.values.single, 'version', 5),
     );
   });
 

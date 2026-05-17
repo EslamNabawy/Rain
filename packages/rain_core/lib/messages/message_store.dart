@@ -66,8 +66,9 @@ class MessageStore {
     required String to,
     required String content,
     MessageType type = MessageType.text,
+    bool trackSequence = true,
   }) async {
-    final seq = await nextOutgoingSeq(to);
+    final seq = trackSequence ? await nextOutgoingSeq(to) : 0;
     return MessageEnvelope(
       id: _uuid.v4(),
       from: from,
@@ -127,13 +128,16 @@ class MessageStore {
   Future<StoredMessage> forceStoreIncomingEnvelope(
     MessageEnvelope envelope, {
     required DateTime receivedAt,
+    bool trackSequence = true,
   }) {
     return _database.serializedTransaction(() async {
       final message = await _persistIncoming(
         envelope,
         sentAt: displayTime(envelope, receivedAt).millisecondsSinceEpoch,
       );
-      await _upsertTrackedSeq(_incomingSeqKey(envelope.from), envelope.seq);
+      if (trackSequence) {
+        await _upsertTrackedSeq(_incomingSeqKey(envelope.from), envelope.seq);
+      }
       return message;
     });
   }

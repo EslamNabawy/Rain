@@ -1,8 +1,11 @@
 import 'dart:async';
+import 'dart:io';
 
+import 'package:file_picker/file_picker.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
+import 'package:open_filex/open_filex.dart';
 import 'package:protocol_brain/protocol_brain.dart';
 import 'package:rain_core/rain_core.dart';
 
@@ -838,6 +841,7 @@ class _ChatPanelState extends ConsumerState<_ChatPanel> {
   final TextEditingController _composerController = TextEditingController();
   final ScrollController _messageScrollController = ScrollController();
   bool _isSending = false;
+  bool _isPickingFile = false;
   bool _isConnecting = false;
   bool _showJumpToLatest = false;
 
@@ -887,6 +891,7 @@ class _ChatPanelState extends ConsumerState<_ChatPanel> {
     final canDisconnectNow =
         runtime != null && canChat && connectionStatus.canDisconnect;
     final messages = ref.watch(messagesProvider(widget.peerId));
+    final transfers = ref.watch(fileTransfersProvider(widget.peerId));
     ref.listen<AsyncValue<List<StoredMessage>>>(
       messagesProvider(widget.peerId),
       _handleMessageSound,
@@ -931,6 +936,7 @@ class _ChatPanelState extends ConsumerState<_ChatPanel> {
                         : canChat
                         ? _buildMessages(
                             messages,
+                            transfers,
                             constraints,
                             horizontalPadding,
                             isNarrow,
@@ -965,8 +971,10 @@ class _ChatPanelState extends ConsumerState<_ChatPanel> {
                   controller: _composerController,
                   enabled: runtime != null && canChat,
                   isSending: _isSending,
+                  isAttaching: _isPickingFile,
                   maxLength: InputValidator.messageMaxLength,
                   onSend: () => _sendMessage(runtime),
+                  onAttach: () => _pickAndSendFile(runtime, connectionStatus),
                 ),
               ),
           ],
@@ -1262,6 +1270,7 @@ class _ChatPanelState extends ConsumerState<_ChatPanel> {
 
   Widget _buildMessages(
     AsyncValue<List<StoredMessage>> messages,
+    AsyncValue<List<FileTransferRecord>> transfers,
     BoxConstraints constraints,
     double horizontalPadding,
     bool isNarrow,
@@ -1270,6 +1279,11 @@ class _ChatPanelState extends ConsumerState<_ChatPanel> {
       onRefresh: _refreshChat,
       child: messages.when(
         data: (List<StoredMessage> items) {
+          final transferByMessageId = <String, FileTransferRecord>{
+            for (final transfer
+                in transfers.valueOrNull ?? const <FileTransferRecord>[])
+              transfer.messageId: transfer,
+          };
           if (items.isEmpty) {
             return ListView(
               physics: const AlwaysScrollableScrollPhysics(),
@@ -1316,6 +1330,9 @@ class _ChatPanelState extends ConsumerState<_ChatPanel> {
               final deliveryColor = message.isOutgoing
                   ? _deliveryColor(message.status)
                   : null;
+              final transfer = message.type == MessageType.file
+                  ? transferByMessageId[message.id]
+                  : null;
 
               return Column(
                 crossAxisAlignment: CrossAxisAlignment.stretch,
@@ -1324,23 +1341,39 @@ class _ChatPanelState extends ConsumerState<_ChatPanel> {
                     RainMessageDayDivider(
                       label: _formatMessageDay(message.sentAt),
                     ),
-                  RainMessageBubble(
-                    text: message.content,
-                    timeLabel: _formatMessageTime(message.sentAt),
-                    isOutgoing: message.isOutgoing,
-                    startsCluster: startsCluster,
-                    endsCluster: endsCluster,
-                    maxWidth: maxBubbleWidth,
-                    deliveryLabel: deliveryLabel,
-                    deliveryColor: deliveryColor,
-                    onRetry:
-                        message.isOutgoing &&
-                            message.status == MessageStatus.failed
-                        ? () => unawaited(_resendMessage(message))
-                        : null,
-                    onOpenActions: () =>
-                        unawaited(_showMessageActions(message)),
-                  ),
+                  if (transfer != null)
+                    _FileTransferBubble(
+                      transfer: transfer,
+                      timeLabel: _formatMessageTime(message.sentAt),
+                      startsCluster: startsCluster,
+                      endsCluster: endsCluster,
+                      maxWidth: maxBubbleWidth,
+                      onAccept: () => unawaited(_acceptFileTransfer(transfer)),
+                      onReject: () => unawaited(_rejectFileTransfer(transfer)),
+                      onCancel: () => unawaited(_cancelFileTransfer(transfer)),
+                      onOpen: () => unawaited(_openFileTransfer(transfer)),
+                      onRetry: _canRetryFileTransfer(transfer)
+                          ? () => unawaited(_retryFileTransfer(transfer))
+                          : null,
+                    )
+                  else
+                    RainMessageBubble(
+                      text: message.content,
+                      timeLabel: _formatMessageTime(message.sentAt),
+                      isOutgoing: message.isOutgoing,
+                      startsCluster: startsCluster,
+                      endsCluster: endsCluster,
+                      maxWidth: maxBubbleWidth,
+                      deliveryLabel: deliveryLabel,
+                      deliveryColor: deliveryColor,
+                      onRetry:
+                          message.isOutgoing &&
+                              message.status == MessageStatus.failed
+                          ? () => unawaited(_resendMessage(message))
+                          : null,
+                      onOpenActions: () =>
+                          unawaited(_showMessageActions(message)),
+                    ),
                 ],
               );
             },
@@ -1568,6 +1601,151 @@ class _ChatPanelState extends ConsumerState<_ChatPanel> {
         ),
       );
     }
+  }
+
+  Future<void> _pickAndSendFile(
+    RainRuntimeController? runtime,
+    _ConnectionStatus connectionStatus,
+  ) async {
+    if (_isPickingFile) {
+      return;
+    }
+    if (runtime == null || !connectionStatus.isConnected) {
+      _playSound(RainSoundEffect.error);
+      _showErrorSnack('Connect first.');
+      return;
+    }
+
+    setState(() => _isPickingFile = true);
+    try {
+      final result = await FilePicker.platform.pickFiles(
+        allowMultiple: false,
+        withData: false,
+        withReadStream: true,
+      );
+      final picked = result == null || result.files.isEmpty
+          ? null
+          : result.files.first;
+      if (picked == null) {
+        return;
+      }
+      if (picked.size > maxFileTransferBytes) {
+        throw StateError(
+          'Files are limited to ${formatFileTransferSize(maxFileTransferBytes)}.',
+        );
+      }
+      final localPath = picked.path;
+      final file = localPath == null ? null : File(localPath);
+      await ref
+          .read(messagesProvider(widget.peerId).notifier)
+          .sendFile(
+            fileName: picked.name,
+            fileSize: picked.size,
+            localPath: localPath,
+            openRead: () {
+              if (file != null) {
+                return file.openRead();
+              }
+              final stream = picked.readStream;
+              if (stream == null) {
+                throw StateError('Could not read the selected file.');
+              }
+              return stream;
+            },
+          );
+      _playSound(RainSoundEffect.send);
+      WidgetsBinding.instance.addPostFrameCallback((_) => _jumpToLatest());
+    } catch (error) {
+      _playSound(RainSoundEffect.error);
+      _showErrorSnack(_formatUiError(error));
+    } finally {
+      if (mounted) {
+        setState(() => _isPickingFile = false);
+      }
+    }
+  }
+
+  Future<void> _acceptFileTransfer(FileTransferRecord transfer) async {
+    await _runFileTransferAction(
+      () => ref
+          .read(fileTransfersProvider(widget.peerId).notifier)
+          .accept(transfer.id),
+    );
+  }
+
+  Future<void> _rejectFileTransfer(FileTransferRecord transfer) async {
+    await _runFileTransferAction(
+      () => ref
+          .read(fileTransfersProvider(widget.peerId).notifier)
+          .reject(transfer.id),
+    );
+  }
+
+  Future<void> _cancelFileTransfer(FileTransferRecord transfer) async {
+    await _runFileTransferAction(
+      () => ref
+          .read(fileTransfersProvider(widget.peerId).notifier)
+          .cancel(transfer.id),
+    );
+  }
+
+  Future<void> _retryFileTransfer(FileTransferRecord transfer) async {
+    await _runFileTransferAction(
+      () => ref
+          .read(fileTransfersProvider(widget.peerId).notifier)
+          .retry(transfer),
+      successEffect: RainSoundEffect.send,
+    );
+  }
+
+  Future<void> _openFileTransfer(FileTransferRecord transfer) async {
+    final localPath = transfer.localPath;
+    if (localPath == null || localPath.isEmpty) {
+      _showErrorSnack('Received file is not available.');
+      return;
+    }
+    final file = File(localPath);
+    if (!await file.exists()) {
+      _showErrorSnack('Received file is not available.');
+      return;
+    }
+    final result = await OpenFilex.open(localPath);
+    if (result.type != ResultType.done) {
+      _showErrorSnack(result.message);
+    }
+  }
+
+  bool _canRetryFileTransfer(FileTransferRecord transfer) {
+    return transfer.direction == FileTransferDirection.outgoing &&
+        (transfer.state == FileTransferState.failed ||
+            transfer.state == FileTransferState.canceled) &&
+        transfer.localPath != null &&
+        transfer.localPath!.isNotEmpty;
+  }
+
+  Future<void> _runFileTransferAction(
+    Future<void> Function() action, {
+    RainSoundEffect successEffect = RainSoundEffect.action,
+  }) async {
+    try {
+      await action();
+      _playSound(successEffect);
+    } catch (error) {
+      _playSound(RainSoundEffect.error);
+      _showErrorSnack(_formatUiError(error));
+    }
+  }
+
+  void _showErrorSnack(String message) {
+    if (!mounted) {
+      return;
+    }
+    ScaffoldMessenger.of(context).showSnackBar(
+      SnackBar(
+        content: Text(message),
+        backgroundColor: Theme.of(context).colorScheme.error,
+      ),
+    );
   }
 
   FriendRecord? _currentFriend(AsyncValue<List<FriendRecord>> friends) {
@@ -1809,6 +1987,248 @@ class _ChatPanelState extends ConsumerState<_ChatPanel> {
       }
     }
   }
+}
+
+class _FileTransferBubble extends StatelessWidget {
+  const _FileTransferBubble({
+    required this.transfer,
+    required this.timeLabel,
+    required this.startsCluster,
+    required this.endsCluster,
+    required this.maxWidth,
+    required this.onAccept,
+    required this.onReject,
+    required this.onCancel,
+    required this.onOpen,
+    this.onRetry,
+  });
+
+  final FileTransferRecord transfer;
+  final String timeLabel;
+  final bool startsCluster;
+  final bool endsCluster;
+  final double maxWidth;
+  final VoidCallback onAccept;
+  final VoidCallback onReject;
+  final VoidCallback onCancel;
+  final VoidCallback onOpen;
+  final VoidCallback? onRetry;
+
+  bool get _isOutgoing => transfer.direction == FileTransferDirection.outgoing;
+  bool get _isActive => transfer.isActive;
+  bool get _canOpen =>
+      transfer.state == FileTransferState.completed &&
+      transfer.localPath != null &&
+      transfer.localPath!.isNotEmpty;
+
+  @override
+  Widget build(BuildContext context) {
+    final scheme = Theme.of(context).colorScheme;
+    final isDark = scheme.brightness == Brightness.dark;
+    final bubbleColor = _isOutgoing
+        ? (isDark ? const Color(0xFF1D7E8E) : scheme.primaryContainer)
+        : (isDark ? const Color(0xFF18262E) : scheme.surfaceContainerHighest);
+    final textColor = _isOutgoing
+        ? (isDark ? Colors.white : scheme.onPrimaryContainer)
+        : scheme.onSurface;
+    final muted = textColor.withValues(alpha: 0.72);
+    final statusColor = _fileTransferStatusColor(transfer.state);
+    final tailRadius = const Radius.circular(6);
+    final roundRadius = const Radius.circular(20);
+    final radius = BorderRadius.only(
+      topLeft: roundRadius,
+      topRight: roundRadius,
+      bottomLeft: _isOutgoing || !endsCluster ? roundRadius : tailRadius,
+      bottomRight: _isOutgoing && endsCluster ? tailRadius : roundRadius,
+    );
+
+    return Align(
+      alignment: _isOutgoing ? Alignment.centerRight : Alignment.centerLeft,
+      child: ConstrainedBox(
+        constraints: BoxConstraints(maxWidth: maxWidth),
+        child: Container(
+          margin: EdgeInsets.only(
+            top: startsCluster ? 8 : 2,
+            bottom: endsCluster ? 8 : 1,
+          ),
+          padding: const EdgeInsets.fromLTRB(14, 12, 12, 10),
+          decoration: BoxDecoration(color: bubbleColor, borderRadius: radius),
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: <Widget>[
+              Row(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: <Widget>[
+                  Icon(Icons.insert_drive_file_outlined, color: textColor),
+                  const SizedBox(width: 10),
+                  Expanded(
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: <Widget>[
+                        Text(
+                          transfer.fileName,
+                          maxLines: 2,
+                          overflow: TextOverflow.ellipsis,
+                          style: Theme.of(context).textTheme.bodyMedium
+                              ?.copyWith(
+                                color: textColor,
+                                fontWeight: FontWeight.w900,
+                                height: 1.18,
+                              ),
+                        ),
+                        const SizedBox(height: 4),
+                        Text(
+                          formatFileTransferSize(transfer.fileSize),
+                          style: Theme.of(context).textTheme.labelMedium
+                              ?.copyWith(
+                                color: muted,
+                                fontWeight: FontWeight.w700,
+                              ),
+                        ),
+                      ],
+                    ),
+                  ),
+                ],
+              ),
+              if (_isActive) ...<Widget>[
+                const SizedBox(height: 10),
+                ClipRRect(
+                  borderRadius: BorderRadius.circular(4),
+                  child: LinearProgressIndicator(
+                    value: transfer.fileSize <= 0 ? null : transfer.progress,
+                    minHeight: 5,
+                    color: statusColor,
+                    backgroundColor: textColor.withValues(alpha: 0.14),
+                  ),
+                ),
+              ],
+              if (transfer.error != null && transfer.error!.isNotEmpty) ...[
+                const SizedBox(height: 8),
+                Text(
+                  transfer.error!,
+                  style: Theme.of(context).textTheme.labelMedium?.copyWith(
+                    color: statusColor,
+                    fontWeight: FontWeight.w800,
+                  ),
+                ),
+              ],
+              const SizedBox(height: 9),
+              Wrap(
+                spacing: 8,
+                runSpacing: 8,
+                crossAxisAlignment: WrapCrossAlignment.center,
+                children: <Widget>[
+                  Text(
+                    timeLabel,
+                    style: Theme.of(context).textTheme.labelSmall?.copyWith(
+                      color: muted,
+                      fontWeight: FontWeight.w700,
+                    ),
+                  ),
+                  Container(
+                    width: 5,
+                    height: 5,
+                    decoration: BoxDecoration(
+                      color: statusColor,
+                      shape: BoxShape.circle,
+                    ),
+                  ),
+                  Text(
+                    _fileTransferStatusLabel(transfer),
+                    style: Theme.of(context).textTheme.labelSmall?.copyWith(
+                      color: statusColor,
+                      fontWeight: FontWeight.w900,
+                    ),
+                  ),
+                ],
+              ),
+              if (_hasActions) ...<Widget>[
+                const SizedBox(height: 10),
+                Wrap(
+                  spacing: 8,
+                  runSpacing: 8,
+                  children: <Widget>[
+                    if (transfer.direction == FileTransferDirection.incoming &&
+                        transfer.state == FileTransferState.offered) ...[
+                      FilledButton.tonalIcon(
+                        onPressed: onAccept,
+                        icon: const Icon(Icons.check_rounded),
+                        label: const Text('Accept'),
+                      ),
+                      TextButton.icon(
+                        onPressed: onReject,
+                        icon: const Icon(Icons.close_rounded),
+                        label: const Text('Reject'),
+                      ),
+                    ],
+                    if (_isActive &&
+                        transfer.state != FileTransferState.offered)
+                      TextButton.icon(
+                        onPressed: onCancel,
+                        icon: const Icon(Icons.close_rounded),
+                        label: const Text('Cancel'),
+                      ),
+                    if (_canOpen)
+                      FilledButton.tonalIcon(
+                        onPressed: onOpen,
+                        icon: const Icon(Icons.open_in_new_rounded),
+                        label: const Text('Open'),
+                      ),
+                    if (onRetry != null)
+                      TextButton.icon(
+                        onPressed: onRetry,
+                        icon: const Icon(Icons.refresh_rounded),
+                        label: const Text('Retry'),
+                      ),
+                  ],
+                ),
+              ],
+            ],
+          ),
+        ),
+      ),
+    );
+  }
+
+  bool get _hasActions {
+    return (transfer.direction == FileTransferDirection.incoming &&
+            transfer.state == FileTransferState.offered) ||
+        (_isActive && transfer.state != FileTransferState.offered) ||
+        _canOpen ||
+        onRetry != null;
+  }
+}
+
+String _fileTransferStatusLabel(FileTransferRecord transfer) {
+  final progress = transfer.fileSize <= 0
+      ? ''
+      : ' ${(transfer.progress * 100).clamp(0, 100).toStringAsFixed(0)}%';
+  return switch (transfer.state) {
+    FileTransferState.offered =>
+      transfer.direction == FileTransferDirection.incoming
+          ? 'Incoming'
+          : 'Offered',
+    FileTransferState.accepted => 'Accepted',
+    FileTransferState.sending => 'Sending$progress',
+    FileTransferState.receiving => 'Receiving$progress',
+    FileTransferState.completed => 'Completed',
+    FileTransferState.canceled => 'Canceled',
+    FileTransferState.failed => 'Failed',
+    FileTransferState.rejected => 'Rejected',
+  };
+}
+
+Color _fileTransferStatusColor(FileTransferState state) {
+  return switch (state) {
+    FileTransferState.offered ||
+    FileTransferState.accepted => const Color(0xFF7DD3FC),
+    FileTransferState.sending ||
+    FileTransferState.receiving => const Color(0xFFFBBF24),
+    FileTransferState.completed => const Color(0xFF2DD4A3),
+    FileTransferState.canceled ||
+    FileTransferState.failed ||
+    FileTransferState.rejected => const Color(0xFFFF6B6B),
+  };
 }
 
 class _LinkStatCard extends StatelessWidget {

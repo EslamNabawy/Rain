@@ -82,6 +82,7 @@ class DefaultPeerCore implements PeerCore {
     _ensureState(<PeerState>{PeerState.ready});
     await openChannel(PeerChannels.chat);
     await openChannel(PeerChannels.control);
+    await openChannel(PeerChannels.file);
     final offer = await _requirePeerConnection().createOffer();
     await _requirePeerConnection().setLocalDescription(offer);
     _transition(PeerState.offering);
@@ -140,6 +141,20 @@ class DefaultPeerCore implements PeerCore {
       opts ?? _config!.defaultChannelOptions(),
     );
     _attachChannel(channelId, channel);
+  }
+
+  @override
+  Future<int> bufferedAmount(String channelId) async {
+    final channel = _channels[channelId];
+    if (channel == null) {
+      throw StateError('Channel $channelId is not open.');
+    }
+    return channel.getBufferedAmount();
+  }
+
+  @override
+  bool isChannelOpen(String channelId) {
+    return _openChannels.contains(channelId);
   }
 
   @override

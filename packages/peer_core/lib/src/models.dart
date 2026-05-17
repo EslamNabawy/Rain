@@ -79,6 +79,8 @@ abstract class PeerCore {
   void send(String channelId, dynamic data);
   Future<void> openChannel(String channelId, {RTCDataChannelInit? opts});
   Future<void> closeChannel(String channelId);
+  Future<int> bufferedAmount(String channelId);
+  bool isChannelOpen(String channelId);
 
   Stream<RTCIceCandidate> get onIceCandidate;
   Stream<void> get onConnected;

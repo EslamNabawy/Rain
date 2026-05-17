@@ -1,6 +1,6 @@
 import 'dart:convert';
 
-enum MessageType { text, system }
+enum MessageType { text, system, file }
 
 enum MessageStatus { queued, sending, sent, pendingAck, delivered, failed }
 

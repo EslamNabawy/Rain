@@ -1,4 +1,5 @@
 import 'dart:async';
+import 'dart:io';
 
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
@@ -105,6 +106,10 @@ final messageStoreProvider = Provider(
 
 final offlineQueueStoreProvider = Provider(
   (Ref ref) => OfflineQueueStore(ref.watch(databaseProvider)),
+);
+
+final fileTransferStoreProvider = Provider(
+  (Ref ref) => FileTransferStore(ref.watch(databaseProvider)),
 );
 
 final connectionMemoryStoreProvider = Provider(
@@ -378,6 +383,105 @@ class MessagesController
     await _runtime().sendMessage(_peerId, content);
   }
 
+  Future<void> sendFile({
+    required String fileName,
+    required int fileSize,
+    required Stream<List<int>> Function() openRead,
+    String? localPath,
+    String? mimeType,
+  }) async {
+    await _runtime().sendFile(
+      peerId: _peerId,
+      fileName: fileName,
+      fileSize: fileSize,
+      openRead: openRead,
+      localPath: localPath,
+      mimeType: mimeType,
+    );
+  }
+
+  RainRuntimeController _runtime() {
+    final runtime = ref.read(runtimeControllerProvider).valueOrNull;
+    if (runtime == null) {
+      throw StateError('Rain is still starting. Try again in a moment.');
+    }
+    return runtime;
+  }
+}
+
+final fileTransfersProvider =
+    AsyncNotifierProvider.family<
+      FileTransfersController,
+      List<FileTransferRecord>,
+      String
+    >(FileTransfersController.new);
+
+class FileTransfersController
+    extends FamilyAsyncNotifier<List<FileTransferRecord>, String> {
+  late String _peerId;
+  StreamSubscription<List<FileTransferRecord>>? _subscription;
+
+  @override
+  Future<List<FileTransferRecord>> build(String peerId) {
+    _peerId = peerId;
+    final completer = Completer<List<FileTransferRecord>>();
+    var completed = false;
+    _subscription = ref
+        .watch(fileTransferStoreProvider)
+        .watchPeerTransfers(peerId)
+        .listen(
+          (List<FileTransferRecord> transfers) {
+            state = AsyncValue.data(transfers);
+            if (!completed) {
+              completed = true;
+              completer.complete(transfers);
+            }
+          },
+          onError: (Object error, StackTrace stackTrace) {
+            state = AsyncValue.error(error, stackTrace);
+            if (!completed) {
+              completed = true;
+              completer.completeError(error, stackTrace);
+            }
+          },
+        );
+    ref.onDispose(() => unawaited(_subscription?.cancel()));
+    return completer.future;
+  }
+
+  Future<void> accept(String transferId) async {
+    await _runtime().acceptFileTransfer(transferId);
+  }
+
+  Future<void> reject(String transferId) async {
+    await _runtime().rejectFileTransfer(transferId);
+  }
+
+  Future<void> cancel(String transferId) async {
+    await _runtime().cancelFileTransfer(transferId);
+  }
+
+  Future<void> retry(FileTransferRecord transfer) async {
+    final localPath = transfer.localPath;
+    if (transfer.direction != FileTransferDirection.outgoing ||
+        localPath == null ||
+        localPath.isEmpty) {
+      throw StateError('Original file is no longer available.');
+    }
+    final file = File(localPath);
+    if (!await file.exists()) {
+      throw StateError('Original file is no longer available.');
+    }
+    await _runtime().sendFile(
+      peerId: _peerId,
+      fileName: transfer.fileName,
+      fileSize: await file.length(),
+      openRead: file.openRead,
+      localPath: localPath,
+      mimeType: transfer.mimeType,
+    );
+  }
+
   RainRuntimeController _runtime() {
     final runtime = ref.read(runtimeControllerProvider).valueOrNull;
     if (runtime == null) {
@@ -428,6 +532,7 @@ class RuntimeController extends AsyncNotifier<RainRuntimeController?> {
       messageStore: ref.watch(messageStoreProvider),
       offlineQueueStore: ref.watch(offlineQueueStoreProvider),
       messageDeliveryService: ref.watch(messageDeliveryServiceProvider),
+      fileTransferStore: ref.watch(fileTransferStoreProvider),
       heartbeatInterval: environment.heartbeatInterval,
     );
 
@@ -453,6 +558,7 @@ class RuntimeController extends AsyncNotifier<RainRuntimeController?> {
     state = const AsyncValue.data(null);
     ref.invalidate(identityProvider);
     ref.invalidate(friendsProvider);
+    ref.invalidate(fileTransfersProvider);
     ref.invalidate(connectionsProvider);
     ref.invalidate(recentSearchesProvider);
   }

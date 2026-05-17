@@ -756,6 +756,55 @@ void main() {
       },
     );
 
+    test(
+      'sendFile while disconnected does not connect or create a transfer',
+      () async {
+        final adapter = NoopSignalingAdapter();
+        final brain = TestSessionManager();
+        await adapter.register('bob', 'bobpw');
+        await db
+            .into(db.friends)
+            .insert(
+              FriendsCompanion.insert(
+                username: 'bob',
+                displayName: 'Bob',
+                state: 'friend',
+                addedAt: 0,
+              ),
+            );
+        final messageStore = MessageStore(db);
+        final offlineQueueStore = OfflineQueueStore(db);
+        final runtime = RainRuntimeController(
+          selfIdentity: alice,
+          adapter: adapter,
+          brain: brain,
+          database: db,
+          friendStore: FriendStore(db),
+          messageStore: messageStore,
+          offlineQueueStore: offlineQueueStore,
+          messageDeliveryService: MessageDeliveryService(
+            messageStore: messageStore,
+            offlineQueueStore: offlineQueueStore,
+          ),
+        );
+
+        await expectLater(
+          runtime.sendFile(
+            peerId: 'bob',
+            fileName: 'note.txt',
+            fileSize: 1,
+            openRead: () => Stream<List<int>>.value(<int>[1]),
+          ),
+          throwsA(isA<StateError>()),
+        );
+
+        expect(brain.registeredPeers, isEmpty);
+        expect(brain.connectedPeers, isEmpty);
+        expect(await db.select(db.messages).get(), isEmpty);
+        expect(await db.select(db.fileTransfers).get(), isEmpty);
+      },
+    );
+
     test('resendMessage stays queued while disconnected', () async {
       final adapter = NoopSignalingAdapter();
       final brain = TestSessionManager();
@@ -1452,6 +1501,18 @@ class TestSessionManager implements SessionManager {
 
   @override
   void sendControl(String peerId, String data) {}
+
+  @override
+  void send(String peerId, SessionChannel channel, Object data) {}
+
+  @override
+  Future<void> openChannel(String peerId, SessionChannel channel) async {}
+
+  @override
+  Future<int> bufferedAmount(String peerId, SessionChannel channel) async => 0;
+
+  @override
+  bool isChannelOpen(String peerId, SessionChannel channel) => true;
 
   @override
   Future<void> unregisterPeer(String peerId) async {

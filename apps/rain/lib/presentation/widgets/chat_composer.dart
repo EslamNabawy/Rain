@@ -14,6 +14,8 @@ class ChatComposer extends StatefulWidget {
     required this.isSending,
     required this.maxLength,
     required this.onSend,
+    this.onAttach,
+    this.isAttaching = false,
     this.hintText = 'Message',
     this.textCapitalization = TextCapitalization.sentences,
   });
@@ -23,6 +25,8 @@ class ChatComposer extends StatefulWidget {
   final bool isSending;
   final int maxLength;
   final FutureOr<void> Function() onSend;
+  final FutureOr<void> Function()? onAttach;
+  final bool isAttaching;
   final String hintText;
   final TextCapitalization textCapitalization;
 
@@ -40,6 +44,9 @@ class _ChatComposerState extends State<ChatComposer> {
       widget.enabled &&
       !widget.isSending &&
       widget.controller.text.trim().isNotEmpty;
+
+  bool get _canAttach =>
+      widget.enabled && !widget.isSending && !widget.isAttaching;
 
   @override
   void initState() {
@@ -131,6 +138,28 @@ class _ChatComposerState extends State<ChatComposer> {
       child: Row(
         crossAxisAlignment: CrossAxisAlignment.end,
         children: <Widget>[
+          if (widget.onAttach != null) ...<Widget>[
+            SizedBox.square(
+              dimension: 48,
+              child: IconButton.filledTonal(
+                tooltip: 'Attach file',
+                onPressed: _canAttach
+                    ? () => unawaited(Future<void>.sync(widget.onAttach!))
+                    : null,
+                icon: widget.isAttaching
+                    ? SizedBox(
+                        width: 18,
+                        height: 18,
+                        child: CircularProgressIndicator(
+                          strokeWidth: 2,
+                          color: scheme.primary,
+                        ),
+                      )
+                    : const Icon(Icons.attach_file_rounded),
+              ),
+            ),
+            const SizedBox(width: 8),
+          ],
           Expanded(
             child: AnimatedContainer(
               duration: RainMotion.quick,

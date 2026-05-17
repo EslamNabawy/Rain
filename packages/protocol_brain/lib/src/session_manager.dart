@@ -55,6 +55,10 @@ abstract class SessionManager {
   Future<Session> connect(String peerId);
   Future<void> disconnect(String peerId);
   void sendControl(String peerId, String data);
+  void send(String peerId, SessionChannel channel, Object data);
+  Future<void> openChannel(String peerId, SessionChannel channel);
+  Future<int> bufferedAmount(String peerId, SessionChannel channel);
+  bool isChannelOpen(String peerId, SessionChannel channel);
 }
 
 abstract class ProtocolBrain implements SessionManager {}

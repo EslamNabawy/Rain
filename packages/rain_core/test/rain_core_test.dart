@@ -138,4 +138,53 @@ void main() {
       expect(messages.map((m) => m.id), <String>['out-1', 'in-1']);
     },
   );
+
+  test(
+    'unsequenced file messages do not move chat sequence trackers',
+    () async {
+      final database = RainDatabase(NativeDatabase.memory());
+      addTearDown(database.close);
+
+      final store = MessageStore(database);
+      final outgoing = await store.composeOutgoingEnvelope(
+        from: 'alice',
+        to: 'bob',
+        content: 'file',
+        type: MessageType.file,
+        trackSequence: false,
+      );
+
+      expect(outgoing.seq, 0);
+      expect(await store.nextOutgoingSeq('bob'), 1);
+
+      await store.forceStoreIncomingEnvelope(
+        MessageEnvelope(
+          id: 'file-1',
+          from: 'bob',
+          to: 'alice',
+          content: 'file',
+          sentAt: DateTime.now().millisecondsSinceEpoch,
+          seq: 0,
+          type: MessageType.file,
+        ),
+        receivedAt: DateTime.now(),
+        trackSequence: false,
+      );
+
+      expect(await store.lastIncomingSeq('bob'), 0);
+      final textResult = await store.storeIncomingEnvelope(
+        MessageEnvelope(
+          id: 'text-1',
+          from: 'bob',
+          to: 'alice',
+          content: 'hello',
+          sentAt: DateTime.now().millisecondsSinceEpoch,
+          seq: 1,
+          type: MessageType.text,
+        ),
+        receivedAt: DateTime.now(),
+      );
+      expect(textResult.disposition, IncomingMessageDisposition.stored);
+    },
+  );
 }

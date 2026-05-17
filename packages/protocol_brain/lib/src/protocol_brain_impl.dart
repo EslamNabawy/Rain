@@ -135,11 +135,43 @@ class ProtocolBrainImpl implements ProtocolBrain {
 
   @override
   void sendControl(String peerId, String data) {
+    send(peerId, SessionChannel.control, data);
+  }
+
+  @override
+  void send(String peerId, SessionChannel channel, Object data) {
     final active = _sessions[peerId];
     if (active == null) {
       throw StateError('No active session for $peerId');
     }
-    active.peer.send(PeerChannels.control, data);
+    active.peer.send(_toPeerChannel(channel), data);
+  }
+
+  @override
+  Future<void> openChannel(String peerId, SessionChannel channel) async {
+    final active = _sessions[peerId];
+    if (active == null) {
+      throw StateError('No active session for $peerId');
+    }
+    await active.peer.openChannel(_toPeerChannel(channel));
+  }
+
+  @override
+  Future<int> bufferedAmount(String peerId, SessionChannel channel) async {
+    final active = _sessions[peerId];
+    if (active == null) {
+      throw StateError('No active session for $peerId');
+    }
+    return active.peer.bufferedAmount(_toPeerChannel(channel));
+  }
+
+  @override
+  bool isChannelOpen(String peerId, SessionChannel channel) {
+    final active = _sessions[peerId];
+    if (active == null) {
+      return false;
+    }
+    return active.peer.isChannelOpen(_toPeerChannel(channel));
   }
 
   @override
@@ -791,6 +823,17 @@ SessionChannel _toSessionChannel(String channelId) {
       return SessionChannel.file;
   }
   throw StateError('Unknown peer channel: $channelId');
+}
+
+String _toPeerChannel(SessionChannel channel) {
+  switch (channel) {
+    case SessionChannel.chat:
+      return PeerChannels.chat;
+    case SessionChannel.control:
+      return PeerChannels.control;
+    case SessionChannel.file:
+      return PeerChannels.file;
+  }
 }
 
 class _ActiveSession {

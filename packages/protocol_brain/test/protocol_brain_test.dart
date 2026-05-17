@@ -658,6 +658,12 @@ class _FakePeerCore implements PeerCore {
   Future<void> closeChannel(String channelId) async {}
 
   @override
+  Future<int> bufferedAmount(String channelId) async => 0;
+
+  @override
+  bool isChannelOpen(String channelId) => true;
+
+  @override
   Stream<RTCIceCandidate> get onIceCandidate => _iceController.stream;
 
   @override
