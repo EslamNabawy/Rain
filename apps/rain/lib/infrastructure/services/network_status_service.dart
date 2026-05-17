@@ -108,24 +108,35 @@ class NetworkStatusService {
   NetworkStatusService({
     required ConnectivityProbe connectivityProbe,
     required BackendConnectivityProbe backendProbe,
+    Duration backendStartupGrace = const Duration(seconds: 8),
   }) : _connectivityProbe = connectivityProbe,
-       _backendProbe = backendProbe;
+       _backendProbe = backendProbe,
+       _backendStartupGrace = backendStartupGrace;
 
   final ConnectivityProbe _connectivityProbe;
   final BackendConnectivityProbe _backendProbe;
+  final Duration _backendStartupGrace;
 
   Stream<NetworkStatusState> watch() {
     late StreamController<NetworkStatusState> controller;
     StreamSubscription<List<ConnectivityResult>>? connectivitySubscription;
     StreamSubscription<bool>? backendSubscription;
+    Timer? backendStartupGraceTimer;
     List<ConnectivityResult>? latestConnectivity;
     bool latestBackendConnected = true;
+    var hasConfirmedBackendOnline = false;
+    var backendStartupGraceExpired = false;
     var closed = false;
 
     void emit(NetworkStatusState status) {
       if (!closed && !controller.isClosed) {
         controller.add(status);
       }
+    }
+
+    void cancelBackendStartupGrace() {
+      backendStartupGraceTimer?.cancel();
+      backendStartupGraceTimer = null;
     }
 
     NetworkStatusState resolveStatus() {
@@ -137,23 +148,59 @@ class NetworkStatusService {
         return const NetworkStatusState.offline();
       }
       if (!latestBackendConnected) {
+        if (!hasConfirmedBackendOnline && !backendStartupGraceExpired) {
+          return const NetworkStatusState.checking();
+        }
         return const NetworkStatusState.limited();
       }
       return const NetworkStatusState.online();
     }
 
+    void startBackendStartupGrace() {
+      if (hasConfirmedBackendOnline ||
+          backendStartupGraceExpired ||
+          backendStartupGraceTimer != null) {
+        return;
+      }
+      if (_backendStartupGrace <= Duration.zero) {
+        backendStartupGraceExpired = true;
+        return;
+      }
+      backendStartupGraceTimer = Timer(_backendStartupGrace, () {
+        backendStartupGraceTimer = null;
+        backendStartupGraceExpired = true;
+        emit(resolveStatus());
+      });
+    }
+
+    void updateBackendConnected(bool connected) {
+      latestBackendConnected = connected;
+      if (connected) {
+        hasConfirmedBackendOnline = true;
+        backendStartupGraceExpired = false;
+        cancelBackendStartupGrace();
+      } else if (!_isOffline(
+        latestConnectivity ?? const <ConnectivityResult>[],
+      )) {
+        startBackendStartupGrace();
+      }
+      emit(resolveStatus());
+    }
+
     Future<void> refreshBackend() async {
       if (_isOffline(latestConnectivity ?? const <ConnectivityResult>[])) {
         latestBackendConnected = false;
+        cancelBackendStartupGrace();
         emit(resolveStatus());
         return;
       }
+      bool connected;
       try {
-        latestBackendConnected = await _backendProbe.checkConnected();
+        connected = await _backendProbe.checkConnected();
       } catch (_) {
-        latestBackendConnected = false;
+        connected = false;
       }
-      emit(resolveStatus());
+      updateBackendConnected(connected);
     }
 
     controller = StreamController<NetworkStatusState>.broadcast(
@@ -182,12 +229,12 @@ class NetworkStatusService {
         backendSubscription = _backendProbe.watchConnected().listen((
           bool connected,
         ) {
-          latestBackendConnected = connected;
-          emit(resolveStatus());
+          updateBackendConnected(connected);
         });
       },
       onCancel: () async {
         closed = true;
+        cancelBackendStartupGrace();
         await connectivitySubscription?.cancel();
         await backendSubscription?.cancel();
       },

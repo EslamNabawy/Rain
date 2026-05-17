@@ -30,6 +30,7 @@ void main() {
             initial: const <ConnectivityResult>[ConnectivityResult.wifi],
           ),
           backendProbe: _FakeBackendProbe(initial: false),
+          backendStartupGrace: Duration.zero,
         );
 
         final status = await service.watch().firstWhere(
@@ -41,6 +42,30 @@ void main() {
       },
     );
 
+    test('does not show limited during backend startup grace', () async {
+      final service = NetworkStatusService(
+        connectivityProbe: _FakeConnectivityProbe(
+          initial: const <ConnectivityResult>[ConnectivityResult.mobile],
+        ),
+        backendProbe: _FakeBackendProbe(initial: false),
+        backendStartupGrace: const Duration(milliseconds: 30),
+      );
+      final statuses = <NetworkStatusKind>[];
+      final subscription = service.watch().listen(
+        (NetworkStatusState status) => statuses.add(status.kind),
+      );
+
+      await pumpEventQueue();
+      await Future<void>.delayed(const Duration(milliseconds: 10));
+      expect(statuses, isNot(contains(NetworkStatusKind.limited)));
+      expect(statuses.last, NetworkStatusKind.checking);
+
+      await Future<void>.delayed(const Duration(milliseconds: 40));
+      await subscription.cancel();
+
+      expect(statuses, contains(NetworkStatusKind.limited));
+    });
+
     test('emits online again when backend reconnects', () async {
       final backend = _FakeBackendProbe(initial: false);
       final service = NetworkStatusService(
@@ -48,6 +73,7 @@ void main() {
           initial: const <ConnectivityResult>[ConnectivityResult.wifi],
         ),
         backendProbe: backend,
+        backendStartupGrace: Duration.zero,
       );
       final statuses = <NetworkStatusKind>[];
       final subscription = service.watch().listen(
@@ -62,6 +88,32 @@ void main() {
       expect(statuses, contains(NetworkStatusKind.limited));
       expect(statuses, contains(NetworkStatusKind.online));
     });
+
+    test(
+      'marks limited immediately after a confirmed backend disconnect',
+      () async {
+        final backend = _FakeBackendProbe(initial: true);
+        final service = NetworkStatusService(
+          connectivityProbe: _FakeConnectivityProbe(
+            initial: const <ConnectivityResult>[ConnectivityResult.wifi],
+          ),
+          backendProbe: backend,
+          backendStartupGrace: const Duration(seconds: 30),
+        );
+        final statuses = <NetworkStatusKind>[];
+        final subscription = service.watch().listen(
+          (NetworkStatusState status) => statuses.add(status.kind),
+        );
+
+        await pumpEventQueue();
+        backend.emit(false);
+        await pumpEventQueue();
+        await subscription.cancel();
+
+        expect(statuses, contains(NetworkStatusKind.online));
+        expect(statuses.last, NetworkStatusKind.limited);
+      },
+    );
   });
 }
 
