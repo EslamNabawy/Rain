@@ -208,9 +208,13 @@ void main() {
 
   test('build artifacts workflow uploads mobile APKs without archives', () {
     final workflow = _repoFile('.github/workflows/build-artifacts.yml');
+    final androidBuildStep = RegExp(
+      r'- name: Build Android APK artifacts(?<step>[\s\S]*?)\n\s*- name:',
+    ).firstMatch(workflow)?.namedGroup('step');
 
-    expect(workflow, contains("'-AndroidArtifactSet'"));
-    expect(workflow, contains("'mobile'"));
+    expect(androidBuildStep, isNotNull);
+    expect(androidBuildStep, contains("'-AndroidArtifactSet'"));
+    expect(androidBuildStep, contains("'mobile'"));
     expect(workflow, contains('Rain-Demo-Android-Universal-Build.apk'));
     expect(workflow, contains('Rain-Demo-Android-ARM-v7-Build.apk'));
     expect(workflow, contains('Rain-Demo-Android-ARM-v8-v9-Build.apk'));

@@ -79,8 +79,6 @@ jobs:
             'artifacts',
             '-DartDefinesFile',
             $env:RAIN_DART_DEFINES_FILE,
-            '-AndroidArtifactSet',
-            'mobile',
             '-Clean'
           )
           if ($env:BUILD_PROFILE -eq 'demo') {
@@ -170,6 +168,8 @@ jobs:
             'artifacts',
             '-DartDefinesFile',
             $env:RAIN_DART_DEFINES_FILE,
+            '-AndroidArtifactSet',
+            'mobile',
             '-Clean'
           )
           if ($env:BUILD_PROFILE -eq 'demo') {
