@@ -381,7 +381,6 @@ jobs:
         run: |
           $expected = @(
             @{ Label = 'Windows portable EXE'; Path = 'artifacts\Rain-Demo-Windows-x64-Build\rain.exe' },
-            @{ Label = 'Windows portable zip'; Path = 'artifacts\Rain-Demo-Windows-x64-Build.zip' },
             @{ Label = 'Android universal APK'; Path = 'artifacts\Rain-Demo-Android-Universal-Build.apk' },
             @{ Label = 'Android ARM v7 APK (armeabi-v7a)'; Path = 'artifacts\Rain-Demo-Android-ARM-v7-Build.apk' },
             @{ Label = 'Android ARM v8/v9 APK (arm64-v8a)'; Path = 'artifacts\Rain-Demo-Android-ARM-v8-v9-Build.apk' },
@@ -394,12 +393,18 @@ jobs:
             }
             Write-Host "Verified $($artifact.Label): $path"
           }
+          $nestedArchives = Get-ChildItem -LiteralPath 'artifacts\Rain-Demo-Windows-x64-Build' -Recurse -File |
+            Where-Object { $_.Extension -in @('.zip', '.rar', '.7z') }
+          if ($nestedArchives) {
+            $archiveList = ($nestedArchives | ForEach-Object { $_.FullName }) -join "`n"
+            throw "Windows portable upload folder must not contain nested archives:`n$archiveList"
+          }
 
       - name: Upload Windows portable EXE bundle
         uses: actions/upload-artifact@v7
         with:
           name: Rain-Demo-Windows-x64-Build
-          path: artifacts/Rain-Demo-Windows-x64-Build.zip
+          path: artifacts/Rain-Demo-Windows-x64-Build
           if-no-files-found: error
           retention-days: ${{ env.ARTIFACT_RETENTION_RELEASE }}
 

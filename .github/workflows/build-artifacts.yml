@@ -86,11 +86,20 @@ jobs:
           }
           pwsh @args
 
-      - name: Upload Windows artifact
+      - name: Upload Windows demo portable app
+        if: ${{ env.BUILD_PROFILE == 'demo' }}
         uses: actions/upload-artifact@v7
         with:
-          name: ${{ env.BUILD_PROFILE == 'demo' && 'Rain-Demo-Windows-x64-Build' || 'Rain-Release-Windows-x64-Build' }}
-          path: artifacts/*.zip
+          name: Rain-Demo-Windows-x64-Build
+          path: artifacts/Rain-Demo-Windows-x64-Build
+          if-no-files-found: error
+
+      - name: Upload Windows production portable app
+        if: ${{ env.BUILD_PROFILE == 'production' }}
+        uses: actions/upload-artifact@v7
+        with:
+          name: Rain-Release-Windows-x64-Build
+          path: artifacts/Rain-windows-portable
           if-no-files-found: error
 
   build-android:
