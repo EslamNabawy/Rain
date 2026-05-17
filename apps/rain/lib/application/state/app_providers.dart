@@ -10,9 +10,12 @@ import 'package:rain/application/bootstrap/app_bootstrap.dart';
 import 'package:rain/infrastructure/services/app_settings_store.dart';
 import 'package:rain/infrastructure/services/background_services.dart';
 import 'package:rain/infrastructure/services/force_update_service.dart';
+import 'package:rain/infrastructure/services/network_status_service.dart';
+import 'package:rain/infrastructure/services/received_file_export_service.dart';
 import 'package:rain/application/runtime/rain_runtime_controller.dart';
 import 'package:rain/infrastructure/services/sound_effects_service.dart';
 import 'app_state.dart';
+import 'file_transfer_view.dart';
 
 enum AppThemeMode { dark, light, system }
 
@@ -84,6 +87,21 @@ final forceUpdateServiceProvider = Provider(
   (Ref ref) => ref.watch(appBootstrapProvider).forceUpdateService,
 );
 
+final networkStatusServiceProvider = Provider((Ref ref) {
+  final bootstrap = ref.watch(appBootstrapProvider);
+  final firebaseDatabase = bootstrap.firebaseDatabase;
+  return NetworkStatusService(
+    connectivityProbe: ConnectivityPlusProbe(),
+    backendProbe: firebaseDatabase == null
+        ? const AlwaysConnectedBackendProbe()
+        : FirebaseBackendConnectivityProbe(firebaseDatabase),
+  );
+});
+
+final networkStatusProvider = StreamProvider<NetworkStatusState>((Ref ref) {
+  return ref.watch(networkStatusServiceProvider).watch();
+});
+
 final soundEffectsProvider = Provider<SoundEffectsService>((Ref ref) {
   final service = SoundEffectsService();
   ref.onDispose(() => unawaited(service.dispose()));
@@ -91,6 +109,13 @@ final soundEffectsProvider = Provider<SoundEffectsService>((Ref ref) {
 });
 
 final appSettingsStoreProvider = Provider((Ref ref) => AppSettingsStore());
+
+void _assertNetworkReady(Ref ref) {
+  final status = ref.read(networkStatusProvider).valueOrNull;
+  if (status != null && status.blocksNetworkActions) {
+    throw StateError(status.actionErrorMessage);
+  }
+}
 
 final identityRepositoryProvider = Provider(
   (Ref ref) => IdentityRepository(ref.watch(databaseProvider)),
@@ -110,6 +135,10 @@ final offlineQueueStoreProvider = Provider(
 
 final fileTransferStoreProvider = Provider(
   (Ref ref) => FileTransferStore(ref.watch(databaseProvider)),
+);
+
+final receivedFileExportServiceProvider = Provider(
+  (Ref ref) => ReceivedFileExportService(),
 );
 
 final connectionMemoryStoreProvider = Provider(
@@ -133,6 +162,10 @@ final forceUpdateProvider =
 class ForceUpdateController extends AsyncNotifier<ForceUpdateResult> {
   @override
   Future<ForceUpdateResult> build() {
+    final networkStatus = ref.watch(networkStatusProvider).valueOrNull;
+    if (networkStatus != null && networkStatus.blocksNetworkActions) {
+      return ref.watch(forceUpdateServiceProvider).checkUnavailable();
+    }
     return ref.watch(forceUpdateServiceProvider).check();
   }
 }
@@ -198,6 +231,7 @@ class IdentityController extends AsyncNotifier<RainIdentity?> {
     required String password,
     required RainGender gender,
   }) async {
+    _assertNetworkReady(ref);
     final adapter = ref.read(adapterProvider);
     await adapter.register(username, password);
     final now = DateTime.now().millisecondsSinceEpoch;
@@ -215,6 +249,7 @@ class IdentityController extends AsyncNotifier<RainIdentity?> {
     required String username,
     required String password,
   }) async {
+    _assertNetworkReady(ref);
     final adapter = ref.read(adapterProvider);
     await adapter.login(username, password);
     final existing = await adapter.fetchIdentity(username);
@@ -232,6 +267,7 @@ class IdentityController extends AsyncNotifier<RainIdentity?> {
   }
 
   Future<void> updateDisplayName(String displayName) async {
+    _assertNetworkReady(ref);
     final identity = state.valueOrNull;
     if (identity == null) {
       return;
@@ -240,6 +276,7 @@ class IdentityController extends AsyncNotifier<RainIdentity?> {
   }
 
   Future<void> updateGender(RainGender gender) async {
+    _assertNetworkReady(ref);
     final identity = state.valueOrNull;
     if (identity == null) {
       return;
@@ -295,30 +332,37 @@ class FriendsController extends AsyncNotifier<List<FriendRecord>> {
   }
 
   Future<void> accept(String username) async {
+    _assertNetworkReady(ref);
     await _runtime().acceptFriend(username);
   }
 
   Future<void> reject(String username) async {
+    _assertNetworkReady(ref);
     await _runtime().rejectFriend(username);
   }
 
   Future<void> unfriend(String username) async {
+    _assertNetworkReady(ref);
     await _runtime().unfriend(username);
   }
 
   Future<void> block(String username) async {
+    _assertNetworkReady(ref);
     await _runtime().blockFriend(username);
   }
 
   Future<void> unblock(String username) async {
+    _assertNetworkReady(ref);
     await _runtime().unblockFriend(username);
   }
 
   Future<void> refresh() async {
+    _assertNetworkReady(ref);
     await _runtime().refreshRelationships();
   }
 
   Future<void> refreshPeer(String username) async {
+    _assertNetworkReady(ref);
     await _runtime().refreshPeer(username);
   }
 
@@ -376,10 +420,12 @@ class MessagesController
   }
 
   Future<void> resend(String messageId) async {
+    _assertNetworkReady(ref);
     await _runtime().resendMessage(messageId);
   }
 
   Future<void> send(String content) async {
+    _assertNetworkReady(ref);
     await _runtime().sendMessage(_peerId, content);
   }
 
@@ -390,6 +436,7 @@ class MessagesController
     String? localPath,
     String? mimeType,
   }) async {
+    _assertNetworkReady(ref);
     await _runtime().sendFile(
       peerId: _peerId,
       fileName: fileName,
@@ -450,18 +497,22 @@ class FileTransfersController
   }
 
   Future<void> accept(String transferId) async {
+    _assertNetworkReady(ref);
     await _runtime().acceptFileTransfer(transferId);
   }
 
   Future<void> reject(String transferId) async {
+    _assertNetworkReady(ref);
     await _runtime().rejectFileTransfer(transferId);
   }
 
   Future<void> cancel(String transferId) async {
+    _assertNetworkReady(ref);
     await _runtime().cancelFileTransfer(transferId);
   }
 
   Future<void> retry(FileTransferRecord transfer) async {
+    _assertNetworkReady(ref);
     final localPath = transfer.localPath;
     if (transfer.direction != FileTransferDirection.outgoing ||
         localPath == null ||
@@ -488,6 +539,24 @@ class FileTransfersController
       throw StateError('Rain is still starting. Try again in a moment.');
     }
     return runtime;
+  }
+}
+
+final fileTransferViewsProvider =
+    NotifierProvider.family<
+      FileTransferViewsController,
+      AsyncValue<List<FileTransferView>>,
+      String
+    >(FileTransferViewsController.new);
+
+class FileTransferViewsController
+    extends FamilyNotifier<AsyncValue<List<FileTransferView>>, String> {
+  final FileTransferSpeedTracker _speedTracker = FileTransferSpeedTracker();
+
+  @override
+  AsyncValue<List<FileTransferView>> build(String peerId) {
+    final transfers = ref.watch(fileTransfersProvider(peerId));
+    return transfers.whenData(_speedTracker.apply);
   }
 }
 
@@ -519,6 +588,21 @@ class RuntimeController extends AsyncNotifier<RainRuntimeController?> {
   Future<RainRuntimeController?> build() async {
     final identity = ref.watch(identityProvider).valueOrNull;
     if (identity == null) {
+      return null;
+    }
+    final networkStatus =
+        ref.watch(networkStatusProvider).valueOrNull ??
+        const NetworkStatusState.checking();
+    if (networkStatus.blocksNetworkActions) {
+      final current = state.valueOrNull;
+      if (current != null) {
+        await current.handleNetworkLost(
+          'Internet connection lost. Transfer canceled.',
+        );
+      }
+      return null;
+    }
+    if (networkStatus.kind == NetworkStatusKind.checking) {
       return null;
     }
     final environment = ref.watch(appEnvironmentProvider);
@@ -597,6 +681,7 @@ class ConnectionsController extends Notifier<ConnectionsState> {
   }
 
   Future<void> connect(String peerId, {bool waitForConnected = false}) async {
+    _assertNetworkReady(ref);
     final runtime = _requireRuntime();
     _upsert(
       peerId,
@@ -782,6 +867,12 @@ class UserSearchController extends AsyncNotifier<UserSearchState> {
       state = AsyncValue.data(UserSearchState(query: normalized));
       return;
     }
+    try {
+      _assertNetworkReady(ref);
+    } catch (error, stackTrace) {
+      state = AsyncValue.error(error, stackTrace);
+      return;
+    }
 
     state = const AsyncValue.loading();
     final next = await AsyncValue.guard(() async {
@@ -805,6 +896,7 @@ class UserSearchController extends AsyncNotifier<UserSearchState> {
   }
 
   Future<FriendRequestResult?> sendFriendRequest(String username) async {
+    _assertNetworkReady(ref);
     final previous = state.valueOrNull ?? const UserSearchState();
     state = AsyncValue.data(previous.copyWith(sendingTo: username));
     try {

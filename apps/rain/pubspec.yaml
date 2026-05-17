@@ -10,6 +10,7 @@ dependencies:
   flutter:
     sdk: flutter
   audioplayers: ^6.6.0
+  connectivity_plus: ^7.1.1
   file_picker: ^10.3.8
   firebase_auth: ^6.1.1
   firebase_core: ^4.1.1

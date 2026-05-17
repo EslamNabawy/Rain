@@ -12,6 +12,7 @@ import 'package:rain_core/rain_core.dart';
 import 'package:rain/presentation/navigation/app_routes.dart';
 import 'package:rain/application/state/app_providers.dart';
 import 'package:rain/application/state/app_state.dart';
+import 'package:rain/application/state/file_transfer_view.dart';
 import 'package:rain/application/runtime/rain_runtime_controller.dart';
 import 'package:rain/infrastructure/services/sound_effects_service.dart';
 import 'package:rain/presentation/theme/rain_theme.dart';
@@ -261,7 +262,7 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
       friends: friends,
       selectedPeerId: _selectedPeerId,
       onSelect: _handleFriendSelection,
-      onRefresh: () => ref.read(friendsProvider.notifier).refresh(),
+      onRefresh: _refreshFriends,
       compact: true,
     );
   }
@@ -275,7 +276,7 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
             friends: friends,
             selectedPeerId: _selectedPeerId,
             onSelect: _handleFriendSelection,
-            onRefresh: () => ref.read(friendsProvider.notifier).refresh(),
+            onRefresh: _refreshFriends,
           ),
         ),
         const VerticalDivider(width: 1),
@@ -295,6 +296,19 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
   Future<void> _handleFriendSelection(FriendRecord friend) async {
     setState(() => _selectedPeerId = friend.username);
     await ref.read(messagesProvider(friend.username).notifier).markRead();
+  }
+
+  Future<void> _refreshFriends() async {
+    final status = ref.read(networkStatusProvider).valueOrNull;
+    if (status != null && status.blocksNetworkActions) {
+      if (mounted) {
+        ScaffoldMessenger.of(
+          context,
+        ).showSnackBar(SnackBar(content: Text(status.actionErrorMessage)));
+      }
+      return;
+    }
+    await ref.read(friendsProvider.notifier).refresh();
   }
 }
 
@@ -891,7 +905,7 @@ class _ChatPanelState extends ConsumerState<_ChatPanel> {
     final canDisconnectNow =
         runtime != null && canChat && connectionStatus.canDisconnect;
     final messages = ref.watch(messagesProvider(widget.peerId));
-    final transfers = ref.watch(fileTransfersProvider(widget.peerId));
+    final transfers = ref.watch(fileTransferViewsProvider(widget.peerId));
     ref.listen<AsyncValue<List<StoredMessage>>>(
       messagesProvider(widget.peerId),
       _handleMessageSound,
@@ -1270,7 +1284,7 @@ class _ChatPanelState extends ConsumerState<_ChatPanel> {
 
   Widget _buildMessages(
     AsyncValue<List<StoredMessage>> messages,
-    AsyncValue<List<FileTransferRecord>> transfers,
+    AsyncValue<List<FileTransferView>> transfers,
     BoxConstraints constraints,
     double horizontalPadding,
     bool isNarrow,
@@ -1279,10 +1293,10 @@ class _ChatPanelState extends ConsumerState<_ChatPanel> {
       onRefresh: _refreshChat,
       child: messages.when(
         data: (List<StoredMessage> items) {
-          final transferByMessageId = <String, FileTransferRecord>{
-            for (final transfer
-                in transfers.valueOrNull ?? const <FileTransferRecord>[])
-              transfer.messageId: transfer,
+          final transferByMessageId = <String, FileTransferView>{
+            for (final transferView
+                in transfers.valueOrNull ?? const <FileTransferView>[])
+              transferView.record.messageId: transferView,
           };
           if (items.isEmpty) {
             return ListView(
@@ -1330,7 +1344,7 @@ class _ChatPanelState extends ConsumerState<_ChatPanel> {
               final deliveryColor = message.isOutgoing
                   ? _deliveryColor(message.status)
                   : null;
-              final transfer = message.type == MessageType.file
+              final transferView = message.type == MessageType.file
                   ? transferByMessageId[message.id]
                   : null;
 
@@ -1341,20 +1355,29 @@ class _ChatPanelState extends ConsumerState<_ChatPanel> {
                     RainMessageDayDivider(
                       label: _formatMessageDay(message.sentAt),
                     ),
-                  if (transfer != null)
-                    _FileTransferBubble(
-                      transfer: transfer,
-                      timeLabel: _formatMessageTime(message.sentAt),
-                      startsCluster: startsCluster,
-                      endsCluster: endsCluster,
-                      maxWidth: maxBubbleWidth,
-                      onAccept: () => unawaited(_acceptFileTransfer(transfer)),
-                      onReject: () => unawaited(_rejectFileTransfer(transfer)),
-                      onCancel: () => unawaited(_cancelFileTransfer(transfer)),
-                      onOpen: () => unawaited(_openFileTransfer(transfer)),
-                      onRetry: _canRetryFileTransfer(transfer)
-                          ? () => unawaited(_retryFileTransfer(transfer))
-                          : null,
+                  if (transferView != null)
+                    Builder(
+                      builder: (BuildContext context) {
+                        final transfer = transferView.record;
+                        return _FileTransferBubble(
+                          transferView: transferView,
+                          timeLabel: _formatMessageTime(message.sentAt),
+                          startsCluster: startsCluster,
+                          endsCluster: endsCluster,
+                          maxWidth: maxBubbleWidth,
+                          onAccept: () =>
+                              unawaited(_acceptFileTransfer(transfer)),
+                          onReject: () =>
+                              unawaited(_rejectFileTransfer(transfer)),
+                          onCancel: () =>
+                              unawaited(_cancelFileTransfer(transfer)),
+                          onOpen: () => unawaited(_openFileTransfer(transfer)),
+                          onSave: () => unawaited(_saveFileTransfer(transfer)),
+                          onRetry: _canRetryFileTransfer(transfer)
+                              ? () => unawaited(_retryFileTransfer(transfer))
+                              : null,
+                        );
+                      },
                     )
                   else
                     RainMessageBubble(
@@ -1401,6 +1424,11 @@ class _ChatPanelState extends ConsumerState<_ChatPanel> {
   }
 
   Future<void> _refreshChat() async {
+    final networkError = _networkActionError();
+    if (networkError != null) {
+      _showErrorSnack(networkError);
+      return;
+    }
     await ref.read(friendsProvider.notifier).refreshPeer(widget.peerId);
     await ref.read(messagesProvider(widget.peerId).notifier).markRead();
   }
@@ -1610,6 +1638,12 @@ class _ChatPanelState extends ConsumerState<_ChatPanel> {
     if (_isPickingFile) {
       return;
     }
+    final networkError = _networkActionError();
+    if (networkError != null) {
+      _playSound(RainSoundEffect.error);
+      _showErrorSnack(networkError);
+      return;
+    }
     if (runtime == null || !connectionStatus.isConnected) {
       _playSound(RainSoundEffect.error);
       _showErrorSnack('Connect first.');
@@ -1715,6 +1749,21 @@ class _ChatPanelState extends ConsumerState<_ChatPanel> {
     }
   }
 
+  Future<void> _saveFileTransfer(FileTransferRecord transfer) async {
+    try {
+      final result = await ref
+          .read(receivedFileExportServiceProvider)
+          .saveReceivedFile(transfer);
+      if (result.saved) {
+        _playSound(RainSoundEffect.action);
+        _showInfoSnack('File saved.');
+      }
+    } catch (error) {
+      _playSound(RainSoundEffect.error);
+      _showErrorSnack(_formatUiError(error));
+    }
+  }
+
   bool _canRetryFileTransfer(FileTransferRecord transfer) {
     return transfer.direction == FileTransferDirection.outgoing &&
         (transfer.state == FileTransferState.failed ||
@@ -1746,6 +1795,15 @@ class _ChatPanelState extends ConsumerState<_ChatPanel> {
         backgroundColor: Theme.of(context).colorScheme.error,
       ),
     );
+  }
+
+  void _showInfoSnack(String message) {
+    if (!mounted) {
+      return;
+    }
+    ScaffoldMessenger.of(
+      context,
+    ).showSnackBar(SnackBar(content: Text(message)));
   }
 
   FriendRecord? _currentFriend(AsyncValue<List<FriendRecord>> friends) {
@@ -1916,11 +1974,22 @@ class _ChatPanelState extends ConsumerState<_ChatPanel> {
     if (text.isEmpty || _isSending) {
       return;
     }
+    final networkError = _networkActionError();
+    if (networkError != null) {
+      _playSound(RainSoundEffect.error);
+      _showErrorSnack(networkError);
+      return;
+    }
+    if (runtime == null) {
+      _playSound(RainSoundEffect.error);
+      _showErrorSnack('Peer connection is unavailable right now.');
+      return;
+    }
 
     setState(() => _isSending = true);
     _composerController.clear();
     try {
-      await runtime?.sendMessage(widget.peerId, text);
+      await runtime.sendMessage(widget.peerId, text);
       _playSound(RainSoundEffect.send);
       WidgetsBinding.instance.addPostFrameCallback((_) => _jumpToLatest());
     } catch (error) {
@@ -1943,6 +2012,12 @@ class _ChatPanelState extends ConsumerState<_ChatPanel> {
 
   Future<void> _connectToPeer() async {
     if (_isConnecting) return;
+    final networkError = _networkActionError();
+    if (networkError != null) {
+      _playSound(RainSoundEffect.error);
+      _showErrorSnack(networkError);
+      return;
+    }
     setState(() => _isConnecting = true);
     try {
       await ref
@@ -1987,11 +2062,18 @@ class _ChatPanelState extends ConsumerState<_ChatPanel> {
       }
     }
   }
+
+  String? _networkActionError() {
+    final status = ref.read(networkStatusProvider).valueOrNull;
+    return status != null && status.blocksNetworkActions
+        ? status.actionErrorMessage
+        : null;
+  }
 }
 
 class _FileTransferBubble extends StatelessWidget {
   const _FileTransferBubble({
-    required this.transfer,
+    required this.transferView,
     required this.timeLabel,
     required this.startsCluster,
     required this.endsCluster,
@@ -2000,10 +2082,11 @@ class _FileTransferBubble extends StatelessWidget {
     required this.onReject,
     required this.onCancel,
     required this.onOpen,
+    required this.onSave,
     this.onRetry,
   });
 
-  final FileTransferRecord transfer;
+  final FileTransferView transferView;
   final String timeLabel;
   final bool startsCluster;
   final bool endsCluster;
@@ -2012,14 +2095,18 @@ class _FileTransferBubble extends StatelessWidget {
   final VoidCallback onReject;
   final VoidCallback onCancel;
   final VoidCallback onOpen;
+  final VoidCallback onSave;
   final VoidCallback? onRetry;
 
+  FileTransferRecord get transfer => transferView.record;
   bool get _isOutgoing => transfer.direction == FileTransferDirection.outgoing;
   bool get _isActive => transfer.isActive;
   bool get _canOpen =>
       transfer.state == FileTransferState.completed &&
       transfer.localPath != null &&
       transfer.localPath!.isNotEmpty;
+  bool get _canSave =>
+      _canOpen && transfer.direction == FileTransferDirection.incoming;
 
   @override
   Widget build(BuildContext context) {
@@ -2134,7 +2221,7 @@ class _FileTransferBubble extends StatelessWidget {
                     ),
                   ),
                   Text(
-                    _fileTransferStatusLabel(transfer),
+                    _fileTransferStatusLabel(transferView),
                     style: Theme.of(context).textTheme.labelSmall?.copyWith(
                       color: statusColor,
                       fontWeight: FontWeight.w900,
@@ -2174,6 +2261,12 @@ class _FileTransferBubble extends StatelessWidget {
                         icon: const Icon(Icons.open_in_new_rounded),
                         label: const Text('Open'),
                       ),
+                    if (_canSave)
+                      TextButton.icon(
+                        onPressed: onSave,
+                        icon: const Icon(Icons.save_alt_rounded),
+                        label: const Text('Save'),
+                      ),
                     if (onRetry != null)
                       TextButton.icon(
                         onPressed: onRetry,
@@ -2195,22 +2288,27 @@ class _FileTransferBubble extends StatelessWidget {
             transfer.state == FileTransferState.offered) ||
         (_isActive && transfer.state != FileTransferState.offered) ||
         _canOpen ||
+        _canSave ||
         onRetry != null;
   }
 }
 
-String _fileTransferStatusLabel(FileTransferRecord transfer) {
+String _fileTransferStatusLabel(FileTransferView transferView) {
+  final transfer = transferView.record;
   final progress = transfer.fileSize <= 0
       ? ''
       : ' ${(transfer.progress * 100).clamp(0, 100).toStringAsFixed(0)}%';
+  final speed = transferView.speedBytesPerSecond == null
+      ? ''
+      : ' • ${formatFileTransferSize(transferView.speedBytesPerSecond!)}/s';
   return switch (transfer.state) {
     FileTransferState.offered =>
       transfer.direction == FileTransferDirection.incoming
           ? 'Incoming'
           : 'Offered',
     FileTransferState.accepted => 'Accepted',
-    FileTransferState.sending => 'Sending$progress',
-    FileTransferState.receiving => 'Receiving$progress',
+    FileTransferState.sending => 'Sending$progress$speed',
+    FileTransferState.receiving => 'Receiving$progress$speed',
     FileTransferState.completed => 'Completed',
     FileTransferState.canceled => 'Canceled',
     FileTransferState.failed => 'Failed',

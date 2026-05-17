@@ -170,6 +170,8 @@ class _OnboardingScreenState extends ConsumerState<OnboardingScreen>
 
   @override
   Widget build(BuildContext context) {
+    final networkStatus = ref.watch(networkStatusProvider).valueOrNull;
+    final networkBlocked = networkStatus?.blocksNetworkActions ?? false;
     return LayoutBuilder(
       builder: (BuildContext context, BoxConstraints constraints) {
         final scheme = Theme.of(context).colorScheme;
@@ -408,7 +410,9 @@ class _OnboardingScreenState extends ConsumerState<OnboardingScreen>
                           SizedBox(
                             width: double.infinity,
                             child: FilledButton.icon(
-                              onPressed: _submitting ? null : _submit,
+                              onPressed: _submitting || networkBlocked
+                                  ? null
+                                  : _submit,
                               icon: _submitting
                                   ? SizedBox(
                                       width: 16,
@@ -465,6 +469,13 @@ class _OnboardingScreenState extends ConsumerState<OnboardingScreen>
   }
 
   Future<void> _submit() async {
+    final networkStatus = ref.read(networkStatusProvider).valueOrNull;
+    if (networkStatus != null && networkStatus.blocksNetworkActions) {
+      setState(() => _error = networkStatus.actionErrorMessage);
+      _playSound(RainSoundEffect.error);
+      return;
+    }
+
     final username = InputValidator.normalizeUsername(_usernameController.text);
     final password = _passwordController.text;
 

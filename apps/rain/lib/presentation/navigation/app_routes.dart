@@ -35,15 +35,18 @@ final appRouterProvider = Provider<GoRouter>((Ref ref) {
             builder: (BuildContext context, WidgetRef ref, Widget? _) {
               final identity = ref.watch(identityProvider).valueOrNull;
               final forceUpdate = ref.watch(forceUpdateProvider).valueOrNull;
-              final runtime = identity == null
-                  ? null
-                  : ref.watch(runtimeControllerProvider).valueOrNull;
+              final networkStatus = ref
+                  .watch(networkStatusProvider)
+                  .valueOrNull;
               final canUseCurrentVersion =
                   forceUpdate != null && !forceUpdate.requiresUpdate;
               return RainNavigationShell(
                 location: state.uri.path,
-                showNavigation:
-                    identity != null && runtime != null && canUseCurrentVersion,
+                showNavigation: identity != null && canUseCurrentVersion,
+                networkStatusMessage:
+                    networkStatus != null && networkStatus.blocksNetworkActions
+                    ? networkStatus.message
+                    : null,
                 child: child,
               );
             },

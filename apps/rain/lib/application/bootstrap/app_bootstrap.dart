@@ -20,12 +20,14 @@ class AppBootstrapState {
     required this.database,
     required this.adapter,
     required this.forceUpdateService,
+    this.firebaseDatabase,
   });
 
   final AppEnvironment environment;
   final RainDatabase database;
   final SignalingAdapter adapter;
   final ForceUpdateService forceUpdateService;
+  final FirebaseDatabase? firebaseDatabase;
 }
 
 class AppBootstrapper {
@@ -95,6 +97,7 @@ class AppBootstrapper {
         environment: effectiveEnvironment,
         database: database,
         adapter: adapter,
+        firebaseDatabase: firebaseDatabase,
         forceUpdateService: ForceUpdateService(
           remoteConfig: remoteConfig,
           updateUrl: effectiveEnvironment.forceUpdateUrl,

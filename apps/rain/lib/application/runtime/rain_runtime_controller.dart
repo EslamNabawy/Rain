@@ -398,6 +398,41 @@ class RainRuntimeController with WidgetsBindingObserver {
     await brain?.unregisterPeer(normalizedUsername);
   }
 
+  Future<void> handleNetworkLost(String reason) async {
+    if (_shutDown) {
+      return;
+    }
+
+    List<FileTransferRecord> activeTransfers;
+    try {
+      activeTransfers = await fileTransferStore.loadActiveTransfers();
+    } catch (_) {
+      activeTransfers = const <FileTransferRecord>[];
+    }
+    for (final transfer in activeTransfers) {
+      try {
+        await _markTransferFailed(transfer.id, reason);
+      } catch (_) {
+        // Network-loss cleanup is best effort; the next launch can retry cleanup.
+      }
+    }
+
+    final sessions = brain?.getSessions() ?? const <Session>[];
+    for (final session in sessions) {
+      _manualDisconnectedPeers.add(session.peerId);
+      try {
+        await brain?.disconnect(session.peerId);
+        await brain?.unregisterPeer(session.peerId);
+      } catch (_) {
+        // The network is already unavailable; stale peer cleanup is best effort.
+      }
+    }
+
+    _pendingFileChunks.clear();
+    _fileMessageQueues.clear();
+    _outgoingFileSources.clear();
+  }
+
   Future<void> setBackgroundServiceEnabled(bool enabled) async {
     _backgroundOfflineTimer?.cancel();
     if (_started && !_shutDown && !enabled) {
