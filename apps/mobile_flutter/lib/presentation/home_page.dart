@@ -53,7 +53,7 @@ final itemListProvider = StateNotifierProvider<ItemListNotifier, ItemListState>(
 class HomePage extends ConsumerStatefulWidget {
   const HomePage({Key? key}) : super(key: key);
   @override
-  _HomePageState createState() => _HomePageState();
+  ConsumerState<HomePage> createState() => _HomePageState();
 }
 
 class _HomePageState extends ConsumerState<HomePage> {
