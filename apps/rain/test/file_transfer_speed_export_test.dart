@@ -11,7 +11,7 @@ void main() {
   TestWidgetsFlutterBinding.ensureInitialized();
 
   group('FileTransferSpeedTracker', () {
-    test('calculates speed from transfer progress samples', () {
+    test('calculates speed from a readable rolling window', () {
       var now = DateTime.fromMillisecondsSinceEpoch(1000);
       final tracker = FileTransferSpeedTracker(now: () => now);
 
@@ -27,6 +27,24 @@ void main() {
 
       expect(updated.single.speedBytesPerSecond, 2048);
       expect(updated.single.eta, const Duration(seconds: 1));
+
+      now = now.add(const Duration(milliseconds: 250));
+      final throttled = tracker.apply(<FileTransferRecord>[
+        _transfer(bytesTransferred: 8192, state: FileTransferState.sending),
+      ]);
+      expect(throttled.single.speedBytesPerSecond, 2048);
+
+      now = now.add(const Duration(milliseconds: 750));
+      final averaged = tracker.apply(<FileTransferRecord>[
+        _transfer(bytesTransferred: 12288, state: FileTransferState.sending),
+      ]);
+      expect(averaged.single.speedBytesPerSecond, 6144);
+    });
+
+    test('formats visible speed for stable reading', () {
+      expect(formatFileTransferSpeed(512), '512 B/s');
+      expect(formatFileTransferSpeed(900 * 1024), '900 KB/s');
+      expect(formatFileTransferSpeed(1536 * 1024), '1.5 MB/s');
     });
 
     test('clears speed samples when transfer reaches terminal state', () {

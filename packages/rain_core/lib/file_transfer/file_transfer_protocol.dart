@@ -4,9 +4,9 @@ import 'package:collection/collection.dart';
 
 const int fileTransferProtocolVersion = 1;
 const int maxFileTransferBytes = 100 * 1024 * 1024;
-const int fileTransferChunkBytes = 32 * 1024;
-const int fileTransferHighWatermarkBytes = 1024 * 1024;
-const int fileTransferLowWatermarkBytes = 512 * 1024;
+const int fileTransferChunkBytes = 64 * 1024;
+const int fileTransferHighWatermarkBytes = 4 * 1024 * 1024;
+const int fileTransferLowWatermarkBytes = 1024 * 1024;
 
 class FileTransferFrame {
   const FileTransferFrame({

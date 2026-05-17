@@ -13,12 +13,22 @@ class FileTransferView {
 }
 
 class FileTransferSpeedTracker {
-  FileTransferSpeedTracker({DateTime Function()? now})
-    : _now = now ?? DateTime.now;
+  FileTransferSpeedTracker({
+    DateTime Function()? now,
+    Duration sampleWindow = const Duration(seconds: 2),
+    Duration displayUpdateInterval = const Duration(milliseconds: 750),
+    Duration minimumSampleAge = const Duration(milliseconds: 500),
+  }) : _now = now ?? DateTime.now,
+       _sampleWindow = sampleWindow,
+       _displayUpdateInterval = displayUpdateInterval,
+       _minimumSampleAge = minimumSampleAge;
 
   final DateTime Function() _now;
-  final Map<String, _TransferSpeedSample> _samples =
-      <String, _TransferSpeedSample>{};
+  final Duration _sampleWindow;
+  final Duration _displayUpdateInterval;
+  final Duration _minimumSampleAge;
+  final Map<String, _TransferSpeedState> _states =
+      <String, _TransferSpeedState>{};
 
   List<FileTransferView> apply(List<FileTransferRecord> transfers) {
     final activeIds = <String>{};
@@ -26,32 +36,39 @@ class FileTransferSpeedTracker {
 
     for (final transfer in transfers) {
       if (!_shouldTrack(transfer)) {
-        _samples.remove(transfer.id);
+        _states.remove(transfer.id);
         views.add(FileTransferView(record: transfer));
         continue;
       }
 
       activeIds.add(transfer.id);
       final now = _now();
-      final previous = _samples[transfer.id];
-      final nextSpeed = _speedFor(transfer, previous, now);
-      final smoothedSpeed = _smooth(previous?.bytesPerSecond, nextSpeed);
-      _samples[transfer.id] = _TransferSpeedSample(
-        bytesTransferred: transfer.bytesTransferred,
-        sampledAt: now,
-        bytesPerSecond: smoothedSpeed,
+      final previous = _states[transfer.id];
+      final samples = _nextSamples(previous?.samples, transfer, now);
+      final windowSpeed = _speedFor(samples);
+      final visibleSpeed = _visibleSpeedFor(
+        previous?.visibleSpeed,
+        windowSpeed,
+        now,
       );
+      _states[transfer.id] = _TransferSpeedState(
+        samples: samples,
+        visibleSpeed: visibleSpeed,
+      );
+      final bytesPerSecond = visibleSpeed?.bytesPerSecond;
 
       views.add(
         FileTransferView(
           record: transfer,
-          speedBytesPerSecond: smoothedSpeed <= 0 ? null : smoothedSpeed,
-          eta: _etaFor(transfer, smoothedSpeed),
+          speedBytesPerSecond: bytesPerSecond,
+          eta: bytesPerSecond == null
+              ? null
+              : _etaFor(transfer, bytesPerSecond),
         ),
       );
     }
 
-    _samples.removeWhere(
+    _states.removeWhere(
       (String transferId, _) => !activeIds.contains(transferId),
     );
     return views;
@@ -62,30 +79,65 @@ class FileTransferSpeedTracker {
         transfer.state == FileTransferState.receiving;
   }
 
-  int _speedFor(
+  List<_TransferProgressSample> _nextSamples(
+    List<_TransferProgressSample>? previousSamples,
     FileTransferRecord transfer,
-    _TransferSpeedSample? previous,
     DateTime now,
   ) {
-    if (previous == null) {
-      return 0;
+    final previous = previousSamples ?? const <_TransferProgressSample>[];
+    final latest = previous.lastOrNull;
+    final current = _TransferProgressSample(
+      bytesTransferred: transfer.bytesTransferred,
+      sampledAt: now,
+    );
+    if (latest != null && transfer.bytesTransferred < latest.bytesTransferred) {
+      return <_TransferProgressSample>[current];
     }
-    final elapsedMs = now.difference(previous.sampledAt).inMilliseconds;
-    final deltaBytes = transfer.bytesTransferred - previous.bytesTransferred;
-    if (elapsedMs <= 0 || deltaBytes <= 0) {
-      return previous.bytesPerSecond;
-    }
-    return (deltaBytes * 1000 / elapsedMs).round();
+
+    final cutoff = now.subtract(_sampleWindow);
+    return <_TransferProgressSample>[
+      for (final sample in previous)
+        if (!sample.sampledAt.isBefore(cutoff)) sample,
+      current,
+    ];
   }
 
-  int _smooth(int? previous, int next) {
-    if (next <= 0) {
-      return previous ?? 0;
+  int? _speedFor(List<_TransferProgressSample> samples) {
+    if (samples.length < 2) {
+      return null;
     }
-    if (previous == null || previous <= 0) {
-      return next;
+    final oldest = samples.first;
+    final newest = samples.last;
+    final elapsed = newest.sampledAt.difference(oldest.sampledAt);
+    if (elapsed < _minimumSampleAge) {
+      return null;
     }
-    return ((previous * 0.35) + (next * 0.65)).round();
+    final deltaBytes = newest.bytesTransferred - oldest.bytesTransferred;
+    if (deltaBytes <= 0) {
+      return 0;
+    }
+    return (deltaBytes * 1000 / elapsed.inMilliseconds).round();
+  }
+
+  _VisibleSpeedSample? _visibleSpeedFor(
+    _VisibleSpeedSample? previous,
+    int? next,
+    DateTime now,
+  ) {
+    if (next == null || next <= 0) {
+      if (previous == null) {
+        return null;
+      }
+      if (now.difference(previous.updatedAt) < _displayUpdateInterval) {
+        return previous;
+      }
+      return null;
+    }
+    if (previous != null &&
+        now.difference(previous.updatedAt) < _displayUpdateInterval) {
+      return previous;
+    }
+    return _VisibleSpeedSample(bytesPerSecond: next, updatedAt: now);
   }
 
   Duration? _etaFor(FileTransferRecord transfer, int bytesPerSecond) {
@@ -100,14 +152,44 @@ class FileTransferSpeedTracker {
   }
 }
 
-class _TransferSpeedSample {
-  const _TransferSpeedSample({
+String formatFileTransferSpeed(int bytesPerSecond) {
+  if (bytesPerSecond < 1024) {
+    return '$bytesPerSecond B/s';
+  }
+  final kb = bytesPerSecond / 1024;
+  if (kb < 1024) {
+    return '${kb.round()} KB/s';
+  }
+  final mb = kb / 1024;
+  return '${mb.toStringAsFixed(1)} MB/s';
+}
+
+class _TransferSpeedState {
+  const _TransferSpeedState({
+    required this.samples,
+    required this.visibleSpeed,
+  });
+
+  final List<_TransferProgressSample> samples;
+  final _VisibleSpeedSample? visibleSpeed;
+}
+
+class _TransferProgressSample {
+  const _TransferProgressSample({
     required this.bytesTransferred,
     required this.sampledAt,
-    required this.bytesPerSecond,
   });
 
   final int bytesTransferred;
   final DateTime sampledAt;
+}
+
+class _VisibleSpeedSample {
+  const _VisibleSpeedSample({
+    required this.bytesPerSecond,
+    required this.updatedAt,
+  });
+
   final int bytesPerSecond;
+  final DateTime updatedAt;
 }

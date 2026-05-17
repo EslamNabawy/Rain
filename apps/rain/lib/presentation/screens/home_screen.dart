@@ -2300,7 +2300,7 @@ String _fileTransferStatusLabel(FileTransferView transferView) {
       : ' ${(transfer.progress * 100).clamp(0, 100).toStringAsFixed(0)}%';
   final speed = transferView.speedBytesPerSecond == null
       ? ''
-      : ' • ${formatFileTransferSize(transferView.speedBytesPerSecond!)}/s';
+      : ' • ${formatFileTransferSpeed(transferView.speedBytesPerSecond!)}';
   return switch (transfer.state) {
     FileTransferState.offered =>
       transfer.direction == FileTransferDirection.incoming

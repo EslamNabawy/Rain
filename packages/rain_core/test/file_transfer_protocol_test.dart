@@ -4,6 +4,18 @@ import 'package:flutter_test/flutter_test.dart';
 import 'package:rain_core/rain_core.dart';
 
 void main() {
+  group('file transfer throughput settings', () {
+    test('uses larger chunks and buffer room for efficient P2P transfers', () {
+      expect(fileTransferChunkBytes, 64 * 1024);
+      expect(fileTransferLowWatermarkBytes, 1024 * 1024);
+      expect(fileTransferHighWatermarkBytes, 4 * 1024 * 1024);
+      expect(
+        fileTransferLowWatermarkBytes,
+        lessThan(fileTransferHighWatermarkBytes),
+      );
+    });
+  });
+
   group('FileTransferFrame', () {
     test('round-trips a valid offer frame', () {
       final frame = FileTransferFrame.offer(

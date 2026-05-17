@@ -7,6 +7,7 @@ import 'package:path_provider/path_provider.dart';
 import 'package:protocol_brain/protocol_brain.dart';
 import 'package:rain_core/rain_core.dart';
 
+import 'file_transfer_progress_batcher.dart';
 import 'serialized_runtime_mutations.dart';
 
 enum FriendRequestResult { sent, acceptedExisting }
@@ -27,7 +28,11 @@ class RainRuntimeController with WidgetsBindingObserver {
     Future<Directory> Function()? documentsDirectoryProvider,
   }) : fileTransferStore = fileTransferStore ?? FileTransferStore(database),
        _documentsDirectoryProvider =
-           documentsDirectoryProvider ?? getApplicationDocumentsDirectory;
+           documentsDirectoryProvider ?? getApplicationDocumentsDirectory {
+    _fileProgressBatcher = FileTransferProgressBatcher(
+      markProgress: this.fileTransferStore.markProgress,
+    );
+  }
 
   final RainIdentity selfIdentity;
   final SignalingAdapter adapter;
@@ -47,10 +52,12 @@ class RainRuntimeController with WidgetsBindingObserver {
       <String, StreamSubscription<bool>>{};
   final Map<String, FileTransferFrame> _pendingFileChunks =
       <String, FileTransferFrame>{};
+  final Map<String, int> _receiveProgressOffsets = <String, int>{};
   final Map<String, Future<void>> _fileMessageQueues = <String, Future<void>>{};
   final Map<String, _OutgoingFileSource> _outgoingFileSources =
       <String, _OutgoingFileSource>{};
   final Set<String> _canceledTransfers = <String>{};
+  late final FileTransferProgressBatcher _fileProgressBatcher;
 
   final List<StreamSubscription<dynamic>> _subscriptions =
       <StreamSubscription<dynamic>>[];
@@ -755,6 +762,7 @@ class RainRuntimeController with WidgetsBindingObserver {
       localPath: paths.finalPath,
       tempPath: paths.tempPath,
     );
+    _receiveProgressOffsets[transfer.id] = 0;
     brain!.send(
       transfer.peerId,
       SessionChannel.file,
@@ -772,6 +780,7 @@ class RainRuntimeController with WidgetsBindingObserver {
       FileTransferState.rejected,
       error: 'Rejected.',
     );
+    _clearTransferRuntimeState(transfer.id);
     _sendFileControlIfConnected(
       transfer.peerId,
       FileTransferFrame.reject(transfer.id, 'Rejected.'),
@@ -790,6 +799,7 @@ class RainRuntimeController with WidgetsBindingObserver {
       FileTransferState.canceled,
       error: 'Canceled.',
     );
+    _clearTransferRuntimeState(transfer.id);
     _sendFileControlIfConnected(
       transfer.peerId,
       FileTransferFrame.cancel(transfer.id, 'Canceled.'),
@@ -1023,7 +1033,9 @@ class RainRuntimeController with WidgetsBindingObserver {
         transfer.state != FileTransferState.receiving) {
       return;
     }
-    if (frame.offset != transfer.bytesTransferred ||
+    final expectedOffset =
+        _receiveProgressOffsets[transfer.id] ?? transfer.bytesTransferred;
+    if (frame.offset != expectedOffset ||
         frame.byteCount != bytes.lengthInBytes ||
         transfer.tempPath == null) {
       await _markTransferFailed(transfer.id, 'Received an invalid file chunk.');
@@ -1039,10 +1051,9 @@ class RainRuntimeController with WidgetsBindingObserver {
     final sink = tempFile.openWrite(mode: FileMode.append);
     sink.add(bytes);
     await sink.close();
-    await fileTransferStore.markProgress(
-      transfer.id,
-      transfer.bytesTransferred + bytes.lengthInBytes,
-    );
+    final nextOffset = expectedOffset + bytes.lengthInBytes;
+    _receiveProgressOffsets[transfer.id] = nextOffset;
+    await _fileProgressBatcher.record(transfer.id, nextOffset);
   }
 
   Future<void> _handleFileComplete(String peerId, String transferId) async {
@@ -1073,6 +1084,7 @@ class RainRuntimeController with WidgetsBindingObserver {
           peerId,
           FileTransferFrame.received(transfer.id),
         );
+        _clearTransferRuntimeState(transfer.id);
         return;
       }
       await _markTransferFailed(transfer.id, 'Received file is missing.');
@@ -1110,6 +1122,7 @@ class RainRuntimeController with WidgetsBindingObserver {
       bytesTransferred: transfer.fileSize,
       localPath: finalFile.path,
     );
+    _clearTransferRuntimeState(transfer.id);
     _sendFileControlIfConnected(
       peerId,
       FileTransferFrame.received(transfer.id),
@@ -1135,6 +1148,7 @@ class RainRuntimeController with WidgetsBindingObserver {
         MessageStatus.delivered,
       );
     });
+    _clearTransferRuntimeState(transferId);
   }
 
   Future<void> _handleFileTerminalFrame(
@@ -1148,6 +1162,7 @@ class RainRuntimeController with WidgetsBindingObserver {
     }
     _outgoingFileSources.remove(transferId);
     _canceledTransfers.add(transferId);
+    _clearTransferRuntimeState(transferId);
     await _deleteTempFile(transfer);
     await _localMutations.run(() async {
       await fileTransferStore.markState(transferId, state, error: reason);
@@ -1226,6 +1241,7 @@ class RainRuntimeController with WidgetsBindingObserver {
       if (offset != fileSize) {
         throw StateError('File changed while sending.');
       }
+      await _fileProgressBatcher.flush(transferId, offset);
       brain!.send(
         peerId,
         SessionChannel.file,
@@ -1270,10 +1286,7 @@ class RainRuntimeController with WidgetsBindingObserver {
       ).encode(),
     );
     brain!.send(peerId, SessionChannel.file, chunk);
-    await fileTransferStore.markProgress(
-      transferId,
-      offset + chunk.lengthInBytes,
-    );
+    await _fileProgressBatcher.record(transferId, offset + chunk.lengthInBytes);
   }
 
   Future<void> _waitForFileBuffer(String peerId) async {
@@ -1283,12 +1296,30 @@ class RainRuntimeController with WidgetsBindingObserver {
         throw StateError('Peer disconnected.');
       }
       final buffered = await brain!.bufferedAmount(peerId, SessionChannel.file);
-      if (buffered <= fileTransferLowWatermarkBytes) {
+      if (buffered <= fileTransferHighWatermarkBytes) {
         return;
       }
       await Future<void>.delayed(const Duration(milliseconds: 25));
+      while (DateTime.now().isBefore(deadline)) {
+        if (_connectedSession(peerId) == null) {
+          throw StateError('Peer disconnected.');
+        }
+        final drained = await brain!.bufferedAmount(
+          peerId,
+          SessionChannel.file,
+        );
+        if (drained <= fileTransferLowWatermarkBytes) {
+          return;
+        }
+        await Future<void>.delayed(const Duration(milliseconds: 25));
+      }
     }
     throw StateError('File channel is congested. Try again.');
+  }
+
+  void _clearTransferRuntimeState(String transferId) {
+    _receiveProgressOffsets.remove(transferId);
+    _fileProgressBatcher.clear(transferId);
   }
 
   Future<void> _assertCanTransferFile(String peerId) async {
@@ -1349,6 +1380,7 @@ class RainRuntimeController with WidgetsBindingObserver {
     }
     _outgoingFileSources.remove(transferId);
     _canceledTransfers.add(transferId);
+    _clearTransferRuntimeState(transferId);
     await _deleteTempFile(transfer);
     await _localMutations.run(() async {
       await fileTransferStore.markState(
