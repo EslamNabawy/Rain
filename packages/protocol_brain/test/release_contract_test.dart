@@ -265,10 +265,15 @@ void main() {
     expect(workflow, isNot(contains('.zip')));
   });
 
-  test('CI demo artifacts upload one portable Windows archive', () {
+  test('CI relay-test artifacts require live broker and portable output', () {
     final workflow = _repoFile('.github/workflows/ci.yml');
 
-    expect(workflow, contains('path: artifacts/Rain-Demo-Windows-x64-Build'));
+    expect(workflow, contains('Verify relay-test TURN broker endpoint'));
+    expect(workflow, contains('RAIN_RELEASE_DART_DEFINES_JSON'));
+    expect(
+      workflow,
+      contains('path: artifacts/Rain-Relay-Test-Windows-x64-Build'),
+    );
     expect(
       workflow,
       contains(
@@ -277,10 +282,10 @@ void main() {
     );
     expect(
       workflow,
-      isNot(contains('path: artifacts/Rain-Demo-Windows-x64-Build.zip')),
+      isNot(contains('path: artifacts/Rain-Relay-Test-Windows-x64-Build.zip')),
     );
-    expect(workflow, contains('Rain-Demo-Android-ARM-v7-Build.apk'));
-    expect(workflow, contains('Rain-Demo-Android-ARM-v8-v9-Build.apk'));
-    expect(workflow, contains('Rain-Demo-Android-x86_64-Build.apk'));
+    expect(workflow, contains('Rain-Relay-Test-android-armeabi-v7a.apk'));
+    expect(workflow, contains('Rain-Relay-Test-android-arm64-v8a.apk'));
+    expect(workflow, contains('Rain-Relay-Test-android-x86_64.apk'));
   });
 }
