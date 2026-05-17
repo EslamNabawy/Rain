@@ -8,9 +8,12 @@ class NoopSignalingAdapter implements SignalingAdapter {
   final Map<String, bool> _presence = <String, bool>{};
   final Set<String> _friendRequests = <String>{};
   final Set<String> _friendships = <String>{};
+  final Set<String> _blocks = <String>{};
   final Map<String, StreamController<bool>> _presenceControllers =
       <String, StreamController<bool>>{};
   final Map<String, StreamController<String>> _friendRequestControllers =
+      <String, StreamController<String>>{};
+  final Map<String, StreamController<String>> _relationshipControllers =
       <String, StreamController<String>>{};
 
   String _normalizedUsername(String username) {
@@ -29,6 +32,9 @@ class NoopSignalingAdapter implements SignalingAdapter {
       await controller.close();
     }
     for (final controller in _friendRequestControllers.values) {
+      await controller.close();
+    }
+    for (final controller in _relationshipControllers.values) {
       await controller.close();
     }
   }
@@ -108,18 +114,26 @@ class NoopSignalingAdapter implements SignalingAdapter {
   Future<void> deleteFriendRequest(String to, String from) async {
     final normalizedTo = _normalizedUsername(to);
     final normalizedFrom = _normalizedUsername(from);
-    _friendRequests.remove('$normalizedFrom->$normalizedTo');
+    final removed = _friendRequests.remove('$normalizedFrom->$normalizedTo');
+    if (removed) {
+      _emitRelationshipChange(normalizedTo, normalizedFrom);
+      _emitRelationshipChange(normalizedFrom, normalizedTo);
+    }
   }
 
   @override
   Future<void> deleteFriendship(String firstUser, String secondUser) async {
     final normalizedFirstUser = _normalizedUsername(firstUser);
     final normalizedSecondUser = _normalizedUsername(secondUser);
-    _friendships.remove(
+    final removed = _friendships.remove(
       _friendshipKey(normalizedFirstUser, normalizedSecondUser),
     );
     await deleteFriendRequest(normalizedFirstUser, normalizedSecondUser);
     await deleteFriendRequest(normalizedSecondUser, normalizedFirstUser);
+    if (removed) {
+      _emitRelationshipChange(normalizedFirstUser, normalizedSecondUser);
+      _emitRelationshipChange(normalizedSecondUser, normalizedFirstUser);
+    }
   }
 
   @override
@@ -135,6 +149,32 @@ class NoopSignalingAdapter implements SignalingAdapter {
           (List<String> pair) =>
               pair.first == normalizedUsername ? pair.last : pair.first,
         )
+        .toList(growable: false);
+  }
+
+  @override
+  Future<List<String>> loadBlockedUsers(String username) async {
+    final normalizedUsername = _normalizedUsername(username);
+    return _blocks
+        .map((String key) => key.split('->'))
+        .where(
+          (List<String> pair) =>
+              pair.length == 2 && pair[0] == normalizedUsername,
+        )
+        .map((List<String> pair) => pair[1])
+        .toList(growable: false);
+  }
+
+  @override
+  Future<List<String>> loadUsersBlocking(String username) async {
+    final normalizedUsername = _normalizedUsername(username);
+    return _blocks
+        .map((String key) => key.split('->'))
+        .where(
+          (List<String> pair) =>
+              pair.length == 2 && pair[1] == normalizedUsername,
+        )
+        .map((List<String> pair) => pair[0])
         .toList(growable: false);
   }
 
@@ -176,6 +216,10 @@ class NoopSignalingAdapter implements SignalingAdapter {
   @override
   Stream<String> onFriendRequest(String username) =>
       _friendRequestController(username).stream;
+
+  @override
+  Stream<String> onRelationshipChanged(String username) =>
+      _relationshipController(username).stream;
 
   @override
   Stream<RTCIceCandidate> onICE(String roomId, IceRole role) =>
@@ -231,17 +275,55 @@ class NoopSignalingAdapter implements SignalingAdapter {
     if (normalizedTo == normalizedFrom) {
       throw Exception('Cannot send friend request to yourself');
     }
-    _friendRequests.add('$normalizedFrom->$normalizedTo');
-    _friendRequestController(normalizedTo).add(normalizedFrom);
+    final added = _friendRequests.add('$normalizedFrom->$normalizedTo');
+    if (added) {
+      _friendRequestController(normalizedTo).add(normalizedFrom);
+      _emitRelationshipChange(normalizedTo, normalizedFrom);
+      _emitRelationshipChange(normalizedFrom, normalizedTo);
+    }
   }
 
   @override
   Future<void> upsertFriendship(String firstUser, String secondUser) async {
     final normalizedFirstUser = _normalizedUsername(firstUser);
     final normalizedSecondUser = _normalizedUsername(secondUser);
-    _friendships.add(_friendshipKey(normalizedFirstUser, normalizedSecondUser));
+    final added = _friendships.add(
+      _friendshipKey(normalizedFirstUser, normalizedSecondUser),
+    );
     await deleteFriendRequest(normalizedFirstUser, normalizedSecondUser);
     await deleteFriendRequest(normalizedSecondUser, normalizedFirstUser);
+    if (added) {
+      _emitRelationshipChange(normalizedFirstUser, normalizedSecondUser);
+      _emitRelationshipChange(normalizedSecondUser, normalizedFirstUser);
+    }
+  }
+
+  @override
+  Future<void> blockUser(String blocker, String blocked) async {
+    final normalizedBlocker = _normalizedUsername(blocker);
+    final normalizedBlocked = _normalizedUsername(blocked);
+    if (normalizedBlocker == normalizedBlocked) {
+      throw Exception('Cannot block yourself');
+    }
+    final added = _blocks.add('$normalizedBlocker->$normalizedBlocked');
+    await deleteFriendship(normalizedBlocker, normalizedBlocked);
+    await deleteFriendRequest(normalizedBlocker, normalizedBlocked);
+    await deleteFriendRequest(normalizedBlocked, normalizedBlocker);
+    if (added) {
+      _emitRelationshipChange(normalizedBlocker, normalizedBlocked);
+      _emitRelationshipChange(normalizedBlocked, normalizedBlocker);
+    }
+  }
+
+  @override
+  Future<void> unblockUser(String blocker, String blocked) async {
+    final normalizedBlocker = _normalizedUsername(blocker);
+    final normalizedBlocked = _normalizedUsername(blocked);
+    final removed = _blocks.remove('$normalizedBlocker->$normalizedBlocked');
+    if (removed) {
+      _emitRelationshipChange(normalizedBlocker, normalizedBlocked);
+      _emitRelationshipChange(normalizedBlocked, normalizedBlocker);
+    }
   }
 
   @override
@@ -261,6 +343,13 @@ class NoopSignalingAdapter implements SignalingAdapter {
     );
   }
 
+  StreamController<String> _relationshipController(String username) {
+    return _relationshipControllers.putIfAbsent(
+      _normalizedUsername(username),
+      () => StreamController<String>.broadcast(sync: true),
+    );
+  }
+
   StreamController<bool> _presenceController(String username) {
     return _presenceControllers.putIfAbsent(
       username,
@@ -274,5 +363,9 @@ class NoopSignalingAdapter implements SignalingAdapter {
       _normalizedUsername(secondUser),
     ]..sort();
     return '${users[0]}::${users[1]}';
+  }
+
+  void _emitRelationshipChange(String username, String peerUsername) {
+    _relationshipController(username).add(_normalizedUsername(peerUsername));
   }
 }

@@ -33,6 +33,7 @@ class RainRuntimeController with WidgetsBindingObserver {
   final Duration heartbeatInterval;
   final Duration friendRequestRefreshInterval;
   final Set<String> _manualDisconnectedPeers = <String>{};
+  final Set<String> _unblockingPeers = <String>{};
   final Map<String, StreamSubscription<bool>> _presenceSubscriptions =
       <String, StreamSubscription<bool>>{};
 
@@ -100,7 +101,9 @@ class RainRuntimeController with WidgetsBindingObserver {
 
     final existingFriends = await friendStore.loadFriends();
     for (final friend in existingFriends) {
-      _watchPresence(friend.username);
+      if (!_isBlockedState(friend.state)) {
+        _watchPresence(friend.username);
+      }
     }
 
     if (friendRequestRefreshInterval > Duration.zero) {
@@ -122,6 +125,24 @@ class RainRuntimeController with WidgetsBindingObserver {
           .listen(
             (String from) async {
               await _processIncomingFriendRequest(from);
+            },
+            onError: (Object error, StackTrace stackTrace) {
+              _refreshRelationshipsSilently();
+            },
+          ),
+    );
+
+    _subscriptions.add(
+      adapter
+          .onRelationshipChanged(selfIdentity.username)
+          .listen(
+            (String username) {
+              final normalizedUsername = _normalizedUsername(username);
+              if (normalizedUsername.isNotEmpty &&
+                  normalizedUsername !=
+                      _normalizedUsername(selfIdentity.username)) {
+                _refreshRelationshipsSilently(onlyUsername: normalizedUsername);
+              }
             },
             onError: (Object error, StackTrace stackTrace) {
               _refreshRelationshipsSilently();
@@ -210,14 +231,24 @@ class RainRuntimeController with WidgetsBindingObserver {
   }
 
   Future<void> blockFriend(String username) async {
-    await _clearFriendRequests(username);
-    await adapter.deleteFriendship(selfIdentity.username, username);
-    await _localMutations.run(() => friendStore.block(username));
-    await _stopTrackingPeer(username);
+    final normalizedUsername = _normalizedUsername(username);
+    await adapter.blockUser(selfIdentity.username, normalizedUsername);
+    await _clearFriendRequests(normalizedUsername);
+    await adapter.deleteFriendship(selfIdentity.username, normalizedUsername);
+    await _localMutations.run(() => friendStore.block(normalizedUsername));
+    await _stopTrackingPeer(normalizedUsername);
   }
 
   Future<void> unblockFriend(String username) async {
-    await _localMutations.run(() => friendStore.unblock(username));
+    final normalizedUsername = _normalizedUsername(username);
+    _unblockingPeers.add(normalizedUsername);
+    try {
+      await adapter.unblockUser(selfIdentity.username, normalizedUsername);
+      await _localMutations.run(() => friendStore.unblock(normalizedUsername));
+      await _stopTrackingPeer(normalizedUsername);
+    } finally {
+      _unblockingPeers.remove(normalizedUsername);
+    }
   }
 
   Future<void> unfriend(String username) async {
@@ -266,6 +297,8 @@ class RainRuntimeController with WidgetsBindingObserver {
             'Accept @$normalizedUsername first before trying to connect.',
           FriendState.blocked =>
             'Unblock @$normalizedUsername before trying to connect.',
+          FriendState.blockedByPeer =>
+            '@$normalizedUsername blocked you. You cannot connect right now.',
           FriendState.friend => null,
           null => 'Could not find @$normalizedUsername in your friends list.',
         };
@@ -444,6 +477,10 @@ class RainRuntimeController with WidgetsBindingObserver {
           return FriendRequestResult.acceptedExisting;
         case FriendState.blocked:
           throw Exception('Unblock @$targetUsername before sending a request.');
+        case FriendState.blockedByPeer:
+          throw Exception(
+            '@$targetUsername blocked you. You cannot send a request right now.',
+          );
       }
     }
 
@@ -616,8 +653,15 @@ class RainRuntimeController with WidgetsBindingObserver {
   }
 
   Future<void> _clearFriendRequests(String username) async {
-    await adapter.deleteFriendRequest(selfIdentity.username, username);
-    await adapter.deleteFriendRequest(username, selfIdentity.username);
+    final normalizedUsername = _normalizedUsername(username);
+    await adapter.deleteFriendRequest(
+      selfIdentity.username,
+      normalizedUsername,
+    );
+    await adapter.deleteFriendRequest(
+      normalizedUsername,
+      selfIdentity.username,
+    );
   }
 
   void _refreshRelationshipsSilently({String? onlyUsername}) {
@@ -632,7 +676,7 @@ class RainRuntimeController with WidgetsBindingObserver {
       return;
     }
     final normalizedFrom = _normalizedUsername(from);
-    final existing = await _localMutations.run(() {
+    var existing = await _localMutations.run(() {
       if (_shutDown) {
         return Future<FriendRecord?>.value();
       }
@@ -655,7 +699,20 @@ class RainRuntimeController with WidgetsBindingObserver {
     if (_shutDown) {
       return;
     }
+    if (existing?.state == FriendState.blockedByPeer) {
+      await _syncRelationships(onlyUsername: normalizedFrom);
+      existing = await _localMutations.run(
+        () => friendStore.loadFriend(normalizedFrom),
+      );
+    }
     if (existing?.state == FriendState.blocked) {
+      await adapter.blockUser(selfIdentity.username, normalizedFrom);
+      await _clearFriendRequests(normalizedFrom);
+      await adapter.deleteFriendship(selfIdentity.username, normalizedFrom);
+      await _stopTrackingPeer(normalizedFrom);
+      return;
+    }
+    if (existing?.state == FriendState.blockedByPeer) {
       await _clearFriendRequests(normalizedFrom);
       await adapter.deleteFriendship(selfIdentity.username, normalizedFrom);
       await _stopTrackingPeer(normalizedFrom);
@@ -674,7 +731,7 @@ class RainRuntimeController with WidgetsBindingObserver {
           gender: gender,
         );
       });
-    } else if (existing?.state != FriendState.blocked) {
+    } else if (!_isBlockedState(existing?.state)) {
       await _localMutations.run(() {
         if (_shutDown) {
           return Future<void>.value();
@@ -746,12 +803,19 @@ class RainRuntimeController with WidgetsBindingObserver {
     final outgoingRequests = await adapter.loadOutgoingFriendRequests(
       selfIdentity.username,
     );
+    final blockedByMe = await adapter.loadBlockedUsers(selfIdentity.username);
+    final blockedMe = await adapter.loadUsersBlocking(selfIdentity.username);
 
     final incomingSet = incomingRequests.toSet();
     final outgoingSet = outgoingRequests.toSet();
     final acceptedSet = acceptedFriends.toSet();
+    final blockedByMeSet = blockedByMe.toSet();
+    final blockedMeSet = blockedMe.toSet();
 
-    final crossedRequests = incomingSet.intersection(outgoingSet);
+    final crossedRequests = incomingSet
+        .intersection(outgoingSet)
+        .difference(blockedByMeSet)
+        .difference(blockedMeSet);
     for (final username in crossedRequests) {
       await adapter.upsertFriendship(selfIdentity.username, username);
       acceptedSet.add(username);
@@ -763,6 +827,8 @@ class RainRuntimeController with WidgetsBindingObserver {
       ...acceptedSet,
       ...incomingSet,
       ...outgoingSet,
+      ...blockedByMeSet,
+      ...blockedMeSet,
       ...existingByUsername.keys,
     };
 
@@ -772,9 +838,33 @@ class RainRuntimeController with WidgetsBindingObserver {
       }
 
       final existing = existingByUsername[username];
-      if (existing?.state == FriendState.blocked) {
+      final locallyBlockedByMe = existing?.state == FriendState.blocked;
+      final unblocking = _unblockingPeers.contains(username);
+      if (locallyBlockedByMe &&
+          !blockedByMeSet.contains(username) &&
+          !unblocking) {
+        await adapter.blockUser(selfIdentity.username, username);
+        blockedByMeSet.add(username);
+        incomingSet.remove(username);
+        outgoingSet.remove(username);
+        acceptedSet.remove(username);
+      }
+
+      if (blockedByMeSet.contains(username) ||
+          (locallyBlockedByMe && !unblocking)) {
         await _clearFriendRequests(username);
         await adapter.deleteFriendship(selfIdentity.username, username);
+        await _localMutations.run(() => friendStore.block(username));
+        await _stopTrackingPeer(username);
+        continue;
+      }
+
+      if (blockedMeSet.contains(username)) {
+        await _clearFriendRequests(username);
+        await adapter.deleteFriendship(selfIdentity.username, username);
+        await _localMutations.run(
+          () => friendStore.markBlockedByPeer(username),
+        );
         await _stopTrackingPeer(username);
         continue;
       }
@@ -788,9 +878,11 @@ class RainRuntimeController with WidgetsBindingObserver {
           : null;
 
       if (nextState == null) {
-        if (existing != null && existing.state != FriendState.blocked) {
+        if (existing != null && !_isBlockedState(existing.state)) {
           await _localMutations.run(() => friendStore.reject(username));
           await _stopTrackingPeer(username);
+        } else if (existing?.state == FriendState.blockedByPeer) {
+          await _localMutations.run(() => friendStore.reject(username));
         }
         continue;
       }
@@ -840,5 +932,9 @@ class RainRuntimeController with WidgetsBindingObserver {
     _manualDisconnectedPeers.remove(normalizedUsername);
     await brain?.disconnect(normalizedUsername);
     await brain?.unregisterPeer(normalizedUsername);
+  }
+
+  bool _isBlockedState(FriendState? state) {
+    return state == FriendState.blocked || state == FriendState.blockedByPeer;
   }
 }

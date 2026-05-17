@@ -327,9 +327,9 @@ class FirebaseSignalingAdapter implements SignalingAdapter {
 
   @override
   Future<void> deleteFriendship(String firstUser, String secondUser) async {
-    await ensureAuthenticated();
     final normalizedFirstUser = _normalizedUsername(firstUser);
     final normalizedSecondUser = _normalizedUsername(secondUser);
+    await _ensureSignedInAsUsername(normalizedFirstUser);
     await _root
         .child('friendships/$normalizedFirstUser/$normalizedSecondUser')
         .remove();
@@ -341,10 +341,76 @@ class FirebaseSignalingAdapter implements SignalingAdapter {
   }
 
   @override
+  Future<void> blockUser(String blocker, String blocked) async {
+    final normalizedBlocker = _normalizedUsername(blocker);
+    final normalizedBlocked = _normalizedUsername(blocked);
+    await _ensureSignedInAsUsername(normalizedBlocker);
+    if (normalizedBlocker == normalizedBlocked) {
+      throw Exception('Cannot block yourself');
+    }
+    final payload = <String, Object?>{
+      'blockedAt': DateTime.now().millisecondsSinceEpoch,
+    };
+    await _root.update(<String, Object?>{
+      'blocks/$normalizedBlocker/$normalizedBlocked': payload,
+      'blockedBy/$normalizedBlocked/$normalizedBlocker': payload,
+      'friendships/$normalizedBlocker/$normalizedBlocked': null,
+      'friendships/$normalizedBlocked/$normalizedBlocker': null,
+      'friendRequests/$normalizedBlocker/$normalizedBlocked': null,
+      'friendRequests/$normalizedBlocked/$normalizedBlocker': null,
+      'outgoingFriendRequests/$normalizedBlocker/$normalizedBlocked': null,
+      'outgoingFriendRequests/$normalizedBlocked/$normalizedBlocker': null,
+    });
+  }
+
+  @override
+  Future<void> unblockUser(String blocker, String blocked) async {
+    final normalizedBlocker = _normalizedUsername(blocker);
+    final normalizedBlocked = _normalizedUsername(blocked);
+    await _ensureSignedInAsUsername(normalizedBlocker);
+    await _root.update(<String, Object?>{
+      'blocks/$normalizedBlocker/$normalizedBlocked': null,
+      'blockedBy/$normalizedBlocked/$normalizedBlocker': null,
+    });
+  }
+
+  @override
   Future<List<String>> loadAcceptedFriends(String username) async {
     await ensureAuthenticated();
     final normalizedUsername = _normalizedUsername(username);
     final snapshot = await _root.child('friendships/$normalizedUsername').get();
+    if (!snapshot.exists || snapshot.value is! Map<Object?, Object?>) {
+      return const <String>[];
+    }
+
+    final values = snapshot.value! as Map<Object?, Object?>;
+    return values.keys
+        .whereType<String>()
+        .where((String value) => value.isNotEmpty)
+        .toList(growable: false);
+  }
+
+  @override
+  Future<List<String>> loadBlockedUsers(String username) async {
+    await ensureAuthenticated();
+    final normalizedUsername = _normalizedUsername(username);
+    final snapshot = await _root.child('blocks/$normalizedUsername').get();
+    if (!snapshot.exists || snapshot.value is! Map<Object?, Object?>) {
+      return const <String>[];
+    }
+
+    final values = snapshot.value! as Map<Object?, Object?>;
+    return values.keys
+        .whereType<String>()
+        .where((String value) => value.isNotEmpty)
+        .toList(growable: false);
+  }
+
+  @override
+  Future<List<String>> loadUsersBlocking(String username) async {
+    await ensureAuthenticated();
+    final normalizedUsername = _normalizedUsername(username);
+    final snapshot = await _root.child('blockedBy/$normalizedUsername').get();
     if (!snapshot.exists || snapshot.value is! Map<Object?, Object?>) {
       return const <String>[];
     }
@@ -427,6 +493,44 @@ class FirebaseSignalingAdapter implements SignalingAdapter {
         .onChildAdded
         .map((DatabaseEvent event) => event.snapshot.key ?? '')
         .where((String value) => value.isNotEmpty);
+  }
+
+  @override
+  Stream<String> onRelationshipChanged(String username) {
+    final normalizedUsername = _normalizedUsername(username);
+    late final StreamController<String> controller;
+    final subscriptions = <StreamSubscription<DatabaseEvent>>[];
+
+    void emitPeer(DatabaseEvent event) {
+      final key = event.snapshot.key;
+      if (key != null && key.isNotEmpty && !controller.isClosed) {
+        controller.add(key);
+      }
+    }
+
+    void listenTo(DatabaseReference reference) {
+      subscriptions.add(reference.onChildAdded.listen(emitPeer));
+      subscriptions.add(reference.onChildChanged.listen(emitPeer));
+      subscriptions.add(reference.onChildRemoved.listen(emitPeer));
+    }
+
+    controller = StreamController<String>.broadcast(
+      onListen: () {
+        listenTo(_root.child('friendships/$normalizedUsername'));
+        listenTo(_root.child('friendRequests/$normalizedUsername'));
+        listenTo(_root.child('outgoingFriendRequests/$normalizedUsername'));
+        listenTo(_root.child('blocks/$normalizedUsername'));
+        listenTo(_root.child('blockedBy/$normalizedUsername'));
+      },
+      onCancel: () async {
+        for (final subscription in subscriptions) {
+          await subscription.cancel();
+        }
+        subscriptions.clear();
+      },
+    );
+
+    return controller.stream;
   }
 
   @override
@@ -573,9 +677,9 @@ class FirebaseSignalingAdapter implements SignalingAdapter {
 
   @override
   Future<void> writeFriendRequest(String to, String from) async {
-    await ensureAuthenticated();
     final normalizedTo = _normalizedUsername(to);
     final normalizedFrom = _normalizedUsername(from);
+    await _ensureSignedInAsUsername(normalizedFrom);
     if (normalizedTo == normalizedFrom) {
       throw Exception('Cannot send friend request to yourself');
     }
@@ -590,9 +694,9 @@ class FirebaseSignalingAdapter implements SignalingAdapter {
 
   @override
   Future<void> upsertFriendship(String firstUser, String secondUser) async {
-    await ensureAuthenticated();
     final normalizedFirstUser = _normalizedUsername(firstUser);
     final normalizedSecondUser = _normalizedUsername(secondUser);
+    await _ensureSignedInAsUsername(normalizedFirstUser);
     final payload = <String, Object?>{
       'acceptedAt': DateTime.now().millisecondsSinceEpoch,
     };

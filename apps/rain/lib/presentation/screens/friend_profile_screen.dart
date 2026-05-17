@@ -189,6 +189,15 @@ class FriendProfileScreen extends ConsumerWidget {
               label: const Text('Unblock'),
             ),
           ],
+          if (friend.state == FriendState.blockedByPeer) ...<Widget>[
+            const Card(
+              child: ListTile(
+                leading: Icon(Icons.block_outlined),
+                title: Text('Blocked by peer'),
+                subtitle: Text('They must unblock you before chat can resume'),
+              ),
+            ),
+          ],
         ],
       ),
     );
@@ -199,6 +208,7 @@ class FriendProfileScreen extends ConsumerWidget {
     FriendState.pendingIncoming => 'Incoming request',
     FriendState.friend => 'Friend',
     FriendState.blocked => 'Blocked',
+    FriendState.blockedByPeer => 'Blocked you',
   };
 
   String _formatDate(int timestamp) {

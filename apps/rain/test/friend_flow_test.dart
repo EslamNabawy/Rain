@@ -346,6 +346,44 @@ void main() {
     );
 
     test(
+      'acceptance updates the requester live without restart or polling',
+      () async {
+        final adapter = RecordingNoopSignalingAdapter();
+        final bobDb = RainDatabase(NativeDatabase.memory());
+        final bob = RainIdentity(
+          username: 'bob',
+          displayName: 'Bob',
+          createdAt: 0,
+          gender: RainGender.male,
+        );
+        final aliceRuntime = _runtimeFor(db, alice, adapter);
+        final bobRuntime = _runtimeFor(bobDb, bob, adapter);
+
+        try {
+          await aliceRuntime.start();
+          await bobRuntime.start();
+
+          await aliceRuntime.sendFriendRequest('bob');
+          await _waitForFriendState(db, 'bob', FriendState.pendingOutgoing);
+          await _waitForFriendState(
+            bobDb,
+            'alice',
+            FriendState.pendingIncoming,
+          );
+
+          await bobRuntime.acceptFriend('alice');
+
+          await _waitForFriendState(db, 'bob', FriendState.friend);
+          await _waitForFriendState(bobDb, 'alice', FriendState.friend);
+        } finally {
+          await aliceRuntime.dispose();
+          await bobRuntime.dispose();
+          await bobDb.close();
+        }
+      },
+    );
+
+    test(
       'sendFriendRequest to self throws even with whitespace or case',
       () async {
         final adapter = NoopSignalingAdapter();
@@ -489,6 +527,97 @@ void main() {
       expect(brain.unregisteredPeers, contains('bob'));
       expect(brain.getSession('bob'), isNull);
     });
+
+    test(
+      'blockFriend publishes blocked state to the other user live',
+      () async {
+        final adapter = RecordingNoopSignalingAdapter();
+        final bobDb = RainDatabase(NativeDatabase.memory());
+        final bob = RainIdentity(
+          username: 'bob',
+          displayName: 'Bob',
+          createdAt: 0,
+          gender: RainGender.male,
+        );
+        final aliceRuntime = _runtimeFor(db, alice, adapter);
+        final bobRuntime = _runtimeFor(bobDb, bob, adapter);
+
+        try {
+          await adapter.upsertFriendship('alice', 'bob');
+          await aliceRuntime.start();
+          await bobRuntime.start();
+          await _waitForFriendState(db, 'bob', FriendState.friend);
+          await _waitForFriendState(bobDb, 'alice', FriendState.friend);
+
+          await aliceRuntime.blockFriend('bob');
+
+          await _waitForFriendState(db, 'bob', FriendState.blocked);
+          await _waitForFriendState(bobDb, 'alice', FriendState.blockedByPeer);
+          expect(
+            await adapter.loadAcceptedFriends('bob'),
+            isNot(contains('alice')),
+          );
+        } finally {
+          await aliceRuntime.dispose();
+          await bobRuntime.dispose();
+          await bobDb.close();
+        }
+      },
+    );
+
+    test(
+      'unblock clears backend block so a new friend request is delivered',
+      () async {
+        final adapter = RecordingNoopSignalingAdapter();
+        final bobDb = RainDatabase(NativeDatabase.memory());
+        final bob = RainIdentity(
+          username: 'bob',
+          displayName: 'Bob',
+          createdAt: 0,
+          gender: RainGender.male,
+        );
+        final aliceRuntime = _runtimeFor(db, alice, adapter);
+        final bobRuntime = _runtimeFor(bobDb, bob, adapter);
+
+        try {
+          await adapter.upsertFriendship('alice', 'bob');
+          await aliceRuntime.start();
+          await bobRuntime.start();
+          await _waitForFriendState(db, 'bob', FriendState.friend);
+          await _waitForFriendState(bobDb, 'alice', FriendState.friend);
+
+          await aliceRuntime.blockFriend('bob');
+          await _waitForFriendState(bobDb, 'alice', FriendState.blockedByPeer);
+          await expectLater(
+            bobRuntime.sendFriendRequest('alice'),
+            throwsA(
+              isA<Exception>().having(
+                (Exception error) => error.toString(),
+                'message',
+                contains('blocked you'),
+              ),
+            ),
+          );
+
+          await aliceRuntime.unblockFriend('bob');
+          await _waitForFriendRemoval(db, 'bob');
+          await _waitForFriendRemoval(bobDb, 'alice');
+
+          await bobRuntime.sendFriendRequest('alice');
+
+          await _waitForFriendState(db, 'bob', FriendState.pendingIncoming);
+          await _waitForFriendState(
+            bobDb,
+            'alice',
+            FriendState.pendingOutgoing,
+          );
+        } finally {
+          await aliceRuntime.dispose();
+          await bobRuntime.dispose();
+          await bobDb.close();
+        }
+      },
+    );
 
     test('blocked inbound request is deleted from the backend flow', () async {
       final adapter = RecordingNoopSignalingAdapter();
@@ -1160,6 +1289,29 @@ Future<String> _nextString(Stream<String> stream) {
   );
 
   return completer.future;
+}
+
+RainRuntimeController _runtimeFor(
+  RainDatabase database,
+  RainIdentity identity,
+  NoopSignalingAdapter adapter, {
+  SessionManager? brain,
+}) {
+  final messageStore = MessageStore(database);
+  final offlineQueueStore = OfflineQueueStore(database);
+  return RainRuntimeController(
+    selfIdentity: identity,
+    adapter: adapter,
+    brain: brain,
+    database: database,
+    friendStore: FriendStore(database),
+    messageStore: messageStore,
+    offlineQueueStore: offlineQueueStore,
+    messageDeliveryService: MessageDeliveryService(
+      messageStore: messageStore,
+      offlineQueueStore: offlineQueueStore,
+    ),
+  );
 }
 
 Future<void> _waitForDeletedRequest(

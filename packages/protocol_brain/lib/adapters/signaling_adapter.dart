@@ -32,9 +32,14 @@ abstract class SignalingAdapter {
   Future<List<String>> loadIncomingFriendRequests(String username);
   Future<List<String>> loadOutgoingFriendRequests(String username);
   Future<List<String>> loadAcceptedFriends(String username);
+  Future<List<String>> loadBlockedUsers(String username);
+  Future<List<String>> loadUsersBlocking(String username);
   Future<void> upsertFriendship(String firstUser, String secondUser);
   Future<void> deleteFriendship(String firstUser, String secondUser);
+  Future<void> blockUser(String blocker, String blocked);
+  Future<void> unblockUser(String blocker, String blocked);
   Stream<String> onFriendRequest(String username);
+  Stream<String> onRelationshipChanged(String username);
 
   Future<void> deleteRoom(String roomId);
   Future<void> dispose();

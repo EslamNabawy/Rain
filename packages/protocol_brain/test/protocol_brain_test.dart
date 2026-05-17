@@ -298,6 +298,7 @@ void main() {
       expect(session?.phase, SessionPhase.failed);
       expect(session?.error, contains('signaling data'));
       expect(session?.detail, contains('Signaling failed'));
+      expect(adapter.deletedRooms, contains('alice:bob'));
 
       await brain.disconnect('bob');
     },
@@ -327,6 +328,7 @@ void main() {
       expect(session?.phase, SessionPhase.failed);
       expect(session?.error, contains('signaling data'));
       expect(session?.detail, contains('Signaling failed'));
+      expect(adapter.deletedRooms, contains('alice:bob'));
 
       await brain.disconnect('alice');
     },
@@ -390,6 +392,7 @@ PeerConfig _fakePeerConfig() {
 class _RecordingSignalingAdapter implements SignalingAdapter {
   final List<String> writtenOffers = <String>[];
   final List<String> writtenAnswers = <String>[];
+  final List<String> deletedRooms = <String>[];
   final Map<String, StreamController<SDPPayload>> _offerControllers =
       <String, StreamController<SDPPayload>>{};
   final Map<String, StreamController<SDPPayload>> _answerControllers =
@@ -519,17 +522,37 @@ class _RecordingSignalingAdapter implements SignalingAdapter {
       const <String>[];
 
   @override
+  Future<List<String>> loadBlockedUsers(String username) async =>
+      const <String>[];
+
+  @override
+  Future<List<String>> loadUsersBlocking(String username) async =>
+      const <String>[];
+
+  @override
   Future<void> upsertFriendship(String firstUser, String secondUser) async {}
 
   @override
   Future<void> deleteFriendship(String firstUser, String secondUser) async {}
 
   @override
+  Future<void> blockUser(String blocker, String blocked) async {}
+
+  @override
+  Future<void> unblockUser(String blocker, String blocked) async {}
+
+  @override
   Stream<String> onFriendRequest(String username) =>
       const Stream<String>.empty();
 
   @override
-  Future<void> deleteRoom(String roomId) async {}
+  Stream<String> onRelationshipChanged(String username) =>
+      const Stream<String>.empty();
+
+  @override
+  Future<void> deleteRoom(String roomId) async {
+    deletedRooms.add(roomId);
+  }
 
   @override
   Future<void> dispose() async {
