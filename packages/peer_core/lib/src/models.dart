@@ -37,7 +37,10 @@ class PeerConfig {
   final int? maxRetransmits;
 
   Map<String, dynamic> toRtcConfiguration() {
-    return <String, dynamic>{'iceServers': iceServers};
+    return <String, dynamic>{
+      'iceServers': iceServers,
+      'iceTransportPolicy': 'all',
+    };
   }
 
   RTCDataChannelInit defaultChannelOptions() {

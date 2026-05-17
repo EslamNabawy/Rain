@@ -31,6 +31,28 @@ void main() {
   });
 
   test(
+    'peer config keeps direct P2P candidates enabled before relay fallback',
+    () {
+      final config = PeerConfig(
+        iceServers: const <Map<String, dynamic>>[
+          <String, dynamic>{'urls': 'stun:stun.l.google.com:19302'},
+          <String, dynamic>{
+            'urls': 'turn:turn.example:3478',
+            'username': 'rain',
+            'credential': 'secret',
+          },
+        ],
+        platform: _FakePlatformBridge(),
+      );
+
+      expect(config.toRtcConfiguration(), <String, Object?>{
+        'iceServers': config.iceServers,
+        'iceTransportPolicy': 'all',
+      });
+    },
+  );
+
+  test(
     'default peer waits for chat and control channels before connected',
     () async {
       final platform = _FakePlatformBridge();
