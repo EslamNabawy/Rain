@@ -16,6 +16,7 @@ String roomId(String a, String b) {
 }
 
 const Duration _handshakeTimeout = Duration(seconds: 30);
+const Duration _routeRefreshDelay = Duration(milliseconds: 850);
 
 Duration _maxDuration(Duration a, Duration b) {
   return a.compareTo(b) >= 0 ? a : b;
@@ -288,11 +289,16 @@ class ProtocolBrainImpl implements ProtocolBrain {
         connectedAt: connectedAt,
         state: SessionState.connected,
         phase: SessionPhase.connected,
-        detail: 'Data channels open. Chat ready.',
+        detail: 'Detecting route...',
         updatedAt: connectedAt,
         retryAttempt: 0,
+        route: PeerConnectionRoute.unknown(updatedAt: connectedAt),
         clearError: true,
       ),
+    );
+    unawaited(_refreshRoute(active));
+    unawaited(
+      Future<void>.delayed(_routeRefreshDelay, () => _refreshRoute(active)),
     );
     _peerConnectedController.add(active.snapshot);
     unawaited(adapter.deleteRoom(active.roomId));
@@ -426,6 +432,9 @@ class ProtocolBrainImpl implements ProtocolBrain {
           detail: 'Connection failed after retries.',
           updatedAt: DateTime.now().millisecondsSinceEpoch,
           error: 'Connection failed after retries.',
+          route: PeerConnectionRoute.unknown(
+            updatedAt: DateTime.now().millisecondsSinceEpoch,
+          ),
         ),
       );
       return;
@@ -451,6 +460,9 @@ class ProtocolBrainImpl implements ProtocolBrain {
         detail: 'Reconnect attempt ${active.retryAttempt + 1} scheduled.',
         updatedAt: DateTime.now().millisecondsSinceEpoch,
         retryAttempt: active.retryAttempt + 1,
+        route: PeerConnectionRoute.unknown(
+          updatedAt: DateTime.now().millisecondsSinceEpoch,
+        ),
       ),
     );
 
@@ -698,20 +710,67 @@ class ProtocolBrainImpl implements ProtocolBrain {
     SessionState? state,
     String? error,
   }) {
+    final updatedAt = DateTime.now().millisecondsSinceEpoch;
+    final route = switch (state) {
+      SessionState.connecting ||
+      SessionState.reconnecting ||
+      SessionState.failed => PeerConnectionRoute.unknown(updatedAt: updatedAt),
+      SessionState.connected || null => null,
+    };
     _updateSession(
       active.peerId,
       active.snapshot.copyWith(
         state: state,
         phase: phase,
         detail: detail,
-        updatedAt: DateTime.now().millisecondsSinceEpoch,
+        updatedAt: updatedAt,
         error: error,
         clearError: error == null,
         retryAttempt: active.retryAttempt,
         roomId: active.roomId,
         isOfferOwner: _isOfferOwner(active.peerId),
+        route: route,
       ),
     );
+  }
+
+  Future<void> _refreshRoute(_ActiveSession active) async {
+    if (!_canPublishRoute(active)) {
+      return;
+    }
+    try {
+      final route = await active.peer.currentRoute();
+      if (!_canPublishRoute(active)) {
+        return;
+      }
+      final updatedAt =
+          route.updatedAt ?? DateTime.now().millisecondsSinceEpoch;
+      _updateSession(
+        active.peerId,
+        active.snapshot.copyWith(
+          detail: _routeDetail(route),
+          updatedAt: updatedAt,
+          route: route,
+          clearError: true,
+        ),
+      );
+    } catch (_) {
+      // Route stats are diagnostic only; they must not fail the peer session.
+    }
+  }
+
+  bool _canPublishRoute(_ActiveSession active) {
+    return _sessions[active.peerId] == active &&
+        active.snapshot.state == SessionState.connected &&
+        active.peer.state == PeerState.connected;
+  }
+
+  String _routeDetail(PeerConnectionRoute route) {
+    return switch (route.kind) {
+      PeerRouteKind.direct => 'Direct encrypted peer lane is open.',
+      PeerRouteKind.relay => 'Encrypted peer lane is relayed through TURN.',
+      PeerRouteKind.unknown => 'Detecting route...',
+    };
   }
 
   void _handleSignalingStreamError(
@@ -734,6 +793,9 @@ class ProtocolBrainImpl implements ProtocolBrain {
         detail: 'Signaling failed while reading $source data.',
         updatedAt: DateTime.now().millisecondsSinceEpoch,
         error: _signalingFailureMessage(error),
+        route: PeerConnectionRoute.unknown(
+          updatedAt: DateTime.now().millisecondsSinceEpoch,
+        ),
       ),
     );
   }
@@ -771,6 +833,9 @@ class ProtocolBrainImpl implements ProtocolBrain {
           detail: 'Handshake timed out.',
           updatedAt: DateTime.now().millisecondsSinceEpoch,
           error: 'Handshake timed out.',
+          route: PeerConnectionRoute.unknown(
+            updatedAt: DateTime.now().millisecondsSinceEpoch,
+          ),
         ),
       );
       return;
@@ -787,6 +852,9 @@ class ProtocolBrainImpl implements ProtocolBrain {
           detail: 'Connection failed after retries.',
           updatedAt: DateTime.now().millisecondsSinceEpoch,
           error: 'Connection failed after retries.',
+          route: PeerConnectionRoute.unknown(
+            updatedAt: DateTime.now().millisecondsSinceEpoch,
+          ),
         ),
       );
       return;

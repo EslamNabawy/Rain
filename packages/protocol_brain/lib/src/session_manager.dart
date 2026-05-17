@@ -1,5 +1,7 @@
 import 'dart:typed_data';
 
+import 'package:peer_core/peer_core.dart' show PeerConnectionRoute;
+
 enum SessionState { connecting, connected, reconnecting, failed }
 
 enum ConnectionType { signaling }
@@ -77,6 +79,7 @@ class Session {
     this.retryAttempt = 0,
     this.roomId,
     this.isOfferOwner,
+    this.route = const PeerConnectionRoute.unknown(),
   }) : _sender = sender;
 
   final String peerId;
@@ -90,6 +93,7 @@ class Session {
   final int retryAttempt;
   final String? roomId;
   final bool? isOfferOwner;
+  final PeerConnectionRoute route;
   final void Function(String data) _sender;
 
   void send(String data) => _sender(data);
@@ -106,6 +110,7 @@ class Session {
     int? retryAttempt,
     String? roomId,
     bool? isOfferOwner,
+    PeerConnectionRoute? route,
     void Function(String data)? sender,
   }) {
     return Session(
@@ -120,6 +125,7 @@ class Session {
       retryAttempt: retryAttempt ?? this.retryAttempt,
       roomId: roomId ?? this.roomId,
       isOfferOwner: isOfferOwner ?? this.isOfferOwner,
+      route: route ?? this.route,
       sender: sender ?? _sender,
     );
   }

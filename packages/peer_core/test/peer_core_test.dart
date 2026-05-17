@@ -195,6 +195,134 @@ void main() {
       await disconnectedSubscription.cancel();
     },
   );
+
+  test('default peer maps selected host/srflx route as direct', () async {
+    final platform = _FakePlatformBridge();
+    final peer = DefaultPeerCore();
+    platform.connection.statsReports = _routeStats(
+      localType: 'host',
+      remoteType: 'srflx',
+    );
+
+    await peer.init(
+      PeerConfig(
+        iceServers: const <Map<String, dynamic>>[],
+        platform: platform,
+      ),
+    );
+
+    final route = await peer.currentRoute();
+
+    expect(route.kind, PeerRouteKind.direct);
+    expect(route.localCandidateType, 'host');
+    expect(route.remoteCandidateType, 'srflx');
+    expect(route.protocol, 'udp');
+    expect(route.rtt, 0.04);
+    expect(route.bitrate, 1200000);
+  });
+
+  test('default peer maps selected relay route as relay', () async {
+    final platform = _FakePlatformBridge();
+    final peer = DefaultPeerCore();
+    platform.connection.statsReports = _routeStats(
+      localType: 'relay',
+      remoteType: 'prflx',
+      relayProtocol: 'udp',
+    );
+
+    await peer.init(
+      PeerConfig(
+        iceServers: const <Map<String, dynamic>>[],
+        platform: platform,
+      ),
+    );
+
+    final route = await peer.currentRoute();
+
+    expect(route.kind, PeerRouteKind.relay);
+    expect(route.localCandidateType, 'relay');
+    expect(route.remoteCandidateType, 'prflx');
+    expect(route.relayProtocol, 'udp');
+  });
+
+  test(
+    'default peer reports unknown route when no selected pair exists',
+    () async {
+      final platform = _FakePlatformBridge();
+      final peer = DefaultPeerCore();
+      platform.connection.statsReports = <StatsReport>[
+        StatsReport('pair-1', 'candidate-pair', 1, <String, Object?>{
+          'state': 'in-progress',
+        }),
+      ];
+
+      await peer.init(
+        PeerConfig(
+          iceServers: const <Map<String, dynamic>>[],
+          platform: platform,
+        ),
+      );
+
+      final route = await peer.currentRoute();
+
+      expect(route.kind, PeerRouteKind.unknown);
+    },
+  );
+
+  test('default peer keeps malformed route stats unknown', () async {
+    final platform = _FakePlatformBridge();
+    final peer = DefaultPeerCore();
+    platform.connection.statsReports = <StatsReport>[
+      StatsReport('pair-1', 'candidate-pair', 1, <String, Object?>{
+        'selected': true,
+        'localCandidateId': 'missing-local',
+        'remoteCandidateId': 'missing-remote',
+      }),
+    ];
+
+    await peer.init(
+      PeerConfig(
+        iceServers: const <Map<String, dynamic>>[],
+        platform: platform,
+      ),
+    );
+
+    final route = await peer.currentRoute();
+
+    expect(route.kind, PeerRouteKind.unknown);
+    expect(route.localCandidateType, isNull);
+    expect(route.remoteCandidateType, isNull);
+  });
+}
+
+List<StatsReport> _routeStats({
+  required String localType,
+  required String remoteType,
+  String? relayProtocol,
+}) {
+  return <StatsReport>[
+    StatsReport('transport-1', 'transport', 1, <String, Object?>{
+      'selectedCandidatePairId': 'pair-1',
+    }),
+    StatsReport('pair-1', 'candidate-pair', 1, <String, Object?>{
+      'state': 'succeeded',
+      'localCandidateId': 'local-1',
+      'remoteCandidateId': 'remote-1',
+      'currentRoundTripTime': 0.04,
+      'availableOutgoingBitrate': 1200000,
+    }),
+    StatsReport('local-1', 'local-candidate', 1, <String, Object?>{
+      'candidateType': localType,
+      'protocol': 'udp',
+      ...relayProtocol == null
+          ? const <String, Object?>{}
+          : <String, Object?>{'relayProtocol': relayProtocol},
+    }),
+    StatsReport('remote-1', 'remote-candidate', 1, <String, Object?>{
+      'candidateType': remoteType,
+      'protocol': 'udp',
+    }),
+  ];
 }
 
 class _FakePlatformBridge implements PlatformBridge {
@@ -227,6 +355,7 @@ class _FakePlatformBridge implements PlatformBridge {
 class _FakeRtcPeerConnection extends Fake implements RTCPeerConnection {
   RTCPeerConnectionState? _connectionState =
       RTCPeerConnectionState.RTCPeerConnectionStateNew;
+  List<StatsReport> statsReports = <StatsReport>[];
 
   @override
   Function(RTCPeerConnectionState state)? onConnectionState;
@@ -260,6 +389,11 @@ class _FakeRtcPeerConnection extends Fake implements RTCPeerConnection {
 
   @override
   Future<void> addCandidate(RTCIceCandidate candidate) async {}
+
+  @override
+  Future<List<StatsReport>> getStats([MediaStreamTrack? track]) async {
+    return statsReports;
+  }
 
   @override
   Future<void> close() async {}

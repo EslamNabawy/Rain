@@ -1,3 +1,6 @@
+export 'package:peer_core/peer_core.dart'
+    show PeerConnectionRoute, PeerRouteKind;
+
 export 'adapters/firebase_adapter.dart';
 export 'adapters/signaling_adapter.dart';
 export 'adapters/signaling_cipher.dart';

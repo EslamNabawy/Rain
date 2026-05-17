@@ -32,6 +32,46 @@ String _formatUiError(Object error) {
   return raw;
 }
 
+String _candidateLabel(String? value) {
+  final trimmed = value?.trim();
+  if (trimmed == null || trimmed.isEmpty) {
+    return 'Unknown';
+  }
+  return trimmed.toUpperCase();
+}
+
+String _protocolLabel(PeerConnectionRoute route) {
+  final protocol = route.protocol?.trim();
+  final relayProtocol = route.relayProtocol?.trim();
+  if ((protocol == null || protocol.isEmpty) &&
+      (relayProtocol == null || relayProtocol.isEmpty)) {
+    return 'Unknown';
+  }
+  final parts = <String>[
+    if (protocol != null && protocol.isNotEmpty) protocol.toUpperCase(),
+    if (relayProtocol != null && relayProtocol.isNotEmpty)
+      'relay ${relayProtocol.toUpperCase()}',
+  ];
+  return parts.join(' / ');
+}
+
+String _rttLabel(double? rtt) {
+  if (rtt == null || rtt.isNaN || rtt.isInfinite) {
+    return 'Unknown';
+  }
+  return '${(rtt * 1000).round()} ms';
+}
+
+String _bitrateLabel(double? bitrate) {
+  if (bitrate == null || bitrate.isNaN || bitrate.isInfinite || bitrate <= 0) {
+    return 'Unknown';
+  }
+  if (bitrate >= 1000000) {
+    return '${(bitrate / 1000000).toStringAsFixed(1)} Mbps';
+  }
+  return '${(bitrate / 1000).round()} Kbps';
+}
+
 class _ConnectionStatus {
   const _ConnectionStatus({
     required this.label,
@@ -89,14 +129,34 @@ _ConnectionStatus _connectionStatusFor({
   final session = connection.session;
   switch (session?.state) {
     case SessionState.connected:
-      return _ConnectionStatus(
-        label: 'Linked',
-        icon: Icons.hub_outlined,
-        color: const Color(0xFF2DD4A3),
-        detail: connection.localDetail ?? 'Encrypted peer lane is open.',
-        isConnected: true,
-        canDisconnect: true,
-      );
+      final route = session!.route;
+      return switch (route.kind) {
+        PeerRouteKind.direct => _ConnectionStatus(
+          label: 'Direct',
+          icon: Icons.hub_outlined,
+          color: const Color(0xFF2DD4A3),
+          detail: connection.localDetail ?? session.detail,
+          isConnected: true,
+          canDisconnect: true,
+        ),
+        PeerRouteKind.relay => _ConnectionStatus(
+          label: 'Relay',
+          icon: Icons.alt_route,
+          color: const Color(0xFF7DD3FC),
+          detail: connection.localDetail ?? session.detail,
+          isConnected: true,
+          canDisconnect: true,
+        ),
+        PeerRouteKind.unknown => _ConnectionStatus(
+          label: 'Connecting',
+          icon: Icons.sync,
+          color: const Color(0xFFFBBF24),
+          detail: connection.localDetail ?? 'Detecting route...',
+          isBusy: true,
+          isConnected: true,
+          canDisconnect: true,
+        ),
+      };
     case SessionState.failed:
       return _ConnectionStatus(
         label: 'Failed',
@@ -118,10 +178,10 @@ _ConnectionStatus _connectionStatusFor({
       );
     case SessionState.connecting:
       return _ConnectionStatus(
-        label: _phaseLabel(session!.phase),
+        label: 'Connecting',
         icon: Icons.sync,
         color: const Color(0xFFFBBF24),
-        detail: connection.localDetail ?? session.detail,
+        detail: connection.localDetail ?? session!.detail,
         isBusy: true,
         canDisconnect: true,
       );
@@ -160,26 +220,6 @@ _ConnectionStatus _connectionStatusFor({
     color: Color(0xFF7DD3FC),
     detail: 'Peer is online. Open the peer lane.',
   );
-}
-
-String _phaseLabel(SessionPhase phase) {
-  return switch (phase) {
-    SessionPhase.checkingPresence => 'Checking',
-    SessionPhase.registeringPeer => 'Registering',
-    SessionPhase.waitingForOffer => 'Signaling',
-    SessionPhase.creatingOffer => 'Signaling',
-    SessionPhase.writingOffer => 'Signaling',
-    SessionPhase.waitingForAnswer => 'Signaling',
-    SessionPhase.writingAnswer => 'Signaling',
-    SessionPhase.exchangingIce => 'Exchanging data',
-    SessionPhase.openingDataChannels => 'Opening channels',
-    SessionPhase.reconnecting => 'Reconnecting',
-    SessionPhase.disconnecting => 'Disconnecting',
-    SessionPhase.connected => 'Connected',
-    SessionPhase.disconnected => 'Disconnected',
-    SessionPhase.failed => 'Failed',
-    SessionPhase.idle => 'Connecting',
-  };
 }
 
 class HomeScreen extends ConsumerStatefulWidget {
@@ -1151,6 +1191,7 @@ class _ChatPanelState extends ConsumerState<_ChatPanel> {
     required bool canDisconnectNow,
   }) {
     final session = connection.session;
+    final route = session?.route ?? const PeerConnectionRoute.unknown();
     final updatedAt = session?.updatedAt ?? connection.updatedAt;
     return showDialog<void>(
       context: context,
@@ -1204,11 +1245,24 @@ class _ChatPanelState extends ConsumerState<_ChatPanel> {
                   children: <Widget>[
                     _LinkStatCard(
                       label: 'Route',
-                      value: connectionStatus.isConnected
-                          ? 'Peer lane'
-                          : connectionStatus.isBusy
-                          ? 'Opening'
-                          : 'Standby',
+                      value: connectionStatus.label,
+                    ),
+                    _LinkStatCard(
+                      label: 'Local',
+                      value: _candidateLabel(route.localCandidateType),
+                    ),
+                    _LinkStatCard(
+                      label: 'Remote',
+                      value: _candidateLabel(route.remoteCandidateType),
+                    ),
+                    _LinkStatCard(
+                      label: 'Protocol',
+                      value: _protocolLabel(route),
+                    ),
+                    _LinkStatCard(label: 'RTT', value: _rttLabel(route.rtt)),
+                    _LinkStatCard(
+                      label: 'Bitrate',
+                      value: _bitrateLabel(route.bitrate),
                     ),
                     _LinkStatCard(
                       label: 'Room',

@@ -158,6 +158,15 @@ class DefaultPeerCore implements PeerCore {
   }
 
   @override
+  Future<PeerConnectionRoute> currentRoute() async {
+    final reports = await _requirePeerConnection().getStats();
+    return PeerConnectionRoute.fromStats(
+      reports,
+      updatedAt: DateTime.now().millisecondsSinceEpoch,
+    );
+  }
+
+  @override
   void send(String channelId, dynamic data) {
     final channel = _channels[channelId];
     if (channel == null) {

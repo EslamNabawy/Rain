@@ -128,6 +128,15 @@ void main() {
     final subscription = brain.onSessionChanged.listen(changes.add);
 
     await brain.connect('bob');
+    peer.route = const PeerConnectionRoute(
+      kind: PeerRouteKind.direct,
+      localCandidateType: 'host',
+      remoteCandidateType: 'srflx',
+      protocol: 'udp',
+      rtt: 0.03,
+      bitrate: 1000000,
+      updatedAt: 10,
+    );
 
     expect(
       changes.map((Session session) => session.state),
@@ -139,12 +148,88 @@ void main() {
     );
 
     peer.emitConnected();
-    await pumpEventQueue();
+    await pumpEventQueue(times: 3);
 
     expect(changes.last.state, SessionState.connected);
+    expect(changes.last.route.kind, PeerRouteKind.direct);
+    expect(changes.last.detail, contains('Direct'));
     expect(brain.getSession('bob')?.state, SessionState.connected);
+    expect(brain.getSession('bob')?.route.kind, PeerRouteKind.direct);
 
     await subscription.cancel();
+    await brain.disconnect('bob');
+  });
+
+  test('reconnect clears stale route until a new route is detected', () async {
+    final adapter = _RecordingSignalingAdapter();
+    late _FakePeerCore peer;
+    final brain = ProtocolBrainImpl(
+      selfUsername: 'alice',
+      adapter: adapter,
+      peerConfig: _fakePeerConfig(),
+      peerFactory: () {
+        peer = _FakePeerCore();
+        return peer;
+      },
+      connectionMemoryStore: _MemoryConnectionStore(),
+      reconnectGrace: const Duration(seconds: 5),
+    );
+
+    await brain.connect('bob');
+    peer.route = const PeerConnectionRoute(
+      kind: PeerRouteKind.direct,
+      localCandidateType: 'host',
+      remoteCandidateType: 'host',
+      protocol: 'udp',
+    );
+    peer.emitConnected();
+    await pumpEventQueue(times: 3);
+
+    expect(brain.getSession('bob')?.route.kind, PeerRouteKind.direct);
+
+    peer.emitDisconnected();
+    await pumpEventQueue();
+
+    final session = brain.getSession('bob');
+    expect(session?.state, SessionState.reconnecting);
+    expect(session?.route.kind, PeerRouteKind.unknown);
+
+    await brain.disconnect('bob');
+  });
+
+  test('failed session does not keep stale direct route', () async {
+    final adapter = _RecordingSignalingAdapter();
+    late _FakePeerCore peer;
+    final brain = ProtocolBrainImpl(
+      selfUsername: 'alice',
+      adapter: adapter,
+      peerConfig: _fakePeerConfig(),
+      peerFactory: () {
+        peer = _FakePeerCore();
+        return peer;
+      },
+      connectionMemoryStore: _MemoryConnectionStore(),
+    );
+
+    await brain.connect('bob');
+    peer.route = const PeerConnectionRoute(
+      kind: PeerRouteKind.direct,
+      localCandidateType: 'host',
+      remoteCandidateType: 'srflx',
+      protocol: 'udp',
+    );
+    peer.emitConnected();
+    await pumpEventQueue(times: 3);
+
+    expect(brain.getSession('bob')?.route.kind, PeerRouteKind.direct);
+
+    peer.emitFailed();
+    await pumpEventQueue();
+
+    final session = brain.getSession('bob');
+    expect(session?.state, SessionState.failed);
+    expect(session?.route.kind, PeerRouteKind.unknown);
+
     await brain.disconnect('bob');
   });
 
@@ -588,6 +673,7 @@ class _MemoryConnectionStore implements ConnectionMemoryStore {
 class _FakePeerCore implements PeerCore {
   PeerState _state = PeerState.idle;
   int setAnswerCalls = 0;
+  PeerConnectionRoute route = const PeerConnectionRoute.unknown();
   final StreamController<RTCIceCandidate> _iceController =
       StreamController<RTCIceCandidate>.broadcast();
   final StreamController<void> _connectedController =
@@ -664,6 +750,9 @@ class _FakePeerCore implements PeerCore {
   bool isChannelOpen(String channelId) => true;
 
   @override
+  Future<PeerConnectionRoute> currentRoute() async => route;
+
+  @override
   Stream<RTCIceCandidate> get onIceCandidate => _iceController.stream;
 
   @override
@@ -697,6 +786,11 @@ class _FakePeerCore implements PeerCore {
     _state = PeerState.reconnecting;
     _stateController.add(_state);
     _disconnectedController.add(null);
+  }
+
+  void emitFailed() {
+    _state = PeerState.failed;
+    _stateController.add(_state);
   }
 }
 
