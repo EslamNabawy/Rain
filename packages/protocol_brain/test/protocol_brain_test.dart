@@ -111,6 +111,70 @@ void main() {
     await answererBrain.disconnect('alice');
   });
 
+  test('new owner offer clears stale answers before listening', () async {
+    final adapter = _RecordingSignalingAdapter();
+    adapter.storedAnswers['alice:bob'] = SDPPayload(
+      sdp: RTCSessionDescription('stale-answer-sdp', 'answer'),
+      ts: 1,
+    );
+    late _FakePeerCore peer;
+    final brain = ProtocolBrainImpl(
+      selfUsername: 'alice',
+      adapter: adapter,
+      peerConfig: _fakePeerConfig(),
+      peerFactory: () {
+        peer = _FakePeerCore();
+        return peer;
+      },
+      connectionMemoryStore: _MemoryConnectionStore(),
+    );
+
+    await brain.connect('bob');
+    await pumpEventQueue();
+
+    expect(adapter.deletedRooms, <String>['alice:bob']);
+    expect(peer.setAnswerCalls, 0);
+
+    adapter.emitAnswer(
+      'alice:bob',
+      SDPPayload(
+        sdp: RTCSessionDescription('fresh-answer-sdp', 'answer'),
+        ts: 2,
+      ),
+    );
+    await pumpEventQueue();
+
+    expect(peer.setAnswerCalls, 1);
+    expect(peer.receivedAnswers, <String>['fresh-answer-sdp']);
+
+    await brain.disconnect('bob');
+  });
+
+  test('connect setup failure marks session failed and allows retry', () async {
+    final adapter = _RecordingSignalingAdapter()
+      ..writeOfferError = Exception('permission denied');
+    final brain = ProtocolBrainImpl(
+      selfUsername: 'alice',
+      adapter: adapter,
+      peerConfig: _fakePeerConfig(),
+      peerFactory: _FakePeerCore.new,
+      connectionMemoryStore: _MemoryConnectionStore(),
+    );
+
+    await expectLater(brain.connect('bob'), throwsException);
+
+    final failed = brain.getSession('bob');
+    expect(failed?.state, SessionState.failed);
+    expect(failed?.error, contains('permission denied'));
+
+    adapter.writeOfferError = null;
+    await brain.connect('bob');
+
+    expect(adapter.writtenOffers, <String>['alice:bob']);
+
+    await brain.disconnect('bob');
+  });
+
   test('session changes are emitted when peer becomes connected', () async {
     final adapter = _RecordingSignalingAdapter();
     late _FakePeerCore peer;
@@ -478,6 +542,8 @@ class _RecordingSignalingAdapter implements SignalingAdapter {
   final List<String> writtenOffers = <String>[];
   final List<String> writtenAnswers = <String>[];
   final List<String> deletedRooms = <String>[];
+  final Map<String, SDPPayload> storedAnswers = <String, SDPPayload>{};
+  Object? writeOfferError;
   final Map<String, StreamController<SDPPayload>> _offerControllers =
       <String, StreamController<SDPPayload>>{};
   final Map<String, StreamController<SDPPayload>> _answerControllers =
@@ -502,12 +568,17 @@ class _RecordingSignalingAdapter implements SignalingAdapter {
 
   @override
   Future<void> writeOffer(String roomId, SDPPayload offer) async {
+    final error = writeOfferError;
+    if (error != null) {
+      throw error;
+    }
     writtenOffers.add(roomId);
   }
 
   @override
   Future<void> writeAnswer(String roomId, SDPPayload answer) async {
     writtenAnswers.add(roomId);
+    storedAnswers[roomId] = answer;
   }
 
   @override
@@ -519,9 +590,17 @@ class _RecordingSignalingAdapter implements SignalingAdapter {
 
   @override
   Stream<SDPPayload> onAnswer(String roomId) {
-    return _answerControllers
-        .putIfAbsent(roomId, () => StreamController<SDPPayload>.broadcast())
-        .stream;
+    final controller = _answerControllers.putIfAbsent(
+      roomId,
+      () => StreamController<SDPPayload>.broadcast(),
+    );
+    scheduleMicrotask(() {
+      final storedAnswer = storedAnswers[roomId];
+      if (storedAnswer != null && !controller.isClosed) {
+        controller.add(storedAnswer);
+      }
+    });
+    return controller.stream;
   }
 
   @override
@@ -637,6 +716,7 @@ class _RecordingSignalingAdapter implements SignalingAdapter {
   @override
   Future<void> deleteRoom(String roomId) async {
     deletedRooms.add(roomId);
+    storedAnswers.remove(roomId);
   }
 
   @override
@@ -673,6 +753,7 @@ class _MemoryConnectionStore implements ConnectionMemoryStore {
 class _FakePeerCore implements PeerCore {
   PeerState _state = PeerState.idle;
   int setAnswerCalls = 0;
+  final List<String?> receivedAnswers = <String?>[];
   PeerConnectionRoute route = const PeerConnectionRoute.unknown();
   final StreamController<RTCIceCandidate> _iceController =
       StreamController<RTCIceCandidate>.broadcast();
@@ -718,6 +799,7 @@ class _FakePeerCore implements PeerCore {
   @override
   Future<void> setAnswer(RTCSessionDescription answer) async {
     setAnswerCalls += 1;
+    receivedAnswers.add(answer.sdp);
     if (_state != PeerState.offering) {
       throw StateError('Unexpected answer in $_state');
     }

@@ -318,7 +318,7 @@ class RainRuntimeController with WidgetsBindingObserver {
     String username, {
     bool interactive = false,
     bool waitForConnected = false,
-    Duration connectionTimeout = const Duration(seconds: 15),
+    Duration connectionTimeout = const Duration(seconds: 60),
   }) async {
     final normalizedUsername = _normalizedUsername(username);
     if (brain == null) {

@@ -15,7 +15,7 @@ String roomId(String a, String b) {
   return sorted.join(':');
 }
 
-const Duration _handshakeTimeout = Duration(seconds: 30);
+const Duration _handshakeTimeout = Duration(seconds: 60);
 const Duration _routeRefreshDelay = Duration(milliseconds: 850);
 
 Duration _maxDuration(Duration a, Duration b) {
@@ -75,10 +75,15 @@ class ProtocolBrainImpl implements ProtocolBrain {
             active.snapshot.state == SessionState.reconnecting)) {
       return active.snapshot;
     }
-    if (_isOfferOwner(peerId)) {
-      await _startOffer(active, isRetry: false);
-    } else {
-      await _waitForOffer(active, isRetry: false);
+    try {
+      if (_isOfferOwner(peerId)) {
+        await _startOffer(active, isRetry: false);
+      } else {
+        await _waitForOffer(active, isRetry: false);
+      }
+    } catch (error) {
+      await _failConnectAttempt(active, error);
+      rethrow;
     }
     return active.snapshot;
   }
@@ -554,6 +559,7 @@ class ProtocolBrainImpl implements ProtocolBrain {
     if (active.peer.state != PeerState.ready) {
       await _recreatePeer(active);
     }
+    await _resetRoomForNewOffer(active);
     await _bindPeerCore(active, IceRole.caller);
     active.startHandshakeTimeout(() => _handleHandshakeTimeout(active.peerId));
     _markPhase(
@@ -599,6 +605,45 @@ class ProtocolBrainImpl implements ProtocolBrain {
       SessionPhase.waitingForAnswer,
       'Offer written. Waiting for answer.',
     );
+  }
+
+  Future<void> _resetRoomForNewOffer(_ActiveSession active) async {
+    await adapter.deleteRoom(active.roomId);
+    active.lastAnswerTs = null;
+    active.remoteIceCache.clear();
+  }
+
+  Future<void> _failConnectAttempt(_ActiveSession active, Object error) async {
+    active.stopReconnecting();
+    active.cancelHandshakeTimeout();
+    await active.disposePeerBindings();
+    active.bound = false;
+    final updatedAt = DateTime.now().millisecondsSinceEpoch;
+    _updateSession(
+      active.peerId,
+      active.snapshot.copyWith(
+        state: SessionState.failed,
+        phase: SessionPhase.failed,
+        detail: 'Connection setup failed.',
+        updatedAt: updatedAt,
+        error: _connectSetupFailureMessage(error),
+        route: PeerConnectionRoute.unknown(updatedAt: updatedAt),
+      ),
+    );
+  }
+
+  String _connectSetupFailureMessage(Object error) {
+    final message = error.toString();
+    if (message.startsWith('Exception: ')) {
+      return message.substring('Exception: '.length);
+    }
+    if (message.startsWith('Bad state: ')) {
+      return message.substring('Bad state: '.length);
+    }
+    if (message.startsWith('StateError: ')) {
+      return message.substring('StateError: '.length);
+    }
+    return message;
   }
 
   Future<void> _waitForOffer(
