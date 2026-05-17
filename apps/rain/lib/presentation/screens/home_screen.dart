@@ -15,6 +15,7 @@ import 'package:rain/application/state/connection_diagnostics.dart';
 import 'package:rain/application/state/file_transfer_view.dart';
 import 'package:rain/application/runtime/rain_runtime_controller.dart';
 import 'package:rain/infrastructure/services/sound_effects_service.dart';
+import 'package:rain/infrastructure/services/turn_credential_service.dart';
 import 'package:rain/presentation/theme/rain_theme.dart';
 import 'package:rain/presentation/widgets/app_components.dart';
 import 'package:rain/presentation/widgets/chat_composer.dart';
@@ -921,6 +922,9 @@ class _ChatPanelState extends ConsumerState<_ChatPanel> {
     final canChat = friend?.state == FriendState.friend;
     final isPeerOnline = canChat ? friend?.isOnline ?? false : false;
     final connection = ref.watch(connectionsProvider).peer(widget.peerId);
+    final turnDiagnostics = ref
+        .watch(turnCredentialServiceProvider)
+        .diagnostics;
     final diagnostics = ConnectionDiagnostics.fromConnection(
       canChat: canChat,
       isPeerOnline: isPeerOnline,
@@ -962,6 +966,7 @@ class _ChatPanelState extends ConsumerState<_ChatPanel> {
                 friend: friend,
                 canChat: canChat,
                 diagnostics: diagnostics,
+                turnDiagnostics: turnDiagnostics,
                 connectionStatus: connectionStatus,
                 canConnectNow: canConnectNow,
                 canDisconnectNow: canDisconnectNow,
@@ -1089,6 +1094,7 @@ class _ChatPanelState extends ConsumerState<_ChatPanel> {
     required FriendRecord? friend,
     required bool canChat,
     required ConnectionDiagnostics diagnostics,
+    required TurnCredentialDiagnostics turnDiagnostics,
     required _ConnectionStatus connectionStatus,
     required bool canConnectNow,
     required bool canDisconnectNow,
@@ -1099,6 +1105,7 @@ class _ChatPanelState extends ConsumerState<_ChatPanel> {
     void openLinkDialog() {
       _showLinkCommandDialog(
         diagnostics: diagnostics,
+        turnDiagnostics: turnDiagnostics,
         connectionStatus: connectionStatus,
         canConnectNow: canConnectNow,
         canDisconnectNow: canDisconnectNow,
@@ -1178,6 +1185,7 @@ class _ChatPanelState extends ConsumerState<_ChatPanel> {
 
   Future<void> _showLinkCommandDialog({
     required ConnectionDiagnostics diagnostics,
+    required TurnCredentialDiagnostics turnDiagnostics,
     required _ConnectionStatus connectionStatus,
     required bool canConnectNow,
     required bool canDisconnectNow,
@@ -1263,6 +1271,30 @@ class _ChatPanelState extends ConsumerState<_ChatPanel> {
                         value: _bitrateLabel(route.bitrate),
                       ),
                       _LinkStatCard(
+                        label: 'TURN',
+                        value: turnDiagnostics.brokerConfigured
+                            ? 'Broker'
+                            : 'Static',
+                      ),
+                      _LinkStatCard(
+                        label: 'Provider',
+                        value: turnDiagnostics.provider,
+                      ),
+                      _LinkStatCard(
+                        label: 'TURN URLs',
+                        value: '${turnDiagnostics.turnUrlCount}',
+                      ),
+                      _LinkStatCard(
+                        label: 'TURN expires',
+                        value: turnDiagnostics.expiresAt == null
+                            ? 'None'
+                            : _formatMessageTime(
+                                turnDiagnostics
+                                    .expiresAt!
+                                    .millisecondsSinceEpoch,
+                              ),
+                      ),
+                      _LinkStatCard(
                         label: 'Room',
                         value: diagnostics.roomId ?? 'Not opened',
                       ),
@@ -1290,6 +1322,13 @@ class _ChatPanelState extends ConsumerState<_ChatPanel> {
                     const SizedBox(height: 14),
                     Text(
                       diagnostics.lastError!,
+                      style: TextStyle(color: scheme.error),
+                    ),
+                  ],
+                  if (turnDiagnostics.lastError != null) ...<Widget>[
+                    const SizedBox(height: 8),
+                    Text(
+                      turnDiagnostics.lastError!,
                       style: TextStyle(color: scheme.error),
                     ),
                   ],

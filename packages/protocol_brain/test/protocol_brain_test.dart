@@ -346,11 +346,109 @@ void main() {
       ]);
       expect(adapter.deletedRooms, contains('alice:bob'));
       expect(adapter.writtenOffers, <String>['alice:bob', 'alice:bob']);
+      expect(adapter.storedOfferPolicies, <String?>['all', 'relay']);
       expect(brain.getSession('bob')?.state, SessionState.reconnecting);
 
       await brain.disconnect('bob');
     },
   );
+
+  test('relay-only offer recreates answerer peer with relay policy', () async {
+    final adapter = _RecordingSignalingAdapter();
+    final peers = <_FakePeerCore>[];
+    final requestedPolicies = <PeerIceTransportPolicy>[];
+    final brain = ProtocolBrainImpl(
+      selfUsername: 'bob',
+      adapter: adapter,
+      peerConfig: _fakePeerConfig(),
+      peerConfigProvider: (PeerIceTransportPolicy policy) async {
+        requestedPolicies.add(policy);
+        return PeerConfig(
+          iceServers: const <Map<String, dynamic>>[
+            <String, dynamic>{'urls': 'stun:stun.l.google.com:19302'},
+            <String, dynamic>{
+              'urls': 'turn:turn.rain.example:3478?transport=udp',
+              'username': 'rain',
+              'credential': 'secret',
+            },
+          ],
+          platform: _FakePlatformBridge(),
+          iceTransportPolicy: policy,
+        );
+      },
+      peerFactory: () {
+        final peer = _FakePeerCore();
+        peers.add(peer);
+        return peer;
+      },
+      connectionMemoryStore: _MemoryConnectionStore(),
+    );
+
+    await brain.connect('alice');
+    adapter.emitOffer(
+      'alice:bob',
+      SDPPayload(
+        sdp: RTCSessionDescription('relay-offer', 'offer'),
+        ts: DateTime.now().millisecondsSinceEpoch,
+        icePolicy: 'relay',
+      ),
+    );
+    await pumpEventQueue(times: 4);
+
+    expect(peers, hasLength(2));
+    expect(requestedPolicies, <PeerIceTransportPolicy>[
+      PeerIceTransportPolicy.all,
+      PeerIceTransportPolicy.relayOnly,
+    ]);
+    expect(
+      peers.last.initialConfig?.iceTransportPolicy,
+      PeerIceTransportPolicy.relayOnly,
+    );
+    expect(adapter.writtenAnswers, <String>['alice:bob']);
+    expect(brain.getSession('alice')?.state, SessionState.connecting);
+
+    await brain.disconnect('alice');
+  });
+
+  test('relay fallback provider failure surfaces broker error', () async {
+    final adapter = _RecordingSignalingAdapter();
+    late _FakePeerCore peer;
+    final brain = ProtocolBrainImpl(
+      selfUsername: 'alice',
+      adapter: adapter,
+      peerConfig: _fakePeerConfig(),
+      peerConfigProvider: (PeerIceTransportPolicy policy) async {
+        if (policy == PeerIceTransportPolicy.relayOnly) {
+          throw StateError(
+            'TURN broker unreachable. Relay fallback unavailable.',
+          );
+        }
+        return PeerConfig(
+          iceServers: const <Map<String, dynamic>>[
+            <String, dynamic>{'urls': 'stun:stun.l.google.com:19302'},
+          ],
+          platform: _FakePlatformBridge(),
+          iceTransportPolicy: policy,
+        );
+      },
+      peerFactory: () {
+        peer = _FakePeerCore();
+        return peer;
+      },
+      connectionMemoryStore: _MemoryConnectionStore(),
+    );
+
+    await brain.connect('bob');
+    peer.emitFailed();
+    await pumpEventQueue(times: 4);
+
+    final session = brain.getSession('bob');
+    expect(session?.state, SessionState.failed);
+    expect(session?.error, contains('TURN broker unreachable'));
+    expect(adapter.deletedRooms, contains('alice:bob'));
+
+    await brain.disconnect('bob');
+  });
 
   test('transient disconnect recovery cancels pending reconnect', () async {
     final adapter = _RecordingSignalingAdapter();
@@ -595,8 +693,10 @@ PeerConfig _fakePeerConfig() {
 
 class _RecordingSignalingAdapter implements SignalingAdapter {
   final List<String> writtenOffers = <String>[];
+  final List<String?> storedOfferPolicies = <String?>[];
   final List<String> writtenAnswers = <String>[];
   final List<String> deletedRooms = <String>[];
+  final Map<String, SDPPayload> storedOffers = <String, SDPPayload>{};
   final Map<String, SDPPayload> storedAnswers = <String, SDPPayload>{};
   Object? writeOfferError;
   final Map<String, StreamController<SDPPayload>> _offerControllers =
@@ -628,6 +728,8 @@ class _RecordingSignalingAdapter implements SignalingAdapter {
       throw error;
     }
     writtenOffers.add(roomId);
+    storedOfferPolicies.add(offer.icePolicy);
+    storedOffers[roomId] = offer;
   }
 
   @override
@@ -771,6 +873,7 @@ class _RecordingSignalingAdapter implements SignalingAdapter {
   @override
   Future<void> deleteRoom(String roomId) async {
     deletedRooms.add(roomId);
+    storedOffers.remove(roomId);
     storedAnswers.remove(roomId);
   }
 

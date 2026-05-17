@@ -57,15 +57,17 @@ class SignalingSessionExpiredException implements Exception {
 enum IceRole { caller, callee }
 
 class SDPPayload {
-  const SDPPayload({required this.sdp, required this.ts});
+  const SDPPayload({required this.sdp, required this.ts, this.icePolicy});
 
   final RTCSessionDescription sdp;
   final int ts;
+  final String? icePolicy;
 
   Map<String, Object?> toJson() {
     return <String, Object?>{
       'sdp': <String, Object?>{'type': sdp.type, 'sdp': sdp.sdp},
       'ts': ts,
+      if (icePolicy != null && icePolicy!.isNotEmpty) 'icePolicy': icePolicy,
     };
   }
 
@@ -78,6 +80,7 @@ class SDPPayload {
         sdpMap['type'] as String?,
       ),
       ts: (json['ts'] as num?)?.toInt() ?? 0,
+      icePolicy: json['icePolicy'] as String?,
     );
   }
 }

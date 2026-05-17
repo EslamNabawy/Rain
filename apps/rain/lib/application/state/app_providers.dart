@@ -585,7 +585,11 @@ final brainProvider = Provider<SessionManager?>((Ref ref) {
     selfUsername: identity.username,
     adapter: ref.watch(adapterProvider),
     iceServers: environment.iceServers,
-    iceServersProvider: ref.watch(turnCredentialServiceProvider).iceServers,
+    iceServersProvider: (PeerIceTransportPolicy policy) {
+      return ref
+          .watch(turnCredentialServiceProvider)
+          .iceServers(requireTurn: policy == PeerIceTransportPolicy.relayOnly);
+    },
     connectionMemoryStore: ref.watch(connectionMemoryStoreProvider),
   );
 

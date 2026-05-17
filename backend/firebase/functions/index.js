@@ -2,14 +2,29 @@ const admin = require("firebase-admin");
 const crypto = require("crypto");
 const { onSchedule } = require("firebase-functions/v2/scheduler");
 const { onRequest } = require("firebase-functions/v2/https");
+const { defineSecret } = require("firebase-functions/v2/params");
 const logger = require("firebase-functions/logger");
 
 admin.initializeApp();
 
 const HEARTBEAT_STALE_MS = 7 * 60 * 1000;
 const DEFAULT_TURN_TTL_SECONDS = 20 * 60;
+const twilioAccountSidSecret = defineSecret("TWILIO_ACCOUNT_SID");
+const twilioAuthTokenSecret = defineSecret("TWILIO_AUTH_TOKEN");
+const cloudflareTurnKeyIdSecret = defineSecret("CLOUDFLARE_TURN_KEY_ID");
+const cloudflareTurnApiTokenSecret = defineSecret(
+  "CLOUDFLARE_TURN_KEY_API_TOKEN",
+);
 
-exports.rainTurnCredentials = onRequest(async (req, res) => {
+exports.rainTurnCredentials = onRequest({
+  region: "us-central1",
+  secrets: [
+    twilioAccountSidSecret,
+    twilioAuthTokenSecret,
+    cloudflareTurnKeyIdSecret,
+    cloudflareTurnApiTokenSecret,
+  ],
+}, async (req, res) => {
   if (req.method !== "POST") {
     res.set("Allow", "POST");
     res.status(405).json({ error: "method_not_allowed" });
@@ -18,7 +33,8 @@ exports.rainTurnCredentials = onRequest(async (req, res) => {
 
   try {
     await verifyBearer(req);
-    const provider = (process.env.RAIN_TURN_PROVIDER || "").trim();
+    const provider = (process.env.RAIN_TURN_PROVIDER || "twilio,cloudflare")
+      .trim();
     const ttlSeconds = boundedTtlSeconds(
       process.env.RAIN_TURN_TTL_SECONDS,
     );
@@ -130,9 +146,39 @@ async function verifyBearer(req) {
 }
 
 async function buildTurnCredentialPayload(provider, ttlSeconds) {
+  const providers = provider
+    .split(",")
+    .map((item) => item.trim())
+    .filter(Boolean);
+  if (providers.length === 0) {
+    throw httpError(503, "turn_provider_not_configured");
+  }
+
+  const failures = [];
+  for (const providerName of providers) {
+    try {
+      return await buildProviderTurnCredentialPayload(
+        providerName,
+        ttlSeconds,
+      );
+    } catch (error) {
+      failures.push(error.code || error.message || providerName);
+      logger.warn("TURN provider failed; trying next provider.", {
+        provider: providerName,
+        code: error.code || "unknown",
+      });
+    }
+  }
+
+  throw httpError(503, failures.join(",") || "turn_provider_not_configured");
+}
+
+async function buildProviderTurnCredentialPayload(provider, ttlSeconds) {
   switch (provider) {
     case "twilio":
       return twilioCredentials(ttlSeconds);
+    case "cloudflare":
+      return cloudflareCredentials(ttlSeconds);
     case "coturn-hmac":
       return coturnHmacCredentials(ttlSeconds);
     case "static":
@@ -143,8 +189,14 @@ async function buildTurnCredentialPayload(provider, ttlSeconds) {
 }
 
 async function twilioCredentials(ttlSeconds) {
-  const accountSid = requiredEnv("TWILIO_ACCOUNT_SID");
-  const authToken = requiredEnv("TWILIO_AUTH_TOKEN");
+  const accountSid = requiredSecretOrEnv(
+    twilioAccountSidSecret,
+    "TWILIO_ACCOUNT_SID",
+  );
+  const authToken = requiredSecretOrEnv(
+    twilioAuthTokenSecret,
+    "TWILIO_AUTH_TOKEN",
+  );
   const response = await fetch(
     `https://api.twilio.com/2010-04-01/Accounts/${accountSid}/Tokens.json`,
     {
@@ -166,6 +218,37 @@ async function twilioCredentials(ttlSeconds) {
     provider: "twilio",
     ttlSeconds,
     iceServers: normalizeIceServers(data.ice_servers),
+  });
+}
+
+async function cloudflareCredentials(ttlSeconds) {
+  const turnKeyId = requiredSecretOrEnv(
+    cloudflareTurnKeyIdSecret,
+    "CLOUDFLARE_TURN_KEY_ID",
+  );
+  const apiToken = requiredSecretOrEnv(
+    cloudflareTurnApiTokenSecret,
+    "CLOUDFLARE_TURN_KEY_API_TOKEN",
+  );
+  const response = await fetch(
+    `https://rtc.live.cloudflare.com/v1/turn/keys/${turnKeyId}/credentials/generate-ice-servers`,
+    {
+      method: "POST",
+      headers: {
+        authorization: `Bearer ${apiToken}`,
+        "content-type": "application/json",
+      },
+      body: JSON.stringify({ ttl: ttlSeconds }),
+    },
+  );
+  if (!response.ok) {
+    throw httpError(502, "cloudflare_turn_token_failed");
+  }
+  const data = await response.json();
+  return turnPayload({
+    provider: "cloudflare",
+    ttlSeconds,
+    iceServers: normalizeIceServers(data.iceServers),
   });
 }
 
@@ -248,6 +331,22 @@ function hasTurnUrl(server) {
 
 function requiredEnv(name) {
   const value = (process.env[name] || "").trim();
+  if (!value) {
+    throw httpError(500, `${name.toLowerCase()}_missing`);
+  }
+  return value;
+}
+
+function requiredSecretOrEnv(secret, name) {
+  let value = "";
+  try {
+    value = (secret.value() || "").trim();
+  } catch (error) {
+    value = "";
+  }
+  if (!value) {
+    value = (process.env[name] || "").trim();
+  }
   if (!value) {
     throw httpError(500, `${name.toLowerCase()}_missing`);
   }

@@ -15,9 +15,9 @@ String roomId(String a, String b) {
   return sorted.join(':');
 }
 
-const Duration _directHandshakeTimeout = Duration(seconds: 20);
-const Duration _relayHandshakeTimeout = Duration(seconds: 60);
-const Duration _waitingForOfferTimeout = Duration(seconds: 60);
+const Duration _directHandshakeTimeout = Duration(seconds: 12);
+const Duration _relayHandshakeTimeout = Duration(seconds: 45);
+const Duration _waitingForOfferTimeout = Duration(seconds: 45);
 const Duration _routeRefreshDelay = Duration(milliseconds: 850);
 
 typedef PeerConfigProvider =
@@ -151,7 +151,11 @@ class ProtocolBrainImpl implements ProtocolBrain {
             if (!shouldHandleIncomingOffers) {
               return;
             }
-            unawaited(_handleIncomingOffer(peerId, offer));
+            unawaited(
+              _handleIncomingOffer(peerId, offer).catchError((Object error) {
+                _handleIncomingOfferFailure(peerId, error);
+              }),
+            );
           },
           onError: (Object error, StackTrace stackTrace) {
             _handleSignalingStreamError(peerId, error, source: 'offer');
@@ -358,8 +362,16 @@ class ProtocolBrainImpl implements ProtocolBrain {
       return;
     }
     active.lastOfferTs = offer.ts;
-    if (active.peer.state != PeerState.ready) {
-      await _recreatePeer(active);
+    var policyChanged = false;
+    final offerPolicy = _icePolicyFromPayload(offer);
+    if (offerPolicy != null && offerPolicy != active.icePolicy) {
+      active.icePolicy = offerPolicy;
+      active.relayFallbackTried =
+          offerPolicy == PeerIceTransportPolicy.relayOnly;
+      policyChanged = true;
+    }
+    if (policyChanged || active.peer.state != PeerState.ready) {
+      await _recreatePeer(active, policy: active.icePolicy);
     }
     await _bindPeerCore(active, IceRole.callee);
     active.remoteIceCache.clear();
@@ -631,7 +643,11 @@ class ProtocolBrainImpl implements ProtocolBrain {
     );
     await adapter.writeOffer(
       active.roomId,
-      SDPPayload(sdp: offer, ts: DateTime.now().millisecondsSinceEpoch),
+      SDPPayload(
+        sdp: offer,
+        ts: DateTime.now().millisecondsSinceEpoch,
+        icePolicy: _icePolicyPayload(active.icePolicy),
+      ),
     );
     _markPhase(
       active,
@@ -975,17 +991,16 @@ class ProtocolBrainImpl implements ProtocolBrain {
     active.relayFallbackTried = true;
     active.directAttemptFailure = directFailure;
 
-    final hasRelay = await _hasRelayFallbackConfig();
-    if (!hasRelay) {
+    final relayUnavailableReason = await _relayFallbackUnavailableReason();
+    if (relayUnavailableReason != null) {
       _updateSession(
         active.peerId,
         active.snapshot.copyWith(
           state: SessionState.failed,
           phase: SessionPhase.failed,
-          detail: 'Direct path blocked. Relay fallback unavailable.',
+          detail: relayUnavailableReason,
           updatedAt: DateTime.now().millisecondsSinceEpoch,
-          error:
-              'Direct path blocked. No TURN relay is configured for this build.',
+          error: relayUnavailableReason,
           route: PeerConnectionRoute.unknown(
             updatedAt: DateTime.now().millisecondsSinceEpoch,
           ),
@@ -1037,17 +1052,41 @@ class ProtocolBrainImpl implements ProtocolBrain {
     }
   }
 
-  Future<bool> _hasRelayFallbackConfig() async {
+  Future<String?> _relayFallbackUnavailableReason() async {
     try {
       final config = peerConfigProvider == null
           ? peerConfig.copyWith(
               iceTransportPolicy: PeerIceTransportPolicy.relayOnly,
             )
           : await peerConfigProvider!(PeerIceTransportPolicy.relayOnly);
-      return config.hasRelayServer;
-    } catch (_) {
-      return false;
+      return config.hasRelayServer
+          ? null
+          : 'Direct path blocked. No TURN relay is configured for this build.';
+    } catch (error) {
+      return _connectSetupFailureMessage(error);
     }
+  }
+
+  void _handleIncomingOfferFailure(String peerId, Object error) {
+    final active = _sessions[peerId];
+    if (active == null) {
+      return;
+    }
+    active.stopReconnecting();
+    unawaited(_deleteRoomSilently(active));
+    unawaited(active.disposePeerBindings());
+    final updatedAt = DateTime.now().millisecondsSinceEpoch;
+    _updateSession(
+      peerId,
+      active.snapshot.copyWith(
+        state: SessionState.failed,
+        phase: SessionPhase.failed,
+        detail: 'Incoming peer offer failed.',
+        updatedAt: updatedAt,
+        error: _connectSetupFailureMessage(error),
+        route: PeerConnectionRoute.unknown(updatedAt: updatedAt),
+      ),
+    );
   }
 
   Future<void> _deleteRoomSilently(_ActiveSession active) async {
@@ -1057,6 +1096,21 @@ class ProtocolBrainImpl implements ProtocolBrain {
       // Room cleanup is best-effort; connection state still reports failure.
     }
   }
+}
+
+String _icePolicyPayload(PeerIceTransportPolicy policy) {
+  return switch (policy) {
+    PeerIceTransportPolicy.all => 'all',
+    PeerIceTransportPolicy.relayOnly => 'relay',
+  };
+}
+
+PeerIceTransportPolicy? _icePolicyFromPayload(SDPPayload payload) {
+  return switch (payload.icePolicy?.trim().toLowerCase()) {
+    'relay' || 'relayonly' => PeerIceTransportPolicy.relayOnly,
+    'all' => PeerIceTransportPolicy.all,
+    _ => null,
+  };
 }
 
 SessionMessage _toSessionMessage(PeerMessage message, String peerId) {

@@ -13,7 +13,8 @@ ProtocolBrain createDefaultProtocolBrain({
   PlatformBridge? platformBridge,
   PeerCoreFactory? peerFactory,
   PeerConfigProvider? peerConfigProvider,
-  Future<List<Map<String, dynamic>>> Function()? iceServersProvider,
+  Future<List<Map<String, dynamic>>> Function(PeerIceTransportPolicy policy)?
+  iceServersProvider,
   bool ordered = true,
   int? maxRetransmits,
 }) {
@@ -33,7 +34,7 @@ ProtocolBrain createDefaultProtocolBrain({
             ? null
             : (PeerIceTransportPolicy policy) async {
                 return PeerConfig(
-                  iceServers: await iceServersProvider(),
+                  iceServers: await iceServersProvider(policy),
                   platform: bridge,
                   ordered: ordered,
                   maxRetransmits: maxRetransmits,

@@ -5,6 +5,7 @@ Use from repo root:
   pwsh -File scripts/build_release.ps1 -Platform windows -DartDefinesFile .\release-defines.json
   pwsh -File scripts/build_release.ps1 -Platform android -DartDefinesFile .\release-defines.json
   pwsh -File scripts/build_release.ps1 -Platform all -DartDefinesFile .\apps\rain\tool\dart_defines.local.json -AllowPublicTurnForDemo -UseDemoAndroidSigningKey
+  pwsh -File scripts/build_release.ps1 -Platform all -DartDefinesFile .\relay-test-defines.json -RelayTest -UseDemoAndroidSigningKey
 #>
 [CmdletBinding()]
 param(
@@ -16,6 +17,7 @@ param(
   [ValidateSet('all', 'mobile')]
   [string]$AndroidArtifactSet = 'all',
   [switch]$AllowPublicTurnForDemo,
+  [switch]$RelayTest,
   [switch]$UseDemoAndroidSigningKey,
   [switch]$Clean
 )
@@ -147,7 +149,8 @@ function Get-DartDefineArgs(
   [string]$FlutterProjectRoot,
   [string]$DartDefinesFile,
   [string]$RepoRoot,
-  [bool]$AllowPublicTurnForDemo
+  [bool]$AllowPublicTurnForDemo,
+  [bool]$RequireTurnBroker
 ) {
   if ([string]::IsNullOrWhiteSpace($DartDefinesFile)) {
     throw "Release builds require -DartDefinesFile with project-owned TURN servers."
@@ -168,7 +171,7 @@ function Get-DartDefineArgs(
     throw "Release builds must not use tool\dart_defines.local.json. Pass a sanitized release defines file."
   }
 
-  Assert-ReleaseDartDefines -Path $resolved -AllowPublicTurnForDemo:$AllowPublicTurnForDemo
+  Assert-ReleaseDartDefines -Path $resolved -AllowPublicTurnForDemo:$AllowPublicTurnForDemo -RequireTurnBroker:$RequireTurnBroker
 
   if ($AllowPublicTurnForDemo) {
     $resolved = New-DemoDartDefinesFile -Path $resolved -RepoRoot $RepoRoot
@@ -235,7 +238,7 @@ function Test-IceUrlHasTransport([string]$Url, [string]$Transport) {
   return $normalized.Contains("?$expected") -or $normalized.Contains("&$expected")
 }
 
-function Assert-ReleaseDartDefines([string]$Path, [switch]$AllowPublicTurnForDemo) {
+function Assert-ReleaseDartDefines([string]$Path, [switch]$AllowPublicTurnForDemo, [switch]$RequireTurnBroker) {
   try {
     $defines = Get-Content -Raw -LiteralPath $Path | ConvertFrom-Json -ErrorAction Stop
   } catch {
@@ -306,6 +309,9 @@ function Assert-ReleaseDartDefines([string]$Path, [switch]$AllowPublicTurnForDem
 
   $turnBrokerUrl = Get-JsonPropertyValue $defines 'RAIN_TURN_BROKER_URL'
   $hasTurnBroker = -not [string]::IsNullOrWhiteSpace($turnBrokerUrl)
+  if ($RequireTurnBroker -and -not $hasTurnBroker) {
+    throw "Relay test builds require RAIN_TURN_BROKER_URL."
+  }
   if ($hasTurnBroker -and -not $AllowPublicTurnForDemo) {
     Write-Host "Production release uses TURN credential broker: $turnBrokerUrl"
     return
@@ -486,13 +492,17 @@ $repoRoot = $RepoRoot
 $appsRoot = Join-Path $repoRoot 'apps\rain'
 $releaseRoot = $OutputDir
 $isOpenRelayDemoBuild = [bool]$AllowPublicTurnForDemo
-if ($UseDemoAndroidSigningKey -and -not $isOpenRelayDemoBuild) {
-  throw "Demo Android signing is only allowed with -AllowPublicTurnForDemo."
+$isRelayTestBuild = [bool]$RelayTest
+if ($isRelayTestBuild -and $isOpenRelayDemoBuild) {
+  throw "Relay test artifacts must not use -AllowPublicTurnForDemo."
+}
+if ($UseDemoAndroidSigningKey -and -not $isOpenRelayDemoBuild -and -not $isRelayTestBuild) {
+  throw "Demo Android signing is enabled for non-production artifacts. Pass -RelayTest or -AllowPublicTurnForDemo."
 }
 
-$androidArtifactPrefix = if ($isOpenRelayDemoBuild) { 'Rain-Demo' } else { 'Rain-release' }
-$windowsPortableName = if ($isOpenRelayDemoBuild) { 'Rain-Demo-Windows-x64-Build' } else { 'Rain-windows-portable' }
-$dartDefineArgs = Get-DartDefineArgs $appsRoot $DartDefinesFile $repoRoot $isOpenRelayDemoBuild
+$androidArtifactPrefix = if ($isOpenRelayDemoBuild) { 'Rain-Demo' } elseif ($isRelayTestBuild) { 'Rain-Relay-Test' } else { 'Rain-release' }
+$windowsPortableName = if ($isOpenRelayDemoBuild) { 'Rain-Demo-Windows-x64-Build' } elseif ($isRelayTestBuild) { 'Rain-Relay-Test-Windows-x64-Build' } else { 'Rain-windows-portable' }
+$dartDefineArgs = Get-DartDefineArgs $appsRoot $DartDefinesFile $repoRoot $isOpenRelayDemoBuild $isRelayTestBuild
 if ($Platform -in @('all', 'android')) {
   if ($UseDemoAndroidSigningKey) {
     Use-DemoAndroidSigningKey $repoRoot

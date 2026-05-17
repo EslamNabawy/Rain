@@ -15,6 +15,7 @@ void main() {
 
     expect(script, contains('[string]\$DartDefinesFile'));
     expect(script, contains('[switch]\$AllowPublicTurnForDemo'));
+    expect(script, contains('[switch]\$RelayTest'));
     expect(script, contains('[switch]\$UseDemoAndroidSigningKey'));
     expect(
       script,
@@ -78,6 +79,7 @@ void main() {
       ),
     );
     expect(script, contains('Production release uses TURN credential broker:'));
+    expect(script, contains('Relay test builds require RAIN_TURN_BROKER_URL.'));
     expect(
       script,
       contains('Release TURN servers must include username and credential.'),
@@ -109,9 +111,7 @@ void main() {
     expect(script, contains('Assert-AndroidReleaseSigning'));
     expect(
       script,
-      contains(
-        'Demo Android signing is only allowed with -AllowPublicTurnForDemo.',
-      ),
+      contains('Demo Android signing is enabled for non-production artifacts.'),
     );
     expect(script, contains('Resolve-KeytoolPath'));
     expect(script, contains('JAVA_HOME'));
@@ -152,12 +152,52 @@ void main() {
     );
   });
 
+  test('relay test dart defines use broker and STUN-only base ICE', () {
+    final defines = _repoFile(
+      'apps/rain/tool/dart_defines.relay-test.example.json',
+    );
+
+    expect(
+      defines,
+      contains(
+        'https://us-central1-rain-8fb4b.cloudfunctions.net/rainTurnCredentials',
+      ),
+    );
+    expect(defines, contains('"RAIN_ALLOW_PUBLIC_TURN": "false"'));
+    expect(defines, contains('stun:stun.l.google.com:19302'));
+    expect(defines, contains('stun:stun.cloudflare.com:3478'));
+    expect(defines, isNot(contains('openrelay.metered.ca')));
+    expect(defines, isNot(contains('turn:')));
+    expect(defines, isNot(contains('turns:')));
+  });
+
+  test('Firebase TURN broker uses Twilio v2 secrets', () {
+    final functions = _repoFile('backend/firebase/functions/index.js');
+
+    expect(functions, contains('defineSecret("TWILIO_ACCOUNT_SID")'));
+    expect(functions, contains('defineSecret("TWILIO_AUTH_TOKEN")'));
+    expect(functions, contains('defineSecret("CLOUDFLARE_TURN_KEY_ID")'));
+    expect(functions, contains('CLOUDFLARE_TURN_KEY_API_TOKEN'));
+    expect(functions, contains('cloudflareTurnApiTokenSecret'));
+    expect(
+      functions,
+      contains('process.env.RAIN_TURN_PROVIDER || "twilio,cloudflare"'),
+    );
+    expect(functions, contains('normalizeIceServers(data.ice_servers)'));
+    expect(functions, contains('normalizeIceServers(data.iceServers)'));
+    expect(functions, contains('credentials/generate-ice-servers'));
+    expect(functions, contains('provider: "twilio"'));
+    expect(functions, contains('provider: "cloudflare"'));
+    expect(functions, contains('ttlSeconds'));
+  });
+
   test('release script packages universal and per-ABI Android APKs', () {
     final script = _repoFile('scripts/build_release.ps1');
 
     expect(script, contains('--split-per-abi'));
     expect(script, contains('Rain-release'));
     expect(script, contains('Rain-Demo'));
+    expect(script, contains('Rain-Relay-Test'));
     expect(script, contains('ARMv8/ARMv9 devices'));
     expect(script, contains('Rain-Demo-Android-Universal-Build.apk'));
     expect(script, contains('Rain-Demo-Android-ARM-v8-v9-Build.apk'));
@@ -216,6 +256,8 @@ void main() {
     expect(androidBuildStep, contains("'-AndroidArtifactSet'"));
     expect(androidBuildStep, contains("'mobile'"));
     expect(workflow, contains('Rain-Demo-Android-Universal-Build.apk'));
+    expect(workflow, contains('Rain-Relay-Test-android-universal.apk'));
+    expect(workflow, contains('Rain-Relay-Test-Android-Builds'));
     expect(workflow, contains('Rain-Demo-Android-ARM-v7-Build.apk'));
     expect(workflow, contains('Rain-Demo-Android-ARM-v8-v9-Build.apk'));
     expect(workflow, isNot(contains('Rain-Demo-Android-x86_64-Build.apk')));

@@ -4,6 +4,7 @@ on:
   push:
     branches:
       - main
+      - dev
       - 'codex/**'
   workflow_dispatch:
     inputs:
@@ -17,12 +18,13 @@ on:
           - android
           - windows
       build_profile:
-        description: Demo uses OpenRelay/demo signing; production requires release secrets
+        description: Demo uses OpenRelay; relay-test uses broker + demo signing; production requires release secrets
         required: true
         default: demo
         type: choice
         options:
           - demo
+          - relay-test
           - production
 
 permissions:
@@ -56,9 +58,9 @@ jobs:
           RAIN_RELEASE_DART_DEFINES_JSON: ${{ secrets.RAIN_RELEASE_DART_DEFINES_JSON }}
         run: |
           $definesPath = Join-Path $env:RUNNER_TEMP 'rain-defines.json'
-          if ($env:BUILD_PROFILE -eq 'production') {
+          if ($env:BUILD_PROFILE -in @('production', 'relay-test')) {
             if ([string]::IsNullOrWhiteSpace($env:RAIN_RELEASE_DART_DEFINES_JSON)) {
-              throw "RAIN_RELEASE_DART_DEFINES_JSON secret is required for production builds."
+              throw "RAIN_RELEASE_DART_DEFINES_JSON secret is required for $env:BUILD_PROFILE builds."
             }
             Set-Content -LiteralPath $definesPath -Value $env:RAIN_RELEASE_DART_DEFINES_JSON -Encoding utf8NoBOM
           } else {
@@ -84,6 +86,9 @@ jobs:
           if ($env:BUILD_PROFILE -eq 'demo') {
             $args += '-AllowPublicTurnForDemo'
           }
+          if ($env:BUILD_PROFILE -eq 'relay-test') {
+            $args += '-RelayTest'
+          }
           pwsh @args
 
       - name: Upload Windows demo portable app
@@ -92,6 +97,14 @@ jobs:
         with:
           name: Rain-Demo-Windows-x64-Build
           path: artifacts/Rain-Demo-Windows-x64-Build
+          if-no-files-found: error
+
+      - name: Upload Windows relay-test portable app
+        if: ${{ env.BUILD_PROFILE == 'relay-test' }}
+        uses: actions/upload-artifact@v7
+        with:
+          name: Rain-Relay-Test-Windows-x64-Build
+          path: artifacts/Rain-Relay-Test-Windows-x64-Build
           if-no-files-found: error
 
       - name: Upload Windows production portable app
@@ -130,9 +143,15 @@ jobs:
           RAIN_RELEASE_KEY_PASSWORD: ${{ secrets.RAIN_RELEASE_KEY_PASSWORD }}
         run: |
           $definesPath = Join-Path $env:RUNNER_TEMP 'rain-defines.json'
+          if ($env:BUILD_PROFILE -in @('production', 'relay-test')) {
+            if ([string]::IsNullOrWhiteSpace($env:RAIN_RELEASE_DART_DEFINES_JSON)) {
+              throw "RAIN_RELEASE_DART_DEFINES_JSON secret is required for $env:BUILD_PROFILE Android builds."
+            }
+            Set-Content -LiteralPath $definesPath -Value $env:RAIN_RELEASE_DART_DEFINES_JSON -Encoding utf8NoBOM
+          }
+
           if ($env:BUILD_PROFILE -eq 'production') {
             foreach ($required in @(
-              'RAIN_RELEASE_DART_DEFINES_JSON',
               'RAIN_RELEASE_KEYSTORE_BASE64',
               'RAIN_RELEASE_STORE_PASSWORD',
               'RAIN_RELEASE_KEY_ALIAS',
@@ -143,7 +162,6 @@ jobs:
               }
             }
 
-            Set-Content -LiteralPath $definesPath -Value $env:RAIN_RELEASE_DART_DEFINES_JSON -Encoding utf8NoBOM
             $keystorePath = Join-Path $env:RUNNER_TEMP 'rain-release.jks'
             [IO.File]::WriteAllBytes($keystorePath, [Convert]::FromBase64String($env:RAIN_RELEASE_KEYSTORE_BASE64))
             "RAIN_RELEASE_STORE_FILE=$keystorePath" | Out-File -FilePath $env:GITHUB_ENV -Encoding utf8 -Append
@@ -151,7 +169,9 @@ jobs:
             "RAIN_RELEASE_KEY_ALIAS=$env:RAIN_RELEASE_KEY_ALIAS" | Out-File -FilePath $env:GITHUB_ENV -Encoding utf8 -Append
             "RAIN_RELEASE_KEY_PASSWORD=$env:RAIN_RELEASE_KEY_PASSWORD" | Out-File -FilePath $env:GITHUB_ENV -Encoding utf8 -Append
           } else {
-            Copy-Item -LiteralPath 'apps\rain\tool\dart_defines.example.json' -Destination $definesPath -Force
+            if ($env:BUILD_PROFILE -eq 'demo') {
+              Copy-Item -LiteralPath 'apps\rain\tool\dart_defines.example.json' -Destination $definesPath -Force
+            }
           }
           "RAIN_DART_DEFINES_FILE=$definesPath" | Out-File -FilePath $env:GITHUB_ENV -Encoding utf8 -Append
 
@@ -176,6 +196,10 @@ jobs:
             $args += '-AllowPublicTurnForDemo'
             $args += '-UseDemoAndroidSigningKey'
           }
+          if ($env:BUILD_PROFILE -eq 'relay-test') {
+            $args += '-RelayTest'
+            $args += '-UseDemoAndroidSigningKey'
+          }
           pwsh @args
 
       - name: Verify Android APK ABI set
@@ -186,6 +210,14 @@ jobs:
               @{ Label = 'Android universal APK'; Path = 'artifacts\Rain-Demo-Android-Universal-Build.apk' },
               @{ Label = 'Android ARM v7 APK (armeabi-v7a)'; Path = 'artifacts\Rain-Demo-Android-ARM-v7-Build.apk' },
               @{ Label = 'Android ARM v8/v9 APK (arm64-v8a)'; Path = 'artifacts\Rain-Demo-Android-ARM-v8-v9-Build.apk' }
+            )
+          } elseif ($env:BUILD_PROFILE -eq 'relay-test') {
+            $prefix = 'Rain-Relay-Test'
+            $expected = @(
+              @{ Label = 'Android universal APK'; Path = "artifacts\$prefix-android-universal.apk" },
+              @{ Label = 'Android default/universal APK alias'; Path = "artifacts\$prefix-android.apk" },
+              @{ Label = 'Android ARM v7 APK (armeabi-v7a)'; Path = "artifacts\$prefix-android-armeabi-v7a.apk" },
+              @{ Label = 'Android ARM v8/v9 APK (arm64-v8a)'; Path = "artifacts\$prefix-android-arm64-v8a.apk" }
             )
           } else {
             $prefix = 'Rain-release'
@@ -206,11 +238,15 @@ jobs:
       - name: Upload Android APK artifacts
         uses: actions/upload-artifact@v7
         with:
-          name: ${{ env.BUILD_PROFILE == 'demo' && 'Rain-Demo-Android-Builds' || 'Rain-Release-Android-Builds' }}
+          name: ${{ env.BUILD_PROFILE == 'demo' && 'Rain-Demo-Android-Builds' || env.BUILD_PROFILE == 'relay-test' && 'Rain-Relay-Test-Android-Builds' || 'Rain-Release-Android-Builds' }}
           path: |
             artifacts/Rain-Demo-Android-Universal-Build.apk
             artifacts/Rain-Demo-Android-ARM-v8-v9-Build.apk
             artifacts/Rain-Demo-Android-ARM-v7-Build.apk
+            artifacts/Rain-Relay-Test-android.apk
+            artifacts/Rain-Relay-Test-android-universal.apk
+            artifacts/Rain-Relay-Test-android-arm64-v8a.apk
+            artifacts/Rain-Relay-Test-android-armeabi-v7a.apk
             artifacts/Rain-release-android.apk
             artifacts/Rain-release-android-universal.apk
             artifacts/Rain-release-android-arm64-v8a.apk
