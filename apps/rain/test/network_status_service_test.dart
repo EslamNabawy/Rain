@@ -38,11 +38,13 @@ void main() {
         );
 
         expect(status.kind, NetworkStatusKind.limited);
+        expect(status.blocksNetworkActions, isFalse);
+        expect(status.isOnline, isTrue);
         expect(status.actionErrorMessage, contains('backend'));
       },
     );
 
-    test('does not show limited during backend startup grace', () async {
+    test('optimistically stays online during backend startup grace', () async {
       final service = NetworkStatusService(
         connectivityProbe: _FakeConnectivityProbe(
           initial: const <ConnectivityResult>[ConnectivityResult.mobile],
@@ -58,7 +60,7 @@ void main() {
       await pumpEventQueue();
       await Future<void>.delayed(const Duration(milliseconds: 10));
       expect(statuses, isNot(contains(NetworkStatusKind.limited)));
-      expect(statuses.last, NetworkStatusKind.checking);
+      expect(statuses.last, NetworkStatusKind.online);
 
       await Future<void>.delayed(const Duration(milliseconds: 40));
       await subscription.cancel();
@@ -114,6 +116,23 @@ void main() {
         expect(statuses.last, NetworkStatusKind.limited);
       },
     );
+
+    test('backend disconnect never blocks network actions', () async {
+      final service = NetworkStatusService(
+        connectivityProbe: _FakeConnectivityProbe(
+          initial: const <ConnectivityResult>[ConnectivityResult.wifi],
+        ),
+        backendProbe: _FakeBackendProbe(initial: false),
+        backendStartupGrace: Duration.zero,
+      );
+
+      final status = await service.watch().firstWhere(
+        (NetworkStatusState item) => item.kind == NetworkStatusKind.limited,
+      );
+
+      expect(status.blocksNetworkActions, isFalse);
+      expect(status.isOnline, isTrue);
+    });
   });
 }
 

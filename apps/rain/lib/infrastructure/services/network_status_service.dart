@@ -23,10 +23,10 @@ class NetworkStatusState {
   final NetworkStatusKind kind;
   final String message;
 
-  bool get isOnline => kind == NetworkStatusKind.online;
+  bool get isOnline =>
+      kind == NetworkStatusKind.online || kind == NetworkStatusKind.limited;
 
-  bool get blocksNetworkActions =>
-      kind == NetworkStatusKind.offline || kind == NetworkStatusKind.limited;
+  bool get blocksNetworkActions => kind == NetworkStatusKind.offline;
 
   String get actionErrorMessage => switch (kind) {
     NetworkStatusKind.offline =>
@@ -149,7 +149,7 @@ class NetworkStatusService {
       }
       if (!latestBackendConnected) {
         if (!hasConfirmedBackendOnline && !backendStartupGraceExpired) {
-          return const NetworkStatusState.checking();
+          return const NetworkStatusState.online();
         }
         return const NetworkStatusState.limited();
       }
