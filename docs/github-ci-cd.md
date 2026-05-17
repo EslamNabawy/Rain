@@ -19,6 +19,8 @@ Demo builds use `apps/rain/tool/dart_defines.example.json`, OpenRelay demo TURN,
 
 Relay-test builds use `RAIN_RELEASE_DART_DEFINES_JSON`, require `RAIN_TURN_BROKER_URL`, reject OpenRelay, and use a generated Android signing key. Use this profile for mobile-data/VPN validation before production signing is ready.
 
+The main `CI/CD` workflow builds relay-test artifacts, not demo artifacts. It preflights `RAIN_TURN_BROKER_URL` before packaging so a missing Firebase/managed TURN broker fails CI instead of producing APKs that only work on LAN.
+
 Production builds require the secrets below.
 
 ## Production Secrets

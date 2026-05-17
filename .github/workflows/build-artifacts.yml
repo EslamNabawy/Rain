@@ -68,6 +68,29 @@ jobs:
           }
           "RAIN_DART_DEFINES_FILE=$definesPath" | Out-File -FilePath $env:GITHUB_ENV -Encoding utf8 -Append
 
+      - name: Verify relay-test TURN broker endpoint
+        if: ${{ env.BUILD_PROFILE == 'relay-test' }}
+        shell: pwsh
+        run: |
+          $defines = Get-Content -Raw -LiteralPath $env:RAIN_DART_DEFINES_FILE | ConvertFrom-Json
+          $brokerUrl = [string]$defines.RAIN_TURN_BROKER_URL
+          if ([string]::IsNullOrWhiteSpace($brokerUrl)) {
+            throw 'Relay-test build requires RAIN_TURN_BROKER_URL.'
+          }
+
+          try {
+            $response = Invoke-WebRequest -Uri $brokerUrl -Method POST -TimeoutSec 20 -SkipHttpErrorCheck
+          } catch {
+            throw "TURN broker endpoint is unreachable: $($_.Exception.Message)"
+          }
+
+          if ($response.StatusCode -eq 404) {
+            throw "TURN broker endpoint returned 404. Deploy rainTurnCredentials before building relay-test artifacts: $brokerUrl"
+          }
+          if ($response.StatusCode -ne 401) {
+            throw "Unauthenticated TURN broker preflight expected HTTP 401, got HTTP $($response.StatusCode)."
+          }
+
       - name: Build Windows artifact
         shell: pwsh
         run: |
@@ -174,6 +197,29 @@ jobs:
             }
           }
           "RAIN_DART_DEFINES_FILE=$definesPath" | Out-File -FilePath $env:GITHUB_ENV -Encoding utf8 -Append
+
+      - name: Verify relay-test TURN broker endpoint
+        if: ${{ env.BUILD_PROFILE == 'relay-test' }}
+        shell: pwsh
+        run: |
+          $defines = Get-Content -Raw -LiteralPath $env:RAIN_DART_DEFINES_FILE | ConvertFrom-Json
+          $brokerUrl = [string]$defines.RAIN_TURN_BROKER_URL
+          if ([string]::IsNullOrWhiteSpace($brokerUrl)) {
+            throw 'Relay-test build requires RAIN_TURN_BROKER_URL.'
+          }
+
+          try {
+            $response = Invoke-WebRequest -Uri $brokerUrl -Method POST -TimeoutSec 20 -SkipHttpErrorCheck
+          } catch {
+            throw "TURN broker endpoint is unreachable: $($_.Exception.Message)"
+          }
+
+          if ($response.StatusCode -eq 404) {
+            throw "TURN broker endpoint returned 404. Deploy rainTurnCredentials before building relay-test artifacts: $brokerUrl"
+          }
+          if ($response.StatusCode -ne 401) {
+            throw "Unauthenticated TURN broker preflight expected HTTP 401, got HTTP $($response.StatusCode)."
+          }
 
       - name: Build Android APK artifacts
         shell: pwsh
