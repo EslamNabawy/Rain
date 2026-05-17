@@ -15,7 +15,9 @@ String roomId(String a, String b) {
   return sorted.join(':');
 }
 
-const Duration _handshakeTimeout = Duration(seconds: 60);
+const Duration _directHandshakeTimeout = Duration(seconds: 20);
+const Duration _relayHandshakeTimeout = Duration(seconds: 60);
+const Duration _waitingForOfferTimeout = Duration(seconds: 60);
 const Duration _routeRefreshDelay = Duration(milliseconds: 850);
 
 typedef PeerConfigProvider =
@@ -367,7 +369,10 @@ class ProtocolBrainImpl implements ProtocolBrain {
       'Received offer. Creating answer.',
       state: SessionState.connecting,
     );
-    active.startHandshakeTimeout(() => _handleHandshakeTimeout(active.peerId));
+    active.startHandshakeTimeout(
+      () => _handleHandshakeTimeout(active.peerId),
+      duration: _handshakeTimeoutFor(active),
+    );
 
     _listenForRemoteIce(active, IceRole.caller);
     final answer = await active.peer.setOffer(offer.sdp);
@@ -585,7 +590,10 @@ class ProtocolBrainImpl implements ProtocolBrain {
     }
     await _resetRoomForNewOffer(active);
     await _bindPeerCore(active, IceRole.caller);
-    active.startHandshakeTimeout(() => _handleHandshakeTimeout(active.peerId));
+    active.startHandshakeTimeout(
+      () => _handleHandshakeTimeout(active.peerId),
+      duration: _handshakeTimeoutFor(active),
+    );
     _markPhase(
       active,
       SessionPhase.creatingOffer,
@@ -678,7 +686,10 @@ class ProtocolBrainImpl implements ProtocolBrain {
     if (active.peer.state != PeerState.ready) {
       await _recreatePeer(active);
     }
-    active.startHandshakeTimeout(() => _handleHandshakeTimeout(active.peerId));
+    active.startHandshakeTimeout(
+      () => _handleHandshakeTimeout(active.peerId),
+      duration: _waitingForOfferTimeout,
+    );
     _markPhase(
       active,
       SessionPhase.waitingForOffer,
@@ -944,6 +955,12 @@ class ProtocolBrainImpl implements ProtocolBrain {
     unawaited(_scheduleReconnect(peerId));
   }
 
+  Duration _handshakeTimeoutFor(_ActiveSession active) {
+    return active.icePolicy == PeerIceTransportPolicy.relayOnly
+        ? _relayHandshakeTimeout
+        : _directHandshakeTimeout;
+  }
+
   Future<bool> _tryRelayFallback(
     _ActiveSession active,
     String directFailure,
@@ -1128,9 +1145,12 @@ class _ActiveSession {
     iceSubscriptions.clear();
   }
 
-  void startHandshakeTimeout(Future<void> Function() onTimeout) {
+  void startHandshakeTimeout(
+    Future<void> Function() onTimeout, {
+    required Duration duration,
+  }) {
     cancelHandshakeTimeout();
-    handshakeTimeoutTimer = Timer(_handshakeTimeout, () {
+    handshakeTimeoutTimer = Timer(duration, () {
       unawaited(onTimeout());
     });
   }

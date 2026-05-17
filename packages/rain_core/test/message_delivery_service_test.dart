@@ -180,6 +180,46 @@ void main() {
     service.dispose();
   });
 
+  test('late unknown messages are stored before ack to avoid false delivery', () async {
+    final service = MessageDeliveryService(
+      messageStore: messageStore,
+      offlineQueueStore: offlineQueueStore,
+    );
+    await messageStore.setIncomingSeq('alice', 5);
+
+    final envelope = MessageEnvelope(
+      id: 'late-but-new',
+      from: 'alice',
+      to: 'bob',
+      content: 'still must appear',
+      sentAt: DateTime.now().millisecondsSinceEpoch,
+      seq: 3,
+      type: MessageType.text,
+    );
+    final storedIds = <String>[];
+    final ackedIds = <String>[];
+
+    await service.handleIncomingEnvelope(
+      envelope,
+      receivedAt: DateTime.now(),
+      sendAck: (String rawAck) async {
+        final ack = jsonDecode(rawAck) as Map<String, dynamic>;
+        ackedIds.add(ack['ackId'] as String);
+        expect(await messageStore.containsMessage(envelope.id), isTrue);
+      },
+      onStored: (MessageEnvelope envelope) {
+        storedIds.add(envelope.id);
+      },
+    );
+
+    expect(storedIds, <String>['late-but-new']);
+    expect(ackedIds, <String>['late-but-new']);
+    expect(await messageStore.lastIncomingSeq('alice'), 5);
+    final rows = await database.select(database.messages).get();
+    expect(rows.single.content, 'still must appear');
+    service.dispose();
+  });
+
   test('ack timeout retries once and then marks the message failed', () async {
     final service = MessageDeliveryService(
       messageStore: messageStore,

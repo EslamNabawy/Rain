@@ -67,6 +67,18 @@ void main() {
     expect(environment.validateForRelease, returnsNormally);
   });
 
+  test('demo OpenRelay config includes UDP, TCP, and TLS relay paths', () {
+    final environment = AppEnvironment.fromEnvironment(
+      runtimeEnvironment: <String, String>{'RAIN_ALLOW_PUBLIC_TURN': 'true'},
+    );
+
+    expect(environment.usesPublicOpenRelay, isTrue);
+    expect(environment.hasTurnUdpEndpoint, isTrue);
+    expect(environment.hasTurnTcpEndpoint, isTrue);
+    expect(environment.hasTurnsTcpEndpoint, isTrue);
+    expect(environment.allTurnServersHaveCredentials, isTrue);
+  });
+
   test(
     'release sanitizer keeps OpenRelay when demo mode explicitly allows it',
     () {

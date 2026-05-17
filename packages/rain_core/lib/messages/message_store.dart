@@ -103,8 +103,13 @@ class MessageStore {
 
       final lastSeq = await _loadTrackedSeq(_incomingSeqKey(envelope.from));
       if (envelope.seq <= lastSeq) {
-        return const IncomingMessageResult(
-          disposition: IncomingMessageDisposition.late,
+        final message = await _persistIncoming(
+          envelope,
+          sentAt: displayTime(envelope, receivedAt).millisecondsSinceEpoch,
+        );
+        return IncomingMessageResult(
+          disposition: IncomingMessageDisposition.stored,
+          message: message,
         );
       }
       if (envelope.seq > lastSeq + 1) {
