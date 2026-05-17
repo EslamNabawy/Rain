@@ -1,7 +1,9 @@
+import 'dart:async';
 import 'dart:io';
 
 import 'package:drift/native.dart';
 import 'package:flutter_test/flutter_test.dart';
+import 'package:protocol_brain/protocol_brain.dart';
 import 'package:rain/application/runtime/rain_runtime_controller.dart';
 import 'package:rain/infrastructure/signaling/noop_signaling_adapter.dart';
 import 'package:rain_core/rain_core.dart';
@@ -67,4 +69,147 @@ void main() {
     expect(failed?.error, 'Internet connection lost. Transfer canceled.');
     expect(await tempFile.exists(), isFalse);
   });
+
+  test('peer connection drop fails active transfers clearly', () async {
+    final db = RainDatabase(NativeDatabase.memory());
+    final adapter = NoopSignalingAdapter();
+    final brain = _DisconnectingSessionManager();
+    final temp = await Directory.systemTemp.createTemp('rain-peer-drop-');
+    addTearDown(() async {
+      await brain.close();
+      await db.close();
+      if (await temp.exists()) {
+        await temp.delete(recursive: true);
+      }
+    });
+
+    await adapter.upsertFriendship('alice', 'bob');
+    await db
+        .into(db.friends)
+        .insert(
+          FriendsCompanion.insert(
+            username: 'bob',
+            displayName: 'Bob',
+            state: FriendState.friend.name,
+            addedAt: 1,
+          ),
+        );
+    final tempFile = File('${temp.path}${Platform.pathSeparator}file.part');
+    await tempFile.writeAsString('partial');
+    final transferStore = FileTransferStore(db);
+    await transferStore.upsert(
+      FileTransferRecord(
+        id: 'transfer-1',
+        peerId: 'bob',
+        messageId: 'message-1',
+        direction: FileTransferDirection.incoming,
+        fileName: 'clip.bin',
+        fileSize: 4096,
+        localPath: '${temp.path}${Platform.pathSeparator}clip.bin',
+        tempPath: tempFile.path,
+        bytesTransferred: 7,
+        state: FileTransferState.receiving,
+        createdAt: 1,
+        updatedAt: 1,
+      ),
+    );
+    final runtime = RainRuntimeController(
+      selfIdentity: const RainIdentity(
+        username: 'alice',
+        displayName: 'Alice',
+        createdAt: 1,
+        gender: null,
+      ),
+      adapter: adapter,
+      brain: brain,
+      database: db,
+      friendStore: FriendStore(db),
+      messageStore: MessageStore(db),
+      offlineQueueStore: OfflineQueueStore(db),
+      messageDeliveryService: MessageDeliveryService(
+        messageStore: MessageStore(db),
+        offlineQueueStore: OfflineQueueStore(db),
+      ),
+      fileTransferStore: transferStore,
+    );
+    addTearDown(runtime.dispose);
+    await runtime.start();
+
+    brain.emitPeerDisconnected('bob');
+    await pumpEventQueue();
+
+    final failed = await transferStore.loadById('transfer-1');
+    expect(failed?.state, FileTransferState.failed);
+    expect(failed?.error, 'Connection lost. Transfer canceled.');
+    expect(await tempFile.exists(), isFalse);
+  });
+}
+
+class _DisconnectingSessionManager implements SessionManager {
+  final StreamController<Session> _connected =
+      StreamController<Session>.broadcast();
+  final StreamController<String> _disconnected =
+      StreamController<String>.broadcast();
+  final StreamController<SessionMessage> _messages =
+      StreamController<SessionMessage>.broadcast();
+  final StreamController<Session> _changes =
+      StreamController<Session>.broadcast();
+
+  void emitPeerDisconnected(String peerId) {
+    _disconnected.add(peerId);
+  }
+
+  Future<void> close() async {
+    await _connected.close();
+    await _disconnected.close();
+    await _messages.close();
+    await _changes.close();
+  }
+
+  @override
+  Future<int> bufferedAmount(String peerId, SessionChannel channel) async => 0;
+
+  @override
+  Future<Session> connect(String peerId) async {
+    throw UnimplementedError();
+  }
+
+  @override
+  Future<void> disconnect(String peerId) async {}
+
+  @override
+  List<Session> getSessions() => const <Session>[];
+
+  @override
+  Session? getSession(String peerId) => null;
+
+  @override
+  bool isChannelOpen(String peerId, SessionChannel channel) => false;
+
+  @override
+  Stream<Session> get onPeerConnected => _connected.stream;
+
+  @override
+  Stream<String> get onPeerDisconnected => _disconnected.stream;
+
+  @override
+  Stream<SessionMessage> get onPeerMessage => _messages.stream;
+
+  @override
+  Stream<Session> get onSessionChanged => _changes.stream;
+
+  @override
+  Future<void> openChannel(String peerId, SessionChannel channel) async {}
+
+  @override
+  Future<void> registerPeer(String peerId) async {}
+
+  @override
+  void send(String peerId, SessionChannel channel, Object data) {}
+
+  @override
+  void sendControl(String peerId, String data) {}
+
+  @override
+  Future<void> unregisterPeer(String peerId) async {}
 }

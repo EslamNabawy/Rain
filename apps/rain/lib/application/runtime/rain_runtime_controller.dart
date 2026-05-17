@@ -190,7 +190,12 @@ class RainRuntimeController with WidgetsBindingObserver {
 
       _subscriptions.add(
         brain!.onPeerDisconnected.listen((String peerId) {
-          unawaited(_failActiveTransfersForPeer(peerId, 'Peer disconnected.'));
+          unawaited(
+            _failActiveTransfersForPeer(
+              peerId,
+              'Connection lost. Transfer canceled.',
+            ),
+          );
         }),
       );
 

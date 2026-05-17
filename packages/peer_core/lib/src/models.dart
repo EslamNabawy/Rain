@@ -74,6 +74,7 @@ enum PeerRouteKind { unknown, direct, relay }
 class PeerConnectionRoute {
   const PeerConnectionRoute({
     required this.kind,
+    this.selectedCandidatePairId,
     this.localCandidateType,
     this.remoteCandidateType,
     this.protocol,
@@ -85,6 +86,7 @@ class PeerConnectionRoute {
 
   const PeerConnectionRoute.unknown({this.updatedAt})
     : kind = PeerRouteKind.unknown,
+      selectedCandidatePairId = null,
       localCandidateType = null,
       remoteCandidateType = null,
       protocol = null,
@@ -93,6 +95,7 @@ class PeerConnectionRoute {
       bitrate = null;
 
   final PeerRouteKind kind;
+  final String? selectedCandidatePairId;
   final String? localCandidateType;
   final String? remoteCandidateType;
   final String? protocol;
@@ -135,6 +138,7 @@ class PeerConnectionRoute {
 
     return PeerConnectionRoute(
       kind: kind,
+      selectedCandidatePairId: selectedPair.id,
       localCandidateType: localType,
       remoteCandidateType: remoteType,
       protocol:

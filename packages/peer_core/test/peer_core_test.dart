@@ -238,6 +238,7 @@ void main() {
     expect(route.kind, PeerRouteKind.direct);
     expect(route.localCandidateType, 'host');
     expect(route.remoteCandidateType, 'srflx');
+    expect(route.selectedCandidatePairId, 'pair-1');
     expect(route.protocol, 'udp');
     expect(route.rtt, 0.04);
     expect(route.bitrate, 1200000);

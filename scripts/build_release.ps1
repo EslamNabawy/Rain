@@ -219,6 +219,20 @@ function Get-IceServerUrls([object]$IceServer) {
   return @([string]$urls)
 }
 
+function Test-IceUrlIsTurn([string]$Url) {
+  return $Url.StartsWith('turn:', [System.StringComparison]::OrdinalIgnoreCase)
+}
+
+function Test-IceUrlIsTurns([string]$Url) {
+  return $Url.StartsWith('turns:', [System.StringComparison]::OrdinalIgnoreCase)
+}
+
+function Test-IceUrlHasTransport([string]$Url, [string]$Transport) {
+  $normalized = $Url.Trim().ToLowerInvariant()
+  $expected = "transport=$($Transport.ToLowerInvariant())"
+  return $normalized.Contains("?$expected") -or $normalized.Contains("&$expected")
+}
+
 function Assert-ReleaseDartDefines([string]$Path, [switch]$AllowPublicTurnForDemo) {
   try {
     $defines = Get-Content -Raw -LiteralPath $Path | ConvertFrom-Json -ErrorAction Stop
@@ -289,20 +303,27 @@ function Assert-ReleaseDartDefines([string]$Path, [switch]$AllowPublicTurnForDem
   }
 
   $turnUrls = @($urls | Where-Object {
-    $_.StartsWith('turn:', [System.StringComparison]::OrdinalIgnoreCase) -or
-      $_.StartsWith('turns:', [System.StringComparison]::OrdinalIgnoreCase)
+    (Test-IceUrlIsTurn $_) -or (Test-IceUrlIsTurns $_)
   })
   if ($turnUrls.Count -eq 0) {
     throw "Release builds require at least one project-owned TURN/TURNS URL in RAIN_ICE_SERVERS."
   }
+
+  $turnServerEntries = @($iceServers | Where-Object {
+    $serverUrls = @(Get-IceServerUrls $_ | Where-Object {
+      -not [string]::IsNullOrWhiteSpace($_)
+    })
+    @($serverUrls | Where-Object {
+      (Test-IceUrlIsTurn $_) -or (Test-IceUrlIsTurns $_)
+    }).Count -gt 0
+  })
 
   $turnServersWithCredentials = @($iceServers | Where-Object {
     $serverUrls = @(Get-IceServerUrls $_ | Where-Object {
       -not [string]::IsNullOrWhiteSpace($_)
     })
     $hasTurnUrl = @($serverUrls | Where-Object {
-      $_.StartsWith('turn:', [System.StringComparison]::OrdinalIgnoreCase) -or
-        $_.StartsWith('turns:', [System.StringComparison]::OrdinalIgnoreCase)
+      (Test-IceUrlIsTurn $_) -or (Test-IceUrlIsTurns $_)
     }).Count -gt 0
 
     $username = Get-JsonPropertyValue $_ 'username'
@@ -313,6 +334,39 @@ function Assert-ReleaseDartDefines([string]$Path, [switch]$AllowPublicTurnForDem
   })
   if ($turnServersWithCredentials.Count -eq 0) {
     throw "Release TURN servers must include username and credential."
+  }
+
+  if (-not $AllowPublicTurnForDemo) {
+    $turnServersMissingCredentials = @($turnServerEntries | Where-Object {
+      $username = Get-JsonPropertyValue $_ 'username'
+      $credential = Get-JsonPropertyValue $_ 'credential'
+      [string]::IsNullOrWhiteSpace($username) -or
+        [string]::IsNullOrWhiteSpace($credential)
+    })
+    if ($turnServersMissingCredentials.Count -gt 0) {
+      throw "Every production TURN/TURNS server entry must include username and credential."
+    }
+
+    $hasTurnUdp = @($turnUrls | Where-Object {
+      (Test-IceUrlIsTurn $_) -and (Test-IceUrlHasTransport $_ 'udp')
+    }).Count -gt 0
+    if (-not $hasTurnUdp) {
+      throw "Production RAIN_ICE_SERVERS must include a turn: UDP endpoint."
+    }
+
+    $hasTurnTcp = @($turnUrls | Where-Object {
+      (Test-IceUrlIsTurn $_) -and (Test-IceUrlHasTransport $_ 'tcp')
+    }).Count -gt 0
+    if (-not $hasTurnTcp) {
+      throw "Production RAIN_ICE_SERVERS must include a turn: TCP endpoint."
+    }
+
+    $hasTurnsTcp = @($turnUrls | Where-Object {
+      (Test-IceUrlIsTurns $_) -and (Test-IceUrlHasTransport $_ 'tcp')
+    }).Count -gt 0
+    if (-not $hasTurnsTcp) {
+      throw "Production RAIN_ICE_SERVERS must include a turns: TCP/TLS endpoint."
+    }
   }
 }
 

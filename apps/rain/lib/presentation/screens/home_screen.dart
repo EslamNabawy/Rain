@@ -11,7 +11,7 @@ import 'package:rain_core/rain_core.dart';
 
 import 'package:rain/presentation/navigation/app_routes.dart';
 import 'package:rain/application/state/app_providers.dart';
-import 'package:rain/application/state/app_state.dart';
+import 'package:rain/application/state/connection_diagnostics.dart';
 import 'package:rain/application/state/file_transfer_view.dart';
 import 'package:rain/application/runtime/rain_runtime_controller.dart';
 import 'package:rain/infrastructure/services/sound_effects_service.dart';
@@ -92,134 +92,92 @@ class _ConnectionStatus {
   final bool canDisconnect;
 }
 
-_ConnectionStatus _connectionStatusFor({
-  required bool canChat,
-  required bool isPeerOnline,
-  required PeerConnectionView connection,
-}) {
-  if (!canChat) {
-    return const _ConnectionStatus(
-      label: 'Unavailable',
-      icon: Icons.lock_outline,
-      color: Color(0xFF52646D),
-      detail: 'Only accepted friends can chat.',
-    );
-  }
-
-  if (connection.disconnecting) {
-    return const _ConnectionStatus(
-      label: 'Disconnecting',
-      icon: Icons.link_off,
-      color: Color(0xFFFBBF24),
-      detail: 'Closing peer session.',
-      isBusy: true,
-      canDisconnect: true,
-    );
-  }
-
-  if (connection.manualIntent == ManualConnectionIntent.manualDisconnected) {
-    return const _ConnectionStatus(
-      label: 'Disconnected',
-      icon: Icons.link_off,
-      color: Color(0xFF52646D),
-      detail: 'Manual disconnect. Press Connect to open the peer lane again.',
-    );
-  }
-
-  final session = connection.session;
-  switch (session?.state) {
-    case SessionState.connected:
-      final route = session!.route;
-      return switch (route.kind) {
-        PeerRouteKind.direct => _ConnectionStatus(
-          label: 'Direct',
-          icon: Icons.hub_outlined,
-          color: const Color(0xFF2DD4A3),
-          detail: connection.localDetail ?? session.detail,
-          isConnected: true,
-          canDisconnect: true,
-        ),
-        PeerRouteKind.relay => _ConnectionStatus(
-          label: 'Relay',
-          icon: Icons.alt_route,
-          color: const Color(0xFF7DD3FC),
-          detail: connection.localDetail ?? session.detail,
-          isConnected: true,
-          canDisconnect: true,
-        ),
-        PeerRouteKind.unknown => _ConnectionStatus(
-          label: 'Connecting',
-          icon: Icons.sync,
-          color: const Color(0xFFFBBF24),
-          detail: connection.localDetail ?? 'Detecting route...',
-          isBusy: true,
-          isConnected: true,
-          canDisconnect: true,
-        ),
-      };
-    case SessionState.failed:
-      return _ConnectionStatus(
-        label: 'Failed',
-        icon: Icons.error_outline,
-        color: const Color(0xFFFF6B6B),
-        detail:
-            connection.error?.toString() ??
-            connection.localDetail ??
-            session!.detail,
+_ConnectionStatus _connectionStatusForDiagnostics(
+  ConnectionDiagnostics diagnostics,
+) {
+  switch (diagnostics.label) {
+    case 'Unavailable':
+      return const _ConnectionStatus(
+        label: 'Unavailable',
+        icon: Icons.lock_outline,
+        color: Color(0xFF52646D),
+        detail: 'Only accepted friends can chat.',
       );
-    case SessionState.reconnecting:
+    case 'Disconnecting':
+      return const _ConnectionStatus(
+        label: 'Disconnecting',
+        icon: Icons.link_off,
+        color: Color(0xFFFBBF24),
+        detail: 'Closing peer session.',
+        isBusy: true,
+        canDisconnect: true,
+      );
+    case 'Disconnected':
+      return const _ConnectionStatus(
+        label: 'Disconnected',
+        icon: Icons.link_off,
+        color: Color(0xFF52646D),
+        detail: 'Manual disconnect. Press Connect to open the peer lane again.',
+      );
+    case 'Direct':
+      return _ConnectionStatus(
+        label: 'Direct',
+        icon: Icons.hub_outlined,
+        color: const Color(0xFF2DD4A3),
+        detail: diagnostics.detail,
+        isConnected: true,
+        canDisconnect: true,
+      );
+    case 'Relay':
+      return _ConnectionStatus(
+        label: 'Relay',
+        icon: Icons.alt_route,
+        color: const Color(0xFF7DD3FC),
+        detail: diagnostics.detail,
+        isConnected: true,
+        canDisconnect: true,
+      );
+    case 'Recovering':
       return _ConnectionStatus(
         label: 'Recovering',
         icon: Icons.sync,
         color: const Color(0xFFFBBF24),
-        detail: connection.localDetail ?? session!.detail,
+        detail: diagnostics.detail,
         isBusy: true,
         canDisconnect: true,
       );
-    case SessionState.connecting:
+    case 'Connecting':
       return _ConnectionStatus(
         label: 'Connecting',
         icon: Icons.sync,
         color: const Color(0xFFFBBF24),
-        detail: connection.localDetail ?? session!.detail,
-        isBusy: true,
-        canDisconnect: true,
+        detail: diagnostics.detail,
+        isBusy: diagnostics.isBusy,
+        isConnected: diagnostics.isConnected,
+        canDisconnect: diagnostics.canDisconnect,
       );
-    case null:
-      break;
+    case 'Failed':
+      return _ConnectionStatus(
+        label: 'Failed',
+        icon: Icons.error_outline,
+        color: const Color(0xFFFF6B6B),
+        detail: diagnostics.detail,
+      );
+    case 'Offline':
+      return const _ConnectionStatus(
+        label: 'Offline',
+        icon: Icons.cloud_off_outlined,
+        color: Color(0xFF52646D),
+        detail: 'Peer is offline. Keep both apps open.',
+      );
+    default:
+      return _ConnectionStatus(
+        label: 'Ready',
+        icon: Icons.wifi_tethering,
+        color: const Color(0xFF7DD3FC),
+        detail: diagnostics.detail,
+      );
   }
-
-  if (connection.actionBusy) {
-    return _ConnectionStatus(
-      label: 'Connecting',
-      icon: Icons.sync,
-      color: const Color(0xFFFBBF24),
-      detail: connection.localDetail ?? 'Starting peer connection.',
-      isBusy: true,
-    );
-  }
-  if (connection.error != null) {
-    return _ConnectionStatus(
-      label: 'Failed',
-      icon: Icons.error_outline,
-      color: const Color(0xFFFF6B6B),
-      detail: _formatUiError(connection.error!),
-    );
-  }
-  if (!isPeerOnline) {
-    return const _ConnectionStatus(
-      label: 'Offline',
-      icon: Icons.cloud_off_outlined,
-      color: Color(0xFF52646D),
-      detail: 'Peer is offline. Keep both apps open.',
-    );
-  }
-  return const _ConnectionStatus(
-    label: 'Ready',
-    icon: Icons.wifi_tethering,
-    color: Color(0xFF7DD3FC),
-    detail: 'Peer is online. Open the peer lane.',
-  );
 }
 
 class HomeScreen extends ConsumerStatefulWidget {
@@ -931,11 +889,12 @@ class _ChatPanelState extends ConsumerState<_ChatPanel> {
     final canChat = friend?.state == FriendState.friend;
     final isPeerOnline = canChat ? friend?.isOnline ?? false : false;
     final connection = ref.watch(connectionsProvider).peer(widget.peerId);
-    final connectionStatus = _connectionStatusFor(
+    final diagnostics = ConnectionDiagnostics.fromConnection(
       canChat: canChat,
       isPeerOnline: isPeerOnline,
       connection: connection,
     );
+    final connectionStatus = _connectionStatusForDiagnostics(diagnostics);
     final canConnectNow =
         runtime != null &&
         canChat &&
@@ -970,7 +929,7 @@ class _ChatPanelState extends ConsumerState<_ChatPanel> {
               child: _buildCommandHeader(
                 friend: friend,
                 canChat: canChat,
-                connection: connection,
+                diagnostics: diagnostics,
                 connectionStatus: connectionStatus,
                 canConnectNow: canConnectNow,
                 canDisconnectNow: canDisconnectNow,
@@ -1097,7 +1056,7 @@ class _ChatPanelState extends ConsumerState<_ChatPanel> {
   Widget _buildCommandHeader({
     required FriendRecord? friend,
     required bool canChat,
-    required PeerConnectionView connection,
+    required ConnectionDiagnostics diagnostics,
     required _ConnectionStatus connectionStatus,
     required bool canConnectNow,
     required bool canDisconnectNow,
@@ -1107,7 +1066,7 @@ class _ChatPanelState extends ConsumerState<_ChatPanel> {
     final handle = '@${friend?.username ?? widget.peerId}';
     void openLinkDialog() {
       _showLinkCommandDialog(
-        connection: connection,
+        diagnostics: diagnostics,
         connectionStatus: connectionStatus,
         canConnectNow: canConnectNow,
         canDisconnectNow: canDisconnectNow,
@@ -1185,14 +1144,13 @@ class _ChatPanelState extends ConsumerState<_ChatPanel> {
   }
 
   Future<void> _showLinkCommandDialog({
-    required PeerConnectionView connection,
+    required ConnectionDiagnostics diagnostics,
     required _ConnectionStatus connectionStatus,
     required bool canConnectNow,
     required bool canDisconnectNow,
   }) {
-    final session = connection.session;
-    final route = session?.route ?? const PeerConnectionRoute.unknown();
-    final updatedAt = session?.updatedAt ?? connection.updatedAt;
+    final route = diagnostics.route;
+    final updatedAt = diagnostics.updatedAt;
     return showDialog<void>(
       context: context,
       builder: (BuildContext dialogContext) {
@@ -1243,9 +1201,10 @@ class _ChatPanelState extends ConsumerState<_ChatPanel> {
                   spacing: 10,
                   runSpacing: 10,
                   children: <Widget>[
+                    _LinkStatCard(label: 'Route', value: diagnostics.label),
                     _LinkStatCard(
-                      label: 'Route',
-                      value: connectionStatus.label,
+                      label: 'Pair',
+                      value: diagnostics.selectedCandidatePairId ?? 'Unknown',
                     ),
                     _LinkStatCard(
                       label: 'Local',
@@ -1266,19 +1225,19 @@ class _ChatPanelState extends ConsumerState<_ChatPanel> {
                     ),
                     _LinkStatCard(
                       label: 'Room',
-                      value: session?.roomId ?? 'Not opened',
+                      value: diagnostics.roomId ?? 'Not opened',
                     ),
                     _LinkStatCard(
                       label: 'Role',
-                      value: session?.isOfferOwner == null
+                      value: diagnostics.isOfferOwner == null
                           ? 'None'
-                          : session!.isOfferOwner!
+                          : diagnostics.isOfferOwner!
                           ? 'Offer'
                           : 'Answer',
                     ),
                     _LinkStatCard(
                       label: 'Retries',
-                      value: '${session?.retryAttempt ?? 0}',
+                      value: '${diagnostics.retryAttempt}',
                     ),
                     _LinkStatCard(
                       label: 'Updated',
@@ -1288,11 +1247,10 @@ class _ChatPanelState extends ConsumerState<_ChatPanel> {
                     ),
                   ],
                 ),
-                if (connection.error != null ||
-                    (session?.error?.isNotEmpty ?? false)) ...<Widget>[
+                if (diagnostics.lastError != null) ...<Widget>[
                   const SizedBox(height: 14),
                   Text(
-                    _formatUiError(connection.error ?? session!.error!),
+                    diagnostics.lastError!,
                     style: TextStyle(color: scheme.error),
                   ),
                 ],

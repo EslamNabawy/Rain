@@ -271,11 +271,41 @@ class AppEnvironment {
     });
   });
 
-  bool get releaseRelayIsLimited => !hasProjectOwnedTurn;
+  bool get allTurnServersHaveCredentials {
+    final turnServers = iceServers
+        .where(_serverHasTurnUrl)
+        .toList(growable: false);
+    return turnServers.isNotEmpty && turnServers.every(_serverHasCredentials);
+  }
+
+  bool get hasTurnUdpEndpoint =>
+      _iceUrls.any((url) => _isTurnUrl(url) && _hasTransport(url, 'udp'));
+
+  bool get hasTurnTcpEndpoint =>
+      _iceUrls.any((url) => _isTurnUrl(url) && _hasTransport(url, 'tcp'));
+
+  bool get hasTurnsTcpEndpoint =>
+      _iceUrls.any((url) => _isTurnsUrl(url) && _hasTransport(url, 'tcp'));
+
+  bool get hasProductionTurnCoverage =>
+      hasProjectOwnedTurn &&
+      allTurnServersHaveCredentials &&
+      hasTurnUdpEndpoint &&
+      hasTurnTcpEndpoint &&
+      hasTurnsTcpEndpoint;
+
+  Iterable<String> get _iceUrls sync* {
+    for (final server in iceServers) {
+      yield* _serverUrls(server);
+    }
+  }
+
+  bool get releaseRelayIsLimited => !hasProductionTurnCoverage;
 
   String get releaseRelayWarning =>
-      'TURN relay is not configured. Rain will start with direct peer routes; '
-      'add project-owned TURN servers for reliable release connections.';
+      'Managed TURN fallback is not fully configured. Rain will start with '
+      'direct peer routes; add project-owned UDP/TCP/TLS TURN servers for '
+      'reliable release connections.';
 
   AppEnvironment sanitizedForRelease() {
     if (allowPublicTurn) {
@@ -328,6 +358,39 @@ class AppEnvironment {
     }
   }
 
+  void validateProductionIceConfig() {
+    if (usesPublicOpenRelay) {
+      throw StateError(
+        'Production release builds must not use OpenRelay/public TURN servers.',
+      );
+    }
+    if (!hasProjectOwnedTurn) {
+      throw StateError(
+        'Release builds require at least one project-owned TURN/TURNS URL in RAIN_ICE_SERVERS.',
+      );
+    }
+    if (!allTurnServersHaveCredentials) {
+      throw StateError(
+        'Every production TURN/TURNS server entry must include username and credential.',
+      );
+    }
+    if (!hasTurnUdpEndpoint) {
+      throw StateError(
+        'Production RAIN_ICE_SERVERS must include a turn: UDP endpoint.',
+      );
+    }
+    if (!hasTurnTcpEndpoint) {
+      throw StateError(
+        'Production RAIN_ICE_SERVERS must include a turn: TCP endpoint.',
+      );
+    }
+    if (!hasTurnsTcpEndpoint) {
+      throw StateError(
+        'Production RAIN_ICE_SERVERS must include a turns: TCP/TLS endpoint.',
+      );
+    }
+  }
+
   Duration get heartbeatInterval => Duration(
     seconds: backgroundHeartbeatSeconds > 0 ? backgroundHeartbeatSeconds : 30,
   );
@@ -371,6 +434,30 @@ Map<String, dynamic> _cloneIceServer(Map<String, dynamic> server) {
       );
     }),
   );
+}
+
+bool _serverHasTurnUrl(Map<String, dynamic> server) {
+  return _serverUrls(server).any((url) => _isTurnUrl(url) || _isTurnsUrl(url));
+}
+
+bool _serverHasCredentials(Map<String, dynamic> server) {
+  final username = server['username']?.toString().trim() ?? '';
+  final credential = server['credential']?.toString().trim() ?? '';
+  return username.isNotEmpty && credential.isNotEmpty;
+}
+
+bool _isTurnUrl(String url) {
+  return url.trim().toLowerCase().startsWith('turn:');
+}
+
+bool _isTurnsUrl(String url) {
+  return url.trim().toLowerCase().startsWith('turns:');
+}
+
+bool _hasTransport(String url, String transport) {
+  final normalized = url.trim().toLowerCase();
+  final expected = 'transport=${transport.toLowerCase()}';
+  return normalized.contains('?$expected') || normalized.contains('&$expected');
 }
 
 const releaseDefaultIceServers = <Map<String, dynamic>>[

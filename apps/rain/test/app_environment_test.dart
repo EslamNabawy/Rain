@@ -81,15 +81,69 @@ void main() {
     },
   );
 
-  test('project-owned TURN passes release validation', () {
+  test('project-owned TURN passes production ICE validation', () {
     final environment = AppEnvironment.fromEnvironment(
       runtimeEnvironment: <String, String>{
         'RAIN_ICE_SERVERS':
-            '[{"urls":"stun:turn.rain.example:3478"},{"urls":"turn:turn.rain.example:3478","username":"rain","credential":"secret"}]',
+            '[{"urls":"stun:turn.rain.example:3478"},'
+            '{"urls":["turn:turn.rain.example:3478?transport=udp",'
+            '"turn:turn.rain.example:3478?transport=tcp",'
+            '"turns:turn.rain.example:5349?transport=tcp"],'
+            '"username":"rain","credential":"secret"}]',
       },
     );
 
     expect(environment.usesPublicOpenRelay, isFalse);
     expect(environment.validateForRelease, returnsNormally);
+    expect(environment.validateProductionIceConfig, returnsNormally);
+    expect(environment.releaseRelayIsLimited, isFalse);
   });
+
+  test('production ICE validation rejects missing TURNS fallback', () {
+    final environment = AppEnvironment.fromEnvironment(
+      runtimeEnvironment: <String, String>{
+        'RAIN_ICE_SERVERS':
+            '[{"urls":"stun:turn.rain.example:3478"},'
+            '{"urls":["turn:turn.rain.example:3478?transport=udp",'
+            '"turn:turn.rain.example:3478?transport=tcp"],'
+            '"username":"rain","credential":"secret"}]',
+      },
+    );
+
+    expect(
+      environment.validateProductionIceConfig,
+      throwsA(
+        isA<StateError>().having(
+          (StateError error) => error.toString(),
+          'message',
+          contains('turns: TCP/TLS'),
+        ),
+      ),
+    );
+  });
+
+  test(
+    'production ICE validation rejects TURN entries without credentials',
+    () {
+      final environment = AppEnvironment.fromEnvironment(
+        runtimeEnvironment: <String, String>{
+          'RAIN_ICE_SERVERS':
+              '[{"urls":["turn:turn.rain.example:3478?transport=udp",'
+              '"turn:turn.rain.example:3478?transport=tcp",'
+              '"turns:turn.rain.example:5349?transport=tcp"]}]',
+        },
+      );
+
+      expect(
+        environment.validateProductionIceConfig,
+        throwsA(
+          isA<StateError>().having(
+            (StateError error) => error.toString(),
+            'message',
+            contains('username and credential'),
+          ),
+        ),
+      );
+    },
+  );
 }

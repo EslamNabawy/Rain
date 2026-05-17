@@ -81,6 +81,30 @@ void main() {
       script,
       contains('Release TURN servers must include username and credential.'),
     );
+    expect(
+      script,
+      contains(
+        'Every production TURN/TURNS server entry must include username and credential.',
+      ),
+    );
+    expect(
+      script,
+      contains(
+        'Production RAIN_ICE_SERVERS must include a turn: UDP endpoint.',
+      ),
+    );
+    expect(
+      script,
+      contains(
+        'Production RAIN_ICE_SERVERS must include a turn: TCP endpoint.',
+      ),
+    );
+    expect(
+      script,
+      contains(
+        'Production RAIN_ICE_SERVERS must include a turns: TCP/TLS endpoint.',
+      ),
+    );
     expect(script, contains('Assert-AndroidReleaseSigning'));
     expect(
       script,
