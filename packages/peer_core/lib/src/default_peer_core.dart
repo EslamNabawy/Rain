@@ -176,17 +176,7 @@ class DefaultPeerCore implements PeerCore {
       throw StateError('Channel $channelId is not ready.');
     }
 
-    if (channelId == PeerChannels.chat) {
-      _sendChunkedIfNeeded(channel, data);
-      return;
-    }
-
-    if (data is Uint8List) {
-      channel.send(RTCDataChannelMessage.fromBinary(data));
-      return;
-    }
-
-    channel.send(RTCDataChannelMessage(data.toString()));
+    _sendChunkedIfNeeded(channel, data);
   }
 
   @override

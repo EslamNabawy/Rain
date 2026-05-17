@@ -1,3 +1,5 @@
+import 'dart:typed_data';
+
 import 'package:flutter_test/flutter_test.dart';
 import 'package:flutter_webrtc/flutter_webrtc.dart';
 import 'package:peer_core/peer_core.dart';
@@ -240,6 +242,46 @@ void main() {
       await disconnectedSubscription.cancel();
     },
   );
+
+  test('default peer chunks large binary payloads on file channel', () async {
+    final platform = _FakePlatformBridge();
+    final peer = DefaultPeerCore();
+    final receivedMessages = <PeerMessage>[];
+    final subscription = peer.onMessage.listen(receivedMessages.add);
+    final payload = List<int>.generate(40 * 1024, (int index) => index % 251);
+
+    await peer.init(
+      PeerConfig(
+        iceServers: const <Map<String, dynamic>>[],
+        platform: platform,
+      ),
+    );
+    await peer.createOffer();
+    await peer.setAnswer(RTCSessionDescription('answer-sdp', 'answer'));
+    platform.channel(PeerChannels.chat).emitOpen();
+    platform.channel(PeerChannels.control).emitOpen();
+    platform.channel(PeerChannels.file).emitOpen();
+    await pumpEventQueue();
+
+    peer.send(PeerChannels.file, Uint8List.fromList(payload));
+    final sentMessages = platform.channel(PeerChannels.file).sentMessages;
+
+    expect(sentMessages.length, greaterThan(1));
+    expect(
+      sentMessages.map((RTCDataChannelMessage message) => message.isBinary),
+      everyElement(isFalse),
+    );
+    for (final message in sentMessages) {
+      platform.channel(PeerChannels.file).onMessage?.call(message);
+    }
+    await pumpEventQueue();
+
+    expect(receivedMessages, hasLength(1));
+    expect(receivedMessages.single.channelId, PeerChannels.file);
+    expect(receivedMessages.single.data, Uint8List.fromList(payload));
+
+    await subscription.cancel();
+  });
 
   test('default peer maps selected host/srflx route as direct', () async {
     final platform = _FakePlatformBridge();
