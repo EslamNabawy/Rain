@@ -74,9 +74,10 @@ void main() {
     expect(
       script,
       contains(
-        'Release builds require at least one project-owned TURN/TURNS URL in RAIN_ICE_SERVERS.',
+        'Release builds require RAIN_TURN_BROKER_URL or at least one project-owned TURN/TURNS URL in RAIN_ICE_SERVERS.',
       ),
     );
+    expect(script, contains('Production release uses TURN credential broker:'));
     expect(
       script,
       contains('Release TURN servers must include username and credential.'),
@@ -163,16 +164,17 @@ void main() {
     expect(script, contains('Rain-Demo-Android-ARM-v7-Build.apk'));
     expect(script, contains('Rain-Demo-Android-x86_64-Build.apk'));
     expect(script, contains('Rain-Demo-Windows-x64-Build'));
+    expect(script, contains('[string]\$AndroidArtifactSet = \'all\''));
+    expect(script, contains('android-arm,android-arm64'));
     expect(script, contains('\$androidArtifactPrefix-android-universal.apk'));
     expect(script, contains('\$androidArtifactPrefix-android-arm64-v8a.apk'));
     expect(script, contains('\$androidArtifactPrefix-android-armeabi-v7a.apk'));
     expect(script, contains('\$androidArtifactPrefix-android-x86_64.apk'));
   });
 
-  test('artifact workflows verify every Android APK architecture', () {
+  test('CI and release workflows verify every Android APK architecture', () {
     final workflows = <String>[
       _repoFile('.github/workflows/ci.yml'),
-      _repoFile('.github/workflows/build-artifacts.yml'),
       _repoFile('.github/workflows/release.yml'),
     ];
 
@@ -202,6 +204,19 @@ void main() {
         ),
       );
     }
+  });
+
+  test('build artifacts workflow uploads mobile APKs without archives', () {
+    final workflow = _repoFile('.github/workflows/build-artifacts.yml');
+
+    expect(workflow, contains("'-AndroidArtifactSet'"));
+    expect(workflow, contains("'mobile'"));
+    expect(workflow, contains('Rain-Demo-Android-Universal-Build.apk'));
+    expect(workflow, contains('Rain-Demo-Android-ARM-v7-Build.apk'));
+    expect(workflow, contains('Rain-Demo-Android-ARM-v8-v9-Build.apk'));
+    expect(workflow, isNot(contains('Rain-Demo-Android-x86_64-Build.apk')));
+    expect(workflow, isNot(contains('.rar')));
+    expect(workflow, isNot(contains('.zip')));
   });
 
   test('CI demo artifacts upload one portable Windows archive', () {

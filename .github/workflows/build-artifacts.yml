@@ -79,6 +79,8 @@ jobs:
             'artifacts',
             '-DartDefinesFile',
             $env:RAIN_DART_DEFINES_FILE,
+            '-AndroidArtifactSet',
+            'mobile',
             '-Clean'
           )
           if ($env:BUILD_PROFILE -eq 'demo') {
@@ -183,8 +185,7 @@ jobs:
             $expected = @(
               @{ Label = 'Android universal APK'; Path = 'artifacts\Rain-Demo-Android-Universal-Build.apk' },
               @{ Label = 'Android ARM v7 APK (armeabi-v7a)'; Path = 'artifacts\Rain-Demo-Android-ARM-v7-Build.apk' },
-              @{ Label = 'Android ARM v8/v9 APK (arm64-v8a)'; Path = 'artifacts\Rain-Demo-Android-ARM-v8-v9-Build.apk' },
-              @{ Label = 'Android x86_64 APK'; Path = 'artifacts\Rain-Demo-Android-x86_64-Build.apk' }
+              @{ Label = 'Android ARM v8/v9 APK (arm64-v8a)'; Path = 'artifacts\Rain-Demo-Android-ARM-v8-v9-Build.apk' }
             )
           } else {
             $prefix = 'Rain-release'
@@ -192,8 +193,7 @@ jobs:
               @{ Label = 'Android universal APK'; Path = "artifacts\$prefix-android-universal.apk" },
               @{ Label = 'Android default/universal APK alias'; Path = "artifacts\$prefix-android.apk" },
               @{ Label = 'Android ARM v7 APK (armeabi-v7a)'; Path = "artifacts\$prefix-android-armeabi-v7a.apk" },
-              @{ Label = 'Android ARM v8/v9 APK (arm64-v8a)'; Path = "artifacts\$prefix-android-arm64-v8a.apk" },
-              @{ Label = 'Android x86_64 APK'; Path = "artifacts\$prefix-android-x86_64.apk" }
+              @{ Label = 'Android ARM v8/v9 APK (arm64-v8a)'; Path = "artifacts\$prefix-android-arm64-v8a.apk" }
             )
           }
           foreach ($artifact in $expected) {
@@ -207,5 +207,12 @@ jobs:
         uses: actions/upload-artifact@v7
         with:
           name: ${{ env.BUILD_PROFILE == 'demo' && 'Rain-Demo-Android-Builds' || 'Rain-Release-Android-Builds' }}
-          path: artifacts/*.apk
+          path: |
+            artifacts/Rain-Demo-Android-Universal-Build.apk
+            artifacts/Rain-Demo-Android-ARM-v8-v9-Build.apk
+            artifacts/Rain-Demo-Android-ARM-v7-Build.apk
+            artifacts/Rain-release-android.apk
+            artifacts/Rain-release-android-universal.apk
+            artifacts/Rain-release-android-arm64-v8a.apk
+            artifacts/Rain-release-android-armeabi-v7a.apk
           if-no-files-found: error

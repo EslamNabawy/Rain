@@ -297,6 +297,61 @@ void main() {
     await brain.disconnect('bob');
   });
 
+  test(
+    'direct transport failure triggers one clean relay-only retry',
+    () async {
+      final adapter = _RecordingSignalingAdapter();
+      final peers = <_FakePeerCore>[];
+      final requestedPolicies = <PeerIceTransportPolicy>[];
+      final brain = ProtocolBrainImpl(
+        selfUsername: 'alice',
+        adapter: adapter,
+        peerConfig: _fakePeerConfig(),
+        peerConfigProvider: (PeerIceTransportPolicy policy) async {
+          requestedPolicies.add(policy);
+          return PeerConfig(
+            iceServers: const <Map<String, dynamic>>[
+              <String, dynamic>{'urls': 'stun:stun.l.google.com:19302'},
+              <String, dynamic>{
+                'urls': 'turn:turn.rain.example:3478?transport=udp',
+                'username': 'rain',
+                'credential': 'secret',
+              },
+            ],
+            platform: _FakePlatformBridge(),
+            iceTransportPolicy: policy,
+          );
+        },
+        peerFactory: () {
+          final peer = _FakePeerCore();
+          peers.add(peer);
+          return peer;
+        },
+        connectionMemoryStore: _MemoryConnectionStore(),
+      );
+
+      await brain.connect('bob');
+      peers.single.emitFailed();
+      await pumpEventQueue(times: 4);
+
+      expect(peers, hasLength(2));
+      expect(
+        peers.last.initialConfig?.iceTransportPolicy,
+        PeerIceTransportPolicy.relayOnly,
+      );
+      expect(requestedPolicies, <PeerIceTransportPolicy>[
+        PeerIceTransportPolicy.all,
+        PeerIceTransportPolicy.relayOnly,
+        PeerIceTransportPolicy.relayOnly,
+      ]);
+      expect(adapter.deletedRooms, contains('alice:bob'));
+      expect(adapter.writtenOffers, <String>['alice:bob', 'alice:bob']);
+      expect(brain.getSession('bob')?.state, SessionState.reconnecting);
+
+      await brain.disconnect('bob');
+    },
+  );
+
   test('transient disconnect recovery cancels pending reconnect', () async {
     final adapter = _RecordingSignalingAdapter();
     var peerCreations = 0;
@@ -753,6 +808,7 @@ class _MemoryConnectionStore implements ConnectionMemoryStore {
 class _FakePeerCore implements PeerCore {
   PeerState _state = PeerState.idle;
   int setAnswerCalls = 0;
+  PeerConfig? initialConfig;
   final List<String?> receivedAnswers = <String?>[];
   PeerConnectionRoute route = const PeerConnectionRoute.unknown();
   final StreamController<RTCIceCandidate> _iceController =
@@ -772,6 +828,7 @@ class _FakePeerCore implements PeerCore {
 
   @override
   Future<void> init(PeerConfig config) async {
+    initialConfig = config;
     _state = PeerState.ready;
     _stateController.add(_state);
   }

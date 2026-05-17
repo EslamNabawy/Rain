@@ -14,6 +14,7 @@ import 'package:rain/infrastructure/services/network_status_service.dart';
 import 'package:rain/infrastructure/services/received_file_export_service.dart';
 import 'package:rain/application/runtime/rain_runtime_controller.dart';
 import 'package:rain/infrastructure/services/sound_effects_service.dart';
+import 'package:rain/infrastructure/services/turn_credential_service.dart';
 import 'app_state.dart';
 import 'file_transfer_view.dart';
 
@@ -144,6 +145,18 @@ final receivedFileExportServiceProvider = Provider(
 final connectionMemoryStoreProvider = Provider(
   (Ref ref) => DriftConnectionMemoryStore(ref.watch(databaseProvider)),
 );
+
+final turnCredentialServiceProvider = Provider<TurnCredentialService>((
+  Ref ref,
+) {
+  final environment = ref.watch(appEnvironmentProvider);
+  final service = TurnCredentialService(
+    baseIceServers: environment.iceServers,
+    brokerUrl: environment.turnBrokerUrl,
+  );
+  ref.onDispose(service.dispose);
+  return service;
+});
 
 final messageDeliveryServiceProvider = Provider((Ref ref) {
   final service = MessageDeliveryService(
@@ -572,6 +585,7 @@ final brainProvider = Provider<SessionManager?>((Ref ref) {
     selfUsername: identity.username,
     adapter: ref.watch(adapterProvider),
     iceServers: environment.iceServers,
+    iceServersProvider: ref.watch(turnCredentialServiceProvider).iceServers,
     connectionMemoryStore: ref.watch(connectionMemoryStoreProvider),
   );
 

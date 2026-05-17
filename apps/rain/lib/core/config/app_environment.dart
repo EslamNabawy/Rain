@@ -28,6 +28,7 @@ class AppEnvironment {
     required this.supabaseUrl,
     required this.supabaseAnonKey,
     required this.signalingEncryptionKey,
+    required this.turnBrokerUrl,
   });
 
   final RainBackend backend;
@@ -50,6 +51,7 @@ class AppEnvironment {
   final String supabaseUrl;
   final String supabaseAnonKey;
   final String signalingEncryptionKey;
+  final String turnBrokerUrl;
 
   factory AppEnvironment.fromEnvironment({
     Map<String, String>? runtimeEnvironment,
@@ -224,6 +226,10 @@ class AppEnvironment {
         ),
         defaultValue: demoSignalingEncryptionKey,
       ),
+      turnBrokerUrl: readString(
+        'RAIN_TURN_BROKER_URL',
+        compileTimeValue: const String.fromEnvironment('RAIN_TURN_BROKER_URL'),
+      ),
     );
   }
 
@@ -288,11 +294,14 @@ class AppEnvironment {
       _iceUrls.any((url) => _isTurnsUrl(url) && _hasTransport(url, 'tcp'));
 
   bool get hasProductionTurnCoverage =>
-      hasProjectOwnedTurn &&
-      allTurnServersHaveCredentials &&
-      hasTurnUdpEndpoint &&
-      hasTurnTcpEndpoint &&
-      hasTurnsTcpEndpoint;
+      hasTurnBroker ||
+      (hasProjectOwnedTurn &&
+          allTurnServersHaveCredentials &&
+          hasTurnUdpEndpoint &&
+          hasTurnTcpEndpoint &&
+          hasTurnsTcpEndpoint);
+
+  bool get hasTurnBroker => turnBrokerUrl.trim().isNotEmpty;
 
   Iterable<String> get _iceUrls sync* {
     for (final server in iceServers) {
@@ -349,6 +358,7 @@ class AppEnvironment {
       supabaseUrl: supabaseUrl,
       supabaseAnonKey: supabaseAnonKey,
       signalingEncryptionKey: signalingEncryptionKey,
+      turnBrokerUrl: turnBrokerUrl,
     );
   }
 
@@ -364,9 +374,12 @@ class AppEnvironment {
         'Production release builds must not use OpenRelay/public TURN servers.',
       );
     }
+    if (hasTurnBroker) {
+      return;
+    }
     if (!hasProjectOwnedTurn) {
       throw StateError(
-        'Release builds require at least one project-owned TURN/TURNS URL in RAIN_ICE_SERVERS.',
+        'Release builds require RAIN_TURN_BROKER_URL or at least one project-owned TURN/TURNS URL in RAIN_ICE_SERVERS.',
       );
     }
     if (!allTurnServersHaveCredentials) {

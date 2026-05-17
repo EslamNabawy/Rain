@@ -1,19 +1,23 @@
 import 'dart:convert';
+import 'dart:typed_data';
 
 import 'package:flutter_test/flutter_test.dart';
 import 'package:rain_core/rain_core.dart';
 
 void main() {
   group('file transfer throughput settings', () {
-    test('uses larger chunks and buffer room for efficient P2P transfers', () {
-      expect(fileTransferChunkBytes, 64 * 1024);
-      expect(fileTransferLowWatermarkBytes, 1024 * 1024);
-      expect(fileTransferHighWatermarkBytes, 4 * 1024 * 1024);
-      expect(
-        fileTransferLowWatermarkBytes,
-        lessThan(fileTransferHighWatermarkBytes),
-      );
-    });
+    test(
+      'uses mobile-safe chunks and buffer room for reliable P2P transfers',
+      () {
+        expect(fileTransferChunkBytes, 32 * 1024);
+        expect(fileTransferLowWatermarkBytes, 1024 * 1024);
+        expect(fileTransferHighWatermarkBytes, 4 * 1024 * 1024);
+        expect(
+          fileTransferLowWatermarkBytes,
+          lessThan(fileTransferHighWatermarkBytes),
+        );
+      },
+    );
   });
 
   group('FileTransferFrame', () {
@@ -78,6 +82,56 @@ void main() {
         ),
         throwsFormatException,
       );
+    });
+
+    test('completion frames require final byte count and hash', () {
+      final frame = FileTransferFrame.complete(
+        transferId: 'transfer-1',
+        finalByteCount: 4,
+        sha256:
+            '63d987d1c6d69751c17297f410f5b3547a65d096a8993b35bcb4f9cad054f176',
+      );
+
+      final parsed = FileTransferFrame.parse(frame.encode());
+
+      expect(parsed.type, FileTransferFrame.completeType);
+      expect(parsed.finalByteCount, 4);
+      expect(
+        parsed.sha256,
+        '63d987d1c6d69751c17297f410f5b3547a65d096a8993b35bcb4f9cad054f176',
+      );
+      expect(
+        () => FileTransferFrame.parse(
+          jsonEncode(<String, Object?>{
+            'v': fileTransferProtocolVersion,
+            'type': FileTransferFrame.receivedType,
+            'id': 'transfer-1',
+          }),
+        ),
+        throwsFormatException,
+      );
+    });
+
+    test('packs chunk metadata and bytes into one binary message', () {
+      final payload = Uint8List.fromList(<int>[1, 2, 3, 4]);
+      final frame = FileTransferFrame.chunk(
+        transferId: 'transfer-1',
+        index: 2,
+        offset: 8192,
+        byteCount: payload.lengthInBytes,
+      );
+
+      final encoded = FileTransferChunkPacket(
+        frame: frame,
+        payload: payload,
+      ).encode();
+      final parsed = FileTransferChunkPacket.tryParse(encoded);
+
+      expect(parsed, isNotNull);
+      expect(parsed!.frame.transferId, 'transfer-1');
+      expect(parsed.frame.index, 2);
+      expect(parsed.frame.offset, 8192);
+      expect(parsed.payload, payload);
     });
   });
 

@@ -18,8 +18,15 @@ String roomId(String a, String b) {
 const Duration _handshakeTimeout = Duration(seconds: 60);
 const Duration _routeRefreshDelay = Duration(milliseconds: 850);
 
+typedef PeerConfigProvider =
+    Future<PeerConfig> Function(PeerIceTransportPolicy policy);
+
 Duration _maxDuration(Duration a, Duration b) {
   return a.compareTo(b) >= 0 ? a : b;
+}
+
+bool _cachedIceReconnectEnabled() {
+  return false;
 }
 
 class ProtocolBrainImpl implements ProtocolBrain {
@@ -29,6 +36,7 @@ class ProtocolBrainImpl implements ProtocolBrain {
     required this.peerConfig,
     required this.peerFactory,
     required this.connectionMemoryStore,
+    this.peerConfigProvider,
     this.reconnectGrace = const Duration(seconds: 2),
   });
 
@@ -37,6 +45,7 @@ class ProtocolBrainImpl implements ProtocolBrain {
   final PeerConfig peerConfig;
   final PeerCoreFactory peerFactory;
   final ConnectionMemoryStore connectionMemoryStore;
+  final PeerConfigProvider? peerConfigProvider;
   final Duration reconnectGrace;
 
   final Map<String, _ActiveSession> _sessions = <String, _ActiveSession>{};
@@ -74,6 +83,16 @@ class ProtocolBrainImpl implements ProtocolBrain {
             active.snapshot.state == SessionState.connecting ||
             active.snapshot.state == SessionState.reconnecting)) {
       return active.snapshot;
+    }
+    final previousPolicy = active.icePolicy;
+    active.icePolicy = PeerIceTransportPolicy.all;
+    active.relayFallbackTried = false;
+    active.directAttemptFailure = null;
+    active.retryAttempt = 0;
+    if (previousPolicy != PeerIceTransportPolicy.all ||
+        active.peer.state != PeerState.ready ||
+        active.snapshot.state == SessionState.failed) {
+      await _recreatePeer(active, policy: PeerIceTransportPolicy.all);
     }
     try {
       if (_isOfferOwner(peerId)) {
@@ -265,6 +284,11 @@ class ProtocolBrainImpl implements ProtocolBrain {
             break;
           case PeerState.failed:
             unawaited(_deleteRoomSilently(active));
+            if (active.icePolicy == PeerIceTransportPolicy.all &&
+                !active.relayFallbackTried) {
+              unawaited(_tryRelayFallback(active, 'Direct path failed.'));
+              break;
+            }
             _markPhase(
               active,
               SessionPhase.failed,
@@ -576,6 +600,7 @@ class ProtocolBrainImpl implements ProtocolBrain {
     }
 
     final useCachedReconnect =
+        _cachedIceReconnectEnabled() &&
         isRetry &&
         memory != null &&
         memory.isUsable &&
@@ -673,9 +698,14 @@ class ProtocolBrainImpl implements ProtocolBrain {
     return _isOfferOwner(peerId) ? IceRole.caller : IceRole.callee;
   }
 
-  Future<PeerCore> _newPeer() async {
+  Future<PeerCore> _newPeer({
+    PeerIceTransportPolicy policy = PeerIceTransportPolicy.all,
+  }) async {
     final peer = peerFactory();
-    await peer.init(peerConfig);
+    final config = peerConfigProvider == null
+        ? peerConfig.copyWith(iceTransportPolicy: policy)
+        : await peerConfigProvider!(policy);
+    await peer.init(config.copyWith(iceTransportPolicy: policy));
     return peer;
   }
 
@@ -700,6 +730,7 @@ class ProtocolBrainImpl implements ProtocolBrain {
     _ActiveSession active, {
     bool Function()? shouldContinue,
     IceRole? restoreRole,
+    PeerIceTransportPolicy? policy,
   }) async {
     if (shouldContinue != null && !shouldContinue()) {
       return false;
@@ -719,7 +750,9 @@ class ProtocolBrainImpl implements ProtocolBrain {
       return false;
     }
     await active.peer.destroy();
-    active.peer = await _newPeer();
+    final nextPolicy = policy ?? active.icePolicy;
+    active.peer = await _newPeer(policy: nextPolicy);
+    active.icePolicy = nextPolicy;
     active.bound = false;
     active.remoteIceCache.clear();
     active.answerSubscription = null;
@@ -868,6 +901,9 @@ class ProtocolBrainImpl implements ProtocolBrain {
     active.remoteIceCache.clear();
     active.answerSubscription = null;
     active.iceSubscriptions.clear();
+    if (await _tryRelayFallback(active, 'Direct path timed out.')) {
+      return;
+    }
     if (!active.shouldReconnect) {
       active.stopReconnecting();
       _updateSession(
@@ -906,6 +942,95 @@ class ProtocolBrainImpl implements ProtocolBrain {
     }
 
     unawaited(_scheduleReconnect(peerId));
+  }
+
+  Future<bool> _tryRelayFallback(
+    _ActiveSession active,
+    String directFailure,
+  ) async {
+    if (_sessions[active.peerId] != active ||
+        !active.shouldReconnect ||
+        active.icePolicy != PeerIceTransportPolicy.all ||
+        active.relayFallbackTried) {
+      return false;
+    }
+
+    active.relayFallbackTried = true;
+    active.directAttemptFailure = directFailure;
+
+    final hasRelay = await _hasRelayFallbackConfig();
+    if (!hasRelay) {
+      _updateSession(
+        active.peerId,
+        active.snapshot.copyWith(
+          state: SessionState.failed,
+          phase: SessionPhase.failed,
+          detail: 'Direct path blocked. Relay fallback unavailable.',
+          updatedAt: DateTime.now().millisecondsSinceEpoch,
+          error:
+              'Direct path blocked. No TURN relay is configured for this build.',
+          route: PeerConnectionRoute.unknown(
+            updatedAt: DateTime.now().millisecondsSinceEpoch,
+          ),
+        ),
+      );
+      return false;
+    }
+
+    active.cancelPendingReconnect();
+    active.cancelHandshakeTimeout();
+    active.retryAttempt = 0;
+    _markPhase(
+      active,
+      SessionPhase.reconnecting,
+      'Direct path blocked. Trying TURN relay fallback.',
+      state: SessionState.reconnecting,
+      error: directFailure,
+    );
+    final recreated = await _recreatePeer(
+      active,
+      policy: PeerIceTransportPolicy.relayOnly,
+    );
+    if (!recreated || _sessions[active.peerId] != active) {
+      return false;
+    }
+    try {
+      if (_isOfferOwner(active.peerId)) {
+        await _startOffer(active, isRetry: true);
+      } else {
+        await _waitForOffer(active, isRetry: true);
+      }
+      return true;
+    } catch (error) {
+      _updateSession(
+        active.peerId,
+        active.snapshot.copyWith(
+          state: SessionState.failed,
+          phase: SessionPhase.failed,
+          detail: 'Direct path blocked. Relay fallback failed.',
+          updatedAt: DateTime.now().millisecondsSinceEpoch,
+          error:
+              'Direct path blocked. Relay fallback failed: ${_connectSetupFailureMessage(error)}',
+          route: PeerConnectionRoute.unknown(
+            updatedAt: DateTime.now().millisecondsSinceEpoch,
+          ),
+        ),
+      );
+      return false;
+    }
+  }
+
+  Future<bool> _hasRelayFallbackConfig() async {
+    try {
+      final config = peerConfigProvider == null
+          ? peerConfig.copyWith(
+              iceTransportPolicy: PeerIceTransportPolicy.relayOnly,
+            )
+          : await peerConfigProvider!(PeerIceTransportPolicy.relayOnly);
+      return config.hasRelayServer;
+    } catch (_) {
+      return false;
+    }
   }
 
   Future<void> _deleteRoomSilently(_ActiveSession active) async {
@@ -972,6 +1097,9 @@ class _ActiveSession {
   bool usedCachedReconnect = false;
   bool shouldReconnect = true;
   bool reconnectInProgress = false;
+  bool relayFallbackTried = false;
+  String? directAttemptFailure;
+  PeerIceTransportPolicy icePolicy = PeerIceTransportPolicy.all;
   int reconnectGeneration = 0;
   int? lastOfferTs;
   int? lastAnswerTs;

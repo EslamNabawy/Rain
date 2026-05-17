@@ -52,6 +52,29 @@ void main() {
     },
   );
 
+  test('peer config can force relay-only for fallback attempts', () {
+    final config = PeerConfig(
+      iceServers: const <Map<String, dynamic>>[
+        <String, dynamic>{
+          'urls': 'turn:turn.example:3478?transport=udp',
+          'username': 'rain',
+          'credential': 'secret',
+        },
+      ],
+      platform: _FakePlatformBridge(),
+      iceTransportPolicy: PeerIceTransportPolicy.relayOnly,
+    );
+
+    expect(config.hasRelayServer, isTrue);
+    expect(config.toRtcConfiguration()['iceTransportPolicy'], 'relay');
+    expect(
+      config
+          .copyWith(iceTransportPolicy: PeerIceTransportPolicy.all)
+          .toRtcConfiguration()['iceTransportPolicy'],
+      'all',
+    );
+  });
+
   test(
     'default peer waits for chat and control channels before connected',
     () async {
@@ -266,6 +289,36 @@ void main() {
     expect(route.localCandidateType, 'relay');
     expect(route.remoteCandidateType, 'prflx');
     expect(route.relayProtocol, 'udp');
+  });
+
+  test('default peer maps Android legacy candidate pair stats', () async {
+    final platform = _FakePlatformBridge();
+    final peer = DefaultPeerCore();
+    platform.connection.statsReports = <StatsReport>[
+      StatsReport('pair-legacy', 'googCandidatePair', 1, <String, Object?>{
+        'googActiveConnection': 'true',
+        'googLocalCandidateType': 'local',
+        'googRemoteCandidateType': 'stun',
+        'googRtt': '42',
+        'googAvailableSendBandwidth': '900000',
+      }),
+    ];
+
+    await peer.init(
+      PeerConfig(
+        iceServers: const <Map<String, dynamic>>[],
+        platform: platform,
+      ),
+    );
+
+    final route = await peer.currentRoute();
+
+    expect(route.kind, PeerRouteKind.direct);
+    expect(route.localCandidateType, 'host');
+    expect(route.remoteCandidateType, 'srflx');
+    expect(route.selectedCandidatePairId, 'pair-legacy');
+    expect(route.rtt, 0.042);
+    expect(route.bitrate, 900000);
   });
 
   test(

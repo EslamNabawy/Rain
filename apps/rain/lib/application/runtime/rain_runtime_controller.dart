@@ -2,6 +2,7 @@ import 'dart:async';
 import 'dart:io';
 import 'dart:typed_data';
 
+import 'package:crypto/crypto.dart';
 import 'package:flutter/widgets.dart';
 import 'package:path_provider/path_provider.dart';
 import 'package:protocol_brain/protocol_brain.dart';
@@ -56,6 +57,7 @@ class RainRuntimeController with WidgetsBindingObserver {
   final Map<String, Future<void>> _fileMessageQueues = <String, Future<void>>{};
   final Map<String, _OutgoingFileSource> _outgoingFileSources =
       <String, _OutgoingFileSource>{};
+  final Map<String, String> _outgoingFileHashes = <String, String>{};
   final Set<String> _canceledTransfers = <String>{};
   late final FileTransferProgressBatcher _fileProgressBatcher;
 
@@ -833,6 +835,15 @@ class RainRuntimeController with WidgetsBindingObserver {
 
     final binary = message.binary;
     if (binary != null) {
+      if (_pendingFileChunks.containsKey(peerId)) {
+        await _handleFileChunkBytes(peerId, binary);
+        return;
+      }
+      final packet = FileTransferChunkPacket.tryParse(binary);
+      if (packet != null) {
+        await _handleFileChunkPacket(peerId, packet.frame, packet.payload);
+        return;
+      }
       await _handleFileChunkBytes(peerId, binary);
     }
   }
@@ -886,10 +897,25 @@ class RainRuntimeController with WidgetsBindingObserver {
         _pendingFileChunks[peerId] = frame;
         break;
       case FileTransferFrame.completeType:
-        await _handleFileComplete(peerId, frame.transferId);
+        final pendingFrame = _pendingFileChunks.remove(peerId);
+        if (pendingFrame?.transferId == frame.transferId) {
+          await _markTransferFailed(
+            frame.transferId,
+            'Received file chunk payload was missing.',
+          );
+          _sendFileControlIfConnected(
+            peerId,
+            FileTransferFrame.fail(
+              frame.transferId,
+              'Received file chunk payload was missing.',
+            ),
+          );
+          return;
+        }
+        await _handleFileComplete(peerId, frame);
         break;
       case FileTransferFrame.receivedType:
-        await _handleFileReceived(frame.transferId);
+        await _handleFileReceived(frame);
         break;
       case FileTransferFrame.cancelType:
         await _handleFileTerminalFrame(
@@ -1031,6 +1057,14 @@ class RainRuntimeController with WidgetsBindingObserver {
     if (frame == null) {
       return;
     }
+    await _handleFileChunkPacket(peerId, frame, bytes);
+  }
+
+  Future<void> _handleFileChunkPacket(
+    String peerId,
+    FileTransferFrame frame,
+    Uint8List bytes,
+  ) async {
     final transfer = await fileTransferStore.loadById(frame.transferId);
     if (transfer == null ||
         transfer.peerId != peerId ||
@@ -1050,6 +1084,20 @@ class RainRuntimeController with WidgetsBindingObserver {
       );
       return;
     }
+    if (expectedOffset + bytes.lengthInBytes > transfer.fileSize) {
+      await _markTransferFailed(
+        transfer.id,
+        'Received file exceeded the offer size.',
+      );
+      _sendFileControlIfConnected(
+        peerId,
+        FileTransferFrame.fail(
+          transfer.id,
+          'Received file exceeded the offer size.',
+        ),
+      );
+      return;
+    }
 
     final tempFile = File(transfer.tempPath!);
     await tempFile.parent.create(recursive: true);
@@ -1061,8 +1109,11 @@ class RainRuntimeController with WidgetsBindingObserver {
     await _fileProgressBatcher.record(transfer.id, nextOffset);
   }
 
-  Future<void> _handleFileComplete(String peerId, String transferId) async {
-    final transfer = await fileTransferStore.loadById(transferId);
+  Future<void> _handleFileComplete(
+    String peerId,
+    FileTransferFrame frame,
+  ) async {
+    final transfer = await fileTransferStore.loadById(frame.transferId);
     if (transfer == null ||
         transfer.peerId != peerId ||
         transfer.direction != FileTransferDirection.incoming ||
@@ -1070,9 +1121,41 @@ class RainRuntimeController with WidgetsBindingObserver {
         transfer.localPath == null) {
       return;
     }
+    final expectedHash = frame.sha256;
+    if (frame.finalByteCount != transfer.fileSize ||
+        expectedHash == null ||
+        expectedHash.isEmpty) {
+      await _markTransferFailed(
+        transfer.id,
+        'Received file did not match the offer.',
+      );
+      _sendFileControlIfConnected(
+        peerId,
+        FileTransferFrame.fail(
+          transfer.id,
+          'Receiver reported incomplete file.',
+        ),
+      );
+      return;
+    }
     final tempFile = File(transfer.tempPath!);
     if (!await tempFile.exists()) {
       if (transfer.fileSize == 0) {
+        final emptyHash = sha256.convert(const <int>[]).toString();
+        if (expectedHash != emptyHash) {
+          await _markTransferFailed(
+            transfer.id,
+            'Received file did not match the offer.',
+          );
+          _sendFileControlIfConnected(
+            peerId,
+            FileTransferFrame.fail(
+              transfer.id,
+              'Receiver reported incomplete file.',
+            ),
+          );
+          return;
+        }
         final finalFile = File(transfer.localPath!);
         await finalFile.parent.create(recursive: true);
         if (await finalFile.exists()) {
@@ -1087,7 +1170,11 @@ class RainRuntimeController with WidgetsBindingObserver {
         );
         _sendFileControlIfConnected(
           peerId,
-          FileTransferFrame.received(transfer.id),
+          FileTransferFrame.received(
+            transferId: transfer.id,
+            finalByteCount: 0,
+            sha256: emptyHash,
+          ),
         );
         _clearTransferRuntimeState(transfer.id);
         return;
@@ -1114,6 +1201,21 @@ class RainRuntimeController with WidgetsBindingObserver {
       );
       return;
     }
+    final actualHash = await _sha256File(tempFile);
+    if (actualHash != expectedHash) {
+      await _markTransferFailed(
+        transfer.id,
+        'Received file did not match the offer.',
+      );
+      _sendFileControlIfConnected(
+        peerId,
+        FileTransferFrame.fail(
+          transfer.id,
+          'Receiver reported incomplete file.',
+        ),
+      );
+      return;
+    }
 
     final finalFile = File(transfer.localPath!);
     await finalFile.parent.create(recursive: true);
@@ -1130,21 +1232,37 @@ class RainRuntimeController with WidgetsBindingObserver {
     _clearTransferRuntimeState(transfer.id);
     _sendFileControlIfConnected(
       peerId,
-      FileTransferFrame.received(transfer.id),
+      FileTransferFrame.received(
+        transferId: transfer.id,
+        finalByteCount: transfer.fileSize,
+        sha256: actualHash,
+      ),
     );
   }
 
-  Future<void> _handleFileReceived(String transferId) async {
-    final transfer = await fileTransferStore.loadById(transferId);
+  Future<void> _handleFileReceived(FileTransferFrame frame) async {
+    final transfer = await fileTransferStore.loadById(frame.transferId);
     if (transfer == null ||
         transfer.direction != FileTransferDirection.outgoing) {
       return;
     }
-    _outgoingFileSources.remove(transferId);
-    _canceledTransfers.remove(transferId);
+    final expectedHash = _outgoingFileHashes[frame.transferId];
+    if (frame.finalByteCount != transfer.fileSize ||
+        frame.sha256 == null ||
+        frame.sha256!.isEmpty ||
+        (expectedHash != null && frame.sha256 != expectedHash)) {
+      await _markTransferFailed(
+        frame.transferId,
+        'Receiver reported incomplete file.',
+      );
+      return;
+    }
+    _outgoingFileSources.remove(frame.transferId);
+    _outgoingFileHashes.remove(frame.transferId);
+    _canceledTransfers.remove(frame.transferId);
     await _localMutations.run(() async {
       await fileTransferStore.markState(
-        transferId,
+        frame.transferId,
         FileTransferState.completed,
         bytesTransferred: transfer.fileSize,
       );
@@ -1153,7 +1271,7 @@ class RainRuntimeController with WidgetsBindingObserver {
         MessageStatus.delivered,
       );
     });
-    _clearTransferRuntimeState(transferId);
+    _clearTransferRuntimeState(frame.transferId);
   }
 
   Future<void> _handleFileTerminalFrame(
@@ -1223,7 +1341,10 @@ class RainRuntimeController with WidgetsBindingObserver {
       var offset = 0;
       var index = 0;
       final pending = <int>[];
+      final hashOutput = _DigestSink();
+      final hashInput = sha256.startChunkedConversion(hashOutput);
       await for (final bytes in openRead()) {
+        hashInput.add(bytes);
         pending.addAll(bytes);
         while (pending.length >= fileTransferChunkBytes) {
           final chunk = Uint8List.fromList(
@@ -1246,11 +1367,18 @@ class RainRuntimeController with WidgetsBindingObserver {
       if (offset != fileSize) {
         throw StateError('File changed while sending.');
       }
+      hashInput.close();
+      final digest = hashOutput.value.toString();
+      _outgoingFileHashes[transferId] = digest;
       await _fileProgressBatcher.flush(transferId, offset);
       brain!.send(
         peerId,
         SessionChannel.file,
-        FileTransferFrame.complete(transferId).encode(),
+        FileTransferFrame.complete(
+          transferId: transferId,
+          finalByteCount: offset,
+          sha256: digest,
+        ).encode(),
       );
       await messageStore.markMessageStatus(messageId, MessageStatus.pendingAck);
     } catch (error) {
@@ -1283,14 +1411,16 @@ class RainRuntimeController with WidgetsBindingObserver {
     brain!.send(
       peerId,
       SessionChannel.file,
-      FileTransferFrame.chunk(
-        transferId: transferId,
-        index: index,
-        offset: offset,
-        byteCount: chunk.lengthInBytes,
+      FileTransferChunkPacket(
+        frame: FileTransferFrame.chunk(
+          transferId: transferId,
+          index: index,
+          offset: offset,
+          byteCount: chunk.lengthInBytes,
+        ),
+        payload: chunk,
       ).encode(),
     );
-    brain!.send(peerId, SessionChannel.file, chunk);
     await _fileProgressBatcher.record(transferId, offset + chunk.lengthInBytes);
   }
 
@@ -1322,8 +1452,22 @@ class RainRuntimeController with WidgetsBindingObserver {
     throw StateError('File channel is congested. Try again.');
   }
 
+  Future<String> _sha256File(File file) async {
+    final output = _DigestSink();
+    final input = sha256.startChunkedConversion(output);
+    try {
+      await for (final chunk in file.openRead()) {
+        input.add(chunk);
+      }
+    } finally {
+      input.close();
+    }
+    return output.value.toString();
+  }
+
   void _clearTransferRuntimeState(String transferId) {
     _receiveProgressOffsets.remove(transferId);
+    _outgoingFileHashes.remove(transferId);
     _fileProgressBatcher.clear(transferId);
   }
 
@@ -1884,6 +2028,26 @@ class _OutgoingFileSource {
 
   final Stream<List<int>> Function() openRead;
   final String? localPath;
+}
+
+class _DigestSink implements Sink<Digest> {
+  Digest? _value;
+
+  Digest get value {
+    final digest = _value;
+    if (digest == null) {
+      throw StateError('Digest was not finalized.');
+    }
+    return digest;
+  }
+
+  @override
+  void add(Digest data) {
+    _value = data;
+  }
+
+  @override
+  void close() {}
 }
 
 class _ReceivePaths {

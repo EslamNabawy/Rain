@@ -99,6 +99,21 @@ void main() {
     expect(environment.releaseRelayIsLimited, isFalse);
   });
 
+  test('TURN broker passes production ICE validation without static secrets', () {
+    final environment = AppEnvironment.fromEnvironment(
+      runtimeEnvironment: <String, String>{
+        'RAIN_ICE_SERVERS': '[{"urls":"stun:stun.l.google.com:19302"}]',
+        'RAIN_TURN_BROKER_URL':
+            'https://us-central1-rain.example.cloudfunctions.net/rainTurnCredentials',
+      },
+    );
+
+    expect(environment.hasTurnBroker, isTrue);
+    expect(environment.hasProductionTurnCoverage, isTrue);
+    expect(environment.validateProductionIceConfig, returnsNormally);
+    expect(environment.releaseRelayIsLimited, isFalse);
+  });
+
   test('production ICE validation rejects missing TURNS fallback', () {
     final environment = AppEnvironment.fromEnvironment(
       runtimeEnvironment: <String, String>{

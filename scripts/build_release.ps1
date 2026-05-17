@@ -13,6 +13,8 @@ param(
   [string]$RepoRoot = '',
   [string]$OutputDir = '',
   [string]$DartDefinesFile = '',
+  [ValidateSet('all', 'mobile')]
+  [string]$AndroidArtifactSet = 'all',
   [switch]$AllowPublicTurnForDemo,
   [switch]$UseDemoAndroidSigningKey,
   [switch]$Clean
@@ -302,11 +304,18 @@ function Assert-ReleaseDartDefines([string]$Path, [switch]$AllowPublicTurnForDem
     Write-Warning "OpenRelay/public TURN is enabled for demo release artifacts only."
   }
 
+  $turnBrokerUrl = Get-JsonPropertyValue $defines 'RAIN_TURN_BROKER_URL'
+  $hasTurnBroker = -not [string]::IsNullOrWhiteSpace($turnBrokerUrl)
+  if ($hasTurnBroker -and -not $AllowPublicTurnForDemo) {
+    Write-Host "Production release uses TURN credential broker: $turnBrokerUrl"
+    return
+  }
+
   $turnUrls = @($urls | Where-Object {
     (Test-IceUrlIsTurn $_) -or (Test-IceUrlIsTurns $_)
   })
   if ($turnUrls.Count -eq 0) {
-    throw "Release builds require at least one project-owned TURN/TURNS URL in RAIN_ICE_SERVERS."
+    throw "Release builds require RAIN_TURN_BROKER_URL or at least one project-owned TURN/TURNS URL in RAIN_ICE_SERVERS."
   }
 
   $turnServerEntries = @($iceServers | Where-Object {
@@ -593,7 +602,12 @@ if ($Platform -in @('all', 'android')) {
     Stop-GradleDaemons $appsRoot
     Clean-FlutterProject $appsRoot
   }
-  $flutterArgs = @('build', 'apk', '--release') + $dartDefineArgs
+  $androidTargetPlatformArgs = if ($AndroidArtifactSet -eq 'mobile') {
+    @('--target-platform', 'android-arm,android-arm64')
+  } else {
+    @()
+  }
+  $flutterArgs = @('build', 'apk', '--release') + $androidTargetPlatformArgs + $dartDefineArgs
   Invoke-InDir $appsRoot {
     Invoke-FlutterBuild $flutterArgs
   }
@@ -619,8 +633,13 @@ if ($Platform -in @('all', 'android')) {
   Stop-GradleDaemons $appsRoot
   Clean-FlutterProject $appsRoot
 
-  Write-Step "Building Android per-ABI release APKs: armeabi-v7a, arm64-v8a (ARMv8/ARMv9 devices), x86_64"
-  $splitFlutterArgs = @('build', 'apk', '--release', '--split-per-abi') + $dartDefineArgs
+  $abiBuildLabel = if ($AndroidArtifactSet -eq 'mobile') {
+    'armeabi-v7a, arm64-v8a (ARMv8/ARMv9 devices)'
+  } else {
+    'armeabi-v7a, arm64-v8a (ARMv8/ARMv9 devices), x86_64'
+  }
+  Write-Step "Building Android per-ABI release APKs: $abiBuildLabel"
+  $splitFlutterArgs = @('build', 'apk', '--release', '--split-per-abi') + $androidTargetPlatformArgs + $dartDefineArgs
   Invoke-InDir $appsRoot {
     Invoke-FlutterBuild $splitFlutterArgs
   }
@@ -637,6 +656,9 @@ if ($Platform -in @('all', 'android')) {
       @{ Label = 'ARM v7 devices (armeabi-v7a)'; Source = 'app-armeabi-v7a-release.apk'; Destination = "$androidArtifactPrefix-android-armeabi-v7a.apk" },
       @{ Label = 'x86_64 devices'; Source = 'app-x86_64-release.apk'; Destination = "$androidArtifactPrefix-android-x86_64.apk" }
     )
+  }
+  if ($AndroidArtifactSet -eq 'mobile') {
+    $abiApks = @($abiApks | Where-Object { $_.Source -ne 'app-x86_64-release.apk' })
   }
 
   foreach ($abiApk in $abiApks) {
@@ -677,17 +699,22 @@ if ($Platform -in @('all', 'android')) {
     @(
       'Rain-Demo-Android-Universal-Build.apk',
       'Rain-Demo-Android-ARM-v8-v9-Build.apk',
-      'Rain-Demo-Android-ARM-v7-Build.apk',
-      'Rain-Demo-Android-x86_64-Build.apk'
+      'Rain-Demo-Android-ARM-v7-Build.apk'
     )
   } else {
     @(
       "$androidArtifactPrefix-android.apk",
       "$androidArtifactPrefix-android-universal.apk",
       "$androidArtifactPrefix-android-arm64-v8a.apk",
-      "$androidArtifactPrefix-android-armeabi-v7a.apk",
-      "$androidArtifactPrefix-android-x86_64.apk"
+      "$androidArtifactPrefix-android-armeabi-v7a.apk"
     )
+  }
+  if ($AndroidArtifactSet -eq 'all') {
+    if ($isOpenRelayDemoBuild) {
+      $expectedApks += 'Rain-Demo-Android-x86_64-Build.apk'
+    } else {
+      $expectedApks += "$androidArtifactPrefix-android-x86_64.apk"
+    }
   }
 
   foreach ($apkName in $expectedApks) {

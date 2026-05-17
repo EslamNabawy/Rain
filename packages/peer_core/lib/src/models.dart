@@ -15,6 +15,8 @@ enum PeerState {
   failed,
 }
 
+enum PeerIceTransportPolicy { all, relayOnly }
+
 final class PeerChannels {
   static const chat = 'rain.chat';
   static const control = 'rain.ctrl';
@@ -29,19 +31,49 @@ class PeerConfig {
     required this.platform,
     this.ordered = true,
     this.maxRetransmits,
+    this.iceTransportPolicy = PeerIceTransportPolicy.all,
   });
 
   final List<Map<String, dynamic>> iceServers;
   final PlatformBridge platform;
   final bool ordered;
   final int? maxRetransmits;
+  final PeerIceTransportPolicy iceTransportPolicy;
 
   Map<String, dynamic> toRtcConfiguration() {
     return <String, dynamic>{
       'iceServers': iceServers,
-      'iceTransportPolicy': 'all',
+      'iceTransportPolicy': switch (iceTransportPolicy) {
+        PeerIceTransportPolicy.all => 'all',
+        PeerIceTransportPolicy.relayOnly => 'relay',
+      },
     };
   }
+
+  PeerConfig copyWith({
+    List<Map<String, dynamic>>? iceServers,
+    PlatformBridge? platform,
+    bool? ordered,
+    int? maxRetransmits,
+    PeerIceTransportPolicy? iceTransportPolicy,
+  }) {
+    return PeerConfig(
+      iceServers: iceServers ?? this.iceServers,
+      platform: platform ?? this.platform,
+      ordered: ordered ?? this.ordered,
+      maxRetransmits: maxRetransmits ?? this.maxRetransmits,
+      iceTransportPolicy: iceTransportPolicy ?? this.iceTransportPolicy,
+    );
+  }
+
+  bool get hasRelayServer => iceServers.any((Map<String, dynamic> server) {
+    final urls = server['urls'];
+    final iterable = urls is Iterable ? urls : <Object?>[urls];
+    return iterable.whereType<Object>().any((Object url) {
+      final normalized = url.toString().trim().toLowerCase();
+      return normalized.startsWith('turn:') || normalized.startsWith('turns:');
+    });
+  });
 
   RTCDataChannelInit defaultChannelOptions() {
     final options = RTCDataChannelInit()..ordered = ordered;
@@ -132,8 +164,18 @@ class PeerConnectionRoute {
     final remoteCandidate = remoteCandidateId == null
         ? null
         : byId[remoteCandidateId];
-    final localType = _candidateType(localCandidate);
-    final remoteType = _candidateType(remoteCandidate);
+    final localType =
+        _candidateType(localCandidate) ??
+        _candidateTypeFromPair(selectedPair, const <String>[
+          'localCandidateType',
+          'googLocalCandidateType',
+        ]);
+    final remoteType =
+        _candidateType(remoteCandidate) ??
+        _candidateTypeFromPair(selectedPair, const <String>[
+          'remoteCandidateType',
+          'googRemoteCandidateType',
+        ]);
     final kind = _routeKind(localType, remoteType);
 
     return PeerConnectionRoute(
@@ -143,16 +185,20 @@ class PeerConnectionRoute {
       remoteCandidateType: remoteType,
       protocol:
           _stringStat(localCandidate?.values, const <String>['protocol']) ??
-          _stringStat(remoteCandidate?.values, const <String>['protocol']),
+          _stringStat(remoteCandidate?.values, const <String>['protocol']) ??
+          _stringStat(selectedPair.values, const <String>[
+            'protocol',
+            'googTransportType',
+          ]),
       relayProtocol:
           _stringStat(localCandidate?.values, const <String>[
             'relayProtocol',
           ]) ??
-          _stringStat(remoteCandidate?.values, const <String>['relayProtocol']),
-      rtt: _doubleStat(selectedPair.values, const <String>[
-        'currentRoundTripTime',
-        'roundTripTime',
-      ]),
+          _stringStat(remoteCandidate?.values, const <String>[
+            'relayProtocol',
+          ]) ??
+          _stringStat(selectedPair.values, const <String>['relayProtocol']),
+      rtt: _selectedRtt(selectedPair.values),
       bitrate: _selectedBitrate(selectedPair.values),
       updatedAt: updatedAt,
     );
@@ -219,8 +265,13 @@ StatsReport? _selectedCandidatePair(
 }
 
 bool _isCandidatePair(StatsReport? report) {
-  return report != null &&
-      _normalizedReportType(report.type) == 'candidate-pair';
+  if (report == null) {
+    return false;
+  }
+  final compactType = _normalizedReportType(
+    report.type,
+  ).replaceAll(RegExp(r'[-_\s]'), '');
+  return compactType == 'candidatepair' || compactType == 'googcandidatepair';
 }
 
 String _normalizedReportType(String value) {
@@ -228,10 +279,26 @@ String _normalizedReportType(String value) {
 }
 
 String? _candidateType(StatsReport? report) {
-  return _stringStat(report?.values, const <String>[
-    'candidateType',
-    'type',
-  ])?.toLowerCase();
+  return _normalizeCandidateType(
+    _stringStat(report?.values, const <String>['candidateType', 'type']),
+  );
+}
+
+String? _candidateTypeFromPair(StatsReport report, Iterable<String> keys) {
+  return _normalizeCandidateType(_stringStat(report.values, keys));
+}
+
+String? _normalizeCandidateType(String? value) {
+  final normalized = value?.trim().toLowerCase();
+  return switch (normalized) {
+    'local' => 'host',
+    'stun' => 'srflx',
+    'serverreflexive' => 'srflx',
+    'peerreflexive' => 'prflx',
+    'relay' || 'relayed' => 'relay',
+    'host' || 'srflx' || 'prflx' => normalized,
+    _ => normalized,
+  };
 }
 
 PeerRouteKind _routeKind(String? localType, String? remoteType) {
@@ -303,9 +370,11 @@ double? _doubleStat(Map<dynamic, dynamic> values, Iterable<String> keys) {
 double? _selectedBitrate(Map<dynamic, dynamic> values) {
   final outgoing = _doubleStat(values, const <String>[
     'availableOutgoingBitrate',
+    'googAvailableSendBandwidth',
   ]);
   final incoming = _doubleStat(values, const <String>[
     'availableIncomingBitrate',
+    'googAvailableReceiveBandwidth',
   ]);
   if (outgoing == null) {
     return incoming;
@@ -314,6 +383,18 @@ double? _selectedBitrate(Map<dynamic, dynamic> values) {
     return outgoing;
   }
   return outgoing > incoming ? outgoing : incoming;
+}
+
+double? _selectedRtt(Map<dynamic, dynamic> values) {
+  final standard = _doubleStat(values, const <String>[
+    'currentRoundTripTime',
+    'roundTripTime',
+  ]);
+  if (standard != null) {
+    return standard;
+  }
+  final legacyMs = _doubleStat(values, const <String>['googRtt']);
+  return legacyMs == null ? null : legacyMs / 1000;
 }
 
 abstract class PeerCore {

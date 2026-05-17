@@ -1,5 +1,5 @@
 export 'package:peer_core/peer_core.dart'
-    show PeerConnectionRoute, PeerRouteKind;
+    show PeerConfig, PeerConnectionRoute, PeerIceTransportPolicy, PeerRouteKind;
 
 export 'adapters/firebase_adapter.dart';
 export 'adapters/signaling_adapter.dart';

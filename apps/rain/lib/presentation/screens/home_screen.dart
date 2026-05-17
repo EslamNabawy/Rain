@@ -398,24 +398,36 @@ class _CompactLinkStatusPill extends StatelessWidget {
   const _CompactLinkStatusPill({
     required this.status,
     required this.onTap,
+    required this.compact,
     this.enabled = true,
   });
 
   final _ConnectionStatus status;
   final VoidCallback onTap;
+  final bool compact;
   final bool enabled;
 
   @override
   Widget build(BuildContext context) {
     final scheme = Theme.of(context).colorScheme;
+    final availableWidth = MediaQuery.sizeOf(context).width;
+    final pillWidth = compact ? (availableWidth < 360 ? 104.0 : 116.0) : null;
+    final maxLabelWidth = compact
+        ? pillWidth! - 34
+        : availableWidth < 380
+        ? 64.0
+        : 94.0;
 
-    return Material(
+    final pill = Material(
       color: Colors.transparent,
       child: InkWell(
         onTap: enabled ? onTap : null,
         borderRadius: BorderRadius.circular(999),
         child: Ink(
-          padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 7),
+          padding: EdgeInsets.symmetric(
+            horizontal: compact ? 8 : 10,
+            vertical: compact ? 8 : 7,
+          ),
           decoration: BoxDecoration(
             color: status.color.withValues(alpha: 0.13),
             borderRadius: BorderRadius.circular(999),
@@ -442,26 +454,37 @@ class _CompactLinkStatusPill extends StatelessWidget {
                   ),
                 ),
               const SizedBox(width: 7),
-              Text(
-                status.label,
-                maxLines: 1,
-                overflow: TextOverflow.ellipsis,
-                style: Theme.of(context).textTheme.labelMedium?.copyWith(
-                  color: status.color,
-                  fontWeight: FontWeight.w900,
+              ConstrainedBox(
+                constraints: BoxConstraints(maxWidth: maxLabelWidth),
+                child: Text(
+                  status.label,
+                  maxLines: 1,
+                  overflow: TextOverflow.ellipsis,
+                  style: Theme.of(context).textTheme.labelMedium?.copyWith(
+                    color: status.color,
+                    fontWeight: FontWeight.w900,
+                  ),
                 ),
               ),
-              const SizedBox(width: 4),
-              Icon(
-                Icons.tune_rounded,
-                size: 14,
-                color: scheme.onSurface.withValues(alpha: 0.46),
-              ),
+              if (!compact && availableWidth >= 340) ...<Widget>[
+                const SizedBox(width: 4),
+                Icon(
+                  Icons.tune_rounded,
+                  size: 14,
+                  color: scheme.onSurface.withValues(alpha: 0.46),
+                ),
+              ],
             ],
           ),
         ),
       ),
     );
+
+    if (!compact) {
+      return pill;
+    }
+
+    return SizedBox(width: pillWidth, height: 40, child: pill);
   }
 }
 
@@ -490,10 +513,19 @@ class _ConnectionActionButton extends StatelessWidget {
     final label = isConnected ? 'Disconnect' : 'Connect';
 
     if (compact) {
-      return IconButton.filledTonal(
-        tooltip: label,
-        onPressed: enabled ? action : null,
-        icon: Icon(icon),
+      return SizedBox.square(
+        dimension: 40,
+        child: IconButton.filledTonal(
+          tooltip: label,
+          onPressed: enabled ? action : null,
+          style: const ButtonStyle(
+            tapTargetSize: MaterialTapTargetSize.shrinkWrap,
+            minimumSize: WidgetStatePropertyAll(Size.square(40)),
+            fixedSize: WidgetStatePropertyAll(Size.square(40)),
+            padding: WidgetStatePropertyAll(EdgeInsets.zero),
+          ),
+          icon: Icon(icon, size: 20),
+        ),
       );
     }
 
@@ -1122,6 +1154,7 @@ class _ChatPanelState extends ConsumerState<_ChatPanel> {
         _CompactLinkStatusPill(
           status: connectionStatus,
           enabled: canChat,
+          compact: widget.isCompact,
           onTap: openLinkDialog,
         ),
         const SizedBox(width: 8),
@@ -1155,6 +1188,7 @@ class _ChatPanelState extends ConsumerState<_ChatPanel> {
       context: context,
       builder: (BuildContext dialogContext) {
         final scheme = Theme.of(dialogContext).colorScheme;
+        final maxDialogHeight = MediaQuery.sizeOf(dialogContext).height * 0.64;
 
         return AlertDialog(
           titlePadding: const EdgeInsets.fromLTRB(20, 18, 8, 0),
@@ -1180,81 +1214,87 @@ class _ChatPanelState extends ConsumerState<_ChatPanel> {
             ],
           ),
           content: ConstrainedBox(
-            constraints: const BoxConstraints(maxWidth: 420),
-            child: Column(
-              mainAxisSize: MainAxisSize.min,
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: <Widget>[
-                RainMiniStatusChip(
-                  label: connectionStatus.label,
-                  color: connectionStatus.color,
-                ),
-                const SizedBox(height: 12),
-                Text(
-                  connectionStatus.detail,
-                  style: Theme.of(dialogContext).textTheme.bodyMedium?.copyWith(
-                    color: scheme.onSurface.withValues(alpha: 0.72),
+            constraints: BoxConstraints(
+              maxWidth: 420,
+              maxHeight: maxDialogHeight,
+            ),
+            child: SingleChildScrollView(
+              child: Column(
+                mainAxisSize: MainAxisSize.min,
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: <Widget>[
+                  RainMiniStatusChip(
+                    label: connectionStatus.label,
+                    color: connectionStatus.color,
                   ),
-                ),
-                const SizedBox(height: 16),
-                Wrap(
-                  spacing: 10,
-                  runSpacing: 10,
-                  children: <Widget>[
-                    _LinkStatCard(label: 'Route', value: diagnostics.label),
-                    _LinkStatCard(
-                      label: 'Pair',
-                      value: diagnostics.selectedCandidatePairId ?? 'Unknown',
-                    ),
-                    _LinkStatCard(
-                      label: 'Local',
-                      value: _candidateLabel(route.localCandidateType),
-                    ),
-                    _LinkStatCard(
-                      label: 'Remote',
-                      value: _candidateLabel(route.remoteCandidateType),
-                    ),
-                    _LinkStatCard(
-                      label: 'Protocol',
-                      value: _protocolLabel(route),
-                    ),
-                    _LinkStatCard(label: 'RTT', value: _rttLabel(route.rtt)),
-                    _LinkStatCard(
-                      label: 'Bitrate',
-                      value: _bitrateLabel(route.bitrate),
-                    ),
-                    _LinkStatCard(
-                      label: 'Room',
-                      value: diagnostics.roomId ?? 'Not opened',
-                    ),
-                    _LinkStatCard(
-                      label: 'Role',
-                      value: diagnostics.isOfferOwner == null
-                          ? 'None'
-                          : diagnostics.isOfferOwner!
-                          ? 'Offer'
-                          : 'Answer',
-                    ),
-                    _LinkStatCard(
-                      label: 'Retries',
-                      value: '${diagnostics.retryAttempt}',
-                    ),
-                    _LinkStatCard(
-                      label: 'Updated',
-                      value: updatedAt == null
-                          ? 'Never'
-                          : _formatMessageTime(updatedAt),
+                  const SizedBox(height: 12),
+                  Text(
+                    connectionStatus.detail,
+                    style: Theme.of(dialogContext).textTheme.bodyMedium
+                        ?.copyWith(
+                          color: scheme.onSurface.withValues(alpha: 0.72),
+                        ),
+                  ),
+                  const SizedBox(height: 16),
+                  Wrap(
+                    spacing: 10,
+                    runSpacing: 10,
+                    children: <Widget>[
+                      _LinkStatCard(label: 'Route', value: diagnostics.label),
+                      _LinkStatCard(
+                        label: 'Pair',
+                        value: diagnostics.selectedCandidatePairId ?? 'Unknown',
+                      ),
+                      _LinkStatCard(
+                        label: 'Local',
+                        value: _candidateLabel(route.localCandidateType),
+                      ),
+                      _LinkStatCard(
+                        label: 'Remote',
+                        value: _candidateLabel(route.remoteCandidateType),
+                      ),
+                      _LinkStatCard(
+                        label: 'Protocol',
+                        value: _protocolLabel(route),
+                      ),
+                      _LinkStatCard(label: 'RTT', value: _rttLabel(route.rtt)),
+                      _LinkStatCard(
+                        label: 'Bitrate',
+                        value: _bitrateLabel(route.bitrate),
+                      ),
+                      _LinkStatCard(
+                        label: 'Room',
+                        value: diagnostics.roomId ?? 'Not opened',
+                      ),
+                      _LinkStatCard(
+                        label: 'Role',
+                        value: diagnostics.isOfferOwner == null
+                            ? 'None'
+                            : diagnostics.isOfferOwner!
+                            ? 'Offer'
+                            : 'Answer',
+                      ),
+                      _LinkStatCard(
+                        label: 'Retries',
+                        value: '${diagnostics.retryAttempt}',
+                      ),
+                      _LinkStatCard(
+                        label: 'Updated',
+                        value: updatedAt == null
+                            ? 'Never'
+                            : _formatMessageTime(updatedAt),
+                      ),
+                    ],
+                  ),
+                  if (diagnostics.lastError != null) ...<Widget>[
+                    const SizedBox(height: 14),
+                    Text(
+                      diagnostics.lastError!,
+                      style: TextStyle(color: scheme.error),
                     ),
                   ],
-                ),
-                if (diagnostics.lastError != null) ...<Widget>[
-                  const SizedBox(height: 14),
-                  Text(
-                    diagnostics.lastError!,
-                    style: TextStyle(color: scheme.error),
-                  ),
                 ],
-              ],
+              ),
             ),
           ),
           actions: <Widget>[

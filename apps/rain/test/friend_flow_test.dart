@@ -881,7 +881,12 @@ void main() {
           ..emitFileMessage('bob', Uint8List.fromList(<int>[1, 2, 3]))
           ..emitFileMessage(
             'bob',
-            FileTransferFrame.complete('transfer-1').encode(),
+            FileTransferFrame.complete(
+              transferId: 'transfer-1',
+              finalByteCount: 3,
+              sha256:
+                  '039058c6f2c0cb492c533b0a4d14ef77cc0f78abccced5287d84a1a2011cfb81',
+            ).encode(),
           );
 
         await _waitForTransferState(
@@ -897,7 +902,14 @@ void main() {
         expect(await receivedFile.readAsBytes(), <int>[1, 2, 3]);
         expect(
           brain.sentFilePayloads,
-          contains(FileTransferFrame.received('transfer-1').encode()),
+          contains(
+            FileTransferFrame.received(
+              transferId: 'transfer-1',
+              finalByteCount: 3,
+              sha256:
+                  '039058c6f2c0cb492c533b0a4d14ef77cc0f78abccced5287d84a1a2011cfb81',
+            ).encode(),
+          ),
         );
       } finally {
         await runtime.dispose();
@@ -908,7 +920,7 @@ void main() {
     });
 
     test(
-      'zero-byte incoming files complete without a chunk temp file',
+      'incoming file packet carries chunk metadata and bytes together',
       () async {
         final adapter = NoopSignalingAdapter();
         await adapter.register('bob', 'bobpw');
@@ -927,7 +939,7 @@ void main() {
         await brain.connect('bob');
         brain.markConnected('bob');
         final tempDir = Directory.systemTemp.createTempSync(
-          'rain_empty_file_receive_test_',
+          'rain_file_packet_receive_test_',
         );
         final transferStore = FileTransferStore(db);
         final runtime = RainRuntimeController(
@@ -951,34 +963,58 @@ void main() {
           brain.emitFileMessage(
             'bob',
             FileTransferFrame.offer(
-              transferId: 'empty-transfer',
-              messageId: 'empty-message',
-              fileName: 'empty.txt',
-              fileSize: 0,
+              transferId: 'packet-transfer',
+              messageId: 'packet-message',
+              fileName: 'packet.bin',
+              fileSize: 4,
               sentAt: DateTime.now().millisecondsSinceEpoch,
               seq: 0,
             ).encode(),
           );
           await _waitForTransferState(
             db,
-            'empty-transfer',
+            'packet-transfer',
             FileTransferState.offered,
           );
-          await runtime.acceptFileTransfer('empty-transfer');
-          brain.emitFileMessage(
-            'bob',
-            FileTransferFrame.complete('empty-transfer').encode(),
+          await runtime.acceptFileTransfer('packet-transfer');
+          await _waitForTransferState(
+            db,
+            'packet-transfer',
+            FileTransferState.receiving,
           );
+
+          final payload = Uint8List.fromList(<int>[9, 8, 7, 6]);
+          brain
+            ..emitFileMessage(
+              'bob',
+              FileTransferChunkPacket(
+                frame: FileTransferFrame.chunk(
+                  transferId: 'packet-transfer',
+                  index: 0,
+                  offset: 0,
+                  byteCount: payload.lengthInBytes,
+                ),
+                payload: payload,
+              ).encode(),
+            )
+            ..emitFileMessage(
+              'bob',
+              FileTransferFrame.complete(
+                transferId: 'packet-transfer',
+                finalByteCount: 4,
+                sha256:
+                    '63d987d1c6d69751c17297f410f5b3547a65d096a8993b35bcb4f9cad054f176',
+              ).encode(),
+            );
 
           await _waitForTransferState(
             db,
-            'empty-transfer',
+            'packet-transfer',
             FileTransferState.completed,
           );
-          final transfer = await transferStore.loadById('empty-transfer');
+          final transfer = await transferStore.loadById('packet-transfer');
           final receivedFile = File(transfer!.localPath!);
-          expect(await receivedFile.exists(), isTrue);
-          expect(await receivedFile.length(), 0);
+          expect(await receivedFile.readAsBytes(), <int>[9, 8, 7, 6]);
         } finally {
           await runtime.dispose();
           if (tempDir.existsSync()) {
@@ -987,6 +1023,89 @@ void main() {
         }
       },
     );
+
+    test('zero-byte incoming files complete without a chunk temp file', () async {
+      final adapter = NoopSignalingAdapter();
+      await adapter.register('bob', 'bobpw');
+      await adapter.upsertFriendship('alice', 'bob');
+      await db
+          .into(db.friends)
+          .insert(
+            FriendsCompanion.insert(
+              username: 'bob',
+              displayName: 'Bob',
+              state: 'friend',
+              addedAt: 0,
+            ),
+          );
+      final brain = TestSessionManager();
+      await brain.connect('bob');
+      brain.markConnected('bob');
+      final tempDir = Directory.systemTemp.createTempSync(
+        'rain_empty_file_receive_test_',
+      );
+      final transferStore = FileTransferStore(db);
+      final runtime = RainRuntimeController(
+        selfIdentity: alice,
+        adapter: adapter,
+        brain: brain,
+        database: db,
+        friendStore: FriendStore(db),
+        messageStore: MessageStore(db),
+        offlineQueueStore: OfflineQueueStore(db),
+        messageDeliveryService: MessageDeliveryService(
+          messageStore: MessageStore(db),
+          offlineQueueStore: OfflineQueueStore(db),
+        ),
+        fileTransferStore: transferStore,
+        documentsDirectoryProvider: () async => tempDir,
+      );
+
+      try {
+        await runtime.start();
+        brain.emitFileMessage(
+          'bob',
+          FileTransferFrame.offer(
+            transferId: 'empty-transfer',
+            messageId: 'empty-message',
+            fileName: 'empty.txt',
+            fileSize: 0,
+            sentAt: DateTime.now().millisecondsSinceEpoch,
+            seq: 0,
+          ).encode(),
+        );
+        await _waitForTransferState(
+          db,
+          'empty-transfer',
+          FileTransferState.offered,
+        );
+        await runtime.acceptFileTransfer('empty-transfer');
+        brain.emitFileMessage(
+          'bob',
+          FileTransferFrame.complete(
+            transferId: 'empty-transfer',
+            finalByteCount: 0,
+            sha256:
+                'e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855',
+          ).encode(),
+        );
+
+        await _waitForTransferState(
+          db,
+          'empty-transfer',
+          FileTransferState.completed,
+        );
+        final transfer = await transferStore.loadById('empty-transfer');
+        final receivedFile = File(transfer!.localPath!);
+        expect(await receivedFile.exists(), isTrue);
+        expect(await receivedFile.length(), 0);
+      } finally {
+        await runtime.dispose();
+        if (tempDir.existsSync()) {
+          tempDir.deleteSync(recursive: true);
+        }
+      }
+    });
 
     test('resendMessage stays queued while disconnected', () async {
       final adapter = NoopSignalingAdapter();

@@ -1,12 +1,25 @@
 import 'dart:convert';
+import 'dart:typed_data';
 
 import 'package:collection/collection.dart';
 
 const int fileTransferProtocolVersion = 1;
 const int maxFileTransferBytes = 100 * 1024 * 1024;
-const int fileTransferChunkBytes = 64 * 1024;
+const int fileTransferChunkBytes = 32 * 1024;
 const int fileTransferHighWatermarkBytes = 4 * 1024 * 1024;
 const int fileTransferLowWatermarkBytes = 1024 * 1024;
+
+const List<int> _fileChunkPacketMagic = <int>[
+  0x52,
+  0x41,
+  0x49,
+  0x4E,
+  0x46,
+  0x49,
+  0x4C,
+  0x45,
+  0x31,
+]; // RAINFILE1
 
 class FileTransferFrame {
   const FileTransferFrame({
@@ -21,6 +34,8 @@ class FileTransferFrame {
     this.index,
     this.offset,
     this.byteCount,
+    this.finalByteCount,
+    this.sha256,
     this.reason,
   });
 
@@ -44,6 +59,8 @@ class FileTransferFrame {
   final int? index;
   final int? offset;
   final int? byteCount;
+  final int? finalByteCount;
+  final String? sha256;
   final String? reason;
 
   factory FileTransferFrame.offer({
@@ -94,12 +111,30 @@ class FileTransferFrame {
     );
   }
 
-  factory FileTransferFrame.complete(String transferId) {
-    return FileTransferFrame(type: completeType, transferId: transferId);
+  factory FileTransferFrame.complete({
+    required String transferId,
+    required int finalByteCount,
+    required String sha256,
+  }) {
+    return FileTransferFrame(
+      type: completeType,
+      transferId: transferId,
+      finalByteCount: finalByteCount,
+      sha256: sha256,
+    );
   }
 
-  factory FileTransferFrame.received(String transferId) {
-    return FileTransferFrame(type: receivedType, transferId: transferId);
+  factory FileTransferFrame.received({
+    required String transferId,
+    required int finalByteCount,
+    required String sha256,
+  }) {
+    return FileTransferFrame(
+      type: receivedType,
+      transferId: transferId,
+      finalByteCount: finalByteCount,
+      sha256: sha256,
+    );
   }
 
   factory FileTransferFrame.cancel(String transferId, String reason) {
@@ -150,6 +185,8 @@ class FileTransferFrame {
       index: (decoded['index'] as num?)?.toInt(),
       offset: (decoded['offset'] as num?)?.toInt(),
       byteCount: (decoded['byteCount'] as num?)?.toInt(),
+      finalByteCount: (decoded['finalByteCount'] as num?)?.toInt(),
+      sha256: decoded['sha256'] as String?,
       reason: decoded['reason'] as String?,
     ).._validate();
   }
@@ -181,6 +218,8 @@ class FileTransferFrame {
       if (index != null) 'index': index,
       if (offset != null) 'offset': offset,
       if (byteCount != null) 'byteCount': byteCount,
+      if (finalByteCount != null) 'finalByteCount': finalByteCount,
+      if (sha256 != null) 'sha256': sha256,
       if (reason != null) 'reason': reason,
     };
   }
@@ -205,6 +244,19 @@ class FileTransferFrame {
         }
         if (index! < 0 || offset! < 0 || byteCount! <= 0) {
           throw const FormatException('File chunk has invalid counters.');
+        }
+        break;
+      case completeType:
+      case receivedType:
+        if (finalByteCount == null || sha256 == null || sha256!.isEmpty) {
+          throw const FormatException(
+            'File completion frame is missing integrity fields.',
+          );
+        }
+        if (finalByteCount! < 0) {
+          throw const FormatException(
+            'File completion byte count cannot be negative.',
+          );
         }
         break;
     }
@@ -241,6 +293,78 @@ class FileMessageContent {
       fileSize: (decoded['fileSize'] as num).toInt(),
       mimeType: decoded['mimeType'] as String?,
     );
+  }
+}
+
+class FileTransferChunkPacket {
+  const FileTransferChunkPacket({required this.frame, required this.payload});
+
+  final FileTransferFrame frame;
+  final Uint8List payload;
+
+  Uint8List encode() {
+    if (frame.type != FileTransferFrame.chunkType) {
+      throw StateError('File chunk packet requires a chunk frame.');
+    }
+    if (frame.byteCount != payload.lengthInBytes) {
+      throw StateError('File chunk packet byte count does not match payload.');
+    }
+    final header = Uint8List.fromList(utf8.encode(frame.encode()));
+    final bytes = Uint8List(
+      _fileChunkPacketMagic.length + 4 + header.lengthInBytes + payload.length,
+    );
+    bytes.setRange(0, _fileChunkPacketMagic.length, _fileChunkPacketMagic);
+    final data = ByteData.sublistView(bytes);
+    data.setUint32(_fileChunkPacketMagic.length, header.lengthInBytes);
+    final headerOffset = _fileChunkPacketMagic.length + 4;
+    bytes.setRange(headerOffset, headerOffset + header.lengthInBytes, header);
+    bytes.setRange(
+      headerOffset + header.lengthInBytes,
+      bytes.lengthInBytes,
+      payload,
+    );
+    return bytes;
+  }
+
+  static FileTransferChunkPacket? tryParse(Uint8List bytes) {
+    if (!_hasMagic(bytes)) {
+      return null;
+    }
+    final headerLengthOffset = _fileChunkPacketMagic.length;
+    if (bytes.lengthInBytes < headerLengthOffset + 4) {
+      throw const FormatException('File chunk packet header is missing.');
+    }
+    final data = ByteData.sublistView(bytes);
+    final headerLength = data.getUint32(headerLengthOffset);
+    final headerOffset = headerLengthOffset + 4;
+    final payloadOffset = headerOffset + headerLength;
+    if (headerLength <= 0 || payloadOffset > bytes.lengthInBytes) {
+      throw const FormatException('File chunk packet header is invalid.');
+    }
+    final header = utf8.decode(bytes.sublist(headerOffset, payloadOffset));
+    final frame = FileTransferFrame.parse(header);
+    if (frame.type != FileTransferFrame.chunkType) {
+      throw const FormatException('File chunk packet must contain a chunk.');
+    }
+    final payload = Uint8List.sublistView(bytes, payloadOffset);
+    if (frame.byteCount != payload.lengthInBytes) {
+      throw const FormatException(
+        'File chunk packet byte count does not match payload.',
+      );
+    }
+    return FileTransferChunkPacket(frame: frame, payload: payload);
+  }
+
+  static bool _hasMagic(Uint8List bytes) {
+    if (bytes.lengthInBytes < _fileChunkPacketMagic.length) {
+      return false;
+    }
+    for (var index = 0; index < _fileChunkPacketMagic.length; index++) {
+      if (bytes[index] != _fileChunkPacketMagic[index]) {
+        return false;
+      }
+    }
+    return true;
   }
 }
 
