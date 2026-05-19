@@ -159,9 +159,7 @@ void main() {
 
     expect(
       defines,
-      contains(
-        'https://us-central1-rain-8fb4b.cloudfunctions.net/rainTurnCredentials',
-      ),
+      contains('https://rain-p2p-turn.duckdns.org/rainTurnCredentials'),
     );
     expect(defines, contains('"RAIN_ALLOW_PUBLIC_TURN": "false"'));
     expect(defines, contains('stun:stun.l.google.com:19302'));
@@ -189,6 +187,32 @@ void main() {
     expect(functions, contains('provider: "twilio"'));
     expect(functions, contains('provider: "cloudflare"'));
     expect(functions, contains('ttlSeconds'));
+  });
+
+  test('self-hosted TURN broker uses Coturn HMAC credentials', () {
+    final broker = _repoFile('backend/turn/src/credentials.js');
+    final server = _repoFile('backend/turn/src/server.js');
+    final coturn = _repoFile('backend/turn/coturn/turnserver.conf.template');
+    final docs = _repoFile('backend/turn/README.md');
+
+    expect(broker, contains('provider: "coturn-hmac"'));
+    expect(broker, contains('createHmac("sha1"'));
+    expect(server, contains('createRateLimiter'));
+    expect(server, contains('rate_limited'));
+    expect(server, contains('Retry-After'));
+    expect(server, contains('verifyIdToken(token, true)'));
+    expect(broker, contains(r'turns:${hostname}:5349?transport=tcp'));
+    expect(server, contains('/rainTurnCredentials'));
+    expect(coturn, contains('use-auth-secret'));
+    expect(coturn, contains('max-bps=512000'));
+    expect(coturn, contains('no-loopback-peers'));
+    expect(coturn, contains('denied-peer-ip=10.0.0.0-10.255.255.255'));
+    expect(coturn, contains('denied-peer-ip=172.16.0.0-172.31.255.255'));
+    expect(coturn, contains('denied-peer-ip=192.168.0.0-192.168.255.255'));
+    expect(coturn, contains('min-port=49160'));
+    expect(docs, contains('Oracle Always Free'));
+    expect(docs, contains('rain-p2p-turn.duckdns.org'));
+    expect(docs, contains('70 concurrent relayed sessions'));
   });
 
   test('release script packages universal and per-ABI Android APKs', () {
@@ -265,15 +289,13 @@ void main() {
     expect(workflow, isNot(contains('.zip')));
   });
 
-  test('CI relay-test artifacts require live broker and portable output', () {
+  test('CI demo artifacts use OpenRelay and portable output', () {
     final workflow = _repoFile('.github/workflows/ci.yml');
 
-    expect(workflow, contains('Verify relay-test TURN broker endpoint'));
-    expect(workflow, contains('RAIN_RELEASE_DART_DEFINES_JSON'));
-    expect(
-      workflow,
-      contains('path: artifacts/Rain-Relay-Test-Windows-x64-Build'),
-    );
+    expect(workflow, contains('TURN Backend'));
+    expect(workflow, contains('Prepare OpenRelay demo dart defines'));
+    expect(workflow, contains('-AllowPublicTurnForDemo'));
+    expect(workflow, contains('path: artifacts/Rain-Demo-Windows-x64-Build'));
     expect(
       workflow,
       contains(
@@ -282,10 +304,10 @@ void main() {
     );
     expect(
       workflow,
-      isNot(contains('path: artifacts/Rain-Relay-Test-Windows-x64-Build.zip')),
+      isNot(contains('path: artifacts/Rain-Demo-Windows-x64-Build.zip')),
     );
-    expect(workflow, contains('Rain-Relay-Test-android-armeabi-v7a.apk'));
-    expect(workflow, contains('Rain-Relay-Test-android-arm64-v8a.apk'));
-    expect(workflow, contains('Rain-Relay-Test-android-x86_64.apk'));
+    expect(workflow, contains('Rain-Demo-Android-ARM-v7-Build.apk'));
+    expect(workflow, contains('Rain-Demo-Android-ARM-v8-v9-Build.apk'));
+    expect(workflow, contains('Rain-Demo-Android-x86_64-Build.apk'));
   });
 }
