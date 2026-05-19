@@ -1,0 +1,22 @@
+[Unit]
+Description=Rain TURN credential broker
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=simple
+User=rain-turn
+Group=rain-turn
+WorkingDirectory=/opt/rain-turn-broker
+EnvironmentFile=/etc/rain-turn-broker.env
+ExecStart=/usr/bin/node /opt/rain-turn-broker/src/server.js
+Restart=always
+RestartSec=3
+NoNewPrivileges=true
+PrivateTmp=true
+ProtectSystem=full
+ProtectHome=true
+ReadWritePaths=/opt/rain-turn-broker
+
+[Install]
+WantedBy=multi-user.target

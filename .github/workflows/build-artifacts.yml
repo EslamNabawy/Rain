@@ -36,7 +36,7 @@ concurrency:
 
 env:
   FLUTTER_VERSION: '3.38.5'
-  BUILD_PROFILE: ${{ github.event_name == 'workflow_dispatch' && inputs.build_profile || 'relay-test' }}
+  BUILD_PROFILE: ${{ github.event_name == 'workflow_dispatch' && inputs.build_profile || 'demo' }}
 
 jobs:
   build-windows:

@@ -1,0 +1,17 @@
+{
+  "name": "rain-turn-broker",
+  "version": "0.1.0",
+  "private": true,
+  "description": "Rain self-hosted Coturn credential broker",
+  "main": "src/server.js",
+  "scripts": {
+    "lint": "node --check src/credentials.js && node --check src/server.js && node --check test/credentials.test.js && node --check test/server.test.js",
+    "test": "node --test test/*.test.js"
+  },
+  "engines": {
+    "node": ">=20"
+  },
+  "dependencies": {
+    "firebase-admin": "^12.7.0"
+  }
+}

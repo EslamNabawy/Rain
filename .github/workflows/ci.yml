@@ -256,6 +256,31 @@ jobs:
         working-directory: backend/firebase/functions
         run: npm test --if-present
 
+  turn-backend:
+    name: TURN Backend
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v5
+
+      - uses: actions/setup-node@v6
+        with:
+          node-version: ${{ env.NODE_VERSION }}
+          cache: npm
+          cache-dependency-path: backend/turn/package-lock.json
+
+      - name: Install TURN broker dependencies
+        working-directory: backend/turn
+        run: npm ci --ignore-scripts --no-audit
+
+      - name: Lint TURN broker
+        working-directory: backend/turn
+        run: npm run lint
+
+      - name: Test TURN broker
+        working-directory: backend/turn
+        run: npm test
+
   android-build:
     name: Android Build
     runs-on: ubuntu-latest
@@ -320,6 +345,7 @@ jobs:
       - static-analysis
       - tests
       - firebase-backend
+      - turn-backend
       - android-build
     steps:
       - name: Fail if any required job failed
@@ -329,6 +355,7 @@ jobs:
           test "${{ needs.static-analysis.result }}" = "success"
           test "${{ needs.tests.result }}" = "success"
           test "${{ needs.firebase-backend.result }}" = "success"
+          test "${{ needs.turn-backend.result }}" = "success"
           test "${{ needs.android-build.result }}" = "success"
 
   release-artifacts:
@@ -358,43 +385,16 @@ jobs:
       - name: Flutter doctor
         run: flutter doctor -v
 
-      - name: Prepare relay-test dart defines
+      - name: Prepare OpenRelay demo dart defines
         shell: pwsh
-        env:
-          RAIN_RELEASE_DART_DEFINES_JSON: ${{ secrets.RAIN_RELEASE_DART_DEFINES_JSON }}
         run: |
-          if ([string]::IsNullOrWhiteSpace($env:RAIN_RELEASE_DART_DEFINES_JSON)) {
-            throw 'RAIN_RELEASE_DART_DEFINES_JSON secret is required for CI relay-test artifacts.'
-          }
-          $definesPath = Join-Path $env:RUNNER_TEMP 'rain-relay-test-defines.json'
-          Set-Content -LiteralPath $definesPath -Value $env:RAIN_RELEASE_DART_DEFINES_JSON -Encoding utf8NoBOM
+          $definesPath = Join-Path $env:RUNNER_TEMP 'rain-openrelay-demo-defines.json'
+          Copy-Item -LiteralPath 'apps\rain\tool\dart_defines.example.json' -Destination $definesPath -Force
           $env:RAIN_DART_DEFINES_FILE = $definesPath
           "RAIN_DART_DEFINES_FILE=$definesPath" | Out-File -FilePath $env:GITHUB_ENV -Encoding utf8 -Append
 
           if (-not (Test-Path -LiteralPath $env:RAIN_DART_DEFINES_FILE)) {
             throw "Dart defines file not found: $env:RAIN_DART_DEFINES_FILE"
-          }
-
-      - name: Verify relay-test TURN broker endpoint
-        shell: pwsh
-        run: |
-          $defines = Get-Content -Raw -LiteralPath $env:RAIN_DART_DEFINES_FILE | ConvertFrom-Json
-          $brokerUrl = [string]$defines.RAIN_TURN_BROKER_URL
-          if ([string]::IsNullOrWhiteSpace($brokerUrl)) {
-            throw 'Relay-test build requires RAIN_TURN_BROKER_URL.'
-          }
-
-          try {
-            $response = Invoke-WebRequest -Uri $brokerUrl -Method POST -TimeoutSec 20 -SkipHttpErrorCheck
-          } catch {
-            throw "TURN broker endpoint is unreachable: $($_.Exception.Message)"
-          }
-
-          if ($response.StatusCode -eq 404) {
-            throw "TURN broker endpoint returned 404. Deploy rainTurnCredentials before building relay-test artifacts: $brokerUrl"
-          }
-          if ($response.StatusCode -ne 401) {
-            throw "Unauthenticated TURN broker preflight expected HTTP 401, got HTTP $($response.StatusCode)."
           }
 
       - name: Build Windows EXE and all Android APK architectures
@@ -404,7 +404,7 @@ jobs:
             -Platform all `
             -OutputDir artifacts `
             -DartDefinesFile $env:RAIN_DART_DEFINES_FILE `
-            -RelayTest `
+            -AllowPublicTurnForDemo `
             -UseDemoAndroidSigningKey `
             -Clean
 
@@ -412,12 +412,11 @@ jobs:
         shell: pwsh
         run: |
           $expected = @(
-            @{ Label = 'Windows portable EXE'; Path = 'artifacts\Rain-Relay-Test-Windows-x64-Build\rain.exe' },
-            @{ Label = 'Android universal APK'; Path = 'artifacts\Rain-Relay-Test-android-universal.apk' },
-            @{ Label = 'Android default/universal APK alias'; Path = 'artifacts\Rain-Relay-Test-android.apk' },
-            @{ Label = 'Android ARM v7 APK (armeabi-v7a)'; Path = 'artifacts\Rain-Relay-Test-android-armeabi-v7a.apk' },
-            @{ Label = 'Android ARM v8/v9 APK (arm64-v8a)'; Path = 'artifacts\Rain-Relay-Test-android-arm64-v8a.apk' },
-            @{ Label = 'Android x86_64 APK'; Path = 'artifacts\Rain-Relay-Test-android-x86_64.apk' }
+            @{ Label = 'Windows portable EXE'; Path = 'artifacts\Rain-Demo-Windows-x64-Build\rain.exe' },
+            @{ Label = 'Android universal APK'; Path = 'artifacts\Rain-Demo-Android-Universal-Build.apk' },
+            @{ Label = 'Android ARM v7 APK (armeabi-v7a)'; Path = 'artifacts\Rain-Demo-Android-ARM-v7-Build.apk' },
+            @{ Label = 'Android ARM v8/v9 APK (arm64-v8a)'; Path = 'artifacts\Rain-Demo-Android-ARM-v8-v9-Build.apk' },
+            @{ Label = 'Android x86_64 APK'; Path = 'artifacts\Rain-Demo-Android-x86_64-Build.apk' }
           )
           foreach ($artifact in $expected) {
             $path = $artifact.Path
@@ -426,7 +425,7 @@ jobs:
             }
             Write-Host "Verified $($artifact.Label): $path"
           }
-          $nestedArchives = Get-ChildItem -LiteralPath 'artifacts\Rain-Relay-Test-Windows-x64-Build' -Recurse -File |
+          $nestedArchives = Get-ChildItem -LiteralPath 'artifacts\Rain-Demo-Windows-x64-Build' -Recurse -File |
             Where-Object { $_.Extension -in @('.zip', '.rar', '.7z') }
           if ($nestedArchives) {
             $archiveList = ($nestedArchives | ForEach-Object { $_.FullName }) -join "`n"
@@ -436,21 +435,20 @@ jobs:
       - name: Upload Windows portable EXE bundle
         uses: actions/upload-artifact@v7
         with:
-          name: Rain-Relay-Test-Windows-x64-Build
-          path: artifacts/Rain-Relay-Test-Windows-x64-Build
+          name: Rain-Demo-Windows-x64-Build
+          path: artifacts/Rain-Demo-Windows-x64-Build
           if-no-files-found: error
           retention-days: ${{ env.ARTIFACT_RETENTION_RELEASE }}
 
       - name: Upload Android APKs all architectures
         uses: actions/upload-artifact@v7
         with:
-          name: Rain-Relay-Test-Android-Builds
+          name: Rain-Demo-Android-Builds
           path: |
-            artifacts/Rain-Relay-Test-android.apk
-            artifacts/Rain-Relay-Test-android-universal.apk
-            artifacts/Rain-Relay-Test-android-arm64-v8a.apk
-            artifacts/Rain-Relay-Test-android-armeabi-v7a.apk
-            artifacts/Rain-Relay-Test-android-x86_64.apk
+            artifacts/Rain-Demo-Android-Universal-Build.apk
+            artifacts/Rain-Demo-Android-ARM-v8-v9-Build.apk
+            artifacts/Rain-Demo-Android-ARM-v7-Build.apk
+            artifacts/Rain-Demo-Android-x86_64-Build.apk
           if-no-files-found: error
           retention-days: ${{ env.ARTIFACT_RETENTION_RELEASE }}
 
