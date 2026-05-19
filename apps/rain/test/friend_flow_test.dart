@@ -2,6 +2,7 @@ import 'dart:async';
 import 'dart:io';
 import 'dart:typed_data';
 
+import 'package:drift/drift.dart' show driftRuntimeOptions;
 import 'package:drift/native.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:protocol_brain/protocol_brain.dart';
@@ -15,6 +16,16 @@ void main() {
   group('Friend flow', () {
     late RainDatabase db;
     late RainIdentity alice;
+
+    setUpAll(() {
+      // These tests intentionally run two independent in-memory RainDatabase
+      // instances to model two devices in one process.
+      driftRuntimeOptions.dontWarnAboutMultipleDatabases = true;
+    });
+
+    tearDownAll(() {
+      driftRuntimeOptions.dontWarnAboutMultipleDatabases = false;
+    });
 
     setUp(() {
       db = RainDatabase(NativeDatabase.memory());
