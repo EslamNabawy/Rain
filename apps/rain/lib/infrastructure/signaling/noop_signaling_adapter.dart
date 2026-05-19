@@ -1,6 +1,5 @@
 import 'dart:async';
 
-import 'package:flutter_webrtc/flutter_webrtc.dart';
 import 'package:protocol_brain/protocol_brain.dart';
 
 class NoopSignalingAdapter implements SignalingAdapter {
@@ -222,8 +221,12 @@ class NoopSignalingAdapter implements SignalingAdapter {
       _relationshipController(username).stream;
 
   @override
-  Stream<RTCIceCandidate> onICE(String roomId, IceRole role) =>
-      const Stream<RTCIceCandidate>.empty();
+  Stream<IceCandidatePayload> onICE(String roomId, IceRole role) =>
+      const Stream<IceCandidatePayload>.empty();
+
+  @override
+  Stream<IrohAddressPayload> onIrohAddress(String roomId) =>
+      const Stream<IrohAddressPayload>.empty();
 
   @override
   Stream<SDPPayload> onOffer(String roomId) => const Stream<SDPPayload>.empty();
@@ -330,7 +333,13 @@ class NoopSignalingAdapter implements SignalingAdapter {
   Future<void> writeICE(
     String roomId,
     IceRole role,
-    RTCIceCandidate candidate,
+    IceCandidatePayload candidate,
+  ) async {}
+
+  @override
+  Future<void> writeIrohAddress(
+    String roomId,
+    IrohAddressPayload payload,
   ) async {}
 
   @override

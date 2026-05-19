@@ -3,7 +3,9 @@
 ecc-temp/
 .dart_tool/
 **/build/
+**/node_modules/
 backend/firebase/functions/node_modules/
+artifacts/
 final product/*
 !final product/README.txt
 final product/archive/

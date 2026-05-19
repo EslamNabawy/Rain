@@ -59,13 +59,13 @@ class MessageDeliveryService {
     }
   }
 
-  Future<void> handleControlMessage(String rawMessage) async {
+  Future<void> handleControlMessage(String rawMessage, {String? peerId}) async {
     final json = jsonDecode(rawMessage) as Map<String, dynamic>;
     if (json['type'] != 'ack') {
       return;
     }
     final ackId = json['ackId'] as String;
-    await _acknowledge(ackId);
+    await _acknowledge(ackId, peerId: peerId);
   }
 
   Future<void> queueOutgoing(MessageEnvelope envelope) async {
@@ -149,9 +149,16 @@ class MessageDeliveryService {
     );
   }
 
-  Future<void> _acknowledge(String ackId) async {
-    final tracker = _ackTrackers.remove(ackId);
-    tracker?.timer.cancel();
+  Future<void> _acknowledge(String ackId, {String? peerId}) async {
+    final tracker = _ackTrackers[ackId];
+    if (tracker == null) {
+      return;
+    }
+    if (peerId != null && tracker.envelope.to != peerId) {
+      return;
+    }
+    _ackTrackers.remove(ackId);
+    tracker.timer.cancel();
     await _messageStore.markMessageStatus(ackId, MessageStatus.delivered);
     await _offlineQueueStore.remove(ackId);
   }

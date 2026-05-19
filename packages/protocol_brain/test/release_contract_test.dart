@@ -16,6 +16,9 @@ void main() {
     expect(script, contains('[string]\$DartDefinesFile'));
     expect(script, contains('[switch]\$AllowPublicTurnForDemo'));
     expect(script, contains('[switch]\$RelayTest'));
+    expect(script, contains('[switch]\$ForceRelayOnlySmoke'));
+    expect(script, contains('[string]\$TurnBrokerUrl'));
+    expect(script, contains('[string]\$TurnProviderName'));
     expect(script, contains('[switch]\$UseDemoAndroidSigningKey'));
     expect(
       script,
@@ -80,6 +83,15 @@ void main() {
     );
     expect(script, contains('Production release uses TURN credential broker:'));
     expect(script, contains('Relay test builds require RAIN_TURN_BROKER_URL.'));
+    expect(
+      script,
+      contains(
+        'Relay test builds require -TurnBrokerUrl when -ForceRelayOnlySmoke is set.',
+      ),
+    );
+    expect(script, contains('RAIN_ICE_STRATEGY'));
+    expect(script, contains('RAIN_TURN_PROVIDER_ORDER'));
+    expect(script, contains('rain-relay-test-defines.generated.json'));
     expect(
       script,
       contains('Release TURN servers must include username and credential.'),
@@ -296,13 +308,44 @@ void main() {
     expect(workflow, isNot(contains('.zip')));
   });
 
+  test('build artifacts workflow has explicit relay test profile', () {
+    final workflow = _repoFile('.github/workflows/build-artifacts.yml');
+
+    expect(workflow, contains('build_relay_test'));
+    expect(workflow, contains('relay-test'));
+    expect(workflow, contains('RAIN_TURN_BROKER_URL'));
+    expect(workflow, contains('RAIN_SIGNALING_ENCRYPTION_KEY'));
+    expect(workflow, contains('RAIN_ALLOW_PUBLIC_TURN=false'));
+    expect(
+      workflow,
+      contains('Relay-test build requires RAIN_TURN_BROKER_URL.'),
+    );
+    expect(
+      workflow,
+      contains('Relay-test build requires RAIN_SIGNALING_ENCRYPTION_KEY.'),
+    );
+    expect(workflow, contains('Rain-Relay-Test-Android-Builds'));
+    expect(workflow, contains('Rain-Relay-Test-Windows-x64-Build'));
+  });
+
+  test(
+    'default demo artifacts do not pretend to be production relay artifacts',
+    () {
+      final workflow = _repoFile('.github/workflows/build-artifacts.yml');
+
+      expect(workflow, contains('Rain-Demo-Android-ARM-v7-Build.apk'));
+      expect(workflow, isNot(contains('Rain-Production-OpenRelay')));
+      expect(workflow, isNot(contains('Rain-Release-OpenRelay')));
+    },
+  );
+
   test('CI demo artifacts use OpenRelay and portable output', () {
     final workflow = _repoFile('.github/workflows/ci.yml');
 
     expect(workflow, contains('TURN Backend'));
     expect(workflow, contains('Prepare OpenRelay demo dart defines'));
     expect(workflow, contains('-AllowPublicTurnForDemo'));
-    expect(workflow, contains('path: artifacts/Rain-Demo-Windows-x64-Build'));
+    expect(workflow, contains('artifacts/Rain-Demo-Windows-x64-Build'));
     expect(
       workflow,
       contains(

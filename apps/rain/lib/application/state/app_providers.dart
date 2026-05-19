@@ -7,6 +7,16 @@ import 'package:protocol_brain/protocol_brain.dart';
 import 'package:rain_core/rain_core.dart';
 
 import 'package:rain/application/bootstrap/app_bootstrap.dart';
+import 'package:rain/application/connection_command/connection_command_models.dart';
+import 'package:rain/application/connection_command/connection_command_orchestrator.dart';
+import 'package:rain/application/connection_command/connection_failure_messages.dart';
+import 'package:rain/application/connection_command/runtime_connection_command_transport.dart';
+import 'package:rain/application/connection_command/session_manager_connection_transport.dart';
+import 'package:rain/application/transport/fallback_session_manager.dart';
+import 'package:rain/application/transport/session_manager_composer.dart';
+import 'package:rain/application/transport/turn_relay_probe.dart';
+import 'package:rain/infrastructure/iroh/iroh_bridge_client.dart';
+import 'package:rain/infrastructure/iroh/iroh_session_manager.dart';
 import 'package:rain/infrastructure/services/app_settings_store.dart';
 import 'package:rain/infrastructure/services/background_services.dart';
 import 'package:rain/infrastructure/services/force_update_service.dart';
@@ -153,9 +163,18 @@ final turnCredentialServiceProvider = Provider<TurnCredentialService>((
   final service = TurnCredentialService(
     baseIceServers: environment.iceServers,
     brokerUrl: environment.turnBrokerUrl,
+    enableExperimentalRelay: environment.enableTier3Turn,
   );
   ref.onDispose(service.dispose);
   return service;
+});
+
+final turnRelayProbeProvider = Provider<TurnRelayProbe>((Ref ref) {
+  return TurnRelayProbe(
+    iceServersForAttempt: ref
+        .watch(turnCredentialServiceProvider)
+        .iceServersForAttempt,
+  );
 });
 
 final messageDeliveryServiceProvider = Provider((Ref ref) {
@@ -573,6 +592,37 @@ class FileTransferViewsController
   }
 }
 
+final irohBridgeClientProvider = Provider<IrohBridgeClient?>((Ref ref) {
+  final environment = ref.watch(appEnvironmentProvider);
+  if (!environment.enableIrohFallback || environment.shouldUseFallbackAdapter) {
+    return null;
+  }
+  return IrohBridgeClient(GeneratedIrohNativeApi());
+});
+
+final irohSessionManagerProvider = Provider<SessionManager?>((Ref ref) {
+  final identity = ref.watch(identityProvider).valueOrNull;
+  final environment = ref.watch(appEnvironmentProvider);
+  final bridge = ref.watch(irohBridgeClientProvider);
+
+  if (!environment.enableIrohFallback ||
+      identity == null ||
+      environment.shouldUseFallbackAdapter ||
+      bridge == null) {
+    return null;
+  }
+
+  final manager = IrohSessionManager(
+    selfUsername: identity.username,
+    adapter: ref.watch(adapterProvider),
+    bridge: bridge,
+    alpn: environment.irohAlpn,
+    connectTimeout: environment.irohConnectTimeout,
+  );
+  ref.onDispose(() => unawaited(manager.dispose()));
+  return manager;
+});
+
 final brainProvider = Provider<SessionManager?>((Ref ref) {
   final identity = ref.watch(identityProvider).valueOrNull;
   final environment = ref.watch(appEnvironmentProvider);
@@ -581,10 +631,19 @@ final brainProvider = Provider<SessionManager?>((Ref ref) {
     return null;
   }
 
-  final brain = createDefaultProtocolBrain(
+  final webRtcBrain = createDefaultProtocolBrain(
     selfUsername: identity.username,
     adapter: ref.watch(adapterProvider),
     iceServers: environment.iceServers,
+    enableExperimentalRelay: environment.enableTier3Turn,
+    iceAttemptServersProvider: (IceAttemptDescriptor attempt) {
+      return ref
+          .watch(turnCredentialServiceProvider)
+          .iceServersForAttempt(attempt);
+    },
+    iceAttemptResultRecorder: (IceAttemptResult result) {
+      ref.watch(turnCredentialServiceProvider).recordAttemptResult(result);
+    },
     iceServersProvider: (PeerIceTransportPolicy policy) {
       return ref
           .watch(turnCredentialServiceProvider)
@@ -592,6 +651,16 @@ final brainProvider = Provider<SessionManager?>((Ref ref) {
     },
     connectionMemoryStore: ref.watch(connectionMemoryStoreProvider),
   );
+
+  final brain = composeSessionManager(
+    webRtc: webRtcBrain,
+    iroh: ref.watch(irohSessionManagerProvider),
+    enableIrohFallback: environment.enableIrohFallback,
+    connectTimeout: environment.irohConnectTimeout,
+  );
+  if (brain is FallbackSessionManager) {
+    ref.onDispose(() => unawaited(brain.dispose()));
+  }
 
   return brain;
 });
@@ -671,9 +740,60 @@ final connectionsProvider =
       ConnectionsController.new,
     );
 
+final connectionCommandOrchestratorProvider =
+    Provider<ConnectionCommandOrchestrator?>((Ref ref) {
+      final runtime = ref.watch(runtimeControllerProvider).valueOrNull;
+      final brain = runtime?.brain;
+      if (runtime == null || brain == null) {
+        return null;
+      }
+      final transport = RuntimeConnectionCommandTransport(
+        runtime: runtime,
+        delegate: SessionManagerConnectionTransport(webRtc: brain),
+      );
+      final orchestrator = ConnectionCommandOrchestrator(transport: transport);
+      ref.onDispose(orchestrator.dispose);
+      return orchestrator;
+    });
+
+final connectionTimelineProvider =
+    StreamProvider.family<ConnectionTimeline?, String>((
+      Ref ref,
+      String peerId,
+    ) async* {
+      final orchestrator = ref.watch(connectionCommandOrchestratorProvider);
+      if (orchestrator == null) {
+        yield null;
+        return;
+      }
+      final normalizedPeerId = peerId.trim().toLowerCase();
+      yield orchestrator.currentTimeline(normalizedPeerId);
+      yield* orchestrator.timelineStream(normalizedPeerId);
+    });
+
+final connectionFallbackRequestProvider =
+    StreamProvider.family<ConnectionFallbackRequest, String>((
+      Ref ref,
+      String peerId,
+    ) async* {
+      final orchestrator = ref.watch(connectionCommandOrchestratorProvider);
+      if (orchestrator == null) {
+        return;
+      }
+      final normalizedPeerId = peerId.trim().toLowerCase();
+      await for (final request in orchestrator.fallbackRequests) {
+        if (request.peerId.trim().toLowerCase() == normalizedPeerId) {
+          yield request;
+        }
+      }
+    });
+
 class ConnectionsController extends Notifier<ConnectionsState> {
   final List<StreamSubscription<dynamic>> _brainSubscriptions =
       <StreamSubscription<dynamic>>[];
+  final Map<String, StreamSubscription<ConnectionTimeline>>
+  _commandTimelineSubscriptions =
+      <String, StreamSubscription<ConnectionTimeline>>{};
   RainRuntimeController? _runtime;
 
   @override
@@ -694,15 +814,25 @@ class ConnectionsController extends Notifier<ConnectionsState> {
         unawaited(subscription.cancel());
       }
       _brainSubscriptions.clear();
+      for (final subscription in _commandTimelineSubscriptions.values) {
+        unawaited(subscription.cancel());
+      }
+      _commandTimelineSubscriptions.clear();
     });
     return const ConnectionsState();
   }
 
-  Future<void> connect(String peerId, {bool waitForConnected = false}) async {
+  Future<void> connect(
+    String peerId, {
+    bool waitForConnected = false,
+    ConnectionPolicy? policy,
+  }) async {
     _assertNetworkReady(ref);
-    final runtime = _requireRuntime();
+    final normalizedPeerId = peerId.trim().toLowerCase();
+    final orchestrator = _requireCommandOrchestrator();
+    _subscribeCommandTimeline(normalizedPeerId, orchestrator);
     _upsert(
-      peerId,
+      normalizedPeerId,
       (view) => view.copyWith(
         manualIntent: ManualConnectionIntent.connecting,
         actionBusy: true,
@@ -711,15 +841,10 @@ class ConnectionsController extends Notifier<ConnectionsState> {
       ),
     );
     try {
-      await runtime.connectPeer(
-        peerId,
-        interactive: true,
-        waitForConnected: waitForConnected,
-      );
-      syncPeer(peerId);
+      await orchestrator.connect(normalizedPeerId, policy: policy);
     } catch (error) {
       _upsert(
-        peerId,
+        normalizedPeerId,
         (view) => view.copyWith(
           manualIntent: ManualConnectionIntent.failed,
           actionBusy: false,
@@ -731,8 +856,39 @@ class ConnectionsController extends Notifier<ConnectionsState> {
     }
   }
 
+  Future<void> cancel(String peerId) async {
+    final normalizedPeerId = peerId.trim().toLowerCase();
+    final orchestrator = _requireCommandOrchestrator();
+    await orchestrator.cancel(normalizedPeerId);
+    _upsert(
+      normalizedPeerId,
+      (view) => view.copyWith(
+        manualIntent: ManualConnectionIntent.idle,
+        actionBusy: false,
+        disconnecting: false,
+        localDetail: 'Connection canceled.',
+        error: null,
+        updatedAt: DateTime.now().millisecondsSinceEpoch,
+      ),
+    );
+  }
+
+  Future<void> resolveFallback(
+    String peerId,
+    ConnectionFallbackChoice choice, {
+    bool rememberForSession = false,
+  }) async {
+    final normalizedPeerId = peerId.trim().toLowerCase();
+    await _requireCommandOrchestrator().resolveFallback(
+      peerId: normalizedPeerId,
+      choice: choice,
+      rememberForSession: rememberForSession,
+    );
+  }
+
   Future<void> disconnect(String peerId) async {
     final runtime = _requireRuntime();
+    await ref.read(connectionCommandOrchestratorProvider)?.disconnect(peerId);
     _upsert(
       peerId,
       (view) => view.copyWith(
@@ -789,6 +945,64 @@ class ConnectionsController extends Notifier<ConnectionsState> {
       throw StateError('Peer connection is unavailable right now.');
     }
     return runtime;
+  }
+
+  ConnectionCommandOrchestrator _requireCommandOrchestrator() {
+    final orchestrator = ref.read(connectionCommandOrchestratorProvider);
+    if (orchestrator == null) {
+      throw StateError('Peer connection is unavailable right now.');
+    }
+    return orchestrator;
+  }
+
+  void _subscribeCommandTimeline(
+    String peerId,
+    ConnectionCommandOrchestrator orchestrator,
+  ) {
+    final normalizedPeerId = peerId.trim().toLowerCase();
+    if (_commandTimelineSubscriptions.containsKey(normalizedPeerId)) {
+      return;
+    }
+    _commandTimelineSubscriptions[normalizedPeerId] = orchestrator
+        .timelineStream(normalizedPeerId)
+        .listen(_handleCommandTimeline);
+  }
+
+  void _handleCommandTimeline(ConnectionTimeline timeline) {
+    if (timeline.steps.isEmpty) {
+      return;
+    }
+    final step = timeline.steps.last;
+    final failureCode = step.failureCode;
+    _upsert(
+      timeline.peerId,
+      (view) => view.copyWith(
+        manualIntent: _intentForTimeline(timeline, fallback: view.manualIntent),
+        actionBusy: timeline.canCancel,
+        disconnecting: false,
+        localDetail: step.userMessage,
+        error: failureCode == null
+            ? null
+            : StateError(ConnectionFailureMessages.userMessage(failureCode)),
+        updatedAt: step.endedAt ?? step.startedAt,
+      ),
+    );
+  }
+
+  ManualConnectionIntent _intentForTimeline(
+    ConnectionTimeline timeline, {
+    required ManualConnectionIntent fallback,
+  }) {
+    if (timeline.canCancel) {
+      return ManualConnectionIntent.connecting;
+    }
+    final step = timeline.steps.isEmpty ? null : timeline.steps.last;
+    return switch (step?.state) {
+      ConnectionStepState.succeeded => ManualConnectionIntent.linked,
+      ConnectionStepState.failed => ManualConnectionIntent.failed,
+      ConnectionStepState.canceled => ManualConnectionIntent.idle,
+      _ => fallback,
+    };
   }
 
   Future<void> _replaceRuntime(RainRuntimeController? runtime) async {

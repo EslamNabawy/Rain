@@ -26,6 +26,11 @@ on:
           - demo
           - relay-test
           - production
+      build_relay_test:
+        description: Build broker-backed relay-test artifacts
+        required: false
+        type: boolean
+        default: false
 
 permissions:
   contents: read
@@ -36,7 +41,8 @@ concurrency:
 
 env:
   FLUTTER_VERSION: '3.38.5'
-  BUILD_PROFILE: ${{ github.event_name == 'workflow_dispatch' && inputs.build_profile || 'demo' }}
+  FRB_CODEGEN_VERSION: '2.12.0'
+  BUILD_PROFILE: ${{ github.event_name == 'workflow_dispatch' && inputs.build_relay_test && 'relay-test' || github.event_name == 'workflow_dispatch' && inputs.build_profile || 'demo' }}
 
 jobs:
   build-windows:
@@ -51,6 +57,15 @@ jobs:
         with:
           flutter-version: ${{ env.FLUTTER_VERSION }}
           channel: stable
+
+      - uses: dtolnay/rust-toolchain@stable
+
+      - name: Install Flutter Rust Bridge codegen
+        run: cargo install flutter_rust_bridge_codegen --version ${{ env.FRB_CODEGEN_VERSION }}
+
+      - name: Generate Rust bridge
+        working-directory: apps/rain
+        run: flutter_rust_bridge_codegen generate
 
       - name: Prepare dart defines
         shell: pwsh
@@ -77,6 +92,15 @@ jobs:
           if ([string]::IsNullOrWhiteSpace($brokerUrl)) {
             throw 'Relay-test build requires RAIN_TURN_BROKER_URL.'
           }
+          $signalingKey = [string]$defines.RAIN_SIGNALING_ENCRYPTION_KEY
+          if ([string]::IsNullOrWhiteSpace($signalingKey)) {
+            throw 'Relay-test build requires RAIN_SIGNALING_ENCRYPTION_KEY.'
+          }
+          $allowPublicTurn = [string]$defines.RAIN_ALLOW_PUBLIC_TURN
+          if ($allowPublicTurn.Trim().ToLowerInvariant() -ne 'false') {
+            throw 'Relay-test build requires RAIN_ALLOW_PUBLIC_TURN=false.'
+          }
+          "RAIN_TURN_BROKER_URL=$brokerUrl" | Out-File -FilePath $env:GITHUB_ENV -Encoding utf8 -Append
 
           try {
             $response = Invoke-WebRequest -Uri $brokerUrl -Method POST -TimeoutSec 20 -SkipHttpErrorCheck
@@ -110,7 +134,9 @@ jobs:
             $args += '-AllowPublicTurnForDemo'
           }
           if ($env:BUILD_PROFILE -eq 'relay-test') {
-            $args += '-RelayTest'
+            $args += '-ForceRelayOnlySmoke'
+            $args += '-TurnBrokerUrl'
+            $args += $env:RAIN_TURN_BROKER_URL
           }
           pwsh @args
 
@@ -155,6 +181,17 @@ jobs:
         with:
           flutter-version: ${{ env.FLUTTER_VERSION }}
           channel: stable
+
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          targets: armv7-linux-androideabi,aarch64-linux-android,x86_64-linux-android
+
+      - name: Install Flutter Rust Bridge codegen
+        run: cargo install flutter_rust_bridge_codegen --version ${{ env.FRB_CODEGEN_VERSION }}
+
+      - name: Generate Rust bridge
+        working-directory: apps/rain
+        run: flutter_rust_bridge_codegen generate
 
       - name: Prepare dart defines and signing
         shell: pwsh
@@ -207,6 +244,15 @@ jobs:
           if ([string]::IsNullOrWhiteSpace($brokerUrl)) {
             throw 'Relay-test build requires RAIN_TURN_BROKER_URL.'
           }
+          $signalingKey = [string]$defines.RAIN_SIGNALING_ENCRYPTION_KEY
+          if ([string]::IsNullOrWhiteSpace($signalingKey)) {
+            throw 'Relay-test build requires RAIN_SIGNALING_ENCRYPTION_KEY.'
+          }
+          $allowPublicTurn = [string]$defines.RAIN_ALLOW_PUBLIC_TURN
+          if ($allowPublicTurn.Trim().ToLowerInvariant() -ne 'false') {
+            throw 'Relay-test build requires RAIN_ALLOW_PUBLIC_TURN=false.'
+          }
+          "RAIN_TURN_BROKER_URL=$brokerUrl" | Out-File -FilePath $env:GITHUB_ENV -Encoding utf8 -Append
 
           try {
             $response = Invoke-WebRequest -Uri $brokerUrl -Method POST -TimeoutSec 20 -SkipHttpErrorCheck
@@ -244,7 +290,9 @@ jobs:
             $args += '-UseDemoAndroidSigningKey'
           }
           if ($env:BUILD_PROFILE -eq 'relay-test') {
-            $args += '-RelayTest'
+            $args += '-ForceRelayOnlySmoke'
+            $args += '-TurnBrokerUrl'
+            $args += $env:RAIN_TURN_BROKER_URL
             $args += '-UseDemoAndroidSigningKey'
           }
           pwsh @args

@@ -6,6 +6,7 @@ Use from repo root:
   pwsh -File scripts/build_release.ps1 -Platform android -DartDefinesFile .\release-defines.json
   pwsh -File scripts/build_release.ps1 -Platform all -DartDefinesFile .\apps\rain\tool\dart_defines.local.json -AllowPublicTurnForDemo -UseDemoAndroidSigningKey
   pwsh -File scripts/build_release.ps1 -Platform all -DartDefinesFile .\relay-test-defines.json -RelayTest -UseDemoAndroidSigningKey
+  pwsh -File scripts/build_release.ps1 -Platform all -DartDefinesFile .\relay-test-defines.json -ForceRelayOnlySmoke -TurnBrokerUrl https://rain-p2p-turn.duckdns.org/rainTurnCredentials -UseDemoAndroidSigningKey
 #>
 [CmdletBinding()]
 param(
@@ -18,6 +19,9 @@ param(
   [string]$AndroidArtifactSet = 'mobile',
   [switch]$AllowPublicTurnForDemo,
   [switch]$RelayTest,
+  [switch]$ForceRelayOnlySmoke,
+  [string]$TurnBrokerUrl = '',
+  [string]$TurnProviderName = '',
   [switch]$UseDemoAndroidSigningKey,
   [switch]$GenerateSizeReports,
   [switch]$Clean
@@ -41,6 +45,27 @@ function Write-Step([string]$Message) {
 function Ensure-Command([string]$Name) {
   if (-not (Get-Command $Name -ErrorAction SilentlyContinue)) {
     throw "Required command not found on PATH: $Name"
+  }
+}
+
+function Add-CargoBinToPathIfPresent() {
+  $homeCandidates = @($env:USERPROFILE, $env:HOME) | Where-Object {
+    -not [string]::IsNullOrWhiteSpace($_)
+  } | Select-Object -Unique
+
+  foreach ($homeDir in $homeCandidates) {
+    $cargoBin = Join-Path (Join-Path $homeDir '.cargo') 'bin'
+    if (-not (Test-Path -LiteralPath $cargoBin)) {
+      continue
+    }
+
+    $pathEntries = $env:PATH -split [System.IO.Path]::PathSeparator
+    $alreadyOnPath = $pathEntries | Where-Object {
+      $_.TrimEnd('\', '/') -ieq $cargoBin.TrimEnd('\', '/')
+    }
+    if (-not $alreadyOnPath) {
+      $env:PATH = "$cargoBin$([System.IO.Path]::PathSeparator)$env:PATH"
+    }
   }
 }
 
@@ -151,7 +176,10 @@ function Get-DartDefineArgs(
   [string]$DartDefinesFile,
   [string]$RepoRoot,
   [bool]$AllowPublicTurnForDemo,
-  [bool]$RequireTurnBroker
+  [bool]$RequireTurnBroker,
+  [bool]$ForceRelayOnlySmoke,
+  [string]$TurnBrokerUrl,
+  [string]$TurnProviderName
 ) {
   if ([string]::IsNullOrWhiteSpace($DartDefinesFile)) {
     throw "Release builds require -DartDefinesFile with project-owned TURN servers."
@@ -172,6 +200,10 @@ function Get-DartDefineArgs(
     throw "Release builds must not use tool\dart_defines.local.json. Pass a sanitized release defines file."
   }
 
+  if ($ForceRelayOnlySmoke) {
+    $resolved = New-RelayTestDartDefinesFile -Path $resolved -RepoRoot $RepoRoot -TurnBrokerUrl $TurnBrokerUrl -TurnProviderName $TurnProviderName
+  }
+
   Assert-ReleaseDartDefines -Path $resolved -AllowPublicTurnForDemo:$AllowPublicTurnForDemo -RequireTurnBroker:$RequireTurnBroker
 
   if ($AllowPublicTurnForDemo) {
@@ -181,13 +213,17 @@ function Get-DartDefineArgs(
   return @("--dart-define-from-file=$resolved")
 }
 
+function Set-DartDefineJsonProperty([object]$Json, [string]$Name, [string]$Value) {
+  if ($null -eq $Json.PSObject.Properties[$Name]) {
+    $Json | Add-Member -NotePropertyName $Name -NotePropertyValue $Value
+  } else {
+    $Json.PSObject.Properties[$Name].Value = $Value
+  }
+}
+
 function New-DemoDartDefinesFile([string]$Path, [string]$RepoRoot) {
   $defines = Get-Content -Raw -LiteralPath $Path | ConvertFrom-Json -ErrorAction Stop
-  if ($null -eq $defines.PSObject.Properties['RAIN_ALLOW_PUBLIC_TURN']) {
-    $defines | Add-Member -NotePropertyName 'RAIN_ALLOW_PUBLIC_TURN' -NotePropertyValue 'true'
-  } else {
-    $defines.RAIN_ALLOW_PUBLIC_TURN = 'true'
-  }
+  Set-DartDefineJsonProperty $defines 'RAIN_ALLOW_PUBLIC_TURN' 'true'
 
   if ($null -eq $defines.PSObject.Properties['RAIN_SIGNALING_ENCRYPTION_KEY']) {
     $defines | Add-Member -NotePropertyName 'RAIN_SIGNALING_ENCRYPTION_KEY' -NotePropertyValue $script:DemoSignalingEncryptionKey
@@ -199,6 +235,31 @@ function New-DemoDartDefinesFile([string]$Path, [string]$RepoRoot) {
   $demoDefinesPath = Join-Path $tmpDir 'rain-openrelay-demo-defines.generated.json'
   $defines | ConvertTo-Json -Depth 20 | Set-Content -LiteralPath $demoDefinesPath -Encoding utf8
   return $demoDefinesPath
+}
+
+function New-RelayTestDartDefinesFile(
+  [string]$Path,
+  [string]$RepoRoot,
+  [string]$TurnBrokerUrl,
+  [string]$TurnProviderName
+) {
+  if ([string]::IsNullOrWhiteSpace($TurnBrokerUrl)) {
+    throw "Relay test builds require -TurnBrokerUrl when -ForceRelayOnlySmoke is set."
+  }
+
+  $defines = Get-Content -Raw -LiteralPath $Path | ConvertFrom-Json -ErrorAction Stop
+  Set-DartDefineJsonProperty $defines 'RAIN_TURN_BROKER_URL' $TurnBrokerUrl.Trim()
+  Set-DartDefineJsonProperty $defines 'RAIN_ALLOW_PUBLIC_TURN' 'false'
+  Set-DartDefineJsonProperty $defines 'RAIN_ICE_STRATEGY' 'staged'
+
+  if (-not [string]::IsNullOrWhiteSpace($TurnProviderName)) {
+    Set-DartDefineJsonProperty $defines 'RAIN_TURN_PROVIDER_ORDER' $TurnProviderName.Trim()
+  }
+
+  $tmpDir = Get-ReleaseTempDir $RepoRoot
+  $relayDefinesPath = Join-Path $tmpDir 'rain-relay-test-defines.generated.json'
+  $defines | ConvertTo-Json -Depth 20 | Set-Content -LiteralPath $relayDefinesPath -Encoding utf8
+  return $relayDefinesPath
 }
 
 function Get-JsonPropertyValue([object]$Json, [string]$Name) {
@@ -450,6 +511,16 @@ function Invoke-FlutterBuild([string[]]$Arguments) {
   }
 }
 
+function Invoke-RustBridgeCodegen([string]$FlutterProjectRoot) {
+  Write-Step "Generating Flutter Rust bridge bindings"
+  Invoke-InDir $FlutterProjectRoot {
+    & flutter_rust_bridge_codegen generate | Out-Host
+    if ($LASTEXITCODE -ne 0) {
+      throw "flutter_rust_bridge_codegen generate failed with exit code $LASTEXITCODE"
+    }
+  }
+}
+
 function Remove-AndroidSizeAnalysisReports([string]$ProjectRoot) {
   $candidateDirs = @(
     (Join-Path $ProjectRoot 'build'),
@@ -541,7 +612,7 @@ $repoRoot = $RepoRoot
 $appsRoot = Join-Path $repoRoot 'apps\rain'
 $releaseRoot = $OutputDir
 $isOpenRelayDemoBuild = [bool]$AllowPublicTurnForDemo
-$isRelayTestBuild = [bool]$RelayTest
+$isRelayTestBuild = [bool]($RelayTest -or $ForceRelayOnlySmoke)
 if ($isRelayTestBuild -and $isOpenRelayDemoBuild) {
   throw "Relay test artifacts must not use -AllowPublicTurnForDemo."
 }
@@ -551,7 +622,7 @@ if ($UseDemoAndroidSigningKey -and -not $isOpenRelayDemoBuild -and -not $isRelay
 
 $androidArtifactPrefix = if ($isOpenRelayDemoBuild) { 'Rain-Demo' } elseif ($isRelayTestBuild) { 'Rain-Relay-Test' } else { 'Rain-release' }
 $windowsPortableName = if ($isOpenRelayDemoBuild) { 'Rain-Demo-Windows-x64-Build' } elseif ($isRelayTestBuild) { 'Rain-Relay-Test-Windows-x64-Build' } else { 'Rain-windows-portable' }
-$dartDefineArgs = Get-DartDefineArgs $appsRoot $DartDefinesFile $repoRoot $isOpenRelayDemoBuild $isRelayTestBuild
+$dartDefineArgs = Get-DartDefineArgs $appsRoot $DartDefinesFile $repoRoot $isOpenRelayDemoBuild $isRelayTestBuild $ForceRelayOnlySmoke $TurnBrokerUrl $TurnProviderName
 if ($Platform -in @('all', 'android')) {
   if ($UseDemoAndroidSigningKey) {
     Use-DemoAndroidSigningKey $repoRoot
@@ -559,9 +630,28 @@ if ($Platform -in @('all', 'android')) {
   Assert-AndroidReleaseSigning
 }
 
+Add-CargoBinToPathIfPresent
+
 Ensure-Command flutter
 Ensure-Command dart
 Ensure-Command git
+Ensure-Command rustc
+Ensure-Command cargo
+Ensure-Command flutter_rust_bridge_codegen
+
+Write-Step "Checking Rust bridge toolchain"
+& rustc --version | Out-Host
+if ($LASTEXITCODE -ne 0) {
+  throw "rustc --version failed with exit code $LASTEXITCODE"
+}
+& cargo --version | Out-Host
+if ($LASTEXITCODE -ne 0) {
+  throw "cargo --version failed with exit code $LASTEXITCODE"
+}
+& flutter_rust_bridge_codegen --version | Out-Host
+if ($LASTEXITCODE -ne 0) {
+  throw "flutter_rust_bridge_codegen --version failed with exit code $LASTEXITCODE"
+}
 
 Write-Step "Syncing app icons"
 & (Join-Path $repoRoot 'scripts\sync_app_icons.ps1') -RepoRoot $repoRoot | Out-Host
@@ -593,6 +683,8 @@ foreach ($pubRoot in $pubGetRoots) {
     flutter pub get | Out-Host
   }
 }
+
+Invoke-RustBridgeCodegen $appsRoot
 
 if ($Platform -in @('all', 'windows')) {
   Write-Step "Building Windows release"

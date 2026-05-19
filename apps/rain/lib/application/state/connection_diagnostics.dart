@@ -7,6 +7,8 @@ class ConnectionDiagnostics {
     required this.label,
     required this.detail,
     required this.route,
+    required this.transportLabel,
+    this.transportDetail,
     this.roomId,
     this.isOfferOwner,
     this.retryAttempt = 0,
@@ -15,11 +17,18 @@ class ConnectionDiagnostics {
     this.isBusy = false,
     this.isConnected = false,
     this.canDisconnect = false,
+    this.iceStage,
+    this.providerTier,
+    this.providerId,
+    this.connectAttemptId,
+    this.attemptIndex = 0,
   });
 
   final String label;
   final String detail;
   final PeerConnectionRoute route;
+  final String transportLabel;
+  final String? transportDetail;
   final String? roomId;
   final bool? isOfferOwner;
   final int retryAttempt;
@@ -28,6 +37,11 @@ class ConnectionDiagnostics {
   final bool isBusy;
   final bool isConnected;
   final bool canDisconnect;
+  final IceAttemptStage? iceStage;
+  final IceProviderTier? providerTier;
+  final String? providerId;
+  final String? connectAttemptId;
+  final int attemptIndex;
 
   PeerRouteKind get routeKind => route.kind;
   String? get selectedCandidatePairId => route.selectedCandidatePairId;
@@ -52,6 +66,8 @@ class ConnectionDiagnostics {
           );
     final updatedAt =
         safeRoute.updatedAt ?? session?.updatedAt ?? connection.updatedAt;
+    final transportLabel = _transportLabel(session?.connectionType);
+    final transportDetail = _transportDetail(session?.connectionType);
     final sessionError = session?.error?.trim();
     final lastError =
         _formatConnectionError(connection.error) ??
@@ -69,6 +85,8 @@ class ConnectionDiagnostics {
         label: label,
         detail: detail,
         route: route,
+        transportLabel: transportLabel,
+        transportDetail: transportDetail,
         roomId: session?.roomId,
         isOfferOwner: session?.isOfferOwner,
         retryAttempt: session?.retryAttempt ?? 0,
@@ -77,6 +95,11 @@ class ConnectionDiagnostics {
         isBusy: isBusy,
         isConnected: isConnected,
         canDisconnect: canDisconnect,
+        iceStage: session?.iceStage,
+        providerTier: session?.providerTier,
+        providerId: session?.providerId,
+        connectAttemptId: session?.connectAttemptId,
+        attemptIndex: session?.attemptIndex ?? 0,
       );
     }
 
@@ -201,4 +224,20 @@ String? _formatConnectionError(Object? error) {
     }
   }
   return raw;
+}
+
+String _transportLabel(ConnectionType? connectionType) {
+  return switch (connectionType) {
+    ConnectionType.signaling => 'WebRTC',
+    ConnectionType.iroh => 'Iroh',
+    null => 'None',
+  };
+}
+
+String? _transportDetail(ConnectionType? connectionType) {
+  return switch (connectionType) {
+    ConnectionType.signaling => 'WebRTC data channels',
+    ConnectionType.iroh => 'Iroh QUIC fallback',
+    null => null,
+  };
 }

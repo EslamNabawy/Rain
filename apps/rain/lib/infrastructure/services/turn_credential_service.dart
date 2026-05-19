@@ -3,6 +3,7 @@ import 'dart:convert';
 import 'dart:io';
 
 import 'package:firebase_auth/firebase_auth.dart';
+import 'package:protocol_brain/protocol_brain.dart';
 
 typedef TurnCredentialFetcher = Future<TurnCredentialFetchResult> Function();
 
@@ -10,12 +11,16 @@ class TurnCredentialService {
   TurnCredentialService({
     required List<Map<String, dynamic>> baseIceServers,
     required String brokerUrl,
+    bool enableExperimentalRelay = false,
+    IceMetricsStore? metricsStore,
     Future<String?> Function()? idTokenProvider,
     HttpClient? httpClient,
     DateTime Function()? now,
     TurnCredentialFetcher? credentialFetcher,
   }) : _baseIceServers = _cloneIceServers(baseIceServers),
        _brokerUrl = brokerUrl.trim(),
+       _enableExperimentalRelay = enableExperimentalRelay,
+       _metricsStore = metricsStore ?? MemoryIceMetricsStore(),
        _idTokenProvider = idTokenProvider ?? _defaultFirebaseIdTokenProvider,
        _httpClient = httpClient ?? HttpClient(),
        _now = now ?? DateTime.now,
@@ -23,6 +28,8 @@ class TurnCredentialService {
 
   final List<Map<String, dynamic>> _baseIceServers;
   final String _brokerUrl;
+  final bool _enableExperimentalRelay;
+  final IceMetricsStore _metricsStore;
   final Future<String?> Function() _idTokenProvider;
   final HttpClient _httpClient;
   final DateTime Function() _now;
@@ -32,6 +39,30 @@ class TurnCredentialService {
   TurnCredentialDiagnostics _diagnostics = const TurnCredentialDiagnostics();
 
   TurnCredentialDiagnostics get diagnostics => _diagnostics;
+
+  void recordAttemptResult(IceAttemptResult result) {
+    _metricsStore.record(result);
+  }
+
+  Future<List<Map<String, dynamic>>> iceServersForAttempt(
+    IceAttemptDescriptor attempt,
+  ) async {
+    switch (attempt.stage) {
+      case IceAttemptStage.directStunOnly:
+        return _stunPoolServers();
+      case IceAttemptStage.primaryRelay:
+        return _primaryRelayServers();
+      case IceAttemptStage.backupRelay:
+        return _backupRelayServers(requireRelay: true);
+      case IceAttemptStage.experimentalRelay:
+        if (!_enableExperimentalRelay) {
+          throw StateError('Experimental relay tier is disabled.');
+        }
+        return _experimentalRelayServers();
+      case IceAttemptStage.fullRestart:
+        return _fullRestartServers();
+    }
+  }
 
   Future<List<Map<String, dynamic>>> iceServers({
     bool requireTurn = false,
@@ -78,14 +109,97 @@ class TurnCredentialService {
         brokerConfigured: true,
         provider: 'unknown',
         turnUrlCount: 0,
-        lastError: brokerError,
+        lastError: brokerError.message,
+        errorCode: brokerError.code,
       );
       if (requireTurn) {
         throw StateError(
-          '${_sentence(brokerError)} Relay fallback unavailable.',
+          '${_sentence(brokerError.message)} Relay fallback unavailable.',
         );
       }
       return _cloneIceServers(_baseIceServers);
+    }
+  }
+
+  Future<List<Map<String, dynamic>>> _primaryRelayServers() async {
+    _throwIfCoolingDown('primary-relay');
+    if (_brokerUrl.isEmpty) {
+      throw StateError('Relay credentials unavailable.');
+    }
+    final servers = await iceServers(requireTurn: true);
+    final turnServers = servers.where(_hasTurnUrl).toList(growable: false);
+    if (turnServers.isEmpty) {
+      throw StateError('Relay credentials unavailable.');
+    }
+    return <Map<String, dynamic>>[
+      ..._stunPoolServers(),
+      ...turnServers.map(_cloneIceServer),
+    ];
+  }
+
+  List<Map<String, dynamic>> _backupRelayServers({required bool requireRelay}) {
+    _throwIfCoolingDown('backup-relay');
+    final servers = <Map<String, dynamic>>[
+      ..._stunPoolServers(),
+      ..._openRelayServersFromBase(),
+    ];
+    if (requireRelay && !servers.any(_hasTurnUrl)) {
+      throw StateError('Relay provider unavailable.');
+    }
+    _diagnostics = TurnCredentialDiagnostics.fromIceServers(
+      brokerConfigured: _brokerUrl.isNotEmpty,
+      provider: 'openRelay',
+      iceServers: servers,
+    );
+    return _cloneIceServers(servers);
+  }
+
+  List<Map<String, dynamic>> _experimentalRelayServers() {
+    _throwIfCoolingDown('experimental-relay');
+    final servers = <Map<String, dynamic>>[
+      ..._stunPoolServers(),
+      ..._experimentalRelayServersStatic,
+    ];
+    _diagnostics = TurnCredentialDiagnostics.fromIceServers(
+      brokerConfigured: _brokerUrl.isNotEmpty,
+      provider: 'experimental',
+      iceServers: servers,
+    );
+    return _cloneIceServers(servers);
+  }
+
+  Future<List<Map<String, dynamic>>> _fullRestartServers() async {
+    _throwIfCoolingDown('full-restart');
+    final servers = <Map<String, dynamic>>[
+      ..._stunPoolServers(),
+      ..._openRelayServersFromBase(),
+    ];
+    try {
+      final primary = await iceServers(requireTurn: false);
+      for (final server in primary.where(_hasTurnUrl)) {
+        servers.add(_cloneIceServer(server));
+      }
+    } catch (_) {
+      // Final restart is best-effort: backup relay is still useful if present.
+    }
+    if (_enableExperimentalRelay) {
+      servers.addAll(_experimentalRelayServersStatic.map(_cloneIceServer));
+    }
+    final unique = _uniqueIceServers(servers);
+    if (!unique.any(_hasTurnUrl)) {
+      throw StateError('All connection routes failed.');
+    }
+    _diagnostics = TurnCredentialDiagnostics.fromIceServers(
+      brokerConfigured: _brokerUrl.isNotEmpty,
+      provider: 'fullRestart',
+      iceServers: unique,
+    );
+    return unique;
+  }
+
+  void _throwIfCoolingDown(String providerId) {
+    if (_metricsStore.isCoolingDown(providerId, now: _now())) {
+      throw StateError('Relay provider unavailable.');
     }
   }
 
@@ -103,7 +217,7 @@ class TurnCredentialService {
     final response = await request.close().timeout(const Duration(seconds: 8));
     final body = await utf8.decoder.bind(response).join();
     if (response.statusCode < 200 || response.statusCode >= 300) {
-      throw HttpException('TURN broker returned ${response.statusCode}');
+      throw TurnCredentialException.fromStatus(response.statusCode);
     }
     final decoded = jsonDecode(body);
     if (decoded is! Map<String, dynamic>) {
@@ -124,6 +238,28 @@ class TurnCredentialService {
       ...brokerIceServers.map(_cloneIceServer),
     ];
     return next.isEmpty ? _cloneIceServers(_baseIceServers) : next;
+  }
+
+  List<Map<String, dynamic>> _stunPoolServers() {
+    final baseStun = _baseIceServers
+        .where((Map<String, dynamic> server) => _urls(server).any(_isStunUrl))
+        .map(_cloneIceServer);
+    return _uniqueIceServers(<Map<String, dynamic>>[
+      ...baseStun,
+      ..._defaultStunPool.map(_cloneIceServer),
+    ]);
+  }
+
+  List<Map<String, dynamic>> _openRelayServersFromBase() {
+    return _baseIceServers
+        .where((Map<String, dynamic> server) {
+          return _urls(
+            server,
+          ).any((String url) => url.contains('openrelay.metered.ca'));
+        })
+        .where(_hasTurnUrl)
+        .map(_cloneIceServer)
+        .toList(growable: false);
   }
 
   void dispose() {
@@ -184,6 +320,7 @@ class TurnCredentialDiagnostics {
     this.turnUrlCount = 0,
     this.expiresAt,
     this.lastError,
+    this.errorCode,
   });
 
   factory TurnCredentialDiagnostics.fromIceServers({
@@ -205,6 +342,55 @@ class TurnCredentialDiagnostics {
   final int turnUrlCount;
   final DateTime? expiresAt;
   final String? lastError;
+  final TurnCredentialErrorCode? errorCode;
+}
+
+enum TurnCredentialErrorCode {
+  brokerUnreachable('broker-unreachable'),
+  brokerAuthFailed('broker-auth-failed'),
+  brokerRateLimited('broker-rate-limited'),
+  brokerRejected('broker-rejected'),
+  invalidBrokerResponse('invalid-broker-response'),
+  relayUnavailable('relay-unavailable');
+
+  const TurnCredentialErrorCode(this.label);
+
+  final String label;
+}
+
+class TurnCredentialException implements Exception {
+  const TurnCredentialException(this.code, this.message);
+
+  factory TurnCredentialException.fromStatus(int statusCode) {
+    if (statusCode == 401 || statusCode == 403) {
+      return const TurnCredentialException(
+        TurnCredentialErrorCode.brokerAuthFailed,
+        'Relay authorization failed. Sign in again.',
+      );
+    }
+    if (statusCode == 429) {
+      return const TurnCredentialException(
+        TurnCredentialErrorCode.brokerRateLimited,
+        'Relay is rate limited. Try again later.',
+      );
+    }
+    if (statusCode >= 500) {
+      return const TurnCredentialException(
+        TurnCredentialErrorCode.brokerUnreachable,
+        'Relay unavailable. Direct connection only.',
+      );
+    }
+    return const TurnCredentialException(
+      TurnCredentialErrorCode.brokerRejected,
+      'Relay request was rejected.',
+    );
+  }
+
+  final TurnCredentialErrorCode code;
+  final String message;
+
+  @override
+  String toString() => message;
 }
 
 Future<String?> _defaultFirebaseIdTokenProvider() async {
@@ -262,6 +448,20 @@ List<Map<String, dynamic>> _cloneIceServers(
   return servers.map(_cloneIceServer).toList(growable: false);
 }
 
+List<Map<String, dynamic>> _uniqueIceServers(
+  Iterable<Map<String, dynamic>> servers,
+) {
+  final seen = <String>{};
+  final unique = <Map<String, dynamic>>[];
+  for (final server in servers) {
+    final key = jsonEncode(_cloneIceServer(server));
+    if (seen.add(key)) {
+      unique.add(_cloneIceServer(server));
+    }
+  }
+  return unique;
+}
+
 Map<String, dynamic> _cloneIceServer(Map<String, dynamic> server) {
   return Map<String, dynamic>.fromEntries(
     server.entries.map((MapEntry<String, dynamic> entry) {
@@ -282,21 +482,69 @@ int _turnUrlCount(List<Map<String, dynamic>> iceServers) {
   return count;
 }
 
-String _turnBrokerError(Object error) {
+({TurnCredentialErrorCode code, String message}) _turnBrokerError(
+  Object error,
+) {
+  if (error is TurnCredentialException) {
+    return (code: error.code, message: error.message);
+  }
   if (error is TimeoutException || error is SocketException) {
-    return 'TURN broker unreachable.';
+    return (
+      code: TurnCredentialErrorCode.brokerUnreachable,
+      message: 'Relay unavailable. Direct connection only.',
+    );
+  }
+  if (error is FormatException) {
+    return (
+      code: TurnCredentialErrorCode.invalidBrokerResponse,
+      message: 'Relay configuration is invalid.',
+    );
   }
   final raw = error.toString().trim();
   if (raw.isEmpty) {
-    return 'TURN broker unreachable.';
+    return (
+      code: TurnCredentialErrorCode.brokerUnreachable,
+      message: 'Relay unavailable. Direct connection only.',
+    );
   }
   const prefixes = <String>['Exception: ', 'HttpException: ', 'StateError: '];
+  var normalized = raw;
   for (final prefix in prefixes) {
-    if (raw.startsWith(prefix)) {
-      return raw.substring(prefix.length).trim();
+    if (normalized.startsWith(prefix)) {
+      normalized = normalized.substring(prefix.length).trim();
+      break;
     }
   }
-  return raw;
+  final lower = normalized.toLowerCase();
+  if (lower.contains('401') ||
+      lower.contains('403') ||
+      lower.contains('missing_auth') ||
+      lower.contains('invalid_auth')) {
+    return (
+      code: TurnCredentialErrorCode.brokerAuthFailed,
+      message: 'Relay authorization failed. Sign in again.',
+    );
+  }
+  if (lower.contains('429') || lower.contains('rate_limited')) {
+    return (
+      code: TurnCredentialErrorCode.brokerRateLimited,
+      message: 'Relay is rate limited. Try again later.',
+    );
+  }
+  if (lower.contains('503') ||
+      lower.contains('502') ||
+      lower.contains('500') ||
+      lower.contains('timeout') ||
+      lower.contains('unreachable')) {
+    return (
+      code: TurnCredentialErrorCode.brokerUnreachable,
+      message: 'Relay unavailable. Direct connection only.',
+    );
+  }
+  return (
+    code: TurnCredentialErrorCode.brokerRejected,
+    message: 'Relay request was rejected.',
+  );
 }
 
 String _sentence(String value) {
@@ -309,3 +557,21 @@ String _sentence(String value) {
   }
   return '$trimmed.';
 }
+
+const _defaultStunPool = <Map<String, dynamic>>[
+  <String, dynamic>{'urls': 'stun:stun.l.google.com:19302'},
+  <String, dynamic>{'urls': 'stun:stun1.l.google.com:19302'},
+  <String, dynamic>{'urls': 'stun:stun2.l.google.com:19302'},
+  <String, dynamic>{'urls': 'stun:stun3.l.google.com:19302'},
+  <String, dynamic>{'urls': 'stun:stun4.l.google.com:19302'},
+  <String, dynamic>{'urls': 'stun:stun.services.mozilla.com:3478'},
+  <String, dynamic>{'urls': 'stun:stun.nextcloud.com:3478'},
+];
+
+const _experimentalRelayServersStatic = <Map<String, dynamic>>[
+  <String, dynamic>{
+    'urls': 'turn:freestun.net:3478',
+    'username': 'free',
+    'credential': 'free',
+  },
+];

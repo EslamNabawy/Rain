@@ -2,6 +2,7 @@ import 'dart:async';
 import 'dart:io';
 
 import 'package:file_picker/file_picker.dart';
+import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
@@ -10,6 +11,8 @@ import 'package:protocol_brain/protocol_brain.dart';
 import 'package:rain_core/rain_core.dart';
 
 import 'package:rain/presentation/navigation/app_routes.dart';
+import 'package:rain/application/connection_command/connection_command_models.dart';
+import 'package:rain/application/transport/turn_fallback_diagnostics.dart';
 import 'package:rain/application/state/app_providers.dart';
 import 'package:rain/application/state/connection_diagnostics.dart';
 import 'package:rain/application/state/file_transfer_view.dart';
@@ -19,6 +22,7 @@ import 'package:rain/infrastructure/services/turn_credential_service.dart';
 import 'package:rain/presentation/theme/rain_theme.dart';
 import 'package:rain/presentation/widgets/app_components.dart';
 import 'package:rain/presentation/widgets/chat_composer.dart';
+import 'package:rain/presentation/widgets/connection_command_center.dart';
 import 'package:rain/presentation/widgets/app_dialogs.dart';
 import 'package:rain/presentation/widgets/rain_command_widgets.dart';
 
@@ -71,6 +75,15 @@ String _bitrateLabel(double? bitrate) {
     return '${(bitrate / 1000000).toStringAsFixed(1)} Mbps';
   }
   return '${(bitrate / 1000).round()} Kbps';
+}
+
+String _fallbackChoiceLabel(ConnectionFallbackChoice choice) {
+  return switch (choice) {
+    ConnectionFallbackChoice.tryAuto => 'Try Auto',
+    ConnectionFallbackChoice.tryRelay => 'Try Relay',
+    ConnectionFallbackChoice.tryIroh => 'Try Iroh',
+    ConnectionFallbackChoice.cancel => 'Cancel',
+  };
 }
 
 class _ConnectionStatus {
@@ -889,6 +902,7 @@ class _ChatPanelState extends ConsumerState<_ChatPanel> {
   bool _isPickingFile = false;
   bool _isConnecting = false;
   bool _showJumpToLatest = false;
+  String? _activeFallbackPromptAttemptId;
 
   @override
   void initState() {
@@ -925,10 +939,17 @@ class _ChatPanelState extends ConsumerState<_ChatPanel> {
     final turnDiagnostics = ref
         .watch(turnCredentialServiceProvider)
         .diagnostics;
+    final commandTimeline = ref
+        .watch(connectionTimelineProvider(widget.peerId))
+        .valueOrNull;
     final diagnostics = ConnectionDiagnostics.fromConnection(
       canChat: canChat,
       isPeerOnline: isPeerOnline,
       connection: connection,
+    );
+    final turnFallbackDiagnostics = TurnFallbackDiagnostics.fromSession(
+      connection.session,
+      turnDiagnostics: turnDiagnostics,
     );
     final connectionStatus = _connectionStatusForDiagnostics(diagnostics);
     final canConnectNow =
@@ -944,6 +965,20 @@ class _ChatPanelState extends ConsumerState<_ChatPanel> {
     ref.listen<AsyncValue<List<StoredMessage>>>(
       messagesProvider(widget.peerId),
       _handleMessageSound,
+    );
+    ref.listen<AsyncValue<ConnectionFallbackRequest>>(
+      connectionFallbackRequestProvider(widget.peerId),
+      (_, AsyncValue<ConnectionFallbackRequest> next) {
+        final request = next.valueOrNull;
+        if (request == null) {
+          return;
+        }
+        WidgetsBinding.instance.addPostFrameCallback((_) {
+          if (mounted) {
+            unawaited(_showConnectionFallbackPrompt(request));
+          }
+        });
+      },
     );
 
     return LayoutBuilder(
@@ -967,7 +1002,9 @@ class _ChatPanelState extends ConsumerState<_ChatPanel> {
                 canChat: canChat,
                 diagnostics: diagnostics,
                 turnDiagnostics: turnDiagnostics,
+                turnFallbackDiagnostics: turnFallbackDiagnostics,
                 connectionStatus: connectionStatus,
+                commandTimeline: commandTimeline,
                 canConnectNow: canConnectNow,
                 canDisconnectNow: canDisconnectNow,
               ),
@@ -1095,7 +1132,9 @@ class _ChatPanelState extends ConsumerState<_ChatPanel> {
     required bool canChat,
     required ConnectionDiagnostics diagnostics,
     required TurnCredentialDiagnostics turnDiagnostics,
+    required TurnFallbackDiagnostics turnFallbackDiagnostics,
     required _ConnectionStatus connectionStatus,
+    required ConnectionTimeline? commandTimeline,
     required bool canConnectNow,
     required bool canDisconnectNow,
   }) {
@@ -1106,7 +1145,9 @@ class _ChatPanelState extends ConsumerState<_ChatPanel> {
       _showLinkCommandDialog(
         diagnostics: diagnostics,
         turnDiagnostics: turnDiagnostics,
+        turnFallbackDiagnostics: turnFallbackDiagnostics,
         connectionStatus: connectionStatus,
+        commandTimeline: commandTimeline,
         canConnectNow: canConnectNow,
         canDisconnectNow: canDisconnectNow,
       );
@@ -1186,191 +1227,247 @@ class _ChatPanelState extends ConsumerState<_ChatPanel> {
   Future<void> _showLinkCommandDialog({
     required ConnectionDiagnostics diagnostics,
     required TurnCredentialDiagnostics turnDiagnostics,
+    required TurnFallbackDiagnostics turnFallbackDiagnostics,
     required _ConnectionStatus connectionStatus,
+    required ConnectionTimeline? commandTimeline,
     required bool canConnectNow,
     required bool canDisconnectNow,
   }) {
     final route = diagnostics.route;
     final updatedAt = diagnostics.updatedAt;
+    final relayProbeEnabled =
+        !kReleaseMode && ref.read(appEnvironmentProvider).enableRelayProbe;
     return showDialog<void>(
       context: context,
       builder: (BuildContext dialogContext) {
-        final scheme = Theme.of(dialogContext).colorScheme;
-        final maxDialogHeight = MediaQuery.sizeOf(dialogContext).height * 0.64;
+        void closeDialog() => Navigator.of(dialogContext).pop();
 
-        return AlertDialog(
-          titlePadding: const EdgeInsets.fromLTRB(20, 18, 8, 0),
-          contentPadding: const EdgeInsets.fromLTRB(20, 16, 20, 8),
-          actionsPadding: const EdgeInsets.fromLTRB(20, 8, 20, 18),
-          title: Row(
-            children: <Widget>[
-              Icon(connectionStatus.icon, color: connectionStatus.color),
-              const SizedBox(width: 10),
-              Expanded(
-                child: Text(
-                  'Live Link',
-                  style: Theme.of(
-                    dialogContext,
-                  ).textTheme.titleLarge?.copyWith(fontWeight: FontWeight.w900),
-                ),
+        return Dialog(
+          insetPadding: const EdgeInsets.all(12),
+          backgroundColor: Colors.transparent,
+          child: ConnectionCommandCenter(
+            statusLabel: connectionStatus.label,
+            statusDetail: connectionStatus.detail,
+            statusColor: connectionStatus.color,
+            statusIcon: connectionStatus.icon,
+            timeline: commandTimeline,
+            initialPolicy:
+                commandTimeline?.policy ?? const ConnectionPolicy.defaults(),
+            diagnosticItems: <ConnectionDiagnosticItem>[
+              ConnectionDiagnosticItem(
+                label: 'Transport',
+                value: diagnostics.transportLabel,
               ),
-              IconButton(
-                tooltip: 'Close',
-                onPressed: () => Navigator.of(dialogContext).pop(),
-                icon: const Icon(Icons.close),
+              ConnectionDiagnosticItem(
+                label: 'Route',
+                value: diagnostics.label,
+              ),
+              ConnectionDiagnosticItem(
+                label: 'ICE stage',
+                value: turnFallbackDiagnostics.stageLabel,
+              ),
+              ConnectionDiagnosticItem(
+                label: 'Provider tier',
+                value: turnFallbackDiagnostics.providerTierLabel,
+              ),
+              ConnectionDiagnosticItem(
+                label: 'Provider',
+                value: diagnostics.providerId,
+              ),
+              ConnectionDiagnosticItem(
+                label: 'Pair',
+                value: diagnostics.selectedCandidatePairId,
+              ),
+              ConnectionDiagnosticItem(
+                label: 'Local',
+                value: _candidateLabel(route.localCandidateType),
+              ),
+              ConnectionDiagnosticItem(
+                label: 'Remote',
+                value: _candidateLabel(route.remoteCandidateType),
+              ),
+              ConnectionDiagnosticItem(
+                label: 'Protocol',
+                value: _protocolLabel(route),
+              ),
+              ConnectionDiagnosticItem(
+                label: 'RTT',
+                value: _rttLabel(route.rtt),
+              ),
+              ConnectionDiagnosticItem(
+                label: 'Bitrate',
+                value: _bitrateLabel(route.bitrate),
+              ),
+              ConnectionDiagnosticItem(
+                label: 'TURN',
+                value: turnDiagnostics.brokerConfigured ? 'Broker' : 'Static',
+              ),
+              ConnectionDiagnosticItem(
+                label: 'TURN provider',
+                value: turnFallbackDiagnostics.providerLabel,
+              ),
+              ConnectionDiagnosticItem(
+                label: 'TURN URLs',
+                value: turnFallbackDiagnostics.turnUrlCountLabel,
+              ),
+              ConnectionDiagnosticItem(
+                label: 'TURN expires',
+                value: turnDiagnostics.expiresAt == null
+                    ? null
+                    : _formatMessageTime(
+                        turnDiagnostics.expiresAt!.millisecondsSinceEpoch,
+                      ),
+              ),
+              ConnectionDiagnosticItem(
+                label: 'Room',
+                value: diagnostics.roomId,
+              ),
+              ConnectionDiagnosticItem(
+                label: 'Role',
+                value: diagnostics.isOfferOwner == null
+                    ? null
+                    : diagnostics.isOfferOwner!
+                    ? 'Offer'
+                    : 'Answer',
+              ),
+              ConnectionDiagnosticItem(
+                label: 'Retries',
+                value: '${diagnostics.retryAttempt}',
+              ),
+              ConnectionDiagnosticItem(
+                label: 'Attempt',
+                value: '${diagnostics.attemptIndex + 1}',
+              ),
+              ConnectionDiagnosticItem(
+                label: 'Updated',
+                value: updatedAt == null ? null : _formatMessageTime(updatedAt),
+              ),
+              ConnectionDiagnosticItem(
+                label: 'Last error',
+                value:
+                    diagnostics.lastError ??
+                    turnFallbackDiagnostics.lastError ??
+                    turnDiagnostics.lastError,
+              ),
+              ConnectionDiagnosticItem(
+                label: 'Error code',
+                value: turnFallbackDiagnostics.errorCodeLabel,
               ),
             ],
+            canConnect: canConnectNow,
+            canRetry: canConnectNow && connectionStatus.label == 'Failed',
+            canCancel: commandTimeline?.canCancel ?? false,
+            canDisconnect: canDisconnectNow,
+            canRunRelayProbe: relayProbeEnabled,
+            onClose: closeDialog,
+            onConnect: (ConnectionPolicy policy) {
+              closeDialog();
+              unawaited(_connectToPeer(policy: policy));
+            },
+            onRetry: (ConnectionPolicy policy) {
+              closeDialog();
+              unawaited(_connectToPeer(policy: policy));
+            },
+            onCancel: () {
+              closeDialog();
+              unawaited(_cancelConnectionAttempt());
+            },
+            onDisconnect: () {
+              closeDialog();
+              unawaited(_disconnectPeer());
+            },
+            onRunRelayProbe: () {
+              closeDialog();
+              unawaited(_runRelayProbe());
+            },
           ),
-          content: ConstrainedBox(
-            constraints: BoxConstraints(
-              maxWidth: 420,
-              maxHeight: maxDialogHeight,
-            ),
-            child: SingleChildScrollView(
-              child: Column(
-                mainAxisSize: MainAxisSize.min,
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: <Widget>[
-                  RainMiniStatusChip(
-                    label: connectionStatus.label,
-                    color: connectionStatus.color,
-                  ),
-                  const SizedBox(height: 12),
-                  Text(
-                    connectionStatus.detail,
-                    style: Theme.of(dialogContext).textTheme.bodyMedium
-                        ?.copyWith(
-                          color: scheme.onSurface.withValues(alpha: 0.72),
-                        ),
-                  ),
-                  const SizedBox(height: 16),
-                  Wrap(
-                    spacing: 10,
-                    runSpacing: 10,
-                    children: <Widget>[
-                      _LinkStatCard(label: 'Route', value: diagnostics.label),
-                      _LinkStatCard(
-                        label: 'Pair',
-                        value: diagnostics.selectedCandidatePairId ?? 'Unknown',
-                      ),
-                      _LinkStatCard(
-                        label: 'Local',
-                        value: _candidateLabel(route.localCandidateType),
-                      ),
-                      _LinkStatCard(
-                        label: 'Remote',
-                        value: _candidateLabel(route.remoteCandidateType),
-                      ),
-                      _LinkStatCard(
-                        label: 'Protocol',
-                        value: _protocolLabel(route),
-                      ),
-                      _LinkStatCard(label: 'RTT', value: _rttLabel(route.rtt)),
-                      _LinkStatCard(
-                        label: 'Bitrate',
-                        value: _bitrateLabel(route.bitrate),
-                      ),
-                      _LinkStatCard(
-                        label: 'TURN',
-                        value: turnDiagnostics.brokerConfigured
-                            ? 'Broker'
-                            : 'Static',
-                      ),
-                      _LinkStatCard(
-                        label: 'Provider',
-                        value: turnDiagnostics.provider,
-                      ),
-                      _LinkStatCard(
-                        label: 'TURN URLs',
-                        value: '${turnDiagnostics.turnUrlCount}',
-                      ),
-                      _LinkStatCard(
-                        label: 'TURN expires',
-                        value: turnDiagnostics.expiresAt == null
-                            ? 'None'
-                            : _formatMessageTime(
-                                turnDiagnostics
-                                    .expiresAt!
-                                    .millisecondsSinceEpoch,
-                              ),
-                      ),
-                      _LinkStatCard(
-                        label: 'Room',
-                        value: diagnostics.roomId ?? 'Not opened',
-                      ),
-                      _LinkStatCard(
-                        label: 'Role',
-                        value: diagnostics.isOfferOwner == null
-                            ? 'None'
-                            : diagnostics.isOfferOwner!
-                            ? 'Offer'
-                            : 'Answer',
-                      ),
-                      _LinkStatCard(
-                        label: 'Retries',
-                        value: '${diagnostics.retryAttempt}',
-                      ),
-                      _LinkStatCard(
-                        label: 'Updated',
-                        value: updatedAt == null
-                            ? 'Never'
-                            : _formatMessageTime(updatedAt),
-                      ),
-                    ],
-                  ),
-                  if (diagnostics.lastError != null) ...<Widget>[
-                    const SizedBox(height: 14),
-                    Text(
-                      diagnostics.lastError!,
-                      style: TextStyle(color: scheme.error),
-                    ),
-                  ],
-                  if (turnDiagnostics.lastError != null) ...<Widget>[
-                    const SizedBox(height: 8),
-                    Text(
-                      turnDiagnostics.lastError!,
-                      style: TextStyle(color: scheme.error),
-                    ),
-                  ],
-                ],
-              ),
-            ),
-          ),
-          actions: <Widget>[
-            TextButton(
-              onPressed: () => Navigator.of(dialogContext).pop(),
-              child: const Text('Close'),
-            ),
-            OutlinedButton.icon(
-              onPressed: canDisconnectNow
-                  ? () {
-                      Navigator.of(dialogContext).pop();
-                      _disconnectPeer();
-                    }
-                  : null,
-              icon: const Icon(Icons.link_off),
-              label: const Text('Disconnect'),
-            ),
-            FilledButton.icon(
-              onPressed: canConnectNow
-                  ? () {
-                      Navigator.of(dialogContext).pop();
-                      _connectToPeer();
-                    }
-                  : null,
-              icon: Icon(
-                connectionStatus.label == 'Failed'
-                    ? Icons.refresh
-                    : Icons.hub_outlined,
-              ),
-              label: Text(
-                connectionStatus.label == 'Failed' ? 'Retry' : 'Connect',
-              ),
-            ),
-          ],
         );
       },
     );
+  }
+
+  Future<void> _showConnectionFallbackPrompt(
+    ConnectionFallbackRequest request,
+  ) async {
+    if (_activeFallbackPromptAttemptId == request.attemptId) {
+      return;
+    }
+    _activeFallbackPromptAttemptId = request.attemptId;
+    var rememberForSession = false;
+
+    Future<void> choose(ConnectionFallbackChoice choice) async {
+      Navigator.of(context).pop();
+      try {
+        await ref
+            .read(connectionsProvider.notifier)
+            .resolveFallback(
+              request.peerId,
+              choice,
+              rememberForSession: rememberForSession,
+            );
+      } catch (error) {
+        _playSound(RainSoundEffect.error);
+        if (mounted) {
+          _showErrorSnack(_formatUiError(error));
+        }
+      }
+    }
+
+    try {
+      await showDialog<void>(
+        context: context,
+        barrierDismissible: false,
+        builder: (BuildContext dialogContext) {
+          final scheme = Theme.of(dialogContext).colorScheme;
+          return StatefulBuilder(
+            builder: (BuildContext context, StateSetter setDialogState) {
+              return AlertDialog(
+                title: const Text('Connection fallback'),
+                content: ConstrainedBox(
+                  constraints: const BoxConstraints(maxWidth: 420),
+                  child: Column(
+                    mainAxisSize: MainAxisSize.min,
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: <Widget>[
+                      Text(
+                        request.userMessage,
+                        style: Theme.of(context).textTheme.bodyMedium?.copyWith(
+                          color: scheme.onSurface.withValues(alpha: 0.74),
+                        ),
+                      ),
+                      const SizedBox(height: 12),
+                      CheckboxListTile(
+                        contentPadding: EdgeInsets.zero,
+                        dense: true,
+                        value: rememberForSession,
+                        onChanged: (bool? value) {
+                          setDialogState(
+                            () => rememberForSession = value ?? false,
+                          );
+                        },
+                        title: const Text('Remember for this session'),
+                        controlAffinity: ListTileControlAffinity.leading,
+                      ),
+                    ],
+                  ),
+                ),
+                actions: <Widget>[
+                  for (final choice in request.choices)
+                    TextButton(
+                      onPressed: () => unawaited(choose(choice)),
+                      child: Text(_fallbackChoiceLabel(choice)),
+                    ),
+                ],
+              );
+            },
+          );
+        },
+      );
+    } finally {
+      if (_activeFallbackPromptAttemptId == request.attemptId) {
+        _activeFallbackPromptAttemptId = null;
+      }
+    }
   }
 
   Widget _buildMessages(
@@ -2101,7 +2198,7 @@ class _ChatPanelState extends ConsumerState<_ChatPanel> {
     }
   }
 
-  Future<void> _connectToPeer() async {
+  Future<void> _connectToPeer({ConnectionPolicy? policy}) async {
     if (_isConnecting) return;
     final networkError = _networkActionError();
     if (networkError != null) {
@@ -2113,11 +2210,11 @@ class _ChatPanelState extends ConsumerState<_ChatPanel> {
     try {
       await ref
           .read(connectionsProvider.notifier)
-          .connect(widget.peerId, waitForConnected: true);
+          .connect(widget.peerId, waitForConnected: true, policy: policy);
       _playSound(RainSoundEffect.action);
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(content: Text('Connected to @${widget.peerId}.')),
+          SnackBar(content: Text('Connection started for @${widget.peerId}.')),
         );
       }
     } catch (error) {
@@ -2134,6 +2231,43 @@ class _ChatPanelState extends ConsumerState<_ChatPanel> {
       if (mounted) {
         setState(() => _isConnecting = false);
       }
+    }
+  }
+
+  Future<void> _cancelConnectionAttempt() async {
+    try {
+      await ref.read(connectionsProvider.notifier).cancel(widget.peerId);
+      _playSound(RainSoundEffect.action);
+    } catch (error) {
+      _playSound(RainSoundEffect.error);
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text(_formatUiError(error)),
+            backgroundColor: Theme.of(context).colorScheme.error,
+          ),
+        );
+      }
+    }
+  }
+
+  Future<void> _runRelayProbe() async {
+    final attempt = IceAttemptDescriptor(
+      stage: IceAttemptStage.primaryRelay,
+      policy: PeerIceTransportPolicy.relayOnly,
+      providerTier: IceProviderTier.primaryRelay,
+      providerId: 'primary-relay',
+      timeout: const Duration(seconds: 30),
+      connectAttemptId: 'probe-${DateTime.now().microsecondsSinceEpoch}',
+      attemptIndex: 1,
+    );
+    final result = await ref
+        .read(turnRelayProbeProvider)
+        .run(peerId: widget.peerId, attempt: attempt);
+    if (result.succeeded) {
+      _showInfoSnack(result.userMessage);
+    } else {
+      _showErrorSnack(result.userMessage);
     }
   }
 
@@ -2418,48 +2552,4 @@ Color _fileTransferStatusColor(FileTransferState state) {
     FileTransferState.failed ||
     FileTransferState.rejected => const Color(0xFFFF6B6B),
   };
-}
-
-class _LinkStatCard extends StatelessWidget {
-  const _LinkStatCard({required this.label, required this.value});
-
-  final String label;
-  final String value;
-
-  @override
-  Widget build(BuildContext context) {
-    final scheme = Theme.of(context).colorScheme;
-
-    return Container(
-      width: 132,
-      padding: const EdgeInsets.all(12),
-      decoration: BoxDecoration(
-        color: scheme.surfaceContainerHighest.withValues(alpha: 0.52),
-        borderRadius: BorderRadius.circular(14),
-        border: Border.all(
-          color: scheme.outlineVariant.withValues(alpha: 0.38),
-        ),
-      ),
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: <Widget>[
-          Text(
-            label,
-            style: Theme.of(context).textTheme.labelSmall?.copyWith(
-              color: scheme.onSurface.withValues(alpha: 0.58),
-            ),
-          ),
-          const SizedBox(height: 5),
-          Text(
-            value,
-            maxLines: 1,
-            overflow: TextOverflow.ellipsis,
-            style: Theme.of(
-              context,
-            ).textTheme.bodyMedium?.copyWith(fontWeight: FontWeight.w800),
-          ),
-        ],
-      ),
-    );
-  }
 }

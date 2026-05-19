@@ -9,6 +9,7 @@ Rain is a Melos-based Flutter monorepo for a peer-to-peer chat MVP. The codebase
 - `packages/protocol_brain`: Signaling adapters, session manager, retry logic, and connection memory.
 - `packages/rain_core`: Drift database, identity, friends, messages, offline queue, and delivery rules.
 - `backend/firebase`: Firebase Realtime Database rules and scheduled cleanup functions.
+- `backend/turn`: Self-hosted Coturn and TURN credential broker for relay fallback.
 - `backend/supabase`: Supabase schema, RLS policies, and Edge Function cleanup job.
 
 ## Prerequisites
@@ -93,6 +94,12 @@ The app reads compile-time configuration from `apps/rain/tool/dart_defines.local
 
 ## Backend Setup
 
+### TURN Relay
+
+Direct P2P stays the first choice, but mobile data, VPNs, symmetric NATs, and strict firewalls need a relay fallback. The zero-cost relay path lives in [backend/turn](backend/turn/README.md): an Oracle Always Free VM runs Coturn and a small HTTPS broker that returns short-lived TURN credentials after Firebase Auth verification.
+
+The app should be built with `RAIN_TURN_BROKER_URL=https://rain-p2p-turn.duckdns.org/rainTurnCredentials` once that broker is deployed. The unauthenticated broker check must return `401`; authenticated app calls must return at least one `turn:` or `turns:` ICE URL.
+
 ### Supabase
 
 1. Create a Supabase project and enable the Email provider for Auth.
@@ -145,3 +152,9 @@ flutter build windows --debug --no-pub
 - Rooms are deleted immediately after connect and also cleaned up server-side as a safety net.
 - Local persistence and queue operations live behind Drift transactions in `rain_core`.
 - Android background execution still requires device validation after Android SDK tooling is fixed on the host machine.
+
+## Scalability and Cost
+
+The zero-cost Oracle/Coturn relay is an early reliability path, not unlimited production infrastructure. The default Coturn template uses relay ports `49160-49300`, which is 140 UDP ports or roughly 70 concurrent relayed sessions. It caps each relayed session at `512000` bps, about 230 MB/hour for one continuously relayed session.
+
+Set an OCI budget alert around 7 TB/month, monitor Coturn active sessions, and move to paid managed TURN or a larger multi-region Coturn fleet when relay usage regularly nears 70 concurrent sessions, relay saturation appears in logs, or monthly egress approaches the free-tier ceiling.

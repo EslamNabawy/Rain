@@ -18,6 +18,7 @@ class SignalingCipher {
   static const String answerPurpose = 'answer';
   static const String callerIcePurpose = 'callerICE';
   static const String calleeIcePurpose = 'calleeICE';
+  static const String irohAddressPurpose = 'irohAddress';
 
   static const List<int> _salt = <int>[
     114,

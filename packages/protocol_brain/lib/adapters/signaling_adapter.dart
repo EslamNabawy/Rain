@@ -1,5 +1,7 @@
 import 'package:flutter_webrtc/flutter_webrtc.dart';
 
+import '../src/iroh_signaling.dart';
+
 abstract class SignalingAdapter {
   Future<void> ensureAuthenticated();
   Future<String> currentUid();
@@ -10,10 +12,16 @@ abstract class SignalingAdapter {
 
   Future<void> writeOffer(String roomId, SDPPayload offer);
   Future<void> writeAnswer(String roomId, SDPPayload answer);
-  Future<void> writeICE(String roomId, IceRole role, RTCIceCandidate candidate);
+  Future<void> writeICE(
+    String roomId,
+    IceRole role,
+    IceCandidatePayload candidate,
+  );
+  Future<void> writeIrohAddress(String roomId, IrohAddressPayload payload);
 
   Stream<SDPPayload> onAnswer(String roomId);
-  Stream<RTCIceCandidate> onICE(String roomId, IceRole role);
+  Stream<IceCandidatePayload> onICE(String roomId, IceRole role);
+  Stream<IrohAddressPayload> onIrohAddress(String roomId);
   Stream<SDPPayload> onOffer(String roomId);
 
   Future<void> setPresence(String username, bool online);
@@ -57,17 +65,34 @@ class SignalingSessionExpiredException implements Exception {
 enum IceRole { caller, callee }
 
 class SDPPayload {
-  const SDPPayload({required this.sdp, required this.ts, this.icePolicy});
+  const SDPPayload({
+    required this.sdp,
+    required this.ts,
+    this.icePolicy,
+    this.connectAttemptId,
+    this.iceStage,
+    this.protocolVersion = 1,
+    this.createdAt,
+  });
 
   final RTCSessionDescription sdp;
   final int ts;
   final String? icePolicy;
+  final String? connectAttemptId;
+  final String? iceStage;
+  final int protocolVersion;
+  final int? createdAt;
 
   Map<String, Object?> toJson() {
     return <String, Object?>{
       'sdp': <String, Object?>{'type': sdp.type, 'sdp': sdp.sdp},
       'ts': ts,
       if (icePolicy != null && icePolicy!.isNotEmpty) 'icePolicy': icePolicy,
+      if (connectAttemptId != null && connectAttemptId!.isNotEmpty)
+        'connectAttemptId': connectAttemptId,
+      if (iceStage != null && iceStage!.isNotEmpty) 'iceStage': iceStage,
+      'protocolVersion': protocolVersion,
+      if (createdAt != null) 'createdAt': createdAt,
     };
   }
 
@@ -81,6 +106,47 @@ class SDPPayload {
       ),
       ts: (json['ts'] as num?)?.toInt() ?? 0,
       icePolicy: json['icePolicy'] as String?,
+      connectAttemptId: json['connectAttemptId'] as String?,
+      iceStage: json['iceStage'] as String?,
+      protocolVersion: (json['protocolVersion'] as num?)?.toInt() ?? 1,
+      createdAt: (json['createdAt'] as num?)?.toInt(),
+    );
+  }
+}
+
+class IceCandidatePayload {
+  const IceCandidatePayload({
+    required this.candidate,
+    this.connectAttemptId,
+    this.iceStage,
+    this.protocolVersion = 1,
+    this.createdAt,
+  });
+
+  final RTCIceCandidate candidate;
+  final String? connectAttemptId;
+  final String? iceStage;
+  final int protocolVersion;
+  final int? createdAt;
+
+  Map<String, Object?> toJson() {
+    return <String, Object?>{
+      ...iceCandidateToJson(candidate),
+      if (connectAttemptId != null && connectAttemptId!.isNotEmpty)
+        'connectAttemptId': connectAttemptId,
+      if (iceStage != null && iceStage!.isNotEmpty) 'iceStage': iceStage,
+      'protocolVersion': protocolVersion,
+      if (createdAt != null) 'createdAt': createdAt,
+    };
+  }
+
+  static IceCandidatePayload fromJson(Map<Object?, Object?> json) {
+    return IceCandidatePayload(
+      candidate: iceCandidateFromJson(json),
+      connectAttemptId: json['connectAttemptId'] as String?,
+      iceStage: json['iceStage'] as String?,
+      protocolVersion: (json['protocolVersion'] as num?)?.toInt() ?? 1,
+      createdAt: (json['createdAt'] as num?)?.toInt(),
     );
   }
 }

@@ -2,6 +2,7 @@ import 'package:peer_core/peer_core.dart';
 
 import '../adapters/signaling_adapter.dart';
 import 'connection_memory.dart';
+import 'ice_attempt.dart';
 import 'protocol_brain_impl.dart';
 import 'session_manager.dart';
 
@@ -13,8 +14,13 @@ ProtocolBrain createDefaultProtocolBrain({
   PlatformBridge? platformBridge,
   PeerCoreFactory? peerFactory,
   PeerConfigProvider? peerConfigProvider,
+  IceAttemptConfigProvider? iceAttemptConfigProvider,
+  Future<List<Map<String, dynamic>>> Function(IceAttemptDescriptor attempt)?
+  iceAttemptServersProvider,
+  IceAttemptResultRecorder? iceAttemptResultRecorder,
   Future<List<Map<String, dynamic>>> Function(PeerIceTransportPolicy policy)?
   iceServersProvider,
+  bool enableExperimentalRelay = false,
   bool ordered = true,
   int? maxRetransmits,
 }) {
@@ -28,6 +34,20 @@ ProtocolBrain createDefaultProtocolBrain({
       ordered: ordered,
       maxRetransmits: maxRetransmits,
     ),
+    iceAttemptResultRecorder: iceAttemptResultRecorder,
+    iceAttemptConfigProvider:
+        iceAttemptConfigProvider ??
+        (iceAttemptServersProvider == null
+            ? null
+            : (IceAttemptDescriptor attempt) async {
+                return PeerConfig(
+                  iceServers: await iceAttemptServersProvider(attempt),
+                  platform: bridge,
+                  ordered: ordered,
+                  maxRetransmits: maxRetransmits,
+                  iceTransportPolicy: attempt.policy,
+                );
+              }),
     peerConfigProvider:
         peerConfigProvider ??
         (iceServersProvider == null
@@ -43,5 +63,6 @@ ProtocolBrain createDefaultProtocolBrain({
               }),
     peerFactory: peerFactory ?? DefaultPeerCore.new,
     connectionMemoryStore: connectionMemoryStore,
+    enableExperimentalRelay: enableExperimentalRelay,
   );
 }

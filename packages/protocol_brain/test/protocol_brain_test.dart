@@ -342,12 +342,82 @@ void main() {
       expect(requestedPolicies, <PeerIceTransportPolicy>[
         PeerIceTransportPolicy.all,
         PeerIceTransportPolicy.relayOnly,
-        PeerIceTransportPolicy.relayOnly,
       ]);
       expect(adapter.deletedRooms, contains('alice:bob'));
       expect(adapter.writtenOffers, <String>['alice:bob', 'alice:bob']);
       expect(adapter.storedOfferPolicies, <String?>['all', 'relay']);
       expect(brain.getSession('bob')?.state, SessionState.reconnecting);
+
+      await brain.disconnect('bob');
+    },
+  );
+
+  test(
+    'direct failure exposes primary relay stage and records attempt',
+    () async {
+      final adapter = _RecordingSignalingAdapter();
+      final peers = <_FakePeerCore>[];
+      final requestedAttempts = <IceAttemptDescriptor>[];
+      final results = <IceAttemptResult>[];
+      final brain = ProtocolBrainImpl(
+        selfUsername: 'alice',
+        adapter: adapter,
+        peerConfig: _fakePeerConfig(),
+        iceAttemptConfigProvider: (IceAttemptDescriptor attempt) async {
+          requestedAttempts.add(attempt);
+          return PeerConfig(
+            iceServers: <Map<String, dynamic>>[
+              const <String, dynamic>{'urls': 'stun:stun.l.google.com:19302'},
+              if (attempt.requiresRelay)
+                const <String, dynamic>{
+                  'urls': 'turn:turn.rain.example:3478?transport=udp',
+                  'username': 'rain',
+                  'credential': 'secret',
+                },
+            ],
+            platform: _FakePlatformBridge(),
+            iceTransportPolicy: attempt.policy,
+          );
+        },
+        iceAttemptResultRecorder: results.add,
+        peerFactory: () {
+          final peer = _FakePeerCore();
+          peers.add(peer);
+          return peer;
+        },
+        connectionMemoryStore: _MemoryConnectionStore(),
+      );
+
+      await brain.connect('bob');
+      peers.single.emitFailed();
+      await pumpEventQueue(times: 4);
+
+      final session = brain.getSession('bob')!;
+      expect(session.state, SessionState.reconnecting);
+      expect(session.iceStage, IceAttemptStage.primaryRelay);
+      expect(session.providerTier, IceProviderTier.primaryRelay);
+      expect(session.providerId, 'primary-relay');
+      expect(session.attemptIndex, 1);
+      expect(session.detail, contains('Trying primary TURN relay'));
+      expect(peers, hasLength(2));
+      expect(
+        requestedAttempts.map((IceAttemptDescriptor attempt) => attempt.stage),
+        <IceAttemptStage>[
+          IceAttemptStage.directStunOnly,
+          IceAttemptStage.primaryRelay,
+        ],
+      );
+      expect(
+        requestedAttempts.map((IceAttemptDescriptor attempt) => attempt.policy),
+        <PeerIceTransportPolicy>[
+          PeerIceTransportPolicy.all,
+          PeerIceTransportPolicy.relayOnly,
+        ],
+      );
+      expect(results, hasLength(1));
+      expect(results.single.attempt.stage, IceAttemptStage.directStunOnly);
+      expect(results.single.succeeded, isFalse);
+      expect(adapter.storedOfferPolicies, <String?>['all', 'relay']);
 
       await brain.disconnect('bob');
     },
@@ -446,6 +516,91 @@ void main() {
     expect(session?.state, SessionState.failed);
     expect(session?.error, contains('TURN broker unreachable'));
     expect(adapter.deletedRooms, contains('alice:bob'));
+
+    await brain.disconnect('bob');
+  });
+
+  test('relay credential failure keeps precise final error', () async {
+    final adapter = _RecordingSignalingAdapter();
+    late _FakePeerCore peer;
+    final brain = ProtocolBrainImpl(
+      selfUsername: 'alice',
+      adapter: adapter,
+      peerConfig: _fakePeerConfig(),
+      iceAttemptConfigProvider: (IceAttemptDescriptor attempt) async {
+        if (attempt.stage != IceAttemptStage.directStunOnly) {
+          throw StateError('Relay credentials unavailable.');
+        }
+        return PeerConfig(
+          iceServers: const <Map<String, dynamic>>[
+            <String, dynamic>{'urls': 'stun:stun.l.google.com:19302'},
+          ],
+          platform: _FakePlatformBridge(),
+          iceTransportPolicy: attempt.policy,
+        );
+      },
+      peerFactory: () {
+        peer = _FakePeerCore();
+        return peer;
+      },
+      connectionMemoryStore: _MemoryConnectionStore(),
+    );
+
+    await brain.connect('bob');
+    peer.emitFailed();
+    await pumpEventQueue(times: 8);
+
+    final session = brain.getSession('bob')!;
+    expect(session.state, SessionState.failed);
+    expect(session.error, contains('Relay credentials unavailable'));
+    expect(
+      session.detail,
+      isNot(contains('Direct path blocked. Relay providers failed.')),
+    );
+    expect(adapter.deletedRooms, contains('alice:bob'));
+
+    await brain.disconnect('bob');
+  });
+
+  test('stale ICE candidates from older attempts are ignored', () async {
+    final adapter = _RecordingSignalingAdapter();
+    late _FakePeerCore peer;
+    final brain = ProtocolBrainImpl(
+      selfUsername: 'alice',
+      adapter: adapter,
+      peerConfig: _fakePeerConfig(),
+      peerFactory: () {
+        peer = _FakePeerCore();
+        return peer;
+      },
+      connectionMemoryStore: _MemoryConnectionStore(),
+    );
+
+    await brain.connect('bob');
+    final attemptId = brain.getSession('bob')?.connectAttemptId;
+    expect(attemptId, isNotNull);
+
+    adapter.emitIce(
+      'alice:bob',
+      IceRole.callee,
+      IceCandidatePayload(
+        candidate: RTCIceCandidate('stale-candidate', '0', 0),
+        connectAttemptId: 'old-attempt',
+        iceStage: IceAttemptStage.directStunOnly.wireName,
+      ),
+    );
+    adapter.emitIce(
+      'alice:bob',
+      IceRole.callee,
+      IceCandidatePayload(
+        candidate: RTCIceCandidate('fresh-candidate', '0', 0),
+        connectAttemptId: attemptId,
+        iceStage: IceAttemptStage.directStunOnly.wireName,
+      ),
+    );
+    await pumpEventQueue();
+
+    expect(peer.addedIceCandidates, <String?>['fresh-candidate']);
 
     await brain.disconnect('bob');
   });
@@ -703,8 +858,8 @@ class _RecordingSignalingAdapter implements SignalingAdapter {
       <String, StreamController<SDPPayload>>{};
   final Map<String, StreamController<SDPPayload>> _answerControllers =
       <String, StreamController<SDPPayload>>{};
-  final Map<String, StreamController<RTCIceCandidate>> _iceControllers =
-      <String, StreamController<RTCIceCandidate>>{};
+  final Map<String, StreamController<IceCandidatePayload>> _iceControllers =
+      <String, StreamController<IceCandidatePayload>>{};
 
   @override
   Future<void> ensureAuthenticated() async {}
@@ -742,7 +897,13 @@ class _RecordingSignalingAdapter implements SignalingAdapter {
   Future<void> writeICE(
     String roomId,
     IceRole role,
-    RTCIceCandidate candidate,
+    IceCandidatePayload candidate,
+  ) async {}
+
+  @override
+  Future<void> writeIrohAddress(
+    String roomId,
+    IrohAddressPayload payload,
   ) async {}
 
   @override
@@ -761,12 +922,19 @@ class _RecordingSignalingAdapter implements SignalingAdapter {
   }
 
   @override
-  Stream<RTCIceCandidate> onICE(String roomId, IceRole role) {
+  Stream<IceCandidatePayload> onICE(String roomId, IceRole role) {
     final key = '$roomId:${role.name}';
     return _iceControllers
-        .putIfAbsent(key, () => StreamController<RTCIceCandidate>.broadcast())
+        .putIfAbsent(
+          key,
+          () => StreamController<IceCandidatePayload>.broadcast(),
+        )
         .stream;
   }
+
+  @override
+  Stream<IrohAddressPayload> onIrohAddress(String roomId) =>
+      const Stream<IrohAddressPayload>.empty();
 
   @override
   Stream<SDPPayload> onOffer(String roomId) {
@@ -785,6 +953,16 @@ class _RecordingSignalingAdapter implements SignalingAdapter {
     _answerControllers
         .putIfAbsent(roomId, () => StreamController<SDPPayload>.broadcast())
         .add(answer);
+  }
+
+  void emitIce(String roomId, IceRole role, IceCandidatePayload payload) {
+    final key = '$roomId:${role.name}';
+    _iceControllers
+        .putIfAbsent(
+          key,
+          () => StreamController<IceCandidatePayload>.broadcast(),
+        )
+        .add(payload);
   }
 
   void emitOfferError(String roomId, Object error) {
@@ -913,6 +1091,7 @@ class _FakePeerCore implements PeerCore {
   int setAnswerCalls = 0;
   PeerConfig? initialConfig;
   final List<String?> receivedAnswers = <String?>[];
+  final List<String?> addedIceCandidates = <String?>[];
   PeerConnectionRoute route = const PeerConnectionRoute.unknown();
   final StreamController<RTCIceCandidate> _iceController =
       StreamController<RTCIceCandidate>.broadcast();
@@ -968,7 +1147,9 @@ class _FakePeerCore implements PeerCore {
   }
 
   @override
-  Future<void> addIceCandidate(RTCIceCandidate candidate) async {}
+  Future<void> addIceCandidate(RTCIceCandidate candidate) async {
+    addedIceCandidates.add(candidate.candidate);
+  }
 
   @override
   List<RTCIceCandidate> getLocalCandidates() => const <RTCIceCandidate>[];

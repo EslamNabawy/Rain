@@ -40,6 +40,44 @@ void main() {
     expect(environment.shouldUseFallbackAdapter, isFalse);
   });
 
+  test('relay probe debug flag is disabled unless explicitly enabled', () {
+    final defaultEnvironment = AppEnvironment.fromEnvironment(
+      runtimeEnvironment: const <String, String>{},
+    );
+    final enabledEnvironment = AppEnvironment.fromEnvironment(
+      runtimeEnvironment: const <String, String>{
+        'RAIN_ENABLE_RELAY_PROBE': 'true',
+      },
+    );
+
+    expect(defaultEnvironment.enableRelayProbe, isFalse);
+    expect(enabledEnvironment.enableRelayProbe, isTrue);
+  });
+
+  test('Iroh fallback is disabled by default', () {
+    final environment = AppEnvironment.fromEnvironment(
+      runtimeEnvironment: const <String, String>{},
+    );
+
+    expect(environment.enableIrohFallback, isFalse);
+    expect(environment.irohConnectTimeout, const Duration(seconds: 25));
+    expect(environment.irohAlpn, 'rain.p2p.quic.v1');
+  });
+
+  test('Iroh fallback can be enabled from runtime environment', () {
+    final environment = AppEnvironment.fromEnvironment(
+      runtimeEnvironment: const <String, String>{
+        'RAIN_ENABLE_IROH_FALLBACK': 'true',
+        'RAIN_IROH_CONNECT_TIMEOUT_SECONDS': '35',
+        'RAIN_IROH_ALPN': 'rain.test.v1',
+      },
+    );
+
+    expect(environment.enableIrohFallback, isTrue);
+    expect(environment.irohConnectTimeout, const Duration(seconds: 35));
+    expect(environment.irohAlpn, 'rain.test.v1');
+  });
+
   test('release validation rejects public OpenRelay by default', () {
     final environment = AppEnvironment.fromEnvironment();
 

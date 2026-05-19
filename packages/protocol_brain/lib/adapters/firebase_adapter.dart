@@ -2,8 +2,8 @@ import 'dart:async';
 
 import 'package:firebase_auth/firebase_auth.dart';
 import 'package:firebase_database/firebase_database.dart';
-import 'package:flutter_webrtc/flutter_webrtc.dart';
 
+import '../src/iroh_signaling.dart';
 import 'signaling_adapter.dart';
 import 'signaling_cipher.dart';
 
@@ -534,7 +534,7 @@ class FirebaseSignalingAdapter implements SignalingAdapter {
   }
 
   @override
-  Stream<RTCIceCandidate> onICE(String roomId, IceRole role) {
+  Stream<IceCandidatePayload> onICE(String roomId, IceRole role) {
     final path = role == IceRole.caller ? 'callerICE' : 'calleeICE';
     final purpose = role == IceRole.caller
         ? SignalingCipher.callerIcePurpose
@@ -550,8 +550,28 @@ class FirebaseSignalingAdapter implements SignalingAdapter {
             purpose: purpose,
             payload: value! as Map<Object?, Object?>,
           );
-          return iceCandidateFromJson(payload);
+          return IceCandidatePayload.fromJson(payload);
         });
+  }
+
+  @override
+  Stream<IrohAddressPayload> onIrohAddress(String roomId) {
+    return _root.child('rooms/$roomId/iroh').onValue.asyncExpand((
+      DatabaseEvent event,
+    ) async* {
+      final value = event.snapshot.value;
+      if (value is! Map<Object?, Object?>) {
+        return;
+      }
+      for (final encryptedPayload in _irohAddressPayloadMaps(value)) {
+        final payload = await _signalingCipher.decryptPayload(
+          roomId: roomId,
+          purpose: SignalingCipher.irohAddressPurpose,
+          payload: encryptedPayload,
+        );
+        yield IrohAddressPayload.fromJson(payload);
+      }
+    });
   }
 
   @override
@@ -714,7 +734,7 @@ class FirebaseSignalingAdapter implements SignalingAdapter {
   Future<void> writeICE(
     String roomId,
     IceRole role,
-    RTCIceCandidate candidate,
+    IceCandidatePayload candidate,
   ) async {
     await ensureAuthenticated();
     final timestamp = DateTime.now().millisecondsSinceEpoch;
@@ -730,12 +750,33 @@ class FirebaseSignalingAdapter implements SignalingAdapter {
           ? SignalingCipher.callerIcePurpose
           : SignalingCipher.calleeIcePurpose,
       timestamp: timestamp,
-      payload: iceCandidateToJson(candidate),
+      payload: candidate.toJson(),
     );
     await _root.child('rooms/$roomId').update(<String, Object?>{
       ..._roomParticipants(roomId),
       ..._roomLifecycle(roomId: roomId, timestamp: timestamp),
       '$path/$candidateKey': encryptedCandidate,
+    });
+  }
+
+  @override
+  Future<void> writeIrohAddress(
+    String roomId,
+    IrohAddressPayload payload,
+  ) async {
+    await ensureAuthenticated();
+    final timestamp = DateTime.now().millisecondsSinceEpoch;
+    final encryptedAddress = await _signalingCipher.encryptPayload(
+      roomId: roomId,
+      purpose: SignalingCipher.irohAddressPurpose,
+      timestamp: timestamp,
+      payload: payload.toJson(),
+    );
+    await _root.child('rooms/$roomId').update(<String, Object?>{
+      ..._roomParticipants(roomId),
+      ..._roomLifecycle(roomId: roomId, timestamp: timestamp),
+      'iroh/${payload.connectAttemptId}/${_normalizedUsername(payload.username)}':
+          encryptedAddress,
     });
   }
 
@@ -756,6 +797,21 @@ class FirebaseSignalingAdapter implements SignalingAdapter {
       ..._roomLifecycle(roomId: roomId, timestamp: timestamp, newAttempt: true),
       'offer': encryptedOffer,
     });
+  }
+
+  Iterable<Map<Object?, Object?>> _irohAddressPayloadMaps(
+    Map<Object?, Object?> attempts,
+  ) sync* {
+    for (final attemptValue in attempts.values) {
+      if (attemptValue is! Map<Object?, Object?>) {
+        continue;
+      }
+      for (final payloadValue in attemptValue.values) {
+        if (payloadValue is Map<Object?, Object?>) {
+          yield payloadValue;
+        }
+      }
+    }
   }
 
   Future<void> _ensureSignedInAsUsername(String username) async {

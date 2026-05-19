@@ -11,6 +11,12 @@ on:
       - main
       - develop
   workflow_dispatch:
+    inputs:
+      build_relay_test:
+        description: Build broker-backed relay-test artifacts
+        required: false
+        type: boolean
+        default: false
 
 permissions:
   contents: read
@@ -21,10 +27,12 @@ concurrency:
 
 env:
   FLUTTER_VERSION: '3.38.5'
+  FRB_CODEGEN_VERSION: '2.12.0'
   JAVA_VERSION: '17'
   NODE_VERSION: '20'
   RAIN_APP_DIR: apps/rain
   RAIN_DART_DEFINES_FILE: apps/rain/tool/dart_defines.example.json
+  BUILD_PROFILE: ${{ github.event_name == 'workflow_dispatch' && inputs.build_relay_test && 'relay-test' || 'demo' }}
   ARTIFACT_RETENTION_CI: '14'
   ARTIFACT_RETENTION_RELEASE: '60'
 
@@ -65,11 +73,21 @@ jobs:
           channel: stable
           cache: true
 
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          targets: armv7-linux-androideabi,aarch64-linux-android,x86_64-linux-android
+
+      - name: Install Flutter Rust Bridge codegen
+        run: cargo install flutter_rust_bridge_codegen --version ${{ env.FRB_CODEGEN_VERSION }}
+
       - name: Print toolchain versions
         run: |
           flutter doctor -v
           flutter --version
           dart --version
+          rustc --version
+          cargo --version
+          flutter_rust_bridge_codegen --version
 
       - name: Restore Dart and Flutter dependencies
         run: |
@@ -82,6 +100,10 @@ jobs:
           do
             (cd "$package" && flutter pub get)
           done
+
+      - name: Generate Rust bridge
+        working-directory: ${{ env.RAIN_APP_DIR }}
+        run: flutter_rust_bridge_codegen generate
 
       - name: Fail on dependency lock drift
         run: |
@@ -109,6 +131,19 @@ jobs:
         run: |
           test -s apps/rain/lib/application/state/app_state.freezed.dart
           test -s packages/rain_core/lib/database/rain_database.g.dart
+          test -s apps/rain/lib/src/rust/frb_generated.dart
+          test -s apps/rain/rust/src/frb_generated.rs
+
+      - name: Verify Rust bridge generated code is committed
+        run: |
+          git diff --exit-code -- \
+            apps/rain/lib/src/rust \
+            apps/rain/rust/src/frb_generated.rs
+
+      - name: Check Rust bridge crate
+        run: |
+          cargo fmt --manifest-path apps/rain/rust/Cargo.toml --check
+          cargo test --manifest-path apps/rain/rust/Cargo.toml
 
       - name: Verify release guard fails closed
         shell: pwsh
@@ -302,12 +337,23 @@ jobs:
           channel: stable
           cache: true
 
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          targets: armv7-linux-androideabi,aarch64-linux-android,x86_64-linux-android
+
+      - name: Install Flutter Rust Bridge codegen
+        run: cargo install flutter_rust_bridge_codegen --version ${{ env.FRB_CODEGEN_VERSION }}
+
       - name: Flutter doctor
         run: flutter doctor -v
 
       - name: Restore app dependencies
         working-directory: ${{ env.RAIN_APP_DIR }}
         run: flutter pub get
+
+      - name: Generate Rust bridge
+        working-directory: ${{ env.RAIN_APP_DIR }}
+        run: flutter_rust_bridge_codegen generate
 
       - name: Verify Dart defines file exists
         run: test -f "${GITHUB_WORKSPACE}/${RAIN_DART_DEFINES_FILE}"
@@ -382,14 +428,48 @@ jobs:
           channel: stable
           cache: true
 
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          targets: armv7-linux-androideabi,aarch64-linux-android,x86_64-linux-android
+
+      - name: Install Flutter Rust Bridge codegen
+        run: cargo install flutter_rust_bridge_codegen --version ${{ env.FRB_CODEGEN_VERSION }}
+
       - name: Flutter doctor
         run: flutter doctor -v
 
+      - name: Generate Rust bridge
+        working-directory: ${{ env.RAIN_APP_DIR }}
+        run: flutter_rust_bridge_codegen generate
+
       - name: Prepare OpenRelay demo dart defines
         shell: pwsh
+        env:
+          RAIN_RELEASE_DART_DEFINES_JSON: ${{ secrets.RAIN_RELEASE_DART_DEFINES_JSON }}
         run: |
           $definesPath = Join-Path $env:RUNNER_TEMP 'rain-openrelay-demo-defines.json'
-          Copy-Item -LiteralPath 'apps\rain\tool\dart_defines.example.json' -Destination $definesPath -Force
+          if ($env:BUILD_PROFILE -eq 'relay-test') {
+            if ([string]::IsNullOrWhiteSpace($env:RAIN_RELEASE_DART_DEFINES_JSON)) {
+              throw 'RAIN_RELEASE_DART_DEFINES_JSON secret is required for relay-test CI artifacts.'
+            }
+            Set-Content -LiteralPath $definesPath -Value $env:RAIN_RELEASE_DART_DEFINES_JSON -Encoding utf8NoBOM
+            $defines = Get-Content -Raw -LiteralPath $definesPath | ConvertFrom-Json
+            $brokerUrl = [string]$defines.RAIN_TURN_BROKER_URL
+            if ([string]::IsNullOrWhiteSpace($brokerUrl)) {
+              throw 'Relay-test build requires RAIN_TURN_BROKER_URL.'
+            }
+            $signalingKey = [string]$defines.RAIN_SIGNALING_ENCRYPTION_KEY
+            if ([string]::IsNullOrWhiteSpace($signalingKey)) {
+              throw 'Relay-test build requires RAIN_SIGNALING_ENCRYPTION_KEY.'
+            }
+            $allowPublicTurn = [string]$defines.RAIN_ALLOW_PUBLIC_TURN
+            if ($allowPublicTurn.Trim().ToLowerInvariant() -ne 'false') {
+              throw 'Relay-test build requires RAIN_ALLOW_PUBLIC_TURN=false.'
+            }
+            "RAIN_TURN_BROKER_URL=$brokerUrl" | Out-File -FilePath $env:GITHUB_ENV -Encoding utf8 -Append
+          } else {
+            Copy-Item -LiteralPath 'apps\rain\tool\dart_defines.example.json' -Destination $definesPath -Force
+          }
           $env:RAIN_DART_DEFINES_FILE = $definesPath
           "RAIN_DART_DEFINES_FILE=$definesPath" | Out-File -FilePath $env:GITHUB_ENV -Encoding utf8 -Append
 
@@ -400,25 +480,49 @@ jobs:
       - name: Build Windows EXE and mobile Android APK architectures
         shell: pwsh
         run: |
-          pwsh -NoProfile -File scripts\build_release.ps1 `
-            -Platform all `
-            -OutputDir artifacts `
-            -DartDefinesFile $env:RAIN_DART_DEFINES_FILE `
-            -AllowPublicTurnForDemo `
-            -UseDemoAndroidSigningKey `
-            -GenerateSizeReports `
-            -Clean
+          $args = @(
+            '-NoProfile',
+            '-File',
+            'scripts\build_release.ps1',
+            '-Platform',
+            'all',
+            '-OutputDir',
+            'artifacts',
+            '-DartDefinesFile',
+            $env:RAIN_DART_DEFINES_FILE,
+            '-UseDemoAndroidSigningKey',
+            '-GenerateSizeReports',
+            '-Clean'
+          )
+          if ($env:BUILD_PROFILE -eq 'relay-test') {
+            $args += '-ForceRelayOnlySmoke'
+            $args += '-TurnBrokerUrl'
+            $args += $env:RAIN_TURN_BROKER_URL
+          } else {
+            $args += '-AllowPublicTurnForDemo'
+          }
+          pwsh @args
 
       - name: Verify expected artifact set
         shell: pwsh
         run: |
-          $expected = @(
-            @{ Label = 'Windows portable EXE'; Path = 'artifacts\Rain-Demo-Windows-x64-Build\rain.exe' },
-            @{ Label = 'Android ARM v7 APK (armeabi-v7a)'; Path = 'artifacts\Rain-Demo-Android-ARM-v7-Build.apk' },
-            @{ Label = 'Android ARM v8/v9 APK (arm64-v8a)'; Path = 'artifacts\Rain-Demo-Android-ARM-v8-v9-Build.apk' },
-            @{ Label = 'Android ARM v7 size report'; Path = 'artifacts\size-reports\apk-code-size-analysis-android-arm.json' },
-            @{ Label = 'Android ARM v8/v9 size report'; Path = 'artifacts\size-reports\apk-code-size-analysis-android-arm64.json' }
-          )
+          if ($env:BUILD_PROFILE -eq 'relay-test') {
+            $expected = @(
+              @{ Label = 'Windows portable EXE'; Path = 'artifacts\Rain-Relay-Test-Windows-x64-Build\rain.exe' },
+              @{ Label = 'Android ARM v7 APK (armeabi-v7a)'; Path = 'artifacts\Rain-Relay-Test-android-armeabi-v7a.apk' },
+              @{ Label = 'Android ARM v8/v9 APK (arm64-v8a)'; Path = 'artifacts\Rain-Relay-Test-android-arm64-v8a.apk' },
+              @{ Label = 'Android ARM v7 size report'; Path = 'artifacts\size-reports\apk-code-size-analysis-android-arm.json' },
+              @{ Label = 'Android ARM v8/v9 size report'; Path = 'artifacts\size-reports\apk-code-size-analysis-android-arm64.json' }
+            )
+          } else {
+            $expected = @(
+              @{ Label = 'Windows portable EXE'; Path = 'artifacts\Rain-Demo-Windows-x64-Build\rain.exe' },
+              @{ Label = 'Android ARM v7 APK (armeabi-v7a)'; Path = 'artifacts\Rain-Demo-Android-ARM-v7-Build.apk' },
+              @{ Label = 'Android ARM v8/v9 APK (arm64-v8a)'; Path = 'artifacts\Rain-Demo-Android-ARM-v8-v9-Build.apk' },
+              @{ Label = 'Android ARM v7 size report'; Path = 'artifacts\size-reports\apk-code-size-analysis-android-arm.json' },
+              @{ Label = 'Android ARM v8/v9 size report'; Path = 'artifacts\size-reports\apk-code-size-analysis-android-arm64.json' }
+            )
+          }
           foreach ($artifact in $expected) {
             $path = $artifact.Path
             if (-not (Test-Path -LiteralPath $path)) {
@@ -435,7 +539,8 @@ jobs:
               throw "Default CI/CD mobile artifacts must not include oversized optional APK: $path"
             }
           }
-          $nestedArchives = Get-ChildItem -LiteralPath 'artifacts\Rain-Demo-Windows-x64-Build' -Recurse -File |
+          $windowsArtifactDir = if ($env:BUILD_PROFILE -eq 'relay-test') { 'artifacts\Rain-Relay-Test-Windows-x64-Build' } else { 'artifacts\Rain-Demo-Windows-x64-Build' }
+          $nestedArchives = Get-ChildItem -LiteralPath $windowsArtifactDir -Recurse -File |
             Where-Object { $_.Extension -in @('.zip', '.rar', '.7z') }
           if ($nestedArchives) {
             $archiveList = ($nestedArchives | ForEach-Object { $_.FullName }) -join "`n"
@@ -445,25 +550,29 @@ jobs:
       - name: Upload Windows portable EXE bundle
         uses: actions/upload-artifact@v7
         with:
-          name: Rain-Demo-Windows-x64-Build
-          path: artifacts/Rain-Demo-Windows-x64-Build
+          name: ${{ env.BUILD_PROFILE == 'relay-test' && 'Rain-Relay-Test-Windows-x64-Build' || 'Rain-Demo-Windows-x64-Build' }}
+          path: |
+            artifacts/Rain-Demo-Windows-x64-Build
+            artifacts/Rain-Relay-Test-Windows-x64-Build
           if-no-files-found: error
           retention-days: ${{ env.ARTIFACT_RETENTION_RELEASE }}
 
       - name: Upload Android APKs mobile architectures
         uses: actions/upload-artifact@v7
         with:
-          name: Rain-Demo-Android-Builds
+          name: ${{ env.BUILD_PROFILE == 'relay-test' && 'Rain-Relay-Test-Android-Builds' || 'Rain-Demo-Android-Builds' }}
           path: |
             artifacts/Rain-Demo-Android-ARM-v8-v9-Build.apk
             artifacts/Rain-Demo-Android-ARM-v7-Build.apk
+            artifacts/Rain-Relay-Test-android-arm64-v8a.apk
+            artifacts/Rain-Relay-Test-android-armeabi-v7a.apk
           if-no-files-found: error
           retention-days: ${{ env.ARTIFACT_RETENTION_RELEASE }}
 
       - name: Upload Android APK size reports
         uses: actions/upload-artifact@v7
         with:
-          name: Rain-Demo-Android-Size-Reports
+          name: ${{ env.BUILD_PROFILE == 'relay-test' && 'Rain-Relay-Test-Android-Size-Reports' || 'Rain-Demo-Android-Size-Reports' }}
           path: artifacts/size-reports/*.json
           if-no-files-found: error
           retention-days: ${{ env.ARTIFACT_RETENTION_RELEASE }}

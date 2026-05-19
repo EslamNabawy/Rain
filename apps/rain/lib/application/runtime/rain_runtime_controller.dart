@@ -214,7 +214,10 @@ class RainRuntimeController with WidgetsBindingObserver {
               return;
             }
             await _localMutations.run(
-              () => messageDeliveryService.handleControlMessage(text),
+              () => messageDeliveryService.handleControlMessage(
+                text,
+                peerId: peerId,
+              ),
             );
             return;
           }
@@ -399,6 +402,59 @@ class RainRuntimeController with WidgetsBindingObserver {
         timeout: connectionTimeout,
       );
     }
+  }
+
+  Future<void> preparePeerConnection(
+    String username, {
+    bool interactive = true,
+  }) async {
+    final normalizedUsername = _normalizedUsername(username);
+    if (brain == null) {
+      if (interactive) {
+        throw StateError('Peer connection is unavailable right now.');
+      }
+      return;
+    }
+    var friend = await _localMutations.run(
+      () => friendStore.loadFriend(normalizedUsername),
+    );
+    if (friend?.state != FriendState.friend) {
+      await _syncRelationships(onlyUsername: normalizedUsername);
+      friend = await _localMutations.run(
+        () => friendStore.loadFriend(normalizedUsername),
+      );
+    }
+    if (friend?.state != FriendState.friend) {
+      if (interactive) {
+        final message = switch (friend?.state) {
+          FriendState.pendingOutgoing =>
+            'Wait for @$normalizedUsername to accept your friend request before connecting.',
+          FriendState.pendingIncoming =>
+            'Accept @$normalizedUsername first before trying to connect.',
+          FriendState.blocked =>
+            'Unblock @$normalizedUsername before trying to connect.',
+          FriendState.blockedByPeer =>
+            '@$normalizedUsername blocked you. You cannot connect right now.',
+          FriendState.friend => null,
+          null => 'Could not find @$normalizedUsername in your friends list.',
+        };
+        if (message != null) {
+          throw StateError(message);
+        }
+      }
+      return;
+    }
+    final backendIdentity = await adapter.fetchIdentity(normalizedUsername);
+    final isOnline = backendIdentity?.online ?? friend?.isOnline ?? false;
+    await _localMutations.run(
+      () => friendStore.updatePresence(normalizedUsername, isOnline),
+    );
+    if (!isOnline && interactive) {
+      throw StateError(
+        '@$normalizedUsername is offline. Wait for them to come online before connecting.',
+      );
+    }
+    _manualDisconnectedPeers.remove(normalizedUsername);
   }
 
   Future<void> disconnectPeer(String username) async {

@@ -2,9 +2,11 @@ import 'dart:typed_data';
 
 import 'package:peer_core/peer_core.dart' show PeerConnectionRoute;
 
+import 'ice_attempt.dart';
+
 enum SessionState { connecting, connected, reconnecting, failed }
 
-enum ConnectionType { signaling }
+enum ConnectionType { signaling, iroh }
 
 enum SessionChannel { chat, control, file }
 
@@ -80,6 +82,11 @@ class Session {
     this.roomId,
     this.isOfferOwner,
     this.route = const PeerConnectionRoute.unknown(),
+    this.iceStage,
+    this.providerTier,
+    this.providerId,
+    this.connectAttemptId,
+    this.attemptIndex = 0,
   }) : _sender = sender;
 
   final String peerId;
@@ -94,6 +101,11 @@ class Session {
   final String? roomId;
   final bool? isOfferOwner;
   final PeerConnectionRoute route;
+  final IceAttemptStage? iceStage;
+  final IceProviderTier? providerTier;
+  final String? providerId;
+  final String? connectAttemptId;
+  final int attemptIndex;
   final void Function(String data) _sender;
 
   void send(String data) => _sender(data);
@@ -111,6 +123,11 @@ class Session {
     String? roomId,
     bool? isOfferOwner,
     PeerConnectionRoute? route,
+    IceAttemptStage? iceStage,
+    IceProviderTier? providerTier,
+    String? providerId,
+    String? connectAttemptId,
+    int? attemptIndex,
     void Function(String data)? sender,
   }) {
     return Session(
@@ -126,6 +143,11 @@ class Session {
       roomId: roomId ?? this.roomId,
       isOfferOwner: isOfferOwner ?? this.isOfferOwner,
       route: route ?? this.route,
+      iceStage: iceStage ?? this.iceStage,
+      providerTier: providerTier ?? this.providerTier,
+      providerId: providerId ?? this.providerId,
+      connectAttemptId: connectAttemptId ?? this.connectAttemptId,
+      attemptIndex: attemptIndex ?? this.attemptIndex,
       sender: sender ?? _sender,
     );
   }

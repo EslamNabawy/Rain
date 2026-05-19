@@ -1,8 +1,8 @@
 import 'dart:async';
 
-import 'package:flutter_webrtc/flutter_webrtc.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
 
+import '../src/iroh_signaling.dart';
 import 'signaling_adapter.dart';
 import 'signaling_cipher.dart';
 import 'supabase_auth_alias.dart';
@@ -590,7 +590,7 @@ class SupabaseSignalingAdapter implements SignalingAdapter {
   }
 
   @override
-  Stream<RTCIceCandidate> onICE(String roomId, IceRole role) {
+  Stream<IceCandidatePayload> onICE(String roomId, IceRole role) {
     final field = role == IceRole.caller ? 'caller_ice' : 'callee_ice';
     final purpose = role == IceRole.caller
         ? SignalingCipher.callerIcePurpose
@@ -617,10 +617,15 @@ class SupabaseSignalingAdapter implements SignalingAdapter {
                 purpose: purpose,
                 payload: value,
               );
-              yield iceCandidateFromJson(decrypted);
+              yield IceCandidatePayload.fromJson(decrypted);
             }
           }
         });
+  }
+
+  @override
+  Stream<IrohAddressPayload> onIrohAddress(String roomId) {
+    return const Stream<IrohAddressPayload>.empty();
   }
 
   @override
@@ -859,7 +864,7 @@ class SupabaseSignalingAdapter implements SignalingAdapter {
   Future<void> writeICE(
     String roomId,
     IceRole role,
-    RTCIceCandidate candidate,
+    IceCandidatePayload candidate,
   ) async {
     await ensureAuthenticated();
     final encryptedCandidate = await _signalingCipher.encryptPayload(
@@ -868,7 +873,7 @@ class SupabaseSignalingAdapter implements SignalingAdapter {
           ? SignalingCipher.callerIcePurpose
           : SignalingCipher.calleeIcePurpose,
       timestamp: DateTime.now().millisecondsSinceEpoch,
-      payload: iceCandidateToJson(candidate),
+      payload: candidate.toJson(),
     );
     await _client.rpc(
       'append_room_ice',
@@ -879,6 +884,12 @@ class SupabaseSignalingAdapter implements SignalingAdapter {
       },
     );
   }
+
+  @override
+  Future<void> writeIrohAddress(
+    String roomId,
+    IrohAddressPayload payload,
+  ) async {}
 
   @override
   Future<void> writeOffer(String roomId, SDPPayload offer) async {

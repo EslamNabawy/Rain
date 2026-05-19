@@ -29,6 +29,13 @@ class AppEnvironment {
     required this.supabaseAnonKey,
     required this.signalingEncryptionKey,
     required this.turnBrokerUrl,
+    required this.iceStrategy,
+    required this.enableTier3Turn,
+    required this.enableRelayProbe,
+    required this.turnProviderOrder,
+    required this.enableIrohFallback,
+    required this.irohConnectTimeoutSeconds,
+    required this.irohAlpn,
   });
 
   final RainBackend backend;
@@ -52,6 +59,13 @@ class AppEnvironment {
   final String supabaseAnonKey;
   final String signalingEncryptionKey;
   final String turnBrokerUrl;
+  final String iceStrategy;
+  final bool enableTier3Turn;
+  final bool enableRelayProbe;
+  final String turnProviderOrder;
+  final bool enableIrohFallback;
+  final int irohConnectTimeoutSeconds;
+  final String irohAlpn;
 
   factory AppEnvironment.fromEnvironment({
     Map<String, String>? runtimeEnvironment,
@@ -230,6 +244,51 @@ class AppEnvironment {
         'RAIN_TURN_BROKER_URL',
         compileTimeValue: const String.fromEnvironment('RAIN_TURN_BROKER_URL'),
       ),
+      iceStrategy: readString(
+        'RAIN_ICE_STRATEGY',
+        compileTimeValue: const String.fromEnvironment('RAIN_ICE_STRATEGY'),
+        defaultValue: 'staged',
+      ),
+      enableTier3Turn: readBool(
+        'RAIN_ENABLE_TIER3_TURN',
+        compileTimeValue: const String.fromEnvironment(
+          'RAIN_ENABLE_TIER3_TURN',
+        ),
+        defaultValue: false,
+      ),
+      enableRelayProbe: readBool(
+        'RAIN_ENABLE_RELAY_PROBE',
+        compileTimeValue: const String.fromEnvironment(
+          'RAIN_ENABLE_RELAY_PROBE',
+        ),
+        defaultValue: false,
+      ),
+      turnProviderOrder: readString(
+        'RAIN_TURN_PROVIDER_ORDER',
+        compileTimeValue: const String.fromEnvironment(
+          'RAIN_TURN_PROVIDER_ORDER',
+        ),
+        defaultValue: 'cloudflare,selfHosted,openRelay,xirsys,freestun,numb',
+      ),
+      enableIrohFallback: readBool(
+        'RAIN_ENABLE_IROH_FALLBACK',
+        compileTimeValue: const String.fromEnvironment(
+          'RAIN_ENABLE_IROH_FALLBACK',
+        ),
+        defaultValue: false,
+      ),
+      irohConnectTimeoutSeconds: readInt(
+        'RAIN_IROH_CONNECT_TIMEOUT_SECONDS',
+        compileTimeValue: const String.fromEnvironment(
+          'RAIN_IROH_CONNECT_TIMEOUT_SECONDS',
+        ),
+        defaultValue: 25,
+      ),
+      irohAlpn: readString(
+        'RAIN_IROH_ALPN',
+        compileTimeValue: const String.fromEnvironment('RAIN_IROH_ALPN'),
+        defaultValue: 'rain.p2p.quic.v1',
+      ),
     );
   }
 
@@ -359,6 +418,13 @@ class AppEnvironment {
       supabaseAnonKey: supabaseAnonKey,
       signalingEncryptionKey: signalingEncryptionKey,
       turnBrokerUrl: turnBrokerUrl,
+      iceStrategy: iceStrategy,
+      enableTier3Turn: enableTier3Turn,
+      enableRelayProbe: enableRelayProbe,
+      turnProviderOrder: turnProviderOrder,
+      enableIrohFallback: enableIrohFallback,
+      irohConnectTimeoutSeconds: irohConnectTimeoutSeconds,
+      irohAlpn: irohAlpn,
     );
   }
 
@@ -406,6 +472,10 @@ class AppEnvironment {
 
   Duration get heartbeatInterval => Duration(
     seconds: backgroundHeartbeatSeconds > 0 ? backgroundHeartbeatSeconds : 30,
+  );
+
+  Duration get irohConnectTimeout => Duration(
+    seconds: irohConnectTimeoutSeconds > 0 ? irohConnectTimeoutSeconds : 25,
   );
 
   String get backendLabel => switch (backend) {

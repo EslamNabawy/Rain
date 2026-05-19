@@ -34,6 +34,8 @@ void main() {
     );
 
     expect(diagnostics.label, 'Direct');
+    expect(diagnostics.transportLabel, 'WebRTC');
+    expect(diagnostics.transportDetail, 'WebRTC data channels');
     expect(diagnostics.isConnected, isTrue);
     expect(diagnostics.routeKind, PeerRouteKind.direct);
     expect(diagnostics.selectedCandidatePairId, 'pair-7');
@@ -43,6 +45,60 @@ void main() {
     expect(diagnostics.retryAttempt, 2);
     expect(diagnostics.roomId, 'room-bob-alice');
     expect(diagnostics.isOfferOwner, isTrue);
+  });
+
+  test('connected Iroh direct session reports Iroh transport diagnostics', () {
+    final diagnostics = ConnectionDiagnostics.fromConnection(
+      canChat: true,
+      isPeerOnline: true,
+      connection: PeerConnectionView(
+        peerId: 'bob',
+        session: Session(
+          peerId: 'bob',
+          state: SessionState.connected,
+          connectionType: ConnectionType.iroh,
+          sender: (_) {},
+          detail: 'Connected over Iroh fallback.',
+          route: const PeerConnectionRoute(
+            kind: PeerRouteKind.direct,
+            protocol: 'quic',
+            rtt: 0.044,
+          ),
+        ),
+      ),
+    );
+
+    expect(diagnostics.label, 'Direct');
+    expect(diagnostics.transportLabel, 'Iroh');
+    expect(diagnostics.transportDetail, 'Iroh QUIC fallback');
+    expect(diagnostics.protocol, 'quic');
+    expect(diagnostics.rtt, 0.044);
+  });
+
+  test('connected Iroh relay session reports relay route', () {
+    final diagnostics = ConnectionDiagnostics.fromConnection(
+      canChat: true,
+      isPeerOnline: true,
+      connection: PeerConnectionView(
+        peerId: 'bob',
+        session: Session(
+          peerId: 'bob',
+          state: SessionState.connected,
+          connectionType: ConnectionType.iroh,
+          sender: (_) {},
+          detail: 'Connected over Iroh relay.',
+          route: const PeerConnectionRoute(
+            kind: PeerRouteKind.relay,
+            protocol: 'quic',
+            relayProtocol: 'iroh-relay',
+          ),
+        ),
+      ),
+    );
+
+    expect(diagnostics.label, 'Relay');
+    expect(diagnostics.transportLabel, 'Iroh');
+    expect(diagnostics.relayProtocol, 'iroh-relay');
   });
 
   test('failed session reports failure without stale route success', () {
@@ -68,6 +124,24 @@ void main() {
     expect(diagnostics.routeKind, PeerRouteKind.unknown);
     expect(diagnostics.lastError, 'ICE timeout');
   });
+
+  test(
+    'relay credential failure remains precise in connection diagnostics',
+    () {
+      final diagnostics = ConnectionDiagnostics.fromConnection(
+        canChat: true,
+        isPeerOnline: true,
+        connection: PeerConnectionView(
+          peerId: 'bob',
+          error: StateError('Relay credentials unavailable.'),
+          manualIntent: ManualConnectionIntent.failed,
+        ),
+      );
+
+      expect(diagnostics.label, 'Failed');
+      expect(diagnostics.detail, 'Relay credentials unavailable.');
+    },
+  );
 
   test('connected unknown route stays connecting while stats settle', () {
     final diagnostics = ConnectionDiagnostics.fromConnection(
