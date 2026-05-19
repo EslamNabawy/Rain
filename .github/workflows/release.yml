@@ -123,23 +123,31 @@ jobs:
             -Platform android `
             -OutputDir artifacts `
             -DartDefinesFile $env:RAIN_DART_DEFINES_FILE `
+            -AndroidArtifactSet mobile `
             -Clean
 
       - name: Verify Android release APK ABI set
         shell: pwsh
         run: |
           $expected = @(
-            @{ Label = 'Android universal APK'; Path = 'artifacts\Rain-release-android-universal.apk' },
-            @{ Label = 'Android default/universal APK alias'; Path = 'artifacts\Rain-release-android.apk' },
             @{ Label = 'Android ARM v7 APK (armeabi-v7a)'; Path = 'artifacts\Rain-release-android-armeabi-v7a.apk' },
-            @{ Label = 'Android ARM v8/v9 APK (arm64-v8a)'; Path = 'artifacts\Rain-release-android-arm64-v8a.apk' },
-            @{ Label = 'Android x86_64 APK'; Path = 'artifacts\Rain-release-android-x86_64.apk' }
+            @{ Label = 'Android ARM v8/v9 APK (arm64-v8a)'; Path = 'artifacts\Rain-release-android-arm64-v8a.apk' }
           )
           foreach ($artifact in $expected) {
             if (-not (Test-Path -LiteralPath $artifact.Path)) {
               throw "Missing expected artifact for $($artifact.Label): $($artifact.Path)"
             }
             Write-Host "Verified $($artifact.Label): $($artifact.Path)"
+          }
+          $unexpected = @(
+            'artifacts\Rain-release-android.apk',
+            'artifacts\Rain-release-android-universal.apk',
+            'artifacts\Rain-release-android-x86_64.apk'
+          )
+          foreach ($path in $unexpected) {
+            if (Test-Path -LiteralPath $path) {
+              throw "Release artifacts must not include oversized optional APK: $path"
+            }
           }
 
       - name: Upload Android release artifacts

@@ -236,6 +236,7 @@ jobs:
             $env:RAIN_DART_DEFINES_FILE,
             '-AndroidArtifactSet',
             'mobile',
+            '-GenerateSizeReports',
             '-Clean'
           )
           if ($env:BUILD_PROFILE -eq 'demo') {
@@ -253,25 +254,26 @@ jobs:
         run: |
           if ($env:BUILD_PROFILE -eq 'demo') {
             $expected = @(
-              @{ Label = 'Android universal APK'; Path = 'artifacts\Rain-Demo-Android-Universal-Build.apk' },
               @{ Label = 'Android ARM v7 APK (armeabi-v7a)'; Path = 'artifacts\Rain-Demo-Android-ARM-v7-Build.apk' },
-              @{ Label = 'Android ARM v8/v9 APK (arm64-v8a)'; Path = 'artifacts\Rain-Demo-Android-ARM-v8-v9-Build.apk' }
+              @{ Label = 'Android ARM v8/v9 APK (arm64-v8a)'; Path = 'artifacts\Rain-Demo-Android-ARM-v8-v9-Build.apk' },
+              @{ Label = 'Android ARM v7 size report'; Path = 'artifacts\size-reports\apk-code-size-analysis-android-arm.json' },
+              @{ Label = 'Android ARM v8/v9 size report'; Path = 'artifacts\size-reports\apk-code-size-analysis-android-arm64.json' }
             )
           } elseif ($env:BUILD_PROFILE -eq 'relay-test') {
             $prefix = 'Rain-Relay-Test'
             $expected = @(
-              @{ Label = 'Android universal APK'; Path = "artifacts\$prefix-android-universal.apk" },
-              @{ Label = 'Android default/universal APK alias'; Path = "artifacts\$prefix-android.apk" },
               @{ Label = 'Android ARM v7 APK (armeabi-v7a)'; Path = "artifacts\$prefix-android-armeabi-v7a.apk" },
-              @{ Label = 'Android ARM v8/v9 APK (arm64-v8a)'; Path = "artifacts\$prefix-android-arm64-v8a.apk" }
+              @{ Label = 'Android ARM v8/v9 APK (arm64-v8a)'; Path = "artifacts\$prefix-android-arm64-v8a.apk" },
+              @{ Label = 'Android ARM v7 size report'; Path = 'artifacts\size-reports\apk-code-size-analysis-android-arm.json' },
+              @{ Label = 'Android ARM v8/v9 size report'; Path = 'artifacts\size-reports\apk-code-size-analysis-android-arm64.json' }
             )
           } else {
             $prefix = 'Rain-release'
             $expected = @(
-              @{ Label = 'Android universal APK'; Path = "artifacts\$prefix-android-universal.apk" },
-              @{ Label = 'Android default/universal APK alias'; Path = "artifacts\$prefix-android.apk" },
               @{ Label = 'Android ARM v7 APK (armeabi-v7a)'; Path = "artifacts\$prefix-android-armeabi-v7a.apk" },
-              @{ Label = 'Android ARM v8/v9 APK (arm64-v8a)'; Path = "artifacts\$prefix-android-arm64-v8a.apk" }
+              @{ Label = 'Android ARM v8/v9 APK (arm64-v8a)'; Path = "artifacts\$prefix-android-arm64-v8a.apk" },
+              @{ Label = 'Android ARM v7 size report'; Path = 'artifacts\size-reports\apk-code-size-analysis-android-arm.json' },
+              @{ Label = 'Android ARM v8/v9 size report'; Path = 'artifacts\size-reports\apk-code-size-analysis-android-arm64.json' }
             )
           }
           foreach ($artifact in $expected) {
@@ -280,21 +282,38 @@ jobs:
             }
             Write-Host "Verified $($artifact.Label): $($artifact.Path)"
           }
+          $unexpected = @(
+            'artifacts\Rain-Demo-Android-Universal-Build.apk',
+            'artifacts\Rain-Demo-Android-x86_64-Build.apk',
+            'artifacts\Rain-Relay-Test-android.apk',
+            'artifacts\Rain-Relay-Test-android-universal.apk',
+            'artifacts\Rain-Relay-Test-android-x86_64.apk',
+            'artifacts\Rain-release-android.apk',
+            'artifacts\Rain-release-android-universal.apk',
+            'artifacts\Rain-release-android-x86_64.apk'
+          )
+          foreach ($path in $unexpected) {
+            if (Test-Path -LiteralPath $path) {
+              throw "Default mobile artifact build must not include oversized optional APK: $path"
+            }
+          }
 
       - name: Upload Android APK artifacts
         uses: actions/upload-artifact@v7
         with:
           name: ${{ env.BUILD_PROFILE == 'demo' && 'Rain-Demo-Android-Builds' || env.BUILD_PROFILE == 'relay-test' && 'Rain-Relay-Test-Android-Builds' || 'Rain-Release-Android-Builds' }}
           path: |
-            artifacts/Rain-Demo-Android-Universal-Build.apk
             artifacts/Rain-Demo-Android-ARM-v8-v9-Build.apk
             artifacts/Rain-Demo-Android-ARM-v7-Build.apk
-            artifacts/Rain-Relay-Test-android.apk
-            artifacts/Rain-Relay-Test-android-universal.apk
             artifacts/Rain-Relay-Test-android-arm64-v8a.apk
             artifacts/Rain-Relay-Test-android-armeabi-v7a.apk
-            artifacts/Rain-release-android.apk
-            artifacts/Rain-release-android-universal.apk
             artifacts/Rain-release-android-arm64-v8a.apk
             artifacts/Rain-release-android-armeabi-v7a.apk
+          if-no-files-found: error
+
+      - name: Upload Android APK size reports
+        uses: actions/upload-artifact@v7
+        with:
+          name: ${{ env.BUILD_PROFILE == 'demo' && 'Rain-Demo-Android-Size-Reports' || env.BUILD_PROFILE == 'relay-test' && 'Rain-Relay-Test-Android-Size-Reports' || 'Rain-Release-Android-Size-Reports' }}
+          path: artifacts/size-reports/*.json
           if-no-files-found: error

@@ -15,10 +15,11 @@ param(
   [string]$OutputDir = '',
   [string]$DartDefinesFile = '',
   [ValidateSet('all', 'mobile')]
-  [string]$AndroidArtifactSet = 'all',
+  [string]$AndroidArtifactSet = 'mobile',
   [switch]$AllowPublicTurnForDemo,
   [switch]$RelayTest,
   [switch]$UseDemoAndroidSigningKey,
+  [switch]$GenerateSizeReports,
   [switch]$Clean
 )
 
@@ -449,6 +450,54 @@ function Invoke-FlutterBuild([string[]]$Arguments) {
   }
 }
 
+function Remove-AndroidSizeAnalysisReports([string]$ProjectRoot) {
+  $candidateDirs = @(
+    (Join-Path $ProjectRoot 'build'),
+    (Join-Path $HOME '.flutter-devtools')
+  )
+
+  foreach ($dir in $candidateDirs) {
+    if (-not (Test-Path -LiteralPath $dir)) {
+      continue
+    }
+
+    Get-ChildItem -LiteralPath $dir -Recurse -File -Filter '*code-size-analysis*.json' -ErrorAction SilentlyContinue |
+      Remove-Item -Force
+  }
+}
+
+function Copy-LatestAndroidSizeAnalysisReport(
+  [string]$ProjectRoot,
+  [string]$ReportDir,
+  [string]$ReportName
+) {
+  $candidateDirs = @(
+    (Join-Path $ProjectRoot 'build'),
+    (Join-Path $HOME '.flutter-devtools')
+  )
+  $report = $null
+
+  foreach ($dir in $candidateDirs) {
+    if (-not (Test-Path -LiteralPath $dir)) {
+      continue
+    }
+
+    $report = Get-ChildItem -LiteralPath $dir -Recurse -File -Filter '*code-size-analysis*.json' -ErrorAction SilentlyContinue |
+      Sort-Object LastWriteTime -Descending |
+      Select-Object -First 1
+    if ($report) {
+      break
+    }
+  }
+
+  if (-not $report) {
+    throw "Flutter size analysis report was not generated for $ReportName."
+  }
+
+  New-Item -ItemType Directory -Force -Path $ReportDir | Out-Null
+  Copy-Item -LiteralPath $report.FullName -Destination (Join-Path $ReportDir "$ReportName.json") -Force
+}
+
 function Stop-GradleDaemons([string]$ProjectRoot) {
   $gradlewPath = Join-Path $ProjectRoot 'android\gradlew.bat'
   if (-not (Test-Path $gradlewPath)) {
@@ -606,7 +655,6 @@ if ($Platform -in @('all', 'windows')) {
 }
 
 if ($Platform -in @('all', 'android')) {
-  Write-Step "Building Android universal release APK"
   if ($Clean) {
     Write-Step "Cleaning Flutter project state for Android build"
     Stop-GradleDaemons $appsRoot
@@ -617,31 +665,37 @@ if ($Platform -in @('all', 'android')) {
   } else {
     @()
   }
-  $flutterArgs = @('build', 'apk', '--release') + $androidTargetPlatformArgs + $dartDefineArgs
-  Invoke-InDir $appsRoot {
-    Invoke-FlutterBuild $flutterArgs
-  }
 
-  $apkSource = Join-Path $appsRoot 'build\app\outputs\flutter-apk\app-release.apk'
-  $apkDestination = if ($isOpenRelayDemoBuild) { '' } else { Join-Path $releaseRoot "$androidArtifactPrefix-android.apk" }
-  $universalApkDestination = if ($isOpenRelayDemoBuild) {
-    Join-Path $releaseRoot 'Rain-Demo-Android-Universal-Build.apk'
+  if ($AndroidArtifactSet -eq 'all') {
+    Write-Step "Building Android universal release APK"
+    $flutterArgs = @('build', 'apk', '--release') + $dartDefineArgs
+    Invoke-InDir $appsRoot {
+      Invoke-FlutterBuild $flutterArgs
+    }
+
+    $apkSource = Join-Path $appsRoot 'build\app\outputs\flutter-apk\app-release.apk'
+    $apkDestination = if ($isOpenRelayDemoBuild) { '' } else { Join-Path $releaseRoot "$androidArtifactPrefix-android.apk" }
+    $universalApkDestination = if ($isOpenRelayDemoBuild) {
+      Join-Path $releaseRoot 'Rain-Demo-Android-Universal-Build.apk'
+    } else {
+      Join-Path $releaseRoot "$androidArtifactPrefix-android-universal.apk"
+    }
+
+    if (-not (Test-Path $apkSource)) {
+      throw "Android release APK not found: $apkSource"
+    }
+
+    if (-not [string]::IsNullOrWhiteSpace($apkDestination)) {
+      Copy-Item -LiteralPath $apkSource -Destination $apkDestination -Force
+    }
+    Copy-Item -LiteralPath $apkSource -Destination $universalApkDestination -Force
+
+    Write-Step "Resetting Android build state before per-ABI release APKs"
+    Stop-GradleDaemons $appsRoot
+    Clean-FlutterProject $appsRoot
   } else {
-    Join-Path $releaseRoot "$androidArtifactPrefix-android-universal.apk"
+    Write-Step "Skipping Android universal/x86_64 release APK; mobile user artifacts are ARM-only"
   }
-
-  if (-not (Test-Path $apkSource)) {
-    throw "Android release APK not found: $apkSource"
-  }
-
-  if (-not [string]::IsNullOrWhiteSpace($apkDestination)) {
-    Copy-Item -LiteralPath $apkSource -Destination $apkDestination -Force
-  }
-  Copy-Item -LiteralPath $apkSource -Destination $universalApkDestination -Force
-
-  Write-Step "Resetting Android build state before per-ABI release APKs"
-  Stop-GradleDaemons $appsRoot
-  Clean-FlutterProject $appsRoot
 
   $abiBuildLabel = if ($AndroidArtifactSet -eq 'mobile') {
     'armeabi-v7a, arm64-v8a (ARMv8/ARMv9 devices)'
@@ -682,6 +736,30 @@ if ($Platform -in @('all', 'android')) {
     Copy-Item -LiteralPath $abiApkSource -Destination $abiApkDestination -Force
     Write-Step "Packaged Android APK for $($abiApk.Label): $abiApkDestination"
   }
+
+  if ($GenerateSizeReports) {
+    $sizeReportDir = Join-Path $releaseRoot 'size-reports'
+    $sizeTargets = @(
+      @{ Label = 'android-arm'; TargetPlatform = 'android-arm'; ReportName = 'apk-code-size-analysis-android-arm' },
+      @{ Label = 'android-arm64'; TargetPlatform = 'android-arm64'; ReportName = 'apk-code-size-analysis-android-arm64' }
+    )
+
+    foreach ($sizeTarget in $sizeTargets) {
+      Write-Step "Generating Android APK size analysis for $($sizeTarget.Label)"
+      Remove-AndroidSizeAnalysisReports $appsRoot
+      $sizeFlutterArgs = @(
+        'build',
+        'apk',
+        '--release',
+        '--analyze-size',
+        "--target-platform=$($sizeTarget.TargetPlatform)"
+      ) + $dartDefineArgs
+      Invoke-InDir $appsRoot {
+        Invoke-FlutterBuild $sizeFlutterArgs
+      }
+      Copy-LatestAndroidSizeAnalysisReport $appsRoot $sizeReportDir $sizeTarget.ReportName
+    }
+  }
 }
 
 if ($Platform -in @('all', 'windows')) {
@@ -707,22 +785,22 @@ if ($Platform -in @('all', 'windows')) {
 if ($Platform -in @('all', 'android')) {
   $expectedApks = if ($isOpenRelayDemoBuild) {
     @(
-      'Rain-Demo-Android-Universal-Build.apk',
       'Rain-Demo-Android-ARM-v8-v9-Build.apk',
       'Rain-Demo-Android-ARM-v7-Build.apk'
     )
   } else {
     @(
-      "$androidArtifactPrefix-android.apk",
-      "$androidArtifactPrefix-android-universal.apk",
       "$androidArtifactPrefix-android-arm64-v8a.apk",
       "$androidArtifactPrefix-android-armeabi-v7a.apk"
     )
   }
   if ($AndroidArtifactSet -eq 'all') {
     if ($isOpenRelayDemoBuild) {
+      $expectedApks += 'Rain-Demo-Android-Universal-Build.apk'
       $expectedApks += 'Rain-Demo-Android-x86_64-Build.apk'
     } else {
+      $expectedApks += "$androidArtifactPrefix-android.apk"
+      $expectedApks += "$androidArtifactPrefix-android-universal.apk"
       $expectedApks += "$androidArtifactPrefix-android-x86_64.apk"
     }
   }

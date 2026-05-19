@@ -397,7 +397,7 @@ jobs:
             throw "Dart defines file not found: $env:RAIN_DART_DEFINES_FILE"
           }
 
-      - name: Build Windows EXE and all Android APK architectures
+      - name: Build Windows EXE and mobile Android APK architectures
         shell: pwsh
         run: |
           pwsh -NoProfile -File scripts\build_release.ps1 `
@@ -406,6 +406,7 @@ jobs:
             -DartDefinesFile $env:RAIN_DART_DEFINES_FILE `
             -AllowPublicTurnForDemo `
             -UseDemoAndroidSigningKey `
+            -GenerateSizeReports `
             -Clean
 
       - name: Verify expected artifact set
@@ -413,10 +414,10 @@ jobs:
         run: |
           $expected = @(
             @{ Label = 'Windows portable EXE'; Path = 'artifacts\Rain-Demo-Windows-x64-Build\rain.exe' },
-            @{ Label = 'Android universal APK'; Path = 'artifacts\Rain-Demo-Android-Universal-Build.apk' },
             @{ Label = 'Android ARM v7 APK (armeabi-v7a)'; Path = 'artifacts\Rain-Demo-Android-ARM-v7-Build.apk' },
             @{ Label = 'Android ARM v8/v9 APK (arm64-v8a)'; Path = 'artifacts\Rain-Demo-Android-ARM-v8-v9-Build.apk' },
-            @{ Label = 'Android x86_64 APK'; Path = 'artifacts\Rain-Demo-Android-x86_64-Build.apk' }
+            @{ Label = 'Android ARM v7 size report'; Path = 'artifacts\size-reports\apk-code-size-analysis-android-arm.json' },
+            @{ Label = 'Android ARM v8/v9 size report'; Path = 'artifacts\size-reports\apk-code-size-analysis-android-arm64.json' }
           )
           foreach ($artifact in $expected) {
             $path = $artifact.Path
@@ -424,6 +425,15 @@ jobs:
               throw "Missing expected artifact for $($artifact.Label): $path"
             }
             Write-Host "Verified $($artifact.Label): $path"
+          }
+          $unexpected = @(
+            'artifacts\Rain-Demo-Android-Universal-Build.apk',
+            'artifacts\Rain-Demo-Android-x86_64-Build.apk'
+          )
+          foreach ($path in $unexpected) {
+            if (Test-Path -LiteralPath $path) {
+              throw "Default CI/CD mobile artifacts must not include oversized optional APK: $path"
+            }
           }
           $nestedArchives = Get-ChildItem -LiteralPath 'artifacts\Rain-Demo-Windows-x64-Build' -Recurse -File |
             Where-Object { $_.Extension -in @('.zip', '.rar', '.7z') }
@@ -440,15 +450,21 @@ jobs:
           if-no-files-found: error
           retention-days: ${{ env.ARTIFACT_RETENTION_RELEASE }}
 
-      - name: Upload Android APKs all architectures
+      - name: Upload Android APKs mobile architectures
         uses: actions/upload-artifact@v7
         with:
           name: Rain-Demo-Android-Builds
           path: |
-            artifacts/Rain-Demo-Android-Universal-Build.apk
             artifacts/Rain-Demo-Android-ARM-v8-v9-Build.apk
             artifacts/Rain-Demo-Android-ARM-v7-Build.apk
-            artifacts/Rain-Demo-Android-x86_64-Build.apk
+          if-no-files-found: error
+          retention-days: ${{ env.ARTIFACT_RETENTION_RELEASE }}
+
+      - name: Upload Android APK size reports
+        uses: actions/upload-artifact@v7
+        with:
+          name: Rain-Demo-Android-Size-Reports
+          path: artifacts/size-reports/*.json
           if-no-files-found: error
           retention-days: ${{ env.ARTIFACT_RETENTION_RELEASE }}
 

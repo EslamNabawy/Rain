@@ -215,7 +215,7 @@ void main() {
     expect(docs, contains('70 concurrent relayed sessions'));
   });
 
-  test('release script packages universal and per-ABI Android APKs', () {
+  test('release script defaults to mobile APKs with optional all-ABI builds', () {
     final script = _repoFile('scripts/build_release.ps1');
 
     expect(script, contains('--split-per-abi'));
@@ -228,7 +228,14 @@ void main() {
     expect(script, contains('Rain-Demo-Android-ARM-v7-Build.apk'));
     expect(script, contains('Rain-Demo-Android-x86_64-Build.apk'));
     expect(script, contains('Rain-Demo-Windows-x64-Build'));
-    expect(script, contains('[string]\$AndroidArtifactSet = \'all\''));
+    expect(script, contains('[string]\$AndroidArtifactSet = \'mobile\''));
+    expect(script, contains('[switch]\$GenerateSizeReports'));
+    expect(
+      script,
+      contains(
+        'Skipping Android universal/x86_64 release APK; mobile user artifacts are ARM-only',
+      ),
+    );
     expect(script, contains('android-arm,android-arm64'));
     expect(script, contains('\$androidArtifactPrefix-android-universal.apk'));
     expect(script, contains('\$androidArtifactPrefix-android-arm64-v8a.apk'));
@@ -236,7 +243,7 @@ void main() {
     expect(script, contains('\$androidArtifactPrefix-android-x86_64.apk'));
   });
 
-  test('CI and release workflows verify every Android APK architecture', () {
+  test('CI and release workflows verify mobile Android APK architectures', () {
     final workflows = <String>[
       _repoFile('.github/workflows/ci.yml'),
       _repoFile('.github/workflows/release.yml'),
@@ -245,7 +252,8 @@ void main() {
     for (final workflow in workflows) {
       expect(workflow, contains('Android ARM v7 APK (armeabi-v7a)'));
       expect(workflow, contains('Android ARM v8/v9 APK (arm64-v8a)'));
-      expect(workflow, contains('Android x86_64 APK'));
+      expect(workflow, isNot(contains('Android x86_64 APK')));
+      expect(workflow, isNot(contains('Android universal APK')));
       expect(
         workflow,
         anyOf(
@@ -260,13 +268,6 @@ void main() {
           contains('Rain-Demo-Android-ARM-v8-v9-Build.apk'),
         ),
       );
-      expect(
-        workflow,
-        anyOf(
-          contains('-android-x86_64.apk'),
-          contains('Rain-Demo-Android-x86_64-Build.apk'),
-        ),
-      );
     }
   });
 
@@ -279,12 +280,18 @@ void main() {
     expect(androidBuildStep, isNotNull);
     expect(androidBuildStep, contains("'-AndroidArtifactSet'"));
     expect(androidBuildStep, contains("'mobile'"));
-    expect(workflow, contains('Rain-Demo-Android-Universal-Build.apk'));
-    expect(workflow, contains('Rain-Relay-Test-android-universal.apk'));
+    expect(androidBuildStep, contains("'-GenerateSizeReports'"));
+    expect(
+      workflow,
+      contains(
+        'Default mobile artifact build must not include oversized optional APK',
+      ),
+    );
+    expect(workflow, contains('Rain-Demo-Android-Size-Reports'));
+    expect(workflow, contains('Rain-Relay-Test-Android-Size-Reports'));
     expect(workflow, contains('Rain-Relay-Test-Android-Builds'));
     expect(workflow, contains('Rain-Demo-Android-ARM-v7-Build.apk'));
     expect(workflow, contains('Rain-Demo-Android-ARM-v8-v9-Build.apk'));
-    expect(workflow, isNot(contains('Rain-Demo-Android-x86_64-Build.apk')));
     expect(workflow, isNot(contains('.rar')));
     expect(workflow, isNot(contains('.zip')));
   });
@@ -308,6 +315,12 @@ void main() {
     );
     expect(workflow, contains('Rain-Demo-Android-ARM-v7-Build.apk'));
     expect(workflow, contains('Rain-Demo-Android-ARM-v8-v9-Build.apk'));
-    expect(workflow, contains('Rain-Demo-Android-x86_64-Build.apk'));
+    expect(workflow, contains('Rain-Demo-Android-Size-Reports'));
+    expect(
+      workflow,
+      contains(
+        'Default CI/CD mobile artifacts must not include oversized optional APK',
+      ),
+    );
   });
 }
