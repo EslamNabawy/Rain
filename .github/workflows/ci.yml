@@ -55,6 +55,7 @@ jobs:
       - uses: actions/setup-go@v6
         with:
           go-version: stable
+          cache: false
 
       - name: Install actionlint
         run: go install github.com/rhysd/actionlint/cmd/actionlint@v1.7.8
