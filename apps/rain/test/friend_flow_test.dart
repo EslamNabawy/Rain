@@ -2,6 +2,7 @@ import 'dart:async';
 import 'dart:io';
 import 'dart:typed_data';
 
+import 'package:drift/drift.dart' show driftRuntimeOptions;
 import 'package:drift/native.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:protocol_brain/protocol_brain.dart';
@@ -11,6 +12,16 @@ import 'package:rain_core/rain_core.dart';
 
 void main() {
   TestWidgetsFlutterBinding.ensureInitialized();
+
+  setUpAll(() {
+    // Two-user flow tests intentionally model separate devices with separate
+    // in-memory databases in the same isolate.
+    driftRuntimeOptions.dontWarnAboutMultipleDatabases = true;
+  });
+
+  tearDownAll(() {
+    driftRuntimeOptions.dontWarnAboutMultipleDatabases = false;
+  });
 
   group('Friend flow', () {
     late RainDatabase db;
@@ -1155,7 +1166,7 @@ void main() {
     });
 
     test(
-      'start, presence, and refresh do not open peer links automatically',
+      'start and refresh register accepted friends for passive answering only',
       () async {
         final adapter = NoopSignalingAdapter();
         final brain = TestSessionManager();
@@ -1183,11 +1194,170 @@ void main() {
         await runtime.refreshRelationships();
         await runtime.refreshRelationships(onlyUsername: 'bob');
 
-        expect(brain.registeredPeers, isEmpty);
+        expect(brain.registeredPeers, <String>['bob']);
         expect(brain.connectedPeers, isEmpty);
+        final guard = brain.incomingOfferGuards['bob'];
+        expect(guard, isNotNull);
+        var decision = await guard!('bob');
+        expect(decision.allowed, isTrue);
+
+        await runtime.disconnectPeer('bob');
+        await runtime.refreshRelationships(onlyUsername: 'bob');
+        decision = await guard('bob');
+
+        expect(brain.registeredPeers, <String>['bob']);
+        expect(brain.unregisteredPeers, <String>['bob']);
+        expect(decision.allowed, isFalse);
+        expect(decision.reason, contains('Manual disconnect'));
         await runtime.dispose();
       },
     );
+
+    test('passive incoming offer guard rejects blocked friends', () async {
+      final adapter = NoopSignalingAdapter();
+      final brain = TestSessionManager();
+      await adapter.register('bob', 'bobpw');
+      await adapter.upsertFriendship('alice', 'bob');
+      final runtime = RainRuntimeController(
+        selfIdentity: alice,
+        adapter: adapter,
+        brain: brain,
+        database: db,
+        friendStore: FriendStore(db),
+        messageStore: MessageStore(db),
+        offlineQueueStore: OfflineQueueStore(db),
+        messageDeliveryService: MessageDeliveryService(
+          messageStore: MessageStore(db),
+          offlineQueueStore: OfflineQueueStore(db),
+        ),
+        friendRequestRefreshInterval: Duration.zero,
+      );
+
+      await runtime.start();
+      await runtime.refreshRelationships(onlyUsername: 'bob');
+      final guard = brain.incomingOfferGuards['bob'];
+      expect(guard, isNotNull);
+      expect((await guard!('bob')).allowed, isTrue);
+
+      await runtime.blockFriend('bob');
+      final decision = await guard('bob');
+
+      expect(brain.unregisteredPeers, contains('bob'));
+      expect(decision.allowed, isFalse);
+      expect(decision.reason, contains('blocked'));
+      await runtime.dispose();
+    });
+
+    test('passive incoming offer guard rejects removed friends', () async {
+      final adapter = NoopSignalingAdapter();
+      final brain = TestSessionManager();
+      await adapter.register('bob', 'bobpw');
+      await adapter.upsertFriendship('alice', 'bob');
+      final runtime = RainRuntimeController(
+        selfIdentity: alice,
+        adapter: adapter,
+        brain: brain,
+        database: db,
+        friendStore: FriendStore(db),
+        messageStore: MessageStore(db),
+        offlineQueueStore: OfflineQueueStore(db),
+        messageDeliveryService: MessageDeliveryService(
+          messageStore: MessageStore(db),
+          offlineQueueStore: OfflineQueueStore(db),
+        ),
+        friendRequestRefreshInterval: Duration.zero,
+      );
+
+      await runtime.start();
+      await runtime.refreshRelationships(onlyUsername: 'bob');
+      final guard = brain.incomingOfferGuards['bob'];
+      expect(guard, isNotNull);
+      expect((await guard!('bob')).allowed, isTrue);
+
+      await runtime.unfriend('bob');
+      final decision = await guard('bob');
+
+      expect(brain.unregisteredPeers, contains('bob'));
+      expect(decision.allowed, isFalse);
+      expect(decision.reason, contains('no longer in your friends list'));
+      await runtime.dispose();
+    });
+
+    test('passive listener cap limits accepted friend registrations', () async {
+      final adapter = NoopSignalingAdapter();
+      final brain = TestSessionManager();
+      for (final username in <String>['bob', 'cara', 'dan']) {
+        await adapter.register(username, '${username}pw');
+        await adapter.upsertFriendship('alice', username);
+      }
+      final runtime = RainRuntimeController(
+        selfIdentity: alice,
+        adapter: adapter,
+        brain: brain,
+        database: db,
+        friendStore: FriendStore(db),
+        messageStore: MessageStore(db),
+        offlineQueueStore: OfflineQueueStore(db),
+        messageDeliveryService: MessageDeliveryService(
+          messageStore: MessageStore(db),
+          offlineQueueStore: OfflineQueueStore(db),
+        ),
+        friendRequestRefreshInterval: Duration.zero,
+        maxPassivePeerListeners: 2,
+      );
+
+      await runtime.start();
+      await runtime.refreshRelationships();
+
+      final snapshot = runtime.connectionCoordinatorSnapshotFor('bob');
+      expect(snapshot.passiveListenerCount, 2);
+      expect(snapshot.passiveListenerLimit, 2);
+      expect(brain.incomingOfferGuards, hasLength(2));
+      await runtime.dispose();
+    });
+
+    test('failed peer attempts back off before retrying', () async {
+      final adapter = NoopSignalingAdapter();
+      final brain = TestSessionManager();
+      await adapter.register('bob', 'bobpw');
+      await adapter.upsertFriendship('alice', 'bob');
+      final runtime = RainRuntimeController(
+        selfIdentity: alice,
+        adapter: adapter,
+        brain: brain,
+        database: db,
+        friendStore: FriendStore(db),
+        messageStore: MessageStore(db),
+        offlineQueueStore: OfflineQueueStore(db),
+        messageDeliveryService: MessageDeliveryService(
+          messageStore: MessageStore(db),
+          offlineQueueStore: OfflineQueueStore(db),
+        ),
+        friendRequestRefreshInterval: Duration.zero,
+        initialConnectionRetryBackoff: const Duration(seconds: 30),
+        maxConnectionRetryBackoff: const Duration(seconds: 30),
+      );
+
+      await runtime.start();
+      await runtime.connectPeer('bob', interactive: true);
+      brain.markFailed('bob', 'ICE failed');
+      await pumpEventQueue();
+
+      await expectLater(
+        runtime.connectPeer('bob', interactive: true),
+        throwsA(
+          isA<StateError>().having(
+            (StateError error) => error.message,
+            'message',
+            contains('cooling down'),
+          ),
+        ),
+      );
+      final snapshot = runtime.connectionCoordinatorSnapshotFor('bob');
+      expect(snapshot.retryAttempt, 1);
+      expect(snapshot.nextRetryAt, isNotNull);
+      await runtime.dispose();
+    });
 
     test('disconnectPeer unregisters the peer session', () async {
       final adapter = NoopSignalingAdapter();
@@ -1798,6 +1968,11 @@ class TestSessionManager implements SessionManager {
       StreamController<SessionMessage>.broadcast();
   final StreamController<Session> _sessionChangedController =
       StreamController<Session>.broadcast();
+  final StreamController<IncomingOfferRejection>
+  _incomingOfferRejectedController =
+      StreamController<IncomingOfferRejection>.broadcast();
+  final Map<String, IncomingOfferGuard> incomingOfferGuards =
+      <String, IncomingOfferGuard>{};
 
   @override
   Stream<Session> get onPeerConnected => _peerConnectedController.stream;
@@ -1810,6 +1985,10 @@ class TestSessionManager implements SessionManager {
 
   @override
   Stream<Session> get onSessionChanged => _sessionChangedController.stream;
+
+  @override
+  Stream<IncomingOfferRejection> get onIncomingOfferRejected =>
+      _incomingOfferRejectedController.stream;
 
   @override
   Future<Session> connect(String peerId) async {
@@ -1833,14 +2012,31 @@ class TestSessionManager implements SessionManager {
   }
 
   @override
+  Future<void> recoverConnection(
+    String peerId, {
+    String reason = 'Network changed. Restarting peer connection.',
+  }) async {}
+
+  @override
+  Future<void> recoverConnections({
+    String reason = 'Network changed. Restarting peer connections.',
+  }) async {}
+
+  @override
   Session? getSession(String peerId) => _sessions[peerId];
 
   @override
   List<Session> getSessions() => _sessions.values.toList(growable: false);
 
   @override
-  Future<void> registerPeer(String peerId) async {
+  Future<void> registerPeer(
+    String peerId, {
+    IncomingOfferGuard? incomingOfferGuard,
+  }) async {
     registeredPeers.add(peerId);
+    if (incomingOfferGuard != null) {
+      incomingOfferGuards[peerId] = incomingOfferGuard;
+    }
   }
 
   @override
@@ -1865,6 +2061,7 @@ class TestSessionManager implements SessionManager {
   @override
   Future<void> unregisterPeer(String peerId) async {
     unregisteredPeers.add(peerId);
+    incomingOfferGuards.remove(peerId);
     _sessions.remove(peerId);
   }
 

@@ -170,7 +170,7 @@ class _OnboardingScreenState extends ConsumerState<OnboardingScreen>
 
   @override
   Widget build(BuildContext context) {
-    final networkStatus = ref.watch(networkStatusProvider).valueOrNull;
+    final networkStatus = ref.watch(networkStatusProvider).value;
     final networkBlocked = networkStatus?.blocksNetworkActions ?? false;
     return LayoutBuilder(
       builder: (BuildContext context, BoxConstraints constraints) {
@@ -469,7 +469,7 @@ class _OnboardingScreenState extends ConsumerState<OnboardingScreen>
   }
 
   Future<void> _submit() async {
-    final networkStatus = ref.read(networkStatusProvider).valueOrNull;
+    final networkStatus = ref.read(networkStatusProvider).value;
     if (networkStatus != null && networkStatus.blocksNetworkActions) {
       setState(() => _error = networkStatus.actionErrorMessage);
       _playSound(RainSoundEffect.error);

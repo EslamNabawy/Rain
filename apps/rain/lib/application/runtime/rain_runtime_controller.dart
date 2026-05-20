@@ -8,10 +8,24 @@ import 'package:path_provider/path_provider.dart';
 import 'package:protocol_brain/protocol_brain.dart';
 import 'package:rain_core/rain_core.dart';
 
+import 'connection_attempt_coordinator.dart';
 import 'file_transfer_progress_batcher.dart';
 import 'serialized_runtime_mutations.dart';
 
 enum FriendRequestResult { sent, acceptedExisting }
+
+String _formatRetryDelay(Duration delay) {
+  if (delay.inSeconds <= 1) {
+    return '1 second';
+  }
+  if (delay.inMinutes < 1) {
+    return '${delay.inSeconds} seconds';
+  }
+  if (delay.inMinutes == 1) {
+    return '1 minute';
+  }
+  return '${delay.inMinutes} minutes';
+}
 
 class RainRuntimeController with WidgetsBindingObserver {
   RainRuntimeController({
@@ -26,10 +40,20 @@ class RainRuntimeController with WidgetsBindingObserver {
     FileTransferStore? fileTransferStore,
     this.heartbeatInterval = const Duration(minutes: 3),
     this.friendRequestRefreshInterval = Duration.zero,
+    this.maxPassivePeerListeners = 32,
+    this.networkRecoveryDebounce = const Duration(seconds: 2),
+    Duration initialConnectionRetryBackoff = const Duration(seconds: 3),
+    Duration maxConnectionRetryBackoff = const Duration(minutes: 1),
     Future<Directory> Function()? documentsDirectoryProvider,
   }) : fileTransferStore = fileTransferStore ?? FileTransferStore(database),
        _documentsDirectoryProvider =
-           documentsDirectoryProvider ?? getApplicationDocumentsDirectory {
+           documentsDirectoryProvider ?? getApplicationDocumentsDirectory,
+       _connectionCoordinator = ConnectionAttemptCoordinator(
+         passiveListenerLimit: maxPassivePeerListeners,
+         networkRecoveryDebounce: networkRecoveryDebounce,
+         initialRetryBackoff: initialConnectionRetryBackoff,
+         maxRetryBackoff: maxConnectionRetryBackoff,
+       ) {
     _fileProgressBatcher = FileTransferProgressBatcher(
       markProgress: this.fileTransferStore.markProgress,
     );
@@ -46,8 +70,12 @@ class RainRuntimeController with WidgetsBindingObserver {
   final FileTransferStore fileTransferStore;
   final Duration heartbeatInterval;
   final Duration friendRequestRefreshInterval;
+  final int maxPassivePeerListeners;
+  final Duration networkRecoveryDebounce;
   final Future<Directory> Function() _documentsDirectoryProvider;
   final Set<String> _manualDisconnectedPeers = <String>{};
+  final Set<String> _registeredPeerListeners = <String>{};
+  final Set<String> _passivePeerListeners = <String>{};
   final Set<String> _unblockingPeers = <String>{};
   final Map<String, StreamSubscription<bool>> _presenceSubscriptions =
       <String, StreamSubscription<bool>>{};
@@ -60,6 +88,7 @@ class RainRuntimeController with WidgetsBindingObserver {
   final Map<String, String> _outgoingFileHashes = <String, String>{};
   final Set<String> _canceledTransfers = <String>{};
   late final FileTransferProgressBatcher _fileProgressBatcher;
+  final ConnectionAttemptCoordinator _connectionCoordinator;
 
   final List<StreamSubscription<dynamic>> _subscriptions =
       <StreamSubscription<dynamic>>[];
@@ -73,6 +102,14 @@ class RainRuntimeController with WidgetsBindingObserver {
 
   String _normalizedUsername(String username) {
     return username.trim().toLowerCase();
+  }
+
+  ConnectionCoordinatorSnapshot connectionCoordinatorSnapshotFor(
+    String username,
+  ) {
+    return _connectionCoordinator.snapshot(
+      peerId: _normalizedUsername(username),
+    );
   }
 
   RainGender? _backendGender(String? value) {
@@ -129,6 +166,7 @@ class RainRuntimeController with WidgetsBindingObserver {
         _watchPresence(friend.username);
       }
     }
+    await _reconcilePassivePeerListeners(existingFriends);
 
     if (friendRequestRefreshInterval > Duration.zero) {
       _friendRequestRefreshTimer = Timer.periodic(
@@ -176,10 +214,21 @@ class RainRuntimeController with WidgetsBindingObserver {
 
     if (brain != null) {
       _subscriptions.add(
+        brain!.onSessionChanged.listen(_recordSessionAttemptState),
+      );
+
+      _subscriptions.add(
+        brain!.onIncomingOfferRejected.listen(
+          _connectionCoordinator.recordIncomingOfferRejected,
+        ),
+      );
+
+      _subscriptions.add(
         brain!.onPeerConnected.listen((Session session) async {
           if (_manualDisconnectedPeers.contains(session.peerId)) {
             return;
           }
+          _connectionCoordinator.recordAttemptSuccess(session.peerId);
           await _localMutations.run(
             () => messageDeliveryService.flushQueue(
               selfIdentity.username,
@@ -274,7 +323,7 @@ class RainRuntimeController with WidgetsBindingObserver {
         gender: existing?.gender,
       ),
     );
-    _watchPresence(normalizedUsername);
+    await _refreshPassivePeerListeners();
   }
 
   Future<void> blockFriend(String username) async {
@@ -390,8 +439,17 @@ class RainRuntimeController with WidgetsBindingObserver {
       }
       return;
     }
+    final retryGate = _connectionCoordinator.retryGate(normalizedUsername);
+    if (!retryGate.allowed) {
+      if (interactive) {
+        throw StateError(
+          'Connection to @$normalizedUsername is cooling down after a failed attempt. Try again in ${_formatRetryDelay(retryGate.remaining)}.',
+        );
+      }
+      return;
+    }
     _manualDisconnectedPeers.remove(normalizedUsername);
-    await brain!.registerPeer(normalizedUsername);
+    await _registerPeerListener(normalizedUsername, bestEffort: false);
     await brain!.connect(normalizedUsername);
     if (waitForConnected) {
       await _waitForPeerConnection(
@@ -404,12 +462,13 @@ class RainRuntimeController with WidgetsBindingObserver {
   Future<void> disconnectPeer(String username) async {
     final normalizedUsername = _normalizedUsername(username);
     _manualDisconnectedPeers.add(normalizedUsername);
+    _connectionCoordinator.clearRetry(normalizedUsername);
     await _failActiveTransfersForPeer(
       normalizedUsername,
       'Transfer canceled because the peer link was disconnected.',
     );
     await brain?.disconnect(normalizedUsername);
-    await brain?.unregisterPeer(normalizedUsername);
+    await _unregisterPeerListener(normalizedUsername);
   }
 
   Future<void> handleNetworkLost(String reason) async {
@@ -436,15 +495,41 @@ class RainRuntimeController with WidgetsBindingObserver {
       _manualDisconnectedPeers.add(session.peerId);
       try {
         await brain?.disconnect(session.peerId);
-        await brain?.unregisterPeer(session.peerId);
+        await _unregisterPeerListener(session.peerId);
       } catch (_) {
         // The network is already unavailable; stale peer cleanup is best effort.
+      }
+    }
+    for (final peerId in _registeredPeerListeners.toList()) {
+      try {
+        await _unregisterPeerListener(peerId);
+      } catch (_) {
+        // The network is already unavailable; stale listener cleanup is best effort.
       }
     }
 
     _pendingFileChunks.clear();
     _fileMessageQueues.clear();
     _outgoingFileSources.clear();
+  }
+
+  Future<void> handleNetworkAvailable(String reason) async {
+    if (_shutDown || !_started) {
+      return;
+    }
+
+    try {
+      await adapter.setPresence(selfIdentity.username, true);
+      await adapter.sendHeartbeat(selfIdentity.username);
+    } catch (_) {
+      // Backend reachability is already reported by NetworkStatusService.
+    }
+
+    await _connectionCoordinator.scheduleNetworkRecovery(reason, (
+      String recoveryReason,
+    ) async {
+      await brain?.recoverConnections(reason: recoveryReason);
+    });
   }
 
   Future<void> setBackgroundServiceEnabled(bool enabled) async {
@@ -1640,6 +1725,163 @@ class RainRuntimeController with WidgetsBindingObserver {
     });
   }
 
+  Future<void> _trackAcceptedPeer(String username) async {
+    final normalizedUsername = _normalizedUsername(username);
+    _watchPresence(normalizedUsername);
+    if (_manualDisconnectedPeers.contains(normalizedUsername)) {
+      return;
+    }
+    await _registerPeerListener(
+      normalizedUsername,
+      bestEffort: true,
+      passive: true,
+    );
+  }
+
+  Future<void> _refreshPassivePeerListeners() async {
+    final friends = await _localMutations.run(friendStore.loadFriends);
+    await _reconcilePassivePeerListeners(friends);
+  }
+
+  Future<void> _reconcilePassivePeerListeners(
+    List<FriendRecord> friends,
+  ) async {
+    final selectedPeerIds = _connectionCoordinator
+        .selectPassivePeerIds(
+          friends,
+          manualDisconnectedPeers: _manualDisconnectedPeers,
+        )
+        .toSet();
+
+    for (final peerId in _passivePeerListeners.toList()) {
+      if (selectedPeerIds.contains(peerId)) {
+        continue;
+      }
+      if (_hasActiveSession(peerId)) {
+        _passivePeerListeners.remove(peerId);
+        continue;
+      }
+      await _unregisterPeerListener(peerId);
+    }
+
+    for (final peerId in selectedPeerIds) {
+      await _trackAcceptedPeer(peerId);
+    }
+
+    _connectionCoordinator.updatePassiveListenerCount(
+      _passivePeerListeners.length,
+    );
+  }
+
+  bool _hasActiveSession(String peerId) {
+    final state = brain?.getSession(peerId)?.state;
+    return state == SessionState.connected ||
+        state == SessionState.connecting ||
+        state == SessionState.reconnecting;
+  }
+
+  Future<void> _registerPeerListener(
+    String username, {
+    required bool bestEffort,
+    bool passive = false,
+  }) async {
+    final normalizedUsername = _normalizedUsername(username);
+    if (brain == null ||
+        _registeredPeerListeners.contains(normalizedUsername)) {
+      if (passive && _registeredPeerListeners.contains(normalizedUsername)) {
+        _passivePeerListeners.add(normalizedUsername);
+        _connectionCoordinator.updatePassiveListenerCount(
+          _passivePeerListeners.length,
+        );
+      }
+      return;
+    }
+    if (passive &&
+        !_connectionCoordinator.canRegisterPassivePeer(
+          normalizedUsername,
+          passivePeerIds: _passivePeerListeners,
+        )) {
+      return;
+    }
+    try {
+      await brain!.registerPeer(
+        normalizedUsername,
+        incomingOfferGuard: _authorizeIncomingOffer,
+      );
+      _registeredPeerListeners.add(normalizedUsername);
+      if (passive) {
+        _passivePeerListeners.add(normalizedUsername);
+        _connectionCoordinator.updatePassiveListenerCount(
+          _passivePeerListeners.length,
+        );
+      }
+    } catch (_) {
+      if (!bestEffort) {
+        rethrow;
+      }
+      // Passive answering is best effort. Manual connect still reports errors.
+    }
+  }
+
+  Future<void> _unregisterPeerListener(String username) async {
+    final normalizedUsername = _normalizedUsername(username);
+    _registeredPeerListeners.remove(normalizedUsername);
+    _passivePeerListeners.remove(normalizedUsername);
+    _connectionCoordinator.updatePassiveListenerCount(
+      _passivePeerListeners.length,
+    );
+    await brain?.unregisterPeer(normalizedUsername);
+  }
+
+  Future<IncomingOfferDecision> _authorizeIncomingOffer(String username) async {
+    final normalizedUsername = _normalizedUsername(username);
+    _connectionCoordinator.recordInboundOffer(normalizedUsername);
+    if (_shutDown || !_started) {
+      return const IncomingOfferDecision.deny('Rain is not running.');
+    }
+    if (_manualDisconnectedPeers.contains(normalizedUsername)) {
+      return const IncomingOfferDecision.deny(
+        'Manual disconnect is active. Press Connect to open the peer lane again.',
+      );
+    }
+    final friend = await _localMutations.run(
+      () => friendStore.loadFriend(normalizedUsername),
+    );
+    return switch (friend?.state) {
+      FriendState.friend => const IncomingOfferDecision.allow(),
+      FriendState.blocked => const IncomingOfferDecision.deny(
+        'Incoming offer rejected because this user is blocked.',
+      ),
+      FriendState.blockedByPeer => const IncomingOfferDecision.deny(
+        'Incoming offer rejected because this user blocked you.',
+      ),
+      FriendState.pendingIncoming ||
+      FriendState.pendingOutgoing => const IncomingOfferDecision.deny(
+        'Incoming offer rejected because this user is not an accepted friend.',
+      ),
+      null => const IncomingOfferDecision.deny(
+        'Incoming offer rejected because this user is no longer in your friends list.',
+      ),
+    };
+  }
+
+  void _recordSessionAttemptState(Session session) {
+    switch (session.state) {
+      case SessionState.connected:
+        _connectionCoordinator.recordAttemptSuccess(session.peerId);
+        break;
+      case SessionState.failed:
+        _connectionCoordinator.recordAttemptFailure(
+          session.peerId,
+          session.error ?? session.detail,
+        );
+        break;
+      case SessionState.connecting:
+      case SessionState.reconnecting:
+        break;
+    }
+  }
+
   @override
   void didChangeAppLifecycleState(AppLifecycleState state) {
     if (!_started || _shutDown) {
@@ -1701,8 +1943,15 @@ class RainRuntimeController with WidgetsBindingObserver {
             'Transfer canceled because Rain is closing.',
           );
           await brain!.disconnect(session.peerId);
-          await brain!.unregisterPeer(session.peerId);
+          await _unregisterPeerListener(session.peerId);
         } catch (error) {
+          // Ignore errors during cleanup
+        }
+      }
+      for (final peerId in _registeredPeerListeners.toList()) {
+        try {
+          await _unregisterPeerListener(peerId);
+        } catch (_) {
           // Ignore errors during cleanup
         }
       }
@@ -1712,6 +1961,7 @@ class RainRuntimeController with WidgetsBindingObserver {
     _backgroundOfflineTimer?.cancel();
     _heartbeatTimer?.cancel();
     _friendRequestRefreshTimer?.cancel();
+    _connectionCoordinator.dispose();
 
     for (final subscription in _subscriptions) {
       await subscription.cancel();
@@ -1825,7 +2075,12 @@ class RainRuntimeController with WidgetsBindingObserver {
         );
       });
     }
-    _watchPresence(normalizedFrom);
+    if (existing?.state == FriendState.pendingOutgoing ||
+        existing?.state == FriendState.friend) {
+      await _refreshPassivePeerListeners();
+    } else {
+      _watchPresence(normalizedFrom);
+    }
   }
 
   Future<void> _safeSyncRelationships({String? onlyUsername}) async {
@@ -2004,6 +2259,7 @@ class RainRuntimeController with WidgetsBindingObserver {
       );
       _watchPresence(username);
     }
+    await _refreshPassivePeerListeners();
   }
 
   Future<void> _stopTrackingPeer(String username) async {
@@ -2014,8 +2270,9 @@ class RainRuntimeController with WidgetsBindingObserver {
     );
     await _presenceSubscriptions.remove(normalizedUsername)?.cancel();
     _manualDisconnectedPeers.remove(normalizedUsername);
+    _connectionCoordinator.clearRetry(normalizedUsername);
     await brain?.disconnect(normalizedUsername);
-    await brain?.unregisterPeer(normalizedUsername);
+    await _unregisterPeerListener(normalizedUsername);
   }
 
   bool _isBlockedState(FriendState? state) {

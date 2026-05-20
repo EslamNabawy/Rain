@@ -40,6 +40,34 @@ String _candidateLabel(String? value) {
   return trimmed.toUpperCase();
 }
 
+String _addressFamilyLabel(PeerAddressFamily family) {
+  return switch (family) {
+    PeerAddressFamily.ipv4 => 'IPv4',
+    PeerAddressFamily.ipv6 => 'IPv6',
+    PeerAddressFamily.mixed => 'Mixed',
+    PeerAddressFamily.unknown => 'Unknown',
+  };
+}
+
+String _routeAddressFamilyLabel(PeerConnectionRoute route) {
+  final family = route.addressFamily;
+  if (family != PeerAddressFamily.mixed) {
+    return _addressFamilyLabel(family);
+  }
+  final local = route.localAddressFamily;
+  final remote = route.remoteAddressFamily;
+  if (local != PeerAddressFamily.unknown &&
+      remote != PeerAddressFamily.unknown) {
+    return '${_addressFamilyLabel(local)} / ${_addressFamilyLabel(remote)}';
+  }
+  return _addressFamilyLabel(family);
+}
+
+String _routeAddressFamilySuffix(PeerConnectionRoute route) {
+  final label = _routeAddressFamilyLabel(route);
+  return label == 'Unknown' ? '' : ' - $label';
+}
+
 String _protocolLabel(PeerConnectionRoute route) {
   final protocol = route.protocol?.trim();
   final relayProtocol = route.relayProtocol?.trim();
@@ -53,6 +81,27 @@ String _protocolLabel(PeerConnectionRoute route) {
       'relay ${relayProtocol.toUpperCase()}',
   ];
   return parts.join(' / ');
+}
+
+String _phaseLabel(SessionPhase? phase) {
+  return switch (phase) {
+    SessionPhase.idle => 'Idle',
+    SessionPhase.checkingPresence => 'Checking presence',
+    SessionPhase.registeringPeer => 'Registering peer',
+    SessionPhase.waitingForOffer => 'Waiting for offer',
+    SessionPhase.creatingOffer => 'Creating offer',
+    SessionPhase.writingOffer => 'Writing offer',
+    SessionPhase.waitingForAnswer => 'Waiting for answer',
+    SessionPhase.writingAnswer => 'Writing answer',
+    SessionPhase.exchangingIce => 'Exchanging ICE',
+    SessionPhase.openingDataChannels => 'Opening channels',
+    SessionPhase.connected => 'Connected',
+    SessionPhase.reconnecting => 'Reconnecting',
+    SessionPhase.disconnecting => 'Disconnecting',
+    SessionPhase.disconnected => 'Disconnected',
+    SessionPhase.failed => 'Failed',
+    null => 'None',
+  };
 }
 
 String _rttLabel(double? rtt) {
@@ -70,6 +119,41 @@ String _bitrateLabel(double? bitrate) {
     return '${(bitrate / 1000000).toStringAsFixed(1)} Mbps';
   }
   return '${(bitrate / 1000).round()} Kbps';
+}
+
+String _nextRetryLabel(int? nextRetryAt) {
+  if (nextRetryAt == null) {
+    return 'None';
+  }
+  final remaining = nextRetryAt - DateTime.now().millisecondsSinceEpoch;
+  if (remaining <= 0) {
+    return 'Ready';
+  }
+  final seconds = (remaining / 1000).ceil();
+  if (seconds < 60) {
+    return '${seconds}s';
+  }
+  return '${(seconds / 60).ceil()}m';
+}
+
+String _mobileLinkDetail(
+  ConnectionDiagnostics diagnostics,
+  _ConnectionStatus status,
+) {
+  if (diagnostics.route.kind == PeerRouteKind.direct) {
+    return 'Direct peer route${_routeAddressFamilySuffix(diagnostics.route)}';
+  }
+  if (diagnostics.route.kind == PeerRouteKind.relay) {
+    final protocol = diagnostics.route.relayProtocol?.trim();
+    return protocol == null || protocol.isEmpty
+        ? 'TURN relay route${_routeAddressFamilySuffix(diagnostics.route)}'
+        : 'TURN relay ${protocol.toUpperCase()}${_routeAddressFamilySuffix(diagnostics.route)}';
+  }
+  if (diagnostics.lastError != null &&
+      diagnostics.lastError!.trim().isNotEmpty) {
+    return diagnostics.lastError!.trim();
+  }
+  return status.detail;
 }
 
 class _ConnectionStatus {
@@ -195,7 +279,7 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
   @override
   Widget build(BuildContext context) {
     final friends = ref.watch(friendsProvider);
-    final identity = ref.watch(identityProvider).valueOrNull;
+    final identity = ref.watch(identityProvider).value;
 
     return LayoutBuilder(
       builder: (BuildContext context, BoxConstraints constraints) {
@@ -297,7 +381,7 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
   }
 
   Future<void> _refreshFriends() async {
-    final status = ref.read(networkStatusProvider).valueOrNull;
+    final status = ref.read(networkStatusProvider).value;
     if (status != null && status.blocksNetworkActions) {
       if (mounted) {
         ScaffoldMessenger.of(
@@ -485,6 +569,192 @@ class _CompactLinkStatusPill extends StatelessWidget {
     }
 
     return SizedBox(width: pillWidth, height: 40, child: pill);
+  }
+}
+
+class _MobileLinkStatusBar extends StatelessWidget {
+  const _MobileLinkStatusBar({
+    required this.status,
+    required this.diagnostics,
+    required this.canConnectNow,
+    required this.canDisconnectNow,
+    required this.onConnect,
+    required this.onDisconnect,
+    required this.onTap,
+    required this.enabled,
+  });
+
+  final _ConnectionStatus status;
+  final ConnectionDiagnostics diagnostics;
+  final bool canConnectNow;
+  final bool canDisconnectNow;
+  final VoidCallback onConnect;
+  final VoidCallback onDisconnect;
+  final VoidCallback onTap;
+  final bool enabled;
+
+  @override
+  Widget build(BuildContext context) {
+    final scheme = Theme.of(context).colorScheme;
+    final action = status.isConnected ? onDisconnect : onConnect;
+    final actionEnabled = status.isConnected ? canDisconnectNow : canConnectNow;
+    final actionIcon = status.isConnected ? Icons.link_off : Icons.hub_outlined;
+    final actionLabel = status.isConnected ? 'Disconnect' : 'Connect';
+    final detail = _mobileLinkDetail(diagnostics, status);
+
+    return Semantics(
+      button: enabled,
+      label: 'Connection ${status.label}. $detail',
+      child: Material(
+        color: Colors.transparent,
+        child: InkWell(
+          onTap: enabled ? onTap : null,
+          borderRadius: BorderRadius.circular(16),
+          child: Ink(
+            height: 56,
+            decoration: BoxDecoration(
+              color: Color.alphaBlend(
+                status.color.withValues(alpha: 0.08),
+                scheme.surfaceContainerHighest.withValues(alpha: 0.62),
+              ),
+              borderRadius: BorderRadius.circular(16),
+              border: Border.all(color: status.color.withValues(alpha: 0.28)),
+            ),
+            child: Padding(
+              padding: const EdgeInsets.fromLTRB(12, 8, 8, 8),
+              child: Row(
+                children: <Widget>[
+                  _MobileLinkGlyph(status: status),
+                  const SizedBox(width: 10),
+                  Expanded(
+                    child: Column(
+                      mainAxisAlignment: MainAxisAlignment.center,
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: <Widget>[
+                        Text(
+                          status.label,
+                          maxLines: 1,
+                          overflow: TextOverflow.ellipsis,
+                          style: Theme.of(context).textTheme.labelLarge
+                              ?.copyWith(
+                                color: status.color,
+                                fontWeight: FontWeight.w900,
+                              ),
+                        ),
+                        const SizedBox(height: 2),
+                        Text(
+                          detail,
+                          maxLines: 1,
+                          overflow: TextOverflow.ellipsis,
+                          style: Theme.of(context).textTheme.bodySmall
+                              ?.copyWith(
+                                color: scheme.onSurface.withValues(alpha: 0.66),
+                                fontWeight: FontWeight.w600,
+                              ),
+                        ),
+                      ],
+                    ),
+                  ),
+                  const SizedBox(width: 8),
+                  _MobileLinkMeter(color: status.color, level: _linkLevel()),
+                  const SizedBox(width: 8),
+                  SizedBox.square(
+                    dimension: 40,
+                    child: IconButton.filledTonal(
+                      tooltip: actionLabel,
+                      onPressed: actionEnabled ? action : null,
+                      style: const ButtonStyle(
+                        tapTargetSize: MaterialTapTargetSize.shrinkWrap,
+                        minimumSize: WidgetStatePropertyAll(Size.square(40)),
+                        fixedSize: WidgetStatePropertyAll(Size.square(40)),
+                        padding: WidgetStatePropertyAll(EdgeInsets.zero),
+                      ),
+                      icon: Icon(actionIcon, size: 20),
+                    ),
+                  ),
+                ],
+              ),
+            ),
+          ),
+        ),
+      ),
+    );
+  }
+
+  int _linkLevel() {
+    if (status.isBusy) {
+      return 2;
+    }
+    return switch (diagnostics.route.kind) {
+      PeerRouteKind.direct => 4,
+      PeerRouteKind.relay => 3,
+      PeerRouteKind.unknown => status.isConnected ? 2 : 1,
+    };
+  }
+}
+
+class _MobileLinkGlyph extends StatelessWidget {
+  const _MobileLinkGlyph({required this.status});
+
+  final _ConnectionStatus status;
+
+  @override
+  Widget build(BuildContext context) {
+    return SizedBox.square(
+      dimension: 34,
+      child: DecoratedBox(
+        decoration: BoxDecoration(
+          color: status.color.withValues(alpha: 0.14),
+          shape: BoxShape.circle,
+        ),
+        child: Center(
+          child: status.isBusy
+              ? SizedBox.square(
+                  dimension: 16,
+                  child: CircularProgressIndicator(
+                    strokeWidth: 2.2,
+                    color: status.color,
+                  ),
+                )
+              : Icon(status.icon, size: 18, color: status.color),
+        ),
+      ),
+    );
+  }
+}
+
+class _MobileLinkMeter extends StatelessWidget {
+  const _MobileLinkMeter({required this.color, required this.level});
+
+  final Color color;
+  final int level;
+
+  @override
+  Widget build(BuildContext context) {
+    final scheme = Theme.of(context).colorScheme;
+    final boundedLevel = level.clamp(0, 4).toInt();
+
+    return SizedBox(
+      width: 30,
+      height: 22,
+      child: Row(
+        crossAxisAlignment: CrossAxisAlignment.end,
+        children: List<Widget>.generate(4, (int index) {
+          final active = index < boundedLevel;
+          return Container(
+            width: 4,
+            height: 8 + (index * 4),
+            margin: EdgeInsets.only(left: index == 0 ? 0 : 4),
+            decoration: BoxDecoration(
+              color: active
+                  ? color
+                  : scheme.outlineVariant.withValues(alpha: 0.34),
+              borderRadius: BorderRadius.circular(999),
+            ),
+          );
+        }),
+      ),
+    );
   }
 }
 
@@ -916,7 +1186,7 @@ class _ChatPanelState extends ConsumerState<_ChatPanel> {
   @override
   Widget build(BuildContext context) {
     final friends = ref.watch(friendsProvider);
-    final runtime = ref.watch(runtimeControllerProvider).valueOrNull;
+    final runtime = ref.watch(runtimeControllerProvider).value;
     final friend = _currentFriend(friends);
     final canChat = friend?.state == FriendState.friend;
     final isPeerOnline = canChat ? friend?.isOnline ?? false : false;
@@ -925,6 +1195,7 @@ class _ChatPanelState extends ConsumerState<_ChatPanel> {
       canChat: canChat,
       isPeerOnline: isPeerOnline,
       connection: connection,
+      coordinator: runtime?.connectionCoordinatorSnapshotFor(widget.peerId),
     );
     final connectionStatus = _connectionStatusForDiagnostics(diagnostics);
     final canConnectNow =
@@ -1057,8 +1328,8 @@ class _ChatPanelState extends ConsumerState<_ChatPanel> {
     AsyncValue<List<StoredMessage>>? previous,
     AsyncValue<List<StoredMessage>> next,
   ) {
-    final previousMessages = previous?.valueOrNull;
-    final nextMessages = next.valueOrNull;
+    final previousMessages = previous?.value;
+    final nextMessages = next.value;
     if (previousMessages == null || nextMessages == null) {
       return;
     }
@@ -1102,6 +1373,73 @@ class _ChatPanelState extends ConsumerState<_ChatPanel> {
         connectionStatus: connectionStatus,
         canConnectNow: canConnectNow,
         canDisconnectNow: canDisconnectNow,
+      );
+    }
+
+    if (widget.isCompact) {
+      return Column(
+        mainAxisSize: MainAxisSize.min,
+        children: <Widget>[
+          Row(
+            children: <Widget>[
+              if (widget.onBack != null)
+                IconButton(
+                  tooltip: 'Back',
+                  onPressed: widget.onBack,
+                  icon: const Icon(Icons.arrow_back),
+                ),
+              RainAvatar(
+                name: displayName,
+                size: 36,
+                statusColor: canChat ? connectionStatus.color : null,
+                gender: friend?.gender?.name,
+              ),
+              const SizedBox(width: 10),
+              Expanded(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: <Widget>[
+                    Text(
+                      displayName,
+                      maxLines: 1,
+                      overflow: TextOverflow.ellipsis,
+                      style: Theme.of(context).textTheme.titleMedium?.copyWith(
+                        fontWeight: FontWeight.w900,
+                      ),
+                    ),
+                    const SizedBox(height: 1),
+                    Text(
+                      handle,
+                      maxLines: 1,
+                      overflow: TextOverflow.ellipsis,
+                      style: Theme.of(context).textTheme.bodySmall?.copyWith(
+                        color: scheme.onSurface.withValues(alpha: 0.62),
+                        fontWeight: FontWeight.w600,
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+              if (friend != null)
+                IconButton(
+                  tooltip: 'Open peer profile',
+                  onPressed: () => AppRoutes.openFriendProfile(context, friend),
+                  icon: const Icon(Icons.person_outline),
+                ),
+            ],
+          ),
+          const SizedBox(height: 10),
+          _MobileLinkStatusBar(
+            status: connectionStatus,
+            diagnostics: diagnostics,
+            canConnectNow: canConnectNow,
+            canDisconnectNow: canDisconnectNow,
+            onConnect: _connectToPeer,
+            onDisconnect: _disconnectPeer,
+            onTap: openLinkDialog,
+            enabled: canChat,
+          ),
+        ],
       );
     }
 
@@ -1242,6 +1580,10 @@ class _ChatPanelState extends ConsumerState<_ChatPanel> {
                     children: <Widget>[
                       _LinkStatCard(label: 'Route', value: diagnostics.label),
                       _LinkStatCard(
+                        label: 'Phase',
+                        value: _phaseLabel(diagnostics.phase),
+                      ),
+                      _LinkStatCard(
                         label: 'Pair',
                         value: diagnostics.selectedCandidatePairId ?? 'Unknown',
                       ),
@@ -1256,6 +1598,10 @@ class _ChatPanelState extends ConsumerState<_ChatPanel> {
                       _LinkStatCard(
                         label: 'Protocol',
                         value: _protocolLabel(route),
+                      ),
+                      _LinkStatCard(
+                        label: 'IP Family',
+                        value: _routeAddressFamilyLabel(route),
                       ),
                       _LinkStatCard(label: 'RTT', value: _rttLabel(route.rtt)),
                       _LinkStatCard(
@@ -1279,6 +1625,34 @@ class _ChatPanelState extends ConsumerState<_ChatPanel> {
                         value: '${diagnostics.retryAttempt}',
                       ),
                       _LinkStatCard(
+                        label: 'Backoff',
+                        value: diagnostics.connectionRetryAttempt == 0
+                            ? '0'
+                            : '${diagnostics.connectionRetryAttempt}',
+                      ),
+                      _LinkStatCard(
+                        label: 'Next Retry',
+                        value: _nextRetryLabel(diagnostics.nextRetryAt),
+                      ),
+                      _LinkStatCard(
+                        label: 'Passive',
+                        value:
+                            '${diagnostics.passiveListenerCount}/${diagnostics.passiveListenerLimit}',
+                      ),
+                      _LinkStatCard(
+                        label: 'Net Retry',
+                        value:
+                            '${diagnostics.networkRecoveryRuns}/${diagnostics.networkRecoveryRequests}',
+                      ),
+                      _LinkStatCard(
+                        label: 'Inbound',
+                        value: diagnostics.lastInboundOfferPeer ?? 'None',
+                      ),
+                      _LinkStatCard(
+                        label: 'Rejected',
+                        value: diagnostics.lastRejectedOfferPeer ?? 'None',
+                      ),
+                      _LinkStatCard(
                         label: 'Updated',
                         value: updatedAt == null
                             ? 'Never'
@@ -1286,6 +1660,13 @@ class _ChatPanelState extends ConsumerState<_ChatPanel> {
                       ),
                     ],
                   ),
+                  if (diagnostics.lastRejectedOfferReason != null) ...<Widget>[
+                    const SizedBox(height: 14),
+                    Text(
+                      diagnostics.lastRejectedOfferReason!,
+                      style: TextStyle(color: scheme.error),
+                    ),
+                  ],
                   if (diagnostics.lastError != null) ...<Widget>[
                     const SizedBox(height: 14),
                     Text(
@@ -1347,7 +1728,7 @@ class _ChatPanelState extends ConsumerState<_ChatPanel> {
         data: (List<StoredMessage> items) {
           final transferByMessageId = <String, FileTransferView>{
             for (final transferView
-                in transfers.valueOrNull ?? const <FileTransferView>[])
+                in transfers.value ?? const <FileTransferView>[])
               transferView.record.messageId: transferView,
           };
           if (items.isEmpty) {
@@ -1704,7 +2085,7 @@ class _ChatPanelState extends ConsumerState<_ChatPanel> {
 
     setState(() => _isPickingFile = true);
     try {
-      final result = await FilePicker.platform.pickFiles(
+      final result = await FilePicker.pickFiles(
         allowMultiple: false,
         withData: false,
         withReadStream: true,
@@ -1859,7 +2240,7 @@ class _ChatPanelState extends ConsumerState<_ChatPanel> {
   }
 
   FriendRecord? _currentFriend(AsyncValue<List<FriendRecord>> friends) {
-    final items = friends.valueOrNull;
+    final items = friends.value;
     if (items == null) {
       return null;
     }
@@ -2116,7 +2497,7 @@ class _ChatPanelState extends ConsumerState<_ChatPanel> {
   }
 
   String? _networkActionError() {
-    final status = ref.read(networkStatusProvider).valueOrNull;
+    final status = ref.read(networkStatusProvider).value;
     return status != null && status.blocksNetworkActions
         ? status.actionErrorMessage
         : null;

@@ -156,6 +156,8 @@ void main() {
     final script = _repoFile('scripts/build_release.ps1');
 
     expect(script, contains('--split-per-abi'));
+    expect(script, contains('Assert-AndroidApkContainsSqlite'));
+    expect(script, contains('lib/\$abi/libsqlite3.so'));
     expect(script, contains('Rain-release'));
     expect(script, contains('Rain-Demo'));
     expect(script, contains('ARMv8/ARMv9 devices'));
@@ -170,6 +172,44 @@ void main() {
     expect(script, contains('\$androidArtifactPrefix-android-arm64-v8a.apk'));
     expect(script, contains('\$androidArtifactPrefix-android-armeabi-v7a.apk'));
     expect(script, contains('\$androidArtifactPrefix-android-x86_64.apk'));
+  });
+
+  test('Windows release packaging includes Dart native assets', () {
+    final script = _repoFile('scripts/build_release.ps1');
+
+    expect(script, contains('Copy-WindowsNativeAssets'));
+    expect(script, contains('Assert-WindowsNativeAssetsPackaged'));
+    expect(script, contains('Assert-WindowsSqliteExports'));
+    expect(script, contains('Resolve-DumpbinPath'));
+    expect(script, contains('sqlite3_temp_directory'));
+    expect(script, contains('Get-WindowsNativeAssetNames'));
+    expect(script, contains(r"build\native_assets\windows"));
+    expect(script, contains(r"data\flutter_assets\NativeAssetsManifest.json"));
+    expect(script, contains("entry[0] -ne 'absolute'"));
+    expect(script, contains('Windows native asset source not found:'));
+    expect(
+      script,
+      contains('Windows native asset not found in portable output:'),
+    );
+    expect(
+      script,
+      contains(
+        'Copy-WindowsNativeAssets -ProjectRoot \$appsRoot -DestinationRoot \$windowsPortableDir',
+      ),
+    );
+  });
+
+  test('Windows release packaging removes non-runtime linker artifacts', () {
+    final script = _repoFile('scripts/build_release.ps1');
+
+    expect(script, contains('Remove-WindowsLinkerArtifacts'));
+    expect(script, contains("'.exp', '.lib'"));
+    expect(
+      script,
+      contains(
+        'Remove-WindowsLinkerArtifacts -DestinationRoot \$windowsPortableDir',
+      ),
+    );
   });
 
   test('CI and release workflows verify every Android APK architecture', () {
@@ -227,6 +267,10 @@ void main() {
     final workflow = _repoFile('.github/workflows/ci.yml');
 
     expect(workflow, contains('path: artifacts/Rain-Demo-Windows-x64-Build'));
+    expect(workflow, contains('Windows SQLite runtime DLL'));
+    expect(workflow, contains('lib/armeabi-v7a/libsqlite3.so'));
+    expect(workflow, contains('lib/arm64-v8a/libsqlite3.so'));
+    expect(workflow, contains('lib/x86_64/libsqlite3.so'));
     expect(
       workflow,
       contains(
@@ -240,5 +284,13 @@ void main() {
     expect(workflow, contains('Rain-Demo-Android-ARM-v7-Build.apk'));
     expect(workflow, contains('Rain-Demo-Android-ARM-v8-v9-Build.apk'));
     expect(workflow, contains('Rain-Demo-Android-x86_64-Build.apk'));
+  });
+
+  test('Rain core uses bundled SQLite native library packaging', () {
+    final pubspec = _repoFile('packages/rain_core/pubspec.yaml');
+
+    expect(pubspec, contains('drift_flutter: ^0.3.0'));
+    expect(pubspec, contains('sqlite3: ^3.3.1'));
+    expect(pubspec, isNot(contains('sqlite3_flutter_libs:')));
   });
 }

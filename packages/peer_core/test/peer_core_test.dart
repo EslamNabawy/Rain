@@ -1,3 +1,4 @@
+import 'dart:convert';
 import 'dart:typed_data';
 
 import 'package:flutter_test/flutter_test.dart';
@@ -283,6 +284,94 @@ void main() {
     await subscription.cancel();
   });
 
+  test('default peer drops malformed zero-total chunk frames', () async {
+    final platform = _FakePlatformBridge();
+    final peer = DefaultPeerCore();
+    final receivedMessages = <PeerMessage>[];
+    final subscription = peer.onMessage.listen(receivedMessages.add);
+
+    await peer.init(
+      PeerConfig(
+        iceServers: const <Map<String, dynamic>>[],
+        platform: platform,
+      ),
+    );
+    await peer.createOffer();
+    await peer.setAnswer(RTCSessionDescription('answer-sdp', 'answer'));
+    platform.channel(PeerChannels.chat).emitOpen();
+    platform.channel(PeerChannels.control).emitOpen();
+    await pumpEventQueue();
+
+    platform
+        .channel(PeerChannels.chat)
+        .onMessage
+        ?.call(
+          RTCDataChannelMessage(
+            jsonEncode(<String, Object?>{
+              'type': 'chunk',
+              'id': 'bad-zero-total',
+              'index': 0,
+              'total': 0,
+              'isBinary': false,
+              'payload': base64Encode(utf8.encode('ignored')),
+            }),
+          ),
+        );
+    await pumpEventQueue();
+
+    expect(receivedMessages, isEmpty);
+
+    await subscription.cancel();
+  });
+
+  test(
+    'default peer rejects oversized chunk totals without poisoning id',
+    () async {
+      final platform = _FakePlatformBridge();
+      final peer = DefaultPeerCore();
+      final receivedMessages = <PeerMessage>[];
+      final subscription = peer.onMessage.listen(receivedMessages.add);
+
+      await peer.init(
+        PeerConfig(
+          iceServers: const <Map<String, dynamic>>[],
+          platform: platform,
+        ),
+      );
+      await peer.createOffer();
+      await peer.setAnswer(RTCSessionDescription('answer-sdp', 'answer'));
+      platform.channel(PeerChannels.chat).emitOpen();
+      platform.channel(PeerChannels.control).emitOpen();
+      await pumpEventQueue();
+
+      String frame({required int total, required String text}) {
+        return jsonEncode(<String, Object?>{
+          'type': 'chunk',
+          'id': 'reused-id',
+          'index': 0,
+          'total': total,
+          'isBinary': false,
+          'payload': base64Encode(utf8.encode(text)),
+        });
+      }
+
+      platform
+          .channel(PeerChannels.chat)
+          .onMessage
+          ?.call(RTCDataChannelMessage(frame(total: 2048, text: 'poison')));
+      platform
+          .channel(PeerChannels.chat)
+          .onMessage
+          ?.call(RTCDataChannelMessage(frame(total: 1, text: 'accepted')));
+      await pumpEventQueue();
+
+      expect(receivedMessages, hasLength(1));
+      expect(receivedMessages.single.data, 'accepted');
+
+      await subscription.cancel();
+    },
+  );
+
   test('default peer maps selected host/srflx route as direct', () async {
     final platform = _FakePlatformBridge();
     final peer = DefaultPeerCore();
@@ -307,6 +396,59 @@ void main() {
     expect(route.protocol, 'udp');
     expect(route.rtt, 0.04);
     expect(route.bitrate, 1200000);
+  });
+
+  test('default peer reports selected route address family', () async {
+    final platform = _FakePlatformBridge();
+    final peer = DefaultPeerCore();
+    platform.connection.statsReports = _routeStats(
+      localType: 'host',
+      remoteType: 'srflx',
+      localAddress: '2001:db8::10',
+      remoteAddress: '[2001:db8::20]:49152',
+    );
+
+    await peer.init(
+      PeerConfig(
+        iceServers: const <Map<String, dynamic>>[],
+        platform: platform,
+      ),
+    );
+
+    final route = await peer.currentRoute();
+
+    expect(route.kind, PeerRouteKind.direct);
+    expect(route.localAddressFamily, PeerAddressFamily.ipv6);
+    expect(route.remoteAddressFamily, PeerAddressFamily.ipv6);
+    expect(route.addressFamily, PeerAddressFamily.ipv6);
+  });
+
+  test('default peer reports legacy route address family', () async {
+    final platform = _FakePlatformBridge();
+    final peer = DefaultPeerCore();
+    platform.connection.statsReports = <StatsReport>[
+      StatsReport('pair-legacy', 'googCandidatePair', 1, <String, Object?>{
+        'googActiveConnection': 'true',
+        'googLocalCandidateType': 'local',
+        'googRemoteCandidateType': 'stun',
+        'googLocalAddress': '192.0.2.10:49152',
+        'googRemoteAddress': '198.51.100.20:3478',
+      }),
+    ];
+
+    await peer.init(
+      PeerConfig(
+        iceServers: const <Map<String, dynamic>>[],
+        platform: platform,
+      ),
+    );
+
+    final route = await peer.currentRoute();
+
+    expect(route.kind, PeerRouteKind.direct);
+    expect(route.localAddressFamily, PeerAddressFamily.ipv4);
+    expect(route.remoteAddressFamily, PeerAddressFamily.ipv4);
+    expect(route.addressFamily, PeerAddressFamily.ipv4);
   });
 
   test('default peer maps selected relay route as relay', () async {
@@ -417,6 +559,8 @@ List<StatsReport> _routeStats({
   required String localType,
   required String remoteType,
   String? relayProtocol,
+  String? localAddress,
+  String? remoteAddress,
 }) {
   return <StatsReport>[
     StatsReport('transport-1', 'transport', 1, <String, Object?>{
@@ -432,6 +576,9 @@ List<StatsReport> _routeStats({
     StatsReport('local-1', 'local-candidate', 1, <String, Object?>{
       'candidateType': localType,
       'protocol': 'udp',
+      ...localAddress == null
+          ? const <String, Object?>{}
+          : <String, Object?>{'address': localAddress},
       ...relayProtocol == null
           ? const <String, Object?>{}
           : <String, Object?>{'relayProtocol': relayProtocol},
@@ -439,6 +586,9 @@ List<StatsReport> _routeStats({
     StatsReport('remote-1', 'remote-candidate', 1, <String, Object?>{
       'candidateType': remoteType,
       'protocol': 'udp',
+      ...remoteAddress == null
+          ? const <String, Object?>{}
+          : <String, Object?>{'address': remoteAddress},
     }),
   ];
 }

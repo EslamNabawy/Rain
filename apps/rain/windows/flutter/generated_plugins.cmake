@@ -3,7 +3,6 @@
 #
 
 list(APPEND FLUTTER_PLUGIN_LIST
-  app_links
   audioplayers_windows
   connectivity_plus
   firebase_auth
@@ -12,12 +11,12 @@ list(APPEND FLUTTER_PLUGIN_LIST
   firebase_remote_config
   flutter_webrtc
   screen_retriever_windows
-  sqlite3_flutter_libs
   url_launcher_windows
   window_manager
 )
 
 list(APPEND FLUTTER_FFI_PLUGIN_LIST
+  jni
 )
 
 set(PLUGIN_BUNDLED_LIBRARIES)

@@ -57,15 +57,17 @@ class SignalingSessionExpiredException implements Exception {
 enum IceRole { caller, callee }
 
 class SDPPayload {
-  const SDPPayload({required this.sdp, required this.ts});
+  const SDPPayload({required this.sdp, required this.ts, this.restart = false});
 
   final RTCSessionDescription sdp;
   final int ts;
+  final bool restart;
 
   Map<String, Object?> toJson() {
     return <String, Object?>{
       'sdp': <String, Object?>{'type': sdp.type, 'sdp': sdp.sdp},
       'ts': ts,
+      if (restart) 'restart': true,
     };
   }
 
@@ -78,6 +80,7 @@ class SDPPayload {
         sdpMap['type'] as String?,
       ),
       ts: (json['ts'] as num?)?.toInt() ?? 0,
+      restart: json['restart'] == true,
     );
   }
 }
@@ -111,19 +114,6 @@ class BackendIdentity {
       'registeredAt': registeredAt,
       'lastSeen': lastSeen,
       'lastHeartbeat': lastHeartbeat,
-      'online': online,
-      'uid': uid,
-    };
-  }
-
-  Map<String, Object?> toSupabaseJson() {
-    return <String, Object?>{
-      'username': username,
-      'display_name': displayName,
-      'gender': gender,
-      'registered_at': registeredAt,
-      'last_seen': lastSeen,
-      'last_heartbeat': lastHeartbeat,
       'online': online,
       'uid': uid,
     };

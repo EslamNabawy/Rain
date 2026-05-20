@@ -482,6 +482,158 @@ function Clean-FlutterProject([string]$ProjectRoot) {
   }
 }
 
+function Get-WindowsNativeAssetNames([string]$ManifestPath) {
+  if (-not (Test-Path -LiteralPath $ManifestPath)) {
+    return @()
+  }
+
+  $manifest = Get-Content -Raw -LiteralPath $ManifestPath | ConvertFrom-Json -ErrorAction Stop
+  $nativeAssetsProperty = $manifest.PSObject.Properties['native-assets']
+  if ($null -eq $nativeAssetsProperty) {
+    return @()
+  }
+
+  $windowsAssetsProperty = $nativeAssetsProperty.Value.PSObject.Properties['windows_x64']
+  if ($null -eq $windowsAssetsProperty) {
+    return @()
+  }
+
+  $assetNames = @()
+  foreach ($property in $windowsAssetsProperty.Value.PSObject.Properties) {
+    $entry = @($property.Value)
+    if ($entry.Count -lt 2 -or [string]$entry[0] -ne 'absolute') {
+      continue
+    }
+
+    $assetName = [System.IO.Path]::GetFileName([string]$entry[1])
+    if (-not [string]::IsNullOrWhiteSpace($assetName)) {
+      $assetNames += $assetName
+    }
+  }
+
+  return @($assetNames | Sort-Object -Unique)
+}
+
+function Copy-WindowsNativeAssets([string]$ProjectRoot, [string]$DestinationRoot) {
+  $nativeAssetsDir = Join-Path $ProjectRoot 'build\native_assets\windows'
+  if (-not (Test-Path -LiteralPath $nativeAssetsDir)) {
+    return
+  }
+
+  $nativeAssetsManifest = Join-Path $DestinationRoot 'data\flutter_assets\NativeAssetsManifest.json'
+  $nativeAssetNames = @(Get-WindowsNativeAssetNames -ManifestPath $nativeAssetsManifest)
+  if ($nativeAssetNames.Count -eq 0) {
+    return
+  }
+
+  Write-Step "Copying Windows native assets"
+  foreach ($nativeAssetName in $nativeAssetNames) {
+    $nativeAssetPath = Join-Path $nativeAssetsDir $nativeAssetName
+    if (-not (Test-Path -LiteralPath $nativeAssetPath)) {
+      throw "Windows native asset source not found: $nativeAssetPath"
+    }
+    Copy-Item -LiteralPath $nativeAssetPath -Destination $DestinationRoot -Force
+  }
+}
+
+function Assert-WindowsNativeAssetsPackaged([string]$ProjectRoot, [string]$DestinationRoot) {
+  $nativeAssetsManifest = Join-Path $DestinationRoot 'data\flutter_assets\NativeAssetsManifest.json'
+  $nativeAssetNames = @(Get-WindowsNativeAssetNames -ManifestPath $nativeAssetsManifest)
+  foreach ($nativeAssetName in $nativeAssetNames) {
+    $packagedNativeAsset = Join-Path $DestinationRoot $nativeAssetName
+    if (-not (Test-Path -LiteralPath $packagedNativeAsset)) {
+      throw "Windows native asset not found in portable output: $packagedNativeAsset"
+    }
+  }
+}
+
+function Remove-WindowsLinkerArtifacts([string]$DestinationRoot) {
+  Get-ChildItem -LiteralPath $DestinationRoot -File -ErrorAction SilentlyContinue |
+    Where-Object { $_.Extension -in @('.exp', '.lib') } |
+    Remove-Item -Force
+}
+
+function Resolve-DumpbinPath() {
+  $command = Get-Command dumpbin.exe -ErrorAction SilentlyContinue
+  if ($command) {
+    return $command.Source
+  }
+
+  $candidatePatterns = @(
+    'C:\Program Files\Microsoft Visual Studio\2022\Enterprise\VC\Tools\MSVC\*\bin\Hostx64\x64\dumpbin.exe',
+    'C:\Program Files\Microsoft Visual Studio\2022\Professional\VC\Tools\MSVC\*\bin\Hostx64\x64\dumpbin.exe',
+    'C:\Program Files\Microsoft Visual Studio\2022\Community\VC\Tools\MSVC\*\bin\Hostx64\x64\dumpbin.exe',
+    'C:\Program Files\Microsoft Visual Studio\2022\BuildTools\VC\Tools\MSVC\*\bin\Hostx64\x64\dumpbin.exe',
+    'C:\Program Files (x86)\Microsoft Visual Studio\2022\BuildTools\VC\Tools\MSVC\*\bin\Hostx64\x64\dumpbin.exe'
+  )
+
+  foreach ($pattern in $candidatePatterns) {
+    $candidate = Get-ChildItem -Path $pattern -ErrorAction SilentlyContinue |
+      Sort-Object FullName -Descending |
+      Select-Object -First 1
+    if ($candidate) {
+      return $candidate.FullName
+    }
+  }
+
+  throw "Required command not found: dumpbin.exe. Install Visual Studio Build Tools."
+}
+
+function Assert-DllExports([string]$DllPath, [string[]]$RequiredExports) {
+  if (-not (Test-Path -LiteralPath $DllPath)) {
+    throw "Required Windows runtime DLL not found: $DllPath"
+  }
+
+  $dumpbin = Resolve-DumpbinPath
+  $output = & $dumpbin /exports $DllPath 2>&1
+  if ($LASTEXITCODE -ne 0) {
+    $text = $output | Out-String
+    throw "Could not inspect Windows runtime DLL exports: $DllPath`n$text"
+  }
+
+  $exports = $output | Out-String
+  foreach ($requiredExport in $RequiredExports) {
+    $pattern = "(?m)(^|\s)$([regex]::Escape($requiredExport))(\s|$)"
+    if ($exports -notmatch $pattern) {
+      throw "Windows runtime DLL '$DllPath' is missing required export '$requiredExport'."
+    }
+  }
+}
+
+function Assert-WindowsSqliteExports([string]$DestinationRoot) {
+  $sqliteDll = Join-Path $DestinationRoot 'sqlite3.dll'
+  Assert-DllExports -DllPath $sqliteDll -RequiredExports @(
+    'sqlite3_open_v2',
+    'sqlite3_temp_directory'
+  )
+}
+
+function Get-ZipEntryNames([string]$ArchivePath) {
+  Add-Type -AssemblyName System.IO.Compression -ErrorAction SilentlyContinue
+  Add-Type -AssemblyName System.IO.Compression.FileSystem -ErrorAction SilentlyContinue
+
+  $archive = [System.IO.Compression.ZipFile]::OpenRead($ArchivePath)
+  try {
+    return @($archive.Entries | ForEach-Object { $_.FullName })
+  } finally {
+    $archive.Dispose()
+  }
+}
+
+function Assert-AndroidApkContainsSqlite([string]$ApkPath, [string[]]$Abis) {
+  if (-not (Test-Path -LiteralPath $ApkPath)) {
+    throw "Android release APK not found: $ApkPath"
+  }
+
+  $entryNames = @(Get-ZipEntryNames -ArchivePath $ApkPath)
+  foreach ($abi in $Abis) {
+    $requiredEntry = "lib/$abi/libsqlite3.so"
+    if ($entryNames -notcontains $requiredEntry) {
+      throw "Android APK is missing bundled SQLite native library: $ApkPath -> $requiredEntry"
+    }
+  }
+}
+
 $repoRoot = $RepoRoot
 $appsRoot = Join-Path $repoRoot 'apps\rain'
 $releaseRoot = $OutputDir
@@ -586,6 +738,10 @@ if ($Platform -in @('all', 'windows')) {
     Remove-Item -LiteralPath $flutterAssetsDestination -Recurse -Force
   }
   Copy-Item -Path $flutterAssetsSource -Destination $flutterAssetsDestination -Recurse -Force
+  Copy-WindowsNativeAssets -ProjectRoot $appsRoot -DestinationRoot $windowsPortableDir
+  Assert-WindowsNativeAssetsPackaged -ProjectRoot $appsRoot -DestinationRoot $windowsPortableDir
+  Remove-WindowsLinkerArtifacts -DestinationRoot $windowsPortableDir
+  Assert-WindowsSqliteExports -DestinationRoot $windowsPortableDir
 
   if (Test-Path $windowsZip) {
     Remove-Item -LiteralPath $windowsZip -Force
@@ -628,6 +784,12 @@ if ($Platform -in @('all', 'android')) {
     Copy-Item -LiteralPath $apkSource -Destination $apkDestination -Force
   }
   Copy-Item -LiteralPath $apkSource -Destination $universalApkDestination -Force
+  $universalApkAbis = if ($AndroidArtifactSet -eq 'mobile') {
+    @('armeabi-v7a', 'arm64-v8a')
+  } else {
+    @('armeabi-v7a', 'arm64-v8a', 'x86_64')
+  }
+  Assert-AndroidApkContainsSqlite -ApkPath $universalApkDestination -Abis $universalApkAbis
 
   Write-Step "Resetting Android build state before per-ABI release APKs"
   Stop-GradleDaemons $appsRoot
@@ -646,15 +808,15 @@ if ($Platform -in @('all', 'android')) {
 
   $abiApks = if ($isOpenRelayDemoBuild) {
     @(
-      @{ Label = 'ARM v8/v9 devices (arm64-v8a)'; Source = 'app-arm64-v8a-release.apk'; Destination = 'Rain-Demo-Android-ARM-v8-v9-Build.apk' },
-      @{ Label = 'ARM v7 devices (armeabi-v7a)'; Source = 'app-armeabi-v7a-release.apk'; Destination = 'Rain-Demo-Android-ARM-v7-Build.apk' },
-      @{ Label = 'x86_64 devices'; Source = 'app-x86_64-release.apk'; Destination = 'Rain-Demo-Android-x86_64-Build.apk' }
+      @{ Label = 'ARM v8/v9 devices (arm64-v8a)'; Source = 'app-arm64-v8a-release.apk'; Destination = 'Rain-Demo-Android-ARM-v8-v9-Build.apk'; Abi = 'arm64-v8a' },
+      @{ Label = 'ARM v7 devices (armeabi-v7a)'; Source = 'app-armeabi-v7a-release.apk'; Destination = 'Rain-Demo-Android-ARM-v7-Build.apk'; Abi = 'armeabi-v7a' },
+      @{ Label = 'x86_64 devices'; Source = 'app-x86_64-release.apk'; Destination = 'Rain-Demo-Android-x86_64-Build.apk'; Abi = 'x86_64' }
     )
   } else {
     @(
-      @{ Label = 'ARM v8/v9 devices (arm64-v8a)'; Source = 'app-arm64-v8a-release.apk'; Destination = "$androidArtifactPrefix-android-arm64-v8a.apk" },
-      @{ Label = 'ARM v7 devices (armeabi-v7a)'; Source = 'app-armeabi-v7a-release.apk'; Destination = "$androidArtifactPrefix-android-armeabi-v7a.apk" },
-      @{ Label = 'x86_64 devices'; Source = 'app-x86_64-release.apk'; Destination = "$androidArtifactPrefix-android-x86_64.apk" }
+      @{ Label = 'ARM v8/v9 devices (arm64-v8a)'; Source = 'app-arm64-v8a-release.apk'; Destination = "$androidArtifactPrefix-android-arm64-v8a.apk"; Abi = 'arm64-v8a' },
+      @{ Label = 'ARM v7 devices (armeabi-v7a)'; Source = 'app-armeabi-v7a-release.apk'; Destination = "$androidArtifactPrefix-android-armeabi-v7a.apk"; Abi = 'armeabi-v7a' },
+      @{ Label = 'x86_64 devices'; Source = 'app-x86_64-release.apk'; Destination = "$androidArtifactPrefix-android-x86_64.apk"; Abi = 'x86_64' }
     )
   }
   if ($AndroidArtifactSet -eq 'mobile') {
@@ -670,6 +832,7 @@ if ($Platform -in @('all', 'android')) {
     }
 
     Copy-Item -LiteralPath $abiApkSource -Destination $abiApkDestination -Force
+    Assert-AndroidApkContainsSqlite -ApkPath $abiApkDestination -Abis @($abiApk.Abi)
     Write-Step "Packaged Android APK for $($abiApk.Label): $abiApkDestination"
   }
 }

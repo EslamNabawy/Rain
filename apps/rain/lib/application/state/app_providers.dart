@@ -112,7 +112,7 @@ final soundEffectsProvider = Provider<SoundEffectsService>((Ref ref) {
 final appSettingsStoreProvider = Provider((Ref ref) => AppSettingsStore());
 
 void _assertNetworkReady(Ref ref) {
-  final status = ref.read(networkStatusProvider).valueOrNull;
+  final status = ref.read(networkStatusProvider).value;
   if (status != null && status.blocksNetworkActions) {
     throw StateError(status.actionErrorMessage);
   }
@@ -175,7 +175,7 @@ final forceUpdateProvider =
 class ForceUpdateController extends AsyncNotifier<ForceUpdateResult> {
   @override
   Future<ForceUpdateResult> build() {
-    final networkStatus = ref.watch(networkStatusProvider).valueOrNull;
+    final networkStatus = ref.watch(networkStatusProvider).value;
     if (networkStatus != null && networkStatus.blocksNetworkActions) {
       return ref.watch(forceUpdateServiceProvider).checkUnavailable();
     }
@@ -198,13 +198,13 @@ class BackgroundServiceController extends AsyncNotifier<bool> {
 
   Future<void> setEnabled(bool enabled) async {
     final previous =
-        state.valueOrNull ?? AppSettingsStore.defaultBackgroundServiceEnabled;
+        state.value ?? AppSettingsStore.defaultBackgroundServiceEnabled;
     state = const AsyncValue.data(false);
     try {
       await ref
           .read(appSettingsStoreProvider)
           .setBackgroundServiceEnabled(false);
-      final runtime = ref.read(runtimeControllerProvider).valueOrNull;
+      final runtime = ref.read(runtimeControllerProvider).value;
       if (runtime == null) {
         await BackgroundServices.instance.stop();
         return;
@@ -281,7 +281,7 @@ class IdentityController extends AsyncNotifier<RainIdentity?> {
 
   Future<void> updateDisplayName(String displayName) async {
     _assertNetworkReady(ref);
-    final identity = state.valueOrNull;
+    final identity = state.value;
     if (identity == null) {
       return;
     }
@@ -290,7 +290,7 @@ class IdentityController extends AsyncNotifier<RainIdentity?> {
 
   Future<void> updateGender(RainGender gender) async {
     _assertNetworkReady(ref);
-    final identity = state.valueOrNull;
+    final identity = state.value;
     if (identity == null) {
       return;
     }
@@ -380,7 +380,7 @@ class FriendsController extends AsyncNotifier<List<FriendRecord>> {
   }
 
   RainRuntimeController _runtime() {
-    final runtime = ref.read(runtimeControllerProvider).valueOrNull;
+    final runtime = ref.read(runtimeControllerProvider).value;
     if (runtime == null) {
       throw StateError('Rain is still starting. Try again in a moment.');
     }
@@ -395,19 +395,19 @@ final messagesProvider =
       String
     >(MessagesController.new);
 
-class MessagesController
-    extends FamilyAsyncNotifier<List<StoredMessage>, String> {
-  late String _peerId;
+class MessagesController extends AsyncNotifier<List<StoredMessage>> {
+  MessagesController(this._peerId);
+
+  final String _peerId;
   StreamSubscription<List<StoredMessage>>? _subscription;
 
   @override
-  Future<List<StoredMessage>> build(String peerId) {
-    _peerId = peerId;
+  Future<List<StoredMessage>> build() {
     final completer = Completer<List<StoredMessage>>();
     var completed = false;
     _subscription = ref
         .watch(messageStoreProvider)
-        .watchConversation(peerId)
+        .watchConversation(_peerId)
         .listen(
           (List<StoredMessage> messages) {
             state = AsyncValue.data(messages);
@@ -461,7 +461,7 @@ class MessagesController
   }
 
   RainRuntimeController _runtime() {
-    final runtime = ref.read(runtimeControllerProvider).valueOrNull;
+    final runtime = ref.read(runtimeControllerProvider).value;
     if (runtime == null) {
       throw StateError('Rain is still starting. Try again in a moment.');
     }
@@ -476,19 +476,19 @@ final fileTransfersProvider =
       String
     >(FileTransfersController.new);
 
-class FileTransfersController
-    extends FamilyAsyncNotifier<List<FileTransferRecord>, String> {
-  late String _peerId;
+class FileTransfersController extends AsyncNotifier<List<FileTransferRecord>> {
+  FileTransfersController(this._peerId);
+
+  final String _peerId;
   StreamSubscription<List<FileTransferRecord>>? _subscription;
 
   @override
-  Future<List<FileTransferRecord>> build(String peerId) {
-    _peerId = peerId;
+  Future<List<FileTransferRecord>> build() {
     final completer = Completer<List<FileTransferRecord>>();
     var completed = false;
     _subscription = ref
         .watch(fileTransferStoreProvider)
-        .watchPeerTransfers(peerId)
+        .watchPeerTransfers(_peerId)
         .listen(
           (List<FileTransferRecord> transfers) {
             state = AsyncValue.data(transfers);
@@ -547,7 +547,7 @@ class FileTransfersController
   }
 
   RainRuntimeController _runtime() {
-    final runtime = ref.read(runtimeControllerProvider).valueOrNull;
+    final runtime = ref.read(runtimeControllerProvider).value;
     if (runtime == null) {
       throw StateError('Rain is still starting. Try again in a moment.');
     }
@@ -563,18 +563,21 @@ final fileTransferViewsProvider =
     >(FileTransferViewsController.new);
 
 class FileTransferViewsController
-    extends FamilyNotifier<AsyncValue<List<FileTransferView>>, String> {
+    extends Notifier<AsyncValue<List<FileTransferView>>> {
+  FileTransferViewsController(this._peerId);
+
+  final String _peerId;
   final FileTransferSpeedTracker _speedTracker = FileTransferSpeedTracker();
 
   @override
-  AsyncValue<List<FileTransferView>> build(String peerId) {
-    final transfers = ref.watch(fileTransfersProvider(peerId));
+  AsyncValue<List<FileTransferView>> build() {
+    final transfers = ref.watch(fileTransfersProvider(_peerId));
     return transfers.whenData(_speedTracker.apply);
   }
 }
 
 final brainProvider = Provider<SessionManager?>((Ref ref) {
-  final identity = ref.watch(identityProvider).valueOrNull;
+  final identity = ref.watch(identityProvider).value;
   final environment = ref.watch(appEnvironmentProvider);
 
   if (identity == null || environment.shouldUseFallbackAdapter) {
@@ -598,26 +601,42 @@ final runtimeControllerProvider =
     );
 
 class RuntimeController extends AsyncNotifier<RainRuntimeController?> {
+  NetworkStatusKind? _lastNetworkKind;
+
   @override
   Future<RainRuntimeController?> build() async {
-    final identity = ref.watch(identityProvider).valueOrNull;
+    final identity = ref.watch(identityProvider).value;
     if (identity == null) {
       return null;
     }
+    final current = state.value;
     final networkStatus =
-        ref.watch(networkStatusProvider).valueOrNull ??
+        ref.watch(networkStatusProvider).value ??
         const NetworkStatusState.checking();
+    final previousNetworkKind = _lastNetworkKind;
+    _lastNetworkKind = networkStatus.kind;
     if (networkStatus.blocksNetworkActions) {
-      final current = state.valueOrNull;
       if (current != null) {
         await current.handleNetworkLost(
           'Internet connection lost. Transfer canceled.',
         );
+        await current.dispose();
       }
       return null;
     }
     if (networkStatus.kind == NetworkStatusKind.checking) {
-      return null;
+      return current?.selfIdentity.username == identity.username
+          ? current
+          : null;
+    }
+    if (current != null && current.selfIdentity.username == identity.username) {
+      if (previousNetworkKind != null &&
+          previousNetworkKind != networkStatus.kind) {
+        await current.handleNetworkAvailable(
+          'Network changed. Restarting peer connection paths.',
+        );
+      }
+      return current;
     }
     final environment = ref.watch(appEnvironmentProvider);
     await ref.read(backgroundServiceProvider.future);
@@ -648,7 +667,7 @@ class RuntimeController extends AsyncNotifier<RainRuntimeController?> {
   }
 
   Future<void> logOut() async {
-    final controller = state.valueOrNull;
+    final controller = state.value;
     if (controller == null) {
       return;
     }
@@ -678,12 +697,10 @@ class ConnectionsController extends Notifier<ConnectionsState> {
       _,
       AsyncValue<RainRuntimeController?> next,
     ) {
-      unawaited(_replaceRuntime(next.valueOrNull));
+      unawaited(_replaceRuntime(next.value));
     });
     scheduleMicrotask(() {
-      unawaited(
-        _replaceRuntime(ref.read(runtimeControllerProvider).valueOrNull),
-      );
+      unawaited(_replaceRuntime(ref.read(runtimeControllerProvider).value));
     });
     ref.onDispose(() {
       for (final subscription in _brainSubscriptions) {
@@ -780,7 +797,7 @@ class ConnectionsController extends Notifier<ConnectionsState> {
   }
 
   RainRuntimeController _requireRuntime() {
-    final runtime = _runtime ?? ref.read(runtimeControllerProvider).valueOrNull;
+    final runtime = _runtime ?? ref.read(runtimeControllerProvider).value;
     if (runtime == null) {
       throw StateError('Peer connection is unavailable right now.');
     }
@@ -804,6 +821,9 @@ class ConnectionsController extends Notifier<ConnectionsState> {
     _brainSubscriptions.add(brain.onSessionChanged.listen(_handleSession));
     _brainSubscriptions.add(brain.onPeerConnected.listen(_handleSession));
     _brainSubscriptions.add(
+      brain.onIncomingOfferRejected.listen(_handleIncomingOfferRejected),
+    );
+    _brainSubscriptions.add(
       brain.onPeerDisconnected.listen((String peerId) {
         _upsert(
           peerId,
@@ -820,6 +840,17 @@ class ConnectionsController extends Notifier<ConnectionsState> {
           ),
         );
       }),
+    );
+  }
+
+  void _handleIncomingOfferRejected(IncomingOfferRejection rejection) {
+    _upsert(
+      rejection.peerId,
+      (view) => view.copyWith(
+        error: rejection.reason,
+        localDetail: rejection.reason,
+        updatedAt: rejection.rejectedAt.millisecondsSinceEpoch,
+      ),
     );
   }
 
@@ -902,7 +933,7 @@ class UserSearchController extends AsyncNotifier<UserSearchState> {
   }
 
   Future<void> refreshCurrent() async {
-    final currentQuery = state.valueOrNull?.query.trim() ?? '';
+    final currentQuery = state.value?.query.trim() ?? '';
     if (currentQuery.length < 2) {
       return;
     }
@@ -911,18 +942,18 @@ class UserSearchController extends AsyncNotifier<UserSearchState> {
 
   Future<FriendRequestResult?> sendFriendRequest(String username) async {
     _assertNetworkReady(ref);
-    final previous = state.valueOrNull ?? const UserSearchState();
+    final previous = state.value ?? const UserSearchState();
     state = AsyncValue.data(previous.copyWith(sendingTo: username));
     try {
       return await _runtime().sendFriendRequest(username);
     } finally {
-      final current = state.valueOrNull ?? previous;
+      final current = state.value ?? previous;
       state = AsyncValue.data(current.copyWith(sendingTo: null));
     }
   }
 
   RainRuntimeController _runtime() {
-    final runtime = ref.read(runtimeControllerProvider).valueOrNull;
+    final runtime = ref.read(runtimeControllerProvider).value;
     if (runtime == null) {
       throw StateError('Rain is still starting. Try again in a moment.');
     }

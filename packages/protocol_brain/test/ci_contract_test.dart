@@ -10,27 +10,6 @@ String _repoFile(String relativePath) {
 }
 
 void main() {
-  test('Phase 4 runner executes real Flutter checks', () {
-    final runner = _repoFile('scripts/phase4-runner.js');
-
-    expect(runner, contains('spawnSync'));
-    expect(runner, contains("['analyze']"));
-    expect(runner, contains("['test']"));
-    expect(runner, isNot(contains('Simulated checks')));
-    expect(runner, isNot(contains("status: 'PASS'")));
-  });
-
-  test('Phase 4 workflow does not install nonexistent npm dependencies', () {
-    final workflow = _repoFile(
-      '.github/workflows/phase4-verification-gate.yml',
-    );
-
-    expect(workflow, contains('subosito/flutter-action'));
-    expect(workflow, contains('node scripts/phase4-runner.js'));
-    expect(workflow, isNot(contains('npm ci || npm install')));
-    expect(workflow, isNot(contains('Gate Pass')));
-  });
-
   test('CI workflow uses direct Flutter analyze and test commands', () {
     final workflow = _repoFile('.github/workflows/ci.yml');
 
@@ -45,7 +24,6 @@ void main() {
       _repoFile('.github/workflows/ci.yml'),
       _repoFile('.github/workflows/build-artifacts.yml'),
       _repoFile('.github/workflows/release.yml'),
-      _repoFile('.github/workflows/phase4-verification-gate.yml'),
     ];
 
     for (final workflow in workflows) {
@@ -55,9 +33,59 @@ void main() {
     }
 
     final ciWorkflow = _repoFile('.github/workflows/ci.yml');
+    final buildArtifactsWorkflow = _repoFile(
+      '.github/workflows/build-artifacts.yml',
+    );
+    final releaseWorkflow = _repoFile('.github/workflows/release.yml');
     expect(ciWorkflow, contains('actions/setup-node@v6'));
     expect(ciWorkflow, contains('actions/setup-java@v5'));
+    expect(ciWorkflow, contains('actions/setup-go@v6'));
     expect(ciWorkflow, contains('actions/upload-artifact@v7'));
     expect(ciWorkflow, contains('runs-on: windows-2022'));
+    expect(ciWorkflow, contains("JAVA_VERSION: '21'"));
+    expect(buildArtifactsWorkflow, contains("java-version: '21'"));
+    expect(releaseWorkflow, contains("java-version: '21'"));
+  });
+
+  test('CI runs workflow lint before required checks pass', () {
+    final workflow = _repoFile('.github/workflows/ci.yml');
+
+    expect(workflow, contains('workflow-lint:'));
+    expect(workflow, contains('github.com/rhysd/actionlint/cmd/actionlint'));
+    expect(workflow, contains('bin/actionlint" -color'));
+    expect(workflow, contains('needs.workflow-lint.result'));
+  });
+
+  test('CI runs Firebase emulator integration tests without skips', () {
+    final workflow = _repoFile('.github/workflows/ci.yml');
+    final script = _repoFile('scripts/ci_run_firebase_emulators.sh');
+
+    expect(workflow, contains('firebase-emulator-tests:'));
+    expect(workflow, contains('bash scripts/ci_run_firebase_emulators.sh'));
+    expect(workflow, contains('needs.firebase-emulator-tests.result'));
+    expect(script, contains('--only auth,database'));
+    expect(script, contains('FIREBASE_TOOLS_VERSION'));
+    expect(script, contains(r'firebase-tools@$FIREBASE_TOOLS_VERSION'));
+    expect(script, contains('--dart-define=RUN_RAIN_INTEGRATION_TESTS=true'));
+    expect(script, contains('integration_two_users_end2end_test.dart'));
+    expect(
+      script,
+      contains('integration_two_devices_handshake_full_test.dart'),
+    );
+  });
+
+  test('Firebase backend CI audits moderate and higher dependency issues', () {
+    final workflow = _repoFile('.github/workflows/ci.yml');
+    final packageJson = _repoFile('backend/firebase/functions/package.json');
+    final firebaseJson = _repoFile('backend/firebase/firebase.json');
+
+    expect(workflow, contains('Audit Firebase functions dependencies'));
+    expect(workflow, contains('npm run audit:moderate'));
+    expect(
+      packageJson,
+      contains('npm audit --omit=dev --audit-level=moderate'),
+    );
+    expect(packageJson, contains('"node": ">=20 <25"'));
+    expect(firebaseJson, contains('"runtime": "nodejs20"'));
   });
 }

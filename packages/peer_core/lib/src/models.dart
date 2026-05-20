@@ -17,6 +17,8 @@ enum PeerState {
 
 enum PeerIceTransportPolicy { all, relayOnly }
 
+enum PeerAddressFamily { unknown, ipv4, ipv6, mixed }
+
 final class PeerChannels {
   static const chat = 'rain.chat';
   static const control = 'rain.ctrl';
@@ -109,6 +111,8 @@ class PeerConnectionRoute {
     this.selectedCandidatePairId,
     this.localCandidateType,
     this.remoteCandidateType,
+    this.localAddressFamily = PeerAddressFamily.unknown,
+    this.remoteAddressFamily = PeerAddressFamily.unknown,
     this.protocol,
     this.relayProtocol,
     this.rtt,
@@ -121,6 +125,8 @@ class PeerConnectionRoute {
       selectedCandidatePairId = null,
       localCandidateType = null,
       remoteCandidateType = null,
+      localAddressFamily = PeerAddressFamily.unknown,
+      remoteAddressFamily = PeerAddressFamily.unknown,
       protocol = null,
       relayProtocol = null,
       rtt = null,
@@ -130,11 +136,26 @@ class PeerConnectionRoute {
   final String? selectedCandidatePairId;
   final String? localCandidateType;
   final String? remoteCandidateType;
+  final PeerAddressFamily localAddressFamily;
+  final PeerAddressFamily remoteAddressFamily;
   final String? protocol;
   final String? relayProtocol;
   final double? rtt;
   final double? bitrate;
   final int? updatedAt;
+
+  PeerAddressFamily get addressFamily {
+    if (localAddressFamily == remoteAddressFamily) {
+      return localAddressFamily;
+    }
+    if (localAddressFamily == PeerAddressFamily.unknown) {
+      return remoteAddressFamily;
+    }
+    if (remoteAddressFamily == PeerAddressFamily.unknown) {
+      return localAddressFamily;
+    }
+    return PeerAddressFamily.mixed;
+  }
 
   static PeerConnectionRoute fromStats(
     Iterable<StatsReport> reports, {
@@ -183,6 +204,22 @@ class PeerConnectionRoute {
       selectedCandidatePairId: selectedPair.id,
       localCandidateType: localType,
       remoteCandidateType: remoteType,
+      localAddressFamily:
+          _addressFamily(localCandidate, selectedPair, const <String>[
+            'localAddress',
+            'localIp',
+            'localIP',
+            'localCandidateAddress',
+            'googLocalAddress',
+          ]),
+      remoteAddressFamily:
+          _addressFamily(remoteCandidate, selectedPair, const <String>[
+            'remoteAddress',
+            'remoteIp',
+            'remoteIP',
+            'remoteCandidateAddress',
+            'googRemoteAddress',
+          ]),
       protocol:
           _stringStat(localCandidate?.values, const <String>['protocol']) ??
           _stringStat(remoteCandidate?.values, const <String>['protocol']) ??
@@ -286,6 +323,101 @@ String? _candidateType(StatsReport? report) {
 
 String? _candidateTypeFromPair(StatsReport report, Iterable<String> keys) {
   return _normalizeCandidateType(_stringStat(report.values, keys));
+}
+
+PeerAddressFamily _addressFamily(
+  StatsReport? candidate,
+  StatsReport selectedPair,
+  Iterable<String> selectedPairKeys,
+) {
+  return _addressFamilyFromValues(candidate?.values, const <String>[
+        'address',
+        'ip',
+        'ipAddress',
+        'networkAddress',
+        'transportAddress',
+      ]) ??
+      _addressFamilyFromCandidateLine(
+        _stringStat(candidate?.values, const <String>['candidate']),
+      ) ??
+      _addressFamilyFromValues(selectedPair.values, selectedPairKeys) ??
+      PeerAddressFamily.unknown;
+}
+
+PeerAddressFamily? _addressFamilyFromValues(
+  Map<dynamic, dynamic>? values,
+  Iterable<String> keys,
+) {
+  return _addressFamilyFromAddress(_stringStat(values, keys));
+}
+
+PeerAddressFamily? _addressFamilyFromCandidateLine(String? value) {
+  final candidate = value?.trim();
+  if (candidate == null || candidate.isEmpty) {
+    return null;
+  }
+  final normalized = candidate.startsWith('a=')
+      ? candidate.substring(2).trim()
+      : candidate;
+  final parts = normalized.split(RegExp(r'\s+'));
+  if (parts.length < 6 || !parts.first.startsWith('candidate:')) {
+    return null;
+  }
+  return _addressFamilyFromAddress(parts[4]);
+}
+
+PeerAddressFamily? _addressFamilyFromAddress(String? value) {
+  var text = value?.trim().toLowerCase();
+  if (text == null || text.isEmpty || text.endsWith('.local')) {
+    return null;
+  }
+
+  final bracketedIpv6 = RegExp(r'^\[([^\]]+)\](?::\d+)?$').firstMatch(text);
+  if (bracketedIpv6 != null) {
+    final bracketedAddress = bracketedIpv6.group(1);
+    if (bracketedAddress != null) {
+      text = bracketedAddress;
+    }
+  }
+
+  if (_isIpv4Address(text)) {
+    return PeerAddressFamily.ipv4;
+  }
+
+  final ipv4WithPort = RegExp(
+    r'^((?:\d{1,3}\.){3}\d{1,3})(?::\d+)?$',
+  ).firstMatch(text);
+  if (ipv4WithPort != null) {
+    final ipv4Address = ipv4WithPort.group(1);
+    if (ipv4Address != null && _isIpv4Address(ipv4Address)) {
+      return PeerAddressFamily.ipv4;
+    }
+  }
+
+  final withoutZone = text.split('%').first;
+  if (withoutZone.contains(':') &&
+      RegExp(r'^[0-9a-f:.]+$').hasMatch(withoutZone)) {
+    return PeerAddressFamily.ipv6;
+  }
+
+  return null;
+}
+
+bool _isIpv4Address(String value) {
+  final parts = value.split('.');
+  if (parts.length != 4) {
+    return false;
+  }
+  for (final part in parts) {
+    if (part.isEmpty || !RegExp(r'^\d{1,3}$').hasMatch(part)) {
+      return false;
+    }
+    final octet = int.tryParse(part);
+    if (octet == null || octet > 255) {
+      return false;
+    }
+  }
+  return true;
 }
 
 String? _normalizeCandidateType(String? value) {

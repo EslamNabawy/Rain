@@ -1,13 +1,23 @@
 $ErrorActionPreference = 'Stop'
 try {
-  Push-Location -Path "apps/mobile_flutter" -ErrorAction Stop
-  Write-Host "Running flutter analyze in apps/mobile_flutter..." -ForegroundColor Cyan
-  & flutter analyze
-  if ($LASTEXITCODE -ne 0) {
-    Write-Error "flutter analyze reported issues"
-    exit 1
+  $root = (Get-Location).Path
+  $packagePaths = @(
+    "apps\rain",
+    "packages\peer_core",
+    "packages\protocol_brain",
+    "packages\rain_core"
+  )
+  foreach ($relPath in $packagePaths) {
+    $fullPath = Join-Path $root $relPath
+    Push-Location -Path $fullPath -ErrorAction Stop
+    Write-Host "Running flutter analyze in $relPath..." -ForegroundColor Cyan
+    & flutter analyze
+    if ($LASTEXITCODE -ne 0) {
+      Write-Error "flutter analyze reported issues in $relPath"
+      exit 1
+    }
+    Pop-Location
   }
-  Pop-Location
   Write-Host "flutter analyze completed successfully" -ForegroundColor Green
   exit 0
 } catch {

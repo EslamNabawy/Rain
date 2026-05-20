@@ -1,5 +1,6 @@
 import 'package:protocol_brain/protocol_brain.dart';
 
+import '../runtime/connection_attempt_coordinator.dart';
 import 'app_state.dart';
 
 class ConnectionDiagnostics {
@@ -7,11 +8,24 @@ class ConnectionDiagnostics {
     required this.label,
     required this.detail,
     required this.route,
+    this.phase,
     this.roomId,
     this.isOfferOwner,
     this.retryAttempt = 0,
+    this.connectionRetryAttempt = 0,
+    this.nextRetryAt,
     this.lastError,
     this.updatedAt,
+    this.passiveListenerCount = 0,
+    this.passiveListenerLimit = 0,
+    this.passiveListenerSkips = 0,
+    this.networkRecoveryRequests = 0,
+    this.networkRecoveryRuns = 0,
+    this.lastInboundOfferPeer,
+    this.lastInboundOfferAt,
+    this.lastRejectedOfferPeer,
+    this.lastRejectedOfferReason,
+    this.lastRejectedOfferAt,
     this.isBusy = false,
     this.isConnected = false,
     this.canDisconnect = false,
@@ -20,11 +34,24 @@ class ConnectionDiagnostics {
   final String label;
   final String detail;
   final PeerConnectionRoute route;
+  final SessionPhase? phase;
   final String? roomId;
   final bool? isOfferOwner;
   final int retryAttempt;
+  final int connectionRetryAttempt;
+  final int? nextRetryAt;
   final String? lastError;
   final int? updatedAt;
+  final int passiveListenerCount;
+  final int passiveListenerLimit;
+  final int passiveListenerSkips;
+  final int networkRecoveryRequests;
+  final int networkRecoveryRuns;
+  final String? lastInboundOfferPeer;
+  final int? lastInboundOfferAt;
+  final String? lastRejectedOfferPeer;
+  final String? lastRejectedOfferReason;
+  final int? lastRejectedOfferAt;
   final bool isBusy;
   final bool isConnected;
   final bool canDisconnect;
@@ -33,6 +60,9 @@ class ConnectionDiagnostics {
   String? get selectedCandidatePairId => route.selectedCandidatePairId;
   String? get localCandidateType => route.localCandidateType;
   String? get remoteCandidateType => route.remoteCandidateType;
+  PeerAddressFamily get addressFamily => route.addressFamily;
+  PeerAddressFamily get localAddressFamily => route.localAddressFamily;
+  PeerAddressFamily get remoteAddressFamily => route.remoteAddressFamily;
   String? get protocol => route.protocol;
   String? get relayProtocol => route.relayProtocol;
   double? get rtt => route.rtt;
@@ -42,6 +72,7 @@ class ConnectionDiagnostics {
     required bool canChat,
     required bool isPeerOnline,
     required PeerConnectionView connection,
+    ConnectionCoordinatorSnapshot? coordinator,
   }) {
     final session = connection.session;
     final baseRoute = session?.route ?? const PeerConnectionRoute.unknown();
@@ -69,11 +100,24 @@ class ConnectionDiagnostics {
         label: label,
         detail: detail,
         route: route,
+        phase: session?.phase,
         roomId: session?.roomId,
         isOfferOwner: session?.isOfferOwner,
         retryAttempt: session?.retryAttempt ?? 0,
+        connectionRetryAttempt: coordinator?.retryAttempt ?? 0,
+        nextRetryAt: coordinator?.nextRetryAt,
         lastError: lastError,
         updatedAt: updatedAt,
+        passiveListenerCount: coordinator?.passiveListenerCount ?? 0,
+        passiveListenerLimit: coordinator?.passiveListenerLimit ?? 0,
+        passiveListenerSkips: coordinator?.passiveListenerSkips ?? 0,
+        networkRecoveryRequests: coordinator?.networkRecoveryRequests ?? 0,
+        networkRecoveryRuns: coordinator?.networkRecoveryRuns ?? 0,
+        lastInboundOfferPeer: coordinator?.lastInboundOfferPeer,
+        lastInboundOfferAt: coordinator?.lastInboundOfferAt,
+        lastRejectedOfferPeer: coordinator?.lastRejectedOfferPeer,
+        lastRejectedOfferReason: coordinator?.lastRejectedOfferReason,
+        lastRejectedOfferAt: coordinator?.lastRejectedOfferAt,
         isBusy: isBusy,
         isConnected: isConnected,
         canDisconnect: canDisconnect,

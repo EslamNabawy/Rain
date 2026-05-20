@@ -20,8 +20,8 @@ concurrency:
   cancel-in-progress: ${{ github.ref != 'refs/heads/main' && !startsWith(github.ref, 'refs/tags/') }}
 
 env:
-  FLUTTER_VERSION: '3.38.5'
-  JAVA_VERSION: '17'
+  FLUTTER_VERSION: '3.44.0'
+  JAVA_VERSION: '21'
   NODE_VERSION: '20'
   RAIN_APP_DIR: apps/rain
   RAIN_DART_DEFINES_FILE: apps/rain/tool/dart_defines.example.json
@@ -44,6 +44,24 @@ jobs:
         with:
           fail-on-severity: high
           comment-summary-in-pr: always
+
+  workflow-lint:
+    name: Workflow Lint
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v5
+
+      - uses: actions/setup-go@v6
+        with:
+          go-version: stable
+
+      - name: Install actionlint
+        run: go install github.com/rhysd/actionlint/cmd/actionlint@v1.7.8
+
+      - name: Lint GitHub Actions workflows
+        run: |
+          "$(go env GOPATH)/bin/actionlint" -color
 
   quality-gate:
     name: Quality Gate
@@ -85,12 +103,7 @@ jobs:
 
       - name: Fail on dependency lock drift
         run: |
-          git diff --exit-code -- \
-            pubspec.lock \
-            apps/rain/pubspec.lock \
-            packages/peer_core/pubspec.lock \
-            packages/protocol_brain/pubspec.lock \
-            packages/rain_core/pubspec.lock
+          git diff --exit-code -- pubspec.lock
 
       - name: Enforce Dart formatting
         run: |
@@ -252,9 +265,40 @@ jobs:
         working-directory: backend/firebase/functions
         run: npm run lint
 
+      - name: Audit Firebase functions dependencies
+        working-directory: backend/firebase/functions
+        run: npm run audit:moderate
+
       - name: Run Firebase function tests if present
         working-directory: backend/firebase/functions
         run: npm test --if-present
+
+  firebase-emulator-tests:
+    name: Firebase Emulator Integration
+    runs-on: ubuntu-latest
+    timeout-minutes: 35
+    steps:
+      - uses: actions/checkout@v5
+
+      - uses: actions/setup-java@v5
+        with:
+          distribution: temurin
+          java-version: ${{ env.JAVA_VERSION }}
+
+      - uses: actions/setup-node@v6
+        with:
+          node-version: ${{ env.NODE_VERSION }}
+          cache: npm
+          cache-dependency-path: backend/firebase/functions/package-lock.json
+
+      - uses: subosito/flutter-action@v2
+        with:
+          flutter-version: ${{ env.FLUTTER_VERSION }}
+          channel: stable
+          cache: true
+
+      - name: Run Firebase emulator integration tests
+        run: bash scripts/ci_run_firebase_emulators.sh
 
   android-build:
     name: Android Build
@@ -316,19 +360,23 @@ jobs:
     if: always()
     needs:
       - dependency-review
+      - workflow-lint
       - quality-gate
       - static-analysis
       - tests
       - firebase-backend
+      - firebase-emulator-tests
       - android-build
     steps:
       - name: Fail if any required job failed
         run: |
           test "${{ needs.dependency-review.result }}" = "success" || test "${{ needs.dependency-review.result }}" = "skipped"
+          test "${{ needs.workflow-lint.result }}" = "success"
           test "${{ needs.quality-gate.result }}" = "success"
           test "${{ needs.static-analysis.result }}" = "success"
           test "${{ needs.tests.result }}" = "success"
           test "${{ needs.firebase-backend.result }}" = "success"
+          test "${{ needs.firebase-emulator-tests.result }}" = "success"
           test "${{ needs.android-build.result }}" = "success"
 
   release-artifacts:
@@ -381,6 +429,8 @@ jobs:
         run: |
           $expected = @(
             @{ Label = 'Windows portable EXE'; Path = 'artifacts\Rain-Demo-Windows-x64-Build\rain.exe' },
+            @{ Label = 'Windows SQLite runtime DLL'; Path = 'artifacts\Rain-Demo-Windows-x64-Build\sqlite3.dll' },
+            @{ Label = 'Windows win32 native asset DLL'; Path = 'artifacts\Rain-Demo-Windows-x64-Build\win32_windows_x64.dll' },
             @{ Label = 'Android universal APK'; Path = 'artifacts\Rain-Demo-Android-Universal-Build.apk' },
             @{ Label = 'Android ARM v7 APK (armeabi-v7a)'; Path = 'artifacts\Rain-Demo-Android-ARM-v7-Build.apk' },
             @{ Label = 'Android ARM v8/v9 APK (arm64-v8a)'; Path = 'artifacts\Rain-Demo-Android-ARM-v8-v9-Build.apk' },
@@ -399,6 +449,23 @@ jobs:
             $archiveList = ($nestedArchives | ForEach-Object { $_.FullName }) -join "`n"
             throw "Windows portable upload folder must not contain nested archives:`n$archiveList"
           }
+          Add-Type -AssemblyName System.IO.Compression -ErrorAction SilentlyContinue
+          Add-Type -AssemblyName System.IO.Compression.FileSystem -ErrorAction SilentlyContinue
+          function Assert-ApkEntry([string]$Path, [string]$Entry) {
+            $archive = [System.IO.Compression.ZipFile]::OpenRead($Path)
+            try {
+              $entryNames = @($archive.Entries | ForEach-Object { $_.FullName })
+              if ($entryNames -notcontains $Entry) {
+                throw "APK is missing required native runtime entry: $Path -> $Entry"
+              }
+            } finally {
+              $archive.Dispose()
+            }
+            Write-Host "Verified APK native runtime entry: $Path -> $Entry"
+          }
+          Assert-ApkEntry 'artifacts\Rain-Demo-Android-ARM-v7-Build.apk' 'lib/armeabi-v7a/libsqlite3.so'
+          Assert-ApkEntry 'artifacts\Rain-Demo-Android-ARM-v8-v9-Build.apk' 'lib/arm64-v8a/libsqlite3.so'
+          Assert-ApkEntry 'artifacts\Rain-Demo-Android-x86_64-Build.apk' 'lib/x86_64/libsqlite3.so'
 
       - name: Upload Windows portable EXE bundle
         uses: actions/upload-artifact@v7

@@ -4,7 +4,7 @@ import 'package:flutter/foundation.dart';
 
 import 'runtime_environment.dart';
 
-enum RainBackend { noop, firebase, supabase }
+enum RainBackend { noop, firebase }
 
 class AppEnvironment {
   const AppEnvironment({
@@ -25,8 +25,6 @@ class AppEnvironment {
     required this.firebaseStorageBucket,
     required this.firebaseAuthDomain,
     required this.firebaseMeasurementId,
-    required this.supabaseUrl,
-    required this.supabaseAnonKey,
     required this.signalingEncryptionKey,
     required this.turnBrokerUrl,
   });
@@ -48,8 +46,6 @@ class AppEnvironment {
   final String firebaseStorageBucket;
   final String firebaseAuthDomain;
   final String firebaseMeasurementId;
-  final String supabaseUrl;
-  final String supabaseAnonKey;
   final String signalingEncryptionKey;
   final String turnBrokerUrl;
 
@@ -116,7 +112,6 @@ class AppEnvironment {
       defaultValue: 'firebase',
     )) {
       'firebase' => RainBackend.firebase,
-      'supabase' => RainBackend.supabase,
       _ => RainBackend.noop,
     };
 
@@ -211,14 +206,6 @@ class AppEnvironment {
           'FIREBASE_MEASUREMENT_ID',
         ),
       ),
-      supabaseUrl: readString(
-        'SUPABASE_URL',
-        compileTimeValue: const String.fromEnvironment('SUPABASE_URL'),
-      ),
-      supabaseAnonKey: readString(
-        'SUPABASE_ANON_KEY',
-        compileTimeValue: const String.fromEnvironment('SUPABASE_ANON_KEY'),
-      ),
       signalingEncryptionKey: readString(
         'RAIN_SIGNALING_ENCRYPTION_KEY',
         compileTimeValue: const String.fromEnvironment(
@@ -242,14 +229,10 @@ class AppEnvironment {
   bool get isFirebaseConfigured =>
       supportsFirebasePlatform && firebaseDatabaseUrl.isNotEmpty;
 
-  bool get isSupabaseConfigured =>
-      supabaseUrl.isNotEmpty && supabaseAnonKey.isNotEmpty;
-
   bool get shouldUseFallbackAdapter {
     return switch (backend) {
       RainBackend.noop => true,
       RainBackend.firebase => !isFirebaseConfigured,
-      RainBackend.supabase => !isSupabaseConfigured,
     };
   }
 
@@ -303,6 +286,9 @@ class AppEnvironment {
 
   bool get hasTurnBroker => turnBrokerUrl.trim().isNotEmpty;
 
+  bool get usesDemoSignalingEncryptionKey =>
+      signalingEncryptionKey == demoSignalingEncryptionKey;
+
   Iterable<String> get _iceUrls sync* {
     for (final server in iceServers) {
       yield* _serverUrls(server);
@@ -355,14 +341,17 @@ class AppEnvironment {
       firebaseStorageBucket: firebaseStorageBucket,
       firebaseAuthDomain: firebaseAuthDomain,
       firebaseMeasurementId: firebaseMeasurementId,
-      supabaseUrl: supabaseUrl,
-      supabaseAnonKey: supabaseAnonKey,
       signalingEncryptionKey: signalingEncryptionKey,
       turnBrokerUrl: turnBrokerUrl,
     );
   }
 
   void validateForRelease() {
+    if (usesDemoSignalingEncryptionKey && !allowPublicTurn) {
+      throw StateError(
+        'Production release builds must not use the demo signaling encryption key.',
+      );
+    }
     if (!allowPublicTurn && usesPublicOpenRelay) {
       throw StateError('Release builds require project-owned TURN servers.');
     }
@@ -411,18 +400,15 @@ class AppEnvironment {
   String get backendLabel => switch (backend) {
     RainBackend.noop => 'Local Demo',
     RainBackend.firebase => 'Firebase',
-    RainBackend.supabase => 'Supabase',
   };
 
   String get fallbackReason => switch (backend) {
     RainBackend.noop =>
-      'Running with the local demo adapter. Identities, friends, and queues work locally, but peer signaling is disabled until you choose Firebase or Supabase.',
+      'Running with the local demo adapter. Identities, friends, and queues work locally, but peer signaling is disabled until Firebase is configured.',
     RainBackend.firebase =>
       !supportsFirebasePlatform
           ? 'Firebase signaling is configured only for Android, macOS, and Windows in this build, so Rain is using the local demo adapter on this platform.'
           : 'Firebase is selected, but FIREBASE_DATABASE_URL is missing, so Rain is using the local demo adapter until the Realtime Database instance is configured.',
-    RainBackend.supabase =>
-      'Supabase is selected but SUPABASE_URL and SUPABASE_ANON_KEY are missing, so Rain is using the local demo adapter.',
   };
 }
 
@@ -473,17 +459,28 @@ bool _hasTransport(String url, String transport) {
   return normalized.contains('?$expected') || normalized.contains('&$expected');
 }
 
-const releaseDefaultIceServers = <Map<String, dynamic>>[
+const testedPublicStunIceServers = <Map<String, dynamic>>[
   <String, dynamic>{'urls': 'stun:stun.l.google.com:19302'},
   <String, dynamic>{'urls': 'stun:stun1.l.google.com:19302'},
+  <String, dynamic>{'urls': 'stun:stun2.l.google.com:19302'},
+  <String, dynamic>{'urls': 'stun:stun3.l.google.com:19302'},
+  <String, dynamic>{'urls': 'stun:stun4.l.google.com:19302'},
+  <String, dynamic>{'urls': 'stun:stun.voipstunt.com:3478'},
+  <String, dynamic>{'urls': 'stun:stun.voipbuster.com:3478'},
+  <String, dynamic>{'urls': 'stun:stun.sipgate.net:10000'},
+  <String, dynamic>{'urls': 'stun:stun.schlund.de:3478'},
+  <String, dynamic>{'urls': 'stun:stun.1und1.de:3478'},
+];
+
+const releaseDefaultIceServers = <Map<String, dynamic>>[
+  ...testedPublicStunIceServers,
 ];
 
 const demoSignalingEncryptionKey =
     'rain-demo-signaling-encryption-key-v1-change-me';
 
 const defaultIceServers = <Map<String, dynamic>>[
-  <String, dynamic>{'urls': 'stun:stun.l.google.com:19302'},
-  <String, dynamic>{'urls': 'stun:stun1.l.google.com:19302'},
+  ...testedPublicStunIceServers,
   <String, dynamic>{
     'urls': <String>[
       'turn:openrelay.metered.ca:80?transport=udp',

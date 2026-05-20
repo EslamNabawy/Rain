@@ -29,7 +29,7 @@ class ReceivedFileExportService {
     saveFilePicker,
   }) : _androidChannel =
            androidChannel ?? const MethodChannel('rain/file_export'),
-       _saveFilePicker = saveFilePicker ?? FilePicker.platform.saveFile;
+       _saveFilePicker = saveFilePicker ?? FilePicker.saveFile;
 
   final MethodChannel _androidChannel;
   final Future<String?> Function({
