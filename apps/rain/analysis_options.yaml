@@ -9,6 +9,13 @@
 # packages, and plugins designed to encourage good coding practices.
 include: package:flutter_lints/flutter.yaml
 
+analyzer:
+  exclude:
+    # Flutter Rust Bridge/Cargokit build support is vendored native tooling, not
+    # Rain application source. Its own package dependencies are resolved by the
+    # native build flow, so app-level analysis must not lint it as app code.
+    - rust_builder/**
+
 linter:
   # The lint rules applied to this project can be customized in the
   # section below to disable rules from the `package:flutter_lints/flutter.yaml`
