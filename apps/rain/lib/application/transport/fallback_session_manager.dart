@@ -133,10 +133,7 @@ class FallbackSessionManager implements SessionManager {
     throw StateError(message);
   }
 
-  Future<Session> connectWebRtcOnly(
-    String peerId, {
-    Duration? timeout,
-  }) {
+  Future<Session> connectWebRtcOnly(String peerId, {Duration? timeout}) {
     return _connectOnly(
       _TransportKind.webRtc,
       webRtc,
@@ -145,10 +142,7 @@ class FallbackSessionManager implements SessionManager {
     );
   }
 
-  Future<Session> connectIrohOnly(
-    String peerId, {
-    Duration? timeout,
-  }) {
+  Future<Session> connectIrohOnly(String peerId, {Duration? timeout}) {
     return _connectOnly(
       _TransportKind.iroh,
       iroh,

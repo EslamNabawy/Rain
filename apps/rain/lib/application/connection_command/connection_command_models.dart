@@ -61,12 +61,7 @@ enum ConnectionCancelReason {
   globalBudgetExceeded,
 }
 
-enum ConnectionFallbackChoice {
-  tryAuto,
-  tryRelay,
-  tryIroh,
-  cancel,
-}
+enum ConnectionFallbackChoice { tryAuto, tryRelay, tryIroh, cancel }
 
 class ConnectionFallbackRequest {
   const ConnectionFallbackRequest({

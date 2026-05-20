@@ -104,8 +104,8 @@ class ConnectionCommandOrchestrator {
       <String, ConnectionPolicy>{};
   final Map<String, ConnectionTimeline> _timelines =
       <String, ConnectionTimeline>{};
-  final Map<String, StreamController<ConnectionTimeline>>
-  _timelineControllers = <String, StreamController<ConnectionTimeline>>{};
+  final Map<String, StreamController<ConnectionTimeline>> _timelineControllers =
+      <String, StreamController<ConnectionTimeline>>{};
   final Map<String, ConnectionRunToken> _activeRuns =
       <String, ConnectionRunToken>{};
   final Map<String, int> _generations = <String, int>{};
@@ -167,13 +167,14 @@ class ConnectionCommandOrchestrator {
 
   Future<void> connect(String peerId, {ConnectionPolicy? policy}) async {
     final normalizedPeerId = peerId.trim();
-    if (normalizedPeerId.isEmpty ||
-        _activeRuns.containsKey(normalizedPeerId)) {
+    if (normalizedPeerId.isEmpty || _activeRuns.containsKey(normalizedPeerId)) {
       return;
     }
 
     final attemptPolicy =
-        policy ?? _sessionPolicies[normalizedPeerId] ?? const ConnectionPolicy.defaults();
+        policy ??
+        _sessionPolicies[normalizedPeerId] ??
+        const ConnectionPolicy.defaults();
     final runId = _runIdFactory();
     final generation = (_generations[normalizedPeerId] ?? 0) + 1;
     _generations[normalizedPeerId] = generation;
@@ -184,26 +185,27 @@ class ConnectionCommandOrchestrator {
       startedAt: _now(),
     );
 
-    var timeline = ConnectionTimeline.initial(
-      peerId: normalizedPeerId,
-      attemptId: runId,
-      policy: attemptPolicy,
-    ).addStep(
-      ConnectionAttemptStep.pending(
-        layer: ConnectionLayer.preflight,
-        userMessage: 'Checking peer.',
-        startedAt: _now(),
-      ),
-    );
+    var timeline =
+        ConnectionTimeline.initial(
+          peerId: normalizedPeerId,
+          attemptId: runId,
+          policy: attemptPolicy,
+        ).addStep(
+          ConnectionAttemptStep.pending(
+            layer: ConnectionLayer.preflight,
+            userMessage: 'Checking peer.',
+            startedAt: _now(),
+          ),
+        );
     _emit(timeline);
 
     final runningStep = timeline.steps.last.copyWith(
       state: ConnectionStepState.running,
     );
-    timeline = _replaceLastStep(timeline, runningStep).copyWith(
-      activeLayer: ConnectionLayer.preflight,
-      canCancel: true,
-    );
+    timeline = _replaceLastStep(
+      timeline,
+      runningStep,
+    ).copyWith(activeLayer: ConnectionLayer.preflight, canCancel: true);
     _emit(timeline);
     _globalBudgetTimers[normalizedPeerId]?.cancel();
     _globalBudgetTimers[normalizedPeerId] = Timer(
@@ -213,10 +215,7 @@ class ConnectionCommandOrchestrator {
     unawaited(_runPolicy(normalizedPeerId));
   }
 
-  Future<void> retry(
-    String peerId, {
-    ConnectionPolicy? overridePolicy,
-  }) async {
+  Future<void> retry(String peerId, {ConnectionPolicy? overridePolicy}) async {
     await connect(peerId, policy: overridePolicy);
   }
 
@@ -295,19 +294,13 @@ class ConnectionCommandOrchestrator {
       return;
     }
 
-    final policy = _policyForFallbackChoice(choice).copyWith(
-      rememberForSession: rememberForSession,
-    );
+    final policy = _policyForFallbackChoice(
+      choice,
+    ).copyWith(rememberForSession: rememberForSession);
     if (rememberForSession) {
       rememberPolicyForSession(normalizedPeerId, policy);
     }
-    _emit(
-      timeline.copyWith(
-        policy: policy,
-        canCancel: true,
-        canRetry: false,
-      ),
-    );
+    _emit(timeline.copyWith(policy: policy, canCancel: true, canRetry: false));
     unawaited(_runPolicy(normalizedPeerId));
   }
 
@@ -396,8 +389,7 @@ class ConnectionCommandOrchestrator {
           return;
         }
 
-        final failureCode =
-            result.failureCode ?? ConnectionFailureCode.unknown;
+        final failureCode = result.failureCode ?? ConnectionFailureCode.unknown;
         if (retryCount == 0 && isRetryable(failureCode)) {
           retryCount += 1;
           timeline = _replaceLastStep(
@@ -490,11 +482,7 @@ class ConnectionCommandOrchestrator {
         failureCode: ConnectionFailureCode.globalBudgetExceeded,
         endedAt: _now(),
       ),
-    ).copyWith(
-      canCancel: false,
-      canRetry: true,
-      globalBudgetExceeded: true,
-    );
+    ).copyWith(canCancel: false, canRetry: true, globalBudgetExceeded: true);
     _emit(timeline);
   }
 

@@ -18,14 +18,11 @@ class ConnectionFailureMessages {
       ConnectionFailureCode.directPathBlocked => 'Direct path blocked.',
       ConnectionFailureCode.turnCredentialsUnavailable =>
         'Relay credentials unavailable.',
-      ConnectionFailureCode.turnProviderTimedOut =>
-        'Relay provider timed out.',
-      ConnectionFailureCode.dataChannelTimeout =>
-        'Data channel did not open.',
+      ConnectionFailureCode.turnProviderTimedOut => 'Relay provider timed out.',
+      ConnectionFailureCode.dataChannelTimeout => 'Data channel did not open.',
       ConnectionFailureCode.irohAddressTimeout =>
         'Iroh address exchange timed out.',
-      ConnectionFailureCode.irohHandshakeRejected =>
-        'Iroh handshake rejected.',
+      ConnectionFailureCode.irohHandshakeRejected => 'Iroh handshake rejected.',
       ConnectionFailureCode.irohConnectFailed => 'Iroh connection failed.',
       ConnectionFailureCode.globalBudgetExceeded =>
         'All connection routes timed out.',

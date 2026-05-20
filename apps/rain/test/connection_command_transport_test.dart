@@ -83,19 +83,22 @@ void main() {
       expect(result.technicalDetail, contains('handshake rejected'));
     });
 
-    test('cancel layer disconnects and unregisters the active manager', () async {
-      final webRtc = _FakeSessionManager(ConnectionType.signaling);
-      final transport = SessionManagerConnectionTransport(webRtc: webRtc);
+    test(
+      'cancel layer disconnects and unregisters the active manager',
+      () async {
+        final webRtc = _FakeSessionManager(ConnectionType.signaling);
+        final transport = SessionManagerConnectionTransport(webRtc: webRtc);
 
-      await transport.cancelLayer(
-        peerId: 'bob',
-        layer: ConnectionLayer.webRtcPrimaryRelay,
-        token: _token(),
-      );
+        await transport.cancelLayer(
+          peerId: 'bob',
+          layer: ConnectionLayer.webRtcPrimaryRelay,
+          token: _token(),
+        );
 
-      expect(webRtc.disconnectCalls, 1);
-      expect(webRtc.unregisterCalls, 1);
-    });
+        expect(webRtc.disconnectCalls, 1);
+        expect(webRtc.unregisterCalls, 1);
+      },
+    );
   });
 }
 

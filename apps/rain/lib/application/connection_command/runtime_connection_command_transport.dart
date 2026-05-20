@@ -107,8 +107,7 @@ class RuntimeConnectionCommandTransport implements ConnectionCommandTransport {
     return switch (layer) {
       ConnectionLayer.preflight => ConnectionFailureCode.unknown,
       ConnectionLayer.webRtcDirect => ConnectionFailureCode.directPathBlocked,
-      ConnectionLayer.webRtcPrimaryRelay ||
-      ConnectionLayer.webRtcBackupRelay =>
+      ConnectionLayer.webRtcPrimaryRelay || ConnectionLayer.webRtcBackupRelay =>
         ConnectionFailureCode.turnProviderTimedOut,
       ConnectionLayer.webRtcFullRestart =>
         ConnectionFailureCode.dataChannelTimeout,

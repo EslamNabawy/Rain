@@ -7,10 +7,7 @@ import 'connection_command_orchestrator.dart';
 import 'connection_run_token.dart';
 
 class SessionManagerConnectionTransport implements ConnectionCommandTransport {
-  const SessionManagerConnectionTransport({
-    required this.webRtc,
-    this.iroh,
-  });
+  const SessionManagerConnectionTransport({required this.webRtc, this.iroh});
 
   final SessionManager webRtc;
   final SessionManager? iroh;
@@ -88,9 +85,8 @@ class SessionManagerConnectionTransport implements ConnectionCommandTransport {
     return switch (layer) {
       ConnectionLayer.preflight => ConnectionFailureCode.unknown,
       ConnectionLayer.webRtcDirect => ConnectionFailureCode.directPathBlocked,
-      ConnectionLayer.webRtcPrimaryRelay ||
-      ConnectionLayer.webRtcBackupRelay => ConnectionFailureCode
-          .turnProviderTimedOut,
+      ConnectionLayer.webRtcPrimaryRelay || ConnectionLayer.webRtcBackupRelay =>
+        ConnectionFailureCode.turnProviderTimedOut,
       ConnectionLayer.webRtcFullRestart =>
         ConnectionFailureCode.dataChannelTimeout,
       ConnectionLayer.iroh => ConnectionFailureCode.irohConnectFailed,
@@ -99,8 +95,7 @@ class SessionManagerConnectionTransport implements ConnectionCommandTransport {
 
   ConnectionFailureCode _timeoutFailureForLayer(ConnectionLayer layer) {
     return switch (layer) {
-      ConnectionLayer.webRtcPrimaryRelay ||
-      ConnectionLayer.webRtcBackupRelay =>
+      ConnectionLayer.webRtcPrimaryRelay || ConnectionLayer.webRtcBackupRelay =>
         ConnectionFailureCode.turnProviderTimedOut,
       ConnectionLayer.iroh => ConnectionFailureCode.irohAddressTimeout,
       _ => _failureForLayer(layer),

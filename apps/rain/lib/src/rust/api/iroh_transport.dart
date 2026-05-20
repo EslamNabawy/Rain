@@ -6,7 +6,7 @@
 import '../frb_generated.dart';
 import 'package:flutter_rust_bridge/flutter_rust_bridge_for_generated.dart';
 
-// These functions are ignored because they are not marked as `pub`: `accept_peer_in_state`, `connect_peer_in_state`, `connection_from_state`, `diagnostics_event`, `disconnect_peer_in_state`, `emit_event`, `endpoint_from_state`, `read_loop`, `register_connection`, `runtime_state`, `send_frame_in_state`, `start_endpoint_in_state`, `stop_endpoint_in_state`, `validate_remote`
+// These functions are ignored because they are not marked as `pub`: `accept_peer_in_state`, `add_pending_bytes`, `authenticate_acceptor`, `authenticate_dialer`, `connect_peer_in_state`, `connection_from_state`, `diagnostics_event`, `disconnect_peer_in_state`, `emit_event`, `endpoint_and_username_from_state`, `normalize_name`, `pending_key`, `read_loop`, `register_connection`, `remove_pending_bytes`, `remove_pending_for_peer`, `runtime_state`, `send_frame_in_state`, `start_endpoint_in_state`, `stop_endpoint_in_state`, `validate_remote`, `write_frame_to_peer`
 // These types are ignored because they are neither used by any `pub` functions nor (for structs and enums) marked `#[frb(unignore)]`: `IrohEvent`
 // These function are ignored because they are on traits that is not defined in current crate (put an empty `#[frb]` on it to unignore): `clone`, `clone`, `fmt`, `fmt`
 

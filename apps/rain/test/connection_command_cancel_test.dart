@@ -108,38 +108,43 @@ void main() {
   });
 
   group('ConnectionCommandOrchestrator cancellation', () {
-    test('cancel waits for transport disposal before emitting canceled', () async {
-      final cancelCompleter = Completer<void>();
-      final transport = FakeConnectionTransport.hanging(
-        cancelCompleter: cancelCompleter,
-      );
-      final orchestrator = ConnectionCommandOrchestrator(
-        transport: transport,
-        runIdFactory: () => 'run-1',
-      );
-      addTearDown(orchestrator.dispose);
+    test(
+      'cancel waits for transport disposal before emitting canceled',
+      () async {
+        final cancelCompleter = Completer<void>();
+        final transport = FakeConnectionTransport.hanging(
+          cancelCompleter: cancelCompleter,
+        );
+        final orchestrator = ConnectionCommandOrchestrator(
+          transport: transport,
+          runIdFactory: () => 'run-1',
+        );
+        addTearDown(orchestrator.dispose);
 
-      await orchestrator.connect('bob');
-      final cancelFuture = orchestrator.cancel('bob');
-      await Future<void>.delayed(Duration.zero);
+        await orchestrator.connect('bob');
+        final cancelFuture = orchestrator.cancel('bob');
+        await Future<void>.delayed(Duration.zero);
 
-      expect(transport.cancelCalls, <ConnectionLayer>[ConnectionLayer.preflight]);
-      expect(
-        orchestrator.currentTimeline('bob')!.steps.last.state,
-        isNot(ConnectionStepState.canceled),
-      );
+        expect(transport.cancelCalls, <ConnectionLayer>[
+          ConnectionLayer.preflight,
+        ]);
+        expect(
+          orchestrator.currentTimeline('bob')!.steps.last.state,
+          isNot(ConnectionStepState.canceled),
+        );
 
-      cancelCompleter.complete();
-      await cancelFuture;
+        cancelCompleter.complete();
+        await cancelFuture;
 
-      final timeline = orchestrator.currentTimeline('bob')!;
-      expect(timeline.canCancel, isFalse);
-      expect(timeline.steps.last.state, ConnectionStepState.canceled);
-      expect(
-        timeline.steps.last.failureCode,
-        ConnectionFailureCode.userCanceled,
-      );
-    });
+        final timeline = orchestrator.currentTimeline('bob')!;
+        expect(timeline.canCancel, isFalse);
+        expect(timeline.steps.last.state, ConnectionStepState.canceled);
+        expect(
+          timeline.steps.last.failureCode,
+          ConnectionFailureCode.userCanceled,
+        );
+      },
+    );
 
     test('new connect after cancel uses a fresh run', () async {
       final transport = FakeConnectionTransport.hanging();

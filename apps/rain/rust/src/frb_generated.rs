@@ -115,15 +115,15 @@ fn wire__crate__api__iroh_transport__iroh_buffered_amount_impl(
             };
             let mut deserializer =
                 flutter_rust_bridge::for_generated::SseDeserializer::new(message);
-            let api__peer_id = <String>::sse_decode(&mut deserializer);
-            let api__channel = <String>::sse_decode(&mut deserializer);
+            let api_peer_id = <String>::sse_decode(&mut deserializer);
+            let api_channel = <String>::sse_decode(&mut deserializer);
             deserializer.end();
             move |context| async move {
                 transform_result_sse::<_, flutter_rust_bridge::for_generated::anyhow::Error>(
                     (move || async move {
                         let output_ok = crate::api::iroh_transport::iroh_buffered_amount(
-                            api__peer_id,
-                            api__channel,
+                            api_peer_id,
+                            api_channel,
                         )
                         .await?;
                         Ok(output_ok)
@@ -323,17 +323,15 @@ fn wire__crate__api__iroh_transport__iroh_start_endpoint_impl(
             };
             let mut deserializer =
                 flutter_rust_bridge::for_generated::SseDeserializer::new(message);
-            let api__username = <String>::sse_decode(&mut deserializer);
+            let api_username = <String>::sse_decode(&mut deserializer);
             let api_alpn = <String>::sse_decode(&mut deserializer);
             deserializer.end();
             move |context| async move {
                 transform_result_sse::<_, flutter_rust_bridge::for_generated::anyhow::Error>(
                     (move || async move {
-                        let output_ok = crate::api::iroh_transport::iroh_start_endpoint(
-                            api__username,
-                            api_alpn,
-                        )
-                        .await?;
+                        let output_ok =
+                            crate::api::iroh_transport::iroh_start_endpoint(api_username, api_alpn)
+                                .await?;
                         Ok(output_ok)
                     })()
                     .await,

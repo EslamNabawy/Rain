@@ -96,14 +96,8 @@ void main() {
         ConnectionTimeouts.webRtcPrimaryRelay,
         const Duration(seconds: 30),
       );
-      expect(
-        ConnectionTimeouts.webRtcBackupRelay,
-        const Duration(seconds: 20),
-      );
-      expect(
-        ConnectionTimeouts.webRtcFullRestart,
-        const Duration(seconds: 25),
-      );
+      expect(ConnectionTimeouts.webRtcBackupRelay, const Duration(seconds: 20));
+      expect(ConnectionTimeouts.webRtcFullRestart, const Duration(seconds: 25));
       expect(ConnectionTimeouts.iroh, const Duration(seconds: 25));
       expect(ConnectionTimeouts.globalBudget, const Duration(seconds: 90));
       expect(

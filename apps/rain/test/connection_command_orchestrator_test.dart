@@ -31,23 +31,26 @@ void main() {
       expect(timelines.last, isNot(same(timelines.first)));
     });
 
-    test('connect while peer is already connecting returns the existing run', () async {
-      var nextRunId = 0;
-      final orchestrator = ConnectionCommandOrchestrator(
-        now: () => 100,
-        runIdFactory: () => 'run-${nextRunId += 1}',
-      );
-      addTearDown(orchestrator.dispose);
+    test(
+      'connect while peer is already connecting returns the existing run',
+      () async {
+        var nextRunId = 0;
+        final orchestrator = ConnectionCommandOrchestrator(
+          now: () => 100,
+          runIdFactory: () => 'run-${nextRunId += 1}',
+        );
+        addTearDown(orchestrator.dispose);
 
-      await orchestrator.connect('bob');
-      await orchestrator.connect('bob');
+        await orchestrator.connect('bob');
+        await orchestrator.connect('bob');
 
-      final timeline = orchestrator.currentTimeline('bob');
+        final timeline = orchestrator.currentTimeline('bob');
 
-      expect(timeline, isNotNull);
-      expect(timeline!.attemptId, 'run-1');
-      expect(timeline.steps, hasLength(1));
-    });
+        expect(timeline, isNotNull);
+        expect(timeline!.attemptId, 'run-1');
+        expect(timeline.steps, hasLength(1));
+      },
+    );
 
     test('remembered policy is in-memory and peer specific', () {
       final orchestrator = ConnectionCommandOrchestrator();
@@ -60,10 +63,7 @@ void main() {
       orchestrator.rememberPolicyForSession('bob', policy);
 
       expect(orchestrator.policyForPeer('bob'), policy);
-      expect(
-        orchestrator.policyForPeer('alice').mode,
-        ConnectionMode.auto,
-      );
+      expect(orchestrator.policyForPeer('alice').mode, ConnectionMode.auto);
 
       orchestrator.clearSessionPolicy('bob');
 
@@ -137,10 +137,7 @@ void main() {
         ConnectionCommandOrchestrator.layersForPolicy(
           const ConnectionPolicy(mode: ConnectionMode.irohFallback),
         ),
-        <ConnectionLayer>[
-          ConnectionLayer.preflight,
-          ConnectionLayer.iroh,
-        ],
+        <ConnectionLayer>[ConnectionLayer.preflight, ConnectionLayer.iroh],
       );
     });
 
@@ -191,18 +188,15 @@ void main() {
       await orchestrator.connect('bob');
       await transport.waitForIdle();
 
-      expect(
-        transport.calls.map((call) => call.layer),
-        <ConnectionLayer>[
-          ConnectionLayer.preflight,
-          ConnectionLayer.webRtcDirect,
-          ConnectionLayer.webRtcPrimaryRelay,
-          ConnectionLayer.webRtcBackupRelay,
-          ConnectionLayer.webRtcFullRestart,
-          ConnectionLayer.webRtcFullRestart,
-          ConnectionLayer.iroh,
-        ],
-      );
+      expect(transport.calls.map((call) => call.layer), <ConnectionLayer>[
+        ConnectionLayer.preflight,
+        ConnectionLayer.webRtcDirect,
+        ConnectionLayer.webRtcPrimaryRelay,
+        ConnectionLayer.webRtcBackupRelay,
+        ConnectionLayer.webRtcFullRestart,
+        ConnectionLayer.webRtcFullRestart,
+        ConnectionLayer.iroh,
+      ]);
       expect(orchestrator.currentTimeline('bob')!.canCancel, isFalse);
       expect(
         orchestrator.currentTimeline('bob')!.steps.last.state,
@@ -210,30 +204,35 @@ void main() {
       );
     });
 
-    test('global budget cancels the active layer and fails the timeline', () async {
-      final transport = FakeConnectionTransport.hanging();
-      final orchestrator = ConnectionCommandOrchestrator(
-        transport: transport,
-        runIdFactory: () => 'run-1',
-        timeouts: const ConnectionCommandTimeoutConfig(
-          globalBudget: Duration(milliseconds: 5),
-        ),
-      );
-      addTearDown(orchestrator.dispose);
+    test(
+      'global budget cancels the active layer and fails the timeline',
+      () async {
+        final transport = FakeConnectionTransport.hanging();
+        final orchestrator = ConnectionCommandOrchestrator(
+          transport: transport,
+          runIdFactory: () => 'run-1',
+          timeouts: const ConnectionCommandTimeoutConfig(
+            globalBudget: Duration(milliseconds: 5),
+          ),
+        );
+        addTearDown(orchestrator.dispose);
 
-      await orchestrator.connect('bob');
-      await Future<void>.delayed(const Duration(milliseconds: 30));
+        await orchestrator.connect('bob');
+        await Future<void>.delayed(const Duration(milliseconds: 30));
 
-      final timeline = orchestrator.currentTimeline('bob')!;
-      expect(timeline.globalBudgetExceeded, isTrue);
-      expect(timeline.canCancel, isFalse);
-      expect(timeline.steps.last.state, ConnectionStepState.failed);
-      expect(
-        timeline.steps.last.failureCode,
-        ConnectionFailureCode.globalBudgetExceeded,
-      );
-      expect(transport.cancelCalls, <ConnectionLayer>[ConnectionLayer.preflight]);
-    });
+        final timeline = orchestrator.currentTimeline('bob')!;
+        expect(timeline.globalBudgetExceeded, isTrue);
+        expect(timeline.canCancel, isFalse);
+        expect(timeline.steps.last.state, ConnectionStepState.failed);
+        expect(
+          timeline.steps.last.failureCode,
+          ConnectionFailureCode.globalBudgetExceeded,
+        );
+        expect(transport.cancelCalls, <ConnectionLayer>[
+          ConnectionLayer.preflight,
+        ]);
+      },
+    );
 
     test('retry delay stays inside the configured jitter range', () {
       final delays = List<Duration>.generate(
@@ -242,112 +241,110 @@ void main() {
       );
 
       for (final delay in delays) {
-        expect(
-          delay,
-          greaterThanOrEqualTo(const Duration(milliseconds: 1200)),
-        );
+        expect(delay, greaterThanOrEqualTo(const Duration(milliseconds: 1200)));
         expect(delay, lessThanOrEqualTo(const Duration(milliseconds: 1800)));
       }
     });
 
-    test('retryable failure retries the same layer once before advancing', () async {
-      final transport = FakeConnectionTransport(
-        scriptedResults: <ConnectionLayer, List<ConnectionLayerResult>>{
-          ConnectionLayer.preflight: <ConnectionLayerResult>[
-            const ConnectionLayerResult.succeeded(),
-          ],
-          ConnectionLayer.webRtcDirect: <ConnectionLayerResult>[
-            const ConnectionLayerResult.failed(
-              ConnectionFailureCode.dataChannelTimeout,
-            ),
-            const ConnectionLayerResult.failed(
-              ConnectionFailureCode.directPathBlocked,
-            ),
-          ],
-          ConnectionLayer.webRtcPrimaryRelay: <ConnectionLayerResult>[
-            const ConnectionLayerResult.succeeded(),
-          ],
-        },
-      );
-      final orchestrator = ConnectionCommandOrchestrator(
-        transport: transport,
-        runIdFactory: () => 'run-1',
-        timeouts: const ConnectionCommandTimeoutConfig(
-          retryBaseDelay: Duration.zero,
-          retryMaxJitter: Duration.zero,
-        ),
-      );
-      addTearDown(orchestrator.dispose);
+    test(
+      'retryable failure retries the same layer once before advancing',
+      () async {
+        final transport = FakeConnectionTransport(
+          scriptedResults: <ConnectionLayer, List<ConnectionLayerResult>>{
+            ConnectionLayer.preflight: <ConnectionLayerResult>[
+              const ConnectionLayerResult.succeeded(),
+            ],
+            ConnectionLayer.webRtcDirect: <ConnectionLayerResult>[
+              const ConnectionLayerResult.failed(
+                ConnectionFailureCode.dataChannelTimeout,
+              ),
+              const ConnectionLayerResult.failed(
+                ConnectionFailureCode.directPathBlocked,
+              ),
+            ],
+            ConnectionLayer.webRtcPrimaryRelay: <ConnectionLayerResult>[
+              const ConnectionLayerResult.succeeded(),
+            ],
+          },
+        );
+        final orchestrator = ConnectionCommandOrchestrator(
+          transport: transport,
+          runIdFactory: () => 'run-1',
+          timeouts: const ConnectionCommandTimeoutConfig(
+            retryBaseDelay: Duration.zero,
+            retryMaxJitter: Duration.zero,
+          ),
+        );
+        addTearDown(orchestrator.dispose);
 
-      await orchestrator.connect('bob');
-      await transport.waitForIdle();
+        await orchestrator.connect('bob');
+        await transport.waitForIdle();
 
-      expect(
-        transport.calls.map((call) => call.layer),
-        <ConnectionLayer>[
+        expect(transport.calls.map((call) => call.layer), <ConnectionLayer>[
           ConnectionLayer.preflight,
           ConnectionLayer.webRtcDirect,
           ConnectionLayer.webRtcDirect,
           ConnectionLayer.webRtcPrimaryRelay,
-        ],
-      );
-      final directSteps = orchestrator
-          .currentTimeline('bob')!
-          .fullHistory
-          .where((step) => step.layer == ConnectionLayer.webRtcDirect)
-          .toList();
-      expect(directSteps.last.retryCount, 1);
-    });
+        ]);
+        final directSteps = orchestrator
+            .currentTimeline('bob')!
+            .fullHistory
+            .where((step) => step.layer == ConnectionLayer.webRtcDirect)
+            .toList();
+        expect(directSteps.last.retryCount, 1);
+      },
+    );
 
-    test('non-retryable failure advances without retrying the same layer', () async {
-      final transport = FakeConnectionTransport(
-        scriptedResults: <ConnectionLayer, List<ConnectionLayerResult>>{
-          ConnectionLayer.preflight: <ConnectionLayerResult>[
-            const ConnectionLayerResult.succeeded(),
-          ],
-          ConnectionLayer.webRtcDirect: <ConnectionLayerResult>[
-            const ConnectionLayerResult.failed(
-              ConnectionFailureCode.directPathBlocked,
-            ),
-          ],
-          ConnectionLayer.webRtcPrimaryRelay: <ConnectionLayerResult>[
-            const ConnectionLayerResult.failed(
-              ConnectionFailureCode.turnCredentialsUnavailable,
-            ),
-          ],
-          ConnectionLayer.webRtcBackupRelay: <ConnectionLayerResult>[
-            const ConnectionLayerResult.succeeded(),
-          ],
-        },
-      );
-      final orchestrator = ConnectionCommandOrchestrator(
-        transport: transport,
-        runIdFactory: () => 'run-1',
-        timeouts: const ConnectionCommandTimeoutConfig(
-          retryBaseDelay: Duration.zero,
-          retryMaxJitter: Duration.zero,
-        ),
-      );
-      addTearDown(orchestrator.dispose);
+    test(
+      'non-retryable failure advances without retrying the same layer',
+      () async {
+        final transport = FakeConnectionTransport(
+          scriptedResults: <ConnectionLayer, List<ConnectionLayerResult>>{
+            ConnectionLayer.preflight: <ConnectionLayerResult>[
+              const ConnectionLayerResult.succeeded(),
+            ],
+            ConnectionLayer.webRtcDirect: <ConnectionLayerResult>[
+              const ConnectionLayerResult.failed(
+                ConnectionFailureCode.directPathBlocked,
+              ),
+            ],
+            ConnectionLayer.webRtcPrimaryRelay: <ConnectionLayerResult>[
+              const ConnectionLayerResult.failed(
+                ConnectionFailureCode.turnCredentialsUnavailable,
+              ),
+            ],
+            ConnectionLayer.webRtcBackupRelay: <ConnectionLayerResult>[
+              const ConnectionLayerResult.succeeded(),
+            ],
+          },
+        );
+        final orchestrator = ConnectionCommandOrchestrator(
+          transport: transport,
+          runIdFactory: () => 'run-1',
+          timeouts: const ConnectionCommandTimeoutConfig(
+            retryBaseDelay: Duration.zero,
+            retryMaxJitter: Duration.zero,
+          ),
+        );
+        addTearDown(orchestrator.dispose);
 
-      await orchestrator.connect('bob');
-      await transport.waitForIdle();
+        await orchestrator.connect('bob');
+        await transport.waitForIdle();
 
-      expect(
-        transport.calls.map((call) => call.layer),
-        <ConnectionLayer>[
+        expect(transport.calls.map((call) => call.layer), <ConnectionLayer>[
           ConnectionLayer.preflight,
           ConnectionLayer.webRtcDirect,
           ConnectionLayer.webRtcPrimaryRelay,
           ConnectionLayer.webRtcBackupRelay,
-        ],
-      );
-      expect(
-        transport.calls
-            .where((call) => call.layer == ConnectionLayer.webRtcPrimaryRelay),
-        hasLength(1),
-      );
-    });
+        ]);
+        expect(
+          transport.calls.where(
+            (call) => call.layer == ConnectionLayer.webRtcPrimaryRelay,
+          ),
+          hasLength(1),
+        );
+      },
+    );
 
     test('manual direct failure emits one fallback request', () async {
       final transport = FakeConnectionTransport(
@@ -373,9 +370,7 @@ void main() {
 
       await orchestrator.connect(
         'bob',
-        policy: const ConnectionPolicy(
-          mode: ConnectionMode.webRtcDirectOnly,
-        ),
+        policy: const ConnectionPolicy(mode: ConnectionMode.webRtcDirectOnly),
       );
       await transport.waitForIdle();
 
@@ -386,84 +381,82 @@ void main() {
         requests.single.failureCode,
         ConnectionFailureCode.directPathBlocked,
       );
-      expect(
-        requests.single.choices,
-        <ConnectionFallbackChoice>[
-          ConnectionFallbackChoice.tryAuto,
-          ConnectionFallbackChoice.tryRelay,
-          ConnectionFallbackChoice.tryIroh,
-          ConnectionFallbackChoice.cancel,
-        ],
-      );
+      expect(requests.single.choices, <ConnectionFallbackChoice>[
+        ConnectionFallbackChoice.tryAuto,
+        ConnectionFallbackChoice.tryRelay,
+        ConnectionFallbackChoice.tryIroh,
+        ConnectionFallbackChoice.cancel,
+      ]);
       expect(
         orchestrator.currentTimeline('bob')!.fallbackPromptAlreadyShown,
         isTrue,
       );
     });
 
-    test('fallback choice can be remembered for the session and never loops', () async {
-      final transport = FakeConnectionTransport(
-        scriptedResults: <ConnectionLayer, List<ConnectionLayerResult>>{
-          ConnectionLayer.preflight: <ConnectionLayerResult>[
-            const ConnectionLayerResult.succeeded(),
-            const ConnectionLayerResult.succeeded(),
-          ],
-          ConnectionLayer.webRtcDirect: <ConnectionLayerResult>[
-            const ConnectionLayerResult.failed(
-              ConnectionFailureCode.directPathBlocked,
-            ),
-          ],
-          ConnectionLayer.webRtcPrimaryRelay: <ConnectionLayerResult>[
-            const ConnectionLayerResult.failed(
-              ConnectionFailureCode.turnProviderTimedOut,
-            ),
-          ],
-          ConnectionLayer.webRtcBackupRelay: <ConnectionLayerResult>[
-            const ConnectionLayerResult.failed(
-              ConnectionFailureCode.turnProviderTimedOut,
-            ),
-          ],
-          ConnectionLayer.webRtcFullRestart: <ConnectionLayerResult>[
-            const ConnectionLayerResult.failed(
-              ConnectionFailureCode.turnCredentialsUnavailable,
-            ),
-          ],
-        },
-      );
-      final orchestrator = ConnectionCommandOrchestrator(
-        transport: transport,
-        runIdFactory: () => 'run-1',
-      );
-      final requests = <ConnectionFallbackRequest>[];
-      final subscription = orchestrator.fallbackRequests.listen(requests.add);
-      addTearDown(subscription.cancel);
-      addTearDown(orchestrator.dispose);
+    test(
+      'fallback choice can be remembered for the session and never loops',
+      () async {
+        final transport = FakeConnectionTransport(
+          scriptedResults: <ConnectionLayer, List<ConnectionLayerResult>>{
+            ConnectionLayer.preflight: <ConnectionLayerResult>[
+              const ConnectionLayerResult.succeeded(),
+              const ConnectionLayerResult.succeeded(),
+            ],
+            ConnectionLayer.webRtcDirect: <ConnectionLayerResult>[
+              const ConnectionLayerResult.failed(
+                ConnectionFailureCode.directPathBlocked,
+              ),
+            ],
+            ConnectionLayer.webRtcPrimaryRelay: <ConnectionLayerResult>[
+              const ConnectionLayerResult.failed(
+                ConnectionFailureCode.turnProviderTimedOut,
+              ),
+            ],
+            ConnectionLayer.webRtcBackupRelay: <ConnectionLayerResult>[
+              const ConnectionLayerResult.failed(
+                ConnectionFailureCode.turnProviderTimedOut,
+              ),
+            ],
+            ConnectionLayer.webRtcFullRestart: <ConnectionLayerResult>[
+              const ConnectionLayerResult.failed(
+                ConnectionFailureCode.turnCredentialsUnavailable,
+              ),
+            ],
+          },
+        );
+        final orchestrator = ConnectionCommandOrchestrator(
+          transport: transport,
+          runIdFactory: () => 'run-1',
+        );
+        final requests = <ConnectionFallbackRequest>[];
+        final subscription = orchestrator.fallbackRequests.listen(requests.add);
+        addTearDown(subscription.cancel);
+        addTearDown(orchestrator.dispose);
 
-      await orchestrator.connect(
-        'bob',
-        policy: const ConnectionPolicy(
-          mode: ConnectionMode.webRtcDirectOnly,
-        ),
-      );
-      await transport.waitForIdle();
+        await orchestrator.connect(
+          'bob',
+          policy: const ConnectionPolicy(mode: ConnectionMode.webRtcDirectOnly),
+        );
+        await transport.waitForIdle();
 
-      await orchestrator.resolveFallback(
-        peerId: 'bob',
-        choice: ConnectionFallbackChoice.tryRelay,
-        rememberForSession: true,
-      );
-      await transport.waitForIdle();
+        await orchestrator.resolveFallback(
+          peerId: 'bob',
+          choice: ConnectionFallbackChoice.tryRelay,
+          rememberForSession: true,
+        );
+        await transport.waitForIdle();
 
-      expect(requests, hasLength(1));
-      expect(
-        orchestrator.policyForPeer('bob').mode,
-        ConnectionMode.webRtcRelayOnly,
-      );
-      expect(orchestrator.currentTimeline('bob')!.canRetry, isTrue);
-      expect(
-        orchestrator.currentTimeline('bob')!.fallbackPromptAlreadyShown,
-        isTrue,
-      );
-    });
+        expect(requests, hasLength(1));
+        expect(
+          orchestrator.policyForPeer('bob').mode,
+          ConnectionMode.webRtcRelayOnly,
+        );
+        expect(orchestrator.currentTimeline('bob')!.canRetry, isTrue);
+        expect(
+          orchestrator.currentTimeline('bob')!.fallbackPromptAlreadyShown,
+          isTrue,
+        );
+      },
+    );
   });
 }
