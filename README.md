@@ -28,6 +28,22 @@ dart run melos run analyze
 dart run melos run test
 ```
 
+## Clean Generated Outputs
+
+Preview cleanup:
+
+```powershell
+powershell -ExecutionPolicy Bypass -File scripts/clean_workspace.ps1 -WhatIf
+```
+
+Clean generated caches and build folders:
+
+```powershell
+powershell -ExecutionPolicy Bypass -File scripts/clean_workspace.ps1
+```
+
+The script does not remove `final product` unless `-IncludeFinalProduct` is passed.
+
 ## Run Locally
 
 Firebase is the default signaling backend for this app. Copy the example defines file and run the app:
