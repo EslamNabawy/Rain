@@ -1,9 +1,6 @@
 name: Build Rain Apps
 
 on:
-  push:
-    branches:
-      - main
   workflow_dispatch:
     inputs:
       platform:
