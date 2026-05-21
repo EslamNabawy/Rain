@@ -1,0 +1,432 @@
+import 'dart:async';
+
+import 'package:flutter_riverpod/flutter_riverpod.dart';
+import 'package:protocol_brain/protocol_brain.dart';
+import 'package:rain_core/rain_core.dart';
+
+import 'package:rain/application/runtime/rain_runtime_controller.dart';
+import 'package:rain/infrastructure/services/app_settings_store.dart';
+import 'package:rain/infrastructure/services/background_services.dart';
+import 'package:rain/infrastructure/services/network_status_service.dart';
+import 'app_state.dart';
+import 'core_providers.dart';
+import 'identity_providers.dart';
+import 'messaging_providers.dart';
+import 'settings_providers.dart';
+
+final backgroundServiceProvider =
+    AsyncNotifierProvider<BackgroundServiceController, bool>(
+      BackgroundServiceController.new,
+    );
+
+class BackgroundServiceController extends AsyncNotifier<bool> {
+  @override
+  Future<bool> build() async {
+    await ref.watch(appSettingsStoreProvider).loadBackgroundServiceEnabled();
+    await BackgroundServices.instance.stop();
+    return false;
+  }
+
+  Future<void> setEnabled(bool enabled) async {
+    final previous =
+        state.value ?? AppSettingsStore.defaultBackgroundServiceEnabled;
+    state = const AsyncValue.data(false);
+    try {
+      await ref
+          .read(appSettingsStoreProvider)
+          .setBackgroundServiceEnabled(false);
+      final runtime = ref.read(runtimeControllerProvider).value;
+      if (runtime == null) {
+        await BackgroundServices.instance.stop();
+        return;
+      }
+      await runtime.setBackgroundServiceEnabled(false);
+    } catch (error, stackTrace) {
+      state = AsyncValue.data(previous);
+      Error.throwWithStackTrace(error, stackTrace);
+    }
+  }
+}
+
+final friendsProvider =
+    AsyncNotifierProvider<FriendsController, List<FriendRecord>>(
+      FriendsController.new,
+    );
+
+class FriendsController extends AsyncNotifier<List<FriendRecord>> {
+  StreamSubscription<List<FriendRecord>>? _subscription;
+
+  @override
+  Future<List<FriendRecord>> build() async {
+    final store = ref.watch(friendStoreProvider);
+    _subscription = store.watchFriends().listen(
+      (List<FriendRecord> friends) => state = AsyncValue.data(friends),
+      onError: (Object error, StackTrace stackTrace) {
+        state = AsyncValue.error(error, stackTrace);
+      },
+    );
+    ref.onDispose(() => unawaited(_subscription?.cancel()));
+    return store.loadFriends();
+  }
+
+  Future<void> accept(String username) async {
+    assertNetworkReady(ref);
+    await _runtime().acceptFriend(username);
+  }
+
+  Future<void> reject(String username) async {
+    assertNetworkReady(ref);
+    await _runtime().rejectFriend(username);
+  }
+
+  Future<void> unfriend(String username) async {
+    assertNetworkReady(ref);
+    await _runtime().unfriend(username);
+  }
+
+  Future<void> block(String username) async {
+    assertNetworkReady(ref);
+    await _runtime().blockFriend(username);
+  }
+
+  Future<void> unblock(String username) async {
+    assertNetworkReady(ref);
+    await _runtime().unblockFriend(username);
+  }
+
+  Future<void> refresh() async {
+    assertNetworkReady(ref);
+    await _runtime().refreshRelationships();
+  }
+
+  Future<void> refreshPeer(String username) async {
+    assertNetworkReady(ref);
+    await _runtime().refreshPeer(username);
+  }
+
+  RainRuntimeController _runtime() {
+    final runtime = ref.read(runtimeControllerProvider).value;
+    if (runtime == null) {
+      throw StateError('Rain is still starting. Try again in a moment.');
+    }
+    return runtime;
+  }
+}
+
+final brainProvider = Provider<SessionManager?>((Ref ref) {
+  final identity = ref.watch(identityProvider).value;
+  final environment = ref.watch(appEnvironmentProvider);
+
+  if (identity == null || environment.shouldUseFallbackAdapter) {
+    return null;
+  }
+
+  final brain = createDefaultProtocolBrain(
+    selfUsername: identity.username,
+    adapter: ref.watch(adapterProvider),
+    iceServers: environment.iceServers,
+    iceServersProvider: ref.watch(turnCredentialServiceProvider).iceServers,
+    connectionMemoryStore: ref.watch(connectionMemoryStoreProvider),
+  );
+
+  return brain;
+});
+
+final runtimeControllerProvider =
+    AsyncNotifierProvider<RuntimeController, RainRuntimeController?>(
+      RuntimeController.new,
+    );
+
+class RuntimeController extends AsyncNotifier<RainRuntimeController?> {
+  NetworkStatusKind? _lastNetworkKind;
+
+  @override
+  Future<RainRuntimeController?> build() async {
+    final identity = ref.watch(identityProvider).value;
+    if (identity == null) {
+      return null;
+    }
+    final current = state.value;
+    final networkStatus =
+        ref.watch(networkStatusProvider).value ??
+        const NetworkStatusState.checking();
+    final previousNetworkKind = _lastNetworkKind;
+    _lastNetworkKind = networkStatus.kind;
+    if (networkStatus.blocksNetworkActions) {
+      if (current != null) {
+        await current.handleNetworkLost(
+          'Internet connection lost. Transfer canceled.',
+        );
+        await current.dispose();
+      }
+      return null;
+    }
+    if (networkStatus.kind == NetworkStatusKind.checking) {
+      return current?.selfIdentity.username == identity.username
+          ? current
+          : null;
+    }
+    if (current != null && current.selfIdentity.username == identity.username) {
+      if (previousNetworkKind != null &&
+          previousNetworkKind != networkStatus.kind) {
+        await current.handleNetworkAvailable(
+          'Network changed. Restarting peer connection paths.',
+        );
+      }
+      return current;
+    }
+    final environment = ref.watch(appEnvironmentProvider);
+    await ref.read(backgroundServiceProvider.future);
+    final controller = RainRuntimeController(
+      selfIdentity: identity,
+      adapter: ref.watch(adapterProvider),
+      brain: ref.watch(brainProvider),
+      database: ref.watch(databaseProvider),
+      friendStore: ref.watch(friendStoreProvider),
+      messageStore: ref.watch(messageStoreProvider),
+      offlineQueueStore: ref.watch(offlineQueueStoreProvider),
+      messageDeliveryService: ref.watch(messageDeliveryServiceProvider),
+      fileTransferStore: ref.watch(fileTransferStoreProvider),
+      heartbeatInterval: environment.heartbeatInterval,
+    );
+
+    ref.onDispose(() {
+      unawaited(controller.dispose());
+    });
+
+    try {
+      await controller.start();
+    } catch (_) {
+      await controller.dispose();
+      rethrow;
+    }
+    return controller;
+  }
+
+  Future<void> logOut() async {
+    final controller = state.value;
+    if (controller == null) {
+      return;
+    }
+    await controller.logOut();
+    state = const AsyncValue.data(null);
+    ref.invalidate(identityProvider);
+    ref.invalidate(friendsProvider);
+    ref.invalidate(fileTransfersProvider);
+    ref.invalidate(connectionsProvider);
+    ref.invalidate(recentSearchesProvider);
+  }
+}
+
+final connectionsProvider =
+    NotifierProvider<ConnectionsController, ConnectionsState>(
+      ConnectionsController.new,
+    );
+
+class ConnectionsController extends Notifier<ConnectionsState> {
+  final List<StreamSubscription<dynamic>> _brainSubscriptions =
+      <StreamSubscription<dynamic>>[];
+  RainRuntimeController? _runtime;
+
+  @override
+  ConnectionsState build() {
+    ref.listen<AsyncValue<RainRuntimeController?>>(runtimeControllerProvider, (
+      _,
+      AsyncValue<RainRuntimeController?> next,
+    ) {
+      unawaited(_replaceRuntime(next.value));
+    });
+    scheduleMicrotask(() {
+      unawaited(_replaceRuntime(ref.read(runtimeControllerProvider).value));
+    });
+    ref.onDispose(() {
+      for (final subscription in _brainSubscriptions) {
+        unawaited(subscription.cancel());
+      }
+      _brainSubscriptions.clear();
+    });
+    return const ConnectionsState();
+  }
+
+  Future<void> connect(String peerId, {bool waitForConnected = false}) async {
+    assertNetworkReady(ref);
+    final runtime = _requireRuntime();
+    _upsert(
+      peerId,
+      (view) => view.copyWith(
+        manualIntent: ManualConnectionIntent.connecting,
+        actionBusy: true,
+        localDetail: 'Checking presence and starting signaling.',
+        error: null,
+      ),
+    );
+    try {
+      await runtime.connectPeer(
+        peerId,
+        interactive: true,
+        waitForConnected: waitForConnected,
+      );
+      syncPeer(peerId);
+    } catch (error) {
+      _upsert(
+        peerId,
+        (view) => view.copyWith(
+          manualIntent: ManualConnectionIntent.failed,
+          actionBusy: false,
+          error: error,
+          localDetail: 'Connection failed before chat was ready.',
+        ),
+      );
+      rethrow;
+    }
+  }
+
+  Future<void> disconnect(String peerId) async {
+    final runtime = _requireRuntime();
+    _upsert(
+      peerId,
+      (view) => view.copyWith(
+        manualIntent: ManualConnectionIntent.manualDisconnected,
+        disconnecting: true,
+        localDetail: 'Disconnecting.',
+        error: null,
+      ),
+    );
+    try {
+      await runtime.disconnectPeer(peerId);
+      _upsert(
+        peerId,
+        (view) => view.copyWith(
+          session: null,
+          manualIntent: ManualConnectionIntent.manualDisconnected,
+          actionBusy: false,
+          disconnecting: false,
+          localDetail: 'Manual disconnect.',
+          updatedAt: DateTime.now().millisecondsSinceEpoch,
+        ),
+      );
+    } catch (error) {
+      _upsert(
+        peerId,
+        (view) => view.copyWith(
+          disconnecting: false,
+          error: error,
+          localDetail: 'Disconnect failed.',
+        ),
+      );
+      rethrow;
+    }
+  }
+
+  void syncPeer(String peerId) {
+    final session = _runtime?.brain?.getSession(peerId);
+    _upsert(
+      peerId,
+      (view) => view.copyWith(
+        session: session,
+        manualIntent: _intentForSession(session, fallback: view.manualIntent),
+        actionBusy: false,
+        disconnecting: false,
+        localDetail: session?.detail,
+        updatedAt: DateTime.now().millisecondsSinceEpoch,
+      ),
+    );
+  }
+
+  RainRuntimeController _requireRuntime() {
+    final runtime = _runtime ?? ref.read(runtimeControllerProvider).value;
+    if (runtime == null) {
+      throw StateError('Peer connection is unavailable right now.');
+    }
+    return runtime;
+  }
+
+  Future<void> _replaceRuntime(RainRuntimeController? runtime) async {
+    _runtime = runtime;
+    for (final subscription in _brainSubscriptions) {
+      await subscription.cancel();
+    }
+    _brainSubscriptions.clear();
+    final brain = runtime?.brain;
+    if (brain == null) {
+      state = const ConnectionsState();
+      return;
+    }
+    for (final session in brain.getSessions()) {
+      _handleSession(session);
+    }
+    _brainSubscriptions.add(brain.onSessionChanged.listen(_handleSession));
+    _brainSubscriptions.add(brain.onPeerConnected.listen(_handleSession));
+    _brainSubscriptions.add(
+      brain.onIncomingOfferRejected.listen(_handleIncomingOfferRejected),
+    );
+    _brainSubscriptions.add(
+      brain.onPeerDisconnected.listen((String peerId) {
+        _upsert(
+          peerId,
+          (view) => view.copyWith(
+            session: null,
+            manualIntent:
+                view.manualIntent == ManualConnectionIntent.manualDisconnected
+                ? ManualConnectionIntent.manualDisconnected
+                : ManualConnectionIntent.idle,
+            actionBusy: false,
+            disconnecting: false,
+            localDetail: 'Disconnected.',
+            updatedAt: DateTime.now().millisecondsSinceEpoch,
+          ),
+        );
+      }),
+    );
+  }
+
+  void _handleIncomingOfferRejected(IncomingOfferRejection rejection) {
+    _upsert(
+      rejection.peerId,
+      (view) => view.copyWith(
+        error: rejection.reason,
+        localDetail: rejection.reason,
+        updatedAt: rejection.rejectedAt.millisecondsSinceEpoch,
+      ),
+    );
+  }
+
+  void _handleSession(Session session) {
+    _upsert(
+      session.peerId,
+      (view) => view.copyWith(
+        session: session,
+        manualIntent: _intentForSession(session, fallback: view.manualIntent),
+        actionBusy: false,
+        disconnecting: false,
+        localDetail: session.detail,
+        error: session.error,
+        updatedAt: session.updatedAt,
+      ),
+    );
+  }
+
+  ManualConnectionIntent _intentForSession(
+    Session? session, {
+    required ManualConnectionIntent fallback,
+  }) {
+    return switch (session?.state) {
+      SessionState.connected => ManualConnectionIntent.linked,
+      SessionState.connecting ||
+      SessionState.reconnecting => ManualConnectionIntent.connecting,
+      SessionState.failed => ManualConnectionIntent.failed,
+      null => fallback,
+    };
+  }
+
+  void _upsert(
+    String peerId,
+    PeerConnectionView Function(PeerConnectionView view) update,
+  ) {
+    final next = Map<String, PeerConnectionView>.of(state.peers);
+    next[peerId] = update(state.peer(peerId));
+    state = state.copyWith(
+      peers: Map<String, PeerConnectionView>.unmodifiable(next),
+    );
+  }
+}
