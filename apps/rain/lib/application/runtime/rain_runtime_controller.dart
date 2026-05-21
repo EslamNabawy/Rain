@@ -1368,6 +1368,9 @@ class RainRuntimeController with WidgetsBindingObserver {
     if (transfer == null) {
       return;
     }
+    if (_isTerminalTransferState(transfer.state)) {
+      return;
+    }
     _outgoingFileSources.remove(transferId);
     _canceledTransfers.add(transferId);
     _clearTransferRuntimeState(transferId);
@@ -1401,19 +1404,32 @@ class RainRuntimeController with WidgetsBindingObserver {
       final initialPeerId = transfer.peerId;
       final initialMessageId = transfer.messageId;
       await _ensureFileChannelReady(initialPeerId);
-      await _localMutations.run(() async {
-        await fileTransferStore.markState(
+      final startedSending = await _localMutations.run(() async {
+        if (_canceledTransfers.contains(transferId)) {
+          return false;
+        }
+        final markedSending = await fileTransferStore.markStateIfCurrent(
           transferId,
+          const <FileTransferState>{FileTransferState.accepted},
           FileTransferState.sending,
           bytesTransferred: 0,
         );
+        if (!markedSending) {
+          return false;
+        }
         await messageStore.markMessageStatus(
           initialMessageId,
           MessageStatus.sending,
         );
+        return true;
       });
+      if (!startedSending || _canceledTransfers.contains(transferId)) {
+        return;
+      }
       transfer = await fileTransferStore.loadById(transferId);
-      if (transfer == null) {
+      if (transfer == null ||
+          _canceledTransfers.contains(transferId) ||
+          _isTerminalTransferState(transfer.state)) {
         return;
       }
       final activeTransfer = transfer;
@@ -1467,6 +1483,12 @@ class RainRuntimeController with WidgetsBindingObserver {
       );
       await messageStore.markMessageStatus(messageId, MessageStatus.pendingAck);
     } catch (error) {
+      final latestBeforeFail = await fileTransferStore.loadById(transferId);
+      if (latestBeforeFail == null ||
+          _canceledTransfers.contains(transferId) ||
+          _isTerminalTransferState(latestBeforeFail.state)) {
+        return;
+      }
       final reason = _formatTransferError(error);
       await _markTransferFailed(transferId, reason);
       final latest = await fileTransferStore.loadById(transferId);
@@ -1556,6 +1578,19 @@ class RainRuntimeController with WidgetsBindingObserver {
     _fileProgressBatcher.clear(transferId);
   }
 
+  bool _isTerminalTransferState(FileTransferState state) {
+    return switch (state) {
+      FileTransferState.completed ||
+      FileTransferState.canceled ||
+      FileTransferState.failed ||
+      FileTransferState.rejected => true,
+      FileTransferState.offered ||
+      FileTransferState.accepted ||
+      FileTransferState.sending ||
+      FileTransferState.receiving => false,
+    };
+  }
+
   Future<void> _assertCanTransferFile(String peerId) async {
     var friend = await _localMutations.run(
       () => friendStore.loadFriend(peerId),
@@ -1610,6 +1645,9 @@ class RainRuntimeController with WidgetsBindingObserver {
   Future<void> _markTransferFailed(String transferId, String reason) async {
     final transfer = await fileTransferStore.loadById(transferId);
     if (transfer == null) {
+      return;
+    }
+    if (_isTerminalTransferState(transfer.state)) {
       return;
     }
     _outgoingFileSources.remove(transferId);

@@ -3,6 +3,7 @@ import 'dart:convert';
 import 'dart:io';
 
 import 'package:firebase_auth/firebase_auth.dart';
+import 'package:flutter/foundation.dart';
 
 class TurnCredentialService {
   TurnCredentialService({
@@ -11,7 +12,9 @@ class TurnCredentialService {
     Future<String?> Function()? idTokenProvider,
     HttpClient? httpClient,
     DateTime Function()? now,
-  }) : _baseIceServers = _cloneIceServers(baseIceServers),
+  }) : _baseIceServers = _windowsReleaseSafeIceServers(
+         _cloneIceServers(baseIceServers),
+       ),
        _brokerUrl = brokerUrl.trim(),
        _idTokenProvider = idTokenProvider ?? _defaultFirebaseIdTokenProvider,
        _httpClient = httpClient ?? HttpClient(),
@@ -100,7 +103,9 @@ class TurnCredentialService {
       ...stunServers,
       ...brokerIceServers.map(_cloneIceServer),
     ];
-    return next.isEmpty ? _cloneIceServers(_baseIceServers) : next;
+    return _windowsReleaseSafeIceServers(
+      next.isEmpty ? _cloneIceServers(_baseIceServers) : next,
+    );
   }
 
   void dispose() {
@@ -187,4 +192,46 @@ Map<String, dynamic> _cloneIceServer(Map<String, dynamic> server) {
       );
     }),
   );
+}
+
+List<Map<String, dynamic>> _windowsReleaseSafeIceServers(
+  List<Map<String, dynamic>> servers,
+) {
+  if (!kReleaseMode || !Platform.isWindows) {
+    return _cloneIceServers(servers);
+  }
+
+  String? selectedStunUrl;
+  final relayServers = <Map<String, dynamic>>[];
+  for (final server in servers) {
+    final turnUrls = <String>[];
+    for (final url in _urls(server)) {
+      final normalized = url.trim().toLowerCase();
+      if (normalized.startsWith('stun:')) {
+        selectedStunUrl ??= url;
+      } else if (normalized.startsWith('turn:') ||
+          normalized.startsWith('turns:')) {
+        turnUrls.add(url);
+      }
+    }
+    if (turnUrls.isNotEmpty) {
+      relayServers.add(_copyIceServerWithUrls(server, turnUrls));
+    }
+  }
+
+  return <Map<String, dynamic>>[
+    <String, dynamic>{
+      'urls': selectedStunUrl ?? 'stun:stun.l.google.com:19302',
+    },
+    ...relayServers,
+  ];
+}
+
+Map<String, dynamic> _copyIceServerWithUrls(
+  Map<String, dynamic> server,
+  List<String> urls,
+) {
+  final copy = _cloneIceServer(server);
+  copy['urls'] = urls.length == 1 ? urls.single : urls;
+  return copy;
 }

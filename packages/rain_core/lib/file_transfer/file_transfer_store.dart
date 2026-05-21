@@ -214,6 +214,44 @@ class FileTransferStore {
     });
   }
 
+  Future<bool> markStateIfCurrent(
+    String id,
+    Set<FileTransferState> currentStates,
+    FileTransferState state, {
+    String? error,
+    int? bytesTransferred,
+    String? localPath,
+    String? tempPath,
+  }) {
+    final expectedStateNames = currentStates
+        .map((FileTransferState state) => state.name)
+        .toList(growable: false);
+    return _database.serializedTransaction(() async {
+      final updatedRows =
+          await (_database.update(_database.fileTransfers)..where(
+                (FileTransfers row) =>
+                    row.id.equals(id) & row.state.isIn(expectedStateNames),
+              ))
+              .write(
+                FileTransfersCompanion(
+                  state: Value<String>(state.name),
+                  error: Value<String?>(error),
+                  bytesTransferred: bytesTransferred == null
+                      ? const Value<int>.absent()
+                      : Value<int>(bytesTransferred),
+                  localPath: localPath == null
+                      ? const Value<String?>.absent()
+                      : Value<String?>(localPath),
+                  tempPath: tempPath == null
+                      ? const Value<String?>.absent()
+                      : Value<String?>(tempPath),
+                  updatedAt: Value<int>(DateTime.now().millisecondsSinceEpoch),
+                ),
+              );
+      return updatedRows > 0;
+    });
+  }
+
   Future<void> markProgress(String id, int bytesTransferred) {
     return _database.serializedTransaction(() async {
       await (_database.update(

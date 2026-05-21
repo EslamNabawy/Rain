@@ -818,6 +818,78 @@ void main() {
       },
     );
 
+    test('cancel during outgoing send is not overwritten as failed', () async {
+      final adapter = NoopSignalingAdapter();
+      await adapter.register('bob', 'bobpw');
+      await adapter.upsertFriendship('alice', 'bob');
+      await db
+          .into(db.friends)
+          .insert(
+            FriendsCompanion.insert(
+              username: 'bob',
+              displayName: 'Bob',
+              state: 'friend',
+              addedAt: 0,
+            ),
+          );
+      final brain = TestSessionManager();
+      await brain.connect('bob');
+      brain.markConnected('bob');
+      final transferStore = FileTransferStore(db);
+      final source = StreamController<List<int>>();
+      final runtime = RainRuntimeController(
+        selfIdentity: alice,
+        adapter: adapter,
+        brain: brain,
+        database: db,
+        friendStore: FriendStore(db),
+        messageStore: MessageStore(db),
+        offlineQueueStore: OfflineQueueStore(db),
+        messageDeliveryService: MessageDeliveryService(
+          messageStore: MessageStore(db),
+          offlineQueueStore: OfflineQueueStore(db),
+        ),
+        fileTransferStore: transferStore,
+      );
+
+      try {
+        await runtime.start();
+        await runtime.sendFile(
+          peerId: 'bob',
+          fileName: 'video.mp4',
+          fileSize: 1,
+          openRead: () => source.stream,
+        );
+        final transfer = (await transferStore.loadPeerTransfers('bob')).single;
+
+        brain.emitFileMessage(
+          'bob',
+          FileTransferFrame.accept(transfer.id).encode(),
+        );
+        await _waitForTransferState(db, transfer.id, FileTransferState.sending);
+
+        await runtime.cancelFileTransfer(transfer.id);
+        await _waitForTransferState(
+          db,
+          transfer.id,
+          FileTransferState.canceled,
+        );
+
+        source.add(<int>[7]);
+        await source.close();
+        await Future<void>.delayed(const Duration(milliseconds: 80));
+
+        final canceled = await transferStore.loadById(transfer.id);
+        expect(canceled?.state, FileTransferState.canceled);
+        expect(canceled?.error, 'Canceled.');
+      } finally {
+        if (!source.isClosed) {
+          await source.close();
+        }
+        await runtime.dispose();
+      }
+    });
+
     test('incoming file chunks are finalized before complete frames', () async {
       final adapter = NoopSignalingAdapter();
       await adapter.register('bob', 'bobpw');

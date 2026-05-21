@@ -303,11 +303,35 @@ class AppEnvironment {
       'reliable release connections.';
 
   AppEnvironment sanitizedForRelease() {
+    final releaseSafeIceServers = _windowsReleaseSafeIceServers(iceServers);
     if (allowPublicTurn) {
-      return this;
+      if (_sameIceServerUrls(releaseSafeIceServers, iceServers)) {
+        return this;
+      }
+      return AppEnvironment(
+        backend: backend,
+        iceServers: releaseSafeIceServers,
+        forceUpdateUrl: forceUpdateUrl,
+        backgroundHeartbeatSeconds: backgroundHeartbeatSeconds,
+        allowPublicTurn: true,
+        smokeMode: smokeMode,
+        smokeUsername: smokeUsername,
+        smokePassword: smokePassword,
+        smokeDisplayName: smokeDisplayName,
+        firebaseApiKey: firebaseApiKey,
+        firebaseAppId: firebaseAppId,
+        firebaseMessagingSenderId: firebaseMessagingSenderId,
+        firebaseProjectId: firebaseProjectId,
+        firebaseDatabaseUrl: firebaseDatabaseUrl,
+        firebaseStorageBucket: firebaseStorageBucket,
+        firebaseAuthDomain: firebaseAuthDomain,
+        firebaseMeasurementId: firebaseMeasurementId,
+        signalingEncryptionKey: signalingEncryptionKey,
+        turnBrokerUrl: turnBrokerUrl,
+      );
     }
 
-    final safeIceServers = iceServers
+    final safeIceServers = releaseSafeIceServers
         .where((server) {
           return !_serverUrls(
             server,
@@ -457,6 +481,65 @@ bool _hasTransport(String url, String transport) {
   final normalized = url.trim().toLowerCase();
   final expected = 'transport=${transport.toLowerCase()}';
   return normalized.contains('?$expected') || normalized.contains('&$expected');
+}
+
+List<Map<String, dynamic>> _windowsReleaseSafeIceServers(
+  List<Map<String, dynamic>> servers,
+) {
+  if (!kReleaseMode || defaultTargetPlatform != TargetPlatform.windows) {
+    return servers.map(_cloneIceServer).toList(growable: false);
+  }
+
+  String? selectedStunUrl;
+  final relayServers = <Map<String, dynamic>>[];
+  for (final server in servers) {
+    final turnUrls = <String>[];
+    for (final url in _serverUrls(server)) {
+      final normalized = url.trim().toLowerCase();
+      if (normalized.startsWith('stun:')) {
+        selectedStunUrl ??= url;
+      } else if (normalized.startsWith('turn:') ||
+          normalized.startsWith('turns:')) {
+        turnUrls.add(url);
+      }
+    }
+    if (turnUrls.isNotEmpty) {
+      relayServers.add(_copyIceServerWithUrls(server, turnUrls));
+    }
+  }
+
+  return <Map<String, dynamic>>[
+    <String, dynamic>{
+      'urls': selectedStunUrl ?? 'stun:stun.l.google.com:19302',
+    },
+    ...relayServers,
+  ];
+}
+
+Map<String, dynamic> _copyIceServerWithUrls(
+  Map<String, dynamic> server,
+  List<String> urls,
+) {
+  final copy = _cloneIceServer(server);
+  copy['urls'] = urls.length == 1 ? urls.single : urls;
+  return copy;
+}
+
+bool _sameIceServerUrls(
+  List<Map<String, dynamic>> first,
+  List<Map<String, dynamic>> second,
+) {
+  final firstUrls = first.expand(_serverUrls).toList(growable: false);
+  final secondUrls = second.expand(_serverUrls).toList(growable: false);
+  if (firstUrls.length != secondUrls.length) {
+    return false;
+  }
+  for (var index = 0; index < firstUrls.length; index += 1) {
+    if (firstUrls[index] != secondUrls[index]) {
+      return false;
+    }
+  }
+  return true;
 }
 
 const testedPublicStunIceServers = <Map<String, dynamic>>[
