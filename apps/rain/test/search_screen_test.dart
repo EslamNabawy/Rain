@@ -21,7 +21,7 @@ void main() {
     final db = RainDatabase(NativeDatabase.memory());
     addTearDown(db.close);
     final container = ProviderContainer(
-      overrides: <Override>[
+      overrides: [
         appBootstrapProvider.overrideWithValue(_bootstrap(adapter, db)),
       ],
     );
@@ -59,7 +59,7 @@ void main() {
     ]);
     await firstSearch;
 
-    final state = container.read(userSearchProvider).valueOrNull;
+    final state = container.read(userSearchProvider).value;
     expect(state?.query, 'bo');
     expect(state?.results.single.username, 'bob');
   });
@@ -69,7 +69,7 @@ void main() {
     final db = RainDatabase(NativeDatabase.memory());
     addTearDown(db.close);
     final container = ProviderContainer(
-      overrides: <Override>[
+      overrides: [
         appBootstrapProvider.overrideWithValue(_bootstrap(adapter, db)),
       ],
     );
@@ -96,7 +96,7 @@ void main() {
 
     await tester.pumpWidget(
       ProviderScope(
-        overrides: <Override>[
+        overrides: [
           appBootstrapProvider.overrideWithValue(_bootstrap(adapter, db)),
           identityProvider.overrideWith(_NoIdentityController.new),
         ],
@@ -131,7 +131,7 @@ void main() {
 
     await tester.pumpWidget(
       ProviderScope(
-        overrides: <Override>[
+        overrides: [
           appBootstrapProvider.overrideWithValue(_bootstrap(adapter, db)),
           identityProvider.overrideWith(_NoIdentityController.new),
         ],
@@ -167,7 +167,7 @@ void main() {
 
     await tester.pumpWidget(
       ProviderScope(
-        overrides: <Override>[
+        overrides: [
           appBootstrapProvider.overrideWithValue(_bootstrap(adapter, db)),
           identityProvider.overrideWith(_NoIdentityController.new),
         ],

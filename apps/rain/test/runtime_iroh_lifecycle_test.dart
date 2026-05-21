@@ -144,6 +144,10 @@ class _LifecycleSessionManager implements SessionManager {
   Stream<Session> get onSessionChanged => _changes.stream;
 
   @override
+  Stream<IncomingOfferRejection> get onIncomingOfferRejected =>
+      const Stream<IncomingOfferRejection>.empty();
+
+  @override
   Future<int> bufferedAmount(String peerId, SessionChannel channel) async => 0;
 
   @override
@@ -178,7 +182,21 @@ class _LifecycleSessionManager implements SessionManager {
   Future<void> openChannel(String peerId, SessionChannel channel) async {}
 
   @override
-  Future<void> registerPeer(String peerId) async {}
+  Future<void> registerPeer(
+    String peerId, {
+    IncomingOfferGuard? incomingOfferGuard,
+  }) async {}
+
+  @override
+  Future<void> recoverConnection(
+    String peerId, {
+    String reason = 'Network changed. Restarting peer connection.',
+  }) async {}
+
+  @override
+  Future<void> recoverConnections({
+    String reason = 'Network changed. Restarting peer connections.',
+  }) async {}
 
   @override
   void send(String peerId, SessionChannel channel, Object data) {}

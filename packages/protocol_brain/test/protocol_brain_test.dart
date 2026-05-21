@@ -3,79 +3,98 @@ import 'dart:async';
 import 'package:flutter_webrtc/flutter_webrtc.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:peer_core/peer_core.dart';
-import 'package:protocol_brain/adapters/supabase_auth_error.dart';
-import 'package:protocol_brain/adapters/supabase_identity_error.dart';
 import 'package:protocol_brain/protocol_brain.dart';
-import 'package:supabase_flutter/supabase_flutter.dart' hide Session;
 
 void main() {
-  test('supabase auth errors map to Rain-friendly guidance', () {
-    expect(
-      normalizeSupabaseAuthError(
-        AuthApiException(
-          'email rate limit exceeded',
-          statusCode: '429',
-          code: 'over_email_send_rate_limit',
-        ),
-        duringRegistration: true,
-      ).toString(),
-      contains('Enable email confirmations'),
-    );
-    expect(
-      normalizeSupabaseAuthError(
-        AuthApiException(
-          'Email not confirmed',
-          statusCode: '400',
-          code: 'email_not_confirmed',
-        ),
-        duringRegistration: false,
-      ).toString(),
-      contains('requires email confirmation'),
-    );
-  });
-
-  test('supabase uid conflicts reset mismatched local identity', () {
-    final normalized = normalizeSupabaseIdentityWriteError(
-      const PostgrestException(
-        message:
-            'duplicate key value violates unique constraint "users_uid_key"',
-        code: '23505',
-        details: 'Conflict',
-      ),
-      username: 'alice',
-    );
-
-    expect(normalized, isA<SignalingSessionExpiredException>());
-    expect(normalized.toString(), contains('@alice'));
-  });
-
-  test('supabase auth aliases derive from the project host', () {
-    expect(
-      supabasePreferredEmailFromUsername(
-        'alice',
-        projectUrl: 'https://project-ref.supabase.co',
-      ),
-      'alice@auth.project-ref.supabase.co',
-    );
-    expect(
-      supabaseLoginEmailsFromUsername(
-        'alice',
-        projectUrl: 'https://project-ref.supabase.co',
-      ),
-      <String>[
-        'alice@auth.project-ref.supabase.co',
-        'alice@example.com',
-        'alice@rain.example.com',
-        'alice@rain.local',
-        'alice@gmail.com',
-      ],
-    );
-    expect(() => supabaseAuthAliasDomain('not-a-url'), throwsArgumentError);
-  });
-
   test('roomId is deterministic regardless of peer order', () {
     expect(roomId('alice', 'bob'), 'alice:bob');
     expect(roomId('bob', 'alice'), 'alice:bob');
+  });
+
+  test('SDP payload preserves restart marker', () {
+    final payload = SDPPayload(
+      sdp: RTCSessionDescription('offer-sdp', 'offer'),
+      ts: 7,
+      restart: true,
+    );
+
+    final decoded = SDPPayload.fromJson(payload.toJson());
+
+    expect(decoded.sdp.sdp, 'offer-sdp');
+    expect(decoded.sdp.type, 'offer');
+    expect(decoded.ts, 7);
+    expect(decoded.restart, isTrue);
+  });
+
+  test('incoming offer guard rejects stale unauthorized offers', () async {
+    final adapter = _RecordingSignalingAdapter();
+    final brain = ProtocolBrainImpl(
+      selfUsername: 'bob',
+      adapter: adapter,
+      peerConfig: _fakePeerConfig(),
+      peerFactory: _FakePeerCore.new,
+      connectionMemoryStore: _MemoryConnectionStore(),
+    );
+    final rejections = <IncomingOfferRejection>[];
+    final subscription = brain.onIncomingOfferRejected.listen(rejections.add);
+
+    await brain.registerPeer(
+      'alice',
+      incomingOfferGuard: (_) async {
+        return const IncomingOfferDecision.deny('Manual disconnect is active.');
+      },
+    );
+    adapter.emitOffer(
+      'alice:bob',
+      SDPPayload(sdp: RTCSessionDescription('offer-sdp', 'offer'), ts: 1),
+    );
+    await pumpEventQueue();
+
+    expect(adapter.writtenAnswers, isEmpty);
+    expect(brain.getSession('alice'), isNull);
+    expect(rejections, hasLength(1));
+    expect(rejections.single.peerId, 'alice');
+    expect(rejections.single.reason, 'Manual disconnect is active.');
+    expect(rejections.single.offerTimestamp, 1);
+
+    await subscription.cancel();
+    await brain.unregisterPeer('alice');
+  });
+
+  test('incoming offer is ignored after unregister during guard', () async {
+    final adapter = _RecordingSignalingAdapter();
+    final guardStarted = Completer<void>();
+    final releaseGuard = Completer<void>();
+    final brain = ProtocolBrainImpl(
+      selfUsername: 'bob',
+      adapter: adapter,
+      peerConfig: _fakePeerConfig(),
+      peerFactory: _FakePeerCore.new,
+      connectionMemoryStore: _MemoryConnectionStore(),
+    );
+
+    await brain.registerPeer(
+      'alice',
+      incomingOfferGuard: (_) async {
+        if (!guardStarted.isCompleted) {
+          guardStarted.complete();
+        }
+        await releaseGuard.future;
+        return const IncomingOfferDecision.allow();
+      },
+    );
+    adapter.emitOffer(
+      'alice:bob',
+      SDPPayload(sdp: RTCSessionDescription('offer-sdp', 'offer'), ts: 1),
+    );
+    await guardStarted.future;
+
+    await brain.unregisterPeer('alice');
+    releaseGuard.complete();
+    await pumpEventQueue(times: 3);
+
+    expect(adapter.writtenAnswers, isEmpty);
+    expect(brain.getSession('alice'), isNull);
   });
 
   test('only canonical room owner creates the initial offer', () async {
@@ -645,6 +664,42 @@ void main() {
     await brain.disconnect('bob');
   });
 
+  test(
+    'network recovery restarts connected owner with restart offer',
+    () async {
+      final adapter = _RecordingSignalingAdapter();
+      final peers = <_FakePeerCore>[];
+      final brain = ProtocolBrainImpl(
+        selfUsername: 'alice',
+        adapter: adapter,
+        peerConfig: _fakePeerConfig(),
+        peerFactory: () {
+          final peer = _FakePeerCore();
+          peers.add(peer);
+          return peer;
+        },
+        connectionMemoryStore: _MemoryConnectionStore(),
+      );
+
+      await brain.connect('bob');
+      peers.single.emitConnected();
+      await pumpEventQueue(times: 3);
+
+      await brain.recoverConnection(
+        'bob',
+        reason: 'Network changed. Restarting peer connection paths.',
+      );
+      await pumpEventQueue(times: 3);
+
+      expect(peers, hasLength(2));
+      expect(adapter.writtenOffers, <String>['alice:bob', 'alice:bob']);
+      expect(adapter.writtenOfferPayloads.last.restart, isTrue);
+      expect(brain.getSession('bob')?.state, SessionState.reconnecting);
+
+      await brain.disconnect('bob');
+    },
+  );
+
   test('connected answerer ignores stale retry offers', () async {
     final adapter = _RecordingSignalingAdapter();
     var peerCreations = 0;
@@ -686,6 +741,48 @@ void main() {
     expect(peerCreations, 1);
     expect(adapter.writtenAnswers, <String>['alice:bob']);
     expect(brain.getSession('alice')?.state, SessionState.connected);
+
+    await brain.disconnect('alice');
+  });
+
+  test('connected answerer accepts marked restart offers', () async {
+    final adapter = _RecordingSignalingAdapter();
+    var peerCreations = 0;
+    late _FakePeerCore peer;
+    final brain = ProtocolBrainImpl(
+      selfUsername: 'bob',
+      adapter: adapter,
+      peerConfig: _fakePeerConfig(),
+      peerFactory: () {
+        peerCreations += 1;
+        peer = _FakePeerCore();
+        return peer;
+      },
+      connectionMemoryStore: _MemoryConnectionStore(),
+    );
+
+    await brain.connect('alice');
+    adapter.emitOffer(
+      'alice:bob',
+      SDPPayload(sdp: RTCSessionDescription('initial-offer', 'offer'), ts: 1),
+    );
+    await pumpEventQueue();
+    peer.emitConnected();
+    await pumpEventQueue();
+
+    adapter.emitOffer(
+      'alice:bob',
+      SDPPayload(
+        sdp: RTCSessionDescription('restart-offer', 'offer'),
+        ts: 2,
+        restart: true,
+      ),
+    );
+    await pumpEventQueue(times: 3);
+
+    expect(peerCreations, 2);
+    expect(adapter.writtenAnswers, <String>['alice:bob', 'alice:bob']);
+    expect(brain.getSession('alice')?.state, SessionState.reconnecting);
 
     await brain.disconnect('alice');
   });
@@ -803,7 +900,7 @@ void main() {
     expect(memory.isUsable, isFalse);
   });
 
-  test('backend identity serializes separately for firebase and supabase', () {
+  test('backend identity serializes for Firebase', () {
     const identity = BackendIdentity(
       username: 'alice',
       uid: 'uid-1',
@@ -825,17 +922,6 @@ void main() {
       'online': true,
       'uid': 'uid-1',
     });
-
-    expect(identity.toSupabaseJson(), <String, Object?>{
-      'username': 'alice',
-      'display_name': 'Alice',
-      'gender': null,
-      'registered_at': 1,
-      'last_seen': 2,
-      'last_heartbeat': 3,
-      'online': true,
-      'uid': 'uid-1',
-    });
   });
 }
 
@@ -852,6 +938,7 @@ class _RecordingSignalingAdapter implements SignalingAdapter {
   final List<String> writtenAnswers = <String>[];
   final List<String> deletedRooms = <String>[];
   final Map<String, SDPPayload> storedOffers = <String, SDPPayload>{};
+  final List<SDPPayload> writtenOfferPayloads = <SDPPayload>[];
   final Map<String, SDPPayload> storedAnswers = <String, SDPPayload>{};
   Object? writeOfferError;
   final Map<String, StreamController<SDPPayload>> _offerControllers =
@@ -885,6 +972,7 @@ class _RecordingSignalingAdapter implements SignalingAdapter {
     writtenOffers.add(roomId);
     storedOfferPolicies.add(offer.icePolicy);
     storedOffers[roomId] = offer;
+    writtenOfferPayloads.add(offer);
   }
 
   @override

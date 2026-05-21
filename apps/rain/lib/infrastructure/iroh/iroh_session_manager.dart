@@ -61,6 +61,10 @@ class IrohSessionManager implements SessionManager {
   Stream<Session> get onSessionChanged => _sessionChangedController.stream;
 
   @override
+  Stream<IncomingOfferRejection> get onIncomingOfferRejected =>
+      const Stream<IncomingOfferRejection>.empty();
+
+  @override
   Future<Session> connect(String peerId) async {
     final normalizedPeerId = _normalized(peerId);
     final localAttemptId = _attemptIdFactory();
@@ -148,7 +152,10 @@ class IrohSessionManager implements SessionManager {
   }
 
   @override
-  Future<void> registerPeer(String peerId) async {}
+  Future<void> registerPeer(
+    String peerId, {
+    IncomingOfferGuard? incomingOfferGuard,
+  }) async {}
 
   @override
   Future<void> unregisterPeer(String peerId) async {
@@ -157,6 +164,17 @@ class IrohSessionManager implements SessionManager {
       await disconnect(normalizedPeerId);
     }
   }
+
+  @override
+  Future<void> recoverConnection(
+    String peerId, {
+    String reason = 'Network changed. Restarting peer connection.',
+  }) async {}
+
+  @override
+  Future<void> recoverConnections({
+    String reason = 'Network changed. Restarting peer connections.',
+  }) async {}
 
   @override
   List<Session> getSessions() => _sessions.values.toList(growable: false);

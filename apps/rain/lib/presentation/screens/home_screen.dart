@@ -77,6 +77,27 @@ String _bitrateLabel(double? bitrate) {
   return '${(bitrate / 1000).round()} Kbps';
 }
 
+String _phaseLabel(SessionPhase? phase) {
+  return switch (phase) {
+    SessionPhase.idle => 'Idle',
+    SessionPhase.checkingPresence => 'Checking presence',
+    SessionPhase.registeringPeer => 'Registering peer',
+    SessionPhase.waitingForOffer => 'Waiting for offer',
+    SessionPhase.creatingOffer => 'Creating offer',
+    SessionPhase.writingOffer => 'Writing offer',
+    SessionPhase.waitingForAnswer => 'Waiting for answer',
+    SessionPhase.writingAnswer => 'Writing answer',
+    SessionPhase.exchangingIce => 'Exchanging ICE',
+    SessionPhase.openingDataChannels => 'Opening channels',
+    SessionPhase.connected => 'Connected',
+    SessionPhase.reconnecting => 'Reconnecting',
+    SessionPhase.disconnecting => 'Disconnecting',
+    SessionPhase.disconnected => 'Disconnected',
+    SessionPhase.failed => 'Failed',
+    null => 'Unknown',
+  };
+}
+
 String _fallbackChoiceLabel(ConnectionFallbackChoice choice) {
   return switch (choice) {
     ConnectionFallbackChoice.tryAuto => 'Try Auto',
@@ -209,7 +230,7 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
   @override
   Widget build(BuildContext context) {
     final friends = ref.watch(friendsProvider);
-    final identity = ref.watch(identityProvider).valueOrNull;
+    final identity = ref.watch(identityProvider).value;
 
     return LayoutBuilder(
       builder: (BuildContext context, BoxConstraints constraints) {
@@ -311,7 +332,7 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
   }
 
   Future<void> _refreshFriends() async {
-    final status = ref.read(networkStatusProvider).valueOrNull;
+    final status = ref.read(networkStatusProvider).value;
     if (status != null && status.blocksNetworkActions) {
       if (mounted) {
         ScaffoldMessenger.of(
@@ -931,7 +952,7 @@ class _ChatPanelState extends ConsumerState<_ChatPanel> {
   @override
   Widget build(BuildContext context) {
     final friends = ref.watch(friendsProvider);
-    final runtime = ref.watch(runtimeControllerProvider).valueOrNull;
+    final runtime = ref.watch(runtimeControllerProvider).value;
     final friend = _currentFriend(friends);
     final canChat = friend?.state == FriendState.friend;
     final isPeerOnline = canChat ? friend?.isOnline ?? false : false;
@@ -941,7 +962,7 @@ class _ChatPanelState extends ConsumerState<_ChatPanel> {
         .diagnostics;
     final commandTimeline = ref
         .watch(connectionTimelineProvider(widget.peerId))
-        .valueOrNull;
+        .value;
     final diagnostics = ConnectionDiagnostics.fromConnection(
       canChat: canChat,
       isPeerOnline: isPeerOnline,
@@ -969,7 +990,7 @@ class _ChatPanelState extends ConsumerState<_ChatPanel> {
     ref.listen<AsyncValue<ConnectionFallbackRequest>>(
       connectionFallbackRequestProvider(widget.peerId),
       (_, AsyncValue<ConnectionFallbackRequest> next) {
-        final request = next.valueOrNull;
+        final request = next.value;
         if (request == null) {
           return;
         }
@@ -1099,8 +1120,8 @@ class _ChatPanelState extends ConsumerState<_ChatPanel> {
     AsyncValue<List<StoredMessage>>? previous,
     AsyncValue<List<StoredMessage>> next,
   ) {
-    final previousMessages = previous?.valueOrNull;
-    final nextMessages = next.valueOrNull;
+    final previousMessages = previous?.value;
+    final nextMessages = next.value;
     if (previousMessages == null || nextMessages == null) {
       return;
     }
@@ -1261,6 +1282,10 @@ class _ChatPanelState extends ConsumerState<_ChatPanel> {
               ConnectionDiagnosticItem(
                 label: 'Route',
                 value: diagnostics.label,
+              ),
+              ConnectionDiagnosticItem(
+                label: 'Phase',
+                value: _phaseLabel(diagnostics.phase),
               ),
               ConnectionDiagnosticItem(
                 label: 'ICE stage',
@@ -1483,7 +1508,7 @@ class _ChatPanelState extends ConsumerState<_ChatPanel> {
         data: (List<StoredMessage> items) {
           final transferByMessageId = <String, FileTransferView>{
             for (final transferView
-                in transfers.valueOrNull ?? const <FileTransferView>[])
+                in transfers.value ?? const <FileTransferView>[])
               transferView.record.messageId: transferView,
           };
           if (items.isEmpty) {
@@ -1840,7 +1865,7 @@ class _ChatPanelState extends ConsumerState<_ChatPanel> {
 
     setState(() => _isPickingFile = true);
     try {
-      final result = await FilePicker.platform.pickFiles(
+      final result = await FilePicker.pickFiles(
         allowMultiple: false,
         withData: false,
         withReadStream: true,
@@ -1995,7 +2020,7 @@ class _ChatPanelState extends ConsumerState<_ChatPanel> {
   }
 
   FriendRecord? _currentFriend(AsyncValue<List<FriendRecord>> friends) {
-    final items = friends.valueOrNull;
+    final items = friends.value;
     if (items == null) {
       return null;
     }
@@ -2289,7 +2314,7 @@ class _ChatPanelState extends ConsumerState<_ChatPanel> {
   }
 
   String? _networkActionError() {
-    final status = ref.read(networkStatusProvider).valueOrNull;
+    final status = ref.read(networkStatusProvider).value;
     return status != null && status.blocksNetworkActions
         ? status.actionErrorMessage
         : null;

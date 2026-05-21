@@ -1,3 +1,4 @@
+import 'dart:async';
 import 'dart:typed_data';
 
 import 'package:peer_core/peer_core.dart' show PeerConnectionRoute;
@@ -28,6 +29,32 @@ enum SessionPhase {
   failed,
 }
 
+class IncomingOfferDecision {
+  const IncomingOfferDecision.allow() : allowed = true, reason = null;
+
+  const IncomingOfferDecision.deny(this.reason) : allowed = false;
+
+  final bool allowed;
+  final String? reason;
+}
+
+class IncomingOfferRejection {
+  const IncomingOfferRejection({
+    required this.peerId,
+    required this.reason,
+    required this.rejectedAt,
+    required this.offerTimestamp,
+  });
+
+  final String peerId;
+  final String reason;
+  final DateTime rejectedAt;
+  final int offerTimestamp;
+}
+
+typedef IncomingOfferGuard =
+    FutureOr<IncomingOfferDecision> Function(String peerId);
+
 class SessionMessage {
   const SessionMessage({
     required this.channel,
@@ -53,11 +80,22 @@ abstract class SessionManager {
   Stream<String> get onPeerDisconnected;
   Stream<SessionMessage> get onPeerMessage;
   Stream<Session> get onSessionChanged;
+  Stream<IncomingOfferRejection> get onIncomingOfferRejected;
 
-  Future<void> registerPeer(String peerId);
+  Future<void> registerPeer(
+    String peerId, {
+    IncomingOfferGuard? incomingOfferGuard,
+  });
   Future<void> unregisterPeer(String peerId);
   Future<Session> connect(String peerId);
   Future<void> disconnect(String peerId);
+  Future<void> recoverConnection(
+    String peerId, {
+    String reason = 'Network changed. Restarting peer connection.',
+  });
+  Future<void> recoverConnections({
+    String reason = 'Network changed. Restarting peer connections.',
+  });
   void sendControl(String peerId, String data);
   void send(String peerId, SessionChannel channel, Object data);
   Future<void> openChannel(String peerId, SessionChannel channel);

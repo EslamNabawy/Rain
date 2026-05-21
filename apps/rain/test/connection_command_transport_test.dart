@@ -141,7 +141,14 @@ class _FakeSessionManager implements SessionManager {
   Stream<Session> get onSessionChanged => _changed.stream;
 
   @override
-  Future<void> registerPeer(String peerId) async {
+  Stream<IncomingOfferRejection> get onIncomingOfferRejected =>
+      const Stream<IncomingOfferRejection>.empty();
+
+  @override
+  Future<void> registerPeer(
+    String peerId, {
+    IncomingOfferGuard? incomingOfferGuard,
+  }) async {
     registerCalls += 1;
   }
 
@@ -175,6 +182,17 @@ class _FakeSessionManager implements SessionManager {
   Future<void> unregisterPeer(String peerId) async {
     unregisterCalls += 1;
   }
+
+  @override
+  Future<void> recoverConnection(
+    String peerId, {
+    String reason = 'Network changed. Restarting peer connection.',
+  }) async {}
+
+  @override
+  Future<void> recoverConnections({
+    String reason = 'Network changed. Restarting peer connections.',
+  }) async {}
 
   @override
   Session? getSession(String peerId) => _sessions[peerId];

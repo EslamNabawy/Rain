@@ -68,6 +68,7 @@ class SDPPayload {
   const SDPPayload({
     required this.sdp,
     required this.ts,
+    this.restart = false,
     this.icePolicy,
     this.connectAttemptId,
     this.iceStage,
@@ -77,6 +78,7 @@ class SDPPayload {
 
   final RTCSessionDescription sdp;
   final int ts;
+  final bool restart;
   final String? icePolicy;
   final String? connectAttemptId;
   final String? iceStage;
@@ -87,6 +89,7 @@ class SDPPayload {
     return <String, Object?>{
       'sdp': <String, Object?>{'type': sdp.type, 'sdp': sdp.sdp},
       'ts': ts,
+      if (restart) 'restart': true,
       if (icePolicy != null && icePolicy!.isNotEmpty) 'icePolicy': icePolicy,
       if (connectAttemptId != null && connectAttemptId!.isNotEmpty)
         'connectAttemptId': connectAttemptId,
@@ -105,6 +108,7 @@ class SDPPayload {
         sdpMap['type'] as String?,
       ),
       ts: (json['ts'] as num?)?.toInt() ?? 0,
+      restart: json['restart'] == true,
       icePolicy: json['icePolicy'] as String?,
       connectAttemptId: json['connectAttemptId'] as String?,
       iceStage: json['iceStage'] as String?,
@@ -180,19 +184,6 @@ class BackendIdentity {
       'registeredAt': registeredAt,
       'lastSeen': lastSeen,
       'lastHeartbeat': lastHeartbeat,
-      'online': online,
-      'uid': uid,
-    };
-  }
-
-  Map<String, Object?> toSupabaseJson() {
-    return <String, Object?>{
-      'username': username,
-      'display_name': displayName,
-      'gender': gender,
-      'registered_at': registeredAt,
-      'last_seen': lastSeen,
-      'last_heartbeat': lastHeartbeat,
       'online': online,
       'uid': uid,
     };

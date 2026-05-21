@@ -63,6 +63,8 @@ class ProtocolBrainImpl implements ProtocolBrain {
   final Map<String, _ActiveSession> _sessions = <String, _ActiveSession>{};
   final Map<String, StreamSubscription<SDPPayload>> _offerSubscriptions =
       <String, StreamSubscription<SDPPayload>>{};
+  final Map<String, IncomingOfferGuard> _incomingOfferGuards =
+      <String, IncomingOfferGuard>{};
 
   final StreamController<Session> _peerConnectedController =
       StreamController<Session>.broadcast();
@@ -72,6 +74,9 @@ class ProtocolBrainImpl implements ProtocolBrain {
       StreamController<SessionMessage>.broadcast();
   final StreamController<Session> _sessionChangedController =
       StreamController<Session>.broadcast();
+  final StreamController<IncomingOfferRejection>
+  _incomingOfferRejectedController =
+      StreamController<IncomingOfferRejection>.broadcast();
 
   @override
   Stream<Session> get onPeerConnected => _peerConnectedController.stream;
@@ -84,6 +89,10 @@ class ProtocolBrainImpl implements ProtocolBrain {
 
   @override
   Stream<Session> get onSessionChanged => _sessionChangedController.stream;
+
+  @override
+  Stream<IncomingOfferRejection> get onIncomingOfferRejected =>
+      _incomingOfferRejectedController.stream;
 
   @override
   Future<Session> connect(String peerId) async {
@@ -148,6 +157,31 @@ class ProtocolBrainImpl implements ProtocolBrain {
   }
 
   @override
+  Future<void> recoverConnection(
+    String peerId, {
+    String reason = 'Network changed. Restarting peer connection.',
+  }) async {
+    final active = _sessions[peerId];
+    if (active == null || !active.shouldReconnect) {
+      return;
+    }
+    await _restartForNetworkChange(active, reason: reason);
+  }
+
+  @override
+  Future<void> recoverConnections({
+    String reason = 'Network changed. Restarting peer connections.',
+  }) async {
+    final activeSessions = _sessions.values.toList(growable: false);
+    for (final active in activeSessions) {
+      if (_sessions[active.peerId] != active || !active.shouldReconnect) {
+        continue;
+      }
+      await _restartForNetworkChange(active, reason: reason);
+    }
+  }
+
+  @override
   Session? getSession(String peerId) => _sessions[peerId]?.snapshot;
 
   @override
@@ -158,7 +192,13 @@ class ProtocolBrainImpl implements ProtocolBrain {
   }
 
   @override
-  Future<void> registerPeer(String peerId) async {
+  Future<void> registerPeer(
+    String peerId, {
+    IncomingOfferGuard? incomingOfferGuard,
+  }) async {
+    if (incomingOfferGuard != null) {
+      _incomingOfferGuards[peerId] = incomingOfferGuard;
+    }
     if (_offerSubscriptions.containsKey(peerId)) {
       return;
     }
@@ -226,6 +266,7 @@ class ProtocolBrainImpl implements ProtocolBrain {
 
   @override
   Future<void> unregisterPeer(String peerId) async {
+    _incomingOfferGuards.remove(peerId);
     await _offerSubscriptions.remove(peerId)?.cancel();
   }
 
@@ -388,9 +429,30 @@ class ProtocolBrainImpl implements ProtocolBrain {
   }
 
   Future<void> _handleIncomingOffer(String peerId, SDPPayload offer) async {
+    if (!_offerSubscriptions.containsKey(peerId)) {
+      return;
+    }
+    final decision = await _authorizeIncomingOffer(peerId);
+    if (!_offerSubscriptions.containsKey(peerId)) {
+      return;
+    }
+    if (!decision.allowed) {
+      _incomingOfferRejectedController.add(
+        IncomingOfferRejection(
+          peerId: peerId,
+          reason: decision.reason ?? 'Incoming offer rejected by local policy.',
+          rejectedAt: DateTime.now(),
+          offerTimestamp: offer.ts,
+        ),
+      );
+      return;
+    }
+
     final active = await _ensureSession(peerId);
-    if (active.snapshot.state == SessionState.connected ||
-        active.peer.state == PeerState.connected) {
+    final alreadyConnected =
+        active.snapshot.state == SessionState.connected ||
+        active.peer.state == PeerState.connected;
+    if (alreadyConnected && !offer.restart) {
       return;
     }
     if (active.lastOfferTs != null && offer.ts <= active.lastOfferTs!) {
@@ -398,6 +460,15 @@ class ProtocolBrainImpl implements ProtocolBrain {
     }
     active.lastOfferTs = offer.ts;
     var policyChanged = false;
+    if (offer.restart) {
+      active.cancelPendingReconnect();
+      active.cancelHandshakeTimeout();
+      active.reconnectInProgress = false;
+      active.usedCachedReconnect = false;
+      active.retryAttempt = 0;
+      active.icePolicy = PeerIceTransportPolicy.all;
+      policyChanged = true;
+    }
     final offerAttempt = _attemptFromPayload(active, offer);
     final offerPolicy = offerAttempt?.policy ?? _icePolicyFromPayload(offer);
     if (offerAttempt != null &&
@@ -422,8 +493,12 @@ class ProtocolBrainImpl implements ProtocolBrain {
     _markPhase(
       active,
       SessionPhase.writingAnswer,
-      'Received offer. Creating answer.',
-      state: SessionState.connecting,
+      offer.restart
+          ? 'Received ICE restart offer. Creating answer.'
+          : 'Received offer. Creating answer.',
+      state: offer.restart
+          ? SessionState.reconnecting
+          : SessionState.connecting,
     );
     active.startHandshakeTimeout(
       () => _handleHandshakeTimeout(active.peerId),
@@ -448,6 +523,20 @@ class ProtocolBrainImpl implements ProtocolBrain {
       SessionPhase.exchangingIce,
       'Answer written. Exchanging network candidates.',
     );
+  }
+
+  Future<IncomingOfferDecision> _authorizeIncomingOffer(String peerId) async {
+    final guard = _incomingOfferGuards[peerId];
+    if (guard == null) {
+      return const IncomingOfferDecision.allow();
+    }
+    try {
+      return await guard(peerId);
+    } catch (_) {
+      return const IncomingOfferDecision.deny(
+        'Incoming offer rejected by local policy.',
+      );
+    }
   }
 
   Future<void> _listenForAnswer(_ActiveSession active) async {
@@ -657,6 +746,7 @@ class ProtocolBrainImpl implements ProtocolBrain {
   Future<void> _startOffer(
     _ActiveSession active, {
     required bool isRetry,
+    bool isRestart = false,
   }) async {
     if (active.peer.state != PeerState.ready) {
       await _recreatePeer(active);
@@ -670,7 +760,11 @@ class ProtocolBrainImpl implements ProtocolBrain {
     _markPhase(
       active,
       SessionPhase.creatingOffer,
-      isRetry ? 'Creating retry offer.' : 'Creating signaling offer.',
+      isRestart
+          ? 'Creating ICE restart offer.'
+          : isRetry
+          ? 'Creating retry offer.'
+          : 'Creating signaling offer.',
       state: isRetry ? SessionState.reconnecting : SessionState.connecting,
     );
 
@@ -707,6 +801,7 @@ class ProtocolBrainImpl implements ProtocolBrain {
       SDPPayload(
         sdp: offer,
         ts: DateTime.now().millisecondsSinceEpoch,
+        restart: isRestart,
         icePolicy: _icePolicyPayload(active.icePolicy),
         connectAttemptId: active.currentAttempt?.connectAttemptId,
         iceStage: active.currentAttempt?.stage.wireName,
@@ -757,6 +852,82 @@ class ProtocolBrainImpl implements ProtocolBrain {
       return message.substring('StateError: '.length);
     }
     return message;
+  }
+
+  Future<void> _restartForNetworkChange(
+    _ActiveSession active, {
+    required String reason,
+  }) async {
+    if (_sessions[active.peerId] != active ||
+        !active.shouldReconnect ||
+        active.reconnectInProgress) {
+      return;
+    }
+    if (active.snapshot.state == SessionState.failed) {
+      return;
+    }
+
+    active.cancelPendingReconnect();
+    active.cancelHandshakeTimeout();
+    active.reconnectInProgress = true;
+    active.usedCachedReconnect = false;
+    active.retryAttempt = 0;
+    final generation = active.nextReconnectGeneration();
+
+    _markPhase(
+      active,
+      SessionPhase.reconnecting,
+      reason,
+      state: SessionState.reconnecting,
+    );
+
+    try {
+      final recreated = await _recreatePeer(
+        active,
+        shouldContinue: () => _canContinueNetworkRestart(active, generation),
+        restoreRole: _localRoleFor(active.peerId),
+        policy: PeerIceTransportPolicy.all,
+      );
+      if (!recreated || !_canContinueNetworkRestart(active, generation)) {
+        return;
+      }
+      if (_isOfferOwner(active.peerId)) {
+        await _startOffer(active, isRetry: true, isRestart: true);
+      } else {
+        await _waitForOffer(active, isRetry: true);
+      }
+    } catch (error) {
+      if (_sessions[active.peerId] != active ||
+          active.reconnectGeneration != generation) {
+        return;
+      }
+      _updateSession(
+        active.peerId,
+        active.snapshot.copyWith(
+          state: SessionState.failed,
+          phase: SessionPhase.failed,
+          detail: 'Network recovery failed.',
+          updatedAt: DateTime.now().millisecondsSinceEpoch,
+          error:
+              'Network recovery failed: ${_connectSetupFailureMessage(error)}',
+          route: PeerConnectionRoute.unknown(
+            updatedAt: DateTime.now().millisecondsSinceEpoch,
+          ),
+        ),
+      );
+    } finally {
+      if (_sessions[active.peerId] == active &&
+          active.reconnectGeneration == generation) {
+        active.reconnectInProgress = false;
+      }
+    }
+  }
+
+  bool _canContinueNetworkRestart(_ActiveSession active, int generation) {
+    return _sessions[active.peerId] == active &&
+        active.shouldReconnect &&
+        active.reconnectGeneration == generation &&
+        active.snapshot.state != SessionState.failed;
   }
 
   Future<void> _waitForOffer(
@@ -951,9 +1122,20 @@ class ProtocolBrainImpl implements ProtocolBrain {
 
   String _routeDetail(PeerConnectionRoute route) {
     return switch (route.kind) {
-      PeerRouteKind.direct => 'Direct encrypted peer lane is open.',
-      PeerRouteKind.relay => 'Encrypted peer lane is relayed through TURN.',
+      PeerRouteKind.direct =>
+        'Direct encrypted peer lane is open${_addressFamilyDetail(route)}.',
+      PeerRouteKind.relay =>
+        'Encrypted peer lane is relayed through TURN${_addressFamilyDetail(route)}.',
       PeerRouteKind.unknown => 'Detecting route...',
+    };
+  }
+
+  String _addressFamilyDetail(PeerConnectionRoute route) {
+    return switch (route.addressFamily) {
+      PeerAddressFamily.ipv4 => ' over IPv4',
+      PeerAddressFamily.ipv6 => ' over IPv6',
+      PeerAddressFamily.mixed => ' across mixed IP families',
+      PeerAddressFamily.unknown => '',
     };
   }
 

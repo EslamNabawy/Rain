@@ -9,31 +9,28 @@ Rain is a Melos-based Flutter monorepo for a peer-to-peer chat MVP. The codebase
 - `packages/protocol_brain`: Signaling adapters, session manager, retry logic, and connection memory.
 - `packages/rain_core`: Drift database, identity, friends, messages, offline queue, and delivery rules.
 - `backend/firebase`: Firebase Realtime Database rules and scheduled cleanup functions.
-- `backend/turn`: Self-hosted Coturn and TURN credential broker for relay fallback.
-- `backend/supabase`: Supabase schema, RLS policies, and Edge Function cleanup job.
 
 ## Prerequisites
 
-- Flutter `3.38.5`
-- Dart `3.10.4`
+- Flutter `3.44.0`
+- Dart `3.12.0`
 - Melos `7.x`
 - Windows desktop toolchain for local desktop development
 - Android SDK cmdline-tools and accepted licenses before Android validation
 - Firebase CLI for Firebase deployment
-- Supabase CLI for Supabase deployment
 
 ## Bootstrap
 
 ```powershell
-dart pub global activate melos
-melos bootstrap
-melos run analyze
-melos run test
+dart pub get
+dart run melos bootstrap
+dart run melos run analyze
+dart run melos run test
 ```
 
 ## Run Locally
 
-Supabase is the default signaling backend for this app. Copy the example defines file and run the app:
+Firebase is the default signaling backend for this app. Copy the example defines file and run the app:
 
 ```powershell
 cd apps/rain
@@ -85,39 +82,25 @@ Navigation behavior inside the shell is intentionally compact:
 
 The app reads compile-time configuration from `apps/rain/tool/dart_defines.local.json`. The supported keys are:
 
-- `RAIN_BACKEND`: `supabase`, `firebase`, or `noop`
+- `RAIN_BACKEND`: `firebase` or `noop`
 - `RAIN_ICE_SERVERS`: JSON array of WebRTC ICE server objects
+- `RAIN_ALLOW_PUBLIC_TURN`: local/demo escape hatch for public OpenRelay TURN
+- `RAIN_TURN_BROKER_URL`: optional production TURN credential broker URL
 - `RAIN_UPDATE_URL`: fallback update page used by the force-update gate
 - `FIREBASE_DATABASE_URL`
-- `SUPABASE_URL`
-- `SUPABASE_ANON_KEY`
+
+The bundled example defines use OpenRelay only for demo/dev runs. Production
+release validation rejects OpenRelay/public TURN unless the demo build flag is
+explicitly enabled. Production publishing still needs project-owned TURN
+servers or a broker later; the release script intentionally fails without one.
 
 ## Backend Setup
-
-### TURN Relay
-
-Direct P2P stays the first choice, but mobile data, VPNs, symmetric NATs, and strict firewalls need a relay fallback. The zero-cost relay path lives in [backend/turn](backend/turn/README.md): an Oracle Always Free VM runs Coturn and a small HTTPS broker that returns short-lived TURN credentials after Firebase Auth verification.
-
-The app should be built with `RAIN_TURN_BROKER_URL=https://rain-p2p-turn.duckdns.org/rainTurnCredentials` once that broker is deployed. The unauthenticated broker check must return `401`; authenticated app calls must return at least one `turn:` or `turns:` ICE URL.
-
-### Supabase
-
-1. Create a Supabase project and enable the Email provider for Auth.
-2. Disable email confirmation for the project, because Rain signs users in with a username-derived alias email.
-3. Apply [backend/supabase/schema.sql](backend/supabase/schema.sql).
-4. Deploy [backend/supabase/functions/presence-cleanup/index.ts](backend/supabase/functions/presence-cleanup/index.ts) with `--no-verify-jwt`.
-5. Schedule the function every 3 minutes so stale users are marked offline after 7 minutes without heartbeat.
-
-Detailed Supabase instructions live in [backend/supabase/README.md](backend/supabase/README.md).
-For a step-by-step live deployment runbook with exact commands and expected results, see [backend/supabase/DEPLOYMENT_RUNBOOK.md](backend/supabase/DEPLOYMENT_RUNBOOK.md).
-
-### Firebase
 
 1. Create a Firebase project and enable:
    - Anonymous Authentication
    - Realtime Database
    - Remote Config
-2. Run `flutterfire configure --project=rain-8fb4b` inside `apps/rain`. This repo already includes the generated [apps/rain/lib/firebase_options.dart](apps/rain/lib/firebase_options.dart) for project `rain-8fb4b`.
+2. Run `flutterfire configure --project=rain-8fb4b` inside `apps/rain`. This repo already includes the generated [apps/rain/lib/infrastructure/firebase/firebase_options.dart](apps/rain/lib/infrastructure/firebase/firebase_options.dart) for project `rain-8fb4b`.
 3. Create or verify the Realtime Database instance and set `FIREBASE_DATABASE_URL`. The current project URL is `https://rain-8fb4b-default-rtdb.firebaseio.com`.
 4. Deploy the Realtime Database rules from [backend/firebase/database.rules.json](backend/firebase/database.rules.json).
 5. Deploy the cleanup functions from [backend/firebase/functions/index.js](backend/firebase/functions/index.js).
@@ -130,31 +113,23 @@ Detailed Firebase instructions live in [backend/firebase/README.md](backend/fire
 ## Verification
 
 ```powershell
-melos run analyze
-melos run test
-cd apps/rain
-flutter build windows --debug --no-pub
+dart run melos run analyze
+dart run melos run test
 ```
 
 ## Local Testing
 - Quick per-package tests:
-  - In each Flutter package (rain_core, peer_core): flutter pub get && flutter test
+  - In each maintained package/app: `flutter pub get && flutter test`
 - Full monorepo tests via Melos:
-  - melos bootstrap
-  - melos test
+  - `dart run melos bootstrap`
+  - `dart run melos run test`
 - Cross-platform local testing:
   - Windows: powershell -ExecutionPolicy Bypass -File scripts/test_all.ps1
-  - macOS/Linux: melos test (or implement test_all.sh if desired)
+  - macOS/Linux: `dart run melos run test` (or implement test_all.sh if desired)
 
 ## MVP Notes
 
-- Signaling data never stores message bodies in Firebase or Supabase.
+- Signaling data never stores message bodies in Firebase.
 - Rooms are deleted immediately after connect and also cleaned up server-side as a safety net.
 - Local persistence and queue operations live behind Drift transactions in `rain_core`.
 - Android background execution still requires device validation after Android SDK tooling is fixed on the host machine.
-
-## Scalability and Cost
-
-The zero-cost Oracle/Coturn relay is an early reliability path, not unlimited production infrastructure. The default Coturn template uses relay ports `49160-49300`, which is 140 UDP ports or roughly 70 concurrent relayed sessions. It caps each relayed session at `512000` bps, about 230 MB/hour for one continuously relayed session.
-
-Set an OCI budget alert around 7 TB/month, monitor Coturn active sessions, and move to paid managed TURN or a larger multi-region Coturn fleet when relay usage regularly nears 70 concurrent sessions, relay saturation appears in logs, or monthly egress approaches the free-tier ceiling.

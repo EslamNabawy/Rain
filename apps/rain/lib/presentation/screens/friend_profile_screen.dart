@@ -19,7 +19,7 @@ class FriendProfileScreen extends ConsumerWidget {
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {
-    final friends = ref.watch(friendsProvider).valueOrNull;
+    final friends = ref.watch(friendsProvider).value;
     FriendRecord? currentFriend = initialFriend;
     for (final friend in friends ?? const <FriendRecord>[]) {
       if (friend.username == username) {

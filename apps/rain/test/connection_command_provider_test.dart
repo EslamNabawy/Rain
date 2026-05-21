@@ -35,7 +35,7 @@ void main() {
         runIdFactory: () => 'run-1',
       );
       final container = ProviderContainer(
-        overrides: <Override>[
+        overrides: [
           connectionCommandOrchestratorProvider.overrideWithValue(orchestrator),
         ],
       );
@@ -63,7 +63,7 @@ void main() {
         runIdFactory: () => 'run-1',
       );
       final container = ProviderContainer(
-        overrides: <Override>[
+        overrides: [
           connectionCommandOrchestratorProvider.overrideWithValue(orchestrator),
         ],
       );
@@ -115,7 +115,7 @@ void main() {
         runIdFactory: () => 'run-1',
       );
       final container = ProviderContainer(
-        overrides: <Override>[
+        overrides: [
           connectionCommandOrchestratorProvider.overrideWithValue(orchestrator),
         ],
       );
@@ -124,7 +124,7 @@ void main() {
           .listen<AsyncValue<ConnectionFallbackRequest>>(
             connectionFallbackRequestProvider('bob'),
             (_, next) {
-              final request = next.valueOrNull;
+              final request = next.value;
               if (request != null) {
                 requests.add(request);
               }

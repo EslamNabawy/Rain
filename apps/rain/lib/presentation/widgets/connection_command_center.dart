@@ -89,20 +89,16 @@ class _ConnectionCommandCenterState extends State<ConnectionCommandCenter> {
         child: SizedBox(
           width: math.min(panelWidth, 540),
           height: math.max(360, panelHeight),
-          child: DecoratedBox(
-            decoration: BoxDecoration(
-              color: scheme.surface,
+          child: Material(
+            color: scheme.surface,
+            elevation: 12,
+            shadowColor: Colors.black.withValues(alpha: 0.28),
+            clipBehavior: Clip.antiAlias,
+            shape: RoundedRectangleBorder(
               borderRadius: BorderRadius.circular(24),
-              border: Border.all(
+              side: BorderSide(
                 color: scheme.outlineVariant.withValues(alpha: 0.65),
               ),
-              boxShadow: <BoxShadow>[
-                BoxShadow(
-                  color: Colors.black.withValues(alpha: 0.28),
-                  blurRadius: 28,
-                  offset: const Offset(0, 16),
-                ),
-              ],
             ),
             child: Column(
               children: <Widget>[

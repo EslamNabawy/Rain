@@ -173,6 +173,26 @@ void main() {
     expect(functions, contains('.endAt(now)'));
   });
 
+  test('Firebase backend does not depend on managed TURN provider secrets', () {
+    final functions = _repoFile('backend/firebase/functions/index.js');
+    final readme = _repoFile('backend/firebase/README.md');
+    final appDefines = _repoFile('apps/rain/tool/dart_defines.example.json');
+
+    expect(functions, isNot(contains('CLOUDFLARE')));
+    expect(functions, isNot(contains('cloudflare')));
+    expect(functions, isNot(contains('defineSecret')));
+    expect(functions, isNot(contains('api.twilio.com')));
+    expect(functions, isNot(contains('TURN_STATIC_AUTH_SECRET')));
+    expect(readme, isNot(contains('Cloudflare')));
+    expect(appDefines, isNot(contains('CLOUDFLARE_TURN_API_TOKEN')));
+    expect(appDefines, isNot(contains('CLOUDFLARE_TURN_KEY_ID')));
+    expect(appDefines, contains('"RAIN_ALLOW_PUBLIC_TURN": "true"'));
+    expect(appDefines, contains('stun:stun4.l.google.com:19302'));
+    expect(appDefines, contains('stun:stun.sipgate.net:10000'));
+    expect(appDefines, isNot(contains('stun.cloudflare.com')));
+    expect(appDefines, contains('openrelay.metered.ca'));
+  });
+
   test('Firebase rules do not expose unused push notification surface', () {
     final rules = _repoFile('backend/firebase/database.rules.json');
 

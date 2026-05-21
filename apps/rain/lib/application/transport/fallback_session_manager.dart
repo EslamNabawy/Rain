@@ -74,6 +74,10 @@ class FallbackSessionManager implements SessionManager {
   Stream<Session> get onSessionChanged => _sessionChangedController.stream;
 
   @override
+  Stream<IncomingOfferRejection> get onIncomingOfferRejected =>
+      webRtc.onIncomingOfferRejected;
+
+  @override
   Future<Session> connect(String peerId) async {
     final normalizedPeerId = _normalizedPeerId(peerId);
     await registerPeer(normalizedPeerId);
@@ -163,10 +167,16 @@ class FallbackSessionManager implements SessionManager {
   }
 
   @override
-  Future<void> registerPeer(String peerId) async {
+  Future<void> registerPeer(
+    String peerId, {
+    IncomingOfferGuard? incomingOfferGuard,
+  }) async {
     final normalizedPeerId = _normalizedPeerId(peerId);
     await Future.wait(<Future<void>>[
-      webRtc.registerPeer(normalizedPeerId),
+      webRtc.registerPeer(
+        normalizedPeerId,
+        incomingOfferGuard: incomingOfferGuard,
+      ),
       iroh.registerPeer(normalizedPeerId),
     ]);
   }
@@ -178,6 +188,37 @@ class FallbackSessionManager implements SessionManager {
     await Future.wait(<Future<void>>[
       webRtc.unregisterPeer(normalizedPeerId),
       iroh.unregisterPeer(normalizedPeerId),
+    ]);
+  }
+
+  @override
+  Future<void> recoverConnection(
+    String peerId, {
+    String reason = 'Network changed. Restarting peer connection.',
+  }) async {
+    final normalizedPeerId = _normalizedPeerId(peerId);
+    final active = _activeTransports[normalizedPeerId];
+    if (active == _TransportKind.webRtc) {
+      await webRtc.recoverConnection(normalizedPeerId, reason: reason);
+      return;
+    }
+    if (active == _TransportKind.iroh) {
+      await iroh.recoverConnection(normalizedPeerId, reason: reason);
+      return;
+    }
+    await Future.wait(<Future<void>>[
+      webRtc.recoverConnection(normalizedPeerId, reason: reason),
+      iroh.recoverConnection(normalizedPeerId, reason: reason),
+    ]);
+  }
+
+  @override
+  Future<void> recoverConnections({
+    String reason = 'Network changed. Restarting peer connections.',
+  }) async {
+    await Future.wait(<Future<void>>[
+      webRtc.recoverConnections(reason: reason),
+      iroh.recoverConnections(reason: reason),
     ]);
   }
 

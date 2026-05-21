@@ -4,6 +4,22 @@ publish_to: none
 environment:
   sdk: ^3.10.4
 
+workspace:
+  - apps/rain
+  - packages/peer_core
+  - packages/protocol_brain
+  - packages/rain_core
+
 dev_dependencies:
   flutter_lints: ^6.0.0
   melos: ^7.5.0
+
+melos:
+  command:
+    bootstrap:
+      usePubspecOverrides: true
+
+  scripts:
+    pub:get: dart run melos exec -- flutter pub get
+    analyze: dart run melos exec -- flutter analyze
+    test: dart run melos exec -- flutter test

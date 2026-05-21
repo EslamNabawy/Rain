@@ -1,8 +1,0 @@
-rain-p2p-turn.duckdns.org {
-  encode zstd gzip
-
-  @broker path /rainTurnCredentials
-  reverse_proxy @broker 127.0.0.1:8080
-
-  respond "Rain TURN broker" 200
-}

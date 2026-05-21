@@ -20,7 +20,7 @@ class RootScreen extends ConsumerWidget {
     final environment = ref.watch(appEnvironmentProvider);
     final forceUpdate = ref.watch(forceUpdateProvider);
     final identity = ref.watch(identityProvider);
-    final runtime = identity.valueOrNull == null
+    final runtime = identity.value == null
         ? const AsyncValue<RainRuntimeController?>.data(null)
         : ref.watch(runtimeControllerProvider);
 

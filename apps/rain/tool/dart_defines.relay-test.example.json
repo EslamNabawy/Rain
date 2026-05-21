@@ -8,11 +8,9 @@
   "RAIN_SMOKE_PEER_PASSWORD": "",
   "RAIN_SMOKE_DISPLAY_NAME": "",
   "RAIN_ALLOW_PUBLIC_TURN": "false",
-  "RAIN_TURN_BROKER_URL": "https://rain-p2p-turn.duckdns.org/rainTurnCredentials",
+  "RAIN_TURN_BROKER_URL": "https://your-turn-broker.example/rainTurnCredentials",
   "RAIN_ICE_SERVERS": "[{\"urls\":\"stun:stun.l.google.com:19302\"},{\"urls\":\"stun:stun1.l.google.com:19302\"},{\"urls\":\"stun:stun.cloudflare.com:3478\"}]",
   "RAIN_SIGNALING_ENCRYPTION_KEY": "replace-with-one-shared-random-key-at-least-32-chars",
   "RAIN_UPDATE_URL": "https://github.com/EslamNabawy/Rain/releases",
-  "FIREBASE_DATABASE_URL": "https://rain-8fb4b-default-rtdb.firebaseio.com",
-  "SUPABASE_URL": "",
-  "SUPABASE_ANON_KEY": ""
+  "FIREBASE_DATABASE_URL": "https://rain-8fb4b-default-rtdb.firebaseio.com"
 }

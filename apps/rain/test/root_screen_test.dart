@@ -21,7 +21,7 @@ void main() {
 
     await tester.pumpWidget(
       ProviderScope(
-        overrides: <Override>[
+        overrides: [
           appBootstrapProvider.overrideWithValue(_bootstrap(db)),
           forceUpdateProvider.overrideWith(
             _UnavailableForceUpdateController.new,
@@ -45,7 +45,7 @@ void main() {
 
     await tester.pumpWidget(
       ProviderScope(
-        overrides: <Override>[
+        overrides: [
           appBootstrapProvider.overrideWithValue(_bootstrap(db)),
           forceUpdateProvider.overrideWith(_LoadingForceUpdateController.new),
           identityProvider.overrideWith(_NoIdentityController.new),

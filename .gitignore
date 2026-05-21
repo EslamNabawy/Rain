@@ -1,10 +1,15 @@
-.opencode/
-.skills/
-ecc-temp/
 .dart_tool/
+**/.dart_tool/
 **/build/
 **/node_modules/
+**/.flutter-plugins-dependencies
+.idea/
+*.iml
 backend/firebase/functions/node_modules/
+backend/firebase/functions/.env
+backend/firebase/functions/.env.*
+*-debug.log
+apps/rain/tool/dart_defines.local.json
 artifacts/
 final product/*
 !final product/README.txt

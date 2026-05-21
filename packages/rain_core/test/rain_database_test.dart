@@ -95,7 +95,10 @@ void main() {
     final result = await database.serializedWrite(() async {
       attempts += 1;
       if (attempts == 1) {
-        throw SqliteException(517, 'database is locked');
+        throw SqliteException(
+          extendedResultCode: 517,
+          message: 'database is locked',
+        );
       }
       await database
           .into(database.friends)

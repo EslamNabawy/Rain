@@ -58,6 +58,7 @@ void main() {
         offlineQueueStore: OfflineQueueStore(db),
       ),
       fileTransferStore: transferStore,
+      networkRecoveryDebounce: Duration.zero,
     );
 
     await runtime.handleNetworkLost(
@@ -131,6 +132,7 @@ void main() {
         offlineQueueStore: OfflineQueueStore(db),
       ),
       fileTransferStore: transferStore,
+      networkRecoveryDebounce: Duration.zero,
     );
     addTearDown(runtime.dispose);
     await runtime.start();
@@ -143,9 +145,50 @@ void main() {
     expect(failed?.error, 'Connection lost. Transfer canceled.');
     expect(await tempFile.exists(), isFalse);
   });
+
+  test('network recovery asks active peer manager to restart paths', () async {
+    final db = RainDatabase(NativeDatabase.memory());
+    final adapter = NoopSignalingAdapter();
+    final brain = _DisconnectingSessionManager();
+    addTearDown(() async {
+      await brain.close();
+      await db.close();
+    });
+
+    final runtime = RainRuntimeController(
+      selfIdentity: const RainIdentity(
+        username: 'alice',
+        displayName: 'Alice',
+        createdAt: 1,
+        gender: null,
+      ),
+      adapter: adapter,
+      brain: brain,
+      database: db,
+      friendStore: FriendStore(db),
+      messageStore: MessageStore(db),
+      offlineQueueStore: OfflineQueueStore(db),
+      messageDeliveryService: MessageDeliveryService(
+        messageStore: MessageStore(db),
+        offlineQueueStore: OfflineQueueStore(db),
+      ),
+      networkRecoveryDebounce: Duration.zero,
+    );
+    addTearDown(runtime.dispose);
+    await runtime.start();
+
+    await runtime.handleNetworkAvailable(
+      'Network changed. Restarting peer connection paths.',
+    );
+
+    expect(brain.recoveryReasons, <String>[
+      'Network changed. Restarting peer connection paths.',
+    ]);
+  });
 }
 
 class _DisconnectingSessionManager implements SessionManager {
+  final List<String> recoveryReasons = <String>[];
   final StreamController<Session> _connected =
       StreamController<Session>.broadcast();
   final StreamController<String> _disconnected =
@@ -154,6 +197,8 @@ class _DisconnectingSessionManager implements SessionManager {
       StreamController<SessionMessage>.broadcast();
   final StreamController<Session> _changes =
       StreamController<Session>.broadcast();
+  final StreamController<IncomingOfferRejection> _incomingOfferRejected =
+      StreamController<IncomingOfferRejection>.broadcast();
 
   void emitPeerDisconnected(String peerId) {
     _disconnected.add(peerId);
@@ -164,6 +209,7 @@ class _DisconnectingSessionManager implements SessionManager {
     await _disconnected.close();
     await _messages.close();
     await _changes.close();
+    await _incomingOfferRejected.close();
   }
 
   @override
@@ -176,6 +222,21 @@ class _DisconnectingSessionManager implements SessionManager {
 
   @override
   Future<void> disconnect(String peerId) async {}
+
+  @override
+  Future<void> recoverConnection(
+    String peerId, {
+    String reason = 'Network changed. Restarting peer connection.',
+  }) async {
+    recoveryReasons.add(reason);
+  }
+
+  @override
+  Future<void> recoverConnections({
+    String reason = 'Network changed. Restarting peer connections.',
+  }) async {
+    recoveryReasons.add(reason);
+  }
 
   @override
   List<Session> getSessions() => const <Session>[];
@@ -199,10 +260,17 @@ class _DisconnectingSessionManager implements SessionManager {
   Stream<Session> get onSessionChanged => _changes.stream;
 
   @override
+  Stream<IncomingOfferRejection> get onIncomingOfferRejected =>
+      _incomingOfferRejected.stream;
+
+  @override
   Future<void> openChannel(String peerId, SessionChannel channel) async {}
 
   @override
-  Future<void> registerPeer(String peerId) async {}
+  Future<void> registerPeer(
+    String peerId, {
+    IncomingOfferGuard? incomingOfferGuard,
+  }) async {}
 
   @override
   void send(String peerId, SessionChannel channel, Object data) {}

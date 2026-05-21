@@ -108,7 +108,7 @@ class _SearchScreenState extends ConsumerState<SearchScreen> {
   @override
   Widget build(BuildContext context) {
     final search = ref.watch(userSearchProvider);
-    final identity = ref.watch(identityProvider).valueOrNull;
+    final identity = ref.watch(identityProvider).value;
     final recentSearches = ref.watch(recentSearchesProvider);
     final query = _normalizedHandleText();
 

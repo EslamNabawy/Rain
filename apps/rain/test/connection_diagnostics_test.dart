@@ -15,6 +15,7 @@ void main() {
           state: SessionState.connected,
           connectionType: ConnectionType.signaling,
           sender: (_) {},
+          phase: SessionPhase.connected,
           detail: 'Data channels open.',
           roomId: 'room-bob-alice',
           isOfferOwner: true,
@@ -24,6 +25,8 @@ void main() {
             selectedCandidatePairId: 'pair-7',
             localCandidateType: 'host',
             remoteCandidateType: 'srflx',
+            localAddressFamily: PeerAddressFamily.ipv6,
+            remoteAddressFamily: PeerAddressFamily.ipv6,
             protocol: 'udp',
             rtt: 0.031,
             bitrate: 1200000,
@@ -36,11 +39,15 @@ void main() {
     expect(diagnostics.label, 'Direct');
     expect(diagnostics.transportLabel, 'WebRTC');
     expect(diagnostics.transportDetail, 'WebRTC data channels');
+    expect(diagnostics.phase, SessionPhase.connected);
     expect(diagnostics.isConnected, isTrue);
     expect(diagnostics.routeKind, PeerRouteKind.direct);
     expect(diagnostics.selectedCandidatePairId, 'pair-7');
     expect(diagnostics.localCandidateType, 'host');
     expect(diagnostics.remoteCandidateType, 'srflx');
+    expect(diagnostics.localAddressFamily, PeerAddressFamily.ipv6);
+    expect(diagnostics.remoteAddressFamily, PeerAddressFamily.ipv6);
+    expect(diagnostics.addressFamily, PeerAddressFamily.ipv6);
     expect(diagnostics.protocol, 'udp');
     expect(diagnostics.retryAttempt, 2);
     expect(diagnostics.roomId, 'room-bob-alice');
@@ -112,6 +119,7 @@ void main() {
           state: SessionState.failed,
           connectionType: ConnectionType.signaling,
           sender: (_) {},
+          phase: SessionPhase.failed,
           detail: 'Failed',
           error: 'ICE timeout',
           route: const PeerConnectionRoute(kind: PeerRouteKind.direct),
@@ -120,6 +128,7 @@ void main() {
     );
 
     expect(diagnostics.label, 'Failed');
+    expect(diagnostics.phase, SessionPhase.failed);
     expect(diagnostics.isConnected, isFalse);
     expect(diagnostics.routeKind, PeerRouteKind.unknown);
     expect(diagnostics.lastError, 'ICE timeout');
@@ -154,6 +163,7 @@ void main() {
           state: SessionState.connected,
           connectionType: ConnectionType.signaling,
           sender: (_) {},
+          phase: SessionPhase.openingDataChannels,
           detail: 'Connected',
           route: const PeerConnectionRoute.unknown(),
         ),
@@ -161,6 +171,7 @@ void main() {
     );
 
     expect(diagnostics.label, 'Connecting');
+    expect(diagnostics.phase, SessionPhase.openingDataChannels);
     expect(diagnostics.detail, 'Detecting route...');
     expect(diagnostics.isConnected, isTrue);
     expect(diagnostics.routeKind, PeerRouteKind.unknown);

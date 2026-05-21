@@ -2,14 +2,22 @@
   "name": "rain-firebase-functions",
   "private": true,
   "engines": {
-    "node": "20"
+    "node": ">=20 <25"
   },
   "main": "index.js",
   "scripts": {
+    "audit:moderate": "npm audit --omit=dev --audit-level=moderate",
     "lint": "node --check index.js"
   },
   "dependencies": {
-    "firebase-admin": "^12.7.0",
-    "firebase-functions": "^6.0.1"
+    "firebase-admin": "^13.10.0",
+    "firebase-functions": "^7.2.5"
+  },
+  "overrides": {
+    "@google-cloud/firestore": "^8.6.0",
+    "google-gax": "^5.0.6",
+    "http-proxy-agent": "^9.0.0",
+    "retry-request": "^8.0.2",
+    "teeny-request": "^10.1.2"
   }
 }

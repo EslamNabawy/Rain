@@ -7,9 +7,7 @@ import 'package:rain/infrastructure/iroh/iroh_bridge_client.dart';
 void main() {
   test('Iroh bridge provider stays disabled by default', () {
     final container = ProviderContainer(
-      overrides: <Override>[
-        appEnvironmentProvider.overrideWithValue(_environment()),
-      ],
+      overrides: [appEnvironmentProvider.overrideWithValue(_environment())],
     );
     addTearDown(container.dispose);
 
@@ -18,7 +16,7 @@ void main() {
 
   test('Iroh bridge provider is available when fallback is enabled', () {
     final container = ProviderContainer(
-      overrides: <Override>[
+      overrides: [
         appEnvironmentProvider.overrideWithValue(
           _environment(enableIrohFallback: true),
         ),

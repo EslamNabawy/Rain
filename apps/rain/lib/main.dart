@@ -72,9 +72,7 @@ class _RainStartupAppState extends State<RainStartupApp> {
         }
 
         return ProviderScope(
-          overrides: <Override>[
-            appBootstrapProvider.overrideWithValue(bootstrap),
-          ],
+          overrides: [appBootstrapProvider.overrideWithValue(bootstrap)],
           child: const RainApp(),
         );
       },
