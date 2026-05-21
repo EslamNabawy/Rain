@@ -62,6 +62,19 @@ class _LiveSmokePeerCore implements PeerCore {
   Future<void> closeChannel(String channelId) async {}
 
   @override
+  Future<int> bufferedAmount(String channelId) async => 0;
+
+  @override
+  bool isChannelOpen(String channelId) => true;
+
+  @override
+  Future<PeerConnectionRoute> currentRoute() async {
+    return PeerConnectionRoute.unknown(
+      updatedAt: DateTime.now().millisecondsSinceEpoch,
+    );
+  }
+
+  @override
   Future<RTCSessionDescription> createOffer() async {
     _transition(PeerState.offering);
     return RTCSessionDescription('fake-offer', 'offer');

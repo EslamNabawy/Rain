@@ -1,8 +1,13 @@
+import 'dart:async';
 import 'dart:typed_data';
+
+import 'package:peer_core/peer_core.dart' show PeerConnectionRoute;
+
+import 'ice_attempt.dart';
 
 enum SessionState { connecting, connected, reconnecting, failed }
 
-enum ConnectionType { signaling }
+enum ConnectionType { signaling, iroh }
 
 enum SessionChannel { chat, control, file }
 
@@ -23,6 +28,32 @@ enum SessionPhase {
   disconnected,
   failed,
 }
+
+class IncomingOfferDecision {
+  const IncomingOfferDecision.allow() : allowed = true, reason = null;
+
+  const IncomingOfferDecision.deny(this.reason) : allowed = false;
+
+  final bool allowed;
+  final String? reason;
+}
+
+class IncomingOfferRejection {
+  const IncomingOfferRejection({
+    required this.peerId,
+    required this.reason,
+    required this.rejectedAt,
+    required this.offerTimestamp,
+  });
+
+  final String peerId;
+  final String reason;
+  final DateTime rejectedAt;
+  final int offerTimestamp;
+}
+
+typedef IncomingOfferGuard =
+    FutureOr<IncomingOfferDecision> Function(String peerId);
 
 class SessionMessage {
   const SessionMessage({
@@ -49,12 +80,27 @@ abstract class SessionManager {
   Stream<String> get onPeerDisconnected;
   Stream<SessionMessage> get onPeerMessage;
   Stream<Session> get onSessionChanged;
+  Stream<IncomingOfferRejection> get onIncomingOfferRejected;
 
-  Future<void> registerPeer(String peerId);
+  Future<void> registerPeer(
+    String peerId, {
+    IncomingOfferGuard? incomingOfferGuard,
+  });
   Future<void> unregisterPeer(String peerId);
   Future<Session> connect(String peerId);
   Future<void> disconnect(String peerId);
+  Future<void> recoverConnection(
+    String peerId, {
+    String reason = 'Network changed. Restarting peer connection.',
+  });
+  Future<void> recoverConnections({
+    String reason = 'Network changed. Restarting peer connections.',
+  });
   void sendControl(String peerId, String data);
+  void send(String peerId, SessionChannel channel, Object data);
+  Future<void> openChannel(String peerId, SessionChannel channel);
+  Future<int> bufferedAmount(String peerId, SessionChannel channel);
+  bool isChannelOpen(String peerId, SessionChannel channel);
 }
 
 abstract class ProtocolBrain implements SessionManager {}
@@ -73,6 +119,12 @@ class Session {
     this.retryAttempt = 0,
     this.roomId,
     this.isOfferOwner,
+    this.route = const PeerConnectionRoute.unknown(),
+    this.iceStage,
+    this.providerTier,
+    this.providerId,
+    this.connectAttemptId,
+    this.attemptIndex = 0,
   }) : _sender = sender;
 
   final String peerId;
@@ -86,6 +138,12 @@ class Session {
   final int retryAttempt;
   final String? roomId;
   final bool? isOfferOwner;
+  final PeerConnectionRoute route;
+  final IceAttemptStage? iceStage;
+  final IceProviderTier? providerTier;
+  final String? providerId;
+  final String? connectAttemptId;
+  final int attemptIndex;
   final void Function(String data) _sender;
 
   void send(String data) => _sender(data);
@@ -102,6 +160,12 @@ class Session {
     int? retryAttempt,
     String? roomId,
     bool? isOfferOwner,
+    PeerConnectionRoute? route,
+    IceAttemptStage? iceStage,
+    IceProviderTier? providerTier,
+    String? providerId,
+    String? connectAttemptId,
+    int? attemptIndex,
     void Function(String data)? sender,
   }) {
     return Session(
@@ -116,6 +180,12 @@ class Session {
       retryAttempt: retryAttempt ?? this.retryAttempt,
       roomId: roomId ?? this.roomId,
       isOfferOwner: isOfferOwner ?? this.isOfferOwner,
+      route: route ?? this.route,
+      iceStage: iceStage ?? this.iceStage,
+      providerTier: providerTier ?? this.providerTier,
+      providerId: providerId ?? this.providerId,
+      connectAttemptId: connectAttemptId ?? this.connectAttemptId,
+      attemptIndex: attemptIndex ?? this.attemptIndex,
       sender: sender ?? _sender,
     );
   }

@@ -10,6 +10,9 @@ import 'state_machine.dart';
 
 const _maxMessageBytes = 16 * 1024;
 const _chunkPayloadBytes = 12 * 1024;
+const _maxChunkFrames = 1024;
+const _maxPendingChunkBuffers = 64;
+const _chunkBufferTtl = Duration(minutes: 2);
 
 class DefaultPeerCore implements PeerCore {
   DefaultPeerCore({Uuid? uuid}) : _uuid = uuid ?? const Uuid();
@@ -82,6 +85,7 @@ class DefaultPeerCore implements PeerCore {
     _ensureState(<PeerState>{PeerState.ready});
     await openChannel(PeerChannels.chat);
     await openChannel(PeerChannels.control);
+    await openChannel(PeerChannels.file);
     final offer = await _requirePeerConnection().createOffer();
     await _requirePeerConnection().setLocalDescription(offer);
     _transition(PeerState.offering);
@@ -143,6 +147,29 @@ class DefaultPeerCore implements PeerCore {
   }
 
   @override
+  Future<int> bufferedAmount(String channelId) async {
+    final channel = _channels[channelId];
+    if (channel == null) {
+      throw StateError('Channel $channelId is not open.');
+    }
+    return channel.getBufferedAmount();
+  }
+
+  @override
+  bool isChannelOpen(String channelId) {
+    return _openChannels.contains(channelId);
+  }
+
+  @override
+  Future<PeerConnectionRoute> currentRoute() async {
+    final reports = await _requirePeerConnection().getStats();
+    return PeerConnectionRoute.fromStats(
+      reports,
+      updatedAt: DateTime.now().millisecondsSinceEpoch,
+    );
+  }
+
+  @override
   void send(String channelId, dynamic data) {
     final channel = _channels[channelId];
     if (channel == null) {
@@ -152,17 +179,7 @@ class DefaultPeerCore implements PeerCore {
       throw StateError('Channel $channelId is not ready.');
     }
 
-    if (channelId == PeerChannels.chat) {
-      _sendChunkedIfNeeded(channel, data);
-      return;
-    }
-
-    if (data is Uint8List) {
-      channel.send(RTCDataChannelMessage.fromBinary(data));
-      return;
-    }
-
-    channel.send(RTCDataChannelMessage(data.toString()));
+    _sendChunkedIfNeeded(channel, data);
   }
 
   @override
@@ -217,22 +234,47 @@ class DefaultPeerCore implements PeerCore {
     if (payload is String) {
       final maybeChunk = _ChunkFrame.tryParse(payload);
       if (maybeChunk != null) {
-        final accumulator = _chunkBuffers.putIfAbsent(
-          maybeChunk.id,
-          () => _ChunkAccumulator(maybeChunk.total, maybeChunk.isBinary),
-        );
+        final now = DateTime.now();
+        _pruneStaleChunkBuffers(now);
+        final existing = _chunkBuffers[maybeChunk.id];
+        if (existing != null && !existing.matches(maybeChunk)) {
+          _chunkBuffers.remove(maybeChunk.id);
+          return;
+        }
+        if (existing == null &&
+            _chunkBuffers.length >= _maxPendingChunkBuffers) {
+          return;
+        }
+        final accumulator =
+            existing ??
+            (_chunkBuffers[maybeChunk.id] = _ChunkAccumulator(
+              maybeChunk.total,
+              maybeChunk.isBinary,
+              createdAt: now,
+            ));
         accumulator.add(maybeChunk.index, maybeChunk.payload);
         if (accumulator.isComplete) {
           _chunkBuffers.remove(maybeChunk.id);
           final assembled = accumulator.join();
+          final Object data;
+          try {
+            data = accumulator.isBinary
+                ? assembled
+                : utf8.decode(assembled, allowMalformed: false);
+          } catch (_) {
+            return;
+          }
           _messageController.add(
             PeerMessage(
               channelId: channelId,
-              data: accumulator.isBinary ? assembled : utf8.decode(assembled),
+              data: data,
               receivedAt: DateTime.now(),
             ),
           );
         }
+        return;
+      }
+      if (_ChunkFrame.hasChunkEnvelope(payload)) {
         return;
       }
     }
@@ -381,17 +423,28 @@ class DefaultPeerCore implements PeerCore {
       }
     };
   }
+
+  void _pruneStaleChunkBuffers(DateTime now) {
+    _chunkBuffers.removeWhere((_, _ChunkAccumulator accumulator) {
+      return now.difference(accumulator.createdAt) > _chunkBufferTtl;
+    });
+  }
 }
 
 class _ChunkAccumulator {
-  _ChunkAccumulator(this.total, this.isBinary)
+  _ChunkAccumulator(this.total, this.isBinary, {required this.createdAt})
     : _parts = List<Uint8List?>.filled(total, null);
 
   final int total;
   final bool isBinary;
+  final DateTime createdAt;
   final List<Uint8List?> _parts;
 
   bool get isComplete => _parts.every((Uint8List? part) => part != null);
+
+  bool matches(_ChunkFrame frame) {
+    return frame.total == total && frame.isBinary == isBinary;
+  }
 
   void add(int index, Uint8List payload) {
     if (index >= 0 && index < total) {
@@ -451,12 +504,45 @@ class _ChunkFrame {
     if (decoded is! Map<String, dynamic> || decoded['type'] != 'chunk') {
       return null;
     }
+    final id = decoded['id'];
+    final index = decoded['index'];
+    final total = decoded['total'];
+    final payload = decoded['payload'];
+    if (id is! String ||
+        id.isEmpty ||
+        id.length > 128 ||
+        index is! int ||
+        total is! int ||
+        payload is! String) {
+      return null;
+    }
+    if (total <= 0 || total > _maxChunkFrames || index < 0 || index >= total) {
+      return null;
+    }
+    final Uint8List decodedPayload;
+    try {
+      decodedPayload = base64Decode(payload);
+    } catch (_) {
+      return null;
+    }
+    if (decodedPayload.lengthInBytes > _chunkPayloadBytes) {
+      return null;
+    }
     return _ChunkFrame(
-      id: decoded['id'] as String,
-      index: decoded['index'] as int,
-      total: decoded['total'] as int,
+      id: id,
+      index: index,
+      total: total,
       isBinary: decoded['isBinary'] as bool? ?? false,
-      payload: base64Decode(decoded['payload'] as String),
+      payload: decodedPayload,
     );
+  }
+
+  static bool hasChunkEnvelope(String raw) {
+    try {
+      final decoded = jsonDecode(raw);
+      return decoded is Map<String, dynamic> && decoded['type'] == 'chunk';
+    } catch (_) {
+      return false;
+    }
   }
 }

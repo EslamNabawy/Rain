@@ -15,6 +15,10 @@ void main() {
 
     expect(script, contains('[string]\$DartDefinesFile'));
     expect(script, contains('[switch]\$AllowPublicTurnForDemo'));
+    expect(script, contains('[switch]\$RelayTest'));
+    expect(script, contains('[switch]\$ForceRelayOnlySmoke'));
+    expect(script, contains('[string]\$TurnBrokerUrl'));
+    expect(script, contains('[string]\$TurnProviderName'));
     expect(script, contains('[switch]\$UseDemoAndroidSigningKey'));
     expect(
       script,
@@ -74,19 +78,52 @@ void main() {
     expect(
       script,
       contains(
-        'Release builds require at least one project-owned TURN/TURNS URL in RAIN_ICE_SERVERS.',
+        'Release builds require RAIN_TURN_BROKER_URL or at least one project-owned TURN/TURNS URL in RAIN_ICE_SERVERS.',
       ),
     );
+    expect(script, contains('Production release uses TURN credential broker:'));
+    expect(script, contains('Relay test builds require RAIN_TURN_BROKER_URL.'));
+    expect(
+      script,
+      contains(
+        'Relay test builds require -TurnBrokerUrl when -ForceRelayOnlySmoke is set.',
+      ),
+    );
+    expect(script, contains('RAIN_ICE_STRATEGY'));
+    expect(script, contains('RAIN_TURN_PROVIDER_ORDER'));
+    expect(script, contains('rain-relay-test-defines.generated.json'));
     expect(
       script,
       contains('Release TURN servers must include username and credential.'),
     );
-    expect(script, contains('Assert-AndroidReleaseSigning'));
     expect(
       script,
       contains(
-        'Demo Android signing is only allowed with -AllowPublicTurnForDemo.',
+        'Every production TURN/TURNS server entry must include username and credential.',
       ),
+    );
+    expect(
+      script,
+      contains(
+        'Production RAIN_ICE_SERVERS must include a turn: UDP endpoint.',
+      ),
+    );
+    expect(
+      script,
+      contains(
+        'Production RAIN_ICE_SERVERS must include a turn: TCP endpoint.',
+      ),
+    );
+    expect(
+      script,
+      contains(
+        'Production RAIN_ICE_SERVERS must include a turns: TCP/TLS endpoint.',
+      ),
+    );
+    expect(script, contains('Assert-AndroidReleaseSigning'));
+    expect(
+      script,
+      contains('Demo Android signing is enabled for non-production artifacts.'),
     );
     expect(script, contains('Resolve-KeytoolPath'));
     expect(script, contains('JAVA_HOME'));
@@ -127,35 +164,110 @@ void main() {
     );
   });
 
-  test('release script packages universal and per-ABI Android APKs', () {
+  test('relay test dart defines use broker and STUN-only base ICE', () {
+    final defines = _repoFile(
+      'apps/rain/tool/dart_defines.relay-test.example.json',
+    );
+
+    expect(defines, contains('/rainTurnCredentials'));
+    expect(defines, contains('"RAIN_ALLOW_PUBLIC_TURN": "false"'));
+    expect(defines, contains('stun:stun.l.google.com:19302'));
+    expect(defines, contains('stun:stun.cloudflare.com:3478'));
+    expect(defines, isNot(contains('openrelay.metered.ca')));
+    expect(defines, isNot(contains('turn:')));
+    expect(defines, isNot(contains('turns:')));
+  });
+
+  test('Firebase functions do not embed managed TURN provider secrets', () {
+    final functions = _repoFile('backend/firebase/functions/index.js');
+
+    expect(functions, isNot(contains('TWILIO')));
+    expect(functions, isNot(contains('CLOUDFLARE')));
+    expect(functions, isNot(contains('rainTurnCredentials')));
+    expect(functions, isNot(contains('generate-ice-servers')));
+    expect(functions, contains('cleanupPresence'));
+    expect(functions, contains('cleanupRooms'));
+  });
+
+  test('release script defaults to mobile APKs with optional all-ABI builds', () {
     final script = _repoFile('scripts/build_release.ps1');
 
     expect(script, contains('--split-per-abi'));
+    expect(script, contains('Assert-AndroidApkContainsSqlite'));
+    expect(script, contains('lib/\$abi/libsqlite3.so'));
     expect(script, contains('Rain-release'));
     expect(script, contains('Rain-Demo'));
+    expect(script, contains('Rain-Relay-Test'));
     expect(script, contains('ARMv8/ARMv9 devices'));
     expect(script, contains('Rain-Demo-Android-Universal-Build.apk'));
     expect(script, contains('Rain-Demo-Android-ARM-v8-v9-Build.apk'));
     expect(script, contains('Rain-Demo-Android-ARM-v7-Build.apk'));
     expect(script, contains('Rain-Demo-Android-x86_64-Build.apk'));
     expect(script, contains('Rain-Demo-Windows-x64-Build'));
+    expect(script, contains('[string]\$AndroidArtifactSet = \'mobile\''));
+    expect(script, contains('[switch]\$GenerateSizeReports'));
+    expect(
+      script,
+      contains(
+        'Skipping Android universal/x86_64 release APK; mobile user artifacts are ARM-only',
+      ),
+    );
+    expect(script, contains('android-arm,android-arm64'));
     expect(script, contains('\$androidArtifactPrefix-android-universal.apk'));
     expect(script, contains('\$androidArtifactPrefix-android-arm64-v8a.apk'));
     expect(script, contains('\$androidArtifactPrefix-android-armeabi-v7a.apk'));
     expect(script, contains('\$androidArtifactPrefix-android-x86_64.apk'));
   });
 
-  test('artifact workflows verify every Android APK architecture', () {
+  test('Windows release packaging includes Dart native assets', () {
+    final script = _repoFile('scripts/build_release.ps1');
+
+    expect(script, contains('Copy-WindowsNativeAssets'));
+    expect(script, contains('Assert-WindowsNativeAssetsPackaged'));
+    expect(script, contains('Assert-WindowsSqliteExports'));
+    expect(script, contains('Resolve-DumpbinPath'));
+    expect(script, contains('sqlite3_temp_directory'));
+    expect(script, contains('Get-WindowsNativeAssetNames'));
+    expect(script, contains(r"build\native_assets\windows"));
+    expect(script, contains(r"data\flutter_assets\NativeAssetsManifest.json"));
+    expect(script, contains("entry[0] -ne 'absolute'"));
+    expect(script, contains('Windows native asset source not found:'));
+    expect(
+      script,
+      contains('Windows native asset not found in portable output:'),
+    );
+    expect(
+      script,
+      contains(
+        'Copy-WindowsNativeAssets -ProjectRoot \$appsRoot -DestinationRoot \$windowsPortableDir',
+      ),
+    );
+  });
+
+  test('Windows release packaging removes non-runtime linker artifacts', () {
+    final script = _repoFile('scripts/build_release.ps1');
+
+    expect(script, contains('Remove-WindowsLinkerArtifacts'));
+    expect(script, contains("'.exp', '.lib'"));
+    expect(
+      script,
+      contains(
+        'Remove-WindowsLinkerArtifacts -DestinationRoot \$windowsPortableDir',
+      ),
+    );
+  });
+
+  test('CI and release workflows verify mobile Android APK architectures', () {
     final workflows = <String>[
       _repoFile('.github/workflows/ci.yml'),
-      _repoFile('.github/workflows/build-artifacts.yml'),
       _repoFile('.github/workflows/release.yml'),
     ];
 
     for (final workflow in workflows) {
       expect(workflow, contains('Android ARM v7 APK (armeabi-v7a)'));
       expect(workflow, contains('Android ARM v8/v9 APK (arm64-v8a)'));
-      expect(workflow, contains('Android x86_64 APK'));
+      expect(workflow, isNot(contains('Android x86_64 APK')));
+      expect(workflow, isNot(contains('Android universal APK')));
       expect(
         workflow,
         anyOf(
@@ -170,29 +282,100 @@ void main() {
           contains('Rain-Demo-Android-ARM-v8-v9-Build.apk'),
         ),
       );
-      expect(
-        workflow,
-        anyOf(
-          contains('-android-x86_64.apk'),
-          contains('Rain-Demo-Android-x86_64-Build.apk'),
-        ),
-      );
     }
   });
 
-  test(
-    'CI demo artifacts use concise names and upload only the Windows zip',
-    () {
-      final workflow = _repoFile('.github/workflows/ci.yml');
+  test('build artifacts workflow uploads mobile APKs without archives', () {
+    final workflow = _repoFile('.github/workflows/build-artifacts.yml');
+    final androidBuildStep = RegExp(
+      r'- name: Build Android APK artifacts(?<step>[\s\S]*?)\n\s*- name:',
+    ).firstMatch(workflow)?.namedGroup('step');
 
-      expect(workflow, contains('Rain-Demo-Windows-x64-Build.zip'));
+    expect(androidBuildStep, isNotNull);
+    expect(androidBuildStep, contains("'-AndroidArtifactSet'"));
+    expect(androidBuildStep, contains("'mobile'"));
+    expect(androidBuildStep, contains("'-GenerateSizeReports'"));
+    expect(
+      workflow,
+      contains(
+        'Default mobile artifact build must not include oversized optional APK',
+      ),
+    );
+    expect(workflow, contains('Rain-Demo-Android-Size-Reports'));
+    expect(workflow, contains('Rain-Relay-Test-Android-Size-Reports'));
+    expect(workflow, contains('Rain-Relay-Test-Android-Builds'));
+    expect(workflow, contains('Rain-Demo-Android-ARM-v7-Build.apk'));
+    expect(workflow, contains('Rain-Demo-Android-ARM-v8-v9-Build.apk'));
+    expect(workflow, isNot(contains('.rar')));
+    expect(workflow, isNot(contains('.zip')));
+  });
+
+  test('build artifacts workflow has explicit relay test profile', () {
+    final workflow = _repoFile('.github/workflows/build-artifacts.yml');
+
+    expect(workflow, contains('build_relay_test'));
+    expect(workflow, contains('relay-test'));
+    expect(workflow, contains('RAIN_TURN_BROKER_URL'));
+    expect(workflow, contains('RAIN_SIGNALING_ENCRYPTION_KEY'));
+    expect(workflow, contains('RAIN_ALLOW_PUBLIC_TURN=false'));
+    expect(
+      workflow,
+      contains('Relay-test build requires RAIN_TURN_BROKER_URL.'),
+    );
+    expect(
+      workflow,
+      contains('Relay-test build requires RAIN_SIGNALING_ENCRYPTION_KEY.'),
+    );
+    expect(workflow, contains('Rain-Relay-Test-Android-Builds'));
+    expect(workflow, contains('Rain-Relay-Test-Windows-x64-Build'));
+  });
+
+  test(
+    'default demo artifacts do not pretend to be production relay artifacts',
+    () {
+      final workflow = _repoFile('.github/workflows/build-artifacts.yml');
+
       expect(workflow, contains('Rain-Demo-Android-ARM-v7-Build.apk'));
-      expect(workflow, contains('Rain-Demo-Android-ARM-v8-v9-Build.apk'));
-      expect(workflow, contains('Rain-Demo-Android-x86_64-Build.apk'));
-      expect(
-        workflow,
-        isNot(contains('artifacts/Rain-Demo-Windows-x64-Build/**')),
-      );
+      expect(workflow, isNot(contains('Rain-Production-OpenRelay')));
+      expect(workflow, isNot(contains('Rain-Release-OpenRelay')));
     },
   );
+
+  test('CI demo artifacts use OpenRelay and portable output', () {
+    final workflow = _repoFile('.github/workflows/ci.yml');
+
+    expect(workflow, contains('Prepare OpenRelay demo dart defines'));
+    expect(workflow, contains('-AllowPublicTurnForDemo'));
+    expect(workflow, contains('artifacts/Rain-Demo-Windows-x64-Build'));
+    expect(workflow, contains('Windows SQLite runtime DLL'));
+    expect(workflow, contains('lib/armeabi-v7a/libsqlite3.so'));
+    expect(workflow, contains('lib/arm64-v8a/libsqlite3.so'));
+    expect(
+      workflow,
+      contains(
+        'Windows portable upload folder must not contain nested archives',
+      ),
+    );
+    expect(
+      workflow,
+      isNot(contains('path: artifacts/Rain-Demo-Windows-x64-Build.zip')),
+    );
+    expect(workflow, contains('Rain-Demo-Android-ARM-v7-Build.apk'));
+    expect(workflow, contains('Rain-Demo-Android-ARM-v8-v9-Build.apk'));
+    expect(workflow, contains('Rain-Demo-Android-Size-Reports'));
+    expect(
+      workflow,
+      contains(
+        'Default CI/CD mobile artifacts must not include oversized optional APK',
+      ),
+    );
+  });
+
+  test('Rain core uses bundled SQLite native library packaging', () {
+    final pubspec = _repoFile('packages/rain_core/pubspec.yaml');
+
+    expect(pubspec, contains('drift_flutter: ^0.3.0'));
+    expect(pubspec, contains('sqlite3: ^3.3.1'));
+    expect(pubspec, isNot(contains('sqlite3_flutter_libs:')));
+  });
 }

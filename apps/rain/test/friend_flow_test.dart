@@ -1,5 +1,8 @@
 import 'dart:async';
+import 'dart:io';
+import 'dart:typed_data';
 
+import 'package:drift/drift.dart' show driftRuntimeOptions;
 import 'package:drift/native.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:protocol_brain/protocol_brain.dart';
@@ -10,9 +13,29 @@ import 'package:rain_core/rain_core.dart';
 void main() {
   TestWidgetsFlutterBinding.ensureInitialized();
 
+  setUpAll(() {
+    // Two-user flow tests intentionally model separate devices with separate
+    // in-memory databases in the same isolate.
+    driftRuntimeOptions.dontWarnAboutMultipleDatabases = true;
+  });
+
+  tearDownAll(() {
+    driftRuntimeOptions.dontWarnAboutMultipleDatabases = false;
+  });
+
   group('Friend flow', () {
     late RainDatabase db;
     late RainIdentity alice;
+
+    setUpAll(() {
+      // These tests intentionally run two independent in-memory RainDatabase
+      // instances to model two devices in one process.
+      driftRuntimeOptions.dontWarnAboutMultipleDatabases = true;
+    });
+
+    tearDownAll(() {
+      driftRuntimeOptions.dontWarnAboutMultipleDatabases = false;
+    });
 
     setUp(() {
       db = RainDatabase(NativeDatabase.memory());
@@ -756,6 +779,355 @@ void main() {
       },
     );
 
+    test(
+      'sendFile while disconnected does not connect or create a transfer',
+      () async {
+        final adapter = NoopSignalingAdapter();
+        final brain = TestSessionManager();
+        await adapter.register('bob', 'bobpw');
+        await db
+            .into(db.friends)
+            .insert(
+              FriendsCompanion.insert(
+                username: 'bob',
+                displayName: 'Bob',
+                state: 'friend',
+                addedAt: 0,
+              ),
+            );
+        final messageStore = MessageStore(db);
+        final offlineQueueStore = OfflineQueueStore(db);
+        final runtime = RainRuntimeController(
+          selfIdentity: alice,
+          adapter: adapter,
+          brain: brain,
+          database: db,
+          friendStore: FriendStore(db),
+          messageStore: messageStore,
+          offlineQueueStore: offlineQueueStore,
+          messageDeliveryService: MessageDeliveryService(
+            messageStore: messageStore,
+            offlineQueueStore: offlineQueueStore,
+          ),
+        );
+
+        await expectLater(
+          runtime.sendFile(
+            peerId: 'bob',
+            fileName: 'note.txt',
+            fileSize: 1,
+            openRead: () => Stream<List<int>>.value(<int>[1]),
+          ),
+          throwsA(isA<StateError>()),
+        );
+
+        expect(brain.registeredPeers, isEmpty);
+        expect(brain.connectedPeers, isEmpty);
+        expect(await db.select(db.messages).get(), isEmpty);
+        expect(await db.select(db.fileTransfers).get(), isEmpty);
+      },
+    );
+
+    test('incoming file chunks are finalized before complete frames', () async {
+      final adapter = NoopSignalingAdapter();
+      await adapter.register('bob', 'bobpw');
+      await adapter.upsertFriendship('alice', 'bob');
+      await db
+          .into(db.friends)
+          .insert(
+            FriendsCompanion.insert(
+              username: 'bob',
+              displayName: 'Bob',
+              state: 'friend',
+              addedAt: 0,
+            ),
+          );
+      final brain = TestSessionManager();
+      await brain.connect('bob');
+      brain.markConnected('bob');
+      final tempDir = Directory.systemTemp.createTempSync(
+        'rain_file_receive_test_',
+      );
+      final transferStore = DelayingFileTransferStore(db);
+      final runtime = RainRuntimeController(
+        selfIdentity: alice,
+        adapter: adapter,
+        brain: brain,
+        database: db,
+        friendStore: FriendStore(db),
+        messageStore: MessageStore(db),
+        offlineQueueStore: OfflineQueueStore(db),
+        messageDeliveryService: MessageDeliveryService(
+          messageStore: MessageStore(db),
+          offlineQueueStore: OfflineQueueStore(db),
+        ),
+        fileTransferStore: transferStore,
+        documentsDirectoryProvider: () async => tempDir,
+      );
+
+      try {
+        await runtime.start();
+        final offer = FileTransferFrame.offer(
+          transferId: 'transfer-1',
+          messageId: 'message-1',
+          fileName: 'hello.txt',
+          fileSize: 3,
+          sentAt: DateTime.now().millisecondsSinceEpoch,
+          seq: 0,
+        );
+        brain.emitFileMessage('bob', offer.encode());
+        await _waitForTransferState(
+          db,
+          'transfer-1',
+          FileTransferState.offered,
+        );
+        await runtime.acceptFileTransfer('transfer-1');
+        await _waitForTransferState(
+          db,
+          'transfer-1',
+          FileTransferState.receiving,
+        );
+
+        transferStore.delayNextLoadById();
+        brain
+          ..emitFileMessage(
+            'bob',
+            FileTransferFrame.chunk(
+              transferId: 'transfer-1',
+              index: 0,
+              offset: 0,
+              byteCount: 3,
+            ).encode(),
+          )
+          ..emitFileMessage('bob', Uint8List.fromList(<int>[1, 2, 3]))
+          ..emitFileMessage(
+            'bob',
+            FileTransferFrame.complete(
+              transferId: 'transfer-1',
+              finalByteCount: 3,
+              sha256:
+                  '039058c6f2c0cb492c533b0a4d14ef77cc0f78abccced5287d84a1a2011cfb81',
+            ).encode(),
+          );
+
+        await _waitForTransferState(
+          db,
+          'transfer-1',
+          FileTransferState.completed,
+        );
+        final transfer = await transferStore.loadById('transfer-1');
+        expect(transfer?.error, isNull);
+        expect(transfer?.bytesTransferred, 3);
+        final receivedFile = File(transfer!.localPath!);
+        expect(await receivedFile.exists(), isTrue);
+        expect(await receivedFile.readAsBytes(), <int>[1, 2, 3]);
+        expect(
+          brain.sentFilePayloads,
+          contains(
+            FileTransferFrame.received(
+              transferId: 'transfer-1',
+              finalByteCount: 3,
+              sha256:
+                  '039058c6f2c0cb492c533b0a4d14ef77cc0f78abccced5287d84a1a2011cfb81',
+            ).encode(),
+          ),
+        );
+      } finally {
+        await runtime.dispose();
+        if (tempDir.existsSync()) {
+          tempDir.deleteSync(recursive: true);
+        }
+      }
+    });
+
+    test(
+      'incoming file packet carries chunk metadata and bytes together',
+      () async {
+        final adapter = NoopSignalingAdapter();
+        await adapter.register('bob', 'bobpw');
+        await adapter.upsertFriendship('alice', 'bob');
+        await db
+            .into(db.friends)
+            .insert(
+              FriendsCompanion.insert(
+                username: 'bob',
+                displayName: 'Bob',
+                state: 'friend',
+                addedAt: 0,
+              ),
+            );
+        final brain = TestSessionManager();
+        await brain.connect('bob');
+        brain.markConnected('bob');
+        final tempDir = Directory.systemTemp.createTempSync(
+          'rain_file_packet_receive_test_',
+        );
+        final transferStore = FileTransferStore(db);
+        final runtime = RainRuntimeController(
+          selfIdentity: alice,
+          adapter: adapter,
+          brain: brain,
+          database: db,
+          friendStore: FriendStore(db),
+          messageStore: MessageStore(db),
+          offlineQueueStore: OfflineQueueStore(db),
+          messageDeliveryService: MessageDeliveryService(
+            messageStore: MessageStore(db),
+            offlineQueueStore: OfflineQueueStore(db),
+          ),
+          fileTransferStore: transferStore,
+          documentsDirectoryProvider: () async => tempDir,
+        );
+
+        try {
+          await runtime.start();
+          brain.emitFileMessage(
+            'bob',
+            FileTransferFrame.offer(
+              transferId: 'packet-transfer',
+              messageId: 'packet-message',
+              fileName: 'packet.bin',
+              fileSize: 4,
+              sentAt: DateTime.now().millisecondsSinceEpoch,
+              seq: 0,
+            ).encode(),
+          );
+          await _waitForTransferState(
+            db,
+            'packet-transfer',
+            FileTransferState.offered,
+          );
+          await runtime.acceptFileTransfer('packet-transfer');
+          await _waitForTransferState(
+            db,
+            'packet-transfer',
+            FileTransferState.receiving,
+          );
+
+          final payload = Uint8List.fromList(<int>[9, 8, 7, 6]);
+          brain
+            ..emitFileMessage(
+              'bob',
+              FileTransferChunkPacket(
+                frame: FileTransferFrame.chunk(
+                  transferId: 'packet-transfer',
+                  index: 0,
+                  offset: 0,
+                  byteCount: payload.lengthInBytes,
+                ),
+                payload: payload,
+              ).encode(),
+            )
+            ..emitFileMessage(
+              'bob',
+              FileTransferFrame.complete(
+                transferId: 'packet-transfer',
+                finalByteCount: 4,
+                sha256:
+                    '63d987d1c6d69751c17297f410f5b3547a65d096a8993b35bcb4f9cad054f176',
+              ).encode(),
+            );
+
+          await _waitForTransferState(
+            db,
+            'packet-transfer',
+            FileTransferState.completed,
+          );
+          final transfer = await transferStore.loadById('packet-transfer');
+          final receivedFile = File(transfer!.localPath!);
+          expect(await receivedFile.readAsBytes(), <int>[9, 8, 7, 6]);
+        } finally {
+          await runtime.dispose();
+          if (tempDir.existsSync()) {
+            tempDir.deleteSync(recursive: true);
+          }
+        }
+      },
+    );
+
+    test('zero-byte incoming files complete without a chunk temp file', () async {
+      final adapter = NoopSignalingAdapter();
+      await adapter.register('bob', 'bobpw');
+      await adapter.upsertFriendship('alice', 'bob');
+      await db
+          .into(db.friends)
+          .insert(
+            FriendsCompanion.insert(
+              username: 'bob',
+              displayName: 'Bob',
+              state: 'friend',
+              addedAt: 0,
+            ),
+          );
+      final brain = TestSessionManager();
+      await brain.connect('bob');
+      brain.markConnected('bob');
+      final tempDir = Directory.systemTemp.createTempSync(
+        'rain_empty_file_receive_test_',
+      );
+      final transferStore = FileTransferStore(db);
+      final runtime = RainRuntimeController(
+        selfIdentity: alice,
+        adapter: adapter,
+        brain: brain,
+        database: db,
+        friendStore: FriendStore(db),
+        messageStore: MessageStore(db),
+        offlineQueueStore: OfflineQueueStore(db),
+        messageDeliveryService: MessageDeliveryService(
+          messageStore: MessageStore(db),
+          offlineQueueStore: OfflineQueueStore(db),
+        ),
+        fileTransferStore: transferStore,
+        documentsDirectoryProvider: () async => tempDir,
+      );
+
+      try {
+        await runtime.start();
+        brain.emitFileMessage(
+          'bob',
+          FileTransferFrame.offer(
+            transferId: 'empty-transfer',
+            messageId: 'empty-message',
+            fileName: 'empty.txt',
+            fileSize: 0,
+            sentAt: DateTime.now().millisecondsSinceEpoch,
+            seq: 0,
+          ).encode(),
+        );
+        await _waitForTransferState(
+          db,
+          'empty-transfer',
+          FileTransferState.offered,
+        );
+        await runtime.acceptFileTransfer('empty-transfer');
+        brain.emitFileMessage(
+          'bob',
+          FileTransferFrame.complete(
+            transferId: 'empty-transfer',
+            finalByteCount: 0,
+            sha256:
+                'e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855',
+          ).encode(),
+        );
+
+        await _waitForTransferState(
+          db,
+          'empty-transfer',
+          FileTransferState.completed,
+        );
+        final transfer = await transferStore.loadById('empty-transfer');
+        final receivedFile = File(transfer!.localPath!);
+        expect(await receivedFile.exists(), isTrue);
+        expect(await receivedFile.length(), 0);
+      } finally {
+        await runtime.dispose();
+        if (tempDir.existsSync()) {
+          tempDir.deleteSync(recursive: true);
+        }
+      }
+    });
+
     test('resendMessage stays queued while disconnected', () async {
       final adapter = NoopSignalingAdapter();
       final brain = TestSessionManager();
@@ -804,7 +1176,7 @@ void main() {
     });
 
     test(
-      'start, presence, and refresh do not open peer links automatically',
+      'start and refresh register accepted friends for passive answering only',
       () async {
         final adapter = NoopSignalingAdapter();
         final brain = TestSessionManager();
@@ -832,11 +1204,170 @@ void main() {
         await runtime.refreshRelationships();
         await runtime.refreshRelationships(onlyUsername: 'bob');
 
-        expect(brain.registeredPeers, isEmpty);
+        expect(brain.registeredPeers, <String>['bob']);
         expect(brain.connectedPeers, isEmpty);
+        final guard = brain.incomingOfferGuards['bob'];
+        expect(guard, isNotNull);
+        var decision = await guard!('bob');
+        expect(decision.allowed, isTrue);
+
+        await runtime.disconnectPeer('bob');
+        await runtime.refreshRelationships(onlyUsername: 'bob');
+        decision = await guard('bob');
+
+        expect(brain.registeredPeers, <String>['bob']);
+        expect(brain.unregisteredPeers, <String>['bob']);
+        expect(decision.allowed, isFalse);
+        expect(decision.reason, contains('Manual disconnect'));
         await runtime.dispose();
       },
     );
+
+    test('passive incoming offer guard rejects blocked friends', () async {
+      final adapter = NoopSignalingAdapter();
+      final brain = TestSessionManager();
+      await adapter.register('bob', 'bobpw');
+      await adapter.upsertFriendship('alice', 'bob');
+      final runtime = RainRuntimeController(
+        selfIdentity: alice,
+        adapter: adapter,
+        brain: brain,
+        database: db,
+        friendStore: FriendStore(db),
+        messageStore: MessageStore(db),
+        offlineQueueStore: OfflineQueueStore(db),
+        messageDeliveryService: MessageDeliveryService(
+          messageStore: MessageStore(db),
+          offlineQueueStore: OfflineQueueStore(db),
+        ),
+        friendRequestRefreshInterval: Duration.zero,
+      );
+
+      await runtime.start();
+      await runtime.refreshRelationships(onlyUsername: 'bob');
+      final guard = brain.incomingOfferGuards['bob'];
+      expect(guard, isNotNull);
+      expect((await guard!('bob')).allowed, isTrue);
+
+      await runtime.blockFriend('bob');
+      final decision = await guard('bob');
+
+      expect(brain.unregisteredPeers, contains('bob'));
+      expect(decision.allowed, isFalse);
+      expect(decision.reason, contains('blocked'));
+      await runtime.dispose();
+    });
+
+    test('passive incoming offer guard rejects removed friends', () async {
+      final adapter = NoopSignalingAdapter();
+      final brain = TestSessionManager();
+      await adapter.register('bob', 'bobpw');
+      await adapter.upsertFriendship('alice', 'bob');
+      final runtime = RainRuntimeController(
+        selfIdentity: alice,
+        adapter: adapter,
+        brain: brain,
+        database: db,
+        friendStore: FriendStore(db),
+        messageStore: MessageStore(db),
+        offlineQueueStore: OfflineQueueStore(db),
+        messageDeliveryService: MessageDeliveryService(
+          messageStore: MessageStore(db),
+          offlineQueueStore: OfflineQueueStore(db),
+        ),
+        friendRequestRefreshInterval: Duration.zero,
+      );
+
+      await runtime.start();
+      await runtime.refreshRelationships(onlyUsername: 'bob');
+      final guard = brain.incomingOfferGuards['bob'];
+      expect(guard, isNotNull);
+      expect((await guard!('bob')).allowed, isTrue);
+
+      await runtime.unfriend('bob');
+      final decision = await guard('bob');
+
+      expect(brain.unregisteredPeers, contains('bob'));
+      expect(decision.allowed, isFalse);
+      expect(decision.reason, contains('no longer in your friends list'));
+      await runtime.dispose();
+    });
+
+    test('passive listener cap limits accepted friend registrations', () async {
+      final adapter = NoopSignalingAdapter();
+      final brain = TestSessionManager();
+      for (final username in <String>['bob', 'cara', 'dan']) {
+        await adapter.register(username, '${username}pw');
+        await adapter.upsertFriendship('alice', username);
+      }
+      final runtime = RainRuntimeController(
+        selfIdentity: alice,
+        adapter: adapter,
+        brain: brain,
+        database: db,
+        friendStore: FriendStore(db),
+        messageStore: MessageStore(db),
+        offlineQueueStore: OfflineQueueStore(db),
+        messageDeliveryService: MessageDeliveryService(
+          messageStore: MessageStore(db),
+          offlineQueueStore: OfflineQueueStore(db),
+        ),
+        friendRequestRefreshInterval: Duration.zero,
+        maxPassivePeerListeners: 2,
+      );
+
+      await runtime.start();
+      await runtime.refreshRelationships();
+
+      final snapshot = runtime.connectionCoordinatorSnapshotFor('bob');
+      expect(snapshot.passiveListenerCount, 2);
+      expect(snapshot.passiveListenerLimit, 2);
+      expect(brain.incomingOfferGuards, hasLength(2));
+      await runtime.dispose();
+    });
+
+    test('failed peer attempts back off before retrying', () async {
+      final adapter = NoopSignalingAdapter();
+      final brain = TestSessionManager();
+      await adapter.register('bob', 'bobpw');
+      await adapter.upsertFriendship('alice', 'bob');
+      final runtime = RainRuntimeController(
+        selfIdentity: alice,
+        adapter: adapter,
+        brain: brain,
+        database: db,
+        friendStore: FriendStore(db),
+        messageStore: MessageStore(db),
+        offlineQueueStore: OfflineQueueStore(db),
+        messageDeliveryService: MessageDeliveryService(
+          messageStore: MessageStore(db),
+          offlineQueueStore: OfflineQueueStore(db),
+        ),
+        friendRequestRefreshInterval: Duration.zero,
+        initialConnectionRetryBackoff: const Duration(seconds: 30),
+        maxConnectionRetryBackoff: const Duration(seconds: 30),
+      );
+
+      await runtime.start();
+      await runtime.connectPeer('bob', interactive: true);
+      brain.markFailed('bob', 'ICE failed');
+      await pumpEventQueue();
+
+      await expectLater(
+        runtime.connectPeer('bob', interactive: true),
+        throwsA(
+          isA<StateError>().having(
+            (StateError error) => error.message,
+            'message',
+            contains('cooling down'),
+          ),
+        ),
+      );
+      final snapshot = runtime.connectionCoordinatorSnapshotFor('bob');
+      expect(snapshot.retryAttempt, 1);
+      expect(snapshot.nextRetryAt, isNotNull);
+      await runtime.dispose();
+    });
 
     test('disconnectPeer unregisters the peer session', () async {
       final adapter = NoopSignalingAdapter();
@@ -1270,6 +1801,28 @@ Future<void> _waitForFriendState(
   fail('Timed out waiting for @$username to become ${expectedState.name}.');
 }
 
+Future<void> _waitForTransferState(
+  RainDatabase db,
+  String transferId,
+  FileTransferState expectedState,
+) async {
+  final deadline = DateTime.now().add(const Duration(seconds: 2));
+  final store = FileTransferStore(db);
+  while (DateTime.now().isBefore(deadline)) {
+    final transfer = await store.loadById(transferId);
+    if (transfer?.state == expectedState) {
+      return;
+    }
+    await Future<void>.delayed(const Duration(milliseconds: 20));
+  }
+
+  final transfer = await store.loadById(transferId);
+  fail(
+    'Timed out waiting for $transferId to become ${expectedState.name}; '
+    'last state was ${transfer?.state.name}.',
+  );
+}
+
 Future<String> _nextString(Stream<String> stream) {
   final completer = Completer<String>();
   late final StreamSubscription<String> subscription;
@@ -1391,11 +1944,31 @@ class FailingFriendshipNoopSignalingAdapter extends NoopSignalingAdapter {
   }
 }
 
+class DelayingFileTransferStore extends FileTransferStore {
+  DelayingFileTransferStore(super.database);
+
+  bool _delayNextLoad = false;
+
+  void delayNextLoadById() {
+    _delayNextLoad = true;
+  }
+
+  @override
+  Future<FileTransferRecord?> loadById(String id) async {
+    if (_delayNextLoad) {
+      _delayNextLoad = false;
+      await Future<void>.delayed(const Duration(milliseconds: 80));
+    }
+    return super.loadById(id);
+  }
+}
+
 class TestSessionManager implements SessionManager {
   final List<String> registeredPeers = <String>[];
   final List<String> connectedPeers = <String>[];
   final List<String> disconnectedPeers = <String>[];
   final List<String> unregisteredPeers = <String>[];
+  final List<String> sentFilePayloads = <String>[];
   final Map<String, Session> _sessions = <String, Session>{};
   final StreamController<Session> _peerConnectedController =
       StreamController<Session>.broadcast();
@@ -1405,6 +1978,11 @@ class TestSessionManager implements SessionManager {
       StreamController<SessionMessage>.broadcast();
   final StreamController<Session> _sessionChangedController =
       StreamController<Session>.broadcast();
+  final StreamController<IncomingOfferRejection>
+  _incomingOfferRejectedController =
+      StreamController<IncomingOfferRejection>.broadcast();
+  final Map<String, IncomingOfferGuard> incomingOfferGuards =
+      <String, IncomingOfferGuard>{};
 
   @override
   Stream<Session> get onPeerConnected => _peerConnectedController.stream;
@@ -1417,6 +1995,10 @@ class TestSessionManager implements SessionManager {
 
   @override
   Stream<Session> get onSessionChanged => _sessionChangedController.stream;
+
+  @override
+  Stream<IncomingOfferRejection> get onIncomingOfferRejected =>
+      _incomingOfferRejectedController.stream;
 
   @override
   Future<Session> connect(String peerId) async {
@@ -1440,22 +2022,56 @@ class TestSessionManager implements SessionManager {
   }
 
   @override
+  Future<void> recoverConnection(
+    String peerId, {
+    String reason = 'Network changed. Restarting peer connection.',
+  }) async {}
+
+  @override
+  Future<void> recoverConnections({
+    String reason = 'Network changed. Restarting peer connections.',
+  }) async {}
+
+  @override
   Session? getSession(String peerId) => _sessions[peerId];
 
   @override
   List<Session> getSessions() => _sessions.values.toList(growable: false);
 
   @override
-  Future<void> registerPeer(String peerId) async {
+  Future<void> registerPeer(
+    String peerId, {
+    IncomingOfferGuard? incomingOfferGuard,
+  }) async {
     registeredPeers.add(peerId);
+    if (incomingOfferGuard != null) {
+      incomingOfferGuards[peerId] = incomingOfferGuard;
+    }
   }
 
   @override
   void sendControl(String peerId, String data) {}
 
   @override
+  void send(String peerId, SessionChannel channel, Object data) {
+    if (channel == SessionChannel.file && data is String) {
+      sentFilePayloads.add(data);
+    }
+  }
+
+  @override
+  Future<void> openChannel(String peerId, SessionChannel channel) async {}
+
+  @override
+  Future<int> bufferedAmount(String peerId, SessionChannel channel) async => 0;
+
+  @override
+  bool isChannelOpen(String peerId, SessionChannel channel) => true;
+
+  @override
   Future<void> unregisterPeer(String peerId) async {
     unregisteredPeers.add(peerId);
+    incomingOfferGuards.remove(peerId);
     _sessions.remove(peerId);
   }
 
@@ -1486,5 +2102,16 @@ class TestSessionManager implements SessionManager {
     );
     _sessions[peerId] = session;
     _sessionChangedController.add(session);
+  }
+
+  void emitFileMessage(String peerId, Object data) {
+    _peerMessageController.add(
+      SessionMessage(
+        channel: SessionChannel.file,
+        data: data,
+        receivedAt: DateTime.now(),
+        peerId: peerId,
+      ),
+    );
   }
 }

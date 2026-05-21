@@ -1,4 +1,5 @@
 import 'dart:async';
+import 'dart:io';
 
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
@@ -6,12 +7,26 @@ import 'package:protocol_brain/protocol_brain.dart';
 import 'package:rain_core/rain_core.dart';
 
 import 'package:rain/application/bootstrap/app_bootstrap.dart';
+import 'package:rain/application/connection_command/connection_command_models.dart';
+import 'package:rain/application/connection_command/connection_command_orchestrator.dart';
+import 'package:rain/application/connection_command/connection_failure_messages.dart';
+import 'package:rain/application/connection_command/runtime_connection_command_transport.dart';
+import 'package:rain/application/connection_command/session_manager_connection_transport.dart';
+import 'package:rain/application/transport/fallback_session_manager.dart';
+import 'package:rain/application/transport/session_manager_composer.dart';
+import 'package:rain/application/transport/turn_relay_probe.dart';
+import 'package:rain/infrastructure/iroh/iroh_bridge_client.dart';
+import 'package:rain/infrastructure/iroh/iroh_session_manager.dart';
 import 'package:rain/infrastructure/services/app_settings_store.dart';
 import 'package:rain/infrastructure/services/background_services.dart';
 import 'package:rain/infrastructure/services/force_update_service.dart';
+import 'package:rain/infrastructure/services/network_status_service.dart';
+import 'package:rain/infrastructure/services/received_file_export_service.dart';
 import 'package:rain/application/runtime/rain_runtime_controller.dart';
 import 'package:rain/infrastructure/services/sound_effects_service.dart';
+import 'package:rain/infrastructure/services/turn_credential_service.dart';
 import 'app_state.dart';
+import 'file_transfer_view.dart';
 
 enum AppThemeMode { dark, light, system }
 
@@ -83,6 +98,21 @@ final forceUpdateServiceProvider = Provider(
   (Ref ref) => ref.watch(appBootstrapProvider).forceUpdateService,
 );
 
+final networkStatusServiceProvider = Provider((Ref ref) {
+  final bootstrap = ref.watch(appBootstrapProvider);
+  final firebaseDatabase = bootstrap.firebaseDatabase;
+  return NetworkStatusService(
+    connectivityProbe: ConnectivityPlusProbe(),
+    backendProbe: firebaseDatabase == null
+        ? const AlwaysConnectedBackendProbe()
+        : FirebaseBackendConnectivityProbe(firebaseDatabase),
+  );
+});
+
+final networkStatusProvider = StreamProvider<NetworkStatusState>((Ref ref) {
+  return ref.watch(networkStatusServiceProvider).watch();
+});
+
 final soundEffectsProvider = Provider<SoundEffectsService>((Ref ref) {
   final service = SoundEffectsService();
   ref.onDispose(() => unawaited(service.dispose()));
@@ -90,6 +120,13 @@ final soundEffectsProvider = Provider<SoundEffectsService>((Ref ref) {
 });
 
 final appSettingsStoreProvider = Provider((Ref ref) => AppSettingsStore());
+
+void _assertNetworkReady(Ref ref) {
+  final status = ref.read(networkStatusProvider).value;
+  if (status != null && status.blocksNetworkActions) {
+    throw StateError(status.actionErrorMessage);
+  }
+}
 
 final identityRepositoryProvider = Provider(
   (Ref ref) => IdentityRepository(ref.watch(databaseProvider)),
@@ -107,9 +144,38 @@ final offlineQueueStoreProvider = Provider(
   (Ref ref) => OfflineQueueStore(ref.watch(databaseProvider)),
 );
 
+final fileTransferStoreProvider = Provider(
+  (Ref ref) => FileTransferStore(ref.watch(databaseProvider)),
+);
+
+final receivedFileExportServiceProvider = Provider(
+  (Ref ref) => ReceivedFileExportService(),
+);
+
 final connectionMemoryStoreProvider = Provider(
   (Ref ref) => DriftConnectionMemoryStore(ref.watch(databaseProvider)),
 );
+
+final turnCredentialServiceProvider = Provider<TurnCredentialService>((
+  Ref ref,
+) {
+  final environment = ref.watch(appEnvironmentProvider);
+  final service = TurnCredentialService(
+    baseIceServers: environment.iceServers,
+    brokerUrl: environment.turnBrokerUrl,
+    enableExperimentalRelay: environment.enableTier3Turn,
+  );
+  ref.onDispose(service.dispose);
+  return service;
+});
+
+final turnRelayProbeProvider = Provider<TurnRelayProbe>((Ref ref) {
+  return TurnRelayProbe(
+    iceServersForAttempt: ref
+        .watch(turnCredentialServiceProvider)
+        .iceServersForAttempt,
+  );
+});
 
 final messageDeliveryServiceProvider = Provider((Ref ref) {
   final service = MessageDeliveryService(
@@ -128,6 +194,10 @@ final forceUpdateProvider =
 class ForceUpdateController extends AsyncNotifier<ForceUpdateResult> {
   @override
   Future<ForceUpdateResult> build() {
+    final networkStatus = ref.watch(networkStatusProvider).value;
+    if (networkStatus != null && networkStatus.blocksNetworkActions) {
+      return ref.watch(forceUpdateServiceProvider).checkUnavailable();
+    }
     return ref.watch(forceUpdateServiceProvider).check();
   }
 }
@@ -147,13 +217,13 @@ class BackgroundServiceController extends AsyncNotifier<bool> {
 
   Future<void> setEnabled(bool enabled) async {
     final previous =
-        state.valueOrNull ?? AppSettingsStore.defaultBackgroundServiceEnabled;
+        state.value ?? AppSettingsStore.defaultBackgroundServiceEnabled;
     state = const AsyncValue.data(false);
     try {
       await ref
           .read(appSettingsStoreProvider)
           .setBackgroundServiceEnabled(false);
-      final runtime = ref.read(runtimeControllerProvider).valueOrNull;
+      final runtime = ref.read(runtimeControllerProvider).value;
       if (runtime == null) {
         await BackgroundServices.instance.stop();
         return;
@@ -193,6 +263,7 @@ class IdentityController extends AsyncNotifier<RainIdentity?> {
     required String password,
     required RainGender gender,
   }) async {
+    _assertNetworkReady(ref);
     final adapter = ref.read(adapterProvider);
     await adapter.register(username, password);
     final now = DateTime.now().millisecondsSinceEpoch;
@@ -210,6 +281,7 @@ class IdentityController extends AsyncNotifier<RainIdentity?> {
     required String username,
     required String password,
   }) async {
+    _assertNetworkReady(ref);
     final adapter = ref.read(adapterProvider);
     await adapter.login(username, password);
     final existing = await adapter.fetchIdentity(username);
@@ -227,7 +299,8 @@ class IdentityController extends AsyncNotifier<RainIdentity?> {
   }
 
   Future<void> updateDisplayName(String displayName) async {
-    final identity = state.valueOrNull;
+    _assertNetworkReady(ref);
+    final identity = state.value;
     if (identity == null) {
       return;
     }
@@ -235,7 +308,8 @@ class IdentityController extends AsyncNotifier<RainIdentity?> {
   }
 
   Future<void> updateGender(RainGender gender) async {
-    final identity = state.valueOrNull;
+    _assertNetworkReady(ref);
+    final identity = state.value;
     if (identity == null) {
       return;
     }
@@ -290,35 +364,42 @@ class FriendsController extends AsyncNotifier<List<FriendRecord>> {
   }
 
   Future<void> accept(String username) async {
+    _assertNetworkReady(ref);
     await _runtime().acceptFriend(username);
   }
 
   Future<void> reject(String username) async {
+    _assertNetworkReady(ref);
     await _runtime().rejectFriend(username);
   }
 
   Future<void> unfriend(String username) async {
+    _assertNetworkReady(ref);
     await _runtime().unfriend(username);
   }
 
   Future<void> block(String username) async {
+    _assertNetworkReady(ref);
     await _runtime().blockFriend(username);
   }
 
   Future<void> unblock(String username) async {
+    _assertNetworkReady(ref);
     await _runtime().unblockFriend(username);
   }
 
   Future<void> refresh() async {
+    _assertNetworkReady(ref);
     await _runtime().refreshRelationships();
   }
 
   Future<void> refreshPeer(String username) async {
+    _assertNetworkReady(ref);
     await _runtime().refreshPeer(username);
   }
 
   RainRuntimeController _runtime() {
-    final runtime = ref.read(runtimeControllerProvider).valueOrNull;
+    final runtime = ref.read(runtimeControllerProvider).value;
     if (runtime == null) {
       throw StateError('Rain is still starting. Try again in a moment.');
     }
@@ -333,19 +414,19 @@ final messagesProvider =
       String
     >(MessagesController.new);
 
-class MessagesController
-    extends FamilyAsyncNotifier<List<StoredMessage>, String> {
-  late String _peerId;
+class MessagesController extends AsyncNotifier<List<StoredMessage>> {
+  MessagesController(this._peerId);
+
+  final String _peerId;
   StreamSubscription<List<StoredMessage>>? _subscription;
 
   @override
-  Future<List<StoredMessage>> build(String peerId) {
-    _peerId = peerId;
+  Future<List<StoredMessage>> build() {
     final completer = Completer<List<StoredMessage>>();
     var completed = false;
     _subscription = ref
         .watch(messageStoreProvider)
-        .watchConversation(peerId)
+        .watchConversation(_peerId)
         .listen(
           (List<StoredMessage> messages) {
             state = AsyncValue.data(messages);
@@ -371,15 +452,35 @@ class MessagesController
   }
 
   Future<void> resend(String messageId) async {
+    _assertNetworkReady(ref);
     await _runtime().resendMessage(messageId);
   }
 
   Future<void> send(String content) async {
+    _assertNetworkReady(ref);
     await _runtime().sendMessage(_peerId, content);
   }
 
+  Future<void> sendFile({
+    required String fileName,
+    required int fileSize,
+    required Stream<List<int>> Function() openRead,
+    String? localPath,
+    String? mimeType,
+  }) async {
+    _assertNetworkReady(ref);
+    await _runtime().sendFile(
+      peerId: _peerId,
+      fileName: fileName,
+      fileSize: fileSize,
+      openRead: openRead,
+      localPath: localPath,
+      mimeType: mimeType,
+    );
+  }
+
   RainRuntimeController _runtime() {
-    final runtime = ref.read(runtimeControllerProvider).valueOrNull;
+    final runtime = ref.read(runtimeControllerProvider).value;
     if (runtime == null) {
       throw StateError('Rain is still starting. Try again in a moment.');
     }
@@ -387,20 +488,182 @@ class MessagesController
   }
 }
 
+final fileTransfersProvider =
+    AsyncNotifierProvider.family<
+      FileTransfersController,
+      List<FileTransferRecord>,
+      String
+    >(FileTransfersController.new);
+
+class FileTransfersController extends AsyncNotifier<List<FileTransferRecord>> {
+  FileTransfersController(this._peerId);
+
+  final String _peerId;
+  StreamSubscription<List<FileTransferRecord>>? _subscription;
+
+  @override
+  Future<List<FileTransferRecord>> build() {
+    final completer = Completer<List<FileTransferRecord>>();
+    var completed = false;
+    _subscription = ref
+        .watch(fileTransferStoreProvider)
+        .watchPeerTransfers(_peerId)
+        .listen(
+          (List<FileTransferRecord> transfers) {
+            state = AsyncValue.data(transfers);
+            if (!completed) {
+              completed = true;
+              completer.complete(transfers);
+            }
+          },
+          onError: (Object error, StackTrace stackTrace) {
+            state = AsyncValue.error(error, stackTrace);
+            if (!completed) {
+              completed = true;
+              completer.completeError(error, stackTrace);
+            }
+          },
+        );
+    ref.onDispose(() => unawaited(_subscription?.cancel()));
+    return completer.future;
+  }
+
+  Future<void> accept(String transferId) async {
+    _assertNetworkReady(ref);
+    await _runtime().acceptFileTransfer(transferId);
+  }
+
+  Future<void> reject(String transferId) async {
+    _assertNetworkReady(ref);
+    await _runtime().rejectFileTransfer(transferId);
+  }
+
+  Future<void> cancel(String transferId) async {
+    _assertNetworkReady(ref);
+    await _runtime().cancelFileTransfer(transferId);
+  }
+
+  Future<void> retry(FileTransferRecord transfer) async {
+    _assertNetworkReady(ref);
+    final localPath = transfer.localPath;
+    if (transfer.direction != FileTransferDirection.outgoing ||
+        localPath == null ||
+        localPath.isEmpty) {
+      throw StateError('Original file is no longer available.');
+    }
+    final file = File(localPath);
+    if (!await file.exists()) {
+      throw StateError('Original file is no longer available.');
+    }
+    await _runtime().sendFile(
+      peerId: _peerId,
+      fileName: transfer.fileName,
+      fileSize: await file.length(),
+      openRead: file.openRead,
+      localPath: localPath,
+      mimeType: transfer.mimeType,
+    );
+  }
+
+  RainRuntimeController _runtime() {
+    final runtime = ref.read(runtimeControllerProvider).value;
+    if (runtime == null) {
+      throw StateError('Rain is still starting. Try again in a moment.');
+    }
+    return runtime;
+  }
+}
+
+final fileTransferViewsProvider =
+    NotifierProvider.family<
+      FileTransferViewsController,
+      AsyncValue<List<FileTransferView>>,
+      String
+    >(FileTransferViewsController.new);
+
+class FileTransferViewsController
+    extends Notifier<AsyncValue<List<FileTransferView>>> {
+  FileTransferViewsController(this._peerId);
+
+  final String _peerId;
+  final FileTransferSpeedTracker _speedTracker = FileTransferSpeedTracker();
+
+  @override
+  AsyncValue<List<FileTransferView>> build() {
+    final transfers = ref.watch(fileTransfersProvider(_peerId));
+    return transfers.whenData(_speedTracker.apply);
+  }
+}
+
+final irohBridgeClientProvider = Provider<IrohBridgeClient?>((Ref ref) {
+  final environment = ref.watch(appEnvironmentProvider);
+  if (!environment.enableIrohFallback || environment.shouldUseFallbackAdapter) {
+    return null;
+  }
+  return IrohBridgeClient(GeneratedIrohNativeApi());
+});
+
+final irohSessionManagerProvider = Provider<SessionManager?>((Ref ref) {
+  final identity = ref.watch(identityProvider).value;
+  final environment = ref.watch(appEnvironmentProvider);
+  final bridge = ref.watch(irohBridgeClientProvider);
+
+  if (!environment.enableIrohFallback ||
+      identity == null ||
+      environment.shouldUseFallbackAdapter ||
+      bridge == null) {
+    return null;
+  }
+
+  final manager = IrohSessionManager(
+    selfUsername: identity.username,
+    adapter: ref.watch(adapterProvider),
+    bridge: bridge,
+    alpn: environment.irohAlpn,
+    connectTimeout: environment.irohConnectTimeout,
+  );
+  ref.onDispose(() => unawaited(manager.dispose()));
+  return manager;
+});
+
 final brainProvider = Provider<SessionManager?>((Ref ref) {
-  final identity = ref.watch(identityProvider).valueOrNull;
+  final identity = ref.watch(identityProvider).value;
   final environment = ref.watch(appEnvironmentProvider);
 
   if (identity == null || environment.shouldUseFallbackAdapter) {
     return null;
   }
 
-  final brain = createDefaultProtocolBrain(
+  final webRtcBrain = createDefaultProtocolBrain(
     selfUsername: identity.username,
     adapter: ref.watch(adapterProvider),
     iceServers: environment.iceServers,
+    enableExperimentalRelay: environment.enableTier3Turn,
+    iceAttemptServersProvider: (IceAttemptDescriptor attempt) {
+      return ref
+          .watch(turnCredentialServiceProvider)
+          .iceServersForAttempt(attempt);
+    },
+    iceAttemptResultRecorder: (IceAttemptResult result) {
+      ref.watch(turnCredentialServiceProvider).recordAttemptResult(result);
+    },
+    iceServersProvider: (PeerIceTransportPolicy policy) {
+      return ref
+          .watch(turnCredentialServiceProvider)
+          .iceServers(requireTurn: policy == PeerIceTransportPolicy.relayOnly);
+    },
     connectionMemoryStore: ref.watch(connectionMemoryStoreProvider),
   );
+
+  final brain = composeSessionManager(
+    webRtc: webRtcBrain,
+    iroh: ref.watch(irohSessionManagerProvider),
+    enableIrohFallback: environment.enableIrohFallback,
+    connectTimeout: environment.irohConnectTimeout,
+  );
+  if (brain is FallbackSessionManager) {
+    ref.onDispose(() => unawaited(brain.dispose()));
+  }
 
   return brain;
 });
@@ -411,11 +674,42 @@ final runtimeControllerProvider =
     );
 
 class RuntimeController extends AsyncNotifier<RainRuntimeController?> {
+  NetworkStatusKind? _lastNetworkKind;
+
   @override
   Future<RainRuntimeController?> build() async {
-    final identity = ref.watch(identityProvider).valueOrNull;
+    final identity = ref.watch(identityProvider).value;
     if (identity == null) {
       return null;
+    }
+    final current = state.value;
+    final networkStatus =
+        ref.watch(networkStatusProvider).value ??
+        const NetworkStatusState.checking();
+    final previousNetworkKind = _lastNetworkKind;
+    _lastNetworkKind = networkStatus.kind;
+    if (networkStatus.blocksNetworkActions) {
+      if (current != null) {
+        await current.handleNetworkLost(
+          'Internet connection lost. Transfer canceled.',
+        );
+        await current.dispose();
+      }
+      return null;
+    }
+    if (networkStatus.kind == NetworkStatusKind.checking) {
+      return current?.selfIdentity.username == identity.username
+          ? current
+          : null;
+    }
+    if (current != null && current.selfIdentity.username == identity.username) {
+      if (previousNetworkKind != null &&
+          previousNetworkKind != networkStatus.kind) {
+        await current.handleNetworkAvailable(
+          'Network changed. Restarting peer connection paths.',
+        );
+      }
+      return current;
     }
     final environment = ref.watch(appEnvironmentProvider);
     await ref.read(backgroundServiceProvider.future);
@@ -428,6 +722,7 @@ class RuntimeController extends AsyncNotifier<RainRuntimeController?> {
       messageStore: ref.watch(messageStoreProvider),
       offlineQueueStore: ref.watch(offlineQueueStoreProvider),
       messageDeliveryService: ref.watch(messageDeliveryServiceProvider),
+      fileTransferStore: ref.watch(fileTransferStoreProvider),
       heartbeatInterval: environment.heartbeatInterval,
     );
 
@@ -445,7 +740,7 @@ class RuntimeController extends AsyncNotifier<RainRuntimeController?> {
   }
 
   Future<void> logOut() async {
-    final controller = state.valueOrNull;
+    final controller = state.value;
     if (controller == null) {
       return;
     }
@@ -453,6 +748,7 @@ class RuntimeController extends AsyncNotifier<RainRuntimeController?> {
     state = const AsyncValue.data(null);
     ref.invalidate(identityProvider);
     ref.invalidate(friendsProvider);
+    ref.invalidate(fileTransfersProvider);
     ref.invalidate(connectionsProvider);
     ref.invalidate(recentSearchesProvider);
   }
@@ -463,9 +759,60 @@ final connectionsProvider =
       ConnectionsController.new,
     );
 
+final connectionCommandOrchestratorProvider =
+    Provider<ConnectionCommandOrchestrator?>((Ref ref) {
+      final runtime = ref.watch(runtimeControllerProvider).value;
+      final brain = runtime?.brain;
+      if (runtime == null || brain == null) {
+        return null;
+      }
+      final transport = RuntimeConnectionCommandTransport(
+        runtime: runtime,
+        delegate: SessionManagerConnectionTransport(webRtc: brain),
+      );
+      final orchestrator = ConnectionCommandOrchestrator(transport: transport);
+      ref.onDispose(orchestrator.dispose);
+      return orchestrator;
+    });
+
+final connectionTimelineProvider =
+    StreamProvider.family<ConnectionTimeline?, String>((
+      Ref ref,
+      String peerId,
+    ) async* {
+      final orchestrator = ref.watch(connectionCommandOrchestratorProvider);
+      if (orchestrator == null) {
+        yield null;
+        return;
+      }
+      final normalizedPeerId = peerId.trim().toLowerCase();
+      yield orchestrator.currentTimeline(normalizedPeerId);
+      yield* orchestrator.timelineStream(normalizedPeerId);
+    });
+
+final connectionFallbackRequestProvider =
+    StreamProvider.family<ConnectionFallbackRequest, String>((
+      Ref ref,
+      String peerId,
+    ) async* {
+      final orchestrator = ref.watch(connectionCommandOrchestratorProvider);
+      if (orchestrator == null) {
+        return;
+      }
+      final normalizedPeerId = peerId.trim().toLowerCase();
+      await for (final request in orchestrator.fallbackRequests) {
+        if (request.peerId.trim().toLowerCase() == normalizedPeerId) {
+          yield request;
+        }
+      }
+    });
+
 class ConnectionsController extends Notifier<ConnectionsState> {
   final List<StreamSubscription<dynamic>> _brainSubscriptions =
       <StreamSubscription<dynamic>>[];
+  final Map<String, StreamSubscription<ConnectionTimeline>>
+  _commandTimelineSubscriptions =
+      <String, StreamSubscription<ConnectionTimeline>>{};
   RainRuntimeController? _runtime;
 
   @override
@@ -474,26 +821,35 @@ class ConnectionsController extends Notifier<ConnectionsState> {
       _,
       AsyncValue<RainRuntimeController?> next,
     ) {
-      unawaited(_replaceRuntime(next.valueOrNull));
+      unawaited(_replaceRuntime(next.value));
     });
     scheduleMicrotask(() {
-      unawaited(
-        _replaceRuntime(ref.read(runtimeControllerProvider).valueOrNull),
-      );
+      unawaited(_replaceRuntime(ref.read(runtimeControllerProvider).value));
     });
     ref.onDispose(() {
       for (final subscription in _brainSubscriptions) {
         unawaited(subscription.cancel());
       }
       _brainSubscriptions.clear();
+      for (final subscription in _commandTimelineSubscriptions.values) {
+        unawaited(subscription.cancel());
+      }
+      _commandTimelineSubscriptions.clear();
     });
     return const ConnectionsState();
   }
 
-  Future<void> connect(String peerId, {bool waitForConnected = false}) async {
-    final runtime = _requireRuntime();
+  Future<void> connect(
+    String peerId, {
+    bool waitForConnected = false,
+    ConnectionPolicy? policy,
+  }) async {
+    _assertNetworkReady(ref);
+    final normalizedPeerId = peerId.trim().toLowerCase();
+    final orchestrator = _requireCommandOrchestrator();
+    _subscribeCommandTimeline(normalizedPeerId, orchestrator);
     _upsert(
-      peerId,
+      normalizedPeerId,
       (view) => view.copyWith(
         manualIntent: ManualConnectionIntent.connecting,
         actionBusy: true,
@@ -502,15 +858,10 @@ class ConnectionsController extends Notifier<ConnectionsState> {
       ),
     );
     try {
-      await runtime.connectPeer(
-        peerId,
-        interactive: true,
-        waitForConnected: waitForConnected,
-      );
-      syncPeer(peerId);
+      await orchestrator.connect(normalizedPeerId, policy: policy);
     } catch (error) {
       _upsert(
-        peerId,
+        normalizedPeerId,
         (view) => view.copyWith(
           manualIntent: ManualConnectionIntent.failed,
           actionBusy: false,
@@ -522,8 +873,39 @@ class ConnectionsController extends Notifier<ConnectionsState> {
     }
   }
 
+  Future<void> cancel(String peerId) async {
+    final normalizedPeerId = peerId.trim().toLowerCase();
+    final orchestrator = _requireCommandOrchestrator();
+    await orchestrator.cancel(normalizedPeerId);
+    _upsert(
+      normalizedPeerId,
+      (view) => view.copyWith(
+        manualIntent: ManualConnectionIntent.idle,
+        actionBusy: false,
+        disconnecting: false,
+        localDetail: 'Connection canceled.',
+        error: null,
+        updatedAt: DateTime.now().millisecondsSinceEpoch,
+      ),
+    );
+  }
+
+  Future<void> resolveFallback(
+    String peerId,
+    ConnectionFallbackChoice choice, {
+    bool rememberForSession = false,
+  }) async {
+    final normalizedPeerId = peerId.trim().toLowerCase();
+    await _requireCommandOrchestrator().resolveFallback(
+      peerId: normalizedPeerId,
+      choice: choice,
+      rememberForSession: rememberForSession,
+    );
+  }
+
   Future<void> disconnect(String peerId) async {
     final runtime = _requireRuntime();
+    await ref.read(connectionCommandOrchestratorProvider)?.disconnect(peerId);
     _upsert(
       peerId,
       (view) => view.copyWith(
@@ -575,11 +957,69 @@ class ConnectionsController extends Notifier<ConnectionsState> {
   }
 
   RainRuntimeController _requireRuntime() {
-    final runtime = _runtime ?? ref.read(runtimeControllerProvider).valueOrNull;
+    final runtime = _runtime ?? ref.read(runtimeControllerProvider).value;
     if (runtime == null) {
       throw StateError('Peer connection is unavailable right now.');
     }
     return runtime;
+  }
+
+  ConnectionCommandOrchestrator _requireCommandOrchestrator() {
+    final orchestrator = ref.read(connectionCommandOrchestratorProvider);
+    if (orchestrator == null) {
+      throw StateError('Peer connection is unavailable right now.');
+    }
+    return orchestrator;
+  }
+
+  void _subscribeCommandTimeline(
+    String peerId,
+    ConnectionCommandOrchestrator orchestrator,
+  ) {
+    final normalizedPeerId = peerId.trim().toLowerCase();
+    if (_commandTimelineSubscriptions.containsKey(normalizedPeerId)) {
+      return;
+    }
+    _commandTimelineSubscriptions[normalizedPeerId] = orchestrator
+        .timelineStream(normalizedPeerId)
+        .listen(_handleCommandTimeline);
+  }
+
+  void _handleCommandTimeline(ConnectionTimeline timeline) {
+    if (timeline.steps.isEmpty) {
+      return;
+    }
+    final step = timeline.steps.last;
+    final failureCode = step.failureCode;
+    _upsert(
+      timeline.peerId,
+      (view) => view.copyWith(
+        manualIntent: _intentForTimeline(timeline, fallback: view.manualIntent),
+        actionBusy: timeline.canCancel,
+        disconnecting: false,
+        localDetail: step.userMessage,
+        error: failureCode == null
+            ? null
+            : StateError(ConnectionFailureMessages.userMessage(failureCode)),
+        updatedAt: step.endedAt ?? step.startedAt,
+      ),
+    );
+  }
+
+  ManualConnectionIntent _intentForTimeline(
+    ConnectionTimeline timeline, {
+    required ManualConnectionIntent fallback,
+  }) {
+    if (timeline.canCancel) {
+      return ManualConnectionIntent.connecting;
+    }
+    final step = timeline.steps.isEmpty ? null : timeline.steps.last;
+    return switch (step?.state) {
+      ConnectionStepState.succeeded => ManualConnectionIntent.linked,
+      ConnectionStepState.failed => ManualConnectionIntent.failed,
+      ConnectionStepState.canceled => ManualConnectionIntent.idle,
+      _ => fallback,
+    };
   }
 
   Future<void> _replaceRuntime(RainRuntimeController? runtime) async {
@@ -599,6 +1039,9 @@ class ConnectionsController extends Notifier<ConnectionsState> {
     _brainSubscriptions.add(brain.onSessionChanged.listen(_handleSession));
     _brainSubscriptions.add(brain.onPeerConnected.listen(_handleSession));
     _brainSubscriptions.add(
+      brain.onIncomingOfferRejected.listen(_handleIncomingOfferRejected),
+    );
+    _brainSubscriptions.add(
       brain.onPeerDisconnected.listen((String peerId) {
         _upsert(
           peerId,
@@ -615,6 +1058,17 @@ class ConnectionsController extends Notifier<ConnectionsState> {
           ),
         );
       }),
+    );
+  }
+
+  void _handleIncomingOfferRejected(IncomingOfferRejection rejection) {
+    _upsert(
+      rejection.peerId,
+      (view) => view.copyWith(
+        error: rejection.reason,
+        localDetail: rejection.reason,
+        updatedAt: rejection.rejectedAt.millisecondsSinceEpoch,
+      ),
     );
   }
 
@@ -676,6 +1130,12 @@ class UserSearchController extends AsyncNotifier<UserSearchState> {
       state = AsyncValue.data(UserSearchState(query: normalized));
       return;
     }
+    try {
+      _assertNetworkReady(ref);
+    } catch (error, stackTrace) {
+      state = AsyncValue.error(error, stackTrace);
+      return;
+    }
 
     state = const AsyncValue.loading();
     final next = await AsyncValue.guard(() async {
@@ -691,7 +1151,7 @@ class UserSearchController extends AsyncNotifier<UserSearchState> {
   }
 
   Future<void> refreshCurrent() async {
-    final currentQuery = state.valueOrNull?.query.trim() ?? '';
+    final currentQuery = state.value?.query.trim() ?? '';
     if (currentQuery.length < 2) {
       return;
     }
@@ -699,18 +1159,19 @@ class UserSearchController extends AsyncNotifier<UserSearchState> {
   }
 
   Future<FriendRequestResult?> sendFriendRequest(String username) async {
-    final previous = state.valueOrNull ?? const UserSearchState();
+    _assertNetworkReady(ref);
+    final previous = state.value ?? const UserSearchState();
     state = AsyncValue.data(previous.copyWith(sendingTo: username));
     try {
       return await _runtime().sendFriendRequest(username);
     } finally {
-      final current = state.valueOrNull ?? previous;
+      final current = state.value ?? previous;
       state = AsyncValue.data(current.copyWith(sendingTo: null));
     }
   }
 
   RainRuntimeController _runtime() {
-    final runtime = ref.read(runtimeControllerProvider).valueOrNull;
+    final runtime = ref.read(runtimeControllerProvider).value;
     if (runtime == null) {
       throw StateError('Rain is still starting. Try again in a moment.');
     }

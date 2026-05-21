@@ -4,7 +4,7 @@ import 'package:flutter/foundation.dart';
 
 import 'runtime_environment.dart';
 
-enum RainBackend { noop, firebase, supabase }
+enum RainBackend { noop, firebase }
 
 class AppEnvironment {
   const AppEnvironment({
@@ -25,9 +25,15 @@ class AppEnvironment {
     required this.firebaseStorageBucket,
     required this.firebaseAuthDomain,
     required this.firebaseMeasurementId,
-    required this.supabaseUrl,
-    required this.supabaseAnonKey,
     required this.signalingEncryptionKey,
+    required this.turnBrokerUrl,
+    required this.iceStrategy,
+    required this.enableTier3Turn,
+    required this.enableRelayProbe,
+    required this.turnProviderOrder,
+    required this.enableIrohFallback,
+    required this.irohConnectTimeoutSeconds,
+    required this.irohAlpn,
   });
 
   final RainBackend backend;
@@ -47,9 +53,15 @@ class AppEnvironment {
   final String firebaseStorageBucket;
   final String firebaseAuthDomain;
   final String firebaseMeasurementId;
-  final String supabaseUrl;
-  final String supabaseAnonKey;
   final String signalingEncryptionKey;
+  final String turnBrokerUrl;
+  final String iceStrategy;
+  final bool enableTier3Turn;
+  final bool enableRelayProbe;
+  final String turnProviderOrder;
+  final bool enableIrohFallback;
+  final int irohConnectTimeoutSeconds;
+  final String irohAlpn;
 
   factory AppEnvironment.fromEnvironment({
     Map<String, String>? runtimeEnvironment,
@@ -114,7 +126,6 @@ class AppEnvironment {
       defaultValue: 'firebase',
     )) {
       'firebase' => RainBackend.firebase,
-      'supabase' => RainBackend.supabase,
       _ => RainBackend.noop,
     };
 
@@ -209,20 +220,61 @@ class AppEnvironment {
           'FIREBASE_MEASUREMENT_ID',
         ),
       ),
-      supabaseUrl: readString(
-        'SUPABASE_URL',
-        compileTimeValue: const String.fromEnvironment('SUPABASE_URL'),
-      ),
-      supabaseAnonKey: readString(
-        'SUPABASE_ANON_KEY',
-        compileTimeValue: const String.fromEnvironment('SUPABASE_ANON_KEY'),
-      ),
       signalingEncryptionKey: readString(
         'RAIN_SIGNALING_ENCRYPTION_KEY',
         compileTimeValue: const String.fromEnvironment(
           'RAIN_SIGNALING_ENCRYPTION_KEY',
         ),
         defaultValue: demoSignalingEncryptionKey,
+      ),
+      turnBrokerUrl: readString(
+        'RAIN_TURN_BROKER_URL',
+        compileTimeValue: const String.fromEnvironment('RAIN_TURN_BROKER_URL'),
+      ),
+      iceStrategy: readString(
+        'RAIN_ICE_STRATEGY',
+        compileTimeValue: const String.fromEnvironment('RAIN_ICE_STRATEGY'),
+        defaultValue: 'staged',
+      ),
+      enableTier3Turn: readBool(
+        'RAIN_ENABLE_TIER3_TURN',
+        compileTimeValue: const String.fromEnvironment(
+          'RAIN_ENABLE_TIER3_TURN',
+        ),
+        defaultValue: false,
+      ),
+      enableRelayProbe: readBool(
+        'RAIN_ENABLE_RELAY_PROBE',
+        compileTimeValue: const String.fromEnvironment(
+          'RAIN_ENABLE_RELAY_PROBE',
+        ),
+        defaultValue: false,
+      ),
+      turnProviderOrder: readString(
+        'RAIN_TURN_PROVIDER_ORDER',
+        compileTimeValue: const String.fromEnvironment(
+          'RAIN_TURN_PROVIDER_ORDER',
+        ),
+        defaultValue: 'cloudflare,selfHosted,openRelay,xirsys,freestun,numb',
+      ),
+      enableIrohFallback: readBool(
+        'RAIN_ENABLE_IROH_FALLBACK',
+        compileTimeValue: const String.fromEnvironment(
+          'RAIN_ENABLE_IROH_FALLBACK',
+        ),
+        defaultValue: false,
+      ),
+      irohConnectTimeoutSeconds: readInt(
+        'RAIN_IROH_CONNECT_TIMEOUT_SECONDS',
+        compileTimeValue: const String.fromEnvironment(
+          'RAIN_IROH_CONNECT_TIMEOUT_SECONDS',
+        ),
+        defaultValue: 25,
+      ),
+      irohAlpn: readString(
+        'RAIN_IROH_ALPN',
+        compileTimeValue: const String.fromEnvironment('RAIN_IROH_ALPN'),
+        defaultValue: 'rain.p2p.quic.v1',
       ),
     );
   }
@@ -236,14 +288,10 @@ class AppEnvironment {
   bool get isFirebaseConfigured =>
       supportsFirebasePlatform && firebaseDatabaseUrl.isNotEmpty;
 
-  bool get isSupabaseConfigured =>
-      supabaseUrl.isNotEmpty && supabaseAnonKey.isNotEmpty;
-
   bool get shouldUseFallbackAdapter {
     return switch (backend) {
       RainBackend.noop => true,
       RainBackend.firebase => !isFirebaseConfigured,
-      RainBackend.supabase => !isSupabaseConfigured,
     };
   }
 
@@ -271,11 +319,47 @@ class AppEnvironment {
     });
   });
 
-  bool get releaseRelayIsLimited => !hasProjectOwnedTurn;
+  bool get allTurnServersHaveCredentials {
+    final turnServers = iceServers
+        .where(_serverHasTurnUrl)
+        .toList(growable: false);
+    return turnServers.isNotEmpty && turnServers.every(_serverHasCredentials);
+  }
+
+  bool get hasTurnUdpEndpoint =>
+      _iceUrls.any((url) => _isTurnUrl(url) && _hasTransport(url, 'udp'));
+
+  bool get hasTurnTcpEndpoint =>
+      _iceUrls.any((url) => _isTurnUrl(url) && _hasTransport(url, 'tcp'));
+
+  bool get hasTurnsTcpEndpoint =>
+      _iceUrls.any((url) => _isTurnsUrl(url) && _hasTransport(url, 'tcp'));
+
+  bool get hasProductionTurnCoverage =>
+      hasTurnBroker ||
+      (hasProjectOwnedTurn &&
+          allTurnServersHaveCredentials &&
+          hasTurnUdpEndpoint &&
+          hasTurnTcpEndpoint &&
+          hasTurnsTcpEndpoint);
+
+  bool get hasTurnBroker => turnBrokerUrl.trim().isNotEmpty;
+
+  bool get usesDemoSignalingEncryptionKey =>
+      signalingEncryptionKey == demoSignalingEncryptionKey;
+
+  Iterable<String> get _iceUrls sync* {
+    for (final server in iceServers) {
+      yield* _serverUrls(server);
+    }
+  }
+
+  bool get releaseRelayIsLimited => !hasProductionTurnCoverage;
 
   String get releaseRelayWarning =>
-      'TURN relay is not configured. Rain will start with direct peer routes; '
-      'add project-owned TURN servers for reliable release connections.';
+      'Managed TURN fallback is not fully configured. Rain will start with '
+      'direct peer routes; add project-owned UDP/TCP/TLS TURN servers for '
+      'reliable release connections.';
 
   AppEnvironment sanitizedForRelease() {
     if (allowPublicTurn) {
@@ -316,15 +400,62 @@ class AppEnvironment {
       firebaseStorageBucket: firebaseStorageBucket,
       firebaseAuthDomain: firebaseAuthDomain,
       firebaseMeasurementId: firebaseMeasurementId,
-      supabaseUrl: supabaseUrl,
-      supabaseAnonKey: supabaseAnonKey,
       signalingEncryptionKey: signalingEncryptionKey,
+      turnBrokerUrl: turnBrokerUrl,
+      iceStrategy: iceStrategy,
+      enableTier3Turn: enableTier3Turn,
+      enableRelayProbe: enableRelayProbe,
+      turnProviderOrder: turnProviderOrder,
+      enableIrohFallback: enableIrohFallback,
+      irohConnectTimeoutSeconds: irohConnectTimeoutSeconds,
+      irohAlpn: irohAlpn,
     );
   }
 
   void validateForRelease() {
+    if (usesDemoSignalingEncryptionKey && !allowPublicTurn) {
+      throw StateError(
+        'Production release builds must not use the demo signaling encryption key.',
+      );
+    }
     if (!allowPublicTurn && usesPublicOpenRelay) {
       throw StateError('Release builds require project-owned TURN servers.');
+    }
+  }
+
+  void validateProductionIceConfig() {
+    if (usesPublicOpenRelay) {
+      throw StateError(
+        'Production release builds must not use OpenRelay/public TURN servers.',
+      );
+    }
+    if (hasTurnBroker) {
+      return;
+    }
+    if (!hasProjectOwnedTurn) {
+      throw StateError(
+        'Release builds require RAIN_TURN_BROKER_URL or at least one project-owned TURN/TURNS URL in RAIN_ICE_SERVERS.',
+      );
+    }
+    if (!allTurnServersHaveCredentials) {
+      throw StateError(
+        'Every production TURN/TURNS server entry must include username and credential.',
+      );
+    }
+    if (!hasTurnUdpEndpoint) {
+      throw StateError(
+        'Production RAIN_ICE_SERVERS must include a turn: UDP endpoint.',
+      );
+    }
+    if (!hasTurnTcpEndpoint) {
+      throw StateError(
+        'Production RAIN_ICE_SERVERS must include a turn: TCP endpoint.',
+      );
+    }
+    if (!hasTurnsTcpEndpoint) {
+      throw StateError(
+        'Production RAIN_ICE_SERVERS must include a turns: TCP/TLS endpoint.',
+      );
     }
   }
 
@@ -332,21 +463,22 @@ class AppEnvironment {
     seconds: backgroundHeartbeatSeconds > 0 ? backgroundHeartbeatSeconds : 30,
   );
 
+  Duration get irohConnectTimeout => Duration(
+    seconds: irohConnectTimeoutSeconds > 0 ? irohConnectTimeoutSeconds : 25,
+  );
+
   String get backendLabel => switch (backend) {
     RainBackend.noop => 'Local Demo',
     RainBackend.firebase => 'Firebase',
-    RainBackend.supabase => 'Supabase',
   };
 
   String get fallbackReason => switch (backend) {
     RainBackend.noop =>
-      'Running with the local demo adapter. Identities, friends, and queues work locally, but peer signaling is disabled until you choose Firebase or Supabase.',
+      'Running with the local demo adapter. Identities, friends, and queues work locally, but peer signaling is disabled until Firebase is configured.',
     RainBackend.firebase =>
       !supportsFirebasePlatform
           ? 'Firebase signaling is configured only for Android, macOS, and Windows in this build, so Rain is using the local demo adapter on this platform.'
           : 'Firebase is selected, but FIREBASE_DATABASE_URL is missing, so Rain is using the local demo adapter until the Realtime Database instance is configured.',
-    RainBackend.supabase =>
-      'Supabase is selected but SUPABASE_URL and SUPABASE_ANON_KEY are missing, so Rain is using the local demo adapter.',
   };
 }
 
@@ -373,19 +505,59 @@ Map<String, dynamic> _cloneIceServer(Map<String, dynamic> server) {
   );
 }
 
-const releaseDefaultIceServers = <Map<String, dynamic>>[
+bool _serverHasTurnUrl(Map<String, dynamic> server) {
+  return _serverUrls(server).any((url) => _isTurnUrl(url) || _isTurnsUrl(url));
+}
+
+bool _serverHasCredentials(Map<String, dynamic> server) {
+  final username = server['username']?.toString().trim() ?? '';
+  final credential = server['credential']?.toString().trim() ?? '';
+  return username.isNotEmpty && credential.isNotEmpty;
+}
+
+bool _isTurnUrl(String url) {
+  return url.trim().toLowerCase().startsWith('turn:');
+}
+
+bool _isTurnsUrl(String url) {
+  return url.trim().toLowerCase().startsWith('turns:');
+}
+
+bool _hasTransport(String url, String transport) {
+  final normalized = url.trim().toLowerCase();
+  final expected = 'transport=${transport.toLowerCase()}';
+  return normalized.contains('?$expected') || normalized.contains('&$expected');
+}
+
+const testedPublicStunIceServers = <Map<String, dynamic>>[
   <String, dynamic>{'urls': 'stun:stun.l.google.com:19302'},
   <String, dynamic>{'urls': 'stun:stun1.l.google.com:19302'},
+  <String, dynamic>{'urls': 'stun:stun2.l.google.com:19302'},
+  <String, dynamic>{'urls': 'stun:stun3.l.google.com:19302'},
+  <String, dynamic>{'urls': 'stun:stun4.l.google.com:19302'},
+  <String, dynamic>{'urls': 'stun:stun.voipstunt.com:3478'},
+  <String, dynamic>{'urls': 'stun:stun.voipbuster.com:3478'},
+  <String, dynamic>{'urls': 'stun:stun.sipgate.net:10000'},
+  <String, dynamic>{'urls': 'stun:stun.schlund.de:3478'},
+  <String, dynamic>{'urls': 'stun:stun.1und1.de:3478'},
+];
+
+const releaseDefaultIceServers = <Map<String, dynamic>>[
+  ...testedPublicStunIceServers,
 ];
 
 const demoSignalingEncryptionKey =
     'rain-demo-signaling-encryption-key-v1-change-me';
 
 const defaultIceServers = <Map<String, dynamic>>[
-  <String, dynamic>{'urls': 'stun:stun.l.google.com:19302'},
-  <String, dynamic>{'urls': 'stun:stun1.l.google.com:19302'},
+  ...testedPublicStunIceServers,
   <String, dynamic>{
-    'urls': 'turn:openrelay.metered.ca:80',
+    'urls': <String>[
+      'turn:openrelay.metered.ca:80?transport=udp',
+      'turn:openrelay.metered.ca:80?transport=tcp',
+      'turn:openrelay.metered.ca:443?transport=tcp',
+      'turns:openrelay.metered.ca:443?transport=tcp',
+    ],
     'username': 'openrelayproject',
     'credential': 'openrelayproject',
   },

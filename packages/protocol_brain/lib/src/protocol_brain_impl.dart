@@ -6,6 +6,7 @@ import 'package:peer_core/peer_core.dart';
 import '../adapters/signaling_adapter.dart';
 import '../adapters/signaling_cipher.dart';
 import 'connection_memory.dart';
+import 'ice_attempt.dart';
 import 'session_manager.dart';
 
 String _normalizedPeerId(String peerId) => peerId.trim().toLowerCase();
@@ -15,10 +16,23 @@ String roomId(String a, String b) {
   return sorted.join(':');
 }
 
-const Duration _handshakeTimeout = Duration(seconds: 30);
+const Duration _directHandshakeTimeout = Duration(seconds: 12);
+const Duration _waitingForOfferTimeout = Duration(seconds: 45);
+const Duration _routeRefreshDelay = Duration(milliseconds: 850);
+
+typedef PeerConfigProvider =
+    Future<PeerConfig> Function(PeerIceTransportPolicy policy);
+typedef IceAttemptConfigProvider =
+    Future<PeerConfig> Function(IceAttemptDescriptor attempt);
+typedef IceAttemptResultRecorder =
+    FutureOr<void> Function(IceAttemptResult result);
 
 Duration _maxDuration(Duration a, Duration b) {
   return a.compareTo(b) >= 0 ? a : b;
+}
+
+bool _cachedIceReconnectEnabled() {
+  return false;
 }
 
 class ProtocolBrainImpl implements ProtocolBrain {
@@ -28,6 +42,10 @@ class ProtocolBrainImpl implements ProtocolBrain {
     required this.peerConfig,
     required this.peerFactory,
     required this.connectionMemoryStore,
+    this.peerConfigProvider,
+    this.iceAttemptConfigProvider,
+    this.iceAttemptResultRecorder,
+    this.enableExperimentalRelay = false,
     this.reconnectGrace = const Duration(seconds: 2),
   });
 
@@ -36,11 +54,17 @@ class ProtocolBrainImpl implements ProtocolBrain {
   final PeerConfig peerConfig;
   final PeerCoreFactory peerFactory;
   final ConnectionMemoryStore connectionMemoryStore;
+  final PeerConfigProvider? peerConfigProvider;
+  final IceAttemptConfigProvider? iceAttemptConfigProvider;
+  final IceAttemptResultRecorder? iceAttemptResultRecorder;
+  final bool enableExperimentalRelay;
   final Duration reconnectGrace;
 
   final Map<String, _ActiveSession> _sessions = <String, _ActiveSession>{};
   final Map<String, StreamSubscription<SDPPayload>> _offerSubscriptions =
       <String, StreamSubscription<SDPPayload>>{};
+  final Map<String, IncomingOfferGuard> _incomingOfferGuards =
+      <String, IncomingOfferGuard>{};
 
   final StreamController<Session> _peerConnectedController =
       StreamController<Session>.broadcast();
@@ -50,6 +74,9 @@ class ProtocolBrainImpl implements ProtocolBrain {
       StreamController<SessionMessage>.broadcast();
   final StreamController<Session> _sessionChangedController =
       StreamController<Session>.broadcast();
+  final StreamController<IncomingOfferRejection>
+  _incomingOfferRejectedController =
+      StreamController<IncomingOfferRejection>.broadcast();
 
   @override
   Stream<Session> get onPeerConnected => _peerConnectedController.stream;
@@ -64,9 +91,24 @@ class ProtocolBrainImpl implements ProtocolBrain {
   Stream<Session> get onSessionChanged => _sessionChangedController.stream;
 
   @override
+  Stream<IncomingOfferRejection> get onIncomingOfferRejected =>
+      _incomingOfferRejectedController.stream;
+
+  @override
   Future<Session> connect(String peerId) async {
     await registerPeer(peerId);
-    final active = await _ensureSession(peerId);
+    final plan = IceAttemptPlan.staged(
+      peerId: peerId,
+      selfUsername: selfUsername,
+      now: DateTime.now(),
+      enableExperimentalRelay: enableExperimentalRelay,
+    );
+    final firstAttempt = plan.first;
+    if (firstAttempt == null) {
+      throw StateError('No ICE connection attempts are configured.');
+    }
+    final existing = _sessions[peerId];
+    final active = await _ensureSession(peerId, initialAttempt: firstAttempt);
     active.shouldReconnect = true;
     if (active.bound &&
         (active.snapshot.state == SessionState.connected ||
@@ -74,10 +116,23 @@ class ProtocolBrainImpl implements ProtocolBrain {
             active.snapshot.state == SessionState.reconnecting)) {
       return active.snapshot;
     }
-    if (_isOfferOwner(peerId)) {
-      await _startOffer(active, isRetry: false);
-    } else {
-      await _waitForOffer(active, isRetry: false);
+    active.startAttemptPlan(plan);
+    active.icePolicy = firstAttempt.policy;
+    active.retryAttempt = 0;
+    if (existing != null ||
+        active.peer.state != PeerState.ready ||
+        active.snapshot.state == SessionState.failed) {
+      await _recreatePeer(active, attempt: firstAttempt);
+    }
+    try {
+      if (_isOfferOwner(peerId)) {
+        await _startOffer(active, isRetry: false);
+      } else {
+        await _waitForOffer(active, isRetry: false);
+      }
+    } catch (error) {
+      await _failConnectAttempt(active, error);
+      rethrow;
     }
     return active.snapshot;
   }
@@ -102,6 +157,31 @@ class ProtocolBrainImpl implements ProtocolBrain {
   }
 
   @override
+  Future<void> recoverConnection(
+    String peerId, {
+    String reason = 'Network changed. Restarting peer connection.',
+  }) async {
+    final active = _sessions[peerId];
+    if (active == null || !active.shouldReconnect) {
+      return;
+    }
+    await _restartForNetworkChange(active, reason: reason);
+  }
+
+  @override
+  Future<void> recoverConnections({
+    String reason = 'Network changed. Restarting peer connections.',
+  }) async {
+    final activeSessions = _sessions.values.toList(growable: false);
+    for (final active in activeSessions) {
+      if (_sessions[active.peerId] != active || !active.shouldReconnect) {
+        continue;
+      }
+      await _restartForNetworkChange(active, reason: reason);
+    }
+  }
+
+  @override
   Session? getSession(String peerId) => _sessions[peerId]?.snapshot;
 
   @override
@@ -112,7 +192,13 @@ class ProtocolBrainImpl implements ProtocolBrain {
   }
 
   @override
-  Future<void> registerPeer(String peerId) async {
+  Future<void> registerPeer(
+    String peerId, {
+    IncomingOfferGuard? incomingOfferGuard,
+  }) async {
+    if (incomingOfferGuard != null) {
+      _incomingOfferGuards[peerId] = incomingOfferGuard;
+    }
     if (_offerSubscriptions.containsKey(peerId)) {
       return;
     }
@@ -124,7 +210,11 @@ class ProtocolBrainImpl implements ProtocolBrain {
             if (!shouldHandleIncomingOffers) {
               return;
             }
-            unawaited(_handleIncomingOffer(peerId, offer));
+            unawaited(
+              _handleIncomingOffer(peerId, offer).catchError((Object error) {
+                _handleIncomingOfferFailure(peerId, error);
+              }),
+            );
           },
           onError: (Object error, StackTrace stackTrace) {
             _handleSignalingStreamError(peerId, error, source: 'offer');
@@ -135,15 +225,48 @@ class ProtocolBrainImpl implements ProtocolBrain {
 
   @override
   void sendControl(String peerId, String data) {
+    send(peerId, SessionChannel.control, data);
+  }
+
+  @override
+  void send(String peerId, SessionChannel channel, Object data) {
     final active = _sessions[peerId];
     if (active == null) {
       throw StateError('No active session for $peerId');
     }
-    active.peer.send(PeerChannels.control, data);
+    active.peer.send(_toPeerChannel(channel), data);
+  }
+
+  @override
+  Future<void> openChannel(String peerId, SessionChannel channel) async {
+    final active = _sessions[peerId];
+    if (active == null) {
+      throw StateError('No active session for $peerId');
+    }
+    await active.peer.openChannel(_toPeerChannel(channel));
+  }
+
+  @override
+  Future<int> bufferedAmount(String peerId, SessionChannel channel) async {
+    final active = _sessions[peerId];
+    if (active == null) {
+      throw StateError('No active session for $peerId');
+    }
+    return active.peer.bufferedAmount(_toPeerChannel(channel));
+  }
+
+  @override
+  bool isChannelOpen(String peerId, SessionChannel channel) {
+    final active = _sessions[peerId];
+    if (active == null) {
+      return false;
+    }
+    return active.peer.isChannelOpen(_toPeerChannel(channel));
   }
 
   @override
   Future<void> unregisterPeer(String peerId) async {
+    _incomingOfferGuards.remove(peerId);
     await _offerSubscriptions.remove(peerId)?.cancel();
   }
 
@@ -160,7 +283,16 @@ class ProtocolBrainImpl implements ProtocolBrain {
           SessionPhase.exchangingIce,
           'Sending local ICE candidate.',
         );
-        await adapter.writeICE(active.roomId, localRole, candidate);
+        await adapter.writeICE(
+          active.roomId,
+          localRole,
+          IceCandidatePayload(
+            candidate: candidate,
+            connectAttemptId: active.currentAttempt?.connectAttemptId,
+            iceStage: active.currentAttempt?.stage.wireName,
+            createdAt: DateTime.now().millisecondsSinceEpoch,
+          ),
+        );
       }),
     );
 
@@ -227,6 +359,12 @@ class ProtocolBrainImpl implements ProtocolBrain {
             break;
           case PeerState.failed:
             unawaited(_deleteRoomSilently(active));
+            unawaited(active.disposePeerBindings());
+            if (active.shouldReconnect &&
+                active.snapshot.state != SessionState.connected) {
+              unawaited(_tryNextIceAttempt(active, 'Direct path failed.'));
+              break;
+            }
             _markPhase(
               active,
               SessionPhase.failed,
@@ -256,12 +394,23 @@ class ProtocolBrainImpl implements ProtocolBrain {
         connectedAt: connectedAt,
         state: SessionState.connected,
         phase: SessionPhase.connected,
-        detail: 'Data channels open. Chat ready.',
+        detail: 'Detecting route...',
         updatedAt: connectedAt,
         retryAttempt: 0,
+        route: PeerConnectionRoute.unknown(updatedAt: connectedAt),
+        iceStage: active.currentAttempt?.stage,
+        providerTier: active.currentAttempt?.providerTier,
+        providerId: active.currentAttempt?.providerId,
+        connectAttemptId: active.currentAttempt?.connectAttemptId,
+        attemptIndex: active.currentAttempt?.attemptIndex ?? 0,
         clearError: true,
       ),
     );
+    unawaited(_refreshRoute(active));
+    unawaited(
+      Future<void>.delayed(_routeRefreshDelay, () => _refreshRoute(active)),
+    );
+    _recordAttemptResult(active, succeeded: true, route: active.snapshot.route);
     _peerConnectedController.add(active.snapshot);
     unawaited(adapter.deleteRoom(active.roomId));
     unawaited(
@@ -280,39 +429,114 @@ class ProtocolBrainImpl implements ProtocolBrain {
   }
 
   Future<void> _handleIncomingOffer(String peerId, SDPPayload offer) async {
+    if (!_offerSubscriptions.containsKey(peerId)) {
+      return;
+    }
+    final decision = await _authorizeIncomingOffer(peerId);
+    if (!_offerSubscriptions.containsKey(peerId)) {
+      return;
+    }
+    if (!decision.allowed) {
+      _incomingOfferRejectedController.add(
+        IncomingOfferRejection(
+          peerId: peerId,
+          reason: decision.reason ?? 'Incoming offer rejected by local policy.',
+          rejectedAt: DateTime.now(),
+          offerTimestamp: offer.ts,
+        ),
+      );
+      return;
+    }
+
     final active = await _ensureSession(peerId);
-    if (active.snapshot.state == SessionState.connected ||
-        active.peer.state == PeerState.connected) {
+    final alreadyConnected =
+        active.snapshot.state == SessionState.connected ||
+        active.peer.state == PeerState.connected;
+    if (alreadyConnected && !offer.restart) {
       return;
     }
     if (active.lastOfferTs != null && offer.ts <= active.lastOfferTs!) {
       return;
     }
     active.lastOfferTs = offer.ts;
-    if (active.peer.state != PeerState.ready) {
-      await _recreatePeer(active);
+    var policyChanged = false;
+    if (offer.restart) {
+      active.cancelPendingReconnect();
+      active.cancelHandshakeTimeout();
+      active.reconnectInProgress = false;
+      active.usedCachedReconnect = false;
+      active.retryAttempt = 0;
+      active.icePolicy = PeerIceTransportPolicy.all;
+      policyChanged = true;
+    }
+    final offerAttempt = _attemptFromPayload(active, offer);
+    final offerPolicy = offerAttempt?.policy ?? _icePolicyFromPayload(offer);
+    if (offerAttempt != null &&
+        offerAttempt.connectAttemptId !=
+            active.currentAttempt?.connectAttemptId) {
+      active.currentAttempt = offerAttempt;
+      active.icePolicy = offerAttempt.policy;
+      policyChanged = true;
+    } else if (offerPolicy != null && offerPolicy != active.icePolicy) {
+      active.icePolicy = offerPolicy;
+      policyChanged = true;
+    }
+    if (policyChanged || active.peer.state != PeerState.ready) {
+      await _recreatePeer(
+        active,
+        attempt: offerAttempt,
+        policy: offerAttempt == null ? active.icePolicy : null,
+      );
     }
     await _bindPeerCore(active, IceRole.callee);
     active.remoteIceCache.clear();
     _markPhase(
       active,
       SessionPhase.writingAnswer,
-      'Received offer. Creating answer.',
-      state: SessionState.connecting,
+      offer.restart
+          ? 'Received ICE restart offer. Creating answer.'
+          : 'Received offer. Creating answer.',
+      state: offer.restart
+          ? SessionState.reconnecting
+          : SessionState.connecting,
     );
-    active.startHandshakeTimeout(() => _handleHandshakeTimeout(active.peerId));
+    active.startHandshakeTimeout(
+      () => _handleHandshakeTimeout(active.peerId),
+      duration: _handshakeTimeoutFor(active),
+    );
 
     _listenForRemoteIce(active, IceRole.caller);
     final answer = await active.peer.setOffer(offer.sdp);
     await adapter.writeAnswer(
       active.roomId,
-      SDPPayload(sdp: answer, ts: DateTime.now().millisecondsSinceEpoch),
+      SDPPayload(
+        sdp: answer,
+        ts: DateTime.now().millisecondsSinceEpoch,
+        icePolicy: _icePolicyPayload(active.icePolicy),
+        connectAttemptId: active.currentAttempt?.connectAttemptId,
+        iceStage: active.currentAttempt?.stage.wireName,
+        createdAt: DateTime.now().millisecondsSinceEpoch,
+      ),
     );
     _markPhase(
       active,
       SessionPhase.exchangingIce,
       'Answer written. Exchanging network candidates.',
     );
+  }
+
+  Future<IncomingOfferDecision> _authorizeIncomingOffer(String peerId) async {
+    final guard = _incomingOfferGuards[peerId];
+    if (guard == null) {
+      return const IncomingOfferDecision.allow();
+    }
+    try {
+      return await guard(peerId);
+    } catch (_) {
+      return const IncomingOfferDecision.deny(
+        'Incoming offer rejected by local policy.',
+      );
+    }
   }
 
   Future<void> _listenForAnswer(_ActiveSession active) async {
@@ -325,6 +549,7 @@ class ProtocolBrainImpl implements ProtocolBrain {
           (SDPPayload payload) async {
             if (active.snapshot.state == SessionState.connected ||
                 active.peer.state != PeerState.offering ||
+                !_payloadMatchesCurrentAttempt(active, payload) ||
                 (active.lastAnswerTs != null &&
                     payload.ts <= active.lastAnswerTs!)) {
               return;
@@ -352,14 +577,17 @@ class ProtocolBrainImpl implements ProtocolBrain {
     active.iceSubscriptions[remoteRole] = adapter
         .onICE(active.roomId, remoteRole)
         .listen(
-          (RTCIceCandidate candidate) async {
-            active.remoteIceCache.add(candidate);
+          (IceCandidatePayload payload) async {
+            if (!_icePayloadMatchesCurrentAttempt(active, payload)) {
+              return;
+            }
+            active.remoteIceCache.add(payload.candidate);
             _markPhase(
               active,
               SessionPhase.exchangingIce,
               'Received remote ICE candidate.',
             );
-            await active.peer.addIceCandidate(candidate);
+            await active.peer.addIceCandidate(payload.candidate);
           },
           onError: (Object error, StackTrace stackTrace) {
             _handleSignalingStreamError(
@@ -394,6 +622,9 @@ class ProtocolBrainImpl implements ProtocolBrain {
           detail: 'Connection failed after retries.',
           updatedAt: DateTime.now().millisecondsSinceEpoch,
           error: 'Connection failed after retries.',
+          route: PeerConnectionRoute.unknown(
+            updatedAt: DateTime.now().millisecondsSinceEpoch,
+          ),
         ),
       );
       return;
@@ -419,6 +650,9 @@ class ProtocolBrainImpl implements ProtocolBrain {
         detail: 'Reconnect attempt ${active.retryAttempt + 1} scheduled.',
         updatedAt: DateTime.now().millisecondsSinceEpoch,
         retryAttempt: active.retryAttempt + 1,
+        route: PeerConnectionRoute.unknown(
+          updatedAt: DateTime.now().millisecondsSinceEpoch,
+        ),
       ),
     );
 
@@ -475,14 +709,20 @@ class ProtocolBrainImpl implements ProtocolBrain {
     }
   }
 
-  Future<_ActiveSession> _ensureSession(String peerId) async {
+  Future<_ActiveSession> _ensureSession(
+    String peerId, {
+    IceAttemptDescriptor? initialAttempt,
+  }) async {
     final existing = _sessions[peerId];
     if (existing != null) {
       return existing;
     }
 
     late final _ActiveSession active;
-    final peer = await _newPeer();
+    final peer = await _newPeer(
+      policy: initialAttempt?.policy ?? PeerIceTransportPolicy.all,
+      attempt: initialAttempt,
+    );
     active = _ActiveSession(
       peerId: peerId,
       roomId: roomId(selfUsername, peerId),
@@ -506,16 +746,25 @@ class ProtocolBrainImpl implements ProtocolBrain {
   Future<void> _startOffer(
     _ActiveSession active, {
     required bool isRetry,
+    bool isRestart = false,
   }) async {
     if (active.peer.state != PeerState.ready) {
       await _recreatePeer(active);
     }
+    await _resetRoomForNewOffer(active);
     await _bindPeerCore(active, IceRole.caller);
-    active.startHandshakeTimeout(() => _handleHandshakeTimeout(active.peerId));
+    active.startHandshakeTimeout(
+      () => _handleHandshakeTimeout(active.peerId),
+      duration: _handshakeTimeoutFor(active),
+    );
     _markPhase(
       active,
       SessionPhase.creatingOffer,
-      isRetry ? 'Creating retry offer.' : 'Creating signaling offer.',
+      isRestart
+          ? 'Creating ICE restart offer.'
+          : isRetry
+          ? 'Creating retry offer.'
+          : 'Creating signaling offer.',
       state: isRetry ? SessionState.reconnecting : SessionState.connecting,
     );
 
@@ -526,6 +775,7 @@ class ProtocolBrainImpl implements ProtocolBrain {
     }
 
     final useCachedReconnect =
+        _cachedIceReconnectEnabled() &&
         isRetry &&
         memory != null &&
         memory.isUsable &&
@@ -548,13 +798,136 @@ class ProtocolBrainImpl implements ProtocolBrain {
     );
     await adapter.writeOffer(
       active.roomId,
-      SDPPayload(sdp: offer, ts: DateTime.now().millisecondsSinceEpoch),
+      SDPPayload(
+        sdp: offer,
+        ts: DateTime.now().millisecondsSinceEpoch,
+        restart: isRestart,
+        icePolicy: _icePolicyPayload(active.icePolicy),
+        connectAttemptId: active.currentAttempt?.connectAttemptId,
+        iceStage: active.currentAttempt?.stage.wireName,
+        createdAt: DateTime.now().millisecondsSinceEpoch,
+      ),
     );
     _markPhase(
       active,
       SessionPhase.waitingForAnswer,
-      'Offer written. Waiting for answer.',
+      _waitingForAnswerDetail(active),
     );
+  }
+
+  Future<void> _resetRoomForNewOffer(_ActiveSession active) async {
+    await adapter.deleteRoom(active.roomId);
+    active.lastAnswerTs = null;
+    active.remoteIceCache.clear();
+  }
+
+  Future<void> _failConnectAttempt(_ActiveSession active, Object error) async {
+    active.stopReconnecting();
+    active.cancelHandshakeTimeout();
+    await active.disposePeerBindings();
+    active.bound = false;
+    final updatedAt = DateTime.now().millisecondsSinceEpoch;
+    _updateSession(
+      active.peerId,
+      active.snapshot.copyWith(
+        state: SessionState.failed,
+        phase: SessionPhase.failed,
+        detail: 'Connection setup failed.',
+        updatedAt: updatedAt,
+        error: _connectSetupFailureMessage(error),
+        route: PeerConnectionRoute.unknown(updatedAt: updatedAt),
+      ),
+    );
+  }
+
+  String _connectSetupFailureMessage(Object error) {
+    final message = error.toString();
+    if (message.startsWith('Exception: ')) {
+      return message.substring('Exception: '.length);
+    }
+    if (message.startsWith('Bad state: ')) {
+      return message.substring('Bad state: '.length);
+    }
+    if (message.startsWith('StateError: ')) {
+      return message.substring('StateError: '.length);
+    }
+    return message;
+  }
+
+  Future<void> _restartForNetworkChange(
+    _ActiveSession active, {
+    required String reason,
+  }) async {
+    if (_sessions[active.peerId] != active ||
+        !active.shouldReconnect ||
+        active.reconnectInProgress) {
+      return;
+    }
+    if (active.snapshot.state == SessionState.failed) {
+      return;
+    }
+
+    active.cancelPendingReconnect();
+    active.cancelHandshakeTimeout();
+    active.reconnectInProgress = true;
+    active.usedCachedReconnect = false;
+    active.retryAttempt = 0;
+    final generation = active.nextReconnectGeneration();
+
+    _markPhase(
+      active,
+      SessionPhase.reconnecting,
+      reason,
+      state: SessionState.reconnecting,
+    );
+
+    try {
+      final recreated = await _recreatePeer(
+        active,
+        shouldContinue: () => _canContinueNetworkRestart(active, generation),
+        restoreRole: _localRoleFor(active.peerId),
+        policy: PeerIceTransportPolicy.all,
+      );
+      if (!recreated || !_canContinueNetworkRestart(active, generation)) {
+        return;
+      }
+      if (_isOfferOwner(active.peerId)) {
+        await _startOffer(active, isRetry: true, isRestart: true);
+      } else {
+        await _waitForOffer(active, isRetry: true);
+      }
+    } catch (error) {
+      if (_sessions[active.peerId] != active ||
+          active.reconnectGeneration != generation) {
+        return;
+      }
+      _updateSession(
+        active.peerId,
+        active.snapshot.copyWith(
+          state: SessionState.failed,
+          phase: SessionPhase.failed,
+          detail: 'Network recovery failed.',
+          updatedAt: DateTime.now().millisecondsSinceEpoch,
+          error:
+              'Network recovery failed: ${_connectSetupFailureMessage(error)}',
+          route: PeerConnectionRoute.unknown(
+            updatedAt: DateTime.now().millisecondsSinceEpoch,
+          ),
+        ),
+      );
+    } finally {
+      if (_sessions[active.peerId] == active &&
+          active.reconnectGeneration == generation) {
+        active.reconnectInProgress = false;
+      }
+    }
+  }
+
+  bool _canContinueNetworkRestart(_ActiveSession active, int generation) {
+    return _sessions[active.peerId] == active &&
+        active.shouldReconnect &&
+        active.reconnectGeneration == generation &&
+        active.snapshot.state != SessionState.failed;
   }
 
   Future<void> _waitForOffer(
@@ -564,11 +937,14 @@ class ProtocolBrainImpl implements ProtocolBrain {
     if (active.peer.state != PeerState.ready) {
       await _recreatePeer(active);
     }
-    active.startHandshakeTimeout(() => _handleHandshakeTimeout(active.peerId));
+    active.startHandshakeTimeout(
+      () => _handleHandshakeTimeout(active.peerId),
+      duration: _waitingForOfferTimeout,
+    );
     _markPhase(
       active,
       SessionPhase.waitingForOffer,
-      isRetry ? 'Waiting for retry offer.' : 'Waiting for remote offer.',
+      _waitingForOfferDetail(active, isRetry: isRetry),
       state: isRetry ? SessionState.reconnecting : SessionState.connecting,
     );
   }
@@ -584,9 +960,18 @@ class ProtocolBrainImpl implements ProtocolBrain {
     return _isOfferOwner(peerId) ? IceRole.caller : IceRole.callee;
   }
 
-  Future<PeerCore> _newPeer() async {
+  Future<PeerCore> _newPeer({
+    PeerIceTransportPolicy policy = PeerIceTransportPolicy.all,
+    IceAttemptDescriptor? attempt,
+  }) async {
     final peer = peerFactory();
-    await peer.init(peerConfig);
+    final config = attempt != null && iceAttemptConfigProvider != null
+        ? await iceAttemptConfigProvider!(attempt)
+        : peerConfigProvider == null
+        ? peerConfig.copyWith(iceTransportPolicy: policy)
+        : await peerConfigProvider!(policy);
+    final effectivePolicy = attempt?.policy ?? policy;
+    await peer.init(config.copyWith(iceTransportPolicy: effectivePolicy));
     return peer;
   }
 
@@ -611,6 +996,8 @@ class ProtocolBrainImpl implements ProtocolBrain {
     _ActiveSession active, {
     bool Function()? shouldContinue,
     IceRole? restoreRole,
+    PeerIceTransportPolicy? policy,
+    IceAttemptDescriptor? attempt,
   }) async {
     if (shouldContinue != null && !shouldContinue()) {
       return false;
@@ -630,7 +1017,14 @@ class ProtocolBrainImpl implements ProtocolBrain {
       return false;
     }
     await active.peer.destroy();
-    active.peer = await _newPeer();
+    final nextAttempt =
+        attempt ?? (policy == null ? active.currentAttempt : null);
+    final nextPolicy = policy ?? nextAttempt?.policy ?? active.icePolicy;
+    active.peer = await _newPeer(policy: nextPolicy, attempt: nextAttempt);
+    active.icePolicy = nextPolicy;
+    if (nextAttempt != null) {
+      active.currentAttempt = nextAttempt;
+    }
     active.bound = false;
     active.remoteIceCache.clear();
     active.answerSubscription = null;
@@ -666,20 +1060,83 @@ class ProtocolBrainImpl implements ProtocolBrain {
     SessionState? state,
     String? error,
   }) {
+    final updatedAt = DateTime.now().millisecondsSinceEpoch;
+    final route = switch (state) {
+      SessionState.connecting ||
+      SessionState.reconnecting ||
+      SessionState.failed => PeerConnectionRoute.unknown(updatedAt: updatedAt),
+      SessionState.connected || null => null,
+    };
     _updateSession(
       active.peerId,
       active.snapshot.copyWith(
         state: state,
         phase: phase,
         detail: detail,
-        updatedAt: DateTime.now().millisecondsSinceEpoch,
+        updatedAt: updatedAt,
         error: error,
         clearError: error == null,
         retryAttempt: active.retryAttempt,
         roomId: active.roomId,
         isOfferOwner: _isOfferOwner(active.peerId),
+        route: route,
+        iceStage: active.currentAttempt?.stage,
+        providerTier: active.currentAttempt?.providerTier,
+        providerId: active.currentAttempt?.providerId,
+        connectAttemptId: active.currentAttempt?.connectAttemptId,
+        attemptIndex: active.currentAttempt?.attemptIndex ?? 0,
       ),
     );
+  }
+
+  Future<void> _refreshRoute(_ActiveSession active) async {
+    if (!_canPublishRoute(active)) {
+      return;
+    }
+    try {
+      final route = await active.peer.currentRoute();
+      if (!_canPublishRoute(active)) {
+        return;
+      }
+      final updatedAt =
+          route.updatedAt ?? DateTime.now().millisecondsSinceEpoch;
+      _updateSession(
+        active.peerId,
+        active.snapshot.copyWith(
+          detail: _routeDetail(route),
+          updatedAt: updatedAt,
+          route: route,
+          clearError: true,
+        ),
+      );
+    } catch (_) {
+      // Route stats are diagnostic only; they must not fail the peer session.
+    }
+  }
+
+  bool _canPublishRoute(_ActiveSession active) {
+    return _sessions[active.peerId] == active &&
+        active.snapshot.state == SessionState.connected &&
+        active.peer.state == PeerState.connected;
+  }
+
+  String _routeDetail(PeerConnectionRoute route) {
+    return switch (route.kind) {
+      PeerRouteKind.direct =>
+        'Direct encrypted peer lane is open${_addressFamilyDetail(route)}.',
+      PeerRouteKind.relay =>
+        'Encrypted peer lane is relayed through TURN${_addressFamilyDetail(route)}.',
+      PeerRouteKind.unknown => 'Detecting route...',
+    };
+  }
+
+  String _addressFamilyDetail(PeerConnectionRoute route) {
+    return switch (route.addressFamily) {
+      PeerAddressFamily.ipv4 => ' over IPv4',
+      PeerAddressFamily.ipv6 => ' over IPv6',
+      PeerAddressFamily.mixed => ' across mixed IP families',
+      PeerAddressFamily.unknown => '',
+    };
   }
 
   void _handleSignalingStreamError(
@@ -702,6 +1159,9 @@ class ProtocolBrainImpl implements ProtocolBrain {
         detail: 'Signaling failed while reading $source data.',
         updatedAt: DateTime.now().millisecondsSinceEpoch,
         error: _signalingFailureMessage(error),
+        route: PeerConnectionRoute.unknown(
+          updatedAt: DateTime.now().millisecondsSinceEpoch,
+        ),
       ),
     );
   }
@@ -729,6 +1189,12 @@ class ProtocolBrainImpl implements ProtocolBrain {
     active.remoteIceCache.clear();
     active.answerSubscription = null;
     active.iceSubscriptions.clear();
+    if (await _tryNextIceAttempt(
+      active,
+      _timeoutFailureFor(active.currentAttempt),
+    )) {
+      return;
+    }
     if (!active.shouldReconnect) {
       active.stopReconnecting();
       _updateSession(
@@ -739,6 +1205,9 @@ class ProtocolBrainImpl implements ProtocolBrain {
           detail: 'Handshake timed out.',
           updatedAt: DateTime.now().millisecondsSinceEpoch,
           error: 'Handshake timed out.',
+          route: PeerConnectionRoute.unknown(
+            updatedAt: DateTime.now().millisecondsSinceEpoch,
+          ),
         ),
       );
       return;
@@ -755,12 +1224,321 @@ class ProtocolBrainImpl implements ProtocolBrain {
           detail: 'Connection failed after retries.',
           updatedAt: DateTime.now().millisecondsSinceEpoch,
           error: 'Connection failed after retries.',
+          route: PeerConnectionRoute.unknown(
+            updatedAt: DateTime.now().millisecondsSinceEpoch,
+          ),
         ),
       );
       return;
     }
 
     unawaited(_scheduleReconnect(peerId));
+  }
+
+  Duration _handshakeTimeoutFor(_ActiveSession active) {
+    final attemptTimeout =
+        active.currentAttempt?.timeout ?? _directHandshakeTimeout;
+    final startedAt = active.connectStartedAt;
+    final budget = active.attemptPlan?.maxBudget;
+    if (startedAt == null || budget == null) {
+      return attemptTimeout;
+    }
+    final elapsed = Duration(
+      milliseconds: DateTime.now().millisecondsSinceEpoch - startedAt,
+    );
+    final remaining = budget - elapsed;
+    if (remaining <= Duration.zero) {
+      return const Duration(milliseconds: 1);
+    }
+    return remaining < attemptTimeout ? remaining : attemptTimeout;
+  }
+
+  Future<bool> _tryNextIceAttempt(
+    _ActiveSession active,
+    String failureReason,
+  ) async {
+    if (_sessions[active.peerId] != active || !active.shouldReconnect) {
+      return false;
+    }
+
+    if (iceAttemptConfigProvider == null &&
+        active.currentAttempt?.requiresRelay == true) {
+      _recordAttemptResult(active, succeeded: false, reason: failureReason);
+      _failAllAttempts(active, failureReason);
+      return false;
+    }
+
+    final nextAttempt = active.attemptPlan?.after(active.currentAttempt);
+    if (nextAttempt == null) {
+      _recordAttemptResult(active, succeeded: false, reason: failureReason);
+      _failAllAttempts(active, failureReason);
+      return false;
+    }
+
+    _recordAttemptResult(active, succeeded: false, reason: failureReason);
+    active.cancelPendingReconnect();
+    active.cancelHandshakeTimeout();
+    active.retryAttempt = nextAttempt.attemptIndex;
+    active.currentAttempt = nextAttempt;
+    active.icePolicy = nextAttempt.policy;
+    _markPhase(
+      active,
+      SessionPhase.reconnecting,
+      _attemptStartDetail(nextAttempt),
+      state: SessionState.reconnecting,
+      error: failureReason,
+    );
+
+    try {
+      final recreated = await _recreatePeer(active, attempt: nextAttempt);
+      if (!recreated || _sessions[active.peerId] != active) {
+        return false;
+      }
+      if (_isOfferOwner(active.peerId)) {
+        await _startOffer(active, isRetry: true);
+      } else {
+        await _waitForOffer(active, isRetry: true);
+      }
+      return true;
+    } catch (error) {
+      return _tryNextIceAttempt(
+        active,
+        _attemptFailedMessage(nextAttempt, _connectSetupFailureMessage(error)),
+      );
+    }
+  }
+
+  void _failAllAttempts(_ActiveSession active, String failureReason) {
+    final updatedAt = DateTime.now().millisecondsSinceEpoch;
+    final error = _finalConnectFailure(failureReason);
+    active.stopReconnecting();
+    _updateSession(
+      active.peerId,
+      active.snapshot.copyWith(
+        state: SessionState.failed,
+        phase: SessionPhase.failed,
+        detail: error,
+        updatedAt: updatedAt,
+        error: error,
+        retryAttempt:
+            active.currentAttempt?.attemptIndex ?? active.retryAttempt,
+        route: PeerConnectionRoute.unknown(updatedAt: updatedAt),
+        iceStage: active.currentAttempt?.stage,
+        providerTier: active.currentAttempt?.providerTier,
+        providerId: active.currentAttempt?.providerId,
+        connectAttemptId: active.currentAttempt?.connectAttemptId,
+        attemptIndex: active.currentAttempt?.attemptIndex ?? 0,
+      ),
+    );
+  }
+
+  void _recordAttemptResult(
+    _ActiveSession active, {
+    required bool succeeded,
+    String? reason,
+    PeerConnectionRoute route = const PeerConnectionRoute.unknown(),
+  }) {
+    final attempt = active.currentAttempt;
+    final recorder = iceAttemptResultRecorder;
+    if (attempt == null || recorder == null) {
+      return;
+    }
+    unawaited(
+      Future<void>.sync(() {
+        return recorder(
+          IceAttemptResult(
+            attempt: attempt,
+            succeeded: succeeded,
+            completedAt: DateTime.now(),
+            failureReason: reason,
+            route: route,
+          ),
+        );
+      }),
+    );
+  }
+
+  String _timeoutFailureFor(IceAttemptDescriptor? attempt) {
+    return switch (attempt?.stage) {
+      IceAttemptStage.directStunOnly => 'Direct path blocked.',
+      IceAttemptStage.primaryRelay ||
+      IceAttemptStage.backupRelay ||
+      IceAttemptStage.experimentalRelay => 'Relay provider timed out.',
+      IceAttemptStage.fullRestart => 'Data channel did not open.',
+      null => 'Handshake timed out.',
+    };
+  }
+
+  String _attemptStartDetail(IceAttemptDescriptor attempt) {
+    return switch (attempt.stage) {
+      IceAttemptStage.directStunOnly => 'Trying direct peer route.',
+      IceAttemptStage.primaryRelay =>
+        'Direct path blocked. Trying primary TURN relay.',
+      IceAttemptStage.backupRelay => 'Trying backup TURN relay.',
+      IceAttemptStage.experimentalRelay =>
+        'Trying experimental relay fallback.',
+      IceAttemptStage.fullRestart =>
+        'Refreshing ICE credentials and restarting connection.',
+    };
+  }
+
+  String _waitingForAnswerDetail(_ActiveSession active) {
+    final attempt = active.currentAttempt;
+    if (attempt == null ||
+        attempt.stage == IceAttemptStage.directStunOnly ||
+        attempt.stage == IceAttemptStage.fullRestart) {
+      return 'Offer written. Waiting for answer.';
+    }
+    return '${_attemptStartDetail(attempt)} Offer written. Waiting for answer.';
+  }
+
+  String _waitingForOfferDetail(
+    _ActiveSession active, {
+    required bool isRetry,
+  }) {
+    final base = isRetry
+        ? 'Waiting for retry offer.'
+        : 'Waiting for remote offer.';
+    final attempt = active.currentAttempt;
+    if (attempt == null ||
+        attempt.stage == IceAttemptStage.directStunOnly ||
+        attempt.stage == IceAttemptStage.fullRestart) {
+      return base;
+    }
+    return '${_attemptStartDetail(attempt)} $base';
+  }
+
+  String _attemptFailedMessage(IceAttemptDescriptor attempt, String reason) {
+    final cleanReason = reason.trim().isEmpty ? 'unknown error' : reason.trim();
+    return switch (attempt.stage) {
+      IceAttemptStage.directStunOnly => 'Direct path blocked.',
+      IceAttemptStage.primaryRelay ||
+      IceAttemptStage.backupRelay ||
+      IceAttemptStage.experimentalRelay =>
+        'Relay provider unavailable: $cleanReason',
+      IceAttemptStage.fullRestart => 'Data channel did not open: $cleanReason',
+    };
+  }
+
+  String _finalConnectFailure(String reason) {
+    final cleanReason = reason.trim();
+    if (cleanReason.isEmpty) {
+      return 'All connection routes failed.';
+    }
+    if (cleanReason.contains('Relay credentials unavailable') ||
+        cleanReason.contains('TURN broker') ||
+        cleanReason.contains('Relay authorization')) {
+      return cleanReason;
+    }
+    if (cleanReason == 'Direct path blocked.') {
+      return 'Direct path blocked. Relay providers failed.';
+    }
+    if (cleanReason.contains('Relay provider')) {
+      return '$cleanReason All connection routes failed.';
+    }
+    return cleanReason.endsWith('.')
+        ? '$cleanReason All connection routes failed.'
+        : '$cleanReason. All connection routes failed.';
+  }
+
+  bool _payloadMatchesCurrentAttempt(
+    _ActiveSession active,
+    SDPPayload payload,
+  ) {
+    final currentAttemptId = active.currentAttempt?.connectAttemptId;
+    final payloadAttemptId = payload.connectAttemptId;
+    if (currentAttemptId == null ||
+        payloadAttemptId == null ||
+        payloadAttemptId.isEmpty) {
+      return true;
+    }
+    return currentAttemptId == payloadAttemptId;
+  }
+
+  bool _icePayloadMatchesCurrentAttempt(
+    _ActiveSession active,
+    IceCandidatePayload payload,
+  ) {
+    final currentAttemptId = active.currentAttempt?.connectAttemptId;
+    final payloadAttemptId = payload.connectAttemptId;
+    if (currentAttemptId == null) {
+      return true;
+    }
+    if (payloadAttemptId == null || payloadAttemptId.isEmpty) {
+      return false;
+    }
+    return currentAttemptId == payloadAttemptId;
+  }
+
+  IceAttemptDescriptor? _attemptFromPayload(
+    _ActiveSession active,
+    SDPPayload payload,
+  ) {
+    final stage = IceAttemptStageX.fromWireName(payload.iceStage);
+    final attemptId = payload.connectAttemptId?.trim();
+    if (stage == null || attemptId == null || attemptId.isEmpty) {
+      return null;
+    }
+    final existing = active.attemptPlan?.matchingStage(stage, attemptId);
+    if (existing != null) {
+      return existing;
+    }
+    return IceAttemptDescriptor(
+      stage: stage,
+      policy:
+          _icePolicyFromPayload(payload) ??
+          (stage == IceAttemptStage.directStunOnly ||
+                  stage == IceAttemptStage.fullRestart
+              ? PeerIceTransportPolicy.all
+              : PeerIceTransportPolicy.relayOnly),
+      providerTier: _tierForStage(stage),
+      providerId: stage.wireName,
+      timeout: _timeoutForStage(stage),
+      connectAttemptId: attemptId,
+      attemptIndex: active.currentAttempt?.attemptIndex ?? 0,
+    );
+  }
+
+  IceProviderTier _tierForStage(IceAttemptStage stage) {
+    return switch (stage) {
+      IceAttemptStage.directStunOnly => IceProviderTier.stunOnly,
+      IceAttemptStage.primaryRelay => IceProviderTier.primaryRelay,
+      IceAttemptStage.backupRelay ||
+      IceAttemptStage.fullRestart => IceProviderTier.backupRelay,
+      IceAttemptStage.experimentalRelay => IceProviderTier.experimentalRelay,
+    };
+  }
+
+  Duration _timeoutForStage(IceAttemptStage stage) {
+    return switch (stage) {
+      IceAttemptStage.directStunOnly => const Duration(seconds: 12),
+      IceAttemptStage.primaryRelay => const Duration(seconds: 30),
+      IceAttemptStage.backupRelay ||
+      IceAttemptStage.experimentalRelay => const Duration(seconds: 20),
+      IceAttemptStage.fullRestart => const Duration(seconds: 25),
+    };
+  }
+
+  void _handleIncomingOfferFailure(String peerId, Object error) {
+    final active = _sessions[peerId];
+    if (active == null) {
+      return;
+    }
+    active.stopReconnecting();
+    unawaited(_deleteRoomSilently(active));
+    unawaited(active.disposePeerBindings());
+    final updatedAt = DateTime.now().millisecondsSinceEpoch;
+    _updateSession(
+      peerId,
+      active.snapshot.copyWith(
+        state: SessionState.failed,
+        phase: SessionPhase.failed,
+        detail: 'Incoming peer offer failed.',
+        updatedAt: updatedAt,
+        error: _connectSetupFailureMessage(error),
+        route: PeerConnectionRoute.unknown(updatedAt: updatedAt),
+      ),
+    );
   }
 
   Future<void> _deleteRoomSilently(_ActiveSession active) async {
@@ -770,6 +1548,21 @@ class ProtocolBrainImpl implements ProtocolBrain {
       // Room cleanup is best-effort; connection state still reports failure.
     }
   }
+}
+
+String _icePolicyPayload(PeerIceTransportPolicy policy) {
+  return switch (policy) {
+    PeerIceTransportPolicy.all => 'all',
+    PeerIceTransportPolicy.relayOnly => 'relay',
+  };
+}
+
+PeerIceTransportPolicy? _icePolicyFromPayload(SDPPayload payload) {
+  return switch (payload.icePolicy?.trim().toLowerCase()) {
+    'relay' || 'relayonly' => PeerIceTransportPolicy.relayOnly,
+    'all' => PeerIceTransportPolicy.all,
+    _ => null,
+  };
 }
 
 SessionMessage _toSessionMessage(PeerMessage message, String peerId) {
@@ -793,6 +1586,17 @@ SessionChannel _toSessionChannel(String channelId) {
   throw StateError('Unknown peer channel: $channelId');
 }
 
+String _toPeerChannel(SessionChannel channel) {
+  switch (channel) {
+    case SessionChannel.chat:
+      return PeerChannels.chat;
+    case SessionChannel.control:
+      return PeerChannels.control;
+    case SessionChannel.file:
+      return PeerChannels.file;
+  }
+}
+
 class _ActiveSession {
   _ActiveSession({
     required this.peerId,
@@ -806,8 +1610,8 @@ class _ActiveSession {
   PeerCore peer;
   final List<StreamSubscription<dynamic>> subscriptions =
       <StreamSubscription<dynamic>>[];
-  final Map<IceRole, StreamSubscription<RTCIceCandidate>> iceSubscriptions =
-      <IceRole, StreamSubscription<RTCIceCandidate>>{};
+  final Map<IceRole, StreamSubscription<IceCandidatePayload>> iceSubscriptions =
+      <IceRole, StreamSubscription<IceCandidatePayload>>{};
   final List<RTCIceCandidate> remoteIceCache = <RTCIceCandidate>[];
 
   Session snapshot;
@@ -816,12 +1620,16 @@ class _ActiveSession {
   bool usedCachedReconnect = false;
   bool shouldReconnect = true;
   bool reconnectInProgress = false;
+  PeerIceTransportPolicy icePolicy = PeerIceTransportPolicy.all;
+  IceAttemptPlan? attemptPlan;
+  IceAttemptDescriptor? currentAttempt;
   int reconnectGeneration = 0;
   int? lastOfferTs;
   int? lastAnswerTs;
   StreamSubscription<SDPPayload>? answerSubscription;
   Timer? handshakeTimeoutTimer;
   Timer? reconnectTimer;
+  int? connectStartedAt;
 
   Future<void> dispose() async {
     shouldReconnect = false;
@@ -834,19 +1642,29 @@ class _ActiveSession {
     cancelHandshakeTimeout();
     await answerSubscription?.cancel();
     answerSubscription = null;
-    for (final subscription in subscriptions) {
-      await subscription.cancel();
-    }
+    final peerSubscriptions = List<StreamSubscription<dynamic>>.of(
+      subscriptions,
+    );
     subscriptions.clear();
-    for (final subscription in iceSubscriptions.values) {
+    for (final subscription in peerSubscriptions) {
       await subscription.cancel();
     }
+    final iceStreamSubscriptions =
+        List<StreamSubscription<IceCandidatePayload>>.of(
+          iceSubscriptions.values,
+        );
     iceSubscriptions.clear();
+    for (final subscription in iceStreamSubscriptions) {
+      await subscription.cancel();
+    }
   }
 
-  void startHandshakeTimeout(Future<void> Function() onTimeout) {
+  void startHandshakeTimeout(
+    Future<void> Function() onTimeout, {
+    required Duration duration,
+  }) {
     cancelHandshakeTimeout();
-    handshakeTimeoutTimer = Timer(_handshakeTimeout, () {
+    handshakeTimeoutTimer = Timer(duration, () {
       unawaited(onTimeout());
     });
   }
@@ -871,5 +1689,15 @@ class _ActiveSession {
   void stopReconnecting() {
     shouldReconnect = false;
     cancelPendingReconnect();
+  }
+
+  void startAttemptPlan(IceAttemptPlan plan) {
+    attemptPlan = plan;
+    currentAttempt = plan.first;
+    connectStartedAt = DateTime.now().millisecondsSinceEpoch;
+    icePolicy = currentAttempt?.policy ?? PeerIceTransportPolicy.all;
+    remoteIceCache.clear();
+    lastOfferTs = null;
+    lastAnswerTs = null;
   }
 }

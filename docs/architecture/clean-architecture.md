@@ -11,7 +11,6 @@ packages/rain_core/     local data, identity, friends, messages, queues
 packages/protocol_brain/ signaling adapters, session state, reconnect policy
 packages/peer_core/     WebRTC/data-channel primitives
 backend/firebase/       active Firebase signaling infrastructure
-backend/supabase/       archived Supabase infrastructure kept for later
 docs/                   plans, architecture notes, CI/CD notes
 scripts/                build, verification, and asset automation
 final product/          only user-facing builds and testable packages

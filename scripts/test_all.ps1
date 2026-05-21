@@ -1,10 +1,15 @@
 <# 
 PowerShell script to run Flutter tests for all Flutter packages in the Rain monorepo.
 Usage: Run from repo root: powershell -ExecutionPolicy Bypass -File scripts/test_all.ps1
-This script bootstraps dependencies and runs tests for all Dart/Flutter packages under packages/.
+This script bootstraps dependencies and runs tests for the maintained Flutter app and packages.
 #>
 $root = (Get-Location).Path
-$packagePaths = @("packages\rain_core","packages\peer_core")
+$packagePaths = @(
+  "apps\rain",
+  "packages\peer_core",
+  "packages\protocol_brain",
+  "packages\rain_core"
+)
 $failed = $false
 Write-Host "Rain test runner: testing packages:" ($packagePaths -join ", ")
 foreach ($relPath in $packagePaths) {

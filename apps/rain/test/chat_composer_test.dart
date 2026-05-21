@@ -89,4 +89,39 @@ void main() {
       debugDefaultTargetPlatformOverride = null;
     }
   });
+
+  testWidgets('attachment action is exposed separately from send', (
+    WidgetTester tester,
+  ) async {
+    final controller = TextEditingController();
+    var attachCount = 0;
+    var sendCount = 0;
+
+    addTearDown(controller.dispose);
+
+    await tester.pumpWidget(
+      MaterialApp(
+        home: Scaffold(
+          body: ChatComposer(
+            controller: controller,
+            enabled: true,
+            isSending: false,
+            maxLength: 4000,
+            onAttach: () {
+              attachCount += 1;
+            },
+            onSend: () {
+              sendCount += 1;
+            },
+          ),
+        ),
+      ),
+    );
+
+    await tester.tap(find.byTooltip('Attach file'));
+    await tester.pump();
+
+    expect(attachCount, 1);
+    expect(sendCount, 0);
+  });
 }

@@ -45,7 +45,6 @@ void main() {
       'package:protocol_brain/',
       'package:rain_core/',
       'package:firebase_',
-      'package:supabase_flutter/',
     ];
 
     final offenders = <String>[];
@@ -85,8 +84,7 @@ void main() {
       }
 
       final contents = file.readAsStringSync();
-      if (contents.contains('package:firebase_') ||
-          contents.contains('package:supabase_flutter/')) {
+      if (contents.contains('package:firebase_')) {
         offenders.add(file.path);
       }
     }

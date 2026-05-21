@@ -3,7 +3,7 @@ import 'package:package_info_plus/package_info_plus.dart';
 import 'package:rain/infrastructure/services/force_update_service.dart';
 
 void main() {
-  test('custom config loader enforces the Supabase min version', () async {
+  test('custom config loader enforces configured min version', () async {
     final service = ForceUpdateService(
       remoteConfig: null,
       updateUrl: 'https://example.com/update',

@@ -1,19 +1,28 @@
 import 'dart:async';
+import 'dart:io';
 
+import 'package:file_picker/file_picker.dart';
+import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
+import 'package:open_filex/open_filex.dart';
 import 'package:protocol_brain/protocol_brain.dart';
 import 'package:rain_core/rain_core.dart';
 
 import 'package:rain/presentation/navigation/app_routes.dart';
+import 'package:rain/application/connection_command/connection_command_models.dart';
+import 'package:rain/application/transport/turn_fallback_diagnostics.dart';
 import 'package:rain/application/state/app_providers.dart';
-import 'package:rain/application/state/app_state.dart';
+import 'package:rain/application/state/connection_diagnostics.dart';
+import 'package:rain/application/state/file_transfer_view.dart';
 import 'package:rain/application/runtime/rain_runtime_controller.dart';
 import 'package:rain/infrastructure/services/sound_effects_service.dart';
+import 'package:rain/infrastructure/services/turn_credential_service.dart';
 import 'package:rain/presentation/theme/rain_theme.dart';
 import 'package:rain/presentation/widgets/app_components.dart';
 import 'package:rain/presentation/widgets/chat_composer.dart';
+import 'package:rain/presentation/widgets/connection_command_center.dart';
 import 'package:rain/presentation/widgets/app_dialogs.dart';
 import 'package:rain/presentation/widgets/rain_command_widgets.dart';
 
@@ -26,6 +35,76 @@ String _formatUiError(Object error) {
     }
   }
   return raw;
+}
+
+String _candidateLabel(String? value) {
+  final trimmed = value?.trim();
+  if (trimmed == null || trimmed.isEmpty) {
+    return 'Unknown';
+  }
+  return trimmed.toUpperCase();
+}
+
+String _protocolLabel(PeerConnectionRoute route) {
+  final protocol = route.protocol?.trim();
+  final relayProtocol = route.relayProtocol?.trim();
+  if ((protocol == null || protocol.isEmpty) &&
+      (relayProtocol == null || relayProtocol.isEmpty)) {
+    return 'Unknown';
+  }
+  final parts = <String>[
+    if (protocol != null && protocol.isNotEmpty) protocol.toUpperCase(),
+    if (relayProtocol != null && relayProtocol.isNotEmpty)
+      'relay ${relayProtocol.toUpperCase()}',
+  ];
+  return parts.join(' / ');
+}
+
+String _rttLabel(double? rtt) {
+  if (rtt == null || rtt.isNaN || rtt.isInfinite) {
+    return 'Unknown';
+  }
+  return '${(rtt * 1000).round()} ms';
+}
+
+String _bitrateLabel(double? bitrate) {
+  if (bitrate == null || bitrate.isNaN || bitrate.isInfinite || bitrate <= 0) {
+    return 'Unknown';
+  }
+  if (bitrate >= 1000000) {
+    return '${(bitrate / 1000000).toStringAsFixed(1)} Mbps';
+  }
+  return '${(bitrate / 1000).round()} Kbps';
+}
+
+String _phaseLabel(SessionPhase? phase) {
+  return switch (phase) {
+    SessionPhase.idle => 'Idle',
+    SessionPhase.checkingPresence => 'Checking presence',
+    SessionPhase.registeringPeer => 'Registering peer',
+    SessionPhase.waitingForOffer => 'Waiting for offer',
+    SessionPhase.creatingOffer => 'Creating offer',
+    SessionPhase.writingOffer => 'Writing offer',
+    SessionPhase.waitingForAnswer => 'Waiting for answer',
+    SessionPhase.writingAnswer => 'Writing answer',
+    SessionPhase.exchangingIce => 'Exchanging ICE',
+    SessionPhase.openingDataChannels => 'Opening channels',
+    SessionPhase.connected => 'Connected',
+    SessionPhase.reconnecting => 'Reconnecting',
+    SessionPhase.disconnecting => 'Disconnecting',
+    SessionPhase.disconnected => 'Disconnected',
+    SessionPhase.failed => 'Failed',
+    null => 'Unknown',
+  };
+}
+
+String _fallbackChoiceLabel(ConnectionFallbackChoice choice) {
+  return switch (choice) {
+    ConnectionFallbackChoice.tryAuto => 'Try Auto',
+    ConnectionFallbackChoice.tryRelay => 'Try Relay',
+    ConnectionFallbackChoice.tryIroh => 'Try Iroh',
+    ConnectionFallbackChoice.cancel => 'Cancel',
+  };
 }
 
 class _ConnectionStatus {
@@ -48,134 +127,92 @@ class _ConnectionStatus {
   final bool canDisconnect;
 }
 
-_ConnectionStatus _connectionStatusFor({
-  required bool canChat,
-  required bool isPeerOnline,
-  required PeerConnectionView connection,
-}) {
-  if (!canChat) {
-    return const _ConnectionStatus(
-      label: 'Unavailable',
-      icon: Icons.lock_outline,
-      color: Color(0xFF52646D),
-      detail: 'Only accepted friends can chat.',
-    );
-  }
-
-  if (connection.disconnecting) {
-    return const _ConnectionStatus(
-      label: 'Disconnecting',
-      icon: Icons.link_off,
-      color: Color(0xFFFBBF24),
-      detail: 'Closing peer session.',
-      isBusy: true,
-      canDisconnect: true,
-    );
-  }
-
-  if (connection.manualIntent == ManualConnectionIntent.manualDisconnected) {
-    return const _ConnectionStatus(
-      label: 'Disconnected',
-      icon: Icons.link_off,
-      color: Color(0xFF52646D),
-      detail: 'Manual disconnect. Press Connect to open the peer lane again.',
-    );
-  }
-
-  final session = connection.session;
-  switch (session?.state) {
-    case SessionState.connected:
+_ConnectionStatus _connectionStatusForDiagnostics(
+  ConnectionDiagnostics diagnostics,
+) {
+  switch (diagnostics.label) {
+    case 'Unavailable':
+      return const _ConnectionStatus(
+        label: 'Unavailable',
+        icon: Icons.lock_outline,
+        color: Color(0xFF52646D),
+        detail: 'Only accepted friends can chat.',
+      );
+    case 'Disconnecting':
+      return const _ConnectionStatus(
+        label: 'Disconnecting',
+        icon: Icons.link_off,
+        color: Color(0xFFFBBF24),
+        detail: 'Closing peer session.',
+        isBusy: true,
+        canDisconnect: true,
+      );
+    case 'Disconnected':
+      return const _ConnectionStatus(
+        label: 'Disconnected',
+        icon: Icons.link_off,
+        color: Color(0xFF52646D),
+        detail: 'Manual disconnect. Press Connect to open the peer lane again.',
+      );
+    case 'Direct':
       return _ConnectionStatus(
-        label: 'Linked',
+        label: 'Direct',
         icon: Icons.hub_outlined,
         color: const Color(0xFF2DD4A3),
-        detail: connection.localDetail ?? 'Encrypted peer lane is open.',
+        detail: diagnostics.detail,
         isConnected: true,
         canDisconnect: true,
       );
-    case SessionState.failed:
+    case 'Relay':
       return _ConnectionStatus(
-        label: 'Failed',
-        icon: Icons.error_outline,
-        color: const Color(0xFFFF6B6B),
-        detail:
-            connection.error?.toString() ??
-            connection.localDetail ??
-            session!.detail,
+        label: 'Relay',
+        icon: Icons.alt_route,
+        color: const Color(0xFF7DD3FC),
+        detail: diagnostics.detail,
+        isConnected: true,
+        canDisconnect: true,
       );
-    case SessionState.reconnecting:
+    case 'Recovering':
       return _ConnectionStatus(
         label: 'Recovering',
         icon: Icons.sync,
         color: const Color(0xFFFBBF24),
-        detail: connection.localDetail ?? session!.detail,
+        detail: diagnostics.detail,
         isBusy: true,
         canDisconnect: true,
       );
-    case SessionState.connecting:
+    case 'Connecting':
       return _ConnectionStatus(
-        label: _phaseLabel(session!.phase),
+        label: 'Connecting',
         icon: Icons.sync,
         color: const Color(0xFFFBBF24),
-        detail: connection.localDetail ?? session.detail,
-        isBusy: true,
-        canDisconnect: true,
+        detail: diagnostics.detail,
+        isBusy: diagnostics.isBusy,
+        isConnected: diagnostics.isConnected,
+        canDisconnect: diagnostics.canDisconnect,
       );
-    case null:
-      break;
+    case 'Failed':
+      return _ConnectionStatus(
+        label: 'Failed',
+        icon: Icons.error_outline,
+        color: const Color(0xFFFF6B6B),
+        detail: diagnostics.detail,
+      );
+    case 'Offline':
+      return const _ConnectionStatus(
+        label: 'Offline',
+        icon: Icons.cloud_off_outlined,
+        color: Color(0xFF52646D),
+        detail: 'Peer is offline. Keep both apps open.',
+      );
+    default:
+      return _ConnectionStatus(
+        label: 'Ready',
+        icon: Icons.wifi_tethering,
+        color: const Color(0xFF7DD3FC),
+        detail: diagnostics.detail,
+      );
   }
-
-  if (connection.actionBusy) {
-    return _ConnectionStatus(
-      label: 'Connecting',
-      icon: Icons.sync,
-      color: const Color(0xFFFBBF24),
-      detail: connection.localDetail ?? 'Starting peer connection.',
-      isBusy: true,
-    );
-  }
-  if (connection.error != null) {
-    return _ConnectionStatus(
-      label: 'Failed',
-      icon: Icons.error_outline,
-      color: const Color(0xFFFF6B6B),
-      detail: _formatUiError(connection.error!),
-    );
-  }
-  if (!isPeerOnline) {
-    return const _ConnectionStatus(
-      label: 'Offline',
-      icon: Icons.cloud_off_outlined,
-      color: Color(0xFF52646D),
-      detail: 'Peer is offline. Keep both apps open.',
-    );
-  }
-  return const _ConnectionStatus(
-    label: 'Ready',
-    icon: Icons.wifi_tethering,
-    color: Color(0xFF7DD3FC),
-    detail: 'Peer is online. Open the peer lane.',
-  );
-}
-
-String _phaseLabel(SessionPhase phase) {
-  return switch (phase) {
-    SessionPhase.checkingPresence => 'Checking',
-    SessionPhase.registeringPeer => 'Registering',
-    SessionPhase.waitingForOffer => 'Signaling',
-    SessionPhase.creatingOffer => 'Signaling',
-    SessionPhase.writingOffer => 'Signaling',
-    SessionPhase.waitingForAnswer => 'Signaling',
-    SessionPhase.writingAnswer => 'Signaling',
-    SessionPhase.exchangingIce => 'Exchanging data',
-    SessionPhase.openingDataChannels => 'Opening channels',
-    SessionPhase.reconnecting => 'Reconnecting',
-    SessionPhase.disconnecting => 'Disconnecting',
-    SessionPhase.connected => 'Connected',
-    SessionPhase.disconnected => 'Disconnected',
-    SessionPhase.failed => 'Failed',
-    SessionPhase.idle => 'Connecting',
-  };
 }
 
 class HomeScreen extends ConsumerStatefulWidget {
@@ -193,7 +230,7 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
   @override
   Widget build(BuildContext context) {
     final friends = ref.watch(friendsProvider);
-    final identity = ref.watch(identityProvider).valueOrNull;
+    final identity = ref.watch(identityProvider).value;
 
     return LayoutBuilder(
       builder: (BuildContext context, BoxConstraints constraints) {
@@ -258,7 +295,7 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
       friends: friends,
       selectedPeerId: _selectedPeerId,
       onSelect: _handleFriendSelection,
-      onRefresh: () => ref.read(friendsProvider.notifier).refresh(),
+      onRefresh: _refreshFriends,
       compact: true,
     );
   }
@@ -272,7 +309,7 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
             friends: friends,
             selectedPeerId: _selectedPeerId,
             onSelect: _handleFriendSelection,
-            onRefresh: () => ref.read(friendsProvider.notifier).refresh(),
+            onRefresh: _refreshFriends,
           ),
         ),
         const VerticalDivider(width: 1),
@@ -292,6 +329,19 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
   Future<void> _handleFriendSelection(FriendRecord friend) async {
     setState(() => _selectedPeerId = friend.username);
     await ref.read(messagesProvider(friend.username).notifier).markRead();
+  }
+
+  Future<void> _refreshFriends() async {
+    final status = ref.read(networkStatusProvider).value;
+    if (status != null && status.blocksNetworkActions) {
+      if (mounted) {
+        ScaffoldMessenger.of(
+          context,
+        ).showSnackBar(SnackBar(content: Text(status.actionErrorMessage)));
+      }
+      return;
+    }
+    await ref.read(friendsProvider.notifier).refresh();
   }
 }
 
@@ -383,24 +433,36 @@ class _CompactLinkStatusPill extends StatelessWidget {
   const _CompactLinkStatusPill({
     required this.status,
     required this.onTap,
+    required this.compact,
     this.enabled = true,
   });
 
   final _ConnectionStatus status;
   final VoidCallback onTap;
+  final bool compact;
   final bool enabled;
 
   @override
   Widget build(BuildContext context) {
     final scheme = Theme.of(context).colorScheme;
+    final availableWidth = MediaQuery.sizeOf(context).width;
+    final pillWidth = compact ? (availableWidth < 360 ? 104.0 : 116.0) : null;
+    final maxLabelWidth = compact
+        ? pillWidth! - 34
+        : availableWidth < 380
+        ? 64.0
+        : 94.0;
 
-    return Material(
+    final pill = Material(
       color: Colors.transparent,
       child: InkWell(
         onTap: enabled ? onTap : null,
         borderRadius: BorderRadius.circular(999),
         child: Ink(
-          padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 7),
+          padding: EdgeInsets.symmetric(
+            horizontal: compact ? 8 : 10,
+            vertical: compact ? 8 : 7,
+          ),
           decoration: BoxDecoration(
             color: status.color.withValues(alpha: 0.13),
             borderRadius: BorderRadius.circular(999),
@@ -427,26 +489,37 @@ class _CompactLinkStatusPill extends StatelessWidget {
                   ),
                 ),
               const SizedBox(width: 7),
-              Text(
-                status.label,
-                maxLines: 1,
-                overflow: TextOverflow.ellipsis,
-                style: Theme.of(context).textTheme.labelMedium?.copyWith(
-                  color: status.color,
-                  fontWeight: FontWeight.w900,
+              ConstrainedBox(
+                constraints: BoxConstraints(maxWidth: maxLabelWidth),
+                child: Text(
+                  status.label,
+                  maxLines: 1,
+                  overflow: TextOverflow.ellipsis,
+                  style: Theme.of(context).textTheme.labelMedium?.copyWith(
+                    color: status.color,
+                    fontWeight: FontWeight.w900,
+                  ),
                 ),
               ),
-              const SizedBox(width: 4),
-              Icon(
-                Icons.tune_rounded,
-                size: 14,
-                color: scheme.onSurface.withValues(alpha: 0.46),
-              ),
+              if (!compact && availableWidth >= 340) ...<Widget>[
+                const SizedBox(width: 4),
+                Icon(
+                  Icons.tune_rounded,
+                  size: 14,
+                  color: scheme.onSurface.withValues(alpha: 0.46),
+                ),
+              ],
             ],
           ),
         ),
       ),
     );
+
+    if (!compact) {
+      return pill;
+    }
+
+    return SizedBox(width: pillWidth, height: 40, child: pill);
   }
 }
 
@@ -475,10 +548,19 @@ class _ConnectionActionButton extends StatelessWidget {
     final label = isConnected ? 'Disconnect' : 'Connect';
 
     if (compact) {
-      return IconButton.filledTonal(
-        tooltip: label,
-        onPressed: enabled ? action : null,
-        icon: Icon(icon),
+      return SizedBox.square(
+        dimension: 40,
+        child: IconButton.filledTonal(
+          tooltip: label,
+          onPressed: enabled ? action : null,
+          style: const ButtonStyle(
+            tapTargetSize: MaterialTapTargetSize.shrinkWrap,
+            minimumSize: WidgetStatePropertyAll(Size.square(40)),
+            fixedSize: WidgetStatePropertyAll(Size.square(40)),
+            padding: WidgetStatePropertyAll(EdgeInsets.zero),
+          ),
+          icon: Icon(icon, size: 20),
+        ),
       );
     }
 
@@ -838,8 +920,10 @@ class _ChatPanelState extends ConsumerState<_ChatPanel> {
   final TextEditingController _composerController = TextEditingController();
   final ScrollController _messageScrollController = ScrollController();
   bool _isSending = false;
+  bool _isPickingFile = false;
   bool _isConnecting = false;
   bool _showJumpToLatest = false;
+  String? _activeFallbackPromptAttemptId;
 
   @override
   void initState() {
@@ -868,16 +952,27 @@ class _ChatPanelState extends ConsumerState<_ChatPanel> {
   @override
   Widget build(BuildContext context) {
     final friends = ref.watch(friendsProvider);
-    final runtime = ref.watch(runtimeControllerProvider).valueOrNull;
+    final runtime = ref.watch(runtimeControllerProvider).value;
     final friend = _currentFriend(friends);
     final canChat = friend?.state == FriendState.friend;
     final isPeerOnline = canChat ? friend?.isOnline ?? false : false;
     final connection = ref.watch(connectionsProvider).peer(widget.peerId);
-    final connectionStatus = _connectionStatusFor(
+    final turnDiagnostics = ref
+        .watch(turnCredentialServiceProvider)
+        .diagnostics;
+    final commandTimeline = ref
+        .watch(connectionTimelineProvider(widget.peerId))
+        .value;
+    final diagnostics = ConnectionDiagnostics.fromConnection(
       canChat: canChat,
       isPeerOnline: isPeerOnline,
       connection: connection,
     );
+    final turnFallbackDiagnostics = TurnFallbackDiagnostics.fromSession(
+      connection.session,
+      turnDiagnostics: turnDiagnostics,
+    );
+    final connectionStatus = _connectionStatusForDiagnostics(diagnostics);
     final canConnectNow =
         runtime != null &&
         canChat &&
@@ -887,9 +982,24 @@ class _ChatPanelState extends ConsumerState<_ChatPanel> {
     final canDisconnectNow =
         runtime != null && canChat && connectionStatus.canDisconnect;
     final messages = ref.watch(messagesProvider(widget.peerId));
+    final transfers = ref.watch(fileTransferViewsProvider(widget.peerId));
     ref.listen<AsyncValue<List<StoredMessage>>>(
       messagesProvider(widget.peerId),
       _handleMessageSound,
+    );
+    ref.listen<AsyncValue<ConnectionFallbackRequest>>(
+      connectionFallbackRequestProvider(widget.peerId),
+      (_, AsyncValue<ConnectionFallbackRequest> next) {
+        final request = next.value;
+        if (request == null) {
+          return;
+        }
+        WidgetsBinding.instance.addPostFrameCallback((_) {
+          if (mounted) {
+            unawaited(_showConnectionFallbackPrompt(request));
+          }
+        });
+      },
     );
 
     return LayoutBuilder(
@@ -911,8 +1021,11 @@ class _ChatPanelState extends ConsumerState<_ChatPanel> {
               child: _buildCommandHeader(
                 friend: friend,
                 canChat: canChat,
-                connection: connection,
+                diagnostics: diagnostics,
+                turnDiagnostics: turnDiagnostics,
+                turnFallbackDiagnostics: turnFallbackDiagnostics,
                 connectionStatus: connectionStatus,
+                commandTimeline: commandTimeline,
                 canConnectNow: canConnectNow,
                 canDisconnectNow: canDisconnectNow,
               ),
@@ -931,6 +1044,7 @@ class _ChatPanelState extends ConsumerState<_ChatPanel> {
                         : canChat
                         ? _buildMessages(
                             messages,
+                            transfers,
                             constraints,
                             horizontalPadding,
                             isNarrow,
@@ -965,8 +1079,10 @@ class _ChatPanelState extends ConsumerState<_ChatPanel> {
                   controller: _composerController,
                   enabled: runtime != null && canChat,
                   isSending: _isSending,
+                  isAttaching: _isPickingFile,
                   maxLength: InputValidator.messageMaxLength,
                   onSend: () => _sendMessage(runtime),
+                  onAttach: () => _pickAndSendFile(runtime, connectionStatus),
                 ),
               ),
           ],
@@ -1004,8 +1120,8 @@ class _ChatPanelState extends ConsumerState<_ChatPanel> {
     AsyncValue<List<StoredMessage>>? previous,
     AsyncValue<List<StoredMessage>> next,
   ) {
-    final previousMessages = previous?.valueOrNull;
-    final nextMessages = next.valueOrNull;
+    final previousMessages = previous?.value;
+    final nextMessages = next.value;
     if (previousMessages == null || nextMessages == null) {
       return;
     }
@@ -1035,8 +1151,11 @@ class _ChatPanelState extends ConsumerState<_ChatPanel> {
   Widget _buildCommandHeader({
     required FriendRecord? friend,
     required bool canChat,
-    required PeerConnectionView connection,
+    required ConnectionDiagnostics diagnostics,
+    required TurnCredentialDiagnostics turnDiagnostics,
+    required TurnFallbackDiagnostics turnFallbackDiagnostics,
     required _ConnectionStatus connectionStatus,
+    required ConnectionTimeline? commandTimeline,
     required bool canConnectNow,
     required bool canDisconnectNow,
   }) {
@@ -1045,8 +1164,11 @@ class _ChatPanelState extends ConsumerState<_ChatPanel> {
     final handle = '@${friend?.username ?? widget.peerId}';
     void openLinkDialog() {
       _showLinkCommandDialog(
-        connection: connection,
+        diagnostics: diagnostics,
+        turnDiagnostics: turnDiagnostics,
+        turnFallbackDiagnostics: turnFallbackDiagnostics,
         connectionStatus: connectionStatus,
+        commandTimeline: commandTimeline,
         canConnectNow: canConnectNow,
         canDisconnectNow: canDisconnectNow,
       );
@@ -1101,6 +1223,7 @@ class _ChatPanelState extends ConsumerState<_ChatPanel> {
         _CompactLinkStatusPill(
           status: connectionStatus,
           enabled: canChat,
+          compact: widget.isCompact,
           onTap: openLinkDialog,
         ),
         const SizedBox(width: 8),
@@ -1123,145 +1246,258 @@ class _ChatPanelState extends ConsumerState<_ChatPanel> {
   }
 
   Future<void> _showLinkCommandDialog({
-    required PeerConnectionView connection,
+    required ConnectionDiagnostics diagnostics,
+    required TurnCredentialDiagnostics turnDiagnostics,
+    required TurnFallbackDiagnostics turnFallbackDiagnostics,
     required _ConnectionStatus connectionStatus,
+    required ConnectionTimeline? commandTimeline,
     required bool canConnectNow,
     required bool canDisconnectNow,
   }) {
-    final session = connection.session;
-    final updatedAt = session?.updatedAt ?? connection.updatedAt;
+    final route = diagnostics.route;
+    final updatedAt = diagnostics.updatedAt;
+    final relayProbeEnabled =
+        !kReleaseMode && ref.read(appEnvironmentProvider).enableRelayProbe;
     return showDialog<void>(
       context: context,
       builder: (BuildContext dialogContext) {
-        final scheme = Theme.of(dialogContext).colorScheme;
+        void closeDialog() => Navigator.of(dialogContext).pop();
 
-        return AlertDialog(
-          titlePadding: const EdgeInsets.fromLTRB(20, 18, 8, 0),
-          contentPadding: const EdgeInsets.fromLTRB(20, 16, 20, 8),
-          actionsPadding: const EdgeInsets.fromLTRB(20, 8, 20, 18),
-          title: Row(
-            children: <Widget>[
-              Icon(connectionStatus.icon, color: connectionStatus.color),
-              const SizedBox(width: 10),
-              Expanded(
-                child: Text(
-                  'Live Link',
-                  style: Theme.of(
-                    dialogContext,
-                  ).textTheme.titleLarge?.copyWith(fontWeight: FontWeight.w900),
-                ),
+        return Dialog(
+          insetPadding: const EdgeInsets.all(12),
+          backgroundColor: Colors.transparent,
+          child: ConnectionCommandCenter(
+            statusLabel: connectionStatus.label,
+            statusDetail: connectionStatus.detail,
+            statusColor: connectionStatus.color,
+            statusIcon: connectionStatus.icon,
+            timeline: commandTimeline,
+            initialPolicy:
+                commandTimeline?.policy ?? const ConnectionPolicy.defaults(),
+            diagnosticItems: <ConnectionDiagnosticItem>[
+              ConnectionDiagnosticItem(
+                label: 'Transport',
+                value: diagnostics.transportLabel,
               ),
-              IconButton(
-                tooltip: 'Close',
-                onPressed: () => Navigator.of(dialogContext).pop(),
-                icon: const Icon(Icons.close),
+              ConnectionDiagnosticItem(
+                label: 'Route',
+                value: diagnostics.label,
+              ),
+              ConnectionDiagnosticItem(
+                label: 'Phase',
+                value: _phaseLabel(diagnostics.phase),
+              ),
+              ConnectionDiagnosticItem(
+                label: 'ICE stage',
+                value: turnFallbackDiagnostics.stageLabel,
+              ),
+              ConnectionDiagnosticItem(
+                label: 'Provider tier',
+                value: turnFallbackDiagnostics.providerTierLabel,
+              ),
+              ConnectionDiagnosticItem(
+                label: 'Provider',
+                value: diagnostics.providerId,
+              ),
+              ConnectionDiagnosticItem(
+                label: 'Pair',
+                value: diagnostics.selectedCandidatePairId,
+              ),
+              ConnectionDiagnosticItem(
+                label: 'Local',
+                value: _candidateLabel(route.localCandidateType),
+              ),
+              ConnectionDiagnosticItem(
+                label: 'Remote',
+                value: _candidateLabel(route.remoteCandidateType),
+              ),
+              ConnectionDiagnosticItem(
+                label: 'Protocol',
+                value: _protocolLabel(route),
+              ),
+              ConnectionDiagnosticItem(
+                label: 'RTT',
+                value: _rttLabel(route.rtt),
+              ),
+              ConnectionDiagnosticItem(
+                label: 'Bitrate',
+                value: _bitrateLabel(route.bitrate),
+              ),
+              ConnectionDiagnosticItem(
+                label: 'TURN',
+                value: turnDiagnostics.brokerConfigured ? 'Broker' : 'Static',
+              ),
+              ConnectionDiagnosticItem(
+                label: 'TURN provider',
+                value: turnFallbackDiagnostics.providerLabel,
+              ),
+              ConnectionDiagnosticItem(
+                label: 'TURN URLs',
+                value: turnFallbackDiagnostics.turnUrlCountLabel,
+              ),
+              ConnectionDiagnosticItem(
+                label: 'TURN expires',
+                value: turnDiagnostics.expiresAt == null
+                    ? null
+                    : _formatMessageTime(
+                        turnDiagnostics.expiresAt!.millisecondsSinceEpoch,
+                      ),
+              ),
+              ConnectionDiagnosticItem(
+                label: 'Room',
+                value: diagnostics.roomId,
+              ),
+              ConnectionDiagnosticItem(
+                label: 'Role',
+                value: diagnostics.isOfferOwner == null
+                    ? null
+                    : diagnostics.isOfferOwner!
+                    ? 'Offer'
+                    : 'Answer',
+              ),
+              ConnectionDiagnosticItem(
+                label: 'Retries',
+                value: '${diagnostics.retryAttempt}',
+              ),
+              ConnectionDiagnosticItem(
+                label: 'Attempt',
+                value: '${diagnostics.attemptIndex + 1}',
+              ),
+              ConnectionDiagnosticItem(
+                label: 'Updated',
+                value: updatedAt == null ? null : _formatMessageTime(updatedAt),
+              ),
+              ConnectionDiagnosticItem(
+                label: 'Last error',
+                value:
+                    diagnostics.lastError ??
+                    turnFallbackDiagnostics.lastError ??
+                    turnDiagnostics.lastError,
+              ),
+              ConnectionDiagnosticItem(
+                label: 'Error code',
+                value: turnFallbackDiagnostics.errorCodeLabel,
               ),
             ],
+            canConnect: canConnectNow,
+            canRetry: canConnectNow && connectionStatus.label == 'Failed',
+            canCancel: commandTimeline?.canCancel ?? false,
+            canDisconnect: canDisconnectNow,
+            canRunRelayProbe: relayProbeEnabled,
+            onClose: closeDialog,
+            onConnect: (ConnectionPolicy policy) {
+              closeDialog();
+              unawaited(_connectToPeer(policy: policy));
+            },
+            onRetry: (ConnectionPolicy policy) {
+              closeDialog();
+              unawaited(_connectToPeer(policy: policy));
+            },
+            onCancel: () {
+              closeDialog();
+              unawaited(_cancelConnectionAttempt());
+            },
+            onDisconnect: () {
+              closeDialog();
+              unawaited(_disconnectPeer());
+            },
+            onRunRelayProbe: () {
+              closeDialog();
+              unawaited(_runRelayProbe());
+            },
           ),
-          content: ConstrainedBox(
-            constraints: const BoxConstraints(maxWidth: 420),
-            child: Column(
-              mainAxisSize: MainAxisSize.min,
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: <Widget>[
-                RainMiniStatusChip(
-                  label: connectionStatus.label,
-                  color: connectionStatus.color,
-                ),
-                const SizedBox(height: 12),
-                Text(
-                  connectionStatus.detail,
-                  style: Theme.of(dialogContext).textTheme.bodyMedium?.copyWith(
-                    color: scheme.onSurface.withValues(alpha: 0.72),
-                  ),
-                ),
-                const SizedBox(height: 16),
-                Wrap(
-                  spacing: 10,
-                  runSpacing: 10,
-                  children: <Widget>[
-                    _LinkStatCard(
-                      label: 'Route',
-                      value: connectionStatus.isConnected
-                          ? 'Peer lane'
-                          : connectionStatus.isBusy
-                          ? 'Opening'
-                          : 'Standby',
-                    ),
-                    _LinkStatCard(
-                      label: 'Room',
-                      value: session?.roomId ?? 'Not opened',
-                    ),
-                    _LinkStatCard(
-                      label: 'Role',
-                      value: session?.isOfferOwner == null
-                          ? 'None'
-                          : session!.isOfferOwner!
-                          ? 'Offer'
-                          : 'Answer',
-                    ),
-                    _LinkStatCard(
-                      label: 'Retries',
-                      value: '${session?.retryAttempt ?? 0}',
-                    ),
-                    _LinkStatCard(
-                      label: 'Updated',
-                      value: updatedAt == null
-                          ? 'Never'
-                          : _formatMessageTime(updatedAt),
-                    ),
-                  ],
-                ),
-                if (connection.error != null ||
-                    (session?.error?.isNotEmpty ?? false)) ...<Widget>[
-                  const SizedBox(height: 14),
-                  Text(
-                    _formatUiError(connection.error ?? session!.error!),
-                    style: TextStyle(color: scheme.error),
-                  ),
-                ],
-              ],
-            ),
-          ),
-          actions: <Widget>[
-            TextButton(
-              onPressed: () => Navigator.of(dialogContext).pop(),
-              child: const Text('Close'),
-            ),
-            OutlinedButton.icon(
-              onPressed: canDisconnectNow
-                  ? () {
-                      Navigator.of(dialogContext).pop();
-                      _disconnectPeer();
-                    }
-                  : null,
-              icon: const Icon(Icons.link_off),
-              label: const Text('Disconnect'),
-            ),
-            FilledButton.icon(
-              onPressed: canConnectNow
-                  ? () {
-                      Navigator.of(dialogContext).pop();
-                      _connectToPeer();
-                    }
-                  : null,
-              icon: Icon(
-                connectionStatus.label == 'Failed'
-                    ? Icons.refresh
-                    : Icons.hub_outlined,
-              ),
-              label: Text(
-                connectionStatus.label == 'Failed' ? 'Retry' : 'Connect',
-              ),
-            ),
-          ],
         );
       },
     );
   }
 
+  Future<void> _showConnectionFallbackPrompt(
+    ConnectionFallbackRequest request,
+  ) async {
+    if (_activeFallbackPromptAttemptId == request.attemptId) {
+      return;
+    }
+    _activeFallbackPromptAttemptId = request.attemptId;
+    var rememberForSession = false;
+
+    Future<void> choose(ConnectionFallbackChoice choice) async {
+      Navigator.of(context).pop();
+      try {
+        await ref
+            .read(connectionsProvider.notifier)
+            .resolveFallback(
+              request.peerId,
+              choice,
+              rememberForSession: rememberForSession,
+            );
+      } catch (error) {
+        _playSound(RainSoundEffect.error);
+        if (mounted) {
+          _showErrorSnack(_formatUiError(error));
+        }
+      }
+    }
+
+    try {
+      await showDialog<void>(
+        context: context,
+        barrierDismissible: false,
+        builder: (BuildContext dialogContext) {
+          final scheme = Theme.of(dialogContext).colorScheme;
+          return StatefulBuilder(
+            builder: (BuildContext context, StateSetter setDialogState) {
+              return AlertDialog(
+                title: const Text('Connection fallback'),
+                content: ConstrainedBox(
+                  constraints: const BoxConstraints(maxWidth: 420),
+                  child: Column(
+                    mainAxisSize: MainAxisSize.min,
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: <Widget>[
+                      Text(
+                        request.userMessage,
+                        style: Theme.of(context).textTheme.bodyMedium?.copyWith(
+                          color: scheme.onSurface.withValues(alpha: 0.74),
+                        ),
+                      ),
+                      const SizedBox(height: 12),
+                      CheckboxListTile(
+                        contentPadding: EdgeInsets.zero,
+                        dense: true,
+                        value: rememberForSession,
+                        onChanged: (bool? value) {
+                          setDialogState(
+                            () => rememberForSession = value ?? false,
+                          );
+                        },
+                        title: const Text('Remember for this session'),
+                        controlAffinity: ListTileControlAffinity.leading,
+                      ),
+                    ],
+                  ),
+                ),
+                actions: <Widget>[
+                  for (final choice in request.choices)
+                    TextButton(
+                      onPressed: () => unawaited(choose(choice)),
+                      child: Text(_fallbackChoiceLabel(choice)),
+                    ),
+                ],
+              );
+            },
+          );
+        },
+      );
+    } finally {
+      if (_activeFallbackPromptAttemptId == request.attemptId) {
+        _activeFallbackPromptAttemptId = null;
+      }
+    }
+  }
+
   Widget _buildMessages(
     AsyncValue<List<StoredMessage>> messages,
+    AsyncValue<List<FileTransferView>> transfers,
     BoxConstraints constraints,
     double horizontalPadding,
     bool isNarrow,
@@ -1270,6 +1506,11 @@ class _ChatPanelState extends ConsumerState<_ChatPanel> {
       onRefresh: _refreshChat,
       child: messages.when(
         data: (List<StoredMessage> items) {
+          final transferByMessageId = <String, FileTransferView>{
+            for (final transferView
+                in transfers.value ?? const <FileTransferView>[])
+              transferView.record.messageId: transferView,
+          };
           if (items.isEmpty) {
             return ListView(
               physics: const AlwaysScrollableScrollPhysics(),
@@ -1316,6 +1557,9 @@ class _ChatPanelState extends ConsumerState<_ChatPanel> {
               final deliveryColor = message.isOutgoing
                   ? _deliveryColor(message.status)
                   : null;
+              final transferView = message.type == MessageType.file
+                  ? transferByMessageId[message.id]
+                  : null;
 
               return Column(
                 crossAxisAlignment: CrossAxisAlignment.stretch,
@@ -1324,23 +1568,48 @@ class _ChatPanelState extends ConsumerState<_ChatPanel> {
                     RainMessageDayDivider(
                       label: _formatMessageDay(message.sentAt),
                     ),
-                  RainMessageBubble(
-                    text: message.content,
-                    timeLabel: _formatMessageTime(message.sentAt),
-                    isOutgoing: message.isOutgoing,
-                    startsCluster: startsCluster,
-                    endsCluster: endsCluster,
-                    maxWidth: maxBubbleWidth,
-                    deliveryLabel: deliveryLabel,
-                    deliveryColor: deliveryColor,
-                    onRetry:
-                        message.isOutgoing &&
-                            message.status == MessageStatus.failed
-                        ? () => unawaited(_resendMessage(message))
-                        : null,
-                    onOpenActions: () =>
-                        unawaited(_showMessageActions(message)),
-                  ),
+                  if (transferView != null)
+                    Builder(
+                      builder: (BuildContext context) {
+                        final transfer = transferView.record;
+                        return _FileTransferBubble(
+                          transferView: transferView,
+                          timeLabel: _formatMessageTime(message.sentAt),
+                          startsCluster: startsCluster,
+                          endsCluster: endsCluster,
+                          maxWidth: maxBubbleWidth,
+                          onAccept: () =>
+                              unawaited(_acceptFileTransfer(transfer)),
+                          onReject: () =>
+                              unawaited(_rejectFileTransfer(transfer)),
+                          onCancel: () =>
+                              unawaited(_cancelFileTransfer(transfer)),
+                          onOpen: () => unawaited(_openFileTransfer(transfer)),
+                          onSave: () => unawaited(_saveFileTransfer(transfer)),
+                          onRetry: _canRetryFileTransfer(transfer)
+                              ? () => unawaited(_retryFileTransfer(transfer))
+                              : null,
+                        );
+                      },
+                    )
+                  else
+                    RainMessageBubble(
+                      text: message.content,
+                      timeLabel: _formatMessageTime(message.sentAt),
+                      isOutgoing: message.isOutgoing,
+                      startsCluster: startsCluster,
+                      endsCluster: endsCluster,
+                      maxWidth: maxBubbleWidth,
+                      deliveryLabel: deliveryLabel,
+                      deliveryColor: deliveryColor,
+                      onRetry:
+                          message.isOutgoing &&
+                              message.status == MessageStatus.failed
+                          ? () => unawaited(_resendMessage(message))
+                          : null,
+                      onOpenActions: () =>
+                          unawaited(_showMessageActions(message)),
+                    ),
                 ],
               );
             },
@@ -1368,6 +1637,11 @@ class _ChatPanelState extends ConsumerState<_ChatPanel> {
   }
 
   Future<void> _refreshChat() async {
+    final networkError = _networkActionError();
+    if (networkError != null) {
+      _showErrorSnack(networkError);
+      return;
+    }
     await ref.read(friendsProvider.notifier).refreshPeer(widget.peerId);
     await ref.read(messagesProvider(widget.peerId).notifier).markRead();
   }
@@ -1570,8 +1844,183 @@ class _ChatPanelState extends ConsumerState<_ChatPanel> {
     }
   }
 
+  Future<void> _pickAndSendFile(
+    RainRuntimeController? runtime,
+    _ConnectionStatus connectionStatus,
+  ) async {
+    if (_isPickingFile) {
+      return;
+    }
+    final networkError = _networkActionError();
+    if (networkError != null) {
+      _playSound(RainSoundEffect.error);
+      _showErrorSnack(networkError);
+      return;
+    }
+    if (runtime == null || !connectionStatus.isConnected) {
+      _playSound(RainSoundEffect.error);
+      _showErrorSnack('Connect first.');
+      return;
+    }
+
+    setState(() => _isPickingFile = true);
+    try {
+      final result = await FilePicker.pickFiles(
+        allowMultiple: false,
+        withData: false,
+        withReadStream: true,
+      );
+      final picked = result == null || result.files.isEmpty
+          ? null
+          : result.files.first;
+      if (picked == null) {
+        return;
+      }
+      if (picked.size > maxFileTransferBytes) {
+        throw StateError(
+          'Files are limited to ${formatFileTransferSize(maxFileTransferBytes)}.',
+        );
+      }
+      final localPath = picked.path;
+      final file = localPath == null ? null : File(localPath);
+      await ref
+          .read(messagesProvider(widget.peerId).notifier)
+          .sendFile(
+            fileName: picked.name,
+            fileSize: picked.size,
+            localPath: localPath,
+            openRead: () {
+              if (file != null) {
+                return file.openRead();
+              }
+              final stream = picked.readStream;
+              if (stream == null) {
+                throw StateError('Could not read the selected file.');
+              }
+              return stream;
+            },
+          );
+      _playSound(RainSoundEffect.send);
+      WidgetsBinding.instance.addPostFrameCallback((_) => _jumpToLatest());
+    } catch (error) {
+      _playSound(RainSoundEffect.error);
+      _showErrorSnack(_formatUiError(error));
+    } finally {
+      if (mounted) {
+        setState(() => _isPickingFile = false);
+      }
+    }
+  }
+
+  Future<void> _acceptFileTransfer(FileTransferRecord transfer) async {
+    await _runFileTransferAction(
+      () => ref
+          .read(fileTransfersProvider(widget.peerId).notifier)
+          .accept(transfer.id),
+    );
+  }
+
+  Future<void> _rejectFileTransfer(FileTransferRecord transfer) async {
+    await _runFileTransferAction(
+      () => ref
+          .read(fileTransfersProvider(widget.peerId).notifier)
+          .reject(transfer.id),
+    );
+  }
+
+  Future<void> _cancelFileTransfer(FileTransferRecord transfer) async {
+    await _runFileTransferAction(
+      () => ref
+          .read(fileTransfersProvider(widget.peerId).notifier)
+          .cancel(transfer.id),
+    );
+  }
+
+  Future<void> _retryFileTransfer(FileTransferRecord transfer) async {
+    await _runFileTransferAction(
+      () => ref
+          .read(fileTransfersProvider(widget.peerId).notifier)
+          .retry(transfer),
+      successEffect: RainSoundEffect.send,
+    );
+  }
+
+  Future<void> _openFileTransfer(FileTransferRecord transfer) async {
+    final localPath = transfer.localPath;
+    if (localPath == null || localPath.isEmpty) {
+      _showErrorSnack('Received file is not available.');
+      return;
+    }
+    final file = File(localPath);
+    if (!await file.exists()) {
+      _showErrorSnack('Received file is not available.');
+      return;
+    }
+    final result = await OpenFilex.open(localPath);
+    if (result.type != ResultType.done) {
+      _showErrorSnack(result.message);
+    }
+  }
+
+  Future<void> _saveFileTransfer(FileTransferRecord transfer) async {
+    try {
+      final result = await ref
+          .read(receivedFileExportServiceProvider)
+          .saveReceivedFile(transfer);
+      if (result.saved) {
+        _playSound(RainSoundEffect.action);
+        _showInfoSnack('File saved.');
+      }
+    } catch (error) {
+      _playSound(RainSoundEffect.error);
+      _showErrorSnack(_formatUiError(error));
+    }
+  }
+
+  bool _canRetryFileTransfer(FileTransferRecord transfer) {
+    return transfer.direction == FileTransferDirection.outgoing &&
+        (transfer.state == FileTransferState.failed ||
+            transfer.state == FileTransferState.canceled) &&
+        transfer.localPath != null &&
+        transfer.localPath!.isNotEmpty;
+  }
+
+  Future<void> _runFileTransferAction(
+    Future<void> Function() action, {
+    RainSoundEffect successEffect = RainSoundEffect.action,
+  }) async {
+    try {
+      await action();
+      _playSound(successEffect);
+    } catch (error) {
+      _playSound(RainSoundEffect.error);
+      _showErrorSnack(_formatUiError(error));
+    }
+  }
+
+  void _showErrorSnack(String message) {
+    if (!mounted) {
+      return;
+    }
+    ScaffoldMessenger.of(context).showSnackBar(
+      SnackBar(
+        content: Text(message),
+        backgroundColor: Theme.of(context).colorScheme.error,
+      ),
+    );
+  }
+
+  void _showInfoSnack(String message) {
+    if (!mounted) {
+      return;
+    }
+    ScaffoldMessenger.of(
+      context,
+    ).showSnackBar(SnackBar(content: Text(message)));
+  }
+
   FriendRecord? _currentFriend(AsyncValue<List<FriendRecord>> friends) {
-    final items = friends.valueOrNull;
+    final items = friends.value;
     if (items == null) {
       return null;
     }
@@ -1738,11 +2187,22 @@ class _ChatPanelState extends ConsumerState<_ChatPanel> {
     if (text.isEmpty || _isSending) {
       return;
     }
+    final networkError = _networkActionError();
+    if (networkError != null) {
+      _playSound(RainSoundEffect.error);
+      _showErrorSnack(networkError);
+      return;
+    }
+    if (runtime == null) {
+      _playSound(RainSoundEffect.error);
+      _showErrorSnack('Peer connection is unavailable right now.');
+      return;
+    }
 
     setState(() => _isSending = true);
     _composerController.clear();
     try {
-      await runtime?.sendMessage(widget.peerId, text);
+      await runtime.sendMessage(widget.peerId, text);
       _playSound(RainSoundEffect.send);
       WidgetsBinding.instance.addPostFrameCallback((_) => _jumpToLatest());
     } catch (error) {
@@ -1763,17 +2223,23 @@ class _ChatPanelState extends ConsumerState<_ChatPanel> {
     }
   }
 
-  Future<void> _connectToPeer() async {
+  Future<void> _connectToPeer({ConnectionPolicy? policy}) async {
     if (_isConnecting) return;
+    final networkError = _networkActionError();
+    if (networkError != null) {
+      _playSound(RainSoundEffect.error);
+      _showErrorSnack(networkError);
+      return;
+    }
     setState(() => _isConnecting = true);
     try {
       await ref
           .read(connectionsProvider.notifier)
-          .connect(widget.peerId, waitForConnected: true);
+          .connect(widget.peerId, waitForConnected: true, policy: policy);
       _playSound(RainSoundEffect.action);
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(content: Text('Connected to @${widget.peerId}.')),
+          SnackBar(content: Text('Connection started for @${widget.peerId}.')),
         );
       }
     } catch (error) {
@@ -1793,6 +2259,43 @@ class _ChatPanelState extends ConsumerState<_ChatPanel> {
     }
   }
 
+  Future<void> _cancelConnectionAttempt() async {
+    try {
+      await ref.read(connectionsProvider.notifier).cancel(widget.peerId);
+      _playSound(RainSoundEffect.action);
+    } catch (error) {
+      _playSound(RainSoundEffect.error);
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text(_formatUiError(error)),
+            backgroundColor: Theme.of(context).colorScheme.error,
+          ),
+        );
+      }
+    }
+  }
+
+  Future<void> _runRelayProbe() async {
+    final attempt = IceAttemptDescriptor(
+      stage: IceAttemptStage.primaryRelay,
+      policy: PeerIceTransportPolicy.relayOnly,
+      providerTier: IceProviderTier.primaryRelay,
+      providerId: 'primary-relay',
+      timeout: const Duration(seconds: 30),
+      connectAttemptId: 'probe-${DateTime.now().microsecondsSinceEpoch}',
+      attemptIndex: 1,
+    );
+    final result = await ref
+        .read(turnRelayProbeProvider)
+        .run(peerId: widget.peerId, attempt: attempt);
+    if (result.succeeded) {
+      _showInfoSnack(result.userMessage);
+    } else {
+      _showErrorSnack(result.userMessage);
+    }
+  }
+
   Future<void> _disconnectPeer() async {
     try {
       await ref.read(connectionsProvider.notifier).disconnect(widget.peerId);
@@ -1809,48 +2312,269 @@ class _ChatPanelState extends ConsumerState<_ChatPanel> {
       }
     }
   }
+
+  String? _networkActionError() {
+    final status = ref.read(networkStatusProvider).value;
+    return status != null && status.blocksNetworkActions
+        ? status.actionErrorMessage
+        : null;
+  }
 }
 
-class _LinkStatCard extends StatelessWidget {
-  const _LinkStatCard({required this.label, required this.value});
+class _FileTransferBubble extends StatelessWidget {
+  const _FileTransferBubble({
+    required this.transferView,
+    required this.timeLabel,
+    required this.startsCluster,
+    required this.endsCluster,
+    required this.maxWidth,
+    required this.onAccept,
+    required this.onReject,
+    required this.onCancel,
+    required this.onOpen,
+    required this.onSave,
+    this.onRetry,
+  });
 
-  final String label;
-  final String value;
+  final FileTransferView transferView;
+  final String timeLabel;
+  final bool startsCluster;
+  final bool endsCluster;
+  final double maxWidth;
+  final VoidCallback onAccept;
+  final VoidCallback onReject;
+  final VoidCallback onCancel;
+  final VoidCallback onOpen;
+  final VoidCallback onSave;
+  final VoidCallback? onRetry;
+
+  FileTransferRecord get transfer => transferView.record;
+  bool get _isOutgoing => transfer.direction == FileTransferDirection.outgoing;
+  bool get _isActive => transfer.isActive;
+  bool get _canOpen =>
+      transfer.state == FileTransferState.completed &&
+      transfer.localPath != null &&
+      transfer.localPath!.isNotEmpty;
+  bool get _canSave =>
+      _canOpen && transfer.direction == FileTransferDirection.incoming;
 
   @override
   Widget build(BuildContext context) {
     final scheme = Theme.of(context).colorScheme;
+    final isDark = scheme.brightness == Brightness.dark;
+    final bubbleColor = _isOutgoing
+        ? (isDark ? const Color(0xFF1D7E8E) : scheme.primaryContainer)
+        : (isDark ? const Color(0xFF18262E) : scheme.surfaceContainerHighest);
+    final textColor = _isOutgoing
+        ? (isDark ? Colors.white : scheme.onPrimaryContainer)
+        : scheme.onSurface;
+    final muted = textColor.withValues(alpha: 0.72);
+    final statusColor = _fileTransferStatusColor(transfer.state);
+    final tailRadius = const Radius.circular(6);
+    final roundRadius = const Radius.circular(20);
+    final radius = BorderRadius.only(
+      topLeft: roundRadius,
+      topRight: roundRadius,
+      bottomLeft: _isOutgoing || !endsCluster ? roundRadius : tailRadius,
+      bottomRight: _isOutgoing && endsCluster ? tailRadius : roundRadius,
+    );
 
-    return Container(
-      width: 132,
-      padding: const EdgeInsets.all(12),
-      decoration: BoxDecoration(
-        color: scheme.surfaceContainerHighest.withValues(alpha: 0.52),
-        borderRadius: BorderRadius.circular(14),
-        border: Border.all(
-          color: scheme.outlineVariant.withValues(alpha: 0.38),
+    return Align(
+      alignment: _isOutgoing ? Alignment.centerRight : Alignment.centerLeft,
+      child: ConstrainedBox(
+        constraints: BoxConstraints(maxWidth: maxWidth),
+        child: Container(
+          margin: EdgeInsets.only(
+            top: startsCluster ? 8 : 2,
+            bottom: endsCluster ? 8 : 1,
+          ),
+          padding: const EdgeInsets.fromLTRB(14, 12, 12, 10),
+          decoration: BoxDecoration(color: bubbleColor, borderRadius: radius),
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: <Widget>[
+              Row(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: <Widget>[
+                  Icon(Icons.insert_drive_file_outlined, color: textColor),
+                  const SizedBox(width: 10),
+                  Expanded(
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: <Widget>[
+                        Text(
+                          transfer.fileName,
+                          maxLines: 2,
+                          overflow: TextOverflow.ellipsis,
+                          style: Theme.of(context).textTheme.bodyMedium
+                              ?.copyWith(
+                                color: textColor,
+                                fontWeight: FontWeight.w900,
+                                height: 1.18,
+                              ),
+                        ),
+                        const SizedBox(height: 4),
+                        Text(
+                          formatFileTransferSize(transfer.fileSize),
+                          style: Theme.of(context).textTheme.labelMedium
+                              ?.copyWith(
+                                color: muted,
+                                fontWeight: FontWeight.w700,
+                              ),
+                        ),
+                      ],
+                    ),
+                  ),
+                ],
+              ),
+              if (_isActive) ...<Widget>[
+                const SizedBox(height: 10),
+                ClipRRect(
+                  borderRadius: BorderRadius.circular(4),
+                  child: LinearProgressIndicator(
+                    value: transfer.fileSize <= 0 ? null : transfer.progress,
+                    minHeight: 5,
+                    color: statusColor,
+                    backgroundColor: textColor.withValues(alpha: 0.14),
+                  ),
+                ),
+              ],
+              if (transfer.error != null && transfer.error!.isNotEmpty) ...[
+                const SizedBox(height: 8),
+                Text(
+                  transfer.error!,
+                  style: Theme.of(context).textTheme.labelMedium?.copyWith(
+                    color: statusColor,
+                    fontWeight: FontWeight.w800,
+                  ),
+                ),
+              ],
+              const SizedBox(height: 9),
+              Wrap(
+                spacing: 8,
+                runSpacing: 8,
+                crossAxisAlignment: WrapCrossAlignment.center,
+                children: <Widget>[
+                  Text(
+                    timeLabel,
+                    style: Theme.of(context).textTheme.labelSmall?.copyWith(
+                      color: muted,
+                      fontWeight: FontWeight.w700,
+                    ),
+                  ),
+                  Container(
+                    width: 5,
+                    height: 5,
+                    decoration: BoxDecoration(
+                      color: statusColor,
+                      shape: BoxShape.circle,
+                    ),
+                  ),
+                  Text(
+                    _fileTransferStatusLabel(transferView),
+                    style: Theme.of(context).textTheme.labelSmall?.copyWith(
+                      color: statusColor,
+                      fontWeight: FontWeight.w900,
+                    ),
+                  ),
+                ],
+              ),
+              if (_hasActions) ...<Widget>[
+                const SizedBox(height: 10),
+                Wrap(
+                  spacing: 8,
+                  runSpacing: 8,
+                  children: <Widget>[
+                    if (transfer.direction == FileTransferDirection.incoming &&
+                        transfer.state == FileTransferState.offered) ...[
+                      FilledButton.tonalIcon(
+                        onPressed: onAccept,
+                        icon: const Icon(Icons.check_rounded),
+                        label: const Text('Accept'),
+                      ),
+                      TextButton.icon(
+                        onPressed: onReject,
+                        icon: const Icon(Icons.close_rounded),
+                        label: const Text('Reject'),
+                      ),
+                    ],
+                    if (_isActive &&
+                        transfer.state != FileTransferState.offered)
+                      TextButton.icon(
+                        onPressed: onCancel,
+                        icon: const Icon(Icons.close_rounded),
+                        label: const Text('Cancel'),
+                      ),
+                    if (_canOpen)
+                      FilledButton.tonalIcon(
+                        onPressed: onOpen,
+                        icon: const Icon(Icons.open_in_new_rounded),
+                        label: const Text('Open'),
+                      ),
+                    if (_canSave)
+                      TextButton.icon(
+                        onPressed: onSave,
+                        icon: const Icon(Icons.save_alt_rounded),
+                        label: const Text('Save'),
+                      ),
+                    if (onRetry != null)
+                      TextButton.icon(
+                        onPressed: onRetry,
+                        icon: const Icon(Icons.refresh_rounded),
+                        label: const Text('Retry'),
+                      ),
+                  ],
+                ),
+              ],
+            ],
+          ),
         ),
-      ),
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: <Widget>[
-          Text(
-            label,
-            style: Theme.of(context).textTheme.labelSmall?.copyWith(
-              color: scheme.onSurface.withValues(alpha: 0.58),
-            ),
-          ),
-          const SizedBox(height: 5),
-          Text(
-            value,
-            maxLines: 1,
-            overflow: TextOverflow.ellipsis,
-            style: Theme.of(
-              context,
-            ).textTheme.bodyMedium?.copyWith(fontWeight: FontWeight.w800),
-          ),
-        ],
       ),
     );
   }
+
+  bool get _hasActions {
+    return (transfer.direction == FileTransferDirection.incoming &&
+            transfer.state == FileTransferState.offered) ||
+        (_isActive && transfer.state != FileTransferState.offered) ||
+        _canOpen ||
+        _canSave ||
+        onRetry != null;
+  }
+}
+
+String _fileTransferStatusLabel(FileTransferView transferView) {
+  final transfer = transferView.record;
+  final progress = transfer.fileSize <= 0
+      ? ''
+      : ' ${(transfer.progress * 100).clamp(0, 100).toStringAsFixed(0)}%';
+  final speed = transferView.speedBytesPerSecond == null
+      ? ''
+      : ' • ${formatFileTransferSpeed(transferView.speedBytesPerSecond!)}';
+  return switch (transfer.state) {
+    FileTransferState.offered =>
+      transfer.direction == FileTransferDirection.incoming
+          ? 'Incoming'
+          : 'Offered',
+    FileTransferState.accepted => 'Accepted',
+    FileTransferState.sending => 'Sending$progress$speed',
+    FileTransferState.receiving => 'Receiving$progress$speed',
+    FileTransferState.completed => 'Completed',
+    FileTransferState.canceled => 'Canceled',
+    FileTransferState.failed => 'Failed',
+    FileTransferState.rejected => 'Rejected',
+  };
+}
+
+Color _fileTransferStatusColor(FileTransferState state) {
+  return switch (state) {
+    FileTransferState.offered ||
+    FileTransferState.accepted => const Color(0xFF7DD3FC),
+    FileTransferState.sending ||
+    FileTransferState.receiving => const Color(0xFFFBBF24),
+    FileTransferState.completed => const Color(0xFF2DD4A3),
+    FileTransferState.canceled ||
+    FileTransferState.failed ||
+    FileTransferState.rejected => const Color(0xFFFF6B6B),
+  };
 }

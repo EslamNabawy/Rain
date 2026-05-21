@@ -1,3 +1,6 @@
+import 'dart:convert';
+import 'dart:typed_data';
+
 import 'package:flutter_test/flutter_test.dart';
 import 'package:flutter_webrtc/flutter_webrtc.dart';
 import 'package:peer_core/peer_core.dart';
@@ -28,6 +31,51 @@ void main() {
     machine.transition(PeerState.connecting);
 
     expect(() => machine.transition(PeerState.failed), throwsStateError);
+  });
+
+  test(
+    'peer config keeps direct P2P candidates enabled before relay fallback',
+    () {
+      final config = PeerConfig(
+        iceServers: const <Map<String, dynamic>>[
+          <String, dynamic>{'urls': 'stun:stun.l.google.com:19302'},
+          <String, dynamic>{
+            'urls': 'turn:turn.example:3478',
+            'username': 'rain',
+            'credential': 'secret',
+          },
+        ],
+        platform: _FakePlatformBridge(),
+      );
+
+      expect(config.toRtcConfiguration(), <String, Object?>{
+        'iceServers': config.iceServers,
+        'iceTransportPolicy': 'all',
+      });
+    },
+  );
+
+  test('peer config can force relay-only for fallback attempts', () {
+    final config = PeerConfig(
+      iceServers: const <Map<String, dynamic>>[
+        <String, dynamic>{
+          'urls': 'turn:turn.example:3478?transport=udp',
+          'username': 'rain',
+          'credential': 'secret',
+        },
+      ],
+      platform: _FakePlatformBridge(),
+      iceTransportPolicy: PeerIceTransportPolicy.relayOnly,
+    );
+
+    expect(config.hasRelayServer, isTrue);
+    expect(config.toRtcConfiguration()['iceTransportPolicy'], 'relay');
+    expect(
+      config
+          .copyWith(iceTransportPolicy: PeerIceTransportPolicy.all)
+          .toRtcConfiguration()['iceTransportPolicy'],
+      'all',
+    );
   });
 
   test(
@@ -195,6 +243,354 @@ void main() {
       await disconnectedSubscription.cancel();
     },
   );
+
+  test('default peer chunks large binary payloads on file channel', () async {
+    final platform = _FakePlatformBridge();
+    final peer = DefaultPeerCore();
+    final receivedMessages = <PeerMessage>[];
+    final subscription = peer.onMessage.listen(receivedMessages.add);
+    final payload = List<int>.generate(40 * 1024, (int index) => index % 251);
+
+    await peer.init(
+      PeerConfig(
+        iceServers: const <Map<String, dynamic>>[],
+        platform: platform,
+      ),
+    );
+    await peer.createOffer();
+    await peer.setAnswer(RTCSessionDescription('answer-sdp', 'answer'));
+    platform.channel(PeerChannels.chat).emitOpen();
+    platform.channel(PeerChannels.control).emitOpen();
+    platform.channel(PeerChannels.file).emitOpen();
+    await pumpEventQueue();
+
+    peer.send(PeerChannels.file, Uint8List.fromList(payload));
+    final sentMessages = platform.channel(PeerChannels.file).sentMessages;
+
+    expect(sentMessages.length, greaterThan(1));
+    expect(
+      sentMessages.map((RTCDataChannelMessage message) => message.isBinary),
+      everyElement(isFalse),
+    );
+    for (final message in sentMessages) {
+      platform.channel(PeerChannels.file).onMessage?.call(message);
+    }
+    await pumpEventQueue();
+
+    expect(receivedMessages, hasLength(1));
+    expect(receivedMessages.single.channelId, PeerChannels.file);
+    expect(receivedMessages.single.data, Uint8List.fromList(payload));
+
+    await subscription.cancel();
+  });
+
+  test('default peer drops malformed zero-total chunk frames', () async {
+    final platform = _FakePlatformBridge();
+    final peer = DefaultPeerCore();
+    final receivedMessages = <PeerMessage>[];
+    final subscription = peer.onMessage.listen(receivedMessages.add);
+
+    await peer.init(
+      PeerConfig(
+        iceServers: const <Map<String, dynamic>>[],
+        platform: platform,
+      ),
+    );
+    await peer.createOffer();
+    await peer.setAnswer(RTCSessionDescription('answer-sdp', 'answer'));
+    platform.channel(PeerChannels.chat).emitOpen();
+    platform.channel(PeerChannels.control).emitOpen();
+    await pumpEventQueue();
+
+    platform
+        .channel(PeerChannels.chat)
+        .onMessage
+        ?.call(
+          RTCDataChannelMessage(
+            jsonEncode(<String, Object?>{
+              'type': 'chunk',
+              'id': 'bad-zero-total',
+              'index': 0,
+              'total': 0,
+              'isBinary': false,
+              'payload': base64Encode(utf8.encode('ignored')),
+            }),
+          ),
+        );
+    await pumpEventQueue();
+
+    expect(receivedMessages, isEmpty);
+
+    await subscription.cancel();
+  });
+
+  test(
+    'default peer rejects oversized chunk totals without poisoning id',
+    () async {
+      final platform = _FakePlatformBridge();
+      final peer = DefaultPeerCore();
+      final receivedMessages = <PeerMessage>[];
+      final subscription = peer.onMessage.listen(receivedMessages.add);
+
+      await peer.init(
+        PeerConfig(
+          iceServers: const <Map<String, dynamic>>[],
+          platform: platform,
+        ),
+      );
+      await peer.createOffer();
+      await peer.setAnswer(RTCSessionDescription('answer-sdp', 'answer'));
+      platform.channel(PeerChannels.chat).emitOpen();
+      platform.channel(PeerChannels.control).emitOpen();
+      await pumpEventQueue();
+
+      String frame({required int total, required String text}) {
+        return jsonEncode(<String, Object?>{
+          'type': 'chunk',
+          'id': 'reused-id',
+          'index': 0,
+          'total': total,
+          'isBinary': false,
+          'payload': base64Encode(utf8.encode(text)),
+        });
+      }
+
+      platform
+          .channel(PeerChannels.chat)
+          .onMessage
+          ?.call(RTCDataChannelMessage(frame(total: 2048, text: 'poison')));
+      platform
+          .channel(PeerChannels.chat)
+          .onMessage
+          ?.call(RTCDataChannelMessage(frame(total: 1, text: 'accepted')));
+      await pumpEventQueue();
+
+      expect(receivedMessages, hasLength(1));
+      expect(receivedMessages.single.data, 'accepted');
+
+      await subscription.cancel();
+    },
+  );
+
+  test('default peer maps selected host/srflx route as direct', () async {
+    final platform = _FakePlatformBridge();
+    final peer = DefaultPeerCore();
+    platform.connection.statsReports = _routeStats(
+      localType: 'host',
+      remoteType: 'srflx',
+    );
+
+    await peer.init(
+      PeerConfig(
+        iceServers: const <Map<String, dynamic>>[],
+        platform: platform,
+      ),
+    );
+
+    final route = await peer.currentRoute();
+
+    expect(route.kind, PeerRouteKind.direct);
+    expect(route.localCandidateType, 'host');
+    expect(route.remoteCandidateType, 'srflx');
+    expect(route.selectedCandidatePairId, 'pair-1');
+    expect(route.protocol, 'udp');
+    expect(route.rtt, 0.04);
+    expect(route.bitrate, 1200000);
+  });
+
+  test('default peer reports selected route address family', () async {
+    final platform = _FakePlatformBridge();
+    final peer = DefaultPeerCore();
+    platform.connection.statsReports = _routeStats(
+      localType: 'host',
+      remoteType: 'srflx',
+      localAddress: '2001:db8::10',
+      remoteAddress: '[2001:db8::20]:49152',
+    );
+
+    await peer.init(
+      PeerConfig(
+        iceServers: const <Map<String, dynamic>>[],
+        platform: platform,
+      ),
+    );
+
+    final route = await peer.currentRoute();
+
+    expect(route.kind, PeerRouteKind.direct);
+    expect(route.localAddressFamily, PeerAddressFamily.ipv6);
+    expect(route.remoteAddressFamily, PeerAddressFamily.ipv6);
+    expect(route.addressFamily, PeerAddressFamily.ipv6);
+  });
+
+  test('default peer reports legacy route address family', () async {
+    final platform = _FakePlatformBridge();
+    final peer = DefaultPeerCore();
+    platform.connection.statsReports = <StatsReport>[
+      StatsReport('pair-legacy', 'googCandidatePair', 1, <String, Object?>{
+        'googActiveConnection': 'true',
+        'googLocalCandidateType': 'local',
+        'googRemoteCandidateType': 'stun',
+        'googLocalAddress': '192.0.2.10:49152',
+        'googRemoteAddress': '198.51.100.20:3478',
+      }),
+    ];
+
+    await peer.init(
+      PeerConfig(
+        iceServers: const <Map<String, dynamic>>[],
+        platform: platform,
+      ),
+    );
+
+    final route = await peer.currentRoute();
+
+    expect(route.kind, PeerRouteKind.direct);
+    expect(route.localAddressFamily, PeerAddressFamily.ipv4);
+    expect(route.remoteAddressFamily, PeerAddressFamily.ipv4);
+    expect(route.addressFamily, PeerAddressFamily.ipv4);
+  });
+
+  test('default peer maps selected relay route as relay', () async {
+    final platform = _FakePlatformBridge();
+    final peer = DefaultPeerCore();
+    platform.connection.statsReports = _routeStats(
+      localType: 'relay',
+      remoteType: 'prflx',
+      relayProtocol: 'udp',
+    );
+
+    await peer.init(
+      PeerConfig(
+        iceServers: const <Map<String, dynamic>>[],
+        platform: platform,
+      ),
+    );
+
+    final route = await peer.currentRoute();
+
+    expect(route.kind, PeerRouteKind.relay);
+    expect(route.localCandidateType, 'relay');
+    expect(route.remoteCandidateType, 'prflx');
+    expect(route.relayProtocol, 'udp');
+  });
+
+  test('default peer maps Android legacy candidate pair stats', () async {
+    final platform = _FakePlatformBridge();
+    final peer = DefaultPeerCore();
+    platform.connection.statsReports = <StatsReport>[
+      StatsReport('pair-legacy', 'googCandidatePair', 1, <String, Object?>{
+        'googActiveConnection': 'true',
+        'googLocalCandidateType': 'local',
+        'googRemoteCandidateType': 'stun',
+        'googRtt': '42',
+        'googAvailableSendBandwidth': '900000',
+      }),
+    ];
+
+    await peer.init(
+      PeerConfig(
+        iceServers: const <Map<String, dynamic>>[],
+        platform: platform,
+      ),
+    );
+
+    final route = await peer.currentRoute();
+
+    expect(route.kind, PeerRouteKind.direct);
+    expect(route.localCandidateType, 'host');
+    expect(route.remoteCandidateType, 'srflx');
+    expect(route.selectedCandidatePairId, 'pair-legacy');
+    expect(route.rtt, 0.042);
+    expect(route.bitrate, 900000);
+  });
+
+  test(
+    'default peer reports unknown route when no selected pair exists',
+    () async {
+      final platform = _FakePlatformBridge();
+      final peer = DefaultPeerCore();
+      platform.connection.statsReports = <StatsReport>[
+        StatsReport('pair-1', 'candidate-pair', 1, <String, Object?>{
+          'state': 'in-progress',
+        }),
+      ];
+
+      await peer.init(
+        PeerConfig(
+          iceServers: const <Map<String, dynamic>>[],
+          platform: platform,
+        ),
+      );
+
+      final route = await peer.currentRoute();
+
+      expect(route.kind, PeerRouteKind.unknown);
+    },
+  );
+
+  test('default peer keeps malformed route stats unknown', () async {
+    final platform = _FakePlatformBridge();
+    final peer = DefaultPeerCore();
+    platform.connection.statsReports = <StatsReport>[
+      StatsReport('pair-1', 'candidate-pair', 1, <String, Object?>{
+        'selected': true,
+        'localCandidateId': 'missing-local',
+        'remoteCandidateId': 'missing-remote',
+      }),
+    ];
+
+    await peer.init(
+      PeerConfig(
+        iceServers: const <Map<String, dynamic>>[],
+        platform: platform,
+      ),
+    );
+
+    final route = await peer.currentRoute();
+
+    expect(route.kind, PeerRouteKind.unknown);
+    expect(route.localCandidateType, isNull);
+    expect(route.remoteCandidateType, isNull);
+  });
+}
+
+List<StatsReport> _routeStats({
+  required String localType,
+  required String remoteType,
+  String? relayProtocol,
+  String? localAddress,
+  String? remoteAddress,
+}) {
+  return <StatsReport>[
+    StatsReport('transport-1', 'transport', 1, <String, Object?>{
+      'selectedCandidatePairId': 'pair-1',
+    }),
+    StatsReport('pair-1', 'candidate-pair', 1, <String, Object?>{
+      'state': 'succeeded',
+      'localCandidateId': 'local-1',
+      'remoteCandidateId': 'remote-1',
+      'currentRoundTripTime': 0.04,
+      'availableOutgoingBitrate': 1200000,
+    }),
+    StatsReport('local-1', 'local-candidate', 1, <String, Object?>{
+      'candidateType': localType,
+      'protocol': 'udp',
+      ...localAddress == null
+          ? const <String, Object?>{}
+          : <String, Object?>{'address': localAddress},
+      ...relayProtocol == null
+          ? const <String, Object?>{}
+          : <String, Object?>{'relayProtocol': relayProtocol},
+    }),
+    StatsReport('remote-1', 'remote-candidate', 1, <String, Object?>{
+      'candidateType': remoteType,
+      'protocol': 'udp',
+      ...remoteAddress == null
+          ? const <String, Object?>{}
+          : <String, Object?>{'address': remoteAddress},
+    }),
+  ];
 }
 
 class _FakePlatformBridge implements PlatformBridge {
@@ -227,6 +623,7 @@ class _FakePlatformBridge implements PlatformBridge {
 class _FakeRtcPeerConnection extends Fake implements RTCPeerConnection {
   RTCPeerConnectionState? _connectionState =
       RTCPeerConnectionState.RTCPeerConnectionStateNew;
+  List<StatsReport> statsReports = <StatsReport>[];
 
   @override
   Function(RTCPeerConnectionState state)? onConnectionState;
@@ -260,6 +657,11 @@ class _FakeRtcPeerConnection extends Fake implements RTCPeerConnection {
 
   @override
   Future<void> addCandidate(RTCIceCandidate candidate) async {}
+
+  @override
+  Future<List<StatsReport>> getStats([MediaStreamTrack? track]) async {
+    return statsReports;
+  }
 
   @override
   Future<void> close() async {}

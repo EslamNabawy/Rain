@@ -6,7 +6,6 @@ import 'package:firebase_remote_config/firebase_remote_config.dart';
 import 'package:flutter/foundation.dart';
 import 'package:protocol_brain/protocol_brain.dart';
 import 'package:rain_core/rain_core.dart';
-import 'package:supabase_flutter/supabase_flutter.dart';
 import 'package:window_manager/window_manager.dart';
 
 import 'package:rain/core/config/app_environment.dart';
@@ -20,12 +19,14 @@ class AppBootstrapState {
     required this.database,
     required this.adapter,
     required this.forceUpdateService,
+    this.firebaseDatabase,
   });
 
   final AppEnvironment environment;
   final RainDatabase database;
   final SignalingAdapter adapter;
   final ForceUpdateService forceUpdateService;
+  final FirebaseDatabase? firebaseDatabase;
 }
 
 class AppBootstrapper {
@@ -39,8 +40,6 @@ class AppBootstrapper {
 
     final database = RainDatabase();
     try {
-      ForceUpdateConfigLoader? forceUpdateConfigLoader;
-
       FirebaseRemoteConfig? remoteConfig;
       FirebaseDatabase? firebaseDatabase;
       if (effectiveEnvironment.backend == RainBackend.firebase &&
@@ -55,15 +54,6 @@ class AppBootstrapper {
         );
       }
 
-      if (effectiveEnvironment.backend == RainBackend.supabase &&
-          effectiveEnvironment.isSupabaseConfigured) {
-        await Supabase.initialize(
-          url: effectiveEnvironment.supabaseUrl,
-          anonKey: effectiveEnvironment.supabaseAnonKey,
-        );
-        forceUpdateConfigLoader = _loadSupabaseForceUpdateConfig;
-      }
-
       final signalingCipher = SignalingCipher.fromKeyMaterial(
         effectiveEnvironment.signalingEncryptionKey,
       );
@@ -72,10 +62,6 @@ class AppBootstrapper {
           : switch (effectiveEnvironment.backend) {
               RainBackend.firebase => FirebaseSignalingAdapter(
                 database: firebaseDatabase!,
-                signalingCipher: signalingCipher,
-              ),
-              RainBackend.supabase => SupabaseSignalingAdapter(
-                projectUrl: effectiveEnvironment.supabaseUrl,
                 signalingCipher: signalingCipher,
               ),
               RainBackend.noop => NoopSignalingAdapter(),
@@ -95,10 +81,10 @@ class AppBootstrapper {
         environment: effectiveEnvironment,
         database: database,
         adapter: adapter,
+        firebaseDatabase: firebaseDatabase,
         forceUpdateService: ForceUpdateService(
           remoteConfig: remoteConfig,
           updateUrl: effectiveEnvironment.forceUpdateUrl,
-          configLoader: forceUpdateConfigLoader,
         ),
       );
     } catch (_) {
@@ -106,26 +92,6 @@ class AppBootstrapper {
       rethrow;
     }
   }
-}
-
-Future<ForceUpdateConfig?> _loadSupabaseForceUpdateConfig() async {
-  final rows = await Supabase.instance.client
-      .from('app_config')
-      .select('min_required_version, update_url')
-      .limit(1);
-  final resultRows = rows as List<dynamic>;
-  if (resultRows.isEmpty) {
-    return null;
-  }
-
-  final row = Map<String, dynamic>.from(resultRows.first as Map);
-  final minVersion = (row['min_required_version'] as String? ?? '').trim();
-  final updateUrl = (row['update_url'] as String? ?? '').trim();
-  if (minVersion.isEmpty && updateUrl.isEmpty) {
-    return null;
-  }
-
-  return ForceUpdateConfig(minVersion: minVersion, updateUrl: updateUrl);
 }
 
 Future<void> _seedSmokeIdentity({

@@ -1418,6 +1418,807 @@ class QueuedMessagesCompanion extends UpdateCompanion<QueuedMessage> {
   }
 }
 
+class $FileTransfersTable extends FileTransfers
+    with TableInfo<$FileTransfersTable, FileTransfer> {
+  @override
+  final GeneratedDatabase attachedDatabase;
+  final String? _alias;
+  $FileTransfersTable(this.attachedDatabase, [this._alias]);
+  static const VerificationMeta _idMeta = const VerificationMeta('id');
+  @override
+  late final GeneratedColumn<String> id = GeneratedColumn<String>(
+    'id',
+    aliasedName,
+    false,
+    type: DriftSqlType.string,
+    requiredDuringInsert: true,
+  );
+  static const VerificationMeta _peerIdMeta = const VerificationMeta('peerId');
+  @override
+  late final GeneratedColumn<String> peerId = GeneratedColumn<String>(
+    'peer_id',
+    aliasedName,
+    false,
+    type: DriftSqlType.string,
+    requiredDuringInsert: true,
+  );
+  static const VerificationMeta _messageIdMeta = const VerificationMeta(
+    'messageId',
+  );
+  @override
+  late final GeneratedColumn<String> messageId = GeneratedColumn<String>(
+    'message_id',
+    aliasedName,
+    false,
+    type: DriftSqlType.string,
+    requiredDuringInsert: true,
+  );
+  static const VerificationMeta _directionMeta = const VerificationMeta(
+    'direction',
+  );
+  @override
+  late final GeneratedColumn<String> direction = GeneratedColumn<String>(
+    'direction',
+    aliasedName,
+    false,
+    type: DriftSqlType.string,
+    requiredDuringInsert: true,
+  );
+  static const VerificationMeta _fileNameMeta = const VerificationMeta(
+    'fileName',
+  );
+  @override
+  late final GeneratedColumn<String> fileName = GeneratedColumn<String>(
+    'file_name',
+    aliasedName,
+    false,
+    type: DriftSqlType.string,
+    requiredDuringInsert: true,
+  );
+  static const VerificationMeta _fileSizeMeta = const VerificationMeta(
+    'fileSize',
+  );
+  @override
+  late final GeneratedColumn<int> fileSize = GeneratedColumn<int>(
+    'file_size',
+    aliasedName,
+    false,
+    type: DriftSqlType.int,
+    requiredDuringInsert: true,
+  );
+  static const VerificationMeta _mimeTypeMeta = const VerificationMeta(
+    'mimeType',
+  );
+  @override
+  late final GeneratedColumn<String> mimeType = GeneratedColumn<String>(
+    'mime_type',
+    aliasedName,
+    true,
+    type: DriftSqlType.string,
+    requiredDuringInsert: false,
+  );
+  static const VerificationMeta _localPathMeta = const VerificationMeta(
+    'localPath',
+  );
+  @override
+  late final GeneratedColumn<String> localPath = GeneratedColumn<String>(
+    'local_path',
+    aliasedName,
+    true,
+    type: DriftSqlType.string,
+    requiredDuringInsert: false,
+  );
+  static const VerificationMeta _tempPathMeta = const VerificationMeta(
+    'tempPath',
+  );
+  @override
+  late final GeneratedColumn<String> tempPath = GeneratedColumn<String>(
+    'temp_path',
+    aliasedName,
+    true,
+    type: DriftSqlType.string,
+    requiredDuringInsert: false,
+  );
+  static const VerificationMeta _bytesTransferredMeta = const VerificationMeta(
+    'bytesTransferred',
+  );
+  @override
+  late final GeneratedColumn<int> bytesTransferred = GeneratedColumn<int>(
+    'bytes_transferred',
+    aliasedName,
+    false,
+    type: DriftSqlType.int,
+    requiredDuringInsert: false,
+    defaultValue: const Constant(0),
+  );
+  static const VerificationMeta _stateMeta = const VerificationMeta('state');
+  @override
+  late final GeneratedColumn<String> state = GeneratedColumn<String>(
+    'state',
+    aliasedName,
+    false,
+    type: DriftSqlType.string,
+    requiredDuringInsert: true,
+  );
+  static const VerificationMeta _errorMeta = const VerificationMeta('error');
+  @override
+  late final GeneratedColumn<String> error = GeneratedColumn<String>(
+    'error',
+    aliasedName,
+    true,
+    type: DriftSqlType.string,
+    requiredDuringInsert: false,
+  );
+  static const VerificationMeta _createdAtMeta = const VerificationMeta(
+    'createdAt',
+  );
+  @override
+  late final GeneratedColumn<int> createdAt = GeneratedColumn<int>(
+    'created_at',
+    aliasedName,
+    false,
+    type: DriftSqlType.int,
+    requiredDuringInsert: true,
+  );
+  static const VerificationMeta _updatedAtMeta = const VerificationMeta(
+    'updatedAt',
+  );
+  @override
+  late final GeneratedColumn<int> updatedAt = GeneratedColumn<int>(
+    'updated_at',
+    aliasedName,
+    false,
+    type: DriftSqlType.int,
+    requiredDuringInsert: true,
+  );
+  @override
+  List<GeneratedColumn> get $columns => [
+    id,
+    peerId,
+    messageId,
+    direction,
+    fileName,
+    fileSize,
+    mimeType,
+    localPath,
+    tempPath,
+    bytesTransferred,
+    state,
+    error,
+    createdAt,
+    updatedAt,
+  ];
+  @override
+  String get aliasedName => _alias ?? actualTableName;
+  @override
+  String get actualTableName => $name;
+  static const String $name = 'file_transfers';
+  @override
+  VerificationContext validateIntegrity(
+    Insertable<FileTransfer> instance, {
+    bool isInserting = false,
+  }) {
+    final context = VerificationContext();
+    final data = instance.toColumns(true);
+    if (data.containsKey('id')) {
+      context.handle(_idMeta, id.isAcceptableOrUnknown(data['id']!, _idMeta));
+    } else if (isInserting) {
+      context.missing(_idMeta);
+    }
+    if (data.containsKey('peer_id')) {
+      context.handle(
+        _peerIdMeta,
+        peerId.isAcceptableOrUnknown(data['peer_id']!, _peerIdMeta),
+      );
+    } else if (isInserting) {
+      context.missing(_peerIdMeta);
+    }
+    if (data.containsKey('message_id')) {
+      context.handle(
+        _messageIdMeta,
+        messageId.isAcceptableOrUnknown(data['message_id']!, _messageIdMeta),
+      );
+    } else if (isInserting) {
+      context.missing(_messageIdMeta);
+    }
+    if (data.containsKey('direction')) {
+      context.handle(
+        _directionMeta,
+        direction.isAcceptableOrUnknown(data['direction']!, _directionMeta),
+      );
+    } else if (isInserting) {
+      context.missing(_directionMeta);
+    }
+    if (data.containsKey('file_name')) {
+      context.handle(
+        _fileNameMeta,
+        fileName.isAcceptableOrUnknown(data['file_name']!, _fileNameMeta),
+      );
+    } else if (isInserting) {
+      context.missing(_fileNameMeta);
+    }
+    if (data.containsKey('file_size')) {
+      context.handle(
+        _fileSizeMeta,
+        fileSize.isAcceptableOrUnknown(data['file_size']!, _fileSizeMeta),
+      );
+    } else if (isInserting) {
+      context.missing(_fileSizeMeta);
+    }
+    if (data.containsKey('mime_type')) {
+      context.handle(
+        _mimeTypeMeta,
+        mimeType.isAcceptableOrUnknown(data['mime_type']!, _mimeTypeMeta),
+      );
+    }
+    if (data.containsKey('local_path')) {
+      context.handle(
+        _localPathMeta,
+        localPath.isAcceptableOrUnknown(data['local_path']!, _localPathMeta),
+      );
+    }
+    if (data.containsKey('temp_path')) {
+      context.handle(
+        _tempPathMeta,
+        tempPath.isAcceptableOrUnknown(data['temp_path']!, _tempPathMeta),
+      );
+    }
+    if (data.containsKey('bytes_transferred')) {
+      context.handle(
+        _bytesTransferredMeta,
+        bytesTransferred.isAcceptableOrUnknown(
+          data['bytes_transferred']!,
+          _bytesTransferredMeta,
+        ),
+      );
+    }
+    if (data.containsKey('state')) {
+      context.handle(
+        _stateMeta,
+        state.isAcceptableOrUnknown(data['state']!, _stateMeta),
+      );
+    } else if (isInserting) {
+      context.missing(_stateMeta);
+    }
+    if (data.containsKey('error')) {
+      context.handle(
+        _errorMeta,
+        error.isAcceptableOrUnknown(data['error']!, _errorMeta),
+      );
+    }
+    if (data.containsKey('created_at')) {
+      context.handle(
+        _createdAtMeta,
+        createdAt.isAcceptableOrUnknown(data['created_at']!, _createdAtMeta),
+      );
+    } else if (isInserting) {
+      context.missing(_createdAtMeta);
+    }
+    if (data.containsKey('updated_at')) {
+      context.handle(
+        _updatedAtMeta,
+        updatedAt.isAcceptableOrUnknown(data['updated_at']!, _updatedAtMeta),
+      );
+    } else if (isInserting) {
+      context.missing(_updatedAtMeta);
+    }
+    return context;
+  }
+
+  @override
+  Set<GeneratedColumn> get $primaryKey => {id};
+  @override
+  FileTransfer map(Map<String, dynamic> data, {String? tablePrefix}) {
+    final effectivePrefix = tablePrefix != null ? '$tablePrefix.' : '';
+    return FileTransfer(
+      id: attachedDatabase.typeMapping.read(
+        DriftSqlType.string,
+        data['${effectivePrefix}id'],
+      )!,
+      peerId: attachedDatabase.typeMapping.read(
+        DriftSqlType.string,
+        data['${effectivePrefix}peer_id'],
+      )!,
+      messageId: attachedDatabase.typeMapping.read(
+        DriftSqlType.string,
+        data['${effectivePrefix}message_id'],
+      )!,
+      direction: attachedDatabase.typeMapping.read(
+        DriftSqlType.string,
+        data['${effectivePrefix}direction'],
+      )!,
+      fileName: attachedDatabase.typeMapping.read(
+        DriftSqlType.string,
+        data['${effectivePrefix}file_name'],
+      )!,
+      fileSize: attachedDatabase.typeMapping.read(
+        DriftSqlType.int,
+        data['${effectivePrefix}file_size'],
+      )!,
+      mimeType: attachedDatabase.typeMapping.read(
+        DriftSqlType.string,
+        data['${effectivePrefix}mime_type'],
+      ),
+      localPath: attachedDatabase.typeMapping.read(
+        DriftSqlType.string,
+        data['${effectivePrefix}local_path'],
+      ),
+      tempPath: attachedDatabase.typeMapping.read(
+        DriftSqlType.string,
+        data['${effectivePrefix}temp_path'],
+      ),
+      bytesTransferred: attachedDatabase.typeMapping.read(
+        DriftSqlType.int,
+        data['${effectivePrefix}bytes_transferred'],
+      )!,
+      state: attachedDatabase.typeMapping.read(
+        DriftSqlType.string,
+        data['${effectivePrefix}state'],
+      )!,
+      error: attachedDatabase.typeMapping.read(
+        DriftSqlType.string,
+        data['${effectivePrefix}error'],
+      ),
+      createdAt: attachedDatabase.typeMapping.read(
+        DriftSqlType.int,
+        data['${effectivePrefix}created_at'],
+      )!,
+      updatedAt: attachedDatabase.typeMapping.read(
+        DriftSqlType.int,
+        data['${effectivePrefix}updated_at'],
+      )!,
+    );
+  }
+
+  @override
+  $FileTransfersTable createAlias(String alias) {
+    return $FileTransfersTable(attachedDatabase, alias);
+  }
+}
+
+class FileTransfer extends DataClass implements Insertable<FileTransfer> {
+  final String id;
+  final String peerId;
+  final String messageId;
+  final String direction;
+  final String fileName;
+  final int fileSize;
+  final String? mimeType;
+  final String? localPath;
+  final String? tempPath;
+  final int bytesTransferred;
+  final String state;
+  final String? error;
+  final int createdAt;
+  final int updatedAt;
+  const FileTransfer({
+    required this.id,
+    required this.peerId,
+    required this.messageId,
+    required this.direction,
+    required this.fileName,
+    required this.fileSize,
+    this.mimeType,
+    this.localPath,
+    this.tempPath,
+    required this.bytesTransferred,
+    required this.state,
+    this.error,
+    required this.createdAt,
+    required this.updatedAt,
+  });
+  @override
+  Map<String, Expression> toColumns(bool nullToAbsent) {
+    final map = <String, Expression>{};
+    map['id'] = Variable<String>(id);
+    map['peer_id'] = Variable<String>(peerId);
+    map['message_id'] = Variable<String>(messageId);
+    map['direction'] = Variable<String>(direction);
+    map['file_name'] = Variable<String>(fileName);
+    map['file_size'] = Variable<int>(fileSize);
+    if (!nullToAbsent || mimeType != null) {
+      map['mime_type'] = Variable<String>(mimeType);
+    }
+    if (!nullToAbsent || localPath != null) {
+      map['local_path'] = Variable<String>(localPath);
+    }
+    if (!nullToAbsent || tempPath != null) {
+      map['temp_path'] = Variable<String>(tempPath);
+    }
+    map['bytes_transferred'] = Variable<int>(bytesTransferred);
+    map['state'] = Variable<String>(state);
+    if (!nullToAbsent || error != null) {
+      map['error'] = Variable<String>(error);
+    }
+    map['created_at'] = Variable<int>(createdAt);
+    map['updated_at'] = Variable<int>(updatedAt);
+    return map;
+  }
+
+  FileTransfersCompanion toCompanion(bool nullToAbsent) {
+    return FileTransfersCompanion(
+      id: Value(id),
+      peerId: Value(peerId),
+      messageId: Value(messageId),
+      direction: Value(direction),
+      fileName: Value(fileName),
+      fileSize: Value(fileSize),
+      mimeType: mimeType == null && nullToAbsent
+          ? const Value.absent()
+          : Value(mimeType),
+      localPath: localPath == null && nullToAbsent
+          ? const Value.absent()
+          : Value(localPath),
+      tempPath: tempPath == null && nullToAbsent
+          ? const Value.absent()
+          : Value(tempPath),
+      bytesTransferred: Value(bytesTransferred),
+      state: Value(state),
+      error: error == null && nullToAbsent
+          ? const Value.absent()
+          : Value(error),
+      createdAt: Value(createdAt),
+      updatedAt: Value(updatedAt),
+    );
+  }
+
+  factory FileTransfer.fromJson(
+    Map<String, dynamic> json, {
+    ValueSerializer? serializer,
+  }) {
+    serializer ??= driftRuntimeOptions.defaultSerializer;
+    return FileTransfer(
+      id: serializer.fromJson<String>(json['id']),
+      peerId: serializer.fromJson<String>(json['peerId']),
+      messageId: serializer.fromJson<String>(json['messageId']),
+      direction: serializer.fromJson<String>(json['direction']),
+      fileName: serializer.fromJson<String>(json['fileName']),
+      fileSize: serializer.fromJson<int>(json['fileSize']),
+      mimeType: serializer.fromJson<String?>(json['mimeType']),
+      localPath: serializer.fromJson<String?>(json['localPath']),
+      tempPath: serializer.fromJson<String?>(json['tempPath']),
+      bytesTransferred: serializer.fromJson<int>(json['bytesTransferred']),
+      state: serializer.fromJson<String>(json['state']),
+      error: serializer.fromJson<String?>(json['error']),
+      createdAt: serializer.fromJson<int>(json['createdAt']),
+      updatedAt: serializer.fromJson<int>(json['updatedAt']),
+    );
+  }
+  @override
+  Map<String, dynamic> toJson({ValueSerializer? serializer}) {
+    serializer ??= driftRuntimeOptions.defaultSerializer;
+    return <String, dynamic>{
+      'id': serializer.toJson<String>(id),
+      'peerId': serializer.toJson<String>(peerId),
+      'messageId': serializer.toJson<String>(messageId),
+      'direction': serializer.toJson<String>(direction),
+      'fileName': serializer.toJson<String>(fileName),
+      'fileSize': serializer.toJson<int>(fileSize),
+      'mimeType': serializer.toJson<String?>(mimeType),
+      'localPath': serializer.toJson<String?>(localPath),
+      'tempPath': serializer.toJson<String?>(tempPath),
+      'bytesTransferred': serializer.toJson<int>(bytesTransferred),
+      'state': serializer.toJson<String>(state),
+      'error': serializer.toJson<String?>(error),
+      'createdAt': serializer.toJson<int>(createdAt),
+      'updatedAt': serializer.toJson<int>(updatedAt),
+    };
+  }
+
+  FileTransfer copyWith({
+    String? id,
+    String? peerId,
+    String? messageId,
+    String? direction,
+    String? fileName,
+    int? fileSize,
+    Value<String?> mimeType = const Value.absent(),
+    Value<String?> localPath = const Value.absent(),
+    Value<String?> tempPath = const Value.absent(),
+    int? bytesTransferred,
+    String? state,
+    Value<String?> error = const Value.absent(),
+    int? createdAt,
+    int? updatedAt,
+  }) => FileTransfer(
+    id: id ?? this.id,
+    peerId: peerId ?? this.peerId,
+    messageId: messageId ?? this.messageId,
+    direction: direction ?? this.direction,
+    fileName: fileName ?? this.fileName,
+    fileSize: fileSize ?? this.fileSize,
+    mimeType: mimeType.present ? mimeType.value : this.mimeType,
+    localPath: localPath.present ? localPath.value : this.localPath,
+    tempPath: tempPath.present ? tempPath.value : this.tempPath,
+    bytesTransferred: bytesTransferred ?? this.bytesTransferred,
+    state: state ?? this.state,
+    error: error.present ? error.value : this.error,
+    createdAt: createdAt ?? this.createdAt,
+    updatedAt: updatedAt ?? this.updatedAt,
+  );
+  FileTransfer copyWithCompanion(FileTransfersCompanion data) {
+    return FileTransfer(
+      id: data.id.present ? data.id.value : this.id,
+      peerId: data.peerId.present ? data.peerId.value : this.peerId,
+      messageId: data.messageId.present ? data.messageId.value : this.messageId,
+      direction: data.direction.present ? data.direction.value : this.direction,
+      fileName: data.fileName.present ? data.fileName.value : this.fileName,
+      fileSize: data.fileSize.present ? data.fileSize.value : this.fileSize,
+      mimeType: data.mimeType.present ? data.mimeType.value : this.mimeType,
+      localPath: data.localPath.present ? data.localPath.value : this.localPath,
+      tempPath: data.tempPath.present ? data.tempPath.value : this.tempPath,
+      bytesTransferred: data.bytesTransferred.present
+          ? data.bytesTransferred.value
+          : this.bytesTransferred,
+      state: data.state.present ? data.state.value : this.state,
+      error: data.error.present ? data.error.value : this.error,
+      createdAt: data.createdAt.present ? data.createdAt.value : this.createdAt,
+      updatedAt: data.updatedAt.present ? data.updatedAt.value : this.updatedAt,
+    );
+  }
+
+  @override
+  String toString() {
+    return (StringBuffer('FileTransfer(')
+          ..write('id: $id, ')
+          ..write('peerId: $peerId, ')
+          ..write('messageId: $messageId, ')
+          ..write('direction: $direction, ')
+          ..write('fileName: $fileName, ')
+          ..write('fileSize: $fileSize, ')
+          ..write('mimeType: $mimeType, ')
+          ..write('localPath: $localPath, ')
+          ..write('tempPath: $tempPath, ')
+          ..write('bytesTransferred: $bytesTransferred, ')
+          ..write('state: $state, ')
+          ..write('error: $error, ')
+          ..write('createdAt: $createdAt, ')
+          ..write('updatedAt: $updatedAt')
+          ..write(')'))
+        .toString();
+  }
+
+  @override
+  int get hashCode => Object.hash(
+    id,
+    peerId,
+    messageId,
+    direction,
+    fileName,
+    fileSize,
+    mimeType,
+    localPath,
+    tempPath,
+    bytesTransferred,
+    state,
+    error,
+    createdAt,
+    updatedAt,
+  );
+  @override
+  bool operator ==(Object other) =>
+      identical(this, other) ||
+      (other is FileTransfer &&
+          other.id == this.id &&
+          other.peerId == this.peerId &&
+          other.messageId == this.messageId &&
+          other.direction == this.direction &&
+          other.fileName == this.fileName &&
+          other.fileSize == this.fileSize &&
+          other.mimeType == this.mimeType &&
+          other.localPath == this.localPath &&
+          other.tempPath == this.tempPath &&
+          other.bytesTransferred == this.bytesTransferred &&
+          other.state == this.state &&
+          other.error == this.error &&
+          other.createdAt == this.createdAt &&
+          other.updatedAt == this.updatedAt);
+}
+
+class FileTransfersCompanion extends UpdateCompanion<FileTransfer> {
+  final Value<String> id;
+  final Value<String> peerId;
+  final Value<String> messageId;
+  final Value<String> direction;
+  final Value<String> fileName;
+  final Value<int> fileSize;
+  final Value<String?> mimeType;
+  final Value<String?> localPath;
+  final Value<String?> tempPath;
+  final Value<int> bytesTransferred;
+  final Value<String> state;
+  final Value<String?> error;
+  final Value<int> createdAt;
+  final Value<int> updatedAt;
+  final Value<int> rowid;
+  const FileTransfersCompanion({
+    this.id = const Value.absent(),
+    this.peerId = const Value.absent(),
+    this.messageId = const Value.absent(),
+    this.direction = const Value.absent(),
+    this.fileName = const Value.absent(),
+    this.fileSize = const Value.absent(),
+    this.mimeType = const Value.absent(),
+    this.localPath = const Value.absent(),
+    this.tempPath = const Value.absent(),
+    this.bytesTransferred = const Value.absent(),
+    this.state = const Value.absent(),
+    this.error = const Value.absent(),
+    this.createdAt = const Value.absent(),
+    this.updatedAt = const Value.absent(),
+    this.rowid = const Value.absent(),
+  });
+  FileTransfersCompanion.insert({
+    required String id,
+    required String peerId,
+    required String messageId,
+    required String direction,
+    required String fileName,
+    required int fileSize,
+    this.mimeType = const Value.absent(),
+    this.localPath = const Value.absent(),
+    this.tempPath = const Value.absent(),
+    this.bytesTransferred = const Value.absent(),
+    required String state,
+    this.error = const Value.absent(),
+    required int createdAt,
+    required int updatedAt,
+    this.rowid = const Value.absent(),
+  }) : id = Value(id),
+       peerId = Value(peerId),
+       messageId = Value(messageId),
+       direction = Value(direction),
+       fileName = Value(fileName),
+       fileSize = Value(fileSize),
+       state = Value(state),
+       createdAt = Value(createdAt),
+       updatedAt = Value(updatedAt);
+  static Insertable<FileTransfer> custom({
+    Expression<String>? id,
+    Expression<String>? peerId,
+    Expression<String>? messageId,
+    Expression<String>? direction,
+    Expression<String>? fileName,
+    Expression<int>? fileSize,
+    Expression<String>? mimeType,
+    Expression<String>? localPath,
+    Expression<String>? tempPath,
+    Expression<int>? bytesTransferred,
+    Expression<String>? state,
+    Expression<String>? error,
+    Expression<int>? createdAt,
+    Expression<int>? updatedAt,
+    Expression<int>? rowid,
+  }) {
+    return RawValuesInsertable({
+      if (id != null) 'id': id,
+      if (peerId != null) 'peer_id': peerId,
+      if (messageId != null) 'message_id': messageId,
+      if (direction != null) 'direction': direction,
+      if (fileName != null) 'file_name': fileName,
+      if (fileSize != null) 'file_size': fileSize,
+      if (mimeType != null) 'mime_type': mimeType,
+      if (localPath != null) 'local_path': localPath,
+      if (tempPath != null) 'temp_path': tempPath,
+      if (bytesTransferred != null) 'bytes_transferred': bytesTransferred,
+      if (state != null) 'state': state,
+      if (error != null) 'error': error,
+      if (createdAt != null) 'created_at': createdAt,
+      if (updatedAt != null) 'updated_at': updatedAt,
+      if (rowid != null) 'rowid': rowid,
+    });
+  }
+
+  FileTransfersCompanion copyWith({
+    Value<String>? id,
+    Value<String>? peerId,
+    Value<String>? messageId,
+    Value<String>? direction,
+    Value<String>? fileName,
+    Value<int>? fileSize,
+    Value<String?>? mimeType,
+    Value<String?>? localPath,
+    Value<String?>? tempPath,
+    Value<int>? bytesTransferred,
+    Value<String>? state,
+    Value<String?>? error,
+    Value<int>? createdAt,
+    Value<int>? updatedAt,
+    Value<int>? rowid,
+  }) {
+    return FileTransfersCompanion(
+      id: id ?? this.id,
+      peerId: peerId ?? this.peerId,
+      messageId: messageId ?? this.messageId,
+      direction: direction ?? this.direction,
+      fileName: fileName ?? this.fileName,
+      fileSize: fileSize ?? this.fileSize,
+      mimeType: mimeType ?? this.mimeType,
+      localPath: localPath ?? this.localPath,
+      tempPath: tempPath ?? this.tempPath,
+      bytesTransferred: bytesTransferred ?? this.bytesTransferred,
+      state: state ?? this.state,
+      error: error ?? this.error,
+      createdAt: createdAt ?? this.createdAt,
+      updatedAt: updatedAt ?? this.updatedAt,
+      rowid: rowid ?? this.rowid,
+    );
+  }
+
+  @override
+  Map<String, Expression> toColumns(bool nullToAbsent) {
+    final map = <String, Expression>{};
+    if (id.present) {
+      map['id'] = Variable<String>(id.value);
+    }
+    if (peerId.present) {
+      map['peer_id'] = Variable<String>(peerId.value);
+    }
+    if (messageId.present) {
+      map['message_id'] = Variable<String>(messageId.value);
+    }
+    if (direction.present) {
+      map['direction'] = Variable<String>(direction.value);
+    }
+    if (fileName.present) {
+      map['file_name'] = Variable<String>(fileName.value);
+    }
+    if (fileSize.present) {
+      map['file_size'] = Variable<int>(fileSize.value);
+    }
+    if (mimeType.present) {
+      map['mime_type'] = Variable<String>(mimeType.value);
+    }
+    if (localPath.present) {
+      map['local_path'] = Variable<String>(localPath.value);
+    }
+    if (tempPath.present) {
+      map['temp_path'] = Variable<String>(tempPath.value);
+    }
+    if (bytesTransferred.present) {
+      map['bytes_transferred'] = Variable<int>(bytesTransferred.value);
+    }
+    if (state.present) {
+      map['state'] = Variable<String>(state.value);
+    }
+    if (error.present) {
+      map['error'] = Variable<String>(error.value);
+    }
+    if (createdAt.present) {
+      map['created_at'] = Variable<int>(createdAt.value);
+    }
+    if (updatedAt.present) {
+      map['updated_at'] = Variable<int>(updatedAt.value);
+    }
+    if (rowid.present) {
+      map['rowid'] = Variable<int>(rowid.value);
+    }
+    return map;
+  }
+
+  @override
+  String toString() {
+    return (StringBuffer('FileTransfersCompanion(')
+          ..write('id: $id, ')
+          ..write('peerId: $peerId, ')
+          ..write('messageId: $messageId, ')
+          ..write('direction: $direction, ')
+          ..write('fileName: $fileName, ')
+          ..write('fileSize: $fileSize, ')
+          ..write('mimeType: $mimeType, ')
+          ..write('localPath: $localPath, ')
+          ..write('tempPath: $tempPath, ')
+          ..write('bytesTransferred: $bytesTransferred, ')
+          ..write('state: $state, ')
+          ..write('error: $error, ')
+          ..write('createdAt: $createdAt, ')
+          ..write('updatedAt: $updatedAt, ')
+          ..write('rowid: $rowid')
+          ..write(')'))
+        .toString();
+  }
+}
+
 class $ConnectionMemoryTableTable extends ConnectionMemoryTable
     with TableInfo<$ConnectionMemoryTableTable, ConnectionMemoryTableData> {
   @override
@@ -2392,6 +3193,7 @@ abstract class _$RainDatabase extends GeneratedDatabase {
   late final $MessagesTable messages = $MessagesTable(this);
   late final $FriendsTable friends = $FriendsTable(this);
   late final $QueuedMessagesTable queuedMessages = $QueuedMessagesTable(this);
+  late final $FileTransfersTable fileTransfers = $FileTransfersTable(this);
   late final $ConnectionMemoryTableTable connectionMemoryTable =
       $ConnectionMemoryTableTable(this);
   late final $IdentityTableTable identityTable = $IdentityTableTable(this);
@@ -2405,6 +3207,7 @@ abstract class _$RainDatabase extends GeneratedDatabase {
     messages,
     friends,
     queuedMessages,
+    fileTransfers,
     connectionMemoryTable,
     identityTable,
     messageSeqTracker,
@@ -3142,6 +3945,379 @@ typedef $$QueuedMessagesTableProcessedTableManager =
       QueuedMessage,
       PrefetchHooks Function()
     >;
+typedef $$FileTransfersTableCreateCompanionBuilder =
+    FileTransfersCompanion Function({
+      required String id,
+      required String peerId,
+      required String messageId,
+      required String direction,
+      required String fileName,
+      required int fileSize,
+      Value<String?> mimeType,
+      Value<String?> localPath,
+      Value<String?> tempPath,
+      Value<int> bytesTransferred,
+      required String state,
+      Value<String?> error,
+      required int createdAt,
+      required int updatedAt,
+      Value<int> rowid,
+    });
+typedef $$FileTransfersTableUpdateCompanionBuilder =
+    FileTransfersCompanion Function({
+      Value<String> id,
+      Value<String> peerId,
+      Value<String> messageId,
+      Value<String> direction,
+      Value<String> fileName,
+      Value<int> fileSize,
+      Value<String?> mimeType,
+      Value<String?> localPath,
+      Value<String?> tempPath,
+      Value<int> bytesTransferred,
+      Value<String> state,
+      Value<String?> error,
+      Value<int> createdAt,
+      Value<int> updatedAt,
+      Value<int> rowid,
+    });
+
+class $$FileTransfersTableFilterComposer
+    extends Composer<_$RainDatabase, $FileTransfersTable> {
+  $$FileTransfersTableFilterComposer({
+    required super.$db,
+    required super.$table,
+    super.joinBuilder,
+    super.$addJoinBuilderToRootComposer,
+    super.$removeJoinBuilderFromRootComposer,
+  });
+  ColumnFilters<String> get id => $composableBuilder(
+    column: $table.id,
+    builder: (column) => ColumnFilters(column),
+  );
+
+  ColumnFilters<String> get peerId => $composableBuilder(
+    column: $table.peerId,
+    builder: (column) => ColumnFilters(column),
+  );
+
+  ColumnFilters<String> get messageId => $composableBuilder(
+    column: $table.messageId,
+    builder: (column) => ColumnFilters(column),
+  );
+
+  ColumnFilters<String> get direction => $composableBuilder(
+    column: $table.direction,
+    builder: (column) => ColumnFilters(column),
+  );
+
+  ColumnFilters<String> get fileName => $composableBuilder(
+    column: $table.fileName,
+    builder: (column) => ColumnFilters(column),
+  );
+
+  ColumnFilters<int> get fileSize => $composableBuilder(
+    column: $table.fileSize,
+    builder: (column) => ColumnFilters(column),
+  );
+
+  ColumnFilters<String> get mimeType => $composableBuilder(
+    column: $table.mimeType,
+    builder: (column) => ColumnFilters(column),
+  );
+
+  ColumnFilters<String> get localPath => $composableBuilder(
+    column: $table.localPath,
+    builder: (column) => ColumnFilters(column),
+  );
+
+  ColumnFilters<String> get tempPath => $composableBuilder(
+    column: $table.tempPath,
+    builder: (column) => ColumnFilters(column),
+  );
+
+  ColumnFilters<int> get bytesTransferred => $composableBuilder(
+    column: $table.bytesTransferred,
+    builder: (column) => ColumnFilters(column),
+  );
+
+  ColumnFilters<String> get state => $composableBuilder(
+    column: $table.state,
+    builder: (column) => ColumnFilters(column),
+  );
+
+  ColumnFilters<String> get error => $composableBuilder(
+    column: $table.error,
+    builder: (column) => ColumnFilters(column),
+  );
+
+  ColumnFilters<int> get createdAt => $composableBuilder(
+    column: $table.createdAt,
+    builder: (column) => ColumnFilters(column),
+  );
+
+  ColumnFilters<int> get updatedAt => $composableBuilder(
+    column: $table.updatedAt,
+    builder: (column) => ColumnFilters(column),
+  );
+}
+
+class $$FileTransfersTableOrderingComposer
+    extends Composer<_$RainDatabase, $FileTransfersTable> {
+  $$FileTransfersTableOrderingComposer({
+    required super.$db,
+    required super.$table,
+    super.joinBuilder,
+    super.$addJoinBuilderToRootComposer,
+    super.$removeJoinBuilderFromRootComposer,
+  });
+  ColumnOrderings<String> get id => $composableBuilder(
+    column: $table.id,
+    builder: (column) => ColumnOrderings(column),
+  );
+
+  ColumnOrderings<String> get peerId => $composableBuilder(
+    column: $table.peerId,
+    builder: (column) => ColumnOrderings(column),
+  );
+
+  ColumnOrderings<String> get messageId => $composableBuilder(
+    column: $table.messageId,
+    builder: (column) => ColumnOrderings(column),
+  );
+
+  ColumnOrderings<String> get direction => $composableBuilder(
+    column: $table.direction,
+    builder: (column) => ColumnOrderings(column),
+  );
+
+  ColumnOrderings<String> get fileName => $composableBuilder(
+    column: $table.fileName,
+    builder: (column) => ColumnOrderings(column),
+  );
+
+  ColumnOrderings<int> get fileSize => $composableBuilder(
+    column: $table.fileSize,
+    builder: (column) => ColumnOrderings(column),
+  );
+
+  ColumnOrderings<String> get mimeType => $composableBuilder(
+    column: $table.mimeType,
+    builder: (column) => ColumnOrderings(column),
+  );
+
+  ColumnOrderings<String> get localPath => $composableBuilder(
+    column: $table.localPath,
+    builder: (column) => ColumnOrderings(column),
+  );
+
+  ColumnOrderings<String> get tempPath => $composableBuilder(
+    column: $table.tempPath,
+    builder: (column) => ColumnOrderings(column),
+  );
+
+  ColumnOrderings<int> get bytesTransferred => $composableBuilder(
+    column: $table.bytesTransferred,
+    builder: (column) => ColumnOrderings(column),
+  );
+
+  ColumnOrderings<String> get state => $composableBuilder(
+    column: $table.state,
+    builder: (column) => ColumnOrderings(column),
+  );
+
+  ColumnOrderings<String> get error => $composableBuilder(
+    column: $table.error,
+    builder: (column) => ColumnOrderings(column),
+  );
+
+  ColumnOrderings<int> get createdAt => $composableBuilder(
+    column: $table.createdAt,
+    builder: (column) => ColumnOrderings(column),
+  );
+
+  ColumnOrderings<int> get updatedAt => $composableBuilder(
+    column: $table.updatedAt,
+    builder: (column) => ColumnOrderings(column),
+  );
+}
+
+class $$FileTransfersTableAnnotationComposer
+    extends Composer<_$RainDatabase, $FileTransfersTable> {
+  $$FileTransfersTableAnnotationComposer({
+    required super.$db,
+    required super.$table,
+    super.joinBuilder,
+    super.$addJoinBuilderToRootComposer,
+    super.$removeJoinBuilderFromRootComposer,
+  });
+  GeneratedColumn<String> get id =>
+      $composableBuilder(column: $table.id, builder: (column) => column);
+
+  GeneratedColumn<String> get peerId =>
+      $composableBuilder(column: $table.peerId, builder: (column) => column);
+
+  GeneratedColumn<String> get messageId =>
+      $composableBuilder(column: $table.messageId, builder: (column) => column);
+
+  GeneratedColumn<String> get direction =>
+      $composableBuilder(column: $table.direction, builder: (column) => column);
+
+  GeneratedColumn<String> get fileName =>
+      $composableBuilder(column: $table.fileName, builder: (column) => column);
+
+  GeneratedColumn<int> get fileSize =>
+      $composableBuilder(column: $table.fileSize, builder: (column) => column);
+
+  GeneratedColumn<String> get mimeType =>
+      $composableBuilder(column: $table.mimeType, builder: (column) => column);
+
+  GeneratedColumn<String> get localPath =>
+      $composableBuilder(column: $table.localPath, builder: (column) => column);
+
+  GeneratedColumn<String> get tempPath =>
+      $composableBuilder(column: $table.tempPath, builder: (column) => column);
+
+  GeneratedColumn<int> get bytesTransferred => $composableBuilder(
+    column: $table.bytesTransferred,
+    builder: (column) => column,
+  );
+
+  GeneratedColumn<String> get state =>
+      $composableBuilder(column: $table.state, builder: (column) => column);
+
+  GeneratedColumn<String> get error =>
+      $composableBuilder(column: $table.error, builder: (column) => column);
+
+  GeneratedColumn<int> get createdAt =>
+      $composableBuilder(column: $table.createdAt, builder: (column) => column);
+
+  GeneratedColumn<int> get updatedAt =>
+      $composableBuilder(column: $table.updatedAt, builder: (column) => column);
+}
+
+class $$FileTransfersTableTableManager
+    extends
+        RootTableManager<
+          _$RainDatabase,
+          $FileTransfersTable,
+          FileTransfer,
+          $$FileTransfersTableFilterComposer,
+          $$FileTransfersTableOrderingComposer,
+          $$FileTransfersTableAnnotationComposer,
+          $$FileTransfersTableCreateCompanionBuilder,
+          $$FileTransfersTableUpdateCompanionBuilder,
+          (
+            FileTransfer,
+            BaseReferences<_$RainDatabase, $FileTransfersTable, FileTransfer>,
+          ),
+          FileTransfer,
+          PrefetchHooks Function()
+        > {
+  $$FileTransfersTableTableManager(_$RainDatabase db, $FileTransfersTable table)
+    : super(
+        TableManagerState(
+          db: db,
+          table: table,
+          createFilteringComposer: () =>
+              $$FileTransfersTableFilterComposer($db: db, $table: table),
+          createOrderingComposer: () =>
+              $$FileTransfersTableOrderingComposer($db: db, $table: table),
+          createComputedFieldComposer: () =>
+              $$FileTransfersTableAnnotationComposer($db: db, $table: table),
+          updateCompanionCallback:
+              ({
+                Value<String> id = const Value.absent(),
+                Value<String> peerId = const Value.absent(),
+                Value<String> messageId = const Value.absent(),
+                Value<String> direction = const Value.absent(),
+                Value<String> fileName = const Value.absent(),
+                Value<int> fileSize = const Value.absent(),
+                Value<String?> mimeType = const Value.absent(),
+                Value<String?> localPath = const Value.absent(),
+                Value<String?> tempPath = const Value.absent(),
+                Value<int> bytesTransferred = const Value.absent(),
+                Value<String> state = const Value.absent(),
+                Value<String?> error = const Value.absent(),
+                Value<int> createdAt = const Value.absent(),
+                Value<int> updatedAt = const Value.absent(),
+                Value<int> rowid = const Value.absent(),
+              }) => FileTransfersCompanion(
+                id: id,
+                peerId: peerId,
+                messageId: messageId,
+                direction: direction,
+                fileName: fileName,
+                fileSize: fileSize,
+                mimeType: mimeType,
+                localPath: localPath,
+                tempPath: tempPath,
+                bytesTransferred: bytesTransferred,
+                state: state,
+                error: error,
+                createdAt: createdAt,
+                updatedAt: updatedAt,
+                rowid: rowid,
+              ),
+          createCompanionCallback:
+              ({
+                required String id,
+                required String peerId,
+                required String messageId,
+                required String direction,
+                required String fileName,
+                required int fileSize,
+                Value<String?> mimeType = const Value.absent(),
+                Value<String?> localPath = const Value.absent(),
+                Value<String?> tempPath = const Value.absent(),
+                Value<int> bytesTransferred = const Value.absent(),
+                required String state,
+                Value<String?> error = const Value.absent(),
+                required int createdAt,
+                required int updatedAt,
+                Value<int> rowid = const Value.absent(),
+              }) => FileTransfersCompanion.insert(
+                id: id,
+                peerId: peerId,
+                messageId: messageId,
+                direction: direction,
+                fileName: fileName,
+                fileSize: fileSize,
+                mimeType: mimeType,
+                localPath: localPath,
+                tempPath: tempPath,
+                bytesTransferred: bytesTransferred,
+                state: state,
+                error: error,
+                createdAt: createdAt,
+                updatedAt: updatedAt,
+                rowid: rowid,
+              ),
+          withReferenceMapper: (p0) => p0
+              .map((e) => (e.readTable(table), BaseReferences(db, table, e)))
+              .toList(),
+          prefetchHooksCallback: null,
+        ),
+      );
+}
+
+typedef $$FileTransfersTableProcessedTableManager =
+    ProcessedTableManager<
+      _$RainDatabase,
+      $FileTransfersTable,
+      FileTransfer,
+      $$FileTransfersTableFilterComposer,
+      $$FileTransfersTableOrderingComposer,
+      $$FileTransfersTableAnnotationComposer,
+      $$FileTransfersTableCreateCompanionBuilder,
+      $$FileTransfersTableUpdateCompanionBuilder,
+      (
+        FileTransfer,
+        BaseReferences<_$RainDatabase, $FileTransfersTable, FileTransfer>,
+      ),
+      FileTransfer,
+      PrefetchHooks Function()
+    >;
 typedef $$ConnectionMemoryTableTableCreateCompanionBuilder =
     ConnectionMemoryTableCompanion Function({
       required String peerId,
@@ -3733,6 +4909,8 @@ class $RainDatabaseManager {
       $$FriendsTableTableManager(_db, _db.friends);
   $$QueuedMessagesTableTableManager get queuedMessages =>
       $$QueuedMessagesTableTableManager(_db, _db.queuedMessages);
+  $$FileTransfersTableTableManager get fileTransfers =>
+      $$FileTransfersTableTableManager(_db, _db.fileTransfers);
   $$ConnectionMemoryTableTableTableManager get connectionMemoryTable =>
       $$ConnectionMemoryTableTableTableManager(_db, _db.connectionMemoryTable);
   $$IdentityTableTableTableManager get identityTable =>

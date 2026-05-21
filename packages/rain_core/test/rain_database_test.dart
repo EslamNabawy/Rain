@@ -78,8 +78,12 @@ void main() {
     expect(columns.map((row) => row.data['name']), contains('online'));
     expect(columns.map((row) => row.data['name']), contains('gender'));
     expect(
+      await database.customSelect('PRAGMA table_info(file_transfers);').get(),
+      isNotEmpty,
+    );
+    expect(
       await database.customSelect('PRAGMA user_version;').getSingle(),
-      isA<QueryRow>().having((row) => row.data.values.single, 'version', 4),
+      isA<QueryRow>().having((row) => row.data.values.single, 'version', 5),
     );
   });
 
@@ -91,7 +95,10 @@ void main() {
     final result = await database.serializedWrite(() async {
       attempts += 1;
       if (attempts == 1) {
-        throw SqliteException(517, 'database is locked');
+        throw SqliteException(
+          extendedResultCode: 517,
+          message: 'database is locked',
+        );
       }
       await database
           .into(database.friends)

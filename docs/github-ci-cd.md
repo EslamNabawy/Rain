@@ -2,7 +2,9 @@
 
 Rain uses three GitHub Actions workflow layers:
 
-- `CI`: runs analyze and tests on pushes and pull requests.
+- `CI`: runs workflow lint, dependency lock drift checks, analyze, tests,
+  Firebase emulator integration tests, and debug/demo artifact checks on pushes
+  and pull requests.
 - `Build Rain Apps`: builds downloadable Windows and Android artifacts on pushes or manual dispatch.
 - `Release Rain`: builds production artifacts and publishes a GitHub Release when a `v*` tag is pushed or the workflow is manually dispatched.
 
@@ -23,13 +25,13 @@ Production builds require the secrets below.
 
 Add these under **Repository Settings -> Secrets and variables -> Actions**:
 
-- `RAIN_RELEASE_DART_DEFINES_JSON`: sanitized release dart defines JSON. Must include project-owned TURN in `RAIN_ICE_SERVERS`.
+- `RAIN_RELEASE_DART_DEFINES_JSON`: sanitized release dart defines JSON. Must include `RAIN_TURN_BROKER_URL` or project-owned TURN in `RAIN_ICE_SERVERS`.
 - `RAIN_RELEASE_KEYSTORE_BASE64`: base64-encoded Android release keystore.
 - `RAIN_RELEASE_STORE_PASSWORD`: Android keystore password.
 - `RAIN_RELEASE_KEY_ALIAS`: Android key alias.
 - `RAIN_RELEASE_KEY_PASSWORD`: Android key password.
 
-`RAIN_RELEASE_DART_DEFINES_JSON` must not point at OpenRelay unless you are using the demo build path. Production release builds intentionally fail without project-owned TURN.
+`RAIN_RELEASE_DART_DEFINES_JSON` must not point at OpenRelay unless you are using the demo build path. Production release builds intentionally fail without `RAIN_TURN_BROKER_URL` or project-owned TURN.
 
 ## Release
 
@@ -42,3 +44,15 @@ The release workflow publishes:
 - Android `arm64-v8a` APK.
 - Android `armeabi-v7a` APK.
 - Android `x86_64` APK.
+
+## Local Android Parity
+
+Local Android build verification needs the same major tooling CI installs:
+
+- JDK 21 available on `PATH` or through `JAVA_HOME`.
+- Android SDK command-line tools installed.
+- Android SDK licenses accepted with `flutter doctor --android-licenses`.
+
+Run `flutter doctor -v` before treating local Android build failures as app
+failures. CI installs JDK 21 in the workflow, but it still depends on a valid
+Flutter/Android SDK setup in the runner image.

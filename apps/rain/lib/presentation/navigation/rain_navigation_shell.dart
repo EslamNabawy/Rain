@@ -9,6 +9,7 @@ class RainNavigationShell extends StatelessWidget {
     required this.location,
     required this.child,
     this.showNavigation = true,
+    this.networkStatusMessage,
   });
 
   static const double _railBreakpoint = 900;
@@ -16,9 +17,12 @@ class RainNavigationShell extends StatelessWidget {
   final String location;
   final Widget child;
   final bool showNavigation;
+  final String? networkStatusMessage;
 
   @override
   Widget build(BuildContext context) {
+    final statusMessage = networkStatusMessage;
+    final showStatus = statusMessage != null && statusMessage.isNotEmpty;
     return RainBackdrop(
       child: LayoutBuilder(
         builder: (BuildContext context, BoxConstraints constraints) {
@@ -26,17 +30,24 @@ class RainNavigationShell extends StatelessWidget {
               showNavigation && constraints.maxWidth >= _railBreakpoint;
           final keyboardOpen = MediaQuery.viewInsetsOf(context).bottom > 0;
 
+          final body = showNavigation && useRail
+              ? _RailLayout(
+                  selectedIndex: _selectedIndex,
+                  onDestinationSelected: (int index) =>
+                      _openDestination(context, index),
+                  child: child,
+                )
+              : RepaintBoundary(child: child);
+
           return Scaffold(
             backgroundColor: Colors.transparent,
             resizeToAvoidBottomInset: true,
-            body: showNavigation && useRail
-                ? _RailLayout(
-                    selectedIndex: _selectedIndex,
-                    onDestinationSelected: (int index) =>
-                        _openDestination(context, index),
-                    child: child,
-                  )
-                : RepaintBoundary(child: child),
+            body: Column(
+              children: <Widget>[
+                if (showStatus) _NetworkStatusStrip(statusMessage),
+                Expanded(child: body),
+              ],
+            ),
             bottomNavigationBar: showNavigation && !useRail && !keyboardOpen
                 ? _BottomNavigation(
                     selectedIndex: _selectedIndex,
@@ -71,6 +82,46 @@ class RainNavigationShell extends StatelessWidget {
       return;
     }
     context.go(target);
+  }
+}
+
+class _NetworkStatusStrip extends StatelessWidget {
+  const _NetworkStatusStrip(this.message);
+
+  final String message;
+
+  @override
+  Widget build(BuildContext context) {
+    final scheme = Theme.of(context).colorScheme;
+    return SafeArea(
+      bottom: false,
+      child: Container(
+        width: double.infinity,
+        padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 9),
+        color: scheme.errorContainer.withValues(alpha: 0.92),
+        child: Row(
+          children: <Widget>[
+            Icon(
+              Icons.cloud_off_rounded,
+              size: 18,
+              color: scheme.onErrorContainer,
+            ),
+            const SizedBox(width: 8),
+            Expanded(
+              child: Text(
+                message,
+                maxLines: 2,
+                overflow: TextOverflow.ellipsis,
+                style: Theme.of(context).textTheme.labelMedium?.copyWith(
+                  color: scheme.onErrorContainer,
+                  fontWeight: FontWeight.w800,
+                ),
+              ),
+            ),
+          ],
+        ),
+      ),
+    );
   }
 }
 

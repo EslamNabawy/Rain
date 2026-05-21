@@ -28,18 +28,19 @@ firebase deploy --only database
 
 The rules file is [database.rules.json](database.rules.json).
 
-## Deploy Cleanup Functions
+## Deploy Functions
 
 Install dependencies and deploy:
 
 ```powershell
 cd functions
 npm install
+npm run lint
 cd ..
 firebase deploy --only functions
 ```
 
-The scheduled jobs do two things:
+The Cloud Functions do two things:
 
 - mark users offline when `lastHeartbeat` is older than 7 minutes
 - remove abandoned signaling rooms after 15 minutes

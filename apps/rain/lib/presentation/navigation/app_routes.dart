@@ -22,7 +22,7 @@ final appRouterProvider = Provider<GoRouter>((Ref ref) {
       if (!identity.hasValue) {
         return null;
       }
-      final isSignedIn = identity.valueOrNull != null;
+      final isSignedIn = identity.value != null;
       if (!isSignedIn && state.uri.path != '/') {
         return '/';
       }
@@ -33,17 +33,18 @@ final appRouterProvider = Provider<GoRouter>((Ref ref) {
         builder: (BuildContext context, GoRouterState state, Widget child) {
           return Consumer(
             builder: (BuildContext context, WidgetRef ref, Widget? _) {
-              final identity = ref.watch(identityProvider).valueOrNull;
-              final forceUpdate = ref.watch(forceUpdateProvider).valueOrNull;
-              final runtime = identity == null
-                  ? null
-                  : ref.watch(runtimeControllerProvider).valueOrNull;
+              final identity = ref.watch(identityProvider).value;
+              final forceUpdate = ref.watch(forceUpdateProvider).value;
+              final networkStatus = ref.watch(networkStatusProvider).value;
               final canUseCurrentVersion =
                   forceUpdate != null && !forceUpdate.requiresUpdate;
               return RainNavigationShell(
                 location: state.uri.path,
-                showNavigation:
-                    identity != null && runtime != null && canUseCurrentVersion,
+                showNavigation: identity != null && canUseCurrentVersion,
+                networkStatusMessage:
+                    networkStatus != null && networkStatus.blocksNetworkActions
+                    ? networkStatus.message
+                    : null,
                 child: child,
               );
             },

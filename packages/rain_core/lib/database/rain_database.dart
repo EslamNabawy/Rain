@@ -46,6 +46,26 @@ class QueuedMessages extends Table {
   Set<Column<Object>> get primaryKey => <Column<Object>>{id};
 }
 
+class FileTransfers extends Table {
+  TextColumn get id => text()();
+  TextColumn get peerId => text()();
+  TextColumn get messageId => text()();
+  TextColumn get direction => text()();
+  TextColumn get fileName => text()();
+  IntColumn get fileSize => integer()();
+  TextColumn get mimeType => text().nullable()();
+  TextColumn get localPath => text().nullable()();
+  TextColumn get tempPath => text().nullable()();
+  IntColumn get bytesTransferred => integer().withDefault(const Constant(0))();
+  TextColumn get state => text()();
+  TextColumn get error => text().nullable()();
+  IntColumn get createdAt => integer()();
+  IntColumn get updatedAt => integer()();
+
+  @override
+  Set<Column<Object>> get primaryKey => <Column<Object>>{id};
+}
+
 class ConnectionMemoryTable extends Table {
   TextColumn get peerId => text()();
   IntColumn get lastConnectedAt => integer()();
@@ -79,6 +99,7 @@ class MessageSeqTracker extends Table {
     Messages,
     Friends,
     QueuedMessages,
+    FileTransfers,
     ConnectionMemoryTable,
     IdentityTable,
     MessageSeqTracker,
@@ -90,7 +111,7 @@ class RainDatabase extends _$RainDatabase {
   Future<void> _serializedWriteQueue = Future<void>.value();
 
   @override
-  int get schemaVersion => 4;
+  int get schemaVersion => 5;
 
   @override
   MigrationStrategy get migration => MigrationStrategy(
@@ -107,6 +128,9 @@ class RainDatabase extends _$RainDatabase {
       if (from < 4 && !await _hasColumn('friends', 'gender')) {
         await m.addColumn(friends, friends.gender);
       }
+      if (from < 5) {
+        await m.createTable(fileTransfers);
+      }
     },
   );
 
@@ -120,6 +144,7 @@ class RainDatabase extends _$RainDatabase {
       await delete(messages).go();
       await delete(friends).go();
       await delete(queuedMessages).go();
+      await delete(fileTransfers).go();
       await delete(connectionMemoryTable).go();
       await delete(identityTable).go();
       await delete(messageSeqTracker).go();

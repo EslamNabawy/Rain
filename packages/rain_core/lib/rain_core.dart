@@ -1,4 +1,6 @@
 export 'database/rain_database.dart';
+export 'file_transfer/file_transfer_protocol.dart';
+export 'file_transfer/file_transfer_store.dart';
 export 'friends/friend_request.dart';
 export 'friends/friend_store.dart';
 export 'identity/identity.dart';

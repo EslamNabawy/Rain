@@ -37,8 +37,8 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen> {
       return const RainSplashScreen();
     }
 
-    final identity = ref.watch(identityProvider).valueOrNull;
-    final runtime = ref.watch(runtimeControllerProvider).valueOrNull;
+    final identity = ref.watch(identityProvider).value;
+    final runtime = ref.watch(runtimeControllerProvider).value;
     final themeMode = ref.watch(themeModeProvider);
     final themeController = ref.read(themeModeProvider.notifier);
 

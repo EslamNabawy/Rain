@@ -3,6 +3,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:protocol_brain/protocol_brain.dart';
 import 'package:url_launcher/url_launcher_string.dart';
 
+import 'package:rain/core/config/app_environment.dart';
 import 'package:rain/infrastructure/services/force_update_service.dart';
 import 'package:rain/application/runtime/rain_runtime_controller.dart';
 import 'package:rain/application/state/app_providers.dart';
@@ -19,7 +20,7 @@ class RootScreen extends ConsumerWidget {
     final environment = ref.watch(appEnvironmentProvider);
     final forceUpdate = ref.watch(forceUpdateProvider);
     final identity = ref.watch(identityProvider);
-    final runtime = identity.valueOrNull == null
+    final runtime = identity.value == null
         ? const AsyncValue<RainRuntimeController?>.data(null)
         : ref.watch(runtimeControllerProvider);
 
@@ -32,22 +33,16 @@ class RootScreen extends ConsumerWidget {
         return identity.when(
           data: (value) {
             if (value == null) {
-              return Column(
-                children: <Widget>[
-                  if (environment.shouldUseFallbackAdapter)
-                    BackendBanner(message: environment.fallbackReason),
-                  const Expanded(child: OnboardingScreen()),
-                ],
+              return _withBanners(
+                environment: environment,
+                child: const OnboardingScreen(),
               );
             }
 
             return runtime.when(
-              data: (_) => Column(
-                children: <Widget>[
-                  if (environment.shouldUseFallbackAdapter)
-                    BackendBanner(message: environment.fallbackReason),
-                  const Expanded(child: HomeScreen()),
-                ],
+              data: (_) => _withBanners(
+                environment: environment,
+                child: const HomeScreen(),
               ),
               error: (error, stackTrace) {
                 if (error is SignalingSessionExpiredException) {
@@ -66,6 +61,19 @@ class RootScreen extends ConsumerWidget {
       },
       error: (error, stackTrace) => _ErrorView(error: error.toString()),
       loading: () => const _LoadingView(),
+    );
+  }
+
+  Widget _withBanners({
+    required AppEnvironment environment,
+    required Widget child,
+  }) {
+    return Column(
+      children: <Widget>[
+        if (environment.shouldUseFallbackAdapter)
+          BackendBanner(message: environment.fallbackReason),
+        Expanded(child: child),
+      ],
     );
   }
 }

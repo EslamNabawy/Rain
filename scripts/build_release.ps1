@@ -5,6 +5,8 @@ Use from repo root:
   pwsh -File scripts/build_release.ps1 -Platform windows -DartDefinesFile .\release-defines.json
   pwsh -File scripts/build_release.ps1 -Platform android -DartDefinesFile .\release-defines.json
   pwsh -File scripts/build_release.ps1 -Platform all -DartDefinesFile .\apps\rain\tool\dart_defines.local.json -AllowPublicTurnForDemo -UseDemoAndroidSigningKey
+  pwsh -File scripts/build_release.ps1 -Platform all -DartDefinesFile .\relay-test-defines.json -RelayTest -UseDemoAndroidSigningKey
+  pwsh -File scripts/build_release.ps1 -Platform all -DartDefinesFile .\relay-test-defines.json -ForceRelayOnlySmoke -TurnBrokerUrl https://your-turn-broker.example/rainTurnCredentials -UseDemoAndroidSigningKey
 #>
 [CmdletBinding()]
 param(
@@ -13,8 +15,15 @@ param(
   [string]$RepoRoot = '',
   [string]$OutputDir = '',
   [string]$DartDefinesFile = '',
+  [ValidateSet('all', 'mobile')]
+  [string]$AndroidArtifactSet = 'mobile',
   [switch]$AllowPublicTurnForDemo,
+  [switch]$RelayTest,
+  [switch]$ForceRelayOnlySmoke,
+  [string]$TurnBrokerUrl = '',
+  [string]$TurnProviderName = '',
   [switch]$UseDemoAndroidSigningKey,
+  [switch]$GenerateSizeReports,
   [switch]$Clean
 )
 
@@ -36,6 +45,27 @@ function Write-Step([string]$Message) {
 function Ensure-Command([string]$Name) {
   if (-not (Get-Command $Name -ErrorAction SilentlyContinue)) {
     throw "Required command not found on PATH: $Name"
+  }
+}
+
+function Add-CargoBinToPathIfPresent() {
+  $homeCandidates = @($env:USERPROFILE, $env:HOME) | Where-Object {
+    -not [string]::IsNullOrWhiteSpace($_)
+  } | Select-Object -Unique
+
+  foreach ($homeDir in $homeCandidates) {
+    $cargoBin = Join-Path (Join-Path $homeDir '.cargo') 'bin'
+    if (-not (Test-Path -LiteralPath $cargoBin)) {
+      continue
+    }
+
+    $pathEntries = $env:PATH -split [System.IO.Path]::PathSeparator
+    $alreadyOnPath = $pathEntries | Where-Object {
+      $_.TrimEnd('\', '/') -ieq $cargoBin.TrimEnd('\', '/')
+    }
+    if (-not $alreadyOnPath) {
+      $env:PATH = "$cargoBin$([System.IO.Path]::PathSeparator)$env:PATH"
+    }
   }
 }
 
@@ -145,7 +175,11 @@ function Get-DartDefineArgs(
   [string]$FlutterProjectRoot,
   [string]$DartDefinesFile,
   [string]$RepoRoot,
-  [bool]$AllowPublicTurnForDemo
+  [bool]$AllowPublicTurnForDemo,
+  [bool]$RequireTurnBroker,
+  [bool]$ForceRelayOnlySmoke,
+  [string]$TurnBrokerUrl,
+  [string]$TurnProviderName
 ) {
   if ([string]::IsNullOrWhiteSpace($DartDefinesFile)) {
     throw "Release builds require -DartDefinesFile with project-owned TURN servers."
@@ -166,7 +200,11 @@ function Get-DartDefineArgs(
     throw "Release builds must not use tool\dart_defines.local.json. Pass a sanitized release defines file."
   }
 
-  Assert-ReleaseDartDefines -Path $resolved -AllowPublicTurnForDemo:$AllowPublicTurnForDemo
+  if ($ForceRelayOnlySmoke) {
+    $resolved = New-RelayTestDartDefinesFile -Path $resolved -RepoRoot $RepoRoot -TurnBrokerUrl $TurnBrokerUrl -TurnProviderName $TurnProviderName
+  }
+
+  Assert-ReleaseDartDefines -Path $resolved -AllowPublicTurnForDemo:$AllowPublicTurnForDemo -RequireTurnBroker:$RequireTurnBroker
 
   if ($AllowPublicTurnForDemo) {
     $resolved = New-DemoDartDefinesFile -Path $resolved -RepoRoot $RepoRoot
@@ -175,13 +213,17 @@ function Get-DartDefineArgs(
   return @("--dart-define-from-file=$resolved")
 }
 
+function Set-DartDefineJsonProperty([object]$Json, [string]$Name, [string]$Value) {
+  if ($null -eq $Json.PSObject.Properties[$Name]) {
+    $Json | Add-Member -NotePropertyName $Name -NotePropertyValue $Value
+  } else {
+    $Json.PSObject.Properties[$Name].Value = $Value
+  }
+}
+
 function New-DemoDartDefinesFile([string]$Path, [string]$RepoRoot) {
   $defines = Get-Content -Raw -LiteralPath $Path | ConvertFrom-Json -ErrorAction Stop
-  if ($null -eq $defines.PSObject.Properties['RAIN_ALLOW_PUBLIC_TURN']) {
-    $defines | Add-Member -NotePropertyName 'RAIN_ALLOW_PUBLIC_TURN' -NotePropertyValue 'true'
-  } else {
-    $defines.RAIN_ALLOW_PUBLIC_TURN = 'true'
-  }
+  Set-DartDefineJsonProperty $defines 'RAIN_ALLOW_PUBLIC_TURN' 'true'
 
   if ($null -eq $defines.PSObject.Properties['RAIN_SIGNALING_ENCRYPTION_KEY']) {
     $defines | Add-Member -NotePropertyName 'RAIN_SIGNALING_ENCRYPTION_KEY' -NotePropertyValue $script:DemoSignalingEncryptionKey
@@ -193,6 +235,31 @@ function New-DemoDartDefinesFile([string]$Path, [string]$RepoRoot) {
   $demoDefinesPath = Join-Path $tmpDir 'rain-openrelay-demo-defines.generated.json'
   $defines | ConvertTo-Json -Depth 20 | Set-Content -LiteralPath $demoDefinesPath -Encoding utf8
   return $demoDefinesPath
+}
+
+function New-RelayTestDartDefinesFile(
+  [string]$Path,
+  [string]$RepoRoot,
+  [string]$TurnBrokerUrl,
+  [string]$TurnProviderName
+) {
+  if ([string]::IsNullOrWhiteSpace($TurnBrokerUrl)) {
+    throw "Relay test builds require -TurnBrokerUrl when -ForceRelayOnlySmoke is set."
+  }
+
+  $defines = Get-Content -Raw -LiteralPath $Path | ConvertFrom-Json -ErrorAction Stop
+  Set-DartDefineJsonProperty $defines 'RAIN_TURN_BROKER_URL' $TurnBrokerUrl.Trim()
+  Set-DartDefineJsonProperty $defines 'RAIN_ALLOW_PUBLIC_TURN' 'false'
+  Set-DartDefineJsonProperty $defines 'RAIN_ICE_STRATEGY' 'staged'
+
+  if (-not [string]::IsNullOrWhiteSpace($TurnProviderName)) {
+    Set-DartDefineJsonProperty $defines 'RAIN_TURN_PROVIDER_ORDER' $TurnProviderName.Trim()
+  }
+
+  $tmpDir = Get-ReleaseTempDir $RepoRoot
+  $relayDefinesPath = Join-Path $tmpDir 'rain-relay-test-defines.generated.json'
+  $defines | ConvertTo-Json -Depth 20 | Set-Content -LiteralPath $relayDefinesPath -Encoding utf8
+  return $relayDefinesPath
 }
 
 function Get-JsonPropertyValue([object]$Json, [string]$Name) {
@@ -219,7 +286,21 @@ function Get-IceServerUrls([object]$IceServer) {
   return @([string]$urls)
 }
 
-function Assert-ReleaseDartDefines([string]$Path, [switch]$AllowPublicTurnForDemo) {
+function Test-IceUrlIsTurn([string]$Url) {
+  return $Url.StartsWith('turn:', [System.StringComparison]::OrdinalIgnoreCase)
+}
+
+function Test-IceUrlIsTurns([string]$Url) {
+  return $Url.StartsWith('turns:', [System.StringComparison]::OrdinalIgnoreCase)
+}
+
+function Test-IceUrlHasTransport([string]$Url, [string]$Transport) {
+  $normalized = $Url.Trim().ToLowerInvariant()
+  $expected = "transport=$($Transport.ToLowerInvariant())"
+  return $normalized.Contains("?$expected") -or $normalized.Contains("&$expected")
+}
+
+function Assert-ReleaseDartDefines([string]$Path, [switch]$AllowPublicTurnForDemo, [switch]$RequireTurnBroker) {
   try {
     $defines = Get-Content -Raw -LiteralPath $Path | ConvertFrom-Json -ErrorAction Stop
   } catch {
@@ -288,21 +369,38 @@ function Assert-ReleaseDartDefines([string]$Path, [switch]$AllowPublicTurnForDem
     Write-Warning "OpenRelay/public TURN is enabled for demo release artifacts only."
   }
 
+  $turnBrokerUrl = Get-JsonPropertyValue $defines 'RAIN_TURN_BROKER_URL'
+  $hasTurnBroker = -not [string]::IsNullOrWhiteSpace($turnBrokerUrl)
+  if ($RequireTurnBroker -and -not $hasTurnBroker) {
+    throw "Relay test builds require RAIN_TURN_BROKER_URL."
+  }
+  if ($hasTurnBroker -and -not $AllowPublicTurnForDemo) {
+    Write-Host "Production release uses TURN credential broker: $turnBrokerUrl"
+    return
+  }
+
   $turnUrls = @($urls | Where-Object {
-    $_.StartsWith('turn:', [System.StringComparison]::OrdinalIgnoreCase) -or
-      $_.StartsWith('turns:', [System.StringComparison]::OrdinalIgnoreCase)
+    (Test-IceUrlIsTurn $_) -or (Test-IceUrlIsTurns $_)
   })
   if ($turnUrls.Count -eq 0) {
-    throw "Release builds require at least one project-owned TURN/TURNS URL in RAIN_ICE_SERVERS."
+    throw "Release builds require RAIN_TURN_BROKER_URL or at least one project-owned TURN/TURNS URL in RAIN_ICE_SERVERS."
   }
+
+  $turnServerEntries = @($iceServers | Where-Object {
+    $serverUrls = @(Get-IceServerUrls $_ | Where-Object {
+      -not [string]::IsNullOrWhiteSpace($_)
+    })
+    @($serverUrls | Where-Object {
+      (Test-IceUrlIsTurn $_) -or (Test-IceUrlIsTurns $_)
+    }).Count -gt 0
+  })
 
   $turnServersWithCredentials = @($iceServers | Where-Object {
     $serverUrls = @(Get-IceServerUrls $_ | Where-Object {
       -not [string]::IsNullOrWhiteSpace($_)
     })
     $hasTurnUrl = @($serverUrls | Where-Object {
-      $_.StartsWith('turn:', [System.StringComparison]::OrdinalIgnoreCase) -or
-        $_.StartsWith('turns:', [System.StringComparison]::OrdinalIgnoreCase)
+      (Test-IceUrlIsTurn $_) -or (Test-IceUrlIsTurns $_)
     }).Count -gt 0
 
     $username = Get-JsonPropertyValue $_ 'username'
@@ -313,6 +411,39 @@ function Assert-ReleaseDartDefines([string]$Path, [switch]$AllowPublicTurnForDem
   })
   if ($turnServersWithCredentials.Count -eq 0) {
     throw "Release TURN servers must include username and credential."
+  }
+
+  if (-not $AllowPublicTurnForDemo) {
+    $turnServersMissingCredentials = @($turnServerEntries | Where-Object {
+      $username = Get-JsonPropertyValue $_ 'username'
+      $credential = Get-JsonPropertyValue $_ 'credential'
+      [string]::IsNullOrWhiteSpace($username) -or
+        [string]::IsNullOrWhiteSpace($credential)
+    })
+    if ($turnServersMissingCredentials.Count -gt 0) {
+      throw "Every production TURN/TURNS server entry must include username and credential."
+    }
+
+    $hasTurnUdp = @($turnUrls | Where-Object {
+      (Test-IceUrlIsTurn $_) -and (Test-IceUrlHasTransport $_ 'udp')
+    }).Count -gt 0
+    if (-not $hasTurnUdp) {
+      throw "Production RAIN_ICE_SERVERS must include a turn: UDP endpoint."
+    }
+
+    $hasTurnTcp = @($turnUrls | Where-Object {
+      (Test-IceUrlIsTurn $_) -and (Test-IceUrlHasTransport $_ 'tcp')
+    }).Count -gt 0
+    if (-not $hasTurnTcp) {
+      throw "Production RAIN_ICE_SERVERS must include a turn: TCP endpoint."
+    }
+
+    $hasTurnsTcp = @($turnUrls | Where-Object {
+      (Test-IceUrlIsTurns $_) -and (Test-IceUrlHasTransport $_ 'tcp')
+    }).Count -gt 0
+    if (-not $hasTurnsTcp) {
+      throw "Production RAIN_ICE_SERVERS must include a turns: TCP/TLS endpoint."
+    }
   }
 }
 
@@ -380,6 +511,64 @@ function Invoke-FlutterBuild([string[]]$Arguments) {
   }
 }
 
+function Invoke-RustBridgeCodegen([string]$FlutterProjectRoot) {
+  Write-Step "Generating Flutter Rust bridge bindings"
+  Invoke-InDir $FlutterProjectRoot {
+    & flutter_rust_bridge_codegen generate | Out-Host
+    if ($LASTEXITCODE -ne 0) {
+      throw "flutter_rust_bridge_codegen generate failed with exit code $LASTEXITCODE"
+    }
+  }
+}
+
+function Remove-AndroidSizeAnalysisReports([string]$ProjectRoot) {
+  $candidateDirs = @(
+    (Join-Path $ProjectRoot 'build'),
+    (Join-Path $HOME '.flutter-devtools')
+  )
+
+  foreach ($dir in $candidateDirs) {
+    if (-not (Test-Path -LiteralPath $dir)) {
+      continue
+    }
+
+    Get-ChildItem -LiteralPath $dir -Recurse -File -Filter '*code-size-analysis*.json' -ErrorAction SilentlyContinue |
+      Remove-Item -Force
+  }
+}
+
+function Copy-LatestAndroidSizeAnalysisReport(
+  [string]$ProjectRoot,
+  [string]$ReportDir,
+  [string]$ReportName
+) {
+  $candidateDirs = @(
+    (Join-Path $ProjectRoot 'build'),
+    (Join-Path $HOME '.flutter-devtools')
+  )
+  $report = $null
+
+  foreach ($dir in $candidateDirs) {
+    if (-not (Test-Path -LiteralPath $dir)) {
+      continue
+    }
+
+    $report = Get-ChildItem -LiteralPath $dir -Recurse -File -Filter '*code-size-analysis*.json' -ErrorAction SilentlyContinue |
+      Sort-Object LastWriteTime -Descending |
+      Select-Object -First 1
+    if ($report) {
+      break
+    }
+  }
+
+  if (-not $report) {
+    throw "Flutter size analysis report was not generated for $ReportName."
+  }
+
+  New-Item -ItemType Directory -Force -Path $ReportDir | Out-Null
+  Copy-Item -LiteralPath $report.FullName -Destination (Join-Path $ReportDir "$ReportName.json") -Force
+}
+
 function Stop-GradleDaemons([string]$ProjectRoot) {
   $gradlewPath = Join-Path $ProjectRoot 'android\gradlew.bat'
   if (-not (Test-Path $gradlewPath)) {
@@ -419,17 +608,173 @@ function Clean-FlutterProject([string]$ProjectRoot) {
   }
 }
 
+function Get-WindowsNativeAssetNames([string]$ManifestPath) {
+  if (-not (Test-Path -LiteralPath $ManifestPath)) {
+    return @()
+  }
+
+  $manifest = Get-Content -Raw -LiteralPath $ManifestPath | ConvertFrom-Json -ErrorAction Stop
+  $nativeAssetsProperty = $manifest.PSObject.Properties['native-assets']
+  if ($null -eq $nativeAssetsProperty) {
+    return @()
+  }
+
+  $windowsAssetsProperty = $nativeAssetsProperty.Value.PSObject.Properties['windows_x64']
+  if ($null -eq $windowsAssetsProperty) {
+    return @()
+  }
+
+  $assetNames = @()
+  foreach ($property in $windowsAssetsProperty.Value.PSObject.Properties) {
+    $entry = @($property.Value)
+    if ($entry.Count -lt 2 -or [string]$entry[0] -ne 'absolute') {
+      continue
+    }
+
+    $assetName = [System.IO.Path]::GetFileName([string]$entry[1])
+    if (-not [string]::IsNullOrWhiteSpace($assetName)) {
+      $assetNames += $assetName
+    }
+  }
+
+  return @($assetNames | Sort-Object -Unique)
+}
+
+function Copy-WindowsNativeAssets([string]$ProjectRoot, [string]$DestinationRoot) {
+  $nativeAssetsDir = Join-Path $ProjectRoot 'build\native_assets\windows'
+  if (-not (Test-Path -LiteralPath $nativeAssetsDir)) {
+    return
+  }
+
+  $nativeAssetsManifest = Join-Path $DestinationRoot 'data\flutter_assets\NativeAssetsManifest.json'
+  $nativeAssetNames = @(Get-WindowsNativeAssetNames -ManifestPath $nativeAssetsManifest)
+  if ($nativeAssetNames.Count -eq 0) {
+    return
+  }
+
+  Write-Step "Copying Windows native assets"
+  foreach ($nativeAssetName in $nativeAssetNames) {
+    $nativeAssetPath = Join-Path $nativeAssetsDir $nativeAssetName
+    if (-not (Test-Path -LiteralPath $nativeAssetPath)) {
+      throw "Windows native asset source not found: $nativeAssetPath"
+    }
+    Copy-Item -LiteralPath $nativeAssetPath -Destination $DestinationRoot -Force
+  }
+}
+
+function Assert-WindowsNativeAssetsPackaged([string]$ProjectRoot, [string]$DestinationRoot) {
+  $nativeAssetsManifest = Join-Path $DestinationRoot 'data\flutter_assets\NativeAssetsManifest.json'
+  $nativeAssetNames = @(Get-WindowsNativeAssetNames -ManifestPath $nativeAssetsManifest)
+  foreach ($nativeAssetName in $nativeAssetNames) {
+    $packagedNativeAsset = Join-Path $DestinationRoot $nativeAssetName
+    if (-not (Test-Path -LiteralPath $packagedNativeAsset)) {
+      throw "Windows native asset not found in portable output: $packagedNativeAsset"
+    }
+  }
+}
+
+function Remove-WindowsLinkerArtifacts([string]$DestinationRoot) {
+  Get-ChildItem -LiteralPath $DestinationRoot -File -ErrorAction SilentlyContinue |
+    Where-Object { $_.Extension -in @('.exp', '.lib') } |
+    Remove-Item -Force
+}
+
+function Resolve-DumpbinPath() {
+  $command = Get-Command dumpbin.exe -ErrorAction SilentlyContinue
+  if ($command) {
+    return $command.Source
+  }
+
+  $candidatePatterns = @(
+    'C:\Program Files\Microsoft Visual Studio\2022\Enterprise\VC\Tools\MSVC\*\bin\Hostx64\x64\dumpbin.exe',
+    'C:\Program Files\Microsoft Visual Studio\2022\Professional\VC\Tools\MSVC\*\bin\Hostx64\x64\dumpbin.exe',
+    'C:\Program Files\Microsoft Visual Studio\2022\Community\VC\Tools\MSVC\*\bin\Hostx64\x64\dumpbin.exe',
+    'C:\Program Files\Microsoft Visual Studio\2022\BuildTools\VC\Tools\MSVC\*\bin\Hostx64\x64\dumpbin.exe',
+    'C:\Program Files (x86)\Microsoft Visual Studio\2022\BuildTools\VC\Tools\MSVC\*\bin\Hostx64\x64\dumpbin.exe'
+  )
+
+  foreach ($pattern in $candidatePatterns) {
+    $candidate = Get-ChildItem -Path $pattern -ErrorAction SilentlyContinue |
+      Sort-Object FullName -Descending |
+      Select-Object -First 1
+    if ($candidate) {
+      return $candidate.FullName
+    }
+  }
+
+  throw "Required command not found: dumpbin.exe. Install Visual Studio Build Tools."
+}
+
+function Assert-DllExports([string]$DllPath, [string[]]$RequiredExports) {
+  if (-not (Test-Path -LiteralPath $DllPath)) {
+    throw "Required Windows runtime DLL not found: $DllPath"
+  }
+
+  $dumpbin = Resolve-DumpbinPath
+  $output = & $dumpbin /exports $DllPath 2>&1
+  if ($LASTEXITCODE -ne 0) {
+    $text = $output | Out-String
+    throw "Could not inspect Windows runtime DLL exports: $DllPath`n$text"
+  }
+
+  $exports = $output | Out-String
+  foreach ($requiredExport in $RequiredExports) {
+    $pattern = "(?m)(^|\s)$([regex]::Escape($requiredExport))(\s|$)"
+    if ($exports -notmatch $pattern) {
+      throw "Windows runtime DLL '$DllPath' is missing required export '$requiredExport'."
+    }
+  }
+}
+
+function Assert-WindowsSqliteExports([string]$DestinationRoot) {
+  $sqliteDll = Join-Path $DestinationRoot 'sqlite3.dll'
+  Assert-DllExports -DllPath $sqliteDll -RequiredExports @(
+    'sqlite3_open_v2',
+    'sqlite3_temp_directory'
+  )
+}
+
+function Get-ZipEntryNames([string]$ArchivePath) {
+  Add-Type -AssemblyName System.IO.Compression -ErrorAction SilentlyContinue
+  Add-Type -AssemblyName System.IO.Compression.FileSystem -ErrorAction SilentlyContinue
+
+  $archive = [System.IO.Compression.ZipFile]::OpenRead($ArchivePath)
+  try {
+    return @($archive.Entries | ForEach-Object { $_.FullName })
+  } finally {
+    $archive.Dispose()
+  }
+}
+
+function Assert-AndroidApkContainsSqlite([string]$ApkPath, [string[]]$Abis) {
+  if (-not (Test-Path -LiteralPath $ApkPath)) {
+    throw "Android release APK not found: $ApkPath"
+  }
+
+  $entryNames = @(Get-ZipEntryNames -ArchivePath $ApkPath)
+  foreach ($abi in $Abis) {
+    $requiredEntry = "lib/$abi/libsqlite3.so"
+    if ($entryNames -notcontains $requiredEntry) {
+      throw "Android APK is missing bundled SQLite native library: $ApkPath -> $requiredEntry"
+    }
+  }
+}
+
 $repoRoot = $RepoRoot
 $appsRoot = Join-Path $repoRoot 'apps\rain'
 $releaseRoot = $OutputDir
 $isOpenRelayDemoBuild = [bool]$AllowPublicTurnForDemo
-if ($UseDemoAndroidSigningKey -and -not $isOpenRelayDemoBuild) {
-  throw "Demo Android signing is only allowed with -AllowPublicTurnForDemo."
+$isRelayTestBuild = [bool]($RelayTest -or $ForceRelayOnlySmoke)
+if ($isRelayTestBuild -and $isOpenRelayDemoBuild) {
+  throw "Relay test artifacts must not use -AllowPublicTurnForDemo."
+}
+if ($UseDemoAndroidSigningKey -and -not $isOpenRelayDemoBuild -and -not $isRelayTestBuild) {
+  throw "Demo Android signing is enabled for non-production artifacts. Pass -RelayTest or -AllowPublicTurnForDemo."
 }
 
-$androidArtifactPrefix = if ($isOpenRelayDemoBuild) { 'Rain-Demo' } else { 'Rain-release' }
-$windowsPortableName = if ($isOpenRelayDemoBuild) { 'Rain-Demo-Windows-x64-Build' } else { 'Rain-windows-portable' }
-$dartDefineArgs = Get-DartDefineArgs $appsRoot $DartDefinesFile $repoRoot $isOpenRelayDemoBuild
+$androidArtifactPrefix = if ($isOpenRelayDemoBuild) { 'Rain-Demo' } elseif ($isRelayTestBuild) { 'Rain-Relay-Test' } else { 'Rain-release' }
+$windowsPortableName = if ($isOpenRelayDemoBuild) { 'Rain-Demo-Windows-x64-Build' } elseif ($isRelayTestBuild) { 'Rain-Relay-Test-Windows-x64-Build' } else { 'Rain-windows-portable' }
+$dartDefineArgs = Get-DartDefineArgs $appsRoot $DartDefinesFile $repoRoot $isOpenRelayDemoBuild $isRelayTestBuild $ForceRelayOnlySmoke $TurnBrokerUrl $TurnProviderName
 if ($Platform -in @('all', 'android')) {
   if ($UseDemoAndroidSigningKey) {
     Use-DemoAndroidSigningKey $repoRoot
@@ -437,9 +782,28 @@ if ($Platform -in @('all', 'android')) {
   Assert-AndroidReleaseSigning
 }
 
+Add-CargoBinToPathIfPresent
+
 Ensure-Command flutter
 Ensure-Command dart
 Ensure-Command git
+Ensure-Command rustc
+Ensure-Command cargo
+Ensure-Command flutter_rust_bridge_codegen
+
+Write-Step "Checking Rust bridge toolchain"
+& rustc --version | Out-Host
+if ($LASTEXITCODE -ne 0) {
+  throw "rustc --version failed with exit code $LASTEXITCODE"
+}
+& cargo --version | Out-Host
+if ($LASTEXITCODE -ne 0) {
+  throw "cargo --version failed with exit code $LASTEXITCODE"
+}
+& flutter_rust_bridge_codegen --version | Out-Host
+if ($LASTEXITCODE -ne 0) {
+  throw "flutter_rust_bridge_codegen --version failed with exit code $LASTEXITCODE"
+}
 
 Write-Step "Syncing app icons"
 & (Join-Path $repoRoot 'scripts\sync_app_icons.ps1') -RepoRoot $repoRoot | Out-Host
@@ -471,6 +835,8 @@ foreach ($pubRoot in $pubGetRoots) {
     flutter pub get | Out-Host
   }
 }
+
+Invoke-RustBridgeCodegen $appsRoot
 
 if ($Platform -in @('all', 'windows')) {
   Write-Step "Building Windows release"
@@ -523,6 +889,10 @@ if ($Platform -in @('all', 'windows')) {
     Remove-Item -LiteralPath $flutterAssetsDestination -Recurse -Force
   }
   Copy-Item -Path $flutterAssetsSource -Destination $flutterAssetsDestination -Recurse -Force
+  Copy-WindowsNativeAssets -ProjectRoot $appsRoot -DestinationRoot $windowsPortableDir
+  Assert-WindowsNativeAssetsPackaged -ProjectRoot $appsRoot -DestinationRoot $windowsPortableDir
+  Remove-WindowsLinkerArtifacts -DestinationRoot $windowsPortableDir
+  Assert-WindowsSqliteExports -DestinationRoot $windowsPortableDir
 
   if (Test-Path $windowsZip) {
     Remove-Item -LiteralPath $windowsZip -Force
@@ -533,56 +903,80 @@ if ($Platform -in @('all', 'windows')) {
 }
 
 if ($Platform -in @('all', 'android')) {
-  Write-Step "Building Android universal release APK"
   if ($Clean) {
     Write-Step "Cleaning Flutter project state for Android build"
     Stop-GradleDaemons $appsRoot
     Clean-FlutterProject $appsRoot
   }
-  $flutterArgs = @('build', 'apk', '--release') + $dartDefineArgs
-  Invoke-InDir $appsRoot {
-    Invoke-FlutterBuild $flutterArgs
-  }
-
-  $apkSource = Join-Path $appsRoot 'build\app\outputs\flutter-apk\app-release.apk'
-  $apkDestination = if ($isOpenRelayDemoBuild) { '' } else { Join-Path $releaseRoot "$androidArtifactPrefix-android.apk" }
-  $universalApkDestination = if ($isOpenRelayDemoBuild) {
-    Join-Path $releaseRoot 'Rain-Demo-Android-Universal-Build.apk'
+  $androidTargetPlatformArgs = if ($AndroidArtifactSet -eq 'mobile') {
+    @('--target-platform', 'android-arm,android-arm64')
   } else {
-    Join-Path $releaseRoot "$androidArtifactPrefix-android-universal.apk"
+    @()
   }
 
-  if (-not (Test-Path $apkSource)) {
-    throw "Android release APK not found: $apkSource"
+  if ($AndroidArtifactSet -eq 'all') {
+    Write-Step "Building Android universal release APK"
+    $flutterArgs = @('build', 'apk', '--release') + $dartDefineArgs
+    Invoke-InDir $appsRoot {
+      Invoke-FlutterBuild $flutterArgs
+    }
+
+    $apkSource = Join-Path $appsRoot 'build\app\outputs\flutter-apk\app-release.apk'
+    $apkDestination = if ($isOpenRelayDemoBuild) { '' } else { Join-Path $releaseRoot "$androidArtifactPrefix-android.apk" }
+    $universalApkDestination = if ($isOpenRelayDemoBuild) {
+      Join-Path $releaseRoot 'Rain-Demo-Android-Universal-Build.apk'
+    } else {
+      Join-Path $releaseRoot "$androidArtifactPrefix-android-universal.apk"
+    }
+
+    if (-not (Test-Path $apkSource)) {
+      throw "Android release APK not found: $apkSource"
+    }
+
+    if (-not [string]::IsNullOrWhiteSpace($apkDestination)) {
+      Copy-Item -LiteralPath $apkSource -Destination $apkDestination -Force
+    }
+    Copy-Item -LiteralPath $apkSource -Destination $universalApkDestination -Force
+    $universalApkAbis = if ($AndroidArtifactSet -eq 'mobile') {
+      @('armeabi-v7a', 'arm64-v8a')
+    } else {
+      @('armeabi-v7a', 'arm64-v8a', 'x86_64')
+    }
+    Assert-AndroidApkContainsSqlite -ApkPath $universalApkDestination -Abis $universalApkAbis
+
+    Write-Step "Resetting Android build state before per-ABI release APKs"
+    Stop-GradleDaemons $appsRoot
+    Clean-FlutterProject $appsRoot
+  } else {
+    Write-Step "Skipping Android universal/x86_64 release APK; mobile user artifacts are ARM-only"
   }
 
-  if (-not [string]::IsNullOrWhiteSpace($apkDestination)) {
-    Copy-Item -LiteralPath $apkSource -Destination $apkDestination -Force
+  $abiBuildLabel = if ($AndroidArtifactSet -eq 'mobile') {
+    'armeabi-v7a, arm64-v8a (ARMv8/ARMv9 devices)'
+  } else {
+    'armeabi-v7a, arm64-v8a (ARMv8/ARMv9 devices), x86_64'
   }
-  Copy-Item -LiteralPath $apkSource -Destination $universalApkDestination -Force
-
-  Write-Step "Resetting Android build state before per-ABI release APKs"
-  Stop-GradleDaemons $appsRoot
-  Clean-FlutterProject $appsRoot
-
-  Write-Step "Building Android per-ABI release APKs: armeabi-v7a, arm64-v8a (ARMv8/ARMv9 devices), x86_64"
-  $splitFlutterArgs = @('build', 'apk', '--release', '--split-per-abi') + $dartDefineArgs
+  Write-Step "Building Android per-ABI release APKs: $abiBuildLabel"
+  $splitFlutterArgs = @('build', 'apk', '--release', '--split-per-abi') + $androidTargetPlatformArgs + $dartDefineArgs
   Invoke-InDir $appsRoot {
     Invoke-FlutterBuild $splitFlutterArgs
   }
 
   $abiApks = if ($isOpenRelayDemoBuild) {
     @(
-      @{ Label = 'ARM v8/v9 devices (arm64-v8a)'; Source = 'app-arm64-v8a-release.apk'; Destination = 'Rain-Demo-Android-ARM-v8-v9-Build.apk' },
-      @{ Label = 'ARM v7 devices (armeabi-v7a)'; Source = 'app-armeabi-v7a-release.apk'; Destination = 'Rain-Demo-Android-ARM-v7-Build.apk' },
-      @{ Label = 'x86_64 devices'; Source = 'app-x86_64-release.apk'; Destination = 'Rain-Demo-Android-x86_64-Build.apk' }
+      @{ Label = 'ARM v8/v9 devices (arm64-v8a)'; Source = 'app-arm64-v8a-release.apk'; Destination = 'Rain-Demo-Android-ARM-v8-v9-Build.apk'; Abi = 'arm64-v8a' },
+      @{ Label = 'ARM v7 devices (armeabi-v7a)'; Source = 'app-armeabi-v7a-release.apk'; Destination = 'Rain-Demo-Android-ARM-v7-Build.apk'; Abi = 'armeabi-v7a' },
+      @{ Label = 'x86_64 devices'; Source = 'app-x86_64-release.apk'; Destination = 'Rain-Demo-Android-x86_64-Build.apk'; Abi = 'x86_64' }
     )
   } else {
     @(
-      @{ Label = 'ARM v8/v9 devices (arm64-v8a)'; Source = 'app-arm64-v8a-release.apk'; Destination = "$androidArtifactPrefix-android-arm64-v8a.apk" },
-      @{ Label = 'ARM v7 devices (armeabi-v7a)'; Source = 'app-armeabi-v7a-release.apk'; Destination = "$androidArtifactPrefix-android-armeabi-v7a.apk" },
-      @{ Label = 'x86_64 devices'; Source = 'app-x86_64-release.apk'; Destination = "$androidArtifactPrefix-android-x86_64.apk" }
+      @{ Label = 'ARM v8/v9 devices (arm64-v8a)'; Source = 'app-arm64-v8a-release.apk'; Destination = "$androidArtifactPrefix-android-arm64-v8a.apk"; Abi = 'arm64-v8a' },
+      @{ Label = 'ARM v7 devices (armeabi-v7a)'; Source = 'app-armeabi-v7a-release.apk'; Destination = "$androidArtifactPrefix-android-armeabi-v7a.apk"; Abi = 'armeabi-v7a' },
+      @{ Label = 'x86_64 devices'; Source = 'app-x86_64-release.apk'; Destination = "$androidArtifactPrefix-android-x86_64.apk"; Abi = 'x86_64' }
     )
+  }
+  if ($AndroidArtifactSet -eq 'mobile') {
+    $abiApks = @($abiApks | Where-Object { $_.Source -ne 'app-x86_64-release.apk' })
   }
 
   foreach ($abiApk in $abiApks) {
@@ -594,7 +988,32 @@ if ($Platform -in @('all', 'android')) {
     }
 
     Copy-Item -LiteralPath $abiApkSource -Destination $abiApkDestination -Force
+    Assert-AndroidApkContainsSqlite -ApkPath $abiApkDestination -Abis @($abiApk.Abi)
     Write-Step "Packaged Android APK for $($abiApk.Label): $abiApkDestination"
+  }
+
+  if ($GenerateSizeReports) {
+    $sizeReportDir = Join-Path $releaseRoot 'size-reports'
+    $sizeTargets = @(
+      @{ Label = 'android-arm'; TargetPlatform = 'android-arm'; ReportName = 'apk-code-size-analysis-android-arm' },
+      @{ Label = 'android-arm64'; TargetPlatform = 'android-arm64'; ReportName = 'apk-code-size-analysis-android-arm64' }
+    )
+
+    foreach ($sizeTarget in $sizeTargets) {
+      Write-Step "Generating Android APK size analysis for $($sizeTarget.Label)"
+      Remove-AndroidSizeAnalysisReports $appsRoot
+      $sizeFlutterArgs = @(
+        'build',
+        'apk',
+        '--release',
+        '--analyze-size',
+        "--target-platform=$($sizeTarget.TargetPlatform)"
+      ) + $dartDefineArgs
+      Invoke-InDir $appsRoot {
+        Invoke-FlutterBuild $sizeFlutterArgs
+      }
+      Copy-LatestAndroidSizeAnalysisReport $appsRoot $sizeReportDir $sizeTarget.ReportName
+    }
   }
 }
 
@@ -621,19 +1040,24 @@ if ($Platform -in @('all', 'windows')) {
 if ($Platform -in @('all', 'android')) {
   $expectedApks = if ($isOpenRelayDemoBuild) {
     @(
-      'Rain-Demo-Android-Universal-Build.apk',
       'Rain-Demo-Android-ARM-v8-v9-Build.apk',
-      'Rain-Demo-Android-ARM-v7-Build.apk',
-      'Rain-Demo-Android-x86_64-Build.apk'
+      'Rain-Demo-Android-ARM-v7-Build.apk'
     )
   } else {
     @(
-      "$androidArtifactPrefix-android.apk",
-      "$androidArtifactPrefix-android-universal.apk",
       "$androidArtifactPrefix-android-arm64-v8a.apk",
-      "$androidArtifactPrefix-android-armeabi-v7a.apk",
-      "$androidArtifactPrefix-android-x86_64.apk"
+      "$androidArtifactPrefix-android-armeabi-v7a.apk"
     )
+  }
+  if ($AndroidArtifactSet -eq 'all') {
+    if ($isOpenRelayDemoBuild) {
+      $expectedApks += 'Rain-Demo-Android-Universal-Build.apk'
+      $expectedApks += 'Rain-Demo-Android-x86_64-Build.apk'
+    } else {
+      $expectedApks += "$androidArtifactPrefix-android.apk"
+      $expectedApks += "$androidArtifactPrefix-android-universal.apk"
+      $expectedApks += "$androidArtifactPrefix-android-x86_64.apk"
+    }
   }
 
   foreach ($apkName in $expectedApks) {

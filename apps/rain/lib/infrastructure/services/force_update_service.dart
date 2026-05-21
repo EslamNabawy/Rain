@@ -74,6 +74,18 @@ class ForceUpdateService {
     }
   }
 
+  Future<ForceUpdateResult> checkUnavailable() async {
+    final info = _packageInfoLoader == null
+        ? await PackageInfo.fromPlatform()
+        : await _packageInfoLoader();
+    return ForceUpdateResult(
+      status: ForceUpdateStatus.checkUnavailable,
+      currentVersion: info.version,
+      minVersion: info.version,
+      updateUrl: updateUrl,
+    );
+  }
+
   Future<ForceUpdateConfig?> _loadConfig() async {
     if (_configLoader != null) {
       return _configLoader();

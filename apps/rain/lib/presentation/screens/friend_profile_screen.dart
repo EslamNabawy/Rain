@@ -19,7 +19,7 @@ class FriendProfileScreen extends ConsumerWidget {
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {
-    final friends = ref.watch(friendsProvider).valueOrNull;
+    final friends = ref.watch(friendsProvider).value;
     FriendRecord? currentFriend = initialFriend;
     for (final friend in friends ?? const <FriendRecord>[]) {
       if (friend.username == username) {
@@ -136,11 +136,16 @@ class FriendProfileScreen extends ConsumerWidget {
           if (friend.state == FriendState.pendingIncoming) ...<Widget>[
             FilledButton.icon(
               onPressed: () async {
-                await ref
-                    .read(friendsProvider.notifier)
-                    .accept(friend.username);
+                final succeeded = await _runProfileAction(
+                  context,
+                  () => ref
+                      .read(friendsProvider.notifier)
+                      .accept(friend.username),
+                );
                 if (context.mounted) {
-                  Navigator.of(context).pop();
+                  if (succeeded) {
+                    Navigator.of(context).pop();
+                  }
                 }
               },
               icon: const Icon(Icons.check),
@@ -149,11 +154,16 @@ class FriendProfileScreen extends ConsumerWidget {
             const SizedBox(height: 12),
             OutlinedButton.icon(
               onPressed: () async {
-                await ref
-                    .read(friendsProvider.notifier)
-                    .reject(friend.username);
+                final succeeded = await _runProfileAction(
+                  context,
+                  () => ref
+                      .read(friendsProvider.notifier)
+                      .reject(friend.username),
+                );
                 if (context.mounted) {
-                  Navigator.of(context).pop();
+                  if (succeeded) {
+                    Navigator.of(context).pop();
+                  }
                 }
               },
               icon: const Icon(Icons.close),
@@ -171,11 +181,16 @@ class FriendProfileScreen extends ConsumerWidget {
             const SizedBox(height: 12),
             OutlinedButton.icon(
               onPressed: () async {
-                await ref
-                    .read(friendsProvider.notifier)
-                    .reject(friend.username);
+                final succeeded = await _runProfileAction(
+                  context,
+                  () => ref
+                      .read(friendsProvider.notifier)
+                      .reject(friend.username),
+                );
                 if (context.mounted) {
-                  Navigator.of(context).pop();
+                  if (succeeded) {
+                    Navigator.of(context).pop();
+                  }
                 }
               },
               icon: const Icon(Icons.cancel),
@@ -233,9 +248,17 @@ class FriendProfileScreen extends ConsumerWidget {
     );
 
     if (confirmed == true) {
-      await ref.read(friendsProvider.notifier).unfriend(friend.username);
+      if (!context.mounted) {
+        return;
+      }
+      final succeeded = await _runProfileAction(
+        context,
+        () => ref.read(friendsProvider.notifier).unfriend(friend.username),
+      );
       if (context.mounted) {
-        Navigator.of(context).pop();
+        if (succeeded) {
+          Navigator.of(context).pop();
+        }
       }
     }
   }
@@ -257,9 +280,17 @@ class FriendProfileScreen extends ConsumerWidget {
     );
 
     if (confirmed == true) {
-      await ref.read(friendsProvider.notifier).block(friend.username);
+      if (!context.mounted) {
+        return;
+      }
+      final succeeded = await _runProfileAction(
+        context,
+        () => ref.read(friendsProvider.notifier).block(friend.username),
+      );
       if (context.mounted) {
-        Navigator.of(context).pop();
+        if (succeeded) {
+          Navigator.of(context).pop();
+        }
       }
     }
   }
@@ -278,11 +309,50 @@ class FriendProfileScreen extends ConsumerWidget {
     );
 
     if (confirmed == true) {
-      await ref.read(friendsProvider.notifier).unblock(friend.username);
+      if (!context.mounted) {
+        return;
+      }
+      final succeeded = await _runProfileAction(
+        context,
+        () => ref.read(friendsProvider.notifier).unblock(friend.username),
+      );
       if (context.mounted) {
-        Navigator.of(context).pop();
+        if (succeeded) {
+          Navigator.of(context).pop();
+        }
       }
     }
+  }
+
+  Future<bool> _runProfileAction(
+    BuildContext context,
+    Future<void> Function() action,
+  ) async {
+    try {
+      await action();
+      return true;
+    } catch (error) {
+      if (context.mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text(_formatError(error)),
+            backgroundColor: Theme.of(context).colorScheme.error,
+          ),
+        );
+      }
+      return false;
+    }
+  }
+
+  String _formatError(Object error) {
+    final raw = error.toString().trim();
+    const prefixes = <String>['Exception: ', 'Bad state: ', 'StateError: '];
+    for (final prefix in prefixes) {
+      if (raw.startsWith(prefix)) {
+        return raw.substring(prefix.length).trim();
+      }
+    }
+    return raw;
   }
 }
 
