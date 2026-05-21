@@ -1,16 +1,23 @@
-# rain
+# Rain App
 
-A new Flutter project.
+Flutter desktop and Android shell for Rain.
 
-## Getting Started
+## Source Layout
 
-This project is a starting point for a Flutter application.
+- `lib/application`: bootstrap, Riverpod providers, runtime orchestration.
+- `lib/core`: compile-time and platform configuration.
+- `lib/infrastructure`: Firebase adapters and device/app services.
+- `lib/presentation`: routes, screens, widgets, and theme.
 
-A few resources to get you started if this is your first Flutter project:
+## Local Run
 
-- [Lab: Write your first Flutter app](https://docs.flutter.dev/get-started/codelab)
-- [Cookbook: Useful Flutter samples](https://docs.flutter.dev/cookbook)
+```powershell
+flutter run -d windows --dart-define-from-file=tool/dart_defines.example.json
+```
 
-For help getting started with Flutter development, view the
-[online documentation](https://docs.flutter.dev/), which offers tutorials,
-samples, guidance on mobile development, and a full API reference.
+## Validation
+
+```powershell
+flutter analyze
+flutter test
+```

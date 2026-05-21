@@ -5,7 +5,8 @@ Rain uses three GitHub Actions workflow layers:
 - `CI`: runs workflow lint, dependency lock drift checks, analyze, tests,
   Firebase emulator integration tests, and debug/demo artifact checks on pushes
   and pull requests.
-- `Build Rain Apps`: builds downloadable Windows and Android artifacts on pushes or manual dispatch.
+- `Build Rain Apps`: builds downloadable Windows and Android artifacts through
+  manual `workflow_dispatch`.
 - `Release Rain`: builds production artifacts and publishes a GitHub Release when a `v*` tag is pushed or the workflow is manually dispatched.
 
 ## Build Artifacts
