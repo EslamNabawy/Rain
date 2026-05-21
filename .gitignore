@@ -1,6 +1,9 @@
 .dart_tool/
 **/.dart_tool/
+**/.gradle/
 **/build/
+**/coverage/
+**/node_modules/
 **/.flutter-plugins-dependencies
 .idea/
 *.iml
