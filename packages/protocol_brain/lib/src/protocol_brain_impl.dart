@@ -8,28 +8,9 @@ import '../adapters/signaling_cipher.dart';
 import 'connection_memory.dart';
 import 'session_manager.dart';
 
-String _normalizedPeerId(String peerId) => peerId.trim().toLowerCase();
-
-String roomId(String a, String b) {
-  final sorted = <String>[_normalizedPeerId(a), _normalizedPeerId(b)]..sort();
-  return sorted.join(':');
-}
-
-const Duration _directHandshakeTimeout = Duration(seconds: 20);
-const Duration _relayHandshakeTimeout = Duration(seconds: 60);
-const Duration _waitingForOfferTimeout = Duration(seconds: 60);
-const Duration _routeRefreshDelay = Duration(milliseconds: 850);
-
-typedef PeerConfigProvider =
-    Future<PeerConfig> Function(PeerIceTransportPolicy policy);
-
-Duration _maxDuration(Duration a, Duration b) {
-  return a.compareTo(b) >= 0 ? a : b;
-}
-
-bool _cachedIceReconnectEnabled() {
-  return false;
-}
+part 'active_session.dart';
+part 'ice_candidate_policy.dart';
+part 'session_retry_policy.dart';
 
 class ProtocolBrainImpl implements ProtocolBrain {
   ProtocolBrainImpl({
@@ -1279,92 +1260,5 @@ String _toPeerChannel(SessionChannel channel) {
       return PeerChannels.control;
     case SessionChannel.file:
       return PeerChannels.file;
-  }
-}
-
-class _ActiveSession {
-  _ActiveSession({
-    required this.peerId,
-    required this.roomId,
-    required this.peer,
-    required this.snapshot,
-  });
-
-  final String peerId;
-  final String roomId;
-  PeerCore peer;
-  final List<StreamSubscription<dynamic>> subscriptions =
-      <StreamSubscription<dynamic>>[];
-  final Map<IceRole, StreamSubscription<RTCIceCandidate>> iceSubscriptions =
-      <IceRole, StreamSubscription<RTCIceCandidate>>{};
-  final List<RTCIceCandidate> remoteIceCache = <RTCIceCandidate>[];
-
-  Session snapshot;
-  bool bound = false;
-  int retryAttempt = 0;
-  bool usedCachedReconnect = false;
-  bool shouldReconnect = true;
-  bool reconnectInProgress = false;
-  bool relayFallbackTried = false;
-  String? directAttemptFailure;
-  PeerIceTransportPolicy icePolicy = PeerIceTransportPolicy.all;
-  int reconnectGeneration = 0;
-  int? lastOfferTs;
-  int? lastAnswerTs;
-  StreamSubscription<SDPPayload>? answerSubscription;
-  Timer? handshakeTimeoutTimer;
-  Timer? reconnectTimer;
-
-  Future<void> dispose() async {
-    shouldReconnect = false;
-    stopReconnecting();
-    await disposePeerBindings();
-    await peer.destroy();
-  }
-
-  Future<void> disposePeerBindings() async {
-    cancelHandshakeTimeout();
-    await answerSubscription?.cancel();
-    answerSubscription = null;
-    for (final subscription in subscriptions) {
-      await subscription.cancel();
-    }
-    subscriptions.clear();
-    for (final subscription in iceSubscriptions.values) {
-      await subscription.cancel();
-    }
-    iceSubscriptions.clear();
-  }
-
-  void startHandshakeTimeout(
-    Future<void> Function() onTimeout, {
-    required Duration duration,
-  }) {
-    cancelHandshakeTimeout();
-    handshakeTimeoutTimer = Timer(duration, () {
-      unawaited(onTimeout());
-    });
-  }
-
-  void cancelHandshakeTimeout() {
-    handshakeTimeoutTimer?.cancel();
-    handshakeTimeoutTimer = null;
-  }
-
-  int nextReconnectGeneration() {
-    reconnectGeneration += 1;
-    return reconnectGeneration;
-  }
-
-  void cancelPendingReconnect() {
-    reconnectTimer?.cancel();
-    reconnectTimer = null;
-    reconnectInProgress = false;
-    reconnectGeneration += 1;
-  }
-
-  void stopReconnecting() {
-    shouldReconnect = false;
-    cancelPendingReconnect();
   }
 }
