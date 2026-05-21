@@ -19,7 +19,7 @@ import 'package:rain/presentation/theme/rain_theme.dart';
 import 'package:rain/presentation/widgets/app_components.dart';
 import 'package:rain/presentation/widgets/chat_composer.dart';
 import 'package:rain/presentation/widgets/app_dialogs.dart';
-import 'package:rain/presentation/widgets/rain_command_widgets.dart';
+import 'package:rain/presentation/widgets/rain_chat_widgets.dart';
 
 part '../widgets/home/shell_header.dart';
 part '../widgets/home/link_status.dart';

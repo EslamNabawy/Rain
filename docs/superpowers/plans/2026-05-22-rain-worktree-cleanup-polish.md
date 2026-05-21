@@ -871,7 +871,7 @@ git mv apps/rain/test/rain_command_widgets_test.dart apps/rain/test/rain_chat_wi
 Run:
 
 ```powershell
-rg -n "rain_command_widgets|Command Center|connection_command|Iroh|iroh|rust_lib_rain|flutter_rust_bridge" apps/rain/lib apps/rain/test packages docs .github pubspec.yaml apps/rain/pubspec.yaml
+rg -n -g '!docs/superpowers/plans/**' "rain_command_widgets|Command Center|connection_command|Iroh|iroh|rust_lib_rain|flutter_rust_bridge" apps/rain/lib apps/rain/test packages docs .github pubspec.yaml apps/rain/pubspec.yaml
 ```
 
 Expected: no matches, except `rain_chat_widgets` names if intentionally used.
@@ -1014,7 +1014,7 @@ Expected: `found 0 vulnerabilities`.
 Run:
 
 ```powershell
-rg -n -g '!**/node_modules/**' "Supabase|supabase|Iroh|iroh|Command Center|connection_command|flutter_rust_bridge|rust_lib_rain" apps/rain/lib apps/rain/test packages backend scripts docs .github pubspec.yaml apps/rain/pubspec.yaml
+rg -n -g '!**/node_modules/**' -g '!docs/superpowers/plans/**' "Supabase|supabase|Iroh|iroh|Command Center|connection_command|flutter_rust_bridge|rust_lib_rain" apps/rain/lib apps/rain/test packages backend scripts docs .github pubspec.yaml apps/rain/pubspec.yaml
 ```
 
 Expected: no matches.

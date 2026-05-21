@@ -1,7 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_svg/flutter_svg.dart';
 import 'package:flutter_test/flutter_test.dart';
-import 'package:rain/presentation/widgets/rain_command_widgets.dart';
+import 'package:rain/presentation/widgets/rain_chat_widgets.dart';
 
 void main() {
   testWidgets('RainLiveLinkBar renders link state and strength', (

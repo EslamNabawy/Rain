@@ -10,7 +10,7 @@ import 'package:rain/application/state/app_providers.dart';
 import 'package:rain/application/state/app_state.dart';
 import 'package:rain/application/runtime/rain_runtime_controller.dart';
 import 'package:rain/presentation/widgets/app_components.dart';
-import 'package:rain/presentation/widgets/rain_command_widgets.dart';
+import 'package:rain/presentation/widgets/rain_chat_widgets.dart';
 
 class SearchScreen extends ConsumerStatefulWidget {
   const SearchScreen({super.key});

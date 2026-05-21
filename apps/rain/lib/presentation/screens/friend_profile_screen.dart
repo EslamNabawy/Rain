@@ -5,7 +5,7 @@ import 'package:rain_core/rain_core.dart';
 import 'package:rain/application/state/app_providers.dart';
 import 'package:rain/presentation/widgets/app_components.dart';
 import 'package:rain/presentation/widgets/app_dialogs.dart';
-import 'package:rain/presentation/widgets/rain_command_widgets.dart';
+import 'package:rain/presentation/widgets/rain_chat_widgets.dart';
 
 class FriendProfileScreen extends ConsumerWidget {
   const FriendProfileScreen({

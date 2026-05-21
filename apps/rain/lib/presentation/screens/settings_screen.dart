@@ -8,7 +8,7 @@ import 'package:rain/application/state/app_providers.dart';
 import 'package:rain/presentation/screens/splash_screen.dart';
 import 'package:rain/presentation/widgets/app_components.dart';
 import 'package:rain/presentation/widgets/app_dialogs.dart';
-import 'package:rain/presentation/widgets/rain_command_widgets.dart';
+import 'package:rain/presentation/widgets/rain_chat_widgets.dart';
 
 String _formatSettingsError(Object error) {
   final raw = error.toString().trim();
