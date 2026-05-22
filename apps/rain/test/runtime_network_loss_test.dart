@@ -139,7 +139,11 @@ void main() {
     await runtime.start();
 
     brain.emitPeerDisconnected('bob');
-    await pumpEventQueue();
+    await _waitForTransferState(
+      transferStore,
+      'transfer-1',
+      FileTransferState.failed,
+    );
 
     final failed = await transferStore.loadById('transfer-1');
     expect(failed?.state, FileTransferState.failed);
@@ -186,6 +190,27 @@ void main() {
       'Network changed. Restarting peer connection paths.',
     ]);
   });
+}
+
+Future<void> _waitForTransferState(
+  FileTransferStore store,
+  String transferId,
+  FileTransferState expected,
+) async {
+  final deadline = DateTime.now().add(const Duration(seconds: 2));
+  while (DateTime.now().isBefore(deadline)) {
+    final transfer = await store.loadById(transferId);
+    if (transfer?.state == expected) {
+      return;
+    }
+    await Future<void>.delayed(const Duration(milliseconds: 20));
+  }
+
+  final transfer = await store.loadById(transferId);
+  fail(
+    'Timed out waiting for $transferId to become ${expected.name}; '
+    'last state was ${transfer?.state.name}.',
+  );
 }
 
 class _DisconnectingSessionManager implements SessionManager {
