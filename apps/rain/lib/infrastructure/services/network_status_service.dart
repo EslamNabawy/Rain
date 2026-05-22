@@ -6,22 +6,32 @@ import 'package:firebase_database/firebase_database.dart';
 enum NetworkStatusKind { checking, online, offline, limited }
 
 class NetworkStatusState {
-  const NetworkStatusState._(this.kind, this.message);
+  const NetworkStatusState._(this.kind, this.message, {this.pathKey = ''});
 
-  const NetworkStatusState.checking()
-    : this._(NetworkStatusKind.checking, 'Checking internet connection.');
-  const NetworkStatusState.online()
-    : this._(NetworkStatusKind.online, 'Rain is online.');
-  const NetworkStatusState.offline()
-    : this._(NetworkStatusKind.offline, 'Offline - cached chats only.');
-  const NetworkStatusState.limited()
+  const NetworkStatusState.checking({String pathKey = ''})
+    : this._(
+        NetworkStatusKind.checking,
+        'Checking internet connection.',
+        pathKey: pathKey,
+      );
+  const NetworkStatusState.online({String pathKey = ''})
+    : this._(NetworkStatusKind.online, 'Rain is online.', pathKey: pathKey);
+  const NetworkStatusState.offline({String pathKey = ''})
+    : this._(
+        NetworkStatusKind.offline,
+        'Offline - cached chats only.',
+        pathKey: pathKey,
+      );
+  const NetworkStatusState.limited({String pathKey = ''})
     : this._(
         NetworkStatusKind.limited,
         'Internet is available, but Rain backend is unreachable.',
+        pathKey: pathKey,
       );
 
   final NetworkStatusKind kind;
   final String message;
+  final String pathKey;
 
   bool get isOnline =>
       kind == NetworkStatusKind.online || kind == NetworkStatusKind.limited;
@@ -39,11 +49,13 @@ class NetworkStatusState {
 
   @override
   bool operator ==(Object other) {
-    return other is NetworkStatusState && other.kind == kind;
+    return other is NetworkStatusState &&
+        other.kind == kind &&
+        other.pathKey == pathKey;
   }
 
   @override
-  int get hashCode => kind.hashCode;
+  int get hashCode => Object.hash(kind, pathKey);
 }
 
 abstract class ConnectivityProbe {
@@ -144,16 +156,17 @@ class NetworkStatusService {
       if (connectivity == null) {
         return const NetworkStatusState.checking();
       }
+      final pathKey = _connectivityPathKey(connectivity);
       if (_isOffline(connectivity)) {
-        return const NetworkStatusState.offline();
+        return NetworkStatusState.offline(pathKey: pathKey);
       }
       if (!latestBackendConnected) {
         if (!hasConfirmedBackendOnline && !backendStartupGraceExpired) {
-          return const NetworkStatusState.online();
+          return NetworkStatusState.online(pathKey: pathKey);
         }
-        return const NetworkStatusState.limited();
+        return NetworkStatusState.limited(pathKey: pathKey);
       }
-      return const NetworkStatusState.online();
+      return NetworkStatusState.online(pathKey: pathKey);
     }
 
     void startBackendStartupGrace() {
@@ -247,5 +260,17 @@ class NetworkStatusService {
     return connectivity.isEmpty ||
         (connectivity.length == 1 &&
             connectivity.first == ConnectivityResult.none);
+  }
+
+  static String _connectivityPathKey(List<ConnectivityResult> connectivity) {
+    if (connectivity.isEmpty) {
+      return 'none';
+    }
+    final names =
+        connectivity
+            .map((ConnectivityResult result) => result.name)
+            .toList(growable: false)
+          ..sort();
+    return names.join('+');
   }
 }

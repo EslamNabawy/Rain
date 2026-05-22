@@ -56,6 +56,7 @@ void main() {
     final keyboardTop =
         tester.view.physicalSize.height - tester.view.viewInsets.bottom;
     expect(tester.getRect(passwordField).bottom, lessThan(keyboardTop));
+    expect(tester.getRect(passwordField).top, lessThan(220));
   });
 }
 

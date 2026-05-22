@@ -139,6 +139,7 @@ final runtimeControllerProvider =
 
 class RuntimeController extends AsyncNotifier<RainRuntimeController?> {
   NetworkStatusKind? _lastNetworkKind;
+  String? _lastNetworkPathKey;
 
   @override
   Future<RainRuntimeController?> build() async {
@@ -151,7 +152,9 @@ class RuntimeController extends AsyncNotifier<RainRuntimeController?> {
         ref.watch(networkStatusProvider).value ??
         const NetworkStatusState.checking();
     final previousNetworkKind = _lastNetworkKind;
+    final previousNetworkPathKey = _lastNetworkPathKey;
     _lastNetworkKind = networkStatus.kind;
+    _lastNetworkPathKey = networkStatus.pathKey;
     if (networkStatus.blocksNetworkActions) {
       if (current != null) {
         await current.handleNetworkLost(
@@ -168,7 +171,8 @@ class RuntimeController extends AsyncNotifier<RainRuntimeController?> {
     }
     if (current != null && current.selfIdentity.username == identity.username) {
       if (previousNetworkKind != null &&
-          previousNetworkKind != networkStatus.kind) {
+          (previousNetworkKind != networkStatus.kind ||
+              previousNetworkPathKey != networkStatus.pathKey)) {
         await current.handleNetworkAvailable(
           'Network changed. Restarting peer connection paths.',
         );
@@ -248,7 +252,11 @@ class ConnectionsController extends Notifier<ConnectionsState> {
     return const ConnectionsState();
   }
 
-  Future<void> connect(String peerId, {bool waitForConnected = false}) async {
+  Future<void> connect(
+    String peerId, {
+    bool waitForConnected = false,
+    bool manualRetry = false,
+  }) async {
     assertNetworkReady(ref);
     final runtime = _requireRuntime();
     _upsert(
@@ -256,7 +264,9 @@ class ConnectionsController extends Notifier<ConnectionsState> {
       (view) => view.copyWith(
         manualIntent: ManualConnectionIntent.connecting,
         actionBusy: true,
-        localDetail: 'Checking presence and starting signaling.',
+        localDetail: manualRetry
+            ? 'Retrying peer connection.'
+            : 'Checking presence and starting signaling.',
         error: null,
       ),
     );
@@ -265,6 +275,8 @@ class ConnectionsController extends Notifier<ConnectionsState> {
         peerId,
         interactive: true,
         waitForConnected: waitForConnected,
+        allowStalePresence: manualRetry,
+        bypassRetryBackoff: manualRetry,
       );
       syncPeer(peerId);
     } catch (error) {

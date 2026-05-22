@@ -1431,6 +1431,47 @@ void main() {
       await runtime.dispose();
     });
 
+    test('manual retry bypasses failed-attempt cooldown', () async {
+      final adapter = NoopSignalingAdapter();
+      final brain = TestSessionManager();
+      await adapter.register('bob', 'bobpw');
+      await adapter.upsertFriendship('alice', 'bob');
+      final runtime = RainRuntimeController(
+        selfIdentity: alice,
+        adapter: adapter,
+        brain: brain,
+        database: db,
+        friendStore: FriendStore(db),
+        messageStore: MessageStore(db),
+        offlineQueueStore: OfflineQueueStore(db),
+        messageDeliveryService: MessageDeliveryService(
+          messageStore: MessageStore(db),
+          offlineQueueStore: OfflineQueueStore(db),
+        ),
+        friendRequestRefreshInterval: Duration.zero,
+        initialConnectionRetryBackoff: const Duration(seconds: 30),
+        maxConnectionRetryBackoff: const Duration(seconds: 30),
+      );
+
+      await runtime.start();
+      await runtime.connectPeer('bob', interactive: true);
+      brain.markFailed('bob', 'ICE failed');
+      await pumpEventQueue();
+
+      await runtime.connectPeer(
+        'bob',
+        interactive: true,
+        bypassRetryBackoff: true,
+      );
+
+      expect(brain.connectedPeers, <String>['bob', 'bob']);
+      expect(
+        runtime.connectionCoordinatorSnapshotFor('bob').nextRetryAt,
+        isNull,
+      );
+      await runtime.dispose();
+    });
+
     test('disconnectPeer unregisters the peer session', () async {
       final adapter = NoopSignalingAdapter();
       final brain = TestSessionManager();
@@ -1693,6 +1734,46 @@ void main() {
       );
 
       expect(brain.connectedPeers, isEmpty);
+    });
+
+    test('connectPeer can try through stale offline presence', () async {
+      final adapter = NoopSignalingAdapter();
+      final brain = TestSessionManager();
+      await adapter.register('bob', 'bobpw');
+      await adapter.setPresence('bob', false);
+      await db
+          .into(db.friends)
+          .insert(
+            FriendsCompanion.insert(
+              username: 'bob',
+              displayName: 'Bob',
+              state: 'friend',
+              addedAt: 0,
+            ),
+          );
+
+      final runtime = RainRuntimeController(
+        selfIdentity: alice,
+        adapter: adapter,
+        brain: brain,
+        database: db,
+        friendStore: FriendStore(db),
+        messageStore: MessageStore(db),
+        offlineQueueStore: OfflineQueueStore(db),
+        messageDeliveryService: MessageDeliveryService(
+          messageStore: MessageStore(db),
+          offlineQueueStore: OfflineQueueStore(db),
+        ),
+      );
+
+      await runtime.connectPeer(
+        'bob',
+        interactive: true,
+        allowStalePresence: true,
+      );
+
+      expect(brain.registeredPeers, <String>['bob']);
+      expect(brain.connectedPeers, <String>['bob']);
     });
 
     test(

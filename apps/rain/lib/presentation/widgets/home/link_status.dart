@@ -1,99 +1,5 @@
 part of '../../screens/home_screen.dart';
 
-class _CompactLinkStatusPill extends StatelessWidget {
-  const _CompactLinkStatusPill({
-    required this.status,
-    required this.onTap,
-    required this.compact,
-    this.enabled = true,
-  });
-
-  final _ConnectionStatus status;
-  final VoidCallback onTap;
-  final bool compact;
-  final bool enabled;
-
-  @override
-  Widget build(BuildContext context) {
-    final scheme = Theme.of(context).colorScheme;
-    final availableWidth = MediaQuery.sizeOf(context).width;
-    final pillWidth = compact ? (availableWidth < 360 ? 104.0 : 116.0) : null;
-    final maxLabelWidth = compact
-        ? pillWidth! - 34
-        : availableWidth < 380
-        ? 64.0
-        : 94.0;
-
-    final pill = Material(
-      color: Colors.transparent,
-      child: InkWell(
-        onTap: enabled ? onTap : null,
-        borderRadius: BorderRadius.circular(999),
-        child: Ink(
-          padding: EdgeInsets.symmetric(
-            horizontal: compact ? 8 : 10,
-            vertical: compact ? 8 : 7,
-          ),
-          decoration: BoxDecoration(
-            color: status.color.withValues(alpha: 0.13),
-            borderRadius: BorderRadius.circular(999),
-            border: Border.all(color: status.color.withValues(alpha: 0.35)),
-          ),
-          child: Row(
-            mainAxisSize: MainAxisSize.min,
-            children: <Widget>[
-              if (status.isBusy)
-                SizedBox.square(
-                  dimension: 12,
-                  child: CircularProgressIndicator(
-                    strokeWidth: 2,
-                    color: status.color,
-                  ),
-                )
-              else
-                Container(
-                  width: 8,
-                  height: 8,
-                  decoration: BoxDecoration(
-                    color: status.color,
-                    shape: BoxShape.circle,
-                  ),
-                ),
-              const SizedBox(width: 7),
-              ConstrainedBox(
-                constraints: BoxConstraints(maxWidth: maxLabelWidth),
-                child: Text(
-                  status.label,
-                  maxLines: 1,
-                  overflow: TextOverflow.ellipsis,
-                  style: Theme.of(context).textTheme.labelMedium?.copyWith(
-                    color: status.color,
-                    fontWeight: FontWeight.w900,
-                  ),
-                ),
-              ),
-              if (!compact && availableWidth >= 340) ...<Widget>[
-                const SizedBox(width: 4),
-                Icon(
-                  Icons.tune_rounded,
-                  size: 14,
-                  color: scheme.onSurface.withValues(alpha: 0.46),
-                ),
-              ],
-            ],
-          ),
-        ),
-      ),
-    );
-
-    if (!compact) {
-      return pill;
-    }
-
-    return SizedBox(width: pillWidth, height: 40, child: pill);
-  }
-}
-
 class _MobileLinkStatusBar extends StatelessWidget {
   const _MobileLinkStatusBar({
     required this.status,
@@ -280,51 +186,27 @@ class _MobileLinkMeter extends StatelessWidget {
   }
 }
 
-class _ConnectionActionButton extends StatelessWidget {
-  const _ConnectionActionButton({
-    required this.isConnected,
-    required this.canConnectNow,
-    required this.canDisconnectNow,
-    required this.onConnect,
-    required this.onDisconnect,
-    required this.compact,
-  });
+class _LinkStat {
+  const _LinkStat({required this.label, required this.value});
 
-  final bool isConnected;
-  final bool canConnectNow;
-  final bool canDisconnectNow;
-  final VoidCallback onConnect;
-  final VoidCallback onDisconnect;
-  final bool compact;
+  final String label;
+  final String value;
+}
+
+class _LinkStatGrid extends StatelessWidget {
+  const _LinkStatGrid({required this.stats});
+
+  final List<_LinkStat> stats;
 
   @override
   Widget build(BuildContext context) {
-    final action = isConnected ? onDisconnect : onConnect;
-    final enabled = isConnected ? canDisconnectNow : canConnectNow;
-    final icon = isConnected ? Icons.link_off : Icons.hub_outlined;
-    final label = isConnected ? 'Disconnect' : 'Connect';
-
-    if (compact) {
-      return SizedBox.square(
-        dimension: 40,
-        child: IconButton.filledTonal(
-          tooltip: label,
-          onPressed: enabled ? action : null,
-          style: const ButtonStyle(
-            tapTargetSize: MaterialTapTargetSize.shrinkWrap,
-            minimumSize: WidgetStatePropertyAll(Size.square(40)),
-            fixedSize: WidgetStatePropertyAll(Size.square(40)),
-            padding: WidgetStatePropertyAll(EdgeInsets.zero),
-          ),
-          icon: Icon(icon, size: 20),
-        ),
-      );
-    }
-
-    return FilledButton.tonalIcon(
-      onPressed: enabled ? action : null,
-      icon: Icon(icon, size: 18),
-      label: Text(label),
+    return Wrap(
+      spacing: 8,
+      runSpacing: 8,
+      children: <Widget>[
+        for (final stat in stats)
+          _LinkStatCard(label: stat.label, value: stat.value),
+      ],
     );
   }
 }
@@ -340,11 +222,11 @@ class _LinkStatCard extends StatelessWidget {
     final scheme = Theme.of(context).colorScheme;
 
     return Container(
-      width: 132,
-      padding: const EdgeInsets.all(12),
+      width: 118,
+      padding: const EdgeInsets.all(10),
       decoration: BoxDecoration(
         color: scheme.surfaceContainerHighest.withValues(alpha: 0.52),
-        borderRadius: BorderRadius.circular(14),
+        borderRadius: BorderRadius.circular(8),
         border: Border.all(
           color: scheme.outlineVariant.withValues(alpha: 0.38),
         ),

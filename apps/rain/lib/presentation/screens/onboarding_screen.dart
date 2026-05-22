@@ -101,7 +101,17 @@ class _OnboardingScreenState extends ConsumerState<OnboardingScreen>
       return;
     }
     _scheduleFocusedFieldReveal(focusNode, key);
+    _scheduleFocusedFieldReveal(
+      focusNode,
+      key,
+      delay: const Duration(milliseconds: 120),
+    );
     _scheduleFocusedFieldReveal(focusNode, key, delay: RainMotion.standard);
+    _scheduleFocusedFieldReveal(
+      focusNode,
+      key,
+      delay: const Duration(milliseconds: 520),
+    );
   }
 
   void _scheduleFocusedFieldReveal(
@@ -139,7 +149,7 @@ class _OnboardingScreenState extends ConsumerState<OnboardingScreen>
         fieldContext,
         duration: RainMotion.standard,
         curve: Curves.easeOutCubic,
-        alignment: keyboardOpen ? 0.24 : 0,
+        alignment: keyboardOpen ? 0.08 : 0,
         alignmentPolicy: keyboardOpen
             ? ScrollPositionAlignmentPolicy.explicit
             : ScrollPositionAlignmentPolicy.keepVisibleAtEnd,

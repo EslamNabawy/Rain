@@ -61,7 +61,6 @@ class _ChatPanelState extends ConsumerState<_ChatPanel> {
     final canConnectNow =
         runtime != null &&
         canChat &&
-        isPeerOnline &&
         !connectionStatus.isBusy &&
         !connectionStatus.isConnected;
     final canDisconnectNow =
@@ -349,27 +348,32 @@ class _ChatPanelState extends ConsumerState<_ChatPanel> {
           ),
         ),
         const SizedBox(width: 8),
-        _CompactLinkStatusPill(
-          status: connectionStatus,
-          enabled: canChat,
-          compact: widget.isCompact,
-          onTap: openLinkDialog,
+        Flexible(
+          child: Align(
+            alignment: Alignment.centerRight,
+            child: ConstrainedBox(
+              constraints: const BoxConstraints(maxWidth: 420),
+              child: _MobileLinkStatusBar(
+                status: connectionStatus,
+                diagnostics: diagnostics,
+                canConnectNow: canConnectNow,
+                canDisconnectNow: canDisconnectNow,
+                onConnect: _connectToPeer,
+                onDisconnect: _disconnectPeer,
+                onTap: openLinkDialog,
+                enabled: canChat,
+              ),
+            ),
+          ),
         ),
-        const SizedBox(width: 8),
-        _ConnectionActionButton(
-          isConnected: connectionStatus.isConnected,
-          canConnectNow: canConnectNow,
-          canDisconnectNow: canDisconnectNow,
-          onConnect: _connectToPeer,
-          onDisconnect: _disconnectPeer,
-          compact: widget.isCompact,
-        ),
-        if (!widget.isCompact && friend != null)
+        if (!widget.isCompact && friend != null) ...<Widget>[
+          const SizedBox(width: 8),
           IconButton(
             tooltip: 'Open peer profile',
             onPressed: () => AppRoutes.openFriendProfile(context, friend),
             icon: const Icon(Icons.person_outline),
           ),
+        ],
       ],
     );
   }
@@ -382,11 +386,73 @@ class _ChatPanelState extends ConsumerState<_ChatPanel> {
   }) {
     final route = diagnostics.route;
     final updatedAt = diagnostics.updatedAt;
+    final primaryStats = <_LinkStat>[
+      _LinkStat(label: 'Phase', value: _phaseLabel(diagnostics.phase)),
+      _LinkStat(label: 'Route', value: diagnostics.label),
+      _LinkStat(
+        label: 'Local',
+        value: _candidateLabel(route.localCandidateType),
+      ),
+      _LinkStat(
+        label: 'Remote',
+        value: _candidateLabel(route.remoteCandidateType),
+      ),
+      _LinkStat(label: 'IP', value: _routeAddressFamilyLabel(route)),
+      _LinkStat(label: 'Next', value: _nextRetryLabel(diagnostics.nextRetryAt)),
+    ];
+    final advancedStats = <_LinkStat>[
+      _LinkStat(
+        label: 'Pair',
+        value: diagnostics.selectedCandidatePairId ?? 'Unknown',
+      ),
+      _LinkStat(label: 'Protocol', value: _protocolLabel(route)),
+      _LinkStat(label: 'RTT', value: _rttLabel(route.rtt)),
+      _LinkStat(label: 'Bitrate', value: _bitrateLabel(route.bitrate)),
+      _LinkStat(label: 'Room', value: diagnostics.roomId ?? 'Not opened'),
+      _LinkStat(
+        label: 'Role',
+        value: diagnostics.isOfferOwner == null
+            ? 'None'
+            : diagnostics.isOfferOwner!
+            ? 'Offer'
+            : 'Answer',
+      ),
+      _LinkStat(label: 'Retries', value: '${diagnostics.retryAttempt}'),
+      _LinkStat(
+        label: 'Backoff',
+        value: diagnostics.connectionRetryAttempt == 0
+            ? '0'
+            : '${diagnostics.connectionRetryAttempt}',
+      ),
+      _LinkStat(
+        label: 'Passive',
+        value:
+            '${diagnostics.passiveListenerCount}/${diagnostics.passiveListenerLimit}',
+      ),
+      _LinkStat(
+        label: 'Net Retry',
+        value:
+            '${diagnostics.networkRecoveryRuns}/${diagnostics.networkRecoveryRequests}',
+      ),
+      _LinkStat(
+        label: 'Inbound',
+        value: diagnostics.lastInboundOfferPeer ?? 'None',
+      ),
+      _LinkStat(
+        label: 'Rejected',
+        value: diagnostics.lastRejectedOfferPeer ?? 'None',
+      ),
+      _LinkStat(
+        label: 'Updated',
+        value: updatedAt == null ? 'Never' : _formatMessageTime(updatedAt),
+      ),
+    ];
     return showDialog<void>(
       context: context,
       builder: (BuildContext dialogContext) {
         final scheme = Theme.of(dialogContext).colorScheme;
-        final maxDialogHeight = MediaQuery.sizeOf(dialogContext).height * 0.64;
+        final size = MediaQuery.sizeOf(dialogContext);
+        final maxDialogHeight = size.height * (size.width < 600 ? 0.82 : 0.70);
 
         return AlertDialog(
           titlePadding: const EdgeInsets.fromLTRB(20, 18, 8, 0),
@@ -433,92 +499,14 @@ class _ChatPanelState extends ConsumerState<_ChatPanel> {
                           color: scheme.onSurface.withValues(alpha: 0.72),
                         ),
                   ),
-                  const SizedBox(height: 16),
-                  Wrap(
-                    spacing: 10,
-                    runSpacing: 10,
-                    children: <Widget>[
-                      _LinkStatCard(label: 'Route', value: diagnostics.label),
-                      _LinkStatCard(
-                        label: 'Phase',
-                        value: _phaseLabel(diagnostics.phase),
-                      ),
-                      _LinkStatCard(
-                        label: 'Pair',
-                        value: diagnostics.selectedCandidatePairId ?? 'Unknown',
-                      ),
-                      _LinkStatCard(
-                        label: 'Local',
-                        value: _candidateLabel(route.localCandidateType),
-                      ),
-                      _LinkStatCard(
-                        label: 'Remote',
-                        value: _candidateLabel(route.remoteCandidateType),
-                      ),
-                      _LinkStatCard(
-                        label: 'Protocol',
-                        value: _protocolLabel(route),
-                      ),
-                      _LinkStatCard(
-                        label: 'IP Family',
-                        value: _routeAddressFamilyLabel(route),
-                      ),
-                      _LinkStatCard(label: 'RTT', value: _rttLabel(route.rtt)),
-                      _LinkStatCard(
-                        label: 'Bitrate',
-                        value: _bitrateLabel(route.bitrate),
-                      ),
-                      _LinkStatCard(
-                        label: 'Room',
-                        value: diagnostics.roomId ?? 'Not opened',
-                      ),
-                      _LinkStatCard(
-                        label: 'Role',
-                        value: diagnostics.isOfferOwner == null
-                            ? 'None'
-                            : diagnostics.isOfferOwner!
-                            ? 'Offer'
-                            : 'Answer',
-                      ),
-                      _LinkStatCard(
-                        label: 'Retries',
-                        value: '${diagnostics.retryAttempt}',
-                      ),
-                      _LinkStatCard(
-                        label: 'Backoff',
-                        value: diagnostics.connectionRetryAttempt == 0
-                            ? '0'
-                            : '${diagnostics.connectionRetryAttempt}',
-                      ),
-                      _LinkStatCard(
-                        label: 'Next Retry',
-                        value: _nextRetryLabel(diagnostics.nextRetryAt),
-                      ),
-                      _LinkStatCard(
-                        label: 'Passive',
-                        value:
-                            '${diagnostics.passiveListenerCount}/${diagnostics.passiveListenerLimit}',
-                      ),
-                      _LinkStatCard(
-                        label: 'Net Retry',
-                        value:
-                            '${diagnostics.networkRecoveryRuns}/${diagnostics.networkRecoveryRequests}',
-                      ),
-                      _LinkStatCard(
-                        label: 'Inbound',
-                        value: diagnostics.lastInboundOfferPeer ?? 'None',
-                      ),
-                      _LinkStatCard(
-                        label: 'Rejected',
-                        value: diagnostics.lastRejectedOfferPeer ?? 'None',
-                      ),
-                      _LinkStatCard(
-                        label: 'Updated',
-                        value: updatedAt == null
-                            ? 'Never'
-                            : _formatMessageTime(updatedAt),
-                      ),
-                    ],
+                  const SizedBox(height: 14),
+                  _LinkStatGrid(stats: primaryStats),
+                  const SizedBox(height: 8),
+                  ExpansionTile(
+                    tilePadding: EdgeInsets.zero,
+                    childrenPadding: EdgeInsets.zero,
+                    title: const Text('Advanced diagnostics'),
+                    children: <Widget>[_LinkStatGrid(stats: advancedStats)],
                   ),
                   if (diagnostics.lastRejectedOfferReason != null) ...<Widget>[
                     const SizedBox(height: 14),
@@ -614,6 +602,7 @@ class _ChatPanelState extends ConsumerState<_ChatPanel> {
           return ListView.builder(
             controller: _messageScrollController,
             physics: const AlwaysScrollableScrollPhysics(),
+            scrollCacheExtent: const ScrollCacheExtent.pixels(900),
             padding: EdgeInsets.fromLTRB(
               horizontalPadding,
               8,
@@ -642,6 +631,7 @@ class _ChatPanelState extends ConsumerState<_ChatPanel> {
                   : null;
 
               return Column(
+                key: ValueKey<String>('message-row-${message.id}'),
                 crossAxisAlignment: CrossAxisAlignment.stretch,
                 children: <Widget>[
                   if (showDayDivider)
@@ -1315,7 +1305,7 @@ class _ChatPanelState extends ConsumerState<_ChatPanel> {
     try {
       await ref
           .read(connectionsProvider.notifier)
-          .connect(widget.peerId, waitForConnected: true);
+          .connect(widget.peerId, waitForConnected: true, manualRetry: true);
       _playSound(RainSoundEffect.action);
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(

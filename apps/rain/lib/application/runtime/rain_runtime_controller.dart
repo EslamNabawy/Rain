@@ -377,6 +377,8 @@ class RainRuntimeController with WidgetsBindingObserver {
     String username, {
     bool interactive = false,
     bool waitForConnected = false,
+    bool allowStalePresence = false,
+    bool bypassRetryBackoff = false,
     Duration connectionTimeout = const Duration(seconds: 60),
   }) async {
     final normalizedUsername = _normalizedUsername(username);
@@ -434,7 +436,7 @@ class RainRuntimeController with WidgetsBindingObserver {
     await _localMutations.run(
       () => friendStore.updatePresence(normalizedUsername, isOnline),
     );
-    if (!isOnline) {
+    if (!isOnline && !allowStalePresence) {
       if (interactive) {
         throw StateError(
           '@$normalizedUsername is offline. Wait for them to come online before connecting.',
@@ -442,14 +444,18 @@ class RainRuntimeController with WidgetsBindingObserver {
       }
       return;
     }
-    final retryGate = _connectionCoordinator.retryGate(normalizedUsername);
-    if (!retryGate.allowed) {
-      if (interactive) {
-        throw StateError(
-          'Connection to @$normalizedUsername is cooling down after a failed attempt. Try again in ${_formatRetryDelay(retryGate.remaining)}.',
-        );
+    if (bypassRetryBackoff) {
+      _connectionCoordinator.clearRetry(normalizedUsername);
+    } else {
+      final retryGate = _connectionCoordinator.retryGate(normalizedUsername);
+      if (!retryGate.allowed) {
+        if (interactive) {
+          throw StateError(
+            'Connection to @$normalizedUsername is cooling down after a failed attempt. Try again in ${_formatRetryDelay(retryGate.remaining)}.',
+          );
+        }
+        return;
       }
-      return;
     }
     _manualDisconnectedPeers.remove(normalizedUsername);
     await _registerPeerListener(normalizedUsername, bestEffort: false);
@@ -528,6 +534,7 @@ class RainRuntimeController with WidgetsBindingObserver {
       // Backend reachability is already reported by NetworkStatusService.
     }
 
+    await _safeSyncRelationships();
     await _connectionCoordinator.scheduleNetworkRecovery(reason, (
       String recoveryReason,
     ) async {
@@ -927,7 +934,11 @@ class RainRuntimeController with WidgetsBindingObserver {
     switch (state) {
       case AppLifecycleState.resumed:
         _backgroundOfflineTimer?.cancel();
-        unawaited(adapter.setPresence(selfIdentity.username, true));
+        unawaited(
+          handleNetworkAvailable(
+            'App resumed. Refreshing peer connection paths.',
+          ),
+        );
         break;
       case AppLifecycleState.inactive:
       case AppLifecycleState.hidden:
