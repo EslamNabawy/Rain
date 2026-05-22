@@ -67,6 +67,14 @@ class _ChatPanelState extends ConsumerState<_ChatPanel> {
         runtime != null && canChat && connectionStatus.canDisconnect;
     final messages = ref.watch(messagesProvider(widget.peerId));
     final transfers = ref.watch(fileTransferViewsProvider(widget.peerId));
+    final voiceCall = ref.watch(voiceCallProvider);
+    final voiceCallForPeer =
+        voiceCall.hasCall && voiceCall.peerId == widget.peerId;
+    final hasBlockingCall =
+        voiceCall.hasCall && voiceCall.phase != VoiceCallPhase.failed;
+    final hasActiveTransfer = _hasActiveFileTransfer(transfers.value);
+    final canStartVoiceCall =
+        runtime != null && canChat && !hasBlockingCall && !hasActiveTransfer;
     ref.listen<AsyncValue<List<StoredMessage>>>(
       messagesProvider(widget.peerId),
       _handleMessageSound,
@@ -95,8 +103,28 @@ class _ChatPanelState extends ConsumerState<_ChatPanel> {
                 connectionStatus: connectionStatus,
                 canConnectNow: canConnectNow,
                 canDisconnectNow: canDisconnectNow,
+                voiceCall: voiceCall,
+                canStartVoiceCall: canStartVoiceCall,
+                hasActiveTransfer: hasActiveTransfer,
               ),
             ),
+            if (canChat && voiceCallForPeer)
+              Padding(
+                padding: EdgeInsets.fromLTRB(
+                  horizontalPadding,
+                  0,
+                  horizontalPadding,
+                  12,
+                ),
+                child: _VoiceCallPanel(
+                  state: voiceCall,
+                  displayName: friend?.displayName ?? widget.peerId,
+                  onAccept: _acceptVoiceCall,
+                  onReject: _rejectVoiceCall,
+                  onHangUp: _hangUpVoiceCall,
+                  onToggleMute: () => _toggleVoiceMute(voiceCall),
+                ),
+              ),
             Expanded(
               child: Stack(
                 children: <Widget>[
@@ -222,6 +250,9 @@ class _ChatPanelState extends ConsumerState<_ChatPanel> {
     required _ConnectionStatus connectionStatus,
     required bool canConnectNow,
     required bool canDisconnectNow,
+    required VoiceCallState voiceCall,
+    required bool canStartVoiceCall,
+    required bool hasActiveTransfer,
   }) {
     final displayName = friend?.displayName ?? widget.peerId;
     final scheme = Theme.of(context).colorScheme;
@@ -279,6 +310,12 @@ class _ChatPanelState extends ConsumerState<_ChatPanel> {
                   ],
                 ),
               ),
+              if (canChat)
+                _buildCallButton(
+                  voiceCall: voiceCall,
+                  canStartVoiceCall: canStartVoiceCall,
+                  hasActiveTransfer: hasActiveTransfer,
+                ),
               if (friend != null)
                 IconButton(
                   tooltip: 'Open peer profile',
@@ -368,6 +405,12 @@ class _ChatPanelState extends ConsumerState<_ChatPanel> {
         ),
         if (!widget.isCompact && friend != null) ...<Widget>[
           const SizedBox(width: 8),
+          _buildCallButton(
+            voiceCall: voiceCall,
+            canStartVoiceCall: canStartVoiceCall,
+            hasActiveTransfer: hasActiveTransfer,
+          ),
+          const SizedBox(width: 4),
           IconButton(
             tooltip: 'Open peer profile',
             onPressed: () => AppRoutes.openFriendProfile(context, friend),
@@ -376,6 +419,39 @@ class _ChatPanelState extends ConsumerState<_ChatPanel> {
         ],
       ],
     );
+  }
+
+  Widget _buildCallButton({
+    required VoiceCallState voiceCall,
+    required bool canStartVoiceCall,
+    required bool hasActiveTransfer,
+  }) {
+    final isCurrentCall =
+        voiceCall.peerId == widget.peerId && voiceCall.hasCall;
+    return IconButton(
+      tooltip: _voiceCallButtonTooltip(
+        voiceCall: voiceCall,
+        hasActiveTransfer: hasActiveTransfer,
+      ),
+      onPressed: canStartVoiceCall ? _startVoiceCall : null,
+      icon: Icon(isCurrentCall ? Icons.call : Icons.call_outlined),
+    );
+  }
+
+  String _voiceCallButtonTooltip({
+    required VoiceCallState voiceCall,
+    required bool hasActiveTransfer,
+  }) {
+    if (hasActiveTransfer) {
+      return 'Finish the active file transfer first';
+    }
+    if (voiceCall.hasCall && voiceCall.phase != VoiceCallPhase.failed) {
+      final peerId = voiceCall.peerId;
+      return peerId == widget.peerId
+          ? 'Voice call in progress'
+          : 'Finish the active call with @$peerId first';
+    }
+    return 'Start voice call';
   }
 
   Future<void> _showLinkCommandDialog({
@@ -932,6 +1008,13 @@ class _ChatPanelState extends ConsumerState<_ChatPanel> {
       _showErrorSnack('Connect first.');
       return;
     }
+    if (ref
+        .read(voiceCallProvider.notifier)
+        .blocksFileTransfer(widget.peerId)) {
+      _playSound(RainSoundEffect.error);
+      _showErrorSnack('Finish the call before sending files.');
+      return;
+    }
 
     setState(() => _isPickingFile = true);
     try {
@@ -1053,6 +1136,10 @@ class _ChatPanelState extends ConsumerState<_ChatPanel> {
             transfer.state == FileTransferState.canceled) &&
         transfer.localPath != null &&
         transfer.localPath!.isNotEmpty;
+  }
+
+  bool _hasActiveFileTransfer(List<FileTransferView>? transfers) {
+    return transfers?.any((view) => view.record.isActive) ?? false;
   }
 
   Future<void> _runFileTransferAction(
@@ -1293,6 +1380,56 @@ class _ChatPanelState extends ConsumerState<_ChatPanel> {
     }
   }
 
+  Future<void> _startVoiceCall() async {
+    try {
+      await ref.read(voiceCallProvider.notifier).start(widget.peerId);
+      _playSound(RainSoundEffect.action);
+    } catch (error) {
+      _playSound(RainSoundEffect.error);
+      _showErrorSnack(_formatUiError(error));
+    }
+  }
+
+  Future<void> _acceptVoiceCall() async {
+    try {
+      await ref.read(voiceCallProvider.notifier).accept();
+      _playSound(RainSoundEffect.action);
+    } catch (error) {
+      _playSound(RainSoundEffect.error);
+      _showErrorSnack(_formatUiError(error));
+    }
+  }
+
+  Future<void> _rejectVoiceCall() async {
+    try {
+      await ref.read(voiceCallProvider.notifier).reject();
+      _playSound(RainSoundEffect.action);
+    } catch (error) {
+      _playSound(RainSoundEffect.error);
+      _showErrorSnack(_formatUiError(error));
+    }
+  }
+
+  Future<void> _hangUpVoiceCall() async {
+    try {
+      await ref.read(voiceCallProvider.notifier).hangUp();
+      _playSound(RainSoundEffect.action);
+    } catch (error) {
+      _playSound(RainSoundEffect.error);
+      _showErrorSnack(_formatUiError(error));
+    }
+  }
+
+  Future<void> _toggleVoiceMute(VoiceCallState state) async {
+    try {
+      await ref.read(voiceCallProvider.notifier).setMuted(!state.isMuted);
+      _playSound(RainSoundEffect.action);
+    } catch (error) {
+      _playSound(RainSoundEffect.error);
+      _showErrorSnack(_formatUiError(error));
+    }
+  }
+
   Future<void> _connectToPeer() async {
     if (_isConnecting) return;
     final networkError = _networkActionError();
@@ -1352,4 +1489,262 @@ class _ChatPanelState extends ConsumerState<_ChatPanel> {
         ? status.actionErrorMessage
         : null;
   }
+}
+
+class _VoiceCallPanel extends StatelessWidget {
+  const _VoiceCallPanel({
+    required this.state,
+    required this.displayName,
+    required this.onAccept,
+    required this.onReject,
+    required this.onHangUp,
+    required this.onToggleMute,
+  });
+
+  final VoiceCallState state;
+  final String displayName;
+  final VoidCallback onAccept;
+  final VoidCallback onReject;
+  final VoidCallback onHangUp;
+  final VoidCallback onToggleMute;
+
+  @override
+  Widget build(BuildContext context) {
+    final scheme = Theme.of(context).colorScheme;
+    final accent = _voiceCallAccent(context, state);
+
+    return AnimatedContainer(
+      duration: RainMotion.quick,
+      curve: Curves.easeOutCubic,
+      padding: const EdgeInsets.all(12),
+      decoration: BoxDecoration(
+        color: accent.withValues(alpha: 0.10),
+        borderRadius: BorderRadius.circular(16),
+        border: Border.all(color: accent.withValues(alpha: 0.34)),
+      ),
+      child: LayoutBuilder(
+        builder: (BuildContext context, BoxConstraints constraints) {
+          final status = Row(
+            children: <Widget>[
+              Container(
+                width: 42,
+                height: 42,
+                decoration: BoxDecoration(
+                  color: accent.withValues(alpha: 0.18),
+                  borderRadius: BorderRadius.circular(14),
+                ),
+                child: Icon(_voiceCallIcon(state), color: accent),
+              ),
+              const SizedBox(width: 12),
+              Expanded(
+                child: StreamBuilder<int>(
+                  stream: state.isActive
+                      ? Stream<int>.periodic(
+                          const Duration(seconds: 1),
+                          (_) => DateTime.now().millisecondsSinceEpoch,
+                        )
+                      : null,
+                  initialData: DateTime.now().millisecondsSinceEpoch,
+                  builder: (BuildContext context, AsyncSnapshot<int> snapshot) {
+                    final now =
+                        snapshot.data ?? DateTime.now().millisecondsSinceEpoch;
+                    return Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      mainAxisSize: MainAxisSize.min,
+                      children: <Widget>[
+                        Text(
+                          _voiceCallTitle(state, displayName),
+                          maxLines: 1,
+                          overflow: TextOverflow.ellipsis,
+                          style: Theme.of(context).textTheme.titleSmall
+                              ?.copyWith(fontWeight: FontWeight.w900),
+                        ),
+                        const SizedBox(height: 3),
+                        Text(
+                          _voiceCallDetail(state, now),
+                          maxLines: 2,
+                          overflow: TextOverflow.ellipsis,
+                          style: Theme.of(context).textTheme.bodySmall
+                              ?.copyWith(
+                                color: scheme.onSurface.withValues(alpha: 0.70),
+                                fontWeight: FontWeight.w600,
+                              ),
+                        ),
+                      ],
+                    );
+                  },
+                ),
+              ),
+            ],
+          );
+          final actions = _VoiceCallActions(
+            state: state,
+            onAccept: onAccept,
+            onReject: onReject,
+            onHangUp: onHangUp,
+            onToggleMute: onToggleMute,
+          );
+          if (constraints.maxWidth < 430) {
+            return Column(
+              mainAxisSize: MainAxisSize.min,
+              crossAxisAlignment: CrossAxisAlignment.stretch,
+              children: <Widget>[
+                status,
+                const SizedBox(height: 10),
+                Align(alignment: Alignment.centerRight, child: actions),
+              ],
+            );
+          }
+          return Row(
+            children: <Widget>[
+              Expanded(child: status),
+              const SizedBox(width: 10),
+              actions,
+            ],
+          );
+        },
+      ),
+    );
+  }
+}
+
+class _VoiceCallActions extends StatelessWidget {
+  const _VoiceCallActions({
+    required this.state,
+    required this.onAccept,
+    required this.onReject,
+    required this.onHangUp,
+    required this.onToggleMute,
+  });
+
+  final VoiceCallState state;
+  final VoidCallback onAccept;
+  final VoidCallback onReject;
+  final VoidCallback onHangUp;
+  final VoidCallback onToggleMute;
+
+  @override
+  Widget build(BuildContext context) {
+    if (state.phase == VoiceCallPhase.incomingRinging) {
+      return Wrap(
+        spacing: 8,
+        runSpacing: 8,
+        alignment: WrapAlignment.end,
+        children: <Widget>[
+          OutlinedButton.icon(
+            onPressed: onReject,
+            icon: const Icon(Icons.call_end),
+            label: const Text('Reject'),
+          ),
+          FilledButton.icon(
+            onPressed: onAccept,
+            icon: const Icon(Icons.call),
+            label: const Text('Accept'),
+          ),
+        ],
+      );
+    }
+
+    if (state.phase == VoiceCallPhase.failed) {
+      return TextButton.icon(
+        onPressed: onHangUp,
+        icon: const Icon(Icons.close),
+        label: const Text('Dismiss'),
+      );
+    }
+
+    return Wrap(
+      spacing: 8,
+      runSpacing: 8,
+      alignment: WrapAlignment.end,
+      children: <Widget>[
+        IconButton(
+          tooltip: state.isMuted ? 'Unmute microphone' : 'Mute microphone',
+          onPressed: state.isActive ? onToggleMute : null,
+          icon: Icon(state.isMuted ? Icons.mic_off : Icons.mic),
+        ),
+        IconButton.filled(
+          tooltip: 'Hang up',
+          onPressed: onHangUp,
+          icon: const Icon(Icons.call_end),
+        ),
+      ],
+    );
+  }
+}
+
+IconData _voiceCallIcon(VoiceCallState state) {
+  return switch (state.phase) {
+    VoiceCallPhase.failed => Icons.error_outline,
+    VoiceCallPhase.incomingRinging => Icons.call_received,
+    VoiceCallPhase.outgoingRinging => Icons.call_made,
+    VoiceCallPhase.active => state.isMuted ? Icons.mic_off : Icons.call,
+    VoiceCallPhase.connectingPeer ||
+    VoiceCallPhase.connectingMedia ||
+    VoiceCallPhase.ending ||
+    VoiceCallPhase.idle => Icons.call_outlined,
+  };
+}
+
+Color _voiceCallAccent(BuildContext context, VoiceCallState state) {
+  final scheme = Theme.of(context).colorScheme;
+  return switch (state.phase) {
+    VoiceCallPhase.failed => scheme.error,
+    VoiceCallPhase.active => const Color(0xFF2DD4A3),
+    VoiceCallPhase.incomingRinging ||
+    VoiceCallPhase.outgoingRinging => scheme.tertiary,
+    VoiceCallPhase.connectingPeer ||
+    VoiceCallPhase.connectingMedia ||
+    VoiceCallPhase.ending ||
+    VoiceCallPhase.idle => scheme.primary,
+  };
+}
+
+String _voiceCallTitle(VoiceCallState state, String displayName) {
+  return switch (state.phase) {
+    VoiceCallPhase.incomingRinging => '$displayName is calling',
+    VoiceCallPhase.outgoingRinging => 'Calling $displayName',
+    VoiceCallPhase.active => 'Voice call with $displayName',
+    VoiceCallPhase.failed => 'Voice call failed',
+    VoiceCallPhase.ending => 'Ending voice call',
+    VoiceCallPhase.connectingPeer ||
+    VoiceCallPhase.connectingMedia => 'Connecting voice call',
+    VoiceCallPhase.idle => 'Voice call',
+  };
+}
+
+String _voiceCallDetail(VoiceCallState state, int nowMs) {
+  if (state.phase == VoiceCallPhase.active && state.startedAt != null) {
+    final elapsed = Duration(milliseconds: nowMs - state.startedAt!);
+    final labels = <String>[_formatVoiceElapsed(elapsed)];
+    if (state.isMuted) {
+      labels.add('Muted');
+    }
+    if (state.isRemoteMuted) {
+      labels.add('Peer muted');
+    }
+    return labels.join(' / ');
+  }
+  return switch (state.phase) {
+    VoiceCallPhase.connectingPeer => 'Connecting peer link.',
+    VoiceCallPhase.outgoingRinging => 'Ringing.',
+    VoiceCallPhase.incomingRinging => 'Incoming voice call.',
+    VoiceCallPhase.connectingMedia => 'Connecting microphone audio.',
+    VoiceCallPhase.ending => 'Closing microphone audio.',
+    VoiceCallPhase.failed => state.detail ?? 'Call failed.',
+    VoiceCallPhase.idle => '',
+    VoiceCallPhase.active => 'Connected.',
+  };
+}
+
+String _formatVoiceElapsed(Duration elapsed) {
+  final seconds = elapsed.inSeconds.clamp(0, 86400).toInt();
+  final hours = seconds ~/ 3600;
+  final minutes = (seconds ~/ 60) % 60;
+  final remainingSeconds = seconds % 60;
+  final secondsLabel = remainingSeconds.toString().padLeft(2, '0');
+  if (hours > 0) {
+    return '$hours:${minutes.toString().padLeft(2, '0')}:$secondsLabel';
+  }
+  return '$minutes:$secondsLabel';
 }

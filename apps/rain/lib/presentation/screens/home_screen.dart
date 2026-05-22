@@ -11,6 +11,7 @@ import 'package:protocol_brain/protocol_brain.dart';
 import 'package:rain_core/rain_core.dart';
 
 import 'package:rain/presentation/navigation/app_routes.dart';
+import 'package:rain/application/runtime/voice_call_state.dart';
 import 'package:rain/application/state/app_providers.dart';
 import 'package:rain/application/state/connection_diagnostics.dart';
 import 'package:rain/application/state/file_transfer_view.dart';
@@ -102,6 +103,7 @@ String _phaseLabel(SessionPhase? phase) {
     SessionPhase.writingAnswer => 'Writing answer',
     SessionPhase.exchangingIce => 'Exchanging ICE',
     SessionPhase.openingDataChannels => 'Opening channels',
+    SessionPhase.negotiatingMedia => 'Negotiating media',
     SessionPhase.connected => 'Connected',
     SessionPhase.reconnecting => 'Reconnecting',
     SessionPhase.disconnecting => 'Disconnecting',
@@ -287,6 +289,7 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
   Widget build(BuildContext context) {
     final friends = ref.watch(friendsProvider);
     final identity = ref.watch(identityProvider).value;
+    ref.listen<VoiceCallState>(voiceCallProvider, _handleVoiceCallNavigation);
 
     return LayoutBuilder(
       builder: (BuildContext context, BoxConstraints constraints) {
@@ -385,6 +388,19 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
   Future<void> _handleFriendSelection(FriendRecord friend) async {
     setState(() => _selectedPeerId = friend.username);
     await ref.read(messagesProvider(friend.username).notifier).markRead();
+  }
+
+  void _handleVoiceCallNavigation(
+    VoiceCallState? previous,
+    VoiceCallState next,
+  ) {
+    if (!mounted ||
+        next.phase != VoiceCallPhase.incomingRinging ||
+        next.peerId == null ||
+        _selectedPeerId == next.peerId) {
+      return;
+    }
+    setState(() => _selectedPeerId = next.peerId);
   }
 
   Future<void> _refreshFriends() async {
