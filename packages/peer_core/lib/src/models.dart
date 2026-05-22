@@ -103,6 +103,18 @@ class PeerMessage {
   Uint8List? get binary => data is Uint8List ? data! as Uint8List : null;
 }
 
+class PeerRemoteTrack {
+  const PeerRemoteTrack({
+    required this.track,
+    required this.streams,
+    required this.receivedAt,
+  });
+
+  final MediaStreamTrack track;
+  final List<MediaStream> streams;
+  final DateTime receivedAt;
+}
+
 enum PeerRouteKind { unknown, direct, relay }
 
 class PeerConnectionRoute {
@@ -539,6 +551,13 @@ abstract class PeerCore {
   Future<void> addIceCandidate(RTCIceCandidate candidate);
   List<RTCIceCandidate> getLocalCandidates();
 
+  Future<void> startLocalAudio();
+  Future<void> stopLocalAudio();
+  Future<void> setMicrophoneMuted({required bool muted});
+  Future<RTCSessionDescription> createMediaOffer();
+  Future<RTCSessionDescription> applyMediaOffer(RTCSessionDescription offer);
+  Future<void> applyMediaAnswer(RTCSessionDescription answer);
+
   void send(String channelId, dynamic data);
   Future<void> openChannel(String channelId, {RTCDataChannelInit? opts});
   Future<void> closeChannel(String channelId);
@@ -550,6 +569,7 @@ abstract class PeerCore {
   Stream<void> get onConnected;
   Stream<void> get onDisconnected;
   Stream<PeerMessage> get onMessage;
+  Stream<PeerRemoteTrack> get onRemoteTrack;
   Stream<String> get onChannelOpen;
   Stream<String> get onChannelClose;
   Stream<PeerState> get onStateChange;
