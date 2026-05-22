@@ -51,6 +51,7 @@ void main() {
 
       expect(config.toRtcConfiguration(), <String, Object?>{
         'iceServers': config.iceServers,
+        'sdpSemantics': 'unified-plan',
         'iceTransportPolicy': 'all',
       });
     },
@@ -603,15 +604,12 @@ void main() {
 
     await peer.startLocalAudio();
     final offer = await peer.createMediaOffer();
-    final audioTransceiver = platform.connection.fakeTransceivers.single;
 
     expect(platform.prepareVoiceAudioCalls, 1);
     expect(platform.userMediaConstraints.single['video'], isFalse);
-    expect(platform.connection.addedTracks, isEmpty);
-    expect(audioTransceiver.sender.replacedTrackIds, <String?>['audio-1']);
-    expect(audioTransceiver.directionChanges, <TransceiverDirection>[
-      TransceiverDirection.SendRecv,
-    ]);
+    expect(platform.connection.fakeTransceivers, isEmpty);
+    expect(platform.connection.addedTracks, <String?>['audio-1']);
+    expect(platform.connection.addedTrackStreamIds, <String?>['local-audio']);
     expect(offer.type, 'offer');
     expect(platform.connection.localDescriptions.last.sdp, 'offer-sdp');
   });
@@ -664,17 +662,13 @@ void main() {
 
     await peer.startLocalAudio();
     await peer.stopLocalAudio();
-    final audioTransceiver = platform.connection.fakeTransceivers.single;
 
-    expect(platform.connection.removedSenderIds, isEmpty);
-    expect(audioTransceiver.sender.replacedTrackIds, <String?>[
-      'audio-1',
-      null,
-    ]);
-    expect(audioTransceiver.directionChanges, <TransceiverDirection>[
-      TransceiverDirection.SendRecv,
-      TransceiverDirection.RecvOnly,
-    ]);
+    expect(platform.connection.fakeTransceivers, isEmpty);
+    expect(platform.connection.removedSenderIds, <String>['sender-audio-1']);
+    expect(
+      platform.connection.addedTrackSenders.single.replacedTrackIds,
+      <String?>[null],
+    );
     expect(platform.audioStream.audioTrack.stopped, isTrue);
     expect(platform.audioStream.disposed, isTrue);
     expect(platform.clearVoiceAudioCalls, 1);
@@ -926,6 +920,8 @@ class _FakeRtcPeerConnection extends Fake implements RTCPeerConnection {
   List<StatsReport> statsReports = <StatsReport>[];
   final List<_FakeRtpTransceiver> fakeTransceivers = <_FakeRtpTransceiver>[];
   final List<String?> addedTracks = <String?>[];
+  final List<String?> addedTrackStreamIds = <String?>[];
+  final List<_FakeRtpSender> addedTrackSenders = <_FakeRtpSender>[];
   final List<String> removedSenderIds = <String>[];
   final List<RTCSessionDescription> localDescriptions =
       <RTCSessionDescription>[];
@@ -1001,7 +997,10 @@ class _FakeRtcPeerConnection extends Fake implements RTCPeerConnection {
     MediaStream? stream,
   ]) async {
     addedTracks.add(track.id);
-    return _FakeRtpSender('sender-${track.id}');
+    addedTrackStreamIds.add(stream?.id);
+    final sender = _FakeRtpSender('sender-${track.id}', track);
+    addedTrackSenders.add(sender);
+    return sender;
   }
 
   @override

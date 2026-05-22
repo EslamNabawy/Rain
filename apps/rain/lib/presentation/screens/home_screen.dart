@@ -32,12 +32,22 @@ part '../widgets/home/file_transfer_bubble.dart';
 String _formatUiError(Object error) {
   final raw = error.toString().trim();
   const prefixes = <String>['Exception: ', 'Bad state: ', 'StateError: '];
+  var message = raw;
   for (final prefix in prefixes) {
     if (raw.startsWith(prefix)) {
-      return raw.substring(prefix.length).trim();
+      message = raw.substring(prefix.length).trim();
+      break;
     }
   }
-  return raw;
+  final normalized = message.toLowerCase();
+  if (normalized.contains('rtcrtptransceiver') ||
+      normalized.contains('setdirection') ||
+      normalized.contains('setremotedescription') ||
+      normalized.contains('peerconnectionsetremotedescription') ||
+      normalized.contains('m-line')) {
+    return 'Voice call media could not connect. Try again.';
+  }
+  return message;
 }
 
 String _candidateLabel(String? value) {

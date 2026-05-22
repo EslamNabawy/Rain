@@ -45,6 +45,7 @@ class PeerConfig {
   Map<String, dynamic> toRtcConfiguration() {
     return <String, dynamic>{
       'iceServers': iceServers,
+      'sdpSemantics': 'unified-plan',
       'iceTransportPolicy': switch (iceTransportPolicy) {
         PeerIceTransportPolicy.all => 'all',
         PeerIceTransportPolicy.relayOnly => 'relay',
