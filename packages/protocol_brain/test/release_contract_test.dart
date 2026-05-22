@@ -235,6 +235,24 @@ void main() {
     }
   });
 
+  test('CI debug APK build targets Android ARM64 only', () {
+    final workflow = _repoFile('.github/workflows/ci.yml');
+
+    expect(
+      workflow,
+      contains(
+        'flutter build apk --debug --split-per-abi --target-platform android-arm64',
+      ),
+    );
+    expect(workflow, contains('Verify debug APK is ARM64 only'));
+    expect(workflow, contains('app-arm64-v8a-debug.apk'));
+    expect(workflow, contains("grep -q 'lib/arm64-v8a/'"));
+    expect(workflow, contains("! grep -q 'lib/armeabi-v7a/'"));
+    expect(workflow, contains("! grep -q 'lib/x86_64/'"));
+    expect(workflow, contains('rain-debug-arm64-apk'));
+    expect(workflow, isNot(contains('name: rain-debug-apk')));
+  });
+
   test('build artifacts workflow uploads ARM v8/v9 APKs without archives', () {
     final workflow = _repoFile('.github/workflows/build-artifacts.yml');
     final androidBuildStep = RegExp(

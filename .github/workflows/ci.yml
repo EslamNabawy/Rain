@@ -332,15 +332,23 @@ jobs:
       - name: Verify Dart defines file exists
         run: test -f "${GITHUB_WORKSPACE}/${RAIN_DART_DEFINES_FILE}"
 
-      - name: Build debug APK
+      - name: Build debug ARM64 APK
         working-directory: ${{ env.RAIN_APP_DIR }}
-        run: flutter build apk --debug --dart-define-from-file="${GITHUB_WORKSPACE}/${RAIN_DART_DEFINES_FILE}"
+        run: flutter build apk --debug --split-per-abi --target-platform android-arm64 --dart-define-from-file="${GITHUB_WORKSPACE}/${RAIN_DART_DEFINES_FILE}"
 
-      - name: Upload debug APK
+      - name: Verify debug APK is ARM64 only
+        working-directory: ${{ env.RAIN_APP_DIR }}
+        run: |
+          unzip -l build/app/outputs/flutter-apk/app-arm64-v8a-debug.apk > "$RUNNER_TEMP/rain-debug-apk-entries.txt"
+          grep -q 'lib/arm64-v8a/' "$RUNNER_TEMP/rain-debug-apk-entries.txt"
+          ! grep -q 'lib/armeabi-v7a/' "$RUNNER_TEMP/rain-debug-apk-entries.txt"
+          ! grep -q 'lib/x86_64/' "$RUNNER_TEMP/rain-debug-apk-entries.txt"
+
+      - name: Upload debug ARM64 APK
         uses: actions/upload-artifact@v7
         with:
-          name: rain-debug-apk
-          path: apps/rain/build/app/outputs/flutter-apk/app-debug.apk
+          name: rain-debug-arm64-apk
+          path: apps/rain/build/app/outputs/flutter-apk/app-arm64-v8a-debug.apk
           if-no-files-found: error
           retention-days: ${{ env.ARTIFACT_RETENTION_CI }}
 
