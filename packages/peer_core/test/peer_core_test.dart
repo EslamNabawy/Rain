@@ -193,8 +193,8 @@ void main() {
       );
       await pumpEventQueue();
 
-      expect(peer.state, PeerState.reconnecting);
-      expect(disconnectedEvents, hasLength(1));
+      expect(peer.state, PeerState.connected);
+      expect(disconnectedEvents, isEmpty);
 
       platform.connection.emitConnectionState(
         RTCPeerConnectionState.RTCPeerConnectionStateConnected,
@@ -202,7 +202,7 @@ void main() {
       await pumpEventQueue();
 
       expect(peer.state, PeerState.connected);
-      expect(connectedEvents, hasLength(2));
+      expect(connectedEvents, hasLength(1));
 
       await connectedSubscription.cancel();
       await disconnectedSubscription.cancel();
@@ -572,10 +572,15 @@ void main() {
 
     await peer.startLocalAudio();
     final offer = await peer.createMediaOffer();
+    final audioTransceiver = platform.connection.fakeTransceivers.single;
 
     expect(platform.prepareVoiceAudioCalls, 1);
     expect(platform.userMediaConstraints.single['video'], isFalse);
-    expect(platform.connection.addedTracks, <String?>['audio-1']);
+    expect(platform.connection.addedTracks, isEmpty);
+    expect(audioTransceiver.sender.replacedTrackIds, <String?>['audio-1']);
+    expect(audioTransceiver.directionChanges, <TransceiverDirection>[
+      TransceiverDirection.SendRecv,
+    ]);
     expect(offer.type, 'offer');
     expect(platform.connection.localDescriptions.last.sdp, 'offer-sdp');
   });
@@ -628,8 +633,17 @@ void main() {
 
     await peer.startLocalAudio();
     await peer.stopLocalAudio();
+    final audioTransceiver = platform.connection.fakeTransceivers.single;
 
-    expect(platform.connection.removedSenderIds, <String>['sender-audio-1']);
+    expect(platform.connection.removedSenderIds, isEmpty);
+    expect(audioTransceiver.sender.replacedTrackIds, <String?>[
+      'audio-1',
+      null,
+    ]);
+    expect(audioTransceiver.directionChanges, <TransceiverDirection>[
+      TransceiverDirection.SendRecv,
+      TransceiverDirection.RecvOnly,
+    ]);
     expect(platform.audioStream.audioTrack.stopped, isTrue);
     expect(platform.audioStream.disposed, isTrue);
     expect(platform.clearVoiceAudioCalls, 1);
@@ -792,6 +806,7 @@ class _FakeRtcPeerConnection extends Fake implements RTCPeerConnection {
   RTCPeerConnectionState? _connectionState =
       RTCPeerConnectionState.RTCPeerConnectionStateNew;
   List<StatsReport> statsReports = <StatsReport>[];
+  final List<_FakeRtpTransceiver> fakeTransceivers = <_FakeRtpTransceiver>[];
   final List<String?> addedTracks = <String?>[];
   final List<String> removedSenderIds = <String>[];
   final List<RTCSessionDescription> localDescriptions =
@@ -844,6 +859,25 @@ class _FakeRtcPeerConnection extends Fake implements RTCPeerConnection {
   }
 
   @override
+  Future<RTCRtpTransceiver> addTransceiver({
+    MediaStreamTrack? track,
+    RTCRtpMediaType? kind,
+    RTCRtpTransceiverInit? init,
+  }) async {
+    final sender = _FakeRtpSender(
+      'transceiver-sender-${fakeTransceivers.length + 1}',
+      track,
+    );
+    final transceiver = _FakeRtpTransceiver(
+      'transceiver-${fakeTransceivers.length + 1}',
+      sender,
+      init?.direction ?? TransceiverDirection.SendRecv,
+    );
+    fakeTransceivers.add(transceiver);
+    return transceiver;
+  }
+
+  @override
   Future<RTCRtpSender> addTrack(
     MediaStreamTrack track, [
     MediaStream? stream,
@@ -861,6 +895,9 @@ class _FakeRtcPeerConnection extends Fake implements RTCPeerConnection {
   }
 
   @override
+  Future<List<RTCRtpTransceiver>> getTransceivers() async => fakeTransceivers;
+
+  @override
   Future<void> addCandidate(RTCIceCandidate candidate) async {}
 
   @override
@@ -873,9 +910,60 @@ class _FakeRtcPeerConnection extends Fake implements RTCPeerConnection {
 }
 
 class _FakeRtpSender extends Fake implements RTCRtpSender {
-  _FakeRtpSender(this.id);
+  _FakeRtpSender(this.id, [MediaStreamTrack? track]) : _track = track;
 
   final String id;
+  final List<String?> replacedTrackIds = <String?>[];
+  final List<List<MediaStream>> streamSets = <List<MediaStream>>[];
+  MediaStreamTrack? _track;
+
+  @override
+  String get senderId => id;
+
+  @override
+  MediaStreamTrack? get track => _track;
+
+  @override
+  Future<void> replaceTrack(MediaStreamTrack? track) async {
+    _track = track;
+    replacedTrackIds.add(track?.id);
+  }
+
+  @override
+  Future<void> setStreams(List<MediaStream> streams) async {
+    streamSets.add(streams);
+  }
+}
+
+class _FakeRtpTransceiver extends Fake implements RTCRtpTransceiver {
+  _FakeRtpTransceiver(this.transceiverId, this.sender, this._direction);
+
+  @override
+  final String transceiverId;
+
+  @override
+  final _FakeRtpSender sender;
+
+  final List<TransceiverDirection> directionChanges = <TransceiverDirection>[];
+  TransceiverDirection _direction;
+
+  @override
+  String get mid => transceiverId;
+
+  @override
+  bool get stoped => false;
+
+  @override
+  Future<TransceiverDirection?> getCurrentDirection() async => _direction;
+
+  @override
+  Future<TransceiverDirection> getDirection() async => _direction;
+
+  @override
+  Future<void> setDirection(TransceiverDirection direction) async {
+    _direction = direction;
+    directionChanges.add(direction);
+  }
 }
 
 class _FakeRtcDataChannel extends Fake implements RTCDataChannel {
