@@ -9,6 +9,8 @@ enum VoiceCallPhase {
   failed,
 }
 
+enum VoiceCallFailureReason { microphoneDenied, remoteMicrophoneDenied }
+
 class VoiceCallState {
   const VoiceCallState({
     required this.phase,
@@ -21,6 +23,7 @@ class VoiceCallState {
     this.updatedAt,
     this.detail,
     this.error,
+    this.failureReason,
   });
 
   const VoiceCallState.idle()
@@ -33,7 +36,8 @@ class VoiceCallState {
       startedAt = null,
       updatedAt = null,
       detail = null,
-      error = null;
+      error = null,
+      failureReason = null;
 
   final VoiceCallPhase phase;
   final String? peerId;
@@ -45,6 +49,7 @@ class VoiceCallState {
   final int? updatedAt;
   final String? detail;
   final Object? error;
+  final VoiceCallFailureReason? failureReason;
 
   bool get hasCall => phase != VoiceCallPhase.idle;
 
@@ -77,7 +82,9 @@ class VoiceCallState {
     int? updatedAt,
     String? detail,
     Object? error,
+    VoiceCallFailureReason? failureReason,
     bool clearError = false,
+    bool clearFailureReason = false,
   }) {
     return VoiceCallState(
       phase: phase ?? this.phase,
@@ -90,6 +97,9 @@ class VoiceCallState {
       updatedAt: updatedAt ?? this.updatedAt,
       detail: detail ?? this.detail,
       error: clearError ? null : error ?? this.error,
+      failureReason: clearFailureReason
+          ? null
+          : failureReason ?? this.failureReason,
     );
   }
 }

@@ -258,48 +258,53 @@ class DefaultPeerCore implements PeerCore {
       throw StateError('PeerCore has not been initialized.');
     }
     final connection = _requirePeerConnection();
-    await config.platform.prepareVoiceAudio();
-    final stream = await config.platform.getUserMedia(const <String, dynamic>{
-      'audio': <String, dynamic>{
-        'echoCancellation': true,
-        'noiseSuppression': true,
-        'autoGainControl': true,
-      },
-      'video': false,
-    });
-    final audioTracks = stream.getAudioTracks();
-    if (audioTracks.isEmpty) {
-      await stream.dispose();
-      await config.platform.clearVoiceAudio();
-      throw StateError('No microphone audio track was captured.');
-    }
-    _localAudioStream = stream;
-    _localAudioTrack = audioTracks.first;
-    final transceiver = _audioTransceiver ??= await _createAudioTransceiver(
-      connection,
-    );
+    MediaStream? pendingStream;
+    var keepVoiceAudio = false;
     try {
-      await transceiver.sender.replaceTrack(_localAudioTrack);
+      await config.platform.prepareVoiceAudio();
+      final stream = await config.platform.getUserMedia(const <String, dynamic>{
+        'audio': <String, dynamic>{
+          'echoCancellation': true,
+          'noiseSuppression': true,
+          'autoGainControl': true,
+        },
+        'video': false,
+      });
+      pendingStream = stream;
+      final audioTracks = stream.getAudioTracks();
+      if (audioTracks.isEmpty) {
+        throw StateError('No microphone audio track was captured.');
+      }
+      final audioTrack = audioTracks.first;
+      final transceiver = _audioTransceiver ??= await _createAudioTransceiver(
+        connection,
+      );
+      await transceiver.sender.replaceTrack(audioTrack);
       await transceiver.sender.setStreams(<MediaStream>[stream]);
       await transceiver.setDirection(TransceiverDirection.SendRecv);
+      _localAudioStream = stream;
+      _localAudioTrack = audioTrack;
+      pendingStream = null;
+      keepVoiceAudio = true;
     } catch (_) {
-      _localAudioStream = null;
-      _localAudioTrack = null;
-      try {
-        await transceiver.sender.replaceTrack(null);
-      } catch (_) {
-        // Best-effort rollback for partially attached microphone tracks.
-      }
-      for (final track in stream.getTracks()) {
+      final transceiver = _audioTransceiver;
+      if (transceiver != null) {
         try {
-          await track.stop();
+          await transceiver.sender.replaceTrack(null);
         } catch (_) {
-          // Best-effort local media cleanup.
+          // Best-effort rollback for partially attached microphone tracks.
         }
       }
-      await stream.dispose();
-      await config.platform.clearVoiceAudio();
       rethrow;
+    } finally {
+      if (!keepVoiceAudio) {
+        _localAudioStream = null;
+        _localAudioTrack = null;
+        if (pendingStream != null) {
+          await _disposeMediaStream(pendingStream);
+        }
+        await config.platform.clearVoiceAudio();
+      }
     }
   }
 
@@ -308,33 +313,40 @@ class DefaultPeerCore implements PeerCore {
     final stream = _localAudioStream;
     final config = _config;
     final transceiver = _audioTransceiver;
-    if (transceiver != null) {
-      try {
-        await transceiver.sender.replaceTrack(null);
-      } catch (_) {
-        // Peer may already be closing; local device cleanup still matters.
-      }
-      try {
-        await transceiver.setDirection(TransceiverDirection.RecvOnly);
-      } catch (_) {
-        // Renegotiation cleanup is best-effort during shutdown.
-      }
-    }
-    if (stream != null) {
-      for (final track in stream.getTracks()) {
+    try {
+      if (transceiver != null) {
         try {
-          await track.stop();
+          await transceiver.sender.replaceTrack(null);
         } catch (_) {
-          // Best-effort local media cleanup.
+          // Peer may already be closing; local device cleanup still matters.
+        }
+        try {
+          await transceiver.setDirection(TransceiverDirection.RecvOnly);
+        } catch (_) {
+          // Renegotiation cleanup is best-effort during shutdown.
         }
       }
-      await stream.dispose();
+      if (stream != null) {
+        await _disposeMediaStream(stream);
+      }
+    } finally {
+      _localAudioStream = null;
+      _localAudioTrack = null;
+      if (config != null) {
+        await config.platform.clearVoiceAudio();
+      }
     }
-    _localAudioStream = null;
-    _localAudioTrack = null;
-    if (config != null) {
-      await config.platform.clearVoiceAudio();
+  }
+
+  Future<void> _disposeMediaStream(MediaStream stream) async {
+    for (final track in stream.getTracks()) {
+      try {
+        await track.stop();
+      } catch (_) {
+        // Best-effort local media cleanup.
+      }
     }
+    await stream.dispose();
   }
 
   Future<RTCRtpTransceiver> _createAudioTransceiver(

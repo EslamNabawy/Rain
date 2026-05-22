@@ -3,6 +3,11 @@ part of 'rain_runtime_controller.dart';
 extension VoiceCallRuntime on RainRuntimeController {
   static const Duration _voiceCallInviteTimeout = Duration(seconds: 45);
   static const String _voiceCallFailedReasonCode = 'failed';
+  static const String _voiceCallMicrophoneDeniedReasonCode = 'microphoneDenied';
+  static const String _voiceCallMicrophonePermissionRequired =
+      'Microphone permission required.';
+  static const String _voiceCallRemoteMicrophonePermissionRequired =
+      'Peer microphone permission required.';
 
   Future<void> startVoiceCall(String username) async {
     final peerId = _normalizedUsername(username);
@@ -34,16 +39,31 @@ extension VoiceCallRuntime on RainRuntimeController {
       );
       _setVoiceCallState(
         _voiceCallState.copyWith(
+          phase: VoiceCallPhase.connectingMedia,
+          detail: 'Checking microphone permission.',
+          updatedAt: DateTime.now().millisecondsSinceEpoch,
+          clearError: true,
+          clearFailureReason: true,
+        ),
+      );
+      await brain!.startLocalAudio(peerId);
+      _setVoiceCallState(
+        _voiceCallState.copyWith(
           phase: VoiceCallPhase.outgoingRinging,
           detail: 'Ringing @$peerId.',
           updatedAt: DateTime.now().millisecondsSinceEpoch,
           clearError: true,
+          clearFailureReason: true,
         ),
       );
       _armVoiceCallTimeout(callId);
-      _sendVoiceFrame(peerId, VoiceCallFrameType.invite, callId: callId);
+      await _sendVoiceFrame(peerId, VoiceCallFrameType.invite, callId: callId);
     } catch (error) {
-      await _failVoiceCall(error);
+      await _failVoiceCall(
+        error,
+        failureReason: _localAudioFailureReason(error),
+        detail: _localAudioFailureDetail(error),
+      );
       rethrow;
     }
   }
@@ -74,6 +94,7 @@ extension VoiceCallRuntime on RainRuntimeController {
         detail: 'Starting microphone.',
         updatedAt: DateTime.now().millisecondsSinceEpoch,
         clearError: true,
+        clearFailureReason: true,
       ),
     );
 
@@ -86,14 +107,24 @@ extension VoiceCallRuntime on RainRuntimeController {
       );
       await _createVoiceMediaOfferIfOwner(current.peerId!, current.callId!);
     } catch (error) {
+      final microphoneFailureReason = _localAudioFailureReason(error);
       await _sendVoiceFrame(
         current.peerId!,
         VoiceCallFrameType.reject,
         callId: current.callId!,
-        reason: _voiceCallErrorMessage(error),
+        reason:
+            _localAudioFailureDetail(error) ?? _voiceCallErrorMessage(error),
+        reasonCode:
+            microphoneFailureReason == VoiceCallFailureReason.microphoneDenied
+            ? _voiceCallMicrophoneDeniedReasonCode
+            : null,
         bestEffort: true,
       );
-      await _failVoiceCall(error);
+      await _failVoiceCall(
+        error,
+        failureReason: microphoneFailureReason,
+        detail: _localAudioFailureDetail(error),
+      );
       rethrow;
     }
   }
@@ -241,6 +272,7 @@ extension VoiceCallRuntime on RainRuntimeController {
         detail: 'Starting microphone.',
         updatedAt: DateTime.now().millisecondsSinceEpoch,
         clearError: true,
+        clearFailureReason: true,
       ),
     );
     try {
@@ -254,7 +286,11 @@ extension VoiceCallRuntime on RainRuntimeController {
         reason: _voiceCallErrorMessage(error),
         bestEffort: true,
       );
-      await _failVoiceCall(error);
+      await _failVoiceCall(
+        error,
+        failureReason: _localAudioFailureReason(error),
+        detail: _localAudioFailureDetail(error),
+      );
     }
   }
 
@@ -264,8 +300,14 @@ extension VoiceCallRuntime on RainRuntimeController {
     }
     final message = frame.type == VoiceCallFrameType.busy
         ? 'Peer is busy.'
-        : frame.reason ?? 'Call rejected.';
-    await _failVoiceCall(message);
+        : _voiceCallRejectedMessage(frame);
+    await _failVoiceCall(
+      message,
+      failureReason: frame.reasonCode == _voiceCallMicrophoneDeniedReasonCode
+          ? VoiceCallFailureReason.remoteMicrophoneDenied
+          : null,
+      detail: message,
+    );
   }
 
   Future<void> _handleVoiceOffer(String peerId, VoiceCallFrame frame) async {
@@ -285,6 +327,7 @@ extension VoiceCallRuntime on RainRuntimeController {
         detail: 'Answering voice media.',
         updatedAt: DateTime.now().millisecondsSinceEpoch,
         clearError: true,
+        clearFailureReason: true,
       ),
     );
     try {
@@ -395,6 +438,7 @@ extension VoiceCallRuntime on RainRuntimeController {
         phase: VoiceCallPhase.connectingMedia,
         detail: 'Creating voice media offer.',
         updatedAt: DateTime.now().millisecondsSinceEpoch,
+        clearFailureReason: true,
       ),
     );
     if (!_beginVoiceMediaNegotiation(peerId)) {
@@ -579,6 +623,7 @@ extension VoiceCallRuntime on RainRuntimeController {
         startedAt: _voiceCallState.startedAt ?? now,
         updatedAt: now,
         clearError: true,
+        clearFailureReason: true,
       ),
     );
   }
@@ -623,7 +668,11 @@ extension VoiceCallRuntime on RainRuntimeController {
     unawaited(_failVoiceCall(message));
   }
 
-  Future<void> _failVoiceCall(Object error) async {
+  Future<void> _failVoiceCall(
+    Object error, {
+    VoiceCallFailureReason? failureReason,
+    String? detail,
+  }) async {
     _clearVoiceCallTimer();
     final current = _voiceCallState;
     if (current.peerId != null) {
@@ -637,8 +686,9 @@ extension VoiceCallRuntime on RainRuntimeController {
     _setVoiceCallState(
       current.copyWith(
         phase: VoiceCallPhase.failed,
-        detail: _voiceCallErrorMessage(error),
+        detail: detail ?? _voiceCallErrorMessage(error),
         error: error,
+        failureReason: failureReason,
         updatedAt: DateTime.now().millisecondsSinceEpoch,
       ),
     );
@@ -703,5 +753,31 @@ extension VoiceCallRuntime on RainRuntimeController {
       }
     }
     return raw;
+  }
+
+  String _voiceCallRejectedMessage(VoiceCallFrame frame) {
+    if (frame.reasonCode == _voiceCallMicrophoneDeniedReasonCode) {
+      return _voiceCallRemoteMicrophonePermissionRequired;
+    }
+    return frame.reason ?? 'Call rejected.';
+  }
+
+  VoiceCallFailureReason? _localAudioFailureReason(Object error) {
+    final normalized = error.toString().toLowerCase();
+    final permissionDenied =
+        normalized.contains('notallowed') ||
+        normalized.contains('not allowed') ||
+        normalized.contains('permission denied') ||
+        normalized.contains('permission was denied') ||
+        normalized.contains('denied permission') ||
+        normalized.contains('microphone permission');
+    return permissionDenied ? VoiceCallFailureReason.microphoneDenied : null;
+  }
+
+  String? _localAudioFailureDetail(Object error) {
+    return _localAudioFailureReason(error) ==
+            VoiceCallFailureReason.microphoneDenied
+        ? _voiceCallMicrophonePermissionRequired
+        : null;
   }
 }

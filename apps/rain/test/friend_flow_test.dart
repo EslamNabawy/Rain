@@ -849,6 +849,7 @@ void main() {
 
         expect(runtime.voiceCallState.phase, VoiceCallPhase.outgoingRinging);
         expect(brain.registeredPeers, contains('bob'));
+        expect(brain.startedAudioPeers, contains('bob'));
         expect(brain.sentControlPayloads, hasLength(1));
         final invite = VoiceCallFrame.tryDecode(
           brain.sentControlPayloads.single,
@@ -858,6 +859,53 @@ void main() {
         expect(invite?.to, 'bob');
       },
     );
+
+    test('startVoiceCall requests microphone before sending invite', () async {
+      final adapter = NoopSignalingAdapter();
+      final brain = TestSessionManager()
+        ..startLocalAudioError = StateError('Microphone permission denied');
+      await adapter.register('bob', 'bobpw');
+      await adapter.upsertFriendship('alice', 'bob');
+      await db
+          .into(db.friends)
+          .insert(
+            FriendsCompanion.insert(
+              username: 'bob',
+              displayName: 'Bob',
+              state: 'friend',
+              addedAt: 0,
+            ),
+          );
+      final runtime = _runtimeFor(db, alice, adapter, brain: brain);
+      addTearDown(runtime.dispose);
+
+      final callStarted = runtime.startVoiceCall('bob');
+      await _waitForCondition(
+        () => brain.connectedPeers.contains('bob'),
+        'voice call to request peer connection',
+      );
+      brain.markConnected('bob');
+
+      await expectLater(
+        callStarted,
+        throwsA(
+          isA<StateError>().having(
+            (error) => error.toString(),
+            'message',
+            contains('Microphone permission denied'),
+          ),
+        ),
+      );
+
+      expect(brain.startedAudioPeers, <String>['bob']);
+      expect(brain.sentControlPayloads, isEmpty);
+      expect(runtime.voiceCallState.phase, VoiceCallPhase.failed);
+      expect(
+        runtime.voiceCallState.failureReason,
+        VoiceCallFailureReason.microphoneDenied,
+      );
+      expect(runtime.voiceCallState.detail, 'Microphone permission required.');
+    });
 
     test('incoming voice invite can be rejected', () async {
       final adapter = NoopSignalingAdapter();
@@ -900,6 +948,75 @@ void main() {
       expect(reject?.type, VoiceCallFrameType.reject);
       expect(reject?.callId, 'call-1');
     });
+
+    test(
+      'acceptVoiceCall rejects before accept when microphone is denied',
+      () async {
+        final adapter = NoopSignalingAdapter();
+        final brain = TestSessionManager()
+          ..startLocalAudioError = StateError('Microphone permission denied');
+        await adapter.register('bob', 'bobpw');
+        await adapter.upsertFriendship('alice', 'bob');
+        await db
+            .into(db.friends)
+            .insert(
+              FriendsCompanion.insert(
+                username: 'bob',
+                displayName: 'Bob',
+                state: 'friend',
+                addedAt: 0,
+              ),
+            );
+        final runtime = _runtimeFor(db, alice, adapter, brain: brain);
+        addTearDown(runtime.dispose);
+
+        await runtime.start();
+        brain.emitControlMessage(
+          'bob',
+          VoiceCallFrame(
+            type: VoiceCallFrameType.invite,
+            callId: 'call-1',
+            from: 'bob',
+            to: 'alice',
+            sentAt: DateTime.now().millisecondsSinceEpoch,
+          ).encode(),
+        );
+        await _waitForCondition(
+          () => runtime.voiceCallState.phase == VoiceCallPhase.incomingRinging,
+          'incoming voice invite to ring',
+        );
+
+        await expectLater(
+          runtime.acceptVoiceCall(),
+          throwsA(
+            isA<StateError>().having(
+              (error) => error.toString(),
+              'message',
+              contains('Microphone permission denied'),
+            ),
+          ),
+        );
+
+        final frames = brain.sentControlPayloads
+            .map(VoiceCallFrame.tryDecode)
+            .whereType<VoiceCallFrame>()
+            .toList(growable: false);
+        expect(frames.map((frame) => frame.type), <VoiceCallFrameType>[
+          VoiceCallFrameType.reject,
+        ]);
+        expect(frames.single.reasonCode, 'microphoneDenied');
+        expect(frames.single.reason, 'Microphone permission required.');
+        expect(runtime.voiceCallState.phase, VoiceCallPhase.failed);
+        expect(
+          runtime.voiceCallState.failureReason,
+          VoiceCallFailureReason.microphoneDenied,
+        );
+        expect(
+          runtime.voiceCallState.detail,
+          'Microphone permission required.',
+        );
+      },
+    );
 
     test('active file transfer blocks starting a voice call', () async {
       final adapter = NoopSignalingAdapter();
@@ -2510,6 +2627,7 @@ class TestSessionManager implements SessionManager {
   final List<String> sentFilePayloads = <String>[];
   final List<String> sentControlPayloads = <String>[];
   final Map<String, bool> mutedPeers = <String, bool>{};
+  Object? startLocalAudioError;
   Object? createMediaOfferError;
   Object? applyMediaOfferError;
   Object? applyMediaAnswerError;
@@ -2622,6 +2740,10 @@ class TestSessionManager implements SessionManager {
   @override
   Future<void> startLocalAudio(String peerId) async {
     startedAudioPeers.add(peerId);
+    final error = startLocalAudioError;
+    if (error != null) {
+      throw error;
+    }
   }
 
   @override

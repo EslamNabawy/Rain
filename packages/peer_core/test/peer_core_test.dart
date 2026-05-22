@@ -649,6 +649,42 @@ void main() {
     expect(platform.clearVoiceAudioCalls, 1);
   });
 
+  test(
+    'default peer clears native call audio when microphone capture fails',
+    () async {
+      final platform = _FakePlatformBridge()
+        ..getUserMediaError = StateError('Microphone permission denied');
+      final peer = DefaultPeerCore();
+
+      await peer.init(
+        PeerConfig(
+          iceServers: const <Map<String, dynamic>>[],
+          platform: platform,
+        ),
+      );
+      await peer.createOffer();
+      await peer.setAnswer(RTCSessionDescription('answer-sdp', 'answer'));
+      platform.channel(PeerChannels.chat).emitOpen();
+      platform.channel(PeerChannels.control).emitOpen();
+      await pumpEventQueue();
+
+      await expectLater(
+        peer.startLocalAudio(),
+        throwsA(
+          isA<StateError>().having(
+            (error) => error.toString(),
+            'message',
+            contains('Microphone permission denied'),
+          ),
+        ),
+      );
+
+      expect(platform.prepareVoiceAudioCalls, 1);
+      expect(platform.clearVoiceAudioCalls, 1);
+      expect(platform.userMediaConstraints, hasLength(1));
+    },
+  );
+
   test('default peer mutes microphone through platform bridge', () async {
     final platform = _FakePlatformBridge();
     final peer = DefaultPeerCore();
@@ -752,6 +788,7 @@ class _FakePlatformBridge implements PlatformBridge {
   final List<Map<String, dynamic>> userMediaConstraints =
       <Map<String, dynamic>>[];
   final List<bool> muteCalls = <bool>[];
+  Object? getUserMediaError;
   int prepareVoiceAudioCalls = 0;
   int clearVoiceAudioCalls = 0;
 
@@ -781,6 +818,10 @@ class _FakePlatformBridge implements PlatformBridge {
   @override
   Future<MediaStream> getUserMedia(Map<String, dynamic> constraints) async {
     userMediaConstraints.add(constraints);
+    final error = getUserMediaError;
+    if (error != null) {
+      throw error;
+    }
     return audioStream;
   }
 

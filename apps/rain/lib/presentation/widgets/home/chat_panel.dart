@@ -122,6 +122,7 @@ class _ChatPanelState extends ConsumerState<_ChatPanel> {
                   onAccept: _acceptVoiceCall,
                   onReject: _rejectVoiceCall,
                   onHangUp: _hangUpVoiceCall,
+                  onRetry: _startVoiceCall,
                   onToggleMute: () => _toggleVoiceMute(voiceCall),
                 ),
               ),
@@ -1498,6 +1499,7 @@ class _VoiceCallPanel extends StatelessWidget {
     required this.onAccept,
     required this.onReject,
     required this.onHangUp,
+    required this.onRetry,
     required this.onToggleMute,
   });
 
@@ -1506,6 +1508,7 @@ class _VoiceCallPanel extends StatelessWidget {
   final VoidCallback onAccept;
   final VoidCallback onReject;
   final VoidCallback onHangUp;
+  final VoidCallback onRetry;
   final VoidCallback onToggleMute;
 
   @override
@@ -1582,6 +1585,7 @@ class _VoiceCallPanel extends StatelessWidget {
             onAccept: onAccept,
             onReject: onReject,
             onHangUp: onHangUp,
+            onRetry: onRetry,
             onToggleMute: onToggleMute,
           );
           if (constraints.maxWidth < 430) {
@@ -1614,6 +1618,7 @@ class _VoiceCallActions extends StatelessWidget {
     required this.onAccept,
     required this.onReject,
     required this.onHangUp,
+    required this.onRetry,
     required this.onToggleMute,
   });
 
@@ -1621,6 +1626,7 @@ class _VoiceCallActions extends StatelessWidget {
   final VoidCallback onAccept;
   final VoidCallback onReject;
   final VoidCallback onHangUp;
+  final VoidCallback onRetry;
   final VoidCallback onToggleMute;
 
   @override
@@ -1646,10 +1652,23 @@ class _VoiceCallActions extends StatelessWidget {
     }
 
     if (state.phase == VoiceCallPhase.failed) {
-      return TextButton.icon(
-        onPressed: onHangUp,
-        icon: const Icon(Icons.close),
-        label: const Text('Dismiss'),
+      return Wrap(
+        spacing: 8,
+        runSpacing: 8,
+        alignment: WrapAlignment.end,
+        children: <Widget>[
+          if (state.failureReason == VoiceCallFailureReason.microphoneDenied)
+            FilledButton.icon(
+              onPressed: onRetry,
+              icon: const Icon(Icons.refresh),
+              label: const Text('Retry'),
+            ),
+          TextButton.icon(
+            onPressed: onHangUp,
+            icon: const Icon(Icons.close),
+            label: const Text('Dismiss'),
+          ),
+        ],
       );
     }
 
