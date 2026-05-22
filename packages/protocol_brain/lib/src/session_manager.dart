@@ -1,7 +1,9 @@
 import 'dart:async';
 import 'dart:typed_data';
 
-import 'package:peer_core/peer_core.dart' show PeerConnectionRoute;
+import 'package:flutter_webrtc/flutter_webrtc.dart';
+import 'package:peer_core/peer_core.dart'
+    show PeerConnectionRoute, PeerRemoteTrack;
 
 enum SessionState { connecting, connected, reconnecting, failed }
 
@@ -20,11 +22,38 @@ enum SessionPhase {
   writingAnswer,
   exchangingIce,
   openingDataChannels,
+  negotiatingMedia,
   connected,
   reconnecting,
   disconnecting,
   disconnected,
   failed,
+}
+
+class SessionRemoteTrack {
+  const SessionRemoteTrack({
+    required this.peerId,
+    required this.track,
+    required this.streams,
+    required this.receivedAt,
+  });
+
+  final String peerId;
+  final MediaStreamTrack track;
+  final List<MediaStream> streams;
+  final DateTime receivedAt;
+
+  factory SessionRemoteTrack.fromPeerTrack(
+    String peerId,
+    PeerRemoteTrack event,
+  ) {
+    return SessionRemoteTrack(
+      peerId: peerId,
+      track: event.track,
+      streams: event.streams,
+      receivedAt: event.receivedAt,
+    );
+  }
 }
 
 class IncomingOfferDecision {
@@ -77,6 +106,7 @@ abstract class SessionManager {
   Stream<Session> get onPeerConnected;
   Stream<String> get onPeerDisconnected;
   Stream<SessionMessage> get onPeerMessage;
+  Stream<SessionRemoteTrack> get onRemoteTrack;
   Stream<Session> get onSessionChanged;
   Stream<IncomingOfferRejection> get onIncomingOfferRejected;
 
@@ -99,6 +129,15 @@ abstract class SessionManager {
   Future<void> openChannel(String peerId, SessionChannel channel);
   Future<int> bufferedAmount(String peerId, SessionChannel channel);
   bool isChannelOpen(String peerId, SessionChannel channel);
+  Future<void> startLocalAudio(String peerId);
+  Future<void> stopLocalAudio(String peerId);
+  Future<void> setMicrophoneMuted(String peerId, {required bool muted});
+  Future<RTCSessionDescription> createMediaOffer(String peerId);
+  Future<RTCSessionDescription> applyMediaOffer(
+    String peerId,
+    RTCSessionDescription offer,
+  );
+  Future<void> applyMediaAnswer(String peerId, RTCSessionDescription answer);
 }
 
 abstract class ProtocolBrain implements SessionManager {}

@@ -43,6 +43,8 @@ class ProtocolBrainImpl implements ProtocolBrain {
       StreamController<String>.broadcast();
   final StreamController<SessionMessage> _peerMessageController =
       StreamController<SessionMessage>.broadcast();
+  final StreamController<SessionRemoteTrack> _remoteTrackController =
+      StreamController<SessionRemoteTrack>.broadcast();
   final StreamController<Session> _sessionChangedController =
       StreamController<Session>.broadcast();
   final StreamController<IncomingOfferRejection>
@@ -57,6 +59,9 @@ class ProtocolBrainImpl implements ProtocolBrain {
 
   @override
   Stream<SessionMessage> get onPeerMessage => _peerMessageController.stream;
+
+  @override
+  Stream<SessionRemoteTrack> get onRemoteTrack => _remoteTrackController.stream;
 
   @override
   Stream<Session> get onSessionChanged => _sessionChangedController.stream;
@@ -223,9 +228,97 @@ class ProtocolBrainImpl implements ProtocolBrain {
   }
 
   @override
+  Future<RTCSessionDescription> applyMediaOffer(
+    String peerId,
+    RTCSessionDescription offer,
+  ) async {
+    final active = _requireConnectedSession(peerId);
+    _markPhase(
+      active,
+      SessionPhase.negotiatingMedia,
+      'Applying voice media offer.',
+      state: SessionState.connected,
+    );
+    final answer = await active.peer.applyMediaOffer(offer);
+    _markPhase(
+      active,
+      SessionPhase.connected,
+      'Voice media negotiation answered.',
+      state: SessionState.connected,
+    );
+    return answer;
+  }
+
+  @override
+  Future<void> applyMediaAnswer(
+    String peerId,
+    RTCSessionDescription answer,
+  ) async {
+    final active = _requireConnectedSession(peerId);
+    _markPhase(
+      active,
+      SessionPhase.negotiatingMedia,
+      'Applying voice media answer.',
+      state: SessionState.connected,
+    );
+    await active.peer.applyMediaAnswer(answer);
+    _markPhase(
+      active,
+      SessionPhase.connected,
+      'Voice media negotiation complete.',
+      state: SessionState.connected,
+    );
+  }
+
+  @override
+  Future<RTCSessionDescription> createMediaOffer(String peerId) async {
+    final active = _requireConnectedSession(peerId);
+    _markPhase(
+      active,
+      SessionPhase.negotiatingMedia,
+      'Creating voice media offer.',
+      state: SessionState.connected,
+    );
+    return active.peer.createMediaOffer();
+  }
+
+  @override
+  Future<void> setMicrophoneMuted(String peerId, {required bool muted}) async {
+    final active = _requireConnectedSession(peerId);
+    await active.peer.setMicrophoneMuted(muted: muted);
+  }
+
+  @override
+  Future<void> startLocalAudio(String peerId) async {
+    final active = _requireConnectedSession(peerId);
+    await active.peer.startLocalAudio();
+  }
+
+  @override
+  Future<void> stopLocalAudio(String peerId) async {
+    final active = _sessions[peerId];
+    if (active == null) {
+      return;
+    }
+    await active.peer.stopLocalAudio();
+  }
+
+  @override
   Future<void> unregisterPeer(String peerId) async {
     _incomingOfferGuards.remove(peerId);
     await _offerSubscriptions.remove(peerId)?.cancel();
+  }
+
+  _ActiveSession _requireConnectedSession(String peerId) {
+    final active = _sessions[peerId];
+    if (active == null) {
+      throw StateError('No active session for $peerId');
+    }
+    if (active.snapshot.state != SessionState.connected ||
+        active.peer.state != PeerState.connected) {
+      throw StateError('Peer $peerId is not connected.');
+    }
+    return active;
   }
 
   Future<void> _bindPeerCore(_ActiveSession active, IceRole localRole) async {
@@ -248,6 +341,14 @@ class ProtocolBrainImpl implements ProtocolBrain {
     active.subscriptions.add(
       active.peer.onMessage.listen((PeerMessage message) {
         _peerMessageController.add(_toSessionMessage(message, active.peerId));
+      }),
+    );
+
+    active.subscriptions.add(
+      active.peer.onRemoteTrack.listen((PeerRemoteTrack event) {
+        _remoteTrackController.add(
+          SessionRemoteTrack.fromPeerTrack(active.peerId, event),
+        );
       }),
     );
 

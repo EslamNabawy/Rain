@@ -4,6 +4,7 @@ export 'package:peer_core/peer_core.dart'
         PeerConfig,
         PeerConnectionRoute,
         PeerIceTransportPolicy,
+        PeerRemoteTrack,
         PeerRouteKind;
 
 export 'adapters/firebase_adapter.dart';

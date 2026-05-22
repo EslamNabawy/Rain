@@ -20,6 +20,8 @@ class _LiveSmokePeerCore implements PeerCore {
       StreamController<void>.broadcast();
   final StreamController<PeerMessage> _messageController =
       StreamController<PeerMessage>.broadcast();
+  final StreamController<PeerRemoteTrack> _remoteTrackController =
+      StreamController<PeerRemoteTrack>.broadcast();
   final StreamController<String> _channelOpenController =
       StreamController<String>.broadcast();
   final StreamController<String> _channelCloseController =
@@ -42,6 +44,9 @@ class _LiveSmokePeerCore implements PeerCore {
 
   @override
   Stream<PeerMessage> get onMessage => _messageController.stream;
+
+  @override
+  Stream<PeerRemoteTrack> get onRemoteTrack => _remoteTrackController.stream;
 
   @override
   Stream<String> get onChannelOpen => _channelOpenController.stream;
@@ -78,6 +83,11 @@ class _LiveSmokePeerCore implements PeerCore {
   Future<RTCSessionDescription> createOffer() async {
     _transition(PeerState.offering);
     return RTCSessionDescription('fake-offer', 'offer');
+  }
+
+  @override
+  Future<RTCSessionDescription> createMediaOffer() async {
+    return RTCSessionDescription('fake-media-offer', 'offer');
   }
 
   @override
@@ -126,6 +136,25 @@ class _LiveSmokePeerCore implements PeerCore {
     _transition(PeerState.answering);
     return RTCSessionDescription('fake-answer', 'answer');
   }
+
+  @override
+  Future<void> applyMediaAnswer(RTCSessionDescription answer) async {}
+
+  @override
+  Future<RTCSessionDescription> applyMediaOffer(
+    RTCSessionDescription offer,
+  ) async {
+    return RTCSessionDescription('fake-media-answer', 'answer');
+  }
+
+  @override
+  Future<void> setMicrophoneMuted({required bool muted}) async {}
+
+  @override
+  Future<void> startLocalAudio() async {}
+
+  @override
+  Future<void> stopLocalAudio() async {}
 
   void _transition(PeerState next) {
     if (_state == next) {
