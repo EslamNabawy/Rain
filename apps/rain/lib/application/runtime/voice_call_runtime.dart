@@ -668,6 +668,23 @@ extension VoiceCallRuntime on RainRuntimeController {
     unawaited(_failVoiceCall(message));
   }
 
+  void _markVoiceCallReconnectingForPeer(String peerId) {
+    final current = _voiceCallState;
+    if (current.peerId != _normalizedUsername(peerId) ||
+        current.phase == VoiceCallPhase.idle ||
+        current.phase == VoiceCallPhase.failed ||
+        current.phase == VoiceCallPhase.ending) {
+      return;
+    }
+    _setVoiceCallState(
+      current.copyWith(
+        detail: 'Peer connection interrupted. Reconnecting...',
+        updatedAt: DateTime.now().millisecondsSinceEpoch,
+        clearError: true,
+      ),
+    );
+  }
+
   Future<void> _failVoiceCall(
     Object error, {
     VoiceCallFailureReason? failureReason,
@@ -747,12 +764,23 @@ extension VoiceCallRuntime on RainRuntimeController {
   String _voiceCallErrorMessage(Object error) {
     final raw = error.toString().trim();
     const prefixes = <String>['Exception: ', 'Bad state: ', 'StateError: '];
+    var message = raw;
     for (final prefix in prefixes) {
       if (raw.startsWith(prefix)) {
-        return raw.substring(prefix.length).trim();
+        message = raw.substring(prefix.length).trim();
+        break;
       }
     }
-    return raw;
+    final normalized = message.toLowerCase();
+    if (normalized.contains('rtcrtptransceiver') ||
+        normalized.contains('setdirection') ||
+        normalized.contains('setremotedescription') ||
+        normalized.contains('peerconnectionsetremotedescription') ||
+        normalized.contains('m-line') ||
+        normalized.contains('peer connection changed while')) {
+      return 'Voice call media could not connect. Try again.';
+    }
+    return message;
   }
 
   String _voiceCallRejectedMessage(VoiceCallFrame frame) {

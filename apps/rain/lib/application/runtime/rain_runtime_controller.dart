@@ -273,6 +273,12 @@ class RainRuntimeController with WidgetsBindingObserver {
 
       _subscriptions.add(
         brain!.onPeerDisconnected.listen((String peerId) {
+          final session = brain?.getSession(peerId);
+          if (session?.state == SessionState.connecting ||
+              session?.state == SessionState.reconnecting) {
+            _markVoiceCallReconnectingForPeer(peerId);
+            return;
+          }
           _failVoiceCallForPeer(
             peerId,
             'Peer connection closed. Voice call ended.',
@@ -966,6 +972,16 @@ class RainRuntimeController with WidgetsBindingObserver {
         _connectionCoordinator.recordAttemptFailure(
           session.peerId,
           session.error ?? session.detail,
+        );
+        _failVoiceCallForPeer(
+          session.peerId,
+          'Peer connection failed. Voice call ended.',
+        );
+        unawaited(
+          _failActiveTransfersForPeer(
+            session.peerId,
+            'Connection lost. Transfer canceled.',
+          ),
         );
         break;
       case SessionState.connecting:

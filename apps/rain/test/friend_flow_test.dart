@@ -1294,10 +1294,15 @@ void main() {
           'voice call media failure to surface',
         );
 
+        expect(
+          runtime.voiceCallState.detail,
+          'Voice call media could not connect. Try again.',
+        );
         final hangup = brain.sentControlPayloads
             .map(VoiceCallFrame.tryDecode)
             .whereType<VoiceCallFrame>()
             .lastWhere((frame) => frame.type == VoiceCallFrameType.hangup);
+        expect(hangup.reason, 'Voice call media could not connect. Try again.');
         expect(hangup.reasonCode, 'failed');
         expect(brain.stoppedAudioPeers, contains('bob'));
         expect(brain.disconnectedPeers, isEmpty);

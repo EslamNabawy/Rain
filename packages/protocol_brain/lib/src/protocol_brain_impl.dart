@@ -239,7 +239,11 @@ class ProtocolBrainImpl implements ProtocolBrain {
       'Applying voice media offer.',
       state: SessionState.connected,
     );
-    final answer = await active.peer.applyMediaOffer(offer);
+    final answer = await _runConnectedPeerOperation(
+      active,
+      'applying voice media offer',
+      (PeerCore peer) => peer.applyMediaOffer(offer),
+    );
     _markPhase(
       active,
       SessionPhase.connected,
@@ -261,7 +265,11 @@ class ProtocolBrainImpl implements ProtocolBrain {
       'Applying voice media answer.',
       state: SessionState.connected,
     );
-    await active.peer.applyMediaAnswer(answer);
+    await _runConnectedPeerOperation(
+      active,
+      'applying voice media answer',
+      (PeerCore peer) => peer.applyMediaAnswer(answer),
+    );
     _markPhase(
       active,
       SessionPhase.connected,
@@ -279,19 +287,38 @@ class ProtocolBrainImpl implements ProtocolBrain {
       'Creating voice media offer.',
       state: SessionState.connected,
     );
-    return active.peer.createMediaOffer();
+    final offer = await _runConnectedPeerOperation(
+      active,
+      'creating voice media offer',
+      (PeerCore peer) => peer.createMediaOffer(),
+    );
+    _markPhase(
+      active,
+      SessionPhase.connected,
+      'Voice media offer created.',
+      state: SessionState.connected,
+    );
+    return offer;
   }
 
   @override
   Future<void> setMicrophoneMuted(String peerId, {required bool muted}) async {
     final active = _requireConnectedSession(peerId);
-    await active.peer.setMicrophoneMuted(muted: muted);
+    await _runConnectedPeerOperation(
+      active,
+      'muting voice media',
+      (PeerCore peer) => peer.setMicrophoneMuted(muted: muted),
+    );
   }
 
   @override
   Future<void> startLocalAudio(String peerId) async {
     final active = _requireConnectedSession(peerId);
-    await active.peer.startLocalAudio();
+    await _runConnectedPeerOperation(
+      active,
+      'starting local voice media',
+      (PeerCore peer) => peer.startLocalAudio(),
+    );
   }
 
   @override
@@ -300,7 +327,12 @@ class ProtocolBrainImpl implements ProtocolBrain {
     if (active == null) {
       return;
     }
-    await active.peer.stopLocalAudio();
+    await active.runPeerOperation(() async {
+      if (_sessions[peerId] != active) {
+        return;
+      }
+      await active.peer.stopLocalAudio();
+    });
   }
 
   @override
@@ -319,6 +351,45 @@ class ProtocolBrainImpl implements ProtocolBrain {
       throw StateError('Peer $peerId is not connected.');
     }
     return active;
+  }
+
+  Future<T> _runConnectedPeerOperation<T>(
+    _ActiveSession active,
+    String operation,
+    Future<T> Function(PeerCore peer) action,
+  ) {
+    return active.runPeerOperation(() async {
+      _ensureCurrentConnectedPeer(active, operation);
+      final peer = active.peer;
+      final generation = active.peerGeneration;
+      final result = await action(peer);
+      _ensureCurrentConnectedPeer(
+        active,
+        operation,
+        peer: peer,
+        generation: generation,
+      );
+      return result;
+    });
+  }
+
+  void _ensureCurrentConnectedPeer(
+    _ActiveSession active,
+    String operation, {
+    PeerCore? peer,
+    int? generation,
+  }) {
+    if (_sessions[active.peerId] != active || !active.shouldReconnect) {
+      throw StateError('Peer ${active.peerId} is no longer active.');
+    }
+    if ((peer != null && !identical(active.peer, peer)) ||
+        (generation != null && active.peerGeneration != generation)) {
+      throw StateError('Peer connection changed while $operation.');
+    }
+    if (active.snapshot.state != SessionState.connected ||
+        active.peer.state != PeerState.connected) {
+      throw StateError('Peer ${active.peerId} is not connected.');
+    }
   }
 
   Future<void> _bindPeerCore(_ActiveSession active, IceRole localRole) async {
@@ -875,6 +946,12 @@ class ProtocolBrainImpl implements ProtocolBrain {
     if (active.snapshot.state == SessionState.failed) {
       return;
     }
+    if (active.snapshot.state == SessionState.connected &&
+        active.peer.state == PeerState.connected) {
+      active.cancelPendingReconnect();
+      unawaited(_refreshRoute(active));
+      return;
+    }
 
     active.cancelPendingReconnect();
     active.cancelHandshakeTimeout();
@@ -1004,11 +1081,28 @@ class ProtocolBrainImpl implements ProtocolBrain {
     bool Function()? shouldContinue,
     IceRole? restoreRole,
     PeerIceTransportPolicy? policy,
+  }) {
+    return active.runPeerOperation(
+      () => _recreatePeerLocked(
+        active,
+        shouldContinue: shouldContinue,
+        restoreRole: restoreRole,
+        policy: policy,
+      ),
+    );
+  }
+
+  Future<bool> _recreatePeerLocked(
+    _ActiveSession active, {
+    bool Function()? shouldContinue,
+    IceRole? restoreRole,
+    PeerIceTransportPolicy? policy,
   }) async {
     if (shouldContinue != null && !shouldContinue()) {
       return false;
     }
     await active.disposePeerBindings();
+    active.peerGeneration += 1;
     if (shouldContinue != null && !shouldContinue()) {
       active.bound = false;
       if (_sessions[active.peerId] == active &&

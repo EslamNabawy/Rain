@@ -465,7 +465,7 @@ void main() {
   });
 
   test(
-    'network recovery restarts connected owner with restart offer',
+    'network recovery keeps an already connected owner peer alive',
     () async {
       final adapter = _RecordingSignalingAdapter();
       final peers = <_FakePeerCore>[];
@@ -491,10 +491,53 @@ void main() {
       );
       await pumpEventQueue(times: 3);
 
+      expect(peers, hasLength(1));
+      expect(adapter.writtenOffers, <String>['alice:bob']);
+      expect(brain.getSession('bob')?.state, SessionState.connected);
+
+      await brain.disconnect('bob');
+    },
+  );
+
+  test(
+    'scheduled reconnect waits for in-flight media before destroying peer',
+    () async {
+      final adapter = _RecordingSignalingAdapter();
+      final peers = <_FakePeerCore>[];
+      final brain = ProtocolBrainImpl(
+        selfUsername: 'alice',
+        adapter: adapter,
+        peerConfig: _fakePeerConfig(),
+        peerFactory: () {
+          final peer = _FakePeerCore();
+          peers.add(peer);
+          return peer;
+        },
+        connectionMemoryStore: _MemoryConnectionStore(),
+        reconnectGrace: Duration.zero,
+      );
+
+      await brain.connect('bob');
+      peers.single.emitConnected();
+      await pumpEventQueue(times: 3);
+
+      final microphoneGate = Completer<void>();
+      peers.single.startLocalAudioCompleter = microphoneGate;
+      final audioStart = brain.startLocalAudio('bob');
+      await pumpEventQueue(times: 3);
+
+      peers.single.emitDisconnected();
+      await pumpEventQueue(times: 5);
+
+      expect(peers, hasLength(1));
+      expect(peers.single.destroyed, isFalse);
+
+      microphoneGate.complete();
+      await expectLater(audioStart, throwsA(isA<StateError>()));
+      await pumpEventQueue(times: 5);
+
+      expect(peers.first.destroyed, isTrue);
       expect(peers, hasLength(2));
-      expect(adapter.writtenOffers, <String>['alice:bob', 'alice:bob']);
-      expect(adapter.writtenOfferPayloads.last.restart, isTrue);
-      expect(brain.getSession('bob')?.state, SessionState.reconnecting);
 
       await brain.disconnect('bob');
     },
@@ -954,8 +997,10 @@ class _FakePeerCore implements PeerCore {
   final List<String?> receivedMediaOffers = <String?>[];
   final List<String?> receivedMediaAnswers = <String?>[];
   final List<bool> muteCalls = <bool>[];
+  Completer<void>? startLocalAudioCompleter;
   bool localAudioStarted = false;
   bool localAudioStopped = false;
+  bool destroyed = false;
   PeerConnectionRoute route = const PeerConnectionRoute.unknown();
   final StreamController<RTCIceCandidate> _iceController =
       StreamController<RTCIceCandidate>.broadcast();
@@ -977,12 +1022,14 @@ class _FakePeerCore implements PeerCore {
   @override
   Future<void> init(PeerConfig config) async {
     initialConfig = config;
+    destroyed = false;
     _state = PeerState.ready;
     _stateController.add(_state);
   }
 
   @override
   Future<void> destroy() async {
+    destroyed = true;
     _state = PeerState.idle;
     _stateController.add(_state);
   }
@@ -1065,6 +1112,10 @@ class _FakePeerCore implements PeerCore {
   @override
   Future<void> startLocalAudio() async {
     localAudioStarted = true;
+    final completer = startLocalAudioCompleter;
+    if (completer != null) {
+      await completer.future;
+    }
   }
 
   @override

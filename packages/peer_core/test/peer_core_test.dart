@@ -1,3 +1,4 @@
+import 'dart:async';
 import 'dart:convert';
 import 'dart:typed_data';
 
@@ -243,6 +244,36 @@ void main() {
       await disconnectedSubscription.cancel();
     },
   );
+
+  test('default peer gives required channel closes a grace window', () async {
+    final platform = _FakePlatformBridge();
+    final peer = DefaultPeerCore();
+    final disconnectedEvents = <void>[];
+    final disconnectedSubscription = peer.onDisconnected.listen(
+      disconnectedEvents.add,
+    );
+
+    await peer.init(
+      PeerConfig(
+        iceServers: const <Map<String, dynamic>>[],
+        platform: platform,
+      ),
+    );
+    await peer.createOffer();
+    await peer.setAnswer(RTCSessionDescription('answer-sdp', 'answer'));
+    platform.channel(PeerChannels.chat).emitOpen();
+    platform.channel(PeerChannels.control).emitOpen();
+    await pumpEventQueue();
+
+    await peer.closeChannel(PeerChannels.control);
+    await pumpEventQueue();
+
+    expect(peer.state, PeerState.connected);
+    expect(disconnectedEvents, isEmpty);
+
+    await peer.destroy();
+    await disconnectedSubscription.cancel();
+  });
 
   test('default peer chunks large binary payloads on file channel', () async {
     final platform = _FakePlatformBridge();
@@ -685,6 +716,47 @@ void main() {
     },
   );
 
+  test(
+    'default peer aborts local audio if the peer is destroyed during capture',
+    () async {
+      final platform = _FakePlatformBridge()
+        ..getUserMediaCompleter = Completer<MediaStream>();
+      final peer = DefaultPeerCore();
+
+      await peer.init(
+        PeerConfig(
+          iceServers: const <Map<String, dynamic>>[],
+          platform: platform,
+        ),
+      );
+      await peer.createOffer();
+      await peer.setAnswer(RTCSessionDescription('answer-sdp', 'answer'));
+      platform.channel(PeerChannels.chat).emitOpen();
+      platform.channel(PeerChannels.control).emitOpen();
+      await pumpEventQueue();
+
+      final audioStart = peer.startLocalAudio();
+      await pumpEventQueue();
+      await peer.destroy();
+      platform.getUserMediaCompleter!.complete(platform.audioStream);
+
+      await expectLater(
+        audioStart,
+        throwsA(
+          isA<StateError>().having(
+            (error) => error.toString(),
+            'message',
+            contains('Peer connection changed while capturing local audio'),
+          ),
+        ),
+      );
+
+      expect(platform.audioStream.audioTrack.stopped, isTrue);
+      expect(platform.audioStream.disposed, isTrue);
+      expect(platform.clearVoiceAudioCalls, greaterThanOrEqualTo(1));
+    },
+  );
+
   test('default peer mutes microphone through platform bridge', () async {
     final platform = _FakePlatformBridge();
     final peer = DefaultPeerCore();
@@ -789,6 +861,7 @@ class _FakePlatformBridge implements PlatformBridge {
       <Map<String, dynamic>>[];
   final List<bool> muteCalls = <bool>[];
   Object? getUserMediaError;
+  Completer<MediaStream>? getUserMediaCompleter;
   int prepareVoiceAudioCalls = 0;
   int clearVoiceAudioCalls = 0;
 
@@ -821,6 +894,10 @@ class _FakePlatformBridge implements PlatformBridge {
     final error = getUserMediaError;
     if (error != null) {
       throw error;
+    }
+    final completer = getUserMediaCompleter;
+    if (completer != null) {
+      return completer.future;
     }
     return audioStream;
   }
