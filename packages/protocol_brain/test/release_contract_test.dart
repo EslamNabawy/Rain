@@ -247,8 +247,8 @@ void main() {
     expect(workflow, contains('Verify debug APK is ARM64 only'));
     expect(workflow, contains('app-arm64-v8a-debug.apk'));
     expect(workflow, contains("grep -q 'lib/arm64-v8a/'"));
-    expect(workflow, contains("! grep -q 'lib/armeabi-v7a/'"));
-    expect(workflow, contains("! grep -q 'lib/x86_64/'"));
+    expect(workflow, contains("if grep -q 'lib/armeabi-v7a/'"));
+    expect(workflow, contains("if grep -q 'lib/x86_64/'"));
     expect(workflow, contains('rain-debug-arm64-apk'));
     expect(workflow, isNot(contains('name: rain-debug-apk')));
   });

@@ -341,8 +341,14 @@ jobs:
         run: |
           unzip -l build/app/outputs/flutter-apk/app-arm64-v8a-debug.apk > "$RUNNER_TEMP/rain-debug-apk-entries.txt"
           grep -q 'lib/arm64-v8a/' "$RUNNER_TEMP/rain-debug-apk-entries.txt"
-          ! grep -q 'lib/armeabi-v7a/' "$RUNNER_TEMP/rain-debug-apk-entries.txt"
-          ! grep -q 'lib/x86_64/' "$RUNNER_TEMP/rain-debug-apk-entries.txt"
+          if grep -q 'lib/armeabi-v7a/' "$RUNNER_TEMP/rain-debug-apk-entries.txt"; then
+            echo "Debug APK must not contain armeabi-v7a native libraries."
+            exit 1
+          fi
+          if grep -q 'lib/x86_64/' "$RUNNER_TEMP/rain-debug-apk-entries.txt"; then
+            echo "Debug APK must not contain x86_64 native libraries."
+            exit 1
+          fi
 
       - name: Upload debug ARM64 APK
         uses: actions/upload-artifact@v7
