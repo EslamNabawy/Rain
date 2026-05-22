@@ -4,6 +4,7 @@ import 'dart:typed_data';
 
 import 'package:crypto/crypto.dart';
 import 'package:flutter/widgets.dart';
+import 'package:flutter_webrtc/flutter_webrtc.dart' show RTCSessionDescription;
 import 'package:path_provider/path_provider.dart';
 import 'package:protocol_brain/protocol_brain.dart';
 import 'package:rain_core/rain_core.dart';
@@ -11,9 +12,11 @@ import 'package:rain_core/rain_core.dart';
 import 'connection_attempt_coordinator.dart';
 import 'file_transfer_progress_batcher.dart';
 import 'serialized_runtime_mutations.dart';
+import 'voice_call_state.dart';
 
 part 'file_transfer_runtime.dart';
 part 'friend_runtime.dart';
+part 'voice_call_runtime.dart';
 
 enum FriendRequestResult { sent, acceptedExisting }
 
@@ -90,6 +93,10 @@ class RainRuntimeController with WidgetsBindingObserver {
       <String, _OutgoingFileSource>{};
   final Map<String, String> _outgoingFileHashes = <String, String>{};
   final Set<String> _canceledTransfers = <String>{};
+  final StreamController<VoiceCallState> _voiceCallStateController =
+      StreamController<VoiceCallState>.broadcast();
+  VoiceCallState _voiceCallState = const VoiceCallState.idle();
+  Timer? _voiceCallTimer;
   late final FileTransferProgressBatcher _fileProgressBatcher;
   final ConnectionAttemptCoordinator _connectionCoordinator;
 
@@ -113,6 +120,13 @@ class RainRuntimeController with WidgetsBindingObserver {
     return _connectionCoordinator.snapshot(
       peerId: _normalizedUsername(username),
     );
+  }
+
+  VoiceCallState get voiceCallState => _voiceCallState;
+
+  Stream<VoiceCallState> watchVoiceCallState() async* {
+    yield _voiceCallState;
+    yield* _voiceCallStateController.stream;
   }
 
   RainGender? _backendGender(String? value) {
@@ -244,6 +258,10 @@ class RainRuntimeController with WidgetsBindingObserver {
 
       _subscriptions.add(
         brain!.onPeerDisconnected.listen((String peerId) {
+          _failVoiceCallForPeer(
+            peerId,
+            'Peer connection closed. Voice call ended.',
+          );
           unawaited(
             _failActiveTransfersForPeer(
               peerId,
@@ -263,6 +281,11 @@ class RainRuntimeController with WidgetsBindingObserver {
           if (message.channel == SessionChannel.control) {
             final text = message.text;
             if (text == null) {
+              return;
+            }
+            final voiceFrame = VoiceCallFrame.tryDecode(text);
+            if (voiceFrame != null) {
+              await _handleVoiceCallFrame(peerId, voiceFrame);
               return;
             }
             await _localMutations.run(
@@ -502,6 +525,11 @@ class RainRuntimeController with WidgetsBindingObserver {
     final sessions = brain?.getSessions() ?? const <Session>[];
     for (final session in sessions) {
       _manualDisconnectedPeers.add(session.peerId);
+      await _endVoiceCallForPeer(
+        session.peerId,
+        notifyPeer: false,
+        detail: reason,
+      );
       try {
         await brain?.disconnect(session.peerId);
         await _unregisterPeerListener(session.peerId);
@@ -755,6 +783,9 @@ class RainRuntimeController with WidgetsBindingObserver {
     }
 
     await _assertCanTransferFile(normalizedPeerId);
+    if (voiceCallBlocksFileTransfer(normalizedPeerId)) {
+      throw StateError('Finish the call before sending files.');
+    }
     final session = _connectedSession(normalizedPeerId);
     if (session == null) {
       throw StateError('Connect first.');
@@ -852,6 +883,9 @@ class RainRuntimeController with WidgetsBindingObserver {
       throw StateError('This file transfer cannot be accepted.');
     }
     await _assertCanTransferFile(transfer.peerId);
+    if (voiceCallBlocksFileTransfer(transfer.peerId)) {
+      throw StateError('Finish the call before accepting files.');
+    }
     if (_connectedSession(transfer.peerId) == null) {
       throw StateError('Connect first.');
     }
@@ -985,6 +1019,11 @@ class RainRuntimeController with WidgetsBindingObserver {
     if (brain != null) {
       for (final session in brain!.getSessions()) {
         try {
+          await _endVoiceCallForPeer(
+            session.peerId,
+            notifyPeer: false,
+            detail: 'Rain is closing.',
+          );
           await _failActiveTransfersForPeer(
             session.peerId,
             'Transfer canceled because Rain is closing.',
@@ -1006,6 +1045,7 @@ class RainRuntimeController with WidgetsBindingObserver {
 
     WidgetsBinding.instance.removeObserver(this);
     _backgroundOfflineTimer?.cancel();
+    _voiceCallTimer?.cancel();
     _heartbeatTimer?.cancel();
     _friendRequestRefreshTimer?.cancel();
     _connectionCoordinator.dispose();
@@ -1019,6 +1059,7 @@ class RainRuntimeController with WidgetsBindingObserver {
       await subscription.cancel();
     }
     _presenceSubscriptions.clear();
+    await _voiceCallStateController.close();
 
     if (signOut) {
       await adapter.signOut();

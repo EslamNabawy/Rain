@@ -3,6 +3,7 @@ import 'dart:io';
 
 import 'package:drift/native.dart';
 import 'package:flutter_test/flutter_test.dart';
+import 'package:flutter_webrtc/flutter_webrtc.dart' show RTCSessionDescription;
 import 'package:protocol_brain/protocol_brain.dart';
 import 'package:rain/application/runtime/rain_runtime_controller.dart';
 import 'package:rain/infrastructure/signaling/noop_signaling_adapter.dart';
@@ -195,6 +196,8 @@ class _DisconnectingSessionManager implements SessionManager {
       StreamController<String>.broadcast();
   final StreamController<SessionMessage> _messages =
       StreamController<SessionMessage>.broadcast();
+  final StreamController<SessionRemoteTrack> _remoteTracks =
+      StreamController<SessionRemoteTrack>.broadcast();
   final StreamController<Session> _changes =
       StreamController<Session>.broadcast();
   final StreamController<IncomingOfferRejection> _incomingOfferRejected =
@@ -208,6 +211,7 @@ class _DisconnectingSessionManager implements SessionManager {
     await _connected.close();
     await _disconnected.close();
     await _messages.close();
+    await _remoteTracks.close();
     await _changes.close();
     await _incomingOfferRejected.close();
   }
@@ -257,6 +261,9 @@ class _DisconnectingSessionManager implements SessionManager {
   Stream<SessionMessage> get onPeerMessage => _messages.stream;
 
   @override
+  Stream<SessionRemoteTrack> get onRemoteTrack => _remoteTracks.stream;
+
+  @override
   Stream<Session> get onSessionChanged => _changes.stream;
 
   @override
@@ -265,6 +272,31 @@ class _DisconnectingSessionManager implements SessionManager {
 
   @override
   Future<void> openChannel(String peerId, SessionChannel channel) async {}
+
+  @override
+  Future<void> startLocalAudio(String peerId) async {}
+
+  @override
+  Future<void> stopLocalAudio(String peerId) async {}
+
+  @override
+  Future<void> setMicrophoneMuted(String peerId, {required bool muted}) async {}
+
+  @override
+  Future<RTCSessionDescription> createMediaOffer(String peerId) async =>
+      RTCSessionDescription('media-offer-$peerId', 'offer');
+
+  @override
+  Future<RTCSessionDescription> applyMediaOffer(
+    String peerId,
+    RTCSessionDescription offer,
+  ) async => RTCSessionDescription('media-answer-$peerId', 'answer');
+
+  @override
+  Future<void> applyMediaAnswer(
+    String peerId,
+    RTCSessionDescription answer,
+  ) async {}
 
   @override
   Future<void> registerPeer(

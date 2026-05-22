@@ -172,6 +172,16 @@ extension FileTransferRuntime on RainRuntimeController {
       );
       return;
     }
+    if (voiceCallBlocksFileTransfer(peerId)) {
+      _sendFileControlIfConnected(
+        peerId,
+        FileTransferFrame.reject(
+          frame.transferId,
+          'Finish the call before sending files.',
+        ),
+      );
+      return;
+    }
     if (await fileTransferStore.hasActiveTransferForPeer(peerId)) {
       _sendFileControlIfConnected(
         peerId,

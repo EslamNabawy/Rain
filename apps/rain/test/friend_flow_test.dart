@@ -5,9 +5,11 @@ import 'dart:typed_data';
 import 'package:drift/drift.dart' show driftRuntimeOptions;
 import 'package:drift/native.dart';
 import 'package:flutter_test/flutter_test.dart';
+import 'package:flutter_webrtc/flutter_webrtc.dart' show RTCSessionDescription;
 import 'package:protocol_brain/protocol_brain.dart';
 import 'package:rain/infrastructure/signaling/noop_signaling_adapter.dart';
 import 'package:rain/application/runtime/rain_runtime_controller.dart';
+import 'package:rain/application/runtime/voice_call_state.dart';
 import 'package:rain_core/rain_core.dart';
 
 void main() {
@@ -817,6 +819,212 @@ void main() {
         expect(await db.select(db.fileTransfers).get(), isEmpty);
       },
     );
+
+    test(
+      'startVoiceCall auto-connects and sends invite over control channel',
+      () async {
+        final adapter = NoopSignalingAdapter();
+        final brain = TestSessionManager();
+        await adapter.register('bob', 'bobpw');
+        await adapter.upsertFriendship('alice', 'bob');
+        await db
+            .into(db.friends)
+            .insert(
+              FriendsCompanion.insert(
+                username: 'bob',
+                displayName: 'Bob',
+                state: 'friend',
+                addedAt: 0,
+              ),
+            );
+        final runtime = _runtimeFor(db, alice, adapter, brain: brain);
+
+        final callStarted = runtime.startVoiceCall('bob');
+        await _waitForCondition(
+          () => brain.connectedPeers.contains('bob'),
+          'voice call to request peer connection',
+        );
+        brain.markConnected('bob');
+        await callStarted;
+
+        expect(runtime.voiceCallState.phase, VoiceCallPhase.outgoingRinging);
+        expect(brain.registeredPeers, contains('bob'));
+        expect(brain.sentControlPayloads, hasLength(1));
+        final invite = VoiceCallFrame.tryDecode(
+          brain.sentControlPayloads.single,
+        );
+        expect(invite?.type, VoiceCallFrameType.invite);
+        expect(invite?.from, 'alice');
+        expect(invite?.to, 'bob');
+      },
+    );
+
+    test('incoming voice invite can be rejected', () async {
+      final adapter = NoopSignalingAdapter();
+      final brain = TestSessionManager();
+      await adapter.register('bob', 'bobpw');
+      await adapter.upsertFriendship('alice', 'bob');
+      await db
+          .into(db.friends)
+          .insert(
+            FriendsCompanion.insert(
+              username: 'bob',
+              displayName: 'Bob',
+              state: 'friend',
+              addedAt: 0,
+            ),
+          );
+      final runtime = _runtimeFor(db, alice, adapter, brain: brain);
+      addTearDown(runtime.dispose);
+
+      await runtime.start();
+      brain.emitControlMessage(
+        'bob',
+        VoiceCallFrame(
+          type: VoiceCallFrameType.invite,
+          callId: 'call-1',
+          from: 'bob',
+          to: 'alice',
+          sentAt: DateTime.now().millisecondsSinceEpoch,
+        ).encode(),
+      );
+      await _waitForCondition(
+        () => runtime.voiceCallState.phase == VoiceCallPhase.incomingRinging,
+        'incoming voice invite to ring',
+      );
+
+      await runtime.rejectVoiceCall();
+
+      expect(runtime.voiceCallState.phase, VoiceCallPhase.idle);
+      final reject = VoiceCallFrame.tryDecode(brain.sentControlPayloads.last);
+      expect(reject?.type, VoiceCallFrameType.reject);
+      expect(reject?.callId, 'call-1');
+    });
+
+    test('active file transfer blocks starting a voice call', () async {
+      final adapter = NoopSignalingAdapter();
+      final brain = TestSessionManager();
+      final transferStore = FileTransferStore(db);
+      await db
+          .into(db.friends)
+          .insert(
+            FriendsCompanion.insert(
+              username: 'bob',
+              displayName: 'Bob',
+              state: 'friend',
+              addedAt: 0,
+            ),
+          );
+      await transferStore.upsert(
+        FileTransferRecord(
+          id: 'transfer-1',
+          peerId: 'bob',
+          messageId: 'message-1',
+          direction: FileTransferDirection.outgoing,
+          fileName: 'busy.txt',
+          fileSize: 1,
+          bytesTransferred: 0,
+          state: FileTransferState.sending,
+          createdAt: 0,
+          updatedAt: 0,
+        ),
+      );
+      final runtime = RainRuntimeController(
+        selfIdentity: alice,
+        adapter: adapter,
+        brain: brain,
+        database: db,
+        friendStore: FriendStore(db),
+        messageStore: MessageStore(db),
+        offlineQueueStore: OfflineQueueStore(db),
+        messageDeliveryService: MessageDeliveryService(
+          messageStore: MessageStore(db),
+          offlineQueueStore: OfflineQueueStore(db),
+        ),
+        fileTransferStore: transferStore,
+      );
+
+      await expectLater(
+        runtime.startVoiceCall('bob'),
+        throwsA(
+          isA<StateError>().having(
+            (error) => error.toString(),
+            'message',
+            contains('Finish the active file transfer'),
+          ),
+        ),
+      );
+    });
+
+    test('active voice call blocks new outgoing file transfer', () async {
+      final adapter = NoopSignalingAdapter();
+      final brain = TestSessionManager();
+      await adapter.register('bob', 'bobpw');
+      await adapter.upsertFriendship('alice', 'bob');
+      await db
+          .into(db.friends)
+          .insert(
+            FriendsCompanion.insert(
+              username: 'bob',
+              displayName: 'Bob',
+              state: 'friend',
+              addedAt: 0,
+            ),
+          );
+      await brain.connect('bob');
+      brain.markConnected('bob');
+      final runtime = _runtimeFor(db, alice, adapter, brain: brain);
+      addTearDown(runtime.dispose);
+
+      await runtime.start();
+      await runtime.startVoiceCall('bob');
+      brain.emitControlMessage(
+        'bob',
+        VoiceCallFrame(
+          type: VoiceCallFrameType.accept,
+          callId: runtime.voiceCallState.callId!,
+          from: 'bob',
+          to: 'alice',
+          sentAt: DateTime.now().millisecondsSinceEpoch,
+        ).encode(),
+      );
+      await _waitForCondition(
+        () => brain.mediaOfferPeers.contains('bob'),
+        'voice media offer to be created',
+      );
+      brain.emitControlMessage(
+        'bob',
+        VoiceCallFrame(
+          type: VoiceCallFrameType.answer,
+          callId: runtime.voiceCallState.callId!,
+          from: 'bob',
+          to: 'alice',
+          sentAt: DateTime.now().millisecondsSinceEpoch,
+          sdp: 'media-answer-bob',
+          sdpType: 'answer',
+        ).encode(),
+      );
+      await _waitForCondition(
+        () => runtime.voiceCallState.phase == VoiceCallPhase.active,
+        'voice call to become active',
+      );
+
+      await expectLater(
+        runtime.sendFile(
+          peerId: 'bob',
+          fileName: 'note.txt',
+          fileSize: 1,
+          openRead: () => Stream<List<int>>.value(<int>[1]),
+        ),
+        throwsA(
+          isA<StateError>().having(
+            (error) => error.toString(),
+            'message',
+            contains('Finish the call before sending files'),
+          ),
+        ),
+      );
+    });
 
     test('cancel during outgoing send is not overwritten as failed', () async {
       final adapter = NoopSignalingAdapter();
@@ -1966,6 +2174,21 @@ Future<void> _waitForTransferState(
   );
 }
 
+Future<void> _waitForCondition(
+  bool Function() condition,
+  String description,
+) async {
+  final deadline = DateTime.now().add(const Duration(seconds: 2));
+  while (DateTime.now().isBefore(deadline)) {
+    if (condition()) {
+      return;
+    }
+    await Future<void>.delayed(const Duration(milliseconds: 20));
+  }
+
+  fail('Timed out waiting for $description.');
+}
+
 Future<String> _nextString(Stream<String> stream) {
   final completer = Completer<String>();
   late final StreamSubscription<String> subscription;
@@ -2111,7 +2334,14 @@ class TestSessionManager implements SessionManager {
   final List<String> connectedPeers = <String>[];
   final List<String> disconnectedPeers = <String>[];
   final List<String> unregisteredPeers = <String>[];
+  final List<String> startedAudioPeers = <String>[];
+  final List<String> stoppedAudioPeers = <String>[];
+  final List<String> mediaOfferPeers = <String>[];
+  final List<String> appliedMediaOfferPeers = <String>[];
+  final List<String> appliedMediaAnswerPeers = <String>[];
   final List<String> sentFilePayloads = <String>[];
+  final List<String> sentControlPayloads = <String>[];
+  final Map<String, bool> mutedPeers = <String, bool>{};
   final Map<String, Session> _sessions = <String, Session>{};
   final StreamController<Session> _peerConnectedController =
       StreamController<Session>.broadcast();
@@ -2119,6 +2349,8 @@ class TestSessionManager implements SessionManager {
       StreamController<String>.broadcast();
   final StreamController<SessionMessage> _peerMessageController =
       StreamController<SessionMessage>.broadcast();
+  final StreamController<SessionRemoteTrack> _remoteTrackController =
+      StreamController<SessionRemoteTrack>.broadcast();
   final StreamController<Session> _sessionChangedController =
       StreamController<Session>.broadcast();
   final StreamController<IncomingOfferRejection>
@@ -2135,6 +2367,9 @@ class TestSessionManager implements SessionManager {
 
   @override
   Stream<SessionMessage> get onPeerMessage => _peerMessageController.stream;
+
+  @override
+  Stream<SessionRemoteTrack> get onRemoteTrack => _remoteTrackController.stream;
 
   @override
   Stream<Session> get onSessionChanged => _sessionChangedController.stream;
@@ -2193,7 +2428,9 @@ class TestSessionManager implements SessionManager {
   }
 
   @override
-  void sendControl(String peerId, String data) {}
+  void sendControl(String peerId, String data) {
+    sentControlPayloads.add(data);
+  }
 
   @override
   void send(String peerId, SessionChannel channel, Object data) {
@@ -2212,13 +2449,51 @@ class TestSessionManager implements SessionManager {
   bool isChannelOpen(String peerId, SessionChannel channel) => true;
 
   @override
+  Future<void> startLocalAudio(String peerId) async {
+    startedAudioPeers.add(peerId);
+  }
+
+  @override
+  Future<void> stopLocalAudio(String peerId) async {
+    stoppedAudioPeers.add(peerId);
+  }
+
+  @override
+  Future<void> setMicrophoneMuted(String peerId, {required bool muted}) async {
+    mutedPeers[peerId] = muted;
+  }
+
+  @override
+  Future<RTCSessionDescription> createMediaOffer(String peerId) async {
+    mediaOfferPeers.add(peerId);
+    return RTCSessionDescription('media-offer-$peerId', 'offer');
+  }
+
+  @override
+  Future<RTCSessionDescription> applyMediaOffer(
+    String peerId,
+    RTCSessionDescription offer,
+  ) async {
+    appliedMediaOfferPeers.add(peerId);
+    return RTCSessionDescription('media-answer-$peerId', 'answer');
+  }
+
+  @override
+  Future<void> applyMediaAnswer(
+    String peerId,
+    RTCSessionDescription answer,
+  ) async {
+    appliedMediaAnswerPeers.add(peerId);
+  }
+
+  @override
   Future<void> unregisterPeer(String peerId) async {
     unregisteredPeers.add(peerId);
     incomingOfferGuards.remove(peerId);
     _sessions.remove(peerId);
   }
 
-  void markConnected(String peerId) {
+  void markConnected(String peerId, {bool isOfferOwner = true}) {
     final existing = _sessions[peerId];
     if (existing == null) {
       return;
@@ -2226,6 +2501,7 @@ class TestSessionManager implements SessionManager {
     final session = existing.copyWith(
       state: SessionState.connected,
       connectedAt: DateTime.now().millisecondsSinceEpoch,
+      isOfferOwner: isOfferOwner,
     );
     _sessions[peerId] = session;
     _sessionChangedController.add(session);
@@ -2251,6 +2527,17 @@ class TestSessionManager implements SessionManager {
     _peerMessageController.add(
       SessionMessage(
         channel: SessionChannel.file,
+        data: data,
+        receivedAt: DateTime.now(),
+        peerId: peerId,
+      ),
+    );
+  }
+
+  void emitControlMessage(String peerId, Object data) {
+    _peerMessageController.add(
+      SessionMessage(
+        channel: SessionChannel.control,
         data: data,
         receivedAt: DateTime.now(),
         peerId: peerId,

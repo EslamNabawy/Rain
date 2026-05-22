@@ -5,6 +5,7 @@ import 'package:protocol_brain/protocol_brain.dart';
 import 'package:rain_core/rain_core.dart';
 
 import 'package:rain/application/runtime/rain_runtime_controller.dart';
+import 'package:rain/application/runtime/voice_call_state.dart';
 import 'package:rain/infrastructure/services/app_settings_store.dart';
 import 'package:rain/infrastructure/services/background_services.dart';
 import 'package:rain/infrastructure/services/network_status_service.dart';
@@ -217,8 +218,85 @@ class RuntimeController extends AsyncNotifier<RainRuntimeController?> {
     ref.invalidate(identityProvider);
     ref.invalidate(friendsProvider);
     ref.invalidate(fileTransfersProvider);
+    ref.invalidate(voiceCallProvider);
     ref.invalidate(connectionsProvider);
     ref.invalidate(recentSearchesProvider);
+  }
+}
+
+final voiceCallProvider = NotifierProvider<VoiceCallController, VoiceCallState>(
+  VoiceCallController.new,
+);
+
+class VoiceCallController extends Notifier<VoiceCallState> {
+  StreamSubscription<VoiceCallState>? _subscription;
+  RainRuntimeController? _runtime;
+
+  @override
+  VoiceCallState build() {
+    ref.listen<AsyncValue<RainRuntimeController?>>(runtimeControllerProvider, (
+      _,
+      AsyncValue<RainRuntimeController?> next,
+    ) {
+      unawaited(_replaceRuntime(next.value));
+    });
+    scheduleMicrotask(() {
+      unawaited(_replaceRuntime(ref.read(runtimeControllerProvider).value));
+    });
+    ref.onDispose(() => unawaited(_subscription?.cancel()));
+    return ref.read(runtimeControllerProvider).value?.voiceCallState ??
+        const VoiceCallState.idle();
+  }
+
+  Future<void> start(String peerId) async {
+    assertNetworkReady(ref);
+    await _requireRuntime().startVoiceCall(peerId);
+  }
+
+  Future<void> accept() async {
+    assertNetworkReady(ref);
+    await _requireRuntime().acceptVoiceCall();
+  }
+
+  Future<void> reject() async {
+    await _requireRuntime().rejectVoiceCall();
+  }
+
+  Future<void> hangUp() async {
+    await _requireRuntime().hangUpVoiceCall();
+  }
+
+  Future<void> setMuted(bool muted) async {
+    await _requireRuntime().setVoiceCallMuted(muted);
+  }
+
+  bool blocksFileTransfer(String peerId) {
+    return state.blocksFileTransfersFor(peerId);
+  }
+
+  RainRuntimeController _requireRuntime() {
+    final runtime = _runtime ?? ref.read(runtimeControllerProvider).value;
+    if (runtime == null) {
+      throw StateError('Peer connection is unavailable right now.');
+    }
+    return runtime;
+  }
+
+  Future<void> _replaceRuntime(RainRuntimeController? runtime) async {
+    _runtime = runtime;
+    await _subscription?.cancel();
+    _subscription = null;
+    if (runtime == null) {
+      state = const VoiceCallState.idle();
+      return;
+    }
+    state = runtime.voiceCallState;
+    _subscription = runtime.watchVoiceCallState().listen(
+      (VoiceCallState next) => state = next,
+      onError: (Object error, StackTrace stackTrace) {
+        state = state.copyWith(error: error);
+      },
+    );
   }
 }
 
