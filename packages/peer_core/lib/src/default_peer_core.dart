@@ -595,7 +595,7 @@ class DefaultPeerCore implements PeerCore {
     _disconnectGraceTimer = Timer(_disconnectGraceDuration, () {
       _disconnectGraceTimer = null;
       if (_destroying ||
-          this.state != PeerState.connected ||
+          state != PeerState.connected ||
           connection.connectionState !=
               RTCPeerConnectionState.RTCPeerConnectionStateDisconnected) {
         return;
