@@ -1,20 +1,39 @@
+import 'dart:async';
+
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import 'application/bootstrap/app_bootstrap.dart';
 import 'core/config/app_environment.dart';
 import 'application/state/app_providers.dart';
+import 'infrastructure/services/crash_diagnostics_service.dart';
 import 'presentation/screens/rain_app.dart';
 import 'presentation/screens/splash_screen.dart';
 
 Future<void> main() async {
-  await runRainApp();
+  WidgetsFlutterBinding.ensureInitialized();
+  final diagnostics = CrashDiagnosticsService.instance;
+  await diagnostics.initialize();
+  diagnostics.installGlobalHandlers();
+
+  await runZonedGuarded<Future<void>>(
+    () => runRainApp(crashDiagnosticsService: diagnostics),
+    (Object error, StackTrace stackTrace) {
+      diagnostics.recordErrorSync(
+        error,
+        stackTrace,
+        source: 'dart-zone',
+        fatal: true,
+      );
+    },
+  );
 }
 
 @visibleForTesting
 Future<void> runRainApp({
   AppEnvironment? environment,
   AppBootstrapper? bootstrapper,
+  CrashDiagnosticsService? crashDiagnosticsService,
 }) async {
   WidgetsFlutterBinding.ensureInitialized();
 
@@ -22,6 +41,7 @@ Future<void> runRainApp({
     RainStartupApp(
       environment: environment ?? AppEnvironment.fromEnvironment(),
       bootstrapper: bootstrapper ?? AppBootstrapper(),
+      crashDiagnosticsService: crashDiagnosticsService,
     ),
   );
 }
@@ -31,11 +51,13 @@ class RainStartupApp extends StatefulWidget {
   const RainStartupApp({
     required this.environment,
     required this.bootstrapper,
+    this.crashDiagnosticsService,
     super.key,
   });
 
   final AppEnvironment environment;
   final AppBootstrapper bootstrapper;
+  final CrashDiagnosticsService? crashDiagnosticsService;
 
   @override
   State<RainStartupApp> createState() => _RainStartupAppState();
@@ -84,6 +106,12 @@ class _RainStartupAppState extends State<RainStartupApp> {
       return;
     }
     _loggedBootstrapError = error;
+    widget.crashDiagnosticsService?.recordErrorSync(
+      error,
+      stackTrace,
+      source: 'bootstrap',
+      fatal: true,
+    );
     debugPrint('Rain bootstrap failed: $error');
     if (stackTrace != null) {
       debugPrintStack(stackTrace: stackTrace);
