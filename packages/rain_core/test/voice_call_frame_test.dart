@@ -53,6 +53,7 @@ void main() {
       'from': 'alice',
       'to': 'bob',
       'sentAt': 10,
+      'mediaSeq': 1,
       'sdpType': 'offer',
     });
 
@@ -69,9 +70,70 @@ void main() {
       'sentAt': 10,
       'sdp': 'sdp',
       'sdpType': 'offer',
+      'mediaSeq': 1,
     });
 
     expect(() => VoiceCallFrame.decode(raw), throwsFormatException);
+  });
+
+  test('media offer and answer require positive media sequence', () {
+    final valid = VoiceCallFrame.decode(
+      jsonEncode(<String, Object?>{
+        'type': VoiceCallFrame.wireType,
+        'action': 'offer',
+        'callId': 'call-1',
+        'from': 'alice',
+        'to': 'bob',
+        'sentAt': 10,
+        'sdp': 'sdp',
+        'sdpType': 'offer',
+        'mediaSeq': 7,
+      }),
+    );
+    expect(valid.mediaSeq, 7);
+
+    final missing = jsonEncode(<String, Object?>{
+      'type': VoiceCallFrame.wireType,
+      'action': 'answer',
+      'callId': 'call-1',
+      'from': 'bob',
+      'to': 'alice',
+      'sentAt': 10,
+      'sdp': 'sdp',
+      'sdpType': 'answer',
+    });
+    expect(() => VoiceCallFrame.decode(missing), throwsFormatException);
+
+    final nonMediaWithSequence = jsonEncode(<String, Object?>{
+      'type': VoiceCallFrame.wireType,
+      'action': 'invite',
+      'callId': 'call-1',
+      'from': 'alice',
+      'to': 'bob',
+      'sentAt': 10,
+      'mediaSeq': 1,
+    });
+    expect(
+      () => VoiceCallFrame.decode(nonMediaWithSequence),
+      throwsFormatException,
+    );
+  });
+
+  test('hangup frame can carry typed failed reason code', () {
+    final hangup = VoiceCallFrame.decode(
+      jsonEncode(<String, Object?>{
+        'type': VoiceCallFrame.wireType,
+        'action': 'hangup',
+        'callId': 'call-1',
+        'from': 'alice',
+        'to': 'bob',
+        'sentAt': 10,
+        'reason': 'Media negotiation failed.',
+        'reasonCode': 'failed',
+      }),
+    );
+
+    expect(hangup.reasonCode, 'failed');
   });
 
   test('requires muted flag only for mute frame', () {

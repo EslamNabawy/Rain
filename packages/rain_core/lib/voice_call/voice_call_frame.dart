@@ -19,15 +19,18 @@ class VoiceCallFrame {
     required this.to,
     required this.sentAt,
     this.reason,
+    this.reasonCode,
     this.muted,
     this.sdp,
     this.sdpType,
+    this.mediaSeq,
   });
 
   static const String wireType = 'voice_call';
   static const int maxIdLength = 128;
   static const int maxUsernameLength = 64;
   static const int maxReasonLength = 256;
+  static const int maxReasonCodeLength = 48;
   static const int maxSdpLength = 262144;
 
   final VoiceCallFrameType type;
@@ -36,9 +39,11 @@ class VoiceCallFrame {
   final String to;
   final int sentAt;
   final String? reason;
+  final String? reasonCode;
   final bool? muted;
   final String? sdp;
   final String? sdpType;
+  final int? mediaSeq;
 
   bool get carriesSessionDescription {
     return type == VoiceCallFrameType.offer ||
@@ -54,9 +59,11 @@ class VoiceCallFrame {
       'to': to,
       'sentAt': sentAt,
       if (reason != null) 'reason': reason,
+      if (reasonCode != null) 'reasonCode': reasonCode,
       if (muted != null) 'muted': muted,
       if (sdp != null) 'sdp': sdp,
       if (sdpType != null) 'sdpType': sdpType,
+      if (mediaSeq != null) 'mediaSeq': mediaSeq,
     };
   }
 
@@ -102,9 +109,11 @@ class VoiceCallFrame {
       to: _requiredString(json, 'to', max: maxUsernameLength),
       sentAt: _requiredInt(json, 'sentAt'),
       reason: _optionalString(json, 'reason', max: maxReasonLength),
+      reasonCode: _optionalString(json, 'reasonCode', max: maxReasonCodeLength),
       muted: _optionalBool(json, 'muted'),
       sdp: _optionalString(json, 'sdp', max: maxSdpLength),
       sdpType: _optionalString(json, 'sdpType', max: 16),
+      mediaSeq: _optionalPositiveInt(json, 'mediaSeq'),
     );
     frame._validateShape();
     return frame;
@@ -114,7 +123,20 @@ class VoiceCallFrame {
     if (sentAt <= 0) {
       throw const FormatException('Voice call sentAt must be positive.');
     }
+    if (reasonCode != null &&
+        type != VoiceCallFrameType.reject &&
+        type != VoiceCallFrameType.busy &&
+        type != VoiceCallFrameType.hangup) {
+      throw const FormatException(
+        'Only reject, busy, and hangup frames may carry reason codes.',
+      );
+    }
     if (carriesSessionDescription) {
+      if (mediaSeq == null) {
+        throw const FormatException(
+          'Voice call media frame requires media sequence.',
+        );
+      }
       if (sdp == null || sdp!.isEmpty) {
         throw const FormatException('Voice call media frame requires SDP.');
       }
@@ -134,6 +156,11 @@ class VoiceCallFrame {
     if (sdp != null || sdpType != null) {
       throw const FormatException(
         'Only media offer/answer frames may carry SDP.',
+      );
+    }
+    if (mediaSeq != null) {
+      throw const FormatException(
+        'Only media offer/answer frames may carry media sequence.',
       );
     }
     if (type == VoiceCallFrameType.mute && muted == null) {
@@ -188,6 +215,23 @@ class VoiceCallFrame {
       return value.toInt();
     }
     throw FormatException('Voice call $key must be an integer.');
+  }
+
+  static int? _optionalPositiveInt(Map<String, Object?> json, String key) {
+    final value = json[key];
+    if (value == null) {
+      return null;
+    }
+    final parsed = switch (value) {
+      final int raw => raw,
+      final num raw when raw.isFinite && raw.roundToDouble() == raw =>
+        raw.toInt(),
+      _ => throw FormatException('Voice call $key must be an integer.'),
+    };
+    if (parsed <= 0) {
+      throw FormatException('Voice call $key must be positive.');
+    }
+    return parsed;
   }
 
   static bool? _optionalBool(Map<String, Object?> json, String key) {
