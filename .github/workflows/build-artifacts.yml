@@ -195,16 +195,11 @@ jobs:
         run: |
           if ($env:BUILD_PROFILE -eq 'demo') {
             $expected = @(
-              @{ Label = 'Android universal APK'; Path = 'artifacts\Rain-Demo-Android-Universal-Build.apk' },
-              @{ Label = 'Android ARM v7 APK (armeabi-v7a)'; Path = 'artifacts\Rain-Demo-Android-ARM-v7-Build.apk' },
               @{ Label = 'Android ARM v8/v9 APK (arm64-v8a)'; Path = 'artifacts\Rain-Demo-Android-ARM-v8-v9-Build.apk' }
             )
           } else {
             $prefix = 'Rain-release'
             $expected = @(
-              @{ Label = 'Android universal APK'; Path = "artifacts\$prefix-android-universal.apk" },
-              @{ Label = 'Android default/universal APK alias'; Path = "artifacts\$prefix-android.apk" },
-              @{ Label = 'Android ARM v7 APK (armeabi-v7a)'; Path = "artifacts\$prefix-android-armeabi-v7a.apk" },
               @{ Label = 'Android ARM v8/v9 APK (arm64-v8a)'; Path = "artifacts\$prefix-android-arm64-v8a.apk" }
             )
           }
@@ -229,10 +224,8 @@ jobs:
             Write-Host "Verified APK native runtime entry: $Path -> $Entry"
           }
           if ($env:BUILD_PROFILE -eq 'demo') {
-            Assert-ApkEntry 'artifacts\Rain-Demo-Android-ARM-v7-Build.apk' 'lib/armeabi-v7a/libsqlite3.so'
             Assert-ApkEntry 'artifacts\Rain-Demo-Android-ARM-v8-v9-Build.apk' 'lib/arm64-v8a/libsqlite3.so'
           } else {
-            Assert-ApkEntry 'artifacts\Rain-release-android-armeabi-v7a.apk' 'lib/armeabi-v7a/libsqlite3.so'
             Assert-ApkEntry 'artifacts\Rain-release-android-arm64-v8a.apk' 'lib/arm64-v8a/libsqlite3.so'
           }
 
@@ -241,11 +234,6 @@ jobs:
         with:
           name: ${{ env.BUILD_PROFILE == 'demo' && 'Rain-Demo-Android-Builds' || 'Rain-Release-Android-Builds' }}
           path: |
-            artifacts/Rain-Demo-Android-Universal-Build.apk
             artifacts/Rain-Demo-Android-ARM-v8-v9-Build.apk
-            artifacts/Rain-Demo-Android-ARM-v7-Build.apk
-            artifacts/Rain-release-android.apk
-            artifacts/Rain-release-android-universal.apk
             artifacts/Rain-release-android-arm64-v8a.apk
-            artifacts/Rain-release-android-armeabi-v7a.apk
           if-no-files-found: error

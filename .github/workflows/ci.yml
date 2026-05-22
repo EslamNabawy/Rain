@@ -414,7 +414,7 @@ jobs:
             throw "Dart defines file not found: $env:RAIN_DART_DEFINES_FILE"
           }
 
-      - name: Build Windows EXE and all Android APK architectures
+      - name: Build Windows EXE and Android ARM64 APK
         shell: pwsh
         run: |
           pwsh -NoProfile -File scripts\build_release.ps1 `
@@ -432,10 +432,7 @@ jobs:
             @{ Label = 'Windows portable EXE'; Path = 'artifacts\Rain-Demo-Windows-x64-Build\rain.exe' },
             @{ Label = 'Windows SQLite runtime DLL'; Path = 'artifacts\Rain-Demo-Windows-x64-Build\sqlite3.dll' },
             @{ Label = 'Windows win32 native asset DLL'; Path = 'artifacts\Rain-Demo-Windows-x64-Build\win32_windows_x64.dll' },
-            @{ Label = 'Android universal APK'; Path = 'artifacts\Rain-Demo-Android-Universal-Build.apk' },
-            @{ Label = 'Android ARM v7 APK (armeabi-v7a)'; Path = 'artifacts\Rain-Demo-Android-ARM-v7-Build.apk' },
-            @{ Label = 'Android ARM v8/v9 APK (arm64-v8a)'; Path = 'artifacts\Rain-Demo-Android-ARM-v8-v9-Build.apk' },
-            @{ Label = 'Android x86_64 APK'; Path = 'artifacts\Rain-Demo-Android-x86_64-Build.apk' }
+            @{ Label = 'Android ARM v8/v9 APK (arm64-v8a)'; Path = 'artifacts\Rain-Demo-Android-ARM-v8-v9-Build.apk' }
           )
           foreach ($artifact in $expected) {
             $path = $artifact.Path
@@ -464,9 +461,7 @@ jobs:
             }
             Write-Host "Verified APK native runtime entry: $Path -> $Entry"
           }
-          Assert-ApkEntry 'artifacts\Rain-Demo-Android-ARM-v7-Build.apk' 'lib/armeabi-v7a/libsqlite3.so'
           Assert-ApkEntry 'artifacts\Rain-Demo-Android-ARM-v8-v9-Build.apk' 'lib/arm64-v8a/libsqlite3.so'
-          Assert-ApkEntry 'artifacts\Rain-Demo-Android-x86_64-Build.apk' 'lib/x86_64/libsqlite3.so'
 
       - name: Upload Windows portable EXE bundle
         uses: actions/upload-artifact@v7
@@ -476,15 +471,12 @@ jobs:
           if-no-files-found: error
           retention-days: ${{ env.ARTIFACT_RETENTION_RELEASE }}
 
-      - name: Upload Android APKs all architectures
+      - name: Upload Android ARM64 APK
         uses: actions/upload-artifact@v7
         with:
           name: Rain-Demo-Android-Builds
           path: |
-            artifacts/Rain-Demo-Android-Universal-Build.apk
             artifacts/Rain-Demo-Android-ARM-v8-v9-Build.apk
-            artifacts/Rain-Demo-Android-ARM-v7-Build.apk
-            artifacts/Rain-Demo-Android-x86_64-Build.apk
           if-no-files-found: error
           retention-days: ${{ env.ARTIFACT_RETENTION_RELEASE }}
 

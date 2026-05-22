@@ -752,55 +752,14 @@ if ($Platform -in @('all', 'windows')) {
 }
 
 if ($Platform -in @('all', 'android')) {
-  Write-Step "Building Android universal release APK"
+  Write-Step "Building Android ARM v8/v9 release APK"
   if ($Clean) {
     Write-Step "Cleaning Flutter project state for Android build"
     Stop-GradleDaemons $appsRoot
     Clean-FlutterProject $appsRoot
   }
-  $androidTargetPlatformArgs = if ($AndroidArtifactSet -eq 'mobile') {
-    @('--target-platform', 'android-arm,android-arm64')
-  } else {
-    @()
-  }
-  $flutterArgs = @('build', 'apk', '--release') + $androidTargetPlatformArgs + $dartDefineArgs
-  Invoke-InDir $appsRoot {
-    Invoke-FlutterBuild $flutterArgs
-  }
-
-  $apkSource = Join-Path $appsRoot 'build\app\outputs\flutter-apk\app-release.apk'
-  $apkDestination = if ($isOpenRelayDemoBuild) { '' } else { Join-Path $releaseRoot "$androidArtifactPrefix-android.apk" }
-  $universalApkDestination = if ($isOpenRelayDemoBuild) {
-    Join-Path $releaseRoot 'Rain-Demo-Android-Universal-Build.apk'
-  } else {
-    Join-Path $releaseRoot "$androidArtifactPrefix-android-universal.apk"
-  }
-
-  if (-not (Test-Path $apkSource)) {
-    throw "Android release APK not found: $apkSource"
-  }
-
-  if (-not [string]::IsNullOrWhiteSpace($apkDestination)) {
-    Copy-Item -LiteralPath $apkSource -Destination $apkDestination -Force
-  }
-  Copy-Item -LiteralPath $apkSource -Destination $universalApkDestination -Force
-  $universalApkAbis = if ($AndroidArtifactSet -eq 'mobile') {
-    @('armeabi-v7a', 'arm64-v8a')
-  } else {
-    @('armeabi-v7a', 'arm64-v8a', 'x86_64')
-  }
-  Assert-AndroidApkContainsSqlite -ApkPath $universalApkDestination -Abis $universalApkAbis
-
-  Write-Step "Resetting Android build state before per-ABI release APKs"
-  Stop-GradleDaemons $appsRoot
-  Clean-FlutterProject $appsRoot
-
-  $abiBuildLabel = if ($AndroidArtifactSet -eq 'mobile') {
-    'armeabi-v7a, arm64-v8a (ARMv8/ARMv9 devices)'
-  } else {
-    'armeabi-v7a, arm64-v8a (ARMv8/ARMv9 devices), x86_64'
-  }
-  Write-Step "Building Android per-ABI release APKs: $abiBuildLabel"
+  $androidTargetPlatformArgs = @('--target-platform', 'android-arm64')
+  Write-Step "Building Android per-ABI release APKs: arm64-v8a (ARMv8/ARMv9 devices)"
   $splitFlutterArgs = @('build', 'apk', '--release', '--split-per-abi') + $androidTargetPlatformArgs + $dartDefineArgs
   Invoke-InDir $appsRoot {
     Invoke-FlutterBuild $splitFlutterArgs
@@ -808,19 +767,12 @@ if ($Platform -in @('all', 'android')) {
 
   $abiApks = if ($isOpenRelayDemoBuild) {
     @(
-      @{ Label = 'ARM v8/v9 devices (arm64-v8a)'; Source = 'app-arm64-v8a-release.apk'; Destination = 'Rain-Demo-Android-ARM-v8-v9-Build.apk'; Abi = 'arm64-v8a' },
-      @{ Label = 'ARM v7 devices (armeabi-v7a)'; Source = 'app-armeabi-v7a-release.apk'; Destination = 'Rain-Demo-Android-ARM-v7-Build.apk'; Abi = 'armeabi-v7a' },
-      @{ Label = 'x86_64 devices'; Source = 'app-x86_64-release.apk'; Destination = 'Rain-Demo-Android-x86_64-Build.apk'; Abi = 'x86_64' }
+      @{ Label = 'ARM v8/v9 devices (arm64-v8a)'; Source = 'app-arm64-v8a-release.apk'; Destination = 'Rain-Demo-Android-ARM-v8-v9-Build.apk'; Abi = 'arm64-v8a' }
     )
   } else {
     @(
-      @{ Label = 'ARM v8/v9 devices (arm64-v8a)'; Source = 'app-arm64-v8a-release.apk'; Destination = "$androidArtifactPrefix-android-arm64-v8a.apk"; Abi = 'arm64-v8a' },
-      @{ Label = 'ARM v7 devices (armeabi-v7a)'; Source = 'app-armeabi-v7a-release.apk'; Destination = "$androidArtifactPrefix-android-armeabi-v7a.apk"; Abi = 'armeabi-v7a' },
-      @{ Label = 'x86_64 devices'; Source = 'app-x86_64-release.apk'; Destination = "$androidArtifactPrefix-android-x86_64.apk"; Abi = 'x86_64' }
+      @{ Label = 'ARM v8/v9 devices (arm64-v8a)'; Source = 'app-arm64-v8a-release.apk'; Destination = "$androidArtifactPrefix-android-arm64-v8a.apk"; Abi = 'arm64-v8a' }
     )
-  }
-  if ($AndroidArtifactSet -eq 'mobile') {
-    $abiApks = @($abiApks | Where-Object { $_.Source -ne 'app-x86_64-release.apk' })
   }
 
   foreach ($abiApk in $abiApks) {
@@ -860,24 +812,12 @@ if ($Platform -in @('all', 'windows')) {
 if ($Platform -in @('all', 'android')) {
   $expectedApks = if ($isOpenRelayDemoBuild) {
     @(
-      'Rain-Demo-Android-Universal-Build.apk',
-      'Rain-Demo-Android-ARM-v8-v9-Build.apk',
-      'Rain-Demo-Android-ARM-v7-Build.apk'
+      'Rain-Demo-Android-ARM-v8-v9-Build.apk'
     )
   } else {
     @(
-      "$androidArtifactPrefix-android.apk",
-      "$androidArtifactPrefix-android-universal.apk",
-      "$androidArtifactPrefix-android-arm64-v8a.apk",
-      "$androidArtifactPrefix-android-armeabi-v7a.apk"
+      "$androidArtifactPrefix-android-arm64-v8a.apk"
     )
-  }
-  if ($AndroidArtifactSet -eq 'all') {
-    if ($isOpenRelayDemoBuild) {
-      $expectedApks += 'Rain-Demo-Android-x86_64-Build.apk'
-    } else {
-      $expectedApks += "$androidArtifactPrefix-android-x86_64.apk"
-    }
   }
 
   foreach ($apkName in $expectedApks) {
