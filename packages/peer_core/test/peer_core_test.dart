@@ -603,6 +603,8 @@ void main() {
     await pumpEventQueue();
 
     await peer.startLocalAudio();
+    expect(platform.connection.addedTracks, isEmpty);
+
     final offer = await peer.createMediaOffer();
 
     expect(platform.prepareVoiceAudioCalls, 1);
@@ -638,6 +640,18 @@ void main() {
     );
 
     expect(answer.type, 'answer');
+    expect(platform.connection.addedTracks, <String?>['audio-1']);
+    expect(platform.connection.addedTrackStreamIds, <String?>['local-audio']);
+    expect(platform.connection.operations, <String>[
+      'createOffer',
+      'setLocalDescription:offer',
+      'setRemoteDescription:answer',
+      'setRemoteDescription:offer',
+      'addTrack:audio-1',
+      'createAnswer',
+      'setLocalDescription:answer',
+      'setRemoteDescription:answer',
+    ]);
     expect(
       platform.connection.remoteDescriptions.map((value) => value.sdp),
       <String?>['answer-sdp', 'media-offer-sdp', 'media-answer-sdp'],
@@ -661,6 +675,7 @@ void main() {
     await pumpEventQueue();
 
     await peer.startLocalAudio();
+    await peer.createMediaOffer();
     await peer.stopLocalAudio();
 
     expect(platform.connection.fakeTransceivers, isEmpty);
@@ -923,6 +938,7 @@ class _FakeRtcPeerConnection extends Fake implements RTCPeerConnection {
   final List<String?> addedTrackStreamIds = <String?>[];
   final List<_FakeRtpSender> addedTrackSenders = <_FakeRtpSender>[];
   final List<String> removedSenderIds = <String>[];
+  final List<String> operations = <String>[];
   final List<RTCSessionDescription> localDescriptions =
       <RTCSessionDescription>[];
   final List<RTCSessionDescription> remoteDescriptions =
@@ -952,6 +968,7 @@ class _FakeRtcPeerConnection extends Fake implements RTCPeerConnection {
   Future<RTCSessionDescription> createOffer([
     Map<String, dynamic>? constraints,
   ]) async {
+    operations.add('createOffer');
     return RTCSessionDescription('offer-sdp', 'offer');
   }
 
@@ -959,16 +976,19 @@ class _FakeRtcPeerConnection extends Fake implements RTCPeerConnection {
   Future<RTCSessionDescription> createAnswer([
     Map<String, dynamic>? constraints,
   ]) async {
+    operations.add('createAnswer');
     return RTCSessionDescription('answer-sdp', 'answer');
   }
 
   @override
   Future<void> setLocalDescription(RTCSessionDescription description) async {
+    operations.add('setLocalDescription:${description.type}');
     localDescriptions.add(description);
   }
 
   @override
   Future<void> setRemoteDescription(RTCSessionDescription description) async {
+    operations.add('setRemoteDescription:${description.type}');
     remoteDescriptions.add(description);
   }
 
@@ -996,6 +1016,7 @@ class _FakeRtcPeerConnection extends Fake implements RTCPeerConnection {
     MediaStreamTrack track, [
     MediaStream? stream,
   ]) async {
+    operations.add('addTrack:${track.id}');
     addedTracks.add(track.id);
     addedTrackStreamIds.add(stream?.id);
     final sender = _FakeRtpSender('sender-${track.id}', track);

@@ -100,6 +100,8 @@ class DefaultPeerCore implements PeerCore {
     final epoch = _lifecycleEpoch;
     await connection.setRemoteDescription(offer);
     _ensureCurrentPeer(connection, epoch, 'applying media offer');
+    await _ensureLocalAudioCaptured(connection, epoch);
+    await _attachLocalAudioTrack(connection, epoch);
     final answer = await connection.createAnswer();
     _ensureCurrentPeer(connection, epoch, 'answering media offer');
     await connection.setLocalDescription(answer);
@@ -121,6 +123,8 @@ class DefaultPeerCore implements PeerCore {
     _ensureState(<PeerState>{PeerState.connected});
     final connection = _requirePeerConnection();
     final epoch = _lifecycleEpoch;
+    await _ensureLocalAudioCaptured(connection, epoch);
+    await _attachLocalAudioTrack(connection, epoch);
     final offer = await connection.createOffer();
     _ensureCurrentPeer(connection, epoch, 'creating media offer');
     await connection.setLocalDescription(offer);
@@ -266,6 +270,15 @@ class DefaultPeerCore implements PeerCore {
 
   @override
   Future<void> startLocalAudio() async {
+    final connection = _requirePeerConnection();
+    final epoch = _lifecycleEpoch;
+    await _ensureLocalAudioCaptured(connection, epoch);
+  }
+
+  Future<void> _ensureLocalAudioCaptured(
+    RTCPeerConnection connection,
+    int epoch,
+  ) async {
     if (_localAudioStream != null && _localAudioTrack != null) {
       return;
     }
@@ -273,10 +286,7 @@ class DefaultPeerCore implements PeerCore {
     if (config == null) {
       throw StateError('PeerCore has not been initialized.');
     }
-    final connection = _requirePeerConnection();
-    final epoch = _lifecycleEpoch;
     MediaStream? pendingStream;
-    RTCRtpSender? pendingSender;
     var keepVoiceAudio = false;
     try {
       await config.platform.prepareVoiceAudio();
@@ -296,16 +306,44 @@ class DefaultPeerCore implements PeerCore {
         throw StateError('No microphone audio track was captured.');
       }
       final audioTrack = audioTracks.first;
-      pendingSender = await connection.addTrack(audioTrack, stream);
-      _ensureCurrentPeer(connection, epoch, 'attaching local audio track');
-      _localAudioSender = pendingSender;
-      pendingSender = null;
       _localAudioStream = stream;
       _localAudioTrack = audioTrack;
       pendingStream = null;
       keepVoiceAudio = true;
     } catch (_) {
-      final sender = pendingSender ?? _localAudioSender;
+      rethrow;
+    } finally {
+      if (!keepVoiceAudio) {
+        _localAudioStream = null;
+        _localAudioTrack = null;
+        if (pendingStream != null) {
+          await _disposeMediaStream(pendingStream);
+        }
+        await config.platform.clearVoiceAudio();
+      }
+    }
+  }
+
+  Future<void> _attachLocalAudioTrack(
+    RTCPeerConnection connection,
+    int epoch,
+  ) async {
+    if (_localAudioSender != null) {
+      return;
+    }
+    final stream = _localAudioStream;
+    final audioTrack = _localAudioTrack;
+    if (stream == null || audioTrack == null) {
+      throw StateError('Local audio has not been started.');
+    }
+
+    RTCRtpSender? pendingSender;
+    try {
+      pendingSender = await connection.addTrack(audioTrack, stream);
+      _ensureCurrentPeer(connection, epoch, 'attaching local audio track');
+      _localAudioSender = pendingSender;
+    } catch (_) {
+      final sender = pendingSender;
       if (sender != null && _isCurrentPeer(connection, epoch)) {
         try {
           await sender.replaceTrack(null);
@@ -319,15 +357,6 @@ class DefaultPeerCore implements PeerCore {
         }
       }
       rethrow;
-    } finally {
-      if (!keepVoiceAudio) {
-        _localAudioStream = null;
-        _localAudioTrack = null;
-        if (pendingStream != null) {
-          await _disposeMediaStream(pendingStream);
-        }
-        await config.platform.clearVoiceAudio();
-      }
     }
   }
 
