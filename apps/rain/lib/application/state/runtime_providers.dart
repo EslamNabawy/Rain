@@ -193,6 +193,7 @@ class RuntimeController extends AsyncNotifier<RainRuntimeController?> {
       messageDeliveryService: ref.watch(messageDeliveryServiceProvider),
       fileTransferStore: ref.watch(fileTransferStoreProvider),
       heartbeatInterval: environment.heartbeatInterval,
+      errorRecorder: ref.watch(crashDiagnosticsServiceProvider).recordErrorSync,
     );
 
     ref.onDispose(() {

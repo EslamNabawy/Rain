@@ -2,6 +2,7 @@ part of 'rain_runtime_controller.dart';
 
 extension VoiceCallRuntime on RainRuntimeController {
   static const Duration _voiceCallInviteTimeout = Duration(seconds: 45);
+  static const String _voiceCallFailedReasonCode = 'failed';
 
   Future<void> startVoiceCall(String username) async {
     final peerId = _normalizedUsername(username);
@@ -11,6 +12,7 @@ extension VoiceCallRuntime on RainRuntimeController {
     }
 
     final callId = _newVoiceCallId(peerId);
+    _clearVoiceMediaTracking(peerId, callId);
     _setVoiceCallState(
       VoiceCallState(
         phase: VoiceCallPhase.connectingPeer,
@@ -213,6 +215,7 @@ extension VoiceCallRuntime on RainRuntimeController {
       );
       return;
     }
+    _clearVoiceMediaTracking(peerId, frame.callId);
     _setVoiceCallState(
       VoiceCallState(
         phase: VoiceCallPhase.incomingRinging,
@@ -268,7 +271,11 @@ extension VoiceCallRuntime on RainRuntimeController {
   Future<void> _handleVoiceOffer(String peerId, VoiceCallFrame frame) async {
     if (!_isCurrentVoiceCall(peerId, frame.callId) ||
         frame.sdp == null ||
-        frame.sdpType != 'offer') {
+        frame.sdpType != 'offer' ||
+        !_acceptIncomingVoiceMediaFrame(peerId, frame)) {
+      return;
+    }
+    if (!_beginVoiceMediaNegotiation(peerId)) {
       return;
     }
     _clearVoiceCallTimer();
@@ -286,30 +293,39 @@ extension VoiceCallRuntime on RainRuntimeController {
         peerId,
         RTCSessionDescription(frame.sdp, frame.sdpType),
       );
+      if (!_isCurrentVoiceCall(peerId, frame.callId) ||
+          _voiceCallState.phase == VoiceCallPhase.failed) {
+        return;
+      }
       await _sendVoiceFrame(
         peerId,
         VoiceCallFrameType.answer,
         callId: frame.callId,
         sdp: answer.sdp,
         sdpType: answer.type,
+        mediaSeq: frame.mediaSeq,
       );
       _activateVoiceCall('Voice call connected.');
-    } catch (error) {
-      await _sendVoiceFrame(
-        peerId,
-        VoiceCallFrameType.hangup,
+    } catch (error, stackTrace) {
+      _recordVoiceCallMediaError(
+        peerId: peerId,
         callId: frame.callId,
-        reason: _voiceCallErrorMessage(error),
-        bestEffort: true,
+        action: 'apply-media-offer',
+        error: error,
+        stackTrace: stackTrace,
       );
+      await _sendVoiceFailedHangup(peerId, callId: frame.callId, error: error);
       await _failVoiceCall(error);
+    } finally {
+      _endVoiceMediaNegotiation(peerId);
     }
   }
 
   Future<void> _handleVoiceAnswer(String peerId, VoiceCallFrame frame) async {
     if (!_isCurrentVoiceCall(peerId, frame.callId) ||
         frame.sdp == null ||
-        frame.sdpType != 'answer') {
+        frame.sdpType != 'answer' ||
+        !_acceptExpectedVoiceMediaAnswer(peerId, frame)) {
       return;
     }
     try {
@@ -317,9 +333,23 @@ extension VoiceCallRuntime on RainRuntimeController {
         peerId,
         RTCSessionDescription(frame.sdp, frame.sdpType),
       );
+      if (!_isCurrentVoiceCall(peerId, frame.callId) ||
+          _voiceCallState.phase == VoiceCallPhase.failed) {
+        return;
+      }
       _activateVoiceCall('Voice call connected.');
-    } catch (error) {
+    } catch (error, stackTrace) {
+      _recordVoiceCallMediaError(
+        peerId: peerId,
+        callId: frame.callId,
+        action: 'apply-media-answer',
+        error: error,
+        stackTrace: stackTrace,
+      );
+      await _sendVoiceFailedHangup(peerId, callId: frame.callId, error: error);
       await _failVoiceCall(error);
+    } finally {
+      _endVoiceMediaNegotiation(peerId);
     }
   }
 
@@ -367,13 +397,135 @@ extension VoiceCallRuntime on RainRuntimeController {
         updatedAt: DateTime.now().millisecondsSinceEpoch,
       ),
     );
-    final offer = await brain!.createMediaOffer(peerId);
-    await _sendVoiceFrame(
+    if (!_beginVoiceMediaNegotiation(peerId)) {
+      return;
+    }
+    final mediaSeq = _nextVoiceMediaSequence(peerId, callId);
+    try {
+      final offer = await brain!.createMediaOffer(peerId);
+      if (!_isCurrentVoiceCall(peerId, callId) ||
+          _voiceCallState.phase == VoiceCallPhase.failed) {
+        _endVoiceMediaNegotiation(peerId);
+        return;
+      }
+      await _sendVoiceFrame(
+        peerId,
+        VoiceCallFrameType.offer,
+        callId: callId,
+        sdp: offer.sdp,
+        sdpType: offer.type,
+        mediaSeq: mediaSeq,
+      );
+    } catch (error, stackTrace) {
+      _recordVoiceCallMediaError(
+        peerId: peerId,
+        callId: callId,
+        action: 'create-media-offer',
+        error: error,
+        stackTrace: stackTrace,
+      );
+      await _sendVoiceFailedHangup(peerId, callId: callId, error: error);
+      await _failVoiceCall(error);
+      _endVoiceMediaNegotiation(peerId);
+    }
+  }
+
+  bool _beginVoiceMediaNegotiation(String peerId) {
+    final normalizedPeerId = _normalizedUsername(peerId);
+    if (_voiceMediaNegotiatingPeers.contains(normalizedPeerId)) {
+      _setVoiceCallState(
+        _voiceCallState.copyWith(
+          detail: 'Voice media negotiation is already running.',
+          updatedAt: DateTime.now().millisecondsSinceEpoch,
+        ),
+      );
+      return false;
+    }
+    _voiceMediaNegotiatingPeers.add(normalizedPeerId);
+    return true;
+  }
+
+  void _endVoiceMediaNegotiation(String peerId) {
+    _voiceMediaNegotiatingPeers.remove(_normalizedUsername(peerId));
+  }
+
+  int _nextVoiceMediaSequence(String peerId, String callId) {
+    final key = _voiceMediaKey(peerId, callId);
+    final next = (_voiceMediaSentSequences[key] ?? 0) + 1;
+    _voiceMediaSentSequences[key] = next;
+    return next;
+  }
+
+  bool _acceptIncomingVoiceMediaFrame(String peerId, VoiceCallFrame frame) {
+    final mediaSeq = frame.mediaSeq;
+    if (mediaSeq == null) {
+      return false;
+    }
+    final key = _voiceMediaKey(peerId, frame.callId);
+    final previous = _voiceMediaReceivedSequences[key] ?? 0;
+    if (mediaSeq <= previous) {
+      return false;
+    }
+    _voiceMediaReceivedSequences[key] = mediaSeq;
+    return true;
+  }
+
+  bool _acceptExpectedVoiceMediaAnswer(String peerId, VoiceCallFrame frame) {
+    final mediaSeq = frame.mediaSeq;
+    if (mediaSeq == null) {
+      return false;
+    }
+    final key = _voiceMediaKey(peerId, frame.callId);
+    final expected = _voiceMediaSentSequences[key];
+    final previous = _voiceMediaReceivedSequences[key] ?? 0;
+    if (expected == null || mediaSeq != expected || mediaSeq <= previous) {
+      return false;
+    }
+    _voiceMediaReceivedSequences[key] = mediaSeq;
+    return true;
+  }
+
+  void _clearVoiceMediaTracking(String peerId, String callId) {
+    final key = _voiceMediaKey(peerId, callId);
+    _voiceMediaNegotiatingPeers.remove(_normalizedUsername(peerId));
+    _voiceMediaSentSequences.remove(key);
+    _voiceMediaReceivedSequences.remove(key);
+  }
+
+  String _voiceMediaKey(String peerId, String callId) {
+    return '${_normalizedUsername(peerId)}::$callId';
+  }
+
+  Future<void> _sendVoiceFailedHangup(
+    String peerId, {
+    required String callId,
+    required Object error,
+  }) {
+    return _sendVoiceFrame(
       peerId,
-      VoiceCallFrameType.offer,
+      VoiceCallFrameType.hangup,
       callId: callId,
-      sdp: offer.sdp,
-      sdpType: offer.type,
+      reason: _voiceCallErrorMessage(error),
+      reasonCode: _voiceCallFailedReasonCode,
+      bestEffort: true,
+    );
+  }
+
+  void _recordVoiceCallMediaError({
+    required String peerId,
+    required String callId,
+    required String action,
+    required Object error,
+    required StackTrace stackTrace,
+  }) {
+    errorRecorder?.call(
+      StateError(
+        'Voice call media negotiation failed '
+        'action=$action peer=$peerId callId=$callId error=$error',
+      ),
+      stackTrace,
+      source: 'voice-call-media',
+      fatal: false,
     );
   }
 
@@ -382,9 +534,11 @@ extension VoiceCallRuntime on RainRuntimeController {
     VoiceCallFrameType type, {
     required String callId,
     String? reason,
+    String? reasonCode,
     bool? muted,
     String? sdp,
     String? sdpType,
+    int? mediaSeq,
     bool bestEffort = false,
   }) async {
     try {
@@ -401,9 +555,11 @@ extension VoiceCallRuntime on RainRuntimeController {
           to: peerId,
           sentAt: DateTime.now().millisecondsSinceEpoch,
           reason: reason,
+          reasonCode: reasonCode,
           muted: muted,
           sdp: sdp,
           sdpType: sdpType,
+          mediaSeq: mediaSeq,
         ).encode(),
       );
     } catch (_) {
@@ -454,6 +610,9 @@ extension VoiceCallRuntime on RainRuntimeController {
       );
     }
     await brain?.stopLocalAudio(current.peerId!);
+    if (current.callId != null) {
+      _clearVoiceMediaTracking(current.peerId!, current.callId!);
+    }
     _setVoiceCallState(const VoiceCallState.idle());
   }
 
@@ -471,6 +630,9 @@ extension VoiceCallRuntime on RainRuntimeController {
       try {
         await brain?.stopLocalAudio(current.peerId!);
       } catch (_) {}
+    }
+    if (current.peerId != null && current.callId != null) {
+      _clearVoiceMediaTracking(current.peerId!, current.callId!);
     }
     _setVoiceCallState(
       current.copyWith(

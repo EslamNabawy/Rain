@@ -992,6 +992,10 @@ void main() {
         () => brain.mediaOfferPeers.contains('bob'),
         'voice media offer to be created',
       );
+      final offer = brain.sentControlPayloads
+          .map(VoiceCallFrame.tryDecode)
+          .whereType<VoiceCallFrame>()
+          .lastWhere((frame) => frame.type == VoiceCallFrameType.offer);
       brain.emitControlMessage(
         'bob',
         VoiceCallFrame(
@@ -1002,6 +1006,7 @@ void main() {
           sentAt: DateTime.now().millisecondsSinceEpoch,
           sdp: 'media-answer-bob',
           sdpType: 'answer',
+          mediaSeq: offer.mediaSeq,
         ).encode(),
       );
       await _waitForCondition(
@@ -1025,6 +1030,167 @@ void main() {
         ),
       );
     });
+
+    test('stale media answers are ignored by media sequence', () async {
+      final adapter = NoopSignalingAdapter();
+      final brain = TestSessionManager();
+      await adapter.register('bob', 'bobpw');
+      await adapter.upsertFriendship('alice', 'bob');
+      await db
+          .into(db.friends)
+          .insert(
+            FriendsCompanion.insert(
+              username: 'bob',
+              displayName: 'Bob',
+              state: 'friend',
+              addedAt: 0,
+            ),
+          );
+      await brain.connect('bob');
+      brain.markConnected('bob');
+      final runtime = _runtimeFor(db, alice, adapter, brain: brain);
+      addTearDown(runtime.dispose);
+
+      await runtime.start();
+      await runtime.startVoiceCall('bob');
+      brain.emitControlMessage(
+        'bob',
+        VoiceCallFrame(
+          type: VoiceCallFrameType.accept,
+          callId: runtime.voiceCallState.callId!,
+          from: 'bob',
+          to: 'alice',
+          sentAt: DateTime.now().millisecondsSinceEpoch,
+        ).encode(),
+      );
+      await _waitForCondition(
+        () => brain.mediaOfferPeers.contains('bob'),
+        'voice media offer to be created',
+      );
+      final offer = brain.sentControlPayloads
+          .map(VoiceCallFrame.tryDecode)
+          .whereType<VoiceCallFrame>()
+          .lastWhere((frame) => frame.type == VoiceCallFrameType.offer);
+      final answer = VoiceCallFrame(
+        type: VoiceCallFrameType.answer,
+        callId: runtime.voiceCallState.callId!,
+        from: 'bob',
+        to: 'alice',
+        sentAt: DateTime.now().millisecondsSinceEpoch,
+        sdp: 'media-answer-bob',
+        sdpType: 'answer',
+        mediaSeq: offer.mediaSeq,
+      ).encode();
+
+      brain.emitControlMessage('bob', answer);
+      await _waitForCondition(
+        () => runtime.voiceCallState.phase == VoiceCallPhase.active,
+        'voice call to become active',
+      );
+      brain.emitControlMessage('bob', answer);
+      await Future<void>.delayed(const Duration(milliseconds: 80));
+
+      expect(brain.appliedMediaAnswerPeers, <String>['bob']);
+    });
+
+    test(
+      'media answer failure sends failed hangup and preserves chat session',
+      () async {
+        final adapter = NoopSignalingAdapter();
+        final brain = TestSessionManager();
+        final recordedErrors = <Object>[];
+        final recordedSources = <String>[];
+        await adapter.register('bob', 'bobpw');
+        await adapter.upsertFriendship('alice', 'bob');
+        await db
+            .into(db.friends)
+            .insert(
+              FriendsCompanion.insert(
+                username: 'bob',
+                displayName: 'Bob',
+                state: 'friend',
+                addedAt: 0,
+              ),
+            );
+        await brain.connect('bob');
+        brain.markConnected('bob');
+        final runtime = _runtimeFor(
+          db,
+          alice,
+          adapter,
+          brain: brain,
+          errorRecorder:
+              (
+                Object error,
+                StackTrace? stackTrace, {
+                required String source,
+                required bool fatal,
+                String? flutterLibrary,
+                String? flutterContext,
+              }) {
+                recordedErrors.add(error);
+                recordedSources.add(source);
+              },
+        );
+        addTearDown(runtime.dispose);
+
+        await runtime.start();
+        await runtime.startVoiceCall('bob');
+        brain.emitControlMessage(
+          'bob',
+          VoiceCallFrame(
+            type: VoiceCallFrameType.accept,
+            callId: runtime.voiceCallState.callId!,
+            from: 'bob',
+            to: 'alice',
+            sentAt: DateTime.now().millisecondsSinceEpoch,
+          ).encode(),
+        );
+        await _waitForCondition(
+          () => brain.mediaOfferPeers.contains('bob'),
+          'voice media offer to be created',
+        );
+        final offer = brain.sentControlPayloads
+            .map(VoiceCallFrame.tryDecode)
+            .whereType<VoiceCallFrame>()
+            .lastWhere((frame) => frame.type == VoiceCallFrameType.offer);
+        brain.applyMediaAnswerError = StateError(
+          'Unable to RTCPeerConnection::setRemoteDescription: '
+          'peerConnectionSetRemoteDescription failed with m-line mismatch',
+        );
+
+        brain.emitControlMessage(
+          'bob',
+          VoiceCallFrame(
+            type: VoiceCallFrameType.answer,
+            callId: runtime.voiceCallState.callId!,
+            from: 'bob',
+            to: 'alice',
+            sentAt: DateTime.now().millisecondsSinceEpoch,
+            sdp: 'bad-media-answer-bob',
+            sdpType: 'answer',
+            mediaSeq: offer.mediaSeq,
+          ).encode(),
+        );
+        await _waitForCondition(
+          () => runtime.voiceCallState.phase == VoiceCallPhase.failed,
+          'voice call media failure to surface',
+        );
+
+        final hangup = brain.sentControlPayloads
+            .map(VoiceCallFrame.tryDecode)
+            .whereType<VoiceCallFrame>()
+            .lastWhere((frame) => frame.type == VoiceCallFrameType.hangup);
+        expect(hangup.reasonCode, 'failed');
+        expect(brain.stoppedAudioPeers, contains('bob'));
+        expect(brain.disconnectedPeers, isEmpty);
+        expect(recordedSources, contains('voice-call-media'));
+        expect(
+          recordedErrors.single.toString(),
+          contains('setRemoteDescription'),
+        );
+      },
+    );
 
     test('cancel during outgoing send is not overwritten as failed', () async {
       final adapter = NoopSignalingAdapter();
@@ -2215,6 +2381,7 @@ RainRuntimeController _runtimeFor(
   RainIdentity identity,
   NoopSignalingAdapter adapter, {
   SessionManager? brain,
+  RuntimeErrorRecorder? errorRecorder,
 }) {
   final messageStore = MessageStore(database);
   final offlineQueueStore = OfflineQueueStore(database);
@@ -2230,6 +2397,7 @@ RainRuntimeController _runtimeFor(
       messageStore: messageStore,
       offlineQueueStore: offlineQueueStore,
     ),
+    errorRecorder: errorRecorder,
   );
 }
 
@@ -2342,6 +2510,9 @@ class TestSessionManager implements SessionManager {
   final List<String> sentFilePayloads = <String>[];
   final List<String> sentControlPayloads = <String>[];
   final Map<String, bool> mutedPeers = <String, bool>{};
+  Object? createMediaOfferError;
+  Object? applyMediaOfferError;
+  Object? applyMediaAnswerError;
   final Map<String, Session> _sessions = <String, Session>{};
   final StreamController<Session> _peerConnectedController =
       StreamController<Session>.broadcast();
@@ -2466,6 +2637,10 @@ class TestSessionManager implements SessionManager {
   @override
   Future<RTCSessionDescription> createMediaOffer(String peerId) async {
     mediaOfferPeers.add(peerId);
+    final error = createMediaOfferError;
+    if (error != null) {
+      throw error;
+    }
     return RTCSessionDescription('media-offer-$peerId', 'offer');
   }
 
@@ -2475,6 +2650,10 @@ class TestSessionManager implements SessionManager {
     RTCSessionDescription offer,
   ) async {
     appliedMediaOfferPeers.add(peerId);
+    final error = applyMediaOfferError;
+    if (error != null) {
+      throw error;
+    }
     return RTCSessionDescription('media-answer-$peerId', 'answer');
   }
 
@@ -2484,6 +2663,10 @@ class TestSessionManager implements SessionManager {
     RTCSessionDescription answer,
   ) async {
     appliedMediaAnswerPeers.add(peerId);
+    final error = applyMediaAnswerError;
+    if (error != null) {
+      throw error;
+    }
   }
 
   @override

@@ -20,6 +20,16 @@ part 'voice_call_runtime.dart';
 
 enum FriendRequestResult { sent, acceptedExisting }
 
+typedef RuntimeErrorRecorder =
+    void Function(
+      Object error,
+      StackTrace? stackTrace, {
+      required String source,
+      required bool fatal,
+      String? flutterLibrary,
+      String? flutterContext,
+    });
+
 String _formatRetryDelay(Duration delay) {
   if (delay.inSeconds <= 1) {
     return '1 second';
@@ -51,6 +61,7 @@ class RainRuntimeController with WidgetsBindingObserver {
     Duration initialConnectionRetryBackoff = const Duration(seconds: 3),
     Duration maxConnectionRetryBackoff = const Duration(minutes: 1),
     Future<Directory> Function()? documentsDirectoryProvider,
+    this.errorRecorder,
   }) : fileTransferStore = fileTransferStore ?? FileTransferStore(database),
        _documentsDirectoryProvider =
            documentsDirectoryProvider ?? getApplicationDocumentsDirectory,
@@ -78,6 +89,7 @@ class RainRuntimeController with WidgetsBindingObserver {
   final Duration friendRequestRefreshInterval;
   final int maxPassivePeerListeners;
   final Duration networkRecoveryDebounce;
+  final RuntimeErrorRecorder? errorRecorder;
   final Future<Directory> Function() _documentsDirectoryProvider;
   final Set<String> _manualDisconnectedPeers = <String>{};
   final Set<String> _registeredPeerListeners = <String>{};
@@ -97,6 +109,9 @@ class RainRuntimeController with WidgetsBindingObserver {
       StreamController<VoiceCallState>.broadcast();
   VoiceCallState _voiceCallState = const VoiceCallState.idle();
   Timer? _voiceCallTimer;
+  final Set<String> _voiceMediaNegotiatingPeers = <String>{};
+  final Map<String, int> _voiceMediaSentSequences = <String, int>{};
+  final Map<String, int> _voiceMediaReceivedSequences = <String, int>{};
   late final FileTransferProgressBatcher _fileProgressBatcher;
   final ConnectionAttemptCoordinator _connectionCoordinator;
 
@@ -1046,6 +1061,9 @@ class RainRuntimeController with WidgetsBindingObserver {
     WidgetsBinding.instance.removeObserver(this);
     _backgroundOfflineTimer?.cancel();
     _voiceCallTimer?.cancel();
+    _voiceMediaNegotiatingPeers.clear();
+    _voiceMediaSentSequences.clear();
+    _voiceMediaReceivedSequences.clear();
     _heartbeatTimer?.cancel();
     _friendRequestRefreshTimer?.cancel();
     _connectionCoordinator.dispose();

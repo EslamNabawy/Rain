@@ -46,6 +46,22 @@ The release workflow publishes:
 - Android `armeabi-v7a` APK.
 - Android `x86_64` APK.
 
+## Pre-Release Live Smoke Checks
+
+Before publishing a release with voice calling enabled, run a live 1:1 voice
+call smoke test on Android and Windows using the release candidate artifacts.
+
+- Sign in two accepted friend accounts with both apps open and reachable.
+- Start a call from Android to Windows, accept it, verify audio connects, mute
+  toggles locally, hang up, and confirm the chat session remains connected.
+- Repeat from Windows to Android.
+- Repeat one call over a direct route and one call over a TURN relay route.
+- Force a bad media negotiation or disconnect during call setup when practical,
+  then confirm the call fails cleanly, local audio stops, a failed hangup is
+  sent, and the existing chat session stays alive.
+- Check diagnostics for the full native WebRTC error text when a media setup
+  failure occurs.
+
 ## Local Android Parity
 
 Local Android build verification needs the same major tooling CI installs:
