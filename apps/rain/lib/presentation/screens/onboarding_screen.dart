@@ -12,6 +12,9 @@ import 'package:rain/presentation/widgets/app_components.dart';
 
 enum _AuthMode { register, login }
 
+const double _focusedFieldKeyboardClearance = 72;
+const double _keyboardResizeTolerance = 1;
+
 class OnboardingScreen extends ConsumerStatefulWidget {
   const OnboardingScreen({super.key});
 
@@ -43,16 +46,16 @@ class _OnboardingScreenState extends ConsumerState<OnboardingScreen>
     super.initState();
     WidgetsBinding.instance.addObserver(this);
     _usernameFocusNode.addListener(
-      () => _ensureFocusedFieldVisible(_usernameFocusNode, _usernameFieldKey),
+      () => _handleCredentialFocusChange(_usernameFocusNode, _usernameFieldKey),
     );
     _displayNameFocusNode.addListener(
-      () => _ensureFocusedFieldVisible(
+      () => _handleCredentialFocusChange(
         _displayNameFocusNode,
         _displayNameFieldKey,
       ),
     );
     _passwordFocusNode.addListener(
-      () => _ensureFocusedFieldVisible(_passwordFocusNode, _passwordFieldKey),
+      () => _handleCredentialFocusChange(_passwordFocusNode, _passwordFieldKey),
     );
   }
 
@@ -76,7 +79,12 @@ class _OnboardingScreenState extends ConsumerState<OnboardingScreen>
   @override
   void didChangeMetrics() {
     super.didChangeMetrics();
-    _ensureVisibleForFocusedField();
+    if (mounted) {
+      setState(() {});
+    }
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      _ensureVisibleForFocusedField();
+    });
   }
 
   void _setMode(_AuthMode mode) {
@@ -94,6 +102,13 @@ class _OnboardingScreenState extends ConsumerState<OnboardingScreen>
     WidgetsBinding.instance.addPostFrameCallback((_) {
       _ensureVisibleForFocusedField();
     });
+  }
+
+  void _handleCredentialFocusChange(FocusNode focusNode, GlobalKey key) {
+    if (mounted) {
+      setState(() {});
+    }
+    _ensureFocusedFieldVisible(focusNode, key);
   }
 
   void _ensureFocusedFieldVisible(FocusNode focusNode, GlobalKey key) {
@@ -149,9 +164,9 @@ class _OnboardingScreenState extends ConsumerState<OnboardingScreen>
         fieldContext,
         duration: RainMotion.standard,
         curve: Curves.easeOutCubic,
-        alignment: keyboardOpen ? 0.08 : 0,
+        alignment: keyboardOpen ? 1 : 0,
         alignmentPolicy: keyboardOpen
-            ? ScrollPositionAlignmentPolicy.explicit
+            ? ScrollPositionAlignmentPolicy.keepVisibleAtEnd
             : ScrollPositionAlignmentPolicy.keepVisibleAtEnd,
       );
     });
@@ -186,8 +201,21 @@ class _OnboardingScreenState extends ConsumerState<OnboardingScreen>
       builder: (BuildContext context, BoxConstraints constraints) {
         final scheme = Theme.of(context).colorScheme;
         final isDark = scheme.brightness == Brightness.dark;
+        final mediaHeight = MediaQuery.sizeOf(context).height;
         final keyboardBottom = MediaQuery.viewInsetsOf(context).bottom;
         final keyboardOpen = keyboardBottom > 0;
+        final keyboardAlreadyReserved =
+            keyboardOpen &&
+            constraints.maxHeight <=
+                mediaHeight - keyboardBottom + _keyboardResizeTolerance;
+        final syntheticKeyboardInset = keyboardAlreadyReserved
+            ? 0.0
+            : keyboardBottom;
+        final keyboardSafeHeight =
+            (constraints.maxHeight - syntheticKeyboardInset).clamp(
+              0.0,
+              constraints.maxHeight,
+            );
         final isTightHeight = constraints.maxHeight < 680 || keyboardOpen;
         final horizontalPadding = constraints.maxWidth < 600 ? 16.0 : 24.0;
         final cardPadding = isTightHeight
@@ -206,274 +234,293 @@ class _OnboardingScreenState extends ConsumerState<OnboardingScreen>
 
         return SafeArea(
           child: Align(
-            alignment: isTightHeight ? Alignment.topCenter : Alignment.center,
-            child: SingleChildScrollView(
-              controller: _scrollController,
-              keyboardDismissBehavior: ScrollViewKeyboardDismissBehavior.onDrag,
-              padding: EdgeInsets.fromLTRB(
-                horizontalPadding,
-                verticalPadding,
-                horizontalPadding,
-                verticalPadding + keyboardBottom,
-              ),
-              child: ConstrainedBox(
-                constraints: const BoxConstraints(maxWidth: 560),
-                child: Card(
-                  elevation: isDark ? 0 : 16,
-                  shape: RoundedRectangleBorder(
-                    borderRadius: BorderRadius.circular(28),
+            alignment: Alignment.topCenter,
+            child: SizedBox(
+              height: keyboardSafeHeight,
+              child: Align(
+                alignment: isTightHeight
+                    ? Alignment.topCenter
+                    : Alignment.center,
+                child: SingleChildScrollView(
+                  controller: _scrollController,
+                  keyboardDismissBehavior:
+                      ScrollViewKeyboardDismissBehavior.onDrag,
+                  padding: EdgeInsets.fromLTRB(
+                    horizontalPadding,
+                    verticalPadding,
+                    horizontalPadding,
+                    verticalPadding,
                   ),
-                  child: Padding(
-                    padding: EdgeInsets.all(cardPadding),
-                    child: AutofillGroup(
-                      child: Column(
-                        mainAxisSize: MainAxisSize.min,
-                        crossAxisAlignment: CrossAxisAlignment.start,
-                        children: <Widget>[
-                          if (showBrandHeader) ...<Widget>[
-                            Row(
-                              children: <Widget>[
-                                Container(
-                                  width: 44,
-                                  height: 44,
-                                  padding: const EdgeInsets.all(2),
-                                  decoration: BoxDecoration(
-                                    color: scheme.primary.withValues(
-                                      alpha: 0.14,
+                  child: ConstrainedBox(
+                    constraints: const BoxConstraints(maxWidth: 560),
+                    child: Card(
+                      elevation: isDark ? 0 : 16,
+                      shape: RoundedRectangleBorder(
+                        borderRadius: BorderRadius.circular(28),
+                      ),
+                      child: Padding(
+                        padding: EdgeInsets.all(cardPadding),
+                        child: AutofillGroup(
+                          child: Column(
+                            mainAxisSize: MainAxisSize.min,
+                            crossAxisAlignment: CrossAxisAlignment.start,
+                            children: <Widget>[
+                              if (showBrandHeader) ...<Widget>[
+                                Row(
+                                  children: <Widget>[
+                                    Container(
+                                      width: 44,
+                                      height: 44,
+                                      padding: const EdgeInsets.all(2),
+                                      decoration: BoxDecoration(
+                                        color: scheme.primary.withValues(
+                                          alpha: 0.14,
+                                        ),
+                                        borderRadius: BorderRadius.circular(14),
+                                      ),
+                                      clipBehavior: Clip.antiAlias,
+                                      child: Image.asset(
+                                        'assets/branding/rain_app_icon_1024.png',
+                                        fit: BoxFit.cover,
+                                        filterQuality: FilterQuality.medium,
+                                        errorBuilder: (_, _, _) => Icon(
+                                          Icons.hub_outlined,
+                                          color: scheme.primary,
+                                        ),
+                                      ),
                                     ),
-                                    borderRadius: BorderRadius.circular(14),
-                                  ),
-                                  clipBehavior: Clip.antiAlias,
-                                  child: Image.asset(
-                                    'assets/branding/rain_app_icon_1024.png',
-                                    fit: BoxFit.cover,
-                                    filterQuality: FilterQuality.medium,
-                                    errorBuilder: (_, _, _) => Icon(
-                                      Icons.hub_outlined,
-                                      color: scheme.primary,
+                                    const SizedBox(width: 14),
+                                    Expanded(
+                                      child: Column(
+                                        crossAxisAlignment:
+                                            CrossAxisAlignment.start,
+                                        children: <Widget>[
+                                          Text(
+                                            'Rain',
+                                            style: Theme.of(
+                                              context,
+                                            ).textTheme.headlineMedium,
+                                          ),
+                                          const SizedBox(height: 2),
+                                          Text(
+                                            'Peer-to-peer chat for desktop and Android.',
+                                            style: Theme.of(
+                                              context,
+                                            ).textTheme.bodyMedium,
+                                          ),
+                                        ],
+                                      ),
                                     ),
-                                  ),
+                                  ],
                                 ),
-                                const SizedBox(width: 14),
-                                Expanded(
-                                  child: Column(
-                                    crossAxisAlignment:
-                                        CrossAxisAlignment.start,
-                                    children: <Widget>[
-                                      Text(
-                                        'Rain',
-                                        style: Theme.of(
-                                          context,
-                                        ).textTheme.headlineMedium,
-                                      ),
-                                      const SizedBox(height: 2),
-                                      Text(
-                                        'Peer-to-peer chat for desktop and Android.',
-                                        style: Theme.of(
-                                          context,
-                                        ).textTheme.bodyMedium,
-                                      ),
+                                SizedBox(height: sectionGap),
+                              ],
+                              Text(
+                                _mode == _AuthMode.login
+                                    ? 'Sign in'
+                                    : 'Create account',
+                                style: Theme.of(context).textTheme.titleLarge
+                                    ?.copyWith(fontWeight: FontWeight.w900),
+                              ),
+                              SizedBox(height: fieldGap),
+                              if (_mode == _AuthMode.register) ...<Widget>[
+                                _CredentialFocusReveal(
+                                  key: _displayNameFieldKey,
+                                  focusNode: _displayNameFocusNode,
+                                  keyboardOpen: keyboardOpen,
+                                  child: AppTextInputField(
+                                    controller: _displayNameController,
+                                    focusNode: _displayNameFocusNode,
+                                    labelText: 'Display name',
+                                    textInputAction: TextInputAction.next,
+                                    textCapitalization:
+                                        TextCapitalization.words,
+                                    maxLength:
+                                        InputValidator.displayNameMaxLength,
+                                    autofillHints: const <String>[
+                                      AutofillHints.name,
                                     ],
+                                    scrollPadding: fieldScrollPadding,
+                                    prefixIcon: const Icon(
+                                      Icons.badge_outlined,
+                                    ),
+                                    onSubmitted: (_) =>
+                                        _usernameFocusNode.requestFocus(),
                                   ),
                                 ),
+                                SizedBox(height: fieldGap),
                               ],
-                            ),
-                            SizedBox(height: sectionGap),
-                          ],
-                          Text(
-                            _mode == _AuthMode.login
-                                ? 'Sign in'
-                                : 'Create account',
-                            style: Theme.of(context).textTheme.titleLarge
-                                ?.copyWith(fontWeight: FontWeight.w900),
-                          ),
-                          SizedBox(height: fieldGap),
-                          if (_mode == _AuthMode.register) ...<Widget>[
-                            KeyedSubtree(
-                              key: _displayNameFieldKey,
-                              child: AppTextInputField(
-                                controller: _displayNameController,
-                                focusNode: _displayNameFocusNode,
-                                labelText: 'Display name',
-                                textInputAction: TextInputAction.next,
-                                textCapitalization: TextCapitalization.words,
-                                maxLength: InputValidator.displayNameMaxLength,
-                                autofillHints: const <String>[
-                                  AutofillHints.name,
-                                ],
-                                scrollPadding: fieldScrollPadding,
-                                prefixIcon: const Icon(Icons.badge_outlined),
-                                onSubmitted: (_) =>
-                                    _usernameFocusNode.requestFocus(),
+                              _CredentialFocusReveal(
+                                key: _usernameFieldKey,
+                                focusNode: _usernameFocusNode,
+                                keyboardOpen: keyboardOpen,
+                                child: AppTextInputField(
+                                  controller: _usernameController,
+                                  focusNode: _usernameFocusNode,
+                                  labelText: _mode == _AuthMode.register
+                                      ? 'Unique Username'
+                                      : 'Username',
+                                  hintText: _mode == _AuthMode.register
+                                      ? 'Unique Username'
+                                      : null,
+                                  maxLength: InputValidator.usernameMaxLength,
+                                  textInputAction: TextInputAction.next,
+                                  textInputType: TextInputType.visiblePassword,
+                                  autofillHints: const <String>[
+                                    AutofillHints.username,
+                                  ],
+                                  scrollPadding: fieldScrollPadding,
+                                  autocorrect: false,
+                                  enableSuggestions: false,
+                                  prefixIcon: const Icon(Icons.alternate_email),
+                                  onSubmitted: (_) {
+                                    _passwordFocusNode.requestFocus();
+                                  },
+                                  inputFormatters: [
+                                    const AppLowerCaseTextFormatter(),
+                                    FilteringTextInputFormatter.allow(
+                                      RegExp(r'[a-z0-9_]'),
+                                    ),
+                                  ],
+                                ),
                               ),
-                            ),
-                            SizedBox(height: fieldGap),
-                          ],
-                          KeyedSubtree(
-                            key: _usernameFieldKey,
-                            child: AppTextInputField(
-                              controller: _usernameController,
-                              focusNode: _usernameFocusNode,
-                              labelText: _mode == _AuthMode.register
-                                  ? 'Unique Username'
-                                  : 'Username',
-                              hintText: _mode == _AuthMode.register
-                                  ? 'Unique Username'
-                                  : null,
-                              maxLength: InputValidator.usernameMaxLength,
-                              textInputAction: TextInputAction.next,
-                              textInputType: TextInputType.visiblePassword,
-                              autofillHints: const <String>[
-                                AutofillHints.username,
-                              ],
-                              scrollPadding: fieldScrollPadding,
-                              autocorrect: false,
-                              enableSuggestions: false,
-                              prefixIcon: const Icon(Icons.alternate_email),
-                              onSubmitted: (_) {
-                                _passwordFocusNode.requestFocus();
-                              },
-                              inputFormatters: [
-                                const AppLowerCaseTextFormatter(),
-                                FilteringTextInputFormatter.allow(
-                                  RegExp(r'[a-z0-9_]'),
-                                ),
-                              ],
-                            ),
-                          ),
-                          SizedBox(height: fieldGap),
-                          KeyedSubtree(
-                            key: _passwordFieldKey,
-                            child: AppTextInputField(
-                              controller: _passwordController,
-                              focusNode: _passwordFocusNode,
-                              labelText: 'Password',
-                              hintText: _mode == _AuthMode.register
-                                  ? 'at least 6 characters'
-                                  : null,
-                              obscureText: _obscurePassword,
-                              textInputAction: TextInputAction.done,
-                              maxLength: 50,
-                              autofillHints: <String>[
-                                _mode == _AuthMode.register
-                                    ? AutofillHints.newPassword
-                                    : AutofillHints.password,
-                              ],
-                              scrollPadding: fieldScrollPadding,
-                              autocorrect: false,
-                              enableSuggestions: false,
-                              prefixIcon: const Icon(Icons.lock_outline),
-                              onSubmitted: (_) {
-                                if (!_submitting) {
-                                  _submit();
-                                }
-                              },
-                              suffixIcon: IconButton(
-                                tooltip: _obscurePassword
-                                    ? 'Show password'
-                                    : 'Hide password',
-                                icon: Icon(
-                                  _obscurePassword
-                                      ? Icons.visibility_off
-                                      : Icons.visibility,
-                                ),
-                                onPressed: () {
-                                  setState(() {
-                                    _obscurePassword = !_obscurePassword;
-                                  });
-                                },
-                              ),
-                            ),
-                          ),
-                          if (_mode == _AuthMode.register) ...<Widget>[
-                            SizedBox(height: fieldGap),
-                            Text(
-                              'Gender',
-                              style: Theme.of(context).textTheme.bodyMedium,
-                            ),
-                            const SizedBox(height: 8),
-                            SizedBox(
-                              width: double.infinity,
-                              child: SegmentedButton<RainGender>(
-                                segments: const <ButtonSegment<RainGender>>[
-                                  ButtonSegment<RainGender>(
-                                    value: RainGender.male,
-                                    icon: Icon(Icons.male),
-                                    label: Text('Male'),
-                                  ),
-                                  ButtonSegment<RainGender>(
-                                    value: RainGender.female,
-                                    icon: Icon(Icons.female),
-                                    label: Text('Female'),
-                                  ),
-                                ],
-                                selected: <RainGender>{_gender},
-                                onSelectionChanged:
-                                    (Set<RainGender> selection) {
+                              SizedBox(height: fieldGap),
+                              _CredentialFocusReveal(
+                                key: _passwordFieldKey,
+                                focusNode: _passwordFocusNode,
+                                keyboardOpen: keyboardOpen,
+                                child: AppTextInputField(
+                                  controller: _passwordController,
+                                  focusNode: _passwordFocusNode,
+                                  labelText: 'Password',
+                                  hintText: _mode == _AuthMode.register
+                                      ? 'at least 6 characters'
+                                      : null,
+                                  obscureText: _obscurePassword,
+                                  textInputAction: TextInputAction.done,
+                                  maxLength: 50,
+                                  autofillHints: <String>[
+                                    _mode == _AuthMode.register
+                                        ? AutofillHints.newPassword
+                                        : AutofillHints.password,
+                                  ],
+                                  scrollPadding: fieldScrollPadding,
+                                  autocorrect: false,
+                                  enableSuggestions: false,
+                                  prefixIcon: const Icon(Icons.lock_outline),
+                                  onSubmitted: (_) {
+                                    if (!_submitting) {
+                                      _submit();
+                                    }
+                                  },
+                                  suffixIcon: IconButton(
+                                    tooltip: _obscurePassword
+                                        ? 'Show password'
+                                        : 'Hide password',
+                                    icon: Icon(
+                                      _obscurePassword
+                                          ? Icons.visibility_off
+                                          : Icons.visibility,
+                                    ),
+                                    onPressed: () {
                                       setState(() {
-                                        _gender = selection.first;
+                                        _obscurePassword = !_obscurePassword;
                                       });
                                     },
+                                  ),
+                                ),
                               ),
-                            ),
-                          ],
-                          if (_error != null) ...<Widget>[
-                            const SizedBox(height: 12),
-                            Text(
-                              _error!,
-                              style: TextStyle(color: scheme.error),
-                            ),
-                          ],
-                          SizedBox(height: sectionGap),
-                          SizedBox(
-                            width: double.infinity,
-                            child: FilledButton.icon(
-                              onPressed: _submitting || networkBlocked
-                                  ? null
-                                  : _submit,
-                              icon: _submitting
-                                  ? SizedBox(
-                                      width: 16,
-                                      height: 16,
-                                      child: CircularProgressIndicator(
-                                        strokeWidth: 2,
-                                        color: scheme.onPrimary,
+                              if (_mode == _AuthMode.register) ...<Widget>[
+                                SizedBox(height: fieldGap),
+                                Text(
+                                  'Gender',
+                                  style: Theme.of(context).textTheme.bodyMedium,
+                                ),
+                                const SizedBox(height: 8),
+                                SizedBox(
+                                  width: double.infinity,
+                                  child: SegmentedButton<RainGender>(
+                                    segments: const <ButtonSegment<RainGender>>[
+                                      ButtonSegment<RainGender>(
+                                        value: RainGender.male,
+                                        icon: Icon(Icons.male),
+                                        label: Text('Male'),
                                       ),
-                                    )
-                                  : Icon(
-                                      _mode == _AuthMode.register
-                                          ? Icons.person_add_alt_1
-                                          : Icons.login,
-                                    ),
-                              label: Text(
-                                _submitting
-                                    ? (_mode == _AuthMode.register
-                                          ? 'Creating account...'
-                                          : 'Signing in...')
-                                    : (_mode == _AuthMode.register
-                                          ? 'Create account'
-                                          : 'Sign in'),
+                                      ButtonSegment<RainGender>(
+                                        value: RainGender.female,
+                                        icon: Icon(Icons.female),
+                                        label: Text('Female'),
+                                      ),
+                                    ],
+                                    selected: <RainGender>{_gender},
+                                    onSelectionChanged:
+                                        (Set<RainGender> selection) {
+                                          setState(() {
+                                            _gender = selection.first;
+                                          });
+                                        },
+                                  ),
+                                ),
+                              ],
+                              if (_error != null) ...<Widget>[
+                                const SizedBox(height: 12),
+                                Text(
+                                  _error!,
+                                  style: TextStyle(color: scheme.error),
+                                ),
+                              ],
+                              SizedBox(height: sectionGap),
+                              SizedBox(
+                                width: double.infinity,
+                                child: FilledButton.icon(
+                                  onPressed: _submitting || networkBlocked
+                                      ? null
+                                      : _submit,
+                                  icon: _submitting
+                                      ? SizedBox(
+                                          width: 16,
+                                          height: 16,
+                                          child: CircularProgressIndicator(
+                                            strokeWidth: 2,
+                                            color: scheme.onPrimary,
+                                          ),
+                                        )
+                                      : Icon(
+                                          _mode == _AuthMode.register
+                                              ? Icons.person_add_alt_1
+                                              : Icons.login,
+                                        ),
+                                  label: Text(
+                                    _submitting
+                                        ? (_mode == _AuthMode.register
+                                              ? 'Creating account...'
+                                              : 'Signing in...')
+                                        : (_mode == _AuthMode.register
+                                              ? 'Create account'
+                                              : 'Sign in'),
+                                  ),
+                                ),
                               ),
-                            ),
-                          ),
-                          const SizedBox(height: 10),
-                          Center(
-                            child: TextButton(
-                              onPressed: _submitting
-                                  ? null
-                                  : () => _setMode(
-                                      _mode == _AuthMode.login
-                                          ? _AuthMode.register
-                                          : _AuthMode.login,
-                                    ),
-                              child: Text(
-                                _mode == _AuthMode.login
-                                    ? 'Create account'
-                                    : 'Sign in',
+                              const SizedBox(height: 10),
+                              Center(
+                                child: TextButton(
+                                  onPressed: _submitting
+                                      ? null
+                                      : () => _setMode(
+                                          _mode == _AuthMode.login
+                                              ? _AuthMode.register
+                                              : _AuthMode.login,
+                                        ),
+                                  child: Text(
+                                    _mode == _AuthMode.login
+                                        ? 'Create account'
+                                        : 'Sign in',
+                                  ),
+                                ),
                               ),
-                            ),
+                            ],
                           ),
-                        ],
+                        ),
                       ),
                     ),
                   ),
@@ -561,5 +608,30 @@ class _OnboardingScreenState extends ConsumerState<OnboardingScreen>
 
   void _playSound(RainSoundEffect effect) {
     unawaited(ref.read(soundEffectsProvider).play(effect));
+  }
+}
+
+class _CredentialFocusReveal extends StatelessWidget {
+  const _CredentialFocusReveal({
+    super.key,
+    required this.focusNode,
+    required this.keyboardOpen,
+    required this.child,
+  });
+
+  final FocusNode focusNode;
+  final bool keyboardOpen;
+  final Widget child;
+
+  @override
+  Widget build(BuildContext context) {
+    return Column(
+      mainAxisSize: MainAxisSize.min,
+      children: <Widget>[
+        child,
+        if (keyboardOpen && focusNode.hasFocus)
+          const SizedBox(height: _focusedFieldKeyboardClearance),
+      ],
+    );
   }
 }
