@@ -191,9 +191,12 @@ class _OnboardingScreenState extends ConsumerState<OnboardingScreen>
         final isTightHeight = constraints.maxHeight < 680 || keyboardOpen;
         final horizontalPadding = constraints.maxWidth < 600 ? 16.0 : 24.0;
         final cardPadding = isTightHeight
-            ? 18.0
+            ? (keyboardOpen ? 14.0 : 18.0)
             : (constraints.maxWidth < 420 ? 20.0 : 32.0);
-        final verticalPadding = keyboardOpen ? 10.0 : 24.0;
+        final verticalPadding = keyboardOpen ? 6.0 : 24.0;
+        final fieldGap = keyboardOpen ? 12.0 : 16.0;
+        final sectionGap = keyboardOpen ? 12.0 : (isTightHeight ? 18.0 : 24.0);
+        final showBrandHeader = !keyboardOpen;
         final fieldScrollPadding = EdgeInsets.fromLTRB(
           20,
           20,
@@ -227,39 +230,42 @@ class _OnboardingScreenState extends ConsumerState<OnboardingScreen>
                         mainAxisSize: MainAxisSize.min,
                         crossAxisAlignment: CrossAxisAlignment.start,
                         children: <Widget>[
-                          Row(
-                            children: <Widget>[
-                              Container(
-                                width: 44,
-                                height: 44,
-                                padding: const EdgeInsets.all(2),
-                                decoration: BoxDecoration(
-                                  color: scheme.primary.withValues(alpha: 0.14),
-                                  borderRadius: BorderRadius.circular(14),
-                                ),
-                                clipBehavior: Clip.antiAlias,
-                                child: Image.asset(
-                                  'assets/branding/rain_app_icon_1024.png',
-                                  fit: BoxFit.cover,
-                                  filterQuality: FilterQuality.medium,
-                                  errorBuilder: (_, _, _) => Icon(
-                                    Icons.hub_outlined,
-                                    color: scheme.primary,
+                          if (showBrandHeader) ...<Widget>[
+                            Row(
+                              children: <Widget>[
+                                Container(
+                                  width: 44,
+                                  height: 44,
+                                  padding: const EdgeInsets.all(2),
+                                  decoration: BoxDecoration(
+                                    color: scheme.primary.withValues(
+                                      alpha: 0.14,
+                                    ),
+                                    borderRadius: BorderRadius.circular(14),
+                                  ),
+                                  clipBehavior: Clip.antiAlias,
+                                  child: Image.asset(
+                                    'assets/branding/rain_app_icon_1024.png',
+                                    fit: BoxFit.cover,
+                                    filterQuality: FilterQuality.medium,
+                                    errorBuilder: (_, _, _) => Icon(
+                                      Icons.hub_outlined,
+                                      color: scheme.primary,
+                                    ),
                                   ),
                                 ),
-                              ),
-                              const SizedBox(width: 14),
-                              Expanded(
-                                child: Column(
-                                  crossAxisAlignment: CrossAxisAlignment.start,
-                                  children: <Widget>[
-                                    Text(
-                                      'Rain',
-                                      style: Theme.of(
-                                        context,
-                                      ).textTheme.headlineMedium,
-                                    ),
-                                    if (!keyboardOpen) ...<Widget>[
+                                const SizedBox(width: 14),
+                                Expanded(
+                                  child: Column(
+                                    crossAxisAlignment:
+                                        CrossAxisAlignment.start,
+                                    children: <Widget>[
+                                      Text(
+                                        'Rain',
+                                        style: Theme.of(
+                                          context,
+                                        ).textTheme.headlineMedium,
+                                      ),
                                       const SizedBox(height: 2),
                                       Text(
                                         'Peer-to-peer chat for desktop and Android.',
@@ -268,12 +274,12 @@ class _OnboardingScreenState extends ConsumerState<OnboardingScreen>
                                         ).textTheme.bodyMedium,
                                       ),
                                     ],
-                                  ],
+                                  ),
                                 ),
-                              ),
-                            ],
-                          ),
-                          SizedBox(height: isTightHeight ? 18 : 24),
+                              ],
+                            ),
+                            SizedBox(height: sectionGap),
+                          ],
                           Text(
                             _mode == _AuthMode.login
                                 ? 'Sign in'
@@ -281,7 +287,7 @@ class _OnboardingScreenState extends ConsumerState<OnboardingScreen>
                             style: Theme.of(context).textTheme.titleLarge
                                 ?.copyWith(fontWeight: FontWeight.w900),
                           ),
-                          SizedBox(height: isTightHeight ? 16 : 20),
+                          SizedBox(height: fieldGap),
                           if (_mode == _AuthMode.register) ...<Widget>[
                             KeyedSubtree(
                               key: _displayNameFieldKey,
@@ -301,7 +307,7 @@ class _OnboardingScreenState extends ConsumerState<OnboardingScreen>
                                     _usernameFocusNode.requestFocus(),
                               ),
                             ),
-                            const SizedBox(height: 16),
+                            SizedBox(height: fieldGap),
                           ],
                           KeyedSubtree(
                             key: _usernameFieldKey,
@@ -313,7 +319,7 @@ class _OnboardingScreenState extends ConsumerState<OnboardingScreen>
                                   : 'Username',
                               hintText: _mode == _AuthMode.register
                                   ? 'Unique Username'
-                                  : 'lowercase, numbers, underscores',
+                                  : null,
                               maxLength: InputValidator.usernameMaxLength,
                               textInputAction: TextInputAction.next,
                               textInputType: TextInputType.visiblePassword,
@@ -335,14 +341,16 @@ class _OnboardingScreenState extends ConsumerState<OnboardingScreen>
                               ],
                             ),
                           ),
-                          const SizedBox(height: 16),
+                          SizedBox(height: fieldGap),
                           KeyedSubtree(
                             key: _passwordFieldKey,
                             child: AppTextInputField(
                               controller: _passwordController,
                               focusNode: _passwordFocusNode,
                               labelText: 'Password',
-                              hintText: 'at least 6 characters',
+                              hintText: _mode == _AuthMode.register
+                                  ? 'at least 6 characters'
+                                  : null,
                               obscureText: _obscurePassword,
                               textInputAction: TextInputAction.done,
                               maxLength: 50,
@@ -378,7 +386,7 @@ class _OnboardingScreenState extends ConsumerState<OnboardingScreen>
                             ),
                           ),
                           if (_mode == _AuthMode.register) ...<Widget>[
-                            const SizedBox(height: 16),
+                            SizedBox(height: fieldGap),
                             Text(
                               'Gender',
                               style: Theme.of(context).textTheme.bodyMedium,
@@ -416,7 +424,7 @@ class _OnboardingScreenState extends ConsumerState<OnboardingScreen>
                               style: TextStyle(color: scheme.error),
                             ),
                           ],
-                          SizedBox(height: isTightHeight ? 18 : 24),
+                          SizedBox(height: sectionGap),
                           SizedBox(
                             width: double.infinity,
                             child: FilledButton.icon(

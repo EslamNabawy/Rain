@@ -316,6 +316,19 @@ class _AppTextInputFieldState extends State<AppTextInputField> {
         hintText: widget.hintText,
         helperText: widget.helperText,
         counterText: '',
+        isDense: false,
+        contentPadding: const EdgeInsets.symmetric(
+          horizontal: 18,
+          vertical: 18,
+        ),
+        prefixIconConstraints: const BoxConstraints(
+          minWidth: 56,
+          minHeight: 56,
+        ),
+        suffixIconConstraints: const BoxConstraints(
+          minWidth: 56,
+          minHeight: 56,
+        ),
         prefixIcon: widget.prefixIcon,
         suffixIcon: widget.suffixIcon,
       ),

@@ -55,8 +55,26 @@ void main() {
 
     final keyboardTop =
         tester.view.physicalSize.height - tester.view.viewInsets.bottom;
-    expect(tester.getRect(passwordField).bottom, lessThan(keyboardTop));
+    expect(tester.getRect(passwordField).bottom, lessThan(keyboardTop - 64));
     expect(tester.getRect(passwordField).top, lessThan(220));
+  });
+
+  testWidgets('login credential fields use matching geometry', (
+    WidgetTester tester,
+  ) async {
+    await tester.pumpWidget(
+      const ProviderScope(
+        child: MaterialApp(home: Scaffold(body: OnboardingScreen())),
+      ),
+    );
+    await tester.pumpAndSettle();
+
+    final usernameRect = tester.getRect(_textFieldWithLabel('Username'));
+    final passwordRect = tester.getRect(_textFieldWithLabel('Password'));
+
+    expect(usernameRect.height, moreOrLessEquals(passwordRect.height));
+    expect(usernameRect.left, moreOrLessEquals(passwordRect.left));
+    expect(usernameRect.right, moreOrLessEquals(passwordRect.right));
   });
 }
 
