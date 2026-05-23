@@ -72,6 +72,7 @@ void main() {
       script,
       contains('integration_two_devices_handshake_full_test.dart'),
     );
+    expect(script, contains('integration_voice_signaling_emulator_test.dart'));
   });
 
   test('Firebase backend CI audits moderate and higher dependency issues', () {

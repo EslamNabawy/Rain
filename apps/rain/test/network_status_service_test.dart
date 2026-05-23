@@ -91,6 +91,33 @@ void main() {
       expect(statuses, contains(NetworkStatusKind.online));
     });
 
+    test('emits a new online state when connectivity path changes', () async {
+      final connectivity = _FakeConnectivityProbe(
+        initial: const <ConnectivityResult>[ConnectivityResult.wifi],
+      );
+      final service = NetworkStatusService(
+        connectivityProbe: connectivity,
+        backendProbe: _FakeBackendProbe(initial: true),
+      );
+      final statuses = <NetworkStatusState>[];
+      final subscription = service.watch().listen(statuses.add);
+
+      await pumpEventQueue();
+      connectivity.emit(const <ConnectivityResult>[ConnectivityResult.mobile]);
+      await pumpEventQueue();
+      await subscription.cancel();
+
+      final onlineStates = statuses
+          .where((NetworkStatusState status) {
+            return status.kind == NetworkStatusKind.online;
+          })
+          .toList(growable: false);
+      expect(onlineStates.map((NetworkStatusState status) => status.pathKey), [
+        contains('wifi'),
+        contains('mobile'),
+      ]);
+    });
+
     test(
       'marks limited immediately after a confirmed backend disconnect',
       () async {
@@ -149,6 +176,10 @@ class _FakeConnectivityProbe implements ConnectivityProbe {
   @override
   Stream<List<ConnectivityResult>> get onConnectivityChanged =>
       _controller.stream;
+
+  void emit(List<ConnectivityResult> connectivity) {
+    _controller.add(connectivity);
+  }
 }
 
 class _FakeBackendProbe implements BackendConnectivityProbe {

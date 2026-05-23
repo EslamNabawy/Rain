@@ -3,6 +3,7 @@ import 'dart:io';
 
 import 'package:file_picker/file_picker.dart';
 import 'package:flutter/material.dart';
+import 'package:flutter/rendering.dart' show ScrollCacheExtent;
 import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:open_filex/open_filex.dart';
@@ -10,6 +11,7 @@ import 'package:protocol_brain/protocol_brain.dart';
 import 'package:rain_core/rain_core.dart';
 
 import 'package:rain/presentation/navigation/app_routes.dart';
+import 'package:rain/application/runtime/voice_call_state.dart';
 import 'package:rain/application/state/app_providers.dart';
 import 'package:rain/application/state/connection_diagnostics.dart';
 import 'package:rain/application/state/file_transfer_view.dart';
@@ -30,12 +32,73 @@ part '../widgets/home/file_transfer_bubble.dart';
 String _formatUiError(Object error) {
   final raw = error.toString().trim();
   const prefixes = <String>['Exception: ', 'Bad state: ', 'StateError: '];
+  var message = raw;
   for (final prefix in prefixes) {
     if (raw.startsWith(prefix)) {
-      return raw.substring(prefix.length).trim();
+      message = raw.substring(prefix.length).trim();
+      break;
     }
   }
-  return raw;
+  final normalized = message.toLowerCase();
+  if (normalized.contains('active file transfer')) {
+    return 'Finish the active file transfer first.';
+  }
+  if (normalized.contains('finish the call before') ||
+      normalized == 'finish the call first.') {
+    return 'Finish the call first.';
+  }
+  if (normalized.contains('microphone') &&
+      (normalized.contains('permission') || normalized.contains('denied'))) {
+    return 'Microphone permission required.';
+  }
+  if (normalized.contains('peer is busy') ||
+      normalized == 'busy.' ||
+      normalized.contains('active voice call already exists') ||
+      normalized.contains('activevoicepairs') ||
+      normalized.contains('active voice pair')) {
+    return 'Peer is busy.';
+  }
+  if (normalized == 'rejected.' ||
+      normalized.contains('call declined') ||
+      normalized.contains('call rejected')) {
+    return 'Call declined.';
+  }
+  if (normalized.contains('network connection lost') ||
+      normalized.contains('network lost') ||
+      normalized.contains('internet connection') ||
+      normalized.contains('network is unavailable') ||
+      normalized.contains('network unavailable')) {
+    return 'Network connection lost. Call ended.';
+  }
+  if (normalized.contains('timed out') ||
+      normalized.contains('voice call expired') ||
+      normalized.contains('call room expired')) {
+    return 'Call timed out.';
+  }
+  if (normalized.contains('voice signaling') ||
+      normalized.contains('firebase') ||
+      normalized.contains('unknown voice call') ||
+      normalized.contains('voice call already exists') ||
+      normalized.contains('already ended') ||
+      normalized.contains('permission-denied') ||
+      normalized.contains('database')) {
+    return 'Call setup failed. Try again.';
+  }
+  if (normalized.contains('ice timeout')) {
+    return 'Call media could not connect. Try again.';
+  }
+  if (normalized.contains('no remote audio')) {
+    return 'Call media could not connect. Try again.';
+  }
+  if (normalized.contains('rtcrtptransceiver') ||
+      normalized.contains('setdirection') ||
+      normalized.contains('setremotedescription') ||
+      normalized.contains('peerconnectionsetremotedescription') ||
+      normalized.contains('m-line') ||
+      normalized.contains('peer connection changed while')) {
+    return 'Call media could not connect. Try again.';
+  }
+  return message;
 }
 
 String _candidateLabel(String? value) {
@@ -101,6 +164,7 @@ String _phaseLabel(SessionPhase? phase) {
     SessionPhase.writingAnswer => 'Writing answer',
     SessionPhase.exchangingIce => 'Exchanging ICE',
     SessionPhase.openingDataChannels => 'Opening channels',
+    SessionPhase.negotiatingMedia => 'Negotiating media',
     SessionPhase.connected => 'Connected',
     SessionPhase.reconnecting => 'Reconnecting',
     SessionPhase.disconnecting => 'Disconnecting',
@@ -286,6 +350,7 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
   Widget build(BuildContext context) {
     final friends = ref.watch(friendsProvider);
     final identity = ref.watch(identityProvider).value;
+    ref.listen<VoiceCallState>(voiceCallProvider, _handleVoiceCallNavigation);
 
     return LayoutBuilder(
       builder: (BuildContext context, BoxConstraints constraints) {
@@ -384,6 +449,19 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
   Future<void> _handleFriendSelection(FriendRecord friend) async {
     setState(() => _selectedPeerId = friend.username);
     await ref.read(messagesProvider(friend.username).notifier).markRead();
+  }
+
+  void _handleVoiceCallNavigation(
+    VoiceCallState? previous,
+    VoiceCallState next,
+  ) {
+    if (!mounted ||
+        next.phase != VoiceCallPhase.incomingRinging ||
+        next.peerId == null ||
+        _selectedPeerId == next.peerId) {
+      return;
+    }
+    setState(() => _selectedPeerId = next.peerId);
   }
 
   Future<void> _refreshFriends() async {

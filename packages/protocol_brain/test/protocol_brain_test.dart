@@ -280,6 +280,84 @@ void main() {
     await brain.disconnect('bob');
   });
 
+  test(
+    'connected session negotiates voice media without dropping chat session',
+    () async {
+      final adapter = _RecordingSignalingAdapter();
+      late _FakePeerCore peer;
+      final brain = ProtocolBrainImpl(
+        selfUsername: 'alice',
+        adapter: adapter,
+        peerConfig: _fakePeerConfig(),
+        peerFactory: () {
+          peer = _FakePeerCore();
+          return peer;
+        },
+        connectionMemoryStore: _MemoryConnectionStore(),
+      );
+      final changes = <Session>[];
+      final subscription = brain.onSessionChanged.listen(changes.add);
+
+      await brain.connect('bob');
+      peer.emitConnected();
+      await pumpEventQueue(times: 3);
+
+      await brain.startLocalAudio('bob');
+      final offer = await brain.createMediaOffer('bob');
+      final answer = await brain.applyMediaOffer(
+        'bob',
+        RTCSessionDescription('remote-media-offer', 'offer'),
+      );
+      await brain.applyMediaAnswer(
+        'bob',
+        RTCSessionDescription('remote-media-answer', 'answer'),
+      );
+      await brain.setMicrophoneMuted('bob', muted: true);
+      await brain.stopLocalAudio('bob');
+
+      expect(offer.sdp, 'media-offer-sdp');
+      expect(answer.sdp, 'media-answer-sdp');
+      expect(peer.localAudioStarted, isTrue);
+      expect(peer.localAudioStopped, isTrue);
+      expect(peer.muteCalls, <bool>[true]);
+      expect(peer.receivedMediaOffers, <String?>['remote-media-offer']);
+      expect(peer.receivedMediaAnswers, <String?>['remote-media-answer']);
+      expect(brain.getSession('bob')?.state, SessionState.connected);
+      expect(
+        changes.map((Session session) => session.phase),
+        contains(SessionPhase.negotiatingMedia),
+      );
+
+      await subscription.cancel();
+      await brain.disconnect('bob');
+    },
+  );
+
+  test('dedicated voice media does not require a chat peer session', () async {
+    final adapter = _RecordingSignalingAdapter();
+    final requestedPolicies = <PeerIceTransportPolicy>[];
+    final brain = ProtocolBrainImpl(
+      selfUsername: 'alice',
+      adapter: adapter,
+      peerConfig: _fakePeerConfig(),
+      peerFactory: _FakePeerCore.new,
+      peerConfigProvider: (PeerIceTransportPolicy policy) async {
+        requestedPolicies.add(policy);
+        return _fakePeerConfig().copyWith(iceTransportPolicy: policy);
+      },
+      connectionMemoryStore: _MemoryConnectionStore(),
+    );
+
+    final media = await brain.createVoiceMediaConnection('bob');
+    addTearDown(media.dispose);
+
+    expect(media, isA<VoiceMediaConnection>());
+    expect(brain.getSession('bob'), isNull);
+    expect(requestedPolicies, <PeerIceTransportPolicy>[
+      PeerIceTransportPolicy.all,
+    ]);
+  });
+
   test('failed session does not keep stale direct route', () async {
     final adapter = _RecordingSignalingAdapter();
     late _FakePeerCore peer;
@@ -412,7 +490,7 @@ void main() {
   });
 
   test(
-    'network recovery restarts connected owner with restart offer',
+    'network recovery keeps an already connected owner peer alive',
     () async {
       final adapter = _RecordingSignalingAdapter();
       final peers = <_FakePeerCore>[];
@@ -438,10 +516,53 @@ void main() {
       );
       await pumpEventQueue(times: 3);
 
+      expect(peers, hasLength(1));
+      expect(adapter.writtenOffers, <String>['alice:bob']);
+      expect(brain.getSession('bob')?.state, SessionState.connected);
+
+      await brain.disconnect('bob');
+    },
+  );
+
+  test(
+    'scheduled reconnect waits for in-flight media before destroying peer',
+    () async {
+      final adapter = _RecordingSignalingAdapter();
+      final peers = <_FakePeerCore>[];
+      final brain = ProtocolBrainImpl(
+        selfUsername: 'alice',
+        adapter: adapter,
+        peerConfig: _fakePeerConfig(),
+        peerFactory: () {
+          final peer = _FakePeerCore();
+          peers.add(peer);
+          return peer;
+        },
+        connectionMemoryStore: _MemoryConnectionStore(),
+        reconnectGrace: Duration.zero,
+      );
+
+      await brain.connect('bob');
+      peers.single.emitConnected();
+      await pumpEventQueue(times: 3);
+
+      final microphoneGate = Completer<void>();
+      peers.single.startLocalAudioCompleter = microphoneGate;
+      final audioStart = brain.startLocalAudio('bob');
+      await pumpEventQueue(times: 3);
+
+      peers.single.emitDisconnected();
+      await pumpEventQueue(times: 5);
+
+      expect(peers, hasLength(1));
+      expect(peers.single.destroyed, isFalse);
+
+      microphoneGate.complete();
+      await expectLater(audioStart, throwsA(isA<StateError>()));
+      await pumpEventQueue(times: 5);
+
+      expect(peers.first.destroyed, isTrue);
       expect(peers, hasLength(2));
-      expect(adapter.writtenOffers, <String>['alice:bob', 'alice:bob']);
-      expect(adapter.writtenOfferPayloads.last.restart, isTrue);
-      expect(brain.getSession('bob')?.state, SessionState.reconnecting);
 
       await brain.disconnect('bob');
     },
@@ -898,6 +1019,13 @@ class _FakePeerCore implements PeerCore {
   int setAnswerCalls = 0;
   PeerConfig? initialConfig;
   final List<String?> receivedAnswers = <String?>[];
+  final List<String?> receivedMediaOffers = <String?>[];
+  final List<String?> receivedMediaAnswers = <String?>[];
+  final List<bool> muteCalls = <bool>[];
+  Completer<void>? startLocalAudioCompleter;
+  bool localAudioStarted = false;
+  bool localAudioStopped = false;
+  bool destroyed = false;
   PeerConnectionRoute route = const PeerConnectionRoute.unknown();
   final StreamController<RTCIceCandidate> _iceController =
       StreamController<RTCIceCandidate>.broadcast();
@@ -907,6 +1035,8 @@ class _FakePeerCore implements PeerCore {
       StreamController<void>.broadcast();
   final StreamController<PeerMessage> _messageController =
       StreamController<PeerMessage>.broadcast();
+  final StreamController<PeerRemoteTrack> _remoteTrackController =
+      StreamController<PeerRemoteTrack>.broadcast();
   final StreamController<String> _channelOpenController =
       StreamController<String>.broadcast();
   final StreamController<String> _channelCloseController =
@@ -917,12 +1047,14 @@ class _FakePeerCore implements PeerCore {
   @override
   Future<void> init(PeerConfig config) async {
     initialConfig = config;
+    destroyed = false;
     _state = PeerState.ready;
     _stateController.add(_state);
   }
 
   @override
   Future<void> destroy() async {
+    destroyed = true;
     _state = PeerState.idle;
     _stateController.add(_state);
   }
@@ -959,6 +1091,24 @@ class _FakePeerCore implements PeerCore {
   List<RTCIceCandidate> getLocalCandidates() => const <RTCIceCandidate>[];
 
   @override
+  Future<void> applyMediaAnswer(RTCSessionDescription answer) async {
+    receivedMediaAnswers.add(answer.sdp);
+  }
+
+  @override
+  Future<RTCSessionDescription> applyMediaOffer(
+    RTCSessionDescription offer,
+  ) async {
+    receivedMediaOffers.add(offer.sdp);
+    return RTCSessionDescription('media-answer-sdp', 'answer');
+  }
+
+  @override
+  Future<RTCSessionDescription> createMediaOffer() async {
+    return RTCSessionDescription('media-offer-sdp', 'offer');
+  }
+
+  @override
   void send(String channelId, data) {}
 
   @override
@@ -980,6 +1130,25 @@ class _FakePeerCore implements PeerCore {
   Future<PeerConnectionRoute> currentRoute() async => route;
 
   @override
+  Future<void> setMicrophoneMuted({required bool muted}) async {
+    muteCalls.add(muted);
+  }
+
+  @override
+  Future<void> startLocalAudio() async {
+    localAudioStarted = true;
+    final completer = startLocalAudioCompleter;
+    if (completer != null) {
+      await completer.future;
+    }
+  }
+
+  @override
+  Future<void> stopLocalAudio() async {
+    localAudioStopped = true;
+  }
+
+  @override
   Stream<RTCIceCandidate> get onIceCandidate => _iceController.stream;
 
   @override
@@ -990,6 +1159,9 @@ class _FakePeerCore implements PeerCore {
 
   @override
   Stream<PeerMessage> get onMessage => _messageController.stream;
+
+  @override
+  Stream<PeerRemoteTrack> get onRemoteTrack => _remoteTrackController.stream;
 
   @override
   Stream<String> get onChannelOpen => _channelOpenController.stream;
@@ -1037,5 +1209,22 @@ class _FakePlatformBridge implements PlatformBridge {
   }
 
   @override
+  Future<void> clearVoiceAudio() async {}
+
+  @override
+  Future<MediaStream> getUserMedia(Map<String, dynamic> constraints) {
+    throw UnimplementedError();
+  }
+
+  @override
   StorageBackend getLocalStorage() => MemoryStorageBackend();
+
+  @override
+  Future<void> prepareVoiceAudio() async {}
+
+  @override
+  Future<void> setMicrophoneMuted(
+    MediaStreamTrack track, {
+    required bool muted,
+  }) async {}
 }

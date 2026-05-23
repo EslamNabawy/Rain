@@ -11,11 +11,24 @@ import 'package:rain_core/rain_core.dart';
 import 'connection_attempt_coordinator.dart';
 import 'file_transfer_progress_batcher.dart';
 import 'serialized_runtime_mutations.dart';
+import 'voice_call_diagnostics.dart';
+import 'voice_call_state.dart';
 
 part 'file_transfer_runtime.dart';
 part 'friend_runtime.dart';
+part 'voice_call_runtime.dart';
 
 enum FriendRequestResult { sent, acceptedExisting }
+
+typedef RuntimeErrorRecorder =
+    void Function(
+      Object error,
+      StackTrace? stackTrace, {
+      required String source,
+      required bool fatal,
+      String? flutterLibrary,
+      String? flutterContext,
+    });
 
 String _formatRetryDelay(Duration delay) {
   if (delay.inSeconds <= 1) {
@@ -41,6 +54,8 @@ class RainRuntimeController with WidgetsBindingObserver {
     required this.offlineQueueStore,
     required this.messageDeliveryService,
     FileTransferStore? fileTransferStore,
+    VoiceSignalingAdapter? voiceSignalingAdapter,
+    SignalingCipher? voiceSignalingCipher,
     this.heartbeatInterval = const Duration(minutes: 3),
     this.friendRequestRefreshInterval = Duration.zero,
     this.maxPassivePeerListeners = 32,
@@ -48,7 +63,14 @@ class RainRuntimeController with WidgetsBindingObserver {
     Duration initialConnectionRetryBackoff = const Duration(seconds: 3),
     Duration maxConnectionRetryBackoff = const Duration(minutes: 1),
     Future<Directory> Function()? documentsDirectoryProvider,
+    this.errorRecorder,
   }) : fileTransferStore = fileTransferStore ?? FileTransferStore(database),
+       voiceSignalingAdapter =
+           voiceSignalingAdapter ??
+           (adapter is VoiceSignalingAdapter
+               ? adapter as VoiceSignalingAdapter
+               : null),
+       voiceSignalingCipher = voiceSignalingCipher ?? SignalingCipher.demo(),
        _documentsDirectoryProvider =
            documentsDirectoryProvider ?? getApplicationDocumentsDirectory,
        _connectionCoordinator = ConnectionAttemptCoordinator(
@@ -71,10 +93,13 @@ class RainRuntimeController with WidgetsBindingObserver {
   final OfflineQueueStore offlineQueueStore;
   final MessageDeliveryService messageDeliveryService;
   final FileTransferStore fileTransferStore;
+  final VoiceSignalingAdapter? voiceSignalingAdapter;
+  final SignalingCipher voiceSignalingCipher;
   final Duration heartbeatInterval;
   final Duration friendRequestRefreshInterval;
   final int maxPassivePeerListeners;
   final Duration networkRecoveryDebounce;
+  final RuntimeErrorRecorder? errorRecorder;
   final Future<Directory> Function() _documentsDirectoryProvider;
   final Set<String> _manualDisconnectedPeers = <String>{};
   final Set<String> _registeredPeerListeners = <String>{};
@@ -90,6 +115,13 @@ class RainRuntimeController with WidgetsBindingObserver {
       <String, _OutgoingFileSource>{};
   final Map<String, String> _outgoingFileHashes = <String, String>{};
   final Set<String> _canceledTransfers = <String>{};
+  final StreamController<VoiceCallState> _voiceCallStateController =
+      StreamController<VoiceCallState>.broadcast();
+  VoiceCallState _voiceCallState = const VoiceCallState.idle();
+  VoiceCallSession? _voiceCallSession;
+  StreamSubscription<VoiceCallSessionState>? _voiceCallSessionSubscription;
+  final List<StreamSubscription<dynamic>> _voiceSignalingSubscriptions =
+      <StreamSubscription<dynamic>>[];
   late final FileTransferProgressBatcher _fileProgressBatcher;
   final ConnectionAttemptCoordinator _connectionCoordinator;
 
@@ -113,6 +145,13 @@ class RainRuntimeController with WidgetsBindingObserver {
     return _connectionCoordinator.snapshot(
       peerId: _normalizedUsername(username),
     );
+  }
+
+  VoiceCallState get voiceCallState => _voiceCallState;
+
+  Stream<VoiceCallState> watchVoiceCallState() async* {
+    yield _voiceCallState;
+    yield* _voiceCallStateController.stream;
   }
 
   RainGender? _backendGender(String? value) {
@@ -215,6 +254,27 @@ class RainRuntimeController with WidgetsBindingObserver {
           ),
     );
 
+    final voiceAdapter = voiceSignalingAdapter;
+    if (voiceAdapter != null) {
+      _subscriptions.add(
+        voiceAdapter
+            .watchIncomingCalls(selfIdentity.username)
+            .listen(
+              (VoiceCallInboxEntry entry) async {
+                await _handleIncomingVoiceCallEntry(entry);
+              },
+              onError: (Object error, StackTrace stackTrace) {
+                errorRecorder?.call(
+                  error,
+                  stackTrace,
+                  source: 'voice-call-signaling',
+                  fatal: false,
+                );
+              },
+            ),
+      );
+    }
+
     if (brain != null) {
       _subscriptions.add(
         brain!.onSessionChanged.listen(_recordSessionAttemptState),
@@ -244,6 +304,16 @@ class RainRuntimeController with WidgetsBindingObserver {
 
       _subscriptions.add(
         brain!.onPeerDisconnected.listen((String peerId) {
+          final session = brain?.getSession(peerId);
+          if (session?.state == SessionState.connecting ||
+              session?.state == SessionState.reconnecting) {
+            _markVoiceCallReconnectingForPeer(peerId);
+            return;
+          }
+          _failVoiceCallForPeer(
+            peerId,
+            'Peer connection closed. Voice call ended.',
+          );
           unawaited(
             _failActiveTransfersForPeer(
               peerId,
@@ -263,6 +333,11 @@ class RainRuntimeController with WidgetsBindingObserver {
           if (message.channel == SessionChannel.control) {
             final text = message.text;
             if (text == null) {
+              return;
+            }
+            final voiceFrame = VoiceCallFrame.tryDecode(text);
+            if (voiceFrame != null) {
+              await _handleVoiceCallFrame(peerId, voiceFrame);
               return;
             }
             await _localMutations.run(
@@ -377,6 +452,8 @@ class RainRuntimeController with WidgetsBindingObserver {
     String username, {
     bool interactive = false,
     bool waitForConnected = false,
+    bool allowStalePresence = false,
+    bool bypassRetryBackoff = false,
     Duration connectionTimeout = const Duration(seconds: 60),
   }) async {
     final normalizedUsername = _normalizedUsername(username);
@@ -434,7 +511,7 @@ class RainRuntimeController with WidgetsBindingObserver {
     await _localMutations.run(
       () => friendStore.updatePresence(normalizedUsername, isOnline),
     );
-    if (!isOnline) {
+    if (!isOnline && !allowStalePresence) {
       if (interactive) {
         throw StateError(
           '@$normalizedUsername is offline. Wait for them to come online before connecting.',
@@ -442,14 +519,18 @@ class RainRuntimeController with WidgetsBindingObserver {
       }
       return;
     }
-    final retryGate = _connectionCoordinator.retryGate(normalizedUsername);
-    if (!retryGate.allowed) {
-      if (interactive) {
-        throw StateError(
-          'Connection to @$normalizedUsername is cooling down after a failed attempt. Try again in ${_formatRetryDelay(retryGate.remaining)}.',
-        );
+    if (bypassRetryBackoff) {
+      _connectionCoordinator.clearRetry(normalizedUsername);
+    } else {
+      final retryGate = _connectionCoordinator.retryGate(normalizedUsername);
+      if (!retryGate.allowed) {
+        if (interactive) {
+          throw StateError(
+            'Connection to @$normalizedUsername is cooling down after a failed attempt. Try again in ${_formatRetryDelay(retryGate.remaining)}.',
+          );
+        }
+        return;
       }
-      return;
     }
     _manualDisconnectedPeers.remove(normalizedUsername);
     await _registerPeerListener(normalizedUsername, bestEffort: false);
@@ -493,9 +574,27 @@ class RainRuntimeController with WidgetsBindingObserver {
       }
     }
 
+    final activeVoicePeer = _voiceCallState.peerId;
+    if (_voiceCallState.hasCall && activeVoicePeer != null) {
+      await _endVoiceCallForPeer(
+        activeVoicePeer,
+        notifyPeer: false,
+        detail: reason,
+        failureReason: VoiceCallFailureReason.networkLost,
+        failureDetail: 'Network connection lost. Call ended.',
+      );
+    }
+
     final sessions = brain?.getSessions() ?? const <Session>[];
     for (final session in sessions) {
       _manualDisconnectedPeers.add(session.peerId);
+      await _endVoiceCallForPeer(
+        session.peerId,
+        notifyPeer: false,
+        detail: reason,
+        failureReason: VoiceCallFailureReason.networkLost,
+        failureDetail: 'Network connection lost. Call ended.',
+      );
       try {
         await brain?.disconnect(session.peerId);
         await _unregisterPeerListener(session.peerId);
@@ -528,6 +627,7 @@ class RainRuntimeController with WidgetsBindingObserver {
       // Backend reachability is already reported by NetworkStatusService.
     }
 
+    await _safeSyncRelationships();
     await _connectionCoordinator.scheduleNetworkRecovery(reason, (
       String recoveryReason,
     ) async {
@@ -748,6 +848,9 @@ class RainRuntimeController with WidgetsBindingObserver {
     }
 
     await _assertCanTransferFile(normalizedPeerId);
+    if (voiceCallBlocksFileTransfer(normalizedPeerId)) {
+      throw StateError('Finish the call first.');
+    }
     final session = _connectedSession(normalizedPeerId);
     if (session == null) {
       throw StateError('Connect first.');
@@ -845,6 +948,9 @@ class RainRuntimeController with WidgetsBindingObserver {
       throw StateError('This file transfer cannot be accepted.');
     }
     await _assertCanTransferFile(transfer.peerId);
+    if (voiceCallBlocksFileTransfer(transfer.peerId)) {
+      throw StateError('Finish the call first.');
+    }
     if (_connectedSession(transfer.peerId) == null) {
       throw StateError('Connect first.');
     }
@@ -911,6 +1017,16 @@ class RainRuntimeController with WidgetsBindingObserver {
           session.peerId,
           session.error ?? session.detail,
         );
+        _failVoiceCallForPeer(
+          session.peerId,
+          'Peer connection failed. Voice call ended.',
+        );
+        unawaited(
+          _failActiveTransfersForPeer(
+            session.peerId,
+            'Connection lost. Transfer canceled.',
+          ),
+        );
         break;
       case SessionState.connecting:
       case SessionState.reconnecting:
@@ -927,7 +1043,11 @@ class RainRuntimeController with WidgetsBindingObserver {
     switch (state) {
       case AppLifecycleState.resumed:
         _backgroundOfflineTimer?.cancel();
-        unawaited(adapter.setPresence(selfIdentity.username, true));
+        unawaited(
+          handleNetworkAvailable(
+            'App resumed. Refreshing peer connection paths.',
+          ),
+        );
         break;
       case AppLifecycleState.inactive:
       case AppLifecycleState.hidden:
@@ -971,9 +1091,27 @@ class RainRuntimeController with WidgetsBindingObserver {
       }
     }
 
+    final activeVoicePeer = _voiceCallState.peerId;
+    if (activeVoicePeer != null) {
+      try {
+        await _endVoiceCallForPeer(
+          activeVoicePeer,
+          notifyPeer: false,
+          detail: 'Rain is closing.',
+        );
+      } catch (_) {
+        // Ignore errors during cleanup
+      }
+    }
+
     if (brain != null) {
       for (final session in brain!.getSessions()) {
         try {
+          await _endVoiceCallForPeer(
+            session.peerId,
+            notifyPeer: false,
+            detail: 'Rain is closing.',
+          );
           await _failActiveTransfersForPeer(
             session.peerId,
             'Transfer canceled because Rain is closing.',
@@ -995,6 +1133,7 @@ class RainRuntimeController with WidgetsBindingObserver {
 
     WidgetsBinding.instance.removeObserver(this);
     _backgroundOfflineTimer?.cancel();
+    await _disposeCurrentVoiceCallSession();
     _heartbeatTimer?.cancel();
     _friendRequestRefreshTimer?.cancel();
     _connectionCoordinator.dispose();
@@ -1008,6 +1147,7 @@ class RainRuntimeController with WidgetsBindingObserver {
       await subscription.cancel();
     }
     _presenceSubscriptions.clear();
+    await _voiceCallStateController.close();
 
     if (signOut) {
       await adapter.signOut();

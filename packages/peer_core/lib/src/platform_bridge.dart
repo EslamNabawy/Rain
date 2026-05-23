@@ -34,6 +34,13 @@ abstract class PlatformBridge {
     String label,
     webrtc.RTCDataChannelInit opts,
   );
+  Future<webrtc.MediaStream> getUserMedia(Map<String, dynamic> constraints);
+  Future<void> prepareVoiceAudio();
+  Future<void> clearVoiceAudio();
+  Future<void> setMicrophoneMuted(
+    webrtc.MediaStreamTrack track, {
+    required bool muted,
+  });
   StorageBackend getLocalStorage();
 }
 
@@ -60,7 +67,41 @@ class FlutterWebRTCBridge implements PlatformBridge {
   }
 
   @override
+  Future<void> clearVoiceAudio() async {
+    if (webrtc.WebRTC.platformIsAndroid) {
+      await webrtc.Helper.clearAndroidCommunicationDevice();
+    }
+  }
+
+  @override
+  Future<webrtc.MediaStream> getUserMedia(Map<String, dynamic> constraints) {
+    return webrtc.navigator.mediaDevices.getUserMedia(constraints);
+  }
+
+  @override
   StorageBackend getLocalStorage() {
     return _storageBackend;
+  }
+
+  @override
+  Future<void> prepareVoiceAudio() async {
+    if (webrtc.WebRTC.platformIsAndroid) {
+      await webrtc.Helper.setAndroidAudioConfiguration(
+        webrtc.AndroidAudioConfiguration.communication,
+      );
+    }
+  }
+
+  @override
+  Future<void> setMicrophoneMuted(
+    webrtc.MediaStreamTrack track, {
+    required bool muted,
+  }) async {
+    track.enabled = !muted;
+    try {
+      await webrtc.Helper.setMicrophoneMute(muted, track);
+    } catch (_) {
+      // Track.enabled is the portable fallback; native helper support varies.
+    }
   }
 }

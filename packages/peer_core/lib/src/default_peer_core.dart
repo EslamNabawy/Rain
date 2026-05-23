@@ -13,6 +13,7 @@ const _chunkPayloadBytes = 12 * 1024;
 const _maxChunkFrames = 1024;
 const _maxPendingChunkBuffers = 64;
 const _chunkBufferTtl = Duration(minutes: 2);
+const _disconnectGraceDuration = Duration(seconds: 8);
 
 class DefaultPeerCore implements PeerCore {
   DefaultPeerCore({Uuid? uuid}) : _uuid = uuid ?? const Uuid();
@@ -27,6 +28,8 @@ class DefaultPeerCore implements PeerCore {
       StreamController<void>.broadcast();
   final StreamController<PeerMessage> _messageController =
       StreamController<PeerMessage>.broadcast();
+  final StreamController<PeerRemoteTrack> _remoteTrackController =
+      StreamController<PeerRemoteTrack>.broadcast();
   final StreamController<String> _channelOpenController =
       StreamController<String>.broadcast();
   final StreamController<String> _channelCloseController =
@@ -41,8 +44,14 @@ class DefaultPeerCore implements PeerCore {
   final List<RTCIceCandidate> _localCandidates = <RTCIceCandidate>[];
 
   RTCPeerConnection? _peerConnection;
+  RTCRtpTransceiver? _localAudioTransceiver;
+  RTCRtpSender? _localAudioSender;
+  MediaStream? _localAudioStream;
+  MediaStreamTrack? _localAudioTrack;
   PeerConfig? _config;
+  Timer? _disconnectGraceTimer;
   bool _destroying = false;
+  int _lifecycleEpoch = 0;
 
   @override
   Stream<RTCIceCandidate> get onIceCandidate => _iceController.stream;
@@ -55,6 +64,9 @@ class DefaultPeerCore implements PeerCore {
 
   @override
   Stream<PeerMessage> get onMessage => _messageController.stream;
+
+  @override
+  Stream<PeerRemoteTrack> get onRemoteTrack => _remoteTrackController.stream;
 
   @override
   Stream<String> get onChannelOpen => _channelOpenController.stream;
@@ -81,6 +93,47 @@ class DefaultPeerCore implements PeerCore {
   }
 
   @override
+  Future<RTCSessionDescription> applyMediaOffer(
+    RTCSessionDescription offer,
+  ) async {
+    _ensureState(<PeerState>{PeerState.connected});
+    final connection = _requirePeerConnection();
+    final epoch = _lifecycleEpoch;
+    await connection.setRemoteDescription(offer);
+    _ensureCurrentPeer(connection, epoch, 'applying media offer');
+    await _ensureLocalAudioCaptured(connection, epoch);
+    await _attachLocalAudioTrack(connection, epoch);
+    final answer = await connection.createAnswer();
+    _ensureCurrentPeer(connection, epoch, 'answering media offer');
+    await connection.setLocalDescription(answer);
+    _ensureCurrentPeer(connection, epoch, 'setting local media answer');
+    return answer;
+  }
+
+  @override
+  Future<void> applyMediaAnswer(RTCSessionDescription answer) async {
+    _ensureState(<PeerState>{PeerState.connected});
+    final connection = _requirePeerConnection();
+    final epoch = _lifecycleEpoch;
+    await connection.setRemoteDescription(answer);
+    _ensureCurrentPeer(connection, epoch, 'applying media answer');
+  }
+
+  @override
+  Future<RTCSessionDescription> createMediaOffer() async {
+    _ensureState(<PeerState>{PeerState.connected});
+    final connection = _requirePeerConnection();
+    final epoch = _lifecycleEpoch;
+    await _ensureLocalAudioCaptured(connection, epoch);
+    await _attachLocalAudioTrack(connection, epoch);
+    final offer = await connection.createOffer();
+    _ensureCurrentPeer(connection, epoch, 'creating media offer');
+    await connection.setLocalDescription(offer);
+    _ensureCurrentPeer(connection, epoch, 'setting local media offer');
+    return offer;
+  }
+
+  @override
   Future<RTCSessionDescription> createOffer() async {
     _ensureState(<PeerState>{PeerState.ready});
     await openChannel(PeerChannels.chat);
@@ -95,7 +148,10 @@ class DefaultPeerCore implements PeerCore {
   @override
   Future<void> destroy() async {
     _destroying = true;
+    _lifecycleEpoch += 1;
+    _cancelPendingDisconnect();
     try {
+      await stopLocalAudio();
       for (final channel in _channels.values.toList()) {
         await channel.close();
       }
@@ -106,6 +162,8 @@ class DefaultPeerCore implements PeerCore {
     _openChannels.clear();
     await _peerConnection?.close();
     _peerConnection = null;
+    _localAudioTransceiver = null;
+    _localAudioSender = null;
     _localCandidates.clear();
     _chunkBuffers.clear();
     if (state != PeerState.idle) {
@@ -128,7 +186,9 @@ class DefaultPeerCore implements PeerCore {
     _peerConnection = await config.platform.createPeerConnection(
       config.toRtcConfiguration(),
     );
-    _wirePeerConnection(_peerConnection!);
+    _lifecycleEpoch += 1;
+    _wirePeerConnection(_peerConnection!, _lifecycleEpoch);
+    await _reserveReusableAudioTransceiver(_peerConnection!, _lifecycleEpoch);
     _transition(PeerState.ready);
   }
 
@@ -138,12 +198,15 @@ class DefaultPeerCore implements PeerCore {
       return;
     }
 
+    final connection = _requirePeerConnection();
+    final epoch = _lifecycleEpoch;
     final channel = await _config!.platform.createDataChannel(
-      _requirePeerConnection(),
+      connection,
       channelId,
       opts ?? _config!.defaultChannelOptions(),
     );
-    _attachChannel(channelId, channel);
+    _ensureCurrentPeer(connection, epoch, 'opening $channelId channel');
+    _attachChannel(channelId, channel, connection, epoch);
   }
 
   @override
@@ -199,9 +262,201 @@ class DefaultPeerCore implements PeerCore {
     return answer;
   }
 
-  void _attachChannel(String channelId, RTCDataChannel channel) {
+  @override
+  Future<void> setMicrophoneMuted({required bool muted}) async {
+    final track = _localAudioTrack;
+    if (track == null) {
+      throw StateError('Local audio has not been started.');
+    }
+    await _config!.platform.setMicrophoneMuted(track, muted: muted);
+  }
+
+  @override
+  Future<void> startLocalAudio() async {
+    final connection = _requirePeerConnection();
+    final epoch = _lifecycleEpoch;
+    await _ensureLocalAudioCaptured(connection, epoch);
+  }
+
+  Future<void> _ensureLocalAudioCaptured(
+    RTCPeerConnection connection,
+    int epoch,
+  ) async {
+    if (_localAudioStream != null && _localAudioTrack != null) {
+      return;
+    }
+    final config = _config;
+    if (config == null) {
+      throw StateError('PeerCore has not been initialized.');
+    }
+    MediaStream? pendingStream;
+    var keepVoiceAudio = false;
+    try {
+      await config.platform.prepareVoiceAudio();
+      _ensureCurrentPeer(connection, epoch, 'preparing local audio');
+      final stream = await config.platform.getUserMedia(const <String, dynamic>{
+        'audio': <String, dynamic>{
+          'echoCancellation': true,
+          'noiseSuppression': true,
+          'autoGainControl': true,
+        },
+        'video': false,
+      });
+      pendingStream = stream;
+      _ensureCurrentPeer(connection, epoch, 'capturing local audio');
+      final audioTracks = stream.getAudioTracks();
+      if (audioTracks.isEmpty) {
+        throw StateError('No microphone audio track was captured.');
+      }
+      final audioTrack = audioTracks.first;
+      _localAudioStream = stream;
+      _localAudioTrack = audioTrack;
+      pendingStream = null;
+      keepVoiceAudio = true;
+    } catch (_) {
+      rethrow;
+    } finally {
+      if (!keepVoiceAudio) {
+        _localAudioStream = null;
+        _localAudioTrack = null;
+        if (pendingStream != null) {
+          await _disposeMediaStream(pendingStream);
+        }
+        await config.platform.clearVoiceAudio();
+      }
+    }
+  }
+
+  Future<void> _attachLocalAudioTrack(
+    RTCPeerConnection connection,
+    int epoch,
+  ) async {
+    final stream = _localAudioStream;
+    final audioTrack = _localAudioTrack;
+    if (stream == null || audioTrack == null) {
+      throw StateError('Local audio has not been started.');
+    }
+
+    final existingSender = _localAudioSender;
+    if (existingSender != null) {
+      await existingSender.replaceTrack(audioTrack);
+      _ensureCurrentPeer(connection, epoch, 'reusing local audio sender');
+      await _setSenderStreams(existingSender, stream);
+      await _setLocalAudioDirection(TransceiverDirection.SendRecv);
+      _ensureCurrentPeer(connection, epoch, 'enabling local audio sender');
+      return;
+    }
+
+    RTCRtpSender? pendingSender;
+    try {
+      pendingSender = await connection.addTrack(audioTrack, stream);
+      _ensureCurrentPeer(connection, epoch, 'attaching local audio track');
+      _localAudioSender = pendingSender;
+      await _setLocalAudioDirection(TransceiverDirection.SendRecv);
+    } catch (_) {
+      final sender = pendingSender;
+      if (sender != null && _isCurrentPeer(connection, epoch)) {
+        try {
+          await sender.replaceTrack(null);
+        } catch (_) {
+          // Best-effort rollback for partially attached microphone tracks.
+        }
+      }
+      rethrow;
+    }
+  }
+
+  @override
+  Future<void> stopLocalAudio() async {
+    final stream = _localAudioStream;
+    final config = _config;
+    final sender = _localAudioSender;
+    try {
+      if (sender != null) {
+        try {
+          await sender.replaceTrack(null);
+        } catch (_) {
+          // Peer may already be closing; local device cleanup still matters.
+        }
+        if (!_destroying) {
+          try {
+            await _setLocalAudioDirection(TransceiverDirection.Inactive);
+          } catch (_) {
+            // Direction cleanup is best-effort; never block microphone release.
+          }
+        }
+      }
+      if (stream != null) {
+        await _disposeMediaStream(stream);
+      }
+    } finally {
+      _localAudioStream = null;
+      _localAudioTrack = null;
+      if (config != null) {
+        await config.platform.clearVoiceAudio();
+      }
+    }
+  }
+
+  Future<void> _disposeMediaStream(MediaStream stream) async {
+    for (final track in stream.getTracks()) {
+      try {
+        await track.stop();
+      } catch (_) {
+        // Best-effort local media cleanup.
+      }
+    }
+    await stream.dispose();
+  }
+
+  Future<void> _reserveReusableAudioTransceiver(
+    RTCPeerConnection connection,
+    int epoch,
+  ) async {
+    try {
+      final transceiver = await connection.addTransceiver(
+        kind: RTCRtpMediaType.RTCRtpMediaTypeAudio,
+        init: RTCRtpTransceiverInit(direction: TransceiverDirection.Inactive),
+      );
+      _ensureCurrentPeer(connection, epoch, 'reserving local audio sender');
+      _localAudioTransceiver = transceiver;
+      _localAudioSender = transceiver.sender;
+    } catch (_) {
+      // Older platform bindings can still negotiate voice by adding a track
+      // on demand. The reusable transceiver path is preferred when available.
+    }
+  }
+
+  Future<void> _setSenderStreams(
+    RTCRtpSender sender,
+    MediaStream stream,
+  ) async {
+    try {
+      await sender.setStreams(<MediaStream>[stream]);
+    } catch (_) {
+      // Stream metadata is optional for RTP; replaceTrack is the critical step.
+    }
+  }
+
+  Future<void> _setLocalAudioDirection(TransceiverDirection direction) async {
+    final transceiver = _localAudioTransceiver;
+    if (transceiver == null || transceiver.stoped) {
+      return;
+    }
+    await transceiver.setDirection(direction);
+  }
+
+  void _attachChannel(
+    String channelId,
+    RTCDataChannel channel,
+    RTCPeerConnection connection,
+    int epoch,
+  ) {
     _channels[channelId] = channel;
     channel.onDataChannelState = (RTCDataChannelState state) {
+      if (!_isCurrentPeer(connection, epoch)) {
+        return;
+      }
       if (state == RTCDataChannelState.RTCDataChannelOpen) {
         _openChannels.add(channelId);
         _channelOpenController.add(channelId);
@@ -213,8 +468,11 @@ class DefaultPeerCore implements PeerCore {
         if (!_destroying &&
             _isRequiredDataChannel(channelId) &&
             this.state == PeerState.connected) {
-          _transition(PeerState.reconnecting);
-          _disconnectedController.add(null);
+          _scheduleTransientDisconnect(
+            connection,
+            epoch,
+            requireRequiredDataChannelClosed: true,
+          );
         }
       }
     };
@@ -223,6 +481,9 @@ class DefaultPeerCore implements PeerCore {
       _markConnectedIfDataChannelsReady();
     }
     channel.onMessage = (RTCDataChannelMessage message) {
+      if (!_isCurrentPeer(connection, epoch)) {
+        return;
+      }
       final payload = message.isBinary
           ? Uint8List.fromList(message.binary)
           : message.text;
@@ -302,6 +563,23 @@ class DefaultPeerCore implements PeerCore {
     return peerConnection;
   }
 
+  bool _isCurrentPeer(RTCPeerConnection connection, int epoch) {
+    return !_destroying &&
+        identical(_peerConnection, connection) &&
+        _lifecycleEpoch == epoch &&
+        _config != null;
+  }
+
+  void _ensureCurrentPeer(
+    RTCPeerConnection connection,
+    int epoch,
+    String operation,
+  ) {
+    if (!_isCurrentPeer(connection, epoch)) {
+      throw StateError('Peer connection changed while $operation.');
+    }
+  }
+
   void _sendChunkedIfNeeded(RTCDataChannel channel, dynamic data) {
     if (data is Uint8List) {
       if (data.lengthInBytes <= _maxMessageBytes) {
@@ -360,6 +638,9 @@ class DefaultPeerCore implements PeerCore {
   }
 
   void _markConnectedIfDataChannelsReady() {
+    if (_requiredDataChannelsOpen) {
+      _cancelPendingDisconnect();
+    }
     if (!_requiredDataChannelsOpen || state == PeerState.connected) {
       return;
     }
@@ -372,12 +653,39 @@ class DefaultPeerCore implements PeerCore {
     }
   }
 
-  void _wirePeerConnection(RTCPeerConnection connection) {
+  void _wirePeerConnection(RTCPeerConnection connection, int epoch) {
     connection.onDataChannel = (RTCDataChannel channel) {
-      _attachChannel(channel.label ?? 'rain.remote', channel);
+      if (!_isCurrentPeer(connection, epoch)) {
+        return;
+      }
+      _attachChannel(
+        channel.label ?? 'rain.remote',
+        channel,
+        connection,
+        epoch,
+      );
+    };
+
+    connection.onTrack = (RTCTrackEvent event) {
+      if (!_isCurrentPeer(connection, epoch)) {
+        return;
+      }
+      if (event.track.kind != 'audio') {
+        return;
+      }
+      _remoteTrackController.add(
+        PeerRemoteTrack(
+          track: event.track,
+          streams: List<MediaStream>.unmodifiable(event.streams),
+          receivedAt: DateTime.now(),
+        ),
+      );
     };
 
     connection.onIceCandidate = (RTCIceCandidate candidate) {
+      if (!_isCurrentPeer(connection, epoch)) {
+        return;
+      }
       if (candidate.candidate == null || candidate.candidate!.isEmpty) {
         return;
       }
@@ -386,8 +694,12 @@ class DefaultPeerCore implements PeerCore {
     };
 
     connection.onConnectionState = (RTCPeerConnectionState state) {
+      if (!_isCurrentPeer(connection, epoch)) {
+        return;
+      }
       switch (state) {
         case RTCPeerConnectionState.RTCPeerConnectionStateConnected:
+          _cancelPendingDisconnect();
           if (this.state == PeerState.offering ||
               this.state == PeerState.answering) {
             _transition(PeerState.connecting);
@@ -395,17 +707,18 @@ class DefaultPeerCore implements PeerCore {
           _markConnectedIfDataChannelsReady();
           break;
         case RTCPeerConnectionState.RTCPeerConnectionStateConnecting:
+          _cancelPendingDisconnect();
           if (this.state == PeerState.answering) {
             _transition(PeerState.connecting);
           }
           break;
         case RTCPeerConnectionState.RTCPeerConnectionStateDisconnected:
           if (this.state == PeerState.connected) {
-            _transition(PeerState.reconnecting);
-            _disconnectedController.add(null);
+            _scheduleTransientDisconnect(connection, epoch);
           }
           break;
         case RTCPeerConnectionState.RTCPeerConnectionStateFailed:
+          _cancelPendingDisconnect();
           if (this.state == PeerState.reconnecting) {
             _transition(PeerState.failed);
           } else if (this.state == PeerState.connected) {
@@ -414,14 +727,47 @@ class DefaultPeerCore implements PeerCore {
           _disconnectedController.add(null);
           break;
         case RTCPeerConnectionState.RTCPeerConnectionStateClosed:
+          _cancelPendingDisconnect();
           if (this.state != PeerState.idle) {
             _transition(PeerState.idle);
           }
           break;
         case RTCPeerConnectionState.RTCPeerConnectionStateNew:
+          _cancelPendingDisconnect();
           break;
       }
     };
+  }
+
+  void _scheduleTransientDisconnect(
+    RTCPeerConnection connection,
+    int epoch, {
+    bool requireRequiredDataChannelClosed = false,
+  }) {
+    if (_disconnectGraceTimer != null) {
+      return;
+    }
+    _disconnectGraceTimer = Timer(_disconnectGraceDuration, () {
+      _disconnectGraceTimer = null;
+      if (!_isCurrentPeer(connection, epoch) || state != PeerState.connected) {
+        return;
+      }
+      final transportDisconnected =
+          connection.connectionState ==
+          RTCPeerConnectionState.RTCPeerConnectionStateDisconnected;
+      final requiredChannelClosed =
+          requireRequiredDataChannelClosed && !_requiredDataChannelsOpen;
+      if (!transportDisconnected && !requiredChannelClosed) {
+        return;
+      }
+      _transition(PeerState.reconnecting);
+      _disconnectedController.add(null);
+    });
+  }
+
+  void _cancelPendingDisconnect() {
+    _disconnectGraceTimer?.cancel();
+    _disconnectGraceTimer = null;
   }
 
   void _pruneStaleChunkBuffers(DateTime now) {

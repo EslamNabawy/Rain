@@ -221,7 +221,8 @@ class ConnectionDiagnostics {
     if (!isPeerOnline) {
       return build(
         label: 'Offline',
-        detail: 'Peer is offline. Keep both apps open.',
+        detail:
+            'Presence says this peer is offline. If both apps are open, try Connect.',
         route: const PeerConnectionRoute.unknown(),
       );
     }

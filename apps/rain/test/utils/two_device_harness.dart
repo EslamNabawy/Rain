@@ -1,7 +1,8 @@
 import 'dart:async';
 
 import 'package:drift/native.dart';
-import 'package:flutter_webrtc/flutter_webrtc.dart';
+import 'package:flutter_webrtc/flutter_webrtc.dart'
+    show RTCDataChannelInit, RTCIceCandidate, RTCSessionDescription;
 import 'package:peer_core/peer_core.dart';
 import 'package:rain/core/config/app_environment.dart';
 import 'package:rain/application/runtime/rain_runtime_controller.dart';
@@ -177,6 +178,8 @@ class _LinkedPeerCore implements PeerCore {
       StreamController<void>.broadcast();
   final StreamController<PeerMessage> _messageController =
       StreamController<PeerMessage>.broadcast();
+  final StreamController<PeerRemoteTrack> _remoteTrackController =
+      StreamController<PeerRemoteTrack>.broadcast();
   final StreamController<String> _channelOpenController =
       StreamController<String>.broadcast();
   final StreamController<String> _channelCloseController =
@@ -216,6 +219,27 @@ class _LinkedPeerCore implements PeerCore {
     _stateController.add(_state);
     connectPair();
   }
+
+  @override
+  Future<void> startLocalAudio() async {}
+
+  @override
+  Future<void> stopLocalAudio() async {}
+
+  @override
+  Future<void> setMicrophoneMuted({required bool muted}) async {}
+
+  @override
+  Future<RTCSessionDescription> createMediaOffer() async =>
+      RTCSessionDescription('media-offer-sdp-$name', 'offer');
+
+  @override
+  Future<RTCSessionDescription> applyMediaOffer(
+    RTCSessionDescription offer,
+  ) async => RTCSessionDescription('media-answer-sdp-$name', 'answer');
+
+  @override
+  Future<void> applyMediaAnswer(RTCSessionDescription answer) async {}
 
   @override
   Future<void> addIceCandidate(RTCIceCandidate candidate) async {}
@@ -271,6 +295,9 @@ class _LinkedPeerCore implements PeerCore {
 
   @override
   Stream<PeerMessage> get onMessage => _messageController.stream;
+
+  @override
+  Stream<PeerRemoteTrack> get onRemoteTrack => _remoteTrackController.stream;
 
   @override
   Stream<String> get onChannelOpen => _channelOpenController.stream;

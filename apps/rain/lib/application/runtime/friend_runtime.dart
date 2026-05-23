@@ -444,6 +444,11 @@ extension FriendRuntime on RainRuntimeController {
 
   Future<void> _stopTrackingPeer(String username) async {
     final normalizedUsername = _normalizedUsername(username);
+    await _endVoiceCallForPeer(
+      normalizedUsername,
+      notifyPeer: true,
+      detail: 'Call ended because the relationship changed.',
+    );
     await _failActiveTransfersForPeer(
       normalizedUsername,
       'Transfer canceled because the peer link closed.',

@@ -4,10 +4,12 @@ import 'package:firebase_auth/firebase_auth.dart';
 import 'package:firebase_database/firebase_database.dart';
 import 'package:flutter_webrtc/flutter_webrtc.dart';
 
+import '../src/voice_signaling_contract.dart';
 import 'signaling_adapter.dart';
 import 'signaling_cipher.dart';
 
-class FirebaseSignalingAdapter implements SignalingAdapter {
+class FirebaseSignalingAdapter
+    implements SignalingAdapter, VoiceSignalingAdapter {
   FirebaseSignalingAdapter({
     FirebaseAuth? auth,
     FirebaseDatabase? database,
@@ -141,6 +143,260 @@ class FirebaseSignalingAdapter implements SignalingAdapter {
     await _configureEmulatorsIfNeeded();
     await ensureAuthenticated();
     await _root.child('rooms/$roomId').remove();
+  }
+
+  @override
+  Future<VoiceCallRoom> createOutgoingCall({
+    required String callId,
+    required String caller,
+    required String callee,
+    required int createdAt,
+    required int expiresAt,
+  }) async {
+    await _configureEmulatorsIfNeeded();
+    final normalizedCallId = callId.trim();
+    final normalizedCaller = normalizeVoiceCallUsername(caller);
+    final normalizedCallee = normalizeVoiceCallUsername(callee);
+    await _ensureSignedInAsUsername(normalizedCaller);
+
+    final pairId = voiceCallPairId(normalizedCaller, normalizedCallee);
+    final room = VoiceCallRoom(
+      v: VoiceCallRoom.version,
+      callId: normalizedCallId,
+      pairId: pairId,
+      caller: normalizedCaller,
+      callee: normalizedCallee,
+      status: VoiceCallSignalingStatus.ringing,
+      createdAt: createdAt,
+      updatedAt: createdAt,
+      expiresAt: expiresAt,
+      muted: Map<String, bool>.unmodifiable(<String, bool>{
+        normalizedCaller: false,
+        normalizedCallee: false,
+      }),
+    );
+    room.validate();
+    final lock = VoiceActivePairLock(
+      pairId: pairId,
+      callId: normalizedCallId,
+      caller: normalizedCaller,
+      callee: normalizedCallee,
+      createdAt: createdAt,
+      updatedAt: createdAt,
+      expiresAt: expiresAt,
+    );
+    final inbox = VoiceCallInboxEntry(
+      callId: normalizedCallId,
+      from: normalizedCaller,
+      to: normalizedCallee,
+      pairId: pairId,
+      status: VoiceCallSignalingStatus.ringing,
+      createdAt: createdAt,
+      updatedAt: createdAt,
+      expiresAt: expiresAt,
+    );
+
+    final lockRef = _root.child('activeVoicePairs/$pairId');
+    final transaction = await lockRef.runTransaction((Object? current) {
+      if (current is Map) {
+        try {
+          final existing = VoiceActivePairLock.fromJson(
+            pairId: pairId,
+            json: _asObjectMap(current),
+          );
+          if (existing.expiresAt > createdAt) {
+            return Transaction.abort();
+          }
+        } catch (_) {
+          return Transaction.abort();
+        }
+      }
+      return Transaction.success(lock.toJson());
+    }, applyLocally: false);
+    if (!transaction.committed) {
+      throw VoiceSignalingException(
+        'Active voice call already exists for pair $pairId.',
+      );
+    }
+
+    try {
+      await _root.update(<String, Object?>{
+        'voiceCalls/$normalizedCallId': room.toJson(),
+        'voiceCallInboxes/$normalizedCallee/$normalizedCallId': inbox.toJson(),
+      });
+    } catch (_) {
+      await lockRef.remove();
+      rethrow;
+    }
+    return room;
+  }
+
+  @override
+  Future<VoiceCallRoom?> fetchCall(String callId) async {
+    await _configureEmulatorsIfNeeded();
+    await ensureAuthenticated();
+    final normalizedCallId = callId.trim();
+    final snapshot = await _root.child('voiceCalls/$normalizedCallId').get();
+    return _voiceCallRoomFromSnapshot(normalizedCallId, snapshot.value);
+  }
+
+  @override
+  Stream<VoiceCallRoom?> watchCall(String callId) {
+    final normalizedCallId = callId.trim();
+    return _root
+        .child('voiceCalls/$normalizedCallId')
+        .onValue
+        .map(
+          (DatabaseEvent event) => _voiceCallRoomFromSnapshot(
+            normalizedCallId,
+            event.snapshot.value,
+          ),
+        );
+  }
+
+  @override
+  Stream<VoiceCallInboxEntry> watchIncomingCalls(String username) {
+    final normalizedUsername = normalizeVoiceCallUsername(username);
+    late final StreamController<VoiceCallInboxEntry> controller;
+    final subscriptions = <StreamSubscription<DatabaseEvent>>[];
+
+    void emitEntry(DatabaseEvent event) {
+      final key = event.snapshot.key;
+      final value = event.snapshot.value;
+      if (key == null || key.isEmpty || value is! Map) {
+        return;
+      }
+      try {
+        final entry = VoiceCallInboxEntry.fromJson(
+          callId: key,
+          json: _asObjectMap(value),
+        );
+        if (!controller.isClosed) {
+          controller.add(entry);
+        }
+      } catch (error, stackTrace) {
+        if (!controller.isClosed) {
+          controller.addError(error, stackTrace);
+        }
+      }
+    }
+
+    controller = StreamController<VoiceCallInboxEntry>.broadcast(
+      onListen: () {
+        final ref = _root.child('voiceCallInboxes/$normalizedUsername');
+        subscriptions.add(ref.onChildAdded.listen(emitEntry));
+        subscriptions.add(ref.onChildChanged.listen(emitEntry));
+      },
+      onCancel: () async {
+        for (final subscription in subscriptions) {
+          await subscription.cancel();
+        }
+        subscriptions.clear();
+      },
+    );
+    return controller.stream;
+  }
+
+  @override
+  Future<void> acceptCall({
+    required String callId,
+    required String callee,
+    required int acceptedAt,
+  }) async {
+    final room = await _requireVoiceCall(callId);
+    final normalizedCallee = normalizeVoiceCallUsername(callee);
+    await _ensureSignedInAsUsername(normalizedCallee);
+    _ensureVoiceRole(room, normalizedCallee, VoiceCallRole.callee);
+    _ensureVoiceStatus(room, const <VoiceCallSignalingStatus>{
+      VoiceCallSignalingStatus.ringing,
+    });
+    await _root.update(<String, Object?>{
+      'voiceCalls/${room.callId}/status':
+          VoiceCallSignalingStatus.accepted.name,
+      'voiceCalls/${room.callId}/acceptedAt': acceptedAt,
+      'voiceCalls/${room.callId}/updatedAt': acceptedAt,
+      'voiceCallInboxes/${room.callee}/${room.callId}/status':
+          VoiceCallSignalingStatus.accepted.name,
+      'voiceCallInboxes/${room.callee}/${room.callId}/updatedAt': acceptedAt,
+    });
+  }
+
+  @override
+  Future<void> markConnected({
+    required String callId,
+    required String username,
+    required int connectedAt,
+  }) async {
+    final room = await _requireVoiceCall(callId);
+    final normalizedUsername = normalizeVoiceCallUsername(username);
+    await _ensureSignedInAsUsername(normalizedUsername);
+    _ensureVoiceParticipant(room, normalizedUsername);
+    _ensureVoiceStatus(room, const <VoiceCallSignalingStatus>{
+      VoiceCallSignalingStatus.accepted,
+      VoiceCallSignalingStatus.negotiating,
+      VoiceCallSignalingStatus.connected,
+    });
+    await _root.update(<String, Object?>{
+      'voiceCalls/${room.callId}/status':
+          VoiceCallSignalingStatus.connected.name,
+      'voiceCalls/${room.callId}/connectedAt': connectedAt,
+      'voiceCalls/${room.callId}/updatedAt': connectedAt,
+      'voiceCallInboxes/${room.callee}/${room.callId}/status':
+          VoiceCallSignalingStatus.connected.name,
+      'voiceCallInboxes/${room.callee}/${room.callId}/updatedAt': connectedAt,
+    });
+  }
+
+  @override
+  Future<void> endCall({
+    required String callId,
+    required String username,
+    required VoiceCallSignalingStatus status,
+    required int endedAt,
+    String? reasonCode,
+    String? reason,
+  }) async {
+    if (!status.isTerminal) {
+      throw const VoiceSignalingException(
+        'Voice call end status must be terminal.',
+      );
+    }
+    final room = await _requireVoiceCall(callId);
+    final normalizedUsername = normalizeVoiceCallUsername(username);
+    await _ensureSignedInAsUsername(normalizedUsername);
+    _ensureVoiceParticipant(room, normalizedUsername);
+    if (room.status.isTerminal) {
+      return;
+    }
+    await _root.update(<String, Object?>{
+      'voiceCalls/${room.callId}/status': status.name,
+      'voiceCalls/${room.callId}/endedAt': endedAt,
+      'voiceCalls/${room.callId}/endedBy': normalizedUsername,
+      'voiceCalls/${room.callId}/updatedAt': endedAt,
+      'voiceCalls/${room.callId}/reasonCode': reasonCode,
+      'voiceCalls/${room.callId}/reason': reason,
+      'voiceCallInboxes/${room.callee}/${room.callId}/status': status.name,
+      'voiceCallInboxes/${room.callee}/${room.callId}/updatedAt': endedAt,
+      'activeVoicePairs/${room.pairId}': null,
+    });
+  }
+
+  @override
+  Future<void> setMuted({
+    required String callId,
+    required String username,
+    required bool muted,
+    required int updatedAt,
+  }) async {
+    final room = await _requireVoiceCall(callId);
+    final normalizedUsername = normalizeVoiceCallUsername(username);
+    await _ensureSignedInAsUsername(normalizedUsername);
+    _ensureVoiceParticipant(room, normalizedUsername);
+    _ensureVoiceNonTerminal(room);
+    await _root.update(<String, Object?>{
+      'voiceCalls/${room.callId}/muted/$normalizedUsername': muted,
+      'voiceCalls/${room.callId}/updatedAt': updatedAt,
+    });
   }
 
   @override
@@ -647,6 +903,158 @@ class FirebaseSignalingAdapter implements SignalingAdapter {
   }
 
   @override
+  Future<void> writeVoiceOffer({
+    required String callId,
+    required String caller,
+    required VoiceSignalingEnvelope offer,
+    required int updatedAt,
+  }) async {
+    offer.validate(
+      maxCiphertextLength: VoiceSignalingEnvelope.maxSdpCiphertextLength,
+    );
+    final room = await _requireVoiceCall(callId);
+    final normalizedCaller = normalizeVoiceCallUsername(caller);
+    await _ensureSignedInAsUsername(normalizedCaller);
+    _ensureVoiceRole(room, normalizedCaller, VoiceCallRole.caller);
+    _ensureVoiceStatus(room, const <VoiceCallSignalingStatus>{
+      VoiceCallSignalingStatus.accepted,
+      VoiceCallSignalingStatus.negotiating,
+    });
+    await _root.update(<String, Object?>{
+      'voiceCalls/${room.callId}/status':
+          VoiceCallSignalingStatus.negotiating.name,
+      'voiceCalls/${room.callId}/offer': offer.toJson(
+        maxCiphertextLength: VoiceSignalingEnvelope.maxSdpCiphertextLength,
+      ),
+      'voiceCalls/${room.callId}/updatedAt': updatedAt,
+      'voiceCallInboxes/${room.callee}/${room.callId}/status':
+          VoiceCallSignalingStatus.negotiating.name,
+      'voiceCallInboxes/${room.callee}/${room.callId}/updatedAt': updatedAt,
+    });
+  }
+
+  @override
+  Future<void> writeVoiceAnswer({
+    required String callId,
+    required String callee,
+    required VoiceSignalingEnvelope answer,
+    required int updatedAt,
+  }) async {
+    answer.validate(
+      maxCiphertextLength: VoiceSignalingEnvelope.maxSdpCiphertextLength,
+    );
+    final room = await _requireVoiceCall(callId);
+    final normalizedCallee = normalizeVoiceCallUsername(callee);
+    await _ensureSignedInAsUsername(normalizedCallee);
+    _ensureVoiceRole(room, normalizedCallee, VoiceCallRole.callee);
+    _ensureVoiceStatus(room, const <VoiceCallSignalingStatus>{
+      VoiceCallSignalingStatus.negotiating,
+    });
+    if (room.offer == null) {
+      throw const VoiceSignalingException(
+        'Cannot write voice answer before offer.',
+      );
+    }
+    await _root.update(<String, Object?>{
+      'voiceCalls/${room.callId}/answer': answer.toJson(
+        maxCiphertextLength: VoiceSignalingEnvelope.maxSdpCiphertextLength,
+      ),
+      'voiceCalls/${room.callId}/updatedAt': updatedAt,
+    });
+  }
+
+  @override
+  Stream<VoiceSignalingEnvelope> watchVoiceOffer(String callId) {
+    final normalizedCallId = callId.trim();
+    return _root
+        .child('voiceCalls/$normalizedCallId/offer')
+        .onValue
+        .map((DatabaseEvent event) => event.snapshot.value)
+        .where((Object? value) => value is Map)
+        .map(
+          (Object? value) => VoiceSignalingEnvelope.fromJson(
+            _asObjectMap(value),
+            maxCiphertextLength: VoiceSignalingEnvelope.maxSdpCiphertextLength,
+          ),
+        );
+  }
+
+  @override
+  Stream<VoiceSignalingEnvelope> watchVoiceAnswer(String callId) {
+    final normalizedCallId = callId.trim();
+    return _root
+        .child('voiceCalls/$normalizedCallId/answer')
+        .onValue
+        .map((DatabaseEvent event) => event.snapshot.value)
+        .where((Object? value) => value is Map)
+        .map(
+          (Object? value) => VoiceSignalingEnvelope.fromJson(
+            _asObjectMap(value),
+            maxCiphertextLength: VoiceSignalingEnvelope.maxSdpCiphertextLength,
+          ),
+        );
+  }
+
+  @override
+  Future<String> writeIceCandidate({
+    required String callId,
+    required String username,
+    required VoiceCallRole role,
+    required VoiceSignalingEnvelope candidate,
+    required int createdAt,
+  }) async {
+    candidate.validate(
+      maxCiphertextLength: VoiceSignalingEnvelope.maxIceCiphertextLength,
+    );
+    final room = await _requireVoiceCall(callId);
+    final normalizedUsername = normalizeVoiceCallUsername(username);
+    await _ensureSignedInAsUsername(normalizedUsername);
+    _ensureVoiceRole(room, normalizedUsername, role);
+    _ensureVoiceStatus(room, const <VoiceCallSignalingStatus>{
+      VoiceCallSignalingStatus.accepted,
+      VoiceCallSignalingStatus.negotiating,
+      VoiceCallSignalingStatus.connected,
+    });
+    final candidateRef = _root
+        .child('voiceCalls/${room.callId}/${_voiceIcePath(role)}')
+        .push();
+    final candidateId = candidateRef.key;
+    if (candidateId == null || candidateId.isEmpty) {
+      throw const VoiceSignalingException(
+        'Failed to allocate voice ICE candidate key.',
+      );
+    }
+    await _root.update(<String, Object?>{
+      'voiceCalls/${room.callId}/${_voiceIcePath(role)}/$candidateId': candidate
+          .toJson(
+            maxCiphertextLength: VoiceSignalingEnvelope.maxIceCiphertextLength,
+          ),
+      'voiceCalls/${room.callId}/updatedAt': createdAt,
+    });
+    return candidateId;
+  }
+
+  @override
+  Stream<VoiceCallIceCandidateRecord> watchIceCandidates({
+    required String callId,
+    required VoiceCallRole role,
+  }) {
+    final normalizedCallId = callId.trim();
+    return _root
+        .child('voiceCalls/$normalizedCallId/${_voiceIcePath(role)}')
+        .onChildAdded
+        .where((DatabaseEvent event) => event.snapshot.value is Map)
+        .map(
+          (DatabaseEvent event) => VoiceCallIceCandidateRecord.fromJson(
+            callId: normalizedCallId,
+            candidateId: event.snapshot.key ?? '',
+            role: role,
+            json: _asObjectMap(event.snapshot.value),
+          ),
+        );
+  }
+
+  @override
   Future<void> sendHeartbeat(String username) async {
     await _ensureSignedInAsUsername(username);
     final now = DateTime.now().millisecondsSinceEpoch;
@@ -756,6 +1164,96 @@ class FirebaseSignalingAdapter implements SignalingAdapter {
       ..._roomLifecycle(roomId: roomId, timestamp: timestamp, newAttempt: true),
       'offer': encryptedOffer,
     });
+  }
+
+  @override
+  Future<void> deleteCall(String callId) async {
+    await _configureEmulatorsIfNeeded();
+    await ensureAuthenticated();
+    final normalizedCallId = callId.trim();
+    final room = await fetchCall(normalizedCallId);
+    if (room == null) {
+      await _root.child('voiceCalls/$normalizedCallId').remove();
+      return;
+    }
+    await _root.update(<String, Object?>{
+      'voiceCalls/${room.callId}': null,
+      'voiceCallInboxes/${room.callee}/${room.callId}': null,
+      'activeVoicePairs/${room.pairId}': null,
+    });
+  }
+
+  VoiceCallRoom? _voiceCallRoomFromSnapshot(String callId, Object? value) {
+    if (value is! Map) {
+      return null;
+    }
+    return VoiceCallRoom.fromJson(callId: callId, json: _asObjectMap(value));
+  }
+
+  Future<VoiceCallRoom> _requireVoiceCall(String callId) async {
+    final room = await fetchCall(callId);
+    if (room == null) {
+      throw VoiceSignalingException('Unknown voice call: ${callId.trim()}');
+    }
+    return room;
+  }
+
+  void _ensureVoiceParticipant(VoiceCallRoom room, String username) {
+    final normalizedUsername = normalizeVoiceCallUsername(username);
+    if (normalizedUsername != room.caller &&
+        normalizedUsername != room.callee) {
+      throw VoiceSignalingException(
+        '@$normalizedUsername is not a participant in ${room.callId}.',
+      );
+    }
+  }
+
+  void _ensureVoiceRole(
+    VoiceCallRoom room,
+    String username,
+    VoiceCallRole role,
+  ) {
+    final normalizedUsername = normalizeVoiceCallUsername(username);
+    final expectedUsername = voiceCallRoleUsername(room, role);
+    if (normalizedUsername != expectedUsername) {
+      throw VoiceSignalingException(
+        '@$normalizedUsername cannot write ${role.name} signaling for ${room.callId}.',
+      );
+    }
+  }
+
+  void _ensureVoiceStatus(
+    VoiceCallRoom room,
+    Set<VoiceCallSignalingStatus> allowed,
+  ) {
+    if (!allowed.contains(room.status)) {
+      throw VoiceSignalingException(
+        'Voice call ${room.callId} is ${room.status.name}.',
+      );
+    }
+  }
+
+  void _ensureVoiceNonTerminal(VoiceCallRoom room) {
+    if (room.status.isTerminal) {
+      throw VoiceSignalingException('Voice call ${room.callId} already ended.');
+    }
+  }
+
+  String _voiceIcePath(VoiceCallRole role) {
+    return switch (role) {
+      VoiceCallRole.caller => 'ice/caller',
+      VoiceCallRole.callee => 'ice/callee',
+    };
+  }
+
+  Map<Object?, Object?> _asObjectMap(Object? value) {
+    if (value is Map<Object?, Object?>) {
+      return value;
+    }
+    if (value is Map) {
+      return Map<Object?, Object?>.from(value);
+    }
+    throw ArgumentError.value(value, 'value', 'Expected a JSON map');
   }
 
   Future<void> _ensureSignedInAsUsername(String username) async {

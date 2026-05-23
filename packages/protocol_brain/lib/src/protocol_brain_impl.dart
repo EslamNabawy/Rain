@@ -43,6 +43,8 @@ class ProtocolBrainImpl implements ProtocolBrain {
       StreamController<String>.broadcast();
   final StreamController<SessionMessage> _peerMessageController =
       StreamController<SessionMessage>.broadcast();
+  final StreamController<SessionRemoteTrack> _remoteTrackController =
+      StreamController<SessionRemoteTrack>.broadcast();
   final StreamController<Session> _sessionChangedController =
       StreamController<Session>.broadcast();
   final StreamController<IncomingOfferRejection>
@@ -57,6 +59,9 @@ class ProtocolBrainImpl implements ProtocolBrain {
 
   @override
   Stream<SessionMessage> get onPeerMessage => _peerMessageController.stream;
+
+  @override
+  Stream<SessionRemoteTrack> get onRemoteTrack => _remoteTrackController.stream;
 
   @override
   Stream<Session> get onSessionChanged => _sessionChangedController.stream;
@@ -223,9 +228,180 @@ class ProtocolBrainImpl implements ProtocolBrain {
   }
 
   @override
+  Future<RTCSessionDescription> applyMediaOffer(
+    String peerId,
+    RTCSessionDescription offer,
+  ) async {
+    final active = _requireConnectedSession(peerId);
+    _markPhase(
+      active,
+      SessionPhase.negotiatingMedia,
+      'Applying voice media offer.',
+      state: SessionState.connected,
+    );
+    final answer = await _runConnectedPeerOperation(
+      active,
+      'applying voice media offer',
+      (PeerCore peer) => peer.applyMediaOffer(offer),
+    );
+    _markPhase(
+      active,
+      SessionPhase.connected,
+      'Voice media negotiation answered.',
+      state: SessionState.connected,
+    );
+    return answer;
+  }
+
+  @override
+  Future<void> applyMediaAnswer(
+    String peerId,
+    RTCSessionDescription answer,
+  ) async {
+    final active = _requireConnectedSession(peerId);
+    _markPhase(
+      active,
+      SessionPhase.negotiatingMedia,
+      'Applying voice media answer.',
+      state: SessionState.connected,
+    );
+    await _runConnectedPeerOperation(
+      active,
+      'applying voice media answer',
+      (PeerCore peer) => peer.applyMediaAnswer(answer),
+    );
+    _markPhase(
+      active,
+      SessionPhase.connected,
+      'Voice media negotiation complete.',
+      state: SessionState.connected,
+    );
+  }
+
+  @override
+  Future<RTCSessionDescription> createMediaOffer(String peerId) async {
+    final active = _requireConnectedSession(peerId);
+    _markPhase(
+      active,
+      SessionPhase.negotiatingMedia,
+      'Creating voice media offer.',
+      state: SessionState.connected,
+    );
+    final offer = await _runConnectedPeerOperation(
+      active,
+      'creating voice media offer',
+      (PeerCore peer) => peer.createMediaOffer(),
+    );
+    _markPhase(
+      active,
+      SessionPhase.connected,
+      'Voice media offer created.',
+      state: SessionState.connected,
+    );
+    return offer;
+  }
+
+  @override
+  Future<void> setMicrophoneMuted(String peerId, {required bool muted}) async {
+    final active = _requireConnectedSession(peerId);
+    await _runConnectedPeerOperation(
+      active,
+      'muting voice media',
+      (PeerCore peer) => peer.setMicrophoneMuted(muted: muted),
+    );
+  }
+
+  @override
+  Future<void> startLocalAudio(String peerId) async {
+    final active = _requireConnectedSession(peerId);
+    await _runConnectedPeerOperation(
+      active,
+      'starting local voice media',
+      (PeerCore peer) => peer.startLocalAudio(),
+    );
+  }
+
+  @override
+  Future<void> stopLocalAudio(String peerId) async {
+    final active = _sessions[peerId];
+    if (active == null) {
+      return;
+    }
+    await active.runPeerOperation(() async {
+      if (_sessions[peerId] != active) {
+        return;
+      }
+      await active.peer.stopLocalAudio();
+    });
+  }
+
+  @override
+  Future<VoiceMediaConnection> createVoiceMediaConnection(String peerId) async {
+    final active = _sessions[peerId];
+    final policy = active?.icePolicy ?? PeerIceTransportPolicy.all;
+    final config = peerConfigProvider == null
+        ? peerConfig.copyWith(iceTransportPolicy: policy)
+        : await peerConfigProvider!(policy);
+    return DefaultVoiceMediaConnection(
+      config: config.copyWith(iceTransportPolicy: policy),
+    );
+  }
+
+  @override
   Future<void> unregisterPeer(String peerId) async {
     _incomingOfferGuards.remove(peerId);
     await _offerSubscriptions.remove(peerId)?.cancel();
+  }
+
+  _ActiveSession _requireConnectedSession(String peerId) {
+    final active = _sessions[peerId];
+    if (active == null) {
+      throw StateError('No active session for $peerId');
+    }
+    if (active.snapshot.state != SessionState.connected ||
+        active.peer.state != PeerState.connected) {
+      throw StateError('Peer $peerId is not connected.');
+    }
+    return active;
+  }
+
+  Future<T> _runConnectedPeerOperation<T>(
+    _ActiveSession active,
+    String operation,
+    Future<T> Function(PeerCore peer) action,
+  ) {
+    return active.runPeerOperation(() async {
+      _ensureCurrentConnectedPeer(active, operation);
+      final peer = active.peer;
+      final generation = active.peerGeneration;
+      final result = await action(peer);
+      _ensureCurrentConnectedPeer(
+        active,
+        operation,
+        peer: peer,
+        generation: generation,
+      );
+      return result;
+    });
+  }
+
+  void _ensureCurrentConnectedPeer(
+    _ActiveSession active,
+    String operation, {
+    PeerCore? peer,
+    int? generation,
+  }) {
+    if (_sessions[active.peerId] != active || !active.shouldReconnect) {
+      throw StateError('Peer ${active.peerId} is no longer active.');
+    }
+    if ((peer != null && !identical(active.peer, peer)) ||
+        (generation != null && active.peerGeneration != generation)) {
+      throw StateError('Peer connection changed while $operation.');
+    }
+    if (active.snapshot.state != SessionState.connected ||
+        active.peer.state != PeerState.connected) {
+      throw StateError('Peer ${active.peerId} is not connected.');
+    }
   }
 
   Future<void> _bindPeerCore(_ActiveSession active, IceRole localRole) async {
@@ -248,6 +424,14 @@ class ProtocolBrainImpl implements ProtocolBrain {
     active.subscriptions.add(
       active.peer.onMessage.listen((PeerMessage message) {
         _peerMessageController.add(_toSessionMessage(message, active.peerId));
+      }),
+    );
+
+    active.subscriptions.add(
+      active.peer.onRemoteTrack.listen((PeerRemoteTrack event) {
+        _remoteTrackController.add(
+          SessionRemoteTrack.fromPeerTrack(active.peerId, event),
+        );
       }),
     );
 
@@ -774,6 +958,12 @@ class ProtocolBrainImpl implements ProtocolBrain {
     if (active.snapshot.state == SessionState.failed) {
       return;
     }
+    if (active.snapshot.state == SessionState.connected &&
+        active.peer.state == PeerState.connected) {
+      active.cancelPendingReconnect();
+      unawaited(_refreshRoute(active));
+      return;
+    }
 
     active.cancelPendingReconnect();
     active.cancelHandshakeTimeout();
@@ -903,11 +1093,28 @@ class ProtocolBrainImpl implements ProtocolBrain {
     bool Function()? shouldContinue,
     IceRole? restoreRole,
     PeerIceTransportPolicy? policy,
+  }) {
+    return active.runPeerOperation(
+      () => _recreatePeerLocked(
+        active,
+        shouldContinue: shouldContinue,
+        restoreRole: restoreRole,
+        policy: policy,
+      ),
+    );
+  }
+
+  Future<bool> _recreatePeerLocked(
+    _ActiveSession active, {
+    bool Function()? shouldContinue,
+    IceRole? restoreRole,
+    PeerIceTransportPolicy? policy,
   }) async {
     if (shouldContinue != null && !shouldContinue()) {
       return false;
     }
     await active.disposePeerBindings();
+    active.peerGeneration += 1;
     if (shouldContinue != null && !shouldContinue()) {
       active.bound = false;
       if (_sessions[active.peerId] == active &&

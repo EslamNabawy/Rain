@@ -55,7 +55,87 @@ void main() {
 
     final keyboardTop =
         tester.view.physicalSize.height - tester.view.viewInsets.bottom;
-    expect(tester.getRect(passwordField).bottom, lessThan(keyboardTop));
+    expect(tester.getRect(passwordField).bottom, lessThan(keyboardTop - 64));
+    expect(tester.getRect(passwordField).top, lessThan(220));
+  });
+
+  testWidgets('focused credential field clears OEM overlay keyboard in login', (
+    WidgetTester tester,
+  ) async {
+    tester.view.physicalSize = const Size(390, 720);
+    tester.view.devicePixelRatio = 1;
+    addTearDown(tester.view.resetPhysicalSize);
+    addTearDown(tester.view.resetDevicePixelRatio);
+    addTearDown(tester.view.resetViewInsets);
+
+    await tester.pumpWidget(
+      const ProviderScope(child: MaterialApp(home: OnboardingScreen())),
+    );
+    await tester.pumpAndSettle();
+
+    final passwordField = _textFieldWithLabel('Password');
+    await tester.tap(passwordField);
+    await tester.pump();
+
+    tester.view.viewInsets = const FakeViewPadding(bottom: 360);
+    await tester.pump();
+    await tester.pump(const Duration(milliseconds: 700));
+    await tester.pumpAndSettle();
+
+    final keyboardTop =
+        tester.view.physicalSize.height - tester.view.viewInsets.bottom;
+    final passwordRect = tester.getRect(passwordField);
+    expect(passwordRect.bottom, lessThanOrEqualTo(keyboardTop - 48));
+    expect(passwordRect.top, greaterThanOrEqualTo(0));
+  });
+
+  testWidgets(
+    'focused credential field clears keyboard on short Android size',
+    (WidgetTester tester) async {
+      tester.view.physicalSize = const Size(360, 640);
+      tester.view.devicePixelRatio = 1;
+      addTearDown(tester.view.resetPhysicalSize);
+      addTearDown(tester.view.resetDevicePixelRatio);
+      addTearDown(tester.view.resetViewInsets);
+
+      await tester.pumpWidget(
+        const ProviderScope(child: MaterialApp(home: OnboardingScreen())),
+      );
+      await tester.pumpAndSettle();
+
+      final passwordField = _textFieldWithLabel('Password');
+      await tester.tap(passwordField);
+      await tester.pump();
+
+      tester.view.viewInsets = const FakeViewPadding(bottom: 330);
+      await tester.pump();
+      await tester.pump(const Duration(milliseconds: 700));
+      await tester.pumpAndSettle();
+
+      final keyboardTop =
+          tester.view.physicalSize.height - tester.view.viewInsets.bottom;
+      final passwordRect = tester.getRect(passwordField);
+      expect(passwordRect.bottom, lessThanOrEqualTo(keyboardTop - 40));
+      expect(passwordRect.top, greaterThanOrEqualTo(0));
+    },
+  );
+
+  testWidgets('login credential fields use matching geometry', (
+    WidgetTester tester,
+  ) async {
+    await tester.pumpWidget(
+      const ProviderScope(
+        child: MaterialApp(home: Scaffold(body: OnboardingScreen())),
+      ),
+    );
+    await tester.pumpAndSettle();
+
+    final usernameRect = tester.getRect(_textFieldWithLabel('Username'));
+    final passwordRect = tester.getRect(_textFieldWithLabel('Password'));
+
+    expect(usernameRect.height, moreOrLessEquals(passwordRect.height));
+    expect(usernameRect.left, moreOrLessEquals(passwordRect.left));
+    expect(usernameRect.right, moreOrLessEquals(passwordRect.right));
   });
 }
 

@@ -32,12 +32,28 @@ class _ActiveSession {
   StreamSubscription<SDPPayload>? answerSubscription;
   Timer? handshakeTimeoutTimer;
   Timer? reconnectTimer;
+  int peerGeneration = 0;
+  Future<void> _peerOperationTail = Future<void>.value();
 
   Future<void> dispose() async {
     shouldReconnect = false;
     stopReconnecting();
-    await disposePeerBindings();
-    await peer.destroy();
+    await runPeerOperation(() async {
+      await disposePeerBindings();
+      peerGeneration += 1;
+      await peer.destroy();
+    });
+  }
+
+  Future<T> runPeerOperation<T>(Future<T> Function() action) {
+    final previous = _peerOperationTail;
+    final completer = Completer<void>();
+    _peerOperationTail = completer.future;
+    return previous.then((_) => action()).whenComplete(() {
+      if (!completer.isCompleted) {
+        completer.complete();
+      }
+    });
   }
 
   Future<void> disposePeerBindings() async {

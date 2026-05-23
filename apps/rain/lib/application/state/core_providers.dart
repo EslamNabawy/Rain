@@ -6,6 +6,7 @@ import 'package:rain_core/rain_core.dart';
 
 import 'package:rain/application/bootstrap/app_bootstrap.dart';
 import 'package:rain/infrastructure/services/app_settings_store.dart';
+import 'package:rain/infrastructure/services/crash_diagnostics_service.dart';
 import 'package:rain/infrastructure/services/force_update_service.dart';
 import 'package:rain/infrastructure/services/network_status_service.dart';
 import 'package:rain/infrastructure/services/received_file_export_service.dart';
@@ -81,6 +82,16 @@ final fileTransferStoreProvider = Provider(
 final receivedFileExportServiceProvider = Provider(
   (Ref ref) => ReceivedFileExportService(),
 );
+
+final crashDiagnosticsServiceProvider = Provider<CrashDiagnosticsService>(
+  (Ref ref) => CrashDiagnosticsService.instance,
+);
+
+final lastCrashDiagnosticsProvider = FutureProvider<CrashDiagnosticsRecord?>((
+  Ref ref,
+) {
+  return ref.watch(crashDiagnosticsServiceProvider).loadLastCrash();
+});
 
 final connectionMemoryStoreProvider = Provider(
   (Ref ref) => DriftConnectionMemoryStore(ref.watch(databaseProvider)),

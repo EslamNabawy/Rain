@@ -90,12 +90,20 @@ jobs:
           } else {
             'artifacts\Rain-windows-portable'
           }
-          foreach ($fileName in @('rain.exe', 'sqlite3.dll', 'win32_windows_x64.dll')) {
+          foreach ($fileName in @(
+            'rain.exe',
+            'flutter_windows.dll',
+            'flutter_webrtc_plugin.dll',
+            'libwebrtc.dll',
+            'sqlite3.dll',
+            'win32_windows_x64.dll',
+            'data'
+          )) {
             $path = Join-Path $portableDir $fileName
             if (-not (Test-Path -LiteralPath $path)) {
-              throw "Missing Windows runtime file before upload: $path"
+              throw "Missing Windows runtime entry before upload: $path"
             }
-            Write-Host "Verified Windows runtime file: $path"
+            Write-Host "Verified Windows runtime entry: $path"
           }
 
       - name: Upload Windows demo portable app
@@ -195,15 +203,12 @@ jobs:
         run: |
           if ($env:BUILD_PROFILE -eq 'demo') {
             $expected = @(
-              @{ Label = 'Android universal APK'; Path = 'artifacts\Rain-Demo-Android-Universal-Build.apk' },
-              @{ Label = 'Android ARM v7 APK (armeabi-v7a)'; Path = 'artifacts\Rain-Demo-Android-ARM-v7-Build.apk' },
+              @{ Label = 'Android ARM v7 APK (armeabi-v7a)'; Path = 'artifacts\Rain-Demo-Android-ARM-v7a-Build.apk' },
               @{ Label = 'Android ARM v8/v9 APK (arm64-v8a)'; Path = 'artifacts\Rain-Demo-Android-ARM-v8-v9-Build.apk' }
             )
           } else {
             $prefix = 'Rain-release'
             $expected = @(
-              @{ Label = 'Android universal APK'; Path = "artifacts\$prefix-android-universal.apk" },
-              @{ Label = 'Android default/universal APK alias'; Path = "artifacts\$prefix-android.apk" },
               @{ Label = 'Android ARM v7 APK (armeabi-v7a)'; Path = "artifacts\$prefix-android-armeabi-v7a.apk" },
               @{ Label = 'Android ARM v8/v9 APK (arm64-v8a)'; Path = "artifacts\$prefix-android-arm64-v8a.apk" }
             )
@@ -229,11 +234,15 @@ jobs:
             Write-Host "Verified APK native runtime entry: $Path -> $Entry"
           }
           if ($env:BUILD_PROFILE -eq 'demo') {
-            Assert-ApkEntry 'artifacts\Rain-Demo-Android-ARM-v7-Build.apk' 'lib/armeabi-v7a/libsqlite3.so'
+            Assert-ApkEntry 'artifacts\Rain-Demo-Android-ARM-v7a-Build.apk' 'lib/armeabi-v7a/libsqlite3.so'
+            Assert-ApkEntry 'artifacts\Rain-Demo-Android-ARM-v7a-Build.apk' 'lib/armeabi-v7a/libjingle_peerconnection_so.so'
             Assert-ApkEntry 'artifacts\Rain-Demo-Android-ARM-v8-v9-Build.apk' 'lib/arm64-v8a/libsqlite3.so'
+            Assert-ApkEntry 'artifacts\Rain-Demo-Android-ARM-v8-v9-Build.apk' 'lib/arm64-v8a/libjingle_peerconnection_so.so'
           } else {
             Assert-ApkEntry 'artifacts\Rain-release-android-armeabi-v7a.apk' 'lib/armeabi-v7a/libsqlite3.so'
+            Assert-ApkEntry 'artifacts\Rain-release-android-armeabi-v7a.apk' 'lib/armeabi-v7a/libjingle_peerconnection_so.so'
             Assert-ApkEntry 'artifacts\Rain-release-android-arm64-v8a.apk' 'lib/arm64-v8a/libsqlite3.so'
+            Assert-ApkEntry 'artifacts\Rain-release-android-arm64-v8a.apk' 'lib/arm64-v8a/libjingle_peerconnection_so.so'
           }
 
       - name: Upload Android APK artifacts
@@ -241,11 +250,8 @@ jobs:
         with:
           name: ${{ env.BUILD_PROFILE == 'demo' && 'Rain-Demo-Android-Builds' || 'Rain-Release-Android-Builds' }}
           path: |
-            artifacts/Rain-Demo-Android-Universal-Build.apk
+            artifacts/Rain-Demo-Android-ARM-v7a-Build.apk
             artifacts/Rain-Demo-Android-ARM-v8-v9-Build.apk
-            artifacts/Rain-Demo-Android-ARM-v7-Build.apk
-            artifacts/Rain-release-android.apk
-            artifacts/Rain-release-android-universal.apk
-            artifacts/Rain-release-android-arm64-v8a.apk
             artifacts/Rain-release-android-armeabi-v7a.apk
+            artifacts/Rain-release-android-arm64-v8a.apk
           if-no-files-found: error

@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_svg/flutter_svg.dart';
 import 'package:flutter_test/flutter_test.dart';
+import 'package:rain/application/runtime/voice_call_state.dart';
 import 'package:rain/presentation/widgets/rain_chat_widgets.dart';
 
 void main() {
@@ -151,6 +152,274 @@ void main() {
 
     await tester.tap(find.text('Open'));
     expect(opened, isTrue);
+  });
+
+  testWidgets('voice call button disables during active transfer', (
+    WidgetTester tester,
+  ) async {
+    var started = false;
+
+    await tester.pumpWidget(
+      MaterialApp(
+        home: Scaffold(
+          body: RainVoiceCallButton(
+            peerId: 'bob',
+            state: const VoiceCallState.idle(),
+            canStart: false,
+            hasActiveTransfer: true,
+            onStart: () => started = true,
+          ),
+        ),
+      ),
+    );
+
+    final button = tester.widget<IconButton>(find.byType(IconButton));
+    expect(button.onPressed, isNull);
+    expect(button.tooltip, 'Finish the active file transfer first.');
+    await tester.tap(find.byType(IconButton));
+    expect(started, isFalse);
+  });
+
+  testWidgets('voice call button disables during another call', (
+    WidgetTester tester,
+  ) async {
+    await tester.pumpWidget(
+      MaterialApp(
+        home: Scaffold(
+          body: RainVoiceCallButton(
+            peerId: 'bob',
+            state: const VoiceCallState(
+              phase: VoiceCallPhase.active,
+              peerId: 'alice',
+              callId: 'call-1',
+            ),
+            canStart: false,
+            hasActiveTransfer: false,
+            onStart: () {},
+          ),
+        ),
+      ),
+    );
+
+    final button = tester.widget<IconButton>(find.byType(IconButton));
+    expect(button.onPressed, isNull);
+    expect(button.tooltip, 'Finish the active call with @alice first.');
+  });
+
+  testWidgets('voice call incoming ring actions are wired', (
+    WidgetTester tester,
+  ) async {
+    var accepted = false;
+    var rejected = false;
+
+    await tester.pumpWidget(
+      MaterialApp(
+        home: Scaffold(
+          body: RainVoiceCallPanel(
+            state: const VoiceCallState(
+              phase: VoiceCallPhase.incomingRinging,
+              peerId: 'bob',
+              callId: 'call-1',
+            ),
+            displayName: 'Bob',
+            onAccept: () => accepted = true,
+            onReject: () => rejected = true,
+            onHangUp: () {},
+            onRetry: () {},
+            onToggleMute: () {},
+          ),
+        ),
+      ),
+    );
+
+    expect(find.text('Bob is calling'), findsOneWidget);
+    expect(find.text('Incoming voice call.'), findsOneWidget);
+
+    await tester.tap(find.text('Accept'));
+    expect(accepted, isTrue);
+
+    await tester.tap(find.text('Reject'));
+    expect(rejected, isTrue);
+  });
+
+  testWidgets('voice call active mute and hangup actions are wired', (
+    WidgetTester tester,
+  ) async {
+    var muted = false;
+    var hungUp = false;
+
+    await tester.pumpWidget(
+      MaterialApp(
+        home: Scaffold(
+          body: RainVoiceCallPanel(
+            state: VoiceCallState(
+              phase: VoiceCallPhase.active,
+              peerId: 'bob',
+              callId: 'call-1',
+              startedAt: DateTime.now()
+                  .subtract(const Duration(seconds: 7))
+                  .millisecondsSinceEpoch,
+            ),
+            displayName: 'Bob',
+            onAccept: () {},
+            onReject: () {},
+            onHangUp: () => hungUp = true,
+            onRetry: () {},
+            onToggleMute: () => muted = true,
+          ),
+        ),
+      ),
+    );
+
+    expect(find.text('Voice call with Bob'), findsOneWidget);
+    await tester.tap(find.byTooltip('Mute microphone'));
+    expect(muted, isTrue);
+
+    await tester.tap(find.byTooltip('Hang up'));
+    expect(hungUp, isTrue);
+  });
+
+  testWidgets('voice call mic permission failure offers retry', (
+    WidgetTester tester,
+  ) async {
+    var retried = false;
+    var dismissed = false;
+
+    await tester.pumpWidget(
+      MaterialApp(
+        home: Scaffold(
+          body: RainVoiceCallPanel(
+            state: const VoiceCallState(
+              phase: VoiceCallPhase.failed,
+              peerId: 'bob',
+              callId: 'call-1',
+              failureReason: VoiceCallFailureReason.microphoneDenied,
+              detail: 'NotAllowedError: Permission denied',
+            ),
+            displayName: 'Bob',
+            onAccept: () {},
+            onReject: () {},
+            onHangUp: () => dismissed = true,
+            onRetry: () => retried = true,
+            onToggleMute: () {},
+          ),
+        ),
+      ),
+    );
+
+    expect(find.text('Voice call failed'), findsOneWidget);
+    expect(find.text('Microphone permission required.'), findsOneWidget);
+    expect(find.textContaining('NotAllowedError'), findsNothing);
+
+    await tester.tap(find.text('Retry'));
+    expect(retried, isTrue);
+
+    await tester.tap(find.text('Dismiss'));
+    expect(dismissed, isTrue);
+  });
+
+  testWidgets('voice call failed dismiss hides raw native errors', (
+    WidgetTester tester,
+  ) async {
+    var dismissed = false;
+
+    await tester.pumpWidget(
+      MaterialApp(
+        home: Scaffold(
+          body: RainVoiceCallPanel(
+            state: const VoiceCallState(
+              phase: VoiceCallPhase.failed,
+              peerId: 'bob',
+              callId: 'call-1',
+              failureReason: VoiceCallFailureReason.mediaConnectionFailed,
+              detail:
+                  'Unable to RTCRtpTransceiver::setDirection: RtpTransceiver has been disposed.',
+            ),
+            displayName: 'Bob',
+            onAccept: () {},
+            onReject: () {},
+            onHangUp: () => dismissed = true,
+            onRetry: () {},
+            onToggleMute: () {},
+          ),
+        ),
+      ),
+    );
+
+    expect(
+      find.text('Call media could not connect. Try again.'),
+      findsOneWidget,
+    );
+    expect(find.textContaining('RTCRtpTransceiver'), findsNothing);
+
+    await tester.tap(find.text('Dismiss'));
+    expect(dismissed, isTrue);
+  });
+
+  testWidgets('voice call failure maps signaling errors to typed UI', (
+    WidgetTester tester,
+  ) async {
+    var retried = false;
+
+    await tester.pumpWidget(
+      MaterialApp(
+        home: Scaffold(
+          body: RainVoiceCallPanel(
+            state: const VoiceCallState(
+              phase: VoiceCallPhase.failed,
+              peerId: 'bob',
+              callId: 'call-1',
+              failureReason: VoiceCallFailureReason.signalingFailed,
+              detail:
+                  'VoiceSignalingException: Firebase permission-denied at voiceCalls/call-1',
+            ),
+            displayName: 'Bob',
+            onAccept: () {},
+            onReject: () {},
+            onHangUp: () {},
+            onRetry: () => retried = true,
+            onToggleMute: () {},
+          ),
+        ),
+      ),
+    );
+
+    expect(find.text('Call setup failed. Try again.'), findsOneWidget);
+    expect(find.textContaining('Firebase'), findsNothing);
+    expect(find.textContaining('voiceCalls'), findsNothing);
+
+    await tester.tap(find.text('Retry'));
+    expect(retried, isTrue);
+  });
+
+  testWidgets('voice call busy raw room lock is shown as peer busy', (
+    WidgetTester tester,
+  ) async {
+    await tester.pumpWidget(
+      MaterialApp(
+        home: Scaffold(
+          body: RainVoiceCallPanel(
+            state: const VoiceCallState(
+              phase: VoiceCallPhase.failed,
+              peerId: 'bob',
+              callId: 'call-1',
+              detail:
+                  'VoiceSignalingException: Active voice call already exists for pair alice:bob.',
+            ),
+            displayName: 'Bob',
+            onAccept: () {},
+            onReject: () {},
+            onHangUp: () {},
+            onRetry: () {},
+            onToggleMute: () {},
+          ),
+        ),
+      ),
+    );
+
+    expect(find.text('Peer is busy.'), findsOneWidget);
+    expect(find.textContaining('Active voice call'), findsNothing);
+    expect(find.text('Retry'), findsNothing);
   });
 }
 

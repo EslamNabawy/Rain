@@ -1,3 +1,4 @@
+import 'dart:async';
 import 'dart:convert';
 import 'dart:typed_data';
 
@@ -50,6 +51,7 @@ void main() {
 
       expect(config.toRtcConfiguration(), <String, Object?>{
         'iceServers': config.iceServers,
+        'sdpSemantics': 'unified-plan',
         'iceTransportPolicy': 'all',
       });
     },
@@ -76,6 +78,25 @@ void main() {
           .toRtcConfiguration()['iceTransportPolicy'],
       'all',
     );
+  });
+
+  test('default peer core does not own dedicated voice media calls', () {
+    final peer = DefaultPeerCore();
+
+    expect(peer, isNot(isA<VoiceMediaConnection>()));
+    expect(
+      const VoiceSessionDescription(sdp: 'v=0', type: 'offer').toRtc().type,
+      'offer',
+    );
+    expect(
+      const VoiceIceCandidate(
+        candidate: 'candidate:1',
+        sdpMid: '0',
+        sdpMLineIndex: 0,
+      ).toRtc().sdpMLineIndex,
+      0,
+    );
+    expect(const VoiceMediaState.idle().phase, VoiceMediaPhase.idle);
   });
 
   test(
@@ -193,8 +214,8 @@ void main() {
       );
       await pumpEventQueue();
 
-      expect(peer.state, PeerState.reconnecting);
-      expect(disconnectedEvents, hasLength(1));
+      expect(peer.state, PeerState.connected);
+      expect(disconnectedEvents, isEmpty);
 
       platform.connection.emitConnectionState(
         RTCPeerConnectionState.RTCPeerConnectionStateConnected,
@@ -202,7 +223,7 @@ void main() {
       await pumpEventQueue();
 
       expect(peer.state, PeerState.connected);
-      expect(connectedEvents, hasLength(2));
+      expect(connectedEvents, hasLength(1));
 
       await connectedSubscription.cancel();
       await disconnectedSubscription.cancel();
@@ -243,6 +264,36 @@ void main() {
       await disconnectedSubscription.cancel();
     },
   );
+
+  test('default peer gives required channel closes a grace window', () async {
+    final platform = _FakePlatformBridge();
+    final peer = DefaultPeerCore();
+    final disconnectedEvents = <void>[];
+    final disconnectedSubscription = peer.onDisconnected.listen(
+      disconnectedEvents.add,
+    );
+
+    await peer.init(
+      PeerConfig(
+        iceServers: const <Map<String, dynamic>>[],
+        platform: platform,
+      ),
+    );
+    await peer.createOffer();
+    await peer.setAnswer(RTCSessionDescription('answer-sdp', 'answer'));
+    platform.channel(PeerChannels.chat).emitOpen();
+    platform.channel(PeerChannels.control).emitOpen();
+    await pumpEventQueue();
+
+    await peer.closeChannel(PeerChannels.control);
+    await pumpEventQueue();
+
+    expect(peer.state, PeerState.connected);
+    expect(disconnectedEvents, isEmpty);
+
+    await peer.destroy();
+    await disconnectedSubscription.cancel();
+  });
 
   test('default peer chunks large binary payloads on file channel', () async {
     final platform = _FakePlatformBridge();
@@ -553,6 +604,292 @@ void main() {
     expect(route.localCandidateType, isNull);
     expect(route.remoteCandidateType, isNull);
   });
+
+  test('default peer captures local audio and creates media offer', () async {
+    final platform = _FakePlatformBridge();
+    final peer = DefaultPeerCore();
+
+    await peer.init(
+      PeerConfig(
+        iceServers: const <Map<String, dynamic>>[],
+        platform: platform,
+      ),
+    );
+    await peer.createOffer();
+    await peer.setAnswer(RTCSessionDescription('answer-sdp', 'answer'));
+    platform.channel(PeerChannels.chat).emitOpen();
+    platform.channel(PeerChannels.control).emitOpen();
+    await pumpEventQueue();
+
+    await peer.startLocalAudio();
+    expect(platform.connection.addedTracks, isEmpty);
+
+    final offer = await peer.createMediaOffer();
+
+    expect(platform.prepareVoiceAudioCalls, 1);
+    expect(platform.userMediaConstraints.single['video'], isFalse);
+    expect(platform.connection.fakeTransceivers, hasLength(1));
+    expect(
+      platform.connection.fakeTransceivers.single.directionChanges,
+      <TransceiverDirection>[TransceiverDirection.SendRecv],
+    );
+    expect(
+      platform.connection.fakeTransceivers.single.sender.replacedTrackIds,
+      <String?>['audio-1'],
+    );
+    expect(
+      platform.connection.fakeTransceivers.single.sender.streamSets.single.map(
+        (stream) => stream.id,
+      ),
+      <String>['local-audio'],
+    );
+    expect(platform.connection.addedTracks, isEmpty);
+    expect(platform.connection.addedTrackStreamIds, isEmpty);
+    expect(offer.type, 'offer');
+    expect(platform.connection.localDescriptions.last.sdp, 'offer-sdp');
+  });
+
+  test('default peer applies media offer and answer while connected', () async {
+    final platform = _FakePlatformBridge();
+    final peer = DefaultPeerCore();
+
+    await peer.init(
+      PeerConfig(
+        iceServers: const <Map<String, dynamic>>[],
+        platform: platform,
+      ),
+    );
+    await peer.createOffer();
+    await peer.setAnswer(RTCSessionDescription('answer-sdp', 'answer'));
+    platform.channel(PeerChannels.chat).emitOpen();
+    platform.channel(PeerChannels.control).emitOpen();
+    await pumpEventQueue();
+
+    final answer = await peer.applyMediaOffer(
+      RTCSessionDescription('media-offer-sdp', 'offer'),
+    );
+    await peer.applyMediaAnswer(
+      RTCSessionDescription('media-answer-sdp', 'answer'),
+    );
+
+    expect(answer.type, 'answer');
+    expect(platform.connection.addedTracks, isEmpty);
+    expect(platform.connection.addedTrackStreamIds, isEmpty);
+    expect(
+      platform.connection.fakeTransceivers.single.sender.replacedTrackIds,
+      <String?>['audio-1'],
+    );
+    expect(
+      platform.connection.fakeTransceivers.single.directionChanges,
+      <TransceiverDirection>[TransceiverDirection.SendRecv],
+    );
+    expect(platform.connection.operations, <String>[
+      'createOffer',
+      'setLocalDescription:offer',
+      'setRemoteDescription:answer',
+      'setRemoteDescription:offer',
+      'createAnswer',
+      'setLocalDescription:answer',
+      'setRemoteDescription:answer',
+    ]);
+    expect(
+      platform.connection.remoteDescriptions.map((value) => value.sdp),
+      <String?>['answer-sdp', 'media-offer-sdp', 'media-answer-sdp'],
+    );
+  });
+
+  test('default peer stops local audio without removing the sender', () async {
+    final platform = _FakePlatformBridge();
+    final peer = DefaultPeerCore();
+
+    await peer.init(
+      PeerConfig(
+        iceServers: const <Map<String, dynamic>>[],
+        platform: platform,
+      ),
+    );
+    await peer.createOffer();
+    await peer.setAnswer(RTCSessionDescription('answer-sdp', 'answer'));
+    platform.channel(PeerChannels.chat).emitOpen();
+    platform.channel(PeerChannels.control).emitOpen();
+    await pumpEventQueue();
+
+    await peer.startLocalAudio();
+    await peer.createMediaOffer();
+    await peer.stopLocalAudio();
+
+    expect(platform.connection.removedSenderIds, isEmpty);
+    expect(
+      platform.connection.fakeTransceivers.single.sender.replacedTrackIds,
+      <String?>['audio-1', null],
+    );
+    expect(platform.audioStream.audioTrack.stopped, isTrue);
+    expect(platform.audioStream.disposed, isTrue);
+    expect(platform.clearVoiceAudioCalls, 1);
+  });
+
+  test('default peer reuses detached audio sender for later calls', () async {
+    final platform = _FakePlatformBridge();
+    final peer = DefaultPeerCore();
+
+    await peer.init(
+      PeerConfig(
+        iceServers: const <Map<String, dynamic>>[],
+        platform: platform,
+      ),
+    );
+    await peer.createOffer();
+    await peer.setAnswer(RTCSessionDescription('answer-sdp', 'answer'));
+    platform.channel(PeerChannels.chat).emitOpen();
+    platform.channel(PeerChannels.control).emitOpen();
+    await pumpEventQueue();
+
+    await peer.startLocalAudio();
+    await peer.createMediaOffer();
+    await peer.applyMediaAnswer(
+      RTCSessionDescription('media-answer-1', 'answer'),
+    );
+    await peer.stopLocalAudio();
+    await peer.startLocalAudio();
+    await peer.createMediaOffer();
+
+    expect(platform.connection.addedTracks, isEmpty);
+    expect(platform.connection.removedSenderIds, isEmpty);
+    expect(
+      platform.connection.fakeTransceivers.single.sender.replacedTrackIds,
+      <String?>['audio-1', null, 'audio-1'],
+    );
+  });
+
+  test(
+    'default peer clears native call audio when microphone capture fails',
+    () async {
+      final platform = _FakePlatformBridge()
+        ..getUserMediaError = StateError('Microphone permission denied');
+      final peer = DefaultPeerCore();
+
+      await peer.init(
+        PeerConfig(
+          iceServers: const <Map<String, dynamic>>[],
+          platform: platform,
+        ),
+      );
+      await peer.createOffer();
+      await peer.setAnswer(RTCSessionDescription('answer-sdp', 'answer'));
+      platform.channel(PeerChannels.chat).emitOpen();
+      platform.channel(PeerChannels.control).emitOpen();
+      await pumpEventQueue();
+
+      await expectLater(
+        peer.startLocalAudio(),
+        throwsA(
+          isA<StateError>().having(
+            (error) => error.toString(),
+            'message',
+            contains('Microphone permission denied'),
+          ),
+        ),
+      );
+
+      expect(platform.prepareVoiceAudioCalls, 1);
+      expect(platform.clearVoiceAudioCalls, 1);
+      expect(platform.userMediaConstraints, hasLength(1));
+    },
+  );
+
+  test(
+    'default peer aborts local audio if the peer is destroyed during capture',
+    () async {
+      final platform = _FakePlatformBridge()
+        ..getUserMediaCompleter = Completer<MediaStream>();
+      final peer = DefaultPeerCore();
+
+      await peer.init(
+        PeerConfig(
+          iceServers: const <Map<String, dynamic>>[],
+          platform: platform,
+        ),
+      );
+      await peer.createOffer();
+      await peer.setAnswer(RTCSessionDescription('answer-sdp', 'answer'));
+      platform.channel(PeerChannels.chat).emitOpen();
+      platform.channel(PeerChannels.control).emitOpen();
+      await pumpEventQueue();
+
+      final audioStart = peer.startLocalAudio();
+      await pumpEventQueue();
+      await peer.destroy();
+      platform.getUserMediaCompleter!.complete(platform.audioStream);
+
+      await expectLater(
+        audioStart,
+        throwsA(
+          isA<StateError>().having(
+            (error) => error.toString(),
+            'message',
+            contains('Peer connection changed while capturing local audio'),
+          ),
+        ),
+      );
+
+      expect(platform.audioStream.audioTrack.stopped, isTrue);
+      expect(platform.audioStream.disposed, isTrue);
+      expect(platform.clearVoiceAudioCalls, greaterThanOrEqualTo(1));
+    },
+  );
+
+  test('default peer mutes microphone through platform bridge', () async {
+    final platform = _FakePlatformBridge();
+    final peer = DefaultPeerCore();
+
+    await peer.init(
+      PeerConfig(
+        iceServers: const <Map<String, dynamic>>[],
+        platform: platform,
+      ),
+    );
+    await peer.createOffer();
+    await peer.setAnswer(RTCSessionDescription('answer-sdp', 'answer'));
+    platform.channel(PeerChannels.chat).emitOpen();
+    platform.channel(PeerChannels.control).emitOpen();
+    await pumpEventQueue();
+
+    await peer.startLocalAudio();
+    await peer.setMicrophoneMuted(muted: true);
+
+    expect(platform.muteCalls, <bool>[true]);
+    expect(platform.audioStream.audioTrack.enabled, isFalse);
+  });
+
+  test('default peer emits remote audio track events', () async {
+    final platform = _FakePlatformBridge();
+    final peer = DefaultPeerCore();
+    final remoteTracks = <PeerRemoteTrack>[];
+    final subscription = peer.onRemoteTrack.listen(remoteTracks.add);
+
+    await peer.init(
+      PeerConfig(
+        iceServers: const <Map<String, dynamic>>[],
+        platform: platform,
+      ),
+    );
+    final remoteStream = _FakeMediaStream(
+      'remote-stream',
+      _FakeMediaTrack('remote-audio'),
+    );
+    platform.connection.onTrack?.call(
+      RTCTrackEvent(
+        track: remoteStream.audioTrack,
+        streams: <MediaStream>[remoteStream],
+      ),
+    );
+    await pumpEventQueue();
+
+    expect(remoteTracks, hasLength(1));
+    expect(remoteTracks.single.track.id, 'remote-audio');
+
+    await subscription.cancel();
+  });
 }
 
 List<StatsReport> _routeStats({
@@ -597,6 +934,17 @@ class _FakePlatformBridge implements PlatformBridge {
   final _FakeRtcPeerConnection connection = _FakeRtcPeerConnection();
   final Map<String, _FakeRtcDataChannel> channels =
       <String, _FakeRtcDataChannel>{};
+  final _FakeMediaStream audioStream = _FakeMediaStream(
+    'local-audio',
+    _FakeMediaTrack('audio-1'),
+  );
+  final List<Map<String, dynamic>> userMediaConstraints =
+      <Map<String, dynamic>>[];
+  final List<bool> muteCalls = <bool>[];
+  Object? getUserMediaError;
+  Completer<MediaStream>? getUserMediaCompleter;
+  int prepareVoiceAudioCalls = 0;
+  int clearVoiceAudioCalls = 0;
 
   _FakeRtcDataChannel channel(String label) => channels[label]!;
 
@@ -617,13 +965,56 @@ class _FakePlatformBridge implements PlatformBridge {
   }
 
   @override
+  Future<void> clearVoiceAudio() async {
+    clearVoiceAudioCalls += 1;
+  }
+
+  @override
+  Future<MediaStream> getUserMedia(Map<String, dynamic> constraints) async {
+    userMediaConstraints.add(constraints);
+    final error = getUserMediaError;
+    if (error != null) {
+      throw error;
+    }
+    final completer = getUserMediaCompleter;
+    if (completer != null) {
+      return completer.future;
+    }
+    return audioStream;
+  }
+
+  @override
   StorageBackend getLocalStorage() => MemoryStorageBackend();
+
+  @override
+  Future<void> prepareVoiceAudio() async {
+    prepareVoiceAudioCalls += 1;
+  }
+
+  @override
+  Future<void> setMicrophoneMuted(
+    MediaStreamTrack track, {
+    required bool muted,
+  }) async {
+    muteCalls.add(muted);
+    track.enabled = !muted;
+  }
 }
 
 class _FakeRtcPeerConnection extends Fake implements RTCPeerConnection {
   RTCPeerConnectionState? _connectionState =
       RTCPeerConnectionState.RTCPeerConnectionStateNew;
   List<StatsReport> statsReports = <StatsReport>[];
+  final List<_FakeRtpTransceiver> fakeTransceivers = <_FakeRtpTransceiver>[];
+  final List<String?> addedTracks = <String?>[];
+  final List<String?> addedTrackStreamIds = <String?>[];
+  final List<_FakeRtpSender> addedTrackSenders = <_FakeRtpSender>[];
+  final List<String> removedSenderIds = <String>[];
+  final List<String> operations = <String>[];
+  final List<RTCSessionDescription> localDescriptions =
+      <RTCSessionDescription>[];
+  final List<RTCSessionDescription> remoteDescriptions =
+      <RTCSessionDescription>[];
 
   @override
   Function(RTCPeerConnectionState state)? onConnectionState;
@@ -633,6 +1024,9 @@ class _FakeRtcPeerConnection extends Fake implements RTCPeerConnection {
 
   @override
   Function(RTCDataChannel channel)? onDataChannel;
+
+  @override
+  Function(RTCTrackEvent event)? onTrack;
 
   @override
   RTCPeerConnectionState? get connectionState => _connectionState;
@@ -646,14 +1040,72 @@ class _FakeRtcPeerConnection extends Fake implements RTCPeerConnection {
   Future<RTCSessionDescription> createOffer([
     Map<String, dynamic>? constraints,
   ]) async {
+    operations.add('createOffer');
     return RTCSessionDescription('offer-sdp', 'offer');
   }
 
   @override
-  Future<void> setLocalDescription(RTCSessionDescription description) async {}
+  Future<RTCSessionDescription> createAnswer([
+    Map<String, dynamic>? constraints,
+  ]) async {
+    operations.add('createAnswer');
+    return RTCSessionDescription('answer-sdp', 'answer');
+  }
 
   @override
-  Future<void> setRemoteDescription(RTCSessionDescription description) async {}
+  Future<void> setLocalDescription(RTCSessionDescription description) async {
+    operations.add('setLocalDescription:${description.type}');
+    localDescriptions.add(description);
+  }
+
+  @override
+  Future<void> setRemoteDescription(RTCSessionDescription description) async {
+    operations.add('setRemoteDescription:${description.type}');
+    remoteDescriptions.add(description);
+  }
+
+  @override
+  Future<RTCRtpTransceiver> addTransceiver({
+    MediaStreamTrack? track,
+    RTCRtpMediaType? kind,
+    RTCRtpTransceiverInit? init,
+  }) async {
+    final sender = _FakeRtpSender(
+      'transceiver-sender-${fakeTransceivers.length + 1}',
+      track,
+    );
+    final transceiver = _FakeRtpTransceiver(
+      'transceiver-${fakeTransceivers.length + 1}',
+      sender,
+      init?.direction ?? TransceiverDirection.SendRecv,
+    );
+    fakeTransceivers.add(transceiver);
+    return transceiver;
+  }
+
+  @override
+  Future<RTCRtpSender> addTrack(
+    MediaStreamTrack track, [
+    MediaStream? stream,
+  ]) async {
+    operations.add('addTrack:${track.id}');
+    addedTracks.add(track.id);
+    addedTrackStreamIds.add(stream?.id);
+    final sender = _FakeRtpSender('sender-${track.id}', track);
+    addedTrackSenders.add(sender);
+    return sender;
+  }
+
+  @override
+  Future<bool> removeTrack(RTCRtpSender sender) async {
+    if (sender is _FakeRtpSender) {
+      removedSenderIds.add(sender.id);
+    }
+    return true;
+  }
+
+  @override
+  Future<List<RTCRtpTransceiver>> getTransceivers() async => fakeTransceivers;
 
   @override
   Future<void> addCandidate(RTCIceCandidate candidate) async {}
@@ -665,6 +1117,63 @@ class _FakeRtcPeerConnection extends Fake implements RTCPeerConnection {
 
   @override
   Future<void> close() async {}
+}
+
+class _FakeRtpSender extends Fake implements RTCRtpSender {
+  _FakeRtpSender(this.id, [MediaStreamTrack? track]) : _track = track;
+
+  final String id;
+  final List<String?> replacedTrackIds = <String?>[];
+  final List<List<MediaStream>> streamSets = <List<MediaStream>>[];
+  MediaStreamTrack? _track;
+
+  @override
+  String get senderId => id;
+
+  @override
+  MediaStreamTrack? get track => _track;
+
+  @override
+  Future<void> replaceTrack(MediaStreamTrack? track) async {
+    _track = track;
+    replacedTrackIds.add(track?.id);
+  }
+
+  @override
+  Future<void> setStreams(List<MediaStream> streams) async {
+    streamSets.add(streams);
+  }
+}
+
+class _FakeRtpTransceiver extends Fake implements RTCRtpTransceiver {
+  _FakeRtpTransceiver(this.transceiverId, this.sender, this._direction);
+
+  @override
+  final String transceiverId;
+
+  @override
+  final _FakeRtpSender sender;
+
+  final List<TransceiverDirection> directionChanges = <TransceiverDirection>[];
+  TransceiverDirection _direction;
+
+  @override
+  String get mid => transceiverId;
+
+  @override
+  bool get stoped => false;
+
+  @override
+  Future<TransceiverDirection?> getCurrentDirection() async => _direction;
+
+  @override
+  Future<TransceiverDirection> getDirection() async => _direction;
+
+  @override
+  Future<void> setDirection(TransceiverDirection direction) async {
+    _direction = direction;
+    directionChanges.add(direction);
+  }
 }
 
 class _FakeRtcDataChannel extends Fake implements RTCDataChannel {
@@ -709,5 +1218,57 @@ class _FakeRtcDataChannel extends Fake implements RTCDataChannel {
   Future<void> close() async {
     _state = RTCDataChannelState.RTCDataChannelClosed;
     onDataChannelState?.call(_state!);
+  }
+}
+
+class _FakeMediaStream extends Fake implements MediaStream {
+  _FakeMediaStream(this._id, this.audioTrack);
+
+  final String _id;
+  final _FakeMediaTrack audioTrack;
+  bool disposed = false;
+
+  @override
+  String get id => _id;
+
+  @override
+  List<MediaStreamTrack> getAudioTracks() => <MediaStreamTrack>[audioTrack];
+
+  @override
+  List<MediaStreamTrack> getTracks() => <MediaStreamTrack>[audioTrack];
+
+  @override
+  List<MediaStreamTrack> getVideoTracks() => const <MediaStreamTrack>[];
+
+  @override
+  Future<void> dispose() async {
+    disposed = true;
+  }
+}
+
+class _FakeMediaTrack extends Fake implements MediaStreamTrack {
+  _FakeMediaTrack(this._id);
+
+  final String _id;
+  bool stopped = false;
+  bool _enabled = true;
+
+  @override
+  String? get id => _id;
+
+  @override
+  String? get kind => 'audio';
+
+  @override
+  bool get enabled => _enabled;
+
+  @override
+  set enabled(bool value) {
+    _enabled = value;
+  }
+
+  @override
+  Future<void> stop() async {
+    stopped = true;
   }
 }

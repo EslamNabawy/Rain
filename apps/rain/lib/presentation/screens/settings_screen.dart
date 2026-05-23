@@ -5,6 +5,7 @@ import 'package:rain_core/rain_core.dart';
 
 import 'package:rain/presentation/navigation/app_routes.dart';
 import 'package:rain/application/state/app_providers.dart';
+import 'package:rain/infrastructure/services/crash_diagnostics_service.dart';
 import 'package:rain/presentation/screens/splash_screen.dart';
 import 'package:rain/presentation/widgets/app_components.dart';
 import 'package:rain/presentation/widgets/app_dialogs.dart';
@@ -30,6 +31,7 @@ class SettingsScreen extends ConsumerStatefulWidget {
 
 class _SettingsScreenState extends ConsumerState<SettingsScreen> {
   bool _loggingOut = false;
+  bool _exportingDiagnostics = false;
 
   @override
   Widget build(BuildContext context) {
@@ -41,6 +43,7 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen> {
     final runtime = ref.watch(runtimeControllerProvider).value;
     final themeMode = ref.watch(themeModeProvider);
     final themeController = ref.read(themeModeProvider.notifier);
+    final lastCrash = ref.watch(lastCrashDiagnosticsProvider);
 
     return AppPageFrame(
       title: 'Settings',
@@ -159,6 +162,48 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen> {
                         )
                       : null,
                   onTap: () => themeController.setSystem(),
+                ),
+              ],
+            ),
+          ),
+          const SizedBox(height: 24),
+          const AppSectionTitle(title: 'Diagnostics'),
+          AppSectionCard(
+            child: Column(
+              children: <Widget>[
+                lastCrash.when(
+                  data: (record) => _LastCrashTile(record: record),
+                  error: (Object error, StackTrace stackTrace) => ListTile(
+                    leading: Icon(
+                      Icons.error_outline,
+                      color: Theme.of(context).colorScheme.error,
+                    ),
+                    title: const Text('Diagnostics unavailable'),
+                    subtitle: Text(_formatSettingsError(error)),
+                  ),
+                  loading: () => const ListTile(
+                    leading: SizedBox.square(
+                      dimension: 22,
+                      child: CircularProgressIndicator(strokeWidth: 2),
+                    ),
+                    title: Text('Checking diagnostics'),
+                  ),
+                ),
+                const Divider(height: 1),
+                ListTile(
+                  leading: const Icon(Icons.ios_share),
+                  title: const Text('Export diagnostics'),
+                  subtitle: const Text('Save the latest crash and app log'),
+                  enabled: !_exportingDiagnostics,
+                  trailing: _exportingDiagnostics
+                      ? const SizedBox.square(
+                          dimension: 22,
+                          child: CircularProgressIndicator(strokeWidth: 2),
+                        )
+                      : null,
+                  onTap: _exportingDiagnostics
+                      ? null
+                      : () => _exportDiagnostics(context),
                 ),
               ],
             ),
@@ -289,9 +334,89 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen> {
     RainGender.female => 'Female',
     null => 'Gender not set',
   };
+
+  Future<void> _exportDiagnostics(BuildContext context) async {
+    final messenger = ScaffoldMessenger.of(context);
+    final errorColor = Theme.of(context).colorScheme.error;
+    setState(() => _exportingDiagnostics = true);
+    try {
+      final result = await ref
+          .read(crashDiagnosticsServiceProvider)
+          .exportDiagnostics();
+      if (!context.mounted) {
+        return;
+      }
+      if (result.saved) {
+        messenger.showSnackBar(
+          SnackBar(content: Text('Diagnostics exported to ${result.path}')),
+        );
+      }
+    } catch (error) {
+      if (!context.mounted) {
+        return;
+      }
+      messenger.showSnackBar(
+        SnackBar(
+          content: Text(
+            'Could not export diagnostics: ${_formatSettingsError(error)}',
+          ),
+          backgroundColor: errorColor,
+        ),
+      );
+    } finally {
+      if (mounted) {
+        setState(() => _exportingDiagnostics = false);
+      }
+    }
+  }
 }
 
 enum _ProfileAction { editDisplayName, editGender }
+
+class _LastCrashTile extends StatelessWidget {
+  const _LastCrashTile({required this.record});
+
+  final CrashDiagnosticsRecord? record;
+
+  @override
+  Widget build(BuildContext context) {
+    final crash = record;
+    if (crash == null) {
+      return const ListTile(
+        leading: Icon(Icons.check_circle_outline),
+        title: Text('No crash recorded'),
+        subtitle: Text('Diagnostics will capture the next app error'),
+      );
+    }
+
+    return ListTile(
+      leading: Icon(
+        crash.fatal ? Icons.report_gmailerrorred : Icons.bug_report_outlined,
+        color: crash.fatal ? Theme.of(context).colorScheme.error : null,
+      ),
+      title: Text(crash.fatal ? 'Last fatal error' : 'Last Flutter error'),
+      subtitle: Text(
+        '${_formatCrashTime(crash.recordedAt)} | ${crash.source} | '
+        '${_compactCrashError(crash.error)}',
+      ),
+    );
+  }
+
+  static String _formatCrashTime(DateTime value) {
+    final local = value.toLocal();
+    String two(int input) => input.toString().padLeft(2, '0');
+    return '${local.year}-${two(local.month)}-${two(local.day)} '
+        '${two(local.hour)}:${two(local.minute)}';
+  }
+
+  static String _compactCrashError(String error) {
+    final normalized = error.replaceAll(RegExp(r'\s+'), ' ').trim();
+    if (normalized.length <= 96) {
+      return normalized;
+    }
+    return '${normalized.substring(0, 93)}...';
+  }
+}
 
 class _BlockedUsersList extends ConsumerWidget {
   const _BlockedUsersList();

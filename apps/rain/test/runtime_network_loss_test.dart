@@ -3,6 +3,7 @@ import 'dart:io';
 
 import 'package:drift/native.dart';
 import 'package:flutter_test/flutter_test.dart';
+import 'package:flutter_webrtc/flutter_webrtc.dart' show RTCSessionDescription;
 import 'package:protocol_brain/protocol_brain.dart';
 import 'package:rain/application/runtime/rain_runtime_controller.dart';
 import 'package:rain/infrastructure/signaling/noop_signaling_adapter.dart';
@@ -138,7 +139,11 @@ void main() {
     await runtime.start();
 
     brain.emitPeerDisconnected('bob');
-    await pumpEventQueue();
+    await _waitForTransferState(
+      transferStore,
+      'transfer-1',
+      FileTransferState.failed,
+    );
 
     final failed = await transferStore.loadById('transfer-1');
     expect(failed?.state, FileTransferState.failed);
@@ -187,6 +192,27 @@ void main() {
   });
 }
 
+Future<void> _waitForTransferState(
+  FileTransferStore store,
+  String transferId,
+  FileTransferState expected,
+) async {
+  final deadline = DateTime.now().add(const Duration(seconds: 2));
+  while (DateTime.now().isBefore(deadline)) {
+    final transfer = await store.loadById(transferId);
+    if (transfer?.state == expected) {
+      return;
+    }
+    await Future<void>.delayed(const Duration(milliseconds: 20));
+  }
+
+  final transfer = await store.loadById(transferId);
+  fail(
+    'Timed out waiting for $transferId to become ${expected.name}; '
+    'last state was ${transfer?.state.name}.',
+  );
+}
+
 class _DisconnectingSessionManager implements SessionManager {
   final List<String> recoveryReasons = <String>[];
   final StreamController<Session> _connected =
@@ -195,6 +221,8 @@ class _DisconnectingSessionManager implements SessionManager {
       StreamController<String>.broadcast();
   final StreamController<SessionMessage> _messages =
       StreamController<SessionMessage>.broadcast();
+  final StreamController<SessionRemoteTrack> _remoteTracks =
+      StreamController<SessionRemoteTrack>.broadcast();
   final StreamController<Session> _changes =
       StreamController<Session>.broadcast();
   final StreamController<IncomingOfferRejection> _incomingOfferRejected =
@@ -208,6 +236,7 @@ class _DisconnectingSessionManager implements SessionManager {
     await _connected.close();
     await _disconnected.close();
     await _messages.close();
+    await _remoteTracks.close();
     await _changes.close();
     await _incomingOfferRejected.close();
   }
@@ -257,6 +286,9 @@ class _DisconnectingSessionManager implements SessionManager {
   Stream<SessionMessage> get onPeerMessage => _messages.stream;
 
   @override
+  Stream<SessionRemoteTrack> get onRemoteTrack => _remoteTracks.stream;
+
+  @override
   Stream<Session> get onSessionChanged => _changes.stream;
 
   @override
@@ -265,6 +297,36 @@ class _DisconnectingSessionManager implements SessionManager {
 
   @override
   Future<void> openChannel(String peerId, SessionChannel channel) async {}
+
+  @override
+  Future<void> startLocalAudio(String peerId) async {}
+
+  @override
+  Future<void> stopLocalAudio(String peerId) async {}
+
+  @override
+  Future<void> setMicrophoneMuted(String peerId, {required bool muted}) async {}
+
+  @override
+  Future<VoiceMediaConnection> createVoiceMediaConnection(String peerId) async {
+    return _NoopVoiceMediaConnection();
+  }
+
+  @override
+  Future<RTCSessionDescription> createMediaOffer(String peerId) async =>
+      RTCSessionDescription('media-offer-$peerId', 'offer');
+
+  @override
+  Future<RTCSessionDescription> applyMediaOffer(
+    String peerId,
+    RTCSessionDescription offer,
+  ) async => RTCSessionDescription('media-answer-$peerId', 'answer');
+
+  @override
+  Future<void> applyMediaAnswer(
+    String peerId,
+    RTCSessionDescription answer,
+  ) async {}
 
   @override
   Future<void> registerPeer(
@@ -280,4 +342,53 @@ class _DisconnectingSessionManager implements SessionManager {
 
   @override
   Future<void> unregisterPeer(String peerId) async {}
+}
+
+class _NoopVoiceMediaConnection implements VoiceMediaConnection {
+  final StreamController<VoiceIceCandidate> _ice =
+      StreamController<VoiceIceCandidate>.broadcast();
+  final StreamController<VoiceRemoteAudioTrack> _tracks =
+      StreamController<VoiceRemoteAudioTrack>.broadcast();
+  final StreamController<VoiceMediaState> _states =
+      StreamController<VoiceMediaState>.broadcast();
+
+  @override
+  Stream<VoiceIceCandidate> get onIceCandidate => _ice.stream;
+
+  @override
+  Stream<VoiceRemoteAudioTrack> get onRemoteAudioTrack => _tracks.stream;
+
+  @override
+  Stream<VoiceMediaState> get onStateChanged => _states.stream;
+
+  @override
+  VoiceMediaDiagnostics get diagnostics => const VoiceMediaDiagnostics();
+
+  @override
+  Future<void> startLocalAudio() async {}
+
+  @override
+  Future<VoiceSessionDescription> createOffer() async =>
+      const VoiceSessionDescription(sdp: 'offer', type: 'offer');
+
+  @override
+  Future<VoiceSessionDescription> acceptOffer(
+    VoiceSessionDescription offer,
+  ) async => const VoiceSessionDescription(sdp: 'answer', type: 'answer');
+
+  @override
+  Future<void> applyAnswer(VoiceSessionDescription answer) async {}
+
+  @override
+  Future<void> addRemoteCandidate(VoiceIceCandidate candidate) async {}
+
+  @override
+  Future<void> setMuted({required bool muted}) async {}
+
+  @override
+  Future<void> dispose() async {
+    await _ice.close();
+    await _tracks.close();
+    await _states.close();
+  }
 }

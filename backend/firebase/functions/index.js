@@ -87,3 +87,56 @@ exports.cleanupRooms = onSchedule(
     logger.info("Deleted expired signaling rooms.", { deletedRooms });
   },
 );
+
+exports.cleanupVoiceCalls = onSchedule(
+  {
+    schedule: "every 5 minutes",
+    timeZone: "Etc/UTC",
+  },
+  async () => {
+    const now = Date.now();
+    const root = admin.database().ref();
+    const [callsSnapshot, locksSnapshot] = await Promise.all([
+      root.child("voiceCalls").orderByChild("expiresAt").endAt(now).get(),
+      root.child("activeVoicePairs").orderByChild("expiresAt").endAt(now).get(),
+    ]);
+
+    const updates = {};
+    let deletedCalls = 0;
+    let deletedLocks = 0;
+
+    if (callsSnapshot.exists()) {
+      callsSnapshot.forEach((child) => {
+        const call = child.val() || {};
+        updates[`voiceCalls/${child.key}`] = null;
+        if (call.callee) {
+          updates[`voiceCallInboxes/${call.callee}/${child.key}`] = null;
+        }
+        if (call.pairId) {
+          updates[`activeVoicePairs/${call.pairId}`] = null;
+        }
+        deletedCalls += 1;
+        return false;
+      });
+    }
+
+    if (locksSnapshot.exists()) {
+      locksSnapshot.forEach((child) => {
+        updates[`activeVoicePairs/${child.key}`] = null;
+        deletedLocks += 1;
+        return false;
+      });
+    }
+
+    if (Object.keys(updates).length === 0) {
+      logger.info("No expired voice calls found.");
+      return;
+    }
+
+    await root.update(updates);
+    logger.info("Deleted expired voice call signaling data.", {
+      deletedCalls,
+      deletedLocks,
+    });
+  },
+);

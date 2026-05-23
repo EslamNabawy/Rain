@@ -5,7 +5,8 @@ import 'dart:io';
 import 'package:flutter_webrtc/flutter_webrtc.dart';
 import 'package:protocol_brain/protocol_brain.dart';
 
-class FirebaseEmulatorSignalingAdapter implements SignalingAdapter {
+class FirebaseEmulatorSignalingAdapter
+    implements SignalingAdapter, VoiceSignalingAdapter {
   FirebaseEmulatorSignalingAdapter({
     this.databaseNamespace = 'rain-8fb4b-default-rtdb',
     this.authHost = '127.0.0.1',
@@ -575,6 +576,318 @@ class FirebaseEmulatorSignalingAdapter implements SignalingAdapter {
   }
 
   @override
+  Future<VoiceCallRoom> createOutgoingCall({
+    required String callId,
+    required String caller,
+    required String callee,
+    required int createdAt,
+    required int expiresAt,
+  }) async {
+    final normalizedCallId = callId.trim();
+    final normalizedCaller = normalizeVoiceCallUsername(caller);
+    final normalizedCallee = normalizeVoiceCallUsername(callee);
+    await _ensureSignedInAsUsername(normalizedCaller);
+    final pairId = voiceCallPairId(normalizedCaller, normalizedCallee);
+    final existingLock = await _get(<String>['activeVoicePairs', pairId]);
+    if (existingLock is Map &&
+        ((existingLock['expiresAt'] as num?)?.toInt() ?? 0) > createdAt) {
+      throw VoiceSignalingException(
+        'Active voice call already exists for pair $pairId.',
+      );
+    }
+    final room = VoiceCallRoom(
+      v: VoiceCallRoom.version,
+      callId: normalizedCallId,
+      pairId: pairId,
+      caller: normalizedCaller,
+      callee: normalizedCallee,
+      status: VoiceCallSignalingStatus.ringing,
+      createdAt: createdAt,
+      updatedAt: createdAt,
+      expiresAt: expiresAt,
+      muted: Map<String, bool>.unmodifiable(<String, bool>{
+        normalizedCaller: false,
+        normalizedCallee: false,
+      }),
+    );
+    final lock = VoiceActivePairLock(
+      pairId: pairId,
+      callId: normalizedCallId,
+      caller: normalizedCaller,
+      callee: normalizedCallee,
+      createdAt: createdAt,
+      updatedAt: createdAt,
+      expiresAt: expiresAt,
+    );
+    final inbox = VoiceCallInboxEntry(
+      callId: normalizedCallId,
+      from: normalizedCaller,
+      to: normalizedCallee,
+      pairId: pairId,
+      status: VoiceCallSignalingStatus.ringing,
+      createdAt: createdAt,
+      updatedAt: createdAt,
+      expiresAt: expiresAt,
+    );
+    await _put(<String>['activeVoicePairs', pairId], lock.toJson());
+    try {
+      await _patch(<String>[], <String, Object?>{
+        'voiceCalls/$normalizedCallId': room.toJson(),
+        'voiceCallInboxes/$normalizedCallee/$normalizedCallId': inbox.toJson(),
+      });
+    } catch (_) {
+      await _delete(<String>['activeVoicePairs', pairId]);
+      rethrow;
+    }
+    return room;
+  }
+
+  @override
+  Future<VoiceCallRoom?> fetchCall(String callId) async {
+    await ensureAuthenticated();
+    return _voiceCallRoomFromValue(
+      callId.trim(),
+      await _get(<String>['voiceCalls', callId.trim()]),
+    );
+  }
+
+  @override
+  Stream<VoiceCallRoom?> watchCall(String callId) {
+    final normalizedCallId = callId.trim();
+    return _pollValue<VoiceCallRoom?>(
+      read: () async => _voiceCallRoomFromValue(
+        normalizedCallId,
+        await _get(<String>['voiceCalls', normalizedCallId]),
+      ),
+    );
+  }
+
+  @override
+  Stream<VoiceCallInboxEntry> watchIncomingCalls(String username) {
+    return _pollChildren<VoiceCallInboxEntry>(
+      <String>['voiceCallInboxes', normalizeVoiceCallUsername(username)],
+      parse: (Object? value, String key) async {
+        if (value is! Map) return null;
+        return VoiceCallInboxEntry.fromJson(
+          callId: key,
+          json: _asObjectMap(value),
+        );
+      },
+    );
+  }
+
+  @override
+  Future<void> acceptCall({
+    required String callId,
+    required String callee,
+    required int acceptedAt,
+  }) async {
+    final room = await _requireVoiceCall(callId);
+    final normalizedCallee = normalizeVoiceCallUsername(callee);
+    await _ensureSignedInAsUsername(normalizedCallee);
+    _ensureVoiceRole(room, normalizedCallee, VoiceCallRole.callee);
+    await _patch(<String>[], <String, Object?>{
+      'voiceCalls/${room.callId}/status':
+          VoiceCallSignalingStatus.accepted.name,
+      'voiceCalls/${room.callId}/acceptedAt': acceptedAt,
+      'voiceCalls/${room.callId}/updatedAt': acceptedAt,
+      'voiceCallInboxes/${room.callee}/${room.callId}/status':
+          VoiceCallSignalingStatus.accepted.name,
+      'voiceCallInboxes/${room.callee}/${room.callId}/updatedAt': acceptedAt,
+    });
+  }
+
+  @override
+  Future<void> markConnected({
+    required String callId,
+    required String username,
+    required int connectedAt,
+  }) async {
+    final room = await _requireVoiceCall(callId);
+    final normalizedUsername = normalizeVoiceCallUsername(username);
+    await _ensureSignedInAsUsername(normalizedUsername);
+    _ensureVoiceParticipant(room, normalizedUsername);
+    await _patch(<String>[], <String, Object?>{
+      'voiceCalls/${room.callId}/status':
+          VoiceCallSignalingStatus.connected.name,
+      'voiceCalls/${room.callId}/connectedAt': connectedAt,
+      'voiceCalls/${room.callId}/updatedAt': connectedAt,
+      'voiceCallInboxes/${room.callee}/${room.callId}/status':
+          VoiceCallSignalingStatus.connected.name,
+      'voiceCallInboxes/${room.callee}/${room.callId}/updatedAt': connectedAt,
+    });
+  }
+
+  @override
+  Future<void> endCall({
+    required String callId,
+    required String username,
+    required VoiceCallSignalingStatus status,
+    required int endedAt,
+    String? reasonCode,
+    String? reason,
+  }) async {
+    final room = await _requireVoiceCall(callId);
+    final normalizedUsername = normalizeVoiceCallUsername(username);
+    await _ensureSignedInAsUsername(normalizedUsername);
+    _ensureVoiceParticipant(room, normalizedUsername);
+    await _patch(<String>[], <String, Object?>{
+      'voiceCalls/${room.callId}/status': status.name,
+      'voiceCalls/${room.callId}/endedAt': endedAt,
+      'voiceCalls/${room.callId}/endedBy': normalizedUsername,
+      'voiceCalls/${room.callId}/updatedAt': endedAt,
+      'voiceCalls/${room.callId}/reasonCode': reasonCode,
+      'voiceCalls/${room.callId}/reason': reason,
+      'voiceCallInboxes/${room.callee}/${room.callId}/status': status.name,
+      'voiceCallInboxes/${room.callee}/${room.callId}/updatedAt': endedAt,
+      'activeVoicePairs/${room.pairId}': null,
+    });
+  }
+
+  @override
+  Future<void> setMuted({
+    required String callId,
+    required String username,
+    required bool muted,
+    required int updatedAt,
+  }) async {
+    final room = await _requireVoiceCall(callId);
+    final normalizedUsername = normalizeVoiceCallUsername(username);
+    await _ensureSignedInAsUsername(normalizedUsername);
+    _ensureVoiceParticipant(room, normalizedUsername);
+    await _patch(<String>[], <String, Object?>{
+      'voiceCalls/${room.callId}/muted/$normalizedUsername': muted,
+      'voiceCalls/${room.callId}/updatedAt': updatedAt,
+    });
+  }
+
+  @override
+  Future<void> writeVoiceOffer({
+    required String callId,
+    required String caller,
+    required VoiceSignalingEnvelope offer,
+    required int updatedAt,
+  }) async {
+    final room = await _requireVoiceCall(callId);
+    final normalizedCaller = normalizeVoiceCallUsername(caller);
+    await _ensureSignedInAsUsername(normalizedCaller);
+    _ensureVoiceRole(room, normalizedCaller, VoiceCallRole.caller);
+    await _patch(<String>[], <String, Object?>{
+      'voiceCalls/${room.callId}/status':
+          VoiceCallSignalingStatus.negotiating.name,
+      'voiceCalls/${room.callId}/offer': offer.toJson(
+        maxCiphertextLength: VoiceSignalingEnvelope.maxSdpCiphertextLength,
+      ),
+      'voiceCalls/${room.callId}/updatedAt': updatedAt,
+      'voiceCallInboxes/${room.callee}/${room.callId}/status':
+          VoiceCallSignalingStatus.negotiating.name,
+      'voiceCallInboxes/${room.callee}/${room.callId}/updatedAt': updatedAt,
+    });
+  }
+
+  @override
+  Future<void> writeVoiceAnswer({
+    required String callId,
+    required String callee,
+    required VoiceSignalingEnvelope answer,
+    required int updatedAt,
+  }) async {
+    final room = await _requireVoiceCall(callId);
+    final normalizedCallee = normalizeVoiceCallUsername(callee);
+    await _ensureSignedInAsUsername(normalizedCallee);
+    _ensureVoiceRole(room, normalizedCallee, VoiceCallRole.callee);
+    await _patch(<String>[], <String, Object?>{
+      'voiceCalls/${room.callId}/answer': answer.toJson(
+        maxCiphertextLength: VoiceSignalingEnvelope.maxSdpCiphertextLength,
+      ),
+      'voiceCalls/${room.callId}/updatedAt': updatedAt,
+    });
+  }
+
+  @override
+  Stream<VoiceSignalingEnvelope> watchVoiceOffer(String callId) {
+    final normalizedCallId = callId.trim();
+    return _pollValue<VoiceSignalingEnvelope>(
+      read: () async => _voiceEnvelopeFromValue(
+        await _get(<String>['voiceCalls', normalizedCallId, 'offer']),
+        maxCiphertextLength: VoiceSignalingEnvelope.maxSdpCiphertextLength,
+      ),
+    );
+  }
+
+  @override
+  Stream<VoiceSignalingEnvelope> watchVoiceAnswer(String callId) {
+    final normalizedCallId = callId.trim();
+    return _pollValue<VoiceSignalingEnvelope>(
+      read: () async => _voiceEnvelopeFromValue(
+        await _get(<String>['voiceCalls', normalizedCallId, 'answer']),
+        maxCiphertextLength: VoiceSignalingEnvelope.maxSdpCiphertextLength,
+      ),
+    );
+  }
+
+  @override
+  Future<String> writeIceCandidate({
+    required String callId,
+    required String username,
+    required VoiceCallRole role,
+    required VoiceSignalingEnvelope candidate,
+    required int createdAt,
+  }) async {
+    final room = await _requireVoiceCall(callId);
+    final normalizedUsername = normalizeVoiceCallUsername(username);
+    await _ensureSignedInAsUsername(normalizedUsername);
+    _ensureVoiceRole(room, normalizedUsername, role);
+    final candidateId = '${createdAt.toRadixString(36)}_${_pushCounter++}';
+    await _patch(<String>[], <String, Object?>{
+      'voiceCalls/${room.callId}/${_voiceIcePath(role)}/$candidateId': candidate
+          .toJson(
+            maxCiphertextLength: VoiceSignalingEnvelope.maxIceCiphertextLength,
+          ),
+      'voiceCalls/${room.callId}/updatedAt': createdAt,
+    });
+    return candidateId;
+  }
+
+  @override
+  Stream<VoiceCallIceCandidateRecord> watchIceCandidates({
+    required String callId,
+    required VoiceCallRole role,
+  }) {
+    final normalizedCallId = callId.trim();
+    return _pollChildren<VoiceCallIceCandidateRecord>(
+      <String>[
+        'voiceCalls',
+        normalizedCallId,
+        ..._voiceIcePath(role).split('/'),
+      ],
+      parse: (Object? value, String key) async {
+        if (value is! Map) return null;
+        return VoiceCallIceCandidateRecord.fromJson(
+          callId: normalizedCallId,
+          candidateId: key,
+          role: role,
+          json: _asObjectMap(value),
+        );
+      },
+    );
+  }
+
+  @override
+  Future<void> deleteCall(String callId) async {
+    final room = await fetchCall(callId);
+    if (room == null) {
+      await _delete(<String>['voiceCalls', callId.trim()]);
+      return;
+    }
+    await _patch(<String>[], <String, Object?>{
+      'voiceCalls/${room.callId}': null,
+      'voiceCallInboxes/${room.callee}/${room.callId}': null,
+      'activeVoicePairs/${room.pairId}': null,
+    });
+  }
+
+  @override
   Future<void> dispose() async {
     for (final timer in _timers) {
       timer.cancel();
@@ -591,6 +904,61 @@ class FirebaseEmulatorSignalingAdapter implements SignalingAdapter {
     final value = await _get(path);
     if (value is! Map) return const <String>[];
     return value.keys.whereType<String>().toList(growable: false);
+  }
+
+  VoiceCallRoom? _voiceCallRoomFromValue(String callId, Object? value) {
+    if (value is! Map) return null;
+    return VoiceCallRoom.fromJson(callId: callId, json: _asObjectMap(value));
+  }
+
+  VoiceSignalingEnvelope? _voiceEnvelopeFromValue(
+    Object? value, {
+    required int maxCiphertextLength,
+  }) {
+    if (value is! Map) return null;
+    return VoiceSignalingEnvelope.fromJson(
+      _asObjectMap(value),
+      maxCiphertextLength: maxCiphertextLength,
+    );
+  }
+
+  Future<VoiceCallRoom> _requireVoiceCall(String callId) async {
+    final room = await fetchCall(callId);
+    if (room == null) {
+      throw VoiceSignalingException('Unknown voice call: ${callId.trim()}');
+    }
+    return room;
+  }
+
+  void _ensureVoiceParticipant(VoiceCallRoom room, String username) {
+    final normalizedUsername = normalizeVoiceCallUsername(username);
+    if (normalizedUsername != room.caller &&
+        normalizedUsername != room.callee) {
+      throw VoiceSignalingException(
+        '@$normalizedUsername is not a participant in ${room.callId}.',
+      );
+    }
+  }
+
+  void _ensureVoiceRole(
+    VoiceCallRoom room,
+    String username,
+    VoiceCallRole role,
+  ) {
+    final normalizedUsername = normalizeVoiceCallUsername(username);
+    final expectedUsername = voiceCallRoleUsername(room, role);
+    if (normalizedUsername != expectedUsername) {
+      throw VoiceSignalingException(
+        '@$normalizedUsername cannot write ${role.name} signaling for ${room.callId}.',
+      );
+    }
+  }
+
+  String _voiceIcePath(VoiceCallRole role) {
+    return switch (role) {
+      VoiceCallRole.caller => 'ice/caller',
+      VoiceCallRole.callee => 'ice/callee',
+    };
   }
 
   Future<void> _ensureSignedInAsUsername(String username) async {
