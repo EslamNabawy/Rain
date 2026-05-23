@@ -316,7 +316,7 @@ flutter test packages\peer_core\test\call_media_connection_test.dart
 flutter test packages\peer_core\test\voice_media_connection_test.dart
 ```
 
-- [ ] Commit:
+- [x] Commit:
 
 ```powershell
 git add packages\peer_core
@@ -327,9 +327,9 @@ git commit -m "feat: add audio video call media core"
 
 **Purpose:** Keep UI renderer textures out of protocol/media logic.
 
-- [ ] Create `apps/rain/lib/application/runtime/video_call_renderers.dart`.
-- [ ] Add renderer factory abstraction so tests do not need native textures.
-- [ ] Add tests in `apps/rain/test/video_call_renderers_test.dart`:
+- [x] Create `apps/rain/lib/application/runtime/video_call_renderers.dart`.
+- [x] Add renderer factory abstraction so tests do not need native textures.
+- [x] Add tests in `apps/rain/test/video_call_renderers_test.dart`:
   - initializes local and remote renderers once
   - assigns local stream to local renderer
   - assigns remote stream when remote video arrives
@@ -337,18 +337,18 @@ git commit -m "feat: add audio video call media core"
   - disposes renderers idempotently
   - first-frame event updates state
 
-- [ ] Wire first-frame diagnostics:
+- [x] Wire first-frame diagnostics:
   - local preview first frame
   - remote first frame
   - remote video timeout
 
-- [ ] Run:
+- [x] Run:
 
 ```powershell
 flutter test apps\rain\test\video_call_renderers_test.dart
 ```
 
-- [ ] Commit:
+- [x] Commit:
 
 ```powershell
 git add apps\rain\lib\application\runtime\video_call_renderers.dart apps\rain\test\video_call_renderers_test.dart
