@@ -3,6 +3,7 @@ import 'dart:convert';
 class VoiceCallDiagnostics {
   const VoiceCallDiagnostics({
     required this.callId,
+    required this.sessionEpoch,
     required this.peerId,
     required this.role,
     required this.failureCode,
@@ -17,6 +18,7 @@ class VoiceCallDiagnostics {
   });
 
   final String callId;
+  final int sessionEpoch;
   final String peerId;
   final String role;
   final String failureCode;
@@ -31,6 +33,7 @@ class VoiceCallDiagnostics {
 
   Map<String, Object?> toJson() => <String, Object?>{
     'callId': callId,
+    'sessionEpoch': sessionEpoch,
     'peerId': peerId,
     'role': role,
     'failureCode': failureCode,

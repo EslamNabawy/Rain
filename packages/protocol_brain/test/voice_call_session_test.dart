@@ -520,7 +520,8 @@ void main() {
   test('late media frames after local hangup are ignored', () async {
     final media = _FakeVoiceMediaConnection();
     final sent = <VoiceCallFrame>[];
-    final session = _session(media: media, sent: sent);
+    final logs = <String>[];
+    final session = _session(media: media, sent: sent, logger: logs.add);
 
     await session.startOutgoing();
     await session.handleFrame(
@@ -552,12 +553,15 @@ void main() {
     expect(session.state.phase, VoiceCallSessionPhase.idle);
     expect(media.appliedAnswers, isEmpty);
     expect(media.remoteCandidates, isEmpty);
+    expect(logs, contains('answer frame in idle'));
+    expect(logs, contains('candidate frame in idle'));
   });
 
   test('late candidate after dispose is ignored', () async {
     final media = _FakeVoiceMediaConnection();
     final sent = <VoiceCallFrame>[];
-    final session = _session(media: media, sent: sent);
+    final logs = <String>[];
+    final session = _session(media: media, sent: sent, logger: logs.add);
 
     await session.startOutgoing();
     await session.handleFrame(
@@ -577,6 +581,31 @@ void main() {
     );
 
     expect(media.remoteCandidates, isEmpty);
+    expect(logs, contains('late candidate frame after dispose'));
+  });
+
+  test('failed session ignores late connected media state', () async {
+    final media = _FakeVoiceMediaConnection();
+    final sent = <VoiceCallFrame>[];
+    final session = _session(media: media, sent: sent);
+
+    await session.startOutgoing();
+    await session.handleFrame(
+      _frame(VoiceCallFrameType.accept, from: 'bob', to: 'alice', seq: 1),
+    );
+    media.emitState(
+      const VoiceMediaState(
+        phase: VoiceMediaPhase.failed,
+        detail: 'native ice failed',
+      ),
+    );
+    await pumpEventQueue();
+    expect(session.state.phase, VoiceCallSessionPhase.failed);
+
+    media.emitState(const VoiceMediaState(phase: VoiceMediaPhase.connected));
+    await pumpEventQueue();
+
+    expect(session.state.phase, VoiceCallSessionPhase.failed);
   });
 
   test('media failure attaches diagnostics to failed session state', () async {
@@ -648,6 +677,7 @@ VoiceCallSession _session({
   String remotePeerId = 'bob',
   VoiceCallSessionTimeouts? timeouts,
   VoiceCallFrameSender? sendFrame,
+  VoiceCallLogSink? logger,
 }) {
   return VoiceCallSession(
     localPeerId: localPeerId,
@@ -658,6 +688,7 @@ VoiceCallSession _session({
     sendFrame: sendFrame ?? sent.add,
     timeouts: timeouts ?? _timeouts(),
     clock: () => DateTime.fromMillisecondsSinceEpoch(1000),
+    logger: logger,
   );
 }
 

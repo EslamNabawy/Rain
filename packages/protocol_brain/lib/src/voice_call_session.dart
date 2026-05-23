@@ -485,6 +485,7 @@ final class VoiceCallSession {
     if (state.phase != VoiceCallSessionPhase.creatingMedia &&
         state.phase != VoiceCallSessionPhase.connectingMedia &&
         state.phase != VoiceCallSessionPhase.active) {
+      _logInvalidEvent('candidate frame in ${state.phase.name}');
       return;
     }
     try {
@@ -621,11 +622,29 @@ final class VoiceCallSession {
   }
 
   bool _acceptFrame(VoiceCallFrame frame) {
-    if (_disposed ||
-        frame.callId != callId ||
-        frame.sessionEpoch != sessionEpoch ||
-        _normalizePeerId(frame.from) != _normalizedRemotePeerId ||
+    if (_disposed) {
+      _logInvalidEvent('late ${frame.type.name} frame after dispose');
+      return false;
+    }
+    if (frame.callId != callId) {
+      _logInvalidEvent(
+        'late ${frame.type.name} frame for stale callId=${frame.callId}',
+      );
+      return false;
+    }
+    if (frame.sessionEpoch != sessionEpoch) {
+      _logInvalidEvent(
+        'late ${frame.type.name} frame for stale sessionEpoch='
+        '${frame.sessionEpoch}',
+      );
+      return false;
+    }
+    if (_normalizePeerId(frame.from) != _normalizedRemotePeerId ||
         _normalizePeerId(frame.to) != _normalizedLocalPeerId) {
+      _logInvalidEvent(
+        'late ${frame.type.name} frame for unexpected peers '
+        '${frame.from}->${frame.to}',
+      );
       return false;
     }
 

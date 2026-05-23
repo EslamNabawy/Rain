@@ -33,6 +33,7 @@ class VoiceCallState {
     required this.phase,
     this.peerId,
     this.callId,
+    this.sessionEpoch,
     this.isOutgoing = false,
     this.isMuted = false,
     this.isDeafened = false,
@@ -51,6 +52,7 @@ class VoiceCallState {
     : phase = VoiceCallPhase.idle,
       peerId = null,
       callId = null,
+      sessionEpoch = null,
       isOutgoing = false,
       isMuted = false,
       isDeafened = false,
@@ -67,6 +69,7 @@ class VoiceCallState {
   final VoiceCallPhase phase;
   final String? peerId;
   final String? callId;
+  final int? sessionEpoch;
   final bool isOutgoing;
   final bool isMuted;
   final bool isDeafened;
@@ -104,6 +107,7 @@ class VoiceCallState {
     VoiceCallPhase? phase,
     String? peerId,
     String? callId,
+    int? sessionEpoch,
     bool? isOutgoing,
     bool? isMuted,
     bool? isDeafened,
@@ -124,6 +128,7 @@ class VoiceCallState {
       phase: phase ?? this.phase,
       peerId: peerId ?? this.peerId,
       callId: callId ?? this.callId,
+      sessionEpoch: sessionEpoch ?? this.sessionEpoch,
       isOutgoing: isOutgoing ?? this.isOutgoing,
       isMuted: isMuted ?? this.isMuted,
       isDeafened: isDeafened ?? this.isDeafened,
