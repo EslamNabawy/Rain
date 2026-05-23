@@ -212,7 +212,7 @@ If Firebase schema change is still forbidden, fallback path is existing encrypte
 
 **Purpose:** Lock the architecture before code changes start.
 
-- [ ] Confirm voice media will use one fresh, short-lived audio-only `RTCPeerConnection` per call.
+- [x] Confirm voice media will use one fresh, short-lived audio-only `RTCPeerConnection` per call.
 
 Architecture rule:
 
@@ -221,7 +221,7 @@ chat/data peer connection: chat, control, file data channels only
 voice media peer connection: microphone audio only, created per call, disposed after call
 ```
 
-- [ ] Confirm Rain will not send microphone audio over data channels.
+- [x] Confirm Rain will not send microphone audio over data channels.
 
 Reason:
 
@@ -230,9 +230,9 @@ WebRTC media stack already handles Opus, RTP, RTCP, DTLS-SRTP, jitter buffer, pa
 Data channels are only for call control/signaling, not realtime mic packets.
 ```
 
-- [ ] Confirm signaling path before implementation.
+- [x] Confirm signaling path before implementation.
 
-Preferred:
+Selected:
 
 ```text
 Firebase ephemeral voice call signaling
@@ -244,7 +244,7 @@ Fallback:
 Existing encrypted SessionChannel.control, requiring connected peer before ringing
 ```
 
-- [ ] Confirm release proof required.
+- [x] Confirm release proof required.
 
 Do not mark voice call fixed until:
 
@@ -256,11 +256,15 @@ repeat calls pass without app restart
 mic denial and hangup paths pass
 ```
 
-- [ ] Commit.
+- [x] Add architecture lock note.
+
+Saved in `docs/architecture/voice-call-architecture-lock.md`.
+
+- [x] Commit.
 
 ```powershell
-git add docs/superpowers/plans/2026-05-23-webrtc-voice-call-rebuild.md
-git commit -m "docs: add voice call architecture lock phase"
+git add docs/architecture/voice-call-architecture-lock.md docs/superpowers/plans/2026-05-23-webrtc-voice-call-rebuild.md
+git commit -m "docs: lock voice call architecture"
 ```
 
 ## Phase 01: Freeze Old Media Path
