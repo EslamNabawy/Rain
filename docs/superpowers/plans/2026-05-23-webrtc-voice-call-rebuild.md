@@ -208,6 +208,61 @@ Security rules must enforce:
 
 If Firebase schema change is still forbidden, fallback path is existing encrypted `SessionChannel.control`; then calls require a connected chat peer before ringing. That is simpler but less reliable for call setup.
 
+## Phase 00: Architecture Lock
+
+**Purpose:** Lock the architecture before code changes start.
+
+- [ ] Confirm voice media will use one fresh, short-lived audio-only `RTCPeerConnection` per call.
+
+Architecture rule:
+
+```text
+chat/data peer connection: chat, control, file data channels only
+voice media peer connection: microphone audio only, created per call, disposed after call
+```
+
+- [ ] Confirm Rain will not send microphone audio over data channels.
+
+Reason:
+
+```text
+WebRTC media stack already handles Opus, RTP, RTCP, DTLS-SRTP, jitter buffer, packet loss, and timing.
+Data channels are only for call control/signaling, not realtime mic packets.
+```
+
+- [ ] Confirm signaling path before implementation.
+
+Preferred:
+
+```text
+Firebase ephemeral voice call signaling
+```
+
+Fallback:
+
+```text
+Existing encrypted SessionChannel.control, requiring connected peer before ringing
+```
+
+- [ ] Confirm release proof required.
+
+Do not mark voice call fixed until:
+
+```text
+same commit installed on Windows and Android
+Windows -> Android live call passes
+Android -> Windows live call passes
+repeat calls pass without app restart
+mic denial and hangup paths pass
+```
+
+- [ ] Commit.
+
+```powershell
+git add docs/superpowers/plans/2026-05-23-webrtc-voice-call-rebuild.md
+git commit -m "docs: add voice call architecture lock phase"
+```
+
 ## Phase 1: Freeze Old Media Path
 
 **Purpose:** Stop adding more logic to the chat peer connection.
