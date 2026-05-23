@@ -394,7 +394,7 @@ git add packages/peer_core/lib packages/peer_core/test
 git commit -m "feat: add dedicated webrtc voice media connection"
 ```
 
-## Phase 3: Call Signaling And State Machine
+## Phase 03: Signaling Protocol
 
 **Purpose:** Make call control deterministic before UI.
 
