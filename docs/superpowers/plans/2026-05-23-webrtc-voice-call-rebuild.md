@@ -624,7 +624,7 @@ git add apps/rain/lib/presentation apps/rain/test
 git commit -m "feat: update voice call ui states"
 ```
 
-## Phase 6: Platform And Build Gates
+## Phase 06: Platform/Build Gates
 
 **Purpose:** Prevent wrong APK/EXE and platform regressions.
 
