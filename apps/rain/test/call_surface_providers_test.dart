@@ -60,7 +60,7 @@ void main() {
     expect(harness.surface.callId, 'call-1');
   });
 
-  test('failed and ended calls clear the call surface state', () {
+  test('failed call expands for action and ended call clears the surface', () {
     final harness = _CallSurfaceHarness();
     addTearDown(harness.dispose);
 
@@ -74,7 +74,10 @@ void main() {
       ),
     );
 
-    expect(harness.surface, const CallSurfaceState.hidden());
+    expect(harness.surface.isVisible, isTrue);
+    expect(harness.surface.mode, CallSurfaceMode.expanded);
+    expect(harness.surface.dock, CallSurfaceDock.chatCenter);
+    expect(harness.surface.callId, 'call-1');
 
     harness.setVoiceCall(_voiceCall());
     harness.setVoiceCall(const VoiceCallState.idle());

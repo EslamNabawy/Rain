@@ -150,7 +150,7 @@ class CallSurfaceController extends Notifier<CallSurfaceState> {
       return const CallSurfaceState.hidden();
     }
 
-    if (call.isRinging) {
+    if (call.isRinging || call.phase == VoiceCallPhase.failed) {
       return CallSurfaceState.visible(peerId: call.peerId, callId: call.callId);
     }
 
@@ -162,7 +162,6 @@ class CallSurfaceController extends Notifier<CallSurfaceState> {
   }
 
   bool _shouldHide(VoiceCallState call) {
-    return call.phase == VoiceCallPhase.idle ||
-        call.phase == VoiceCallPhase.failed;
+    return call.phase == VoiceCallPhase.idle;
   }
 }

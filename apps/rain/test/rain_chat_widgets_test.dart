@@ -2,6 +2,8 @@ import 'package:flutter/material.dart';
 import 'package:flutter_svg/flutter_svg.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:rain/application/runtime/voice_call_state.dart';
+import 'package:rain/application/state/call_surface_providers.dart';
+import 'package:rain/presentation/widgets/calls/rain_call_overlay.dart';
 import 'package:rain/presentation/widgets/rain_chat_widgets.dart';
 
 void main() {
@@ -421,6 +423,251 @@ void main() {
     expect(find.textContaining('Active voice call'), findsNothing);
     expect(find.text('Retry'), findsNothing);
   });
+
+  testWidgets('call overlay expands and minimizes active calls', (
+    WidgetTester tester,
+  ) async {
+    var minimized = false;
+    var muted = false;
+    var hungUp = false;
+
+    await tester.pumpWidget(
+      MaterialApp(
+        home: Scaffold(
+          body: Stack(
+            children: <Widget>[
+              Positioned.fill(
+                child: RainCallOverlay(
+                  state: _activeVoiceCall(),
+                  surface: const CallSurfaceState.visible(
+                    peerId: 'bob',
+                    callId: 'call-1',
+                  ),
+                  displayName: 'Bob',
+                  onAccept: () {},
+                  onReject: () {},
+                  onHangUp: () => hungUp = true,
+                  onRetry: () {},
+                  onToggleMute: () => muted = true,
+                  onMinimize: () => minimized = true,
+                  onExpand: () {},
+                ),
+              ),
+            ],
+          ),
+        ),
+      ),
+    );
+
+    expect(find.text('Voice call with Bob'), findsOneWidget);
+    expect(find.byTooltip('Minimize call'), findsOneWidget);
+
+    await tester.tap(find.byTooltip('Mute microphone'));
+    expect(muted, isTrue);
+
+    await tester.tap(find.byTooltip('Minimize call'));
+    expect(minimized, isTrue);
+
+    await tester.tap(find.byTooltip('Hang up'));
+    expect(hungUp, isTrue);
+  });
+
+  testWidgets(
+    'call overlay minimized chip restores without blocking composer',
+    (WidgetTester tester) async {
+      var restored = false;
+      var composerTapped = false;
+
+      await tester.pumpWidget(
+        MaterialApp(
+          home: Scaffold(
+            body: Stack(
+              children: <Widget>[
+                Align(
+                  alignment: Alignment.bottomCenter,
+                  child: SizedBox(
+                    height: 64,
+                    child: TextButton(
+                      onPressed: () => composerTapped = true,
+                      child: const Text('Message composer'),
+                    ),
+                  ),
+                ),
+                Positioned.fill(
+                  child: RainCallOverlay(
+                    state: _activeVoiceCall(),
+                    surface: const CallSurfaceState.visible(
+                      peerId: 'bob',
+                      callId: 'call-1',
+                      mode: CallSurfaceMode.minimized,
+                      dock: CallSurfaceDock.bottomSafe,
+                    ),
+                    displayName: 'Bob',
+                    onAccept: () {},
+                    onReject: () {},
+                    onHangUp: () {},
+                    onRetry: () {},
+                    onToggleMute: () {},
+                    onMinimize: () {},
+                    onExpand: () => restored = true,
+                  ),
+                ),
+              ],
+            ),
+          ),
+        ),
+      );
+
+      expect(find.byTooltip('Restore call'), findsOneWidget);
+
+      await tester.tap(find.byTooltip('Restore call'));
+      expect(restored, isTrue);
+
+      await tester.tap(find.text('Message composer'));
+      expect(composerTapped, isTrue);
+    },
+  );
+
+  testWidgets('call overlay incoming controls are wired', (
+    WidgetTester tester,
+  ) async {
+    var accepted = false;
+    var rejected = false;
+
+    await tester.pumpWidget(
+      MaterialApp(
+        home: Scaffold(
+          body: Stack(
+            children: <Widget>[
+              Positioned.fill(
+                child: RainCallOverlay(
+                  state: const VoiceCallState(
+                    phase: VoiceCallPhase.incomingRinging,
+                    peerId: 'bob',
+                    callId: 'call-1',
+                  ),
+                  surface: const CallSurfaceState.visible(
+                    peerId: 'bob',
+                    callId: 'call-1',
+                  ),
+                  displayName: 'Bob',
+                  onAccept: () => accepted = true,
+                  onReject: () => rejected = true,
+                  onHangUp: () {},
+                  onRetry: () {},
+                  onToggleMute: () {},
+                  onMinimize: () {},
+                  onExpand: () {},
+                ),
+              ),
+            ],
+          ),
+        ),
+      ),
+    );
+
+    expect(find.text('Bob is calling'), findsOneWidget);
+
+    await tester.tap(find.text('Accept'));
+    expect(accepted, isTrue);
+
+    await tester.tap(find.text('Reject'));
+    expect(rejected, isTrue);
+  });
+
+  testWidgets('call overlay failure shows retry and sanitized detail', (
+    WidgetTester tester,
+  ) async {
+    var retried = false;
+    var dismissed = false;
+
+    await tester.pumpWidget(
+      MaterialApp(
+        home: Scaffold(
+          body: Stack(
+            children: <Widget>[
+              Positioned.fill(
+                child: RainCallOverlay(
+                  state: const VoiceCallState(
+                    phase: VoiceCallPhase.failed,
+                    peerId: 'bob',
+                    callId: 'call-1',
+                    failureReason: VoiceCallFailureReason.mediaConnectionFailed,
+                    detail:
+                        'Unable to RTCRtpTransceiver::setDirection: disposed.',
+                  ),
+                  surface: const CallSurfaceState.visible(
+                    peerId: 'bob',
+                    callId: 'call-1',
+                  ),
+                  displayName: 'Bob',
+                  onAccept: () {},
+                  onReject: () {},
+                  onHangUp: () => dismissed = true,
+                  onRetry: () => retried = true,
+                  onToggleMute: () {},
+                  onMinimize: () {},
+                  onExpand: () {},
+                ),
+              ),
+            ],
+          ),
+        ),
+      ),
+    );
+
+    expect(
+      find.text('Call media could not connect. Try again.'),
+      findsOneWidget,
+    );
+    expect(find.textContaining('RTCRtpTransceiver'), findsNothing);
+
+    await tester.tap(find.text('Retry'));
+    expect(retried, isTrue);
+
+    await tester.tap(find.text('Dismiss'));
+    expect(dismissed, isTrue);
+  });
+
+  testWidgets('call overlay fits narrow mobile layout', (
+    WidgetTester tester,
+  ) async {
+    tester.view.physicalSize = const Size(320, 640);
+    tester.view.devicePixelRatio = 1;
+    addTearDown(tester.view.resetPhysicalSize);
+    addTearDown(tester.view.resetDevicePixelRatio);
+
+    await tester.pumpWidget(
+      MaterialApp(
+        home: Scaffold(
+          body: Stack(
+            children: <Widget>[
+              Positioned.fill(
+                child: RainCallOverlay(
+                  state: _activeVoiceCall(),
+                  surface: const CallSurfaceState.visible(
+                    peerId: 'bob',
+                    callId: 'call-1',
+                  ),
+                  displayName: 'Bob With A Very Long Display Name',
+                  onAccept: () {},
+                  onReject: () {},
+                  onHangUp: () {},
+                  onRetry: () {},
+                  onToggleMute: () {},
+                  onMinimize: () {},
+                  onExpand: () {},
+                ),
+              ),
+            ],
+          ),
+        ),
+      ),
+    );
+
+    expect(find.textContaining('Bob With'), findsWidgets);
+    expect(tester.takeException(), isNull);
+  });
 }
 
 Finder _findMeterCells(String prefix) {
@@ -428,4 +675,15 @@ Finder _findMeterCells(String prefix) {
     final key = widget.key;
     return key is ValueKey<String> && key.value.startsWith(prefix);
   });
+}
+
+VoiceCallState _activeVoiceCall() {
+  return VoiceCallState(
+    phase: VoiceCallPhase.active,
+    peerId: 'bob',
+    callId: 'call-1',
+    startedAt: DateTime.now()
+        .subtract(const Duration(seconds: 7))
+        .millisecondsSinceEpoch,
+  );
 }

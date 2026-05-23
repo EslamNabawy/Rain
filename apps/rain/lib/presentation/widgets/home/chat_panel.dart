@@ -68,8 +68,6 @@ class _ChatPanelState extends ConsumerState<_ChatPanel> {
     final messages = ref.watch(messagesProvider(widget.peerId));
     final transfers = ref.watch(fileTransferViewsProvider(widget.peerId));
     final voiceCall = ref.watch(voiceCallProvider);
-    final voiceCallForPeer =
-        voiceCall.hasCall && voiceCall.peerId == widget.peerId;
     final hasBlockingCall =
         voiceCall.hasCall && voiceCall.phase != VoiceCallPhase.failed;
     final hasActiveTransfer = _hasActiveFileTransfer(transfers.value);
@@ -108,24 +106,6 @@ class _ChatPanelState extends ConsumerState<_ChatPanel> {
                 hasActiveTransfer: hasActiveTransfer,
               ),
             ),
-            if (canChat && voiceCallForPeer)
-              Padding(
-                padding: EdgeInsets.fromLTRB(
-                  horizontalPadding,
-                  0,
-                  horizontalPadding,
-                  12,
-                ),
-                child: RainVoiceCallPanel(
-                  state: voiceCall,
-                  displayName: friend?.displayName ?? widget.peerId,
-                  onAccept: _acceptVoiceCall,
-                  onReject: _rejectVoiceCall,
-                  onHangUp: _hangUpVoiceCall,
-                  onRetry: _startVoiceCall,
-                  onToggleMute: () => _toggleVoiceMute(voiceCall),
-                ),
-              ),
             Expanded(
               child: Stack(
                 children: <Widget>[
@@ -1365,46 +1345,6 @@ class _ChatPanelState extends ConsumerState<_ChatPanel> {
   Future<void> _startVoiceCall() async {
     try {
       await ref.read(voiceCallProvider.notifier).start(widget.peerId);
-      _playSound(RainSoundEffect.action);
-    } catch (error) {
-      _playSound(RainSoundEffect.error);
-      _showErrorSnack(_formatUiError(error));
-    }
-  }
-
-  Future<void> _acceptVoiceCall() async {
-    try {
-      await ref.read(voiceCallProvider.notifier).accept();
-      _playSound(RainSoundEffect.action);
-    } catch (error) {
-      _playSound(RainSoundEffect.error);
-      _showErrorSnack(_formatUiError(error));
-    }
-  }
-
-  Future<void> _rejectVoiceCall() async {
-    try {
-      await ref.read(voiceCallProvider.notifier).reject();
-      _playSound(RainSoundEffect.action);
-    } catch (error) {
-      _playSound(RainSoundEffect.error);
-      _showErrorSnack(_formatUiError(error));
-    }
-  }
-
-  Future<void> _hangUpVoiceCall() async {
-    try {
-      await ref.read(voiceCallProvider.notifier).hangUp();
-      _playSound(RainSoundEffect.action);
-    } catch (error) {
-      _playSound(RainSoundEffect.error);
-      _showErrorSnack(_formatUiError(error));
-    }
-  }
-
-  Future<void> _toggleVoiceMute(VoiceCallState state) async {
-    try {
-      await ref.read(voiceCallProvider.notifier).setMuted(!state.isMuted);
       _playSound(RainSoundEffect.action);
     } catch (error) {
       _playSound(RainSoundEffect.error);

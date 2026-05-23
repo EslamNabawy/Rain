@@ -21,6 +21,7 @@ import 'package:rain/presentation/theme/rain_theme.dart';
 import 'package:rain/presentation/widgets/app_components.dart';
 import 'package:rain/presentation/widgets/chat_composer.dart';
 import 'package:rain/presentation/widgets/app_dialogs.dart';
+import 'package:rain/presentation/widgets/calls/rain_call_overlay.dart';
 import 'package:rain/presentation/widgets/rain_chat_widgets.dart';
 
 part '../widgets/home/shell_header.dart';
@@ -350,8 +351,8 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
   Widget build(BuildContext context) {
     final friends = ref.watch(friendsProvider);
     final identity = ref.watch(identityProvider).value;
-    // Keep call controls scoped above chat selection before the popup is drawn.
-    ref.watch(callSurfaceProvider);
+    final voiceCall = ref.watch(voiceCallProvider);
+    final callSurface = ref.watch(callSurfaceProvider);
     ref.listen<VoiceCallState>(voiceCallProvider, _handleVoiceCallNavigation);
 
     return LayoutBuilder(
@@ -391,9 +392,12 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
                     const Divider(height: 1),
                   ],
                   Expanded(
-                    child: isCompact
-                        ? _buildCompactBody(friends)
-                        : _buildWideBody(friends),
+                    child: _buildBodyWithCallSurface(
+                      friends: friends,
+                      isCompact: isCompact,
+                      voiceCall: voiceCall,
+                      callSurface: callSurface,
+                    ),
                   ),
                 ],
               ),
@@ -401,6 +405,40 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
           ),
         );
       },
+    );
+  }
+
+  Widget _buildBodyWithCallSurface({
+    required AsyncValue<List<FriendRecord>> friends,
+    required bool isCompact,
+    required VoiceCallState voiceCall,
+    required CallSurfaceState callSurface,
+  }) {
+    final body = isCompact
+        ? _buildCompactBody(friends)
+        : _buildWideBody(friends);
+    return Stack(
+      children: <Widget>[
+        Positioned.fill(child: body),
+        if (callSurface.isVisible && voiceCall.phase != VoiceCallPhase.idle)
+          Positioned.fill(
+            left: isCompact ? 0 : 321,
+            child: RainCallOverlay(
+              state: voiceCall,
+              surface: callSurface,
+              displayName: _voiceCallDisplayName(friends, voiceCall),
+              gender: _voiceCallGender(friends, voiceCall),
+              onAccept: _acceptVoiceCall,
+              onReject: _rejectVoiceCall,
+              onHangUp: _hangUpVoiceCall,
+              onRetry: () => _retryVoiceCall(voiceCall),
+              onToggleMute: () => _toggleVoiceMute(voiceCall),
+              onMinimize: () =>
+                  ref.read(callSurfaceProvider.notifier).minimize(),
+              onExpand: () => ref.read(callSurfaceProvider.notifier).expand(),
+            ),
+          ),
+      ],
     );
   }
 
@@ -477,5 +515,112 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
       return;
     }
     await ref.read(friendsProvider.notifier).refresh();
+  }
+
+  String _voiceCallDisplayName(
+    AsyncValue<List<FriendRecord>> friends,
+    VoiceCallState call,
+  ) {
+    final friend = _voiceCallFriend(friends, call);
+    return friend?.displayName ?? call.peerId ?? 'Peer';
+  }
+
+  String? _voiceCallGender(
+    AsyncValue<List<FriendRecord>> friends,
+    VoiceCallState call,
+  ) {
+    return _voiceCallFriend(friends, call)?.gender?.name;
+  }
+
+  FriendRecord? _voiceCallFriend(
+    AsyncValue<List<FriendRecord>> friends,
+    VoiceCallState call,
+  ) {
+    final peerId = call.peerId;
+    final items = friends.value;
+    if (peerId == null || items == null) {
+      return null;
+    }
+    for (final friend in items) {
+      if (friend.username == peerId) {
+        return friend;
+      }
+    }
+    return null;
+  }
+
+  Future<void> _retryVoiceCall(VoiceCallState call) async {
+    final peerId = call.peerId;
+    if (peerId == null || peerId.trim().isEmpty) {
+      _showVoiceCallError('Peer connection is unavailable right now.');
+      return;
+    }
+    await _startVoiceCall(peerId);
+  }
+
+  Future<void> _startVoiceCall(String peerId) async {
+    try {
+      await ref.read(voiceCallProvider.notifier).start(peerId);
+      _playSound(RainSoundEffect.action);
+    } catch (error) {
+      _playSound(RainSoundEffect.error);
+      _showVoiceCallError(_formatUiError(error));
+    }
+  }
+
+  Future<void> _acceptVoiceCall() async {
+    try {
+      await ref.read(voiceCallProvider.notifier).accept();
+      _playSound(RainSoundEffect.action);
+    } catch (error) {
+      _playSound(RainSoundEffect.error);
+      _showVoiceCallError(_formatUiError(error));
+    }
+  }
+
+  Future<void> _rejectVoiceCall() async {
+    try {
+      await ref.read(voiceCallProvider.notifier).reject();
+      _playSound(RainSoundEffect.action);
+    } catch (error) {
+      _playSound(RainSoundEffect.error);
+      _showVoiceCallError(_formatUiError(error));
+    }
+  }
+
+  Future<void> _hangUpVoiceCall() async {
+    try {
+      await ref.read(voiceCallProvider.notifier).hangUp();
+      _playSound(RainSoundEffect.action);
+    } catch (error) {
+      _playSound(RainSoundEffect.error);
+      _showVoiceCallError(_formatUiError(error));
+    }
+  }
+
+  Future<void> _toggleVoiceMute(VoiceCallState call) async {
+    try {
+      await ref.read(voiceCallProvider.notifier).setMuted(!call.isMuted);
+      _playSound(RainSoundEffect.action);
+    } catch (error) {
+      _playSound(RainSoundEffect.error);
+      _showVoiceCallError(_formatUiError(error));
+    }
+  }
+
+  void _playSound(RainSoundEffect effect) {
+    unawaited(ref.read(soundEffectsProvider).play(effect));
+  }
+
+  void _showVoiceCallError(String message) {
+    if (!mounted) {
+      return;
+    }
+    ScaffoldMessenger.of(context).showSnackBar(
+      SnackBar(
+        content: Text(message),
+        backgroundColor: Theme.of(context).colorScheme.error,
+      ),
+    );
   }
 }

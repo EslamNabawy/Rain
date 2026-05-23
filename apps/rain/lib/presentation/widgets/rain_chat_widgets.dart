@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_svg/flutter_svg.dart';
 import 'package:rain/application/runtime/voice_call_state.dart';
+import 'package:rain/presentation/widgets/calls/rain_call_controls.dart';
 
 const String _maleAvatarAsset = 'assets/gender avatar/man-avatar.svg';
 const String _femaleAvatarAsset = 'assets/gender avatar/woman-avatar.svg';
@@ -620,7 +621,7 @@ class RainVoiceCallPanel extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final scheme = Theme.of(context).colorScheme;
-    final accent = _voiceCallAccent(context, state);
+    final accent = rainVoiceCallAccent(context, state);
 
     return AnimatedContainer(
       duration: const Duration(milliseconds: 180),
@@ -642,7 +643,7 @@ class RainVoiceCallPanel extends StatelessWidget {
                   color: accent.withValues(alpha: 0.18),
                   borderRadius: BorderRadius.circular(14),
                 ),
-                child: Icon(_voiceCallIcon(state), color: accent),
+                child: Icon(rainVoiceCallIcon(state), color: accent),
               ),
               const SizedBox(width: 12),
               Expanded(
@@ -662,7 +663,7 @@ class RainVoiceCallPanel extends StatelessWidget {
                       mainAxisSize: MainAxisSize.min,
                       children: <Widget>[
                         Text(
-                          _voiceCallTitle(state, displayName),
+                          rainVoiceCallTitle(state, displayName),
                           maxLines: 1,
                           overflow: TextOverflow.ellipsis,
                           style: Theme.of(context).textTheme.titleSmall
@@ -670,7 +671,7 @@ class RainVoiceCallPanel extends StatelessWidget {
                         ),
                         const SizedBox(height: 3),
                         Text(
-                          _voiceCallDetail(state, now),
+                          rainVoiceCallDetail(state, now),
                           maxLines: 2,
                           overflow: TextOverflow.ellipsis,
                           style: Theme.of(context).textTheme.bodySmall
@@ -686,7 +687,7 @@ class RainVoiceCallPanel extends StatelessWidget {
               ),
             ],
           );
-          final actions = _RainVoiceCallActions(
+          final actions = RainCallControls(
             state: state,
             onAccept: onAccept,
             onReject: onReject,
@@ -718,86 +719,6 @@ class RainVoiceCallPanel extends StatelessWidget {
   }
 }
 
-class _RainVoiceCallActions extends StatelessWidget {
-  const _RainVoiceCallActions({
-    required this.state,
-    required this.onAccept,
-    required this.onReject,
-    required this.onHangUp,
-    required this.onRetry,
-    required this.onToggleMute,
-  });
-
-  final VoiceCallState state;
-  final VoidCallback onAccept;
-  final VoidCallback onReject;
-  final VoidCallback onHangUp;
-  final VoidCallback onRetry;
-  final VoidCallback onToggleMute;
-
-  @override
-  Widget build(BuildContext context) {
-    if (state.phase == VoiceCallPhase.incomingRinging) {
-      return Wrap(
-        spacing: 8,
-        runSpacing: 8,
-        alignment: WrapAlignment.end,
-        children: <Widget>[
-          OutlinedButton.icon(
-            onPressed: onReject,
-            icon: const Icon(Icons.call_end),
-            label: const Text('Reject'),
-          ),
-          FilledButton.icon(
-            onPressed: onAccept,
-            icon: const Icon(Icons.call),
-            label: const Text('Accept'),
-          ),
-        ],
-      );
-    }
-
-    if (state.phase == VoiceCallPhase.failed) {
-      return Wrap(
-        spacing: 8,
-        runSpacing: 8,
-        alignment: WrapAlignment.end,
-        children: <Widget>[
-          if (_voiceCallCanRetry(state))
-            FilledButton.icon(
-              onPressed: onRetry,
-              icon: const Icon(Icons.refresh),
-              label: const Text('Retry'),
-            ),
-          TextButton.icon(
-            onPressed: onHangUp,
-            icon: const Icon(Icons.close),
-            label: const Text('Dismiss'),
-          ),
-        ],
-      );
-    }
-
-    return Wrap(
-      spacing: 8,
-      runSpacing: 8,
-      alignment: WrapAlignment.end,
-      children: <Widget>[
-        IconButton(
-          tooltip: state.isMuted ? 'Unmute microphone' : 'Mute microphone',
-          onPressed: state.isActive ? onToggleMute : null,
-          icon: Icon(state.isMuted ? Icons.mic_off : Icons.mic),
-        ),
-        IconButton.filled(
-          tooltip: 'Hang up',
-          onPressed: onHangUp,
-          icon: const Icon(Icons.call_end),
-        ),
-      ],
-    );
-  }
-}
-
 String _voiceCallButtonTooltip({
   required String peerId,
   required VoiceCallState state,
@@ -813,196 +734,4 @@ String _voiceCallButtonTooltip({
         : 'Finish the active call with @$activePeerId first.';
   }
   return 'Start voice call';
-}
-
-IconData _voiceCallIcon(VoiceCallState state) {
-  return switch (state.phase) {
-    VoiceCallPhase.failed => Icons.error_outline,
-    VoiceCallPhase.incomingRinging => Icons.call_received,
-    VoiceCallPhase.outgoingRinging => Icons.call_made,
-    VoiceCallPhase.active => state.isMuted ? Icons.mic_off : Icons.call,
-    VoiceCallPhase.connectingPeer ||
-    VoiceCallPhase.connectingMedia ||
-    VoiceCallPhase.ending ||
-    VoiceCallPhase.idle => Icons.call_outlined,
-  };
-}
-
-Color _voiceCallAccent(BuildContext context, VoiceCallState state) {
-  final scheme = Theme.of(context).colorScheme;
-  return switch (state.phase) {
-    VoiceCallPhase.failed => scheme.error,
-    VoiceCallPhase.active => const Color(0xFF2DD4A3),
-    VoiceCallPhase.incomingRinging ||
-    VoiceCallPhase.outgoingRinging => scheme.tertiary,
-    VoiceCallPhase.connectingPeer ||
-    VoiceCallPhase.connectingMedia ||
-    VoiceCallPhase.ending ||
-    VoiceCallPhase.idle => scheme.primary,
-  };
-}
-
-String _voiceCallTitle(VoiceCallState state, String displayName) {
-  return switch (state.phase) {
-    VoiceCallPhase.incomingRinging => '$displayName is calling',
-    VoiceCallPhase.outgoingRinging => 'Calling $displayName',
-    VoiceCallPhase.active => 'Voice call with $displayName',
-    VoiceCallPhase.failed => 'Voice call failed',
-    VoiceCallPhase.ending => 'Ending voice call',
-    VoiceCallPhase.connectingPeer ||
-    VoiceCallPhase.connectingMedia => 'Connecting voice call',
-    VoiceCallPhase.idle => 'Voice call',
-  };
-}
-
-String _voiceCallDetail(VoiceCallState state, int nowMs) {
-  if (state.phase == VoiceCallPhase.active && state.startedAt != null) {
-    final elapsed = Duration(milliseconds: nowMs - state.startedAt!);
-    final labels = <String>[_formatVoiceElapsed(elapsed)];
-    if (state.isMuted) {
-      labels.add('Muted');
-    }
-    if (state.isRemoteMuted) {
-      labels.add('Peer muted');
-    }
-    return labels.join(' / ');
-  }
-  return switch (state.phase) {
-    VoiceCallPhase.connectingPeer => 'Connecting peer link.',
-    VoiceCallPhase.outgoingRinging => 'Ringing.',
-    VoiceCallPhase.incomingRinging => 'Incoming voice call.',
-    VoiceCallPhase.connectingMedia => 'Connecting microphone audio.',
-    VoiceCallPhase.ending => 'Closing microphone audio.',
-    VoiceCallPhase.failed => _voiceCallFailureDetail(state),
-    VoiceCallPhase.idle => '',
-    VoiceCallPhase.active => 'Connected.',
-  };
-}
-
-String _voiceCallFailureDetail(VoiceCallState state) {
-  return switch (state.failureReason) {
-    VoiceCallFailureReason.microphoneDenied =>
-      'Microphone permission required.',
-    VoiceCallFailureReason.remoteMicrophoneDenied =>
-      'Peer microphone permission required.',
-    VoiceCallFailureReason.peerBusy => 'Peer is busy.',
-    VoiceCallFailureReason.fileTransferActive =>
-      'Finish the active file transfer first.',
-    VoiceCallFailureReason.rejected => 'Call declined.',
-    VoiceCallFailureReason.networkLost =>
-      'Network connection lost. Call ended.',
-    VoiceCallFailureReason.signalingFailed => 'Call setup failed. Try again.',
-    VoiceCallFailureReason.expired ||
-    VoiceCallFailureReason.ringingTimeout => 'Call timed out.',
-    VoiceCallFailureReason.mediaIceTimeout ||
-    VoiceCallFailureReason.mediaNoRemoteAudio ||
-    VoiceCallFailureReason.mediaConnectionFailed =>
-      'Call media could not connect. Try again.',
-    null => _sanitizeVoiceCallFailureDetail(state.detail),
-  };
-}
-
-bool _voiceCallCanRetry(VoiceCallState state) {
-  return switch (state.failureReason) {
-    VoiceCallFailureReason.microphoneDenied ||
-    VoiceCallFailureReason.peerBusy ||
-    VoiceCallFailureReason.signalingFailed ||
-    VoiceCallFailureReason.expired ||
-    VoiceCallFailureReason.ringingTimeout ||
-    VoiceCallFailureReason.mediaConnectionFailed ||
-    VoiceCallFailureReason.mediaIceTimeout ||
-    VoiceCallFailureReason.mediaNoRemoteAudio => true,
-    VoiceCallFailureReason.remoteMicrophoneDenied ||
-    VoiceCallFailureReason.fileTransferActive ||
-    VoiceCallFailureReason.rejected ||
-    VoiceCallFailureReason.networkLost ||
-    null => false,
-  };
-}
-
-String _sanitizeVoiceCallFailureDetail(String? detail) {
-  final raw = detail?.trim();
-  if (raw == null || raw.isEmpty) {
-    return 'Call failed.';
-  }
-  const prefixes = <String>['Exception: ', 'Bad state: ', 'StateError: '];
-  var message = raw;
-  for (final prefix in prefixes) {
-    if (raw.startsWith(prefix)) {
-      message = raw.substring(prefix.length).trim();
-      break;
-    }
-  }
-  final normalized = message.toLowerCase();
-  if (normalized.contains('microphone') &&
-      (normalized.contains('permission') || normalized.contains('denied'))) {
-    return 'Microphone permission required.';
-  }
-  if (normalized.contains('peer is busy') ||
-      normalized == 'busy.' ||
-      normalized.contains('active voice call already exists') ||
-      normalized.contains('activevoicepairs') ||
-      normalized.contains('active voice pair')) {
-    return 'Peer is busy.';
-  }
-  if (normalized.contains('active file transfer')) {
-    return 'Finish the active file transfer first.';
-  }
-  if (normalized.contains('finish the call before') ||
-      normalized == 'finish the call first.') {
-    return 'Finish the call first.';
-  }
-  if (normalized == 'rejected.' ||
-      normalized.contains('call declined') ||
-      normalized.contains('call rejected')) {
-    return 'Call declined.';
-  }
-  if (normalized.contains('network connection lost') ||
-      normalized.contains('network lost') ||
-      normalized.contains('internet connection') ||
-      normalized.contains('network is unavailable') ||
-      normalized.contains('network unavailable')) {
-    return 'Network connection lost. Call ended.';
-  }
-  if (normalized.contains('timed out') ||
-      normalized.contains('voice call expired') ||
-      normalized.contains('call room expired')) {
-    return 'Call timed out.';
-  }
-  if (normalized.contains('voice signaling') ||
-      normalized.contains('firebase') ||
-      normalized.contains('unknown voice call') ||
-      normalized.contains('voice call already exists') ||
-      normalized.contains('already ended') ||
-      normalized.contains('permission-denied') ||
-      normalized.contains('database')) {
-    return 'Call setup failed. Try again.';
-  }
-  if (normalized.contains('ice timeout')) {
-    return 'Call media could not connect. Try again.';
-  }
-  if (normalized.contains('no remote audio')) {
-    return 'Call media could not connect. Try again.';
-  }
-  if (normalized.contains('rtcrtptransceiver') ||
-      normalized.contains('setdirection') ||
-      normalized.contains('setremotedescription') ||
-      normalized.contains('peerconnectionsetremotedescription') ||
-      normalized.contains('m-line') ||
-      normalized.contains('peer connection changed while')) {
-    return 'Call media could not connect. Try again.';
-  }
-  return message;
-}
-
-String _formatVoiceElapsed(Duration elapsed) {
-  final seconds = elapsed.inSeconds.clamp(0, 86400).toInt();
-  final hours = seconds ~/ 3600;
-  final minutes = (seconds ~/ 60) % 60;
-  final remainingSeconds = seconds % 60;
-  final secondsLabel = remainingSeconds.toString().padLeft(2, '0');
-  if (hours > 0) {
-    return '$hours:${minutes.toString().padLeft(2, '0')}:$secondsLabel';
-  }
-  return '$minutes:$secondsLabel';
 }
