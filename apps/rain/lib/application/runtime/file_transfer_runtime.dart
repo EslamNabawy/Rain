@@ -175,10 +175,7 @@ extension FileTransferRuntime on RainRuntimeController {
     if (voiceCallBlocksFileTransfer(peerId)) {
       _sendFileControlIfConnected(
         peerId,
-        FileTransferFrame.reject(
-          frame.transferId,
-          'Finish the call before sending files.',
-        ),
+        FileTransferFrame.reject(frame.transferId, 'Finish the call first.'),
       );
       return;
     }

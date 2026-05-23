@@ -1108,6 +1108,48 @@ void main() {
       );
     });
 
+    test('active Firebase pair lock is surfaced as peer busy', () async {
+      final adapter = RecordingVoiceSignalingAdapter();
+      final brain = TestSessionManager();
+      await adapter.register('bob', 'bobpw');
+      await adapter.upsertFriendship('alice', 'bob');
+      await db
+          .into(db.friends)
+          .insert(
+            FriendsCompanion.insert(
+              username: 'bob',
+              displayName: 'Bob',
+              state: 'friend',
+              addedAt: 0,
+            ),
+          );
+      final now = DateTime.now().millisecondsSinceEpoch;
+      await adapter.createOutgoingCall(
+        callId: 'existing-call',
+        caller: 'alice',
+        callee: 'bob',
+        createdAt: now,
+        expiresAt: now + const Duration(minutes: 2).inMilliseconds,
+      );
+      final runtime = _runtimeFor(db, alice, adapter, brain: brain);
+      addTearDown(runtime.dispose);
+
+      await runtime.start();
+      await expectLater(
+        runtime.startVoiceCall('bob'),
+        throwsA(isA<VoiceSignalingException>()),
+      );
+
+      expect(runtime.voiceCallState.phase, VoiceCallPhase.failed);
+      expect(
+        runtime.voiceCallState.failureReason,
+        VoiceCallFailureReason.peerBusy,
+      );
+      expect(runtime.voiceCallState.detail, 'Peer is busy.');
+      expect(adapter.rooms, hasLength(1));
+      expect(adapter.rooms.values.single.callId, 'existing-call');
+    });
+
     test(
       'incoming microphone denial fails Firebase room before accept',
       () async {
@@ -1247,7 +1289,7 @@ void main() {
             isA<StateError>().having(
               (error) => error.toString(),
               'message',
-              contains('Finish the call before sending files'),
+              contains('Finish the call first'),
             ),
           ),
         );
@@ -1791,7 +1833,7 @@ void main() {
               isA<StateError>().having(
                 (error) => error.toString(),
                 'message',
-                contains('Finish the call before sending files'),
+                contains('Finish the call first'),
               ),
             ),
           );

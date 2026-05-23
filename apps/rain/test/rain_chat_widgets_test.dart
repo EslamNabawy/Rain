@@ -355,6 +355,72 @@ void main() {
     await tester.tap(find.text('Dismiss'));
     expect(dismissed, isTrue);
   });
+
+  testWidgets('voice call failure maps signaling errors to typed UI', (
+    WidgetTester tester,
+  ) async {
+    var retried = false;
+
+    await tester.pumpWidget(
+      MaterialApp(
+        home: Scaffold(
+          body: RainVoiceCallPanel(
+            state: const VoiceCallState(
+              phase: VoiceCallPhase.failed,
+              peerId: 'bob',
+              callId: 'call-1',
+              failureReason: VoiceCallFailureReason.signalingFailed,
+              detail:
+                  'VoiceSignalingException: Firebase permission-denied at voiceCalls/call-1',
+            ),
+            displayName: 'Bob',
+            onAccept: () {},
+            onReject: () {},
+            onHangUp: () {},
+            onRetry: () => retried = true,
+            onToggleMute: () {},
+          ),
+        ),
+      ),
+    );
+
+    expect(find.text('Call setup failed. Try again.'), findsOneWidget);
+    expect(find.textContaining('Firebase'), findsNothing);
+    expect(find.textContaining('voiceCalls'), findsNothing);
+
+    await tester.tap(find.text('Retry'));
+    expect(retried, isTrue);
+  });
+
+  testWidgets('voice call busy raw room lock is shown as peer busy', (
+    WidgetTester tester,
+  ) async {
+    await tester.pumpWidget(
+      MaterialApp(
+        home: Scaffold(
+          body: RainVoiceCallPanel(
+            state: const VoiceCallState(
+              phase: VoiceCallPhase.failed,
+              peerId: 'bob',
+              callId: 'call-1',
+              detail:
+                  'VoiceSignalingException: Active voice call already exists for pair alice:bob.',
+            ),
+            displayName: 'Bob',
+            onAccept: () {},
+            onReject: () {},
+            onHangUp: () {},
+            onRetry: () {},
+            onToggleMute: () {},
+          ),
+        ),
+      ),
+    );
+
+    expect(find.text('Peer is busy.'), findsOneWidget);
+    expect(find.textContaining('Active voice call'), findsNothing);
+    expect(find.text('Retry'), findsNothing);
+  });
 }
 
 Finder _findMeterCells(String prefix) {

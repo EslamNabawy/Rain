@@ -102,6 +102,67 @@ void main() {
     },
   );
 
+  test('outgoing invite send failure is signaling failure', () async {
+    final media = _FakeVoiceMediaConnection();
+    final sent = <VoiceCallFrame>[];
+    final session = _session(
+      media: media,
+      sent: sent,
+      sendFrame: (_) {
+        throw StateError('firebase write denied');
+      },
+    );
+
+    await expectLater(session.startOutgoing(), throwsStateError);
+
+    expect(session.state.phase, VoiceCallSessionPhase.failed);
+    expect(session.state.detail, 'Voice call signaling failed.');
+    expect(session.state.reasonCode, 'signalingFailed');
+    expect(media.startLocalAudioCalls, 1);
+    expect(media.disposeCalls, 1);
+    expect(sent, isEmpty);
+  });
+
+  test(
+    'incoming accept send failure is not reported as microphone denial',
+    () async {
+      final media = _FakeVoiceMediaConnection();
+      final sent = <VoiceCallFrame>[];
+      final session = _session(
+        media: media,
+        sent: sent,
+        localPeerId: 'bob',
+        remotePeerId: 'alice',
+        sendFrame: (VoiceCallFrame frame) {
+          sent.add(frame);
+          if (frame.type == VoiceCallFrameType.accept) {
+            throw StateError('firebase accept denied');
+          }
+        },
+      );
+
+      await session.handleFrame(
+        _frame(VoiceCallFrameType.invite, from: 'alice', to: 'bob', seq: 1),
+      );
+      await expectLater(session.acceptIncoming(), throwsStateError);
+
+      expect(session.state.phase, VoiceCallSessionPhase.failed);
+      expect(session.state.detail, 'Voice call signaling failed.');
+      expect(session.state.reasonCode, 'signalingFailed');
+      expect(
+        sent.where(
+          (VoiceCallFrame frame) =>
+              frame.type == VoiceCallFrameType.reject &&
+              frame.reasonCode == 'microphoneDenied',
+        ),
+        isEmpty,
+      );
+      expect(sent.first.type, VoiceCallFrameType.accept);
+      expect(sent.last.type, VoiceCallFrameType.hangup);
+      expect(sent.last.reasonCode, 'signalingFailed');
+    },
+  );
+
   test('reject and busy fail the outgoing call and dispose media', () async {
     final media = _FakeVoiceMediaConnection();
     final sent = <VoiceCallFrame>[];
@@ -357,6 +418,7 @@ VoiceCallSession _session({
   String localPeerId = 'alice',
   String remotePeerId = 'bob',
   VoiceCallSessionTimeouts? timeouts,
+  VoiceCallFrameSender? sendFrame,
 }) {
   return VoiceCallSession(
     localPeerId: localPeerId,
@@ -364,7 +426,7 @@ VoiceCallSession _session({
     callId: 'call-1',
     sessionEpoch: 11,
     media: media,
-    sendFrame: sent.add,
+    sendFrame: sendFrame ?? sent.add,
     timeouts: timeouts ?? _timeouts(),
     clock: () => DateTime.fromMillisecondsSinceEpoch(1000),
   );
@@ -424,6 +486,7 @@ final class _FakeVoiceMediaConnection implements VoiceMediaConnection {
       StreamController<VoiceMediaState>.broadcast();
 
   int startLocalAudioCalls = 0;
+  Object? startLocalAudioError;
   int createOfferCalls = 0;
   int disposeCalls = 0;
   final List<String> acceptedOffers = <String>[];
@@ -447,6 +510,10 @@ final class _FakeVoiceMediaConnection implements VoiceMediaConnection {
   @override
   Future<void> startLocalAudio() async {
     startLocalAudioCalls += 1;
+    final error = startLocalAudioError;
+    if (error != null) {
+      throw error;
+    }
   }
 
   @override

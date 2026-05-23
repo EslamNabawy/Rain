@@ -8,6 +8,14 @@ typedef VoiceCallFrameSender = FutureOr<void> Function(VoiceCallFrame frame);
 typedef VoiceCallClock = DateTime Function();
 typedef VoiceCallLogSink = void Function(String message);
 
+const String _voiceCallFailedReasonCode = 'failed';
+const String _voiceCallBusyReasonCode = 'busy';
+const String _voiceCallRejectedReasonCode = 'rejected';
+const String _voiceCallSignalingFailedReasonCode = 'signalingFailed';
+const String _voiceCallRingingTimeoutReasonCode = 'ringingTimeout';
+const String _voiceCallIceTimeoutReasonCode = 'iceTimeout';
+const String _voiceCallMicrophoneDeniedReasonCode = 'microphoneDenied';
+
 enum VoiceCallSessionPhase {
   idle,
   preflightingMic,
@@ -132,16 +140,25 @@ final class VoiceCallSession {
       }
       try {
         await media.startLocalAudio();
-        if (!_transitionTo(
-          VoiceCallSessionPhase.outgoingRinging,
-          detail: 'Ringing @$remotePeerId.',
-        )) {
-          return;
-        }
-        _armRingingTimeout();
+      } catch (error) {
+        await _fail('Microphone permission required.', error: error);
+        rethrow;
+      }
+      if (!_transitionTo(
+        VoiceCallSessionPhase.outgoingRinging,
+        detail: 'Ringing @$remotePeerId.',
+      )) {
+        return;
+      }
+      _armRingingTimeout();
+      try {
         await _send(VoiceCallFrameType.invite);
       } catch (error) {
-        await _fail('Microphone could not start.', error: error);
+        await _fail(
+          'Voice call signaling failed.',
+          error: error,
+          reasonCode: _voiceCallSignalingFailedReasonCode,
+        );
         rethrow;
       }
     });
@@ -162,14 +179,25 @@ final class VoiceCallSession {
       }
       try {
         await media.startLocalAudio();
-        if (!_transitionTo(
-          VoiceCallSessionPhase.connectingMedia,
-          detail: isOfferOwner
-              ? 'Creating voice media offer.'
-              : 'Waiting for voice media offer.',
-        )) {
-          return;
-        }
+      } catch (error) {
+        await _send(
+          VoiceCallFrameType.reject,
+          reason: 'Microphone permission required.',
+          reasonCode: _voiceCallMicrophoneDeniedReasonCode,
+          bestEffort: true,
+        );
+        await _fail('Microphone permission required.', error: error);
+        rethrow;
+      }
+      if (!_transitionTo(
+        VoiceCallSessionPhase.connectingMedia,
+        detail: isOfferOwner
+            ? 'Creating voice media offer.'
+            : 'Waiting for voice media offer.',
+      )) {
+        return;
+      }
+      try {
         await _send(VoiceCallFrameType.accept);
         if (isOfferOwner) {
           await _createAndSendOffer();
@@ -177,13 +205,12 @@ final class VoiceCallSession {
           _armAnswerTimeout('Timed out waiting for voice media offer.');
         }
       } catch (error) {
-        await _send(
-          VoiceCallFrameType.reject,
-          reason: 'Microphone permission required.',
-          reasonCode: 'microphoneDenied',
-          bestEffort: true,
+        await _fail(
+          'Voice call signaling failed.',
+          error: error,
+          notifyPeer: true,
+          reasonCode: _voiceCallSignalingFailedReasonCode,
         );
-        await _fail('Microphone permission required.', error: error);
         rethrow;
       }
     });
@@ -194,7 +221,12 @@ final class VoiceCallSession {
       if (state.phase != VoiceCallSessionPhase.incomingRinging) {
         return;
       }
-      await _send(VoiceCallFrameType.reject, reason: reason, bestEffort: true);
+      await _send(
+        VoiceCallFrameType.reject,
+        reason: reason,
+        reasonCode: _voiceCallRejectedReasonCode,
+        bestEffort: true,
+      );
       await _clearVoiceOnly(detail: reason);
     });
   }
@@ -324,14 +356,19 @@ final class VoiceCallSession {
   Future<void> _handleRejected(VoiceCallFrame frame) async {
     final detail = frame.type == VoiceCallFrameType.busy
         ? 'Peer is busy.'
-        : frame.reasonCode == 'microphoneDenied'
+        : frame.reasonCode == _voiceCallMicrophoneDeniedReasonCode
         ? 'Peer microphone permission required.'
-        : frame.reason ?? 'Call rejected.';
+        : frame.reasonCode == _voiceCallRejectedReasonCode ||
+              frame.reason == 'Rejected.'
+        ? 'Call declined.'
+        : frame.reason ?? 'Call declined.';
     await _fail(
       detail,
       reasonCode:
           frame.reasonCode ??
-          (frame.type == VoiceCallFrameType.busy ? 'busy' : null),
+          (frame.type == VoiceCallFrameType.busy
+              ? _voiceCallBusyReasonCode
+              : _voiceCallRejectedReasonCode),
     );
   }
 
@@ -371,7 +408,7 @@ final class VoiceCallSession {
         await _fail(
           'Voice call media could not connect.',
           error: error,
-          reasonCode: 'failed',
+          reasonCode: _voiceCallFailedReasonCode,
         );
       }
     });
@@ -404,7 +441,7 @@ final class VoiceCallSession {
         await _fail(
           'Voice call media could not connect.',
           error: error,
-          reasonCode: 'failed',
+          reasonCode: _voiceCallFailedReasonCode,
         );
       }
     });
@@ -461,7 +498,7 @@ final class VoiceCallSession {
         await _fail(
           'Voice call media could not connect.',
           error: error,
-          reasonCode: 'failed',
+          reasonCode: _voiceCallFailedReasonCode,
         );
       }
     });
@@ -516,7 +553,7 @@ final class VoiceCallSession {
               'Voice call media could not connect.',
               error: mediaState.error ?? mediaState.detail,
               notifyPeer: true,
-              reasonCode: 'failed',
+              reasonCode: _voiceCallFailedReasonCode,
             ),
           ),
         );
@@ -597,7 +634,7 @@ final class VoiceCallSession {
     return _send(
       VoiceCallFrameType.hangup,
       reason: 'Voice call media could not connect.',
-      reasonCode: 'failed',
+      reasonCode: _voiceCallFailedReasonCode,
       bestEffort: true,
     );
   }
@@ -609,7 +646,8 @@ final class VoiceCallSession {
     String? reasonCode,
   }) async {
     _clearTimers();
-    final effectiveReasonCode = reasonCode ?? (notifyPeer ? 'failed' : null);
+    final effectiveReasonCode =
+        reasonCode ?? (notifyPeer ? _voiceCallFailedReasonCode : null);
     final mediaDiagnostics = media.diagnostics;
     if (notifyPeer) {
       await _send(
@@ -738,7 +776,7 @@ final class VoiceCallSession {
         _enqueue(
           () => _fail(
             'Call timed out while ringing.',
-            reasonCode: 'ringingTimeout',
+            reasonCode: _voiceCallRingingTimeoutReasonCode,
           ),
         ),
       );
@@ -760,7 +798,7 @@ final class VoiceCallSession {
           () => _fail(
             'Call media could not connect: ICE timeout.',
             notifyPeer: true,
-            reasonCode: 'iceTimeout',
+            reasonCode: _voiceCallIceTimeoutReasonCode,
           ),
         ),
       );

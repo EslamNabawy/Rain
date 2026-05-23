@@ -580,6 +580,8 @@ class RainRuntimeController with WidgetsBindingObserver {
         activeVoicePeer,
         notifyPeer: false,
         detail: reason,
+        failureReason: VoiceCallFailureReason.networkLost,
+        failureDetail: 'Network connection lost. Call ended.',
       );
     }
 
@@ -590,6 +592,8 @@ class RainRuntimeController with WidgetsBindingObserver {
         session.peerId,
         notifyPeer: false,
         detail: reason,
+        failureReason: VoiceCallFailureReason.networkLost,
+        failureDetail: 'Network connection lost. Call ended.',
       );
       try {
         await brain?.disconnect(session.peerId);
@@ -845,7 +849,7 @@ class RainRuntimeController with WidgetsBindingObserver {
 
     await _assertCanTransferFile(normalizedPeerId);
     if (voiceCallBlocksFileTransfer(normalizedPeerId)) {
-      throw StateError('Finish the call before sending files.');
+      throw StateError('Finish the call first.');
     }
     final session = _connectedSession(normalizedPeerId);
     if (session == null) {
@@ -945,7 +949,7 @@ class RainRuntimeController with WidgetsBindingObserver {
     }
     await _assertCanTransferFile(transfer.peerId);
     if (voiceCallBlocksFileTransfer(transfer.peerId)) {
-      throw StateError('Finish the call before accepting files.');
+      throw StateError('Finish the call first.');
     }
     if (_connectedSession(transfer.peerId) == null) {
       throw StateError('Connect first.');

@@ -5,6 +5,10 @@ enum _IncomingVoiceInviteDisposition { accept, busy, ignore }
 extension VoiceCallRuntime on RainRuntimeController {
   static const String _voiceCallFailedReasonCode = 'failed';
   static const String _voiceCallBusyReasonCode = 'busy';
+  static const String _voiceCallRejectedReasonCode = 'rejected';
+  static const String _voiceCallSignalingFailedReasonCode = 'signalingFailed';
+  static const String _voiceCallNetworkLostReasonCode = 'networkLost';
+  static const String _voiceCallExpiredReasonCode = 'expired';
   static const String _voiceCallRingingTimeoutReasonCode = 'ringingTimeout';
   static const String _voiceCallIceTimeoutReasonCode = 'iceTimeout';
   static const String _voiceCallNoRemoteAudioReasonCode = 'noRemoteAudio';
@@ -15,12 +19,12 @@ extension VoiceCallRuntime on RainRuntimeController {
       'Peer microphone permission required.';
   static const String _voiceCallFileTransferRequired =
       'Finish the active file transfer first.';
-  static const String _voiceCallRingingTimedOut =
-      'Call timed out while ringing.';
-  static const String _voiceCallMediaIceTimeout =
-      'Call media could not connect: ICE timeout.';
-  static const String _voiceCallNoRemoteAudio =
-      'Call media connected but no remote audio arrived.';
+  static const String _voiceCallRejected = 'Call declined.';
+  static const String _voiceCallNetworkLost =
+      'Network connection lost. Call ended.';
+  static const String _voiceCallSignalingFailed =
+      'Call setup failed. Try again.';
+  static const String _voiceCallTimedOut = 'Call timed out.';
   static const String _voiceCallMediaFailed =
       'Call media could not connect. Try again.';
   static bool get _legacyControlChannelVoiceSignalingFrozen => true;
@@ -61,8 +65,12 @@ extension VoiceCallRuntime on RainRuntimeController {
     } catch (error) {
       await _failVoiceCall(
         error,
-        failureReason: _localAudioFailureReason(error),
-        detail: _localAudioFailureDetail(error),
+        failureReason:
+            _voiceCallFailureReasonForError(error) ??
+            _localAudioFailureReason(error),
+        detail:
+            _voiceCallFailureDetailForError(error) ??
+            _localAudioFailureDetail(error),
       );
       rethrow;
     }
@@ -104,8 +112,12 @@ extension VoiceCallRuntime on RainRuntimeController {
     } catch (error) {
       await _failVoiceCall(
         error,
-        failureReason: _localAudioFailureReason(error),
-        detail: _localAudioFailureDetail(error),
+        failureReason:
+            _voiceCallFailureReasonForError(error) ??
+            _localAudioFailureReason(error),
+        detail:
+            _voiceCallFailureDetailForError(error) ??
+            _localAudioFailureDetail(error),
       );
       rethrow;
     }
@@ -128,6 +140,7 @@ extension VoiceCallRuntime on RainRuntimeController {
       VoiceCallFrameType.reject,
       callId: current.callId!,
       reason: 'Rejected.',
+      reasonCode: _voiceCallRejectedReasonCode,
       bestEffort: true,
     );
     _setVoiceCallState(const VoiceCallState.idle());
@@ -626,6 +639,9 @@ extension VoiceCallRuntime on RainRuntimeController {
       VoiceCallSignalingStatus.failed
           when room.reasonCode == _voiceCallMicrophoneDeniedReasonCode =>
         VoiceCallFrameType.reject,
+      VoiceCallSignalingStatus.failed
+          when room.reasonCode == _voiceCallRejectedReasonCode =>
+        VoiceCallFrameType.reject,
       VoiceCallSignalingStatus.failed => VoiceCallFrameType.hangup,
       VoiceCallSignalingStatus.expired => VoiceCallFrameType.hangup,
       VoiceCallSignalingStatus.ended => VoiceCallFrameType.hangup,
@@ -642,9 +658,24 @@ extension VoiceCallRuntime on RainRuntimeController {
       sentAt: room.endedAt ?? room.updatedAt,
       seq: _voiceCallTerminalSeq,
       sessionEpoch: room.createdAt,
-      reason: room.reason,
-      reasonCode: room.reasonCode,
+      reason: room.reason ?? _terminalVoiceCallReason(room.status),
+      reasonCode: room.reasonCode ?? _terminalVoiceCallReasonCode(room.status),
     );
+  }
+
+  String? _terminalVoiceCallReason(VoiceCallSignalingStatus status) {
+    return switch (status) {
+      VoiceCallSignalingStatus.expired => _voiceCallTimedOut,
+      _ => null,
+    };
+  }
+
+  String? _terminalVoiceCallReasonCode(VoiceCallSignalingStatus status) {
+    return switch (status) {
+      VoiceCallSignalingStatus.expired => _voiceCallExpiredReasonCode,
+      VoiceCallSignalingStatus.failed => _voiceCallFailedReasonCode,
+      _ => null,
+    };
   }
 
   Future<void> _handleFirebaseVoiceEnvelope({
@@ -715,7 +746,7 @@ extension VoiceCallRuntime on RainRuntimeController {
               frame.reasonCode ??
               (frame.type == VoiceCallFrameType.busy
                   ? _voiceCallBusyReasonCode
-                  : _voiceCallFailedReasonCode),
+                  : _voiceCallRejectedReasonCode),
           reason: frame.reason,
         );
         break;
@@ -870,17 +901,35 @@ extension VoiceCallRuntime on RainRuntimeController {
         state.detail == 'Peer is busy.') {
       return VoiceCallFailureReason.peerBusy;
     }
+    if (state.reasonCode == _voiceCallRejectedReasonCode ||
+        state.detail == _voiceCallRejected ||
+        state.detail == 'Rejected.') {
+      return VoiceCallFailureReason.rejected;
+    }
+    if (state.reasonCode == _voiceCallNetworkLostReasonCode ||
+        state.detail == _voiceCallNetworkLost) {
+      return VoiceCallFailureReason.networkLost;
+    }
+    if (state.reasonCode == _voiceCallSignalingFailedReasonCode ||
+        state.detail == _voiceCallSignalingFailed) {
+      return VoiceCallFailureReason.signalingFailed;
+    }
+    if (state.reasonCode == _voiceCallExpiredReasonCode ||
+        state.detail == _voiceCallTimedOut) {
+      return VoiceCallFailureReason.expired;
+    }
     if (state.reasonCode == _voiceCallRingingTimeoutReasonCode ||
-        state.detail == _voiceCallRingingTimedOut ||
-        state.detail == 'Call timed out.') {
+        state.detail == _voiceCallTimedOut ||
+        state.detail == 'Call timed out.' ||
+        state.detail == 'Call timed out while ringing.') {
       return VoiceCallFailureReason.ringingTimeout;
     }
     if (state.reasonCode == _voiceCallIceTimeoutReasonCode ||
-        state.detail == _voiceCallMediaIceTimeout) {
+        state.detail == _voiceCallMediaFailed) {
       return VoiceCallFailureReason.mediaIceTimeout;
     }
     if (state.reasonCode == _voiceCallNoRemoteAudioReasonCode ||
-        state.detail == _voiceCallNoRemoteAudio) {
+        state.detail == _voiceCallMediaFailed) {
       return VoiceCallFailureReason.mediaNoRemoteAudio;
     }
     if (state.reasonCode == _voiceCallFailedReasonCode) {
@@ -904,15 +953,32 @@ extension VoiceCallRuntime on RainRuntimeController {
         state.detail == 'Peer is busy.') {
       return 'Peer is busy.';
     }
+    if (state.reasonCode == _voiceCallRejectedReasonCode ||
+        state.detail == 'Rejected.') {
+      return _voiceCallRejected;
+    }
+    if (state.reasonCode == _voiceCallNetworkLostReasonCode ||
+        state.detail == _voiceCallNetworkLost) {
+      return _voiceCallNetworkLost;
+    }
+    if (state.reasonCode == _voiceCallSignalingFailedReasonCode ||
+        state.detail == _voiceCallSignalingFailed) {
+      return _voiceCallSignalingFailed;
+    }
+    if (state.reasonCode == _voiceCallExpiredReasonCode ||
+        state.detail == _voiceCallTimedOut) {
+      return _voiceCallTimedOut;
+    }
     if (state.reasonCode == _voiceCallRingingTimeoutReasonCode ||
-        state.detail == 'Call timed out.') {
-      return _voiceCallRingingTimedOut;
+        state.detail == 'Call timed out.' ||
+        state.detail == 'Call timed out while ringing.') {
+      return _voiceCallTimedOut;
     }
     if (state.reasonCode == _voiceCallIceTimeoutReasonCode) {
-      return _voiceCallMediaIceTimeout;
+      return _voiceCallMediaFailed;
     }
     if (state.reasonCode == _voiceCallNoRemoteAudioReasonCode) {
-      return _voiceCallNoRemoteAudio;
+      return _voiceCallMediaFailed;
     }
     if (state.reasonCode == _voiceCallFailedReasonCode) {
       return _voiceCallMediaFailed;
@@ -1129,6 +1195,8 @@ extension VoiceCallRuntime on RainRuntimeController {
     String peerId, {
     required bool notifyPeer,
     required String detail,
+    VoiceCallFailureReason? failureReason,
+    String? failureDetail,
   }) async {
     final current = _voiceCallState;
     if (current.peerId != _normalizedUsername(peerId)) {
@@ -1153,7 +1221,14 @@ extension VoiceCallRuntime on RainRuntimeController {
           ),
         );
         await _disposeVoiceCallSession(session);
-        _setVoiceCallState(const VoiceCallState.idle());
+        _setVoiceCallState(
+          _voiceCallStateAfterLocalEnd(
+            current,
+            detail: detail,
+            failureReason: failureReason,
+            failureDetail: failureDetail,
+          ),
+        );
       }
       return;
     }
@@ -1181,7 +1256,32 @@ extension VoiceCallRuntime on RainRuntimeController {
         bestEffort: true,
       );
     }
-    _setVoiceCallState(const VoiceCallState.idle());
+    _setVoiceCallState(
+      _voiceCallStateAfterLocalEnd(
+        current,
+        detail: detail,
+        failureReason: failureReason,
+        failureDetail: failureDetail,
+      ),
+    );
+  }
+
+  VoiceCallState _voiceCallStateAfterLocalEnd(
+    VoiceCallState current, {
+    required String detail,
+    VoiceCallFailureReason? failureReason,
+    String? failureDetail,
+  }) {
+    if (failureReason == null) {
+      return const VoiceCallState.idle();
+    }
+    return current.copyWith(
+      phase: VoiceCallPhase.failed,
+      detail: failureDetail ?? detail,
+      failureReason: failureReason,
+      updatedAt: DateTime.now().millisecondsSinceEpoch,
+      clearError: true,
+    );
   }
 
   void _failVoiceCallForPeer(String peerId, String message) {
@@ -1215,12 +1315,17 @@ extension VoiceCallRuntime on RainRuntimeController {
   }) async {
     final current = _voiceCallState;
     await _disposeCurrentVoiceCallSession();
+    final effectiveFailureReason =
+        failureReason ?? _voiceCallFailureReasonForError(error);
     _setVoiceCallState(
       current.copyWith(
         phase: VoiceCallPhase.failed,
-        detail: detail ?? _voiceCallErrorMessage(error),
+        detail:
+            detail ??
+            _voiceCallFailureDetailForError(error) ??
+            _voiceCallErrorMessage(error),
         error: error,
-        failureReason: failureReason,
+        failureReason: effectiveFailureReason,
         updatedAt: DateTime.now().millisecondsSinceEpoch,
       ),
     );
@@ -1267,9 +1372,64 @@ extension VoiceCallRuntime on RainRuntimeController {
     return '${_normalizedUsername(selfIdentity.username)}:$peerId:$now';
   }
 
-  String _voiceCallErrorMessage(Object error) {
+  VoiceCallFailureReason? _voiceCallFailureReasonForError(Object error) {
+    final normalized = _normalizedVoiceCallErrorText(error).toLowerCase();
+    if (_isVoiceCallBusyError(normalized)) {
+      return VoiceCallFailureReason.peerBusy;
+    }
+    if (_isVoiceCallRejectedError(normalized)) {
+      return VoiceCallFailureReason.rejected;
+    }
+    if (_isVoiceCallNetworkLostError(normalized)) {
+      return VoiceCallFailureReason.networkLost;
+    }
+    if (_isVoiceCallExpiredError(normalized)) {
+      return VoiceCallFailureReason.expired;
+    }
+    if (_isVoiceCallSignalingError(error, normalized)) {
+      return VoiceCallFailureReason.signalingFailed;
+    }
+    if (_isVoiceCallNativeMediaError(normalized) ||
+        normalized.contains('ice timeout') ||
+        normalized.contains('no remote audio')) {
+      return VoiceCallFailureReason.mediaConnectionFailed;
+    }
+    return null;
+  }
+
+  String? _voiceCallFailureDetailForError(Object error) {
+    final normalized = _normalizedVoiceCallErrorText(error).toLowerCase();
+    if (_isVoiceCallBusyError(normalized)) {
+      return 'Peer is busy.';
+    }
+    if (_isVoiceCallRejectedError(normalized)) {
+      return _voiceCallRejected;
+    }
+    if (_isVoiceCallNetworkLostError(normalized)) {
+      return _voiceCallNetworkLost;
+    }
+    if (_isVoiceCallExpiredError(normalized)) {
+      return _voiceCallTimedOut;
+    }
+    if (_isVoiceCallSignalingError(error, normalized)) {
+      return _voiceCallSignalingFailed;
+    }
+    if (_isVoiceCallNativeMediaError(normalized) ||
+        normalized.contains('ice timeout') ||
+        normalized.contains('no remote audio')) {
+      return _voiceCallMediaFailed;
+    }
+    return null;
+  }
+
+  String _normalizedVoiceCallErrorText(Object error) {
     final raw = error.toString().trim();
-    const prefixes = <String>['Exception: ', 'Bad state: ', 'StateError: '];
+    const prefixes = <String>[
+      'Exception: ',
+      'Bad state: ',
+      'StateError: ',
+      'VoiceSignalingException: ',
+    ];
     var message = raw;
     for (final prefix in prefixes) {
       if (raw.startsWith(prefix)) {
@@ -1277,22 +1437,65 @@ extension VoiceCallRuntime on RainRuntimeController {
         break;
       }
     }
-    final normalized = message.toLowerCase();
-    if (normalized.contains('ice timeout')) {
-      return _voiceCallMediaIceTimeout;
+    return message;
+  }
+
+  String _voiceCallErrorMessage(Object error) {
+    final message = _normalizedVoiceCallErrorText(error);
+    final typedDetail = _voiceCallFailureDetailForError(error);
+    if (typedDetail != null) {
+      return typedDetail;
     }
-    if (normalized.contains('no remote audio')) {
-      return _voiceCallNoRemoteAudio;
-    }
-    if (normalized.contains('rtcrtptransceiver') ||
+    return message;
+  }
+
+  bool _isVoiceCallBusyError(String normalized) {
+    return normalized.contains('peer is busy') ||
+        normalized == 'busy.' ||
+        normalized.contains('active voice call already exists') ||
+        normalized.contains('activevoicepairs') ||
+        normalized.contains('active voice pair');
+  }
+
+  bool _isVoiceCallRejectedError(String normalized) {
+    return normalized == 'rejected.' ||
+        normalized.contains('call declined') ||
+        normalized.contains('call rejected');
+  }
+
+  bool _isVoiceCallNetworkLostError(String normalized) {
+    return normalized.contains('network connection lost') ||
+        normalized.contains('network lost') ||
+        normalized.contains('internet connection') ||
+        normalized.contains('network is unavailable') ||
+        normalized.contains('network unavailable');
+  }
+
+  bool _isVoiceCallExpiredError(String normalized) {
+    return normalized.contains('call timed out') ||
+        normalized.contains('voice call expired') ||
+        normalized.contains('call room expired') ||
+        normalized == 'expired.';
+  }
+
+  bool _isVoiceCallSignalingError(Object error, String normalized) {
+    return error is VoiceSignalingException ||
+        normalized.contains('voice signaling') ||
+        normalized.contains('firebase') ||
+        normalized.contains('unknown voice call') ||
+        normalized.contains('voice call already exists') ||
+        normalized.contains('already ended') ||
+        normalized.contains('permission-denied') ||
+        normalized.contains('database');
+  }
+
+  bool _isVoiceCallNativeMediaError(String normalized) {
+    return normalized.contains('rtcrtptransceiver') ||
         normalized.contains('setdirection') ||
         normalized.contains('setremotedescription') ||
         normalized.contains('peerconnectionsetremotedescription') ||
         normalized.contains('m-line') ||
-        normalized.contains('peer connection changed while')) {
-      return _voiceCallMediaFailed;
-    }
-    return message;
+        normalized.contains('peer connection changed while');
   }
 
   VoiceCallFailureReason? _localAudioFailureReason(Object error) {

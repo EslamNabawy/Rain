@@ -994,7 +994,7 @@ class _ChatPanelState extends ConsumerState<_ChatPanel> {
         .read(voiceCallProvider.notifier)
         .blocksFileTransfer(widget.peerId)) {
       _playSound(RainSoundEffect.error);
-      _showErrorSnack('Finish the call before sending files.');
+      _showErrorSnack('Finish the call first.');
       return;
     }
 

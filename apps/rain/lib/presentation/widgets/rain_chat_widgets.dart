@@ -763,7 +763,7 @@ class _RainVoiceCallActions extends StatelessWidget {
         runSpacing: 8,
         alignment: WrapAlignment.end,
         children: <Widget>[
-          if (state.failureReason == VoiceCallFailureReason.microphoneDenied)
+          if (_voiceCallCanRetry(state))
             FilledButton.icon(
               onPressed: onRetry,
               icon: const Icon(Icons.refresh),
@@ -888,14 +888,35 @@ String _voiceCallFailureDetail(VoiceCallState state) {
     VoiceCallFailureReason.peerBusy => 'Peer is busy.',
     VoiceCallFailureReason.fileTransferActive =>
       'Finish the active file transfer first.',
-    VoiceCallFailureReason.ringingTimeout => 'Call timed out while ringing.',
-    VoiceCallFailureReason.mediaIceTimeout =>
-      'Call media could not connect: ICE timeout.',
-    VoiceCallFailureReason.mediaNoRemoteAudio =>
-      'Call media connected but no remote audio arrived.',
+    VoiceCallFailureReason.rejected => 'Call declined.',
+    VoiceCallFailureReason.networkLost =>
+      'Network connection lost. Call ended.',
+    VoiceCallFailureReason.signalingFailed => 'Call setup failed. Try again.',
+    VoiceCallFailureReason.expired ||
+    VoiceCallFailureReason.ringingTimeout => 'Call timed out.',
+    VoiceCallFailureReason.mediaIceTimeout ||
+    VoiceCallFailureReason.mediaNoRemoteAudio ||
     VoiceCallFailureReason.mediaConnectionFailed =>
       'Call media could not connect. Try again.',
     null => _sanitizeVoiceCallFailureDetail(state.detail),
+  };
+}
+
+bool _voiceCallCanRetry(VoiceCallState state) {
+  return switch (state.failureReason) {
+    VoiceCallFailureReason.microphoneDenied ||
+    VoiceCallFailureReason.peerBusy ||
+    VoiceCallFailureReason.signalingFailed ||
+    VoiceCallFailureReason.expired ||
+    VoiceCallFailureReason.ringingTimeout ||
+    VoiceCallFailureReason.mediaConnectionFailed ||
+    VoiceCallFailureReason.mediaIceTimeout ||
+    VoiceCallFailureReason.mediaNoRemoteAudio => true,
+    VoiceCallFailureReason.remoteMicrophoneDenied ||
+    VoiceCallFailureReason.fileTransferActive ||
+    VoiceCallFailureReason.rejected ||
+    VoiceCallFailureReason.networkLost ||
+    null => false,
   };
 }
 
@@ -917,20 +938,51 @@ String _sanitizeVoiceCallFailureDetail(String? detail) {
       (normalized.contains('permission') || normalized.contains('denied'))) {
     return 'Microphone permission required.';
   }
-  if (normalized.contains('peer is busy') || normalized == 'busy.') {
+  if (normalized.contains('peer is busy') ||
+      normalized == 'busy.' ||
+      normalized.contains('active voice call already exists') ||
+      normalized.contains('activevoicepairs') ||
+      normalized.contains('active voice pair')) {
     return 'Peer is busy.';
   }
   if (normalized.contains('active file transfer')) {
     return 'Finish the active file transfer first.';
   }
-  if (normalized.contains('timed out') && normalized.contains('ring')) {
-    return 'Call timed out while ringing.';
+  if (normalized.contains('finish the call before') ||
+      normalized == 'finish the call first.') {
+    return 'Finish the call first.';
+  }
+  if (normalized == 'rejected.' ||
+      normalized.contains('call declined') ||
+      normalized.contains('call rejected')) {
+    return 'Call declined.';
+  }
+  if (normalized.contains('network connection lost') ||
+      normalized.contains('network lost') ||
+      normalized.contains('internet connection') ||
+      normalized.contains('network is unavailable') ||
+      normalized.contains('network unavailable')) {
+    return 'Network connection lost. Call ended.';
+  }
+  if (normalized.contains('timed out') ||
+      normalized.contains('voice call expired') ||
+      normalized.contains('call room expired')) {
+    return 'Call timed out.';
+  }
+  if (normalized.contains('voice signaling') ||
+      normalized.contains('firebase') ||
+      normalized.contains('unknown voice call') ||
+      normalized.contains('voice call already exists') ||
+      normalized.contains('already ended') ||
+      normalized.contains('permission-denied') ||
+      normalized.contains('database')) {
+    return 'Call setup failed. Try again.';
   }
   if (normalized.contains('ice timeout')) {
-    return 'Call media could not connect: ICE timeout.';
+    return 'Call media could not connect. Try again.';
   }
   if (normalized.contains('no remote audio')) {
-    return 'Call media connected but no remote audio arrived.';
+    return 'Call media could not connect. Try again.';
   }
   if (normalized.contains('rtcrtptransceiver') ||
       normalized.contains('setdirection') ||
