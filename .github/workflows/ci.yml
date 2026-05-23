@@ -226,7 +226,27 @@ jobs:
 
       - name: Run randomized tests with coverage
         working-directory: ${{ matrix.path }}
-        run: flutter test --coverage --test-randomize-ordering-seed=random --reporter expanded
+        shell: bash
+        run: |
+          set -o pipefail
+
+          for attempt in 1 2 3; do
+            rm -f coverage/lcov.info
+            if flutter test --coverage --test-randomize-ordering-seed=random --reporter expanded 2>&1 | tee test-output.log; then
+              exit 0
+            fi
+
+            status=$?
+            if ! grep -Eq 'Building native assets failed|download.*libsqlite3|Connection closed before full header' test-output.log; then
+              exit "$status"
+            fi
+
+            if [ "$attempt" -eq 3 ]; then
+              exit "$status"
+            fi
+
+            sleep "$((attempt * 10))"
+          done
 
       - name: Require coverage output
         run: test -s "${{ matrix.path }}/coverage/lcov.info"
