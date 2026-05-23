@@ -1,5 +1,6 @@
 import 'dart:async';
 
+import '../voice_call_frame.dart';
 import '../voice_signaling_contract.dart';
 
 final class FakeVoiceSignalingAdapter implements VoiceSignalingAdapter {
@@ -44,6 +45,7 @@ final class FakeVoiceSignalingAdapter implements VoiceSignalingAdapter {
     required String callee,
     required int createdAt,
     required int expiresAt,
+    CallMediaMode mediaMode = CallMediaMode.audio,
   }) async {
     _ensureOpen();
     final normalizedCallId = callId.trim();
@@ -70,6 +72,7 @@ final class FakeVoiceSignalingAdapter implements VoiceSignalingAdapter {
       caller: normalizedCaller,
       callee: normalizedCallee,
       status: VoiceCallSignalingStatus.ringing,
+      mediaMode: mediaMode,
       createdAt: createdAt,
       updatedAt: createdAt,
       expiresAt: expiresAt,
@@ -77,6 +80,12 @@ final class FakeVoiceSignalingAdapter implements VoiceSignalingAdapter {
         normalizedCaller: false,
         normalizedCallee: false,
       }),
+      cameraMuted: mediaMode == CallMediaMode.video
+          ? Map<String, bool>.unmodifiable(<String, bool>{
+              normalizedCaller: false,
+              normalizedCallee: false,
+            })
+          : const <String, bool>{},
     );
     room.validate();
     final lock = VoiceActivePairLock(
@@ -234,6 +243,29 @@ final class FakeVoiceSignalingAdapter implements VoiceSignalingAdapter {
       room.copyWith(
         updatedAt: updatedAt,
         muted: <String, bool>{...room.muted, normalizedUsername: muted},
+      ),
+    );
+  }
+
+  @override
+  Future<void> setCameraMuted({
+    required String callId,
+    required String username,
+    required bool cameraMuted,
+    required int updatedAt,
+  }) async {
+    _ensureOpen();
+    final room = _requireRoom(callId);
+    _ensureParticipant(room, username);
+    _ensureNonTerminal(room);
+    final normalizedUsername = normalizeVoiceCallUsername(username);
+    _putRoom(
+      room.copyWith(
+        updatedAt: updatedAt,
+        cameraMuted: <String, bool>{
+          ...room.cameraMuted,
+          normalizedUsername: cameraMuted,
+        },
       ),
     );
   }

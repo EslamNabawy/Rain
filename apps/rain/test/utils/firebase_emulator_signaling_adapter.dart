@@ -582,6 +582,7 @@ class FirebaseEmulatorSignalingAdapter
     required String callee,
     required int createdAt,
     required int expiresAt,
+    CallMediaMode mediaMode = CallMediaMode.audio,
   }) async {
     final normalizedCallId = callId.trim();
     final normalizedCaller = normalizeVoiceCallUsername(caller);
@@ -602,6 +603,7 @@ class FirebaseEmulatorSignalingAdapter
       caller: normalizedCaller,
       callee: normalizedCallee,
       status: VoiceCallSignalingStatus.ringing,
+      mediaMode: mediaMode,
       createdAt: createdAt,
       updatedAt: createdAt,
       expiresAt: expiresAt,
@@ -609,6 +611,12 @@ class FirebaseEmulatorSignalingAdapter
         normalizedCaller: false,
         normalizedCallee: false,
       }),
+      cameraMuted: mediaMode == CallMediaMode.video
+          ? Map<String, bool>.unmodifiable(<String, bool>{
+              normalizedCaller: false,
+              normalizedCallee: false,
+            })
+          : const <String, bool>{},
     );
     final lock = VoiceActivePairLock(
       pairId: pairId,
@@ -757,6 +765,23 @@ class FirebaseEmulatorSignalingAdapter
     _ensureVoiceParticipant(room, normalizedUsername);
     await _patch(<String>[], <String, Object?>{
       'voiceCalls/${room.callId}/muted/$normalizedUsername': muted,
+      'voiceCalls/${room.callId}/updatedAt': updatedAt,
+    });
+  }
+
+  @override
+  Future<void> setCameraMuted({
+    required String callId,
+    required String username,
+    required bool cameraMuted,
+    required int updatedAt,
+  }) async {
+    final room = await _requireVoiceCall(callId);
+    final normalizedUsername = normalizeVoiceCallUsername(username);
+    await _ensureSignedInAsUsername(normalizedUsername);
+    _ensureVoiceParticipant(room, normalizedUsername);
+    await _patch(<String>[], <String, Object?>{
+      'voiceCalls/${room.callId}/cameraMuted/$normalizedUsername': cameraMuted,
       'voiceCalls/${room.callId}/updatedAt': updatedAt,
     });
   }

@@ -171,7 +171,7 @@ Checked against installed `flutter_webrtc` 1.4.1 and Context7 docs for `/flutter
 - [x] Confirm feature scope in `docs/superpowers/plans/2026-05-23-video-call-v2.md`.
 - [x] Lock non-goals: no group calls, screen share, recording, background service, call history, audio-to-video upgrade.
 - [x] Lock architecture: dedicated media PC per call, Firebase signaling, WebRTC RTP media.
-- [ ] Commit:
+- [x] Commit:
 
 ```powershell
 git add docs/superpowers/plans/2026-05-23-video-call-v2.md
@@ -219,26 +219,26 @@ git commit -m "feat: add video call signaling contract"
 
 **Purpose:** Store call media mode and camera state safely.
 
-- [ ] Add failing tests in `packages/protocol_brain/test/voice_signaling_contract_test.dart`:
+- [x] Add failing tests in `packages/protocol_brain/test/voice_signaling_contract_test.dart`:
   - create video call room stores `mediaMode: video`
   - old room with missing `mediaMode` reads as audio
   - invalid `mediaMode` rejected
   - terminal cleanup still releases active pair lock
 
-- [ ] Add failing tests in `packages/protocol_brain/test/firebase_contract_test.dart`:
+- [x] Add failing tests in `packages/protocol_brain/test/firebase_contract_test.dart`:
   - rules allow `mediaMode: audio|video`
   - rules reject unknown mode
   - rules allow bounded `cameraMuted` boolean
   - rules reject oversized/new unsafe fields
 
-- [ ] Modify:
+- [x] Modify:
   - `packages/protocol_brain/lib/src/voice_signaling_contract.dart`
   - `packages/protocol_brain/lib/adapters/signaling_adapter.dart`
   - `packages/protocol_brain/lib/adapters/firebase_adapter.dart`
   - `packages/protocol_brain/lib/src/testing/fake_voice_signaling_adapter.dart`
   - `backend/firebase/database.rules.json`
 
-- [ ] Run:
+- [x] Run:
 
 ```powershell
 flutter test packages\protocol_brain\test\voice_signaling_contract_test.dart

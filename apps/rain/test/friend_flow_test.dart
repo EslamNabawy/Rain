@@ -7,6 +7,7 @@ import 'package:drift/native.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:flutter_webrtc/flutter_webrtc.dart' show RTCSessionDescription;
 import 'package:protocol_brain/protocol_brain.dart';
+import 'package:protocol_brain/protocol_brain.dart' as protocol;
 import 'package:protocol_brain/testing.dart';
 import 'package:rain/infrastructure/signaling/noop_signaling_adapter.dart';
 import 'package:rain/application/runtime/rain_runtime_controller.dart';
@@ -3605,6 +3606,7 @@ class RecordingVoiceSignalingAdapter extends RecordingNoopSignalingAdapter
     required String callee,
     required int createdAt,
     required int expiresAt,
+    protocol.CallMediaMode mediaMode = protocol.CallMediaMode.audio,
   }) {
     return _voice.createOutgoingCall(
       callId: callId,
@@ -3612,6 +3614,7 @@ class RecordingVoiceSignalingAdapter extends RecordingNoopSignalingAdapter
       callee: callee,
       createdAt: createdAt,
       expiresAt: expiresAt,
+      mediaMode: mediaMode,
     );
   }
 
@@ -3670,6 +3673,21 @@ class RecordingVoiceSignalingAdapter extends RecordingNoopSignalingAdapter
       callId: callId,
       username: username,
       muted: muted,
+      updatedAt: updatedAt,
+    );
+  }
+
+  @override
+  Future<void> setCameraMuted({
+    required String callId,
+    required String username,
+    required bool cameraMuted,
+    required int updatedAt,
+  }) {
+    return _voice.setCameraMuted(
+      callId: callId,
+      username: username,
+      cameraMuted: cameraMuted,
       updatedAt: updatedAt,
     );
   }

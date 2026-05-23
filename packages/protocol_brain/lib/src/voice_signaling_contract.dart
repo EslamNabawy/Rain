@@ -1,3 +1,5 @@
+import 'voice_call_frame.dart';
+
 enum VoiceCallRole { caller, callee }
 
 enum VoiceCallSignalingStatus {
@@ -29,6 +31,7 @@ abstract interface class VoiceSignalingAdapter {
     required String callee,
     required int createdAt,
     required int expiresAt,
+    CallMediaMode mediaMode = CallMediaMode.audio,
   });
 
   Future<VoiceCallRoom?> fetchCall(String callId);
@@ -62,6 +65,13 @@ abstract interface class VoiceSignalingAdapter {
     required String callId,
     required String username,
     required bool muted,
+    required int updatedAt,
+  });
+
+  Future<void> setCameraMuted({
+    required String callId,
+    required String username,
+    required bool cameraMuted,
     required int updatedAt,
   });
 
@@ -304,7 +314,9 @@ final class VoiceCallRoom {
     this.endedBy,
     this.reasonCode,
     this.reason,
+    this.mediaMode = CallMediaMode.audio,
     this.muted = const <String, bool>{},
+    this.cameraMuted = const <String, bool>{},
     this.offer,
     this.answer,
   });
@@ -328,7 +340,9 @@ final class VoiceCallRoom {
   final String? endedBy;
   final String? reasonCode;
   final String? reason;
+  final CallMediaMode mediaMode;
   final Map<String, bool> muted;
+  final Map<String, bool> cameraMuted;
   final VoiceSignalingEnvelope? offer;
   final VoiceSignalingEnvelope? answer;
 
@@ -343,7 +357,9 @@ final class VoiceCallRoom {
     String? endedBy,
     String? reasonCode,
     String? reason,
+    CallMediaMode? mediaMode,
     Map<String, bool>? muted,
+    Map<String, bool>? cameraMuted,
     VoiceSignalingEnvelope? offer,
     VoiceSignalingEnvelope? answer,
   }) {
@@ -363,7 +379,11 @@ final class VoiceCallRoom {
       endedBy: endedBy ?? this.endedBy,
       reasonCode: reasonCode ?? this.reasonCode,
       reason: reason ?? this.reason,
+      mediaMode: mediaMode ?? this.mediaMode,
       muted: Map<String, bool>.unmodifiable(muted ?? this.muted),
+      cameraMuted: Map<String, bool>.unmodifiable(
+        cameraMuted ?? this.cameraMuted,
+      ),
       offer: offer ?? this.offer,
       answer: answer ?? this.answer,
     );
@@ -377,6 +397,7 @@ final class VoiceCallRoom {
       'caller': caller,
       'callee': callee,
       'status': status.name,
+      'mediaMode': mediaMode.name,
       'createdAt': createdAt,
       'updatedAt': updatedAt,
       'expiresAt': expiresAt,
@@ -387,6 +408,7 @@ final class VoiceCallRoom {
       if (reasonCode != null) 'reasonCode': reasonCode,
       if (reason != null) 'reason': reason,
       if (muted.isNotEmpty) 'muted': muted,
+      if (cameraMuted.isNotEmpty) 'cameraMuted': cameraMuted,
       if (offer != null)
         'offer': offer!.toJson(
           maxCiphertextLength: VoiceSignalingEnvelope.maxSdpCiphertextLength,
@@ -402,17 +424,8 @@ final class VoiceCallRoom {
     required String callId,
     required Map<Object?, Object?> json,
   }) {
-    final mutedJson = json['muted'];
-    final muted = <String, bool>{};
-    if (mutedJson is Map<Object?, Object?>) {
-      for (final entry in mutedJson.entries) {
-        final key = entry.key;
-        final value = entry.value;
-        if (key is String && value is bool) {
-          muted[key] = value;
-        }
-      }
-    }
+    final muted = _optionalBoolMap(json, 'muted');
+    final cameraMuted = _optionalBoolMap(json, 'cameraMuted');
 
     VoiceSignalingEnvelope? sdpEnvelope(String key) {
       final value = json[key];
@@ -438,6 +451,7 @@ final class VoiceCallRoom {
       status: voiceCallSignalingStatusFromName(
         _requiredString(json, 'status', max: 32),
       ),
+      mediaMode: _optionalCallMediaMode(json, 'mediaMode'),
       createdAt: _requiredInt(json, 'createdAt'),
       updatedAt: _requiredInt(json, 'updatedAt'),
       expiresAt: _requiredInt(json, 'expiresAt'),
@@ -456,6 +470,7 @@ final class VoiceCallRoom {
         max: VoiceCallRoom.maxReasonLength,
       ),
       muted: Map<String, bool>.unmodifiable(muted),
+      cameraMuted: Map<String, bool>.unmodifiable(cameraMuted),
       offer: sdpEnvelope('offer'),
       answer: sdpEnvelope('answer'),
     );
@@ -508,6 +523,14 @@ final class VoiceCallRoom {
       _validateUsername(username);
       if (username != caller && username != callee) {
         throw const FormatException('Muted user is not a call participant.');
+      }
+    }
+    for (final username in cameraMuted.keys) {
+      _validateUsername(username);
+      if (username != caller && username != callee) {
+        throw const FormatException(
+          'Camera-muted user is not a call participant.',
+        );
       }
     }
     offer?.validate(
@@ -720,4 +743,40 @@ String? _optionalString(
   }
   _validateRequiredString(key, value, max: max);
   return value;
+}
+
+CallMediaMode _optionalCallMediaMode(Map<Object?, Object?> json, String key) {
+  final value = json[key];
+  if (value == null) {
+    return CallMediaMode.audio;
+  }
+  if (value is! String) {
+    throw FormatException('Voice signaling $key must be a string.');
+  }
+  for (final mode in CallMediaMode.values) {
+    if (mode.name == value) {
+      return mode;
+    }
+  }
+  throw FormatException('Unknown voice call media mode: $value');
+}
+
+Map<String, bool> _optionalBoolMap(Map<Object?, Object?> json, String key) {
+  final value = json[key];
+  if (value == null) {
+    return const <String, bool>{};
+  }
+  if (value is! Map<Object?, Object?>) {
+    throw FormatException('Voice signaling $key must be a map.');
+  }
+  final result = <String, bool>{};
+  for (final entry in value.entries) {
+    final entryKey = entry.key;
+    final entryValue = entry.value;
+    if (entryKey is! String || entryValue is! bool) {
+      throw FormatException('Voice signaling $key entries must be booleans.');
+    }
+    result[entryKey] = entryValue;
+  }
+  return result;
 }

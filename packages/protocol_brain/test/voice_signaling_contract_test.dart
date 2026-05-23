@@ -100,6 +100,54 @@ void main() {
     },
   );
 
+  test('fake adapter stores video media mode and camera mute state', () async {
+    final adapter = FakeVoiceSignalingAdapter();
+    addTearDown(adapter.dispose);
+
+    final room = await adapter.createOutgoingCall(
+      callId: 'call-1',
+      caller: 'alice',
+      callee: 'bob',
+      createdAt: 1000,
+      expiresAt: 2000,
+      mediaMode: CallMediaMode.video,
+    );
+
+    expect(room.mediaMode, CallMediaMode.video);
+    expect(room.toJson(), containsPair('mediaMode', 'video'));
+    expect(room.cameraMuted, <String, bool>{'alice': false, 'bob': false});
+
+    await adapter.setCameraMuted(
+      callId: 'call-1',
+      username: 'alice',
+      cameraMuted: true,
+      updatedAt: 1100,
+    );
+
+    final updated = await adapter.fetchCall('call-1');
+    expect(updated?.mediaMode, CallMediaMode.video);
+    expect(updated?.cameraMuted['alice'], isTrue);
+  });
+
+  test('old room without media mode reads as audio', () {
+    final room = VoiceCallRoom.fromJson(
+      callId: 'call-1',
+      json: _roomJson()..remove('mediaMode'),
+    );
+
+    expect(room.mediaMode, CallMediaMode.audio);
+  });
+
+  test('invalid media mode is rejected', () {
+    expect(
+      () => VoiceCallRoom.fromJson(
+        callId: 'call-1',
+        json: _roomJson(mediaMode: 'screen'),
+      ),
+      throwsA(isA<FormatException>()),
+    );
+  });
+
   test(
     'fake adapter enforces role-specific offer answer and ICE writes',
     () async {
@@ -111,6 +159,7 @@ void main() {
         callee: 'bob',
         createdAt: 1000,
         expiresAt: 3000,
+        mediaMode: CallMediaMode.video,
       );
       await adapter.acceptCall(
         callId: 'call-1',
@@ -196,6 +245,7 @@ void main() {
         callee: 'bob',
         createdAt: 1000,
         expiresAt: 3000,
+        mediaMode: CallMediaMode.video,
       );
       await adapter.acceptCall(
         callId: 'call-1',
@@ -213,10 +263,18 @@ void main() {
         muted: true,
         updatedAt: 1600,
       );
+      await adapter.setCameraMuted(
+        callId: 'call-1',
+        username: 'bob',
+        cameraMuted: true,
+        updatedAt: 1650,
+      );
 
       var room = await adapter.fetchCall('call-1');
       expect(room?.status, VoiceCallSignalingStatus.connected);
+      expect(room?.mediaMode, CallMediaMode.video);
       expect(room?.muted['bob'], isTrue);
+      expect(room?.cameraMuted['bob'], isTrue);
       expect(adapter.activePairLocks, contains('alice:bob'));
 
       await adapter.endCall(
@@ -237,6 +295,15 @@ void main() {
           callId: 'call-1',
           username: 'alice',
           muted: true,
+          updatedAt: 1800,
+        ),
+        throwsA(isA<VoiceSignalingException>()),
+      );
+      await expectLater(
+        adapter.setCameraMuted(
+          callId: 'call-1',
+          username: 'alice',
+          cameraMuted: false,
           updatedAt: 1800,
         ),
         throwsA(isA<VoiceSignalingException>()),
@@ -272,4 +339,18 @@ VoiceSignalingEnvelope _envelope({required String ciphertext}) {
     ciphertext: ciphertext,
     mac: 'mac',
   );
+}
+
+Map<Object?, Object?> _roomJson({String mediaMode = 'audio'}) {
+  return <Object?, Object?>{
+    'v': VoiceCallRoom.version,
+    'pairId': 'alice:bob',
+    'caller': 'alice',
+    'callee': 'bob',
+    'status': VoiceCallSignalingStatus.ringing.name,
+    'mediaMode': mediaMode,
+    'createdAt': 1000,
+    'updatedAt': 1000,
+    'expiresAt': 2000,
+  };
 }

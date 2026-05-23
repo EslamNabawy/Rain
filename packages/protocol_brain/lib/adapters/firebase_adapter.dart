@@ -4,6 +4,7 @@ import 'package:firebase_auth/firebase_auth.dart';
 import 'package:firebase_database/firebase_database.dart';
 import 'package:flutter_webrtc/flutter_webrtc.dart';
 
+import '../src/voice_call_frame.dart';
 import '../src/voice_signaling_contract.dart';
 import 'signaling_adapter.dart';
 import 'signaling_cipher.dart';
@@ -152,6 +153,7 @@ class FirebaseSignalingAdapter
     required String callee,
     required int createdAt,
     required int expiresAt,
+    CallMediaMode mediaMode = CallMediaMode.audio,
   }) async {
     await _configureEmulatorsIfNeeded();
     final normalizedCallId = callId.trim();
@@ -167,6 +169,7 @@ class FirebaseSignalingAdapter
       caller: normalizedCaller,
       callee: normalizedCallee,
       status: VoiceCallSignalingStatus.ringing,
+      mediaMode: mediaMode,
       createdAt: createdAt,
       updatedAt: createdAt,
       expiresAt: expiresAt,
@@ -174,6 +177,12 @@ class FirebaseSignalingAdapter
         normalizedCaller: false,
         normalizedCallee: false,
       }),
+      cameraMuted: mediaMode == CallMediaMode.video
+          ? Map<String, bool>.unmodifiable(<String, bool>{
+              normalizedCaller: false,
+              normalizedCallee: false,
+            })
+          : const <String, bool>{},
     );
     room.validate();
     final lock = VoiceActivePairLock(
@@ -395,6 +404,24 @@ class FirebaseSignalingAdapter
     _ensureVoiceNonTerminal(room);
     await _root.update(<String, Object?>{
       'voiceCalls/${room.callId}/muted/$normalizedUsername': muted,
+      'voiceCalls/${room.callId}/updatedAt': updatedAt,
+    });
+  }
+
+  @override
+  Future<void> setCameraMuted({
+    required String callId,
+    required String username,
+    required bool cameraMuted,
+    required int updatedAt,
+  }) async {
+    final room = await _requireVoiceCall(callId);
+    final normalizedUsername = normalizeVoiceCallUsername(username);
+    await _ensureSignedInAsUsername(normalizedUsername);
+    _ensureVoiceParticipant(room, normalizedUsername);
+    _ensureVoiceNonTerminal(room);
+    await _root.update(<String, Object?>{
+      'voiceCalls/${room.callId}/cameraMuted/$normalizedUsername': cameraMuted,
       'voiceCalls/${room.callId}/updatedAt': updatedAt,
     });
   }
