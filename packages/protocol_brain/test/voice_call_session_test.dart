@@ -350,6 +350,169 @@ void main() {
     expect(media.remoteCandidates.single.sdpMLineIndex, 0);
   });
 
+  test('remote candidate before answer does not stale-drop answer', () async {
+    final media = _FakeVoiceMediaConnection();
+    final sent = <VoiceCallFrame>[];
+    final session = _session(media: media, sent: sent);
+
+    await session.startOutgoing();
+    await session.handleFrame(
+      _frame(VoiceCallFrameType.accept, from: 'bob', to: 'alice', seq: 1),
+    );
+    await session.handleFrame(
+      _frame(
+        VoiceCallFrameType.candidate,
+        from: 'bob',
+        to: 'alice',
+        seq: 3,
+        candidate: 'candidate:early 1 udp 1 127.0.0.1 9 typ host',
+        sdpMid: '0',
+        sdpMLineIndex: 0,
+      ),
+    );
+    await session.handleFrame(
+      _frame(
+        VoiceCallFrameType.answer,
+        from: 'bob',
+        to: 'alice',
+        seq: 2,
+        sdp: 'remote-answer',
+        sdpType: 'answer',
+      ),
+    );
+
+    expect(media.remoteCandidates, hasLength(1));
+    expect(media.appliedAnswers, <String>['remote-answer']);
+  });
+
+  test('remote candidate before offer does not stale-drop offer', () async {
+    final media = _FakeVoiceMediaConnection();
+    final sent = <VoiceCallFrame>[];
+    final session = _session(
+      media: media,
+      sent: sent,
+      localPeerId: 'bob',
+      remotePeerId: 'alice',
+    );
+
+    await session.handleFrame(
+      _frame(VoiceCallFrameType.invite, from: 'alice', to: 'bob', seq: 1),
+    );
+    await session.acceptIncoming();
+    await session.handleFrame(
+      _frame(
+        VoiceCallFrameType.candidate,
+        from: 'alice',
+        to: 'bob',
+        seq: 3,
+        candidate: 'candidate:early 1 udp 1 127.0.0.1 9 typ host',
+        sdpMid: '0',
+        sdpMLineIndex: 0,
+      ),
+    );
+    await session.handleFrame(
+      _frame(
+        VoiceCallFrameType.offer,
+        from: 'alice',
+        to: 'bob',
+        seq: 2,
+        sdp: 'remote-offer',
+        sdpType: 'offer',
+      ),
+    );
+
+    expect(media.remoteCandidates, hasLength(1));
+    expect(media.acceptedOffers, <String>['remote-offer']);
+    expect(sent.last.type, VoiceCallFrameType.answer);
+  });
+
+  test('duplicate remote ICE candidate is ignored', () async {
+    final media = _FakeVoiceMediaConnection();
+    final sent = <VoiceCallFrame>[];
+    final session = _session(media: media, sent: sent);
+
+    await session.startOutgoing();
+    await session.handleFrame(
+      _frame(VoiceCallFrameType.accept, from: 'bob', to: 'alice', seq: 1),
+    );
+    final candidate = _frame(
+      VoiceCallFrameType.candidate,
+      from: 'bob',
+      to: 'alice',
+      seq: 3,
+      candidate: 'candidate:duplicate 1 udp 1 127.0.0.1 9 typ host',
+      sdpMid: '0',
+      sdpMLineIndex: 0,
+    );
+
+    await session.handleFrame(candidate);
+    await session.handleFrame(candidate);
+
+    expect(media.remoteCandidates, hasLength(1));
+  });
+
+  test('late media frames after local hangup are ignored', () async {
+    final media = _FakeVoiceMediaConnection();
+    final sent = <VoiceCallFrame>[];
+    final session = _session(media: media, sent: sent);
+
+    await session.startOutgoing();
+    await session.handleFrame(
+      _frame(VoiceCallFrameType.accept, from: 'bob', to: 'alice', seq: 1),
+    );
+    await session.hangUp();
+    await session.handleFrame(
+      _frame(
+        VoiceCallFrameType.answer,
+        from: 'bob',
+        to: 'alice',
+        seq: 2,
+        sdp: 'late-answer',
+        sdpType: 'answer',
+      ),
+    );
+    await session.handleFrame(
+      _frame(
+        VoiceCallFrameType.candidate,
+        from: 'bob',
+        to: 'alice',
+        seq: 3,
+        candidate: 'candidate:late 1 udp 1 127.0.0.1 9 typ host',
+        sdpMid: '0',
+        sdpMLineIndex: 0,
+      ),
+    );
+
+    expect(session.state.phase, VoiceCallSessionPhase.idle);
+    expect(media.appliedAnswers, isEmpty);
+    expect(media.remoteCandidates, isEmpty);
+  });
+
+  test('late candidate after dispose is ignored', () async {
+    final media = _FakeVoiceMediaConnection();
+    final sent = <VoiceCallFrame>[];
+    final session = _session(media: media, sent: sent);
+
+    await session.startOutgoing();
+    await session.handleFrame(
+      _frame(VoiceCallFrameType.accept, from: 'bob', to: 'alice', seq: 1),
+    );
+    await session.dispose();
+    await session.handleFrame(
+      _frame(
+        VoiceCallFrameType.candidate,
+        from: 'bob',
+        to: 'alice',
+        seq: 3,
+        candidate: 'candidate:late 1 udp 1 127.0.0.1 9 typ host',
+        sdpMid: '0',
+        sdpMLineIndex: 0,
+      ),
+    );
+
+    expect(media.remoteCandidates, isEmpty);
+  });
+
   test('media failure attaches diagnostics to failed session state', () async {
     final media = _FakeVoiceMediaConnection()
       ..diagnosticSnapshot = const VoiceMediaDiagnostics(

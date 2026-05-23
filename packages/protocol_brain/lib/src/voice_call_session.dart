@@ -119,8 +119,9 @@ final class VoiceCallSession {
   Timer? _ringingTimer;
   Timer? _answerTimer;
   Timer? _mediaTimer;
-  int _lastReceivedSeq = 0;
+  int _lastReceivedOrderedSeq = 0;
   int _lastSentSeq = 0;
+  final Set<String> _receivedCandidateKeys = <String>{};
   bool _negotiatingMedia = false;
   bool _disposed = false;
   Future<void> _operationTail = Future<void>.value();
@@ -578,12 +579,39 @@ final class VoiceCallSession {
         _normalizePeerId(frame.to) != _normalizedLocalPeerId) {
       return false;
     }
-    if (frame.seq <= _lastReceivedSeq) {
+
+    if (frame.type == VoiceCallFrameType.candidate) {
+      return _acceptCandidateFrame(frame);
+    }
+
+    if (frame.seq <= _lastReceivedOrderedSeq) {
       _logInvalidEvent('stale ${frame.type.name} frame seq=${frame.seq}');
       return false;
     }
-    _lastReceivedSeq = frame.seq;
+    _lastReceivedOrderedSeq = frame.seq;
     return true;
+  }
+
+  bool _acceptCandidateFrame(VoiceCallFrame frame) {
+    final key = _candidateFrameKey(frame);
+    if (key == null) {
+      return true;
+    }
+    if (!_receivedCandidateKeys.add(key)) {
+      _logInvalidEvent('duplicate candidate frame seq=${frame.seq}');
+      return false;
+    }
+    return true;
+  }
+
+  String? _candidateFrameKey(VoiceCallFrame frame) {
+    final candidate = frame.candidate;
+    final sdpMid = frame.sdpMid;
+    final sdpMLineIndex = frame.sdpMLineIndex;
+    if (candidate == null || sdpMid == null || sdpMLineIndex == null) {
+      return null;
+    }
+    return '$sdpMid|$sdpMLineIndex|$candidate';
   }
 
   Future<void> _send(
