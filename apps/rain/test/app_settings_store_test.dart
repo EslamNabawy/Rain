@@ -30,4 +30,16 @@ void main() {
     await store.setBackgroundServiceEnabled(false);
     expect(await store.loadBackgroundServiceEnabled(), isFalse);
   });
+
+  test('selected microphone persists locally', () async {
+    final store = AppSettingsStore();
+
+    expect(await store.loadSelectedMicrophoneDeviceId(), isNull);
+
+    await store.setSelectedMicrophoneDeviceId(' external-mic ');
+    expect(await store.loadSelectedMicrophoneDeviceId(), 'external-mic');
+
+    await store.setSelectedMicrophoneDeviceId(null);
+    expect(await store.loadSelectedMicrophoneDeviceId(), isNull);
+  });
 }

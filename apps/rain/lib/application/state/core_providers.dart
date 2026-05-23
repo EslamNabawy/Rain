@@ -5,6 +5,7 @@ import 'package:protocol_brain/protocol_brain.dart';
 import 'package:rain_core/rain_core.dart';
 
 import 'package:rain/application/bootstrap/app_bootstrap.dart';
+import 'package:rain/application/runtime/media_device_settings.dart';
 import 'package:rain/infrastructure/services/app_settings_store.dart';
 import 'package:rain/infrastructure/services/crash_diagnostics_service.dart';
 import 'package:rain/infrastructure/services/force_update_service.dart';
@@ -55,6 +56,17 @@ final soundEffectsProvider = Provider<SoundEffectsService>((Ref ref) {
 });
 
 final appSettingsStoreProvider = Provider((Ref ref) => AppSettingsStore());
+
+final platformBridgeProvider = Provider<PlatformBridge>(
+  (Ref ref) => FlutterWebRTCBridge(),
+);
+
+final mediaDeviceSettingsProvider = Provider<MediaDeviceSettings>((Ref ref) {
+  return MediaDeviceSettings(
+    platformBridge: ref.watch(platformBridgeProvider),
+    settingsStore: ref.watch(appSettingsStoreProvider),
+  );
+});
 
 void assertNetworkReady(Ref ref) {
   final status = ref.read(networkStatusProvider).value;

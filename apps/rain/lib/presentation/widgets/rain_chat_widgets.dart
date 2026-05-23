@@ -1,10 +1,12 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_svg/flutter_svg.dart';
+import 'package:rain/application/runtime/media_device_settings.dart';
 import 'package:rain/application/runtime/voice_call_state.dart';
 import 'package:rain/presentation/widgets/calls/rain_call_controls.dart';
 
 const String _maleAvatarAsset = 'assets/gender avatar/man-avatar.svg';
 const String _femaleAvatarAsset = 'assets/gender avatar/woman-avatar.svg';
+const String _defaultMicrophoneMenuValue = '__rain_default_microphone__';
 
 class RainAvatar extends StatelessWidget {
   const RainAvatar({
@@ -715,6 +717,119 @@ class RainVoiceCallPanel extends StatelessWidget {
           );
         },
       ),
+    );
+  }
+}
+
+class RainMicrophoneSelector extends StatelessWidget {
+  const RainMicrophoneSelector({
+    super.key,
+    required this.state,
+    required this.isBusy,
+    required this.onRefresh,
+    required this.onSelected,
+  });
+
+  final MicrophoneSelectionState state;
+  final bool isBusy;
+  final VoidCallback onRefresh;
+  final ValueChanged<String?> onSelected;
+
+  @override
+  Widget build(BuildContext context) {
+    final scheme = Theme.of(context).colorScheme;
+    final selectedLabel = _selectedLabel();
+    final warning = state.hasMissingSelection
+        ? 'Selected microphone unavailable. Using default.'
+        : null;
+    final subtitle = warning ?? selectedLabel;
+
+    return ListTile(
+      leading: Icon(Icons.mic, color: warning == null ? null : scheme.error),
+      title: const Text('Microphone'),
+      subtitle: Text(subtitle),
+      trailing: Row(
+        mainAxisSize: MainAxisSize.min,
+        children: <Widget>[
+          IconButton(
+            tooltip: 'Refresh microphones',
+            onPressed: isBusy ? null : onRefresh,
+            icon: isBusy
+                ? const SizedBox.square(
+                    dimension: 18,
+                    child: CircularProgressIndicator(strokeWidth: 2),
+                  )
+                : const Icon(Icons.refresh),
+          ),
+          PopupMenuButton<String>(
+            tooltip: 'Choose microphone',
+            enabled: !isBusy && state.devices.isNotEmpty,
+            onSelected: (String value) =>
+                onSelected(value == _defaultMicrophoneMenuValue ? null : value),
+            itemBuilder: (BuildContext context) {
+              return <PopupMenuEntry<String>>[
+                PopupMenuItem<String>(
+                  value: _defaultMicrophoneMenuValue,
+                  child: _RainMicrophoneMenuRow(
+                    label: 'Default microphone',
+                    selected: state.selectedDeviceId == null,
+                  ),
+                ),
+                for (var index = 0; index < state.devices.length; index += 1)
+                  PopupMenuItem<String>(
+                    value: state.devices[index].deviceId,
+                    child: _RainMicrophoneMenuRow(
+                      label: state.devices[index].displayLabel(index),
+                      selected:
+                          state.selectedDeviceId ==
+                          state.devices[index].deviceId,
+                    ),
+                  ),
+              ];
+            },
+            icon: Icon(
+              state.devices.isEmpty
+                  ? Icons.mic_none
+                  : Icons.arrow_drop_down_circle_outlined,
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
+  String _selectedLabel() {
+    final selected = state.selectedDevice;
+    if (selected == null) {
+      return state.devices.isEmpty
+          ? 'No microphones found.'
+          : 'Default microphone. Applies to next call.';
+    }
+    final index = state.devices.indexOf(selected);
+    return '${selected.displayLabel(index)}. Applies to next call.';
+  }
+}
+
+class _RainMicrophoneMenuRow extends StatelessWidget {
+  const _RainMicrophoneMenuRow({required this.label, required this.selected});
+
+  final String label;
+  final bool selected;
+
+  @override
+  Widget build(BuildContext context) {
+    return Row(
+      children: <Widget>[
+        Icon(
+          selected ? Icons.check_circle : Icons.circle_outlined,
+          size: 20,
+          color: selected ? Theme.of(context).colorScheme.primary : null,
+        ),
+        const SizedBox(width: 10),
+        Flexible(
+          child: Text(label, maxLines: 1, overflow: TextOverflow.ellipsis),
+        ),
+      ],
     );
   }
 }

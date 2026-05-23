@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_svg/flutter_svg.dart';
 import 'package:flutter_test/flutter_test.dart';
+import 'package:rain/application/runtime/media_device_settings.dart';
 import 'package:rain/application/runtime/voice_audio_level.dart';
 import 'package:rain/application/runtime/voice_call_state.dart';
 import 'package:rain/application/state/call_surface_providers.dart';
@@ -423,6 +424,68 @@ void main() {
     expect(find.text('Peer is busy.'), findsOneWidget);
     expect(find.textContaining('Active voice call'), findsNothing);
     expect(find.text('Retry'), findsNothing);
+  });
+
+  testWidgets('microphone selector handles empty device list', (
+    WidgetTester tester,
+  ) async {
+    var refreshed = false;
+    String? selected = 'unchanged';
+
+    await tester.pumpWidget(
+      MaterialApp(
+        home: Scaffold(
+          body: RainMicrophoneSelector(
+            state: const MicrophoneSelectionState(devices: []),
+            isBusy: false,
+            onRefresh: () => refreshed = true,
+            onSelected: (String? value) => selected = value,
+          ),
+        ),
+      ),
+    );
+
+    expect(find.text('Microphone'), findsOneWidget);
+    expect(find.text('No microphones found.'), findsOneWidget);
+
+    await tester.tap(find.byTooltip('Refresh microphones'));
+    expect(refreshed, isTrue);
+
+    await tester.tap(find.byTooltip('Choose microphone'));
+    expect(selected, 'unchanged');
+  });
+
+  testWidgets('microphone selector emits selected device', (
+    WidgetTester tester,
+  ) async {
+    String? selected;
+
+    await tester.pumpWidget(
+      MaterialApp(
+        home: Scaffold(
+          body: RainMicrophoneSelector(
+            state: const MicrophoneSelectionState(
+              devices: <RainMediaDevice>[
+                RainMediaDevice(
+                  deviceId: 'mic-1',
+                  label: 'Desk mic',
+                  kind: audioInputDeviceKind,
+                ),
+              ],
+            ),
+            isBusy: false,
+            onRefresh: () {},
+            onSelected: (String? value) => selected = value,
+          ),
+        ),
+      ),
+    );
+
+    await tester.tap(find.byTooltip('Choose microphone'));
+    await tester.pumpAndSettle();
+    await tester.tap(find.text('Desk mic').last);
+
+    expect(selected, 'mic-1');
   });
 
   testWidgets('call overlay expands and minimizes active calls', (

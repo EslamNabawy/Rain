@@ -14,6 +14,7 @@ ProtocolBrain createDefaultProtocolBrain({
   PeerCoreFactory? peerFactory,
   PeerConfigProvider? peerConfigProvider,
   Future<List<Map<String, dynamic>>> Function()? iceServersProvider,
+  Future<String?> Function()? selectedAudioInputDeviceIdProvider,
   bool ordered = true,
   int? maxRetransmits,
 }) {
@@ -26,6 +27,7 @@ ProtocolBrain createDefaultProtocolBrain({
       platform: bridge,
       ordered: ordered,
       maxRetransmits: maxRetransmits,
+      selectedAudioInputDeviceIdProvider: selectedAudioInputDeviceIdProvider,
     ),
     peerConfigProvider:
         peerConfigProvider ??
@@ -38,6 +40,8 @@ ProtocolBrain createDefaultProtocolBrain({
                   ordered: ordered,
                   maxRetransmits: maxRetransmits,
                   iceTransportPolicy: policy,
+                  selectedAudioInputDeviceIdProvider:
+                      selectedAudioInputDeviceIdProvider,
                 );
               }),
     peerFactory: peerFactory ?? DefaultPeerCore.new,

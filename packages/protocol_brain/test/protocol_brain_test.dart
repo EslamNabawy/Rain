@@ -1217,6 +1217,11 @@ class _FakePlatformBridge implements PlatformBridge {
   }
 
   @override
+  Future<List<MediaDeviceInfo>> enumerateMediaDevices() async {
+    return const <MediaDeviceInfo>[];
+  }
+
+  @override
   StorageBackend getLocalStorage() => MemoryStorageBackend();
 
   @override
@@ -1227,4 +1232,16 @@ class _FakePlatformBridge implements PlatformBridge {
     MediaStreamTrack track, {
     required bool muted,
   }) async {}
+
+  @override
+  Future<void> selectAudioInput(String deviceId) async {}
+
+  @override
+  Future<void> selectAudioOutput(String deviceId) async {}
+
+  @override
+  Future<void> setSpeakerphoneOn(bool enabled) async {}
+
+  @override
+  Future<void> setSpeakerphoneOnButPreferBluetooth() async {}
 }

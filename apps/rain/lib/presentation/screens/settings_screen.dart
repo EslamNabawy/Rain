@@ -4,6 +4,7 @@ import 'package:go_router/go_router.dart';
 import 'package:rain_core/rain_core.dart';
 
 import 'package:rain/presentation/navigation/app_routes.dart';
+import 'package:rain/application/runtime/media_device_settings.dart';
 import 'package:rain/application/state/app_providers.dart';
 import 'package:rain/infrastructure/services/crash_diagnostics_service.dart';
 import 'package:rain/presentation/screens/splash_screen.dart';
@@ -44,6 +45,7 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen> {
     final themeMode = ref.watch(themeModeProvider);
     final themeController = ref.read(themeModeProvider.notifier);
     final lastCrash = ref.watch(lastCrashDiagnosticsProvider);
+    final microphones = ref.watch(microphoneSelectionProvider);
 
     return AppPageFrame(
       title: 'Settings',
@@ -102,6 +104,38 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen> {
               title: const Text('Log out'),
               subtitle: const Text('Clear Rain session on this device'),
               onTap: runtime == null ? null : () => _confirmLogOut(context),
+            ),
+          ),
+          const SizedBox(height: 24),
+          const AppSectionTitle(title: 'Call Audio'),
+          AppSectionCard(
+            child: microphones.when(
+              data: (state) => RainMicrophoneSelector(
+                state: state,
+                isBusy: false,
+                onRefresh: () => _refreshMicrophones(ref),
+                onSelected: (String? deviceId) =>
+                    _selectMicrophone(context, ref, deviceId),
+              ),
+              error: (Object error, StackTrace stackTrace) => ListTile(
+                leading: Icon(
+                  Icons.mic_off,
+                  color: Theme.of(context).colorScheme.error,
+                ),
+                title: const Text('Microphones unavailable'),
+                subtitle: Text(_formatSettingsError(error)),
+                trailing: IconButton(
+                  tooltip: 'Refresh microphones',
+                  onPressed: () => _refreshMicrophones(ref),
+                  icon: const Icon(Icons.refresh),
+                ),
+              ),
+              loading: () => RainMicrophoneSelector(
+                state: const MicrophoneSelectionState(devices: []),
+                isBusy: true,
+                onRefresh: () {},
+                onSelected: (_) {},
+              ),
             ),
           ),
           const SizedBox(height: 24),
@@ -237,6 +271,36 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen> {
         newName.isNotEmpty &&
         newName != identity.displayName) {
       await ref.read(identityProvider.notifier).updateDisplayName(newName);
+    }
+  }
+
+  void _refreshMicrophones(WidgetRef ref) {
+    ref.read(microphoneSelectionProvider.notifier).refresh();
+  }
+
+  Future<void> _selectMicrophone(
+    BuildContext context,
+    WidgetRef ref,
+    String? deviceId,
+  ) async {
+    final messenger = ScaffoldMessenger.of(context);
+    final errorColor = Theme.of(context).colorScheme.error;
+    try {
+      await ref
+          .read(microphoneSelectionProvider.notifier)
+          .selectMicrophone(deviceId);
+    } catch (error) {
+      if (!context.mounted) {
+        return;
+      }
+      messenger.showSnackBar(
+        SnackBar(
+          content: Text(
+            'Could not update microphone: ${_formatSettingsError(error)}',
+          ),
+          backgroundColor: errorColor,
+        ),
+      );
     }
   }
 

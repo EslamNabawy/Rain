@@ -80,6 +80,78 @@ void main() {
     },
   );
 
+  test('dedicated voice media requests selected microphone device', () async {
+    final platform = _FakeVoicePlatformBridge()
+      ..mediaDevices = <MediaDeviceInfo>[
+        MediaDeviceInfo(
+          deviceId: 'external-mic',
+          label: 'External microphone',
+          kind: 'audioinput',
+        ),
+      ];
+    final connection = DefaultVoiceMediaConnection(
+      config: PeerConfig(
+        iceServers: const <Map<String, dynamic>>[],
+        platform: platform,
+        selectedAudioInputDeviceIdProvider: () async => 'external-mic',
+      ),
+    );
+
+    await connection.startLocalAudio();
+
+    expect(platform.selectedAudioInputs, <String>['external-mic']);
+    expect(platform.userMediaConstraints.single, <String, dynamic>{
+      'audio': <String, dynamic>{
+        'deviceId': 'external-mic',
+        'echoCancellation': true,
+        'noiseSuppression': true,
+        'autoGainControl': true,
+      },
+      'video': false,
+    });
+
+    await connection.dispose();
+  });
+
+  test(
+    'dedicated voice media falls back when selected mic is missing',
+    () async {
+      final platform = _FakeVoicePlatformBridge()
+        ..mediaDevices = <MediaDeviceInfo>[
+          MediaDeviceInfo(
+            deviceId: 'built-in-mic',
+            label: 'Built-in microphone',
+            kind: 'audioinput',
+          ),
+        ];
+      final connection = DefaultVoiceMediaConnection(
+        config: PeerConfig(
+          iceServers: const <Map<String, dynamic>>[],
+          platform: platform,
+          selectedAudioInputDeviceIdProvider: () async => 'missing-mic',
+        ),
+      );
+
+      await connection.startLocalAudio();
+
+      expect(platform.selectedAudioInputs, isEmpty);
+      expect(platform.userMediaConstraints.single, <String, dynamic>{
+        'audio': <String, dynamic>{
+          'echoCancellation': true,
+          'noiseSuppression': true,
+          'autoGainControl': true,
+        },
+        'video': false,
+      });
+      expect(
+        connection.diagnostics.mediaStates,
+        contains('selectedAudioInputMissing'),
+      );
+
+      await connection.dispose();
+    },
+  );
+
   test('dedicated voice media creates offer after local audio track', () async {
     final platform = _FakeVoicePlatformBridge();
     final connection = DefaultVoiceMediaConnection(
@@ -651,6 +723,14 @@ class _FakeVoicePlatformBridge implements PlatformBridge {
   final List<Map<String, dynamic>> userMediaConstraints =
       <Map<String, dynamic>>[];
   final List<bool> muteCalls = <bool>[];
+  final List<String> selectedAudioInputs = <String>[];
+  List<MediaDeviceInfo> mediaDevices = <MediaDeviceInfo>[
+    MediaDeviceInfo(
+      deviceId: 'audio-1',
+      label: 'Built-in microphone',
+      kind: 'audioinput',
+    ),
+  ];
   Object? getUserMediaError;
   Completer<MediaStream>? getUserMediaCompleter;
   int prepareVoiceAudioCalls = 0;
@@ -697,6 +777,9 @@ class _FakeVoicePlatformBridge implements PlatformBridge {
   StorageBackend getLocalStorage() => MemoryStorageBackend();
 
   @override
+  Future<List<MediaDeviceInfo>> enumerateMediaDevices() async => mediaDevices;
+
+  @override
   Future<void> prepareVoiceAudio() async {
     prepareVoiceAudioCalls += 1;
   }
@@ -709,6 +792,20 @@ class _FakeVoicePlatformBridge implements PlatformBridge {
     muteCalls.add(muted);
     track.enabled = !muted;
   }
+
+  @override
+  Future<void> selectAudioInput(String deviceId) async {
+    selectedAudioInputs.add(deviceId);
+  }
+
+  @override
+  Future<void> selectAudioOutput(String deviceId) async {}
+
+  @override
+  Future<void> setSpeakerphoneOn(bool enabled) async {}
+
+  @override
+  Future<void> setSpeakerphoneOnButPreferBluetooth() async {}
 }
 
 class _FakeVoicePeerConnection extends Fake implements RTCPeerConnection {

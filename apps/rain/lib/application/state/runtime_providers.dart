@@ -128,6 +128,10 @@ final brainProvider = Provider<SessionManager?>((Ref ref) {
     iceServers: environment.iceServers,
     iceServersProvider: ref.watch(turnCredentialServiceProvider).iceServers,
     connectionMemoryStore: ref.watch(connectionMemoryStoreProvider),
+    platformBridge: ref.watch(platformBridgeProvider),
+    selectedAudioInputDeviceIdProvider: ref
+        .watch(appSettingsStoreProvider)
+        .loadSelectedMicrophoneDeviceId,
   );
 
   return brain;

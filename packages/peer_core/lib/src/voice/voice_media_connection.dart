@@ -141,15 +141,14 @@ class DefaultVoiceMediaConnection implements VoiceMediaConnection {
       _emitState(VoiceMediaPhase.startingLocalAudio);
       await _prepareVoiceAudio();
       _ensureCurrentPeerConnection(connection, epoch, 'preparing local audio');
+      final selectedAudioInputDeviceId = await _selectedAudioInputDeviceId();
+      _ensureCurrentPeerConnection(
+        connection,
+        epoch,
+        'selecting local audio input',
+      );
       final stream = await _config.platform.getUserMedia(
-        const <String, dynamic>{
-          'audio': <String, dynamic>{
-            'echoCancellation': true,
-            'noiseSuppression': true,
-            'autoGainControl': true,
-          },
-          'video': false,
-        },
+        _localAudioConstraints(selectedAudioInputDeviceId),
       );
       pendingStream = stream;
       _ensureCurrentPeerConnection(connection, epoch, 'capturing local audio');
@@ -455,6 +454,59 @@ class DefaultVoiceMediaConnection implements VoiceMediaConnection {
   Future<void> _prepareVoiceAudio() async {
     await _config.platform.prepareVoiceAudio();
     _voiceAudioPrepared = true;
+  }
+
+  Future<String?> _selectedAudioInputDeviceId() async {
+    final provider = _config.selectedAudioInputDeviceIdProvider;
+    String? selected;
+    try {
+      selected = (await provider?.call())?.trim();
+    } catch (error) {
+      _appendDiagnostic(_mediaStates, 'selectedAudioInputLoad failed | $error');
+      _lastError = error.toString();
+      return null;
+    }
+    if (selected == null || selected.isEmpty) {
+      return null;
+    }
+
+    try {
+      final devices = await _config.platform.enumerateMediaDevices();
+      final audioInputs = devices
+          .where((device) {
+            return device.kind == 'audioinput' &&
+                device.deviceId.trim().isNotEmpty;
+          })
+          .toList(growable: false);
+      if (audioInputs.isNotEmpty &&
+          !audioInputs.any((device) => device.deviceId == selected)) {
+        _appendDiagnostic(_mediaStates, 'selectedAudioInputMissing');
+        return null;
+      }
+    } catch (error) {
+      _appendDiagnostic(_mediaStates, 'enumerateMediaDevices failed | $error');
+      _lastError = error.toString();
+    }
+
+    try {
+      await _config.platform.selectAudioInput(selected);
+    } catch (error) {
+      _appendDiagnostic(_mediaStates, 'selectAudioInput failed | $error');
+      _lastError = error.toString();
+    }
+    return selected;
+  }
+
+  Map<String, dynamic> _localAudioConstraints(String? deviceId) {
+    return <String, dynamic>{
+      'audio': <String, dynamic>{
+        'deviceId': ?deviceId,
+        'echoCancellation': true,
+        'noiseSuppression': true,
+        'autoGainControl': true,
+      },
+      'video': false,
+    };
   }
 
   Future<void> _clearVoiceAudioIfPrepared() async {

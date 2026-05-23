@@ -8,6 +8,8 @@ class AppSettingsStore {
 
   static const String _backgroundServiceEnabledKey =
       'background_service_enabled';
+  static const String _selectedMicrophoneDeviceIdKey =
+      'selected_microphone_device_id';
 
   final SharedPreferencesAsync _preferences;
 
@@ -21,5 +23,23 @@ class AppSettingsStore {
 
   Future<void> setBackgroundServiceEnabled(bool enabled) async {
     await _preferences.setBool(_backgroundServiceEnabledKey, false);
+  }
+
+  Future<String?> loadSelectedMicrophoneDeviceId() async {
+    final value = await _preferences.getString(_selectedMicrophoneDeviceIdKey);
+    final normalized = value?.trim();
+    if (normalized == null || normalized.isEmpty) {
+      return null;
+    }
+    return normalized;
+  }
+
+  Future<void> setSelectedMicrophoneDeviceId(String? deviceId) async {
+    final normalized = deviceId?.trim();
+    if (normalized == null || normalized.isEmpty) {
+      await _preferences.remove(_selectedMicrophoneDeviceIdKey);
+      return;
+    }
+    await _preferences.setString(_selectedMicrophoneDeviceIdKey, normalized);
   }
 }
