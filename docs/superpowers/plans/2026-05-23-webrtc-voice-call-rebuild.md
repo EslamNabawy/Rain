@@ -635,7 +635,7 @@ git commit -m "feat: update voice call ui states"
 
 **Purpose:** Prevent wrong APK/EXE and platform regressions.
 
-- [ ] Verify Android permissions are present.
+- [x] Verify Android permissions are present.
 
 Expected manifest entries:
 
@@ -646,7 +646,7 @@ Expected manifest entries:
 <uses-permission android:name="android.permission.CHANGE_NETWORK_STATE" />
 ```
 
-- [ ] Verify release artifacts still build.
+- [x] Verify release artifacts still build.
 
 Commands:
 
@@ -656,7 +656,7 @@ dart run melos run analyze
 dart run melos run test
 ```
 
-- [ ] Verify generated files do not drift.
+- [x] Verify generated files do not drift.
 
 Expected generated artifacts remain committed:
 
@@ -667,7 +667,7 @@ packages/rain_core/lib/database/rain_database.g.dart
 
 If Drift or Freezed inputs change, regenerate and commit outputs before CI.
 
-- [ ] Verify Android release path, not only debug.
+- [x] Verify Android release path, not only debug.
 
 Reason: debug APK can pass while R8/release packaging fails.
 
@@ -681,7 +681,7 @@ no Bluetooth permission added unless headset routing is explicitly supported
 WebRTC native libs exist in produced APK
 ```
 
-- [ ] Verify Android debug APK ABI.
+- [x] Verify Android debug APK ABI.
 
 Expected for current CI:
 
@@ -692,7 +692,7 @@ release artifact: Rain-Demo-Android-ARM-v8-v9-Build.apk
 
 If `armeabi-v7a` is required again, explicitly add a separate v7 artifact and update CI checks. Do not silently ship universal APKs.
 
-- [ ] Verify Windows package shape.
+- [x] Verify Windows package shape.
 
 Artifact must include the full Flutter release directory, not only `rain.exe`:
 
@@ -714,7 +714,7 @@ apps/rain/windows/flutter/generated_plugins.cmake
 apps/rain/windows/flutter/generated_plugin_registrant.cc
 ```
 
-- [ ] Commit.
+- [x] Commit.
 
 ```powershell
 git add apps/rain/android .github/workflows scripts

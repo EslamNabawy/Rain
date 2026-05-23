@@ -123,6 +123,8 @@ void main() {
   test('Android release signing is required and never debug-signed', () {
     final gradle = _repoFile('apps/rain/android/app/build.gradle.kts');
 
+    expect(gradle, contains('plugins {'));
+    expect(gradle, contains('android {'));
     expect(gradle, contains('RAIN_RELEASE_STORE_FILE'));
     expect(gradle, contains('RAIN_RELEASE_STORE_PASSWORD'));
     expect(gradle, contains('RAIN_RELEASE_KEY_ALIAS'));
@@ -131,6 +133,30 @@ void main() {
     expect(gradle, contains('isReleaseBuild'));
     expect(gradle, isNot(contains('signingConfigs.getByName("debug")')));
     expect(gradle, isNot(contains('Signing with the debug keys')));
+  });
+
+  test('Android manifest keeps audio permissions install-safe', () {
+    final manifest = _repoFile(
+      'apps/rain/android/app/src/main/AndroidManifest.xml',
+    );
+    final applicationIndex = manifest.indexOf('<application');
+
+    expect(applicationIndex, greaterThan(0));
+    for (final permission in <String>[
+      'android.permission.RECORD_AUDIO',
+      'android.permission.MODIFY_AUDIO_SETTINGS',
+      'android.permission.ACCESS_NETWORK_STATE',
+      'android.permission.CHANGE_NETWORK_STATE',
+    ]) {
+      final entry = '<uses-permission android:name="$permission" />';
+      expect(manifest, contains(entry));
+      expect(manifest.indexOf(entry), lessThan(applicationIndex));
+    }
+
+    expect(manifest, isNot(contains('android.permission.CAMERA')));
+    expect(manifest, isNot(contains('android.hardware.camera')));
+    expect(manifest, isNot(contains('android.permission.BLUETOOTH')));
+    expect(manifest, isNot(contains('android.permission.BLUETOOTH_CONNECT')));
   });
 
   test('release workflow creates sanitized defines and signing inputs', () {
@@ -156,8 +182,9 @@ void main() {
     final script = _repoFile('scripts/build_release.ps1');
 
     expect(script, contains('--split-per-abi'));
-    expect(script, contains('Assert-AndroidApkContainsSqlite'));
-    expect(script, contains('lib/\$abi/libsqlite3.so'));
+    expect(script, contains('Assert-AndroidApkContainsNativeRuntimes'));
+    expect(script, contains('libsqlite3.so'));
+    expect(script, contains('libjingle_peerconnection_so.so'));
     expect(script, contains('Rain-release'));
     expect(script, contains('Rain-Demo'));
     expect(script, contains('ARMv8/ARMv9 devices'));
@@ -177,10 +204,16 @@ void main() {
     final script = _repoFile('scripts/build_release.ps1');
 
     expect(script, contains('Copy-WindowsNativeAssets'));
+    expect(script, contains('Assert-WindowsRuntimeBundle'));
     expect(script, contains('Assert-WindowsNativeAssetsPackaged'));
     expect(script, contains('Assert-WindowsSqliteExports'));
     expect(script, contains('Resolve-DumpbinPath'));
     expect(script, contains('sqlite3_temp_directory'));
+    expect(script, contains('rain.exe'));
+    expect(script, contains('flutter_windows.dll'));
+    expect(script, contains('flutter_webrtc_plugin.dll'));
+    expect(script, contains('libwebrtc.dll'));
+    expect(script, contains('data'));
     expect(script, contains('Get-WindowsNativeAssetNames'));
     expect(script, contains(r"build\native_assets\windows"));
     expect(script, contains(r"data\flutter_assets\NativeAssetsManifest.json"));
@@ -247,6 +280,10 @@ void main() {
     expect(workflow, contains('Verify debug APK is ARM64 only'));
     expect(workflow, contains('app-arm64-v8a-debug.apk'));
     expect(workflow, contains("grep -q 'lib/arm64-v8a/'"));
+    expect(
+      workflow,
+      contains("grep -q 'lib/arm64-v8a/libjingle_peerconnection_so.so'"),
+    );
     expect(workflow, contains("if grep -q 'lib/armeabi-v7a/'"));
     expect(workflow, contains("if grep -q 'lib/x86_64/'"));
     expect(workflow, contains('rain-debug-arm64-apk'));
@@ -264,6 +301,7 @@ void main() {
     expect(androidBuildStep, contains("'mobile'"));
     expect(workflow, contains('Rain-Demo-Android-ARM-v8-v9-Build.apk'));
     expect(workflow, contains('Rain-release-android-arm64-v8a.apk'));
+    expect(workflow, contains('lib/arm64-v8a/libjingle_peerconnection_so.so'));
     expect(workflow, isNot(contains('Rain-Demo-Android-Universal-Build.apk')));
     expect(workflow, isNot(contains('Rain-Demo-Android-ARM-v7-Build.apk')));
     expect(workflow, isNot(contains('Rain-Demo-Android-x86_64-Build.apk')));
@@ -278,8 +316,12 @@ void main() {
     final workflow = _repoFile('.github/workflows/ci.yml');
 
     expect(workflow, contains('path: artifacts/Rain-Demo-Windows-x64-Build'));
+    expect(workflow, contains('Windows Flutter runtime DLL'));
+    expect(workflow, contains('Windows WebRTC plugin DLL'));
+    expect(workflow, contains('Windows WebRTC runtime DLL'));
     expect(workflow, contains('Windows SQLite runtime DLL'));
     expect(workflow, contains('lib/arm64-v8a/libsqlite3.so'));
+    expect(workflow, contains('lib/arm64-v8a/libjingle_peerconnection_so.so'));
     expect(
       workflow,
       contains(
@@ -295,6 +337,17 @@ void main() {
     expect(workflow, isNot(contains('Rain-Demo-Android-x86_64-Build.apk')));
     expect(workflow, isNot(contains('lib/armeabi-v7a/libsqlite3.so')));
     expect(workflow, isNot(contains('lib/x86_64/libsqlite3.so')));
+  });
+
+  test('release workflow verifies native voice runtimes before upload', () {
+    final workflow = _repoFile('.github/workflows/release.yml');
+
+    expect(workflow, contains('Verify Windows release package'));
+    expect(workflow, contains('flutter_webrtc_plugin.dll'));
+    expect(workflow, contains('libwebrtc.dll'));
+    expect(workflow, contains('Assert-ApkEntry'));
+    expect(workflow, contains('lib/arm64-v8a/libsqlite3.so'));
+    expect(workflow, contains('lib/arm64-v8a/libjingle_peerconnection_so.so'));
   });
 
   test('Rain core uses bundled SQLite native library packaging', () {

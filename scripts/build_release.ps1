@@ -608,6 +608,24 @@ function Assert-WindowsSqliteExports([string]$DestinationRoot) {
   )
 }
 
+function Assert-WindowsRuntimeBundle([string]$DestinationRoot) {
+  $requiredEntries = @(
+    'rain.exe',
+    'flutter_windows.dll',
+    'flutter_webrtc_plugin.dll',
+    'libwebrtc.dll',
+    'sqlite3.dll',
+    'data'
+  )
+
+  foreach ($entry in $requiredEntries) {
+    $path = Join-Path $DestinationRoot $entry
+    if (-not (Test-Path -LiteralPath $path)) {
+      throw "Windows runtime bundle is missing required entry: $path"
+    }
+  }
+}
+
 function Get-ZipEntryNames([string]$ArchivePath) {
   Add-Type -AssemblyName System.IO.Compression -ErrorAction SilentlyContinue
   Add-Type -AssemblyName System.IO.Compression.FileSystem -ErrorAction SilentlyContinue
@@ -620,16 +638,22 @@ function Get-ZipEntryNames([string]$ArchivePath) {
   }
 }
 
-function Assert-AndroidApkContainsSqlite([string]$ApkPath, [string[]]$Abis) {
+function Assert-AndroidApkContainsNativeRuntimes([string]$ApkPath, [string[]]$Abis) {
   if (-not (Test-Path -LiteralPath $ApkPath)) {
     throw "Android release APK not found: $ApkPath"
   }
 
+  $requiredLibraries = @(
+    'libsqlite3.so',
+    'libjingle_peerconnection_so.so'
+  )
   $entryNames = @(Get-ZipEntryNames -ArchivePath $ApkPath)
   foreach ($abi in $Abis) {
-    $requiredEntry = "lib/$abi/libsqlite3.so"
-    if ($entryNames -notcontains $requiredEntry) {
-      throw "Android APK is missing bundled SQLite native library: $ApkPath -> $requiredEntry"
+    foreach ($library in $requiredLibraries) {
+      $requiredEntry = "lib/$abi/$library"
+      if ($entryNames -notcontains $requiredEntry) {
+        throw "Android APK is missing required native runtime library: $ApkPath -> $requiredEntry"
+      }
     }
   }
 }
@@ -741,6 +765,7 @@ if ($Platform -in @('all', 'windows')) {
   Copy-WindowsNativeAssets -ProjectRoot $appsRoot -DestinationRoot $windowsPortableDir
   Assert-WindowsNativeAssetsPackaged -ProjectRoot $appsRoot -DestinationRoot $windowsPortableDir
   Remove-WindowsLinkerArtifacts -DestinationRoot $windowsPortableDir
+  Assert-WindowsRuntimeBundle -DestinationRoot $windowsPortableDir
   Assert-WindowsSqliteExports -DestinationRoot $windowsPortableDir
 
   if (Test-Path $windowsZip) {
@@ -784,7 +809,7 @@ if ($Platform -in @('all', 'android')) {
     }
 
     Copy-Item -LiteralPath $abiApkSource -Destination $abiApkDestination -Force
-    Assert-AndroidApkContainsSqlite -ApkPath $abiApkDestination -Abis @($abiApk.Abi)
+    Assert-AndroidApkContainsNativeRuntimes -ApkPath $abiApkDestination -Abis @($abiApk.Abi)
     Write-Step "Packaged Android APK for $($abiApk.Label): $abiApkDestination"
   }
 }

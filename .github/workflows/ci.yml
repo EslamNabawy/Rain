@@ -362,6 +362,7 @@ jobs:
         run: |
           unzip -l build/app/outputs/flutter-apk/app-arm64-v8a-debug.apk > "$RUNNER_TEMP/rain-debug-apk-entries.txt"
           grep -q 'lib/arm64-v8a/' "$RUNNER_TEMP/rain-debug-apk-entries.txt"
+          grep -q 'lib/arm64-v8a/libjingle_peerconnection_so.so' "$RUNNER_TEMP/rain-debug-apk-entries.txt"
           if grep -q 'lib/armeabi-v7a/' "$RUNNER_TEMP/rain-debug-apk-entries.txt"; then
             echo "Debug APK must not contain armeabi-v7a native libraries."
             exit 1
@@ -465,8 +466,12 @@ jobs:
         run: |
           $expected = @(
             @{ Label = 'Windows portable EXE'; Path = 'artifacts\Rain-Demo-Windows-x64-Build\rain.exe' },
+            @{ Label = 'Windows Flutter runtime DLL'; Path = 'artifacts\Rain-Demo-Windows-x64-Build\flutter_windows.dll' },
+            @{ Label = 'Windows WebRTC plugin DLL'; Path = 'artifacts\Rain-Demo-Windows-x64-Build\flutter_webrtc_plugin.dll' },
+            @{ Label = 'Windows WebRTC runtime DLL'; Path = 'artifacts\Rain-Demo-Windows-x64-Build\libwebrtc.dll' },
             @{ Label = 'Windows SQLite runtime DLL'; Path = 'artifacts\Rain-Demo-Windows-x64-Build\sqlite3.dll' },
             @{ Label = 'Windows win32 native asset DLL'; Path = 'artifacts\Rain-Demo-Windows-x64-Build\win32_windows_x64.dll' },
+            @{ Label = 'Windows Flutter data directory'; Path = 'artifacts\Rain-Demo-Windows-x64-Build\data' },
             @{ Label = 'Android ARM v8/v9 APK (arm64-v8a)'; Path = 'artifacts\Rain-Demo-Android-ARM-v8-v9-Build.apk' }
           )
           foreach ($artifact in $expected) {
@@ -497,6 +502,7 @@ jobs:
             Write-Host "Verified APK native runtime entry: $Path -> $Entry"
           }
           Assert-ApkEntry 'artifacts\Rain-Demo-Android-ARM-v8-v9-Build.apk' 'lib/arm64-v8a/libsqlite3.so'
+          Assert-ApkEntry 'artifacts\Rain-Demo-Android-ARM-v8-v9-Build.apk' 'lib/arm64-v8a/libjingle_peerconnection_so.so'
 
       - name: Upload Windows portable EXE bundle
         uses: actions/upload-artifact@v7

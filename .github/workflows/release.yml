@@ -57,6 +57,25 @@ jobs:
             -DartDefinesFile $env:RAIN_DART_DEFINES_FILE `
             -Clean
 
+      - name: Verify Windows release package
+        shell: pwsh
+        run: |
+          $portableDir = 'artifacts\Rain-windows-portable'
+          foreach ($fileName in @(
+            'rain.exe',
+            'flutter_windows.dll',
+            'flutter_webrtc_plugin.dll',
+            'libwebrtc.dll',
+            'sqlite3.dll',
+            'data'
+          )) {
+            $path = Join-Path $portableDir $fileName
+            if (-not (Test-Path -LiteralPath $path)) {
+              throw "Missing Windows runtime entry before release upload: $path"
+            }
+            Write-Host "Verified Windows runtime entry: $path"
+          }
+
       - name: Upload Windows release artifact
         uses: actions/upload-artifact@v7
         with:
@@ -137,6 +156,22 @@ jobs:
             }
             Write-Host "Verified $($artifact.Label): $($artifact.Path)"
           }
+          Add-Type -AssemblyName System.IO.Compression -ErrorAction SilentlyContinue
+          Add-Type -AssemblyName System.IO.Compression.FileSystem -ErrorAction SilentlyContinue
+          function Assert-ApkEntry([string]$Path, [string]$Entry) {
+            $archive = [System.IO.Compression.ZipFile]::OpenRead($Path)
+            try {
+              $entryNames = @($archive.Entries | ForEach-Object { $_.FullName })
+              if ($entryNames -notcontains $Entry) {
+                throw "APK is missing required native runtime entry: $Path -> $Entry"
+              }
+            } finally {
+              $archive.Dispose()
+            }
+            Write-Host "Verified APK native runtime entry: $Path -> $Entry"
+          }
+          Assert-ApkEntry 'artifacts\Rain-release-android-arm64-v8a.apk' 'lib/arm64-v8a/libsqlite3.so'
+          Assert-ApkEntry 'artifacts\Rain-release-android-arm64-v8a.apk' 'lib/arm64-v8a/libjingle_peerconnection_so.so'
 
       - name: Upload Android release artifacts
         uses: actions/upload-artifact@v7
