@@ -1,5 +1,7 @@
 part of 'rain_runtime_controller.dart';
 
+enum _IncomingVoiceInviteDisposition { accept, busy, ignore }
+
 extension VoiceCallRuntime on RainRuntimeController {
   static const Duration _voiceCallInviteTimeout = Duration(seconds: 45);
   static const String _voiceCallFailedReasonCode = 'failed';
@@ -222,7 +224,11 @@ extension VoiceCallRuntime on RainRuntimeController {
   }
 
   Future<void> _handleVoiceInvite(String peerId, VoiceCallFrame frame) async {
-    if (!_voiceCallCanReceiveInvite(peerId) ||
+    final disposition = await _prepareIncomingVoiceInvite(peerId, frame);
+    if (disposition == _IncomingVoiceInviteDisposition.ignore) {
+      return;
+    }
+    if (disposition == _IncomingVoiceInviteDisposition.busy ||
         await fileTransferStore.hasActiveTransferForPeer(peerId)) {
       await _sendVoiceFrame(
         peerId,
@@ -258,6 +264,72 @@ extension VoiceCallRuntime on RainRuntimeController {
       ),
     );
     _armVoiceCallTimeout(frame.callId);
+  }
+
+  Future<_IncomingVoiceInviteDisposition> _prepareIncomingVoiceInvite(
+    String peerId,
+    VoiceCallFrame frame,
+  ) async {
+    if (_shutDown || !_started) {
+      return _IncomingVoiceInviteDisposition.busy;
+    }
+
+    final current = _voiceCallState;
+    if (!current.hasCall || current.phase == VoiceCallPhase.failed) {
+      return _IncomingVoiceInviteDisposition.accept;
+    }
+
+    final normalizedPeerId = _normalizedUsername(peerId);
+    if (current.peerId != normalizedPeerId) {
+      return _IncomingVoiceInviteDisposition.busy;
+    }
+
+    if (current.callId == frame.callId) {
+      _armVoiceCallTimeout(frame.callId);
+      return _IncomingVoiceInviteDisposition.ignore;
+    }
+
+    if (!_canReplaceVoiceCallWithRetry(current)) {
+      return _IncomingVoiceInviteDisposition.busy;
+    }
+
+    await _replaceStaleVoiceCallForRetry(current);
+    return _IncomingVoiceInviteDisposition.accept;
+  }
+
+  bool _canReplaceVoiceCallWithRetry(VoiceCallState current) {
+    return switch (current.phase) {
+      VoiceCallPhase.idle || VoiceCallPhase.failed => true,
+      VoiceCallPhase.connectingPeer ||
+      VoiceCallPhase.outgoingRinging ||
+      VoiceCallPhase.incomingRinging ||
+      VoiceCallPhase.connectingMedia => true,
+      VoiceCallPhase.active || VoiceCallPhase.ending => false,
+    };
+  }
+
+  Future<void> _replaceStaleVoiceCallForRetry(VoiceCallState current) async {
+    final peerId = current.peerId;
+    if (peerId == null) {
+      _setVoiceCallState(const VoiceCallState.idle());
+      return;
+    }
+
+    _clearVoiceCallTimer();
+    if (current.callId != null) {
+      await _sendVoiceFrame(
+        peerId,
+        VoiceCallFrameType.hangup,
+        callId: current.callId!,
+        reason: 'Replaced by newer voice call invite.',
+        bestEffort: true,
+      );
+      _clearVoiceMediaTracking(peerId, current.callId!);
+    }
+    try {
+      await brain?.stopLocalAudio(peerId);
+    } catch (_) {}
+    _setVoiceCallState(const VoiceCallState.idle());
   }
 
   Future<void> _handleVoiceAccept(String peerId, VoiceCallFrame frame) async {
@@ -719,13 +791,6 @@ extension VoiceCallRuntime on RainRuntimeController {
         _voiceCallState.phase != VoiceCallPhase.failed) {
       throw StateError('Finish the active call before starting another.');
     }
-  }
-
-  bool _voiceCallCanReceiveInvite(String peerId) {
-    return !_shutDown &&
-        _started &&
-        (!_voiceCallState.hasCall ||
-            _voiceCallState.phase == VoiceCallPhase.failed);
   }
 
   bool _isCurrentVoiceCall(String peerId, String callId) {

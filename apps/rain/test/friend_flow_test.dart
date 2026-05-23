@@ -950,6 +950,124 @@ void main() {
     });
 
     test(
+      'incoming voice retry from same peer replaces stale ringing call',
+      () async {
+        final adapter = NoopSignalingAdapter();
+        final brain = TestSessionManager();
+        await adapter.register('bob', 'bobpw');
+        await adapter.upsertFriendship('alice', 'bob');
+        await db
+            .into(db.friends)
+            .insert(
+              FriendsCompanion.insert(
+                username: 'bob',
+                displayName: 'Bob',
+                state: 'friend',
+                addedAt: 0,
+              ),
+            );
+        final runtime = _runtimeFor(db, alice, adapter, brain: brain);
+        addTearDown(runtime.dispose);
+
+        await runtime.start();
+        brain.emitControlMessage(
+          'bob',
+          VoiceCallFrame(
+            type: VoiceCallFrameType.invite,
+            callId: 'call-1',
+            from: 'bob',
+            to: 'alice',
+            sentAt: DateTime.now().millisecondsSinceEpoch,
+          ).encode(),
+        );
+        await _waitForCondition(
+          () => runtime.voiceCallState.callId == 'call-1',
+          'first incoming voice invite to ring',
+        );
+
+        brain.emitControlMessage(
+          'bob',
+          VoiceCallFrame(
+            type: VoiceCallFrameType.invite,
+            callId: 'call-2',
+            from: 'bob',
+            to: 'alice',
+            sentAt: DateTime.now().millisecondsSinceEpoch,
+          ).encode(),
+        );
+        await _waitForCondition(
+          () => runtime.voiceCallState.callId == 'call-2',
+          'same-peer voice retry to replace stale invite',
+        );
+
+        final frames = brain.sentControlPayloads
+            .map(VoiceCallFrame.tryDecode)
+            .whereType<VoiceCallFrame>()
+            .toList(growable: false);
+        expect(
+          frames.where((frame) => frame.type == VoiceCallFrameType.busy),
+          isEmpty,
+        );
+        expect(
+          frames.any(
+            (frame) =>
+                frame.type == VoiceCallFrameType.hangup &&
+                frame.callId == 'call-1',
+          ),
+          isTrue,
+        );
+        expect(runtime.voiceCallState.phase, VoiceCallPhase.incomingRinging);
+      },
+    );
+
+    test('duplicate incoming voice invite does not report busy', () async {
+      final adapter = NoopSignalingAdapter();
+      final brain = TestSessionManager();
+      await adapter.register('bob', 'bobpw');
+      await adapter.upsertFriendship('alice', 'bob');
+      await db
+          .into(db.friends)
+          .insert(
+            FriendsCompanion.insert(
+              username: 'bob',
+              displayName: 'Bob',
+              state: 'friend',
+              addedAt: 0,
+            ),
+          );
+      final runtime = _runtimeFor(db, alice, adapter, brain: brain);
+      addTearDown(runtime.dispose);
+
+      await runtime.start();
+      final invite = VoiceCallFrame(
+        type: VoiceCallFrameType.invite,
+        callId: 'call-1',
+        from: 'bob',
+        to: 'alice',
+        sentAt: DateTime.now().millisecondsSinceEpoch,
+      ).encode();
+      brain.emitControlMessage('bob', invite);
+      await _waitForCondition(
+        () => runtime.voiceCallState.callId == 'call-1',
+        'incoming voice invite to ring',
+      );
+
+      brain.emitControlMessage('bob', invite);
+      await Future<void>.delayed(const Duration(milliseconds: 80));
+
+      final frames = brain.sentControlPayloads
+          .map(VoiceCallFrame.tryDecode)
+          .whereType<VoiceCallFrame>()
+          .toList(growable: false);
+      expect(
+        frames.where((frame) => frame.type == VoiceCallFrameType.busy),
+        isEmpty,
+      );
+      expect(runtime.voiceCallState.callId, 'call-1');
+      expect(runtime.voiceCallState.phase, VoiceCallPhase.incomingRinging);
+    });
+
+    test(
       'acceptVoiceCall rejects before accept when microphone is denied',
       () async {
         final adapter = NoopSignalingAdapter();
