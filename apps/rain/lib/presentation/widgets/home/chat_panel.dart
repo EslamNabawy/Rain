@@ -221,7 +221,11 @@ class _ChatPanelState extends ConsumerState<_ChatPanel> {
   }
 
   void _playSound(RainSoundEffect effect) {
-    unawaited(ref.read(soundEffectsProvider).play(effect));
+    unawaited(
+      ref
+          .read(soundEffectsProvider)
+          .play(effect, voiceCallActive: ref.read(voiceCallProvider).isActive),
+    );
   }
 
   Widget _buildCommandHeader({
@@ -1345,9 +1349,9 @@ class _ChatPanelState extends ConsumerState<_ChatPanel> {
   Future<void> _startVoiceCall() async {
     try {
       await ref.read(voiceCallProvider.notifier).start(widget.peerId);
-      _playSound(RainSoundEffect.action);
+      _playSound(RainSoundEffect.callOutgoing);
     } catch (error) {
-      _playSound(RainSoundEffect.error);
+      _playSound(RainSoundEffect.callFailed);
       _showErrorSnack(_formatUiError(error));
     }
   }

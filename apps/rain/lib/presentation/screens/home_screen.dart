@@ -497,13 +497,51 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
     VoiceCallState? previous,
     VoiceCallState next,
   ) {
-    if (!mounted ||
-        next.phase != VoiceCallPhase.incomingRinging ||
+    if (!mounted) {
+      return;
+    }
+
+    _handleVoiceCallSound(previous, next);
+
+    if (next.phase != VoiceCallPhase.incomingRinging ||
         next.peerId == null ||
         _selectedPeerId == next.peerId) {
       return;
     }
     setState(() => _selectedPeerId = next.peerId);
+  }
+
+  void _handleVoiceCallSound(VoiceCallState? previous, VoiceCallState next) {
+    final previousPhase = previous?.phase;
+    if (previousPhase == next.phase && previous?.callId == next.callId) {
+      return;
+    }
+    switch (next.phase) {
+      case VoiceCallPhase.incomingRinging:
+        _playSound(RainSoundEffect.callIncoming);
+        break;
+      case VoiceCallPhase.active:
+        _playSound(RainSoundEffect.callConnected, voiceCallActive: true);
+        break;
+      case VoiceCallPhase.failed:
+        _playSound(RainSoundEffect.callFailed);
+        break;
+      case VoiceCallPhase.idle:
+        if (previous != null &&
+            previous.phase != VoiceCallPhase.idle &&
+            previous.phase != VoiceCallPhase.failed) {
+          _playSound(
+            RainSoundEffect.callEnded,
+            voiceCallActive: previous.isActive,
+          );
+        }
+        break;
+      case VoiceCallPhase.connectingPeer:
+      case VoiceCallPhase.outgoingRinging:
+      case VoiceCallPhase.connectingMedia:
+      case VoiceCallPhase.ending:
+        break;
+    }
   }
 
   Future<void> _refreshFriends() async {
@@ -563,9 +601,9 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
   Future<void> _startVoiceCall(String peerId) async {
     try {
       await ref.read(voiceCallProvider.notifier).start(peerId);
-      _playSound(RainSoundEffect.action);
+      _playSound(RainSoundEffect.callOutgoing);
     } catch (error) {
-      _playSound(RainSoundEffect.error);
+      _playSound(RainSoundEffect.callFailed);
       _showVoiceCallError(_formatUiError(error));
     }
   }
@@ -573,9 +611,9 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
   Future<void> _acceptVoiceCall() async {
     try {
       await ref.read(voiceCallProvider.notifier).accept();
-      _playSound(RainSoundEffect.action);
+      _playSound(RainSoundEffect.callConnected, voiceCallActive: true);
     } catch (error) {
-      _playSound(RainSoundEffect.error);
+      _playSound(RainSoundEffect.callFailed);
       _showVoiceCallError(_formatUiError(error));
     }
   }
@@ -583,39 +621,48 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
   Future<void> _rejectVoiceCall() async {
     try {
       await ref.read(voiceCallProvider.notifier).reject();
-      _playSound(RainSoundEffect.action);
+      _playSound(RainSoundEffect.callEnded);
     } catch (error) {
-      _playSound(RainSoundEffect.error);
+      _playSound(RainSoundEffect.callFailed);
       _showVoiceCallError(_formatUiError(error));
     }
   }
 
   Future<void> _hangUpVoiceCall() async {
     try {
+      final wasActive = ref.read(voiceCallProvider).isActive;
       await ref.read(voiceCallProvider.notifier).hangUp();
-      _playSound(RainSoundEffect.action);
+      _playSound(RainSoundEffect.callEnded, voiceCallActive: wasActive);
     } catch (error) {
-      _playSound(RainSoundEffect.error);
+      _playSound(RainSoundEffect.callFailed);
       _showVoiceCallError(_formatUiError(error));
     }
   }
 
   Future<void> _toggleVoiceMute(VoiceCallState call) async {
+    final nextMuted = !call.isMuted;
     try {
-      await ref.read(voiceCallProvider.notifier).setMuted(!call.isMuted);
-      _playSound(RainSoundEffect.action);
+      await ref.read(voiceCallProvider.notifier).setMuted(nextMuted);
+      _playSound(
+        nextMuted ? RainSoundEffect.mute : RainSoundEffect.unmute,
+        voiceCallActive: true,
+      );
     } catch (error) {
-      _playSound(RainSoundEffect.error);
+      _playSound(RainSoundEffect.callFailed);
       _showVoiceCallError(_formatUiError(error));
     }
   }
 
   Future<void> _toggleVoiceDeafen(VoiceCallState call) async {
+    final nextDeafened = !call.isDeafened;
     try {
-      await ref.read(voiceCallProvider.notifier).setDeafened(!call.isDeafened);
-      _playSound(RainSoundEffect.action);
+      await ref.read(voiceCallProvider.notifier).setDeafened(nextDeafened);
+      _playSound(
+        nextDeafened ? RainSoundEffect.deafen : RainSoundEffect.undeafen,
+        voiceCallActive: true,
+      );
     } catch (error) {
-      _playSound(RainSoundEffect.error);
+      _playSound(RainSoundEffect.callFailed);
       _showVoiceCallError(_formatUiError(error));
     }
   }
@@ -623,15 +670,23 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
   Future<void> _selectVoiceOutputRoute(VoiceCallOutputRoute route) async {
     try {
       await ref.read(voiceCallProvider.notifier).setOutputRoute(route);
-      _playSound(RainSoundEffect.action);
+      _playSound(RainSoundEffect.action, voiceCallActive: true);
     } catch (error) {
-      _playSound(RainSoundEffect.error);
+      _playSound(RainSoundEffect.callFailed);
       _showVoiceCallError(_formatUiError(error));
     }
   }
 
-  void _playSound(RainSoundEffect effect) {
-    unawaited(ref.read(soundEffectsProvider).play(effect));
+  void _playSound(RainSoundEffect effect, {bool? voiceCallActive}) {
+    unawaited(
+      ref
+          .read(soundEffectsProvider)
+          .play(
+            effect,
+            voiceCallActive:
+                voiceCallActive ?? ref.read(voiceCallProvider).isActive,
+          ),
+    );
   }
 
   void _showVoiceCallError(String message) {

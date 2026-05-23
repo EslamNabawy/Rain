@@ -7,9 +7,18 @@ import 'package:flutter_test/flutter_test.dart';
 void main() {
   const sounds = <String, _SoundExpectation>{
     'action.wav': _SoundExpectation(minMs: 100, maxMs: 140),
-    'send.wav': _SoundExpectation(minMs: 140, maxMs: 175),
-    'receive.wav': _SoundExpectation(minMs: 175, maxMs: 210),
+    'call_connected.wav': _SoundExpectation(minMs: 170, maxMs: 190),
+    'call_ended.wav': _SoundExpectation(minMs: 150, maxMs: 170),
+    'call_failed.wav': _SoundExpectation(minMs: 240, maxMs: 260),
+    'call_incoming.wav': _SoundExpectation(minMs: 310, maxMs: 330),
+    'call_outgoing.wav': _SoundExpectation(minMs: 230, maxMs: 250),
+    'deafen.wav': _SoundExpectation(minMs: 120, maxMs: 140),
     'error.wav': _SoundExpectation(minMs: 215, maxMs: 255),
+    'mute.wav': _SoundExpectation(minMs: 100, maxMs: 120),
+    'receive.wav': _SoundExpectation(minMs: 175, maxMs: 210),
+    'send.wav': _SoundExpectation(minMs: 140, maxMs: 175),
+    'undeafen.wav': _SoundExpectation(minMs: 120, maxMs: 140),
+    'unmute.wav': _SoundExpectation(minMs: 110, maxMs: 130),
   };
 
   for (final entry in sounds.entries) {
@@ -56,7 +65,7 @@ class _WaveInfo {
 }
 
 _WaveInfo _readWaveInfo(String path) {
-  final bytes = File(path).readAsBytesSync();
+  final bytes = _soundFile(path).readAsBytesSync();
   final data = ByteData.sublistView(Uint8List.fromList(bytes));
   expect(String.fromCharCodes(bytes.sublist(0, 4)), 'RIFF');
   expect(String.fromCharCodes(bytes.sublist(8, 12)), 'WAVE');
@@ -113,4 +122,14 @@ _WaveInfo _readWaveInfo(String path) {
     peak: peak,
     rms: sampleCount == 0 ? 0 : math.sqrt(sumSquares / sampleCount),
   );
+}
+
+File _soundFile(String path) {
+  for (final candidate in <String>[path, 'apps/rain/$path']) {
+    final file = File(candidate);
+    if (file.existsSync()) {
+      return file;
+    }
+  }
+  fail('Could not locate $path.');
 }
