@@ -350,6 +350,8 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
   Widget build(BuildContext context) {
     final friends = ref.watch(friendsProvider);
     final identity = ref.watch(identityProvider).value;
+    // Keep call controls scoped above chat selection before the popup is drawn.
+    ref.watch(callSurfaceProvider);
     ref.listen<VoiceCallState>(voiceCallProvider, _handleVoiceCallNavigation);
 
     return LayoutBuilder(
