@@ -862,6 +862,9 @@ class _FakeVoicePlatformBridge implements PlatformBridge {
   }
 
   @override
+  Future<void> switchCamera(MediaStreamTrack track) async {}
+
+  @override
   Future<void> selectAudioInput(String deviceId) async {
     selectedAudioInputs.add(deviceId);
   }

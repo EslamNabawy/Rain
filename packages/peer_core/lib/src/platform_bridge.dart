@@ -46,6 +46,7 @@ abstract class PlatformBridge {
     webrtc.MediaStreamTrack track, {
     required bool muted,
   });
+  Future<void> switchCamera(webrtc.MediaStreamTrack track);
   StorageBackend getLocalStorage();
 }
 
@@ -113,6 +114,11 @@ class FlutterWebRTCBridge implements PlatformBridge {
     } catch (_) {
       // Track.enabled is the portable fallback; native helper support varies.
     }
+  }
+
+  @override
+  Future<void> switchCamera(webrtc.MediaStreamTrack track) {
+    return webrtc.Helper.switchCamera(track);
   }
 
   @override

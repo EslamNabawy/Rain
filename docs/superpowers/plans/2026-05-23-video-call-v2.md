@@ -208,7 +208,7 @@ flutter test packages\rain_core\test\voice_call_frame_test.dart
 flutter test packages\protocol_brain\test\voice_call_session_test.dart
 ```
 
-- [ ] Commit:
+- [x] Commit:
 
 ```powershell
 git add packages\rain_core\test\voice_call_frame_test.dart packages\protocol_brain\test\voice_call_session_test.dart packages\protocol_brain\lib\src\voice_call_frame.dart packages\rain_core\lib\voice_call\voice_call_frame.dart
@@ -256,9 +256,9 @@ git commit -m "feat: add video call firebase signaling metadata"
 
 **Purpose:** Capture camera/mic and negotiate audio/video on the dedicated media peer.
 
-- [ ] Create `packages/peer_core/lib/src/call/call_media_models.dart`.
-- [ ] Create `packages/peer_core/lib/src/call/call_media_connection.dart`.
-- [ ] Add tests in `packages/peer_core/test/call_media_connection_test.dart`:
+- [x] Create `packages/peer_core/lib/src/call/call_media_models.dart`.
+- [x] Create `packages/peer_core/lib/src/call/call_media_connection.dart`.
+- [x] Add tests in `packages/peer_core/test/call_media_connection_test.dart`:
   - audio mode requests audio only and `OfferToReceiveVideo: false`
   - video mode requests audio + video and `OfferToReceiveVideo: true`
   - camera denied fails before invite
@@ -272,7 +272,7 @@ git commit -m "feat: add video call firebase signaling metadata"
   - dispose stops audio/video tracks and closes PC
   - repeated calls create fresh peer connections
 
-- [ ] Use native-shaped SDP constraints:
+- [x] Use native-shaped SDP constraints:
 
 ```dart
 {
@@ -284,7 +284,7 @@ git commit -m "feat: add video call firebase signaling metadata"
 }
 ```
 
-- [ ] Use video capture constraints:
+- [x] Use video capture constraints:
 
 ```dart
 {
@@ -308,8 +308,8 @@ git commit -m "feat: add video call firebase signaling metadata"
 }
 ```
 
-- [ ] Keep voice compatibility wrapper until runtime migration is complete.
-- [ ] Run:
+- [x] Keep voice compatibility wrapper until runtime migration is complete.
+- [x] Run:
 
 ```powershell
 flutter test packages\peer_core\test\call_media_connection_test.dart
