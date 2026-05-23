@@ -86,6 +86,27 @@ void main() {
     expect(() => VoiceCallFrame.decode(raw), throwsFormatException);
   });
 
+  test('preserves session description text exactly', () {
+    const sdp =
+        'v=0\r\no=- 1 2 IN IP4 127.0.0.1\r\nm=audio 9 UDP/TLS/RTP/SAVPF 111\r\n';
+    final frame = VoiceCallFrame.decode(
+      jsonEncode(<String, Object?>{
+        'type': VoiceCallFrame.wireType,
+        'action': 'offer',
+        'callId': 'call-1',
+        'from': 'alice',
+        'to': 'bob',
+        'sentAt': 10,
+        'seq': 1,
+        'sessionEpoch': 1,
+        'sdp': sdp,
+        'sdpType': 'offer',
+      }),
+    );
+
+    expect(frame.sdp, sdp);
+  });
+
   test('media offer and answer require positive media sequence', () {
     final valid = VoiceCallFrame.decode(
       jsonEncode(<String, Object?>{

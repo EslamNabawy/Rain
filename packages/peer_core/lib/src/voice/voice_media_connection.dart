@@ -5,6 +5,14 @@ import 'package:flutter_webrtc/flutter_webrtc.dart';
 import '../models.dart';
 import 'voice_media_models.dart';
 
+const Map<String, dynamic> _voiceSdpConstraints = <String, dynamic>{
+  'mandatory': <String, dynamic>{
+    'OfferToReceiveAudio': true,
+    'OfferToReceiveVideo': false,
+  },
+  'optional': <dynamic>[],
+};
+
 abstract class VoiceMediaConnection {
   Stream<VoiceIceCandidate> get onIceCandidate;
   Stream<VoiceRemoteAudioTrack> get onRemoteAudioTrack;
@@ -169,10 +177,7 @@ class DefaultVoiceMediaConnection implements VoiceMediaConnection {
         final connection = await _ensurePeerConnection();
         final epoch = _connectionEpoch;
         _emitState(VoiceMediaPhase.creatingOffer);
-        final offer = await connection.createOffer(const <String, dynamic>{
-          'offerToReceiveAudio': true,
-          'offerToReceiveVideo': false,
-        });
+        final offer = await connection.createOffer(_voiceSdpConstraints);
         _ensureCurrentPeerConnection(connection, epoch, 'creating offer');
         await connection.setLocalDescription(offer);
         _ensureCurrentPeerConnection(connection, epoch, 'setting local offer');
@@ -197,10 +202,7 @@ class DefaultVoiceMediaConnection implements VoiceMediaConnection {
         _ensureCurrentPeerConnection(connection, epoch, 'applying offer');
         _remoteDescriptionSet = true;
         await _flushRemoteCandidates(connection: connection, epoch: epoch);
-        final answer = await connection.createAnswer(const <String, dynamic>{
-          'offerToReceiveAudio': true,
-          'offerToReceiveVideo': false,
-        });
+        final answer = await connection.createAnswer(_voiceSdpConstraints);
         _ensureCurrentPeerConnection(connection, epoch, 'creating answer');
         await connection.setLocalDescription(answer);
         _ensureCurrentPeerConnection(connection, epoch, 'setting local answer');

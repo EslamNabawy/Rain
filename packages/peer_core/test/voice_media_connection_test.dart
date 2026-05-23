@@ -99,6 +99,10 @@ void main() {
       'createOffer',
       'setLocalDescription:offer',
     ]);
+    expect(platform.createdConnections.single.createOfferConstraints.single, {
+      'mandatory': {'OfferToReceiveAudio': true, 'OfferToReceiveVideo': false},
+      'optional': [],
+    });
 
     await connection.dispose();
   });
@@ -127,6 +131,10 @@ void main() {
       platform.createdConnections.single.localDescriptions.single.type,
       'answer',
     );
+    expect(platform.createdConnections.single.createAnswerConstraints.single, {
+      'mandatory': {'OfferToReceiveAudio': true, 'OfferToReceiveVideo': false},
+      'optional': [],
+    });
   });
 
   test('dedicated voice media buffers candidates before remote SDP', () async {
@@ -535,6 +543,10 @@ class _FakeVoicePeerConnection extends Fake implements RTCPeerConnection {
       <RTCSessionDescription>[];
   final List<RTCSessionDescription> remoteDescriptions =
       <RTCSessionDescription>[];
+  final List<Map<String, dynamic>?> createOfferConstraints =
+      <Map<String, dynamic>?>[];
+  final List<Map<String, dynamic>?> createAnswerConstraints =
+      <Map<String, dynamic>?>[];
   Completer<RTCSessionDescription>? createOfferCompleter;
   int closeCalls = 0;
   int disposeCalls = 0;
@@ -584,6 +596,7 @@ class _FakeVoicePeerConnection extends Fake implements RTCPeerConnection {
     Map<String, dynamic>? constraints,
   ]) async {
     operations.add('createOffer');
+    createOfferConstraints.add(constraints);
     final completer = createOfferCompleter;
     if (completer != null) {
       return completer.future;
@@ -596,6 +609,7 @@ class _FakeVoicePeerConnection extends Fake implements RTCPeerConnection {
     Map<String, dynamic>? constraints,
   ]) async {
     operations.add('createAnswer');
+    createAnswerConstraints.add(constraints);
     return RTCSessionDescription('answer-sdp', 'answer');
   }
 

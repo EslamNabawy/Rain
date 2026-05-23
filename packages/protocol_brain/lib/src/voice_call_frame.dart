@@ -133,11 +133,16 @@ class VoiceCallFrame {
       reason: _optionalString(json, 'reason', max: maxReasonLength),
       reasonCode: _optionalString(json, 'reasonCode', max: maxReasonCodeLength),
       muted: _optionalBool(json, 'muted'),
-      sdp: _optionalString(json, 'sdp', max: maxSdpLength),
+      sdp: _optionalString(json, 'sdp', max: maxSdpLength, preserve: true),
       sdpType: _optionalString(json, 'sdpType', max: 16),
       mediaSeq: _optionalPositiveInt(json, 'mediaSeq'),
-      candidate: _optionalString(json, 'candidate', max: maxCandidateLength),
-      sdpMid: _optionalString(json, 'sdpMid', max: 64),
+      candidate: _optionalString(
+        json,
+        'candidate',
+        max: maxCandidateLength,
+        preserve: true,
+      ),
+      sdpMid: _optionalString(json, 'sdpMid', max: 64, preserve: true),
       sdpMLineIndex: _optionalPositiveOrZeroInt(json, 'sdpMLineIndex'),
     );
     frame._validateShape();
@@ -169,7 +174,7 @@ class VoiceCallFrame {
       throw const FormatException('Only mute frames may carry muted flag.');
     }
     if (carriesSessionDescription) {
-      if (sdp == null || sdp!.isEmpty) {
+      if (sdp == null || sdp!.trim().isEmpty) {
         throw const FormatException('Voice call media frame requires SDP.');
       }
       if (sdpType != 'offer' && sdpType != 'answer') {
@@ -236,6 +241,7 @@ class VoiceCallFrame {
     Map<String, Object?> json,
     String key, {
     required int max,
+    bool preserve = false,
   }) {
     final value = json[key];
     if (value == null) {
@@ -245,10 +251,10 @@ class VoiceCallFrame {
       throw FormatException('Voice call $key must be a string.');
     }
     final trimmed = value.trim();
-    if (trimmed.isEmpty || trimmed.length > max) {
+    if (trimmed.isEmpty || value.length > max) {
       throw FormatException('Voice call $key length is invalid.');
     }
-    return trimmed;
+    return preserve ? value : trimmed;
   }
 
   static int _requiredInt(Map<String, Object?> json, String key) {
