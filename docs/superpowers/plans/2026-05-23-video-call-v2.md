@@ -182,26 +182,26 @@ git commit -m "docs: plan video call v2"
 
 **Purpose:** Make protocol understand audio vs video before touching capture.
 
-- [ ] Add failing tests in `packages/rain_core/test/voice_call_frame_test.dart`:
+- [x] Add failing tests in `packages/rain_core/test/voice_call_frame_test.dart`:
   - video invite round-trips `mediaMode: video`
   - audio invite defaults to `mediaMode: audio`
   - `cameraMuted` only allowed on mute/control frames
   - SDP still preserved byte-for-byte
   - invalid `mediaMode` rejected
 
-- [ ] Add failing tests in `packages/protocol_brain/test/voice_call_session_test.dart`:
+- [x] Add failing tests in `packages/protocol_brain/test/voice_call_session_test.dart`:
   - video call sends invite with `mediaMode: video`
   - audio call behavior unchanged
   - stale video offer ignored by `callId`, `sessionEpoch`, and `seq`
   - camera mute frame changes remote camera state only
 
-- [ ] Implement minimal fields:
+- [x] Implement minimal fields:
   - `VoiceCallFrame.mediaMode`
   - `VoiceCallFrame.cameraMuted`
   - `CallMediaMode.audio`
   - `CallMediaMode.video`
 
-- [ ] Run:
+- [x] Run:
 
 ```powershell
 flutter test packages\rain_core\test\voice_call_frame_test.dart

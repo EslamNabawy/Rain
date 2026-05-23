@@ -46,24 +46,34 @@ final class VoiceCallSessionState {
   const VoiceCallSessionState({
     required this.phase,
     required this.updatedAt,
+    this.mediaMode = CallMediaMode.audio,
     this.audioLevel = const VoiceMediaAudioLevel.unavailable(),
+    this.isRemoteMuted = false,
+    this.isRemoteCameraMuted = false,
     this.detail,
     this.error,
     this.reasonCode,
     this.mediaDiagnostics,
   });
 
-  factory VoiceCallSessionState.idle({required int updatedAt}) {
+  factory VoiceCallSessionState.idle({
+    required int updatedAt,
+    CallMediaMode mediaMode = CallMediaMode.audio,
+  }) {
     return VoiceCallSessionState(
       phase: VoiceCallSessionPhase.idle,
       updatedAt: updatedAt,
+      mediaMode: mediaMode,
       detail: 'Idle',
     );
   }
 
   final VoiceCallSessionPhase phase;
   final int updatedAt;
+  final CallMediaMode mediaMode;
   final VoiceMediaAudioLevel audioLevel;
+  final bool isRemoteMuted;
+  final bool isRemoteCameraMuted;
   final String? detail;
   final Object? error;
   final String? reasonCode;
@@ -81,9 +91,11 @@ final class VoiceCallSession {
     this.timeouts = const VoiceCallSessionTimeouts(),
     this.clock = DateTime.now,
     this.logger,
+    this.mediaMode = CallMediaMode.audio,
     bool? isOfferOwner,
   }) : state = VoiceCallSessionState.idle(
          updatedAt: clock().millisecondsSinceEpoch,
+         mediaMode: mediaMode,
        ),
        _isOfferOwnerOverride = isOfferOwner {
     if (sessionEpoch <= 0) {
@@ -111,6 +123,7 @@ final class VoiceCallSession {
   final VoiceCallSessionTimeouts timeouts;
   final VoiceCallClock clock;
   final VoiceCallLogSink? logger;
+  final CallMediaMode mediaMode;
   final bool? _isOfferOwnerOverride;
 
   late final String _normalizedLocalPeerId;
@@ -335,7 +348,27 @@ final class VoiceCallSession {
         }
         break;
       case VoiceCallFrameType.mute:
+        _handleRemoteMute(frame);
         break;
+    }
+  }
+
+  void _handleRemoteMute(VoiceCallFrame frame) {
+    final updated = VoiceCallSessionState(
+      phase: state.phase,
+      updatedAt: clock().millisecondsSinceEpoch,
+      mediaMode: state.mediaMode,
+      audioLevel: state.audioLevel,
+      isRemoteMuted: frame.muted ?? state.isRemoteMuted,
+      isRemoteCameraMuted: frame.cameraMuted ?? state.isRemoteCameraMuted,
+      detail: state.detail,
+      error: state.error,
+      reasonCode: state.reasonCode,
+      mediaDiagnostics: state.mediaDiagnostics,
+    );
+    state = updated;
+    if (!_stateController.isClosed) {
+      _stateController.add(updated);
     }
   }
 
@@ -609,7 +642,10 @@ final class VoiceCallSession {
     final updated = VoiceCallSessionState(
       phase: state.phase,
       updatedAt: audioLevel.updatedAt ?? clock().millisecondsSinceEpoch,
+      mediaMode: state.mediaMode,
       audioLevel: audioLevel,
+      isRemoteMuted: state.isRemoteMuted,
+      isRemoteCameraMuted: state.isRemoteCameraMuted,
       detail: state.detail,
       error: state.error,
       reasonCode: state.reasonCode,
@@ -687,6 +723,7 @@ final class VoiceCallSession {
     String? reason,
     String? reasonCode,
     bool? muted,
+    bool? cameraMuted,
     String? sdp,
     String? sdpType,
     String? candidate,
@@ -705,6 +742,10 @@ final class VoiceCallSession {
       reason: reason,
       reasonCode: reasonCode,
       muted: muted,
+      cameraMuted: cameraMuted,
+      mediaMode: type == VoiceCallFrameType.invite
+          ? mediaMode
+          : CallMediaMode.audio,
       sdp: sdp,
       sdpType: sdpType,
       candidate: candidate,
@@ -806,9 +847,12 @@ final class VoiceCallSession {
     }
     final updated = VoiceCallSessionState(
       phase: next,
+      mediaMode: state.mediaMode,
       audioLevel: _phaseCanHoldAudioLevel(next)
           ? state.audioLevel
           : const VoiceMediaAudioLevel.unavailable(),
+      isRemoteMuted: state.isRemoteMuted,
+      isRemoteCameraMuted: state.isRemoteCameraMuted,
       detail: detail,
       error: error,
       reasonCode: reasonCode,

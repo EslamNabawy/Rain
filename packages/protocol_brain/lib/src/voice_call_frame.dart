@@ -12,6 +12,8 @@ enum VoiceCallFrameType {
   mute,
 }
 
+enum CallMediaMode { audio, video }
+
 class VoiceCallFrame {
   const VoiceCallFrame({
     required this.type,
@@ -24,6 +26,8 @@ class VoiceCallFrame {
     this.reason,
     this.reasonCode,
     this.muted,
+    this.cameraMuted,
+    this.mediaMode = CallMediaMode.audio,
     this.sdp,
     this.sdpType,
     this.mediaSeq,
@@ -50,6 +54,8 @@ class VoiceCallFrame {
   final String? reason;
   final String? reasonCode;
   final bool? muted;
+  final bool? cameraMuted;
+  final CallMediaMode mediaMode;
   final String? sdp;
   final String? sdpType;
   final int? mediaSeq;
@@ -78,6 +84,8 @@ class VoiceCallFrame {
       if (reason != null) 'reason': reason,
       if (reasonCode != null) 'reasonCode': reasonCode,
       if (muted != null) 'muted': muted,
+      if (cameraMuted != null) 'cameraMuted': cameraMuted,
+      if (mediaMode != CallMediaMode.audio) 'mediaMode': mediaMode.name,
       if (sdp != null) 'sdp': sdp,
       if (sdpType != null) 'sdpType': sdpType,
       if (mediaSeq != null) 'mediaSeq': mediaSeq,
@@ -133,6 +141,8 @@ class VoiceCallFrame {
       reason: _optionalString(json, 'reason', max: maxReasonLength),
       reasonCode: _optionalString(json, 'reasonCode', max: maxReasonCodeLength),
       muted: _optionalBool(json, 'muted'),
+      cameraMuted: _optionalBool(json, 'cameraMuted'),
+      mediaMode: _optionalMediaMode(json, 'mediaMode'),
       sdp: _optionalString(json, 'sdp', max: maxSdpLength, preserve: true),
       sdpType: _optionalString(json, 'sdpType', max: 16),
       mediaSeq: _optionalPositiveInt(json, 'mediaSeq'),
@@ -167,11 +177,20 @@ class VoiceCallFrame {
         'Only reject, busy, and hangup frames may carry reason codes.',
       );
     }
-    if (type == VoiceCallFrameType.mute && muted == null) {
-      throw const FormatException('Mute frame requires muted flag.');
+    if (type == VoiceCallFrameType.mute &&
+        muted == null &&
+        cameraMuted == null) {
+      throw const FormatException(
+        'Mute frame requires muted or cameraMuted flag.',
+      );
     }
     if (type != VoiceCallFrameType.mute && muted != null) {
       throw const FormatException('Only mute frames may carry muted flag.');
+    }
+    if (type != VoiceCallFrameType.mute && cameraMuted != null) {
+      throw const FormatException(
+        'Only mute frames may carry cameraMuted flag.',
+      );
     }
     if (carriesSessionDescription) {
       if (sdp == null || sdp!.trim().isEmpty) {
@@ -321,5 +340,24 @@ class VoiceCallFrame {
       return value;
     }
     throw FormatException('Voice call $key must be a boolean.');
+  }
+
+  static CallMediaMode _optionalMediaMode(
+    Map<String, Object?> json,
+    String key,
+  ) {
+    final value = json[key];
+    if (value == null) {
+      return CallMediaMode.audio;
+    }
+    if (value is! String) {
+      throw FormatException('Voice call $key must be a string.');
+    }
+    for (final mode in CallMediaMode.values) {
+      if (mode.name == value) {
+        return mode;
+      }
+    }
+    throw FormatException('Unknown voice call media mode: $value');
   }
 }

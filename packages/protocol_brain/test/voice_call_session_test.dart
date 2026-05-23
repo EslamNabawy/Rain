@@ -26,6 +26,7 @@ void main() {
       );
       expect(sent.single.seq, 1);
       expect(sent.single.sessionEpoch, 11);
+      expect(sent.single.mediaMode, CallMediaMode.audio);
 
       await session.handleFrame(
         _frame(VoiceCallFrameType.accept, from: 'bob', to: 'alice', seq: 1),
@@ -45,6 +46,22 @@ void main() {
       expect(sent.last.seq, 2);
     },
   );
+
+  test('video call sends invite with media mode video', () async {
+    final media = _FakeVoiceMediaConnection();
+    final sent = <VoiceCallFrame>[];
+    final session = _session(
+      media: media,
+      sent: sent,
+      mediaMode: CallMediaMode.video,
+    );
+
+    await session.startOutgoing();
+
+    expect(sent.single.type, VoiceCallFrameType.invite);
+    expect(sent.single.mediaMode, CallMediaMode.video);
+    expect(media.startLocalAudioCalls, 1);
+  });
 
   test(
     'incoming accept flow answers remote offer and waits for media',
@@ -316,6 +333,128 @@ void main() {
       expect(media.appliedAnswers, isEmpty);
     },
   );
+
+  test(
+    'stale video offer is ignored by call id, session epoch, and sequence',
+    () async {
+      final media = _FakeVoiceMediaConnection();
+      final sent = <VoiceCallFrame>[];
+      final logs = <String>[];
+      final session = _session(
+        media: media,
+        sent: sent,
+        logger: logs.add,
+        localPeerId: 'bob',
+        remotePeerId: 'alice',
+        mediaMode: CallMediaMode.video,
+      );
+
+      await session.handleFrame(
+        _frame(
+          VoiceCallFrameType.invite,
+          from: 'alice',
+          to: 'bob',
+          seq: 1,
+          mediaMode: CallMediaMode.video,
+        ),
+      );
+      await session.acceptIncoming();
+
+      await session.handleFrame(
+        _frame(
+          VoiceCallFrameType.offer,
+          from: 'alice',
+          to: 'bob',
+          callId: 'old-call',
+          seq: 2,
+          sdp: 'wrong-call-offer',
+          sdpType: 'offer',
+        ),
+      );
+      await session.handleFrame(
+        _frame(
+          VoiceCallFrameType.offer,
+          from: 'alice',
+          to: 'bob',
+          seq: 2,
+          sessionEpoch: 10,
+          sdp: 'old-epoch-offer',
+          sdpType: 'offer',
+        ),
+      );
+
+      expect(media.acceptedOffers, isEmpty);
+
+      await session.handleFrame(
+        _frame(
+          VoiceCallFrameType.offer,
+          from: 'alice',
+          to: 'bob',
+          seq: 2,
+          sdp: 'video-offer',
+          sdpType: 'offer',
+        ),
+      );
+      await session.handleFrame(
+        _frame(
+          VoiceCallFrameType.offer,
+          from: 'alice',
+          to: 'bob',
+          seq: 2,
+          sdp: 'duplicate-video-offer',
+          sdpType: 'offer',
+        ),
+      );
+
+      expect(media.acceptedOffers, <String>['video-offer']);
+      expect(logs, contains('late offer frame for stale callId=old-call'));
+      expect(logs, contains('late offer frame for stale sessionEpoch=10'));
+      expect(logs, contains('stale offer frame seq=2'));
+    },
+  );
+
+  test('camera mute frame changes remote camera state only', () async {
+    final media = _FakeVoiceMediaConnection();
+    final sent = <VoiceCallFrame>[];
+    final session = _session(
+      media: media,
+      sent: sent,
+      mediaMode: CallMediaMode.video,
+    );
+
+    await session.startOutgoing();
+    await session.handleFrame(
+      _frame(VoiceCallFrameType.accept, from: 'bob', to: 'alice', seq: 1),
+    );
+    media.emitState(const VoiceMediaState(phase: VoiceMediaPhase.connected));
+    await pumpEventQueue();
+
+    await session.handleFrame(
+      _frame(
+        VoiceCallFrameType.mute,
+        from: 'bob',
+        to: 'alice',
+        seq: 2,
+        cameraMuted: true,
+      ),
+    );
+
+    expect(session.state.isRemoteMuted, isFalse);
+    expect(session.state.isRemoteCameraMuted, isTrue);
+
+    await session.handleFrame(
+      _frame(
+        VoiceCallFrameType.mute,
+        from: 'bob',
+        to: 'alice',
+        seq: 3,
+        muted: true,
+      ),
+    );
+
+    expect(session.state.isRemoteMuted, isTrue);
+    expect(session.state.isRemoteCameraMuted, isTrue);
+  });
 
   test('incoming reject sends reject and disposes voice media', () async {
     final media = _FakeVoiceMediaConnection();
@@ -678,6 +817,7 @@ VoiceCallSession _session({
   VoiceCallSessionTimeouts? timeouts,
   VoiceCallFrameSender? sendFrame,
   VoiceCallLogSink? logger,
+  CallMediaMode mediaMode = CallMediaMode.audio,
 }) {
   return VoiceCallSession(
     localPeerId: localPeerId,
@@ -689,6 +829,7 @@ VoiceCallSession _session({
     timeouts: timeouts ?? _timeouts(),
     clock: () => DateTime.fromMillisecondsSinceEpoch(1000),
     logger: logger,
+    mediaMode: mediaMode,
   );
 }
 
@@ -719,6 +860,9 @@ VoiceCallFrame _frame(
   String? candidate,
   String? sdpMid,
   int? sdpMLineIndex,
+  bool? muted,
+  bool? cameraMuted,
+  CallMediaMode mediaMode = CallMediaMode.audio,
 }) {
   return VoiceCallFrame(
     type: type,
@@ -734,6 +878,9 @@ VoiceCallFrame _frame(
     candidate: candidate,
     sdpMid: sdpMid,
     sdpMLineIndex: sdpMLineIndex,
+    muted: muted,
+    cameraMuted: cameraMuted,
+    mediaMode: mediaMode,
   );
 }
 
