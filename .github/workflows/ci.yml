@@ -418,7 +418,7 @@ jobs:
     name: Build EXE and APK Artifacts
     runs-on: windows-2022
     timeout-minutes: 120
-    if: ${{ always() && needs.test-gates.result == 'success' }}
+    if: ${{ always() && needs.test-gates.result == 'success' && (github.event_name == 'workflow_dispatch' || startsWith(github.ref, 'refs/tags/v')) }}
     needs:
       - test-gates
     env:
@@ -529,4 +529,4 @@ jobs:
           echo "test-gates: ${{ needs.test-gates.result }}"
           echo "release-artifacts: ${{ needs.release-artifacts.result }}"
           test "${{ needs.test-gates.result }}" = "success"
-          test "${{ needs.release-artifacts.result }}" = "success"
+          test "${{ needs.release-artifacts.result }}" = "success" || test "${{ needs.release-artifacts.result }}" = "skipped"
