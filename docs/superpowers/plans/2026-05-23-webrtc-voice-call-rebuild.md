@@ -263,7 +263,7 @@ git add docs/superpowers/plans/2026-05-23-webrtc-voice-call-rebuild.md
 git commit -m "docs: add voice call architecture lock phase"
 ```
 
-## Phase 1: Freeze Old Media Path
+## Phase 01: Freeze Old Media Path
 
 **Purpose:** Stop adding more logic to the chat peer connection.
 
