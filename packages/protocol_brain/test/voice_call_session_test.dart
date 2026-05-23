@@ -136,7 +136,7 @@ void main() {
     await Future<void>.delayed(const Duration(milliseconds: 20));
 
     expect(session.state.phase, VoiceCallSessionPhase.failed);
-    expect(session.state.detail, 'Call timed out.');
+    expect(session.state.detail, 'Call timed out while ringing.');
     expect(media.disposeCalls, 1);
   });
 

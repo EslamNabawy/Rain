@@ -579,7 +579,7 @@ git commit -m "feat: wire voice calls to dedicated media runtime"
 
 **Purpose:** Make state understandable and stop hiding root causes.
 
-- [ ] Update call panel copy in `apps/rain/lib/presentation/widgets/home/chat_panel.dart`.
+- [x] Update call panel copy in `apps/rain/lib/presentation/widgets/home/chat_panel.dart`.
 
 Display typed messages:
 
@@ -593,7 +593,7 @@ Peer is busy.
 Finish the active file transfer first.
 ```
 
-- [ ] Keep raw native error out of normal UI.
+- [x] Keep raw native error out of normal UI.
 
 Store raw error in diagnostics:
 
@@ -608,7 +608,7 @@ VoiceCallDiagnostics(
 )
 ```
 
-- [ ] Widget tests:
+- [x] Widget tests:
 
 ```powershell
 cd apps/rain
@@ -624,7 +624,7 @@ Must cover:
 - mic permission retry message
 - failed call dismiss
 
-- [ ] Commit.
+- [x] Commit.
 
 ```powershell
 git add apps/rain/lib/presentation apps/rain/test

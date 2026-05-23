@@ -4,17 +4,31 @@ enum _IncomingVoiceInviteDisposition { accept, busy, ignore }
 
 extension VoiceCallRuntime on RainRuntimeController {
   static const String _voiceCallFailedReasonCode = 'failed';
+  static const String _voiceCallBusyReasonCode = 'busy';
+  static const String _voiceCallRingingTimeoutReasonCode = 'ringingTimeout';
+  static const String _voiceCallIceTimeoutReasonCode = 'iceTimeout';
+  static const String _voiceCallNoRemoteAudioReasonCode = 'noRemoteAudio';
   static const String _voiceCallMicrophoneDeniedReasonCode = 'microphoneDenied';
   static const String _voiceCallMicrophonePermissionRequired =
       'Microphone permission required.';
   static const String _voiceCallRemoteMicrophonePermissionRequired =
       'Peer microphone permission required.';
+  static const String _voiceCallFileTransferRequired =
+      'Finish the active file transfer first.';
+  static const String _voiceCallRingingTimedOut =
+      'Call timed out while ringing.';
+  static const String _voiceCallMediaIceTimeout =
+      'Call media could not connect: ICE timeout.';
+  static const String _voiceCallNoRemoteAudio =
+      'Call media connected but no remote audio arrived.';
+  static const String _voiceCallMediaFailed =
+      'Call media could not connect. Try again.';
 
   Future<void> startVoiceCall(String username) async {
     final peerId = _normalizedUsername(username);
     _assertVoiceCallCanStart();
     if (await fileTransferStore.hasActiveTransferForPeer(peerId)) {
-      throw StateError('Finish the active file transfer before calling.');
+      throw StateError(_voiceCallFileTransferRequired);
     }
 
     await _disposeCurrentVoiceCallSession();
@@ -68,10 +82,15 @@ extension VoiceCallRuntime on RainRuntimeController {
         VoiceCallFrameType.busy,
         callId: current.callId!,
         sessionEpoch: _voiceCallSession?.sessionEpoch,
-        reason: 'Finish the active file transfer before calling.',
+        reason: _voiceCallFileTransferRequired,
+        reasonCode: _voiceCallBusyReasonCode,
         bestEffort: true,
       );
-      await _failVoiceCall('Finish the active file transfer before calling.');
+      await _failVoiceCall(
+        _voiceCallFileTransferRequired,
+        failureReason: VoiceCallFailureReason.fileTransferActive,
+        detail: _voiceCallFileTransferRequired,
+      );
       return;
     }
 
@@ -219,6 +238,7 @@ extension VoiceCallRuntime on RainRuntimeController {
         callId: frame.callId,
         sessionEpoch: frame.sessionEpoch,
         reason: 'Busy.',
+        reasonCode: _voiceCallBusyReasonCode,
         bestEffort: true,
       );
       return;
@@ -413,7 +433,11 @@ extension VoiceCallRuntime on RainRuntimeController {
     );
 
     if (mappedPhase == VoiceCallPhase.failed) {
-      _recordVoiceCallSessionFailure(session, sessionState);
+      _recordVoiceCallSessionFailure(
+        session,
+        sessionState,
+        isOutgoing: isOutgoing,
+      );
       unawaited(_disposeVoiceCallSession(session));
     }
   }
@@ -438,6 +462,26 @@ extension VoiceCallRuntime on RainRuntimeController {
     if (state.reasonCode == _voiceCallMicrophoneDeniedReasonCode) {
       return VoiceCallFailureReason.remoteMicrophoneDenied;
     }
+    if (state.reasonCode == _voiceCallBusyReasonCode ||
+        state.detail == 'Peer is busy.') {
+      return VoiceCallFailureReason.peerBusy;
+    }
+    if (state.reasonCode == _voiceCallRingingTimeoutReasonCode ||
+        state.detail == _voiceCallRingingTimedOut ||
+        state.detail == 'Call timed out.') {
+      return VoiceCallFailureReason.ringingTimeout;
+    }
+    if (state.reasonCode == _voiceCallIceTimeoutReasonCode ||
+        state.detail == _voiceCallMediaIceTimeout) {
+      return VoiceCallFailureReason.mediaIceTimeout;
+    }
+    if (state.reasonCode == _voiceCallNoRemoteAudioReasonCode ||
+        state.detail == _voiceCallNoRemoteAudio) {
+      return VoiceCallFailureReason.mediaNoRemoteAudio;
+    }
+    if (state.reasonCode == _voiceCallFailedReasonCode) {
+      return VoiceCallFailureReason.mediaConnectionFailed;
+    }
     final error = state.error;
     if (error != null) {
       return _localAudioFailureReason(error);
@@ -452,8 +496,22 @@ extension VoiceCallRuntime on RainRuntimeController {
     if (state.reasonCode == _voiceCallMicrophoneDeniedReasonCode) {
       return _voiceCallRemoteMicrophonePermissionRequired;
     }
+    if (state.reasonCode == _voiceCallBusyReasonCode ||
+        state.detail == 'Peer is busy.') {
+      return 'Peer is busy.';
+    }
+    if (state.reasonCode == _voiceCallRingingTimeoutReasonCode ||
+        state.detail == 'Call timed out.') {
+      return _voiceCallRingingTimedOut;
+    }
+    if (state.reasonCode == _voiceCallIceTimeoutReasonCode) {
+      return _voiceCallMediaIceTimeout;
+    }
+    if (state.reasonCode == _voiceCallNoRemoteAudioReasonCode) {
+      return _voiceCallNoRemoteAudio;
+    }
     if (state.reasonCode == _voiceCallFailedReasonCode) {
-      return 'Voice call media could not connect. Try again.';
+      return _voiceCallMediaFailed;
     }
     final error = state.error;
     if (error == null) {
@@ -464,16 +522,27 @@ extension VoiceCallRuntime on RainRuntimeController {
 
   void _recordVoiceCallSessionFailure(
     VoiceCallSession session,
-    VoiceCallSessionState state,
-  ) {
+    VoiceCallSessionState state, {
+    required bool isOutgoing,
+  }) {
     final error = state.error;
     if (error == null || _localAudioFailureReason(error) != null) {
       return;
     }
+    final detail =
+        _voiceCallDetailForSessionState(state) ?? _voiceCallMediaFailed;
+    final failureCode =
+        state.reasonCode ??
+        _voiceCallFailureReasonForSessionState(state)?.name ??
+        'unknown';
     errorRecorder?.call(
-      StateError(
-        'Voice call media negotiation failed '
-        'peer=${session.remotePeerId} callId=${session.callId} error=$error',
+      VoiceCallDiagnostics(
+        callId: session.callId,
+        peerId: session.remotePeerId,
+        role: isOutgoing ? 'caller' : 'callee',
+        failureCode: failureCode,
+        userMessage: detail,
+        nativeError: error.toString(),
       ),
       StackTrace.current,
       source: 'voice-call-media',
@@ -667,13 +736,19 @@ extension VoiceCallRuntime on RainRuntimeController {
       }
     }
     final normalized = message.toLowerCase();
+    if (normalized.contains('ice timeout')) {
+      return _voiceCallMediaIceTimeout;
+    }
+    if (normalized.contains('no remote audio')) {
+      return _voiceCallNoRemoteAudio;
+    }
     if (normalized.contains('rtcrtptransceiver') ||
         normalized.contains('setdirection') ||
         normalized.contains('setremotedescription') ||
         normalized.contains('peerconnectionsetremotedescription') ||
         normalized.contains('m-line') ||
         normalized.contains('peer connection changed while')) {
-      return 'Voice call media could not connect. Try again.';
+      return _voiceCallMediaFailed;
     }
     return message;
   }

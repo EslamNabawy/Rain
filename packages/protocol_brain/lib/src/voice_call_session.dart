@@ -259,7 +259,7 @@ final class VoiceCallSession {
         await _handleRemoteCandidate(frame);
         break;
       case VoiceCallFrameType.hangup:
-        if (frame.reasonCode == 'failed') {
+        if (frame.reasonCode != null) {
           await _fail(
             frame.reason ?? 'Voice call media could not connect.',
             reasonCode: frame.reasonCode,
@@ -321,7 +321,12 @@ final class VoiceCallSession {
         : frame.reasonCode == 'microphoneDenied'
         ? 'Peer microphone permission required.'
         : frame.reason ?? 'Call rejected.';
-    await _fail(detail, reasonCode: frame.reasonCode);
+    await _fail(
+      detail,
+      reasonCode:
+          frame.reasonCode ??
+          (frame.type == VoiceCallFrameType.busy ? 'busy' : null),
+    );
   }
 
   Future<void> _handleOffer(VoiceCallFrame frame) async {
@@ -598,11 +603,12 @@ final class VoiceCallSession {
     String? reasonCode,
   }) async {
     _clearTimers();
+    final effectiveReasonCode = reasonCode ?? (notifyPeer ? 'failed' : null);
     if (notifyPeer) {
       await _send(
         VoiceCallFrameType.hangup,
         reason: detail,
-        reasonCode: reasonCode ?? 'failed',
+        reasonCode: effectiveReasonCode,
         bestEffort: true,
       );
     }
@@ -610,7 +616,7 @@ final class VoiceCallSession {
       VoiceCallSessionPhase.failed,
       detail: detail,
       error: error,
-      reasonCode: reasonCode,
+      reasonCode: effectiveReasonCode,
     );
     await _disposeMedia();
   }
@@ -718,7 +724,14 @@ final class VoiceCallSession {
   void _armRingingTimeout() {
     _clearRingingTimeout();
     _ringingTimer = Timer(timeouts.ringing, () {
-      unawaited(_enqueue(() => _fail('Call timed out.')));
+      unawaited(
+        _enqueue(
+          () => _fail(
+            'Call timed out while ringing.',
+            reasonCode: 'ringingTimeout',
+          ),
+        ),
+      );
     });
   }
 
@@ -735,9 +748,9 @@ final class VoiceCallSession {
       unawaited(
         _enqueue(
           () => _fail(
-            'Voice call media could not connect.',
+            'Call media could not connect: ICE timeout.',
             notifyPeer: true,
-            reasonCode: 'failed',
+            reasonCode: 'iceTimeout',
           ),
         ),
       );

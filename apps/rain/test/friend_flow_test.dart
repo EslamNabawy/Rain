@@ -1438,7 +1438,7 @@ void main() {
 
         expect(
           runtime.voiceCallState.detail,
-          'Voice call media could not connect. Try again.',
+          'Call media could not connect. Try again.',
         );
         final hangup = brain.sentControlPayloads
             .map(VoiceCallFrame.tryDecode)

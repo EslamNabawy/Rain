@@ -40,12 +40,28 @@ String _formatUiError(Object error) {
     }
   }
   final normalized = message.toLowerCase();
+  if (normalized.contains('active file transfer')) {
+    return 'Finish the active file transfer first.';
+  }
+  if (normalized.contains('microphone') &&
+      (normalized.contains('permission') || normalized.contains('denied'))) {
+    return 'Microphone permission required.';
+  }
+  if (normalized.contains('peer is busy') || normalized == 'busy.') {
+    return 'Peer is busy.';
+  }
+  if (normalized.contains('ice timeout')) {
+    return 'Call media could not connect: ICE timeout.';
+  }
+  if (normalized.contains('no remote audio')) {
+    return 'Call media connected but no remote audio arrived.';
+  }
   if (normalized.contains('rtcrtptransceiver') ||
       normalized.contains('setdirection') ||
       normalized.contains('setremotedescription') ||
       normalized.contains('peerconnectionsetremotedescription') ||
       normalized.contains('m-line')) {
-    return 'Voice call media could not connect. Try again.';
+    return 'Call media could not connect. Try again.';
   }
   return message;
 }

@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_svg/flutter_svg.dart';
+import 'package:rain/application/runtime/voice_call_state.dart';
 
 const String _maleAvatarAsset = 'assets/gender avatar/man-avatar.svg';
 const String _femaleAvatarAsset = 'assets/gender avatar/woman-avatar.svg';
@@ -563,4 +564,393 @@ class RainComposerCommandStrip extends StatelessWidget {
       },
     );
   }
+}
+
+class RainVoiceCallButton extends StatelessWidget {
+  const RainVoiceCallButton({
+    super.key,
+    required this.peerId,
+    required this.state,
+    required this.canStart,
+    required this.hasActiveTransfer,
+    required this.onStart,
+  });
+
+  final String peerId;
+  final VoiceCallState state;
+  final bool canStart;
+  final bool hasActiveTransfer;
+  final VoidCallback onStart;
+
+  @override
+  Widget build(BuildContext context) {
+    final isCurrentCall = state.peerId == peerId && state.hasCall;
+    return IconButton(
+      tooltip: _voiceCallButtonTooltip(
+        peerId: peerId,
+        state: state,
+        hasActiveTransfer: hasActiveTransfer,
+      ),
+      onPressed: canStart ? onStart : null,
+      icon: Icon(isCurrentCall ? Icons.call : Icons.call_outlined),
+    );
+  }
+}
+
+class RainVoiceCallPanel extends StatelessWidget {
+  const RainVoiceCallPanel({
+    super.key,
+    required this.state,
+    required this.displayName,
+    required this.onAccept,
+    required this.onReject,
+    required this.onHangUp,
+    required this.onRetry,
+    required this.onToggleMute,
+  });
+
+  final VoiceCallState state;
+  final String displayName;
+  final VoidCallback onAccept;
+  final VoidCallback onReject;
+  final VoidCallback onHangUp;
+  final VoidCallback onRetry;
+  final VoidCallback onToggleMute;
+
+  @override
+  Widget build(BuildContext context) {
+    final scheme = Theme.of(context).colorScheme;
+    final accent = _voiceCallAccent(context, state);
+
+    return AnimatedContainer(
+      duration: const Duration(milliseconds: 180),
+      curve: Curves.easeOutCubic,
+      padding: const EdgeInsets.all(12),
+      decoration: BoxDecoration(
+        color: accent.withValues(alpha: 0.10),
+        borderRadius: BorderRadius.circular(16),
+        border: Border.all(color: accent.withValues(alpha: 0.34)),
+      ),
+      child: LayoutBuilder(
+        builder: (BuildContext context, BoxConstraints constraints) {
+          final status = Row(
+            children: <Widget>[
+              Container(
+                width: 42,
+                height: 42,
+                decoration: BoxDecoration(
+                  color: accent.withValues(alpha: 0.18),
+                  borderRadius: BorderRadius.circular(14),
+                ),
+                child: Icon(_voiceCallIcon(state), color: accent),
+              ),
+              const SizedBox(width: 12),
+              Expanded(
+                child: StreamBuilder<int>(
+                  stream: state.isActive
+                      ? Stream<int>.periodic(
+                          const Duration(seconds: 1),
+                          (_) => DateTime.now().millisecondsSinceEpoch,
+                        )
+                      : null,
+                  initialData: DateTime.now().millisecondsSinceEpoch,
+                  builder: (BuildContext context, AsyncSnapshot<int> snapshot) {
+                    final now =
+                        snapshot.data ?? DateTime.now().millisecondsSinceEpoch;
+                    return Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      mainAxisSize: MainAxisSize.min,
+                      children: <Widget>[
+                        Text(
+                          _voiceCallTitle(state, displayName),
+                          maxLines: 1,
+                          overflow: TextOverflow.ellipsis,
+                          style: Theme.of(context).textTheme.titleSmall
+                              ?.copyWith(fontWeight: FontWeight.w900),
+                        ),
+                        const SizedBox(height: 3),
+                        Text(
+                          _voiceCallDetail(state, now),
+                          maxLines: 2,
+                          overflow: TextOverflow.ellipsis,
+                          style: Theme.of(context).textTheme.bodySmall
+                              ?.copyWith(
+                                color: scheme.onSurface.withValues(alpha: 0.70),
+                                fontWeight: FontWeight.w600,
+                              ),
+                        ),
+                      ],
+                    );
+                  },
+                ),
+              ),
+            ],
+          );
+          final actions = _RainVoiceCallActions(
+            state: state,
+            onAccept: onAccept,
+            onReject: onReject,
+            onHangUp: onHangUp,
+            onRetry: onRetry,
+            onToggleMute: onToggleMute,
+          );
+          if (constraints.maxWidth < 430) {
+            return Column(
+              mainAxisSize: MainAxisSize.min,
+              crossAxisAlignment: CrossAxisAlignment.stretch,
+              children: <Widget>[
+                status,
+                const SizedBox(height: 10),
+                Align(alignment: Alignment.centerRight, child: actions),
+              ],
+            );
+          }
+          return Row(
+            children: <Widget>[
+              Expanded(child: status),
+              const SizedBox(width: 10),
+              actions,
+            ],
+          );
+        },
+      ),
+    );
+  }
+}
+
+class _RainVoiceCallActions extends StatelessWidget {
+  const _RainVoiceCallActions({
+    required this.state,
+    required this.onAccept,
+    required this.onReject,
+    required this.onHangUp,
+    required this.onRetry,
+    required this.onToggleMute,
+  });
+
+  final VoiceCallState state;
+  final VoidCallback onAccept;
+  final VoidCallback onReject;
+  final VoidCallback onHangUp;
+  final VoidCallback onRetry;
+  final VoidCallback onToggleMute;
+
+  @override
+  Widget build(BuildContext context) {
+    if (state.phase == VoiceCallPhase.incomingRinging) {
+      return Wrap(
+        spacing: 8,
+        runSpacing: 8,
+        alignment: WrapAlignment.end,
+        children: <Widget>[
+          OutlinedButton.icon(
+            onPressed: onReject,
+            icon: const Icon(Icons.call_end),
+            label: const Text('Reject'),
+          ),
+          FilledButton.icon(
+            onPressed: onAccept,
+            icon: const Icon(Icons.call),
+            label: const Text('Accept'),
+          ),
+        ],
+      );
+    }
+
+    if (state.phase == VoiceCallPhase.failed) {
+      return Wrap(
+        spacing: 8,
+        runSpacing: 8,
+        alignment: WrapAlignment.end,
+        children: <Widget>[
+          if (state.failureReason == VoiceCallFailureReason.microphoneDenied)
+            FilledButton.icon(
+              onPressed: onRetry,
+              icon: const Icon(Icons.refresh),
+              label: const Text('Retry'),
+            ),
+          TextButton.icon(
+            onPressed: onHangUp,
+            icon: const Icon(Icons.close),
+            label: const Text('Dismiss'),
+          ),
+        ],
+      );
+    }
+
+    return Wrap(
+      spacing: 8,
+      runSpacing: 8,
+      alignment: WrapAlignment.end,
+      children: <Widget>[
+        IconButton(
+          tooltip: state.isMuted ? 'Unmute microphone' : 'Mute microphone',
+          onPressed: state.isActive ? onToggleMute : null,
+          icon: Icon(state.isMuted ? Icons.mic_off : Icons.mic),
+        ),
+        IconButton.filled(
+          tooltip: 'Hang up',
+          onPressed: onHangUp,
+          icon: const Icon(Icons.call_end),
+        ),
+      ],
+    );
+  }
+}
+
+String _voiceCallButtonTooltip({
+  required String peerId,
+  required VoiceCallState state,
+  required bool hasActiveTransfer,
+}) {
+  if (hasActiveTransfer) {
+    return 'Finish the active file transfer first.';
+  }
+  if (state.hasCall && state.phase != VoiceCallPhase.failed) {
+    final activePeerId = state.peerId;
+    return activePeerId == peerId
+        ? 'Voice call in progress'
+        : 'Finish the active call with @$activePeerId first.';
+  }
+  return 'Start voice call';
+}
+
+IconData _voiceCallIcon(VoiceCallState state) {
+  return switch (state.phase) {
+    VoiceCallPhase.failed => Icons.error_outline,
+    VoiceCallPhase.incomingRinging => Icons.call_received,
+    VoiceCallPhase.outgoingRinging => Icons.call_made,
+    VoiceCallPhase.active => state.isMuted ? Icons.mic_off : Icons.call,
+    VoiceCallPhase.connectingPeer ||
+    VoiceCallPhase.connectingMedia ||
+    VoiceCallPhase.ending ||
+    VoiceCallPhase.idle => Icons.call_outlined,
+  };
+}
+
+Color _voiceCallAccent(BuildContext context, VoiceCallState state) {
+  final scheme = Theme.of(context).colorScheme;
+  return switch (state.phase) {
+    VoiceCallPhase.failed => scheme.error,
+    VoiceCallPhase.active => const Color(0xFF2DD4A3),
+    VoiceCallPhase.incomingRinging ||
+    VoiceCallPhase.outgoingRinging => scheme.tertiary,
+    VoiceCallPhase.connectingPeer ||
+    VoiceCallPhase.connectingMedia ||
+    VoiceCallPhase.ending ||
+    VoiceCallPhase.idle => scheme.primary,
+  };
+}
+
+String _voiceCallTitle(VoiceCallState state, String displayName) {
+  return switch (state.phase) {
+    VoiceCallPhase.incomingRinging => '$displayName is calling',
+    VoiceCallPhase.outgoingRinging => 'Calling $displayName',
+    VoiceCallPhase.active => 'Voice call with $displayName',
+    VoiceCallPhase.failed => 'Voice call failed',
+    VoiceCallPhase.ending => 'Ending voice call',
+    VoiceCallPhase.connectingPeer ||
+    VoiceCallPhase.connectingMedia => 'Connecting voice call',
+    VoiceCallPhase.idle => 'Voice call',
+  };
+}
+
+String _voiceCallDetail(VoiceCallState state, int nowMs) {
+  if (state.phase == VoiceCallPhase.active && state.startedAt != null) {
+    final elapsed = Duration(milliseconds: nowMs - state.startedAt!);
+    final labels = <String>[_formatVoiceElapsed(elapsed)];
+    if (state.isMuted) {
+      labels.add('Muted');
+    }
+    if (state.isRemoteMuted) {
+      labels.add('Peer muted');
+    }
+    return labels.join(' / ');
+  }
+  return switch (state.phase) {
+    VoiceCallPhase.connectingPeer => 'Connecting peer link.',
+    VoiceCallPhase.outgoingRinging => 'Ringing.',
+    VoiceCallPhase.incomingRinging => 'Incoming voice call.',
+    VoiceCallPhase.connectingMedia => 'Connecting microphone audio.',
+    VoiceCallPhase.ending => 'Closing microphone audio.',
+    VoiceCallPhase.failed => _voiceCallFailureDetail(state),
+    VoiceCallPhase.idle => '',
+    VoiceCallPhase.active => 'Connected.',
+  };
+}
+
+String _voiceCallFailureDetail(VoiceCallState state) {
+  return switch (state.failureReason) {
+    VoiceCallFailureReason.microphoneDenied =>
+      'Microphone permission required.',
+    VoiceCallFailureReason.remoteMicrophoneDenied =>
+      'Peer microphone permission required.',
+    VoiceCallFailureReason.peerBusy => 'Peer is busy.',
+    VoiceCallFailureReason.fileTransferActive =>
+      'Finish the active file transfer first.',
+    VoiceCallFailureReason.ringingTimeout => 'Call timed out while ringing.',
+    VoiceCallFailureReason.mediaIceTimeout =>
+      'Call media could not connect: ICE timeout.',
+    VoiceCallFailureReason.mediaNoRemoteAudio =>
+      'Call media connected but no remote audio arrived.',
+    VoiceCallFailureReason.mediaConnectionFailed =>
+      'Call media could not connect. Try again.',
+    null => _sanitizeVoiceCallFailureDetail(state.detail),
+  };
+}
+
+String _sanitizeVoiceCallFailureDetail(String? detail) {
+  final raw = detail?.trim();
+  if (raw == null || raw.isEmpty) {
+    return 'Call failed.';
+  }
+  const prefixes = <String>['Exception: ', 'Bad state: ', 'StateError: '];
+  var message = raw;
+  for (final prefix in prefixes) {
+    if (raw.startsWith(prefix)) {
+      message = raw.substring(prefix.length).trim();
+      break;
+    }
+  }
+  final normalized = message.toLowerCase();
+  if (normalized.contains('microphone') &&
+      (normalized.contains('permission') || normalized.contains('denied'))) {
+    return 'Microphone permission required.';
+  }
+  if (normalized.contains('peer is busy') || normalized == 'busy.') {
+    return 'Peer is busy.';
+  }
+  if (normalized.contains('active file transfer')) {
+    return 'Finish the active file transfer first.';
+  }
+  if (normalized.contains('timed out') && normalized.contains('ring')) {
+    return 'Call timed out while ringing.';
+  }
+  if (normalized.contains('ice timeout')) {
+    return 'Call media could not connect: ICE timeout.';
+  }
+  if (normalized.contains('no remote audio')) {
+    return 'Call media connected but no remote audio arrived.';
+  }
+  if (normalized.contains('rtcrtptransceiver') ||
+      normalized.contains('setdirection') ||
+      normalized.contains('setremotedescription') ||
+      normalized.contains('peerconnectionsetremotedescription') ||
+      normalized.contains('m-line') ||
+      normalized.contains('peer connection changed while')) {
+    return 'Call media could not connect. Try again.';
+  }
+  return message;
+}
+
+String _formatVoiceElapsed(Duration elapsed) {
+  final seconds = elapsed.inSeconds.clamp(0, 86400).toInt();
+  final hours = seconds ~/ 3600;
+  final minutes = (seconds ~/ 60) % 60;
+  final remainingSeconds = seconds % 60;
+  final secondsLabel = remainingSeconds.toString().padLeft(2, '0');
+  if (hours > 0) {
+    return '$hours:${minutes.toString().padLeft(2, '0')}:$secondsLabel';
+  }
+  return '$minutes:$secondsLabel';
 }

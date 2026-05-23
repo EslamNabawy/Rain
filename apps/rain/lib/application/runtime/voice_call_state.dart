@@ -9,7 +9,16 @@ enum VoiceCallPhase {
   failed,
 }
 
-enum VoiceCallFailureReason { microphoneDenied, remoteMicrophoneDenied }
+enum VoiceCallFailureReason {
+  microphoneDenied,
+  remoteMicrophoneDenied,
+  peerBusy,
+  fileTransferActive,
+  ringingTimeout,
+  mediaConnectionFailed,
+  mediaIceTimeout,
+  mediaNoRemoteAudio,
+}
 
 class VoiceCallState {
   const VoiceCallState({
