@@ -820,94 +820,7 @@ void main() {
       },
     );
 
-    test(
-      'startVoiceCall auto-connects and sends invite over control channel',
-      () async {
-        final adapter = NoopSignalingAdapter();
-        final brain = TestSessionManager();
-        await adapter.register('bob', 'bobpw');
-        await adapter.upsertFriendship('alice', 'bob');
-        await db
-            .into(db.friends)
-            .insert(
-              FriendsCompanion.insert(
-                username: 'bob',
-                displayName: 'Bob',
-                state: 'friend',
-                addedAt: 0,
-              ),
-            );
-        final runtime = _runtimeFor(db, alice, adapter, brain: brain);
-
-        final callStarted = runtime.startVoiceCall('bob');
-        await _waitForCondition(
-          () => brain.connectedPeers.contains('bob'),
-          'voice call to request peer connection',
-        );
-        brain.markConnected('bob');
-        await callStarted;
-
-        expect(runtime.voiceCallState.phase, VoiceCallPhase.outgoingRinging);
-        expect(brain.registeredPeers, contains('bob'));
-        expect(brain.startedAudioPeers, contains('bob'));
-        expect(brain.sentControlPayloads, hasLength(1));
-        final invite = VoiceCallFrame.tryDecode(
-          brain.sentControlPayloads.single,
-        );
-        expect(invite?.type, VoiceCallFrameType.invite);
-        expect(invite?.from, 'alice');
-        expect(invite?.to, 'bob');
-      },
-    );
-
-    test('startVoiceCall requests microphone before sending invite', () async {
-      final adapter = NoopSignalingAdapter();
-      final brain = TestSessionManager()
-        ..startLocalAudioError = StateError('Microphone permission denied');
-      await adapter.register('bob', 'bobpw');
-      await adapter.upsertFriendship('alice', 'bob');
-      await db
-          .into(db.friends)
-          .insert(
-            FriendsCompanion.insert(
-              username: 'bob',
-              displayName: 'Bob',
-              state: 'friend',
-              addedAt: 0,
-            ),
-          );
-      final runtime = _runtimeFor(db, alice, adapter, brain: brain);
-      addTearDown(runtime.dispose);
-
-      final callStarted = runtime.startVoiceCall('bob');
-      await _waitForCondition(
-        () => brain.connectedPeers.contains('bob'),
-        'voice call to request peer connection',
-      );
-      brain.markConnected('bob');
-
-      await expectLater(
-        callStarted,
-        throwsA(
-          isA<StateError>().having(
-            (error) => error.toString(),
-            'message',
-            contains('Microphone permission denied'),
-          ),
-        ),
-      );
-
-      expect(brain.startedAudioPeers, <String>['bob']);
-      expect(brain.sentControlPayloads, isEmpty);
-      expect(runtime.voiceCallState.phase, VoiceCallPhase.failed);
-      expect(
-        runtime.voiceCallState.failureReason,
-        VoiceCallFailureReason.microphoneDenied,
-      );
-      expect(runtime.voiceCallState.detail, 'Microphone permission required.');
-    });
-
-    test('incoming voice invite can be rejected', () async {
+    test('startVoiceCall is frozen before legacy peer/control use', () async {
       final adapter = NoopSignalingAdapter();
       final brain = TestSessionManager();
       await adapter.register('bob', 'bobpw');
@@ -923,6 +836,60 @@ void main() {
             ),
           );
       final runtime = _runtimeFor(db, alice, adapter, brain: brain);
+      addTearDown(runtime.dispose);
+
+      await expectLater(
+        runtime.startVoiceCall('bob'),
+        throwsA(
+          isA<StateError>().having(
+            (error) => error.toString(),
+            'message',
+            contains('Voice calls are being rebuilt on Firebase signaling'),
+          ),
+        ),
+      );
+
+      expect(runtime.voiceCallState.phase, VoiceCallPhase.idle);
+      expect(brain.registeredPeers, isEmpty);
+      expect(brain.connectedPeers, isEmpty);
+      expect(brain.startedAudioPeers, isEmpty);
+      expect(brain.mediaOfferPeers, isEmpty);
+      expect(brain.sentControlPayloads, isEmpty);
+    });
+
+    test('legacy control-channel voice invite is ignored', () async {
+      final adapter = NoopSignalingAdapter();
+      final brain = TestSessionManager();
+      final recordedSources = <String>[];
+      await adapter.register('bob', 'bobpw');
+      await adapter.upsertFriendship('alice', 'bob');
+      await db
+          .into(db.friends)
+          .insert(
+            FriendsCompanion.insert(
+              username: 'bob',
+              displayName: 'Bob',
+              state: 'friend',
+              addedAt: 0,
+            ),
+          );
+      final runtime = _runtimeFor(
+        db,
+        alice,
+        adapter,
+        brain: brain,
+        errorRecorder:
+            (
+              Object error,
+              StackTrace? stackTrace, {
+              required String source,
+              required bool fatal,
+              String? flutterLibrary,
+              String? flutterContext,
+            }) {
+              recordedSources.add(source);
+            },
+      );
       addTearDown(runtime.dispose);
 
       await runtime.start();
@@ -936,207 +903,15 @@ void main() {
           sentAt: DateTime.now().millisecondsSinceEpoch,
         ).encode(),
       );
-      await _waitForCondition(
-        () => runtime.voiceCallState.phase == VoiceCallPhase.incomingRinging,
-        'incoming voice invite to ring',
-      );
-
-      await runtime.rejectVoiceCall();
-
-      expect(runtime.voiceCallState.phase, VoiceCallPhase.idle);
-      final reject = VoiceCallFrame.tryDecode(brain.sentControlPayloads.last);
-      expect(reject?.type, VoiceCallFrameType.reject);
-      expect(reject?.callId, 'call-1');
-    });
-
-    test(
-      'incoming voice retry from same peer replaces stale ringing call',
-      () async {
-        final adapter = NoopSignalingAdapter();
-        final brain = TestSessionManager();
-        await adapter.register('bob', 'bobpw');
-        await adapter.upsertFriendship('alice', 'bob');
-        await db
-            .into(db.friends)
-            .insert(
-              FriendsCompanion.insert(
-                username: 'bob',
-                displayName: 'Bob',
-                state: 'friend',
-                addedAt: 0,
-              ),
-            );
-        final runtime = _runtimeFor(db, alice, adapter, brain: brain);
-        addTearDown(runtime.dispose);
-
-        await runtime.start();
-        brain.emitControlMessage(
-          'bob',
-          VoiceCallFrame(
-            type: VoiceCallFrameType.invite,
-            callId: 'call-1',
-            from: 'bob',
-            to: 'alice',
-            sentAt: DateTime.now().millisecondsSinceEpoch,
-          ).encode(),
-        );
-        await _waitForCondition(
-          () => runtime.voiceCallState.callId == 'call-1',
-          'first incoming voice invite to ring',
-        );
-
-        brain.emitControlMessage(
-          'bob',
-          VoiceCallFrame(
-            type: VoiceCallFrameType.invite,
-            callId: 'call-2',
-            from: 'bob',
-            to: 'alice',
-            sentAt: DateTime.now().millisecondsSinceEpoch,
-          ).encode(),
-        );
-        await _waitForCondition(
-          () => runtime.voiceCallState.callId == 'call-2',
-          'same-peer voice retry to replace stale invite',
-        );
-
-        final frames = brain.sentControlPayloads
-            .map(VoiceCallFrame.tryDecode)
-            .whereType<VoiceCallFrame>()
-            .toList(growable: false);
-        expect(
-          frames.where((frame) => frame.type == VoiceCallFrameType.busy),
-          isEmpty,
-        );
-        expect(
-          frames.any(
-            (frame) =>
-                frame.type == VoiceCallFrameType.hangup &&
-                frame.callId == 'call-1',
-          ),
-          isTrue,
-        );
-        expect(runtime.voiceCallState.phase, VoiceCallPhase.incomingRinging);
-      },
-    );
-
-    test('duplicate incoming voice invite does not report busy', () async {
-      final adapter = NoopSignalingAdapter();
-      final brain = TestSessionManager();
-      await adapter.register('bob', 'bobpw');
-      await adapter.upsertFriendship('alice', 'bob');
-      await db
-          .into(db.friends)
-          .insert(
-            FriendsCompanion.insert(
-              username: 'bob',
-              displayName: 'Bob',
-              state: 'friend',
-              addedAt: 0,
-            ),
-          );
-      final runtime = _runtimeFor(db, alice, adapter, brain: brain);
-      addTearDown(runtime.dispose);
-
-      await runtime.start();
-      final invite = VoiceCallFrame(
-        type: VoiceCallFrameType.invite,
-        callId: 'call-1',
-        from: 'bob',
-        to: 'alice',
-        sentAt: DateTime.now().millisecondsSinceEpoch,
-      ).encode();
-      brain.emitControlMessage('bob', invite);
-      await _waitForCondition(
-        () => runtime.voiceCallState.callId == 'call-1',
-        'incoming voice invite to ring',
-      );
-
-      brain.emitControlMessage('bob', invite);
       await Future<void>.delayed(const Duration(milliseconds: 80));
 
-      final frames = brain.sentControlPayloads
-          .map(VoiceCallFrame.tryDecode)
-          .whereType<VoiceCallFrame>()
-          .toList(growable: false);
-      expect(
-        frames.where((frame) => frame.type == VoiceCallFrameType.busy),
-        isEmpty,
-      );
-      expect(runtime.voiceCallState.callId, 'call-1');
-      expect(runtime.voiceCallState.phase, VoiceCallPhase.incomingRinging);
+      expect(runtime.voiceCallState.phase, VoiceCallPhase.idle);
+      expect(brain.startedAudioPeers, isEmpty);
+      expect(brain.sentControlPayloads, isEmpty);
+      expect(recordedSources, contains('voice-call-legacy-control'));
     });
 
-    test(
-      'acceptVoiceCall rejects before accept when microphone is denied',
-      () async {
-        final adapter = NoopSignalingAdapter();
-        final brain = TestSessionManager()
-          ..startLocalAudioError = StateError('Microphone permission denied');
-        await adapter.register('bob', 'bobpw');
-        await adapter.upsertFriendship('alice', 'bob');
-        await db
-            .into(db.friends)
-            .insert(
-              FriendsCompanion.insert(
-                username: 'bob',
-                displayName: 'Bob',
-                state: 'friend',
-                addedAt: 0,
-              ),
-            );
-        final runtime = _runtimeFor(db, alice, adapter, brain: brain);
-        addTearDown(runtime.dispose);
-
-        await runtime.start();
-        brain.emitControlMessage(
-          'bob',
-          VoiceCallFrame(
-            type: VoiceCallFrameType.invite,
-            callId: 'call-1',
-            from: 'bob',
-            to: 'alice',
-            sentAt: DateTime.now().millisecondsSinceEpoch,
-          ).encode(),
-        );
-        await _waitForCondition(
-          () => runtime.voiceCallState.phase == VoiceCallPhase.incomingRinging,
-          'incoming voice invite to ring',
-        );
-
-        await expectLater(
-          runtime.acceptVoiceCall(),
-          throwsA(
-            isA<StateError>().having(
-              (error) => error.toString(),
-              'message',
-              contains('Microphone permission denied'),
-            ),
-          ),
-        );
-
-        final frames = brain.sentControlPayloads
-            .map(VoiceCallFrame.tryDecode)
-            .whereType<VoiceCallFrame>()
-            .toList(growable: false);
-        expect(frames.map((frame) => frame.type), <VoiceCallFrameType>[
-          VoiceCallFrameType.reject,
-        ]);
-        expect(frames.single.reasonCode, 'microphoneDenied');
-        expect(frames.single.reason, 'Microphone permission required.');
-        expect(runtime.voiceCallState.phase, VoiceCallPhase.failed);
-        expect(
-          runtime.voiceCallState.failureReason,
-          VoiceCallFailureReason.microphoneDenied,
-        );
-        expect(
-          runtime.voiceCallState.detail,
-          'Microphone permission required.',
-        );
-      },
-    );
-
-    test('active file transfer blocks starting a voice call', () async {
+    test('active file transfer still blocks frozen voice call start', () async {
       final adapter = NoopSignalingAdapter();
       final brain = TestSessionManager();
       final transferStore = FileTransferStore(db);
@@ -1178,6 +953,7 @@ void main() {
         ),
         fileTransferStore: transferStore,
       );
+      addTearDown(runtime.dispose);
 
       await expectLater(
         runtime.startVoiceCall('bob'),
@@ -1189,237 +965,537 @@ void main() {
           ),
         ),
       );
+
+      expect(brain.registeredPeers, isEmpty);
+      expect(brain.sentControlPayloads, isEmpty);
     });
 
-    test('active voice call blocks new outgoing file transfer', () async {
-      final adapter = NoopSignalingAdapter();
-      final brain = TestSessionManager();
-      await adapter.register('bob', 'bobpw');
-      await adapter.upsertFriendship('alice', 'bob');
-      await db
-          .into(db.friends)
-          .insert(
-            FriendsCompanion.insert(
-              username: 'bob',
-              displayName: 'Bob',
-              state: 'friend',
-              addedAt: 0,
-            ),
-          );
-      await brain.connect('bob');
-      brain.markConnected('bob');
-      final runtime = _runtimeFor(db, alice, adapter, brain: brain);
-      addTearDown(runtime.dispose);
+    group(
+      'legacy control-channel voice signaling path',
+      () {
+        test(
+          'startVoiceCall auto-connects and sends invite over control channel',
+          () async {
+            final adapter = NoopSignalingAdapter();
+            final brain = TestSessionManager();
+            await adapter.register('bob', 'bobpw');
+            await adapter.upsertFriendship('alice', 'bob');
+            await db
+                .into(db.friends)
+                .insert(
+                  FriendsCompanion.insert(
+                    username: 'bob',
+                    displayName: 'Bob',
+                    state: 'friend',
+                    addedAt: 0,
+                  ),
+                );
+            final runtime = _runtimeFor(db, alice, adapter, brain: brain);
 
-      await runtime.start();
-      await runtime.startVoiceCall('bob');
-      final invite = brain.sentControlPayloads
-          .map(VoiceCallFrame.tryDecode)
-          .whereType<VoiceCallFrame>()
-          .lastWhere((frame) => frame.type == VoiceCallFrameType.invite);
-      brain.emitControlMessage(
-        'bob',
-        VoiceCallFrame(
-          type: VoiceCallFrameType.accept,
-          callId: runtime.voiceCallState.callId!,
-          from: 'bob',
-          to: 'alice',
-          sentAt: DateTime.now().millisecondsSinceEpoch,
-          seq: 1,
-          sessionEpoch: invite.sessionEpoch,
-        ).encode(),
-      );
-      await _waitForCondition(
-        () => brain.mediaOfferPeers.contains('bob'),
-        'voice media offer to be created',
-      );
-      final offer = brain.sentControlPayloads
-          .map(VoiceCallFrame.tryDecode)
-          .whereType<VoiceCallFrame>()
-          .lastWhere((frame) => frame.type == VoiceCallFrameType.offer);
-      expect(offer.sessionEpoch, invite.sessionEpoch);
-      brain.emitControlMessage(
-        'bob',
-        VoiceCallFrame(
-          type: VoiceCallFrameType.answer,
-          callId: runtime.voiceCallState.callId!,
-          from: 'bob',
-          to: 'alice',
-          sentAt: DateTime.now().millisecondsSinceEpoch,
-          seq: 2,
-          sessionEpoch: invite.sessionEpoch,
-          sdp: 'media-answer-bob',
-          sdpType: 'answer',
-        ).encode(),
-      );
-      await _waitForCondition(
-        () => runtime.voiceCallState.phase == VoiceCallPhase.active,
-        'voice call to become active',
-      );
+            final callStarted = runtime.startVoiceCall('bob');
+            await _waitForCondition(
+              () => brain.connectedPeers.contains('bob'),
+              'voice call to request peer connection',
+            );
+            brain.markConnected('bob');
+            await callStarted;
 
-      await expectLater(
-        runtime.sendFile(
-          peerId: 'bob',
-          fileName: 'note.txt',
-          fileSize: 1,
-          openRead: () => Stream<List<int>>.value(<int>[1]),
-        ),
-        throwsA(
-          isA<StateError>().having(
-            (error) => error.toString(),
-            'message',
-            contains('Finish the call before sending files'),
-          ),
-        ),
-      );
-    });
+            expect(
+              runtime.voiceCallState.phase,
+              VoiceCallPhase.outgoingRinging,
+            );
+            expect(brain.registeredPeers, contains('bob'));
+            expect(brain.startedAudioPeers, contains('bob'));
+            expect(brain.sentControlPayloads, hasLength(1));
+            final invite = VoiceCallFrame.tryDecode(
+              brain.sentControlPayloads.single,
+            );
+            expect(invite?.type, VoiceCallFrameType.invite);
+            expect(invite?.from, 'alice');
+            expect(invite?.to, 'bob');
+          },
+        );
 
-    test('stale media answers are ignored by signaling sequence', () async {
-      final adapter = NoopSignalingAdapter();
-      final brain = TestSessionManager();
-      await adapter.register('bob', 'bobpw');
-      await adapter.upsertFriendship('alice', 'bob');
-      await db
-          .into(db.friends)
-          .insert(
-            FriendsCompanion.insert(
-              username: 'bob',
-              displayName: 'Bob',
-              state: 'friend',
-              addedAt: 0,
-            ),
-          );
-      await brain.connect('bob');
-      brain.markConnected('bob');
-      final runtime = _runtimeFor(db, alice, adapter, brain: brain);
-      addTearDown(runtime.dispose);
+        test(
+          'startVoiceCall requests microphone before sending invite',
+          () async {
+            final adapter = NoopSignalingAdapter();
+            final brain = TestSessionManager()
+              ..startLocalAudioError = StateError(
+                'Microphone permission denied',
+              );
+            await adapter.register('bob', 'bobpw');
+            await adapter.upsertFriendship('alice', 'bob');
+            await db
+                .into(db.friends)
+                .insert(
+                  FriendsCompanion.insert(
+                    username: 'bob',
+                    displayName: 'Bob',
+                    state: 'friend',
+                    addedAt: 0,
+                  ),
+                );
+            final runtime = _runtimeFor(db, alice, adapter, brain: brain);
+            addTearDown(runtime.dispose);
 
-      await runtime.start();
-      await runtime.startVoiceCall('bob');
-      final invite = brain.sentControlPayloads
-          .map(VoiceCallFrame.tryDecode)
-          .whereType<VoiceCallFrame>()
-          .lastWhere((frame) => frame.type == VoiceCallFrameType.invite);
-      brain.emitControlMessage(
-        'bob',
-        VoiceCallFrame(
-          type: VoiceCallFrameType.accept,
-          callId: runtime.voiceCallState.callId!,
-          from: 'bob',
-          to: 'alice',
-          sentAt: DateTime.now().millisecondsSinceEpoch,
-          seq: 1,
-          sessionEpoch: invite.sessionEpoch,
-        ).encode(),
-      );
-      await _waitForCondition(
-        () => brain.mediaOfferPeers.contains('bob'),
-        'voice media offer to be created',
-      );
-      final offer = brain.sentControlPayloads
-          .map(VoiceCallFrame.tryDecode)
-          .whereType<VoiceCallFrame>()
-          .lastWhere((frame) => frame.type == VoiceCallFrameType.offer);
-      expect(offer.sessionEpoch, invite.sessionEpoch);
-      final answer = VoiceCallFrame(
-        type: VoiceCallFrameType.answer,
-        callId: runtime.voiceCallState.callId!,
-        from: 'bob',
-        to: 'alice',
-        sentAt: DateTime.now().millisecondsSinceEpoch,
-        seq: 2,
-        sessionEpoch: invite.sessionEpoch,
-        sdp: 'media-answer-bob',
-        sdpType: 'answer',
-      ).encode();
+            final callStarted = runtime.startVoiceCall('bob');
+            await _waitForCondition(
+              () => brain.connectedPeers.contains('bob'),
+              'voice call to request peer connection',
+            );
+            brain.markConnected('bob');
 
-      brain.emitControlMessage('bob', answer);
-      await _waitForCondition(
-        () => runtime.voiceCallState.phase == VoiceCallPhase.active,
-        'voice call to become active',
-      );
-      brain.emitControlMessage('bob', answer);
-      await Future<void>.delayed(const Duration(milliseconds: 80));
-
-      expect(brain.appliedMediaAnswerPeers, <String>['bob']);
-    });
-
-    test(
-      'media answer failure sends failed hangup and preserves chat session',
-      () async {
-        final adapter = NoopSignalingAdapter();
-        final brain = TestSessionManager();
-        final recordedErrors = <Object>[];
-        final recordedSources = <String>[];
-        await adapter.register('bob', 'bobpw');
-        await adapter.upsertFriendship('alice', 'bob');
-        await db
-            .into(db.friends)
-            .insert(
-              FriendsCompanion.insert(
-                username: 'bob',
-                displayName: 'Bob',
-                state: 'friend',
-                addedAt: 0,
+            await expectLater(
+              callStarted,
+              throwsA(
+                isA<StateError>().having(
+                  (error) => error.toString(),
+                  'message',
+                  contains('Microphone permission denied'),
+                ),
               ),
             );
-        await brain.connect('bob');
-        brain.markConnected('bob');
-        final runtime = _runtimeFor(
-          db,
-          alice,
-          adapter,
-          brain: brain,
-          errorRecorder:
-              (
-                Object error,
-                StackTrace? stackTrace, {
-                required String source,
-                required bool fatal,
-                String? flutterLibrary,
-                String? flutterContext,
-              }) {
-                recordedErrors.add(error);
-                recordedSources.add(source);
-              },
-        );
-        addTearDown(runtime.dispose);
 
-        await runtime.start();
-        await runtime.startVoiceCall('bob');
-        final invite = brain.sentControlPayloads
-            .map(VoiceCallFrame.tryDecode)
-            .whereType<VoiceCallFrame>()
-            .lastWhere((frame) => frame.type == VoiceCallFrameType.invite);
-        brain.emitControlMessage(
-          'bob',
-          VoiceCallFrame(
-            type: VoiceCallFrameType.accept,
-            callId: runtime.voiceCallState.callId!,
+            expect(brain.startedAudioPeers, <String>['bob']);
+            expect(brain.sentControlPayloads, isEmpty);
+            expect(runtime.voiceCallState.phase, VoiceCallPhase.failed);
+            expect(
+              runtime.voiceCallState.failureReason,
+              VoiceCallFailureReason.microphoneDenied,
+            );
+            expect(
+              runtime.voiceCallState.detail,
+              'Microphone permission required.',
+            );
+          },
+        );
+
+        test('incoming voice invite can be rejected', () async {
+          final adapter = NoopSignalingAdapter();
+          final brain = TestSessionManager();
+          await adapter.register('bob', 'bobpw');
+          await adapter.upsertFriendship('alice', 'bob');
+          await db
+              .into(db.friends)
+              .insert(
+                FriendsCompanion.insert(
+                  username: 'bob',
+                  displayName: 'Bob',
+                  state: 'friend',
+                  addedAt: 0,
+                ),
+              );
+          final runtime = _runtimeFor(db, alice, adapter, brain: brain);
+          addTearDown(runtime.dispose);
+
+          await runtime.start();
+          brain.emitControlMessage(
+            'bob',
+            VoiceCallFrame(
+              type: VoiceCallFrameType.invite,
+              callId: 'call-1',
+              from: 'bob',
+              to: 'alice',
+              sentAt: DateTime.now().millisecondsSinceEpoch,
+            ).encode(),
+          );
+          await _waitForCondition(
+            () =>
+                runtime.voiceCallState.phase == VoiceCallPhase.incomingRinging,
+            'incoming voice invite to ring',
+          );
+
+          await runtime.rejectVoiceCall();
+
+          expect(runtime.voiceCallState.phase, VoiceCallPhase.idle);
+          final reject = VoiceCallFrame.tryDecode(
+            brain.sentControlPayloads.last,
+          );
+          expect(reject?.type, VoiceCallFrameType.reject);
+          expect(reject?.callId, 'call-1');
+        });
+
+        test(
+          'incoming voice retry from same peer replaces stale ringing call',
+          () async {
+            final adapter = NoopSignalingAdapter();
+            final brain = TestSessionManager();
+            await adapter.register('bob', 'bobpw');
+            await adapter.upsertFriendship('alice', 'bob');
+            await db
+                .into(db.friends)
+                .insert(
+                  FriendsCompanion.insert(
+                    username: 'bob',
+                    displayName: 'Bob',
+                    state: 'friend',
+                    addedAt: 0,
+                  ),
+                );
+            final runtime = _runtimeFor(db, alice, adapter, brain: brain);
+            addTearDown(runtime.dispose);
+
+            await runtime.start();
+            brain.emitControlMessage(
+              'bob',
+              VoiceCallFrame(
+                type: VoiceCallFrameType.invite,
+                callId: 'call-1',
+                from: 'bob',
+                to: 'alice',
+                sentAt: DateTime.now().millisecondsSinceEpoch,
+              ).encode(),
+            );
+            await _waitForCondition(
+              () => runtime.voiceCallState.callId == 'call-1',
+              'first incoming voice invite to ring',
+            );
+
+            brain.emitControlMessage(
+              'bob',
+              VoiceCallFrame(
+                type: VoiceCallFrameType.invite,
+                callId: 'call-2',
+                from: 'bob',
+                to: 'alice',
+                sentAt: DateTime.now().millisecondsSinceEpoch,
+              ).encode(),
+            );
+            await _waitForCondition(
+              () => runtime.voiceCallState.callId == 'call-2',
+              'same-peer voice retry to replace stale invite',
+            );
+
+            final frames = brain.sentControlPayloads
+                .map(VoiceCallFrame.tryDecode)
+                .whereType<VoiceCallFrame>()
+                .toList(growable: false);
+            expect(
+              frames.where((frame) => frame.type == VoiceCallFrameType.busy),
+              isEmpty,
+            );
+            expect(
+              frames.any(
+                (frame) =>
+                    frame.type == VoiceCallFrameType.hangup &&
+                    frame.callId == 'call-1',
+              ),
+              isTrue,
+            );
+            expect(
+              runtime.voiceCallState.phase,
+              VoiceCallPhase.incomingRinging,
+            );
+          },
+        );
+
+        test('duplicate incoming voice invite does not report busy', () async {
+          final adapter = NoopSignalingAdapter();
+          final brain = TestSessionManager();
+          await adapter.register('bob', 'bobpw');
+          await adapter.upsertFriendship('alice', 'bob');
+          await db
+              .into(db.friends)
+              .insert(
+                FriendsCompanion.insert(
+                  username: 'bob',
+                  displayName: 'Bob',
+                  state: 'friend',
+                  addedAt: 0,
+                ),
+              );
+          final runtime = _runtimeFor(db, alice, adapter, brain: brain);
+          addTearDown(runtime.dispose);
+
+          await runtime.start();
+          final invite = VoiceCallFrame(
+            type: VoiceCallFrameType.invite,
+            callId: 'call-1',
             from: 'bob',
             to: 'alice',
             sentAt: DateTime.now().millisecondsSinceEpoch,
-            seq: 1,
-            sessionEpoch: invite.sessionEpoch,
-          ).encode(),
-        );
-        await _waitForCondition(
-          () => brain.mediaOfferPeers.contains('bob'),
-          'voice media offer to be created',
-        );
-        final offer = brain.sentControlPayloads
-            .map(VoiceCallFrame.tryDecode)
-            .whereType<VoiceCallFrame>()
-            .lastWhere((frame) => frame.type == VoiceCallFrameType.offer);
-        expect(offer.sessionEpoch, invite.sessionEpoch);
-        brain.applyMediaAnswerError = StateError(
-          'Unable to RTCPeerConnection::setRemoteDescription: '
-          'peerConnectionSetRemoteDescription failed with m-line mismatch',
+          ).encode();
+          brain.emitControlMessage('bob', invite);
+          await _waitForCondition(
+            () => runtime.voiceCallState.callId == 'call-1',
+            'incoming voice invite to ring',
+          );
+
+          brain.emitControlMessage('bob', invite);
+          await Future<void>.delayed(const Duration(milliseconds: 80));
+
+          final frames = brain.sentControlPayloads
+              .map(VoiceCallFrame.tryDecode)
+              .whereType<VoiceCallFrame>()
+              .toList(growable: false);
+          expect(
+            frames.where((frame) => frame.type == VoiceCallFrameType.busy),
+            isEmpty,
+          );
+          expect(runtime.voiceCallState.callId, 'call-1');
+          expect(runtime.voiceCallState.phase, VoiceCallPhase.incomingRinging);
+        });
+
+        test(
+          'acceptVoiceCall rejects before accept when microphone is denied',
+          () async {
+            final adapter = NoopSignalingAdapter();
+            final brain = TestSessionManager()
+              ..startLocalAudioError = StateError(
+                'Microphone permission denied',
+              );
+            await adapter.register('bob', 'bobpw');
+            await adapter.upsertFriendship('alice', 'bob');
+            await db
+                .into(db.friends)
+                .insert(
+                  FriendsCompanion.insert(
+                    username: 'bob',
+                    displayName: 'Bob',
+                    state: 'friend',
+                    addedAt: 0,
+                  ),
+                );
+            final runtime = _runtimeFor(db, alice, adapter, brain: brain);
+            addTearDown(runtime.dispose);
+
+            await runtime.start();
+            brain.emitControlMessage(
+              'bob',
+              VoiceCallFrame(
+                type: VoiceCallFrameType.invite,
+                callId: 'call-1',
+                from: 'bob',
+                to: 'alice',
+                sentAt: DateTime.now().millisecondsSinceEpoch,
+              ).encode(),
+            );
+            await _waitForCondition(
+              () =>
+                  runtime.voiceCallState.phase ==
+                  VoiceCallPhase.incomingRinging,
+              'incoming voice invite to ring',
+            );
+
+            await expectLater(
+              runtime.acceptVoiceCall(),
+              throwsA(
+                isA<StateError>().having(
+                  (error) => error.toString(),
+                  'message',
+                  contains('Microphone permission denied'),
+                ),
+              ),
+            );
+
+            final frames = brain.sentControlPayloads
+                .map(VoiceCallFrame.tryDecode)
+                .whereType<VoiceCallFrame>()
+                .toList(growable: false);
+            expect(frames.map((frame) => frame.type), <VoiceCallFrameType>[
+              VoiceCallFrameType.reject,
+            ]);
+            expect(frames.single.reasonCode, 'microphoneDenied');
+            expect(frames.single.reason, 'Microphone permission required.');
+            expect(runtime.voiceCallState.phase, VoiceCallPhase.failed);
+            expect(
+              runtime.voiceCallState.failureReason,
+              VoiceCallFailureReason.microphoneDenied,
+            );
+            expect(
+              runtime.voiceCallState.detail,
+              'Microphone permission required.',
+            );
+          },
         );
 
-        brain.emitControlMessage(
-          'bob',
-          VoiceCallFrame(
+        test('active file transfer blocks starting a voice call', () async {
+          final adapter = NoopSignalingAdapter();
+          final brain = TestSessionManager();
+          final transferStore = FileTransferStore(db);
+          await db
+              .into(db.friends)
+              .insert(
+                FriendsCompanion.insert(
+                  username: 'bob',
+                  displayName: 'Bob',
+                  state: 'friend',
+                  addedAt: 0,
+                ),
+              );
+          await transferStore.upsert(
+            FileTransferRecord(
+              id: 'transfer-1',
+              peerId: 'bob',
+              messageId: 'message-1',
+              direction: FileTransferDirection.outgoing,
+              fileName: 'busy.txt',
+              fileSize: 1,
+              bytesTransferred: 0,
+              state: FileTransferState.sending,
+              createdAt: 0,
+              updatedAt: 0,
+            ),
+          );
+          final runtime = RainRuntimeController(
+            selfIdentity: alice,
+            adapter: adapter,
+            brain: brain,
+            database: db,
+            friendStore: FriendStore(db),
+            messageStore: MessageStore(db),
+            offlineQueueStore: OfflineQueueStore(db),
+            messageDeliveryService: MessageDeliveryService(
+              messageStore: MessageStore(db),
+              offlineQueueStore: OfflineQueueStore(db),
+            ),
+            fileTransferStore: transferStore,
+          );
+
+          await expectLater(
+            runtime.startVoiceCall('bob'),
+            throwsA(
+              isA<StateError>().having(
+                (error) => error.toString(),
+                'message',
+                contains('Finish the active file transfer'),
+              ),
+            ),
+          );
+        });
+
+        test('active voice call blocks new outgoing file transfer', () async {
+          final adapter = NoopSignalingAdapter();
+          final brain = TestSessionManager();
+          await adapter.register('bob', 'bobpw');
+          await adapter.upsertFriendship('alice', 'bob');
+          await db
+              .into(db.friends)
+              .insert(
+                FriendsCompanion.insert(
+                  username: 'bob',
+                  displayName: 'Bob',
+                  state: 'friend',
+                  addedAt: 0,
+                ),
+              );
+          await brain.connect('bob');
+          brain.markConnected('bob');
+          final runtime = _runtimeFor(db, alice, adapter, brain: brain);
+          addTearDown(runtime.dispose);
+
+          await runtime.start();
+          await runtime.startVoiceCall('bob');
+          final invite = brain.sentControlPayloads
+              .map(VoiceCallFrame.tryDecode)
+              .whereType<VoiceCallFrame>()
+              .lastWhere((frame) => frame.type == VoiceCallFrameType.invite);
+          brain.emitControlMessage(
+            'bob',
+            VoiceCallFrame(
+              type: VoiceCallFrameType.accept,
+              callId: runtime.voiceCallState.callId!,
+              from: 'bob',
+              to: 'alice',
+              sentAt: DateTime.now().millisecondsSinceEpoch,
+              seq: 1,
+              sessionEpoch: invite.sessionEpoch,
+            ).encode(),
+          );
+          await _waitForCondition(
+            () => brain.mediaOfferPeers.contains('bob'),
+            'voice media offer to be created',
+          );
+          final offer = brain.sentControlPayloads
+              .map(VoiceCallFrame.tryDecode)
+              .whereType<VoiceCallFrame>()
+              .lastWhere((frame) => frame.type == VoiceCallFrameType.offer);
+          expect(offer.sessionEpoch, invite.sessionEpoch);
+          brain.emitControlMessage(
+            'bob',
+            VoiceCallFrame(
+              type: VoiceCallFrameType.answer,
+              callId: runtime.voiceCallState.callId!,
+              from: 'bob',
+              to: 'alice',
+              sentAt: DateTime.now().millisecondsSinceEpoch,
+              seq: 2,
+              sessionEpoch: invite.sessionEpoch,
+              sdp: 'media-answer-bob',
+              sdpType: 'answer',
+            ).encode(),
+          );
+          await _waitForCondition(
+            () => runtime.voiceCallState.phase == VoiceCallPhase.active,
+            'voice call to become active',
+          );
+
+          await expectLater(
+            runtime.sendFile(
+              peerId: 'bob',
+              fileName: 'note.txt',
+              fileSize: 1,
+              openRead: () => Stream<List<int>>.value(<int>[1]),
+            ),
+            throwsA(
+              isA<StateError>().having(
+                (error) => error.toString(),
+                'message',
+                contains('Finish the call before sending files'),
+              ),
+            ),
+          );
+        });
+
+        test('stale media answers are ignored by signaling sequence', () async {
+          final adapter = NoopSignalingAdapter();
+          final brain = TestSessionManager();
+          await adapter.register('bob', 'bobpw');
+          await adapter.upsertFriendship('alice', 'bob');
+          await db
+              .into(db.friends)
+              .insert(
+                FriendsCompanion.insert(
+                  username: 'bob',
+                  displayName: 'Bob',
+                  state: 'friend',
+                  addedAt: 0,
+                ),
+              );
+          await brain.connect('bob');
+          brain.markConnected('bob');
+          final runtime = _runtimeFor(db, alice, adapter, brain: brain);
+          addTearDown(runtime.dispose);
+
+          await runtime.start();
+          await runtime.startVoiceCall('bob');
+          final invite = brain.sentControlPayloads
+              .map(VoiceCallFrame.tryDecode)
+              .whereType<VoiceCallFrame>()
+              .lastWhere((frame) => frame.type == VoiceCallFrameType.invite);
+          brain.emitControlMessage(
+            'bob',
+            VoiceCallFrame(
+              type: VoiceCallFrameType.accept,
+              callId: runtime.voiceCallState.callId!,
+              from: 'bob',
+              to: 'alice',
+              sentAt: DateTime.now().millisecondsSinceEpoch,
+              seq: 1,
+              sessionEpoch: invite.sessionEpoch,
+            ).encode(),
+          );
+          await _waitForCondition(
+            () => brain.mediaOfferPeers.contains('bob'),
+            'voice media offer to be created',
+          );
+          final offer = brain.sentControlPayloads
+              .map(VoiceCallFrame.tryDecode)
+              .whereType<VoiceCallFrame>()
+              .lastWhere((frame) => frame.type == VoiceCallFrameType.offer);
+          expect(offer.sessionEpoch, invite.sessionEpoch);
+          final answer = VoiceCallFrame(
             type: VoiceCallFrameType.answer,
             callId: runtime.voiceCallState.callId!,
             from: 'bob',
@@ -1427,33 +1503,135 @@ void main() {
             sentAt: DateTime.now().millisecondsSinceEpoch,
             seq: 2,
             sessionEpoch: invite.sessionEpoch,
-            sdp: 'bad-media-answer-bob',
+            sdp: 'media-answer-bob',
             sdpType: 'answer',
-          ).encode(),
-        );
-        await _waitForCondition(
-          () => runtime.voiceCallState.phase == VoiceCallPhase.failed,
-          'voice call media failure to surface',
-        );
+          ).encode();
 
-        expect(
-          runtime.voiceCallState.detail,
-          'Call media could not connect. Try again.',
-        );
-        final hangup = brain.sentControlPayloads
-            .map(VoiceCallFrame.tryDecode)
-            .whereType<VoiceCallFrame>()
-            .lastWhere((frame) => frame.type == VoiceCallFrameType.hangup);
-        expect(hangup.reason, 'Voice call media could not connect.');
-        expect(hangup.reasonCode, 'failed');
-        expect(brain.stoppedAudioPeers, contains('bob'));
-        expect(brain.disconnectedPeers, isEmpty);
-        expect(recordedSources, contains('voice-call-media'));
-        expect(
-          recordedErrors.single.toString(),
-          contains('setRemoteDescription'),
+          brain.emitControlMessage('bob', answer);
+          await _waitForCondition(
+            () => runtime.voiceCallState.phase == VoiceCallPhase.active,
+            'voice call to become active',
+          );
+          brain.emitControlMessage('bob', answer);
+          await Future<void>.delayed(const Duration(milliseconds: 80));
+
+          expect(brain.appliedMediaAnswerPeers, <String>['bob']);
+        });
+
+        test(
+          'media answer failure sends failed hangup and preserves chat session',
+          () async {
+            final adapter = NoopSignalingAdapter();
+            final brain = TestSessionManager();
+            final recordedErrors = <Object>[];
+            final recordedSources = <String>[];
+            await adapter.register('bob', 'bobpw');
+            await adapter.upsertFriendship('alice', 'bob');
+            await db
+                .into(db.friends)
+                .insert(
+                  FriendsCompanion.insert(
+                    username: 'bob',
+                    displayName: 'Bob',
+                    state: 'friend',
+                    addedAt: 0,
+                  ),
+                );
+            await brain.connect('bob');
+            brain.markConnected('bob');
+            final runtime = _runtimeFor(
+              db,
+              alice,
+              adapter,
+              brain: brain,
+              errorRecorder:
+                  (
+                    Object error,
+                    StackTrace? stackTrace, {
+                    required String source,
+                    required bool fatal,
+                    String? flutterLibrary,
+                    String? flutterContext,
+                  }) {
+                    recordedErrors.add(error);
+                    recordedSources.add(source);
+                  },
+            );
+            addTearDown(runtime.dispose);
+
+            await runtime.start();
+            await runtime.startVoiceCall('bob');
+            final invite = brain.sentControlPayloads
+                .map(VoiceCallFrame.tryDecode)
+                .whereType<VoiceCallFrame>()
+                .lastWhere((frame) => frame.type == VoiceCallFrameType.invite);
+            brain.emitControlMessage(
+              'bob',
+              VoiceCallFrame(
+                type: VoiceCallFrameType.accept,
+                callId: runtime.voiceCallState.callId!,
+                from: 'bob',
+                to: 'alice',
+                sentAt: DateTime.now().millisecondsSinceEpoch,
+                seq: 1,
+                sessionEpoch: invite.sessionEpoch,
+              ).encode(),
+            );
+            await _waitForCondition(
+              () => brain.mediaOfferPeers.contains('bob'),
+              'voice media offer to be created',
+            );
+            final offer = brain.sentControlPayloads
+                .map(VoiceCallFrame.tryDecode)
+                .whereType<VoiceCallFrame>()
+                .lastWhere((frame) => frame.type == VoiceCallFrameType.offer);
+            expect(offer.sessionEpoch, invite.sessionEpoch);
+            brain.applyMediaAnswerError = StateError(
+              'Unable to RTCPeerConnection::setRemoteDescription: '
+              'peerConnectionSetRemoteDescription failed with m-line mismatch',
+            );
+
+            brain.emitControlMessage(
+              'bob',
+              VoiceCallFrame(
+                type: VoiceCallFrameType.answer,
+                callId: runtime.voiceCallState.callId!,
+                from: 'bob',
+                to: 'alice',
+                sentAt: DateTime.now().millisecondsSinceEpoch,
+                seq: 2,
+                sessionEpoch: invite.sessionEpoch,
+                sdp: 'bad-media-answer-bob',
+                sdpType: 'answer',
+              ).encode(),
+            );
+            await _waitForCondition(
+              () => runtime.voiceCallState.phase == VoiceCallPhase.failed,
+              'voice call media failure to surface',
+            );
+
+            expect(
+              runtime.voiceCallState.detail,
+              'Call media could not connect. Try again.',
+            );
+            final hangup = brain.sentControlPayloads
+                .map(VoiceCallFrame.tryDecode)
+                .whereType<VoiceCallFrame>()
+                .lastWhere((frame) => frame.type == VoiceCallFrameType.hangup);
+            expect(hangup.reason, 'Voice call media could not connect.');
+            expect(hangup.reasonCode, 'failed');
+            expect(brain.stoppedAudioPeers, contains('bob'));
+            expect(brain.disconnectedPeers, isEmpty);
+            expect(recordedSources, contains('voice-call-media'));
+            expect(
+              recordedErrors.single.toString(),
+              contains('setRemoteDescription'),
+            );
+          },
         );
       },
+      skip:
+          'Legacy control-channel voice path frozen until Firebase signaling.',
     );
 
     test('cancel during outgoing send is not overwritten as failed', () async {

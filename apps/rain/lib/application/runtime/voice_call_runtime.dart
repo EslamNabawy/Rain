@@ -23,13 +23,20 @@ extension VoiceCallRuntime on RainRuntimeController {
       'Call media connected but no remote audio arrived.';
   static const String _voiceCallMediaFailed =
       'Call media could not connect. Try again.';
+  static const String _legacyControlChannelVoicePathFrozen =
+      'Voice calls are being rebuilt on Firebase signaling.';
+  static bool get _legacyControlChannelVoiceSignalingFrozen => true;
 
   Future<void> startVoiceCall(String username) async {
     final peerId = _normalizedUsername(username);
-    _assertVoiceCallCanStart();
     if (await fileTransferStore.hasActiveTransferForPeer(peerId)) {
       throw StateError(_voiceCallFileTransferRequired);
     }
+    if (_legacyControlChannelVoiceSignalingFrozen) {
+      throw StateError(_legacyControlChannelVoicePathFrozen);
+    }
+
+    _assertVoiceCallCanStart();
 
     await _disposeCurrentVoiceCallSession();
     final callId = _newVoiceCallId(peerId);
@@ -172,6 +179,19 @@ extension VoiceCallRuntime on RainRuntimeController {
     String peerId,
     VoiceCallFrame frame,
   ) async {
+    if (_legacyControlChannelVoiceSignalingFrozen) {
+      errorRecorder?.call(
+        StateError(
+          'Ignored legacy control-channel voice frame: '
+          '${frame.type.name} ${frame.callId}',
+        ),
+        StackTrace.current,
+        source: 'voice-call-legacy-control',
+        fatal: false,
+      );
+      return;
+    }
+
     final normalizedPeerId = _normalizedUsername(peerId);
     if (_normalizedUsername(frame.from) != normalizedPeerId ||
         _normalizedUsername(frame.to) !=
@@ -386,6 +406,9 @@ extension VoiceCallRuntime on RainRuntimeController {
     String peerId,
     VoiceCallFrame frame,
   ) async {
+    if (_legacyControlChannelVoiceSignalingFrozen) {
+      throw StateError(_legacyControlChannelVoicePathFrozen);
+    }
     final manager = brain;
     if (manager == null) {
       throw StateError('Peer connection is unavailable right now.');
