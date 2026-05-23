@@ -656,6 +656,20 @@ function Assert-AndroidApkContainsNativeRuntimes([string]$ApkPath, [string[]]$Ab
       }
     }
   }
+
+  $knownAndroidAbis = @('armeabi-v7a', 'arm64-v8a', 'x86', 'x86_64')
+  foreach ($knownAbi in $knownAndroidAbis) {
+    if ($Abis -contains $knownAbi) {
+      continue
+    }
+
+    $unexpectedEntries = @($entryNames | Where-Object {
+        $_.StartsWith("lib/$knownAbi/", [System.StringComparison]::Ordinal)
+      })
+    if ($unexpectedEntries.Count -gt 0) {
+      throw "Android APK contains unexpected native ABI '$knownAbi': $ApkPath"
+    }
+  }
 }
 
 $repoRoot = $RepoRoot
@@ -777,14 +791,14 @@ if ($Platform -in @('all', 'windows')) {
 }
 
 if ($Platform -in @('all', 'android')) {
-  Write-Step "Building Android ARM v8/v9 release APK"
+  Write-Step "Building Android ARM v7 and ARM v8/v9 release APKs"
   if ($Clean) {
     Write-Step "Cleaning Flutter project state for Android build"
     Stop-GradleDaemons $appsRoot
     Clean-FlutterProject $appsRoot
   }
-  $androidTargetPlatformArgs = @('--target-platform', 'android-arm64')
-  Write-Step "Building Android per-ABI release APKs: arm64-v8a (ARMv8/ARMv9 devices)"
+  $androidTargetPlatformArgs = @('--target-platform', 'android-arm,android-arm64')
+  Write-Step "Building Android per-ABI release APKs: armeabi-v7a and arm64-v8a"
   $splitFlutterArgs = @('build', 'apk', '--release', '--split-per-abi') + $androidTargetPlatformArgs + $dartDefineArgs
   Invoke-InDir $appsRoot {
     Invoke-FlutterBuild $splitFlutterArgs
@@ -792,10 +806,12 @@ if ($Platform -in @('all', 'android')) {
 
   $abiApks = if ($isOpenRelayDemoBuild) {
     @(
+      @{ Label = 'ARM v7 devices (armeabi-v7a)'; Source = 'app-armeabi-v7a-release.apk'; Destination = 'Rain-Demo-Android-ARM-v7a-Build.apk'; Abi = 'armeabi-v7a' }
       @{ Label = 'ARM v8/v9 devices (arm64-v8a)'; Source = 'app-arm64-v8a-release.apk'; Destination = 'Rain-Demo-Android-ARM-v8-v9-Build.apk'; Abi = 'arm64-v8a' }
     )
   } else {
     @(
+      @{ Label = 'ARM v7 devices (armeabi-v7a)'; Source = 'app-armeabi-v7a-release.apk'; Destination = "$androidArtifactPrefix-android-armeabi-v7a.apk"; Abi = 'armeabi-v7a' }
       @{ Label = 'ARM v8/v9 devices (arm64-v8a)'; Source = 'app-arm64-v8a-release.apk'; Destination = "$androidArtifactPrefix-android-arm64-v8a.apk"; Abi = 'arm64-v8a' }
     )
   }
@@ -837,10 +853,12 @@ if ($Platform -in @('all', 'windows')) {
 if ($Platform -in @('all', 'android')) {
   $expectedApks = if ($isOpenRelayDemoBuild) {
     @(
+      'Rain-Demo-Android-ARM-v7a-Build.apk',
       'Rain-Demo-Android-ARM-v8-v9-Build.apk'
     )
   } else {
     @(
+      "$androidArtifactPrefix-android-armeabi-v7a.apk",
       "$androidArtifactPrefix-android-arm64-v8a.apk"
     )
   }
