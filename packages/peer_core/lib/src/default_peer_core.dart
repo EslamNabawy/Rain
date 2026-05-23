@@ -44,6 +44,7 @@ class DefaultPeerCore implements PeerCore {
   final List<RTCIceCandidate> _localCandidates = <RTCIceCandidate>[];
 
   RTCPeerConnection? _peerConnection;
+  RTCRtpTransceiver? _localAudioTransceiver;
   RTCRtpSender? _localAudioSender;
   MediaStream? _localAudioStream;
   MediaStreamTrack? _localAudioTrack;
@@ -161,6 +162,7 @@ class DefaultPeerCore implements PeerCore {
     _openChannels.clear();
     await _peerConnection?.close();
     _peerConnection = null;
+    _localAudioTransceiver = null;
     _localAudioSender = null;
     _localCandidates.clear();
     _chunkBuffers.clear();
@@ -186,6 +188,7 @@ class DefaultPeerCore implements PeerCore {
     );
     _lifecycleEpoch += 1;
     _wirePeerConnection(_peerConnection!, _lifecycleEpoch);
+    await _reserveReusableAudioTransceiver(_peerConnection!, _lifecycleEpoch);
     _transition(PeerState.ready);
   }
 
@@ -328,13 +331,20 @@ class DefaultPeerCore implements PeerCore {
     RTCPeerConnection connection,
     int epoch,
   ) async {
-    if (_localAudioSender != null) {
-      return;
-    }
     final stream = _localAudioStream;
     final audioTrack = _localAudioTrack;
     if (stream == null || audioTrack == null) {
       throw StateError('Local audio has not been started.');
+    }
+
+    final existingSender = _localAudioSender;
+    if (existingSender != null) {
+      await existingSender.replaceTrack(audioTrack);
+      _ensureCurrentPeer(connection, epoch, 'reusing local audio sender');
+      await _setSenderStreams(existingSender, stream);
+      await _setLocalAudioDirection(TransceiverDirection.SendRecv);
+      _ensureCurrentPeer(connection, epoch, 'enabling local audio sender');
+      return;
     }
 
     RTCRtpSender? pendingSender;
@@ -342,16 +352,12 @@ class DefaultPeerCore implements PeerCore {
       pendingSender = await connection.addTrack(audioTrack, stream);
       _ensureCurrentPeer(connection, epoch, 'attaching local audio track');
       _localAudioSender = pendingSender;
+      await _setLocalAudioDirection(TransceiverDirection.SendRecv);
     } catch (_) {
       final sender = pendingSender;
       if (sender != null && _isCurrentPeer(connection, epoch)) {
         try {
           await sender.replaceTrack(null);
-        } catch (_) {
-          // Best-effort rollback for partially attached microphone tracks.
-        }
-        try {
-          await connection.removeTrack(sender);
         } catch (_) {
           // Best-effort rollback for partially attached microphone tracks.
         }
@@ -365,7 +371,6 @@ class DefaultPeerCore implements PeerCore {
     final stream = _localAudioStream;
     final config = _config;
     final sender = _localAudioSender;
-    final connection = _peerConnection;
     try {
       if (sender != null) {
         try {
@@ -373,11 +378,11 @@ class DefaultPeerCore implements PeerCore {
         } catch (_) {
           // Peer may already be closing; local device cleanup still matters.
         }
-        if (connection != null) {
+        if (!_destroying) {
           try {
-            await connection.removeTrack(sender);
+            await _setLocalAudioDirection(TransceiverDirection.Inactive);
           } catch (_) {
-            // Sender may already be detached while the peer is closing.
+            // Direction cleanup is best-effort; never block microphone release.
           }
         }
       }
@@ -385,7 +390,6 @@ class DefaultPeerCore implements PeerCore {
         await _disposeMediaStream(stream);
       }
     } finally {
-      _localAudioSender = null;
       _localAudioStream = null;
       _localAudioTrack = null;
       if (config != null) {
@@ -403,6 +407,43 @@ class DefaultPeerCore implements PeerCore {
       }
     }
     await stream.dispose();
+  }
+
+  Future<void> _reserveReusableAudioTransceiver(
+    RTCPeerConnection connection,
+    int epoch,
+  ) async {
+    try {
+      final transceiver = await connection.addTransceiver(
+        kind: RTCRtpMediaType.RTCRtpMediaTypeAudio,
+        init: RTCRtpTransceiverInit(direction: TransceiverDirection.Inactive),
+      );
+      _ensureCurrentPeer(connection, epoch, 'reserving local audio sender');
+      _localAudioTransceiver = transceiver;
+      _localAudioSender = transceiver.sender;
+    } catch (_) {
+      // Older platform bindings can still negotiate voice by adding a track
+      // on demand. The reusable transceiver path is preferred when available.
+    }
+  }
+
+  Future<void> _setSenderStreams(
+    RTCRtpSender sender,
+    MediaStream stream,
+  ) async {
+    try {
+      await sender.setStreams(<MediaStream>[stream]);
+    } catch (_) {
+      // Stream metadata is optional for RTP; replaceTrack is the critical step.
+    }
+  }
+
+  Future<void> _setLocalAudioDirection(TransceiverDirection direction) async {
+    final transceiver = _localAudioTransceiver;
+    if (transceiver == null || transceiver.stoped) {
+      return;
+    }
+    await transceiver.setDirection(direction);
   }
 
   void _attachChannel(

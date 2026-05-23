@@ -609,9 +609,23 @@ void main() {
 
     expect(platform.prepareVoiceAudioCalls, 1);
     expect(platform.userMediaConstraints.single['video'], isFalse);
-    expect(platform.connection.fakeTransceivers, isEmpty);
-    expect(platform.connection.addedTracks, <String?>['audio-1']);
-    expect(platform.connection.addedTrackStreamIds, <String?>['local-audio']);
+    expect(platform.connection.fakeTransceivers, hasLength(1));
+    expect(
+      platform.connection.fakeTransceivers.single.directionChanges,
+      <TransceiverDirection>[TransceiverDirection.SendRecv],
+    );
+    expect(
+      platform.connection.fakeTransceivers.single.sender.replacedTrackIds,
+      <String?>['audio-1'],
+    );
+    expect(
+      platform.connection.fakeTransceivers.single.sender.streamSets.single.map(
+        (stream) => stream.id,
+      ),
+      <String>['local-audio'],
+    );
+    expect(platform.connection.addedTracks, isEmpty);
+    expect(platform.connection.addedTrackStreamIds, isEmpty);
     expect(offer.type, 'offer');
     expect(platform.connection.localDescriptions.last.sdp, 'offer-sdp');
   });
@@ -640,14 +654,21 @@ void main() {
     );
 
     expect(answer.type, 'answer');
-    expect(platform.connection.addedTracks, <String?>['audio-1']);
-    expect(platform.connection.addedTrackStreamIds, <String?>['local-audio']);
+    expect(platform.connection.addedTracks, isEmpty);
+    expect(platform.connection.addedTrackStreamIds, isEmpty);
+    expect(
+      platform.connection.fakeTransceivers.single.sender.replacedTrackIds,
+      <String?>['audio-1'],
+    );
+    expect(
+      platform.connection.fakeTransceivers.single.directionChanges,
+      <TransceiverDirection>[TransceiverDirection.SendRecv],
+    );
     expect(platform.connection.operations, <String>[
       'createOffer',
       'setLocalDescription:offer',
       'setRemoteDescription:answer',
       'setRemoteDescription:offer',
-      'addTrack:audio-1',
       'createAnswer',
       'setLocalDescription:answer',
       'setRemoteDescription:answer',
@@ -658,7 +679,7 @@ void main() {
     );
   });
 
-  test('default peer stops local audio and clears native call audio', () async {
+  test('default peer stops local audio without removing the sender', () async {
     final platform = _FakePlatformBridge();
     final peer = DefaultPeerCore();
 
@@ -678,15 +699,47 @@ void main() {
     await peer.createMediaOffer();
     await peer.stopLocalAudio();
 
-    expect(platform.connection.fakeTransceivers, isEmpty);
-    expect(platform.connection.removedSenderIds, <String>['sender-audio-1']);
+    expect(platform.connection.removedSenderIds, isEmpty);
     expect(
-      platform.connection.addedTrackSenders.single.replacedTrackIds,
-      <String?>[null],
+      platform.connection.fakeTransceivers.single.sender.replacedTrackIds,
+      <String?>['audio-1', null],
     );
     expect(platform.audioStream.audioTrack.stopped, isTrue);
     expect(platform.audioStream.disposed, isTrue);
     expect(platform.clearVoiceAudioCalls, 1);
+  });
+
+  test('default peer reuses detached audio sender for later calls', () async {
+    final platform = _FakePlatformBridge();
+    final peer = DefaultPeerCore();
+
+    await peer.init(
+      PeerConfig(
+        iceServers: const <Map<String, dynamic>>[],
+        platform: platform,
+      ),
+    );
+    await peer.createOffer();
+    await peer.setAnswer(RTCSessionDescription('answer-sdp', 'answer'));
+    platform.channel(PeerChannels.chat).emitOpen();
+    platform.channel(PeerChannels.control).emitOpen();
+    await pumpEventQueue();
+
+    await peer.startLocalAudio();
+    await peer.createMediaOffer();
+    await peer.applyMediaAnswer(
+      RTCSessionDescription('media-answer-1', 'answer'),
+    );
+    await peer.stopLocalAudio();
+    await peer.startLocalAudio();
+    await peer.createMediaOffer();
+
+    expect(platform.connection.addedTracks, isEmpty);
+    expect(platform.connection.removedSenderIds, isEmpty);
+    expect(
+      platform.connection.fakeTransceivers.single.sender.replacedTrackIds,
+      <String?>['audio-1', null, 'audio-1'],
+    );
   });
 
   test(
