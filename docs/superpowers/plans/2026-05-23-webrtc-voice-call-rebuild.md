@@ -313,7 +313,7 @@ git commit -m "feat: add dedicated voice media interface"
 
 **Purpose:** Create real audio-only WebRTC connection per call.
 
-- [ ] Implement `DefaultVoiceMediaConnection`.
+- [x] Implement `DefaultVoiceMediaConnection`.
 
 Core lifecycle:
 
@@ -332,7 +332,7 @@ for (final track in localStream.getAudioTracks()) {
 }
 ```
 
-- [ ] Wire `RTCPeerConnection` events.
+- [x] Wire `RTCPeerConnection` events.
 
 Required event handling:
 
@@ -347,7 +347,7 @@ pc.onIceConnectionState = (state) => diagnostics.recordIceState(state);
 pc.onConnectionState = (state) => diagnostics.recordConnectionState(state);
 ```
 
-- [ ] Implement candidate buffering.
+- [x] Implement candidate buffering.
 
 Rule:
 
@@ -360,7 +360,7 @@ else:
 
 After `setRemoteDescription`, flush queue in order.
 
-- [ ] Implement idempotent dispose.
+- [x] Implement idempotent dispose.
 
 Order:
 
@@ -373,7 +373,7 @@ clear Android audio
 close stream controllers
 ```
 
-- [ ] Tests:
+- [x] Tests:
 
 ```powershell
 cd packages/peer_core
@@ -391,7 +391,7 @@ Must cover:
 - dispose twice is safe
 - repeated call creates new PC
 
-- [ ] Commit.
+- [x] Commit.
 
 ```powershell
 git add packages/peer_core/lib packages/peer_core/test
