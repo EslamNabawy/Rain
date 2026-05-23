@@ -751,7 +751,7 @@ no RTCRtpTransceiver disposed errors
 diagnostics identify failure reason when failure is forced
 ```
 
-## Phase 8: PR Gate
+## Phase 08: PR/Release Gate
 
 Before PR:
 
