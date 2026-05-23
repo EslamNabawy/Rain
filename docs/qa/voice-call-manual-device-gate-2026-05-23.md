@@ -2,21 +2,39 @@
 
 Gate status: BLOCKED
 
-This run did not execute the manual matrix. The current Codex session cannot
-see a physical Android device and cannot run `adb`.
+The automated release gate built fresh demo release artifacts, but this run did
+not execute the manual matrix. The current Codex session cannot see a physical
+Android device and cannot run `adb`.
 
 ## Local Discovery
 
 ```text
 Git branch: dev
-Code candidate at discovery time: 308c10a
+Artifact build commit: a4cba12
 flutter devices: Windows, Chrome, Edge only
 adb devices -l: adb is not recognized on PATH
 ```
 
-Existing local `final product` APKs are not accepted for this gate because they
-are stale and include obsolete universal, ARM v7, and x86_64 APK outputs from
-before the current artifact policy.
+## Built Artifacts
+
+```text
+final product\Rain-Demo-Android-ARM-v7a-Build.apk
+  Size: 28.83 MB
+  SHA256: BC0C25360CB2C7F515DD36769BCC2753226E6DE2A102761CC5079F81AB0DB2E1
+  Native ABI: armeabi-v7a only
+
+final product\Rain-Demo-Android-ARM-v8-v9-Build.apk
+  Size: 36.07 MB
+  SHA256: EA207E21D0DAD016481D8F3DABEB2793FD602E3EA8B10F500D7AF1DDC191B19D
+  Native ABI: arm64-v8a only
+
+final product\Rain-Demo-Windows-x64-Build.zip
+  Size: 25.68 MB
+  SHA256: D33522D471A583B2F665403E6E971F250195EEBF311512857F167DC14B975577
+```
+
+The Android APKs contain the expected WebRTC and SQLite native runtimes:
+`libjingle_peerconnection_so.so` and `libsqlite3.so`.
 
 ## Required Before Rerun
 
