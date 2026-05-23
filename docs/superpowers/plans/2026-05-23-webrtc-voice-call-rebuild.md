@@ -481,7 +481,7 @@ git add packages/rain_core packages/protocol_brain
 git commit -m "feat: add deterministic voice call signaling"
 ```
 
-## Phase 4: Runtime Integration
+## Phase 04: Runtime Integration
 
 **Purpose:** Wire app runtime without UI churn.
 
