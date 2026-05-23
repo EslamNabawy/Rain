@@ -45,22 +45,24 @@
 - Read: `docs/superpowers/plans/2026-05-23-video-call-v2.md`
 - Modify: `docs/superpowers/plans/2026-05-23-voice-call-polish.md`
 
-- [ ] Confirm this plan keeps dedicated voice media peer connections.
-- [ ] Confirm no DB migration is needed for overlay state, selected mic, deafen, or sound settings; these are local app preferences.
-- [ ] Confirm Firebase changes are postponed unless a phase proves a signaling/capability field is required.
-- [ ] Run focused baseline tests before touching code:
+- [x] Confirm this plan keeps dedicated voice media peer connections.
+- [x] Confirm no DB migration is needed for overlay state, selected mic, deafen, or sound settings; these are local app preferences.
+- [x] Confirm Firebase changes are postponed unless a phase proves a signaling/capability field is required.
+- [x] Run focused baseline tests before touching code:
 
 ```powershell
 flutter test packages\peer_core\test\voice_media_connection_test.dart
-flutter test apps\rain\test\friend_flow_test.dart
-flutter test apps\rain\test\rain_chat_widgets_test.dart
+Push-Location apps\rain
+flutter test test\friend_flow_test.dart
+flutter test test\rain_chat_widgets_test.dart
+Pop-Location
 ```
 
-- [ ] Commit only the plan if this phase changes docs:
+- [x] Commit only the plan if this phase changes docs:
 
 ```powershell
 git add docs\superpowers\plans\2026-05-23-voice-call-polish.md
-git commit -m "docs: plan voice call polish"
+git commit -m "docs: record voice call polish baseline"
 ```
 
 ## Phase 01: Baseline Freeze And Signaling Race Hardening
