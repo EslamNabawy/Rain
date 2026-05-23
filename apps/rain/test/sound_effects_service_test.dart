@@ -3,6 +3,7 @@ import 'dart:io';
 import 'package:audioplayers/audioplayers.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_test/flutter_test.dart';
+import 'package:rain/infrastructure/services/app_settings_store.dart';
 import 'package:rain/infrastructure/services/sound_effects_service.dart';
 
 void main() {
@@ -120,6 +121,57 @@ void main() {
     expect(fakes.single.played.single.assetPath, 'sounds/mute.wav');
     expect(fakes.single.played.single.volume, greaterThan(0.12));
     expect(fakes.single.played.single.volume, lessThan(0.20));
+  });
+
+  test('sound effects setting disables playback', () async {
+    final fakes = <_FakeRainSoundPlayer>[];
+    final service = SoundEffectsService(
+      settingsLoader: () => const AppAudioSettings(soundEffectsEnabled: false),
+      playerFactory: (String _) {
+        final fake = _FakeRainSoundPlayer();
+        fakes.add(fake);
+        return fake;
+      },
+    );
+
+    await service.play(RainSoundEffect.send);
+
+    expect(fakes, isEmpty);
+  });
+
+  test('call sounds setting disables only call sound effects', () async {
+    final fakes = <_FakeRainSoundPlayer>[];
+    final service = SoundEffectsService(
+      settingsLoader: () => const AppAudioSettings(callSoundsEnabled: false),
+      playerFactory: (String _) {
+        final fake = _FakeRainSoundPlayer();
+        fakes.add(fake);
+        return fake;
+      },
+    );
+
+    await service.play(RainSoundEffect.callIncoming);
+    await service.play(RainSoundEffect.send);
+
+    expect(fakes, hasLength(1));
+    expect(fakes.single.played.single.assetPath, 'sounds/send.wav');
+  });
+
+  test('sound effects volume scales playback volume', () async {
+    final fakes = <_FakeRainSoundPlayer>[];
+    final service = SoundEffectsService(
+      settingsLoader: () => const AppAudioSettings(soundEffectsVolume: 0.25),
+      playerFactory: (String _) {
+        final fake = _FakeRainSoundPlayer();
+        fakes.add(fake);
+        return fake;
+      },
+    );
+
+    await service.play(RainSoundEffect.send);
+
+    expect(fakes, hasLength(1));
+    expect(fakes.single.played.single.volume, closeTo(0.075, 0.0001));
   });
 
   test('asset map covers every sound effect', () {

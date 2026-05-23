@@ -106,10 +106,91 @@ void main() {
     expect(state.selectedDeviceId, isNull);
     expect(state.hasMissingSelection, isFalse);
   });
+
+  test(
+    'selected microphone test captures and disposes a short stream',
+    () async {
+      final stream = _FakeMediaStream('stream-1', _FakeMediaTrack('track-1'));
+      final platform = _FakePlatformBridge()
+        ..devices = <MediaDeviceInfo>[
+          MediaDeviceInfo(
+            deviceId: 'mic-1',
+            label: 'Desk mic',
+            kind: 'audioinput',
+          ),
+        ]
+        ..userMediaStream = stream;
+      final service = MediaDeviceSettings(
+        platformBridge: platform,
+        settingsStore: AppSettingsStore(),
+      );
+
+      await service.selectMicrophone('mic-1');
+      await service.testSelectedMicrophoneAvailability();
+
+      expect(platform.userMediaConstraints, hasLength(1));
+      final constraints = platform.userMediaConstraints.single;
+      expect(constraints['video'], isFalse);
+      expect(constraints['audio'], containsPair('deviceId', 'mic-1'));
+      expect(stream.audioTrack.stopped, isTrue);
+      expect(stream.disposed, isTrue);
+    },
+  );
+
+  test('selected microphone test rejects missing persisted device', () async {
+    final platform = _FakePlatformBridge()
+      ..devices = <MediaDeviceInfo>[
+        MediaDeviceInfo(
+          deviceId: 'mic-1',
+          label: 'Desk mic',
+          kind: 'audioinput',
+        ),
+      ];
+    final service = MediaDeviceSettings(
+      platformBridge: platform,
+      settingsStore: AppSettingsStore(),
+    );
+
+    await service.selectMicrophone('missing-mic');
+
+    await expectLater(
+      service.testSelectedMicrophoneAvailability(),
+      throwsA(isA<StateError>()),
+    );
+    expect(platform.userMediaConstraints, isEmpty);
+  });
+
+  test('selected microphone test surfaces capture failures', () async {
+    final platform = _FakePlatformBridge()
+      ..devices = <MediaDeviceInfo>[
+        MediaDeviceInfo(
+          deviceId: 'mic-1',
+          label: 'Desk mic',
+          kind: 'audioinput',
+        ),
+      ]
+      ..userMediaError = StateError('Microphone permission denied');
+    final service = MediaDeviceSettings(
+      platformBridge: platform,
+      settingsStore: AppSettingsStore(),
+    );
+
+    await service.selectMicrophone('mic-1');
+
+    await expectLater(
+      service.testSelectedMicrophoneAvailability(),
+      throwsA(isA<StateError>()),
+    );
+    expect(platform.userMediaConstraints, hasLength(1));
+  });
 }
 
 class _FakePlatformBridge implements PlatformBridge {
   List<MediaDeviceInfo> devices = const <MediaDeviceInfo>[];
+  final List<Map<String, dynamic>> userMediaConstraints =
+      <Map<String, dynamic>>[];
+  _FakeMediaStream? userMediaStream;
+  Object? userMediaError;
 
   @override
   Future<List<MediaDeviceInfo>> enumerateMediaDevices() async => devices;
@@ -129,8 +210,14 @@ class _FakePlatformBridge implements PlatformBridge {
   }
 
   @override
-  Future<MediaStream> getUserMedia(Map<String, dynamic> constraints) {
-    throw UnimplementedError();
+  Future<MediaStream> getUserMedia(Map<String, dynamic> constraints) async {
+    userMediaConstraints.add(constraints);
+    final error = userMediaError;
+    if (error != null) {
+      throw error;
+    }
+    return userMediaStream ??
+        _FakeMediaStream('stream-default', _FakeMediaTrack('track-default'));
   }
 
   @override
@@ -159,4 +246,47 @@ class _FakePlatformBridge implements PlatformBridge {
 
   @override
   Future<void> setSpeakerphoneOnButPreferBluetooth() async {}
+}
+
+class _FakeMediaStream extends Fake implements MediaStream {
+  _FakeMediaStream(this._id, this.audioTrack);
+
+  final String _id;
+  final _FakeMediaTrack audioTrack;
+  bool disposed = false;
+
+  @override
+  String get id => _id;
+
+  @override
+  List<MediaStreamTrack> getAudioTracks() => <MediaStreamTrack>[audioTrack];
+
+  @override
+  List<MediaStreamTrack> getTracks() => <MediaStreamTrack>[audioTrack];
+
+  @override
+  List<MediaStreamTrack> getVideoTracks() => const <MediaStreamTrack>[];
+
+  @override
+  Future<void> dispose() async {
+    disposed = true;
+  }
+}
+
+class _FakeMediaTrack extends Fake implements MediaStreamTrack {
+  _FakeMediaTrack(this._id);
+
+  final String _id;
+  bool stopped = false;
+
+  @override
+  String? get id => _id;
+
+  @override
+  String? get kind => 'audio';
+
+  @override
+  Future<void> stop() async {
+    stopped = true;
+  }
 }

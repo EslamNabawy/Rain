@@ -1,3 +1,4 @@
+import 'package:flutter_webrtc/flutter_webrtc.dart';
 import 'package:protocol_brain/protocol_brain.dart';
 
 import 'package:rain/infrastructure/services/app_settings_store.dart';
@@ -101,5 +102,52 @@ class MediaDeviceSettings {
 
   Future<void> selectMicrophone(String? deviceId) async {
     await settingsStore.setSelectedMicrophoneDeviceId(deviceId);
+  }
+
+  Future<void> testSelectedMicrophoneAvailability() async {
+    final selection = await loadMicrophoneSelection();
+    if (selection.hasMissingSelection) {
+      throw StateError('Selected microphone is unavailable.');
+    }
+    MediaStream? stream;
+    try {
+      stream = await platformBridge.getUserMedia(
+        _microphoneTestConstraints(selection.selectedDeviceId),
+      );
+      if (stream.getAudioTracks().isEmpty) {
+        throw StateError('No microphone audio track was captured.');
+      }
+    } finally {
+      if (stream != null) {
+        await _disposeMediaStream(stream);
+      }
+    }
+  }
+
+  Map<String, dynamic> _microphoneTestConstraints(String? deviceId) {
+    final audioConstraints = <String, dynamic>{
+      'echoCancellation': true,
+      'noiseSuppression': true,
+      'autoGainControl': true,
+    };
+    if (deviceId != null) {
+      audioConstraints['deviceId'] = deviceId;
+    }
+    return <String, dynamic>{'audio': audioConstraints, 'video': false};
+  }
+
+  Future<void> _disposeMediaStream(MediaStream stream) async {
+    for (final track in stream.getTracks()) {
+      try {
+        await track.stop();
+      } catch (_) {
+        // Best-effort cleanup after a short microphone probe.
+      }
+    }
+    try {
+      await stream.dispose();
+    } catch (_) {
+      // Best-effort cleanup after a short microphone probe.
+    }
   }
 }

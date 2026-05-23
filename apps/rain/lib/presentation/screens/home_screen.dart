@@ -16,6 +16,7 @@ import 'package:rain/application/state/app_providers.dart';
 import 'package:rain/application/state/connection_diagnostics.dart';
 import 'package:rain/application/state/file_transfer_view.dart';
 import 'package:rain/application/runtime/rain_runtime_controller.dart';
+import 'package:rain/infrastructure/services/app_settings_store.dart';
 import 'package:rain/infrastructure/services/sound_effects_service.dart';
 import 'package:rain/presentation/theme/rain_theme.dart';
 import 'package:rain/presentation/widgets/app_components.dart';
@@ -100,6 +101,17 @@ String _formatUiError(Object error) {
     return 'Call media could not connect. Try again.';
   }
   return message;
+}
+
+VoiceCallOutputRoute _voiceCallOutputRouteForPreference(
+  CallAudioOutputPreference preference,
+) {
+  return switch (preference) {
+    CallAudioOutputPreference.systemDefault =>
+      VoiceCallOutputRoute.systemDefault,
+    CallAudioOutputPreference.speaker => VoiceCallOutputRoute.speaker,
+    CallAudioOutputPreference.bluetooth => VoiceCallOutputRoute.bluetooth,
+  };
 }
 
 String _candidateLabel(String? value) {
@@ -346,6 +358,7 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
   static const double _compactBreakpoint = 860;
 
   String? _selectedPeerId;
+  String? _defaultOutputAppliedCallId;
 
   @override
   Widget build(BuildContext context) {
@@ -502,6 +515,7 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
     }
 
     _handleVoiceCallSound(previous, next);
+    _maybeApplyDefaultVoiceOutput(next);
 
     if (next.phase != VoiceCallPhase.incomingRinging ||
         next.peerId == null ||
@@ -509,6 +523,46 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
       return;
     }
     setState(() => _selectedPeerId = next.peerId);
+  }
+
+  void _maybeApplyDefaultVoiceOutput(VoiceCallState call) {
+    final callId = call.callId;
+    if (call.phase != VoiceCallPhase.active || callId == null) {
+      if (call.phase == VoiceCallPhase.idle ||
+          call.phase == VoiceCallPhase.failed) {
+        _defaultOutputAppliedCallId = null;
+      }
+      return;
+    }
+    if (_defaultOutputAppliedCallId == callId) {
+      return;
+    }
+    _defaultOutputAppliedCallId = callId;
+    unawaited(_applyDefaultVoiceOutput(callId));
+  }
+
+  Future<void> _applyDefaultVoiceOutput(String callId) async {
+    try {
+      final settings = await ref.read(voiceAudioSettingsProvider.future);
+      final route = _voiceCallOutputRouteForPreference(
+        settings.defaultOutputPreference,
+      );
+      if (route == VoiceCallOutputRoute.systemDefault) {
+        return;
+      }
+      if (!mounted) {
+        return;
+      }
+      final current = ref.read(voiceCallProvider);
+      if (current.callId != callId || current.phase != VoiceCallPhase.active) {
+        return;
+      }
+      await ref.read(voiceCallProvider.notifier).setOutputRoute(route);
+    } catch (error) {
+      if (mounted) {
+        _showVoiceCallError(_formatUiError(error));
+      }
+    }
   }
 
   void _handleVoiceCallSound(VoiceCallState? previous, VoiceCallState next) {

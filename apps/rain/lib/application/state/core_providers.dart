@@ -50,7 +50,9 @@ final networkStatusProvider = StreamProvider<NetworkStatusState>((Ref ref) {
 });
 
 final soundEffectsProvider = Provider<SoundEffectsService>((Ref ref) {
-  final service = SoundEffectsService();
+  final service = SoundEffectsService(
+    settingsLoader: ref.watch(appSettingsStoreProvider).loadAudioSettings,
+  );
   ref.onDispose(() => unawaited(service.dispose()));
   return service;
 });

@@ -4,6 +4,8 @@ import 'package:audioplayers/audioplayers.dart';
 import 'package:flutter/foundation.dart';
 import 'package:flutter/services.dart';
 
+import 'app_settings_store.dart';
+
 enum RainSoundEffect {
   send,
   receive,
@@ -21,6 +23,7 @@ enum RainSoundEffect {
 }
 
 typedef RainSoundPlayerFactory = RainSoundPlayer Function(String playerId);
+typedef RainSoundSettingsLoader = FutureOr<AppAudioSettings> Function();
 
 final AudioContextConfig rainSoundEffectsAudioContextConfig =
     AudioContextConfig(
@@ -89,17 +92,20 @@ class AudioplayersRainSoundPlayer implements RainSoundPlayer {
 class SoundEffectsService {
   SoundEffectsService({
     RainSoundPlayerFactory? playerFactory,
+    RainSoundSettingsLoader? settingsLoader,
     DateTime Function()? clock,
     AudioContext? audioContext,
   }) : _playerFactory =
            playerFactory ??
            ((String playerId) =>
                AudioplayersRainSoundPlayer(AudioPlayer(playerId: playerId))),
+       _settingsLoader = settingsLoader ?? (() => const AppAudioSettings()),
        _clock = clock ?? DateTime.now,
        _audioContext =
            audioContext ?? rainSoundEffectsAudioContextConfig.build();
 
   final RainSoundPlayerFactory _playerFactory;
+  final RainSoundSettingsLoader _settingsLoader;
   final DateTime Function() _clock;
   final AudioContext _audioContext;
   final Map<RainSoundEffect, RainSoundPlayer> _players =
@@ -115,7 +121,22 @@ class SoundEffectsService {
     if (_disabled) {
       return;
     }
-    if (!_shouldPlayInCurrentContext(effect, voiceCallActive)) {
+    late final AppAudioSettings settings;
+    try {
+      settings = await Future<AppAudioSettings>.value(_settingsLoader());
+    } catch (error) {
+      _disabled = true;
+      debugPrint('Rain sound effects disabled: $error');
+      return;
+    }
+    if (!settings.soundEffectsEnabled) {
+      return;
+    }
+    if (!settings.callSoundsEnabled && _isCallSoundEffect(effect)) {
+      return;
+    }
+    final reduceDuringCall = voiceCallActive && settings.reduceSoundsDuringCall;
+    if (!_shouldPlayInCurrentContext(effect, reduceDuringCall)) {
       return;
     }
     final now = _clock();
@@ -135,7 +156,9 @@ class SoundEffectsService {
       );
       await player.playAsset(
         _assetFor(effect),
-        volume: _volumeFor(effect, voiceCallActive: voiceCallActive),
+        volume:
+            _volumeFor(effect, voiceCallActive: reduceDuringCall) *
+            settings.soundEffectsVolume,
       );
     } on MissingPluginException {
       _disabled = true;
@@ -227,5 +250,23 @@ bool _isCriticalCallEffect(RainSoundEffect effect) {
     RainSoundEffect.send ||
     RainSoundEffect.receive ||
     RainSoundEffect.action => false,
+  };
+}
+
+bool _isCallSoundEffect(RainSoundEffect effect) {
+  return switch (effect) {
+    RainSoundEffect.callIncoming ||
+    RainSoundEffect.callOutgoing ||
+    RainSoundEffect.callConnected ||
+    RainSoundEffect.callEnded ||
+    RainSoundEffect.callFailed ||
+    RainSoundEffect.mute ||
+    RainSoundEffect.unmute ||
+    RainSoundEffect.deafen ||
+    RainSoundEffect.undeafen => true,
+    RainSoundEffect.send ||
+    RainSoundEffect.receive ||
+    RainSoundEffect.action ||
+    RainSoundEffect.error => false,
   };
 }
