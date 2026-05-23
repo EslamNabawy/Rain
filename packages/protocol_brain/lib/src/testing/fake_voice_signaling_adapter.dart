@@ -173,6 +173,7 @@ final class FakeVoiceSignalingAdapter implements VoiceSignalingAdapter {
     _ensureStatus(room, const <VoiceCallSignalingStatus>{
       VoiceCallSignalingStatus.accepted,
       VoiceCallSignalingStatus.negotiating,
+      VoiceCallSignalingStatus.connected,
     });
     _putRoom(
       room.copyWith(

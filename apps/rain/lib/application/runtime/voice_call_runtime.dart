@@ -23,46 +23,38 @@ extension VoiceCallRuntime on RainRuntimeController {
       'Call media connected but no remote audio arrived.';
   static const String _voiceCallMediaFailed =
       'Call media could not connect. Try again.';
-  static const String _legacyControlChannelVoicePathFrozen =
-      'Voice calls are being rebuilt on Firebase signaling.';
   static bool get _legacyControlChannelVoiceSignalingFrozen => true;
+  static const Duration _voiceCallExpiry = Duration(minutes: 2);
+  static const int _voiceCallTerminalSeq = 1 << 30;
 
   Future<void> startVoiceCall(String username) async {
     final peerId = _normalizedUsername(username);
     if (await fileTransferStore.hasActiveTransferForPeer(peerId)) {
       throw StateError(_voiceCallFileTransferRequired);
     }
-    if (_legacyControlChannelVoiceSignalingFrozen) {
-      throw StateError(_legacyControlChannelVoicePathFrozen);
-    }
 
     _assertVoiceCallCanStart();
+    await _assertVoiceCallPeerIsFriend(peerId);
 
     await _disposeCurrentVoiceCallSession();
     final callId = _newVoiceCallId(peerId);
+    final sessionEpoch = DateTime.now().millisecondsSinceEpoch;
     _setVoiceCallState(
       VoiceCallState(
-        phase: VoiceCallPhase.connectingPeer,
+        phase: VoiceCallPhase.connectingMedia,
         peerId: peerId,
         callId: callId,
         isOutgoing: true,
-        updatedAt: DateTime.now().millisecondsSinceEpoch,
-        detail: 'Connecting peer before ringing.',
+        updatedAt: sessionEpoch,
+        detail: 'Checking microphone permission.',
       ),
     );
 
     try {
-      await connectPeer(
-        peerId,
-        interactive: true,
-        waitForConnected: true,
-        allowStalePresence: true,
-        bypassRetryBackoff: true,
-      );
       final session = await _createVoiceCallSession(
         peerId: peerId,
         callId: callId,
-        sessionEpoch: _newVoiceCallSessionEpoch(),
+        sessionEpoch: sessionEpoch,
         isOutgoing: true,
       );
       await session.startOutgoing();
@@ -175,6 +167,37 @@ extension VoiceCallRuntime on RainRuntimeController {
     return _voiceCallState.blocksFileTransfersFor(_normalizedUsername(peerId));
   }
 
+  Future<void> _handleIncomingVoiceCallEntry(VoiceCallInboxEntry entry) async {
+    if (entry.status.isTerminal) {
+      return;
+    }
+    final peerId = _normalizedUsername(entry.from);
+    final localUsername = _normalizedUsername(selfIdentity.username);
+    if (_normalizedUsername(entry.to) != localUsername ||
+        peerId == localUsername) {
+      return;
+    }
+    final voiceAdapter = _requireVoiceSignalingAdapter();
+    final room = await voiceAdapter.fetchCall(entry.callId);
+    if (room == null ||
+        room.isTerminal ||
+        room.caller != peerId ||
+        room.callee != localUsername) {
+      return;
+    }
+
+    final invite = VoiceCallFrame(
+      type: VoiceCallFrameType.invite,
+      callId: room.callId,
+      from: room.caller,
+      to: room.callee,
+      sentAt: room.createdAt,
+      seq: 1,
+      sessionEpoch: room.createdAt,
+    );
+    await _handleFirebaseVoiceInvite(peerId, invite, room: room);
+  }
+
   Future<void> _handleVoiceCallFrame(
     String peerId,
     VoiceCallFrame frame,
@@ -242,6 +265,50 @@ extension VoiceCallRuntime on RainRuntimeController {
         await session.handleFrame(frame);
         break;
     }
+  }
+
+  Future<void> _handleFirebaseVoiceInvite(
+    String peerId,
+    VoiceCallFrame frame, {
+    required VoiceCallRoom room,
+  }) async {
+    final disposition = await _prepareIncomingVoiceInvite(peerId, frame);
+    if (disposition == _IncomingVoiceInviteDisposition.ignore) {
+      await _voiceCallSession?.handleFrame(frame);
+      return;
+    }
+    if (disposition == _IncomingVoiceInviteDisposition.busy ||
+        await fileTransferStore.hasActiveTransferForPeer(peerId)) {
+      await _endVoiceCallInSignaling(
+        callId: frame.callId,
+        status: VoiceCallSignalingStatus.failed,
+        reason: 'Busy.',
+        reasonCode: _voiceCallBusyReasonCode,
+        bestEffort: true,
+      );
+      return;
+    }
+    final friend = await _localMutations.run(
+      () => friendStore.loadFriend(peerId),
+    );
+    if (friend?.state != FriendState.friend) {
+      await _endVoiceCallInSignaling(
+        callId: frame.callId,
+        status: VoiceCallSignalingStatus.failed,
+        reason: 'Only accepted friends can call.',
+        reasonCode: _voiceCallFailedReasonCode,
+        bestEffort: true,
+      );
+      return;
+    }
+
+    final session = await _createVoiceCallSession(
+      peerId: peerId,
+      callId: frame.callId,
+      sessionEpoch: room.createdAt,
+      isOutgoing: false,
+    );
+    await session.handleFrame(frame);
   }
 
   Future<void> _handleVoiceInvite(String peerId, VoiceCallFrame frame) async {
@@ -374,6 +441,7 @@ extension VoiceCallRuntime on RainRuntimeController {
     if (manager == null) {
       throw StateError('Peer connection is unavailable right now.');
     }
+    _requireVoiceSignalingAdapter();
 
     await _disposeCurrentVoiceCallSession();
     final media = await manager.createVoiceMediaConnection(peerId);
@@ -384,6 +452,7 @@ extension VoiceCallRuntime on RainRuntimeController {
       sessionEpoch: sessionEpoch,
       media: media,
       sendFrame: (VoiceCallFrame frame) => _sendVoiceFrameObject(peerId, frame),
+      isOfferOwner: isOutgoing,
       logger: (String message) {
         errorRecorder?.call(
           StateError('Voice call signaling ignored: $message'),
@@ -399,21 +468,316 @@ extension VoiceCallRuntime on RainRuntimeController {
     ) {
       _applyVoiceSessionState(session, state, isOutgoing: isOutgoing);
     });
+    _watchFirebaseVoiceCall(
+      session: session,
+      peerId: peerId,
+      isOutgoing: isOutgoing,
+    );
     return session;
+  }
+
+  void _watchFirebaseVoiceCall({
+    required VoiceCallSession session,
+    required String peerId,
+    required bool isOutgoing,
+  }) {
+    final voiceAdapter = _requireVoiceSignalingAdapter();
+    final remoteRole = isOutgoing ? VoiceCallRole.callee : VoiceCallRole.caller;
+
+    _voiceSignalingSubscriptions.add(
+      voiceAdapter
+          .watchCall(session.callId)
+          .listen(
+            (VoiceCallRoom? room) async {
+              if (room == null || _voiceCallSession != session) {
+                return;
+              }
+              await _handleFirebaseVoiceRoomUpdate(
+                session: session,
+                room: room,
+                peerId: peerId,
+                isOutgoing: isOutgoing,
+              );
+            },
+            onError: (Object error, StackTrace stackTrace) {
+              _recordVoiceSignalingError(error, stackTrace);
+            },
+          ),
+    );
+    _voiceSignalingSubscriptions.add(
+      voiceAdapter
+          .watchVoiceOffer(session.callId)
+          .listen(
+            (VoiceSignalingEnvelope envelope) async {
+              await _handleFirebaseVoiceEnvelope(
+                session: session,
+                peerId: peerId,
+                envelope: envelope,
+                purpose: SignalingCipher.offerPurpose,
+              );
+            },
+            onError: (Object error, StackTrace stackTrace) {
+              _recordVoiceSignalingError(error, stackTrace);
+            },
+          ),
+    );
+    _voiceSignalingSubscriptions.add(
+      voiceAdapter
+          .watchVoiceAnswer(session.callId)
+          .listen(
+            (VoiceSignalingEnvelope envelope) async {
+              await _handleFirebaseVoiceEnvelope(
+                session: session,
+                peerId: peerId,
+                envelope: envelope,
+                purpose: SignalingCipher.answerPurpose,
+              );
+            },
+            onError: (Object error, StackTrace stackTrace) {
+              _recordVoiceSignalingError(error, stackTrace);
+            },
+          ),
+    );
+    _voiceSignalingSubscriptions.add(
+      voiceAdapter
+          .watchIceCandidates(callId: session.callId, role: remoteRole)
+          .listen(
+            (VoiceCallIceCandidateRecord record) async {
+              await _handleFirebaseVoiceEnvelope(
+                session: session,
+                peerId: peerId,
+                envelope: record.envelope,
+                purpose: _voiceIcePurpose(remoteRole),
+              );
+            },
+            onError: (Object error, StackTrace stackTrace) {
+              _recordVoiceSignalingError(error, stackTrace);
+            },
+          ),
+    );
+  }
+
+  Future<void> _handleFirebaseVoiceRoomUpdate({
+    required VoiceCallSession session,
+    required VoiceCallRoom room,
+    required String peerId,
+    required bool isOutgoing,
+  }) async {
+    if (_voiceCallSession != session || room.callId != session.callId) {
+      return;
+    }
+    final localUsername = _normalizedUsername(selfIdentity.username);
+    final remoteMuted = room.muted[peerId];
+    if (remoteMuted != null && _voiceCallState.isRemoteMuted != remoteMuted) {
+      _setVoiceCallState(
+        _voiceCallState.copyWith(
+          isRemoteMuted: remoteMuted,
+          updatedAt: DateTime.now().millisecondsSinceEpoch,
+        ),
+      );
+    }
+
+    switch (room.status) {
+      case VoiceCallSignalingStatus.ringing:
+      case VoiceCallSignalingStatus.negotiating:
+      case VoiceCallSignalingStatus.connected:
+        break;
+      case VoiceCallSignalingStatus.accepted:
+        if (isOutgoing) {
+          await session.handleFrame(
+            VoiceCallFrame(
+              type: VoiceCallFrameType.accept,
+              callId: room.callId,
+              from: peerId,
+              to: localUsername,
+              sentAt: room.acceptedAt ?? room.updatedAt,
+              seq: 1,
+              sessionEpoch: room.createdAt,
+            ),
+          );
+        }
+        break;
+      case VoiceCallSignalingStatus.ended:
+      case VoiceCallSignalingStatus.failed:
+      case VoiceCallSignalingStatus.expired:
+        if (room.endedBy == localUsername) {
+          return;
+        }
+        await session.handleFrame(
+          _terminalVoiceFrameFromRoom(
+            room: room,
+            from: peerId,
+            to: localUsername,
+          ),
+        );
+        break;
+    }
+  }
+
+  VoiceCallFrame _terminalVoiceFrameFromRoom({
+    required VoiceCallRoom room,
+    required String from,
+    required String to,
+  }) {
+    final type = switch (room.status) {
+      VoiceCallSignalingStatus.failed
+          when room.reasonCode == _voiceCallBusyReasonCode =>
+        VoiceCallFrameType.busy,
+      VoiceCallSignalingStatus.failed
+          when room.reasonCode == _voiceCallMicrophoneDeniedReasonCode =>
+        VoiceCallFrameType.reject,
+      VoiceCallSignalingStatus.failed => VoiceCallFrameType.hangup,
+      VoiceCallSignalingStatus.expired => VoiceCallFrameType.hangup,
+      VoiceCallSignalingStatus.ended => VoiceCallFrameType.hangup,
+      VoiceCallSignalingStatus.ringing ||
+      VoiceCallSignalingStatus.accepted ||
+      VoiceCallSignalingStatus.negotiating ||
+      VoiceCallSignalingStatus.connected => VoiceCallFrameType.hangup,
+    };
+    return VoiceCallFrame(
+      type: type,
+      callId: room.callId,
+      from: from,
+      to: to,
+      sentAt: room.endedAt ?? room.updatedAt,
+      seq: _voiceCallTerminalSeq,
+      sessionEpoch: room.createdAt,
+      reason: room.reason,
+      reasonCode: room.reasonCode,
+    );
+  }
+
+  Future<void> _handleFirebaseVoiceEnvelope({
+    required VoiceCallSession session,
+    required String peerId,
+    required VoiceSignalingEnvelope envelope,
+    required String purpose,
+  }) async {
+    if (_voiceCallSession != session) {
+      return;
+    }
+    try {
+      final frame = await _decryptVoiceFrame(
+        callId: session.callId,
+        envelope: envelope,
+        purpose: purpose,
+      );
+      if (_normalizedUsername(frame.from) ==
+          _normalizedUsername(selfIdentity.username)) {
+        return;
+      }
+      if (_normalizedUsername(frame.from) != _normalizedUsername(peerId)) {
+        return;
+      }
+      await session.handleFrame(frame);
+    } catch (error, stackTrace) {
+      _recordVoiceSignalingError(error, stackTrace);
+      await _failVoiceCall(
+        error,
+        failureReason: VoiceCallFailureReason.mediaConnectionFailed,
+        detail: _voiceCallMediaFailed,
+      );
+    }
   }
 
   Future<void> _sendVoiceFrameObject(
     String peerId,
     VoiceCallFrame frame,
   ) async {
-    if (_legacyControlChannelVoiceSignalingFrozen) {
-      throw StateError(_legacyControlChannelVoicePathFrozen);
+    final voiceAdapter = _requireVoiceSignalingAdapter();
+    final localUsername = _normalizedUsername(selfIdentity.username);
+    final now = DateTime.now().millisecondsSinceEpoch;
+    switch (frame.type) {
+      case VoiceCallFrameType.invite:
+        await voiceAdapter.createOutgoingCall(
+          callId: frame.callId,
+          caller: localUsername,
+          callee: _normalizedUsername(peerId),
+          createdAt: frame.sessionEpoch,
+          expiresAt: frame.sessionEpoch + _voiceCallExpiry.inMilliseconds,
+        );
+        break;
+      case VoiceCallFrameType.accept:
+        await voiceAdapter.acceptCall(
+          callId: frame.callId,
+          callee: localUsername,
+          acceptedAt: now,
+        );
+        break;
+      case VoiceCallFrameType.reject:
+      case VoiceCallFrameType.busy:
+        await voiceAdapter.endCall(
+          callId: frame.callId,
+          username: localUsername,
+          status: VoiceCallSignalingStatus.failed,
+          endedAt: now,
+          reasonCode:
+              frame.reasonCode ??
+              (frame.type == VoiceCallFrameType.busy
+                  ? _voiceCallBusyReasonCode
+                  : _voiceCallFailedReasonCode),
+          reason: frame.reason,
+        );
+        break;
+      case VoiceCallFrameType.hangup:
+        await voiceAdapter.endCall(
+          callId: frame.callId,
+          username: localUsername,
+          status: frame.reasonCode == null
+              ? VoiceCallSignalingStatus.ended
+              : VoiceCallSignalingStatus.failed,
+          endedAt: now,
+          reasonCode: frame.reasonCode,
+          reason: frame.reason,
+        );
+        break;
+      case VoiceCallFrameType.offer:
+        await voiceAdapter.writeVoiceOffer(
+          callId: frame.callId,
+          caller: localUsername,
+          offer: await _encryptVoiceFrame(
+            frame,
+            purpose: SignalingCipher.offerPurpose,
+            maxCiphertextLength: VoiceSignalingEnvelope.maxSdpCiphertextLength,
+          ),
+          updatedAt: now,
+        );
+        break;
+      case VoiceCallFrameType.answer:
+        await voiceAdapter.writeVoiceAnswer(
+          callId: frame.callId,
+          callee: localUsername,
+          answer: await _encryptVoiceFrame(
+            frame,
+            purpose: SignalingCipher.answerPurpose,
+            maxCiphertextLength: VoiceSignalingEnvelope.maxSdpCiphertextLength,
+          ),
+          updatedAt: now,
+        );
+        break;
+      case VoiceCallFrameType.candidate:
+        final localRole = _localVoiceCallRole();
+        await voiceAdapter.writeIceCandidate(
+          callId: frame.callId,
+          username: localUsername,
+          role: localRole,
+          candidate: await _encryptVoiceFrame(
+            frame,
+            purpose: _voiceIcePurpose(localRole),
+            maxCiphertextLength: VoiceSignalingEnvelope.maxIceCiphertextLength,
+          ),
+          createdAt: now,
+        );
+        break;
+      case VoiceCallFrameType.mute:
+        await voiceAdapter.setMuted(
+          callId: frame.callId,
+          username: localUsername,
+          muted: frame.muted ?? false,
+          updatedAt: now,
+        );
+        break;
     }
-    final manager = brain;
-    if (manager == null) {
-      throw StateError('Peer connection is unavailable right now.');
-    }
-    manager.sendControl(peerId, frame.encode());
   }
 
   void _applyVoiceSessionState(
@@ -454,6 +818,23 @@ extension VoiceCallRuntime on RainRuntimeController {
         failureReason: failureReason,
       ),
     );
+
+    if (mappedPhase == VoiceCallPhase.active) {
+      final voiceAdapter = voiceSignalingAdapter;
+      if (voiceAdapter != null) {
+        unawaited(
+          voiceAdapter
+              .markConnected(
+                callId: session.callId,
+                username: _normalizedUsername(selfIdentity.username),
+                connectedAt: now,
+              )
+              .catchError((Object error, StackTrace stackTrace) {
+                _recordVoiceSignalingError(error, stackTrace);
+              }),
+        );
+      }
+    }
 
     if (mappedPhase == VoiceCallPhase.failed) {
       _recordVoiceCallSessionFailure(
@@ -588,6 +969,7 @@ extension VoiceCallRuntime on RainRuntimeController {
   }
 
   Future<void> _disposeCurrentVoiceCallSession() async {
+    await _cancelVoiceSignalingSubscriptions();
     final session = _voiceCallSession;
     if (session == null) {
       await _voiceCallSessionSubscription?.cancel();
@@ -600,6 +982,7 @@ extension VoiceCallRuntime on RainRuntimeController {
   Future<void> _disposeVoiceCallSession(VoiceCallSession session) async {
     if (_voiceCallSession == session) {
       _voiceCallSession = null;
+      await _cancelVoiceSignalingSubscriptions();
       await _voiceCallSessionSubscription?.cancel();
       _voiceCallSessionSubscription = null;
     }
@@ -643,6 +1026,105 @@ extension VoiceCallRuntime on RainRuntimeController {
     }
   }
 
+  Future<VoiceSignalingEnvelope> _encryptVoiceFrame(
+    VoiceCallFrame frame, {
+    required String purpose,
+    required int maxCiphertextLength,
+  }) async {
+    final encrypted = await voiceSignalingCipher.encryptPayload(
+      roomId: frame.callId,
+      purpose: purpose,
+      timestamp: frame.sentAt,
+      payload: frame.toJson(),
+    );
+    return VoiceSignalingEnvelope.fromJson(
+      Map<Object?, Object?>.from(encrypted),
+      maxCiphertextLength: maxCiphertextLength,
+    );
+  }
+
+  Future<VoiceCallFrame> _decryptVoiceFrame({
+    required String callId,
+    required VoiceSignalingEnvelope envelope,
+    required String purpose,
+  }) async {
+    final decrypted = await voiceSignalingCipher.decryptPayload(
+      roomId: callId,
+      purpose: purpose,
+      payload: envelope.toJson(
+        maxCiphertextLength:
+            purpose == SignalingCipher.offerPurpose ||
+                purpose == SignalingCipher.answerPurpose
+            ? VoiceSignalingEnvelope.maxSdpCiphertextLength
+            : VoiceSignalingEnvelope.maxIceCiphertextLength,
+      ),
+    );
+    return VoiceCallFrame.fromJson(Map<String, Object?>.from(decrypted));
+  }
+
+  VoiceCallRole _localVoiceCallRole() {
+    return _voiceCallState.isOutgoing
+        ? VoiceCallRole.caller
+        : VoiceCallRole.callee;
+  }
+
+  String _voiceIcePurpose(VoiceCallRole role) {
+    return switch (role) {
+      VoiceCallRole.caller => SignalingCipher.callerIcePurpose,
+      VoiceCallRole.callee => SignalingCipher.calleeIcePurpose,
+    };
+  }
+
+  VoiceSignalingAdapter _requireVoiceSignalingAdapter() {
+    final voiceAdapter = voiceSignalingAdapter;
+    if (voiceAdapter == null) {
+      throw StateError('Voice calls require Firebase voice signaling.');
+    }
+    return voiceAdapter;
+  }
+
+  void _recordVoiceSignalingError(Object error, StackTrace stackTrace) {
+    errorRecorder?.call(
+      error,
+      stackTrace,
+      source: 'voice-call-signaling',
+      fatal: false,
+    );
+  }
+
+  Future<void> _cancelVoiceSignalingSubscriptions() async {
+    final subscriptions = List<StreamSubscription<dynamic>>.of(
+      _voiceSignalingSubscriptions,
+    );
+    _voiceSignalingSubscriptions.clear();
+    for (final subscription in subscriptions) {
+      await subscription.cancel();
+    }
+  }
+
+  Future<void> _endVoiceCallInSignaling({
+    required String callId,
+    required VoiceCallSignalingStatus status,
+    String? reason,
+    String? reasonCode,
+    bool bestEffort = false,
+  }) async {
+    try {
+      await _requireVoiceSignalingAdapter().endCall(
+        callId: callId,
+        username: _normalizedUsername(selfIdentity.username),
+        status: status,
+        endedAt: DateTime.now().millisecondsSinceEpoch,
+        reason: reason,
+        reasonCode: reasonCode,
+      );
+    } catch (_) {
+      if (!bestEffort) {
+        rethrow;
+      }
+    }
+  }
+
   Future<void> _endVoiceCallForPeer(
     String peerId, {
     required bool notifyPeer,
@@ -657,6 +1139,12 @@ extension VoiceCallRuntime on RainRuntimeController {
       if (notifyPeer) {
         await session.hangUp(reason: detail);
       } else {
+        await _endVoiceCallInSignaling(
+          callId: session.callId,
+          status: VoiceCallSignalingStatus.ended,
+          reason: detail,
+          bestEffort: true,
+        );
         _setVoiceCallState(
           current.copyWith(
             phase: VoiceCallPhase.ending,
@@ -682,6 +1170,13 @@ extension VoiceCallRuntime on RainRuntimeController {
         current.peerId!,
         VoiceCallFrameType.hangup,
         callId: current.callId!,
+        reason: detail,
+        bestEffort: true,
+      );
+    } else if (current.callId != null) {
+      await _endVoiceCallInSignaling(
+        callId: current.callId!,
+        status: VoiceCallSignalingStatus.ended,
         reason: detail,
         bestEffort: true,
       );
@@ -735,9 +1230,23 @@ extension VoiceCallRuntime on RainRuntimeController {
     if (brain == null) {
       throw StateError('Peer connection is unavailable right now.');
     }
+    _requireVoiceSignalingAdapter();
     if (_voiceCallState.hasCall &&
         _voiceCallState.phase != VoiceCallPhase.failed) {
       throw StateError('Finish the active call before starting another.');
+    }
+  }
+
+  Future<void> _assertVoiceCallPeerIsFriend(String peerId) async {
+    var friend = await _localMutations.run(
+      () => friendStore.loadFriend(peerId),
+    );
+    if (friend?.state != FriendState.friend) {
+      await _syncRelationships(onlyUsername: peerId);
+      friend = await _localMutations.run(() => friendStore.loadFriend(peerId));
+    }
+    if (friend?.state != FriendState.friend) {
+      throw StateError('Only accepted friends can call.');
     }
   }
 
@@ -756,10 +1265,6 @@ extension VoiceCallRuntime on RainRuntimeController {
   String _newVoiceCallId(String peerId) {
     final now = DateTime.now().microsecondsSinceEpoch.toRadixString(36);
     return '${_normalizedUsername(selfIdentity.username)}:$peerId:$now';
-  }
-
-  int _newVoiceCallSessionEpoch() {
-    return DateTime.now().microsecondsSinceEpoch;
   }
 
   String _voiceCallErrorMessage(Object error) {

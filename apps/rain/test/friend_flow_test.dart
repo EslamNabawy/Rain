@@ -7,6 +7,7 @@ import 'package:drift/native.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:flutter_webrtc/flutter_webrtc.dart' show RTCSessionDescription;
 import 'package:protocol_brain/protocol_brain.dart';
+import 'package:protocol_brain/testing.dart';
 import 'package:rain/infrastructure/signaling/noop_signaling_adapter.dart';
 import 'package:rain/application/runtime/rain_runtime_controller.dart';
 import 'package:rain/application/runtime/voice_call_state.dart';
@@ -820,7 +821,7 @@ void main() {
       },
     );
 
-    test('startVoiceCall is frozen before legacy peer/control use', () async {
+    test('startVoiceCall requires Firebase voice signaling', () async {
       final adapter = NoopSignalingAdapter();
       final brain = TestSessionManager();
       await adapter.register('bob', 'bobpw');
@@ -844,7 +845,7 @@ void main() {
           isA<StateError>().having(
             (error) => error.toString(),
             'message',
-            contains('Voice calls are being rebuilt on Firebase signaling'),
+            contains('Voice calls require Firebase voice signaling'),
           ),
         ),
       );
@@ -968,6 +969,354 @@ void main() {
 
       expect(brain.registeredPeers, isEmpty);
       expect(brain.sentControlPayloads, isEmpty);
+    });
+
+    test(
+      'startVoiceCall creates Firebase voice room without peer connect',
+      () async {
+        final adapter = RecordingVoiceSignalingAdapter();
+        final brain = TestSessionManager();
+        await adapter.register('bob', 'bobpw');
+        await adapter.upsertFriendship('alice', 'bob');
+        await db
+            .into(db.friends)
+            .insert(
+              FriendsCompanion.insert(
+                username: 'bob',
+                displayName: 'Bob',
+                state: 'friend',
+                addedAt: 0,
+              ),
+            );
+        final runtime = _runtimeFor(db, alice, adapter, brain: brain);
+        addTearDown(runtime.dispose);
+
+        await runtime.start();
+        await runtime.startVoiceCall('bob');
+
+        expect(runtime.voiceCallState.phase, VoiceCallPhase.outgoingRinging);
+        expect(adapter.rooms.values.single.caller, 'alice');
+        expect(adapter.rooms.values.single.callee, 'bob');
+        expect(
+          adapter.rooms.values.single.status,
+          VoiceCallSignalingStatus.ringing,
+        );
+        expect(brain.startedAudioPeers, <String>['bob']);
+        expect(brain.connectedPeers, isEmpty);
+        expect(brain.sentControlPayloads, isEmpty);
+      },
+    );
+
+    test(
+      'Firebase voice signaling reaches active without chat peer link',
+      () async {
+        final adapter = RecordingVoiceSignalingAdapter();
+        final aliceBrain = TestSessionManager();
+        final bobBrain = TestSessionManager();
+        final bobDb = RainDatabase(NativeDatabase.memory());
+        addTearDown(bobDb.close);
+        await adapter.register('bob', 'bobpw');
+        await adapter.upsertFriendship('alice', 'bob');
+        await db
+            .into(db.friends)
+            .insert(
+              FriendsCompanion.insert(
+                username: 'bob',
+                displayName: 'Bob',
+                state: 'friend',
+                addedAt: 0,
+              ),
+            );
+        await bobDb
+            .into(bobDb.friends)
+            .insert(
+              FriendsCompanion.insert(
+                username: 'alice',
+                displayName: 'Alice',
+                state: 'friend',
+                addedAt: 0,
+              ),
+            );
+        final bob = RainIdentity(
+          username: 'bob',
+          displayName: 'Bob',
+          createdAt: DateTime.now().millisecondsSinceEpoch,
+          gender: RainGender.male,
+        );
+        final aliceRuntime = _runtimeFor(db, alice, adapter, brain: aliceBrain);
+        final bobRuntime = _runtimeFor(bobDb, bob, adapter, brain: bobBrain);
+        addTearDown(aliceRuntime.dispose);
+        addTearDown(bobRuntime.dispose);
+
+        await aliceRuntime.start();
+        await bobRuntime.start();
+        await aliceRuntime.startVoiceCall('bob');
+        await _waitForCondition(
+          () =>
+              bobRuntime.voiceCallState.phase == VoiceCallPhase.incomingRinging,
+          'Firebase voice invite to ring on callee',
+        );
+        await bobRuntime.acceptVoiceCall();
+
+        await _waitForCondition(
+          () =>
+              aliceRuntime.voiceCallState.phase == VoiceCallPhase.active &&
+              bobRuntime.voiceCallState.phase == VoiceCallPhase.active,
+          'Firebase voice call to become active on both peers',
+        );
+
+        expect(aliceBrain.connectedPeers, isEmpty);
+        expect(bobBrain.connectedPeers, isEmpty);
+        expect(
+          adapter.rooms.values.single.status,
+          VoiceCallSignalingStatus.connected,
+        );
+
+        await aliceRuntime.sendMessage('bob', 'chat still works');
+        final queued = await db.select(db.queuedMessages).get();
+        expect(queued, hasLength(1));
+      },
+    );
+
+    test('outgoing microphone denial writes no Firebase invite', () async {
+      final adapter = RecordingVoiceSignalingAdapter();
+      final brain = TestSessionManager()
+        ..startLocalAudioError = StateError('Microphone permission denied');
+      await adapter.register('bob', 'bobpw');
+      await adapter.upsertFriendship('alice', 'bob');
+      await db
+          .into(db.friends)
+          .insert(
+            FriendsCompanion.insert(
+              username: 'bob',
+              displayName: 'Bob',
+              state: 'friend',
+              addedAt: 0,
+            ),
+          );
+      final runtime = _runtimeFor(db, alice, adapter, brain: brain);
+      addTearDown(runtime.dispose);
+
+      await runtime.start();
+      await expectLater(runtime.startVoiceCall('bob'), throwsStateError);
+
+      expect(adapter.rooms, isEmpty);
+      expect(runtime.voiceCallState.phase, VoiceCallPhase.failed);
+      expect(
+        runtime.voiceCallState.failureReason,
+        VoiceCallFailureReason.microphoneDenied,
+      );
+    });
+
+    test(
+      'incoming microphone denial fails Firebase room before accept',
+      () async {
+        final adapter = RecordingVoiceSignalingAdapter();
+        final aliceBrain = TestSessionManager();
+        final bobBrain = TestSessionManager()
+          ..startLocalAudioError = StateError('Microphone permission denied');
+        final bobDb = RainDatabase(NativeDatabase.memory());
+        addTearDown(bobDb.close);
+        await adapter.register('bob', 'bobpw');
+        await adapter.upsertFriendship('alice', 'bob');
+        await db
+            .into(db.friends)
+            .insert(
+              FriendsCompanion.insert(
+                username: 'bob',
+                displayName: 'Bob',
+                state: 'friend',
+                addedAt: 0,
+              ),
+            );
+        await bobDb
+            .into(bobDb.friends)
+            .insert(
+              FriendsCompanion.insert(
+                username: 'alice',
+                displayName: 'Alice',
+                state: 'friend',
+                addedAt: 0,
+              ),
+            );
+        final bob = RainIdentity(
+          username: 'bob',
+          displayName: 'Bob',
+          createdAt: DateTime.now().millisecondsSinceEpoch,
+          gender: RainGender.male,
+        );
+        final aliceRuntime = _runtimeFor(db, alice, adapter, brain: aliceBrain);
+        final bobRuntime = _runtimeFor(bobDb, bob, adapter, brain: bobBrain);
+        addTearDown(aliceRuntime.dispose);
+        addTearDown(bobRuntime.dispose);
+
+        await aliceRuntime.start();
+        await bobRuntime.start();
+        await aliceRuntime.startVoiceCall('bob');
+        await _waitForCondition(
+          () =>
+              bobRuntime.voiceCallState.phase == VoiceCallPhase.incomingRinging,
+          'Firebase voice invite to ring before mic denial',
+        );
+
+        await expectLater(bobRuntime.acceptVoiceCall(), throwsStateError);
+        await _waitForCondition(
+          () =>
+              adapter.rooms.values.single.status ==
+              VoiceCallSignalingStatus.failed,
+          'Firebase voice room to fail after callee mic denial',
+        );
+
+        final room = adapter.rooms.values.single;
+        expect(room.reasonCode, 'microphoneDenied');
+        expect(bobRuntime.voiceCallState.phase, VoiceCallPhase.failed);
+        await _waitForCondition(
+          () => aliceRuntime.voiceCallState.phase == VoiceCallPhase.failed,
+          'caller to see remote microphone denial',
+        );
+        expect(
+          aliceRuntime.voiceCallState.failureReason,
+          VoiceCallFailureReason.remoteMicrophoneDenied,
+        );
+      },
+    );
+
+    test(
+      'active Firebase voice call blocks new outgoing file transfer',
+      () async {
+        final adapter = RecordingVoiceSignalingAdapter();
+        final aliceBrain = TestSessionManager();
+        final bobBrain = TestSessionManager();
+        final bobDb = RainDatabase(NativeDatabase.memory());
+        addTearDown(bobDb.close);
+        await adapter.register('bob', 'bobpw');
+        await adapter.upsertFriendship('alice', 'bob');
+        await db
+            .into(db.friends)
+            .insert(
+              FriendsCompanion.insert(
+                username: 'bob',
+                displayName: 'Bob',
+                state: 'friend',
+                addedAt: 0,
+              ),
+            );
+        await bobDb
+            .into(bobDb.friends)
+            .insert(
+              FriendsCompanion.insert(
+                username: 'alice',
+                displayName: 'Alice',
+                state: 'friend',
+                addedAt: 0,
+              ),
+            );
+        final bob = RainIdentity(
+          username: 'bob',
+          displayName: 'Bob',
+          createdAt: DateTime.now().millisecondsSinceEpoch,
+          gender: RainGender.male,
+        );
+        final aliceRuntime = _runtimeFor(db, alice, adapter, brain: aliceBrain);
+        final bobRuntime = _runtimeFor(bobDb, bob, adapter, brain: bobBrain);
+        addTearDown(aliceRuntime.dispose);
+        addTearDown(bobRuntime.dispose);
+
+        await aliceRuntime.start();
+        await bobRuntime.start();
+        await aliceRuntime.startVoiceCall('bob');
+        await _waitForCondition(
+          () =>
+              bobRuntime.voiceCallState.phase == VoiceCallPhase.incomingRinging,
+          'Firebase voice invite to ring before file block check',
+        );
+        await bobRuntime.acceptVoiceCall();
+        await _waitForCondition(
+          () => aliceRuntime.voiceCallState.phase == VoiceCallPhase.active,
+          'Firebase voice call to become active before file block check',
+        );
+
+        await expectLater(
+          aliceRuntime.sendFile(
+            peerId: 'bob',
+            fileName: 'blocked.txt',
+            fileSize: 1,
+            openRead: () => Stream<List<int>>.value(<int>[1]),
+          ),
+          throwsA(
+            isA<StateError>().having(
+              (error) => error.toString(),
+              'message',
+              contains('Finish the call before sending files'),
+            ),
+          ),
+        );
+      },
+    );
+
+    test('dispose releases active Firebase voice room', () async {
+      final adapter = RecordingVoiceSignalingAdapter();
+      final aliceBrain = TestSessionManager();
+      final bobBrain = TestSessionManager();
+      final bobDb = RainDatabase(NativeDatabase.memory());
+      addTearDown(bobDb.close);
+      await adapter.register('bob', 'bobpw');
+      await adapter.upsertFriendship('alice', 'bob');
+      await db
+          .into(db.friends)
+          .insert(
+            FriendsCompanion.insert(
+              username: 'bob',
+              displayName: 'Bob',
+              state: 'friend',
+              addedAt: 0,
+            ),
+          );
+      await bobDb
+          .into(bobDb.friends)
+          .insert(
+            FriendsCompanion.insert(
+              username: 'alice',
+              displayName: 'Alice',
+              state: 'friend',
+              addedAt: 0,
+            ),
+          );
+      final bob = RainIdentity(
+        username: 'bob',
+        displayName: 'Bob',
+        createdAt: DateTime.now().millisecondsSinceEpoch,
+        gender: RainGender.male,
+      );
+      final aliceRuntime = _runtimeFor(db, alice, adapter, brain: aliceBrain);
+      final bobRuntime = _runtimeFor(bobDb, bob, adapter, brain: bobBrain);
+      addTearDown(aliceRuntime.dispose);
+      addTearDown(bobRuntime.dispose);
+
+      await aliceRuntime.start();
+      await bobRuntime.start();
+      await aliceRuntime.startVoiceCall('bob');
+      await _waitForCondition(
+        () => bobRuntime.voiceCallState.phase == VoiceCallPhase.incomingRinging,
+        'Firebase voice invite to ring before dispose cleanup',
+      );
+      await bobRuntime.acceptVoiceCall();
+      await _waitForCondition(
+        () => aliceRuntime.voiceCallState.phase == VoiceCallPhase.active,
+        'Firebase voice call to become active before dispose cleanup',
+      );
+
+      await aliceRuntime.dispose();
+
+      await _waitForCondition(
+        () =>
+            adapter.rooms.values.single.status ==
+            VoiceCallSignalingStatus.ended,
+        'Firebase voice room to end on runtime dispose',
+      );
+      final room = adapter.rooms.values.single;
+      expect(room.endedBy, 'alice');
+      expect(room.reason, 'Rain is closing.');
     });
 
     group(
@@ -2904,6 +3253,175 @@ class RecordingNoopSignalingAdapter extends NoopSignalingAdapter {
   String _friendshipKey(String firstUser, String secondUser) {
     final users = <String>[firstUser, secondUser]..sort();
     return '${users[0]}::${users[1]}';
+  }
+}
+
+class RecordingVoiceSignalingAdapter extends RecordingNoopSignalingAdapter
+    implements VoiceSignalingAdapter {
+  final FakeVoiceSignalingAdapter _voice = FakeVoiceSignalingAdapter();
+
+  Map<String, VoiceCallRoom> get rooms => _voice.rooms;
+
+  @override
+  Future<void> acceptCall({
+    required String callId,
+    required String callee,
+    required int acceptedAt,
+  }) {
+    return _voice.acceptCall(
+      callId: callId,
+      callee: callee,
+      acceptedAt: acceptedAt,
+    );
+  }
+
+  @override
+  Future<VoiceCallRoom> createOutgoingCall({
+    required String callId,
+    required String caller,
+    required String callee,
+    required int createdAt,
+    required int expiresAt,
+  }) {
+    return _voice.createOutgoingCall(
+      callId: callId,
+      caller: caller,
+      callee: callee,
+      createdAt: createdAt,
+      expiresAt: expiresAt,
+    );
+  }
+
+  @override
+  Future<void> deleteCall(String callId) => _voice.deleteCall(callId);
+
+  @override
+  Future<void> dispose() async {
+    await _voice.dispose();
+    await super.dispose();
+  }
+
+  @override
+  Future<void> endCall({
+    required String callId,
+    required String username,
+    required VoiceCallSignalingStatus status,
+    required int endedAt,
+    String? reasonCode,
+    String? reason,
+  }) {
+    return _voice.endCall(
+      callId: callId,
+      username: username,
+      status: status,
+      endedAt: endedAt,
+      reasonCode: reasonCode,
+      reason: reason,
+    );
+  }
+
+  @override
+  Future<VoiceCallRoom?> fetchCall(String callId) => _voice.fetchCall(callId);
+
+  @override
+  Future<void> markConnected({
+    required String callId,
+    required String username,
+    required int connectedAt,
+  }) {
+    return _voice.markConnected(
+      callId: callId,
+      username: username,
+      connectedAt: connectedAt,
+    );
+  }
+
+  @override
+  Future<void> setMuted({
+    required String callId,
+    required String username,
+    required bool muted,
+    required int updatedAt,
+  }) {
+    return _voice.setMuted(
+      callId: callId,
+      username: username,
+      muted: muted,
+      updatedAt: updatedAt,
+    );
+  }
+
+  @override
+  Stream<VoiceCallRoom?> watchCall(String callId) => _voice.watchCall(callId);
+
+  @override
+  Stream<VoiceCallInboxEntry> watchIncomingCalls(String username) {
+    return _voice.watchIncomingCalls(username);
+  }
+
+  @override
+  Stream<VoiceCallIceCandidateRecord> watchIceCandidates({
+    required String callId,
+    required VoiceCallRole role,
+  }) {
+    return _voice.watchIceCandidates(callId: callId, role: role);
+  }
+
+  @override
+  Stream<VoiceSignalingEnvelope> watchVoiceAnswer(String callId) {
+    return _voice.watchVoiceAnswer(callId);
+  }
+
+  @override
+  Stream<VoiceSignalingEnvelope> watchVoiceOffer(String callId) {
+    return _voice.watchVoiceOffer(callId);
+  }
+
+  @override
+  Future<String> writeIceCandidate({
+    required String callId,
+    required String username,
+    required VoiceCallRole role,
+    required VoiceSignalingEnvelope candidate,
+    required int createdAt,
+  }) {
+    return _voice.writeIceCandidate(
+      callId: callId,
+      username: username,
+      role: role,
+      candidate: candidate,
+      createdAt: createdAt,
+    );
+  }
+
+  @override
+  Future<void> writeVoiceAnswer({
+    required String callId,
+    required String callee,
+    required VoiceSignalingEnvelope answer,
+    required int updatedAt,
+  }) {
+    return _voice.writeVoiceAnswer(
+      callId: callId,
+      callee: callee,
+      answer: answer,
+      updatedAt: updatedAt,
+    );
+  }
+
+  @override
+  Future<void> writeVoiceOffer({
+    required String callId,
+    required String caller,
+    required VoiceSignalingEnvelope offer,
+    required int updatedAt,
+  }) {
+    return _voice.writeVoiceOffer(
+      callId: callId,
+      caller: caller,
+      offer: offer,
+      updatedAt: updatedAt,
+    );
   }
 }
 

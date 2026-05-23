@@ -333,6 +333,31 @@ void main() {
     },
   );
 
+  test('dedicated voice media does not require a chat peer session', () async {
+    final adapter = _RecordingSignalingAdapter();
+    final requestedPolicies = <PeerIceTransportPolicy>[];
+    final brain = ProtocolBrainImpl(
+      selfUsername: 'alice',
+      adapter: adapter,
+      peerConfig: _fakePeerConfig(),
+      peerFactory: _FakePeerCore.new,
+      peerConfigProvider: (PeerIceTransportPolicy policy) async {
+        requestedPolicies.add(policy);
+        return _fakePeerConfig().copyWith(iceTransportPolicy: policy);
+      },
+      connectionMemoryStore: _MemoryConnectionStore(),
+    );
+
+    final media = await brain.createVoiceMediaConnection('bob');
+    addTearDown(media.dispose);
+
+    expect(media, isA<VoiceMediaConnection>());
+    expect(brain.getSession('bob'), isNull);
+    expect(requestedPolicies, <PeerIceTransportPolicy>[
+      PeerIceTransportPolicy.all,
+    ]);
+  });
+
   test('failed session does not keep stale direct route', () async {
     final adapter = _RecordingSignalingAdapter();
     late _FakePeerCore peer;

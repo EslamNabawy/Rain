@@ -337,8 +337,8 @@ class ProtocolBrainImpl implements ProtocolBrain {
 
   @override
   Future<VoiceMediaConnection> createVoiceMediaConnection(String peerId) async {
-    final active = _requireConnectedSession(peerId);
-    final policy = active.icePolicy;
+    final active = _sessions[peerId];
+    final policy = active?.icePolicy ?? PeerIceTransportPolicy.all;
     final config = peerConfigProvider == null
         ? peerConfig.copyWith(iceTransportPolicy: policy)
         : await peerConfigProvider!(policy);

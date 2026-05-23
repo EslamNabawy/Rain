@@ -185,6 +185,9 @@ class RuntimeController extends AsyncNotifier<RainRuntimeController?> {
     final controller = RainRuntimeController(
       selfIdentity: identity,
       adapter: ref.watch(adapterProvider),
+      voiceSignalingCipher: SignalingCipher.fromKeyMaterial(
+        environment.signalingEncryptionKey,
+      ),
       brain: ref.watch(brainProvider),
       database: ref.watch(databaseProvider),
       friendStore: ref.watch(friendStoreProvider),

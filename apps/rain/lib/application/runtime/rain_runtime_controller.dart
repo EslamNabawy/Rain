@@ -54,6 +54,8 @@ class RainRuntimeController with WidgetsBindingObserver {
     required this.offlineQueueStore,
     required this.messageDeliveryService,
     FileTransferStore? fileTransferStore,
+    VoiceSignalingAdapter? voiceSignalingAdapter,
+    SignalingCipher? voiceSignalingCipher,
     this.heartbeatInterval = const Duration(minutes: 3),
     this.friendRequestRefreshInterval = Duration.zero,
     this.maxPassivePeerListeners = 32,
@@ -63,6 +65,12 @@ class RainRuntimeController with WidgetsBindingObserver {
     Future<Directory> Function()? documentsDirectoryProvider,
     this.errorRecorder,
   }) : fileTransferStore = fileTransferStore ?? FileTransferStore(database),
+       voiceSignalingAdapter =
+           voiceSignalingAdapter ??
+           (adapter is VoiceSignalingAdapter
+               ? adapter as VoiceSignalingAdapter
+               : null),
+       voiceSignalingCipher = voiceSignalingCipher ?? SignalingCipher.demo(),
        _documentsDirectoryProvider =
            documentsDirectoryProvider ?? getApplicationDocumentsDirectory,
        _connectionCoordinator = ConnectionAttemptCoordinator(
@@ -85,6 +93,8 @@ class RainRuntimeController with WidgetsBindingObserver {
   final OfflineQueueStore offlineQueueStore;
   final MessageDeliveryService messageDeliveryService;
   final FileTransferStore fileTransferStore;
+  final VoiceSignalingAdapter? voiceSignalingAdapter;
+  final SignalingCipher voiceSignalingCipher;
   final Duration heartbeatInterval;
   final Duration friendRequestRefreshInterval;
   final int maxPassivePeerListeners;
@@ -110,6 +120,8 @@ class RainRuntimeController with WidgetsBindingObserver {
   VoiceCallState _voiceCallState = const VoiceCallState.idle();
   VoiceCallSession? _voiceCallSession;
   StreamSubscription<VoiceCallSessionState>? _voiceCallSessionSubscription;
+  final List<StreamSubscription<dynamic>> _voiceSignalingSubscriptions =
+      <StreamSubscription<dynamic>>[];
   late final FileTransferProgressBatcher _fileProgressBatcher;
   final ConnectionAttemptCoordinator _connectionCoordinator;
 
@@ -241,6 +253,27 @@ class RainRuntimeController with WidgetsBindingObserver {
             },
           ),
     );
+
+    final voiceAdapter = voiceSignalingAdapter;
+    if (voiceAdapter != null) {
+      _subscriptions.add(
+        voiceAdapter
+            .watchIncomingCalls(selfIdentity.username)
+            .listen(
+              (VoiceCallInboxEntry entry) async {
+                await _handleIncomingVoiceCallEntry(entry);
+              },
+              onError: (Object error, StackTrace stackTrace) {
+                errorRecorder?.call(
+                  error,
+                  stackTrace,
+                  source: 'voice-call-signaling',
+                  fatal: false,
+                );
+              },
+            ),
+      );
+    }
 
     if (brain != null) {
       _subscriptions.add(
@@ -539,6 +572,15 @@ class RainRuntimeController with WidgetsBindingObserver {
       } catch (_) {
         // Network-loss cleanup is best effort; the next launch can retry cleanup.
       }
+    }
+
+    final activeVoicePeer = _voiceCallState.peerId;
+    if (_voiceCallState.hasCall && activeVoicePeer != null) {
+      await _endVoiceCallForPeer(
+        activeVoicePeer,
+        notifyPeer: false,
+        detail: reason,
+      );
     }
 
     final sessions = brain?.getSessions() ?? const <Session>[];
@@ -1042,6 +1084,19 @@ class RainRuntimeController with WidgetsBindingObserver {
         await adapter.setPresence(selfIdentity.username, false);
       } catch (error) {
         // Ignore permission errors during logout
+      }
+    }
+
+    final activeVoicePeer = _voiceCallState.peerId;
+    if (activeVoicePeer != null) {
+      try {
+        await _endVoiceCallForPeer(
+          activeVoicePeer,
+          notifyPeer: false,
+          detail: 'Rain is closing.',
+        );
+      } catch (_) {
+        // Ignore errors during cleanup
       }
     }
 

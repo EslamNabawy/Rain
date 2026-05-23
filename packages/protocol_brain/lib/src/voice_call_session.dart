@@ -71,9 +71,11 @@ final class VoiceCallSession {
     this.timeouts = const VoiceCallSessionTimeouts(),
     this.clock = DateTime.now,
     this.logger,
+    bool? isOfferOwner,
   }) : state = VoiceCallSessionState.idle(
          updatedAt: clock().millisecondsSinceEpoch,
-       ) {
+       ),
+       _isOfferOwnerOverride = isOfferOwner {
     if (sessionEpoch <= 0) {
       throw ArgumentError.value(
         sessionEpoch,
@@ -96,6 +98,7 @@ final class VoiceCallSession {
   final VoiceCallSessionTimeouts timeouts;
   final VoiceCallClock clock;
   final VoiceCallLogSink? logger;
+  final bool? _isOfferOwnerOverride;
 
   late final String _normalizedLocalPeerId;
   late final String _normalizedRemotePeerId;
@@ -114,7 +117,8 @@ final class VoiceCallSession {
   bool _disposed = false;
   Future<void> _operationTail = Future<void>.value();
 
-  bool get isOfferOwner => isVoiceCallOfferOwner(localPeerId, remotePeerId);
+  bool get isOfferOwner =>
+      _isOfferOwnerOverride ?? isVoiceCallOfferOwner(localPeerId, remotePeerId);
 
   Stream<VoiceCallSessionState> get onStateChanged => _stateController.stream;
 
