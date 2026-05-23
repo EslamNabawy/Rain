@@ -41,15 +41,17 @@ Push a tag like `v1.0.0`, or run **Actions -> Release Rain -> Run workflow** wit
 The release workflow publishes:
 
 - Windows portable zip.
+- Android ARM v7 APK: `Rain-release-android-armeabi-v7a.apk`.
 - Android ARM v8/v9 APK: `Rain-release-android-arm64-v8a.apk`.
 
 The demo artifact workflow publishes:
 
 - Windows portable folder: `Rain-Demo-Windows-x64-Build`.
+- Android ARM v7 APK: `Rain-Demo-Android-ARM-v7a-Build.apk`.
 - Android ARM v8/v9 APK: `Rain-Demo-Android-ARM-v8-v9-Build.apk`.
 
-Universal, ARM v7, and x86_64 APKs are not release artifacts unless a future
-release plan explicitly adds them back as separate named artifacts.
+Universal and x86_64 APKs are not release artifacts unless a future release
+plan explicitly adds them back as separate named artifacts.
 
 ## Pre-Release Live Smoke Checks
 

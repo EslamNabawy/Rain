@@ -178,7 +178,7 @@ void main() {
     );
   });
 
-  test('release script packages only ARM v8/v9 Android APKs', () {
+  test('release script packages only ARM v7 and ARM v8/v9 Android APKs', () {
     final script = _repoFile('scripts/build_release.ps1');
 
     expect(script, contains('--split-per-abi'));
@@ -187,16 +187,18 @@ void main() {
     expect(script, contains('libjingle_peerconnection_so.so'));
     expect(script, contains('Rain-release'));
     expect(script, contains('Rain-Demo'));
-    expect(script, contains('ARMv8/ARMv9 devices'));
+    expect(script, contains('ARM v7 devices (armeabi-v7a)'));
+    expect(script, contains('ARM v8/v9 devices (arm64-v8a)'));
+    expect(script, contains('Rain-Demo-Android-ARM-v7a-Build.apk'));
     expect(script, contains('Rain-Demo-Android-ARM-v8-v9-Build.apk'));
     expect(script, contains('Rain-Demo-Windows-x64-Build'));
     expect(script, contains('[string]\$AndroidArtifactSet = \'all\''));
+    expect(script, contains('android-arm,android-arm64'));
+    expect(script, contains('\$androidArtifactPrefix-android-armeabi-v7a.apk'));
     expect(script, contains('android-arm64'));
     expect(script, contains('\$androidArtifactPrefix-android-arm64-v8a.apk'));
     expect(script, isNot(contains('Rain-Demo-Android-Universal-Build.apk')));
-    expect(script, isNot(contains('Rain-Demo-Android-ARM-v7-Build.apk')));
     expect(script, isNot(contains('Rain-Demo-Android-x86_64-Build.apk')));
-    expect(script, isNot(contains('android-armeabi-v7a.apk')));
     expect(script, isNot(contains('android-x86_64.apk')));
   });
 
@@ -244,82 +246,111 @@ void main() {
     );
   });
 
-  test('CI and release workflows verify only Android ARM v8/v9 APKs', () {
-    final workflows = <String>[
-      _repoFile('.github/workflows/ci.yml'),
-      _repoFile('.github/workflows/release.yml'),
-    ];
+  test(
+    'CI and release workflows verify only Android ARM v7 and ARM v8/v9 APKs',
+    () {
+      final workflows = <String>[
+        _repoFile('.github/workflows/ci.yml'),
+        _repoFile('.github/workflows/release.yml'),
+      ];
 
-    for (final workflow in workflows) {
-      expect(workflow, contains('Android ARM v8/v9 APK (arm64-v8a)'));
-      expect(
-        workflow,
-        anyOf(
-          contains('-android-arm64-v8a.apk'),
-          contains('Rain-Demo-Android-ARM-v8-v9-Build.apk'),
-        ),
-      );
-      expect(workflow, isNot(contains('Android ARM v7 APK (armeabi-v7a)')));
-      expect(workflow, isNot(contains('Android x86_64 APK')));
-      expect(workflow, isNot(contains('-android-armeabi-v7a.apk')));
-      expect(workflow, isNot(contains('Rain-Demo-Android-ARM-v7-Build.apk')));
-      expect(workflow, isNot(contains('-android-x86_64.apk')));
-      expect(workflow, isNot(contains('Rain-Demo-Android-x86_64-Build.apk')));
-    }
-  });
+      for (final workflow in workflows) {
+        expect(workflow, contains('Android ARM v7 APK (armeabi-v7a)'));
+        expect(workflow, contains('Android ARM v8/v9 APK (arm64-v8a)'));
+        expect(
+          workflow,
+          anyOf(
+            contains('-android-armeabi-v7a.apk'),
+            contains('Rain-Demo-Android-ARM-v7a-Build.apk'),
+          ),
+        );
+        expect(
+          workflow,
+          anyOf(
+            contains('-android-arm64-v8a.apk'),
+            contains('Rain-Demo-Android-ARM-v8-v9-Build.apk'),
+          ),
+        );
+        expect(workflow, isNot(contains('Android x86_64 APK')));
+        expect(workflow, isNot(contains('Rain-Demo-Android-ARM-v7-Build.apk')));
+        expect(workflow, isNot(contains('-android-x86_64.apk')));
+        expect(workflow, isNot(contains('Rain-Demo-Android-x86_64-Build.apk')));
+      }
+    },
+  );
 
-  test('CI debug APK build targets Android ARM64 only', () {
+  test('CI debug APK build targets Android ARMv7 and ARM64 only', () {
     final workflow = _repoFile('.github/workflows/ci.yml');
 
     expect(
       workflow,
       contains(
-        'flutter build apk --debug --split-per-abi --target-platform android-arm64',
+        'flutter build apk --debug --split-per-abi --target-platform android-arm,android-arm64',
       ),
     );
-    expect(workflow, contains('Verify debug APK is ARM64 only'));
+    expect(workflow, contains('Verify debug APK ABI split'));
+    expect(workflow, contains('app-armeabi-v7a-debug.apk'));
     expect(workflow, contains('app-arm64-v8a-debug.apk'));
+    expect(workflow, contains("grep -q 'lib/armeabi-v7a/'"));
+    expect(
+      workflow,
+      contains("grep -q 'lib/armeabi-v7a/libjingle_peerconnection_so.so'"),
+    );
     expect(workflow, contains("grep -q 'lib/arm64-v8a/'"));
     expect(
       workflow,
       contains("grep -q 'lib/arm64-v8a/libjingle_peerconnection_so.so'"),
     );
-    expect(workflow, contains("if grep -q 'lib/armeabi-v7a/'"));
     expect(workflow, contains("if grep -q 'lib/x86_64/'"));
+    expect(workflow, contains('rain-debug-armeabi-v7a-apk'));
     expect(workflow, contains('rain-debug-arm64-apk'));
     expect(workflow, isNot(contains('name: rain-debug-apk')));
   });
 
-  test('build artifacts workflow uploads ARM v8/v9 APKs without archives', () {
-    final workflow = _repoFile('.github/workflows/build-artifacts.yml');
-    final androidBuildStep = RegExp(
-      r'- name: Build Android APK artifacts(?<step>[\s\S]*?)\n\s*- name:',
-    ).firstMatch(workflow)?.namedGroup('step');
+  test(
+    'build artifacts workflow uploads ARM v7 and ARM v8/v9 APKs without archives',
+    () {
+      final workflow = _repoFile('.github/workflows/build-artifacts.yml');
+      final androidBuildStep = RegExp(
+        r'- name: Build Android APK artifacts(?<step>[\s\S]*?)\n\s*- name:',
+      ).firstMatch(workflow)?.namedGroup('step');
 
-    expect(androidBuildStep, isNotNull);
-    expect(androidBuildStep, contains("'-AndroidArtifactSet'"));
-    expect(androidBuildStep, contains("'mobile'"));
-    expect(workflow, contains('Rain-Demo-Android-ARM-v8-v9-Build.apk'));
-    expect(workflow, contains('Rain-release-android-arm64-v8a.apk'));
-    expect(workflow, contains('lib/arm64-v8a/libjingle_peerconnection_so.so'));
-    expect(workflow, isNot(contains('Rain-Demo-Android-Universal-Build.apk')));
-    expect(workflow, isNot(contains('Rain-Demo-Android-ARM-v7-Build.apk')));
-    expect(workflow, isNot(contains('Rain-Demo-Android-x86_64-Build.apk')));
-    expect(workflow, isNot(contains('Rain-release-android-universal.apk')));
-    expect(workflow, isNot(contains('Rain-release-android-armeabi-v7a.apk')));
-    expect(workflow, isNot(contains('Rain-release-android-x86_64.apk')));
-    expect(workflow, isNot(contains('.rar')));
-    expect(workflow, isNot(contains('.zip')));
-  });
+      expect(androidBuildStep, isNotNull);
+      expect(androidBuildStep, contains("'-AndroidArtifactSet'"));
+      expect(androidBuildStep, contains("'mobile'"));
+      expect(workflow, contains('Rain-Demo-Android-ARM-v7a-Build.apk'));
+      expect(workflow, contains('Rain-Demo-Android-ARM-v8-v9-Build.apk'));
+      expect(workflow, contains('Rain-release-android-armeabi-v7a.apk'));
+      expect(workflow, contains('Rain-release-android-arm64-v8a.apk'));
+      expect(
+        workflow,
+        contains('lib/armeabi-v7a/libjingle_peerconnection_so.so'),
+      );
+      expect(
+        workflow,
+        contains('lib/arm64-v8a/libjingle_peerconnection_so.so'),
+      );
+      expect(
+        workflow,
+        isNot(contains('Rain-Demo-Android-Universal-Build.apk')),
+      );
+      expect(workflow, isNot(contains('Rain-Demo-Android-x86_64-Build.apk')));
+      expect(workflow, isNot(contains('Rain-release-android-universal.apk')));
+      expect(workflow, isNot(contains('Rain-release-android-x86_64.apk')));
+      expect(workflow, isNot(contains('.rar')));
+      expect(workflow, isNot(contains('.zip')));
+    },
+  );
 
   test('CI docs describe current Android artifact set only', () {
     final docs = _repoFile('docs/github-ci-cd.md');
 
+    expect(docs, contains('Rain-release-android-armeabi-v7a.apk'));
     expect(docs, contains('Rain-release-android-arm64-v8a.apk'));
+    expect(docs, contains('Rain-Demo-Android-ARM-v7a-Build.apk'));
     expect(docs, contains('Rain-Demo-Android-ARM-v8-v9-Build.apk'));
     expect(docs, contains('docs/qa/voice-call-manual-device-gate.md'));
     expect(docs, isNot(contains('Android universal APK')));
-    expect(docs, isNot(contains('Android `armeabi-v7a` APK')));
     expect(docs, isNot(contains('Android `x86_64` APK')));
   });
 
@@ -331,6 +362,11 @@ void main() {
     expect(workflow, contains('Windows WebRTC plugin DLL'));
     expect(workflow, contains('Windows WebRTC runtime DLL'));
     expect(workflow, contains('Windows SQLite runtime DLL'));
+    expect(workflow, contains('lib/armeabi-v7a/libsqlite3.so'));
+    expect(
+      workflow,
+      contains('lib/armeabi-v7a/libjingle_peerconnection_so.so'),
+    );
     expect(workflow, contains('lib/arm64-v8a/libsqlite3.so'));
     expect(workflow, contains('lib/arm64-v8a/libjingle_peerconnection_so.so'));
     expect(
@@ -343,10 +379,9 @@ void main() {
       workflow,
       isNot(contains('path: artifacts/Rain-Demo-Windows-x64-Build.zip')),
     );
+    expect(workflow, contains('Rain-Demo-Android-ARM-v7a-Build.apk'));
     expect(workflow, contains('Rain-Demo-Android-ARM-v8-v9-Build.apk'));
-    expect(workflow, isNot(contains('Rain-Demo-Android-ARM-v7-Build.apk')));
     expect(workflow, isNot(contains('Rain-Demo-Android-x86_64-Build.apk')));
-    expect(workflow, isNot(contains('lib/armeabi-v7a/libsqlite3.so')));
     expect(workflow, isNot(contains('lib/x86_64/libsqlite3.so')));
   });
 
@@ -357,6 +392,11 @@ void main() {
     expect(workflow, contains('flutter_webrtc_plugin.dll'));
     expect(workflow, contains('libwebrtc.dll'));
     expect(workflow, contains('Assert-ApkEntry'));
+    expect(workflow, contains('lib/armeabi-v7a/libsqlite3.so'));
+    expect(
+      workflow,
+      contains('lib/armeabi-v7a/libjingle_peerconnection_so.so'),
+    );
     expect(workflow, contains('lib/arm64-v8a/libsqlite3.so'));
     expect(workflow, contains('lib/arm64-v8a/libjingle_peerconnection_so.so'));
   });
