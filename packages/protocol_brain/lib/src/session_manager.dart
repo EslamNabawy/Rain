@@ -3,7 +3,7 @@ import 'dart:typed_data';
 
 import 'package:flutter_webrtc/flutter_webrtc.dart';
 import 'package:peer_core/peer_core.dart'
-    show PeerConnectionRoute, PeerRemoteTrack;
+    show PeerConnectionRoute, PeerRemoteTrack, VoiceMediaConnection;
 
 enum SessionState { connecting, connected, reconnecting, failed }
 
@@ -132,6 +132,7 @@ abstract class SessionManager {
   Future<void> startLocalAudio(String peerId);
   Future<void> stopLocalAudio(String peerId);
   Future<void> setMicrophoneMuted(String peerId, {required bool muted});
+  Future<VoiceMediaConnection> createVoiceMediaConnection(String peerId);
   Future<RTCSessionDescription> createMediaOffer(String peerId);
   Future<RTCSessionDescription> applyMediaOffer(
     String peerId,

@@ -1,7 +1,6 @@
 import 'dart:async';
 
 import 'package:flutter_test/flutter_test.dart';
-import 'package:peer_core/peer_core.dart';
 import 'package:protocol_brain/protocol_brain.dart';
 
 void main() {

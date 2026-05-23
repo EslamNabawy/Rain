@@ -1213,6 +1213,10 @@ void main() {
 
       await runtime.start();
       await runtime.startVoiceCall('bob');
+      final invite = brain.sentControlPayloads
+          .map(VoiceCallFrame.tryDecode)
+          .whereType<VoiceCallFrame>()
+          .lastWhere((frame) => frame.type == VoiceCallFrameType.invite);
       brain.emitControlMessage(
         'bob',
         VoiceCallFrame(
@@ -1221,6 +1225,8 @@ void main() {
           from: 'bob',
           to: 'alice',
           sentAt: DateTime.now().millisecondsSinceEpoch,
+          seq: 1,
+          sessionEpoch: invite.sessionEpoch,
         ).encode(),
       );
       await _waitForCondition(
@@ -1231,6 +1237,7 @@ void main() {
           .map(VoiceCallFrame.tryDecode)
           .whereType<VoiceCallFrame>()
           .lastWhere((frame) => frame.type == VoiceCallFrameType.offer);
+      expect(offer.sessionEpoch, invite.sessionEpoch);
       brain.emitControlMessage(
         'bob',
         VoiceCallFrame(
@@ -1239,9 +1246,10 @@ void main() {
           from: 'bob',
           to: 'alice',
           sentAt: DateTime.now().millisecondsSinceEpoch,
+          seq: 2,
+          sessionEpoch: invite.sessionEpoch,
           sdp: 'media-answer-bob',
           sdpType: 'answer',
-          mediaSeq: offer.mediaSeq,
         ).encode(),
       );
       await _waitForCondition(
@@ -1266,7 +1274,7 @@ void main() {
       );
     });
 
-    test('stale media answers are ignored by media sequence', () async {
+    test('stale media answers are ignored by signaling sequence', () async {
       final adapter = NoopSignalingAdapter();
       final brain = TestSessionManager();
       await adapter.register('bob', 'bobpw');
@@ -1288,6 +1296,10 @@ void main() {
 
       await runtime.start();
       await runtime.startVoiceCall('bob');
+      final invite = brain.sentControlPayloads
+          .map(VoiceCallFrame.tryDecode)
+          .whereType<VoiceCallFrame>()
+          .lastWhere((frame) => frame.type == VoiceCallFrameType.invite);
       brain.emitControlMessage(
         'bob',
         VoiceCallFrame(
@@ -1296,6 +1308,8 @@ void main() {
           from: 'bob',
           to: 'alice',
           sentAt: DateTime.now().millisecondsSinceEpoch,
+          seq: 1,
+          sessionEpoch: invite.sessionEpoch,
         ).encode(),
       );
       await _waitForCondition(
@@ -1306,15 +1320,17 @@ void main() {
           .map(VoiceCallFrame.tryDecode)
           .whereType<VoiceCallFrame>()
           .lastWhere((frame) => frame.type == VoiceCallFrameType.offer);
+      expect(offer.sessionEpoch, invite.sessionEpoch);
       final answer = VoiceCallFrame(
         type: VoiceCallFrameType.answer,
         callId: runtime.voiceCallState.callId!,
         from: 'bob',
         to: 'alice',
         sentAt: DateTime.now().millisecondsSinceEpoch,
+        seq: 2,
+        sessionEpoch: invite.sessionEpoch,
         sdp: 'media-answer-bob',
         sdpType: 'answer',
-        mediaSeq: offer.mediaSeq,
       ).encode();
 
       brain.emitControlMessage('bob', answer);
@@ -1371,6 +1387,10 @@ void main() {
 
         await runtime.start();
         await runtime.startVoiceCall('bob');
+        final invite = brain.sentControlPayloads
+            .map(VoiceCallFrame.tryDecode)
+            .whereType<VoiceCallFrame>()
+            .lastWhere((frame) => frame.type == VoiceCallFrameType.invite);
         brain.emitControlMessage(
           'bob',
           VoiceCallFrame(
@@ -1379,6 +1399,8 @@ void main() {
             from: 'bob',
             to: 'alice',
             sentAt: DateTime.now().millisecondsSinceEpoch,
+            seq: 1,
+            sessionEpoch: invite.sessionEpoch,
           ).encode(),
         );
         await _waitForCondition(
@@ -1389,6 +1411,7 @@ void main() {
             .map(VoiceCallFrame.tryDecode)
             .whereType<VoiceCallFrame>()
             .lastWhere((frame) => frame.type == VoiceCallFrameType.offer);
+        expect(offer.sessionEpoch, invite.sessionEpoch);
         brain.applyMediaAnswerError = StateError(
           'Unable to RTCPeerConnection::setRemoteDescription: '
           'peerConnectionSetRemoteDescription failed with m-line mismatch',
@@ -1402,9 +1425,10 @@ void main() {
             from: 'bob',
             to: 'alice',
             sentAt: DateTime.now().millisecondsSinceEpoch,
+            seq: 2,
+            sessionEpoch: invite.sessionEpoch,
             sdp: 'bad-media-answer-bob',
             sdpType: 'answer',
-            mediaSeq: offer.mediaSeq,
           ).encode(),
         );
         await _waitForCondition(
@@ -1420,7 +1444,7 @@ void main() {
             .map(VoiceCallFrame.tryDecode)
             .whereType<VoiceCallFrame>()
             .lastWhere((frame) => frame.type == VoiceCallFrameType.hangup);
-        expect(hangup.reason, 'Voice call media could not connect. Try again.');
+        expect(hangup.reason, 'Voice call media could not connect.');
         expect(hangup.reasonCode, 'failed');
         expect(brain.stoppedAudioPeers, contains('bob'));
         expect(brain.disconnectedPeers, isEmpty);
@@ -2749,6 +2773,8 @@ class TestSessionManager implements SessionManager {
   final List<String> appliedMediaAnswerPeers = <String>[];
   final List<String> sentFilePayloads = <String>[];
   final List<String> sentControlPayloads = <String>[];
+  final Map<String, VoiceMediaConnection> voiceMediaConnections =
+      <String, VoiceMediaConnection>{};
   final Map<String, bool> mutedPeers = <String, bool>{};
   Object? startLocalAudioError;
   Object? createMediaOfferError;
@@ -2880,6 +2906,13 @@ class TestSessionManager implements SessionManager {
   }
 
   @override
+  Future<VoiceMediaConnection> createVoiceMediaConnection(String peerId) async {
+    final connection = _TestVoiceMediaConnection(this, peerId);
+    voiceMediaConnections[peerId] = connection;
+    return connection;
+  }
+
+  @override
   Future<RTCSessionDescription> createMediaOffer(String peerId) async {
     mediaOfferPeers.add(peerId);
     final error = createMediaOfferError;
@@ -2969,6 +3002,108 @@ class TestSessionManager implements SessionManager {
         data: data,
         receivedAt: DateTime.now(),
         peerId: peerId,
+      ),
+    );
+  }
+}
+
+class _TestVoiceMediaConnection implements VoiceMediaConnection {
+  _TestVoiceMediaConnection(this.owner, this.peerId);
+
+  final TestSessionManager owner;
+  final String peerId;
+  final StreamController<VoiceIceCandidate> _iceController =
+      StreamController<VoiceIceCandidate>.broadcast();
+  final StreamController<VoiceRemoteAudioTrack> _remoteTrackController =
+      StreamController<VoiceRemoteAudioTrack>.broadcast();
+  final StreamController<VoiceMediaState> _stateController =
+      StreamController<VoiceMediaState>.broadcast();
+  final List<VoiceIceCandidate> remoteCandidates = <VoiceIceCandidate>[];
+  bool disposed = false;
+
+  @override
+  Stream<VoiceIceCandidate> get onIceCandidate => _iceController.stream;
+
+  @override
+  Stream<VoiceRemoteAudioTrack> get onRemoteAudioTrack =>
+      _remoteTrackController.stream;
+
+  @override
+  Stream<VoiceMediaState> get onStateChanged => _stateController.stream;
+
+  @override
+  Future<void> startLocalAudio() async {
+    owner.startedAudioPeers.add(peerId);
+    final error = owner.startLocalAudioError;
+    if (error != null) {
+      throw error;
+    }
+  }
+
+  @override
+  Future<VoiceSessionDescription> createOffer() async {
+    owner.mediaOfferPeers.add(peerId);
+    final error = owner.createMediaOfferError;
+    if (error != null) {
+      throw error;
+    }
+    return VoiceSessionDescription(sdp: 'media-offer-$peerId', type: 'offer');
+  }
+
+  @override
+  Future<VoiceSessionDescription> acceptOffer(
+    VoiceSessionDescription offer,
+  ) async {
+    owner.appliedMediaOfferPeers.add(peerId);
+    final error = owner.applyMediaOfferError;
+    if (error != null) {
+      throw error;
+    }
+    _emitConnected();
+    return VoiceSessionDescription(sdp: 'media-answer-$peerId', type: 'answer');
+  }
+
+  @override
+  Future<void> applyAnswer(VoiceSessionDescription answer) async {
+    owner.appliedMediaAnswerPeers.add(peerId);
+    final error = owner.applyMediaAnswerError;
+    if (error != null) {
+      throw error;
+    }
+    _emitConnected();
+  }
+
+  @override
+  Future<void> addRemoteCandidate(VoiceIceCandidate candidate) async {
+    remoteCandidates.add(candidate);
+  }
+
+  @override
+  Future<void> setMuted({required bool muted}) async {
+    owner.mutedPeers[peerId] = muted;
+  }
+
+  @override
+  Future<void> dispose() async {
+    if (disposed) {
+      return;
+    }
+    disposed = true;
+    owner.stoppedAudioPeers.add(peerId);
+    await _iceController.close();
+    await _remoteTrackController.close();
+    await _stateController.close();
+  }
+
+  void emitIceCandidate(VoiceIceCandidate candidate) {
+    _iceController.add(candidate);
+  }
+
+  void _emitConnected() {
+    _stateController.add(
+      VoiceMediaState(
+        phase: VoiceMediaPhase.connected,
+        updatedAt: DateTime.now().millisecondsSinceEpoch,
       ),
     );
   }

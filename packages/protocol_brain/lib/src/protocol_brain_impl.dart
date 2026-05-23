@@ -336,6 +336,18 @@ class ProtocolBrainImpl implements ProtocolBrain {
   }
 
   @override
+  Future<VoiceMediaConnection> createVoiceMediaConnection(String peerId) async {
+    final active = _requireConnectedSession(peerId);
+    final policy = active.icePolicy;
+    final config = peerConfigProvider == null
+        ? peerConfig.copyWith(iceTransportPolicy: policy)
+        : await peerConfigProvider!(policy);
+    return DefaultVoiceMediaConnection(
+      config: config.copyWith(iceTransportPolicy: policy),
+    );
+  }
+
+  @override
   Future<void> unregisterPeer(String peerId) async {
     _incomingOfferGuards.remove(peerId);
     await _offerSubscriptions.remove(peerId)?.cancel();

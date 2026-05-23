@@ -308,6 +308,11 @@ class _DisconnectingSessionManager implements SessionManager {
   Future<void> setMicrophoneMuted(String peerId, {required bool muted}) async {}
 
   @override
+  Future<VoiceMediaConnection> createVoiceMediaConnection(String peerId) async {
+    return _NoopVoiceMediaConnection();
+  }
+
+  @override
   Future<RTCSessionDescription> createMediaOffer(String peerId) async =>
       RTCSessionDescription('media-offer-$peerId', 'offer');
 
@@ -337,4 +342,50 @@ class _DisconnectingSessionManager implements SessionManager {
 
   @override
   Future<void> unregisterPeer(String peerId) async {}
+}
+
+class _NoopVoiceMediaConnection implements VoiceMediaConnection {
+  final StreamController<VoiceIceCandidate> _ice =
+      StreamController<VoiceIceCandidate>.broadcast();
+  final StreamController<VoiceRemoteAudioTrack> _tracks =
+      StreamController<VoiceRemoteAudioTrack>.broadcast();
+  final StreamController<VoiceMediaState> _states =
+      StreamController<VoiceMediaState>.broadcast();
+
+  @override
+  Stream<VoiceIceCandidate> get onIceCandidate => _ice.stream;
+
+  @override
+  Stream<VoiceRemoteAudioTrack> get onRemoteAudioTrack => _tracks.stream;
+
+  @override
+  Stream<VoiceMediaState> get onStateChanged => _states.stream;
+
+  @override
+  Future<void> startLocalAudio() async {}
+
+  @override
+  Future<VoiceSessionDescription> createOffer() async =>
+      const VoiceSessionDescription(sdp: 'offer', type: 'offer');
+
+  @override
+  Future<VoiceSessionDescription> acceptOffer(
+    VoiceSessionDescription offer,
+  ) async => const VoiceSessionDescription(sdp: 'answer', type: 'answer');
+
+  @override
+  Future<void> applyAnswer(VoiceSessionDescription answer) async {}
+
+  @override
+  Future<void> addRemoteCandidate(VoiceIceCandidate candidate) async {}
+
+  @override
+  Future<void> setMuted({required bool muted}) async {}
+
+  @override
+  Future<void> dispose() async {
+    await _ice.close();
+    await _tracks.close();
+    await _states.close();
+  }
 }

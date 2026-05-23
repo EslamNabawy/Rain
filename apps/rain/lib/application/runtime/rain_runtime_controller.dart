@@ -4,7 +4,6 @@ import 'dart:typed_data';
 
 import 'package:crypto/crypto.dart';
 import 'package:flutter/widgets.dart';
-import 'package:flutter_webrtc/flutter_webrtc.dart' show RTCSessionDescription;
 import 'package:path_provider/path_provider.dart';
 import 'package:protocol_brain/protocol_brain.dart';
 import 'package:rain_core/rain_core.dart';
@@ -108,10 +107,8 @@ class RainRuntimeController with WidgetsBindingObserver {
   final StreamController<VoiceCallState> _voiceCallStateController =
       StreamController<VoiceCallState>.broadcast();
   VoiceCallState _voiceCallState = const VoiceCallState.idle();
-  Timer? _voiceCallTimer;
-  final Set<String> _voiceMediaNegotiatingPeers = <String>{};
-  final Map<String, int> _voiceMediaSentSequences = <String, int>{};
-  final Map<String, int> _voiceMediaReceivedSequences = <String, int>{};
+  VoiceCallSession? _voiceCallSession;
+  StreamSubscription<VoiceCallSessionState>? _voiceCallSessionSubscription;
   late final FileTransferProgressBatcher _fileProgressBatcher;
   final ConnectionAttemptCoordinator _connectionCoordinator;
 
@@ -1076,10 +1073,7 @@ class RainRuntimeController with WidgetsBindingObserver {
 
     WidgetsBinding.instance.removeObserver(this);
     _backgroundOfflineTimer?.cancel();
-    _voiceCallTimer?.cancel();
-    _voiceMediaNegotiatingPeers.clear();
-    _voiceMediaSentSequences.clear();
-    _voiceMediaReceivedSequences.clear();
+    await _disposeCurrentVoiceCallSession();
     _heartbeatTimer?.cancel();
     _friendRequestRefreshTimer?.cancel();
     _connectionCoordinator.dispose();

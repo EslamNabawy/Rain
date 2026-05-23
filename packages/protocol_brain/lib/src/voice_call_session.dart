@@ -40,6 +40,7 @@ final class VoiceCallSessionState {
     required this.updatedAt,
     this.detail,
     this.error,
+    this.reasonCode,
   });
 
   factory VoiceCallSessionState.idle({required int updatedAt}) {
@@ -54,6 +55,7 @@ final class VoiceCallSessionState {
   final int updatedAt;
   final String? detail;
   final Object? error;
+  final String? reasonCode;
 }
 
 final class VoiceCallSession {
@@ -98,7 +100,7 @@ final class VoiceCallSession {
   late final StreamSubscription<VoiceIceCandidate> _iceSubscription;
   late final StreamSubscription<VoiceMediaState> _mediaStateSubscription;
   final StreamController<VoiceCallSessionState> _stateController =
-      StreamController<VoiceCallSessionState>.broadcast();
+      StreamController<VoiceCallSessionState>.broadcast(sync: true);
 
   VoiceCallSessionState state;
   Timer? _ringingTimer;
@@ -206,6 +208,17 @@ final class VoiceCallSession {
     });
   }
 
+  Future<void> setMuted({required bool muted}) {
+    return _enqueue(() async {
+      if (state.phase != VoiceCallSessionPhase.active) {
+        _logInvalidEvent('mute in ${state.phase.name}');
+        return;
+      }
+      await media.setMuted(muted: muted);
+      await _send(VoiceCallFrameType.mute, muted: muted, bestEffort: true);
+    });
+  }
+
   Future<void> dispose() {
     return _enqueue(() async {
       if (_disposed) {
@@ -246,7 +259,14 @@ final class VoiceCallSession {
         await _handleRemoteCandidate(frame);
         break;
       case VoiceCallFrameType.hangup:
-        await _clearVoiceOnly(detail: frame.reason ?? 'Peer ended the call.');
+        if (frame.reasonCode == 'failed') {
+          await _fail(
+            frame.reason ?? 'Voice call media could not connect.',
+            reasonCode: frame.reasonCode,
+          );
+        } else {
+          await _clearVoiceOnly(detail: frame.reason ?? 'Peer ended the call.');
+        }
         break;
       case VoiceCallFrameType.mute:
         break;
@@ -298,8 +318,10 @@ final class VoiceCallSession {
   Future<void> _handleRejected(VoiceCallFrame frame) async {
     final detail = frame.type == VoiceCallFrameType.busy
         ? 'Peer is busy.'
+        : frame.reasonCode == 'microphoneDenied'
+        ? 'Peer microphone permission required.'
         : frame.reason ?? 'Call rejected.';
-    await _fail(detail);
+    await _fail(detail, reasonCode: frame.reasonCode);
   }
 
   Future<void> _handleOffer(VoiceCallFrame frame) async {
@@ -335,7 +357,11 @@ final class VoiceCallSession {
         _armMediaTimeout();
       } catch (error) {
         await _sendFailedHangup(error);
-        await _fail('Voice call media could not connect.', error: error);
+        await _fail(
+          'Voice call media could not connect.',
+          error: error,
+          reasonCode: 'failed',
+        );
       }
     });
   }
@@ -364,7 +390,11 @@ final class VoiceCallSession {
         _armMediaTimeout();
       } catch (error) {
         await _sendFailedHangup(error);
-        await _fail('Voice call media could not connect.', error: error);
+        await _fail(
+          'Voice call media could not connect.',
+          error: error,
+          reasonCode: 'failed',
+        );
       }
     });
   }
@@ -376,7 +406,8 @@ final class VoiceCallSession {
     if (candidate == null || sdpMid == null || sdpMLineIndex == null) {
       return;
     }
-    if (state.phase != VoiceCallSessionPhase.connectingMedia &&
+    if (state.phase != VoiceCallSessionPhase.creatingMedia &&
+        state.phase != VoiceCallSessionPhase.connectingMedia &&
         state.phase != VoiceCallSessionPhase.active) {
       return;
     }
@@ -416,7 +447,11 @@ final class VoiceCallSession {
         _armAnswerTimeout('Timed out waiting for voice media answer.');
       } catch (error) {
         await _sendFailedHangup(error);
-        await _fail('Voice call media could not connect.', error: error);
+        await _fail(
+          'Voice call media could not connect.',
+          error: error,
+          reasonCode: 'failed',
+        );
       }
     });
   }
@@ -428,7 +463,8 @@ final class VoiceCallSession {
         candidate.sdpMLineIndex == null) {
       return;
     }
-    if (state.phase != VoiceCallSessionPhase.connectingMedia &&
+    if (state.phase != VoiceCallSessionPhase.creatingMedia &&
+        state.phase != VoiceCallSessionPhase.connectingMedia &&
         state.phase != VoiceCallSessionPhase.active) {
       return;
     }
@@ -469,6 +505,7 @@ final class VoiceCallSession {
               'Voice call media could not connect.',
               error: mediaState.error ?? mediaState.detail,
               notifyPeer: true,
+              reasonCode: 'failed',
             ),
           ),
         );
@@ -548,7 +585,7 @@ final class VoiceCallSession {
   Future<void> _sendFailedHangup(Object error) {
     return _send(
       VoiceCallFrameType.hangup,
-      reason: error.toString(),
+      reason: 'Voice call media could not connect.',
       reasonCode: 'failed',
       bestEffort: true,
     );
@@ -558,17 +595,23 @@ final class VoiceCallSession {
     String detail, {
     Object? error,
     bool notifyPeer = false,
+    String? reasonCode,
   }) async {
     _clearTimers();
     if (notifyPeer) {
       await _send(
         VoiceCallFrameType.hangup,
         reason: detail,
-        reasonCode: 'failed',
+        reasonCode: reasonCode ?? 'failed',
         bestEffort: true,
       );
     }
-    _transitionTo(VoiceCallSessionPhase.failed, detail: detail, error: error);
+    _transitionTo(
+      VoiceCallSessionPhase.failed,
+      detail: detail,
+      error: error,
+      reasonCode: reasonCode,
+    );
     await _disposeMedia();
   }
 
@@ -606,6 +649,7 @@ final class VoiceCallSession {
     VoiceCallSessionPhase next, {
     String? detail,
     Object? error,
+    String? reasonCode,
   }) {
     if (!_isAllowedTransition(state.phase, next)) {
       _logInvalidEvent('invalid transition ${state.phase.name} -> $next');
@@ -615,6 +659,7 @@ final class VoiceCallSession {
       phase: next,
       detail: detail,
       error: error,
+      reasonCode: reasonCode,
       updatedAt: clock().millisecondsSinceEpoch,
     );
     state = updated;
@@ -689,7 +734,11 @@ final class VoiceCallSession {
     _mediaTimer = Timer(timeouts.media, () {
       unawaited(
         _enqueue(
-          () => _fail('Voice call media could not connect.', notifyPeer: true),
+          () => _fail(
+            'Voice call media could not connect.',
+            notifyPeer: true,
+            reasonCode: 'failed',
+          ),
         ),
       );
     });

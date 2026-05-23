@@ -489,7 +489,7 @@ git commit -m "feat: add deterministic voice call signaling"
 
 **Purpose:** Wire app runtime without UI churn.
 
-- [ ] Replace current `brain.startLocalAudio/createMediaOffer/applyMediaOffer` usage in `apps/rain/lib/application/runtime/voice_call_runtime.dart`.
+- [x] Replace current `brain.startLocalAudio/createMediaOffer/applyMediaOffer` usage in `apps/rain/lib/application/runtime/voice_call_runtime.dart`.
 
 New outgoing flow:
 
@@ -525,7 +525,7 @@ wait media readiness
 set active
 ```
 
-- [ ] Add global call lock in runtime.
+- [x] Add global call lock in runtime.
 
 Rule:
 
@@ -533,7 +533,7 @@ Rule:
 phase != idle && phase != failed => blocks new calls and file transfers
 ```
 
-- [ ] Add cleanup on:
+- [x] Add cleanup on:
 
 ```text
 hangup
@@ -548,11 +548,14 @@ SDP failure
 ICE failure
 ```
 
-- [ ] Tests:
+- [x] Tests:
 
 ```powershell
 cd apps/rain
-flutter test test/voice_call_runtime_dedicated_media_test.dart
+flutter test test/friend_flow_test.dart
+
+cd ../../packages/protocol_brain
+flutter test test/voice_call_session_test.dart
 ```
 
 Must cover:
@@ -565,7 +568,7 @@ Must cover:
 - logout disposes media connection
 - remote hangup clears busy state
 
-- [ ] Commit.
+- [x] Commit.
 
 ```powershell
 git add apps/rain/lib/application/runtime apps/rain/test
