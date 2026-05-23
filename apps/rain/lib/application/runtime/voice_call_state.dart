@@ -26,6 +26,8 @@ enum VoiceCallFailureReason {
   mediaNoRemoteAudio,
 }
 
+enum VoiceCallOutputRoute { systemDefault, speaker, bluetooth }
+
 class VoiceCallState {
   const VoiceCallState({
     required this.phase,
@@ -33,7 +35,10 @@ class VoiceCallState {
     this.callId,
     this.isOutgoing = false,
     this.isMuted = false,
+    this.isDeafened = false,
     this.isRemoteMuted = false,
+    this.outputRoute = VoiceCallOutputRoute.systemDefault,
+    this.outputRouteWarning,
     this.startedAt,
     this.updatedAt,
     this.detail,
@@ -48,7 +53,10 @@ class VoiceCallState {
       callId = null,
       isOutgoing = false,
       isMuted = false,
+      isDeafened = false,
       isRemoteMuted = false,
+      outputRoute = VoiceCallOutputRoute.systemDefault,
+      outputRouteWarning = null,
       startedAt = null,
       updatedAt = null,
       detail = null,
@@ -61,7 +69,10 @@ class VoiceCallState {
   final String? callId;
   final bool isOutgoing;
   final bool isMuted;
+  final bool isDeafened;
   final bool isRemoteMuted;
+  final VoiceCallOutputRoute outputRoute;
+  final String? outputRouteWarning;
   final int? startedAt;
   final int? updatedAt;
   final String? detail;
@@ -95,7 +106,10 @@ class VoiceCallState {
     String? callId,
     bool? isOutgoing,
     bool? isMuted,
+    bool? isDeafened,
     bool? isRemoteMuted,
+    VoiceCallOutputRoute? outputRoute,
+    String? outputRouteWarning,
     int? startedAt,
     int? updatedAt,
     String? detail,
@@ -104,6 +118,7 @@ class VoiceCallState {
     VoiceAudioLevel? audioLevel,
     bool clearError = false,
     bool clearFailureReason = false,
+    bool clearOutputRouteWarning = false,
   }) {
     return VoiceCallState(
       phase: phase ?? this.phase,
@@ -111,7 +126,12 @@ class VoiceCallState {
       callId: callId ?? this.callId,
       isOutgoing: isOutgoing ?? this.isOutgoing,
       isMuted: isMuted ?? this.isMuted,
+      isDeafened: isDeafened ?? this.isDeafened,
       isRemoteMuted: isRemoteMuted ?? this.isRemoteMuted,
+      outputRoute: outputRoute ?? this.outputRoute,
+      outputRouteWarning: clearOutputRouteWarning
+          ? null
+          : outputRouteWarning ?? this.outputRouteWarning,
       startedAt: startedAt ?? this.startedAt,
       updatedAt: updatedAt ?? this.updatedAt,
       detail: detail ?? this.detail,

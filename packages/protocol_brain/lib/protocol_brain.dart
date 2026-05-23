@@ -12,6 +12,7 @@ export 'package:peer_core/peer_core.dart'
         MemoryStorageBackend,
         VoiceMediaAudioLevel,
         VoiceMediaAudioLevelSource,
+        VoiceMediaOutputRoute,
         VoiceIceCandidate,
         VoiceMediaDiagnostics,
         VoiceMediaConnection,

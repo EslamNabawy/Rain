@@ -139,6 +139,35 @@ void main() {
     await subscription.cancel();
   });
 
+  test('active session deafen and output route are local only', () async {
+    final media = _FakeVoiceMediaConnection();
+    final sent = <VoiceCallFrame>[];
+    final session = _session(media: media, sent: sent);
+
+    await session.startOutgoing();
+    await session.handleFrame(
+      _frame(VoiceCallFrameType.accept, from: 'bob', to: 'alice', seq: 1),
+    );
+    media.emitState(const VoiceMediaState(phase: VoiceMediaPhase.connected));
+    await pumpEventQueue();
+
+    expect(session.state.phase, VoiceCallSessionPhase.active);
+    final sentBeforeLocalControls = sent.length;
+
+    await session.setDeafened(deafened: true);
+    await session.setAudioOutputRoute(VoiceMediaOutputRoute.speaker);
+
+    expect(media.deafenCalls, <bool>[true]);
+    expect(media.outputRoutes, <VoiceMediaOutputRoute>[
+      VoiceMediaOutputRoute.speaker,
+    ]);
+    expect(sent, hasLength(sentBeforeLocalControls));
+    expect(
+      sent.any((VoiceCallFrame frame) => frame.type == VoiceCallFrameType.mute),
+      isFalse,
+    );
+  });
+
   test('outgoing invite send failure is signaling failure', () async {
     final media = _FakeVoiceMediaConnection();
     final sent = <VoiceCallFrame>[];
@@ -694,6 +723,8 @@ final class _FakeVoiceMediaConnection implements VoiceMediaConnection {
   final List<String> acceptedOffers = <String>[];
   final List<String> appliedAnswers = <String>[];
   final List<VoiceIceCandidate> remoteCandidates = <VoiceIceCandidate>[];
+  final List<bool> deafenCalls = <bool>[];
+  final List<VoiceMediaOutputRoute> outputRoutes = <VoiceMediaOutputRoute>[];
   VoiceMediaDiagnostics diagnosticSnapshot = const VoiceMediaDiagnostics();
 
   @override
@@ -748,6 +779,16 @@ final class _FakeVoiceMediaConnection implements VoiceMediaConnection {
 
   @override
   Future<void> setMuted({required bool muted}) async {}
+
+  @override
+  Future<void> setDeafened({required bool deafened}) async {
+    deafenCalls.add(deafened);
+  }
+
+  @override
+  Future<void> setAudioOutputRoute(VoiceMediaOutputRoute route) async {
+    outputRoutes.add(route);
+  }
 
   @override
   Future<void> dispose() async {

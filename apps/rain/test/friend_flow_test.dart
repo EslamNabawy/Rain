@@ -1078,6 +1078,105 @@ void main() {
       },
     );
 
+    test(
+      'active Firebase voice call supports local deafen and output routing',
+      () async {
+        final adapter = RecordingVoiceSignalingAdapter();
+        final aliceBrain = TestSessionManager();
+        final bobBrain = TestSessionManager();
+        final bobDb = RainDatabase(NativeDatabase.memory());
+        addTearDown(bobDb.close);
+        await adapter.register('bob', 'bobpw');
+        await adapter.upsertFriendship('alice', 'bob');
+        await db
+            .into(db.friends)
+            .insert(
+              FriendsCompanion.insert(
+                username: 'bob',
+                displayName: 'Bob',
+                state: 'friend',
+                addedAt: 0,
+              ),
+            );
+        await bobDb
+            .into(bobDb.friends)
+            .insert(
+              FriendsCompanion.insert(
+                username: 'alice',
+                displayName: 'Alice',
+                state: 'friend',
+                addedAt: 0,
+              ),
+            );
+        final bob = RainIdentity(
+          username: 'bob',
+          displayName: 'Bob',
+          createdAt: DateTime.now().millisecondsSinceEpoch,
+          gender: RainGender.male,
+        );
+        final aliceRuntime = _runtimeFor(db, alice, adapter, brain: aliceBrain);
+        final bobRuntime = _runtimeFor(bobDb, bob, adapter, brain: bobBrain);
+        addTearDown(aliceRuntime.dispose);
+        addTearDown(bobRuntime.dispose);
+
+        await aliceRuntime.start();
+        await bobRuntime.start();
+        await aliceRuntime.startVoiceCall('bob');
+        await _waitForCondition(
+          () =>
+              bobRuntime.voiceCallState.phase == VoiceCallPhase.incomingRinging,
+          'Firebase voice invite to ring on callee',
+        );
+        await bobRuntime.acceptVoiceCall();
+        await _waitForCondition(
+          () => aliceRuntime.voiceCallState.phase == VoiceCallPhase.active,
+          'Firebase voice call to become active before local audio controls',
+        );
+
+        await aliceRuntime.setVoiceCallDeafened(true);
+        expect(aliceRuntime.voiceCallState.isDeafened, isTrue);
+        expect(aliceBrain.deafenedPeers, <String>['bob:true']);
+        expect(aliceBrain.mutedPeers, isEmpty);
+        expect(adapter.rooms.values.single.muted.values, everyElement(isFalse));
+
+        await aliceRuntime.setVoiceCallOutputRoute(
+          VoiceCallOutputRoute.speaker,
+        );
+        expect(aliceBrain.outputRoutes['bob'], <VoiceMediaOutputRoute>[
+          VoiceMediaOutputRoute.speaker,
+        ]);
+        expect(
+          aliceRuntime.voiceCallState.outputRoute,
+          VoiceCallOutputRoute.speaker,
+        );
+
+        aliceBrain.audioOutputRouteError = UnsupportedError(
+          'speaker route unavailable',
+        );
+        await aliceRuntime.setVoiceCallOutputRoute(
+          VoiceCallOutputRoute.bluetooth,
+        );
+
+        expect(aliceRuntime.voiceCallState.phase, VoiceCallPhase.active);
+        expect(
+          aliceRuntime.voiceCallState.outputRoute,
+          VoiceCallOutputRoute.speaker,
+        );
+        expect(
+          aliceRuntime.voiceCallState.outputRouteWarning,
+          'Audio route unavailable.',
+        );
+
+        await aliceRuntime.hangUpVoiceCall();
+        expect(aliceRuntime.voiceCallState.phase, VoiceCallPhase.idle);
+        expect(aliceRuntime.voiceCallState.isDeafened, isFalse);
+        expect(
+          aliceRuntime.voiceCallState.outputRoute,
+          VoiceCallOutputRoute.systemDefault,
+        );
+      },
+    );
+
     test('outgoing microphone denial writes no Firebase invite', () async {
       final adapter = RecordingVoiceSignalingAdapter();
       final brain = TestSessionManager()
@@ -3509,15 +3608,19 @@ class TestSessionManager implements SessionManager {
   final List<String> mediaOfferPeers = <String>[];
   final List<String> appliedMediaOfferPeers = <String>[];
   final List<String> appliedMediaAnswerPeers = <String>[];
+  final List<String> deafenedPeers = <String>[];
   final List<String> sentFilePayloads = <String>[];
   final List<String> sentControlPayloads = <String>[];
   final Map<String, VoiceMediaConnection> voiceMediaConnections =
       <String, VoiceMediaConnection>{};
   final Map<String, bool> mutedPeers = <String, bool>{};
+  final Map<String, List<VoiceMediaOutputRoute>> outputRoutes =
+      <String, List<VoiceMediaOutputRoute>>{};
   Object? startLocalAudioError;
   Object? createMediaOfferError;
   Object? applyMediaOfferError;
   Object? applyMediaAnswerError;
+  Object? audioOutputRouteError;
   final Map<String, Session> _sessions = <String, Session>{};
   final StreamController<Session> _peerConnectedController =
       StreamController<Session>.broadcast();
@@ -3828,6 +3931,22 @@ class _TestVoiceMediaConnection implements VoiceMediaConnection {
   @override
   Future<void> setMuted({required bool muted}) async {
     owner.mutedPeers[peerId] = muted;
+  }
+
+  @override
+  Future<void> setDeafened({required bool deafened}) async {
+    owner.deafenedPeers.add('$peerId:$deafened');
+  }
+
+  @override
+  Future<void> setAudioOutputRoute(VoiceMediaOutputRoute route) async {
+    final error = owner.audioOutputRouteError;
+    if (error != null) {
+      throw error;
+    }
+    owner.outputRoutes
+        .putIfAbsent(peerId, () => <VoiceMediaOutputRoute>[])
+        .add(route);
   }
 
   @override

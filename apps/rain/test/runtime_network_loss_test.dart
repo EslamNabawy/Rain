@@ -391,6 +391,12 @@ class _NoopVoiceMediaConnection implements VoiceMediaConnection {
   Future<void> setMuted({required bool muted}) async {}
 
   @override
+  Future<void> setDeafened({required bool deafened}) async {}
+
+  @override
+  Future<void> setAudioOutputRoute(VoiceMediaOutputRoute route) async {}
+
+  @override
   Future<void> dispose() async {
     await _ice.close();
     await _tracks.close();

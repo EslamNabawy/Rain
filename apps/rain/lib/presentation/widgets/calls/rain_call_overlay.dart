@@ -20,6 +20,8 @@ class RainCallOverlay extends StatelessWidget {
     required this.onHangUp,
     required this.onRetry,
     required this.onToggleMute,
+    this.onToggleDeafen,
+    this.onSelectOutputRoute,
     required this.onMinimize,
     required this.onExpand,
   });
@@ -34,6 +36,8 @@ class RainCallOverlay extends StatelessWidget {
   final VoidCallback onHangUp;
   final VoidCallback onRetry;
   final VoidCallback onToggleMute;
+  final VoidCallback? onToggleDeafen;
+  final ValueChanged<VoiceCallOutputRoute>? onSelectOutputRoute;
   final VoidCallback onMinimize;
   final VoidCallback onExpand;
 
@@ -79,6 +83,8 @@ class RainCallOverlay extends StatelessWidget {
               onHangUp: onHangUp,
               onRetry: onRetry,
               onToggleMute: onToggleMute,
+              onToggleDeafen: onToggleDeafen,
+              onSelectOutputRoute: onSelectOutputRoute,
               onMinimize: onMinimize,
             ),
           ),
@@ -121,6 +127,8 @@ class _RainExpandedCallPanel extends StatelessWidget {
     required this.onHangUp,
     required this.onRetry,
     required this.onToggleMute,
+    this.onToggleDeafen,
+    this.onSelectOutputRoute,
     required this.onMinimize,
     this.gender,
     this.routeSummary,
@@ -137,6 +145,8 @@ class _RainExpandedCallPanel extends StatelessWidget {
   final VoidCallback onHangUp;
   final VoidCallback onRetry;
   final VoidCallback onToggleMute;
+  final VoidCallback? onToggleDeafen;
+  final ValueChanged<VoiceCallOutputRoute>? onSelectOutputRoute;
   final VoidCallback onMinimize;
 
   @override
@@ -270,6 +280,8 @@ class _RainExpandedCallPanel extends StatelessWidget {
                         onHangUp: onHangUp,
                         onRetry: onRetry,
                         onToggleMute: onToggleMute,
+                        onToggleDeafen: onToggleDeafen,
+                        onSelectOutputRoute: onSelectOutputRoute,
                       ),
                     ),
                   ],

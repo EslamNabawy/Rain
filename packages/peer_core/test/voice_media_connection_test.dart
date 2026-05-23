@@ -321,6 +321,72 @@ void main() {
     expect(connection.diagnostics.remoteStreamCount, 0);
   });
 
+  test(
+    'dedicated voice media deafens retained and future remote audio',
+    () async {
+      final platform = _FakeVoicePlatformBridge();
+      final connection = DefaultVoiceMediaConnection(
+        config: PeerConfig(
+          iceServers: const <Map<String, dynamic>>[],
+          platform: platform,
+        ),
+      );
+      final firstRemoteStream = _FakeMediaStream(
+        'remote-stream-1',
+        _FakeMediaTrack('remote-audio-1'),
+      );
+      final secondRemoteStream = _FakeMediaStream(
+        'remote-stream-2',
+        _FakeMediaTrack('remote-audio-2'),
+      );
+
+      await connection.startLocalAudio();
+      platform.createdConnections.single.emitTrack(
+        firstRemoteStream.audioTrack,
+        firstRemoteStream,
+      );
+      await pumpEventQueue();
+
+      expect(firstRemoteStream.audioTrack.enabled, isTrue);
+
+      await connection.setDeafened(deafened: true);
+      expect(firstRemoteStream.audioTrack.enabled, isFalse);
+
+      platform.createdConnections.single.emitTrack(
+        secondRemoteStream.audioTrack,
+        secondRemoteStream,
+      );
+      await pumpEventQueue();
+      expect(secondRemoteStream.audioTrack.enabled, isFalse);
+
+      await connection.setDeafened(deafened: false);
+      expect(firstRemoteStream.audioTrack.enabled, isTrue);
+      expect(secondRemoteStream.audioTrack.enabled, isTrue);
+
+      await connection.dispose();
+    },
+  );
+
+  test('dedicated voice media applies output route helpers', () async {
+    final platform = _FakeVoicePlatformBridge();
+    final connection = DefaultVoiceMediaConnection(
+      config: PeerConfig(
+        iceServers: const <Map<String, dynamic>>[],
+        platform: platform,
+      ),
+    );
+
+    await connection.startLocalAudio();
+    await connection.setAudioOutputRoute(VoiceMediaOutputRoute.speaker);
+    await connection.setAudioOutputRoute(VoiceMediaOutputRoute.bluetooth);
+    await connection.setAudioOutputRoute(VoiceMediaOutputRoute.systemDefault);
+
+    expect(platform.speakerphoneCalls, <bool>[true, false]);
+    expect(platform.preferBluetoothCalls, 1);
+
+    await connection.dispose();
+  });
+
   test('dedicated voice media emits remote audio level from stats', () async {
     final platform = _FakeVoicePlatformBridge();
     final connection = DefaultVoiceMediaConnection(
@@ -724,6 +790,8 @@ class _FakeVoicePlatformBridge implements PlatformBridge {
       <Map<String, dynamic>>[];
   final List<bool> muteCalls = <bool>[];
   final List<String> selectedAudioInputs = <String>[];
+  final List<bool> speakerphoneCalls = <bool>[];
+  int preferBluetoothCalls = 0;
   List<MediaDeviceInfo> mediaDevices = <MediaDeviceInfo>[
     MediaDeviceInfo(
       deviceId: 'audio-1',
@@ -802,10 +870,14 @@ class _FakeVoicePlatformBridge implements PlatformBridge {
   Future<void> selectAudioOutput(String deviceId) async {}
 
   @override
-  Future<void> setSpeakerphoneOn(bool enabled) async {}
+  Future<void> setSpeakerphoneOn(bool enabled) async {
+    speakerphoneCalls.add(enabled);
+  }
 
   @override
-  Future<void> setSpeakerphoneOnButPreferBluetooth() async {}
+  Future<void> setSpeakerphoneOnButPreferBluetooth() async {
+    preferBluetoothCalls += 1;
+  }
 }
 
 class _FakeVoicePeerConnection extends Fake implements RTCPeerConnection {

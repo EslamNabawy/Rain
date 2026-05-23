@@ -27,6 +27,8 @@ abstract class VoiceMediaConnection {
   Future<void> applyAnswer(VoiceSessionDescription answer);
   Future<void> addRemoteCandidate(VoiceIceCandidate candidate);
   Future<void> setMuted({required bool muted});
+  Future<void> setDeafened({required bool deafened});
+  Future<void> setAudioOutputRoute(VoiceMediaOutputRoute route);
   Future<void> dispose();
 }
 
@@ -73,6 +75,7 @@ class DefaultVoiceMediaConnection implements VoiceMediaConnection {
   bool _peerConnectionClosed = false;
   bool _voiceAudioPrepared = false;
   bool _muted = false;
+  bool _deafened = false;
   bool _samplingAudioLevel = false;
   bool _disposed = false;
   bool _controllersClosed = false;
@@ -268,6 +271,42 @@ class DefaultVoiceMediaConnection implements VoiceMediaConnection {
     }
     _muted = muted;
     await _config.platform.setMicrophoneMuted(track, muted: muted);
+  }
+
+  @override
+  Future<void> setDeafened({required bool deafened}) async {
+    _ensureNotDisposed();
+    _deafened = deafened;
+    for (final track in _remoteAudioTracks) {
+      track.enabled = !deafened;
+    }
+    _appendDiagnostic(_mediaStates, 'deafened:$deafened');
+  }
+
+  @override
+  Future<void> setAudioOutputRoute(VoiceMediaOutputRoute route) async {
+    _ensureNotDisposed();
+    try {
+      switch (route) {
+        case VoiceMediaOutputRoute.systemDefault:
+          await _config.platform.setSpeakerphoneOn(false);
+          break;
+        case VoiceMediaOutputRoute.speaker:
+          await _config.platform.setSpeakerphoneOn(true);
+          break;
+        case VoiceMediaOutputRoute.bluetooth:
+          await _config.platform.setSpeakerphoneOnButPreferBluetooth();
+          break;
+      }
+    } catch (error) {
+      _appendDiagnostic(
+        _mediaStates,
+        'audioOutputRoute:${route.name} failed | $error',
+      );
+      _lastError = error.toString();
+      rethrow;
+    }
+    _appendDiagnostic(_mediaStates, 'audioOutputRoute:${route.name}');
   }
 
   @override
@@ -523,6 +562,7 @@ class DefaultVoiceMediaConnection implements VoiceMediaConnection {
   }
 
   void _retainRemoteAudio(MediaStreamTrack track, List<MediaStream> streams) {
+    track.enabled = !_deafened;
     if (!_containsTrack(_remoteAudioTracks, track)) {
       _remoteAudioTracks.add(track);
     }

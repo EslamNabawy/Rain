@@ -11,6 +11,8 @@ class RainCallControls extends StatelessWidget {
     required this.onHangUp,
     required this.onRetry,
     required this.onToggleMute,
+    this.onToggleDeafen,
+    this.onSelectOutputRoute,
   });
 
   final VoiceCallState state;
@@ -19,6 +21,8 @@ class RainCallControls extends StatelessWidget {
   final VoidCallback onHangUp;
   final VoidCallback onRetry;
   final VoidCallback onToggleMute;
+  final VoidCallback? onToggleDeafen;
+  final ValueChanged<VoiceCallOutputRoute>? onSelectOutputRoute;
 
   @override
   Widget build(BuildContext context) {
@@ -73,6 +77,39 @@ class RainCallControls extends StatelessWidget {
           onPressed: state.isActive ? onToggleMute : null,
           icon: Icon(state.isMuted ? Icons.mic_off : Icons.mic),
         ),
+        IconButton(
+          tooltip: state.isDeafened ? 'Undeafen audio' : 'Deafen audio',
+          onPressed: state.isActive ? onToggleDeafen : null,
+          icon: Icon(state.isDeafened ? Icons.volume_off : Icons.volume_up),
+        ),
+        PopupMenuButton<VoiceCallOutputRoute>(
+          tooltip: 'Choose audio output',
+          enabled: state.isActive && onSelectOutputRoute != null,
+          onSelected: onSelectOutputRoute,
+          itemBuilder: (BuildContext context) {
+            return <PopupMenuEntry<VoiceCallOutputRoute>>[
+              _outputRouteMenuItem(
+                route: VoiceCallOutputRoute.systemDefault,
+                current: state.outputRoute,
+                label: 'Default',
+                icon: Icons.volume_up,
+              ),
+              _outputRouteMenuItem(
+                route: VoiceCallOutputRoute.speaker,
+                current: state.outputRoute,
+                label: 'Speaker',
+                icon: Icons.speaker_phone,
+              ),
+              _outputRouteMenuItem(
+                route: VoiceCallOutputRoute.bluetooth,
+                current: state.outputRoute,
+                label: 'Bluetooth',
+                icon: Icons.bluetooth_audio,
+              ),
+            ];
+          },
+          icon: Icon(_outputRouteIcon(state.outputRoute)),
+        ),
         IconButton.filled(
           tooltip: 'Hang up',
           onPressed: onHangUp,
@@ -83,12 +120,44 @@ class RainCallControls extends StatelessWidget {
   }
 }
 
+PopupMenuItem<VoiceCallOutputRoute> _outputRouteMenuItem({
+  required VoiceCallOutputRoute route,
+  required VoiceCallOutputRoute current,
+  required String label,
+  required IconData icon,
+}) {
+  final selected = route == current;
+  return PopupMenuItem<VoiceCallOutputRoute>(
+    value: route,
+    child: Row(
+      children: <Widget>[
+        Icon(selected ? Icons.check_circle : icon, size: 20),
+        const SizedBox(width: 10),
+        Text(label),
+      ],
+    ),
+  );
+}
+
+IconData _outputRouteIcon(VoiceCallOutputRoute route) {
+  return switch (route) {
+    VoiceCallOutputRoute.systemDefault => Icons.volume_up,
+    VoiceCallOutputRoute.speaker => Icons.speaker_phone,
+    VoiceCallOutputRoute.bluetooth => Icons.bluetooth_audio,
+  };
+}
+
 IconData rainVoiceCallIcon(VoiceCallState state) {
   return switch (state.phase) {
     VoiceCallPhase.failed => Icons.error_outline,
     VoiceCallPhase.incomingRinging => Icons.call_received,
     VoiceCallPhase.outgoingRinging => Icons.call_made,
-    VoiceCallPhase.active => state.isMuted ? Icons.mic_off : Icons.call,
+    VoiceCallPhase.active =>
+      state.isDeafened
+          ? Icons.volume_off
+          : state.isMuted
+          ? Icons.mic_off
+          : Icons.call,
     VoiceCallPhase.connectingPeer ||
     VoiceCallPhase.connectingMedia ||
     VoiceCallPhase.ending ||
@@ -130,8 +199,18 @@ String rainVoiceCallDetail(VoiceCallState state, int nowMs) {
     if (state.isMuted) {
       labels.add('Muted');
     }
+    if (state.isDeafened) {
+      labels.add('Deafened');
+    }
     if (state.isRemoteMuted) {
       labels.add('Peer muted');
+    }
+    if (state.outputRoute != VoiceCallOutputRoute.systemDefault) {
+      labels.add(_outputRouteLabel(state.outputRoute));
+    }
+    final warning = state.outputRouteWarning?.trim();
+    if (warning != null && warning.isNotEmpty) {
+      labels.add(warning);
     }
     return labels.join(' / ');
   }
@@ -144,6 +223,14 @@ String rainVoiceCallDetail(VoiceCallState state, int nowMs) {
     VoiceCallPhase.failed => rainVoiceCallFailureDetail(state),
     VoiceCallPhase.idle => '',
     VoiceCallPhase.active => 'Connected.',
+  };
+}
+
+String _outputRouteLabel(VoiceCallOutputRoute route) {
+  return switch (route) {
+    VoiceCallOutputRoute.systemDefault => 'Default audio',
+    VoiceCallOutputRoute.speaker => 'Speaker',
+    VoiceCallOutputRoute.bluetooth => 'Bluetooth',
   };
 }
 

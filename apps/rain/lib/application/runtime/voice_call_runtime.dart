@@ -27,6 +27,8 @@ extension VoiceCallRuntime on RainRuntimeController {
   static const String _voiceCallTimedOut = 'Call timed out.';
   static const String _voiceCallMediaFailed =
       'Call media could not connect. Try again.';
+  static const String _voiceCallAudioRouteUnavailable =
+      'Audio route unavailable.';
   static bool get _legacyControlChannelVoiceSignalingFrozen => true;
   static const Duration _voiceCallExpiry = Duration(minutes: 2);
   static const int _voiceCallTerminalSeq = 1 << 30;
@@ -174,6 +176,67 @@ extension VoiceCallRuntime on RainRuntimeController {
         updatedAt: DateTime.now().millisecondsSinceEpoch,
       ),
     );
+  }
+
+  Future<void> setVoiceCallDeafened(bool deafened) async {
+    final current = _voiceCallState;
+    final session = _voiceCallSession;
+    if (!current.isActive ||
+        current.peerId == null ||
+        current.callId == null ||
+        session == null) {
+      throw StateError('There is no active call to deafen.');
+    }
+    await session.setDeafened(deafened: deafened);
+    if (!_isCurrentVoiceCall(current.peerId!, current.callId!)) {
+      return;
+    }
+    _setVoiceCallState(
+      _voiceCallState.copyWith(
+        isDeafened: deafened,
+        updatedAt: DateTime.now().millisecondsSinceEpoch,
+      ),
+    );
+  }
+
+  Future<void> setVoiceCallOutputRoute(VoiceCallOutputRoute route) async {
+    final current = _voiceCallState;
+    final session = _voiceCallSession;
+    if (!current.isActive ||
+        current.peerId == null ||
+        current.callId == null ||
+        session == null) {
+      throw StateError('There is no active call to route audio.');
+    }
+    try {
+      await session.setAudioOutputRoute(_voiceMediaOutputRoute(route));
+      if (!_isCurrentVoiceCall(current.peerId!, current.callId!)) {
+        return;
+      }
+      _setVoiceCallState(
+        _voiceCallState.copyWith(
+          outputRoute: route,
+          updatedAt: DateTime.now().millisecondsSinceEpoch,
+          clearOutputRouteWarning: true,
+        ),
+      );
+    } catch (error, stackTrace) {
+      errorRecorder?.call(
+        error,
+        stackTrace,
+        source: 'voice-call-audio-route',
+        fatal: false,
+      );
+      if (!_isCurrentVoiceCall(current.peerId!, current.callId!)) {
+        return;
+      }
+      _setVoiceCallState(
+        _voiceCallState.copyWith(
+          outputRouteWarning: _voiceCallAudioRouteUnavailable,
+          updatedAt: DateTime.now().millisecondsSinceEpoch,
+        ),
+      );
+    }
   }
 
   bool voiceCallBlocksFileTransfer(String peerId) {
@@ -828,6 +891,7 @@ extension VoiceCallRuntime on RainRuntimeController {
     final startedAt = mappedPhase == VoiceCallPhase.active
         ? _voiceCallState.startedAt ?? now
         : _voiceCallState.startedAt;
+    final keepsLocalAudioControls = mappedPhase == VoiceCallPhase.active;
 
     if (mappedPhase == VoiceCallPhase.idle) {
       _setVoiceCallState(const VoiceCallState.idle());
@@ -842,7 +906,14 @@ extension VoiceCallRuntime on RainRuntimeController {
         callId: session.callId,
         isOutgoing: isOutgoing,
         isMuted: _voiceCallState.isMuted,
+        isDeafened: keepsLocalAudioControls && _voiceCallState.isDeafened,
         isRemoteMuted: _voiceCallState.isRemoteMuted,
+        outputRoute: keepsLocalAudioControls
+            ? _voiceCallState.outputRoute
+            : VoiceCallOutputRoute.systemDefault,
+        outputRouteWarning: keepsLocalAudioControls
+            ? _voiceCallState.outputRouteWarning
+            : null,
         startedAt: startedAt,
         updatedAt: now,
         detail: detail,
@@ -1143,6 +1214,14 @@ extension VoiceCallRuntime on RainRuntimeController {
     };
   }
 
+  VoiceMediaOutputRoute _voiceMediaOutputRoute(VoiceCallOutputRoute route) {
+    return switch (route) {
+      VoiceCallOutputRoute.systemDefault => VoiceMediaOutputRoute.systemDefault,
+      VoiceCallOutputRoute.speaker => VoiceMediaOutputRoute.speaker,
+      VoiceCallOutputRoute.bluetooth => VoiceMediaOutputRoute.bluetooth,
+    };
+  }
+
   VoiceSignalingAdapter _requireVoiceSignalingAdapter() {
     final voiceAdapter = voiceSignalingAdapter;
     if (voiceAdapter == null) {
@@ -1283,8 +1362,11 @@ extension VoiceCallRuntime on RainRuntimeController {
       phase: VoiceCallPhase.failed,
       detail: failureDetail ?? detail,
       failureReason: failureReason,
+      isDeafened: false,
+      outputRoute: VoiceCallOutputRoute.systemDefault,
       updatedAt: DateTime.now().millisecondsSinceEpoch,
       clearError: true,
+      clearOutputRouteWarning: true,
       audioLevel: const VoiceAudioLevel.unavailable(),
     );
   }
@@ -1331,7 +1413,10 @@ extension VoiceCallRuntime on RainRuntimeController {
             _voiceCallErrorMessage(error),
         error: error,
         failureReason: effectiveFailureReason,
+        isDeafened: false,
+        outputRoute: VoiceCallOutputRoute.systemDefault,
         updatedAt: DateTime.now().millisecondsSinceEpoch,
+        clearOutputRouteWarning: true,
         audioLevel: const VoiceAudioLevel.unavailable(),
       ),
     );

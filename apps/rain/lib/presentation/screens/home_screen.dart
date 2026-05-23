@@ -433,6 +433,8 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
               onHangUp: _hangUpVoiceCall,
               onRetry: () => _retryVoiceCall(voiceCall),
               onToggleMute: () => _toggleVoiceMute(voiceCall),
+              onToggleDeafen: () => _toggleVoiceDeafen(voiceCall),
+              onSelectOutputRoute: _selectVoiceOutputRoute,
               onMinimize: () =>
                   ref.read(callSurfaceProvider.notifier).minimize(),
               onExpand: () => ref.read(callSurfaceProvider.notifier).expand(),
@@ -601,6 +603,26 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
   Future<void> _toggleVoiceMute(VoiceCallState call) async {
     try {
       await ref.read(voiceCallProvider.notifier).setMuted(!call.isMuted);
+      _playSound(RainSoundEffect.action);
+    } catch (error) {
+      _playSound(RainSoundEffect.error);
+      _showVoiceCallError(_formatUiError(error));
+    }
+  }
+
+  Future<void> _toggleVoiceDeafen(VoiceCallState call) async {
+    try {
+      await ref.read(voiceCallProvider.notifier).setDeafened(!call.isDeafened);
+      _playSound(RainSoundEffect.action);
+    } catch (error) {
+      _playSound(RainSoundEffect.error);
+      _showVoiceCallError(_formatUiError(error));
+    }
+  }
+
+  Future<void> _selectVoiceOutputRoute(VoiceCallOutputRoute route) async {
+    try {
+      await ref.read(voiceCallProvider.notifier).setOutputRoute(route);
       _playSound(RainSoundEffect.action);
     } catch (error) {
       _playSound(RainSoundEffect.error);

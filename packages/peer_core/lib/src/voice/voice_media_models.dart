@@ -2,6 +2,8 @@ import 'package:flutter_webrtc/flutter_webrtc.dart';
 
 enum VoiceMediaAudioLevelSource { unavailable, audioLevel, totalAudioEnergy }
 
+enum VoiceMediaOutputRoute { systemDefault, speaker, bluetooth }
+
 enum VoiceMediaPhase {
   idle,
   startingLocalAudio,

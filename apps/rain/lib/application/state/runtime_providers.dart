@@ -278,6 +278,14 @@ class VoiceCallController extends Notifier<VoiceCallState> {
     await _requireRuntime().setVoiceCallMuted(muted);
   }
 
+  Future<void> setDeafened(bool deafened) async {
+    await _requireRuntime().setVoiceCallDeafened(deafened);
+  }
+
+  Future<void> setOutputRoute(VoiceCallOutputRoute route) async {
+    await _requireRuntime().setVoiceCallOutputRoute(route);
+  }
+
   bool blocksFileTransfer(String peerId) {
     return state.blocksFileTransfersFor(peerId);
   }

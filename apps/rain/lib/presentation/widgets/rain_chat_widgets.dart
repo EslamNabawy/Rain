@@ -610,6 +610,8 @@ class RainVoiceCallPanel extends StatelessWidget {
     required this.onHangUp,
     required this.onRetry,
     required this.onToggleMute,
+    this.onToggleDeafen,
+    this.onSelectOutputRoute,
   });
 
   final VoiceCallState state;
@@ -619,6 +621,8 @@ class RainVoiceCallPanel extends StatelessWidget {
   final VoidCallback onHangUp;
   final VoidCallback onRetry;
   final VoidCallback onToggleMute;
+  final VoidCallback? onToggleDeafen;
+  final ValueChanged<VoiceCallOutputRoute>? onSelectOutputRoute;
 
   @override
   Widget build(BuildContext context) {
@@ -696,6 +700,8 @@ class RainVoiceCallPanel extends StatelessWidget {
             onHangUp: onHangUp,
             onRetry: onRetry,
             onToggleMute: onToggleMute,
+            onToggleDeafen: onToggleDeafen,
+            onSelectOutputRoute: onSelectOutputRoute,
           );
           if (constraints.maxWidth < 430) {
             return Column(

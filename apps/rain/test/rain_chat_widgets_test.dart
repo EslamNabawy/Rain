@@ -283,6 +283,54 @@ void main() {
     expect(hungUp, isTrue);
   });
 
+  testWidgets('voice call deafen and output route actions are wired', (
+    WidgetTester tester,
+  ) async {
+    var deafened = false;
+    VoiceCallOutputRoute? route;
+
+    await tester.pumpWidget(
+      MaterialApp(
+        home: Scaffold(
+          body: RainVoiceCallPanel(
+            state: VoiceCallState(
+              phase: VoiceCallPhase.active,
+              peerId: 'bob',
+              callId: 'call-1',
+              isDeafened: true,
+              outputRoute: VoiceCallOutputRoute.speaker,
+              outputRouteWarning: 'Audio route unavailable.',
+              startedAt: DateTime.now()
+                  .subtract(const Duration(seconds: 7))
+                  .millisecondsSinceEpoch,
+            ),
+            displayName: 'Bob',
+            onAccept: () {},
+            onReject: () {},
+            onHangUp: () {},
+            onRetry: () {},
+            onToggleMute: () {},
+            onToggleDeafen: () => deafened = true,
+            onSelectOutputRoute: (VoiceCallOutputRoute value) => route = value,
+          ),
+        ),
+      ),
+    );
+
+    expect(find.textContaining('Deafened'), findsOneWidget);
+    expect(find.textContaining('Speaker'), findsOneWidget);
+    expect(find.textContaining('Audio route unavailable.'), findsOneWidget);
+
+    await tester.tap(find.byTooltip('Undeafen audio'));
+    expect(deafened, isTrue);
+
+    await tester.tap(find.byTooltip('Choose audio output'));
+    await tester.pumpAndSettle();
+    await tester.tap(find.text('Bluetooth').last);
+
+    expect(route, VoiceCallOutputRoute.bluetooth);
+  });
+
   testWidgets('voice call mic permission failure offers retry', (
     WidgetTester tester,
   ) async {

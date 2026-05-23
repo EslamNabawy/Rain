@@ -264,6 +264,26 @@ final class VoiceCallSession {
     });
   }
 
+  Future<void> setDeafened({required bool deafened}) {
+    return _enqueue(() async {
+      if (state.phase != VoiceCallSessionPhase.active) {
+        _logInvalidEvent('deafen in ${state.phase.name}');
+        return;
+      }
+      await media.setDeafened(deafened: deafened);
+    });
+  }
+
+  Future<void> setAudioOutputRoute(VoiceMediaOutputRoute route) {
+    return _enqueue(() async {
+      if (state.phase != VoiceCallSessionPhase.active) {
+        _logInvalidEvent('audio output route in ${state.phase.name}');
+        return;
+      }
+      await media.setAudioOutputRoute(route);
+    });
+  }
+
   Future<void> dispose() {
     return _enqueue(() async {
       if (_disposed) {
