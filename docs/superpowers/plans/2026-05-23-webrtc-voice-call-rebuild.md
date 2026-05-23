@@ -568,7 +568,7 @@ git add apps/rain/lib/application/runtime apps/rain/test
 git commit -m "feat: wire voice calls to dedicated media runtime"
 ```
 
-## Phase 5: UI And User Errors
+## Phase 05: UI/Error Handling
 
 **Purpose:** Make state understandable and stop hiding root causes.
 
