@@ -178,6 +178,43 @@ void main() {
     );
   });
 
+  test('stable test pair script builds shared-key Windows and v7a APK', () {
+    final script = _repoFile('scripts/build_stable_test_pair.ps1');
+
+    expect(script, contains('Builds a local Rain test pair'));
+    expect(script, contains('New-SignalingKey'));
+    expect(script, contains('Stable test builds must not use the demo'));
+    expect(script, contains('RAIN_SIGNALING_ENCRYPTION_KEY'));
+    expect(script, contains('RAIN_ALLOW_PUBLIC_TURN'));
+    expect(script, contains('--dart-define-from-file='));
+    expect(script, contains("('build', 'windows', '--release'"));
+    expect(script, contains('flutter_webrtc_plugin.dll'));
+    expect(script, contains('libwebrtc.dll'));
+    expect(script, contains('Use-LocalDebugSigningKey'));
+    expect(script, contains('androiddebugkey'));
+    expect(script, contains("'apk',"));
+    expect(script, contains('--split-per-abi'));
+    expect(script, contains("'android-arm'"));
+    expect(script, contains('app-armeabi-v7a-release.apk'));
+    expect(script, contains('Assert-ApkContainsOnlyArmV7'));
+    expect(script, contains("only armeabi-v7a"));
+    expect(script, isNot(contains('android-arm64')));
+    expect(script, isNot(contains('app-arm64-v8a-release.apk')));
+  });
+
+  test('stable test build docs preserve shared key release rule', () {
+    final docs = _repoFile('docs/stable-test-build.md');
+
+    expect(docs, contains('same non-demo `RAIN_SIGNALING_ENCRYPTION_KEY`'));
+    expect(docs, contains('scripts\\build_stable_test_pair.ps1'));
+    expect(docs, contains('app-armeabi-v7a-release.apk'));
+    expect(docs, contains('build\\windows\\x64\\runner\\Release\\rain.exe'));
+    expect(docs, contains('locally test-signed'));
+    expect(docs, contains('not store distribution'));
+    expect(docs, contains('dart run melos run analyze'));
+    expect(docs, contains('dart run melos run test'));
+  });
+
   test('release script packages only ARM v7 and ARM v8/v9 Android APKs', () {
     final script = _repoFile('scripts/build_release.ps1');
 
