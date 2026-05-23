@@ -80,6 +80,25 @@ void main() {
     );
   });
 
+  test('default peer core does not own dedicated voice media calls', () {
+    final peer = DefaultPeerCore();
+
+    expect(peer, isNot(isA<VoiceMediaConnection>()));
+    expect(
+      const VoiceSessionDescription(sdp: 'v=0', type: 'offer').toRtc().type,
+      'offer',
+    );
+    expect(
+      const VoiceIceCandidate(
+        candidate: 'candidate:1',
+        sdpMid: '0',
+        sdpMLineIndex: 0,
+      ).toRtc().sdpMLineIndex,
+      0,
+    );
+    expect(const VoiceMediaState.idle().phase, VoiceMediaPhase.idle);
+  });
+
   test(
     'default peer waits for chat and control channels before connected',
     () async {

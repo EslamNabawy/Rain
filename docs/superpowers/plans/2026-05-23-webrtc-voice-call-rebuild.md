@@ -271,7 +271,7 @@ git commit -m "docs: lock voice call architecture"
 
 **Purpose:** Stop adding more logic to the chat peer connection.
 
-- [ ] Write failing tests proving `DefaultPeerCore` is not used for new call media.
+- [x] Write failing tests proving `DefaultPeerCore` is not used for new call media.
 
 Run:
 
@@ -280,9 +280,9 @@ cd packages/peer_core
 flutter test test/peer_core_test.dart --plain-name "default peer core does not own dedicated voice media calls"
 ```
 
-Expected before change: fail because current call code still exposes media APIs through chat peer core.
+Result before skeleton: failed because dedicated voice-media API types did not exist.
 
-- [ ] Add `VoiceMediaConnection` interface skeleton.
+- [x] Add `VoiceMediaConnection` interface skeleton.
 
 ```dart
 abstract class VoiceMediaConnection {
@@ -300,9 +300,9 @@ abstract class VoiceMediaConnection {
 }
 ```
 
-- [ ] Export skeleton from `packages/peer_core/lib/peer_core.dart`.
+- [x] Export skeleton from `packages/peer_core/lib/peer_core.dart`.
 
-- [ ] Commit.
+- [x] Commit.
 
 ```powershell
 git add packages/peer_core/lib packages/peer_core/test
