@@ -714,7 +714,7 @@ git add apps/rain/android .github/workflows scripts
 git commit -m "ci: verify voice call platform artifacts"
 ```
 
-## Phase 7: Manual Device Gate
+## Phase 07: Manual Device Gate
 
 **Purpose:** Do not call it fixed until real devices prove it.
 
