@@ -359,7 +359,7 @@ git commit -m "feat: manage video call renderers"
 
 **Purpose:** Add video call behavior without breaking voice calls.
 
-- [ ] Extend `apps/rain/lib/application/runtime/voice_call_state.dart`:
+- [x] Extend `apps/rain/lib/application/runtime/voice_call_state.dart`:
   - `mediaMode`
   - `isCameraMuted`
   - `isRemoteCameraMuted`
@@ -369,12 +369,12 @@ git commit -m "feat: manage video call renderers"
   - `remoteCameraDenied`
   - `videoFirstFrameTimeout`
 
-- [ ] Add runtime methods in `apps/rain/lib/application/runtime/voice_call_runtime.dart`:
+- [x] Add runtime methods in `apps/rain/lib/application/runtime/voice_call_runtime.dart`:
   - `startVideoCall(String username)`
   - `setVideoCallCameraMuted(bool muted)`
   - `switchVideoCallCamera()`
 
-- [ ] Add tests in `apps/rain/test/friend_flow_test.dart`:
+- [x] Add tests in `apps/rain/test/friend_flow_test.dart`:
   - video call preflights mic + camera before Firebase invite
   - camera denied never sends invite
   - incoming video accept preflights camera before accept
@@ -386,14 +386,14 @@ git commit -m "feat: manage video call renderers"
   - voice call still works after video call hangup
   - video call still works after failed voice call
 
-- [ ] Keep current voice provider names unless rename is required by compiler.
-- [ ] Run:
+- [x] Keep current voice provider names unless rename is required by compiler.
+- [x] Run:
 
 ```powershell
 flutter test apps\rain\test\friend_flow_test.dart
 ```
 
-- [ ] Commit:
+- [x] Commit:
 
 ```powershell
 git add apps\rain\lib\application\runtime apps\rain\test\friend_flow_test.dart

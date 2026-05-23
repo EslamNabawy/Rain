@@ -256,8 +256,14 @@ String rainVoiceCallDetail(VoiceCallState state, int nowMs) {
     VoiceCallPhase.outgoingRinging => 'Ringing.',
     VoiceCallPhase.incomingRinging =>
       state.isVideo ? 'Incoming video call.' : 'Incoming voice call.',
-    VoiceCallPhase.connectingMedia => 'Connecting microphone audio.',
-    VoiceCallPhase.ending => 'Closing microphone audio.',
+    VoiceCallPhase.connectingMedia =>
+      state.isVideo
+          ? 'Connecting camera and microphone.'
+          : 'Connecting microphone audio.',
+    VoiceCallPhase.ending =>
+      state.isVideo
+          ? 'Closing camera and microphone.'
+          : 'Closing microphone audio.',
     VoiceCallPhase.failed => rainVoiceCallFailureDetail(state),
     VoiceCallPhase.idle => '',
     VoiceCallPhase.active => 'Connected.',
@@ -285,6 +291,9 @@ String rainVoiceCallFailureDetail(VoiceCallState state) {
       'Microphone permission required.',
     VoiceCallFailureReason.remoteMicrophoneDenied =>
       'Peer microphone permission required.',
+    VoiceCallFailureReason.cameraDenied => 'Camera permission required.',
+    VoiceCallFailureReason.remoteCameraDenied =>
+      'Peer camera permission required.',
     VoiceCallFailureReason.peerBusy => 'Peer is busy.',
     VoiceCallFailureReason.fileTransferActive =>
       'Finish the active file transfer first.',
@@ -298,6 +307,8 @@ String rainVoiceCallFailureDetail(VoiceCallState state) {
     VoiceCallFailureReason.mediaNoRemoteAudio ||
     VoiceCallFailureReason.mediaConnectionFailed =>
       'Call media could not connect. Try again.',
+    VoiceCallFailureReason.videoFirstFrameTimeout =>
+      'Video stream did not render. Try again.',
     null => rainSanitizeVoiceCallFailureDetail(state.detail),
   };
 }
@@ -305,14 +316,17 @@ String rainVoiceCallFailureDetail(VoiceCallState state) {
 bool rainVoiceCallCanRetry(VoiceCallState state) {
   return switch (state.failureReason) {
     VoiceCallFailureReason.microphoneDenied ||
+    VoiceCallFailureReason.cameraDenied ||
     VoiceCallFailureReason.peerBusy ||
     VoiceCallFailureReason.signalingFailed ||
     VoiceCallFailureReason.expired ||
     VoiceCallFailureReason.ringingTimeout ||
     VoiceCallFailureReason.mediaConnectionFailed ||
     VoiceCallFailureReason.mediaIceTimeout ||
-    VoiceCallFailureReason.mediaNoRemoteAudio => true,
+    VoiceCallFailureReason.mediaNoRemoteAudio ||
+    VoiceCallFailureReason.videoFirstFrameTimeout => true,
     VoiceCallFailureReason.remoteMicrophoneDenied ||
+    VoiceCallFailureReason.remoteCameraDenied ||
     VoiceCallFailureReason.fileTransferActive ||
     VoiceCallFailureReason.rejected ||
     VoiceCallFailureReason.networkLost ||

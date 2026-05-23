@@ -261,6 +261,11 @@ class VoiceCallController extends Notifier<VoiceCallState> {
     await _requireRuntime().startVoiceCall(peerId);
   }
 
+  Future<void> startVideo(String peerId) async {
+    assertNetworkReady(ref);
+    await _requireRuntime().startVideoCall(peerId);
+  }
+
   Future<void> accept() async {
     assertNetworkReady(ref);
     await _requireRuntime().acceptVoiceCall();
@@ -276,6 +281,14 @@ class VoiceCallController extends Notifier<VoiceCallState> {
 
   Future<void> setMuted(bool muted) async {
     await _requireRuntime().setVoiceCallMuted(muted);
+  }
+
+  Future<void> setCameraMuted(bool muted) async {
+    await _requireRuntime().setVideoCallCameraMuted(muted);
+  }
+
+  Future<void> switchCamera() async {
+    await _requireRuntime().switchVideoCallCamera();
   }
 
   Future<void> setDeafened(bool deafened) async {

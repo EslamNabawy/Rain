@@ -1,3 +1,7 @@
+import 'package:protocol_brain/protocol_brain.dart' show CallMediaMode;
+
+export 'package:protocol_brain/protocol_brain.dart' show CallMediaMode;
+
 import 'voice_audio_level.dart';
 
 enum VoiceCallPhase {
@@ -14,6 +18,8 @@ enum VoiceCallPhase {
 enum VoiceCallFailureReason {
   microphoneDenied,
   remoteMicrophoneDenied,
+  cameraDenied,
+  remoteCameraDenied,
   peerBusy,
   fileTransferActive,
   rejected,
@@ -24,11 +30,10 @@ enum VoiceCallFailureReason {
   mediaConnectionFailed,
   mediaIceTimeout,
   mediaNoRemoteAudio,
+  videoFirstFrameTimeout,
 }
 
 enum VoiceCallOutputRoute { systemDefault, speaker, bluetooth }
-
-enum CallMediaMode { audio, video }
 
 enum CallControlCapability {
   microphone,
@@ -52,6 +57,9 @@ class VoiceCallState {
     this.isDeafened = false,
     this.isRemoteMuted = false,
     this.isRemoteCameraMuted = false,
+    this.hasLocalVideo = false,
+    this.hasRemoteVideo = false,
+    this.videoFirstFrameTimedOut = false,
     this.outputRoute = VoiceCallOutputRoute.systemDefault,
     this.outputRouteWarning,
     this.startedAt,
@@ -74,6 +82,9 @@ class VoiceCallState {
       isDeafened = false,
       isRemoteMuted = false,
       isRemoteCameraMuted = false,
+      hasLocalVideo = false,
+      hasRemoteVideo = false,
+      videoFirstFrameTimedOut = false,
       outputRoute = VoiceCallOutputRoute.systemDefault,
       outputRouteWarning = null,
       startedAt = null,
@@ -94,6 +105,9 @@ class VoiceCallState {
   final bool isDeafened;
   final bool isRemoteMuted;
   final bool isRemoteCameraMuted;
+  final bool hasLocalVideo;
+  final bool hasRemoteVideo;
+  final bool videoFirstFrameTimedOut;
   final VoiceCallOutputRoute outputRoute;
   final String? outputRouteWarning;
   final int? startedAt;
@@ -156,6 +170,9 @@ class VoiceCallState {
     bool? isDeafened,
     bool? isRemoteMuted,
     bool? isRemoteCameraMuted,
+    bool? hasLocalVideo,
+    bool? hasRemoteVideo,
+    bool? videoFirstFrameTimedOut,
     VoiceCallOutputRoute? outputRoute,
     String? outputRouteWarning,
     int? startedAt,
@@ -180,6 +197,10 @@ class VoiceCallState {
       isDeafened: isDeafened ?? this.isDeafened,
       isRemoteMuted: isRemoteMuted ?? this.isRemoteMuted,
       isRemoteCameraMuted: isRemoteCameraMuted ?? this.isRemoteCameraMuted,
+      hasLocalVideo: hasLocalVideo ?? this.hasLocalVideo,
+      hasRemoteVideo: hasRemoteVideo ?? this.hasRemoteVideo,
+      videoFirstFrameTimedOut:
+          videoFirstFrameTimedOut ?? this.videoFirstFrameTimedOut,
       outputRoute: outputRoute ?? this.outputRoute,
       outputRouteWarning: clearOutputRouteWarning
           ? null

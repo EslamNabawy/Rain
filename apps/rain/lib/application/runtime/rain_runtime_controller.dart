@@ -11,6 +11,7 @@ import 'package:rain_core/rain_core.dart';
 import 'connection_attempt_coordinator.dart';
 import 'file_transfer_progress_batcher.dart';
 import 'serialized_runtime_mutations.dart';
+import 'video_call_renderers.dart';
 import 'voice_audio_level.dart';
 import 'voice_call_diagnostics.dart';
 import 'voice_call_state.dart';
@@ -64,6 +65,7 @@ class RainRuntimeController with WidgetsBindingObserver {
     Duration initialConnectionRetryBackoff = const Duration(seconds: 3),
     Duration maxConnectionRetryBackoff = const Duration(minutes: 1),
     Future<Directory> Function()? documentsDirectoryProvider,
+    this.videoCallRendererFactory = const RtcVideoCallRendererFactory(),
     this.errorRecorder,
   }) : fileTransferStore = fileTransferStore ?? FileTransferStore(database),
        voiceSignalingAdapter =
@@ -102,6 +104,7 @@ class RainRuntimeController with WidgetsBindingObserver {
   final Duration networkRecoveryDebounce;
   final RuntimeErrorRecorder? errorRecorder;
   final Future<Directory> Function() _documentsDirectoryProvider;
+  final VideoCallRendererFactory videoCallRendererFactory;
   final Set<String> _manualDisconnectedPeers = <String>{};
   final Set<String> _registeredPeerListeners = <String>{};
   final Set<String> _passivePeerListeners = <String>{};
@@ -121,6 +124,9 @@ class RainRuntimeController with WidgetsBindingObserver {
   VoiceCallState _voiceCallState = const VoiceCallState.idle();
   VoiceCallSession? _voiceCallSession;
   StreamSubscription<VoiceCallSessionState>? _voiceCallSessionSubscription;
+  CallMediaConnection? _videoCallMediaConnection;
+  VideoCallRenderers? _videoCallRenderers;
+  StreamSubscription<VideoCallRendererState>? _videoCallRendererSubscription;
   final List<StreamSubscription<dynamic>> _voiceSignalingSubscriptions =
       <StreamSubscription<dynamic>>[];
   late final FileTransferProgressBatcher _fileProgressBatcher;

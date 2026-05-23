@@ -5,12 +5,14 @@ import 'dart:typed_data';
 import 'package:drift/drift.dart' show driftRuntimeOptions;
 import 'package:drift/native.dart';
 import 'package:flutter_test/flutter_test.dart';
-import 'package:flutter_webrtc/flutter_webrtc.dart' show RTCSessionDescription;
+import 'package:flutter_webrtc/flutter_webrtc.dart'
+    show MediaStream, MediaStreamTrack, RTCSessionDescription;
 import 'package:protocol_brain/protocol_brain.dart';
 import 'package:protocol_brain/protocol_brain.dart' as protocol;
 import 'package:protocol_brain/testing.dart';
 import 'package:rain/infrastructure/signaling/noop_signaling_adapter.dart';
 import 'package:rain/application/runtime/rain_runtime_controller.dart';
+import 'package:rain/application/runtime/video_call_renderers.dart';
 import 'package:rain/application/runtime/voice_call_state.dart';
 import 'package:rain_core/rain_core.dart';
 
@@ -1207,6 +1209,428 @@ void main() {
         VoiceCallFailureReason.microphoneDenied,
       );
     });
+
+    test(
+      'startVideoCall preflights mic and camera before Firebase invite',
+      () async {
+        final adapter = RecordingVoiceSignalingAdapter();
+        final brain = TestSessionManager();
+        await adapter.register('bob', 'bobpw');
+        await adapter.upsertFriendship('alice', 'bob');
+        await db
+            .into(db.friends)
+            .insert(
+              FriendsCompanion.insert(
+                username: 'bob',
+                displayName: 'Bob',
+                state: 'friend',
+                addedAt: 0,
+              ),
+            );
+        final runtime = _runtimeFor(
+          db,
+          alice,
+          adapter,
+          brain: brain,
+          videoCallRendererFactory: const _TestVideoCallRendererFactory(),
+        );
+        addTearDown(runtime.dispose);
+
+        await runtime.start();
+        await runtime.startVideoCall('bob');
+
+        expect(runtime.voiceCallState.phase, VoiceCallPhase.outgoingRinging);
+        expect(runtime.voiceCallState.isVideo, isTrue);
+        expect(
+          adapter.rooms.values.single.mediaMode,
+          protocol.CallMediaMode.video,
+        );
+        expect(brain.startedAudioPeers, <String>['bob']);
+        expect(brain.startedVideoPeers, <String>['bob']);
+      },
+    );
+
+    test('outgoing camera denial writes no Firebase invite', () async {
+      final adapter = RecordingVoiceSignalingAdapter();
+      final brain = TestSessionManager()
+        ..startLocalVideoError = const CallMediaException(
+          CallMediaFailureReason.cameraDenied,
+          'Camera permission is required.',
+        );
+      await adapter.register('bob', 'bobpw');
+      await adapter.upsertFriendship('alice', 'bob');
+      await db
+          .into(db.friends)
+          .insert(
+            FriendsCompanion.insert(
+              username: 'bob',
+              displayName: 'Bob',
+              state: 'friend',
+              addedAt: 0,
+            ),
+          );
+      final runtime = _runtimeFor(
+        db,
+        alice,
+        adapter,
+        brain: brain,
+        videoCallRendererFactory: const _TestVideoCallRendererFactory(),
+      );
+      addTearDown(runtime.dispose);
+
+      await runtime.start();
+      await expectLater(
+        runtime.startVideoCall('bob'),
+        throwsA(isA<CallMediaException>()),
+      );
+
+      expect(adapter.rooms, isEmpty);
+      expect(runtime.voiceCallState.phase, VoiceCallPhase.failed);
+      expect(
+        runtime.voiceCallState.failureReason,
+        VoiceCallFailureReason.cameraDenied,
+      );
+      expect(brain.startedAudioPeers, <String>['bob']);
+      expect(brain.startedVideoPeers, <String>['bob']);
+    });
+
+    test(
+      'incoming video accept preflights camera before Firebase accept',
+      () async {
+        final adapter = RecordingVoiceSignalingAdapter();
+        final aliceBrain = TestSessionManager();
+        final bobBrain = TestSessionManager();
+        final bobDb = RainDatabase(NativeDatabase.memory());
+        addTearDown(bobDb.close);
+        await adapter.register('bob', 'bobpw');
+        await adapter.upsertFriendship('alice', 'bob');
+        await db
+            .into(db.friends)
+            .insert(
+              FriendsCompanion.insert(
+                username: 'bob',
+                displayName: 'Bob',
+                state: 'friend',
+                addedAt: 0,
+              ),
+            );
+        await bobDb
+            .into(bobDb.friends)
+            .insert(
+              FriendsCompanion.insert(
+                username: 'alice',
+                displayName: 'Alice',
+                state: 'friend',
+                addedAt: 0,
+              ),
+            );
+        final bob = RainIdentity(
+          username: 'bob',
+          displayName: 'Bob',
+          createdAt: DateTime.now().millisecondsSinceEpoch,
+          gender: RainGender.male,
+        );
+        final aliceRuntime = _runtimeFor(
+          db,
+          alice,
+          adapter,
+          brain: aliceBrain,
+          videoCallRendererFactory: const _TestVideoCallRendererFactory(),
+        );
+        final bobRuntime = _runtimeFor(
+          bobDb,
+          bob,
+          adapter,
+          brain: bobBrain,
+          videoCallRendererFactory: const _TestVideoCallRendererFactory(),
+        );
+        addTearDown(aliceRuntime.dispose);
+        addTearDown(bobRuntime.dispose);
+
+        await aliceRuntime.start();
+        await bobRuntime.start();
+        await aliceRuntime.startVideoCall('bob');
+        await _waitForCondition(
+          () =>
+              bobRuntime.voiceCallState.phase == VoiceCallPhase.incomingRinging,
+          'Firebase video invite to ring on callee',
+        );
+        expect(
+          adapter.rooms.values.single.status,
+          VoiceCallSignalingStatus.ringing,
+        );
+
+        await bobRuntime.acceptVoiceCall();
+
+        expect(bobBrain.startedAudioPeers, <String>['alice']);
+        expect(bobBrain.startedVideoPeers, <String>['alice']);
+        await _waitForCondition(
+          () =>
+              adapter.rooms.values.single.status !=
+              VoiceCallSignalingStatus.ringing,
+          'Firebase video room to move beyond ringing after camera preflight',
+        );
+      },
+    );
+
+    test('remote camera denial maps to typed video failure', () async {
+      final adapter = RecordingVoiceSignalingAdapter();
+      final aliceBrain = TestSessionManager();
+      final bobBrain = TestSessionManager()
+        ..startLocalVideoError = const CallMediaException(
+          CallMediaFailureReason.cameraDenied,
+          'Camera permission is required.',
+        );
+      final bobDb = RainDatabase(NativeDatabase.memory());
+      addTearDown(bobDb.close);
+      await adapter.register('bob', 'bobpw');
+      await adapter.upsertFriendship('alice', 'bob');
+      await db
+          .into(db.friends)
+          .insert(
+            FriendsCompanion.insert(
+              username: 'bob',
+              displayName: 'Bob',
+              state: 'friend',
+              addedAt: 0,
+            ),
+          );
+      await bobDb
+          .into(bobDb.friends)
+          .insert(
+            FriendsCompanion.insert(
+              username: 'alice',
+              displayName: 'Alice',
+              state: 'friend',
+              addedAt: 0,
+            ),
+          );
+      final bob = RainIdentity(
+        username: 'bob',
+        displayName: 'Bob',
+        createdAt: DateTime.now().millisecondsSinceEpoch,
+        gender: RainGender.male,
+      );
+      final aliceRuntime = _runtimeFor(
+        db,
+        alice,
+        adapter,
+        brain: aliceBrain,
+        videoCallRendererFactory: const _TestVideoCallRendererFactory(),
+      );
+      final bobRuntime = _runtimeFor(
+        bobDb,
+        bob,
+        adapter,
+        brain: bobBrain,
+        videoCallRendererFactory: const _TestVideoCallRendererFactory(),
+      );
+      addTearDown(aliceRuntime.dispose);
+      addTearDown(bobRuntime.dispose);
+
+      await aliceRuntime.start();
+      await bobRuntime.start();
+      await aliceRuntime.startVideoCall('bob');
+      await _waitForCondition(
+        () => bobRuntime.voiceCallState.phase == VoiceCallPhase.incomingRinging,
+        'Firebase video invite to ring before camera denial',
+      );
+
+      await expectLater(
+        bobRuntime.acceptVoiceCall(),
+        throwsA(isA<CallMediaException>()),
+      );
+      await _waitForCondition(
+        () =>
+            adapter.rooms.values.single.status ==
+            VoiceCallSignalingStatus.failed,
+        'Firebase video room to fail after callee camera denial',
+      );
+      expect(adapter.rooms.values.single.reasonCode, 'cameraDenied');
+      await _waitForCondition(
+        () => aliceRuntime.voiceCallState.phase == VoiceCallPhase.failed,
+        'caller to observe remote camera denial',
+      );
+      expect(
+        aliceRuntime.voiceCallState.failureReason,
+        VoiceCallFailureReason.remoteCameraDenied,
+      );
+    });
+
+    test('active file transfer blocks starting a video call', () async {
+      final adapter = RecordingVoiceSignalingAdapter();
+      final brain = TestSessionManager();
+      final transferStore = FileTransferStore(db);
+      await adapter.register('bob', 'bobpw');
+      await adapter.upsertFriendship('alice', 'bob');
+      await db
+          .into(db.friends)
+          .insert(
+            FriendsCompanion.insert(
+              username: 'bob',
+              displayName: 'Bob',
+              state: 'friend',
+              addedAt: 0,
+            ),
+          );
+      await transferStore.upsert(
+        FileTransferRecord(
+          id: 'transfer-1',
+          peerId: 'bob',
+          messageId: 'message-1',
+          direction: FileTransferDirection.outgoing,
+          fileName: 'busy.txt',
+          fileSize: 1,
+          bytesTransferred: 0,
+          state: FileTransferState.sending,
+          createdAt: 0,
+          updatedAt: 0,
+        ),
+      );
+      final messageStore = MessageStore(db);
+      final offlineQueueStore = OfflineQueueStore(db);
+      final runtime = RainRuntimeController(
+        selfIdentity: alice,
+        adapter: adapter,
+        brain: brain,
+        database: db,
+        friendStore: FriendStore(db),
+        messageStore: messageStore,
+        offlineQueueStore: offlineQueueStore,
+        messageDeliveryService: MessageDeliveryService(
+          messageStore: messageStore,
+          offlineQueueStore: offlineQueueStore,
+        ),
+        fileTransferStore: transferStore,
+        videoCallRendererFactory: const _TestVideoCallRendererFactory(),
+      );
+      addTearDown(runtime.dispose);
+
+      await expectLater(
+        runtime.startVideoCall('bob'),
+        throwsA(
+          isA<StateError>().having(
+            (error) => error.toString(),
+            'message',
+            contains('Finish the active file transfer'),
+          ),
+        ),
+      );
+
+      expect(adapter.rooms, isEmpty);
+      expect(brain.callMediaConnections, isEmpty);
+    });
+
+    test(
+      'active Firebase video call blocks file transfer and hangup releases media',
+      () async {
+        final adapter = RecordingVoiceSignalingAdapter();
+        final aliceBrain = TestSessionManager();
+        final bobBrain = TestSessionManager();
+        final bobDb = RainDatabase(NativeDatabase.memory());
+        addTearDown(bobDb.close);
+        await adapter.register('bob', 'bobpw');
+        await adapter.upsertFriendship('alice', 'bob');
+        await db
+            .into(db.friends)
+            .insert(
+              FriendsCompanion.insert(
+                username: 'bob',
+                displayName: 'Bob',
+                state: 'friend',
+                addedAt: 0,
+              ),
+            );
+        await bobDb
+            .into(bobDb.friends)
+            .insert(
+              FriendsCompanion.insert(
+                username: 'alice',
+                displayName: 'Alice',
+                state: 'friend',
+                addedAt: 0,
+              ),
+            );
+        final bob = RainIdentity(
+          username: 'bob',
+          displayName: 'Bob',
+          createdAt: DateTime.now().millisecondsSinceEpoch,
+          gender: RainGender.male,
+        );
+        final aliceRuntime = _runtimeFor(
+          db,
+          alice,
+          adapter,
+          brain: aliceBrain,
+          videoCallRendererFactory: const _TestVideoCallRendererFactory(),
+        );
+        final bobRuntime = _runtimeFor(
+          bobDb,
+          bob,
+          adapter,
+          brain: bobBrain,
+          videoCallRendererFactory: const _TestVideoCallRendererFactory(),
+        );
+        addTearDown(aliceRuntime.dispose);
+        addTearDown(bobRuntime.dispose);
+
+        await aliceRuntime.start();
+        await bobRuntime.start();
+        await aliceRuntime.startVideoCall('bob');
+        await _waitForCondition(
+          () =>
+              bobRuntime.voiceCallState.phase == VoiceCallPhase.incomingRinging,
+          'Firebase video invite to ring before file block check',
+        );
+        await bobRuntime.acceptVoiceCall();
+        await _waitForCondition(
+          () => aliceRuntime.voiceCallState.phase == VoiceCallPhase.active,
+          'Firebase video call to become active before file block check',
+        );
+
+        await expectLater(
+          aliceRuntime.sendFile(
+            peerId: 'bob',
+            fileName: 'blocked.txt',
+            fileSize: 1,
+            openRead: () => Stream<List<int>>.value(<int>[1]),
+          ),
+          throwsA(
+            isA<StateError>().having(
+              (error) => error.toString(),
+              'message',
+              contains('Finish the call first'),
+            ),
+          ),
+        );
+
+        await aliceRuntime.hangUpVoiceCall();
+        await _waitForCondition(
+          () =>
+              adapter.rooms.values.single.status ==
+              VoiceCallSignalingStatus.ended,
+          'Firebase video room to end after hangup',
+        );
+        expect(aliceRuntime.voiceCallState.phase, VoiceCallPhase.idle);
+        expect(
+          (aliceBrain.callMediaConnections['bob']! as _TestCallMediaConnection)
+              .disposed,
+          isTrue,
+        );
+        await _waitForCondition(
+          () => bobRuntime.voiceCallState.phase == VoiceCallPhase.idle,
+          'remote video call to clear after hangup',
+        );
+
+        await aliceRuntime.startVoiceCall('bob');
+        await _waitForCondition(
+          () =>
+              bobRuntime.voiceCallState.phase == VoiceCallPhase.incomingRinging,
+          'voice call to ring after video hangup',
+        );
+        expect(aliceRuntime.voiceCallState.isVideo, isFalse);
+      },
+    );
 
     test('active Firebase pair lock is surfaced as peer busy', () async {
       final adapter = RecordingVoiceSignalingAdapter();
@@ -3494,6 +3918,8 @@ RainRuntimeController _runtimeFor(
   NoopSignalingAdapter adapter, {
   SessionManager? brain,
   RuntimeErrorRecorder? errorRecorder,
+  VideoCallRendererFactory videoCallRendererFactory =
+      const RtcVideoCallRendererFactory(),
 }) {
   final messageStore = MessageStore(database);
   final offlineQueueStore = OfflineQueueStore(database);
@@ -3509,6 +3935,7 @@ RainRuntimeController _runtimeFor(
       messageStore: messageStore,
       offlineQueueStore: offlineQueueStore,
     ),
+    videoCallRendererFactory: videoCallRendererFactory,
     errorRecorder: errorRecorder,
   );
 }
@@ -3805,6 +4232,7 @@ class TestSessionManager implements SessionManager {
   final List<String> unregisteredPeers = <String>[];
   final List<String> startedAudioPeers = <String>[];
   final List<String> stoppedAudioPeers = <String>[];
+  final List<String> startedVideoPeers = <String>[];
   final List<String> mediaOfferPeers = <String>[];
   final List<String> appliedMediaOfferPeers = <String>[];
   final List<String> appliedMediaAnswerPeers = <String>[];
@@ -3813,10 +4241,14 @@ class TestSessionManager implements SessionManager {
   final List<String> sentControlPayloads = <String>[];
   final Map<String, VoiceMediaConnection> voiceMediaConnections =
       <String, VoiceMediaConnection>{};
+  final Map<String, CallMediaConnection> callMediaConnections =
+      <String, CallMediaConnection>{};
   final Map<String, bool> mutedPeers = <String, bool>{};
+  final Map<String, bool> cameraMutedPeers = <String, bool>{};
   final Map<String, List<VoiceMediaOutputRoute>> outputRoutes =
       <String, List<VoiceMediaOutputRoute>>{};
   Object? startLocalAudioError;
+  Object? startLocalVideoError;
   Object? createMediaOfferError;
   Object? applyMediaOfferError;
   Object? applyMediaAnswerError;
@@ -3950,6 +4382,13 @@ class TestSessionManager implements SessionManager {
   Future<VoiceMediaConnection> createVoiceMediaConnection(String peerId) async {
     final connection = _TestVoiceMediaConnection(this, peerId);
     voiceMediaConnections[peerId] = connection;
+    return connection;
+  }
+
+  @override
+  Future<CallMediaConnection> createCallMediaConnection(String peerId) async {
+    final connection = _TestCallMediaConnection(this, peerId);
+    callMediaConnections[peerId] = connection;
     return connection;
   }
 
@@ -4173,5 +4612,207 @@ class _TestVoiceMediaConnection implements VoiceMediaConnection {
         updatedAt: DateTime.now().millisecondsSinceEpoch,
       ),
     );
+  }
+}
+
+class _TestCallMediaConnection implements CallMediaConnection {
+  _TestCallMediaConnection(this.owner, this.peerId);
+
+  final TestSessionManager owner;
+  final String peerId;
+  final StreamController<CallIceCandidate> _iceController =
+      StreamController<CallIceCandidate>.broadcast();
+  final StreamController<CallRemoteMediaTrack> _remoteTrackController =
+      StreamController<CallRemoteMediaTrack>.broadcast();
+  final StreamController<CallMediaState> _stateController =
+      StreamController<CallMediaState>.broadcast();
+  final List<CallIceCandidate> remoteCandidates = <CallIceCandidate>[];
+  bool hasLocalAudio = false;
+  bool hasLocalVideo = false;
+  bool disposed = false;
+
+  @override
+  Stream<CallIceCandidate> get onIceCandidate => _iceController.stream;
+
+  @override
+  Stream<CallRemoteMediaTrack> get onRemoteTrack =>
+      _remoteTrackController.stream;
+
+  @override
+  Stream<CallMediaState> get onStateChanged => _stateController.stream;
+
+  @override
+  CallMediaDiagnostics get diagnostics => CallMediaDiagnostics(
+    hasLocalAudio: hasLocalAudio,
+    hasLocalVideo: hasLocalVideo,
+    disposed: disposed,
+  );
+
+  @override
+  MediaStream? get localStream => null;
+
+  @override
+  MediaStreamTrack? get localVideoTrack => null;
+
+  @override
+  Future<void> startLocalMedia({required CallMediaKind kind}) async {
+    if (hasLocalAudio && (kind == CallMediaKind.audio || hasLocalVideo)) {
+      return;
+    }
+    owner.startedAudioPeers.add(peerId);
+    final audioError = owner.startLocalAudioError;
+    if (audioError != null) {
+      throw audioError;
+    }
+    hasLocalAudio = true;
+    if (kind == CallMediaKind.video) {
+      owner.startedVideoPeers.add(peerId);
+      final videoError = owner.startLocalVideoError;
+      if (videoError != null) {
+        throw videoError;
+      }
+      hasLocalVideo = true;
+    }
+    _stateController.add(
+      CallMediaState(
+        phase: CallMediaPhase.localMediaReady,
+        updatedAt: DateTime.now().millisecondsSinceEpoch,
+      ),
+    );
+  }
+
+  @override
+  Future<CallSessionDescription> createOffer({
+    required CallMediaKind kind,
+  }) async {
+    await startLocalMedia(kind: kind);
+    owner.mediaOfferPeers.add(peerId);
+    final error = owner.createMediaOfferError;
+    if (error != null) {
+      throw error;
+    }
+    return CallSessionDescription(sdp: 'media-offer-$peerId', type: 'offer');
+  }
+
+  @override
+  Future<CallSessionDescription> acceptOffer(
+    CallSessionDescription offer, {
+    required CallMediaKind kind,
+  }) async {
+    await startLocalMedia(kind: kind);
+    owner.appliedMediaOfferPeers.add(peerId);
+    final error = owner.applyMediaOfferError;
+    if (error != null) {
+      throw error;
+    }
+    _emitConnected();
+    return CallSessionDescription(sdp: 'media-answer-$peerId', type: 'answer');
+  }
+
+  @override
+  Future<void> applyAnswer(CallSessionDescription answer) async {
+    owner.appliedMediaAnswerPeers.add(peerId);
+    final error = owner.applyMediaAnswerError;
+    if (error != null) {
+      throw error;
+    }
+    _emitConnected();
+  }
+
+  @override
+  Future<void> addRemoteCandidate(CallIceCandidate candidate) async {
+    remoteCandidates.add(candidate);
+  }
+
+  @override
+  Future<void> setMicrophoneMuted({required bool muted}) async {
+    owner.mutedPeers[peerId] = muted;
+  }
+
+  @override
+  Future<void> setCameraMuted({required bool muted}) async {
+    owner.cameraMutedPeers[peerId] = muted;
+  }
+
+  @override
+  Future<void> switchCamera() async {
+    owner.startedVideoPeers.add('$peerId:switch');
+  }
+
+  @override
+  Future<void> setDeafened({required bool deafened}) async {
+    owner.deafenedPeers.add('$peerId:$deafened');
+  }
+
+  @override
+  Future<void> setAudioOutputRoute(CallMediaOutputRoute route) async {
+    final error = owner.audioOutputRouteError;
+    if (error != null) {
+      throw error;
+    }
+    owner.outputRoutes
+        .putIfAbsent(peerId, () => <VoiceMediaOutputRoute>[])
+        .add(route);
+  }
+
+  @override
+  Future<void> dispose() async {
+    if (disposed) {
+      return;
+    }
+    disposed = true;
+    owner.stoppedAudioPeers.add(peerId);
+    await _iceController.close();
+    await _remoteTrackController.close();
+    await _stateController.close();
+  }
+
+  void _emitConnected() {
+    _stateController.add(
+      CallMediaState(
+        phase: CallMediaPhase.connected,
+        updatedAt: DateTime.now().millisecondsSinceEpoch,
+      ),
+    );
+  }
+}
+
+class _TestVideoCallRendererFactory implements VideoCallRendererFactory {
+  const _TestVideoCallRendererFactory();
+
+  @override
+  VideoCallRendererHandle create() => _TestVideoCallRendererHandle();
+}
+
+class _TestVideoCallRendererHandle implements VideoCallRendererHandle {
+  MediaStream? _stream;
+  void Function()? _onFirstFrameRendered;
+
+  @override
+  Future<void> initialize() async {}
+
+  @override
+  MediaStream? get srcObject => _stream;
+
+  @override
+  set srcObject(MediaStream? stream) {
+    _stream = stream;
+    if (stream != null) {
+      scheduleMicrotask(() => _onFirstFrameRendered?.call());
+    }
+  }
+
+  @override
+  int? get textureId => 1;
+
+  @override
+  set onFirstFrameRendered(void Function()? callback) {
+    _onFirstFrameRendered = callback;
+  }
+
+  @override
+  Future<void> dispose() async {
+    _stream = null;
+    _onFirstFrameRendered = null;
   }
 }
