@@ -725,6 +725,17 @@ git commit -m "ci: verify voice call platform artifacts"
 
 **Purpose:** Do not call it fixed until real devices prove it.
 
+Current execution record:
+
+```text
+docs/qa/voice-call-manual-device-gate.md
+docs/qa/voice-call-manual-device-gate-2026-05-23.md
+```
+
+2026-05-23 status: `BLOCKED`. Flutter detected Windows/web only and `adb` was
+not available on PATH, so the Android side of the matrix was not runnable from
+this session.
+
 Install same commit on both devices.
 
 Required matrix:

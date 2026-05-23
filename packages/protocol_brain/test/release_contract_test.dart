@@ -312,6 +312,17 @@ void main() {
     expect(workflow, isNot(contains('.zip')));
   });
 
+  test('CI docs describe current Android artifact set only', () {
+    final docs = _repoFile('docs/github-ci-cd.md');
+
+    expect(docs, contains('Rain-release-android-arm64-v8a.apk'));
+    expect(docs, contains('Rain-Demo-Android-ARM-v8-v9-Build.apk'));
+    expect(docs, contains('docs/qa/voice-call-manual-device-gate.md'));
+    expect(docs, isNot(contains('Android universal APK')));
+    expect(docs, isNot(contains('Android `armeabi-v7a` APK')));
+    expect(docs, isNot(contains('Android `x86_64` APK')));
+  });
+
   test('CI demo artifacts upload one portable Windows archive', () {
     final workflow = _repoFile('.github/workflows/ci.yml');
 
@@ -348,6 +359,31 @@ void main() {
     expect(workflow, contains('Assert-ApkEntry'));
     expect(workflow, contains('lib/arm64-v8a/libsqlite3.so'));
     expect(workflow, contains('lib/arm64-v8a/libjingle_peerconnection_so.so'));
+  });
+
+  test('manual voice gate requires real Android and Windows evidence', () {
+    final gate = _repoFile('docs/qa/voice-call-manual-device-gate.md');
+    final blockedRecord = _repoFile(
+      'docs/qa/voice-call-manual-device-gate-2026-05-23.md',
+    );
+
+    expect(gate, contains('physical Android device'));
+    expect(gate, contains('Windows machine'));
+    expect(gate, contains('Git commit:'));
+    expect(gate, contains('Android artifact SHA256:'));
+    expect(gate, contains('Windows artifact SHA256:'));
+    expect(gate, contains('Rain-Demo-Android-ARM-v8-v9-Build.apk'));
+    expect(gate, contains('Rain-Demo-Windows-x64-Build'));
+    expect(gate, contains('adb install -r'));
+    expect(gate, contains('Windows -> Android direct route'));
+    expect(gate, contains('Android -> Windows TURN relay'));
+    expect(gate, contains('Android mic permission denied'));
+    expect(gate, contains('Five repeated calls without app restart'));
+    expect(gate, contains('File send blocked during active call'));
+    expect(gate, contains('RTCRtpTransceiver has been disposed'));
+    expect(gate, contains('No stale `Peer is busy` state'));
+    expect(blockedRecord, contains('Gate status: BLOCKED'));
+    expect(blockedRecord, contains('adb is not recognized on PATH'));
   });
 
   test('Rain core uses bundled SQLite native library packaging', () {

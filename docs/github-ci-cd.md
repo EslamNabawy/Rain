@@ -41,15 +41,21 @@ Push a tag like `v1.0.0`, or run **Actions -> Release Rain -> Run workflow** wit
 The release workflow publishes:
 
 - Windows portable zip.
-- Android universal APK.
-- Android `arm64-v8a` APK.
-- Android `armeabi-v7a` APK.
-- Android `x86_64` APK.
+- Android ARM v8/v9 APK: `Rain-release-android-arm64-v8a.apk`.
+
+The demo artifact workflow publishes:
+
+- Windows portable folder: `Rain-Demo-Windows-x64-Build`.
+- Android ARM v8/v9 APK: `Rain-Demo-Android-ARM-v8-v9-Build.apk`.
+
+Universal, ARM v7, and x86_64 APKs are not release artifacts unless a future
+release plan explicitly adds them back as separate named artifacts.
 
 ## Pre-Release Live Smoke Checks
 
 Before publishing a release with voice calling enabled, run a live 1:1 voice
 call smoke test on Android and Windows using the release candidate artifacts.
+Use `docs/qa/voice-call-manual-device-gate.md` as the required evidence record.
 
 - Sign in two accepted friend accounts with both apps open and reachable.
 - Start a call from Android to Windows, accept it, verify audio connects, mute
