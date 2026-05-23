@@ -238,7 +238,7 @@ final class FakeVoiceSignalingAdapter implements VoiceSignalingAdapter {
   }
 
   @override
-  Future<void> writeOffer({
+  Future<void> writeVoiceOffer({
     required String callId,
     required String caller,
     required VoiceSignalingEnvelope offer,
@@ -265,7 +265,7 @@ final class FakeVoiceSignalingAdapter implements VoiceSignalingAdapter {
   }
 
   @override
-  Future<void> writeAnswer({
+  Future<void> writeVoiceAnswer({
     required String callId,
     required String callee,
     required VoiceSignalingEnvelope answer,
@@ -296,7 +296,7 @@ final class FakeVoiceSignalingAdapter implements VoiceSignalingAdapter {
   }
 
   @override
-  Stream<VoiceSignalingEnvelope> watchOffer(String callId) async* {
+  Stream<VoiceSignalingEnvelope> watchVoiceOffer(String callId) async* {
     _ensureOpen();
     final normalizedCallId = callId.trim();
     final offer = _rooms[normalizedCallId]?.offer;
@@ -307,7 +307,7 @@ final class FakeVoiceSignalingAdapter implements VoiceSignalingAdapter {
   }
 
   @override
-  Stream<VoiceSignalingEnvelope> watchAnswer(String callId) async* {
+  Stream<VoiceSignalingEnvelope> watchVoiceAnswer(String callId) async* {
     _ensureOpen();
     final normalizedCallId = callId.trim();
     final answer = _rooms[normalizedCallId]?.answer;

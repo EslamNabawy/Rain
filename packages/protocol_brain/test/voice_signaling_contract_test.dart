@@ -119,7 +119,7 @@ void main() {
       );
 
       await expectLater(
-        adapter.writeOffer(
+        adapter.writeVoiceOffer(
           callId: 'call-1',
           caller: 'bob',
           offer: _envelope(ciphertext: 'offer'),
@@ -128,8 +128,8 @@ void main() {
         throwsA(isA<VoiceSignalingException>()),
       );
 
-      final offerEvent = adapter.watchOffer('call-1').first;
-      await adapter.writeOffer(
+      final offerEvent = adapter.watchVoiceOffer('call-1').first;
+      await adapter.writeVoiceOffer(
         callId: 'call-1',
         caller: 'alice',
         offer: _envelope(ciphertext: 'offer'),
@@ -138,7 +138,7 @@ void main() {
       expect((await offerEvent).ciphertext, 'offer');
 
       await expectLater(
-        adapter.writeAnswer(
+        adapter.writeVoiceAnswer(
           callId: 'call-1',
           callee: 'alice',
           answer: _envelope(ciphertext: 'answer'),
@@ -147,8 +147,8 @@ void main() {
         throwsA(isA<VoiceSignalingException>()),
       );
 
-      final answerEvent = adapter.watchAnswer('call-1').first;
-      await adapter.writeAnswer(
+      final answerEvent = adapter.watchVoiceAnswer('call-1').first;
+      await adapter.writeVoiceAnswer(
         callId: 'call-1',
         callee: 'bob',
         answer: _envelope(ciphertext: 'answer'),

@@ -14,8 +14,12 @@ This directory contains the Firebase assets needed by Rain's Realtime Database s
 - `users/<username>`: identity ownership, presence, and heartbeat timestamps
 - `friendRequests/<to>/<from>`: username-based request inbox
 - `rooms/<roomId>`: offer, answer, and ICE candidates only
+- `activeVoicePairs/<pairId>`: ephemeral one-call lock for a caller/callee pair
+- `voiceCallInboxes/<username>/<callId>`: ephemeral incoming call pointer
+- `voiceCalls/<callId>`: ephemeral voice call state, encrypted SDP, and encrypted ICE
 
 Room nodes never store chat message content.
+Voice call nodes are signaling state only and are removed by TTL cleanup; they are not call history.
 
 ## Deploy Realtime Database Rules
 
@@ -44,6 +48,7 @@ The Cloud Functions do two things:
 
 - mark users offline when `lastHeartbeat` is older than 7 minutes
 - remove abandoned signaling rooms after 15 minutes
+- remove expired voice call rooms, inbox pointers, and active pair locks
 
 ## Remote Config
 

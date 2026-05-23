@@ -65,23 +65,23 @@ abstract interface class VoiceSignalingAdapter {
     required int updatedAt,
   });
 
-  Future<void> writeOffer({
+  Future<void> writeVoiceOffer({
     required String callId,
     required String caller,
     required VoiceSignalingEnvelope offer,
     required int updatedAt,
   });
 
-  Future<void> writeAnswer({
+  Future<void> writeVoiceAnswer({
     required String callId,
     required String callee,
     required VoiceSignalingEnvelope answer,
     required int updatedAt,
   });
 
-  Stream<VoiceSignalingEnvelope> watchOffer(String callId);
+  Stream<VoiceSignalingEnvelope> watchVoiceOffer(String callId);
 
-  Stream<VoiceSignalingEnvelope> watchAnswer(String callId);
+  Stream<VoiceSignalingEnvelope> watchVoiceAnswer(String callId);
 
   Future<String> writeIceCandidate({
     required String callId,
@@ -204,6 +204,23 @@ final class VoiceActivePairLock {
       'expiresAt': expiresAt,
     };
   }
+
+  factory VoiceActivePairLock.fromJson({
+    required String pairId,
+    required Map<Object?, Object?> json,
+  }) {
+    final lock = VoiceActivePairLock(
+      pairId: pairId,
+      callId: _requiredString(json, 'callId', max: _maxCallIdLength),
+      caller: _requiredString(json, 'caller', max: _maxUsernameLength),
+      callee: _requiredString(json, 'callee', max: _maxUsernameLength),
+      createdAt: _requiredInt(json, 'createdAt'),
+      updatedAt: _requiredInt(json, 'updatedAt'),
+      expiresAt: _requiredInt(json, 'expiresAt'),
+    );
+    lock.toJson();
+    return lock;
+  }
 }
 
 final class VoiceCallInboxEntry {
@@ -243,6 +260,30 @@ final class VoiceCallInboxEntry {
       'updatedAt': updatedAt,
       'expiresAt': expiresAt,
     };
+  }
+
+  factory VoiceCallInboxEntry.fromJson({
+    required String callId,
+    required Map<Object?, Object?> json,
+  }) {
+    final entry = VoiceCallInboxEntry(
+      callId: callId,
+      from: _requiredString(json, 'from', max: _maxUsernameLength),
+      to: _requiredString(json, 'to', max: _maxUsernameLength),
+      pairId: _requiredString(
+        json,
+        'pairId',
+        max: (_maxUsernameLength * 2) + 1,
+      ),
+      status: voiceCallSignalingStatusFromName(
+        _requiredString(json, 'status', max: 32),
+      ),
+      createdAt: _requiredInt(json, 'createdAt'),
+      updatedAt: _requiredInt(json, 'updatedAt'),
+      expiresAt: _requiredInt(json, 'expiresAt'),
+    );
+    entry.toJson();
+    return entry;
   }
 }
 
@@ -357,6 +398,71 @@ final class VoiceCallRoom {
     };
   }
 
+  factory VoiceCallRoom.fromJson({
+    required String callId,
+    required Map<Object?, Object?> json,
+  }) {
+    final mutedJson = json['muted'];
+    final muted = <String, bool>{};
+    if (mutedJson is Map<Object?, Object?>) {
+      for (final entry in mutedJson.entries) {
+        final key = entry.key;
+        final value = entry.value;
+        if (key is String && value is bool) {
+          muted[key] = value;
+        }
+      }
+    }
+
+    VoiceSignalingEnvelope? sdpEnvelope(String key) {
+      final value = json[key];
+      if (value is! Map<Object?, Object?>) {
+        return null;
+      }
+      return VoiceSignalingEnvelope.fromJson(
+        value,
+        maxCiphertextLength: VoiceSignalingEnvelope.maxSdpCiphertextLength,
+      );
+    }
+
+    final room = VoiceCallRoom(
+      v: _requiredInt(json, 'v'),
+      callId: callId,
+      pairId: _requiredString(
+        json,
+        'pairId',
+        max: (_maxUsernameLength * 2) + 1,
+      ),
+      caller: _requiredString(json, 'caller', max: _maxUsernameLength),
+      callee: _requiredString(json, 'callee', max: _maxUsernameLength),
+      status: voiceCallSignalingStatusFromName(
+        _requiredString(json, 'status', max: 32),
+      ),
+      createdAt: _requiredInt(json, 'createdAt'),
+      updatedAt: _requiredInt(json, 'updatedAt'),
+      expiresAt: _requiredInt(json, 'expiresAt'),
+      acceptedAt: _optionalInt(json, 'acceptedAt'),
+      connectedAt: _optionalInt(json, 'connectedAt'),
+      endedAt: _optionalInt(json, 'endedAt'),
+      endedBy: _optionalString(json, 'endedBy', max: _maxUsernameLength),
+      reasonCode: _optionalString(
+        json,
+        'reasonCode',
+        max: VoiceCallRoom.maxReasonCodeLength,
+      ),
+      reason: _optionalString(
+        json,
+        'reason',
+        max: VoiceCallRoom.maxReasonLength,
+      ),
+      muted: Map<String, bool>.unmodifiable(muted),
+      offer: sdpEnvelope('offer'),
+      answer: sdpEnvelope('answer'),
+    );
+    room.validate();
+    return room;
+  }
+
   void validate() {
     if (v != version) {
       throw const FormatException('Voice call room version invalid.');
@@ -438,6 +544,25 @@ final class VoiceCallIceCandidateRecord {
       maxCiphertextLength: VoiceSignalingEnvelope.maxIceCiphertextLength,
     );
   }
+
+  factory VoiceCallIceCandidateRecord.fromJson({
+    required String callId,
+    required String candidateId,
+    required VoiceCallRole role,
+    required Map<Object?, Object?> json,
+  }) {
+    final envelope = VoiceSignalingEnvelope.fromJson(
+      json,
+      maxCiphertextLength: VoiceSignalingEnvelope.maxIceCiphertextLength,
+    );
+    return VoiceCallIceCandidateRecord(
+      callId: callId,
+      candidateId: candidateId,
+      role: role,
+      envelope: envelope,
+      createdAt: envelope.ts,
+    );
+  }
 }
 
 String normalizeVoiceCallUsername(String value) {
@@ -455,6 +580,15 @@ String voiceCallPairId(String firstUser, String secondUser) {
     throw const FormatException('Voice call pair requires two users.');
   }
   return '${users[0]}:${users[1]}';
+}
+
+VoiceCallSignalingStatus voiceCallSignalingStatusFromName(String value) {
+  for (final status in VoiceCallSignalingStatus.values) {
+    if (status.name == value) {
+      return status;
+    }
+  }
+  throw FormatException('Unknown voice call signaling status: $value');
 }
 
 VoiceCallRole voiceCallRoleFor({
@@ -556,4 +690,34 @@ int _requiredInt(Map<Object?, Object?> json, String key) {
     return value.toInt();
   }
   throw FormatException('Voice signaling $key must be an integer.');
+}
+
+int? _optionalInt(Map<Object?, Object?> json, String key) {
+  final value = json[key];
+  if (value == null) {
+    return null;
+  }
+  if (value is int) {
+    return value;
+  }
+  if (value is num && value.isFinite && value.roundToDouble() == value) {
+    return value.toInt();
+  }
+  throw FormatException('Voice signaling $key must be an integer.');
+}
+
+String? _optionalString(
+  Map<Object?, Object?> json,
+  String key, {
+  required int max,
+}) {
+  final value = json[key];
+  if (value == null) {
+    return null;
+  }
+  if (value is! String) {
+    throw FormatException('Voice signaling $key must be a string.');
+  }
+  _validateRequiredString(key, value, max: max);
+  return value;
 }

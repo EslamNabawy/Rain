@@ -173,6 +173,108 @@ void main() {
     expect(functions, contains('.endAt(now)'));
   });
 
+  test('Firebase voice signaling uses dedicated ephemeral namespaces', () {
+    final rules = _repoFile('backend/firebase/database.rules.json');
+    final adapter = _repoFile(
+      'packages/protocol_brain/lib/adapters/firebase_adapter.dart',
+    );
+    final functions = _repoFile('backend/firebase/functions/index.js');
+    final readme = _repoFile('backend/firebase/README.md');
+
+    for (final node in <String>[
+      'activeVoicePairs',
+      'voiceCallInboxes',
+      'voiceCalls',
+    ]) {
+      expect(rules, contains('"$node"'));
+      expect(adapter, contains(node));
+      expect(functions, contains(node));
+      expect(readme, contains(node));
+    }
+    expect(rules, contains('".indexOn": ["expiresAt"]'));
+    expect(functions, contains('exports.cleanupVoiceCalls'));
+    expect(functions, contains('orderByChild("expiresAt")'));
+    expect(
+      functions,
+      contains(r'voiceCallInboxes/${call.callee}/${child.key}'),
+    );
+  });
+
+  test('Firebase voice signaling requires friends and blocks denied users', () {
+    final rules = _repoFile('backend/firebase/database.rules.json');
+
+    expect(rules, contains('root.child(\'friendships/\''));
+    expect(rules, contains('root.child(\'blocks/\''));
+    expect(rules, contains('"activeVoicePairs"'));
+    expect(rules, contains('"voiceCalls"'));
+    expect(
+      rules,
+      contains(
+        "root.child('activeVoicePairs/' + newData.child('pairId').val() + '/callId').val() === \$callId",
+      ),
+    );
+    expect(
+      rules,
+      contains(
+        "root.child('friendships/' + newData.child('caller').val() + '/' + newData.child('callee').val()).exists()",
+      ),
+    );
+  });
+
+  test('Firebase voice signaling stores encrypted SDP and ICE envelopes', () {
+    final rules = _repoFile('backend/firebase/database.rules.json');
+    final adapter = _repoFile(
+      'packages/protocol_brain/lib/adapters/firebase_adapter.dart',
+    );
+
+    expect(rules, contains('"offer"'));
+    expect(rules, contains('"answer"'));
+    expect(rules, contains('"ice"'));
+    expect(rules, contains('"caller"'));
+    expect(rules, contains('"callee"'));
+    expect(rules, contains("'nonce', 'ciphertext', 'mac'"));
+    expect(
+      rules,
+      contains("newData.child('ciphertext').val().length <= 262144"),
+    );
+    expect(
+      rules,
+      contains("newData.child('ciphertext').val().length <= 32768"),
+    );
+    expect(adapter, contains('writeVoiceOffer'));
+    expect(adapter, contains('writeVoiceAnswer'));
+    expect(adapter, contains('writeIceCandidate'));
+    expect(adapter, contains('VoiceSignalingEnvelope.fromJson'));
+    expect(adapter, isNot(contains("'sdp':")));
+    expect(adapter, isNot(contains("'candidate':")));
+  });
+
+  test('Firebase voice signaling enforces role-specific writes', () {
+    final rules = _repoFile('backend/firebase/database.rules.json');
+    final adapter = _repoFile(
+      'packages/protocol_brain/lib/adapters/firebase_adapter.dart',
+    );
+
+    expect(
+      rules,
+      contains(
+        "root.child('users/' + root.child('voiceCalls/' + \$callId + '/caller').val() + '/uid').val() === auth.uid",
+      ),
+    );
+    expect(
+      rules,
+      contains(
+        "root.child('users/' + root.child('voiceCalls/' + \$callId + '/callee').val() + '/uid').val() === auth.uid",
+      ),
+    );
+    expect(rules, contains("newData.val() === 'accepted'"));
+    expect(rules, contains("newData.val() === 'negotiating'"));
+    expect(rules, contains("newData.val() === 'connected'"));
+    expect(adapter, contains('_ensureVoiceRole'));
+    expect(adapter, contains('VoiceCallRole.caller'));
+    expect(adapter, contains('VoiceCallRole.callee'));
+  });
+
   test('Firebase backend does not depend on managed TURN provider secrets', () {
     final functions = _repoFile('backend/firebase/functions/index.js');
     final readme = _repoFile('backend/firebase/README.md');
