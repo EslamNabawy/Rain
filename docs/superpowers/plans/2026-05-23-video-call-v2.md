@@ -168,9 +168,9 @@ Checked against installed `flutter_webrtc` 1.4.1 and Context7 docs for `/flutter
 
 **Purpose:** Stop design drift before code starts.
 
-- [ ] Confirm feature scope in `docs/superpowers/plans/2026-05-23-video-call-v2.md`.
-- [ ] Lock non-goals: no group calls, screen share, recording, background service, call history, audio-to-video upgrade.
-- [ ] Lock architecture: dedicated media PC per call, Firebase signaling, WebRTC RTP media.
+- [x] Confirm feature scope in `docs/superpowers/plans/2026-05-23-video-call-v2.md`.
+- [x] Lock non-goals: no group calls, screen share, recording, background service, call history, audio-to-video upgrade.
+- [x] Lock architecture: dedicated media PC per call, Firebase signaling, WebRTC RTP media.
 - [ ] Commit:
 
 ```powershell
