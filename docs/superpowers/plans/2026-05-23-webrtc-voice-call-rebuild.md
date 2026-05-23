@@ -305,7 +305,7 @@ git add packages/peer_core/lib packages/peer_core/test
 git commit -m "feat: add dedicated voice media interface"
 ```
 
-## Phase 2: Media Connection Core
+## Phase 02: Dedicated Media Core
 
 **Purpose:** Create real audio-only WebRTC connection per call.
 
