@@ -219,7 +219,7 @@ void main() {
     await tester.pumpWidget(
       MaterialApp(
         home: Scaffold(
-          body: RainVoiceCallPanel(
+          body: RainCallPanel(
             state: const VoiceCallState(
               phase: VoiceCallPhase.incomingRinging,
               peerId: 'bob',
@@ -255,7 +255,7 @@ void main() {
     await tester.pumpWidget(
       MaterialApp(
         home: Scaffold(
-          body: RainVoiceCallPanel(
+          body: RainCallPanel(
             state: VoiceCallState(
               phase: VoiceCallPhase.active,
               peerId: 'bob',
@@ -292,7 +292,7 @@ void main() {
     await tester.pumpWidget(
       MaterialApp(
         home: Scaffold(
-          body: RainVoiceCallPanel(
+          body: RainCallPanel(
             state: VoiceCallState(
               phase: VoiceCallPhase.active,
               peerId: 'bob',
@@ -331,6 +331,72 @@ void main() {
     expect(route, VoiceCallOutputRoute.bluetooth);
   });
 
+  testWidgets('audio-only call controls do not render future video controls', (
+    WidgetTester tester,
+  ) async {
+    await tester.pumpWidget(
+      MaterialApp(
+        home: Scaffold(
+          body: RainCallPanel(
+            state: _activeVoiceCall(),
+            displayName: 'Bob',
+            onAccept: () {},
+            onReject: () {},
+            onHangUp: () {},
+            onRetry: () {},
+            onToggleMute: () {},
+          ),
+        ),
+      ),
+    );
+
+    expect(find.byTooltip('Mute microphone'), findsOneWidget);
+    expect(find.byTooltip('Deafen audio'), findsOneWidget);
+    expect(find.byTooltip('Choose audio output'), findsOneWidget);
+    expect(find.byTooltip('Hang up'), findsOneWidget);
+    expect(find.byTooltip('Turn camera off'), findsNothing);
+    expect(find.byTooltip('Switch camera'), findsNothing);
+  });
+
+  testWidgets('future video mode adds controls without changing audio mode', (
+    WidgetTester tester,
+  ) async {
+    var cameraToggled = false;
+    var cameraSwitched = false;
+
+    expect(_activeVoiceCall().controlCapabilities, <CallControlCapability>[
+      CallControlCapability.microphone,
+      CallControlCapability.deafen,
+      CallControlCapability.outputRoute,
+      CallControlCapability.hangUp,
+    ]);
+
+    await tester.pumpWidget(
+      MaterialApp(
+        home: Scaffold(
+          body: RainCallPanel(
+            state: _activeVoiceCall(mediaMode: CallMediaMode.video),
+            displayName: 'Bob',
+            onAccept: () {},
+            onReject: () {},
+            onHangUp: () {},
+            onRetry: () {},
+            onToggleMute: () {},
+            onToggleCamera: () => cameraToggled = true,
+            onSwitchCamera: () => cameraSwitched = true,
+          ),
+        ),
+      ),
+    );
+
+    expect(find.text('Video call with Bob'), findsOneWidget);
+    await tester.tap(find.byTooltip('Turn camera off'));
+    await tester.tap(find.byTooltip('Switch camera'));
+
+    expect(cameraToggled, isTrue);
+    expect(cameraSwitched, isTrue);
+  });
+
   testWidgets('voice call mic permission failure offers retry', (
     WidgetTester tester,
   ) async {
@@ -340,7 +406,7 @@ void main() {
     await tester.pumpWidget(
       MaterialApp(
         home: Scaffold(
-          body: RainVoiceCallPanel(
+          body: RainCallPanel(
             state: const VoiceCallState(
               phase: VoiceCallPhase.failed,
               peerId: 'bob',
@@ -378,7 +444,7 @@ void main() {
     await tester.pumpWidget(
       MaterialApp(
         home: Scaffold(
-          body: RainVoiceCallPanel(
+          body: RainCallPanel(
             state: const VoiceCallState(
               phase: VoiceCallPhase.failed,
               peerId: 'bob',
@@ -416,7 +482,7 @@ void main() {
     await tester.pumpWidget(
       MaterialApp(
         home: Scaffold(
-          body: RainVoiceCallPanel(
+          body: RainCallPanel(
             state: const VoiceCallState(
               phase: VoiceCallPhase.failed,
               peerId: 'bob',
@@ -450,7 +516,7 @@ void main() {
     await tester.pumpWidget(
       MaterialApp(
         home: Scaffold(
-          body: RainVoiceCallPanel(
+          body: RainCallPanel(
             state: const VoiceCallState(
               phase: VoiceCallPhase.failed,
               peerId: 'bob',
@@ -631,10 +697,45 @@ void main() {
     await _pumpCallOverlay(tester, _activeVoiceCall());
 
     expect(
+      find.byKey(const ValueKey<String>('rain-call-audio-stage')),
+      findsOneWidget,
+    );
+    expect(
       find.byKey(const ValueKey<String>('rain-call-audio-unavailable')),
       findsOneWidget,
     );
     expect(_findMeterCells('rain-call-audio-wave-bar-'), findsNothing);
+  });
+
+  testWidgets('audio-only overlay renders without video dependencies', (
+    WidgetTester tester,
+  ) async {
+    await _pumpCallOverlay(tester, _activeVoiceCall());
+
+    expect(
+      find.byKey(const ValueKey<String>('rain-call-audio-stage')),
+      findsOneWidget,
+    );
+    expect(
+      find.byKey(const ValueKey<String>('rain-call-video-slot-reserved')),
+      findsNothing,
+    );
+    expect(_findRuntimeType('RTCVideoView'), findsNothing);
+  });
+
+  testWidgets('future video mode reserves a renderer-free media slot', (
+    WidgetTester tester,
+  ) async {
+    await _pumpCallOverlay(
+      tester,
+      _activeVoiceCall(mediaMode: CallMediaMode.video),
+    );
+
+    expect(
+      find.byKey(const ValueKey<String>('rain-call-video-slot-reserved')),
+      findsOneWidget,
+    );
+    expect(_findRuntimeType('RTCVideoView'), findsNothing);
   });
 
   testWidgets(
@@ -842,13 +943,21 @@ Finder _findMeterCells(String prefix) {
   });
 }
 
+Finder _findRuntimeType(String typeName) {
+  return find.byWidgetPredicate((Widget widget) {
+    return widget.runtimeType.toString() == typeName;
+  });
+}
+
 VoiceCallState _activeVoiceCall({
   VoiceAudioLevel audioLevel = const VoiceAudioLevel.unavailable(),
+  CallMediaMode mediaMode = CallMediaMode.audio,
 }) {
   return VoiceCallState(
     phase: VoiceCallPhase.active,
     peerId: 'bob',
     callId: 'call-1',
+    mediaMode: mediaMode,
     startedAt: DateTime.now()
         .subtract(const Duration(seconds: 7))
         .millisecondsSinceEpoch,

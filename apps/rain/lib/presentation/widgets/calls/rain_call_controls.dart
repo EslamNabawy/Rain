@@ -12,6 +12,8 @@ class RainCallControls extends StatelessWidget {
     required this.onRetry,
     required this.onToggleMute,
     this.onToggleDeafen,
+    this.onToggleCamera,
+    this.onSwitchCamera,
     this.onSelectOutputRoute,
   });
 
@@ -22,6 +24,8 @@ class RainCallControls extends StatelessWidget {
   final VoidCallback onRetry;
   final VoidCallback onToggleMute;
   final VoidCallback? onToggleDeafen;
+  final VoidCallback? onToggleCamera;
+  final VoidCallback? onSwitchCamera;
   final ValueChanged<VoiceCallOutputRoute>? onSelectOutputRoute;
 
   @override
@@ -72,16 +76,35 @@ class RainCallControls extends StatelessWidget {
       runSpacing: 8,
       alignment: WrapAlignment.end,
       children: <Widget>[
-        IconButton(
-          tooltip: state.isMuted ? 'Unmute microphone' : 'Mute microphone',
-          onPressed: state.isActive ? onToggleMute : null,
-          icon: Icon(state.isMuted ? Icons.mic_off : Icons.mic),
-        ),
-        IconButton(
-          tooltip: state.isDeafened ? 'Undeafen audio' : 'Deafen audio',
-          onPressed: state.isActive ? onToggleDeafen : null,
-          icon: Icon(state.isDeafened ? Icons.volume_off : Icons.volume_up),
-        ),
+        for (final capability in state.controlCapabilities)
+          _buildActiveControl(capability),
+      ],
+    );
+  }
+
+  Widget _buildActiveControl(CallControlCapability capability) {
+    return switch (capability) {
+      CallControlCapability.microphone => IconButton(
+        tooltip: state.isMuted ? 'Unmute microphone' : 'Mute microphone',
+        onPressed: state.isActive ? onToggleMute : null,
+        icon: Icon(state.isMuted ? Icons.mic_off : Icons.mic),
+      ),
+      CallControlCapability.camera => IconButton(
+        tooltip: state.isCameraMuted ? 'Turn camera on' : 'Turn camera off',
+        onPressed: state.isActive ? onToggleCamera : null,
+        icon: Icon(state.isCameraMuted ? Icons.videocam_off : Icons.videocam),
+      ),
+      CallControlCapability.switchCamera => IconButton(
+        tooltip: 'Switch camera',
+        onPressed: state.isActive ? onSwitchCamera : null,
+        icon: const Icon(Icons.cameraswitch),
+      ),
+      CallControlCapability.deafen => IconButton(
+        tooltip: state.isDeafened ? 'Undeafen audio' : 'Deafen audio',
+        onPressed: state.isActive ? onToggleDeafen : null,
+        icon: Icon(state.isDeafened ? Icons.volume_off : Icons.volume_up),
+      ),
+      CallControlCapability.outputRoute =>
         PopupMenuButton<VoiceCallOutputRoute>(
           tooltip: 'Choose audio output',
           enabled: state.isActive && onSelectOutputRoute != null,
@@ -110,13 +133,12 @@ class RainCallControls extends StatelessWidget {
           },
           icon: Icon(_outputRouteIcon(state.outputRoute)),
         ),
-        IconButton.filled(
-          tooltip: 'Hang up',
-          onPressed: onHangUp,
-          icon: const Icon(Icons.call_end),
-        ),
-      ],
-    );
+      CallControlCapability.hangUp => IconButton.filled(
+        tooltip: 'Hang up',
+        onPressed: onHangUp,
+        icon: const Icon(Icons.call_end),
+      ),
+    };
   }
 }
 
@@ -152,17 +174,25 @@ IconData rainVoiceCallIcon(VoiceCallState state) {
     VoiceCallPhase.failed => Icons.error_outline,
     VoiceCallPhase.incomingRinging => Icons.call_received,
     VoiceCallPhase.outgoingRinging => Icons.call_made,
-    VoiceCallPhase.active =>
-      state.isDeafened
-          ? Icons.volume_off
-          : state.isMuted
-          ? Icons.mic_off
-          : Icons.call,
+    VoiceCallPhase.active => _activeCallIcon(state),
     VoiceCallPhase.connectingPeer ||
     VoiceCallPhase.connectingMedia ||
     VoiceCallPhase.ending ||
     VoiceCallPhase.idle => Icons.call_outlined,
   };
+}
+
+IconData _activeCallIcon(VoiceCallState state) {
+  if (state.isVideo) {
+    return state.isCameraMuted ? Icons.videocam_off : Icons.videocam;
+  }
+  if (state.isDeafened) {
+    return Icons.volume_off;
+  }
+  if (state.isMuted) {
+    return Icons.mic_off;
+  }
+  return Icons.call;
 }
 
 Color rainVoiceCallAccent(BuildContext context, VoiceCallState state) {
@@ -180,15 +210,16 @@ Color rainVoiceCallAccent(BuildContext context, VoiceCallState state) {
 }
 
 String rainVoiceCallTitle(VoiceCallState state, String displayName) {
+  final callKind = state.isVideo ? 'video call' : 'voice call';
   return switch (state.phase) {
     VoiceCallPhase.incomingRinging => '$displayName is calling',
     VoiceCallPhase.outgoingRinging => 'Calling $displayName',
-    VoiceCallPhase.active => 'Voice call with $displayName',
-    VoiceCallPhase.failed => 'Voice call failed',
-    VoiceCallPhase.ending => 'Ending voice call',
+    VoiceCallPhase.active => '${_capitalize(callKind)} with $displayName',
+    VoiceCallPhase.failed => '${_capitalize(callKind)} failed',
+    VoiceCallPhase.ending => 'Ending $callKind',
     VoiceCallPhase.connectingPeer ||
-    VoiceCallPhase.connectingMedia => 'Connecting voice call',
-    VoiceCallPhase.idle => 'Voice call',
+    VoiceCallPhase.connectingMedia => 'Connecting $callKind',
+    VoiceCallPhase.idle => _capitalize(callKind),
   };
 }
 
@@ -205,6 +236,12 @@ String rainVoiceCallDetail(VoiceCallState state, int nowMs) {
     if (state.isRemoteMuted) {
       labels.add('Peer muted');
     }
+    if (state.isVideo && state.isCameraMuted) {
+      labels.add('Camera off');
+    }
+    if (state.isVideo && state.isRemoteCameraMuted) {
+      labels.add('Peer camera off');
+    }
     if (state.outputRoute != VoiceCallOutputRoute.systemDefault) {
       labels.add(_outputRouteLabel(state.outputRoute));
     }
@@ -217,13 +254,21 @@ String rainVoiceCallDetail(VoiceCallState state, int nowMs) {
   return switch (state.phase) {
     VoiceCallPhase.connectingPeer => 'Connecting peer link.',
     VoiceCallPhase.outgoingRinging => 'Ringing.',
-    VoiceCallPhase.incomingRinging => 'Incoming voice call.',
+    VoiceCallPhase.incomingRinging =>
+      state.isVideo ? 'Incoming video call.' : 'Incoming voice call.',
     VoiceCallPhase.connectingMedia => 'Connecting microphone audio.',
     VoiceCallPhase.ending => 'Closing microphone audio.',
     VoiceCallPhase.failed => rainVoiceCallFailureDetail(state),
     VoiceCallPhase.idle => '',
     VoiceCallPhase.active => 'Connected.',
   };
+}
+
+String _capitalize(String value) {
+  if (value.isEmpty) {
+    return value;
+  }
+  return value[0].toUpperCase() + value.substring(1);
 }
 
 String _outputRouteLabel(VoiceCallOutputRoute route) {

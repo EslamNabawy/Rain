@@ -600,8 +600,8 @@ class RainVoiceCallButton extends StatelessWidget {
   }
 }
 
-class RainVoiceCallPanel extends StatelessWidget {
-  const RainVoiceCallPanel({
+class RainCallPanel extends StatelessWidget {
+  const RainCallPanel({
     super.key,
     required this.state,
     required this.displayName,
@@ -611,6 +611,8 @@ class RainVoiceCallPanel extends StatelessWidget {
     required this.onRetry,
     required this.onToggleMute,
     this.onToggleDeafen,
+    this.onToggleCamera,
+    this.onSwitchCamera,
     this.onSelectOutputRoute,
   });
 
@@ -622,6 +624,8 @@ class RainVoiceCallPanel extends StatelessWidget {
   final VoidCallback onRetry;
   final VoidCallback onToggleMute;
   final VoidCallback? onToggleDeafen;
+  final VoidCallback? onToggleCamera;
+  final VoidCallback? onSwitchCamera;
   final ValueChanged<VoiceCallOutputRoute>? onSelectOutputRoute;
 
   @override
@@ -701,6 +705,8 @@ class RainVoiceCallPanel extends StatelessWidget {
             onRetry: onRetry,
             onToggleMute: onToggleMute,
             onToggleDeafen: onToggleDeafen,
+            onToggleCamera: onToggleCamera,
+            onSwitchCamera: onSwitchCamera,
             onSelectOutputRoute: onSelectOutputRoute,
           );
           if (constraints.maxWidth < 430) {
@@ -723,6 +729,53 @@ class RainVoiceCallPanel extends StatelessWidget {
           );
         },
       ),
+    );
+  }
+}
+
+@Deprecated('Use RainCallPanel for audio/video-compatible call surfaces.')
+class RainVoiceCallPanel extends StatelessWidget {
+  const RainVoiceCallPanel({
+    super.key,
+    required this.state,
+    required this.displayName,
+    required this.onAccept,
+    required this.onReject,
+    required this.onHangUp,
+    required this.onRetry,
+    required this.onToggleMute,
+    this.onToggleDeafen,
+    this.onToggleCamera,
+    this.onSwitchCamera,
+    this.onSelectOutputRoute,
+  });
+
+  final VoiceCallState state;
+  final String displayName;
+  final VoidCallback onAccept;
+  final VoidCallback onReject;
+  final VoidCallback onHangUp;
+  final VoidCallback onRetry;
+  final VoidCallback onToggleMute;
+  final VoidCallback? onToggleDeafen;
+  final VoidCallback? onToggleCamera;
+  final VoidCallback? onSwitchCamera;
+  final ValueChanged<VoiceCallOutputRoute>? onSelectOutputRoute;
+
+  @override
+  Widget build(BuildContext context) {
+    return RainCallPanel(
+      state: state,
+      displayName: displayName,
+      onAccept: onAccept,
+      onReject: onReject,
+      onHangUp: onHangUp,
+      onRetry: onRetry,
+      onToggleMute: onToggleMute,
+      onToggleDeafen: onToggleDeafen,
+      onToggleCamera: onToggleCamera,
+      onSwitchCamera: onSwitchCamera,
+      onSelectOutputRoute: onSelectOutputRoute,
     );
   }
 }

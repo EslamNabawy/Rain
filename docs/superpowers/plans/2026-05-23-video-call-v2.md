@@ -126,6 +126,7 @@ Checked against installed `flutter_webrtc` 1.4.1 and Context7 docs for `/flutter
 - `apps/rain/lib/application/runtime/voice_call_state.dart`
   - Evolve state into audio/video call state without breaking provider names.
   - Add `mediaMode`, `isCameraMuted`, `isRemoteCameraMuted`, `hasRemoteVideo`, video failure reasons.
+  - Reuse the Phase 10 compatibility layer (`CallMediaMode`, camera mute flags, and control capabilities) instead of creating a parallel video state model.
 
 - `apps/rain/lib/application/runtime/voice_call_runtime.dart`
   - Add `startVideoCall`, video accept path, camera controls, renderer wiring, diagnostics.
@@ -138,6 +139,7 @@ Checked against installed `flutter_webrtc` 1.4.1 and Context7 docs for `/flutter
 
 - `apps/rain/lib/presentation/widgets/rain_chat_widgets.dart`
   - Add video call controls, local preview, remote video surface, camera buttons.
+  - Extend the generic `RainCallPanel`/`RainCallControls` surfaces; keep `RainVoiceCallPanel` only as a compatibility alias while older call sites are migrated.
 
 - `apps/rain/android/app/src/main/AndroidManifest.xml`
   - Add camera permission/features.
@@ -632,4 +634,3 @@ Two execution options:
 
 1. **Subagent-Driven (recommended)** - dispatch fresh subagent per phase, review between phases, commit after each phase.
 2. **Inline Execution** - execute phases in this session with checkpoints and commits.
-

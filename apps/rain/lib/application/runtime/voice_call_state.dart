@@ -28,16 +28,30 @@ enum VoiceCallFailureReason {
 
 enum VoiceCallOutputRoute { systemDefault, speaker, bluetooth }
 
+enum CallMediaMode { audio, video }
+
+enum CallControlCapability {
+  microphone,
+  camera,
+  switchCamera,
+  deafen,
+  outputRoute,
+  hangUp,
+}
+
 class VoiceCallState {
   const VoiceCallState({
     required this.phase,
     this.peerId,
     this.callId,
     this.sessionEpoch,
+    this.mediaMode = CallMediaMode.audio,
     this.isOutgoing = false,
     this.isMuted = false,
+    this.isCameraMuted = false,
     this.isDeafened = false,
     this.isRemoteMuted = false,
+    this.isRemoteCameraMuted = false,
     this.outputRoute = VoiceCallOutputRoute.systemDefault,
     this.outputRouteWarning,
     this.startedAt,
@@ -53,10 +67,13 @@ class VoiceCallState {
       peerId = null,
       callId = null,
       sessionEpoch = null,
+      mediaMode = CallMediaMode.audio,
       isOutgoing = false,
       isMuted = false,
+      isCameraMuted = false,
       isDeafened = false,
       isRemoteMuted = false,
+      isRemoteCameraMuted = false,
       outputRoute = VoiceCallOutputRoute.systemDefault,
       outputRouteWarning = null,
       startedAt = null,
@@ -70,10 +87,13 @@ class VoiceCallState {
   final String? peerId;
   final String? callId;
   final int? sessionEpoch;
+  final CallMediaMode mediaMode;
   final bool isOutgoing;
   final bool isMuted;
+  final bool isCameraMuted;
   final bool isDeafened;
   final bool isRemoteMuted;
+  final bool isRemoteCameraMuted;
   final VoiceCallOutputRoute outputRoute;
   final String? outputRouteWarning;
   final int? startedAt;
@@ -96,6 +116,27 @@ class VoiceCallState {
 
   bool get isActive => phase == VoiceCallPhase.active;
 
+  bool get isVideo => mediaMode == CallMediaMode.video;
+
+  List<CallControlCapability> get controlCapabilities {
+    return switch (mediaMode) {
+      CallMediaMode.audio => const <CallControlCapability>[
+        CallControlCapability.microphone,
+        CallControlCapability.deafen,
+        CallControlCapability.outputRoute,
+        CallControlCapability.hangUp,
+      ],
+      CallMediaMode.video => const <CallControlCapability>[
+        CallControlCapability.microphone,
+        CallControlCapability.camera,
+        CallControlCapability.switchCamera,
+        CallControlCapability.deafen,
+        CallControlCapability.outputRoute,
+        CallControlCapability.hangUp,
+      ],
+    };
+  }
+
   bool blocksFileTransfersFor(String peerId) {
     if (peerId.trim().isEmpty) {
       return false;
@@ -108,10 +149,13 @@ class VoiceCallState {
     String? peerId,
     String? callId,
     int? sessionEpoch,
+    CallMediaMode? mediaMode,
     bool? isOutgoing,
     bool? isMuted,
+    bool? isCameraMuted,
     bool? isDeafened,
     bool? isRemoteMuted,
+    bool? isRemoteCameraMuted,
     VoiceCallOutputRoute? outputRoute,
     String? outputRouteWarning,
     int? startedAt,
@@ -129,10 +173,13 @@ class VoiceCallState {
       peerId: peerId ?? this.peerId,
       callId: callId ?? this.callId,
       sessionEpoch: sessionEpoch ?? this.sessionEpoch,
+      mediaMode: mediaMode ?? this.mediaMode,
       isOutgoing: isOutgoing ?? this.isOutgoing,
       isMuted: isMuted ?? this.isMuted,
+      isCameraMuted: isCameraMuted ?? this.isCameraMuted,
       isDeafened: isDeafened ?? this.isDeafened,
       isRemoteMuted: isRemoteMuted ?? this.isRemoteMuted,
+      isRemoteCameraMuted: isRemoteCameraMuted ?? this.isRemoteCameraMuted,
       outputRoute: outputRoute ?? this.outputRoute,
       outputRouteWarning: clearOutputRouteWarning
           ? null

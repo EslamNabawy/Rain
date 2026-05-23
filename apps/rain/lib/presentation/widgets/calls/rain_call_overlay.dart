@@ -21,6 +21,8 @@ class RainCallOverlay extends StatelessWidget {
     required this.onRetry,
     required this.onToggleMute,
     this.onToggleDeafen,
+    this.onToggleCamera,
+    this.onSwitchCamera,
     this.onSelectOutputRoute,
     required this.onMinimize,
     required this.onExpand,
@@ -37,6 +39,8 @@ class RainCallOverlay extends StatelessWidget {
   final VoidCallback onRetry;
   final VoidCallback onToggleMute;
   final VoidCallback? onToggleDeafen;
+  final VoidCallback? onToggleCamera;
+  final VoidCallback? onSwitchCamera;
   final ValueChanged<VoiceCallOutputRoute>? onSelectOutputRoute;
   final VoidCallback onMinimize;
   final VoidCallback onExpand;
@@ -84,6 +88,8 @@ class RainCallOverlay extends StatelessWidget {
               onRetry: onRetry,
               onToggleMute: onToggleMute,
               onToggleDeafen: onToggleDeafen,
+              onToggleCamera: onToggleCamera,
+              onSwitchCamera: onSwitchCamera,
               onSelectOutputRoute: onSelectOutputRoute,
               onMinimize: onMinimize,
             ),
@@ -128,6 +134,8 @@ class _RainExpandedCallPanel extends StatelessWidget {
     required this.onRetry,
     required this.onToggleMute,
     this.onToggleDeafen,
+    this.onToggleCamera,
+    this.onSwitchCamera,
     this.onSelectOutputRoute,
     required this.onMinimize,
     this.gender,
@@ -146,6 +154,8 @@ class _RainExpandedCallPanel extends StatelessWidget {
   final VoidCallback onRetry;
   final VoidCallback onToggleMute;
   final VoidCallback? onToggleDeafen;
+  final VoidCallback? onToggleCamera;
+  final VoidCallback? onSwitchCamera;
   final ValueChanged<VoiceCallOutputRoute>? onSelectOutputRoute;
   final VoidCallback onMinimize;
 
@@ -244,7 +254,7 @@ class _RainExpandedCallPanel extends StatelessWidget {
                       ],
                     ),
                     const SizedBox(height: 24),
-                    _RainCallStatusGlyph(state: state, accent: accent),
+                    _RainCallMediaStage(state: state, accent: accent),
                     const SizedBox(height: 20),
                     Text(
                       rainVoiceCallTitle(state, displayName),
@@ -281,6 +291,8 @@ class _RainExpandedCallPanel extends StatelessWidget {
                         onRetry: onRetry,
                         onToggleMute: onToggleMute,
                         onToggleDeafen: onToggleDeafen,
+                        onToggleCamera: onToggleCamera,
+                        onSwitchCamera: onSwitchCamera,
                         onSelectOutputRoute: onSelectOutputRoute,
                       ),
                     ),
@@ -295,8 +307,66 @@ class _RainExpandedCallPanel extends StatelessWidget {
   }
 }
 
+class _RainCallMediaStage extends StatelessWidget {
+  const _RainCallMediaStage({required this.state, required this.accent});
+
+  final VoiceCallState state;
+  final Color accent;
+
+  @override
+  Widget build(BuildContext context) {
+    if (!state.isVideo) {
+      return _RainCallStatusGlyph(
+        key: const ValueKey<String>('rain-call-audio-stage'),
+        state: state,
+        accent: accent,
+      );
+    }
+
+    return Center(
+      child: ConstrainedBox(
+        constraints: const BoxConstraints(maxWidth: 360),
+        child: AspectRatio(
+          aspectRatio: 16 / 9,
+          child: _RainReservedVideoSlot(accent: accent),
+        ),
+      ),
+    );
+  }
+}
+
+class _RainReservedVideoSlot extends StatelessWidget {
+  const _RainReservedVideoSlot({required this.accent});
+
+  final Color accent;
+
+  @override
+  Widget build(BuildContext context) {
+    final scheme = Theme.of(context).colorScheme;
+    return Container(
+      key: const ValueKey<String>('rain-call-video-slot-reserved'),
+      decoration: BoxDecoration(
+        color: scheme.surfaceContainerHighest.withValues(alpha: 0.52),
+        borderRadius: BorderRadius.circular(20),
+        border: Border.all(color: accent.withValues(alpha: 0.30)),
+      ),
+      child: Center(
+        child: Icon(
+          Icons.videocam_outlined,
+          size: 42,
+          color: accent.withValues(alpha: 0.70),
+        ),
+      ),
+    );
+  }
+}
+
 class _RainCallStatusGlyph extends StatelessWidget {
-  const _RainCallStatusGlyph({required this.state, required this.accent});
+  const _RainCallStatusGlyph({
+    super.key,
+    required this.state,
+    required this.accent,
+  });
 
   final VoiceCallState state;
   final Color accent;

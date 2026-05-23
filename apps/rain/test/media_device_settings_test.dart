@@ -49,6 +49,48 @@ void main() {
     expect(devices.single.label, 'Desk mic');
   });
 
+  test(
+    'device model keeps audio output and future video input kinds',
+    () async {
+      final platform = _FakePlatformBridge()
+        ..devices = <MediaDeviceInfo>[
+          MediaDeviceInfo(
+            deviceId: 'mic-1',
+            label: '',
+            kind: audioInputDeviceKind,
+          ),
+          MediaDeviceInfo(
+            deviceId: 'speaker-1',
+            label: '',
+            kind: audioOutputDeviceKind,
+          ),
+          MediaDeviceInfo(
+            deviceId: 'camera-1',
+            label: '',
+            kind: videoInputDeviceKind,
+          ),
+        ];
+      final service = MediaDeviceSettings(
+        platformBridge: platform,
+        settingsStore: AppSettingsStore(),
+      );
+
+      final devices = await service.loadMediaDevices();
+      final outputs = await service.loadAudioOutputDevices();
+      final cameras = await service.loadVideoInputDevices();
+
+      expect(devices.map((device) => device.typedKind), <RainMediaDeviceKind>[
+        RainMediaDeviceKind.audioInput,
+        RainMediaDeviceKind.audioOutput,
+        RainMediaDeviceKind.videoInput,
+      ]);
+      expect(devices[0].displayLabel(0), 'Microphone 1');
+      expect(outputs.single.displayLabel(0), 'Speaker 1');
+      expect(cameras.single.displayLabel(0), 'Camera 1');
+      expect(cameras.single.isVideoInput, isTrue);
+    },
+  );
+
   test('selected microphone persists and resolves when available', () async {
     final platform = _FakePlatformBridge()
       ..devices = <MediaDeviceInfo>[
