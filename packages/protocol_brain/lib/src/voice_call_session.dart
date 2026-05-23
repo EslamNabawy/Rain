@@ -187,8 +187,7 @@ final class VoiceCallSession {
         return;
       }
       await _send(VoiceCallFrameType.reject, reason: reason, bestEffort: true);
-      _clearTimers();
-      _transitionTo(VoiceCallSessionPhase.idle, detail: reason);
+      await _clearVoiceOnly(detail: reason);
     });
   }
 

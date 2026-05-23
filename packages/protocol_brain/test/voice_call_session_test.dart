@@ -141,33 +141,76 @@ void main() {
     expect(media.disposeCalls, 1);
   });
 
-  test('stale sequence and wrong peer frames are ignored', () async {
+  test(
+    'wrong call id, stale epoch, and wrong peer frames are ignored',
+    () async {
+      final media = _FakeVoiceMediaConnection();
+      final sent = <VoiceCallFrame>[];
+      final session = _session(media: media, sent: sent);
+
+      await session.startOutgoing();
+      await session.handleFrame(
+        _frame(
+          VoiceCallFrameType.accept,
+          from: 'bob',
+          to: 'alice',
+          callId: 'other-call',
+          seq: 1,
+        ),
+      );
+      await session.handleFrame(
+        _frame(
+          VoiceCallFrameType.accept,
+          from: 'bob',
+          to: 'alice',
+          sessionEpoch: 10,
+          seq: 1,
+        ),
+      );
+      await session.handleFrame(
+        _frame(VoiceCallFrameType.accept, from: 'mallory', to: 'alice', seq: 1),
+      );
+      expect(media.createOfferCalls, 0);
+
+      await session.handleFrame(
+        _frame(VoiceCallFrameType.accept, from: 'bob', to: 'alice', seq: 1),
+      );
+      expect(media.createOfferCalls, 1);
+
+      await session.handleFrame(
+        _frame(
+          VoiceCallFrameType.answer,
+          from: 'bob',
+          to: 'alice',
+          seq: 1,
+          sdp: 'stale-answer',
+          sdpType: 'answer',
+        ),
+      );
+      expect(media.appliedAnswers, isEmpty);
+    },
+  );
+
+  test('incoming reject sends reject and disposes voice media', () async {
     final media = _FakeVoiceMediaConnection();
     final sent = <VoiceCallFrame>[];
-    final session = _session(media: media, sent: sent);
-
-    await session.startOutgoing();
-    await session.handleFrame(
-      _frame(VoiceCallFrameType.accept, from: 'mallory', to: 'alice', seq: 1),
+    final session = _session(
+      media: media,
+      sent: sent,
+      localPeerId: 'bob',
+      remotePeerId: 'alice',
     );
-    expect(media.createOfferCalls, 0);
-
-    await session.handleFrame(
-      _frame(VoiceCallFrameType.accept, from: 'bob', to: 'alice', seq: 1),
-    );
-    expect(media.createOfferCalls, 1);
 
     await session.handleFrame(
-      _frame(
-        VoiceCallFrameType.answer,
-        from: 'bob',
-        to: 'alice',
-        seq: 1,
-        sdp: 'stale-answer',
-        sdpType: 'answer',
-      ),
+      _frame(VoiceCallFrameType.invite, from: 'alice', to: 'bob', seq: 1),
     );
-    expect(media.appliedAnswers, isEmpty);
+    await session.rejectIncoming(reason: 'No.');
+
+    expect(session.state.phase, VoiceCallSessionPhase.idle);
+    expect(session.state.detail, 'No.');
+    expect(media.disposeCalls, 1);
+    expect(sent.single.type, VoiceCallFrameType.reject);
+    expect(sent.single.reason, 'No.');
   });
 
   test('hangup clears only the voice session', () async {
@@ -219,6 +262,55 @@ void main() {
     expect(sent.last.sdpMid, '0');
     expect(sent.last.sdpMLineIndex, 0);
   });
+
+  test('remote ICE candidate is routed to media while connecting', () async {
+    final media = _FakeVoiceMediaConnection();
+    final sent = <VoiceCallFrame>[];
+    final session = _session(media: media, sent: sent);
+
+    await session.startOutgoing();
+    await session.handleFrame(
+      _frame(VoiceCallFrameType.accept, from: 'bob', to: 'alice', seq: 1),
+    );
+    await session.handleFrame(
+      _frame(
+        VoiceCallFrameType.candidate,
+        from: 'bob',
+        to: 'alice',
+        seq: 2,
+        candidate: 'candidate:remote 1 udp 1 127.0.0.1 9 typ host',
+        sdpMid: '0',
+        sdpMLineIndex: 0,
+      ),
+    );
+
+    expect(media.remoteCandidates, hasLength(1));
+    expect(media.remoteCandidates.single.candidate, startsWith('candidate:'));
+    expect(media.remoteCandidates.single.sdpMid, '0');
+    expect(media.remoteCandidates.single.sdpMLineIndex, 0);
+  });
+
+  test('answer timeout sends failed hangup and disposes media', () async {
+    final media = _FakeVoiceMediaConnection();
+    final sent = <VoiceCallFrame>[];
+    final session = _session(
+      media: media,
+      sent: sent,
+      timeouts: _timeouts(answer: const Duration(milliseconds: 5)),
+    );
+
+    await session.startOutgoing();
+    await session.handleFrame(
+      _frame(VoiceCallFrameType.accept, from: 'bob', to: 'alice', seq: 1),
+    );
+    await Future<void>.delayed(const Duration(milliseconds: 20));
+
+    expect(session.state.phase, VoiceCallSessionPhase.failed);
+    expect(session.state.detail, 'Timed out waiting for voice media answer.');
+    expect(media.disposeCalls, 1);
+    expect(sent.last.type, VoiceCallFrameType.hangup);
+    expect(sent.last.reasonCode, 'failed');
+  });
 }
 
 VoiceCallSession _session({
@@ -264,6 +356,9 @@ VoiceCallFrame _frame(
   String? reason,
   String? sdp,
   String? sdpType,
+  String? candidate,
+  String? sdpMid,
+  int? sdpMLineIndex,
 }) {
   return VoiceCallFrame(
     type: type,
@@ -276,6 +371,9 @@ VoiceCallFrame _frame(
     reason: reason,
     sdp: sdp,
     sdpType: sdpType,
+    candidate: candidate,
+    sdpMid: sdpMid,
+    sdpMLineIndex: sdpMLineIndex,
   );
 }
 
