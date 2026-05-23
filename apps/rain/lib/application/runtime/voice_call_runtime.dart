@@ -214,6 +214,8 @@ extension VoiceCallRuntime on RainRuntimeController {
       case VoiceCallFrameType.answer:
         await _handleVoiceAnswer(normalizedPeerId, frame);
         break;
+      case VoiceCallFrameType.candidate:
+        break;
       case VoiceCallFrameType.hangup:
         await _handleVoiceHangup(normalizedPeerId, frame);
         break;

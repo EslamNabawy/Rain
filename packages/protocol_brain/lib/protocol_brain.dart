@@ -14,3 +14,5 @@ export 'src/connection_memory.dart';
 export 'src/default_protocol_brain.dart';
 export 'src/protocol_brain_impl.dart';
 export 'src/session_manager.dart';
+export 'src/voice_call_frame.dart';
+export 'src/voice_call_session.dart';

@@ -11,6 +11,8 @@ void main() {
       from: 'alice',
       to: 'bob',
       sentAt: 10,
+      seq: 1,
+      sessionEpoch: 1,
     );
 
     final decoded = VoiceCallFrame.decode(frame.encode());
@@ -20,6 +22,8 @@ void main() {
     expect(decoded.from, 'alice');
     expect(decoded.to, 'bob');
     expect(decoded.sentAt, 10);
+    expect(decoded.seq, 1);
+    expect(decoded.sessionEpoch, 1);
   });
 
   test('tryDecode ignores non voice control messages', () {
@@ -39,6 +43,8 @@ void main() {
       'from': 'alice',
       'to': 'bob',
       'sentAt': 10,
+      'seq': 1,
+      'sessionEpoch': 1,
     });
 
     expect(() => VoiceCallFrame.decode(raw), throwsFormatException);
@@ -53,6 +59,8 @@ void main() {
       'from': 'alice',
       'to': 'bob',
       'sentAt': 10,
+      'seq': 1,
+      'sessionEpoch': 1,
       'mediaSeq': 1,
       'sdpType': 'offer',
     });
@@ -68,6 +76,8 @@ void main() {
       'from': 'bob',
       'to': 'alice',
       'sentAt': 10,
+      'seq': 1,
+      'sessionEpoch': 1,
       'sdp': 'sdp',
       'sdpType': 'offer',
       'mediaSeq': 1,
@@ -85,12 +95,14 @@ void main() {
         'from': 'alice',
         'to': 'bob',
         'sentAt': 10,
+        'seq': 7,
+        'sessionEpoch': 3,
         'sdp': 'sdp',
         'sdpType': 'offer',
-        'mediaSeq': 7,
       }),
     );
-    expect(valid.mediaSeq, 7);
+    expect(valid.seq, 7);
+    expect(valid.sessionEpoch, 3);
 
     final missing = jsonEncode(<String, Object?>{
       'type': VoiceCallFrame.wireType,
@@ -99,10 +111,12 @@ void main() {
       'from': 'bob',
       'to': 'alice',
       'sentAt': 10,
+      'seq': 1,
+      'sessionEpoch': 1,
       'sdp': 'sdp',
       'sdpType': 'answer',
     });
-    expect(() => VoiceCallFrame.decode(missing), throwsFormatException);
+    expect(VoiceCallFrame.decode(missing).mediaSeq, isNull);
 
     final nonMediaWithSequence = jsonEncode(<String, Object?>{
       'type': VoiceCallFrame.wireType,
@@ -111,6 +125,8 @@ void main() {
       'from': 'alice',
       'to': 'bob',
       'sentAt': 10,
+      'seq': 1,
+      'sessionEpoch': 1,
       'mediaSeq': 1,
     });
     expect(
@@ -128,6 +144,8 @@ void main() {
         'from': 'alice',
         'to': 'bob',
         'sentAt': 10,
+        'seq': 1,
+        'sessionEpoch': 1,
         'reason': 'Media negotiation failed.',
         'reasonCode': 'failed',
       }),
@@ -145,6 +163,8 @@ void main() {
         'from': 'alice',
         'to': 'bob',
         'sentAt': 10,
+        'seq': 1,
+        'sessionEpoch': 1,
         'muted': true,
       }),
     );
@@ -157,8 +177,72 @@ void main() {
       'from': 'alice',
       'to': 'bob',
       'sentAt': 10,
+      'seq': 1,
+      'sessionEpoch': 1,
       'muted': true,
     });
     expect(() => VoiceCallFrame.decode(inviteWithMuted), throwsFormatException);
+  });
+
+  test('requires positive sequence and session epoch on wire frames', () {
+    final missingSequence = jsonEncode(<String, Object?>{
+      'type': VoiceCallFrame.wireType,
+      'action': 'invite',
+      'callId': 'call-1',
+      'from': 'alice',
+      'to': 'bob',
+      'sentAt': 10,
+      'sessionEpoch': 1,
+    });
+    expect(() => VoiceCallFrame.decode(missingSequence), throwsFormatException);
+
+    final zeroEpoch = jsonEncode(<String, Object?>{
+      'type': VoiceCallFrame.wireType,
+      'action': 'invite',
+      'callId': 'call-1',
+      'from': 'alice',
+      'to': 'bob',
+      'sentAt': 10,
+      'seq': 1,
+      'sessionEpoch': 0,
+    });
+    expect(() => VoiceCallFrame.decode(zeroEpoch), throwsFormatException);
+  });
+
+  test('candidate frames require candidate routing fields', () {
+    final valid = VoiceCallFrame.decode(
+      jsonEncode(<String, Object?>{
+        'type': VoiceCallFrame.wireType,
+        'action': 'candidate',
+        'callId': 'call-1',
+        'from': 'alice',
+        'to': 'bob',
+        'sentAt': 10,
+        'seq': 2,
+        'sessionEpoch': 1,
+        'candidate': 'candidate:1 1 udp 1 127.0.0.1 9 typ host',
+        'sdpMid': '0',
+        'sdpMLineIndex': 0,
+      }),
+    );
+
+    expect(valid.type, VoiceCallFrameType.candidate);
+    expect(valid.candidate, startsWith('candidate:1'));
+    expect(valid.sdpMid, '0');
+    expect(valid.sdpMLineIndex, 0);
+
+    final missingSdpMid = jsonEncode(<String, Object?>{
+      'type': VoiceCallFrame.wireType,
+      'action': 'candidate',
+      'callId': 'call-1',
+      'from': 'alice',
+      'to': 'bob',
+      'sentAt': 10,
+      'seq': 2,
+      'sessionEpoch': 1,
+      'candidate': 'candidate:1 1 udp 1 127.0.0.1 9 typ host',
+      'sdpMLineIndex': 0,
+    });
+    expect(() => VoiceCallFrame.decode(missingSdpMid), throwsFormatException);
   });
 }

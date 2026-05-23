@@ -402,7 +402,7 @@ git commit -m "feat: add dedicated webrtc voice media connection"
 
 **Purpose:** Make call control deterministic before UI.
 
-- [ ] Extend `VoiceCallFrame`.
+- [x] Extend `VoiceCallFrame`.
 
 Add fields:
 
@@ -424,7 +424,7 @@ seq > 0
 sessionEpoch > 0
 ```
 
-- [ ] Add tests in `packages/rain_core/test/voice_call_frame_test.dart`.
+- [x] Add tests in `packages/rain_core/test/voice_call_frame_test.dart`.
 
 Cases:
 
@@ -433,7 +433,7 @@ Cases:
 - wrong peer ignored
 - unknown frame ignored by demux
 
-- [ ] Implement `VoiceCallSession`.
+- [x] Implement `VoiceCallSession`.
 
 State machine:
 
@@ -451,7 +451,7 @@ failed
 
 Allowed transitions only. Invalid events ignored and logged.
 
-- [ ] Implement timeouts.
+- [x] Implement timeouts.
 
 ```text
 ringing timeout: 45s
@@ -460,7 +460,7 @@ ICE/media timeout: 20s
 cleanup watchdog: 5s
 ```
 
-- [ ] Tests:
+- [x] Tests:
 
 ```powershell
 cd packages/protocol_brain
@@ -478,7 +478,7 @@ Must cover:
 - wrong peer ignored
 - hangup clears only voice session
 
-- [ ] Commit.
+- [x] Commit.
 
 ```powershell
 git add packages/rain_core packages/protocol_brain
