@@ -102,6 +102,43 @@ void main() {
     },
   );
 
+  test('active session forwards voice audio levels', () async {
+    final media = _FakeVoiceMediaConnection();
+    final sent = <VoiceCallFrame>[];
+    final session = _session(media: media, sent: sent);
+    final states = <VoiceCallSessionState>[];
+    final subscription = session.onStateChanged.listen(states.add);
+
+    await session.startOutgoing();
+    await session.handleFrame(
+      _frame(VoiceCallFrameType.accept, from: 'bob', to: 'alice', seq: 1),
+    );
+    media.emitState(const VoiceMediaState(phase: VoiceMediaPhase.connected));
+    media.emitAudioLevel(
+      VoiceMediaAudioLevel(
+        remoteLevel: 0.72,
+        localLevel: 0.08,
+        updatedAt: 1234,
+        source: VoiceMediaAudioLevelSource.audioLevel,
+      ),
+    );
+    await pumpEventQueue();
+
+    expect(session.state.phase, VoiceCallSessionPhase.active);
+    expect(session.state.audioLevel.remoteLevel, 0.72);
+    expect(session.state.audioLevel.localLevel, 0.08);
+    expect(
+      session.state.audioLevel.source,
+      VoiceMediaAudioLevelSource.audioLevel,
+    );
+    expect(
+      states.map((VoiceCallSessionState state) => state.audioLevel.remoteLevel),
+      contains(0.72),
+    );
+
+    await subscription.cancel();
+  });
+
   test('outgoing invite send failure is signaling failure', () async {
     final media = _FakeVoiceMediaConnection();
     final sent = <VoiceCallFrame>[];
@@ -645,6 +682,8 @@ final class _FakeVoiceMediaConnection implements VoiceMediaConnection {
       StreamController<VoiceIceCandidate>.broadcast();
   final StreamController<VoiceRemoteAudioTrack> _trackController =
       StreamController<VoiceRemoteAudioTrack>.broadcast();
+  final StreamController<VoiceMediaAudioLevel> _audioLevelController =
+      StreamController<VoiceMediaAudioLevel>.broadcast();
   final StreamController<VoiceMediaState> _stateController =
       StreamController<VoiceMediaState>.broadcast();
 
@@ -663,6 +702,10 @@ final class _FakeVoiceMediaConnection implements VoiceMediaConnection {
   @override
   Stream<VoiceRemoteAudioTrack> get onRemoteAudioTrack =>
       _trackController.stream;
+
+  @override
+  Stream<VoiceMediaAudioLevel> get onAudioLevelChanged =>
+      _audioLevelController.stream;
 
   @override
   Stream<VoiceMediaState> get onStateChanged => _stateController.stream;
@@ -717,5 +760,9 @@ final class _FakeVoiceMediaConnection implements VoiceMediaConnection {
 
   void emitState(VoiceMediaState state) {
     _stateController.add(state);
+  }
+
+  void emitAudioLevel(VoiceMediaAudioLevel level) {
+    _audioLevelController.add(level);
   }
 }

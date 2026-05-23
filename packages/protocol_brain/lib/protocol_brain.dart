@@ -6,6 +6,8 @@ export 'package:peer_core/peer_core.dart'
         PeerIceTransportPolicy,
         PeerRemoteTrack,
         PeerRouteKind,
+        VoiceMediaAudioLevel,
+        VoiceMediaAudioLevelSource,
         VoiceIceCandidate,
         VoiceMediaDiagnostics,
         VoiceMediaConnection,

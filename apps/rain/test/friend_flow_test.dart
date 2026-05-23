@@ -3754,6 +3754,8 @@ class _TestVoiceMediaConnection implements VoiceMediaConnection {
       StreamController<VoiceIceCandidate>.broadcast();
   final StreamController<VoiceRemoteAudioTrack> _remoteTrackController =
       StreamController<VoiceRemoteAudioTrack>.broadcast();
+  final StreamController<VoiceMediaAudioLevel> _audioLevelController =
+      StreamController<VoiceMediaAudioLevel>.broadcast();
   final StreamController<VoiceMediaState> _stateController =
       StreamController<VoiceMediaState>.broadcast();
   final List<VoiceIceCandidate> remoteCandidates = <VoiceIceCandidate>[];
@@ -3765,6 +3767,10 @@ class _TestVoiceMediaConnection implements VoiceMediaConnection {
   @override
   Stream<VoiceRemoteAudioTrack> get onRemoteAudioTrack =>
       _remoteTrackController.stream;
+
+  @override
+  Stream<VoiceMediaAudioLevel> get onAudioLevelChanged =>
+      _audioLevelController.stream;
 
   @override
   Stream<VoiceMediaState> get onStateChanged => _stateController.stream;
@@ -3833,6 +3839,7 @@ class _TestVoiceMediaConnection implements VoiceMediaConnection {
     owner.stoppedAudioPeers.add(peerId);
     await _iceController.close();
     await _remoteTrackController.close();
+    await _audioLevelController.close();
     await _stateController.close();
   }
 

@@ -349,6 +349,8 @@ class _NoopVoiceMediaConnection implements VoiceMediaConnection {
       StreamController<VoiceIceCandidate>.broadcast();
   final StreamController<VoiceRemoteAudioTrack> _tracks =
       StreamController<VoiceRemoteAudioTrack>.broadcast();
+  final StreamController<VoiceMediaAudioLevel> _audioLevels =
+      StreamController<VoiceMediaAudioLevel>.broadcast();
   final StreamController<VoiceMediaState> _states =
       StreamController<VoiceMediaState>.broadcast();
 
@@ -357,6 +359,9 @@ class _NoopVoiceMediaConnection implements VoiceMediaConnection {
 
   @override
   Stream<VoiceRemoteAudioTrack> get onRemoteAudioTrack => _tracks.stream;
+
+  @override
+  Stream<VoiceMediaAudioLevel> get onAudioLevelChanged => _audioLevels.stream;
 
   @override
   Stream<VoiceMediaState> get onStateChanged => _states.stream;
@@ -389,6 +394,7 @@ class _NoopVoiceMediaConnection implements VoiceMediaConnection {
   Future<void> dispose() async {
     await _ice.close();
     await _tracks.close();
+    await _audioLevels.close();
     await _states.close();
   }
 }

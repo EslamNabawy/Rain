@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_svg/flutter_svg.dart';
 import 'package:flutter_test/flutter_test.dart';
+import 'package:rain/application/runtime/voice_audio_level.dart';
 import 'package:rain/application/runtime/voice_call_state.dart';
 import 'package:rain/application/state/call_surface_providers.dart';
 import 'package:rain/presentation/widgets/calls/rain_call_overlay.dart';
@@ -472,6 +473,59 @@ void main() {
     expect(hungUp, isTrue);
   });
 
+  testWidgets('call overlay wave amplitude follows real audio level', (
+    WidgetTester tester,
+  ) async {
+    await _pumpCallOverlay(
+      tester,
+      _activeVoiceCall(
+        audioLevel: VoiceAudioLevel.available(
+          remoteLevel: 0.08,
+          localLevel: 0,
+          updatedAt: 1,
+          source: VoiceAudioLevelSource.audioLevel,
+        ),
+      ),
+    );
+    final lowHeight = tester
+        .getSize(
+          find.byKey(const ValueKey<String>('rain-call-audio-wave-bar-2')),
+        )
+        .height;
+
+    await _pumpCallOverlay(
+      tester,
+      _activeVoiceCall(
+        audioLevel: VoiceAudioLevel.available(
+          remoteLevel: 0.86,
+          localLevel: 0,
+          updatedAt: 2,
+          source: VoiceAudioLevelSource.audioLevel,
+        ),
+      ),
+    );
+    await tester.pumpAndSettle();
+    final highHeight = tester
+        .getSize(
+          find.byKey(const ValueKey<String>('rain-call-audio-wave-bar-2')),
+        )
+        .height;
+
+    expect(highHeight, greaterThan(lowHeight));
+  });
+
+  testWidgets('call overlay shows idle audio glyph when meter unavailable', (
+    WidgetTester tester,
+  ) async {
+    await _pumpCallOverlay(tester, _activeVoiceCall());
+
+    expect(
+      find.byKey(const ValueKey<String>('rain-call-audio-unavailable')),
+      findsOneWidget,
+    );
+    expect(_findMeterCells('rain-call-audio-wave-bar-'), findsNothing);
+  });
+
   testWidgets(
     'call overlay minimized chip restores without blocking composer',
     (WidgetTester tester) async {
@@ -677,7 +731,9 @@ Finder _findMeterCells(String prefix) {
   });
 }
 
-VoiceCallState _activeVoiceCall() {
+VoiceCallState _activeVoiceCall({
+  VoiceAudioLevel audioLevel = const VoiceAudioLevel.unavailable(),
+}) {
   return VoiceCallState(
     phase: VoiceCallPhase.active,
     peerId: 'bob',
@@ -685,5 +741,36 @@ VoiceCallState _activeVoiceCall() {
     startedAt: DateTime.now()
         .subtract(const Duration(seconds: 7))
         .millisecondsSinceEpoch,
+    audioLevel: audioLevel,
+  );
+}
+
+Future<void> _pumpCallOverlay(WidgetTester tester, VoiceCallState state) async {
+  await tester.pumpWidget(
+    MaterialApp(
+      home: Scaffold(
+        body: Stack(
+          children: <Widget>[
+            Positioned.fill(
+              child: RainCallOverlay(
+                state: state,
+                surface: CallSurfaceState.visible(
+                  peerId: state.peerId ?? 'bob',
+                  callId: state.callId ?? 'call-1',
+                ),
+                displayName: 'Bob',
+                onAccept: () {},
+                onReject: () {},
+                onHangUp: () {},
+                onRetry: () {},
+                onToggleMute: () {},
+                onMinimize: () {},
+                onExpand: () {},
+              ),
+            ),
+          ],
+        ),
+      ),
+    ),
   );
 }

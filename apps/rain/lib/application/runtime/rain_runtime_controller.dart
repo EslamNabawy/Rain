@@ -11,6 +11,7 @@ import 'package:rain_core/rain_core.dart';
 import 'connection_attempt_coordinator.dart';
 import 'file_transfer_progress_batcher.dart';
 import 'serialized_runtime_mutations.dart';
+import 'voice_audio_level.dart';
 import 'voice_call_diagnostics.dart';
 import 'voice_call_state.dart';
 

@@ -310,6 +310,18 @@ class _RainCallStatusGlyph extends StatelessWidget {
                     color: accent,
                   ),
                 )
+              : state.isActive && state.audioLevel.isAvailable
+              ? _RainCallAudioWave(
+                  level: state.audioLevel.displayLevel,
+                  accent: accent,
+                )
+              : state.isActive
+              ? Icon(
+                  rainVoiceCallIcon(state),
+                  key: const ValueKey<String>('rain-call-audio-unavailable'),
+                  size: 42,
+                  color: accent.withValues(alpha: 0.72),
+                )
               : Icon(
                   rainVoiceCallIcon(state),
                   size: 42,
@@ -320,6 +332,49 @@ class _RainCallStatusGlyph extends StatelessWidget {
         ),
       ),
     );
+  }
+}
+
+class _RainCallAudioWave extends StatelessWidget {
+  const _RainCallAudioWave({required this.level, required this.accent});
+
+  final double level;
+  final Color accent;
+
+  @override
+  Widget build(BuildContext context) {
+    const multipliers = <double>[0.38, 0.68, 1, 0.68, 0.38];
+    return SizedBox(
+      width: 62,
+      height: 52,
+      child: Row(
+        mainAxisAlignment: MainAxisAlignment.spaceBetween,
+        crossAxisAlignment: CrossAxisAlignment.center,
+        children: <Widget>[
+          for (var index = 0; index < multipliers.length; index += 1)
+            AnimatedContainer(
+              key: ValueKey<String>('rain-call-audio-wave-bar-$index'),
+              duration: const Duration(milliseconds: 140),
+              curve: Curves.easeOutCubic,
+              width: 8,
+              height: _barHeight(level, multipliers[index]),
+              decoration: BoxDecoration(
+                color: accent.withValues(
+                  alpha: 0.58 + (0.36 * multipliers[index]),
+                ),
+                borderRadius: BorderRadius.circular(999),
+              ),
+            ),
+        ],
+      ),
+    );
+  }
+
+  double _barHeight(double rawLevel, double multiplier) {
+    final clamped = rawLevel.isFinite
+        ? rawLevel.clamp(0.0, 1.0).toDouble()
+        : 0.0;
+    return 12 + (38 * clamped * multiplier);
   }
 }
 

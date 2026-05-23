@@ -1,5 +1,7 @@
 import 'package:flutter_webrtc/flutter_webrtc.dart';
 
+enum VoiceMediaAudioLevelSource { unavailable, audioLevel, totalAudioEnergy }
+
 enum VoiceMediaPhase {
   idle,
   startingLocalAudio,
@@ -65,6 +67,41 @@ final class VoiceMediaDiagnostics {
   final String? lastError;
 }
 
+final class VoiceMediaAudioLevel {
+  factory VoiceMediaAudioLevel({
+    required double remoteLevel,
+    required double localLevel,
+    required int updatedAt,
+    required VoiceMediaAudioLevelSource source,
+  }) {
+    return VoiceMediaAudioLevel._(
+      remoteLevel: _clampLevel(remoteLevel),
+      localLevel: _clampLevel(localLevel),
+      updatedAt: updatedAt,
+      source: source,
+    );
+  }
+
+  const VoiceMediaAudioLevel._({
+    required this.remoteLevel,
+    required this.localLevel,
+    required this.updatedAt,
+    required this.source,
+  });
+
+  const VoiceMediaAudioLevel.unavailable({this.updatedAt})
+    : remoteLevel = 0,
+      localLevel = 0,
+      source = VoiceMediaAudioLevelSource.unavailable;
+
+  final double remoteLevel;
+  final double localLevel;
+  final int? updatedAt;
+  final VoiceMediaAudioLevelSource source;
+
+  bool get isAvailable => source != VoiceMediaAudioLevelSource.unavailable;
+}
+
 final class VoiceSessionDescription {
   const VoiceSessionDescription({required this.sdp, required this.type});
 
@@ -81,6 +118,16 @@ final class VoiceSessionDescription {
       type: description.type ?? '',
     );
   }
+}
+
+double _clampLevel(double value) {
+  if (value.isNaN || !value.isFinite || value <= 0) {
+    return 0;
+  }
+  if (value >= 1) {
+    return 1;
+  }
+  return value;
 }
 
 final class VoiceIceCandidate {

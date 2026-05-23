@@ -1,3 +1,5 @@
+import 'voice_audio_level.dart';
+
 enum VoiceCallPhase {
   idle,
   connectingPeer,
@@ -37,6 +39,7 @@ class VoiceCallState {
     this.detail,
     this.error,
     this.failureReason,
+    this.audioLevel = const VoiceAudioLevel.unavailable(),
   });
 
   const VoiceCallState.idle()
@@ -50,7 +53,8 @@ class VoiceCallState {
       updatedAt = null,
       detail = null,
       error = null,
-      failureReason = null;
+      failureReason = null,
+      audioLevel = const VoiceAudioLevel.unavailable();
 
   final VoiceCallPhase phase;
   final String? peerId;
@@ -63,6 +67,7 @@ class VoiceCallState {
   final String? detail;
   final Object? error;
   final VoiceCallFailureReason? failureReason;
+  final VoiceAudioLevel audioLevel;
 
   bool get hasCall => phase != VoiceCallPhase.idle;
 
@@ -96,6 +101,7 @@ class VoiceCallState {
     String? detail,
     Object? error,
     VoiceCallFailureReason? failureReason,
+    VoiceAudioLevel? audioLevel,
     bool clearError = false,
     bool clearFailureReason = false,
   }) {
@@ -113,6 +119,7 @@ class VoiceCallState {
       failureReason: clearFailureReason
           ? null
           : failureReason ?? this.failureReason,
+      audioLevel: audioLevel ?? this.audioLevel,
     );
   }
 }

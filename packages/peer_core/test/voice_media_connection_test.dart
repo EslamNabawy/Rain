@@ -249,6 +249,170 @@ void main() {
     expect(connection.diagnostics.remoteStreamCount, 0);
   });
 
+  test('dedicated voice media emits remote audio level from stats', () async {
+    final platform = _FakeVoicePlatformBridge();
+    final connection = DefaultVoiceMediaConnection(
+      config: PeerConfig(
+        iceServers: const <Map<String, dynamic>>[],
+        platform: platform,
+      ),
+      audioLevelSampleInterval: const Duration(milliseconds: 10),
+    );
+    final levels = <VoiceMediaAudioLevel>[];
+    final subscription = connection.onAudioLevelChanged.listen(levels.add);
+
+    await connection.startLocalAudio();
+    platform.createdConnections.single.statsReports = <StatsReport>[
+      StatsReport('inbound-audio', 'inbound-rtp', 1, <String, Object?>{
+        'kind': 'audio',
+        'audioLevel': 0.42,
+      }),
+    ];
+    platform.createdConnections.single.emitTrack(
+      _FakeMediaTrack('remote-audio-1'),
+      platform.audioStream,
+    );
+
+    await _waitUntil(() => levels.isNotEmpty);
+
+    expect(levels.last.isAvailable, isTrue);
+    expect(levels.last.source, VoiceMediaAudioLevelSource.audioLevel);
+    expect(levels.last.remoteLevel, closeTo(0.42, 0.001));
+    expect(levels.last.localLevel, 0);
+
+    await subscription.cancel();
+    await connection.dispose();
+  });
+
+  test(
+    'dedicated voice media derives audio level from energy deltas',
+    () async {
+      final platform = _FakeVoicePlatformBridge();
+      final connection = DefaultVoiceMediaConnection(
+        config: PeerConfig(
+          iceServers: const <Map<String, dynamic>>[],
+          platform: platform,
+        ),
+        audioLevelSampleInterval: const Duration(milliseconds: 10),
+      );
+      final levels = <VoiceMediaAudioLevel>[];
+      final subscription = connection.onAudioLevelChanged.listen(levels.add);
+
+      await connection.startLocalAudio();
+      platform.createdConnections.single.statsReports = <StatsReport>[
+        StatsReport('inbound-audio', 'inbound-rtp', 1, <String, Object?>{
+          'kind': 'audio',
+          'totalAudioEnergy': 1.00,
+          'totalSamplesDuration': 10.00,
+        }),
+      ];
+      platform.createdConnections.single.emitTrack(
+        _FakeMediaTrack('remote-audio-1'),
+        platform.audioStream,
+      );
+
+      await _waitUntil(() => levels.isNotEmpty);
+      platform.createdConnections.single.statsReports = <StatsReport>[
+        StatsReport('inbound-audio', 'inbound-rtp', 2, <String, Object?>{
+          'kind': 'audio',
+          'totalAudioEnergy': 1.09,
+          'totalSamplesDuration': 10.25,
+        }),
+      ];
+
+      await _waitUntil(
+        () => levels.any(
+          (VoiceMediaAudioLevel level) =>
+              level.source == VoiceMediaAudioLevelSource.totalAudioEnergy,
+        ),
+      );
+
+      final derived = levels.lastWhere(
+        (VoiceMediaAudioLevel level) =>
+            level.source == VoiceMediaAudioLevelSource.totalAudioEnergy,
+      );
+      expect(derived.remoteLevel, closeTo(0.6, 0.001));
+
+      await subscription.cancel();
+      await connection.dispose();
+    },
+  );
+
+  test('dedicated voice media clamps invalid audio levels', () async {
+    final platform = _FakeVoicePlatformBridge();
+    final connection = DefaultVoiceMediaConnection(
+      config: PeerConfig(
+        iceServers: const <Map<String, dynamic>>[],
+        platform: platform,
+      ),
+      audioLevelSampleInterval: const Duration(milliseconds: 10),
+    );
+    final levels = <VoiceMediaAudioLevel>[];
+    final subscription = connection.onAudioLevelChanged.listen(levels.add);
+
+    await connection.startLocalAudio();
+    platform.createdConnections.single.statsReports = <StatsReport>[
+      StatsReport('remote-audio', 'inbound-rtp', 1, <String, Object?>{
+        'kind': 'audio',
+        'audioLevel': 3,
+      }),
+      StatsReport('local-audio', 'media-source', 1, <String, Object?>{
+        'kind': 'audio',
+        'audioLevel': -1,
+      }),
+    ];
+    platform.createdConnections.single.emitTrack(
+      _FakeMediaTrack('remote-audio-1'),
+      platform.audioStream,
+    );
+
+    await _waitUntil(() => levels.isNotEmpty);
+
+    expect(levels.last.remoteLevel, 1);
+    expect(levels.last.localLevel, 0);
+
+    await subscription.cancel();
+    await connection.dispose();
+  });
+
+  test(
+    'dedicated voice media stops audio level sampling after dispose',
+    () async {
+      final platform = _FakeVoicePlatformBridge();
+      final connection = DefaultVoiceMediaConnection(
+        config: PeerConfig(
+          iceServers: const <Map<String, dynamic>>[],
+          platform: platform,
+        ),
+        audioLevelSampleInterval: const Duration(milliseconds: 10),
+      );
+      final levels = <VoiceMediaAudioLevel>[];
+      final subscription = connection.onAudioLevelChanged.listen(levels.add);
+
+      await connection.startLocalAudio();
+      final peerConnection = platform.createdConnections.single
+        ..statsReports = <StatsReport>[
+          StatsReport('remote-audio', 'inbound-rtp', 1, <String, Object?>{
+            'kind': 'audio',
+            'audioLevel': 0.5,
+          }),
+        ];
+      peerConnection.emitTrack(
+        _FakeMediaTrack('remote-audio-1'),
+        platform.audioStream,
+      );
+
+      await _waitUntil(() => levels.isNotEmpty);
+      await connection.dispose();
+      final callsAfterDispose = peerConnection.getStatsCalls;
+      await Future<void>.delayed(const Duration(milliseconds: 35));
+
+      expect(peerConnection.getStatsCalls, callsAfterDispose);
+
+      await subscription.cancel();
+    },
+  );
+
   test('dedicated voice media diagnostics capture failure context', () async {
     final platform = _FakeVoicePlatformBridge();
     final connection = DefaultVoiceMediaConnection(
@@ -464,6 +628,19 @@ void main() {
   );
 }
 
+Future<void> _waitUntil(
+  bool Function() condition, {
+  Duration timeout = const Duration(seconds: 2),
+}) async {
+  final deadline = DateTime.now().add(timeout);
+  while (!condition()) {
+    if (DateTime.now().isAfter(deadline)) {
+      throw StateError('Timed out waiting for test condition.');
+    }
+    await Future<void>.delayed(const Duration(milliseconds: 5));
+  }
+}
+
 class _FakeVoicePlatformBridge implements PlatformBridge {
   final List<_FakeVoicePeerConnection> createdConnections =
       <_FakeVoicePeerConnection>[];
@@ -548,6 +725,8 @@ class _FakeVoicePeerConnection extends Fake implements RTCPeerConnection {
   final List<Map<String, dynamic>?> createAnswerConstraints =
       <Map<String, dynamic>?>[];
   Completer<RTCSessionDescription>? createOfferCompleter;
+  List<StatsReport> statsReports = const <StatsReport>[];
+  int getStatsCalls = 0;
   int closeCalls = 0;
   int disposeCalls = 0;
 
@@ -623,6 +802,12 @@ class _FakeVoicePeerConnection extends Fake implements RTCPeerConnection {
   Future<void> setRemoteDescription(RTCSessionDescription description) async {
     operations.add('setRemoteDescription:${description.type}');
     remoteDescriptions.add(description);
+  }
+
+  @override
+  Future<List<StatsReport>> getStats([MediaStreamTrack? track]) async {
+    getStatsCalls += 1;
+    return statsReports;
   }
 
   @override

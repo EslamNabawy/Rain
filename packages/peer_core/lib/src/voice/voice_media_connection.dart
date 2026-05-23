@@ -1,4 +1,5 @@
 import 'dart:async';
+import 'dart:math' as math;
 
 import 'package:flutter_webrtc/flutter_webrtc.dart';
 
@@ -16,6 +17,7 @@ const Map<String, dynamic> _voiceSdpConstraints = <String, dynamic>{
 abstract class VoiceMediaConnection {
   Stream<VoiceIceCandidate> get onIceCandidate;
   Stream<VoiceRemoteAudioTrack> get onRemoteAudioTrack;
+  Stream<VoiceMediaAudioLevel> get onAudioLevelChanged;
   Stream<VoiceMediaState> get onStateChanged;
   VoiceMediaDiagnostics get diagnostics;
 
@@ -29,13 +31,20 @@ abstract class VoiceMediaConnection {
 }
 
 class DefaultVoiceMediaConnection implements VoiceMediaConnection {
-  DefaultVoiceMediaConnection({required PeerConfig config}) : _config = config;
+  DefaultVoiceMediaConnection({
+    required PeerConfig config,
+    Duration audioLevelSampleInterval = const Duration(milliseconds: 250),
+  }) : _config = config,
+       _audioLevelSampleInterval = audioLevelSampleInterval;
 
   final PeerConfig _config;
+  final Duration _audioLevelSampleInterval;
   final StreamController<VoiceIceCandidate> _iceController =
       StreamController<VoiceIceCandidate>.broadcast();
   final StreamController<VoiceRemoteAudioTrack> _remoteTrackController =
       StreamController<VoiceRemoteAudioTrack>.broadcast();
+  final StreamController<VoiceMediaAudioLevel> _audioLevelController =
+      StreamController<VoiceMediaAudioLevel>.broadcast();
   final StreamController<VoiceMediaState> _stateController =
       StreamController<VoiceMediaState>.broadcast();
   final List<VoiceIceCandidate> _pendingRemoteCandidates =
@@ -51,6 +60,9 @@ class DefaultVoiceMediaConnection implements VoiceMediaConnection {
   MediaStreamTrack? _localAudioTrack;
   Future<void>? _localAudioStartFuture;
   Future<void>? _mediaOperation;
+  final _VoiceAudioLevelStatsSampler _audioLevelStatsSampler =
+      _VoiceAudioLevelStatsSampler();
+  Timer? _audioLevelTimer;
   int _localCandidateCount = 0;
   int _remoteCandidateCount = 0;
   int _connectionEpoch = 0;
@@ -61,6 +73,7 @@ class DefaultVoiceMediaConnection implements VoiceMediaConnection {
   bool _peerConnectionClosed = false;
   bool _voiceAudioPrepared = false;
   bool _muted = false;
+  bool _samplingAudioLevel = false;
   bool _disposed = false;
   bool _controllersClosed = false;
 
@@ -70,6 +83,10 @@ class DefaultVoiceMediaConnection implements VoiceMediaConnection {
   @override
   Stream<VoiceRemoteAudioTrack> get onRemoteAudioTrack =>
       _remoteTrackController.stream;
+
+  @override
+  Stream<VoiceMediaAudioLevel> get onAudioLevelChanged =>
+      _audioLevelController.stream;
 
   @override
   Stream<VoiceMediaState> get onStateChanged => _stateController.stream;
@@ -264,6 +281,7 @@ class DefaultVoiceMediaConnection implements VoiceMediaConnection {
     _pendingRemoteCandidates.clear();
     _remoteDescriptionSet = false;
     _mediaOperation = null;
+    _stopAudioLevelSampler();
     final stream = _localStream;
     _localStream = null;
     _localAudioTrack = null;
@@ -466,6 +484,7 @@ class DefaultVoiceMediaConnection implements VoiceMediaConnection {
       'remoteAudioReady | tracks=${_remoteAudioTracks.length} '
       'streams=${_remoteStreams.length}',
     );
+    _startAudioLevelSampler();
   }
 
   bool _containsTrack(List<MediaStreamTrack> tracks, MediaStreamTrack track) {
@@ -529,6 +548,7 @@ class DefaultVoiceMediaConnection implements VoiceMediaConnection {
     if (connection == null) {
       return;
     }
+    _stopAudioLevelSampler();
     _peerConnection = null;
     _peerConnectionClosed = true;
     _connectionEpoch += 1;
@@ -550,6 +570,81 @@ class DefaultVoiceMediaConnection implements VoiceMediaConnection {
       _appendDiagnostic(_mediaStates, 'peer dispose failed | $error');
       _lastError = error.toString();
     }
+  }
+
+  void _startAudioLevelSampler() {
+    if (_audioLevelTimer != null ||
+        _disposed ||
+        _controllersClosed ||
+        _audioLevelSampleInterval <= Duration.zero) {
+      return;
+    }
+    final connection = _peerConnection;
+    if (connection == null) {
+      return;
+    }
+    final epoch = _connectionEpoch;
+    unawaited(_sampleAudioLevel(connection: connection, epoch: epoch));
+    _audioLevelTimer = Timer.periodic(_audioLevelSampleInterval, (_) {
+      unawaited(_sampleAudioLevel(connection: connection, epoch: epoch));
+    });
+  }
+
+  void _stopAudioLevelSampler() {
+    _audioLevelTimer?.cancel();
+    _audioLevelTimer = null;
+    _samplingAudioLevel = false;
+    _audioLevelStatsSampler.reset();
+  }
+
+  Future<void> _sampleAudioLevel({
+    required RTCPeerConnection connection,
+    required int epoch,
+  }) async {
+    if (_samplingAudioLevel ||
+        _disposed ||
+        _controllersClosed ||
+        !identical(_peerConnection, connection) ||
+        _connectionEpoch != epoch ||
+        _peerConnectionClosed) {
+      return;
+    }
+    _samplingAudioLevel = true;
+    try {
+      final reports = await connection.getStats();
+      if (_disposed ||
+          _controllersClosed ||
+          !identical(_peerConnection, connection) ||
+          _connectionEpoch != epoch ||
+          _peerConnectionClosed) {
+        return;
+      }
+      _emitAudioLevel(
+        _audioLevelStatsSampler.sample(
+          reports,
+          updatedAt: DateTime.now().millisecondsSinceEpoch,
+        ),
+      );
+    } catch (error) {
+      if (!_disposed && !_controllersClosed) {
+        _appendDiagnostic(_mediaStates, 'audio level stats failed | $error');
+        _lastError = error.toString();
+        _emitAudioLevel(
+          VoiceMediaAudioLevel.unavailable(
+            updatedAt: DateTime.now().millisecondsSinceEpoch,
+          ),
+        );
+      }
+    } finally {
+      _samplingAudioLevel = false;
+    }
+  }
+
+  void _emitAudioLevel(VoiceMediaAudioLevel level) {
+    if (_controllersClosed) {
+      return;
+    }
+    _audioLevelController.add(level);
   }
 
   bool _shouldIgnorePeerCallback(RTCPeerConnection connection) {
@@ -605,6 +700,7 @@ class DefaultVoiceMediaConnection implements VoiceMediaConnection {
     await Future.wait(<Future<void>>[
       _iceController.close(),
       _remoteTrackController.close(),
+      _audioLevelController.close(),
       _stateController.close(),
     ]);
   }
@@ -622,4 +718,281 @@ class DefaultVoiceMediaConnection implements VoiceMediaConnection {
       target.removeRange(0, target.length - maxDiagnostics);
     }
   }
+}
+
+enum _VoiceAudioLevelSide { local, remote, unknown }
+
+final class _VoiceAudioLevelStatsSampler {
+  final Map<String, _VoiceAudioEnergyPoint> _previousEnergy =
+      <String, _VoiceAudioEnergyPoint>{};
+
+  VoiceMediaAudioLevel sample(
+    Iterable<StatsReport> reports, {
+    required int updatedAt,
+  }) {
+    double? remoteLevel;
+    double? localLevel;
+    var source = VoiceMediaAudioLevelSource.unavailable;
+    final nextEnergy = <String, _VoiceAudioEnergyPoint>{};
+
+    for (final report in reports) {
+      if (!_isAudioReport(report)) {
+        continue;
+      }
+
+      final side = _audioReportSide(report);
+      final directLevel = _directAudioLevel(report.values);
+      if (directLevel != null) {
+        switch (side) {
+          case _VoiceAudioLevelSide.remote:
+            remoteLevel = _maxLevel(remoteLevel, directLevel);
+            source = VoiceMediaAudioLevelSource.audioLevel;
+            break;
+          case _VoiceAudioLevelSide.local:
+            localLevel = _maxLevel(localLevel, directLevel);
+            source = VoiceMediaAudioLevelSource.audioLevel;
+            break;
+          case _VoiceAudioLevelSide.unknown:
+            remoteLevel = _maxLevel(remoteLevel, directLevel);
+            source = VoiceMediaAudioLevelSource.audioLevel;
+            break;
+        }
+      }
+
+      final energy = _VoiceAudioEnergyPoint.fromStats(report.values);
+      if (energy == null) {
+        continue;
+      }
+      if (report.id.isNotEmpty) {
+        nextEnergy[report.id] = energy;
+      }
+      if (directLevel != null) {
+        continue;
+      }
+
+      final previous = _previousEnergy[report.id];
+      final energyLevel = previous == null
+          ? null
+          : _levelFromEnergyDelta(previous: previous, current: energy);
+      if (energyLevel == null) {
+        continue;
+      }
+
+      switch (side) {
+        case _VoiceAudioLevelSide.remote:
+          remoteLevel = _maxLevel(remoteLevel, energyLevel);
+          if (source == VoiceMediaAudioLevelSource.unavailable) {
+            source = VoiceMediaAudioLevelSource.totalAudioEnergy;
+          }
+          break;
+        case _VoiceAudioLevelSide.local:
+          localLevel = _maxLevel(localLevel, energyLevel);
+          if (source == VoiceMediaAudioLevelSource.unavailable) {
+            source = VoiceMediaAudioLevelSource.totalAudioEnergy;
+          }
+          break;
+        case _VoiceAudioLevelSide.unknown:
+          remoteLevel = _maxLevel(remoteLevel, energyLevel);
+          if (source == VoiceMediaAudioLevelSource.unavailable) {
+            source = VoiceMediaAudioLevelSource.totalAudioEnergy;
+          }
+          break;
+      }
+    }
+
+    _previousEnergy
+      ..clear()
+      ..addAll(nextEnergy);
+
+    if (remoteLevel == null && localLevel == null) {
+      return VoiceMediaAudioLevel.unavailable(updatedAt: updatedAt);
+    }
+
+    return VoiceMediaAudioLevel(
+      remoteLevel: remoteLevel ?? 0,
+      localLevel: localLevel ?? 0,
+      updatedAt: updatedAt,
+      source: source,
+    );
+  }
+
+  void reset() {
+    _previousEnergy.clear();
+  }
+}
+
+final class _VoiceAudioEnergyPoint {
+  const _VoiceAudioEnergyPoint({
+    required this.totalAudioEnergy,
+    required this.totalSamplesDuration,
+  });
+
+  final double totalAudioEnergy;
+  final double totalSamplesDuration;
+
+  static _VoiceAudioEnergyPoint? fromStats(Map<dynamic, dynamic> values) {
+    final energy = _doubleStat(values, const <String>['totalAudioEnergy']);
+    final duration = _doubleStat(values, const <String>[
+      'totalSamplesDuration',
+    ]);
+    if (energy == null ||
+        duration == null ||
+        !energy.isFinite ||
+        !duration.isFinite ||
+        energy < 0 ||
+        duration < 0) {
+      return null;
+    }
+    return _VoiceAudioEnergyPoint(
+      totalAudioEnergy: energy,
+      totalSamplesDuration: duration,
+    );
+  }
+}
+
+bool _isAudioReport(StatsReport report) {
+  final kind = _stringStat(report.values, const <String>[
+    'kind',
+    'mediaType',
+    'googTrackKind',
+  ]);
+  if (kind != null) {
+    return kind.toLowerCase() == 'audio';
+  }
+  return _hasAnyStat(report.values, const <String>[
+    'audioLevel',
+    'audioInputLevel',
+    'audioOutputLevel',
+    'totalAudioEnergy',
+    'totalSamplesDuration',
+  ]);
+}
+
+_VoiceAudioLevelSide _audioReportSide(StatsReport report) {
+  final type = report.type.toLowerCase().replaceAll('_', '-');
+  final remoteSource = _boolStat(report.values, const <String>['remoteSource']);
+  if (remoteSource == true ||
+      type.contains('inbound') ||
+      type.contains('receiver')) {
+    return _VoiceAudioLevelSide.remote;
+  }
+  if (remoteSource == false ||
+      type.contains('outbound') ||
+      type.contains('sender') ||
+      type == 'media-source') {
+    return _VoiceAudioLevelSide.local;
+  }
+  final id = report.id.toLowerCase();
+  if (id.contains('remote')) {
+    return _VoiceAudioLevelSide.remote;
+  }
+  if (id.contains('local')) {
+    return _VoiceAudioLevelSide.local;
+  }
+  return _VoiceAudioLevelSide.unknown;
+}
+
+double? _directAudioLevel(Map<dynamic, dynamic> values) {
+  final audioLevel = _doubleStat(values, const <String>['audioLevel']);
+  if (audioLevel != null) {
+    return _clampAudioLevel(audioLevel);
+  }
+  final legacyLevel = _doubleStat(values, const <String>[
+    'audioInputLevel',
+    'audioOutputLevel',
+  ]);
+  if (legacyLevel == null || !legacyLevel.isFinite || legacyLevel <= 0) {
+    return null;
+  }
+  return _clampAudioLevel(legacyLevel / 32768);
+}
+
+double? _levelFromEnergyDelta({
+  required _VoiceAudioEnergyPoint previous,
+  required _VoiceAudioEnergyPoint current,
+}) {
+  final energyDelta = current.totalAudioEnergy - previous.totalAudioEnergy;
+  final durationDelta =
+      current.totalSamplesDuration - previous.totalSamplesDuration;
+  if (energyDelta < 0 || durationDelta <= 0) {
+    return null;
+  }
+  return _clampAudioLevel(math.sqrt(energyDelta / durationDelta));
+}
+
+double _maxLevel(double? current, double next) {
+  if (current == null || next > current) {
+    return next;
+  }
+  return current;
+}
+
+double _clampAudioLevel(double value) {
+  if (value.isNaN || !value.isFinite || value <= 0) {
+    return 0;
+  }
+  if (value >= 1) {
+    return 1;
+  }
+  return value;
+}
+
+Object? _statValue(Map<dynamic, dynamic> values, Iterable<String> keys) {
+  for (final key in keys) {
+    if (values.containsKey(key)) {
+      return values[key];
+    }
+  }
+  final normalized = <String, Object?>{
+    for (final entry in values.entries)
+      entry.key.toString().toLowerCase(): entry.value,
+  };
+  for (final key in keys) {
+    final value = normalized[key.toLowerCase()];
+    if (value != null) {
+      return value;
+    }
+  }
+  return null;
+}
+
+bool _hasAnyStat(Map<dynamic, dynamic> values, Iterable<String> keys) {
+  return _statValue(values, keys) != null;
+}
+
+String? _stringStat(Map<dynamic, dynamic> values, Iterable<String> keys) {
+  final value = _statValue(values, keys);
+  if (value == null) {
+    return null;
+  }
+  final text = value.toString().trim();
+  return text.isEmpty ? null : text;
+}
+
+double? _doubleStat(Map<dynamic, dynamic> values, Iterable<String> keys) {
+  final value = _statValue(values, keys);
+  if (value is num) {
+    return value.toDouble();
+  }
+  if (value is String) {
+    return double.tryParse(value.trim());
+  }
+  return null;
+}
+
+bool? _boolStat(Map<dynamic, dynamic> values, Iterable<String> keys) {
+  final value = _statValue(values, keys);
+  if (value is bool) {
+    return value;
+  }
+  if (value is String) {
+    final normalized = value.trim().toLowerCase();
+    if (normalized == 'true') {
+      return true;
+    }
+    if (normalized == 'false') {
+      return false;
+    }
+  }
+  return null;
 }

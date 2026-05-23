@@ -46,6 +46,7 @@ final class VoiceCallSessionState {
   const VoiceCallSessionState({
     required this.phase,
     required this.updatedAt,
+    this.audioLevel = const VoiceMediaAudioLevel.unavailable(),
     this.detail,
     this.error,
     this.reasonCode,
@@ -62,6 +63,7 @@ final class VoiceCallSessionState {
 
   final VoiceCallSessionPhase phase;
   final int updatedAt;
+  final VoiceMediaAudioLevel audioLevel;
   final String? detail;
   final Object? error;
   final String? reasonCode;
@@ -95,6 +97,9 @@ final class VoiceCallSession {
     _normalizedRemotePeerId = _normalizePeerId(remotePeerId);
     _iceSubscription = media.onIceCandidate.listen(_handleLocalCandidate);
     _mediaStateSubscription = media.onStateChanged.listen(_handleMediaState);
+    _audioLevelSubscription = media.onAudioLevelChanged.listen(
+      _handleAudioLevel,
+    );
   }
 
   final String localPeerId;
@@ -112,6 +117,7 @@ final class VoiceCallSession {
   late final String _normalizedRemotePeerId;
   late final StreamSubscription<VoiceIceCandidate> _iceSubscription;
   late final StreamSubscription<VoiceMediaState> _mediaStateSubscription;
+  late final StreamSubscription<VoiceMediaAudioLevel> _audioLevelSubscription;
   final StreamController<VoiceCallSessionState> _stateController =
       StreamController<VoiceCallSessionState>.broadcast(sync: true);
 
@@ -267,6 +273,7 @@ final class VoiceCallSession {
       _clearTimers();
       await _iceSubscription.cancel();
       await _mediaStateSubscription.cancel();
+      await _audioLevelSubscription.cancel();
       await _disposeMedia();
       await _stateController.close();
     });
@@ -571,6 +578,28 @@ final class VoiceCallSession {
     }
   }
 
+  void _handleAudioLevel(VoiceMediaAudioLevel audioLevel) {
+    if (_disposed ||
+        state.phase == VoiceCallSessionPhase.idle ||
+        state.phase == VoiceCallSessionPhase.ending ||
+        state.phase == VoiceCallSessionPhase.failed) {
+      return;
+    }
+    final updated = VoiceCallSessionState(
+      phase: state.phase,
+      updatedAt: audioLevel.updatedAt ?? clock().millisecondsSinceEpoch,
+      audioLevel: audioLevel,
+      detail: state.detail,
+      error: state.error,
+      reasonCode: state.reasonCode,
+      mediaDiagnostics: state.mediaDiagnostics,
+    );
+    state = updated;
+    if (!_stateController.isClosed) {
+      _stateController.add(updated);
+    }
+  }
+
   bool _acceptFrame(VoiceCallFrame frame) {
     if (_disposed ||
         frame.callId != callId ||
@@ -738,6 +767,9 @@ final class VoiceCallSession {
     }
     final updated = VoiceCallSessionState(
       phase: next,
+      audioLevel: _phaseCanHoldAudioLevel(next)
+          ? state.audioLevel
+          : const VoiceMediaAudioLevel.unavailable(),
       detail: detail,
       error: error,
       reasonCode: reasonCode,
@@ -749,6 +781,12 @@ final class VoiceCallSession {
       _stateController.add(updated);
     }
     return true;
+  }
+
+  bool _phaseCanHoldAudioLevel(VoiceCallSessionPhase phase) {
+    return phase == VoiceCallSessionPhase.creatingMedia ||
+        phase == VoiceCallSessionPhase.connectingMedia ||
+        phase == VoiceCallSessionPhase.active;
   }
 
   bool _isAllowedTransition(

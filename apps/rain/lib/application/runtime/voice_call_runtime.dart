@@ -262,6 +262,7 @@ extension VoiceCallRuntime on RainRuntimeController {
               detail: _voiceCallRemoteMicrophonePermissionRequired,
               failureReason: VoiceCallFailureReason.remoteMicrophoneDenied,
               updatedAt: DateTime.now().millisecondsSinceEpoch,
+              audioLevel: const VoiceAudioLevel.unavailable(),
             ),
           );
         }
@@ -847,6 +848,7 @@ extension VoiceCallRuntime on RainRuntimeController {
         detail: detail,
         error: error,
         failureReason: failureReason,
+        audioLevel: VoiceAudioLevel.fromMedia(sessionState.audioLevel),
       ),
     );
 
@@ -1218,6 +1220,7 @@ extension VoiceCallRuntime on RainRuntimeController {
             phase: VoiceCallPhase.ending,
             detail: detail,
             updatedAt: DateTime.now().millisecondsSinceEpoch,
+            audioLevel: const VoiceAudioLevel.unavailable(),
           ),
         );
         await _disposeVoiceCallSession(session);
@@ -1238,6 +1241,7 @@ extension VoiceCallRuntime on RainRuntimeController {
         phase: VoiceCallPhase.ending,
         detail: detail,
         updatedAt: DateTime.now().millisecondsSinceEpoch,
+        audioLevel: const VoiceAudioLevel.unavailable(),
       ),
     );
     if (notifyPeer && current.callId != null) {
@@ -1281,6 +1285,7 @@ extension VoiceCallRuntime on RainRuntimeController {
       failureReason: failureReason,
       updatedAt: DateTime.now().millisecondsSinceEpoch,
       clearError: true,
+      audioLevel: const VoiceAudioLevel.unavailable(),
     );
   }
 
@@ -1327,6 +1332,7 @@ extension VoiceCallRuntime on RainRuntimeController {
         error: error,
         failureReason: effectiveFailureReason,
         updatedAt: DateTime.now().millisecondsSinceEpoch,
+        audioLevel: const VoiceAudioLevel.unavailable(),
       ),
     );
   }
