@@ -196,6 +196,55 @@ void main() {
     await connection.dispose();
   });
 
+  test('dedicated voice media diagnostics capture failure context', () async {
+    final platform = _FakeVoicePlatformBridge();
+    final connection = DefaultVoiceMediaConnection(
+      config: PeerConfig(
+        iceServers: const <Map<String, dynamic>>[],
+        platform: platform,
+      ),
+    );
+
+    await connection.startLocalAudio();
+    await connection.addRemoteCandidate(
+      const VoiceIceCandidate(
+        candidate: 'candidate:remote',
+        sdpMid: '0',
+        sdpMLineIndex: 0,
+      ),
+    );
+    platform.createdConnections.single.emitIceCandidate(
+      RTCIceCandidate('candidate:local', '0', 0),
+    );
+    platform.createdConnections.single.onIceConnectionState?.call(
+      RTCIceConnectionState.RTCIceConnectionStateChecking,
+    );
+    platform.createdConnections.single.onIceConnectionState?.call(
+      RTCIceConnectionState.RTCIceConnectionStateFailed,
+    );
+    platform.createdConnections.single.onConnectionState?.call(
+      RTCPeerConnectionState.RTCPeerConnectionStateFailed,
+    );
+    await pumpEventQueue();
+
+    final diagnostics = connection.diagnostics;
+    expect(diagnostics.localCandidateCount, 1);
+    expect(diagnostics.remoteCandidateCount, 1);
+    expect(diagnostics.pendingRemoteCandidateCount, 1);
+    expect(diagnostics.mediaStates, contains('startingLocalAudio'));
+    expect(diagnostics.mediaStates, contains('localAudioReady'));
+    expect(
+      diagnostics.iceConnectionStates,
+      contains('RTCIceConnectionState.RTCIceConnectionStateFailed'),
+    );
+    expect(
+      diagnostics.peerConnectionStates,
+      contains('RTCPeerConnectionState.RTCPeerConnectionStateFailed'),
+    );
+
+    await connection.dispose();
+  });
+
   test('dedicated voice media mutes without stopping local track', () async {
     final platform = _FakeVoicePlatformBridge();
     final connection = DefaultVoiceMediaConnection(

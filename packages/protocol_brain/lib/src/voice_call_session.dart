@@ -41,6 +41,7 @@ final class VoiceCallSessionState {
     this.detail,
     this.error,
     this.reasonCode,
+    this.mediaDiagnostics,
   });
 
   factory VoiceCallSessionState.idle({required int updatedAt}) {
@@ -56,6 +57,7 @@ final class VoiceCallSessionState {
   final String? detail;
   final Object? error;
   final String? reasonCode;
+  final VoiceMediaDiagnostics? mediaDiagnostics;
 }
 
 final class VoiceCallSession {
@@ -604,6 +606,7 @@ final class VoiceCallSession {
   }) async {
     _clearTimers();
     final effectiveReasonCode = reasonCode ?? (notifyPeer ? 'failed' : null);
+    final mediaDiagnostics = media.diagnostics;
     if (notifyPeer) {
       await _send(
         VoiceCallFrameType.hangup,
@@ -617,6 +620,7 @@ final class VoiceCallSession {
       detail: detail,
       error: error,
       reasonCode: effectiveReasonCode,
+      mediaDiagnostics: mediaDiagnostics,
     );
     await _disposeMedia();
   }
@@ -656,6 +660,7 @@ final class VoiceCallSession {
     String? detail,
     Object? error,
     String? reasonCode,
+    VoiceMediaDiagnostics? mediaDiagnostics,
   }) {
     if (!_isAllowedTransition(state.phase, next)) {
       _logInvalidEvent('invalid transition ${state.phase.name} -> $next');
@@ -666,6 +671,7 @@ final class VoiceCallSession {
       detail: detail,
       error: error,
       reasonCode: reasonCode,
+      mediaDiagnostics: mediaDiagnostics,
       updatedAt: clock().millisecondsSinceEpoch,
     );
     state = updated;

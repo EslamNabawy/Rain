@@ -33,6 +33,28 @@ final class VoiceMediaState {
   final int? updatedAt;
 }
 
+final class VoiceMediaDiagnostics {
+  const VoiceMediaDiagnostics({
+    this.mediaStates = const <String>[],
+    this.iceConnectionStates = const <String>[],
+    this.peerConnectionStates = const <String>[],
+    this.localCandidateCount = 0,
+    this.remoteCandidateCount = 0,
+    this.pendingRemoteCandidateCount = 0,
+    this.lastDetail,
+    this.lastError,
+  });
+
+  final List<String> mediaStates;
+  final List<String> iceConnectionStates;
+  final List<String> peerConnectionStates;
+  final int localCandidateCount;
+  final int remoteCandidateCount;
+  final int pendingRemoteCandidateCount;
+  final String? lastDetail;
+  final String? lastError;
+}
+
 final class VoiceSessionDescription {
   const VoiceSessionDescription({required this.sdp, required this.type});
 

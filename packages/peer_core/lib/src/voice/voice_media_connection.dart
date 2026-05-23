@@ -9,6 +9,7 @@ abstract class VoiceMediaConnection {
   Stream<VoiceIceCandidate> get onIceCandidate;
   Stream<VoiceRemoteAudioTrack> get onRemoteAudioTrack;
   Stream<VoiceMediaState> get onStateChanged;
+  VoiceMediaDiagnostics get diagnostics;
 
   Future<void> startLocalAudio();
   Future<VoiceSessionDescription> createOffer();
@@ -31,10 +32,17 @@ class DefaultVoiceMediaConnection implements VoiceMediaConnection {
       StreamController<VoiceMediaState>.broadcast();
   final List<VoiceIceCandidate> _pendingRemoteCandidates =
       <VoiceIceCandidate>[];
+  final List<String> _mediaStates = <String>[];
+  final List<String> _iceConnectionStates = <String>[];
+  final List<String> _peerConnectionStates = <String>[];
 
   RTCPeerConnection? _peerConnection;
   MediaStream? _localStream;
   MediaStreamTrack? _localAudioTrack;
+  int _localCandidateCount = 0;
+  int _remoteCandidateCount = 0;
+  String? _lastDetail;
+  String? _lastError;
   bool _remoteDescriptionSet = false;
   bool _disposed = false;
   bool _controllersClosed = false;
@@ -48,6 +56,20 @@ class DefaultVoiceMediaConnection implements VoiceMediaConnection {
 
   @override
   Stream<VoiceMediaState> get onStateChanged => _stateController.stream;
+
+  @override
+  VoiceMediaDiagnostics get diagnostics {
+    return VoiceMediaDiagnostics(
+      mediaStates: List<String>.unmodifiable(_mediaStates),
+      iceConnectionStates: List<String>.unmodifiable(_iceConnectionStates),
+      peerConnectionStates: List<String>.unmodifiable(_peerConnectionStates),
+      localCandidateCount: _localCandidateCount,
+      remoteCandidateCount: _remoteCandidateCount,
+      pendingRemoteCandidateCount: _pendingRemoteCandidates.length,
+      lastDetail: _lastDetail,
+      lastError: _lastError,
+    );
+  }
 
   @override
   Future<void> startLocalAudio() async {
@@ -142,6 +164,7 @@ class DefaultVoiceMediaConnection implements VoiceMediaConnection {
   @override
   Future<void> addRemoteCandidate(VoiceIceCandidate candidate) async {
     _ensureNotDisposed();
+    _remoteCandidateCount += 1;
     if (!_remoteDescriptionSet) {
       _pendingRemoteCandidates.add(candidate);
       return;
@@ -203,6 +226,7 @@ class DefaultVoiceMediaConnection implements VoiceMediaConnection {
       if (voiceCandidate.candidate.trim().isEmpty) {
         return;
       }
+      _localCandidateCount += 1;
       _iceController.add(voiceCandidate);
     };
     connection.onTrack = (RTCTrackEvent event) {
@@ -218,6 +242,7 @@ class DefaultVoiceMediaConnection implements VoiceMediaConnection {
       );
     };
     connection.onIceConnectionState = (RTCIceConnectionState state) {
+      _appendDiagnostic(_iceConnectionStates, state.toString());
       switch (state) {
         case RTCIceConnectionState.RTCIceConnectionStateConnected:
         case RTCIceConnectionState.RTCIceConnectionStateCompleted:
@@ -237,6 +262,7 @@ class DefaultVoiceMediaConnection implements VoiceMediaConnection {
       }
     };
     connection.onConnectionState = (RTCPeerConnectionState state) {
+      _appendDiagnostic(_peerConnectionStates, state.toString());
       switch (state) {
         case RTCPeerConnectionState.RTCPeerConnectionStateConnected:
           _emitState(VoiceMediaPhase.connected);
@@ -295,6 +321,16 @@ class DefaultVoiceMediaConnection implements VoiceMediaConnection {
     if (_controllersClosed) {
       return;
     }
+    _lastDetail = detail ?? _lastDetail;
+    _lastError = error?.toString() ?? _lastError;
+    _appendDiagnostic(
+      _mediaStates,
+      <String>[
+        phase.name,
+        if (detail != null && detail.trim().isNotEmpty) detail.trim(),
+        if (error != null) error.toString(),
+      ].join(' | '),
+    );
     _stateController.add(
       VoiceMediaState(
         phase: phase,
@@ -320,6 +356,14 @@ class DefaultVoiceMediaConnection implements VoiceMediaConnection {
   void _ensureNotDisposed() {
     if (_disposed) {
       throw StateError('Voice media connection has been disposed.');
+    }
+  }
+
+  void _appendDiagnostic(List<String> target, String value) {
+    const maxDiagnostics = 40;
+    target.add(value);
+    if (target.length > maxDiagnostics) {
+      target.removeRange(0, target.length - maxDiagnostics);
     }
   }
 }

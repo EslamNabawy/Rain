@@ -362,6 +362,9 @@ class _NoopVoiceMediaConnection implements VoiceMediaConnection {
   Stream<VoiceMediaState> get onStateChanged => _states.stream;
 
   @override
+  VoiceMediaDiagnostics get diagnostics => const VoiceMediaDiagnostics();
+
+  @override
   Future<void> startLocalAudio() async {}
 
   @override

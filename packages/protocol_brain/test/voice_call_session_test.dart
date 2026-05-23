@@ -289,6 +289,45 @@ void main() {
     expect(media.remoteCandidates.single.sdpMLineIndex, 0);
   });
 
+  test('media failure attaches diagnostics to failed session state', () async {
+    final media = _FakeVoiceMediaConnection()
+      ..diagnosticSnapshot = const VoiceMediaDiagnostics(
+        mediaStates: <String>['connecting', 'failed | native ice failed'],
+        iceConnectionStates: <String>[
+          'RTCIceConnectionState.RTCIceConnectionStateFailed',
+        ],
+        peerConnectionStates: <String>[
+          'RTCPeerConnectionState.RTCPeerConnectionStateFailed',
+        ],
+        localCandidateCount: 1,
+        remoteCandidateCount: 2,
+      );
+    final sent = <VoiceCallFrame>[];
+    final session = _session(media: media, sent: sent);
+
+    await session.startOutgoing();
+    await session.handleFrame(
+      _frame(VoiceCallFrameType.accept, from: 'bob', to: 'alice', seq: 1),
+    );
+    media.emitState(
+      const VoiceMediaState(
+        phase: VoiceMediaPhase.failed,
+        detail: 'native ice failed',
+      ),
+    );
+    await pumpEventQueue();
+
+    expect(session.state.phase, VoiceCallSessionPhase.failed);
+    expect(session.state.mediaDiagnostics?.localCandidateCount, 1);
+    expect(session.state.mediaDiagnostics?.remoteCandidateCount, 2);
+    expect(
+      session.state.mediaDiagnostics?.iceConnectionStates,
+      contains('RTCIceConnectionState.RTCIceConnectionStateFailed'),
+    );
+    expect(sent.last.type, VoiceCallFrameType.hangup);
+    expect(sent.last.reasonCode, 'failed');
+  });
+
   test('answer timeout sends failed hangup and disposes media', () async {
     final media = _FakeVoiceMediaConnection();
     final sent = <VoiceCallFrame>[];
@@ -390,6 +429,7 @@ final class _FakeVoiceMediaConnection implements VoiceMediaConnection {
   final List<String> acceptedOffers = <String>[];
   final List<String> appliedAnswers = <String>[];
   final List<VoiceIceCandidate> remoteCandidates = <VoiceIceCandidate>[];
+  VoiceMediaDiagnostics diagnosticSnapshot = const VoiceMediaDiagnostics();
 
   @override
   Stream<VoiceIceCandidate> get onIceCandidate => _iceController.stream;
@@ -400,6 +440,9 @@ final class _FakeVoiceMediaConnection implements VoiceMediaConnection {
 
   @override
   Stream<VoiceMediaState> get onStateChanged => _stateController.stream;
+
+  @override
+  VoiceMediaDiagnostics get diagnostics => diagnosticSnapshot;
 
   @override
   Future<void> startLocalAudio() async {

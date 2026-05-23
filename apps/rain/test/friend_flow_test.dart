@@ -3032,6 +3032,9 @@ class _TestVoiceMediaConnection implements VoiceMediaConnection {
   Stream<VoiceMediaState> get onStateChanged => _stateController.stream;
 
   @override
+  VoiceMediaDiagnostics get diagnostics => const VoiceMediaDiagnostics();
+
+  @override
   Future<void> startLocalAudio() async {
     owner.startedAudioPeers.add(peerId);
     final error = owner.startLocalAudioError;

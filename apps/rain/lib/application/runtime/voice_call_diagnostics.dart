@@ -8,8 +8,12 @@ class VoiceCallDiagnostics {
     required this.failureCode,
     required this.userMessage,
     required this.nativeError,
+    this.mediaStates = const <String>[],
     this.iceStates = const <String>[],
     this.connectionStates = const <String>[],
+    this.localCandidateCount = 0,
+    this.remoteCandidateCount = 0,
+    this.pendingRemoteCandidateCount = 0,
   });
 
   final String callId;
@@ -18,8 +22,12 @@ class VoiceCallDiagnostics {
   final String failureCode;
   final String userMessage;
   final String nativeError;
+  final List<String> mediaStates;
   final List<String> iceStates;
   final List<String> connectionStates;
+  final int localCandidateCount;
+  final int remoteCandidateCount;
+  final int pendingRemoteCandidateCount;
 
   Map<String, Object?> toJson() => <String, Object?>{
     'callId': callId,
@@ -28,6 +36,10 @@ class VoiceCallDiagnostics {
     'failureCode': failureCode,
     'userMessage': userMessage,
     'nativeError': nativeError,
+    'localCandidateCount': localCandidateCount,
+    'remoteCandidateCount': remoteCandidateCount,
+    'pendingRemoteCandidateCount': pendingRemoteCandidateCount,
+    if (mediaStates.isNotEmpty) 'mediaStates': mediaStates,
     if (iceStates.isNotEmpty) 'iceStates': iceStates,
     if (connectionStates.isNotEmpty) 'connectionStates': connectionStates,
   };

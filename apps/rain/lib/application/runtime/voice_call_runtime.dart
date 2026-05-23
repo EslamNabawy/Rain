@@ -526,7 +526,7 @@ extension VoiceCallRuntime on RainRuntimeController {
     required bool isOutgoing,
   }) {
     final error = state.error;
-    if (error == null || _localAudioFailureReason(error) != null) {
+    if (error != null && _localAudioFailureReason(error) != null) {
       return;
     }
     final detail =
@@ -542,7 +542,21 @@ extension VoiceCallRuntime on RainRuntimeController {
         role: isOutgoing ? 'caller' : 'callee',
         failureCode: failureCode,
         userMessage: detail,
-        nativeError: error.toString(),
+        nativeError:
+            error?.toString() ??
+            state.mediaDiagnostics?.lastError ??
+            state.mediaDiagnostics?.lastDetail ??
+            state.detail ??
+            'No native error captured.',
+        mediaStates: state.mediaDiagnostics?.mediaStates ?? const <String>[],
+        iceStates:
+            state.mediaDiagnostics?.iceConnectionStates ?? const <String>[],
+        connectionStates:
+            state.mediaDiagnostics?.peerConnectionStates ?? const <String>[],
+        localCandidateCount: state.mediaDiagnostics?.localCandidateCount ?? 0,
+        remoteCandidateCount: state.mediaDiagnostics?.remoteCandidateCount ?? 0,
+        pendingRemoteCandidateCount:
+            state.mediaDiagnostics?.pendingRemoteCandidateCount ?? 0,
       ),
       StackTrace.current,
       source: 'voice-call-media',
