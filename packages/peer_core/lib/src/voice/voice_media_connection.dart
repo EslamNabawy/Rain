@@ -35,15 +35,24 @@ class DefaultVoiceMediaConnection implements VoiceMediaConnection {
   final List<String> _mediaStates = <String>[];
   final List<String> _iceConnectionStates = <String>[];
   final List<String> _peerConnectionStates = <String>[];
+  final List<MediaStreamTrack> _remoteAudioTracks = <MediaStreamTrack>[];
+  final List<MediaStream> _remoteStreams = <MediaStream>[];
 
   RTCPeerConnection? _peerConnection;
   MediaStream? _localStream;
   MediaStreamTrack? _localAudioTrack;
+  Future<void>? _localAudioStartFuture;
+  Future<void>? _mediaOperation;
   int _localCandidateCount = 0;
   int _remoteCandidateCount = 0;
+  int _connectionEpoch = 0;
   String? _lastDetail;
   String? _lastError;
+  VoiceMediaPhase _lastPhase = VoiceMediaPhase.idle;
   bool _remoteDescriptionSet = false;
+  bool _peerConnectionClosed = false;
+  bool _voiceAudioPrepared = false;
+  bool _muted = false;
   bool _disposed = false;
   bool _controllersClosed = false;
 
@@ -66,6 +75,11 @@ class DefaultVoiceMediaConnection implements VoiceMediaConnection {
       localCandidateCount: _localCandidateCount,
       remoteCandidateCount: _remoteCandidateCount,
       pendingRemoteCandidateCount: _pendingRemoteCandidates.length,
+      remoteAudioTrackCount: _remoteAudioTracks.length,
+      remoteStreamCount: _remoteStreams.length,
+      hasLocalAudio: _localStream != null && _localAudioTrack != null,
+      peerConnectionClosed: _peerConnectionClosed,
+      disposed: _disposed,
       lastDetail: _lastDetail,
       lastError: _lastError,
     );
@@ -77,12 +91,31 @@ class DefaultVoiceMediaConnection implements VoiceMediaConnection {
     if (_localStream != null && _localAudioTrack != null) {
       return;
     }
+    final existingStart = _localAudioStartFuture;
+    if (existingStart != null) {
+      return existingStart;
+    }
 
+    final startFuture = _startLocalAudio();
+    _localAudioStartFuture = startFuture;
+    try {
+      await startFuture;
+    } finally {
+      if (_localStream == null || _localAudioTrack == null) {
+        _localAudioStartFuture = null;
+      }
+    }
+  }
+
+  Future<void> _startLocalAudio() async {
     final connection = await _ensurePeerConnection();
+    final epoch = _connectionEpoch;
     MediaStream? pendingStream;
+    var keepVoiceAudio = false;
     try {
       _emitState(VoiceMediaPhase.startingLocalAudio);
-      await _config.platform.prepareVoiceAudio();
+      await _prepareVoiceAudio();
+      _ensureCurrentPeerConnection(connection, epoch, 'preparing local audio');
       final stream = await _config.platform.getUserMedia(
         const <String, dynamic>{
           'audio': <String, dynamic>{
@@ -94,83 +127,118 @@ class DefaultVoiceMediaConnection implements VoiceMediaConnection {
         },
       );
       pendingStream = stream;
+      _ensureCurrentPeerConnection(connection, epoch, 'capturing local audio');
       final audioTracks = stream.getAudioTracks();
       if (audioTracks.isEmpty) {
         throw StateError('No microphone audio track was captured.');
       }
       final audioTrack = audioTracks.first;
       await connection.addTrack(audioTrack, stream);
+      _ensureCurrentPeerConnection(connection, epoch, 'attaching local audio');
       _localStream = stream;
       _localAudioTrack = audioTrack;
       pendingStream = null;
+      keepVoiceAudio = true;
+      if (_muted) {
+        await _config.platform.setMicrophoneMuted(audioTrack, muted: true);
+      }
       _emitState(VoiceMediaPhase.localAudioReady);
     } catch (error) {
       if (pendingStream != null) {
         await _disposeMediaStream(pendingStream);
       }
-      await _config.platform.clearVoiceAudio();
+      if (!keepVoiceAudio) {
+        _localStream = null;
+        _localAudioTrack = null;
+        await _clearVoiceAudioIfPrepared();
+      }
       await _closePeerConnection();
-      _emitState(VoiceMediaPhase.failed, error: error);
+      if (!_disposed) {
+        _emitState(VoiceMediaPhase.failed, error: error);
+      }
       rethrow;
     }
   }
 
   @override
   Future<VoiceSessionDescription> createOffer() async {
-    _ensureNotDisposed();
-    await startLocalAudio();
-    final connection = await _ensurePeerConnection();
-    _emitState(VoiceMediaPhase.creatingOffer);
-    final offer = await connection.createOffer(const <String, dynamic>{
-      'offerToReceiveAudio': true,
-      'offerToReceiveVideo': false,
-    });
-    await connection.setLocalDescription(offer);
-    _emitState(VoiceMediaPhase.connecting);
-    return VoiceSessionDescription.fromRtc(offer);
+    return _runMediaOperation<VoiceSessionDescription>(
+      'create offer',
+      () async {
+        await startLocalAudio();
+        final connection = await _ensurePeerConnection();
+        final epoch = _connectionEpoch;
+        _emitState(VoiceMediaPhase.creatingOffer);
+        final offer = await connection.createOffer(const <String, dynamic>{
+          'offerToReceiveAudio': true,
+          'offerToReceiveVideo': false,
+        });
+        _ensureCurrentPeerConnection(connection, epoch, 'creating offer');
+        await connection.setLocalDescription(offer);
+        _ensureCurrentPeerConnection(connection, epoch, 'setting local offer');
+        _emitState(VoiceMediaPhase.connecting);
+        return VoiceSessionDescription.fromRtc(offer);
+      },
+    );
   }
 
   @override
   Future<VoiceSessionDescription> acceptOffer(
     VoiceSessionDescription offer,
   ) async {
-    _ensureNotDisposed();
-    await startLocalAudio();
-    final connection = await _ensurePeerConnection();
-    _emitState(VoiceMediaPhase.applyingOffer);
-    await connection.setRemoteDescription(offer.toRtc());
-    _remoteDescriptionSet = true;
-    await _flushRemoteCandidates();
-    final answer = await connection.createAnswer(const <String, dynamic>{
-      'offerToReceiveAudio': true,
-      'offerToReceiveVideo': false,
-    });
-    await connection.setLocalDescription(answer);
-    _emitState(VoiceMediaPhase.connecting);
-    return VoiceSessionDescription.fromRtc(answer);
+    return _runMediaOperation<VoiceSessionDescription>(
+      'accept offer',
+      () async {
+        await startLocalAudio();
+        final connection = await _ensurePeerConnection();
+        final epoch = _connectionEpoch;
+        _emitState(VoiceMediaPhase.applyingOffer);
+        await connection.setRemoteDescription(offer.toRtc());
+        _ensureCurrentPeerConnection(connection, epoch, 'applying offer');
+        _remoteDescriptionSet = true;
+        await _flushRemoteCandidates(connection: connection, epoch: epoch);
+        final answer = await connection.createAnswer(const <String, dynamic>{
+          'offerToReceiveAudio': true,
+          'offerToReceiveVideo': false,
+        });
+        _ensureCurrentPeerConnection(connection, epoch, 'creating answer');
+        await connection.setLocalDescription(answer);
+        _ensureCurrentPeerConnection(connection, epoch, 'setting local answer');
+        _emitState(VoiceMediaPhase.connecting);
+        return VoiceSessionDescription.fromRtc(answer);
+      },
+    );
   }
 
   @override
   Future<void> applyAnswer(VoiceSessionDescription answer) async {
-    _ensureNotDisposed();
-    final connection = await _ensurePeerConnection();
-    _emitState(VoiceMediaPhase.applyingAnswer);
-    await connection.setRemoteDescription(answer.toRtc());
-    _remoteDescriptionSet = true;
-    await _flushRemoteCandidates();
-    _emitState(VoiceMediaPhase.connecting);
+    await _runMediaOperation<void>('apply answer', () async {
+      final connection = await _ensurePeerConnection();
+      final epoch = _connectionEpoch;
+      _emitState(VoiceMediaPhase.applyingAnswer);
+      await connection.setRemoteDescription(answer.toRtc());
+      _ensureCurrentPeerConnection(connection, epoch, 'applying answer');
+      _remoteDescriptionSet = true;
+      await _flushRemoteCandidates(connection: connection, epoch: epoch);
+      _emitState(VoiceMediaPhase.connecting);
+    });
   }
 
   @override
   Future<void> addRemoteCandidate(VoiceIceCandidate candidate) async {
     _ensureNotDisposed();
+    if (_peerConnectionClosed) {
+      throw StateError('Voice media peer connection has already been closed.');
+    }
     _remoteCandidateCount += 1;
     if (!_remoteDescriptionSet) {
       _pendingRemoteCandidates.add(candidate);
       return;
     }
     final connection = await _ensurePeerConnection();
+    final epoch = _connectionEpoch;
     await connection.addCandidate(candidate.toRtc());
+    _ensureCurrentPeerConnection(connection, epoch, 'adding remote candidate');
   }
 
   @override
@@ -180,6 +248,7 @@ class DefaultVoiceMediaConnection implements VoiceMediaConnection {
     if (track == null) {
       throw StateError('Local audio has not been started.');
     }
+    _muted = muted;
     await _config.platform.setMicrophoneMuted(track, muted: muted);
   }
 
@@ -189,6 +258,10 @@ class DefaultVoiceMediaConnection implements VoiceMediaConnection {
       return;
     }
     _disposed = true;
+    _connectionEpoch += 1;
+    _pendingRemoteCandidates.clear();
+    _remoteDescriptionSet = false;
+    _mediaOperation = null;
     final stream = _localStream;
     _localStream = null;
     _localAudioTrack = null;
@@ -196,8 +269,9 @@ class DefaultVoiceMediaConnection implements VoiceMediaConnection {
       if (stream != null) {
         await _disposeMediaStream(stream);
       }
+      await _disposeRemoteMedia();
       await _closePeerConnection();
-      await _config.platform.clearVoiceAudio();
+      await _clearVoiceAudioIfPrepared();
       _emitState(VoiceMediaPhase.disposed);
     } finally {
       await _closeControllers();
@@ -205,6 +279,10 @@ class DefaultVoiceMediaConnection implements VoiceMediaConnection {
   }
 
   Future<RTCPeerConnection> _ensurePeerConnection() async {
+    _ensureNotDisposed();
+    if (_peerConnectionClosed) {
+      throw StateError('Voice media peer connection has already been closed.');
+    }
     final existing = _peerConnection;
     if (existing != null) {
       return existing;
@@ -212,14 +290,23 @@ class DefaultVoiceMediaConnection implements VoiceMediaConnection {
     final connection = await _config.platform.createPeerConnection(
       _config.toRtcConfiguration(),
     );
+    if (_disposed) {
+      try {
+        await connection.close();
+      } finally {
+        await connection.dispose();
+      }
+      _ensureNotDisposed();
+    }
     _peerConnection = connection;
+    _connectionEpoch += 1;
     _wirePeerConnection(connection);
     return connection;
   }
 
   void _wirePeerConnection(RTCPeerConnection connection) {
     connection.onIceCandidate = (RTCIceCandidate candidate) {
-      if (_disposed || _controllersClosed) {
+      if (_shouldIgnorePeerCallback(connection)) {
         return;
       }
       final voiceCandidate = VoiceIceCandidate.fromRtc(candidate);
@@ -230,9 +317,11 @@ class DefaultVoiceMediaConnection implements VoiceMediaConnection {
       _iceController.add(voiceCandidate);
     };
     connection.onTrack = (RTCTrackEvent event) {
-      if (_disposed || _controllersClosed || event.track.kind != 'audio') {
+      if (_shouldIgnorePeerCallback(connection) ||
+          event.track.kind != 'audio') {
         return;
       }
+      _retainRemoteAudio(event.track, event.streams);
       _remoteTrackController.add(
         VoiceRemoteAudioTrack(
           track: event.track,
@@ -242,6 +331,9 @@ class DefaultVoiceMediaConnection implements VoiceMediaConnection {
       );
     };
     connection.onIceConnectionState = (RTCIceConnectionState state) {
+      if (_shouldIgnorePeerCallback(connection)) {
+        return;
+      }
       _appendDiagnostic(_iceConnectionStates, state.toString());
       switch (state) {
         case RTCIceConnectionState.RTCIceConnectionStateConnected:
@@ -249,8 +341,12 @@ class DefaultVoiceMediaConnection implements VoiceMediaConnection {
           _emitState(VoiceMediaPhase.connected);
           break;
         case RTCIceConnectionState.RTCIceConnectionStateFailed:
-        case RTCIceConnectionState.RTCIceConnectionStateClosed:
           _emitState(VoiceMediaPhase.failed, detail: state.toString());
+          break;
+        case RTCIceConnectionState.RTCIceConnectionStateClosed:
+          if (!_disposed) {
+            _emitState(VoiceMediaPhase.failed, detail: state.toString());
+          }
           break;
         case RTCIceConnectionState.RTCIceConnectionStateChecking:
           _emitState(VoiceMediaPhase.connecting);
@@ -262,14 +358,21 @@ class DefaultVoiceMediaConnection implements VoiceMediaConnection {
       }
     };
     connection.onConnectionState = (RTCPeerConnectionState state) {
+      if (_shouldIgnorePeerCallback(connection)) {
+        return;
+      }
       _appendDiagnostic(_peerConnectionStates, state.toString());
       switch (state) {
         case RTCPeerConnectionState.RTCPeerConnectionStateConnected:
           _emitState(VoiceMediaPhase.connected);
           break;
         case RTCPeerConnectionState.RTCPeerConnectionStateFailed:
-        case RTCPeerConnectionState.RTCPeerConnectionStateClosed:
           _emitState(VoiceMediaPhase.failed, detail: state.toString());
+          break;
+        case RTCPeerConnectionState.RTCPeerConnectionStateClosed:
+          if (!_disposed) {
+            _emitState(VoiceMediaPhase.failed, detail: state.toString());
+          }
           break;
         case RTCPeerConnectionState.RTCPeerConnectionStateConnecting:
           _emitState(VoiceMediaPhase.connecting);
@@ -281,15 +384,125 @@ class DefaultVoiceMediaConnection implements VoiceMediaConnection {
     };
   }
 
-  Future<void> _flushRemoteCandidates() async {
+  Future<void> _flushRemoteCandidates({
+    required RTCPeerConnection connection,
+    required int epoch,
+  }) async {
     if (_pendingRemoteCandidates.isEmpty) {
       return;
     }
-    final connection = await _ensurePeerConnection();
     final candidates = List<VoiceIceCandidate>.of(_pendingRemoteCandidates);
     _pendingRemoteCandidates.clear();
     for (final candidate in candidates) {
       await connection.addCandidate(candidate.toRtc());
+      _ensureCurrentPeerConnection(
+        connection,
+        epoch,
+        'flushing remote candidates',
+      );
+    }
+  }
+
+  Future<T> _runMediaOperation<T>(
+    String operationName,
+    Future<T> Function() operation,
+  ) async {
+    _ensureNotDisposed();
+    if (_mediaOperation != null) {
+      throw StateError('Voice media negotiation is already running.');
+    }
+    final operationCompleter = Completer<void>();
+    _mediaOperation = operationCompleter.future;
+    try {
+      return await operation();
+    } catch (error) {
+      if (!_disposed && _lastPhase != VoiceMediaPhase.failed) {
+        _emitState(
+          VoiceMediaPhase.failed,
+          detail: 'Failed to $operationName.',
+          error: error,
+        );
+      }
+      rethrow;
+    } finally {
+      if (_mediaOperation == operationCompleter.future) {
+        _mediaOperation = null;
+      }
+      operationCompleter.complete();
+    }
+  }
+
+  Future<void> _prepareVoiceAudio() async {
+    await _config.platform.prepareVoiceAudio();
+    _voiceAudioPrepared = true;
+  }
+
+  Future<void> _clearVoiceAudioIfPrepared() async {
+    if (!_voiceAudioPrepared) {
+      return;
+    }
+    _voiceAudioPrepared = false;
+    try {
+      await _config.platform.clearVoiceAudio();
+    } catch (error) {
+      _appendDiagnostic(_mediaStates, 'clearVoiceAudio failed | $error');
+      _lastError = error.toString();
+    }
+  }
+
+  void _retainRemoteAudio(MediaStreamTrack track, List<MediaStream> streams) {
+    if (!_containsTrack(_remoteAudioTracks, track)) {
+      _remoteAudioTracks.add(track);
+    }
+    for (final stream in streams) {
+      if (!_containsStream(_remoteStreams, stream)) {
+        _remoteStreams.add(stream);
+      }
+    }
+    _appendDiagnostic(
+      _mediaStates,
+      'remoteAudioReady | tracks=${_remoteAudioTracks.length} '
+      'streams=${_remoteStreams.length}',
+    );
+  }
+
+  bool _containsTrack(List<MediaStreamTrack> tracks, MediaStreamTrack track) {
+    final trackId = track.id;
+    return tracks.any((MediaStreamTrack existing) {
+      final existingId = existing.id;
+      return identical(existing, track) ||
+          (trackId != null && existingId != null && existingId == trackId);
+    });
+  }
+
+  bool _containsStream(List<MediaStream> streams, MediaStream stream) {
+    final streamId = stream.id;
+    return streams.any((MediaStream existing) {
+      return identical(existing, stream) || existing.id == streamId;
+    });
+  }
+
+  Future<void> _disposeRemoteMedia() async {
+    final remoteTracks = List<MediaStreamTrack>.of(_remoteAudioTracks);
+    final remoteStreams = List<MediaStream>.of(_remoteStreams);
+    _remoteAudioTracks.clear();
+    _remoteStreams.clear();
+    for (final track in remoteTracks) {
+      try {
+        await track.stop();
+      } catch (error) {
+        _appendDiagnostic(_mediaStates, 'remote track stop failed | $error');
+      }
+    }
+    for (final stream in remoteStreams) {
+      try {
+        await stream.dispose();
+      } catch (error) {
+        _appendDiagnostic(
+          _mediaStates,
+          'remote stream dispose failed | $error',
+        );
+      }
     }
   }
 
@@ -301,7 +514,12 @@ class DefaultVoiceMediaConnection implements VoiceMediaConnection {
         // Best-effort media device release.
       }
     }
-    await stream.dispose();
+    try {
+      await stream.dispose();
+    } catch (error) {
+      _appendDiagnostic(_mediaStates, 'local stream dispose failed | $error');
+      _lastError = error.toString();
+    }
   }
 
   Future<void> _closePeerConnection() async {
@@ -310,10 +528,45 @@ class DefaultVoiceMediaConnection implements VoiceMediaConnection {
       return;
     }
     _peerConnection = null;
+    _peerConnectionClosed = true;
+    _connectionEpoch += 1;
+    _remoteDescriptionSet = false;
+    _pendingRemoteCandidates.clear();
+    connection.onIceCandidate = null;
+    connection.onTrack = null;
+    connection.onIceConnectionState = null;
+    connection.onConnectionState = null;
     try {
       await connection.close();
-    } finally {
+    } catch (error) {
+      _appendDiagnostic(_mediaStates, 'peer close failed | $error');
+      _lastError = error.toString();
+    }
+    try {
       await connection.dispose();
+    } catch (error) {
+      _appendDiagnostic(_mediaStates, 'peer dispose failed | $error');
+      _lastError = error.toString();
+    }
+  }
+
+  bool _shouldIgnorePeerCallback(RTCPeerConnection connection) {
+    return _disposed ||
+        _controllersClosed ||
+        !identical(_peerConnection, connection) ||
+        _peerConnectionClosed;
+  }
+
+  void _ensureCurrentPeerConnection(
+    RTCPeerConnection connection,
+    int epoch,
+    String action,
+  ) {
+    _ensureNotDisposed();
+    if (!identical(_peerConnection, connection) ||
+        _connectionEpoch != epoch ||
+        _peerConnectionClosed) {
+      throw StateError('Voice media peer connection changed while $action.');
     }
   }
 
@@ -321,6 +574,7 @@ class DefaultVoiceMediaConnection implements VoiceMediaConnection {
     if (_controllersClosed) {
       return;
     }
+    _lastPhase = phase;
     _lastDetail = detail ?? _lastDetail;
     _lastError = error?.toString() ?? _lastError;
     _appendDiagnostic(

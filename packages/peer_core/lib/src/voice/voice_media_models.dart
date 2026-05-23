@@ -41,6 +41,11 @@ final class VoiceMediaDiagnostics {
     this.localCandidateCount = 0,
     this.remoteCandidateCount = 0,
     this.pendingRemoteCandidateCount = 0,
+    this.remoteAudioTrackCount = 0,
+    this.remoteStreamCount = 0,
+    this.hasLocalAudio = false,
+    this.peerConnectionClosed = false,
+    this.disposed = false,
     this.lastDetail,
     this.lastError,
   });
@@ -51,6 +56,11 @@ final class VoiceMediaDiagnostics {
   final int localCandidateCount;
   final int remoteCandidateCount;
   final int pendingRemoteCandidateCount;
+  final int remoteAudioTrackCount;
+  final int remoteStreamCount;
+  final bool hasLocalAudio;
+  final bool peerConnectionClosed;
+  final bool disposed;
   final String? lastDetail;
   final String? lastError;
 }

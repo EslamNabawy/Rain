@@ -1,3 +1,5 @@
+import 'dart:async';
+
 import 'package:flutter_test/flutter_test.dart';
 import 'package:flutter_webrtc/flutter_webrtc.dart';
 import 'package:peer_core/peer_core.dart';
@@ -196,6 +198,49 @@ void main() {
     await connection.dispose();
   });
 
+  test('dedicated voice media retains remote audio until dispose', () async {
+    final platform = _FakeVoicePlatformBridge();
+    final connection = DefaultVoiceMediaConnection(
+      config: PeerConfig(
+        iceServers: const <Map<String, dynamic>>[],
+        platform: platform,
+      ),
+    );
+    final remoteTracks = <VoiceRemoteAudioTrack>[];
+    final trackSubscription = connection.onRemoteAudioTrack.listen(
+      remoteTracks.add,
+    );
+    final remoteStream = _FakeMediaStream(
+      'remote-stream',
+      _FakeMediaTrack('remote-audio-1'),
+    );
+
+    await connection.startLocalAudio();
+    platform.createdConnections.single.emitTrack(
+      remoteStream.audioTrack,
+      remoteStream,
+    );
+    platform.createdConnections.single.emitTrack(
+      remoteStream.audioTrack,
+      remoteStream,
+    );
+    await pumpEventQueue();
+
+    expect(remoteTracks, hasLength(2));
+    expect(connection.diagnostics.remoteAudioTrackCount, 1);
+    expect(connection.diagnostics.remoteStreamCount, 1);
+    expect(remoteStream.audioTrack.stopped, isFalse);
+    expect(remoteStream.disposed, isFalse);
+
+    await trackSubscription.cancel();
+    await connection.dispose();
+
+    expect(remoteStream.audioTrack.stopped, isTrue);
+    expect(remoteStream.disposed, isTrue);
+    expect(connection.diagnostics.remoteAudioTrackCount, 0);
+    expect(connection.diagnostics.remoteStreamCount, 0);
+  });
+
   test('dedicated voice media diagnostics capture failure context', () async {
     final platform = _FakeVoicePlatformBridge();
     final connection = DefaultVoiceMediaConnection(
@@ -241,6 +286,8 @@ void main() {
       diagnostics.peerConnectionStates,
       contains('RTCPeerConnectionState.RTCPeerConnectionStateFailed'),
     );
+    expect(diagnostics.hasLocalAudio, isTrue);
+    expect(diagnostics.peerConnectionClosed, isFalse);
 
     await connection.dispose();
   });
@@ -282,6 +329,98 @@ void main() {
     expect(platform.clearVoiceAudioCalls, 1);
     expect(platform.createdConnections.single.closeCalls, 1);
     expect(platform.createdConnections.single.disposeCalls, 1);
+  });
+
+  test(
+    'dedicated voice media ignores late native callbacks after dispose',
+    () async {
+      final platform = _FakeVoicePlatformBridge();
+      final connection = DefaultVoiceMediaConnection(
+        config: PeerConfig(
+          iceServers: const <Map<String, dynamic>>[],
+          platform: platform,
+        ),
+      );
+      final states = <VoiceMediaPhase>[];
+      final subscription = connection.onStateChanged.listen(
+        (VoiceMediaState state) => states.add(state.phase),
+      );
+
+      await connection.startLocalAudio();
+      final peerConnection = platform.createdConnections.single;
+      final iceCallback = peerConnection.onIceConnectionState;
+      final connectionCallback = peerConnection.onConnectionState;
+      await connection.dispose();
+      iceCallback?.call(RTCIceConnectionState.RTCIceConnectionStateClosed);
+      connectionCallback?.call(
+        RTCPeerConnectionState.RTCPeerConnectionStateClosed,
+      );
+      await pumpEventQueue();
+
+      expect(states, isNot(contains(VoiceMediaPhase.failed)));
+      expect(states, contains(VoiceMediaPhase.disposed));
+      expect(connection.diagnostics.disposed, isTrue);
+
+      await subscription.cancel();
+    },
+  );
+
+  test(
+    'dedicated voice media releases pending capture when disposed mid-start',
+    () async {
+      final platform = _FakeVoicePlatformBridge()
+        ..getUserMediaCompleter = Completer<MediaStream>();
+      final connection = DefaultVoiceMediaConnection(
+        config: PeerConfig(
+          iceServers: const <Map<String, dynamic>>[],
+          platform: platform,
+        ),
+      );
+      final states = <VoiceMediaPhase>[];
+      connection.onStateChanged.listen(
+        (VoiceMediaState state) => states.add(state.phase),
+      );
+
+      final audioStart = connection.startLocalAudio();
+      await pumpEventQueue();
+      await connection.dispose();
+      platform.getUserMediaCompleter!.complete(platform.audioStream);
+
+      await expectLater(audioStart, throwsStateError);
+      expect(platform.audioStream.audioTrack.stopped, isTrue);
+      expect(platform.audioStream.disposed, isTrue);
+      expect(platform.clearVoiceAudioCalls, 1);
+      expect(states, isNot(contains(VoiceMediaPhase.failed)));
+    },
+  );
+
+  test('dedicated voice media allows only one negotiation at a time', () async {
+    final platform = _FakeVoicePlatformBridge();
+    final connection = DefaultVoiceMediaConnection(
+      config: PeerConfig(
+        iceServers: const <Map<String, dynamic>>[],
+        platform: platform,
+      ),
+    );
+
+    await connection.startLocalAudio();
+    final peerConnection = platform.createdConnections.single
+      ..createOfferCompleter = Completer<RTCSessionDescription>();
+    final createOffer = connection.createOffer();
+    await pumpEventQueue();
+
+    await expectLater(
+      connection.applyAnswer(
+        const VoiceSessionDescription(sdp: 'answer-sdp', type: 'answer'),
+      ),
+      throwsStateError,
+    );
+
+    peerConnection.createOfferCompleter!.complete(
+      RTCSessionDescription('offer-sdp', 'offer'),
+    );
+    await expectLater(createOffer, completes);
+    await connection.dispose();
   });
 
   test(
@@ -328,6 +467,7 @@ class _FakeVoicePlatformBridge implements PlatformBridge {
       <Map<String, dynamic>>[];
   final List<bool> muteCalls = <bool>[];
   Object? getUserMediaError;
+  Completer<MediaStream>? getUserMediaCompleter;
   int prepareVoiceAudioCalls = 0;
   int clearVoiceAudioCalls = 0;
 
@@ -361,6 +501,10 @@ class _FakeVoicePlatformBridge implements PlatformBridge {
     if (error != null) {
       throw error;
     }
+    final completer = getUserMediaCompleter;
+    if (completer != null) {
+      return completer.future;
+    }
     return audioStream;
   }
 
@@ -391,6 +535,7 @@ class _FakeVoicePeerConnection extends Fake implements RTCPeerConnection {
       <RTCSessionDescription>[];
   final List<RTCSessionDescription> remoteDescriptions =
       <RTCSessionDescription>[];
+  Completer<RTCSessionDescription>? createOfferCompleter;
   int closeCalls = 0;
   int disposeCalls = 0;
 
@@ -439,6 +584,10 @@ class _FakeVoicePeerConnection extends Fake implements RTCPeerConnection {
     Map<String, dynamic>? constraints,
   ]) async {
     operations.add('createOffer');
+    final completer = createOfferCompleter;
+    if (completer != null) {
+      return completer.future;
+    }
     return RTCSessionDescription('offer-sdp', 'offer');
   }
 
