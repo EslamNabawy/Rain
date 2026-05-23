@@ -245,7 +245,7 @@ flutter test packages\protocol_brain\test\voice_signaling_contract_test.dart
 flutter test packages\protocol_brain\test\firebase_contract_test.dart
 ```
 
-- [ ] Commit:
+- [x] Commit:
 
 ```powershell
 git add packages\protocol_brain backend\firebase
