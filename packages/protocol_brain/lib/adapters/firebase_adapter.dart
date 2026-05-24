@@ -302,6 +302,7 @@ class FirebaseSignalingAdapter
     } catch (_) {
       if (!_shouldReclaimUnreadableActiveVoicePairLock(
         lock: existing,
+        caller: caller,
         createdAt: createdAt,
         now: now,
       )) {
@@ -315,6 +316,7 @@ class FirebaseSignalingAdapter
     if (!_shouldReclaimActiveVoicePairLock(
       lock: existing,
       room: room,
+      caller: caller,
       createdAt: createdAt,
       now: now,
     )) {
@@ -342,10 +344,14 @@ class FirebaseSignalingAdapter
 
   bool _shouldReclaimUnreadableActiveVoicePairLock({
     required VoiceActivePairLock lock,
+    required String caller,
     required int createdAt,
     required int now,
   }) {
     if (lock.expiresAt <= createdAt || lock.expiresAt <= now) {
+      return true;
+    }
+    if (lock.caller == normalizeVoiceCallUsername(caller)) {
       return true;
     }
     return createdAt - lock.updatedAt >= _orphanVoiceLockGraceMs ||
@@ -355,6 +361,7 @@ class FirebaseSignalingAdapter
   bool _shouldReclaimActiveVoicePairLock({
     required VoiceActivePairLock lock,
     required VoiceCallRoom? room,
+    required String caller,
     required int createdAt,
     required int now,
   }) {
@@ -362,6 +369,9 @@ class FirebaseSignalingAdapter
       return true;
     }
     if (room == null) {
+      if (lock.caller == normalizeVoiceCallUsername(caller)) {
+        return true;
+      }
       return createdAt - lock.updatedAt >= _orphanVoiceLockGraceMs ||
           now - lock.updatedAt >= _orphanVoiceLockGraceMs;
     }
@@ -413,6 +423,27 @@ class FirebaseSignalingAdapter
       'voiceCalls/${room.callId}': null,
       'voiceCallInboxes/${room.callee}/${room.callId}': null,
     });
+  }
+
+  Future<void> _removeActiveVoicePairLockForRoomIfCurrent(
+    VoiceCallRoom room,
+  ) async {
+    await _removeActiveVoicePairLockIfUnchanged(
+      lockRef: _root.child('activeVoicePairs/${room.pairId}'),
+      lock: _activeVoicePairLockForRoom(room),
+    );
+  }
+
+  VoiceActivePairLock _activeVoicePairLockForRoom(VoiceCallRoom room) {
+    return VoiceActivePairLock(
+      pairId: room.pairId,
+      callId: room.callId,
+      caller: room.caller,
+      callee: room.callee,
+      createdAt: room.createdAt,
+      updatedAt: room.createdAt,
+      expiresAt: room.expiresAt,
+    );
   }
 
   bool _lockMatchesVoicePair(
@@ -576,6 +607,7 @@ class FirebaseSignalingAdapter
     await _ensureSignedInAsUsername(normalizedUsername);
     _ensureVoiceParticipant(room, normalizedUsername);
     if (room.status.isTerminal) {
+      await _removeActiveVoicePairLockForRoomIfCurrent(room);
       return;
     }
     await _root.update(<String, Object?>{
@@ -1404,10 +1436,10 @@ class FirebaseSignalingAdapter
       await _root.child('voiceCalls/$normalizedCallId').remove();
       return;
     }
+    await _removeActiveVoicePairLockForRoomIfCurrent(room);
     await _root.update(<String, Object?>{
       'voiceCalls/${room.callId}': null,
       'voiceCallInboxes/${room.callee}/${room.callId}': null,
-      'activeVoicePairs/${room.pairId}': null,
     });
   }
 

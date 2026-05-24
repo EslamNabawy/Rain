@@ -65,7 +65,11 @@ final class FakeVoiceSignalingAdapter implements VoiceSignalingAdapter {
     }
     final existingLock = _pairLocks[pairId];
     if (existingLock != null &&
-        !_reclaimActivePairLockIfStale(existingLock, createdAt)) {
+        !_reclaimActivePairLockIfStale(
+          existingLock,
+          createdAt,
+          caller: normalizedCaller,
+        )) {
       throw VoiceSignalingException(
         'Active voice call already exists for pair $pairId.',
       );
@@ -217,6 +221,7 @@ final class FakeVoiceSignalingAdapter implements VoiceSignalingAdapter {
     final room = _requireRoom(callId);
     _ensureParticipant(room, username);
     if (room.status.isTerminal) {
+      _removeActivePairLockForRoomIfCurrent(room);
       return;
     }
     final normalizedUsername = normalizeVoiceCallUsername(username);
@@ -415,7 +420,7 @@ final class FakeVoiceSignalingAdapter implements VoiceSignalingAdapter {
     if (room == null) {
       return;
     }
-    _pairLocks.remove(room.pairId);
+    _removeActivePairLockForRoomIfCurrent(room);
     _inboxes[room.callee]?.remove(room.callId);
     _iceCandidates.remove(_iceKey(room.callId, VoiceCallRole.caller));
     _iceCandidates.remove(_iceKey(room.callId, VoiceCallRole.callee));
@@ -455,7 +460,11 @@ final class FakeVoiceSignalingAdapter implements VoiceSignalingAdapter {
     _emitCall(room.callId);
   }
 
-  bool _reclaimActivePairLockIfStale(VoiceActivePairLock lock, int createdAt) {
+  bool _reclaimActivePairLockIfStale(
+    VoiceActivePairLock lock,
+    int createdAt, {
+    required String caller,
+  }) {
     final room = _rooms[lock.callId];
     if (lock.expiresAt <= createdAt) {
       if (room != null && _shouldDeleteReclaimedVoiceRoom(room, createdAt)) {
@@ -466,6 +475,10 @@ final class FakeVoiceSignalingAdapter implements VoiceSignalingAdapter {
     }
 
     if (room == null) {
+      if (lock.caller == normalizeVoiceCallUsername(caller)) {
+        _pairLocks.remove(lock.pairId);
+        return true;
+      }
       if (createdAt - lock.updatedAt < _orphanVoiceLockGraceMs) {
         return false;
       }
@@ -483,6 +496,12 @@ final class FakeVoiceSignalingAdapter implements VoiceSignalingAdapter {
     _removeCallArtifacts(room.callId);
     _pairLocks.remove(lock.pairId);
     return true;
+  }
+
+  void _removeActivePairLockForRoomIfCurrent(VoiceCallRoom room) {
+    if (_pairLocks[room.pairId]?.callId == room.callId) {
+      _pairLocks.remove(room.pairId);
+    }
   }
 
   bool _shouldDeleteReclaimedVoiceRoom(VoiceCallRoom room, int createdAt) {

@@ -84,23 +84,23 @@
 
 **Purpose:** Fix the first root cause behind `peer busy`: stale or incorrectly retained active voice/video pair locks.
 
-- [ ] Audit `packages/protocol_brain/lib/adapters/firebase_adapter.dart` call creation, active pair claiming, stale pair reclaim, room terminal update, and cleanup paths.
-- [ ] Audit runtime paths that call Firebase call cleanup from `apps/rain/lib/application/runtime/voice_call_runtime.dart`.
-- [ ] Define one authoritative lock invariant:
+- [x] Audit `packages/protocol_brain/lib/adapters/firebase_adapter.dart` call creation, active pair claiming, stale pair reclaim, room terminal update, and cleanup paths.
+- [x] Audit runtime paths that call Firebase call cleanup from `apps/rain/lib/application/runtime/voice_call_runtime.dart`.
+- [x] Define one authoritative lock invariant:
   - A pair lock exists only while a non-terminal call room is alive.
   - Any local setup failure must write a terminal room state and release the matching pair lock.
   - Any remote terminal room state must release local runtime state.
   - Stale locks are reclaimable by age and by terminal room state.
-- [ ] Add protocol tests covering:
+- [x] Add protocol tests covering:
   - terminal room releases `activeVoicePairs`.
   - stale active pair can be reclaimed without creating a reverse incoming call.
   - failed local media setup releases the pair lock.
   - duplicate invite while an active non-terminal room exists returns busy.
-- [ ] Add emulator or fake adapter tests for PC to phone first-attempt invite success after a stale previous failed call.
-- [ ] Acceptance:
+- [x] Add emulator or fake adapter tests for PC to phone first-attempt invite success after a stale previous failed call.
+- [x] Acceptance:
   - First call attempt after a failed or closed prior call does not show false `peer busy`.
   - Retry never flips direction by making the original caller receive the call request.
-- [ ] Commit with message: `fix: clean stale Firebase call leases`.
+- [x] Commit with message: `fix: clean stale Firebase call leases`.
 
 ## Phase 03: Call Direction And Retry Semantics
 

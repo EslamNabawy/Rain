@@ -129,6 +129,146 @@ void main() {
     expect(adapter.rooms.keys, contains('call-2'));
   });
 
+  test('fake adapter reclaims caller-owned orphan lock immediately', () async {
+    final adapter = FakeVoiceSignalingAdapter();
+    addTearDown(adapter.dispose);
+
+    adapter.seedActivePairLockForTest(
+      const VoiceActivePairLock(
+        pairId: 'alice:bob',
+        callId: 'orphan-call',
+        caller: 'alice',
+        callee: 'bob',
+        createdAt: 1000,
+        updatedAt: 1000,
+        expiresAt: 60000,
+      ),
+    );
+
+    final room = await adapter.createOutgoingCall(
+      callId: 'call-2',
+      caller: 'alice',
+      callee: 'bob',
+      createdAt: 1001,
+      expiresAt: 61000,
+    );
+
+    expect(room.callId, 'call-2');
+    expect(adapter.activePairLocks['alice:bob']?.callId, 'call-2');
+    expect(adapter.inboxFor('bob').single.callId, 'call-2');
+  });
+
+  test('fake adapter does not let callee steal fresh orphan lock', () async {
+    final adapter = FakeVoiceSignalingAdapter();
+    addTearDown(adapter.dispose);
+
+    adapter.seedActivePairLockForTest(
+      const VoiceActivePairLock(
+        pairId: 'alice:bob',
+        callId: 'orphan-call',
+        caller: 'alice',
+        callee: 'bob',
+        createdAt: 1000,
+        updatedAt: 1000,
+        expiresAt: 60000,
+      ),
+    );
+
+    await expectLater(
+      adapter.createOutgoingCall(
+        callId: 'call-2',
+        caller: 'bob',
+        callee: 'alice',
+        createdAt: 1001,
+        expiresAt: 61000,
+      ),
+      throwsA(isA<VoiceSignalingException>()),
+    );
+
+    expect(adapter.activePairLocks['alice:bob']?.callId, 'orphan-call');
+    expect(adapter.rooms, isEmpty);
+  });
+
+  test('fake adapter reclaims terminal room with leftover lock', () async {
+    final adapter = FakeVoiceSignalingAdapter();
+    addTearDown(adapter.dispose);
+
+    await adapter.createOutgoingCall(
+      callId: 'call-1',
+      caller: 'alice',
+      callee: 'bob',
+      createdAt: 1000,
+      expiresAt: 60000,
+    );
+    await adapter.endCall(
+      callId: 'call-1',
+      username: 'alice',
+      status: VoiceCallSignalingStatus.failed,
+      endedAt: 1200,
+      reasonCode: 'mediaConnectionFailed',
+      reason: 'Call media could not connect.',
+    );
+    adapter.seedActivePairLockForTest(
+      const VoiceActivePairLock(
+        pairId: 'alice:bob',
+        callId: 'call-1',
+        caller: 'alice',
+        callee: 'bob',
+        createdAt: 1000,
+        updatedAt: 1000,
+        expiresAt: 60000,
+      ),
+    );
+
+    final room = await adapter.createOutgoingCall(
+      callId: 'call-2',
+      caller: 'alice',
+      callee: 'bob',
+      createdAt: 1300,
+      expiresAt: 61300,
+    );
+
+    expect(room.callId, 'call-2');
+    expect(adapter.activePairLocks['alice:bob']?.callId, 'call-2');
+    expect(adapter.rooms.keys, isNot(contains('call-1')));
+  });
+
+  test(
+    'fake adapter deleting old terminal room preserves newer lock',
+    () async {
+      final adapter = FakeVoiceSignalingAdapter();
+      addTearDown(adapter.dispose);
+
+      await adapter.createOutgoingCall(
+        callId: 'call-1',
+        caller: 'alice',
+        callee: 'bob',
+        createdAt: 1000,
+        expiresAt: 60000,
+      );
+      await adapter.endCall(
+        callId: 'call-1',
+        username: 'alice',
+        status: VoiceCallSignalingStatus.ended,
+        endedAt: 1100,
+        reasonCode: 'hangup',
+        reason: 'Ended.',
+      );
+      await adapter.createOutgoingCall(
+        callId: 'call-2',
+        caller: 'alice',
+        callee: 'bob',
+        createdAt: 1200,
+        expiresAt: 61200,
+      );
+
+      await adapter.deleteCall('call-1');
+
+      expect(adapter.rooms.keys, contains('call-2'));
+      expect(adapter.activePairLocks['alice:bob']?.callId, 'call-2');
+    },
+  );
+
   test('fake adapter stores video media mode and camera mute state', () async {
     final adapter = FakeVoiceSignalingAdapter();
     addTearDown(adapter.dispose);
