@@ -33,6 +33,13 @@ final AudioContextConfig rainSoundEffectsAudioContextConfig =
       stayAwake: false,
     );
 
+final AudioContextConfig rainSoundLoopAudioContextConfig = AudioContextConfig(
+  route: AudioContextConfigRoute.system,
+  focus: AudioContextConfigFocus.mixWithOthers,
+  respectSilence: false,
+  stayAwake: false,
+);
+
 const Map<RainSoundEffect, String> rainSoundEffectAssetPaths =
     <RainSoundEffect, String>{
       RainSoundEffect.send: 'sounds/send.wav',
@@ -113,19 +120,25 @@ class SoundEffectsService {
     RainSoundSettingsLoader? settingsLoader,
     DateTime Function()? clock,
     AudioContext? audioContext,
+    AudioContext? loopAudioContext,
   }) : _playerFactory =
            playerFactory ??
            ((String playerId) =>
                AudioplayersRainSoundPlayer(AudioPlayer(playerId: playerId))),
        _settingsLoader = settingsLoader ?? (() => const AppAudioSettings()),
        _clock = clock ?? DateTime.now,
-       _audioContext =
-           audioContext ?? rainSoundEffectsAudioContextConfig.build();
+       _effectAudioContext =
+           audioContext ?? rainSoundEffectsAudioContextConfig.build(),
+       _loopAudioContext =
+           loopAudioContext ??
+           audioContext ??
+           rainSoundLoopAudioContextConfig.build();
 
   final RainSoundPlayerFactory _playerFactory;
   final RainSoundSettingsLoader _settingsLoader;
   final DateTime Function() _clock;
-  final AudioContext _audioContext;
+  final AudioContext _effectAudioContext;
+  final AudioContext _loopAudioContext;
   final Map<RainSoundEffect, RainSoundPlayer> _players =
       <RainSoundEffect, RainSoundPlayer>{};
   final Map<String, RainSoundPlayer> _loopPlayers = <String, RainSoundPlayer>{};
@@ -188,7 +201,7 @@ class SoundEffectsService {
       );
       await player.configure(
         mode: PlayerMode.lowLatency,
-        context: _audioContext,
+        context: _effectAudioContext,
       );
       await player.playAsset(
         _assetFor(effect),
@@ -260,7 +273,7 @@ class SoundEffectsService {
     try {
       await player.configure(
         mode: PlayerMode.lowLatency,
-        context: _audioContext,
+        context: _loopAudioContext,
       );
       await player.setReleaseMode(ReleaseMode.loop);
       await player.playAsset(

@@ -23,7 +23,23 @@ void main() {
     expect(context.android.audioFocus, AndroidAudioFocus.none);
   });
 
-  test('service source never requests audio focus gain for short SFX', () {
+  test('ringtone loop audio context also mixes with other phone audio', () {
+    expect(
+      rainSoundLoopAudioContextConfig.focus,
+      AudioContextConfigFocus.mixWithOthers,
+    );
+    expect(
+      rainSoundLoopAudioContextConfig.route,
+      AudioContextConfigRoute.system,
+    );
+    expect(rainSoundLoopAudioContextConfig.respectSilence, isFalse);
+    expect(rainSoundLoopAudioContextConfig.stayAwake, isFalse);
+
+    final context = rainSoundLoopAudioContextConfig.build();
+    expect(context.android.audioFocus, AndroidAudioFocus.none);
+  });
+
+  test('service source never requests audio focus gain for app sounds', () {
     final source = _soundEffectsServiceFile().readAsStringSync();
 
     expect(source, isNot(contains('AudioContextConfigFocus.gain')));
@@ -221,6 +237,10 @@ void main() {
     expect(fakes, hasLength(1));
     expect(fakes.single.configuredMode, PlayerMode.lowLatency);
     expect(fakes.single.releaseMode, ReleaseMode.loop);
+    expect(
+      fakes.single.configuredContext,
+      rainSoundLoopAudioContextConfig.build(),
+    );
     expect(
       fakes.single.played.single.assetPath,
       'sounds/call_incoming_loop.wav',

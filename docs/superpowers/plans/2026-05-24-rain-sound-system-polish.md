@@ -562,6 +562,8 @@ git commit -m "feat: polish rain sound settings"
 
 **Purpose:** Make Android/Windows behavior predictable around music, calls, speakers, and Bluetooth.
 
+**Status:** Complete.
+
 **Files:**
 - Modify: `apps/rain/lib/infrastructure/services/sound_effects_service.dart`
 - Modify: `apps/rain/test/sound_effects_service_test.dart`
