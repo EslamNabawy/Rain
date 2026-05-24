@@ -1216,10 +1216,9 @@ void main() {
     expect(find.text('Video stream not visible'), findsOneWidget);
   });
 
-  testWidgets('call overlay pip chip restores without blocking composer', (
+  testWidgets('call overlay hides media panel without blocking composer', (
     WidgetTester tester,
   ) async {
-    var restored = false;
     var composerTapped = false;
 
     await tester.pumpWidget(
@@ -1253,7 +1252,7 @@ void main() {
                   onRetry: () {},
                   onToggleMute: () {},
                   onMinimize: () {},
-                  onExpand: () => restored = true,
+                  onExpand: () {},
                 ),
               ),
             ],
@@ -1262,10 +1261,8 @@ void main() {
       ),
     );
 
-    expect(find.byTooltip('Restore call'), findsOneWidget);
-
-    await tester.tap(find.byTooltip('Restore call'));
-    expect(restored, isTrue);
+    expect(find.byTooltip('Restore call'), findsNothing);
+    expect(find.text('Voice call with Bob'), findsNothing);
 
     await tester.tap(find.text('Message composer'));
     expect(composerTapped, isTrue);

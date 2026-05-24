@@ -208,8 +208,8 @@
 
 **Purpose:** Keep call controls reachable without burying them at the bottom of chat.
 
-- [ ] Add `apps/rain/lib/presentation/widgets/calls/rain_call_manager_bar.dart`.
-- [ ] The top manager bar must show:
+- [x] Add `apps/rain/lib/presentation/widgets/calls/rain_call_manager_bar.dart`.
+- [x] The top manager bar must show:
   - Peer display name/avatar.
   - Voice/video state.
   - Elapsed time or ringing state.
@@ -219,14 +219,14 @@
   - Expand/restore.
   - Fullscreen for video.
   - Hangup.
-- [ ] Integrate it in `apps/rain/lib/presentation/screens/home_screen.dart` as an app-scoped overlay above chat content.
-- [ ] Ensure it respects safe areas on Android and window title/header spacing on Windows.
-- [ ] Remove the old bottom minimized chip behavior from `rain_call_overlay.dart`.
-- [ ] Add widget tests:
+- [x] Integrate it in `apps/rain/lib/presentation/screens/home_screen.dart` as an app-scoped overlay above chat content.
+- [x] Ensure it respects safe areas on Android and window title/header spacing on Windows.
+- [x] Remove the old bottom minimized chip behavior from `rain_call_overlay.dart`.
+- [x] Add widget tests:
   - Active call renders top manager.
   - Manager remains visible when media panel is hidden.
   - Hangup and toggles dispatch existing runtime actions.
-- [ ] Commit with message: `feat: add top call manager bar`.
+- [x] Commit with message: `feat: add top call manager bar`.
 
 ## Phase 09: Video Layout Modes
 

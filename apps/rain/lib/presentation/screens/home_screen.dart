@@ -27,6 +27,7 @@ import 'package:rain/presentation/theme/rain_theme.dart';
 import 'package:rain/presentation/widgets/app_components.dart';
 import 'package:rain/presentation/widgets/chat_composer.dart';
 import 'package:rain/presentation/widgets/app_dialogs.dart';
+import 'package:rain/presentation/widgets/calls/rain_call_manager_bar.dart';
 import 'package:rain/presentation/widgets/calls/rain_call_overlay.dart';
 import 'package:rain/presentation/widgets/rain_chat_widgets.dart';
 
@@ -712,11 +713,42 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
               onSelectOutputRoute: _selectVoiceOutputRoute,
               onMinimize: () =>
                   ref.read(callSurfaceProvider.notifier).minimize(),
-              onExpand: () => ref.read(callSurfaceProvider.notifier).restore(),
+              onExpand: () => _toggleCallSurfacePanel(callSurface),
+            ),
+          ),
+        if (callSurface.isVisible && voiceCall.phase != VoiceCallPhase.idle)
+          Positioned(
+            left: isCompact ? 0 : 321,
+            right: 0,
+            top: 0,
+            child: RainCallManagerBar(
+              state: voiceCall,
+              surface: callSurface,
+              displayName: _voiceCallDisplayName(friends, voiceCall),
+              gender: _voiceCallGender(friends, voiceCall),
+              onToggleMute: () => _toggleVoiceMute(voiceCall),
+              onToggleCamera: () => _toggleVoiceCamera(voiceCall),
+              onToggleDeafen: () => _toggleVoiceDeafen(voiceCall),
+              onRestore: () => _toggleCallSurfacePanel(callSurface),
+              onFullscreen: () =>
+                  ref.read(callSurfaceProvider.notifier).enterFullscreen(),
+              onHangUp: voiceCall.phase == VoiceCallPhase.incomingRinging
+                  ? _rejectVoiceCall
+                  : _hangUpVoiceCall,
             ),
           ),
       ],
     );
+  }
+
+  void _toggleCallSurfacePanel(CallSurfaceState surface) {
+    final controller = ref.read(callSurfaceProvider.notifier);
+    if (surface.mode == CallSurfaceMode.expanded ||
+        surface.mode == CallSurfaceMode.fullscreen) {
+      controller.showManagerOnly();
+      return;
+    }
+    controller.restore();
   }
 
   Widget _buildCompactBody(AsyncValue<List<FriendRecord>> friends) {
