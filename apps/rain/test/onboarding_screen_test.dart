@@ -6,6 +6,8 @@ import 'package:rain/application/runtime/voice_call_state.dart';
 import 'package:rain/application/state/sound_event_providers.dart';
 import 'package:rain/infrastructure/services/app_settings_store.dart';
 import 'package:rain/infrastructure/services/sound_effects_service.dart';
+import 'package:rain/presentation/branding/rain_peer_core_mark.dart';
+import 'package:rain/presentation/branding/rain_streak_surface.dart';
 import 'package:rain/presentation/screens/onboarding_screen.dart';
 
 void main() {
@@ -26,6 +28,28 @@ void main() {
       find.byType(EditableText).first,
     );
     expect(editable.controller.text, 'alice_1');
+  });
+
+  testWidgets('auth surface uses Rain Peer Core brand treatment', (
+    WidgetTester tester,
+  ) async {
+    await tester.pumpWidget(
+      const ProviderScope(
+        child: MaterialApp(home: Scaffold(body: OnboardingScreen())),
+      ),
+    );
+    await tester.pumpAndSettle();
+
+    expect(
+      find.byKey(const ValueKey<String>('rain-auth-card-surface')),
+      findsOneWidget,
+    );
+    expect(
+      find.byKey(const ValueKey<String>('rain-auth-peer-core-mark')),
+      findsOneWidget,
+    );
+    expect(find.byType(RainPeerCoreMark), findsWidgets);
+    expect(find.byType(RainStreakSurface), findsWidgets);
   });
 
   testWidgets('focused credential field stays above the mobile keyboard', (

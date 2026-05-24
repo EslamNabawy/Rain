@@ -105,8 +105,8 @@
 
 **Purpose:** Remove remaining old visual language from the maintained app without touching obsolete scaffolding.
 
-- [ ] Search for hardcoded old colors, gradients, and card styles in `apps/rain/lib/presentation`.
-- [ ] Rebrand these surfaces first:
+- [x] Search for hardcoded old colors, gradients, and card styles in `apps/rain/lib/presentation`.
+- [x] Rebrand these surfaces first:
   - Login/auth card.
   - Home shell header.
   - Chat empty state.
@@ -115,14 +115,14 @@
   - Connection status card.
   - File transfer rows.
   - Call failure banners.
-- [ ] Prefer existing Rain components:
+- [x] Prefer existing Rain components:
   - `RainStreakSurface`
   - `RainStateSurface`
   - `RainBackdrop`
   - `RainPeerCoreMark`
-- [ ] Avoid nested cards and oversized decorative panels.
-- [ ] Add focused widget tests for at least the auth screen, chat empty state, and call banner.
-- [ ] Commit with message: `feat: complete Rain surface rebrand`.
+- [x] Avoid nested cards and oversized decorative panels.
+- [x] Add focused widget tests for at least the auth screen, chat empty state, and call banner.
+- [x] Commit with message: `feat: complete Rain surface rebrand`.
 
 ## Phase 05: Rain Sound Asset Replacement
 

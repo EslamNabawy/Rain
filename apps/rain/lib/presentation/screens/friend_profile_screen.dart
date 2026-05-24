@@ -3,6 +3,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:rain_core/rain_core.dart';
 
 import 'package:rain/application/state/app_providers.dart';
+import 'package:rain/presentation/theme/rain_theme.dart';
 import 'package:rain/presentation/widgets/app_components.dart';
 import 'package:rain/presentation/widgets/app_dialogs.dart';
 import 'package:rain/presentation/widgets/rain_chat_widgets.dart';
@@ -55,7 +56,7 @@ class FriendProfileScreen extends ConsumerWidget {
                 RainAvatar(
                   name: friend.displayName,
                   size: 96,
-                  statusColor: isOnline ? const Color(0xFF2DD4A3) : null,
+                  statusColor: isOnline ? RainColors.peerMint : null,
                   gender: friend.gender?.name,
                 ),
                 const SizedBox(height: 16),
@@ -82,8 +83,8 @@ class FriendProfileScreen extends ConsumerWidget {
                       decoration: BoxDecoration(
                         shape: BoxShape.circle,
                         color: isOnline
-                            ? const Color(0xFF2DD4A3)
-                            : const Color(0xFF52646D),
+                            ? RainColors.peerMint
+                            : RainColors.quietLine,
                       ),
                     ),
                     const SizedBox(width: 8),
@@ -171,11 +172,11 @@ class FriendProfileScreen extends ConsumerWidget {
             ),
           ],
           if (friend.state == FriendState.pendingOutgoing) ...<Widget>[
-            Card(
+            const AppSectionCard(
               child: ListTile(
-                leading: const Icon(Icons.hourglass_top),
-                title: const Text('Request pending'),
-                subtitle: const Text('Waiting for them to accept'),
+                leading: Icon(Icons.hourglass_top),
+                title: Text('Request pending'),
+                subtitle: Text('Waiting for them to accept'),
               ),
             ),
             const SizedBox(height: 12),
@@ -205,7 +206,7 @@ class FriendProfileScreen extends ConsumerWidget {
             ),
           ],
           if (friend.state == FriendState.blockedByPeer) ...<Widget>[
-            const Card(
+            const AppSectionCard(
               child: ListTile(
                 leading: Icon(Icons.block_outlined),
                 title: Text('Blocked by peer'),

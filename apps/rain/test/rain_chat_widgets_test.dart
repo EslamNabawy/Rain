@@ -1364,6 +1364,11 @@ void main() {
       find.text('Call media could not connect. Try again.'),
       findsOneWidget,
     );
+    expect(
+      find.byKey(const ValueKey<String>('rain-call-panel-surface')),
+      findsOneWidget,
+    );
+    expect(find.byType(RainStreakSurface), findsWidgets);
     expect(find.textContaining('RTCRtpTransceiver'), findsNothing);
 
     await tester.tap(find.text('Retry'));

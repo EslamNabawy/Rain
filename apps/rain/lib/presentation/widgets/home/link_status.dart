@@ -50,7 +50,15 @@ class _MobileLinkStatusBar extends StatelessWidget {
                   scheme.surfaceContainerHighest.withValues(alpha: 0.62),
                 ),
                 borderRadius: BorderRadius.circular(16),
-                border: Border.all(color: status.color.withValues(alpha: 0.28)),
+                border: Border.all(
+                  color: Color.alphaBlend(
+                    status.color.withValues(alpha: 0.28),
+                    (scheme.brightness == Brightness.dark
+                            ? RainTextureTokens.cardBorderDark
+                            : RainTextureTokens.cardBorderLight)
+                        .withValues(alpha: 0.46),
+                  ),
+                ),
               ),
               child: Padding(
                 padding: const EdgeInsets.fromLTRB(12, 8, 8, 8),
@@ -232,10 +240,18 @@ class _LinkStatCard extends StatelessWidget {
       width: 118,
       padding: const EdgeInsets.all(10),
       decoration: BoxDecoration(
-        color: scheme.surfaceContainerHighest.withValues(alpha: 0.52),
-        borderRadius: BorderRadius.circular(8),
+        color: scheme.surface.withValues(
+          alpha: scheme.brightness == Brightness.dark ? 0.58 : 0.82,
+        ),
+        borderRadius: BorderRadius.circular(12),
         border: Border.all(
-          color: scheme.outlineVariant.withValues(alpha: 0.38),
+          color:
+              (scheme.brightness == Brightness.dark
+                      ? RainTextureTokens.cardBorderDark
+                      : RainTextureTokens.cardBorderLight)
+                  .withValues(
+                    alpha: scheme.brightness == Brightness.dark ? 0.50 : 0.82,
+                  ),
         ),
       ),
       child: Column(

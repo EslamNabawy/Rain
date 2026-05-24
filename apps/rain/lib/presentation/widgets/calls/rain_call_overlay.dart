@@ -6,6 +6,8 @@ import 'package:rain/application/runtime/video_call_renderers.dart';
 import 'package:rain/application/runtime/voice_call_state.dart';
 import 'package:rain/application/state/call_surface_providers.dart';
 import 'package:rain/presentation/branding/rain_peer_core_mark.dart';
+import 'package:rain/presentation/branding/rain_streak_surface.dart';
+import 'package:rain/presentation/theme/rain_theme.dart';
 import 'package:rain/presentation/widgets/calls/rain_call_controls.dart';
 import 'package:rain/presentation/widgets/rain_chat_widgets.dart';
 
@@ -183,143 +185,149 @@ class _RainExpandedCallPanel extends StatelessWidget {
     final canMinimize =
         state.phase != VoiceCallPhase.incomingRinging &&
         state.phase != VoiceCallPhase.failed;
+    final isDark = scheme.brightness == Brightness.dark;
+    final panelBorderColor = state.phase == VoiceCallPhase.failed
+        ? RainColors.errorCoral.withValues(alpha: 0.42)
+        : accent.withValues(alpha: 0.38);
 
     return Material(
       color: Colors.transparent,
-      child: AnimatedContainer(
-        duration: const Duration(milliseconds: 180),
-        curve: Curves.easeOutCubic,
-        width: panelWidth,
-        constraints: BoxConstraints(
-          minHeight: math.min(panelWidth, maxHeight),
-          maxHeight: maxHeight,
-        ),
-        decoration: BoxDecoration(
-          color: scheme.surface.withValues(alpha: 0.98),
-          borderRadius: BorderRadius.circular(24),
-          border: Border.all(color: accent.withValues(alpha: 0.38)),
-          boxShadow: <BoxShadow>[
-            BoxShadow(
-              blurRadius: 34,
-              offset: const Offset(0, 18),
-              color: Colors.black.withValues(
-                alpha: scheme.brightness == Brightness.dark ? 0.38 : 0.16,
+      child: RainStreakSurface(
+        key: const ValueKey<String>('rain-call-panel-surface'),
+        borderRadius: BorderRadius.circular(24),
+        child: AnimatedContainer(
+          duration: RainMotion.callSurface,
+          curve: Curves.easeOutCubic,
+          width: panelWidth,
+          constraints: BoxConstraints(
+            minHeight: math.min(panelWidth, maxHeight),
+            maxHeight: maxHeight,
+          ),
+          decoration: BoxDecoration(
+            color: scheme.surface.withValues(alpha: isDark ? 0.94 : 0.98),
+            borderRadius: BorderRadius.circular(24),
+            border: Border.all(color: panelBorderColor),
+            boxShadow: <BoxShadow>[
+              BoxShadow(
+                blurRadius: 34,
+                offset: const Offset(0, 18),
+                color: Colors.black.withValues(alpha: isDark ? 0.38 : 0.16),
               ),
-            ),
-          ],
-        ),
-        child: ClipRRect(
-          borderRadius: BorderRadius.circular(24),
-          child: SingleChildScrollView(
-            padding: const EdgeInsets.all(18),
-            child: StreamBuilder<int>(
-              stream: state.isActive
-                  ? Stream<int>.periodic(
-                      const Duration(seconds: 1),
-                      (_) => DateTime.now().millisecondsSinceEpoch,
-                    )
-                  : null,
-              initialData: DateTime.now().millisecondsSinceEpoch,
-              builder: (BuildContext context, AsyncSnapshot<int> snapshot) {
-                final now =
-                    snapshot.data ?? DateTime.now().millisecondsSinceEpoch;
-                return Column(
-                  mainAxisSize: MainAxisSize.min,
-                  crossAxisAlignment: CrossAxisAlignment.stretch,
-                  children: <Widget>[
-                    Row(
-                      children: <Widget>[
-                        RainAvatar(
-                          name: displayName,
-                          size: 42,
-                          statusColor: accent,
-                          gender: gender,
-                        ),
-                        const SizedBox(width: 12),
-                        Expanded(
-                          child: Column(
-                            crossAxisAlignment: CrossAxisAlignment.start,
-                            children: <Widget>[
-                              Text(
-                                displayName,
-                                maxLines: 1,
-                                overflow: TextOverflow.ellipsis,
-                                style: Theme.of(context).textTheme.titleMedium
-                                    ?.copyWith(fontWeight: FontWeight.w900),
-                              ),
-                              Text(
-                                '@${state.peerId ?? displayName}',
-                                maxLines: 1,
-                                overflow: TextOverflow.ellipsis,
-                                style: Theme.of(context).textTheme.bodySmall
-                                    ?.copyWith(
-                                      color: scheme.onSurface.withValues(
-                                        alpha: 0.62,
+            ],
+          ),
+          child: ClipRRect(
+            borderRadius: BorderRadius.circular(24),
+            child: SingleChildScrollView(
+              padding: const EdgeInsets.all(18),
+              child: StreamBuilder<int>(
+                stream: state.isActive
+                    ? Stream<int>.periodic(
+                        const Duration(seconds: 1),
+                        (_) => DateTime.now().millisecondsSinceEpoch,
+                      )
+                    : null,
+                initialData: DateTime.now().millisecondsSinceEpoch,
+                builder: (BuildContext context, AsyncSnapshot<int> snapshot) {
+                  final now =
+                      snapshot.data ?? DateTime.now().millisecondsSinceEpoch;
+                  return Column(
+                    mainAxisSize: MainAxisSize.min,
+                    crossAxisAlignment: CrossAxisAlignment.stretch,
+                    children: <Widget>[
+                      Row(
+                        children: <Widget>[
+                          RainAvatar(
+                            name: displayName,
+                            size: 42,
+                            statusColor: accent,
+                            gender: gender,
+                          ),
+                          const SizedBox(width: 12),
+                          Expanded(
+                            child: Column(
+                              crossAxisAlignment: CrossAxisAlignment.start,
+                              children: <Widget>[
+                                Text(
+                                  displayName,
+                                  maxLines: 1,
+                                  overflow: TextOverflow.ellipsis,
+                                  style: Theme.of(context).textTheme.titleMedium
+                                      ?.copyWith(fontWeight: FontWeight.w900),
+                                ),
+                                Text(
+                                  '@${state.peerId ?? displayName}',
+                                  maxLines: 1,
+                                  overflow: TextOverflow.ellipsis,
+                                  style: Theme.of(context).textTheme.bodySmall
+                                      ?.copyWith(
+                                        color: scheme.onSurface.withValues(
+                                          alpha: 0.62,
+                                        ),
+                                        fontWeight: FontWeight.w700,
                                       ),
-                                      fontWeight: FontWeight.w700,
-                                    ),
-                              ),
-                            ],
+                                ),
+                              ],
+                            ),
                           ),
-                        ),
-                        if (canMinimize)
-                          IconButton(
-                            tooltip: 'Minimize call',
-                            onPressed: onMinimize,
-                            icon: const Icon(Icons.keyboard_arrow_down),
-                          ),
-                      ],
-                    ),
-                    const SizedBox(height: 24),
-                    _RainCallMediaStage(
-                      state: state,
-                      accent: accent,
-                      videoRenderers: videoRenderers,
-                    ),
-                    const SizedBox(height: 20),
-                    Text(
-                      rainVoiceCallTitle(state, displayName),
-                      textAlign: TextAlign.center,
-                      maxLines: 2,
-                      overflow: TextOverflow.ellipsis,
-                      style: Theme.of(context).textTheme.titleLarge?.copyWith(
-                        fontWeight: FontWeight.w900,
+                          if (canMinimize)
+                            IconButton(
+                              tooltip: 'Minimize call',
+                              onPressed: onMinimize,
+                              icon: const Icon(Icons.keyboard_arrow_down),
+                            ),
+                        ],
                       ),
-                    ),
-                    const SizedBox(height: 8),
-                    Text(
-                      rainVoiceCallDetail(state, now),
-                      textAlign: TextAlign.center,
-                      maxLines: 3,
-                      overflow: TextOverflow.ellipsis,
-                      style: Theme.of(context).textTheme.bodyMedium?.copyWith(
-                        color: scheme.onSurface.withValues(alpha: 0.70),
-                        fontWeight: FontWeight.w700,
-                      ),
-                    ),
-                    if (routeSummary != null && routeSummary!.isNotEmpty) ...[
-                      const SizedBox(height: 14),
-                      _RainRouteSummary(label: routeSummary!),
-                    ],
-                    const SizedBox(height: 24),
-                    Align(
-                      alignment: Alignment.center,
-                      child: RainCallControls(
+                      const SizedBox(height: 24),
+                      _RainCallMediaStage(
                         state: state,
-                        onAccept: onAccept,
-                        onReject: onReject,
-                        onHangUp: onHangUp,
-                        onRetry: onRetry,
-                        onToggleMute: onToggleMute,
-                        onToggleDeafen: onToggleDeafen,
-                        onToggleCamera: onToggleCamera,
-                        onSwitchCamera: onSwitchCamera,
-                        onSelectOutputRoute: onSelectOutputRoute,
+                        accent: accent,
+                        videoRenderers: videoRenderers,
                       ),
-                    ),
-                  ],
-                );
-              },
+                      const SizedBox(height: 20),
+                      Text(
+                        rainVoiceCallTitle(state, displayName),
+                        textAlign: TextAlign.center,
+                        maxLines: 2,
+                        overflow: TextOverflow.ellipsis,
+                        style: Theme.of(context).textTheme.titleLarge?.copyWith(
+                          fontWeight: FontWeight.w900,
+                        ),
+                      ),
+                      const SizedBox(height: 8),
+                      Text(
+                        rainVoiceCallDetail(state, now),
+                        textAlign: TextAlign.center,
+                        maxLines: 3,
+                        overflow: TextOverflow.ellipsis,
+                        style: Theme.of(context).textTheme.bodyMedium?.copyWith(
+                          color: scheme.onSurface.withValues(alpha: 0.70),
+                          fontWeight: FontWeight.w700,
+                        ),
+                      ),
+                      if (routeSummary != null && routeSummary!.isNotEmpty) ...[
+                        const SizedBox(height: 14),
+                        _RainRouteSummary(label: routeSummary!),
+                      ],
+                      const SizedBox(height: 24),
+                      Align(
+                        alignment: Alignment.center,
+                        child: RainCallControls(
+                          state: state,
+                          onAccept: onAccept,
+                          onReject: onReject,
+                          onHangUp: onHangUp,
+                          onRetry: onRetry,
+                          onToggleMute: onToggleMute,
+                          onToggleDeafen: onToggleDeafen,
+                          onToggleCamera: onToggleCamera,
+                          onSwitchCamera: onSwitchCamera,
+                          onSelectOutputRoute: onSelectOutputRoute,
+                        ),
+                      ),
+                    ],
+                  );
+                },
+              ),
             ),
           ),
         ),

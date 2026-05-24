@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:rain/presentation/branding/rain_state_surfaces.dart';
 import 'package:rain/presentation/theme/rain_theme.dart';
+import 'package:rain/presentation/widgets/app_components.dart';
 
 void main() {
   testWidgets('RainMistStateCard renders title message and action', (
@@ -62,6 +63,27 @@ void main() {
       ),
     );
     expect(border.top.color, isNot(RainTextureTokens.signalLineDark));
+  });
+
+  testWidgets('chat empty state helper renders Rain mist card', (
+    WidgetTester tester,
+  ) async {
+    await tester.pumpWidget(
+      const MaterialApp(
+        home: AppStateMessage(
+          icon: Icons.water_drop_outlined,
+          title: 'No messages yet',
+          message: 'Start the first message when the link is ready.',
+        ),
+      ),
+    );
+
+    expect(find.byType(RainMistStateCard), findsOneWidget);
+    expect(find.text('No messages yet'), findsOneWidget);
+    expect(
+      find.text('Start the first message when the link is ready.'),
+      findsOneWidget,
+    );
   });
 
   testWidgets('RainStreakSkeleton renders requested rows', (
