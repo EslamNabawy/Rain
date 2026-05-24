@@ -325,16 +325,9 @@ class _CallStatusText extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final scheme = Theme.of(context).colorScheme;
-    return StreamBuilder<int>(
-      stream: state.isActive
-          ? Stream<int>.periodic(
-              const Duration(seconds: 1),
-              (_) => DateTime.now().millisecondsSinceEpoch,
-            )
-          : null,
-      initialData: DateTime.now().millisecondsSinceEpoch,
-      builder: (BuildContext context, AsyncSnapshot<int> snapshot) {
-        final now = snapshot.data ?? DateTime.now().millisecondsSinceEpoch;
+    return RainCallTicker(
+      state: state,
+      builder: (BuildContext context, int now) {
         return Column(
           mainAxisSize: MainAxisSize.min,
           crossAxisAlignment: CrossAxisAlignment.start,

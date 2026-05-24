@@ -1181,6 +1181,90 @@ void main() {
       },
     );
 
+    test('Firebase remote mute survives stale media session updates', () async {
+      final adapter = RecordingVoiceSignalingAdapter();
+      final aliceBrain = TestSessionManager();
+      final bobBrain = TestSessionManager();
+      final bobDb = RainDatabase(NativeDatabase.memory());
+      addTearDown(bobDb.close);
+      await adapter.register('bob', 'bobpw');
+      await adapter.upsertFriendship('alice', 'bob');
+      await db
+          .into(db.friends)
+          .insert(
+            FriendsCompanion.insert(
+              username: 'bob',
+              displayName: 'Bob',
+              state: 'friend',
+              addedAt: 0,
+            ),
+          );
+      await bobDb
+          .into(bobDb.friends)
+          .insert(
+            FriendsCompanion.insert(
+              username: 'alice',
+              displayName: 'Alice',
+              state: 'friend',
+              addedAt: 0,
+            ),
+          );
+      final bob = RainIdentity(
+        username: 'bob',
+        displayName: 'Bob',
+        createdAt: DateTime.now().millisecondsSinceEpoch,
+        gender: RainGender.male,
+      );
+      final aliceRuntime = _runtimeFor(db, alice, adapter, brain: aliceBrain);
+      final bobRuntime = _runtimeFor(bobDb, bob, adapter, brain: bobBrain);
+      addTearDown(aliceRuntime.dispose);
+      addTearDown(bobRuntime.dispose);
+
+      await aliceRuntime.start();
+      await bobRuntime.start();
+      await aliceRuntime.startVoiceCall('bob');
+      await _waitForCondition(
+        () => bobRuntime.voiceCallState.phase == VoiceCallPhase.incomingRinging,
+        'Firebase voice invite to ring on callee',
+      );
+      await bobRuntime.acceptVoiceCall();
+      await _waitForCondition(
+        () =>
+            aliceRuntime.voiceCallState.phase == VoiceCallPhase.active &&
+            bobRuntime.voiceCallState.phase == VoiceCallPhase.active,
+        'Firebase voice call to become active before mute check',
+      );
+
+      final bobStartedAt = bobRuntime.voiceCallState.startedAt;
+      expect(bobStartedAt, isNotNull);
+
+      await aliceRuntime.setVoiceCallMuted(true);
+      expect(aliceRuntime.voiceCallState.isMuted, isTrue);
+      expect(aliceRuntime.voiceCallState.isRemoteMuted, isFalse);
+      await _waitForCondition(
+        () => bobRuntime.voiceCallState.isRemoteMuted,
+        'Firebase mute update to appear on the remote peer',
+      );
+
+      final bobConnection =
+          bobBrain.voiceMediaConnections['alice']! as _TestVoiceMediaConnection;
+      bobConnection.emitAudioLevel(
+        VoiceMediaAudioLevel(
+          remoteLevel: 0.42,
+          localLevel: 0.11,
+          updatedAt: DateTime.now().millisecondsSinceEpoch,
+          source: VoiceMediaAudioLevelSource.audioLevel,
+        ),
+      );
+      await _waitForCondition(
+        () => bobRuntime.voiceCallState.audioLevel.remoteLevel == 0.42,
+        'media session update to reach runtime',
+      );
+
+      expect(bobRuntime.voiceCallState.isRemoteMuted, isTrue);
+      expect(bobRuntime.voiceCallState.startedAt, bobStartedAt);
+    });
+
     test('outgoing microphone denial writes no Firebase invite', () async {
       final adapter = RecordingVoiceSignalingAdapter();
       final brain = TestSessionManager()
@@ -5545,6 +5629,10 @@ class _TestVoiceMediaConnection implements VoiceMediaConnection {
 
   void emitIceCandidate(VoiceIceCandidate candidate) {
     _iceController.add(candidate);
+  }
+
+  void emitAudioLevel(VoiceMediaAudioLevel level) {
+    _audioLevelController.add(level);
   }
 
   void _emitConnected() {

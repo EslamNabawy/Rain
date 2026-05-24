@@ -1,3 +1,5 @@
+import 'dart:async';
+
 import 'package:flutter/material.dart';
 
 import 'package:rain/application/runtime/voice_call_state.dart';
@@ -152,6 +154,104 @@ class RainCallControls extends StatelessWidget {
       pulseKey: '${state.callId}:${state.phase}:${capability.name}',
       child: control,
     );
+  }
+}
+
+typedef RainCallTickerBuilder =
+    Widget Function(BuildContext context, int nowMs);
+
+class RainCallTicker extends StatefulWidget {
+  const RainCallTicker({super.key, required this.state, required this.builder});
+
+  final VoiceCallState state;
+  final RainCallTickerBuilder builder;
+
+  @override
+  State<RainCallTicker> createState() => _RainCallTickerState();
+}
+
+class _RainCallTickerState extends State<RainCallTicker> {
+  Timer? _timer;
+  String? _activeTickerKey;
+  int _elapsedMs = 0;
+
+  @override
+  void initState() {
+    super.initState();
+    _syncTicker();
+  }
+
+  @override
+  void didUpdateWidget(covariant RainCallTicker oldWidget) {
+    super.didUpdateWidget(oldWidget);
+    _syncTicker();
+  }
+
+  @override
+  void dispose() {
+    _stopTicker();
+    super.dispose();
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return widget.builder(context, _nowMs());
+  }
+
+  void _syncTicker() {
+    final tickerKey = _tickerKey(widget.state);
+    if (tickerKey == null) {
+      _stopTicker();
+      return;
+    }
+    if (_activeTickerKey == tickerKey && _timer != null) {
+      return;
+    }
+    _stopTicker();
+    _activeTickerKey = tickerKey;
+    _elapsedMs = _elapsedSinceStart();
+    _timer = Timer.periodic(const Duration(seconds: 1), (_) {
+      if (mounted) {
+        setState(_advanceElapsed);
+      }
+    });
+  }
+
+  void _stopTicker() {
+    _timer?.cancel();
+    _timer = null;
+    _activeTickerKey = null;
+    _elapsedMs = 0;
+  }
+
+  int _nowMs() {
+    final startedAt = widget.state.startedAt;
+    if (_activeTickerKey != null && startedAt != null) {
+      return startedAt + _elapsedMs;
+    }
+    return DateTime.now().millisecondsSinceEpoch;
+  }
+
+  void _advanceElapsed() {
+    final timerElapsed = _elapsedMs + const Duration(seconds: 1).inMilliseconds;
+    final wallElapsed = _elapsedSinceStart();
+    _elapsedMs = wallElapsed > timerElapsed ? wallElapsed : timerElapsed;
+  }
+
+  int _elapsedSinceStart() {
+    final startedAt = widget.state.startedAt;
+    if (startedAt == null) {
+      return 0;
+    }
+    final elapsedMs = DateTime.now().millisecondsSinceEpoch - startedAt;
+    return elapsedMs < 0 ? 0 : elapsedMs;
+  }
+
+  String? _tickerKey(VoiceCallState state) {
+    if (!state.isActive || state.startedAt == null) {
+      return null;
+    }
+    return '${state.callId}:${state.sessionEpoch}:${state.startedAt}';
   }
 }
 

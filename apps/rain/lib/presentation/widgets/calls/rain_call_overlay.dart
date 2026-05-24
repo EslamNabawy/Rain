@@ -275,17 +275,9 @@ class _RainExpandedCallPanel extends StatelessWidget {
             borderRadius: BorderRadius.circular(24),
             child: SingleChildScrollView(
               padding: EdgeInsets.all(panelPadding),
-              child: StreamBuilder<int>(
-                stream: state.isActive
-                    ? Stream<int>.periodic(
-                        const Duration(seconds: 1),
-                        (_) => DateTime.now().millisecondsSinceEpoch,
-                      )
-                    : null,
-                initialData: DateTime.now().millisecondsSinceEpoch,
-                builder: (BuildContext context, AsyncSnapshot<int> snapshot) {
-                  final now =
-                      snapshot.data ?? DateTime.now().millisecondsSinceEpoch;
+              child: RainCallTicker(
+                state: state,
+                builder: (BuildContext context, int now) {
                   return Column(
                     key: ValueKey<String>(_popupLayoutKey(state)),
                     mainAxisSize: MainAxisSize.min,

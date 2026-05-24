@@ -972,17 +972,9 @@ class RainCallPanel extends StatelessWidget {
               ),
               const SizedBox(width: 12),
               Expanded(
-                child: StreamBuilder<int>(
-                  stream: state.isActive
-                      ? Stream<int>.periodic(
-                          const Duration(seconds: 1),
-                          (_) => DateTime.now().millisecondsSinceEpoch,
-                        )
-                      : null,
-                  initialData: DateTime.now().millisecondsSinceEpoch,
-                  builder: (BuildContext context, AsyncSnapshot<int> snapshot) {
-                    final now =
-                        snapshot.data ?? DateTime.now().millisecondsSinceEpoch;
+                child: RainCallTicker(
+                  state: state,
+                  builder: (BuildContext context, int now) {
                     return Column(
                       crossAxisAlignment: CrossAxisAlignment.start,
                       mainAxisSize: MainAxisSize.min,

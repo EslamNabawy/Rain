@@ -10,6 +10,7 @@ import 'package:rain/application/state/call_surface_providers.dart';
 import 'package:rain/application/audio/rain_sound_event.dart';
 import 'package:rain/presentation/branding/rain_streak_surface.dart';
 import 'package:rain/presentation/screens/home_screen.dart';
+import 'package:rain/presentation/widgets/calls/rain_call_controls.dart';
 import 'package:rain/presentation/widgets/calls/rain_call_overlay.dart';
 import 'package:rain/presentation/widgets/rain_chat_widgets.dart';
 import 'package:rain_core/rain_core.dart';
@@ -505,6 +506,115 @@ void main() {
 
     await tester.tap(find.byTooltip('Hang up'));
     expect(hungUp, isTrue);
+  });
+
+  testWidgets('voice call panel duration advances while active', (
+    WidgetTester tester,
+  ) async {
+    final startedAt = DateTime.now().millisecondsSinceEpoch;
+
+    await tester.pumpWidget(
+      MaterialApp(
+        home: Scaffold(
+          body: RainCallPanel(
+            state: VoiceCallState(
+              phase: VoiceCallPhase.active,
+              peerId: 'bob',
+              callId: 'call-1',
+              sessionEpoch: 1,
+              startedAt: startedAt,
+            ),
+            displayName: 'Bob',
+            onAccept: () {},
+            onReject: () {},
+            onHangUp: () {},
+            onRetry: () {},
+            onToggleMute: () {},
+          ),
+        ),
+      ),
+    );
+
+    expect(find.textContaining('0:00'), findsOneWidget);
+
+    await tester.pump(const Duration(seconds: 2));
+
+    expect(find.textContaining('0:02'), findsOneWidget);
+  });
+
+  testWidgets('voice call panel stops ticking after terminal state', (
+    WidgetTester tester,
+  ) async {
+    final startedAt = DateTime.now().millisecondsSinceEpoch;
+
+    Widget panel(VoiceCallState state) {
+      return MaterialApp(
+        home: Scaffold(
+          body: RainCallPanel(
+            state: state,
+            displayName: 'Bob',
+            onAccept: () {},
+            onReject: () {},
+            onHangUp: () {},
+            onRetry: () {},
+            onToggleMute: () {},
+          ),
+        ),
+      );
+    }
+
+    await tester.pumpWidget(
+      panel(
+        VoiceCallState(
+          phase: VoiceCallPhase.active,
+          peerId: 'bob',
+          callId: 'call-1',
+          sessionEpoch: 1,
+          startedAt: startedAt,
+        ),
+      ),
+    );
+    await tester.pump(const Duration(seconds: 1));
+    expect(find.textContaining('0:01'), findsOneWidget);
+
+    await tester.pumpWidget(
+      panel(
+        VoiceCallState(
+          phase: VoiceCallPhase.failed,
+          peerId: 'bob',
+          callId: 'call-1',
+          sessionEpoch: 1,
+          startedAt: startedAt,
+          failureReason: VoiceCallFailureReason.mediaConnectionFailed,
+        ),
+      ),
+    );
+    await tester.pump(const Duration(seconds: 2));
+
+    expect(find.textContaining('0:03'), findsNothing);
+    expect(
+      find.text('Call media could not connect. Try again.'),
+      findsOneWidget,
+    );
+  });
+
+  test('voice call detail separates local and remote mute labels', () {
+    const base = VoiceCallState(
+      phase: VoiceCallPhase.active,
+      peerId: 'bob',
+      callId: 'call-1',
+      sessionEpoch: 1,
+      startedAt: 1000,
+    );
+
+    expect(
+      rainVoiceCallDetail(base.copyWith(isMuted: true), 2500),
+      allOf(contains('Muted'), isNot(contains('Peer muted'))),
+    );
+    expect(
+      rainVoiceCallDetail(base.copyWith(isRemoteMuted: true), 2500),
+      contains('Peer muted'),
+    );
   });
 
   testWidgets('voice call deafen and output route actions are wired', (

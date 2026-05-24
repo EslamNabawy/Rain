@@ -176,29 +176,29 @@
 
 **Purpose:** Fix call duration stuck at `0` and remove remote mute flicker.
 
-- [ ] Audit `VoiceCallState.startedAt` ownership in `apps/rain/lib/application/runtime/voice_call_state.dart`.
-- [ ] Audit runtime mapping in `_applyVoiceSessionState`.
-- [ ] Audit timer displays in:
+- [x] Audit `VoiceCallState.startedAt` ownership in `apps/rain/lib/application/runtime/voice_call_state.dart`.
+- [x] Audit runtime mapping in `_applyVoiceSessionState`.
+- [x] Audit timer displays in:
   - `apps/rain/lib/presentation/widgets/calls/rain_call_overlay.dart`
   - `apps/rain/lib/presentation/widgets/calls/rain_call_manager_bar.dart`
   - `apps/rain/lib/presentation/widgets/calls/rain_call_controls.dart`
-- [ ] Define call clock rule:
+- [x] Define call clock rule:
   - The first transition to active sets `startedAt`.
   - No later state mapping can reset it to null or now unless a new call id starts.
   - UI duration is derived from a monotonic ticker and stable `startedAt`.
-- [ ] Define mute truth source:
+- [x] Define mute truth source:
   - Local mute controls only local `isMuted`.
   - Remote mute text uses remote peer mute updates only.
   - Session state cannot overwrite newer Firebase room mute values with stale defaults.
-- [ ] Add tests:
+- [x] Add tests:
   - active call duration increments past `0`.
   - local mute does not show `Peer muted`.
   - remote mute update appears once and does not flicker when session emits another state update.
   - terminal call stops ticking.
-- [ ] Acceptance:
+- [x] Acceptance:
   - Active voice/video calls show increasing duration.
   - Mute state labels are stable and do not twitch.
-- [ ] Commit with message: `fix: stabilize call clock and mute state`.
+- [x] Commit with message: `fix: stabilize call clock and mute state`.
 
 ## Phase 07: Disconnect And Reconnect Intent Reset
 

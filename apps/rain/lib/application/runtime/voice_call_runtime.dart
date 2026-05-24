@@ -1104,13 +1104,19 @@ extension VoiceCallRuntime on RainRuntimeController {
       _recordLateVoiceFrame(session, 'ignored active state after failure');
       return;
     }
+    final previous = _voiceCallState;
+    final isSameCall =
+        previous.callId == session.callId &&
+        previous.sessionEpoch == session.sessionEpoch;
     final now = sessionState.updatedAt;
     final error = sessionState.error;
     final failureReason = _voiceCallFailureReasonForSessionState(sessionState);
     final detail = _voiceCallDetailForSessionState(sessionState);
     final startedAt = mappedPhase == VoiceCallPhase.active
-        ? _voiceCallState.startedAt ?? now
-        : _voiceCallState.startedAt;
+        ? (isSameCall ? previous.startedAt : null) ?? now
+        : isSameCall
+        ? previous.startedAt
+        : null;
     final keepsLocalAudioControls = mappedPhase == VoiceCallPhase.active;
 
     if (mappedPhase == VoiceCallPhase.idle) {
@@ -1127,19 +1133,20 @@ extension VoiceCallRuntime on RainRuntimeController {
         sessionEpoch: session.sessionEpoch,
         mediaMode: sessionState.mediaMode,
         isOutgoing: isOutgoing,
-        isMuted: _voiceCallState.isMuted,
-        isCameraMuted: _voiceCallState.isCameraMuted,
-        isDeafened: keepsLocalAudioControls && _voiceCallState.isDeafened,
-        isRemoteMuted: sessionState.isRemoteMuted,
-        isRemoteCameraMuted: sessionState.isRemoteCameraMuted,
-        hasLocalVideo: _voiceCallState.hasLocalVideo,
-        hasRemoteVideo: _voiceCallState.hasRemoteVideo,
-        videoFirstFrameTimedOut: _voiceCallState.videoFirstFrameTimedOut,
-        outputRoute: keepsLocalAudioControls
-            ? _voiceCallState.outputRoute
+        isMuted: isSameCall && previous.isMuted,
+        isCameraMuted: isSameCall && previous.isCameraMuted,
+        isDeafened:
+            isSameCall && keepsLocalAudioControls && previous.isDeafened,
+        isRemoteMuted: isSameCall && previous.isRemoteMuted,
+        isRemoteCameraMuted: isSameCall && previous.isRemoteCameraMuted,
+        hasLocalVideo: isSameCall && previous.hasLocalVideo,
+        hasRemoteVideo: isSameCall && previous.hasRemoteVideo,
+        videoFirstFrameTimedOut: isSameCall && previous.videoFirstFrameTimedOut,
+        outputRoute: isSameCall && keepsLocalAudioControls
+            ? previous.outputRoute
             : VoiceCallOutputRoute.systemDefault,
-        outputRouteWarning: keepsLocalAudioControls
-            ? _voiceCallState.outputRouteWarning
+        outputRouteWarning: isSameCall && keepsLocalAudioControls
+            ? previous.outputRouteWarning
             : null,
         startedAt: startedAt,
         updatedAt: now,
