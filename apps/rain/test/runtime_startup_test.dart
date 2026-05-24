@@ -297,7 +297,7 @@ void main() {
 
   test('desktop shell close policy exits instead of hiding to tray', () {
     final source = File(
-      '../../apps/rain/lib/application/bootstrap/app_bootstrap.dart',
+      '../../apps/rain/lib/infrastructure/window/desktop_shell_controller.dart',
     ).readAsStringSync().replaceAll('\r\n', '\n');
 
     expect(source, contains('windowManager.setPreventClose(false)'));

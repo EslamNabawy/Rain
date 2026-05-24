@@ -985,7 +985,7 @@ git commit -m "chore: prepare Rain platform icons"
 **Files:**
 - Modify: docs if QA notes are added
 
-- [ ] **Step 1: Run normal validation**
+- [x] **Step 1: Run normal validation**
 
 ```powershell
 dart pub get
@@ -995,7 +995,7 @@ dart run melos run test
 
 Expected: all checks pass.
 
-- [ ] **Step 2: Manual visual pass**
+- [x] **Step 2: Manual visual pass**
 
 Run the app on Windows:
 
@@ -1015,7 +1015,7 @@ Inspect:
 - chat remains dense and readable
 - call controls remain obvious
 
-- [ ] **Step 3: Commit QA note if needed**
+- [x] **Step 3: Commit QA note if needed**
 
 If visual QA notes are created:
 
