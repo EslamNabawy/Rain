@@ -219,7 +219,10 @@ void main() {
     expect(fakes, hasLength(1));
     expect(fakes.single.configuredMode, PlayerMode.lowLatency);
     expect(fakes.single.releaseMode, ReleaseMode.loop);
-    expect(fakes.single.played.single.assetPath, 'sounds/call_incoming.wav');
+    expect(
+      fakes.single.played.single.assetPath,
+      'sounds/call_incoming_loop.wav',
+    );
     expect(fakes.single.played.single.volume, closeTo(0.21, 0.0001));
     expect(fakes.single.stopped, isFalse);
     expect(fakes.single.disposed, isFalse);
@@ -274,7 +277,7 @@ void main() {
     expect(fakes, hasLength(2));
     expect(fakes.first.stopped, isTrue);
     expect(fakes.first.disposed, isTrue);
-    expect(fakes.last.played.single.assetPath, 'sounds/call_incoming.wav');
+    expect(fakes.last.played.single.assetPath, 'sounds/call_incoming_loop.wav');
   });
 
   test('stopLoop stops and disposes the loop player', () async {
@@ -386,6 +389,26 @@ void main() {
     expect(
       rainSoundEffectAssetPaths.values.toSet(),
       hasLength(RainSoundEffect.values.length),
+    );
+  });
+
+  test('loop asset map covers ringtone and ringback effects', () {
+    expect(
+      rainSoundEffectLoopAssetPaths.keys,
+      containsAll(<RainSoundEffect>[
+        RainSoundEffect.callIncoming,
+        RainSoundEffect.callOutgoing,
+      ]),
+    );
+    expect(
+      rainSoundEffectLoopAssetPaths.values.toSet(),
+      hasLength(rainSoundEffectLoopAssetPaths.length),
+    );
+    expect(
+      rainSoundEffectAssetPaths.values.toSet().intersection(
+        rainSoundEffectLoopAssetPaths.values.toSet(),
+      ),
+      isEmpty,
     );
   });
 }

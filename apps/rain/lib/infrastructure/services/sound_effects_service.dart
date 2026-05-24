@@ -50,6 +50,12 @@ const Map<RainSoundEffect, String> rainSoundEffectAssetPaths =
       RainSoundEffect.undeafen: 'sounds/undeafen.wav',
     };
 
+const Map<RainSoundEffect, String> rainSoundEffectLoopAssetPaths =
+    <RainSoundEffect, String>{
+      RainSoundEffect.callIncoming: 'sounds/call_incoming_loop.wav',
+      RainSoundEffect.callOutgoing: 'sounds/call_outgoing_loop.wav',
+    };
+
 abstract interface class RainSoundPlayer {
   Future<void> configure({
     required PlayerMode mode,
@@ -249,7 +255,7 @@ class SoundEffectsService {
       );
       await player.setReleaseMode(ReleaseMode.loop);
       await player.playAsset(
-        _assetFor(effect),
+        _loopAssetFor(effect),
         volume: volume.clamp(0.0, 1.0).toDouble() * settings.soundEffectsVolume,
       );
     } on MissingPluginException {
@@ -332,6 +338,10 @@ String _loopPlayerId(String loopId) {
 
 String _assetFor(RainSoundEffect effect) {
   return rainSoundEffectAssetPaths[effect]!;
+}
+
+String _loopAssetFor(RainSoundEffect effect) {
+  return rainSoundEffectLoopAssetPaths[effect] ?? _assetFor(effect);
 }
 
 double _volumeFor(

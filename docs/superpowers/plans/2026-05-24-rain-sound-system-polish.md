@@ -465,6 +465,8 @@ git commit -m "feat: route chat and ui sounds through policy"
 
 **Purpose:** Replace or refine sounds so the product has one calm water identity.
 
+**Status:** Complete.
+
 **Files:**
 - Modify: `apps/rain/assets/sounds/*.wav`
 - Modify: `apps/rain/test/sound_effects_assets_test.dart`
