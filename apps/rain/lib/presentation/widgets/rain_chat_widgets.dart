@@ -3,6 +3,7 @@ import 'package:flutter_svg/flutter_svg.dart';
 import 'package:rain/application/runtime/media_device_settings.dart';
 import 'package:rain/application/runtime/video_call_renderers.dart';
 import 'package:rain/application/runtime/voice_call_state.dart';
+import 'package:rain/presentation/branding/rain_peer_core_mark.dart';
 import 'package:rain/presentation/widgets/calls/rain_call_controls.dart';
 
 const String _maleAvatarAsset = 'assets/gender avatar/man-avatar.svg';
@@ -639,40 +640,48 @@ class RainVideoCallStage extends StatelessWidget {
     required this.state,
     required this.accent,
     this.renderers,
+    this.layout = RainVideoCallStageLayout.expanded,
   });
 
   final VoiceCallState state;
   final Color accent;
   final VideoCallRenderers? renderers;
+  final RainVideoCallStageLayout layout;
 
   @override
   Widget build(BuildContext context) {
     final scheme = Theme.of(context).colorScheme;
-    return AspectRatio(
-      aspectRatio: 16 / 9,
-      child: Container(
-        key: const ValueKey<String>('rain-call-video-stage'),
-        decoration: BoxDecoration(
-          color: scheme.surfaceContainerHighest.withValues(alpha: 0.46),
-          borderRadius: BorderRadius.circular(20),
-          border: Border.all(color: accent.withValues(alpha: 0.30)),
+    final radius = BorderRadius.circular(layout.borderRadius);
+    final stage = Container(
+      key: const ValueKey<String>('rain-call-video-stage'),
+      decoration: BoxDecoration(
+        color: scheme.surfaceContainerHighest.withValues(
+          alpha: layout == RainVideoCallStageLayout.fullscreen ? 0.90 : 0.46,
         ),
-        child: ClipRRect(
-          borderRadius: BorderRadius.circular(20),
-          child: LayoutBuilder(
-            builder: (BuildContext context, BoxConstraints constraints) {
-              final previewWidth = constraints.maxWidth < 320 ? 96.0 : 124.0;
-              return Stack(
-                fit: StackFit.expand,
-                children: <Widget>[
-                  _RainRemoteVideoSurface(
-                    state: state,
-                    renderers: renderers,
-                    accent: accent,
-                  ),
+        borderRadius: radius,
+        border: Border.all(color: accent.withValues(alpha: 0.30)),
+      ),
+      child: ClipRRect(
+        borderRadius: radius,
+        child: LayoutBuilder(
+          builder: (BuildContext context, BoxConstraints constraints) {
+            final previewWidth = _localPreviewWidth(constraints.maxWidth);
+            return Stack(
+              fit: StackFit.expand,
+              children: <Widget>[
+                _RainRemoteVideoSurface(
+                  state: state,
+                  renderers: renderers,
+                  accent: accent,
+                ),
+                if (layout.showsLocalPreview)
                   Positioned(
-                    top: 10,
-                    right: 10,
+                    top: layout == RainVideoCallStageLayout.fullscreen
+                        ? 88
+                        : 10,
+                    right: layout == RainVideoCallStageLayout.fullscreen
+                        ? 18
+                        : 10,
                     width: previewWidth,
                     child: _RainLocalVideoPreview(
                       state: state,
@@ -680,13 +689,58 @@ class RainVideoCallStage extends StatelessWidget {
                       accent: accent,
                     ),
                   ),
-                ],
-              );
-            },
-          ),
+              ],
+            );
+          },
         ),
       ),
     );
+
+    if (layout == RainVideoCallStageLayout.fullscreen) {
+      return SizedBox.expand(
+        child: KeyedSubtree(
+          key: const ValueKey<String>('rain-call-video-fullscreen-layout'),
+          child: stage,
+        ),
+      );
+    }
+
+    if (layout == RainVideoCallStageLayout.pip) {
+      return AspectRatio(
+        key: const ValueKey<String>('rain-call-video-pip-layout'),
+        aspectRatio: 16 / 9,
+        child: stage,
+      );
+    }
+
+    return AspectRatio(
+      key: const ValueKey<String>('rain-call-video-expanded-layout'),
+      aspectRatio: 16 / 9,
+      child: stage,
+    );
+  }
+
+  double _localPreviewWidth(double maxWidth) {
+    if (layout == RainVideoCallStageLayout.fullscreen) {
+      return maxWidth < 520 ? 112 : 156;
+    }
+    return maxWidth < 320 ? 96 : 124;
+  }
+}
+
+enum RainVideoCallStageLayout {
+  expanded,
+  fullscreen,
+  pip;
+
+  bool get showsLocalPreview => this != RainVideoCallStageLayout.pip;
+
+  double get borderRadius {
+    return switch (this) {
+      RainVideoCallStageLayout.fullscreen => 0,
+      RainVideoCallStageLayout.pip => 18,
+      RainVideoCallStageLayout.expanded => 20,
+    };
   }
 }
 
@@ -816,11 +870,21 @@ class _RainVideoPlaceholder extends StatelessWidget {
         child: Column(
           mainAxisSize: MainAxisSize.min,
           children: <Widget>[
-            Icon(
-              icon,
-              size: compact ? 22 : 42,
-              color: accent.withValues(alpha: 0.78),
-            ),
+            if (!compact)
+              Padding(
+                padding: const EdgeInsets.only(bottom: 12),
+                child: RainPeerCoreAnimatedMark(
+                  key: const ValueKey<String>('rain-call-video-peer-core-mark'),
+                  size: 56,
+                  animate: true,
+                ),
+              )
+            else
+              Icon(
+                icon,
+                size: compact ? 22 : 42,
+                color: accent.withValues(alpha: 0.78),
+              ),
             SizedBox(height: compact ? 4 : 10),
             Padding(
               padding: EdgeInsets.symmetric(horizontal: compact ? 6 : 14),

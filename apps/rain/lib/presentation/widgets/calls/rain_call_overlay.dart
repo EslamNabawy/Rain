@@ -59,9 +59,35 @@ class RainCallOverlay extends StatelessWidget {
 
     return LayoutBuilder(
       builder: (BuildContext context, BoxConstraints constraints) {
-        if (surface.mode == CallSurfaceMode.managerOnly ||
-            surface.mode == CallSurfaceMode.pip) {
+        if (surface.mode == CallSurfaceMode.managerOnly) {
           return const SizedBox.shrink();
+        }
+
+        if (surface.mode == CallSurfaceMode.fullscreen && state.isVideo) {
+          return _RainFullscreenVideoSurface(
+            state: state,
+            accent: rainVoiceCallAccent(context, state),
+            videoRenderers: videoRenderers,
+          );
+        }
+
+        if (surface.mode == CallSurfaceMode.pip && state.isVideo) {
+          return Align(
+            alignment: Alignment.topRight,
+            child: Padding(
+              padding: const EdgeInsets.fromLTRB(16, 96, 16, 0),
+              child: SizedBox(
+                key: const ValueKey<String>('rain-call-video-pip-window'),
+                width: _pipWidth(constraints.maxWidth),
+                child: RainVideoCallStage(
+                  state: state,
+                  accent: rainVoiceCallAccent(context, state),
+                  renderers: videoRenderers,
+                  layout: RainVideoCallStageLayout.pip,
+                ),
+              ),
+            ),
+          );
         }
 
         return Align(
@@ -118,6 +144,40 @@ class RainCallOverlay extends StatelessWidget {
       return 680;
     }
     return availableWidth < 520 ? 380 : 720;
+  }
+
+  double _pipWidth(double availableWidth) {
+    if (!availableWidth.isFinite || availableWidth <= 0) {
+      return 240;
+    }
+    return math.max(180, math.min(280, availableWidth * 0.42));
+  }
+}
+
+class _RainFullscreenVideoSurface extends StatelessWidget {
+  const _RainFullscreenVideoSurface({
+    required this.state,
+    required this.accent,
+    this.videoRenderers,
+  });
+
+  final VoiceCallState state;
+  final Color accent;
+  final VideoCallRenderers? videoRenderers;
+
+  @override
+  Widget build(BuildContext context) {
+    final scheme = Theme.of(context).colorScheme;
+    return ColoredBox(
+      key: const ValueKey<String>('rain-call-video-fullscreen-surface'),
+      color: scheme.surface,
+      child: RainVideoCallStage(
+        state: state,
+        accent: accent,
+        renderers: videoRenderers,
+        layout: RainVideoCallStageLayout.fullscreen,
+      ),
+    );
   }
 }
 
@@ -346,6 +406,7 @@ class _RainCallMediaStage extends StatelessWidget {
           state: state,
           accent: accent,
           renderers: videoRenderers,
+          layout: RainVideoCallStageLayout.expanded,
         ),
       ),
     );

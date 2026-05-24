@@ -1140,6 +1140,10 @@ void main() {
       find.byKey(const ValueKey<String>('rain-call-remote-video-placeholder')),
       findsOneWidget,
     );
+    expect(
+      find.byKey(const ValueKey<String>('rain-call-video-peer-core-mark')),
+      findsOneWidget,
+    );
     expect(_findRuntimeType('RTCVideoView'), findsNothing);
   });
 
@@ -1171,6 +1175,71 @@ void main() {
       findsOneWidget,
     );
     await renderers.dispose();
+  });
+
+  testWidgets('video overlay fullscreen fills the call viewport', (
+    WidgetTester tester,
+  ) async {
+    await _pumpCallOverlay(
+      tester,
+      _activeVoiceCall(mediaMode: CallMediaMode.video),
+      surfaceMode: CallSurfaceMode.fullscreen,
+    );
+
+    expect(
+      find.byKey(const ValueKey<String>('rain-call-video-fullscreen-surface')),
+      findsOneWidget,
+    );
+    expect(
+      find.byKey(const ValueKey<String>('rain-call-video-fullscreen-layout')),
+      findsOneWidget,
+    );
+    expect(
+      find.byKey(const ValueKey<String>('rain-call-local-video-placeholder')),
+      findsOneWidget,
+    );
+  });
+
+  testWidgets('video overlay pip shows only the remote media window', (
+    WidgetTester tester,
+  ) async {
+    await _pumpCallOverlay(
+      tester,
+      _activeVoiceCall(mediaMode: CallMediaMode.video),
+      surfaceMode: CallSurfaceMode.pip,
+    );
+
+    expect(
+      find.byKey(const ValueKey<String>('rain-call-video-pip-window')),
+      findsOneWidget,
+    );
+    expect(
+      find.byKey(const ValueKey<String>('rain-call-video-pip-layout')),
+      findsOneWidget,
+    );
+    expect(
+      find.byKey(const ValueKey<String>('rain-call-local-video-placeholder')),
+      findsNothing,
+    );
+  });
+
+  testWidgets('call overlay manager-only hides the media panel', (
+    WidgetTester tester,
+  ) async {
+    await _pumpCallOverlay(
+      tester,
+      _activeVoiceCall(mediaMode: CallMediaMode.video),
+      surfaceMode: CallSurfaceMode.managerOnly,
+    );
+
+    expect(
+      find.byKey(const ValueKey<String>('rain-call-video-stage')),
+      findsNothing,
+    );
+    expect(
+      find.byKey(const ValueKey<String>('rain-call-panel-surface')),
+      findsNothing,
+    );
   });
 
   testWidgets('video overlay camera muted states are visible', (
@@ -1242,7 +1311,7 @@ void main() {
                   surface: const CallSurfaceState.visible(
                     peerId: 'bob',
                     callId: 'call-1',
-                    mode: CallSurfaceMode.pip,
+                    mode: CallSurfaceMode.managerOnly,
                     mediaMode: CallMediaMode.video,
                   ),
                   displayName: 'Bob',
@@ -1471,6 +1540,7 @@ Future<void> _pumpCallOverlay(
   WidgetTester tester,
   VoiceCallState state, {
   VideoCallRenderers? videoRenderers,
+  CallSurfaceMode surfaceMode = CallSurfaceMode.expanded,
 }) async {
   await tester.pumpWidget(
     MaterialApp(
@@ -1483,6 +1553,8 @@ Future<void> _pumpCallOverlay(
                 surface: CallSurfaceState.visible(
                   peerId: state.peerId ?? 'bob',
                   callId: state.callId ?? 'call-1',
+                  mode: surfaceMode,
+                  mediaMode: state.mediaMode,
                 ),
                 displayName: 'Bob',
                 videoRenderers: videoRenderers,

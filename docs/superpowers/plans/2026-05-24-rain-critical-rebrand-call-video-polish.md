@@ -232,23 +232,23 @@
 
 **Purpose:** Make video calls usable: expanded, fullscreen, picture-in-picture, then hidden while the manager remains.
 
-- [ ] Update `apps/rain/lib/presentation/widgets/rain_chat_widgets.dart`.
-- [ ] Update `apps/rain/lib/presentation/widgets/calls/rain_call_overlay.dart`.
-- [ ] Keep `apps/rain/lib/application/runtime/video_call_renderers.dart` focused on renderer lifecycle only.
-- [ ] Implement layout modes:
+- [x] Update `apps/rain/lib/presentation/widgets/rain_chat_widgets.dart`.
+- [x] Update `apps/rain/lib/presentation/widgets/calls/rain_call_overlay.dart`.
+- [x] Keep `apps/rain/lib/application/runtime/video_call_renderers.dart` focused on renderer lifecycle only.
+- [x] Implement layout modes:
   - `expanded`: centered video/call popup.
   - `fullscreen`: remote video fills viewport with safe top controls.
   - `pip`: small draggable or fixed floating video window above chat content.
   - `managerOnly`: no video window, top manager still visible.
-- [ ] Local preview:
+- [x] Local preview:
   - Show as a small preview in expanded/fullscreen.
   - Hide or shrink in pip.
   - Never cover the hangup/control area.
-- [ ] Empty/camera-off states:
+- [x] Empty/camera-off states:
   - Use Peer Core animated/audio meter surface.
   - Show clear camera-off/mic-only state.
-- [ ] Add tests for all layout transitions.
-- [ ] Commit with message: `feat: add video call layout modes`.
+- [x] Add tests for all layout transitions.
+- [x] Commit with message: `feat: add video call layout modes`.
 
 ## Phase 10: Expanded Call Popup Redesign
 
