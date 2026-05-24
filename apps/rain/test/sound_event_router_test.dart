@@ -425,6 +425,11 @@ void main() {
       expect(effects.played.map((entry) => entry.effect), <RainSoundEffect>[
         RainSoundEffect.callConnected,
       ]);
+      expect(effects.operations, <String>[
+        'startLoop:rain-call-outgoing:callOutgoing',
+        'stopAllLoops',
+        'play:callConnected',
+      ]);
     });
 
     test('outgoing ringback stops on failure', () async {
@@ -440,6 +445,92 @@ void main() {
       expect(effects.activeLoops, isEmpty);
       expect(effects.played.single.effect, RainSoundEffect.callFailed);
     });
+
+    test('stale terminal event cannot stop a newer ringtone loop', () async {
+      final effects = _RecordingSoundEffectsService();
+      final router = _router(effects);
+
+      await router.dispatch(
+        RainSoundEvent.callIncomingStarted(callId: 'call-old'),
+      );
+      await router.dispatch(
+        RainSoundEvent.callIncomingStarted(callId: 'call-new'),
+      );
+      await router.dispatch(RainSoundEvent.callFailed(callId: 'call-old'));
+
+      expect(effects.loopStarts, hasLength(2));
+      expect(effects.loopStops, <String>['rain-call-incoming']);
+      expect(effects.stopAllLoopCalls, 0);
+      expect(effects.played, isEmpty);
+      expect(effects.activeLoops, <String, RainSoundEffect>{
+        'rain-call-incoming': RainSoundEffect.callIncoming,
+      });
+      expect(router.diagnostics.lastSuppressedReason, 'staleCallLifecycle');
+    });
+
+    test('duplicate call lifecycle sounds are ignored', () async {
+      final effects = _RecordingSoundEffectsService();
+      final base = DateTime.utc(2026, 5, 24, 12);
+      final router = _router(effects);
+
+      await router.dispatch(
+        RainSoundEvent.callConnected(
+          callId: 'call-1',
+          sessionEpoch: 7,
+          occurredAt: base,
+        ),
+      );
+      await router.dispatch(
+        RainSoundEvent.callConnected(
+          callId: 'call-1',
+          sessionEpoch: 7,
+          occurredAt: base.add(const Duration(seconds: 2)),
+        ),
+      );
+
+      expect(effects.played.map((entry) => entry.effect), <RainSoundEffect>[
+        RainSoundEffect.callConnected,
+      ]);
+      expect(router.diagnostics.lastSuppressedReason, 'duplicateCallLifecycle');
+    });
+
+    test(
+      'rapid repeated call failures stop loops but throttle failure sounds',
+      () async {
+        final effects = _RecordingSoundEffectsService();
+        final base = DateTime.utc(2026, 5, 24, 12);
+        final router = _router(effects);
+
+        await router.dispatch(
+          RainSoundEvent.callOutgoingStarted(
+            callId: 'call-1',
+            occurredAt: base,
+          ),
+        );
+        await router.dispatch(
+          RainSoundEvent.callFailed(callId: 'call-1', occurredAt: base),
+        );
+        await router.dispatch(
+          RainSoundEvent.callOutgoingStarted(
+            callId: 'call-2',
+            occurredAt: base.add(const Duration(milliseconds: 200)),
+          ),
+        );
+        await router.dispatch(
+          RainSoundEvent.callFailed(
+            callId: 'call-2',
+            occurredAt: base.add(const Duration(milliseconds: 250)),
+          ),
+        );
+
+        expect(effects.stopAllLoopCalls, 2);
+        expect(effects.activeLoops, isEmpty);
+        expect(effects.played.map((entry) => entry.effect), <RainSoundEffect>[
+          RainSoundEffect.callFailed,
+        ]);
+        expect(router.diagnostics.lastSuppressedReason, 'callFailureWindow');
+      },
+    );
 
     test(
       'dispose stops ringtone loops for app-close and logout cleanup',
@@ -493,6 +584,31 @@ void main() {
       expect(router.diagnostics.lastSuppressedReason, 'soundEffectsDisabled');
     });
 
+    test(
+      'same ringing call can restart its loop after sounds are re-enabled',
+      () async {
+        final effects = _RecordingSoundEffectsService();
+        var settings = const AppAudioSettings();
+        final router = _router(effects, settingsLoader: () => settings);
+
+        await router.dispatch(
+          RainSoundEvent.callIncomingStarted(callId: 'call-1'),
+        );
+        settings = const AppAudioSettings(soundEffectsEnabled: false);
+        await router.dispatch(RainSoundEvent.chatSend(conversationId: 'bob'));
+        settings = const AppAudioSettings();
+        await router.dispatch(
+          RainSoundEvent.callIncomingStarted(callId: 'call-1'),
+        );
+
+        expect(effects.loopStarts, hasLength(2));
+        expect(effects.stopAllLoopCalls, 1);
+        expect(effects.activeLoops, <String, RainSoundEffect>{
+          'rain-call-incoming': RainSoundEffect.callIncoming,
+        });
+      },
+    );
+
     test('respects sound and call sound settings at dispatch time', () async {
       final effects = _RecordingSoundEffectsService();
       var settings = const AppAudioSettings(soundEffectsEnabled: false);
@@ -507,6 +623,31 @@ void main() {
 
       expect(effects.played.single.effect, RainSoundEffect.send);
     });
+
+    test(
+      'global sound setting blocks mute and deafen control sounds',
+      () async {
+        final effects = _RecordingSoundEffectsService();
+        final router = _router(
+          effects,
+          settingsLoader: () =>
+              const AppAudioSettings(soundEffectsEnabled: false),
+          callState: const VoiceCallState(
+            phase: VoiceCallPhase.active,
+            callId: 'call-1',
+            peerId: 'bob',
+          ),
+        );
+
+        await router.dispatch(RainSoundEvent.callControlMute(callId: 'call-1'));
+        await router.dispatch(
+          RainSoundEvent.callControlDeafen(callId: 'call-1'),
+        );
+
+        expect(effects.played, isEmpty);
+        expect(router.diagnostics.lastSuppressedReason, 'soundEffectsDisabled');
+      },
+    );
 
     test(
       'catches sound-service failures without throwing into UI flows',
@@ -592,6 +733,7 @@ final class _RecordingSoundEffectsService extends SoundEffectsService {
   final List<_PlayedSound> played = <_PlayedSound>[];
   final List<_StartedLoop> loopStarts = <_StartedLoop>[];
   final List<String> loopStops = <String>[];
+  final List<String> operations = <String>[];
   final Map<String, RainSoundEffect> activeLoops = <String, RainSoundEffect>{};
   var playAttempts = 0;
   var stopAllLoopCalls = 0;
@@ -612,6 +754,7 @@ final class _RecordingSoundEffectsService extends SoundEffectsService {
     if (throwOnPlay) {
       throw StateError('sound device unavailable');
     }
+    operations.add('play:${effect.name}');
     played.add(
       _PlayedSound(
         effect: effect,
@@ -627,6 +770,7 @@ final class _RecordingSoundEffectsService extends SoundEffectsService {
     required String loopId,
     required double volume,
   }) async {
+    operations.add('startLoop:$loopId:${effect.name}');
     loopStarts.add(
       _StartedLoop(effect: effect, loopId: loopId, volume: volume),
     );
@@ -635,12 +779,14 @@ final class _RecordingSoundEffectsService extends SoundEffectsService {
 
   @override
   Future<void> stopLoop(String loopId) async {
+    operations.add('stopLoop:$loopId');
     loopStops.add(loopId);
     activeLoops.remove(loopId);
   }
 
   @override
   Future<void> stopAllLoops() async {
+    operations.add('stopAllLoops');
     stopAllLoopCalls += 1;
     activeLoops.clear();
   }

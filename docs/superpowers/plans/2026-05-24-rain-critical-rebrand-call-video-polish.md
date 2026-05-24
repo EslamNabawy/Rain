@@ -164,22 +164,22 @@
 
 **Purpose:** Make sounds reliable under real chat/call behavior, including message bursts and music playing on the phone.
 
-- [ ] Review `apps/rain/lib/application/audio/sound_event_router.dart`.
-- [ ] Review `apps/rain/lib/infrastructure/services/sound_effects_service.dart`.
-- [ ] Tune policies for:
+- [x] Review `apps/rain/lib/application/audio/sound_event_router.dart`.
+- [x] Review `apps/rain/lib/infrastructure/services/sound_effects_service.dart`.
+- [x] Tune policies for:
   - Message burst compression without treating normal fast chat as abuse.
   - No overlapping ringtone/ringback loops.
   - No repeated failure sounds spamming the user.
   - No UI click sounds during active voice/video call unless explicitly allowed.
   - Audio focus mixing that does not pause external music for short UI sounds.
-- [ ] Add or update tests for:
+- [x] Add or update tests for:
   - Consecutive incoming messages compress into a tasteful sound pattern.
   - Call ringing owns the ringtone loop until accept/reject/hangup/timeout.
   - Call connected stops ringback before playing connected sound.
   - Failure sounds throttle correctly.
   - Deafen/mute sounds do not play when global sound is disabled.
-- [ ] Add QA notes for Android music playback while Rain sounds play.
-- [ ] Commit with message: `fix: harden Rain sound playback policy`.
+- [x] Add QA notes for Android music playback while Rain sounds play.
+- [x] Commit with message: `fix: harden Rain sound playback policy`.
 
 ## Phase 07: Call Surface State Model Rewrite
 

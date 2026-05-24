@@ -20,6 +20,8 @@ const Duration _uiActionWindow = Duration(milliseconds: 140);
 const Duration _warningKeyWindow = Duration(milliseconds: 1500);
 const Duration _warningRollingWindow = Duration(seconds: 5);
 const int _maxWarningsPerRollingWindow = 3;
+const Duration _callLifecycleDedupeWindow = Duration(minutes: 10);
+const Duration _callFailureWindow = Duration(milliseconds: 1200);
 const String _incomingCallLoopId = 'rain-call-incoming';
 const String _outgoingCallLoopId = 'rain-call-outgoing';
 const double _incomingCallLoopVolume = 0.42;
@@ -46,6 +48,7 @@ final class SoundEventRouter {
   final List<DateTime> _recentReceivePlays = <DateTime>[];
   final Map<String, DateTime> _lastWarningByKey = <String, DateTime>{};
   final List<DateTime> _recentWarningPlays = <DateTime>[];
+  final Map<String, DateTime> _playedCallLifecycleByKey = <String, DateTime>{};
   DateTime? _lastDispatchedAt;
   String? _incomingLoopCallId;
   String? _outgoingLoopCallId;
@@ -85,11 +88,15 @@ final class SoundEventRouter {
         return;
       }
       final now = event.occurredAt ?? _clock();
+      if (_isTerminalCallLifecycle(event.kind)) {
+        await _stopLoopsForTerminalEvent(event);
+      }
       final policySuppression = _policySuppressionReason(event, now);
       if (policySuppression != null) {
         _lastSuppressedReason = policySuppression;
         return;
       }
+      _lastSuppressedReason = null;
       _recordAllowedEvent(event, now);
       _lastDispatchedAt = now;
       if (event.kind == RainSoundEventKind.callIncomingStarted) {
@@ -99,9 +106,6 @@ final class SoundEventRouter {
       if (event.kind == RainSoundEventKind.callOutgoingStarted) {
         await _startOutgoingLoop(event);
         return;
-      }
-      if (_isTerminalCallLifecycle(event.kind)) {
-        await stopAllLoops();
       }
       await _effects.play(
         _effectFor(event),
@@ -183,6 +187,10 @@ final class SoundEventRouter {
   }
 
   String? _policySuppressionReason(RainSoundEvent event, DateTime now) {
+    final lifecycleSuppression = _callLifecycleSuppressionReason(event, now);
+    if (lifecycleSuppression != null) {
+      return lifecycleSuppression;
+    }
     return switch (event.kind) {
       RainSoundEventKind.chatSend => _kindCooldownSuppressionReason(
         event.kind,
@@ -202,7 +210,6 @@ final class SoundEventRouter {
       RainSoundEventKind.callOutgoingStarted ||
       RainSoundEventKind.callConnected ||
       RainSoundEventKind.callEnded ||
-      RainSoundEventKind.callFailed ||
       RainSoundEventKind.callControlMute ||
       RainSoundEventKind.callControlUnmute ||
       RainSoundEventKind.callControlDeafen ||
@@ -210,6 +217,12 @@ final class SoundEventRouter {
       RainSoundEventKind.callControlCameraMute ||
       RainSoundEventKind.callControlCameraUnmute ||
       RainSoundEventKind.callRouteChanged => null,
+      RainSoundEventKind.callFailed => _kindCooldownSuppressionReason(
+        event.kind,
+        now,
+        _callFailureWindow,
+        'callFailureWindow',
+      ),
     };
   }
 
@@ -261,8 +274,33 @@ final class SoundEventRouter {
     return null;
   }
 
+  String? _callLifecycleSuppressionReason(RainSoundEvent event, DateTime now) {
+    if (!event.isCallLifecycleEvent) {
+      return null;
+    }
+    if (!_shouldDedupeCallLifecycle(event.kind)) {
+      return null;
+    }
+    if (_isTerminalCallLifecycle(event.kind) &&
+        _hasActiveLoopForDifferentCall(event.callId)) {
+      return 'staleCallLifecycle';
+    }
+    _pruneMapOlderThan(
+      _playedCallLifecycleByKey,
+      now,
+      _callLifecycleDedupeWindow,
+    );
+    if (_playedCallLifecycleByKey.containsKey(_callLifecycleKey(event))) {
+      return 'duplicateCallLifecycle';
+    }
+    return null;
+  }
+
   void _recordAllowedEvent(RainSoundEvent event, DateTime now) {
     _lastPlayedByKind[event.kind] = now;
+    if (_shouldDedupeCallLifecycle(event.kind)) {
+      _playedCallLifecycleByKey[_callLifecycleKey(event)] = now;
+    }
     switch (event.kind) {
       case RainSoundEventKind.chatReceive:
         final conversationId = event.conversationId;
@@ -298,8 +336,10 @@ final class SoundEventRouter {
     if (callId == null || _incomingLoopCallId == callId) {
       return;
     }
-    await _effects.stopLoop(_outgoingCallLoopId);
-    _outgoingLoopCallId = null;
+    if (_outgoingLoopCallId != null) {
+      await _effects.stopLoop(_outgoingCallLoopId);
+      _outgoingLoopCallId = null;
+    }
     if (_incomingLoopCallId != null) {
       await _effects.stopLoop(_incomingCallLoopId);
       _incomingLoopCallId = null;
@@ -317,8 +357,10 @@ final class SoundEventRouter {
     if (callId == null || _outgoingLoopCallId == callId) {
       return;
     }
-    await _effects.stopLoop(_incomingCallLoopId);
-    _incomingLoopCallId = null;
+    if (_incomingLoopCallId != null) {
+      await _effects.stopLoop(_incomingCallLoopId);
+      _incomingLoopCallId = null;
+    }
     if (_outgoingLoopCallId != null) {
       await _effects.stopLoop(_outgoingCallLoopId);
       _outgoingLoopCallId = null;
@@ -330,10 +372,42 @@ final class SoundEventRouter {
     );
     _outgoingLoopCallId = callId;
   }
+
+  Future<void> _stopLoopsForTerminalEvent(RainSoundEvent event) async {
+    final callId = event.callId;
+    if (callId == null) {
+      return;
+    }
+    if (_incomingLoopCallId != callId && _outgoingLoopCallId != callId) {
+      return;
+    }
+    await stopAllLoops();
+  }
+
+  bool _hasActiveLoopForDifferentCall(String? callId) {
+    final activeCallIds = <String>{?_incomingLoopCallId, ?_outgoingLoopCallId};
+    if (activeCallIds.isEmpty) {
+      return false;
+    }
+    return callId == null || !activeCallIds.contains(callId);
+  }
 }
 
 void _pruneOlderThan(List<DateTime> items, DateTime now, Duration window) {
   items.removeWhere((DateTime item) => now.difference(item) >= window);
+}
+
+void _pruneMapOlderThan(
+  Map<String, DateTime> items,
+  DateTime now,
+  Duration window,
+) {
+  items.removeWhere((_, DateTime item) => now.difference(item) >= window);
+}
+
+String _callLifecycleKey(RainSoundEvent event) {
+  return '${event.kind.name}:${event.callId ?? 'none'}:'
+      '${event.sessionEpoch ?? 'none'}';
 }
 
 String? _settingsSuppressionReason(
@@ -354,6 +428,27 @@ bool _isCallSoundEvent(RainSoundEvent event) {
 }
 
 bool _isTerminalCallLifecycle(RainSoundEventKind kind) {
+  return switch (kind) {
+    RainSoundEventKind.callConnected ||
+    RainSoundEventKind.callEnded ||
+    RainSoundEventKind.callFailed => true,
+    RainSoundEventKind.chatSend ||
+    RainSoundEventKind.chatReceive ||
+    RainSoundEventKind.uiAction ||
+    RainSoundEventKind.warning ||
+    RainSoundEventKind.callIncomingStarted ||
+    RainSoundEventKind.callOutgoingStarted ||
+    RainSoundEventKind.callControlMute ||
+    RainSoundEventKind.callControlUnmute ||
+    RainSoundEventKind.callControlDeafen ||
+    RainSoundEventKind.callControlUndeafen ||
+    RainSoundEventKind.callControlCameraMute ||
+    RainSoundEventKind.callControlCameraUnmute ||
+    RainSoundEventKind.callRouteChanged => false,
+  };
+}
+
+bool _shouldDedupeCallLifecycle(RainSoundEventKind kind) {
   return switch (kind) {
     RainSoundEventKind.callConnected ||
     RainSoundEventKind.callEnded ||

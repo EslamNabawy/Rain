@@ -10,9 +10,9 @@ must be verified on real hardware.
 ## Build Under Test
 
 ```text
-Branch: codex/video-call-v2
-Baseline commit before Phase 09: 2b3b3b1
-Recorded at: 2026-05-24T08:49:07+03:00
+Branch: codex/rain-rebrand-implementation
+Baseline commit before Phase 06: 88e6f67
+Recorded at: 2026-05-24T18:51:27+03:00
 ```
 
 ## Automated Assertions
@@ -25,6 +25,17 @@ Recorded at: 2026-05-24T08:49:07+03:00
   disposal.
 - Active WebRTC calls suppress non-critical chat/action sounds through the
   sound event router; call-control sounds remain quiet.
+- Consecutive incoming messages are compressed into a bounded sound pattern,
+  not silenced forever and not played for every message in a burst.
+- A terminal event only stops the ringtone/ringback loop for its own `callId`;
+  stale terminal events from older calls cannot kill a newer ringing call.
+- Call lifecycle sounds are deduped by lifecycle kind, `callId`, and
+  `sessionEpoch` so repeated signaling snapshots do not replay connected or
+  failed sounds.
+- Rapid repeated call failures stop their matching loops but throttle the
+  failure sound.
+- Global sound disablement blocks mute/deafen control sounds as well as chat
+  sounds.
 
 ## Manual Matrix
 
@@ -42,6 +53,7 @@ Recorded at: 2026-05-24T08:49:07+03:00
 | 10 | Windows | Speakers active, repeated send/receive/action/error | Sounds play once per policy and do not stack noisily | NOT RUN | Windows runtime required |
 | 11 | Windows | Headset active, call controls during active call | Control sounds are audible but not loud | NOT RUN | Windows runtime required |
 | 12 | Windows | Repeated incoming/outgoing call attempts | Ring loops start once, stop on terminal state, and do not survive retry | NOT RUN | Windows runtime required |
+| 13 | Android + Windows | Start a second call attempt immediately after a failed or timed out call | Old terminal state does not stop the new ring loop; only one failure sound plays in the throttle window | NOT RUN | Device/runtime required |
 
 ## Release Rule
 
