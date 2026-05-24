@@ -1,4 +1,5 @@
 import 'package:flutter_test/flutter_test.dart';
+import 'package:flutter/widgets.dart';
 import 'package:flutter_webrtc/flutter_webrtc.dart';
 import 'package:rain/application/runtime/video_call_renderers.dart';
 
@@ -154,6 +155,11 @@ class _FakeRendererHandle implements VideoCallRendererHandle {
   @override
   Future<void> dispose() async {
     disposeCalls += 1;
+  }
+
+  @override
+  Widget buildView({Key? key, bool mirror = false}) {
+    return SizedBox(key: key);
   }
 
   void emitFirstFrame() {

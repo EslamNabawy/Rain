@@ -5,6 +5,7 @@ import 'package:protocol_brain/protocol_brain.dart';
 import 'package:rain_core/rain_core.dart';
 
 import 'package:rain/application/runtime/rain_runtime_controller.dart';
+import 'package:rain/application/runtime/video_call_renderers.dart';
 import 'package:rain/application/runtime/voice_call_state.dart';
 import 'package:rain/infrastructure/services/app_settings_store.dart';
 import 'package:rain/infrastructure/services/background_services.dart';
@@ -235,6 +236,14 @@ class RuntimeController extends AsyncNotifier<RainRuntimeController?> {
 final voiceCallProvider = NotifierProvider<VoiceCallController, VoiceCallState>(
   VoiceCallController.new,
 );
+
+final videoCallRenderersProvider = Provider<VideoCallRenderers?>((Ref ref) {
+  final call = ref.watch(voiceCallProvider);
+  if (!call.isVideo || call.phase == VoiceCallPhase.idle) {
+    return null;
+  }
+  return ref.watch(runtimeControllerProvider).value?.videoCallRenderers;
+});
 
 class VoiceCallController extends Notifier<VoiceCallState> {
   StreamSubscription<VoiceCallState>? _subscription;

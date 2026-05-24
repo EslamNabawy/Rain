@@ -2,6 +2,8 @@ import 'package:flutter/material.dart';
 import 'package:flutter_svg/flutter_svg.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:rain/application/runtime/media_device_settings.dart';
+import 'package:flutter_webrtc/flutter_webrtc.dart' show MediaStream;
+import 'package:rain/application/runtime/video_call_renderers.dart';
 import 'package:rain/application/runtime/voice_audio_level.dart';
 import 'package:rain/application/runtime/voice_call_state.dart';
 import 'package:rain/application/state/call_surface_providers.dart';
@@ -210,6 +212,59 @@ void main() {
     expect(button.tooltip, 'Finish the active call with @alice first.');
   });
 
+  testWidgets('video call button disables during active transfer', (
+    WidgetTester tester,
+  ) async {
+    var started = false;
+
+    await tester.pumpWidget(
+      MaterialApp(
+        home: Scaffold(
+          body: RainVideoCallButton(
+            peerId: 'bob',
+            state: const VoiceCallState.idle(),
+            canStart: false,
+            hasActiveTransfer: true,
+            onStart: () => started = true,
+          ),
+        ),
+      ),
+    );
+
+    final button = tester.widget<IconButton>(find.byType(IconButton));
+    expect(button.onPressed, isNull);
+    expect(button.tooltip, 'Finish the active file transfer first.');
+    await tester.tap(find.byType(IconButton));
+    expect(started, isFalse);
+  });
+
+  testWidgets('video call button disables during another call', (
+    WidgetTester tester,
+  ) async {
+    await tester.pumpWidget(
+      MaterialApp(
+        home: Scaffold(
+          body: RainVideoCallButton(
+            peerId: 'bob',
+            state: const VoiceCallState(
+              phase: VoiceCallPhase.active,
+              peerId: 'alice',
+              callId: 'call-1',
+              mediaMode: CallMediaMode.video,
+            ),
+            canStart: false,
+            hasActiveTransfer: false,
+            onStart: () {},
+          ),
+        ),
+      ),
+    );
+
+    final button = tester.widget<IconButton>(find.byType(IconButton));
+    expect(button.onPressed, isNull);
+    expect(button.tooltip, 'Finish the active call with @alice first.');
+  });
+
   testWidgets('voice call incoming ring actions are wired', (
     WidgetTester tester,
   ) async {
@@ -238,6 +293,43 @@ void main() {
 
     expect(find.text('Bob is calling'), findsOneWidget);
     expect(find.text('Incoming voice call.'), findsOneWidget);
+
+    await tester.tap(find.text('Accept'));
+    expect(accepted, isTrue);
+
+    await tester.tap(find.text('Reject'));
+    expect(rejected, isTrue);
+  });
+
+  testWidgets('incoming video ring actions are wired', (
+    WidgetTester tester,
+  ) async {
+    var accepted = false;
+    var rejected = false;
+
+    await tester.pumpWidget(
+      MaterialApp(
+        home: Scaffold(
+          body: RainCallPanel(
+            state: const VoiceCallState(
+              phase: VoiceCallPhase.incomingRinging,
+              peerId: 'bob',
+              callId: 'call-1',
+              mediaMode: CallMediaMode.video,
+            ),
+            displayName: 'Bob',
+            onAccept: () => accepted = true,
+            onReject: () => rejected = true,
+            onHangUp: () {},
+            onRetry: () {},
+            onToggleMute: () {},
+          ),
+        ),
+      ),
+    );
+
+    expect(find.text('Bob is calling'), findsOneWidget);
+    expect(find.text('Incoming video call.'), findsOneWidget);
 
     await tester.tap(find.text('Accept'));
     expect(accepted, isTrue);
@@ -358,7 +450,7 @@ void main() {
     expect(find.byTooltip('Switch camera'), findsNothing);
   });
 
-  testWidgets('future video mode adds controls without changing audio mode', (
+  testWidgets('active video controls are wired without changing audio mode', (
     WidgetTester tester,
   ) async {
     var cameraToggled = false;
@@ -397,6 +489,59 @@ void main() {
     expect(cameraSwitched, isTrue);
   });
 
+  testWidgets('camera muted state is visible', (WidgetTester tester) async {
+    await tester.pumpWidget(
+      MaterialApp(
+        home: Scaffold(
+          body: RainCallPanel(
+            state: _activeVoiceCall(
+              mediaMode: CallMediaMode.video,
+              isCameraMuted: true,
+            ),
+            displayName: 'Bob',
+            onAccept: () {},
+            onReject: () {},
+            onHangUp: () {},
+            onRetry: () {},
+            onToggleMute: () {},
+            onToggleCamera: () {},
+            onSwitchCamera: () {},
+          ),
+        ),
+      ),
+    );
+
+    expect(find.textContaining('Camera off'), findsOneWidget);
+    expect(find.byTooltip('Turn camera on'), findsOneWidget);
+  });
+
+  testWidgets('remote camera muted state is visible', (
+    WidgetTester tester,
+  ) async {
+    await tester.pumpWidget(
+      MaterialApp(
+        home: Scaffold(
+          body: RainCallPanel(
+            state: _activeVoiceCall(
+              mediaMode: CallMediaMode.video,
+              isRemoteCameraMuted: true,
+            ),
+            displayName: 'Bob',
+            onAccept: () {},
+            onReject: () {},
+            onHangUp: () {},
+            onRetry: () {},
+            onToggleMute: () {},
+            onToggleCamera: () {},
+            onSwitchCamera: () {},
+          ),
+        ),
+      ),
+    );
+
+    expect(find.textContaining('Peer camera off'), findsOneWidget);
+  });
+
   testWidgets('voice call mic permission failure offers retry', (
     WidgetTester tester,
   ) async {
@@ -428,6 +573,46 @@ void main() {
     expect(find.text('Voice call failed'), findsOneWidget);
     expect(find.text('Microphone permission required.'), findsOneWidget);
     expect(find.textContaining('NotAllowedError'), findsNothing);
+
+    await tester.tap(find.text('Retry'));
+    expect(retried, isTrue);
+
+    await tester.tap(find.text('Dismiss'));
+    expect(dismissed, isTrue);
+  });
+
+  testWidgets('camera permission failure offers retry', (
+    WidgetTester tester,
+  ) async {
+    var retried = false;
+    var dismissed = false;
+
+    await tester.pumpWidget(
+      MaterialApp(
+        home: Scaffold(
+          body: RainCallPanel(
+            state: const VoiceCallState(
+              phase: VoiceCallPhase.failed,
+              peerId: 'bob',
+              callId: 'call-1',
+              mediaMode: CallMediaMode.video,
+              failureReason: VoiceCallFailureReason.cameraDenied,
+              detail: 'CameraAccessException: permission denied',
+            ),
+            displayName: 'Bob',
+            onAccept: () {},
+            onReject: () {},
+            onHangUp: () => dismissed = true,
+            onRetry: () => retried = true,
+            onToggleMute: () {},
+          ),
+        ),
+      ),
+    );
+
+    expect(find.text('Video call failed'), findsOneWidget);
+    expect(find.text('Camera permission required.'), findsOneWidget);
+    expect(find.textContaining('CameraAccessException'), findsNothing);
 
     await tester.tap(find.text('Retry'));
     expect(retried, isTrue);
@@ -472,6 +657,37 @@ void main() {
 
     await tester.tap(find.text('Dismiss'));
     expect(dismissed, isTrue);
+  });
+
+  testWidgets('native camera and WebRTC errors are sanitized', (
+    WidgetTester tester,
+  ) async {
+    await tester.pumpWidget(
+      MaterialApp(
+        home: Scaffold(
+          body: RainCallPanel(
+            state: const VoiceCallState(
+              phase: VoiceCallPhase.failed,
+              peerId: 'bob',
+              callId: 'call-1',
+              mediaMode: CallMediaMode.video,
+              detail:
+                  'CameraAccessException(CAMERA_ERROR): failed to open camera',
+            ),
+            displayName: 'Bob',
+            onAccept: () {},
+            onReject: () {},
+            onHangUp: () {},
+            onRetry: () {},
+            onToggleMute: () {},
+          ),
+        ),
+      ),
+    );
+
+    expect(find.text('Camera could not start. Try again.'), findsOneWidget);
+    expect(find.textContaining('CameraAccessException'), findsNothing);
+    expect(find.textContaining('CAMERA_ERROR'), findsNothing);
   });
 
   testWidgets('voice call failure maps signaling errors to typed UI', (
@@ -723,7 +939,7 @@ void main() {
     expect(_findRuntimeType('RTCVideoView'), findsNothing);
   });
 
-  testWidgets('future video mode reserves a renderer-free media slot', (
+  testWidgets('video overlay shows placeholders without renderer handles', (
     WidgetTester tester,
   ) async {
     await _pumpCallOverlay(
@@ -732,10 +948,87 @@ void main() {
     );
 
     expect(
-      find.byKey(const ValueKey<String>('rain-call-video-slot-reserved')),
+      find.byKey(const ValueKey<String>('rain-call-video-stage')),
+      findsOneWidget,
+    );
+    expect(
+      find.byKey(const ValueKey<String>('rain-call-remote-video-placeholder')),
       findsOneWidget,
     );
     expect(_findRuntimeType('RTCVideoView'), findsNothing);
+  });
+
+  testWidgets('active video overlay renders local and remote surfaces', (
+    WidgetTester tester,
+  ) async {
+    final renderers = VideoCallRenderers(
+      rendererFactory: _FakeRendererFactory(),
+    );
+    await renderers.attachLocalStream(_FakeMediaStream('local'));
+    await renderers.attachRemoteStream(_FakeMediaStream('remote'));
+
+    await _pumpCallOverlay(
+      tester,
+      _activeVoiceCall(
+        mediaMode: CallMediaMode.video,
+        hasLocalVideo: true,
+        hasRemoteVideo: true,
+      ),
+      videoRenderers: renderers,
+    );
+
+    expect(
+      find.byKey(const ValueKey<String>('rain-call-remote-video-view')),
+      findsOneWidget,
+    );
+    expect(
+      find.byKey(const ValueKey<String>('rain-call-local-video-view')),
+      findsOneWidget,
+    );
+    await renderers.dispose();
+  });
+
+  testWidgets('video overlay camera muted states are visible', (
+    WidgetTester tester,
+  ) async {
+    await _pumpCallOverlay(
+      tester,
+      _activeVoiceCall(
+        mediaMode: CallMediaMode.video,
+        isCameraMuted: true,
+        isRemoteCameraMuted: true,
+      ),
+    );
+
+    expect(
+      find.byKey(const ValueKey<String>('rain-call-local-camera-muted')),
+      findsOneWidget,
+    );
+    expect(
+      find.byKey(const ValueKey<String>('rain-call-remote-camera-muted')),
+      findsOneWidget,
+    );
+    expect(find.text('Camera off'), findsOneWidget);
+    expect(find.text('Peer camera off'), findsOneWidget);
+  });
+
+  testWidgets('video overlay shows remote first-frame timeout', (
+    WidgetTester tester,
+  ) async {
+    await _pumpCallOverlay(
+      tester,
+      _activeVoiceCall(
+        mediaMode: CallMediaMode.video,
+        hasRemoteVideo: true,
+        videoFirstFrameTimedOut: true,
+      ),
+    );
+
+    expect(
+      find.byKey(const ValueKey<String>('rain-call-video-frame-timeout')),
+      findsOneWidget,
+    );
+    expect(find.text('Video stream not visible'), findsOneWidget);
   });
 
   testWidgets(
@@ -952,12 +1245,22 @@ Finder _findRuntimeType(String typeName) {
 VoiceCallState _activeVoiceCall({
   VoiceAudioLevel audioLevel = const VoiceAudioLevel.unavailable(),
   CallMediaMode mediaMode = CallMediaMode.audio,
+  bool isCameraMuted = false,
+  bool isRemoteCameraMuted = false,
+  bool hasLocalVideo = false,
+  bool hasRemoteVideo = false,
+  bool videoFirstFrameTimedOut = false,
 }) {
   return VoiceCallState(
     phase: VoiceCallPhase.active,
     peerId: 'bob',
     callId: 'call-1',
     mediaMode: mediaMode,
+    isCameraMuted: isCameraMuted,
+    isRemoteCameraMuted: isRemoteCameraMuted,
+    hasLocalVideo: hasLocalVideo,
+    hasRemoteVideo: hasRemoteVideo,
+    videoFirstFrameTimedOut: videoFirstFrameTimedOut,
     startedAt: DateTime.now()
         .subtract(const Duration(seconds: 7))
         .millisecondsSinceEpoch,
@@ -965,7 +1268,11 @@ VoiceCallState _activeVoiceCall({
   );
 }
 
-Future<void> _pumpCallOverlay(WidgetTester tester, VoiceCallState state) async {
+Future<void> _pumpCallOverlay(
+  WidgetTester tester,
+  VoiceCallState state, {
+  VideoCallRenderers? videoRenderers,
+}) async {
   await tester.pumpWidget(
     MaterialApp(
       home: Scaffold(
@@ -979,6 +1286,7 @@ Future<void> _pumpCallOverlay(WidgetTester tester, VoiceCallState state) async {
                   callId: state.callId ?? 'call-1',
                 ),
                 displayName: 'Bob',
+                videoRenderers: videoRenderers,
                 onAccept: () {},
                 onReject: () {},
                 onHangUp: () {},
@@ -993,4 +1301,55 @@ Future<void> _pumpCallOverlay(WidgetTester tester, VoiceCallState state) async {
       ),
     ),
   );
+}
+
+class _FakeRendererFactory implements VideoCallRendererFactory {
+  final List<_FakeRendererHandle> handles = <_FakeRendererHandle>[];
+
+  @override
+  VideoCallRendererHandle create() {
+    final handle = _FakeRendererHandle();
+    handles.add(handle);
+    return handle;
+  }
+}
+
+class _FakeRendererHandle implements VideoCallRendererHandle {
+  MediaStream? _stream;
+
+  @override
+  Future<void> initialize() async {}
+
+  @override
+  MediaStream? get srcObject => _stream;
+
+  @override
+  set srcObject(MediaStream? stream) {
+    _stream = stream;
+  }
+
+  @override
+  int? get textureId => 1;
+
+  @override
+  set onFirstFrameRendered(void Function()? callback) {}
+
+  @override
+  Widget buildView({Key? key, bool mirror = false}) {
+    return SizedBox.expand(key: key);
+  }
+
+  @override
+  Future<void> dispose() async {
+    _stream = null;
+  }
+}
+
+class _FakeMediaStream extends Fake implements MediaStream {
+  _FakeMediaStream(this._id);
+
+  final String _id;
+
+  @override
+  String get id => _id;
 }

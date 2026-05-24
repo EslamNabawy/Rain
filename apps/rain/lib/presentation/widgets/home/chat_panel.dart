@@ -73,6 +73,7 @@ class _ChatPanelState extends ConsumerState<_ChatPanel> {
     final hasActiveTransfer = _hasActiveFileTransfer(transfers.value);
     final canStartVoiceCall =
         runtime != null && canChat && !hasBlockingCall && !hasActiveTransfer;
+    final canStartVideoCall = canStartVoiceCall;
     ref.listen<AsyncValue<List<StoredMessage>>>(
       messagesProvider(widget.peerId),
       _handleMessageSound,
@@ -103,6 +104,7 @@ class _ChatPanelState extends ConsumerState<_ChatPanel> {
                 canDisconnectNow: canDisconnectNow,
                 voiceCall: voiceCall,
                 canStartVoiceCall: canStartVoiceCall,
+                canStartVideoCall: canStartVideoCall,
                 hasActiveTransfer: hasActiveTransfer,
               ),
             ),
@@ -237,6 +239,7 @@ class _ChatPanelState extends ConsumerState<_ChatPanel> {
     required bool canDisconnectNow,
     required VoiceCallState voiceCall,
     required bool canStartVoiceCall,
+    required bool canStartVideoCall,
     required bool hasActiveTransfer,
   }) {
     final displayName = friend?.displayName ?? widget.peerId;
@@ -299,6 +302,7 @@ class _ChatPanelState extends ConsumerState<_ChatPanel> {
                 _buildCallButton(
                   voiceCall: voiceCall,
                   canStartVoiceCall: canStartVoiceCall,
+                  canStartVideoCall: canStartVideoCall,
                   hasActiveTransfer: hasActiveTransfer,
                 ),
               if (friend != null)
@@ -393,6 +397,7 @@ class _ChatPanelState extends ConsumerState<_ChatPanel> {
           _buildCallButton(
             voiceCall: voiceCall,
             canStartVoiceCall: canStartVoiceCall,
+            canStartVideoCall: canStartVideoCall,
             hasActiveTransfer: hasActiveTransfer,
           ),
           const SizedBox(width: 4),
@@ -409,14 +414,27 @@ class _ChatPanelState extends ConsumerState<_ChatPanel> {
   Widget _buildCallButton({
     required VoiceCallState voiceCall,
     required bool canStartVoiceCall,
+    required bool canStartVideoCall,
     required bool hasActiveTransfer,
   }) {
-    return RainVoiceCallButton(
-      peerId: widget.peerId,
-      state: voiceCall,
-      canStart: canStartVoiceCall,
-      hasActiveTransfer: hasActiveTransfer,
-      onStart: _startVoiceCall,
+    return Row(
+      mainAxisSize: MainAxisSize.min,
+      children: <Widget>[
+        RainVoiceCallButton(
+          peerId: widget.peerId,
+          state: voiceCall,
+          canStart: canStartVoiceCall,
+          hasActiveTransfer: hasActiveTransfer,
+          onStart: _startVoiceCall,
+        ),
+        RainVideoCallButton(
+          peerId: widget.peerId,
+          state: voiceCall,
+          canStart: canStartVideoCall,
+          hasActiveTransfer: hasActiveTransfer,
+          onStart: _startVideoCall,
+        ),
+      ],
     );
   }
 
@@ -1349,6 +1367,16 @@ class _ChatPanelState extends ConsumerState<_ChatPanel> {
   Future<void> _startVoiceCall() async {
     try {
       await ref.read(voiceCallProvider.notifier).start(widget.peerId);
+      _playSound(RainSoundEffect.callOutgoing);
+    } catch (error) {
+      _playSound(RainSoundEffect.callFailed);
+      _showErrorSnack(_formatUiError(error));
+    }
+  }
+
+  Future<void> _startVideoCall() async {
+    try {
+      await ref.read(voiceCallProvider.notifier).startVideo(widget.peerId);
       _playSound(RainSoundEffect.callOutgoing);
     } catch (error) {
       _playSound(RainSoundEffect.callFailed);

@@ -352,6 +352,18 @@ String rainSanitizeVoiceCallFailureDetail(String? detail) {
       (normalized.contains('permission') || normalized.contains('denied'))) {
     return 'Microphone permission required.';
   }
+  if (normalized.contains('camera') &&
+      (normalized.contains('permission') ||
+          normalized.contains('denied') ||
+          normalized.contains('notallowed'))) {
+    return 'Camera permission required.';
+  }
+  if (normalized.contains('cameraaccess') ||
+      normalized.contains('camera_error') ||
+      normalized.contains('failed to open camera') ||
+      normalized.contains('could not start camera')) {
+    return 'Camera could not start. Try again.';
+  }
   if (normalized.contains('peer is busy') ||
       normalized == 'busy.' ||
       normalized.contains('active voice call already exists') ||

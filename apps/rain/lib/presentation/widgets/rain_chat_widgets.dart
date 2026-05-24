@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_svg/flutter_svg.dart';
 import 'package:rain/application/runtime/media_device_settings.dart';
+import 'package:rain/application/runtime/video_call_renderers.dart';
 import 'package:rain/application/runtime/voice_call_state.dart';
 import 'package:rain/presentation/widgets/calls/rain_call_controls.dart';
 
@@ -600,6 +601,251 @@ class RainVoiceCallButton extends StatelessWidget {
   }
 }
 
+class RainVideoCallButton extends StatelessWidget {
+  const RainVideoCallButton({
+    super.key,
+    required this.peerId,
+    required this.state,
+    required this.canStart,
+    required this.hasActiveTransfer,
+    required this.onStart,
+  });
+
+  final String peerId;
+  final VoiceCallState state;
+  final bool canStart;
+  final bool hasActiveTransfer;
+  final VoidCallback onStart;
+
+  @override
+  Widget build(BuildContext context) {
+    final isCurrentVideoCall =
+        state.peerId == peerId && state.hasCall && state.isVideo;
+    return IconButton(
+      tooltip: _videoCallButtonTooltip(
+        peerId: peerId,
+        state: state,
+        hasActiveTransfer: hasActiveTransfer,
+      ),
+      onPressed: canStart ? onStart : null,
+      icon: Icon(isCurrentVideoCall ? Icons.videocam : Icons.videocam_outlined),
+    );
+  }
+}
+
+class RainVideoCallStage extends StatelessWidget {
+  const RainVideoCallStage({
+    super.key,
+    required this.state,
+    required this.accent,
+    this.renderers,
+  });
+
+  final VoiceCallState state;
+  final Color accent;
+  final VideoCallRenderers? renderers;
+
+  @override
+  Widget build(BuildContext context) {
+    final scheme = Theme.of(context).colorScheme;
+    return AspectRatio(
+      aspectRatio: 16 / 9,
+      child: Container(
+        key: const ValueKey<String>('rain-call-video-stage'),
+        decoration: BoxDecoration(
+          color: scheme.surfaceContainerHighest.withValues(alpha: 0.46),
+          borderRadius: BorderRadius.circular(20),
+          border: Border.all(color: accent.withValues(alpha: 0.30)),
+        ),
+        child: ClipRRect(
+          borderRadius: BorderRadius.circular(20),
+          child: LayoutBuilder(
+            builder: (BuildContext context, BoxConstraints constraints) {
+              final previewWidth = constraints.maxWidth < 320 ? 96.0 : 124.0;
+              return Stack(
+                fit: StackFit.expand,
+                children: <Widget>[
+                  _RainRemoteVideoSurface(
+                    state: state,
+                    renderers: renderers,
+                    accent: accent,
+                  ),
+                  Positioned(
+                    top: 10,
+                    right: 10,
+                    width: previewWidth,
+                    child: _RainLocalVideoPreview(
+                      state: state,
+                      renderers: renderers,
+                      accent: accent,
+                    ),
+                  ),
+                ],
+              );
+            },
+          ),
+        ),
+      ),
+    );
+  }
+}
+
+class _RainRemoteVideoSurface extends StatelessWidget {
+  const _RainRemoteVideoSurface({
+    required this.state,
+    required this.renderers,
+    required this.accent,
+  });
+
+  final VoiceCallState state;
+  final VideoCallRenderers? renderers;
+  final Color accent;
+
+  @override
+  Widget build(BuildContext context) {
+    final remote = renderers?.remoteRenderer;
+    final hasRemoteVideo =
+        state.hasRemoteVideo || renderers?.state.hasRemoteStream == true;
+    if (remote != null && hasRemoteVideo && !state.isRemoteCameraMuted) {
+      return remote.buildView(
+        key: const ValueKey<String>('rain-call-remote-video-view'),
+      );
+    }
+
+    final icon = state.isRemoteCameraMuted
+        ? Icons.videocam_off
+        : state.videoFirstFrameTimedOut
+        ? Icons.visibility_off_outlined
+        : Icons.videocam_outlined;
+    final label = state.isRemoteCameraMuted
+        ? 'Peer camera off'
+        : state.videoFirstFrameTimedOut
+        ? 'Video stream not visible'
+        : 'Waiting for video';
+    final key = state.isRemoteCameraMuted
+        ? const ValueKey<String>('rain-call-remote-camera-muted')
+        : state.videoFirstFrameTimedOut
+        ? const ValueKey<String>('rain-call-video-frame-timeout')
+        : const ValueKey<String>('rain-call-remote-video-placeholder');
+    return _RainVideoPlaceholder(
+      key: key,
+      icon: icon,
+      label: label,
+      accent: accent,
+    );
+  }
+}
+
+class _RainLocalVideoPreview extends StatelessWidget {
+  const _RainLocalVideoPreview({
+    required this.state,
+    required this.renderers,
+    required this.accent,
+  });
+
+  final VoiceCallState state;
+  final VideoCallRenderers? renderers;
+  final Color accent;
+
+  @override
+  Widget build(BuildContext context) {
+    final local = renderers?.localRenderer;
+    final hasLocalVideo =
+        state.hasLocalVideo || renderers?.state.hasLocalStream == true;
+    return AspectRatio(
+      aspectRatio: 4 / 3,
+      child: DecoratedBox(
+        decoration: BoxDecoration(
+          color: Colors.black.withValues(alpha: 0.34),
+          borderRadius: BorderRadius.circular(14),
+          border: Border.all(color: accent.withValues(alpha: 0.42)),
+          boxShadow: <BoxShadow>[
+            BoxShadow(
+              blurRadius: 16,
+              color: Colors.black.withValues(alpha: 0.20),
+              offset: const Offset(0, 8),
+            ),
+          ],
+        ),
+        child: ClipRRect(
+          borderRadius: BorderRadius.circular(13),
+          child: local != null && hasLocalVideo && !state.isCameraMuted
+              ? local.buildView(
+                  key: const ValueKey<String>('rain-call-local-video-view'),
+                  mirror: true,
+                )
+              : _RainVideoPlaceholder(
+                  key: state.isCameraMuted
+                      ? const ValueKey<String>('rain-call-local-camera-muted')
+                      : const ValueKey<String>(
+                          'rain-call-local-video-placeholder',
+                        ),
+                  icon: state.isCameraMuted
+                      ? Icons.videocam_off
+                      : Icons.person_outline,
+                  label: state.isCameraMuted ? 'Camera off' : 'Preview',
+                  accent: accent,
+                  compact: true,
+                ),
+        ),
+      ),
+    );
+  }
+}
+
+class _RainVideoPlaceholder extends StatelessWidget {
+  const _RainVideoPlaceholder({
+    super.key,
+    required this.icon,
+    required this.label,
+    required this.accent,
+    this.compact = false,
+  });
+
+  final IconData icon;
+  final String label;
+  final Color accent;
+  final bool compact;
+
+  @override
+  Widget build(BuildContext context) {
+    final scheme = Theme.of(context).colorScheme;
+    return ColoredBox(
+      color: scheme.surfaceContainerHighest.withValues(alpha: 0.42),
+      child: Center(
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: <Widget>[
+            Icon(
+              icon,
+              size: compact ? 22 : 42,
+              color: accent.withValues(alpha: 0.78),
+            ),
+            SizedBox(height: compact ? 4 : 10),
+            Padding(
+              padding: EdgeInsets.symmetric(horizontal: compact ? 6 : 14),
+              child: Text(
+                label,
+                maxLines: compact ? 1 : 2,
+                overflow: TextOverflow.ellipsis,
+                textAlign: TextAlign.center,
+                style:
+                    (compact
+                            ? Theme.of(context).textTheme.labelSmall
+                            : Theme.of(context).textTheme.labelLarge)
+                        ?.copyWith(
+                          color: scheme.onSurface.withValues(alpha: 0.72),
+                          fontWeight: FontWeight.w800,
+                        ),
+              ),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+}
+
 class RainCallPanel extends StatelessWidget {
   const RainCallPanel({
     super.key,
@@ -898,14 +1144,48 @@ String _voiceCallButtonTooltip({
   required VoiceCallState state,
   required bool hasActiveTransfer,
 }) {
+  return _callButtonTooltip(
+    peerId: peerId,
+    state: state,
+    hasActiveTransfer: hasActiveTransfer,
+    callLabel: 'voice call',
+    currentCallLabel: 'Voice call',
+  );
+}
+
+String _videoCallButtonTooltip({
+  required String peerId,
+  required VoiceCallState state,
+  required bool hasActiveTransfer,
+}) {
+  return _callButtonTooltip(
+    peerId: peerId,
+    state: state,
+    hasActiveTransfer: hasActiveTransfer,
+    callLabel: 'video call',
+    currentCallLabel: 'Video call',
+  );
+}
+
+String _callButtonTooltip({
+  required String peerId,
+  required VoiceCallState state,
+  required bool hasActiveTransfer,
+  required String callLabel,
+  required String currentCallLabel,
+}) {
   if (hasActiveTransfer) {
     return 'Finish the active file transfer first.';
   }
   if (state.hasCall && state.phase != VoiceCallPhase.failed) {
     final activePeerId = state.peerId;
-    return activePeerId == peerId
-        ? 'Voice call in progress'
-        : 'Finish the active call with @$activePeerId first.';
+    if (activePeerId == peerId) {
+      final activeKind = state.isVideo ? 'Video call' : 'Voice call';
+      return activeKind == currentCallLabel
+          ? '$currentCallLabel in progress'
+          : '$activeKind in progress';
+    }
+    return 'Finish the active call with @$activePeerId first.';
   }
-  return 'Start voice call';
+  return 'Start $callLabel';
 }

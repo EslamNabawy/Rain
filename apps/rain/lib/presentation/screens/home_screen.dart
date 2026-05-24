@@ -11,6 +11,7 @@ import 'package:protocol_brain/protocol_brain.dart';
 import 'package:rain_core/rain_core.dart';
 
 import 'package:rain/presentation/navigation/app_routes.dart';
+import 'package:rain/application/runtime/video_call_renderers.dart';
 import 'package:rain/application/runtime/voice_call_state.dart';
 import 'package:rain/application/state/app_providers.dart';
 import 'package:rain/application/state/connection_diagnostics.dart';
@@ -365,6 +366,7 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
     final friends = ref.watch(friendsProvider);
     final identity = ref.watch(identityProvider).value;
     final voiceCall = ref.watch(voiceCallProvider);
+    final videoRenderers = ref.watch(videoCallRenderersProvider);
     final callSurface = ref.watch(callSurfaceProvider);
     ref.listen<VoiceCallState>(voiceCallProvider, _handleVoiceCallNavigation);
 
@@ -409,6 +411,7 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
                       friends: friends,
                       isCompact: isCompact,
                       voiceCall: voiceCall,
+                      videoRenderers: videoRenderers,
                       callSurface: callSurface,
                     ),
                   ),
@@ -425,6 +428,7 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
     required AsyncValue<List<FriendRecord>> friends,
     required bool isCompact,
     required VoiceCallState voiceCall,
+    required VideoCallRenderers? videoRenderers,
     required CallSurfaceState callSurface,
   }) {
     final body = isCompact
@@ -441,12 +445,15 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
               surface: callSurface,
               displayName: _voiceCallDisplayName(friends, voiceCall),
               gender: _voiceCallGender(friends, voiceCall),
+              videoRenderers: videoRenderers,
               onAccept: _acceptVoiceCall,
               onReject: _rejectVoiceCall,
               onHangUp: _hangUpVoiceCall,
               onRetry: () => _retryVoiceCall(voiceCall),
               onToggleMute: () => _toggleVoiceMute(voiceCall),
               onToggleDeafen: () => _toggleVoiceDeafen(voiceCall),
+              onToggleCamera: () => _toggleVoiceCamera(voiceCall),
+              onSwitchCamera: _switchVoiceCamera,
               onSelectOutputRoute: _selectVoiceOutputRoute,
               onMinimize: () =>
                   ref.read(callSurfaceProvider.notifier).minimize(),
@@ -649,12 +656,26 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
       _showVoiceCallError('Peer connection is unavailable right now.');
       return;
     }
-    await _startVoiceCall(peerId);
+    if (call.isVideo) {
+      await _startVideoCall(peerId);
+    } else {
+      await _startVoiceCall(peerId);
+    }
   }
 
   Future<void> _startVoiceCall(String peerId) async {
     try {
       await ref.read(voiceCallProvider.notifier).start(peerId);
+      _playSound(RainSoundEffect.callOutgoing);
+    } catch (error) {
+      _playSound(RainSoundEffect.callFailed);
+      _showVoiceCallError(_formatUiError(error));
+    }
+  }
+
+  Future<void> _startVideoCall(String peerId) async {
+    try {
+      await ref.read(voiceCallProvider.notifier).startVideo(peerId);
       _playSound(RainSoundEffect.callOutgoing);
     } catch (error) {
       _playSound(RainSoundEffect.callFailed);
@@ -715,6 +736,27 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
         nextDeafened ? RainSoundEffect.deafen : RainSoundEffect.undeafen,
         voiceCallActive: true,
       );
+    } catch (error) {
+      _playSound(RainSoundEffect.callFailed);
+      _showVoiceCallError(_formatUiError(error));
+    }
+  }
+
+  Future<void> _toggleVoiceCamera(VoiceCallState call) async {
+    final nextMuted = !call.isCameraMuted;
+    try {
+      await ref.read(voiceCallProvider.notifier).setCameraMuted(nextMuted);
+      _playSound(RainSoundEffect.action, voiceCallActive: true);
+    } catch (error) {
+      _playSound(RainSoundEffect.callFailed);
+      _showVoiceCallError(_formatUiError(error));
+    }
+  }
+
+  Future<void> _switchVoiceCamera() async {
+    try {
+      await ref.read(voiceCallProvider.notifier).switchCamera();
+      _playSound(RainSoundEffect.action, voiceCallActive: true);
     } catch (error) {
       _playSound(RainSoundEffect.callFailed);
       _showVoiceCallError(_formatUiError(error));

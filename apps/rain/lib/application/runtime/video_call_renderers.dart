@@ -1,5 +1,6 @@
 import 'dart:async';
 
+import 'package:flutter/widgets.dart';
 import 'package:flutter_webrtc/flutter_webrtc.dart';
 
 abstract class VideoCallRendererHandle {
@@ -8,6 +9,7 @@ abstract class VideoCallRendererHandle {
   set srcObject(MediaStream? stream);
   int? get textureId;
   set onFirstFrameRendered(void Function()? callback);
+  Widget buildView({Key? key, bool mirror = false});
   Future<void> dispose();
 }
 
@@ -46,6 +48,16 @@ final class RtcVideoCallRendererHandle implements VideoCallRendererHandle {
   @override
   set onFirstFrameRendered(void Function()? callback) {
     renderer.onFirstFrameRendered = callback;
+  }
+
+  @override
+  Widget buildView({Key? key, bool mirror = false}) {
+    return RTCVideoView(
+      renderer,
+      key: key,
+      mirror: mirror,
+      objectFit: RTCVideoViewObjectFit.RTCVideoViewObjectFitCover,
+    );
   }
 
   @override

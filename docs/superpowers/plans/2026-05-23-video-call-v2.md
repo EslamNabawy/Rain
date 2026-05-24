@@ -404,8 +404,8 @@ git commit -m "feat: add video call runtime"
 
 **Purpose:** Give user real video controls and safe failures.
 
-- [ ] Add video call button beside voice button in `apps/rain/lib/presentation/widgets/home/chat_panel.dart`.
-- [ ] Add/extend widgets in `apps/rain/lib/presentation/widgets/rain_chat_widgets.dart`:
+- [x] Add video call button beside voice button in `apps/rain/lib/presentation/widgets/home/chat_panel.dart`.
+- [x] Add/extend widgets in `apps/rain/lib/presentation/widgets/rain_chat_widgets.dart`:
   - remote video surface
   - local preview
   - mic toggle
@@ -415,18 +415,18 @@ git commit -m "feat: add video call runtime"
   - retry after permission failure
   - typed failure banner
 
-- [ ] Mobile layout:
+- [x] Mobile layout:
   - remote video fills call area
   - local preview fixed aspect ratio
   - controls do not overlap bottom nav
   - chat remains reachable
 
-- [ ] Desktop layout:
+- [x] Desktop layout:
   - remote video uses available panel width
   - local preview anchored top/right
   - controls remain visible on narrow window
 
-- [ ] Add widget tests in `apps/rain/test/rain_chat_widgets_test.dart`:
+- [x] Add widget tests in `apps/rain/test/rain_chat_widgets_test.dart`:
   - video call button disabled during active transfer
   - video call button disabled during another call
   - incoming video ring actions wired
@@ -436,13 +436,13 @@ git commit -m "feat: add video call runtime"
   - camera permission failure offers retry
   - native camera/WebRTC errors are sanitized
 
-- [ ] Run:
+- [x] Run:
 
 ```powershell
 flutter test apps\rain\test\rain_chat_widgets_test.dart
 ```
 
-- [ ] Commit:
+- [x] Commit:
 
 ```powershell
 git add apps\rain\lib\presentation apps\rain\test\rain_chat_widgets_test.dart

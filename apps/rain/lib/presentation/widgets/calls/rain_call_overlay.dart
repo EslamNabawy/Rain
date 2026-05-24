@@ -2,6 +2,7 @@ import 'dart:math' as math;
 
 import 'package:flutter/material.dart';
 
+import 'package:rain/application/runtime/video_call_renderers.dart';
 import 'package:rain/application/runtime/voice_call_state.dart';
 import 'package:rain/application/state/call_surface_providers.dart';
 import 'package:rain/presentation/widgets/calls/rain_call_controls.dart';
@@ -15,6 +16,7 @@ class RainCallOverlay extends StatelessWidget {
     required this.displayName,
     this.gender,
     this.routeSummary,
+    this.videoRenderers,
     required this.onAccept,
     required this.onReject,
     required this.onHangUp,
@@ -33,6 +35,7 @@ class RainCallOverlay extends StatelessWidget {
   final String displayName;
   final String? gender;
   final String? routeSummary;
+  final VideoCallRenderers? videoRenderers;
   final VoidCallback onAccept;
   final VoidCallback onReject;
   final VoidCallback onHangUp;
@@ -79,9 +82,10 @@ class RainCallOverlay extends StatelessWidget {
               routeSummary: routeSummary,
               panelWidth: _boundedWidth(
                 constraints.maxWidth,
-                constraints.maxWidth < 480 ? 360 : 420,
+                _preferredPanelWidth(constraints.maxWidth, state),
               ),
               maxHeight: _boundedHeight(constraints.maxHeight),
+              videoRenderers: videoRenderers,
               onAccept: onAccept,
               onReject: onReject,
               onHangUp: onHangUp,
@@ -120,6 +124,16 @@ class RainCallOverlay extends StatelessWidget {
     }
     return math.max(220, availableHeight - 32);
   }
+
+  double _preferredPanelWidth(double availableWidth, VoiceCallState state) {
+    if (!state.isVideo) {
+      return availableWidth < 480 ? 360 : 420;
+    }
+    if (!availableWidth.isFinite || availableWidth <= 0) {
+      return 680;
+    }
+    return availableWidth < 520 ? 380 : 720;
+  }
 }
 
 class _RainExpandedCallPanel extends StatelessWidget {
@@ -128,6 +142,7 @@ class _RainExpandedCallPanel extends StatelessWidget {
     required this.displayName,
     required this.panelWidth,
     required this.maxHeight,
+    this.videoRenderers,
     required this.onAccept,
     required this.onReject,
     required this.onHangUp,
@@ -148,6 +163,7 @@ class _RainExpandedCallPanel extends StatelessWidget {
   final String? routeSummary;
   final double panelWidth;
   final double maxHeight;
+  final VideoCallRenderers? videoRenderers;
   final VoidCallback onAccept;
   final VoidCallback onReject;
   final VoidCallback onHangUp;
@@ -254,7 +270,11 @@ class _RainExpandedCallPanel extends StatelessWidget {
                       ],
                     ),
                     const SizedBox(height: 24),
-                    _RainCallMediaStage(state: state, accent: accent),
+                    _RainCallMediaStage(
+                      state: state,
+                      accent: accent,
+                      videoRenderers: videoRenderers,
+                    ),
                     const SizedBox(height: 20),
                     Text(
                       rainVoiceCallTitle(state, displayName),
@@ -308,10 +328,15 @@ class _RainExpandedCallPanel extends StatelessWidget {
 }
 
 class _RainCallMediaStage extends StatelessWidget {
-  const _RainCallMediaStage({required this.state, required this.accent});
+  const _RainCallMediaStage({
+    required this.state,
+    required this.accent,
+    this.videoRenderers,
+  });
 
   final VoiceCallState state;
   final Color accent;
+  final VideoCallRenderers? videoRenderers;
 
   @override
   Widget build(BuildContext context) {
@@ -325,36 +350,11 @@ class _RainCallMediaStage extends StatelessWidget {
 
     return Center(
       child: ConstrainedBox(
-        constraints: const BoxConstraints(maxWidth: 360),
-        child: AspectRatio(
-          aspectRatio: 16 / 9,
-          child: _RainReservedVideoSlot(accent: accent),
-        ),
-      ),
-    );
-  }
-}
-
-class _RainReservedVideoSlot extends StatelessWidget {
-  const _RainReservedVideoSlot({required this.accent});
-
-  final Color accent;
-
-  @override
-  Widget build(BuildContext context) {
-    final scheme = Theme.of(context).colorScheme;
-    return Container(
-      key: const ValueKey<String>('rain-call-video-slot-reserved'),
-      decoration: BoxDecoration(
-        color: scheme.surfaceContainerHighest.withValues(alpha: 0.52),
-        borderRadius: BorderRadius.circular(20),
-        border: Border.all(color: accent.withValues(alpha: 0.30)),
-      ),
-      child: Center(
-        child: Icon(
-          Icons.videocam_outlined,
-          size: 42,
-          color: accent.withValues(alpha: 0.70),
+        constraints: const BoxConstraints(maxWidth: 640),
+        child: RainVideoCallStage(
+          state: state,
+          accent: accent,
+          renderers: videoRenderers,
         ),
       ),
     );

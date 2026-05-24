@@ -5,6 +5,7 @@ import 'dart:typed_data';
 import 'package:drift/drift.dart' show driftRuntimeOptions;
 import 'package:drift/native.dart';
 import 'package:flutter_test/flutter_test.dart';
+import 'package:flutter/widgets.dart';
 import 'package:flutter_webrtc/flutter_webrtc.dart'
     show MediaStream, MediaStreamTrack, RTCSessionDescription;
 import 'package:protocol_brain/protocol_brain.dart';
@@ -4808,6 +4809,11 @@ class _TestVideoCallRendererHandle implements VideoCallRendererHandle {
   @override
   set onFirstFrameRendered(void Function()? callback) {
     _onFirstFrameRendered = callback;
+  }
+
+  @override
+  Widget buildView({Key? key, bool mirror = false}) {
+    return SizedBox(key: key);
   }
 
   @override

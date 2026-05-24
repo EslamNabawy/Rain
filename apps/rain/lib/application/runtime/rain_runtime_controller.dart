@@ -156,6 +156,8 @@ class RainRuntimeController with WidgetsBindingObserver {
 
   VoiceCallState get voiceCallState => _voiceCallState;
 
+  VideoCallRenderers? get videoCallRenderers => _videoCallRenderers;
+
   Stream<VoiceCallState> watchVoiceCallState() async* {
     yield _voiceCallState;
     yield* _voiceCallStateController.stream;
