@@ -3,6 +3,7 @@
 **/.gradle/
 **/build/
 **/coverage/
+artifacts/
 **/node_modules/
 **/.flutter-plugins-dependencies
 .idea/
