@@ -20,6 +20,126 @@ void main() {
       ]);
     });
 
+    test('five sends in 200 ms produce one send sound', () async {
+      final effects = _RecordingSoundEffectsService();
+      final base = DateTime.utc(2026, 5, 24, 12);
+      final router = _router(effects);
+
+      for (var index = 0; index < 5; index += 1) {
+        await router.dispatch(
+          RainSoundEvent.chatSend(
+            conversationId: 'bob',
+            occurredAt: base.add(Duration(milliseconds: index * 50)),
+          ),
+        );
+      }
+
+      expect(effects.played.map((entry) => entry.effect), <RainSoundEffect>[
+        RainSoundEffect.send,
+      ]);
+    });
+
+    test('five sends over 1200 ms produce spaced send sounds', () async {
+      final effects = _RecordingSoundEffectsService();
+      final base = DateTime.utc(2026, 5, 24, 12);
+      final router = _router(effects);
+
+      for (var index = 0; index < 5; index += 1) {
+        await router.dispatch(
+          RainSoundEvent.chatSend(
+            conversationId: 'bob',
+            occurredAt: base.add(Duration(milliseconds: index * 350)),
+          ),
+        );
+      }
+
+      expect(effects.played.map((entry) => entry.effect), <RainSoundEffect>[
+        RainSoundEffect.send,
+        RainSoundEffect.send,
+        RainSoundEffect.send,
+        RainSoundEffect.send,
+        RainSoundEffect.send,
+      ]);
+    });
+
+    test('ten receives in one chat are grouped but not silenced', () async {
+      final effects = _RecordingSoundEffectsService();
+      final base = DateTime.utc(2026, 5, 24, 12);
+      final router = _router(effects);
+
+      for (var index = 0; index < 10; index += 1) {
+        await router.dispatch(
+          RainSoundEvent.chatReceive(
+            conversationId: 'bob',
+            occurredAt: base.add(Duration(milliseconds: index * 300)),
+          ),
+        );
+      }
+
+      expect(effects.played.map((entry) => entry.effect), <RainSoundEffect>[
+        RainSoundEffect.receive,
+        RainSoundEffect.receive,
+        RainSoundEffect.receive,
+        RainSoundEffect.receive,
+      ]);
+    });
+
+    test('receives from multiple chats are capped globally', () async {
+      final effects = _RecordingSoundEffectsService();
+      final base = DateTime.utc(2026, 5, 24, 12);
+      final router = _router(effects);
+
+      await router.dispatch(
+        RainSoundEvent.chatReceive(conversationId: 'bob', occurredAt: base),
+      );
+      await router.dispatch(
+        RainSoundEvent.chatReceive(
+          conversationId: 'alice',
+          occurredAt: base.add(const Duration(milliseconds: 100)),
+        ),
+      );
+      await router.dispatch(
+        RainSoundEvent.chatReceive(
+          conversationId: 'alice',
+          occurredAt: base.add(const Duration(milliseconds: 400)),
+        ),
+      );
+      await router.dispatch(
+        RainSoundEvent.chatReceive(
+          conversationId: 'carol',
+          occurredAt: base.add(const Duration(milliseconds: 800)),
+        ),
+      );
+      await router.dispatch(
+        RainSoundEvent.chatReceive(
+          conversationId: 'dan',
+          occurredAt: base.add(const Duration(milliseconds: 1200)),
+        ),
+      );
+      await router.dispatch(
+        RainSoundEvent.chatReceive(
+          conversationId: 'erin',
+          occurredAt: base.add(const Duration(milliseconds: 1600)),
+        ),
+      );
+
+      expect(effects.played.map((entry) => entry.effect), <RainSoundEffect>[
+        RainSoundEffect.receive,
+        RainSoundEffect.receive,
+        RainSoundEffect.receive,
+        RainSoundEffect.receive,
+      ]);
+    });
+
+    test('receive without conversation id is ignored', () async {
+      final effects = _RecordingSoundEffectsService();
+      final router = _router(effects);
+
+      await router.dispatch(RainSoundEvent.chatReceive());
+
+      expect(effects.played, isEmpty);
+    });
+
     test('maps warning events to error effect', () async {
       final effects = _RecordingSoundEffectsService();
       final router = _router(effects);
@@ -30,6 +150,46 @@ void main() {
 
       expect(effects.played.single.effect, RainSoundEffect.error);
       expect(effects.played.single.voiceCallActive, isFalse);
+    });
+
+    test('same error repeated rapidly plays one warning sound', () async {
+      final effects = _RecordingSoundEffectsService();
+      final base = DateTime.utc(2026, 5, 24, 12);
+      final router = _router(effects);
+
+      for (var index = 0; index < 3; index += 1) {
+        await router.dispatch(
+          RainSoundEvent.warning(
+            errorKey: 'media-ice-timeout',
+            occurredAt: base.add(Duration(milliseconds: index * 500)),
+          ),
+        );
+      }
+
+      expect(effects.played.map((entry) => entry.effect), <RainSoundEffect>[
+        RainSoundEffect.error,
+      ]);
+    });
+
+    test('different errors respect global warning ceiling', () async {
+      final effects = _RecordingSoundEffectsService();
+      final base = DateTime.utc(2026, 5, 24, 12);
+      final router = _router(effects);
+
+      for (var index = 0; index < 4; index += 1) {
+        await router.dispatch(
+          RainSoundEvent.warning(
+            errorKey: 'error-$index',
+            occurredAt: base.add(Duration(milliseconds: index * 100)),
+          ),
+        );
+      }
+
+      expect(effects.played.map((entry) => entry.effect), <RainSoundEffect>[
+        RainSoundEffect.error,
+        RainSoundEffect.error,
+        RainSoundEffect.error,
+      ]);
     });
 
     test('maps call controls to dedicated control effects', () async {

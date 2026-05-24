@@ -282,6 +282,8 @@ git commit -m "feat: route rain sound events centrally"
 
 **Purpose:** Let fast messaging feel responsive without creating sound spam or many overlapping players.
 
+**Status:** Complete.
+
 **Files:**
 - Modify: `apps/rain/lib/application/audio/sound_event_router.dart`
 - Modify: `apps/rain/test/sound_event_router_test.dart`
