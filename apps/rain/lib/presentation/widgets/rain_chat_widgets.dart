@@ -673,6 +673,7 @@ class RainVideoCallStage extends StatelessWidget {
                   state: state,
                   renderers: renderers,
                   accent: accent,
+                  compact: layout == RainVideoCallStageLayout.pip,
                 ),
                 if (layout.showsLocalPreview)
                   Positioned(
@@ -749,11 +750,13 @@ class _RainRemoteVideoSurface extends StatelessWidget {
     required this.state,
     required this.renderers,
     required this.accent,
+    this.compact = false,
   });
 
   final VoiceCallState state;
   final VideoCallRenderers? renderers;
   final Color accent;
+  final bool compact;
 
   @override
   Widget build(BuildContext context) {
@@ -786,6 +789,7 @@ class _RainRemoteVideoSurface extends StatelessWidget {
       icon: icon,
       label: label,
       accent: accent,
+      compact: compact,
     );
   }
 }

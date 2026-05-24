@@ -112,6 +112,43 @@ void main() {
     expect(harness.surface.mode, CallSurfaceMode.pip);
   });
 
+  test('back intent exits fullscreen before minimizing video', () {
+    final harness = _CallSurfaceHarness();
+    addTearDown(harness.dispose);
+
+    harness.setVoiceCall(_voiceCall(mediaMode: CallMediaMode.video));
+    final controller = harness.container.read(callSurfaceProvider.notifier);
+
+    controller.enterFullscreen();
+
+    expect(harness.surface.mode, CallSurfaceMode.fullscreen);
+    expect(controller.handleBackIntent(), isTrue);
+    expect(harness.surface.mode, CallSurfaceMode.expanded);
+
+    expect(controller.handleBackIntent(), isTrue);
+    expect(harness.surface.mode, CallSurfaceMode.pip);
+
+    expect(controller.handleBackIntent(), isTrue);
+    expect(harness.surface.mode, CallSurfaceMode.managerOnly);
+
+    expect(controller.handleBackIntent(), isFalse);
+    expect(harness.surface.mode, CallSurfaceMode.managerOnly);
+  });
+
+  test('back intent minimizes voice calls to manager only', () {
+    final harness = _CallSurfaceHarness();
+    addTearDown(harness.dispose);
+
+    harness.setVoiceCall(_voiceCall());
+    final controller = harness.container.read(callSurfaceProvider.notifier);
+
+    expect(controller.handleBackIntent(), isTrue);
+    expect(harness.surface.mode, CallSurfaceMode.managerOnly);
+
+    expect(controller.handleBackIntent(), isFalse);
+    expect(harness.surface.mode, CallSurfaceMode.managerOnly);
+  });
+
   test('failed call expands for action and ended call clears the surface', () {
     final harness = _CallSurfaceHarness();
     addTearDown(harness.dispose);

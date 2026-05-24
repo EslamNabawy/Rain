@@ -202,6 +202,19 @@ class CallSurfaceController extends Notifier<CallSurfaceState> {
     _setState(current.copyWith(mode: _safeRestoreMode(current)));
   }
 
+  bool handleBackIntent() {
+    final current = state;
+    if (!current.isVisible || current.mode == CallSurfaceMode.managerOnly) {
+      return false;
+    }
+    if (current.mode == CallSurfaceMode.fullscreen) {
+      exitFullscreen();
+      return true;
+    }
+    minimize();
+    return true;
+  }
+
   void _setState(CallSurfaceState next) {
     _lastState = next;
     state = next;

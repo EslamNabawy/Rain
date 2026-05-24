@@ -88,6 +88,103 @@ void main() {
     expect(fullscreen, isTrue);
     expect(hungUp, isTrue);
   });
+
+  testWidgets('manager respects top safe area padding', (
+    WidgetTester tester,
+  ) async {
+    await _pumpManager(
+      tester,
+      state: _activeCall(),
+      surface: const CallSurfaceState.visible(peerId: 'bob', callId: 'call-1'),
+      mediaQueryData: const MediaQueryData(
+        size: Size(360, 640),
+        padding: EdgeInsets.only(top: 32),
+      ),
+    );
+
+    final top = tester
+        .getTopLeft(find.byKey(const ValueKey<String>('rain-call-manager-bar')))
+        .dy;
+
+    expect(top, greaterThanOrEqualTo(42));
+  });
+
+  testWidgets('manager stays reachable in compact desktop bounds', (
+    WidgetTester tester,
+  ) async {
+    tester.view.physicalSize = const Size(320, 260);
+    tester.view.devicePixelRatio = 1;
+    addTearDown(tester.view.resetPhysicalSize);
+    addTearDown(tester.view.resetDevicePixelRatio);
+
+    await _pumpManager(
+      tester,
+      state: _activeCall(mediaMode: CallMediaMode.video),
+      surface: const CallSurfaceState.visible(
+        peerId: 'bob',
+        callId: 'call-1',
+        mediaMode: CallMediaMode.video,
+        mode: CallSurfaceMode.fullscreen,
+      ),
+    );
+
+    expect(
+      find.byKey(const ValueKey<String>('rain-call-manager-bar')),
+      findsOneWidget,
+    );
+    expect(find.byTooltip('Exit fullscreen'), findsOneWidget);
+    expect(find.byTooltip('Hang up'), findsOneWidget);
+    expect(tester.takeException(), isNull);
+  });
+
+  testWidgets('manager does not block bottom composer taps', (
+    WidgetTester tester,
+  ) async {
+    var composerTapped = false;
+
+    await tester.pumpWidget(
+      MaterialApp(
+        home: Scaffold(
+          body: Stack(
+            children: <Widget>[
+              Align(
+                alignment: Alignment.bottomCenter,
+                child: SizedBox(
+                  height: 64,
+                  child: TextButton(
+                    onPressed: () => composerTapped = true,
+                    child: const Text('Message composer'),
+                  ),
+                ),
+              ),
+              Positioned(
+                left: 0,
+                right: 0,
+                top: 0,
+                child: RainCallManagerBar(
+                  state: _activeCall(),
+                  surface: const CallSurfaceState.visible(
+                    peerId: 'bob',
+                    callId: 'call-1',
+                    mode: CallSurfaceMode.managerOnly,
+                  ),
+                  displayName: 'Bob',
+                  onToggleMute: () {},
+                  onRestore: () {},
+                  onFullscreen: () {},
+                  onHangUp: () {},
+                ),
+              ),
+            ],
+          ),
+        ),
+      ),
+    );
+
+    await tester.tap(find.text('Message composer'));
+
+    expect(composerTapped, isTrue);
+  });
 }
 
 Future<void> _pumpManager(
@@ -100,24 +197,25 @@ Future<void> _pumpManager(
   VoidCallback? onRestore,
   VoidCallback? onFullscreen,
   VoidCallback? onHangUp,
+  MediaQueryData? mediaQueryData,
 }) async {
-  await tester.pumpWidget(
-    MaterialApp(
-      home: Scaffold(
-        body: RainCallManagerBar(
-          state: state,
-          surface: surface,
-          displayName: 'Bob',
-          onToggleMute: onToggleMute ?? () {},
-          onToggleCamera: onToggleCamera,
-          onToggleDeafen: onToggleDeafen,
-          onRestore: onRestore ?? () {},
-          onFullscreen: onFullscreen ?? () {},
-          onHangUp: onHangUp ?? () {},
-        ),
-      ),
+  Widget home = Scaffold(
+    body: RainCallManagerBar(
+      state: state,
+      surface: surface,
+      displayName: 'Bob',
+      onToggleMute: onToggleMute ?? () {},
+      onToggleCamera: onToggleCamera,
+      onToggleDeafen: onToggleDeafen,
+      onRestore: onRestore ?? () {},
+      onFullscreen: onFullscreen ?? () {},
+      onHangUp: onHangUp ?? () {},
     ),
   );
+  if (mediaQueryData != null) {
+    home = MediaQuery(data: mediaQueryData, child: home);
+  }
+  await tester.pumpWidget(MaterialApp(home: home));
 }
 
 VoiceCallState _activeCall({CallMediaMode mediaMode = CallMediaMode.audio}) {

@@ -1256,6 +1256,75 @@ void main() {
     );
   });
 
+  testWidgets('video overlay pip avoids the bottom composer zone', (
+    WidgetTester tester,
+  ) async {
+    tester.view.physicalSize = const Size(360, 640);
+    tester.view.devicePixelRatio = 1;
+    addTearDown(tester.view.resetPhysicalSize);
+    addTearDown(tester.view.resetDevicePixelRatio);
+    var composerTapped = false;
+
+    await tester.pumpWidget(
+      MaterialApp(
+        home: Scaffold(
+          body: Stack(
+            children: <Widget>[
+              Align(
+                alignment: Alignment.bottomCenter,
+                child: SizedBox(
+                  key: const ValueKey<String>('rain-test-composer-zone'),
+                  height: 96,
+                  child: TextButton(
+                    onPressed: () => composerTapped = true,
+                    child: const Text('Message composer'),
+                  ),
+                ),
+              ),
+              Positioned.fill(
+                child: RainCallOverlay(
+                  state: _activeVoiceCall(mediaMode: CallMediaMode.video),
+                  surface: const CallSurfaceState.visible(
+                    peerId: 'bob',
+                    callId: 'call-1',
+                    mode: CallSurfaceMode.pip,
+                    mediaMode: CallMediaMode.video,
+                  ),
+                  displayName: 'Bob',
+                  onAccept: () {},
+                  onReject: () {},
+                  onHangUp: () {},
+                  onRetry: () {},
+                  onToggleMute: () {},
+                  onMinimize: () {},
+                  onExpand: () {},
+                  onFullscreen: () {},
+                ),
+              ),
+            ],
+          ),
+        ),
+      ),
+    );
+
+    final pipBottom = tester
+        .getBottomLeft(
+          find.byKey(const ValueKey<String>('rain-call-video-pip-window')),
+        )
+        .dy;
+    final composerTop = tester
+        .getTopLeft(
+          find.byKey(const ValueKey<String>('rain-test-composer-zone')),
+        )
+        .dy;
+
+    expect(pipBottom, lessThan(composerTop));
+
+    await tester.tap(find.text('Message composer'));
+
+    expect(composerTapped, isTrue);
+  });
+
   testWidgets('call overlay manager-only hides the media panel', (
     WidgetTester tester,
   ) async {

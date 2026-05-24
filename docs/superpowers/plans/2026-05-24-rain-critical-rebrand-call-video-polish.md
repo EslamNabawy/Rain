@@ -277,20 +277,20 @@
 
 **Purpose:** Make the new UI feel reliable on real Android phones and Windows desktops.
 
-- [ ] Android behavior:
+- [x] Android behavior:
   - Safe-area top manager never overlaps status bar.
   - Back button exits fullscreen before minimizing, and minimizes before ending only if that is already the app convention.
   - PiP window does not block message composer or bottom navigation.
   - Orientation changes do not lose renderer state.
-- [ ] Windows behavior:
+- [x] Windows behavior:
   - Fullscreen respects app window bounds.
   - Escape exits fullscreen.
   - Top manager remains reachable at small desktop window sizes.
-- [ ] Keyboard behavior:
+- [x] Keyboard behavior:
   - Chat composer remains usable while call manager is visible.
   - Call manager does not fight auth/login keyboard layout.
-- [ ] Add tests for compact width/height constraints.
-- [ ] Commit with message: `fix: polish call UI interactions`.
+- [x] Add tests for compact width/height constraints.
+- [x] Commit with message: `fix: polish call UI interactions`.
 
 ## Phase 12: Automated Test And Visual Harness Gate
 

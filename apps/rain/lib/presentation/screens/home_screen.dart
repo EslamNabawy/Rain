@@ -634,7 +634,7 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
 
         final showShellHeader = !isCompact || _selectedPeerId == null;
 
-        return SafeArea(
+        final shell = SafeArea(
           child: Padding(
             padding: EdgeInsets.all(isCompact ? 8 : 20),
             child: Container(
@@ -676,8 +676,58 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
             ),
           ),
         );
+        return PopScope<Object?>(
+          canPop: !_shouldHandleSystemBack(callSurface, isCompact),
+          onPopInvokedWithResult: (bool didPop, Object? result) {
+            if (didPop) {
+              return;
+            }
+            _handleSystemBack(isCompact);
+          },
+          child: _wrapFullscreenEscapeHandler(
+            callSurface: callSurface,
+            child: shell,
+          ),
+        );
       },
     );
+  }
+
+  Widget _wrapFullscreenEscapeHandler({
+    required CallSurfaceState callSurface,
+    required Widget child,
+  }) {
+    if (!callSurface.isFullscreen) {
+      return child;
+    }
+    return Focus(
+      autofocus: true,
+      child: CallbackShortcuts(
+        bindings: <ShortcutActivator, VoidCallback>{
+          const SingleActivator(LogicalKeyboardKey.escape): () {
+            ref.read(callSurfaceProvider.notifier).exitFullscreen();
+          },
+        },
+        child: child,
+      ),
+    );
+  }
+
+  bool _shouldHandleSystemBack(CallSurfaceState callSurface, bool isCompact) {
+    if (callSurface.isVisible &&
+        callSurface.mode != CallSurfaceMode.managerOnly) {
+      return true;
+    }
+    return isCompact && _selectedPeerId != null;
+  }
+
+  void _handleSystemBack(bool isCompact) {
+    if (ref.read(callSurfaceProvider.notifier).handleBackIntent()) {
+      return;
+    }
+    if (isCompact && _selectedPeerId != null) {
+      setState(() => _selectedPeerId = null);
+    }
   }
 
   Widget _buildBodyWithCallSurface({
