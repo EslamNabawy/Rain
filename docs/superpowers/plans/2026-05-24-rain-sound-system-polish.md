@@ -165,10 +165,10 @@ Initial policy numbers:
 - Read: `apps/rain/test/sound_effects_service_test.dart`
 - Modify: `docs/superpowers/plans/2026-05-24-rain-sound-system-polish.md`
 
-- [ ] Confirm current sound service still maps to mixed audio focus.
-- [ ] Confirm current call media still uses WebRTC media tracks, not app sound service.
-- [ ] Confirm current settings remain local preferences.
-- [ ] Run focused baseline:
+- [x] Confirm current sound service still maps to mixed audio focus.
+- [x] Confirm current call media still uses WebRTC media tracks, not app sound service.
+- [x] Confirm current settings remain local preferences.
+- [x] Run focused baseline:
 
 ```powershell
 flutter test apps\rain\test\sound_effects_service_test.dart
@@ -177,7 +177,7 @@ flutter test apps\rain\test\settings_screen_test.dart
 flutter test apps\rain\test\rain_chat_widgets_test.dart
 ```
 
-- [ ] Commit plan/baseline docs only:
+- [x] Commit plan/baseline docs only:
 
 ```powershell
 git add docs\superpowers\plans\2026-05-24-rain-sound-system-polish.md
