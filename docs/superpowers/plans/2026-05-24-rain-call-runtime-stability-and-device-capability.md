@@ -247,25 +247,25 @@
 
 **Purpose:** Stop showing invalid camera controls by reading actual device capabilities.
 
-- [ ] Extend `apps/rain/lib/application/runtime/media_device_settings.dart` to model video inputs, not only microphones.
-- [ ] Add a capability result that includes:
+- [x] Extend `apps/rain/lib/application/runtime/media_device_settings.dart` to model video inputs, not only microphones.
+- [x] Add a capability result that includes:
   - available video input count.
   - selected video input id.
   - labels when permission allows.
   - whether camera switching is supported.
   - whether a rear-facing camera is likely available.
-- [ ] Keep behavior permission-safe:
+- [x] Keep behavior permission-safe:
   - If labels are unavailable before permission, do not assume rear camera exists.
   - If only one video input exists, disable or hide flip-camera.
   - On Windows laptop, default to no flip-camera unless multiple cameras are detected.
-- [ ] Add tests for:
+- [x] Add tests for:
   - no camera.
   - one Windows laptop camera.
   - two Android cameras with front/rear labels.
   - labels hidden before permission.
-- [ ] Acceptance:
+- [x] Acceptance:
   - Laptop without rear camera does not show a flip-camera button.
-- [ ] Commit with message: `feat: model video device capabilities`.
+- [x] Commit with message: `feat: model video device capabilities`.
 
 ## Phase 10: Dynamic Video Controls And Camera Selection
 

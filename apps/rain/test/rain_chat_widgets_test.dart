@@ -1290,6 +1290,25 @@ void main() {
     expect(_findRuntimeType('RTCVideoView'), findsNothing);
   });
 
+  testWidgets('video overlay hides switch camera when capability is absent', (
+    WidgetTester tester,
+  ) async {
+    await _pumpCallOverlay(
+      tester,
+      _activeVoiceCall(mediaMode: CallMediaMode.video),
+      controlCapabilities: const <CallControlCapability>[
+        CallControlCapability.microphone,
+        CallControlCapability.camera,
+        CallControlCapability.deafen,
+        CallControlCapability.outputRoute,
+        CallControlCapability.hangUp,
+      ],
+    );
+
+    expect(find.byTooltip('Turn camera off'), findsOneWidget);
+    expect(find.byTooltip('Switch camera'), findsNothing);
+  });
+
   testWidgets('active video overlay renders local and remote surfaces', (
     WidgetTester tester,
   ) async {
@@ -1909,6 +1928,7 @@ Future<void> _pumpCallOverlay(
   VoiceCallState state, {
   VideoCallRenderers? videoRenderers,
   CallSurfaceMode surfaceMode = CallSurfaceMode.expanded,
+  List<CallControlCapability>? controlCapabilities,
 }) async {
   await tester.pumpWidget(
     MaterialApp(
@@ -1934,6 +1954,7 @@ Future<void> _pumpCallOverlay(
                 onMinimize: () {},
                 onExpand: () {},
                 onFullscreen: () {},
+                controlCapabilities: controlCapabilities,
               ),
             ),
           ],

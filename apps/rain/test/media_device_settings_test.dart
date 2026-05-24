@@ -2,6 +2,7 @@ import 'package:flutter_test/flutter_test.dart';
 import 'package:flutter_webrtc/flutter_webrtc.dart';
 import 'package:protocol_brain/protocol_brain.dart';
 import 'package:rain/application/runtime/media_device_settings.dart';
+import 'package:rain/application/runtime/voice_call_state.dart';
 import 'package:rain/infrastructure/services/app_settings_store.dart';
 import 'package:shared_preferences_platform_interface/in_memory_shared_preferences_async.dart';
 import 'package:shared_preferences_platform_interface/shared_preferences_async_platform_interface.dart';
@@ -133,6 +134,164 @@ void main() {
 
     expect(state.selectedDeviceId, isNull);
     expect(state.missingSelectedDeviceId, 'missing-mic');
+    expect(state.hasMissingSelection, isTrue);
+  });
+
+  test('video capabilities report no camera safely', () async {
+    final service = MediaDeviceSettings(
+      platformBridge: _FakePlatformBridge(),
+      settingsStore: AppSettingsStore(),
+    );
+
+    final state = await service.loadVideoInputCapabilities();
+
+    expect(state.devices, isEmpty);
+    expect(state.availableVideoInputCount, 0);
+    expect(state.selectedDeviceId, isNull);
+    expect(state.labelsAvailable, isFalse);
+    expect(state.supportsCameraSwitch, isFalse);
+    expect(state.likelyHasRearFacingCamera, isFalse);
+    expect(
+      state.filterCallControls(const <CallControlCapability>[
+        CallControlCapability.camera,
+        CallControlCapability.switchCamera,
+        CallControlCapability.hangUp,
+      ]),
+      const <CallControlCapability>[
+        CallControlCapability.camera,
+        CallControlCapability.hangUp,
+      ],
+    );
+  });
+
+  test(
+    'video capabilities keep one Windows laptop camera non-switchable',
+    () async {
+      final platform = _FakePlatformBridge()
+        ..devices = <MediaDeviceInfo>[
+          MediaDeviceInfo(
+            deviceId: 'integrated-camera',
+            label: 'Integrated Webcam',
+            kind: videoInputDeviceKind,
+          ),
+        ];
+      final service = MediaDeviceSettings(
+        platformBridge: platform,
+        settingsStore: AppSettingsStore(),
+      );
+
+      final state = await service.loadVideoInputCapabilities();
+
+      expect(state.availableVideoInputCount, 1);
+      expect(state.devices.single.cameraFacing, RainCameraFacing.external);
+      expect(state.labelsAvailable, isTrue);
+      expect(state.supportsCameraSwitch, isFalse);
+      expect(state.likelyHasRearFacingCamera, isFalse);
+    },
+  );
+
+  test('video capabilities detect Android front and rear cameras', () async {
+    final platform = _FakePlatformBridge()
+      ..devices = <MediaDeviceInfo>[
+        MediaDeviceInfo(
+          deviceId: 'front-camera',
+          label: 'Camera 0, Facing front',
+          kind: videoInputDeviceKind,
+        ),
+        MediaDeviceInfo(
+          deviceId: 'rear-camera',
+          label: 'Camera 1, Facing back',
+          kind: videoInputDeviceKind,
+        ),
+      ];
+    final store = AppSettingsStore();
+    final service = MediaDeviceSettings(
+      platformBridge: platform,
+      settingsStore: store,
+    );
+
+    await service.selectVideoInput('rear-camera');
+    final state = await service.loadVideoInputCapabilities();
+
+    expect(await store.loadSelectedVideoInputDeviceId(), 'rear-camera');
+    expect(state.availableVideoInputCount, 2);
+    expect(state.selectedDeviceId, 'rear-camera');
+    expect(state.selectedDevice?.displayLabel(1), 'Camera 1, Facing back');
+    expect(
+      state.devices.map((RainMediaDevice device) => device.cameraFacing),
+      <RainCameraFacing>[RainCameraFacing.front, RainCameraFacing.rear],
+    );
+    expect(state.labelsAvailable, isTrue);
+    expect(state.supportsCameraSwitch, isTrue);
+    expect(state.likelyHasRearFacingCamera, isTrue);
+    expect(
+      state.filterCallControls(const <CallControlCapability>[
+        CallControlCapability.camera,
+        CallControlCapability.switchCamera,
+        CallControlCapability.hangUp,
+      ]),
+      const <CallControlCapability>[
+        CallControlCapability.camera,
+        CallControlCapability.switchCamera,
+        CallControlCapability.hangUp,
+      ],
+    );
+  });
+
+  test(
+    'video capabilities do not assume rear camera when labels are hidden',
+    () async {
+      final platform = _FakePlatformBridge()
+        ..devices = <MediaDeviceInfo>[
+          MediaDeviceInfo(
+            deviceId: 'camera-1',
+            label: '',
+            kind: videoInputDeviceKind,
+          ),
+          MediaDeviceInfo(
+            deviceId: 'camera-2',
+            label: '',
+            kind: videoInputDeviceKind,
+          ),
+        ];
+      final service = MediaDeviceSettings(
+        platformBridge: platform,
+        settingsStore: AppSettingsStore(),
+      );
+
+      final state = await service.loadVideoInputCapabilities();
+
+      expect(state.availableVideoInputCount, 2);
+      expect(state.devices.first.displayLabel(0), 'Camera 1');
+      expect(state.labelsAvailable, isFalse);
+      expect(state.supportsCameraSwitch, isFalse);
+      expect(state.likelyHasRearFacingCamera, isFalse);
+      expect(
+        state.devices.map((RainMediaDevice device) => device.cameraFacing),
+        <RainCameraFacing>[RainCameraFacing.unknown, RainCameraFacing.unknown],
+      );
+    },
+  );
+
+  test('missing selected video input falls back to default', () async {
+    final platform = _FakePlatformBridge()
+      ..devices = <MediaDeviceInfo>[
+        MediaDeviceInfo(
+          deviceId: 'camera-1',
+          label: 'Camera',
+          kind: videoInputDeviceKind,
+        ),
+      ];
+    final service = MediaDeviceSettings(
+      platformBridge: platform,
+      settingsStore: AppSettingsStore(),
+    );
+
+    await service.selectVideoInput('missing-camera');
+    final state = await service.loadVideoInputCapabilities();
+
+    expect(state.selectedDeviceId, isNull);
+    expect(state.missingSelectedDeviceId, 'missing-camera');
     expect(state.hasMissingSelection, isTrue);
   });
 

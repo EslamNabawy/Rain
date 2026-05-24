@@ -43,6 +43,18 @@ void main() {
     expect(await store.loadSelectedMicrophoneDeviceId(), isNull);
   });
 
+  test('selected video input persists locally', () async {
+    final store = AppSettingsStore();
+
+    expect(await store.loadSelectedVideoInputDeviceId(), isNull);
+
+    await store.setSelectedVideoInputDeviceId(' rear-camera ');
+    expect(await store.loadSelectedVideoInputDeviceId(), 'rear-camera');
+
+    await store.setSelectedVideoInputDeviceId(null);
+    expect(await store.loadSelectedVideoInputDeviceId(), isNull);
+  });
+
   test('audio settings load defaults', () async {
     final store = AppSettingsStore();
 

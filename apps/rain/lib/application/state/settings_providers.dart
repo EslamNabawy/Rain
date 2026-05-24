@@ -97,6 +97,42 @@ class MicrophoneSelectionController
   }
 }
 
+final videoInputCapabilityProvider =
+    AsyncNotifierProvider<
+      VideoInputCapabilityController,
+      VideoInputCapabilityState
+    >(VideoInputCapabilityController.new);
+
+class VideoInputCapabilityController
+    extends AsyncNotifier<VideoInputCapabilityState> {
+  @override
+  Future<VideoInputCapabilityState> build() {
+    return ref.watch(mediaDeviceSettingsProvider).loadVideoInputCapabilities();
+  }
+
+  Future<void> refresh() async {
+    state = const AsyncValue.loading();
+    state = await AsyncValue.guard(
+      () => ref.read(mediaDeviceSettingsProvider).loadVideoInputCapabilities(),
+    );
+  }
+
+  Future<void> selectVideoInput(String? deviceId) async {
+    final service = ref.read(mediaDeviceSettingsProvider);
+    final previous = state.value;
+    state = const AsyncValue.loading();
+    final next = await AsyncValue.guard(() async {
+      await service.selectVideoInput(deviceId);
+      return service.loadVideoInputCapabilities();
+    });
+    state = next;
+    if (next.hasError && previous != null) {
+      state = AsyncValue.data(previous);
+      Error.throwWithStackTrace(next.error!, next.stackTrace!);
+    }
+  }
+}
+
 final voiceAudioSettingsProvider =
     AsyncNotifierProvider<VoiceAudioSettingsController, AppAudioSettings>(
       VoiceAudioSettingsController.new,

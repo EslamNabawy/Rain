@@ -29,6 +29,7 @@ class RainCallOverlay extends StatelessWidget {
     this.onToggleCamera,
     this.onSwitchCamera,
     this.onSelectOutputRoute,
+    this.controlCapabilities,
     required this.onMinimize,
     required this.onExpand,
     this.onFullscreen,
@@ -49,6 +50,7 @@ class RainCallOverlay extends StatelessWidget {
   final VoidCallback? onToggleCamera;
   final VoidCallback? onSwitchCamera;
   final ValueChanged<VoiceCallOutputRoute>? onSelectOutputRoute;
+  final List<CallControlCapability>? controlCapabilities;
   final VoidCallback onMinimize;
   final VoidCallback onExpand;
   final VoidCallback? onFullscreen;
@@ -116,6 +118,7 @@ class RainCallOverlay extends StatelessWidget {
               onToggleCamera: onToggleCamera,
               onSwitchCamera: onSwitchCamera,
               onSelectOutputRoute: onSelectOutputRoute,
+              controlCapabilities: controlCapabilities,
               onMinimize: onMinimize,
               onFullscreen: onFullscreen,
             ),
@@ -200,6 +203,7 @@ class _RainExpandedCallPanel extends StatelessWidget {
     this.onToggleCamera,
     this.onSwitchCamera,
     this.onSelectOutputRoute,
+    this.controlCapabilities,
     required this.onMinimize,
     this.onFullscreen,
     this.gender,
@@ -222,6 +226,7 @@ class _RainExpandedCallPanel extends StatelessWidget {
   final VoidCallback? onToggleCamera;
   final VoidCallback? onSwitchCamera;
   final ValueChanged<VoiceCallOutputRoute>? onSelectOutputRoute;
+  final List<CallControlCapability>? controlCapabilities;
   final VoidCallback onMinimize;
   final VoidCallback? onFullscreen;
 
@@ -325,6 +330,7 @@ class _RainExpandedCallPanel extends StatelessWidget {
                         onToggleCamera: onToggleCamera,
                         onSwitchCamera: onSwitchCamera,
                         onSelectOutputRoute: onSelectOutputRoute,
+                        controlCapabilities: controlCapabilities,
                       ),
                     ],
                   );
@@ -566,6 +572,7 @@ class _RainCallControlDock extends StatelessWidget {
     this.onToggleCamera,
     this.onSwitchCamera,
     this.onSelectOutputRoute,
+    this.controlCapabilities,
   });
 
   final VoiceCallState state;
@@ -578,6 +585,7 @@ class _RainCallControlDock extends StatelessWidget {
   final VoidCallback? onToggleCamera;
   final VoidCallback? onSwitchCamera;
   final ValueChanged<VoiceCallOutputRoute>? onSelectOutputRoute;
+  final List<CallControlCapability>? controlCapabilities;
 
   @override
   Widget build(BuildContext context) {
@@ -605,6 +613,7 @@ class _RainCallControlDock extends StatelessWidget {
           onToggleCamera: onToggleCamera,
           onSwitchCamera: onSwitchCamera,
           onSelectOutputRoute: onSelectOutputRoute,
+          controlCapabilities: controlCapabilities,
         ),
       ),
     );

@@ -2,6 +2,7 @@ import 'package:flutter_webrtc/flutter_webrtc.dart';
 import 'package:protocol_brain/protocol_brain.dart';
 
 import 'package:rain/infrastructure/services/app_settings_store.dart';
+import 'voice_call_state.dart';
 
 const String audioInputDeviceKind = 'audioinput';
 const String audioOutputDeviceKind = 'audiooutput';
@@ -29,6 +30,8 @@ enum RainMediaDeviceKind {
   }
 }
 
+enum RainCameraFacing { front, rear, external, unknown }
+
 final class RainMediaDevice {
   const RainMediaDevice({
     required this.deviceId,
@@ -50,6 +53,47 @@ final class RainMediaDevice {
   bool get isAudioOutput => typedKind == RainMediaDeviceKind.audioOutput;
 
   bool get isVideoInput => typedKind == RainMediaDeviceKind.videoInput;
+
+  bool get hasPermissionLabel => label.trim().isNotEmpty;
+
+  RainCameraFacing get cameraFacing {
+    if (!isVideoInput || !hasPermissionLabel) {
+      return RainCameraFacing.unknown;
+    }
+    final tokens = _labelTokens(label);
+    if (_hasAnyToken(tokens, const <String>{
+      'rear',
+      'back',
+      'environment',
+      'world',
+      'outward',
+    })) {
+      return RainCameraFacing.rear;
+    }
+    if (_hasAnyToken(tokens, const <String>{
+      'front',
+      'user',
+      'selfie',
+      'face',
+    })) {
+      return RainCameraFacing.front;
+    }
+    if (_hasAnyToken(tokens, const <String>{
+      'usb',
+      'external',
+      'virtual',
+      'integrated',
+      'built',
+      'builtin',
+      'webcam',
+    })) {
+      return RainCameraFacing.external;
+    }
+    return RainCameraFacing.unknown;
+  }
+
+  bool get isLikelyRearFacingCamera =>
+      isVideoInput && cameraFacing == RainCameraFacing.rear;
 
   String displayLabel(int index) {
     final normalized = label.trim();
@@ -84,6 +128,59 @@ final class MicrophoneSelectionState {
       }
     }
     return null;
+  }
+}
+
+final class VideoInputCapabilityState {
+  const VideoInputCapabilityState({
+    required this.devices,
+    this.selectedDeviceId,
+    this.missingSelectedDeviceId,
+  });
+
+  final List<RainMediaDevice> devices;
+  final String? selectedDeviceId;
+  final String? missingSelectedDeviceId;
+
+  int get availableVideoInputCount => devices.length;
+
+  bool get hasMissingSelection => missingSelectedDeviceId != null;
+
+  bool get labelsAvailable =>
+      devices.any((RainMediaDevice device) => device.hasPermissionLabel);
+
+  bool get likelyHasRearFacingCamera =>
+      labelsAvailable &&
+      devices.any((RainMediaDevice device) => device.isLikelyRearFacingCamera);
+
+  bool get supportsCameraSwitch =>
+      availableVideoInputCount > 1 && labelsAvailable;
+
+  RainMediaDevice? get selectedDevice {
+    final selected = selectedDeviceId;
+    if (selected == null) {
+      return null;
+    }
+    for (final device in devices) {
+      if (device.deviceId == selected) {
+        return device;
+      }
+    }
+    return null;
+  }
+
+  List<CallControlCapability> filterCallControls(
+    Iterable<CallControlCapability> controls,
+  ) {
+    if (supportsCameraSwitch) {
+      return controls.toList(growable: false);
+    }
+    return controls
+        .where(
+          (CallControlCapability capability) =>
+              capability != CallControlCapability.switchCamera,
+        )
+        .toList(growable: false);
   }
 }
 
@@ -150,8 +247,31 @@ class MediaDeviceSettings {
     );
   }
 
+  Future<VideoInputCapabilityState> loadVideoInputCapabilities() async {
+    final storedDeviceId = await settingsStore.loadSelectedVideoInputDeviceId();
+    final devices = await loadVideoInputDevices();
+    final selectedDeviceId =
+        storedDeviceId != null &&
+            devices.any((device) => device.deviceId == storedDeviceId)
+        ? storedDeviceId
+        : null;
+    final missingSelectedDeviceId =
+        storedDeviceId != null && selectedDeviceId == null
+        ? storedDeviceId
+        : null;
+    return VideoInputCapabilityState(
+      devices: devices,
+      selectedDeviceId: selectedDeviceId,
+      missingSelectedDeviceId: missingSelectedDeviceId,
+    );
+  }
+
   Future<void> selectMicrophone(String? deviceId) async {
     await settingsStore.setSelectedMicrophoneDeviceId(deviceId);
+  }
+
+  Future<void> selectVideoInput(String? deviceId) async {
+    await settingsStore.setSelectedVideoInputDeviceId(deviceId);
   }
 
   Future<void> testSelectedMicrophoneAvailability() async {
@@ -209,4 +329,21 @@ class MediaDeviceSettings {
       groupId: device.groupId,
     );
   }
+}
+
+Set<String> _labelTokens(String value) {
+  return value
+      .toLowerCase()
+      .split(RegExp(r'[^a-z0-9]+'))
+      .where((String token) => token.isNotEmpty)
+      .toSet();
+}
+
+bool _hasAnyToken(Set<String> tokens, Set<String> candidates) {
+  for (final candidate in candidates) {
+    if (tokens.contains(candidate)) {
+      return true;
+    }
+  }
+  return false;
 }

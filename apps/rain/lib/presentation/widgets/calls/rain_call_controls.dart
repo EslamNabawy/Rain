@@ -19,6 +19,7 @@ class RainCallControls extends StatelessWidget {
     this.onToggleCamera,
     this.onSwitchCamera,
     this.onSelectOutputRoute,
+    this.controlCapabilities,
   });
 
   final VoiceCallState state;
@@ -31,6 +32,7 @@ class RainCallControls extends StatelessWidget {
   final VoidCallback? onToggleCamera;
   final VoidCallback? onSwitchCamera;
   final ValueChanged<VoiceCallOutputRoute>? onSelectOutputRoute;
+  final List<CallControlCapability>? controlCapabilities;
 
   @override
   Widget build(BuildContext context) {
@@ -80,7 +82,8 @@ class RainCallControls extends StatelessWidget {
       runSpacing: 8,
       alignment: WrapAlignment.end,
       children: <Widget>[
-        for (final capability in state.controlCapabilities)
+        for (final capability
+            in controlCapabilities ?? state.controlCapabilities)
           _buildActiveControl(context, capability),
       ],
     );

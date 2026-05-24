@@ -12,6 +12,7 @@ import 'package:rain_core/rain_core.dart';
 
 import 'package:rain/presentation/navigation/app_routes.dart';
 import 'package:rain/application/audio/rain_sound_event.dart';
+import 'package:rain/application/runtime/media_device_settings.dart';
 import 'package:rain/application/runtime/video_call_renderers.dart';
 import 'package:rain/application/runtime/voice_call_state.dart';
 import 'package:rain/application/state/app_providers.dart';
@@ -624,6 +625,12 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
     final voiceCall = ref.watch(voiceCallProvider);
     final videoRenderers = ref.watch(videoCallRenderersProvider);
     final callSurface = ref.watch(callSurfaceProvider);
+    final videoInputCapabilities = ref
+        .watch(videoInputCapabilityProvider)
+        .value;
+    final callControlCapabilities =
+        (videoInputCapabilities ?? const VideoInputCapabilityState(devices: []))
+            .filterCallControls(voiceCall.controlCapabilities);
     ref.listen<VoiceCallState>(voiceCallProvider, _handleVoiceCallNavigation);
 
     return LayoutBuilder(
@@ -669,6 +676,7 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
                       voiceCall: voiceCall,
                       videoRenderers: videoRenderers,
                       callSurface: callSurface,
+                      callControlCapabilities: callControlCapabilities,
                     ),
                   ),
                 ],
@@ -736,6 +744,7 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
     required VoiceCallState voiceCall,
     required VideoCallRenderers? videoRenderers,
     required CallSurfaceState callSurface,
+    required List<CallControlCapability> callControlCapabilities,
   }) {
     final body = isCompact
         ? _buildCompactBody(friends)
@@ -762,6 +771,7 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
               onToggleCamera: () => _toggleVoiceCamera(voiceCall),
               onSwitchCamera: _switchVoiceCamera,
               onSelectOutputRoute: _selectVoiceOutputRoute,
+              controlCapabilities: callControlCapabilities,
               onMinimize: () =>
                   ref.read(callSurfaceProvider.notifier).minimize(),
               onExpand: () => _toggleCallSurfacePanel(callSurface),
