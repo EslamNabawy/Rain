@@ -78,6 +78,19 @@ Required final state:
 - Windows app title and visible metadata are `Rain` where supported by existing project files.
 - Android launcher icons and Windows ICO are generated from `peer_core_app_icon_1024.png`.
 
+Phase 02 application note:
+
+- Source icon verified: `apps/rain/assets/branding/generated/peer_core_app_icon_1024.png` at `1024x1024`.
+- Applied with `scripts/generate_rain_platform_icons.ps1 -Apply -Approved`.
+- Android outputs verified:
+  - `mipmap-mdpi/ic_launcher.png` at `48x48`.
+  - `mipmap-hdpi/ic_launcher.png` at `72x72`.
+  - `mipmap-xhdpi/ic_launcher.png` at `96x96`.
+  - `mipmap-xxhdpi/ic_launcher.png` at `144x144`.
+  - `mipmap-xxxhdpi/ic_launcher.png` at `192x192`.
+- Windows output verified: `apps/rain/windows/runner/resources/app_icon.ico` exists after regeneration.
+- The same approved script also refreshed existing Linux and macOS runner icon outputs; those files are kept with this phase because they are owned by the icon generation script.
+
 ### 3. Texture Theme Is Too Subtle And Not Variant-Based
 
 Files:

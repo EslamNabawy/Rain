@@ -60,23 +60,23 @@
 
 **Purpose:** Replace the old app icon everywhere users install or launch the app.
 
-- [ ] Verify source icon exists:
+- [x] Verify source icon exists:
   - `apps/rain/assets/branding/generated/peer_core_app_icon_1024.png`
-- [ ] Apply platform icons with:
+- [x] Apply platform icons with:
   - `powershell -ExecutionPolicy Bypass -File scripts/generate_rain_platform_icons.ps1 -Apply -Approved`
-- [ ] Verify Android outputs changed:
+- [x] Verify Android outputs changed:
   - `apps/rain/android/app/src/main/res/mipmap-mdpi/ic_launcher.png`
   - `apps/rain/android/app/src/main/res/mipmap-hdpi/ic_launcher.png`
   - `apps/rain/android/app/src/main/res/mipmap-xhdpi/ic_launcher.png`
   - `apps/rain/android/app/src/main/res/mipmap-xxhdpi/ic_launcher.png`
   - `apps/rain/android/app/src/main/res/mipmap-xxxhdpi/ic_launcher.png`
-- [ ] Verify Windows output changed:
+- [x] Verify Windows output changed:
   - `apps/rain/windows/runner/resources/app_icon.ico`
-- [ ] Update platform labels where still lowercase or old:
+- [x] Update platform labels where still lowercase or old:
   - Android launcher label should be `Rain`.
   - Windows window/app metadata should be `Rain` where supported by existing files.
-- [ ] Add a short note to the QA doc with icon source and generated outputs.
-- [ ] Commit with message: `feat: apply Rain platform icons`.
+- [x] Add a short note to the QA doc with icon source and generated outputs.
+- [x] Commit with message: `feat: apply Rain platform icons`.
 
 ## Phase 03: Splash Logo Motion System
 
