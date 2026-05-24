@@ -354,13 +354,20 @@ Current attempt: blocked because this machine sees only Windows/web targets and
 
 **Purpose:** Ship only after the runtime, UI, and manual paths agree.
 
-- [ ] Confirm `git status` contains only expected changes.
-- [ ] Confirm every phase has a commit.
-- [ ] Push the branch.
-- [ ] Open PR with:
+Current attempt: blocked because Phase 13 has no physical-device evidence. A
+draft PR is open at https://github.com/EslamNabawy/Rain/pull/7. See
+`docs/qa/2026-05-25-rain-call-runtime-final-release-gate.md`.
+
+- [x] Confirm `git status` contains only expected changes.
+  - The branch is pushed. Existing unstaged rebrand planning docs remain
+    intentionally excluded from this call-runtime gate.
+- [x] Confirm every phase has a commit.
+- [x] Push the branch.
+- [x] Open PR with:
   - root causes fixed.
   - tests added.
   - manual device matrix.
   - known residual risks, if any.
 - [ ] Trigger cloud build workflow only after PR branch is pushed and validation is green.
-- [ ] Do not merge until the user approves the tested artifacts.
+  - Not triggered in this attempt because the manual device gate remains blocked.
+- [x] Do not merge until the user approves the tested artifacts.
