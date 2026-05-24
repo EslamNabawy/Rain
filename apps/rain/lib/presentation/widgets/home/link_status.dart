@@ -29,7 +29,7 @@ class _MobileLinkStatusBar extends StatelessWidget {
     final actionIcon = status.isConnected ? Icons.link_off : Icons.hub_outlined;
     final actionLabel = status.isConnected ? 'Disconnect' : 'Connect';
     final detail = _mobileLinkDetail(diagnostics, status);
-    final showStreak = status.isConnected || status.isBusy;
+    final showHalo = status.isConnected || status.isBusy;
 
     return Semantics(
       button: enabled,
@@ -39,9 +39,14 @@ class _MobileLinkStatusBar extends StatelessWidget {
         child: InkWell(
           onTap: enabled ? onTap : null,
           borderRadius: BorderRadius.circular(16),
-          child: RainStreakSurface(
-            enabled: showStreak,
+          child: RainRippleHaloSurface(
+            enabled: showHalo,
             borderRadius: BorderRadius.circular(16),
+            color: _linkHaloColor(status),
+            origin: Alignment.centerLeft,
+            pulseKey:
+                '${status.label}:${diagnostics.route.kind}:${status.isBusy}',
+            pulseOnMount: showHalo,
             child: Ink(
               height: 56,
               decoration: BoxDecoration(
@@ -134,6 +139,17 @@ class _MobileLinkStatusBar extends StatelessWidget {
       PeerRouteKind.unknown => status.isConnected ? 2 : 1,
     };
   }
+}
+
+Color _linkHaloColor(_ConnectionStatus status) {
+  return switch (status.label) {
+    'Direct' => RainColors.peerMint,
+    'Relay' ||
+    'Connecting' ||
+    'Recovering' ||
+    'Disconnecting' => RainColors.mistCyan,
+    _ => RainColors.primary,
+  };
 }
 
 class _MobileLinkGlyph extends StatelessWidget {

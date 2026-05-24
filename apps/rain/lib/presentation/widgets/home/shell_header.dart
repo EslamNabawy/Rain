@@ -19,7 +19,7 @@ class _ShellHeader extends StatelessWidget {
         isCompact ? 10 : 18,
         isCompact ? 10 : 14,
       ),
-      child: RainStreakSurface(
+      child: RainRippleHaloSurface(
         borderRadius: BorderRadius.circular(18),
         child: Container(
           key: const ValueKey<String>('rain-shell-header-surface'),
@@ -74,7 +74,7 @@ class _RainHeaderIcon extends StatelessWidget {
   Widget build(BuildContext context) {
     final scheme = Theme.of(context).colorScheme;
 
-    return RainStreakSurface(
+    return RainRippleHaloSurface(
       borderRadius: BorderRadius.circular(size * 0.30),
       child: Container(
         width: size,

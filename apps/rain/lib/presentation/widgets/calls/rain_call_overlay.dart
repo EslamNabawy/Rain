@@ -6,7 +6,7 @@ import 'package:rain/application/runtime/video_call_renderers.dart';
 import 'package:rain/application/runtime/voice_call_state.dart';
 import 'package:rain/application/state/call_surface_providers.dart';
 import 'package:rain/presentation/branding/rain_peer_core_mark.dart';
-import 'package:rain/presentation/branding/rain_streak_surface.dart';
+import 'package:rain/presentation/branding/rain_ripple_halo_surface.dart';
 import 'package:rain/presentation/theme/rain_theme.dart';
 import 'package:rain/presentation/widgets/calls/rain_call_controls.dart';
 import 'package:rain/presentation/widgets/rain_chat_widgets.dart';
@@ -229,6 +229,7 @@ class _RainExpandedCallPanel extends StatelessWidget {
   Widget build(BuildContext context) {
     final scheme = Theme.of(context).colorScheme;
     final accent = rainVoiceCallAccent(context, state);
+    final haloColor = rainVoiceCallHaloColor(context, state);
     final canMinimize =
         state.phase != VoiceCallPhase.incomingRinging &&
         state.phase != VoiceCallPhase.failed;
@@ -243,9 +244,13 @@ class _RainExpandedCallPanel extends StatelessWidget {
 
     return Material(
       color: Colors.transparent,
-      child: RainStreakSurface(
+      child: RainRippleHaloSurface(
         key: const ValueKey<String>('rain-call-panel-surface'),
+        enabled: rainVoiceCallShowsSignalHalo(state),
         borderRadius: BorderRadius.circular(24),
+        color: haloColor,
+        pulseKey: '${state.callId}:${state.phase}:${state.isVideo}',
+        pulseOnMount: rainVoiceCallShowsSignalHalo(state),
         child: AnimatedContainer(
           duration: RainMotion.callSurface,
           curve: Curves.easeOutCubic,

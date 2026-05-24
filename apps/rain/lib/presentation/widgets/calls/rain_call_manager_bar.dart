@@ -2,7 +2,7 @@ import 'package:flutter/material.dart';
 
 import 'package:rain/application/runtime/voice_call_state.dart';
 import 'package:rain/application/state/call_surface_providers.dart';
-import 'package:rain/presentation/branding/rain_streak_surface.dart';
+import 'package:rain/presentation/branding/rain_ripple_halo_surface.dart';
 import 'package:rain/presentation/widgets/calls/rain_call_controls.dart';
 import 'package:rain/presentation/widgets/rain_chat_widgets.dart';
 
@@ -40,6 +40,7 @@ class RainCallManagerBar extends StatelessWidget {
 
     final scheme = Theme.of(context).colorScheme;
     final accent = rainVoiceCallAccent(context, state);
+    final haloColor = rainVoiceCallHaloColor(context, state);
     return Material(
       color: Colors.transparent,
       child: SafeArea(
@@ -49,9 +50,13 @@ class RainCallManagerBar extends StatelessWidget {
           child: Center(
             child: ConstrainedBox(
               constraints: const BoxConstraints(maxWidth: 980),
-              child: RainStreakSurface(
+              child: RainRippleHaloSurface(
                 key: const ValueKey<String>('rain-call-manager-bar'),
+                enabled: rainVoiceCallShowsSignalHalo(state),
                 borderRadius: BorderRadius.circular(22),
+                color: haloColor,
+                pulseKey: '${state.callId}:${state.phase}:${surface.mode}',
+                pulseOnMount: rainVoiceCallShowsSignalHalo(state),
                 child: DecoratedBox(
                   decoration: BoxDecoration(
                     color: scheme.surface.withValues(

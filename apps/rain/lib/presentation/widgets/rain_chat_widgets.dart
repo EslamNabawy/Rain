@@ -4,6 +4,7 @@ import 'package:rain/application/runtime/media_device_settings.dart';
 import 'package:rain/application/runtime/video_call_renderers.dart';
 import 'package:rain/application/runtime/voice_call_state.dart';
 import 'package:rain/presentation/branding/rain_peer_core_mark.dart';
+import 'package:rain/presentation/branding/rain_ripple_halo_surface.dart';
 import 'package:rain/presentation/widgets/calls/rain_call_controls.dart';
 
 const String _maleAvatarAsset = 'assets/gender avatar/man-avatar.svg';
@@ -1191,18 +1192,30 @@ class _RainMicrophoneMenuRow extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    return Row(
-      children: <Widget>[
-        Icon(
-          selected ? Icons.check_circle : Icons.circle_outlined,
-          size: 20,
-          color: selected ? Theme.of(context).colorScheme.primary : null,
+    final scheme = Theme.of(context).colorScheme;
+    return RainRippleHaloSurface(
+      enabled: selected,
+      borderRadius: BorderRadius.circular(12),
+      color: scheme.primary,
+      origin: Alignment.centerLeft,
+      pulseKey: label,
+      pulseOnMount: selected,
+      child: Padding(
+        padding: const EdgeInsets.symmetric(horizontal: 4, vertical: 6),
+        child: Row(
+          children: <Widget>[
+            Icon(
+              selected ? Icons.check_circle : Icons.circle_outlined,
+              size: 20,
+              color: selected ? scheme.primary : null,
+            ),
+            const SizedBox(width: 10),
+            Flexible(
+              child: Text(label, maxLines: 1, overflow: TextOverflow.ellipsis),
+            ),
+          ],
         ),
-        const SizedBox(width: 10),
-        Flexible(
-          child: Text(label, maxLines: 1, overflow: TextOverflow.ellipsis),
-        ),
-      ],
+      ),
     );
   }
 }

@@ -81,9 +81,13 @@ class _FileTransferBubble extends StatelessWidget {
             top: startsCluster ? 8 : 2,
             bottom: endsCluster ? 8 : 1,
           ),
-          child: RainStreakSurface(
-            enabled: _isOutgoing || _isActive,
+          child: RainRippleHaloSurface(
+            enabled: _isActive,
             borderRadius: radius,
+            color: statusColor,
+            origin: _isOutgoing ? Alignment.centerRight : Alignment.centerLeft,
+            pulseKey: '${transfer.id}:${transfer.state}',
+            pulseOnMount: _isActive,
             child: Container(
               key: const ValueKey<String>('rain-file-transfer-surface'),
               padding: const EdgeInsets.fromLTRB(14, 12, 12, 10),

@@ -4,7 +4,7 @@ import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 
-import 'package:rain/presentation/branding/rain_streak_surface.dart';
+import 'package:rain/presentation/branding/rain_ripple_halo_surface.dart';
 import 'package:rain/presentation/theme/rain_theme.dart';
 
 class ChatComposer extends StatefulWidget {
@@ -213,9 +213,11 @@ class _ChatComposerState extends State<ChatComposer> {
           const SizedBox(width: 8),
           SizedBox.square(
             dimension: 48,
-            child: RainStreakSurface(
+            child: RainRippleHaloSurface(
               enabled: _canSend || widget.isSending,
               borderRadius: const BorderRadius.all(Radius.circular(24)),
+              pulseKey: '${_canSend}:${widget.isSending}',
+              pulseOnMount: _canSend || widget.isSending,
               child: FilledButton(
                 onPressed: _canSend ? () => unawaited(_submit()) : null,
                 style: FilledButton.styleFrom(

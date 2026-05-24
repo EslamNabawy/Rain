@@ -1,7 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:go_router/go_router.dart';
 
-import 'package:rain/presentation/branding/rain_streak_surface.dart';
+import 'package:rain/presentation/branding/rain_ripple_halo_surface.dart';
 import 'package:rain/presentation/widgets/rain_backdrop.dart';
 
 class RainNavigationShell extends StatelessWidget {
@@ -152,17 +152,17 @@ class _BottomNavigation extends StatelessWidget {
       destinations: <NavigationDestination>[
         NavigationDestination(
           icon: const Icon(Icons.chat_bubble_outline),
-          selectedIcon: _RainNavigationStreakIcon(icon: Icons.chat_bubble),
+          selectedIcon: _RainNavigationHaloIcon(icon: Icons.chat_bubble),
           label: 'Chats',
         ),
         NavigationDestination(
           icon: const Icon(Icons.person_search_outlined),
-          selectedIcon: _RainNavigationStreakIcon(icon: Icons.person_search),
+          selectedIcon: _RainNavigationHaloIcon(icon: Icons.person_search),
           label: 'Find',
         ),
         NavigationDestination(
           icon: const Icon(Icons.settings_outlined),
-          selectedIcon: _RainNavigationStreakIcon(icon: Icons.settings),
+          selectedIcon: _RainNavigationHaloIcon(icon: Icons.settings),
           label: 'Settings',
         ),
       ],
@@ -198,21 +198,19 @@ class _RailLayout extends StatelessWidget {
             destinations: <NavigationRailDestination>[
               NavigationRailDestination(
                 icon: const Icon(Icons.chat_bubble_outline),
-                selectedIcon: _RainNavigationStreakIcon(
-                  icon: Icons.chat_bubble,
-                ),
+                selectedIcon: _RainNavigationHaloIcon(icon: Icons.chat_bubble),
                 label: const Text('Chats'),
               ),
               NavigationRailDestination(
                 icon: const Icon(Icons.person_search_outlined),
-                selectedIcon: _RainNavigationStreakIcon(
+                selectedIcon: _RainNavigationHaloIcon(
                   icon: Icons.person_search,
                 ),
                 label: const Text('Find'),
               ),
               NavigationRailDestination(
                 icon: const Icon(Icons.settings_outlined),
-                selectedIcon: _RainNavigationStreakIcon(icon: Icons.settings),
+                selectedIcon: _RainNavigationHaloIcon(icon: Icons.settings),
                 label: const Text('Settings'),
               ),
             ],
@@ -225,15 +223,18 @@ class _RailLayout extends StatelessWidget {
   }
 }
 
-class _RainNavigationStreakIcon extends StatelessWidget {
-  const _RainNavigationStreakIcon({required this.icon});
+class _RainNavigationHaloIcon extends StatelessWidget {
+  const _RainNavigationHaloIcon({required this.icon});
 
   final IconData icon;
 
   @override
   Widget build(BuildContext context) {
-    return RainStreakSurface(
+    return RainRippleHaloSurface(
+      enabled: true,
       borderRadius: const BorderRadius.all(Radius.circular(18)),
+      pulseKey: icon,
+      pulseOnMount: true,
       child: Padding(padding: const EdgeInsets.all(8), child: Icon(icon)),
     );
   }

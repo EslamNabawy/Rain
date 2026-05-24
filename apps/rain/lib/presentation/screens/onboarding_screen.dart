@@ -9,7 +9,7 @@ import 'package:rain/application/audio/rain_sound_event.dart';
 import 'package:rain/application/state/app_providers.dart';
 import 'package:rain/application/state/sound_event_providers.dart';
 import 'package:rain/presentation/branding/rain_peer_core_mark.dart';
-import 'package:rain/presentation/branding/rain_streak_surface.dart';
+import 'package:rain/presentation/branding/rain_ripple_halo_surface.dart';
 import 'package:rain/presentation/theme/rain_theme.dart';
 import 'package:rain/presentation/widgets/app_components.dart';
 
@@ -256,7 +256,7 @@ class _OnboardingScreenState extends ConsumerState<OnboardingScreen>
                   ),
                   child: ConstrainedBox(
                     constraints: const BoxConstraints(maxWidth: 560),
-                    child: RainStreakSurface(
+                    child: RainRippleHaloSurface(
                       borderRadius: BorderRadius.circular(28),
                       child: DecoratedBox(
                         key: const ValueKey<String>('rain-auth-card-surface'),
@@ -296,7 +296,7 @@ class _OnboardingScreenState extends ConsumerState<OnboardingScreen>
                                   if (showBrandHeader) ...<Widget>[
                                     Row(
                                       children: <Widget>[
-                                        RainStreakSurface(
+                                        RainRippleHaloSurface(
                                           borderRadius: BorderRadius.circular(
                                             14,
                                           ),

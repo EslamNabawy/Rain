@@ -1,7 +1,8 @@
 import 'package:flutter/material.dart';
 
 import 'package:rain/application/runtime/voice_call_state.dart';
-import 'package:rain/presentation/branding/rain_streak_surface.dart';
+import 'package:rain/presentation/branding/rain_ripple_halo_surface.dart';
+import 'package:rain/presentation/theme/rain_theme.dart';
 
 class RainCallControls extends StatelessWidget {
   const RainCallControls({
@@ -141,9 +142,11 @@ class RainCallControls extends StatelessWidget {
       ),
     };
 
-    return RainStreakSurface(
+    return RainRippleHaloSurface(
       enabled: state.isActive,
       borderRadius: const BorderRadius.all(Radius.circular(20)),
+      color: rainVoiceCallHaloColor(context, state),
+      pulseKey: '${state.callId}:${state.phase}:${capability.name}',
       child: control,
     );
   }
@@ -213,6 +216,32 @@ Color rainVoiceCallAccent(BuildContext context, VoiceCallState state) {
     VoiceCallPhase.connectingMedia ||
     VoiceCallPhase.ending ||
     VoiceCallPhase.idle => scheme.primary,
+  };
+}
+
+Color rainVoiceCallHaloColor(BuildContext context, VoiceCallState state) {
+  final scheme = Theme.of(context).colorScheme;
+  return switch (state.phase) {
+    VoiceCallPhase.active => RainColors.peerMint,
+    VoiceCallPhase.incomingRinging ||
+    VoiceCallPhase.outgoingRinging ||
+    VoiceCallPhase.connectingPeer ||
+    VoiceCallPhase.connectingMedia => RainColors.mistCyan,
+    VoiceCallPhase.failed => scheme.error,
+    VoiceCallPhase.ending || VoiceCallPhase.idle => scheme.primary,
+  };
+}
+
+bool rainVoiceCallShowsSignalHalo(VoiceCallState state) {
+  return switch (state.phase) {
+    VoiceCallPhase.connectingPeer ||
+    VoiceCallPhase.connectingMedia ||
+    VoiceCallPhase.incomingRinging ||
+    VoiceCallPhase.outgoingRinging ||
+    VoiceCallPhase.active => true,
+    VoiceCallPhase.failed ||
+    VoiceCallPhase.ending ||
+    VoiceCallPhase.idle => false,
   };
 }
 

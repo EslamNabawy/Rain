@@ -11,6 +11,7 @@ import 'package:rain/application/state/app_providers.dart';
 import 'package:rain/application/state/sound_event_providers.dart';
 import 'package:rain/infrastructure/services/crash_diagnostics_service.dart';
 import 'package:rain/infrastructure/services/app_settings_store.dart';
+import 'package:rain/presentation/branding/rain_ripple_halo_surface.dart';
 import 'package:rain/presentation/branding/rain_state_surfaces.dart';
 import 'package:rain/presentation/screens/splash_screen.dart';
 import 'package:rain/presentation/widgets/app_components.dart';
@@ -793,22 +794,34 @@ class _OutputPreferenceMenuRow extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    return Row(
-      children: <Widget>[
-        Icon(
-          selected ? Icons.check_circle : _outputPreferenceIcon(preference),
-          size: 20,
-          color: selected ? Theme.of(context).colorScheme.primary : null,
+    final scheme = Theme.of(context).colorScheme;
+    return RainRippleHaloSurface(
+      enabled: selected,
+      borderRadius: BorderRadius.circular(12),
+      color: scheme.primary,
+      origin: Alignment.centerLeft,
+      pulseKey: preference.name,
+      pulseOnMount: selected,
+      child: Padding(
+        padding: const EdgeInsets.symmetric(horizontal: 4, vertical: 6),
+        child: Row(
+          children: <Widget>[
+            Icon(
+              selected ? Icons.check_circle : _outputPreferenceIcon(preference),
+              size: 20,
+              color: selected ? scheme.primary : null,
+            ),
+            const SizedBox(width: 10),
+            Flexible(
+              child: Text(
+                _outputPreferenceLabel(preference),
+                maxLines: 1,
+                overflow: TextOverflow.ellipsis,
+              ),
+            ),
+          ],
         ),
-        const SizedBox(width: 10),
-        Flexible(
-          child: Text(
-            _outputPreferenceLabel(preference),
-            maxLines: 1,
-            overflow: TextOverflow.ellipsis,
-          ),
-        ),
-      ],
+      ),
     );
   }
 }

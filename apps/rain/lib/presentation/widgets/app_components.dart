@@ -1,6 +1,6 @@
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
-import 'package:rain/presentation/branding/rain_streak_surface.dart';
+import 'package:rain/presentation/branding/rain_ripple_halo_surface.dart';
 import 'package:rain/presentation/branding/rain_state_surfaces.dart';
 import 'package:rain/presentation/theme/rain_theme.dart';
 
@@ -26,7 +26,7 @@ class AppSectionCard extends StatelessWidget {
 
     return Padding(
       padding: margin ?? EdgeInsets.zero,
-      child: RainStreakSurface(
+      child: RainRippleHaloSurface(
         borderRadius: radius,
         child: DecoratedBox(
           key: const ValueKey<String>('rain-section-card-surface'),
@@ -118,7 +118,7 @@ class AppPageFrame extends StatelessWidget {
         return SafeArea(
           child: Padding(
             padding: padding,
-            child: RainStreakSurface(
+            child: RainRippleHaloSurface(
               borderRadius: BorderRadius.circular(isCompact ? 24 : 32),
               child: Container(
                 key: const ValueKey<String>('rain-page-frame-surface'),
