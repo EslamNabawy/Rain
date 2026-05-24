@@ -757,7 +757,7 @@ git commit -m "feat: add Rain mist state surfaces"
 - Modify: `apps/rain/lib/presentation/widgets/calls/rain_call_controls.dart`
 - Modify: related widget tests
 
-- [ ] **Step 1: Add `RainStreakSurface`**
+- [x] **Step 1: Add `RainStreakSurface`**
 
 Create `rain_streak_surface.dart`:
 
@@ -822,7 +822,7 @@ class _RainStreakPainter extends CustomPainter {
 }
 ```
 
-- [ ] **Step 2: Apply only to active/primary/state surfaces**
+- [x] **Step 2: Apply only to active/primary/state surfaces**
 
 Wrap, do not replace, existing controls:
 
@@ -833,7 +833,7 @@ Wrap, do not replace, existing controls:
 
 Neutral icon buttons remain unwrapped.
 
-- [ ] **Step 3: Add focused assertions**
+- [x] **Step 3: Add focused assertions**
 
 Update tests to assert selected/primary states render `RainStreakSurface`:
 
@@ -843,7 +843,7 @@ expect(find.byType(RainStreakSurface), findsWidgets);
 
 Add imports where needed.
 
-- [ ] **Step 4: Validate Task 6**
+- [x] **Step 4: Validate Task 6**
 
 ```powershell
 cd apps/rain
@@ -852,7 +852,7 @@ flutter test test/rain_navigation_shell_test.dart test/chat_composer_test.dart t
 
 Expected: active-state treatment tests pass.
 
-- [ ] **Step 5: Commit Task 6**
+- [x] **Step 5: Commit Task 6**
 
 ```powershell
 git add apps/rain/lib/presentation/branding/rain_streak_surface.dart apps/rain/lib/presentation/navigation/rain_navigation_shell.dart apps/rain/lib/presentation/widgets/chat_composer.dart apps/rain/lib/presentation/widgets/home/link_status.dart apps/rain/lib/presentation/widgets/calls/rain_call_controls.dart apps/rain/test/rain_navigation_shell_test.dart apps/rain/test/chat_composer_test.dart apps/rain/test/rain_chat_widgets_test.dart apps/rain/test/call_surface_providers_test.dart

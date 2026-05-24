@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 
 import 'package:rain/application/runtime/voice_call_state.dart';
+import 'package:rain/presentation/branding/rain_streak_surface.dart';
 
 class RainCallControls extends StatelessWidget {
   const RainCallControls({
@@ -83,7 +84,7 @@ class RainCallControls extends StatelessWidget {
   }
 
   Widget _buildActiveControl(CallControlCapability capability) {
-    return switch (capability) {
+    final control = switch (capability) {
       CallControlCapability.microphone => IconButton(
         tooltip: state.isMuted ? 'Unmute microphone' : 'Mute microphone',
         onPressed: state.isActive ? onToggleMute : null,
@@ -139,6 +140,12 @@ class RainCallControls extends StatelessWidget {
         icon: const Icon(Icons.call_end),
       ),
     };
+
+    return RainStreakSurface(
+      enabled: state.isActive,
+      borderRadius: const BorderRadius.all(Radius.circular(20)),
+      child: control,
+    );
   }
 }
 

@@ -8,6 +8,7 @@ import 'package:rain/application/runtime/voice_audio_level.dart';
 import 'package:rain/application/runtime/voice_call_state.dart';
 import 'package:rain/application/state/call_surface_providers.dart';
 import 'package:rain/application/audio/rain_sound_event.dart';
+import 'package:rain/presentation/branding/rain_streak_surface.dart';
 import 'package:rain/presentation/screens/home_screen.dart';
 import 'package:rain/presentation/widgets/calls/rain_call_overlay.dart';
 import 'package:rain/presentation/widgets/rain_chat_widgets.dart';
@@ -498,6 +499,7 @@ void main() {
     );
 
     expect(find.text('Voice call with Bob'), findsOneWidget);
+    expect(find.byType(RainStreakSurface), findsWidgets);
     await tester.tap(find.byTooltip('Mute microphone'));
     expect(muted, isTrue);
 

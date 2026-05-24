@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:go_router/go_router.dart';
+import 'package:rain/presentation/branding/rain_streak_surface.dart';
 import 'package:rain/presentation/navigation/rain_navigation_shell.dart';
 
 void main() {
@@ -20,6 +21,7 @@ void main() {
     await tester.pumpAndSettle();
 
     expect(find.byType(NavigationBar), findsOneWidget);
+    expect(find.byType(RainStreakSurface), findsWidgets);
     expect(find.text('Chats page'), findsOneWidget);
     expect(find.text('Search page'), findsNothing);
 
@@ -45,6 +47,7 @@ void main() {
     await tester.pumpAndSettle();
 
     expect(find.byType(NavigationRail), findsOneWidget);
+    expect(find.byType(RainStreakSurface), findsWidgets);
     expect(builtPages, <String>['chats']);
 
     await tester.tap(find.text('Settings'));
