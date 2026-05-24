@@ -314,22 +314,22 @@
 
 **Purpose:** Produce installable artifacts only after the polished UI and tests pass.
 
-- [ ] Build only at this phase.
-- [ ] Build Android v7 and v8/v9 packages using the existing release scripts/workflow.
-- [ ] Build Windows executable/package using the existing release scripts/workflow.
-- [ ] Trigger the GitHub Actions release workflow with individual APK assets enabled.
-- [ ] Confirm release artifacts are individually downloadable:
+- [x] Build only at this phase.
+- [x] Build Android v7 and v8/v9 packages using the existing release scripts/workflow.
+- [x] Build Windows executable/package using the existing release scripts/workflow.
+- [x] Trigger the GitHub Actions release workflow with individual APK assets enabled.
+- [x] Confirm release artifacts are individually downloadable:
   - v7 APK.
   - v8/v9 APK.
   - Windows artifact.
-- [ ] Add release notes:
+- [x] Add release notes:
   - Completed rebrand.
   - New splash animation.
   - New app icons.
   - Replaced sound effects.
   - Top call manager.
   - Video fullscreen/PiP/hidden modes.
-- [ ] Commit any final workflow/doc updates with message: `chore: prepare Rain polish release`.
+- [x] Commit any final workflow/doc updates with message: `chore: prepare Rain polish release`.
 
 ---
 

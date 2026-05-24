@@ -40,9 +40,27 @@ Inputs:
 - `build_profile`: `demo`
 - `publish_test_release`: `true`
 
-Status: Pending final updated-commit run.
+Run: [Build Rain Apps #49.1](https://github.com/EslamNabawy/Rain/actions/runs/26368792103)
 
-The first workflow dispatch was canceled because local Phase 13 icon sync produced tracked platform icon updates that need to be committed and pushed before the final cloud artifact run.
+Commit: `f5387c5edfb16af4056a1482ffc0f5ece919f19d`
+
+Status: Passed.
+
+Release: [rain-test-49-1](https://github.com/EslamNabawy/Rain/releases/tag/rain-test-49-1)
+
+Notes:
+
+- The first workflow dispatch was canceled because local Phase 13 icon sync produced tracked platform icon updates that needed to be committed and pushed before the final cloud artifact run.
+- The final cloud run built Windows, Android v7, and Android v8/v9 from the pushed Phase 13 commit.
+- The publish job created a GitHub pre-release with individually downloadable phone-friendly APK assets.
+
+Cloud release artifacts:
+
+| Artifact | Size | SHA256 | Direct download |
+| --- | ---: | --- | --- |
+| `Rain-Demo-Android-v7a.apk` | 31,384,853 bytes | `c96483b74680e34f92ce0d3e4fbbe377418949adac3d5d5a2a1e95d65b38b414` | [Download](https://github.com/EslamNabawy/Rain/releases/download/rain-test-49-1/Rain-Demo-Android-v7a.apk) |
+| `Rain-Demo-Android-v8-v9.apk` | 38,960,049 bytes | `83f1a53e2d4b68c3186417988a1d11d72068eb0834407534ec706c7a17fdc356` | [Download](https://github.com/EslamNabawy/Rain/releases/download/rain-test-49-1/Rain-Demo-Android-v8-v9.apk) |
+| `Rain-Demo-Windows-x64.zip` | 27,663,363 bytes | `4b79cd8e66fe361a1e38d0fa6ca42cec25f2bc7fc1a8b4525dc84f7ce3ff4bfb` | [Download](https://github.com/EslamNabawy/Rain/releases/download/rain-test-49-1/Rain-Demo-Windows-x64.zip) |
 
 ## Release Notes
 
