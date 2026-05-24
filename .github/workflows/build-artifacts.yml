@@ -20,9 +20,14 @@ on:
         options:
           - demo
           - production
+      publish_test_release:
+        description: Publish direct APK/Windows download links in a GitHub pre-release
+        required: true
+        default: true
+        type: boolean
 
 permissions:
-  contents: read
+  contents: write
 
 concurrency:
   group: build-rain-${{ github.workflow }}-${{ github.ref }}-${{ github.event_name == 'workflow_dispatch' && inputs.platform || 'all' }}
@@ -255,3 +260,133 @@ jobs:
             artifacts/Rain-release-android-armeabi-v7a.apk
             artifacts/Rain-release-android-arm64-v8a.apk
           if-no-files-found: error
+
+  publish-test-release:
+    name: Publish Direct Test Downloads
+    runs-on: ubuntu-latest
+    needs:
+      - build-windows
+      - build-android
+    if: ${{ always() && github.event_name == 'workflow_dispatch' && inputs.publish_test_release == true }}
+    timeout-minutes: 20
+    steps:
+      - name: Validate requested build jobs
+        shell: bash
+        run: |
+          set -euo pipefail
+          case "${{ inputs.platform }}" in
+            all)
+              test "${{ needs.build-windows.result }}" = "success"
+              test "${{ needs.build-android.result }}" = "success"
+              ;;
+            android)
+              test "${{ needs.build-android.result }}" = "success"
+              ;;
+            windows)
+              test "${{ needs.build-windows.result }}" = "success"
+              ;;
+            *)
+              echo "Unsupported platform input: ${{ inputs.platform }}" >&2
+              exit 1
+              ;;
+          esac
+
+      - name: Download Android APK artifact bundle
+        if: ${{ inputs.platform == 'all' || inputs.platform == 'android' }}
+        uses: actions/download-artifact@v8
+        with:
+          name: ${{ env.BUILD_PROFILE == 'demo' && 'Rain-Demo-Android-Builds' || 'Rain-Release-Android-Builds' }}
+          path: release-assets/android
+
+      - name: Download Windows portable artifact
+        if: ${{ inputs.platform == 'all' || inputs.platform == 'windows' }}
+        uses: actions/download-artifact@v8
+        with:
+          name: ${{ env.BUILD_PROFILE == 'demo' && 'Rain-Demo-Windows-x64-Build' || 'Rain-Release-Windows-x64-Build' }}
+          path: release-assets/windows
+
+      - name: Prepare direct release assets
+        shell: bash
+        run: |
+          set -euo pipefail
+          mkdir -p release-assets/publish
+
+          if [ "${BUILD_PROFILE}" = "demo" ]; then
+            profile_label="Demo"
+            android_v7_source="release-assets/android/Rain-Demo-Android-ARM-v7a-Build.apk"
+            android_v8_source="release-assets/android/Rain-Demo-Android-ARM-v8-v9-Build.apk"
+            windows_root_name="Rain-Demo-Windows-x64-Build"
+          else
+            profile_label="Release"
+            android_v7_source="release-assets/android/Rain-release-android-armeabi-v7a.apk"
+            android_v8_source="release-assets/android/Rain-release-android-arm64-v8a.apk"
+            windows_root_name="Rain-Release-Windows-x64-Build"
+          fi
+
+          if [ -f "${android_v7_source}" ]; then
+            cp "${android_v7_source}" "release-assets/publish/Rain-${profile_label}-Android-v7a.apk"
+          fi
+          if [ -f "${android_v8_source}" ]; then
+            cp "${android_v8_source}" "release-assets/publish/Rain-${profile_label}-Android-v8-v9.apk"
+          fi
+
+          if [ -d release-assets/windows ]; then
+            mkdir -p "release-assets/windows-zip/${windows_root_name}"
+            cp -R release-assets/windows/. "release-assets/windows-zip/${windows_root_name}/"
+            (cd release-assets/windows-zip && zip -qr "../publish/Rain-${profile_label}-Windows-x64.zip" "${windows_root_name}")
+          fi
+
+          shopt -s nullglob
+          assets=(release-assets/publish/*)
+          if [ "${#assets[@]}" -eq 0 ]; then
+            echo "No direct release assets were prepared." >&2
+            exit 1
+          fi
+          printf 'Prepared direct release assets:\n'
+          printf ' - %s\n' "${assets[@]}"
+
+      - name: Publish GitHub pre-release
+        shell: bash
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          tag="rain-test-${GITHUB_RUN_NUMBER}-${GITHUB_RUN_ATTEMPT}"
+          short_sha="${GITHUB_SHA::7}"
+          title="Rain test build ${GITHUB_RUN_NUMBER}.${GITHUB_RUN_ATTEMPT} (${short_sha})"
+          release_url="https://github.com/${GITHUB_REPOSITORY}/releases/tag/${tag}"
+
+          gh release delete "${tag}" --yes --cleanup-tag >/dev/null 2>&1 || true
+          gh release create "${tag}" release-assets/publish/* \
+            --target "${GITHUB_SHA}" \
+            --title "${title}" \
+            --notes "Direct device downloads for Rain ${BUILD_PROFILE} build from ${GITHUB_SHA}. APK assets are uploaded individually so Android phones can download them without extracting an archive." \
+            --prerelease
+
+          {
+            echo "## Rain direct test downloads"
+            echo
+            echo "Release: [${tag}](${release_url})"
+            echo
+            for asset_path in release-assets/publish/*; do
+              asset_name="$(basename "${asset_path}")"
+              echo "- [${asset_name}](https://github.com/${GITHUB_REPOSITORY}/releases/download/${tag}/${asset_name})"
+            done
+          } >> "${GITHUB_STEP_SUMMARY}"
+
+      - name: Delete old Rain test releases
+        shell: bash
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          keep=10
+          mapfile -t old_tags < <(
+            gh release list --limit 100 --json tagName --jq '.[].tagName' |
+              grep '^rain-test-' |
+              sed -n "$((keep + 1)),\$p"
+          )
+          for old_tag in "${old_tags[@]}"; do
+            echo "Deleting old test release: ${old_tag}"
+            gh release delete "${old_tag}" --yes --cleanup-tag || true
+          done

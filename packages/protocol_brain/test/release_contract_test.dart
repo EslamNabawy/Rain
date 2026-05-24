@@ -415,7 +415,8 @@ void main() {
       expect(workflow, isNot(contains('Rain-release-android-universal.apk')));
       expect(workflow, isNot(contains('Rain-release-android-x86_64.apk')));
       expect(workflow, isNot(contains('.rar')));
-      expect(workflow, isNot(contains('.zip')));
+      expect(workflow, isNot(contains('.apk.zip')));
+      expect(workflow, isNot(contains('Android-Builds.zip')));
     },
   );
 
@@ -460,6 +461,26 @@ void main() {
     expect(workflow, contains('Rain-Demo-Android-ARM-v8-v9-Build.apk'));
     expect(workflow, isNot(contains('Rain-Demo-Android-x86_64-Build.apk')));
     expect(workflow, isNot(contains('lib/x86_64/libsqlite3.so')));
+  });
+
+  test('manual artifact workflow publishes direct device downloads', () {
+    final workflow = _repoFile('.github/workflows/build-artifacts.yml');
+    final docs = _repoFile('docs/github-ci-cd.md');
+
+    expect(workflow, contains('publish_test_release'));
+    expect(workflow, contains('Publish Direct Test Downloads'));
+    expect(workflow, contains('actions/download-artifact@v8'));
+    expect(workflow, contains('gh release create'));
+    expect(workflow, contains('--prerelease'));
+    expect(workflow, contains(r'Rain-${profile_label}-Android-v7a.apk'));
+    expect(workflow, contains(r'Rain-${profile_label}-Android-v8-v9.apk'));
+    expect(workflow, contains('GITHUB_STEP_SUMMARY'));
+    expect(workflow, contains('rain-test-'));
+    expect(workflow, contains('Delete old Rain test releases'));
+    expect(docs, contains('publish_test_release'));
+    expect(docs, contains('individual APK assets'));
+    expect(docs, contains('Rain-Demo-Android-v7a.apk'));
+    expect(docs, contains('Rain-Release-Android-v8-v9.apk'));
   });
 
   test('release workflow verifies native voice runtimes before upload', () {
