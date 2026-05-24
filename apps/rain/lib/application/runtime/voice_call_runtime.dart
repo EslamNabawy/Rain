@@ -1954,10 +1954,23 @@ extension VoiceCallRuntime on RainRuntimeController {
   }
 
   void _failVoiceCallForPeer(String peerId, String message) {
-    if (_voiceCallState.peerId != _normalizedUsername(peerId)) {
+    final normalizedPeerId = _normalizedUsername(peerId);
+    final current = _voiceCallState;
+    if (current.peerId != normalizedPeerId ||
+        current.phase == VoiceCallPhase.idle ||
+        current.phase == VoiceCallPhase.failed ||
+        current.phase == VoiceCallPhase.ending) {
       return;
     }
-    unawaited(_failVoiceCall(message));
+    unawaited(
+      _endVoiceCallForPeer(
+        normalizedPeerId,
+        notifyPeer: false,
+        detail: message,
+        failureReason: VoiceCallFailureReason.networkLost,
+        failureDetail: 'Network connection lost. Call ended.',
+      ),
+    );
   }
 
   void _markVoiceCallReconnectingForPeer(String peerId) {

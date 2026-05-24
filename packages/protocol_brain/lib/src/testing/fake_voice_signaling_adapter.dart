@@ -39,6 +39,11 @@ final class FakeVoiceSignalingAdapter implements VoiceSignalingAdapter {
     _pairLocks[lock.pairId] = lock;
   }
 
+  void reemitCallForTest(String callId) {
+    _ensureOpen();
+    _emitCall(callId.trim());
+  }
+
   List<VoiceCallInboxEntry> inboxFor(String username) {
     final inbox = _inboxes[normalizeVoiceCallUsername(username)];
     return List<VoiceCallInboxEntry>.unmodifiable(

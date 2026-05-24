@@ -1633,6 +1633,94 @@ void main() {
       },
     );
 
+    test('remote hangup clears local Firebase video call state', () async {
+      final adapter = RecordingVoiceSignalingAdapter();
+      final aliceBrain = TestSessionManager();
+      final bobBrain = TestSessionManager();
+      final bobDb = RainDatabase(NativeDatabase.memory());
+      addTearDown(bobDb.close);
+      await adapter.register('bob', 'bobpw');
+      await adapter.upsertFriendship('alice', 'bob');
+      await db
+          .into(db.friends)
+          .insert(
+            FriendsCompanion.insert(
+              username: 'bob',
+              displayName: 'Bob',
+              state: 'friend',
+              addedAt: 0,
+            ),
+          );
+      await bobDb
+          .into(bobDb.friends)
+          .insert(
+            FriendsCompanion.insert(
+              username: 'alice',
+              displayName: 'Alice',
+              state: 'friend',
+              addedAt: 0,
+            ),
+          );
+      final bob = RainIdentity(
+        username: 'bob',
+        displayName: 'Bob',
+        createdAt: DateTime.now().millisecondsSinceEpoch,
+        gender: RainGender.male,
+      );
+      final aliceRuntime = _runtimeFor(
+        db,
+        alice,
+        adapter,
+        brain: aliceBrain,
+        videoCallRendererFactory: const _TestVideoCallRendererFactory(),
+      );
+      final bobRuntime = _runtimeFor(
+        bobDb,
+        bob,
+        adapter,
+        brain: bobBrain,
+        videoCallRendererFactory: const _TestVideoCallRendererFactory(),
+      );
+      addTearDown(aliceRuntime.dispose);
+      addTearDown(bobRuntime.dispose);
+
+      await aliceRuntime.start();
+      await bobRuntime.start();
+      await aliceRuntime.startVideoCall('bob');
+      final callId = aliceRuntime.voiceCallState.callId!;
+      await _waitForCondition(
+        () => bobRuntime.voiceCallState.phase == VoiceCallPhase.incomingRinging,
+        'Firebase video invite to ring before remote hangup',
+      );
+      await bobRuntime.acceptVoiceCall();
+      await _waitForCondition(
+        () =>
+            aliceRuntime.voiceCallState.phase == VoiceCallPhase.active &&
+            bobRuntime.voiceCallState.phase == VoiceCallPhase.active,
+        'Firebase video call to become active before remote hangup',
+      );
+
+      await bobRuntime.hangUpVoiceCall();
+
+      await _waitForCondition(
+        () => adapter.rooms[callId]?.status == VoiceCallSignalingStatus.ended,
+        'Firebase video room to end after remote hangup',
+      );
+      await _waitForCondition(
+        () => aliceRuntime.voiceCallState.phase == VoiceCallPhase.idle,
+        'local video call to clear after remote hangup',
+      );
+
+      expect(aliceRuntime.voiceCallState.hasLocalVideo, isFalse);
+      expect(aliceRuntime.voiceCallState.hasRemoteVideo, isFalse);
+      expect(aliceRuntime.voiceCallState.isVideo, isFalse);
+      expect(
+        (aliceBrain.callMediaConnections['bob']! as _TestCallMediaConnection)
+            .disposed,
+        isTrue,
+      );
+    });
+
     test('active Firebase pair lock is surfaced as peer busy', () async {
       final adapter = RecordingVoiceSignalingAdapter();
       final brain = TestSessionManager();
@@ -1994,6 +2082,89 @@ void main() {
       final room = adapter.rooms.values.single;
       expect(room.endedBy, 'alice');
       expect(room.reason, 'Rain is closing.');
+      expect(adapter.activePairLocks, isEmpty);
+      await _waitForCondition(
+        () => bobRuntime.voiceCallState.phase == VoiceCallPhase.idle,
+        'remaining runtime to clear after remote dispose',
+      );
+      expect(bobBrain.stoppedAudioPeers, contains('alice'));
+    });
+
+    test('remote offline presence ends active Firebase voice call', () async {
+      final adapter = RecordingVoiceSignalingAdapter();
+      final aliceBrain = TestSessionManager();
+      final bobBrain = TestSessionManager();
+      final bobDb = RainDatabase(NativeDatabase.memory());
+      addTearDown(bobDb.close);
+      await adapter.register('bob', 'bobpw');
+      await adapter.upsertFriendship('alice', 'bob');
+      await db
+          .into(db.friends)
+          .insert(
+            FriendsCompanion.insert(
+              username: 'bob',
+              displayName: 'Bob',
+              state: 'friend',
+              addedAt: 0,
+            ),
+          );
+      await bobDb
+          .into(bobDb.friends)
+          .insert(
+            FriendsCompanion.insert(
+              username: 'alice',
+              displayName: 'Alice',
+              state: 'friend',
+              addedAt: 0,
+            ),
+          );
+      final bob = RainIdentity(
+        username: 'bob',
+        displayName: 'Bob',
+        createdAt: DateTime.now().millisecondsSinceEpoch,
+        gender: RainGender.male,
+      );
+      final aliceRuntime = _runtimeFor(db, alice, adapter, brain: aliceBrain);
+      final bobRuntime = _runtimeFor(bobDb, bob, adapter, brain: bobBrain);
+      addTearDown(aliceRuntime.dispose);
+      addTearDown(bobRuntime.dispose);
+
+      await aliceRuntime.start();
+      await bobRuntime.start();
+      await aliceRuntime.startVoiceCall('bob');
+      final callId = aliceRuntime.voiceCallState.callId!;
+      await _waitForCondition(
+        () => bobRuntime.voiceCallState.phase == VoiceCallPhase.incomingRinging,
+        'Firebase voice invite to ring before offline presence',
+      );
+      await bobRuntime.acceptVoiceCall();
+      await _waitForCondition(
+        () =>
+            aliceRuntime.voiceCallState.phase == VoiceCallPhase.active &&
+            bobRuntime.voiceCallState.phase == VoiceCallPhase.active,
+        'Firebase voice call to become active before offline presence',
+      );
+
+      await adapter.setPresence('bob', false);
+
+      await _waitForCondition(
+        () => adapter.rooms[callId]?.status == VoiceCallSignalingStatus.failed,
+        'Firebase voice room to fail when peer presence goes offline',
+      );
+      await _waitForCondition(
+        () => bobRuntime.voiceCallState.phase == VoiceCallPhase.failed,
+        'remote runtime to observe offline terminal state',
+      );
+
+      expect(aliceRuntime.voiceCallState.phase, VoiceCallPhase.failed);
+      expect(
+        aliceRuntime.voiceCallState.failureReason,
+        VoiceCallFailureReason.networkLost,
+      );
+      expect(adapter.rooms[callId]?.reasonCode, 'networkLost');
+      expect(adapter.activePairLocks, isEmpty);
+      expect(aliceBrain.stoppedAudioPeers, contains('bob'));
+      expect(bobBrain.stoppedAudioPeers, contains('alice'));
     });
 
     test(
@@ -2083,6 +2254,166 @@ void main() {
         expect(bobBrain.stoppedAudioPeers, contains('alice'));
       },
     );
+
+    test(
+      'peer data disconnect ends active Firebase voice call media',
+      () async {
+        final adapter = RecordingVoiceSignalingAdapter();
+        final aliceBrain = TestSessionManager();
+        final bobBrain = TestSessionManager();
+        final bobDb = RainDatabase(NativeDatabase.memory());
+        addTearDown(bobDb.close);
+        await adapter.register('bob', 'bobpw');
+        await adapter.upsertFriendship('alice', 'bob');
+        await db
+            .into(db.friends)
+            .insert(
+              FriendsCompanion.insert(
+                username: 'bob',
+                displayName: 'Bob',
+                state: 'friend',
+                addedAt: 0,
+              ),
+            );
+        await bobDb
+            .into(bobDb.friends)
+            .insert(
+              FriendsCompanion.insert(
+                username: 'alice',
+                displayName: 'Alice',
+                state: 'friend',
+                addedAt: 0,
+              ),
+            );
+        final bob = RainIdentity(
+          username: 'bob',
+          displayName: 'Bob',
+          createdAt: DateTime.now().millisecondsSinceEpoch,
+          gender: RainGender.male,
+        );
+        final aliceRuntime = _runtimeFor(db, alice, adapter, brain: aliceBrain);
+        final bobRuntime = _runtimeFor(bobDb, bob, adapter, brain: bobBrain);
+        addTearDown(aliceRuntime.dispose);
+        addTearDown(bobRuntime.dispose);
+
+        await aliceRuntime.start();
+        await bobRuntime.start();
+        await aliceRuntime.connectPeer('bob');
+        aliceBrain.markConnected('bob');
+        await aliceRuntime.startVoiceCall('bob');
+        final callId = aliceRuntime.voiceCallState.callId!;
+        await _waitForCondition(
+          () =>
+              bobRuntime.voiceCallState.phase == VoiceCallPhase.incomingRinging,
+          'Firebase voice invite to ring before data disconnect',
+        );
+        await bobRuntime.acceptVoiceCall();
+        await _waitForCondition(
+          () =>
+              aliceRuntime.voiceCallState.phase == VoiceCallPhase.active &&
+              bobRuntime.voiceCallState.phase == VoiceCallPhase.active,
+          'Firebase voice call to become active before data disconnect',
+        );
+
+        await aliceBrain.disconnect('bob');
+
+        await _waitForCondition(
+          () =>
+              adapter.rooms[callId]?.status == VoiceCallSignalingStatus.failed,
+          'Firebase voice room to fail after data disconnect',
+        );
+        await _waitForCondition(
+          () => bobRuntime.voiceCallState.phase == VoiceCallPhase.failed,
+          'remote runtime to observe data disconnect terminal state',
+        );
+        await _waitForCondition(
+          () => aliceRuntime.voiceCallState.phase == VoiceCallPhase.failed,
+          'local runtime to finish data disconnect cleanup',
+        );
+
+        expect(aliceRuntime.voiceCallState.phase, VoiceCallPhase.failed);
+        expect(
+          aliceRuntime.voiceCallState.failureReason,
+          VoiceCallFailureReason.networkLost,
+        );
+        expect(adapter.rooms[callId]?.reasonCode, 'networkLost');
+        expect(adapter.activePairLocks, isEmpty);
+        expect(aliceBrain.stoppedAudioPeers, contains('bob'));
+        expect(bobBrain.stoppedAudioPeers, contains('alice'));
+      },
+    );
+
+    test('duplicate Firebase terminal update is idempotent', () async {
+      final adapter = RecordingVoiceSignalingAdapter();
+      final aliceBrain = TestSessionManager();
+      final bobBrain = TestSessionManager();
+      final bobDb = RainDatabase(NativeDatabase.memory());
+      addTearDown(bobDb.close);
+      await adapter.register('bob', 'bobpw');
+      await adapter.upsertFriendship('alice', 'bob');
+      await db
+          .into(db.friends)
+          .insert(
+            FriendsCompanion.insert(
+              username: 'bob',
+              displayName: 'Bob',
+              state: 'friend',
+              addedAt: 0,
+            ),
+          );
+      await bobDb
+          .into(bobDb.friends)
+          .insert(
+            FriendsCompanion.insert(
+              username: 'alice',
+              displayName: 'Alice',
+              state: 'friend',
+              addedAt: 0,
+            ),
+          );
+      final bob = RainIdentity(
+        username: 'bob',
+        displayName: 'Bob',
+        createdAt: DateTime.now().millisecondsSinceEpoch,
+        gender: RainGender.male,
+      );
+      final aliceRuntime = _runtimeFor(db, alice, adapter, brain: aliceBrain);
+      final bobRuntime = _runtimeFor(bobDb, bob, adapter, brain: bobBrain);
+      addTearDown(aliceRuntime.dispose);
+      addTearDown(bobRuntime.dispose);
+
+      await aliceRuntime.start();
+      await bobRuntime.start();
+      await aliceRuntime.startVoiceCall('bob');
+      final callId = aliceRuntime.voiceCallState.callId!;
+      await _waitForCondition(
+        () => bobRuntime.voiceCallState.phase == VoiceCallPhase.incomingRinging,
+        'Firebase voice invite to ring before duplicate terminal update',
+      );
+      await bobRuntime.acceptVoiceCall();
+      await _waitForCondition(
+        () =>
+            aliceRuntime.voiceCallState.phase == VoiceCallPhase.active &&
+            bobRuntime.voiceCallState.phase == VoiceCallPhase.active,
+        'Firebase voice call to become active before duplicate terminal update',
+      );
+
+      await bobRuntime.hangUpVoiceCall();
+      await _waitForCondition(
+        () => aliceRuntime.voiceCallState.phase == VoiceCallPhase.idle,
+        'local call to clear after first terminal update',
+      );
+      final stoppedBeforeDuplicate = List<String>.of(
+        aliceBrain.stoppedAudioPeers,
+      );
+
+      adapter.reemitCallForTest(callId);
+      await Future<void>.delayed(const Duration(milliseconds: 80));
+
+      expect(aliceRuntime.voiceCallState.phase, VoiceCallPhase.idle);
+      expect(aliceBrain.stoppedAudioPeers, stoppedBeforeDuplicate);
+      expect(adapter.activePairLocks, isEmpty);
+    });
 
     test(
       'retry after failed Firebase media uses fresh call id and media session',
@@ -4272,6 +4603,10 @@ class RecordingVoiceSignalingAdapter extends RecordingNoopSignalingAdapter
 
   void seedActivePairLockForTest(VoiceActivePairLock lock) {
     _voice.seedActivePairLockForTest(lock);
+  }
+
+  void reemitCallForTest(String callId) {
+    _voice.reemitCallForTest(callId);
   }
 
   @override

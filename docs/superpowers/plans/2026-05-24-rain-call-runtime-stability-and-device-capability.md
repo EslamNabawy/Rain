@@ -126,22 +126,22 @@
 
 **Purpose:** Make both peers converge to the same terminal state when either side closes the app, loses runtime, hangs up, fails media, or disconnects.
 
-- [ ] Audit shutdown and logout paths in `apps/rain/lib/application/runtime/rain_runtime_controller.dart`.
-- [ ] Audit `_disposeCurrentVoiceCallSession`, `_failVoiceCall`, `_endVoiceCallForPeer`, and Firebase room watchers in `voice_call_runtime.dart`.
-- [ ] Add a terminal reconciliation rule:
+- [x] Audit shutdown and logout paths in `apps/rain/lib/application/runtime/rain_runtime_controller.dart`.
+- [x] Audit `_disposeCurrentVoiceCallSession`, `_failVoiceCall`, `_endVoiceCallForPeer`, and Firebase room watchers in `voice_call_runtime.dart`.
+- [x] Add a terminal reconciliation rule:
   - Remote `ended`, `failed`, `rejected`, `busy`, `expired`, or presence-offline event ends local call media and returns UI to idle or failed.
   - Local app shutdown writes terminal state when possible.
   - If the app cannot notify the peer, the peer reclaims by lease timeout and presence.
-- [ ] Ensure peer data connection disposal cancels call media and video renderers before clearing listeners.
-- [ ] Add tests:
+- [x] Ensure peer data connection disposal cancels call media and video renderers before clearing listeners.
+- [x] Add tests:
   - remote app close disposes local call session.
   - remote hangup clears local active video state.
   - local shutdown clears or expires Firebase active pair.
   - terminal state is idempotent when received twice.
-- [ ] Acceptance:
+- [x] Acceptance:
   - If the other peer closes Rain, the remaining app stops showing an active call.
   - Phone no longer thinks a video call is running after computer failure or close.
-- [ ] Commit with message: `fix: reconcile terminal call state`.
+- [x] Commit with message: `fix: reconcile terminal call state`.
 
 ## Phase 05: Video Media And Renderer Crash Hardening
 
