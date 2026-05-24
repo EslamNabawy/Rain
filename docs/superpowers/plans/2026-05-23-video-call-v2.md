@@ -453,7 +453,7 @@ git commit -m "feat: add video call ui"
 
 **Purpose:** Add required platform permissions and release checks.
 
-- [ ] Update `apps/rain/android/app/src/main/AndroidManifest.xml`:
+- [x] Update `apps/rain/android/app/src/main/AndroidManifest.xml`:
 
 ```xml
 <uses-feature android:name="android.hardware.camera" android:required="false" />
@@ -461,7 +461,7 @@ git commit -m "feat: add video call ui"
 <uses-permission android:name="android.permission.CAMERA" />
 ```
 
-- [ ] Keep existing:
+- [x] Keep existing:
 
 ```xml
 <uses-permission android:name="android.permission.RECORD_AUDIO" />
@@ -470,23 +470,23 @@ git commit -m "feat: add video call ui"
 <uses-permission android:name="android.permission.MODIFY_AUDIO_SETTINGS" />
 ```
 
-- [ ] Windows:
+- [x] Windows:
   - no manifest change expected for camera
   - document that Windows privacy settings must allow camera and microphone
 
-- [ ] Add tests in `packages/protocol_brain/test/release_contract_test.dart`:
+- [x] Add tests in `packages/protocol_brain/test/release_contract_test.dart`:
   - Android manifest contains `CAMERA`
   - Android manifest keeps audio/network permissions
   - release docs mention same non-demo signaling key for Windows/APK pair
   - release docs mention camera/mic OS permission checks
 
-- [ ] Run:
+- [x] Run:
 
 ```powershell
 flutter test packages\protocol_brain\test\release_contract_test.dart
 ```
 
-- [ ] Commit:
+- [x] Commit:
 
 ```powershell
 git add apps\rain\android packages\protocol_brain\test\release_contract_test.dart docs
