@@ -1083,6 +1083,105 @@ void main() {
     );
 
     test(
+      'integrated gate connects PC to phone voice on first attempt',
+      () async {
+        final harness = await _createTwoUserCallHarness(db, alice);
+        addTearDown(harness.dispose);
+
+        await harness.start();
+        final callId = await _startAndAcceptHarnessCall(
+          harness,
+          callerIsAlice: true,
+          mediaMode: protocol.CallMediaMode.audio,
+        );
+
+        final room = harness.adapter.rooms[callId]!;
+        expect(room.status, VoiceCallSignalingStatus.connected);
+        expect(room.caller, 'alice');
+        expect(room.callee, 'bob');
+        expect(room.mediaMode, protocol.CallMediaMode.audio);
+        expect(harness.adapter.activePairLocks.values.single.callId, callId);
+        expect(
+          harness.aliceRuntime.voiceCallState.phase,
+          VoiceCallPhase.active,
+        );
+        expect(harness.bobRuntime.voiceCallState.phase, VoiceCallPhase.active);
+        expect(harness.aliceRuntime.voiceCallState.isOutgoing, isTrue);
+        expect(harness.bobRuntime.voiceCallState.isOutgoing, isFalse);
+        expect(harness.aliceBrain.startedAudioPeers, <String>['bob']);
+        expect(harness.bobBrain.startedAudioPeers, <String>['alice']);
+        expect(harness.aliceBrain.connectedPeers, isEmpty);
+        expect(harness.bobBrain.connectedPeers, isEmpty);
+      },
+    );
+
+    test(
+      'integrated gate connects PC to phone video on first attempt',
+      () async {
+        final harness = await _createTwoUserCallHarness(db, alice);
+        addTearDown(harness.dispose);
+
+        await harness.start();
+        final callId = await _startAndAcceptHarnessCall(
+          harness,
+          callerIsAlice: true,
+          mediaMode: protocol.CallMediaMode.video,
+        );
+
+        final room = harness.adapter.rooms[callId]!;
+        expect(room.status, VoiceCallSignalingStatus.connected);
+        expect(room.caller, 'alice');
+        expect(room.callee, 'bob');
+        expect(room.mediaMode, protocol.CallMediaMode.video);
+        expect(harness.adapter.activePairLocks.values.single.callId, callId);
+        expect(
+          harness.aliceRuntime.voiceCallState.phase,
+          VoiceCallPhase.active,
+        );
+        expect(harness.bobRuntime.voiceCallState.phase, VoiceCallPhase.active);
+        expect(harness.aliceRuntime.voiceCallState.isVideo, isTrue);
+        expect(harness.bobRuntime.voiceCallState.isVideo, isTrue);
+        expect(harness.aliceRuntime.voiceCallState.hasLocalVideo, isTrue);
+        expect(harness.bobRuntime.voiceCallState.hasLocalVideo, isTrue);
+        expect(harness.aliceBrain.startedVideoPeers, <String>['bob']);
+        expect(harness.bobBrain.startedVideoPeers, <String>['alice']);
+      },
+    );
+
+    test(
+      'integrated gate connects phone to computer video on first attempt',
+      () async {
+        final harness = await _createTwoUserCallHarness(db, alice);
+        addTearDown(harness.dispose);
+
+        await harness.start();
+        final callId = await _startAndAcceptHarnessCall(
+          harness,
+          callerIsAlice: false,
+          mediaMode: protocol.CallMediaMode.video,
+        );
+
+        final room = harness.adapter.rooms[callId]!;
+        expect(room.status, VoiceCallSignalingStatus.connected);
+        expect(room.caller, 'bob');
+        expect(room.callee, 'alice');
+        expect(room.mediaMode, protocol.CallMediaMode.video);
+        expect(harness.adapter.activePairLocks.values.single.callId, callId);
+        expect(harness.bobRuntime.voiceCallState.phase, VoiceCallPhase.active);
+        expect(
+          harness.aliceRuntime.voiceCallState.phase,
+          VoiceCallPhase.active,
+        );
+        expect(harness.bobRuntime.voiceCallState.isOutgoing, isTrue);
+        expect(harness.aliceRuntime.voiceCallState.isOutgoing, isFalse);
+        expect(harness.bobRuntime.voiceCallState.hasLocalVideo, isTrue);
+        expect(harness.aliceRuntime.voiceCallState.hasLocalVideo, isTrue);
+        expect(harness.bobBrain.startedVideoPeers, <String>['alice']);
+        expect(harness.aliceBrain.startedVideoPeers, <String>['bob']);
+      },
+    );
+
+    test(
       'active Firebase voice call supports local deafen and output routing',
       () async {
         final adapter = RecordingVoiceSignalingAdapter();
@@ -1806,6 +1905,45 @@ void main() {
     });
 
     test(
+      'integrated gate callee app close clears active Firebase video call',
+      () async {
+        final harness = await _createTwoUserCallHarness(db, alice);
+        addTearDown(harness.dispose);
+
+        await harness.start();
+        final callId = await _startAndAcceptHarnessCall(
+          harness,
+          callerIsAlice: true,
+          mediaMode: protocol.CallMediaMode.video,
+        );
+
+        await harness.bobRuntime.dispose();
+
+        await _waitForCondition(
+          () =>
+              harness.adapter.rooms[callId]?.status ==
+              VoiceCallSignalingStatus.ended,
+          'Firebase video room to end when callee app closes',
+        );
+        await _waitForCondition(
+          () =>
+              harness.aliceRuntime.voiceCallState.phase == VoiceCallPhase.idle,
+          'caller runtime to clear when callee app closes',
+        );
+
+        final room = harness.adapter.rooms[callId]!;
+        expect(room.endedBy, 'bob');
+        expect(room.reason, 'Rain is closing.');
+        expect(harness.adapter.activePairLocks, isEmpty);
+        expect(harness.aliceRuntime.voiceCallState.isVideo, isFalse);
+        expect(harness.aliceRuntime.voiceCallState.hasLocalVideo, isFalse);
+        expect(harness.aliceRuntime.voiceCallState.hasRemoteVideo, isFalse);
+        expect(harness.aliceBrain.stoppedAudioPeers, contains('bob'));
+        expect(harness.bobBrain.stoppedAudioPeers, contains('alice'));
+      },
+    );
+
+    test(
       'local video renderer creation failure fails call without Firebase invite',
       () async {
         final adapter = RecordingVoiceSignalingAdapter();
@@ -2040,6 +2178,14 @@ void main() {
           aliceRuntime.voiceCallState.failureReason,
           VoiceCallFailureReason.mediaConnectionFailed,
         );
+        expect(adapter.rooms[callId]?.caller, 'alice');
+        expect(adapter.rooms[callId]?.callee, 'bob');
+        expect(adapter.rooms[callId]?.mediaMode, protocol.CallMediaMode.video);
+        expect(adapter.activePairLocks, isEmpty);
+        expect(aliceRuntime.voiceCallBlocksFileTransfer('bob'), isFalse);
+        expect(bobRuntime.voiceCallBlocksFileTransfer('alice'), isFalse);
+        expect(aliceRuntime.voiceCallState.isVideo, isTrue);
+        expect(bobRuntime.voiceCallState.isVideo, isTrue);
         expect(
           (aliceBrain.callMediaConnections['bob']! as _TestCallMediaConnection)
               .disposed,
@@ -5056,6 +5202,158 @@ RainRuntimeController _runtimeFor(
   );
 }
 
+Future<_TwoUserCallHarness> _createTwoUserCallHarness(
+  RainDatabase aliceDb,
+  RainIdentity alice, {
+  TestSessionManager? aliceBrain,
+  TestSessionManager? bobBrain,
+}) async {
+  final adapter = RecordingVoiceSignalingAdapter();
+  final resolvedAliceBrain = aliceBrain ?? TestSessionManager();
+  final resolvedBobBrain = bobBrain ?? TestSessionManager();
+  final bobDb = RainDatabase(NativeDatabase.memory());
+  final bob = RainIdentity(
+    username: 'bob',
+    displayName: 'Bob',
+    createdAt: DateTime.now().millisecondsSinceEpoch,
+    gender: RainGender.male,
+  );
+
+  await adapter.register('alice', 'alicepw');
+  await adapter.register('bob', 'bobpw');
+  await adapter.upsertFriendship('alice', 'bob');
+  await aliceDb
+      .into(aliceDb.friends)
+      .insert(
+        FriendsCompanion.insert(
+          username: 'bob',
+          displayName: 'Bob',
+          state: 'friend',
+          addedAt: 0,
+        ),
+      );
+  await bobDb
+      .into(bobDb.friends)
+      .insert(
+        FriendsCompanion.insert(
+          username: 'alice',
+          displayName: 'Alice',
+          state: 'friend',
+          addedAt: 0,
+        ),
+      );
+
+  return _TwoUserCallHarness(
+    adapter: adapter,
+    aliceBrain: resolvedAliceBrain,
+    bobBrain: resolvedBobBrain,
+    bobDb: bobDb,
+    aliceRuntime: _runtimeFor(
+      aliceDb,
+      alice,
+      adapter,
+      brain: resolvedAliceBrain,
+      videoCallRendererFactory: const _TestVideoCallRendererFactory(),
+    ),
+    bobRuntime: _runtimeFor(
+      bobDb,
+      bob,
+      adapter,
+      brain: resolvedBobBrain,
+      videoCallRendererFactory: const _TestVideoCallRendererFactory(),
+    ),
+  );
+}
+
+Future<String> _startAndAcceptHarnessCall(
+  _TwoUserCallHarness harness, {
+  required bool callerIsAlice,
+  required protocol.CallMediaMode mediaMode,
+}) async {
+  final caller = callerIsAlice ? harness.aliceRuntime : harness.bobRuntime;
+  final callee = callerIsAlice ? harness.bobRuntime : harness.aliceRuntime;
+  final peerId = callerIsAlice ? 'bob' : 'alice';
+  final callerUsername = callerIsAlice ? 'alice' : 'bob';
+  final calleeUsername = callerIsAlice ? 'bob' : 'alice';
+
+  switch (mediaMode) {
+    case protocol.CallMediaMode.audio:
+      await caller.startVoiceCall(peerId);
+      break;
+    case protocol.CallMediaMode.video:
+      await caller.startVideoCall(peerId);
+      break;
+  }
+  final callId = caller.voiceCallState.callId!;
+
+  expect(caller.voiceCallState.phase, VoiceCallPhase.outgoingRinging);
+  expect(caller.voiceCallState.isOutgoing, isTrue);
+  expect(caller.voiceCallState.mediaMode, mediaMode);
+  expect(harness.adapter.activePairLocks.values.single.callId, callId);
+  expect(harness.adapter.rooms[callId]?.caller, callerUsername);
+  expect(harness.adapter.rooms[callId]?.callee, calleeUsername);
+  expect(
+    harness.adapter.rooms[callId]?.status,
+    VoiceCallSignalingStatus.ringing,
+  );
+
+  await _waitForCondition(
+    () => callee.voiceCallState.phase == VoiceCallPhase.incomingRinging,
+    'Firebase ${mediaMode.name} invite to ring on first attempt',
+  );
+  expect(callee.voiceCallState.isOutgoing, isFalse);
+  expect(callee.voiceCallState.mediaMode, mediaMode);
+
+  await callee.acceptVoiceCall();
+  await _waitForCondition(
+    () =>
+        caller.voiceCallState.phase == VoiceCallPhase.active &&
+        callee.voiceCallState.phase == VoiceCallPhase.active,
+    'Firebase ${mediaMode.name} call to become active on first attempt',
+  );
+
+  expect(
+    harness.adapter.rooms[callId]?.status,
+    VoiceCallSignalingStatus.connected,
+  );
+  expect(harness.adapter.activePairLocks.values.single.callId, callId);
+  expect(caller.voiceCallState.callId, callId);
+  expect(callee.voiceCallState.callId, callId);
+  expect(caller.voiceCallState.mediaMode, mediaMode);
+  expect(callee.voiceCallState.mediaMode, mediaMode);
+  return callId;
+}
+
+class _TwoUserCallHarness {
+  const _TwoUserCallHarness({
+    required this.adapter,
+    required this.aliceBrain,
+    required this.bobBrain,
+    required this.bobDb,
+    required this.aliceRuntime,
+    required this.bobRuntime,
+  });
+
+  final RecordingVoiceSignalingAdapter adapter;
+  final TestSessionManager aliceBrain;
+  final TestSessionManager bobBrain;
+  final RainDatabase bobDb;
+  final RainRuntimeController aliceRuntime;
+  final RainRuntimeController bobRuntime;
+
+  Future<void> start() async {
+    await aliceRuntime.start();
+    await bobRuntime.start();
+  }
+
+  Future<void> dispose() async {
+    await aliceRuntime.dispose();
+    await bobRuntime.dispose();
+    await bobDb.close();
+    await adapter.dispose();
+  }
+}
+
 Future<void> _waitForDeletedRequest(
   RecordingNoopSignalingAdapter adapter,
   String requestKey,
@@ -5777,10 +6075,13 @@ class _TestCallMediaConnection implements CallMediaConnection {
   );
 
   @override
-  MediaStream? get localStream => null;
+  MediaStream? get localStream =>
+      hasLocalVideo ? _FakeMediaStream('local-video-stream') : null;
 
   @override
-  MediaStreamTrack? get localVideoTrack => null;
+  MediaStreamTrack? get localVideoTrack => hasLocalVideo
+      ? _FakeMediaStreamTrack('local-video-track', 'video')
+      : null;
 
   @override
   Future<void> startLocalMedia({required CallMediaKind kind}) async {

@@ -290,7 +290,7 @@
 
 **Purpose:** Verify the fixed state machine across the exact scenarios that failed.
 
-- [ ] Add or extend fake/emulator tests for:
+- [x] Add or extend fake/emulator tests for:
   - PC to phone voice call first attempt.
   - PC to phone video call first attempt.
   - phone to computer video call first attempt.
@@ -298,9 +298,9 @@
   - app close from either peer ends the other peer's call state.
   - disconnect then reconnect on Android.
   - retry does not reverse caller/callee direction.
-- [ ] Ensure tests assert Firebase room status, active pair lock state, local runtime phase, and UI-visible phase.
-- [ ] Keep tests deterministic by using fake clocks and fake device inventories.
-- [ ] Commit with message: `test: cover call runtime failure recovery`.
+- [x] Ensure tests assert Firebase room status, active pair lock state, local runtime phase, and UI-visible phase.
+- [x] Keep tests deterministic by using fake clocks and fake device inventories.
+- [x] Commit with message: `test: cover call runtime failure recovery`.
 
 ## Phase 12: Automated Validation Gate
 

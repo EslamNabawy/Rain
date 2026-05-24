@@ -1102,14 +1102,6 @@ class RainRuntimeController with WidgetsBindingObserver {
     _shutDown = true;
     const keepBackgroundPresence = false;
 
-    if (markOffline && _started && !keepBackgroundPresence) {
-      try {
-        await adapter.setPresence(selfIdentity.username, false);
-      } catch (error) {
-        // Ignore permission errors during logout
-      }
-    }
-
     final activeVoicePeer = _voiceCallState.peerId;
     if (activeVoicePeer != null) {
       try {
@@ -1147,6 +1139,14 @@ class RainRuntimeController with WidgetsBindingObserver {
         } catch (_) {
           // Ignore errors during cleanup
         }
+      }
+    }
+
+    if (markOffline && _started && !keepBackgroundPresence) {
+      try {
+        await adapter.setPresence(selfIdentity.username, false);
+      } catch (error) {
+        // Ignore permission errors during logout
       }
     }
 
