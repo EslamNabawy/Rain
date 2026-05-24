@@ -254,24 +254,24 @@
 
 **Purpose:** Make the central call popup feel like a real call surface, not a generic error/card panel.
 
-- [ ] Redesign `_RainExpandedCallPanel` in `rain_call_overlay.dart`.
-- [ ] Voice call popup:
+- [x] Redesign `_RainExpandedCallPanel` in `rain_call_overlay.dart`.
+- [x] Voice call popup:
   - Square or near-square central panel.
   - Peer identity at top.
   - Center audio activity visual using the Peer Core mark.
   - Real audio meter drives waves when available.
   - Controls dock at bottom with consistent icon buttons.
-- [ ] Video call popup:
+- [x] Video call popup:
   - Remote video is the main content.
   - Local preview has stable size and placement.
   - Controls are readable over video without blocking faces.
   - Fullscreen button is obvious.
-- [ ] Failure state:
+- [x] Failure state:
   - Clear reason text.
   - Dismiss action.
   - No giant blocking banner that hides the whole chat longer than needed.
-- [ ] Add widget tests for voice active, video active, failed, ringing, and connecting states.
-- [ ] Commit with message: `feat: redesign call popup surface`.
+- [x] Add widget tests for voice active, video active, failed, ringing, and connecting states.
+- [x] Commit with message: `feat: redesign call popup surface`.
 
 ## Phase 11: Mobile And Desktop Interaction Polish
 

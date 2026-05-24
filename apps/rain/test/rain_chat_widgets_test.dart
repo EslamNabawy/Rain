@@ -1016,6 +1016,22 @@ void main() {
       ),
     );
 
+    expect(
+      find.byKey(const ValueKey<String>('rain-call-voice-popup-layout')),
+      findsOneWidget,
+    );
+    expect(
+      find.byKey(const ValueKey<String>('rain-call-popup-identity')),
+      findsOneWidget,
+    );
+    expect(
+      find.byKey(const ValueKey<String>('rain-call-popup-media')),
+      findsOneWidget,
+    );
+    expect(
+      find.byKey(const ValueKey<String>('rain-call-control-dock')),
+      findsOneWidget,
+    );
     expect(find.text('Voice call with Bob'), findsOneWidget);
     expect(find.byTooltip('Minimize call'), findsOneWidget);
 
@@ -1099,6 +1115,10 @@ void main() {
     );
 
     expect(
+      find.byKey(const ValueKey<String>('rain-call-voice-popup-layout')),
+      findsOneWidget,
+    );
+    expect(
       find.byKey(const ValueKey<String>('rain-call-peer-core-mark')),
       findsOneWidget,
     );
@@ -1133,6 +1153,14 @@ void main() {
     );
 
     expect(
+      find.byKey(const ValueKey<String>('rain-call-video-popup-layout')),
+      findsOneWidget,
+    );
+    expect(
+      find.byKey(const ValueKey<String>('rain-call-popup-media')),
+      findsOneWidget,
+    );
+    expect(
       find.byKey(const ValueKey<String>('rain-call-video-stage')),
       findsOneWidget,
     );
@@ -1144,6 +1172,7 @@ void main() {
       find.byKey(const ValueKey<String>('rain-call-video-peer-core-mark')),
       findsOneWidget,
     );
+    expect(find.byTooltip('Fullscreen video'), findsOneWidget);
     expect(_findRuntimeType('RTCVideoView'), findsNothing);
   });
 
@@ -1166,6 +1195,10 @@ void main() {
       videoRenderers: renderers,
     );
 
+    expect(
+      find.byKey(const ValueKey<String>('rain-call-video-popup-layout')),
+      findsOneWidget,
+    );
     expect(
       find.byKey(const ValueKey<String>('rain-call-remote-video-view')),
       findsOneWidget,
@@ -1376,6 +1409,19 @@ void main() {
     );
 
     expect(find.text('Bob is calling'), findsOneWidget);
+    expect(
+      find.byKey(const ValueKey<String>('rain-call-voice-popup-layout')),
+      findsOneWidget,
+    );
+    expect(
+      find.byKey(const ValueKey<String>('rain-call-control-dock')),
+      findsOneWidget,
+    );
+    expect(
+      find.byKey(const ValueKey<String>('rain-call-peer-core-mark')),
+      findsOneWidget,
+    );
+    expect(find.byTooltip('Minimize call'), findsNothing);
 
     await tester.tap(find.text('Accept'));
     expect(accepted, isTrue);
@@ -1431,6 +1477,18 @@ void main() {
     );
     expect(
       find.byKey(const ValueKey<String>('rain-call-panel-surface')),
+      findsOneWidget,
+    );
+    expect(
+      find.byKey(const ValueKey<String>('rain-call-failure-popup-layout')),
+      findsOneWidget,
+    );
+    expect(
+      find.byKey(const ValueKey<String>('rain-call-failure-focus')),
+      findsOneWidget,
+    );
+    expect(
+      find.byKey(const ValueKey<String>('rain-call-control-dock')),
       findsOneWidget,
     );
     expect(find.byType(RainStreakSurface), findsWidgets);
@@ -1565,6 +1623,7 @@ Future<void> _pumpCallOverlay(
                 onToggleMute: () {},
                 onMinimize: () {},
                 onExpand: () {},
+                onFullscreen: () {},
               ),
             ),
           ],

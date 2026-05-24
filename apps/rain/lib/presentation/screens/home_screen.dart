@@ -714,6 +714,8 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
               onMinimize: () =>
                   ref.read(callSurfaceProvider.notifier).minimize(),
               onExpand: () => _toggleCallSurfacePanel(callSurface),
+              onFullscreen: () =>
+                  ref.read(callSurfaceProvider.notifier).enterFullscreen(),
             ),
           ),
         if (callSurface.isVisible && voiceCall.phase != VoiceCallPhase.idle)
