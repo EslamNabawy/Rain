@@ -1,0 +1,43 @@
+<svg width="1800" height="1200" viewBox="0 0 1800 1200" fill="none" xmlns="http://www.w3.org/2000/svg">
+  <rect width="1800" height="1200" fill="#061017"/>
+  <text x="80" y="110" fill="#FCFEFF" font-family="Space Grotesk, Inter, Arial, sans-serif" font-size="64" font-weight="800">Rain Peer Core Asset Pack</text>
+  <text x="80" y="158" fill="#FCFEFF" fill-opacity="0.66" font-family="Inter, Arial, sans-serif" font-size="28">Signal Mist / Peer Core / Rain Streak active states</text>
+  <g transform="translate(80 240)">
+    <rect width="420" height="420" rx="92" fill="#0A1E26"/>
+    <path d="M20 -30L100 470M120 -30L200 470M220 -30L300 470M320 -30L400 470M420 -30L500 470" stroke="#7DEBFF" stroke-opacity="0.13" stroke-width="4"/>
+    <circle cx="210" cy="210" r="118" stroke="#7DEBFF" stroke-width="30"/>
+    <path d="M174 235L247 184L258 258L174 235Z" stroke="#FCFEFF" stroke-opacity="0.82" stroke-width="16" stroke-linejoin="round"/>
+    <circle cx="174" cy="235" r="26" fill="#2DD4A3"/>
+    <circle cx="247" cy="184" r="26" fill="#2DD4A3"/>
+    <circle cx="258" cy="258" r="26" fill="#2DD4A3"/>
+    <text x="0" y="484" fill="#FCFEFF" fill-opacity="0.72" font-family="Inter, Arial, sans-serif" font-size="24">App icon source</text>
+  </g>
+  <g transform="translate(620 250)">
+    <circle cx="140" cy="140" r="112" stroke="#7DEBFF" stroke-width="24"/>
+    <path d="M105 165L175 116L186 186L105 165Z" stroke="#FCFEFF" stroke-opacity="0.82" stroke-width="14" stroke-linejoin="round"/>
+    <circle cx="105" cy="165" r="24" fill="#2DD4A3"/>
+    <circle cx="175" cy="116" r="24" fill="#2DD4A3"/>
+    <circle cx="186" cy="186" r="24" fill="#2DD4A3"/>
+    <text x="0" y="330" fill="#FCFEFF" fill-opacity="0.72" font-family="Inter, Arial, sans-serif" font-size="24">Full mark</text>
+  </g>
+  <g transform="translate(1000 260)">
+    <circle cx="110" cy="110" r="88" stroke="#7DEBFF" stroke-width="26"/>
+    <circle cx="110" cy="110" r="34" fill="#2DD4A3"/>
+    <text x="0" y="270" fill="#FCFEFF" fill-opacity="0.72" font-family="Inter, Arial, sans-serif" font-size="24">Tiny mark</text>
+  </g>
+  <g transform="translate(1330 270)">
+    <circle cx="80" cy="80" r="68" stroke="#7DEBFF" stroke-opacity="0.18" stroke-width="2"/>
+    <circle cx="80" cy="80" r="54" stroke="#7DEBFF" stroke-opacity="0.28" stroke-width="2"/>
+    <circle cx="80" cy="80" r="42" stroke="#7DEBFF" stroke-width="10"/>
+    <path d="M67 89L94 70L98 98L67 89Z" stroke="#FCFEFF" stroke-opacity="0.82" stroke-width="6" stroke-linejoin="round"/>
+    <circle cx="67" cy="89" r="9" fill="#2DD4A3"/>
+    <circle cx="94" cy="70" r="9" fill="#2DD4A3"/>
+    <circle cx="98" cy="98" r="9" fill="#2DD4A3"/>
+    <text x="-18" y="210" fill="#FCFEFF" fill-opacity="0.72" font-family="Inter, Arial, sans-serif" font-size="24">Wave emission</text>
+  </g>
+  <g transform="translate(80 820)">
+    <rect width="1640" height="180" rx="90" fill="#7DEBFF" fill-opacity="0.11" stroke="#7DEBFF" stroke-opacity="0.34" stroke-width="4"/>
+    <path d="M-20 -40L40 220M120 -40L180 220M260 -40L320 220M400 -40L460 220M540 -40L600 220M680 -40L740 220M820 -40L880 220M960 -40L1020 220M1100 -40L1160 220M1240 -40L1300 220M1380 -40L1440 220M1520 -40L1580 220" stroke="#FCFEFF" stroke-opacity="0.13" stroke-width="6"/>
+    <text x="80" y="108" fill="#FCFEFF" font-family="Space Grotesk, Inter, Arial, sans-serif" font-size="54" font-weight="700">Rain Streak active state treatment</text>
+  </g>
+</svg>

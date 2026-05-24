@@ -39,6 +39,24 @@ Required variants:
 
 Launcher icons may use OS-required rounded-square or adaptive shapes, but the internal mark remains circular.
 
+Source assets live in `apps/rain/assets/branding/source/`.
+
+Generated previews and PNG exports live in `apps/rain/assets/branding/generated/`.
+
+Animation-ready sources live in `apps/rain/assets/branding/source/animation/`.
+
+Use:
+
+- `peer_core_animatable.svg` when an animation tool can target named SVG groups.
+- `layers/*.svg` when Flutter should stack independent full-viewBox layer assets.
+- `peer_core_animation_manifest.json` for pivots, layer names, and motion timing.
+
+Regenerate the asset pack with:
+
+```powershell
+powershell -ExecutionPolicy Bypass -File apps/rain/assets/branding/source/render_peer_core_assets.ps1
+```
+
 ## Splash And Loading
 
 Splash uses:
@@ -161,6 +179,7 @@ Allowed:
 - short ripple on connect/send/call state changes
 - page transitions already in `RainMotion`
 - short status pulse for active connecting/loading states
+- independent Peer Core layers for ring, waves, rain streaks, links, and each peer node
 
 Avoid:
 
@@ -256,8 +275,8 @@ Brand changes should be applied in phases:
 
 ## Deferred Decisions
 
-- Exact final SVG geometry for Peer Core.
 - Whether to bundle fonts as app assets.
 - Exact platform icon generation tooling.
 - Final sound asset replacement set.
 - Whether to apply glass-style surfaces broadly or only to splash/call/status areas.
+- Exact Flutter animation implementation path: named SVG group animation, stacked SVG layers, or custom painter.
