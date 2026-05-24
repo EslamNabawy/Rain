@@ -35,6 +35,7 @@ void main() {
       expect(gradient.colors.first, RainColors.backgroundLight);
       expect(gradient.colors, contains(RainColors.surfaceLight));
       expect(gradient.colors, isNot(contains(RainColors.backgroundDark)));
+      expect(find.byType(CustomPaint), findsWidgets);
     },
   );
 }

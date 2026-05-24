@@ -431,7 +431,7 @@ git commit -m "feat: add Rain Peer Core mark widgets"
 - Modify: `apps/rain/lib/presentation/widgets/rain_backdrop.dart`
 - Modify: `apps/rain/test/rain_theme_test.dart`
 
-- [ ] **Step 1: Add brand color aliases**
+- [x] **Step 1: Add brand color aliases**
 
 Add these constants to `RainColors`:
 
@@ -444,7 +444,7 @@ static const Color errorCoral = Color(0xFFFF6B6B);
 
 Keep existing colors until all references are migrated.
 
-- [ ] **Step 2: Replace glow blobs with mist/signal painter**
+- [x] **Step 2: Replace glow blobs with mist/signal painter**
 
 In `rain_backdrop.dart`, replace `_RainAtmosphere` and `_GlowBlob` with a `CustomPaint` painter that draws restrained diagonal lines and faint wave arcs:
 
@@ -468,7 +468,7 @@ class _RainAtmosphere extends StatelessWidget {
 
 Use `RainColors.mistCyan` at low opacity and avoid radial glow blobs.
 
-- [ ] **Step 3: Update backdrop test**
+- [x] **Step 3: Update backdrop test**
 
 Extend `apps/rain/test/rain_theme_test.dart` so it asserts `RainBackdrop` still follows light theme surfaces and renders a `CustomPaint` atmosphere:
 
@@ -476,7 +476,7 @@ Extend `apps/rain/test/rain_theme_test.dart` so it asserts `RainBackdrop` still 
 expect(find.byType(CustomPaint), findsWidgets);
 ```
 
-- [ ] **Step 4: Validate Task 3**
+- [x] **Step 4: Validate Task 3**
 
 ```powershell
 cd apps/rain
@@ -485,7 +485,7 @@ flutter test test/rain_theme_test.dart
 
 Expected: theme/backdrop tests pass.
 
-- [ ] **Step 5: Commit Task 3**
+- [x] **Step 5: Commit Task 3**
 
 ```powershell
 git add apps/rain/lib/presentation/theme/rain_theme.dart apps/rain/lib/presentation/widgets/rain_backdrop.dart apps/rain/test/rain_theme_test.dart

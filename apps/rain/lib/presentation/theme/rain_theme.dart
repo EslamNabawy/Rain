@@ -6,6 +6,10 @@ class RainColors {
   static const Color primarySoft = Color(0xFF1C6D78);
   static const Color secondary = Color(0xFF50C878);
   static const Color tertiary = Color(0xFFFFBF00);
+  static const Color mistCyan = Color(0xFF7DEBFF);
+  static const Color peerMint = Color(0xFF2DD4A3);
+  static const Color quietLine = Color(0xFF28424D);
+  static const Color errorCoral = Color(0xFFFF6B6B);
   static const Color backgroundDark = Color(0xFF061017);
   static const Color backgroundMid = Color(0xFF0A1E26);
   static const Color backgroundDeep = Color(0xFF10141E);
