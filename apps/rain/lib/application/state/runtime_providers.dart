@@ -401,6 +401,7 @@ class ConnectionsController extends Notifier<ConnectionsState> {
         (view) => view.copyWith(
           manualIntent: ManualConnectionIntent.failed,
           actionBusy: false,
+          disconnecting: false,
           error: error,
           localDetail: 'Connection failed before chat was ready.',
         ),
@@ -437,6 +438,7 @@ class ConnectionsController extends Notifier<ConnectionsState> {
       _upsert(
         peerId,
         (view) => view.copyWith(
+          actionBusy: false,
           disconnecting: false,
           error: error,
           localDetail: 'Disconnect failed.',
@@ -454,7 +456,9 @@ class ConnectionsController extends Notifier<ConnectionsState> {
         session: session,
         manualIntent: _intentForSession(session, fallback: view.manualIntent),
         actionBusy: false,
-        disconnecting: false,
+        disconnecting: session?.phase == SessionPhase.disconnecting
+            ? view.disconnecting
+            : false,
         localDetail: session?.detail,
         updatedAt: DateTime.now().millisecondsSinceEpoch,
       ),
@@ -526,7 +530,9 @@ class ConnectionsController extends Notifier<ConnectionsState> {
         session: session,
         manualIntent: _intentForSession(session, fallback: view.manualIntent),
         actionBusy: false,
-        disconnecting: false,
+        disconnecting: session.phase == SessionPhase.disconnecting
+            ? view.disconnecting
+            : false,
         localDetail: session.detail,
         error: session.error,
         updatedAt: session.updatedAt,
@@ -538,6 +544,11 @@ class ConnectionsController extends Notifier<ConnectionsState> {
     Session? session, {
     required ManualConnectionIntent fallback,
   }) {
+    if (session?.phase == SessionPhase.disconnecting) {
+      return fallback == ManualConnectionIntent.manualDisconnected
+          ? ManualConnectionIntent.manualDisconnected
+          : ManualConnectionIntent.idle;
+    }
     return switch (session?.state) {
       SessionState.connected => ManualConnectionIntent.linked,
       SessionState.connecting ||

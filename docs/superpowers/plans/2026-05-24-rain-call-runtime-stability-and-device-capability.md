@@ -204,20 +204,20 @@
 
 **Purpose:** Make manual disconnect a reversible user action, not a state that blocks future connection attempts.
 
-- [ ] Audit `ConnectionsController.disconnect` and `syncPeer` in `apps/rain/lib/application/state/runtime_providers.dart`.
-- [ ] Audit runtime manual disconnect tracking in `RainRuntimeController`.
-- [ ] Define manual disconnect rule:
+- [x] Audit `ConnectionsController.disconnect` and `syncPeer` in `apps/rain/lib/application/state/runtime_providers.dart`.
+- [x] Audit runtime manual disconnect tracking in `RainRuntimeController`.
+- [x] Define manual disconnect rule:
   - Disconnect can intentionally stop auto-reconnect.
   - The explicit Connect button must still be enabled after disconnect completes.
   - Pressing Connect clears manual disconnect intent for that peer before starting connection.
-- [ ] Ensure failed disconnect cleanup does not leave `actionBusy` or `disconnecting` stuck.
-- [ ] Add tests:
+- [x] Ensure failed disconnect cleanup does not leave `actionBusy` or `disconnecting` stuck.
+- [x] Add tests:
   - phone disconnect returns UI to disconnected and connect-enabled.
   - pressing connect after manual disconnect clears manual intent.
   - remote offline disconnect and manual disconnect have separate display text.
-- [ ] Acceptance:
+- [x] Acceptance:
   - On Android, after pressing disconnect, the connect button can be pressed again.
-- [ ] Commit with message: `fix: allow reconnect after manual disconnect`.
+- [x] Commit with message: `fix: allow reconnect after manual disconnect`.
 
 ## Phase 08: Call Surface Rendering Contract
 

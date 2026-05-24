@@ -505,6 +505,12 @@ class RainRuntimeController with WidgetsBindingObserver {
       }
       return;
     }
+    if (_manualDisconnectedPeers.contains(normalizedUsername)) {
+      if (!interactive) {
+        return;
+      }
+      _manualDisconnectedPeers.remove(normalizedUsername);
+    }
     final current = brain!.getSession(normalizedUsername);
     if (current?.state == SessionState.connected) {
       return;
@@ -545,7 +551,6 @@ class RainRuntimeController with WidgetsBindingObserver {
         return;
       }
     }
-    _manualDisconnectedPeers.remove(normalizedUsername);
     await _registerPeerListener(normalizedUsername, bestEffort: false);
     await brain!.connect(normalizedUsername);
     if (waitForConnected) {
