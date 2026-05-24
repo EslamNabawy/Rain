@@ -117,6 +117,7 @@ class SoundEffectsService {
   Future<void> play(
     RainSoundEffect effect, {
     bool voiceCallActive = false,
+    bool allowDuringCall = false,
   }) async {
     if (_disabled) {
       return;
@@ -136,7 +137,11 @@ class SoundEffectsService {
       return;
     }
     final reduceDuringCall = voiceCallActive && settings.reduceSoundsDuringCall;
-    if (!_shouldPlayInCurrentContext(effect, reduceDuringCall)) {
+    if (!_shouldPlayInCurrentContext(
+      effect,
+      reduceDuringCall,
+      allowDuringCall: allowDuringCall,
+    )) {
       return;
     }
     final now = _clock();
@@ -157,7 +162,11 @@ class SoundEffectsService {
       await player.playAsset(
         _assetFor(effect),
         volume:
-            _volumeFor(effect, voiceCallActive: reduceDuringCall) *
+            _volumeFor(
+              effect,
+              voiceCallActive: reduceDuringCall,
+              allowDuringCall: allowDuringCall,
+            ) *
             settings.soundEffectsVolume,
       );
     } on MissingPluginException {
@@ -188,7 +197,11 @@ String _assetFor(RainSoundEffect effect) {
   return rainSoundEffectAssetPaths[effect]!;
 }
 
-double _volumeFor(RainSoundEffect effect, {required bool voiceCallActive}) {
+double _volumeFor(
+  RainSoundEffect effect, {
+  required bool voiceCallActive,
+  required bool allowDuringCall,
+}) {
   final baseVolume = switch (effect) {
     RainSoundEffect.send => 0.30,
     RainSoundEffect.receive => 0.32,
@@ -204,7 +217,8 @@ double _volumeFor(RainSoundEffect effect, {required bool voiceCallActive}) {
     RainSoundEffect.deafen => 0.26,
     RainSoundEffect.undeafen => 0.28,
   };
-  if (!voiceCallActive || !_isCriticalCallEffect(effect)) {
+  if (!voiceCallActive ||
+      (!_isCriticalCallEffect(effect) && !allowDuringCall)) {
     return baseVolume;
   }
   return baseVolume * 0.55;
@@ -228,11 +242,15 @@ Duration _throttleFor(RainSoundEffect effect) {
   };
 }
 
-bool _shouldPlayInCurrentContext(RainSoundEffect effect, bool voiceCallActive) {
+bool _shouldPlayInCurrentContext(
+  RainSoundEffect effect,
+  bool voiceCallActive, {
+  required bool allowDuringCall,
+}) {
   if (!voiceCallActive) {
     return true;
   }
-  return _isCriticalCallEffect(effect);
+  return allowDuringCall || _isCriticalCallEffect(effect);
 }
 
 bool _isCriticalCallEffect(RainSoundEffect effect) {

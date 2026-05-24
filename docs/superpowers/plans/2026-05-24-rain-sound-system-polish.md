@@ -233,6 +233,8 @@ git commit -m "feat: add typed rain sound events"
 
 **Purpose:** Move sound decisions into one app-scoped owner.
 
+**Status:** Complete.
+
 **Files:**
 - Create: `apps/rain/lib/application/audio/sound_event_router.dart`
 - Create: `apps/rain/test/sound_event_router_test.dart`

@@ -123,6 +123,31 @@ void main() {
     expect(fakes.single.played.single.volume, lessThan(0.20));
   });
 
+  test(
+    'active calls allow explicit call-control actions at lower volume',
+    () async {
+      final fakes = <_FakeRainSoundPlayer>[];
+      final service = SoundEffectsService(
+        playerFactory: (String _) {
+          final fake = _FakeRainSoundPlayer();
+          fakes.add(fake);
+          return fake;
+        },
+      );
+
+      await service.play(
+        RainSoundEffect.action,
+        voiceCallActive: true,
+        allowDuringCall: true,
+      );
+
+      expect(fakes, hasLength(1));
+      expect(fakes.single.played.single.assetPath, 'sounds/action.wav');
+      expect(fakes.single.played.single.volume, greaterThan(0.18));
+      expect(fakes.single.played.single.volume, lessThan(0.21));
+    },
+  );
+
   test('sound effects setting disables playback', () async {
     final fakes = <_FakeRainSoundPlayer>[];
     final service = SoundEffectsService(
