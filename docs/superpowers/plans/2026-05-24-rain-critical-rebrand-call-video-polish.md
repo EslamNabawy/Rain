@@ -82,24 +82,24 @@
 
 **Purpose:** Replace the static splash with a Rain-branded animation that works on Android and Windows without adding fragile dependencies.
 
-- [ ] Extend `apps/rain/lib/presentation/branding/rain_peer_core_mark.dart`.
-- [ ] Add an animation mode for the Peer Core mark:
+- [x] Extend `apps/rain/lib/presentation/branding/rain_peer_core_mark.dart`.
+- [x] Add an animation mode for the Peer Core mark:
   - Outer ring stays stable.
   - Inner three-dot mesh rotates inside the circle.
   - Dot path stays visually tangent to the inner circle instead of floating randomly.
   - Optional soft wave pulse emits from the ring during startup only.
-- [ ] Add reduced-motion support:
+- [x] Add reduced-motion support:
   - If animations are disabled, show the final mark state without looping motion.
-- [ ] Update `apps/rain/lib/presentation/screens/splash_screen.dart`:
+- [x] Update `apps/rain/lib/presentation/screens/splash_screen.dart`:
   - Use the new animated Peer Core mark.
   - Apply `RainBackdrop.splash`.
   - Remove any old loading-bar behavior.
   - Keep startup timing tied to real app initialization, not fake delays.
-- [ ] Add widget tests:
+- [x] Add widget tests:
   - Splash uses animated mark.
   - Reduced-motion path renders without animation controller leaks.
   - Splash text and logo fit small Android logical heights.
-- [ ] Commit with message: `feat: animate Rain splash mark`.
+- [x] Commit with message: `feat: animate Rain splash mark`.
 
 ## Phase 04: Full Rebrand Surface Pass
 

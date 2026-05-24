@@ -63,17 +63,23 @@ class _SplashBody extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    final reducedMotion = MediaQuery.of(context).disableAnimations;
     return TweenAnimationBuilder<double>(
       tween: Tween<double>(begin: 0.92, end: 1),
-      duration: RainMotion.slow,
+      duration: reducedMotion ? Duration.zero : RainMotion.splashIntro,
       curve: Curves.easeOutCubic,
       builder: (context, scale, child) {
-        return Transform.scale(scale: scale, child: child);
+        return Transform.scale(scale: reducedMotion ? 1 : scale, child: child);
       },
       child: Column(
         mainAxisSize: MainAxisSize.min,
         children: <Widget>[
-          const RainPeerCoreAnimatedMark(size: 112),
+          RainPeerCoreAnimatedMark(
+            key: const ValueKey<String>('rain-splash-peer-core-mark'),
+            size: 112,
+            motion: RainPeerCoreMotion.orbitalMesh,
+            reducedMotion: reducedMotion,
+          ),
           const SizedBox(height: 22),
           Text(
             title,
