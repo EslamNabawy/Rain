@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 
+import 'package:rain/presentation/branding/rain_peer_core_mark.dart';
 import 'package:rain/presentation/theme/rain_theme.dart';
 
 class RainSplashScreen extends StatelessWidget {
@@ -8,11 +9,7 @@ class RainSplashScreen extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     return const _SplashScaffold(
-      child: _SplashBody(
-        title: 'Rain',
-        subtitle: 'Peer command link',
-        showProgress: true,
-      ),
+      child: _SplashBody(title: 'Rain', subtitle: 'Private peer link'),
     );
   }
 }
@@ -28,7 +25,6 @@ class RainStartupFailureScreen extends StatelessWidget {
       child: _SplashBody(
         title: 'Rain could not start.',
         subtitle: error.toString(),
-        showProgress: false,
       ),
     );
   }
@@ -66,15 +62,10 @@ class _SplashScaffold extends StatelessWidget {
 }
 
 class _SplashBody extends StatelessWidget {
-  const _SplashBody({
-    required this.title,
-    required this.subtitle,
-    required this.showProgress,
-  });
+  const _SplashBody({required this.title, required this.subtitle});
 
   final String title;
   final String subtitle;
-  final bool showProgress;
 
   @override
   Widget build(BuildContext context) {
@@ -88,30 +79,7 @@ class _SplashBody extends StatelessWidget {
       child: Column(
         mainAxisSize: MainAxisSize.min,
         children: <Widget>[
-          Container(
-            width: 92,
-            height: 92,
-            decoration: BoxDecoration(
-              borderRadius: BorderRadius.circular(26),
-              boxShadow: <BoxShadow>[
-                BoxShadow(
-                  color: const Color(0xFF2DD4A3).withValues(alpha: 0.18),
-                  blurRadius: 32,
-                  offset: const Offset(0, 18),
-                ),
-              ],
-            ),
-            clipBehavior: Clip.antiAlias,
-            child: Image.asset(
-              'assets/branding/rain_app_icon_1024.png',
-              fit: BoxFit.cover,
-              errorBuilder: (_, _, _) => const Icon(
-                Icons.hub_outlined,
-                size: 54,
-                color: Color(0xFF2DD4A3),
-              ),
-            ),
-          ),
+          const RainPeerCoreAnimatedMark(size: 112),
           const SizedBox(height: 22),
           Text(
             title,
@@ -134,17 +102,6 @@ class _SplashBody extends StatelessWidget {
               letterSpacing: 0,
             ),
           ),
-          if (showProgress) ...<Widget>[
-            const SizedBox(height: 26),
-            ClipRRect(
-              borderRadius: BorderRadius.circular(999),
-              child: const LinearProgressIndicator(
-                minHeight: 3,
-                color: Color(0xFF2DD4A3),
-                backgroundColor: Color(0x2237E8FF),
-              ),
-            ),
-          ],
         ],
       ),
     );

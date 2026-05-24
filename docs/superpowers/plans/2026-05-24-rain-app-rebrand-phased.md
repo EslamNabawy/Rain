@@ -502,7 +502,7 @@ git commit -m "feat: apply Signal Mist theme backdrop"
 - Modify: `apps/rain/test/root_screen_test.dart`
 - Modify: `apps/rain/test/onboarding_screen_test.dart` if header assumptions break
 
-- [ ] **Step 1: Replace splash icon and remove loading bar**
+- [x] **Step 1: Replace splash icon and remove loading bar**
 
 In `splash_screen.dart`:
 
@@ -521,7 +521,7 @@ const SizedBox(height: 8),
 Text(subtitle, textAlign: TextAlign.center, style: ...),
 ```
 
-- [ ] **Step 2: Replace shell header logo**
+- [x] **Step 2: Replace shell header logo**
 
 In `shell_header.dart`, replace `Image.asset('assets/branding/rain_app_icon_1024.png')` fallback with:
 
@@ -531,7 +531,7 @@ RainPeerCoreMark(size: size * 0.72, useTinyVariant: size < 44)
 
 Keep the same container size and layout.
 
-- [ ] **Step 3: Add splash test assertion**
+- [x] **Step 3: Add splash test assertion**
 
 In `apps/rain/test/root_screen_test.dart`, update loading-state test to assert:
 
@@ -541,7 +541,7 @@ expect(find.text('Private peer link'), findsOneWidget);
 expect(find.byType(LinearProgressIndicator), findsNothing);
 ```
 
-- [ ] **Step 4: Validate Task 4**
+- [x] **Step 4: Validate Task 4**
 
 ```powershell
 cd apps/rain
@@ -550,7 +550,7 @@ flutter test test/root_screen_test.dart test/onboarding_screen_test.dart
 
 Expected: tests pass with no splash loading bar.
 
-- [ ] **Step 5: Commit Task 4**
+- [x] **Step 5: Commit Task 4**
 
 ```powershell
 git add apps/rain/lib/presentation/screens/splash_screen.dart apps/rain/lib/presentation/widgets/home/shell_header.dart apps/rain/test/root_screen_test.dart apps/rain/test/onboarding_screen_test.dart

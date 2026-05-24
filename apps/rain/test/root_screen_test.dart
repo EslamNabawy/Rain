@@ -56,8 +56,8 @@ void main() {
     await tester.pump();
 
     expect(find.text('Rain'), findsOneWidget);
-    expect(find.text('Peer command link'), findsOneWidget);
-    expect(find.byType(LinearProgressIndicator), findsOneWidget);
+    expect(find.text('Private peer link'), findsOneWidget);
+    expect(find.byType(LinearProgressIndicator), findsNothing);
   });
 }
 

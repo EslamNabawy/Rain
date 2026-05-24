@@ -72,13 +72,7 @@ class _RainHeaderIcon extends StatelessWidget {
       ),
       child: ClipRRect(
         borderRadius: BorderRadius.circular(size * 0.22),
-        child: Image.asset(
-          'assets/branding/rain_app_icon_1024.png',
-          fit: BoxFit.cover,
-          filterQuality: FilterQuality.medium,
-          errorBuilder: (context, error, stackTrace) =>
-              Icon(Icons.water_drop, size: size * 0.58, color: scheme.primary),
-        ),
+        child: RainPeerCoreMark(size: size * 0.72, useTinyVariant: size < 44),
       ),
     );
   }
