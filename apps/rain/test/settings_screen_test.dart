@@ -82,9 +82,9 @@ void main() {
 
     await tester.pumpSettingsScreen(harness: harness);
     await tester.tap(find.byTooltip('Choose microphone'));
-    await tester.pumpAndSettle();
+    await tester.pumpSettingsFrame();
     await tester.tap(find.text('Desk mic').last);
-    await tester.pumpAndSettle();
+    await tester.pumpSettingsFrame();
 
     expect(await AppSettingsStore().loadSelectedMicrophoneDeviceId(), 'mic-1');
   });
@@ -130,7 +130,7 @@ void main() {
 
     await tester.pumpSettingsScreen(harness: harness);
     await tester.tap(find.byTooltip('Refresh microphones'));
-    await tester.pumpAndSettle();
+    await tester.pumpSettingsFrame();
 
     expect(find.text('Microphones unavailable'), findsOneWidget);
     expect(find.text('Microphone permission denied'), findsOneWidget);
@@ -184,7 +184,12 @@ extension _SettingsPump on WidgetTester {
         child: const MaterialApp(home: Scaffold(body: SettingsScreen())),
       ),
     );
-    await pumpAndSettle();
+    await pumpSettingsFrame();
+  }
+
+  Future<void> pumpSettingsFrame() async {
+    await pump();
+    await pump(const Duration(milliseconds: 300));
   }
 }
 

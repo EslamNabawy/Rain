@@ -296,19 +296,19 @@
 
 **Purpose:** Catch regressions before producing installable builds.
 
-- [ ] Run formatting where needed.
-- [ ] Run focused tests for changed areas:
+- [x] Run formatting where needed.
+- [x] Run focused tests for changed areas:
   - `dart run melos exec --scope rain -- flutter test test/call_surface_providers_test.dart`
   - `dart run melos exec --scope rain -- flutter test test/rain_brand_mark_test.dart`
   - `dart run melos exec --scope rain -- flutter test test/rain_chat_widgets_test.dart`
   - Any new call overlay/sound tests.
-- [ ] Run standard validation:
+- [x] Run standard validation:
   - `dart pub get`
   - `dart run melos run analyze`
   - `dart run melos run test`
-- [ ] Create or update QA document:
+- [x] Create or update QA document:
   - `docs/qa/2026-05-24-rain-critical-polish-validation.md`
-- [ ] Commit with message: `test: validate Rain critical polish`.
+- [x] Commit with message: `test: validate Rain critical polish`.
 
 ## Phase 13: Final Build And Release Gate
 
