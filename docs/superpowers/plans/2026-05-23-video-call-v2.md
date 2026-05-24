@@ -537,7 +537,7 @@ git commit -m "feat: add video call diagnostics"
 
 **Purpose:** Prove codebase health before any installable artifact.
 
-- [ ] Run:
+- [x] Run:
 
 ```powershell
 dart pub get
@@ -545,9 +545,9 @@ dart run melos run analyze
 dart run melos run test
 ```
 
-- [ ] Fix failures with focused commits.
-- [ ] Do not build yet.
-- [ ] Commit final test fixes:
+- [x] Fix failures with focused commits.
+- [x] Do not build yet.
+- [x] Commit final test fixes:
 
 ```powershell
 git status --short
