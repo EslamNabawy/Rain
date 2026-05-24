@@ -918,11 +918,11 @@ git commit -m "feat: polish Rain conversation and call surfaces"
 - Modify after approval: Android, Windows, Linux, and macOS icon files
 - Create if useful: `scripts/generate_rain_platform_icons.ps1`
 
-- [ ] **Step 1: Defer platform replacement until in-app approval**
+- [x] **Step 1: Defer platform replacement until in-app approval**
 
 Do not replace platform icons until the app-shell mark, splash mark, and state treatment are approved in the running app.
 
-- [ ] **Step 2: Use generated approved source**
+- [x] **Step 2: Use generated approved source**
 
 Use:
 
@@ -933,6 +933,13 @@ apps/rain/assets/branding/generated/peer_core_app_icon_1024.png
 as the canonical platform icon source after approval.
 
 - [ ] **Step 3: Replace platform icon targets**
+
+Deferred until in-app approval. Prepared guarded generator:
+
+```powershell
+.\scripts\generate_rain_platform_icons.ps1 -ValidateOnly
+.\scripts\generate_rain_platform_icons.ps1 -Apply -Approved
+```
 
 Targets:
 
@@ -953,7 +960,7 @@ apps/rain/macos/Runner/Assets.xcassets/AppIcon.appiconset/app_icon_512.png
 apps/rain/macos/Runner/Assets.xcassets/AppIcon.appiconset/app_icon_1024.png
 ```
 
-- [ ] **Step 4: Validate asset legibility**
+- [x] **Step 4: Validate asset legibility**
 
 Inspect:
 
@@ -964,11 +971,11 @@ apps/rain/assets/branding/generated/peer_core_size_check.png
 
 Expected: 16 and 24 px variants use simplified ring+dot; 48 px and larger can carry the peer-node triangle.
 
-- [ ] **Step 5: Commit Task 8**
+- [x] **Step 5: Commit Task 8 preparation**
 
 ```powershell
-git add apps/rain/android/app/src/main/res apps/rain/linux/runner/resources apps/rain/windows/runner/resources apps/rain/macos/Runner/Assets.xcassets
-git commit -m "feat: update Rain platform icons"
+git add scripts/generate_rain_platform_icons.ps1 docs/superpowers/plans/2026-05-24-rain-app-rebrand-phased.md
+git commit -m "chore: prepare Rain platform icons"
 ```
 
 ---
