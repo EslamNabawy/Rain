@@ -308,7 +308,7 @@ String rainVoiceCallFailureDetail(VoiceCallState state) {
     VoiceCallFailureReason.mediaConnectionFailed =>
       'Call media could not connect. Try again.',
     VoiceCallFailureReason.videoFirstFrameTimeout =>
-      'Video stream did not render. Try again.',
+      'Video could not connect. Try again.',
     null => rainSanitizeVoiceCallFailureDetail(state.detail),
   };
 }

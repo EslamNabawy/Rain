@@ -659,6 +659,37 @@ void main() {
     expect(dismissed, isTrue);
   });
 
+  testWidgets('video first frame failure hides raw native errors', (
+    WidgetTester tester,
+  ) async {
+    await tester.pumpWidget(
+      MaterialApp(
+        home: Scaffold(
+          body: RainCallPanel(
+            state: const VoiceCallState(
+              phase: VoiceCallPhase.failed,
+              peerId: 'bob',
+              callId: 'call-1',
+              mediaMode: CallMediaMode.video,
+              failureReason: VoiceCallFailureReason.videoFirstFrameTimeout,
+              detail:
+                  'Unable to RTCRtpTransceiver::setDirection: RtpTransceiver has been disposed.',
+            ),
+            displayName: 'Bob',
+            onAccept: () {},
+            onReject: () {},
+            onHangUp: () {},
+            onRetry: () {},
+            onToggleMute: () {},
+          ),
+        ),
+      ),
+    );
+
+    expect(find.text('Video could not connect. Try again.'), findsOneWidget);
+    expect(find.textContaining('RTCRtpTransceiver'), findsNothing);
+  });
+
   testWidgets('native camera and WebRTC errors are sanitized', (
     WidgetTester tester,
   ) async {

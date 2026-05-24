@@ -497,7 +497,7 @@ git commit -m "chore: add video call platform gates"
 
 **Purpose:** Make failures debuggable without exposing raw native spam to normal UI.
 
-- [ ] Extend `apps/rain/lib/application/runtime/voice_call_diagnostics.dart`:
+- [x] Extend `apps/rain/lib/application/runtime/voice_call_diagnostics.dart`:
   - `mediaMode`
   - local/remote audio track counts
   - local/remote video track counts
@@ -508,28 +508,28 @@ git commit -m "chore: add video call platform gates"
   - camera permission failure detail
   - sanitized UI error detail
 
-- [ ] Add tests:
+- [x] Add tests:
   - diagnostics include video counters
   - UI hides raw `RTCRtpTransceiver`/native errors
   - export contains full native error for developer diagnosis
 
-- [ ] Add runtime failure rules:
+- [x] Add runtime failure rules:
   - no remote video first frame within timeout -> show `Video could not connect. Try again.`
   - audio connected but remote camera off -> stay active, show peer camera off
   - ICE failed -> hangup with typed media failure
   - app pause/background -> keep call if OS allows, otherwise fail cleanly and release camera
 
-- [ ] Run:
+- [x] Run:
 
 ```powershell
 flutter test apps\rain\test\crash_diagnostics_service_test.dart
 flutter test apps\rain\test\rain_chat_widgets_test.dart
 ```
 
-- [ ] Commit:
+- [x] Commit:
 
 ```powershell
-git add apps\rain\lib\application\runtime apps\rain\test
+git add apps\rain\lib\application\runtime apps\rain\lib\presentation\widgets\calls apps\rain\test packages\peer_core\lib\src\voice docs
 git commit -m "feat: add video call diagnostics"
 ```
 

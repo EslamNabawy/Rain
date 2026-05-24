@@ -45,13 +45,18 @@ final class VoiceMediaDiagnostics {
     this.localCandidateCount = 0,
     this.remoteCandidateCount = 0,
     this.pendingRemoteCandidateCount = 0,
+    this.localAudioTrackCount = 0,
     this.remoteAudioTrackCount = 0,
+    this.localVideoTrackCount = 0,
+    this.remoteVideoTrackCount = 0,
     this.remoteStreamCount = 0,
     this.hasLocalAudio = false,
+    this.hasLocalVideo = false,
     this.peerConnectionClosed = false,
     this.disposed = false,
     this.lastDetail,
     this.lastError,
+    this.lastFailureReason,
   });
 
   final List<String> mediaStates;
@@ -60,13 +65,18 @@ final class VoiceMediaDiagnostics {
   final int localCandidateCount;
   final int remoteCandidateCount;
   final int pendingRemoteCandidateCount;
+  final int localAudioTrackCount;
   final int remoteAudioTrackCount;
+  final int localVideoTrackCount;
+  final int remoteVideoTrackCount;
   final int remoteStreamCount;
   final bool hasLocalAudio;
+  final bool hasLocalVideo;
   final bool peerConnectionClosed;
   final bool disposed;
   final String? lastDetail;
   final String? lastError;
+  final String? lastFailureReason;
 }
 
 final class VoiceMediaAudioLevel {

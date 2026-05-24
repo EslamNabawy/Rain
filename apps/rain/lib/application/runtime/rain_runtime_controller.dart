@@ -126,6 +126,8 @@ class RainRuntimeController with WidgetsBindingObserver {
   StreamSubscription<VoiceCallSessionState>? _voiceCallSessionSubscription;
   CallMediaConnection? _videoCallMediaConnection;
   VideoCallRenderers? _videoCallRenderers;
+  VideoCallRendererState? _lastVideoCallRendererState;
+  String? _handledVideoFirstFrameTimeoutCallId;
   StreamSubscription<VideoCallRendererState>? _videoCallRendererSubscription;
   final List<StreamSubscription<dynamic>> _voiceSignalingSubscriptions =
       <StreamSubscription<dynamic>>[];
@@ -1048,6 +1050,7 @@ class RainRuntimeController with WidgetsBindingObserver {
     if (!_started || _shutDown) {
       return;
     }
+    _handleVoiceCallAppLifecycleState(state);
 
     switch (state) {
       case AppLifecycleState.resumed:
