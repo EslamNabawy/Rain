@@ -559,9 +559,9 @@ git commit -m "test: stabilize video call coverage"
 
 **Purpose:** Prove real camera/media behavior before release claim.
 
-- [ ] Build only now, after all tests pass.
-- [ ] Build Windows and Android with the same release defines file.
-- [ ] Build v7a APK only when testing old Android phone.
+- [x] Build only now, after all tests pass.
+- [x] Build Windows and Android with the same release defines file.
+- [x] Build v7a APK only when testing old Android phone.
 - [ ] Test matrix:
   - Android v7a -> Android v7a video call
   - Android v7a -> Windows video call
@@ -582,6 +582,13 @@ git commit -m "test: stabilize video call coverage"
   - 3 successful Android-to-Android calls
   - 3 successful Android-to-Windows calls
   - 3 successful Windows-to-Android calls
+
+Build note:
+
+- `scripts\build_stable_test_pair.ps1 -SmokeWindows` passed on 2026-05-24.
+- Windows release smoke launch passed.
+- Android APK verified to contain only `armeabi-v7a` native libraries.
+- Real device video-call matrix is still pending.
 
 ## Phase 11: Final Build And Release Gate
 
