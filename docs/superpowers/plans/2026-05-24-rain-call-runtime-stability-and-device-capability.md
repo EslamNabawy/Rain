@@ -306,7 +306,7 @@
 
 **Purpose:** Run the normal repo gate after all runtime and UI changes are committed.
 
-- [ ] Run:
+- [x] Run:
 
 ```powershell
 dart pub get
@@ -314,9 +314,11 @@ dart run melos run analyze
 dart run melos run test
 ```
 
-- [ ] Fix any failures in the owning phase area only.
-- [ ] Re-run failing commands until green.
-- [ ] Commit validation-only fixes with focused messages.
+- [x] Fix any failures in the owning phase area only.
+  - No validation failures were found.
+- [x] Re-run failing commands until green.
+  - No targeted re-run was needed because the first full gate was green.
+- [x] Commit validation gate result with message: `docs: complete automated validation gate`.
 
 ## Phase 13: Manual Device Gate
 
