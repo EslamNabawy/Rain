@@ -324,6 +324,10 @@ dart run melos run test
 
 **Purpose:** Prove this works on the devices that exposed the failures.
 
+Current attempt: blocked because this machine sees only Windows/web targets and
+`adb` is not available on `PATH`. See
+`docs/qa/2026-05-25-rain-call-runtime-manual-device-gate.md`.
+
 - [ ] Build only after Phase 12 passes or the user explicitly requests an earlier build.
 - [ ] Test Android phone A to Android phone B:
   - voice call.
@@ -343,8 +347,8 @@ dart run melos run test
   - multi-camera Android still shows flip control.
 - [ ] Test startup:
   - cold start never shows bottom navigation during splash loading.
-- [ ] Record results in the QA audit doc.
-- [ ] Commit with message: `docs: record call stability device gate`.
+- [x] Record results in the QA audit doc.
+- [x] Commit with message: `docs: record call stability device gate`.
 
 ## Phase 14: Final Release Gate
 
