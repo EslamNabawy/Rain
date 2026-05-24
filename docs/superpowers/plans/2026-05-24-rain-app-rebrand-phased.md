@@ -216,7 +216,7 @@ git commit -m "feat: register Rain brand runtime assets"
 - Create: `apps/rain/lib/presentation/branding/rain_peer_core_mark.dart`
 - Create: `apps/rain/test/rain_brand_mark_test.dart`
 
-- [ ] **Step 1: Add static and animated mark widgets**
+- [x] **Step 1: Add static and animated mark widgets**
 
 Create `apps/rain/lib/presentation/branding/rain_peer_core_mark.dart`:
 
@@ -374,7 +374,7 @@ class _WaveLayer extends StatelessWidget {
 }
 ```
 
-- [ ] **Step 2: Add widget tests**
+- [x] **Step 2: Add widget tests**
 
 Create `apps/rain/test/rain_brand_mark_test.dart`:
 
@@ -406,7 +406,7 @@ void main() {
 }
 ```
 
-- [ ] **Step 3: Validate Task 2**
+- [x] **Step 3: Validate Task 2**
 
 ```powershell
 cd apps/rain
@@ -415,7 +415,7 @@ flutter test test/rain_brand_mark_test.dart
 
 Expected: both tests pass.
 
-- [ ] **Step 4: Commit Task 2**
+- [x] **Step 4: Commit Task 2**
 
 ```powershell
 git add apps/rain/lib/presentation/branding/rain_peer_core_mark.dart apps/rain/test/rain_brand_mark_test.dart
