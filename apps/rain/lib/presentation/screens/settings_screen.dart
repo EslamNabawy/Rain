@@ -55,6 +55,7 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen> {
     final themeController = ref.read(themeModeProvider.notifier);
     final lastCrash = ref.watch(lastCrashDiagnosticsProvider);
     final microphones = ref.watch(microphoneSelectionProvider);
+    final cameras = ref.watch(videoInputCapabilityProvider);
     final audioSettings = ref.watch(voiceAudioSettingsProvider);
 
     return AppPageFrame(
@@ -207,6 +208,38 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen> {
             ),
           ),
           const SizedBox(height: 24),
+          const AppSectionTitle(title: 'Call Video'),
+          AppSectionCard(
+            child: cameras.when(
+              data: (state) => RainCameraSelector(
+                state: state,
+                isBusy: false,
+                onRefresh: () => _refreshCameras(ref),
+                onSelected: (String? deviceId) =>
+                    _selectCamera(context, ref, deviceId),
+              ),
+              error: (Object error, StackTrace stackTrace) => ListTile(
+                leading: Icon(
+                  Icons.videocam_off,
+                  color: Theme.of(context).colorScheme.error,
+                ),
+                title: const Text('Cameras unavailable'),
+                subtitle: Text(_formatSettingsError(error)),
+                trailing: IconButton(
+                  tooltip: 'Refresh cameras',
+                  onPressed: () => _refreshCameras(ref),
+                  icon: const Icon(Icons.refresh),
+                ),
+              ),
+              loading: () => RainCameraSelector(
+                state: const VideoInputCapabilityState(devices: []),
+                isBusy: true,
+                onRefresh: () {},
+                onSelected: (_) {},
+              ),
+            ),
+          ),
+          const SizedBox(height: 24),
           const AppSectionTitle(title: 'Appearance'),
           AppSectionCard(
             child: Column(
@@ -354,6 +387,10 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen> {
     ref.read(microphoneSelectionProvider.notifier).refresh();
   }
 
+  void _refreshCameras(WidgetRef ref) {
+    ref.read(videoInputCapabilityProvider.notifier).refresh();
+  }
+
   Future<void> _selectMicrophone(
     BuildContext context,
     WidgetRef ref,
@@ -373,6 +410,32 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen> {
         SnackBar(
           content: Text(
             'Could not update microphone: ${_formatSettingsError(error)}',
+          ),
+          backgroundColor: errorColor,
+        ),
+      );
+    }
+  }
+
+  Future<void> _selectCamera(
+    BuildContext context,
+    WidgetRef ref,
+    String? deviceId,
+  ) async {
+    final messenger = ScaffoldMessenger.of(context);
+    final errorColor = Theme.of(context).colorScheme.error;
+    try {
+      await ref
+          .read(videoInputCapabilityProvider.notifier)
+          .selectVideoInput(deviceId);
+    } catch (error) {
+      if (!context.mounted) {
+        return;
+      }
+      messenger.showSnackBar(
+        SnackBar(
+          content: Text(
+            'Could not update camera: ${_formatSettingsError(error)}',
           ),
           backgroundColor: errorColor,
         ),

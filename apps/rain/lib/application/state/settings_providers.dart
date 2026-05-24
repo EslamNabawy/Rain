@@ -117,6 +117,22 @@ class VideoInputCapabilityController
     );
   }
 
+  Future<VideoInputCapabilityState> reload() async {
+    final previous = state.value;
+    state = const AsyncValue.loading();
+    final next = await AsyncValue.guard(
+      () => ref.read(mediaDeviceSettingsProvider).loadVideoInputCapabilities(),
+    );
+    state = next;
+    if (next.hasValue) {
+      return next.requireValue;
+    }
+    if (previous != null) {
+      state = AsyncValue.data(previous);
+    }
+    Error.throwWithStackTrace(next.error!, next.stackTrace!);
+  }
+
   Future<void> selectVideoInput(String? deviceId) async {
     final service = ref.read(mediaDeviceSettingsProvider);
     final previous = state.value;

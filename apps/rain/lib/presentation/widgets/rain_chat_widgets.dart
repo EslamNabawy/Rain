@@ -1136,7 +1136,7 @@ class RainMicrophoneSelector extends StatelessWidget {
               return <PopupMenuEntry<String>>[
                 PopupMenuItem<String>(
                   value: _defaultMicrophoneMenuValue,
-                  child: _RainMicrophoneMenuRow(
+                  child: _RainDeviceMenuRow(
                     label: 'Default microphone',
                     selected: state.selectedDeviceId == null,
                   ),
@@ -1144,7 +1144,7 @@ class RainMicrophoneSelector extends StatelessWidget {
                 for (var index = 0; index < state.devices.length; index += 1)
                   PopupMenuItem<String>(
                     value: state.devices[index].deviceId,
-                    child: _RainMicrophoneMenuRow(
+                    child: _RainDeviceMenuRow(
                       label: state.devices[index].displayLabel(index),
                       selected:
                           state.selectedDeviceId ==
@@ -1176,8 +1176,106 @@ class RainMicrophoneSelector extends StatelessWidget {
   }
 }
 
-class _RainMicrophoneMenuRow extends StatelessWidget {
-  const _RainMicrophoneMenuRow({required this.label, required this.selected});
+const String _defaultCameraMenuValue = '__rain_default_camera__';
+
+class RainCameraSelector extends StatelessWidget {
+  const RainCameraSelector({
+    super.key,
+    required this.state,
+    required this.isBusy,
+    required this.onRefresh,
+    required this.onSelected,
+  });
+
+  final VideoInputCapabilityState state;
+  final bool isBusy;
+  final VoidCallback onRefresh;
+  final ValueChanged<String?> onSelected;
+
+  @override
+  Widget build(BuildContext context) {
+    final scheme = Theme.of(context).colorScheme;
+    final selectedLabel = _selectedLabel();
+    final warning = state.hasMissingSelection
+        ? 'Selected camera unavailable. Using default.'
+        : null;
+
+    return ListTile(
+      leading: Icon(
+        state.availableVideoInputCount == 0
+            ? Icons.videocam_off
+            : Icons.videocam,
+        color: warning == null ? null : scheme.error,
+      ),
+      title: const Text('Camera'),
+      subtitle: Text(warning ?? selectedLabel),
+      trailing: Row(
+        mainAxisSize: MainAxisSize.min,
+        children: <Widget>[
+          IconButton(
+            tooltip: 'Refresh cameras',
+            onPressed: isBusy ? null : onRefresh,
+            icon: isBusy
+                ? const SizedBox.square(
+                    dimension: 18,
+                    child: CircularProgressIndicator(strokeWidth: 2),
+                  )
+                : const Icon(Icons.refresh),
+          ),
+          PopupMenuButton<String>(
+            tooltip: 'Choose camera',
+            enabled: !isBusy && state.devices.isNotEmpty,
+            onSelected: (String value) =>
+                onSelected(value == _defaultCameraMenuValue ? null : value),
+            itemBuilder: (BuildContext context) {
+              return <PopupMenuEntry<String>>[
+                PopupMenuItem<String>(
+                  value: _defaultCameraMenuValue,
+                  child: _RainDeviceMenuRow(
+                    label: 'Default camera',
+                    selected: state.selectedDeviceId == null,
+                  ),
+                ),
+                for (var index = 0; index < state.devices.length; index += 1)
+                  PopupMenuItem<String>(
+                    value: state.devices[index].deviceId,
+                    child: _RainDeviceMenuRow(
+                      label: state.devices[index].displayLabel(index),
+                      selected:
+                          state.selectedDeviceId ==
+                          state.devices[index].deviceId,
+                    ),
+                  ),
+              ];
+            },
+            icon: Icon(
+              state.devices.isEmpty
+                  ? Icons.videocam_off_outlined
+                  : Icons.arrow_drop_down_circle_outlined,
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
+  String _selectedLabel() {
+    final selected = state.selectedDevice;
+    if (selected == null) {
+      return state.devices.isEmpty
+          ? 'No cameras found.'
+          : 'Default camera. Applies to next video call.';
+    }
+    final index = state.devices.indexOf(selected);
+    final switchNote = state.supportsCameraSwitch
+        ? ' Camera switching available.'
+        : '';
+    return '${selected.displayLabel(index)}. Applies to next video call.$switchNote';
+  }
+}
+
+class _RainDeviceMenuRow extends StatelessWidget {
+  const _RainDeviceMenuRow({required this.label, required this.selected});
 
   final String label;
   final bool selected;

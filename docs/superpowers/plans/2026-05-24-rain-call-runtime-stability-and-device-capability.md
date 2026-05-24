@@ -271,20 +271,20 @@
 
 **Purpose:** Wire camera capability data into the call runtime and video UI.
 
-- [ ] Update video call start to use selected video input when available.
-- [ ] Avoid hardcoded front-camera assumptions in `packages/peer_core/lib/src/call/call_media_connection.dart` where platform support allows device id selection.
-- [ ] Update `VoiceCallState` or a companion provider so UI capabilities are dynamic.
-- [ ] Hide or disable switch-camera control based on capability.
-- [ ] If switch-camera is tapped after a capability change, fail gracefully with a user-facing message instead of throwing.
-- [ ] Add tests:
+- [x] Update video call start to use selected video input when available.
+- [x] Avoid hardcoded front-camera assumptions in `packages/peer_core/lib/src/call/call_media_connection.dart` where platform support allows device id selection.
+- [x] Update `VoiceCallState` or a companion provider so UI capabilities are dynamic.
+- [x] Hide or disable switch-camera control based on capability.
+- [x] If switch-camera is tapped after a capability change, fail gracefully with a user-facing message instead of throwing.
+- [x] Add tests:
   - switch-camera capability absent on single camera.
   - switch-camera visible on multi-camera Android inventory.
   - selected camera device id is passed into media constraints.
   - switching failure does not end the call unless media is actually lost.
-- [ ] Acceptance:
+- [x] Acceptance:
   - Windows laptop shows only supported video controls.
   - Android multi-camera device keeps flip-camera available.
-- [ ] Commit with message: `feat: use dynamic video camera controls`.
+- [x] Commit with message: `feat: use dynamic video camera controls`.
 
 ## Phase 11: Integrated Voice And Video Runtime Gate
 

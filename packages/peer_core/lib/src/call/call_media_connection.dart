@@ -163,7 +163,19 @@ class DefaultCallMediaConnection implements CallMediaConnection {
         epoch,
         'selecting local audio input',
       );
-      final stream = await _captureLocalMedia(kind, selectedAudioInputDeviceId);
+      final selectedVideoInputDeviceId = kind == CallMediaKind.video
+          ? await _selectedVideoInputDeviceId()
+          : null;
+      _ensureCurrentPeerConnection(
+        connection,
+        epoch,
+        'selecting local video input',
+      );
+      final stream = await _captureLocalMedia(
+        kind,
+        selectedAudioInputDeviceId,
+        selectedVideoInputDeviceId,
+      );
       pendingStream = stream;
       _ensureCurrentPeerConnection(connection, epoch, 'capturing local media');
       final audioTracks = stream.getAudioTracks();
@@ -226,10 +238,15 @@ class DefaultCallMediaConnection implements CallMediaConnection {
   Future<MediaStream> _captureLocalMedia(
     CallMediaKind kind,
     String? selectedAudioInputDeviceId,
+    String? selectedVideoInputDeviceId,
   ) async {
     try {
       return await _config.platform.getUserMedia(
-        _localMediaConstraints(kind, selectedAudioInputDeviceId),
+        _localMediaConstraints(
+          kind,
+          audioDeviceId: selectedAudioInputDeviceId,
+          videoDeviceId: selectedVideoInputDeviceId,
+        ),
       );
     } catch (error) {
       if (error is CallMediaException) {
@@ -420,31 +437,36 @@ class DefaultCallMediaConnection implements CallMediaConnection {
   }
 
   Map<String, dynamic> _localMediaConstraints(
-    CallMediaKind kind,
-    String? deviceId,
-  ) {
+    CallMediaKind kind, {
+    required String? audioDeviceId,
+    required String? videoDeviceId,
+  }) {
     return <String, dynamic>{
       'audio': <String, dynamic>{
-        'deviceId': ?deviceId,
+        'deviceId': ?audioDeviceId,
         'echoCancellation': true,
         'noiseSuppression': true,
         'autoGainControl': true,
       },
       'video': switch (kind) {
         CallMediaKind.audio => false,
-        CallMediaKind.video => <String, dynamic>{
-          'facingMode': 'user',
-          'mandatory': <String, dynamic>{
-            'minWidth': '320',
-            'minHeight': '240',
-            'maxWidth': '640',
-            'maxHeight': '480',
-            'minFrameRate': '15',
-            'maxFrameRate': '30',
-          },
-          'optional': <dynamic>[],
-        },
+        CallMediaKind.video => _localVideoConstraints(videoDeviceId),
       },
+    };
+  }
+
+  Map<String, dynamic> _localVideoConstraints(String? deviceId) {
+    return <String, dynamic>{
+      if (deviceId == null) 'facingMode': 'user' else 'deviceId': deviceId,
+      'mandatory': <String, dynamic>{
+        'minWidth': '320',
+        'minHeight': '240',
+        'maxWidth': '640',
+        'maxHeight': '480',
+        'minFrameRate': '15',
+        'maxFrameRate': '30',
+      },
+      'optional': <dynamic>[],
     };
   }
 
@@ -672,6 +694,44 @@ class DefaultCallMediaConnection implements CallMediaConnection {
       _appendDiagnostic(_mediaStates, 'selectAudioInput failed | $error');
       _lastError = error.toString();
     }
+    return selected;
+  }
+
+  Future<String?> _selectedVideoInputDeviceId() async {
+    final provider = _config.selectedVideoInputDeviceIdProvider;
+    String? selected;
+    try {
+      selected = (await provider?.call())?.trim();
+    } catch (error) {
+      _appendDiagnostic(_mediaStates, 'selectedVideoInputLoad failed | $error');
+      _lastError = error.toString();
+      return null;
+    }
+    if (selected == null || selected.isEmpty) {
+      return null;
+    }
+
+    try {
+      final devices = await _config.platform.enumerateMediaDevices();
+      final videoInputs = devices
+          .where(
+            (MediaDeviceInfo device) =>
+                device.kind == 'videoinput' &&
+                device.deviceId.trim().isNotEmpty,
+          )
+          .toList(growable: false);
+      if (videoInputs.isNotEmpty &&
+          !videoInputs.any(
+            (MediaDeviceInfo device) => device.deviceId == selected,
+          )) {
+        _appendDiagnostic(_mediaStates, 'selectedVideoInputMissing');
+        return null;
+      }
+    } catch (error) {
+      _appendDiagnostic(_mediaStates, 'enumerateMediaDevices failed | $error');
+      _lastError = error.toString();
+    }
+
     return selected;
   }
 

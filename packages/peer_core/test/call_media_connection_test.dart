@@ -69,6 +69,52 @@ void main() {
     await connection.dispose();
   });
 
+  test('video mode uses selected camera device id when available', () async {
+    final platform = _FakeCallPlatformBridge()
+      ..devices = <MediaDeviceInfo>[
+        MediaDeviceInfo(
+          deviceId: 'audio-1',
+          label: 'Built-in microphone',
+          kind: 'audioinput',
+        ),
+        MediaDeviceInfo(
+          deviceId: 'front-camera',
+          label: 'Front Camera',
+          kind: 'videoinput',
+        ),
+        MediaDeviceInfo(
+          deviceId: 'rear-camera',
+          label: 'Back Camera',
+          kind: 'videoinput',
+        ),
+      ];
+    final connection = _connection(
+      platform,
+      selectedVideoInputDeviceIdProvider: () async => 'rear-camera',
+    );
+
+    await connection.createOffer(kind: CallMediaKind.video);
+
+    expect(platform.userMediaConstraints.single['video'], <String, dynamic>{
+      'deviceId': 'rear-camera',
+      'mandatory': <String, dynamic>{
+        'minWidth': '320',
+        'minHeight': '240',
+        'maxWidth': '640',
+        'maxHeight': '480',
+        'minFrameRate': '15',
+        'maxFrameRate': '30',
+      },
+      'optional': <dynamic>[],
+    });
+    expect(
+      platform.userMediaConstraints.single['video'],
+      isNot(containsPair('facingMode', 'user')),
+    );
+
+    await connection.dispose();
+  });
+
   test('camera denied fails before offer', () async {
     final platform = _FakeCallPlatformBridge()
       ..getUserMediaError = StateError('camera denied');
@@ -200,6 +246,22 @@ void main() {
     await connection.dispose();
   });
 
+  test('switch camera failure leaves active local media intact', () async {
+    final platform = _FakeCallPlatformBridge()
+      ..switchCameraError = StateError('camera switch unavailable');
+    final connection = _connection(platform);
+
+    await connection.startLocalMedia(kind: CallMediaKind.video);
+
+    await expectLater(connection.switchCamera(), throwsA(isA<StateError>()));
+
+    expect(connection.diagnostics.hasLocalVideo, isTrue);
+    expect(connection.diagnostics.disposed, isFalse);
+    expect(platform.videoStream.videoTrack!.stopped, isFalse);
+
+    await connection.dispose();
+  });
+
   test(
     'dispose stops tracks, closes peer, and later calls use fresh PC',
     () async {
@@ -234,11 +296,15 @@ void main() {
   );
 }
 
-DefaultCallMediaConnection _connection(_FakeCallPlatformBridge platform) {
+DefaultCallMediaConnection _connection(
+  _FakeCallPlatformBridge platform, {
+  Future<String?> Function()? selectedVideoInputDeviceIdProvider,
+}) {
   return DefaultCallMediaConnection(
     config: PeerConfig(
       iceServers: const <Map<String, dynamic>>[],
       platform: platform,
+      selectedVideoInputDeviceIdProvider: selectedVideoInputDeviceIdProvider,
     ),
   );
 }
@@ -260,7 +326,15 @@ class _FakeCallPlatformBridge implements PlatformBridge {
       <Map<String, dynamic>>[];
   final List<bool> microphoneMuteCalls = <bool>[];
   final List<String?> switchCameraTrackIds = <String?>[];
+  List<MediaDeviceInfo> devices = <MediaDeviceInfo>[
+    MediaDeviceInfo(
+      deviceId: 'audio-1',
+      label: 'Built-in microphone',
+      kind: 'audioinput',
+    ),
+  ];
   Object? getUserMediaError;
+  Object? switchCameraError;
   bool omitVideoTrack = false;
 
   @override
@@ -286,13 +360,7 @@ class _FakeCallPlatformBridge implements PlatformBridge {
 
   @override
   Future<List<MediaDeviceInfo>> enumerateMediaDevices() async {
-    return <MediaDeviceInfo>[
-      MediaDeviceInfo(
-        deviceId: 'audio-1',
-        label: 'Built-in microphone',
-        kind: 'audioinput',
-      ),
-    ];
+    return devices;
   }
 
   @override
@@ -344,6 +412,10 @@ class _FakeCallPlatformBridge implements PlatformBridge {
 
   @override
   Future<void> switchCamera(MediaStreamTrack track) async {
+    final error = switchCameraError;
+    if (error != null) {
+      throw error;
+    }
     switchCameraTrackIds.add(track.id);
   }
 }

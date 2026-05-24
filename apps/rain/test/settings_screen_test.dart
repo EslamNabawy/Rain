@@ -89,6 +89,46 @@ void main() {
     expect(await AppSettingsStore().loadSelectedMicrophoneDeviceId(), 'mic-1');
   });
 
+  testWidgets('camera selection persists from settings', (
+    WidgetTester tester,
+  ) async {
+    _useTallView(tester);
+    final harness = _SettingsHarness(
+      platformBridge: _FakePlatformBridge()
+        ..devices = <MediaDeviceInfo>[
+          MediaDeviceInfo(
+            deviceId: 'default-mic',
+            label: 'Default mic',
+            kind: 'audioinput',
+          ),
+          MediaDeviceInfo(
+            deviceId: 'front-camera',
+            label: 'Front Camera',
+            kind: 'videoinput',
+          ),
+          MediaDeviceInfo(
+            deviceId: 'rear-camera',
+            label: 'Back Camera',
+            kind: 'videoinput',
+          ),
+        ],
+    );
+    addTearDown(harness.dispose);
+
+    await tester.pumpSettingsScreen(harness: harness);
+    await tester.drag(find.byType(ListView), const Offset(0, -500));
+    await tester.pumpSettingsFrame();
+    await tester.tap(find.byTooltip('Choose camera'));
+    await tester.pumpSettingsFrame();
+    await tester.tap(find.text('Back Camera').last);
+    await tester.pumpSettingsFrame();
+
+    expect(
+      await AppSettingsStore().loadSelectedVideoInputDeviceId(),
+      'rear-camera',
+    );
+  });
+
   testWidgets('sound effects toggle persists from settings', (
     WidgetTester tester,
   ) async {

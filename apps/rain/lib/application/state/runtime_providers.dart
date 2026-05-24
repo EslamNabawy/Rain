@@ -133,6 +133,9 @@ final brainProvider = Provider<SessionManager?>((Ref ref) {
     selectedAudioInputDeviceIdProvider: ref
         .watch(appSettingsStoreProvider)
         .loadSelectedMicrophoneDeviceId,
+    selectedVideoInputDeviceIdProvider: ref
+        .watch(appSettingsStoreProvider)
+        .loadSelectedVideoInputDeviceId,
   );
 
   return brain;
@@ -297,6 +300,12 @@ class VoiceCallController extends Notifier<VoiceCallState> {
   }
 
   Future<void> switchCamera() async {
+    final capabilities = await ref
+        .read(videoInputCapabilityProvider.notifier)
+        .reload();
+    if (!capabilities.supportsCameraSwitch) {
+      throw StateError('Camera switching is unavailable on this device.');
+    }
     await _requireRuntime().switchVideoCallCamera();
   }
 
