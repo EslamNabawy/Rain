@@ -16,10 +16,10 @@
 
 **Purpose:** Freeze what is currently wrong before changing code, so the work does not become subjective or drift into unrelated refactors.
 
-- [ ] Capture the current Android splash, login, home, chat, call, video call, settings, and app icon states.
-- [ ] Capture the current Windows splash, home, chat, call, video call, settings, and app icon states.
-- [ ] Create `docs/qa/2026-05-24-rain-critical-polish-audit.md`.
-- [ ] In the QA doc, list every still-old surface with file candidates:
+- [x] Capture the current Android splash, login, home, chat, call, video call, settings, and app icon states.
+- [x] Capture the current Windows splash, home, chat, call, video call, settings, and app icon states.
+- [x] Create `docs/qa/2026-05-24-rain-critical-polish-audit.md`.
+- [x] In the QA doc, list every still-old surface with file candidates:
   - `apps/rain/lib/presentation/screens/splash_screen.dart`
   - `apps/rain/lib/presentation/screens/home_screen.dart`
   - `apps/rain/lib/presentation/widgets/rain_backdrop.dart`
@@ -28,14 +28,14 @@
   - `apps/rain/lib/presentation/theme/rain_theme.dart`
   - Android `mipmap-*` launcher icons
   - Windows `windows/runner/resources/app_icon.ico`
-- [ ] Define acceptance screenshots for the final gate:
+- [x] Define acceptance screenshots for the final gate:
   - Splash shows animated Rain mark and visible mist/texture.
   - App launcher icon is the new Peer Core mark on Android and Windows.
   - No major screen keeps the old flat dark-card treatment without Rain texture/state treatment.
   - Call manager is pinned at the top while a call is active.
   - Expanded call popup is centered and polished.
   - Video can enter fullscreen, minimize to a small window, and hide while the top manager remains.
-- [ ] Commit with message: `docs: audit critical Rain polish gaps`.
+- [x] Commit with message: `docs: audit critical Rain polish gaps`.
 
 ## Phase 01: Brand Token And Texture Upgrade
 
