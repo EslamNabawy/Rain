@@ -19,6 +19,10 @@ const Duration _uiActionWindow = Duration(milliseconds: 140);
 const Duration _warningKeyWindow = Duration(milliseconds: 1500);
 const Duration _warningRollingWindow = Duration(seconds: 5);
 const int _maxWarningsPerRollingWindow = 3;
+const String _incomingCallLoopId = 'rain-call-incoming';
+const String _outgoingCallLoopId = 'rain-call-outgoing';
+const double _incomingCallLoopVolume = 0.42;
+const double _outgoingCallLoopVolume = 0.34;
 
 final class SoundEventRouter {
   SoundEventRouter({
@@ -42,6 +46,8 @@ final class SoundEventRouter {
   final Map<String, DateTime> _lastWarningByKey = <String, DateTime>{};
   final List<DateTime> _recentWarningPlays = <DateTime>[];
   DateTime? _lastDispatchedAt;
+  String? _incomingLoopCallId;
+  String? _outgoingLoopCallId;
   bool _disposed = false;
 
   DateTime? get lastDispatchedAt => _lastDispatchedAt;
@@ -52,6 +58,9 @@ final class SoundEventRouter {
     }
     try {
       final settings = await Future<AppAudioSettings>.value(_settingsLoader());
+      if (!settings.soundEffectsEnabled || !settings.callSoundsEnabled) {
+        await stopAllLoops();
+      }
       if (!_settingsAllowEvent(settings, event)) {
         return;
       }
@@ -61,17 +70,37 @@ final class SoundEventRouter {
       }
       _recordAllowedEvent(event, now);
       _lastDispatchedAt = now;
+      if (event.kind == RainSoundEventKind.callIncomingStarted) {
+        await _startIncomingLoop(event);
+        return;
+      }
+      if (event.kind == RainSoundEventKind.callOutgoingStarted) {
+        await _startOutgoingLoop(event);
+        return;
+      }
+      if (_isTerminalCallLifecycle(event.kind)) {
+        await stopAllLoops();
+      }
       await _effects.play(
         _effectFor(event),
         voiceCallActive: _isVoiceCallActive(event),
         allowDuringCall: event.isCallControlEvent,
       );
     } catch (error) {
+      try {
+        await stopAllLoops();
+      } catch (cleanupError) {
+        debugPrint('Rain sound loop cleanup ignored: $cleanupError');
+      }
       debugPrint('Rain sound event ignored: $error');
     }
   }
 
-  Future<void> stopAllLoops() async {}
+  Future<void> stopAllLoops() async {
+    _incomingLoopCallId = null;
+    _outgoingLoopCallId = null;
+    await _effects.stopAllLoops();
+  }
 
   Future<void> dispose() async {
     _disposed = true;
@@ -189,6 +218,44 @@ final class SoundEventRouter {
         break;
     }
   }
+
+  Future<void> _startIncomingLoop(RainSoundEvent event) async {
+    final callId = event.callId;
+    if (callId == null || _incomingLoopCallId == callId) {
+      return;
+    }
+    await _effects.stopLoop(_outgoingCallLoopId);
+    _outgoingLoopCallId = null;
+    if (_incomingLoopCallId != null) {
+      await _effects.stopLoop(_incomingCallLoopId);
+      _incomingLoopCallId = null;
+    }
+    await _effects.startLoop(
+      RainSoundEffect.callIncoming,
+      loopId: _incomingCallLoopId,
+      volume: _incomingCallLoopVolume,
+    );
+    _incomingLoopCallId = callId;
+  }
+
+  Future<void> _startOutgoingLoop(RainSoundEvent event) async {
+    final callId = event.callId;
+    if (callId == null || _outgoingLoopCallId == callId) {
+      return;
+    }
+    await _effects.stopLoop(_incomingCallLoopId);
+    _incomingLoopCallId = null;
+    if (_outgoingLoopCallId != null) {
+      await _effects.stopLoop(_outgoingCallLoopId);
+      _outgoingLoopCallId = null;
+    }
+    await _effects.startLoop(
+      RainSoundEffect.callOutgoing,
+      loopId: _outgoingCallLoopId,
+      volume: _outgoingCallLoopVolume,
+    );
+    _outgoingLoopCallId = callId;
+  }
 }
 
 void _pruneOlderThan(List<DateTime> items, DateTime now, Duration window) {
@@ -207,6 +274,27 @@ bool _settingsAllowEvent(AppAudioSettings settings, RainSoundEvent event) {
 
 bool _isCallSoundEvent(RainSoundEvent event) {
   return event.isCallLifecycleEvent || event.isCallControlEvent;
+}
+
+bool _isTerminalCallLifecycle(RainSoundEventKind kind) {
+  return switch (kind) {
+    RainSoundEventKind.callConnected ||
+    RainSoundEventKind.callEnded ||
+    RainSoundEventKind.callFailed => true,
+    RainSoundEventKind.chatSend ||
+    RainSoundEventKind.chatReceive ||
+    RainSoundEventKind.uiAction ||
+    RainSoundEventKind.warning ||
+    RainSoundEventKind.callIncomingStarted ||
+    RainSoundEventKind.callOutgoingStarted ||
+    RainSoundEventKind.callControlMute ||
+    RainSoundEventKind.callControlUnmute ||
+    RainSoundEventKind.callControlDeafen ||
+    RainSoundEventKind.callControlUndeafen ||
+    RainSoundEventKind.callControlCameraMute ||
+    RainSoundEventKind.callControlCameraUnmute ||
+    RainSoundEventKind.callRouteChanged => false,
+  };
 }
 
 RainSoundEffect _effectFor(RainSoundEvent event) {

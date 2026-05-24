@@ -58,6 +58,10 @@ abstract interface class RainSoundPlayer {
 
   Future<void> playAsset(String assetPath, {required double volume});
 
+  Future<void> setReleaseMode(ReleaseMode mode);
+
+  Future<void> stop();
+
   Future<void> dispose();
 }
 
@@ -86,6 +90,14 @@ class AudioplayersRainSoundPlayer implements RainSoundPlayer {
   }
 
   @override
+  Future<void> setReleaseMode(ReleaseMode mode) {
+    return _player.setReleaseMode(mode);
+  }
+
+  @override
+  Future<void> stop() => _player.stop();
+
+  @override
   Future<void> dispose() => _player.dispose();
 }
 
@@ -110,6 +122,8 @@ class SoundEffectsService {
   final AudioContext _audioContext;
   final Map<RainSoundEffect, RainSoundPlayer> _players =
       <RainSoundEffect, RainSoundPlayer>{};
+  final Map<String, RainSoundPlayer> _loopPlayers = <String, RainSoundPlayer>{};
+  final Map<String, RainSoundEffect> _loopEffects = <String, RainSoundEffect>{};
   final Map<RainSoundEffect, DateTime> _lastPlayedAt =
       <RainSoundEffect, DateTime>{};
   bool _disabled = false;
@@ -131,9 +145,11 @@ class SoundEffectsService {
       return;
     }
     if (!settings.soundEffectsEnabled) {
+      await stopAllLoops();
       return;
     }
     if (!settings.callSoundsEnabled && _isCallSoundEffect(effect)) {
+      await stopAllLoops();
       return;
     }
     final reduceDuringCall = voiceCallActive && settings.reduceSoundsDuringCall;
@@ -171,13 +187,107 @@ class SoundEffectsService {
       );
     } on MissingPluginException {
       _disabled = true;
+      await stopAllLoops();
     } catch (error) {
       _disabled = true;
+      await stopAllLoops();
       debugPrint('Rain sound effects disabled: $error');
     }
   }
 
+  Future<void> startLoop(
+    RainSoundEffect effect, {
+    required String loopId,
+    required double volume,
+  }) async {
+    final normalizedLoopId = loopId.trim();
+    if (normalizedLoopId.isEmpty) {
+      throw ArgumentError.value(loopId, 'loopId', 'must not be blank');
+    }
+    if (_disabled) {
+      return;
+    }
+    late final AppAudioSettings settings;
+    try {
+      settings = await Future<AppAudioSettings>.value(_settingsLoader());
+    } catch (error) {
+      _disabled = true;
+      await stopAllLoops();
+      debugPrint('Rain sound effects disabled: $error');
+      return;
+    }
+    if (!settings.soundEffectsEnabled) {
+      await stopAllLoops();
+      return;
+    }
+    if (!settings.callSoundsEnabled && _isCallSoundEffect(effect)) {
+      await stopAllLoops();
+      return;
+    }
+
+    final existingEffect = _loopEffects[normalizedLoopId];
+    if (existingEffect == effect) {
+      return;
+    }
+    if (existingEffect != null) {
+      await stopLoop(normalizedLoopId);
+    }
+
+    final existingLoopForEffect = _loopIdForEffect(effect);
+    if (existingLoopForEffect != null &&
+        existingLoopForEffect != normalizedLoopId) {
+      await stopLoop(existingLoopForEffect);
+    }
+
+    final player = _playerFactory(_loopPlayerId(normalizedLoopId));
+    _loopPlayers[normalizedLoopId] = player;
+    _loopEffects[normalizedLoopId] = effect;
+    try {
+      await player.configure(
+        mode: PlayerMode.lowLatency,
+        context: _audioContext,
+      );
+      await player.setReleaseMode(ReleaseMode.loop);
+      await player.playAsset(
+        _assetFor(effect),
+        volume: volume.clamp(0.0, 1.0).toDouble() * settings.soundEffectsVolume,
+      );
+    } on MissingPluginException {
+      _disabled = true;
+      _loopPlayers.remove(normalizedLoopId);
+      _loopEffects.remove(normalizedLoopId);
+      await _stopAndDisposeLoopPlayer(player);
+    } catch (error) {
+      _disabled = true;
+      _loopPlayers.remove(normalizedLoopId);
+      _loopEffects.remove(normalizedLoopId);
+      await _stopAndDisposeLoopPlayer(player);
+      debugPrint('Rain sound loops disabled: $error');
+    }
+  }
+
+  Future<void> stopLoop(String loopId) async {
+    final normalizedLoopId = loopId.trim();
+    if (normalizedLoopId.isEmpty) {
+      return;
+    }
+    final player = _loopPlayers.remove(normalizedLoopId);
+    _loopEffects.remove(normalizedLoopId);
+    if (player == null) {
+      return;
+    }
+    await _stopAndDisposeLoopPlayer(player);
+  }
+
+  Future<void> stopAllLoops() async {
+    final players = _loopPlayers.values.toList(growable: false);
+    _loopPlayers.clear();
+    _loopEffects.clear();
+    await Future.wait(players.map(_stopAndDisposeLoopPlayer));
+  }
+
   Future<void> dispose() async {
+    await stopAllLoops();
     final players = _players.values.toList(growable: false);
     _players.clear();
     await Future.wait(players.map((player) => player.dispose()));
@@ -191,6 +301,33 @@ class SoundEffectsService {
     final lastPlayedAt = _lastPlayedAt[effect];
     return lastPlayedAt != null && now.difference(lastPlayedAt) < interval;
   }
+
+  String? _loopIdForEffect(RainSoundEffect effect) {
+    for (final entry in _loopEffects.entries) {
+      if (entry.value == effect) {
+        return entry.key;
+      }
+    }
+    return null;
+  }
+}
+
+Future<void> _stopAndDisposeLoopPlayer(RainSoundPlayer player) async {
+  try {
+    await player.stop();
+  } catch (error) {
+    debugPrint('Rain sound loop stop ignored: $error');
+  }
+  try {
+    await player.dispose();
+  } catch (error) {
+    debugPrint('Rain sound loop dispose ignored: $error');
+  }
+}
+
+String _loopPlayerId(String loopId) {
+  final safeLoopId = loopId.replaceAll(RegExp(r'[^A-Za-z0-9_-]'), '-');
+  return 'rain-loop-$safeLoopId';
 }
 
 String _assetFor(RainSoundEffect effect) {

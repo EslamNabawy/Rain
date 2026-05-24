@@ -324,6 +324,8 @@ git commit -m "feat: compress rain sound bursts"
 
 **Purpose:** Add safe looped call sounds with strict ownership and cleanup.
 
+**Status:** Complete.
+
 **Files:**
 - Modify: `apps/rain/lib/infrastructure/services/sound_effects_service.dart`
 - Modify: `apps/rain/lib/application/audio/sound_event_router.dart`

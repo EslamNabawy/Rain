@@ -242,7 +242,7 @@ void main() {
       expect(effects.played.every((entry) => entry.allowDuringCall), isTrue);
     });
 
-    test('maps call lifecycle events to call effects', () async {
+    test('incoming call starts one ringtone loop for the call id', () async {
       final effects = _RecordingSoundEffectsService();
       final router = _router(effects);
 
@@ -250,19 +250,137 @@ void main() {
         RainSoundEvent.callIncomingStarted(callId: 'call-1'),
       );
       await router.dispatch(
-        RainSoundEvent.callOutgoingStarted(callId: 'call-1'),
+        RainSoundEvent.callIncomingStarted(callId: 'call-1'),
+      );
+
+      expect(effects.loopStarts, hasLength(1));
+      expect(effects.loopStarts.single.effect, RainSoundEffect.callIncoming);
+      expect(effects.loopStarts.single.loopId, 'rain-call-incoming');
+      expect(effects.loopStarts.single.volume, closeTo(0.42, 0.0001));
+      expect(effects.played, isEmpty);
+    });
+
+    test('accept stops ringtone before playing connected sound', () async {
+      final effects = _RecordingSoundEffectsService();
+      final router = _router(effects);
+
+      await router.dispatch(
+        RainSoundEvent.callIncomingStarted(callId: 'call-1'),
       );
       await router.dispatch(RainSoundEvent.callConnected(callId: 'call-1'));
-      await router.dispatch(RainSoundEvent.callEnded(callId: 'call-1'));
-      await router.dispatch(RainSoundEvent.callFailed(callId: 'call-1'));
 
+      expect(effects.stopAllLoopCalls, 1);
+      expect(effects.activeLoops, isEmpty);
       expect(effects.played.map((entry) => entry.effect), <RainSoundEffect>[
-        RainSoundEffect.callIncoming,
-        RainSoundEffect.callOutgoing,
         RainSoundEffect.callConnected,
+      ]);
+    });
+
+    test('hangup and failure terminal events stop ringtone loops', () async {
+      final effects = _RecordingSoundEffectsService();
+      final router = _router(effects);
+
+      await router.dispatch(
+        RainSoundEvent.callIncomingStarted(callId: 'call-1'),
+      );
+      await router.dispatch(RainSoundEvent.callEnded(callId: 'call-1'));
+      await router.dispatch(
+        RainSoundEvent.callIncomingStarted(callId: 'call-2'),
+      );
+      await router.dispatch(RainSoundEvent.callFailed(callId: 'call-2'));
+
+      expect(effects.stopAllLoopCalls, 2);
+      expect(effects.activeLoops, isEmpty);
+      expect(effects.played.map((entry) => entry.effect), <RainSoundEffect>[
         RainSoundEffect.callEnded,
         RainSoundEffect.callFailed,
       ]);
+    });
+
+    test('outgoing call starts ringback once and stops on connected', () async {
+      final effects = _RecordingSoundEffectsService();
+      final router = _router(effects);
+
+      await router.dispatch(
+        RainSoundEvent.callOutgoingStarted(callId: 'call-1'),
+      );
+      await router.dispatch(
+        RainSoundEvent.callOutgoingStarted(callId: 'call-1'),
+      );
+      await router.dispatch(RainSoundEvent.callConnected(callId: 'call-1'));
+
+      expect(effects.loopStarts, hasLength(1));
+      expect(effects.loopStarts.single.effect, RainSoundEffect.callOutgoing);
+      expect(effects.loopStarts.single.loopId, 'rain-call-outgoing');
+      expect(effects.loopStarts.single.volume, closeTo(0.34, 0.0001));
+      expect(effects.stopAllLoopCalls, 1);
+      expect(effects.played.map((entry) => entry.effect), <RainSoundEffect>[
+        RainSoundEffect.callConnected,
+      ]);
+    });
+
+    test('outgoing ringback stops on failure', () async {
+      final effects = _RecordingSoundEffectsService();
+      final router = _router(effects);
+
+      await router.dispatch(
+        RainSoundEvent.callOutgoingStarted(callId: 'call-1'),
+      );
+      await router.dispatch(RainSoundEvent.callFailed(callId: 'call-1'));
+
+      expect(effects.stopAllLoopCalls, 1);
+      expect(effects.activeLoops, isEmpty);
+      expect(effects.played.single.effect, RainSoundEffect.callFailed);
+    });
+
+    test(
+      'dispose stops ringtone loops for app-close and logout cleanup',
+      () async {
+        final effects = _RecordingSoundEffectsService();
+        final router = _router(effects);
+
+        await router.dispatch(
+          RainSoundEvent.callIncomingStarted(callId: 'call-1'),
+        );
+        await router.dispose();
+
+        expect(effects.stopAllLoopCalls, 1);
+        expect(effects.activeLoops, isEmpty);
+      },
+    );
+
+    test('disabled call sounds stop active call loops', () async {
+      final effects = _RecordingSoundEffectsService();
+      var settings = const AppAudioSettings();
+      final router = _router(effects, settingsLoader: () => settings);
+
+      await router.dispatch(
+        RainSoundEvent.callIncomingStarted(callId: 'call-1'),
+      );
+      settings = const AppAudioSettings(callSoundsEnabled: false);
+      await router.dispatch(
+        RainSoundEvent.callIncomingStarted(callId: 'call-1'),
+      );
+
+      expect(effects.stopAllLoopCalls, 1);
+      expect(effects.activeLoops, isEmpty);
+      expect(effects.loopStarts, hasLength(1));
+    });
+
+    test('disabled sound effects stop loops and block new sounds', () async {
+      final effects = _RecordingSoundEffectsService();
+      var settings = const AppAudioSettings();
+      final router = _router(effects, settingsLoader: () => settings);
+
+      await router.dispatch(
+        RainSoundEvent.callIncomingStarted(callId: 'call-1'),
+      );
+      settings = const AppAudioSettings(soundEffectsEnabled: false);
+      await router.dispatch(RainSoundEvent.chatSend(conversationId: 'bob'));
+
+      expect(effects.stopAllLoopCalls, 1);
+      expect(effects.activeLoops, isEmpty);
+      expect(effects.played, isEmpty);
     });
 
     test('respects sound and call sound settings at dispatch time', () async {
@@ -330,11 +448,27 @@ final class _PlayedSound {
   final bool allowDuringCall;
 }
 
+final class _StartedLoop {
+  const _StartedLoop({
+    required this.effect,
+    required this.loopId,
+    required this.volume,
+  });
+
+  final RainSoundEffect effect;
+  final String loopId;
+  final double volume;
+}
+
 final class _RecordingSoundEffectsService extends SoundEffectsService {
   _RecordingSoundEffectsService() : super();
 
   final List<_PlayedSound> played = <_PlayedSound>[];
+  final List<_StartedLoop> loopStarts = <_StartedLoop>[];
+  final List<String> loopStops = <String>[];
+  final Map<String, RainSoundEffect> activeLoops = <String, RainSoundEffect>{};
   var playAttempts = 0;
+  var stopAllLoopCalls = 0;
   var throwOnPlay = false;
 
   @override
@@ -354,5 +488,29 @@ final class _RecordingSoundEffectsService extends SoundEffectsService {
         allowDuringCall: allowDuringCall,
       ),
     );
+  }
+
+  @override
+  Future<void> startLoop(
+    RainSoundEffect effect, {
+    required String loopId,
+    required double volume,
+  }) async {
+    loopStarts.add(
+      _StartedLoop(effect: effect, loopId: loopId, volume: volume),
+    );
+    activeLoops[loopId] = effect;
+  }
+
+  @override
+  Future<void> stopLoop(String loopId) async {
+    loopStops.add(loopId);
+    activeLoops.remove(loopId);
+  }
+
+  @override
+  Future<void> stopAllLoops() async {
+    stopAllLoopCalls += 1;
+    activeLoops.clear();
   }
 }

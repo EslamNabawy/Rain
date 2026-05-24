@@ -199,6 +199,188 @@ void main() {
     expect(fakes.single.played.single.volume, closeTo(0.075, 0.0001));
   });
 
+  test('startLoop starts one low-latency looping player', () async {
+    final fakes = <_FakeRainSoundPlayer>[];
+    final service = SoundEffectsService(
+      settingsLoader: () => const AppAudioSettings(soundEffectsVolume: 0.5),
+      playerFactory: (String _) {
+        final fake = _FakeRainSoundPlayer();
+        fakes.add(fake);
+        return fake;
+      },
+    );
+
+    await service.startLoop(
+      RainSoundEffect.callIncoming,
+      loopId: 'incoming',
+      volume: 0.42,
+    );
+
+    expect(fakes, hasLength(1));
+    expect(fakes.single.configuredMode, PlayerMode.lowLatency);
+    expect(fakes.single.releaseMode, ReleaseMode.loop);
+    expect(fakes.single.played.single.assetPath, 'sounds/call_incoming.wav');
+    expect(fakes.single.played.single.volume, closeTo(0.21, 0.0001));
+    expect(fakes.single.stopped, isFalse);
+    expect(fakes.single.disposed, isFalse);
+  });
+
+  test('startLoop is idempotent for the same loop id and effect', () async {
+    final fakes = <_FakeRainSoundPlayer>[];
+    final service = SoundEffectsService(
+      playerFactory: (String _) {
+        final fake = _FakeRainSoundPlayer();
+        fakes.add(fake);
+        return fake;
+      },
+    );
+
+    await service.startLoop(
+      RainSoundEffect.callIncoming,
+      loopId: 'incoming',
+      volume: 0.42,
+    );
+    await service.startLoop(
+      RainSoundEffect.callIncoming,
+      loopId: 'incoming',
+      volume: 0.42,
+    );
+
+    expect(fakes, hasLength(1));
+    expect(fakes.single.played, hasLength(1));
+  });
+
+  test('startLoop replaces an existing loop for the same effect', () async {
+    final fakes = <_FakeRainSoundPlayer>[];
+    final service = SoundEffectsService(
+      playerFactory: (String _) {
+        final fake = _FakeRainSoundPlayer();
+        fakes.add(fake);
+        return fake;
+      },
+    );
+
+    await service.startLoop(
+      RainSoundEffect.callIncoming,
+      loopId: 'incoming-1',
+      volume: 0.42,
+    );
+    await service.startLoop(
+      RainSoundEffect.callIncoming,
+      loopId: 'incoming-2',
+      volume: 0.42,
+    );
+
+    expect(fakes, hasLength(2));
+    expect(fakes.first.stopped, isTrue);
+    expect(fakes.first.disposed, isTrue);
+    expect(fakes.last.played.single.assetPath, 'sounds/call_incoming.wav');
+  });
+
+  test('stopLoop stops and disposes the loop player', () async {
+    final fakes = <_FakeRainSoundPlayer>[];
+    final service = SoundEffectsService(
+      playerFactory: (String _) {
+        final fake = _FakeRainSoundPlayer();
+        fakes.add(fake);
+        return fake;
+      },
+    );
+
+    await service.startLoop(
+      RainSoundEffect.callOutgoing,
+      loopId: 'outgoing',
+      volume: 0.34,
+    );
+    await service.stopLoop('outgoing');
+
+    expect(fakes.single.stopped, isTrue);
+    expect(fakes.single.disposed, isTrue);
+  });
+
+  test('disabled sound settings stop active loops', () async {
+    var settings = const AppAudioSettings();
+    final fakes = <_FakeRainSoundPlayer>[];
+    final service = SoundEffectsService(
+      settingsLoader: () => settings,
+      playerFactory: (String _) {
+        final fake = _FakeRainSoundPlayer();
+        fakes.add(fake);
+        return fake;
+      },
+    );
+
+    await service.startLoop(
+      RainSoundEffect.callIncoming,
+      loopId: 'incoming',
+      volume: 0.42,
+    );
+    settings = const AppAudioSettings(soundEffectsEnabled: false);
+    await service.startLoop(
+      RainSoundEffect.callIncoming,
+      loopId: 'incoming',
+      volume: 0.42,
+    );
+
+    expect(fakes, hasLength(1));
+    expect(fakes.single.stopped, isTrue);
+    expect(fakes.single.disposed, isTrue);
+  });
+
+  test('disabled call sounds stop active call loops', () async {
+    var settings = const AppAudioSettings();
+    final fakes = <_FakeRainSoundPlayer>[];
+    final service = SoundEffectsService(
+      settingsLoader: () => settings,
+      playerFactory: (String _) {
+        final fake = _FakeRainSoundPlayer();
+        fakes.add(fake);
+        return fake;
+      },
+    );
+
+    await service.startLoop(
+      RainSoundEffect.callIncoming,
+      loopId: 'incoming',
+      volume: 0.42,
+    );
+    settings = const AppAudioSettings(callSoundsEnabled: false);
+    await service.startLoop(
+      RainSoundEffect.callIncoming,
+      loopId: 'incoming',
+      volume: 0.42,
+    );
+
+    expect(fakes, hasLength(1));
+    expect(fakes.single.stopped, isTrue);
+    expect(fakes.single.disposed, isTrue);
+  });
+
+  test('dispose stops loops and disposes one-shot players', () async {
+    final fakes = <_FakeRainSoundPlayer>[];
+    final service = SoundEffectsService(
+      playerFactory: (String _) {
+        final fake = _FakeRainSoundPlayer();
+        fakes.add(fake);
+        return fake;
+      },
+    );
+
+    await service.play(RainSoundEffect.send);
+    await service.startLoop(
+      RainSoundEffect.callIncoming,
+      loopId: 'incoming',
+      volume: 0.42,
+    );
+    await service.dispose();
+
+    expect(fakes, hasLength(2));
+    expect(fakes.first.stopped, isFalse);
+    expect(fakes.first.disposed, isTrue);
+    expect(fakes.last.stopped, isTrue);
+    expect(fakes.last.disposed, isTrue);
+  });
+
   test('asset map covers every sound effect', () {
     expect(rainSoundEffectAssetPaths.keys, containsAll(RainSoundEffect.values));
     expect(
@@ -235,6 +417,8 @@ class _FakeRainSoundPlayer implements RainSoundPlayer {
   final List<_PlayedSound> played = <_PlayedSound>[];
   PlayerMode? configuredMode;
   AudioContext? configuredContext;
+  ReleaseMode? releaseMode;
+  var stopped = false;
   var disposed = false;
 
   @override
@@ -257,5 +441,15 @@ class _FakeRainSoundPlayer implements RainSoundPlayer {
   @override
   Future<void> playAsset(String assetPath, {required double volume}) async {
     played.add(_PlayedSound(assetPath: assetPath, volume: volume));
+  }
+
+  @override
+  Future<void> setReleaseMode(ReleaseMode mode) async {
+    releaseMode = mode;
+  }
+
+  @override
+  Future<void> stop() async {
+    stopped = true;
   }
 }
