@@ -188,6 +188,8 @@ git commit -m "docs: plan rain sound system polish"
 
 **Purpose:** Add typed sound events so UI no longer talks directly in raw asset effects.
 
+**Status:** Complete.
+
 **Files:**
 - Create: `apps/rain/lib/application/audio/rain_sound_event.dart`
 - Create: `apps/rain/test/rain_sound_event_test.dart`
