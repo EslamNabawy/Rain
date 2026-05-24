@@ -1086,6 +1086,28 @@ void main() {
     expect(_findMeterCells('rain-call-audio-wave-bar-'), findsNothing);
   });
 
+  testWidgets('call overlay uses Peer Core mark while connecting', (
+    WidgetTester tester,
+  ) async {
+    await _pumpCallOverlay(
+      tester,
+      const VoiceCallState(
+        phase: VoiceCallPhase.connectingPeer,
+        peerId: 'bob',
+        callId: 'call-1',
+      ),
+    );
+
+    expect(
+      find.byKey(const ValueKey<String>('rain-call-peer-core-mark')),
+      findsOneWidget,
+    );
+    expect(
+      find.byKey(const ValueKey<String>('rain-call-audio-unavailable')),
+      findsNothing,
+    );
+  });
+
   testWidgets('audio-only overlay renders without video dependencies', (
     WidgetTester tester,
   ) async {

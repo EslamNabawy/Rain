@@ -870,7 +870,7 @@ git commit -m "feat: add Rain Streak active states"
 - Modify: `apps/rain/lib/presentation/widgets/calls/rain_call_controls.dart`
 - Modify: related tests
 
-- [ ] **Step 1: Apply Mist State Card to chat empty/failure**
+- [x] **Step 1: Apply Mist State Card to chat empty/failure**
 
 In `chat_panel.dart`, replace the `No messages yet` `AppStateMessage` call with the bridged Mist State Card behavior. Keep text:
 
@@ -879,7 +879,7 @@ title: 'No messages yet',
 message: 'Start the first message when the link is ready.',
 ```
 
-- [ ] **Step 2: Apply Rain brand to file transfer states**
+- [x] **Step 2: Apply Rain brand to file transfer states**
 
 In `file_transfer_bubble.dart`, keep existing file actions but use:
 
@@ -890,11 +890,11 @@ In `file_transfer_bubble.dart`, keep existing file actions but use:
 
 Do not animate file progress continuously. Use existing progress semantics.
 
-- [ ] **Step 3: Apply Peer Core status to call overlay**
+- [x] **Step 3: Apply Peer Core status to call overlay**
 
 In `rain_call_overlay.dart`, use `RainPeerCoreAnimatedMark` for connecting/ringing state glyph surfaces. For failed state, keep clear error styling and retry.
 
-- [ ] **Step 4: Validate workflow widgets**
+- [x] **Step 4: Validate workflow widgets**
 
 ```powershell
 cd apps/rain
@@ -903,7 +903,7 @@ flutter test test/rain_chat_widgets_test.dart test/file_transfer_progress_batche
 
 Expected: chat, file-transfer, and call-surface tests pass.
 
-- [ ] **Step 5: Commit Task 7**
+- [x] **Step 5: Commit Task 7**
 
 ```powershell
 git add apps/rain/lib/presentation/widgets/home/chat_panel.dart apps/rain/lib/presentation/widgets/home/file_transfer_bubble.dart apps/rain/lib/presentation/widgets/calls/rain_call_overlay.dart apps/rain/lib/presentation/widgets/calls/rain_call_controls.dart apps/rain/test/rain_chat_widgets_test.dart apps/rain/test/file_transfer_progress_batcher_test.dart apps/rain/test/video_call_renderers_test.dart apps/rain/test/voice_audio_level_test.dart

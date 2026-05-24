@@ -640,8 +640,7 @@ class _ChatPanelState extends ConsumerState<_ChatPanel> {
                 AppStateMessage(
                   icon: Icons.water_drop_outlined,
                   title: 'No messages yet',
-                  message:
-                      'Messages will appear here once the conversation starts.',
+                  message: 'Start the first message when the link is ready.',
                 ),
               ],
             );

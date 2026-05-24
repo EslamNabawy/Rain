@@ -248,12 +248,12 @@ String _fileTransferStatusLabel(FileTransferView transferView) {
 Color _fileTransferStatusColor(FileTransferState state) {
   return switch (state) {
     FileTransferState.offered ||
-    FileTransferState.accepted => const Color(0xFF7DD3FC),
+    FileTransferState.accepted => RainColors.warning,
     FileTransferState.sending ||
-    FileTransferState.receiving => const Color(0xFFFBBF24),
-    FileTransferState.completed => const Color(0xFF2DD4A3),
+    FileTransferState.receiving => RainColors.mistCyan,
+    FileTransferState.completed => RainColors.peerMint,
     FileTransferState.canceled ||
     FileTransferState.failed ||
-    FileTransferState.rejected => const Color(0xFFFF6B6B),
+    FileTransferState.rejected => RainColors.errorCoral,
   };
 }

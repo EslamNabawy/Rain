@@ -5,6 +5,7 @@ import 'package:flutter/material.dart';
 import 'package:rain/application/runtime/video_call_renderers.dart';
 import 'package:rain/application/runtime/voice_call_state.dart';
 import 'package:rain/application/state/call_surface_providers.dart';
+import 'package:rain/presentation/branding/rain_peer_core_mark.dart';
 import 'package:rain/presentation/widgets/calls/rain_call_controls.dart';
 import 'package:rain/presentation/widgets/rain_chat_widgets.dart';
 
@@ -374,6 +375,11 @@ class _RainCallStatusGlyph extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final scheme = Theme.of(context).colorScheme;
+    final showPeerCoreMark =
+        state.phase == VoiceCallPhase.connectingPeer ||
+        state.phase == VoiceCallPhase.connectingMedia ||
+        state.phase == VoiceCallPhase.incomingRinging ||
+        state.phase == VoiceCallPhase.outgoingRinging;
     return Center(
       child: Container(
         width: 116,
@@ -384,13 +390,11 @@ class _RainCallStatusGlyph extends StatelessWidget {
           border: Border.all(color: accent.withValues(alpha: 0.28), width: 2),
         ),
         child: Center(
-          child: state.isBusy
-              ? SizedBox.square(
-                  dimension: 34,
-                  child: CircularProgressIndicator(
-                    strokeWidth: 3,
-                    color: accent,
-                  ),
+          child: showPeerCoreMark
+              ? RainPeerCoreAnimatedMark(
+                  key: const ValueKey<String>('rain-call-peer-core-mark'),
+                  size: 64,
+                  animate: state.isBusy || state.isRinging,
                 )
               : state.isActive && state.audioLevel.isAvailable
               ? _RainCallAudioWave(
