@@ -1,0 +1,11 @@
+<svg width="1024" height="1024" viewBox="0 0 1024 1024" fill="none" xmlns="http://www.w3.org/2000/svg">
+  <defs>
+    <clipPath id="appIconClip">
+      <rect width="1024" height="1024" rx="230"/>
+    </clipPath>
+  </defs>
+  <g id="app-icon-shell" clip-path="url(#appIconClip)">
+    <rect width="1024" height="1024" fill="#061017"/>
+    <rect width="1024" height="1024" fill="#0A1E26" opacity="0.56"/>
+  </g>
+</svg>

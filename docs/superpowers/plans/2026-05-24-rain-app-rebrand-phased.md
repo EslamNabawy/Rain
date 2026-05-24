@@ -53,7 +53,7 @@ Modify:
 - Create: `apps/rain/test/rain_brand_assets_test.dart`
 - Modify: `apps/rain/pubspec.yaml`
 
-- [ ] **Step 1: Create runtime asset copies**
+- [x] **Step 1: Create runtime asset copies**
 
 Run:
 
@@ -64,7 +64,7 @@ Copy-Item apps/rain/assets/branding/source/animation/layers/*.svg apps/rain/asse
 
 Expected: runtime folder contains `app_icon_shell.svg`, `rain_streaks.svg`, `wave_inner.svg`, `wave_middle.svg`, `wave_outer.svg`, `ring.svg`, connector SVGs, and `node_a.svg` through `node_c.svg`.
 
-- [ ] **Step 2: Narrow `pubspec.yaml` branding assets**
+- [x] **Step 2: Narrow `pubspec.yaml` branding assets**
 
 Replace the current broad branding asset entry:
 
@@ -98,7 +98,7 @@ with:
 
 Keep existing gender avatar and sound entries unchanged.
 
-- [ ] **Step 3: Add asset registry**
+- [x] **Step 3: Add asset registry**
 
 Create `apps/rain/lib/presentation/branding/rain_brand_assets.dart`:
 
@@ -169,7 +169,7 @@ class RainBrandAssets {
 }
 ```
 
-- [ ] **Step 4: Add asset bundle test**
+- [x] **Step 4: Add asset bundle test**
 
 Create `apps/rain/test/rain_brand_assets_test.dart`:
 
@@ -190,7 +190,7 @@ void main() {
 }
 ```
 
-- [ ] **Step 5: Validate Task 1**
+- [x] **Step 5: Validate Task 1**
 
 Run:
 
@@ -201,7 +201,7 @@ flutter test test/rain_brand_assets_test.dart
 
 Expected: test passes and all runtime asset paths load.
 
-- [ ] **Step 6: Commit Task 1**
+- [x] **Step 6: Commit Task 1**
 
 ```powershell
 git add apps/rain/pubspec.yaml apps/rain/assets/branding/runtime apps/rain/lib/presentation/branding/rain_brand_assets.dart apps/rain/test/rain_brand_assets_test.dart
