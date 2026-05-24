@@ -471,6 +471,8 @@ void main() {
     expect(workflow, contains('Publish Direct Test Downloads'));
     expect(workflow, contains('actions/download-artifact@v8'));
     expect(workflow, contains('gh release create'));
+    expect(workflow, contains(r'--repo "${GITHUB_REPOSITORY}"'));
+    expect(workflow, contains(r'GH_REPO: ${{ github.repository }}'));
     expect(workflow, contains('--prerelease'));
     expect(workflow, contains(r'Rain-${profile_label}-Android-v7a.apk'));
     expect(workflow, contains(r'Rain-${profile_label}-Android-v8-v9.apk'));

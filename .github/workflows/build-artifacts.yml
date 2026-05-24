@@ -349,6 +349,7 @@ jobs:
         shell: bash
         env:
           GH_TOKEN: ${{ github.token }}
+          GH_REPO: ${{ github.repository }}
         run: |
           set -euo pipefail
           tag="rain-test-${GITHUB_RUN_NUMBER}-${GITHUB_RUN_ATTEMPT}"
@@ -356,8 +357,9 @@ jobs:
           title="Rain test build ${GITHUB_RUN_NUMBER}.${GITHUB_RUN_ATTEMPT} (${short_sha})"
           release_url="https://github.com/${GITHUB_REPOSITORY}/releases/tag/${tag}"
 
-          gh release delete "${tag}" --yes --cleanup-tag >/dev/null 2>&1 || true
+          gh release delete "${tag}" --repo "${GITHUB_REPOSITORY}" --yes --cleanup-tag >/dev/null 2>&1 || true
           gh release create "${tag}" release-assets/publish/* \
+            --repo "${GITHUB_REPOSITORY}" \
             --target "${GITHUB_SHA}" \
             --title "${title}" \
             --notes "Direct device downloads for Rain ${BUILD_PROFILE} build from ${GITHUB_SHA}. APK assets are uploaded individually so Android phones can download them without extracting an archive." \
@@ -378,15 +380,16 @@ jobs:
         shell: bash
         env:
           GH_TOKEN: ${{ github.token }}
+          GH_REPO: ${{ github.repository }}
         run: |
           set -euo pipefail
           keep=10
           mapfile -t old_tags < <(
-            gh release list --limit 100 --json tagName --jq '.[].tagName' |
+            gh release list --repo "${GITHUB_REPOSITORY}" --limit 100 --json tagName --jq '.[].tagName' |
               grep '^rain-test-' |
               sed -n "$((keep + 1)),\$p"
           )
           for old_tag in "${old_tags[@]}"; do
             echo "Deleting old test release: ${old_tag}"
-            gh release delete "${old_tag}" --yes --cleanup-tag || true
+            gh release delete "${old_tag}" --repo "${GITHUB_REPOSITORY}" --yes --cleanup-tag || true
           done
