@@ -36,15 +36,30 @@ class RainMistStateCard extends StatelessWidget {
       RainStateSeverity.warning => RainColors.warning,
       RainStateSeverity.error => RainColors.errorCoral,
     };
+    final neutralBorder = isDark
+        ? RainTextureTokens.cardBorderDark.withValues(
+            alpha: RainTextureTokens.panelBorderAlphaDark,
+          )
+        : RainTextureTokens.cardBorderLight.withValues(
+            alpha: RainTextureTokens.panelBorderAlphaLight,
+          );
 
     return Center(
       child: ConstrainedBox(
         constraints: BoxConstraints(maxWidth: maxWidth),
         child: DecoratedBox(
           decoration: BoxDecoration(
-            color: scheme.surface.withValues(alpha: isDark ? 0.72 : 0.84),
+            color: scheme.surface.withValues(
+              alpha: isDark
+                  ? RainTextureTokens.panelFillAlphaDark
+                  : RainTextureTokens.panelFillAlphaLight,
+            ),
             borderRadius: BorderRadius.circular(compact ? 18 : 22),
-            border: Border.all(color: accent.withValues(alpha: 0.24)),
+            border: Border.all(
+              color: severity == RainStateSeverity.neutral
+                  ? neutralBorder
+                  : accent.withValues(alpha: 0.28),
+            ),
             boxShadow: <BoxShadow>[
               BoxShadow(
                 blurRadius: compact ? 18 : 28,

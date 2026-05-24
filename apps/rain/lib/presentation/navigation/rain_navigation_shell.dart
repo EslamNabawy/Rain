@@ -24,7 +24,11 @@ class RainNavigationShell extends StatelessWidget {
   Widget build(BuildContext context) {
     final statusMessage = networkStatusMessage;
     final showStatus = statusMessage != null && statusMessage.isNotEmpty;
+    final backdropVariant = location.startsWith('/settings')
+        ? RainBackdropVariant.settings
+        : RainBackdropVariant.shell;
     return RainBackdrop(
+      variant: backdropVariant,
       child: LayoutBuilder(
         builder: (BuildContext context, BoxConstraints constraints) {
           final useRail =

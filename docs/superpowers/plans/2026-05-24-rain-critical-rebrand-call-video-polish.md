@@ -41,20 +41,20 @@
 
 **Purpose:** Make the texture theme visible and reusable instead of being a subtle background that disappears on real devices.
 
-- [ ] Update `apps/rain/lib/presentation/theme/rain_theme.dart` with stronger Rain texture tokens:
+- [x] Update `apps/rain/lib/presentation/theme/rain_theme.dart` with stronger Rain texture tokens:
   - Mist opacity levels for splash, app shell, panels, and call surfaces.
   - Signal-line colors separate from card borders.
   - Motion durations for ambient loops, splash intro, call transitions, and fullscreen transitions.
-- [ ] Update `apps/rain/lib/presentation/widgets/rain_backdrop.dart`:
+- [x] Update `apps/rain/lib/presentation/widgets/rain_backdrop.dart`:
   - Add named variants: `splash`, `shell`, `call`, and `settings`.
   - Make `splash` visibly textured on low-brightness Android screenshots.
   - Keep contrast high enough for text and controls.
-- [ ] Replace one-off background gradients in major screens with `RainBackdrop` variants.
-- [ ] Add/adjust tests:
+- [x] Replace one-off background gradients in major screens with `RainBackdrop` variants.
+- [x] Add/adjust tests:
   - `apps/rain/test/rain_theme_test.dart`
   - `apps/rain/test/rain_state_surfaces_test.dart`
-- [ ] Run focused tests for changed files.
-- [ ] Commit with message: `feat: strengthen Rain texture theme`.
+- [x] Run focused tests for changed files.
+- [x] Commit with message: `feat: strengthen Rain texture theme`.
 
 ## Phase 02: Platform App Icon Application
 

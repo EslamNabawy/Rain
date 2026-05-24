@@ -30,12 +30,46 @@ class RainColors {
   static const Color warning = tertiary;
 }
 
+class RainTextureTokens {
+  const RainTextureTokens._();
+
+  static const Color signalLineDark = Color(0xFF8DEFFF);
+  static const Color signalLineLight = Color(0xFF087C8A);
+  static const Color signalAccentDark = Color(0xFF46E1B4);
+  static const Color signalAccentLight = Color(0xFF128A63);
+  static const Color cardBorderDark = Color(0xFF2B4A55);
+  static const Color cardBorderLight = Color(0xFFC3D7DE);
+
+  static const double splashMistAlphaDark = 0.155;
+  static const double splashMistAlphaLight = 0.105;
+  static const double shellMistAlphaDark = 0.086;
+  static const double shellMistAlphaLight = 0.074;
+  static const double panelMistAlphaDark = 0.074;
+  static const double panelMistAlphaLight = 0.056;
+  static const double callMistAlphaDark = 0.122;
+  static const double callMistAlphaLight = 0.088;
+
+  static const double accentAlphaDark = 0.072;
+  static const double accentAlphaLight = 0.064;
+  static const double waveAlphaDark = 0.068;
+  static const double waveAlphaLight = 0.056;
+  static const double panelFillAlphaDark = 0.76;
+  static const double panelFillAlphaLight = 0.88;
+  static const double panelBorderAlphaDark = 0.58;
+  static const double panelBorderAlphaLight = 0.82;
+}
+
 class RainMotion {
   static const Duration quick = Duration(milliseconds: 110);
   static const Duration standard = Duration(milliseconds: 150);
   static const Duration slow = Duration(milliseconds: 220);
   static const Duration page = Duration(milliseconds: 130);
   static const Duration pageReverse = Duration(milliseconds: 95);
+  static const Duration ambientLoop = Duration(milliseconds: 4200);
+  static const Duration splashIntro = Duration(milliseconds: 520);
+  static const Duration callSurface = Duration(milliseconds: 190);
+  static const Duration callSurfaceReverse = Duration(milliseconds: 125);
+  static const Duration fullscreenTransition = Duration(milliseconds: 220);
 }
 
 class RainTheme {

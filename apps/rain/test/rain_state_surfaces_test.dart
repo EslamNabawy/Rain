@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:rain/presentation/branding/rain_state_surfaces.dart';
+import 'package:rain/presentation/theme/rain_theme.dart';
 
 void main() {
   testWidgets('RainMistStateCard renders title message and action', (
@@ -23,6 +24,44 @@ void main() {
       findsOneWidget,
     );
     expect(find.text('Message'), findsOneWidget);
+  });
+
+  testWidgets('RainMistStateCard neutral chrome uses panel texture tokens', (
+    WidgetTester tester,
+  ) async {
+    await tester.pumpWidget(
+      MaterialApp(
+        theme: ThemeData(
+          colorScheme: ColorScheme.fromSeed(
+            seedColor: RainColors.primary,
+            brightness: Brightness.dark,
+            surface: RainColors.surfaceDark,
+          ),
+        ),
+        home: const RainMistStateCard(
+          title: 'No messages yet',
+          message: 'Start the first message when the link is ready.',
+          icon: Icons.chat_bubble_outline,
+        ),
+      ),
+    );
+
+    final decorations = tester
+        .widgetList<DecoratedBox>(find.byType(DecoratedBox))
+        .map((DecoratedBox widget) => widget.decoration)
+        .whereType<BoxDecoration>();
+    final cardDecoration = decorations.firstWhere(
+      (BoxDecoration decoration) => decoration.border != null,
+    );
+    final border = cardDecoration.border! as Border;
+
+    expect(
+      border.top.color,
+      RainTextureTokens.cardBorderDark.withValues(
+        alpha: RainTextureTokens.panelBorderAlphaDark,
+      ),
+    );
+    expect(border.top.color, isNot(RainTextureTokens.signalLineDark));
   });
 
   testWidgets('RainStreakSkeleton renders requested rows', (

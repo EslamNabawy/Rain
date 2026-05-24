@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 
 import 'package:rain/presentation/branding/rain_peer_core_mark.dart';
 import 'package:rain/presentation/theme/rain_theme.dart';
+import 'package:rain/presentation/widgets/rain_backdrop.dart';
 
 class RainSplashScreen extends StatelessWidget {
   const RainSplashScreen({super.key});
@@ -38,15 +39,8 @@ class _SplashScaffold extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     return Scaffold(
-      backgroundColor: const Color(0xFF061017),
-      body: DecoratedBox(
-        decoration: const BoxDecoration(
-          gradient: LinearGradient(
-            begin: Alignment.topLeft,
-            end: Alignment.bottomRight,
-            colors: <Color>[Color(0xFF061017), Color(0xFF0B1F28)],
-          ),
-        ),
+      backgroundColor: RainColors.backgroundDark,
+      body: RainBackdrop.splash(
         child: Center(
           child: Padding(
             padding: const EdgeInsets.all(28),
