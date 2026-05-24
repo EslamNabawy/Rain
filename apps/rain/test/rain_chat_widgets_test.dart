@@ -11,6 +11,7 @@ import 'package:rain/application/audio/rain_sound_event.dart';
 import 'package:rain/presentation/screens/home_screen.dart';
 import 'package:rain/presentation/widgets/calls/rain_call_overlay.dart';
 import 'package:rain/presentation/widgets/rain_chat_widgets.dart';
+import 'package:rain_core/rain_core.dart';
 
 void main() {
   testWidgets('RainLiveLinkBar renders link state and strength', (
@@ -266,6 +267,53 @@ void main() {
 
     expect(event?.kind, RainSoundEventKind.callOutgoingStarted);
     expect(event?.mediaMode, CallMediaMode.video);
+  });
+
+  test('initial chat history load does not emit receive sound', () {
+    final event = rainChatReceiveSoundEventFor(
+      previousMessages: null,
+      nextMessages: <StoredMessage>[_storedMessage('m1')],
+      conversationId: 'bob',
+    );
+
+    expect(event, isNull);
+  });
+
+  test('outgoing and self message updates do not emit receive sound', () {
+    final previous = <StoredMessage>[_storedMessage('m1')];
+    final next = <StoredMessage>[
+      ...previous,
+      _storedMessage('m2', isOutgoing: true),
+    ];
+
+    final event = rainChatReceiveSoundEventFor(
+      previousMessages: previous,
+      nextMessages: next,
+      conversationId: 'bob',
+    );
+
+    expect(event, isNull);
+  });
+
+  test('incoming chat updates emit conversation-scoped receive sound', () {
+    final previous = <StoredMessage>[_storedMessage('m1', isOutgoing: true)];
+    final next = <StoredMessage>[...previous, _storedMessage('m2')];
+
+    final event = rainChatReceiveSoundEventFor(
+      previousMessages: previous,
+      nextMessages: next,
+      conversationId: 'bob',
+    );
+
+    expect(event?.kind, RainSoundEventKind.chatReceive);
+    expect(event?.conversationId, 'bob');
+  });
+
+  test('message send success maps to conversation-scoped send sound', () {
+    final event = rainChatSendSoundEventFor('bob');
+
+    expect(event.kind, RainSoundEventKind.chatSend);
+    expect(event.conversationId, 'bob');
   });
 
   testWidgets('voice call button disables during another call', (
@@ -1353,6 +1401,19 @@ Finder _findRuntimeType(String typeName) {
   return find.byWidgetPredicate((Widget widget) {
     return widget.runtimeType.toString() == typeName;
   });
+}
+
+StoredMessage _storedMessage(String id, {bool isOutgoing = false}) {
+  return StoredMessage(
+    id: id,
+    peerId: 'bob',
+    content: 'Message $id',
+    sentAt: 1000,
+    seq: int.tryParse(id.replaceAll(RegExp(r'\D'), '')) ?? 0,
+    type: MessageType.text,
+    status: MessageStatus.sent,
+    isOutgoing: isOutgoing,
+  );
 }
 
 VoiceCallState _activeVoiceCall({

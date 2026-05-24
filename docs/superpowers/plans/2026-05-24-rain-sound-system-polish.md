@@ -419,6 +419,8 @@ git commit -m "feat: route call sounds from call state"
 
 **Purpose:** Replace direct chat/onboarding sound calls with typed events.
 
+**Status:** Complete.
+
 **Files:**
 - Modify: `apps/rain/lib/presentation/widgets/home/chat_panel.dart`
 - Modify: `apps/rain/lib/presentation/screens/onboarding_screen.dart`

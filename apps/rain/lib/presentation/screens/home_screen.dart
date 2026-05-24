@@ -20,7 +20,6 @@ import 'package:rain/application/state/file_transfer_view.dart';
 import 'package:rain/application/runtime/rain_runtime_controller.dart';
 import 'package:rain/application/state/sound_event_providers.dart';
 import 'package:rain/infrastructure/services/app_settings_store.dart';
-import 'package:rain/infrastructure/services/sound_effects_service.dart';
 import 'package:rain/presentation/theme/rain_theme.dart';
 import 'package:rain/presentation/widgets/app_components.dart';
 import 'package:rain/presentation/widgets/chat_composer.dart';
@@ -189,6 +188,48 @@ String _voiceCallFailureErrorKey(VoiceCallState state) {
     return 'voice.${reason.name}';
   }
   return 'voice.call.failed';
+}
+
+RainSoundEvent? rainChatReceiveSoundEventFor({
+  required List<StoredMessage>? previousMessages,
+  required List<StoredMessage>? nextMessages,
+  required String conversationId,
+}) {
+  if (previousMessages == null || nextMessages == null) {
+    return null;
+  }
+
+  final previousLatestIncoming = _latestIncomingMessageIdForSound(
+    previousMessages,
+  );
+  final nextLatestIncoming = _latestIncomingMessageIdForSound(nextMessages);
+  if (nextLatestIncoming == null ||
+      nextLatestIncoming == previousLatestIncoming ||
+      nextMessages.length < previousMessages.length) {
+    return null;
+  }
+  return RainSoundEvent.chatReceive(conversationId: conversationId);
+}
+
+RainSoundEvent rainChatSendSoundEventFor(String conversationId) {
+  return RainSoundEvent.chatSend(conversationId: conversationId);
+}
+
+RainSoundEvent rainUiActionSoundEvent() {
+  return RainSoundEvent.uiAction();
+}
+
+RainSoundEvent rainUiWarningSoundEvent(String errorKey) {
+  return RainSoundEvent.warning(errorKey: errorKey);
+}
+
+String? _latestIncomingMessageIdForSound(List<StoredMessage> messages) {
+  for (final message in messages.reversed) {
+    if (!message.isOutgoing) {
+      return message.id;
+    }
+  }
+  return null;
 }
 
 void _dispatchRainSoundEvent(WidgetRef ref, RainSoundEvent event) {

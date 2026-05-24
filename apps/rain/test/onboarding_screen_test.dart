@@ -1,6 +1,11 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
+import 'package:rain/application/audio/sound_event_router.dart';
+import 'package:rain/application/runtime/voice_call_state.dart';
+import 'package:rain/application/state/sound_event_providers.dart';
+import 'package:rain/infrastructure/services/app_settings_store.dart';
+import 'package:rain/infrastructure/services/sound_effects_service.dart';
 import 'package:rain/presentation/screens/onboarding_screen.dart';
 
 void main() {
@@ -137,6 +142,59 @@ void main() {
     expect(usernameRect.left, moreOrLessEquals(passwordRect.left));
     expect(usernameRect.right, moreOrLessEquals(passwordRect.right));
   });
+
+  testWidgets('validation failure emits warning sound through router', (
+    WidgetTester tester,
+  ) async {
+    final effects = _RecordingSoundEffectsService();
+
+    await tester.pumpWidget(
+      ProviderScope(
+        overrides: [
+          soundEventRouterProvider.overrideWithValue(
+            SoundEventRouter(
+              effects: effects,
+              settingsLoader: () => const AppAudioSettings(),
+              callStateReader: () => const VoiceCallState.idle(),
+            ),
+          ),
+        ],
+        child: const MaterialApp(home: Scaffold(body: OnboardingScreen())),
+      ),
+    );
+
+    await tester.tap(find.widgetWithText(FilledButton, 'Sign in'));
+    await tester.pumpAndSettle();
+
+    expect(effects.played, <RainSoundEffect>[RainSoundEffect.error]);
+  });
+
+  testWidgets('validation warning respects disabled sound settings', (
+    WidgetTester tester,
+  ) async {
+    final effects = _RecordingSoundEffectsService();
+
+    await tester.pumpWidget(
+      ProviderScope(
+        overrides: [
+          soundEventRouterProvider.overrideWithValue(
+            SoundEventRouter(
+              effects: effects,
+              settingsLoader: () =>
+                  const AppAudioSettings(soundEffectsEnabled: false),
+              callStateReader: () => const VoiceCallState.idle(),
+            ),
+          ),
+        ],
+        child: const MaterialApp(home: Scaffold(body: OnboardingScreen())),
+      ),
+    );
+
+    await tester.tap(find.widgetWithText(FilledButton, 'Sign in'));
+    await tester.pumpAndSettle();
+
+    expect(effects.played, isEmpty);
+  });
 }
 
 Finder _textFieldWithLabel(String label) {
@@ -144,4 +202,19 @@ Finder _textFieldWithLabel(String label) {
     (Widget widget) =>
         widget is TextField && widget.decoration?.labelText == label,
   );
+}
+
+final class _RecordingSoundEffectsService extends SoundEffectsService {
+  _RecordingSoundEffectsService() : super();
+
+  final List<RainSoundEffect> played = <RainSoundEffect>[];
+
+  @override
+  Future<void> play(
+    RainSoundEffect effect, {
+    bool voiceCallActive = false,
+    bool allowDuringCall = false,
+  }) async {
+    played.add(effect);
+  }
 }

@@ -5,8 +5,9 @@ import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:rain_core/rain_core.dart';
 
+import 'package:rain/application/audio/rain_sound_event.dart';
 import 'package:rain/application/state/app_providers.dart';
-import 'package:rain/infrastructure/services/sound_effects_service.dart';
+import 'package:rain/application/state/sound_event_providers.dart';
 import 'package:rain/presentation/theme/rain_theme.dart';
 import 'package:rain/presentation/widgets/app_components.dart';
 
@@ -537,7 +538,7 @@ class _OnboardingScreenState extends ConsumerState<OnboardingScreen>
     final networkStatus = ref.read(networkStatusProvider).value;
     if (networkStatus != null && networkStatus.blocksNetworkActions) {
       setState(() => _error = networkStatus.actionErrorMessage);
-      _playSound(RainSoundEffect.error);
+      _dispatchWarningSound('auth.network_blocked');
       return;
     }
 
@@ -547,19 +548,19 @@ class _OnboardingScreenState extends ConsumerState<OnboardingScreen>
     final usernameError = InputValidator.usernameError(username);
     if (usernameError != null) {
       setState(() => _error = usernameError);
-      _playSound(RainSoundEffect.error);
+      _dispatchWarningSound('auth.username_invalid');
       return;
     }
 
     if (password.length < 6) {
       setState(() => _error = 'Password must be at least 6 characters');
-      _playSound(RainSoundEffect.error);
+      _dispatchWarningSound('auth.password_too_short');
       return;
     }
 
     if (password.length > 50) {
       setState(() => _error = 'Password must be at most 50 characters');
-      _playSound(RainSoundEffect.error);
+      _dispatchWarningSound('auth.password_too_long');
       return;
     }
 
@@ -578,7 +579,7 @@ class _OnboardingScreenState extends ConsumerState<OnboardingScreen>
         final displayNameError = InputValidator.displayNameError(displayName);
         if (displayNameError != null) {
           setState(() => _error = displayNameError);
-          _playSound(RainSoundEffect.error);
+          _dispatchWarningSound('auth.display_name_invalid');
           return;
         }
 
@@ -595,10 +596,14 @@ class _OnboardingScreenState extends ConsumerState<OnboardingScreen>
             .read(identityProvider.notifier)
             .login(username: username, password: password);
       }
-      _playSound(RainSoundEffect.action);
+      _dispatchSoundEvent(RainSoundEvent.uiAction());
     } catch (error) {
       setState(() => _error = _formatError(error));
-      _playSound(RainSoundEffect.error);
+      _dispatchWarningSound(
+        _mode == _AuthMode.register
+            ? 'auth.register_failed'
+            : 'auth.login_failed',
+      );
     } finally {
       if (mounted) {
         setState(() => _submitting = false);
@@ -606,8 +611,12 @@ class _OnboardingScreenState extends ConsumerState<OnboardingScreen>
     }
   }
 
-  void _playSound(RainSoundEffect effect) {
-    unawaited(ref.read(soundEffectsProvider).play(effect));
+  void _dispatchWarningSound(String errorKey) {
+    _dispatchSoundEvent(RainSoundEvent.warning(errorKey: errorKey));
+  }
+
+  void _dispatchSoundEvent(RainSoundEvent event) {
+    unawaited(ref.read(soundEventRouterProvider).dispatch(event));
   }
 }
 
