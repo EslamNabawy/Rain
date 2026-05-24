@@ -35,8 +35,8 @@
 
 **Purpose:** Stop guessing. Convert every reported symptom into a named failure class with an owner layer and acceptance test target.
 
-- [ ] Create `docs/qa/2026-05-24-rain-call-runtime-stability-audit.md`.
-- [ ] Record the observed failures as separate rows:
+- [x] Create `docs/qa/2026-05-24-rain-call-runtime-stability-audit.md`.
+- [x] Record the observed failures as separate rows:
   - Startup loading shows bottom navigation.
   - PC to phone voice call returns `peer busy` on first attempt and succeeds only after retry confusion.
   - Call duration remains `0`.
@@ -47,7 +47,7 @@
   - Phone manual disconnect prevents reconnect.
   - Expanded call popup and top call manager duplicate controls.
   - Laptop shows flip-camera control with no rear camera.
-- [ ] For each row, assign one primary owner:
+- [x] For each row, assign one primary owner:
   - App shell/navigation.
   - Firebase call lease/signaling.
   - Local call runtime state.
@@ -55,9 +55,9 @@
   - Renderer/video resources.
   - Call surface UI.
   - Media device capability inventory.
-- [ ] Add the expected terminal state for every failure path: `idle`, `failed`, `ended`, or `disconnected`.
-- [ ] Add a short "do not fix by UI masking" note for busy locks, stale active calls, and renderer crashes.
-- [ ] Commit with message: `docs: audit Rain call runtime failures`.
+- [x] Add the expected terminal state for every failure path: `idle`, `failed`, `ended`, or `disconnected`.
+- [x] Add a short "do not fix by UI masking" note for busy locks, stale active calls, and renderer crashes.
+- [x] Commit with message: `docs: audit Rain call runtime failures`.
 
 ## Phase 01: Startup Splash Gate Ownership
 
@@ -358,4 +358,3 @@ dart run melos run test
   - known residual risks, if any.
 - [ ] Trigger cloud build workflow only after PR branch is pushed and validation is green.
 - [ ] Do not merge until the user approves the tested artifacts.
-
