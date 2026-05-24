@@ -1,11 +1,14 @@
+import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
 import 'package:rain_core/rain_core.dart';
 
+import 'package:rain/application/audio/sound_event_router.dart';
 import 'package:rain/presentation/navigation/app_routes.dart';
 import 'package:rain/application/runtime/media_device_settings.dart';
 import 'package:rain/application/state/app_providers.dart';
+import 'package:rain/application/state/sound_event_providers.dart';
 import 'package:rain/infrastructure/services/crash_diagnostics_service.dart';
 import 'package:rain/infrastructure/services/app_settings_store.dart';
 import 'package:rain/presentation/screens/splash_screen.dart';
@@ -302,6 +305,14 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen> {
                       ? null
                       : () => _exportDiagnostics(context),
                 ),
+                if (kDebugMode) ...<Widget>[
+                  const Divider(height: 1),
+                  _SoundDiagnosticsTile(
+                    diagnostics: ref
+                        .watch(soundEventRouterProvider)
+                        .diagnostics,
+                  ),
+                ],
               ],
             ),
           ),
@@ -863,6 +874,28 @@ class _LastCrashTile extends StatelessWidget {
       return normalized;
     }
     return '${normalized.substring(0, 93)}...';
+  }
+}
+
+class _SoundDiagnosticsTile extends StatelessWidget {
+  const _SoundDiagnosticsTile({required this.diagnostics});
+
+  final SoundEventRouterDiagnostics diagnostics;
+
+  @override
+  Widget build(BuildContext context) {
+    final loopIds = diagnostics.activeLoopIds.toList(growable: false)..sort();
+    final detail = <String>[
+      'Last: ${diagnostics.lastEventKind?.name ?? 'none'}',
+      'Suppressed: ${diagnostics.lastSuppressedReason ?? 'none'}',
+      'Loops: ${loopIds.isEmpty ? 'none' : loopIds.join(', ')}',
+      'Disabled: ${diagnostics.soundServiceDisabledReason ?? 'none'}',
+    ].join(' | ');
+    return ListTile(
+      leading: const Icon(Icons.graphic_eq),
+      title: const Text('App sound diagnostics'),
+      subtitle: Text(detail, maxLines: 3, overflow: TextOverflow.ellipsis),
+    );
   }
 }
 

@@ -98,6 +98,17 @@ void main() {
     expect(await store.loadSoundEffectsVolume(), 0.0);
   });
 
+  test('non-finite sound effects volume falls back to default', () async {
+    final store = AppSettingsStore();
+
+    await store.setSoundEffectsVolume(double.nan);
+
+    expect(
+      await store.loadSoundEffectsVolume(),
+      AppSettingsStore.defaultSoundEffectsVolume,
+    );
+  });
+
   test('default call output preference persists locally', () async {
     final store = AppSettingsStore();
 

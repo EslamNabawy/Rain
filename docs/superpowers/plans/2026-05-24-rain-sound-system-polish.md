@@ -511,6 +511,8 @@ If optional files are not created, omit them from `git add`.
 
 **Purpose:** Make sound behavior controllable and debuggable without clutter.
 
+**Status:** Complete.
+
 **Files:**
 - Modify: `apps/rain/lib/infrastructure/services/app_settings_store.dart`
 - Modify: `apps/rain/lib/application/state/settings_providers.dart`

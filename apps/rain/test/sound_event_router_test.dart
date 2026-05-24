@@ -1,4 +1,5 @@
 import 'package:flutter_test/flutter_test.dart';
+import 'package:flutter/services.dart';
 import 'package:rain/application/audio/rain_sound_event.dart';
 import 'package:rain/application/audio/sound_event_router.dart';
 import 'package:rain/application/runtime/voice_call_state.dart';
@@ -192,6 +193,7 @@ void main() {
         await router.dispatch(RainSoundEvent.uiAction());
 
         expect(effects.played, isEmpty);
+        expect(router.diagnostics.lastSuppressedReason, 'activeCallReduction');
       },
     );
 
@@ -361,6 +363,7 @@ void main() {
       expect(effects.loopStarts.single.effect, RainSoundEffect.callIncoming);
       expect(effects.loopStarts.single.loopId, 'rain-call-incoming');
       expect(effects.loopStarts.single.volume, closeTo(0.42, 0.0001));
+      expect(router.diagnostics.activeLoopIds, contains('rain-call-incoming'));
       expect(effects.played, isEmpty);
     });
 
@@ -378,6 +381,7 @@ void main() {
       expect(effects.played.map((entry) => entry.effect), <RainSoundEffect>[
         RainSoundEffect.callConnected,
       ]);
+      expect(router.diagnostics.activeLoopIds, isEmpty);
     });
 
     test('hangup and failure terminal events stop ringtone loops', () async {
@@ -469,6 +473,7 @@ void main() {
       expect(effects.stopAllLoopCalls, 1);
       expect(effects.activeLoops, isEmpty);
       expect(effects.loopStarts, hasLength(1));
+      expect(router.diagnostics.lastSuppressedReason, 'callSoundsDisabled');
     });
 
     test('disabled sound effects stop loops and block new sounds', () async {
@@ -485,6 +490,7 @@ void main() {
       expect(effects.stopAllLoopCalls, 1);
       expect(effects.activeLoops, isEmpty);
       expect(effects.played, isEmpty);
+      expect(router.diagnostics.lastSuppressedReason, 'soundEffectsDisabled');
     });
 
     test('respects sound and call sound settings at dispatch time', () async {
@@ -512,8 +518,24 @@ void main() {
 
         expect(effects.playAttempts, 1);
         expect(effects.played, isEmpty);
+        expect(router.diagnostics.lastEventKind, RainSoundEventKind.warning);
+        expect(router.diagnostics.lastSuppressedReason, 'soundPlaybackFailed');
       },
     );
+
+    test('diagnostics sanitize plugin errors', () async {
+      final effects = _RecordingSoundEffectsService()
+        ..playError = MissingPluginException('audioplayers missing');
+      final router = _router(effects);
+
+      await router.dispatch(RainSoundEvent.warning(errorKey: 'boom'));
+
+      expect(router.diagnostics.lastSuppressedReason, 'pluginUnavailable');
+      expect(
+        router.diagnostics.toJson().toString(),
+        isNot(contains('audioplayers missing')),
+      );
+    });
 
     test('ignores events after dispose', () async {
       final effects = _RecordingSoundEffectsService();
@@ -574,6 +596,7 @@ final class _RecordingSoundEffectsService extends SoundEffectsService {
   var playAttempts = 0;
   var stopAllLoopCalls = 0;
   var throwOnPlay = false;
+  Object? playError;
 
   @override
   Future<void> play(
@@ -582,6 +605,10 @@ final class _RecordingSoundEffectsService extends SoundEffectsService {
     bool allowDuringCall = false,
   }) async {
     playAttempts += 1;
+    final error = playError;
+    if (error != null) {
+      throw error;
+    }
     if (throwOnPlay) {
       throw StateError('sound device unavailable');
     }

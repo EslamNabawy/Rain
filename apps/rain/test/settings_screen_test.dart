@@ -49,6 +49,22 @@ void main() {
     expect(find.text('Reduce during calls'), findsOneWidget);
   });
 
+  testWidgets('settings screen exposes debug sound diagnostics', (
+    WidgetTester tester,
+  ) async {
+    _useTallView(tester);
+    final harness = _SettingsHarness();
+    addTearDown(harness.dispose);
+
+    await tester.pumpSettingsScreen(harness: harness);
+    await tester.drag(find.byType(ListView), const Offset(0, -900));
+    await tester.pump();
+    await tester.pump(const Duration(milliseconds: 300));
+
+    expect(find.text('App sound diagnostics'), findsOneWidget);
+    expect(find.textContaining('Last: none'), findsOneWidget);
+  });
+
   testWidgets('microphone selection persists from settings', (
     WidgetTester tester,
   ) async {

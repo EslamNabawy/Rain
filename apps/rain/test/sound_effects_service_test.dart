@@ -64,6 +64,8 @@ void main() {
     await service.play(RainSoundEffect.receive);
 
     expect(created, 1);
+    expect(service.diagnostics.disabled, isTrue);
+    expect(service.diagnostics.disabledReason, 'pluginUnavailable');
   });
 
   test('burst throttle suppresses repeated receive sounds', () async {

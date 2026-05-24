@@ -1,6 +1,7 @@
 import 'dart:async';
 
 import 'package:flutter/foundation.dart';
+import 'package:flutter/services.dart';
 
 import 'package:rain/application/runtime/voice_call_state.dart';
 import 'package:rain/infrastructure/services/app_settings_store.dart';
@@ -48,27 +49,45 @@ final class SoundEventRouter {
   DateTime? _lastDispatchedAt;
   String? _incomingLoopCallId;
   String? _outgoingLoopCallId;
+  RainSoundEventKind? _lastEventKind;
+  String? _lastSuppressedReason;
   bool _disposed = false;
 
   DateTime? get lastDispatchedAt => _lastDispatchedAt;
+
+  SoundEventRouterDiagnostics get diagnostics {
+    return SoundEventRouterDiagnostics(
+      lastEventKind: _lastEventKind,
+      lastSuppressedReason: _lastSuppressedReason,
+      activeLoopIds: _activeLoopIds(),
+      soundServiceDisabledReason: _effects.diagnostics.disabledReason,
+    );
+  }
 
   Future<void> dispatch(RainSoundEvent event) async {
     if (_disposed) {
       return;
     }
+    _lastEventKind = event.kind;
     try {
       final settings = await Future<AppAudioSettings>.value(_settingsLoader());
       if (!settings.soundEffectsEnabled || !settings.callSoundsEnabled) {
         await stopAllLoops();
       }
-      if (!_settingsAllowEvent(settings, event)) {
+      final settingsSuppression = _settingsSuppressionReason(settings, event);
+      if (settingsSuppression != null) {
+        _lastSuppressedReason = settingsSuppression;
         return;
       }
-      if (_callStateSuppressesEvent(settings, event)) {
+      final callStateSuppression = _callStateSuppressionReason(settings, event);
+      if (callStateSuppression != null) {
+        _lastSuppressedReason = callStateSuppression;
         return;
       }
       final now = event.occurredAt ?? _clock();
-      if (!_allowEvent(event, now)) {
+      final policySuppression = _policySuppressionReason(event, now);
+      if (policySuppression != null) {
+        _lastSuppressedReason = policySuppression;
         return;
       }
       _recordAllowedEvent(event, now);
@@ -95,7 +114,8 @@ final class SoundEventRouter {
       } catch (cleanupError) {
         debugPrint('Rain sound loop cleanup ignored: $cleanupError');
       }
-      debugPrint('Rain sound event ignored: $error');
+      _lastSuppressedReason = _sanitizedSoundFailureReason(error);
+      debugPrint('Rain sound event ignored: $_lastSuppressedReason');
     }
   }
 
@@ -110,6 +130,13 @@ final class SoundEventRouter {
     await stopAllLoops();
   }
 
+  Set<String> _activeLoopIds() {
+    return <String>{
+      if (_incomingLoopCallId != null) _incomingCallLoopId,
+      if (_outgoingLoopCallId != null) _outgoingCallLoopId,
+    };
+  }
+
   bool _isVoiceCallActive(RainSoundEvent event) {
     if (event.isCallControlEvent) {
       return true;
@@ -121,27 +148,30 @@ final class SoundEventRouter {
     }
   }
 
-  bool _callStateSuppressesEvent(
+  String? _callStateSuppressionReason(
     AppAudioSettings settings,
     RainSoundEvent event,
   ) {
     if (_isCallSoundEvent(event) || event.kind == RainSoundEventKind.warning) {
-      return false;
+      return null;
     }
     final call = _readCallStateOrNull();
     if (call == null) {
-      return false;
+      return null;
     }
     if (call.isRinging &&
         (event.kind == RainSoundEventKind.chatSend ||
             event.kind == RainSoundEventKind.chatReceive)) {
-      return true;
+      return 'ringingSuppressesChat';
     }
-    return settings.reduceSoundsDuringCall &&
+    if (settings.reduceSoundsDuringCall &&
         call.isActive &&
         (event.kind == RainSoundEventKind.chatSend ||
             event.kind == RainSoundEventKind.chatReceive ||
-            event.kind == RainSoundEventKind.uiAction);
+            event.kind == RainSoundEventKind.uiAction)) {
+      return 'activeCallReduction';
+    }
+    return null;
   }
 
   VoiceCallState? _readCallStateOrNull() {
@@ -152,20 +182,22 @@ final class SoundEventRouter {
     }
   }
 
-  bool _allowEvent(RainSoundEvent event, DateTime now) {
+  String? _policySuppressionReason(RainSoundEvent event, DateTime now) {
     return switch (event.kind) {
-      RainSoundEventKind.chatSend => _allowsKindCooldown(
+      RainSoundEventKind.chatSend => _kindCooldownSuppressionReason(
         event.kind,
         now,
         _sendBurstWindow,
+        'sendBurstWindow',
       ),
-      RainSoundEventKind.chatReceive => _allowsReceive(event, now),
-      RainSoundEventKind.uiAction => _allowsKindCooldown(
+      RainSoundEventKind.chatReceive => _receiveSuppressionReason(event, now),
+      RainSoundEventKind.uiAction => _kindCooldownSuppressionReason(
         event.kind,
         now,
         _uiActionWindow,
+        'uiActionWindow',
       ),
-      RainSoundEventKind.warning => _allowsWarning(event, now),
+      RainSoundEventKind.warning => _warningSuppressionReason(event, now),
       RainSoundEventKind.callIncomingStarted ||
       RainSoundEventKind.callOutgoingStarted ||
       RainSoundEventKind.callConnected ||
@@ -177,48 +209,56 @@ final class SoundEventRouter {
       RainSoundEventKind.callControlUndeafen ||
       RainSoundEventKind.callControlCameraMute ||
       RainSoundEventKind.callControlCameraUnmute ||
-      RainSoundEventKind.callRouteChanged => true,
+      RainSoundEventKind.callRouteChanged => null,
     };
   }
 
-  bool _allowsKindCooldown(
+  String? _kindCooldownSuppressionReason(
     RainSoundEventKind kind,
     DateTime now,
     Duration window,
+    String reason,
   ) {
     final lastPlayedAt = _lastPlayedByKind[kind];
-    return lastPlayedAt == null || now.difference(lastPlayedAt) >= window;
+    if (lastPlayedAt == null || now.difference(lastPlayedAt) >= window) {
+      return null;
+    }
+    return reason;
   }
 
-  bool _allowsReceive(RainSoundEvent event, DateTime now) {
+  String? _receiveSuppressionReason(RainSoundEvent event, DateTime now) {
     final conversationId = event.conversationId;
     if (conversationId == null) {
-      return false;
+      return 'missingConversationId';
     }
     _pruneOlderThan(_recentReceivePlays, now, _receiveRollingWindow);
     if (_recentReceivePlays.length >= _maxReceivesPerRollingWindow) {
-      return false;
+      return 'receiveRollingLimit';
     }
     final lastForConversation = _lastReceiveByConversation[conversationId];
     if (lastForConversation != null &&
         now.difference(lastForConversation) < _sameConversationReceiveWindow) {
-      return false;
+      return 'receiveConversationWindow';
     }
-    return _allowsKindCooldown(
+    return _kindCooldownSuppressionReason(
       RainSoundEventKind.chatReceive,
       now,
       _globalReceiveWindow,
+      'receiveGlobalWindow',
     );
   }
 
-  bool _allowsWarning(RainSoundEvent event, DateTime now) {
+  String? _warningSuppressionReason(RainSoundEvent event, DateTime now) {
     final warningKey = event.errorKey ?? 'global';
     final lastForKey = _lastWarningByKey[warningKey];
     if (lastForKey != null && now.difference(lastForKey) < _warningKeyWindow) {
-      return false;
+      return 'warningKeyWindow';
     }
     _pruneOlderThan(_recentWarningPlays, now, _warningRollingWindow);
-    return _recentWarningPlays.length < _maxWarningsPerRollingWindow;
+    if (_recentWarningPlays.length >= _maxWarningsPerRollingWindow) {
+      return 'warningRollingLimit';
+    }
+    return null;
   }
 
   void _recordAllowedEvent(RainSoundEvent event, DateTime now) {
@@ -296,14 +336,17 @@ void _pruneOlderThan(List<DateTime> items, DateTime now, Duration window) {
   items.removeWhere((DateTime item) => now.difference(item) >= window);
 }
 
-bool _settingsAllowEvent(AppAudioSettings settings, RainSoundEvent event) {
+String? _settingsSuppressionReason(
+  AppAudioSettings settings,
+  RainSoundEvent event,
+) {
   if (!settings.soundEffectsEnabled) {
-    return false;
+    return 'soundEffectsDisabled';
   }
   if (!settings.callSoundsEnabled && _isCallSoundEvent(event)) {
-    return false;
+    return 'callSoundsDisabled';
   }
-  return true;
+  return null;
 }
 
 bool _isCallSoundEvent(RainSoundEvent event) {
@@ -350,4 +393,34 @@ RainSoundEffect _effectFor(RainSoundEvent event) {
     RainSoundEventKind.callControlCameraUnmute ||
     RainSoundEventKind.callRouteChanged => RainSoundEffect.action,
   };
+}
+
+String _sanitizedSoundFailureReason(Object error) {
+  if (error is MissingPluginException) {
+    return 'pluginUnavailable';
+  }
+  return 'soundPlaybackFailed';
+}
+
+final class SoundEventRouterDiagnostics {
+  const SoundEventRouterDiagnostics({
+    required this.lastEventKind,
+    required this.lastSuppressedReason,
+    required this.activeLoopIds,
+    required this.soundServiceDisabledReason,
+  });
+
+  final RainSoundEventKind? lastEventKind;
+  final String? lastSuppressedReason;
+  final Set<String> activeLoopIds;
+  final String? soundServiceDisabledReason;
+
+  Map<String, Object?> toJson() {
+    return <String, Object?>{
+      'lastEventKind': lastEventKind?.name,
+      'lastSuppressedReason': lastSuppressedReason,
+      'activeLoopIds': activeLoopIds.toList(growable: false)..sort(),
+      'soundServiceDisabledReason': soundServiceDisabledReason,
+    };
+  }
 }

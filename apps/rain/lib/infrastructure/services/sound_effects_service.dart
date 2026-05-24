@@ -133,6 +133,15 @@ class SoundEffectsService {
   final Map<RainSoundEffect, DateTime> _lastPlayedAt =
       <RainSoundEffect, DateTime>{};
   bool _disabled = false;
+  String? _disabledReason;
+
+  SoundEffectsDiagnostics get diagnostics {
+    return SoundEffectsDiagnostics(
+      disabled: _disabled,
+      disabledReason: _disabledReason,
+      activeLoopIds: Set<String>.unmodifiable(_loopPlayers.keys),
+    );
+  }
 
   Future<void> play(
     RainSoundEffect effect, {
@@ -146,7 +155,7 @@ class SoundEffectsService {
     try {
       settings = await Future<AppAudioSettings>.value(_settingsLoader());
     } catch (error) {
-      _disabled = true;
+      _disable('settingsUnavailable');
       debugPrint('Rain sound effects disabled: $error');
       return;
     }
@@ -192,10 +201,10 @@ class SoundEffectsService {
             settings.soundEffectsVolume,
       );
     } on MissingPluginException {
-      _disabled = true;
+      _disable('pluginUnavailable');
       await stopAllLoops();
     } catch (error) {
-      _disabled = true;
+      _disable('playbackFailed');
       await stopAllLoops();
       debugPrint('Rain sound effects disabled: $error');
     }
@@ -217,7 +226,7 @@ class SoundEffectsService {
     try {
       settings = await Future<AppAudioSettings>.value(_settingsLoader());
     } catch (error) {
-      _disabled = true;
+      _disable('settingsUnavailable');
       await stopAllLoops();
       debugPrint('Rain sound effects disabled: $error');
       return;
@@ -259,12 +268,12 @@ class SoundEffectsService {
         volume: volume.clamp(0.0, 1.0).toDouble() * settings.soundEffectsVolume,
       );
     } on MissingPluginException {
-      _disabled = true;
+      _disable('pluginUnavailable');
       _loopPlayers.remove(normalizedLoopId);
       _loopEffects.remove(normalizedLoopId);
       await _stopAndDisposeLoopPlayer(player);
     } catch (error) {
-      _disabled = true;
+      _disable('loopPlaybackFailed');
       _loopPlayers.remove(normalizedLoopId);
       _loopEffects.remove(normalizedLoopId);
       await _stopAndDisposeLoopPlayer(player);
@@ -315,6 +324,31 @@ class SoundEffectsService {
       }
     }
     return null;
+  }
+
+  void _disable(String reason) {
+    _disabled = true;
+    _disabledReason = reason;
+  }
+}
+
+final class SoundEffectsDiagnostics {
+  const SoundEffectsDiagnostics({
+    required this.disabled,
+    required this.disabledReason,
+    required this.activeLoopIds,
+  });
+
+  final bool disabled;
+  final String? disabledReason;
+  final Set<String> activeLoopIds;
+
+  Map<String, Object?> toJson() {
+    return <String, Object?>{
+      'disabled': disabled,
+      'disabledReason': disabledReason,
+      'activeLoopIds': activeLoopIds.toList(growable: false)..sort(),
+    };
   }
 }
 
