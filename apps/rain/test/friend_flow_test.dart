@@ -1676,6 +1676,53 @@ void main() {
     });
 
     test(
+      'stale orphan Firebase pair lock is reclaimed before call start',
+      () async {
+        final adapter = RecordingVoiceSignalingAdapter();
+        final brain = TestSessionManager();
+        await adapter.register('bob', 'bobpw');
+        await adapter.upsertFriendship('alice', 'bob');
+        await db
+            .into(db.friends)
+            .insert(
+              FriendsCompanion.insert(
+                username: 'bob',
+                displayName: 'Bob',
+                state: 'friend',
+                addedAt: 0,
+              ),
+            );
+        adapter.seedActivePairLockForTest(
+          const VoiceActivePairLock(
+            pairId: 'alice:bob',
+            callId: 'orphan-call',
+            caller: 'alice',
+            callee: 'bob',
+            createdAt: 1000,
+            updatedAt: 1000,
+            expiresAt: 60000,
+          ),
+        );
+        final runtime = _runtimeFor(db, alice, adapter, brain: brain);
+        addTearDown(runtime.dispose);
+
+        await runtime.start();
+        await runtime.startVoiceCall('bob');
+
+        expect(runtime.voiceCallState.phase, VoiceCallPhase.outgoingRinging);
+        expect(
+          runtime.voiceCallState.failureReason,
+          isNot(VoiceCallFailureReason.peerBusy),
+        );
+        expect(
+          adapter.activePairLocks['alice:bob']?.callId,
+          runtime.voiceCallState.callId,
+        );
+        expect(adapter.rooms.keys, contains(runtime.voiceCallState.callId));
+      },
+    );
+
+    test(
       'incoming microphone denial fails Firebase room before accept',
       () async {
         final adapter = RecordingVoiceSignalingAdapter();
@@ -4013,6 +4060,10 @@ class RecordingVoiceSignalingAdapter extends RecordingNoopSignalingAdapter
 
   Map<String, VoiceActivePairLock> get activePairLocks =>
       _voice.activePairLocks;
+
+  void seedActivePairLockForTest(VoiceActivePairLock lock) {
+    _voice.seedActivePairLockForTest(lock);
+  }
 
   @override
   Future<void> acceptCall({

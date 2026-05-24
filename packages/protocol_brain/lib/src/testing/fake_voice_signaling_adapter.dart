@@ -4,6 +4,8 @@ import '../voice_call_frame.dart';
 import '../voice_signaling_contract.dart';
 
 final class FakeVoiceSignalingAdapter implements VoiceSignalingAdapter {
+  static const int _orphanVoiceLockGraceMs = 15000;
+
   final Map<String, VoiceCallRoom> _rooms = <String, VoiceCallRoom>{};
   final Map<String, VoiceActivePairLock> _pairLocks =
       <String, VoiceActivePairLock>{};
@@ -31,6 +33,12 @@ final class FakeVoiceSignalingAdapter implements VoiceSignalingAdapter {
   Map<String, VoiceActivePairLock> get activePairLocks =>
       Map<String, VoiceActivePairLock>.unmodifiable(_pairLocks);
 
+  void seedActivePairLockForTest(VoiceActivePairLock lock) {
+    _ensureOpen();
+    lock.toJson();
+    _pairLocks[lock.pairId] = lock;
+  }
+
   List<VoiceCallInboxEntry> inboxFor(String username) {
     final inbox = _inboxes[normalizeVoiceCallUsername(username)];
     return List<VoiceCallInboxEntry>.unmodifiable(
@@ -56,13 +64,11 @@ final class FakeVoiceSignalingAdapter implements VoiceSignalingAdapter {
       throw VoiceSignalingException('Voice call already exists: $callId');
     }
     final existingLock = _pairLocks[pairId];
-    if (existingLock != null && existingLock.expiresAt > createdAt) {
+    if (existingLock != null &&
+        !_reclaimActivePairLockIfStale(existingLock, createdAt)) {
       throw VoiceSignalingException(
         'Active voice call already exists for pair $pairId.',
       );
-    }
-    if (existingLock != null) {
-      _pairLocks.remove(pairId);
     }
 
     final room = VoiceCallRoom(
@@ -446,6 +452,55 @@ final class FakeVoiceSignalingAdapter implements VoiceSignalingAdapter {
     room.validate();
     _rooms[room.callId] = room;
     _updateInbox(room);
+    _emitCall(room.callId);
+  }
+
+  bool _reclaimActivePairLockIfStale(VoiceActivePairLock lock, int createdAt) {
+    final room = _rooms[lock.callId];
+    if (lock.expiresAt <= createdAt) {
+      if (room != null && _shouldDeleteReclaimedVoiceRoom(room, createdAt)) {
+        _removeCallArtifacts(lock.callId);
+      }
+      _pairLocks.remove(lock.pairId);
+      return true;
+    }
+
+    if (room == null) {
+      if (createdAt - lock.updatedAt < _orphanVoiceLockGraceMs) {
+        return false;
+      }
+      _pairLocks.remove(lock.pairId);
+      return true;
+    }
+
+    final setupExpired =
+        room.status != VoiceCallSignalingStatus.connected &&
+        room.expiresAt <= createdAt;
+    if (!room.isTerminal && !setupExpired) {
+      return false;
+    }
+
+    _removeCallArtifacts(room.callId);
+    _pairLocks.remove(lock.pairId);
+    return true;
+  }
+
+  bool _shouldDeleteReclaimedVoiceRoom(VoiceCallRoom room, int createdAt) {
+    if (room.isTerminal) {
+      return true;
+    }
+    return room.status != VoiceCallSignalingStatus.connected &&
+        room.expiresAt <= createdAt;
+  }
+
+  void _removeCallArtifacts(String callId) {
+    final room = _rooms.remove(callId.trim());
+    if (room == null) {
+      return;
+    }
+    _inboxes[room.callee]?.remove(room.callId);
+    _iceCandidates.remove(_iceKey(room.callId, VoiceCallRole.caller));
+    _iceCandidates.remove(_iceKey(room.callId, VoiceCallRole.callee));
     _emitCall(room.callId);
   }
 

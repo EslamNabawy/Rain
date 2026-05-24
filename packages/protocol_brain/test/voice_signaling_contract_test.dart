@@ -100,6 +100,35 @@ void main() {
     },
   );
 
+  test('fake adapter reclaims stale orphan active pair lock', () async {
+    final adapter = FakeVoiceSignalingAdapter();
+    addTearDown(adapter.dispose);
+
+    adapter.seedActivePairLockForTest(
+      const VoiceActivePairLock(
+        pairId: 'alice:bob',
+        callId: 'orphan-call',
+        caller: 'alice',
+        callee: 'bob',
+        createdAt: 1000,
+        updatedAt: 1000,
+        expiresAt: 60000,
+      ),
+    );
+
+    final room = await adapter.createOutgoingCall(
+      callId: 'call-2',
+      caller: 'alice',
+      callee: 'bob',
+      createdAt: 20000,
+      expiresAt: 80000,
+    );
+
+    expect(room.callId, 'call-2');
+    expect(adapter.activePairLocks['alice:bob']?.callId, 'call-2');
+    expect(adapter.rooms.keys, contains('call-2'));
+  });
+
   test('fake adapter stores video media mode and camera mute state', () async {
     final adapter = FakeVoiceSignalingAdapter();
     addTearDown(adapter.dispose);
