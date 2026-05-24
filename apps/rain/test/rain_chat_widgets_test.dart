@@ -688,6 +688,7 @@ void main() {
               phase: VoiceCallPhase.failed,
               peerId: 'bob',
               callId: 'call-1',
+              isOutgoing: true,
               failureReason: VoiceCallFailureReason.microphoneDenied,
               detail: 'NotAllowedError: Permission denied',
             ),
@@ -728,6 +729,7 @@ void main() {
               peerId: 'bob',
               callId: 'call-1',
               mediaMode: CallMediaMode.video,
+              isOutgoing: true,
               failureReason: VoiceCallFailureReason.cameraDenied,
               detail: 'CameraAccessException: permission denied',
             ),
@@ -1516,6 +1518,7 @@ void main() {
                     phase: VoiceCallPhase.failed,
                     peerId: 'bob',
                     callId: 'call-1',
+                    isOutgoing: true,
                     failureReason: VoiceCallFailureReason.mediaConnectionFailed,
                     detail:
                         'Unable to RTCRtpTransceiver::setDirection: disposed.',
@@ -1568,6 +1571,56 @@ void main() {
 
     await tester.tap(find.text('Dismiss'));
     expect(dismissed, isTrue);
+  });
+
+  testWidgets('failed incoming call does not offer reverse retry', (
+    WidgetTester tester,
+  ) async {
+    var retried = false;
+    var dismissed = false;
+
+    await tester.pumpWidget(
+      MaterialApp(
+        home: Scaffold(
+          body: Stack(
+            children: <Widget>[
+              Positioned.fill(
+                child: RainCallOverlay(
+                  state: const VoiceCallState(
+                    phase: VoiceCallPhase.failed,
+                    peerId: 'bob',
+                    callId: 'call-1',
+                    isOutgoing: false,
+                    failureReason: VoiceCallFailureReason.mediaConnectionFailed,
+                    detail:
+                        'Unable to RTCRtpTransceiver::setDirection: disposed.',
+                  ),
+                  surface: const CallSurfaceState.visible(
+                    peerId: 'bob',
+                    callId: 'call-1',
+                  ),
+                  displayName: 'Bob',
+                  onAccept: () {},
+                  onReject: () {},
+                  onHangUp: () => dismissed = true,
+                  onRetry: () => retried = true,
+                  onToggleMute: () {},
+                  onMinimize: () {},
+                  onExpand: () {},
+                ),
+              ),
+            ],
+          ),
+        ),
+      ),
+    );
+
+    expect(find.text('Retry'), findsNothing);
+    expect(find.text('Dismiss'), findsOneWidget);
+
+    await tester.tap(find.text('Dismiss'));
+    expect(dismissed, isTrue);
+    expect(retried, isFalse);
   });
 
   testWidgets('call overlay fits narrow mobile layout', (

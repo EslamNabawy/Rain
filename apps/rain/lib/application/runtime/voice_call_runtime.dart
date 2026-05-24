@@ -331,7 +331,7 @@ extension VoiceCallRuntime on RainRuntimeController {
   }
 
   Future<void> _handleIncomingVoiceCallEntry(VoiceCallInboxEntry entry) async {
-    if (entry.status.isTerminal) {
+    if (entry.status != VoiceCallSignalingStatus.ringing) {
       return;
     }
     final peerId = _normalizedUsername(entry.from);
@@ -343,9 +343,12 @@ extension VoiceCallRuntime on RainRuntimeController {
     final voiceAdapter = _requireVoiceSignalingAdapter();
     final room = await voiceAdapter.fetchCall(entry.callId);
     if (room == null ||
-        room.isTerminal ||
-        room.caller != peerId ||
-        room.callee != localUsername) {
+        room.status != VoiceCallSignalingStatus.ringing ||
+        room.createdAt != entry.createdAt ||
+        room.expiresAt != entry.expiresAt ||
+        room.pairId != entry.pairId ||
+        _normalizedUsername(room.caller) != peerId ||
+        _normalizedUsername(room.callee) != localUsername) {
       return;
     }
 
@@ -441,6 +444,17 @@ extension VoiceCallRuntime on RainRuntimeController {
     VoiceCallFrame frame, {
     required VoiceCallRoom room,
   }) async {
+    final localUsername = _normalizedUsername(selfIdentity.username);
+    if (room.status != VoiceCallSignalingStatus.ringing ||
+        frame.callId != room.callId ||
+        frame.sessionEpoch != room.createdAt ||
+        _normalizedUsername(room.caller) != _normalizedUsername(peerId) ||
+        _normalizedUsername(room.callee) != localUsername ||
+        _normalizedUsername(frame.from) != _normalizedUsername(room.caller) ||
+        _normalizedUsername(frame.to) != localUsername) {
+      return;
+    }
+
     final disposition = await _prepareIncomingVoiceInvite(peerId, frame);
     if (disposition == _IncomingVoiceInviteDisposition.ignore) {
       await _voiceCallSession?.handleFrame(frame);
@@ -534,17 +548,25 @@ extension VoiceCallRuntime on RainRuntimeController {
     }
 
     final current = _voiceCallState;
-    if (!current.hasCall || current.phase == VoiceCallPhase.failed) {
-      return _IncomingVoiceInviteDisposition.accept;
-    }
-
     final normalizedPeerId = _normalizedUsername(peerId);
-    if (current.peerId != normalizedPeerId) {
-      return _IncomingVoiceInviteDisposition.busy;
+
+    if (!current.hasCall) {
+      return _IncomingVoiceInviteDisposition.accept;
     }
 
     if (current.callId == frame.callId) {
       return _IncomingVoiceInviteDisposition.ignore;
+    }
+
+    if (current.phase == VoiceCallPhase.failed) {
+      if (current.isOutgoing && current.peerId == normalizedPeerId) {
+        return _IncomingVoiceInviteDisposition.busy;
+      }
+      return _IncomingVoiceInviteDisposition.accept;
+    }
+
+    if (current.peerId != normalizedPeerId) {
+      return _IncomingVoiceInviteDisposition.busy;
     }
 
     if (!_canReplaceVoiceCallWithRetry(current)) {
@@ -556,14 +578,8 @@ extension VoiceCallRuntime on RainRuntimeController {
   }
 
   bool _canReplaceVoiceCallWithRetry(VoiceCallState current) {
-    return switch (current.phase) {
-      VoiceCallPhase.idle || VoiceCallPhase.failed => true,
-      VoiceCallPhase.connectingPeer ||
-      VoiceCallPhase.outgoingRinging ||
-      VoiceCallPhase.incomingRinging ||
-      VoiceCallPhase.connectingMedia => true,
-      VoiceCallPhase.active || VoiceCallPhase.ending => false,
-    };
+    return !current.isOutgoing &&
+        current.phase == VoiceCallPhase.incomingRinging;
   }
 
   Future<void> _replaceStaleVoiceCallForRetry(VoiceCallState current) async {

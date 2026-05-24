@@ -975,6 +975,10 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
       _showVoiceCallError('Peer connection is unavailable right now.');
       return;
     }
+    if (!call.isOutgoing) {
+      _showVoiceCallError('Only the caller can retry this call.');
+      return;
+    }
     if (call.isVideo) {
       await _startVideoCall(peerId);
     } else {

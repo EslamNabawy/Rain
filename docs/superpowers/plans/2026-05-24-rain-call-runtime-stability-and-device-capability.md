@@ -106,21 +106,21 @@
 
 **Purpose:** Make retry mean "retry my outgoing call" instead of accidentally accepting or reflecting a stale incoming request.
 
-- [ ] Add a call direction model to the runtime if the existing model is ambiguous:
+- [x] Confirm the existing `VoiceCallState.isOutgoing` direction model is unambiguous and lock retry semantics around it:
   - `outgoing`
   - `incoming`
   - `remoteInitiatedRetry` only if explicitly needed and tested.
-- [ ] Ensure outgoing retry creates a new call id or a clearly versioned retry attempt for the same owner.
-- [ ] Ignore or clear stale invite frames whose call id, owner, session epoch, or room status no longer matches the active local attempt.
-- [ ] Ensure failed outgoing voice/video attempts cannot remain visible as incoming requests on the original caller.
-- [ ] Add tests in runtime/fake signaling:
+- [x] Ensure outgoing retry creates a new call id or a clearly versioned retry attempt for the same owner.
+- [x] Ignore or clear stale invite frames whose call id, owner, session epoch, or room status no longer matches the active local attempt.
+- [x] Ensure failed outgoing voice/video attempts cannot remain visible as incoming requests on the original caller.
+- [x] Add tests in runtime/fake signaling:
   - PC outgoing voice retry stays PC outgoing.
   - Android receiving side does not send a new reverse invite during retry.
   - stale invite is ignored after terminal room state.
-- [ ] Acceptance:
+- [x] Acceptance:
   - PC to phone voice call either rings the phone or fails with a true actionable reason.
   - Pressing retry does not swap caller/callee roles.
-- [ ] Commit with message: `fix: preserve call direction during retry`.
+- [x] Commit with message: `fix: preserve call direction during retry`.
 
 ## Phase 04: Terminal State Reconciliation And Remote App Close
 

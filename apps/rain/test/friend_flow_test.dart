@@ -2170,8 +2170,154 @@ void main() {
 
         expect(secondCallId, isNot(firstCallId));
         expect(adapter.activePairLocks.values.single.callId, secondCallId);
+        expect(aliceRuntime.voiceCallState.isOutgoing, isTrue);
+        expect(bobRuntime.voiceCallState.isOutgoing, isFalse);
+        expect(adapter.rooms[secondCallId]?.caller, 'alice');
+        expect(adapter.rooms[secondCallId]?.callee, 'bob');
+        expect(
+          adapter.rooms.values.where(
+            (VoiceCallRoom room) =>
+                room.caller == 'bob' && room.callee == 'alice',
+          ),
+          isEmpty,
+        );
         expect(aliceBrain.startedAudioPeers, <String>['bob', 'bob']);
         expect(aliceRuntime.voiceCallBlocksFileTransfer('bob'), isTrue);
+      },
+    );
+
+    test(
+      'reverse retry after failed incoming Firebase call does not flip caller',
+      () async {
+        final adapter = RecordingVoiceSignalingAdapter();
+        final aliceBrain = TestSessionManager()
+          ..applyMediaAnswerError = StateError(
+            'Unable to RTCPeerConnection::setRemoteDescription',
+          );
+        final bobBrain = TestSessionManager();
+        final bobDb = RainDatabase(NativeDatabase.memory());
+        addTearDown(bobDb.close);
+        await adapter.register('bob', 'bobpw');
+        await adapter.upsertFriendship('alice', 'bob');
+        await db
+            .into(db.friends)
+            .insert(
+              FriendsCompanion.insert(
+                username: 'bob',
+                displayName: 'Bob',
+                state: 'friend',
+                addedAt: 0,
+              ),
+            );
+        await bobDb
+            .into(bobDb.friends)
+            .insert(
+              FriendsCompanion.insert(
+                username: 'alice',
+                displayName: 'Alice',
+                state: 'friend',
+                addedAt: 0,
+              ),
+            );
+        final bob = RainIdentity(
+          username: 'bob',
+          displayName: 'Bob',
+          createdAt: DateTime.now().millisecondsSinceEpoch,
+          gender: RainGender.male,
+        );
+        final aliceRuntime = _runtimeFor(db, alice, adapter, brain: aliceBrain);
+        final bobRuntime = _runtimeFor(bobDb, bob, adapter, brain: bobBrain);
+        addTearDown(aliceRuntime.dispose);
+        addTearDown(bobRuntime.dispose);
+
+        await aliceRuntime.start();
+        await bobRuntime.start();
+        await aliceRuntime.startVoiceCall('bob');
+        final originalCallId = aliceRuntime.voiceCallState.callId!;
+        await _waitForCondition(
+          () =>
+              bobRuntime.voiceCallState.phase == VoiceCallPhase.incomingRinging,
+          'original Firebase voice invite to ring',
+        );
+        await bobRuntime.acceptVoiceCall();
+        await _waitForCondition(
+          () => aliceRuntime.voiceCallState.phase == VoiceCallPhase.failed,
+          'original caller to fail media',
+        );
+        await _waitForCondition(
+          () => bobRuntime.voiceCallState.phase == VoiceCallPhase.failed,
+          'original callee to observe failed incoming call',
+        );
+
+        aliceBrain.applyMediaAnswerError = null;
+        await bobRuntime.startVoiceCall('alice');
+        final reverseCallId = bobRuntime.voiceCallState.callId!;
+
+        await _waitForCondition(
+          () =>
+              adapter.rooms[reverseCallId]?.status ==
+              VoiceCallSignalingStatus.failed,
+          'reverse retry room to be rejected as busy',
+        );
+        await _waitForCondition(
+          () => bobRuntime.voiceCallState.phase == VoiceCallPhase.failed,
+          'reverse retry caller to receive busy failure',
+        );
+
+        expect(aliceRuntime.voiceCallState.callId, originalCallId);
+        expect(aliceRuntime.voiceCallState.isOutgoing, isTrue);
+        expect(aliceRuntime.voiceCallState.phase, VoiceCallPhase.failed);
+        expect(
+          aliceRuntime.voiceCallState.failureReason,
+          isNot(VoiceCallFailureReason.peerBusy),
+        );
+        expect(adapter.rooms[reverseCallId]?.caller, 'bob');
+        expect(adapter.rooms[reverseCallId]?.callee, 'alice');
+        expect(adapter.rooms[reverseCallId]?.reasonCode, 'busy');
+        expect(
+          bobRuntime.voiceCallState.failureReason,
+          VoiceCallFailureReason.peerBusy,
+        );
+      },
+    );
+
+    test(
+      'advanced Firebase inbox entry is ignored instead of recreated as invite',
+      () async {
+        final adapter = RecordingVoiceSignalingAdapter();
+        final brain = TestSessionManager();
+        await adapter.register('bob', 'bobpw');
+        await adapter.upsertFriendship('alice', 'bob');
+        await db
+            .into(db.friends)
+            .insert(
+              FriendsCompanion.insert(
+                username: 'bob',
+                displayName: 'Bob',
+                state: 'friend',
+                addedAt: 0,
+              ),
+            );
+        await adapter.createOutgoingCall(
+          callId: 'advanced-call',
+          caller: 'bob',
+          callee: 'alice',
+          createdAt: 1000,
+          expiresAt: 60000,
+        );
+        await adapter.acceptCall(
+          callId: 'advanced-call',
+          callee: 'alice',
+          acceptedAt: 1200,
+        );
+        final runtime = _runtimeFor(db, alice, adapter, brain: brain);
+        addTearDown(runtime.dispose);
+
+        await runtime.start();
+        await Future<void>.delayed(const Duration(milliseconds: 80));
+
+        expect(runtime.voiceCallState.phase, VoiceCallPhase.idle);
+        expect(brain.startedAudioPeers, isEmpty);
       },
     );
 

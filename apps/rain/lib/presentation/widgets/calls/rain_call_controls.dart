@@ -353,6 +353,9 @@ String rainVoiceCallFailureDetail(VoiceCallState state) {
 }
 
 bool rainVoiceCallCanRetry(VoiceCallState state) {
+  if (!state.isOutgoing) {
+    return false;
+  }
   return switch (state.failureReason) {
     VoiceCallFailureReason.microphoneDenied ||
     VoiceCallFailureReason.cameraDenied ||
