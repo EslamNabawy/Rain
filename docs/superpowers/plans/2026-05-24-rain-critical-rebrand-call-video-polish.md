@@ -185,14 +185,14 @@
 
 **Purpose:** Stop overloading "minimized" and make the call UI modes explicit.
 
-- [ ] Update `apps/rain/lib/application/state/call_surface_providers.dart`.
-- [ ] Replace the current minimized/bottom dock behavior with explicit state:
+- [x] Update `apps/rain/lib/application/state/call_surface_providers.dart`.
+- [x] Replace the current minimized/bottom dock behavior with explicit state:
   - `managerOnly`: top call manager visible, media panel hidden.
   - `expanded`: centered call popup visible.
   - `fullscreen`: video takes the full app viewport.
   - `pip`: small floating video preview visible.
-- [ ] Remove `bottomSafe` as the default minimized behavior.
-- [ ] Define transitions:
+- [x] Remove `bottomSafe` as the default minimized behavior.
+- [x] Define transitions:
   - Start voice call: `expanded`.
   - Start video call: `expanded`.
   - Tap minimize once during video: `pip`.
@@ -200,9 +200,9 @@
   - Tap top manager: restore previous useful mode.
   - Tap fullscreen: `fullscreen`.
   - Back/Escape from fullscreen: return to `pip` or `expanded`.
-- [ ] Preserve current active call lifecycle and do not change signaling/media code.
-- [ ] Update `apps/rain/test/call_surface_providers_test.dart`.
-- [ ] Commit with message: `feat: model explicit call surface modes`.
+- [x] Preserve current active call lifecycle and do not change signaling/media code.
+- [x] Update `apps/rain/test/call_surface_providers_test.dart`.
+- [x] Commit with message: `feat: model explicit call surface modes`.
 
 ## Phase 08: Top Call Manager Bar
 

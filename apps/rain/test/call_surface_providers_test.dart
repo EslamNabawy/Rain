@@ -16,12 +16,13 @@ void main() {
 
     expect(harness.surface.isVisible, isTrue);
     expect(harness.surface.mode, CallSurfaceMode.expanded);
-    expect(harness.surface.dock, CallSurfaceDock.chatCenter);
+    expect(harness.surface.restoreMode, CallSurfaceMode.expanded);
+    expect(harness.surface.mediaMode, CallMediaMode.audio);
     expect(harness.surface.peerId, 'bob');
     expect(harness.surface.callId, 'call-1');
   });
 
-  test('new outgoing call expands the call surface', () {
+  test('new outgoing call expands and resets older surface mode', () {
     final harness = _CallSurfaceHarness();
     addTearDown(harness.dispose);
 
@@ -38,26 +39,77 @@ void main() {
 
     expect(harness.surface.isVisible, isTrue);
     expect(harness.surface.mode, CallSurfaceMode.expanded);
-    expect(harness.surface.dock, CallSurfaceDock.chatCenter);
+    expect(harness.surface.restoreMode, CallSurfaceMode.expanded);
     expect(harness.surface.callId, 'call-2');
   });
 
-  test('active call can minimize and stays minimized for the same call', () {
+  test('voice call minimize becomes manager-only and restores expanded', () {
     final harness = _CallSurfaceHarness();
     addTearDown(harness.dispose);
 
     harness.setVoiceCall(_voiceCall());
     harness.container.read(callSurfaceProvider.notifier).minimize();
 
-    expect(harness.surface.mode, CallSurfaceMode.minimized);
-    expect(harness.surface.dock, CallSurfaceDock.bottomSafe);
+    expect(harness.surface.mode, CallSurfaceMode.managerOnly);
+    expect(harness.surface.restoreMode, CallSurfaceMode.expanded);
+    expect(harness.surface.hasMediaPanel, isFalse);
 
     harness.setVoiceCall(_voiceCall(updatedAt: 2));
 
     expect(harness.surface.isVisible, isTrue);
-    expect(harness.surface.mode, CallSurfaceMode.minimized);
-    expect(harness.surface.dock, CallSurfaceDock.bottomSafe);
+    expect(harness.surface.mode, CallSurfaceMode.managerOnly);
+    expect(harness.surface.restoreMode, CallSurfaceMode.expanded);
     expect(harness.surface.callId, 'call-1');
+
+    harness.container.read(callSurfaceProvider.notifier).restore();
+
+    expect(harness.surface.mode, CallSurfaceMode.expanded);
+    expect(harness.surface.hasMediaPanel, isTrue);
+  });
+
+  test('video call minimize moves through pip then manager-only', () {
+    final harness = _CallSurfaceHarness();
+    addTearDown(harness.dispose);
+
+    harness.setVoiceCall(_voiceCall(mediaMode: CallMediaMode.video));
+
+    harness.container.read(callSurfaceProvider.notifier).minimize();
+
+    expect(harness.surface.mode, CallSurfaceMode.pip);
+    expect(harness.surface.restoreMode, CallSurfaceMode.pip);
+    expect(harness.surface.hasMediaPanel, isTrue);
+
+    harness.container.read(callSurfaceProvider.notifier).minimize();
+
+    expect(harness.surface.mode, CallSurfaceMode.managerOnly);
+    expect(harness.surface.restoreMode, CallSurfaceMode.pip);
+    expect(harness.surface.hasMediaPanel, isFalse);
+
+    harness.container.read(callSurfaceProvider.notifier).restore();
+
+    expect(harness.surface.mode, CallSurfaceMode.pip);
+  });
+
+  test('fullscreen returns to the previous useful video mode', () {
+    final harness = _CallSurfaceHarness();
+    addTearDown(harness.dispose);
+
+    harness.setVoiceCall(_voiceCall(mediaMode: CallMediaMode.video));
+
+    harness.container.read(callSurfaceProvider.notifier).enterFullscreen();
+
+    expect(harness.surface.mode, CallSurfaceMode.fullscreen);
+    expect(harness.surface.restoreMode, CallSurfaceMode.expanded);
+
+    harness.container.read(callSurfaceProvider.notifier).exitFullscreen();
+
+    expect(harness.surface.mode, CallSurfaceMode.expanded);
+
+    harness.container.read(callSurfaceProvider.notifier).minimize();
+    harness.container.read(callSurfaceProvider.notifier).enterFullscreen();
+    harness.container.read(callSurfaceProvider.notifier).restore();
+
+    expect(harness.surface.mode, CallSurfaceMode.pip);
   });
 
   test('failed call expands for action and ended call clears the surface', () {
@@ -76,7 +128,7 @@ void main() {
 
     expect(harness.surface.isVisible, isTrue);
     expect(harness.surface.mode, CallSurfaceMode.expanded);
-    expect(harness.surface.dock, CallSurfaceDock.chatCenter);
+    expect(harness.surface.restoreMode, CallSurfaceMode.expanded);
     expect(harness.surface.callId, 'call-1');
 
     harness.setVoiceCall(_voiceCall());
@@ -85,17 +137,33 @@ void main() {
     expect(harness.surface, const CallSurfaceState.hidden());
   });
 
+  test('audio call strips video-only pip and fullscreen modes', () {
+    final harness = _CallSurfaceHarness();
+    addTearDown(harness.dispose);
+
+    harness.setVoiceCall(_voiceCall(mediaMode: CallMediaMode.video));
+    harness.container.read(callSurfaceProvider.notifier).minimize();
+
+    expect(harness.surface.mode, CallSurfaceMode.pip);
+
+    harness.setVoiceCall(_voiceCall(mediaMode: CallMediaMode.audio));
+
+    expect(harness.surface.mode, CallSurfaceMode.expanded);
+    expect(harness.surface.restoreMode, CallSurfaceMode.expanded);
+    expect(harness.surface.mediaMode, CallMediaMode.audio);
+  });
+
   test('call surface controls never mutate the voice call state', () {
     final harness = _CallSurfaceHarness();
     addTearDown(harness.dispose);
 
-    harness.setVoiceCall(_voiceCall());
+    harness.setVoiceCall(_voiceCall(mediaMode: CallMediaMode.video));
     final before = harness.voiceCall;
 
     harness.container.read(callSurfaceProvider.notifier).minimize();
-    harness.container
-        .read(callSurfaceProvider.notifier)
-        .expand(dock: CallSurfaceDock.chatTop);
+    harness.container.read(callSurfaceProvider.notifier).enterFullscreen();
+    harness.container.read(callSurfaceProvider.notifier).exitFullscreen();
+    harness.container.read(callSurfaceProvider.notifier).expand();
 
     expect(identical(harness.voiceCall, before), isTrue);
     expect(harness.voiceCall.phase, VoiceCallPhase.active);
@@ -112,7 +180,7 @@ void main() {
     harness.container.read(_selectedChatProvider.notifier).set('alice');
 
     expect(harness.surface.isVisible, isTrue);
-    expect(harness.surface.mode, CallSurfaceMode.minimized);
+    expect(harness.surface.mode, CallSurfaceMode.managerOnly);
     expect(harness.surface.peerId, 'bob');
   });
 }
@@ -134,11 +202,13 @@ VoiceCallState _voiceCall({
   bool isOutgoing = false,
   int updatedAt = 1,
   VoiceCallFailureReason? failureReason,
+  CallMediaMode mediaMode = CallMediaMode.audio,
 }) {
   return VoiceCallState(
     phase: phase,
     peerId: peerId,
     callId: callId,
+    mediaMode: mediaMode,
     isOutgoing: isOutgoing,
     startedAt: phase == VoiceCallPhase.active ? 1 : null,
     updatedAt: updatedAt,

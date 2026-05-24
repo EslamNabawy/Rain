@@ -1216,61 +1216,60 @@ void main() {
     expect(find.text('Video stream not visible'), findsOneWidget);
   });
 
-  testWidgets(
-    'call overlay minimized chip restores without blocking composer',
-    (WidgetTester tester) async {
-      var restored = false;
-      var composerTapped = false;
+  testWidgets('call overlay pip chip restores without blocking composer', (
+    WidgetTester tester,
+  ) async {
+    var restored = false;
+    var composerTapped = false;
 
-      await tester.pumpWidget(
-        MaterialApp(
-          home: Scaffold(
-            body: Stack(
-              children: <Widget>[
-                Align(
-                  alignment: Alignment.bottomCenter,
-                  child: SizedBox(
-                    height: 64,
-                    child: TextButton(
-                      onPressed: () => composerTapped = true,
-                      child: const Text('Message composer'),
-                    ),
+    await tester.pumpWidget(
+      MaterialApp(
+        home: Scaffold(
+          body: Stack(
+            children: <Widget>[
+              Align(
+                alignment: Alignment.bottomCenter,
+                child: SizedBox(
+                  height: 64,
+                  child: TextButton(
+                    onPressed: () => composerTapped = true,
+                    child: const Text('Message composer'),
                   ),
                 ),
-                Positioned.fill(
-                  child: RainCallOverlay(
-                    state: _activeVoiceCall(),
-                    surface: const CallSurfaceState.visible(
-                      peerId: 'bob',
-                      callId: 'call-1',
-                      mode: CallSurfaceMode.minimized,
-                      dock: CallSurfaceDock.bottomSafe,
-                    ),
-                    displayName: 'Bob',
-                    onAccept: () {},
-                    onReject: () {},
-                    onHangUp: () {},
-                    onRetry: () {},
-                    onToggleMute: () {},
-                    onMinimize: () {},
-                    onExpand: () => restored = true,
+              ),
+              Positioned.fill(
+                child: RainCallOverlay(
+                  state: _activeVoiceCall(),
+                  surface: const CallSurfaceState.visible(
+                    peerId: 'bob',
+                    callId: 'call-1',
+                    mode: CallSurfaceMode.pip,
+                    mediaMode: CallMediaMode.video,
                   ),
+                  displayName: 'Bob',
+                  onAccept: () {},
+                  onReject: () {},
+                  onHangUp: () {},
+                  onRetry: () {},
+                  onToggleMute: () {},
+                  onMinimize: () {},
+                  onExpand: () => restored = true,
                 ),
-              ],
-            ),
+              ),
+            ],
           ),
         ),
-      );
+      ),
+    );
 
-      expect(find.byTooltip('Restore call'), findsOneWidget);
+    expect(find.byTooltip('Restore call'), findsOneWidget);
 
-      await tester.tap(find.byTooltip('Restore call'));
-      expect(restored, isTrue);
+    await tester.tap(find.byTooltip('Restore call'));
+    expect(restored, isTrue);
 
-      await tester.tap(find.text('Message composer'));
-      expect(composerTapped, isTrue);
-    },
-  );
+    await tester.tap(find.text('Message composer'));
+    expect(composerTapped, isTrue);
+  });
 
   testWidgets('call overlay incoming controls are wired', (
     WidgetTester tester,

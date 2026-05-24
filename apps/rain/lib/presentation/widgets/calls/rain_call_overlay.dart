@@ -59,7 +59,8 @@ class RainCallOverlay extends StatelessWidget {
 
     return LayoutBuilder(
       builder: (BuildContext context, BoxConstraints constraints) {
-        if (surface.mode == CallSurfaceMode.minimized) {
+        if (surface.mode == CallSurfaceMode.managerOnly ||
+            surface.mode == CallSurfaceMode.pip) {
           return _RainMinimizedCallChip(
             state: state,
             displayName: displayName,
@@ -70,14 +71,9 @@ class RainCallOverlay extends StatelessWidget {
         }
 
         return Align(
-          alignment: _expandedAlignment(surface.dock),
+          alignment: Alignment.center,
           child: Padding(
-            padding: EdgeInsets.fromLTRB(
-              16,
-              surface.dock == CallSurfaceDock.chatTop ? 16 : 24,
-              16,
-              24,
-            ),
+            padding: const EdgeInsets.fromLTRB(16, 24, 16, 24),
             child: _RainExpandedCallPanel(
               state: state,
               displayName: displayName,
@@ -104,14 +100,6 @@ class RainCallOverlay extends StatelessWidget {
         );
       },
     );
-  }
-
-  Alignment _expandedAlignment(CallSurfaceDock dock) {
-    return switch (dock) {
-      CallSurfaceDock.chatTop => Alignment.topCenter,
-      CallSurfaceDock.chatCenter ||
-      CallSurfaceDock.bottomSafe => Alignment.center,
-    };
   }
 
   double _boundedWidth(double availableWidth, double preferredWidth) {
@@ -539,9 +527,9 @@ class _RainMinimizedCallChip extends StatelessWidget {
     final scheme = Theme.of(context).colorScheme;
     final accent = rainVoiceCallAccent(context, state);
     return Align(
-      alignment: Alignment.bottomCenter,
+      alignment: Alignment.topRight,
       child: Padding(
-        padding: const EdgeInsets.fromLTRB(12, 0, 12, 92),
+        padding: const EdgeInsets.fromLTRB(12, 12, 12, 0),
         child: ConstrainedBox(
           constraints: BoxConstraints(maxWidth: maxWidth),
           child: Material(

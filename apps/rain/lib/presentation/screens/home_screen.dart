@@ -712,7 +712,7 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
               onSelectOutputRoute: _selectVoiceOutputRoute,
               onMinimize: () =>
                   ref.read(callSurfaceProvider.notifier).minimize(),
-              onExpand: () => ref.read(callSurfaceProvider.notifier).expand(),
+              onExpand: () => ref.read(callSurfaceProvider.notifier).restore(),
             ),
           ),
       ],
