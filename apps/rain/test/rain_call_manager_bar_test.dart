@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:rain/application/runtime/voice_call_state.dart';
 import 'package:rain/application/state/call_surface_providers.dart';
+import 'package:rain/presentation/widgets/calls/rain_call_controls.dart';
 import 'package:rain/presentation/widgets/calls/rain_call_manager_bar.dart';
 
 void main() {
@@ -11,7 +12,11 @@ void main() {
     await _pumpManager(
       tester,
       state: _activeCall(),
-      surface: const CallSurfaceState.visible(peerId: 'bob', callId: 'call-1'),
+      surface: const CallSurfaceState.visible(
+        peerId: 'bob',
+        callId: 'call-1',
+        mode: CallSurfaceMode.managerOnly,
+      ),
     );
 
     expect(
@@ -23,8 +28,45 @@ void main() {
     expect(find.text('Voice call with Bob'), findsOneWidget);
     expect(find.byTooltip('Mute microphone'), findsOneWidget);
     expect(find.byTooltip('Deafen audio'), findsOneWidget);
-    expect(find.byTooltip('Hide call panel'), findsOneWidget);
+    expect(find.byTooltip('Restore call panel'), findsOneWidget);
     expect(find.byTooltip('Hang up'), findsOneWidget);
+  });
+
+  testWidgets('manager hides while expanded popup owns controls', (
+    WidgetTester tester,
+  ) async {
+    await _pumpManager(
+      tester,
+      state: _activeCall(),
+      surface: const CallSurfaceState.visible(peerId: 'bob', callId: 'call-1'),
+    );
+
+    expect(
+      find.byKey(const ValueKey<String>('rain-call-manager-bar')),
+      findsNothing,
+    );
+    expect(find.byTooltip('Hang up'), findsNothing);
+  });
+
+  testWidgets('manager hides while fullscreen video owns the viewport', (
+    WidgetTester tester,
+  ) async {
+    await _pumpManager(
+      tester,
+      state: _activeCall(mediaMode: CallMediaMode.video),
+      surface: const CallSurfaceState.visible(
+        peerId: 'bob',
+        callId: 'call-1',
+        mediaMode: CallMediaMode.video,
+        mode: CallSurfaceMode.fullscreen,
+      ),
+    );
+
+    expect(
+      find.byKey(const ValueKey<String>('rain-call-manager-bar')),
+      findsNothing,
+    );
+    expect(find.byTooltip('Exit fullscreen'), findsNothing);
   });
 
   testWidgets('manager remains visible when media panel is hidden', (
@@ -95,7 +137,11 @@ void main() {
     await _pumpManager(
       tester,
       state: _activeCall(),
-      surface: const CallSurfaceState.visible(peerId: 'bob', callId: 'call-1'),
+      surface: const CallSurfaceState.visible(
+        peerId: 'bob',
+        callId: 'call-1',
+        mode: CallSurfaceMode.managerOnly,
+      ),
       mediaQueryData: const MediaQueryData(
         size: Size(360, 640),
         padding: EdgeInsets.only(top: 32),
@@ -124,7 +170,7 @@ void main() {
         peerId: 'bob',
         callId: 'call-1',
         mediaMode: CallMediaMode.video,
-        mode: CallSurfaceMode.fullscreen,
+        mode: CallSurfaceMode.managerOnly,
       ),
     );
 
@@ -132,9 +178,40 @@ void main() {
       find.byKey(const ValueKey<String>('rain-call-manager-bar')),
       findsOneWidget,
     );
-    expect(find.byTooltip('Exit fullscreen'), findsOneWidget);
+    expect(find.byTooltip('Fullscreen video'), findsOneWidget);
     expect(find.byTooltip('Hang up'), findsOneWidget);
     expect(tester.takeException(), isNull);
+  });
+
+  testWidgets('manager active control icons use the shared call mapping', (
+    WidgetTester tester,
+  ) async {
+    final state = _activeCall(mediaMode: CallMediaMode.video);
+    await _pumpManager(
+      tester,
+      state: state,
+      surface: const CallSurfaceState.visible(
+        peerId: 'bob',
+        callId: 'call-1',
+        mediaMode: CallMediaMode.video,
+        mode: CallSurfaceMode.managerOnly,
+      ),
+    );
+
+    for (final capability in <CallControlCapability>[
+      CallControlCapability.microphone,
+      CallControlCapability.camera,
+      CallControlCapability.deafen,
+      CallControlCapability.hangUp,
+    ]) {
+      final visual = rainVoiceCallControlVisual(state, capability);
+      final control = find.byTooltip(visual.tooltip);
+      expect(control, findsOneWidget);
+      expect(
+        find.descendant(of: control, matching: find.byIcon(visual.icon)),
+        findsOneWidget,
+      );
+    }
   });
 
   testWidgets('manager does not block bottom composer taps', (

@@ -11,6 +11,7 @@ import 'package:rain/application/audio/rain_sound_event.dart';
 import 'package:rain/presentation/branding/rain_streak_surface.dart';
 import 'package:rain/presentation/screens/home_screen.dart';
 import 'package:rain/presentation/widgets/calls/rain_call_controls.dart';
+import 'package:rain/presentation/widgets/calls/rain_call_manager_bar.dart';
 import 'package:rain/presentation/widgets/calls/rain_call_overlay.dart';
 import 'package:rain/presentation/widgets/rain_chat_widgets.dart';
 import 'package:rain_core/rain_core.dart';
@@ -1457,6 +1458,82 @@ void main() {
     );
   });
 
+  testWidgets('expanded call surface suppresses the top manager bar', (
+    WidgetTester tester,
+  ) async {
+    await _pumpCallSurfaceStack(
+      tester,
+      _activeVoiceCall(),
+      surfaceMode: CallSurfaceMode.expanded,
+    );
+
+    expect(
+      find.byKey(const ValueKey<String>('rain-call-panel-surface')),
+      findsOneWidget,
+    );
+    expect(
+      find.byKey(const ValueKey<String>('rain-call-manager-bar')),
+      findsNothing,
+    );
+  });
+
+  testWidgets('minimized audio call shows only the top manager bar', (
+    WidgetTester tester,
+  ) async {
+    await _pumpCallSurfaceStack(
+      tester,
+      _activeVoiceCall(),
+      surfaceMode: CallSurfaceMode.managerOnly,
+    );
+
+    expect(
+      find.byKey(const ValueKey<String>('rain-call-panel-surface')),
+      findsNothing,
+    );
+    expect(
+      find.byKey(const ValueKey<String>('rain-call-manager-bar')),
+      findsOneWidget,
+    );
+  });
+
+  testWidgets('video pip shows both compact media and top manager bar', (
+    WidgetTester tester,
+  ) async {
+    await _pumpCallSurfaceStack(
+      tester,
+      _activeVoiceCall(mediaMode: CallMediaMode.video),
+      surfaceMode: CallSurfaceMode.pip,
+    );
+
+    expect(
+      find.byKey(const ValueKey<String>('rain-call-video-pip-window')),
+      findsOneWidget,
+    );
+    expect(
+      find.byKey(const ValueKey<String>('rain-call-manager-bar')),
+      findsOneWidget,
+    );
+  });
+
+  testWidgets('fullscreen video hides the top manager bar', (
+    WidgetTester tester,
+  ) async {
+    await _pumpCallSurfaceStack(
+      tester,
+      _activeVoiceCall(mediaMode: CallMediaMode.video),
+      surfaceMode: CallSurfaceMode.fullscreen,
+    );
+
+    expect(
+      find.byKey(const ValueKey<String>('rain-call-video-fullscreen-surface')),
+      findsOneWidget,
+    );
+    expect(
+      find.byKey(const ValueKey<String>('rain-call-manager-bar')),
+      findsNothing,
+    );
+  });
+
   testWidgets('video overlay camera muted states are visible', (
     WidgetTester tester,
   ) async {
@@ -1859,6 +1936,62 @@ Future<void> _pumpCallOverlay(
                 onFullscreen: () {},
               ),
             ),
+          ],
+        ),
+      ),
+    ),
+  );
+}
+
+Future<void> _pumpCallSurfaceStack(
+  WidgetTester tester,
+  VoiceCallState state, {
+  required CallSurfaceMode surfaceMode,
+}) async {
+  final surface = CallSurfaceState.visible(
+    peerId: state.peerId ?? 'bob',
+    callId: state.callId ?? 'call-1',
+    mode: surfaceMode,
+    mediaMode: state.mediaMode,
+  );
+  await tester.pumpWidget(
+    MaterialApp(
+      home: Scaffold(
+        body: Stack(
+          children: <Widget>[
+            if (surface.showsMediaSurface)
+              Positioned.fill(
+                child: RainCallOverlay(
+                  state: state,
+                  surface: surface,
+                  displayName: 'Bob',
+                  onAccept: () {},
+                  onReject: () {},
+                  onHangUp: () {},
+                  onRetry: () {},
+                  onToggleMute: () {},
+                  onMinimize: () {},
+                  onExpand: () {},
+                  onFullscreen: () {},
+                ),
+              ),
+            if (surface.showsManagerBar)
+              Positioned(
+                left: 0,
+                right: 0,
+                top: 0,
+                child: RainCallManagerBar(
+                  state: state,
+                  surface: surface,
+                  displayName: 'Bob',
+                  onToggleMute: () {},
+                  onToggleCamera: () {},
+                  onToggleDeafen: () {},
+                  onRestore: () {},
+                  onFullscreen: () {},
+                  onHangUp: () {},
+                ),
+              ),
           ],
         ),
       ),

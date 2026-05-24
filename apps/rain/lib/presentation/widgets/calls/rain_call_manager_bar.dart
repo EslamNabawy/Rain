@@ -34,7 +34,7 @@ class RainCallManagerBar extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    if (!surface.isVisible || state.phase == VoiceCallPhase.idle) {
+    if (!surface.showsManagerBar || state.phase == VoiceCallPhase.idle) {
       return const SizedBox.shrink();
     }
 
@@ -420,19 +420,25 @@ class _CallPrimaryToggles extends StatelessWidget {
       mainAxisSize: MainAxisSize.min,
       children: <Widget>[
         _CallManagerIconButton(
-          tooltip: state.isMuted ? 'Unmute microphone' : 'Mute microphone',
-          icon: state.isMuted ? Icons.mic_off : Icons.mic,
+          visual: rainVoiceCallControlVisual(
+            state,
+            CallControlCapability.microphone,
+          ),
           onPressed: state.isActive ? onToggleMute : null,
         ),
         if (state.isVideo)
           _CallManagerIconButton(
-            tooltip: state.isCameraMuted ? 'Turn camera on' : 'Turn camera off',
-            icon: state.isCameraMuted ? Icons.videocam_off : Icons.videocam,
+            visual: rainVoiceCallControlVisual(
+              state,
+              CallControlCapability.camera,
+            ),
             onPressed: state.isActive ? onToggleCamera : null,
           ),
         _CallManagerIconButton(
-          tooltip: state.isDeafened ? 'Undeafen audio' : 'Deafen audio',
-          icon: state.isDeafened ? Icons.volume_off : Icons.volume_up,
+          visual: rainVoiceCallControlVisual(
+            state,
+            CallControlCapability.deafen,
+          ),
           onPressed: state.isActive ? onToggleDeafen : null,
         ),
       ],
@@ -450,8 +456,10 @@ class _CallRestoreButton extends StatelessWidget {
   Widget build(BuildContext context) {
     final isExpanded = surface.mode == CallSurfaceMode.expanded;
     return _CallManagerIconButton(
-      tooltip: isExpanded ? 'Hide call panel' : 'Restore call panel',
-      icon: isExpanded ? Icons.keyboard_arrow_up : Icons.open_in_full,
+      visual: RainCallControlVisual(
+        tooltip: isExpanded ? 'Hide call panel' : 'Restore call panel',
+        icon: isExpanded ? Icons.keyboard_arrow_up : Icons.open_in_full,
+      ),
       onPressed: onRestore,
     );
   }
@@ -472,8 +480,10 @@ class _CallFullscreenButton extends StatelessWidget {
   Widget build(BuildContext context) {
     final isFullscreen = surface.mode == CallSurfaceMode.fullscreen;
     return _CallManagerIconButton(
-      tooltip: isFullscreen ? 'Exit fullscreen' : 'Fullscreen video',
-      icon: isFullscreen ? Icons.fullscreen_exit : Icons.fullscreen,
+      visual: RainCallControlVisual(
+        tooltip: isFullscreen ? 'Exit fullscreen' : 'Fullscreen video',
+        icon: isFullscreen ? Icons.fullscreen_exit : Icons.fullscreen,
+      ),
       onPressed: isFullscreen ? onRestore : onFullscreen,
     );
   }
@@ -487,57 +497,40 @@ class _HangUpButton extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final isFailed = state.phase == VoiceCallPhase.failed;
-    final isIncoming = state.phase == VoiceCallPhase.incomingRinging;
-    return _CallManagerIconButton(
-      tooltip: isFailed
-          ? 'Dismiss call'
-          : isIncoming
-          ? 'Reject call'
-          : 'Hang up',
-      icon: isFailed ? Icons.close : Icons.call_end,
-      onPressed: onHangUp,
-      danger: !isFailed,
-    );
+    final visual = rainVoiceCallTerminalActionVisual(state);
+    return _CallManagerIconButton(visual: visual, onPressed: onHangUp);
   }
 }
 
 class _CallManagerIconButton extends StatelessWidget {
-  const _CallManagerIconButton({
-    required this.tooltip,
-    required this.icon,
-    required this.onPressed,
-    this.danger = false,
-  });
+  const _CallManagerIconButton({required this.visual, required this.onPressed});
 
-  final String tooltip;
-  final IconData icon;
+  final RainCallControlVisual visual;
   final VoidCallback? onPressed;
-  final bool danger;
 
   @override
   Widget build(BuildContext context) {
     final scheme = Theme.of(context).colorScheme;
-    final foreground = danger ? scheme.error : scheme.onSurface;
+    final foreground = visual.danger ? scheme.error : scheme.onSurface;
     return Padding(
       padding: const EdgeInsets.symmetric(horizontal: 2),
       child: SizedBox.square(
         dimension: 40,
         child: IconButton(
-          tooltip: tooltip,
+          tooltip: visual.tooltip,
           onPressed: onPressed,
           color: onPressed == null
               ? scheme.onSurface.withValues(alpha: 0.32)
               : foreground,
           style: IconButton.styleFrom(
-            backgroundColor: danger
+            backgroundColor: visual.danger
                 ? scheme.errorContainer.withValues(alpha: 0.60)
                 : scheme.surfaceContainerHighest.withValues(alpha: 0.60),
             shape: RoundedRectangleBorder(
               borderRadius: BorderRadius.circular(16),
             ),
           ),
-          icon: Icon(icon, size: 21),
+          icon: Icon(visual.icon, size: 21),
         ),
       ),
     );

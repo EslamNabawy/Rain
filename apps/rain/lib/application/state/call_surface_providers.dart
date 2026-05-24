@@ -58,6 +58,13 @@ class CallSurfaceState {
 
   bool get hasMediaPanel => isVisible && mode != CallSurfaceMode.managerOnly;
 
+  bool get showsMediaSurface =>
+      isVisible && mode != CallSurfaceMode.managerOnly;
+
+  bool get showsManagerBar =>
+      isVisible &&
+      (mode == CallSurfaceMode.managerOnly || mode == CallSurfaceMode.pip);
+
   bool matchesCall(VoiceCallState call) {
     if (!isVisible || call.peerId == null) {
       return false;

@@ -743,7 +743,8 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
     return Stack(
       children: <Widget>[
         Positioned.fill(child: body),
-        if (callSurface.isVisible && voiceCall.phase != VoiceCallPhase.idle)
+        if (callSurface.showsMediaSurface &&
+            voiceCall.phase != VoiceCallPhase.idle)
           Positioned.fill(
             left: isCompact ? 0 : 321,
             child: RainCallOverlay(
@@ -768,7 +769,8 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
                   ref.read(callSurfaceProvider.notifier).enterFullscreen(),
             ),
           ),
-        if (callSurface.isVisible && voiceCall.phase != VoiceCallPhase.idle)
+        if (callSurface.showsManagerBar &&
+            voiceCall.phase != VoiceCallPhase.idle)
           Positioned(
             left: isCompact ? 0 : 321,
             right: 0,

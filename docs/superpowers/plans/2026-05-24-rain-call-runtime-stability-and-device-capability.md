@@ -223,25 +223,25 @@
 
 **Purpose:** Remove duplicated call controls and make expanded/minimized behavior simple and predictable.
 
-- [ ] Audit call surface state in `apps/rain/lib/application/state/call_surface_providers.dart`.
-- [ ] Audit rendering in `apps/rain/lib/presentation/screens/home_screen.dart`.
-- [ ] Define one rendering contract:
+- [x] Audit call surface state in `apps/rain/lib/application/state/call_surface_providers.dart`.
+- [x] Audit rendering in `apps/rain/lib/presentation/screens/home_screen.dart`.
+- [x] Define one rendering contract:
   - Expanded popup visible: hide top call manager bar.
   - Fullscreen video visible: hide top call manager bar.
   - Picture-in-picture video visible: show compact top call manager bar.
   - Manager-only minimized state: show top call manager bar.
   - No active call: show no call surface.
-- [ ] Use one shared icon/capability mapping for manager bar and popup controls.
-- [ ] Add tests:
+- [x] Use one shared icon/capability mapping for manager bar and popup controls.
+- [x] Add tests:
   - expanded popup suppresses manager bar.
   - minimized audio shows manager bar.
   - video PiP shows manager bar and PiP window.
   - fullscreen hides manager bar.
   - icons match for the same action across surfaces.
-- [ ] Acceptance:
+- [x] Acceptance:
   - No duplicated top bar plus popup controls.
   - Minimized call remains manageable from the top, not buried at the bottom of chat.
-- [ ] Commit with message: `fix: simplify call surface rendering`.
+- [x] Commit with message: `fix: simplify call surface rendering`.
 
 ## Phase 09: Media Device Capability Inventory
 

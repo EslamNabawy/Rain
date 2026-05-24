@@ -67,6 +67,58 @@ void main() {
     expect(harness.surface.hasMediaPanel, isTrue);
   });
 
+  test('rendering contract separates media surface and manager bar', () {
+    expect(const CallSurfaceState.hidden().showsManagerBar, isFalse);
+    expect(const CallSurfaceState.hidden().showsMediaSurface, isFalse);
+    expect(
+      const CallSurfaceState.visible(
+        peerId: 'bob',
+        callId: 'call-1',
+      ).showsMediaSurface,
+      isTrue,
+    );
+    expect(
+      const CallSurfaceState.visible(
+        peerId: 'bob',
+        callId: 'call-1',
+      ).showsManagerBar,
+      isFalse,
+    );
+    expect(
+      const CallSurfaceState.visible(
+        peerId: 'bob',
+        callId: 'call-1',
+        mode: CallSurfaceMode.fullscreen,
+      ).showsManagerBar,
+      isFalse,
+    );
+    expect(
+      const CallSurfaceState.visible(
+        peerId: 'bob',
+        callId: 'call-1',
+        mode: CallSurfaceMode.pip,
+        mediaMode: CallMediaMode.video,
+      ).showsManagerBar,
+      isTrue,
+    );
+    expect(
+      const CallSurfaceState.visible(
+        peerId: 'bob',
+        callId: 'call-1',
+        mode: CallSurfaceMode.managerOnly,
+      ).showsManagerBar,
+      isTrue,
+    );
+    expect(
+      const CallSurfaceState.visible(
+        peerId: 'bob',
+        callId: 'call-1',
+        mode: CallSurfaceMode.managerOnly,
+      ).showsMediaSurface,
+      isFalse,
+    );
+  });
+
   test('video call minimize moves through pip then manager-only', () {
     final harness = _CallSurfaceHarness();
     addTearDown(harness.dispose);

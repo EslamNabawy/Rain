@@ -90,30 +90,31 @@ class RainCallControls extends StatelessWidget {
     BuildContext context,
     CallControlCapability capability,
   ) {
+    final visual = rainVoiceCallControlVisual(state, capability);
     final control = switch (capability) {
       CallControlCapability.microphone => IconButton(
-        tooltip: state.isMuted ? 'Unmute microphone' : 'Mute microphone',
+        tooltip: visual.tooltip,
         onPressed: state.isActive ? onToggleMute : null,
-        icon: Icon(state.isMuted ? Icons.mic_off : Icons.mic),
+        icon: Icon(visual.icon),
       ),
       CallControlCapability.camera => IconButton(
-        tooltip: state.isCameraMuted ? 'Turn camera on' : 'Turn camera off',
+        tooltip: visual.tooltip,
         onPressed: state.isActive ? onToggleCamera : null,
-        icon: Icon(state.isCameraMuted ? Icons.videocam_off : Icons.videocam),
+        icon: Icon(visual.icon),
       ),
       CallControlCapability.switchCamera => IconButton(
-        tooltip: 'Switch camera',
+        tooltip: visual.tooltip,
         onPressed: state.isActive ? onSwitchCamera : null,
-        icon: const Icon(Icons.cameraswitch),
+        icon: Icon(visual.icon),
       ),
       CallControlCapability.deafen => IconButton(
-        tooltip: state.isDeafened ? 'Undeafen audio' : 'Deafen audio',
+        tooltip: visual.tooltip,
         onPressed: state.isActive ? onToggleDeafen : null,
-        icon: Icon(state.isDeafened ? Icons.volume_off : Icons.volume_up),
+        icon: Icon(visual.icon),
       ),
       CallControlCapability.outputRoute =>
         PopupMenuButton<VoiceCallOutputRoute>(
-          tooltip: 'Choose audio output',
+          tooltip: visual.tooltip,
           enabled: state.isActive && onSelectOutputRoute != null,
           onSelected: onSelectOutputRoute,
           itemBuilder: (BuildContext context) {
@@ -138,12 +139,12 @@ class RainCallControls extends StatelessWidget {
               ),
             ];
           },
-          icon: Icon(_outputRouteIcon(state.outputRoute)),
+          icon: Icon(visual.icon),
         ),
       CallControlCapability.hangUp => IconButton.filled(
-        tooltip: 'Hang up',
+        tooltip: visual.tooltip,
         onPressed: onHangUp,
-        icon: const Icon(Icons.call_end),
+        icon: Icon(visual.icon),
       ),
     };
 
@@ -155,6 +156,61 @@ class RainCallControls extends StatelessWidget {
       child: control,
     );
   }
+}
+
+class RainCallControlVisual {
+  const RainCallControlVisual({
+    required this.tooltip,
+    required this.icon,
+    this.danger = false,
+  });
+
+  final String tooltip;
+  final IconData icon;
+  final bool danger;
+}
+
+RainCallControlVisual rainVoiceCallControlVisual(
+  VoiceCallState state,
+  CallControlCapability capability,
+) {
+  return switch (capability) {
+    CallControlCapability.microphone => RainCallControlVisual(
+      tooltip: state.isMuted ? 'Unmute microphone' : 'Mute microphone',
+      icon: state.isMuted ? Icons.mic_off : Icons.mic,
+    ),
+    CallControlCapability.camera => RainCallControlVisual(
+      tooltip: state.isCameraMuted ? 'Turn camera on' : 'Turn camera off',
+      icon: state.isCameraMuted ? Icons.videocam_off : Icons.videocam,
+    ),
+    CallControlCapability.switchCamera => const RainCallControlVisual(
+      tooltip: 'Switch camera',
+      icon: Icons.cameraswitch,
+    ),
+    CallControlCapability.deafen => RainCallControlVisual(
+      tooltip: state.isDeafened ? 'Undeafen audio' : 'Deafen audio',
+      icon: state.isDeafened ? Icons.volume_off : Icons.volume_up,
+    ),
+    CallControlCapability.outputRoute => RainCallControlVisual(
+      tooltip: 'Choose audio output',
+      icon: _outputRouteIcon(state.outputRoute),
+    ),
+    CallControlCapability.hangUp => rainVoiceCallTerminalActionVisual(state),
+  };
+}
+
+RainCallControlVisual rainVoiceCallTerminalActionVisual(VoiceCallState state) {
+  final isFailed = state.phase == VoiceCallPhase.failed;
+  final isIncoming = state.phase == VoiceCallPhase.incomingRinging;
+  return RainCallControlVisual(
+    tooltip: isFailed
+        ? 'Dismiss call'
+        : isIncoming
+        ? 'Reject call'
+        : 'Hang up',
+    icon: isFailed ? Icons.close : Icons.call_end,
+    danger: !isFailed,
+  );
 }
 
 typedef RainCallTickerBuilder =
