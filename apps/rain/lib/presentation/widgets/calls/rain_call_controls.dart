@@ -79,12 +79,15 @@ class RainCallControls extends StatelessWidget {
       alignment: WrapAlignment.end,
       children: <Widget>[
         for (final capability in state.controlCapabilities)
-          _buildActiveControl(capability),
+          _buildActiveControl(context, capability),
       ],
     );
   }
 
-  Widget _buildActiveControl(CallControlCapability capability) {
+  Widget _buildActiveControl(
+    BuildContext context,
+    CallControlCapability capability,
+  ) {
     final control = switch (capability) {
       CallControlCapability.microphone => IconButton(
         tooltip: state.isMuted ? 'Unmute microphone' : 'Mute microphone',

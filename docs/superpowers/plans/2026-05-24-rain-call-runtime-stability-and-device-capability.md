@@ -63,22 +63,22 @@
 
 **Purpose:** Make the splash screen own all app startup loading states and prevent the bottom navigation shell from appearing while the root runtime is still loading.
 
-- [ ] Inspect current shell conditions in `apps/rain/lib/presentation/navigation/app_routes.dart`.
-- [ ] Inspect startup surfaces in:
+- [x] Inspect current shell conditions in `apps/rain/lib/presentation/navigation/app_routes.dart`.
+- [x] Inspect startup surfaces in:
   - `apps/rain/lib/main.dart`
   - `apps/rain/lib/presentation/screens/root_screen.dart`
   - `apps/rain/lib/presentation/screens/splash_screen.dart`
-- [ ] Introduce a single app-shell readiness decision that includes update gate, identity readiness, and runtime readiness.
-- [ ] Ensure `RainNavigationShell` hides bottom navigation whenever `RootScreen` would show `RainSplashScreen`.
-- [ ] Remove or bypass the old quick loading surface if it duplicates the real splash experience.
-- [ ] Add or update tests:
+- [x] Introduce a single app-shell readiness decision that includes update gate, identity readiness, and runtime readiness.
+- [x] Ensure `RainNavigationShell` hides bottom navigation whenever `RootScreen` would show `RainSplashScreen`.
+- [x] Remove or bypass the old quick loading surface if it duplicates the real splash experience.
+- [x] Add or update tests:
   - `apps/rain/test/root_screen_test.dart`
   - a navigation-shell test proving bottom navigation is hidden while runtime loading is active.
-- [ ] Acceptance:
+- [x] Acceptance:
   - Cold start shows only the Rain splash loading surface.
   - No bottom navigation appears until the app is ready for normal navigation.
   - Existing signed-in startup still lands on the correct home route.
-- [ ] Commit with message: `fix: gate navigation behind Rain startup readiness`.
+- [x] Commit with message: `fix: gate navigation behind Rain startup readiness`.
 
 ## Phase 02: Firebase Call Lease And Busy Lock Hygiene
 

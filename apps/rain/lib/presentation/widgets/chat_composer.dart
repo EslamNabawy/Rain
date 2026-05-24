@@ -216,7 +216,7 @@ class _ChatComposerState extends State<ChatComposer> {
             child: RainRippleHaloSurface(
               enabled: _canSend || widget.isSending,
               borderRadius: const BorderRadius.all(Radius.circular(24)),
-              pulseKey: '${_canSend}:${widget.isSending}',
+              pulseKey: '$_canSend:${widget.isSending}',
               pulseOnMount: _canSend || widget.isSending,
               child: FilledButton(
                 onPressed: _canSend ? () => unawaited(_submit()) : null,
