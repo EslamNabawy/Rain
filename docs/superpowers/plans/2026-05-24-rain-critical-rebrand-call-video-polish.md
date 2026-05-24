@@ -128,7 +128,7 @@
 
 **Purpose:** Replace the current bad sound effects with clean, short, water-themed sounds that do not feel harsh or cheap.
 
-- [ ] Define final sound style in `apps/rain/assets/sounds/README.md`:
+- [x] Define final sound style in `apps/rain/assets/sounds/README.md`:
   - Light water-drop send.
   - Softer incoming ripple.
   - Low, non-alarming error splash.
@@ -136,7 +136,7 @@
   - Distinct but not annoying incoming ringtone.
   - Short call connected and ended sounds.
   - Quiet mute/deafen toggles.
-- [ ] Replace runtime assets in `apps/rain/assets/sounds/`:
+- [x] Replace runtime assets in `apps/rain/assets/sounds/`:
   - `action.wav`
   - `send.wav`
   - `receive.wav`
@@ -152,13 +152,13 @@
   - `unmute.wav`
   - `deafen.wav`
   - `undeafen.wav`
-- [ ] Keep files small and decode-friendly:
+- [x] Keep files small and decode-friendly:
   - WAV or app-supported compressed format only.
   - UI effects under one second.
   - Loops must be seamless and not click at boundaries.
   - No copyrighted or unlicensed tracks.
-- [ ] Confirm `pubspec.yaml` asset declarations still include the sound folder.
-- [ ] Commit with message: `feat: refresh Rain sound assets`.
+- [x] Confirm `pubspec.yaml` asset declarations still include the sound folder.
+- [x] Commit with message: `feat: refresh Rain sound assets`.
 
 ## Phase 06: Sound Playback Policy And QA Gate
 

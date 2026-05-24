@@ -9,10 +9,25 @@ dart apps\rain\tool\generate_rain_sound_assets.dart
 The generator keeps the set repeatable and intentionally small for APK size.
 All files are mono, 44.1 kHz, signed 16-bit PCM WAV.
 
-Design notes:
+Phase 05 sound direction:
 
-- Short UI sounds stay soft and low-latency, with a restrained water-droplet identity.
-- `call_incoming.wav` and `call_outgoing.wav` remain short one-shot call feedback assets.
-- `call_incoming_loop.wav` and `call_outgoing_loop.wav` are longer loop-safe call ringing assets used only by `SoundEffectsService.startLoop`.
-- Peaks are kept below clipping so app sounds do not compete with WebRTC call audio.
+- `send.wav`: light water-drop send cue, short and soft enough for repeated chat use.
+- `receive.wav`: softer incoming ripple, lower-pitched than send so bursts do not feel sharp.
+- `action.wav`: small UI droplet for non-message actions.
+- `error.wav`: low, non-alarming splash with a descending tone instead of a harsh alert.
+- `call_incoming.wav`: short incoming-call accent; the loop file handles sustained ringing.
+- `call_incoming_loop.wav`: distinct but calm loop-safe ringtone, no hard click at loop edges.
+- `call_outgoing.wav`: short outgoing-call cue.
+- `call_outgoing_loop.wav`: calmer ringback loop with lower energy than incoming ringing.
+- `call_connected.wav` and `call_ended.wav`: short state-change cues.
+- `call_failed.wav`: low failed-call splash, clearly negative without sounding like a system alarm.
+- `mute.wav`, `unmute.wav`, `deafen.wav`, `undeafen.wav`: quiet control toggles for in-call use.
+
+Asset rules:
+
+- Runtime sound files must stay small and decode-friendly.
+- One-shot UI sounds should remain under one second.
+- Loop files must start and end near zero amplitude to avoid edge clicks.
+- The app sound service controls final playback volume; source files must stay below clipping.
+- Assets are generated in-repo and are not copied from copyrighted tracks.
 - Provenance is the generator script; edit the script and regenerate instead of hand-editing WAV files.
