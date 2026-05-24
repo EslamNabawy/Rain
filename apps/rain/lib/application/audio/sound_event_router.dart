@@ -64,6 +64,9 @@ final class SoundEventRouter {
       if (!_settingsAllowEvent(settings, event)) {
         return;
       }
+      if (_callStateSuppressesEvent(settings, event)) {
+        return;
+      }
       final now = event.occurredAt ?? _clock();
       if (!_allowEvent(event, now)) {
         return;
@@ -115,6 +118,37 @@ final class SoundEventRouter {
       return _callStateReader().isActive;
     } catch (_) {
       return false;
+    }
+  }
+
+  bool _callStateSuppressesEvent(
+    AppAudioSettings settings,
+    RainSoundEvent event,
+  ) {
+    if (_isCallSoundEvent(event) || event.kind == RainSoundEventKind.warning) {
+      return false;
+    }
+    final call = _readCallStateOrNull();
+    if (call == null) {
+      return false;
+    }
+    if (call.isRinging &&
+        (event.kind == RainSoundEventKind.chatSend ||
+            event.kind == RainSoundEventKind.chatReceive)) {
+      return true;
+    }
+    return settings.reduceSoundsDuringCall &&
+        call.isActive &&
+        (event.kind == RainSoundEventKind.chatSend ||
+            event.kind == RainSoundEventKind.chatReceive ||
+            event.kind == RainSoundEventKind.uiAction);
+  }
+
+  VoiceCallState? _readCallStateOrNull() {
+    try {
+      return _callStateReader();
+    } catch (_) {
+      return null;
     }
   }
 

@@ -7,6 +7,8 @@ import 'package:rain/application/runtime/video_call_renderers.dart';
 import 'package:rain/application/runtime/voice_audio_level.dart';
 import 'package:rain/application/runtime/voice_call_state.dart';
 import 'package:rain/application/state/call_surface_providers.dart';
+import 'package:rain/application/audio/rain_sound_event.dart';
+import 'package:rain/presentation/screens/home_screen.dart';
 import 'package:rain/presentation/widgets/calls/rain_call_overlay.dart';
 import 'package:rain/presentation/widgets/rain_chat_widgets.dart';
 
@@ -184,6 +186,86 @@ void main() {
     expect(button.tooltip, 'Finish the active file transfer first.');
     await tester.tap(find.byType(IconButton));
     expect(started, isFalse);
+  });
+
+  test('call-state sound mapping emits incoming ringtone event', () {
+    final next = const VoiceCallState(
+      phase: VoiceCallPhase.incomingRinging,
+      peerId: 'bob',
+      callId: 'call-1',
+      sessionEpoch: 7,
+    );
+
+    final event = rainVoiceCallLifecycleSoundEventFor(null, next);
+
+    expect(event?.kind, RainSoundEventKind.callIncomingStarted);
+    expect(event?.callId, 'call-1');
+    expect(event?.peerId, 'bob');
+    expect(event?.sessionEpoch, 7);
+  });
+
+  test('call-state sound mapping emits connected event once per phase key', () {
+    final previous = const VoiceCallState(
+      phase: VoiceCallPhase.connectingMedia,
+      peerId: 'bob',
+      callId: 'call-1',
+      sessionEpoch: 9,
+    );
+    final next = const VoiceCallState(
+      phase: VoiceCallPhase.active,
+      peerId: 'bob',
+      callId: 'call-1',
+      sessionEpoch: 9,
+    );
+
+    final event = rainVoiceCallLifecycleSoundEventFor(previous, next);
+    final key = rainVoiceCallLifecycleSoundKeyFor(previous, next);
+    final duplicateKey = rainVoiceCallLifecycleSoundKeyFor(next, next);
+
+    expect(event?.kind, RainSoundEventKind.callConnected);
+    expect(key, duplicateKey);
+  });
+
+  test('call-state sound mapping emits ended and failed lifecycle events', () {
+    const active = VoiceCallState(
+      phase: VoiceCallPhase.active,
+      peerId: 'bob',
+      callId: 'call-1',
+      sessionEpoch: 11,
+    );
+    const idle = VoiceCallState.idle();
+    const failed = VoiceCallState(
+      phase: VoiceCallPhase.failed,
+      peerId: 'bob',
+      callId: 'call-2',
+      sessionEpoch: 12,
+      failureReason: VoiceCallFailureReason.mediaConnectionFailed,
+    );
+
+    final ended = rainVoiceCallLifecycleSoundEventFor(active, idle);
+    final failure = rainVoiceCallLifecycleSoundEventFor(active, failed);
+
+    expect(ended?.kind, RainSoundEventKind.callEnded);
+    expect(ended?.callId, 'call-1');
+    expect(failure?.kind, RainSoundEventKind.callFailed);
+    expect(failure?.errorKey, 'voice.mediaconnectionfailed');
+  });
+
+  test('video call lifecycle reuses call sound policy with video mode', () {
+    final event = rainVoiceCallLifecycleSoundEventFor(
+      null,
+      const VoiceCallState(
+        phase: VoiceCallPhase.outgoingRinging,
+        peerId: 'bob',
+        callId: 'video-1',
+        sessionEpoch: 13,
+        mediaMode: CallMediaMode.video,
+        isOutgoing: true,
+      ),
+    );
+
+    expect(event?.kind, RainSoundEventKind.callOutgoingStarted);
+    expect(event?.mediaMode, CallMediaMode.video);
   });
 
   testWidgets('voice call button disables during another call', (

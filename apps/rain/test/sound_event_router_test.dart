@@ -140,6 +140,83 @@ void main() {
       expect(effects.played, isEmpty);
     });
 
+    test('incoming and outgoing ringing suppress chat sounds', () async {
+      final incomingEffects = _RecordingSoundEffectsService();
+      final incomingRouter = _router(
+        incomingEffects,
+        callState: const VoiceCallState(
+          phase: VoiceCallPhase.incomingRinging,
+          callId: 'call-1',
+          peerId: 'bob',
+        ),
+      );
+      final outgoingEffects = _RecordingSoundEffectsService();
+      final outgoingRouter = _router(
+        outgoingEffects,
+        callState: const VoiceCallState(
+          phase: VoiceCallPhase.outgoingRinging,
+          callId: 'call-2',
+          peerId: 'bob',
+          isOutgoing: true,
+        ),
+      );
+
+      await incomingRouter.dispatch(
+        RainSoundEvent.chatReceive(conversationId: 'bob'),
+      );
+      await outgoingRouter.dispatch(
+        RainSoundEvent.chatSend(conversationId: 'bob'),
+      );
+
+      expect(incomingEffects.played, isEmpty);
+      expect(outgoingEffects.played, isEmpty);
+    });
+
+    test(
+      'active call suppresses non-critical chat and action sounds',
+      () async {
+        final effects = _RecordingSoundEffectsService();
+        final router = _router(
+          effects,
+          callState: const VoiceCallState(
+            phase: VoiceCallPhase.active,
+            callId: 'call-1',
+            peerId: 'bob',
+          ),
+        );
+
+        await router.dispatch(RainSoundEvent.chatSend(conversationId: 'bob'));
+        await router.dispatch(
+          RainSoundEvent.chatReceive(conversationId: 'bob'),
+        );
+        await router.dispatch(RainSoundEvent.uiAction());
+
+        expect(effects.played, isEmpty);
+      },
+    );
+
+    test(
+      'active call can keep chat sounds when reduction is disabled',
+      () async {
+        final effects = _RecordingSoundEffectsService();
+        final router = _router(
+          effects,
+          settingsLoader: () =>
+              const AppAudioSettings(reduceSoundsDuringCall: false),
+          callState: const VoiceCallState(
+            phase: VoiceCallPhase.active,
+            callId: 'call-1',
+            peerId: 'bob',
+          ),
+        );
+
+        await router.dispatch(RainSoundEvent.chatSend(conversationId: 'bob'));
+
+        expect(effects.played.single.effect, RainSoundEffect.send);
+        expect(effects.played.single.voiceCallActive, isTrue);
+      },
+    );
+
     test('maps warning events to error effect', () async {
       final effects = _RecordingSoundEffectsService();
       final router = _router(effects);
@@ -211,6 +288,33 @@ void main() {
       ]);
       expect(effects.played.every((entry) => entry.allowDuringCall), isTrue);
     });
+
+    test(
+      'mute and deafen controls remain allowed during active calls',
+      () async {
+        final effects = _RecordingSoundEffectsService();
+        final router = _router(
+          effects,
+          callState: const VoiceCallState(
+            phase: VoiceCallPhase.active,
+            callId: 'call-1',
+            peerId: 'bob',
+          ),
+        );
+
+        await router.dispatch(RainSoundEvent.callControlMute(callId: 'call-1'));
+        await router.dispatch(
+          RainSoundEvent.callControlDeafen(callId: 'call-1'),
+        );
+
+        expect(effects.played.map((entry) => entry.effect), <RainSoundEffect>[
+          RainSoundEffect.mute,
+          RainSoundEffect.deafen,
+        ]);
+        expect(effects.played.every((entry) => entry.voiceCallActive), isTrue);
+        expect(effects.played.every((entry) => entry.allowDuringCall), isTrue);
+      },
+    );
 
     test('allows camera controls as quiet call-control actions', () async {
       final effects = _RecordingSoundEffectsService();

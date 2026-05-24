@@ -372,6 +372,8 @@ git commit -m "feat: add safe rain call ringtone loops"
 
 **Purpose:** Replace direct call sound calls with router events and make call state the source of truth.
 
+**Status:** Complete.
+
 **Files:**
 - Modify: `apps/rain/lib/presentation/screens/home_screen.dart`
 - Modify: `apps/rain/test/rain_chat_widgets_test.dart`

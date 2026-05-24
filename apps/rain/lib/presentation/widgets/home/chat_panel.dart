@@ -1365,21 +1365,21 @@ class _ChatPanelState extends ConsumerState<_ChatPanel> {
   }
 
   Future<void> _startVoiceCall() async {
+    final before = ref.read(voiceCallProvider);
     try {
       await ref.read(voiceCallProvider.notifier).start(widget.peerId);
-      _playSound(RainSoundEffect.callOutgoing);
     } catch (error) {
-      _playSound(RainSoundEffect.callFailed);
+      _dispatchVoiceCommandFailureSoundForRef(ref, error, before: before);
       _showErrorSnack(_formatUiError(error));
     }
   }
 
   Future<void> _startVideoCall() async {
+    final before = ref.read(voiceCallProvider);
     try {
       await ref.read(voiceCallProvider.notifier).startVideo(widget.peerId);
-      _playSound(RainSoundEffect.callOutgoing);
     } catch (error) {
-      _playSound(RainSoundEffect.callFailed);
+      _dispatchVoiceCommandFailureSoundForRef(ref, error, before: before);
       _showErrorSnack(_formatUiError(error));
     }
   }
