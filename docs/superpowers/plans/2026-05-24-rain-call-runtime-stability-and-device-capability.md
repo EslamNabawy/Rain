@@ -147,30 +147,30 @@
 
 **Purpose:** Turn PC to phone video setup failures into controlled call failures instead of Windows app crashes or stuck Android states.
 
-- [ ] Audit video setup in `apps/rain/lib/application/runtime/voice_call_runtime.dart`.
-- [ ] Audit renderer lifecycle in call overlay widgets and `peer_core` media connection disposal.
-- [ ] Wrap video media creation, local renderer attach, remote renderer attach, first-frame timeout, and dispose in guarded paths.
-- [ ] Convert thrown media/renderer failures into typed runtime failures:
+- [x] Audit video setup in `apps/rain/lib/application/runtime/voice_call_runtime.dart`.
+- [x] Audit renderer lifecycle in call overlay widgets and `peer_core` media connection disposal.
+- [x] Wrap video media creation, local renderer attach, remote renderer attach, first-frame timeout, and dispose in guarded paths.
+- [x] Convert thrown media/renderer failures into typed runtime failures:
   - `cameraDenied`
   - `cameraUnavailable`
   - `mediaConnectionFailed`
   - `videoRendererFailed`
   - `videoFirstFrameTimeout`
-- [ ] On any video setup failure:
+- [x] On any video setup failure:
   - stop local camera and microphone tracks opened for that attempt.
   - send terminal failed state through Firebase.
   - release active pair lock.
   - keep the app process alive.
   - keep chat usable.
-- [ ] Add tests with fakes:
+- [x] Add tests with fakes:
   - local renderer creation throws.
   - remote renderer attach throws.
   - media connection fails after room creation.
   - first-frame timeout ends only the call, not the chat session.
-- [ ] Acceptance:
+- [x] Acceptance:
   - PC app does not close when Android video setup fails.
   - Android does not stay in a false active video state after Windows media failure.
-- [ ] Commit with message: `fix: harden video media failures`.
+- [x] Commit with message: `fix: harden video media failures`.
 
 ## Phase 06: Call Clock And Mute State Truth Source
 

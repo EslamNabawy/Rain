@@ -868,6 +868,7 @@ void main() {
               phase: VoiceCallPhase.failed,
               peerId: 'bob',
               callId: 'call-1',
+              isOutgoing: true,
               failureReason: VoiceCallFailureReason.signalingFailed,
               detail:
                   'VoiceSignalingException: Firebase permission-denied at voiceCalls/call-1',

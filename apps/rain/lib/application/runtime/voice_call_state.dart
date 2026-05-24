@@ -30,6 +30,7 @@ enum VoiceCallFailureReason {
   mediaConnectionFailed,
   mediaIceTimeout,
   mediaNoRemoteAudio,
+  videoRendererFailed,
   videoFirstFrameTimeout,
 }
 

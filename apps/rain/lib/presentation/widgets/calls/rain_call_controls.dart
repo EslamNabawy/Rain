@@ -346,6 +346,7 @@ String rainVoiceCallFailureDetail(VoiceCallState state) {
     VoiceCallFailureReason.mediaNoRemoteAudio ||
     VoiceCallFailureReason.mediaConnectionFailed =>
       'Call media could not connect. Try again.',
+    VoiceCallFailureReason.videoRendererFailed ||
     VoiceCallFailureReason.videoFirstFrameTimeout =>
       'Video could not connect. Try again.',
     null => rainSanitizeVoiceCallFailureDetail(state.detail),
@@ -366,6 +367,7 @@ bool rainVoiceCallCanRetry(VoiceCallState state) {
     VoiceCallFailureReason.mediaConnectionFailed ||
     VoiceCallFailureReason.mediaIceTimeout ||
     VoiceCallFailureReason.mediaNoRemoteAudio ||
+    VoiceCallFailureReason.videoRendererFailed ||
     VoiceCallFailureReason.videoFirstFrameTimeout => true,
     VoiceCallFailureReason.remoteMicrophoneDenied ||
     VoiceCallFailureReason.remoteCameraDenied ||

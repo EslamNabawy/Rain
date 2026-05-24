@@ -20,6 +20,21 @@ void main() {
     await renderers.dispose();
   });
 
+  test('initialization failure disposes partial renderer handles', () async {
+    final factory = _FakeRendererFactory(failInitializeAt: 2);
+    final renderers = VideoCallRenderers(rendererFactory: factory);
+
+    await expectLater(renderers.ensureInitialized(), throwsStateError);
+
+    expect(factory.handles, hasLength(2));
+    expect(factory.local.disposeCalls, 1);
+    expect(factory.remote.disposeCalls, 1);
+    expect(renderers.state.localInitialized, isFalse);
+    expect(renderers.state.remoteInitialized, isFalse);
+
+    await renderers.dispose();
+  });
+
   test('assigns local stream to local renderer', () async {
     final factory = _FakeRendererFactory();
     final renderers = VideoCallRenderers(rendererFactory: factory);
@@ -119,6 +134,9 @@ void main() {
 }
 
 class _FakeRendererFactory implements VideoCallRendererFactory {
+  _FakeRendererFactory({this.failInitializeAt});
+
+  final int? failInitializeAt;
   final List<_FakeRendererHandle> handles = <_FakeRendererHandle>[];
 
   _FakeRendererHandle get local => handles[0];
@@ -126,17 +144,21 @@ class _FakeRendererFactory implements VideoCallRendererFactory {
 
   @override
   VideoCallRendererHandle create() {
-    final handle = _FakeRendererHandle(textureId: handles.length + 1);
+    final handle = _FakeRendererHandle(
+      textureId: handles.length + 1,
+      failInitialize: failInitializeAt == handles.length + 1,
+    );
     handles.add(handle);
     return handle;
   }
 }
 
 class _FakeRendererHandle implements VideoCallRendererHandle {
-  _FakeRendererHandle({required this.textureId});
+  _FakeRendererHandle({required this.textureId, this.failInitialize = false});
 
   @override
   final int? textureId;
+  final bool failInitialize;
 
   @override
   MediaStream? srcObject;
@@ -150,6 +172,9 @@ class _FakeRendererHandle implements VideoCallRendererHandle {
   @override
   Future<void> initialize() async {
     initializeCalls += 1;
+    if (failInitialize) {
+      throw StateError('renderer initialize failed');
+    }
   }
 
   @override

@@ -178,6 +178,9 @@ final class VideoCallRenderers {
       _setState(
         _state.copyWith(localInitialized: true, remoteInitialized: true),
       );
+    } catch (_) {
+      await _resetRenderersAfterInitializationFailure();
+      rethrow;
     } finally {
       _initializing = false;
     }
@@ -185,7 +188,18 @@ final class VideoCallRenderers {
 
   Future<void> attachLocalStream(MediaStream? stream) async {
     await ensureInitialized();
-    _localRenderer!.srcObject = stream;
+    try {
+      _localRenderer!.srcObject = stream;
+    } catch (_) {
+      _setState(
+        _state.copyWith(
+          hasLocalStream: false,
+          localFirstFrameRendered: false,
+          clearLocalFirstFrameAt: true,
+        ),
+      );
+      rethrow;
+    }
     _setState(
       _state.copyWith(
         hasLocalStream: stream != null,
@@ -199,7 +213,20 @@ final class VideoCallRenderers {
     await ensureInitialized();
     _remoteFirstFrameTimer?.cancel();
     _remoteFirstFrameTimer = null;
-    _remoteRenderer!.srcObject = stream;
+    try {
+      _remoteRenderer!.srcObject = stream;
+    } catch (_) {
+      _setState(
+        _state.copyWith(
+          hasRemoteStream: false,
+          remoteFirstFrameRendered: false,
+          remoteFirstFrameTimedOut: false,
+          clearRemoteFirstFrameAt: true,
+          clearRemoteFirstFrameTimeoutAt: true,
+        ),
+      );
+      rethrow;
+    }
     _setState(
       _state.copyWith(
         hasRemoteStream: stream != null,
@@ -215,6 +242,23 @@ final class VideoCallRenderers {
         _markRemoteFirstFrameTimedOut,
       );
     }
+  }
+
+  Future<void> _resetRenderersAfterInitializationFailure() async {
+    _remoteFirstFrameTimer?.cancel();
+    _remoteFirstFrameTimer = null;
+    final local = _localRenderer;
+    final remote = _remoteRenderer;
+    _localRenderer = null;
+    _remoteRenderer = null;
+    local?.onFirstFrameRendered = null;
+    remote?.onFirstFrameRendered = null;
+    _setState(const VideoCallRendererState());
+    await Future.wait(<Future<void>>[
+      if (local != null) local.dispose().catchError((_) {}),
+      if (remote != null && !identical(remote, local))
+        remote.dispose().catchError((_) {}),
+    ]);
   }
 
   Future<void> clear() async {

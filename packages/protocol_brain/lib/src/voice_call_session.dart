@@ -16,6 +16,7 @@ const String _voiceCallRingingTimeoutReasonCode = 'ringingTimeout';
 const String _voiceCallIceTimeoutReasonCode = 'iceTimeout';
 const String _voiceCallMicrophoneDeniedReasonCode = 'microphoneDenied';
 const String _voiceCallCameraDeniedReasonCode = 'cameraDenied';
+const String _voiceCallVideoRendererFailedReasonCode = 'videoRendererFailed';
 
 enum VoiceCallSessionPhase {
   idle,
@@ -795,6 +796,10 @@ final class VoiceCallSession {
   }
 
   String _localMediaFailureDetail(Object error) {
+    if (_localMediaFailureReasonCode(error) ==
+        _voiceCallVideoRendererFailedReasonCode) {
+      return 'Video could not connect. Try again.';
+    }
     return _localMediaFailureReasonCode(error) ==
             _voiceCallCameraDeniedReasonCode
         ? 'Camera permission required.'
@@ -811,6 +816,11 @@ final class VoiceCallSession {
     if (normalized.contains('camera') ||
         normalized.contains('video permission')) {
       return _voiceCallCameraDeniedReasonCode;
+    }
+    if (normalized.contains('video renderer') ||
+        normalized.contains('rtc video renderer') ||
+        normalized.contains('rtcvideorenderer')) {
+      return _voiceCallVideoRendererFailedReasonCode;
     }
     return _voiceCallMicrophoneDeniedReasonCode;
   }

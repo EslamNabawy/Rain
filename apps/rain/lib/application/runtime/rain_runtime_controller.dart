@@ -66,6 +66,7 @@ class RainRuntimeController with WidgetsBindingObserver {
     Duration maxConnectionRetryBackoff = const Duration(minutes: 1),
     Future<Directory> Function()? documentsDirectoryProvider,
     this.videoCallRendererFactory = const RtcVideoCallRendererFactory(),
+    this.videoCallRemoteFirstFrameTimeout = const Duration(seconds: 8),
     this.errorRecorder,
   }) : fileTransferStore = fileTransferStore ?? FileTransferStore(database),
        voiceSignalingAdapter =
@@ -105,6 +106,7 @@ class RainRuntimeController with WidgetsBindingObserver {
   final RuntimeErrorRecorder? errorRecorder;
   final Future<Directory> Function() _documentsDirectoryProvider;
   final VideoCallRendererFactory videoCallRendererFactory;
+  final Duration videoCallRemoteFirstFrameTimeout;
   final Set<String> _manualDisconnectedPeers = <String>{};
   final Set<String> _registeredPeerListeners = <String>{};
   final Set<String> _passivePeerListeners = <String>{};

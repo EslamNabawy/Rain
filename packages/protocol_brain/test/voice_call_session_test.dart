@@ -246,6 +246,38 @@ void main() {
     },
   );
 
+  test('video renderer preflight failure sends typed reject reason', () async {
+    final media = _FakeVoiceMediaConnection()
+      ..startLocalAudioError = StateError(
+        'Video renderer failed while attaching local video stream.',
+      );
+    final sent = <VoiceCallFrame>[];
+    final session = _session(
+      media: media,
+      sent: sent,
+      localPeerId: 'bob',
+      remotePeerId: 'alice',
+      mediaMode: CallMediaMode.video,
+    );
+
+    await session.handleFrame(
+      _frame(
+        VoiceCallFrameType.invite,
+        from: 'alice',
+        to: 'bob',
+        seq: 1,
+        mediaMode: CallMediaMode.video,
+      ),
+    );
+    await expectLater(session.acceptIncoming(), throwsStateError);
+
+    expect(session.state.phase, VoiceCallSessionPhase.failed);
+    expect(session.state.detail, 'Video could not connect. Try again.');
+    expect(session.state.reasonCode, 'videoRendererFailed');
+    expect(sent.single.type, VoiceCallFrameType.reject);
+    expect(sent.single.reasonCode, 'videoRendererFailed');
+  });
+
   test('reject and busy fail the outgoing call and dispose media', () async {
     final media = _FakeVoiceMediaConnection();
     final sent = <VoiceCallFrame>[];

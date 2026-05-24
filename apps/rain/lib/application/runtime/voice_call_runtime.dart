@@ -12,6 +12,8 @@ extension VoiceCallRuntime on RainRuntimeController {
   static const String _voiceCallRingingTimeoutReasonCode = 'ringingTimeout';
   static const String _voiceCallIceTimeoutReasonCode = 'iceTimeout';
   static const String _voiceCallNoRemoteAudioReasonCode = 'noRemoteAudio';
+  static const String _voiceCallVideoRendererFailedReasonCode =
+      'videoRendererFailed';
   static const String _voiceCallVideoFirstFrameTimeoutReasonCode =
       'videoFirstFrameTimeout';
   static const String _voiceCallMicrophoneDeniedReasonCode = 'microphoneDenied';
@@ -910,6 +912,8 @@ extension VoiceCallRuntime on RainRuntimeController {
       VoiceCallFailureReason.mediaIceTimeout => _voiceCallIceTimeoutReasonCode,
       VoiceCallFailureReason.mediaNoRemoteAudio =>
         _voiceCallNoRemoteAudioReasonCode,
+      VoiceCallFailureReason.videoRendererFailed =>
+        _voiceCallVideoRendererFailedReasonCode,
       VoiceCallFailureReason.videoFirstFrameTimeout =>
         _voiceCallVideoFirstFrameTimeoutReasonCode,
       VoiceCallFailureReason.mediaConnectionFailed =>
@@ -1250,6 +1254,9 @@ extension VoiceCallRuntime on RainRuntimeController {
         state.detail == _voiceCallMediaFailed) {
       return VoiceCallFailureReason.mediaNoRemoteAudio;
     }
+    if (state.reasonCode == _voiceCallVideoRendererFailedReasonCode) {
+      return VoiceCallFailureReason.videoRendererFailed;
+    }
     if (state.reasonCode == _voiceCallVideoFirstFrameTimeoutReasonCode ||
         state.detail == _voiceCallVideoFailed) {
       return VoiceCallFailureReason.videoFirstFrameTimeout;
@@ -1310,6 +1317,9 @@ extension VoiceCallRuntime on RainRuntimeController {
     }
     if (state.reasonCode == _voiceCallNoRemoteAudioReasonCode) {
       return _voiceCallMediaFailed;
+    }
+    if (state.reasonCode == _voiceCallVideoRendererFailedReasonCode) {
+      return _voiceCallVideoFailed;
     }
     if (state.reasonCode == _voiceCallVideoFirstFrameTimeoutReasonCode) {
       return _voiceCallVideoFailed;
@@ -1639,30 +1649,29 @@ extension VoiceCallRuntime on RainRuntimeController {
     _videoCallMediaConnection = media;
     final renderers = VideoCallRenderers(
       rendererFactory: videoCallRendererFactory,
+      remoteFirstFrameTimeout: videoCallRemoteFirstFrameTimeout,
     );
     _videoCallRenderers = renderers;
     _videoCallRendererSubscription = renderers.onStateChanged.listen(
       _handleVideoRendererState,
       onError: (Object error, StackTrace stackTrace) {
-        errorRecorder?.call(
-          error,
-          stackTrace,
-          source: 'video-call-renderer',
-          fatal: false,
-        );
+        _handleVideoRendererFailure(peerId, error, stackTrace);
       },
     );
     return _VideoVoiceMediaConnection(
       media: media,
       renderers: renderers,
       kind: CallMediaKind.video,
-      onError: (Object error, StackTrace stackTrace) {
+      onRemoteTrackError: (Object error, StackTrace stackTrace) {
         errorRecorder?.call(
           error,
           stackTrace,
-          source: 'video-call-renderer',
+          source: 'video-call-media',
           fatal: false,
         );
+      },
+      onRendererError: (Object error, StackTrace stackTrace) {
+        _handleVideoRendererFailure(peerId, error, stackTrace);
       },
     );
   }
@@ -1719,6 +1728,48 @@ extension VoiceCallRuntime on RainRuntimeController {
       detail: _voiceCallVideoFailed,
       failureReason: VoiceCallFailureReason.videoFirstFrameTimeout,
       failureDetail: _voiceCallVideoFailed,
+    );
+  }
+
+  void _handleVideoRendererFailure(
+    String peerId,
+    Object error,
+    StackTrace stackTrace,
+  ) {
+    errorRecorder?.call(
+      error,
+      stackTrace,
+      source: 'video-call-renderer',
+      fatal: false,
+    );
+    final current = _voiceCallState;
+    if (!current.hasCall ||
+        !current.isVideo ||
+        current.phase == VoiceCallPhase.failed ||
+        current.phase == VoiceCallPhase.ending ||
+        current.peerId == null ||
+        current.callId == null ||
+        !_isCurrentVoiceCall(
+          peerId,
+          current.callId!,
+          sessionEpoch: current.sessionEpoch,
+        )) {
+      return;
+    }
+    _recordVoiceCallRuntimeFailure(
+      current,
+      failureCode: _voiceCallVideoRendererFailedReasonCode,
+      userMessage: _voiceCallVideoFailed,
+      nativeError: error.toString(),
+    );
+    unawaited(
+      _endVoiceCallForPeer(
+        peerId,
+        notifyPeer: false,
+        detail: _voiceCallVideoFailed,
+        failureReason: VoiceCallFailureReason.videoRendererFailed,
+        failureDetail: _voiceCallVideoFailed,
+      ),
     );
   }
 
@@ -2126,6 +2177,9 @@ extension VoiceCallRuntime on RainRuntimeController {
     if (_isVoiceCallSignalingError(error, normalized)) {
       return VoiceCallFailureReason.signalingFailed;
     }
+    if (_isVoiceCallVideoRendererError(normalized)) {
+      return VoiceCallFailureReason.videoRendererFailed;
+    }
     if (_isVoiceCallNativeMediaError(normalized) ||
         normalized.contains('ice timeout') ||
         normalized.contains('no remote audio')) {
@@ -2150,6 +2204,9 @@ extension VoiceCallRuntime on RainRuntimeController {
     }
     if (_isVoiceCallSignalingError(error, normalized)) {
       return _voiceCallSignalingFailed;
+    }
+    if (_isVoiceCallVideoRendererError(normalized)) {
+      return _voiceCallVideoFailed;
     }
     if (_isVoiceCallNativeMediaError(normalized) ||
         normalized.contains('ice timeout') ||
@@ -2235,7 +2292,17 @@ extension VoiceCallRuntime on RainRuntimeController {
         normalized.contains('peer connection changed while');
   }
 
+  bool _isVoiceCallVideoRendererError(String normalized) {
+    return normalized.contains('video renderer') ||
+        normalized.contains('rtc video renderer') ||
+        normalized.contains('rtcvideorenderer');
+  }
+
   VoiceCallFailureReason? _localAudioFailureReason(Object error) {
+    if (error is _VideoCallRendererException ||
+        _isVoiceCallVideoRendererError(error.toString().toLowerCase())) {
+      return VoiceCallFailureReason.videoRendererFailed;
+    }
     if (error is CallMediaException) {
       return switch (error.reason) {
         CallMediaFailureReason.cameraDenied ||
@@ -2269,6 +2336,7 @@ extension VoiceCallRuntime on RainRuntimeController {
       VoiceCallFailureReason.microphoneDenied =>
         _voiceCallMicrophonePermissionRequired,
       VoiceCallFailureReason.cameraDenied => _voiceCallCameraPermissionRequired,
+      VoiceCallFailureReason.videoRendererFailed => _voiceCallVideoFailed,
       _ => null,
     };
   }
@@ -2279,15 +2347,18 @@ final class _VideoVoiceMediaConnection implements VoiceMediaConnection {
     required CallMediaConnection media,
     required VideoCallRenderers renderers,
     required CallMediaKind kind,
-    required void Function(Object error, StackTrace stackTrace) onError,
+    required void Function(Object error, StackTrace stackTrace)
+    onRemoteTrackError,
+    required void Function(Object error, StackTrace stackTrace) onRendererError,
   }) : _media = media,
        _renderers = renderers,
        _kind = kind,
-       _onError = onError {
+       _onRemoteTrackError = onRemoteTrackError,
+       _onRendererError = onRendererError {
     _remoteTrackSubscription = _media.onRemoteTrack.listen(
       _handleRemoteTrack,
       onError: (Object error, StackTrace stackTrace) {
-        _onError(error, stackTrace);
+        _onRemoteTrackError(error, stackTrace);
       },
     );
   }
@@ -2295,7 +2366,8 @@ final class _VideoVoiceMediaConnection implements VoiceMediaConnection {
   final CallMediaConnection _media;
   final VideoCallRenderers _renderers;
   final CallMediaKind _kind;
-  final void Function(Object error, StackTrace stackTrace) _onError;
+  final void Function(Object error, StackTrace stackTrace) _onRemoteTrackError;
+  final void Function(Object error, StackTrace stackTrace) _onRendererError;
   final StreamController<VoiceRemoteAudioTrack> _remoteAudioController =
       StreamController<VoiceRemoteAudioTrack>.broadcast();
   final StreamController<VoiceMediaAudioLevel> _audioLevelController =
@@ -2388,7 +2460,17 @@ final class _VideoVoiceMediaConnection implements VoiceMediaConnection {
     if (_kind != CallMediaKind.video) {
       return;
     }
-    await _renderers.attachLocalStream(_media.localStream);
+    try {
+      await _renderers.attachLocalStream(_media.localStream);
+    } catch (error, stackTrace) {
+      Error.throwWithStackTrace(
+        _VideoCallRendererException(
+          'Video renderer failed while attaching local video stream.',
+          error,
+        ),
+        stackTrace,
+      );
+    }
   }
 
   void _handleRemoteTrack(CallRemoteMediaTrack event) {
@@ -2414,10 +2496,26 @@ final class _VideoVoiceMediaConnection implements VoiceMediaConnection {
         Object error,
         StackTrace stackTrace,
       ) {
-        _onError(error, stackTrace);
+        _onRendererError(
+          _VideoCallRendererException(
+            'Video renderer failed while attaching remote video stream.',
+            error,
+          ),
+          stackTrace,
+        );
       }),
     );
   }
+}
+
+final class _VideoCallRendererException implements Exception {
+  const _VideoCallRendererException(this.message, this.cause);
+
+  final String message;
+  final Object cause;
+
+  @override
+  String toString() => '$message $cause';
 }
 
 VoiceMediaState _voiceMediaStateForCall(CallMediaState state) {
