@@ -602,6 +602,8 @@ git commit -m "test: record rain sound platform gate"
 
 **Purpose:** Prove the sound system did not regress calls, chat, settings, or assets.
 
+**Status:** Complete.
+
 **Files:**
 - Modify: tests only if a gate exposes a missing regression.
 
