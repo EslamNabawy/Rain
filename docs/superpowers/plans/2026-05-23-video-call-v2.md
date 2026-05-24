@@ -594,15 +594,25 @@ Build note:
 
 **Purpose:** Produce usable artifacts without repeating the demo-key mistake.
 
-- [ ] Generate one shared non-demo `RAIN_SIGNALING_ENCRYPTION_KEY`.
-- [ ] Use same `--dart-define-from-file` for Windows and APK.
-- [ ] Build Windows release.
-- [ ] Build Android v7a release APK.
-- [ ] Verify APK contains only `armeabi-v7a`.
-- [ ] Smoke launch Windows release.
+- [x] Generate one shared non-demo `RAIN_SIGNALING_ENCRYPTION_KEY`.
+- [x] Use same `--dart-define-from-file` for Windows and APK.
+- [x] Build Windows release.
+- [x] Build Android v7a release APK.
+- [x] Verify APK contains only `armeabi-v7a`.
+- [x] Smoke launch Windows release.
 - [ ] Install APK on target Android device.
 - [ ] Confirm both artifacts talk to each other.
-- [ ] Commit release doc updates only if docs changed.
+- [x] Commit release doc updates only if docs changed.
+
+Release gate note:
+
+- Built Windows release and Android v7a release APK on 2026-05-24 with `%TEMP%\rain-release-defines.json`.
+- Shared signaling key was generated for this build and verified non-demo without recording the key in source.
+- Windows artifact: `apps\rain\build\windows\x64\runner\Release\rain.exe`.
+- Android artifact: `apps\rain\build\app\outputs\flutter-apk\app-armeabi-v7a-release.apk`.
+- APK ABI verification found only `armeabi-v7a`.
+- Windows smoke launch passed.
+- Android install and cross-device communication are pending because no Android device was visible to Flutter or ADB.
 
 Commands:
 
