@@ -62,7 +62,12 @@ class _FriendsListView extends StatelessWidget {
         message: error.toString(),
         iconColor: Theme.of(context).colorScheme.error,
       ),
-      loading: () => const Center(child: CircularProgressIndicator()),
+      loading: () => const Center(
+        child: Padding(
+          padding: EdgeInsets.all(24),
+          child: RainStreakSkeleton(rows: 4),
+        ),
+      ),
     );
   }
 }

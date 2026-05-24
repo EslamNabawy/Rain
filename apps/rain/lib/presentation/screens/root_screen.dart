@@ -7,6 +7,7 @@ import 'package:rain/core/config/app_environment.dart';
 import 'package:rain/infrastructure/services/force_update_service.dart';
 import 'package:rain/application/runtime/rain_runtime_controller.dart';
 import 'package:rain/application/state/app_providers.dart';
+import 'package:rain/presentation/branding/rain_state_surfaces.dart';
 import 'package:rain/presentation/widgets/backend_banner.dart';
 import 'home_screen.dart';
 import 'onboarding_screen.dart';
@@ -179,11 +180,11 @@ class _ErrorView extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    return Center(
-      child: Padding(
-        padding: const EdgeInsets.all(24),
-        child: Text(error, textAlign: TextAlign.center),
-      ),
+    return RainMistStateCard(
+      icon: Icons.error_outline,
+      title: 'Rain could not start.',
+      message: error,
+      severity: RainStateSeverity.error,
     );
   }
 }

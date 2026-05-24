@@ -11,6 +11,7 @@ import 'package:rain/application/state/app_providers.dart';
 import 'package:rain/application/state/sound_event_providers.dart';
 import 'package:rain/infrastructure/services/crash_diagnostics_service.dart';
 import 'package:rain/infrastructure/services/app_settings_store.dart';
+import 'package:rain/presentation/branding/rain_state_surfaces.dart';
 import 'package:rain/presentation/screens/splash_screen.dart';
 import 'package:rain/presentation/widgets/app_components.dart';
 import 'package:rain/presentation/widgets/app_dialogs.dart';
@@ -944,10 +945,8 @@ class _BlockedUsersList extends ConsumerWidget {
         ),
       ),
       loading: () => const AppSectionCard(
-        child: ListTile(
-          leading: CircularProgressIndicator(),
-          title: Text('Loading...'),
-        ),
+        padding: EdgeInsets.all(18),
+        child: RainStreakSkeleton(rows: 2),
       ),
     );
   }

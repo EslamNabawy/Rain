@@ -567,7 +567,7 @@ git commit -m "feat: rebrand Rain splash and shell header"
 - Modify: `apps/rain/lib/presentation/widgets/app_components.dart`
 - Modify: state call sites in `friends_list.dart`, `chat_panel.dart`, `search_screen.dart`, `root_screen.dart`, `settings_screen.dart`
 
-- [ ] **Step 1: Add `RainMistStateCard` and `RainStreakSkeleton`**
+- [x] **Step 1: Add `RainMistStateCard` and `RainStreakSkeleton`**
 
 Create `rain_state_surfaces.dart` with:
 
@@ -670,11 +670,11 @@ class RainStreakSkeleton extends StatelessWidget {
 }
 ```
 
-- [ ] **Step 2: Bridge `AppStateMessage` to Mist State Card**
+- [x] **Step 2: Bridge `AppStateMessage` to Mist State Card**
 
 In `app_components.dart`, import `rain_state_surfaces.dart` and make `AppStateMessage.build` return `RainMistStateCard` with compatible parameters. Map `iconColor == scheme.error` to `RainStateSeverity.error`.
 
-- [ ] **Step 3: Replace full-screen loading spinners where context exists**
+- [x] **Step 3: Replace full-screen loading spinners where context exists**
 
 Use `RainStreakSkeleton` in:
 
@@ -685,7 +685,7 @@ Use `RainStreakSkeleton` in:
 
 Keep tiny `CircularProgressIndicator(strokeWidth: 2)` inside buttons during active submit/send operations.
 
-- [ ] **Step 4: Add state surface tests**
+- [x] **Step 4: Add state surface tests**
 
 Create `apps/rain/test/rain_state_surfaces_test.dart`:
 
@@ -729,7 +729,7 @@ void main() {
 }
 ```
 
-- [ ] **Step 5: Validate Task 5**
+- [x] **Step 5: Validate Task 5**
 
 ```powershell
 cd apps/rain
@@ -738,7 +738,7 @@ flutter test test/rain_state_surfaces_test.dart test/search_screen_test.dart tes
 
 Expected: focused state-surface tests pass.
 
-- [ ] **Step 6: Commit Task 5**
+- [x] **Step 6: Commit Task 5**
 
 ```powershell
 git add apps/rain/lib/presentation/branding/rain_state_surfaces.dart apps/rain/lib/presentation/widgets/app_components.dart apps/rain/lib/presentation/widgets/home/friends_list.dart apps/rain/lib/presentation/widgets/home/chat_panel.dart apps/rain/lib/presentation/screens/search_screen.dart apps/rain/lib/presentation/screens/root_screen.dart apps/rain/lib/presentation/screens/settings_screen.dart apps/rain/test/rain_state_surfaces_test.dart apps/rain/test/search_screen_test.dart apps/rain/test/friend_flow_test.dart apps/rain/test/root_screen_test.dart

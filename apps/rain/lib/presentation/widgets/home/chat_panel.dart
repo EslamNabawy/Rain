@@ -741,14 +741,24 @@ class _ChatPanelState extends ConsumerState<_ChatPanel> {
             horizontalPadding,
             24,
           ),
-          children: <Widget>[Center(child: Text(error.toString()))],
+          children: <Widget>[
+            AppStateMessage(
+              icon: Icons.error_outline,
+              title: 'Could not load messages',
+              message: error.toString(),
+              iconColor: Theme.of(context).colorScheme.error,
+            ),
+          ],
         ),
         loading: () => ListView(
           physics: const AlwaysScrollableScrollPhysics(),
-          children: const <Widget>[
-            SizedBox(height: 180),
-            Center(child: CircularProgressIndicator()),
-          ],
+          padding: EdgeInsets.fromLTRB(
+            horizontalPadding,
+            96,
+            horizontalPadding,
+            24,
+          ),
+          children: const <Widget>[RainStreakSkeleton(rows: 5)],
         ),
       ),
     );

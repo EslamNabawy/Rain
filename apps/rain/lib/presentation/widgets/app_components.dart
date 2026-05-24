@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
+import 'package:rain/presentation/branding/rain_state_surfaces.dart';
 
 class AppSectionCard extends StatelessWidget {
   const AppSectionCard({
@@ -153,39 +154,20 @@ class AppStateMessage extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    return Center(
-      child: Padding(
-        padding: padding,
-        child: Column(
-          mainAxisSize: MainAxisSize.min,
-          children: <Widget>[
-            Icon(
-              icon,
-              size: iconSize,
-              color: iconColor ?? Theme.of(context).colorScheme.secondary,
-            ),
-            const SizedBox(height: 16),
-            Text(
-              title,
-              style: Theme.of(context).textTheme.titleMedium,
-              textAlign: TextAlign.center,
-            ),
-            const SizedBox(height: 8),
-            Text(
-              message,
-              style: Theme.of(context).textTheme.bodyMedium?.copyWith(
-                color: Theme.of(
-                  context,
-                ).colorScheme.onSurface.withValues(alpha: 0.6),
-              ),
-              textAlign: TextAlign.center,
-            ),
-            if (action != null) ...<Widget>[
-              const SizedBox(height: 16),
-              action!,
-            ],
-          ],
-        ),
+    final scheme = Theme.of(context).colorScheme;
+    final severity = iconColor == scheme.error
+        ? RainStateSeverity.error
+        : RainStateSeverity.neutral;
+
+    return Padding(
+      padding: padding,
+      child: RainMistStateCard(
+        icon: icon,
+        iconSize: iconSize,
+        title: title,
+        message: message,
+        action: action,
+        severity: severity,
       ),
     );
   }

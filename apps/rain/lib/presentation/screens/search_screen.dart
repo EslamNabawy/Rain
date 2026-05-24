@@ -9,6 +9,7 @@ import 'package:rain_core/rain_core.dart';
 import 'package:rain/application/state/app_providers.dart';
 import 'package:rain/application/state/app_state.dart';
 import 'package:rain/application/runtime/rain_runtime_controller.dart';
+import 'package:rain/presentation/branding/rain_state_surfaces.dart';
 import 'package:rain/presentation/widgets/app_components.dart';
 import 'package:rain/presentation/widgets/rain_chat_widgets.dart';
 
@@ -300,10 +301,8 @@ class _SearchLoading extends StatelessWidget {
   Widget build(BuildContext context) {
     return ListView(
       physics: const AlwaysScrollableScrollPhysics(),
-      children: const <Widget>[
-        SizedBox(height: 180),
-        Center(child: CircularProgressIndicator()),
-      ],
+      padding: const EdgeInsets.fromLTRB(16, 120, 16, 24),
+      children: const <Widget>[RainStreakSkeleton(rows: 4)],
     );
   }
 }
