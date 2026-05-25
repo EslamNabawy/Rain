@@ -1439,15 +1439,93 @@ void main() {
 
   testWidgets(
     'video stage shows remote video as primary and local video as preview',
-    (WidgetTester tester) async {},
-    skip: true,
+    (WidgetTester tester) async {
+      final renderers = VideoCallRenderers(
+        rendererFactory: _FakeRendererFactory(),
+      );
+      await renderers.attachLocalStream(_FakeMediaStream('local'));
+      await renderers.attachRemoteStream(_FakeMediaStream('remote'));
+
+      await _pumpVideoStage(
+        tester,
+        state: _activeVoiceCall(
+          mediaMode: CallMediaMode.video,
+          hasLocalVideo: true,
+          hasRemoteVideo: true,
+        ),
+        renderers: renderers,
+      );
+
+      final remoteSize = tester.getSize(
+        find.byKey(const ValueKey<String>('rain-call-remote-video-view')),
+      );
+      final localSize = tester.getSize(
+        find.byKey(const ValueKey<String>('rain-call-local-video-view')),
+      );
+
+      expect(remoteSize.width, greaterThan(localSize.width));
+      expect(remoteSize.height, greaterThan(localSize.height));
+      await renderers.dispose();
+    },
   );
 
-  testWidgets(
-    'tapping local preview swaps primary and preview video roles',
-    (WidgetTester tester) async {},
-    skip: true,
-  );
+  testWidgets('tapping local preview swaps primary and preview video roles', (
+    WidgetTester tester,
+  ) async {
+    final renderers = VideoCallRenderers(
+      rendererFactory: _FakeRendererFactory(),
+    );
+    await renderers.attachLocalStream(_FakeMediaStream('local'));
+    await renderers.attachRemoteStream(_FakeMediaStream('remote'));
+    var primaryRole = VideoPrimaryRole.remote;
+
+    await _pumpVideoStage(
+      tester,
+      state: _activeVoiceCall(
+        mediaMode: CallMediaMode.video,
+        hasLocalVideo: true,
+        hasRemoteVideo: true,
+      ),
+      renderers: renderers,
+      primaryRole: primaryRole,
+      onTogglePrimaryRole: () {
+        primaryRole = primaryRole == VideoPrimaryRole.remote
+            ? VideoPrimaryRole.local
+            : VideoPrimaryRole.remote;
+      },
+    );
+
+    await tester.tap(
+      find.byKey(const ValueKey<String>('rain-call-video-preview-hit-target')),
+    );
+    await _pumpVideoStage(
+      tester,
+      state: _activeVoiceCall(
+        mediaMode: CallMediaMode.video,
+        hasLocalVideo: true,
+        hasRemoteVideo: true,
+      ),
+      renderers: renderers,
+      primaryRole: primaryRole,
+      onTogglePrimaryRole: () {
+        primaryRole = primaryRole == VideoPrimaryRole.remote
+            ? VideoPrimaryRole.local
+            : VideoPrimaryRole.remote;
+      },
+    );
+
+    final localSize = tester.getSize(
+      find.byKey(const ValueKey<String>('rain-call-local-video-view')),
+    );
+    final remoteSize = tester.getSize(
+      find.byKey(const ValueKey<String>('rain-call-remote-video-view')),
+    );
+
+    expect(primaryRole, VideoPrimaryRole.local);
+    expect(localSize.width, greaterThan(remoteSize.width));
+    expect(localSize.height, greaterThan(remoteSize.height));
+    await renderers.dispose();
+  });
 
   testWidgets('video overlay fullscreen fills the call viewport', (
     WidgetTester tester,
@@ -2061,6 +2139,7 @@ Future<void> _pumpCallOverlay(
   VoiceCallState state, {
   VideoCallRenderers? videoRenderers,
   CallSurfaceMode surfaceMode = CallSurfaceMode.expanded,
+  VideoPrimaryRole videoPrimaryRole = VideoPrimaryRole.remote,
   List<CallControlCapability>? controlCapabilities,
   List<VoiceCallOutputRouteOption>? outputRouteOptions,
 }) async {
@@ -2077,6 +2156,7 @@ Future<void> _pumpCallOverlay(
                   callId: state.callId ?? 'call-1',
                   mode: surfaceMode,
                   mediaMode: state.mediaMode,
+                  videoPrimaryRole: videoPrimaryRole,
                 ),
                 displayName: 'Bob',
                 videoRenderers: videoRenderers,
@@ -2087,12 +2167,40 @@ Future<void> _pumpCallOverlay(
                 onToggleMute: () {},
                 onMinimize: () {},
                 onExpand: () {},
+                onToggleVideoPrimaryRole: () {},
                 onFullscreen: () {},
                 controlCapabilities: controlCapabilities,
                 outputRouteOptions: outputRouteOptions,
               ),
             ),
           ],
+        ),
+      ),
+    ),
+  );
+}
+
+Future<void> _pumpVideoStage(
+  WidgetTester tester, {
+  required VoiceCallState state,
+  required VideoCallRenderers renderers,
+  VideoPrimaryRole primaryRole = VideoPrimaryRole.remote,
+  VoidCallback? onTogglePrimaryRole,
+}) async {
+  await tester.pumpWidget(
+    MaterialApp(
+      home: Scaffold(
+        body: Center(
+          child: SizedBox(
+            width: 420,
+            child: RainVideoCallStage(
+              state: state,
+              accent: Colors.teal,
+              renderers: renderers,
+              primaryRole: primaryRole,
+              onTogglePrimaryRole: onTogglePrimaryRole,
+            ),
+          ),
         ),
       ),
     ),

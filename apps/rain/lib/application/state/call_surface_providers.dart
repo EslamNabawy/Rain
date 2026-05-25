@@ -6,6 +6,8 @@ import 'runtime_providers.dart';
 
 enum CallSurfaceMode { managerOnly, expanded, fullscreen, pip }
 
+enum VideoPrimaryRole { remote, local }
+
 final voiceCallStateForCallSurfaceProvider = Provider<VoiceCallState>(
   (Ref ref) => ref.watch(voiceCallProvider),
 );
@@ -21,6 +23,7 @@ class CallSurfaceState {
     required this.mode,
     required this.restoreMode,
     required this.mediaMode,
+    this.videoPrimaryRole = VideoPrimaryRole.remote,
     this.peerId,
     this.callId,
   });
@@ -30,6 +33,7 @@ class CallSurfaceState {
       mode = CallSurfaceMode.expanded,
       restoreMode = CallSurfaceMode.expanded,
       mediaMode = CallMediaMode.audio,
+      videoPrimaryRole = VideoPrimaryRole.remote,
       peerId = null,
       callId = null;
 
@@ -39,12 +43,14 @@ class CallSurfaceState {
     this.mode = CallSurfaceMode.expanded,
     this.restoreMode = CallSurfaceMode.expanded,
     this.mediaMode = CallMediaMode.audio,
+    this.videoPrimaryRole = VideoPrimaryRole.remote,
   }) : isVisible = true;
 
   final bool isVisible;
   final CallSurfaceMode mode;
   final CallSurfaceMode restoreMode;
   final CallMediaMode mediaMode;
+  final VideoPrimaryRole videoPrimaryRole;
   final String? peerId;
   final String? callId;
 
@@ -85,12 +91,14 @@ class CallSurfaceState {
     CallSurfaceMode? mode,
     CallSurfaceMode? restoreMode,
     CallMediaMode? mediaMode,
+    VideoPrimaryRole? videoPrimaryRole,
   }) {
     return CallSurfaceState(
       isVisible: isVisible ?? this.isVisible,
       mode: mode ?? this.mode,
       restoreMode: restoreMode ?? this.restoreMode,
       mediaMode: mediaMode ?? this.mediaMode,
+      videoPrimaryRole: videoPrimaryRole ?? this.videoPrimaryRole,
       peerId: peerId,
       callId: callId,
     );
@@ -102,6 +110,7 @@ class CallSurfaceState {
       mode: _modeForMediaMode(mode, call.mediaMode),
       restoreMode: _restoreModeForMediaMode(restoreMode, call.mediaMode),
       mediaMode: call.mediaMode,
+      videoPrimaryRole: videoPrimaryRole,
       peerId: call.peerId,
       callId: call.callId,
     );
@@ -114,13 +123,21 @@ class CallSurfaceState {
         other.mode == mode &&
         other.restoreMode == restoreMode &&
         other.mediaMode == mediaMode &&
+        other.videoPrimaryRole == videoPrimaryRole &&
         other.peerId == peerId &&
         other.callId == callId;
   }
 
   @override
-  int get hashCode =>
-      Object.hash(isVisible, mode, restoreMode, mediaMode, peerId, callId);
+  int get hashCode => Object.hash(
+    isVisible,
+    mode,
+    restoreMode,
+    mediaMode,
+    videoPrimaryRole,
+    peerId,
+    callId,
+  );
 
   @override
   String toString() {
@@ -129,6 +146,7 @@ class CallSurfaceState {
         'mode: $mode, '
         'restoreMode: $restoreMode, '
         'mediaMode: $mediaMode, '
+        'videoPrimaryRole: $videoPrimaryRole, '
         'peerId: $peerId, '
         'callId: $callId'
         ')';
@@ -201,6 +219,22 @@ class CallSurfaceController extends Notifier<CallSurfaceState> {
       current.copyWith(
         mode: CallSurfaceMode.fullscreen,
         restoreMode: _usefulRestoreModeFor(current),
+      ),
+    );
+  }
+
+  void toggleVideoPrimaryRole(String callId) {
+    final current = state;
+    if (!current.isVisible ||
+        current.callId != callId ||
+        current.mediaMode != CallMediaMode.video) {
+      return;
+    }
+    _setState(
+      current.copyWith(
+        videoPrimaryRole: current.videoPrimaryRole == VideoPrimaryRole.remote
+            ? VideoPrimaryRole.local
+            : VideoPrimaryRole.remote,
       ),
     );
   }

@@ -33,6 +33,7 @@ class RainCallOverlay extends StatelessWidget {
     this.outputRouteOptions,
     required this.onMinimize,
     required this.onExpand,
+    this.onToggleVideoPrimaryRole,
     this.onFullscreen,
   });
 
@@ -55,6 +56,7 @@ class RainCallOverlay extends StatelessWidget {
   final List<VoiceCallOutputRouteOption>? outputRouteOptions;
   final VoidCallback onMinimize;
   final VoidCallback onExpand;
+  final VoidCallback? onToggleVideoPrimaryRole;
   final VoidCallback? onFullscreen;
 
   @override
@@ -74,6 +76,8 @@ class RainCallOverlay extends StatelessWidget {
             state: state,
             accent: rainVoiceCallAccent(context, state),
             videoRenderers: videoRenderers,
+            primaryRole: surface.videoPrimaryRole,
+            onTogglePrimaryRole: onToggleVideoPrimaryRole,
           );
         }
 
@@ -90,6 +94,7 @@ class RainCallOverlay extends StatelessWidget {
                   accent: rainVoiceCallAccent(context, state),
                   renderers: videoRenderers,
                   layout: RainVideoCallStageLayout.pip,
+                  primaryRole: surface.videoPrimaryRole,
                 ),
               ),
             ),
@@ -115,6 +120,8 @@ class RainCallOverlay extends StatelessWidget {
                     ),
                     maxHeight: _boundedHeight(safeConstraints.maxHeight),
                     videoRenderers: videoRenderers,
+                    primaryRole: surface.videoPrimaryRole,
+                    onToggleVideoPrimaryRole: onToggleVideoPrimaryRole,
                     onAccept: onAccept,
                     onReject: onReject,
                     onHangUp: onHangUp,
@@ -175,11 +182,15 @@ class _RainFullscreenVideoSurface extends StatelessWidget {
     required this.state,
     required this.accent,
     this.videoRenderers,
+    required this.primaryRole,
+    this.onTogglePrimaryRole,
   });
 
   final VoiceCallState state;
   final Color accent;
   final VideoCallRenderers? videoRenderers;
+  final VideoPrimaryRole primaryRole;
+  final VoidCallback? onTogglePrimaryRole;
 
   @override
   Widget build(BuildContext context) {
@@ -193,6 +204,8 @@ class _RainFullscreenVideoSurface extends StatelessWidget {
           accent: accent,
           renderers: videoRenderers,
           layout: RainVideoCallStageLayout.fullscreen,
+          primaryRole: primaryRole,
+          onTogglePrimaryRole: onTogglePrimaryRole,
         ),
       ),
     );
@@ -206,6 +219,8 @@ class _RainExpandedCallPanel extends StatelessWidget {
     required this.panelWidth,
     required this.maxHeight,
     this.videoRenderers,
+    required this.primaryRole,
+    this.onToggleVideoPrimaryRole,
     required this.onAccept,
     required this.onReject,
     required this.onHangUp,
@@ -230,6 +245,8 @@ class _RainExpandedCallPanel extends StatelessWidget {
   final double panelWidth;
   final double maxHeight;
   final VideoCallRenderers? videoRenderers;
+  final VideoPrimaryRole primaryRole;
+  final VoidCallback? onToggleVideoPrimaryRole;
   final VoidCallback onAccept;
   final VoidCallback onReject;
   final VoidCallback onHangUp;
@@ -321,6 +338,8 @@ class _RainExpandedCallPanel extends StatelessWidget {
                           state: state,
                           accent: accent,
                           videoRenderers: videoRenderers,
+                          primaryRole: primaryRole,
+                          onToggleVideoPrimaryRole: onToggleVideoPrimaryRole,
                         ),
                       const SizedBox(height: 18),
                       _RainPopupStatusText(
@@ -462,11 +481,15 @@ class _RainCallMediaFrame extends StatelessWidget {
     required this.state,
     required this.accent,
     this.videoRenderers,
+    required this.primaryRole,
+    this.onToggleVideoPrimaryRole,
   });
 
   final VoiceCallState state;
   final Color accent;
   final VideoCallRenderers? videoRenderers;
+  final VideoPrimaryRole primaryRole;
+  final VoidCallback? onToggleVideoPrimaryRole;
 
   @override
   Widget build(BuildContext context) {
@@ -490,6 +513,8 @@ class _RainCallMediaFrame extends StatelessWidget {
                 accent: accent,
                 renderers: videoRenderers,
                 layout: RainVideoCallStageLayout.expanded,
+                primaryRole: primaryRole,
+                onTogglePrimaryRole: onToggleVideoPrimaryRole,
               )
             : SizedBox(
                 height: 172,

@@ -175,6 +175,39 @@ void main() {
     expect(harness.surface.mode, CallSurfaceMode.pip);
   });
 
+  test('video primary role toggles for current video call only', () {
+    final harness = _CallSurfaceHarness();
+    addTearDown(harness.dispose);
+
+    harness.setVoiceCall(_voiceCall(mediaMode: CallMediaMode.video));
+
+    expect(harness.surface.videoPrimaryRole, VideoPrimaryRole.remote);
+
+    harness.container
+        .read(callSurfaceProvider.notifier)
+        .toggleVideoPrimaryRole('call-1');
+
+    expect(harness.surface.videoPrimaryRole, VideoPrimaryRole.local);
+
+    harness.container
+        .read(callSurfaceProvider.notifier)
+        .toggleVideoPrimaryRole('other-call');
+
+    expect(harness.surface.videoPrimaryRole, VideoPrimaryRole.local);
+
+    harness.setVoiceCall(
+      _voiceCall(mediaMode: CallMediaMode.video, updatedAt: 2),
+    );
+
+    expect(harness.surface.videoPrimaryRole, VideoPrimaryRole.local);
+
+    harness.setVoiceCall(
+      _voiceCall(mediaMode: CallMediaMode.video, callId: 'call-2'),
+    );
+
+    expect(harness.surface.videoPrimaryRole, VideoPrimaryRole.remote);
+  });
+
   test('fullscreen returns to the previous useful video mode', () {
     final harness = _CallSurfaceHarness();
     addTearDown(harness.dispose);

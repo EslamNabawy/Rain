@@ -3,6 +3,7 @@ import 'package:flutter_svg/flutter_svg.dart';
 import 'package:rain/application/runtime/media_device_settings.dart';
 import 'package:rain/application/runtime/video_call_renderers.dart';
 import 'package:rain/application/runtime/voice_call_state.dart';
+import 'package:rain/application/state/call_surface_providers.dart';
 import 'package:rain/presentation/branding/rain_peer_core_mark.dart';
 import 'package:rain/presentation/branding/rain_ripple_halo_surface.dart';
 import 'package:rain/presentation/widgets/calls/rain_call_controls.dart';
@@ -642,12 +643,16 @@ class RainVideoCallStage extends StatelessWidget {
     required this.accent,
     this.renderers,
     this.layout = RainVideoCallStageLayout.expanded,
+    this.primaryRole = VideoPrimaryRole.remote,
+    this.onTogglePrimaryRole,
   });
 
   final VoiceCallState state;
   final Color accent;
   final VideoCallRenderers? renderers;
   final RainVideoCallStageLayout layout;
+  final VideoPrimaryRole primaryRole;
+  final VoidCallback? onTogglePrimaryRole;
 
   @override
   Widget build(BuildContext context) {
@@ -667,15 +672,14 @@ class RainVideoCallStage extends StatelessWidget {
         child: LayoutBuilder(
           builder: (BuildContext context, BoxConstraints constraints) {
             final previewWidth = _localPreviewWidth(constraints.maxWidth);
+            final primary = _primaryVideoSurface(compact: false);
+            final preview = _previewVideoSurface();
             return Stack(
               fit: StackFit.expand,
               children: <Widget>[
-                _RainRemoteVideoSurface(
-                  state: state,
-                  renderers: renderers,
-                  accent: accent,
-                  compact: layout == RainVideoCallStageLayout.pip,
-                ),
+                layout == RainVideoCallStageLayout.pip
+                    ? _primaryVideoSurface(compact: true)
+                    : primary,
                 if (layout.showsLocalPreview)
                   Positioned(
                     top: layout == RainVideoCallStageLayout.fullscreen
@@ -685,10 +689,13 @@ class RainVideoCallStage extends StatelessWidget {
                         ? 18
                         : 10,
                     width: previewWidth,
-                    child: _RainLocalVideoPreview(
-                      state: state,
-                      renderers: renderers,
-                      accent: accent,
+                    child: GestureDetector(
+                      key: const ValueKey<String>(
+                        'rain-call-video-preview-hit-target',
+                      ),
+                      behavior: HitTestBehavior.opaque,
+                      onTap: onTogglePrimaryRole,
+                      child: preview,
                     ),
                   ),
               ],
@@ -727,6 +734,38 @@ class RainVideoCallStage extends StatelessWidget {
       return maxWidth < 520 ? 112 : 156;
     }
     return maxWidth < 320 ? 96 : 124;
+  }
+
+  Widget _primaryVideoSurface({required bool compact}) {
+    return switch (primaryRole) {
+      VideoPrimaryRole.remote => _RainRemoteVideoSurface(
+        state: state,
+        renderers: renderers,
+        accent: accent,
+        compact: compact,
+      ),
+      VideoPrimaryRole.local => _RainLocalVideoSurface(
+        state: state,
+        renderers: renderers,
+        accent: accent,
+        compact: compact,
+      ),
+    };
+  }
+
+  Widget _previewVideoSurface() {
+    return switch (primaryRole) {
+      VideoPrimaryRole.remote => _RainLocalVideoPreview(
+        state: state,
+        renderers: renderers,
+        accent: accent,
+      ),
+      VideoPrimaryRole.local => _RainRemoteVideoPreview(
+        state: state,
+        renderers: renderers,
+        accent: accent,
+      ),
+    };
   }
 }
 
@@ -808,9 +847,88 @@ class _RainLocalVideoPreview extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    return _RainVideoPreviewFrame(
+      accent: accent,
+      child: _RainLocalVideoSurface(
+        state: state,
+        renderers: renderers,
+        accent: accent,
+        compact: true,
+      ),
+    );
+  }
+}
+
+class _RainRemoteVideoPreview extends StatelessWidget {
+  const _RainRemoteVideoPreview({
+    required this.state,
+    required this.renderers,
+    required this.accent,
+  });
+
+  final VoiceCallState state;
+  final VideoCallRenderers? renderers;
+  final Color accent;
+
+  @override
+  Widget build(BuildContext context) {
+    return _RainVideoPreviewFrame(
+      accent: accent,
+      child: _RainRemoteVideoSurface(
+        state: state,
+        renderers: renderers,
+        accent: accent,
+        compact: true,
+      ),
+    );
+  }
+}
+
+class _RainLocalVideoSurface extends StatelessWidget {
+  const _RainLocalVideoSurface({
+    required this.state,
+    required this.renderers,
+    required this.accent,
+    this.compact = false,
+  });
+
+  final VoiceCallState state;
+  final VideoCallRenderers? renderers;
+  final Color accent;
+  final bool compact;
+
+  @override
+  Widget build(BuildContext context) {
     final local = renderers?.localRenderer;
     final hasLocalVideo =
         state.hasLocalVideo || renderers?.state.hasLocalStream == true;
+    if (local != null && hasLocalVideo && !state.isCameraMuted) {
+      return local.buildView(
+        key: const ValueKey<String>('rain-call-local-video-view'),
+        mirror: true,
+      );
+    }
+
+    return _RainVideoPlaceholder(
+      key: state.isCameraMuted
+          ? const ValueKey<String>('rain-call-local-camera-muted')
+          : const ValueKey<String>('rain-call-local-video-placeholder'),
+      icon: state.isCameraMuted ? Icons.videocam_off : Icons.person_outline,
+      label: state.isCameraMuted ? 'Camera off' : 'Preview',
+      accent: accent,
+      compact: compact,
+    );
+  }
+}
+
+class _RainVideoPreviewFrame extends StatelessWidget {
+  const _RainVideoPreviewFrame({required this.accent, required this.child});
+
+  final Color accent;
+  final Widget child;
+
+  @override
+  Widget build(BuildContext context) {
     return AspectRatio(
       aspectRatio: 4 / 3,
       child: DecoratedBox(
@@ -826,27 +944,7 @@ class _RainLocalVideoPreview extends StatelessWidget {
             ),
           ],
         ),
-        child: ClipRRect(
-          borderRadius: BorderRadius.circular(13),
-          child: local != null && hasLocalVideo && !state.isCameraMuted
-              ? local.buildView(
-                  key: const ValueKey<String>('rain-call-local-video-view'),
-                  mirror: true,
-                )
-              : _RainVideoPlaceholder(
-                  key: state.isCameraMuted
-                      ? const ValueKey<String>('rain-call-local-camera-muted')
-                      : const ValueKey<String>(
-                          'rain-call-local-video-placeholder',
-                        ),
-                  icon: state.isCameraMuted
-                      ? Icons.videocam_off
-                      : Icons.person_outline,
-                  label: state.isCameraMuted ? 'Camera off' : 'Preview',
-                  accent: accent,
-                  compact: true,
-                ),
-        ),
+        child: ClipRRect(borderRadius: BorderRadius.circular(13), child: child),
       ),
     );
   }

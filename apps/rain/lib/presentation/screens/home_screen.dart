@@ -785,6 +785,8 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
               onMinimize: () =>
                   ref.read(callSurfaceProvider.notifier).minimize(),
               onExpand: () => _toggleCallSurfacePanel(callSurface),
+              onToggleVideoPrimaryRole: () =>
+                  _toggleVideoPrimaryRole(voiceCall),
               onFullscreen: () =>
                   ref.read(callSurfaceProvider.notifier).enterFullscreen(),
             ),
@@ -823,6 +825,14 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
       return;
     }
     controller.restore();
+  }
+
+  void _toggleVideoPrimaryRole(VoiceCallState voiceCall) {
+    final callId = voiceCall.callId;
+    if (callId == null || callId.isEmpty) {
+      return;
+    }
+    ref.read(callSurfaceProvider.notifier).toggleVideoPrimaryRole(callId);
   }
 
   Widget _buildCompactBody(AsyncValue<List<FriendRecord>> friends) {
