@@ -131,6 +131,8 @@ void main() {
       expect(manual.canDisconnect, isFalse);
       expect(remoteOffline.label, 'Offline');
       expect(remoteOffline.detail, contains('closed Rain'));
+      expect(remoteOffline.detail, contains('online again'));
+      expect(remoteOffline.detail, isNot(contains('Press Connect')));
       expect(remoteOffline.detail, isNot(manual.detail));
       expect(remoteOffline.isBusy, isFalse);
       expect(remoteOffline.isConnected, isFalse);

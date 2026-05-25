@@ -36,6 +36,13 @@ class RainCallOverlay extends StatelessWidget {
     required this.onExpand,
     this.onToggleVideoPrimaryRole,
     this.onFullscreen,
+    this.onExitFullscreen,
+    this.friendsPanel,
+    this.showFriendsPanel = false,
+    this.friendsPanelCollapsed = false,
+    this.friendsPanelWidth = 280,
+    this.onToggleFriendsPanel,
+    this.onResizeFriendsPanel,
     this.onMoveFloating,
     this.onClampFloating,
   });
@@ -61,6 +68,13 @@ class RainCallOverlay extends StatelessWidget {
   final VoidCallback onExpand;
   final VoidCallback? onToggleVideoPrimaryRole;
   final VoidCallback? onFullscreen;
+  final VoidCallback? onExitFullscreen;
+  final Widget? friendsPanel;
+  final bool showFriendsPanel;
+  final bool friendsPanelCollapsed;
+  final double friendsPanelWidth;
+  final VoidCallback? onToggleFriendsPanel;
+  final ValueChanged<double>? onResizeFriendsPanel;
   final void Function(
     Offset delta,
     Size viewportSize,
@@ -88,12 +102,32 @@ class RainCallOverlay extends StatelessWidget {
         }
 
         if (surface.mode == CallSurfaceMode.fullscreen && state.isVideo) {
-          return _RainFullscreenVideoSurface(
+          return RainFullscreenCallWorkspace(
             state: state,
-            accent: rainVoiceCallAccent(context, state),
+            displayName: displayName,
+            gender: gender,
+            routeSummary: routeSummary,
             videoRenderers: videoRenderers,
             primaryRole: surface.videoPrimaryRole,
-            onTogglePrimaryRole: onToggleVideoPrimaryRole,
+            onToggleVideoPrimaryRole: onToggleVideoPrimaryRole,
+            onAccept: onAccept,
+            onReject: onReject,
+            onHangUp: onHangUp,
+            onRetry: onRetry,
+            onToggleMute: onToggleMute,
+            onToggleDeafen: onToggleDeafen,
+            onToggleCamera: onToggleCamera,
+            onSwitchCamera: onSwitchCamera,
+            onSelectOutputRoute: onSelectOutputRoute,
+            controlCapabilities: controlCapabilities,
+            outputRouteOptions: outputRouteOptions,
+            onExitFullscreen: onExitFullscreen ?? onExpand,
+            friendsPanel: friendsPanel,
+            showFriendsPanel: showFriendsPanel,
+            friendsPanelCollapsed: friendsPanelCollapsed,
+            friendsPanelWidth: friendsPanelWidth,
+            onToggleFriendsPanel: onToggleFriendsPanel,
+            onResizeFriendsPanel: onResizeFriendsPanel,
           );
         }
 
@@ -393,35 +427,494 @@ class _RainFloatingExpandedCallOverlayState
   }
 }
 
-class _RainFullscreenVideoSurface extends StatelessWidget {
-  const _RainFullscreenVideoSurface({
+class RainFullscreenCallWorkspace extends StatelessWidget {
+  const RainFullscreenCallWorkspace({
+    super.key,
     required this.state,
-    required this.accent,
+    required this.displayName,
+    this.gender,
+    this.routeSummary,
     this.videoRenderers,
     required this.primaryRole,
-    this.onTogglePrimaryRole,
+    this.onToggleVideoPrimaryRole,
+    required this.onAccept,
+    required this.onReject,
+    required this.onHangUp,
+    required this.onRetry,
+    required this.onToggleMute,
+    this.onToggleDeafen,
+    this.onToggleCamera,
+    this.onSwitchCamera,
+    this.onSelectOutputRoute,
+    this.controlCapabilities,
+    this.outputRouteOptions,
+    required this.onExitFullscreen,
+    this.friendsPanel,
+    this.showFriendsPanel = false,
+    this.friendsPanelCollapsed = false,
+    this.friendsPanelWidth = 280,
+    this.onToggleFriendsPanel,
+    this.onResizeFriendsPanel,
   });
 
   final VoiceCallState state;
-  final Color accent;
+  final String displayName;
+  final String? gender;
+  final String? routeSummary;
   final VideoCallRenderers? videoRenderers;
   final VideoPrimaryRole primaryRole;
-  final VoidCallback? onTogglePrimaryRole;
+  final VoidCallback? onToggleVideoPrimaryRole;
+  final VoidCallback onAccept;
+  final VoidCallback onReject;
+  final VoidCallback onHangUp;
+  final VoidCallback onRetry;
+  final VoidCallback onToggleMute;
+  final VoidCallback? onToggleDeafen;
+  final VoidCallback? onToggleCamera;
+  final VoidCallback? onSwitchCamera;
+  final ValueChanged<VoiceCallOutputRoute>? onSelectOutputRoute;
+  final List<CallControlCapability>? controlCapabilities;
+  final List<VoiceCallOutputRouteOption>? outputRouteOptions;
+  final VoidCallback onExitFullscreen;
+  final Widget? friendsPanel;
+  final bool showFriendsPanel;
+  final bool friendsPanelCollapsed;
+  final double friendsPanelWidth;
+  final VoidCallback? onToggleFriendsPanel;
+  final ValueChanged<double>? onResizeFriendsPanel;
 
   @override
   Widget build(BuildContext context) {
     final scheme = Theme.of(context).colorScheme;
+    final accent = rainVoiceCallAccent(context, state);
+    final hasFriendsPanel = showFriendsPanel && friendsPanel != null;
     return ColoredBox(
       key: const ValueKey<String>('rain-call-video-fullscreen-surface'),
       color: scheme.surface,
-      child: SafeArea(
-        child: RainVideoCallStage(
-          state: state,
-          accent: accent,
-          renderers: videoRenderers,
-          layout: RainVideoCallStageLayout.fullscreen,
-          primaryRole: primaryRole,
-          onTogglePrimaryRole: onTogglePrimaryRole,
+      child: Row(
+        children: <Widget>[
+          if (hasFriendsPanel)
+            _RainFullscreenFriendsPanel(
+              panel: friendsPanel!,
+              collapsed: friendsPanelCollapsed,
+              width: friendsPanelWidth,
+              onToggle: onToggleFriendsPanel,
+              onResize: onResizeFriendsPanel,
+            ),
+          Expanded(
+            child: SafeArea(
+              child: Padding(
+                padding: const EdgeInsets.all(14),
+                child: Stack(
+                  fit: StackFit.expand,
+                  children: <Widget>[
+                    RainVideoCallStage(
+                      state: state,
+                      accent: accent,
+                      renderers: videoRenderers,
+                      layout: RainVideoCallStageLayout.fullscreen,
+                      primaryRole: primaryRole,
+                      onTogglePrimaryRole: onToggleVideoPrimaryRole,
+                    ),
+                    const _RainFullscreenVideoScrim(),
+                    Positioned(
+                      left: 16,
+                      right: 16,
+                      top: 16,
+                      child: _RainFullscreenStatusStrip(
+                        state: state,
+                        displayName: displayName,
+                        gender: gender,
+                        accent: accent,
+                        routeSummary: routeSummary,
+                        onExitFullscreen: onExitFullscreen,
+                      ),
+                    ),
+                    Positioned(
+                      left: 16,
+                      right: 16,
+                      bottom: 16,
+                      child: _RainFullscreenControlPanel(
+                        state: state,
+                        onAccept: onAccept,
+                        onReject: onReject,
+                        onHangUp: onHangUp,
+                        onRetry: onRetry,
+                        onToggleMute: onToggleMute,
+                        onToggleDeafen: onToggleDeafen,
+                        onToggleCamera: onToggleCamera,
+                        onSwitchCamera: onSwitchCamera,
+                        onSelectOutputRoute: onSelectOutputRoute,
+                        controlCapabilities: controlCapabilities,
+                        outputRouteOptions: outputRouteOptions,
+                        onExitFullscreen: onExitFullscreen,
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+}
+
+class _RainFullscreenFriendsPanel extends StatelessWidget {
+  const _RainFullscreenFriendsPanel({
+    required this.panel,
+    required this.collapsed,
+    required this.width,
+    this.onToggle,
+    this.onResize,
+  });
+
+  static const double collapsedWidth = 56;
+
+  final Widget panel;
+  final bool collapsed;
+  final double width;
+  final VoidCallback? onToggle;
+  final ValueChanged<double>? onResize;
+
+  @override
+  Widget build(BuildContext context) {
+    final scheme = Theme.of(context).colorScheme;
+    final targetWidth = collapsed ? collapsedWidth : width.clamp(220, 380);
+    return SafeArea(
+      right: false,
+      child: Row(
+        children: <Widget>[
+          AnimatedContainer(
+            key: const ValueKey<String>('rain-call-fullscreen-friends-panel'),
+            duration: RainMotion.quick,
+            curve: Curves.easeOutCubic,
+            width: targetWidth.toDouble(),
+            margin: const EdgeInsets.fromLTRB(14, 14, 0, 14),
+            decoration: BoxDecoration(
+              color: scheme.surface.withValues(alpha: 0.86),
+              borderRadius: BorderRadius.circular(24),
+              border: Border.all(
+                color: scheme.outlineVariant.withValues(alpha: 0.26),
+              ),
+              boxShadow: <BoxShadow>[
+                BoxShadow(
+                  blurRadius: 28,
+                  offset: const Offset(0, 16),
+                  color: Colors.black.withValues(alpha: 0.22),
+                ),
+              ],
+            ),
+            child: ClipRRect(
+              borderRadius: BorderRadius.circular(24),
+              child: collapsed
+                  ? _RainFullscreenFriendsRail(onToggle: onToggle)
+                  : Column(
+                      children: <Widget>[
+                        Padding(
+                          padding: const EdgeInsets.fromLTRB(14, 12, 8, 8),
+                          child: Row(
+                            children: <Widget>[
+                              Expanded(
+                                child: Text(
+                                  'Friends',
+                                  maxLines: 1,
+                                  overflow: TextOverflow.ellipsis,
+                                  style: Theme.of(context).textTheme.titleSmall
+                                      ?.copyWith(fontWeight: FontWeight.w900),
+                                ),
+                              ),
+                              IconButton(
+                                key: const ValueKey<String>(
+                                  'rain-call-fullscreen-sidebar-toggle',
+                                ),
+                                tooltip: 'Hide friends',
+                                onPressed: onToggle,
+                                icon: const Icon(Icons.chevron_left),
+                              ),
+                            ],
+                          ),
+                        ),
+                        const Divider(height: 1),
+                        Expanded(child: panel),
+                      ],
+                    ),
+            ),
+          ),
+          if (!collapsed)
+            MouseRegion(
+              cursor: SystemMouseCursors.resizeLeftRight,
+              child: GestureDetector(
+                key: const ValueKey<String>(
+                  'rain-call-fullscreen-friends-resizer',
+                ),
+                behavior: HitTestBehavior.opaque,
+                onHorizontalDragUpdate: (DragUpdateDetails details) =>
+                    onResize?.call(details.delta.dx),
+                child: SizedBox(
+                  width: 14,
+                  child: Center(
+                    child: Container(
+                      width: 3,
+                      height: 54,
+                      decoration: BoxDecoration(
+                        color: scheme.outlineVariant.withValues(alpha: 0.62),
+                        borderRadius: BorderRadius.circular(999),
+                      ),
+                    ),
+                  ),
+                ),
+              ),
+            )
+          else
+            const SizedBox(width: 14),
+        ],
+      ),
+    );
+  }
+}
+
+class _RainFullscreenFriendsRail extends StatelessWidget {
+  const _RainFullscreenFriendsRail({this.onToggle});
+
+  final VoidCallback? onToggle;
+
+  @override
+  Widget build(BuildContext context) {
+    return Column(
+      children: <Widget>[
+        const SizedBox(height: 8),
+        IconButton(
+          key: const ValueKey<String>('rain-call-fullscreen-sidebar-toggle'),
+          tooltip: 'Show friends',
+          onPressed: onToggle,
+          icon: const Icon(Icons.people_outline),
+        ),
+        const Spacer(),
+        RotatedBox(
+          quarterTurns: 3,
+          child: Text(
+            'Friends',
+            maxLines: 1,
+            style: Theme.of(
+              context,
+            ).textTheme.labelMedium?.copyWith(fontWeight: FontWeight.w900),
+          ),
+        ),
+        const Spacer(),
+      ],
+    );
+  }
+}
+
+class _RainFullscreenVideoScrim extends StatelessWidget {
+  const _RainFullscreenVideoScrim();
+
+  @override
+  Widget build(BuildContext context) {
+    return IgnorePointer(
+      child: DecoratedBox(
+        decoration: BoxDecoration(
+          gradient: LinearGradient(
+            begin: Alignment.topCenter,
+            end: Alignment.bottomCenter,
+            colors: <Color>[
+              Colors.black.withValues(alpha: 0.44),
+              Colors.transparent,
+              Colors.transparent,
+              Colors.black.withValues(alpha: 0.48),
+            ],
+            stops: const <double>[0, 0.24, 0.66, 1],
+          ),
+        ),
+      ),
+    );
+  }
+}
+
+class _RainFullscreenStatusStrip extends StatelessWidget {
+  const _RainFullscreenStatusStrip({
+    required this.state,
+    required this.displayName,
+    required this.accent,
+    required this.onExitFullscreen,
+    this.gender,
+    this.routeSummary,
+  });
+
+  final VoiceCallState state;
+  final String displayName;
+  final String? gender;
+  final Color accent;
+  final String? routeSummary;
+  final VoidCallback onExitFullscreen;
+
+  @override
+  Widget build(BuildContext context) {
+    final scheme = Theme.of(context).colorScheme;
+    return Align(
+      alignment: Alignment.topCenter,
+      child: ConstrainedBox(
+        constraints: const BoxConstraints(maxWidth: 860),
+        child: DecoratedBox(
+          key: const ValueKey<String>('rain-call-fullscreen-status-strip'),
+          decoration: BoxDecoration(
+            color: scheme.surface.withValues(alpha: 0.82),
+            borderRadius: BorderRadius.circular(22),
+            border: Border.all(
+              color: scheme.outlineVariant.withValues(alpha: 0.30),
+            ),
+          ),
+          child: Padding(
+            padding: const EdgeInsets.fromLTRB(14, 10, 8, 10),
+            child: RainCallTicker(
+              state: state,
+              builder: (BuildContext context, int now) {
+                final detail = rainVoiceCallDetail(state, now);
+                final secondary = routeSummary == null || routeSummary!.isEmpty
+                    ? detail
+                    : '$detail / $routeSummary';
+                return Row(
+                  children: <Widget>[
+                    RainAvatar(
+                      name: displayName,
+                      size: 38,
+                      statusColor: accent,
+                      gender: gender,
+                    ),
+                    const SizedBox(width: 12),
+                    Expanded(
+                      child: Column(
+                        mainAxisSize: MainAxisSize.min,
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: <Widget>[
+                          Text(
+                            rainVoiceCallTitle(state, displayName),
+                            maxLines: 1,
+                            overflow: TextOverflow.ellipsis,
+                            style: Theme.of(context).textTheme.titleSmall
+                                ?.copyWith(fontWeight: FontWeight.w900),
+                          ),
+                          if (secondary.isNotEmpty) ...<Widget>[
+                            const SizedBox(height: 2),
+                            Text(
+                              secondary,
+                              maxLines: 1,
+                              overflow: TextOverflow.ellipsis,
+                              style: Theme.of(context).textTheme.bodySmall
+                                  ?.copyWith(
+                                    color: scheme.onSurface.withValues(
+                                      alpha: 0.66,
+                                    ),
+                                    fontWeight: FontWeight.w700,
+                                  ),
+                            ),
+                          ],
+                        ],
+                      ),
+                    ),
+                    IconButton.filledTonal(
+                      key: const ValueKey<String>(
+                        'rain-call-fullscreen-exit-button',
+                      ),
+                      tooltip: 'Exit fullscreen',
+                      onPressed: onExitFullscreen,
+                      icon: const Icon(Icons.fullscreen_exit),
+                    ),
+                  ],
+                );
+              },
+            ),
+          ),
+        ),
+      ),
+    );
+  }
+}
+
+class _RainFullscreenControlPanel extends StatelessWidget {
+  const _RainFullscreenControlPanel({
+    required this.state,
+    required this.onAccept,
+    required this.onReject,
+    required this.onHangUp,
+    required this.onRetry,
+    required this.onToggleMute,
+    required this.onExitFullscreen,
+    this.onToggleDeafen,
+    this.onToggleCamera,
+    this.onSwitchCamera,
+    this.onSelectOutputRoute,
+    this.controlCapabilities,
+    this.outputRouteOptions,
+  });
+
+  final VoiceCallState state;
+  final VoidCallback onAccept;
+  final VoidCallback onReject;
+  final VoidCallback onHangUp;
+  final VoidCallback onRetry;
+  final VoidCallback onToggleMute;
+  final VoidCallback onExitFullscreen;
+  final VoidCallback? onToggleDeafen;
+  final VoidCallback? onToggleCamera;
+  final VoidCallback? onSwitchCamera;
+  final ValueChanged<VoiceCallOutputRoute>? onSelectOutputRoute;
+  final List<CallControlCapability>? controlCapabilities;
+  final List<VoiceCallOutputRouteOption>? outputRouteOptions;
+
+  @override
+  Widget build(BuildContext context) {
+    final scheme = Theme.of(context).colorScheme;
+    return Align(
+      alignment: Alignment.bottomCenter,
+      child: ConstrainedBox(
+        constraints: const BoxConstraints(maxWidth: 760),
+        child: Container(
+          key: const ValueKey<String>('rain-call-fullscreen-controls'),
+          padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
+          decoration: BoxDecoration(
+            color: scheme.surface.withValues(alpha: 0.86),
+            borderRadius: BorderRadius.circular(24),
+            border: Border.all(
+              color: scheme.outlineVariant.withValues(alpha: 0.30),
+            ),
+            boxShadow: <BoxShadow>[
+              BoxShadow(
+                blurRadius: 26,
+                offset: const Offset(0, 14),
+                color: Colors.black.withValues(alpha: 0.26),
+              ),
+            ],
+          ),
+          child: Wrap(
+            alignment: WrapAlignment.center,
+            crossAxisAlignment: WrapCrossAlignment.center,
+            spacing: 10,
+            runSpacing: 8,
+            children: <Widget>[
+              RainCallControls(
+                state: state,
+                onAccept: onAccept,
+                onReject: onReject,
+                onHangUp: onHangUp,
+                onRetry: onRetry,
+                onToggleMute: onToggleMute,
+                onToggleDeafen: onToggleDeafen,
+                onToggleCamera: onToggleCamera,
+                onSwitchCamera: onSwitchCamera,
+                onSelectOutputRoute: onSelectOutputRoute,
+                controlCapabilities: controlCapabilities,
+                outputRouteOptions: outputRouteOptions,
+              ),
+              IconButton.filledTonal(
+                tooltip: 'Exit fullscreen',
+                onPressed: onExitFullscreen,
+                icon: const Icon(Icons.fullscreen_exit),
+              ),
+            ],
+          ),
         ),
       ),
     );

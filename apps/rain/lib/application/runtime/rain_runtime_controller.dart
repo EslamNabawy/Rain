@@ -612,7 +612,7 @@ class RainRuntimeController with WidgetsBindingObserver {
     if (!isOnline && !allowStalePresence) {
       if (interactive) {
         throw StateError(
-          '@$normalizedUsername is offline. Wait for them to come online before connecting.',
+          '@$normalizedUsername is offline. Keep both apps open, then try again.',
         );
       }
       return;

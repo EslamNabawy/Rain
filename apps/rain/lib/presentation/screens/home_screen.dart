@@ -614,10 +614,15 @@ class HomeScreen extends ConsumerStatefulWidget {
 
 class _HomeScreenState extends ConsumerState<HomeScreen> {
   static const double _compactBreakpoint = 860;
+  static const double _fullscreenFriendsMinWidth = 220;
+  static const double _fullscreenFriendsMaxWidth = 380;
 
   String? _selectedPeerId;
   String? _defaultOutputAppliedCallId;
   String? _lastVoiceCallLifecycleSoundKey;
+  double _fullscreenFriendsPanelWidth = 280;
+  bool _fullscreenFriendsPanelCollapsed = false;
+  bool _fullscreenFriendsPanelForcedOpen = false;
 
   @override
   Widget build(BuildContext context) {
@@ -692,6 +697,48 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
             ),
           ),
         );
+        final content = Stack(
+          children: <Widget>[
+            Positioned.fill(child: shell),
+            if (_shouldShowFullscreenCallWorkspace(callSurface, voiceCall))
+              Positioned.fill(
+                child: RainFullscreenCallWorkspace(
+                  state: voiceCall,
+                  displayName: _voiceCallDisplayName(friends, voiceCall),
+                  gender: _voiceCallGender(friends, voiceCall),
+                  videoRenderers: videoRenderers,
+                  primaryRole: callSurface.videoPrimaryRole,
+                  onToggleVideoPrimaryRole: () =>
+                      _toggleVideoPrimaryRole(voiceCall),
+                  onAccept: _acceptVoiceCall,
+                  onReject: _rejectVoiceCall,
+                  onHangUp: _hangUpVoiceCall,
+                  onRetry: () => _retryVoiceCall(voiceCall),
+                  onToggleMute: () => _toggleVoiceMute(voiceCall),
+                  onToggleDeafen: () => _toggleVoiceDeafen(voiceCall),
+                  onToggleCamera: () => _toggleVoiceCamera(voiceCall),
+                  onSwitchCamera: _switchVoiceCamera,
+                  onSelectOutputRoute: _selectVoiceOutputRoute,
+                  controlCapabilities: callControlCapabilities,
+                  outputRouteOptions: outputRouteOptions,
+                  onExitFullscreen: () =>
+                      ref.read(callSurfaceProvider.notifier).exitFullscreen(),
+                  friendsPanel: _FriendsListView(
+                    friends: friends,
+                    selectedPeerId: _selectedPeerId,
+                    onSelect: _handleFriendSelection,
+                    onRefresh: _refreshFriends,
+                  ),
+                  showFriendsPanel: !isCompact,
+                  friendsPanelCollapsed: _fullscreenFriendsPanelIsCollapsed,
+                  friendsPanelWidth: _fullscreenFriendsPanelWidth,
+                  onToggleFriendsPanel: _toggleFullscreenFriendsPanel,
+                  onResizeFriendsPanel: _resizeFullscreenFriendsPanel,
+                ),
+              ),
+          ],
+        );
+
         return PopScope<Object?>(
           canPop: !_shouldHandleSystemBack(callSurface, isCompact),
           onPopInvokedWithResult: (bool didPop, Object? result) {
@@ -702,7 +749,7 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
           },
           child: _wrapFullscreenEscapeHandler(
             callSurface: callSurface,
-            child: shell,
+            child: content,
           ),
         );
       },
@@ -762,6 +809,8 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
       children: <Widget>[
         Positioned.fill(child: body),
         if (callSurface.showsMediaSurface &&
+            !(callSurface.mode == CallSurfaceMode.fullscreen &&
+                voiceCall.isVideo) &&
             voiceCall.phase != VoiceCallPhase.idle)
           Positioned.fill(
             left: isCompact ? 0 : 321,
@@ -789,6 +838,8 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
                   _toggleVideoPrimaryRole(voiceCall),
               onFullscreen: () =>
                   ref.read(callSurfaceProvider.notifier).enterFullscreen(),
+              onExitFullscreen: () =>
+                  ref.read(callSurfaceProvider.notifier).exitFullscreen(),
               onMoveFloating:
                   (
                     Offset delta,
@@ -838,6 +889,45 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
           ),
       ],
     );
+  }
+
+  bool _shouldShowFullscreenCallWorkspace(
+    CallSurfaceState surface,
+    VoiceCallState voiceCall,
+  ) {
+    return surface.mode == CallSurfaceMode.fullscreen &&
+        voiceCall.phase != VoiceCallPhase.idle &&
+        voiceCall.isVideo;
+  }
+
+  bool get _fullscreenFriendsPanelIsCollapsed {
+    if (_fullscreenFriendsPanelForcedOpen) {
+      return false;
+    }
+    return _fullscreenFriendsPanelCollapsed || _selectedPeerId != null;
+  }
+
+  void _toggleFullscreenFriendsPanel() {
+    setState(() {
+      if (_fullscreenFriendsPanelIsCollapsed) {
+        _fullscreenFriendsPanelCollapsed = false;
+        _fullscreenFriendsPanelForcedOpen = true;
+      } else {
+        _fullscreenFriendsPanelCollapsed = true;
+        _fullscreenFriendsPanelForcedOpen = false;
+      }
+    });
+  }
+
+  void _resizeFullscreenFriendsPanel(double delta) {
+    if (delta == 0) {
+      return;
+    }
+    setState(() {
+      _fullscreenFriendsPanelWidth = (_fullscreenFriendsPanelWidth + delta)
+          .clamp(_fullscreenFriendsMinWidth, _fullscreenFriendsMaxWidth)
+          .toDouble();
+    });
   }
 
   void _toggleCallSurfacePanel(CallSurfaceState surface) {
@@ -903,7 +993,10 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
   }
 
   Future<void> _handleFriendSelection(FriendRecord friend) async {
-    setState(() => _selectedPeerId = friend.username);
+    setState(() {
+      _selectedPeerId = friend.username;
+      _fullscreenFriendsPanelForcedOpen = false;
+    });
     await ref.read(messagesProvider(friend.username).notifier).markRead();
   }
 

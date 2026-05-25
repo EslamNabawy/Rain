@@ -61,6 +61,7 @@ class _ChatPanelState extends ConsumerState<_ChatPanel> {
     final canConnectNow =
         runtime != null &&
         canChat &&
+        isPeerOnline &&
         !connectionStatus.isBusy &&
         !connectionStatus.isConnected;
     final canDisconnectNow =
@@ -1389,6 +1390,12 @@ class _ChatPanelState extends ConsumerState<_ChatPanel> {
       _showErrorSnack(networkError);
       return;
     }
+    final offlineError = _offlineConnectError();
+    if (offlineError != null) {
+      _dispatchWarningSound('chat.peer.offline_blocked');
+      _showErrorSnack(offlineError);
+      return;
+    }
     setState(() => _isConnecting = true);
     try {
       await ref
@@ -1439,5 +1446,16 @@ class _ChatPanelState extends ConsumerState<_ChatPanel> {
     return status != null && status.blocksNetworkActions
         ? status.actionErrorMessage
         : null;
+  }
+
+  String? _offlineConnectError() {
+    final friend = _currentFriend(ref.read(friendsProvider));
+    if (friend == null || friend.state != FriendState.friend) {
+      return null;
+    }
+    if (friend.isOnline) {
+      return null;
+    }
+    return '@${friend.username} is offline. Keep both apps open, then try again.';
   }
 }

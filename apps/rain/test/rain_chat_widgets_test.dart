@@ -1629,6 +1629,62 @@ void main() {
       find.byKey(const ValueKey<String>('rain-call-local-video-placeholder')),
       findsOneWidget,
     );
+    expect(
+      find.byKey(const ValueKey<String>('rain-call-fullscreen-controls')),
+      findsOneWidget,
+    );
+    expect(
+      find.byKey(const ValueKey<String>('rain-call-fullscreen-status-strip')),
+      findsOneWidget,
+    );
+  });
+
+  testWidgets('fullscreen call workspace can show and collapse friends panel', (
+    WidgetTester tester,
+  ) async {
+    var collapsed = false;
+
+    Future<void> pumpWorkspace() async {
+      await tester.pumpWidget(
+        MaterialApp(
+          home: Scaffold(
+            body: RainFullscreenCallWorkspace(
+              state: _activeVoiceCall(mediaMode: CallMediaMode.video),
+              displayName: 'Bob',
+              primaryRole: VideoPrimaryRole.remote,
+              onAccept: () {},
+              onReject: () {},
+              onHangUp: () {},
+              onRetry: () {},
+              onToggleMute: () {},
+              onExitFullscreen: () {},
+              showFriendsPanel: true,
+              friendsPanelCollapsed: collapsed,
+              friendsPanel: const Center(child: Text('Friend list lives here')),
+              onToggleFriendsPanel: () {
+                collapsed = !collapsed;
+              },
+            ),
+          ),
+        ),
+      );
+    }
+
+    await pumpWorkspace();
+
+    expect(
+      find.byKey(const ValueKey<String>('rain-call-fullscreen-friends-panel')),
+      findsOneWidget,
+    );
+    expect(find.text('Friend list lives here'), findsOneWidget);
+
+    await tester.tap(
+      find.byKey(const ValueKey<String>('rain-call-fullscreen-sidebar-toggle')),
+    );
+    await pumpWorkspace();
+
+    expect(find.text('Friend list lives here'), findsNothing);
+    expect(find.text('Friends'), findsOneWidget);
   });
 
   testWidgets('video fullscreen overlay respects the Android status area', (

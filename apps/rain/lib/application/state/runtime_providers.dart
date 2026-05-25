@@ -393,6 +393,7 @@ class ConnectionsController extends Notifier<ConnectionsState> {
     String peerId, {
     bool waitForConnected = false,
     bool manualRetry = false,
+    bool allowStalePresence = false,
   }) async {
     assertNetworkReady(ref);
     final runtime = _requireRuntime();
@@ -412,7 +413,7 @@ class ConnectionsController extends Notifier<ConnectionsState> {
         peerId,
         interactive: true,
         waitForConnected: waitForConnected,
-        allowStalePresence: manualRetry,
+        allowStalePresence: allowStalePresence,
         bypassRetryBackoff: manualRetry,
       );
       syncPeer(peerId);
