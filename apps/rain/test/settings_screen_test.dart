@@ -40,6 +40,10 @@ void main() {
     await tester.pumpSettingsScreen(harness: harness);
 
     expect(find.text('Microphone'), findsOneWidget);
+    expect(
+      find.text('Default microphone. Applies to the next call.'),
+      findsOneWidget,
+    );
     expect(find.text('Test microphone'), findsOneWidget);
     expect(find.text('Default call output'), findsOneWidget);
     expect(find.text('System default'), findsOneWidget);
@@ -169,14 +173,55 @@ void main() {
       await tester.pumpSettingsFrame();
 
       expect(find.text('Built-in microphone'), findsOneWidget);
+      expect(find.text('Wired headset mic'), findsOneWidget);
       expect(find.text('USB-C Wired Headset Microphone'), findsOneWidget);
 
-      await tester.tap(find.text('USB-C Wired Headset Microphone').last);
+      await tester.tap(find.text('Wired headset mic').last);
       await tester.pumpSettingsFrame();
 
       expect(
         await AppSettingsStore().loadSelectedMicrophoneDeviceId(),
         'wired-headset-mic',
+      );
+    },
+  );
+
+  testWidgets(
+    'settings keeps unavailable selected microphone visible until changed',
+    (WidgetTester tester) async {
+      await AppSettingsStore().setSelectedMicrophoneDeviceId('missing-mic');
+      final harness = _SettingsHarness(
+        platformBridge: _FakePlatformBridge()
+          ..devices = <MediaDeviceInfo>[
+            MediaDeviceInfo(
+              deviceId: 'default-mic',
+              label: 'Default mic',
+              kind: 'audioinput',
+            ),
+          ],
+      );
+      addTearDown(harness.dispose);
+
+      await tester.pumpSettingsScreen(harness: harness);
+
+      expect(
+        find.text('Selected microphone unavailable. Using default.'),
+        findsOneWidget,
+      );
+
+      await tester.tap(find.byTooltip('Choose microphone'));
+      await tester.pumpSettingsFrame();
+
+      expect(find.text('Selected microphone unavailable'), findsOneWidget);
+      expect(find.text('Using default'), findsOneWidget);
+
+      await tester.tap(find.text('Default microphone').first);
+      await tester.pumpSettingsFrame();
+
+      expect(await AppSettingsStore().loadSelectedMicrophoneDeviceId(), isNull);
+      expect(
+        find.text('Default microphone. Applies to the next call.'),
+        findsOneWidget,
       );
     },
   );

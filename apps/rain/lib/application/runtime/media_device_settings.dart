@@ -137,10 +137,45 @@ final class RainMediaDevice {
 
   String displayLabel(int index) {
     final normalized = label.trim();
+    if (isAudioInput) {
+      return _audioInputDisplayLabel(normalized, index);
+    }
     if (normalized.isNotEmpty) {
       return normalized;
     }
     return '${typedKind.fallbackLabel} ${index + 1}';
+  }
+
+  String? displayDetailLabel(int index) {
+    final normalized = label.trim();
+    if (normalized.isEmpty) {
+      return null;
+    }
+    final display = displayLabel(index);
+    return display == normalized ? null : normalized;
+  }
+
+  String _audioInputDisplayLabel(String normalized, int index) {
+    if (normalized.isEmpty) {
+      return '${typedKind.fallbackLabel} ${index + 1}';
+    }
+    final tokens = _labelTokens(normalized);
+    if (_hasAnyToken(tokens, _defaultAudioInputTokens)) {
+      return 'Default microphone';
+    }
+    if (_hasAnyToken(tokens, _bluetoothAudioTokens)) {
+      return 'Bluetooth mic';
+    }
+    if (_hasAnyToken(tokens, _wiredHeadsetAudioTokens)) {
+      return 'Wired headset mic';
+    }
+    if (_hasAnyToken(tokens, _usbAudioTokens)) {
+      return 'USB microphone';
+    }
+    if (_hasAnyToken(tokens, _builtInAudioInputTokens)) {
+      return 'Built-in microphone';
+    }
+    return normalized;
   }
 }
 
@@ -545,6 +580,28 @@ const Set<String> _wiredAudioTokens = <String>{
   'jack',
   'usb',
   'wired',
+};
+
+const Set<String> _defaultAudioInputTokens = <String>{'default'};
+
+const Set<String> _wiredHeadsetAudioTokens = <String>{
+  'cable',
+  'earphones',
+  'earpods',
+  'headphones',
+  'headset',
+  'jack',
+  'wired',
+};
+
+const Set<String> _usbAudioTokens = <String>{'usb', 'usbc'};
+
+const Set<String> _builtInAudioInputTokens = <String>{
+  'array',
+  'built',
+  'builtin',
+  'integrated',
+  'internal',
 };
 
 const Set<String> _headsetAudioTokens = <String>{

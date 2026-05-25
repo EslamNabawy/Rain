@@ -1135,16 +1135,32 @@ class RainMicrophoneSelector extends StatelessWidget {
           ),
           PopupMenuButton<String>(
             tooltip: 'Choose microphone',
-            enabled: !isBusy && state.devices.isNotEmpty,
+            enabled:
+                !isBusy &&
+                (state.devices.isNotEmpty || state.hasMissingSelection),
             onSelected: (String value) =>
                 onSelected(value == _defaultMicrophoneMenuValue ? null : value),
             itemBuilder: (BuildContext context) {
               return <PopupMenuEntry<String>>[
+                if (state.hasMissingSelection)
+                  const PopupMenuItem<String>(
+                    enabled: false,
+                    child: _RainDeviceMenuRow(
+                      label: 'Selected microphone unavailable',
+                      subtitle: 'Using default',
+                      selected: true,
+                      warning: true,
+                    ),
+                  ),
+                if (state.hasMissingSelection) const PopupMenuDivider(),
                 PopupMenuItem<String>(
                   value: _defaultMicrophoneMenuValue,
                   child: _RainDeviceMenuRow(
                     label: 'Default microphone',
-                    selected: state.selectedDeviceId == null,
+                    subtitle: 'Applies to the next call.',
+                    selected:
+                        state.selectedDeviceId == null &&
+                        !state.hasMissingSelection,
                   ),
                 ),
                 for (var index = 0; index < state.devices.length; index += 1)
@@ -1152,6 +1168,7 @@ class RainMicrophoneSelector extends StatelessWidget {
                     value: state.devices[index].deviceId,
                     child: _RainDeviceMenuRow(
                       label: state.devices[index].displayLabel(index),
+                      subtitle: state.devices[index].displayDetailLabel(index),
                       selected:
                           state.selectedDeviceId ==
                           state.devices[index].deviceId,
@@ -1175,10 +1192,10 @@ class RainMicrophoneSelector extends StatelessWidget {
     if (selected == null) {
       return state.devices.isEmpty
           ? 'No microphones found.'
-          : 'Default microphone. Applies to next call.';
+          : 'Default microphone. Applies to the next call.';
     }
     final index = state.devices.indexOf(selected);
-    return '${selected.displayLabel(index)}. Applies to next call.';
+    return '${selected.displayLabel(index)}. Applies to the next call.';
   }
 }
 
@@ -1281,18 +1298,26 @@ class RainCameraSelector extends StatelessWidget {
 }
 
 class _RainDeviceMenuRow extends StatelessWidget {
-  const _RainDeviceMenuRow({required this.label, required this.selected});
+  const _RainDeviceMenuRow({
+    required this.label,
+    required this.selected,
+    this.subtitle,
+    this.warning = false,
+  });
 
   final String label;
   final bool selected;
+  final String? subtitle;
+  final bool warning;
 
   @override
   Widget build(BuildContext context) {
     final scheme = Theme.of(context).colorScheme;
+    final subtitle = this.subtitle;
     return RainRippleHaloSurface(
       enabled: selected,
       borderRadius: BorderRadius.circular(12),
-      color: scheme.primary,
+      color: warning ? scheme.error : scheme.primary,
       origin: Alignment.centerLeft,
       pulseKey: label,
       pulseOnMount: selected,
@@ -1301,13 +1326,36 @@ class _RainDeviceMenuRow extends StatelessWidget {
         child: Row(
           children: <Widget>[
             Icon(
-              selected ? Icons.check_circle : Icons.circle_outlined,
+              warning
+                  ? Icons.error_outline
+                  : selected
+                  ? Icons.check_circle
+                  : Icons.circle_outlined,
               size: 20,
-              color: selected ? scheme.primary : null,
+              color: warning
+                  ? scheme.error
+                  : selected
+                  ? scheme.primary
+                  : null,
             ),
             const SizedBox(width: 10),
             Flexible(
-              child: Text(label, maxLines: 1, overflow: TextOverflow.ellipsis),
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                mainAxisSize: MainAxisSize.min,
+                children: <Widget>[
+                  Text(label, maxLines: 1, overflow: TextOverflow.ellipsis),
+                  if (subtitle != null)
+                    Text(
+                      subtitle,
+                      maxLines: 1,
+                      overflow: TextOverflow.ellipsis,
+                      style: Theme.of(context).textTheme.bodySmall?.copyWith(
+                        color: warning ? scheme.error : scheme.onSurfaceVariant,
+                      ),
+                    ),
+                ],
+              ),
             ),
           ],
         ),

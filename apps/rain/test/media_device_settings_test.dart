@@ -108,6 +108,21 @@ void main() {
       label: 'USB-C Wired Headset Microphone',
       kind: audioInputDeviceKind,
     );
+    const bluetoothInput = RainMediaDevice(
+      deviceId: 'buds-mic',
+      label: 'Galaxy Buds2 Bluetooth Microphone',
+      kind: audioInputDeviceKind,
+    );
+    const usbInput = RainMediaDevice(
+      deviceId: 'usb-table-mic',
+      label: 'USB Studio Microphone',
+      kind: audioInputDeviceKind,
+    );
+    const defaultInput = RainMediaDevice(
+      deviceId: 'default-mic',
+      label: 'Default mic',
+      kind: audioInputDeviceKind,
+    );
     const hiddenLabelInput = RainMediaDevice(
       deviceId: 'default-mic',
       label: '',
@@ -120,7 +135,14 @@ void main() {
     expect(wiredOutput.isBluetoothAudioOutput, isFalse);
     expect(wiredInput.isWiredAudioInput, isTrue);
     expect(wiredInput.isHeadsetAudioInput, isTrue);
+    expect(wiredInput.displayLabel(0), 'Wired headset mic');
+    expect(wiredInput.displayDetailLabel(0), 'USB-C Wired Headset Microphone');
+    expect(bluetoothInput.isBluetoothAudioInput, isTrue);
+    expect(bluetoothInput.displayLabel(0), 'Bluetooth mic');
+    expect(usbInput.displayLabel(0), 'USB microphone');
+    expect(defaultInput.displayLabel(0), 'Default microphone');
     expect(hiddenLabelInput.isHeadsetAudioInput, isFalse);
+    expect(hiddenLabelInput.displayLabel(0), 'Microphone 1');
   });
 
   test(
