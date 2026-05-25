@@ -9,6 +9,7 @@ import 'package:protocol_brain/protocol_brain.dart';
 import 'package:rain_core/rain_core.dart';
 
 import 'connection_attempt_coordinator.dart';
+import 'app_exit_coordinator.dart';
 import 'file_transfer_progress_batcher.dart';
 import 'runtime_interaction_guard.dart';
 import 'serialized_runtime_mutations.dart';
@@ -152,6 +153,7 @@ class RainRuntimeController with WidgetsBindingObserver {
   Timer? _backgroundOfflineTimer;
   bool _started = false;
   bool _shutDown = false;
+  Future<void>? _shutdownFuture;
   final SerializedRuntimeMutations _localMutations =
       SerializedRuntimeMutations();
 
@@ -794,6 +796,14 @@ class RainRuntimeController with WidgetsBindingObserver {
     );
   }
 
+  Future<void> closeForAppExit(AppExitReason reason) async {
+    await _shutdown(
+      markOffline: true,
+      signOut: false,
+      clearLocalSession: false,
+    );
+  }
+
   Future<void> logOut() async {
     await _shutdown(markOffline: true, signOut: true, clearLocalSession: true);
   }
@@ -1211,13 +1221,7 @@ class RainRuntimeController with WidgetsBindingObserver {
         break;
       case AppLifecycleState.detached:
         _backgroundOfflineTimer?.cancel();
-        unawaited(
-          _shutdown(
-            markOffline: true,
-            signOut: false,
-            clearLocalSession: false,
-          ),
-        );
+        unawaited(closeForAppExit(AppExitReason.lifecycleDetached));
         break;
     }
   }
@@ -1227,10 +1231,26 @@ class RainRuntimeController with WidgetsBindingObserver {
     required bool signOut,
     required bool clearLocalSession,
   }) async {
-    if (_shutDown) {
+    final existing = _shutdownFuture;
+    if (existing != null) {
+      await existing;
       return;
     }
     _shutDown = true;
+    final shutdownFuture = _runShutdown(
+      markOffline: markOffline,
+      signOut: signOut,
+      clearLocalSession: clearLocalSession,
+    );
+    _shutdownFuture = shutdownFuture;
+    await shutdownFuture;
+  }
+
+  Future<void> _runShutdown({
+    required bool markOffline,
+    required bool signOut,
+    required bool clearLocalSession,
+  }) async {
     const keepBackgroundPresence = false;
 
     final activeVoicePeer = _voiceCallState.peerId;

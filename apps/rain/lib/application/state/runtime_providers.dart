@@ -6,6 +6,7 @@ import 'package:protocol_brain/protocol_brain.dart';
 import 'package:rain_core/rain_core.dart';
 
 import 'package:rain/application/runtime/rain_runtime_controller.dart';
+import 'package:rain/application/runtime/app_exit_coordinator.dart';
 import 'package:rain/application/runtime/video_call_renderers.dart';
 import 'package:rain/application/runtime/voice_call_state.dart';
 import 'package:rain/infrastructure/services/app_settings_store.dart';
@@ -214,7 +215,11 @@ class RuntimeController extends AsyncNotifier<RainRuntimeController?> {
       errorRecorder: ref.watch(crashDiagnosticsServiceProvider).recordErrorSync,
     );
 
+    final exitRegistration = AppExitCoordinator.instance.register(
+      controller.closeForAppExit,
+    );
     ref.onDispose(() {
+      exitRegistration.unregister();
       unawaited(controller.dispose());
     });
 

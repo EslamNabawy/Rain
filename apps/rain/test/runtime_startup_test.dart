@@ -8,6 +8,7 @@ import 'package:rain/core/config/app_environment.dart';
 import 'package:rain/main.dart' as rain_app;
 import 'package:protocol_brain/protocol_brain.dart';
 import 'package:rain/infrastructure/signaling/noop_signaling_adapter.dart';
+import 'package:rain/application/runtime/app_exit_coordinator.dart';
 import 'package:rain/application/runtime/rain_runtime_controller.dart';
 import 'package:rain_core/rain_core.dart';
 
@@ -357,6 +358,76 @@ void main() {
       expect(adapter.presenceWrites.last, isFalse);
     },
   );
+
+  test('runtime app exit shutdown is idempotent', () async {
+    final db = RainDatabase(NativeDatabase.memory());
+    addTearDown(db.close);
+    const identity = RainIdentity(
+      username: 'alice',
+      displayName: 'Alice',
+      createdAt: 0,
+      gender: RainGender.female,
+    );
+    final adapter = _RecordingPresenceAdapter();
+    final runtime = RainRuntimeController(
+      selfIdentity: identity,
+      adapter: adapter,
+      brain: null,
+      database: db,
+      friendStore: FriendStore(db),
+      messageStore: MessageStore(db),
+      offlineQueueStore: OfflineQueueStore(db),
+      messageDeliveryService: MessageDeliveryService(
+        messageStore: MessageStore(db),
+        offlineQueueStore: OfflineQueueStore(db),
+      ),
+      friendRequestRefreshInterval: Duration.zero,
+    );
+    addTearDown(runtime.dispose);
+
+    await runtime.start();
+    await Future.wait(<Future<void>>[
+      runtime.closeForAppExit(AppExitReason.windowClose),
+      runtime.closeForAppExit(AppExitReason.windowClose),
+    ]);
+
+    expect(adapter.presenceWrites, <bool>[true, false]);
+  });
+
+  test('runtime ignores network recovery after app exit shutdown', () async {
+    final db = RainDatabase(NativeDatabase.memory());
+    addTearDown(db.close);
+    const identity = RainIdentity(
+      username: 'alice',
+      displayName: 'Alice',
+      createdAt: 0,
+      gender: RainGender.female,
+    );
+    final adapter = _RecordingPresenceAdapter();
+    final runtime = RainRuntimeController(
+      selfIdentity: identity,
+      adapter: adapter,
+      brain: null,
+      database: db,
+      friendStore: FriendStore(db),
+      messageStore: MessageStore(db),
+      offlineQueueStore: OfflineQueueStore(db),
+      messageDeliveryService: MessageDeliveryService(
+        messageStore: MessageStore(db),
+        offlineQueueStore: OfflineQueueStore(db),
+      ),
+      friendRequestRefreshInterval: Duration.zero,
+    );
+    addTearDown(runtime.dispose);
+
+    await runtime.start();
+    await runtime.closeForAppExit(AppExitReason.windowClose);
+    adapter.presenceWrites.clear();
+
+    await runtime.handleNetworkAvailable('network restored after close');
+
+    expect(adapter.presenceWrites, isEmpty);
+  });
 
   test('desktop shell close policy exits instead of hiding to tray', () {
     final source = File(
