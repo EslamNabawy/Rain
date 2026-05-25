@@ -311,7 +311,10 @@ void main() {
   test(
     'selected microphone test captures and disposes a short stream',
     () async {
-      final stream = _FakeMediaStream('stream-1', _FakeMediaTrack('track-1'));
+      final stream = _FakeMediaStream(
+        'stream-1',
+        _FakeMediaTrack('track-1', 'audio'),
+      );
       final platform = _FakePlatformBridge()
         ..devices = <MediaDeviceInfo>[
           MediaDeviceInfo(
@@ -384,12 +387,91 @@ void main() {
     );
     expect(platform.userMediaConstraints, hasLength(1));
   });
+
+  test('startup permission warmup probes microphone and camera once', () async {
+    final audioStream = _FakeMediaStream(
+      'audio-stream',
+      _FakeMediaTrack('audio-track', 'audio'),
+    );
+    final videoStream = _FakeMediaStream(
+      'video-stream',
+      _FakeMediaTrack('unused-audio-track', 'audio'),
+      _FakeMediaTrack('video-track', 'video'),
+    );
+    final platform = _FakePlatformBridge()
+      ..userMediaStreams.addAll(<_FakeMediaStream>[audioStream, videoStream]);
+    final store = AppSettingsStore();
+    final service = MediaDeviceSettings(
+      platformBridge: platform,
+      settingsStore: store,
+    );
+
+    final result = await service.warmUpStartupCallPermissions();
+
+    expect(result.microphoneReady, isTrue);
+    expect(result.cameraReady, isTrue);
+    expect(await store.loadStartupMicrophoneWarmupCompleted(), isTrue);
+    expect(await store.loadStartupCameraWarmupCompleted(), isTrue);
+    expect(platform.userMediaConstraints, hasLength(2));
+    expect(platform.userMediaConstraints[0]['video'], isFalse);
+    expect(platform.userMediaConstraints[0]['audio'], isA<Map>());
+    expect(platform.userMediaConstraints[1], <String, dynamic>{
+      'audio': false,
+      'video': true,
+    });
+    expect(audioStream.audioTrack.stopped, isTrue);
+    expect(videoStream.videoTrack?.stopped, isTrue);
+
+    platform.userMediaConstraints.clear();
+    await service.warmUpStartupCallPermissions();
+
+    expect(platform.userMediaConstraints, isEmpty);
+  });
+
+  test(
+    'startup permission warmup records partial failures without skipping camera',
+    () async {
+      final videoStream = _FakeMediaStream(
+        'video-stream',
+        _FakeMediaTrack('unused-audio-track', 'audio'),
+        _FakeMediaTrack('video-track', 'video'),
+      );
+      final platform = _FakePlatformBridge()
+        ..userMediaErrors.add(StateError('Microphone permission denied'))
+        ..userMediaStreams.add(videoStream);
+      final store = AppSettingsStore();
+      final service = MediaDeviceSettings(
+        platformBridge: platform,
+        settingsStore: store,
+      );
+
+      await expectLater(
+        service.warmUpStartupCallPermissions(),
+        throwsA(
+          isA<StartupMediaPermissionWarmupException>()
+              .having(
+                (error) => error.microphoneError,
+                'microphoneError',
+                isA<StateError>(),
+              )
+              .having((error) => error.cameraError, 'cameraError', isNull),
+        ),
+      );
+
+      expect(platform.userMediaConstraints, hasLength(2));
+      expect(await store.loadStartupMicrophoneWarmupCompleted(), isFalse);
+      expect(await store.loadStartupCameraWarmupCompleted(), isTrue);
+      expect(videoStream.videoTrack?.stopped, isTrue);
+    },
+  );
 }
 
 class _FakePlatformBridge implements PlatformBridge {
   List<MediaDeviceInfo> devices = const <MediaDeviceInfo>[];
   final List<Map<String, dynamic>> userMediaConstraints =
       <Map<String, dynamic>>[];
+  final List<_FakeMediaStream> userMediaStreams = <_FakeMediaStream>[];
+  final List<Object> userMediaErrors = <Object>[];
   _FakeMediaStream? userMediaStream;
   Object? userMediaError;
 
@@ -413,12 +495,21 @@ class _FakePlatformBridge implements PlatformBridge {
   @override
   Future<MediaStream> getUserMedia(Map<String, dynamic> constraints) async {
     userMediaConstraints.add(constraints);
+    if (userMediaErrors.isNotEmpty) {
+      throw userMediaErrors.removeAt(0);
+    }
     final error = userMediaError;
     if (error != null) {
       throw error;
     }
+    if (userMediaStreams.isNotEmpty) {
+      return userMediaStreams.removeAt(0);
+    }
     return userMediaStream ??
-        _FakeMediaStream('stream-default', _FakeMediaTrack('track-default'));
+        _FakeMediaStream(
+          'stream-default',
+          _FakeMediaTrack('track-default', 'audio'),
+        );
   }
 
   @override
@@ -453,10 +544,11 @@ class _FakePlatformBridge implements PlatformBridge {
 }
 
 class _FakeMediaStream extends Fake implements MediaStream {
-  _FakeMediaStream(this._id, this.audioTrack);
+  _FakeMediaStream(this._id, this.audioTrack, [this.videoTrack]);
 
   final String _id;
   final _FakeMediaTrack audioTrack;
+  final _FakeMediaTrack? videoTrack;
   bool disposed = false;
 
   @override
@@ -466,10 +558,13 @@ class _FakeMediaStream extends Fake implements MediaStream {
   List<MediaStreamTrack> getAudioTracks() => <MediaStreamTrack>[audioTrack];
 
   @override
-  List<MediaStreamTrack> getTracks() => <MediaStreamTrack>[audioTrack];
+  List<MediaStreamTrack> getTracks() => <MediaStreamTrack>[
+    audioTrack,
+    ?videoTrack,
+  ];
 
   @override
-  List<MediaStreamTrack> getVideoTracks() => const <MediaStreamTrack>[];
+  List<MediaStreamTrack> getVideoTracks() => <MediaStreamTrack>[?videoTrack];
 
   @override
   Future<void> dispose() async {
@@ -478,16 +573,17 @@ class _FakeMediaStream extends Fake implements MediaStream {
 }
 
 class _FakeMediaTrack extends Fake implements MediaStreamTrack {
-  _FakeMediaTrack(this._id);
+  _FakeMediaTrack(this._id, this._kind);
 
   final String _id;
+  final String _kind;
   bool stopped = false;
 
   @override
   String? get id => _id;
 
   @override
-  String? get kind => 'audio';
+  String? get kind => _kind;
 
   @override
   Future<void> stop() async {

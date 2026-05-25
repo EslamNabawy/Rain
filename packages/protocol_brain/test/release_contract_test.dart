@@ -501,6 +501,20 @@ void main() {
     expect(workflow, contains('lib/arm64-v8a/libjingle_peerconnection_so.so'));
   });
 
+  test('Android launch background does not show old launcher icon splash', () {
+    for (final path in const <String>[
+      'apps/rain/android/app/src/main/res/drawable/launch_background.xml',
+      'apps/rain/android/app/src/main/res/drawable-v21/launch_background.xml',
+    ]) {
+      final xml = _repoFile(path);
+
+      expect(xml, contains('#061017'));
+      expect(xml, isNot(contains('@mipmap/ic_launcher')));
+      expect(xml, isNot(contains('<bitmap')));
+      expect(xml, isNot(contains('android:src')));
+    }
+  });
+
   test('manual voice gate requires real Android and Windows evidence', () {
     final gate = _repoFile('docs/qa/voice-call-manual-device-gate.md');
     final blockedRecord = _repoFile(

@@ -983,6 +983,14 @@ class FirebaseEmulatorSignalingAdapter
       return true;
     }
 
+    if (!room.isTerminal &&
+        room.status != VoiceCallSignalingStatus.connected &&
+        lock.caller == normalizeVoiceCallUsername(caller)) {
+      await _delete(<String>['activeVoicePairs', pairId]);
+      await _deleteVoiceCallRoomArtifacts(room);
+      return true;
+    }
+
     final setupExpired =
         room.status != VoiceCallSignalingStatus.connected &&
         room.expiresAt <= createdAt;

@@ -561,9 +561,8 @@ extension VoiceCallRuntime on RainRuntimeController {
     }
 
     if (current.phase == VoiceCallPhase.failed) {
-      if (current.isOutgoing && current.peerId == normalizedPeerId) {
-        return _IncomingVoiceInviteDisposition.busy;
-      }
+      await _disposeCurrentVoiceCallSession();
+      _setVoiceCallState(const VoiceCallState.idle());
       return _IncomingVoiceInviteDisposition.accept;
     }
 

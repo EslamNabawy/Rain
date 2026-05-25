@@ -331,7 +331,8 @@ class FirebaseSignalingAdapter
       return false;
     }
 
-    if (room != null && _shouldDeleteReclaimedVoiceRoom(room, createdAt, now)) {
+    if (room != null &&
+        _shouldDeleteReclaimedVoiceRoom(room, createdAt, now, caller: caller)) {
       try {
         await _deleteVoiceCallRoomArtifacts(room);
       } catch (_) {
@@ -375,6 +376,11 @@ class FirebaseSignalingAdapter
       return createdAt - lock.updatedAt >= _orphanVoiceLockGraceMs ||
           now - lock.updatedAt >= _orphanVoiceLockGraceMs;
     }
+    if (!room.isTerminal &&
+        room.status != VoiceCallSignalingStatus.connected &&
+        lock.caller == normalizeVoiceCallUsername(caller)) {
+      return true;
+    }
     if (room.isTerminal) {
       return true;
     }
@@ -385,9 +391,14 @@ class FirebaseSignalingAdapter
   bool _shouldDeleteReclaimedVoiceRoom(
     VoiceCallRoom room,
     int createdAt,
-    int now,
-  ) {
+    int now, {
+    required String caller,
+  }) {
     if (room.isTerminal) {
+      return true;
+    }
+    if (room.status != VoiceCallSignalingStatus.connected &&
+        room.caller == normalizeVoiceCallUsername(caller)) {
       return true;
     }
     return room.status != VoiceCallSignalingStatus.connected &&

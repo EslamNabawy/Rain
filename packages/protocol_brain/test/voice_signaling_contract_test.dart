@@ -158,6 +158,62 @@ void main() {
     expect(adapter.inboxFor('bob').single.callId, 'call-2');
   });
 
+  test('fake adapter reclaims caller-owned setup room immediately', () async {
+    final adapter = FakeVoiceSignalingAdapter();
+    addTearDown(adapter.dispose);
+
+    await adapter.createOutgoingCall(
+      callId: 'call-1',
+      caller: 'alice',
+      callee: 'bob',
+      createdAt: 1000,
+      expiresAt: 61000,
+    );
+
+    final room = await adapter.createOutgoingCall(
+      callId: 'call-2',
+      caller: 'alice',
+      callee: 'bob',
+      createdAt: 1001,
+      expiresAt: 61001,
+    );
+
+    expect(room.callId, 'call-2');
+    expect(adapter.activePairLocks['alice:bob']?.callId, 'call-2');
+    expect(adapter.rooms.keys, isNot(contains('call-1')));
+    expect(adapter.rooms.keys, contains('call-2'));
+    expect(adapter.inboxFor('bob').single.callId, 'call-2');
+  });
+
+  test('fake adapter does not let opposite caller steal setup room', () async {
+    final adapter = FakeVoiceSignalingAdapter();
+    addTearDown(adapter.dispose);
+
+    await adapter.createOutgoingCall(
+      callId: 'call-1',
+      caller: 'alice',
+      callee: 'bob',
+      createdAt: 1000,
+      expiresAt: 61000,
+    );
+
+    await expectLater(
+      adapter.createOutgoingCall(
+        callId: 'call-2',
+        caller: 'bob',
+        callee: 'alice',
+        createdAt: 1001,
+        expiresAt: 61001,
+      ),
+      throwsA(isA<VoiceSignalingException>()),
+    );
+
+    expect(adapter.activePairLocks['alice:bob']?.callId, 'call-1');
+    expect(adapter.rooms.keys, contains('call-1'));
+    expect(adapter.rooms.keys, isNot(contains('call-2')));
+    expect(adapter.inboxFor('bob').single.callId, 'call-1');
+  });
+
   test('fake adapter does not let callee steal fresh orphan lock', () async {
     final adapter = FakeVoiceSignalingAdapter();
     addTearDown(adapter.dispose);

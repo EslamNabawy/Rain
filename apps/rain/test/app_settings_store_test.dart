@@ -55,6 +55,25 @@ void main() {
     expect(await store.loadSelectedVideoInputDeviceId(), isNull);
   });
 
+  test('startup media permission warmup flags persist locally', () async {
+    final store = AppSettingsStore();
+
+    expect(await store.loadStartupMicrophoneWarmupCompleted(), isFalse);
+    expect(await store.loadStartupCameraWarmupCompleted(), isFalse);
+
+    await store.setStartupMicrophoneWarmupCompleted(true);
+    await store.setStartupCameraWarmupCompleted(true);
+
+    expect(await store.loadStartupMicrophoneWarmupCompleted(), isTrue);
+    expect(await store.loadStartupCameraWarmupCompleted(), isTrue);
+
+    await store.setStartupMicrophoneWarmupCompleted(false);
+    await store.setStartupCameraWarmupCompleted(false);
+
+    expect(await store.loadStartupMicrophoneWarmupCompleted(), isFalse);
+    expect(await store.loadStartupCameraWarmupCompleted(), isFalse);
+  });
+
   test('audio settings load defaults', () async {
     final store = AppSettingsStore();
 

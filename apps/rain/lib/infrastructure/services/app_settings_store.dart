@@ -56,6 +56,10 @@ class AppSettingsStore {
       'selected_microphone_device_id';
   static const String _selectedVideoInputDeviceIdKey =
       'selected_video_input_device_id';
+  static const String _startupMicrophoneWarmupCompletedKey =
+      'startup_microphone_warmup_completed';
+  static const String _startupCameraWarmupCompletedKey =
+      'startup_camera_warmup_completed';
   static const String _soundEffectsEnabledKey = 'sound_effects_enabled';
   static const String _soundEffectsVolumeKey = 'sound_effects_volume';
   static const String _callSoundsEnabledKey = 'call_sounds_enabled';
@@ -118,6 +122,24 @@ class AppSettingsStore {
       return;
     }
     await _preferences.setString(_selectedVideoInputDeviceIdKey, normalized);
+  }
+
+  Future<bool> loadStartupMicrophoneWarmupCompleted() async {
+    return await _preferences.getBool(_startupMicrophoneWarmupCompletedKey) ??
+        false;
+  }
+
+  Future<void> setStartupMicrophoneWarmupCompleted(bool completed) async {
+    await _preferences.setBool(_startupMicrophoneWarmupCompletedKey, completed);
+  }
+
+  Future<bool> loadStartupCameraWarmupCompleted() async {
+    return await _preferences.getBool(_startupCameraWarmupCompletedKey) ??
+        false;
+  }
+
+  Future<void> setStartupCameraWarmupCompleted(bool completed) async {
+    await _preferences.setBool(_startupCameraWarmupCompletedKey, completed);
   }
 
   Future<AppAudioSettings> loadAudioSettings() async {

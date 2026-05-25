@@ -2311,12 +2311,16 @@ void main() {
             ),
           );
       final now = DateTime.now().millisecondsSinceEpoch;
-      await adapter.createOutgoingCall(
-        callId: 'existing-call',
-        caller: 'alice',
-        callee: 'bob',
-        createdAt: now,
-        expiresAt: now + const Duration(minutes: 2).inMilliseconds,
+      adapter.seedActivePairLockForTest(
+        VoiceActivePairLock(
+          pairId: 'alice:bob',
+          callId: 'existing-call',
+          caller: 'bob',
+          callee: 'alice',
+          createdAt: now,
+          updatedAt: now,
+          expiresAt: now + const Duration(minutes: 2).inMilliseconds,
+        ),
       );
       final runtime = _runtimeFor(db, alice, adapter, brain: brain);
       addTearDown(runtime.dispose);
@@ -2333,9 +2337,49 @@ void main() {
         VoiceCallFailureReason.peerBusy,
       );
       expect(runtime.voiceCallState.detail, 'Peer is busy.');
-      expect(adapter.rooms, hasLength(1));
-      expect(adapter.rooms.values.single.callId, 'existing-call');
+      expect(adapter.rooms, isEmpty);
+      expect(adapter.activePairLocks['alice:bob']?.callId, 'existing-call');
     });
+
+    test(
+      'caller-owned Firebase setup room is reclaimed before retry',
+      () async {
+        final adapter = RecordingVoiceSignalingAdapter();
+        final brain = TestSessionManager();
+        await adapter.register('bob', 'bobpw');
+        await adapter.upsertFriendship('alice', 'bob');
+        await db
+            .into(db.friends)
+            .insert(
+              FriendsCompanion.insert(
+                username: 'bob',
+                displayName: 'Bob',
+                state: 'friend',
+                addedAt: 0,
+              ),
+            );
+        final now = DateTime.now().millisecondsSinceEpoch;
+        await adapter.createOutgoingCall(
+          callId: 'existing-call',
+          caller: 'alice',
+          callee: 'bob',
+          createdAt: now,
+          expiresAt: now + const Duration(minutes: 2).inMilliseconds,
+        );
+        final runtime = _runtimeFor(db, alice, adapter, brain: brain);
+        addTearDown(runtime.dispose);
+
+        await runtime.start();
+        await runtime.startVoiceCall('bob');
+
+        expect(adapter.rooms, hasLength(1));
+        expect(adapter.rooms.values.single.callId, isNot('existing-call'));
+        expect(adapter.rooms.values.single.caller, 'alice');
+        expect(adapter.rooms.values.single.callee, 'bob');
+        expect(runtime.voiceCallState.failureReason, isNull);
+        expect(runtime.voiceCallState.phase, VoiceCallPhase.outgoingRinging);
+      },
+    );
 
     test(
       'stale orphan Firebase pair lock is reclaimed before call start',
@@ -3092,7 +3136,7 @@ void main() {
     );
 
     test(
-      'reverse retry after failed incoming Firebase call does not flip caller',
+      'reverse retry after failed incoming Firebase call rings instead of busy',
       () async {
         final adapter = RecordingVoiceSignalingAdapter();
         final aliceBrain = TestSessionManager()
@@ -3161,28 +3205,32 @@ void main() {
         await _waitForCondition(
           () =>
               adapter.rooms[reverseCallId]?.status ==
-              VoiceCallSignalingStatus.failed,
-          'reverse retry room to be rejected as busy',
+              VoiceCallSignalingStatus.ringing,
+          'reverse retry room to ring after stale failure',
         );
         await _waitForCondition(
-          () => bobRuntime.voiceCallState.phase == VoiceCallPhase.failed,
-          'reverse retry caller to receive busy failure',
+          () =>
+              aliceRuntime.voiceCallState.phase ==
+              VoiceCallPhase.incomingRinging,
+          'stale failed caller to receive reverse retry invite',
         );
 
-        expect(aliceRuntime.voiceCallState.callId, originalCallId);
-        expect(aliceRuntime.voiceCallState.isOutgoing, isTrue);
-        expect(aliceRuntime.voiceCallState.phase, VoiceCallPhase.failed);
+        expect(aliceRuntime.voiceCallState.callId, reverseCallId);
+        expect(aliceRuntime.voiceCallState.isOutgoing, isFalse);
+        expect(bobRuntime.voiceCallState.isOutgoing, isTrue);
         expect(
           aliceRuntime.voiceCallState.failureReason,
           isNot(VoiceCallFailureReason.peerBusy),
         );
-        expect(adapter.rooms[reverseCallId]?.caller, 'bob');
-        expect(adapter.rooms[reverseCallId]?.callee, 'alice');
-        expect(adapter.rooms[reverseCallId]?.reasonCode, 'busy');
         expect(
           bobRuntime.voiceCallState.failureReason,
-          VoiceCallFailureReason.peerBusy,
+          isNot(VoiceCallFailureReason.peerBusy),
         );
+        expect(originalCallId, isNot(reverseCallId));
+        expect(adapter.activePairLocks.values.single.callId, reverseCallId);
+        expect(adapter.rooms[reverseCallId]?.caller, 'bob');
+        expect(adapter.rooms[reverseCallId]?.callee, 'alice');
+        expect(adapter.rooms[reverseCallId]?.reasonCode, isNull);
       },
     );
 

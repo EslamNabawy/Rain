@@ -65,6 +65,7 @@ class RainRuntimeController with WidgetsBindingObserver {
     Duration initialConnectionRetryBackoff = const Duration(seconds: 3),
     Duration maxConnectionRetryBackoff = const Duration(minutes: 1),
     Future<Directory> Function()? documentsDirectoryProvider,
+    this.startupMediaPermissionWarmup,
     this.videoCallRendererFactory = const RtcVideoCallRendererFactory(),
     this.videoCallRemoteFirstFrameTimeout = const Duration(seconds: 8),
     this.errorRecorder,
@@ -105,6 +106,7 @@ class RainRuntimeController with WidgetsBindingObserver {
   final Duration networkRecoveryDebounce;
   final RuntimeErrorRecorder? errorRecorder;
   final Future<Directory> Function() _documentsDirectoryProvider;
+  final Future<void> Function()? startupMediaPermissionWarmup;
   final VideoCallRendererFactory videoCallRendererFactory;
   final Duration videoCallRemoteFirstFrameTimeout;
   final Set<String> _manualDisconnectedPeers = <String>{};
@@ -214,6 +216,7 @@ class RainRuntimeController with WidgetsBindingObserver {
     }
     await _localMutations.run(offlineQueueStore.recoverInFlightMessages);
     await _syncRelationships();
+    await _warmUpStartupMediaPermissions();
 
     final existingFriends = await friendStore.loadFriends();
     for (final friend in existingFriends) {
@@ -386,6 +389,23 @@ class RainRuntimeController with WidgetsBindingObserver {
             unawaited(_enqueueFileChannelMessage(peerId, message));
           }
         }),
+      );
+    }
+  }
+
+  Future<void> _warmUpStartupMediaPermissions() async {
+    final warmup = startupMediaPermissionWarmup;
+    if (warmup == null) {
+      return;
+    }
+    try {
+      await warmup();
+    } catch (error, stackTrace) {
+      errorRecorder?.call(
+        error,
+        stackTrace,
+        source: 'media-permission-warmup',
+        fatal: false,
       );
     }
   }

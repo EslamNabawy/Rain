@@ -491,6 +491,14 @@ final class FakeVoiceSignalingAdapter implements VoiceSignalingAdapter {
       return true;
     }
 
+    if (!room.isTerminal &&
+        room.status != VoiceCallSignalingStatus.connected &&
+        lock.caller == normalizeVoiceCallUsername(caller)) {
+      _removeCallArtifacts(room.callId);
+      _pairLocks.remove(lock.pairId);
+      return true;
+    }
+
     final setupExpired =
         room.status != VoiceCallSignalingStatus.connected &&
         room.expiresAt <= createdAt;

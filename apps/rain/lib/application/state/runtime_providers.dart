@@ -1,5 +1,6 @@
 import 'dart:async';
 
+import 'package:flutter/foundation.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:protocol_brain/protocol_brain.dart';
 import 'package:rain_core/rain_core.dart';
@@ -204,6 +205,12 @@ class RuntimeController extends AsyncNotifier<RainRuntimeController?> {
       messageDeliveryService: ref.watch(messageDeliveryServiceProvider),
       fileTransferStore: ref.watch(fileTransferStoreProvider),
       heartbeatInterval: environment.heartbeatInterval,
+      startupMediaPermissionWarmup:
+          !kIsWeb && defaultTargetPlatform == TargetPlatform.android
+          ? () => ref
+                .read(mediaDeviceSettingsProvider)
+                .warmUpStartupCallPermissions()
+          : null,
       errorRecorder: ref.watch(crashDiagnosticsServiceProvider).recordErrorSync,
     );
 

@@ -184,6 +184,42 @@ final class VideoInputCapabilityState {
   }
 }
 
+final class StartupMediaPermissionWarmupResult {
+  const StartupMediaPermissionWarmupResult({
+    required this.microphoneReady,
+    required this.cameraReady,
+    this.microphoneError,
+    this.cameraError,
+  });
+
+  final bool microphoneReady;
+  final bool cameraReady;
+  final Object? microphoneError;
+  final Object? cameraError;
+
+  bool get hasFailure => microphoneError != null || cameraError != null;
+}
+
+final class StartupMediaPermissionWarmupException implements Exception {
+  const StartupMediaPermissionWarmupException({
+    this.microphoneError,
+    this.cameraError,
+  });
+
+  final Object? microphoneError;
+  final Object? cameraError;
+
+  @override
+  String toString() {
+    final parts = <String>[
+      if (microphoneError != null) 'microphone: $microphoneError',
+      if (cameraError != null) 'camera: $cameraError',
+    ];
+    return 'Startup media permission warmup failed'
+        '${parts.isEmpty ? '' : ' (${parts.join(', ')})'}';
+  }
+}
+
 class MediaDeviceSettings {
   const MediaDeviceSettings({
     required this.platformBridge,
@@ -279,22 +315,71 @@ class MediaDeviceSettings {
     if (selection.hasMissingSelection) {
       throw StateError('Selected microphone is unavailable.');
     }
-    MediaStream? stream;
-    try {
-      stream = await platformBridge.getUserMedia(
-        _microphoneTestConstraints(selection.selectedDeviceId),
-      );
-      if (stream.getAudioTracks().isEmpty) {
-        throw StateError('No microphone audio track was captured.');
-      }
-    } finally {
-      if (stream != null) {
-        await _disposeMediaStream(stream);
-      }
-    }
+    await _probeUserMediaPermission(
+      _microphoneConstraints(selection.selectedDeviceId),
+      requireAudio: true,
+      requireVideo: false,
+    );
   }
 
-  Map<String, dynamic> _microphoneTestConstraints(String? deviceId) {
+  Future<StartupMediaPermissionWarmupResult>
+  warmUpStartupCallPermissions() async {
+    final microphoneAlreadyReady = await settingsStore
+        .loadStartupMicrophoneWarmupCompleted();
+    final cameraAlreadyReady = await settingsStore
+        .loadStartupCameraWarmupCompleted();
+
+    Object? microphoneError;
+    Object? cameraError;
+    var microphoneReady = microphoneAlreadyReady;
+    var cameraReady = cameraAlreadyReady;
+
+    if (!microphoneAlreadyReady) {
+      try {
+        await _probeUserMediaPermission(
+          _microphoneConstraints(null),
+          requireAudio: true,
+          requireVideo: false,
+        );
+        microphoneReady = true;
+        await settingsStore.setStartupMicrophoneWarmupCompleted(true);
+      } catch (error) {
+        microphoneError = error;
+        await settingsStore.setStartupMicrophoneWarmupCompleted(false);
+      }
+    }
+
+    if (!cameraAlreadyReady) {
+      try {
+        await _probeUserMediaPermission(
+          _cameraWarmupConstraints(),
+          requireAudio: false,
+          requireVideo: true,
+        );
+        cameraReady = true;
+        await settingsStore.setStartupCameraWarmupCompleted(true);
+      } catch (error) {
+        cameraError = error;
+        await settingsStore.setStartupCameraWarmupCompleted(false);
+      }
+    }
+
+    final result = StartupMediaPermissionWarmupResult(
+      microphoneReady: microphoneReady,
+      cameraReady: cameraReady,
+      microphoneError: microphoneError,
+      cameraError: cameraError,
+    );
+    if (result.hasFailure) {
+      throw StartupMediaPermissionWarmupException(
+        microphoneError: microphoneError,
+        cameraError: cameraError,
+      );
+    }
+    return result;
+  }
+
+  Map<String, dynamic> _microphoneConstraints(String? deviceId) {
     final audioConstraints = <String, dynamic>{
       'echoCancellation': true,
       'noiseSuppression': true,
@@ -304,6 +389,31 @@ class MediaDeviceSettings {
       audioConstraints['deviceId'] = deviceId;
     }
     return <String, dynamic>{'audio': audioConstraints, 'video': false};
+  }
+
+  Map<String, dynamic> _cameraWarmupConstraints() {
+    return const <String, dynamic>{'audio': false, 'video': true};
+  }
+
+  Future<void> _probeUserMediaPermission(
+    Map<String, dynamic> constraints, {
+    required bool requireAudio,
+    required bool requireVideo,
+  }) async {
+    MediaStream? stream;
+    try {
+      stream = await platformBridge.getUserMedia(constraints);
+      if (requireAudio && stream.getAudioTracks().isEmpty) {
+        throw StateError('No microphone audio track was captured.');
+      }
+      if (requireVideo && stream.getVideoTracks().isEmpty) {
+        throw StateError('No camera video track was captured.');
+      }
+    } finally {
+      if (stream != null) {
+        await _disposeMediaStream(stream);
+      }
+    }
   }
 
   Future<void> _disposeMediaStream(MediaStream stream) async {
