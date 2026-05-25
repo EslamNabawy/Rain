@@ -1,0 +1,380 @@
+name: Main Merge Gate
+
+on:
+  pull_request:
+    branches:
+      - main
+    types:
+      - opened
+      - synchronize
+      - reopened
+      - ready_for_review
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: main-merge-gate-${{ github.event.pull_request.number || github.ref }}
+  cancel-in-progress: true
+
+env:
+  FLUTTER_VERSION: '3.44.0'
+  JAVA_VERSION: '21'
+  NODE_VERSION: '20'
+  RAIN_APP_DIR: apps/rain
+  RAIN_DART_DEFINES_FILE: apps/rain/tool/dart_defines.example.json
+  ARTIFACT_RETENTION_DAYS: '14'
+
+jobs:
+  workflow-lint:
+    name: Workflow Lint
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v5
+
+      - uses: actions/setup-go@v6
+        with:
+          go-version: stable
+          cache: false
+
+      - name: Install actionlint
+        run: go install github.com/rhysd/actionlint/cmd/actionlint@v1.7.8
+
+      - name: Lint GitHub Actions workflows
+        run: '"$(go env GOPATH)/bin/actionlint" -color'
+
+  workspace-validation:
+    name: Workspace Analyze And Test
+    runs-on: ubuntu-latest
+    timeout-minutes: 75
+    steps:
+      - uses: actions/checkout@v5
+        with:
+          fetch-depth: 0
+
+      - uses: actions/setup-java@v5
+        with:
+          distribution: temurin
+          java-version: ${{ env.JAVA_VERSION }}
+
+      - uses: subosito/flutter-action@v2
+        with:
+          flutter-version: ${{ env.FLUTTER_VERSION }}
+          channel: stable
+          cache: true
+
+      - name: Print toolchain versions
+        run: |
+          flutter doctor -v
+          flutter --version
+          dart --version
+
+      - name: Restore workspace dependencies
+        run: dart pub get
+
+      - name: Fail on dependency lock drift
+        run: git diff --exit-code -- pubspec.lock
+
+      - name: Enforce Dart formatting
+        run: |
+          dart format --output=none --set-exit-if-changed \
+            apps/rain/lib \
+            apps/rain/test \
+            apps/rain/tool \
+            packages/peer_core/lib \
+            packages/peer_core/test \
+            packages/protocol_brain/lib \
+            packages/protocol_brain/test \
+            packages/rain_core/lib \
+            packages/rain_core/test \
+            backend/firebase
+
+      - name: Require generated code artifacts
+        run: |
+          test -s apps/rain/lib/application/state/app_state.freezed.dart
+          test -s packages/rain_core/lib/database/rain_database.g.dart
+
+      - name: Run workspace analyzer
+        run: dart run melos run analyze
+
+      - name: Run full workspace tests
+        run: dart run melos run test
+
+  firebase-backend:
+    name: Firebase Backend
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v5
+
+      - uses: actions/setup-node@v6
+        with:
+          node-version: ${{ env.NODE_VERSION }}
+          cache: npm
+          cache-dependency-path: backend/firebase/functions/package-lock.json
+
+      - name: Validate Firebase JSON files
+        run: |
+          node -e "JSON.parse(require('fs').readFileSync('backend/firebase/firebase.json', 'utf8'))"
+          node -e "JSON.parse(require('fs').readFileSync('backend/firebase/database.rules.json', 'utf8'))"
+
+      - name: Install Firebase function dependencies
+        working-directory: backend/firebase/functions
+        run: npm ci --ignore-scripts --no-audit
+
+      - name: Lint Firebase functions
+        working-directory: backend/firebase/functions
+        run: npm run lint
+
+      - name: Audit Firebase functions dependencies
+        working-directory: backend/firebase/functions
+        run: npm run audit:moderate
+
+      - name: Run Firebase function tests if present
+        working-directory: backend/firebase/functions
+        run: npm test --if-present
+
+  firebase-emulator-tests:
+    name: Firebase Emulator Integration
+    runs-on: ubuntu-latest
+    timeout-minutes: 35
+    steps:
+      - uses: actions/checkout@v5
+
+      - uses: actions/setup-java@v5
+        with:
+          distribution: temurin
+          java-version: ${{ env.JAVA_VERSION }}
+
+      - uses: actions/setup-node@v6
+        with:
+          node-version: ${{ env.NODE_VERSION }}
+          cache: npm
+          cache-dependency-path: backend/firebase/functions/package-lock.json
+
+      - uses: subosito/flutter-action@v2
+        with:
+          flutter-version: ${{ env.FLUTTER_VERSION }}
+          channel: stable
+          cache: true
+
+      - name: Run Firebase emulator integration tests
+        run: bash scripts/ci_run_firebase_emulators.sh
+
+  android-debug-abi:
+    name: Android Debug ABI Gate
+    runs-on: ubuntu-latest
+    timeout-minutes: 60
+    env:
+      GRADLE_OPTS: "-Dorg.gradle.jvmargs=-Xmx4g -Dorg.gradle.daemon=false -XX:MaxMetaspaceSize=1g -XX:ReservedCodeCacheSize=256m -XX:+HeapDumpOnOutOfMemoryError"
+    steps:
+      - uses: actions/checkout@v5
+
+      - uses: actions/setup-java@v5
+        with:
+          distribution: temurin
+          java-version: ${{ env.JAVA_VERSION }}
+          cache: gradle
+
+      - uses: subosito/flutter-action@v2
+        with:
+          flutter-version: ${{ env.FLUTTER_VERSION }}
+          channel: stable
+          cache: true
+
+      - name: Restore app dependencies
+        working-directory: ${{ env.RAIN_APP_DIR }}
+        run: flutter pub get
+
+      - name: Build debug ARMv7 and ARM64 APKs
+        working-directory: ${{ env.RAIN_APP_DIR }}
+        run: flutter build apk --debug --split-per-abi --target-platform android-arm,android-arm64 --dart-define-from-file="${GITHUB_WORKSPACE}/${RAIN_DART_DEFINES_FILE}"
+
+      - name: Verify debug APK ABI split
+        working-directory: ${{ env.RAIN_APP_DIR }}
+        run: |
+          unzip -l build/app/outputs/flutter-apk/app-armeabi-v7a-debug.apk > "$RUNNER_TEMP/rain-debug-v7a-apk-entries.txt"
+          grep -q 'lib/armeabi-v7a/libsqlite3.so' "$RUNNER_TEMP/rain-debug-v7a-apk-entries.txt"
+          grep -q 'lib/armeabi-v7a/libjingle_peerconnection_so.so' "$RUNNER_TEMP/rain-debug-v7a-apk-entries.txt"
+          if grep -q 'lib/arm64-v8a/' "$RUNNER_TEMP/rain-debug-v7a-apk-entries.txt"; then
+            echo "Debug ARMv7 APK must not contain arm64-v8a native libraries."
+            exit 1
+          fi
+          if grep -q 'lib/x86' "$RUNNER_TEMP/rain-debug-v7a-apk-entries.txt"; then
+            echo "Debug ARMv7 APK must not contain x86 native libraries."
+            exit 1
+          fi
+
+          unzip -l build/app/outputs/flutter-apk/app-arm64-v8a-debug.apk > "$RUNNER_TEMP/rain-debug-v8-apk-entries.txt"
+          grep -q 'lib/arm64-v8a/libsqlite3.so' "$RUNNER_TEMP/rain-debug-v8-apk-entries.txt"
+          grep -q 'lib/arm64-v8a/libjingle_peerconnection_so.so' "$RUNNER_TEMP/rain-debug-v8-apk-entries.txt"
+          if grep -q 'lib/armeabi-v7a/' "$RUNNER_TEMP/rain-debug-v8-apk-entries.txt"; then
+            echo "Debug ARM64 APK must not contain armeabi-v7a native libraries."
+            exit 1
+          fi
+          if grep -q 'lib/x86' "$RUNNER_TEMP/rain-debug-v8-apk-entries.txt"; then
+            echo "Debug ARM64 APK must not contain x86 native libraries."
+            exit 1
+          fi
+
+      - name: Upload debug APKs
+        uses: actions/upload-artifact@v7
+        with:
+          name: main-merge-debug-apks
+          path: |
+            apps/rain/build/app/outputs/flutter-apk/app-armeabi-v7a-debug.apk
+            apps/rain/build/app/outputs/flutter-apk/app-arm64-v8a-debug.apk
+          if-no-files-found: error
+          retention-days: ${{ env.ARTIFACT_RETENTION_DAYS }}
+
+  windows-demo-artifact:
+    name: Windows Demo Artifact Gate
+    runs-on: windows-2022
+    timeout-minutes: 75
+    steps:
+      - uses: actions/checkout@v5
+
+      - uses: subosito/flutter-action@v2
+        with:
+          flutter-version: ${{ env.FLUTTER_VERSION }}
+          channel: stable
+          cache: true
+
+      - name: Build Windows demo artifact
+        shell: pwsh
+        run: |
+          pwsh -NoProfile -File scripts\build_release.ps1 `
+            -Platform windows `
+            -OutputDir artifacts `
+            -DartDefinesFile $env:RAIN_DART_DEFINES_FILE `
+            -AllowPublicTurnForDemo `
+            -Clean
+
+      - name: Verify Windows native runtime bundle
+        shell: pwsh
+        run: |
+          $portableDir = 'artifacts\Rain-Demo-Windows-x64-Build'
+          foreach ($fileName in @(
+            'rain.exe',
+            'flutter_windows.dll',
+            'flutter_webrtc_plugin.dll',
+            'libwebrtc.dll',
+            'sqlite3.dll',
+            'win32_windows_x64.dll',
+            'data'
+          )) {
+            $path = Join-Path $portableDir $fileName
+            if (-not (Test-Path -LiteralPath $path)) {
+              throw "Missing Windows runtime entry before merge: $path"
+            }
+            Write-Host "Verified Windows runtime entry: $path"
+          }
+
+      - name: Upload Windows demo artifact
+        uses: actions/upload-artifact@v7
+        with:
+          name: main-merge-windows-demo
+          path: artifacts/Rain-Demo-Windows-x64-Build
+          if-no-files-found: error
+          retention-days: ${{ env.ARTIFACT_RETENTION_DAYS }}
+
+  android-demo-artifacts:
+    name: Android Demo Artifact Gate
+    runs-on: windows-2022
+    timeout-minutes: 100
+    env:
+      GRADLE_OPTS: "-Dorg.gradle.jvmargs=-Xmx4g -Dorg.gradle.daemon=false -XX:MaxMetaspaceSize=1g -XX:ReservedCodeCacheSize=256m -XX:+HeapDumpOnOutOfMemoryError"
+    steps:
+      - uses: actions/checkout@v5
+
+      - uses: actions/setup-java@v5
+        with:
+          distribution: temurin
+          java-version: ${{ env.JAVA_VERSION }}
+          cache: gradle
+
+      - uses: subosito/flutter-action@v2
+        with:
+          flutter-version: ${{ env.FLUTTER_VERSION }}
+          channel: stable
+          cache: true
+
+      - name: Build Android demo artifacts
+        shell: pwsh
+        run: |
+          pwsh -NoProfile -File scripts\build_release.ps1 `
+            -Platform android `
+            -OutputDir artifacts `
+            -DartDefinesFile $env:RAIN_DART_DEFINES_FILE `
+            -AndroidArtifactSet mobile `
+            -AllowPublicTurnForDemo `
+            -UseDemoAndroidSigningKey `
+            -Clean
+
+      - name: Verify Android demo APK ABI set
+        shell: pwsh
+        run: |
+          $expected = @(
+            @{ Label = 'Android ARM v7 APK (armeabi-v7a)'; Path = 'artifacts\Rain-Demo-Android-ARM-v7a-Build.apk' },
+            @{ Label = 'Android ARM v8/v9 APK (arm64-v8a)'; Path = 'artifacts\Rain-Demo-Android-ARM-v8-v9-Build.apk' }
+          )
+          foreach ($artifact in $expected) {
+            if (-not (Test-Path -LiteralPath $artifact.Path)) {
+              throw "Missing expected artifact for $($artifact.Label): $($artifact.Path)"
+            }
+            Write-Host "Verified $($artifact.Label): $($artifact.Path)"
+          }
+
+          Add-Type -AssemblyName System.IO.Compression -ErrorAction SilentlyContinue
+          Add-Type -AssemblyName System.IO.Compression.FileSystem -ErrorAction SilentlyContinue
+          function Assert-ApkEntry([string]$Path, [string]$Entry) {
+            $archive = [System.IO.Compression.ZipFile]::OpenRead($Path)
+            try {
+              $entryNames = @($archive.Entries | ForEach-Object { $_.FullName })
+              if ($entryNames -notcontains $Entry) {
+                throw "APK is missing required native runtime entry: $Path -> $Entry"
+              }
+            } finally {
+              $archive.Dispose()
+            }
+            Write-Host "Verified APK native runtime entry: $Path -> $Entry"
+          }
+          Assert-ApkEntry 'artifacts\Rain-Demo-Android-ARM-v7a-Build.apk' 'lib/armeabi-v7a/libsqlite3.so'
+          Assert-ApkEntry 'artifacts\Rain-Demo-Android-ARM-v7a-Build.apk' 'lib/armeabi-v7a/libjingle_peerconnection_so.so'
+          Assert-ApkEntry 'artifacts\Rain-Demo-Android-ARM-v8-v9-Build.apk' 'lib/arm64-v8a/libsqlite3.so'
+          Assert-ApkEntry 'artifacts\Rain-Demo-Android-ARM-v8-v9-Build.apk' 'lib/arm64-v8a/libjingle_peerconnection_so.so'
+
+      - name: Upload Android demo artifacts
+        uses: actions/upload-artifact@v7
+        with:
+          name: main-merge-android-demo
+          path: |
+            artifacts/Rain-Demo-Android-ARM-v7a-Build.apk
+            artifacts/Rain-Demo-Android-ARM-v8-v9-Build.apk
+          if-no-files-found: error
+          retention-days: ${{ env.ARTIFACT_RETENTION_DAYS }}
+
+  required-main-merge-checks:
+    name: Required Main Merge Checks
+    runs-on: ubuntu-latest
+    if: always()
+    needs:
+      - workflow-lint
+      - workspace-validation
+      - firebase-backend
+      - firebase-emulator-tests
+      - android-debug-abi
+      - windows-demo-artifact
+      - android-demo-artifacts
+    steps:
+      - name: Fail if any required main merge gate failed
+        run: |
+          test "${{ needs.workflow-lint.result }}" = "success"
+          test "${{ needs.workspace-validation.result }}" = "success"
+          test "${{ needs.firebase-backend.result }}" = "success"
+          test "${{ needs.firebase-emulator-tests.result }}" = "success"
+          test "${{ needs.android-debug-abi.result }}" = "success"
+          test "${{ needs.windows-demo-artifact.result }}" = "success"
+          test "${{ needs.android-demo-artifacts.result }}" = "success"

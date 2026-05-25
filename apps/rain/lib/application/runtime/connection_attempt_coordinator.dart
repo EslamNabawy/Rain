@@ -3,6 +3,14 @@ import 'dart:async';
 import 'package:protocol_brain/protocol_brain.dart';
 import 'package:rain_core/rain_core.dart';
 
+enum PeerDisconnectIntent {
+  localManual,
+  localShutdown,
+  remoteManual,
+  transportLost,
+  networkLost,
+}
+
 class ConnectionRetryGate {
   const ConnectionRetryGate.allow()
     : allowed = true,
@@ -37,6 +45,7 @@ class ConnectionCoordinatorSnapshot {
     this.lastRejectedOfferPeer,
     this.lastRejectedOfferReason,
     this.lastRejectedOfferAt,
+    this.disconnectIntent,
   });
 
   final int passiveListenerCount;
@@ -52,6 +61,10 @@ class ConnectionCoordinatorSnapshot {
   final String? lastRejectedOfferPeer;
   final String? lastRejectedOfferReason;
   final int? lastRejectedOfferAt;
+  final PeerDisconnectIntent? disconnectIntent;
+
+  bool get manualDisconnect =>
+      disconnectIntent == PeerDisconnectIntent.localManual;
 }
 
 class ConnectionAttemptCoordinator {
@@ -79,6 +92,8 @@ class ConnectionAttemptCoordinator {
 
   final Map<String, _PeerAttemptState> _peerAttempts =
       <String, _PeerAttemptState>{};
+  final Map<String, PeerDisconnectIntent> _disconnectIntents =
+      <String, PeerDisconnectIntent>{};
 
   Timer? _networkRecoveryTimer;
   String? _pendingNetworkRecoveryReason;
@@ -156,10 +171,23 @@ class ConnectionAttemptCoordinator {
 
   void recordAttemptSuccess(String peerId) {
     _peerAttempts.remove(peerId);
+    _disconnectIntents.remove(peerId);
   }
 
   void clearRetry(String peerId) {
     _peerAttempts.remove(peerId);
+  }
+
+  void recordDisconnectIntent(String peerId, PeerDisconnectIntent intent) {
+    _disconnectIntents[peerId] = intent;
+  }
+
+  PeerDisconnectIntent? disconnectIntentFor(String peerId) {
+    return _disconnectIntents[peerId];
+  }
+
+  void clearDisconnectIntent(String peerId) {
+    _disconnectIntents.remove(peerId);
   }
 
   void recordInboundOffer(String peerId) {
@@ -205,6 +233,7 @@ class ConnectionAttemptCoordinator {
       lastRejectedOfferPeer: _lastRejectedOfferPeer,
       lastRejectedOfferReason: _lastRejectedOfferReason,
       lastRejectedOfferAt: _lastRejectedOfferAt,
+      disconnectIntent: peerId == null ? null : _disconnectIntents[peerId],
     );
   }
 

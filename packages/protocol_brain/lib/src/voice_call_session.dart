@@ -15,6 +15,8 @@ const String _voiceCallSignalingFailedReasonCode = 'signalingFailed';
 const String _voiceCallRingingTimeoutReasonCode = 'ringingTimeout';
 const String _voiceCallIceTimeoutReasonCode = 'iceTimeout';
 const String _voiceCallMicrophoneDeniedReasonCode = 'microphoneDenied';
+const String _voiceCallCameraDeniedReasonCode = 'cameraDenied';
+const String _voiceCallVideoRendererFailedReasonCode = 'videoRendererFailed';
 
 enum VoiceCallSessionPhase {
   idle,
@@ -46,22 +48,38 @@ final class VoiceCallSessionState {
   const VoiceCallSessionState({
     required this.phase,
     required this.updatedAt,
+    this.mediaMode = CallMediaMode.audio,
+    this.audioLevel = const VoiceMediaAudioLevel.unavailable(),
+    this.isRemoteMuted = false,
+    this.isRemoteCameraMuted = false,
+    this.mediaReconnecting = false,
+    this.reconnectingSince,
     this.detail,
     this.error,
     this.reasonCode,
     this.mediaDiagnostics,
   });
 
-  factory VoiceCallSessionState.idle({required int updatedAt}) {
+  factory VoiceCallSessionState.idle({
+    required int updatedAt,
+    CallMediaMode mediaMode = CallMediaMode.audio,
+  }) {
     return VoiceCallSessionState(
       phase: VoiceCallSessionPhase.idle,
       updatedAt: updatedAt,
+      mediaMode: mediaMode,
       detail: 'Idle',
     );
   }
 
   final VoiceCallSessionPhase phase;
   final int updatedAt;
+  final CallMediaMode mediaMode;
+  final VoiceMediaAudioLevel audioLevel;
+  final bool isRemoteMuted;
+  final bool isRemoteCameraMuted;
+  final bool mediaReconnecting;
+  final int? reconnectingSince;
   final String? detail;
   final Object? error;
   final String? reasonCode;
@@ -79,9 +97,11 @@ final class VoiceCallSession {
     this.timeouts = const VoiceCallSessionTimeouts(),
     this.clock = DateTime.now,
     this.logger,
+    this.mediaMode = CallMediaMode.audio,
     bool? isOfferOwner,
   }) : state = VoiceCallSessionState.idle(
          updatedAt: clock().millisecondsSinceEpoch,
+         mediaMode: mediaMode,
        ),
        _isOfferOwnerOverride = isOfferOwner {
     if (sessionEpoch <= 0) {
@@ -95,6 +115,9 @@ final class VoiceCallSession {
     _normalizedRemotePeerId = _normalizePeerId(remotePeerId);
     _iceSubscription = media.onIceCandidate.listen(_handleLocalCandidate);
     _mediaStateSubscription = media.onStateChanged.listen(_handleMediaState);
+    _audioLevelSubscription = media.onAudioLevelChanged.listen(
+      _handleAudioLevel,
+    );
   }
 
   final String localPeerId;
@@ -106,12 +129,14 @@ final class VoiceCallSession {
   final VoiceCallSessionTimeouts timeouts;
   final VoiceCallClock clock;
   final VoiceCallLogSink? logger;
+  final CallMediaMode mediaMode;
   final bool? _isOfferOwnerOverride;
 
   late final String _normalizedLocalPeerId;
   late final String _normalizedRemotePeerId;
   late final StreamSubscription<VoiceIceCandidate> _iceSubscription;
   late final StreamSubscription<VoiceMediaState> _mediaStateSubscription;
+  late final StreamSubscription<VoiceMediaAudioLevel> _audioLevelSubscription;
   final StreamController<VoiceCallSessionState> _stateController =
       StreamController<VoiceCallSessionState>.broadcast(sync: true);
 
@@ -119,8 +144,9 @@ final class VoiceCallSession {
   Timer? _ringingTimer;
   Timer? _answerTimer;
   Timer? _mediaTimer;
-  int _lastReceivedSeq = 0;
+  int _lastReceivedOrderedSeq = 0;
   int _lastSentSeq = 0;
+  final Set<String> _receivedCandidateKeys = <String>{};
   bool _negotiatingMedia = false;
   bool _disposed = false;
   Future<void> _operationTail = Future<void>.value();
@@ -134,14 +160,18 @@ final class VoiceCallSession {
     return _enqueue(() async {
       if (!_transitionTo(
         VoiceCallSessionPhase.preflightingMic,
-        detail: 'Checking microphone permission.',
+        detail: _localMediaPreflightDetail(),
       )) {
         return;
       }
       try {
         await media.startLocalAudio();
       } catch (error) {
-        await _fail('Microphone permission required.', error: error);
+        await _fail(
+          _localMediaFailureDetail(error),
+          error: error,
+          reasonCode: _localMediaFailureReasonCode(error),
+        );
         rethrow;
       }
       if (!_transitionTo(
@@ -173,7 +203,7 @@ final class VoiceCallSession {
       _clearRingingTimeout();
       if (!_transitionTo(
         VoiceCallSessionPhase.preflightingMic,
-        detail: 'Checking microphone permission.',
+        detail: _localMediaPreflightDetail(),
       )) {
         return;
       }
@@ -182,18 +212,22 @@ final class VoiceCallSession {
       } catch (error) {
         await _send(
           VoiceCallFrameType.reject,
-          reason: 'Microphone permission required.',
-          reasonCode: _voiceCallMicrophoneDeniedReasonCode,
+          reason: _localMediaFailureDetail(error),
+          reasonCode: _localMediaFailureReasonCode(error),
           bestEffort: true,
         );
-        await _fail('Microphone permission required.', error: error);
+        await _fail(
+          _localMediaFailureDetail(error),
+          error: error,
+          reasonCode: _localMediaFailureReasonCode(error),
+        );
         rethrow;
       }
       if (!_transitionTo(
         VoiceCallSessionPhase.connectingMedia,
         detail: isOfferOwner
-            ? 'Creating voice media offer.'
-            : 'Waiting for voice media offer.',
+            ? 'Creating call media offer.'
+            : 'Waiting for call media offer.',
       )) {
         return;
       }
@@ -257,6 +291,40 @@ final class VoiceCallSession {
     });
   }
 
+  Future<void> setCameraMuted({required bool muted}) {
+    return _enqueue(() async {
+      if (state.phase != VoiceCallSessionPhase.active) {
+        _logInvalidEvent('camera mute in ${state.phase.name}');
+        return;
+      }
+      await _send(
+        VoiceCallFrameType.mute,
+        cameraMuted: muted,
+        bestEffort: true,
+      );
+    });
+  }
+
+  Future<void> setDeafened({required bool deafened}) {
+    return _enqueue(() async {
+      if (state.phase != VoiceCallSessionPhase.active) {
+        _logInvalidEvent('deafen in ${state.phase.name}');
+        return;
+      }
+      await media.setDeafened(deafened: deafened);
+    });
+  }
+
+  Future<void> setAudioOutputRoute(VoiceMediaOutputRoute route) {
+    return _enqueue(() async {
+      if (state.phase != VoiceCallSessionPhase.active) {
+        _logInvalidEvent('audio output route in ${state.phase.name}');
+        return;
+      }
+      await media.setAudioOutputRoute(route);
+    });
+  }
+
   Future<void> dispose() {
     return _enqueue(() async {
       if (_disposed) {
@@ -266,6 +334,7 @@ final class VoiceCallSession {
       _clearTimers();
       await _iceSubscription.cancel();
       await _mediaStateSubscription.cancel();
+      await _audioLevelSubscription.cancel();
       await _disposeMedia();
       await _stateController.close();
     });
@@ -307,7 +376,29 @@ final class VoiceCallSession {
         }
         break;
       case VoiceCallFrameType.mute:
+        _handleRemoteMute(frame);
         break;
+    }
+  }
+
+  void _handleRemoteMute(VoiceCallFrame frame) {
+    final updated = VoiceCallSessionState(
+      phase: state.phase,
+      updatedAt: clock().millisecondsSinceEpoch,
+      mediaMode: state.mediaMode,
+      audioLevel: state.audioLevel,
+      isRemoteMuted: frame.muted ?? state.isRemoteMuted,
+      isRemoteCameraMuted: frame.cameraMuted ?? state.isRemoteCameraMuted,
+      mediaReconnecting: state.mediaReconnecting,
+      reconnectingSince: state.reconnectingSince,
+      detail: state.detail,
+      error: state.error,
+      reasonCode: state.reasonCode,
+      mediaDiagnostics: state.mediaDiagnostics,
+    );
+    state = updated;
+    if (!_stateController.isClosed) {
+      _stateController.add(updated);
     }
   }
 
@@ -341,8 +432,8 @@ final class VoiceCallSession {
     if (!_transitionTo(
       VoiceCallSessionPhase.connectingMedia,
       detail: isOfferOwner
-          ? 'Creating voice media offer.'
-          : 'Waiting for voice media offer.',
+          ? 'Creating call media offer.'
+          : 'Waiting for call media offer.',
     )) {
       return;
     }
@@ -358,6 +449,8 @@ final class VoiceCallSession {
         ? 'Peer is busy.'
         : frame.reasonCode == _voiceCallMicrophoneDeniedReasonCode
         ? 'Peer microphone permission required.'
+        : frame.reasonCode == _voiceCallCameraDeniedReasonCode
+        ? 'Peer camera permission required.'
         : frame.reasonCode == _voiceCallRejectedReasonCode ||
               frame.reason == 'Rejected.'
         ? 'Call declined.'
@@ -387,7 +480,7 @@ final class VoiceCallSession {
       _clearAnswerTimeout();
       _transitionTo(
         VoiceCallSessionPhase.creatingMedia,
-        detail: 'Answering voice media offer.',
+        detail: 'Answering call media offer.',
       );
       try {
         final answer = await media.acceptOffer(
@@ -457,6 +550,7 @@ final class VoiceCallSession {
     if (state.phase != VoiceCallSessionPhase.creatingMedia &&
         state.phase != VoiceCallSessionPhase.connectingMedia &&
         state.phase != VoiceCallSessionPhase.active) {
+      _logInvalidEvent('candidate frame in ${state.phase.name}');
       return;
     }
     try {
@@ -477,7 +571,7 @@ final class VoiceCallSession {
     await _runMediaNegotiation(() async {
       if (!_transitionTo(
         VoiceCallSessionPhase.creatingMedia,
-        detail: 'Creating voice media offer.',
+        detail: 'Creating call media offer.',
       )) {
         return;
       }
@@ -542,6 +636,9 @@ final class VoiceCallSession {
                 VoiceCallSessionPhase.active,
                 detail: 'Voice call connected.',
               );
+            } else if (state.phase == VoiceCallSessionPhase.active &&
+                state.mediaReconnecting) {
+              _setMediaReconnecting(false, detail: 'Voice call connected.');
             }
           }),
         );
@@ -570,20 +667,92 @@ final class VoiceCallSession {
     }
   }
 
-  bool _acceptFrame(VoiceCallFrame frame) {
+  void _handleAudioLevel(VoiceMediaAudioLevel audioLevel) {
     if (_disposed ||
-        frame.callId != callId ||
-        frame.sessionEpoch != sessionEpoch ||
-        _normalizePeerId(frame.from) != _normalizedRemotePeerId ||
-        _normalizePeerId(frame.to) != _normalizedLocalPeerId) {
+        state.phase == VoiceCallSessionPhase.idle ||
+        state.phase == VoiceCallSessionPhase.ending ||
+        state.phase == VoiceCallSessionPhase.failed) {
+      return;
+    }
+    final updated = VoiceCallSessionState(
+      phase: state.phase,
+      updatedAt: audioLevel.updatedAt ?? clock().millisecondsSinceEpoch,
+      mediaMode: state.mediaMode,
+      audioLevel: audioLevel,
+      isRemoteMuted: state.isRemoteMuted,
+      isRemoteCameraMuted: state.isRemoteCameraMuted,
+      mediaReconnecting: state.mediaReconnecting,
+      reconnectingSince: state.reconnectingSince,
+      detail: state.detail,
+      error: state.error,
+      reasonCode: state.reasonCode,
+      mediaDiagnostics: state.mediaDiagnostics,
+    );
+    state = updated;
+    if (!_stateController.isClosed) {
+      _stateController.add(updated);
+    }
+  }
+
+  bool _acceptFrame(VoiceCallFrame frame) {
+    if (_disposed) {
+      _logInvalidEvent('late ${frame.type.name} frame after dispose');
       return false;
     }
-    if (frame.seq <= _lastReceivedSeq) {
+    if (frame.callId != callId) {
+      _logInvalidEvent(
+        'late ${frame.type.name} frame for stale callId=${frame.callId}',
+      );
+      return false;
+    }
+    if (frame.sessionEpoch != sessionEpoch) {
+      _logInvalidEvent(
+        'late ${frame.type.name} frame for stale sessionEpoch='
+        '${frame.sessionEpoch}',
+      );
+      return false;
+    }
+    if (_normalizePeerId(frame.from) != _normalizedRemotePeerId ||
+        _normalizePeerId(frame.to) != _normalizedLocalPeerId) {
+      _logInvalidEvent(
+        'late ${frame.type.name} frame for unexpected peers '
+        '${frame.from}->${frame.to}',
+      );
+      return false;
+    }
+
+    if (frame.type == VoiceCallFrameType.candidate) {
+      return _acceptCandidateFrame(frame);
+    }
+
+    if (frame.seq <= _lastReceivedOrderedSeq) {
       _logInvalidEvent('stale ${frame.type.name} frame seq=${frame.seq}');
       return false;
     }
-    _lastReceivedSeq = frame.seq;
+    _lastReceivedOrderedSeq = frame.seq;
     return true;
+  }
+
+  bool _acceptCandidateFrame(VoiceCallFrame frame) {
+    final key = _candidateFrameKey(frame);
+    if (key == null) {
+      return true;
+    }
+    if (!_receivedCandidateKeys.add(key)) {
+      _logInvalidEvent('duplicate candidate frame seq=${frame.seq}');
+      return false;
+    }
+    return true;
+  }
+
+  String? _candidateFrameKey(VoiceCallFrame frame) {
+    final candidate = frame.candidate;
+    final sdpMid = frame.sdpMid;
+    final sdpMLineIndex = frame.sdpMLineIndex;
+    if (candidate == null || sdpMid == null || sdpMLineIndex == null) {
+      return null;
+    }
+    return '$sdpMid|$sdpMLineIndex|$candidate';
   }
 
   Future<void> _send(
@@ -591,6 +760,7 @@ final class VoiceCallSession {
     String? reason,
     String? reasonCode,
     bool? muted,
+    bool? cameraMuted,
     String? sdp,
     String? sdpType,
     String? candidate,
@@ -609,6 +779,10 @@ final class VoiceCallSession {
       reason: reason,
       reasonCode: reasonCode,
       muted: muted,
+      cameraMuted: cameraMuted,
+      mediaMode: type == VoiceCallFrameType.invite
+          ? mediaMode
+          : CallMediaMode.audio,
       sdp: sdp,
       sdpType: sdpType,
       candidate: candidate,
@@ -623,6 +797,43 @@ final class VoiceCallSession {
       }
       _logInvalidEvent('failed to send ${type.name}: $error');
     }
+  }
+
+  String _localMediaPreflightDetail() {
+    return switch (mediaMode) {
+      CallMediaMode.audio => 'Checking microphone permission.',
+      CallMediaMode.video => 'Checking camera and microphone permission.',
+    };
+  }
+
+  String _localMediaFailureDetail(Object error) {
+    if (_localMediaFailureReasonCode(error) ==
+        _voiceCallVideoRendererFailedReasonCode) {
+      return 'Video could not connect. Try again.';
+    }
+    return _localMediaFailureReasonCode(error) ==
+            _voiceCallCameraDeniedReasonCode
+        ? 'Camera permission required.'
+        : 'Microphone permission required.';
+  }
+
+  String _localMediaFailureReasonCode(Object error) {
+    if (error is CallMediaException &&
+        (error.reason == CallMediaFailureReason.cameraDenied ||
+            error.reason == CallMediaFailureReason.cameraUnavailable)) {
+      return _voiceCallCameraDeniedReasonCode;
+    }
+    final normalized = error.toString().toLowerCase();
+    if (normalized.contains('camera') ||
+        normalized.contains('video permission')) {
+      return _voiceCallCameraDeniedReasonCode;
+    }
+    if (normalized.contains('video renderer') ||
+        normalized.contains('rtc video renderer') ||
+        normalized.contains('rtcvideorenderer')) {
+      return _voiceCallVideoRendererFailedReasonCode;
+    }
+    return _voiceCallMicrophoneDeniedReasonCode;
   }
 
   int _nextSeq() {
@@ -697,6 +908,42 @@ final class VoiceCallSession {
     }
   }
 
+  void markMediaReconnecting({String? detail}) {
+    if (_disposed || state.phase != VoiceCallSessionPhase.active) {
+      return;
+    }
+    _setMediaReconnecting(true, detail: detail ?? 'Call media reconnecting.');
+  }
+
+  void clearMediaReconnecting({String? detail}) {
+    if (_disposed || !state.mediaReconnecting) {
+      return;
+    }
+    _setMediaReconnecting(false, detail: detail ?? 'Voice call connected.');
+  }
+
+  void _setMediaReconnecting(bool reconnecting, {required String detail}) {
+    final now = clock().millisecondsSinceEpoch;
+    final updated = VoiceCallSessionState(
+      phase: state.phase,
+      updatedAt: now,
+      mediaMode: state.mediaMode,
+      audioLevel: state.audioLevel,
+      isRemoteMuted: state.isRemoteMuted,
+      isRemoteCameraMuted: state.isRemoteCameraMuted,
+      mediaReconnecting: reconnecting,
+      reconnectingSince: reconnecting ? state.reconnectingSince ?? now : null,
+      detail: detail,
+      error: reconnecting ? state.error : null,
+      reasonCode: reconnecting ? state.reasonCode : null,
+      mediaDiagnostics: state.mediaDiagnostics,
+    );
+    state = updated;
+    if (!_stateController.isClosed) {
+      _stateController.add(updated);
+    }
+  }
+
   bool _transitionTo(
     VoiceCallSessionPhase next, {
     String? detail,
@@ -710,6 +957,14 @@ final class VoiceCallSession {
     }
     final updated = VoiceCallSessionState(
       phase: next,
+      mediaMode: state.mediaMode,
+      audioLevel: _phaseCanHoldAudioLevel(next)
+          ? state.audioLevel
+          : const VoiceMediaAudioLevel.unavailable(),
+      isRemoteMuted: state.isRemoteMuted,
+      isRemoteCameraMuted: state.isRemoteCameraMuted,
+      mediaReconnecting: false,
+      reconnectingSince: null,
       detail: detail,
       error: error,
       reasonCode: reasonCode,
@@ -721,6 +976,12 @@ final class VoiceCallSession {
       _stateController.add(updated);
     }
     return true;
+  }
+
+  bool _phaseCanHoldAudioLevel(VoiceCallSessionPhase phase) {
+    return phase == VoiceCallSessionPhase.creatingMedia ||
+        phase == VoiceCallSessionPhase.connectingMedia ||
+        phase == VoiceCallSessionPhase.active;
   }
 
   bool _isAllowedTransition(

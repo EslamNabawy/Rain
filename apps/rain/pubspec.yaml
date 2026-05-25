@@ -50,6 +50,24 @@ dev_dependencies:
 flutter:
   uses-material-design: true
   assets:
-    - assets/branding/
+    - assets/branding/rain_app_icon_1024.png
+    - assets/branding/rain_logo_premium_1024.png
+    - assets/branding/generated/peer_core_app_icon_1024.png
+    - assets/branding/generated/peer_core_mark_1024.png
+    - assets/branding/generated/peer_core_mark_192.png
+    - assets/branding/generated/peer_core_mark_48.png
+    - assets/branding/generated/peer_core_mark_tiny_48.png
+    - assets/branding/runtime/peer_core/app_icon_shell.svg
+    - assets/branding/runtime/peer_core/rain_streaks.svg
+    - assets/branding/runtime/peer_core/wave_inner.svg
+    - assets/branding/runtime/peer_core/wave_middle.svg
+    - assets/branding/runtime/peer_core/wave_outer.svg
+    - assets/branding/runtime/peer_core/ring.svg
+    - assets/branding/runtime/peer_core/link_node_a_node_b.svg
+    - assets/branding/runtime/peer_core/link_node_b_node_c.svg
+    - assets/branding/runtime/peer_core/link_node_c_node_a.svg
+    - assets/branding/runtime/peer_core/node_a.svg
+    - assets/branding/runtime/peer_core/node_b.svg
+    - assets/branding/runtime/peer_core/node_c.svg
     - "assets/gender avatar/"
     - assets/sounds/

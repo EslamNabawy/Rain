@@ -1,5 +1,9 @@
 import 'package:flutter_webrtc/flutter_webrtc.dart';
 
+enum VoiceMediaAudioLevelSource { unavailable, audioLevel, totalAudioEnergy }
+
+enum VoiceMediaOutputRoute { systemDefault, speaker, bluetooth }
+
 enum VoiceMediaPhase {
   idle,
   startingLocalAudio,
@@ -41,13 +45,18 @@ final class VoiceMediaDiagnostics {
     this.localCandidateCount = 0,
     this.remoteCandidateCount = 0,
     this.pendingRemoteCandidateCount = 0,
+    this.localAudioTrackCount = 0,
     this.remoteAudioTrackCount = 0,
+    this.localVideoTrackCount = 0,
+    this.remoteVideoTrackCount = 0,
     this.remoteStreamCount = 0,
     this.hasLocalAudio = false,
+    this.hasLocalVideo = false,
     this.peerConnectionClosed = false,
     this.disposed = false,
     this.lastDetail,
     this.lastError,
+    this.lastFailureReason,
   });
 
   final List<String> mediaStates;
@@ -56,13 +65,53 @@ final class VoiceMediaDiagnostics {
   final int localCandidateCount;
   final int remoteCandidateCount;
   final int pendingRemoteCandidateCount;
+  final int localAudioTrackCount;
   final int remoteAudioTrackCount;
+  final int localVideoTrackCount;
+  final int remoteVideoTrackCount;
   final int remoteStreamCount;
   final bool hasLocalAudio;
+  final bool hasLocalVideo;
   final bool peerConnectionClosed;
   final bool disposed;
   final String? lastDetail;
   final String? lastError;
+  final String? lastFailureReason;
+}
+
+final class VoiceMediaAudioLevel {
+  factory VoiceMediaAudioLevel({
+    required double remoteLevel,
+    required double localLevel,
+    required int updatedAt,
+    required VoiceMediaAudioLevelSource source,
+  }) {
+    return VoiceMediaAudioLevel._(
+      remoteLevel: _clampLevel(remoteLevel),
+      localLevel: _clampLevel(localLevel),
+      updatedAt: updatedAt,
+      source: source,
+    );
+  }
+
+  const VoiceMediaAudioLevel._({
+    required this.remoteLevel,
+    required this.localLevel,
+    required this.updatedAt,
+    required this.source,
+  });
+
+  const VoiceMediaAudioLevel.unavailable({this.updatedAt})
+    : remoteLevel = 0,
+      localLevel = 0,
+      source = VoiceMediaAudioLevelSource.unavailable;
+
+  final double remoteLevel;
+  final double localLevel;
+  final int? updatedAt;
+  final VoiceMediaAudioLevelSource source;
+
+  bool get isAvailable => source != VoiceMediaAudioLevelSource.unavailable;
 }
 
 final class VoiceSessionDescription {
@@ -81,6 +130,16 @@ final class VoiceSessionDescription {
       type: description.type ?? '',
     );
   }
+}
+
+double _clampLevel(double value) {
+  if (value.isNaN || !value.isFinite || value <= 0) {
+    return 0;
+  }
+  if (value >= 1) {
+    return 1;
+  }
+  return value;
 }
 
 final class VoiceIceCandidate {

@@ -12,11 +12,20 @@ extension VoiceCallRuntime on RainRuntimeController {
   static const String _voiceCallRingingTimeoutReasonCode = 'ringingTimeout';
   static const String _voiceCallIceTimeoutReasonCode = 'iceTimeout';
   static const String _voiceCallNoRemoteAudioReasonCode = 'noRemoteAudio';
+  static const String _voiceCallVideoRendererFailedReasonCode =
+      'videoRendererFailed';
+  static const String _voiceCallVideoFirstFrameTimeoutReasonCode =
+      'videoFirstFrameTimeout';
   static const String _voiceCallMicrophoneDeniedReasonCode = 'microphoneDenied';
+  static const String _voiceCallCameraDeniedReasonCode = 'cameraDenied';
   static const String _voiceCallMicrophonePermissionRequired =
       'Microphone permission required.';
   static const String _voiceCallRemoteMicrophonePermissionRequired =
       'Peer microphone permission required.';
+  static const String _voiceCallCameraPermissionRequired =
+      'Camera permission required.';
+  static const String _voiceCallRemoteCameraPermissionRequired =
+      'Peer camera permission required.';
   static const String _voiceCallFileTransferRequired =
       'Finish the active file transfer first.';
   static const String _voiceCallRejected = 'Call declined.';
@@ -27,17 +36,39 @@ extension VoiceCallRuntime on RainRuntimeController {
   static const String _voiceCallTimedOut = 'Call timed out.';
   static const String _voiceCallMediaFailed =
       'Call media could not connect. Try again.';
+  static const String _voiceCallVideoFailed =
+      'Video could not connect. Try again.';
+  static const String _voiceCallVideoBackgrounded =
+      'Video call ended because the app went to background.';
+  static const String _voiceCallAudioRouteUnavailable =
+      'Audio route unavailable.';
+  static const String _voiceCallReconnecting =
+      'Peer connection interrupted. Reconnecting...';
   static bool get _legacyControlChannelVoiceSignalingFrozen => true;
   static const Duration _voiceCallExpiry = Duration(minutes: 2);
   static const int _voiceCallTerminalSeq = 1 << 30;
 
   Future<void> startVoiceCall(String username) async {
-    final peerId = _normalizedUsername(username);
-    if (await fileTransferStore.hasActiveTransferForPeer(peerId)) {
-      throw StateError(_voiceCallFileTransferRequired);
-    }
+    await _startCall(username, mediaMode: CallMediaMode.audio);
+  }
 
+  Future<void> startVideoCall(String username) async {
+    await _startCall(username, mediaMode: CallMediaMode.video);
+  }
+
+  Future<void> _startCall(
+    String username, {
+    required CallMediaMode mediaMode,
+  }) async {
+    final peerId = _normalizedUsername(username);
     _assertVoiceCallCanStart();
+    RuntimeInteractionGuard.canStartCall(
+      peerId: peerId,
+      mediaMode: mediaMode,
+      voiceCallState: _voiceCallState,
+      activeTransfer: await _firstActiveTransfer(),
+    ).throwIfDenied();
+    _requireVoiceSignalingAdapter();
     await _assertVoiceCallPeerIsFriend(peerId);
 
     await _disposeCurrentVoiceCallSession();
@@ -48,9 +79,11 @@ extension VoiceCallRuntime on RainRuntimeController {
         phase: VoiceCallPhase.connectingMedia,
         peerId: peerId,
         callId: callId,
+        sessionEpoch: sessionEpoch,
+        mediaMode: mediaMode,
         isOutgoing: true,
         updatedAt: sessionEpoch,
-        detail: 'Checking microphone permission.',
+        detail: _voiceCallPreflightDetail(mediaMode),
       ),
     );
 
@@ -60,6 +93,7 @@ extension VoiceCallRuntime on RainRuntimeController {
         callId: callId,
         sessionEpoch: sessionEpoch,
         isOutgoing: true,
+        mediaMode: mediaMode,
       );
       await session.startOutgoing();
     } catch (error) {
@@ -83,7 +117,15 @@ extension VoiceCallRuntime on RainRuntimeController {
         current.callId == null) {
       throw StateError('There is no incoming call to accept.');
     }
-    if (await fileTransferStore.hasActiveTransferForPeer(current.peerId!)) {
+    final acceptDecision = RuntimeInteractionGuard.canAcceptCall(
+      peerId: current.peerId!,
+      callId: current.callId!,
+      voiceCallState: current,
+      activeTransfer: await _firstActiveTransfer(),
+    );
+    if (!acceptDecision.allowed &&
+        acceptDecision.reasonCode ==
+            RuntimeInteractionReasonCode.activeFileTransfer) {
       await _sendVoiceFrame(
         current.peerId!,
         VoiceCallFrameType.busy,
@@ -94,12 +136,13 @@ extension VoiceCallRuntime on RainRuntimeController {
         bestEffort: true,
       );
       await _failVoiceCall(
-        _voiceCallFileTransferRequired,
+        acceptDecision.userMessage ?? _voiceCallFileTransferRequired,
         failureReason: VoiceCallFailureReason.fileTransferActive,
-        detail: _voiceCallFileTransferRequired,
+        detail: acceptDecision.userMessage ?? _voiceCallFileTransferRequired,
       );
       return;
     }
+    acceptDecision.throwIfDenied();
 
     final session = _voiceCallSession;
     if (session == null || session.callId != current.callId) {
@@ -168,12 +211,135 @@ extension VoiceCallRuntime on RainRuntimeController {
       throw StateError('There is no active call to mute.');
     }
     await session.setMuted(muted: muted);
+    if (!_isCurrentVoiceCall(
+      current.peerId!,
+      current.callId!,
+      sessionEpoch: current.sessionEpoch,
+    )) {
+      return;
+    }
     _setVoiceCallState(
-      current.copyWith(
+      _voiceCallState.copyWith(
         isMuted: muted,
         updatedAt: DateTime.now().millisecondsSinceEpoch,
       ),
     );
+  }
+
+  Future<void> setVoiceCallDeafened(bool deafened) async {
+    final current = _voiceCallState;
+    final session = _voiceCallSession;
+    if (!current.isActive ||
+        current.peerId == null ||
+        current.callId == null ||
+        session == null) {
+      throw StateError('There is no active call to deafen.');
+    }
+    await session.setDeafened(deafened: deafened);
+    if (!_isCurrentVoiceCall(
+      current.peerId!,
+      current.callId!,
+      sessionEpoch: current.sessionEpoch,
+    )) {
+      return;
+    }
+    _setVoiceCallState(
+      _voiceCallState.copyWith(
+        isDeafened: deafened,
+        updatedAt: DateTime.now().millisecondsSinceEpoch,
+      ),
+    );
+  }
+
+  Future<void> setVoiceCallOutputRoute(VoiceCallOutputRoute route) async {
+    final current = _voiceCallState;
+    final session = _voiceCallSession;
+    if (!current.isActive ||
+        current.peerId == null ||
+        current.callId == null ||
+        session == null) {
+      throw StateError('There is no active call to route audio.');
+    }
+    try {
+      await session.setAudioOutputRoute(_voiceMediaOutputRoute(route));
+      if (!_isCurrentVoiceCall(
+        current.peerId!,
+        current.callId!,
+        sessionEpoch: current.sessionEpoch,
+      )) {
+        return;
+      }
+      _setVoiceCallState(
+        _voiceCallState.copyWith(
+          outputRoute: route,
+          updatedAt: DateTime.now().millisecondsSinceEpoch,
+          clearOutputRouteWarning: true,
+        ),
+      );
+    } catch (error, stackTrace) {
+      errorRecorder?.call(
+        error,
+        stackTrace,
+        source: 'voice-call-audio-route',
+        fatal: false,
+      );
+      if (!_isCurrentVoiceCall(
+        current.peerId!,
+        current.callId!,
+        sessionEpoch: current.sessionEpoch,
+      )) {
+        return;
+      }
+      _setVoiceCallState(
+        _voiceCallState.copyWith(
+          outputRouteWarning: _voiceCallAudioRouteUnavailable,
+          updatedAt: DateTime.now().millisecondsSinceEpoch,
+        ),
+      );
+    }
+  }
+
+  Future<void> setVideoCallCameraMuted(bool muted) async {
+    final current = _voiceCallState;
+    final session = _voiceCallSession;
+    final media = _videoCallMediaConnection;
+    if (!current.isActive ||
+        !current.isVideo ||
+        current.peerId == null ||
+        current.callId == null ||
+        session == null ||
+        media == null) {
+      throw StateError('There is no active video call to mute camera.');
+    }
+    await media.setCameraMuted(muted: muted);
+    await session.setCameraMuted(muted: muted);
+    if (!_isCurrentVoiceCall(
+      current.peerId!,
+      current.callId!,
+      sessionEpoch: current.sessionEpoch,
+    )) {
+      return;
+    }
+    _setVoiceCallState(
+      _voiceCallState.copyWith(
+        isCameraMuted: muted,
+        updatedAt: DateTime.now().millisecondsSinceEpoch,
+      ),
+    );
+    unawaited(_setVideoCallCameraMutedInSignaling(muted));
+  }
+
+  Future<void> switchVideoCallCamera() async {
+    final current = _voiceCallState;
+    final media = _videoCallMediaConnection;
+    if (!current.isActive ||
+        !current.isVideo ||
+        current.peerId == null ||
+        current.callId == null ||
+        media == null) {
+      throw StateError('There is no active video call to switch camera.');
+    }
+    await media.switchCamera();
   }
 
   bool voiceCallBlocksFileTransfer(String peerId) {
@@ -181,7 +347,7 @@ extension VoiceCallRuntime on RainRuntimeController {
   }
 
   Future<void> _handleIncomingVoiceCallEntry(VoiceCallInboxEntry entry) async {
-    if (entry.status.isTerminal) {
+    if (entry.status != VoiceCallSignalingStatus.ringing) {
       return;
     }
     final peerId = _normalizedUsername(entry.from);
@@ -193,9 +359,12 @@ extension VoiceCallRuntime on RainRuntimeController {
     final voiceAdapter = _requireVoiceSignalingAdapter();
     final room = await voiceAdapter.fetchCall(entry.callId);
     if (room == null ||
-        room.isTerminal ||
-        room.caller != peerId ||
-        room.callee != localUsername) {
+        room.status != VoiceCallSignalingStatus.ringing ||
+        room.createdAt != entry.createdAt ||
+        room.expiresAt != entry.expiresAt ||
+        room.pairId != entry.pairId ||
+        _normalizedUsername(room.caller) != peerId ||
+        _normalizedUsername(room.callee) != localUsername) {
       return;
     }
 
@@ -207,6 +376,7 @@ extension VoiceCallRuntime on RainRuntimeController {
       sentAt: room.createdAt,
       seq: 1,
       sessionEpoch: room.createdAt,
+      mediaMode: room.mediaMode,
     );
     await _handleFirebaseVoiceInvite(peerId, invite, room: room);
   }
@@ -240,7 +410,11 @@ extension VoiceCallRuntime on RainRuntimeController {
       return;
     }
 
-    if (!_isCurrentVoiceCall(normalizedPeerId, frame.callId)) {
+    if (!_isCurrentVoiceCall(
+      normalizedPeerId,
+      frame.callId,
+      sessionEpoch: frame.sessionEpoch,
+    )) {
       return;
     }
 
@@ -255,13 +429,14 @@ extension VoiceCallRuntime on RainRuntimeController {
       case VoiceCallFrameType.reject:
       case VoiceCallFrameType.busy:
         await session.handleFrame(frame);
-        if (frame.reasonCode == _voiceCallMicrophoneDeniedReasonCode) {
+        if (_isRemoteMediaPermissionCode(frame.reasonCode)) {
           _setVoiceCallState(
             _voiceCallState.copyWith(
               phase: VoiceCallPhase.failed,
-              detail: _voiceCallRemoteMicrophonePermissionRequired,
-              failureReason: VoiceCallFailureReason.remoteMicrophoneDenied,
+              detail: _remoteMediaPermissionDetail(frame.reasonCode),
+              failureReason: _remoteMediaPermissionFailure(frame.reasonCode),
               updatedAt: DateTime.now().millisecondsSinceEpoch,
+              audioLevel: const VoiceAudioLevel.unavailable(),
             ),
           );
         }
@@ -285,13 +460,24 @@ extension VoiceCallRuntime on RainRuntimeController {
     VoiceCallFrame frame, {
     required VoiceCallRoom room,
   }) async {
+    final localUsername = _normalizedUsername(selfIdentity.username);
+    if (room.status != VoiceCallSignalingStatus.ringing ||
+        frame.callId != room.callId ||
+        frame.sessionEpoch != room.createdAt ||
+        _normalizedUsername(room.caller) != _normalizedUsername(peerId) ||
+        _normalizedUsername(room.callee) != localUsername ||
+        _normalizedUsername(frame.from) != _normalizedUsername(room.caller) ||
+        _normalizedUsername(frame.to) != localUsername) {
+      return;
+    }
+
     final disposition = await _prepareIncomingVoiceInvite(peerId, frame);
     if (disposition == _IncomingVoiceInviteDisposition.ignore) {
       await _voiceCallSession?.handleFrame(frame);
       return;
     }
     if (disposition == _IncomingVoiceInviteDisposition.busy ||
-        await fileTransferStore.hasActiveTransferForPeer(peerId)) {
+        await _firstActiveTransfer() != null) {
       await _endVoiceCallInSignaling(
         callId: frame.callId,
         status: VoiceCallSignalingStatus.failed,
@@ -320,6 +506,7 @@ extension VoiceCallRuntime on RainRuntimeController {
       callId: frame.callId,
       sessionEpoch: room.createdAt,
       isOutgoing: false,
+      mediaMode: frame.mediaMode,
     );
     await session.handleFrame(frame);
   }
@@ -331,7 +518,7 @@ extension VoiceCallRuntime on RainRuntimeController {
       return;
     }
     if (disposition == _IncomingVoiceInviteDisposition.busy ||
-        await fileTransferStore.hasActiveTransferForPeer(peerId)) {
+        await _firstActiveTransfer() != null) {
       await _sendVoiceFrame(
         peerId,
         VoiceCallFrameType.busy,
@@ -363,6 +550,7 @@ extension VoiceCallRuntime on RainRuntimeController {
       callId: frame.callId,
       sessionEpoch: frame.sessionEpoch,
       isOutgoing: false,
+      mediaMode: frame.mediaMode,
     );
     await session.handleFrame(frame);
   }
@@ -376,17 +564,24 @@ extension VoiceCallRuntime on RainRuntimeController {
     }
 
     final current = _voiceCallState;
-    if (!current.hasCall || current.phase == VoiceCallPhase.failed) {
-      return _IncomingVoiceInviteDisposition.accept;
-    }
-
     final normalizedPeerId = _normalizedUsername(peerId);
-    if (current.peerId != normalizedPeerId) {
-      return _IncomingVoiceInviteDisposition.busy;
+
+    if (!current.hasCall) {
+      return _IncomingVoiceInviteDisposition.accept;
     }
 
     if (current.callId == frame.callId) {
       return _IncomingVoiceInviteDisposition.ignore;
+    }
+
+    if (current.phase == VoiceCallPhase.failed) {
+      await _disposeCurrentVoiceCallSession();
+      _setVoiceCallState(const VoiceCallState.idle());
+      return _IncomingVoiceInviteDisposition.accept;
+    }
+
+    if (current.peerId != normalizedPeerId) {
+      return _IncomingVoiceInviteDisposition.busy;
     }
 
     if (!_canReplaceVoiceCallWithRetry(current)) {
@@ -398,14 +593,8 @@ extension VoiceCallRuntime on RainRuntimeController {
   }
 
   bool _canReplaceVoiceCallWithRetry(VoiceCallState current) {
-    return switch (current.phase) {
-      VoiceCallPhase.idle || VoiceCallPhase.failed => true,
-      VoiceCallPhase.connectingPeer ||
-      VoiceCallPhase.outgoingRinging ||
-      VoiceCallPhase.incomingRinging ||
-      VoiceCallPhase.connectingMedia => true,
-      VoiceCallPhase.active || VoiceCallPhase.ending => false,
-    };
+    return !current.isOutgoing &&
+        current.phase == VoiceCallPhase.incomingRinging;
   }
 
   Future<void> _replaceStaleVoiceCallForRetry(VoiceCallState current) async {
@@ -433,12 +622,19 @@ extension VoiceCallRuntime on RainRuntimeController {
   }
 
   void _handleVoiceMute(String peerId, VoiceCallFrame frame) {
-    if (!_isCurrentVoiceCall(peerId, frame.callId) || frame.muted == null) {
+    if (!_isCurrentVoiceCall(
+          peerId,
+          frame.callId,
+          sessionEpoch: frame.sessionEpoch,
+        ) ||
+        frame.muted == null && frame.cameraMuted == null) {
       return;
     }
     _setVoiceCallState(
       _voiceCallState.copyWith(
-        isRemoteMuted: frame.muted,
+        isRemoteMuted: frame.muted ?? _voiceCallState.isRemoteMuted,
+        isRemoteCameraMuted:
+            frame.cameraMuted ?? _voiceCallState.isRemoteCameraMuted,
         updatedAt: DateTime.now().millisecondsSinceEpoch,
       ),
     );
@@ -449,6 +645,7 @@ extension VoiceCallRuntime on RainRuntimeController {
     required String callId,
     required int sessionEpoch,
     required bool isOutgoing,
+    required CallMediaMode mediaMode,
   }) async {
     final manager = brain;
     if (manager == null) {
@@ -457,7 +654,13 @@ extension VoiceCallRuntime on RainRuntimeController {
     _requireVoiceSignalingAdapter();
 
     await _disposeCurrentVoiceCallSession();
-    final media = await manager.createVoiceMediaConnection(peerId);
+    final media = switch (mediaMode) {
+      CallMediaMode.audio => await manager.createVoiceMediaConnection(peerId),
+      CallMediaMode.video => await _createVideoVoiceMediaConnection(
+        manager,
+        peerId,
+      ),
+    };
     final session = VoiceCallSession(
       localPeerId: selfIdentity.username,
       remotePeerId: peerId,
@@ -466,6 +669,7 @@ extension VoiceCallRuntime on RainRuntimeController {
       media: media,
       sendFrame: (VoiceCallFrame frame) => _sendVoiceFrameObject(peerId, frame),
       isOfferOwner: isOutgoing,
+      mediaMode: mediaMode,
       logger: (String message) {
         errorRecorder?.call(
           StateError('Voice call signaling ignored: $message'),
@@ -502,7 +706,7 @@ extension VoiceCallRuntime on RainRuntimeController {
           .watchCall(session.callId)
           .listen(
             (VoiceCallRoom? room) async {
-              if (room == null || _voiceCallSession != session) {
+              if (room == null || !_isLiveVoiceCallSession(session)) {
                 return;
               }
               await _handleFirebaseVoiceRoomUpdate(
@@ -576,7 +780,14 @@ extension VoiceCallRuntime on RainRuntimeController {
     required String peerId,
     required bool isOutgoing,
   }) async {
-    if (_voiceCallSession != session || room.callId != session.callId) {
+    if (!_isLiveVoiceCallSession(session) || room.callId != session.callId) {
+      return;
+    }
+    if (room.createdAt != session.sessionEpoch) {
+      _recordLateVoiceFrame(
+        session,
+        'ignored room update for stale epoch ${room.createdAt}',
+      );
       return;
     }
     final localUsername = _normalizedUsername(selfIdentity.username);
@@ -585,6 +796,16 @@ extension VoiceCallRuntime on RainRuntimeController {
       _setVoiceCallState(
         _voiceCallState.copyWith(
           isRemoteMuted: remoteMuted,
+          updatedAt: DateTime.now().millisecondsSinceEpoch,
+        ),
+      );
+    }
+    final remoteCameraMuted = room.cameraMuted[peerId];
+    if (remoteCameraMuted != null &&
+        _voiceCallState.isRemoteCameraMuted != remoteCameraMuted) {
+      _setVoiceCallState(
+        _voiceCallState.copyWith(
+          isRemoteCameraMuted: remoteCameraMuted,
           updatedAt: DateTime.now().millisecondsSinceEpoch,
         ),
       );
@@ -613,7 +834,9 @@ extension VoiceCallRuntime on RainRuntimeController {
       case VoiceCallSignalingStatus.ended:
       case VoiceCallSignalingStatus.failed:
       case VoiceCallSignalingStatus.expired:
-        if (room.endedBy == localUsername) {
+        if (room.endedBy == localUsername &&
+            (_voiceCallState.phase == VoiceCallPhase.idle ||
+                _voiceCallState.phase == VoiceCallPhase.ending)) {
           return;
         }
         await session.handleFrame(
@@ -638,6 +861,9 @@ extension VoiceCallRuntime on RainRuntimeController {
         VoiceCallFrameType.busy,
       VoiceCallSignalingStatus.failed
           when room.reasonCode == _voiceCallMicrophoneDeniedReasonCode =>
+        VoiceCallFrameType.reject,
+      VoiceCallSignalingStatus.failed
+          when room.reasonCode == _voiceCallCameraDeniedReasonCode =>
         VoiceCallFrameType.reject,
       VoiceCallSignalingStatus.failed
           when room.reasonCode == _voiceCallRejectedReasonCode =>
@@ -678,13 +904,43 @@ extension VoiceCallRuntime on RainRuntimeController {
     };
   }
 
+  String? _voiceCallReasonCodeForFailure(VoiceCallFailureReason? reason) {
+    return switch (reason) {
+      null => null,
+      VoiceCallFailureReason.microphoneDenied ||
+      VoiceCallFailureReason.remoteMicrophoneDenied =>
+        _voiceCallMicrophoneDeniedReasonCode,
+      VoiceCallFailureReason.cameraDenied ||
+      VoiceCallFailureReason.remoteCameraDenied =>
+        _voiceCallCameraDeniedReasonCode,
+      VoiceCallFailureReason.peerBusy ||
+      VoiceCallFailureReason.fileTransferActive => _voiceCallBusyReasonCode,
+      VoiceCallFailureReason.rejected => _voiceCallRejectedReasonCode,
+      VoiceCallFailureReason.networkLost => _voiceCallNetworkLostReasonCode,
+      VoiceCallFailureReason.signalingFailed =>
+        _voiceCallSignalingFailedReasonCode,
+      VoiceCallFailureReason.expired => _voiceCallExpiredReasonCode,
+      VoiceCallFailureReason.ringingTimeout =>
+        _voiceCallRingingTimeoutReasonCode,
+      VoiceCallFailureReason.mediaIceTimeout => _voiceCallIceTimeoutReasonCode,
+      VoiceCallFailureReason.mediaNoRemoteAudio =>
+        _voiceCallNoRemoteAudioReasonCode,
+      VoiceCallFailureReason.videoRendererFailed =>
+        _voiceCallVideoRendererFailedReasonCode,
+      VoiceCallFailureReason.videoFirstFrameTimeout =>
+        _voiceCallVideoFirstFrameTimeoutReasonCode,
+      VoiceCallFailureReason.mediaConnectionFailed =>
+        _voiceCallFailedReasonCode,
+    };
+  }
+
   Future<void> _handleFirebaseVoiceEnvelope({
     required VoiceCallSession session,
     required String peerId,
     required VoiceSignalingEnvelope envelope,
     required String purpose,
   }) async {
-    if (_voiceCallSession != session) {
+    if (!_isLiveVoiceCallSession(session)) {
       return;
     }
     try {
@@ -693,6 +949,22 @@ extension VoiceCallRuntime on RainRuntimeController {
         envelope: envelope,
         purpose: purpose,
       );
+      if (!_isLiveVoiceCallSession(session)) {
+        _recordLateVoiceFrame(
+          session,
+          'late decrypted ${frame.type.name} frame after call moved on',
+        );
+        return;
+      }
+      if (frame.callId != session.callId ||
+          frame.sessionEpoch != session.sessionEpoch) {
+        _recordLateVoiceFrame(
+          session,
+          'late ${frame.type.name} frame for '
+          '${frame.callId}/${frame.sessionEpoch}',
+        );
+        return;
+      }
       if (_normalizedUsername(frame.from) ==
           _normalizedUsername(selfIdentity.username)) {
         return;
@@ -703,6 +975,13 @@ extension VoiceCallRuntime on RainRuntimeController {
       await session.handleFrame(frame);
     } catch (error, stackTrace) {
       _recordVoiceSignalingError(error, stackTrace);
+      if (!_isLiveVoiceCallSession(session)) {
+        _recordLateVoiceFrame(
+          session,
+          'ignored signaling error after call moved on: $error',
+        );
+        return;
+      }
       await _failVoiceCall(
         error,
         failureReason: VoiceCallFailureReason.mediaConnectionFailed,
@@ -726,6 +1005,7 @@ extension VoiceCallRuntime on RainRuntimeController {
           callee: _normalizedUsername(peerId),
           createdAt: frame.sessionEpoch,
           expiresAt: frame.sessionEpoch + _voiceCallExpiry.inMilliseconds,
+          mediaMode: frame.mediaMode,
         );
         break;
       case VoiceCallFrameType.accept:
@@ -801,12 +1081,22 @@ extension VoiceCallRuntime on RainRuntimeController {
         );
         break;
       case VoiceCallFrameType.mute:
-        await voiceAdapter.setMuted(
-          callId: frame.callId,
-          username: localUsername,
-          muted: frame.muted ?? false,
-          updatedAt: now,
-        );
+        if (frame.muted != null) {
+          await voiceAdapter.setMuted(
+            callId: frame.callId,
+            username: localUsername,
+            muted: frame.muted!,
+            updatedAt: now,
+          );
+        }
+        if (frame.cameraMuted != null) {
+          await voiceAdapter.setCameraMuted(
+            callId: frame.callId,
+            username: localUsername,
+            cameraMuted: frame.cameraMuted!,
+            updatedAt: now,
+          );
+        }
         break;
     }
   }
@@ -816,17 +1106,33 @@ extension VoiceCallRuntime on RainRuntimeController {
     VoiceCallSessionState sessionState, {
     required bool isOutgoing,
   }) {
-    if (_voiceCallSession != session) {
+    if (!_isLiveVoiceCallSession(session)) {
       return;
     }
     final mappedPhase = _mapVoiceCallSessionPhase(sessionState.phase);
+    if (_voiceCallState.phase == VoiceCallPhase.failed &&
+        _voiceCallState.callId == session.callId &&
+        _voiceCallState.sessionEpoch == session.sessionEpoch &&
+        mappedPhase == VoiceCallPhase.active) {
+      _recordLateVoiceFrame(session, 'ignored active state after failure');
+      return;
+    }
+    final previous = _voiceCallState;
+    final isSameCall =
+        previous.callId == session.callId &&
+        previous.sessionEpoch == session.sessionEpoch;
     final now = sessionState.updatedAt;
     final error = sessionState.error;
     final failureReason = _voiceCallFailureReasonForSessionState(sessionState);
     final detail = _voiceCallDetailForSessionState(sessionState);
     final startedAt = mappedPhase == VoiceCallPhase.active
-        ? _voiceCallState.startedAt ?? now
-        : _voiceCallState.startedAt;
+        ? (isSameCall ? previous.startedAt : null) ?? now
+        : isSameCall
+        ? previous.startedAt
+        : null;
+    final keepsLocalAudioControls = mappedPhase == VoiceCallPhase.active;
+    final mediaReconnecting =
+        mappedPhase == VoiceCallPhase.active && sessionState.mediaReconnecting;
 
     if (mappedPhase == VoiceCallPhase.idle) {
       _setVoiceCallState(const VoiceCallState.idle());
@@ -839,14 +1145,34 @@ extension VoiceCallRuntime on RainRuntimeController {
         phase: mappedPhase,
         peerId: session.remotePeerId,
         callId: session.callId,
+        sessionEpoch: session.sessionEpoch,
+        mediaMode: sessionState.mediaMode,
         isOutgoing: isOutgoing,
-        isMuted: _voiceCallState.isMuted,
-        isRemoteMuted: _voiceCallState.isRemoteMuted,
+        isMuted: isSameCall && previous.isMuted,
+        isCameraMuted: isSameCall && previous.isCameraMuted,
+        isDeafened:
+            isSameCall && keepsLocalAudioControls && previous.isDeafened,
+        isRemoteMuted: isSameCall && previous.isRemoteMuted,
+        isRemoteCameraMuted: isSameCall && previous.isRemoteCameraMuted,
+        hasLocalVideo: isSameCall && previous.hasLocalVideo,
+        hasRemoteVideo: isSameCall && previous.hasRemoteVideo,
+        videoFirstFrameTimedOut: isSameCall && previous.videoFirstFrameTimedOut,
+        mediaReconnecting: mediaReconnecting,
+        reconnectingSince: mediaReconnecting
+            ? sessionState.reconnectingSince ?? previous.reconnectingSince
+            : null,
+        outputRoute: isSameCall && keepsLocalAudioControls
+            ? previous.outputRoute
+            : VoiceCallOutputRoute.systemDefault,
+        outputRouteWarning: isSameCall && keepsLocalAudioControls
+            ? previous.outputRouteWarning
+            : null,
         startedAt: startedAt,
         updatedAt: now,
         detail: detail,
         error: error,
         failureReason: failureReason,
+        audioLevel: VoiceAudioLevel.fromMedia(sessionState.audioLevel),
       ),
     );
 
@@ -868,6 +1194,18 @@ extension VoiceCallRuntime on RainRuntimeController {
     }
 
     if (mappedPhase == VoiceCallPhase.failed) {
+      unawaited(
+        _endVoiceCallInSignaling(
+          callId: session.callId,
+          status: VoiceCallSignalingStatus.failed,
+          reason: detail ?? sessionState.detail ?? _voiceCallMediaFailed,
+          reasonCode:
+              sessionState.reasonCode ??
+              _voiceCallReasonCodeForFailure(failureReason) ??
+              _voiceCallFailedReasonCode,
+          bestEffort: true,
+        ),
+      );
       _recordVoiceCallSessionFailure(
         session,
         sessionState,
@@ -894,8 +1232,18 @@ extension VoiceCallRuntime on RainRuntimeController {
   VoiceCallFailureReason? _voiceCallFailureReasonForSessionState(
     VoiceCallSessionState state,
   ) {
+    final error = state.error;
+    if (error != null) {
+      final localFailure = _localAudioFailureReason(error);
+      if (localFailure != null) {
+        return localFailure;
+      }
+    }
     if (state.reasonCode == _voiceCallMicrophoneDeniedReasonCode) {
       return VoiceCallFailureReason.remoteMicrophoneDenied;
+    }
+    if (state.reasonCode == _voiceCallCameraDeniedReasonCode) {
+      return VoiceCallFailureReason.remoteCameraDenied;
     }
     if (state.reasonCode == _voiceCallBusyReasonCode ||
         state.detail == 'Peer is busy.') {
@@ -932,10 +1280,16 @@ extension VoiceCallRuntime on RainRuntimeController {
         state.detail == _voiceCallMediaFailed) {
       return VoiceCallFailureReason.mediaNoRemoteAudio;
     }
+    if (state.reasonCode == _voiceCallVideoRendererFailedReasonCode) {
+      return VoiceCallFailureReason.videoRendererFailed;
+    }
+    if (state.reasonCode == _voiceCallVideoFirstFrameTimeoutReasonCode ||
+        state.detail == _voiceCallVideoFailed) {
+      return VoiceCallFailureReason.videoFirstFrameTimeout;
+    }
     if (state.reasonCode == _voiceCallFailedReasonCode) {
       return VoiceCallFailureReason.mediaConnectionFailed;
     }
-    final error = state.error;
     if (error != null) {
       return _localAudioFailureReason(error);
     }
@@ -946,8 +1300,18 @@ extension VoiceCallRuntime on RainRuntimeController {
     if (state.phase != VoiceCallSessionPhase.failed) {
       return state.detail;
     }
+    final error = state.error;
+    if (error != null) {
+      final localDetail = _localAudioFailureDetail(error);
+      if (localDetail != null) {
+        return localDetail;
+      }
+    }
     if (state.reasonCode == _voiceCallMicrophoneDeniedReasonCode) {
       return _voiceCallRemoteMicrophonePermissionRequired;
+    }
+    if (state.reasonCode == _voiceCallCameraDeniedReasonCode) {
+      return _voiceCallRemoteCameraPermissionRequired;
     }
     if (state.reasonCode == _voiceCallBusyReasonCode ||
         state.detail == 'Peer is busy.') {
@@ -980,10 +1344,15 @@ extension VoiceCallRuntime on RainRuntimeController {
     if (state.reasonCode == _voiceCallNoRemoteAudioReasonCode) {
       return _voiceCallMediaFailed;
     }
+    if (state.reasonCode == _voiceCallVideoRendererFailedReasonCode) {
+      return _voiceCallVideoFailed;
+    }
+    if (state.reasonCode == _voiceCallVideoFirstFrameTimeoutReasonCode) {
+      return _voiceCallVideoFailed;
+    }
     if (state.reasonCode == _voiceCallFailedReasonCode) {
       return _voiceCallMediaFailed;
     }
-    final error = state.error;
     if (error == null) {
       return state.detail;
     }
@@ -996,7 +1365,8 @@ extension VoiceCallRuntime on RainRuntimeController {
     required bool isOutgoing,
   }) {
     final error = state.error;
-    if (error != null && _localAudioFailureReason(error) != null) {
+    final localFailure = error == null ? null : _localAudioFailureReason(error);
+    if (localFailure == VoiceCallFailureReason.microphoneDenied) {
       return;
     }
     final detail =
@@ -1005,28 +1375,103 @@ extension VoiceCallRuntime on RainRuntimeController {
         state.reasonCode ??
         _voiceCallFailureReasonForSessionState(state)?.name ??
         'unknown';
+    _recordVoiceCallDiagnostics(
+      callId: session.callId,
+      sessionEpoch: session.sessionEpoch,
+      peerId: session.remotePeerId,
+      isOutgoing: isOutgoing,
+      mediaMode: state.mediaMode,
+      failureCode: failureCode,
+      userMessage: detail,
+      nativeError:
+          error?.toString() ??
+          state.mediaDiagnostics?.lastError ??
+          state.mediaDiagnostics?.lastDetail ??
+          state.detail ??
+          'No native error captured.',
+      mediaDiagnostics: state.mediaDiagnostics,
+      rendererState: state.mediaMode == CallMediaMode.video
+          ? _lastVideoCallRendererState
+          : null,
+      cameraPermissionFailureDetail: _cameraPermissionFailureDetail(
+        error,
+        state.reasonCode,
+      ),
+    );
+  }
+
+  void _recordVoiceCallRuntimeFailure(
+    VoiceCallState state, {
+    required String failureCode,
+    required String userMessage,
+    required String nativeError,
+  }) {
+    final callId = state.callId;
+    final peerId = state.peerId;
+    final sessionEpoch = state.sessionEpoch;
+    if (callId == null || peerId == null || sessionEpoch == null) {
+      return;
+    }
+    final callDiagnostics = _videoCallMediaConnection?.diagnostics;
+    _recordVoiceCallDiagnostics(
+      callId: callId,
+      sessionEpoch: sessionEpoch,
+      peerId: peerId,
+      isOutgoing: state.isOutgoing,
+      mediaMode: state.mediaMode,
+      failureCode: failureCode,
+      userMessage: userMessage,
+      nativeError: nativeError,
+      mediaDiagnostics: callDiagnostics == null
+          ? _voiceCallSession?.state.mediaDiagnostics
+          : _voiceMediaDiagnosticsForCall(callDiagnostics),
+      rendererState: state.isVideo ? _lastVideoCallRendererState : null,
+    );
+  }
+
+  void _recordVoiceCallDiagnostics({
+    required String callId,
+    required int sessionEpoch,
+    required String peerId,
+    required bool isOutgoing,
+    required CallMediaMode mediaMode,
+    required String failureCode,
+    required String userMessage,
+    required String nativeError,
+    VoiceMediaDiagnostics? mediaDiagnostics,
+    VideoCallRendererState? rendererState,
+    String? cameraPermissionFailureDetail,
+  }) {
     errorRecorder?.call(
       VoiceCallDiagnostics(
-        callId: session.callId,
-        peerId: session.remotePeerId,
+        callId: callId,
+        sessionEpoch: sessionEpoch,
+        peerId: peerId,
         role: isOutgoing ? 'caller' : 'callee',
+        mediaMode: mediaMode.name,
         failureCode: failureCode,
-        userMessage: detail,
-        nativeError:
-            error?.toString() ??
-            state.mediaDiagnostics?.lastError ??
-            state.mediaDiagnostics?.lastDetail ??
-            state.detail ??
-            'No native error captured.',
-        mediaStates: state.mediaDiagnostics?.mediaStates ?? const <String>[],
-        iceStates:
-            state.mediaDiagnostics?.iceConnectionStates ?? const <String>[],
+        userMessage: userMessage,
+        sanitizedUiError: userMessage,
+        nativeError: nativeError,
+        mediaStates: mediaDiagnostics?.mediaStates ?? const <String>[],
+        iceStates: mediaDiagnostics?.iceConnectionStates ?? const <String>[],
         connectionStates:
-            state.mediaDiagnostics?.peerConnectionStates ?? const <String>[],
-        localCandidateCount: state.mediaDiagnostics?.localCandidateCount ?? 0,
-        remoteCandidateCount: state.mediaDiagnostics?.remoteCandidateCount ?? 0,
+            mediaDiagnostics?.peerConnectionStates ?? const <String>[],
+        localCandidateCount: mediaDiagnostics?.localCandidateCount ?? 0,
+        remoteCandidateCount: mediaDiagnostics?.remoteCandidateCount ?? 0,
         pendingRemoteCandidateCount:
-            state.mediaDiagnostics?.pendingRemoteCandidateCount ?? 0,
+            mediaDiagnostics?.pendingRemoteCandidateCount ?? 0,
+        localAudioTrackCount: mediaDiagnostics?.localAudioTrackCount ?? 0,
+        remoteAudioTrackCount: mediaDiagnostics?.remoteAudioTrackCount ?? 0,
+        localVideoTrackCount: mediaDiagnostics?.localVideoTrackCount ?? 0,
+        remoteVideoTrackCount: mediaDiagnostics?.remoteVideoTrackCount ?? 0,
+        remoteStreamCount: mediaDiagnostics?.remoteStreamCount ?? 0,
+        firstLocalVideoFrameAt: _isoTimestamp(rendererState?.localFirstFrameAt),
+        firstRemoteVideoFrameAt: _isoTimestamp(
+          rendererState?.remoteFirstFrameAt,
+        ),
+        selectedCandidateRoute: _selectedVoiceCallCandidateRoute(peerId),
+        cameraPermissionFailureDetail: cameraPermissionFailureDetail,
       ),
       StackTrace.current,
       source: 'voice-call-media',
@@ -1034,7 +1479,49 @@ extension VoiceCallRuntime on RainRuntimeController {
     );
   }
 
+  String? _isoTimestamp(DateTime? value) {
+    return value?.toUtc().toIso8601String();
+  }
+
+  String? _cameraPermissionFailureDetail(Object? error, String? reasonCode) {
+    if (reasonCode == _voiceCallCameraDeniedReasonCode) {
+      return error?.toString() ?? _voiceCallRemoteCameraPermissionRequired;
+    }
+    if (error != null &&
+        _localAudioFailureReason(error) ==
+            VoiceCallFailureReason.cameraDenied) {
+      return error.toString();
+    }
+    return null;
+  }
+
+  String? _selectedVoiceCallCandidateRoute(String peerId) {
+    final route = brain?.getSession(_normalizedUsername(peerId))?.route;
+    if (route == null || route.kind.name == 'unknown') {
+      return null;
+    }
+    final localType = route.localCandidateType?.trim();
+    final remoteType = route.remoteCandidateType?.trim();
+    final protocol = route.protocol?.trim();
+    final relayProtocol = route.relayProtocol?.trim();
+    final pairId = route.selectedCandidatePairId?.trim();
+    final parts = <String>[
+      route.kind.name,
+      if (localType != null &&
+          localType.isNotEmpty &&
+          remoteType != null &&
+          remoteType.isNotEmpty)
+        '$localType->$remoteType',
+      if (protocol != null && protocol.isNotEmpty) protocol,
+      if (relayProtocol != null && relayProtocol.isNotEmpty)
+        'relay:$relayProtocol',
+      if (pairId != null && pairId.isNotEmpty) 'pair:$pairId',
+    ];
+    return parts.join(' ');
+  }
+
   Future<void> _disposeCurrentVoiceCallSession() async {
+    _cancelVoiceCallReconnectGrace();
     await _cancelVoiceSignalingSubscriptions();
     final session = _voiceCallSession;
     if (session == null) {
@@ -1048,6 +1535,7 @@ extension VoiceCallRuntime on RainRuntimeController {
   Future<void> _disposeVoiceCallSession(VoiceCallSession session) async {
     if (_voiceCallSession == session) {
       _voiceCallSession = null;
+      _cancelVoiceCallReconnectGrace();
       await _cancelVoiceSignalingSubscriptions();
       await _voiceCallSessionSubscription?.cancel();
       _voiceCallSessionSubscription = null;
@@ -1056,6 +1544,8 @@ extension VoiceCallRuntime on RainRuntimeController {
       await session.dispose();
     } catch (_) {
       // Voice call cleanup is best effort once the call is terminal.
+    } finally {
+      await _disposeVideoCallResources();
     }
   }
 
@@ -1067,6 +1557,8 @@ extension VoiceCallRuntime on RainRuntimeController {
     String? reason,
     String? reasonCode,
     bool? muted,
+    bool? cameraMuted,
+    CallMediaMode mediaMode = CallMediaMode.audio,
     bool bestEffort = false,
   }) async {
     try {
@@ -1083,6 +1575,8 @@ extension VoiceCallRuntime on RainRuntimeController {
           reason: reason,
           reasonCode: reasonCode,
           muted: muted,
+          cameraMuted: cameraMuted,
+          mediaMode: mediaMode,
         ),
       );
     } catch (_) {
@@ -1139,6 +1633,243 @@ extension VoiceCallRuntime on RainRuntimeController {
       VoiceCallRole.caller => SignalingCipher.callerIcePurpose,
       VoiceCallRole.callee => SignalingCipher.calleeIcePurpose,
     };
+  }
+
+  VoiceMediaOutputRoute _voiceMediaOutputRoute(VoiceCallOutputRoute route) {
+    return switch (route) {
+      VoiceCallOutputRoute.systemDefault => VoiceMediaOutputRoute.systemDefault,
+      VoiceCallOutputRoute.speaker => VoiceMediaOutputRoute.speaker,
+      VoiceCallOutputRoute.bluetooth => VoiceMediaOutputRoute.bluetooth,
+    };
+  }
+
+  String _voiceCallPreflightDetail(CallMediaMode mediaMode) {
+    return switch (mediaMode) {
+      CallMediaMode.audio => 'Checking microphone permission.',
+      CallMediaMode.video => 'Checking camera and microphone permission.',
+    };
+  }
+
+  bool _isRemoteMediaPermissionCode(String? reasonCode) {
+    return reasonCode == _voiceCallMicrophoneDeniedReasonCode ||
+        reasonCode == _voiceCallCameraDeniedReasonCode;
+  }
+
+  VoiceCallFailureReason _remoteMediaPermissionFailure(String? reasonCode) {
+    return reasonCode == _voiceCallCameraDeniedReasonCode
+        ? VoiceCallFailureReason.remoteCameraDenied
+        : VoiceCallFailureReason.remoteMicrophoneDenied;
+  }
+
+  String _remoteMediaPermissionDetail(String? reasonCode) {
+    return reasonCode == _voiceCallCameraDeniedReasonCode
+        ? _voiceCallRemoteCameraPermissionRequired
+        : _voiceCallRemoteMicrophonePermissionRequired;
+  }
+
+  Future<VoiceMediaConnection> _createVideoVoiceMediaConnection(
+    SessionManager manager,
+    String peerId,
+  ) async {
+    final media = await manager.createCallMediaConnection(peerId);
+    _lastVideoCallRendererState = null;
+    _handledVideoFirstFrameTimeoutCallId = null;
+    _videoCallMediaConnection = media;
+    final renderers = VideoCallRenderers(
+      rendererFactory: videoCallRendererFactory,
+      remoteFirstFrameTimeout: videoCallRemoteFirstFrameTimeout,
+    );
+    _videoCallRenderers = renderers;
+    _videoCallRendererSubscription = renderers.onStateChanged.listen(
+      _handleVideoRendererState,
+      onError: (Object error, StackTrace stackTrace) {
+        _handleVideoRendererFailure(peerId, error, stackTrace);
+      },
+    );
+    return _VideoVoiceMediaConnection(
+      media: media,
+      renderers: renderers,
+      kind: CallMediaKind.video,
+      onRemoteTrackError: (Object error, StackTrace stackTrace) {
+        errorRecorder?.call(
+          error,
+          stackTrace,
+          source: 'video-call-media',
+          fatal: false,
+        );
+      },
+      onRendererError: (Object error, StackTrace stackTrace) {
+        _handleVideoRendererFailure(peerId, error, stackTrace);
+      },
+    );
+  }
+
+  void _handleVideoRendererState(VideoCallRendererState rendererState) {
+    _lastVideoCallRendererState = rendererState;
+    final current = _voiceCallState;
+    if (!current.hasCall || !current.isVideo) {
+      return;
+    }
+    _setVoiceCallState(
+      current.copyWith(
+        hasLocalVideo: rendererState.hasLocalStream,
+        hasRemoteVideo: rendererState.hasRemoteStream,
+        videoFirstFrameTimedOut: rendererState.remoteFirstFrameTimedOut,
+        updatedAt: DateTime.now().millisecondsSinceEpoch,
+      ),
+    );
+    if (rendererState.remoteFirstFrameTimedOut &&
+        current.phase == VoiceCallPhase.active &&
+        !current.isRemoteCameraMuted &&
+        current.callId != null &&
+        _handledVideoFirstFrameTimeoutCallId != current.callId) {
+      _handledVideoFirstFrameTimeoutCallId = current.callId;
+      unawaited(_failVideoCallForFirstFrameTimeout(current));
+    }
+  }
+
+  Future<void> _failVideoCallForFirstFrameTimeout(
+    VoiceCallState timedOutCall,
+  ) async {
+    final peerId = timedOutCall.peerId;
+    final callId = timedOutCall.callId;
+    if (peerId == null || callId == null) {
+      return;
+    }
+    if (!_isCurrentVoiceCall(
+      peerId,
+      callId,
+      sessionEpoch: timedOutCall.sessionEpoch,
+    )) {
+      return;
+    }
+    _recordVoiceCallRuntimeFailure(
+      timedOutCall,
+      failureCode: _voiceCallVideoFirstFrameTimeoutReasonCode,
+      userMessage: _voiceCallVideoFailed,
+      nativeError:
+          'Remote video stream was attached but no rendered frame arrived.',
+    );
+    await _endVoiceCallForPeer(
+      peerId,
+      notifyPeer: false,
+      detail: _voiceCallVideoFailed,
+      failureReason: VoiceCallFailureReason.videoFirstFrameTimeout,
+      failureDetail: _voiceCallVideoFailed,
+    );
+  }
+
+  void _handleVideoRendererFailure(
+    String peerId,
+    Object error,
+    StackTrace stackTrace,
+  ) {
+    errorRecorder?.call(
+      error,
+      stackTrace,
+      source: 'video-call-renderer',
+      fatal: false,
+    );
+    final current = _voiceCallState;
+    if (!current.hasCall ||
+        !current.isVideo ||
+        current.phase == VoiceCallPhase.failed ||
+        current.phase == VoiceCallPhase.ending ||
+        current.peerId == null ||
+        current.callId == null ||
+        !_isCurrentVoiceCall(
+          peerId,
+          current.callId!,
+          sessionEpoch: current.sessionEpoch,
+        )) {
+      return;
+    }
+    _recordVoiceCallRuntimeFailure(
+      current,
+      failureCode: _voiceCallVideoRendererFailedReasonCode,
+      userMessage: _voiceCallVideoFailed,
+      nativeError: error.toString(),
+    );
+    unawaited(
+      _endVoiceCallForPeer(
+        peerId,
+        notifyPeer: false,
+        detail: _voiceCallVideoFailed,
+        failureReason: VoiceCallFailureReason.videoRendererFailed,
+        failureDetail: _voiceCallVideoFailed,
+      ),
+    );
+  }
+
+  void _handleVoiceCallAppLifecycleState(AppLifecycleState state) {
+    if (state != AppLifecycleState.paused &&
+        state != AppLifecycleState.detached) {
+      return;
+    }
+    final current = _voiceCallState;
+    if (!current.hasCall ||
+        !current.isVideo ||
+        current.phase == VoiceCallPhase.failed ||
+        current.phase == VoiceCallPhase.ending ||
+        current.peerId == null ||
+        current.callId == null) {
+      return;
+    }
+    _recordVoiceCallRuntimeFailure(
+      current,
+      failureCode: _voiceCallFailedReasonCode,
+      userMessage: _voiceCallVideoBackgrounded,
+      nativeError: _voiceCallVideoBackgrounded,
+    );
+    unawaited(
+      _endVoiceCallForPeer(
+        current.peerId!,
+        notifyPeer: false,
+        detail: _voiceCallVideoBackgrounded,
+        failureReason: VoiceCallFailureReason.mediaConnectionFailed,
+        failureDetail: _voiceCallVideoBackgrounded,
+      ),
+    );
+  }
+
+  Future<void> _setVideoCallCameraMutedInSignaling(bool muted) async {
+    final current = _voiceCallState;
+    final callId = current.callId;
+    if (callId == null) {
+      return;
+    }
+    try {
+      await _requireVoiceSignalingAdapter().setCameraMuted(
+        callId: callId,
+        username: _normalizedUsername(selfIdentity.username),
+        cameraMuted: muted,
+        updatedAt: DateTime.now().millisecondsSinceEpoch,
+      );
+    } catch (error, stackTrace) {
+      _recordVoiceSignalingError(error, stackTrace);
+    }
+  }
+
+  Future<void> _disposeVideoCallResources() async {
+    final renderers = _videoCallRenderers;
+    _videoCallRenderers = null;
+    _videoCallMediaConnection = null;
+    await _videoCallRendererSubscription?.cancel();
+    _videoCallRendererSubscription = null;
+    if (renderers == null) {
+      return;
+    }
+    _lastVideoCallRendererState = renderers.state;
+    try {
+      await renderers.dispose();
+    } catch (error, stackTrace) {
+      errorRecorder?.call(
+        error,
+        stackTrace,
+        source: 'video-call-renderer',
+        fatal: false,
+      );
+    }
   }
 
   VoiceSignalingAdapter _requireVoiceSignalingAdapter() {
@@ -1209,8 +1940,11 @@ extension VoiceCallRuntime on RainRuntimeController {
       } else {
         await _endVoiceCallInSignaling(
           callId: session.callId,
-          status: VoiceCallSignalingStatus.ended,
+          status: failureReason == null
+              ? VoiceCallSignalingStatus.ended
+              : VoiceCallSignalingStatus.failed,
           reason: detail,
+          reasonCode: _voiceCallReasonCodeForFailure(failureReason),
           bestEffort: true,
         );
         _setVoiceCallState(
@@ -1218,6 +1952,7 @@ extension VoiceCallRuntime on RainRuntimeController {
             phase: VoiceCallPhase.ending,
             detail: detail,
             updatedAt: DateTime.now().millisecondsSinceEpoch,
+            audioLevel: const VoiceAudioLevel.unavailable(),
           ),
         );
         await _disposeVoiceCallSession(session);
@@ -1238,6 +1973,7 @@ extension VoiceCallRuntime on RainRuntimeController {
         phase: VoiceCallPhase.ending,
         detail: detail,
         updatedAt: DateTime.now().millisecondsSinceEpoch,
+        audioLevel: const VoiceAudioLevel.unavailable(),
       ),
     );
     if (notifyPeer && current.callId != null) {
@@ -1251,8 +1987,11 @@ extension VoiceCallRuntime on RainRuntimeController {
     } else if (current.callId != null) {
       await _endVoiceCallInSignaling(
         callId: current.callId!,
-        status: VoiceCallSignalingStatus.ended,
+        status: failureReason == null
+            ? VoiceCallSignalingStatus.ended
+            : VoiceCallSignalingStatus.failed,
         reason: detail,
+        reasonCode: _voiceCallReasonCodeForFailure(failureReason),
         bestEffort: true,
       );
     }
@@ -1279,33 +2018,124 @@ extension VoiceCallRuntime on RainRuntimeController {
       phase: VoiceCallPhase.failed,
       detail: failureDetail ?? detail,
       failureReason: failureReason,
+      isCameraMuted: false,
+      isDeafened: false,
+      isRemoteCameraMuted: false,
+      hasLocalVideo: false,
+      hasRemoteVideo: false,
+      videoFirstFrameTimedOut: false,
+      mediaReconnecting: false,
+      outputRoute: VoiceCallOutputRoute.systemDefault,
       updatedAt: DateTime.now().millisecondsSinceEpoch,
       clearError: true,
+      clearOutputRouteWarning: true,
+      clearReconnectingSince: true,
+      audioLevel: const VoiceAudioLevel.unavailable(),
     );
   }
 
   void _failVoiceCallForPeer(String peerId, String message) {
-    if (_voiceCallState.peerId != _normalizedUsername(peerId)) {
-      return;
-    }
-    unawaited(_failVoiceCall(message));
-  }
-
-  void _markVoiceCallReconnectingForPeer(String peerId) {
+    final normalizedPeerId = _normalizedUsername(peerId);
     final current = _voiceCallState;
-    if (current.peerId != _normalizedUsername(peerId) ||
+    if (current.peerId != normalizedPeerId ||
         current.phase == VoiceCallPhase.idle ||
         current.phase == VoiceCallPhase.failed ||
         current.phase == VoiceCallPhase.ending) {
       return;
     }
+    unawaited(
+      _endVoiceCallForPeer(
+        normalizedPeerId,
+        notifyPeer: false,
+        detail: message,
+        failureReason: VoiceCallFailureReason.networkLost,
+        failureDetail: 'Network connection lost. Call ended.',
+      ),
+    );
+  }
+
+  void _markVoiceCallReconnectingForPeer(String peerId) {
+    final current = _voiceCallState;
+    final normalizedPeerId = _normalizedUsername(peerId);
+    if (current.peerId != normalizedPeerId ||
+        current.phase == VoiceCallPhase.idle ||
+        current.phase == VoiceCallPhase.failed ||
+        current.phase == VoiceCallPhase.ending) {
+      return;
+    }
+    final now = DateTime.now().millisecondsSinceEpoch;
+    final session = _voiceCallSession;
+    if (session != null && session.callId == current.callId) {
+      session.markMediaReconnecting(detail: _voiceCallReconnecting);
+    }
     _setVoiceCallState(
       current.copyWith(
-        detail: 'Peer connection interrupted. Reconnecting...',
-        updatedAt: DateTime.now().millisecondsSinceEpoch,
+        mediaReconnecting: true,
+        reconnectingSince: current.reconnectingSince ?? now,
+        detail: _voiceCallReconnecting,
+        updatedAt: now,
         clearError: true,
       ),
     );
+    _armVoiceCallReconnectGrace(current.copyWith(updatedAt: now));
+  }
+
+  void _clearVoiceCallReconnectingForPeer(String peerId) {
+    final current = _voiceCallState;
+    if (current.peerId != _normalizedUsername(peerId) ||
+        !current.mediaReconnecting) {
+      return;
+    }
+    final session = _voiceCallSession;
+    if (session != null && session.callId == current.callId) {
+      session.clearMediaReconnecting();
+    }
+    _cancelVoiceCallReconnectGrace();
+    _setVoiceCallState(
+      current.copyWith(
+        mediaReconnecting: false,
+        detail: 'Voice call connected.',
+        updatedAt: DateTime.now().millisecondsSinceEpoch,
+        clearReconnectingSince: true,
+        clearError: true,
+      ),
+    );
+  }
+
+  void _armVoiceCallReconnectGrace(VoiceCallState call) {
+    final callId = call.callId;
+    final peerId = call.peerId;
+    if (callId == null ||
+        peerId == null ||
+        activeCallReconnectGrace <= Duration.zero) {
+      return;
+    }
+    _voiceCallReconnectGraceTimer?.cancel();
+    final sessionEpoch = call.sessionEpoch;
+    _voiceCallReconnectGraceTimer = Timer(activeCallReconnectGrace, () {
+      final current = _voiceCallState;
+      if (current.callId != callId ||
+          current.peerId != peerId ||
+          current.sessionEpoch != sessionEpoch ||
+          !current.mediaReconnecting ||
+          current.phase != VoiceCallPhase.active) {
+        return;
+      }
+      unawaited(
+        _endVoiceCallForPeer(
+          peerId,
+          notifyPeer: false,
+          detail: _voiceCallNetworkLost,
+          failureReason: VoiceCallFailureReason.networkLost,
+          failureDetail: _voiceCallNetworkLost,
+        ),
+      );
+    });
+  }
+
+  void _cancelVoiceCallReconnectGrace() {
+    _voiceCallReconnectGraceTimer?.cancel();
+    _voiceCallReconnectGraceTimer = null;
   }
 
   Future<void> _failVoiceCall(
@@ -1314,19 +2144,42 @@ extension VoiceCallRuntime on RainRuntimeController {
     String? detail,
   }) async {
     final current = _voiceCallState;
-    await _disposeCurrentVoiceCallSession();
     final effectiveFailureReason =
         failureReason ?? _voiceCallFailureReasonForError(error);
+    final effectiveDetail =
+        detail ??
+        _voiceCallFailureDetailForError(error) ??
+        _voiceCallErrorMessage(error);
+    if (current.callId != null) {
+      await _endVoiceCallInSignaling(
+        callId: current.callId!,
+        status: VoiceCallSignalingStatus.failed,
+        reason: effectiveDetail,
+        reasonCode:
+            _voiceCallReasonCodeForFailure(effectiveFailureReason) ??
+            _voiceCallFailedReasonCode,
+        bestEffort: true,
+      );
+    }
+    await _disposeCurrentVoiceCallSession();
     _setVoiceCallState(
       current.copyWith(
         phase: VoiceCallPhase.failed,
-        detail:
-            detail ??
-            _voiceCallFailureDetailForError(error) ??
-            _voiceCallErrorMessage(error),
+        detail: effectiveDetail,
         error: error,
         failureReason: effectiveFailureReason,
+        isCameraMuted: false,
+        isDeafened: false,
+        isRemoteCameraMuted: false,
+        hasLocalVideo: false,
+        hasRemoteVideo: false,
+        videoFirstFrameTimedOut: false,
+        mediaReconnecting: false,
+        outputRoute: VoiceCallOutputRoute.systemDefault,
         updatedAt: DateTime.now().millisecondsSinceEpoch,
+        clearOutputRouteWarning: true,
+        clearReconnectingSince: true,
+        audioLevel: const VoiceAudioLevel.unavailable(),
       ),
     );
   }
@@ -1334,11 +2187,6 @@ extension VoiceCallRuntime on RainRuntimeController {
   void _assertVoiceCallCanStart() {
     if (brain == null) {
       throw StateError('Peer connection is unavailable right now.');
-    }
-    _requireVoiceSignalingAdapter();
-    if (_voiceCallState.hasCall &&
-        _voiceCallState.phase != VoiceCallPhase.failed) {
-      throw StateError('Finish the active call before starting another.');
     }
   }
 
@@ -1355,12 +2203,57 @@ extension VoiceCallRuntime on RainRuntimeController {
     }
   }
 
-  bool _isCurrentVoiceCall(String peerId, String callId) {
+  Future<FileTransferRecord?> _firstActiveTransfer() async {
+    final transfers = await fileTransferStore.loadActiveTransfers();
+    return transfers.isEmpty ? null : transfers.first;
+  }
+
+  bool _isLiveVoiceCallSession(VoiceCallSession session) {
+    if (_shutDown || _voiceCallSession != session) {
+      return false;
+    }
+    final currentCallId = _voiceCallState.callId;
+    final currentEpoch = _voiceCallState.sessionEpoch;
+    final currentCanBePreviousTerminal =
+        _voiceCallState.phase == VoiceCallPhase.failed;
+    if (currentCallId != null &&
+        currentCallId != session.callId &&
+        !currentCanBePreviousTerminal) {
+      return false;
+    }
+    if (currentEpoch != null &&
+        currentEpoch != session.sessionEpoch &&
+        !currentCanBePreviousTerminal) {
+      return false;
+    }
+    return true;
+  }
+
+  bool _isCurrentVoiceCall(String peerId, String callId, {int? sessionEpoch}) {
     return _voiceCallState.peerId == _normalizedUsername(peerId) &&
-        _voiceCallState.callId == callId;
+        _voiceCallState.callId == callId &&
+        (sessionEpoch == null || _voiceCallState.sessionEpoch == sessionEpoch);
+  }
+
+  void _recordLateVoiceFrame(VoiceCallSession session, String message) {
+    errorRecorder?.call(
+      StateError(
+        'Ignored late voice signaling for ${session.callId}/'
+        '${session.sessionEpoch}: $message',
+      ),
+      StackTrace.current,
+      source: 'voice-call-signaling',
+      fatal: false,
+    );
   }
 
   void _setVoiceCallState(VoiceCallState state) {
+    if (!state.mediaReconnecting ||
+        state.phase == VoiceCallPhase.idle ||
+        state.phase == VoiceCallPhase.failed ||
+        state.phase == VoiceCallPhase.ending) {
+      _cancelVoiceCallReconnectGrace();
+    }
     _voiceCallState = state;
     if (!_voiceCallStateController.isClosed) {
       _voiceCallStateController.add(state);
@@ -1389,6 +2282,9 @@ extension VoiceCallRuntime on RainRuntimeController {
     if (_isVoiceCallSignalingError(error, normalized)) {
       return VoiceCallFailureReason.signalingFailed;
     }
+    if (_isVoiceCallVideoRendererError(normalized)) {
+      return VoiceCallFailureReason.videoRendererFailed;
+    }
     if (_isVoiceCallNativeMediaError(normalized) ||
         normalized.contains('ice timeout') ||
         normalized.contains('no remote audio')) {
@@ -1400,6 +2296,11 @@ extension VoiceCallRuntime on RainRuntimeController {
   String? _voiceCallFailureDetailForError(Object error) {
     final normalized = _normalizedVoiceCallErrorText(error).toLowerCase();
     if (_isVoiceCallBusyError(normalized)) {
+      final busyUser = _voiceCallBusyUser(normalized);
+      if (busyUser != null &&
+          busyUser != _normalizedUsername(selfIdentity.username)) {
+        return '@$busyUser is busy in another call.';
+      }
       return 'Peer is busy.';
     }
     if (_isVoiceCallRejectedError(normalized)) {
@@ -1413,6 +2314,9 @@ extension VoiceCallRuntime on RainRuntimeController {
     }
     if (_isVoiceCallSignalingError(error, normalized)) {
       return _voiceCallSignalingFailed;
+    }
+    if (_isVoiceCallVideoRendererError(normalized)) {
+      return _voiceCallVideoFailed;
     }
     if (_isVoiceCallNativeMediaError(normalized) ||
         normalized.contains('ice timeout') ||
@@ -1457,6 +2361,19 @@ extension VoiceCallRuntime on RainRuntimeController {
         normalized.contains('active voice pair');
   }
 
+  String? _voiceCallBusyUser(String normalized) {
+    const marker = 'active voice call already exists for user ';
+    final markerIndex = normalized.indexOf(marker);
+    if (markerIndex < 0) {
+      return null;
+    }
+    final tail = normalized.substring(markerIndex + marker.length).trim();
+    if (tail.isEmpty) {
+      return null;
+    }
+    return _normalizedUsername(tail.split(RegExp(r'[\s.]')).first);
+  }
+
   bool _isVoiceCallRejectedError(String normalized) {
     return normalized == 'rejected.' ||
         normalized.contains('call declined') ||
@@ -1498,8 +2415,35 @@ extension VoiceCallRuntime on RainRuntimeController {
         normalized.contains('peer connection changed while');
   }
 
+  bool _isVoiceCallVideoRendererError(String normalized) {
+    return normalized.contains('video renderer') ||
+        normalized.contains('rtc video renderer') ||
+        normalized.contains('rtcvideorenderer');
+  }
+
   VoiceCallFailureReason? _localAudioFailureReason(Object error) {
+    if (error is _VideoCallRendererException ||
+        _isVoiceCallVideoRendererError(error.toString().toLowerCase())) {
+      return VoiceCallFailureReason.videoRendererFailed;
+    }
+    if (error is CallMediaException) {
+      return switch (error.reason) {
+        CallMediaFailureReason.cameraDenied ||
+        CallMediaFailureReason.cameraUnavailable =>
+          VoiceCallFailureReason.cameraDenied,
+        CallMediaFailureReason.microphoneDenied =>
+          VoiceCallFailureReason.microphoneDenied,
+        CallMediaFailureReason.mediaCaptureFailed ||
+        CallMediaFailureReason.negotiationFailed => null,
+      };
+    }
     final normalized = error.toString().toLowerCase();
+    if (normalized.contains('camera') &&
+        (normalized.contains('permission') ||
+            normalized.contains('denied') ||
+            normalized.contains('unavailable'))) {
+      return VoiceCallFailureReason.cameraDenied;
+    }
     final permissionDenied =
         normalized.contains('notallowed') ||
         normalized.contains('not allowed') ||
@@ -1511,9 +2455,243 @@ extension VoiceCallRuntime on RainRuntimeController {
   }
 
   String? _localAudioFailureDetail(Object error) {
-    return _localAudioFailureReason(error) ==
-            VoiceCallFailureReason.microphoneDenied
-        ? _voiceCallMicrophonePermissionRequired
-        : null;
+    return switch (_localAudioFailureReason(error)) {
+      VoiceCallFailureReason.microphoneDenied =>
+        _voiceCallMicrophonePermissionRequired,
+      VoiceCallFailureReason.cameraDenied => _voiceCallCameraPermissionRequired,
+      VoiceCallFailureReason.videoRendererFailed => _voiceCallVideoFailed,
+      _ => null,
+    };
   }
+}
+
+final class _VideoVoiceMediaConnection implements VoiceMediaConnection {
+  _VideoVoiceMediaConnection({
+    required CallMediaConnection media,
+    required VideoCallRenderers renderers,
+    required CallMediaKind kind,
+    required void Function(Object error, StackTrace stackTrace)
+    onRemoteTrackError,
+    required void Function(Object error, StackTrace stackTrace) onRendererError,
+  }) : _media = media,
+       _renderers = renderers,
+       _kind = kind,
+       _onRemoteTrackError = onRemoteTrackError,
+       _onRendererError = onRendererError {
+    _remoteTrackSubscription = _media.onRemoteTrack.listen(
+      _handleRemoteTrack,
+      onError: (Object error, StackTrace stackTrace) {
+        _onRemoteTrackError(error, stackTrace);
+      },
+    );
+  }
+
+  final CallMediaConnection _media;
+  final VideoCallRenderers _renderers;
+  final CallMediaKind _kind;
+  final void Function(Object error, StackTrace stackTrace) _onRemoteTrackError;
+  final void Function(Object error, StackTrace stackTrace) _onRendererError;
+  final StreamController<VoiceRemoteAudioTrack> _remoteAudioController =
+      StreamController<VoiceRemoteAudioTrack>.broadcast();
+  final StreamController<VoiceMediaAudioLevel> _audioLevelController =
+      StreamController<VoiceMediaAudioLevel>.broadcast();
+
+  late final StreamSubscription<CallRemoteMediaTrack> _remoteTrackSubscription;
+  bool _disposed = false;
+
+  @override
+  Stream<VoiceIceCandidate> get onIceCandidate => _media.onIceCandidate;
+
+  @override
+  Stream<VoiceRemoteAudioTrack> get onRemoteAudioTrack =>
+      _remoteAudioController.stream;
+
+  @override
+  Stream<VoiceMediaAudioLevel> get onAudioLevelChanged =>
+      _audioLevelController.stream;
+
+  @override
+  Stream<VoiceMediaState> get onStateChanged {
+    return _media.onStateChanged.map(_voiceMediaStateForCall);
+  }
+
+  @override
+  VoiceMediaDiagnostics get diagnostics {
+    return _voiceMediaDiagnosticsForCall(_media.diagnostics);
+  }
+
+  @override
+  Future<void> startLocalAudio() async {
+    await _media.startLocalMedia(kind: _kind);
+    await _attachLocalVideoStream();
+  }
+
+  @override
+  Future<VoiceSessionDescription> createOffer() async {
+    final offer = await _media.createOffer(kind: _kind);
+    await _attachLocalVideoStream();
+    return offer;
+  }
+
+  @override
+  Future<VoiceSessionDescription> acceptOffer(
+    VoiceSessionDescription offer,
+  ) async {
+    final answer = await _media.acceptOffer(offer, kind: _kind);
+    await _attachLocalVideoStream();
+    return answer;
+  }
+
+  @override
+  Future<void> applyAnswer(VoiceSessionDescription answer) async {
+    await _media.applyAnswer(answer);
+  }
+
+  @override
+  Future<void> addRemoteCandidate(VoiceIceCandidate candidate) {
+    return _media.addRemoteCandidate(candidate);
+  }
+
+  @override
+  Future<void> setMuted({required bool muted}) {
+    return _media.setMicrophoneMuted(muted: muted);
+  }
+
+  @override
+  Future<void> setDeafened({required bool deafened}) {
+    return _media.setDeafened(deafened: deafened);
+  }
+
+  @override
+  Future<void> setAudioOutputRoute(VoiceMediaOutputRoute route) {
+    return _media.setAudioOutputRoute(route);
+  }
+
+  @override
+  Future<void> dispose() async {
+    if (_disposed) {
+      return;
+    }
+    _disposed = true;
+    await _remoteTrackSubscription.cancel();
+    await _media.dispose();
+    await _remoteAudioController.close();
+    await _audioLevelController.close();
+  }
+
+  Future<void> _attachLocalVideoStream() async {
+    if (_kind != CallMediaKind.video) {
+      return;
+    }
+    try {
+      await _renderers.attachLocalStream(_media.localStream);
+    } catch (error, stackTrace) {
+      Error.throwWithStackTrace(
+        _VideoCallRendererException(
+          'Video renderer failed while attaching local video stream.',
+          error,
+        ),
+        stackTrace,
+      );
+    }
+  }
+
+  void _handleRemoteTrack(CallRemoteMediaTrack event) {
+    if (_disposed) {
+      return;
+    }
+    if (event.isAudio) {
+      _remoteAudioController.add(
+        VoiceRemoteAudioTrack(
+          track: event.track,
+          streams: event.streams,
+          receivedAt: event.receivedAt,
+        ),
+      );
+      return;
+    }
+    if (!event.isVideo) {
+      return;
+    }
+    final stream = event.streams.isEmpty ? null : event.streams.first;
+    unawaited(
+      _renderers.attachRemoteStream(stream).catchError((
+        Object error,
+        StackTrace stackTrace,
+      ) {
+        _onRendererError(
+          _VideoCallRendererException(
+            'Video renderer failed while attaching remote video stream.',
+            error,
+          ),
+          stackTrace,
+        );
+      }),
+    );
+  }
+}
+
+final class _VideoCallRendererException implements Exception {
+  const _VideoCallRendererException(this.message, this.cause);
+
+  final String message;
+  final Object cause;
+
+  @override
+  String toString() => '$message $cause';
+}
+
+VoiceMediaState _voiceMediaStateForCall(CallMediaState state) {
+  return VoiceMediaState(
+    phase: _voiceMediaPhaseForCall(state.phase),
+    detail: state.detail,
+    error: state.error,
+    updatedAt: state.updatedAt,
+  );
+}
+
+VoiceMediaPhase _voiceMediaPhaseForCall(CallMediaPhase phase) {
+  return switch (phase) {
+    CallMediaPhase.idle => VoiceMediaPhase.idle,
+    CallMediaPhase.startingLocalMedia => VoiceMediaPhase.startingLocalAudio,
+    CallMediaPhase.localMediaReady => VoiceMediaPhase.localAudioReady,
+    CallMediaPhase.creatingOffer => VoiceMediaPhase.creatingOffer,
+    CallMediaPhase.applyingOffer => VoiceMediaPhase.applyingOffer,
+    CallMediaPhase.applyingAnswer => VoiceMediaPhase.applyingAnswer,
+    CallMediaPhase.connecting => VoiceMediaPhase.connecting,
+    CallMediaPhase.connected => VoiceMediaPhase.connected,
+    CallMediaPhase.failed => VoiceMediaPhase.failed,
+    CallMediaPhase.disposed => VoiceMediaPhase.disposed,
+  };
+}
+
+VoiceMediaDiagnostics _voiceMediaDiagnosticsForCall(
+  CallMediaDiagnostics diagnostics,
+) {
+  return VoiceMediaDiagnostics(
+    mediaStates: <String>[
+      ...diagnostics.mediaStates,
+      'remoteVideoTrackCount:${diagnostics.remoteVideoTrackCount}',
+      'hasLocalVideo:${diagnostics.hasLocalVideo}',
+      if (diagnostics.lastFailureReason != null)
+        'lastFailureReason:${diagnostics.lastFailureReason!.name}',
+    ],
+    iceConnectionStates: diagnostics.iceConnectionStates,
+    peerConnectionStates: diagnostics.peerConnectionStates,
+    localCandidateCount: diagnostics.localCandidateCount,
+    remoteCandidateCount: diagnostics.remoteCandidateCount,
+    pendingRemoteCandidateCount: diagnostics.pendingRemoteCandidateCount,
+    localAudioTrackCount: diagnostics.hasLocalAudio ? 1 : 0,
+    remoteAudioTrackCount: diagnostics.remoteAudioTrackCount,
+    localVideoTrackCount: diagnostics.hasLocalVideo ? 1 : 0,
+    remoteVideoTrackCount: diagnostics.remoteVideoTrackCount,
+    remoteStreamCount: diagnostics.remoteStreamCount,
+    hasLocalAudio: diagnostics.hasLocalAudio,
+    hasLocalVideo: diagnostics.hasLocalVideo,
+    peerConnectionClosed: diagnostics.peerConnectionClosed,
+    disposed: diagnostics.disposed,
+    lastDetail: diagnostics.lastDetail,
+    lastError: diagnostics.lastError,
+    lastFailureReason: diagnostics.lastFailureReason?.name,
+  );
 }

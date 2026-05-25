@@ -3,7 +3,8 @@ import 'dart:io';
 
 import 'package:drift/native.dart';
 import 'package:flutter_test/flutter_test.dart';
-import 'package:flutter_webrtc/flutter_webrtc.dart' show RTCSessionDescription;
+import 'package:flutter_webrtc/flutter_webrtc.dart'
+    show MediaStream, MediaStreamTrack, RTCSessionDescription;
 import 'package:protocol_brain/protocol_brain.dart';
 import 'package:rain/application/runtime/rain_runtime_controller.dart';
 import 'package:rain/infrastructure/signaling/noop_signaling_adapter.dart';
@@ -313,6 +314,11 @@ class _DisconnectingSessionManager implements SessionManager {
   }
 
   @override
+  Future<CallMediaConnection> createCallMediaConnection(String peerId) async {
+    return _NoopCallMediaConnection();
+  }
+
+  @override
   Future<RTCSessionDescription> createMediaOffer(String peerId) async =>
       RTCSessionDescription('media-offer-$peerId', 'offer');
 
@@ -349,6 +355,8 @@ class _NoopVoiceMediaConnection implements VoiceMediaConnection {
       StreamController<VoiceIceCandidate>.broadcast();
   final StreamController<VoiceRemoteAudioTrack> _tracks =
       StreamController<VoiceRemoteAudioTrack>.broadcast();
+  final StreamController<VoiceMediaAudioLevel> _audioLevels =
+      StreamController<VoiceMediaAudioLevel>.broadcast();
   final StreamController<VoiceMediaState> _states =
       StreamController<VoiceMediaState>.broadcast();
 
@@ -357,6 +365,9 @@ class _NoopVoiceMediaConnection implements VoiceMediaConnection {
 
   @override
   Stream<VoiceRemoteAudioTrack> get onRemoteAudioTrack => _tracks.stream;
+
+  @override
+  Stream<VoiceMediaAudioLevel> get onAudioLevelChanged => _audioLevels.stream;
 
   @override
   Stream<VoiceMediaState> get onStateChanged => _states.stream;
@@ -384,6 +395,82 @@ class _NoopVoiceMediaConnection implements VoiceMediaConnection {
 
   @override
   Future<void> setMuted({required bool muted}) async {}
+
+  @override
+  Future<void> setDeafened({required bool deafened}) async {}
+
+  @override
+  Future<void> setAudioOutputRoute(VoiceMediaOutputRoute route) async {}
+
+  @override
+  Future<void> dispose() async {
+    await _ice.close();
+    await _tracks.close();
+    await _audioLevels.close();
+    await _states.close();
+  }
+}
+
+class _NoopCallMediaConnection implements CallMediaConnection {
+  final StreamController<CallIceCandidate> _ice =
+      StreamController<CallIceCandidate>.broadcast();
+  final StreamController<CallRemoteMediaTrack> _tracks =
+      StreamController<CallRemoteMediaTrack>.broadcast();
+  final StreamController<CallMediaState> _states =
+      StreamController<CallMediaState>.broadcast();
+
+  @override
+  Stream<CallIceCandidate> get onIceCandidate => _ice.stream;
+
+  @override
+  Stream<CallRemoteMediaTrack> get onRemoteTrack => _tracks.stream;
+
+  @override
+  Stream<CallMediaState> get onStateChanged => _states.stream;
+
+  @override
+  CallMediaDiagnostics get diagnostics => const CallMediaDiagnostics();
+
+  @override
+  MediaStream? get localStream => null;
+
+  @override
+  MediaStreamTrack? get localVideoTrack => null;
+
+  @override
+  Future<void> startLocalMedia({required CallMediaKind kind}) async {}
+
+  @override
+  Future<CallSessionDescription> createOffer({
+    required CallMediaKind kind,
+  }) async => const CallSessionDescription(sdp: 'offer', type: 'offer');
+
+  @override
+  Future<CallSessionDescription> acceptOffer(
+    CallSessionDescription offer, {
+    required CallMediaKind kind,
+  }) async => const CallSessionDescription(sdp: 'answer', type: 'answer');
+
+  @override
+  Future<void> applyAnswer(CallSessionDescription answer) async {}
+
+  @override
+  Future<void> addRemoteCandidate(CallIceCandidate candidate) async {}
+
+  @override
+  Future<void> setMicrophoneMuted({required bool muted}) async {}
+
+  @override
+  Future<void> setCameraMuted({required bool muted}) async {}
+
+  @override
+  Future<void> switchCamera() async {}
+
+  @override
+  Future<void> setDeafened({required bool deafened}) async {}
+
+  @override
+  Future<void> setAudioOutputRoute(CallMediaOutputRoute route) async {}
 
   @override
   Future<void> dispose() async {

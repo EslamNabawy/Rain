@@ -8,6 +8,7 @@ import 'package:rain/core/config/app_environment.dart';
 import 'package:rain/main.dart' as rain_app;
 import 'package:protocol_brain/protocol_brain.dart';
 import 'package:rain/infrastructure/signaling/noop_signaling_adapter.dart';
+import 'package:rain/application/runtime/app_exit_coordinator.dart';
 import 'package:rain/application/runtime/rain_runtime_controller.dart';
 import 'package:rain_core/rain_core.dart';
 
@@ -40,6 +41,14 @@ class _RecordingPresenceAdapter extends NoopSignalingAdapter {
     presenceWrites.add(online);
     await super.setPresence(username, online);
   }
+}
+
+final class _RecordedRuntimeError {
+  const _RecordedRuntimeError(this.error, this.source, this.fatal);
+
+  final Object error;
+  final String source;
+  final bool fatal;
 }
 
 void main() {
@@ -182,6 +191,61 @@ void main() {
   });
 
   test(
+    'runtime startup probes media permissions without blocking startup',
+    () async {
+      final db = RainDatabase(NativeDatabase.memory());
+      addTearDown(db.close);
+      const identity = RainIdentity(
+        username: 'alice',
+        displayName: 'Alice',
+        createdAt: 0,
+        gender: RainGender.female,
+      );
+      var warmupCalls = 0;
+      final recordedErrors = <_RecordedRuntimeError>[];
+      final runtime = RainRuntimeController(
+        selfIdentity: identity,
+        adapter: NoopSignalingAdapter(),
+        brain: null,
+        database: db,
+        friendStore: FriendStore(db),
+        messageStore: MessageStore(db),
+        offlineQueueStore: OfflineQueueStore(db),
+        messageDeliveryService: MessageDeliveryService(
+          messageStore: MessageStore(db),
+          offlineQueueStore: OfflineQueueStore(db),
+        ),
+        friendRequestRefreshInterval: Duration.zero,
+        startupMediaPermissionWarmup: () async {
+          warmupCalls += 1;
+          throw StateError('Microphone permission denied');
+        },
+        errorRecorder:
+            (
+              Object error,
+              StackTrace? stackTrace, {
+              required String source,
+              required bool fatal,
+              String? flutterLibrary,
+              String? flutterContext,
+            }) {
+              recordedErrors.add(_RecordedRuntimeError(error, source, fatal));
+            },
+      );
+      addTearDown(runtime.dispose);
+
+      await runtime.start();
+      await runtime.start();
+
+      expect(warmupCalls, 1);
+      expect(recordedErrors, hasLength(1));
+      expect(recordedErrors.single.source, 'media-permission-warmup');
+      expect(recordedErrors.single.fatal, isFalse);
+      expect(recordedErrors.single.error, isA<StateError>());
+    },
+  );
+
+  test(
     'runtime startup surfaces expired Firebase session without clearing inside provider',
     () async {
       final db = RainDatabase(NativeDatabase.memory());
@@ -295,14 +359,85 @@ void main() {
     },
   );
 
+  test('runtime app exit shutdown is idempotent', () async {
+    final db = RainDatabase(NativeDatabase.memory());
+    addTearDown(db.close);
+    const identity = RainIdentity(
+      username: 'alice',
+      displayName: 'Alice',
+      createdAt: 0,
+      gender: RainGender.female,
+    );
+    final adapter = _RecordingPresenceAdapter();
+    final runtime = RainRuntimeController(
+      selfIdentity: identity,
+      adapter: adapter,
+      brain: null,
+      database: db,
+      friendStore: FriendStore(db),
+      messageStore: MessageStore(db),
+      offlineQueueStore: OfflineQueueStore(db),
+      messageDeliveryService: MessageDeliveryService(
+        messageStore: MessageStore(db),
+        offlineQueueStore: OfflineQueueStore(db),
+      ),
+      friendRequestRefreshInterval: Duration.zero,
+    );
+    addTearDown(runtime.dispose);
+
+    await runtime.start();
+    await Future.wait(<Future<void>>[
+      runtime.closeForAppExit(AppExitReason.windowClose),
+      runtime.closeForAppExit(AppExitReason.windowClose),
+    ]);
+
+    expect(adapter.presenceWrites, <bool>[true, false]);
+  });
+
+  test('runtime ignores network recovery after app exit shutdown', () async {
+    final db = RainDatabase(NativeDatabase.memory());
+    addTearDown(db.close);
+    const identity = RainIdentity(
+      username: 'alice',
+      displayName: 'Alice',
+      createdAt: 0,
+      gender: RainGender.female,
+    );
+    final adapter = _RecordingPresenceAdapter();
+    final runtime = RainRuntimeController(
+      selfIdentity: identity,
+      adapter: adapter,
+      brain: null,
+      database: db,
+      friendStore: FriendStore(db),
+      messageStore: MessageStore(db),
+      offlineQueueStore: OfflineQueueStore(db),
+      messageDeliveryService: MessageDeliveryService(
+        messageStore: MessageStore(db),
+        offlineQueueStore: OfflineQueueStore(db),
+      ),
+      friendRequestRefreshInterval: Duration.zero,
+    );
+    addTearDown(runtime.dispose);
+
+    await runtime.start();
+    await runtime.closeForAppExit(AppExitReason.windowClose);
+    adapter.presenceWrites.clear();
+
+    await runtime.handleNetworkAvailable('network restored after close');
+
+    expect(adapter.presenceWrites, isEmpty);
+  });
+
   test('desktop shell close policy exits instead of hiding to tray', () {
     final source = File(
-      '../../apps/rain/lib/application/bootstrap/app_bootstrap.dart',
+      '../../apps/rain/lib/infrastructure/window/desktop_shell_controller.dart',
     ).readAsStringSync().replaceAll('\r\n', '\n');
 
-    expect(source, contains('windowManager.setPreventClose(false)'));
+    expect(source, contains('windowManager.setPreventClose(true)'));
+    expect(source, contains('AppExitCoordinator.instance.shutdown'));
+    expect(source, contains('AppExitReason.windowClose'));
     expect(source, contains('windowManager.destroy()'));
-    expect(source, isNot(contains('windowManager.setPreventClose(true)')));
     expect(source, isNot(contains('windowManager.hide()')));
     expect(source, isNot(contains('trayManager')));
   });

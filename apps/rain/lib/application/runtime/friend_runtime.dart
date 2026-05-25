@@ -16,6 +16,17 @@ extension FriendRuntime on RainRuntimeController {
         await _localMutations.run(
           () => friendStore.updatePresence(username, isOnline),
         );
+        if (!isOnline) {
+          unawaited(
+            _endVoiceCallForPeer(
+              username,
+              notifyPeer: false,
+              detail: 'Peer went offline. Call ended.',
+              failureReason: VoiceCallFailureReason.networkLost,
+              failureDetail: 'Network connection lost. Call ended.',
+            ),
+          );
+        }
       } catch (_) {
         // Ignore late presence callbacks during shutdown or store teardown.
       }
@@ -455,6 +466,7 @@ extension FriendRuntime on RainRuntimeController {
     );
     await _presenceSubscriptions.remove(normalizedUsername)?.cancel();
     _manualDisconnectedPeers.remove(normalizedUsername);
+    _recoverableDisconnectedPeers.remove(normalizedUsername);
     _connectionCoordinator.clearRetry(normalizedUsername);
     await brain?.disconnect(normalizedUsername);
     await _unregisterPeerListener(normalizedUsername);

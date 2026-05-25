@@ -29,6 +29,7 @@ class _MobileLinkStatusBar extends StatelessWidget {
     final actionIcon = status.isConnected ? Icons.link_off : Icons.hub_outlined;
     final actionLabel = status.isConnected ? 'Disconnect' : 'Connect';
     final detail = _mobileLinkDetail(diagnostics, status);
+    final showHalo = status.isConnected || status.isBusy;
 
     return Semantics(
       button: enabled,
@@ -38,69 +39,89 @@ class _MobileLinkStatusBar extends StatelessWidget {
         child: InkWell(
           onTap: enabled ? onTap : null,
           borderRadius: BorderRadius.circular(16),
-          child: Ink(
-            height: 56,
-            decoration: BoxDecoration(
-              color: Color.alphaBlend(
-                status.color.withValues(alpha: 0.08),
-                scheme.surfaceContainerHighest.withValues(alpha: 0.62),
+          child: RainRippleHaloSurface(
+            enabled: showHalo,
+            borderRadius: BorderRadius.circular(16),
+            color: _linkHaloColor(status),
+            origin: Alignment.centerLeft,
+            pulseKey:
+                '${status.label}:${diagnostics.route.kind}:${status.isBusy}',
+            pulseOnMount: showHalo,
+            minSize: const Size(48, 56),
+            child: Ink(
+              height: 56,
+              decoration: BoxDecoration(
+                color: Color.alphaBlend(
+                  status.color.withValues(alpha: 0.08),
+                  scheme.surfaceContainerHighest.withValues(alpha: 0.62),
+                ),
+                borderRadius: BorderRadius.circular(16),
+                border: Border.all(
+                  color: Color.alphaBlend(
+                    status.color.withValues(alpha: 0.28),
+                    (scheme.brightness == Brightness.dark
+                            ? RainTextureTokens.cardBorderDark
+                            : RainTextureTokens.cardBorderLight)
+                        .withValues(alpha: 0.46),
+                  ),
+                ),
               ),
-              borderRadius: BorderRadius.circular(16),
-              border: Border.all(color: status.color.withValues(alpha: 0.28)),
-            ),
-            child: Padding(
-              padding: const EdgeInsets.fromLTRB(12, 8, 8, 8),
-              child: Row(
-                children: <Widget>[
-                  _MobileLinkGlyph(status: status),
-                  const SizedBox(width: 10),
-                  Expanded(
-                    child: Column(
-                      mainAxisAlignment: MainAxisAlignment.center,
-                      crossAxisAlignment: CrossAxisAlignment.start,
-                      children: <Widget>[
-                        Text(
-                          status.label,
-                          maxLines: 1,
-                          overflow: TextOverflow.ellipsis,
-                          style: Theme.of(context).textTheme.labelLarge
-                              ?.copyWith(
-                                color: status.color,
-                                fontWeight: FontWeight.w900,
-                              ),
-                        ),
-                        const SizedBox(height: 2),
-                        Text(
-                          detail,
-                          maxLines: 1,
-                          overflow: TextOverflow.ellipsis,
-                          style: Theme.of(context).textTheme.bodySmall
-                              ?.copyWith(
-                                color: scheme.onSurface.withValues(alpha: 0.66),
-                                fontWeight: FontWeight.w600,
-                              ),
-                        ),
-                      ],
-                    ),
-                  ),
-                  const SizedBox(width: 8),
-                  _MobileLinkMeter(color: status.color, level: _linkLevel()),
-                  const SizedBox(width: 8),
-                  SizedBox.square(
-                    dimension: 40,
-                    child: IconButton.filledTonal(
-                      tooltip: actionLabel,
-                      onPressed: actionEnabled ? action : null,
-                      style: const ButtonStyle(
-                        tapTargetSize: MaterialTapTargetSize.shrinkWrap,
-                        minimumSize: WidgetStatePropertyAll(Size.square(40)),
-                        fixedSize: WidgetStatePropertyAll(Size.square(40)),
-                        padding: WidgetStatePropertyAll(EdgeInsets.zero),
+              child: Padding(
+                padding: const EdgeInsets.fromLTRB(12, 8, 8, 8),
+                child: Row(
+                  children: <Widget>[
+                    _MobileLinkGlyph(status: status),
+                    const SizedBox(width: 10),
+                    Expanded(
+                      child: Column(
+                        mainAxisAlignment: MainAxisAlignment.center,
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: <Widget>[
+                          Text(
+                            status.label,
+                            maxLines: 1,
+                            overflow: TextOverflow.ellipsis,
+                            style: Theme.of(context).textTheme.labelLarge
+                                ?.copyWith(
+                                  color: status.color,
+                                  fontWeight: FontWeight.w900,
+                                ),
+                          ),
+                          const SizedBox(height: 2),
+                          Text(
+                            detail,
+                            maxLines: 1,
+                            overflow: TextOverflow.ellipsis,
+                            style: Theme.of(context).textTheme.bodySmall
+                                ?.copyWith(
+                                  color: scheme.onSurface.withValues(
+                                    alpha: 0.66,
+                                  ),
+                                  fontWeight: FontWeight.w600,
+                                ),
+                          ),
+                        ],
                       ),
-                      icon: Icon(actionIcon, size: 20),
                     ),
-                  ),
-                ],
+                    const SizedBox(width: 8),
+                    _MobileLinkMeter(color: status.color, level: _linkLevel()),
+                    const SizedBox(width: 8),
+                    SizedBox.square(
+                      dimension: 40,
+                      child: IconButton.filledTonal(
+                        tooltip: actionLabel,
+                        onPressed: actionEnabled ? action : null,
+                        style: const ButtonStyle(
+                          tapTargetSize: MaterialTapTargetSize.shrinkWrap,
+                          minimumSize: WidgetStatePropertyAll(Size.square(40)),
+                          fixedSize: WidgetStatePropertyAll(Size.square(40)),
+                          padding: WidgetStatePropertyAll(EdgeInsets.zero),
+                        ),
+                        icon: Icon(actionIcon, size: 20),
+                      ),
+                    ),
+                  ],
+                ),
               ),
             ),
           ),
@@ -119,6 +140,17 @@ class _MobileLinkStatusBar extends StatelessWidget {
       PeerRouteKind.unknown => status.isConnected ? 2 : 1,
     };
   }
+}
+
+Color _linkHaloColor(_ConnectionStatus status) {
+  return switch (status.label) {
+    'Direct' => RainColors.peerMint,
+    'Relay' ||
+    'Connecting' ||
+    'Recovering' ||
+    'Disconnecting' => RainColors.mistCyan,
+    _ => RainColors.primary,
+  };
 }
 
 class _MobileLinkGlyph extends StatelessWidget {
@@ -225,10 +257,18 @@ class _LinkStatCard extends StatelessWidget {
       width: 118,
       padding: const EdgeInsets.all(10),
       decoration: BoxDecoration(
-        color: scheme.surfaceContainerHighest.withValues(alpha: 0.52),
-        borderRadius: BorderRadius.circular(8),
+        color: scheme.surface.withValues(
+          alpha: scheme.brightness == Brightness.dark ? 0.58 : 0.82,
+        ),
+        borderRadius: BorderRadius.circular(12),
         border: Border.all(
-          color: scheme.outlineVariant.withValues(alpha: 0.38),
+          color:
+              (scheme.brightness == Brightness.dark
+                      ? RainTextureTokens.cardBorderDark
+                      : RainTextureTokens.cardBorderLight)
+                  .withValues(
+                    alpha: scheme.brightness == Brightness.dark ? 0.50 : 0.82,
+                  ),
         ),
       ),
       child: Column(

@@ -1,11 +1,18 @@
+import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
 import 'package:rain_core/rain_core.dart';
 
+import 'package:rain/application/audio/sound_event_router.dart';
 import 'package:rain/presentation/navigation/app_routes.dart';
+import 'package:rain/application/runtime/media_device_settings.dart';
 import 'package:rain/application/state/app_providers.dart';
+import 'package:rain/application/state/sound_event_providers.dart';
 import 'package:rain/infrastructure/services/crash_diagnostics_service.dart';
+import 'package:rain/infrastructure/services/app_settings_store.dart';
+import 'package:rain/presentation/branding/rain_ripple_halo_surface.dart';
+import 'package:rain/presentation/branding/rain_state_surfaces.dart';
 import 'package:rain/presentation/screens/splash_screen.dart';
 import 'package:rain/presentation/widgets/app_components.dart';
 import 'package:rain/presentation/widgets/app_dialogs.dart';
@@ -32,6 +39,9 @@ class SettingsScreen extends ConsumerStatefulWidget {
 class _SettingsScreenState extends ConsumerState<SettingsScreen> {
   bool _loggingOut = false;
   bool _exportingDiagnostics = false;
+  bool _testingMicrophone = false;
+  bool _microphoneTestFailed = false;
+  String? _microphoneTestMessage;
 
   @override
   Widget build(BuildContext context) {
@@ -44,6 +54,13 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen> {
     final themeMode = ref.watch(themeModeProvider);
     final themeController = ref.read(themeModeProvider.notifier);
     final lastCrash = ref.watch(lastCrashDiagnosticsProvider);
+    final microphones = ref.watch(microphoneSelectionProvider);
+    final cameras = ref.watch(videoInputCapabilityProvider);
+    final audioSettings = ref.watch(voiceAudioSettingsProvider);
+    final audioOutputCapabilities = ref.watch(audioOutputCapabilityProvider);
+    final outputCapabilities =
+        audioOutputCapabilities.value ??
+        const AudioOutputCapabilityState(devices: []);
 
     return AppPageFrame(
       title: 'Settings',
@@ -102,6 +119,130 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen> {
               title: const Text('Log out'),
               subtitle: const Text('Clear Rain session on this device'),
               onTap: runtime == null ? null : () => _confirmLogOut(context),
+            ),
+          ),
+          const SizedBox(height: 24),
+          const AppSectionTitle(title: 'Call Audio'),
+          AppSectionCard(
+            child: Column(
+              children: <Widget>[
+                microphones.when(
+                  data: (state) => RainMicrophoneSelector(
+                    state: state,
+                    isBusy: false,
+                    onRefresh: () => _refreshMicrophones(ref),
+                    onSelected: (String? deviceId) =>
+                        _selectMicrophone(context, ref, deviceId),
+                  ),
+                  error: (Object error, StackTrace stackTrace) => ListTile(
+                    leading: Icon(
+                      Icons.mic_off,
+                      color: Theme.of(context).colorScheme.error,
+                    ),
+                    title: const Text('Microphones unavailable'),
+                    subtitle: Text(_formatSettingsError(error)),
+                    trailing: IconButton(
+                      tooltip: 'Refresh microphones',
+                      onPressed: () => _refreshMicrophones(ref),
+                      icon: const Icon(Icons.refresh),
+                    ),
+                  ),
+                  loading: () => RainMicrophoneSelector(
+                    state: const MicrophoneSelectionState(devices: []),
+                    isBusy: true,
+                    onRefresh: () {},
+                    onSelected: (_) {},
+                  ),
+                ),
+                const Divider(height: 1),
+                _MicrophoneTestTile(
+                  isTesting: _testingMicrophone,
+                  failed: _microphoneTestFailed,
+                  message: _microphoneTestMessage,
+                  onTest: _testingMicrophone
+                      ? null
+                      : () => _testMicrophone(context, ref),
+                ),
+                const Divider(height: 1),
+                audioSettings.when(
+                  data: (settings) => _VoiceAudioSettingsControls(
+                    settings: settings,
+                    outputCapabilities: outputCapabilities,
+                    isBusy: false,
+                    onSoundEffectsEnabledChanged: (bool enabled) =>
+                        _setSoundEffectsEnabled(context, ref, enabled),
+                    onSoundEffectsVolumeChanged: (double volume) =>
+                        _setSoundEffectsVolume(context, ref, volume),
+                    onCallSoundsEnabledChanged: (bool enabled) =>
+                        _setCallSoundsEnabled(context, ref, enabled),
+                    onReduceSoundsDuringCallChanged: (bool enabled) =>
+                        _setReduceSoundsDuringCall(context, ref, enabled),
+                    onOutputPreferenceChanged:
+                        (CallAudioOutputPreference preference) =>
+                            _setDefaultOutputPreference(
+                              context,
+                              ref,
+                              preference,
+                            ),
+                  ),
+                  error: (Object error, StackTrace stackTrace) => ListTile(
+                    leading: Icon(
+                      Icons.volume_off,
+                      color: Theme.of(context).colorScheme.error,
+                    ),
+                    title: const Text('Call audio settings unavailable'),
+                    subtitle: Text(_formatSettingsError(error)),
+                    trailing: IconButton(
+                      tooltip: 'Retry audio settings',
+                      onPressed: () =>
+                          ref.invalidate(voiceAudioSettingsProvider),
+                      icon: const Icon(Icons.refresh),
+                    ),
+                  ),
+                  loading: () => _VoiceAudioSettingsControls(
+                    settings: const AppAudioSettings(),
+                    outputCapabilities: outputCapabilities,
+                    isBusy: true,
+                    onSoundEffectsEnabledChanged: (_) {},
+                    onSoundEffectsVolumeChanged: (_) {},
+                    onCallSoundsEnabledChanged: (_) {},
+                    onReduceSoundsDuringCallChanged: (_) {},
+                    onOutputPreferenceChanged: (_) {},
+                  ),
+                ),
+              ],
+            ),
+          ),
+          const SizedBox(height: 24),
+          const AppSectionTitle(title: 'Call Video'),
+          AppSectionCard(
+            child: cameras.when(
+              data: (state) => RainCameraSelector(
+                state: state,
+                isBusy: false,
+                onRefresh: () => _refreshCameras(ref),
+                onSelected: (String? deviceId) =>
+                    _selectCamera(context, ref, deviceId),
+              ),
+              error: (Object error, StackTrace stackTrace) => ListTile(
+                leading: Icon(
+                  Icons.videocam_off,
+                  color: Theme.of(context).colorScheme.error,
+                ),
+                title: const Text('Cameras unavailable'),
+                subtitle: Text(_formatSettingsError(error)),
+                trailing: IconButton(
+                  tooltip: 'Refresh cameras',
+                  onPressed: () => _refreshCameras(ref),
+                  icon: const Icon(Icons.refresh),
+                ),
+              ),
+              loading: () => RainCameraSelector(
+                state: const VideoInputCapabilityState(devices: []),
+                isBusy: true,
+                onRefresh: () {},
+                onSelected: (_) {},
+              ),
             ),
           ),
           const SizedBox(height: 24),
@@ -205,6 +346,14 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen> {
                       ? null
                       : () => _exportDiagnostics(context),
                 ),
+                if (kDebugMode) ...<Widget>[
+                  const Divider(height: 1),
+                  _SoundDiagnosticsTile(
+                    diagnostics: ref
+                        .watch(soundEventRouterProvider)
+                        .diagnostics,
+                  ),
+                ],
               ],
             ),
           ),
@@ -237,6 +386,195 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen> {
         newName.isNotEmpty &&
         newName != identity.displayName) {
       await ref.read(identityProvider.notifier).updateDisplayName(newName);
+    }
+  }
+
+  void _refreshMicrophones(WidgetRef ref) {
+    ref.read(microphoneSelectionProvider.notifier).refresh();
+  }
+
+  void _refreshCameras(WidgetRef ref) {
+    ref.read(videoInputCapabilityProvider.notifier).refresh();
+  }
+
+  Future<void> _selectMicrophone(
+    BuildContext context,
+    WidgetRef ref,
+    String? deviceId,
+  ) async {
+    final messenger = ScaffoldMessenger.of(context);
+    final errorColor = Theme.of(context).colorScheme.error;
+    try {
+      await ref
+          .read(microphoneSelectionProvider.notifier)
+          .selectMicrophone(deviceId);
+    } catch (error) {
+      if (!context.mounted) {
+        return;
+      }
+      messenger.showSnackBar(
+        SnackBar(
+          content: Text(
+            'Could not update microphone: ${_formatSettingsError(error)}',
+          ),
+          backgroundColor: errorColor,
+        ),
+      );
+    }
+  }
+
+  Future<void> _selectCamera(
+    BuildContext context,
+    WidgetRef ref,
+    String? deviceId,
+  ) async {
+    final messenger = ScaffoldMessenger.of(context);
+    final errorColor = Theme.of(context).colorScheme.error;
+    try {
+      await ref
+          .read(videoInputCapabilityProvider.notifier)
+          .selectVideoInput(deviceId);
+    } catch (error) {
+      if (!context.mounted) {
+        return;
+      }
+      messenger.showSnackBar(
+        SnackBar(
+          content: Text(
+            'Could not update camera: ${_formatSettingsError(error)}',
+          ),
+          backgroundColor: errorColor,
+        ),
+      );
+    }
+  }
+
+  Future<void> _testMicrophone(BuildContext context, WidgetRef ref) async {
+    final messenger = ScaffoldMessenger.of(context);
+    final errorColor = Theme.of(context).colorScheme.error;
+    setState(() {
+      _testingMicrophone = true;
+      _microphoneTestFailed = false;
+      _microphoneTestMessage = 'Testing microphone...';
+    });
+    try {
+      await ref
+          .read(microphoneSelectionProvider.notifier)
+          .testSelectedMicrophone();
+      if (!mounted) {
+        return;
+      }
+      setState(() {
+        _microphoneTestFailed = false;
+        _microphoneTestMessage = 'Microphone is available.';
+      });
+      messenger.showSnackBar(
+        const SnackBar(content: Text('Microphone is available.')),
+      );
+    } catch (error) {
+      if (!mounted) {
+        return;
+      }
+      final message = _formatSettingsError(error);
+      setState(() {
+        _microphoneTestFailed = true;
+        _microphoneTestMessage = message;
+      });
+      messenger.showSnackBar(
+        SnackBar(content: Text(message), backgroundColor: errorColor),
+      );
+    } finally {
+      if (mounted) {
+        setState(() => _testingMicrophone = false);
+      }
+    }
+  }
+
+  Future<void> _setSoundEffectsEnabled(
+    BuildContext context,
+    WidgetRef ref,
+    bool enabled,
+  ) {
+    return _runAudioSettingsAction(
+      context,
+      () => ref
+          .read(voiceAudioSettingsProvider.notifier)
+          .setSoundEffectsEnabled(enabled),
+    );
+  }
+
+  Future<void> _setSoundEffectsVolume(
+    BuildContext context,
+    WidgetRef ref,
+    double volume,
+  ) {
+    return _runAudioSettingsAction(
+      context,
+      () => ref
+          .read(voiceAudioSettingsProvider.notifier)
+          .setSoundEffectsVolume(volume),
+    );
+  }
+
+  Future<void> _setCallSoundsEnabled(
+    BuildContext context,
+    WidgetRef ref,
+    bool enabled,
+  ) {
+    return _runAudioSettingsAction(
+      context,
+      () => ref
+          .read(voiceAudioSettingsProvider.notifier)
+          .setCallSoundsEnabled(enabled),
+    );
+  }
+
+  Future<void> _setReduceSoundsDuringCall(
+    BuildContext context,
+    WidgetRef ref,
+    bool enabled,
+  ) {
+    return _runAudioSettingsAction(
+      context,
+      () => ref
+          .read(voiceAudioSettingsProvider.notifier)
+          .setReduceSoundsDuringCall(enabled),
+    );
+  }
+
+  Future<void> _setDefaultOutputPreference(
+    BuildContext context,
+    WidgetRef ref,
+    CallAudioOutputPreference preference,
+  ) {
+    return _runAudioSettingsAction(
+      context,
+      () => ref
+          .read(voiceAudioSettingsProvider.notifier)
+          .setDefaultOutputPreference(preference),
+    );
+  }
+
+  Future<void> _runAudioSettingsAction(
+    BuildContext context,
+    Future<void> Function() action,
+  ) async {
+    final messenger = ScaffoldMessenger.of(context);
+    final errorColor = Theme.of(context).colorScheme.error;
+    try {
+      await action();
+    } catch (error) {
+      if (!context.mounted) {
+        return;
+      }
+      messenger.showSnackBar(
+        SnackBar(
+          content: Text(
+            'Could not update audio setting: ${_formatSettingsError(error)}',
+          ),
+          backgroundColor: errorColor,
+        ),
+      );
     }
   }
 
@@ -373,6 +711,240 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen> {
 
 enum _ProfileAction { editDisplayName, editGender }
 
+class _MicrophoneTestTile extends StatelessWidget {
+  const _MicrophoneTestTile({
+    required this.isTesting,
+    required this.failed,
+    required this.message,
+    required this.onTest,
+  });
+
+  final bool isTesting;
+  final bool failed;
+  final String? message;
+  final VoidCallback? onTest;
+
+  @override
+  Widget build(BuildContext context) {
+    final scheme = Theme.of(context).colorScheme;
+    return ListTile(
+      leading: Icon(
+        failed ? Icons.error_outline : Icons.graphic_eq,
+        color: failed ? scheme.error : null,
+      ),
+      title: const Text('Test microphone'),
+      subtitle: Text(message ?? 'Check selected input'),
+      trailing: IconButton(
+        tooltip: 'Test microphone',
+        onPressed: onTest,
+        icon: isTesting
+            ? const SizedBox.square(
+                dimension: 18,
+                child: CircularProgressIndicator(strokeWidth: 2),
+              )
+            : const Icon(Icons.play_arrow),
+      ),
+    );
+  }
+}
+
+class _VoiceAudioSettingsControls extends StatelessWidget {
+  const _VoiceAudioSettingsControls({
+    required this.settings,
+    required this.outputCapabilities,
+    required this.isBusy,
+    required this.onSoundEffectsEnabledChanged,
+    required this.onSoundEffectsVolumeChanged,
+    required this.onCallSoundsEnabledChanged,
+    required this.onReduceSoundsDuringCallChanged,
+    required this.onOutputPreferenceChanged,
+  });
+
+  final AppAudioSettings settings;
+  final AudioOutputCapabilityState outputCapabilities;
+  final bool isBusy;
+  final ValueChanged<bool> onSoundEffectsEnabledChanged;
+  final ValueChanged<double> onSoundEffectsVolumeChanged;
+  final ValueChanged<bool> onCallSoundsEnabledChanged;
+  final ValueChanged<bool> onReduceSoundsDuringCallChanged;
+  final ValueChanged<CallAudioOutputPreference> onOutputPreferenceChanged;
+
+  @override
+  Widget build(BuildContext context) {
+    final enabled = !isBusy;
+    final soundControlsEnabled = enabled && settings.soundEffectsEnabled;
+    final outputPreferences = _outputPreferencesFor(outputCapabilities);
+    final effectiveOutputPreference = _effectiveOutputPreference(
+      settings.defaultOutputPreference,
+      outputPreferences,
+    );
+    final outputPreferenceUnavailable =
+        settings.defaultOutputPreference != effectiveOutputPreference;
+    return Column(
+      children: <Widget>[
+        ListTile(
+          leading: Icon(_outputPreferenceIcon(effectiveOutputPreference)),
+          title: const Text('Default call output'),
+          subtitle: Text(
+            outputPreferenceUnavailable
+                ? 'Bluetooth unavailable. Using system default.'
+                : _outputPreferenceLabel(effectiveOutputPreference),
+          ),
+          trailing: PopupMenuButton<CallAudioOutputPreference>(
+            tooltip: 'Choose default call output',
+            enabled: enabled,
+            onSelected: onOutputPreferenceChanged,
+            itemBuilder: (BuildContext context) {
+              return <PopupMenuEntry<CallAudioOutputPreference>>[
+                for (final preference in outputPreferences)
+                  PopupMenuItem<CallAudioOutputPreference>(
+                    value: preference,
+                    child: _OutputPreferenceMenuRow(
+                      preference: preference,
+                      selected: effectiveOutputPreference == preference,
+                    ),
+                  ),
+              ];
+            },
+            icon: const Icon(Icons.arrow_drop_down_circle_outlined),
+          ),
+        ),
+        const Divider(height: 1),
+        SwitchListTile(
+          secondary: const Icon(Icons.music_note),
+          title: const Text('Sound effects'),
+          subtitle: Text(settings.soundEffectsEnabled ? 'On' : 'Off'),
+          value: settings.soundEffectsEnabled,
+          onChanged: enabled ? onSoundEffectsEnabledChanged : null,
+        ),
+        const Divider(height: 1),
+        ListTile(
+          leading: const Icon(Icons.volume_up),
+          title: const Text('Sound effects volume'),
+          subtitle: Slider(
+            value: settings.soundEffectsVolume,
+            divisions: 10,
+            label: _volumeLabel(settings.soundEffectsVolume),
+            onChanged: soundControlsEnabled
+                ? onSoundEffectsVolumeChanged
+                : null,
+          ),
+          trailing: SizedBox(
+            width: 48,
+            child: Text(
+              _volumeLabel(settings.soundEffectsVolume),
+              textAlign: TextAlign.end,
+            ),
+          ),
+          enabled: soundControlsEnabled,
+        ),
+        const Divider(height: 1),
+        SwitchListTile(
+          secondary: const Icon(Icons.call),
+          title: const Text('Call sounds'),
+          subtitle: Text(settings.callSoundsEnabled ? 'On' : 'Off'),
+          value: settings.callSoundsEnabled,
+          onChanged: soundControlsEnabled ? onCallSoundsEnabledChanged : null,
+        ),
+        const Divider(height: 1),
+        SwitchListTile(
+          secondary: const Icon(Icons.volume_down),
+          title: const Text('Reduce during calls'),
+          subtitle: Text(settings.reduceSoundsDuringCall ? 'On' : 'Off'),
+          value: settings.reduceSoundsDuringCall,
+          onChanged: soundControlsEnabled
+              ? onReduceSoundsDuringCallChanged
+              : null,
+        ),
+      ],
+    );
+  }
+}
+
+class _OutputPreferenceMenuRow extends StatelessWidget {
+  const _OutputPreferenceMenuRow({
+    required this.preference,
+    required this.selected,
+  });
+
+  final CallAudioOutputPreference preference;
+  final bool selected;
+
+  @override
+  Widget build(BuildContext context) {
+    final scheme = Theme.of(context).colorScheme;
+    return RainRippleHaloSurface(
+      enabled: selected,
+      borderRadius: BorderRadius.circular(12),
+      color: scheme.primary,
+      origin: Alignment.centerLeft,
+      pulseKey: preference.name,
+      pulseOnMount: selected,
+      minSize: const Size(48, 48),
+      child: Padding(
+        padding: const EdgeInsets.symmetric(horizontal: 4, vertical: 6),
+        child: Row(
+          children: <Widget>[
+            Icon(
+              selected ? Icons.check_circle : _outputPreferenceIcon(preference),
+              size: 20,
+              color: selected ? scheme.primary : null,
+            ),
+            const SizedBox(width: 10),
+            Flexible(
+              child: Text(
+                _outputPreferenceLabel(preference),
+                maxLines: 1,
+                overflow: TextOverflow.ellipsis,
+              ),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+}
+
+IconData _outputPreferenceIcon(CallAudioOutputPreference preference) {
+  return switch (preference) {
+    CallAudioOutputPreference.systemDefault => Icons.volume_up,
+    CallAudioOutputPreference.speaker => Icons.speaker_phone,
+    CallAudioOutputPreference.bluetooth => Icons.bluetooth_audio,
+  };
+}
+
+String _outputPreferenceLabel(CallAudioOutputPreference preference) {
+  return switch (preference) {
+    CallAudioOutputPreference.systemDefault => 'System default',
+    CallAudioOutputPreference.speaker => 'Speaker',
+    CallAudioOutputPreference.bluetooth => 'Bluetooth',
+  };
+}
+
+List<CallAudioOutputPreference> _outputPreferencesFor(
+  AudioOutputCapabilityState capabilities,
+) {
+  return <CallAudioOutputPreference>[
+    CallAudioOutputPreference.systemDefault,
+    CallAudioOutputPreference.speaker,
+    if (capabilities.hasBluetoothOutput) CallAudioOutputPreference.bluetooth,
+  ];
+}
+
+CallAudioOutputPreference _effectiveOutputPreference(
+  CallAudioOutputPreference preference,
+  List<CallAudioOutputPreference> available,
+) {
+  if (available.contains(preference)) {
+    return preference;
+  }
+  return CallAudioOutputPreference.systemDefault;
+}
+
+String _volumeLabel(double value) {
+  return '${(value * 100).round()}%';
+}
+
 class _LastCrashTile extends StatelessWidget {
   const _LastCrashTile({required this.record});
 
@@ -415,6 +987,28 @@ class _LastCrashTile extends StatelessWidget {
       return normalized;
     }
     return '${normalized.substring(0, 93)}...';
+  }
+}
+
+class _SoundDiagnosticsTile extends StatelessWidget {
+  const _SoundDiagnosticsTile({required this.diagnostics});
+
+  final SoundEventRouterDiagnostics diagnostics;
+
+  @override
+  Widget build(BuildContext context) {
+    final loopIds = diagnostics.activeLoopIds.toList(growable: false)..sort();
+    final detail = <String>[
+      'Last: ${diagnostics.lastEventKind?.name ?? 'none'}',
+      'Suppressed: ${diagnostics.lastSuppressedReason ?? 'none'}',
+      'Loops: ${loopIds.isEmpty ? 'none' : loopIds.join(', ')}',
+      'Disabled: ${diagnostics.soundServiceDisabledReason ?? 'none'}',
+    ].join(' | ');
+    return ListTile(
+      leading: const Icon(Icons.graphic_eq),
+      title: const Text('App sound diagnostics'),
+      subtitle: Text(detail, maxLines: 3, overflow: TextOverflow.ellipsis),
+    );
   }
 }
 
@@ -463,10 +1057,8 @@ class _BlockedUsersList extends ConsumerWidget {
         ),
       ),
       loading: () => const AppSectionCard(
-        child: ListTile(
-          leading: CircularProgressIndicator(),
-          title: Text('Loading...'),
-        ),
+        padding: EdgeInsets.all(18),
+        child: RainStreakSkeleton(rows: 2),
       ),
     );
   }

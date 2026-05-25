@@ -1,0 +1,10 @@
+<svg width="1024" height="1024" viewBox="0 0 1024 1024" fill="none" xmlns="http://www.w3.org/2000/svg">
+  <g id="rain-streaks" opacity="0.18">
+    <path d="M70 -40L250 1080" stroke="#7DEBFF" stroke-width="6"/>
+    <path d="M230 -40L410 1080" stroke="#7DEBFF" stroke-width="6"/>
+    <path d="M390 -40L570 1080" stroke="#7DEBFF" stroke-width="6"/>
+    <path d="M550 -40L730 1080" stroke="#7DEBFF" stroke-width="6"/>
+    <path d="M710 -40L890 1080" stroke="#7DEBFF" stroke-width="6"/>
+    <path d="M870 -40L1050 1080" stroke="#7DEBFF" stroke-width="6"/>
+  </g>
+</svg>

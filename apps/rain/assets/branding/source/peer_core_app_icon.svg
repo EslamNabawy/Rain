@@ -1,0 +1,30 @@
+<svg width="1024" height="1024" viewBox="0 0 1024 1024" fill="none" xmlns="http://www.w3.org/2000/svg">
+  <defs>
+    <linearGradient id="appBg" x1="0" y1="0" x2="1024" y2="1024" gradientUnits="userSpaceOnUse">
+      <stop stop-color="#061017"/>
+      <stop offset="1" stop-color="#0A1E26"/>
+    </linearGradient>
+    <linearGradient id="appRing" x1="250" y1="170" x2="790" y2="830" gradientUnits="userSpaceOnUse">
+      <stop stop-color="#D7F9FF"/>
+      <stop offset="0.48" stop-color="#7DEBFF"/>
+      <stop offset="1" stop-color="#2DD4A3"/>
+    </linearGradient>
+    <clipPath id="clip">
+      <rect width="1024" height="1024" rx="230"/>
+    </clipPath>
+  </defs>
+  <g clip-path="url(#clip)">
+    <rect width="1024" height="1024" fill="url(#appBg)"/>
+    <path d="M70 -40L250 1080M230 -40L410 1080M390 -40L570 1080M550 -40L730 1080M710 -40L890 1080M870 -40L1050 1080" stroke="#7DEBFF" stroke-opacity="0.13" stroke-width="6"/>
+    <circle cx="512" cy="512" r="420" stroke="#7DEBFF" stroke-opacity="0.10" stroke-width="3"/>
+    <circle cx="512" cy="512" r="356" stroke="#7DEBFF" stroke-opacity="0.13" stroke-width="3"/>
+    <circle cx="512" cy="512" r="286" stroke="url(#appRing)" stroke-width="68"/>
+    <path d="M423 575L601 451L628 629L423 575Z" stroke="#FCFEFF" stroke-opacity="0.84" stroke-width="38" stroke-linejoin="round"/>
+    <circle cx="423" cy="575" r="64" fill="#2DD4A3"/>
+    <circle cx="601" cy="451" r="64" fill="#2DD4A3"/>
+    <circle cx="628" cy="629" r="64" fill="#2DD4A3"/>
+    <circle cx="423" cy="575" r="23" fill="#061017" fill-opacity="0.92"/>
+    <circle cx="601" cy="451" r="23" fill="#061017" fill-opacity="0.92"/>
+    <circle cx="628" cy="629" r="23" fill="#061017" fill-opacity="0.92"/>
+  </g>
+</svg>

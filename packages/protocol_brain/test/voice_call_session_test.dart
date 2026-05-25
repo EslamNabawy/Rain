@@ -26,6 +26,7 @@ void main() {
       );
       expect(sent.single.seq, 1);
       expect(sent.single.sessionEpoch, 11);
+      expect(sent.single.mediaMode, CallMediaMode.audio);
 
       await session.handleFrame(
         _frame(VoiceCallFrameType.accept, from: 'bob', to: 'alice', seq: 1),
@@ -45,6 +46,22 @@ void main() {
       expect(sent.last.seq, 2);
     },
   );
+
+  test('video call sends invite with media mode video', () async {
+    final media = _FakeVoiceMediaConnection();
+    final sent = <VoiceCallFrame>[];
+    final session = _session(
+      media: media,
+      sent: sent,
+      mediaMode: CallMediaMode.video,
+    );
+
+    await session.startOutgoing();
+
+    expect(sent.single.type, VoiceCallFrameType.invite);
+    expect(sent.single.mediaMode, CallMediaMode.video);
+    expect(media.startLocalAudioCalls, 1);
+  });
 
   test(
     'incoming accept flow answers remote offer and waits for media',
@@ -101,6 +118,106 @@ void main() {
       expect(session.state.phase, VoiceCallSessionPhase.active);
     },
   );
+
+  test('active session forwards voice audio levels', () async {
+    final media = _FakeVoiceMediaConnection();
+    final sent = <VoiceCallFrame>[];
+    final session = _session(media: media, sent: sent);
+    final states = <VoiceCallSessionState>[];
+    final subscription = session.onStateChanged.listen(states.add);
+
+    await session.startOutgoing();
+    await session.handleFrame(
+      _frame(VoiceCallFrameType.accept, from: 'bob', to: 'alice', seq: 1),
+    );
+    media.emitState(const VoiceMediaState(phase: VoiceMediaPhase.connected));
+    media.emitAudioLevel(
+      VoiceMediaAudioLevel(
+        remoteLevel: 0.72,
+        localLevel: 0.08,
+        updatedAt: 1234,
+        source: VoiceMediaAudioLevelSource.audioLevel,
+      ),
+    );
+    await pumpEventQueue();
+
+    expect(session.state.phase, VoiceCallSessionPhase.active);
+    expect(session.state.audioLevel.remoteLevel, 0.72);
+    expect(session.state.audioLevel.localLevel, 0.08);
+    expect(
+      session.state.audioLevel.source,
+      VoiceMediaAudioLevelSource.audioLevel,
+    );
+    expect(
+      states.map((VoiceCallSessionState state) => state.audioLevel.remoteLevel),
+      contains(0.72),
+    );
+
+    await subscription.cancel();
+  });
+
+  test(
+    'active session exposes media reconnect metadata without failing',
+    () async {
+      final media = _FakeVoiceMediaConnection();
+      final sent = <VoiceCallFrame>[];
+      final session = _session(media: media, sent: sent);
+
+      await session.startOutgoing();
+      await session.handleFrame(
+        _frame(VoiceCallFrameType.accept, from: 'bob', to: 'alice', seq: 1),
+      );
+      media.emitState(const VoiceMediaState(phase: VoiceMediaPhase.connected));
+      await pumpEventQueue();
+
+      session.markMediaReconnecting(detail: 'Peer connection interrupted.');
+
+      expect(session.state.phase, VoiceCallSessionPhase.active);
+      expect(session.state.mediaReconnecting, isTrue);
+      expect(session.state.reconnectingSince, 1000);
+      expect(session.state.detail, 'Peer connection interrupted.');
+      expect(media.disposeCalls, 0);
+      expect(
+        sent.map((VoiceCallFrame frame) => frame.type),
+        isNot(contains(VoiceCallFrameType.hangup)),
+      );
+
+      session.clearMediaReconnecting();
+
+      expect(session.state.phase, VoiceCallSessionPhase.active);
+      expect(session.state.mediaReconnecting, isFalse);
+      expect(session.state.reconnectingSince, isNull);
+    },
+  );
+
+  test('active session deafen and output route are local only', () async {
+    final media = _FakeVoiceMediaConnection();
+    final sent = <VoiceCallFrame>[];
+    final session = _session(media: media, sent: sent);
+
+    await session.startOutgoing();
+    await session.handleFrame(
+      _frame(VoiceCallFrameType.accept, from: 'bob', to: 'alice', seq: 1),
+    );
+    media.emitState(const VoiceMediaState(phase: VoiceMediaPhase.connected));
+    await pumpEventQueue();
+
+    expect(session.state.phase, VoiceCallSessionPhase.active);
+    final sentBeforeLocalControls = sent.length;
+
+    await session.setDeafened(deafened: true);
+    await session.setAudioOutputRoute(VoiceMediaOutputRoute.speaker);
+
+    expect(media.deafenCalls, <bool>[true]);
+    expect(media.outputRoutes, <VoiceMediaOutputRoute>[
+      VoiceMediaOutputRoute.speaker,
+    ]);
+    expect(sent, hasLength(sentBeforeLocalControls));
+    expect(
+      sent.any((VoiceCallFrame frame) => frame.type == VoiceCallFrameType.mute),
+      isFalse,
+    );
+  });
 
   test('outgoing invite send failure is signaling failure', () async {
     final media = _FakeVoiceMediaConnection();
@@ -162,6 +279,38 @@ void main() {
       expect(sent.last.reasonCode, 'signalingFailed');
     },
   );
+
+  test('video renderer preflight failure sends typed reject reason', () async {
+    final media = _FakeVoiceMediaConnection()
+      ..startLocalAudioError = StateError(
+        'Video renderer failed while attaching local video stream.',
+      );
+    final sent = <VoiceCallFrame>[];
+    final session = _session(
+      media: media,
+      sent: sent,
+      localPeerId: 'bob',
+      remotePeerId: 'alice',
+      mediaMode: CallMediaMode.video,
+    );
+
+    await session.handleFrame(
+      _frame(
+        VoiceCallFrameType.invite,
+        from: 'alice',
+        to: 'bob',
+        seq: 1,
+        mediaMode: CallMediaMode.video,
+      ),
+    );
+    await expectLater(session.acceptIncoming(), throwsStateError);
+
+    expect(session.state.phase, VoiceCallSessionPhase.failed);
+    expect(session.state.detail, 'Video could not connect. Try again.');
+    expect(session.state.reasonCode, 'videoRendererFailed');
+    expect(sent.single.type, VoiceCallFrameType.reject);
+    expect(sent.single.reasonCode, 'videoRendererFailed');
+  });
 
   test('reject and busy fail the outgoing call and dispose media', () async {
     final media = _FakeVoiceMediaConnection();
@@ -250,6 +399,128 @@ void main() {
       expect(media.appliedAnswers, isEmpty);
     },
   );
+
+  test(
+    'stale video offer is ignored by call id, session epoch, and sequence',
+    () async {
+      final media = _FakeVoiceMediaConnection();
+      final sent = <VoiceCallFrame>[];
+      final logs = <String>[];
+      final session = _session(
+        media: media,
+        sent: sent,
+        logger: logs.add,
+        localPeerId: 'bob',
+        remotePeerId: 'alice',
+        mediaMode: CallMediaMode.video,
+      );
+
+      await session.handleFrame(
+        _frame(
+          VoiceCallFrameType.invite,
+          from: 'alice',
+          to: 'bob',
+          seq: 1,
+          mediaMode: CallMediaMode.video,
+        ),
+      );
+      await session.acceptIncoming();
+
+      await session.handleFrame(
+        _frame(
+          VoiceCallFrameType.offer,
+          from: 'alice',
+          to: 'bob',
+          callId: 'old-call',
+          seq: 2,
+          sdp: 'wrong-call-offer',
+          sdpType: 'offer',
+        ),
+      );
+      await session.handleFrame(
+        _frame(
+          VoiceCallFrameType.offer,
+          from: 'alice',
+          to: 'bob',
+          seq: 2,
+          sessionEpoch: 10,
+          sdp: 'old-epoch-offer',
+          sdpType: 'offer',
+        ),
+      );
+
+      expect(media.acceptedOffers, isEmpty);
+
+      await session.handleFrame(
+        _frame(
+          VoiceCallFrameType.offer,
+          from: 'alice',
+          to: 'bob',
+          seq: 2,
+          sdp: 'video-offer',
+          sdpType: 'offer',
+        ),
+      );
+      await session.handleFrame(
+        _frame(
+          VoiceCallFrameType.offer,
+          from: 'alice',
+          to: 'bob',
+          seq: 2,
+          sdp: 'duplicate-video-offer',
+          sdpType: 'offer',
+        ),
+      );
+
+      expect(media.acceptedOffers, <String>['video-offer']);
+      expect(logs, contains('late offer frame for stale callId=old-call'));
+      expect(logs, contains('late offer frame for stale sessionEpoch=10'));
+      expect(logs, contains('stale offer frame seq=2'));
+    },
+  );
+
+  test('camera mute frame changes remote camera state only', () async {
+    final media = _FakeVoiceMediaConnection();
+    final sent = <VoiceCallFrame>[];
+    final session = _session(
+      media: media,
+      sent: sent,
+      mediaMode: CallMediaMode.video,
+    );
+
+    await session.startOutgoing();
+    await session.handleFrame(
+      _frame(VoiceCallFrameType.accept, from: 'bob', to: 'alice', seq: 1),
+    );
+    media.emitState(const VoiceMediaState(phase: VoiceMediaPhase.connected));
+    await pumpEventQueue();
+
+    await session.handleFrame(
+      _frame(
+        VoiceCallFrameType.mute,
+        from: 'bob',
+        to: 'alice',
+        seq: 2,
+        cameraMuted: true,
+      ),
+    );
+
+    expect(session.state.isRemoteMuted, isFalse);
+    expect(session.state.isRemoteCameraMuted, isTrue);
+
+    await session.handleFrame(
+      _frame(
+        VoiceCallFrameType.mute,
+        from: 'bob',
+        to: 'alice',
+        seq: 3,
+        muted: true,
+      ),
+    );
+
+    expect(session.state.isRemoteMuted, isTrue);
+    expect(session.state.isRemoteCameraMuted, isTrue);
+  });
 
   test('incoming reject sends reject and disposes voice media', () async {
     final media = _FakeVoiceMediaConnection();
@@ -350,6 +621,198 @@ void main() {
     expect(media.remoteCandidates.single.sdpMLineIndex, 0);
   });
 
+  test('remote candidate before answer does not stale-drop answer', () async {
+    final media = _FakeVoiceMediaConnection();
+    final sent = <VoiceCallFrame>[];
+    final session = _session(media: media, sent: sent);
+
+    await session.startOutgoing();
+    await session.handleFrame(
+      _frame(VoiceCallFrameType.accept, from: 'bob', to: 'alice', seq: 1),
+    );
+    await session.handleFrame(
+      _frame(
+        VoiceCallFrameType.candidate,
+        from: 'bob',
+        to: 'alice',
+        seq: 3,
+        candidate: 'candidate:early 1 udp 1 127.0.0.1 9 typ host',
+        sdpMid: '0',
+        sdpMLineIndex: 0,
+      ),
+    );
+    await session.handleFrame(
+      _frame(
+        VoiceCallFrameType.answer,
+        from: 'bob',
+        to: 'alice',
+        seq: 2,
+        sdp: 'remote-answer',
+        sdpType: 'answer',
+      ),
+    );
+
+    expect(media.remoteCandidates, hasLength(1));
+    expect(media.appliedAnswers, <String>['remote-answer']);
+  });
+
+  test('remote candidate before offer does not stale-drop offer', () async {
+    final media = _FakeVoiceMediaConnection();
+    final sent = <VoiceCallFrame>[];
+    final session = _session(
+      media: media,
+      sent: sent,
+      localPeerId: 'bob',
+      remotePeerId: 'alice',
+    );
+
+    await session.handleFrame(
+      _frame(VoiceCallFrameType.invite, from: 'alice', to: 'bob', seq: 1),
+    );
+    await session.acceptIncoming();
+    await session.handleFrame(
+      _frame(
+        VoiceCallFrameType.candidate,
+        from: 'alice',
+        to: 'bob',
+        seq: 3,
+        candidate: 'candidate:early 1 udp 1 127.0.0.1 9 typ host',
+        sdpMid: '0',
+        sdpMLineIndex: 0,
+      ),
+    );
+    await session.handleFrame(
+      _frame(
+        VoiceCallFrameType.offer,
+        from: 'alice',
+        to: 'bob',
+        seq: 2,
+        sdp: 'remote-offer',
+        sdpType: 'offer',
+      ),
+    );
+
+    expect(media.remoteCandidates, hasLength(1));
+    expect(media.acceptedOffers, <String>['remote-offer']);
+    expect(sent.last.type, VoiceCallFrameType.answer);
+  });
+
+  test('duplicate remote ICE candidate is ignored', () async {
+    final media = _FakeVoiceMediaConnection();
+    final sent = <VoiceCallFrame>[];
+    final session = _session(media: media, sent: sent);
+
+    await session.startOutgoing();
+    await session.handleFrame(
+      _frame(VoiceCallFrameType.accept, from: 'bob', to: 'alice', seq: 1),
+    );
+    final candidate = _frame(
+      VoiceCallFrameType.candidate,
+      from: 'bob',
+      to: 'alice',
+      seq: 3,
+      candidate: 'candidate:duplicate 1 udp 1 127.0.0.1 9 typ host',
+      sdpMid: '0',
+      sdpMLineIndex: 0,
+    );
+
+    await session.handleFrame(candidate);
+    await session.handleFrame(candidate);
+
+    expect(media.remoteCandidates, hasLength(1));
+  });
+
+  test('late media frames after local hangup are ignored', () async {
+    final media = _FakeVoiceMediaConnection();
+    final sent = <VoiceCallFrame>[];
+    final logs = <String>[];
+    final session = _session(media: media, sent: sent, logger: logs.add);
+
+    await session.startOutgoing();
+    await session.handleFrame(
+      _frame(VoiceCallFrameType.accept, from: 'bob', to: 'alice', seq: 1),
+    );
+    await session.hangUp();
+    await session.handleFrame(
+      _frame(
+        VoiceCallFrameType.answer,
+        from: 'bob',
+        to: 'alice',
+        seq: 2,
+        sdp: 'late-answer',
+        sdpType: 'answer',
+      ),
+    );
+    await session.handleFrame(
+      _frame(
+        VoiceCallFrameType.candidate,
+        from: 'bob',
+        to: 'alice',
+        seq: 3,
+        candidate: 'candidate:late 1 udp 1 127.0.0.1 9 typ host',
+        sdpMid: '0',
+        sdpMLineIndex: 0,
+      ),
+    );
+
+    expect(session.state.phase, VoiceCallSessionPhase.idle);
+    expect(media.appliedAnswers, isEmpty);
+    expect(media.remoteCandidates, isEmpty);
+    expect(logs, contains('answer frame in idle'));
+    expect(logs, contains('candidate frame in idle'));
+  });
+
+  test('late candidate after dispose is ignored', () async {
+    final media = _FakeVoiceMediaConnection();
+    final sent = <VoiceCallFrame>[];
+    final logs = <String>[];
+    final session = _session(media: media, sent: sent, logger: logs.add);
+
+    await session.startOutgoing();
+    await session.handleFrame(
+      _frame(VoiceCallFrameType.accept, from: 'bob', to: 'alice', seq: 1),
+    );
+    await session.dispose();
+    await session.handleFrame(
+      _frame(
+        VoiceCallFrameType.candidate,
+        from: 'bob',
+        to: 'alice',
+        seq: 3,
+        candidate: 'candidate:late 1 udp 1 127.0.0.1 9 typ host',
+        sdpMid: '0',
+        sdpMLineIndex: 0,
+      ),
+    );
+
+    expect(media.remoteCandidates, isEmpty);
+    expect(logs, contains('late candidate frame after dispose'));
+  });
+
+  test('failed session ignores late connected media state', () async {
+    final media = _FakeVoiceMediaConnection();
+    final sent = <VoiceCallFrame>[];
+    final session = _session(media: media, sent: sent);
+
+    await session.startOutgoing();
+    await session.handleFrame(
+      _frame(VoiceCallFrameType.accept, from: 'bob', to: 'alice', seq: 1),
+    );
+    media.emitState(
+      const VoiceMediaState(
+        phase: VoiceMediaPhase.failed,
+        detail: 'native ice failed',
+      ),
+    );
+    await pumpEventQueue();
+    expect(session.state.phase, VoiceCallSessionPhase.failed);
+
+    media.emitState(const VoiceMediaState(phase: VoiceMediaPhase.connected));
+    await pumpEventQueue();
+
+    expect(session.state.phase, VoiceCallSessionPhase.failed);
+  });
+
   test('media failure attaches diagnostics to failed session state', () async {
     final media = _FakeVoiceMediaConnection()
       ..diagnosticSnapshot = const VoiceMediaDiagnostics(
@@ -419,6 +882,8 @@ VoiceCallSession _session({
   String remotePeerId = 'bob',
   VoiceCallSessionTimeouts? timeouts,
   VoiceCallFrameSender? sendFrame,
+  VoiceCallLogSink? logger,
+  CallMediaMode mediaMode = CallMediaMode.audio,
 }) {
   return VoiceCallSession(
     localPeerId: localPeerId,
@@ -429,6 +894,8 @@ VoiceCallSession _session({
     sendFrame: sendFrame ?? sent.add,
     timeouts: timeouts ?? _timeouts(),
     clock: () => DateTime.fromMillisecondsSinceEpoch(1000),
+    logger: logger,
+    mediaMode: mediaMode,
   );
 }
 
@@ -459,6 +926,9 @@ VoiceCallFrame _frame(
   String? candidate,
   String? sdpMid,
   int? sdpMLineIndex,
+  bool? muted,
+  bool? cameraMuted,
+  CallMediaMode mediaMode = CallMediaMode.audio,
 }) {
   return VoiceCallFrame(
     type: type,
@@ -474,6 +944,9 @@ VoiceCallFrame _frame(
     candidate: candidate,
     sdpMid: sdpMid,
     sdpMLineIndex: sdpMLineIndex,
+    muted: muted,
+    cameraMuted: cameraMuted,
+    mediaMode: mediaMode,
   );
 }
 
@@ -482,6 +955,8 @@ final class _FakeVoiceMediaConnection implements VoiceMediaConnection {
       StreamController<VoiceIceCandidate>.broadcast();
   final StreamController<VoiceRemoteAudioTrack> _trackController =
       StreamController<VoiceRemoteAudioTrack>.broadcast();
+  final StreamController<VoiceMediaAudioLevel> _audioLevelController =
+      StreamController<VoiceMediaAudioLevel>.broadcast();
   final StreamController<VoiceMediaState> _stateController =
       StreamController<VoiceMediaState>.broadcast();
 
@@ -492,6 +967,8 @@ final class _FakeVoiceMediaConnection implements VoiceMediaConnection {
   final List<String> acceptedOffers = <String>[];
   final List<String> appliedAnswers = <String>[];
   final List<VoiceIceCandidate> remoteCandidates = <VoiceIceCandidate>[];
+  final List<bool> deafenCalls = <bool>[];
+  final List<VoiceMediaOutputRoute> outputRoutes = <VoiceMediaOutputRoute>[];
   VoiceMediaDiagnostics diagnosticSnapshot = const VoiceMediaDiagnostics();
 
   @override
@@ -500,6 +977,10 @@ final class _FakeVoiceMediaConnection implements VoiceMediaConnection {
   @override
   Stream<VoiceRemoteAudioTrack> get onRemoteAudioTrack =>
       _trackController.stream;
+
+  @override
+  Stream<VoiceMediaAudioLevel> get onAudioLevelChanged =>
+      _audioLevelController.stream;
 
   @override
   Stream<VoiceMediaState> get onStateChanged => _stateController.stream;
@@ -544,6 +1025,16 @@ final class _FakeVoiceMediaConnection implements VoiceMediaConnection {
   Future<void> setMuted({required bool muted}) async {}
 
   @override
+  Future<void> setDeafened({required bool deafened}) async {
+    deafenCalls.add(deafened);
+  }
+
+  @override
+  Future<void> setAudioOutputRoute(VoiceMediaOutputRoute route) async {
+    outputRoutes.add(route);
+  }
+
+  @override
   Future<void> dispose() async {
     disposeCalls += 1;
   }
@@ -554,5 +1045,9 @@ final class _FakeVoiceMediaConnection implements VoiceMediaConnection {
 
   void emitState(VoiceMediaState state) {
     _stateController.add(state);
+  }
+
+  void emitAudioLevel(VoiceMediaAudioLevel level) {
+    _audioLevelController.add(level);
   }
 }

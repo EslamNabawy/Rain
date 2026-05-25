@@ -3,10 +3,26 @@ import 'dart:io';
 import 'package:flutter_test/flutter_test.dart';
 
 String _repoFile(String relativePath) {
-  final workspaceRoot = Directory.current.parent.parent;
+  final workspaceRoot = _workspaceRoot();
   return File.fromUri(
     workspaceRoot.uri.resolve(relativePath),
   ).readAsStringSync().replaceAll('\r\n', '\n');
+}
+
+Directory _workspaceRoot() {
+  var directory = Directory.current;
+  while (true) {
+    final pubspec = File.fromUri(directory.uri.resolve('pubspec.yaml'));
+    if (pubspec.existsSync() &&
+        pubspec.readAsStringSync().contains('name: rain_workspace')) {
+      return directory;
+    }
+    final parent = directory.parent;
+    if (parent.path == directory.path) {
+      throw StateError('Could not locate Rain workspace root.');
+    }
+    directory = parent;
+  }
 }
 
 void main() {
@@ -135,14 +151,23 @@ void main() {
     expect(gradle, isNot(contains('Signing with the debug keys')));
   });
 
-  test('Android manifest keeps audio permissions install-safe', () {
+  test('Android manifest keeps call permissions install-safe', () {
     final manifest = _repoFile(
       'apps/rain/android/app/src/main/AndroidManifest.xml',
     );
     final applicationIndex = manifest.indexOf('<application');
 
     expect(applicationIndex, greaterThan(0));
+    for (final feature in <String>[
+      '<uses-feature android:name="android.hardware.camera" android:required="false" />',
+      '<uses-feature android:name="android.hardware.camera.autofocus" android:required="false" />',
+    ]) {
+      expect(manifest, contains(feature));
+      expect(manifest.indexOf(feature), lessThan(applicationIndex));
+    }
+
     for (final permission in <String>[
+      'android.permission.CAMERA',
       'android.permission.RECORD_AUDIO',
       'android.permission.MODIFY_AUDIO_SETTINGS',
       'android.permission.ACCESS_NETWORK_STATE',
@@ -153,8 +178,7 @@ void main() {
       expect(manifest.indexOf(entry), lessThan(applicationIndex));
     }
 
-    expect(manifest, isNot(contains('android.permission.CAMERA')));
-    expect(manifest, isNot(contains('android.hardware.camera')));
+    expect(manifest, isNot(contains('android:required="true"')));
     expect(manifest, isNot(contains('android.permission.BLUETOOTH')));
     expect(manifest, isNot(contains('android.permission.BLUETOOTH_CONNECT')));
   });
@@ -205,12 +229,28 @@ void main() {
   test('stable test build docs preserve shared key release rule', () {
     final docs = _repoFile('docs/stable-test-build.md');
 
-    expect(docs, contains('same non-demo `RAIN_SIGNALING_ENCRYPTION_KEY`'));
+    expect(
+      docs,
+      contains(
+        'Windows and the APK pair must be built with the same non-demo `RAIN_SIGNALING_ENCRYPTION_KEY`',
+      ),
+    );
     expect(docs, contains('scripts\\build_stable_test_pair.ps1'));
     expect(docs, contains('app-armeabi-v7a-release.apk'));
     expect(docs, contains('build\\windows\\x64\\runner\\Release\\rain.exe'));
     expect(docs, contains('locally test-signed'));
     expect(docs, contains('not store distribution'));
+    expect(docs, contains('Video calls require camera and microphone access'));
+    expect(
+      docs,
+      contains('allow the camera and microphone permission prompts'),
+    );
+    expect(
+      docs,
+      contains(
+        'Windows: Settings > Privacy & security must allow Rain to use the camera and microphone.',
+      ),
+    );
     expect(docs, contains('dart run melos run analyze'));
     expect(docs, contains('dart run melos run test'));
   });
@@ -375,7 +415,8 @@ void main() {
       expect(workflow, isNot(contains('Rain-release-android-universal.apk')));
       expect(workflow, isNot(contains('Rain-release-android-x86_64.apk')));
       expect(workflow, isNot(contains('.rar')));
-      expect(workflow, isNot(contains('.zip')));
+      expect(workflow, isNot(contains('.apk.zip')));
+      expect(workflow, isNot(contains('Android-Builds.zip')));
     },
   );
 
@@ -422,6 +463,28 @@ void main() {
     expect(workflow, isNot(contains('lib/x86_64/libsqlite3.so')));
   });
 
+  test('manual artifact workflow publishes direct device downloads', () {
+    final workflow = _repoFile('.github/workflows/build-artifacts.yml');
+    final docs = _repoFile('docs/github-ci-cd.md');
+
+    expect(workflow, contains('publish_test_release'));
+    expect(workflow, contains('Publish Direct Test Downloads'));
+    expect(workflow, contains('actions/download-artifact@v8'));
+    expect(workflow, contains('gh release create'));
+    expect(workflow, contains(r'--repo "${GITHUB_REPOSITORY}"'));
+    expect(workflow, contains(r'GH_REPO: ${{ github.repository }}'));
+    expect(workflow, contains('--prerelease'));
+    expect(workflow, contains(r'Rain-${profile_label}-Android-v7a.apk'));
+    expect(workflow, contains(r'Rain-${profile_label}-Android-v8-v9.apk'));
+    expect(workflow, contains('GITHUB_STEP_SUMMARY'));
+    expect(workflow, contains('rain-test-'));
+    expect(workflow, contains('Delete old Rain test releases'));
+    expect(docs, contains('publish_test_release'));
+    expect(docs, contains('individual APK assets'));
+    expect(docs, contains('Rain-Demo-Android-v7a.apk'));
+    expect(docs, contains('Rain-Release-Android-v8-v9.apk'));
+  });
+
   test('release workflow verifies native voice runtimes before upload', () {
     final workflow = _repoFile('.github/workflows/release.yml');
 
@@ -436,6 +499,20 @@ void main() {
     );
     expect(workflow, contains('lib/arm64-v8a/libsqlite3.so'));
     expect(workflow, contains('lib/arm64-v8a/libjingle_peerconnection_so.so'));
+  });
+
+  test('Android launch background does not show old launcher icon splash', () {
+    for (final path in const <String>[
+      'apps/rain/android/app/src/main/res/drawable/launch_background.xml',
+      'apps/rain/android/app/src/main/res/drawable-v21/launch_background.xml',
+    ]) {
+      final xml = _repoFile(path);
+
+      expect(xml, contains('#061017'));
+      expect(xml, isNot(contains('@mipmap/ic_launcher')));
+      expect(xml, isNot(contains('<bitmap')));
+      expect(xml, isNot(contains('android:src')));
+    }
   });
 
   test('manual voice gate requires real Android and Windows evidence', () {

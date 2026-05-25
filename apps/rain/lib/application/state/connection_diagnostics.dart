@@ -218,11 +218,20 @@ class ConnectionDiagnostics {
         route: safeRoute,
       );
     }
+    if (connection.localDetail == 'Disconnected.') {
+      return build(
+        label: isPeerOnline ? 'Ready' : 'Offline',
+        detail: isPeerOnline
+            ? 'Peer link closed. Press Connect to open it again.'
+            : 'Peer went offline or closed Rain. Connect is available when they are online again.',
+        route: const PeerConnectionRoute.unknown(),
+      );
+    }
     if (!isPeerOnline) {
       return build(
         label: 'Offline',
         detail:
-            'Presence says this peer is offline. If both apps are open, try Connect.',
+            'Presence says this peer is offline. Keep both apps open, then try again.',
         route: const PeerConnectionRoute.unknown(),
       );
     }

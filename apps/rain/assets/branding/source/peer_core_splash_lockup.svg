@@ -1,0 +1,27 @@
+<svg width="1440" height="1024" viewBox="0 0 1440 1024" fill="none" xmlns="http://www.w3.org/2000/svg">
+  <defs>
+    <linearGradient id="splashBg" x1="0" y1="0" x2="1440" y2="1024" gradientUnits="userSpaceOnUse">
+      <stop stop-color="#061017"/>
+      <stop offset="1" stop-color="#0A1E26"/>
+    </linearGradient>
+    <linearGradient id="splashRing" x1="580" y1="190" x2="860" y2="510" gradientUnits="userSpaceOnUse">
+      <stop stop-color="#D7F9FF"/>
+      <stop offset="0.5" stop-color="#7DEBFF"/>
+      <stop offset="1" stop-color="#2DD4A3"/>
+    </linearGradient>
+  </defs>
+  <rect width="1440" height="1024" fill="url(#splashBg)"/>
+  <path d="M120 -80L320 1120M360 -80L560 1120M600 -80L800 1120M840 -80L1040 1120M1080 -80L1280 1120" stroke="#7DEBFF" stroke-opacity="0.08" stroke-width="5"/>
+  <circle cx="720" cy="348" r="194" stroke="#7DEBFF" stroke-opacity="0.12" stroke-width="3"/>
+  <circle cx="720" cy="348" r="154" stroke="#7DEBFF" stroke-opacity="0.18" stroke-width="3"/>
+  <circle cx="720" cy="348" r="116" stroke="url(#splashRing)" stroke-width="26"/>
+  <path d="M684 374L756 324L767 396L684 374Z" stroke="#FCFEFF" stroke-opacity="0.82" stroke-width="16" stroke-linejoin="round"/>
+  <circle cx="684" cy="374" r="26" fill="#2DD4A3"/>
+  <circle cx="756" cy="324" r="26" fill="#2DD4A3"/>
+  <circle cx="767" cy="396" r="26" fill="#2DD4A3"/>
+  <circle cx="684" cy="374" r="9" fill="#061017" fill-opacity="0.92"/>
+  <circle cx="756" cy="324" r="9" fill="#061017" fill-opacity="0.92"/>
+  <circle cx="767" cy="396" r="9" fill="#061017" fill-opacity="0.92"/>
+  <text x="720" y="632" text-anchor="middle" fill="#FCFEFF" font-family="Space Grotesk, Inter, Arial, sans-serif" font-size="88" font-weight="800" letter-spacing="0">Rain</text>
+  <text x="720" y="690" text-anchor="middle" fill="#FCFEFF" fill-opacity="0.72" font-family="Inter, Arial, sans-serif" font-size="28" font-weight="500" letter-spacing="0">Private peer link</text>
+</svg>

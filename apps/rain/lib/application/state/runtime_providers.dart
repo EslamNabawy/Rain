@@ -1,10 +1,13 @@
 import 'dart:async';
 
+import 'package:flutter/foundation.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:protocol_brain/protocol_brain.dart';
 import 'package:rain_core/rain_core.dart';
 
 import 'package:rain/application/runtime/rain_runtime_controller.dart';
+import 'package:rain/application/runtime/app_exit_coordinator.dart';
+import 'package:rain/application/runtime/video_call_renderers.dart';
 import 'package:rain/application/runtime/voice_call_state.dart';
 import 'package:rain/infrastructure/services/app_settings_store.dart';
 import 'package:rain/infrastructure/services/background_services.dart';
@@ -128,6 +131,13 @@ final brainProvider = Provider<SessionManager?>((Ref ref) {
     iceServers: environment.iceServers,
     iceServersProvider: ref.watch(turnCredentialServiceProvider).iceServers,
     connectionMemoryStore: ref.watch(connectionMemoryStoreProvider),
+    platformBridge: ref.watch(platformBridgeProvider),
+    selectedAudioInputDeviceIdProvider: ref
+        .watch(appSettingsStoreProvider)
+        .loadSelectedMicrophoneDeviceId,
+    selectedVideoInputDeviceIdProvider: ref
+        .watch(appSettingsStoreProvider)
+        .loadSelectedVideoInputDeviceId,
   );
 
   return brain;
@@ -196,10 +206,20 @@ class RuntimeController extends AsyncNotifier<RainRuntimeController?> {
       messageDeliveryService: ref.watch(messageDeliveryServiceProvider),
       fileTransferStore: ref.watch(fileTransferStoreProvider),
       heartbeatInterval: environment.heartbeatInterval,
+      startupMediaPermissionWarmup:
+          !kIsWeb && defaultTargetPlatform == TargetPlatform.android
+          ? () => ref
+                .read(mediaDeviceSettingsProvider)
+                .warmUpStartupCallPermissions()
+          : null,
       errorRecorder: ref.watch(crashDiagnosticsServiceProvider).recordErrorSync,
     );
 
+    final exitRegistration = AppExitCoordinator.instance.register(
+      controller.closeForAppExit,
+    );
     ref.onDispose(() {
+      exitRegistration.unregister();
       unawaited(controller.dispose());
     });
 
@@ -232,6 +252,14 @@ final voiceCallProvider = NotifierProvider<VoiceCallController, VoiceCallState>(
   VoiceCallController.new,
 );
 
+final videoCallRenderersProvider = Provider<VideoCallRenderers?>((Ref ref) {
+  final call = ref.watch(voiceCallProvider);
+  if (!call.isVideo || call.phase == VoiceCallPhase.idle) {
+    return null;
+  }
+  return ref.watch(runtimeControllerProvider).value?.videoCallRenderers;
+});
+
 class VoiceCallController extends Notifier<VoiceCallState> {
   StreamSubscription<VoiceCallState>? _subscription;
   RainRuntimeController? _runtime;
@@ -257,6 +285,11 @@ class VoiceCallController extends Notifier<VoiceCallState> {
     await _requireRuntime().startVoiceCall(peerId);
   }
 
+  Future<void> startVideo(String peerId) async {
+    assertNetworkReady(ref);
+    await _requireRuntime().startVideoCall(peerId);
+  }
+
   Future<void> accept() async {
     assertNetworkReady(ref);
     await _requireRuntime().acceptVoiceCall();
@@ -272,6 +305,28 @@ class VoiceCallController extends Notifier<VoiceCallState> {
 
   Future<void> setMuted(bool muted) async {
     await _requireRuntime().setVoiceCallMuted(muted);
+  }
+
+  Future<void> setCameraMuted(bool muted) async {
+    await _requireRuntime().setVideoCallCameraMuted(muted);
+  }
+
+  Future<void> switchCamera() async {
+    final capabilities = await ref
+        .read(videoInputCapabilityProvider.notifier)
+        .reload();
+    if (!capabilities.supportsCameraSwitch) {
+      throw StateError('Camera switching is unavailable on this device.');
+    }
+    await _requireRuntime().switchVideoCallCamera();
+  }
+
+  Future<void> setDeafened(bool deafened) async {
+    await _requireRuntime().setVoiceCallDeafened(deafened);
+  }
+
+  Future<void> setOutputRoute(VoiceCallOutputRoute route) async {
+    await _requireRuntime().setVoiceCallOutputRoute(route);
   }
 
   bool blocksFileTransfer(String peerId) {
@@ -338,6 +393,7 @@ class ConnectionsController extends Notifier<ConnectionsState> {
     String peerId, {
     bool waitForConnected = false,
     bool manualRetry = false,
+    bool allowStalePresence = false,
   }) async {
     assertNetworkReady(ref);
     final runtime = _requireRuntime();
@@ -357,7 +413,7 @@ class ConnectionsController extends Notifier<ConnectionsState> {
         peerId,
         interactive: true,
         waitForConnected: waitForConnected,
-        allowStalePresence: manualRetry,
+        allowStalePresence: allowStalePresence,
         bypassRetryBackoff: manualRetry,
       );
       syncPeer(peerId);
@@ -367,6 +423,7 @@ class ConnectionsController extends Notifier<ConnectionsState> {
         (view) => view.copyWith(
           manualIntent: ManualConnectionIntent.failed,
           actionBusy: false,
+          disconnecting: false,
           error: error,
           localDetail: 'Connection failed before chat was ready.',
         ),
@@ -403,6 +460,7 @@ class ConnectionsController extends Notifier<ConnectionsState> {
       _upsert(
         peerId,
         (view) => view.copyWith(
+          actionBusy: false,
           disconnecting: false,
           error: error,
           localDetail: 'Disconnect failed.',
@@ -420,7 +478,9 @@ class ConnectionsController extends Notifier<ConnectionsState> {
         session: session,
         manualIntent: _intentForSession(session, fallback: view.manualIntent),
         actionBusy: false,
-        disconnecting: false,
+        disconnecting: session?.phase == SessionPhase.disconnecting
+            ? view.disconnecting
+            : false,
         localDetail: session?.detail,
         updatedAt: DateTime.now().millisecondsSinceEpoch,
       ),
@@ -492,7 +552,9 @@ class ConnectionsController extends Notifier<ConnectionsState> {
         session: session,
         manualIntent: _intentForSession(session, fallback: view.manualIntent),
         actionBusy: false,
-        disconnecting: false,
+        disconnecting: session.phase == SessionPhase.disconnecting
+            ? view.disconnecting
+            : false,
         localDetail: session.detail,
         error: session.error,
         updatedAt: session.updatedAt,
@@ -504,6 +566,11 @@ class ConnectionsController extends Notifier<ConnectionsState> {
     Session? session, {
     required ManualConnectionIntent fallback,
   }) {
+    if (session?.phase == SessionPhase.disconnecting) {
+      return fallback == ManualConnectionIntent.manualDisconnected
+          ? ManualConnectionIntent.manualDisconnected
+          : ManualConnectionIntent.idle;
+    }
     return switch (session?.state) {
       SessionState.connected => ManualConnectionIntent.linked,
       SessionState.connecting ||

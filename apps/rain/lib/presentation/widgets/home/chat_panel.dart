@@ -61,6 +61,7 @@ class _ChatPanelState extends ConsumerState<_ChatPanel> {
     final canConnectNow =
         runtime != null &&
         canChat &&
+        isPeerOnline &&
         !connectionStatus.isBusy &&
         !connectionStatus.isConnected;
     final canDisconnectNow =
@@ -68,13 +69,12 @@ class _ChatPanelState extends ConsumerState<_ChatPanel> {
     final messages = ref.watch(messagesProvider(widget.peerId));
     final transfers = ref.watch(fileTransferViewsProvider(widget.peerId));
     final voiceCall = ref.watch(voiceCallProvider);
-    final voiceCallForPeer =
-        voiceCall.hasCall && voiceCall.peerId == widget.peerId;
     final hasBlockingCall =
         voiceCall.hasCall && voiceCall.phase != VoiceCallPhase.failed;
     final hasActiveTransfer = _hasActiveFileTransfer(transfers.value);
     final canStartVoiceCall =
         runtime != null && canChat && !hasBlockingCall && !hasActiveTransfer;
+    final canStartVideoCall = canStartVoiceCall;
     ref.listen<AsyncValue<List<StoredMessage>>>(
       messagesProvider(widget.peerId),
       _handleMessageSound,
@@ -105,27 +105,10 @@ class _ChatPanelState extends ConsumerState<_ChatPanel> {
                 canDisconnectNow: canDisconnectNow,
                 voiceCall: voiceCall,
                 canStartVoiceCall: canStartVoiceCall,
+                canStartVideoCall: canStartVideoCall,
                 hasActiveTransfer: hasActiveTransfer,
               ),
             ),
-            if (canChat && voiceCallForPeer)
-              Padding(
-                padding: EdgeInsets.fromLTRB(
-                  horizontalPadding,
-                  0,
-                  horizontalPadding,
-                  12,
-                ),
-                child: RainVoiceCallPanel(
-                  state: voiceCall,
-                  displayName: friend?.displayName ?? widget.peerId,
-                  onAccept: _acceptVoiceCall,
-                  onReject: _rejectVoiceCall,
-                  onHangUp: _hangUpVoiceCall,
-                  onRetry: _startVoiceCall,
-                  onToggleMute: () => _toggleVoiceMute(voiceCall),
-                ),
-              ),
             Expanded(
               child: Stack(
                 children: <Widget>[
@@ -218,30 +201,22 @@ class _ChatPanelState extends ConsumerState<_ChatPanel> {
   ) {
     final previousMessages = previous?.value;
     final nextMessages = next.value;
-    if (previousMessages == null || nextMessages == null) {
-      return;
-    }
-
-    final previousLatestIncoming = _latestIncomingMessageId(previousMessages);
-    final nextLatestIncoming = _latestIncomingMessageId(nextMessages);
-    if (nextLatestIncoming != null &&
-        nextLatestIncoming != previousLatestIncoming &&
-        nextMessages.length >= previousMessages.length) {
-      _playSound(RainSoundEffect.receive);
+    final event = rainChatReceiveSoundEventFor(
+      previousMessages: previousMessages,
+      nextMessages: nextMessages,
+      conversationId: widget.peerId,
+    );
+    if (event != null) {
+      _dispatchSoundEvent(event);
     }
   }
 
-  String? _latestIncomingMessageId(List<StoredMessage> messages) {
-    for (final message in messages.reversed) {
-      if (!message.isOutgoing) {
-        return message.id;
-      }
-    }
-    return null;
+  void _dispatchSoundEvent(RainSoundEvent event) {
+    _dispatchRainSoundEvent(ref, event);
   }
 
-  void _playSound(RainSoundEffect effect) {
-    unawaited(ref.read(soundEffectsProvider).play(effect));
+  void _dispatchWarningSound(String errorKey) {
+    _dispatchSoundEvent(rainUiWarningSoundEvent(errorKey));
   }
 
   Widget _buildCommandHeader({
@@ -253,6 +228,7 @@ class _ChatPanelState extends ConsumerState<_ChatPanel> {
     required bool canDisconnectNow,
     required VoiceCallState voiceCall,
     required bool canStartVoiceCall,
+    required bool canStartVideoCall,
     required bool hasActiveTransfer,
   }) {
     final displayName = friend?.displayName ?? widget.peerId;
@@ -315,6 +291,7 @@ class _ChatPanelState extends ConsumerState<_ChatPanel> {
                 _buildCallButton(
                   voiceCall: voiceCall,
                   canStartVoiceCall: canStartVoiceCall,
+                  canStartVideoCall: canStartVideoCall,
                   hasActiveTransfer: hasActiveTransfer,
                 ),
               if (friend != null)
@@ -409,6 +386,7 @@ class _ChatPanelState extends ConsumerState<_ChatPanel> {
           _buildCallButton(
             voiceCall: voiceCall,
             canStartVoiceCall: canStartVoiceCall,
+            canStartVideoCall: canStartVideoCall,
             hasActiveTransfer: hasActiveTransfer,
           ),
           const SizedBox(width: 4),
@@ -425,14 +403,27 @@ class _ChatPanelState extends ConsumerState<_ChatPanel> {
   Widget _buildCallButton({
     required VoiceCallState voiceCall,
     required bool canStartVoiceCall,
+    required bool canStartVideoCall,
     required bool hasActiveTransfer,
   }) {
-    return RainVoiceCallButton(
-      peerId: widget.peerId,
-      state: voiceCall,
-      canStart: canStartVoiceCall,
-      hasActiveTransfer: hasActiveTransfer,
-      onStart: _startVoiceCall,
+    return Row(
+      mainAxisSize: MainAxisSize.min,
+      children: <Widget>[
+        RainVoiceCallButton(
+          peerId: widget.peerId,
+          state: voiceCall,
+          canStart: canStartVoiceCall,
+          hasActiveTransfer: hasActiveTransfer,
+          onStart: _startVoiceCall,
+        ),
+        RainVideoCallButton(
+          peerId: widget.peerId,
+          state: voiceCall,
+          canStart: canStartVideoCall,
+          hasActiveTransfer: hasActiveTransfer,
+          onStart: _startVideoCall,
+        ),
+      ],
     );
   }
 
@@ -650,8 +641,7 @@ class _ChatPanelState extends ConsumerState<_ChatPanel> {
                 AppStateMessage(
                   icon: Icons.water_drop_outlined,
                   title: 'No messages yet',
-                  message:
-                      'Messages will appear here once the conversation starts.',
+                  message: 'Start the first message when the link is ready.',
                 ),
               ],
             );
@@ -751,14 +741,24 @@ class _ChatPanelState extends ConsumerState<_ChatPanel> {
             horizontalPadding,
             24,
           ),
-          children: <Widget>[Center(child: Text(error.toString()))],
+          children: <Widget>[
+            AppStateMessage(
+              icon: Icons.error_outline,
+              title: 'Could not load messages',
+              message: error.toString(),
+              iconColor: Theme.of(context).colorScheme.error,
+            ),
+          ],
         ),
         loading: () => ListView(
           physics: const AlwaysScrollableScrollPhysics(),
-          children: const <Widget>[
-            SizedBox(height: 180),
-            Center(child: CircularProgressIndicator()),
-          ],
+          padding: EdgeInsets.fromLTRB(
+            horizontalPadding,
+            96,
+            horizontalPadding,
+            24,
+          ),
+          children: const <Widget>[RainStreakSkeleton(rows: 5)],
         ),
       ),
     );
@@ -981,20 +981,20 @@ class _ChatPanelState extends ConsumerState<_ChatPanel> {
     }
     final networkError = _networkActionError();
     if (networkError != null) {
-      _playSound(RainSoundEffect.error);
+      _dispatchWarningSound('chat.file.network_blocked');
       _showErrorSnack(networkError);
       return;
     }
     if (runtime == null || !connectionStatus.isConnected) {
-      _playSound(RainSoundEffect.error);
+      _dispatchWarningSound('chat.file.connect_first');
       _showErrorSnack('Connect first.');
       return;
     }
     if (ref
         .read(voiceCallProvider.notifier)
         .blocksFileTransfer(widget.peerId)) {
-      _playSound(RainSoundEffect.error);
-      _showErrorSnack('Finish the call first.');
+      _dispatchWarningSound('chat.file.call_active');
+      _showErrorSnack('Finish the call before sending files.');
       return;
     }
 
@@ -1035,10 +1035,10 @@ class _ChatPanelState extends ConsumerState<_ChatPanel> {
               return stream;
             },
           );
-      _playSound(RainSoundEffect.send);
+      _dispatchSoundEvent(rainChatSendSoundEventFor(widget.peerId));
       WidgetsBinding.instance.addPostFrameCallback((_) => _jumpToLatest());
     } catch (error) {
-      _playSound(RainSoundEffect.error);
+      _dispatchWarningSound('chat.file.send_failed');
       _showErrorSnack(_formatUiError(error));
     } finally {
       if (mounted) {
@@ -1076,7 +1076,7 @@ class _ChatPanelState extends ConsumerState<_ChatPanel> {
       () => ref
           .read(fileTransfersProvider(widget.peerId).notifier)
           .retry(transfer),
-      successEffect: RainSoundEffect.send,
+      successEvent: () => rainChatSendSoundEventFor(widget.peerId),
     );
   }
 
@@ -1103,11 +1103,11 @@ class _ChatPanelState extends ConsumerState<_ChatPanel> {
           .read(receivedFileExportServiceProvider)
           .saveReceivedFile(transfer);
       if (result.saved) {
-        _playSound(RainSoundEffect.action);
+        _dispatchSoundEvent(rainUiActionSoundEvent());
         _showInfoSnack('File saved.');
       }
     } catch (error) {
-      _playSound(RainSoundEffect.error);
+      _dispatchWarningSound('chat.file.save_failed');
       _showErrorSnack(_formatUiError(error));
     }
   }
@@ -1126,13 +1126,13 @@ class _ChatPanelState extends ConsumerState<_ChatPanel> {
 
   Future<void> _runFileTransferAction(
     Future<void> Function() action, {
-    RainSoundEffect successEffect = RainSoundEffect.action,
+    RainSoundEvent Function()? successEvent,
   }) async {
     try {
       await action();
-      _playSound(successEffect);
+      _dispatchSoundEvent(successEvent?.call() ?? rainUiActionSoundEvent());
     } catch (error) {
-      _playSound(RainSoundEffect.error);
+      _dispatchWarningSound('chat.file.action_failed');
       _showErrorSnack(_formatUiError(error));
     }
   }
@@ -1328,12 +1328,12 @@ class _ChatPanelState extends ConsumerState<_ChatPanel> {
     }
     final networkError = _networkActionError();
     if (networkError != null) {
-      _playSound(RainSoundEffect.error);
+      _dispatchWarningSound('chat.message.network_blocked');
       _showErrorSnack(networkError);
       return;
     }
     if (runtime == null) {
-      _playSound(RainSoundEffect.error);
+      _dispatchWarningSound('chat.message.runtime_unavailable');
       _showErrorSnack('Peer connection is unavailable right now.');
       return;
     }
@@ -1342,10 +1342,10 @@ class _ChatPanelState extends ConsumerState<_ChatPanel> {
     _composerController.clear();
     try {
       await runtime.sendMessage(widget.peerId, text);
-      _playSound(RainSoundEffect.send);
+      _dispatchSoundEvent(rainChatSendSoundEventFor(widget.peerId));
       WidgetsBinding.instance.addPostFrameCallback((_) => _jumpToLatest());
     } catch (error) {
-      _playSound(RainSoundEffect.error);
+      _dispatchWarningSound('chat.message.send_failed');
       if (mounted) {
         _composerController.text = text;
         _composerController.selection = TextSelection.collapsed(
@@ -1363,51 +1363,21 @@ class _ChatPanelState extends ConsumerState<_ChatPanel> {
   }
 
   Future<void> _startVoiceCall() async {
+    final before = ref.read(voiceCallProvider);
     try {
       await ref.read(voiceCallProvider.notifier).start(widget.peerId);
-      _playSound(RainSoundEffect.action);
     } catch (error) {
-      _playSound(RainSoundEffect.error);
+      _dispatchVoiceCommandFailureSoundForRef(ref, error, before: before);
       _showErrorSnack(_formatUiError(error));
     }
   }
 
-  Future<void> _acceptVoiceCall() async {
+  Future<void> _startVideoCall() async {
+    final before = ref.read(voiceCallProvider);
     try {
-      await ref.read(voiceCallProvider.notifier).accept();
-      _playSound(RainSoundEffect.action);
+      await ref.read(voiceCallProvider.notifier).startVideo(widget.peerId);
     } catch (error) {
-      _playSound(RainSoundEffect.error);
-      _showErrorSnack(_formatUiError(error));
-    }
-  }
-
-  Future<void> _rejectVoiceCall() async {
-    try {
-      await ref.read(voiceCallProvider.notifier).reject();
-      _playSound(RainSoundEffect.action);
-    } catch (error) {
-      _playSound(RainSoundEffect.error);
-      _showErrorSnack(_formatUiError(error));
-    }
-  }
-
-  Future<void> _hangUpVoiceCall() async {
-    try {
-      await ref.read(voiceCallProvider.notifier).hangUp();
-      _playSound(RainSoundEffect.action);
-    } catch (error) {
-      _playSound(RainSoundEffect.error);
-      _showErrorSnack(_formatUiError(error));
-    }
-  }
-
-  Future<void> _toggleVoiceMute(VoiceCallState state) async {
-    try {
-      await ref.read(voiceCallProvider.notifier).setMuted(!state.isMuted);
-      _playSound(RainSoundEffect.action);
-    } catch (error) {
-      _playSound(RainSoundEffect.error);
+      _dispatchVoiceCommandFailureSoundForRef(ref, error, before: before);
       _showErrorSnack(_formatUiError(error));
     }
   }
@@ -1416,8 +1386,14 @@ class _ChatPanelState extends ConsumerState<_ChatPanel> {
     if (_isConnecting) return;
     final networkError = _networkActionError();
     if (networkError != null) {
-      _playSound(RainSoundEffect.error);
+      _dispatchWarningSound('chat.peer.network_blocked');
       _showErrorSnack(networkError);
+      return;
+    }
+    final offlineError = _offlineConnectError();
+    if (offlineError != null) {
+      _dispatchWarningSound('chat.peer.offline_blocked');
+      _showErrorSnack(offlineError);
       return;
     }
     setState(() => _isConnecting = true);
@@ -1425,14 +1401,14 @@ class _ChatPanelState extends ConsumerState<_ChatPanel> {
       await ref
           .read(connectionsProvider.notifier)
           .connect(widget.peerId, waitForConnected: true, manualRetry: true);
-      _playSound(RainSoundEffect.action);
+      _dispatchSoundEvent(rainUiActionSoundEvent());
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
           SnackBar(content: Text('Connected to @${widget.peerId}.')),
         );
       }
     } catch (error) {
-      _playSound(RainSoundEffect.error);
+      _dispatchWarningSound('chat.peer.connect_failed');
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
           SnackBar(
@@ -1451,9 +1427,9 @@ class _ChatPanelState extends ConsumerState<_ChatPanel> {
   Future<void> _disconnectPeer() async {
     try {
       await ref.read(connectionsProvider.notifier).disconnect(widget.peerId);
-      _playSound(RainSoundEffect.action);
+      _dispatchSoundEvent(rainUiActionSoundEvent());
     } catch (error) {
-      _playSound(RainSoundEffect.error);
+      _dispatchWarningSound('chat.peer.disconnect_failed');
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
           SnackBar(
@@ -1470,5 +1446,16 @@ class _ChatPanelState extends ConsumerState<_ChatPanel> {
     return status != null && status.blocksNetworkActions
         ? status.actionErrorMessage
         : null;
+  }
+
+  String? _offlineConnectError() {
+    final friend = _currentFriend(ref.read(friendsProvider));
+    if (friend == null || friend.state != FriendState.friend) {
+      return null;
+    }
+    if (friend.isOnline) {
+      return null;
+    }
+    return '@${friend.username} is offline. Keep both apps open, then try again.';
   }
 }

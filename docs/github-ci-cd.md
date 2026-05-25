@@ -17,8 +17,20 @@ Inputs:
 
 - `platform`: `all`, `android`, or `windows`.
 - `build_profile`: `demo` or `production`.
+- `publish_test_release`: when enabled, publishes direct APK/Windows download
+  assets to a `rain-test-*` GitHub pre-release.
 
 Demo builds use `apps/rain/tool/dart_defines.example.json`, OpenRelay demo TURN, and a generated demo Android signing key. Demo artifacts are for testing only.
+
+For fast phone installs, keep `publish_test_release` enabled. The workflow
+creates a pre-release with individual APK assets, so Android devices can open
+the release page and download:
+
+- `Rain-Demo-Android-v7a.apk` or `Rain-Release-Android-v7a.apk`.
+- `Rain-Demo-Android-v8-v9.apk` or `Rain-Release-Android-v8-v9.apk`.
+
+The workflow summary also prints direct links to each generated asset. Old
+`rain-test-*` pre-releases are pruned automatically after the latest ten builds.
 
 Production builds require the secrets below.
 

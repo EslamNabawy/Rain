@@ -15,6 +15,7 @@ This directory contains the Firebase assets needed by Rain's Realtime Database s
 - `friendRequests/<to>/<from>`: username-based request inbox
 - `rooms/<roomId>`: offer, answer, and ICE candidates only
 - `activeVoicePairs/<pairId>`: ephemeral one-call lock for a caller/callee pair
+- `activeVoiceUsers/<username>`: ephemeral one-call lock for a user across all peers
 - `voiceCallInboxes/<username>/<callId>`: ephemeral incoming call pointer
 - `voiceCalls/<callId>`: ephemeral voice call state, encrypted SDP, and encrypted ICE
 
@@ -48,7 +49,7 @@ The Cloud Functions do two things:
 
 - mark users offline when `lastHeartbeat` is older than 7 minutes
 - remove abandoned signaling rooms after 15 minutes
-- remove expired voice call rooms, inbox pointers, and active pair locks
+- remove expired voice call rooms, inbox pointers, and active pair/user locks
 
 ## Remote Config
 

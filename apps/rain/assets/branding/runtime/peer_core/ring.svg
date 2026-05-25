@@ -1,0 +1,10 @@
+<svg width="1024" height="1024" viewBox="0 0 1024 1024" fill="none" xmlns="http://www.w3.org/2000/svg">
+  <defs>
+    <linearGradient id="peerCoreRing" x1="240" y1="180" x2="808" y2="844" gradientUnits="userSpaceOnUse">
+      <stop stop-color="#D7F9FF"/>
+      <stop offset="0.48" stop-color="#7DEBFF"/>
+      <stop offset="1" stop-color="#2DD4A3"/>
+    </linearGradient>
+  </defs>
+  <circle id="signal-ring" cx="512" cy="512" r="328" stroke="url(#peerCoreRing)" stroke-width="72"/>
+</svg>

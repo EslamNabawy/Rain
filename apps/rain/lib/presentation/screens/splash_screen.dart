@@ -1,6 +1,9 @@
 import 'package:flutter/material.dart';
 
+import 'package:rain/presentation/branding/rain_peer_core_mark.dart';
+import 'package:rain/presentation/branding/rain_ripple_halo_surface.dart';
 import 'package:rain/presentation/theme/rain_theme.dart';
+import 'package:rain/presentation/widgets/rain_backdrop.dart';
 
 class RainSplashScreen extends StatelessWidget {
   const RainSplashScreen({super.key});
@@ -8,11 +11,7 @@ class RainSplashScreen extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     return const _SplashScaffold(
-      child: _SplashBody(
-        title: 'Rain',
-        subtitle: 'Peer command link',
-        showProgress: true,
-      ),
+      child: _SplashBody(title: 'Rain', subtitle: 'Private peer link'),
     );
   }
 }
@@ -28,7 +27,6 @@ class RainStartupFailureScreen extends StatelessWidget {
       child: _SplashBody(
         title: 'Rain could not start.',
         subtitle: error.toString(),
-        showProgress: false,
       ),
     );
   }
@@ -42,15 +40,8 @@ class _SplashScaffold extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     return Scaffold(
-      backgroundColor: const Color(0xFF061017),
-      body: DecoratedBox(
-        decoration: const BoxDecoration(
-          gradient: LinearGradient(
-            begin: Alignment.topLeft,
-            end: Alignment.bottomRight,
-            colors: <Color>[Color(0xFF061017), Color(0xFF0B1F28)],
-          ),
-        ),
+      backgroundColor: RainColors.backgroundDark,
+      body: RainBackdrop.splash(
         child: Center(
           child: Padding(
             padding: const EdgeInsets.all(28),
@@ -66,50 +57,35 @@ class _SplashScaffold extends StatelessWidget {
 }
 
 class _SplashBody extends StatelessWidget {
-  const _SplashBody({
-    required this.title,
-    required this.subtitle,
-    required this.showProgress,
-  });
+  const _SplashBody({required this.title, required this.subtitle});
 
   final String title;
   final String subtitle;
-  final bool showProgress;
 
   @override
   Widget build(BuildContext context) {
+    final reducedMotion = MediaQuery.of(context).disableAnimations;
     return TweenAnimationBuilder<double>(
       tween: Tween<double>(begin: 0.92, end: 1),
-      duration: RainMotion.slow,
+      duration: reducedMotion ? Duration.zero : RainMotion.splashIntro,
       curve: Curves.easeOutCubic,
       builder: (context, scale, child) {
-        return Transform.scale(scale: scale, child: child);
+        return Transform.scale(scale: reducedMotion ? 1 : scale, child: child);
       },
       child: Column(
         mainAxisSize: MainAxisSize.min,
         children: <Widget>[
-          Container(
-            width: 92,
-            height: 92,
-            decoration: BoxDecoration(
-              borderRadius: BorderRadius.circular(26),
-              boxShadow: <BoxShadow>[
-                BoxShadow(
-                  color: const Color(0xFF2DD4A3).withValues(alpha: 0.18),
-                  blurRadius: 32,
-                  offset: const Offset(0, 18),
-                ),
-              ],
-            ),
-            clipBehavior: Clip.antiAlias,
-            child: Image.asset(
-              'assets/branding/rain_app_icon_1024.png',
-              fit: BoxFit.cover,
-              errorBuilder: (_, _, _) => const Icon(
-                Icons.hub_outlined,
-                size: 54,
-                color: Color(0xFF2DD4A3),
-              ),
+          RainRippleHaloSurface(
+            enabled: true,
+            borderRadius: BorderRadius.circular(56),
+            color: RainColors.peerMint,
+            pulseKey: 'splash-logo',
+            pulseOnMount: true,
+            child: RainPeerCoreAnimatedMark(
+              key: const ValueKey<String>('rain-splash-peer-core-mark'),
+              size: 112,
+              motion: RainPeerCoreMotion.orbitalMesh,
+              reducedMotion: reducedMotion,
             ),
           ),
           const SizedBox(height: 22),
@@ -134,17 +110,6 @@ class _SplashBody extends StatelessWidget {
               letterSpacing: 0,
             ),
           ),
-          if (showProgress) ...<Widget>[
-            const SizedBox(height: 26),
-            ClipRRect(
-              borderRadius: BorderRadius.circular(999),
-              child: const LinearProgressIndicator(
-                minHeight: 3,
-                color: Color(0xFF2DD4A3),
-                backgroundColor: Color(0x2237E8FF),
-              ),
-            ),
-          ],
         ],
       ),
     );

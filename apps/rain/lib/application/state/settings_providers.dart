@@ -1,6 +1,11 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
+import 'package:rain/application/runtime/media_device_settings.dart';
+import 'package:rain/application/runtime/voice_call_state.dart';
+import 'package:rain/infrastructure/services/app_settings_store.dart';
+import 'core_providers.dart';
+
 enum AppThemeMode { dark, light, system }
 
 extension AppThemeModeX on AppThemeMode {
@@ -49,4 +54,239 @@ class RecentSearchesController extends Notifier<List<String>> {
   void clear() {
     state = const <String>[];
   }
+}
+
+final microphoneSelectionProvider =
+    AsyncNotifierProvider<
+      MicrophoneSelectionController,
+      MicrophoneSelectionState
+    >(MicrophoneSelectionController.new);
+
+class MicrophoneSelectionController
+    extends AsyncNotifier<MicrophoneSelectionState> {
+  @override
+  Future<MicrophoneSelectionState> build() {
+    return ref.watch(mediaDeviceSettingsProvider).loadMicrophoneSelection();
+  }
+
+  Future<void> refresh() async {
+    state = const AsyncValue.loading();
+    state = await AsyncValue.guard(
+      () => ref.read(mediaDeviceSettingsProvider).loadMicrophoneSelection(),
+    );
+  }
+
+  Future<void> selectMicrophone(String? deviceId) async {
+    final service = ref.read(mediaDeviceSettingsProvider);
+    final previous = state.value;
+    state = const AsyncValue.loading();
+    final next = await AsyncValue.guard(() async {
+      await service.selectMicrophone(deviceId);
+      return service.loadMicrophoneSelection();
+    });
+    state = next;
+    if (next.hasError && previous != null) {
+      state = AsyncValue.data(previous);
+      Error.throwWithStackTrace(next.error!, next.stackTrace!);
+    }
+  }
+
+  Future<void> testSelectedMicrophone() {
+    return ref
+        .read(mediaDeviceSettingsProvider)
+        .testSelectedMicrophoneAvailability();
+  }
+}
+
+final videoInputCapabilityProvider =
+    AsyncNotifierProvider<
+      VideoInputCapabilityController,
+      VideoInputCapabilityState
+    >(VideoInputCapabilityController.new);
+
+class VideoInputCapabilityController
+    extends AsyncNotifier<VideoInputCapabilityState> {
+  @override
+  Future<VideoInputCapabilityState> build() {
+    return ref.watch(mediaDeviceSettingsProvider).loadVideoInputCapabilities();
+  }
+
+  Future<void> refresh() async {
+    state = const AsyncValue.loading();
+    state = await AsyncValue.guard(
+      () => ref.read(mediaDeviceSettingsProvider).loadVideoInputCapabilities(),
+    );
+  }
+
+  Future<VideoInputCapabilityState> reload() async {
+    final previous = state.value;
+    state = const AsyncValue.loading();
+    final next = await AsyncValue.guard(
+      () => ref.read(mediaDeviceSettingsProvider).loadVideoInputCapabilities(),
+    );
+    state = next;
+    if (next.hasValue) {
+      return next.requireValue;
+    }
+    if (previous != null) {
+      state = AsyncValue.data(previous);
+    }
+    Error.throwWithStackTrace(next.error!, next.stackTrace!);
+  }
+
+  Future<void> selectVideoInput(String? deviceId) async {
+    final service = ref.read(mediaDeviceSettingsProvider);
+    final previous = state.value;
+    state = const AsyncValue.loading();
+    final next = await AsyncValue.guard(() async {
+      await service.selectVideoInput(deviceId);
+      return service.loadVideoInputCapabilities();
+    });
+    state = next;
+    if (next.hasError && previous != null) {
+      state = AsyncValue.data(previous);
+      Error.throwWithStackTrace(next.error!, next.stackTrace!);
+    }
+  }
+}
+
+final voiceAudioSettingsProvider =
+    AsyncNotifierProvider<VoiceAudioSettingsController, AppAudioSettings>(
+      VoiceAudioSettingsController.new,
+    );
+
+class VoiceAudioSettingsController extends AsyncNotifier<AppAudioSettings> {
+  @override
+  Future<AppAudioSettings> build() {
+    return ref.watch(appSettingsStoreProvider).loadAudioSettings();
+  }
+
+  Future<void> setSoundEffectsEnabled(bool enabled) {
+    return _persist(
+      write: (AppSettingsStore store) => store.setSoundEffectsEnabled(enabled),
+      apply: (AppAudioSettings current) =>
+          current.copyWith(soundEffectsEnabled: enabled),
+    );
+  }
+
+  Future<void> setSoundEffectsVolume(double volume) {
+    final normalized = AppSettingsStore.normalizeSoundEffectsVolume(volume);
+    return _persist(
+      write: (AppSettingsStore store) =>
+          store.setSoundEffectsVolume(normalized),
+      apply: (AppAudioSettings current) =>
+          current.copyWith(soundEffectsVolume: normalized),
+    );
+  }
+
+  Future<void> setCallSoundsEnabled(bool enabled) {
+    return _persist(
+      write: (AppSettingsStore store) => store.setCallSoundsEnabled(enabled),
+      apply: (AppAudioSettings current) =>
+          current.copyWith(callSoundsEnabled: enabled),
+    );
+  }
+
+  Future<void> setReduceSoundsDuringCall(bool enabled) {
+    return _persist(
+      write: (AppSettingsStore store) =>
+          store.setReduceSoundsDuringCall(enabled),
+      apply: (AppAudioSettings current) =>
+          current.copyWith(reduceSoundsDuringCall: enabled),
+    );
+  }
+
+  Future<void> setDefaultOutputPreference(
+    CallAudioOutputPreference preference,
+  ) {
+    return _persist(
+      write: (AppSettingsStore store) =>
+          store.setDefaultCallAudioOutputPreference(preference),
+      apply: (AppAudioSettings current) =>
+          current.copyWith(defaultOutputPreference: preference),
+    );
+  }
+
+  Future<AppAudioSettings> _currentSettings() async {
+    return state.value ??
+        ref.read(appSettingsStoreProvider).loadAudioSettings();
+  }
+
+  Future<void> _persist({
+    required Future<void> Function(AppSettingsStore store) write,
+    required AppAudioSettings Function(AppAudioSettings current) apply,
+  }) async {
+    final store = ref.read(appSettingsStoreProvider);
+    final previous = await _currentSettings();
+    final next = apply(previous);
+    state = AsyncValue.data(next);
+    try {
+      await write(store);
+    } catch (error, stackTrace) {
+      state = AsyncValue.data(previous);
+      Error.throwWithStackTrace(error, stackTrace);
+    }
+  }
+}
+
+final audioOutputCapabilityProvider =
+    AsyncNotifierProvider<
+      AudioOutputCapabilityController,
+      AudioOutputCapabilityState
+    >(AudioOutputCapabilityController.new);
+
+class AudioOutputCapabilityController
+    extends AsyncNotifier<AudioOutputCapabilityState> {
+  @override
+  Future<AudioOutputCapabilityState> build() async {
+    final settings = await ref.watch(voiceAudioSettingsProvider.future);
+    return ref
+        .watch(mediaDeviceSettingsProvider)
+        .loadAudioOutputCapabilities(
+          selectedRoute: _voiceCallOutputRoute(
+            settings.defaultOutputPreference,
+          ),
+        );
+  }
+
+  Future<void> refresh() async {
+    state = const AsyncValue.loading();
+    state = await AsyncValue.guard(_load);
+  }
+
+  Future<AudioOutputCapabilityState> reload() async {
+    final previous = state.value;
+    state = const AsyncValue.loading();
+    final next = await AsyncValue.guard(_load);
+    state = next;
+    if (next.hasValue) {
+      return next.requireValue;
+    }
+    if (previous != null) {
+      state = AsyncValue.data(previous);
+    }
+    Error.throwWithStackTrace(next.error!, next.stackTrace!);
+  }
+
+  Future<AudioOutputCapabilityState> _load() async {
+    final settings = await ref.read(voiceAudioSettingsProvider.future);
+    return ref
+        .read(mediaDeviceSettingsProvider)
+        .loadAudioOutputCapabilities(
+          selectedRoute: _voiceCallOutputRoute(
+            settings.defaultOutputPreference,
+          ),
+        );
+  }
+}
+
+VoiceCallOutputRoute _voiceCallOutputRoute(
+  CallAudioOutputPreference preference,
+) {
+  return switch (preference) {
+    CallAudioOutputPreference.systemDefault =>
+      VoiceCallOutputRoute.systemDefault,
+    CallAudioOutputPreference.speaker => VoiceCallOutputRoute.speaker,
+    CallAudioOutputPreference.bluetooth => VoiceCallOutputRoute.bluetooth,
+  };
 }

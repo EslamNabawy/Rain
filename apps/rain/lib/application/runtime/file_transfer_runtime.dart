@@ -172,10 +172,19 @@ extension FileTransferRuntime on RainRuntimeController {
       );
       return;
     }
-    if (voiceCallBlocksFileTransfer(peerId)) {
+    final transferDecision = RuntimeInteractionGuard.canAcceptFileTransfer(
+      peerId: peerId,
+      transferId: frame.transferId,
+      voiceCallState: _voiceCallState,
+    );
+    if (!transferDecision.allowed) {
       _sendFileControlIfConnected(
         peerId,
-        FileTransferFrame.reject(frame.transferId, 'Finish the call first.'),
+        FileTransferFrame.reject(
+          frame.transferId,
+          transferDecision.userMessage ??
+              'Finish the call before sending files.',
+        ),
       );
       return;
     }

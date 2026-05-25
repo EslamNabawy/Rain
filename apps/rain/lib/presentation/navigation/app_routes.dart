@@ -11,6 +11,43 @@ import 'package:rain/presentation/screens/settings_screen.dart';
 import 'package:rain/presentation/theme/rain_theme.dart';
 import 'rain_navigation_shell.dart';
 
+@visibleForTesting
+final appShellReadinessProvider = Provider<AppShellReadiness>((Ref ref) {
+  final identity = ref.watch(identityProvider);
+  final forceUpdate = ref.watch(forceUpdateProvider);
+  final networkStatus = ref.watch(networkStatusProvider).value;
+
+  final signedIn = identity.hasValue && identity.value != null;
+  final canUseCurrentVersion =
+      forceUpdate.hasValue && !forceUpdate.requireValue.requiresUpdate;
+  final runtimeReady =
+      !signedIn ||
+      switch (ref.watch(runtimeControllerProvider)) {
+        AsyncData() => true,
+        _ => false,
+      };
+
+  return AppShellReadiness(
+    showNavigation: signedIn && canUseCurrentVersion && runtimeReady,
+    networkStatusMessage:
+        networkStatus != null && networkStatus.blocksNetworkActions
+        ? networkStatus.message
+        : null,
+  );
+});
+
+@visibleForTesting
+@immutable
+class AppShellReadiness {
+  const AppShellReadiness({
+    required this.showNavigation,
+    this.networkStatusMessage,
+  });
+
+  final bool showNavigation;
+  final String? networkStatusMessage;
+}
+
 final appRouterProvider = Provider<GoRouter>((Ref ref) {
   final refreshListenable = _RouterRefreshNotifier(ref);
   ref.onDispose(refreshListenable.dispose);
@@ -33,18 +70,11 @@ final appRouterProvider = Provider<GoRouter>((Ref ref) {
         builder: (BuildContext context, GoRouterState state, Widget child) {
           return Consumer(
             builder: (BuildContext context, WidgetRef ref, Widget? _) {
-              final identity = ref.watch(identityProvider).value;
-              final forceUpdate = ref.watch(forceUpdateProvider).value;
-              final networkStatus = ref.watch(networkStatusProvider).value;
-              final canUseCurrentVersion =
-                  forceUpdate != null && !forceUpdate.requiresUpdate;
+              final readiness = ref.watch(appShellReadinessProvider);
               return RainNavigationShell(
                 location: state.uri.path,
-                showNavigation: identity != null && canUseCurrentVersion,
-                networkStatusMessage:
-                    networkStatus != null && networkStatus.blocksNetworkActions
-                    ? networkStatus.message
-                    : null,
+                showNavigation: readiness.showNavigation,
+                networkStatusMessage: readiness.networkStatusMessage,
                 child: child,
               );
             },

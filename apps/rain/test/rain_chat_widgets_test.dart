@@ -1,8 +1,21 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_svg/flutter_svg.dart';
 import 'package:flutter_test/flutter_test.dart';
+import 'package:rain/application/runtime/media_device_settings.dart';
+import 'package:flutter_webrtc/flutter_webrtc.dart' show MediaStream;
+import 'package:rain/application/runtime/video_call_renderers.dart';
+import 'package:rain/application/runtime/voice_audio_level.dart';
 import 'package:rain/application/runtime/voice_call_state.dart';
+import 'package:rain/application/state/call_surface_providers.dart';
+import 'package:rain/application/audio/rain_sound_event.dart';
+import 'package:rain/presentation/branding/rain_ripple_halo_surface.dart';
+import 'package:rain/presentation/branding/rain_streak_surface.dart';
+import 'package:rain/presentation/screens/home_screen.dart';
+import 'package:rain/presentation/widgets/calls/rain_call_controls.dart';
+import 'package:rain/presentation/widgets/calls/rain_call_manager_bar.dart';
+import 'package:rain/presentation/widgets/calls/rain_call_overlay.dart';
 import 'package:rain/presentation/widgets/rain_chat_widgets.dart';
+import 'package:rain_core/rain_core.dart';
 
 void main() {
   testWidgets('RainLiveLinkBar renders link state and strength', (
@@ -180,6 +193,133 @@ void main() {
     expect(started, isFalse);
   });
 
+  test('call-state sound mapping emits incoming ringtone event', () {
+    final next = const VoiceCallState(
+      phase: VoiceCallPhase.incomingRinging,
+      peerId: 'bob',
+      callId: 'call-1',
+      sessionEpoch: 7,
+    );
+
+    final event = rainVoiceCallLifecycleSoundEventFor(null, next);
+
+    expect(event?.kind, RainSoundEventKind.callIncomingStarted);
+    expect(event?.callId, 'call-1');
+    expect(event?.peerId, 'bob');
+    expect(event?.sessionEpoch, 7);
+  });
+
+  test('call-state sound mapping emits connected event once per phase key', () {
+    final previous = const VoiceCallState(
+      phase: VoiceCallPhase.connectingMedia,
+      peerId: 'bob',
+      callId: 'call-1',
+      sessionEpoch: 9,
+    );
+    final next = const VoiceCallState(
+      phase: VoiceCallPhase.active,
+      peerId: 'bob',
+      callId: 'call-1',
+      sessionEpoch: 9,
+    );
+
+    final event = rainVoiceCallLifecycleSoundEventFor(previous, next);
+    final key = rainVoiceCallLifecycleSoundKeyFor(previous, next);
+    final duplicateKey = rainVoiceCallLifecycleSoundKeyFor(next, next);
+
+    expect(event?.kind, RainSoundEventKind.callConnected);
+    expect(key, duplicateKey);
+  });
+
+  test('call-state sound mapping emits ended and failed lifecycle events', () {
+    const active = VoiceCallState(
+      phase: VoiceCallPhase.active,
+      peerId: 'bob',
+      callId: 'call-1',
+      sessionEpoch: 11,
+    );
+    const idle = VoiceCallState.idle();
+    const failed = VoiceCallState(
+      phase: VoiceCallPhase.failed,
+      peerId: 'bob',
+      callId: 'call-2',
+      sessionEpoch: 12,
+      failureReason: VoiceCallFailureReason.mediaConnectionFailed,
+    );
+
+    final ended = rainVoiceCallLifecycleSoundEventFor(active, idle);
+    final failure = rainVoiceCallLifecycleSoundEventFor(active, failed);
+
+    expect(ended?.kind, RainSoundEventKind.callEnded);
+    expect(ended?.callId, 'call-1');
+    expect(failure?.kind, RainSoundEventKind.callFailed);
+    expect(failure?.errorKey, 'voice.mediaconnectionfailed');
+  });
+
+  test('video call lifecycle reuses call sound policy with video mode', () {
+    final event = rainVoiceCallLifecycleSoundEventFor(
+      null,
+      const VoiceCallState(
+        phase: VoiceCallPhase.outgoingRinging,
+        peerId: 'bob',
+        callId: 'video-1',
+        sessionEpoch: 13,
+        mediaMode: CallMediaMode.video,
+        isOutgoing: true,
+      ),
+    );
+
+    expect(event?.kind, RainSoundEventKind.callOutgoingStarted);
+    expect(event?.mediaMode, CallMediaMode.video);
+  });
+
+  test('initial chat history load does not emit receive sound', () {
+    final event = rainChatReceiveSoundEventFor(
+      previousMessages: null,
+      nextMessages: <StoredMessage>[_storedMessage('m1')],
+      conversationId: 'bob',
+    );
+
+    expect(event, isNull);
+  });
+
+  test('outgoing and self message updates do not emit receive sound', () {
+    final previous = <StoredMessage>[_storedMessage('m1')];
+    final next = <StoredMessage>[
+      ...previous,
+      _storedMessage('m2', isOutgoing: true),
+    ];
+
+    final event = rainChatReceiveSoundEventFor(
+      previousMessages: previous,
+      nextMessages: next,
+      conversationId: 'bob',
+    );
+
+    expect(event, isNull);
+  });
+
+  test('incoming chat updates emit conversation-scoped receive sound', () {
+    final previous = <StoredMessage>[_storedMessage('m1', isOutgoing: true)];
+    final next = <StoredMessage>[...previous, _storedMessage('m2')];
+
+    final event = rainChatReceiveSoundEventFor(
+      previousMessages: previous,
+      nextMessages: next,
+      conversationId: 'bob',
+    );
+
+    expect(event?.kind, RainSoundEventKind.chatReceive);
+    expect(event?.conversationId, 'bob');
+  });
+
+  test('message send success maps to conversation-scoped send sound', () {
+    final event = rainChatSendSoundEventFor('bob');
+
+    expect(event.kind, RainSoundEventKind.chatSend);
+    expect(event.conversationId, 'bob');
+  });
+
   testWidgets('voice call button disables during another call', (
     WidgetTester tester,
   ) async {
@@ -206,6 +346,59 @@ void main() {
     expect(button.tooltip, 'Finish the active call with @alice first.');
   });
 
+  testWidgets('video call button disables during active transfer', (
+    WidgetTester tester,
+  ) async {
+    var started = false;
+
+    await tester.pumpWidget(
+      MaterialApp(
+        home: Scaffold(
+          body: RainVideoCallButton(
+            peerId: 'bob',
+            state: const VoiceCallState.idle(),
+            canStart: false,
+            hasActiveTransfer: true,
+            onStart: () => started = true,
+          ),
+        ),
+      ),
+    );
+
+    final button = tester.widget<IconButton>(find.byType(IconButton));
+    expect(button.onPressed, isNull);
+    expect(button.tooltip, 'Finish the active file transfer first.');
+    await tester.tap(find.byType(IconButton));
+    expect(started, isFalse);
+  });
+
+  testWidgets('video call button disables during another call', (
+    WidgetTester tester,
+  ) async {
+    await tester.pumpWidget(
+      MaterialApp(
+        home: Scaffold(
+          body: RainVideoCallButton(
+            peerId: 'bob',
+            state: const VoiceCallState(
+              phase: VoiceCallPhase.active,
+              peerId: 'alice',
+              callId: 'call-1',
+              mediaMode: CallMediaMode.video,
+            ),
+            canStart: false,
+            hasActiveTransfer: false,
+            onStart: () {},
+          ),
+        ),
+      ),
+    );
+
+    final button = tester.widget<IconButton>(find.byType(IconButton));
+    expect(button.onPressed, isNull);
+    expect(button.tooltip, 'Finish the active call with @alice first.');
+  });
+
   testWidgets('voice call incoming ring actions are wired', (
     WidgetTester tester,
   ) async {
@@ -215,7 +408,7 @@ void main() {
     await tester.pumpWidget(
       MaterialApp(
         home: Scaffold(
-          body: RainVoiceCallPanel(
+          body: RainCallPanel(
             state: const VoiceCallState(
               phase: VoiceCallPhase.incomingRinging,
               peerId: 'bob',
@@ -235,10 +428,55 @@ void main() {
     expect(find.text('Bob is calling'), findsOneWidget);
     expect(find.text('Incoming voice call.'), findsOneWidget);
 
-    await tester.tap(find.text('Accept'));
+    await tester.tap(
+      find.byKey(const ValueKey<String>('rain-call-accept-button')),
+    );
     expect(accepted, isTrue);
 
-    await tester.tap(find.text('Reject'));
+    await tester.tap(
+      find.byKey(const ValueKey<String>('rain-call-reject-button')),
+    );
+    expect(rejected, isTrue);
+  });
+
+  testWidgets('incoming video ring actions are wired', (
+    WidgetTester tester,
+  ) async {
+    var accepted = false;
+    var rejected = false;
+
+    await tester.pumpWidget(
+      MaterialApp(
+        home: Scaffold(
+          body: RainCallPanel(
+            state: const VoiceCallState(
+              phase: VoiceCallPhase.incomingRinging,
+              peerId: 'bob',
+              callId: 'call-1',
+              mediaMode: CallMediaMode.video,
+            ),
+            displayName: 'Bob',
+            onAccept: () => accepted = true,
+            onReject: () => rejected = true,
+            onHangUp: () {},
+            onRetry: () {},
+            onToggleMute: () {},
+          ),
+        ),
+      ),
+    );
+
+    expect(find.text('Bob is calling'), findsOneWidget);
+    expect(find.text('Incoming video call.'), findsOneWidget);
+
+    await tester.tap(
+      find.byKey(const ValueKey<String>('rain-call-accept-button')),
+    );
+    expect(accepted, isTrue);
+
+    await tester.tap(
+      find.byKey(const ValueKey<String>('rain-call-reject-button')),
+    );
     expect(rejected, isTrue);
   });
 
@@ -251,7 +489,7 @@ void main() {
     await tester.pumpWidget(
       MaterialApp(
         home: Scaffold(
-          body: RainVoiceCallPanel(
+          body: RainCallPanel(
             state: VoiceCallState(
               phase: VoiceCallPhase.active,
               peerId: 'bob',
@@ -272,11 +510,361 @@ void main() {
     );
 
     expect(find.text('Voice call with Bob'), findsOneWidget);
+    expect(find.byType(RainStreakSurface), findsWidgets);
     await tester.tap(find.byTooltip('Mute microphone'));
     expect(muted, isTrue);
 
     await tester.tap(find.byTooltip('Hang up'));
     expect(hungUp, isTrue);
+  });
+
+  testWidgets('voice call panel duration advances while active', (
+    WidgetTester tester,
+  ) async {
+    final startedAt = DateTime.now().millisecondsSinceEpoch;
+
+    await tester.pumpWidget(
+      MaterialApp(
+        home: Scaffold(
+          body: RainCallPanel(
+            state: VoiceCallState(
+              phase: VoiceCallPhase.active,
+              peerId: 'bob',
+              callId: 'call-1',
+              sessionEpoch: 1,
+              startedAt: startedAt,
+            ),
+            displayName: 'Bob',
+            onAccept: () {},
+            onReject: () {},
+            onHangUp: () {},
+            onRetry: () {},
+            onToggleMute: () {},
+          ),
+        ),
+      ),
+    );
+
+    expect(find.textContaining('0:00'), findsOneWidget);
+
+    await tester.pump(const Duration(seconds: 2));
+
+    expect(find.textContaining('0:02'), findsOneWidget);
+  });
+
+  testWidgets('voice call panel stops ticking after terminal state', (
+    WidgetTester tester,
+  ) async {
+    final startedAt = DateTime.now().millisecondsSinceEpoch;
+
+    Widget panel(VoiceCallState state) {
+      return MaterialApp(
+        home: Scaffold(
+          body: RainCallPanel(
+            state: state,
+            displayName: 'Bob',
+            onAccept: () {},
+            onReject: () {},
+            onHangUp: () {},
+            onRetry: () {},
+            onToggleMute: () {},
+          ),
+        ),
+      );
+    }
+
+    await tester.pumpWidget(
+      panel(
+        VoiceCallState(
+          phase: VoiceCallPhase.active,
+          peerId: 'bob',
+          callId: 'call-1',
+          sessionEpoch: 1,
+          startedAt: startedAt,
+        ),
+      ),
+    );
+    await tester.pump(const Duration(seconds: 1));
+    expect(find.textContaining('0:01'), findsOneWidget);
+
+    await tester.pumpWidget(
+      panel(
+        VoiceCallState(
+          phase: VoiceCallPhase.failed,
+          peerId: 'bob',
+          callId: 'call-1',
+          sessionEpoch: 1,
+          startedAt: startedAt,
+          failureReason: VoiceCallFailureReason.mediaConnectionFailed,
+        ),
+      ),
+    );
+    await tester.pump(const Duration(seconds: 2));
+
+    expect(find.textContaining('0:03'), findsNothing);
+    expect(
+      find.text('Call media could not connect. Try again.'),
+      findsOneWidget,
+    );
+  });
+
+  test('voice call detail separates local and remote mute labels', () {
+    const base = VoiceCallState(
+      phase: VoiceCallPhase.active,
+      peerId: 'bob',
+      callId: 'call-1',
+      sessionEpoch: 1,
+      startedAt: 1000,
+    );
+
+    expect(
+      rainVoiceCallDetail(base.copyWith(isMuted: true), 2500),
+      allOf(contains('Muted'), isNot(contains('Peer muted'))),
+    );
+    expect(
+      rainVoiceCallDetail(base.copyWith(isRemoteMuted: true), 2500),
+      contains('Peer muted'),
+    );
+  });
+
+  testWidgets('voice call deafen and output route actions are wired', (
+    WidgetTester tester,
+  ) async {
+    var deafened = false;
+    VoiceCallOutputRoute? route;
+
+    await tester.pumpWidget(
+      MaterialApp(
+        home: Scaffold(
+          body: RainCallPanel(
+            state: VoiceCallState(
+              phase: VoiceCallPhase.active,
+              peerId: 'bob',
+              callId: 'call-1',
+              isDeafened: true,
+              outputRoute: VoiceCallOutputRoute.speaker,
+              outputRouteWarning: 'Audio route unavailable.',
+              startedAt: DateTime.now()
+                  .subtract(const Duration(seconds: 7))
+                  .millisecondsSinceEpoch,
+            ),
+            displayName: 'Bob',
+            onAccept: () {},
+            onReject: () {},
+            onHangUp: () {},
+            onRetry: () {},
+            onToggleMute: () {},
+            onToggleDeafen: () => deafened = true,
+            onSelectOutputRoute: (VoiceCallOutputRoute value) => route = value,
+          ),
+        ),
+      ),
+    );
+
+    expect(find.textContaining('Deafened'), findsOneWidget);
+    expect(find.textContaining('Speaker'), findsOneWidget);
+    expect(find.textContaining('Audio route unavailable.'), findsOneWidget);
+
+    await tester.tap(find.byTooltip('Undeafen audio'));
+    expect(deafened, isTrue);
+
+    await tester.tap(find.byTooltip('Choose audio output'));
+    await tester.pumpAndSettle();
+    await tester.tap(find.text('Bluetooth').last);
+
+    expect(route, VoiceCallOutputRoute.bluetooth);
+  });
+
+  testWidgets('voice call output route toggles when bluetooth is unavailable', (
+    WidgetTester tester,
+  ) async {
+    VoiceCallOutputRoute? route;
+
+    await tester.pumpWidget(
+      MaterialApp(
+        home: Scaffold(
+          body: RainCallPanel(
+            state: VoiceCallState(
+              phase: VoiceCallPhase.active,
+              peerId: 'bob',
+              callId: 'call-1',
+              startedAt: DateTime.now()
+                  .subtract(const Duration(seconds: 7))
+                  .millisecondsSinceEpoch,
+            ),
+            displayName: 'Bob',
+            outputRouteOptions: rainVoiceCallOutputRouteOptions(
+              hasBluetoothOutput: false,
+            ),
+            onAccept: () {},
+            onReject: () {},
+            onHangUp: () {},
+            onRetry: () {},
+            onToggleMute: () {},
+            onSelectOutputRoute: (VoiceCallOutputRoute value) => route = value,
+          ),
+        ),
+      ),
+    );
+
+    await tester.tap(find.byTooltip('Choose audio output'));
+    await tester.pump();
+
+    expect(route, VoiceCallOutputRoute.speaker);
+    expect(find.text('Bluetooth'), findsNothing);
+  });
+
+  testWidgets(
+    'ripple halo wraps the component bounds instead of only the icon glyph',
+    (WidgetTester tester) async {
+      await tester.pumpWidget(
+        MaterialApp(
+          home: Scaffold(
+            body: Center(
+              child: RainCallControls(
+                state: _activeVoiceCall(),
+                onAccept: () {},
+                onReject: () {},
+                onHangUp: () {},
+                onRetry: () {},
+                onToggleMute: () {},
+              ),
+            ),
+          ),
+        ),
+      );
+
+      final callControlHalos = find.byWidgetPredicate(
+        (Widget widget) =>
+            widget is RainRippleHaloSurface &&
+            widget.minSize == const Size.square(48),
+      );
+      expect(callControlHalos, findsNWidgets(4));
+      for (var index = 0; index < 4; index += 1) {
+        final size = tester.getSize(callControlHalos.at(index));
+        expect(size.width, greaterThanOrEqualTo(48));
+        expect(size.height, greaterThanOrEqualTo(48));
+      }
+    },
+  );
+
+  testWidgets('audio-only call controls do not render future video controls', (
+    WidgetTester tester,
+  ) async {
+    await tester.pumpWidget(
+      MaterialApp(
+        home: Scaffold(
+          body: RainCallPanel(
+            state: _activeVoiceCall(),
+            displayName: 'Bob',
+            onAccept: () {},
+            onReject: () {},
+            onHangUp: () {},
+            onRetry: () {},
+            onToggleMute: () {},
+          ),
+        ),
+      ),
+    );
+
+    expect(find.byTooltip('Mute microphone'), findsOneWidget);
+    expect(find.byTooltip('Deafen audio'), findsOneWidget);
+    expect(find.byTooltip('Choose audio output'), findsOneWidget);
+    expect(find.byTooltip('Hang up'), findsOneWidget);
+    expect(find.byTooltip('Turn camera off'), findsNothing);
+    expect(find.byTooltip('Switch camera'), findsNothing);
+  });
+
+  testWidgets('active video controls are wired without changing audio mode', (
+    WidgetTester tester,
+  ) async {
+    var cameraToggled = false;
+    var cameraSwitched = false;
+
+    expect(_activeVoiceCall().controlCapabilities, <CallControlCapability>[
+      CallControlCapability.microphone,
+      CallControlCapability.deafen,
+      CallControlCapability.outputRoute,
+      CallControlCapability.hangUp,
+    ]);
+
+    await tester.pumpWidget(
+      MaterialApp(
+        home: Scaffold(
+          body: RainCallPanel(
+            state: _activeVoiceCall(mediaMode: CallMediaMode.video),
+            displayName: 'Bob',
+            onAccept: () {},
+            onReject: () {},
+            onHangUp: () {},
+            onRetry: () {},
+            onToggleMute: () {},
+            onToggleCamera: () => cameraToggled = true,
+            onSwitchCamera: () => cameraSwitched = true,
+          ),
+        ),
+      ),
+    );
+
+    expect(find.text('Video call with Bob'), findsOneWidget);
+    await tester.tap(find.byTooltip('Turn camera off'));
+    await tester.tap(find.byTooltip('Switch camera'));
+
+    expect(cameraToggled, isTrue);
+    expect(cameraSwitched, isTrue);
+  });
+
+  testWidgets('camera muted state is visible', (WidgetTester tester) async {
+    await tester.pumpWidget(
+      MaterialApp(
+        home: Scaffold(
+          body: RainCallPanel(
+            state: _activeVoiceCall(
+              mediaMode: CallMediaMode.video,
+              isCameraMuted: true,
+            ),
+            displayName: 'Bob',
+            onAccept: () {},
+            onReject: () {},
+            onHangUp: () {},
+            onRetry: () {},
+            onToggleMute: () {},
+            onToggleCamera: () {},
+            onSwitchCamera: () {},
+          ),
+        ),
+      ),
+    );
+
+    expect(find.textContaining('Camera off'), findsOneWidget);
+    expect(find.byTooltip('Turn camera on'), findsOneWidget);
+  });
+
+  testWidgets('remote camera muted state is visible', (
+    WidgetTester tester,
+  ) async {
+    await tester.pumpWidget(
+      MaterialApp(
+        home: Scaffold(
+          body: RainCallPanel(
+            state: _activeVoiceCall(
+              mediaMode: CallMediaMode.video,
+              isRemoteCameraMuted: true,
+            ),
+            displayName: 'Bob',
+            onAccept: () {},
+            onReject: () {},
+            onHangUp: () {},
+            onRetry: () {},
+            onToggleMute: () {},
+            onToggleCamera: () {},
+            onSwitchCamera: () {},
+          ),
+        ),
+      ),
+    );
+
+    expect(find.textContaining('Peer camera off'), findsOneWidget);
   });
 
   testWidgets('voice call mic permission failure offers retry', (
@@ -288,11 +876,12 @@ void main() {
     await tester.pumpWidget(
       MaterialApp(
         home: Scaffold(
-          body: RainVoiceCallPanel(
+          body: RainCallPanel(
             state: const VoiceCallState(
               phase: VoiceCallPhase.failed,
               peerId: 'bob',
               callId: 'call-1',
+              isOutgoing: true,
               failureReason: VoiceCallFailureReason.microphoneDenied,
               detail: 'NotAllowedError: Permission denied',
             ),
@@ -318,6 +907,47 @@ void main() {
     expect(dismissed, isTrue);
   });
 
+  testWidgets('camera permission failure offers retry', (
+    WidgetTester tester,
+  ) async {
+    var retried = false;
+    var dismissed = false;
+
+    await tester.pumpWidget(
+      MaterialApp(
+        home: Scaffold(
+          body: RainCallPanel(
+            state: const VoiceCallState(
+              phase: VoiceCallPhase.failed,
+              peerId: 'bob',
+              callId: 'call-1',
+              mediaMode: CallMediaMode.video,
+              isOutgoing: true,
+              failureReason: VoiceCallFailureReason.cameraDenied,
+              detail: 'CameraAccessException: permission denied',
+            ),
+            displayName: 'Bob',
+            onAccept: () {},
+            onReject: () {},
+            onHangUp: () => dismissed = true,
+            onRetry: () => retried = true,
+            onToggleMute: () {},
+          ),
+        ),
+      ),
+    );
+
+    expect(find.text('Video call failed'), findsOneWidget);
+    expect(find.text('Camera permission required.'), findsOneWidget);
+    expect(find.textContaining('CameraAccessException'), findsNothing);
+
+    await tester.tap(find.text('Retry'));
+    expect(retried, isTrue);
+
+    await tester.tap(find.text('Dismiss'));
+    expect(dismissed, isTrue);
+  });
+
   testWidgets('voice call failed dismiss hides raw native errors', (
     WidgetTester tester,
   ) async {
@@ -326,7 +956,7 @@ void main() {
     await tester.pumpWidget(
       MaterialApp(
         home: Scaffold(
-          body: RainVoiceCallPanel(
+          body: RainCallPanel(
             state: const VoiceCallState(
               phase: VoiceCallPhase.failed,
               peerId: 'bob',
@@ -356,6 +986,68 @@ void main() {
     expect(dismissed, isTrue);
   });
 
+  testWidgets('video first frame failure hides raw native errors', (
+    WidgetTester tester,
+  ) async {
+    await tester.pumpWidget(
+      MaterialApp(
+        home: Scaffold(
+          body: RainCallPanel(
+            state: const VoiceCallState(
+              phase: VoiceCallPhase.failed,
+              peerId: 'bob',
+              callId: 'call-1',
+              mediaMode: CallMediaMode.video,
+              failureReason: VoiceCallFailureReason.videoFirstFrameTimeout,
+              detail:
+                  'Unable to RTCRtpTransceiver::setDirection: RtpTransceiver has been disposed.',
+            ),
+            displayName: 'Bob',
+            onAccept: () {},
+            onReject: () {},
+            onHangUp: () {},
+            onRetry: () {},
+            onToggleMute: () {},
+          ),
+        ),
+      ),
+    );
+
+    expect(find.text('Video could not connect. Try again.'), findsOneWidget);
+    expect(find.textContaining('RTCRtpTransceiver'), findsNothing);
+  });
+
+  testWidgets('native camera and WebRTC errors are sanitized', (
+    WidgetTester tester,
+  ) async {
+    await tester.pumpWidget(
+      MaterialApp(
+        home: Scaffold(
+          body: RainCallPanel(
+            state: const VoiceCallState(
+              phase: VoiceCallPhase.failed,
+              peerId: 'bob',
+              callId: 'call-1',
+              mediaMode: CallMediaMode.video,
+              detail:
+                  'CameraAccessException(CAMERA_ERROR): failed to open camera',
+            ),
+            displayName: 'Bob',
+            onAccept: () {},
+            onReject: () {},
+            onHangUp: () {},
+            onRetry: () {},
+            onToggleMute: () {},
+          ),
+        ),
+      ),
+    );
+
+    expect(find.text('Camera could not start. Try again.'), findsOneWidget);
+    expect(find.textContaining('CameraAccessException'), findsNothing);
+    expect(find.textContaining('CAMERA_ERROR'), findsNothing);
+  });
+
   testWidgets('voice call failure maps signaling errors to typed UI', (
     WidgetTester tester,
   ) async {
@@ -364,11 +1056,12 @@ void main() {
     await tester.pumpWidget(
       MaterialApp(
         home: Scaffold(
-          body: RainVoiceCallPanel(
+          body: RainCallPanel(
             state: const VoiceCallState(
               phase: VoiceCallPhase.failed,
               peerId: 'bob',
               callId: 'call-1',
+              isOutgoing: true,
               failureReason: VoiceCallFailureReason.signalingFailed,
               detail:
                   'VoiceSignalingException: Firebase permission-denied at voiceCalls/call-1',
@@ -398,7 +1091,7 @@ void main() {
     await tester.pumpWidget(
       MaterialApp(
         home: Scaffold(
-          body: RainVoiceCallPanel(
+          body: RainCallPanel(
             state: const VoiceCallState(
               phase: VoiceCallPhase.failed,
               peerId: 'bob',
@@ -421,6 +1114,1260 @@ void main() {
     expect(find.textContaining('Active voice call'), findsNothing);
     expect(find.text('Retry'), findsNothing);
   });
+
+  testWidgets('microphone selector handles empty device list', (
+    WidgetTester tester,
+  ) async {
+    var refreshed = false;
+    String? selected = 'unchanged';
+
+    await tester.pumpWidget(
+      MaterialApp(
+        home: Scaffold(
+          body: RainMicrophoneSelector(
+            state: const MicrophoneSelectionState(devices: []),
+            isBusy: false,
+            onRefresh: () => refreshed = true,
+            onSelected: (String? value) => selected = value,
+          ),
+        ),
+      ),
+    );
+
+    expect(find.text('Microphone'), findsOneWidget);
+    expect(find.text('No microphones found.'), findsOneWidget);
+
+    await tester.tap(find.byTooltip('Refresh microphones'));
+    expect(refreshed, isTrue);
+
+    await tester.tap(find.byTooltip('Choose microphone'));
+    expect(selected, 'unchanged');
+  });
+
+  testWidgets('microphone selector emits selected device', (
+    WidgetTester tester,
+  ) async {
+    String? selected;
+
+    await tester.pumpWidget(
+      MaterialApp(
+        home: Scaffold(
+          body: RainMicrophoneSelector(
+            state: const MicrophoneSelectionState(
+              devices: <RainMediaDevice>[
+                RainMediaDevice(
+                  deviceId: 'mic-1',
+                  label: 'Desk mic',
+                  kind: audioInputDeviceKind,
+                ),
+              ],
+            ),
+            isBusy: false,
+            onRefresh: () {},
+            onSelected: (String? value) => selected = value,
+          ),
+        ),
+      ),
+    );
+
+    await tester.tap(find.byTooltip('Choose microphone'));
+    await tester.pumpAndSettle();
+    await tester.tap(find.text('Desk mic').last);
+
+    expect(selected, 'mic-1');
+  });
+
+  testWidgets('call overlay expands and minimizes active calls', (
+    WidgetTester tester,
+  ) async {
+    var minimized = false;
+    var muted = false;
+    var hungUp = false;
+
+    await tester.pumpWidget(
+      MaterialApp(
+        home: Scaffold(
+          body: Stack(
+            children: <Widget>[
+              Positioned.fill(
+                child: RainCallOverlay(
+                  state: _activeVoiceCall(),
+                  surface: const CallSurfaceState.visible(
+                    peerId: 'bob',
+                    callId: 'call-1',
+                  ),
+                  displayName: 'Bob',
+                  onAccept: () {},
+                  onReject: () {},
+                  onHangUp: () => hungUp = true,
+                  onRetry: () {},
+                  onToggleMute: () => muted = true,
+                  onMinimize: () => minimized = true,
+                  onExpand: () {},
+                ),
+              ),
+            ],
+          ),
+        ),
+      ),
+    );
+
+    expect(
+      find.byKey(const ValueKey<String>('rain-call-voice-popup-layout')),
+      findsOneWidget,
+    );
+    expect(
+      find.byKey(const ValueKey<String>('rain-call-popup-identity')),
+      findsOneWidget,
+    );
+    expect(
+      find.byKey(const ValueKey<String>('rain-call-popup-media')),
+      findsOneWidget,
+    );
+    expect(
+      find.byKey(const ValueKey<String>('rain-call-control-dock')),
+      findsOneWidget,
+    );
+    expect(find.text('Voice call with Bob'), findsOneWidget);
+    expect(find.byTooltip('Minimize call'), findsOneWidget);
+
+    await tester.tap(find.byTooltip('Mute microphone'));
+    expect(muted, isTrue);
+
+    await tester.tap(find.byTooltip('Minimize call'));
+    expect(minimized, isTrue);
+
+    await tester.tap(find.byTooltip('Hang up'));
+    expect(hungUp, isTrue);
+  });
+
+  testWidgets('call overlay popup can be dragged without blocking actions', (
+    WidgetTester tester,
+  ) async {
+    var accepted = false;
+    var offset = const Offset(48, 56);
+    const incomingCall = VoiceCallState(
+      phase: VoiceCallPhase.incomingRinging,
+      peerId: 'bob',
+      callId: 'call-1',
+    );
+
+    await tester.pumpWidget(
+      MaterialApp(
+        home: Scaffold(
+          body: StatefulBuilder(
+            builder: (BuildContext context, StateSetter setState) {
+              return Stack(
+                children: <Widget>[
+                  Positioned.fill(
+                    child: RainCallOverlay(
+                      state: incomingCall,
+                      surface: CallSurfaceState.visible(
+                        peerId: 'bob',
+                        callId: 'call-1',
+                        floatingOffset: offset,
+                      ),
+                      displayName: 'Bob',
+                      onAccept: () => accepted = true,
+                      onReject: () {},
+                      onHangUp: () {},
+                      onRetry: () {},
+                      onToggleMute: () {},
+                      onMinimize: () {},
+                      onExpand: () {},
+                      onMoveFloating:
+                          (
+                            Offset delta,
+                            Size viewportSize,
+                            EdgeInsets safePadding,
+                            Size panelSize,
+                          ) => setState(() => offset += delta),
+                    ),
+                  ),
+                ],
+              );
+            },
+          ),
+        ),
+      ),
+    );
+
+    await tester.pumpAndSettle();
+    final panelFinder = find.byKey(
+      const ValueKey<String>('rain-call-panel-surface'),
+    );
+    final before = tester.getTopLeft(panelFinder);
+
+    await tester.drag(
+      find.byKey(const ValueKey<String>('rain-call-popup-drag-handle')),
+      const Offset(90, 60),
+    );
+    await tester.pumpAndSettle();
+
+    final after = tester.getTopLeft(panelFinder);
+    expect(after.dx, greaterThan(before.dx + 40));
+    expect(after.dy, greaterThan(before.dy + 30));
+
+    await tester.tap(
+      find.byKey(const ValueKey<String>('rain-call-accept-button')),
+    );
+    expect(accepted, isTrue);
+  });
+
+  testWidgets('call overlay wave amplitude follows real audio level', (
+    WidgetTester tester,
+  ) async {
+    await _pumpCallOverlay(
+      tester,
+      _activeVoiceCall(
+        audioLevel: VoiceAudioLevel.available(
+          remoteLevel: 0.08,
+          localLevel: 0,
+          updatedAt: 1,
+          source: VoiceAudioLevelSource.audioLevel,
+        ),
+      ),
+    );
+    final lowHeight = tester
+        .getSize(
+          find.byKey(const ValueKey<String>('rain-call-audio-wave-bar-2')),
+        )
+        .height;
+
+    await _pumpCallOverlay(
+      tester,
+      _activeVoiceCall(
+        audioLevel: VoiceAudioLevel.available(
+          remoteLevel: 0.86,
+          localLevel: 0,
+          updatedAt: 2,
+          source: VoiceAudioLevelSource.audioLevel,
+        ),
+      ),
+    );
+    await tester.pumpAndSettle();
+    final highHeight = tester
+        .getSize(
+          find.byKey(const ValueKey<String>('rain-call-audio-wave-bar-2')),
+        )
+        .height;
+
+    expect(highHeight, greaterThan(lowHeight));
+  });
+
+  testWidgets('call overlay shows idle audio glyph when meter unavailable', (
+    WidgetTester tester,
+  ) async {
+    await _pumpCallOverlay(tester, _activeVoiceCall());
+
+    expect(
+      find.byKey(const ValueKey<String>('rain-call-audio-stage')),
+      findsOneWidget,
+    );
+    expect(
+      find.byKey(const ValueKey<String>('rain-call-audio-unavailable')),
+      findsOneWidget,
+    );
+    expect(_findMeterCells('rain-call-audio-wave-bar-'), findsNothing);
+  });
+
+  testWidgets('call overlay uses Peer Core mark while connecting', (
+    WidgetTester tester,
+  ) async {
+    await _pumpCallOverlay(
+      tester,
+      const VoiceCallState(
+        phase: VoiceCallPhase.connectingPeer,
+        peerId: 'bob',
+        callId: 'call-1',
+      ),
+    );
+
+    expect(
+      find.byKey(const ValueKey<String>('rain-call-voice-popup-layout')),
+      findsOneWidget,
+    );
+    expect(
+      find.byKey(const ValueKey<String>('rain-call-peer-core-mark')),
+      findsOneWidget,
+    );
+    expect(
+      find.byKey(const ValueKey<String>('rain-call-audio-unavailable')),
+      findsNothing,
+    );
+  });
+
+  testWidgets('audio-only overlay renders without video dependencies', (
+    WidgetTester tester,
+  ) async {
+    await _pumpCallOverlay(tester, _activeVoiceCall());
+
+    expect(
+      find.byKey(const ValueKey<String>('rain-call-audio-stage')),
+      findsOneWidget,
+    );
+    expect(
+      find.byKey(const ValueKey<String>('rain-call-video-slot-reserved')),
+      findsNothing,
+    );
+    expect(_findRuntimeType('RTCVideoView'), findsNothing);
+  });
+
+  testWidgets('video overlay shows placeholders without renderer handles', (
+    WidgetTester tester,
+  ) async {
+    await _pumpCallOverlay(
+      tester,
+      _activeVoiceCall(mediaMode: CallMediaMode.video),
+    );
+
+    expect(
+      find.byKey(const ValueKey<String>('rain-call-video-popup-layout')),
+      findsOneWidget,
+    );
+    expect(
+      find.byKey(const ValueKey<String>('rain-call-popup-media')),
+      findsOneWidget,
+    );
+    expect(
+      find.byKey(const ValueKey<String>('rain-call-video-stage')),
+      findsOneWidget,
+    );
+    expect(
+      find.byKey(const ValueKey<String>('rain-call-remote-video-placeholder')),
+      findsOneWidget,
+    );
+    expect(
+      find.byKey(const ValueKey<String>('rain-call-video-peer-core-mark')),
+      findsOneWidget,
+    );
+    expect(find.byTooltip('Fullscreen video'), findsOneWidget);
+    expect(_findRuntimeType('RTCVideoView'), findsNothing);
+  });
+
+  testWidgets('video overlay hides switch camera when capability is absent', (
+    WidgetTester tester,
+  ) async {
+    await _pumpCallOverlay(
+      tester,
+      _activeVoiceCall(mediaMode: CallMediaMode.video),
+      controlCapabilities: const <CallControlCapability>[
+        CallControlCapability.microphone,
+        CallControlCapability.camera,
+        CallControlCapability.deafen,
+        CallControlCapability.outputRoute,
+        CallControlCapability.hangUp,
+      ],
+    );
+
+    expect(find.byTooltip('Turn camera off'), findsOneWidget);
+    expect(find.byTooltip('Switch camera'), findsNothing);
+  });
+
+  testWidgets('video overlay shows switch camera when capability is present', (
+    WidgetTester tester,
+  ) async {
+    await _pumpCallOverlay(
+      tester,
+      _activeVoiceCall(mediaMode: CallMediaMode.video),
+      controlCapabilities: const <CallControlCapability>[
+        CallControlCapability.microphone,
+        CallControlCapability.camera,
+        CallControlCapability.switchCamera,
+        CallControlCapability.deafen,
+        CallControlCapability.outputRoute,
+        CallControlCapability.hangUp,
+      ],
+    );
+
+    expect(find.byTooltip('Turn camera off'), findsOneWidget);
+    expect(find.byTooltip('Switch camera'), findsOneWidget);
+  });
+
+  testWidgets('active video overlay renders local and remote surfaces', (
+    WidgetTester tester,
+  ) async {
+    final renderers = VideoCallRenderers(
+      rendererFactory: _FakeRendererFactory(),
+    );
+    await renderers.attachLocalStream(_FakeMediaStream('local'));
+    await renderers.attachRemoteStream(_FakeMediaStream('remote'));
+
+    await _pumpCallOverlay(
+      tester,
+      _activeVoiceCall(
+        mediaMode: CallMediaMode.video,
+        hasLocalVideo: true,
+        hasRemoteVideo: true,
+      ),
+      videoRenderers: renderers,
+    );
+
+    expect(
+      find.byKey(const ValueKey<String>('rain-call-video-popup-layout')),
+      findsOneWidget,
+    );
+    expect(
+      find.byKey(const ValueKey<String>('rain-call-remote-video-view')),
+      findsOneWidget,
+    );
+    expect(
+      find.byKey(const ValueKey<String>('rain-call-local-video-view')),
+      findsOneWidget,
+    );
+    await renderers.dispose();
+  });
+
+  testWidgets(
+    'video stage shows remote video as primary and local video as preview',
+    (WidgetTester tester) async {
+      final renderers = VideoCallRenderers(
+        rendererFactory: _FakeRendererFactory(),
+      );
+      await renderers.attachLocalStream(_FakeMediaStream('local'));
+      await renderers.attachRemoteStream(_FakeMediaStream('remote'));
+
+      await _pumpVideoStage(
+        tester,
+        state: _activeVoiceCall(
+          mediaMode: CallMediaMode.video,
+          hasLocalVideo: true,
+          hasRemoteVideo: true,
+        ),
+        renderers: renderers,
+      );
+
+      final remoteSize = tester.getSize(
+        find.byKey(const ValueKey<String>('rain-call-remote-video-view')),
+      );
+      final localSize = tester.getSize(
+        find.byKey(const ValueKey<String>('rain-call-local-video-view')),
+      );
+
+      expect(remoteSize.width, greaterThan(localSize.width));
+      expect(remoteSize.height, greaterThan(localSize.height));
+      await renderers.dispose();
+    },
+  );
+
+  testWidgets('tapping local preview swaps primary and preview video roles', (
+    WidgetTester tester,
+  ) async {
+    final renderers = VideoCallRenderers(
+      rendererFactory: _FakeRendererFactory(),
+    );
+    await renderers.attachLocalStream(_FakeMediaStream('local'));
+    await renderers.attachRemoteStream(_FakeMediaStream('remote'));
+    var primaryRole = VideoPrimaryRole.remote;
+
+    await _pumpVideoStage(
+      tester,
+      state: _activeVoiceCall(
+        mediaMode: CallMediaMode.video,
+        hasLocalVideo: true,
+        hasRemoteVideo: true,
+      ),
+      renderers: renderers,
+      primaryRole: primaryRole,
+      onTogglePrimaryRole: () {
+        primaryRole = primaryRole == VideoPrimaryRole.remote
+            ? VideoPrimaryRole.local
+            : VideoPrimaryRole.remote;
+      },
+    );
+
+    await tester.tap(
+      find.byKey(const ValueKey<String>('rain-call-video-preview-hit-target')),
+    );
+    await _pumpVideoStage(
+      tester,
+      state: _activeVoiceCall(
+        mediaMode: CallMediaMode.video,
+        hasLocalVideo: true,
+        hasRemoteVideo: true,
+      ),
+      renderers: renderers,
+      primaryRole: primaryRole,
+      onTogglePrimaryRole: () {
+        primaryRole = primaryRole == VideoPrimaryRole.remote
+            ? VideoPrimaryRole.local
+            : VideoPrimaryRole.remote;
+      },
+    );
+
+    final localSize = tester.getSize(
+      find.byKey(const ValueKey<String>('rain-call-local-video-view')),
+    );
+    final remoteSize = tester.getSize(
+      find.byKey(const ValueKey<String>('rain-call-remote-video-view')),
+    );
+
+    expect(primaryRole, VideoPrimaryRole.local);
+    expect(localSize.width, greaterThan(remoteSize.width));
+    expect(localSize.height, greaterThan(remoteSize.height));
+    await renderers.dispose();
+  });
+
+  testWidgets('video overlay fullscreen fills the call viewport', (
+    WidgetTester tester,
+  ) async {
+    await _pumpCallOverlay(
+      tester,
+      _activeVoiceCall(mediaMode: CallMediaMode.video),
+      surfaceMode: CallSurfaceMode.fullscreen,
+    );
+
+    expect(
+      find.byKey(const ValueKey<String>('rain-call-video-fullscreen-surface')),
+      findsOneWidget,
+    );
+    expect(
+      find.byKey(const ValueKey<String>('rain-call-video-fullscreen-layout')),
+      findsOneWidget,
+    );
+    expect(
+      find.byKey(const ValueKey<String>('rain-call-local-video-placeholder')),
+      findsOneWidget,
+    );
+    expect(
+      find.byKey(const ValueKey<String>('rain-call-fullscreen-controls')),
+      findsOneWidget,
+    );
+    expect(
+      find.byKey(const ValueKey<String>('rain-call-fullscreen-status-strip')),
+      findsOneWidget,
+    );
+  });
+
+  testWidgets('fullscreen call workspace can show and collapse friends panel', (
+    WidgetTester tester,
+  ) async {
+    var collapsed = false;
+
+    Future<void> pumpWorkspace() async {
+      await tester.pumpWidget(
+        MaterialApp(
+          home: Scaffold(
+            body: RainFullscreenCallWorkspace(
+              state: _activeVoiceCall(mediaMode: CallMediaMode.video),
+              displayName: 'Bob',
+              primaryRole: VideoPrimaryRole.remote,
+              onAccept: () {},
+              onReject: () {},
+              onHangUp: () {},
+              onRetry: () {},
+              onToggleMute: () {},
+              onExitFullscreen: () {},
+              showFriendsPanel: true,
+              friendsPanelCollapsed: collapsed,
+              friendsPanel: const Center(child: Text('Friend list lives here')),
+              onToggleFriendsPanel: () {
+                collapsed = !collapsed;
+              },
+            ),
+          ),
+        ),
+      );
+    }
+
+    await pumpWorkspace();
+
+    expect(
+      find.byKey(const ValueKey<String>('rain-call-fullscreen-friends-panel')),
+      findsOneWidget,
+    );
+    expect(find.text('Friend list lives here'), findsOneWidget);
+
+    await tester.tap(
+      find.byKey(const ValueKey<String>('rain-call-fullscreen-sidebar-toggle')),
+    );
+    await pumpWorkspace();
+
+    expect(find.text('Friend list lives here'), findsNothing);
+    expect(find.text('Friends'), findsOneWidget);
+  });
+
+  testWidgets('video fullscreen overlay respects the Android status area', (
+    WidgetTester tester,
+  ) async {
+    tester.view.physicalSize = const Size(360, 640);
+    tester.view.devicePixelRatio = 1;
+    tester.view.padding = const FakeViewPadding(top: 36);
+    addTearDown(tester.view.resetPhysicalSize);
+    addTearDown(tester.view.resetDevicePixelRatio);
+    addTearDown(tester.view.resetPadding);
+
+    await _pumpCallOverlay(
+      tester,
+      _activeVoiceCall(mediaMode: CallMediaMode.video),
+      surfaceMode: CallSurfaceMode.fullscreen,
+    );
+
+    final stageTop = tester
+        .getTopLeft(
+          find.byKey(
+            const ValueKey<String>('rain-call-video-fullscreen-layout'),
+          ),
+        )
+        .dy;
+
+    expect(stageTop, greaterThanOrEqualTo(36));
+  });
+
+  testWidgets('video overlay pip shows only the remote media window', (
+    WidgetTester tester,
+  ) async {
+    await _pumpCallOverlay(
+      tester,
+      _activeVoiceCall(mediaMode: CallMediaMode.video),
+      surfaceMode: CallSurfaceMode.pip,
+    );
+
+    expect(
+      find.byKey(const ValueKey<String>('rain-call-video-pip-window')),
+      findsOneWidget,
+    );
+    expect(
+      find.byKey(const ValueKey<String>('rain-call-video-pip-layout')),
+      findsOneWidget,
+    );
+    expect(
+      find.byKey(const ValueKey<String>('rain-call-local-video-placeholder')),
+      findsNothing,
+    );
+  });
+
+  testWidgets('video overlay pip avoids the bottom composer zone', (
+    WidgetTester tester,
+  ) async {
+    tester.view.physicalSize = const Size(360, 640);
+    tester.view.devicePixelRatio = 1;
+    addTearDown(tester.view.resetPhysicalSize);
+    addTearDown(tester.view.resetDevicePixelRatio);
+    var composerTapped = false;
+
+    await tester.pumpWidget(
+      MaterialApp(
+        home: Scaffold(
+          body: Stack(
+            children: <Widget>[
+              Align(
+                alignment: Alignment.bottomCenter,
+                child: SizedBox(
+                  key: const ValueKey<String>('rain-test-composer-zone'),
+                  height: 96,
+                  child: TextButton(
+                    onPressed: () => composerTapped = true,
+                    child: const Text('Message composer'),
+                  ),
+                ),
+              ),
+              Positioned.fill(
+                child: RainCallOverlay(
+                  state: _activeVoiceCall(mediaMode: CallMediaMode.video),
+                  surface: const CallSurfaceState.visible(
+                    peerId: 'bob',
+                    callId: 'call-1',
+                    mode: CallSurfaceMode.pip,
+                    mediaMode: CallMediaMode.video,
+                  ),
+                  displayName: 'Bob',
+                  onAccept: () {},
+                  onReject: () {},
+                  onHangUp: () {},
+                  onRetry: () {},
+                  onToggleMute: () {},
+                  onMinimize: () {},
+                  onExpand: () {},
+                  onFullscreen: () {},
+                ),
+              ),
+            ],
+          ),
+        ),
+      ),
+    );
+
+    final pipBottom = tester
+        .getBottomLeft(
+          find.byKey(const ValueKey<String>('rain-call-video-pip-window')),
+        )
+        .dy;
+    final composerTop = tester
+        .getTopLeft(
+          find.byKey(const ValueKey<String>('rain-test-composer-zone')),
+        )
+        .dy;
+
+    expect(pipBottom, lessThan(composerTop));
+
+    await tester.tap(find.text('Message composer'));
+
+    expect(composerTapped, isTrue);
+  });
+
+  testWidgets('call overlay manager-only hides the media panel', (
+    WidgetTester tester,
+  ) async {
+    await _pumpCallOverlay(
+      tester,
+      _activeVoiceCall(mediaMode: CallMediaMode.video),
+      surfaceMode: CallSurfaceMode.managerOnly,
+    );
+
+    expect(
+      find.byKey(const ValueKey<String>('rain-call-video-stage')),
+      findsNothing,
+    );
+    expect(
+      find.byKey(const ValueKey<String>('rain-call-panel-surface')),
+      findsNothing,
+    );
+  });
+
+  testWidgets('expanded call surface suppresses the top manager bar', (
+    WidgetTester tester,
+  ) async {
+    await _pumpCallSurfaceStack(
+      tester,
+      _activeVoiceCall(),
+      surfaceMode: CallSurfaceMode.expanded,
+    );
+
+    expect(
+      find.byKey(const ValueKey<String>('rain-call-panel-surface')),
+      findsOneWidget,
+    );
+    expect(
+      find.byKey(const ValueKey<String>('rain-call-manager-bar')),
+      findsNothing,
+    );
+  });
+
+  testWidgets('minimized audio call shows only the top manager bar', (
+    WidgetTester tester,
+  ) async {
+    await _pumpCallSurfaceStack(
+      tester,
+      _activeVoiceCall(),
+      surfaceMode: CallSurfaceMode.managerOnly,
+    );
+
+    expect(
+      find.byKey(const ValueKey<String>('rain-call-panel-surface')),
+      findsNothing,
+    );
+    expect(
+      find.byKey(const ValueKey<String>('rain-call-manager-bar')),
+      findsOneWidget,
+    );
+  });
+
+  testWidgets('video pip shows both compact media and top manager bar', (
+    WidgetTester tester,
+  ) async {
+    await _pumpCallSurfaceStack(
+      tester,
+      _activeVoiceCall(mediaMode: CallMediaMode.video),
+      surfaceMode: CallSurfaceMode.pip,
+    );
+
+    expect(
+      find.byKey(const ValueKey<String>('rain-call-video-pip-window')),
+      findsOneWidget,
+    );
+    expect(
+      find.byKey(const ValueKey<String>('rain-call-manager-bar')),
+      findsOneWidget,
+    );
+  });
+
+  testWidgets('fullscreen video hides the top manager bar', (
+    WidgetTester tester,
+  ) async {
+    await _pumpCallSurfaceStack(
+      tester,
+      _activeVoiceCall(mediaMode: CallMediaMode.video),
+      surfaceMode: CallSurfaceMode.fullscreen,
+    );
+
+    expect(
+      find.byKey(const ValueKey<String>('rain-call-video-fullscreen-surface')),
+      findsOneWidget,
+    );
+    expect(
+      find.byKey(const ValueKey<String>('rain-call-manager-bar')),
+      findsNothing,
+    );
+  });
+
+  testWidgets('drag handle is available only on expanded call popup', (
+    WidgetTester tester,
+  ) async {
+    await _pumpCallOverlay(tester, _activeVoiceCall());
+
+    expect(
+      find.byKey(const ValueKey<String>('rain-call-popup-drag-handle')),
+      findsOneWidget,
+    );
+
+    await _pumpCallOverlay(
+      tester,
+      _activeVoiceCall(),
+      surfaceMode: CallSurfaceMode.managerOnly,
+    );
+    expect(
+      find.byKey(const ValueKey<String>('rain-call-popup-drag-handle')),
+      findsNothing,
+    );
+
+    await _pumpCallOverlay(
+      tester,
+      _activeVoiceCall(mediaMode: CallMediaMode.video),
+      surfaceMode: CallSurfaceMode.pip,
+    );
+    expect(
+      find.byKey(const ValueKey<String>('rain-call-popup-drag-handle')),
+      findsNothing,
+    );
+
+    await _pumpCallOverlay(
+      tester,
+      _activeVoiceCall(mediaMode: CallMediaMode.video),
+      surfaceMode: CallSurfaceMode.fullscreen,
+    );
+    expect(
+      find.byKey(const ValueKey<String>('rain-call-popup-drag-handle')),
+      findsNothing,
+    );
+  });
+
+  testWidgets('fullscreen video ignores floating popup offset', (
+    WidgetTester tester,
+  ) async {
+    await _pumpCallOverlay(
+      tester,
+      _activeVoiceCall(mediaMode: CallMediaMode.video),
+      surfaceMode: CallSurfaceMode.fullscreen,
+      floatingOffset: const Offset(240, 320),
+    );
+
+    expect(
+      tester.getTopLeft(
+        find.byKey(
+          const ValueKey<String>('rain-call-video-fullscreen-surface'),
+        ),
+      ),
+      Offset.zero,
+    );
+    expect(
+      find.byKey(const ValueKey<String>('rain-call-popup-drag-handle')),
+      findsNothing,
+    );
+  });
+
+  testWidgets('video overlay camera muted states are visible', (
+    WidgetTester tester,
+  ) async {
+    await _pumpCallOverlay(
+      tester,
+      _activeVoiceCall(
+        mediaMode: CallMediaMode.video,
+        isCameraMuted: true,
+        isRemoteCameraMuted: true,
+      ),
+    );
+
+    expect(
+      find.byKey(const ValueKey<String>('rain-call-local-camera-muted')),
+      findsOneWidget,
+    );
+    expect(
+      find.byKey(const ValueKey<String>('rain-call-remote-camera-muted')),
+      findsOneWidget,
+    );
+    expect(find.text('Camera off'), findsOneWidget);
+    expect(find.text('Peer camera off'), findsOneWidget);
+  });
+
+  testWidgets('video overlay shows remote first-frame timeout', (
+    WidgetTester tester,
+  ) async {
+    await _pumpCallOverlay(
+      tester,
+      _activeVoiceCall(
+        mediaMode: CallMediaMode.video,
+        hasRemoteVideo: true,
+        videoFirstFrameTimedOut: true,
+      ),
+    );
+
+    expect(
+      find.byKey(const ValueKey<String>('rain-call-video-frame-timeout')),
+      findsOneWidget,
+    );
+    expect(find.text('Video stream not visible'), findsOneWidget);
+  });
+
+  testWidgets('call overlay hides media panel without blocking composer', (
+    WidgetTester tester,
+  ) async {
+    var composerTapped = false;
+
+    await tester.pumpWidget(
+      MaterialApp(
+        home: Scaffold(
+          body: Stack(
+            children: <Widget>[
+              Align(
+                alignment: Alignment.bottomCenter,
+                child: SizedBox(
+                  height: 64,
+                  child: TextButton(
+                    onPressed: () => composerTapped = true,
+                    child: const Text('Message composer'),
+                  ),
+                ),
+              ),
+              Positioned.fill(
+                child: RainCallOverlay(
+                  state: _activeVoiceCall(),
+                  surface: const CallSurfaceState.visible(
+                    peerId: 'bob',
+                    callId: 'call-1',
+                    mode: CallSurfaceMode.managerOnly,
+                    mediaMode: CallMediaMode.video,
+                  ),
+                  displayName: 'Bob',
+                  onAccept: () {},
+                  onReject: () {},
+                  onHangUp: () {},
+                  onRetry: () {},
+                  onToggleMute: () {},
+                  onMinimize: () {},
+                  onExpand: () {},
+                ),
+              ),
+            ],
+          ),
+        ),
+      ),
+    );
+
+    expect(find.byTooltip('Restore call'), findsNothing);
+    expect(find.text('Voice call with Bob'), findsNothing);
+
+    await tester.tap(find.text('Message composer'));
+    expect(composerTapped, isTrue);
+  });
+
+  testWidgets('call overlay incoming controls are wired', (
+    WidgetTester tester,
+  ) async {
+    var accepted = false;
+    var rejected = false;
+
+    await tester.pumpWidget(
+      MaterialApp(
+        home: Scaffold(
+          body: Stack(
+            children: <Widget>[
+              Positioned.fill(
+                child: RainCallOverlay(
+                  state: const VoiceCallState(
+                    phase: VoiceCallPhase.incomingRinging,
+                    peerId: 'bob',
+                    callId: 'call-1',
+                  ),
+                  surface: const CallSurfaceState.visible(
+                    peerId: 'bob',
+                    callId: 'call-1',
+                  ),
+                  displayName: 'Bob',
+                  onAccept: () => accepted = true,
+                  onReject: () => rejected = true,
+                  onHangUp: () {},
+                  onRetry: () {},
+                  onToggleMute: () {},
+                  onMinimize: () {},
+                  onExpand: () {},
+                ),
+              ),
+            ],
+          ),
+        ),
+      ),
+    );
+
+    expect(find.text('Bob is calling'), findsOneWidget);
+    expect(
+      find.byKey(const ValueKey<String>('rain-call-voice-popup-layout')),
+      findsOneWidget,
+    );
+    expect(
+      find.byKey(const ValueKey<String>('rain-call-control-dock')),
+      findsOneWidget,
+    );
+    expect(
+      find.byKey(const ValueKey<String>('rain-call-peer-core-mark')),
+      findsOneWidget,
+    );
+    expect(find.byTooltip('Minimize call'), findsNothing);
+
+    await tester.tap(
+      find.byKey(const ValueKey<String>('rain-call-accept-button')),
+    );
+    expect(accepted, isTrue);
+
+    await tester.tap(
+      find.byKey(const ValueKey<String>('rain-call-reject-button')),
+    );
+    expect(rejected, isTrue);
+  });
+
+  testWidgets('incoming call controls stay visible across viewport sizes', (
+    WidgetTester tester,
+  ) async {
+    const sizes = <Size>[
+      Size(320, 568),
+      Size(360, 640),
+      Size(568, 320),
+      Size(768, 1024),
+      Size(1280, 720),
+    ];
+    addTearDown(tester.view.resetPhysicalSize);
+    addTearDown(tester.view.resetDevicePixelRatio);
+
+    for (final size in sizes) {
+      for (final mediaMode in CallMediaMode.values) {
+        tester.view.physicalSize = size;
+        tester.view.devicePixelRatio = 1;
+        var accepted = false;
+        var rejected = false;
+        final state = VoiceCallState(
+          phase: VoiceCallPhase.incomingRinging,
+          peerId: 'bob',
+          callId: 'call-${size.width}-${mediaMode.name}',
+          mediaMode: mediaMode,
+        );
+
+        await tester.pumpWidget(
+          MaterialApp(
+            home: Scaffold(
+              body: Stack(
+                children: <Widget>[
+                  Positioned.fill(
+                    child: RainCallOverlay(
+                      state: state,
+                      surface: CallSurfaceState.visible(
+                        peerId: 'bob',
+                        callId: state.callId,
+                        mediaMode: mediaMode,
+                      ),
+                      displayName: 'Bob',
+                      onAccept: () => accepted = true,
+                      onReject: () => rejected = true,
+                      onHangUp: () {},
+                      onRetry: () {},
+                      onToggleMute: () {},
+                      onMinimize: () {},
+                      onExpand: () {},
+                    ),
+                  ),
+                ],
+              ),
+            ),
+          ),
+        );
+        await tester.pumpAndSettle();
+
+        final acceptFinder = find.byKey(
+          const ValueKey<String>('rain-call-accept-button'),
+        );
+        final rejectFinder = find.byKey(
+          const ValueKey<String>('rain-call-reject-button'),
+        );
+        final acceptRect = tester.getRect(acceptFinder);
+        final rejectRect = tester.getRect(rejectFinder);
+
+        expect(acceptRect.width, greaterThan(0));
+        expect(acceptRect.height, greaterThanOrEqualTo(48));
+        expect(rejectRect.width, greaterThan(0));
+        expect(rejectRect.height, greaterThanOrEqualTo(48));
+        expect(acceptRect.top, greaterThanOrEqualTo(0));
+        expect(rejectRect.top, greaterThanOrEqualTo(0));
+        expect(acceptRect.bottom, lessThanOrEqualTo(size.height));
+        expect(rejectRect.bottom, lessThanOrEqualTo(size.height));
+
+        await tester.tap(acceptFinder);
+        await tester.tap(rejectFinder);
+        expect(accepted, isTrue);
+        expect(rejected, isTrue);
+      }
+    }
+  });
+
+  testWidgets('call overlay failure shows retry and sanitized detail', (
+    WidgetTester tester,
+  ) async {
+    var retried = false;
+    var dismissed = false;
+
+    await tester.pumpWidget(
+      MaterialApp(
+        home: Scaffold(
+          body: Stack(
+            children: <Widget>[
+              Positioned.fill(
+                child: RainCallOverlay(
+                  state: const VoiceCallState(
+                    phase: VoiceCallPhase.failed,
+                    peerId: 'bob',
+                    callId: 'call-1',
+                    isOutgoing: true,
+                    failureReason: VoiceCallFailureReason.mediaConnectionFailed,
+                    detail:
+                        'Unable to RTCRtpTransceiver::setDirection: disposed.',
+                  ),
+                  surface: const CallSurfaceState.visible(
+                    peerId: 'bob',
+                    callId: 'call-1',
+                  ),
+                  displayName: 'Bob',
+                  onAccept: () {},
+                  onReject: () {},
+                  onHangUp: () => dismissed = true,
+                  onRetry: () => retried = true,
+                  onToggleMute: () {},
+                  onMinimize: () {},
+                  onExpand: () {},
+                ),
+              ),
+            ],
+          ),
+        ),
+      ),
+    );
+
+    expect(
+      find.text('Call media could not connect. Try again.'),
+      findsOneWidget,
+    );
+    expect(
+      find.byKey(const ValueKey<String>('rain-call-panel-surface')),
+      findsOneWidget,
+    );
+    expect(
+      find.byKey(const ValueKey<String>('rain-call-failure-popup-layout')),
+      findsOneWidget,
+    );
+    expect(
+      find.byKey(const ValueKey<String>('rain-call-failure-focus')),
+      findsOneWidget,
+    );
+    expect(
+      find.byKey(const ValueKey<String>('rain-call-control-dock')),
+      findsOneWidget,
+    );
+    expect(find.byType(RainStreakSurface), findsWidgets);
+    expect(find.textContaining('RTCRtpTransceiver'), findsNothing);
+
+    await tester.tap(find.text('Retry'));
+    expect(retried, isTrue);
+
+    await tester.tap(find.text('Dismiss'));
+    expect(dismissed, isTrue);
+  });
+
+  testWidgets('failed incoming call does not offer reverse retry', (
+    WidgetTester tester,
+  ) async {
+    var retried = false;
+    var dismissed = false;
+
+    await tester.pumpWidget(
+      MaterialApp(
+        home: Scaffold(
+          body: Stack(
+            children: <Widget>[
+              Positioned.fill(
+                child: RainCallOverlay(
+                  state: const VoiceCallState(
+                    phase: VoiceCallPhase.failed,
+                    peerId: 'bob',
+                    callId: 'call-1',
+                    isOutgoing: false,
+                    failureReason: VoiceCallFailureReason.mediaConnectionFailed,
+                    detail:
+                        'Unable to RTCRtpTransceiver::setDirection: disposed.',
+                  ),
+                  surface: const CallSurfaceState.visible(
+                    peerId: 'bob',
+                    callId: 'call-1',
+                  ),
+                  displayName: 'Bob',
+                  onAccept: () {},
+                  onReject: () {},
+                  onHangUp: () => dismissed = true,
+                  onRetry: () => retried = true,
+                  onToggleMute: () {},
+                  onMinimize: () {},
+                  onExpand: () {},
+                ),
+              ),
+            ],
+          ),
+        ),
+      ),
+    );
+
+    expect(find.text('Retry'), findsNothing);
+    expect(find.text('Dismiss'), findsOneWidget);
+
+    await tester.tap(find.text('Dismiss'));
+    expect(dismissed, isTrue);
+    expect(retried, isFalse);
+  });
+
+  testWidgets('call overlay fits narrow mobile layout', (
+    WidgetTester tester,
+  ) async {
+    tester.view.physicalSize = const Size(320, 640);
+    tester.view.devicePixelRatio = 1;
+    addTearDown(tester.view.resetPhysicalSize);
+    addTearDown(tester.view.resetDevicePixelRatio);
+
+    await tester.pumpWidget(
+      MaterialApp(
+        home: Scaffold(
+          body: Stack(
+            children: <Widget>[
+              Positioned.fill(
+                child: RainCallOverlay(
+                  state: _activeVoiceCall(),
+                  surface: const CallSurfaceState.visible(
+                    peerId: 'bob',
+                    callId: 'call-1',
+                  ),
+                  displayName: 'Bob With A Very Long Display Name',
+                  onAccept: () {},
+                  onReject: () {},
+                  onHangUp: () {},
+                  onRetry: () {},
+                  onToggleMute: () {},
+                  onMinimize: () {},
+                  onExpand: () {},
+                ),
+              ),
+            ],
+          ),
+        ),
+      ),
+    );
+
+    expect(find.textContaining('Bob With'), findsWidgets);
+    expect(tester.takeException(), isNull);
+  });
 }
 
 Finder _findMeterCells(String prefix) {
@@ -428,4 +2375,231 @@ Finder _findMeterCells(String prefix) {
     final key = widget.key;
     return key is ValueKey<String> && key.value.startsWith(prefix);
   });
+}
+
+Finder _findRuntimeType(String typeName) {
+  return find.byWidgetPredicate((Widget widget) {
+    return widget.runtimeType.toString() == typeName;
+  });
+}
+
+StoredMessage _storedMessage(String id, {bool isOutgoing = false}) {
+  return StoredMessage(
+    id: id,
+    peerId: 'bob',
+    content: 'Message $id',
+    sentAt: 1000,
+    seq: int.tryParse(id.replaceAll(RegExp(r'\D'), '')) ?? 0,
+    type: MessageType.text,
+    status: MessageStatus.sent,
+    isOutgoing: isOutgoing,
+  );
+}
+
+VoiceCallState _activeVoiceCall({
+  VoiceAudioLevel audioLevel = const VoiceAudioLevel.unavailable(),
+  CallMediaMode mediaMode = CallMediaMode.audio,
+  bool isCameraMuted = false,
+  bool isRemoteCameraMuted = false,
+  bool hasLocalVideo = false,
+  bool hasRemoteVideo = false,
+  bool videoFirstFrameTimedOut = false,
+}) {
+  return VoiceCallState(
+    phase: VoiceCallPhase.active,
+    peerId: 'bob',
+    callId: 'call-1',
+    mediaMode: mediaMode,
+    isCameraMuted: isCameraMuted,
+    isRemoteCameraMuted: isRemoteCameraMuted,
+    hasLocalVideo: hasLocalVideo,
+    hasRemoteVideo: hasRemoteVideo,
+    videoFirstFrameTimedOut: videoFirstFrameTimedOut,
+    startedAt: DateTime.now()
+        .subtract(const Duration(seconds: 7))
+        .millisecondsSinceEpoch,
+    audioLevel: audioLevel,
+  );
+}
+
+Future<void> _pumpCallOverlay(
+  WidgetTester tester,
+  VoiceCallState state, {
+  VideoCallRenderers? videoRenderers,
+  CallSurfaceMode surfaceMode = CallSurfaceMode.expanded,
+  VideoPrimaryRole videoPrimaryRole = VideoPrimaryRole.remote,
+  List<CallControlCapability>? controlCapabilities,
+  List<VoiceCallOutputRouteOption>? outputRouteOptions,
+  Offset? floatingOffset,
+}) async {
+  await tester.pumpWidget(
+    MaterialApp(
+      home: Scaffold(
+        body: Stack(
+          children: <Widget>[
+            Positioned.fill(
+              child: RainCallOverlay(
+                state: state,
+                surface: CallSurfaceState.visible(
+                  peerId: state.peerId ?? 'bob',
+                  callId: state.callId ?? 'call-1',
+                  mode: surfaceMode,
+                  mediaMode: state.mediaMode,
+                  videoPrimaryRole: videoPrimaryRole,
+                  floatingOffset: floatingOffset,
+                ),
+                displayName: 'Bob',
+                videoRenderers: videoRenderers,
+                onAccept: () {},
+                onReject: () {},
+                onHangUp: () {},
+                onRetry: () {},
+                onToggleMute: () {},
+                onMinimize: () {},
+                onExpand: () {},
+                onToggleVideoPrimaryRole: () {},
+                onFullscreen: () {},
+                controlCapabilities: controlCapabilities,
+                outputRouteOptions: outputRouteOptions,
+              ),
+            ),
+          ],
+        ),
+      ),
+    ),
+  );
+}
+
+Future<void> _pumpVideoStage(
+  WidgetTester tester, {
+  required VoiceCallState state,
+  required VideoCallRenderers renderers,
+  VideoPrimaryRole primaryRole = VideoPrimaryRole.remote,
+  VoidCallback? onTogglePrimaryRole,
+}) async {
+  await tester.pumpWidget(
+    MaterialApp(
+      home: Scaffold(
+        body: Center(
+          child: SizedBox(
+            width: 420,
+            child: RainVideoCallStage(
+              state: state,
+              accent: Colors.teal,
+              renderers: renderers,
+              primaryRole: primaryRole,
+              onTogglePrimaryRole: onTogglePrimaryRole,
+            ),
+          ),
+        ),
+      ),
+    ),
+  );
+}
+
+Future<void> _pumpCallSurfaceStack(
+  WidgetTester tester,
+  VoiceCallState state, {
+  required CallSurfaceMode surfaceMode,
+}) async {
+  final surface = CallSurfaceState.visible(
+    peerId: state.peerId ?? 'bob',
+    callId: state.callId ?? 'call-1',
+    mode: surfaceMode,
+    mediaMode: state.mediaMode,
+  );
+  await tester.pumpWidget(
+    MaterialApp(
+      home: Scaffold(
+        body: Stack(
+          children: <Widget>[
+            if (surface.showsMediaSurface)
+              Positioned.fill(
+                child: RainCallOverlay(
+                  state: state,
+                  surface: surface,
+                  displayName: 'Bob',
+                  onAccept: () {},
+                  onReject: () {},
+                  onHangUp: () {},
+                  onRetry: () {},
+                  onToggleMute: () {},
+                  onMinimize: () {},
+                  onExpand: () {},
+                  onFullscreen: () {},
+                ),
+              ),
+            if (surface.showsManagerBar)
+              Positioned(
+                left: 0,
+                right: 0,
+                top: 0,
+                child: RainCallManagerBar(
+                  state: state,
+                  surface: surface,
+                  displayName: 'Bob',
+                  onToggleMute: () {},
+                  onToggleCamera: () {},
+                  onToggleDeafen: () {},
+                  onRestore: () {},
+                  onFullscreen: () {},
+                  onHangUp: () {},
+                ),
+              ),
+          ],
+        ),
+      ),
+    ),
+  );
+}
+
+class _FakeRendererFactory implements VideoCallRendererFactory {
+  final List<_FakeRendererHandle> handles = <_FakeRendererHandle>[];
+
+  @override
+  VideoCallRendererHandle create() {
+    final handle = _FakeRendererHandle();
+    handles.add(handle);
+    return handle;
+  }
+}
+
+class _FakeRendererHandle implements VideoCallRendererHandle {
+  MediaStream? _stream;
+
+  @override
+  Future<void> initialize() async {}
+
+  @override
+  MediaStream? get srcObject => _stream;
+
+  @override
+  set srcObject(MediaStream? stream) {
+    _stream = stream;
+  }
+
+  @override
+  int? get textureId => 1;
+
+  @override
+  set onFirstFrameRendered(void Function()? callback) {}
+
+  @override
+  Widget buildView({Key? key, bool mirror = false}) {
+    return SizedBox.expand(key: key);
+  }
+
+  @override
+  Future<void> dispose() async {
+    _stream = null;
+  }
+}
+
+class _FakeMediaStream extends Fake implements MediaStream {
+  _FakeMediaStream(this._id);
+
+  final String _id;
+
+  @override
+  String get id => _id;
 }

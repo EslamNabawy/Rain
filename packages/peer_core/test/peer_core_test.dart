@@ -941,6 +941,14 @@ class _FakePlatformBridge implements PlatformBridge {
   final List<Map<String, dynamic>> userMediaConstraints =
       <Map<String, dynamic>>[];
   final List<bool> muteCalls = <bool>[];
+  final List<String> selectedAudioInputs = <String>[];
+  List<MediaDeviceInfo> mediaDevices = <MediaDeviceInfo>[
+    MediaDeviceInfo(
+      deviceId: 'audio-1',
+      label: 'Built-in microphone',
+      kind: 'audioinput',
+    ),
+  ];
   Object? getUserMediaError;
   Completer<MediaStream>? getUserMediaCompleter;
   int prepareVoiceAudioCalls = 0;
@@ -987,6 +995,9 @@ class _FakePlatformBridge implements PlatformBridge {
   StorageBackend getLocalStorage() => MemoryStorageBackend();
 
   @override
+  Future<List<MediaDeviceInfo>> enumerateMediaDevices() async => mediaDevices;
+
+  @override
   Future<void> prepareVoiceAudio() async {
     prepareVoiceAudioCalls += 1;
   }
@@ -999,6 +1010,23 @@ class _FakePlatformBridge implements PlatformBridge {
     muteCalls.add(muted);
     track.enabled = !muted;
   }
+
+  @override
+  Future<void> switchCamera(MediaStreamTrack track) async {}
+
+  @override
+  Future<void> selectAudioInput(String deviceId) async {
+    selectedAudioInputs.add(deviceId);
+  }
+
+  @override
+  Future<void> selectAudioOutput(String deviceId) async {}
+
+  @override
+  Future<void> setSpeakerphoneOn(bool enabled) async {}
+
+  @override
+  Future<void> setSpeakerphoneOnButPreferBluetooth() async {}
 }
 
 class _FakeRtcPeerConnection extends Fake implements RTCPeerConnection {

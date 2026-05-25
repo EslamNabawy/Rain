@@ -3,10 +3,27 @@ import 'dart:io';
 import 'package:flutter_test/flutter_test.dart';
 
 String _repoFile(String relativePath) {
-  final workspaceRoot = Directory.current.parent.parent;
+  final workspaceRoot = _workspaceRoot();
   return File.fromUri(
     workspaceRoot.uri.resolve(relativePath),
   ).readAsStringSync().replaceAll('\r\n', '\n');
+}
+
+Directory _workspaceRoot() {
+  var current = Directory.current;
+  while (true) {
+    final marker = File.fromUri(
+      current.uri.resolve('backend/firebase/database.rules.json'),
+    );
+    if (marker.existsSync()) {
+      return current;
+    }
+    final parent = current.parent;
+    if (parent.path == current.path) {
+      throw StateError('Could not locate Rain workspace root.');
+    }
+    current = parent;
+  }
 }
 
 void main() {
@@ -183,6 +200,7 @@ void main() {
 
     for (final node in <String>[
       'activeVoicePairs',
+      'activeVoiceUsers',
       'voiceCallInboxes',
       'voiceCalls',
     ]) {
@@ -206,11 +224,24 @@ void main() {
     expect(rules, contains('root.child(\'friendships/\''));
     expect(rules, contains('root.child(\'blocks/\''));
     expect(rules, contains('"activeVoicePairs"'));
+    expect(rules, contains('"activeVoiceUsers"'));
     expect(rules, contains('"voiceCalls"'));
     expect(
       rules,
       contains(
         "root.child('activeVoicePairs/' + newData.child('pairId').val() + '/callId').val() === \$callId",
+      ),
+    );
+    expect(
+      rules,
+      contains(
+        "root.child('activeVoiceUsers/' + newData.child('caller').val() + '/callId').val() === \$callId",
+      ),
+    );
+    expect(
+      rules,
+      contains(
+        "root.child('activeVoiceUsers/' + newData.child('callee').val() + '/callId').val() === \$callId",
       ),
     );
     expect(
@@ -247,6 +278,27 @@ void main() {
     expect(adapter, contains('VoiceSignalingEnvelope.fromJson'));
     expect(adapter, isNot(contains("'sdp':")));
     expect(adapter, isNot(contains("'candidate':")));
+  });
+
+  test('Firebase voice signaling validates video metadata fields', () {
+    final rules = _repoFile('backend/firebase/database.rules.json');
+    final adapter = _repoFile(
+      'packages/protocol_brain/lib/adapters/firebase_adapter.dart',
+    );
+
+    expect(rules, contains('"mediaMode"'));
+    expect(
+      rules,
+      contains("newData.val() === 'audio' || newData.val() === 'video'"),
+    );
+    expect(rules, isNot(contains("newData.val() === 'screen'")));
+    expect(rules, contains('"cameraMuted"'));
+    expect(rules, contains('newData.isBoolean()'));
+    expect(rules, contains(r'"$other"'));
+    expect(adapter, contains('CallMediaMode mediaMode'));
+    expect(adapter, contains('mediaMode: mediaMode'));
+    expect(adapter, contains('setCameraMuted'));
+    expect(adapter, contains(r'cameraMuted/$normalizedUsername'));
   });
 
   test('Firebase voice signaling enforces role-specific writes', () {

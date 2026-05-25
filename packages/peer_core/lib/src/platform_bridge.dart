@@ -1,5 +1,26 @@
 import 'package:flutter_webrtc/flutter_webrtc.dart' as webrtc;
 
+const String webRtcAudioInputDeviceKind = 'audioinput';
+const String webRtcAudioOutputDeviceKind = 'audiooutput';
+const String webRtcVideoInputDeviceKind = 'videoinput';
+
+extension WebRtcMediaDeviceInfoX on webrtc.MediaDeviceInfo {
+  String get normalizedKind => (kind ?? '').trim().toLowerCase();
+
+  String get normalizedDeviceId => deviceId.trim();
+
+  bool get hasUsableDeviceId => normalizedDeviceId.isNotEmpty;
+
+  bool get isAudioInputDevice =>
+      hasUsableDeviceId && normalizedKind == webRtcAudioInputDeviceKind;
+
+  bool get isAudioOutputDevice =>
+      hasUsableDeviceId && normalizedKind == webRtcAudioOutputDeviceKind;
+
+  bool get isVideoInputDevice =>
+      hasUsableDeviceId && normalizedKind == webRtcVideoInputDeviceKind;
+}
+
 abstract class StorageBackend {
   Future<void> write(String key, String value);
   Future<String?> read(String key);
@@ -35,12 +56,18 @@ abstract class PlatformBridge {
     webrtc.RTCDataChannelInit opts,
   );
   Future<webrtc.MediaStream> getUserMedia(Map<String, dynamic> constraints);
+  Future<List<webrtc.MediaDeviceInfo>> enumerateMediaDevices();
+  Future<void> selectAudioInput(String deviceId);
+  Future<void> selectAudioOutput(String deviceId);
+  Future<void> setSpeakerphoneOn(bool enabled);
+  Future<void> setSpeakerphoneOnButPreferBluetooth();
   Future<void> prepareVoiceAudio();
   Future<void> clearVoiceAudio();
   Future<void> setMicrophoneMuted(
     webrtc.MediaStreamTrack track, {
     required bool muted,
   });
+  Future<void> switchCamera(webrtc.MediaStreamTrack track);
   StorageBackend getLocalStorage();
 }
 
@@ -74,6 +101,11 @@ class FlutterWebRTCBridge implements PlatformBridge {
   }
 
   @override
+  Future<List<webrtc.MediaDeviceInfo>> enumerateMediaDevices() {
+    return webrtc.navigator.mediaDevices.enumerateDevices();
+  }
+
+  @override
   Future<webrtc.MediaStream> getUserMedia(Map<String, dynamic> constraints) {
     return webrtc.navigator.mediaDevices.getUserMedia(constraints);
   }
@@ -103,5 +135,30 @@ class FlutterWebRTCBridge implements PlatformBridge {
     } catch (_) {
       // Track.enabled is the portable fallback; native helper support varies.
     }
+  }
+
+  @override
+  Future<void> switchCamera(webrtc.MediaStreamTrack track) {
+    return webrtc.Helper.switchCamera(track);
+  }
+
+  @override
+  Future<void> selectAudioInput(String deviceId) {
+    return webrtc.Helper.selectAudioInput(deviceId);
+  }
+
+  @override
+  Future<void> selectAudioOutput(String deviceId) {
+    return webrtc.Helper.selectAudioOutput(deviceId);
+  }
+
+  @override
+  Future<void> setSpeakerphoneOn(bool enabled) {
+    return webrtc.Helper.setSpeakerphoneOn(enabled);
+  }
+
+  @override
+  Future<void> setSpeakerphoneOnButPreferBluetooth() {
+    return webrtc.Helper.setSpeakerphoneOnButPreferBluetooth();
   }
 }

@@ -59,7 +59,7 @@ void main() {
   });
 
   test(
-    'fake adapter creates room, callee inbox, and active pair lock',
+    'fake adapter creates room, callee inbox, and active pair/user locks',
     () async {
       final adapter = FakeVoiceSignalingAdapter();
       addTearDown(adapter.dispose);
@@ -83,6 +83,8 @@ void main() {
       expect(room.pairId, 'alice:bob');
       expect(room.status, VoiceCallSignalingStatus.ringing);
       expect(adapter.activePairLocks.keys, contains('alice:bob'));
+      expect(adapter.activeUserLocks['alice']?.callId, 'call-1');
+      expect(adapter.activeUserLocks['bob']?.callId, 'call-1');
       expect(adapter.inboxFor('bob').single.callId, 'call-1');
       expect((await inboxEvent).status, VoiceCallSignalingStatus.ringing);
       expect((await roomEvent).callId, 'call-1');
@@ -100,6 +102,320 @@ void main() {
     },
   );
 
+  test('fake adapter user locks block cross-peer simultaneous calls', () async {
+    final adapter = FakeVoiceSignalingAdapter();
+    addTearDown(adapter.dispose);
+
+    await adapter.createOutgoingCall(
+      callId: 'bob-call',
+      caller: 'bob',
+      callee: 'alice',
+      createdAt: 1000,
+      expiresAt: 61000,
+    );
+
+    await expectLater(
+      adapter.createOutgoingCall(
+        callId: 'cara-call',
+        caller: 'cara',
+        callee: 'alice',
+        createdAt: 1100,
+        expiresAt: 61100,
+      ),
+      throwsA(
+        isA<VoiceSignalingException>().having(
+          (error) => error.message,
+          'message',
+          contains('user alice'),
+        ),
+      ),
+    );
+
+    expect(adapter.activePairLocks.keys, contains('alice:bob'));
+    expect(adapter.activePairLocks.keys, isNot(contains('alice:cara')));
+    expect(adapter.activeUserLocks['alice']?.callId, 'bob-call');
+    expect(adapter.rooms.keys, isNot(contains('cara-call')));
+  });
+
+  test('fake adapter reclaims stale orphan active pair lock', () async {
+    final adapter = FakeVoiceSignalingAdapter();
+    addTearDown(adapter.dispose);
+
+    adapter.seedActivePairLockForTest(
+      const VoiceActivePairLock(
+        pairId: 'alice:bob',
+        callId: 'orphan-call',
+        caller: 'alice',
+        callee: 'bob',
+        createdAt: 1000,
+        updatedAt: 1000,
+        expiresAt: 60000,
+      ),
+    );
+
+    final room = await adapter.createOutgoingCall(
+      callId: 'call-2',
+      caller: 'alice',
+      callee: 'bob',
+      createdAt: 20000,
+      expiresAt: 80000,
+    );
+
+    expect(room.callId, 'call-2');
+    expect(adapter.activePairLocks['alice:bob']?.callId, 'call-2');
+    expect(adapter.activeUserLocks['alice']?.callId, 'call-2');
+    expect(adapter.activeUserLocks['bob']?.callId, 'call-2');
+    expect(adapter.rooms.keys, contains('call-2'));
+  });
+
+  test('fake adapter reclaims caller-owned orphan lock immediately', () async {
+    final adapter = FakeVoiceSignalingAdapter();
+    addTearDown(adapter.dispose);
+
+    adapter.seedActivePairLockForTest(
+      const VoiceActivePairLock(
+        pairId: 'alice:bob',
+        callId: 'orphan-call',
+        caller: 'alice',
+        callee: 'bob',
+        createdAt: 1000,
+        updatedAt: 1000,
+        expiresAt: 60000,
+      ),
+    );
+
+    final room = await adapter.createOutgoingCall(
+      callId: 'call-2',
+      caller: 'alice',
+      callee: 'bob',
+      createdAt: 1001,
+      expiresAt: 61000,
+    );
+
+    expect(room.callId, 'call-2');
+    expect(adapter.activePairLocks['alice:bob']?.callId, 'call-2');
+    expect(adapter.inboxFor('bob').single.callId, 'call-2');
+  });
+
+  test('fake adapter reclaims caller-owned setup room immediately', () async {
+    final adapter = FakeVoiceSignalingAdapter();
+    addTearDown(adapter.dispose);
+
+    await adapter.createOutgoingCall(
+      callId: 'call-1',
+      caller: 'alice',
+      callee: 'bob',
+      createdAt: 1000,
+      expiresAt: 61000,
+    );
+
+    final room = await adapter.createOutgoingCall(
+      callId: 'call-2',
+      caller: 'alice',
+      callee: 'bob',
+      createdAt: 1001,
+      expiresAt: 61001,
+    );
+
+    expect(room.callId, 'call-2');
+    expect(adapter.activePairLocks['alice:bob']?.callId, 'call-2');
+    expect(adapter.activeUserLocks['alice']?.callId, 'call-2');
+    expect(adapter.activeUserLocks['bob']?.callId, 'call-2');
+    expect(adapter.rooms.keys, isNot(contains('call-1')));
+    expect(adapter.rooms.keys, contains('call-2'));
+    expect(adapter.inboxFor('bob').single.callId, 'call-2');
+  });
+
+  test('fake adapter does not let opposite caller steal setup room', () async {
+    final adapter = FakeVoiceSignalingAdapter();
+    addTearDown(adapter.dispose);
+
+    await adapter.createOutgoingCall(
+      callId: 'call-1',
+      caller: 'alice',
+      callee: 'bob',
+      createdAt: 1000,
+      expiresAt: 61000,
+    );
+
+    await expectLater(
+      adapter.createOutgoingCall(
+        callId: 'call-2',
+        caller: 'bob',
+        callee: 'alice',
+        createdAt: 1001,
+        expiresAt: 61001,
+      ),
+      throwsA(isA<VoiceSignalingException>()),
+    );
+
+    expect(adapter.activePairLocks['alice:bob']?.callId, 'call-1');
+    expect(adapter.rooms.keys, contains('call-1'));
+    expect(adapter.rooms.keys, isNot(contains('call-2')));
+    expect(adapter.inboxFor('bob').single.callId, 'call-1');
+  });
+
+  test('fake adapter does not let callee steal fresh orphan lock', () async {
+    final adapter = FakeVoiceSignalingAdapter();
+    addTearDown(adapter.dispose);
+
+    adapter.seedActivePairLockForTest(
+      const VoiceActivePairLock(
+        pairId: 'alice:bob',
+        callId: 'orphan-call',
+        caller: 'alice',
+        callee: 'bob',
+        createdAt: 1000,
+        updatedAt: 1000,
+        expiresAt: 60000,
+      ),
+    );
+
+    await expectLater(
+      adapter.createOutgoingCall(
+        callId: 'call-2',
+        caller: 'bob',
+        callee: 'alice',
+        createdAt: 1001,
+        expiresAt: 61000,
+      ),
+      throwsA(isA<VoiceSignalingException>()),
+    );
+
+    expect(adapter.activePairLocks['alice:bob']?.callId, 'orphan-call');
+    expect(adapter.rooms, isEmpty);
+  });
+
+  test('fake adapter reclaims terminal room with leftover lock', () async {
+    final adapter = FakeVoiceSignalingAdapter();
+    addTearDown(adapter.dispose);
+
+    await adapter.createOutgoingCall(
+      callId: 'call-1',
+      caller: 'alice',
+      callee: 'bob',
+      createdAt: 1000,
+      expiresAt: 60000,
+    );
+    await adapter.endCall(
+      callId: 'call-1',
+      username: 'alice',
+      status: VoiceCallSignalingStatus.failed,
+      endedAt: 1200,
+      reasonCode: 'mediaConnectionFailed',
+      reason: 'Call media could not connect.',
+    );
+    adapter.seedActivePairLockForTest(
+      const VoiceActivePairLock(
+        pairId: 'alice:bob',
+        callId: 'call-1',
+        caller: 'alice',
+        callee: 'bob',
+        createdAt: 1000,
+        updatedAt: 1000,
+        expiresAt: 60000,
+      ),
+    );
+
+    final room = await adapter.createOutgoingCall(
+      callId: 'call-2',
+      caller: 'alice',
+      callee: 'bob',
+      createdAt: 1300,
+      expiresAt: 61300,
+    );
+
+    expect(room.callId, 'call-2');
+    expect(adapter.activePairLocks['alice:bob']?.callId, 'call-2');
+    expect(adapter.rooms.keys, isNot(contains('call-1')));
+  });
+
+  test(
+    'fake adapter deleting old terminal room preserves newer lock',
+    () async {
+      final adapter = FakeVoiceSignalingAdapter();
+      addTearDown(adapter.dispose);
+
+      await adapter.createOutgoingCall(
+        callId: 'call-1',
+        caller: 'alice',
+        callee: 'bob',
+        createdAt: 1000,
+        expiresAt: 60000,
+      );
+      await adapter.endCall(
+        callId: 'call-1',
+        username: 'alice',
+        status: VoiceCallSignalingStatus.ended,
+        endedAt: 1100,
+        reasonCode: 'hangup',
+        reason: 'Ended.',
+      );
+      await adapter.createOutgoingCall(
+        callId: 'call-2',
+        caller: 'alice',
+        callee: 'bob',
+        createdAt: 1200,
+        expiresAt: 61200,
+      );
+
+      await adapter.deleteCall('call-1');
+
+      expect(adapter.rooms.keys, contains('call-2'));
+      expect(adapter.activePairLocks['alice:bob']?.callId, 'call-2');
+      expect(adapter.activeUserLocks['alice']?.callId, 'call-2');
+      expect(adapter.activeUserLocks['bob']?.callId, 'call-2');
+    },
+  );
+
+  test('fake adapter stores video media mode and camera mute state', () async {
+    final adapter = FakeVoiceSignalingAdapter();
+    addTearDown(adapter.dispose);
+
+    final room = await adapter.createOutgoingCall(
+      callId: 'call-1',
+      caller: 'alice',
+      callee: 'bob',
+      createdAt: 1000,
+      expiresAt: 2000,
+      mediaMode: CallMediaMode.video,
+    );
+
+    expect(room.mediaMode, CallMediaMode.video);
+    expect(room.toJson(), containsPair('mediaMode', 'video'));
+    expect(room.cameraMuted, <String, bool>{'alice': false, 'bob': false});
+
+    await adapter.setCameraMuted(
+      callId: 'call-1',
+      username: 'alice',
+      cameraMuted: true,
+      updatedAt: 1100,
+    );
+
+    final updated = await adapter.fetchCall('call-1');
+    expect(updated?.mediaMode, CallMediaMode.video);
+    expect(updated?.cameraMuted['alice'], isTrue);
+  });
+
+  test('old room without media mode reads as audio', () {
+    final room = VoiceCallRoom.fromJson(
+      callId: 'call-1',
+      json: _roomJson()..remove('mediaMode'),
+    );
+
+    expect(room.mediaMode, CallMediaMode.audio);
+  });
+
+  test('invalid media mode is rejected', () {
+    expect(
+      () => VoiceCallRoom.fromJson(
+        callId: 'call-1',
+        json: _roomJson(mediaMode: 'screen'),
+      ),
+      throwsA(isA<FormatException>()),
+    );
+  });
+
   test(
     'fake adapter enforces role-specific offer answer and ICE writes',
     () async {
@@ -111,6 +427,7 @@ void main() {
         callee: 'bob',
         createdAt: 1000,
         expiresAt: 3000,
+        mediaMode: CallMediaMode.video,
       );
       await adapter.acceptCall(
         callId: 'call-1',
@@ -196,6 +513,7 @@ void main() {
         callee: 'bob',
         createdAt: 1000,
         expiresAt: 3000,
+        mediaMode: CallMediaMode.video,
       );
       await adapter.acceptCall(
         callId: 'call-1',
@@ -213,11 +531,21 @@ void main() {
         muted: true,
         updatedAt: 1600,
       );
+      await adapter.setCameraMuted(
+        callId: 'call-1',
+        username: 'bob',
+        cameraMuted: true,
+        updatedAt: 1650,
+      );
 
       var room = await adapter.fetchCall('call-1');
       expect(room?.status, VoiceCallSignalingStatus.connected);
+      expect(room?.mediaMode, CallMediaMode.video);
       expect(room?.muted['bob'], isTrue);
+      expect(room?.cameraMuted['bob'], isTrue);
       expect(adapter.activePairLocks, contains('alice:bob'));
+      expect(adapter.activeUserLocks, contains('alice'));
+      expect(adapter.activeUserLocks, contains('bob'));
 
       await adapter.endCall(
         callId: 'call-1',
@@ -232,11 +560,22 @@ void main() {
       expect(room?.status, VoiceCallSignalingStatus.ended);
       expect(room?.endedBy, 'bob');
       expect(adapter.activePairLocks, isNot(contains('alice:bob')));
+      expect(adapter.activeUserLocks, isNot(contains('alice')));
+      expect(adapter.activeUserLocks, isNot(contains('bob')));
       await expectLater(
         adapter.setMuted(
           callId: 'call-1',
           username: 'alice',
           muted: true,
+          updatedAt: 1800,
+        ),
+        throwsA(isA<VoiceSignalingException>()),
+      );
+      await expectLater(
+        adapter.setCameraMuted(
+          callId: 'call-1',
+          username: 'alice',
+          cameraMuted: false,
           updatedAt: 1800,
         ),
         throwsA(isA<VoiceSignalingException>()),
@@ -272,4 +611,18 @@ VoiceSignalingEnvelope _envelope({required String ciphertext}) {
     ciphertext: ciphertext,
     mac: 'mac',
   );
+}
+
+Map<Object?, Object?> _roomJson({String mediaMode = 'audio'}) {
+  return <Object?, Object?>{
+    'v': VoiceCallRoom.version,
+    'pairId': 'alice:bob',
+    'caller': 'alice',
+    'callee': 'bob',
+    'status': VoiceCallSignalingStatus.ringing.name,
+    'mediaMode': mediaMode,
+    'createdAt': 1000,
+    'updatedAt': 1000,
+    'expiresAt': 2000,
+  };
 }

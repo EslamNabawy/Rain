@@ -96,12 +96,14 @@ exports.cleanupVoiceCalls = onSchedule(
   async () => {
     const now = Date.now();
     const root = admin.database().ref();
-    const [callsSnapshot, locksSnapshot] = await Promise.all([
+    const [callsSnapshot, pairLocksSnapshot, userLocksSnapshot] = await Promise.all([
       root.child("voiceCalls").orderByChild("expiresAt").endAt(now).get(),
       root.child("activeVoicePairs").orderByChild("expiresAt").endAt(now).get(),
+      root.child("activeVoiceUsers").orderByChild("expiresAt").endAt(now).get(),
     ]);
 
     const updates = {};
+    const expiredLocks = [];
     let deletedCalls = 0;
     let deletedLocks = 0;
 
@@ -112,31 +114,73 @@ exports.cleanupVoiceCalls = onSchedule(
         if (call.callee) {
           updates[`voiceCallInboxes/${call.callee}/${child.key}`] = null;
         }
-        if (call.pairId) {
-          updates[`activeVoicePairs/${call.pairId}`] = null;
-        }
         deletedCalls += 1;
         return false;
       });
     }
 
-    if (locksSnapshot.exists()) {
-      locksSnapshot.forEach((child) => {
-        updates[`activeVoicePairs/${child.key}`] = null;
-        deletedLocks += 1;
+    if (pairLocksSnapshot.exists()) {
+      pairLocksSnapshot.forEach((child) => {
+        expiredLocks.push({
+          path: `activeVoicePairs/${child.key}`,
+          value: child.val() || {},
+        });
         return false;
       });
     }
 
-    if (Object.keys(updates).length === 0) {
+    if (userLocksSnapshot.exists()) {
+      userLocksSnapshot.forEach((child) => {
+        expiredLocks.push({
+          path: `activeVoiceUsers/${child.key}`,
+          value: child.val() || {},
+        });
+        return false;
+      });
+    }
+
+    if (Object.keys(updates).length > 0) {
+      await root.update(updates);
+    }
+
+    await Promise.all(
+      expiredLocks.map(async (lock) => {
+        const removed = await removeExpiredVoiceLockIfCurrent(
+          root.child(lock.path),
+          lock.value,
+        );
+        if (removed) {
+          deletedLocks += 1;
+        }
+      }),
+    );
+
+    if (deletedCalls === 0 && deletedLocks === 0) {
       logger.info("No expired voice calls found.");
       return;
     }
 
-    await root.update(updates);
     logger.info("Deleted expired voice call signaling data.", {
       deletedCalls,
       deletedLocks,
     });
   },
 );
+
+async function removeExpiredVoiceLockIfCurrent(ref, expected) {
+  const result = await ref.transaction((current) => {
+    if (!current) {
+      return undefined;
+    }
+    if (
+      current.callId === expected.callId &&
+      current.createdAt === expected.createdAt &&
+      current.updatedAt === expected.updatedAt &&
+      current.expiresAt === expected.expiresAt
+    ) {
+      return null;
+    }
+    return undefined;
+  }, undefined, false);
+  return result.committed === true;
+}

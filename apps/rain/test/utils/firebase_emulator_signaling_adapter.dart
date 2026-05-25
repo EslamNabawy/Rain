@@ -26,6 +26,7 @@ class FirebaseEmulatorSignalingAdapter
   final List<StreamController<dynamic>> _controllers =
       <StreamController<dynamic>>[];
   final List<Timer> _timers = <Timer>[];
+  static const int _orphanVoiceLockGraceMs = 15000;
   final String _sessionId = DateTime.now().microsecondsSinceEpoch.toRadixString(
     36,
   );
@@ -582,15 +583,38 @@ class FirebaseEmulatorSignalingAdapter
     required String callee,
     required int createdAt,
     required int expiresAt,
+    CallMediaMode mediaMode = CallMediaMode.audio,
   }) async {
     final normalizedCallId = callId.trim();
     final normalizedCaller = normalizeVoiceCallUsername(caller);
     final normalizedCallee = normalizeVoiceCallUsername(callee);
     await _ensureSignedInAsUsername(normalizedCaller);
     final pairId = voiceCallPairId(normalizedCaller, normalizedCallee);
-    final existingLock = await _get(<String>['activeVoicePairs', pairId]);
-    if (existingLock is Map &&
-        ((existingLock['expiresAt'] as num?)?.toInt() ?? 0) > createdAt) {
+    for (final username in <String>[normalizedCaller, normalizedCallee]) {
+      final existingUserLockValue = await _get(<String>[
+        'activeVoiceUsers',
+        username,
+      ]);
+      if (existingUserLockValue is Map &&
+          !await _reclaimActiveVoiceUserLockIfStale(
+            username: username,
+            value: existingUserLockValue,
+            caller: normalizedCaller,
+            createdAt: createdAt,
+          )) {
+        throw VoiceSignalingException(
+          'Active voice call already exists for user $username.',
+        );
+      }
+    }
+    final existingLockValue = await _get(<String>['activeVoicePairs', pairId]);
+    if (existingLockValue is Map &&
+        !await _reclaimActiveVoicePairLockIfStale(
+          pairId: pairId,
+          value: existingLockValue,
+          caller: normalizedCaller,
+          createdAt: createdAt,
+        )) {
       throw VoiceSignalingException(
         'Active voice call already exists for pair $pairId.',
       );
@@ -602,6 +626,7 @@ class FirebaseEmulatorSignalingAdapter
       caller: normalizedCaller,
       callee: normalizedCallee,
       status: VoiceCallSignalingStatus.ringing,
+      mediaMode: mediaMode,
       createdAt: createdAt,
       updatedAt: createdAt,
       expiresAt: expiresAt,
@@ -609,6 +634,12 @@ class FirebaseEmulatorSignalingAdapter
         normalizedCaller: false,
         normalizedCallee: false,
       }),
+      cameraMuted: mediaMode == CallMediaMode.video
+          ? Map<String, bool>.unmodifiable(<String, bool>{
+              normalizedCaller: false,
+              normalizedCallee: false,
+            })
+          : const <String, bool>{},
     );
     final lock = VoiceActivePairLock(
       pairId: pairId,
@@ -619,6 +650,8 @@ class FirebaseEmulatorSignalingAdapter
       updatedAt: createdAt,
       expiresAt: expiresAt,
     );
+    final callerUserLock = _activeVoiceUserLockForRoom(room, normalizedCaller);
+    final calleeUserLock = _activeVoiceUserLockForRoom(room, normalizedCallee);
     final inbox = VoiceCallInboxEntry(
       callId: normalizedCallId,
       from: normalizedCaller,
@@ -629,14 +662,18 @@ class FirebaseEmulatorSignalingAdapter
       updatedAt: createdAt,
       expiresAt: expiresAt,
     );
-    await _put(<String>['activeVoicePairs', pairId], lock.toJson());
+    await _patch(<String>[], <String, Object?>{
+      'activeVoiceUsers/$normalizedCaller': callerUserLock.toJson(),
+      'activeVoiceUsers/$normalizedCallee': calleeUserLock.toJson(),
+      'activeVoicePairs/$pairId': lock.toJson(),
+    });
     try {
       await _patch(<String>[], <String, Object?>{
         'voiceCalls/$normalizedCallId': room.toJson(),
         'voiceCallInboxes/$normalizedCallee/$normalizedCallId': inbox.toJson(),
       });
     } catch (_) {
-      await _delete(<String>['activeVoicePairs', pairId]);
+      await _deleteActiveVoiceLocksForRoomIfCurrent(room);
       rethrow;
     }
     return room;
@@ -731,6 +768,10 @@ class FirebaseEmulatorSignalingAdapter
     final normalizedUsername = normalizeVoiceCallUsername(username);
     await _ensureSignedInAsUsername(normalizedUsername);
     _ensureVoiceParticipant(room, normalizedUsername);
+    if (room.status.isTerminal) {
+      await _deleteActiveVoiceLocksForRoomIfCurrent(room);
+      return;
+    }
     await _patch(<String>[], <String, Object?>{
       'voiceCalls/${room.callId}/status': status.name,
       'voiceCalls/${room.callId}/endedAt': endedAt,
@@ -740,8 +781,8 @@ class FirebaseEmulatorSignalingAdapter
       'voiceCalls/${room.callId}/reason': reason,
       'voiceCallInboxes/${room.callee}/${room.callId}/status': status.name,
       'voiceCallInboxes/${room.callee}/${room.callId}/updatedAt': endedAt,
-      'activeVoicePairs/${room.pairId}': null,
     });
+    await _deleteActiveVoiceLocksForRoomIfCurrent(room);
   }
 
   @override
@@ -757,6 +798,23 @@ class FirebaseEmulatorSignalingAdapter
     _ensureVoiceParticipant(room, normalizedUsername);
     await _patch(<String>[], <String, Object?>{
       'voiceCalls/${room.callId}/muted/$normalizedUsername': muted,
+      'voiceCalls/${room.callId}/updatedAt': updatedAt,
+    });
+  }
+
+  @override
+  Future<void> setCameraMuted({
+    required String callId,
+    required String username,
+    required bool cameraMuted,
+    required int updatedAt,
+  }) async {
+    final room = await _requireVoiceCall(callId);
+    final normalizedUsername = normalizeVoiceCallUsername(username);
+    await _ensureSignedInAsUsername(normalizedUsername);
+    _ensureVoiceParticipant(room, normalizedUsername);
+    await _patch(<String>[], <String, Object?>{
+      'voiceCalls/${room.callId}/cameraMuted/$normalizedUsername': cameraMuted,
       'voiceCalls/${room.callId}/updatedAt': updatedAt,
     });
   }
@@ -880,11 +938,7 @@ class FirebaseEmulatorSignalingAdapter
       await _delete(<String>['voiceCalls', callId.trim()]);
       return;
     }
-    await _patch(<String>[], <String, Object?>{
-      'voiceCalls/${room.callId}': null,
-      'voiceCallInboxes/${room.callee}/${room.callId}': null,
-      'activeVoicePairs/${room.pairId}': null,
-    });
+    await _deleteVoiceCallRoomArtifacts(room);
   }
 
   @override
@@ -909,6 +963,193 @@ class FirebaseEmulatorSignalingAdapter
   VoiceCallRoom? _voiceCallRoomFromValue(String callId, Object? value) {
     if (value is! Map) return null;
     return VoiceCallRoom.fromJson(callId: callId, json: _asObjectMap(value));
+  }
+
+  Future<bool> _reclaimActiveVoicePairLockIfStale({
+    required String pairId,
+    required Map<dynamic, dynamic> value,
+    required String caller,
+    required int createdAt,
+  }) async {
+    final VoiceActivePairLock lock;
+    try {
+      lock = VoiceActivePairLock.fromJson(
+        pairId: pairId,
+        json: _asObjectMap(value),
+      );
+    } catch (_) {
+      return false;
+    }
+    if (lock.expiresAt <= createdAt) {
+      await _delete(<String>['activeVoicePairs', pairId]);
+      final room = await fetchCall(lock.callId);
+      if (room != null && _shouldDeleteReclaimedVoiceRoom(room, createdAt)) {
+        await _deleteVoiceCallRoomArtifacts(room);
+      }
+      return true;
+    }
+
+    final room = await fetchCall(lock.callId);
+    if (room == null) {
+      if (lock.caller == normalizeVoiceCallUsername(caller)) {
+        await _delete(<String>['activeVoicePairs', pairId]);
+        return true;
+      }
+      if (createdAt - lock.updatedAt < _orphanVoiceLockGraceMs) {
+        return false;
+      }
+      await _delete(<String>['activeVoicePairs', pairId]);
+      return true;
+    }
+
+    if (!room.isTerminal &&
+        room.status != VoiceCallSignalingStatus.connected &&
+        lock.caller == normalizeVoiceCallUsername(caller)) {
+      await _delete(<String>['activeVoicePairs', pairId]);
+      await _deleteVoiceCallRoomArtifacts(room);
+      return true;
+    }
+
+    final setupExpired =
+        room.status != VoiceCallSignalingStatus.connected &&
+        room.expiresAt <= createdAt;
+    if (!room.isTerminal && !setupExpired) {
+      return false;
+    }
+
+    await _delete(<String>['activeVoicePairs', pairId]);
+    await _deleteVoiceCallRoomArtifacts(room);
+    return true;
+  }
+
+  Future<bool> _reclaimActiveVoiceUserLockIfStale({
+    required String username,
+    required Map<dynamic, dynamic> value,
+    required String caller,
+    required int createdAt,
+  }) async {
+    final VoiceActiveUserLock lock;
+    try {
+      lock = VoiceActiveUserLock.fromJson(
+        username: username,
+        json: _asObjectMap(value),
+      );
+    } catch (_) {
+      return false;
+    }
+    if (lock.expiresAt <= createdAt) {
+      await _delete(<String>['activeVoiceUsers', username]);
+      final room = await fetchCall(lock.callId);
+      if (room != null && _shouldDeleteReclaimedVoiceRoom(room, createdAt)) {
+        await _deleteVoiceCallRoomArtifacts(room);
+      }
+      return true;
+    }
+
+    final room = await fetchCall(lock.callId);
+    if (room == null) {
+      if (lock.caller == normalizeVoiceCallUsername(caller)) {
+        await _delete(<String>['activeVoiceUsers', username]);
+        return true;
+      }
+      if (createdAt - lock.updatedAt < _orphanVoiceLockGraceMs) {
+        return false;
+      }
+      await _delete(<String>['activeVoiceUsers', username]);
+      return true;
+    }
+
+    if (!room.isTerminal &&
+        room.status != VoiceCallSignalingStatus.connected &&
+        lock.caller == normalizeVoiceCallUsername(caller)) {
+      await _delete(<String>['activeVoiceUsers', username]);
+      await _deleteVoiceCallRoomArtifacts(room);
+      return true;
+    }
+
+    final setupExpired =
+        room.status != VoiceCallSignalingStatus.connected &&
+        room.expiresAt <= createdAt;
+    if (!room.isTerminal && !setupExpired) {
+      return false;
+    }
+
+    await _delete(<String>['activeVoiceUsers', username]);
+    await _deleteVoiceCallRoomArtifacts(room);
+    return true;
+  }
+
+  Future<void> _deleteActiveVoiceLocksForRoomIfCurrent(
+    VoiceCallRoom room,
+  ) async {
+    await _deleteActiveVoicePairLockForRoomIfCurrent(room);
+    await _deleteActiveVoiceUserLockForRoomIfCurrent(room, room.caller);
+    await _deleteActiveVoiceUserLockForRoomIfCurrent(room, room.callee);
+  }
+
+  Future<void> _deleteActiveVoicePairLockForRoomIfCurrent(
+    VoiceCallRoom room,
+  ) async {
+    final value = await _get(<String>['activeVoicePairs', room.pairId]);
+    if (value is! Map) {
+      return;
+    }
+    final lock = VoiceActivePairLock.fromJson(
+      pairId: room.pairId,
+      json: _asObjectMap(value),
+    );
+    if (lock.callId == room.callId) {
+      await _delete(<String>['activeVoicePairs', room.pairId]);
+    }
+  }
+
+  Future<void> _deleteActiveVoiceUserLockForRoomIfCurrent(
+    VoiceCallRoom room,
+    String username,
+  ) async {
+    final value = await _get(<String>['activeVoiceUsers', username]);
+    if (value is! Map) {
+      return;
+    }
+    final lock = VoiceActiveUserLock.fromJson(
+      username: username,
+      json: _asObjectMap(value),
+    );
+    if (lock.callId == room.callId) {
+      await _delete(<String>['activeVoiceUsers', username]);
+    }
+  }
+
+  bool _shouldDeleteReclaimedVoiceRoom(VoiceCallRoom room, int createdAt) {
+    if (room.isTerminal) {
+      return true;
+    }
+    return room.status != VoiceCallSignalingStatus.connected &&
+        room.expiresAt <= createdAt;
+  }
+
+  Future<void> _deleteVoiceCallRoomArtifacts(VoiceCallRoom room) async {
+    await _deleteActiveVoiceLocksForRoomIfCurrent(room);
+    await _patch(<String>[], <String, Object?>{
+      'voiceCalls/${room.callId}': null,
+      'voiceCallInboxes/${room.callee}/${room.callId}': null,
+    });
+  }
+
+  VoiceActiveUserLock _activeVoiceUserLockForRoom(
+    VoiceCallRoom room,
+    String username,
+  ) {
+    return VoiceActiveUserLock(
+      username: username,
+      callId: room.callId,
+      pairId: room.pairId,
+      caller: room.caller,
+      callee: room.callee,
+      createdAt: room.createdAt,
+      updatedAt: room.createdAt,
+      expiresAt: room.expiresAt,
+    );
   }
 
   VoiceSignalingEnvelope? _voiceEnvelopeFromValue(

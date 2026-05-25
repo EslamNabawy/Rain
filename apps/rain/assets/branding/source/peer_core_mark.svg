@@ -1,0 +1,17 @@
+<svg width="1024" height="1024" viewBox="0 0 1024 1024" fill="none" xmlns="http://www.w3.org/2000/svg">
+  <defs>
+    <linearGradient id="peerCoreRing" x1="240" y1="180" x2="808" y2="844" gradientUnits="userSpaceOnUse">
+      <stop stop-color="#D7F9FF"/>
+      <stop offset="0.48" stop-color="#7DEBFF"/>
+      <stop offset="1" stop-color="#2DD4A3"/>
+    </linearGradient>
+  </defs>
+  <circle cx="512" cy="512" r="328" stroke="url(#peerCoreRing)" stroke-width="72"/>
+  <path d="M410 584L614 441L645 645L410 584Z" stroke="#FCFEFF" stroke-opacity="0.82" stroke-width="42" stroke-linejoin="round"/>
+  <circle cx="410" cy="584" r="72" fill="#2DD4A3"/>
+  <circle cx="614" cy="441" r="72" fill="#2DD4A3"/>
+  <circle cx="645" cy="645" r="72" fill="#2DD4A3"/>
+  <circle cx="410" cy="584" r="26" fill="#061017" fill-opacity="0.92"/>
+  <circle cx="614" cy="441" r="26" fill="#061017" fill-opacity="0.92"/>
+  <circle cx="645" cy="645" r="26" fill="#061017" fill-opacity="0.92"/>
+</svg>
