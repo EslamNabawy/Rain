@@ -1845,6 +1845,71 @@ void main() {
     );
   });
 
+  testWidgets('drag handle is available only on expanded call popup', (
+    WidgetTester tester,
+  ) async {
+    await _pumpCallOverlay(tester, _activeVoiceCall());
+
+    expect(
+      find.byKey(const ValueKey<String>('rain-call-popup-drag-handle')),
+      findsOneWidget,
+    );
+
+    await _pumpCallOverlay(
+      tester,
+      _activeVoiceCall(),
+      surfaceMode: CallSurfaceMode.managerOnly,
+    );
+    expect(
+      find.byKey(const ValueKey<String>('rain-call-popup-drag-handle')),
+      findsNothing,
+    );
+
+    await _pumpCallOverlay(
+      tester,
+      _activeVoiceCall(mediaMode: CallMediaMode.video),
+      surfaceMode: CallSurfaceMode.pip,
+    );
+    expect(
+      find.byKey(const ValueKey<String>('rain-call-popup-drag-handle')),
+      findsNothing,
+    );
+
+    await _pumpCallOverlay(
+      tester,
+      _activeVoiceCall(mediaMode: CallMediaMode.video),
+      surfaceMode: CallSurfaceMode.fullscreen,
+    );
+    expect(
+      find.byKey(const ValueKey<String>('rain-call-popup-drag-handle')),
+      findsNothing,
+    );
+  });
+
+  testWidgets('fullscreen video ignores floating popup offset', (
+    WidgetTester tester,
+  ) async {
+    await _pumpCallOverlay(
+      tester,
+      _activeVoiceCall(mediaMode: CallMediaMode.video),
+      surfaceMode: CallSurfaceMode.fullscreen,
+      floatingOffset: const Offset(240, 320),
+    );
+
+    expect(
+      tester.getTopLeft(
+        find.byKey(
+          const ValueKey<String>('rain-call-video-fullscreen-surface'),
+        ),
+      ),
+      Offset.zero,
+    );
+    expect(
+      find.byKey(const ValueKey<String>('rain-call-popup-drag-handle')),
+      findsNothing,
+    );
+  });
+
   testWidgets('video overlay camera muted states are visible', (
     WidgetTester tester,
   ) async {
@@ -2309,6 +2374,7 @@ Future<void> _pumpCallOverlay(
   VideoPrimaryRole videoPrimaryRole = VideoPrimaryRole.remote,
   List<CallControlCapability>? controlCapabilities,
   List<VoiceCallOutputRouteOption>? outputRouteOptions,
+  Offset? floatingOffset,
 }) async {
   await tester.pumpWidget(
     MaterialApp(
@@ -2324,6 +2390,7 @@ Future<void> _pumpCallOverlay(
                   mode: surfaceMode,
                   mediaMode: state.mediaMode,
                   videoPrimaryRole: videoPrimaryRole,
+                  floatingOffset: floatingOffset,
                 ),
                 displayName: 'Bob',
                 videoRenderers: videoRenderers,
