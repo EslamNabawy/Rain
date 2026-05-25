@@ -39,23 +39,7 @@ class RainCallControls extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     if (state.phase == VoiceCallPhase.incomingRinging) {
-      return Wrap(
-        spacing: 8,
-        runSpacing: 8,
-        alignment: WrapAlignment.end,
-        children: <Widget>[
-          OutlinedButton.icon(
-            onPressed: onReject,
-            icon: const Icon(Icons.call_end),
-            label: const Text('Reject'),
-          ),
-          FilledButton.icon(
-            onPressed: onAccept,
-            icon: const Icon(Icons.call),
-            label: const Text('Accept'),
-          ),
-        ],
-      );
+      return _IncomingCallActions(onAccept: onAccept, onReject: onReject);
     }
 
     if (state.phase == VoiceCallPhase.failed) {
@@ -164,6 +148,102 @@ class RainCallControls extends StatelessWidget {
         ];
       },
       icon: Icon(selected.icon),
+    );
+  }
+}
+
+class _IncomingCallActions extends StatelessWidget {
+  const _IncomingCallActions({required this.onAccept, required this.onReject});
+
+  final VoidCallback onAccept;
+  final VoidCallback onReject;
+
+  @override
+  Widget build(BuildContext context) {
+    return LayoutBuilder(
+      builder: (BuildContext context, BoxConstraints constraints) {
+        final stackActions =
+            constraints.hasBoundedWidth && constraints.maxWidth < 340;
+        final reject = _CallActionButton(
+          key: const ValueKey<String>('rain-call-reject-button'),
+          semanticsLabel: 'Decline call',
+          onPressed: onReject,
+          icon: Icons.call_end,
+          label: 'Decline',
+          filled: false,
+        );
+        final accept = _CallActionButton(
+          key: const ValueKey<String>('rain-call-accept-button'),
+          semanticsLabel: 'Answer call',
+          onPressed: onAccept,
+          icon: Icons.call,
+          label: 'Answer',
+          filled: true,
+        );
+
+        if (stackActions) {
+          return Column(
+            mainAxisSize: MainAxisSize.min,
+            crossAxisAlignment: CrossAxisAlignment.stretch,
+            children: <Widget>[reject, const SizedBox(height: 8), accept],
+          );
+        }
+
+        if (!constraints.hasBoundedWidth) {
+          return Row(
+            mainAxisSize: MainAxisSize.min,
+            children: <Widget>[reject, const SizedBox(width: 10), accept],
+          );
+        }
+
+        return SizedBox(
+          width: constraints.maxWidth,
+          child: Row(
+            children: <Widget>[
+              Expanded(child: reject),
+              const SizedBox(width: 10),
+              Expanded(child: accept),
+            ],
+          ),
+        );
+      },
+    );
+  }
+}
+
+class _CallActionButton extends StatelessWidget {
+  const _CallActionButton({
+    super.key,
+    required this.semanticsLabel,
+    required this.onPressed,
+    required this.icon,
+    required this.label,
+    required this.filled,
+  });
+
+  final String semanticsLabel;
+  final VoidCallback onPressed;
+  final IconData icon;
+  final String label;
+  final bool filled;
+
+  @override
+  Widget build(BuildContext context) {
+    final child = filled
+        ? FilledButton.icon(
+            onPressed: onPressed,
+            icon: Icon(icon),
+            label: Text(label),
+          )
+        : OutlinedButton.icon(
+            onPressed: onPressed,
+            icon: Icon(icon),
+            label: Text(label),
+          );
+    return Semantics(
+      button: true,
+      label: semanticsLabel,
+      child: SizedBox(height: 52, child: child),
     );
   }
 }

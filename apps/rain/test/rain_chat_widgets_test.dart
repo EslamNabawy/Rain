@@ -428,10 +428,14 @@ void main() {
     expect(find.text('Bob is calling'), findsOneWidget);
     expect(find.text('Incoming voice call.'), findsOneWidget);
 
-    await tester.tap(find.text('Accept'));
+    await tester.tap(
+      find.byKey(const ValueKey<String>('rain-call-accept-button')),
+    );
     expect(accepted, isTrue);
 
-    await tester.tap(find.text('Reject'));
+    await tester.tap(
+      find.byKey(const ValueKey<String>('rain-call-reject-button')),
+    );
     expect(rejected, isTrue);
   });
 
@@ -465,10 +469,14 @@ void main() {
     expect(find.text('Bob is calling'), findsOneWidget);
     expect(find.text('Incoming video call.'), findsOneWidget);
 
-    await tester.tap(find.text('Accept'));
+    await tester.tap(
+      find.byKey(const ValueKey<String>('rain-call-accept-button')),
+    );
     expect(accepted, isTrue);
 
-    await tester.tap(find.text('Reject'));
+    await tester.tap(
+      find.byKey(const ValueKey<String>('rain-call-reject-button')),
+    );
     expect(rejected, isTrue);
   });
 
@@ -1300,7 +1308,9 @@ void main() {
     expect(after.dx, greaterThan(before.dx + 40));
     expect(after.dy, greaterThan(before.dy + 30));
 
-    await tester.tap(find.text('Accept'));
+    await tester.tap(
+      find.byKey(const ValueKey<String>('rain-call-accept-button')),
+    );
     expect(accepted, isTrue);
   });
 
@@ -1983,11 +1993,97 @@ void main() {
     );
     expect(find.byTooltip('Minimize call'), findsNothing);
 
-    await tester.tap(find.text('Accept'));
+    await tester.tap(
+      find.byKey(const ValueKey<String>('rain-call-accept-button')),
+    );
     expect(accepted, isTrue);
 
-    await tester.tap(find.text('Reject'));
+    await tester.tap(
+      find.byKey(const ValueKey<String>('rain-call-reject-button')),
+    );
     expect(rejected, isTrue);
+  });
+
+  testWidgets('incoming call controls stay visible across viewport sizes', (
+    WidgetTester tester,
+  ) async {
+    const sizes = <Size>[
+      Size(320, 568),
+      Size(360, 640),
+      Size(568, 320),
+      Size(768, 1024),
+      Size(1280, 720),
+    ];
+    addTearDown(tester.view.resetPhysicalSize);
+    addTearDown(tester.view.resetDevicePixelRatio);
+
+    for (final size in sizes) {
+      for (final mediaMode in CallMediaMode.values) {
+        tester.view.physicalSize = size;
+        tester.view.devicePixelRatio = 1;
+        var accepted = false;
+        var rejected = false;
+        final state = VoiceCallState(
+          phase: VoiceCallPhase.incomingRinging,
+          peerId: 'bob',
+          callId: 'call-${size.width}-${mediaMode.name}',
+          mediaMode: mediaMode,
+        );
+
+        await tester.pumpWidget(
+          MaterialApp(
+            home: Scaffold(
+              body: Stack(
+                children: <Widget>[
+                  Positioned.fill(
+                    child: RainCallOverlay(
+                      state: state,
+                      surface: CallSurfaceState.visible(
+                        peerId: 'bob',
+                        callId: state.callId,
+                        mediaMode: mediaMode,
+                      ),
+                      displayName: 'Bob',
+                      onAccept: () => accepted = true,
+                      onReject: () => rejected = true,
+                      onHangUp: () {},
+                      onRetry: () {},
+                      onToggleMute: () {},
+                      onMinimize: () {},
+                      onExpand: () {},
+                    ),
+                  ),
+                ],
+              ),
+            ),
+          ),
+        );
+        await tester.pumpAndSettle();
+
+        final acceptFinder = find.byKey(
+          const ValueKey<String>('rain-call-accept-button'),
+        );
+        final rejectFinder = find.byKey(
+          const ValueKey<String>('rain-call-reject-button'),
+        );
+        final acceptRect = tester.getRect(acceptFinder);
+        final rejectRect = tester.getRect(rejectFinder);
+
+        expect(acceptRect.width, greaterThan(0));
+        expect(acceptRect.height, greaterThanOrEqualTo(48));
+        expect(rejectRect.width, greaterThan(0));
+        expect(rejectRect.height, greaterThanOrEqualTo(48));
+        expect(acceptRect.top, greaterThanOrEqualTo(0));
+        expect(rejectRect.top, greaterThanOrEqualTo(0));
+        expect(acceptRect.bottom, lessThanOrEqualTo(size.height));
+        expect(rejectRect.bottom, lessThanOrEqualTo(size.height));
+
+        await tester.tap(acceptFinder);
+        await tester.tap(rejectFinder);
+        expect(accepted, isTrue);
+        expect(rejected, isTrue);
+      }
+    }
   });
 
   testWidgets('call overlay failure shows retry and sanitized detail', (
