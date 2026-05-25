@@ -1,145 +1,196 @@
 # Rain
 
+Private peer chat for Android and Windows.
+
 ![Rain Peer Core preview](apps/rain/assets/branding/generated/peer_core_preview_sheet.png)
 
 [![CI](https://github.com/EslamNabawy/Rain/actions/workflows/ci.yml/badge.svg)](https://github.com/EslamNabawy/Rain/actions/workflows/ci.yml)
 [![Main merge gate](https://github.com/EslamNabawy/Rain/actions/workflows/main-merge-gate.yml/badge.svg)](https://github.com/EslamNabawy/Rain/actions/workflows/main-merge-gate.yml)
 [![Build apps](https://github.com/EslamNabawy/Rain/actions/workflows/build-artifacts.yml/badge.svg)](https://github.com/EslamNabawy/Rain/actions/workflows/build-artifacts.yml)
 
-Rain is a private peer-to-peer chat app for Android and Windows.
+Rain is a focused peer-to-peer messenger for people who already trust each
+other. It keeps the product surface small: accepted friends, direct chat, file
+transfer, voice calls, video calls, and clear connection state.
 
-It is built for accepted friends who want a clean, direct way to talk, send
-files, and start voice or video calls without a feed, public profile game, or
-social-network noise. The app focuses on one relationship at a time: who you are
-talking to, whether the peer link is healthy, and what action is safe right now.
+No public feed. No follower graph. No noisy social layer. The app is built
+around one question: can this peer lane safely carry the thing the user is
+trying to do right now?
 
-## What Rain Does
+## Why Rain Exists
 
-| Area | Capability |
+Most chat apps hide the transport behind vague online indicators. Rain exposes
+the important parts without turning the UI into a network console:
+
+| User Need | Rain Behavior |
 | --- | --- |
-| Private friends | Username accounts, friend requests, accepted friendships, blocking, and search |
-| Chat | Ordered peer messages with ACKs, local queueing, retry, and recovery |
-| Connection visibility | Direct/relay route status, peer presence, diagnostics, and clear offline states |
-| Voice calls | One-to-one audio calls with microphone handling, mute, deafen, and output routing |
-| Video calls | One-to-one camera calls with dedicated media connections and fullscreen call UI |
-| File transfer | Offer, accept/reject, chunked transfer, progress, cancel, and export |
-| Safety rules | One active call globally, call/file conflict blocking, stale call cleanup |
-| Polish | Rain visual identity, Peer Core mark, ripple halo states, and sound settings |
+| Know if a friend is reachable | Shows accepted friends, presence, direct/relay route state, and offline blocks |
+| Send messages reliably | Queues, ACKs, retries, and keeps local conversation state in Drift |
+| Move files peer to peer | Uses explicit offer/accept, chunk progress, cancel, and export flows |
+| Start calls safely | Uses dedicated voice/video call state, Firebase call locks, and WebRTC media |
+| Avoid confusing recovery | Manual Disconnect means stay disconnected until the user presses Connect |
+| Test builds quickly | Publishes separate v7a, v8/v9, and Windows artifacts for device testing |
 
-Rain currently targets foreground use on Android phones and Windows desktop.
-Background ringing, push call wakeups, group calls, web, Linux, and macOS are
-outside the maintained release scope right now.
+Rain should feel quiet, premium, and controlled: dark ink surfaces, cyan/mint
+signal accents, restrained motion, and direct messages when something is
+offline, busy, blocked, stale, or unsafe.
 
-## Product Direction
+## Current Scope
 
-Rain should feel like a private signal between people who already know each
-other:
+Maintained targets:
 
-- calm dark surfaces instead of busy feed layouts
-- cyan and mint signal accents instead of loud notification chrome
-- clear user actions instead of hidden automatic behavior
-- explicit errors when a peer is offline, busy, disconnected, or blocked
-- app-level call controls that keep chat usable without losing call state
+- Android phones
+- Windows desktop
 
-The important UX rule is simple: the app should never leave the user guessing
-whether they are connected, calling, transferring, muted, blocked, or offline.
+Working feature areas:
 
-## How It Works
+- username sign-in and account ownership
+- friend search, requests, accepted friendships, and blocking
+- peer chat over WebRTC data channels
+- connection diagnostics and direct/relay visibility
+- one-to-one file transfer
+- one-to-one voice calls
+- one-to-one video calls
+- global call/file conflict guards
+- Android ARM v7 and ARM v8/v9 release artifacts
+- Windows portable release artifact
 
-Rain separates chat/data transport from call media.
+Not in scope yet:
 
-```text
-Firebase:
-  account identity
-  presence
-  friendship state
-  encrypted SDP/ICE signaling
-  ephemeral call locks and inbox pointers
+- push-notification call wakeups
+- background Android call service
+- group calls
+- web, Linux, or macOS releases
+- formal third-party security audit
+- app-store packaging
 
-WebRTC data peer connection:
-  rain.chat    message envelopes
-  rain.ctrl    ACKs and control frames
-  rain.file    file transfer frames
+## Architecture At A Glance
 
-WebRTC media peer connection:
-  microphone/camera tracks
-  RTP/RTCP media
-  DTLS-SRTP transport
-```
-
-Chat messages and file bytes are not stored in Firebase signaling rooms.
-Firebase coordinates who can connect and exchanges signaling data; WebRTC carries
-the real peer traffic.
-
-## Architecture
-
-Rain is a Flutter monorepo with small ownership boundaries.
-
-```text
-apps/rain/               Flutter Android and Windows app
-packages/rain_core/      Drift storage, identity, friends, messages, files
-packages/protocol_brain/ Firebase signaling, sessions, retry, call contracts
-packages/peer_core/      WebRTC data/media primitives and platform bridge
-backend/firebase/        Realtime Database rules and cleanup functions
-docs/                    Architecture, QA, release, and planning notes
-scripts/                 Local automation and release helpers
-```
-
-Runtime ownership:
+Rain separates app state, signaling, data transport, media transport, and local
+storage. That split matters because chat can stay alive while media calls fail,
+end, or restart.
 
 ```mermaid
 flowchart LR
-  UI["Flutter UI"] --> State["Riverpod providers"]
-  State --> Runtime["Rain runtime controllers"]
-  Runtime --> Core["rain_core stores"]
-  Runtime --> Brain["protocol_brain sessions"]
-  Brain --> Peer["peer_core WebRTC"]
-  Runtime --> Firebase["Firebase backend"]
+  User["User action"] --> UI["Flutter UI"]
+  UI --> Providers["Riverpod providers"]
+  Providers --> Runtime["Runtime controllers"]
+  Runtime --> Core["rain_core\nDrift, identity, messages, files"]
+  Runtime --> Brain["protocol_brain\nsignaling, sessions, retries"]
+  Brain --> Peer["peer_core\nWebRTC data/media"]
+  Runtime --> Firebase["Firebase\npresence, rooms, call locks"]
   Peer --> Device["Peer device"]
   Firebase --> Device
 ```
 
-The main rule: UI renders state, runtime owns side effects, `protocol_brain`
-owns signaling/session policy, `peer_core` owns raw WebRTC behavior, and
-`rain_core` owns local persistence rules.
+Ownership rules:
+
+- UI renders state and forwards explicit intent.
+- Runtime controllers own side effects and conflict decisions.
+- `rain_core` owns persistence, identity, friends, messages, and files.
+- `protocol_brain` owns signaling/session policy and Firebase contracts.
+- `peer_core` owns WebRTC primitives, data channels, media tracks, and platform
+  bridges.
+- Firebase coordinates presence, friendship, SDP/ICE exchange, and temporary
+  call locks. It is not the chat message store.
+
+## Transport Model
+
+```text
+Firebase Realtime Database
+  users, presence, friendships, blocks
+  data-peer signaling rooms
+  voice/video call rooms
+  active pair locks
+  active user locks
+  terminal cleanup support
+
+WebRTC data peer connection
+  rain.chat    message envelopes
+  rain.ctrl    ACKs, control frames, diagnostics
+  rain.file    file transfer frames
+
+WebRTC media peer connection
+  microphone tracks
+  camera tracks
+  RTP/RTCP media
+  DTLS-SRTP transport
+```
+
+Calls use a dedicated media path so a failed camera or microphone negotiation
+does not have to destroy the chat/data lane.
+
+## Runtime Guarantees
+
+These are product rules the app is expected to enforce:
+
+- A user can have multiple peer chat lanes, but only one active/ringing call.
+- Incoming calls during an active call return busy instead of opening a second
+  call UI.
+- Active calls block new file sends and incoming file accepts.
+- Active file transfers block starting or accepting calls.
+- Failed/stale calls must release their Firebase pair and user locks.
+- Pressing Disconnect records local manual intent and disables automatic
+  reconnect for that peer.
+- Network loss does not count as a manual disconnect.
+- Closing the app should release runtime resources and stop active connections.
+- Offline peers are blocked before Connect starts a spinner.
 
 ## Repository Map
+
+| Path | Purpose |
+| --- | --- |
+| [apps/rain](apps/rain) | Flutter Android and Windows app |
+| [packages/rain_core](packages/rain_core) | Drift storage, identity, friends, messages, file metadata, frame models |
+| [packages/protocol_brain](packages/protocol_brain) | Firebase signaling, peer sessions, retry policy, call contracts |
+| [packages/peer_core](packages/peer_core) | WebRTC data/media primitives and platform bridge |
+| [backend/firebase](backend/firebase) | Realtime Database rules and cleanup functions |
+| [scripts](scripts) | Build, icon sync, Firebase emulator, and release helpers |
+| [docs/architecture](docs/architecture) | Connection algorithms, widget map, app context, architecture notes |
+| [docs/qa](docs/qa) | Manual gates and release validation records |
+| [docs/superpowers](docs/superpowers) | Planning specs used during feature development |
+
+Useful starting documents:
 
 - [Connection algorithms](docs/architecture/connection-algorithms.md)
 - [Widget map](docs/architecture/widget-map.md)
 - [App context](docs/architecture/app-context.md)
-- [Firebase backend](backend/firebase/README.md)
-- [Manual video-call gate](docs/qa/video-call-manual-device-gate.md)
-- [Build artifacts workflow](.github/workflows/build-artifacts.yml)
+- [GitHub CI/CD guide](docs/github-ci-cd.md)
+- [Firebase backend guide](backend/firebase/README.md)
+- [Video-call manual device gate](docs/qa/video-call-manual-device-gate.md)
 
 ## Quick Start
 
-Prerequisites:
+Required local tools:
 
 - Flutter `3.44.0`
 - Dart SDK compatible with `^3.10.4`
-- Melos `7.x`
-- Windows desktop toolchain for Windows runs
-- Android SDK cmdline-tools and accepted licenses for Android builds
+- JDK 21 for Android builds
+- Android SDK cmdline-tools for Android builds
+- Windows desktop toolchain for Windows builds
 - Firebase CLI for backend deployment
 
-Bootstrap and validate the workspace:
+Install workspace dependencies:
 
 ```powershell
 dart pub get
 dart run melos bootstrap
+```
+
+Run static analysis and tests:
+
+```powershell
 dart run melos run analyze
 dart run melos run test
 ```
 
-Run the app in local noop/demo mode:
+Run the Windows app with the checked-in demo defines:
 
 ```powershell
 cd apps/rain
-flutter run -d windows --dart-define=RAIN_BACKEND=noop
+flutter run -d windows --dart-define-from-file=tool/dart_defines.example.json
 ```
 
-Run with Firebase defines:
+Use local overrides when needed:
 
 ```powershell
 cd apps/rain
@@ -147,21 +198,20 @@ Copy-Item tool/dart_defines.example.json tool/dart_defines.local.json
 flutter run -d windows --dart-define-from-file=tool/dart_defines.local.json
 ```
 
-Do not commit `apps/rain/tool/dart_defines.local.json`. It is ignored because
-local define files may contain project-specific secrets.
+Do not commit `apps/rain/tool/dart_defines.local.json`.
 
-## Firebase Setup
+## Backend Setup
 
 Rain's maintained backend is Firebase.
 
-Enable:
+Enable these Firebase products:
 
-- Firebase Auth
+- Authentication
 - Realtime Database
 - Remote Config
 - Cloud Functions
 
-Deploy backend assets:
+Deploy backend rules and functions:
 
 ```powershell
 cd backend/firebase
@@ -175,16 +225,21 @@ cd ..
 firebase deploy --only functions
 ```
 
-Backend data is intentionally split:
+Important database paths:
 
-- `users/<username>` stores identity ownership and presence
-- `friendRequests/<to>/<from>` stores request inboxes
-- `rooms/<roomId>` stores temporary data-peer signaling
-- `voiceCalls/<callId>` stores temporary call signaling state
-- `activeVoicePairs/<pairId>` and `activeVoiceUsers/<username>` enforce call locks
+| Path | Purpose |
+| --- | --- |
+| `users/<username>` | account ownership and presence |
+| `friendRequests/<to>/<from>` | friend request inbox |
+| `friendships/<a>/<b>` | accepted friendship edges |
+| `blocks/<blocker>/<blocked>` | block enforcement |
+| `rooms/<pairId>` | temporary data-peer signaling |
+| `voiceCalls/<callId>` | temporary voice/video signaling state |
+| `activeVoicePairs/<pairId>` | same-pair call lock |
+| `activeVoiceUsers/<username>` | cross-peer user call lock |
 
-Voice call rooms are not call history. Cleanup functions remove abandoned rooms,
-inbox pointers, stale presence, and terminal call locks.
+Cleanup functions remove expired rooms, stale presence, abandoned call rooms,
+and terminal call locks.
 
 ## Dart Defines
 
@@ -193,19 +248,21 @@ Common compile-time keys:
 | Key | Purpose |
 | --- | --- |
 | `RAIN_BACKEND` | `firebase` or `noop` |
-| `RAIN_SIGNALING_ENCRYPTION_KEY` | Key material for encrypted signaling payloads |
+| `RAIN_BACKGROUND_HEARTBEAT_SECONDS` | foreground presence heartbeat interval |
+| `RAIN_ALLOW_PUBLIC_TURN` | demo-only switch for public TURN |
+| `RAIN_TURN_BROKER_URL` | optional production TURN credential broker |
 | `RAIN_ICE_SERVERS` | JSON array of WebRTC ICE server objects |
-| `RAIN_ALLOW_PUBLIC_TURN` | Local/demo-only escape hatch for public TURN |
-| `RAIN_TURN_BROKER_URL` | Optional production TURN credential broker |
-| `RAIN_UPDATE_URL` | Force-update fallback URL |
+| `RAIN_SIGNALING_ENCRYPTION_KEY` | key material for encrypted signaling payloads |
+| `RAIN_UPDATE_URL` | fallback update/release URL |
 | `FIREBASE_DATABASE_URL` | Firebase Realtime Database URL |
 
-Production release builds must not use demo signaling keys. Production Android
-builds also require release signing secrets in GitHub Actions.
+Production release builds intentionally reject the demo signaling encryption
+key and public OpenRelay TURN configuration unless the build path is explicitly
+marked as demo.
 
-## Build And Test Artifacts
+## Test Builds For Devices
 
-For direct Android and Windows test downloads, run the manual workflow:
+For phone testing, use the manual GitHub workflow instead of building locally:
 
 ```powershell
 gh workflow run build-artifacts.yml `
@@ -215,14 +272,37 @@ gh workflow run build-artifacts.yml `
   -f publish_test_release=true
 ```
 
-The workflow publishes direct pre-release assets:
+When `publish_test_release` is enabled, the workflow creates a `rain-test-*`
+GitHub pre-release with direct downloads:
 
-- `Rain-Demo-Android-v7a.apk`
-- `Rain-Demo-Android-v8-v9.apk`
-- `Rain-Demo-Windows-x64.zip`
+| Artifact | Intended Device |
+| --- | --- |
+| `Rain-Demo-Android-v7a.apk` | older ARM v7 Android phones |
+| `Rain-Demo-Android-v8-v9.apk` | modern ARM64 Android phones |
+| `Rain-Demo-Windows-x64.zip` | Windows x64 test machines |
 
-Production release artifacts are built through `.github/workflows/release.yml`
-and require production dart defines plus Android signing secrets.
+The same workflow can build production artifacts when the required production
+secrets are configured.
+
+## Production Release Requirements
+
+Production Android builds require these GitHub Actions secrets:
+
+- `RAIN_RELEASE_DART_DEFINES_JSON`
+- `RAIN_RELEASE_KEYSTORE_BASE64`
+- `RAIN_RELEASE_STORE_PASSWORD`
+- `RAIN_RELEASE_KEY_ALIAS`
+- `RAIN_RELEASE_KEY_PASSWORD`
+
+`RAIN_RELEASE_DART_DEFINES_JSON` must include a non-demo
+`RAIN_SIGNALING_ENCRYPTION_KEY` and either `RAIN_TURN_BROKER_URL` or
+project-owned TURN/TURNS entries in `RAIN_ICE_SERVERS`.
+
+The release workflow publishes:
+
+- `Rain-windows-portable.zip`
+- `Rain-release-android-armeabi-v7a.apk`
+- `Rain-release-android-arm64-v8a.apk`
 
 ## Validation Policy
 
@@ -234,42 +314,51 @@ dart run melos run analyze
 dart run melos run test
 ```
 
-Call, media, connection, or release changes also require real-device proof:
+Connection, call, media, Firebase, or release changes also require manual
+device validation:
 
-- Android to Android chat and calls
-- Android to Windows chat and calls
-- Windows to Android chat and calls
+- Android to Android chat, file, voice, and video checks
+- Android to Windows chat, file, voice, and video checks
+- Windows to Android call initiation
 - direct and relay route behavior when possible
 - app close during connection and during calls
-- disconnect/reconnect intent behavior
+- manual Disconnect followed by network recovery
 - repeated calls without app restart
-- file transfer blocking during active calls
-- Android v7 and v8/v9 APK install checks
-- Windows portable app launch check
+- file transfer blocked during active calls
+- call blocked during active file transfer
+- Android v7a APK install
+- Android v8/v9 APK install
+- Windows portable launch
 
-Automated tests protect the logic. Real devices prove the WebRTC, permission,
-audio, camera, and OS integration behavior.
+Automated tests protect logic. Real devices prove WebRTC, permissions, audio,
+camera, routing, lifecycle, and OS integration.
 
-## Security And Privacy Notes
+## Security And Privacy Boundaries
 
-- Firebase signaling rooms do not store chat message bodies.
+Rain is designed to minimize what Firebase carries, but this README is not a
+security audit.
+
+- Chat message bodies and file bytes are intended to move over WebRTC, not
+  Firebase rooms.
+- Firebase rules enforce authenticated ownership, friendship, block checks, and
+  call lock permissions.
 - SDP and ICE signaling payloads are encrypted before storage.
-- WebRTC carries peer traffic over encrypted transport.
-- Blocking and friendship checks are enforced in the app and Firebase rules.
-- Release builds reject demo signaling keys.
-- No README should be treated as a formal security audit or cryptographic
-  guarantee.
+- WebRTC media and data channels use encrypted transports.
+- Production builds reject known demo signaling keys.
+- TURN reliability and metadata exposure depend on the configured TURN
+  infrastructure.
 
-## Current Constraints
+## Development Notes
 
-- One active voice/video call globally.
-- One-to-one calls only.
-- Android and Windows are the maintained targets.
-- The app is designed for foreground calling.
-- TURN reliability depends on configured ICE/TURN infrastructure.
-- Manual device validation remains required before trusting a release build.
+- Keep runtime backends limited to Firebase and noop unless the architecture is
+  explicitly changed.
+- Keep manual disconnect intent separate from network loss and automatic
+  recovery.
+- Keep call UI surfaces driven by one shared call-control model.
+- Keep media connection teardown separate from chat/data teardown.
+- Keep docs, Firebase rules, fake adapters, and tests aligned when signaling
+  schema changes.
 
 ## License
 
-No root repository license file is currently declared. Individual packages may
-carry their own license files.
+No root repository license file is currently declared.
