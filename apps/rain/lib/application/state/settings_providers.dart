@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import 'package:rain/application/runtime/media_device_settings.dart';
+import 'package:rain/application/runtime/voice_call_state.dart';
 import 'package:rain/infrastructure/services/app_settings_store.dart';
 import 'core_providers.dart';
 
@@ -226,4 +227,66 @@ class VoiceAudioSettingsController extends AsyncNotifier<AppAudioSettings> {
       Error.throwWithStackTrace(error, stackTrace);
     }
   }
+}
+
+final audioOutputCapabilityProvider =
+    AsyncNotifierProvider<
+      AudioOutputCapabilityController,
+      AudioOutputCapabilityState
+    >(AudioOutputCapabilityController.new);
+
+class AudioOutputCapabilityController
+    extends AsyncNotifier<AudioOutputCapabilityState> {
+  @override
+  Future<AudioOutputCapabilityState> build() async {
+    final settings = await ref.watch(voiceAudioSettingsProvider.future);
+    return ref
+        .watch(mediaDeviceSettingsProvider)
+        .loadAudioOutputCapabilities(
+          selectedRoute: _voiceCallOutputRoute(
+            settings.defaultOutputPreference,
+          ),
+        );
+  }
+
+  Future<void> refresh() async {
+    state = const AsyncValue.loading();
+    state = await AsyncValue.guard(_load);
+  }
+
+  Future<AudioOutputCapabilityState> reload() async {
+    final previous = state.value;
+    state = const AsyncValue.loading();
+    final next = await AsyncValue.guard(_load);
+    state = next;
+    if (next.hasValue) {
+      return next.requireValue;
+    }
+    if (previous != null) {
+      state = AsyncValue.data(previous);
+    }
+    Error.throwWithStackTrace(next.error!, next.stackTrace!);
+  }
+
+  Future<AudioOutputCapabilityState> _load() async {
+    final settings = await ref.read(voiceAudioSettingsProvider.future);
+    return ref
+        .read(mediaDeviceSettingsProvider)
+        .loadAudioOutputCapabilities(
+          selectedRoute: _voiceCallOutputRoute(
+            settings.defaultOutputPreference,
+          ),
+        );
+  }
+}
+
+VoiceCallOutputRoute _voiceCallOutputRoute(
+  CallAudioOutputPreference preference,
+) {
+  return switch (preference) {
+    CallAudioOutputPreference.systemDefault =>
+      VoiceCallOutputRoute.systemDefault,
+    CallAudioOutputPreference.speaker => VoiceCallOutputRoute.speaker,
+    CallAudioOutputPreference.bluetooth => VoiceCallOutputRoute.bluetooth,
+  };
 }

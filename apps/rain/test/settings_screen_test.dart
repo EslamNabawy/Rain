@@ -97,8 +97,39 @@ void main() {
 
   testWidgets(
     'settings microphone picker shows real audio inputs including wired headset labels',
-    (WidgetTester tester) async {},
-    skip: true,
+    (WidgetTester tester) async {
+      final harness = _SettingsHarness(
+        platformBridge: _FakePlatformBridge()
+          ..devices = <MediaDeviceInfo>[
+            MediaDeviceInfo(
+              deviceId: 'built-in-mic',
+              label: 'Built-in microphone',
+              kind: 'audioinput',
+            ),
+            MediaDeviceInfo(
+              deviceId: 'wired-headset-mic',
+              label: 'USB-C Wired Headset Microphone',
+              kind: 'audioinput',
+            ),
+          ],
+      );
+      addTearDown(harness.dispose);
+
+      await tester.pumpSettingsScreen(harness: harness);
+      await tester.tap(find.byTooltip('Choose microphone'));
+      await tester.pumpSettingsFrame();
+
+      expect(find.text('Built-in microphone'), findsOneWidget);
+      expect(find.text('USB-C Wired Headset Microphone'), findsOneWidget);
+
+      await tester.tap(find.text('USB-C Wired Headset Microphone').last);
+      await tester.pumpSettingsFrame();
+
+      expect(
+        await AppSettingsStore().loadSelectedMicrophoneDeviceId(),
+        'wired-headset-mic',
+      );
+    },
   );
 
   testWidgets('camera selection persists from settings', (

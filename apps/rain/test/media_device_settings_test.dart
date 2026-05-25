@@ -92,6 +92,84 @@ void main() {
     },
   );
 
+  test('device model classifies audio labels by transport hints', () {
+    const bluetoothOutput = RainMediaDevice(
+      deviceId: 'airpods-output',
+      label: 'AirPods Pro Bluetooth',
+      kind: audioOutputDeviceKind,
+    );
+    const wiredOutput = RainMediaDevice(
+      deviceId: 'usb-output',
+      label: 'USB-C Wired Headset',
+      kind: audioOutputDeviceKind,
+    );
+    const wiredInput = RainMediaDevice(
+      deviceId: 'usb-mic',
+      label: 'USB-C Wired Headset Microphone',
+      kind: audioInputDeviceKind,
+    );
+    const hiddenLabelInput = RainMediaDevice(
+      deviceId: 'default-mic',
+      label: '',
+      kind: audioInputDeviceKind,
+    );
+
+    expect(bluetoothOutput.isBluetoothAudioOutput, isTrue);
+    expect(bluetoothOutput.isWiredAudioOutput, isFalse);
+    expect(wiredOutput.isWiredAudioOutput, isTrue);
+    expect(wiredOutput.isBluetoothAudioOutput, isFalse);
+    expect(wiredInput.isWiredAudioInput, isTrue);
+    expect(wiredInput.isHeadsetAudioInput, isTrue);
+    expect(hiddenLabelInput.isHeadsetAudioInput, isFalse);
+  });
+
+  test(
+    'audio output capabilities expose typed route and output hints',
+    () async {
+      final platform = _FakePlatformBridge()
+        ..devices = <MediaDeviceInfo>[
+          MediaDeviceInfo(
+            deviceId: 'mic-1',
+            label: 'Desk mic',
+            kind: audioInputDeviceKind,
+          ),
+          MediaDeviceInfo(
+            deviceId: 'speaker-1',
+            label: 'Built-in Speaker',
+            kind: audioOutputDeviceKind,
+          ),
+          MediaDeviceInfo(
+            deviceId: 'bluetooth-1',
+            label: 'Galaxy Buds2 Bluetooth',
+            kind: audioOutputDeviceKind,
+          ),
+          MediaDeviceInfo(
+            deviceId: 'wired-1',
+            label: 'USB Headphones',
+            kind: audioOutputDeviceKind,
+          ),
+        ];
+      final store = AppSettingsStore();
+      final service = MediaDeviceSettings(
+        platformBridge: platform,
+        settingsStore: store,
+      );
+
+      await store.setDefaultCallAudioOutputPreference(
+        CallAudioOutputPreference.bluetooth,
+      );
+      final state = await service.loadAudioOutputCapabilities();
+
+      expect(
+        state.devices.map((RainMediaDevice device) => device.deviceId),
+        <String>['speaker-1', 'bluetooth-1', 'wired-1'],
+      );
+      expect(state.selectedRoute, VoiceCallOutputRoute.bluetooth);
+      expect(state.hasBluetoothOutput, isTrue);
+      expect(state.hasWiredOutput, isTrue);
+    },
+  );
+
   test('selected microphone persists and resolves when available', () async {
     final platform = _FakePlatformBridge()
       ..devices = <MediaDeviceInfo>[

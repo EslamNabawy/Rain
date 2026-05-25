@@ -3,6 +3,7 @@ import 'dart:async';
 import 'package:flutter_webrtc/flutter_webrtc.dart';
 
 import '../models.dart';
+import '../platform_bridge.dart';
 import 'call_media_models.dart';
 
 const Map<String, dynamic> _audioSdpConstraints = <String, dynamic>{
@@ -670,11 +671,7 @@ class DefaultCallMediaConnection implements CallMediaConnection {
     try {
       final devices = await _config.platform.enumerateMediaDevices();
       final audioInputs = devices
-          .where(
-            (MediaDeviceInfo device) =>
-                device.kind == 'audioinput' &&
-                device.deviceId.trim().isNotEmpty,
-          )
+          .where((MediaDeviceInfo device) => device.isAudioInputDevice)
           .toList(growable: false);
       if (audioInputs.isNotEmpty &&
           !audioInputs.any(
@@ -714,11 +711,7 @@ class DefaultCallMediaConnection implements CallMediaConnection {
     try {
       final devices = await _config.platform.enumerateMediaDevices();
       final videoInputs = devices
-          .where(
-            (MediaDeviceInfo device) =>
-                device.kind == 'videoinput' &&
-                device.deviceId.trim().isNotEmpty,
-          )
+          .where((MediaDeviceInfo device) => device.isVideoInputDevice)
           .toList(growable: false);
       if (videoInputs.isNotEmpty &&
           !videoInputs.any(

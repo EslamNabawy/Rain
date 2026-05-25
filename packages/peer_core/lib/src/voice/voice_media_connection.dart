@@ -4,6 +4,7 @@ import 'dart:math' as math;
 import 'package:flutter_webrtc/flutter_webrtc.dart';
 
 import '../models.dart';
+import '../platform_bridge.dart';
 import 'voice_media_models.dart';
 
 const Map<String, dynamic> _voiceSdpConstraints = <String, dynamic>{
@@ -516,10 +517,7 @@ class DefaultVoiceMediaConnection implements VoiceMediaConnection {
     try {
       final devices = await _config.platform.enumerateMediaDevices();
       final audioInputs = devices
-          .where((device) {
-            return device.kind == 'audioinput' &&
-                device.deviceId.trim().isNotEmpty;
-          })
+          .where((device) => device.isAudioInputDevice)
           .toList(growable: false);
       if (audioInputs.isNotEmpty &&
           !audioInputs.any((device) => device.deviceId == selected)) {

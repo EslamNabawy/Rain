@@ -20,7 +20,7 @@ enum RainMediaDeviceKind {
   final String fallbackLabel;
 
   static RainMediaDeviceKind fromPlatformKind(String? kind) {
-    final normalized = kind?.trim();
+    final normalized = kind?.trim().toLowerCase();
     for (final value in RainMediaDeviceKind.values) {
       if (value.platformKind == normalized && value != unknown) {
         return value;
@@ -55,6 +55,46 @@ final class RainMediaDevice {
   bool get isVideoInput => typedKind == RainMediaDeviceKind.videoInput;
 
   bool get hasPermissionLabel => label.trim().isNotEmpty;
+
+  bool get isBluetoothAudioOutput {
+    if (!isAudioOutput || !hasPermissionLabel) {
+      return false;
+    }
+    final tokens = _labelTokens(label);
+    return _hasAnyToken(tokens, _bluetoothAudioTokens);
+  }
+
+  bool get isWiredAudioOutput {
+    if (!isAudioOutput || !hasPermissionLabel) {
+      return false;
+    }
+    final tokens = _labelTokens(label);
+    return _hasAnyToken(tokens, _wiredAudioTokens);
+  }
+
+  bool get isBluetoothAudioInput {
+    if (!isAudioInput || !hasPermissionLabel) {
+      return false;
+    }
+    final tokens = _labelTokens(label);
+    return _hasAnyToken(tokens, _bluetoothAudioTokens);
+  }
+
+  bool get isWiredAudioInput {
+    if (!isAudioInput || !hasPermissionLabel) {
+      return false;
+    }
+    final tokens = _labelTokens(label);
+    return _hasAnyToken(tokens, _wiredAudioTokens);
+  }
+
+  bool get isHeadsetAudioInput {
+    if (!isAudioInput || !hasPermissionLabel) {
+      return false;
+    }
+    final tokens = _labelTokens(label);
+    return _hasAnyToken(tokens, _headsetAudioTokens);
+  }
 
   RainCameraFacing get cameraFacing {
     if (!isVideoInput || !hasPermissionLabel) {
@@ -184,6 +224,22 @@ final class VideoInputCapabilityState {
   }
 }
 
+final class AudioOutputCapabilityState {
+  const AudioOutputCapabilityState({
+    required this.devices,
+    this.selectedRoute = VoiceCallOutputRoute.systemDefault,
+  });
+
+  final List<RainMediaDevice> devices;
+  final VoiceCallOutputRoute selectedRoute;
+
+  bool get hasBluetoothOutput =>
+      devices.any((RainMediaDevice device) => device.isBluetoothAudioOutput);
+
+  bool get hasWiredOutput =>
+      devices.any((RainMediaDevice device) => device.isWiredAudioOutput);
+}
+
 final class StartupMediaPermissionWarmupResult {
   const StartupMediaPermissionWarmupResult({
     required this.microphoneReady,
@@ -300,6 +356,18 @@ class MediaDeviceSettings {
       selectedDeviceId: selectedDeviceId,
       missingSelectedDeviceId: missingSelectedDeviceId,
     );
+  }
+
+  Future<AudioOutputCapabilityState> loadAudioOutputCapabilities({
+    VoiceCallOutputRoute? selectedRoute,
+  }) async {
+    final devices = await loadAudioOutputDevices();
+    final route =
+        selectedRoute ??
+        _voiceCallOutputRouteFromPreference(
+          await settingsStore.loadDefaultCallAudioOutputPreference(),
+        );
+    return AudioOutputCapabilityState(devices: devices, selectedRoute: route);
   }
 
   Future<void> selectMicrophone(String? deviceId) async {
@@ -456,4 +524,43 @@ bool _hasAnyToken(Set<String> tokens, Set<String> candidates) {
     }
   }
   return false;
+}
+
+const Set<String> _bluetoothAudioTokens = <String>{
+  'airpods',
+  'bluetooth',
+  'bt',
+  'buds',
+  'earbuds',
+  'handsfree',
+  'wireless',
+};
+
+const Set<String> _wiredAudioTokens = <String>{
+  'cable',
+  'earphones',
+  'earpods',
+  'headphones',
+  'headset',
+  'jack',
+  'usb',
+  'wired',
+};
+
+const Set<String> _headsetAudioTokens = <String>{
+  ..._bluetoothAudioTokens,
+  ..._wiredAudioTokens,
+  'mic',
+  'microphone',
+};
+
+VoiceCallOutputRoute _voiceCallOutputRouteFromPreference(
+  CallAudioOutputPreference preference,
+) {
+  return switch (preference) {
+    CallAudioOutputPreference.systemDefault =>
+      VoiceCallOutputRoute.systemDefault,
+    CallAudioOutputPreference.speaker => VoiceCallOutputRoute.speaker,
+    CallAudioOutputPreference.bluetooth => VoiceCallOutputRoute.bluetooth,
+  };
 }

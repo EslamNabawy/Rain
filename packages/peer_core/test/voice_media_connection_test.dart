@@ -114,6 +114,37 @@ void main() {
   });
 
   test(
+    'dedicated voice media normalizes device kind before selected mic validation',
+    () async {
+      final platform = _FakeVoicePlatformBridge()
+        ..mediaDevices = <MediaDeviceInfo>[
+          MediaDeviceInfo(
+            deviceId: 'external-mic',
+            label: 'USB headset microphone',
+            kind: ' AudioInput ',
+          ),
+        ];
+      final connection = DefaultVoiceMediaConnection(
+        config: PeerConfig(
+          iceServers: const <Map<String, dynamic>>[],
+          platform: platform,
+          selectedAudioInputDeviceIdProvider: () async => 'external-mic',
+        ),
+      );
+
+      await connection.startLocalAudio();
+
+      expect(platform.selectedAudioInputs, <String>['external-mic']);
+      expect(
+        platform.userMediaConstraints.single['audio'],
+        containsPair('deviceId', 'external-mic'),
+      );
+
+      await connection.dispose();
+    },
+  );
+
+  test(
     'dedicated voice media falls back when selected mic is missing',
     () async {
       final platform = _FakeVoicePlatformBridge()
