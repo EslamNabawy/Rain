@@ -1,7 +1,9 @@
 import 'package:flutter_riverpod/flutter_riverpod.dart';
+import 'package:flutter/widgets.dart';
 
 import 'package:rain/application/runtime/voice_call_state.dart';
 
+import 'call_surface_geometry.dart';
 import 'runtime_providers.dart';
 
 enum CallSurfaceMode { managerOnly, expanded, fullscreen, pip }
@@ -24,6 +26,8 @@ class CallSurfaceState {
     required this.restoreMode,
     required this.mediaMode,
     this.videoPrimaryRole = VideoPrimaryRole.remote,
+    this.floatingOffset,
+    this.lastViewportSize,
     this.peerId,
     this.callId,
   });
@@ -34,6 +38,8 @@ class CallSurfaceState {
       restoreMode = CallSurfaceMode.expanded,
       mediaMode = CallMediaMode.audio,
       videoPrimaryRole = VideoPrimaryRole.remote,
+      floatingOffset = null,
+      lastViewportSize = null,
       peerId = null,
       callId = null;
 
@@ -44,6 +50,8 @@ class CallSurfaceState {
     this.restoreMode = CallSurfaceMode.expanded,
     this.mediaMode = CallMediaMode.audio,
     this.videoPrimaryRole = VideoPrimaryRole.remote,
+    this.floatingOffset,
+    this.lastViewportSize,
   }) : isVisible = true;
 
   final bool isVisible;
@@ -51,6 +59,8 @@ class CallSurfaceState {
   final CallSurfaceMode restoreMode;
   final CallMediaMode mediaMode;
   final VideoPrimaryRole videoPrimaryRole;
+  final Offset? floatingOffset;
+  final Size? lastViewportSize;
   final String? peerId;
   final String? callId;
 
@@ -92,6 +102,8 @@ class CallSurfaceState {
     CallSurfaceMode? restoreMode,
     CallMediaMode? mediaMode,
     VideoPrimaryRole? videoPrimaryRole,
+    Object? floatingOffset = _copyWithSentinel,
+    Object? lastViewportSize = _copyWithSentinel,
   }) {
     return CallSurfaceState(
       isVisible: isVisible ?? this.isVisible,
@@ -99,6 +111,12 @@ class CallSurfaceState {
       restoreMode: restoreMode ?? this.restoreMode,
       mediaMode: mediaMode ?? this.mediaMode,
       videoPrimaryRole: videoPrimaryRole ?? this.videoPrimaryRole,
+      floatingOffset: identical(floatingOffset, _copyWithSentinel)
+          ? this.floatingOffset
+          : floatingOffset as Offset?,
+      lastViewportSize: identical(lastViewportSize, _copyWithSentinel)
+          ? this.lastViewportSize
+          : lastViewportSize as Size?,
       peerId: peerId,
       callId: callId,
     );
@@ -111,6 +129,8 @@ class CallSurfaceState {
       restoreMode: _restoreModeForMediaMode(restoreMode, call.mediaMode),
       mediaMode: call.mediaMode,
       videoPrimaryRole: videoPrimaryRole,
+      floatingOffset: floatingOffset,
+      lastViewportSize: lastViewportSize,
       peerId: call.peerId,
       callId: call.callId,
     );
@@ -124,6 +144,8 @@ class CallSurfaceState {
         other.restoreMode == restoreMode &&
         other.mediaMode == mediaMode &&
         other.videoPrimaryRole == videoPrimaryRole &&
+        other.floatingOffset == floatingOffset &&
+        other.lastViewportSize == lastViewportSize &&
         other.peerId == peerId &&
         other.callId == callId;
   }
@@ -135,6 +157,8 @@ class CallSurfaceState {
     restoreMode,
     mediaMode,
     videoPrimaryRole,
+    floatingOffset,
+    lastViewportSize,
     peerId,
     callId,
   );
@@ -147,6 +171,8 @@ class CallSurfaceState {
         'restoreMode: $restoreMode, '
         'mediaMode: $mediaMode, '
         'videoPrimaryRole: $videoPrimaryRole, '
+        'floatingOffset: $floatingOffset, '
+        'lastViewportSize: $lastViewportSize, '
         'peerId: $peerId, '
         'callId: $callId'
         ')';
@@ -235,6 +261,75 @@ class CallSurfaceController extends Notifier<CallSurfaceState> {
         videoPrimaryRole: current.videoPrimaryRole == VideoPrimaryRole.remote
             ? VideoPrimaryRole.local
             : VideoPrimaryRole.remote,
+      ),
+    );
+  }
+
+  void moveFloatingPanel({
+    required Offset delta,
+    required Size viewportSize,
+    required EdgeInsets safePadding,
+    required Size panelSize,
+  }) {
+    final current = state;
+    if (!current.isVisible || current.mode != CallSurfaceMode.expanded) {
+      return;
+    }
+    final bounds = CallSurfaceBounds(
+      viewportSize: viewportSize,
+      safePadding: safePadding,
+      panelSize: panelSize,
+    );
+    final origin = current.floatingOffset ?? centeredCallSurfaceOffset(bounds);
+    _setState(
+      current.copyWith(
+        floatingOffset: clampCallSurfaceOffset(bounds, origin + delta),
+        lastViewportSize: viewportSize,
+      ),
+    );
+  }
+
+  void recenterFloatingPanel({
+    required Size viewportSize,
+    required EdgeInsets safePadding,
+    required Size panelSize,
+  }) {
+    final current = state;
+    if (!current.isVisible || current.mode != CallSurfaceMode.expanded) {
+      return;
+    }
+    final bounds = CallSurfaceBounds(
+      viewportSize: viewportSize,
+      safePadding: safePadding,
+      panelSize: panelSize,
+    );
+    _setState(
+      current.copyWith(
+        floatingOffset: centeredCallSurfaceOffset(bounds),
+        lastViewportSize: viewportSize,
+      ),
+    );
+  }
+
+  void clampFloatingPanel({
+    required Size viewportSize,
+    required EdgeInsets safePadding,
+    required Size panelSize,
+  }) {
+    final current = state;
+    if (!current.isVisible || current.mode != CallSurfaceMode.expanded) {
+      return;
+    }
+    final bounds = CallSurfaceBounds(
+      viewportSize: viewportSize,
+      safePadding: safePadding,
+      panelSize: panelSize,
+    );
+    final origin = current.floatingOffset ?? centeredCallSurfaceOffset(bounds);
+    _setState(
+      current.copyWith(
+        floatingOffset: clampCallSurfaceOffset(bounds, origin),
+        lastViewportSize: viewportSize,
       ),
     );
   }
@@ -336,6 +431,8 @@ class CallSurfaceController extends Notifier<CallSurfaceState> {
     return _restoreModeForMediaMode(state.restoreMode, state.mediaMode);
   }
 }
+
+const Object _copyWithSentinel = Object();
 
 CallSurfaceMode _modeForMediaMode(
   CallSurfaceMode mode,

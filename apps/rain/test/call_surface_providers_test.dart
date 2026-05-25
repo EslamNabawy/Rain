@@ -1,3 +1,4 @@
+import 'package:flutter/widgets.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:rain/application/runtime/voice_call_state.dart';
@@ -337,6 +338,95 @@ void main() {
     expect(harness.surface.isVisible, isTrue);
     expect(harness.surface.mode, CallSurfaceMode.managerOnly);
     expect(harness.surface.peerId, 'bob');
+  });
+
+  test('floating panel can be centered and clamped inside safe bounds', () {
+    final harness = _CallSurfaceHarness();
+    addTearDown(harness.dispose);
+
+    harness.setVoiceCall(_voiceCall(mediaMode: CallMediaMode.video));
+    final controller = harness.container.read(callSurfaceProvider.notifier);
+    const viewportSize = Size(400, 600);
+    const safePadding = EdgeInsets.only(top: 20, bottom: 30);
+    const panelSize = Size(100, 120);
+
+    controller.recenterFloatingPanel(
+      viewportSize: viewportSize,
+      safePadding: safePadding,
+      panelSize: panelSize,
+    );
+
+    expect(harness.surface.floatingOffset, const Offset(150, 235));
+    expect(harness.surface.lastViewportSize, viewportSize);
+
+    controller.moveFloatingPanel(
+      delta: const Offset(1000, 1000),
+      viewportSize: viewportSize,
+      safePadding: safePadding,
+      panelSize: panelSize,
+    );
+
+    expect(harness.surface.floatingOffset, const Offset(288, 438));
+  });
+
+  test('floating panel clamps against safe padding', () {
+    final harness = _CallSurfaceHarness();
+    addTearDown(harness.dispose);
+
+    harness.setVoiceCall(_voiceCall(mediaMode: CallMediaMode.video));
+    final controller = harness.container.read(callSurfaceProvider.notifier);
+
+    controller.moveFloatingPanel(
+      delta: const Offset(-10000, -10000),
+      viewportSize: const Size(360, 640),
+      safePadding: const EdgeInsets.only(left: 8, top: 24, right: 10),
+      panelSize: const Size(280, 360),
+    );
+
+    expect(harness.surface.floatingOffset, const Offset(20, 36));
+  });
+
+  test('floating panel offset is preserved for the same call', () {
+    final harness = _CallSurfaceHarness();
+    addTearDown(harness.dispose);
+
+    harness.setVoiceCall(_voiceCall(mediaMode: CallMediaMode.video));
+    final controller = harness.container.read(callSurfaceProvider.notifier);
+    controller.moveFloatingPanel(
+      delta: const Offset(40, 50),
+      viewportSize: const Size(600, 800),
+      safePadding: EdgeInsets.zero,
+      panelSize: const Size(300, 360),
+    );
+    final offset = harness.surface.floatingOffset;
+
+    harness.setVoiceCall(
+      _voiceCall(mediaMode: CallMediaMode.video, updatedAt: 2),
+    );
+
+    expect(harness.surface.floatingOffset, offset);
+  });
+
+  test('floating panel offset resets for a new call', () {
+    final harness = _CallSurfaceHarness();
+    addTearDown(harness.dispose);
+
+    harness.setVoiceCall(_voiceCall(mediaMode: CallMediaMode.video));
+    harness.container
+        .read(callSurfaceProvider.notifier)
+        .moveFloatingPanel(
+          delta: const Offset(40, 50),
+          viewportSize: const Size(600, 800),
+          safePadding: EdgeInsets.zero,
+          panelSize: const Size(300, 360),
+        );
+
+    harness.setVoiceCall(
+      _voiceCall(mediaMode: CallMediaMode.video, callId: 'call-2'),
+    );
+
+    expect(harness.surface.floatingOffset, isNull);
+    expect(harness.surface.lastViewportSize, isNull);
   });
 }
 
