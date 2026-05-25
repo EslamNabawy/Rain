@@ -459,7 +459,7 @@ void main() {
     await service.dispose();
 
     expect(fakes, hasLength(2));
-    expect(fakes.first.stopped, isFalse);
+    expect(fakes.first.stopped, isTrue);
     expect(fakes.first.disposed, isTrue);
     expect(fakes.last.stopped, isTrue);
     expect(fakes.last.disposed, isTrue);
