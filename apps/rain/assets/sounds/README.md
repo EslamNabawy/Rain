@@ -9,14 +9,14 @@ dart apps\rain\tool\generate_rain_sound_assets.dart
 The generator keeps the set repeatable and intentionally small for APK size.
 All files are mono, 44.1 kHz, signed 16-bit PCM WAV.
 
-Phase 05 sound direction:
+Current sound direction:
 
-- `send.wav`: light water-drop send cue, short and soft enough for repeated chat use.
-- `receive.wav`: softer incoming ripple, lower-pitched than send so bursts do not feel sharp.
+- `send.wav`: tiny glass-water send cue, short and soft enough for repeated chat use.
+- `receive.wav`: lower incoming ripple, warmer than send so bursts do not feel sharp.
 - `action.wav`: small UI droplet for non-message actions.
 - `error.wav`: low, non-alarming splash with a descending tone instead of a harsh alert.
 - `call_incoming.wav`: short incoming-call accent; the loop file handles sustained ringing.
-- `call_incoming_loop.wav`: distinct but calm loop-safe ringtone, no hard click at loop edges.
+- `call_incoming_loop.wav`: calm loop-safe ringtone, no hard click at loop edges.
 - `call_outgoing.wav`: short outgoing-call cue.
 - `call_outgoing_loop.wav`: calmer ringback loop with lower energy than incoming ringing.
 - `call_connected.wav` and `call_ended.wav`: short state-change cues.

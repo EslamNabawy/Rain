@@ -25,202 +25,204 @@ final List<_SoundSpec> _assetSpecs = <_SoundSpec>[
   _SoundSpec(
     name: 'send.wav',
     durationMs: 156,
-    targetPeak: 10400,
+    targetPeak: 9000,
     droplets: const <_Droplet>[
-      _Droplet(startMs: 0, lengthMs: 104, frequency: 690, amplitude: 0.52),
-      _Droplet(startMs: 48, lengthMs: 74, frequency: 920, amplitude: 0.24),
+      _Droplet(startMs: 0, lengthMs: 96, frequency: 940, amplitude: 0.34),
+      _Droplet(startMs: 44, lengthMs: 82, frequency: 1280, amplitude: 0.22),
     ],
-    shimmer: const _Shimmer(amplitude: 0.010, frequency: 1700),
+    shimmer: const _Shimmer(amplitude: 0.0030, frequency: 2600),
   ),
   _SoundSpec(
     name: 'receive.wav',
     durationMs: 190,
-    targetPeak: 11000,
+    targetPeak: 9200,
     droplets: const <_Droplet>[
-      _Droplet(startMs: 6, lengthMs: 124, frequency: 470, amplitude: 0.54),
-      _Droplet(startMs: 80, lengthMs: 92, frequency: 720, amplitude: 0.30),
+      _Droplet(startMs: 6, lengthMs: 132, frequency: 540, amplitude: 0.38),
+      _Droplet(startMs: 76, lengthMs: 96, frequency: 760, amplitude: 0.22),
     ],
-    shimmer: const _Shimmer(amplitude: 0.009, frequency: 1450),
+    shimmer: const _Shimmer(amplitude: 0.0026, frequency: 1900),
   ),
   _SoundSpec(
     name: 'action.wav',
     durationMs: 120,
-    targetPeak: 9600,
+    targetPeak: 8600,
     droplets: const <_Droplet>[
-      _Droplet(startMs: 0, lengthMs: 88, frequency: 610, amplitude: 0.44),
-      _Droplet(startMs: 36, lengthMs: 58, frequency: 840, amplitude: 0.20),
+      _Droplet(startMs: 0, lengthMs: 74, frequency: 720, amplitude: 0.30),
+      _Droplet(startMs: 30, lengthMs: 54, frequency: 1080, amplitude: 0.14),
     ],
-    shimmer: const _Shimmer(amplitude: 0.008, frequency: 1650),
+    shimmer: const _Shimmer(amplitude: 0.0024, frequency: 2400),
   ),
   _SoundSpec(
     name: 'error.wav',
     durationMs: 236,
-    targetPeak: 11200,
+    targetPeak: 10400,
     droplets: const <_Droplet>[
       _Droplet(
         startMs: 0,
-        lengthMs: 158,
-        frequency: 330,
-        amplitude: 0.62,
-        sweep: -0.20,
+        lengthMs: 162,
+        frequency: 220,
+        amplitude: 0.56,
+        sweep: -0.24,
       ),
       _Droplet(
-        startMs: 92,
-        lengthMs: 116,
-        frequency: 250,
-        amplitude: 0.44,
-        sweep: -0.16,
+        startMs: 86,
+        lengthMs: 126,
+        frequency: 165,
+        amplitude: 0.34,
+        sweep: -0.18,
       ),
     ],
-    shimmer: const _Shimmer(amplitude: 0.008, frequency: 860),
+    shimmer: const _Shimmer(amplitude: 0.0018, frequency: 720),
   ),
   _SoundSpec(
     name: 'call_incoming.wav',
     durationMs: 320,
-    targetPeak: 12200,
+    targetPeak: 9600,
     droplets: const <_Droplet>[
-      _Droplet(startMs: 0, lengthMs: 164, frequency: 520, amplitude: 0.44),
-      _Droplet(startMs: 96, lengthMs: 156, frequency: 760, amplitude: 0.44),
-      _Droplet(startMs: 188, lengthMs: 104, frequency: 610, amplitude: 0.28),
+      _Droplet(startMs: 0, lengthMs: 158, frequency: 440, amplitude: 0.28),
+      _Droplet(startMs: 92, lengthMs: 152, frequency: 660, amplitude: 0.30),
+      _Droplet(startMs: 182, lengthMs: 100, frequency: 880, amplitude: 0.16),
     ],
-    shimmer: const _Shimmer(amplitude: 0.010, frequency: 1800),
+    shimmer: const _Shimmer(amplitude: 0.0026, frequency: 2100),
   ),
   _SoundSpec(
     name: 'call_outgoing.wav',
     durationMs: 240,
-    targetPeak: 10600,
+    targetPeak: 8800,
     droplets: const <_Droplet>[
-      _Droplet(startMs: 0, lengthMs: 134, frequency: 390, amplitude: 0.44),
-      _Droplet(startMs: 76, lengthMs: 108, frequency: 560, amplitude: 0.34),
-      _Droplet(startMs: 140, lengthMs: 72, frequency: 760, amplitude: 0.20),
+      _Droplet(startMs: 0, lengthMs: 134, frequency: 360, amplitude: 0.34),
+      _Droplet(startMs: 78, lengthMs: 108, frequency: 540, amplitude: 0.22),
+      _Droplet(startMs: 140, lengthMs: 70, frequency: 720, amplitude: 0.12),
     ],
-    shimmer: const _Shimmer(amplitude: 0.008, frequency: 1300),
+    shimmer: const _Shimmer(amplitude: 0.0020, frequency: 1450),
   ),
   _SoundSpec(
     name: 'call_connected.wav',
     durationMs: 180,
-    targetPeak: 10800,
+    targetPeak: 9200,
     droplets: const <_Droplet>[
-      _Droplet(startMs: 0, lengthMs: 102, frequency: 640, amplitude: 0.42),
-      _Droplet(startMs: 58, lengthMs: 94, frequency: 920, amplitude: 0.30),
+      _Droplet(startMs: 0, lengthMs: 96, frequency: 620, amplitude: 0.30),
+      _Droplet(startMs: 54, lengthMs: 94, frequency: 980, amplitude: 0.22),
+      _Droplet(startMs: 96, lengthMs: 54, frequency: 1240, amplitude: 0.10),
     ],
-    shimmer: const _Shimmer(amplitude: 0.010, frequency: 1950),
+    shimmer: const _Shimmer(amplitude: 0.0026, frequency: 2600),
   ),
   _SoundSpec(
     name: 'call_ended.wav',
     durationMs: 160,
-    targetPeak: 9400,
+    targetPeak: 8400,
     droplets: const <_Droplet>[
       _Droplet(
         startMs: 0,
         lengthMs: 124,
-        frequency: 520,
-        amplitude: 0.44,
-        sweep: -0.20,
+        frequency: 430,
+        amplitude: 0.34,
+        sweep: -0.22,
       ),
     ],
-    shimmer: const _Shimmer(amplitude: 0.006, frequency: 1100),
+    shimmer: const _Shimmer(amplitude: 0.0016, frequency: 980),
   ),
   _SoundSpec(
     name: 'call_failed.wav',
     durationMs: 250,
-    targetPeak: 11000,
+    targetPeak: 10400,
     droplets: const <_Droplet>[
       _Droplet(
         startMs: 0,
         lengthMs: 155,
-        frequency: 310,
-        amplitude: 0.56,
-        sweep: -0.20,
+        frequency: 240,
+        amplitude: 0.52,
+        sweep: -0.24,
       ),
       _Droplet(
         startMs: 92,
         lengthMs: 145,
-        frequency: 235,
-        amplitude: 0.42,
-        sweep: -0.18,
+        frequency: 185,
+        amplitude: 0.34,
+        sweep: -0.20,
       ),
     ],
-    shimmer: const _Shimmer(amplitude: 0.007, frequency: 820),
+    shimmer: const _Shimmer(amplitude: 0.0016, frequency: 680),
   ),
   _SoundSpec(
     name: 'mute.wav',
     durationMs: 110,
-    targetPeak: 8800,
+    targetPeak: 8200,
     droplets: const <_Droplet>[
       _Droplet(
         startMs: 0,
         lengthMs: 90,
-        frequency: 440,
-        amplitude: 0.38,
-        sweep: -0.18,
+        frequency: 390,
+        amplitude: 0.30,
+        sweep: -0.22,
       ),
     ],
-    shimmer: const _Shimmer(amplitude: 0.004, frequency: 900),
+    shimmer: const _Shimmer(amplitude: 0.0012, frequency: 780),
   ),
   _SoundSpec(
     name: 'unmute.wav',
     durationMs: 120,
-    targetPeak: 9000,
+    targetPeak: 8400,
     droplets: const <_Droplet>[
-      _Droplet(startMs: 0, lengthMs: 88, frequency: 520, amplitude: 0.34),
-      _Droplet(startMs: 44, lengthMs: 58, frequency: 780, amplitude: 0.18),
+      _Droplet(startMs: 0, lengthMs: 86, frequency: 520, amplitude: 0.28),
+      _Droplet(startMs: 42, lengthMs: 58, frequency: 760, amplitude: 0.14),
     ],
-    shimmer: const _Shimmer(amplitude: 0.005, frequency: 1400),
+    shimmer: const _Shimmer(amplitude: 0.0014, frequency: 1500),
   ),
   _SoundSpec(
     name: 'deafen.wav',
     durationMs: 130,
-    targetPeak: 9000,
+    targetPeak: 8400,
     droplets: const <_Droplet>[
       _Droplet(
         startMs: 0,
         lengthMs: 110,
-        frequency: 300,
-        amplitude: 0.46,
-        sweep: -0.20,
+        frequency: 260,
+        amplitude: 0.38,
+        sweep: -0.22,
       ),
-      _Droplet(startMs: 24, lengthMs: 60, frequency: 220, amplitude: 0.24),
+      _Droplet(startMs: 24, lengthMs: 60, frequency: 190, amplitude: 0.16),
     ],
-    shimmer: const _Shimmer(amplitude: 0.004, frequency: 760),
+    shimmer: const _Shimmer(amplitude: 0.0012, frequency: 620),
   ),
   _SoundSpec(
     name: 'undeafen.wav',
     durationMs: 130,
-    targetPeak: 9400,
+    targetPeak: 8600,
     droplets: const <_Droplet>[
-      _Droplet(startMs: 0, lengthMs: 100, frequency: 430, amplitude: 0.38),
-      _Droplet(startMs: 48, lengthMs: 66, frequency: 710, amplitude: 0.24),
+      _Droplet(startMs: 0, lengthMs: 100, frequency: 430, amplitude: 0.30),
+      _Droplet(startMs: 48, lengthMs: 66, frequency: 710, amplitude: 0.16),
     ],
-    shimmer: const _Shimmer(amplitude: 0.005, frequency: 1250),
+    shimmer: const _Shimmer(amplitude: 0.0014, frequency: 1320),
   ),
   _SoundSpec(
     name: 'call_incoming_loop.wav',
     durationMs: 1600,
-    targetPeak: 10600,
+    targetPeak: 9200,
     droplets: const <_Droplet>[
-      _Droplet(startMs: 130, lengthMs: 260, frequency: 520, amplitude: 0.36),
-      _Droplet(startMs: 470, lengthMs: 250, frequency: 760, amplitude: 0.34),
-      _Droplet(startMs: 850, lengthMs: 260, frequency: 560, amplitude: 0.30),
-      _Droplet(startMs: 1190, lengthMs: 240, frequency: 820, amplitude: 0.28),
+      _Droplet(startMs: 140, lengthMs: 280, frequency: 392, amplitude: 0.28),
+      _Droplet(startMs: 245, lengthMs: 230, frequency: 523, amplitude: 0.18),
+      _Droplet(startMs: 690, lengthMs: 270, frequency: 440, amplitude: 0.24),
+      _Droplet(startMs: 1000, lengthMs: 240, frequency: 660, amplitude: 0.18),
+      _Droplet(startMs: 1210, lengthMs: 210, frequency: 523, amplitude: 0.12),
     ],
-    shimmer: const _Shimmer(amplitude: 0.004, frequency: 1550),
-    bedFrequency: 142,
-    bedAmplitude: 0.020,
+    shimmer: const _Shimmer(amplitude: 0.0012, frequency: 1500),
+    bedFrequency: 98,
+    bedAmplitude: 0.004,
     loopSafe: true,
   ),
   _SoundSpec(
     name: 'call_outgoing_loop.wav',
     durationMs: 1500,
-    targetPeak: 9400,
+    targetPeak: 8400,
     droplets: const <_Droplet>[
-      _Droplet(startMs: 150, lengthMs: 230, frequency: 390, amplitude: 0.30),
-      _Droplet(startMs: 570, lengthMs: 220, frequency: 560, amplitude: 0.28),
-      _Droplet(startMs: 1020, lengthMs: 230, frequency: 440, amplitude: 0.24),
+      _Droplet(startMs: 170, lengthMs: 230, frequency: 330, amplitude: 0.24),
+      _Droplet(startMs: 640, lengthMs: 220, frequency: 392, amplitude: 0.20),
+      _Droplet(startMs: 1080, lengthMs: 220, frequency: 330, amplitude: 0.16),
     ],
-    shimmer: const _Shimmer(amplitude: 0.004, frequency: 1100),
-    bedFrequency: 118,
-    bedAmplitude: 0.018,
+    shimmer: const _Shimmer(amplitude: 0.0010, frequency: 1080),
+    bedFrequency: 82,
+    bedAmplitude: 0.003,
     loopSafe: true,
   ),
 ];
@@ -237,7 +239,10 @@ Uint8List _buildWave(_SoundSpec spec) {
       sample += droplet.sample(t);
     }
     sample += spec.shimmer.sample(t, i, progress);
-    sample += spec.bedAmplitude * math.sin(_tau * spec.bedFrequency * t);
+    sample +=
+        spec.bedAmplitude *
+        math.sin(_tau * spec.bedFrequency * t) *
+        (0.72 + 0.28 * math.sin(_tau * spec.bedFrequency * 0.25 * t));
     sample *= spec.loopSafe
         ? math.sin(math.pi * progress)
         : _envelope(progress, attack: 0.04, release: 0.18);
@@ -350,17 +355,19 @@ final class _Droplet {
       return 0;
     }
     final progress = local / lengthSeconds;
-    final attack = (progress / 0.11).clamp(0.0, 1.0);
+    final attack = (progress / 0.12).clamp(0.0, 1.0);
     final decay =
-        math.exp(-4.4 * progress) * math.pow(1.0 - progress, 0.72).toDouble();
+        math.exp(-5.2 * progress) * math.pow(1.0 - progress, 0.86).toDouble();
     final frequencyNow = frequency * (1 + sweep * (1 - progress));
     final phase = _tau * frequencyNow * local;
-    final secondPartial = 0.10 * math.sin(_tau * frequencyNow * 1.72 * local);
+    final attackGain = math.sin(attack * math.pi / 2);
+    final fundamental = math.sin(phase);
+    final bellPartial = 0.052 * math.sin(_tau * frequencyNow * 1.618 * local);
+    final glassPartial = 0.026 * math.sin(_tau * frequencyNow * 2.414 * local);
     return amplitude *
-            math.sin(phase) *
-            math.sin(attack * math.pi / 2) *
-            decay +
-        amplitude * secondPartial * decay;
+        (fundamental + bellPartial + glassPartial) *
+        attackGain *
+        decay;
   }
 }
 
@@ -371,15 +378,24 @@ final class _Shimmer {
   final double frequency;
 
   double sample(double timeSeconds, int index, double progress) {
-    final noise = _noise(index) * amplitude * math.pow(1 - progress, 2.4);
+    final grainIndex = index ~/ 20;
+    final grainProgress = (index % 20) / 20;
+    final smoothNoise = _lerp(
+      _noise(grainIndex),
+      _noise(grainIndex + 1),
+      grainProgress,
+    );
+    final noise = smoothNoise * amplitude * math.pow(1 - progress, 2.8);
     final ripple =
         math.sin(_tau * frequency * timeSeconds) *
         amplitude *
-        0.18 *
+        0.12 *
         math.sin(math.pi * progress);
     return noise + ripple;
   }
 }
+
+double _lerp(double a, double b, double t) => a + (b - a) * t;
 
 double _noise(int index) {
   var value = (index + 1) * 1103515245 + 12345;

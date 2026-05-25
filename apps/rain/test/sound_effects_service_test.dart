@@ -414,6 +414,20 @@ void main() {
     );
   });
 
+  test('sound effect asset paths point to non-empty bundled files', () {
+    final assetPaths = <String>{
+      ...rainSoundEffectAssetPaths.values,
+      ...rainSoundEffectLoopAssetPaths.values,
+    };
+
+    for (final assetPath in assetPaths) {
+      final file = _soundAssetFile(assetPath);
+
+      expect(file.existsSync(), isTrue, reason: assetPath);
+      expect(file.lengthSync(), greaterThan(44), reason: assetPath);
+    }
+  });
+
   test('loop asset map covers ringtone and ringback effects', () {
     expect(
       rainSoundEffectLoopAssetPaths.keys,
@@ -446,6 +460,19 @@ File _soundEffectsServiceFile() {
     }
   }
   fail('Could not locate sound_effects_service.dart.');
+}
+
+File _soundAssetFile(String assetPath) {
+  for (final path in <String>[
+    'assets/$assetPath',
+    'apps/rain/assets/$assetPath',
+  ]) {
+    final file = File(path);
+    if (file.existsSync()) {
+      return file;
+    }
+  }
+  return File('apps/rain/assets/$assetPath');
 }
 
 class _PlayedSound {
