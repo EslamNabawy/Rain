@@ -28,6 +28,7 @@ import 'package:rain/presentation/theme/rain_theme.dart';
 import 'package:rain/presentation/widgets/app_components.dart';
 import 'package:rain/presentation/widgets/chat_composer.dart';
 import 'package:rain/presentation/widgets/app_dialogs.dart';
+import 'package:rain/presentation/widgets/calls/rain_call_controls.dart';
 import 'package:rain/presentation/widgets/calls/rain_call_manager_bar.dart';
 import 'package:rain/presentation/widgets/calls/rain_call_overlay.dart';
 import 'package:rain/presentation/widgets/rain_chat_widgets.dart';
@@ -628,9 +629,15 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
     final videoInputCapabilities = ref
         .watch(videoInputCapabilityProvider)
         .value;
+    final audioOutputCapabilities = ref
+        .watch(audioOutputCapabilityProvider)
+        .value;
     final callControlCapabilities =
         (videoInputCapabilities ?? const VideoInputCapabilityState(devices: []))
             .filterCallControls(voiceCall.controlCapabilities);
+    final outputRouteOptions = rainVoiceCallOutputRouteOptions(
+      hasBluetoothOutput: audioOutputCapabilities?.hasBluetoothOutput ?? false,
+    );
     ref.listen<VoiceCallState>(voiceCallProvider, _handleVoiceCallNavigation);
 
     return LayoutBuilder(
@@ -677,6 +684,7 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
                       videoRenderers: videoRenderers,
                       callSurface: callSurface,
                       callControlCapabilities: callControlCapabilities,
+                      outputRouteOptions: outputRouteOptions,
                     ),
                   ),
                 ],
@@ -745,6 +753,7 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
     required VideoCallRenderers? videoRenderers,
     required CallSurfaceState callSurface,
     required List<CallControlCapability> callControlCapabilities,
+    required List<VoiceCallOutputRouteOption> outputRouteOptions,
   }) {
     final body = isCompact
         ? _buildCompactBody(friends)
@@ -772,6 +781,7 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
               onSwitchCamera: _switchVoiceCamera,
               onSelectOutputRoute: _selectVoiceOutputRoute,
               controlCapabilities: callControlCapabilities,
+              outputRouteOptions: outputRouteOptions,
               onMinimize: () =>
                   ref.read(callSurfaceProvider.notifier).minimize(),
               onExpand: () => _toggleCallSurfacePanel(callSurface),
@@ -906,6 +916,9 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
         settings.defaultOutputPreference,
       );
       if (route == VoiceCallOutputRoute.systemDefault) {
+        return;
+      }
+      if (!await _isVoiceOutputRouteAvailable(route)) {
         return;
       }
       if (!mounted) {
@@ -1106,11 +1119,33 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
   Future<void> _selectVoiceOutputRoute(VoiceCallOutputRoute route) async {
     final before = ref.read(voiceCallProvider);
     try {
+      if (!await _isVoiceOutputRouteAvailable(route)) {
+        _showVoiceCallError('Bluetooth audio output is unavailable.');
+        return;
+      }
       await ref.read(voiceCallProvider.notifier).setOutputRoute(route);
       _dispatchSoundEvent(_callControlRouteChangedEvent(before));
     } catch (error) {
       _dispatchVoiceCommandFailureSound(error, before: before);
       _showVoiceCallError(_formatUiError(error));
+    }
+  }
+
+  Future<bool> _isVoiceOutputRouteAvailable(VoiceCallOutputRoute route) async {
+    if (route != VoiceCallOutputRoute.bluetooth) {
+      return true;
+    }
+    final cached = ref.read(audioOutputCapabilityProvider).value;
+    if (cached != null) {
+      return cached.hasBluetoothOutput;
+    }
+    try {
+      final capabilities = await ref
+          .read(audioOutputCapabilityProvider.notifier)
+          .reload();
+      return capabilities.hasBluetoothOutput;
+    } catch (_) {
+      return false;
     }
   }
 

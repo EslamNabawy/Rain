@@ -1,3 +1,4 @@
+import 'package:flutter/widgets.dart' show IconData;
 import 'package:protocol_brain/protocol_brain.dart' show CallMediaMode;
 
 export 'package:protocol_brain/protocol_brain.dart' show CallMediaMode;
@@ -35,6 +36,18 @@ enum VoiceCallFailureReason {
 }
 
 enum VoiceCallOutputRoute { systemDefault, speaker, bluetooth }
+
+final class VoiceCallOutputRouteOption {
+  const VoiceCallOutputRouteOption({
+    required this.route,
+    required this.label,
+    required this.icon,
+  });
+
+  final VoiceCallOutputRoute route;
+  final String label;
+  final IconData icon;
+}
 
 enum CallControlCapability {
   microphone,

@@ -91,8 +91,57 @@ void main() {
 
   testWidgets(
     'output route control hides bluetooth unless bluetooth output is available',
-    (WidgetTester tester) async {},
-    skip: true,
+    (WidgetTester tester) async {
+      _useTallView(tester);
+      final wiredHarness = _SettingsHarness(
+        platformBridge: _FakePlatformBridge()
+          ..devices = <MediaDeviceInfo>[
+            MediaDeviceInfo(
+              deviceId: 'default-mic',
+              label: 'Default mic',
+              kind: 'audioinput',
+            ),
+            MediaDeviceInfo(
+              deviceId: 'wired-output',
+              label: 'USB-C Wired Headset',
+              kind: 'audiooutput',
+            ),
+          ],
+      );
+      addTearDown(wiredHarness.dispose);
+
+      await tester.pumpSettingsScreen(harness: wiredHarness);
+      await tester.tap(find.byTooltip('Choose default call output'));
+      await tester.pumpSettingsFrame();
+
+      expect(find.text('System default'), findsWidgets);
+      expect(find.text('Speaker'), findsOneWidget);
+      expect(find.text('Bluetooth'), findsNothing);
+
+      await tester.tapAt(const Offset(1, 1));
+      await tester.pumpSettingsFrame();
+      await tester.pumpWidget(const SizedBox.shrink());
+      await tester.pump();
+
+      wiredHarness.platformBridge.devices = <MediaDeviceInfo>[
+        MediaDeviceInfo(
+          deviceId: 'default-mic',
+          label: 'Default mic',
+          kind: 'audioinput',
+        ),
+        MediaDeviceInfo(
+          deviceId: 'bluetooth-output',
+          label: 'Galaxy Buds2 Bluetooth',
+          kind: 'audiooutput',
+        ),
+      ];
+
+      await tester.pumpSettingsScreen(harness: wiredHarness);
+      await tester.tap(find.byTooltip('Choose default call output'));
+      await tester.pumpSettingsFrame();
+
+      expect(find.text('Bluetooth'), findsOneWidget);
+    },
   );
 
   testWidgets(

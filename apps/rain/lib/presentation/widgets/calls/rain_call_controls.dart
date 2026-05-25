@@ -20,6 +20,7 @@ class RainCallControls extends StatelessWidget {
     this.onSwitchCamera,
     this.onSelectOutputRoute,
     this.controlCapabilities,
+    this.outputRouteOptions,
   });
 
   final VoiceCallState state;
@@ -33,6 +34,7 @@ class RainCallControls extends StatelessWidget {
   final VoidCallback? onSwitchCamera;
   final ValueChanged<VoiceCallOutputRoute>? onSelectOutputRoute;
   final List<CallControlCapability>? controlCapabilities;
+  final List<VoiceCallOutputRouteOption>? outputRouteOptions;
 
   @override
   Widget build(BuildContext context) {
@@ -115,35 +117,9 @@ class RainCallControls extends StatelessWidget {
         onPressed: state.isActive ? onToggleDeafen : null,
         icon: Icon(visual.icon),
       ),
-      CallControlCapability.outputRoute =>
-        PopupMenuButton<VoiceCallOutputRoute>(
-          tooltip: visual.tooltip,
-          enabled: state.isActive && onSelectOutputRoute != null,
-          onSelected: onSelectOutputRoute,
-          itemBuilder: (BuildContext context) {
-            return <PopupMenuEntry<VoiceCallOutputRoute>>[
-              _outputRouteMenuItem(
-                route: VoiceCallOutputRoute.systemDefault,
-                current: state.outputRoute,
-                label: 'Default',
-                icon: Icons.volume_up,
-              ),
-              _outputRouteMenuItem(
-                route: VoiceCallOutputRoute.speaker,
-                current: state.outputRoute,
-                label: 'Speaker',
-                icon: Icons.speaker_phone,
-              ),
-              _outputRouteMenuItem(
-                route: VoiceCallOutputRoute.bluetooth,
-                current: state.outputRoute,
-                label: 'Bluetooth',
-                icon: Icons.bluetooth_audio,
-              ),
-            ];
-          },
-          icon: Icon(visual.icon),
-        ),
+      CallControlCapability.outputRoute => _buildOutputRouteControl(
+        visual: visual,
+      ),
       CallControlCapability.hangUp => IconButton.filled(
         tooltip: visual.tooltip,
         onPressed: onHangUp,
@@ -157,6 +133,36 @@ class RainCallControls extends StatelessWidget {
       color: rainVoiceCallHaloColor(context, state),
       pulseKey: '${state.callId}:${state.phase}:${capability.name}',
       child: control,
+    );
+  }
+
+  Widget _buildOutputRouteControl({required RainCallControlVisual visual}) {
+    final options = _effectiveOutputRouteOptions(outputRouteOptions);
+    final enabled =
+        state.isActive && onSelectOutputRoute != null && options.length > 1;
+    final selected = _selectedOutputRouteOption(options, state.outputRoute);
+    if (options.length <= 2) {
+      return IconButton(
+        tooltip: visual.tooltip,
+        onPressed: enabled
+            ? () => onSelectOutputRoute!(
+                _nextOutputRoute(options, state.outputRoute),
+              )
+            : null,
+        icon: Icon(selected.icon),
+      );
+    }
+    return PopupMenuButton<VoiceCallOutputRoute>(
+      tooltip: visual.tooltip,
+      enabled: enabled,
+      onSelected: onSelectOutputRoute,
+      itemBuilder: (BuildContext context) {
+        return <PopupMenuEntry<VoiceCallOutputRoute>>[
+          for (final option in options)
+            _outputRouteMenuItem(option: option, current: state.outputRoute),
+        ];
+      },
+      icon: Icon(selected.icon),
     );
   }
 }
@@ -314,23 +320,102 @@ class _RainCallTickerState extends State<RainCallTicker> {
   }
 }
 
-PopupMenuItem<VoiceCallOutputRoute> _outputRouteMenuItem({
-  required VoiceCallOutputRoute route,
-  required VoiceCallOutputRoute current,
-  required String label,
-  required IconData icon,
+List<VoiceCallOutputRouteOption> rainVoiceCallOutputRouteOptions({
+  bool hasBluetoothOutput = true,
 }) {
-  final selected = route == current;
+  return <VoiceCallOutputRouteOption>[
+    const VoiceCallOutputRouteOption(
+      route: VoiceCallOutputRoute.systemDefault,
+      label: 'Default',
+      icon: Icons.volume_up,
+    ),
+    const VoiceCallOutputRouteOption(
+      route: VoiceCallOutputRoute.speaker,
+      label: 'Speaker',
+      icon: Icons.speaker_phone,
+    ),
+    if (hasBluetoothOutput)
+      const VoiceCallOutputRouteOption(
+        route: VoiceCallOutputRoute.bluetooth,
+        label: 'Bluetooth',
+        icon: Icons.bluetooth_audio,
+      ),
+  ];
+}
+
+PopupMenuItem<VoiceCallOutputRoute> _outputRouteMenuItem({
+  required VoiceCallOutputRouteOption option,
+  required VoiceCallOutputRoute current,
+}) {
+  final selected = option.route == current;
   return PopupMenuItem<VoiceCallOutputRoute>(
-    value: route,
+    value: option.route,
     child: Row(
       children: <Widget>[
-        Icon(selected ? Icons.check_circle : icon, size: 20),
+        Icon(selected ? Icons.check_circle : option.icon, size: 20),
         const SizedBox(width: 10),
-        Text(label),
+        Text(option.label),
       ],
     ),
   );
+}
+
+List<VoiceCallOutputRouteOption> _effectiveOutputRouteOptions(
+  List<VoiceCallOutputRouteOption>? options,
+) {
+  final filtered = (options ?? rainVoiceCallOutputRouteOptions())
+      .where(
+        (VoiceCallOutputRouteOption option) =>
+            !_containsOutputRoute(options, option.route, before: option),
+      )
+      .toList(growable: false);
+  return filtered.isEmpty
+      ? rainVoiceCallOutputRouteOptions(hasBluetoothOutput: false)
+      : filtered;
+}
+
+bool _containsOutputRoute(
+  List<VoiceCallOutputRouteOption>? options,
+  VoiceCallOutputRoute route, {
+  required VoiceCallOutputRouteOption before,
+}) {
+  if (options == null) {
+    return false;
+  }
+  for (final option in options) {
+    if (identical(option, before)) {
+      return false;
+    }
+    if (option.route == route) {
+      return true;
+    }
+  }
+  return false;
+}
+
+VoiceCallOutputRouteOption _selectedOutputRouteOption(
+  List<VoiceCallOutputRouteOption> options,
+  VoiceCallOutputRoute route,
+) {
+  for (final option in options) {
+    if (option.route == route) {
+      return option;
+    }
+  }
+  return options.first;
+}
+
+VoiceCallOutputRoute _nextOutputRoute(
+  List<VoiceCallOutputRouteOption> options,
+  VoiceCallOutputRoute current,
+) {
+  final currentIndex = options.indexWhere(
+    (VoiceCallOutputRouteOption option) => option.route == current,
+  );
+  if (currentIndex < 0) {
+    return options.first.route;
+  }
+  return options[(currentIndex + 1) % options.length].route;
 }
 
 IconData _outputRouteIcon(VoiceCallOutputRoute route) {

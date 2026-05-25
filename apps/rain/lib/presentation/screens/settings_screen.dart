@@ -57,6 +57,10 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen> {
     final microphones = ref.watch(microphoneSelectionProvider);
     final cameras = ref.watch(videoInputCapabilityProvider);
     final audioSettings = ref.watch(voiceAudioSettingsProvider);
+    final audioOutputCapabilities = ref.watch(audioOutputCapabilityProvider);
+    final outputCapabilities =
+        audioOutputCapabilities.value ??
+        const AudioOutputCapabilityState(devices: []);
 
     return AppPageFrame(
       title: 'Settings',
@@ -163,6 +167,7 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen> {
                 audioSettings.when(
                   data: (settings) => _VoiceAudioSettingsControls(
                     settings: settings,
+                    outputCapabilities: outputCapabilities,
                     isBusy: false,
                     onSoundEffectsEnabledChanged: (bool enabled) =>
                         _setSoundEffectsEnabled(context, ref, enabled),
@@ -196,6 +201,7 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen> {
                   ),
                   loading: () => _VoiceAudioSettingsControls(
                     settings: const AppAudioSettings(),
+                    outputCapabilities: outputCapabilities,
                     isBusy: true,
                     onSoundEffectsEnabledChanged: (_) {},
                     onSoundEffectsVolumeChanged: (_) {},
@@ -745,6 +751,7 @@ class _MicrophoneTestTile extends StatelessWidget {
 class _VoiceAudioSettingsControls extends StatelessWidget {
   const _VoiceAudioSettingsControls({
     required this.settings,
+    required this.outputCapabilities,
     required this.isBusy,
     required this.onSoundEffectsEnabledChanged,
     required this.onSoundEffectsVolumeChanged,
@@ -754,6 +761,7 @@ class _VoiceAudioSettingsControls extends StatelessWidget {
   });
 
   final AppAudioSettings settings;
+  final AudioOutputCapabilityState outputCapabilities;
   final bool isBusy;
   final ValueChanged<bool> onSoundEffectsEnabledChanged;
   final ValueChanged<double> onSoundEffectsVolumeChanged;
@@ -765,15 +773,22 @@ class _VoiceAudioSettingsControls extends StatelessWidget {
   Widget build(BuildContext context) {
     final enabled = !isBusy;
     final soundControlsEnabled = enabled && settings.soundEffectsEnabled;
+    final outputPreferences = _outputPreferencesFor(outputCapabilities);
+    final effectiveOutputPreference = _effectiveOutputPreference(
+      settings.defaultOutputPreference,
+      outputPreferences,
+    );
+    final outputPreferenceUnavailable =
+        settings.defaultOutputPreference != effectiveOutputPreference;
     return Column(
       children: <Widget>[
         ListTile(
-          leading: Icon(
-            _outputPreferenceIcon(settings.defaultOutputPreference),
-          ),
+          leading: Icon(_outputPreferenceIcon(effectiveOutputPreference)),
           title: const Text('Default call output'),
           subtitle: Text(
-            _outputPreferenceLabel(settings.defaultOutputPreference),
+            outputPreferenceUnavailable
+                ? 'Bluetooth unavailable. Using system default.'
+                : _outputPreferenceLabel(effectiveOutputPreference),
           ),
           trailing: PopupMenuButton<CallAudioOutputPreference>(
             tooltip: 'Choose default call output',
@@ -781,12 +796,12 @@ class _VoiceAudioSettingsControls extends StatelessWidget {
             onSelected: onOutputPreferenceChanged,
             itemBuilder: (BuildContext context) {
               return <PopupMenuEntry<CallAudioOutputPreference>>[
-                for (final preference in CallAudioOutputPreference.values)
+                for (final preference in outputPreferences)
                   PopupMenuItem<CallAudioOutputPreference>(
                     value: preference,
                     child: _OutputPreferenceMenuRow(
                       preference: preference,
-                      selected: settings.defaultOutputPreference == preference,
+                      selected: effectiveOutputPreference == preference,
                     ),
                   ),
               ];
@@ -903,6 +918,26 @@ String _outputPreferenceLabel(CallAudioOutputPreference preference) {
     CallAudioOutputPreference.speaker => 'Speaker',
     CallAudioOutputPreference.bluetooth => 'Bluetooth',
   };
+}
+
+List<CallAudioOutputPreference> _outputPreferencesFor(
+  AudioOutputCapabilityState capabilities,
+) {
+  return <CallAudioOutputPreference>[
+    CallAudioOutputPreference.systemDefault,
+    CallAudioOutputPreference.speaker,
+    if (capabilities.hasBluetoothOutput) CallAudioOutputPreference.bluetooth,
+  ];
+}
+
+CallAudioOutputPreference _effectiveOutputPreference(
+  CallAudioOutputPreference preference,
+  List<CallAudioOutputPreference> available,
+) {
+  if (available.contains(preference)) {
+    return preference;
+  }
+  return CallAudioOutputPreference.systemDefault;
 }
 
 String _volumeLabel(double value) {

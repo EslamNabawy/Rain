@@ -929,6 +929,7 @@ class RainCallPanel extends StatelessWidget {
     this.onToggleCamera,
     this.onSwitchCamera,
     this.onSelectOutputRoute,
+    this.outputRouteOptions,
   });
 
   final VoiceCallState state;
@@ -942,6 +943,7 @@ class RainCallPanel extends StatelessWidget {
   final VoidCallback? onToggleCamera;
   final VoidCallback? onSwitchCamera;
   final ValueChanged<VoiceCallOutputRoute>? onSelectOutputRoute;
+  final List<VoiceCallOutputRouteOption>? outputRouteOptions;
 
   @override
   Widget build(BuildContext context) {
@@ -1015,6 +1017,7 @@ class RainCallPanel extends StatelessWidget {
             onToggleCamera: onToggleCamera,
             onSwitchCamera: onSwitchCamera,
             onSelectOutputRoute: onSelectOutputRoute,
+            outputRouteOptions: outputRouteOptions,
           );
           if (constraints.maxWidth < 430) {
             return Column(
@@ -1055,6 +1058,7 @@ class RainVoiceCallPanel extends StatelessWidget {
     this.onToggleCamera,
     this.onSwitchCamera,
     this.onSelectOutputRoute,
+    this.outputRouteOptions,
   });
 
   final VoiceCallState state;
@@ -1068,6 +1072,7 @@ class RainVoiceCallPanel extends StatelessWidget {
   final VoidCallback? onToggleCamera;
   final VoidCallback? onSwitchCamera;
   final ValueChanged<VoiceCallOutputRoute>? onSelectOutputRoute;
+  final List<VoiceCallOutputRouteOption>? outputRouteOptions;
 
   @override
   Widget build(BuildContext context) {
@@ -1083,6 +1088,7 @@ class RainVoiceCallPanel extends StatelessWidget {
       onToggleCamera: onToggleCamera,
       onSwitchCamera: onSwitchCamera,
       onSelectOutputRoute: onSelectOutputRoute,
+      outputRouteOptions: outputRouteOptions,
     );
   }
 }

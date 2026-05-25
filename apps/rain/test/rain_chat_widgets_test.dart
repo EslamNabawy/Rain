@@ -666,6 +666,45 @@ void main() {
     expect(route, VoiceCallOutputRoute.bluetooth);
   });
 
+  testWidgets('voice call output route toggles when bluetooth is unavailable', (
+    WidgetTester tester,
+  ) async {
+    VoiceCallOutputRoute? route;
+
+    await tester.pumpWidget(
+      MaterialApp(
+        home: Scaffold(
+          body: RainCallPanel(
+            state: VoiceCallState(
+              phase: VoiceCallPhase.active,
+              peerId: 'bob',
+              callId: 'call-1',
+              startedAt: DateTime.now()
+                  .subtract(const Duration(seconds: 7))
+                  .millisecondsSinceEpoch,
+            ),
+            displayName: 'Bob',
+            outputRouteOptions: rainVoiceCallOutputRouteOptions(
+              hasBluetoothOutput: false,
+            ),
+            onAccept: () {},
+            onReject: () {},
+            onHangUp: () {},
+            onRetry: () {},
+            onToggleMute: () {},
+            onSelectOutputRoute: (VoiceCallOutputRoute value) => route = value,
+          ),
+        ),
+      ),
+    );
+
+    await tester.tap(find.byTooltip('Choose audio output'));
+    await tester.pump();
+
+    expect(route, VoiceCallOutputRoute.speaker);
+    expect(find.text('Bluetooth'), findsNothing);
+  });
+
   testWidgets(
     'ripple halo wraps the component bounds instead of only the icon glyph',
     (WidgetTester tester) async {},
@@ -1967,6 +2006,7 @@ Future<void> _pumpCallOverlay(
   VideoCallRenderers? videoRenderers,
   CallSurfaceMode surfaceMode = CallSurfaceMode.expanded,
   List<CallControlCapability>? controlCapabilities,
+  List<VoiceCallOutputRouteOption>? outputRouteOptions,
 }) async {
   await tester.pumpWidget(
     MaterialApp(
@@ -1993,6 +2033,7 @@ Future<void> _pumpCallOverlay(
                 onExpand: () {},
                 onFullscreen: () {},
                 controlCapabilities: controlCapabilities,
+                outputRouteOptions: outputRouteOptions,
               ),
             ),
           ],
