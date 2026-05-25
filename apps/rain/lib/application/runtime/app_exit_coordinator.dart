@@ -51,12 +51,10 @@ final class AppExitCoordinator {
       return;
     }
 
-    final waitForHandlers = Future.wait<void>(
-      <Future<void>>[
-        for (final handler in handlers)
-          Future<void>(() => handler(reason)).catchError((_) {}),
-      ],
-    ).then<void>((_) {});
+    final waitForHandlers = Future.wait<void>(<Future<void>>[
+      for (final handler in handlers)
+        Future<void>(() => handler(reason)).catchError((_) {}),
+    ]).then<void>((_) {});
     await waitForHandlers.timeout(timeout, onTimeout: () {});
   }
 }
