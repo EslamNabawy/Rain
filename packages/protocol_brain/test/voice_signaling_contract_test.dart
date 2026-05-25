@@ -59,7 +59,7 @@ void main() {
   });
 
   test(
-    'fake adapter creates room, callee inbox, and active pair lock',
+    'fake adapter creates room, callee inbox, and active pair/user locks',
     () async {
       final adapter = FakeVoiceSignalingAdapter();
       addTearDown(adapter.dispose);
@@ -83,6 +83,8 @@ void main() {
       expect(room.pairId, 'alice:bob');
       expect(room.status, VoiceCallSignalingStatus.ringing);
       expect(adapter.activePairLocks.keys, contains('alice:bob'));
+      expect(adapter.activeUserLocks['alice']?.callId, 'call-1');
+      expect(adapter.activeUserLocks['bob']?.callId, 'call-1');
       expect(adapter.inboxFor('bob').single.callId, 'call-1');
       expect((await inboxEvent).status, VoiceCallSignalingStatus.ringing);
       expect((await roomEvent).callId, 'call-1');
@@ -99,6 +101,41 @@ void main() {
       );
     },
   );
+
+  test('fake adapter user locks block cross-peer simultaneous calls', () async {
+    final adapter = FakeVoiceSignalingAdapter();
+    addTearDown(adapter.dispose);
+
+    await adapter.createOutgoingCall(
+      callId: 'bob-call',
+      caller: 'bob',
+      callee: 'alice',
+      createdAt: 1000,
+      expiresAt: 61000,
+    );
+
+    await expectLater(
+      adapter.createOutgoingCall(
+        callId: 'cara-call',
+        caller: 'cara',
+        callee: 'alice',
+        createdAt: 1100,
+        expiresAt: 61100,
+      ),
+      throwsA(
+        isA<VoiceSignalingException>().having(
+          (error) => error.message,
+          'message',
+          contains('user alice'),
+        ),
+      ),
+    );
+
+    expect(adapter.activePairLocks.keys, contains('alice:bob'));
+    expect(adapter.activePairLocks.keys, isNot(contains('alice:cara')));
+    expect(adapter.activeUserLocks['alice']?.callId, 'bob-call');
+    expect(adapter.rooms.keys, isNot(contains('cara-call')));
+  });
 
   test('fake adapter reclaims stale orphan active pair lock', () async {
     final adapter = FakeVoiceSignalingAdapter();
@@ -126,6 +163,8 @@ void main() {
 
     expect(room.callId, 'call-2');
     expect(adapter.activePairLocks['alice:bob']?.callId, 'call-2');
+    expect(adapter.activeUserLocks['alice']?.callId, 'call-2');
+    expect(adapter.activeUserLocks['bob']?.callId, 'call-2');
     expect(adapter.rooms.keys, contains('call-2'));
   });
 
@@ -180,6 +219,8 @@ void main() {
 
     expect(room.callId, 'call-2');
     expect(adapter.activePairLocks['alice:bob']?.callId, 'call-2');
+    expect(adapter.activeUserLocks['alice']?.callId, 'call-2');
+    expect(adapter.activeUserLocks['bob']?.callId, 'call-2');
     expect(adapter.rooms.keys, isNot(contains('call-1')));
     expect(adapter.rooms.keys, contains('call-2'));
     expect(adapter.inboxFor('bob').single.callId, 'call-2');
@@ -322,6 +363,8 @@ void main() {
 
       expect(adapter.rooms.keys, contains('call-2'));
       expect(adapter.activePairLocks['alice:bob']?.callId, 'call-2');
+      expect(adapter.activeUserLocks['alice']?.callId, 'call-2');
+      expect(adapter.activeUserLocks['bob']?.callId, 'call-2');
     },
   );
 
@@ -501,6 +544,8 @@ void main() {
       expect(room?.muted['bob'], isTrue);
       expect(room?.cameraMuted['bob'], isTrue);
       expect(adapter.activePairLocks, contains('alice:bob'));
+      expect(adapter.activeUserLocks, contains('alice'));
+      expect(adapter.activeUserLocks, contains('bob'));
 
       await adapter.endCall(
         callId: 'call-1',
@@ -515,6 +560,8 @@ void main() {
       expect(room?.status, VoiceCallSignalingStatus.ended);
       expect(room?.endedBy, 'bob');
       expect(adapter.activePairLocks, isNot(contains('alice:bob')));
+      expect(adapter.activeUserLocks, isNot(contains('alice')));
+      expect(adapter.activeUserLocks, isNot(contains('bob')));
       await expectLater(
         adapter.setMuted(
           callId: 'call-1',

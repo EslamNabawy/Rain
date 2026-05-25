@@ -993,7 +993,7 @@ class _ChatPanelState extends ConsumerState<_ChatPanel> {
         .read(voiceCallProvider.notifier)
         .blocksFileTransfer(widget.peerId)) {
       _dispatchWarningSound('chat.file.call_active');
-      _showErrorSnack('Finish the call first.');
+      _showErrorSnack('Finish the call before sending files.');
       return;
     }
 

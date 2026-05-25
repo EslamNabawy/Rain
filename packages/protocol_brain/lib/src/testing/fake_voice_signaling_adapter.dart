@@ -9,6 +9,8 @@ final class FakeVoiceSignalingAdapter implements VoiceSignalingAdapter {
   final Map<String, VoiceCallRoom> _rooms = <String, VoiceCallRoom>{};
   final Map<String, VoiceActivePairLock> _pairLocks =
       <String, VoiceActivePairLock>{};
+  final Map<String, VoiceActiveUserLock> _userLocks =
+      <String, VoiceActiveUserLock>{};
   final Map<String, Map<String, VoiceCallInboxEntry>> _inboxes =
       <String, Map<String, VoiceCallInboxEntry>>{};
   final Map<String, List<VoiceCallIceCandidateRecord>> _iceCandidates =
@@ -33,10 +35,19 @@ final class FakeVoiceSignalingAdapter implements VoiceSignalingAdapter {
   Map<String, VoiceActivePairLock> get activePairLocks =>
       Map<String, VoiceActivePairLock>.unmodifiable(_pairLocks);
 
+  Map<String, VoiceActiveUserLock> get activeUserLocks =>
+      Map<String, VoiceActiveUserLock>.unmodifiable(_userLocks);
+
   void seedActivePairLockForTest(VoiceActivePairLock lock) {
     _ensureOpen();
     lock.toJson();
     _pairLocks[lock.pairId] = lock;
+  }
+
+  void seedActiveUserLockForTest(VoiceActiveUserLock lock) {
+    _ensureOpen();
+    lock.toJson();
+    _userLocks[lock.username] = lock;
   }
 
   void reemitCallForTest(String callId) {
@@ -79,6 +90,19 @@ final class FakeVoiceSignalingAdapter implements VoiceSignalingAdapter {
         'Active voice call already exists for pair $pairId.',
       );
     }
+    for (final username in <String>[normalizedCaller, normalizedCallee]) {
+      final existingUserLock = _userLocks[username];
+      if (existingUserLock != null &&
+          !_reclaimActiveUserLockIfStale(
+            existingUserLock,
+            createdAt,
+            caller: normalizedCaller,
+          )) {
+        throw VoiceSignalingException(
+          'Active voice call already exists for user $username.',
+        );
+      }
+    }
 
     final room = VoiceCallRoom(
       v: VoiceCallRoom.version,
@@ -113,6 +137,10 @@ final class FakeVoiceSignalingAdapter implements VoiceSignalingAdapter {
       expiresAt: expiresAt,
     );
     lock.toJson();
+    final callerLock = _activeUserLockForRoom(room, normalizedCaller);
+    final calleeLock = _activeUserLockForRoom(room, normalizedCallee);
+    callerLock.toJson();
+    calleeLock.toJson();
     final inboxEntry = VoiceCallInboxEntry(
       callId: normalizedCallId,
       from: normalizedCaller,
@@ -127,6 +155,8 @@ final class FakeVoiceSignalingAdapter implements VoiceSignalingAdapter {
 
     _rooms[normalizedCallId] = room;
     _pairLocks[pairId] = lock;
+    _userLocks[normalizedCaller] = callerLock;
+    _userLocks[normalizedCallee] = calleeLock;
     _inboxes.putIfAbsent(
       normalizedCallee,
       () => <String, VoiceCallInboxEntry>{},
@@ -226,7 +256,7 @@ final class FakeVoiceSignalingAdapter implements VoiceSignalingAdapter {
     final room = _requireRoom(callId);
     _ensureParticipant(room, username);
     if (room.status.isTerminal) {
-      _removeActivePairLockForRoomIfCurrent(room);
+      _removeActiveLocksForRoomIfCurrent(room);
       return;
     }
     final normalizedUsername = normalizeVoiceCallUsername(username);
@@ -240,7 +270,7 @@ final class FakeVoiceSignalingAdapter implements VoiceSignalingAdapter {
         reason: reason,
       ),
     );
-    _pairLocks.remove(room.pairId);
+    _removeActiveLocksForRoomIfCurrent(room);
   }
 
   @override
@@ -425,7 +455,7 @@ final class FakeVoiceSignalingAdapter implements VoiceSignalingAdapter {
     if (room == null) {
       return;
     }
-    _removeActivePairLockForRoomIfCurrent(room);
+    _removeActiveLocksForRoomIfCurrent(room);
     _inboxes[room.callee]?.remove(room.callId);
     _iceCandidates.remove(_iceKey(room.callId, VoiceCallRole.caller));
     _iceCandidates.remove(_iceKey(room.callId, VoiceCallRole.callee));
@@ -511,9 +541,60 @@ final class FakeVoiceSignalingAdapter implements VoiceSignalingAdapter {
     return true;
   }
 
-  void _removeActivePairLockForRoomIfCurrent(VoiceCallRoom room) {
+  bool _reclaimActiveUserLockIfStale(
+    VoiceActiveUserLock lock,
+    int createdAt, {
+    required String caller,
+  }) {
+    final room = _rooms[lock.callId];
+    if (lock.expiresAt <= createdAt) {
+      if (room != null && _shouldDeleteReclaimedVoiceRoom(room, createdAt)) {
+        _removeCallArtifacts(lock.callId);
+      }
+      _userLocks.remove(lock.username);
+      return true;
+    }
+
+    if (room == null) {
+      if (lock.caller == normalizeVoiceCallUsername(caller)) {
+        _userLocks.remove(lock.username);
+        return true;
+      }
+      if (createdAt - lock.updatedAt < _orphanVoiceLockGraceMs) {
+        return false;
+      }
+      _userLocks.remove(lock.username);
+      return true;
+    }
+
+    if (!room.isTerminal &&
+        room.status != VoiceCallSignalingStatus.connected &&
+        lock.caller == normalizeVoiceCallUsername(caller)) {
+      _removeCallArtifacts(room.callId);
+      _userLocks.remove(lock.username);
+      return true;
+    }
+
+    final setupExpired =
+        room.status != VoiceCallSignalingStatus.connected &&
+        room.expiresAt <= createdAt;
+    if (!room.isTerminal && !setupExpired) {
+      return false;
+    }
+
+    _removeCallArtifacts(room.callId);
+    _userLocks.remove(lock.username);
+    return true;
+  }
+
+  void _removeActiveLocksForRoomIfCurrent(VoiceCallRoom room) {
     if (_pairLocks[room.pairId]?.callId == room.callId) {
       _pairLocks.remove(room.pairId);
+    }
+    for (final username in <String>[room.caller, room.callee]) {
+      if (_userLocks[username]?.callId == room.callId) {
+        _userLocks.remove(username);
+      }
     }
   }
 
@@ -533,7 +614,24 @@ final class FakeVoiceSignalingAdapter implements VoiceSignalingAdapter {
     _inboxes[room.callee]?.remove(room.callId);
     _iceCandidates.remove(_iceKey(room.callId, VoiceCallRole.caller));
     _iceCandidates.remove(_iceKey(room.callId, VoiceCallRole.callee));
+    _removeActiveLocksForRoomIfCurrent(room);
     _emitCall(room.callId);
+  }
+
+  VoiceActiveUserLock _activeUserLockForRoom(
+    VoiceCallRoom room,
+    String username,
+  ) {
+    return VoiceActiveUserLock(
+      username: username,
+      callId: room.callId,
+      pairId: room.pairId,
+      caller: room.caller,
+      callee: room.callee,
+      createdAt: room.createdAt,
+      updatedAt: room.updatedAt,
+      expiresAt: room.expiresAt,
+    );
   }
 
   void _updateInbox(VoiceCallRoom room) {

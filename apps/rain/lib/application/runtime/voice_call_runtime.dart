@@ -61,11 +61,14 @@ extension VoiceCallRuntime on RainRuntimeController {
     required CallMediaMode mediaMode,
   }) async {
     final peerId = _normalizedUsername(username);
-    if (await fileTransferStore.hasActiveTransferForPeer(peerId)) {
-      throw StateError(_voiceCallFileTransferRequired);
-    }
-
     _assertVoiceCallCanStart();
+    RuntimeInteractionGuard.canStartCall(
+      peerId: peerId,
+      mediaMode: mediaMode,
+      voiceCallState: _voiceCallState,
+      activeTransfer: await _firstActiveTransfer(),
+    ).throwIfDenied();
+    _requireVoiceSignalingAdapter();
     await _assertVoiceCallPeerIsFriend(peerId);
 
     await _disposeCurrentVoiceCallSession();
@@ -114,7 +117,15 @@ extension VoiceCallRuntime on RainRuntimeController {
         current.callId == null) {
       throw StateError('There is no incoming call to accept.');
     }
-    if (await fileTransferStore.hasActiveTransferForPeer(current.peerId!)) {
+    final acceptDecision = RuntimeInteractionGuard.canAcceptCall(
+      peerId: current.peerId!,
+      callId: current.callId!,
+      voiceCallState: current,
+      activeTransfer: await _firstActiveTransfer(),
+    );
+    if (!acceptDecision.allowed &&
+        acceptDecision.reasonCode ==
+            RuntimeInteractionReasonCode.activeFileTransfer) {
       await _sendVoiceFrame(
         current.peerId!,
         VoiceCallFrameType.busy,
@@ -125,12 +136,13 @@ extension VoiceCallRuntime on RainRuntimeController {
         bestEffort: true,
       );
       await _failVoiceCall(
-        _voiceCallFileTransferRequired,
+        acceptDecision.userMessage ?? _voiceCallFileTransferRequired,
         failureReason: VoiceCallFailureReason.fileTransferActive,
-        detail: _voiceCallFileTransferRequired,
+        detail: acceptDecision.userMessage ?? _voiceCallFileTransferRequired,
       );
       return;
     }
+    acceptDecision.throwIfDenied();
 
     final session = _voiceCallSession;
     if (session == null || session.callId != current.callId) {
@@ -465,7 +477,7 @@ extension VoiceCallRuntime on RainRuntimeController {
       return;
     }
     if (disposition == _IncomingVoiceInviteDisposition.busy ||
-        await fileTransferStore.hasActiveTransferForPeer(peerId)) {
+        await _firstActiveTransfer() != null) {
       await _endVoiceCallInSignaling(
         callId: frame.callId,
         status: VoiceCallSignalingStatus.failed,
@@ -506,7 +518,7 @@ extension VoiceCallRuntime on RainRuntimeController {
       return;
     }
     if (disposition == _IncomingVoiceInviteDisposition.busy ||
-        await fileTransferStore.hasActiveTransferForPeer(peerId)) {
+        await _firstActiveTransfer() != null) {
       await _sendVoiceFrame(
         peerId,
         VoiceCallFrameType.busy,
@@ -2176,11 +2188,6 @@ extension VoiceCallRuntime on RainRuntimeController {
     if (brain == null) {
       throw StateError('Peer connection is unavailable right now.');
     }
-    _requireVoiceSignalingAdapter();
-    if (_voiceCallState.hasCall &&
-        _voiceCallState.phase != VoiceCallPhase.failed) {
-      throw StateError('Finish the active call before starting another.');
-    }
   }
 
   Future<void> _assertVoiceCallPeerIsFriend(String peerId) async {
@@ -2194,6 +2201,11 @@ extension VoiceCallRuntime on RainRuntimeController {
     if (friend?.state != FriendState.friend) {
       throw StateError('Only accepted friends can call.');
     }
+  }
+
+  Future<FileTransferRecord?> _firstActiveTransfer() async {
+    final transfers = await fileTransferStore.loadActiveTransfers();
+    return transfers.isEmpty ? null : transfers.first;
   }
 
   bool _isLiveVoiceCallSession(VoiceCallSession session) {
@@ -2284,6 +2296,11 @@ extension VoiceCallRuntime on RainRuntimeController {
   String? _voiceCallFailureDetailForError(Object error) {
     final normalized = _normalizedVoiceCallErrorText(error).toLowerCase();
     if (_isVoiceCallBusyError(normalized)) {
+      final busyUser = _voiceCallBusyUser(normalized);
+      if (busyUser != null &&
+          busyUser != _normalizedUsername(selfIdentity.username)) {
+        return '@$busyUser is busy in another call.';
+      }
       return 'Peer is busy.';
     }
     if (_isVoiceCallRejectedError(normalized)) {
@@ -2342,6 +2359,19 @@ extension VoiceCallRuntime on RainRuntimeController {
         normalized.contains('active voice call already exists') ||
         normalized.contains('activevoicepairs') ||
         normalized.contains('active voice pair');
+  }
+
+  String? _voiceCallBusyUser(String normalized) {
+    const marker = 'active voice call already exists for user ';
+    final markerIndex = normalized.indexOf(marker);
+    if (markerIndex < 0) {
+      return null;
+    }
+    final tail = normalized.substring(markerIndex + marker.length).trim();
+    if (tail.isEmpty) {
+      return null;
+    }
+    return _normalizedUsername(tail.split(RegExp(r'[\s.]')).first);
   }
 
   bool _isVoiceCallRejectedError(String normalized) {

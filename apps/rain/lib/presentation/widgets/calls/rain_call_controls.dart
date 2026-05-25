@@ -665,7 +665,7 @@ String rainSanitizeVoiceCallFailureDetail(String? detail) {
   }
   if (normalized.contains('finish the call before') ||
       normalized == 'finish the call first.') {
-    return 'Finish the call first.';
+    return 'Finish the call before sending files.';
   }
   if (normalized == 'rejected.' ||
       normalized.contains('call declined') ||

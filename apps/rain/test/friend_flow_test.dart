@@ -1706,6 +1706,77 @@ void main() {
     });
 
     test(
+      'active file transfer with one peer blocks call with another',
+      () async {
+        final adapter = RecordingVoiceSignalingAdapter();
+        final brain = TestSessionManager();
+        final transferStore = FileTransferStore(db);
+        await adapter.register('bob', 'bobpw');
+        await adapter.register('cara', 'carapw');
+        await adapter.upsertFriendship('alice', 'bob');
+        await adapter.upsertFriendship('alice', 'cara');
+        for (final username in <String>['bob', 'cara']) {
+          await db
+              .into(db.friends)
+              .insert(
+                FriendsCompanion.insert(
+                  username: username,
+                  displayName: username,
+                  state: 'friend',
+                  addedAt: 0,
+                ),
+              );
+        }
+        await transferStore.upsert(
+          FileTransferRecord(
+            id: 'transfer-1',
+            peerId: 'bob',
+            messageId: 'message-1',
+            direction: FileTransferDirection.outgoing,
+            fileName: 'busy.txt',
+            fileSize: 1,
+            bytesTransferred: 0,
+            state: FileTransferState.sending,
+            createdAt: 0,
+            updatedAt: 0,
+          ),
+        );
+        final messageStore = MessageStore(db);
+        final offlineQueueStore = OfflineQueueStore(db);
+        final runtime = RainRuntimeController(
+          selfIdentity: alice,
+          adapter: adapter,
+          brain: brain,
+          database: db,
+          friendStore: FriendStore(db),
+          messageStore: messageStore,
+          offlineQueueStore: offlineQueueStore,
+          messageDeliveryService: MessageDeliveryService(
+            messageStore: messageStore,
+            offlineQueueStore: offlineQueueStore,
+          ),
+          fileTransferStore: transferStore,
+        );
+        addTearDown(runtime.dispose);
+
+        await expectLater(
+          runtime.startVoiceCall('cara'),
+          throwsA(
+            isA<StateError>().having(
+              (error) => error.toString(),
+              'message',
+              contains(
+                'Finish the active file transfer before starting a call.',
+              ),
+            ),
+          ),
+        );
+
+        expect(adapter.rooms, isEmpty);
+      },
+    );
+
+    test(
       'active Firebase video call blocks file transfer and hangup releases media',
       () async {
         final adapter = RecordingVoiceSignalingAdapter();
@@ -1783,7 +1854,7 @@ void main() {
             isA<StateError>().having(
               (error) => error.toString(),
               'message',
-              contains('Finish the call first'),
+              contains('Finish the call before sending files.'),
             ),
           ),
         );
@@ -1813,6 +1884,61 @@ void main() {
           'voice call to ring after video hangup',
         );
         expect(aliceRuntime.voiceCallState.isVideo, isFalse);
+      },
+    );
+
+    test(
+      'active call with one peer blocks calls and files with another',
+      () async {
+        final harness = await _createTwoUserCallHarness(db, alice);
+        addTearDown(harness.dispose);
+        await harness.adapter.register('cara', 'carapw');
+        await harness.adapter.upsertFriendship('alice', 'cara');
+        await db
+            .into(db.friends)
+            .insert(
+              FriendsCompanion.insert(
+                username: 'cara',
+                displayName: 'Cara',
+                state: 'friend',
+                addedAt: 0,
+              ),
+            );
+
+        await harness.start();
+        await _startAndAcceptHarnessCall(
+          harness,
+          callerIsAlice: true,
+          mediaMode: protocol.CallMediaMode.audio,
+        );
+
+        await expectLater(
+          harness.aliceRuntime.startVoiceCall('cara'),
+          throwsA(
+            isA<StateError>().having(
+              (error) => error.toString(),
+              'message',
+              contains(
+                'You are already in a call with @bob. End it before calling @cara.',
+              ),
+            ),
+          ),
+        );
+        await expectLater(
+          harness.aliceRuntime.sendFile(
+            peerId: 'cara',
+            fileName: 'blocked.txt',
+            fileSize: 1,
+            openRead: () => Stream<List<int>>.value(<int>[1]),
+          ),
+          throwsA(
+            isA<StateError>().having(
+              (error) => error.toString(),
+              'message',
+              contains('Finish the call before sending files.'),
+            ),
+          ),
+        );
       },
     );
 
@@ -2342,6 +2468,56 @@ void main() {
     });
 
     test(
+      'active Firebase user lock is surfaced as peer busy in another call',
+      () async {
+        final adapter = RecordingVoiceSignalingAdapter();
+        final brain = TestSessionManager();
+        await adapter.register('bob', 'bobpw');
+        await adapter.upsertFriendship('alice', 'bob');
+        await db
+            .into(db.friends)
+            .insert(
+              FriendsCompanion.insert(
+                username: 'bob',
+                displayName: 'Bob',
+                state: 'friend',
+                addedAt: 0,
+              ),
+            );
+        final now = DateTime.now().millisecondsSinceEpoch;
+        adapter.seedActiveUserLockForTest(
+          VoiceActiveUserLock(
+            username: 'bob',
+            callId: 'bob-cara-call',
+            pairId: 'bob:cara',
+            caller: 'bob',
+            callee: 'cara',
+            createdAt: now,
+            updatedAt: now,
+            expiresAt: now + const Duration(minutes: 2).inMilliseconds,
+          ),
+        );
+        final runtime = _runtimeFor(db, alice, adapter, brain: brain);
+        addTearDown(runtime.dispose);
+
+        await runtime.start();
+        await expectLater(
+          runtime.startVoiceCall('bob'),
+          throwsA(isA<VoiceSignalingException>()),
+        );
+
+        expect(runtime.voiceCallState.phase, VoiceCallPhase.failed);
+        expect(
+          runtime.voiceCallState.failureReason,
+          VoiceCallFailureReason.peerBusy,
+        );
+        expect(runtime.voiceCallState.detail, '@bob is busy in another call.');
+        expect(adapter.rooms, isEmpty);
+        expect(adapter.activeUserLocks['bob']?.callId, 'bob-cara-call');
+      },
+    );
+
+    test(
       'caller-owned Firebase setup room is reclaimed before retry',
       () async {
         final adapter = RecordingVoiceSignalingAdapter();
@@ -2630,7 +2806,7 @@ void main() {
             isA<StateError>().having(
               (error) => error.toString(),
               'message',
-              contains('Finish the call first'),
+              contains('Finish the call before sending files.'),
             ),
           ),
         );
@@ -3746,7 +3922,7 @@ void main() {
               isA<StateError>().having(
                 (error) => error.toString(),
                 'message',
-                contains('Finish the call first'),
+                contains('Finish the call before sending files.'),
               ),
             ),
           );
@@ -4801,6 +4977,77 @@ void main() {
     );
 
     test(
+      'manual disconnect is scoped to one peer in multi-peer runtime',
+      () async {
+        final adapter = NoopSignalingAdapter();
+        final brain = TestSessionManager();
+        for (final username in <String>['bob', 'cara']) {
+          await adapter.register(username, '${username}pw');
+          await adapter.upsertFriendship('alice', username);
+          await db
+              .into(db.friends)
+              .insert(
+                FriendsCompanion.insert(
+                  username: username,
+                  displayName: username,
+                  state: 'friend',
+                  addedAt: 0,
+                  online: const Value(true),
+                ),
+              );
+        }
+        final runtime = RainRuntimeController(
+          selfIdentity: alice,
+          adapter: adapter,
+          brain: brain,
+          database: db,
+          friendStore: FriendStore(db),
+          messageStore: MessageStore(db),
+          offlineQueueStore: OfflineQueueStore(db),
+          messageDeliveryService: MessageDeliveryService(
+            messageStore: MessageStore(db),
+            offlineQueueStore: OfflineQueueStore(db),
+          ),
+          friendRequestRefreshInterval: Duration.zero,
+          networkRecoveryDebounce: Duration.zero,
+        );
+
+        await runtime.start();
+        await runtime.connectPeer('bob', interactive: true);
+        await runtime.connectPeer('cara', interactive: true);
+        brain.markConnected('bob');
+        brain.markConnected('cara');
+
+        await runtime.disconnectPeer('bob');
+        await runtime.handleNetworkAvailable('test recovery');
+        await pumpEventQueue();
+
+        expect(
+          runtime.connectionCoordinatorSnapshotFor('bob').manualDisconnect,
+          isTrue,
+        );
+        expect(brain.getSession('bob'), isNull);
+        expect(brain.getSession('cara')?.state, SessionState.connected);
+        expect(brain.connectedPeers, <String>['bob', 'cara']);
+
+        await runtime.connectPeer(
+          'bob',
+          interactive: true,
+          allowStalePresence: true,
+          bypassRetryBackoff: true,
+        );
+
+        expect(
+          runtime.connectionCoordinatorSnapshotFor('bob').manualDisconnect,
+          isFalse,
+        );
+        expect(brain.connectedPeers, <String>['bob', 'cara', 'bob']);
+        expect(brain.getSession('cara')?.state, SessionState.connected);
+        await runtime.dispose();
+      },
+    );
+
+    test(
       'weak call transport enters reconnecting grace instead of immediate failed disconnect',
       () async {
         final harness = await _createTwoUserCallHarness(
@@ -5477,6 +5724,8 @@ Future<String> _startAndAcceptHarnessCall(
   expect(caller.voiceCallState.isOutgoing, isTrue);
   expect(caller.voiceCallState.mediaMode, mediaMode);
   expect(harness.adapter.activePairLocks.values.single.callId, callId);
+  expect(harness.adapter.activeUserLocks[callerUsername]?.callId, callId);
+  expect(harness.adapter.activeUserLocks[calleeUsername]?.callId, callId);
   expect(harness.adapter.rooms[callId]?.caller, callerUsername);
   expect(harness.adapter.rooms[callId]?.callee, calleeUsername);
   expect(
@@ -5504,6 +5753,8 @@ Future<String> _startAndAcceptHarnessCall(
     VoiceCallSignalingStatus.connected,
   );
   expect(harness.adapter.activePairLocks.values.single.callId, callId);
+  expect(harness.adapter.activeUserLocks[callerUsername]?.callId, callId);
+  expect(harness.adapter.activeUserLocks[calleeUsername]?.callId, callId);
   expect(caller.voiceCallState.callId, callId);
   expect(callee.voiceCallState.callId, callId);
   expect(caller.voiceCallState.mediaMode, mediaMode);
@@ -5614,8 +5865,15 @@ class RecordingVoiceSignalingAdapter extends RecordingNoopSignalingAdapter
   Map<String, VoiceActivePairLock> get activePairLocks =>
       _voice.activePairLocks;
 
+  Map<String, VoiceActiveUserLock> get activeUserLocks =>
+      _voice.activeUserLocks;
+
   void seedActivePairLockForTest(VoiceActivePairLock lock) {
     _voice.seedActivePairLockForTest(lock);
+  }
+
+  void seedActiveUserLockForTest(VoiceActiveUserLock lock) {
+    _voice.seedActiveUserLockForTest(lock);
   }
 
   void reemitCallForTest(String callId) {

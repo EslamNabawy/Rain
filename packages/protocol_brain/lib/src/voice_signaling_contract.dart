@@ -233,6 +233,80 @@ final class VoiceActivePairLock {
   }
 }
 
+final class VoiceActiveUserLock {
+  const VoiceActiveUserLock({
+    required this.username,
+    required this.callId,
+    required this.pairId,
+    required this.caller,
+    required this.callee,
+    required this.createdAt,
+    required this.updatedAt,
+    required this.expiresAt,
+  });
+
+  final String username;
+  final String callId;
+  final String pairId;
+  final String caller;
+  final String callee;
+  final int createdAt;
+  final int updatedAt;
+  final int expiresAt;
+
+  Map<String, Object?> toJson() {
+    _validateUsername(username);
+    _validateCallId(callId);
+    _validatePairId(pairId);
+    _validateUsername(caller);
+    _validateUsername(callee);
+    if (username != caller && username != callee) {
+      throw const FormatException(
+        'Voice user lock owner is not a participant.',
+      );
+    }
+    if (caller == callee) {
+      throw const FormatException('Voice user lock participants must differ.');
+    }
+    if (voiceCallPairId(caller, callee) != pairId) {
+      throw const FormatException('Voice user lock pairId is not canonical.');
+    }
+    _validateTimestampOrder(createdAt: createdAt, updatedAt: updatedAt);
+    _validateExpiresAt(createdAt: createdAt, expiresAt: expiresAt);
+    return <String, Object?>{
+      'callId': callId,
+      'pairId': pairId,
+      'caller': caller,
+      'callee': callee,
+      'createdAt': createdAt,
+      'updatedAt': updatedAt,
+      'expiresAt': expiresAt,
+    };
+  }
+
+  factory VoiceActiveUserLock.fromJson({
+    required String username,
+    required Map<Object?, Object?> json,
+  }) {
+    final lock = VoiceActiveUserLock(
+      username: username,
+      callId: _requiredString(json, 'callId', max: _maxCallIdLength),
+      pairId: _requiredString(
+        json,
+        'pairId',
+        max: (_maxUsernameLength * 2) + 1,
+      ),
+      caller: _requiredString(json, 'caller', max: _maxUsernameLength),
+      callee: _requiredString(json, 'callee', max: _maxUsernameLength),
+      createdAt: _requiredInt(json, 'createdAt'),
+      updatedAt: _requiredInt(json, 'updatedAt'),
+      expiresAt: _requiredInt(json, 'expiresAt'),
+    );
+    lock.toJson();
+    return lock;
+  }
+}
+
 final class VoiceCallInboxEntry {
   const VoiceCallInboxEntry({
     required this.callId,

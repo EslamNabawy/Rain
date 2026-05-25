@@ -55,7 +55,7 @@ String _formatUiError(Object error) {
   }
   if (normalized.contains('finish the call before') ||
       normalized == 'finish the call first.') {
-    return 'Finish the call first.';
+    return 'Finish the call before sending files.';
   }
   if (normalized.contains('microphone') &&
       (normalized.contains('permission') || normalized.contains('denied'))) {

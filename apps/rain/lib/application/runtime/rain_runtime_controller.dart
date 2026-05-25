@@ -10,6 +10,7 @@ import 'package:rain_core/rain_core.dart';
 
 import 'connection_attempt_coordinator.dart';
 import 'file_transfer_progress_batcher.dart';
+import 'runtime_interaction_guard.dart';
 import 'serialized_runtime_mutations.dart';
 import 'video_call_renderers.dart';
 import 'voice_audio_level.dart';
@@ -112,6 +113,7 @@ class RainRuntimeController with WidgetsBindingObserver {
   final Duration videoCallRemoteFirstFrameTimeout;
   final Duration activeCallReconnectGrace;
   final Set<String> _manualDisconnectedPeers = <String>{};
+  final Set<String> _recoverableDisconnectedPeers = <String>{};
   final Set<String> _registeredPeerListeners = <String>{};
   final Set<String> _passivePeerListeners = <String>{};
   final Set<String> _unblockingPeers = <String>{};
@@ -312,6 +314,7 @@ class RainRuntimeController with WidgetsBindingObserver {
           if (_manualDisconnectedPeers.contains(session.peerId)) {
             return;
           }
+          _recoverableDisconnectedPeers.remove(session.peerId);
           _clearVoiceCallReconnectingForPeer(session.peerId);
           _connectionCoordinator.recordAttemptSuccess(session.peerId);
           await _localMutations.run(
@@ -331,6 +334,7 @@ class RainRuntimeController with WidgetsBindingObserver {
               pendingIntent ??
               _connectionCoordinator.disconnectIntentFor(peerId);
           if (recordedIntent == PeerDisconnectIntent.localManual ||
+              recordedIntent == PeerDisconnectIntent.localShutdown ||
               recordedIntent == PeerDisconnectIntent.transportLost ||
               recordedIntent == PeerDisconnectIntent.networkLost) {
             if (recordedIntent != PeerDisconnectIntent.localManual) {
@@ -352,10 +356,7 @@ class RainRuntimeController with WidgetsBindingObserver {
             peerId,
             PeerDisconnectIntent.remoteManual,
           );
-          _failVoiceCallForPeer(
-            peerId,
-            'Peer connection closed. Voice call ended.',
-          );
+          _failVoiceCallForPeer(peerId, 'Peer closed Rain. Connection ended.');
           unawaited(
             _failActiveTransfersForPeer(
               peerId,
@@ -516,9 +517,15 @@ class RainRuntimeController with WidgetsBindingObserver {
     Duration connectionTimeout = const Duration(seconds: 60),
   }) async {
     final normalizedUsername = _normalizedUsername(username);
-    if (brain == null) {
+    final connectDecision = RuntimeInteractionGuard.canConnectPeer(
+      peerId: normalizedUsername,
+      interactive: interactive,
+      manualDisconnectedPeers: _manualDisconnectedPeers,
+      peerConnectionAvailable: brain != null,
+    );
+    if (!connectDecision.allowed) {
       if (interactive) {
-        throw StateError('Peer connection is unavailable right now.');
+        connectDecision.throwIfDenied();
       }
       return;
     }
@@ -557,9 +564,11 @@ class RainRuntimeController with WidgetsBindingObserver {
       }
       _manualDisconnectedPeers.remove(normalizedUsername);
       _connectionCoordinator.clearDisconnectIntent(normalizedUsername);
+      _recoverableDisconnectedPeers.remove(normalizedUsername);
     }
     var current = brain!.getSession(normalizedUsername);
     if (current?.state == SessionState.connected) {
+      _recoverableDisconnectedPeers.remove(normalizedUsername);
       return;
     }
     if (current?.state == SessionState.connecting ||
@@ -621,6 +630,7 @@ class RainRuntimeController with WidgetsBindingObserver {
     }
     await _registerPeerListener(normalizedUsername, bestEffort: false);
     await brain!.connect(normalizedUsername);
+    _recoverableDisconnectedPeers.remove(normalizedUsername);
     if (waitForConnected) {
       await _waitForPeerConnection(
         normalizedUsername,
@@ -632,6 +642,7 @@ class RainRuntimeController with WidgetsBindingObserver {
   Future<void> disconnectPeer(String username) async {
     final normalizedUsername = _normalizedUsername(username);
     _manualDisconnectedPeers.add(normalizedUsername);
+    _recoverableDisconnectedPeers.remove(normalizedUsername);
     _connectionCoordinator.recordDisconnectIntent(
       normalizedUsername,
       PeerDisconnectIntent.localManual,
@@ -680,7 +691,9 @@ class RainRuntimeController with WidgetsBindingObserver {
 
     final sessions = brain?.getSessions() ?? const <Session>[];
     for (final session in sessions) {
-      _manualDisconnectedPeers.add(session.peerId);
+      if (!_manualDisconnectedPeers.contains(session.peerId)) {
+        _recoverableDisconnectedPeers.add(session.peerId);
+      }
       _connectionCoordinator.recordDisconnectIntent(
         session.peerId,
         PeerDisconnectIntent.networkLost,
@@ -745,6 +758,24 @@ class RainRuntimeController with WidgetsBindingObserver {
       String recoveryReason,
     ) async {
       await brain?.recoverConnections(reason: recoveryReason);
+      for (final peerId in _recoverableDisconnectedPeers.toList()) {
+        final recoveryDecision = RuntimeInteractionGuard.canAutoRecoverPeer(
+          peerId: peerId,
+          manualDisconnectedPeers: _manualDisconnectedPeers,
+        );
+        if (!recoveryDecision.allowed) {
+          continue;
+        }
+        try {
+          await connectPeer(
+            peerId,
+            allowStalePresence: true,
+            bypassRetryBackoff: true,
+          );
+        } catch (error) {
+          _connectionCoordinator.recordAttemptFailure(peerId, error);
+        }
+      }
     });
   }
 
@@ -961,9 +992,10 @@ class RainRuntimeController with WidgetsBindingObserver {
     }
 
     await _assertCanTransferFile(normalizedPeerId);
-    if (voiceCallBlocksFileTransfer(normalizedPeerId)) {
-      throw StateError('Finish the call first.');
-    }
+    RuntimeInteractionGuard.canStartFileTransfer(
+      peerId: normalizedPeerId,
+      voiceCallState: _voiceCallState,
+    ).throwIfDenied();
     final session = _connectedSession(normalizedPeerId);
     if (session == null) {
       throw StateError('Connect first.');
@@ -1061,9 +1093,11 @@ class RainRuntimeController with WidgetsBindingObserver {
       throw StateError('This file transfer cannot be accepted.');
     }
     await _assertCanTransferFile(transfer.peerId);
-    if (voiceCallBlocksFileTransfer(transfer.peerId)) {
-      throw StateError('Finish the call first.');
-    }
+    RuntimeInteractionGuard.canAcceptFileTransfer(
+      peerId: transfer.peerId,
+      transferId: transfer.id,
+      voiceCallState: _voiceCallState,
+    ).throwIfDenied();
     if (_connectedSession(transfer.peerId) == null) {
       throw StateError('Connect first.');
     }
@@ -1123,6 +1157,7 @@ class RainRuntimeController with WidgetsBindingObserver {
   void _recordSessionAttemptState(Session session) {
     switch (session.state) {
       case SessionState.connected:
+        _recoverableDisconnectedPeers.remove(session.peerId);
         _clearVoiceCallReconnectingForPeer(session.peerId);
         _connectionCoordinator.recordAttemptSuccess(session.peerId);
         break;
@@ -1223,7 +1258,10 @@ class RainRuntimeController with WidgetsBindingObserver {
             session.peerId,
             'Transfer canceled because Rain is closing.',
           );
-          await brain!.disconnect(session.peerId);
+          await _disconnectBrainPeer(
+            session.peerId,
+            PeerDisconnectIntent.localShutdown,
+          );
           await _unregisterPeerListener(session.peerId);
         } catch (error) {
           // Ignore errors during cleanup

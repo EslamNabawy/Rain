@@ -5,6 +5,7 @@ import 'package:rain_core/rain_core.dart';
 
 enum PeerDisconnectIntent {
   localManual,
+  localShutdown,
   remoteManual,
   transportLost,
   networkLost,

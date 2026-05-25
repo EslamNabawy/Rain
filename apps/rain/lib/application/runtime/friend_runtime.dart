@@ -466,6 +466,7 @@ extension FriendRuntime on RainRuntimeController {
     );
     await _presenceSubscriptions.remove(normalizedUsername)?.cancel();
     _manualDisconnectedPeers.remove(normalizedUsername);
+    _recoverableDisconnectedPeers.remove(normalizedUsername);
     _connectionCoordinator.clearRetry(normalizedUsername);
     await brain?.disconnect(normalizedUsername);
     await _unregisterPeerListener(normalizedUsername);

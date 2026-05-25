@@ -200,6 +200,7 @@ void main() {
 
     for (final node in <String>[
       'activeVoicePairs',
+      'activeVoiceUsers',
       'voiceCallInboxes',
       'voiceCalls',
     ]) {
@@ -223,11 +224,24 @@ void main() {
     expect(rules, contains('root.child(\'friendships/\''));
     expect(rules, contains('root.child(\'blocks/\''));
     expect(rules, contains('"activeVoicePairs"'));
+    expect(rules, contains('"activeVoiceUsers"'));
     expect(rules, contains('"voiceCalls"'));
     expect(
       rules,
       contains(
         "root.child('activeVoicePairs/' + newData.child('pairId').val() + '/callId').val() === \$callId",
+      ),
+    );
+    expect(
+      rules,
+      contains(
+        "root.child('activeVoiceUsers/' + newData.child('caller').val() + '/callId').val() === \$callId",
+      ),
+    );
+    expect(
+      rules,
+      contains(
+        "root.child('activeVoiceUsers/' + newData.child('callee').val() + '/callId').val() === \$callId",
       ),
     );
     expect(
