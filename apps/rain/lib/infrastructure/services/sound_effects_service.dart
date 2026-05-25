@@ -322,11 +322,16 @@ class SoundEffectsService {
     await Future.wait(players.map(_stopAndDisposeLoopPlayer));
   }
 
-  Future<void> dispose() async {
+  Future<void> stopAll() async {
     await stopAllLoops();
     final players = _players.values.toList(growable: false);
     _players.clear();
-    await Future.wait(players.map((player) => player.dispose()));
+    _lastPlayedAt.clear();
+    await Future.wait(players.map(_stopAndDisposeOneShotPlayer));
+  }
+
+  Future<void> dispose() async {
+    await stopAll();
   }
 
   bool _isThrottled(RainSoundEffect effect, DateTime now) {
@@ -387,6 +392,15 @@ Future<void> _disposeOneShotPlayer(RainSoundPlayer player) async {
   } catch (error) {
     debugPrint('Rain sound player dispose ignored: $error');
   }
+}
+
+Future<void> _stopAndDisposeOneShotPlayer(RainSoundPlayer player) async {
+  try {
+    await player.stop();
+  } catch (error) {
+    debugPrint('Rain sound player stop ignored: $error');
+  }
+  await _disposeOneShotPlayer(player);
 }
 
 Future<void> _stopAndDisposeLoopPlayer(RainSoundPlayer player) async {

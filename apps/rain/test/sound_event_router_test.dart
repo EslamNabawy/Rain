@@ -601,6 +601,23 @@ void main() {
       },
     );
 
+    test('app exit cleanup stops loops and one-shot players', () async {
+      final effects = _RecordingSoundEffectsService();
+      final router = _router(effects);
+
+      await router.dispatch(RainSoundEvent.chatSend(conversationId: 'bob'));
+      await router.dispatch(
+        RainSoundEvent.callIncomingStarted(callId: 'call-1'),
+      );
+      await router.stopAllForAppExit();
+
+      expect(effects.stopAllCalls, 1);
+      expect(effects.stopAllLoopCalls, 1);
+      expect(effects.activeLoops, isEmpty);
+      await router.dispatch(RainSoundEvent.chatSend(conversationId: 'bob'));
+      expect(effects.played, hasLength(1));
+    });
+
     test('disabled call sounds stop active call loops', () async {
       final effects = _RecordingSoundEffectsService();
       var settings = const AppAudioSettings();
@@ -792,6 +809,7 @@ final class _RecordingSoundEffectsService extends SoundEffectsService {
   final Map<String, RainSoundEffect> activeLoops = <String, RainSoundEffect>{};
   var playAttempts = 0;
   var stopAllLoopCalls = 0;
+  var stopAllCalls = 0;
   var throwOnPlay = false;
   Object? playError;
 
@@ -846,5 +864,12 @@ final class _RecordingSoundEffectsService extends SoundEffectsService {
     operations.add('stopAllLoops');
     stopAllLoopCalls += 1;
     activeLoops.clear();
+  }
+
+  @override
+  Future<void> stopAll() async {
+    operations.add('stopAll');
+    stopAllCalls += 1;
+    await stopAllLoops();
   }
 }

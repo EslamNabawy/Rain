@@ -4,6 +4,8 @@ import 'dart:ui';
 
 import 'package:window_manager/window_manager.dart';
 
+import 'package:rain/application/runtime/app_exit_coordinator.dart';
+
 class DesktopShellController with WindowListener {
   bool _initialized = false;
   bool _closing = false;
@@ -16,7 +18,7 @@ class DesktopShellController with WindowListener {
 
     await windowManager.ensureInitialized();
     windowManager.addListener(this);
-    await windowManager.setPreventClose(false);
+    await windowManager.setPreventClose(true);
 
     unawaited(
       windowManager.waitUntilReadyToShow(
@@ -35,8 +37,12 @@ class DesktopShellController with WindowListener {
       return;
     }
     _closing = true;
-    await windowManager.setPreventClose(false);
-    await windowManager.destroy();
+    try {
+      await AppExitCoordinator.instance.shutdown(AppExitReason.windowClose);
+    } finally {
+      await windowManager.setPreventClose(false);
+      await windowManager.destroy();
+    }
   }
 
   static bool get _isDesktop =>

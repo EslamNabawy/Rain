@@ -137,9 +137,15 @@ final class SoundEventRouter {
   }
 
   Future<void> dispose() async {
+    await stopAllForAppExit();
+  }
+
+  Future<void> stopAllForAppExit() async {
     _disposed = true;
     _cancelPendingSendBurstTick();
-    await stopAllLoops();
+    _incomingLoopCallId = null;
+    _outgoingLoopCallId = null;
+    await _effects.stopAll();
   }
 
   Set<String> _activeLoopIds() {
