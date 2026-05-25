@@ -22,6 +22,7 @@ const Duration _warningRollingWindow = Duration(seconds: 5);
 const int _maxWarningsPerRollingWindow = 3;
 const Duration _callLifecycleDedupeWindow = Duration(minutes: 10);
 const Duration _callFailureWindow = Duration(milliseconds: 1200);
+const double _sendBurstTrailingVolumeScale = 0.62;
 const String _incomingCallLoopId = 'rain-call-incoming';
 const String _outgoingCallLoopId = 'rain-call-outgoing';
 const double _incomingCallLoopVolume = 0.42;
@@ -49,6 +50,8 @@ final class SoundEventRouter {
   final Map<String, DateTime> _lastWarningByKey = <String, DateTime>{};
   final List<DateTime> _recentWarningPlays = <DateTime>[];
   final Map<String, DateTime> _playedCallLifecycleByKey = <String, DateTime>{};
+  Timer? _pendingSendBurstTick;
+  DateTime? _lastSendBurstSuppressedAt;
   DateTime? _lastDispatchedAt;
   String? _incomingLoopCallId;
   String? _outgoingLoopCallId;
@@ -64,6 +67,7 @@ final class SoundEventRouter {
       lastSuppressedReason: _lastSuppressedReason,
       activeLoopIds: _activeLoopIds(),
       soundServiceDisabledReason: _effects.diagnostics.disabledReason,
+      soundServiceLastFailureReason: _effects.diagnostics.lastFailureReason,
     );
   }
 
@@ -93,8 +97,17 @@ final class SoundEventRouter {
       }
       final policySuppression = _policySuppressionReason(event, now);
       if (policySuppression != null) {
-        _lastSuppressedReason = policySuppression;
+        if (event.kind == RainSoundEventKind.chatSend &&
+            policySuppression == 'sendBurstWindow') {
+          _scheduleSendBurstTick(event, now);
+          _lastSuppressedReason = 'sendBurstQueued';
+        } else {
+          _lastSuppressedReason = policySuppression;
+        }
         return;
+      }
+      if (event.kind == RainSoundEventKind.chatSend) {
+        _cancelPendingSendBurstTick();
       }
       _lastSuppressedReason = null;
       _recordAllowedEvent(event, now);
@@ -113,13 +126,7 @@ final class SoundEventRouter {
         allowDuringCall: event.isCallControlEvent,
       );
     } catch (error) {
-      try {
-        await stopAllLoops();
-      } catch (cleanupError) {
-        debugPrint('Rain sound loop cleanup ignored: $cleanupError');
-      }
-      _lastSuppressedReason = _sanitizedSoundFailureReason(error);
-      debugPrint('Rain sound event ignored: $_lastSuppressedReason');
+      await _handleDispatchFailure(error);
     }
   }
 
@@ -131,6 +138,7 @@ final class SoundEventRouter {
 
   Future<void> dispose() async {
     _disposed = true;
+    _cancelPendingSendBurstTick();
     await stopAllLoops();
   }
 
@@ -331,6 +339,81 @@ final class SoundEventRouter {
     }
   }
 
+  void _scheduleSendBurstTick(RainSoundEvent event, DateTime now) {
+    _lastSendBurstSuppressedAt = now;
+    if (_pendingSendBurstTick != null) {
+      return;
+    }
+    final lastPlayedAt = _lastPlayedByKind[RainSoundEventKind.chatSend] ?? now;
+    final elapsed = now.difference(lastPlayedAt);
+    final delay = elapsed >= _sendBurstWindow
+        ? Duration.zero
+        : _sendBurstWindow - elapsed;
+    _pendingSendBurstTick = Timer(delay, () {
+      _pendingSendBurstTick = null;
+      unawaited(_playPendingSendBurstTick(event));
+    });
+  }
+
+  void _cancelPendingSendBurstTick() {
+    _pendingSendBurstTick?.cancel();
+    _pendingSendBurstTick = null;
+    _lastSendBurstSuppressedAt = null;
+  }
+
+  Future<void> _playPendingSendBurstTick(RainSoundEvent event) async {
+    final burstSuppressedAt = _lastSendBurstSuppressedAt;
+    if (_disposed || burstSuppressedAt == null) {
+      return;
+    }
+    try {
+      final settings = await Future<AppAudioSettings>.value(_settingsLoader());
+      if (_disposed || _lastSendBurstSuppressedAt != burstSuppressedAt) {
+        return;
+      }
+      if (!settings.soundEffectsEnabled || !settings.callSoundsEnabled) {
+        await stopAllLoops();
+      }
+      final settingsSuppression = _settingsSuppressionReason(settings, event);
+      if (settingsSuppression != null) {
+        _lastSuppressedReason = settingsSuppression;
+        return;
+      }
+      final callStateSuppression = _callStateSuppressionReason(settings, event);
+      if (callStateSuppression != null) {
+        _lastSuppressedReason = callStateSuppression;
+        return;
+      }
+      final now = _clock();
+      _lastSuppressedReason = null;
+      _lastDispatchedAt = now;
+      _lastPlayedByKind[RainSoundEventKind.chatSend] = now;
+      await _effects.play(
+        RainSoundEffect.send,
+        voiceCallActive: _isVoiceCallActive(event),
+        volumeScale: _sendBurstTrailingVolumeScale,
+      );
+    } catch (error) {
+      await _handleDispatchFailure(error);
+    } finally {
+      if (_lastSendBurstSuppressedAt == burstSuppressedAt) {
+        _lastSendBurstSuppressedAt = null;
+      }
+    }
+  }
+
+  Future<void> _handleDispatchFailure(Object error) async {
+    if (error is MissingPluginException) {
+      try {
+        await stopAllLoops();
+      } catch (cleanupError) {
+        debugPrint('Rain sound loop cleanup ignored: $cleanupError');
+      }
+    }
+    _lastSuppressedReason = _sanitizedSoundFailureReason(error);
+    debugPrint('Rain sound event ignored: $_lastSuppressedReason');
+  }
+
   Future<void> _startIncomingLoop(RainSoundEvent event) async {
     final callId = event.callId;
     if (callId == null || _incomingLoopCallId == callId) {
@@ -503,12 +586,14 @@ final class SoundEventRouterDiagnostics {
     required this.lastSuppressedReason,
     required this.activeLoopIds,
     required this.soundServiceDisabledReason,
+    required this.soundServiceLastFailureReason,
   });
 
   final RainSoundEventKind? lastEventKind;
   final String? lastSuppressedReason;
   final Set<String> activeLoopIds;
   final String? soundServiceDisabledReason;
+  final String? soundServiceLastFailureReason;
 
   Map<String, Object?> toJson() {
     return <String, Object?>{
@@ -516,6 +601,7 @@ final class SoundEventRouterDiagnostics {
       'lastSuppressedReason': lastSuppressedReason,
       'activeLoopIds': activeLoopIds.toList(growable: false)..sort(),
       'soundServiceDisabledReason': soundServiceDisabledReason,
+      'soundServiceLastFailureReason': soundServiceLastFailureReason,
     };
   }
 }

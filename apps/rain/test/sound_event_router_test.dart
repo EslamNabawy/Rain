@@ -21,24 +21,37 @@ void main() {
       ]);
     });
 
-    test('five sends in 200 ms produce one send sound', () async {
-      final effects = _RecordingSoundEffectsService();
-      final base = DateTime.utc(2026, 5, 24, 12);
-      final router = _router(effects);
+    test(
+      'five sends in 200 ms produce one immediate and one trailing send',
+      () async {
+        final effects = _RecordingSoundEffectsService();
+        final base = DateTime.utc(2026, 5, 24, 12);
+        final router = _router(effects);
 
-      for (var index = 0; index < 5; index += 1) {
-        await router.dispatch(
-          RainSoundEvent.chatSend(
-            conversationId: 'bob',
-            occurredAt: base.add(Duration(milliseconds: index * 50)),
-          ),
-        );
-      }
+        for (var index = 0; index < 5; index += 1) {
+          await router.dispatch(
+            RainSoundEvent.chatSend(
+              conversationId: 'bob',
+              occurredAt: base.add(Duration(milliseconds: index * 50)),
+            ),
+          );
+        }
 
-      expect(effects.played.map((entry) => entry.effect), <RainSoundEffect>[
-        RainSoundEffect.send,
-      ]);
-    });
+        expect(effects.played.map((entry) => entry.effect), <RainSoundEffect>[
+          RainSoundEffect.send,
+        ]);
+        expect(router.diagnostics.lastSuppressedReason, 'sendBurstQueued');
+
+        await Future<void>.delayed(const Duration(milliseconds: 350));
+
+        expect(effects.played.map((entry) => entry.effect), <RainSoundEffect>[
+          RainSoundEffect.send,
+          RainSoundEffect.send,
+        ]);
+        expect(effects.played.last.volumeScale, lessThan(1));
+        expect(router.diagnostics.lastSuppressedReason, isNull);
+      },
+    );
 
     test('five sends over 1200 ms produce spaced send sounds', () async {
       final effects = _RecordingSoundEffectsService();
@@ -65,9 +78,42 @@ void main() {
 
     test(
       'sound router preserves burst feedback without disabling message sounds',
-      () async {},
-      skip:
-          'Phase 10 will replace this baseline with the burst feedback regression.',
+      () async {
+        final effects = _RecordingSoundEffectsService();
+        final base = DateTime.utc(2026, 5, 24, 12);
+        final router = _router(effects);
+
+        for (var index = 0; index < 6; index += 1) {
+          await router.dispatch(
+            RainSoundEvent.chatSend(
+              conversationId: 'bob',
+              occurredAt: base.add(Duration(milliseconds: index * 45)),
+            ),
+          );
+        }
+        await Future<void>.delayed(const Duration(milliseconds: 350));
+        await router.dispatch(
+          RainSoundEvent.chatReceive(
+            conversationId: 'bob',
+            occurredAt: base.add(const Duration(milliseconds: 1200)),
+          ),
+        );
+        await router.dispatch(
+          RainSoundEvent.chatSend(
+            conversationId: 'bob',
+            occurredAt: base.add(const Duration(milliseconds: 1500)),
+          ),
+        );
+
+        expect(effects.played.map((entry) => entry.effect), <RainSoundEffect>[
+          RainSoundEffect.send,
+          RainSoundEffect.send,
+          RainSoundEffect.receive,
+          RainSoundEffect.send,
+        ]);
+        expect(effects.played[1].volumeScale, lessThan(1));
+        expect(router.diagnostics.soundServiceDisabledReason, isNull);
+      },
     );
 
     test('ten receives in one chat are grouped but not silenced', () async {
@@ -715,11 +761,13 @@ final class _PlayedSound {
     required this.effect,
     required this.voiceCallActive,
     required this.allowDuringCall,
+    required this.volumeScale,
   });
 
   final RainSoundEffect effect;
   final bool voiceCallActive;
   final bool allowDuringCall;
+  final double volumeScale;
 }
 
 final class _StartedLoop {
@@ -752,6 +800,7 @@ final class _RecordingSoundEffectsService extends SoundEffectsService {
     RainSoundEffect effect, {
     bool voiceCallActive = false,
     bool allowDuringCall = false,
+    double volumeScale = 1.0,
   }) async {
     playAttempts += 1;
     final error = playError;
@@ -767,6 +816,7 @@ final class _RecordingSoundEffectsService extends SoundEffectsService {
         effect: effect,
         voiceCallActive: voiceCallActive,
         allowDuringCall: allowDuringCall,
+        volumeScale: volumeScale,
       ),
     );
   }

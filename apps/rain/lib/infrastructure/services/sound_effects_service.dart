@@ -147,11 +147,13 @@ class SoundEffectsService {
       <RainSoundEffect, DateTime>{};
   bool _disabled = false;
   String? _disabledReason;
+  String? _lastFailureReason;
 
   SoundEffectsDiagnostics get diagnostics {
     return SoundEffectsDiagnostics(
       disabled: _disabled,
       disabledReason: _disabledReason,
+      lastFailureReason: _lastFailureReason,
       activeLoopIds: Set<String>.unmodifiable(_loopPlayers.keys),
     );
   }
@@ -160,6 +162,7 @@ class SoundEffectsService {
     RainSoundEffect effect, {
     bool voiceCallActive = false,
     bool allowDuringCall = false,
+    double volumeScale = 1.0,
   }) async {
     if (_disabled) {
       return;
@@ -168,8 +171,8 @@ class SoundEffectsService {
     try {
       settings = await Future<AppAudioSettings>.value(_settingsLoader());
     } catch (error) {
-      _disable('settingsUnavailable');
-      debugPrint('Rain sound effects disabled: $error');
+      _recordFailure('settingsUnavailable');
+      debugPrint('Rain sound effect skipped: $error');
       return;
     }
     if (!settings.soundEffectsEnabled) {
@@ -192,10 +195,10 @@ class SoundEffectsService {
     if (_isThrottled(effect, now)) {
       return;
     }
-    _lastPlayedAt[effect] = now;
 
+    RainSoundPlayer? player;
     try {
-      final player = _players.putIfAbsent(
+      player = _players.putIfAbsent(
         effect,
         () => _playerFactory('rain-sfx-${effect.name}'),
       );
@@ -211,15 +214,20 @@ class SoundEffectsService {
               voiceCallActive: reduceDuringCall,
               allowDuringCall: allowDuringCall,
             ) *
-            settings.soundEffectsVolume,
+            settings.soundEffectsVolume *
+            volumeScale.clamp(0.0, 1.0).toDouble(),
       );
+      _lastPlayedAt[effect] = now;
     } on MissingPluginException {
       _disable('pluginUnavailable');
       await stopAllLoops();
     } catch (error) {
-      _disable('playbackFailed');
-      await stopAllLoops();
-      debugPrint('Rain sound effects disabled: $error');
+      _recordFailure('playbackFailed');
+      if (player != null && identical(_players[effect], player)) {
+        _players.remove(effect);
+        await _disposeOneShotPlayer(player);
+      }
+      debugPrint('Rain sound effect skipped: $error');
     }
   }
 
@@ -239,9 +247,8 @@ class SoundEffectsService {
     try {
       settings = await Future<AppAudioSettings>.value(_settingsLoader());
     } catch (error) {
-      _disable('settingsUnavailable');
-      await stopAllLoops();
-      debugPrint('Rain sound effects disabled: $error');
+      _recordFailure('settingsUnavailable');
+      debugPrint('Rain sound loop skipped: $error');
       return;
     }
     if (!settings.soundEffectsEnabled) {
@@ -285,12 +292,13 @@ class SoundEffectsService {
       _loopPlayers.remove(normalizedLoopId);
       _loopEffects.remove(normalizedLoopId);
       await _stopAndDisposeLoopPlayer(player);
+      await stopAllLoops();
     } catch (error) {
-      _disable('loopPlaybackFailed');
+      _recordFailure('loopPlaybackFailed');
       _loopPlayers.remove(normalizedLoopId);
       _loopEffects.remove(normalizedLoopId);
       await _stopAndDisposeLoopPlayer(player);
-      debugPrint('Rain sound loops disabled: $error');
+      debugPrint('Rain sound loop skipped: $error');
     }
   }
 
@@ -342,6 +350,11 @@ class SoundEffectsService {
   void _disable(String reason) {
     _disabled = true;
     _disabledReason = reason;
+    _recordFailure(reason);
+  }
+
+  void _recordFailure(String reason) {
+    _lastFailureReason = reason;
   }
 }
 
@@ -349,19 +362,30 @@ final class SoundEffectsDiagnostics {
   const SoundEffectsDiagnostics({
     required this.disabled,
     required this.disabledReason,
+    required this.lastFailureReason,
     required this.activeLoopIds,
   });
 
   final bool disabled;
   final String? disabledReason;
+  final String? lastFailureReason;
   final Set<String> activeLoopIds;
 
   Map<String, Object?> toJson() {
     return <String, Object?>{
       'disabled': disabled,
       'disabledReason': disabledReason,
+      'lastFailureReason': lastFailureReason,
       'activeLoopIds': activeLoopIds.toList(growable: false)..sort(),
     };
+  }
+}
+
+Future<void> _disposeOneShotPlayer(RainSoundPlayer player) async {
+  try {
+    await player.dispose();
+  } catch (error) {
+    debugPrint('Rain sound player dispose ignored: $error');
   }
 }
 

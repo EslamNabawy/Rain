@@ -238,6 +238,7 @@ final class _RecordingSoundEffectsService extends SoundEffectsService {
     RainSoundEffect effect, {
     bool voiceCallActive = false,
     bool allowDuringCall = false,
+    double volumeScale = 1.0,
   }) async {
     played.add(effect);
   }

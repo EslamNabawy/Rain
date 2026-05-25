@@ -82,7 +82,66 @@ void main() {
     expect(created, 1);
     expect(service.diagnostics.disabled, isTrue);
     expect(service.diagnostics.disabledReason, 'pluginUnavailable');
+    expect(service.diagnostics.lastFailureReason, 'pluginUnavailable');
   });
+
+  test('transient playback error does not disable future effects', () async {
+    var shouldFail = true;
+    final fakes = <_FakeRainSoundPlayer>[];
+    final service = SoundEffectsService(
+      playerFactory: (String _) {
+        final fake = _FakeRainSoundPlayer(
+          playError: shouldFail ? StateError('decoder busy') : null,
+        );
+        shouldFail = false;
+        fakes.add(fake);
+        return fake;
+      },
+    );
+
+    await service.play(RainSoundEffect.send);
+    await service.play(RainSoundEffect.send);
+
+    expect(service.diagnostics.disabled, isFalse);
+    expect(service.diagnostics.disabledReason, isNull);
+    expect(service.diagnostics.lastFailureReason, 'playbackFailed');
+    expect(fakes, hasLength(2));
+    expect(fakes.first.disposed, isTrue);
+    expect(fakes.last.played.single.assetPath, 'sounds/send.wav');
+  });
+
+  test(
+    'transient loop playback error does not disable one-shot effects',
+    () async {
+      var shouldFail = true;
+      final fakes = <_FakeRainSoundPlayer>[];
+      final service = SoundEffectsService(
+        playerFactory: (String _) {
+          final fake = _FakeRainSoundPlayer(
+            playError: shouldFail ? StateError('audio route busy') : null,
+          );
+          shouldFail = false;
+          fakes.add(fake);
+          return fake;
+        },
+      );
+
+      await service.startLoop(
+        RainSoundEffect.callIncoming,
+        loopId: 'incoming',
+        volume: 0.42,
+      );
+      await service.play(RainSoundEffect.send);
+
+      expect(service.diagnostics.disabled, isFalse);
+      expect(service.diagnostics.disabledReason, isNull);
+      expect(service.diagnostics.lastFailureReason, 'loopPlaybackFailed');
+      expect(fakes, hasLength(2));
+      expect(fakes.first.stopped, isTrue);
+      expect(fakes.first.disposed, isTrue);
+      expect(fakes.last.played.single.assetPath, 'sounds/send.wav');
+    },
+  );
 
   test('burst throttle suppresses repeated receive sounds', () async {
     var now = DateTime(2026, 5, 24, 12);
@@ -483,9 +542,10 @@ class _PlayedSound {
 }
 
 class _FakeRainSoundPlayer implements RainSoundPlayer {
-  _FakeRainSoundPlayer({this.throwOnConfigure = false});
+  _FakeRainSoundPlayer({this.throwOnConfigure = false, this.playError});
 
   final bool throwOnConfigure;
+  final Object? playError;
   final List<_PlayedSound> played = <_PlayedSound>[];
   PlayerMode? configuredMode;
   AudioContext? configuredContext;
@@ -512,6 +572,10 @@ class _FakeRainSoundPlayer implements RainSoundPlayer {
 
   @override
   Future<void> playAsset(String assetPath, {required double volume}) async {
+    final error = playError;
+    if (error != null) {
+      throw error;
+    }
     played.add(_PlayedSound(assetPath: assetPath, volume: volume));
   }
 
