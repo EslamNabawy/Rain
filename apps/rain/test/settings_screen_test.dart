@@ -89,6 +89,18 @@ void main() {
     expect(await AppSettingsStore().loadSelectedMicrophoneDeviceId(), 'mic-1');
   });
 
+  testWidgets(
+    'output route control hides bluetooth unless bluetooth output is available',
+    (WidgetTester tester) async {},
+    skip: true,
+  );
+
+  testWidgets(
+    'settings microphone picker shows real audio inputs including wired headset labels',
+    (WidgetTester tester) async {},
+    skip: true,
+  );
+
   testWidgets('camera selection persists from settings', (
     WidgetTester tester,
   ) async {

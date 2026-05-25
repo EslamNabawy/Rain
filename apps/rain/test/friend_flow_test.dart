@@ -4726,6 +4726,20 @@ void main() {
       await runtime.dispose();
     });
 
+    test(
+      'manual disconnect suppresses remote recovery and interactive reconnect restarts cleanly',
+      () async {},
+      skip:
+          'Phase 01 will replace this baseline with the reconnect intent regression.',
+    );
+
+    test(
+      'weak call transport enters reconnecting grace instead of immediate failed disconnect',
+      () async {},
+      skip:
+          'Phase 02 will replace this baseline with the active call recovery regression.',
+    );
+
     test('connectPeer interactive rejects pending relationships', () async {
       final adapter = NoopSignalingAdapter();
       final brain = TestSessionManager();

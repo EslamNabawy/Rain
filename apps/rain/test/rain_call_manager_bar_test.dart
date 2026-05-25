@@ -155,6 +155,12 @@ void main() {
     expect(top, greaterThanOrEqualTo(42));
   });
 
+  testWidgets(
+    'call overlay respects top safe area and does not overlap Android status bar',
+    (WidgetTester tester) async {},
+    skip: true,
+  );
+
   testWidgets('manager stays reachable in compact desktop bounds', (
     WidgetTester tester,
   ) async {

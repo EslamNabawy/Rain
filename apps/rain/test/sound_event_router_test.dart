@@ -63,6 +63,13 @@ void main() {
       ]);
     });
 
+    test(
+      'sound router preserves burst feedback without disabling message sounds',
+      () async {},
+      skip:
+          'Phase 10 will replace this baseline with the burst feedback regression.',
+    );
+
     test('ten receives in one chat are grouped but not silenced', () async {
       final effects = _RecordingSoundEffectsService();
       final base = DateTime.utc(2026, 5, 24, 12);

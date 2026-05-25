@@ -734,6 +734,13 @@ void main() {
   });
 
   test(
+    'dedicated voice media keeps active call recoverable through transient transport weakness',
+    () async {},
+    skip:
+        'Phase 02 will replace this baseline with the voice media recovery regression.',
+  );
+
+  test(
     'dedicated voice media repeated calls create new peer connections',
     () async {
       final platform = _FakeVoicePlatformBridge();

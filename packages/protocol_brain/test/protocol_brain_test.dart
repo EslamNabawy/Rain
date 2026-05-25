@@ -568,6 +568,13 @@ void main() {
     },
   );
 
+  test(
+    'manual remote disconnect does not schedule endless reconnect recovery',
+    () async {},
+    skip:
+        'Phase 01 will replace this baseline with the protocol reconnect intent regression.',
+  );
+
   test('connected answerer ignores stale retry offers', () async {
     final adapter = _RecordingSignalingAdapter();
     var peerCreations = 0;

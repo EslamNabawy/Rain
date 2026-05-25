@@ -666,6 +666,12 @@ void main() {
     expect(route, VoiceCallOutputRoute.bluetooth);
   });
 
+  testWidgets(
+    'ripple halo wraps the component bounds instead of only the icon glyph',
+    (WidgetTester tester) async {},
+    skip: true,
+  );
+
   testWidgets('audio-only call controls do not render future video controls', (
     WidgetTester tester,
   ) async {
@@ -1362,6 +1368,18 @@ void main() {
     );
     await renderers.dispose();
   });
+
+  testWidgets(
+    'video stage shows remote video as primary and local video as preview',
+    (WidgetTester tester) async {},
+    skip: true,
+  );
+
+  testWidgets(
+    'tapping local preview swaps primary and preview video roles',
+    (WidgetTester tester) async {},
+    skip: true,
+  );
 
   testWidgets('video overlay fullscreen fills the call viewport', (
     WidgetTester tester,
