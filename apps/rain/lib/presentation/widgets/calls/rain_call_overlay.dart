@@ -4,6 +4,7 @@ import 'package:flutter/material.dart';
 
 import 'package:rain/application/runtime/video_call_renderers.dart';
 import 'package:rain/application/runtime/voice_call_state.dart';
+import 'package:rain/application/state/call_surface_geometry.dart';
 import 'package:rain/application/state/call_surface_providers.dart';
 import 'package:rain/presentation/branding/rain_peer_core_mark.dart';
 import 'package:rain/presentation/branding/rain_ripple_halo_surface.dart';
@@ -35,6 +36,8 @@ class RainCallOverlay extends StatelessWidget {
     required this.onExpand,
     this.onToggleVideoPrimaryRole,
     this.onFullscreen,
+    this.onMoveFloating,
+    this.onClampFloating,
   });
 
   final VoiceCallState state;
@@ -58,6 +61,19 @@ class RainCallOverlay extends StatelessWidget {
   final VoidCallback onExpand;
   final VoidCallback? onToggleVideoPrimaryRole;
   final VoidCallback? onFullscreen;
+  final void Function(
+    Offset delta,
+    Size viewportSize,
+    EdgeInsets safePadding,
+    Size panelSize,
+  )?
+  onMoveFloating;
+  final void Function(
+    Size viewportSize,
+    EdgeInsets safePadding,
+    Size panelSize,
+  )?
+  onClampFloating;
 
   @override
   Widget build(BuildContext context) {
@@ -101,45 +117,37 @@ class RainCallOverlay extends StatelessWidget {
           );
         }
 
-        return SafeArea(
-          minimum: const EdgeInsets.all(12),
-          child: LayoutBuilder(
-            builder: (BuildContext context, BoxConstraints safeConstraints) {
-              return Align(
-                alignment: Alignment.center,
-                child: Padding(
-                  padding: const EdgeInsets.fromLTRB(4, 12, 4, 12),
-                  child: _RainExpandedCallPanel(
-                    state: state,
-                    displayName: displayName,
-                    gender: gender,
-                    routeSummary: routeSummary,
-                    panelWidth: _boundedWidth(
-                      safeConstraints.maxWidth,
-                      _preferredPanelWidth(safeConstraints.maxWidth, state),
-                    ),
-                    maxHeight: _boundedHeight(safeConstraints.maxHeight),
-                    videoRenderers: videoRenderers,
-                    primaryRole: surface.videoPrimaryRole,
-                    onToggleVideoPrimaryRole: onToggleVideoPrimaryRole,
-                    onAccept: onAccept,
-                    onReject: onReject,
-                    onHangUp: onHangUp,
-                    onRetry: onRetry,
-                    onToggleMute: onToggleMute,
-                    onToggleDeafen: onToggleDeafen,
-                    onToggleCamera: onToggleCamera,
-                    onSwitchCamera: onSwitchCamera,
-                    onSelectOutputRoute: onSelectOutputRoute,
-                    controlCapabilities: controlCapabilities,
-                    outputRouteOptions: outputRouteOptions,
-                    onMinimize: onMinimize,
-                    onFullscreen: onFullscreen,
-                  ),
-                ),
-              );
-            },
+        return _RainFloatingExpandedCallOverlay(
+          state: state,
+          surface: surface,
+          displayName: displayName,
+          gender: gender,
+          routeSummary: routeSummary,
+          panelWidth: _boundedWidth(
+            constraints.maxWidth,
+            _preferredPanelWidth(constraints.maxWidth, state),
           ),
+          maxHeight: _boundedHeight(
+            constraints.maxHeight - MediaQuery.paddingOf(context).vertical - 24,
+          ),
+          videoRenderers: videoRenderers,
+          primaryRole: surface.videoPrimaryRole,
+          onToggleVideoPrimaryRole: onToggleVideoPrimaryRole,
+          onAccept: onAccept,
+          onReject: onReject,
+          onHangUp: onHangUp,
+          onRetry: onRetry,
+          onToggleMute: onToggleMute,
+          onToggleDeafen: onToggleDeafen,
+          onToggleCamera: onToggleCamera,
+          onSwitchCamera: onSwitchCamera,
+          onSelectOutputRoute: onSelectOutputRoute,
+          controlCapabilities: controlCapabilities,
+          outputRouteOptions: outputRouteOptions,
+          onMinimize: onMinimize,
+          onFullscreen: onFullscreen,
+          onMoveFloating: onMoveFloating,
+          onClampFloating: onClampFloating,
         );
       },
     );
@@ -174,6 +182,210 @@ class RainCallOverlay extends StatelessWidget {
       return 240;
     }
     return math.max(180, math.min(280, availableWidth * 0.42));
+  }
+}
+
+class _RainFloatingExpandedCallOverlay extends StatefulWidget {
+  const _RainFloatingExpandedCallOverlay({
+    required this.state,
+    required this.surface,
+    required this.displayName,
+    required this.panelWidth,
+    required this.maxHeight,
+    this.videoRenderers,
+    required this.primaryRole,
+    this.onToggleVideoPrimaryRole,
+    required this.onAccept,
+    required this.onReject,
+    required this.onHangUp,
+    required this.onRetry,
+    required this.onToggleMute,
+    this.onToggleDeafen,
+    this.onToggleCamera,
+    this.onSwitchCamera,
+    this.onSelectOutputRoute,
+    this.controlCapabilities,
+    this.outputRouteOptions,
+    required this.onMinimize,
+    this.onFullscreen,
+    this.onMoveFloating,
+    this.onClampFloating,
+    this.gender,
+    this.routeSummary,
+  });
+
+  final VoiceCallState state;
+  final CallSurfaceState surface;
+  final String displayName;
+  final String? gender;
+  final String? routeSummary;
+  final double panelWidth;
+  final double maxHeight;
+  final VideoCallRenderers? videoRenderers;
+  final VideoPrimaryRole primaryRole;
+  final VoidCallback? onToggleVideoPrimaryRole;
+  final VoidCallback onAccept;
+  final VoidCallback onReject;
+  final VoidCallback onHangUp;
+  final VoidCallback onRetry;
+  final VoidCallback onToggleMute;
+  final VoidCallback? onToggleDeafen;
+  final VoidCallback? onToggleCamera;
+  final VoidCallback? onSwitchCamera;
+  final ValueChanged<VoiceCallOutputRoute>? onSelectOutputRoute;
+  final List<CallControlCapability>? controlCapabilities;
+  final List<VoiceCallOutputRouteOption>? outputRouteOptions;
+  final VoidCallback onMinimize;
+  final VoidCallback? onFullscreen;
+  final void Function(
+    Offset delta,
+    Size viewportSize,
+    EdgeInsets safePadding,
+    Size panelSize,
+  )?
+  onMoveFloating;
+  final void Function(
+    Size viewportSize,
+    EdgeInsets safePadding,
+    Size panelSize,
+  )?
+  onClampFloating;
+
+  @override
+  State<_RainFloatingExpandedCallOverlay> createState() =>
+      _RainFloatingExpandedCallOverlayState();
+}
+
+class _RainFloatingExpandedCallOverlayState
+    extends State<_RainFloatingExpandedCallOverlay> {
+  final GlobalKey _panelKey = GlobalKey();
+  Size? _lastPanelSize;
+
+  @override
+  void didUpdateWidget(covariant _RainFloatingExpandedCallOverlay oldWidget) {
+    super.didUpdateWidget(oldWidget);
+    if (oldWidget.surface.callId != widget.surface.callId ||
+        oldWidget.maxHeight != widget.maxHeight ||
+        oldWidget.panelWidth != widget.panelWidth) {
+      _scheduleClamp();
+    }
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final safePadding = MediaQuery.paddingOf(context);
+    return LayoutBuilder(
+      builder: (BuildContext context, BoxConstraints constraints) {
+        final viewportSize = Size(constraints.maxWidth, constraints.maxHeight);
+        final panelSize = _lastPanelSize ?? _estimatedPanelSize();
+        final bounds = CallSurfaceBounds(
+          viewportSize: viewportSize,
+          safePadding: safePadding,
+          panelSize: panelSize,
+        );
+        final offset = widget.surface.floatingOffset == null
+            ? centeredCallSurfaceOffset(bounds)
+            : clampCallSurfaceOffset(bounds, widget.surface.floatingOffset!);
+        _scheduleClamp(
+          viewportSize: viewportSize,
+          safePadding: safePadding,
+          panelSize: panelSize,
+        );
+
+        return Stack(
+          clipBehavior: Clip.none,
+          children: <Widget>[
+            Positioned(
+              left: offset.dx,
+              top: offset.dy,
+              child: _RainExpandedCallPanel(
+                key: _panelKey,
+                state: widget.state,
+                displayName: widget.displayName,
+                gender: widget.gender,
+                routeSummary: widget.routeSummary,
+                panelWidth: widget.panelWidth,
+                maxHeight: widget.maxHeight,
+                videoRenderers: widget.videoRenderers,
+                primaryRole: widget.primaryRole,
+                onToggleVideoPrimaryRole: widget.onToggleVideoPrimaryRole,
+                onAccept: widget.onAccept,
+                onReject: widget.onReject,
+                onHangUp: widget.onHangUp,
+                onRetry: widget.onRetry,
+                onToggleMute: widget.onToggleMute,
+                onToggleDeafen: widget.onToggleDeafen,
+                onToggleCamera: widget.onToggleCamera,
+                onSwitchCamera: widget.onSwitchCamera,
+                onSelectOutputRoute: widget.onSelectOutputRoute,
+                controlCapabilities: widget.controlCapabilities,
+                outputRouteOptions: widget.outputRouteOptions,
+                onMinimize: widget.onMinimize,
+                onFullscreen: widget.onFullscreen,
+                onHeaderDragUpdate: (DragUpdateDetails details) {
+                  widget.onMoveFloating?.call(
+                    details.delta,
+                    viewportSize,
+                    safePadding,
+                    _panelSizeFromRenderBox() ?? panelSize,
+                  );
+                },
+              ),
+            ),
+          ],
+        );
+      },
+    );
+  }
+
+  Size _estimatedPanelSize() {
+    final height = widget.state.isVideo
+        ? math.min(widget.maxHeight, math.max(420.0, widget.panelWidth * 0.72))
+        : math.min(widget.maxHeight, math.max(420.0, widget.panelWidth));
+    return Size(widget.panelWidth, height);
+  }
+
+  Size? _panelSizeFromRenderBox() {
+    final renderObject = _panelKey.currentContext?.findRenderObject();
+    if (renderObject is! RenderBox || !renderObject.hasSize) {
+      return null;
+    }
+    final size = renderObject.size;
+    if (size.width <= 0 || size.height <= 0) {
+      return null;
+    }
+    return size;
+  }
+
+  void _scheduleClamp({
+    Size? viewportSize,
+    EdgeInsets? safePadding,
+    Size? panelSize,
+  }) {
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (!mounted) {
+        return;
+      }
+      final resolvedPanelSize = _panelSizeFromRenderBox() ?? panelSize;
+      if (resolvedPanelSize == null) {
+        return;
+      }
+      _lastPanelSize = resolvedPanelSize;
+      final renderObject = context.findRenderObject();
+      final resolvedViewportSize =
+          viewportSize ??
+          (renderObject is RenderBox && renderObject.hasSize
+              ? renderObject.size
+              : null);
+      if (resolvedViewportSize == null) {
+        return;
+      }
+      widget.onClampFloating?.call(
+        resolvedViewportSize,
+        safePadding ?? MediaQuery.paddingOf(context),
+        resolvedPanelSize,
+      );
+    });
   }
 }
 
@@ -214,6 +426,7 @@ class _RainFullscreenVideoSurface extends StatelessWidget {
 
 class _RainExpandedCallPanel extends StatelessWidget {
   const _RainExpandedCallPanel({
+    super.key,
     required this.state,
     required this.displayName,
     required this.panelWidth,
@@ -234,6 +447,7 @@ class _RainExpandedCallPanel extends StatelessWidget {
     this.outputRouteOptions,
     required this.onMinimize,
     this.onFullscreen,
+    this.onHeaderDragUpdate,
     this.gender,
     this.routeSummary,
   });
@@ -260,6 +474,7 @@ class _RainExpandedCallPanel extends StatelessWidget {
   final List<VoiceCallOutputRouteOption>? outputRouteOptions;
   final VoidCallback onMinimize;
   final VoidCallback? onFullscreen;
+  final GestureDragUpdateCallback? onHeaderDragUpdate;
 
   @override
   Widget build(BuildContext context) {
@@ -327,6 +542,7 @@ class _RainExpandedCallPanel extends StatelessWidget {
                         canMinimize: canMinimize,
                         onMinimize: onMinimize,
                         onFullscreen: onFullscreen,
+                        onDragUpdate: onHeaderDragUpdate,
                       ),
                       SizedBox(
                         height: state.phase == VoiceCallPhase.failed ? 16 : 18,
@@ -410,6 +626,7 @@ class _RainPopupHeader extends StatelessWidget {
     required this.onMinimize,
     this.gender,
     this.onFullscreen,
+    this.onDragUpdate,
   });
 
   final VoiceCallState state;
@@ -419,59 +636,65 @@ class _RainPopupHeader extends StatelessWidget {
   final bool canMinimize;
   final VoidCallback onMinimize;
   final VoidCallback? onFullscreen;
+  final GestureDragUpdateCallback? onDragUpdate;
 
   @override
   Widget build(BuildContext context) {
     final scheme = Theme.of(context).colorScheme;
-    return Row(
-      key: const ValueKey<String>('rain-call-popup-identity'),
-      children: <Widget>[
-        RainAvatar(
-          name: displayName,
-          size: 44,
-          statusColor: accent,
-          gender: gender,
-        ),
-        const SizedBox(width: 12),
-        Expanded(
-          child: Column(
-            crossAxisAlignment: CrossAxisAlignment.start,
-            children: <Widget>[
-              Text(
-                displayName,
-                maxLines: 1,
-                overflow: TextOverflow.ellipsis,
-                style: Theme.of(
-                  context,
-                ).textTheme.titleMedium?.copyWith(fontWeight: FontWeight.w900),
-              ),
-              Text(
-                '@${state.peerId ?? displayName}',
-                maxLines: 1,
-                overflow: TextOverflow.ellipsis,
-                style: Theme.of(context).textTheme.bodySmall?.copyWith(
-                  color: scheme.onSurface.withValues(alpha: 0.62),
-                  fontWeight: FontWeight.w700,
+    return GestureDetector(
+      key: const ValueKey<String>('rain-call-popup-drag-handle'),
+      behavior: HitTestBehavior.opaque,
+      onPanUpdate: onDragUpdate,
+      child: Row(
+        key: const ValueKey<String>('rain-call-popup-identity'),
+        children: <Widget>[
+          RainAvatar(
+            name: displayName,
+            size: 44,
+            statusColor: accent,
+            gender: gender,
+          ),
+          const SizedBox(width: 12),
+          Expanded(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: <Widget>[
+                Text(
+                  displayName,
+                  maxLines: 1,
+                  overflow: TextOverflow.ellipsis,
+                  style: Theme.of(context).textTheme.titleMedium?.copyWith(
+                    fontWeight: FontWeight.w900,
+                  ),
                 ),
-              ),
-            ],
+                Text(
+                  '@${state.peerId ?? displayName}',
+                  maxLines: 1,
+                  overflow: TextOverflow.ellipsis,
+                  style: Theme.of(context).textTheme.bodySmall?.copyWith(
+                    color: scheme.onSurface.withValues(alpha: 0.62),
+                    fontWeight: FontWeight.w700,
+                  ),
+                ),
+              ],
+            ),
           ),
-        ),
-        if (state.isVideo && onFullscreen != null)
-          IconButton.filledTonal(
-            tooltip: 'Fullscreen video',
-            onPressed: onFullscreen,
-            icon: const Icon(Icons.fullscreen),
-          ),
-        if (canMinimize) ...[
-          const SizedBox(width: 6),
-          IconButton.filledTonal(
-            tooltip: 'Minimize call',
-            onPressed: onMinimize,
-            icon: const Icon(Icons.keyboard_arrow_down),
-          ),
+          if (state.isVideo && onFullscreen != null)
+            IconButton.filledTonal(
+              tooltip: 'Fullscreen video',
+              onPressed: onFullscreen,
+              icon: const Icon(Icons.fullscreen),
+            ),
+          if (canMinimize) ...[
+            const SizedBox(width: 6),
+            IconButton.filledTonal(
+              tooltip: 'Minimize call',
+              onPressed: onMinimize,
+              icon: const Icon(Icons.keyboard_arrow_down),
+            ),
+          ],
         ],
-      ],
+      ),
     );
   }
 }

@@ -1233,6 +1233,77 @@ void main() {
     expect(hungUp, isTrue);
   });
 
+  testWidgets('call overlay popup can be dragged without blocking actions', (
+    WidgetTester tester,
+  ) async {
+    var accepted = false;
+    var offset = const Offset(48, 56);
+    const incomingCall = VoiceCallState(
+      phase: VoiceCallPhase.incomingRinging,
+      peerId: 'bob',
+      callId: 'call-1',
+    );
+
+    await tester.pumpWidget(
+      MaterialApp(
+        home: Scaffold(
+          body: StatefulBuilder(
+            builder: (BuildContext context, StateSetter setState) {
+              return Stack(
+                children: <Widget>[
+                  Positioned.fill(
+                    child: RainCallOverlay(
+                      state: incomingCall,
+                      surface: CallSurfaceState.visible(
+                        peerId: 'bob',
+                        callId: 'call-1',
+                        floatingOffset: offset,
+                      ),
+                      displayName: 'Bob',
+                      onAccept: () => accepted = true,
+                      onReject: () {},
+                      onHangUp: () {},
+                      onRetry: () {},
+                      onToggleMute: () {},
+                      onMinimize: () {},
+                      onExpand: () {},
+                      onMoveFloating:
+                          (
+                            Offset delta,
+                            Size viewportSize,
+                            EdgeInsets safePadding,
+                            Size panelSize,
+                          ) => setState(() => offset += delta),
+                    ),
+                  ),
+                ],
+              );
+            },
+          ),
+        ),
+      ),
+    );
+
+    await tester.pumpAndSettle();
+    final panelFinder = find.byKey(
+      const ValueKey<String>('rain-call-panel-surface'),
+    );
+    final before = tester.getTopLeft(panelFinder);
+
+    await tester.drag(
+      find.byKey(const ValueKey<String>('rain-call-popup-drag-handle')),
+      const Offset(90, 60),
+    );
+    await tester.pumpAndSettle();
+
+    final after = tester.getTopLeft(panelFinder);
+    expect(after.dx, greaterThan(before.dx + 40));
+    expect(after.dy, greaterThan(before.dy + 30));
+
+    await tester.tap(find.text('Accept'));
+    expect(accepted, isTrue);
+  });
+
   testWidgets('call overlay wave amplitude follows real audio level', (
     WidgetTester tester,
   ) async {

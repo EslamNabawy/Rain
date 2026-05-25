@@ -789,6 +789,29 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
                   _toggleVideoPrimaryRole(voiceCall),
               onFullscreen: () =>
                   ref.read(callSurfaceProvider.notifier).enterFullscreen(),
+              onMoveFloating:
+                  (
+                    Offset delta,
+                    Size viewportSize,
+                    EdgeInsets safePadding,
+                    Size panelSize,
+                  ) => ref
+                      .read(callSurfaceProvider.notifier)
+                      .moveFloatingPanel(
+                        delta: delta,
+                        viewportSize: viewportSize,
+                        safePadding: safePadding,
+                        panelSize: panelSize,
+                      ),
+              onClampFloating:
+                  (Size viewportSize, EdgeInsets safePadding, Size panelSize) =>
+                      ref
+                          .read(callSurfaceProvider.notifier)
+                          .clampFloatingPanel(
+                            viewportSize: viewportSize,
+                            safePadding: safePadding,
+                            panelSize: panelSize,
+                          ),
             ),
           ),
         if (callSurface.showsManagerBar &&
