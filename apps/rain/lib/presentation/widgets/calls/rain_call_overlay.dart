@@ -2,8 +2,12 @@ import 'dart:math' as math;
 
 import 'package:flutter/material.dart';
 
+import 'package:rain/application/runtime/video_call_renderers.dart';
 import 'package:rain/application/runtime/voice_call_state.dart';
 import 'package:rain/application/state/call_surface_providers.dart';
+import 'package:rain/presentation/branding/rain_peer_core_mark.dart';
+import 'package:rain/presentation/branding/rain_ripple_halo_surface.dart';
+import 'package:rain/presentation/theme/rain_theme.dart';
 import 'package:rain/presentation/widgets/calls/rain_call_controls.dart';
 import 'package:rain/presentation/widgets/rain_chat_widgets.dart';
 
@@ -15,6 +19,7 @@ class RainCallOverlay extends StatelessWidget {
     required this.displayName,
     this.gender,
     this.routeSummary,
+    this.videoRenderers,
     required this.onAccept,
     required this.onReject,
     required this.onHangUp,
@@ -24,8 +29,12 @@ class RainCallOverlay extends StatelessWidget {
     this.onToggleCamera,
     this.onSwitchCamera,
     this.onSelectOutputRoute,
+    this.controlCapabilities,
+    this.outputRouteOptions,
     required this.onMinimize,
     required this.onExpand,
+    this.onToggleVideoPrimaryRole,
+    this.onFullscreen,
   });
 
   final VoiceCallState state;
@@ -33,6 +42,7 @@ class RainCallOverlay extends StatelessWidget {
   final String displayName;
   final String? gender;
   final String? routeSummary;
+  final VideoCallRenderers? videoRenderers;
   final VoidCallback onAccept;
   final VoidCallback onReject;
   final VoidCallback onHangUp;
@@ -42,8 +52,12 @@ class RainCallOverlay extends StatelessWidget {
   final VoidCallback? onToggleCamera;
   final VoidCallback? onSwitchCamera;
   final ValueChanged<VoiceCallOutputRoute>? onSelectOutputRoute;
+  final List<CallControlCapability>? controlCapabilities;
+  final List<VoiceCallOutputRouteOption>? outputRouteOptions;
   final VoidCallback onMinimize;
   final VoidCallback onExpand;
+  final VoidCallback? onToggleVideoPrimaryRole;
+  final VoidCallback? onFullscreen;
 
   @override
   Widget build(BuildContext context) {
@@ -53,58 +67,82 @@ class RainCallOverlay extends StatelessWidget {
 
     return LayoutBuilder(
       builder: (BuildContext context, BoxConstraints constraints) {
-        if (surface.mode == CallSurfaceMode.minimized) {
-          return _RainMinimizedCallChip(
+        if (surface.mode == CallSurfaceMode.managerOnly) {
+          return const SizedBox.shrink();
+        }
+
+        if (surface.mode == CallSurfaceMode.fullscreen && state.isVideo) {
+          return _RainFullscreenVideoSurface(
             state: state,
-            displayName: displayName,
-            onExpand: onExpand,
-            onHangUp: onHangUp,
-            maxWidth: _boundedWidth(constraints.maxWidth, 420),
+            accent: rainVoiceCallAccent(context, state),
+            videoRenderers: videoRenderers,
+            primaryRole: surface.videoPrimaryRole,
+            onTogglePrimaryRole: onToggleVideoPrimaryRole,
           );
         }
 
-        return Align(
-          alignment: _expandedAlignment(surface.dock),
-          child: Padding(
-            padding: EdgeInsets.fromLTRB(
-              16,
-              surface.dock == CallSurfaceDock.chatTop ? 16 : 24,
-              16,
-              24,
-            ),
-            child: _RainExpandedCallPanel(
-              state: state,
-              displayName: displayName,
-              gender: gender,
-              routeSummary: routeSummary,
-              panelWidth: _boundedWidth(
-                constraints.maxWidth,
-                constraints.maxWidth < 480 ? 360 : 420,
+        if (surface.mode == CallSurfaceMode.pip && state.isVideo) {
+          return Align(
+            alignment: Alignment.topRight,
+            child: Padding(
+              padding: const EdgeInsets.fromLTRB(16, 96, 16, 0),
+              child: SizedBox(
+                key: const ValueKey<String>('rain-call-video-pip-window'),
+                width: _pipWidth(constraints.maxWidth),
+                child: RainVideoCallStage(
+                  state: state,
+                  accent: rainVoiceCallAccent(context, state),
+                  renderers: videoRenderers,
+                  layout: RainVideoCallStageLayout.pip,
+                  primaryRole: surface.videoPrimaryRole,
+                ),
               ),
-              maxHeight: _boundedHeight(constraints.maxHeight),
-              onAccept: onAccept,
-              onReject: onReject,
-              onHangUp: onHangUp,
-              onRetry: onRetry,
-              onToggleMute: onToggleMute,
-              onToggleDeafen: onToggleDeafen,
-              onToggleCamera: onToggleCamera,
-              onSwitchCamera: onSwitchCamera,
-              onSelectOutputRoute: onSelectOutputRoute,
-              onMinimize: onMinimize,
             ),
+          );
+        }
+
+        return SafeArea(
+          minimum: const EdgeInsets.all(12),
+          child: LayoutBuilder(
+            builder: (BuildContext context, BoxConstraints safeConstraints) {
+              return Align(
+                alignment: Alignment.center,
+                child: Padding(
+                  padding: const EdgeInsets.fromLTRB(4, 12, 4, 12),
+                  child: _RainExpandedCallPanel(
+                    state: state,
+                    displayName: displayName,
+                    gender: gender,
+                    routeSummary: routeSummary,
+                    panelWidth: _boundedWidth(
+                      safeConstraints.maxWidth,
+                      _preferredPanelWidth(safeConstraints.maxWidth, state),
+                    ),
+                    maxHeight: _boundedHeight(safeConstraints.maxHeight),
+                    videoRenderers: videoRenderers,
+                    primaryRole: surface.videoPrimaryRole,
+                    onToggleVideoPrimaryRole: onToggleVideoPrimaryRole,
+                    onAccept: onAccept,
+                    onReject: onReject,
+                    onHangUp: onHangUp,
+                    onRetry: onRetry,
+                    onToggleMute: onToggleMute,
+                    onToggleDeafen: onToggleDeafen,
+                    onToggleCamera: onToggleCamera,
+                    onSwitchCamera: onSwitchCamera,
+                    onSelectOutputRoute: onSelectOutputRoute,
+                    controlCapabilities: controlCapabilities,
+                    outputRouteOptions: outputRouteOptions,
+                    onMinimize: onMinimize,
+                    onFullscreen: onFullscreen,
+                  ),
+                ),
+              );
+            },
           ),
         );
       },
     );
-  }
-
-  Alignment _expandedAlignment(CallSurfaceDock dock) {
-    return switch (dock) {
-      CallSurfaceDock.chatTop => Alignment.topCenter,
-      CallSurfaceDock.chatCenter ||
-      CallSurfaceDock.bottomSafe => Alignment.center,
-    };
   }
 
   double _boundedWidth(double availableWidth, double preferredWidth) {
@@ -120,6 +158,58 @@ class RainCallOverlay extends StatelessWidget {
     }
     return math.max(220, availableHeight - 32);
   }
+
+  double _preferredPanelWidth(double availableWidth, VoiceCallState state) {
+    if (!state.isVideo) {
+      return availableWidth < 480 ? 360 : 420;
+    }
+    if (!availableWidth.isFinite || availableWidth <= 0) {
+      return 680;
+    }
+    return availableWidth < 520 ? 380 : 720;
+  }
+
+  double _pipWidth(double availableWidth) {
+    if (!availableWidth.isFinite || availableWidth <= 0) {
+      return 240;
+    }
+    return math.max(180, math.min(280, availableWidth * 0.42));
+  }
+}
+
+class _RainFullscreenVideoSurface extends StatelessWidget {
+  const _RainFullscreenVideoSurface({
+    required this.state,
+    required this.accent,
+    this.videoRenderers,
+    required this.primaryRole,
+    this.onTogglePrimaryRole,
+  });
+
+  final VoiceCallState state;
+  final Color accent;
+  final VideoCallRenderers? videoRenderers;
+  final VideoPrimaryRole primaryRole;
+  final VoidCallback? onTogglePrimaryRole;
+
+  @override
+  Widget build(BuildContext context) {
+    final scheme = Theme.of(context).colorScheme;
+    return ColoredBox(
+      key: const ValueKey<String>('rain-call-video-fullscreen-surface'),
+      color: scheme.surface,
+      child: SafeArea(
+        child: RainVideoCallStage(
+          state: state,
+          accent: accent,
+          renderers: videoRenderers,
+          layout: RainVideoCallStageLayout.fullscreen,
+          primaryRole: primaryRole,
+          onTogglePrimaryRole: onTogglePrimaryRole,
+        ),
+      ),
+    );
+  }
 }
 
 class _RainExpandedCallPanel extends StatelessWidget {
@@ -128,6 +218,9 @@ class _RainExpandedCallPanel extends StatelessWidget {
     required this.displayName,
     required this.panelWidth,
     required this.maxHeight,
+    this.videoRenderers,
+    required this.primaryRole,
+    this.onToggleVideoPrimaryRole,
     required this.onAccept,
     required this.onReject,
     required this.onHangUp,
@@ -137,7 +230,10 @@ class _RainExpandedCallPanel extends StatelessWidget {
     this.onToggleCamera,
     this.onSwitchCamera,
     this.onSelectOutputRoute,
+    this.controlCapabilities,
+    this.outputRouteOptions,
     required this.onMinimize,
+    this.onFullscreen,
     this.gender,
     this.routeSummary,
   });
@@ -148,6 +244,9 @@ class _RainExpandedCallPanel extends StatelessWidget {
   final String? routeSummary;
   final double panelWidth;
   final double maxHeight;
+  final VideoCallRenderers? videoRenderers;
+  final VideoPrimaryRole primaryRole;
+  final VoidCallback? onToggleVideoPrimaryRole;
   final VoidCallback onAccept;
   final VoidCallback onReject;
   final VoidCallback onHangUp;
@@ -157,133 +256,103 @@ class _RainExpandedCallPanel extends StatelessWidget {
   final VoidCallback? onToggleCamera;
   final VoidCallback? onSwitchCamera;
   final ValueChanged<VoiceCallOutputRoute>? onSelectOutputRoute;
+  final List<CallControlCapability>? controlCapabilities;
+  final List<VoiceCallOutputRouteOption>? outputRouteOptions;
   final VoidCallback onMinimize;
+  final VoidCallback? onFullscreen;
 
   @override
   Widget build(BuildContext context) {
     final scheme = Theme.of(context).colorScheme;
     final accent = rainVoiceCallAccent(context, state);
+    final haloColor = rainVoiceCallHaloColor(context, state);
     final canMinimize =
         state.phase != VoiceCallPhase.incomingRinging &&
         state.phase != VoiceCallPhase.failed;
+    final isDark = scheme.brightness == Brightness.dark;
+    final panelBorderColor = state.phase == VoiceCallPhase.failed
+        ? RainColors.errorCoral.withValues(alpha: 0.42)
+        : accent.withValues(alpha: 0.38);
+    final panelPadding = state.isVideo && state.phase != VoiceCallPhase.failed
+        ? 14.0
+        : 18.0;
+    final minHeight = _targetMinHeight(state, panelWidth, maxHeight);
 
     return Material(
       color: Colors.transparent,
-      child: AnimatedContainer(
-        duration: const Duration(milliseconds: 180),
-        curve: Curves.easeOutCubic,
-        width: panelWidth,
-        constraints: BoxConstraints(
-          minHeight: math.min(panelWidth, maxHeight),
-          maxHeight: maxHeight,
-        ),
-        decoration: BoxDecoration(
-          color: scheme.surface.withValues(alpha: 0.98),
-          borderRadius: BorderRadius.circular(24),
-          border: Border.all(color: accent.withValues(alpha: 0.38)),
-          boxShadow: <BoxShadow>[
-            BoxShadow(
-              blurRadius: 34,
-              offset: const Offset(0, 18),
-              color: Colors.black.withValues(
-                alpha: scheme.brightness == Brightness.dark ? 0.38 : 0.16,
+      child: RainRippleHaloSurface(
+        key: const ValueKey<String>('rain-call-panel-surface'),
+        enabled: rainVoiceCallShowsSignalHalo(state),
+        borderRadius: BorderRadius.circular(24),
+        color: haloColor,
+        pulseKey: '${state.callId}:${state.phase}:${state.isVideo}',
+        pulseOnMount: rainVoiceCallShowsSignalHalo(state),
+        child: AnimatedContainer(
+          duration: RainMotion.callSurface,
+          curve: Curves.easeOutCubic,
+          width: panelWidth,
+          constraints: BoxConstraints(
+            minHeight: minHeight,
+            maxHeight: maxHeight,
+          ),
+          decoration: BoxDecoration(
+            color: scheme.surface.withValues(alpha: isDark ? 0.94 : 0.98),
+            borderRadius: BorderRadius.circular(24),
+            border: Border.all(color: panelBorderColor),
+            boxShadow: <BoxShadow>[
+              BoxShadow(
+                blurRadius: 34,
+                offset: const Offset(0, 18),
+                color: Colors.black.withValues(alpha: isDark ? 0.38 : 0.16),
               ),
-            ),
-          ],
-        ),
-        child: ClipRRect(
-          borderRadius: BorderRadius.circular(24),
-          child: SingleChildScrollView(
-            padding: const EdgeInsets.all(18),
-            child: StreamBuilder<int>(
-              stream: state.isActive
-                  ? Stream<int>.periodic(
-                      const Duration(seconds: 1),
-                      (_) => DateTime.now().millisecondsSinceEpoch,
-                    )
-                  : null,
-              initialData: DateTime.now().millisecondsSinceEpoch,
-              builder: (BuildContext context, AsyncSnapshot<int> snapshot) {
-                final now =
-                    snapshot.data ?? DateTime.now().millisecondsSinceEpoch;
-                return Column(
-                  mainAxisSize: MainAxisSize.min,
-                  crossAxisAlignment: CrossAxisAlignment.stretch,
-                  children: <Widget>[
-                    Row(
-                      children: <Widget>[
-                        RainAvatar(
-                          name: displayName,
-                          size: 42,
-                          statusColor: accent,
-                          gender: gender,
+            ],
+          ),
+          child: ClipRRect(
+            borderRadius: BorderRadius.circular(24),
+            child: SingleChildScrollView(
+              padding: EdgeInsets.all(panelPadding),
+              child: RainCallTicker(
+                state: state,
+                builder: (BuildContext context, int now) {
+                  return Column(
+                    key: ValueKey<String>(_popupLayoutKey(state)),
+                    mainAxisSize: MainAxisSize.min,
+                    crossAxisAlignment: CrossAxisAlignment.stretch,
+                    children: <Widget>[
+                      _RainPopupHeader(
+                        state: state,
+                        displayName: displayName,
+                        gender: gender,
+                        accent: accent,
+                        canMinimize: canMinimize,
+                        onMinimize: onMinimize,
+                        onFullscreen: onFullscreen,
+                      ),
+                      SizedBox(
+                        height: state.phase == VoiceCallPhase.failed ? 16 : 18,
+                      ),
+                      if (state.phase == VoiceCallPhase.failed)
+                        _RainFailureFocus(state: state, accent: accent)
+                      else
+                        _RainCallMediaFrame(
+                          state: state,
+                          accent: accent,
+                          videoRenderers: videoRenderers,
+                          primaryRole: primaryRole,
+                          onToggleVideoPrimaryRole: onToggleVideoPrimaryRole,
                         ),
-                        const SizedBox(width: 12),
-                        Expanded(
-                          child: Column(
-                            crossAxisAlignment: CrossAxisAlignment.start,
-                            children: <Widget>[
-                              Text(
-                                displayName,
-                                maxLines: 1,
-                                overflow: TextOverflow.ellipsis,
-                                style: Theme.of(context).textTheme.titleMedium
-                                    ?.copyWith(fontWeight: FontWeight.w900),
-                              ),
-                              Text(
-                                '@${state.peerId ?? displayName}',
-                                maxLines: 1,
-                                overflow: TextOverflow.ellipsis,
-                                style: Theme.of(context).textTheme.bodySmall
-                                    ?.copyWith(
-                                      color: scheme.onSurface.withValues(
-                                        alpha: 0.62,
-                                      ),
-                                      fontWeight: FontWeight.w700,
-                                    ),
-                              ),
-                            ],
-                          ),
-                        ),
-                        if (canMinimize)
-                          IconButton(
-                            tooltip: 'Minimize call',
-                            onPressed: onMinimize,
-                            icon: const Icon(Icons.keyboard_arrow_down),
-                          ),
+                      const SizedBox(height: 18),
+                      _RainPopupStatusText(
+                        state: state,
+                        displayName: displayName,
+                        now: now,
+                      ),
+                      if (routeSummary != null && routeSummary!.isNotEmpty) ...[
+                        const SizedBox(height: 14),
+                        _RainRouteSummary(label: routeSummary!),
                       ],
-                    ),
-                    const SizedBox(height: 24),
-                    _RainCallMediaStage(state: state, accent: accent),
-                    const SizedBox(height: 20),
-                    Text(
-                      rainVoiceCallTitle(state, displayName),
-                      textAlign: TextAlign.center,
-                      maxLines: 2,
-                      overflow: TextOverflow.ellipsis,
-                      style: Theme.of(context).textTheme.titleLarge?.copyWith(
-                        fontWeight: FontWeight.w900,
-                      ),
-                    ),
-                    const SizedBox(height: 8),
-                    Text(
-                      rainVoiceCallDetail(state, now),
-                      textAlign: TextAlign.center,
-                      maxLines: 3,
-                      overflow: TextOverflow.ellipsis,
-                      style: Theme.of(context).textTheme.bodyMedium?.copyWith(
-                        color: scheme.onSurface.withValues(alpha: 0.70),
-                        fontWeight: FontWeight.w700,
-                      ),
-                    ),
-                    if (routeSummary != null && routeSummary!.isNotEmpty) ...[
-                      const SizedBox(height: 14),
-                      _RainRouteSummary(label: routeSummary!),
-                    ],
-                    const SizedBox(height: 24),
-                    Align(
-                      alignment: Alignment.center,
-                      child: RainCallControls(
+                      const SizedBox(height: 20),
+                      _RainCallControlDock(
                         state: state,
                         onAccept: onAccept,
                         onReject: onReject,
@@ -294,67 +363,300 @@ class _RainExpandedCallPanel extends StatelessWidget {
                         onToggleCamera: onToggleCamera,
                         onSwitchCamera: onSwitchCamera,
                         onSelectOutputRoute: onSelectOutputRoute,
+                        controlCapabilities: controlCapabilities,
+                        outputRouteOptions: outputRouteOptions,
                       ),
-                    ),
-                  ],
-                );
-              },
+                    ],
+                  );
+                },
+              ),
             ),
           ),
         ),
       ),
     );
   }
+
+  String _popupLayoutKey(VoiceCallState state) {
+    if (state.phase == VoiceCallPhase.failed) {
+      return 'rain-call-failure-popup-layout';
+    }
+    if (state.isVideo) {
+      return 'rain-call-video-popup-layout';
+    }
+    return 'rain-call-voice-popup-layout';
+  }
+
+  double _targetMinHeight(
+    VoiceCallState state,
+    double panelWidth,
+    double maxHeight,
+  ) {
+    final target = state.phase == VoiceCallPhase.failed
+        ? math.min(360.0, panelWidth * 0.78)
+        : state.isVideo
+        ? math.max(420.0, panelWidth * 0.72)
+        : math.max(420.0, panelWidth);
+    return math.min(target, maxHeight);
+  }
 }
 
-class _RainCallMediaStage extends StatelessWidget {
-  const _RainCallMediaStage({required this.state, required this.accent});
+class _RainPopupHeader extends StatelessWidget {
+  const _RainPopupHeader({
+    required this.state,
+    required this.displayName,
+    required this.accent,
+    required this.canMinimize,
+    required this.onMinimize,
+    this.gender,
+    this.onFullscreen,
+  });
+
+  final VoiceCallState state;
+  final String displayName;
+  final String? gender;
+  final Color accent;
+  final bool canMinimize;
+  final VoidCallback onMinimize;
+  final VoidCallback? onFullscreen;
+
+  @override
+  Widget build(BuildContext context) {
+    final scheme = Theme.of(context).colorScheme;
+    return Row(
+      key: const ValueKey<String>('rain-call-popup-identity'),
+      children: <Widget>[
+        RainAvatar(
+          name: displayName,
+          size: 44,
+          statusColor: accent,
+          gender: gender,
+        ),
+        const SizedBox(width: 12),
+        Expanded(
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: <Widget>[
+              Text(
+                displayName,
+                maxLines: 1,
+                overflow: TextOverflow.ellipsis,
+                style: Theme.of(
+                  context,
+                ).textTheme.titleMedium?.copyWith(fontWeight: FontWeight.w900),
+              ),
+              Text(
+                '@${state.peerId ?? displayName}',
+                maxLines: 1,
+                overflow: TextOverflow.ellipsis,
+                style: Theme.of(context).textTheme.bodySmall?.copyWith(
+                  color: scheme.onSurface.withValues(alpha: 0.62),
+                  fontWeight: FontWeight.w700,
+                ),
+              ),
+            ],
+          ),
+        ),
+        if (state.isVideo && onFullscreen != null)
+          IconButton.filledTonal(
+            tooltip: 'Fullscreen video',
+            onPressed: onFullscreen,
+            icon: const Icon(Icons.fullscreen),
+          ),
+        if (canMinimize) ...[
+          const SizedBox(width: 6),
+          IconButton.filledTonal(
+            tooltip: 'Minimize call',
+            onPressed: onMinimize,
+            icon: const Icon(Icons.keyboard_arrow_down),
+          ),
+        ],
+      ],
+    );
+  }
+}
+
+class _RainCallMediaFrame extends StatelessWidget {
+  const _RainCallMediaFrame({
+    required this.state,
+    required this.accent,
+    this.videoRenderers,
+    required this.primaryRole,
+    this.onToggleVideoPrimaryRole,
+  });
+
+  final VoiceCallState state;
+  final Color accent;
+  final VideoCallRenderers? videoRenderers;
+  final VideoPrimaryRole primaryRole;
+  final VoidCallback? onToggleVideoPrimaryRole;
+
+  @override
+  Widget build(BuildContext context) {
+    final scheme = Theme.of(context).colorScheme;
+    final borderRadius = BorderRadius.circular(state.isVideo ? 20 : 28);
+    return Container(
+      key: const ValueKey<String>('rain-call-popup-media'),
+      padding: EdgeInsets.all(state.isVideo ? 4 : 18),
+      decoration: BoxDecoration(
+        color: state.isVideo
+            ? Colors.black.withValues(alpha: 0.62)
+            : scheme.surfaceContainerHighest.withValues(alpha: 0.42),
+        borderRadius: borderRadius,
+        border: Border.all(color: accent.withValues(alpha: 0.22)),
+      ),
+      child: ClipRRect(
+        borderRadius: BorderRadius.circular(state.isVideo ? 16 : 22),
+        child: state.isVideo
+            ? RainVideoCallStage(
+                state: state,
+                accent: accent,
+                renderers: videoRenderers,
+                layout: RainVideoCallStageLayout.expanded,
+                primaryRole: primaryRole,
+                onTogglePrimaryRole: onToggleVideoPrimaryRole,
+              )
+            : SizedBox(
+                height: 172,
+                child: _RainCallStatusGlyph(
+                  key: const ValueKey<String>('rain-call-audio-stage'),
+                  state: state,
+                  accent: accent,
+                ),
+              ),
+      ),
+    );
+  }
+}
+
+class _RainFailureFocus extends StatelessWidget {
+  const _RainFailureFocus({required this.state, required this.accent});
 
   final VoiceCallState state;
   final Color accent;
 
   @override
   Widget build(BuildContext context) {
-    if (!state.isVideo) {
-      return _RainCallStatusGlyph(
-        key: const ValueKey<String>('rain-call-audio-stage'),
-        state: state,
-        accent: accent,
-      );
-    }
-
-    return Center(
-      child: ConstrainedBox(
-        constraints: const BoxConstraints(maxWidth: 360),
-        child: AspectRatio(
-          aspectRatio: 16 / 9,
-          child: _RainReservedVideoSlot(accent: accent),
+    final scheme = Theme.of(context).colorScheme;
+    return Align(
+      alignment: Alignment.center,
+      child: Container(
+        key: const ValueKey<String>('rain-call-failure-focus'),
+        width: 96,
+        height: 96,
+        decoration: BoxDecoration(
+          shape: BoxShape.circle,
+          color: scheme.errorContainer.withValues(alpha: 0.42),
+          border: Border.all(color: accent.withValues(alpha: 0.42), width: 2),
+        ),
+        child: Icon(
+          rainVoiceCallIcon(state),
+          size: 42,
+          color: scheme.onErrorContainer,
         ),
       ),
     );
   }
 }
 
-class _RainReservedVideoSlot extends StatelessWidget {
-  const _RainReservedVideoSlot({required this.accent});
+class _RainPopupStatusText extends StatelessWidget {
+  const _RainPopupStatusText({
+    required this.state,
+    required this.displayName,
+    required this.now,
+  });
 
-  final Color accent;
+  final VoiceCallState state;
+  final String displayName;
+  final int now;
+
+  @override
+  Widget build(BuildContext context) {
+    final scheme = Theme.of(context).colorScheme;
+    return Column(
+      children: <Widget>[
+        Text(
+          rainVoiceCallTitle(state, displayName),
+          textAlign: TextAlign.center,
+          maxLines: 2,
+          overflow: TextOverflow.ellipsis,
+          style: Theme.of(
+            context,
+          ).textTheme.titleLarge?.copyWith(fontWeight: FontWeight.w900),
+        ),
+        const SizedBox(height: 8),
+        Text(
+          rainVoiceCallDetail(state, now),
+          textAlign: TextAlign.center,
+          maxLines: state.phase == VoiceCallPhase.failed ? 4 : 3,
+          overflow: TextOverflow.ellipsis,
+          style: Theme.of(context).textTheme.bodyMedium?.copyWith(
+            color: scheme.onSurface.withValues(alpha: 0.70),
+            fontWeight: FontWeight.w700,
+          ),
+        ),
+      ],
+    );
+  }
+}
+
+class _RainCallControlDock extends StatelessWidget {
+  const _RainCallControlDock({
+    required this.state,
+    required this.onAccept,
+    required this.onReject,
+    required this.onHangUp,
+    required this.onRetry,
+    required this.onToggleMute,
+    this.onToggleDeafen,
+    this.onToggleCamera,
+    this.onSwitchCamera,
+    this.onSelectOutputRoute,
+    this.controlCapabilities,
+    this.outputRouteOptions,
+  });
+
+  final VoiceCallState state;
+  final VoidCallback onAccept;
+  final VoidCallback onReject;
+  final VoidCallback onHangUp;
+  final VoidCallback onRetry;
+  final VoidCallback onToggleMute;
+  final VoidCallback? onToggleDeafen;
+  final VoidCallback? onToggleCamera;
+  final VoidCallback? onSwitchCamera;
+  final ValueChanged<VoiceCallOutputRoute>? onSelectOutputRoute;
+  final List<CallControlCapability>? controlCapabilities;
+  final List<VoiceCallOutputRouteOption>? outputRouteOptions;
 
   @override
   Widget build(BuildContext context) {
     final scheme = Theme.of(context).colorScheme;
     return Container(
-      key: const ValueKey<String>('rain-call-video-slot-reserved'),
+      key: const ValueKey<String>('rain-call-control-dock'),
+      padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
       decoration: BoxDecoration(
         color: scheme.surfaceContainerHighest.withValues(alpha: 0.52),
-        borderRadius: BorderRadius.circular(20),
-        border: Border.all(color: accent.withValues(alpha: 0.30)),
+        borderRadius: BorderRadius.circular(22),
+        border: Border.all(
+          color: scheme.outlineVariant.withValues(alpha: 0.28),
+        ),
       ),
-      child: Center(
-        child: Icon(
-          Icons.videocam_outlined,
-          size: 42,
-          color: accent.withValues(alpha: 0.70),
+      child: Align(
+        alignment: Alignment.center,
+        child: RainCallControls(
+          state: state,
+          onAccept: onAccept,
+          onReject: onReject,
+          onHangUp: onHangUp,
+          onRetry: onRetry,
+          onToggleMute: onToggleMute,
+          onToggleDeafen: onToggleDeafen,
+          onToggleCamera: onToggleCamera,
+          onSwitchCamera: onSwitchCamera,
+          onSelectOutputRoute: onSelectOutputRoute,
+          controlCapabilities: controlCapabilities,
+          outputRouteOptions: outputRouteOptions,
         ),
       ),
     );
@@ -374,6 +676,11 @@ class _RainCallStatusGlyph extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final scheme = Theme.of(context).colorScheme;
+    final showPeerCoreMark =
+        state.phase == VoiceCallPhase.connectingPeer ||
+        state.phase == VoiceCallPhase.connectingMedia ||
+        state.phase == VoiceCallPhase.incomingRinging ||
+        state.phase == VoiceCallPhase.outgoingRinging;
     return Center(
       child: Container(
         width: 116,
@@ -384,16 +691,14 @@ class _RainCallStatusGlyph extends StatelessWidget {
           border: Border.all(color: accent.withValues(alpha: 0.28), width: 2),
         ),
         child: Center(
-          child: state.isBusy
-              ? SizedBox.square(
-                  dimension: 34,
-                  child: CircularProgressIndicator(
-                    strokeWidth: 3,
-                    color: accent,
-                  ),
+          child: showPeerCoreMark
+              ? RainPeerCoreAnimatedMark(
+                  key: const ValueKey<String>('rain-call-peer-core-mark'),
+                  size: 64,
+                  animate: state.isBusy || state.isRinging,
                 )
               : state.isActive && state.audioLevel.isAvailable
-              ? _RainCallAudioWave(
+              ? _RainCallAudioActivity(
                   level: state.audioLevel.displayLevel,
                   accent: accent,
                 )
@@ -413,6 +718,25 @@ class _RainCallStatusGlyph extends StatelessWidget {
                 ),
         ),
       ),
+    );
+  }
+}
+
+class _RainCallAudioActivity extends StatelessWidget {
+  const _RainCallAudioActivity({required this.level, required this.accent});
+
+  final double level;
+  final Color accent;
+
+  @override
+  Widget build(BuildContext context) {
+    return Column(
+      mainAxisSize: MainAxisSize.min,
+      children: <Widget>[
+        RainPeerCoreAnimatedMark(size: 38, animate: false),
+        const SizedBox(height: 4),
+        _RainCallAudioWave(level: level, accent: accent),
+      ],
     );
   }
 }
@@ -501,137 +825,6 @@ class _RainRouteSummary extends StatelessWidget {
               ),
             ),
           ],
-        ),
-      ),
-    );
-  }
-}
-
-class _RainMinimizedCallChip extends StatelessWidget {
-  const _RainMinimizedCallChip({
-    required this.state,
-    required this.displayName,
-    required this.onExpand,
-    required this.onHangUp,
-    required this.maxWidth,
-  });
-
-  final VoiceCallState state;
-  final String displayName;
-  final VoidCallback onExpand;
-  final VoidCallback onHangUp;
-  final double maxWidth;
-
-  @override
-  Widget build(BuildContext context) {
-    final scheme = Theme.of(context).colorScheme;
-    final accent = rainVoiceCallAccent(context, state);
-    return Align(
-      alignment: Alignment.bottomCenter,
-      child: Padding(
-        padding: const EdgeInsets.fromLTRB(12, 0, 12, 92),
-        child: ConstrainedBox(
-          constraints: BoxConstraints(maxWidth: maxWidth),
-          child: Material(
-            color: Colors.transparent,
-            child: Tooltip(
-              message: 'Restore call',
-              child: InkWell(
-                onTap: onExpand,
-                borderRadius: BorderRadius.circular(24),
-                child: Ink(
-                  padding: const EdgeInsets.fromLTRB(12, 10, 8, 10),
-                  decoration: BoxDecoration(
-                    color: scheme.surface.withValues(alpha: 0.98),
-                    borderRadius: BorderRadius.circular(24),
-                    border: Border.all(color: accent.withValues(alpha: 0.36)),
-                    boxShadow: <BoxShadow>[
-                      BoxShadow(
-                        blurRadius: 22,
-                        offset: const Offset(0, 10),
-                        color: Colors.black.withValues(
-                          alpha: scheme.brightness == Brightness.dark
-                              ? 0.34
-                              : 0.14,
-                        ),
-                      ),
-                    ],
-                  ),
-                  child: Row(
-                    mainAxisSize: MainAxisSize.min,
-                    children: <Widget>[
-                      Container(
-                        width: 34,
-                        height: 34,
-                        decoration: BoxDecoration(
-                          color: accent.withValues(alpha: 0.14),
-                          shape: BoxShape.circle,
-                        ),
-                        child: Icon(rainVoiceCallIcon(state), color: accent),
-                      ),
-                      const SizedBox(width: 10),
-                      Expanded(
-                        child: StreamBuilder<int>(
-                          stream: state.isActive
-                              ? Stream<int>.periodic(
-                                  const Duration(seconds: 1),
-                                  (_) => DateTime.now().millisecondsSinceEpoch,
-                                )
-                              : null,
-                          initialData: DateTime.now().millisecondsSinceEpoch,
-                          builder:
-                              (
-                                BuildContext context,
-                                AsyncSnapshot<int> snapshot,
-                              ) {
-                                final now =
-                                    snapshot.data ??
-                                    DateTime.now().millisecondsSinceEpoch;
-                                return Column(
-                                  mainAxisSize: MainAxisSize.min,
-                                  crossAxisAlignment: CrossAxisAlignment.start,
-                                  children: <Widget>[
-                                    Text(
-                                      rainVoiceCallTitle(state, displayName),
-                                      maxLines: 1,
-                                      overflow: TextOverflow.ellipsis,
-                                      style: Theme.of(context)
-                                          .textTheme
-                                          .labelLarge
-                                          ?.copyWith(
-                                            fontWeight: FontWeight.w900,
-                                          ),
-                                    ),
-                                    Text(
-                                      rainVoiceCallDetail(state, now),
-                                      maxLines: 1,
-                                      overflow: TextOverflow.ellipsis,
-                                      style: Theme.of(context)
-                                          .textTheme
-                                          .labelSmall
-                                          ?.copyWith(
-                                            color: scheme.onSurface.withValues(
-                                              alpha: 0.64,
-                                            ),
-                                            fontWeight: FontWeight.w700,
-                                          ),
-                                    ),
-                                  ],
-                                );
-                              },
-                        ),
-                      ),
-                      IconButton(
-                        tooltip: 'Hang up',
-                        onPressed: onHangUp,
-                        icon: const Icon(Icons.call_end),
-                      ),
-                    ],
-                  ),
-                ),
-              ),
-            ),
-          ),
         ),
       ),
     );

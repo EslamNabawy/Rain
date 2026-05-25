@@ -1,0 +1,117 @@
+{
+  "name": "Rain Peer Core",
+  "version": 1,
+  "viewBox": [0, 0, 1024, 1024],
+  "coordinateSystem": "SVG user units",
+  "source": "peer_core_animatable.svg",
+  "runtimeNote": "Use full-viewBox layer SVGs for stacking, or parse named groups from peer_core_animatable.svg. Keep common action icons separate from this logo animation system.",
+  "layers": [
+    {
+      "id": "app-icon-shell",
+      "file": "layers/app_icon_shell.svg",
+      "kind": "background",
+      "defaultVisible": false,
+      "pivot": [512, 512],
+      "motion": "static"
+    },
+    {
+      "id": "rain-streaks",
+      "file": "layers/rain_streaks.svg",
+      "kind": "background-effect",
+      "defaultOpacity": 0.18,
+      "pivot": [512, 512],
+      "motion": "translate diagonally by 8-16 units during active states only"
+    },
+    {
+      "id": "wave-inner",
+      "file": "layers/wave_inner.svg",
+      "kind": "wave",
+      "defaultOpacity": 0.18,
+      "pivot": [512, 512],
+      "motion": "scale 0.92 to 1.06 and fade out during startup/connect/call events"
+    },
+    {
+      "id": "wave-middle",
+      "file": "layers/wave_middle.svg",
+      "kind": "wave",
+      "defaultOpacity": 0.14,
+      "pivot": [512, 512],
+      "motion": "scale 0.88 to 1.10 with 60ms delay after inner wave"
+    },
+    {
+      "id": "wave-outer",
+      "file": "layers/wave_outer.svg",
+      "kind": "wave",
+      "defaultOpacity": 0.10,
+      "pivot": [512, 512],
+      "motion": "scale 0.84 to 1.14 with 120ms delay after inner wave"
+    },
+    {
+      "id": "ring",
+      "file": "layers/ring.svg",
+      "kind": "mark",
+      "pivot": [512, 512],
+      "motion": "subtle scale 0.985 to 1.0 on event start"
+    },
+    {
+      "id": "link-node-a-node-b",
+      "file": "layers/link_node_a_node_b.svg",
+      "kind": "connector",
+      "from": "node-a",
+      "to": "node-b",
+      "motion": "redraw from node positions if nodes move independently"
+    },
+    {
+      "id": "link-node-b-node-c",
+      "file": "layers/link_node_b_node_c.svg",
+      "kind": "connector",
+      "from": "node-b",
+      "to": "node-c",
+      "motion": "redraw from node positions if nodes move independently"
+    },
+    {
+      "id": "link-node-c-node-a",
+      "file": "layers/link_node_c_node_a.svg",
+      "kind": "connector",
+      "from": "node-c",
+      "to": "node-a",
+      "motion": "redraw from node positions if nodes move independently"
+    },
+    {
+      "id": "node-a",
+      "file": "layers/node_a.svg",
+      "kind": "peer-node",
+      "pivot": [410, 584],
+      "radius": 72,
+      "motion": "micro-bob up to 6 units; avoid more than 8 units unless connectors redraw"
+    },
+    {
+      "id": "node-b",
+      "file": "layers/node_b.svg",
+      "kind": "peer-node",
+      "pivot": [614, 441],
+      "radius": 72,
+      "motion": "micro-bob up to 6 units; avoid more than 8 units unless connectors redraw"
+    },
+    {
+      "id": "node-c",
+      "file": "layers/node_c.svg",
+      "kind": "peer-node",
+      "pivot": [645, 645],
+      "radius": 72,
+      "motion": "micro-bob up to 6 units; avoid more than 8 units unless connectors redraw"
+    }
+  ],
+  "timing": {
+    "quickMs": 110,
+    "standardMs": 150,
+    "slowMs": 220,
+    "startupWaveMs": 700,
+    "connectWaveMs": 520
+  },
+  "reducedMotion": {
+    "waves": "hide",
+    "nodes": "static",
+    "rainStreaks": "static opacity only"
+  }
+}

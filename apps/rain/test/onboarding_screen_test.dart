@@ -1,6 +1,13 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
+import 'package:rain/application/audio/sound_event_router.dart';
+import 'package:rain/application/runtime/voice_call_state.dart';
+import 'package:rain/application/state/sound_event_providers.dart';
+import 'package:rain/infrastructure/services/app_settings_store.dart';
+import 'package:rain/infrastructure/services/sound_effects_service.dart';
+import 'package:rain/presentation/branding/rain_peer_core_mark.dart';
+import 'package:rain/presentation/branding/rain_streak_surface.dart';
 import 'package:rain/presentation/screens/onboarding_screen.dart';
 
 void main() {
@@ -21,6 +28,28 @@ void main() {
       find.byType(EditableText).first,
     );
     expect(editable.controller.text, 'alice_1');
+  });
+
+  testWidgets('auth surface uses Rain Peer Core brand treatment', (
+    WidgetTester tester,
+  ) async {
+    await tester.pumpWidget(
+      const ProviderScope(
+        child: MaterialApp(home: Scaffold(body: OnboardingScreen())),
+      ),
+    );
+    await tester.pumpAndSettle();
+
+    expect(
+      find.byKey(const ValueKey<String>('rain-auth-card-surface')),
+      findsOneWidget,
+    );
+    expect(
+      find.byKey(const ValueKey<String>('rain-auth-peer-core-mark')),
+      findsOneWidget,
+    );
+    expect(find.byType(RainPeerCoreMark), findsWidgets);
+    expect(find.byType(RainStreakSurface), findsWidgets);
   });
 
   testWidgets('focused credential field stays above the mobile keyboard', (
@@ -137,6 +166,59 @@ void main() {
     expect(usernameRect.left, moreOrLessEquals(passwordRect.left));
     expect(usernameRect.right, moreOrLessEquals(passwordRect.right));
   });
+
+  testWidgets('validation failure emits warning sound through router', (
+    WidgetTester tester,
+  ) async {
+    final effects = _RecordingSoundEffectsService();
+
+    await tester.pumpWidget(
+      ProviderScope(
+        overrides: [
+          soundEventRouterProvider.overrideWithValue(
+            SoundEventRouter(
+              effects: effects,
+              settingsLoader: () => const AppAudioSettings(),
+              callStateReader: () => const VoiceCallState.idle(),
+            ),
+          ),
+        ],
+        child: const MaterialApp(home: Scaffold(body: OnboardingScreen())),
+      ),
+    );
+
+    await tester.tap(find.widgetWithText(FilledButton, 'Sign in'));
+    await tester.pumpAndSettle();
+
+    expect(effects.played, <RainSoundEffect>[RainSoundEffect.error]);
+  });
+
+  testWidgets('validation warning respects disabled sound settings', (
+    WidgetTester tester,
+  ) async {
+    final effects = _RecordingSoundEffectsService();
+
+    await tester.pumpWidget(
+      ProviderScope(
+        overrides: [
+          soundEventRouterProvider.overrideWithValue(
+            SoundEventRouter(
+              effects: effects,
+              settingsLoader: () =>
+                  const AppAudioSettings(soundEffectsEnabled: false),
+              callStateReader: () => const VoiceCallState.idle(),
+            ),
+          ),
+        ],
+        child: const MaterialApp(home: Scaffold(body: OnboardingScreen())),
+      ),
+    );
+
+    await tester.tap(find.widgetWithText(FilledButton, 'Sign in'));
+    await tester.pumpAndSettle();
+
+    expect(effects.played, isEmpty);
+  });
 }
 
 Finder _textFieldWithLabel(String label) {
@@ -144,4 +226,20 @@ Finder _textFieldWithLabel(String label) {
     (Widget widget) =>
         widget is TextField && widget.decoration?.labelText == label,
   );
+}
+
+final class _RecordingSoundEffectsService extends SoundEffectsService {
+  _RecordingSoundEffectsService() : super();
+
+  final List<RainSoundEffect> played = <RainSoundEffect>[];
+
+  @override
+  Future<void> play(
+    RainSoundEffect effect, {
+    bool voiceCallActive = false,
+    bool allowDuringCall = false,
+    double volumeScale = 1.0,
+  }) async {
+    played.add(effect);
+  }
 }

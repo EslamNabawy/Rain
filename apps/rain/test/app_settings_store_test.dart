@@ -43,6 +43,37 @@ void main() {
     expect(await store.loadSelectedMicrophoneDeviceId(), isNull);
   });
 
+  test('selected video input persists locally', () async {
+    final store = AppSettingsStore();
+
+    expect(await store.loadSelectedVideoInputDeviceId(), isNull);
+
+    await store.setSelectedVideoInputDeviceId(' rear-camera ');
+    expect(await store.loadSelectedVideoInputDeviceId(), 'rear-camera');
+
+    await store.setSelectedVideoInputDeviceId(null);
+    expect(await store.loadSelectedVideoInputDeviceId(), isNull);
+  });
+
+  test('startup media permission warmup flags persist locally', () async {
+    final store = AppSettingsStore();
+
+    expect(await store.loadStartupMicrophoneWarmupCompleted(), isFalse);
+    expect(await store.loadStartupCameraWarmupCompleted(), isFalse);
+
+    await store.setStartupMicrophoneWarmupCompleted(true);
+    await store.setStartupCameraWarmupCompleted(true);
+
+    expect(await store.loadStartupMicrophoneWarmupCompleted(), isTrue);
+    expect(await store.loadStartupCameraWarmupCompleted(), isTrue);
+
+    await store.setStartupMicrophoneWarmupCompleted(false);
+    await store.setStartupCameraWarmupCompleted(false);
+
+    expect(await store.loadStartupMicrophoneWarmupCompleted(), isFalse);
+    expect(await store.loadStartupCameraWarmupCompleted(), isFalse);
+  });
+
   test('audio settings load defaults', () async {
     final store = AppSettingsStore();
 
@@ -96,6 +127,17 @@ void main() {
 
     await store.setSoundEffectsVolume(-1);
     expect(await store.loadSoundEffectsVolume(), 0.0);
+  });
+
+  test('non-finite sound effects volume falls back to default', () async {
+    final store = AppSettingsStore();
+
+    await store.setSoundEffectsVolume(double.nan);
+
+    expect(
+      await store.loadSoundEffectsVolume(),
+      AppSettingsStore.defaultSoundEffectsVolume,
+    );
   });
 
   test('default call output preference persists locally', () async {

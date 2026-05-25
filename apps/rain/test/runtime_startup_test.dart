@@ -42,6 +42,14 @@ class _RecordingPresenceAdapter extends NoopSignalingAdapter {
   }
 }
 
+final class _RecordedRuntimeError {
+  const _RecordedRuntimeError(this.error, this.source, this.fatal);
+
+  final Object error;
+  final String source;
+  final bool fatal;
+}
+
 void main() {
   TestWidgetsFlutterBinding.ensureInitialized();
 
@@ -182,6 +190,61 @@ void main() {
   });
 
   test(
+    'runtime startup probes media permissions without blocking startup',
+    () async {
+      final db = RainDatabase(NativeDatabase.memory());
+      addTearDown(db.close);
+      const identity = RainIdentity(
+        username: 'alice',
+        displayName: 'Alice',
+        createdAt: 0,
+        gender: RainGender.female,
+      );
+      var warmupCalls = 0;
+      final recordedErrors = <_RecordedRuntimeError>[];
+      final runtime = RainRuntimeController(
+        selfIdentity: identity,
+        adapter: NoopSignalingAdapter(),
+        brain: null,
+        database: db,
+        friendStore: FriendStore(db),
+        messageStore: MessageStore(db),
+        offlineQueueStore: OfflineQueueStore(db),
+        messageDeliveryService: MessageDeliveryService(
+          messageStore: MessageStore(db),
+          offlineQueueStore: OfflineQueueStore(db),
+        ),
+        friendRequestRefreshInterval: Duration.zero,
+        startupMediaPermissionWarmup: () async {
+          warmupCalls += 1;
+          throw StateError('Microphone permission denied');
+        },
+        errorRecorder:
+            (
+              Object error,
+              StackTrace? stackTrace, {
+              required String source,
+              required bool fatal,
+              String? flutterLibrary,
+              String? flutterContext,
+            }) {
+              recordedErrors.add(_RecordedRuntimeError(error, source, fatal));
+            },
+      );
+      addTearDown(runtime.dispose);
+
+      await runtime.start();
+      await runtime.start();
+
+      expect(warmupCalls, 1);
+      expect(recordedErrors, hasLength(1));
+      expect(recordedErrors.single.source, 'media-permission-warmup');
+      expect(recordedErrors.single.fatal, isFalse);
+      expect(recordedErrors.single.error, isA<StateError>());
+    },
+  );
+
+  test(
     'runtime startup surfaces expired Firebase session without clearing inside provider',
     () async {
       final db = RainDatabase(NativeDatabase.memory());
@@ -297,7 +360,7 @@ void main() {
 
   test('desktop shell close policy exits instead of hiding to tray', () {
     final source = File(
-      '../../apps/rain/lib/application/bootstrap/app_bootstrap.dart',
+      '../../apps/rain/lib/infrastructure/window/desktop_shell_controller.dart',
     ).readAsStringSync().replaceAll('\r\n', '\n');
 
     expect(source, contains('windowManager.setPreventClose(false)'));

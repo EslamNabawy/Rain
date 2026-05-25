@@ -168,10 +168,10 @@ Checked against installed `flutter_webrtc` 1.4.1 and Context7 docs for `/flutter
 
 **Purpose:** Stop design drift before code starts.
 
-- [ ] Confirm feature scope in `docs/superpowers/plans/2026-05-23-video-call-v2.md`.
-- [ ] Lock non-goals: no group calls, screen share, recording, background service, call history, audio-to-video upgrade.
-- [ ] Lock architecture: dedicated media PC per call, Firebase signaling, WebRTC RTP media.
-- [ ] Commit:
+- [x] Confirm feature scope in `docs/superpowers/plans/2026-05-23-video-call-v2.md`.
+- [x] Lock non-goals: no group calls, screen share, recording, background service, call history, audio-to-video upgrade.
+- [x] Lock architecture: dedicated media PC per call, Firebase signaling, WebRTC RTP media.
+- [x] Commit:
 
 ```powershell
 git add docs/superpowers/plans/2026-05-23-video-call-v2.md
@@ -182,33 +182,33 @@ git commit -m "docs: plan video call v2"
 
 **Purpose:** Make protocol understand audio vs video before touching capture.
 
-- [ ] Add failing tests in `packages/rain_core/test/voice_call_frame_test.dart`:
+- [x] Add failing tests in `packages/rain_core/test/voice_call_frame_test.dart`:
   - video invite round-trips `mediaMode: video`
   - audio invite defaults to `mediaMode: audio`
   - `cameraMuted` only allowed on mute/control frames
   - SDP still preserved byte-for-byte
   - invalid `mediaMode` rejected
 
-- [ ] Add failing tests in `packages/protocol_brain/test/voice_call_session_test.dart`:
+- [x] Add failing tests in `packages/protocol_brain/test/voice_call_session_test.dart`:
   - video call sends invite with `mediaMode: video`
   - audio call behavior unchanged
   - stale video offer ignored by `callId`, `sessionEpoch`, and `seq`
   - camera mute frame changes remote camera state only
 
-- [ ] Implement minimal fields:
+- [x] Implement minimal fields:
   - `VoiceCallFrame.mediaMode`
   - `VoiceCallFrame.cameraMuted`
   - `CallMediaMode.audio`
   - `CallMediaMode.video`
 
-- [ ] Run:
+- [x] Run:
 
 ```powershell
 flutter test packages\rain_core\test\voice_call_frame_test.dart
 flutter test packages\protocol_brain\test\voice_call_session_test.dart
 ```
 
-- [ ] Commit:
+- [x] Commit:
 
 ```powershell
 git add packages\rain_core\test\voice_call_frame_test.dart packages\protocol_brain\test\voice_call_session_test.dart packages\protocol_brain\lib\src\voice_call_frame.dart packages\rain_core\lib\voice_call\voice_call_frame.dart
@@ -219,33 +219,33 @@ git commit -m "feat: add video call signaling contract"
 
 **Purpose:** Store call media mode and camera state safely.
 
-- [ ] Add failing tests in `packages/protocol_brain/test/voice_signaling_contract_test.dart`:
+- [x] Add failing tests in `packages/protocol_brain/test/voice_signaling_contract_test.dart`:
   - create video call room stores `mediaMode: video`
   - old room with missing `mediaMode` reads as audio
   - invalid `mediaMode` rejected
   - terminal cleanup still releases active pair lock
 
-- [ ] Add failing tests in `packages/protocol_brain/test/firebase_contract_test.dart`:
+- [x] Add failing tests in `packages/protocol_brain/test/firebase_contract_test.dart`:
   - rules allow `mediaMode: audio|video`
   - rules reject unknown mode
   - rules allow bounded `cameraMuted` boolean
   - rules reject oversized/new unsafe fields
 
-- [ ] Modify:
+- [x] Modify:
   - `packages/protocol_brain/lib/src/voice_signaling_contract.dart`
   - `packages/protocol_brain/lib/adapters/signaling_adapter.dart`
   - `packages/protocol_brain/lib/adapters/firebase_adapter.dart`
   - `packages/protocol_brain/lib/src/testing/fake_voice_signaling_adapter.dart`
   - `backend/firebase/database.rules.json`
 
-- [ ] Run:
+- [x] Run:
 
 ```powershell
 flutter test packages\protocol_brain\test\voice_signaling_contract_test.dart
 flutter test packages\protocol_brain\test\firebase_contract_test.dart
 ```
 
-- [ ] Commit:
+- [x] Commit:
 
 ```powershell
 git add packages\protocol_brain backend\firebase
@@ -256,9 +256,9 @@ git commit -m "feat: add video call firebase signaling metadata"
 
 **Purpose:** Capture camera/mic and negotiate audio/video on the dedicated media peer.
 
-- [ ] Create `packages/peer_core/lib/src/call/call_media_models.dart`.
-- [ ] Create `packages/peer_core/lib/src/call/call_media_connection.dart`.
-- [ ] Add tests in `packages/peer_core/test/call_media_connection_test.dart`:
+- [x] Create `packages/peer_core/lib/src/call/call_media_models.dart`.
+- [x] Create `packages/peer_core/lib/src/call/call_media_connection.dart`.
+- [x] Add tests in `packages/peer_core/test/call_media_connection_test.dart`:
   - audio mode requests audio only and `OfferToReceiveVideo: false`
   - video mode requests audio + video and `OfferToReceiveVideo: true`
   - camera denied fails before invite
@@ -272,7 +272,7 @@ git commit -m "feat: add video call firebase signaling metadata"
   - dispose stops audio/video tracks and closes PC
   - repeated calls create fresh peer connections
 
-- [ ] Use native-shaped SDP constraints:
+- [x] Use native-shaped SDP constraints:
 
 ```dart
 {
@@ -284,7 +284,7 @@ git commit -m "feat: add video call firebase signaling metadata"
 }
 ```
 
-- [ ] Use video capture constraints:
+- [x] Use video capture constraints:
 
 ```dart
 {
@@ -308,15 +308,15 @@ git commit -m "feat: add video call firebase signaling metadata"
 }
 ```
 
-- [ ] Keep voice compatibility wrapper until runtime migration is complete.
-- [ ] Run:
+- [x] Keep voice compatibility wrapper until runtime migration is complete.
+- [x] Run:
 
 ```powershell
 flutter test packages\peer_core\test\call_media_connection_test.dart
 flutter test packages\peer_core\test\voice_media_connection_test.dart
 ```
 
-- [ ] Commit:
+- [x] Commit:
 
 ```powershell
 git add packages\peer_core
@@ -327,9 +327,9 @@ git commit -m "feat: add audio video call media core"
 
 **Purpose:** Keep UI renderer textures out of protocol/media logic.
 
-- [ ] Create `apps/rain/lib/application/runtime/video_call_renderers.dart`.
-- [ ] Add renderer factory abstraction so tests do not need native textures.
-- [ ] Add tests in `apps/rain/test/video_call_renderers_test.dart`:
+- [x] Create `apps/rain/lib/application/runtime/video_call_renderers.dart`.
+- [x] Add renderer factory abstraction so tests do not need native textures.
+- [x] Add tests in `apps/rain/test/video_call_renderers_test.dart`:
   - initializes local and remote renderers once
   - assigns local stream to local renderer
   - assigns remote stream when remote video arrives
@@ -337,18 +337,18 @@ git commit -m "feat: add audio video call media core"
   - disposes renderers idempotently
   - first-frame event updates state
 
-- [ ] Wire first-frame diagnostics:
+- [x] Wire first-frame diagnostics:
   - local preview first frame
   - remote first frame
   - remote video timeout
 
-- [ ] Run:
+- [x] Run:
 
 ```powershell
 flutter test apps\rain\test\video_call_renderers_test.dart
 ```
 
-- [ ] Commit:
+- [x] Commit:
 
 ```powershell
 git add apps\rain\lib\application\runtime\video_call_renderers.dart apps\rain\test\video_call_renderers_test.dart
@@ -359,7 +359,7 @@ git commit -m "feat: manage video call renderers"
 
 **Purpose:** Add video call behavior without breaking voice calls.
 
-- [ ] Extend `apps/rain/lib/application/runtime/voice_call_state.dart`:
+- [x] Extend `apps/rain/lib/application/runtime/voice_call_state.dart`:
   - `mediaMode`
   - `isCameraMuted`
   - `isRemoteCameraMuted`
@@ -369,12 +369,12 @@ git commit -m "feat: manage video call renderers"
   - `remoteCameraDenied`
   - `videoFirstFrameTimeout`
 
-- [ ] Add runtime methods in `apps/rain/lib/application/runtime/voice_call_runtime.dart`:
+- [x] Add runtime methods in `apps/rain/lib/application/runtime/voice_call_runtime.dart`:
   - `startVideoCall(String username)`
   - `setVideoCallCameraMuted(bool muted)`
   - `switchVideoCallCamera()`
 
-- [ ] Add tests in `apps/rain/test/friend_flow_test.dart`:
+- [x] Add tests in `apps/rain/test/friend_flow_test.dart`:
   - video call preflights mic + camera before Firebase invite
   - camera denied never sends invite
   - incoming video accept preflights camera before accept
@@ -386,14 +386,14 @@ git commit -m "feat: manage video call renderers"
   - voice call still works after video call hangup
   - video call still works after failed voice call
 
-- [ ] Keep current voice provider names unless rename is required by compiler.
-- [ ] Run:
+- [x] Keep current voice provider names unless rename is required by compiler.
+- [x] Run:
 
 ```powershell
 flutter test apps\rain\test\friend_flow_test.dart
 ```
 
-- [ ] Commit:
+- [x] Commit:
 
 ```powershell
 git add apps\rain\lib\application\runtime apps\rain\test\friend_flow_test.dart
@@ -404,8 +404,8 @@ git commit -m "feat: add video call runtime"
 
 **Purpose:** Give user real video controls and safe failures.
 
-- [ ] Add video call button beside voice button in `apps/rain/lib/presentation/widgets/home/chat_panel.dart`.
-- [ ] Add/extend widgets in `apps/rain/lib/presentation/widgets/rain_chat_widgets.dart`:
+- [x] Add video call button beside voice button in `apps/rain/lib/presentation/widgets/home/chat_panel.dart`.
+- [x] Add/extend widgets in `apps/rain/lib/presentation/widgets/rain_chat_widgets.dart`:
   - remote video surface
   - local preview
   - mic toggle
@@ -415,18 +415,18 @@ git commit -m "feat: add video call runtime"
   - retry after permission failure
   - typed failure banner
 
-- [ ] Mobile layout:
+- [x] Mobile layout:
   - remote video fills call area
   - local preview fixed aspect ratio
   - controls do not overlap bottom nav
   - chat remains reachable
 
-- [ ] Desktop layout:
+- [x] Desktop layout:
   - remote video uses available panel width
   - local preview anchored top/right
   - controls remain visible on narrow window
 
-- [ ] Add widget tests in `apps/rain/test/rain_chat_widgets_test.dart`:
+- [x] Add widget tests in `apps/rain/test/rain_chat_widgets_test.dart`:
   - video call button disabled during active transfer
   - video call button disabled during another call
   - incoming video ring actions wired
@@ -436,13 +436,13 @@ git commit -m "feat: add video call runtime"
   - camera permission failure offers retry
   - native camera/WebRTC errors are sanitized
 
-- [ ] Run:
+- [x] Run:
 
 ```powershell
 flutter test apps\rain\test\rain_chat_widgets_test.dart
 ```
 
-- [ ] Commit:
+- [x] Commit:
 
 ```powershell
 git add apps\rain\lib\presentation apps\rain\test\rain_chat_widgets_test.dart
@@ -453,7 +453,7 @@ git commit -m "feat: add video call ui"
 
 **Purpose:** Add required platform permissions and release checks.
 
-- [ ] Update `apps/rain/android/app/src/main/AndroidManifest.xml`:
+- [x] Update `apps/rain/android/app/src/main/AndroidManifest.xml`:
 
 ```xml
 <uses-feature android:name="android.hardware.camera" android:required="false" />
@@ -461,7 +461,7 @@ git commit -m "feat: add video call ui"
 <uses-permission android:name="android.permission.CAMERA" />
 ```
 
-- [ ] Keep existing:
+- [x] Keep existing:
 
 ```xml
 <uses-permission android:name="android.permission.RECORD_AUDIO" />
@@ -470,23 +470,23 @@ git commit -m "feat: add video call ui"
 <uses-permission android:name="android.permission.MODIFY_AUDIO_SETTINGS" />
 ```
 
-- [ ] Windows:
+- [x] Windows:
   - no manifest change expected for camera
   - document that Windows privacy settings must allow camera and microphone
 
-- [ ] Add tests in `packages/protocol_brain/test/release_contract_test.dart`:
+- [x] Add tests in `packages/protocol_brain/test/release_contract_test.dart`:
   - Android manifest contains `CAMERA`
   - Android manifest keeps audio/network permissions
   - release docs mention same non-demo signaling key for Windows/APK pair
   - release docs mention camera/mic OS permission checks
 
-- [ ] Run:
+- [x] Run:
 
 ```powershell
 flutter test packages\protocol_brain\test\release_contract_test.dart
 ```
 
-- [ ] Commit:
+- [x] Commit:
 
 ```powershell
 git add apps\rain\android packages\protocol_brain\test\release_contract_test.dart docs
@@ -497,7 +497,7 @@ git commit -m "chore: add video call platform gates"
 
 **Purpose:** Make failures debuggable without exposing raw native spam to normal UI.
 
-- [ ] Extend `apps/rain/lib/application/runtime/voice_call_diagnostics.dart`:
+- [x] Extend `apps/rain/lib/application/runtime/voice_call_diagnostics.dart`:
   - `mediaMode`
   - local/remote audio track counts
   - local/remote video track counts
@@ -508,28 +508,28 @@ git commit -m "chore: add video call platform gates"
   - camera permission failure detail
   - sanitized UI error detail
 
-- [ ] Add tests:
+- [x] Add tests:
   - diagnostics include video counters
   - UI hides raw `RTCRtpTransceiver`/native errors
   - export contains full native error for developer diagnosis
 
-- [ ] Add runtime failure rules:
+- [x] Add runtime failure rules:
   - no remote video first frame within timeout -> show `Video could not connect. Try again.`
   - audio connected but remote camera off -> stay active, show peer camera off
   - ICE failed -> hangup with typed media failure
   - app pause/background -> keep call if OS allows, otherwise fail cleanly and release camera
 
-- [ ] Run:
+- [x] Run:
 
 ```powershell
 flutter test apps\rain\test\crash_diagnostics_service_test.dart
 flutter test apps\rain\test\rain_chat_widgets_test.dart
 ```
 
-- [ ] Commit:
+- [x] Commit:
 
 ```powershell
-git add apps\rain\lib\application\runtime apps\rain\test
+git add apps\rain\lib\application\runtime apps\rain\lib\presentation\widgets\calls apps\rain\test packages\peer_core\lib\src\voice docs
 git commit -m "feat: add video call diagnostics"
 ```
 
@@ -537,7 +537,7 @@ git commit -m "feat: add video call diagnostics"
 
 **Purpose:** Prove codebase health before any installable artifact.
 
-- [ ] Run:
+- [x] Run:
 
 ```powershell
 dart pub get
@@ -545,9 +545,9 @@ dart run melos run analyze
 dart run melos run test
 ```
 
-- [ ] Fix failures with focused commits.
-- [ ] Do not build yet.
-- [ ] Commit final test fixes:
+- [x] Fix failures with focused commits.
+- [x] Do not build yet.
+- [x] Commit final test fixes:
 
 ```powershell
 git status --short
@@ -559,9 +559,9 @@ git commit -m "test: stabilize video call coverage"
 
 **Purpose:** Prove real camera/media behavior before release claim.
 
-- [ ] Build only now, after all tests pass.
-- [ ] Build Windows and Android with the same release defines file.
-- [ ] Build v7a APK only when testing old Android phone.
+- [x] Build only now, after all tests pass.
+- [x] Build Windows and Android with the same release defines file.
+- [x] Build v7a APK only when testing old Android phone.
 - [ ] Test matrix:
   - Android v7a -> Android v7a video call
   - Android v7a -> Windows video call
@@ -583,19 +583,36 @@ git commit -m "test: stabilize video call coverage"
   - 3 successful Android-to-Windows calls
   - 3 successful Windows-to-Android calls
 
+Build note:
+
+- `scripts\build_stable_test_pair.ps1 -SmokeWindows` passed on 2026-05-24.
+- Windows release smoke launch passed.
+- Android APK verified to contain only `armeabi-v7a` native libraries.
+- Real device video-call matrix is still pending.
+
 ## Phase 11: Final Build And Release Gate
 
 **Purpose:** Produce usable artifacts without repeating the demo-key mistake.
 
-- [ ] Generate one shared non-demo `RAIN_SIGNALING_ENCRYPTION_KEY`.
-- [ ] Use same `--dart-define-from-file` for Windows and APK.
-- [ ] Build Windows release.
-- [ ] Build Android v7a release APK.
-- [ ] Verify APK contains only `armeabi-v7a`.
-- [ ] Smoke launch Windows release.
+- [x] Generate one shared non-demo `RAIN_SIGNALING_ENCRYPTION_KEY`.
+- [x] Use same `--dart-define-from-file` for Windows and APK.
+- [x] Build Windows release.
+- [x] Build Android v7a release APK.
+- [x] Verify APK contains only `armeabi-v7a`.
+- [x] Smoke launch Windows release.
 - [ ] Install APK on target Android device.
 - [ ] Confirm both artifacts talk to each other.
-- [ ] Commit release doc updates only if docs changed.
+- [x] Commit release doc updates only if docs changed.
+
+Release gate note:
+
+- Built Windows release and Android v7a release APK on 2026-05-24 with `%TEMP%\rain-release-defines.json`.
+- Shared signaling key was generated for this build and verified non-demo without recording the key in source.
+- Windows artifact: `apps\rain\build\windows\x64\runner\Release\rain.exe`.
+- Android artifact: `apps\rain\build\app\outputs\flutter-apk\app-armeabi-v7a-release.apk`.
+- APK ABI verification found only `armeabi-v7a`.
+- Windows smoke launch passed.
+- Android install and cross-device communication are pending because no Android device was visible to Flutter or ADB.
 
 Commands:
 

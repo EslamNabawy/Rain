@@ -1,3 +1,5 @@
+export 'src/call/call_media_connection.dart';
+export 'src/call/call_media_models.dart';
 export 'src/default_peer_core.dart';
 export 'src/models.dart';
 export 'src/platform_bridge.dart';

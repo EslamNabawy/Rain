@@ -102,4 +102,38 @@ void main() {
     expect(diagnostics.isConnected, isTrue);
     expect(diagnostics.routeKind, PeerRouteKind.unknown);
   });
+
+  test(
+    'manual disconnect is reconnectable and distinct from remote offline',
+    () {
+      final manual = ConnectionDiagnostics.fromConnection(
+        canChat: true,
+        isPeerOnline: true,
+        connection: const PeerConnectionView(
+          peerId: 'bob',
+          manualIntent: ManualConnectionIntent.manualDisconnected,
+          localDetail: 'Manual disconnect.',
+        ),
+      );
+      final remoteOffline = ConnectionDiagnostics.fromConnection(
+        canChat: true,
+        isPeerOnline: false,
+        connection: const PeerConnectionView(
+          peerId: 'bob',
+          localDetail: 'Disconnected.',
+        ),
+      );
+
+      expect(manual.label, 'Disconnected');
+      expect(manual.detail, contains('Manual disconnect'));
+      expect(manual.isBusy, isFalse);
+      expect(manual.isConnected, isFalse);
+      expect(manual.canDisconnect, isFalse);
+      expect(remoteOffline.label, 'Offline');
+      expect(remoteOffline.detail, contains('closed Rain'));
+      expect(remoteOffline.detail, isNot(manual.detail));
+      expect(remoteOffline.isBusy, isFalse);
+      expect(remoteOffline.isConnected, isFalse);
+    },
+  );
 }

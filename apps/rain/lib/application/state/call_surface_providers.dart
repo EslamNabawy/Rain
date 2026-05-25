@@ -4,9 +4,9 @@ import 'package:rain/application/runtime/voice_call_state.dart';
 
 import 'runtime_providers.dart';
 
-enum CallSurfaceMode { expanded, minimized }
+enum CallSurfaceMode { managerOnly, expanded, fullscreen, pip }
 
-enum CallSurfaceDock { chatCenter, chatTop, bottomSafe }
+enum VideoPrimaryRole { remote, local }
 
 final voiceCallStateForCallSurfaceProvider = Provider<VoiceCallState>(
   (Ref ref) => ref.watch(voiceCallProvider),
@@ -21,7 +21,9 @@ class CallSurfaceState {
   const CallSurfaceState({
     required this.isVisible,
     required this.mode,
-    required this.dock,
+    required this.restoreMode,
+    required this.mediaMode,
+    this.videoPrimaryRole = VideoPrimaryRole.remote,
     this.peerId,
     this.callId,
   });
@@ -29,7 +31,9 @@ class CallSurfaceState {
   const CallSurfaceState.hidden()
     : isVisible = false,
       mode = CallSurfaceMode.expanded,
-      dock = CallSurfaceDock.chatCenter,
+      restoreMode = CallSurfaceMode.expanded,
+      mediaMode = CallMediaMode.audio,
+      videoPrimaryRole = VideoPrimaryRole.remote,
       peerId = null,
       callId = null;
 
@@ -37,18 +41,39 @@ class CallSurfaceState {
     required this.peerId,
     required this.callId,
     this.mode = CallSurfaceMode.expanded,
-    this.dock = CallSurfaceDock.chatCenter,
+    this.restoreMode = CallSurfaceMode.expanded,
+    this.mediaMode = CallMediaMode.audio,
+    this.videoPrimaryRole = VideoPrimaryRole.remote,
   }) : isVisible = true;
 
   final bool isVisible;
   final CallSurfaceMode mode;
-  final CallSurfaceDock dock;
+  final CallSurfaceMode restoreMode;
+  final CallMediaMode mediaMode;
+  final VideoPrimaryRole videoPrimaryRole;
   final String? peerId;
   final String? callId;
 
   bool get isExpanded => isVisible && mode == CallSurfaceMode.expanded;
 
-  bool get isMinimized => isVisible && mode == CallSurfaceMode.minimized;
+  bool get isManagerOnly => isVisible && mode == CallSurfaceMode.managerOnly;
+
+  bool get isFullscreen => isVisible && mode == CallSurfaceMode.fullscreen;
+
+  bool get isPip => isVisible && mode == CallSurfaceMode.pip;
+
+  bool get hasMediaPanel => isVisible && mode != CallSurfaceMode.managerOnly;
+
+  bool get showsMediaSurface =>
+      isVisible && mode != CallSurfaceMode.managerOnly;
+
+  bool get showsExpandedOverlay =>
+      isVisible &&
+      (mode == CallSurfaceMode.expanded || mode == CallSurfaceMode.fullscreen);
+
+  bool get showsManagerBar =>
+      isVisible &&
+      (mode == CallSurfaceMode.managerOnly || mode == CallSurfaceMode.pip);
 
   bool matchesCall(VoiceCallState call) {
     if (!isVisible || call.peerId == null) {
@@ -64,12 +89,16 @@ class CallSurfaceState {
   CallSurfaceState copyWith({
     bool? isVisible,
     CallSurfaceMode? mode,
-    CallSurfaceDock? dock,
+    CallSurfaceMode? restoreMode,
+    CallMediaMode? mediaMode,
+    VideoPrimaryRole? videoPrimaryRole,
   }) {
     return CallSurfaceState(
       isVisible: isVisible ?? this.isVisible,
       mode: mode ?? this.mode,
-      dock: dock ?? this.dock,
+      restoreMode: restoreMode ?? this.restoreMode,
+      mediaMode: mediaMode ?? this.mediaMode,
+      videoPrimaryRole: videoPrimaryRole ?? this.videoPrimaryRole,
       peerId: peerId,
       callId: callId,
     );
@@ -78,8 +107,10 @@ class CallSurfaceState {
   CallSurfaceState forCall(VoiceCallState call) {
     return CallSurfaceState(
       isVisible: isVisible,
-      mode: mode,
-      dock: dock,
+      mode: _modeForMediaMode(mode, call.mediaMode),
+      restoreMode: _restoreModeForMediaMode(restoreMode, call.mediaMode),
+      mediaMode: call.mediaMode,
+      videoPrimaryRole: videoPrimaryRole,
       peerId: call.peerId,
       callId: call.callId,
     );
@@ -90,20 +121,32 @@ class CallSurfaceState {
     return other is CallSurfaceState &&
         other.isVisible == isVisible &&
         other.mode == mode &&
-        other.dock == dock &&
+        other.restoreMode == restoreMode &&
+        other.mediaMode == mediaMode &&
+        other.videoPrimaryRole == videoPrimaryRole &&
         other.peerId == peerId &&
         other.callId == callId;
   }
 
   @override
-  int get hashCode => Object.hash(isVisible, mode, dock, peerId, callId);
+  int get hashCode => Object.hash(
+    isVisible,
+    mode,
+    restoreMode,
+    mediaMode,
+    videoPrimaryRole,
+    peerId,
+    callId,
+  );
 
   @override
   String toString() {
     return 'CallSurfaceState('
         'isVisible: $isVisible, '
         'mode: $mode, '
-        'dock: $dock, '
+        'restoreMode: $restoreMode, '
+        'mediaMode: $mediaMode, '
+        'videoPrimaryRole: $videoPrimaryRole, '
         'peerId: $peerId, '
         'callId: $callId'
         ')';
@@ -121,20 +164,100 @@ class CallSurfaceController extends Notifier<CallSurfaceState> {
     return next;
   }
 
-  void expand({CallSurfaceDock dock = CallSurfaceDock.chatCenter}) {
+  void expand() {
     final current = state;
     if (!current.isVisible) {
       return;
     }
-    _setState(current.copyWith(mode: CallSurfaceMode.expanded, dock: dock));
+    _setState(
+      current.copyWith(
+        mode: CallSurfaceMode.expanded,
+        restoreMode: CallSurfaceMode.expanded,
+      ),
+    );
   }
 
-  void minimize({CallSurfaceDock dock = CallSurfaceDock.bottomSafe}) {
+  void minimize() {
     final current = state;
     if (!current.isVisible) {
       return;
     }
-    _setState(current.copyWith(mode: CallSurfaceMode.minimized, dock: dock));
+    _setState(_nextMinimizedState(current));
+  }
+
+  void showManagerOnly() {
+    final current = state;
+    if (!current.isVisible) {
+      return;
+    }
+    _setState(
+      current.copyWith(
+        mode: CallSurfaceMode.managerOnly,
+        restoreMode: _usefulRestoreModeFor(current),
+      ),
+    );
+  }
+
+  void restore() {
+    final current = state;
+    if (!current.isVisible) {
+      return;
+    }
+    if (current.mode == CallSurfaceMode.fullscreen) {
+      exitFullscreen();
+      return;
+    }
+    _setState(current.copyWith(mode: _safeRestoreMode(current)));
+  }
+
+  void enterFullscreen() {
+    final current = state;
+    if (!current.isVisible || current.mediaMode != CallMediaMode.video) {
+      return;
+    }
+    _setState(
+      current.copyWith(
+        mode: CallSurfaceMode.fullscreen,
+        restoreMode: _usefulRestoreModeFor(current),
+      ),
+    );
+  }
+
+  void toggleVideoPrimaryRole(String callId) {
+    final current = state;
+    if (!current.isVisible ||
+        current.callId != callId ||
+        current.mediaMode != CallMediaMode.video) {
+      return;
+    }
+    _setState(
+      current.copyWith(
+        videoPrimaryRole: current.videoPrimaryRole == VideoPrimaryRole.remote
+            ? VideoPrimaryRole.local
+            : VideoPrimaryRole.remote,
+      ),
+    );
+  }
+
+  void exitFullscreen() {
+    final current = state;
+    if (!current.isVisible || current.mode != CallSurfaceMode.fullscreen) {
+      return;
+    }
+    _setState(current.copyWith(mode: _safeRestoreMode(current)));
+  }
+
+  bool handleBackIntent() {
+    final current = state;
+    if (!current.isVisible || current.mode == CallSurfaceMode.managerOnly) {
+      return false;
+    }
+    if (current.mode == CallSurfaceMode.fullscreen) {
+      exitFullscreen();
+      return true;
+    }
+    minimize();
+    return true;
   }
 
   void _setState(CallSurfaceState next) {
@@ -151,17 +274,89 @@ class CallSurfaceController extends Notifier<CallSurfaceState> {
     }
 
     if (call.isRinging || call.phase == VoiceCallPhase.failed) {
-      return CallSurfaceState.visible(peerId: call.peerId, callId: call.callId);
+      return CallSurfaceState.visible(
+        peerId: call.peerId,
+        callId: call.callId,
+        mediaMode: call.mediaMode,
+      );
     }
 
     if (previous != null && previous.matchesCall(call)) {
       return previous.forCall(call);
     }
 
-    return CallSurfaceState.visible(peerId: call.peerId, callId: call.callId);
+    return CallSurfaceState.visible(
+      peerId: call.peerId,
+      callId: call.callId,
+      mediaMode: call.mediaMode,
+    );
   }
 
   bool _shouldHide(VoiceCallState call) {
     return call.phase == VoiceCallPhase.idle;
   }
+
+  CallSurfaceState _nextMinimizedState(CallSurfaceState current) {
+    return switch (current.mode) {
+      CallSurfaceMode.expanded when current.mediaMode == CallMediaMode.video =>
+        current.copyWith(
+          mode: CallSurfaceMode.pip,
+          restoreMode: CallSurfaceMode.pip,
+        ),
+      CallSurfaceMode.pip => current.copyWith(
+        mode: CallSurfaceMode.managerOnly,
+        restoreMode: CallSurfaceMode.pip,
+      ),
+      CallSurfaceMode.fullscreen => current.copyWith(
+        mode: current.mediaMode == CallMediaMode.video
+            ? CallSurfaceMode.pip
+            : CallSurfaceMode.managerOnly,
+        restoreMode: current.mediaMode == CallMediaMode.video
+            ? CallSurfaceMode.pip
+            : CallSurfaceMode.expanded,
+      ),
+      CallSurfaceMode.managerOnly => current,
+      CallSurfaceMode.expanded => current.copyWith(
+        mode: CallSurfaceMode.managerOnly,
+        restoreMode: CallSurfaceMode.expanded,
+      ),
+    };
+  }
+
+  CallSurfaceMode _usefulRestoreModeFor(CallSurfaceState state) {
+    return switch (state.mode) {
+      CallSurfaceMode.pip => CallSurfaceMode.pip,
+      CallSurfaceMode.expanded ||
+      CallSurfaceMode.fullscreen => CallSurfaceMode.expanded,
+      CallSurfaceMode.managerOnly => _safeRestoreMode(state),
+    };
+  }
+
+  CallSurfaceMode _safeRestoreMode(CallSurfaceState state) {
+    return _restoreModeForMediaMode(state.restoreMode, state.mediaMode);
+  }
+}
+
+CallSurfaceMode _modeForMediaMode(
+  CallSurfaceMode mode,
+  CallMediaMode mediaMode,
+) {
+  if (mediaMode == CallMediaMode.video) {
+    return mode;
+  }
+  return switch (mode) {
+    CallSurfaceMode.fullscreen ||
+    CallSurfaceMode.pip => CallSurfaceMode.expanded,
+    CallSurfaceMode.managerOnly || CallSurfaceMode.expanded => mode,
+  };
+}
+
+CallSurfaceMode _restoreModeForMediaMode(
+  CallSurfaceMode mode,
+  CallMediaMode mediaMode,
+) {
+  if (mediaMode == CallMediaMode.video && mode == CallSurfaceMode.pip) {
+    return CallSurfaceMode.pip;
+  }
+  return CallSurfaceMode.expanded;
 }

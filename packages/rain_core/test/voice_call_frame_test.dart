@@ -26,6 +26,43 @@ void main() {
     expect(decoded.sessionEpoch, 1);
   });
 
+  test('video invite round-trips media mode', () {
+    const frame = VoiceCallFrame(
+      type: VoiceCallFrameType.invite,
+      callId: 'call-1',
+      from: 'alice',
+      to: 'bob',
+      sentAt: 10,
+      seq: 1,
+      sessionEpoch: 1,
+      mediaMode: CallMediaMode.video,
+    );
+
+    final encoded = jsonDecode(frame.encode()) as Map<String, Object?>;
+    final decoded = VoiceCallFrame.decode(frame.encode());
+
+    expect(encoded['mediaMode'], 'video');
+    expect(decoded.mediaMode, CallMediaMode.video);
+  });
+
+  test('audio invite defaults to audio media mode', () {
+    final decoded = VoiceCallFrame.decode(
+      jsonEncode(<String, Object?>{
+        'type': VoiceCallFrame.wireType,
+        'action': 'invite',
+        'callId': 'call-1',
+        'from': 'alice',
+        'to': 'bob',
+        'sentAt': 10,
+        'seq': 1,
+        'sessionEpoch': 1,
+      }),
+    );
+
+    expect(decoded.mediaMode, CallMediaMode.audio);
+    expect(jsonDecode(decoded.encode()), isNot(contains('mediaMode')));
+  });
+
   test('tryDecode ignores non voice control messages', () {
     final rawAck = jsonEncode(<String, String>{
       'type': 'ack',
@@ -203,6 +240,58 @@ void main() {
       'muted': true,
     });
     expect(() => VoiceCallFrame.decode(inviteWithMuted), throwsFormatException);
+  });
+
+  test('cameraMuted is only allowed on mute frames', () {
+    final cameraMute = VoiceCallFrame.decode(
+      jsonEncode(<String, Object?>{
+        'type': VoiceCallFrame.wireType,
+        'action': 'mute',
+        'callId': 'call-1',
+        'from': 'alice',
+        'to': 'bob',
+        'sentAt': 10,
+        'seq': 1,
+        'sessionEpoch': 1,
+        'cameraMuted': true,
+      }),
+    );
+
+    expect(cameraMute.cameraMuted, isTrue);
+    expect(cameraMute.muted, isNull);
+
+    final inviteWithCameraMuted = jsonEncode(<String, Object?>{
+      'type': VoiceCallFrame.wireType,
+      'action': 'invite',
+      'callId': 'call-1',
+      'from': 'alice',
+      'to': 'bob',
+      'sentAt': 10,
+      'seq': 1,
+      'sessionEpoch': 1,
+      'cameraMuted': true,
+    });
+    expect(
+      () => VoiceCallFrame.decode(inviteWithCameraMuted),
+      throwsFormatException,
+    );
+  });
+
+  test('rejects invalid media mode', () {
+    final raw = jsonEncode(<String, Object?>{
+      'type': VoiceCallFrame.wireType,
+      'action': 'invite',
+      'callId': 'call-1',
+      'from': 'alice',
+      'to': 'bob',
+      'sentAt': 10,
+      'seq': 1,
+      'sessionEpoch': 1,
+      'mediaMode': 'screen',
+    });
+
+    expect(() => VoiceCallFrame.decode(raw), throwsFormatException);
+    expect(VoiceCallFrame.tryDecode(raw), isNull);
   });
 
   test('requires positive sequence and session epoch on wire frames', () {

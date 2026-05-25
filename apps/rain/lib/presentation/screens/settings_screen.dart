@@ -1,13 +1,18 @@
+import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
 import 'package:rain_core/rain_core.dart';
 
+import 'package:rain/application/audio/sound_event_router.dart';
 import 'package:rain/presentation/navigation/app_routes.dart';
 import 'package:rain/application/runtime/media_device_settings.dart';
 import 'package:rain/application/state/app_providers.dart';
+import 'package:rain/application/state/sound_event_providers.dart';
 import 'package:rain/infrastructure/services/crash_diagnostics_service.dart';
 import 'package:rain/infrastructure/services/app_settings_store.dart';
+import 'package:rain/presentation/branding/rain_ripple_halo_surface.dart';
+import 'package:rain/presentation/branding/rain_state_surfaces.dart';
 import 'package:rain/presentation/screens/splash_screen.dart';
 import 'package:rain/presentation/widgets/app_components.dart';
 import 'package:rain/presentation/widgets/app_dialogs.dart';
@@ -50,7 +55,12 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen> {
     final themeController = ref.read(themeModeProvider.notifier);
     final lastCrash = ref.watch(lastCrashDiagnosticsProvider);
     final microphones = ref.watch(microphoneSelectionProvider);
+    final cameras = ref.watch(videoInputCapabilityProvider);
     final audioSettings = ref.watch(voiceAudioSettingsProvider);
+    final audioOutputCapabilities = ref.watch(audioOutputCapabilityProvider);
+    final outputCapabilities =
+        audioOutputCapabilities.value ??
+        const AudioOutputCapabilityState(devices: []);
 
     return AppPageFrame(
       title: 'Settings',
@@ -157,6 +167,7 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen> {
                 audioSettings.when(
                   data: (settings) => _VoiceAudioSettingsControls(
                     settings: settings,
+                    outputCapabilities: outputCapabilities,
                     isBusy: false,
                     onSoundEffectsEnabledChanged: (bool enabled) =>
                         _setSoundEffectsEnabled(context, ref, enabled),
@@ -190,6 +201,7 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen> {
                   ),
                   loading: () => _VoiceAudioSettingsControls(
                     settings: const AppAudioSettings(),
+                    outputCapabilities: outputCapabilities,
                     isBusy: true,
                     onSoundEffectsEnabledChanged: (_) {},
                     onSoundEffectsVolumeChanged: (_) {},
@@ -199,6 +211,38 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen> {
                   ),
                 ),
               ],
+            ),
+          ),
+          const SizedBox(height: 24),
+          const AppSectionTitle(title: 'Call Video'),
+          AppSectionCard(
+            child: cameras.when(
+              data: (state) => RainCameraSelector(
+                state: state,
+                isBusy: false,
+                onRefresh: () => _refreshCameras(ref),
+                onSelected: (String? deviceId) =>
+                    _selectCamera(context, ref, deviceId),
+              ),
+              error: (Object error, StackTrace stackTrace) => ListTile(
+                leading: Icon(
+                  Icons.videocam_off,
+                  color: Theme.of(context).colorScheme.error,
+                ),
+                title: const Text('Cameras unavailable'),
+                subtitle: Text(_formatSettingsError(error)),
+                trailing: IconButton(
+                  tooltip: 'Refresh cameras',
+                  onPressed: () => _refreshCameras(ref),
+                  icon: const Icon(Icons.refresh),
+                ),
+              ),
+              loading: () => RainCameraSelector(
+                state: const VideoInputCapabilityState(devices: []),
+                isBusy: true,
+                onRefresh: () {},
+                onSelected: (_) {},
+              ),
             ),
           ),
           const SizedBox(height: 24),
@@ -302,6 +346,14 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen> {
                       ? null
                       : () => _exportDiagnostics(context),
                 ),
+                if (kDebugMode) ...<Widget>[
+                  const Divider(height: 1),
+                  _SoundDiagnosticsTile(
+                    diagnostics: ref
+                        .watch(soundEventRouterProvider)
+                        .diagnostics,
+                  ),
+                ],
               ],
             ),
           ),
@@ -341,6 +393,10 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen> {
     ref.read(microphoneSelectionProvider.notifier).refresh();
   }
 
+  void _refreshCameras(WidgetRef ref) {
+    ref.read(videoInputCapabilityProvider.notifier).refresh();
+  }
+
   Future<void> _selectMicrophone(
     BuildContext context,
     WidgetRef ref,
@@ -360,6 +416,32 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen> {
         SnackBar(
           content: Text(
             'Could not update microphone: ${_formatSettingsError(error)}',
+          ),
+          backgroundColor: errorColor,
+        ),
+      );
+    }
+  }
+
+  Future<void> _selectCamera(
+    BuildContext context,
+    WidgetRef ref,
+    String? deviceId,
+  ) async {
+    final messenger = ScaffoldMessenger.of(context);
+    final errorColor = Theme.of(context).colorScheme.error;
+    try {
+      await ref
+          .read(videoInputCapabilityProvider.notifier)
+          .selectVideoInput(deviceId);
+    } catch (error) {
+      if (!context.mounted) {
+        return;
+      }
+      messenger.showSnackBar(
+        SnackBar(
+          content: Text(
+            'Could not update camera: ${_formatSettingsError(error)}',
           ),
           backgroundColor: errorColor,
         ),
@@ -669,6 +751,7 @@ class _MicrophoneTestTile extends StatelessWidget {
 class _VoiceAudioSettingsControls extends StatelessWidget {
   const _VoiceAudioSettingsControls({
     required this.settings,
+    required this.outputCapabilities,
     required this.isBusy,
     required this.onSoundEffectsEnabledChanged,
     required this.onSoundEffectsVolumeChanged,
@@ -678,6 +761,7 @@ class _VoiceAudioSettingsControls extends StatelessWidget {
   });
 
   final AppAudioSettings settings;
+  final AudioOutputCapabilityState outputCapabilities;
   final bool isBusy;
   final ValueChanged<bool> onSoundEffectsEnabledChanged;
   final ValueChanged<double> onSoundEffectsVolumeChanged;
@@ -689,15 +773,22 @@ class _VoiceAudioSettingsControls extends StatelessWidget {
   Widget build(BuildContext context) {
     final enabled = !isBusy;
     final soundControlsEnabled = enabled && settings.soundEffectsEnabled;
+    final outputPreferences = _outputPreferencesFor(outputCapabilities);
+    final effectiveOutputPreference = _effectiveOutputPreference(
+      settings.defaultOutputPreference,
+      outputPreferences,
+    );
+    final outputPreferenceUnavailable =
+        settings.defaultOutputPreference != effectiveOutputPreference;
     return Column(
       children: <Widget>[
         ListTile(
-          leading: Icon(
-            _outputPreferenceIcon(settings.defaultOutputPreference),
-          ),
+          leading: Icon(_outputPreferenceIcon(effectiveOutputPreference)),
           title: const Text('Default call output'),
           subtitle: Text(
-            _outputPreferenceLabel(settings.defaultOutputPreference),
+            outputPreferenceUnavailable
+                ? 'Bluetooth unavailable. Using system default.'
+                : _outputPreferenceLabel(effectiveOutputPreference),
           ),
           trailing: PopupMenuButton<CallAudioOutputPreference>(
             tooltip: 'Choose default call output',
@@ -705,12 +796,12 @@ class _VoiceAudioSettingsControls extends StatelessWidget {
             onSelected: onOutputPreferenceChanged,
             itemBuilder: (BuildContext context) {
               return <PopupMenuEntry<CallAudioOutputPreference>>[
-                for (final preference in CallAudioOutputPreference.values)
+                for (final preference in outputPreferences)
                   PopupMenuItem<CallAudioOutputPreference>(
                     value: preference,
                     child: _OutputPreferenceMenuRow(
                       preference: preference,
-                      selected: settings.defaultOutputPreference == preference,
+                      selected: effectiveOutputPreference == preference,
                     ),
                   ),
               ];
@@ -781,22 +872,35 @@ class _OutputPreferenceMenuRow extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    return Row(
-      children: <Widget>[
-        Icon(
-          selected ? Icons.check_circle : _outputPreferenceIcon(preference),
-          size: 20,
-          color: selected ? Theme.of(context).colorScheme.primary : null,
+    final scheme = Theme.of(context).colorScheme;
+    return RainRippleHaloSurface(
+      enabled: selected,
+      borderRadius: BorderRadius.circular(12),
+      color: scheme.primary,
+      origin: Alignment.centerLeft,
+      pulseKey: preference.name,
+      pulseOnMount: selected,
+      minSize: const Size(48, 48),
+      child: Padding(
+        padding: const EdgeInsets.symmetric(horizontal: 4, vertical: 6),
+        child: Row(
+          children: <Widget>[
+            Icon(
+              selected ? Icons.check_circle : _outputPreferenceIcon(preference),
+              size: 20,
+              color: selected ? scheme.primary : null,
+            ),
+            const SizedBox(width: 10),
+            Flexible(
+              child: Text(
+                _outputPreferenceLabel(preference),
+                maxLines: 1,
+                overflow: TextOverflow.ellipsis,
+              ),
+            ),
+          ],
         ),
-        const SizedBox(width: 10),
-        Flexible(
-          child: Text(
-            _outputPreferenceLabel(preference),
-            maxLines: 1,
-            overflow: TextOverflow.ellipsis,
-          ),
-        ),
-      ],
+      ),
     );
   }
 }
@@ -815,6 +919,26 @@ String _outputPreferenceLabel(CallAudioOutputPreference preference) {
     CallAudioOutputPreference.speaker => 'Speaker',
     CallAudioOutputPreference.bluetooth => 'Bluetooth',
   };
+}
+
+List<CallAudioOutputPreference> _outputPreferencesFor(
+  AudioOutputCapabilityState capabilities,
+) {
+  return <CallAudioOutputPreference>[
+    CallAudioOutputPreference.systemDefault,
+    CallAudioOutputPreference.speaker,
+    if (capabilities.hasBluetoothOutput) CallAudioOutputPreference.bluetooth,
+  ];
+}
+
+CallAudioOutputPreference _effectiveOutputPreference(
+  CallAudioOutputPreference preference,
+  List<CallAudioOutputPreference> available,
+) {
+  if (available.contains(preference)) {
+    return preference;
+  }
+  return CallAudioOutputPreference.systemDefault;
 }
 
 String _volumeLabel(double value) {
@@ -866,6 +990,28 @@ class _LastCrashTile extends StatelessWidget {
   }
 }
 
+class _SoundDiagnosticsTile extends StatelessWidget {
+  const _SoundDiagnosticsTile({required this.diagnostics});
+
+  final SoundEventRouterDiagnostics diagnostics;
+
+  @override
+  Widget build(BuildContext context) {
+    final loopIds = diagnostics.activeLoopIds.toList(growable: false)..sort();
+    final detail = <String>[
+      'Last: ${diagnostics.lastEventKind?.name ?? 'none'}',
+      'Suppressed: ${diagnostics.lastSuppressedReason ?? 'none'}',
+      'Loops: ${loopIds.isEmpty ? 'none' : loopIds.join(', ')}',
+      'Disabled: ${diagnostics.soundServiceDisabledReason ?? 'none'}',
+    ].join(' | ');
+    return ListTile(
+      leading: const Icon(Icons.graphic_eq),
+      title: const Text('App sound diagnostics'),
+      subtitle: Text(detail, maxLines: 3, overflow: TextOverflow.ellipsis),
+    );
+  }
+}
+
 class _BlockedUsersList extends ConsumerWidget {
   const _BlockedUsersList();
 
@@ -911,10 +1057,8 @@ class _BlockedUsersList extends ConsumerWidget {
         ),
       ),
       loading: () => const AppSectionCard(
-        child: ListTile(
-          leading: CircularProgressIndicator(),
-          title: Text('Loading...'),
-        ),
+        padding: EdgeInsets.all(18),
+        child: RainStreakSkeleton(rows: 2),
       ),
     );
   }

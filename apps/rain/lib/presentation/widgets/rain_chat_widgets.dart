@@ -1,7 +1,11 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_svg/flutter_svg.dart';
 import 'package:rain/application/runtime/media_device_settings.dart';
+import 'package:rain/application/runtime/video_call_renderers.dart';
 import 'package:rain/application/runtime/voice_call_state.dart';
+import 'package:rain/application/state/call_surface_providers.dart';
+import 'package:rain/presentation/branding/rain_peer_core_mark.dart';
+import 'package:rain/presentation/branding/rain_ripple_halo_surface.dart';
 import 'package:rain/presentation/widgets/calls/rain_call_controls.dart';
 
 const String _maleAvatarAsset = 'assets/gender avatar/man-avatar.svg';
@@ -600,6 +604,415 @@ class RainVoiceCallButton extends StatelessWidget {
   }
 }
 
+class RainVideoCallButton extends StatelessWidget {
+  const RainVideoCallButton({
+    super.key,
+    required this.peerId,
+    required this.state,
+    required this.canStart,
+    required this.hasActiveTransfer,
+    required this.onStart,
+  });
+
+  final String peerId;
+  final VoiceCallState state;
+  final bool canStart;
+  final bool hasActiveTransfer;
+  final VoidCallback onStart;
+
+  @override
+  Widget build(BuildContext context) {
+    final isCurrentVideoCall =
+        state.peerId == peerId && state.hasCall && state.isVideo;
+    return IconButton(
+      tooltip: _videoCallButtonTooltip(
+        peerId: peerId,
+        state: state,
+        hasActiveTransfer: hasActiveTransfer,
+      ),
+      onPressed: canStart ? onStart : null,
+      icon: Icon(isCurrentVideoCall ? Icons.videocam : Icons.videocam_outlined),
+    );
+  }
+}
+
+class RainVideoCallStage extends StatelessWidget {
+  const RainVideoCallStage({
+    super.key,
+    required this.state,
+    required this.accent,
+    this.renderers,
+    this.layout = RainVideoCallStageLayout.expanded,
+    this.primaryRole = VideoPrimaryRole.remote,
+    this.onTogglePrimaryRole,
+  });
+
+  final VoiceCallState state;
+  final Color accent;
+  final VideoCallRenderers? renderers;
+  final RainVideoCallStageLayout layout;
+  final VideoPrimaryRole primaryRole;
+  final VoidCallback? onTogglePrimaryRole;
+
+  @override
+  Widget build(BuildContext context) {
+    final scheme = Theme.of(context).colorScheme;
+    final radius = BorderRadius.circular(layout.borderRadius);
+    final stage = Container(
+      key: const ValueKey<String>('rain-call-video-stage'),
+      decoration: BoxDecoration(
+        color: scheme.surfaceContainerHighest.withValues(
+          alpha: layout == RainVideoCallStageLayout.fullscreen ? 0.90 : 0.46,
+        ),
+        borderRadius: radius,
+        border: Border.all(color: accent.withValues(alpha: 0.30)),
+      ),
+      child: ClipRRect(
+        borderRadius: radius,
+        child: LayoutBuilder(
+          builder: (BuildContext context, BoxConstraints constraints) {
+            final previewWidth = _localPreviewWidth(constraints.maxWidth);
+            final primary = _primaryVideoSurface(compact: false);
+            final preview = _previewVideoSurface();
+            return Stack(
+              fit: StackFit.expand,
+              children: <Widget>[
+                layout == RainVideoCallStageLayout.pip
+                    ? _primaryVideoSurface(compact: true)
+                    : primary,
+                if (layout.showsLocalPreview)
+                  Positioned(
+                    top: layout == RainVideoCallStageLayout.fullscreen
+                        ? 88
+                        : 10,
+                    right: layout == RainVideoCallStageLayout.fullscreen
+                        ? 18
+                        : 10,
+                    width: previewWidth,
+                    child: GestureDetector(
+                      key: const ValueKey<String>(
+                        'rain-call-video-preview-hit-target',
+                      ),
+                      behavior: HitTestBehavior.opaque,
+                      onTap: onTogglePrimaryRole,
+                      child: preview,
+                    ),
+                  ),
+              ],
+            );
+          },
+        ),
+      ),
+    );
+
+    if (layout == RainVideoCallStageLayout.fullscreen) {
+      return SizedBox.expand(
+        child: KeyedSubtree(
+          key: const ValueKey<String>('rain-call-video-fullscreen-layout'),
+          child: stage,
+        ),
+      );
+    }
+
+    if (layout == RainVideoCallStageLayout.pip) {
+      return AspectRatio(
+        key: const ValueKey<String>('rain-call-video-pip-layout'),
+        aspectRatio: 16 / 9,
+        child: stage,
+      );
+    }
+
+    return AspectRatio(
+      key: const ValueKey<String>('rain-call-video-expanded-layout'),
+      aspectRatio: 16 / 9,
+      child: stage,
+    );
+  }
+
+  double _localPreviewWidth(double maxWidth) {
+    if (layout == RainVideoCallStageLayout.fullscreen) {
+      return maxWidth < 520 ? 112 : 156;
+    }
+    return maxWidth < 320 ? 96 : 124;
+  }
+
+  Widget _primaryVideoSurface({required bool compact}) {
+    return switch (primaryRole) {
+      VideoPrimaryRole.remote => _RainRemoteVideoSurface(
+        state: state,
+        renderers: renderers,
+        accent: accent,
+        compact: compact,
+      ),
+      VideoPrimaryRole.local => _RainLocalVideoSurface(
+        state: state,
+        renderers: renderers,
+        accent: accent,
+        compact: compact,
+      ),
+    };
+  }
+
+  Widget _previewVideoSurface() {
+    return switch (primaryRole) {
+      VideoPrimaryRole.remote => _RainLocalVideoPreview(
+        state: state,
+        renderers: renderers,
+        accent: accent,
+      ),
+      VideoPrimaryRole.local => _RainRemoteVideoPreview(
+        state: state,
+        renderers: renderers,
+        accent: accent,
+      ),
+    };
+  }
+}
+
+enum RainVideoCallStageLayout {
+  expanded,
+  fullscreen,
+  pip;
+
+  bool get showsLocalPreview => this != RainVideoCallStageLayout.pip;
+
+  double get borderRadius {
+    return switch (this) {
+      RainVideoCallStageLayout.fullscreen => 0,
+      RainVideoCallStageLayout.pip => 18,
+      RainVideoCallStageLayout.expanded => 20,
+    };
+  }
+}
+
+class _RainRemoteVideoSurface extends StatelessWidget {
+  const _RainRemoteVideoSurface({
+    required this.state,
+    required this.renderers,
+    required this.accent,
+    this.compact = false,
+  });
+
+  final VoiceCallState state;
+  final VideoCallRenderers? renderers;
+  final Color accent;
+  final bool compact;
+
+  @override
+  Widget build(BuildContext context) {
+    final remote = renderers?.remoteRenderer;
+    final hasRemoteVideo =
+        state.hasRemoteVideo || renderers?.state.hasRemoteStream == true;
+    if (remote != null && hasRemoteVideo && !state.isRemoteCameraMuted) {
+      return remote.buildView(
+        key: const ValueKey<String>('rain-call-remote-video-view'),
+      );
+    }
+
+    final icon = state.isRemoteCameraMuted
+        ? Icons.videocam_off
+        : state.videoFirstFrameTimedOut
+        ? Icons.visibility_off_outlined
+        : Icons.videocam_outlined;
+    final label = state.isRemoteCameraMuted
+        ? 'Peer camera off'
+        : state.videoFirstFrameTimedOut
+        ? 'Video stream not visible'
+        : 'Waiting for video';
+    final key = state.isRemoteCameraMuted
+        ? const ValueKey<String>('rain-call-remote-camera-muted')
+        : state.videoFirstFrameTimedOut
+        ? const ValueKey<String>('rain-call-video-frame-timeout')
+        : const ValueKey<String>('rain-call-remote-video-placeholder');
+    return _RainVideoPlaceholder(
+      key: key,
+      icon: icon,
+      label: label,
+      accent: accent,
+      compact: compact,
+    );
+  }
+}
+
+class _RainLocalVideoPreview extends StatelessWidget {
+  const _RainLocalVideoPreview({
+    required this.state,
+    required this.renderers,
+    required this.accent,
+  });
+
+  final VoiceCallState state;
+  final VideoCallRenderers? renderers;
+  final Color accent;
+
+  @override
+  Widget build(BuildContext context) {
+    return _RainVideoPreviewFrame(
+      accent: accent,
+      child: _RainLocalVideoSurface(
+        state: state,
+        renderers: renderers,
+        accent: accent,
+        compact: true,
+      ),
+    );
+  }
+}
+
+class _RainRemoteVideoPreview extends StatelessWidget {
+  const _RainRemoteVideoPreview({
+    required this.state,
+    required this.renderers,
+    required this.accent,
+  });
+
+  final VoiceCallState state;
+  final VideoCallRenderers? renderers;
+  final Color accent;
+
+  @override
+  Widget build(BuildContext context) {
+    return _RainVideoPreviewFrame(
+      accent: accent,
+      child: _RainRemoteVideoSurface(
+        state: state,
+        renderers: renderers,
+        accent: accent,
+        compact: true,
+      ),
+    );
+  }
+}
+
+class _RainLocalVideoSurface extends StatelessWidget {
+  const _RainLocalVideoSurface({
+    required this.state,
+    required this.renderers,
+    required this.accent,
+    this.compact = false,
+  });
+
+  final VoiceCallState state;
+  final VideoCallRenderers? renderers;
+  final Color accent;
+  final bool compact;
+
+  @override
+  Widget build(BuildContext context) {
+    final local = renderers?.localRenderer;
+    final hasLocalVideo =
+        state.hasLocalVideo || renderers?.state.hasLocalStream == true;
+    if (local != null && hasLocalVideo && !state.isCameraMuted) {
+      return local.buildView(
+        key: const ValueKey<String>('rain-call-local-video-view'),
+        mirror: true,
+      );
+    }
+
+    return _RainVideoPlaceholder(
+      key: state.isCameraMuted
+          ? const ValueKey<String>('rain-call-local-camera-muted')
+          : const ValueKey<String>('rain-call-local-video-placeholder'),
+      icon: state.isCameraMuted ? Icons.videocam_off : Icons.person_outline,
+      label: state.isCameraMuted ? 'Camera off' : 'Preview',
+      accent: accent,
+      compact: compact,
+    );
+  }
+}
+
+class _RainVideoPreviewFrame extends StatelessWidget {
+  const _RainVideoPreviewFrame({required this.accent, required this.child});
+
+  final Color accent;
+  final Widget child;
+
+  @override
+  Widget build(BuildContext context) {
+    return AspectRatio(
+      aspectRatio: 4 / 3,
+      child: DecoratedBox(
+        decoration: BoxDecoration(
+          color: Colors.black.withValues(alpha: 0.34),
+          borderRadius: BorderRadius.circular(14),
+          border: Border.all(color: accent.withValues(alpha: 0.42)),
+          boxShadow: <BoxShadow>[
+            BoxShadow(
+              blurRadius: 16,
+              color: Colors.black.withValues(alpha: 0.20),
+              offset: const Offset(0, 8),
+            ),
+          ],
+        ),
+        child: ClipRRect(borderRadius: BorderRadius.circular(13), child: child),
+      ),
+    );
+  }
+}
+
+class _RainVideoPlaceholder extends StatelessWidget {
+  const _RainVideoPlaceholder({
+    super.key,
+    required this.icon,
+    required this.label,
+    required this.accent,
+    this.compact = false,
+  });
+
+  final IconData icon;
+  final String label;
+  final Color accent;
+  final bool compact;
+
+  @override
+  Widget build(BuildContext context) {
+    final scheme = Theme.of(context).colorScheme;
+    return ColoredBox(
+      color: scheme.surfaceContainerHighest.withValues(alpha: 0.42),
+      child: Center(
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: <Widget>[
+            if (!compact)
+              Padding(
+                padding: const EdgeInsets.only(bottom: 12),
+                child: RainPeerCoreAnimatedMark(
+                  key: const ValueKey<String>('rain-call-video-peer-core-mark'),
+                  size: 56,
+                  animate: true,
+                ),
+              )
+            else
+              Icon(
+                icon,
+                size: compact ? 22 : 42,
+                color: accent.withValues(alpha: 0.78),
+              ),
+            SizedBox(height: compact ? 4 : 10),
+            Padding(
+              padding: EdgeInsets.symmetric(horizontal: compact ? 6 : 14),
+              child: Text(
+                label,
+                maxLines: compact ? 1 : 2,
+                overflow: TextOverflow.ellipsis,
+                textAlign: TextAlign.center,
+                style:
+                    (compact
+                            ? Theme.of(context).textTheme.labelSmall
+                            : Theme.of(context).textTheme.labelLarge)
+                        ?.copyWith(
+                          color: scheme.onSurface.withValues(alpha: 0.72),
+                          fontWeight: FontWeight.w800,
+                        ),
+              ),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+}
+
 class RainCallPanel extends StatelessWidget {
   const RainCallPanel({
     super.key,
@@ -614,6 +1027,7 @@ class RainCallPanel extends StatelessWidget {
     this.onToggleCamera,
     this.onSwitchCamera,
     this.onSelectOutputRoute,
+    this.outputRouteOptions,
   });
 
   final VoiceCallState state;
@@ -627,6 +1041,7 @@ class RainCallPanel extends StatelessWidget {
   final VoidCallback? onToggleCamera;
   final VoidCallback? onSwitchCamera;
   final ValueChanged<VoiceCallOutputRoute>? onSelectOutputRoute;
+  final List<VoiceCallOutputRouteOption>? outputRouteOptions;
 
   @override
   Widget build(BuildContext context) {
@@ -657,17 +1072,9 @@ class RainCallPanel extends StatelessWidget {
               ),
               const SizedBox(width: 12),
               Expanded(
-                child: StreamBuilder<int>(
-                  stream: state.isActive
-                      ? Stream<int>.periodic(
-                          const Duration(seconds: 1),
-                          (_) => DateTime.now().millisecondsSinceEpoch,
-                        )
-                      : null,
-                  initialData: DateTime.now().millisecondsSinceEpoch,
-                  builder: (BuildContext context, AsyncSnapshot<int> snapshot) {
-                    final now =
-                        snapshot.data ?? DateTime.now().millisecondsSinceEpoch;
+                child: RainCallTicker(
+                  state: state,
+                  builder: (BuildContext context, int now) {
                     return Column(
                       crossAxisAlignment: CrossAxisAlignment.start,
                       mainAxisSize: MainAxisSize.min,
@@ -708,6 +1115,7 @@ class RainCallPanel extends StatelessWidget {
             onToggleCamera: onToggleCamera,
             onSwitchCamera: onSwitchCamera,
             onSelectOutputRoute: onSelectOutputRoute,
+            outputRouteOptions: outputRouteOptions,
           );
           if (constraints.maxWidth < 430) {
             return Column(
@@ -748,6 +1156,7 @@ class RainVoiceCallPanel extends StatelessWidget {
     this.onToggleCamera,
     this.onSwitchCamera,
     this.onSelectOutputRoute,
+    this.outputRouteOptions,
   });
 
   final VoiceCallState state;
@@ -761,6 +1170,7 @@ class RainVoiceCallPanel extends StatelessWidget {
   final VoidCallback? onToggleCamera;
   final VoidCallback? onSwitchCamera;
   final ValueChanged<VoiceCallOutputRoute>? onSelectOutputRoute;
+  final List<VoiceCallOutputRouteOption>? outputRouteOptions;
 
   @override
   Widget build(BuildContext context) {
@@ -776,6 +1186,7 @@ class RainVoiceCallPanel extends StatelessWidget {
       onToggleCamera: onToggleCamera,
       onSwitchCamera: onSwitchCamera,
       onSelectOutputRoute: onSelectOutputRoute,
+      outputRouteOptions: outputRouteOptions,
     );
   }
 }
@@ -822,23 +1233,40 @@ class RainMicrophoneSelector extends StatelessWidget {
           ),
           PopupMenuButton<String>(
             tooltip: 'Choose microphone',
-            enabled: !isBusy && state.devices.isNotEmpty,
+            enabled:
+                !isBusy &&
+                (state.devices.isNotEmpty || state.hasMissingSelection),
             onSelected: (String value) =>
                 onSelected(value == _defaultMicrophoneMenuValue ? null : value),
             itemBuilder: (BuildContext context) {
               return <PopupMenuEntry<String>>[
+                if (state.hasMissingSelection)
+                  const PopupMenuItem<String>(
+                    enabled: false,
+                    child: _RainDeviceMenuRow(
+                      label: 'Selected microphone unavailable',
+                      subtitle: 'Using default',
+                      selected: true,
+                      warning: true,
+                    ),
+                  ),
+                if (state.hasMissingSelection) const PopupMenuDivider(),
                 PopupMenuItem<String>(
                   value: _defaultMicrophoneMenuValue,
-                  child: _RainMicrophoneMenuRow(
+                  child: _RainDeviceMenuRow(
                     label: 'Default microphone',
-                    selected: state.selectedDeviceId == null,
+                    subtitle: 'Applies to the next call.',
+                    selected:
+                        state.selectedDeviceId == null &&
+                        !state.hasMissingSelection,
                   ),
                 ),
                 for (var index = 0; index < state.devices.length; index += 1)
                   PopupMenuItem<String>(
                     value: state.devices[index].deviceId,
-                    child: _RainMicrophoneMenuRow(
+                    child: _RainDeviceMenuRow(
                       label: state.devices[index].displayLabel(index),
+                      subtitle: state.devices[index].displayDetailLabel(index),
                       selected:
                           state.selectedDeviceId ==
                           state.devices[index].deviceId,
@@ -862,33 +1290,175 @@ class RainMicrophoneSelector extends StatelessWidget {
     if (selected == null) {
       return state.devices.isEmpty
           ? 'No microphones found.'
-          : 'Default microphone. Applies to next call.';
+          : 'Default microphone. Applies to the next call.';
     }
     final index = state.devices.indexOf(selected);
-    return '${selected.displayLabel(index)}. Applies to next call.';
+    return '${selected.displayLabel(index)}. Applies to the next call.';
   }
 }
 
-class _RainMicrophoneMenuRow extends StatelessWidget {
-  const _RainMicrophoneMenuRow({required this.label, required this.selected});
+const String _defaultCameraMenuValue = '__rain_default_camera__';
 
-  final String label;
-  final bool selected;
+class RainCameraSelector extends StatelessWidget {
+  const RainCameraSelector({
+    super.key,
+    required this.state,
+    required this.isBusy,
+    required this.onRefresh,
+    required this.onSelected,
+  });
+
+  final VideoInputCapabilityState state;
+  final bool isBusy;
+  final VoidCallback onRefresh;
+  final ValueChanged<String?> onSelected;
 
   @override
   Widget build(BuildContext context) {
-    return Row(
-      children: <Widget>[
-        Icon(
-          selected ? Icons.check_circle : Icons.circle_outlined,
-          size: 20,
-          color: selected ? Theme.of(context).colorScheme.primary : null,
+    final scheme = Theme.of(context).colorScheme;
+    final selectedLabel = _selectedLabel();
+    final warning = state.hasMissingSelection
+        ? 'Selected camera unavailable. Using default.'
+        : null;
+
+    return ListTile(
+      leading: Icon(
+        state.availableVideoInputCount == 0
+            ? Icons.videocam_off
+            : Icons.videocam,
+        color: warning == null ? null : scheme.error,
+      ),
+      title: const Text('Camera'),
+      subtitle: Text(warning ?? selectedLabel),
+      trailing: Row(
+        mainAxisSize: MainAxisSize.min,
+        children: <Widget>[
+          IconButton(
+            tooltip: 'Refresh cameras',
+            onPressed: isBusy ? null : onRefresh,
+            icon: isBusy
+                ? const SizedBox.square(
+                    dimension: 18,
+                    child: CircularProgressIndicator(strokeWidth: 2),
+                  )
+                : const Icon(Icons.refresh),
+          ),
+          PopupMenuButton<String>(
+            tooltip: 'Choose camera',
+            enabled: !isBusy && state.devices.isNotEmpty,
+            onSelected: (String value) =>
+                onSelected(value == _defaultCameraMenuValue ? null : value),
+            itemBuilder: (BuildContext context) {
+              return <PopupMenuEntry<String>>[
+                PopupMenuItem<String>(
+                  value: _defaultCameraMenuValue,
+                  child: _RainDeviceMenuRow(
+                    label: 'Default camera',
+                    selected: state.selectedDeviceId == null,
+                  ),
+                ),
+                for (var index = 0; index < state.devices.length; index += 1)
+                  PopupMenuItem<String>(
+                    value: state.devices[index].deviceId,
+                    child: _RainDeviceMenuRow(
+                      label: state.devices[index].displayLabel(index),
+                      selected:
+                          state.selectedDeviceId ==
+                          state.devices[index].deviceId,
+                    ),
+                  ),
+              ];
+            },
+            icon: Icon(
+              state.devices.isEmpty
+                  ? Icons.videocam_off_outlined
+                  : Icons.arrow_drop_down_circle_outlined,
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
+  String _selectedLabel() {
+    final selected = state.selectedDevice;
+    if (selected == null) {
+      return state.devices.isEmpty
+          ? 'No cameras found.'
+          : 'Default camera. Applies to next video call.';
+    }
+    final index = state.devices.indexOf(selected);
+    final switchNote = state.supportsCameraSwitch
+        ? ' Camera switching available.'
+        : '';
+    return '${selected.displayLabel(index)}. Applies to next video call.$switchNote';
+  }
+}
+
+class _RainDeviceMenuRow extends StatelessWidget {
+  const _RainDeviceMenuRow({
+    required this.label,
+    required this.selected,
+    this.subtitle,
+    this.warning = false,
+  });
+
+  final String label;
+  final bool selected;
+  final String? subtitle;
+  final bool warning;
+
+  @override
+  Widget build(BuildContext context) {
+    final scheme = Theme.of(context).colorScheme;
+    final subtitle = this.subtitle;
+    return RainRippleHaloSurface(
+      enabled: selected,
+      borderRadius: BorderRadius.circular(12),
+      color: warning ? scheme.error : scheme.primary,
+      origin: Alignment.centerLeft,
+      pulseKey: label,
+      pulseOnMount: selected,
+      minSize: const Size(48, 48),
+      child: Padding(
+        padding: const EdgeInsets.symmetric(horizontal: 4, vertical: 6),
+        child: Row(
+          children: <Widget>[
+            Icon(
+              warning
+                  ? Icons.error_outline
+                  : selected
+                  ? Icons.check_circle
+                  : Icons.circle_outlined,
+              size: 20,
+              color: warning
+                  ? scheme.error
+                  : selected
+                  ? scheme.primary
+                  : null,
+            ),
+            const SizedBox(width: 10),
+            Flexible(
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                mainAxisSize: MainAxisSize.min,
+                children: <Widget>[
+                  Text(label, maxLines: 1, overflow: TextOverflow.ellipsis),
+                  if (subtitle != null)
+                    Text(
+                      subtitle,
+                      maxLines: 1,
+                      overflow: TextOverflow.ellipsis,
+                      style: Theme.of(context).textTheme.bodySmall?.copyWith(
+                        color: warning ? scheme.error : scheme.onSurfaceVariant,
+                      ),
+                    ),
+                ],
+              ),
+            ),
+          ],
         ),
-        const SizedBox(width: 10),
-        Flexible(
-          child: Text(label, maxLines: 1, overflow: TextOverflow.ellipsis),
-        ),
-      ],
+      ),
     );
   }
 }
@@ -898,14 +1468,48 @@ String _voiceCallButtonTooltip({
   required VoiceCallState state,
   required bool hasActiveTransfer,
 }) {
+  return _callButtonTooltip(
+    peerId: peerId,
+    state: state,
+    hasActiveTransfer: hasActiveTransfer,
+    callLabel: 'voice call',
+    currentCallLabel: 'Voice call',
+  );
+}
+
+String _videoCallButtonTooltip({
+  required String peerId,
+  required VoiceCallState state,
+  required bool hasActiveTransfer,
+}) {
+  return _callButtonTooltip(
+    peerId: peerId,
+    state: state,
+    hasActiveTransfer: hasActiveTransfer,
+    callLabel: 'video call',
+    currentCallLabel: 'Video call',
+  );
+}
+
+String _callButtonTooltip({
+  required String peerId,
+  required VoiceCallState state,
+  required bool hasActiveTransfer,
+  required String callLabel,
+  required String currentCallLabel,
+}) {
   if (hasActiveTransfer) {
     return 'Finish the active file transfer first.';
   }
   if (state.hasCall && state.phase != VoiceCallPhase.failed) {
     final activePeerId = state.peerId;
-    return activePeerId == peerId
-        ? 'Voice call in progress'
-        : 'Finish the active call with @$activePeerId first.';
+    if (activePeerId == peerId) {
+      final activeKind = state.isVideo ? 'Video call' : 'Voice call';
+      return activeKind == currentCallLabel
+          ? '$currentCallLabel in progress'
+          : '$activeKind in progress';
+    }
+    return 'Finish the active call with @$activePeerId first.';
   }
-  return 'Start voice call';
+  return 'Start $callLabel';
 }

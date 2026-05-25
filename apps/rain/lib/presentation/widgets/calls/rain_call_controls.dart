@@ -1,6 +1,10 @@
+import 'dart:async';
+
 import 'package:flutter/material.dart';
 
 import 'package:rain/application/runtime/voice_call_state.dart';
+import 'package:rain/presentation/branding/rain_ripple_halo_surface.dart';
+import 'package:rain/presentation/theme/rain_theme.dart';
 
 class RainCallControls extends StatelessWidget {
   const RainCallControls({
@@ -15,6 +19,8 @@ class RainCallControls extends StatelessWidget {
     this.onToggleCamera,
     this.onSwitchCamera,
     this.onSelectOutputRoute,
+    this.controlCapabilities,
+    this.outputRouteOptions,
   });
 
   final VoiceCallState state;
@@ -27,6 +33,8 @@ class RainCallControls extends StatelessWidget {
   final VoidCallback? onToggleCamera;
   final VoidCallback? onSwitchCamera;
   final ValueChanged<VoiceCallOutputRoute>? onSelectOutputRoute;
+  final List<CallControlCapability>? controlCapabilities;
+  final List<VoiceCallOutputRouteOption>? outputRouteOptions;
 
   @override
   Widget build(BuildContext context) {
@@ -76,89 +84,339 @@ class RainCallControls extends StatelessWidget {
       runSpacing: 8,
       alignment: WrapAlignment.end,
       children: <Widget>[
-        for (final capability in state.controlCapabilities)
-          _buildActiveControl(capability),
+        for (final capability
+            in controlCapabilities ?? state.controlCapabilities)
+          _buildActiveControl(context, capability),
       ],
     );
   }
 
-  Widget _buildActiveControl(CallControlCapability capability) {
-    return switch (capability) {
+  Widget _buildActiveControl(
+    BuildContext context,
+    CallControlCapability capability,
+  ) {
+    final visual = rainVoiceCallControlVisual(state, capability);
+    final control = switch (capability) {
       CallControlCapability.microphone => IconButton(
-        tooltip: state.isMuted ? 'Unmute microphone' : 'Mute microphone',
+        tooltip: visual.tooltip,
         onPressed: state.isActive ? onToggleMute : null,
-        icon: Icon(state.isMuted ? Icons.mic_off : Icons.mic),
+        icon: Icon(visual.icon),
       ),
       CallControlCapability.camera => IconButton(
-        tooltip: state.isCameraMuted ? 'Turn camera on' : 'Turn camera off',
+        tooltip: visual.tooltip,
         onPressed: state.isActive ? onToggleCamera : null,
-        icon: Icon(state.isCameraMuted ? Icons.videocam_off : Icons.videocam),
+        icon: Icon(visual.icon),
       ),
       CallControlCapability.switchCamera => IconButton(
-        tooltip: 'Switch camera',
+        tooltip: visual.tooltip,
         onPressed: state.isActive ? onSwitchCamera : null,
-        icon: const Icon(Icons.cameraswitch),
+        icon: Icon(visual.icon),
       ),
       CallControlCapability.deafen => IconButton(
-        tooltip: state.isDeafened ? 'Undeafen audio' : 'Deafen audio',
+        tooltip: visual.tooltip,
         onPressed: state.isActive ? onToggleDeafen : null,
-        icon: Icon(state.isDeafened ? Icons.volume_off : Icons.volume_up),
+        icon: Icon(visual.icon),
       ),
-      CallControlCapability.outputRoute =>
-        PopupMenuButton<VoiceCallOutputRoute>(
-          tooltip: 'Choose audio output',
-          enabled: state.isActive && onSelectOutputRoute != null,
-          onSelected: onSelectOutputRoute,
-          itemBuilder: (BuildContext context) {
-            return <PopupMenuEntry<VoiceCallOutputRoute>>[
-              _outputRouteMenuItem(
-                route: VoiceCallOutputRoute.systemDefault,
-                current: state.outputRoute,
-                label: 'Default',
-                icon: Icons.volume_up,
-              ),
-              _outputRouteMenuItem(
-                route: VoiceCallOutputRoute.speaker,
-                current: state.outputRoute,
-                label: 'Speaker',
-                icon: Icons.speaker_phone,
-              ),
-              _outputRouteMenuItem(
-                route: VoiceCallOutputRoute.bluetooth,
-                current: state.outputRoute,
-                label: 'Bluetooth',
-                icon: Icons.bluetooth_audio,
-              ),
-            ];
-          },
-          icon: Icon(_outputRouteIcon(state.outputRoute)),
-        ),
+      CallControlCapability.outputRoute => _buildOutputRouteControl(
+        visual: visual,
+      ),
       CallControlCapability.hangUp => IconButton.filled(
-        tooltip: 'Hang up',
+        tooltip: visual.tooltip,
         onPressed: onHangUp,
-        icon: const Icon(Icons.call_end),
+        icon: Icon(visual.icon),
       ),
     };
+
+    return RainRippleHaloSurface(
+      enabled: state.isActive,
+      borderRadius: const BorderRadius.all(Radius.circular(20)),
+      color: rainVoiceCallHaloColor(context, state),
+      pulseKey: '${state.callId}:${state.phase}:${capability.name}',
+      minSize: const Size.square(48),
+      child: control,
+    );
+  }
+
+  Widget _buildOutputRouteControl({required RainCallControlVisual visual}) {
+    final options = _effectiveOutputRouteOptions(outputRouteOptions);
+    final enabled =
+        state.isActive && onSelectOutputRoute != null && options.length > 1;
+    final selected = _selectedOutputRouteOption(options, state.outputRoute);
+    if (options.length <= 2) {
+      return IconButton(
+        tooltip: visual.tooltip,
+        onPressed: enabled
+            ? () => onSelectOutputRoute!(
+                _nextOutputRoute(options, state.outputRoute),
+              )
+            : null,
+        icon: Icon(selected.icon),
+      );
+    }
+    return PopupMenuButton<VoiceCallOutputRoute>(
+      tooltip: visual.tooltip,
+      enabled: enabled,
+      onSelected: onSelectOutputRoute,
+      itemBuilder: (BuildContext context) {
+        return <PopupMenuEntry<VoiceCallOutputRoute>>[
+          for (final option in options)
+            _outputRouteMenuItem(option: option, current: state.outputRoute),
+        ];
+      },
+      icon: Icon(selected.icon),
+    );
   }
 }
 
-PopupMenuItem<VoiceCallOutputRoute> _outputRouteMenuItem({
-  required VoiceCallOutputRoute route,
-  required VoiceCallOutputRoute current,
-  required String label,
-  required IconData icon,
+class RainCallControlVisual {
+  const RainCallControlVisual({
+    required this.tooltip,
+    required this.icon,
+    this.danger = false,
+  });
+
+  final String tooltip;
+  final IconData icon;
+  final bool danger;
+}
+
+RainCallControlVisual rainVoiceCallControlVisual(
+  VoiceCallState state,
+  CallControlCapability capability,
+) {
+  return switch (capability) {
+    CallControlCapability.microphone => RainCallControlVisual(
+      tooltip: state.isMuted ? 'Unmute microphone' : 'Mute microphone',
+      icon: state.isMuted ? Icons.mic_off : Icons.mic,
+    ),
+    CallControlCapability.camera => RainCallControlVisual(
+      tooltip: state.isCameraMuted ? 'Turn camera on' : 'Turn camera off',
+      icon: state.isCameraMuted ? Icons.videocam_off : Icons.videocam,
+    ),
+    CallControlCapability.switchCamera => const RainCallControlVisual(
+      tooltip: 'Switch camera',
+      icon: Icons.cameraswitch,
+    ),
+    CallControlCapability.deafen => RainCallControlVisual(
+      tooltip: state.isDeafened ? 'Undeafen audio' : 'Deafen audio',
+      icon: state.isDeafened ? Icons.volume_off : Icons.volume_up,
+    ),
+    CallControlCapability.outputRoute => RainCallControlVisual(
+      tooltip: 'Choose audio output',
+      icon: _outputRouteIcon(state.outputRoute),
+    ),
+    CallControlCapability.hangUp => rainVoiceCallTerminalActionVisual(state),
+  };
+}
+
+RainCallControlVisual rainVoiceCallTerminalActionVisual(VoiceCallState state) {
+  final isFailed = state.phase == VoiceCallPhase.failed;
+  final isIncoming = state.phase == VoiceCallPhase.incomingRinging;
+  return RainCallControlVisual(
+    tooltip: isFailed
+        ? 'Dismiss call'
+        : isIncoming
+        ? 'Reject call'
+        : 'Hang up',
+    icon: isFailed ? Icons.close : Icons.call_end,
+    danger: !isFailed,
+  );
+}
+
+typedef RainCallTickerBuilder =
+    Widget Function(BuildContext context, int nowMs);
+
+class RainCallTicker extends StatefulWidget {
+  const RainCallTicker({super.key, required this.state, required this.builder});
+
+  final VoiceCallState state;
+  final RainCallTickerBuilder builder;
+
+  @override
+  State<RainCallTicker> createState() => _RainCallTickerState();
+}
+
+class _RainCallTickerState extends State<RainCallTicker> {
+  Timer? _timer;
+  String? _activeTickerKey;
+  int _elapsedMs = 0;
+
+  @override
+  void initState() {
+    super.initState();
+    _syncTicker();
+  }
+
+  @override
+  void didUpdateWidget(covariant RainCallTicker oldWidget) {
+    super.didUpdateWidget(oldWidget);
+    _syncTicker();
+  }
+
+  @override
+  void dispose() {
+    _stopTicker();
+    super.dispose();
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return widget.builder(context, _nowMs());
+  }
+
+  void _syncTicker() {
+    final tickerKey = _tickerKey(widget.state);
+    if (tickerKey == null) {
+      _stopTicker();
+      return;
+    }
+    if (_activeTickerKey == tickerKey && _timer != null) {
+      return;
+    }
+    _stopTicker();
+    _activeTickerKey = tickerKey;
+    _elapsedMs = _elapsedSinceStart();
+    _timer = Timer.periodic(const Duration(seconds: 1), (_) {
+      if (mounted) {
+        setState(_advanceElapsed);
+      }
+    });
+  }
+
+  void _stopTicker() {
+    _timer?.cancel();
+    _timer = null;
+    _activeTickerKey = null;
+    _elapsedMs = 0;
+  }
+
+  int _nowMs() {
+    final startedAt = widget.state.startedAt;
+    if (_activeTickerKey != null && startedAt != null) {
+      return startedAt + _elapsedMs;
+    }
+    return DateTime.now().millisecondsSinceEpoch;
+  }
+
+  void _advanceElapsed() {
+    final timerElapsed = _elapsedMs + const Duration(seconds: 1).inMilliseconds;
+    final wallElapsed = _elapsedSinceStart();
+    _elapsedMs = wallElapsed > timerElapsed ? wallElapsed : timerElapsed;
+  }
+
+  int _elapsedSinceStart() {
+    final startedAt = widget.state.startedAt;
+    if (startedAt == null) {
+      return 0;
+    }
+    final elapsedMs = DateTime.now().millisecondsSinceEpoch - startedAt;
+    return elapsedMs < 0 ? 0 : elapsedMs;
+  }
+
+  String? _tickerKey(VoiceCallState state) {
+    if (!state.isActive || state.startedAt == null) {
+      return null;
+    }
+    return '${state.callId}:${state.sessionEpoch}:${state.startedAt}';
+  }
+}
+
+List<VoiceCallOutputRouteOption> rainVoiceCallOutputRouteOptions({
+  bool hasBluetoothOutput = true,
 }) {
-  final selected = route == current;
+  return <VoiceCallOutputRouteOption>[
+    const VoiceCallOutputRouteOption(
+      route: VoiceCallOutputRoute.systemDefault,
+      label: 'Default',
+      icon: Icons.volume_up,
+    ),
+    const VoiceCallOutputRouteOption(
+      route: VoiceCallOutputRoute.speaker,
+      label: 'Speaker',
+      icon: Icons.speaker_phone,
+    ),
+    if (hasBluetoothOutput)
+      const VoiceCallOutputRouteOption(
+        route: VoiceCallOutputRoute.bluetooth,
+        label: 'Bluetooth',
+        icon: Icons.bluetooth_audio,
+      ),
+  ];
+}
+
+PopupMenuItem<VoiceCallOutputRoute> _outputRouteMenuItem({
+  required VoiceCallOutputRouteOption option,
+  required VoiceCallOutputRoute current,
+}) {
+  final selected = option.route == current;
   return PopupMenuItem<VoiceCallOutputRoute>(
-    value: route,
+    value: option.route,
     child: Row(
       children: <Widget>[
-        Icon(selected ? Icons.check_circle : icon, size: 20),
+        Icon(selected ? Icons.check_circle : option.icon, size: 20),
         const SizedBox(width: 10),
-        Text(label),
+        Text(option.label),
       ],
     ),
   );
+}
+
+List<VoiceCallOutputRouteOption> _effectiveOutputRouteOptions(
+  List<VoiceCallOutputRouteOption>? options,
+) {
+  final filtered = (options ?? rainVoiceCallOutputRouteOptions())
+      .where(
+        (VoiceCallOutputRouteOption option) =>
+            !_containsOutputRoute(options, option.route, before: option),
+      )
+      .toList(growable: false);
+  return filtered.isEmpty
+      ? rainVoiceCallOutputRouteOptions(hasBluetoothOutput: false)
+      : filtered;
+}
+
+bool _containsOutputRoute(
+  List<VoiceCallOutputRouteOption>? options,
+  VoiceCallOutputRoute route, {
+  required VoiceCallOutputRouteOption before,
+}) {
+  if (options == null) {
+    return false;
+  }
+  for (final option in options) {
+    if (identical(option, before)) {
+      return false;
+    }
+    if (option.route == route) {
+      return true;
+    }
+  }
+  return false;
+}
+
+VoiceCallOutputRouteOption _selectedOutputRouteOption(
+  List<VoiceCallOutputRouteOption> options,
+  VoiceCallOutputRoute route,
+) {
+  for (final option in options) {
+    if (option.route == route) {
+      return option;
+    }
+  }
+  return options.first;
+}
+
+VoiceCallOutputRoute _nextOutputRoute(
+  List<VoiceCallOutputRouteOption> options,
+  VoiceCallOutputRoute current,
+) {
+  final currentIndex = options.indexWhere(
+    (VoiceCallOutputRouteOption option) => option.route == current,
+  );
+  if (currentIndex < 0) {
+    return options.first.route;
+  }
+  return options[(currentIndex + 1) % options.length].route;
 }
 
 IconData _outputRouteIcon(VoiceCallOutputRoute route) {
@@ -209,6 +467,32 @@ Color rainVoiceCallAccent(BuildContext context, VoiceCallState state) {
   };
 }
 
+Color rainVoiceCallHaloColor(BuildContext context, VoiceCallState state) {
+  final scheme = Theme.of(context).colorScheme;
+  return switch (state.phase) {
+    VoiceCallPhase.active => RainColors.peerMint,
+    VoiceCallPhase.incomingRinging ||
+    VoiceCallPhase.outgoingRinging ||
+    VoiceCallPhase.connectingPeer ||
+    VoiceCallPhase.connectingMedia => RainColors.mistCyan,
+    VoiceCallPhase.failed => scheme.error,
+    VoiceCallPhase.ending || VoiceCallPhase.idle => scheme.primary,
+  };
+}
+
+bool rainVoiceCallShowsSignalHalo(VoiceCallState state) {
+  return switch (state.phase) {
+    VoiceCallPhase.connectingPeer ||
+    VoiceCallPhase.connectingMedia ||
+    VoiceCallPhase.incomingRinging ||
+    VoiceCallPhase.outgoingRinging ||
+    VoiceCallPhase.active => true,
+    VoiceCallPhase.failed ||
+    VoiceCallPhase.ending ||
+    VoiceCallPhase.idle => false,
+  };
+}
+
 String rainVoiceCallTitle(VoiceCallState state, String displayName) {
   final callKind = state.isVideo ? 'video call' : 'voice call';
   return switch (state.phase) {
@@ -256,8 +540,14 @@ String rainVoiceCallDetail(VoiceCallState state, int nowMs) {
     VoiceCallPhase.outgoingRinging => 'Ringing.',
     VoiceCallPhase.incomingRinging =>
       state.isVideo ? 'Incoming video call.' : 'Incoming voice call.',
-    VoiceCallPhase.connectingMedia => 'Connecting microphone audio.',
-    VoiceCallPhase.ending => 'Closing microphone audio.',
+    VoiceCallPhase.connectingMedia =>
+      state.isVideo
+          ? 'Connecting camera and microphone.'
+          : 'Connecting microphone audio.',
+    VoiceCallPhase.ending =>
+      state.isVideo
+          ? 'Closing camera and microphone.'
+          : 'Closing microphone audio.',
     VoiceCallPhase.failed => rainVoiceCallFailureDetail(state),
     VoiceCallPhase.idle => '',
     VoiceCallPhase.active => 'Connected.',
@@ -285,6 +575,9 @@ String rainVoiceCallFailureDetail(VoiceCallState state) {
       'Microphone permission required.',
     VoiceCallFailureReason.remoteMicrophoneDenied =>
       'Peer microphone permission required.',
+    VoiceCallFailureReason.cameraDenied => 'Camera permission required.',
+    VoiceCallFailureReason.remoteCameraDenied =>
+      'Peer camera permission required.',
     VoiceCallFailureReason.peerBusy => 'Peer is busy.',
     VoiceCallFailureReason.fileTransferActive =>
       'Finish the active file transfer first.',
@@ -298,21 +591,31 @@ String rainVoiceCallFailureDetail(VoiceCallState state) {
     VoiceCallFailureReason.mediaNoRemoteAudio ||
     VoiceCallFailureReason.mediaConnectionFailed =>
       'Call media could not connect. Try again.',
+    VoiceCallFailureReason.videoRendererFailed ||
+    VoiceCallFailureReason.videoFirstFrameTimeout =>
+      'Video could not connect. Try again.',
     null => rainSanitizeVoiceCallFailureDetail(state.detail),
   };
 }
 
 bool rainVoiceCallCanRetry(VoiceCallState state) {
+  if (!state.isOutgoing) {
+    return false;
+  }
   return switch (state.failureReason) {
     VoiceCallFailureReason.microphoneDenied ||
+    VoiceCallFailureReason.cameraDenied ||
     VoiceCallFailureReason.peerBusy ||
     VoiceCallFailureReason.signalingFailed ||
     VoiceCallFailureReason.expired ||
     VoiceCallFailureReason.ringingTimeout ||
     VoiceCallFailureReason.mediaConnectionFailed ||
     VoiceCallFailureReason.mediaIceTimeout ||
-    VoiceCallFailureReason.mediaNoRemoteAudio => true,
+    VoiceCallFailureReason.mediaNoRemoteAudio ||
+    VoiceCallFailureReason.videoRendererFailed ||
+    VoiceCallFailureReason.videoFirstFrameTimeout => true,
     VoiceCallFailureReason.remoteMicrophoneDenied ||
+    VoiceCallFailureReason.remoteCameraDenied ||
     VoiceCallFailureReason.fileTransferActive ||
     VoiceCallFailureReason.rejected ||
     VoiceCallFailureReason.networkLost ||
@@ -337,6 +640,18 @@ String rainSanitizeVoiceCallFailureDetail(String? detail) {
   if (normalized.contains('microphone') &&
       (normalized.contains('permission') || normalized.contains('denied'))) {
     return 'Microphone permission required.';
+  }
+  if (normalized.contains('camera') &&
+      (normalized.contains('permission') ||
+          normalized.contains('denied') ||
+          normalized.contains('notallowed'))) {
+    return 'Camera permission required.';
+  }
+  if (normalized.contains('cameraaccess') ||
+      normalized.contains('camera_error') ||
+      normalized.contains('failed to open camera') ||
+      normalized.contains('could not start camera')) {
+    return 'Camera could not start. Try again.';
   }
   if (normalized.contains('peer is busy') ||
       normalized == 'busy.' ||

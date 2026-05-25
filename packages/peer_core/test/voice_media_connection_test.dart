@@ -114,6 +114,37 @@ void main() {
   });
 
   test(
+    'dedicated voice media normalizes device kind before selected mic validation',
+    () async {
+      final platform = _FakeVoicePlatformBridge()
+        ..mediaDevices = <MediaDeviceInfo>[
+          MediaDeviceInfo(
+            deviceId: 'external-mic',
+            label: 'USB headset microphone',
+            kind: ' AudioInput ',
+          ),
+        ];
+      final connection = DefaultVoiceMediaConnection(
+        config: PeerConfig(
+          iceServers: const <Map<String, dynamic>>[],
+          platform: platform,
+          selectedAudioInputDeviceIdProvider: () async => 'external-mic',
+        ),
+      );
+
+      await connection.startLocalAudio();
+
+      expect(platform.selectedAudioInputs, <String>['external-mic']);
+      expect(
+        platform.userMediaConstraints.single['audio'],
+        containsPair('deviceId', 'external-mic'),
+      );
+
+      await connection.dispose();
+    },
+  );
+
+  test(
     'dedicated voice media falls back when selected mic is missing',
     () async {
       final platform = _FakeVoicePlatformBridge()
@@ -734,6 +765,13 @@ void main() {
   });
 
   test(
+    'dedicated voice media keeps active call recoverable through transient transport weakness',
+    () async {},
+    skip:
+        'Phase 02 will replace this baseline with the voice media recovery regression.',
+  );
+
+  test(
     'dedicated voice media repeated calls create new peer connections',
     () async {
       final platform = _FakeVoicePlatformBridge();
@@ -860,6 +898,9 @@ class _FakeVoicePlatformBridge implements PlatformBridge {
     muteCalls.add(muted);
     track.enabled = !muted;
   }
+
+  @override
+  Future<void> switchCamera(MediaStreamTrack track) async {}
 
   @override
   Future<void> selectAudioInput(String deviceId) async {

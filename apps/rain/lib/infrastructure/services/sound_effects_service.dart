@@ -33,6 +33,13 @@ final AudioContextConfig rainSoundEffectsAudioContextConfig =
       stayAwake: false,
     );
 
+final AudioContextConfig rainSoundLoopAudioContextConfig = AudioContextConfig(
+  route: AudioContextConfigRoute.system,
+  focus: AudioContextConfigFocus.mixWithOthers,
+  respectSilence: false,
+  stayAwake: false,
+);
+
 const Map<RainSoundEffect, String> rainSoundEffectAssetPaths =
     <RainSoundEffect, String>{
       RainSoundEffect.send: 'sounds/send.wav',
@@ -50,6 +57,12 @@ const Map<RainSoundEffect, String> rainSoundEffectAssetPaths =
       RainSoundEffect.undeafen: 'sounds/undeafen.wav',
     };
 
+const Map<RainSoundEffect, String> rainSoundEffectLoopAssetPaths =
+    <RainSoundEffect, String>{
+      RainSoundEffect.callIncoming: 'sounds/call_incoming_loop.wav',
+      RainSoundEffect.callOutgoing: 'sounds/call_outgoing_loop.wav',
+    };
+
 abstract interface class RainSoundPlayer {
   Future<void> configure({
     required PlayerMode mode,
@@ -57,6 +70,10 @@ abstract interface class RainSoundPlayer {
   });
 
   Future<void> playAsset(String assetPath, {required double volume});
+
+  Future<void> setReleaseMode(ReleaseMode mode);
+
+  Future<void> stop();
 
   Future<void> dispose();
 }
@@ -86,6 +103,14 @@ class AudioplayersRainSoundPlayer implements RainSoundPlayer {
   }
 
   @override
+  Future<void> setReleaseMode(ReleaseMode mode) {
+    return _player.setReleaseMode(mode);
+  }
+
+  @override
+  Future<void> stop() => _player.stop();
+
+  @override
   Future<void> dispose() => _player.dispose();
 }
 
@@ -95,28 +120,49 @@ class SoundEffectsService {
     RainSoundSettingsLoader? settingsLoader,
     DateTime Function()? clock,
     AudioContext? audioContext,
+    AudioContext? loopAudioContext,
   }) : _playerFactory =
            playerFactory ??
            ((String playerId) =>
                AudioplayersRainSoundPlayer(AudioPlayer(playerId: playerId))),
        _settingsLoader = settingsLoader ?? (() => const AppAudioSettings()),
        _clock = clock ?? DateTime.now,
-       _audioContext =
-           audioContext ?? rainSoundEffectsAudioContextConfig.build();
+       _effectAudioContext =
+           audioContext ?? rainSoundEffectsAudioContextConfig.build(),
+       _loopAudioContext =
+           loopAudioContext ??
+           audioContext ??
+           rainSoundLoopAudioContextConfig.build();
 
   final RainSoundPlayerFactory _playerFactory;
   final RainSoundSettingsLoader _settingsLoader;
   final DateTime Function() _clock;
-  final AudioContext _audioContext;
+  final AudioContext _effectAudioContext;
+  final AudioContext _loopAudioContext;
   final Map<RainSoundEffect, RainSoundPlayer> _players =
       <RainSoundEffect, RainSoundPlayer>{};
+  final Map<String, RainSoundPlayer> _loopPlayers = <String, RainSoundPlayer>{};
+  final Map<String, RainSoundEffect> _loopEffects = <String, RainSoundEffect>{};
   final Map<RainSoundEffect, DateTime> _lastPlayedAt =
       <RainSoundEffect, DateTime>{};
   bool _disabled = false;
+  String? _disabledReason;
+  String? _lastFailureReason;
+
+  SoundEffectsDiagnostics get diagnostics {
+    return SoundEffectsDiagnostics(
+      disabled: _disabled,
+      disabledReason: _disabledReason,
+      lastFailureReason: _lastFailureReason,
+      activeLoopIds: Set<String>.unmodifiable(_loopPlayers.keys),
+    );
+  }
 
   Future<void> play(
     RainSoundEffect effect, {
     bool voiceCallActive = false,
+    bool allowDuringCall = false,
+    double volumeScale = 1.0,
   }) async {
     if (_disabled) {
       return;
@@ -125,50 +171,159 @@ class SoundEffectsService {
     try {
       settings = await Future<AppAudioSettings>.value(_settingsLoader());
     } catch (error) {
-      _disabled = true;
-      debugPrint('Rain sound effects disabled: $error');
+      _recordFailure('settingsUnavailable');
+      debugPrint('Rain sound effect skipped: $error');
       return;
     }
     if (!settings.soundEffectsEnabled) {
+      await stopAllLoops();
       return;
     }
     if (!settings.callSoundsEnabled && _isCallSoundEffect(effect)) {
+      await stopAllLoops();
       return;
     }
     final reduceDuringCall = voiceCallActive && settings.reduceSoundsDuringCall;
-    if (!_shouldPlayInCurrentContext(effect, reduceDuringCall)) {
+    if (!_shouldPlayInCurrentContext(
+      effect,
+      reduceDuringCall,
+      allowDuringCall: allowDuringCall,
+    )) {
       return;
     }
     final now = _clock();
     if (_isThrottled(effect, now)) {
       return;
     }
-    _lastPlayedAt[effect] = now;
 
+    RainSoundPlayer? player;
     try {
-      final player = _players.putIfAbsent(
+      player = _players.putIfAbsent(
         effect,
         () => _playerFactory('rain-sfx-${effect.name}'),
       );
       await player.configure(
         mode: PlayerMode.lowLatency,
-        context: _audioContext,
+        context: _effectAudioContext,
       );
       await player.playAsset(
         _assetFor(effect),
         volume:
-            _volumeFor(effect, voiceCallActive: reduceDuringCall) *
-            settings.soundEffectsVolume,
+            _volumeFor(
+              effect,
+              voiceCallActive: reduceDuringCall,
+              allowDuringCall: allowDuringCall,
+            ) *
+            settings.soundEffectsVolume *
+            volumeScale.clamp(0.0, 1.0).toDouble(),
       );
+      _lastPlayedAt[effect] = now;
     } on MissingPluginException {
-      _disabled = true;
+      _disable('pluginUnavailable');
+      await stopAllLoops();
     } catch (error) {
-      _disabled = true;
-      debugPrint('Rain sound effects disabled: $error');
+      _recordFailure('playbackFailed');
+      if (player != null && identical(_players[effect], player)) {
+        _players.remove(effect);
+        await _disposeOneShotPlayer(player);
+      }
+      debugPrint('Rain sound effect skipped: $error');
     }
   }
 
+  Future<void> startLoop(
+    RainSoundEffect effect, {
+    required String loopId,
+    required double volume,
+  }) async {
+    final normalizedLoopId = loopId.trim();
+    if (normalizedLoopId.isEmpty) {
+      throw ArgumentError.value(loopId, 'loopId', 'must not be blank');
+    }
+    if (_disabled) {
+      return;
+    }
+    late final AppAudioSettings settings;
+    try {
+      settings = await Future<AppAudioSettings>.value(_settingsLoader());
+    } catch (error) {
+      _recordFailure('settingsUnavailable');
+      debugPrint('Rain sound loop skipped: $error');
+      return;
+    }
+    if (!settings.soundEffectsEnabled) {
+      await stopAllLoops();
+      return;
+    }
+    if (!settings.callSoundsEnabled && _isCallSoundEffect(effect)) {
+      await stopAllLoops();
+      return;
+    }
+
+    final existingEffect = _loopEffects[normalizedLoopId];
+    if (existingEffect == effect) {
+      return;
+    }
+    if (existingEffect != null) {
+      await stopLoop(normalizedLoopId);
+    }
+
+    final existingLoopForEffect = _loopIdForEffect(effect);
+    if (existingLoopForEffect != null &&
+        existingLoopForEffect != normalizedLoopId) {
+      await stopLoop(existingLoopForEffect);
+    }
+
+    final player = _playerFactory(_loopPlayerId(normalizedLoopId));
+    _loopPlayers[normalizedLoopId] = player;
+    _loopEffects[normalizedLoopId] = effect;
+    try {
+      await player.configure(
+        mode: PlayerMode.lowLatency,
+        context: _loopAudioContext,
+      );
+      await player.setReleaseMode(ReleaseMode.loop);
+      await player.playAsset(
+        _loopAssetFor(effect),
+        volume: volume.clamp(0.0, 1.0).toDouble() * settings.soundEffectsVolume,
+      );
+    } on MissingPluginException {
+      _disable('pluginUnavailable');
+      _loopPlayers.remove(normalizedLoopId);
+      _loopEffects.remove(normalizedLoopId);
+      await _stopAndDisposeLoopPlayer(player);
+      await stopAllLoops();
+    } catch (error) {
+      _recordFailure('loopPlaybackFailed');
+      _loopPlayers.remove(normalizedLoopId);
+      _loopEffects.remove(normalizedLoopId);
+      await _stopAndDisposeLoopPlayer(player);
+      debugPrint('Rain sound loop skipped: $error');
+    }
+  }
+
+  Future<void> stopLoop(String loopId) async {
+    final normalizedLoopId = loopId.trim();
+    if (normalizedLoopId.isEmpty) {
+      return;
+    }
+    final player = _loopPlayers.remove(normalizedLoopId);
+    _loopEffects.remove(normalizedLoopId);
+    if (player == null) {
+      return;
+    }
+    await _stopAndDisposeLoopPlayer(player);
+  }
+
+  Future<void> stopAllLoops() async {
+    final players = _loopPlayers.values.toList(growable: false);
+    _loopPlayers.clear();
+    _loopEffects.clear();
+    await Future.wait(players.map(_stopAndDisposeLoopPlayer));
+  }
+
   Future<void> dispose() async {
+    await stopAllLoops();
     final players = _players.values.toList(growable: false);
     _players.clear();
     await Future.wait(players.map((player) => player.dispose()));
@@ -182,13 +337,89 @@ class SoundEffectsService {
     final lastPlayedAt = _lastPlayedAt[effect];
     return lastPlayedAt != null && now.difference(lastPlayedAt) < interval;
   }
+
+  String? _loopIdForEffect(RainSoundEffect effect) {
+    for (final entry in _loopEffects.entries) {
+      if (entry.value == effect) {
+        return entry.key;
+      }
+    }
+    return null;
+  }
+
+  void _disable(String reason) {
+    _disabled = true;
+    _disabledReason = reason;
+    _recordFailure(reason);
+  }
+
+  void _recordFailure(String reason) {
+    _lastFailureReason = reason;
+  }
+}
+
+final class SoundEffectsDiagnostics {
+  const SoundEffectsDiagnostics({
+    required this.disabled,
+    required this.disabledReason,
+    required this.lastFailureReason,
+    required this.activeLoopIds,
+  });
+
+  final bool disabled;
+  final String? disabledReason;
+  final String? lastFailureReason;
+  final Set<String> activeLoopIds;
+
+  Map<String, Object?> toJson() {
+    return <String, Object?>{
+      'disabled': disabled,
+      'disabledReason': disabledReason,
+      'lastFailureReason': lastFailureReason,
+      'activeLoopIds': activeLoopIds.toList(growable: false)..sort(),
+    };
+  }
+}
+
+Future<void> _disposeOneShotPlayer(RainSoundPlayer player) async {
+  try {
+    await player.dispose();
+  } catch (error) {
+    debugPrint('Rain sound player dispose ignored: $error');
+  }
+}
+
+Future<void> _stopAndDisposeLoopPlayer(RainSoundPlayer player) async {
+  try {
+    await player.stop();
+  } catch (error) {
+    debugPrint('Rain sound loop stop ignored: $error');
+  }
+  try {
+    await player.dispose();
+  } catch (error) {
+    debugPrint('Rain sound loop dispose ignored: $error');
+  }
+}
+
+String _loopPlayerId(String loopId) {
+  final safeLoopId = loopId.replaceAll(RegExp(r'[^A-Za-z0-9_-]'), '-');
+  return 'rain-loop-$safeLoopId';
 }
 
 String _assetFor(RainSoundEffect effect) {
   return rainSoundEffectAssetPaths[effect]!;
 }
 
-double _volumeFor(RainSoundEffect effect, {required bool voiceCallActive}) {
+String _loopAssetFor(RainSoundEffect effect) {
+  return rainSoundEffectLoopAssetPaths[effect] ?? _assetFor(effect);
+}
+
+double _volumeFor(
+  RainSoundEffect effect, {
+  required bool voiceCallActive,
+  required bool allowDuringCall,
+}) {
   final baseVolume = switch (effect) {
     RainSoundEffect.send => 0.30,
     RainSoundEffect.receive => 0.32,
@@ -204,7 +435,8 @@ double _volumeFor(RainSoundEffect effect, {required bool voiceCallActive}) {
     RainSoundEffect.deafen => 0.26,
     RainSoundEffect.undeafen => 0.28,
   };
-  if (!voiceCallActive || !_isCriticalCallEffect(effect)) {
+  if (!voiceCallActive ||
+      (!_isCriticalCallEffect(effect) && !allowDuringCall)) {
     return baseVolume;
   }
   return baseVolume * 0.55;
@@ -228,11 +460,15 @@ Duration _throttleFor(RainSoundEffect effect) {
   };
 }
 
-bool _shouldPlayInCurrentContext(RainSoundEffect effect, bool voiceCallActive) {
+bool _shouldPlayInCurrentContext(
+  RainSoundEffect effect,
+  bool voiceCallActive, {
+  required bool allowDuringCall,
+}) {
   if (!voiceCallActive) {
     return true;
   }
-  return _isCriticalCallEffect(effect);
+  return allowDuringCall || _isCriticalCallEffect(effect);
 }
 
 bool _isCriticalCallEffect(RainSoundEffect effect) {

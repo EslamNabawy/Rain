@@ -7,19 +7,24 @@ import 'application/bootstrap/app_bootstrap.dart';
 import 'core/config/app_environment.dart';
 import 'application/state/app_providers.dart';
 import 'infrastructure/services/crash_diagnostics_service.dart';
+import 'infrastructure/window/desktop_shell_controller.dart';
 import 'presentation/screens/rain_app.dart';
 import 'presentation/screens/splash_screen.dart';
 
 Future<void> main() async {
-  WidgetsFlutterBinding.ensureInitialized();
-  final diagnostics = CrashDiagnosticsService.instance;
-  await diagnostics.initialize();
-  diagnostics.installGlobalHandlers();
+  CrashDiagnosticsService? diagnostics;
 
   await runZonedGuarded<Future<void>>(
-    () => runRainApp(crashDiagnosticsService: diagnostics),
+    () async {
+      WidgetsFlutterBinding.ensureInitialized();
+      diagnostics = CrashDiagnosticsService.instance;
+      await diagnostics!.initialize();
+      diagnostics!.installGlobalHandlers();
+      await DesktopShellController().initializeBeforeRunApp();
+      await runRainApp(crashDiagnosticsService: diagnostics);
+    },
     (Object error, StackTrace stackTrace) {
-      diagnostics.recordErrorSync(
+      diagnostics?.recordErrorSync(
         error,
         stackTrace,
         source: 'dart-zone',

@@ -89,6 +89,25 @@ failure text if any, and diagnostics reference.
 | 12 | Chat send during active call | Message sends while call remains active | |
 | 13 | File send blocked during active call | Clear "Finish the call first" message | |
 
+## Integrated Call UX Regression Matrix
+
+Run these rows on the same build after the voice matrix. They cover the shared
+call UI, connection, sound, and device-routing behavior that can regress voice
+even when media negotiation still passes.
+
+| Row | Scenario | Required result | Evidence |
+| --- | --- | --- | --- |
+| UX-1 | Android status bar visible during ringing, connecting, active, and failed call states | Call popup and controls never overlap the status bar or camera cutout | |
+| UX-2 | Windows -> Android voice call, then briefly weaken network for 3-8 seconds | Call remains active or enters a recoverable weak-transport state without ending for a transient blip | |
+| UX-3 | Send 10 messages quickly before and after a voice call | Sound feedback remains controlled and audible; the app must not become silent after the first message | |
+| UX-4 | Manual disconnect on one peer while both peers are connected | The remote peer does not enter endless recovery and the local peer clearly stays manually disconnected | |
+| UX-5 | Press Connect after a manual disconnect | A fresh peer session is created and the Connect button is not stuck disabled | |
+| UX-6 | Start voice call while Bluetooth is disconnected | Bluetooth output option is hidden; available options match real device capabilities | |
+| UX-7 | Start voice call while Bluetooth audio is connected | Bluetooth output option appears and route switching keeps the call alive | |
+| UX-8 | Plug in wired headset before opening settings | Headset microphone appears in microphone settings and can be selected | |
+| UX-9 | Open expanded call popup, then minimize it | Top call manager appears only when popup is minimized; controls and icons stay consistent | |
+| UX-10 | Trigger a typed call failure | Failure message is clear, dismissible, and does not leave stale busy or running-call state | |
+
 ## Pass Criteria
 
 All criteria must hold:
@@ -102,6 +121,7 @@ All criteria must hold:
 - No `RTCRtpTransceiver has been disposed` errors appear.
 - Forced failures show typed user-facing messages.
 - Diagnostics keep the full native WebRTC failure reason for forced failures.
+- Integrated call UX rows `UX-1` through `UX-10` pass on the same build.
 
 ## Failure Rule
 

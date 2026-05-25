@@ -348,6 +348,18 @@ class ProtocolBrainImpl implements ProtocolBrain {
   }
 
   @override
+  Future<CallMediaConnection> createCallMediaConnection(String peerId) async {
+    final active = _sessions[peerId];
+    final policy = active?.icePolicy ?? PeerIceTransportPolicy.all;
+    final config = peerConfigProvider == null
+        ? peerConfig.copyWith(iceTransportPolicy: policy)
+        : await peerConfigProvider!(policy);
+    return DefaultCallMediaConnection(
+      config: config.copyWith(iceTransportPolicy: policy),
+    );
+  }
+
+  @override
   Future<void> unregisterPeer(String peerId) async {
     _incomingOfferGuards.remove(peerId);
     await _offerSubscriptions.remove(peerId)?.cancel();
@@ -506,12 +518,25 @@ class ProtocolBrainImpl implements ProtocolBrain {
             );
             break;
           case PeerState.idle:
+            unawaited(_handlePeerClosed(active));
+            break;
           case PeerState.ready:
           case PeerState.connected:
             break;
         }
       }),
     );
+  }
+
+  Future<void> _handlePeerClosed(_ActiveSession active) async {
+    if (_sessions[active.peerId] != active || !active.shouldReconnect) {
+      return;
+    }
+    active.stopReconnecting();
+    _sessions.remove(active.peerId);
+    await _deleteRoomSilently(active);
+    await active.dispose();
+    _peerDisconnectedController.add(active.peerId);
   }
 
   void _handlePeerConnected(_ActiveSession active) {

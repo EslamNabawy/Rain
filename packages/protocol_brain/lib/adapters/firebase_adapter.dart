@@ -4,6 +4,7 @@ import 'package:firebase_auth/firebase_auth.dart';
 import 'package:firebase_database/firebase_database.dart';
 import 'package:flutter_webrtc/flutter_webrtc.dart';
 
+import '../src/voice_call_frame.dart';
 import '../src/voice_signaling_contract.dart';
 import 'signaling_adapter.dart';
 import 'signaling_cipher.dart';
@@ -83,6 +84,7 @@ class FirebaseSignalingAdapter
 
   static const int _presenceTimeoutMs = 90 * 1000;
   static const int _roomTtlMs = 15 * 60 * 1000;
+  static const int _orphanVoiceLockGraceMs = 15000;
   static const int _searchLimit = 10;
 
   Map<String, Object?> _identityJson({
@@ -152,6 +154,7 @@ class FirebaseSignalingAdapter
     required String callee,
     required int createdAt,
     required int expiresAt,
+    CallMediaMode mediaMode = CallMediaMode.audio,
   }) async {
     await _configureEmulatorsIfNeeded();
     final normalizedCallId = callId.trim();
@@ -167,6 +170,7 @@ class FirebaseSignalingAdapter
       caller: normalizedCaller,
       callee: normalizedCallee,
       status: VoiceCallSignalingStatus.ringing,
+      mediaMode: mediaMode,
       createdAt: createdAt,
       updatedAt: createdAt,
       expiresAt: expiresAt,
@@ -174,6 +178,12 @@ class FirebaseSignalingAdapter
         normalizedCaller: false,
         normalizedCallee: false,
       }),
+      cameraMuted: mediaMode == CallMediaMode.video
+          ? Map<String, bool>.unmodifiable(<String, bool>{
+              normalizedCaller: false,
+              normalizedCallee: false,
+            })
+          : const <String, bool>{},
     );
     room.validate();
     final lock = VoiceActivePairLock(
@@ -197,23 +207,26 @@ class FirebaseSignalingAdapter
     );
 
     final lockRef = _root.child('activeVoicePairs/$pairId');
-    final transaction = await lockRef.runTransaction((Object? current) {
-      if (current is Map) {
-        try {
-          final existing = VoiceActivePairLock.fromJson(
-            pairId: pairId,
-            json: _asObjectMap(current),
-          );
-          if (existing.expiresAt > createdAt) {
-            return Transaction.abort();
-          }
-        } catch (_) {
-          return Transaction.abort();
-        }
-      }
-      return Transaction.success(lock.toJson());
-    }, applyLocally: false);
-    if (!transaction.committed) {
+    var claimed = await _claimActiveVoicePairLock(
+      lockRef: lockRef,
+      lock: lock,
+      createdAt: createdAt,
+    );
+    if (!claimed &&
+        await _tryReclaimStaleActiveVoicePair(
+          lockRef: lockRef,
+          pairId: pairId,
+          caller: normalizedCaller,
+          callee: normalizedCallee,
+          createdAt: createdAt,
+        )) {
+      claimed = await _claimActiveVoicePairLock(
+        lockRef: lockRef,
+        lock: lock,
+        createdAt: createdAt,
+      );
+    }
+    if (!claimed) {
       throw VoiceSignalingException(
         'Active voice call already exists for pair $pairId.',
       );
@@ -225,10 +238,249 @@ class FirebaseSignalingAdapter
         'voiceCallInboxes/$normalizedCallee/$normalizedCallId': inbox.toJson(),
       });
     } catch (_) {
-      await lockRef.remove();
+      await _removeActiveVoicePairLockIfUnchanged(lockRef: lockRef, lock: lock);
       rethrow;
     }
     return room;
+  }
+
+  Future<bool> _claimActiveVoicePairLock({
+    required DatabaseReference lockRef,
+    required VoiceActivePairLock lock,
+    required int createdAt,
+  }) async {
+    final now = DateTime.now().millisecondsSinceEpoch;
+    final transaction = await lockRef.runTransaction((Object? current) {
+      if (current is Map) {
+        try {
+          final existing = VoiceActivePairLock.fromJson(
+            pairId: lock.pairId,
+            json: _asObjectMap(current),
+          );
+          if (existing.expiresAt > createdAt && existing.expiresAt > now) {
+            return Transaction.abort();
+          }
+        } catch (_) {
+          return Transaction.abort();
+        }
+      }
+      return Transaction.success(lock.toJson());
+    }, applyLocally: false);
+    return transaction.committed;
+  }
+
+  Future<bool> _tryReclaimStaleActiveVoicePair({
+    required DatabaseReference lockRef,
+    required String pairId,
+    required String caller,
+    required String callee,
+    required int createdAt,
+  }) async {
+    final snapshot = await lockRef.get();
+    final value = snapshot.value;
+    if (value is! Map) {
+      return false;
+    }
+
+    final VoiceActivePairLock existing;
+    try {
+      existing = VoiceActivePairLock.fromJson(
+        pairId: pairId,
+        json: _asObjectMap(value),
+      );
+    } catch (_) {
+      return false;
+    }
+    if (!_lockMatchesVoicePair(existing, caller, callee)) {
+      return false;
+    }
+
+    final now = DateTime.now().millisecondsSinceEpoch;
+    final VoiceCallRoom? room;
+    try {
+      room = await fetchCall(existing.callId);
+    } catch (_) {
+      if (!_shouldReclaimUnreadableActiveVoicePairLock(
+        lock: existing,
+        caller: caller,
+        createdAt: createdAt,
+        now: now,
+      )) {
+        return false;
+      }
+      return _removeActiveVoicePairLockIfUnchanged(
+        lockRef: lockRef,
+        lock: existing,
+      );
+    }
+    if (!_shouldReclaimActiveVoicePairLock(
+      lock: existing,
+      room: room,
+      caller: caller,
+      createdAt: createdAt,
+      now: now,
+    )) {
+      return false;
+    }
+
+    final removed = await _removeActiveVoicePairLockIfUnchanged(
+      lockRef: lockRef,
+      lock: existing,
+    );
+    if (!removed) {
+      return false;
+    }
+
+    if (room != null &&
+        _shouldDeleteReclaimedVoiceRoom(room, createdAt, now, caller: caller)) {
+      try {
+        await _deleteVoiceCallRoomArtifacts(room);
+      } catch (_) {
+        // The lock is the user-visible blocker; stale room cleanup can wait for
+        // the scheduled Firebase cleanup if permissions or connectivity fail.
+      }
+    }
+    return true;
+  }
+
+  bool _shouldReclaimUnreadableActiveVoicePairLock({
+    required VoiceActivePairLock lock,
+    required String caller,
+    required int createdAt,
+    required int now,
+  }) {
+    if (lock.expiresAt <= createdAt || lock.expiresAt <= now) {
+      return true;
+    }
+    if (lock.caller == normalizeVoiceCallUsername(caller)) {
+      return true;
+    }
+    return createdAt - lock.updatedAt >= _orphanVoiceLockGraceMs ||
+        now - lock.updatedAt >= _orphanVoiceLockGraceMs;
+  }
+
+  bool _shouldReclaimActiveVoicePairLock({
+    required VoiceActivePairLock lock,
+    required VoiceCallRoom? room,
+    required String caller,
+    required int createdAt,
+    required int now,
+  }) {
+    if (lock.expiresAt <= createdAt || lock.expiresAt <= now) {
+      return true;
+    }
+    if (room == null) {
+      if (lock.caller == normalizeVoiceCallUsername(caller)) {
+        return true;
+      }
+      return createdAt - lock.updatedAt >= _orphanVoiceLockGraceMs ||
+          now - lock.updatedAt >= _orphanVoiceLockGraceMs;
+    }
+    if (!room.isTerminal &&
+        room.status != VoiceCallSignalingStatus.connected &&
+        lock.caller == normalizeVoiceCallUsername(caller)) {
+      return true;
+    }
+    if (room.isTerminal) {
+      return true;
+    }
+    return room.status != VoiceCallSignalingStatus.connected &&
+        (room.expiresAt <= createdAt || room.expiresAt <= now);
+  }
+
+  bool _shouldDeleteReclaimedVoiceRoom(
+    VoiceCallRoom room,
+    int createdAt,
+    int now, {
+    required String caller,
+  }) {
+    if (room.isTerminal) {
+      return true;
+    }
+    if (room.status != VoiceCallSignalingStatus.connected &&
+        room.caller == normalizeVoiceCallUsername(caller)) {
+      return true;
+    }
+    return room.status != VoiceCallSignalingStatus.connected &&
+        (room.expiresAt <= createdAt || room.expiresAt <= now);
+  }
+
+  Future<bool> _removeActiveVoicePairLockIfUnchanged({
+    required DatabaseReference lockRef,
+    required VoiceActivePairLock lock,
+  }) async {
+    final transaction = await lockRef.runTransaction((Object? current) {
+      if (current is! Map) {
+        return Transaction.abort();
+      }
+      try {
+        final existing = VoiceActivePairLock.fromJson(
+          pairId: lock.pairId,
+          json: _asObjectMap(current),
+        );
+        if (_sameActiveVoicePairLock(existing, lock)) {
+          return Transaction.success(null);
+        }
+      } catch (_) {
+        return Transaction.abort();
+      }
+      return Transaction.abort();
+    }, applyLocally: false);
+    return transaction.committed;
+  }
+
+  Future<void> _deleteVoiceCallRoomArtifacts(VoiceCallRoom room) async {
+    await _root.update(<String, Object?>{
+      'voiceCalls/${room.callId}': null,
+      'voiceCallInboxes/${room.callee}/${room.callId}': null,
+    });
+  }
+
+  Future<void> _removeActiveVoicePairLockForRoomIfCurrent(
+    VoiceCallRoom room,
+  ) async {
+    await _removeActiveVoicePairLockIfUnchanged(
+      lockRef: _root.child('activeVoicePairs/${room.pairId}'),
+      lock: _activeVoicePairLockForRoom(room),
+    );
+  }
+
+  VoiceActivePairLock _activeVoicePairLockForRoom(VoiceCallRoom room) {
+    return VoiceActivePairLock(
+      pairId: room.pairId,
+      callId: room.callId,
+      caller: room.caller,
+      callee: room.callee,
+      createdAt: room.createdAt,
+      updatedAt: room.createdAt,
+      expiresAt: room.expiresAt,
+    );
+  }
+
+  bool _lockMatchesVoicePair(
+    VoiceActivePairLock lock,
+    String caller,
+    String callee,
+  ) {
+    final normalizedCaller = normalizeVoiceCallUsername(caller);
+    final normalizedCallee = normalizeVoiceCallUsername(callee);
+    return lock.pairId == voiceCallPairId(normalizedCaller, normalizedCallee) &&
+        ((lock.caller == normalizedCaller && lock.callee == normalizedCallee) ||
+            (lock.caller == normalizedCallee &&
+                lock.callee == normalizedCaller));
+  }
+
+  bool _sameActiveVoicePairLock(
+    VoiceActivePairLock left,
+    VoiceActivePairLock right,
+  ) {
+    return left.pairId == right.pairId &&
+        left.callId == right.callId &&
+        left.caller == right.caller &&
+        left.callee == right.callee &&
+        left.createdAt == right.createdAt &&
+        left.updatedAt == right.updatedAt &&
+        left.expiresAt == right.expiresAt;
   }
 
   @override
@@ -366,6 +618,7 @@ class FirebaseSignalingAdapter
     await _ensureSignedInAsUsername(normalizedUsername);
     _ensureVoiceParticipant(room, normalizedUsername);
     if (room.status.isTerminal) {
+      await _removeActiveVoicePairLockForRoomIfCurrent(room);
       return;
     }
     await _root.update(<String, Object?>{
@@ -395,6 +648,24 @@ class FirebaseSignalingAdapter
     _ensureVoiceNonTerminal(room);
     await _root.update(<String, Object?>{
       'voiceCalls/${room.callId}/muted/$normalizedUsername': muted,
+      'voiceCalls/${room.callId}/updatedAt': updatedAt,
+    });
+  }
+
+  @override
+  Future<void> setCameraMuted({
+    required String callId,
+    required String username,
+    required bool cameraMuted,
+    required int updatedAt,
+  }) async {
+    final room = await _requireVoiceCall(callId);
+    final normalizedUsername = normalizeVoiceCallUsername(username);
+    await _ensureSignedInAsUsername(normalizedUsername);
+    _ensureVoiceParticipant(room, normalizedUsername);
+    _ensureVoiceNonTerminal(room);
+    await _root.update(<String, Object?>{
+      'voiceCalls/${room.callId}/cameraMuted/$normalizedUsername': cameraMuted,
       'voiceCalls/${room.callId}/updatedAt': updatedAt,
     });
   }
@@ -1176,10 +1447,10 @@ class FirebaseSignalingAdapter
       await _root.child('voiceCalls/$normalizedCallId').remove();
       return;
     }
+    await _removeActiveVoicePairLockForRoomIfCurrent(room);
     await _root.update(<String, Object?>{
       'voiceCalls/${room.callId}': null,
       'voiceCallInboxes/${room.callee}/${room.callId}': null,
-      'activeVoicePairs/${room.pairId}': null,
     });
   }
 

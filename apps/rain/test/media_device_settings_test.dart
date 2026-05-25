@@ -2,6 +2,7 @@ import 'package:flutter_test/flutter_test.dart';
 import 'package:flutter_webrtc/flutter_webrtc.dart';
 import 'package:protocol_brain/protocol_brain.dart';
 import 'package:rain/application/runtime/media_device_settings.dart';
+import 'package:rain/application/runtime/voice_call_state.dart';
 import 'package:rain/infrastructure/services/app_settings_store.dart';
 import 'package:shared_preferences_platform_interface/in_memory_shared_preferences_async.dart';
 import 'package:shared_preferences_platform_interface/shared_preferences_async_platform_interface.dart';
@@ -91,6 +92,106 @@ void main() {
     },
   );
 
+  test('device model classifies audio labels by transport hints', () {
+    const bluetoothOutput = RainMediaDevice(
+      deviceId: 'airpods-output',
+      label: 'AirPods Pro Bluetooth',
+      kind: audioOutputDeviceKind,
+    );
+    const wiredOutput = RainMediaDevice(
+      deviceId: 'usb-output',
+      label: 'USB-C Wired Headset',
+      kind: audioOutputDeviceKind,
+    );
+    const wiredInput = RainMediaDevice(
+      deviceId: 'usb-mic',
+      label: 'USB-C Wired Headset Microphone',
+      kind: audioInputDeviceKind,
+    );
+    const bluetoothInput = RainMediaDevice(
+      deviceId: 'buds-mic',
+      label: 'Galaxy Buds2 Bluetooth Microphone',
+      kind: audioInputDeviceKind,
+    );
+    const usbInput = RainMediaDevice(
+      deviceId: 'usb-table-mic',
+      label: 'USB Studio Microphone',
+      kind: audioInputDeviceKind,
+    );
+    const defaultInput = RainMediaDevice(
+      deviceId: 'default-mic',
+      label: 'Default mic',
+      kind: audioInputDeviceKind,
+    );
+    const hiddenLabelInput = RainMediaDevice(
+      deviceId: 'default-mic',
+      label: '',
+      kind: audioInputDeviceKind,
+    );
+
+    expect(bluetoothOutput.isBluetoothAudioOutput, isTrue);
+    expect(bluetoothOutput.isWiredAudioOutput, isFalse);
+    expect(wiredOutput.isWiredAudioOutput, isTrue);
+    expect(wiredOutput.isBluetoothAudioOutput, isFalse);
+    expect(wiredInput.isWiredAudioInput, isTrue);
+    expect(wiredInput.isHeadsetAudioInput, isTrue);
+    expect(wiredInput.displayLabel(0), 'Wired headset mic');
+    expect(wiredInput.displayDetailLabel(0), 'USB-C Wired Headset Microphone');
+    expect(bluetoothInput.isBluetoothAudioInput, isTrue);
+    expect(bluetoothInput.displayLabel(0), 'Bluetooth mic');
+    expect(usbInput.displayLabel(0), 'USB microphone');
+    expect(defaultInput.displayLabel(0), 'Default microphone');
+    expect(hiddenLabelInput.isHeadsetAudioInput, isFalse);
+    expect(hiddenLabelInput.displayLabel(0), 'Microphone 1');
+  });
+
+  test(
+    'audio output capabilities expose typed route and output hints',
+    () async {
+      final platform = _FakePlatformBridge()
+        ..devices = <MediaDeviceInfo>[
+          MediaDeviceInfo(
+            deviceId: 'mic-1',
+            label: 'Desk mic',
+            kind: audioInputDeviceKind,
+          ),
+          MediaDeviceInfo(
+            deviceId: 'speaker-1',
+            label: 'Built-in Speaker',
+            kind: audioOutputDeviceKind,
+          ),
+          MediaDeviceInfo(
+            deviceId: 'bluetooth-1',
+            label: 'Galaxy Buds2 Bluetooth',
+            kind: audioOutputDeviceKind,
+          ),
+          MediaDeviceInfo(
+            deviceId: 'wired-1',
+            label: 'USB Headphones',
+            kind: audioOutputDeviceKind,
+          ),
+        ];
+      final store = AppSettingsStore();
+      final service = MediaDeviceSettings(
+        platformBridge: platform,
+        settingsStore: store,
+      );
+
+      await store.setDefaultCallAudioOutputPreference(
+        CallAudioOutputPreference.bluetooth,
+      );
+      final state = await service.loadAudioOutputCapabilities();
+
+      expect(
+        state.devices.map((RainMediaDevice device) => device.deviceId),
+        <String>['speaker-1', 'bluetooth-1', 'wired-1'],
+      );
+      expect(state.selectedRoute, VoiceCallOutputRoute.bluetooth);
+      expect(state.hasBluetoothOutput, isTrue);
+      expect(state.hasWiredOutput, isTrue);
+    },
+  );
+
   test('selected microphone persists and resolves when available', () async {
     final platform = _FakePlatformBridge()
       ..devices = <MediaDeviceInfo>[
@@ -136,6 +237,164 @@ void main() {
     expect(state.hasMissingSelection, isTrue);
   });
 
+  test('video capabilities report no camera safely', () async {
+    final service = MediaDeviceSettings(
+      platformBridge: _FakePlatformBridge(),
+      settingsStore: AppSettingsStore(),
+    );
+
+    final state = await service.loadVideoInputCapabilities();
+
+    expect(state.devices, isEmpty);
+    expect(state.availableVideoInputCount, 0);
+    expect(state.selectedDeviceId, isNull);
+    expect(state.labelsAvailable, isFalse);
+    expect(state.supportsCameraSwitch, isFalse);
+    expect(state.likelyHasRearFacingCamera, isFalse);
+    expect(
+      state.filterCallControls(const <CallControlCapability>[
+        CallControlCapability.camera,
+        CallControlCapability.switchCamera,
+        CallControlCapability.hangUp,
+      ]),
+      const <CallControlCapability>[
+        CallControlCapability.camera,
+        CallControlCapability.hangUp,
+      ],
+    );
+  });
+
+  test(
+    'video capabilities keep one Windows laptop camera non-switchable',
+    () async {
+      final platform = _FakePlatformBridge()
+        ..devices = <MediaDeviceInfo>[
+          MediaDeviceInfo(
+            deviceId: 'integrated-camera',
+            label: 'Integrated Webcam',
+            kind: videoInputDeviceKind,
+          ),
+        ];
+      final service = MediaDeviceSettings(
+        platformBridge: platform,
+        settingsStore: AppSettingsStore(),
+      );
+
+      final state = await service.loadVideoInputCapabilities();
+
+      expect(state.availableVideoInputCount, 1);
+      expect(state.devices.single.cameraFacing, RainCameraFacing.external);
+      expect(state.labelsAvailable, isTrue);
+      expect(state.supportsCameraSwitch, isFalse);
+      expect(state.likelyHasRearFacingCamera, isFalse);
+    },
+  );
+
+  test('video capabilities detect Android front and rear cameras', () async {
+    final platform = _FakePlatformBridge()
+      ..devices = <MediaDeviceInfo>[
+        MediaDeviceInfo(
+          deviceId: 'front-camera',
+          label: 'Camera 0, Facing front',
+          kind: videoInputDeviceKind,
+        ),
+        MediaDeviceInfo(
+          deviceId: 'rear-camera',
+          label: 'Camera 1, Facing back',
+          kind: videoInputDeviceKind,
+        ),
+      ];
+    final store = AppSettingsStore();
+    final service = MediaDeviceSettings(
+      platformBridge: platform,
+      settingsStore: store,
+    );
+
+    await service.selectVideoInput('rear-camera');
+    final state = await service.loadVideoInputCapabilities();
+
+    expect(await store.loadSelectedVideoInputDeviceId(), 'rear-camera');
+    expect(state.availableVideoInputCount, 2);
+    expect(state.selectedDeviceId, 'rear-camera');
+    expect(state.selectedDevice?.displayLabel(1), 'Camera 1, Facing back');
+    expect(
+      state.devices.map((RainMediaDevice device) => device.cameraFacing),
+      <RainCameraFacing>[RainCameraFacing.front, RainCameraFacing.rear],
+    );
+    expect(state.labelsAvailable, isTrue);
+    expect(state.supportsCameraSwitch, isTrue);
+    expect(state.likelyHasRearFacingCamera, isTrue);
+    expect(
+      state.filterCallControls(const <CallControlCapability>[
+        CallControlCapability.camera,
+        CallControlCapability.switchCamera,
+        CallControlCapability.hangUp,
+      ]),
+      const <CallControlCapability>[
+        CallControlCapability.camera,
+        CallControlCapability.switchCamera,
+        CallControlCapability.hangUp,
+      ],
+    );
+  });
+
+  test(
+    'video capabilities do not assume rear camera when labels are hidden',
+    () async {
+      final platform = _FakePlatformBridge()
+        ..devices = <MediaDeviceInfo>[
+          MediaDeviceInfo(
+            deviceId: 'camera-1',
+            label: '',
+            kind: videoInputDeviceKind,
+          ),
+          MediaDeviceInfo(
+            deviceId: 'camera-2',
+            label: '',
+            kind: videoInputDeviceKind,
+          ),
+        ];
+      final service = MediaDeviceSettings(
+        platformBridge: platform,
+        settingsStore: AppSettingsStore(),
+      );
+
+      final state = await service.loadVideoInputCapabilities();
+
+      expect(state.availableVideoInputCount, 2);
+      expect(state.devices.first.displayLabel(0), 'Camera 1');
+      expect(state.labelsAvailable, isFalse);
+      expect(state.supportsCameraSwitch, isFalse);
+      expect(state.likelyHasRearFacingCamera, isFalse);
+      expect(
+        state.devices.map((RainMediaDevice device) => device.cameraFacing),
+        <RainCameraFacing>[RainCameraFacing.unknown, RainCameraFacing.unknown],
+      );
+    },
+  );
+
+  test('missing selected video input falls back to default', () async {
+    final platform = _FakePlatformBridge()
+      ..devices = <MediaDeviceInfo>[
+        MediaDeviceInfo(
+          deviceId: 'camera-1',
+          label: 'Camera',
+          kind: videoInputDeviceKind,
+        ),
+      ];
+    final service = MediaDeviceSettings(
+      platformBridge: platform,
+      settingsStore: AppSettingsStore(),
+    );
+
+    await service.selectVideoInput('missing-camera');
+    final state = await service.loadVideoInputCapabilities();
+
+    expect(state.selectedDeviceId, isNull);
+    expect(state.missingSelectedDeviceId, 'missing-camera');
+    expect(state.hasMissingSelection, isTrue);
+  });
+
   test('empty device list leaves default selected', () async {
     final service = MediaDeviceSettings(
       platformBridge: _FakePlatformBridge(),
@@ -152,7 +411,10 @@ void main() {
   test(
     'selected microphone test captures and disposes a short stream',
     () async {
-      final stream = _FakeMediaStream('stream-1', _FakeMediaTrack('track-1'));
+      final stream = _FakeMediaStream(
+        'stream-1',
+        _FakeMediaTrack('track-1', 'audio'),
+      );
       final platform = _FakePlatformBridge()
         ..devices = <MediaDeviceInfo>[
           MediaDeviceInfo(
@@ -225,12 +487,91 @@ void main() {
     );
     expect(platform.userMediaConstraints, hasLength(1));
   });
+
+  test('startup permission warmup probes microphone and camera once', () async {
+    final audioStream = _FakeMediaStream(
+      'audio-stream',
+      _FakeMediaTrack('audio-track', 'audio'),
+    );
+    final videoStream = _FakeMediaStream(
+      'video-stream',
+      _FakeMediaTrack('unused-audio-track', 'audio'),
+      _FakeMediaTrack('video-track', 'video'),
+    );
+    final platform = _FakePlatformBridge()
+      ..userMediaStreams.addAll(<_FakeMediaStream>[audioStream, videoStream]);
+    final store = AppSettingsStore();
+    final service = MediaDeviceSettings(
+      platformBridge: platform,
+      settingsStore: store,
+    );
+
+    final result = await service.warmUpStartupCallPermissions();
+
+    expect(result.microphoneReady, isTrue);
+    expect(result.cameraReady, isTrue);
+    expect(await store.loadStartupMicrophoneWarmupCompleted(), isTrue);
+    expect(await store.loadStartupCameraWarmupCompleted(), isTrue);
+    expect(platform.userMediaConstraints, hasLength(2));
+    expect(platform.userMediaConstraints[0]['video'], isFalse);
+    expect(platform.userMediaConstraints[0]['audio'], isA<Map>());
+    expect(platform.userMediaConstraints[1], <String, dynamic>{
+      'audio': false,
+      'video': true,
+    });
+    expect(audioStream.audioTrack.stopped, isTrue);
+    expect(videoStream.videoTrack?.stopped, isTrue);
+
+    platform.userMediaConstraints.clear();
+    await service.warmUpStartupCallPermissions();
+
+    expect(platform.userMediaConstraints, isEmpty);
+  });
+
+  test(
+    'startup permission warmup records partial failures without skipping camera',
+    () async {
+      final videoStream = _FakeMediaStream(
+        'video-stream',
+        _FakeMediaTrack('unused-audio-track', 'audio'),
+        _FakeMediaTrack('video-track', 'video'),
+      );
+      final platform = _FakePlatformBridge()
+        ..userMediaErrors.add(StateError('Microphone permission denied'))
+        ..userMediaStreams.add(videoStream);
+      final store = AppSettingsStore();
+      final service = MediaDeviceSettings(
+        platformBridge: platform,
+        settingsStore: store,
+      );
+
+      await expectLater(
+        service.warmUpStartupCallPermissions(),
+        throwsA(
+          isA<StartupMediaPermissionWarmupException>()
+              .having(
+                (error) => error.microphoneError,
+                'microphoneError',
+                isA<StateError>(),
+              )
+              .having((error) => error.cameraError, 'cameraError', isNull),
+        ),
+      );
+
+      expect(platform.userMediaConstraints, hasLength(2));
+      expect(await store.loadStartupMicrophoneWarmupCompleted(), isFalse);
+      expect(await store.loadStartupCameraWarmupCompleted(), isTrue);
+      expect(videoStream.videoTrack?.stopped, isTrue);
+    },
+  );
 }
 
 class _FakePlatformBridge implements PlatformBridge {
   List<MediaDeviceInfo> devices = const <MediaDeviceInfo>[];
   final List<Map<String, dynamic>> userMediaConstraints =
       <Map<String, dynamic>>[];
+  final List<_FakeMediaStream> userMediaStreams = <_FakeMediaStream>[];
+  final List<Object> userMediaErrors = <Object>[];
   _FakeMediaStream? userMediaStream;
   Object? userMediaError;
 
@@ -254,12 +595,21 @@ class _FakePlatformBridge implements PlatformBridge {
   @override
   Future<MediaStream> getUserMedia(Map<String, dynamic> constraints) async {
     userMediaConstraints.add(constraints);
+    if (userMediaErrors.isNotEmpty) {
+      throw userMediaErrors.removeAt(0);
+    }
     final error = userMediaError;
     if (error != null) {
       throw error;
     }
+    if (userMediaStreams.isNotEmpty) {
+      return userMediaStreams.removeAt(0);
+    }
     return userMediaStream ??
-        _FakeMediaStream('stream-default', _FakeMediaTrack('track-default'));
+        _FakeMediaStream(
+          'stream-default',
+          _FakeMediaTrack('track-default', 'audio'),
+        );
   }
 
   @override
@@ -278,6 +628,9 @@ class _FakePlatformBridge implements PlatformBridge {
   }) async {}
 
   @override
+  Future<void> switchCamera(MediaStreamTrack track) async {}
+
+  @override
   Future<void> selectAudioInput(String deviceId) async {}
 
   @override
@@ -291,10 +644,11 @@ class _FakePlatformBridge implements PlatformBridge {
 }
 
 class _FakeMediaStream extends Fake implements MediaStream {
-  _FakeMediaStream(this._id, this.audioTrack);
+  _FakeMediaStream(this._id, this.audioTrack, [this.videoTrack]);
 
   final String _id;
   final _FakeMediaTrack audioTrack;
+  final _FakeMediaTrack? videoTrack;
   bool disposed = false;
 
   @override
@@ -304,10 +658,13 @@ class _FakeMediaStream extends Fake implements MediaStream {
   List<MediaStreamTrack> getAudioTracks() => <MediaStreamTrack>[audioTrack];
 
   @override
-  List<MediaStreamTrack> getTracks() => <MediaStreamTrack>[audioTrack];
+  List<MediaStreamTrack> getTracks() => <MediaStreamTrack>[
+    audioTrack,
+    ?videoTrack,
+  ];
 
   @override
-  List<MediaStreamTrack> getVideoTracks() => const <MediaStreamTrack>[];
+  List<MediaStreamTrack> getVideoTracks() => <MediaStreamTrack>[?videoTrack];
 
   @override
   Future<void> dispose() async {
@@ -316,16 +673,17 @@ class _FakeMediaStream extends Fake implements MediaStream {
 }
 
 class _FakeMediaTrack extends Fake implements MediaStreamTrack {
-  _FakeMediaTrack(this._id);
+  _FakeMediaTrack(this._id, this._kind);
 
   final String _id;
+  final String _kind;
   bool stopped = false;
 
   @override
   String? get id => _id;
 
   @override
-  String? get kind => 'audio';
+  String? get kind => _kind;
 
   @override
   Future<void> stop() async {

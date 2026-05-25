@@ -42,13 +42,27 @@ class _FileTransferBubble extends StatelessWidget {
     final scheme = Theme.of(context).colorScheme;
     final isDark = scheme.brightness == Brightness.dark;
     final bubbleColor = _isOutgoing
-        ? (isDark ? const Color(0xFF1D7E8E) : scheme.primaryContainer)
-        : (isDark ? const Color(0xFF18262E) : scheme.surfaceContainerHighest);
+        ? Color.alphaBlend(
+            scheme.primary.withValues(alpha: isDark ? 0.30 : 0.18),
+            scheme.surface,
+          )
+        : Color.alphaBlend(
+            scheme.surfaceContainerHighest.withValues(
+              alpha: isDark ? 0.24 : 0.54,
+            ),
+            scheme.surface,
+          );
     final textColor = _isOutgoing
-        ? (isDark ? Colors.white : scheme.onPrimaryContainer)
+        ? (isDark ? Colors.white : scheme.primary)
         : scheme.onSurface;
     final muted = textColor.withValues(alpha: 0.72);
     final statusColor = _fileTransferStatusColor(transfer.state);
+    final borderColor = _isOutgoing
+        ? scheme.primary.withValues(alpha: isDark ? 0.42 : 0.30)
+        : (isDark
+                  ? RainTextureTokens.cardBorderDark
+                  : RainTextureTokens.cardBorderLight)
+              .withValues(alpha: isDark ? 0.56 : 0.82);
     final tailRadius = const Radius.circular(6);
     final roundRadius = const Radius.circular(20);
     final radius = BorderRadius.only(
@@ -62,150 +76,84 @@ class _FileTransferBubble extends StatelessWidget {
       alignment: _isOutgoing ? Alignment.centerRight : Alignment.centerLeft,
       child: ConstrainedBox(
         constraints: BoxConstraints(maxWidth: maxWidth),
-        child: Container(
-          margin: EdgeInsets.only(
+        child: Padding(
+          padding: EdgeInsets.only(
             top: startsCluster ? 8 : 2,
             bottom: endsCluster ? 8 : 1,
           ),
-          padding: const EdgeInsets.fromLTRB(14, 12, 12, 10),
-          decoration: BoxDecoration(color: bubbleColor, borderRadius: radius),
-          child: Column(
-            crossAxisAlignment: CrossAxisAlignment.start,
-            children: <Widget>[
-              Row(
+          child: RainRippleHaloSurface(
+            enabled: _isActive,
+            borderRadius: radius,
+            color: statusColor,
+            origin: _isOutgoing ? Alignment.centerRight : Alignment.centerLeft,
+            pulseKey: '${transfer.id}:${transfer.state}',
+            pulseOnMount: _isActive,
+            child: Container(
+              key: const ValueKey<String>('rain-file-transfer-surface'),
+              padding: const EdgeInsets.fromLTRB(14, 12, 12, 10),
+              decoration: BoxDecoration(
+                color: bubbleColor,
+                borderRadius: radius,
+                border: Border.all(color: borderColor),
+              ),
+              child: Column(
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: <Widget>[
-                  Icon(Icons.insert_drive_file_outlined, color: textColor),
-                  const SizedBox(width: 10),
-                  Expanded(
-                    child: Column(
-                      crossAxisAlignment: CrossAxisAlignment.start,
-                      children: <Widget>[
-                        Text(
-                          transfer.fileName,
-                          maxLines: 2,
-                          overflow: TextOverflow.ellipsis,
-                          style: Theme.of(context).textTheme.bodyMedium
-                              ?.copyWith(
-                                color: textColor,
-                                fontWeight: FontWeight.w900,
-                                height: 1.18,
-                              ),
-                        ),
-                        const SizedBox(height: 4),
-                        Text(
-                          formatFileTransferSize(transfer.fileSize),
-                          style: Theme.of(context).textTheme.labelMedium
-                              ?.copyWith(
-                                color: muted,
-                                fontWeight: FontWeight.w700,
-                              ),
-                        ),
-                      ],
+                  _FileTransferHeader(
+                    fileName: transfer.fileName,
+                    fileSize: transfer.fileSize,
+                    textColor: textColor,
+                    mutedColor: muted,
+                  ),
+                  if (_isActive) ...<Widget>[
+                    const SizedBox(height: 10),
+                    ClipRRect(
+                      borderRadius: BorderRadius.circular(4),
+                      child: LinearProgressIndicator(
+                        value: transfer.fileSize <= 0
+                            ? null
+                            : transfer.progress,
+                        minHeight: 5,
+                        color: statusColor,
+                        backgroundColor: textColor.withValues(alpha: 0.14),
+                      ),
                     ),
-                  ),
-                ],
-              ),
-              if (_isActive) ...<Widget>[
-                const SizedBox(height: 10),
-                ClipRRect(
-                  borderRadius: BorderRadius.circular(4),
-                  child: LinearProgressIndicator(
-                    value: transfer.fileSize <= 0 ? null : transfer.progress,
-                    minHeight: 5,
-                    color: statusColor,
-                    backgroundColor: textColor.withValues(alpha: 0.14),
-                  ),
-                ),
-              ],
-              if (transfer.error != null && transfer.error!.isNotEmpty) ...[
-                const SizedBox(height: 8),
-                Text(
-                  transfer.error!,
-                  style: Theme.of(context).textTheme.labelMedium?.copyWith(
-                    color: statusColor,
-                    fontWeight: FontWeight.w800,
-                  ),
-                ),
-              ],
-              const SizedBox(height: 9),
-              Wrap(
-                spacing: 8,
-                runSpacing: 8,
-                crossAxisAlignment: WrapCrossAlignment.center,
-                children: <Widget>[
-                  Text(
-                    timeLabel,
-                    style: Theme.of(context).textTheme.labelSmall?.copyWith(
-                      color: muted,
-                      fontWeight: FontWeight.w700,
-                    ),
-                  ),
-                  Container(
-                    width: 5,
-                    height: 5,
-                    decoration: BoxDecoration(
-                      color: statusColor,
-                      shape: BoxShape.circle,
-                    ),
-                  ),
-                  Text(
-                    _fileTransferStatusLabel(transferView),
-                    style: Theme.of(context).textTheme.labelSmall?.copyWith(
-                      color: statusColor,
-                      fontWeight: FontWeight.w900,
-                    ),
-                  ),
-                ],
-              ),
-              if (_hasActions) ...<Widget>[
-                const SizedBox(height: 10),
-                Wrap(
-                  spacing: 8,
-                  runSpacing: 8,
-                  children: <Widget>[
-                    if (transfer.direction == FileTransferDirection.incoming &&
-                        transfer.state == FileTransferState.offered) ...[
-                      FilledButton.tonalIcon(
-                        onPressed: onAccept,
-                        icon: const Icon(Icons.check_rounded),
-                        label: const Text('Accept'),
-                      ),
-                      TextButton.icon(
-                        onPressed: onReject,
-                        icon: const Icon(Icons.close_rounded),
-                        label: const Text('Reject'),
-                      ),
-                    ],
-                    if (_isActive &&
-                        transfer.state != FileTransferState.offered)
-                      TextButton.icon(
-                        onPressed: onCancel,
-                        icon: const Icon(Icons.close_rounded),
-                        label: const Text('Cancel'),
-                      ),
-                    if (_canOpen)
-                      FilledButton.tonalIcon(
-                        onPressed: onOpen,
-                        icon: const Icon(Icons.open_in_new_rounded),
-                        label: const Text('Open'),
-                      ),
-                    if (_canSave)
-                      TextButton.icon(
-                        onPressed: onSave,
-                        icon: const Icon(Icons.save_alt_rounded),
-                        label: const Text('Save'),
-                      ),
-                    if (onRetry != null)
-                      TextButton.icon(
-                        onPressed: onRetry,
-                        icon: const Icon(Icons.refresh_rounded),
-                        label: const Text('Retry'),
-                      ),
                   ],
-                ),
-              ],
-            ],
+                  if (transfer.error != null && transfer.error!.isNotEmpty) ...[
+                    const SizedBox(height: 8),
+                    Text(
+                      transfer.error!,
+                      style: Theme.of(context).textTheme.labelMedium?.copyWith(
+                        color: statusColor,
+                        fontWeight: FontWeight.w800,
+                      ),
+                    ),
+                  ],
+                  const SizedBox(height: 9),
+                  _FileTransferMetaRow(
+                    timeLabel: timeLabel,
+                    statusLabel: _fileTransferStatusLabel(transferView),
+                    mutedColor: muted,
+                    statusColor: statusColor,
+                  ),
+                  if (_hasActions) ...<Widget>[
+                    const SizedBox(height: 10),
+                    _FileTransferActions(
+                      transfer: transfer,
+                      isActive: _isActive,
+                      canOpen: _canOpen,
+                      canSave: _canSave,
+                      onAccept: onAccept,
+                      onReject: onReject,
+                      onCancel: onCancel,
+                      onOpen: onOpen,
+                      onSave: onSave,
+                      onRetry: onRetry,
+                    ),
+                  ],
+                ],
+              ),
+            ),
           ),
         ),
       ),
@@ -219,6 +167,173 @@ class _FileTransferBubble extends StatelessWidget {
         _canOpen ||
         _canSave ||
         onRetry != null;
+  }
+}
+
+class _FileTransferHeader extends StatelessWidget {
+  const _FileTransferHeader({
+    required this.fileName,
+    required this.fileSize,
+    required this.textColor,
+    required this.mutedColor,
+  });
+
+  final String fileName;
+  final int fileSize;
+  final Color textColor;
+  final Color mutedColor;
+
+  @override
+  Widget build(BuildContext context) {
+    return Row(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: <Widget>[
+        Icon(Icons.insert_drive_file_outlined, color: textColor),
+        const SizedBox(width: 10),
+        Expanded(
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: <Widget>[
+              Text(
+                fileName,
+                maxLines: 2,
+                overflow: TextOverflow.ellipsis,
+                style: Theme.of(context).textTheme.bodyMedium?.copyWith(
+                  color: textColor,
+                  fontWeight: FontWeight.w900,
+                  height: 1.18,
+                ),
+              ),
+              const SizedBox(height: 4),
+              Text(
+                formatFileTransferSize(fileSize),
+                style: Theme.of(context).textTheme.labelMedium?.copyWith(
+                  color: mutedColor,
+                  fontWeight: FontWeight.w700,
+                ),
+              ),
+            ],
+          ),
+        ),
+      ],
+    );
+  }
+}
+
+class _FileTransferMetaRow extends StatelessWidget {
+  const _FileTransferMetaRow({
+    required this.timeLabel,
+    required this.statusLabel,
+    required this.mutedColor,
+    required this.statusColor,
+  });
+
+  final String timeLabel;
+  final String statusLabel;
+  final Color mutedColor;
+  final Color statusColor;
+
+  @override
+  Widget build(BuildContext context) {
+    return Wrap(
+      spacing: 8,
+      runSpacing: 8,
+      crossAxisAlignment: WrapCrossAlignment.center,
+      children: <Widget>[
+        Text(
+          timeLabel,
+          style: Theme.of(context).textTheme.labelSmall?.copyWith(
+            color: mutedColor,
+            fontWeight: FontWeight.w700,
+          ),
+        ),
+        Container(
+          width: 5,
+          height: 5,
+          decoration: BoxDecoration(color: statusColor, shape: BoxShape.circle),
+        ),
+        Text(
+          statusLabel,
+          style: Theme.of(context).textTheme.labelSmall?.copyWith(
+            color: statusColor,
+            fontWeight: FontWeight.w900,
+          ),
+        ),
+      ],
+    );
+  }
+}
+
+class _FileTransferActions extends StatelessWidget {
+  const _FileTransferActions({
+    required this.transfer,
+    required this.isActive,
+    required this.canOpen,
+    required this.canSave,
+    required this.onAccept,
+    required this.onReject,
+    required this.onCancel,
+    required this.onOpen,
+    required this.onSave,
+    required this.onRetry,
+  });
+
+  final FileTransferRecord transfer;
+  final bool isActive;
+  final bool canOpen;
+  final bool canSave;
+  final VoidCallback onAccept;
+  final VoidCallback onReject;
+  final VoidCallback onCancel;
+  final VoidCallback onOpen;
+  final VoidCallback onSave;
+  final VoidCallback? onRetry;
+
+  @override
+  Widget build(BuildContext context) {
+    return Wrap(
+      spacing: 8,
+      runSpacing: 8,
+      children: <Widget>[
+        if (transfer.direction == FileTransferDirection.incoming &&
+            transfer.state == FileTransferState.offered) ...[
+          FilledButton.tonalIcon(
+            onPressed: onAccept,
+            icon: const Icon(Icons.check_rounded),
+            label: const Text('Accept'),
+          ),
+          TextButton.icon(
+            onPressed: onReject,
+            icon: const Icon(Icons.close_rounded),
+            label: const Text('Reject'),
+          ),
+        ],
+        if (isActive && transfer.state != FileTransferState.offered)
+          TextButton.icon(
+            onPressed: onCancel,
+            icon: const Icon(Icons.close_rounded),
+            label: const Text('Cancel'),
+          ),
+        if (canOpen)
+          FilledButton.tonalIcon(
+            onPressed: onOpen,
+            icon: const Icon(Icons.open_in_new_rounded),
+            label: const Text('Open'),
+          ),
+        if (canSave)
+          TextButton.icon(
+            onPressed: onSave,
+            icon: const Icon(Icons.save_alt_rounded),
+            label: const Text('Save'),
+          ),
+        if (onRetry != null)
+          TextButton.icon(
+            onPressed: onRetry,
+            icon: const Icon(Icons.refresh_rounded),
+            label: const Text('Retry'),
+          ),
+      ],
+    );
   }
 }
 
@@ -248,12 +363,12 @@ String _fileTransferStatusLabel(FileTransferView transferView) {
 Color _fileTransferStatusColor(FileTransferState state) {
   return switch (state) {
     FileTransferState.offered ||
-    FileTransferState.accepted => const Color(0xFF7DD3FC),
+    FileTransferState.accepted => RainColors.warning,
     FileTransferState.sending ||
-    FileTransferState.receiving => const Color(0xFFFBBF24),
-    FileTransferState.completed => const Color(0xFF2DD4A3),
+    FileTransferState.receiving => RainColors.mistCyan,
+    FileTransferState.completed => RainColors.peerMint,
     FileTransferState.canceled ||
     FileTransferState.failed ||
-    FileTransferState.rejected => const Color(0xFFFF6B6B),
+    FileTransferState.rejected => RainColors.errorCoral,
   };
 }

@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:go_router/go_router.dart';
 
+import 'package:rain/presentation/branding/rain_ripple_halo_surface.dart';
 import 'package:rain/presentation/widgets/rain_backdrop.dart';
 
 class RainNavigationShell extends StatelessWidget {
@@ -23,7 +24,11 @@ class RainNavigationShell extends StatelessWidget {
   Widget build(BuildContext context) {
     final statusMessage = networkStatusMessage;
     final showStatus = statusMessage != null && statusMessage.isNotEmpty;
+    final backdropVariant = location.startsWith('/settings')
+        ? RainBackdropVariant.settings
+        : RainBackdropVariant.shell;
     return RainBackdrop(
+      variant: backdropVariant,
       child: LayoutBuilder(
         builder: (BuildContext context, BoxConstraints constraints) {
           final useRail =
@@ -144,20 +149,20 @@ class _BottomNavigation extends StatelessWidget {
       onDestinationSelected: onDestinationSelected,
       backgroundColor: scheme.surface.withValues(alpha: 0.94),
       indicatorColor: scheme.primary.withValues(alpha: 0.18),
-      destinations: const <NavigationDestination>[
+      destinations: <NavigationDestination>[
         NavigationDestination(
-          icon: Icon(Icons.chat_bubble_outline),
-          selectedIcon: Icon(Icons.chat_bubble),
+          icon: const Icon(Icons.chat_bubble_outline),
+          selectedIcon: _RainNavigationHaloIcon(icon: Icons.chat_bubble),
           label: 'Chats',
         ),
         NavigationDestination(
-          icon: Icon(Icons.person_search_outlined),
-          selectedIcon: Icon(Icons.person_search),
+          icon: const Icon(Icons.person_search_outlined),
+          selectedIcon: _RainNavigationHaloIcon(icon: Icons.person_search),
           label: 'Find',
         ),
         NavigationDestination(
-          icon: Icon(Icons.settings_outlined),
-          selectedIcon: Icon(Icons.settings),
+          icon: const Icon(Icons.settings_outlined),
+          selectedIcon: _RainNavigationHaloIcon(icon: Icons.settings),
           label: 'Settings',
         ),
       ],
@@ -190,21 +195,23 @@ class _RailLayout extends StatelessWidget {
             backgroundColor: Theme.of(
               context,
             ).colorScheme.surface.withValues(alpha: 0.82),
-            destinations: const <NavigationRailDestination>[
+            destinations: <NavigationRailDestination>[
               NavigationRailDestination(
-                icon: Icon(Icons.chat_bubble_outline),
-                selectedIcon: Icon(Icons.chat_bubble),
-                label: Text('Chats'),
+                icon: const Icon(Icons.chat_bubble_outline),
+                selectedIcon: _RainNavigationHaloIcon(icon: Icons.chat_bubble),
+                label: const Text('Chats'),
               ),
               NavigationRailDestination(
-                icon: Icon(Icons.person_search_outlined),
-                selectedIcon: Icon(Icons.person_search),
-                label: Text('Find'),
+                icon: const Icon(Icons.person_search_outlined),
+                selectedIcon: _RainNavigationHaloIcon(
+                  icon: Icons.person_search,
+                ),
+                label: const Text('Find'),
               ),
               NavigationRailDestination(
-                icon: Icon(Icons.settings_outlined),
-                selectedIcon: Icon(Icons.settings),
-                label: Text('Settings'),
+                icon: const Icon(Icons.settings_outlined),
+                selectedIcon: _RainNavigationHaloIcon(icon: Icons.settings),
+                label: const Text('Settings'),
               ),
             ],
           ),
@@ -212,6 +219,24 @@ class _RailLayout extends StatelessWidget {
         const VerticalDivider(width: 1),
         Expanded(child: RepaintBoundary(child: child)),
       ],
+    );
+  }
+}
+
+class _RainNavigationHaloIcon extends StatelessWidget {
+  const _RainNavigationHaloIcon({required this.icon});
+
+  final IconData icon;
+
+  @override
+  Widget build(BuildContext context) {
+    return RainRippleHaloSurface(
+      enabled: true,
+      borderRadius: const BorderRadius.all(Radius.circular(18)),
+      pulseKey: icon,
+      pulseOnMount: true,
+      minSize: const Size.square(48),
+      child: Padding(padding: const EdgeInsets.all(8), child: Icon(icon)),
     );
   }
 }

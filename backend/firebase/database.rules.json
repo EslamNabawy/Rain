@@ -352,6 +352,9 @@
           ".write": "auth != null && root.child('voiceCalls/' + $callId).exists() && (root.child('users/' + root.child('voiceCalls/' + $callId + '/caller').val() + '/uid').val() === auth.uid || root.child('users/' + root.child('voiceCalls/' + $callId + '/callee').val() + '/uid').val() === auth.uid) && ((newData.val() === 'accepted' && root.child('voiceCalls/' + $callId + '/status').val() === 'ringing' && root.child('users/' + root.child('voiceCalls/' + $callId + '/callee').val() + '/uid').val() === auth.uid) || (newData.val() === 'negotiating' && (root.child('voiceCalls/' + $callId + '/status').val() === 'accepted' || root.child('voiceCalls/' + $callId + '/status').val() === 'negotiating') && root.child('users/' + root.child('voiceCalls/' + $callId + '/caller').val() + '/uid').val() === auth.uid) || (newData.val() === 'connected' && (root.child('voiceCalls/' + $callId + '/status').val() === 'accepted' || root.child('voiceCalls/' + $callId + '/status').val() === 'negotiating' || root.child('voiceCalls/' + $callId + '/status').val() === 'connected')) || ((newData.val() === 'ended' || newData.val() === 'failed' || newData.val() === 'expired') && root.child('voiceCalls/' + $callId + '/status').val() !== 'ended' && root.child('voiceCalls/' + $callId + '/status').val() !== 'failed' && root.child('voiceCalls/' + $callId + '/status').val() !== 'expired'))",
           ".validate": "newData.isString() && (newData.val() === 'ringing' || newData.val() === 'accepted' || newData.val() === 'negotiating' || newData.val() === 'connected' || newData.val() === 'ended' || newData.val() === 'failed' || newData.val() === 'expired')"
         },
+        "mediaMode": {
+          ".validate": "newData.isString() && (newData.val() === 'audio' || newData.val() === 'video')"
+        },
         "createdAt": {
           ".validate": "newData.isNumber()"
         },
@@ -387,6 +390,12 @@
           ".validate": "newData.isString() && newData.val().length > 0 && newData.val().length <= 256"
         },
         "muted": {
+          "$username": {
+            ".write": "auth != null && root.child('voiceCalls/' + $callId).exists() && root.child('users/' + $username + '/uid').val() === auth.uid && ($username === root.child('voiceCalls/' + $callId + '/caller').val() || $username === root.child('voiceCalls/' + $callId + '/callee').val())",
+            ".validate": "newData.isBoolean()"
+          }
+        },
+        "cameraMuted": {
           "$username": {
             ".write": "auth != null && root.child('voiceCalls/' + $callId).exists() && root.child('users/' + $username + '/uid').val() === auth.uid && ($username === root.child('voiceCalls/' + $callId + '/caller').val() || $username === root.child('voiceCalls/' + $callId + '/callee').val())",
             ".validate": "newData.isBoolean()"

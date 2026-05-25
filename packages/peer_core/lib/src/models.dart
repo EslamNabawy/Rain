@@ -35,6 +35,7 @@ class PeerConfig {
     this.maxRetransmits,
     this.iceTransportPolicy = PeerIceTransportPolicy.all,
     this.selectedAudioInputDeviceIdProvider,
+    this.selectedVideoInputDeviceIdProvider,
   });
 
   final List<Map<String, dynamic>> iceServers;
@@ -43,6 +44,7 @@ class PeerConfig {
   final int? maxRetransmits;
   final PeerIceTransportPolicy iceTransportPolicy;
   final Future<String?> Function()? selectedAudioInputDeviceIdProvider;
+  final Future<String?> Function()? selectedVideoInputDeviceIdProvider;
 
   Map<String, dynamic> toRtcConfiguration() {
     return <String, dynamic>{
@@ -62,6 +64,7 @@ class PeerConfig {
     int? maxRetransmits,
     PeerIceTransportPolicy? iceTransportPolicy,
     Future<String?> Function()? selectedAudioInputDeviceIdProvider,
+    Future<String?> Function()? selectedVideoInputDeviceIdProvider,
   }) {
     return PeerConfig(
       iceServers: iceServers ?? this.iceServers,
@@ -72,6 +75,9 @@ class PeerConfig {
       selectedAudioInputDeviceIdProvider:
           selectedAudioInputDeviceIdProvider ??
           this.selectedAudioInputDeviceIdProvider,
+      selectedVideoInputDeviceIdProvider:
+          selectedVideoInputDeviceIdProvider ??
+          this.selectedVideoInputDeviceIdProvider,
     );
   }
 

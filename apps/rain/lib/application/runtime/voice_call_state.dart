@@ -1,3 +1,8 @@
+import 'package:flutter/widgets.dart' show IconData;
+import 'package:protocol_brain/protocol_brain.dart' show CallMediaMode;
+
+export 'package:protocol_brain/protocol_brain.dart' show CallMediaMode;
+
 import 'voice_audio_level.dart';
 
 enum VoiceCallPhase {
@@ -14,6 +19,8 @@ enum VoiceCallPhase {
 enum VoiceCallFailureReason {
   microphoneDenied,
   remoteMicrophoneDenied,
+  cameraDenied,
+  remoteCameraDenied,
   peerBusy,
   fileTransferActive,
   rejected,
@@ -24,11 +31,23 @@ enum VoiceCallFailureReason {
   mediaConnectionFailed,
   mediaIceTimeout,
   mediaNoRemoteAudio,
+  videoRendererFailed,
+  videoFirstFrameTimeout,
 }
 
 enum VoiceCallOutputRoute { systemDefault, speaker, bluetooth }
 
-enum CallMediaMode { audio, video }
+final class VoiceCallOutputRouteOption {
+  const VoiceCallOutputRouteOption({
+    required this.route,
+    required this.label,
+    required this.icon,
+  });
+
+  final VoiceCallOutputRoute route;
+  final String label;
+  final IconData icon;
+}
 
 enum CallControlCapability {
   microphone,
@@ -52,6 +71,11 @@ class VoiceCallState {
     this.isDeafened = false,
     this.isRemoteMuted = false,
     this.isRemoteCameraMuted = false,
+    this.hasLocalVideo = false,
+    this.hasRemoteVideo = false,
+    this.videoFirstFrameTimedOut = false,
+    this.mediaReconnecting = false,
+    this.reconnectingSince,
     this.outputRoute = VoiceCallOutputRoute.systemDefault,
     this.outputRouteWarning,
     this.startedAt,
@@ -74,6 +98,11 @@ class VoiceCallState {
       isDeafened = false,
       isRemoteMuted = false,
       isRemoteCameraMuted = false,
+      hasLocalVideo = false,
+      hasRemoteVideo = false,
+      videoFirstFrameTimedOut = false,
+      mediaReconnecting = false,
+      reconnectingSince = null,
       outputRoute = VoiceCallOutputRoute.systemDefault,
       outputRouteWarning = null,
       startedAt = null,
@@ -94,6 +123,11 @@ class VoiceCallState {
   final bool isDeafened;
   final bool isRemoteMuted;
   final bool isRemoteCameraMuted;
+  final bool hasLocalVideo;
+  final bool hasRemoteVideo;
+  final bool videoFirstFrameTimedOut;
+  final bool mediaReconnecting;
+  final int? reconnectingSince;
   final VoiceCallOutputRoute outputRoute;
   final String? outputRouteWarning;
   final int? startedAt;
@@ -156,6 +190,11 @@ class VoiceCallState {
     bool? isDeafened,
     bool? isRemoteMuted,
     bool? isRemoteCameraMuted,
+    bool? hasLocalVideo,
+    bool? hasRemoteVideo,
+    bool? videoFirstFrameTimedOut,
+    bool? mediaReconnecting,
+    int? reconnectingSince,
     VoiceCallOutputRoute? outputRoute,
     String? outputRouteWarning,
     int? startedAt,
@@ -167,7 +206,10 @@ class VoiceCallState {
     bool clearError = false,
     bool clearFailureReason = false,
     bool clearOutputRouteWarning = false,
+    bool clearReconnectingSince = false,
   }) {
+    final effectiveMediaReconnecting =
+        mediaReconnecting ?? this.mediaReconnecting;
     return VoiceCallState(
       phase: phase ?? this.phase,
       peerId: peerId ?? this.peerId,
@@ -180,6 +222,14 @@ class VoiceCallState {
       isDeafened: isDeafened ?? this.isDeafened,
       isRemoteMuted: isRemoteMuted ?? this.isRemoteMuted,
       isRemoteCameraMuted: isRemoteCameraMuted ?? this.isRemoteCameraMuted,
+      hasLocalVideo: hasLocalVideo ?? this.hasLocalVideo,
+      hasRemoteVideo: hasRemoteVideo ?? this.hasRemoteVideo,
+      videoFirstFrameTimedOut:
+          videoFirstFrameTimedOut ?? this.videoFirstFrameTimedOut,
+      mediaReconnecting: effectiveMediaReconnecting,
+      reconnectingSince: !effectiveMediaReconnecting || clearReconnectingSince
+          ? null
+          : reconnectingSince ?? this.reconnectingSince,
       outputRoute: outputRoute ?? this.outputRoute,
       outputRouteWarning: clearOutputRouteWarning
           ? null

@@ -40,6 +40,10 @@ void main() {
     await tester.pumpSettingsScreen(harness: harness);
 
     expect(find.text('Microphone'), findsOneWidget);
+    expect(
+      find.text('Default microphone. Applies to the next call.'),
+      findsOneWidget,
+    );
     expect(find.text('Test microphone'), findsOneWidget);
     expect(find.text('Default call output'), findsOneWidget);
     expect(find.text('System default'), findsOneWidget);
@@ -47,6 +51,22 @@ void main() {
     expect(find.text('100%'), findsOneWidget);
     expect(find.text('Call sounds'), findsOneWidget);
     expect(find.text('Reduce during calls'), findsOneWidget);
+  });
+
+  testWidgets('settings screen exposes debug sound diagnostics', (
+    WidgetTester tester,
+  ) async {
+    _useTallView(tester);
+    final harness = _SettingsHarness();
+    addTearDown(harness.dispose);
+
+    await tester.pumpSettingsScreen(harness: harness);
+    await tester.drag(find.byType(ListView), const Offset(0, -900));
+    await tester.pump();
+    await tester.pump(const Duration(milliseconds: 300));
+
+    expect(find.text('App sound diagnostics'), findsOneWidget);
+    expect(find.textContaining('Last: none'), findsOneWidget);
   });
 
   testWidgets('microphone selection persists from settings', (
@@ -66,11 +86,184 @@ void main() {
 
     await tester.pumpSettingsScreen(harness: harness);
     await tester.tap(find.byTooltip('Choose microphone'));
-    await tester.pumpAndSettle();
+    await tester.pumpSettingsFrame();
     await tester.tap(find.text('Desk mic').last);
-    await tester.pumpAndSettle();
+    await tester.pumpSettingsFrame();
 
     expect(await AppSettingsStore().loadSelectedMicrophoneDeviceId(), 'mic-1');
+  });
+
+  testWidgets(
+    'output route control hides bluetooth unless bluetooth output is available',
+    (WidgetTester tester) async {
+      _useTallView(tester);
+      final wiredHarness = _SettingsHarness(
+        platformBridge: _FakePlatformBridge()
+          ..devices = <MediaDeviceInfo>[
+            MediaDeviceInfo(
+              deviceId: 'default-mic',
+              label: 'Default mic',
+              kind: 'audioinput',
+            ),
+            MediaDeviceInfo(
+              deviceId: 'wired-output',
+              label: 'USB-C Wired Headset',
+              kind: 'audiooutput',
+            ),
+          ],
+      );
+      addTearDown(wiredHarness.dispose);
+
+      await tester.pumpSettingsScreen(harness: wiredHarness);
+      await tester.tap(find.byTooltip('Choose default call output'));
+      await tester.pumpSettingsFrame();
+
+      expect(find.text('System default'), findsWidgets);
+      expect(find.text('Speaker'), findsOneWidget);
+      expect(find.text('Bluetooth'), findsNothing);
+
+      await tester.tapAt(const Offset(1, 1));
+      await tester.pumpSettingsFrame();
+      await tester.pumpWidget(const SizedBox.shrink());
+      await tester.pump();
+
+      wiredHarness.platformBridge.devices = <MediaDeviceInfo>[
+        MediaDeviceInfo(
+          deviceId: 'default-mic',
+          label: 'Default mic',
+          kind: 'audioinput',
+        ),
+        MediaDeviceInfo(
+          deviceId: 'bluetooth-output',
+          label: 'Galaxy Buds2 Bluetooth',
+          kind: 'audiooutput',
+        ),
+      ];
+
+      await tester.pumpSettingsScreen(harness: wiredHarness);
+      await tester.tap(find.byTooltip('Choose default call output'));
+      await tester.pumpSettingsFrame();
+
+      expect(find.text('Bluetooth'), findsOneWidget);
+    },
+  );
+
+  testWidgets(
+    'settings microphone picker shows real audio inputs including wired headset labels',
+    (WidgetTester tester) async {
+      final harness = _SettingsHarness(
+        platformBridge: _FakePlatformBridge()
+          ..devices = <MediaDeviceInfo>[
+            MediaDeviceInfo(
+              deviceId: 'built-in-mic',
+              label: 'Built-in microphone',
+              kind: 'audioinput',
+            ),
+            MediaDeviceInfo(
+              deviceId: 'wired-headset-mic',
+              label: 'USB-C Wired Headset Microphone',
+              kind: 'audioinput',
+            ),
+          ],
+      );
+      addTearDown(harness.dispose);
+
+      await tester.pumpSettingsScreen(harness: harness);
+      await tester.tap(find.byTooltip('Choose microphone'));
+      await tester.pumpSettingsFrame();
+
+      expect(find.text('Built-in microphone'), findsOneWidget);
+      expect(find.text('Wired headset mic'), findsOneWidget);
+      expect(find.text('USB-C Wired Headset Microphone'), findsOneWidget);
+
+      await tester.tap(find.text('Wired headset mic').last);
+      await tester.pumpSettingsFrame();
+
+      expect(
+        await AppSettingsStore().loadSelectedMicrophoneDeviceId(),
+        'wired-headset-mic',
+      );
+    },
+  );
+
+  testWidgets(
+    'settings keeps unavailable selected microphone visible until changed',
+    (WidgetTester tester) async {
+      await AppSettingsStore().setSelectedMicrophoneDeviceId('missing-mic');
+      final harness = _SettingsHarness(
+        platformBridge: _FakePlatformBridge()
+          ..devices = <MediaDeviceInfo>[
+            MediaDeviceInfo(
+              deviceId: 'default-mic',
+              label: 'Default mic',
+              kind: 'audioinput',
+            ),
+          ],
+      );
+      addTearDown(harness.dispose);
+
+      await tester.pumpSettingsScreen(harness: harness);
+
+      expect(
+        find.text('Selected microphone unavailable. Using default.'),
+        findsOneWidget,
+      );
+
+      await tester.tap(find.byTooltip('Choose microphone'));
+      await tester.pumpSettingsFrame();
+
+      expect(find.text('Selected microphone unavailable'), findsOneWidget);
+      expect(find.text('Using default'), findsOneWidget);
+
+      await tester.tap(find.text('Default microphone').first);
+      await tester.pumpSettingsFrame();
+
+      expect(await AppSettingsStore().loadSelectedMicrophoneDeviceId(), isNull);
+      expect(
+        find.text('Default microphone. Applies to the next call.'),
+        findsOneWidget,
+      );
+    },
+  );
+
+  testWidgets('camera selection persists from settings', (
+    WidgetTester tester,
+  ) async {
+    _useTallView(tester);
+    final harness = _SettingsHarness(
+      platformBridge: _FakePlatformBridge()
+        ..devices = <MediaDeviceInfo>[
+          MediaDeviceInfo(
+            deviceId: 'default-mic',
+            label: 'Default mic',
+            kind: 'audioinput',
+          ),
+          MediaDeviceInfo(
+            deviceId: 'front-camera',
+            label: 'Front Camera',
+            kind: 'videoinput',
+          ),
+          MediaDeviceInfo(
+            deviceId: 'rear-camera',
+            label: 'Back Camera',
+            kind: 'videoinput',
+          ),
+        ],
+    );
+    addTearDown(harness.dispose);
+
+    await tester.pumpSettingsScreen(harness: harness);
+    await tester.drag(find.byType(ListView), const Offset(0, -500));
+    await tester.pumpSettingsFrame();
+    await tester.tap(find.byTooltip('Choose camera'));
+    await tester.pumpSettingsFrame();
+    await tester.tap(find.text('Back Camera').last);
+    await tester.pumpSettingsFrame();
+
+    expect(
+      await AppSettingsStore().loadSelectedVideoInputDeviceId(),
+      'rear-camera',
+    );
   });
 
   testWidgets('sound effects toggle persists from settings', (
@@ -114,7 +307,7 @@ void main() {
 
     await tester.pumpSettingsScreen(harness: harness);
     await tester.tap(find.byTooltip('Refresh microphones'));
-    await tester.pumpAndSettle();
+    await tester.pumpSettingsFrame();
 
     expect(find.text('Microphones unavailable'), findsOneWidget);
     expect(find.text('Microphone permission denied'), findsOneWidget);
@@ -168,7 +361,12 @@ extension _SettingsPump on WidgetTester {
         child: const MaterialApp(home: Scaffold(body: SettingsScreen())),
       ),
     );
-    await pumpAndSettle();
+    await pumpSettingsFrame();
+  }
+
+  Future<void> pumpSettingsFrame() async {
+    await pump();
+    await pump(const Duration(milliseconds: 300));
   }
 }
 
@@ -262,6 +460,9 @@ class _FakePlatformBridge implements PlatformBridge {
     MediaStreamTrack track, {
     required bool muted,
   }) async {}
+
+  @override
+  Future<void> switchCamera(MediaStreamTrack track) async {}
 
   @override
   Future<void> selectAudioInput(String deviceId) async {}

@@ -1,5 +1,26 @@
 import 'package:flutter_webrtc/flutter_webrtc.dart' as webrtc;
 
+const String webRtcAudioInputDeviceKind = 'audioinput';
+const String webRtcAudioOutputDeviceKind = 'audiooutput';
+const String webRtcVideoInputDeviceKind = 'videoinput';
+
+extension WebRtcMediaDeviceInfoX on webrtc.MediaDeviceInfo {
+  String get normalizedKind => (kind ?? '').trim().toLowerCase();
+
+  String get normalizedDeviceId => deviceId.trim();
+
+  bool get hasUsableDeviceId => normalizedDeviceId.isNotEmpty;
+
+  bool get isAudioInputDevice =>
+      hasUsableDeviceId && normalizedKind == webRtcAudioInputDeviceKind;
+
+  bool get isAudioOutputDevice =>
+      hasUsableDeviceId && normalizedKind == webRtcAudioOutputDeviceKind;
+
+  bool get isVideoInputDevice =>
+      hasUsableDeviceId && normalizedKind == webRtcVideoInputDeviceKind;
+}
+
 abstract class StorageBackend {
   Future<void> write(String key, String value);
   Future<String?> read(String key);
@@ -46,6 +67,7 @@ abstract class PlatformBridge {
     webrtc.MediaStreamTrack track, {
     required bool muted,
   });
+  Future<void> switchCamera(webrtc.MediaStreamTrack track);
   StorageBackend getLocalStorage();
 }
 
@@ -113,6 +135,11 @@ class FlutterWebRTCBridge implements PlatformBridge {
     } catch (_) {
       // Track.enabled is the portable fallback; native helper support varies.
     }
+  }
+
+  @override
+  Future<void> switchCamera(webrtc.MediaStreamTrack track) {
+    return webrtc.Helper.switchCamera(track);
   }
 
   @override

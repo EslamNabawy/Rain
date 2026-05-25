@@ -1,12 +1,9 @@
-import 'dart:io';
-
 import 'package:firebase_core/firebase_core.dart';
 import 'package:firebase_database/firebase_database.dart';
 import 'package:firebase_remote_config/firebase_remote_config.dart';
 import 'package:flutter/foundation.dart';
 import 'package:protocol_brain/protocol_brain.dart';
 import 'package:rain_core/rain_core.dart';
-import 'package:window_manager/window_manager.dart';
 
 import 'package:rain/core/config/app_environment.dart';
 import 'package:rain/infrastructure/firebase/firebase_options.dart';
@@ -75,8 +72,6 @@ class AppBootstrapper {
         );
       }
 
-      await _DesktopShellController().initialize();
-
       return AppBootstrapState(
         environment: effectiveEnvironment,
         database: database,
@@ -139,37 +134,4 @@ Future<void> _seedSmokeIdentity({
     ),
   );
   await adapter.setPresence(username, true);
-}
-
-class _DesktopShellController with WindowListener {
-  bool _initialized = false;
-  bool _closing = false;
-
-  Future<void> initialize() async {
-    if (_initialized) {
-      return;
-    }
-    if (!Platform.isWindows && !Platform.isLinux && !Platform.isMacOS) {
-      return;
-    }
-    _initialized = true;
-
-    await windowManager.ensureInitialized();
-    windowManager.addListener(this);
-    await windowManager.setPreventClose(false);
-    await windowManager.waitUntilReadyToShow(const WindowOptions(), () async {
-      await windowManager.show();
-      await windowManager.focus();
-    });
-  }
-
-  @override
-  Future<void> onWindowClose() async {
-    if (_closing) {
-      return;
-    }
-    _closing = true;
-    await windowManager.setPreventClose(false);
-    await windowManager.destroy();
-  }
 }

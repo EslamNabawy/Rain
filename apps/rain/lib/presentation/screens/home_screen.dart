@@ -11,17 +11,25 @@ import 'package:protocol_brain/protocol_brain.dart';
 import 'package:rain_core/rain_core.dart';
 
 import 'package:rain/presentation/navigation/app_routes.dart';
+import 'package:rain/application/audio/rain_sound_event.dart';
+import 'package:rain/application/runtime/media_device_settings.dart';
+import 'package:rain/application/runtime/video_call_renderers.dart';
 import 'package:rain/application/runtime/voice_call_state.dart';
 import 'package:rain/application/state/app_providers.dart';
 import 'package:rain/application/state/connection_diagnostics.dart';
 import 'package:rain/application/state/file_transfer_view.dart';
 import 'package:rain/application/runtime/rain_runtime_controller.dart';
+import 'package:rain/application/state/sound_event_providers.dart';
 import 'package:rain/infrastructure/services/app_settings_store.dart';
-import 'package:rain/infrastructure/services/sound_effects_service.dart';
+import 'package:rain/presentation/branding/rain_peer_core_mark.dart';
+import 'package:rain/presentation/branding/rain_ripple_halo_surface.dart';
+import 'package:rain/presentation/branding/rain_state_surfaces.dart';
 import 'package:rain/presentation/theme/rain_theme.dart';
 import 'package:rain/presentation/widgets/app_components.dart';
 import 'package:rain/presentation/widgets/chat_composer.dart';
 import 'package:rain/presentation/widgets/app_dialogs.dart';
+import 'package:rain/presentation/widgets/calls/rain_call_controls.dart';
+import 'package:rain/presentation/widgets/calls/rain_call_manager_bar.dart';
 import 'package:rain/presentation/widgets/calls/rain_call_overlay.dart';
 import 'package:rain/presentation/widgets/rain_chat_widgets.dart';
 
@@ -112,6 +120,256 @@ VoiceCallOutputRoute _voiceCallOutputRouteForPreference(
     CallAudioOutputPreference.speaker => VoiceCallOutputRoute.speaker,
     CallAudioOutputPreference.bluetooth => VoiceCallOutputRoute.bluetooth,
   };
+}
+
+RainSoundEvent? rainVoiceCallLifecycleSoundEventFor(
+  VoiceCallState? previous,
+  VoiceCallState next,
+) {
+  final call = switch (next.phase) {
+    VoiceCallPhase.idle => previous,
+    _ => next,
+  };
+  final callId = call?.callId;
+  if (callId == null || callId.trim().isEmpty) {
+    return null;
+  }
+  return switch (next.phase) {
+    VoiceCallPhase.incomingRinging => RainSoundEvent.callIncomingStarted(
+      callId: callId,
+      peerId: next.peerId,
+      sessionEpoch: next.sessionEpoch,
+      mediaMode: next.mediaMode,
+    ),
+    VoiceCallPhase.outgoingRinging => RainSoundEvent.callOutgoingStarted(
+      callId: callId,
+      peerId: next.peerId,
+      sessionEpoch: next.sessionEpoch,
+      mediaMode: next.mediaMode,
+    ),
+    VoiceCallPhase.active => RainSoundEvent.callConnected(
+      callId: callId,
+      peerId: next.peerId,
+      sessionEpoch: next.sessionEpoch,
+      mediaMode: next.mediaMode,
+    ),
+    VoiceCallPhase.failed => RainSoundEvent.callFailed(
+      callId: callId,
+      peerId: next.peerId,
+      sessionEpoch: next.sessionEpoch,
+      mediaMode: next.mediaMode,
+      errorKey: _voiceCallFailureErrorKey(next),
+    ),
+    VoiceCallPhase.idle
+        when previous != null &&
+            previous.phase != VoiceCallPhase.idle &&
+            previous.phase != VoiceCallPhase.failed =>
+      RainSoundEvent.callEnded(
+        callId: callId,
+        peerId: previous.peerId,
+        sessionEpoch: previous.sessionEpoch,
+        mediaMode: previous.mediaMode,
+      ),
+    VoiceCallPhase.idle ||
+    VoiceCallPhase.connectingPeer ||
+    VoiceCallPhase.connectingMedia ||
+    VoiceCallPhase.ending => null,
+  };
+}
+
+String? rainVoiceCallLifecycleSoundKeyFor(
+  VoiceCallState? previous,
+  VoiceCallState next,
+) {
+  final event = rainVoiceCallLifecycleSoundEventFor(previous, next);
+  if (event == null || event.callId == null) {
+    return null;
+  }
+  return '${event.callId}|${event.sessionEpoch ?? -1}|${next.phase.name}';
+}
+
+String _voiceCallFailureErrorKey(VoiceCallState state) {
+  final reason = state.failureReason;
+  if (reason != null) {
+    return 'voice.${reason.name}';
+  }
+  return 'voice.call.failed';
+}
+
+RainSoundEvent? rainChatReceiveSoundEventFor({
+  required List<StoredMessage>? previousMessages,
+  required List<StoredMessage>? nextMessages,
+  required String conversationId,
+}) {
+  if (previousMessages == null || nextMessages == null) {
+    return null;
+  }
+
+  final previousLatestIncoming = _latestIncomingMessageIdForSound(
+    previousMessages,
+  );
+  final nextLatestIncoming = _latestIncomingMessageIdForSound(nextMessages);
+  if (nextLatestIncoming == null ||
+      nextLatestIncoming == previousLatestIncoming ||
+      nextMessages.length < previousMessages.length) {
+    return null;
+  }
+  return RainSoundEvent.chatReceive(conversationId: conversationId);
+}
+
+RainSoundEvent rainChatSendSoundEventFor(String conversationId) {
+  return RainSoundEvent.chatSend(conversationId: conversationId);
+}
+
+RainSoundEvent rainUiActionSoundEvent() {
+  return RainSoundEvent.uiAction();
+}
+
+RainSoundEvent rainUiWarningSoundEvent(String errorKey) {
+  return RainSoundEvent.warning(errorKey: errorKey);
+}
+
+String? _latestIncomingMessageIdForSound(List<StoredMessage> messages) {
+  for (final message in messages.reversed) {
+    if (!message.isOutgoing) {
+      return message.id;
+    }
+  }
+  return null;
+}
+
+void _dispatchRainSoundEvent(WidgetRef ref, RainSoundEvent event) {
+  unawaited(ref.read(soundEventRouterProvider).dispatch(event));
+}
+
+void _dispatchVoiceCommandFailureSoundForRef(
+  WidgetRef ref,
+  Object error, {
+  VoiceCallState? before,
+}) {
+  final current = ref.read(voiceCallProvider);
+  final failedCallState = current.phase == VoiceCallPhase.failed
+      ? current
+      : null;
+  if (failedCallState?.callId != null) {
+    return;
+  }
+  final call = _soundEventCallContext(current, fallback: before);
+  final callId = call?.callId;
+  if (callId == null || callId.trim().isEmpty) {
+    _dispatchRainSoundEvent(
+      ref,
+      RainSoundEvent.warning(errorKey: _voiceCommandErrorKey(error)),
+    );
+    return;
+  }
+  _dispatchRainSoundEvent(
+    ref,
+    RainSoundEvent.callFailed(
+      callId: callId,
+      peerId: call?.peerId,
+      sessionEpoch: call?.sessionEpoch,
+      mediaMode: call?.mediaMode ?? CallMediaMode.audio,
+      errorKey: _voiceCommandErrorKey(error),
+    ),
+  );
+}
+
+VoiceCallState? _soundEventCallContext(
+  VoiceCallState current, {
+  VoiceCallState? fallback,
+}) {
+  if (current.callId != null && current.callId!.trim().isNotEmpty) {
+    return current;
+  }
+  final fallbackCallId = fallback?.callId;
+  if (fallbackCallId != null && fallbackCallId.trim().isNotEmpty) {
+    return fallback;
+  }
+  return null;
+}
+
+String _voiceCommandErrorKey(Object error) {
+  final message = _formatUiError(error).toLowerCase();
+  if (message.contains('microphone')) {
+    return 'voice.microphone_denied';
+  }
+  if (message.contains('camera')) {
+    return 'voice.camera_denied';
+  }
+  if (message.contains('busy')) {
+    return 'voice.peer_busy';
+  }
+  if (message.contains('network')) {
+    return 'voice.network_lost';
+  }
+  if (message.contains('media')) {
+    return 'voice.media_failed';
+  }
+  return 'voice.command_failed';
+}
+
+RainSoundEvent _callControlMuteEvent(VoiceCallState call) {
+  return RainSoundEvent.callControlMute(
+    callId: call.callId,
+    peerId: call.peerId,
+    sessionEpoch: call.sessionEpoch,
+    mediaMode: call.mediaMode,
+  );
+}
+
+RainSoundEvent _callControlUnmuteEvent(VoiceCallState call) {
+  return RainSoundEvent.callControlUnmute(
+    callId: call.callId,
+    peerId: call.peerId,
+    sessionEpoch: call.sessionEpoch,
+    mediaMode: call.mediaMode,
+  );
+}
+
+RainSoundEvent _callControlDeafenEvent(VoiceCallState call) {
+  return RainSoundEvent.callControlDeafen(
+    callId: call.callId,
+    peerId: call.peerId,
+    sessionEpoch: call.sessionEpoch,
+    mediaMode: call.mediaMode,
+  );
+}
+
+RainSoundEvent _callControlUndeafenEvent(VoiceCallState call) {
+  return RainSoundEvent.callControlUndeafen(
+    callId: call.callId,
+    peerId: call.peerId,
+    sessionEpoch: call.sessionEpoch,
+    mediaMode: call.mediaMode,
+  );
+}
+
+RainSoundEvent _callControlCameraMuteEvent(VoiceCallState call) {
+  return RainSoundEvent.callControlCameraMute(
+    callId: call.callId,
+    peerId: call.peerId,
+    sessionEpoch: call.sessionEpoch,
+    mediaMode: call.mediaMode,
+  );
+}
+
+RainSoundEvent _callControlCameraUnmuteEvent(VoiceCallState call) {
+  return RainSoundEvent.callControlCameraUnmute(
+    callId: call.callId,
+    peerId: call.peerId,
+    sessionEpoch: call.sessionEpoch,
+    mediaMode: call.mediaMode,
+  );
+}
+
+RainSoundEvent _callControlRouteChangedEvent(VoiceCallState call) {
+  return RainSoundEvent.callRouteChanged(
+    callId: call.callId,
+    peerId: call.peerId,
+    sessionEpoch: call.sessionEpoch,
+    mediaMode: call.mediaMode,
+  );
 }
 
 String _candidateLabel(String? value) {
@@ -359,13 +617,27 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
 
   String? _selectedPeerId;
   String? _defaultOutputAppliedCallId;
+  String? _lastVoiceCallLifecycleSoundKey;
 
   @override
   Widget build(BuildContext context) {
     final friends = ref.watch(friendsProvider);
     final identity = ref.watch(identityProvider).value;
     final voiceCall = ref.watch(voiceCallProvider);
+    final videoRenderers = ref.watch(videoCallRenderersProvider);
     final callSurface = ref.watch(callSurfaceProvider);
+    final videoInputCapabilities = ref
+        .watch(videoInputCapabilityProvider)
+        .value;
+    final audioOutputCapabilities = ref
+        .watch(audioOutputCapabilityProvider)
+        .value;
+    final callControlCapabilities =
+        (videoInputCapabilities ?? const VideoInputCapabilityState(devices: []))
+            .filterCallControls(voiceCall.controlCapabilities);
+    final outputRouteOptions = rainVoiceCallOutputRouteOptions(
+      hasBluetoothOutput: audioOutputCapabilities?.hasBluetoothOutput ?? false,
+    );
     ref.listen<VoiceCallState>(voiceCallProvider, _handleVoiceCallNavigation);
 
     return LayoutBuilder(
@@ -376,7 +648,7 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
 
         final showShellHeader = !isCompact || _selectedPeerId == null;
 
-        return SafeArea(
+        final shell = SafeArea(
           child: Padding(
             padding: EdgeInsets.all(isCompact ? 8 : 20),
             child: Container(
@@ -409,7 +681,10 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
                       friends: friends,
                       isCompact: isCompact,
                       voiceCall: voiceCall,
+                      videoRenderers: videoRenderers,
                       callSurface: callSurface,
+                      callControlCapabilities: callControlCapabilities,
+                      outputRouteOptions: outputRouteOptions,
                     ),
                   ),
                 ],
@@ -417,15 +692,68 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
             ),
           ),
         );
+        return PopScope<Object?>(
+          canPop: !_shouldHandleSystemBack(callSurface, isCompact),
+          onPopInvokedWithResult: (bool didPop, Object? result) {
+            if (didPop) {
+              return;
+            }
+            _handleSystemBack(isCompact);
+          },
+          child: _wrapFullscreenEscapeHandler(
+            callSurface: callSurface,
+            child: shell,
+          ),
+        );
       },
     );
+  }
+
+  Widget _wrapFullscreenEscapeHandler({
+    required CallSurfaceState callSurface,
+    required Widget child,
+  }) {
+    if (!callSurface.isFullscreen) {
+      return child;
+    }
+    return Focus(
+      autofocus: true,
+      child: CallbackShortcuts(
+        bindings: <ShortcutActivator, VoidCallback>{
+          const SingleActivator(LogicalKeyboardKey.escape): () {
+            ref.read(callSurfaceProvider.notifier).exitFullscreen();
+          },
+        },
+        child: child,
+      ),
+    );
+  }
+
+  bool _shouldHandleSystemBack(CallSurfaceState callSurface, bool isCompact) {
+    if (callSurface.isVisible &&
+        callSurface.mode != CallSurfaceMode.managerOnly) {
+      return true;
+    }
+    return isCompact && _selectedPeerId != null;
+  }
+
+  void _handleSystemBack(bool isCompact) {
+    if (ref.read(callSurfaceProvider.notifier).handleBackIntent()) {
+      return;
+    }
+    if (isCompact && _selectedPeerId != null) {
+      setState(() => _selectedPeerId = null);
+    }
   }
 
   Widget _buildBodyWithCallSurface({
     required AsyncValue<List<FriendRecord>> friends,
     required bool isCompact,
     required VoiceCallState voiceCall,
+    required VideoCallRenderers? videoRenderers,
     required CallSurfaceState callSurface,
+    required List<CallControlCapability> callControlCapabilities,
+    required List<VoiceCallOutputRouteOption> outputRouteOptions,
   }) {
     final body = isCompact
         ? _buildCompactBody(friends)
@@ -433,7 +761,8 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
     return Stack(
       children: <Widget>[
         Positioned.fill(child: body),
-        if (callSurface.isVisible && voiceCall.phase != VoiceCallPhase.idle)
+        if (callSurface.showsMediaSurface &&
+            voiceCall.phase != VoiceCallPhase.idle)
           Positioned.fill(
             left: isCompact ? 0 : 321,
             child: RainCallOverlay(
@@ -441,20 +770,69 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
               surface: callSurface,
               displayName: _voiceCallDisplayName(friends, voiceCall),
               gender: _voiceCallGender(friends, voiceCall),
+              videoRenderers: videoRenderers,
               onAccept: _acceptVoiceCall,
               onReject: _rejectVoiceCall,
               onHangUp: _hangUpVoiceCall,
               onRetry: () => _retryVoiceCall(voiceCall),
               onToggleMute: () => _toggleVoiceMute(voiceCall),
               onToggleDeafen: () => _toggleVoiceDeafen(voiceCall),
+              onToggleCamera: () => _toggleVoiceCamera(voiceCall),
+              onSwitchCamera: _switchVoiceCamera,
               onSelectOutputRoute: _selectVoiceOutputRoute,
+              controlCapabilities: callControlCapabilities,
+              outputRouteOptions: outputRouteOptions,
               onMinimize: () =>
                   ref.read(callSurfaceProvider.notifier).minimize(),
-              onExpand: () => ref.read(callSurfaceProvider.notifier).expand(),
+              onExpand: () => _toggleCallSurfacePanel(callSurface),
+              onToggleVideoPrimaryRole: () =>
+                  _toggleVideoPrimaryRole(voiceCall),
+              onFullscreen: () =>
+                  ref.read(callSurfaceProvider.notifier).enterFullscreen(),
+            ),
+          ),
+        if (callSurface.showsManagerBar &&
+            voiceCall.phase != VoiceCallPhase.idle)
+          Positioned(
+            left: isCompact ? 0 : 321,
+            right: 0,
+            top: 0,
+            child: RainCallManagerBar(
+              state: voiceCall,
+              surface: callSurface,
+              displayName: _voiceCallDisplayName(friends, voiceCall),
+              gender: _voiceCallGender(friends, voiceCall),
+              onToggleMute: () => _toggleVoiceMute(voiceCall),
+              onToggleCamera: () => _toggleVoiceCamera(voiceCall),
+              onToggleDeafen: () => _toggleVoiceDeafen(voiceCall),
+              onRestore: () => _toggleCallSurfacePanel(callSurface),
+              onFullscreen: () =>
+                  ref.read(callSurfaceProvider.notifier).enterFullscreen(),
+              onHangUp: voiceCall.phase == VoiceCallPhase.incomingRinging
+                  ? _rejectVoiceCall
+                  : _hangUpVoiceCall,
             ),
           ),
       ],
     );
+  }
+
+  void _toggleCallSurfacePanel(CallSurfaceState surface) {
+    final controller = ref.read(callSurfaceProvider.notifier);
+    if (surface.mode == CallSurfaceMode.expanded ||
+        surface.mode == CallSurfaceMode.fullscreen) {
+      controller.showManagerOnly();
+      return;
+    }
+    controller.restore();
+  }
+
+  void _toggleVideoPrimaryRole(VoiceCallState voiceCall) {
+    final callId = voiceCall.callId;
+    if (callId == null || callId.isEmpty) {
+      return;
+    }
+    ref.read(callSurfaceProvider.notifier).toggleVideoPrimaryRole(callId);
   }
 
   Widget _buildCompactBody(AsyncValue<List<FriendRecord>> friends) {
@@ -550,6 +928,9 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
       if (route == VoiceCallOutputRoute.systemDefault) {
         return;
       }
+      if (!await _isVoiceOutputRouteAvailable(route)) {
+        return;
+      }
       if (!mounted) {
         return;
       }
@@ -566,36 +947,16 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
   }
 
   void _handleVoiceCallSound(VoiceCallState? previous, VoiceCallState next) {
-    final previousPhase = previous?.phase;
-    if (previousPhase == next.phase && previous?.callId == next.callId) {
+    final soundKey = rainVoiceCallLifecycleSoundKeyFor(previous, next);
+    if (soundKey == null || soundKey == _lastVoiceCallLifecycleSoundKey) {
       return;
     }
-    switch (next.phase) {
-      case VoiceCallPhase.incomingRinging:
-        _playSound(RainSoundEffect.callIncoming);
-        break;
-      case VoiceCallPhase.active:
-        _playSound(RainSoundEffect.callConnected, voiceCallActive: true);
-        break;
-      case VoiceCallPhase.failed:
-        _playSound(RainSoundEffect.callFailed);
-        break;
-      case VoiceCallPhase.idle:
-        if (previous != null &&
-            previous.phase != VoiceCallPhase.idle &&
-            previous.phase != VoiceCallPhase.failed) {
-          _playSound(
-            RainSoundEffect.callEnded,
-            voiceCallActive: previous.isActive,
-          );
-        }
-        break;
-      case VoiceCallPhase.connectingPeer:
-      case VoiceCallPhase.outgoingRinging:
-      case VoiceCallPhase.connectingMedia:
-      case VoiceCallPhase.ending:
-        break;
+    final event = rainVoiceCallLifecycleSoundEventFor(previous, next);
+    if (event == null) {
+      return;
     }
+    _lastVoiceCallLifecycleSoundKey = soundKey;
+    _dispatchSoundEvent(event);
   }
 
   Future<void> _refreshFriends() async {
@@ -649,46 +1010,64 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
       _showVoiceCallError('Peer connection is unavailable right now.');
       return;
     }
-    await _startVoiceCall(peerId);
+    if (!call.isOutgoing) {
+      _showVoiceCallError('Only the caller can retry this call.');
+      return;
+    }
+    if (call.isVideo) {
+      await _startVideoCall(peerId);
+    } else {
+      await _startVoiceCall(peerId);
+    }
   }
 
   Future<void> _startVoiceCall(String peerId) async {
+    final before = ref.read(voiceCallProvider);
     try {
       await ref.read(voiceCallProvider.notifier).start(peerId);
-      _playSound(RainSoundEffect.callOutgoing);
     } catch (error) {
-      _playSound(RainSoundEffect.callFailed);
+      _dispatchVoiceCommandFailureSound(error, before: before);
+      _showVoiceCallError(_formatUiError(error));
+    }
+  }
+
+  Future<void> _startVideoCall(String peerId) async {
+    final before = ref.read(voiceCallProvider);
+    try {
+      await ref.read(voiceCallProvider.notifier).startVideo(peerId);
+    } catch (error) {
+      _dispatchVoiceCommandFailureSound(error, before: before);
       _showVoiceCallError(_formatUiError(error));
     }
   }
 
   Future<void> _acceptVoiceCall() async {
+    final before = ref.read(voiceCallProvider);
     try {
+      await _stopVoiceCallLoopsBeforeAccept();
       await ref.read(voiceCallProvider.notifier).accept();
-      _playSound(RainSoundEffect.callConnected, voiceCallActive: true);
     } catch (error) {
-      _playSound(RainSoundEffect.callFailed);
+      _dispatchVoiceCommandFailureSound(error, before: before);
       _showVoiceCallError(_formatUiError(error));
     }
   }
 
   Future<void> _rejectVoiceCall() async {
+    final before = ref.read(voiceCallProvider);
     try {
       await ref.read(voiceCallProvider.notifier).reject();
-      _playSound(RainSoundEffect.callEnded);
     } catch (error) {
-      _playSound(RainSoundEffect.callFailed);
+      _dispatchVoiceCommandFailureSound(error, before: before);
       _showVoiceCallError(_formatUiError(error));
     }
   }
 
   Future<void> _hangUpVoiceCall() async {
+    final before = ref.read(voiceCallProvider);
     try {
-      final wasActive = ref.read(voiceCallProvider).isActive;
       await ref.read(voiceCallProvider.notifier).hangUp();
-      _playSound(RainSoundEffect.callEnded, voiceCallActive: wasActive);
     } catch (error) {
-      _playSound(RainSoundEffect.callFailed);
+      _dispatchVoiceCommandFailureSound(error, before: before);
       _showVoiceCallError(_formatUiError(error));
     }
   }
@@ -697,12 +1076,11 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
     final nextMuted = !call.isMuted;
     try {
       await ref.read(voiceCallProvider.notifier).setMuted(nextMuted);
-      _playSound(
-        nextMuted ? RainSoundEffect.mute : RainSoundEffect.unmute,
-        voiceCallActive: true,
+      _dispatchSoundEvent(
+        nextMuted ? _callControlMuteEvent(call) : _callControlUnmuteEvent(call),
       );
     } catch (error) {
-      _playSound(RainSoundEffect.callFailed);
+      _dispatchVoiceCommandFailureSound(error, before: call);
       _showVoiceCallError(_formatUiError(error));
     }
   }
@@ -711,36 +1089,93 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
     final nextDeafened = !call.isDeafened;
     try {
       await ref.read(voiceCallProvider.notifier).setDeafened(nextDeafened);
-      _playSound(
-        nextDeafened ? RainSoundEffect.deafen : RainSoundEffect.undeafen,
-        voiceCallActive: true,
+      _dispatchSoundEvent(
+        nextDeafened
+            ? _callControlDeafenEvent(call)
+            : _callControlUndeafenEvent(call),
       );
     } catch (error) {
-      _playSound(RainSoundEffect.callFailed);
+      _dispatchVoiceCommandFailureSound(error, before: call);
+      _showVoiceCallError(_formatUiError(error));
+    }
+  }
+
+  Future<void> _toggleVoiceCamera(VoiceCallState call) async {
+    final nextMuted = !call.isCameraMuted;
+    try {
+      await ref.read(voiceCallProvider.notifier).setCameraMuted(nextMuted);
+      _dispatchSoundEvent(
+        nextMuted
+            ? _callControlCameraMuteEvent(call)
+            : _callControlCameraUnmuteEvent(call),
+      );
+    } catch (error) {
+      _dispatchVoiceCommandFailureSound(error, before: call);
+      _showVoiceCallError(_formatUiError(error));
+    }
+  }
+
+  Future<void> _switchVoiceCamera() async {
+    final before = ref.read(voiceCallProvider);
+    try {
+      await ref.read(voiceCallProvider.notifier).switchCamera();
+      _dispatchSoundEvent(_callControlRouteChangedEvent(before));
+    } catch (error) {
+      _dispatchVoiceCommandFailureSound(error, before: before);
       _showVoiceCallError(_formatUiError(error));
     }
   }
 
   Future<void> _selectVoiceOutputRoute(VoiceCallOutputRoute route) async {
+    final before = ref.read(voiceCallProvider);
     try {
+      if (!await _isVoiceOutputRouteAvailable(route)) {
+        _showVoiceCallError('Bluetooth audio output is unavailable.');
+        return;
+      }
       await ref.read(voiceCallProvider.notifier).setOutputRoute(route);
-      _playSound(RainSoundEffect.action, voiceCallActive: true);
+      _dispatchSoundEvent(_callControlRouteChangedEvent(before));
     } catch (error) {
-      _playSound(RainSoundEffect.callFailed);
+      _dispatchVoiceCommandFailureSound(error, before: before);
       _showVoiceCallError(_formatUiError(error));
     }
   }
 
-  void _playSound(RainSoundEffect effect, {bool? voiceCallActive}) {
-    unawaited(
-      ref
-          .read(soundEffectsProvider)
-          .play(
-            effect,
-            voiceCallActive:
-                voiceCallActive ?? ref.read(voiceCallProvider).isActive,
-          ),
-    );
+  Future<bool> _isVoiceOutputRouteAvailable(VoiceCallOutputRoute route) async {
+    if (route != VoiceCallOutputRoute.bluetooth) {
+      return true;
+    }
+    final cached = ref.read(audioOutputCapabilityProvider).value;
+    if (cached != null) {
+      return cached.hasBluetoothOutput;
+    }
+    try {
+      final capabilities = await ref
+          .read(audioOutputCapabilityProvider.notifier)
+          .reload();
+      return capabilities.hasBluetoothOutput;
+    } catch (_) {
+      return false;
+    }
+  }
+
+  Future<void> _stopVoiceCallLoopsBeforeAccept() async {
+    try {
+      await ref.read(soundEventRouterProvider).stopAllLoops();
+    } catch (error) {
+      debugPrint('Rain call ringtone cleanup ignored before accept: $error');
+    }
+  }
+
+  void _dispatchSoundEvent(RainSoundEvent event) {
+    _dispatchRainSoundEvent(ref, event);
+  }
+
+  void _dispatchVoiceCommandFailureSound(
+    Object error, {
+    VoiceCallState? before,
+  }) {
+    _dispatchVoiceCommandFailureSoundForRef(ref, error, before: before);
   }
 
   void _showVoiceCallError(String message) {
