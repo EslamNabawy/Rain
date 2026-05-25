@@ -115,6 +115,8 @@ class RainRuntimeController with WidgetsBindingObserver {
   final Set<String> _unblockingPeers = <String>{};
   final Map<String, StreamSubscription<bool>> _presenceSubscriptions =
       <String, StreamSubscription<bool>>{};
+  final Map<String, PeerDisconnectIntent> _pendingPeerDisconnectIntents =
+      <String, PeerDisconnectIntent>{};
   final Map<String, FileTransferFrame> _pendingFileChunks =
       <String, FileTransferFrame>{};
   final Map<String, int> _receiveProgressOffsets = <String, int>{};
@@ -320,12 +322,32 @@ class RainRuntimeController with WidgetsBindingObserver {
 
       _subscriptions.add(
         brain!.onPeerDisconnected.listen((String peerId) {
+          final pendingIntent = _pendingPeerDisconnectIntents.remove(peerId);
+          final recordedIntent =
+              pendingIntent ??
+              _connectionCoordinator.disconnectIntentFor(peerId);
+          if (recordedIntent == PeerDisconnectIntent.localManual ||
+              recordedIntent == PeerDisconnectIntent.transportLost ||
+              recordedIntent == PeerDisconnectIntent.networkLost) {
+            if (recordedIntent != PeerDisconnectIntent.localManual) {
+              _connectionCoordinator.clearDisconnectIntent(peerId);
+            }
+            return;
+          }
           final session = brain?.getSession(peerId);
           if (session?.state == SessionState.connecting ||
               session?.state == SessionState.reconnecting) {
+            _connectionCoordinator.recordDisconnectIntent(
+              peerId,
+              PeerDisconnectIntent.transportLost,
+            );
             _markVoiceCallReconnectingForPeer(peerId);
             return;
           }
+          _connectionCoordinator.recordDisconnectIntent(
+            peerId,
+            PeerDisconnectIntent.remoteManual,
+          );
           _failVoiceCallForPeer(
             peerId,
             'Peer connection closed. Voice call ended.',
@@ -530,8 +552,30 @@ class RainRuntimeController with WidgetsBindingObserver {
         return;
       }
       _manualDisconnectedPeers.remove(normalizedUsername);
+      _connectionCoordinator.clearDisconnectIntent(normalizedUsername);
     }
-    final current = brain!.getSession(normalizedUsername);
+    var current = brain!.getSession(normalizedUsername);
+    if (current?.state == SessionState.connected) {
+      return;
+    }
+    if (current?.state == SessionState.connecting ||
+        current?.state == SessionState.reconnecting) {
+      if (interactive && bypassRetryBackoff) {
+        await _disconnectBrainPeer(
+          normalizedUsername,
+          PeerDisconnectIntent.transportLost,
+        );
+        current = brain!.getSession(normalizedUsername);
+      } else {
+        if (waitForConnected) {
+          await _waitForPeerConnection(
+            normalizedUsername,
+            timeout: connectionTimeout,
+          );
+        }
+        return;
+      }
+    }
     if (current?.state == SessionState.connected) {
       return;
     }
@@ -584,12 +628,19 @@ class RainRuntimeController with WidgetsBindingObserver {
   Future<void> disconnectPeer(String username) async {
     final normalizedUsername = _normalizedUsername(username);
     _manualDisconnectedPeers.add(normalizedUsername);
+    _connectionCoordinator.recordDisconnectIntent(
+      normalizedUsername,
+      PeerDisconnectIntent.localManual,
+    );
     _connectionCoordinator.clearRetry(normalizedUsername);
     await _failActiveTransfersForPeer(
       normalizedUsername,
       'Transfer canceled because the peer link was disconnected.',
     );
-    await brain?.disconnect(normalizedUsername);
+    await _disconnectBrainPeer(
+      normalizedUsername,
+      PeerDisconnectIntent.localManual,
+    );
     await _unregisterPeerListener(normalizedUsername);
   }
 
@@ -626,6 +677,10 @@ class RainRuntimeController with WidgetsBindingObserver {
     final sessions = brain?.getSessions() ?? const <Session>[];
     for (final session in sessions) {
       _manualDisconnectedPeers.add(session.peerId);
+      _connectionCoordinator.recordDisconnectIntent(
+        session.peerId,
+        PeerDisconnectIntent.networkLost,
+      );
       await _endVoiceCallForPeer(
         session.peerId,
         notifyPeer: false,
@@ -634,7 +689,10 @@ class RainRuntimeController with WidgetsBindingObserver {
         failureDetail: 'Network connection lost. Call ended.',
       );
       try {
-        await brain?.disconnect(session.peerId);
+        await _disconnectBrainPeer(
+          session.peerId,
+          PeerDisconnectIntent.networkLost,
+        );
         await _unregisterPeerListener(session.peerId);
       } catch (_) {
         // The network is already unavailable; stale peer cleanup is best effort.
@@ -651,6 +709,19 @@ class RainRuntimeController with WidgetsBindingObserver {
     _pendingFileChunks.clear();
     _fileMessageQueues.clear();
     _outgoingFileSources.clear();
+  }
+
+  Future<void> _disconnectBrainPeer(
+    String peerId,
+    PeerDisconnectIntent intent,
+  ) async {
+    final manager = brain;
+    if (manager == null) {
+      return;
+    }
+    _pendingPeerDisconnectIntents[peerId] = intent;
+    _connectionCoordinator.recordDisconnectIntent(peerId, intent);
+    await manager.disconnect(peerId);
   }
 
   Future<void> handleNetworkAvailable(String reason) async {

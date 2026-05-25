@@ -518,12 +518,25 @@ class ProtocolBrainImpl implements ProtocolBrain {
             );
             break;
           case PeerState.idle:
+            unawaited(_handlePeerClosed(active));
+            break;
           case PeerState.ready:
           case PeerState.connected:
             break;
         }
       }),
     );
+  }
+
+  Future<void> _handlePeerClosed(_ActiveSession active) async {
+    if (_sessions[active.peerId] != active || !active.shouldReconnect) {
+      return;
+    }
+    active.stopReconnecting();
+    _sessions.remove(active.peerId);
+    await _deleteRoomSilently(active);
+    await active.dispose();
+    _peerDisconnectedController.add(active.peerId);
   }
 
   void _handlePeerConnected(_ActiveSession active) {

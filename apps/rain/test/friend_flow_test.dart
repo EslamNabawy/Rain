@@ -4728,9 +4728,76 @@ void main() {
 
     test(
       'manual disconnect suppresses remote recovery and interactive reconnect restarts cleanly',
-      () async {},
-      skip:
-          'Phase 01 will replace this baseline with the reconnect intent regression.',
+      () async {
+        final adapter = NoopSignalingAdapter();
+        final brain = TestSessionManager();
+        await adapter.register('bob', 'bobpw');
+        await adapter.upsertFriendship('alice', 'bob');
+        await db
+            .into(db.friends)
+            .insert(
+              FriendsCompanion.insert(
+                username: 'bob',
+                displayName: 'Bob',
+                state: 'friend',
+                addedAt: 0,
+                online: const Value(true),
+              ),
+            );
+        final runtime = RainRuntimeController(
+          selfIdentity: alice,
+          adapter: adapter,
+          brain: brain,
+          database: db,
+          friendStore: FriendStore(db),
+          messageStore: MessageStore(db),
+          offlineQueueStore: OfflineQueueStore(db),
+          messageDeliveryService: MessageDeliveryService(
+            messageStore: MessageStore(db),
+            offlineQueueStore: OfflineQueueStore(db),
+          ),
+          friendRequestRefreshInterval: Duration.zero,
+        );
+
+        await runtime.start();
+        await runtime.connectPeer('bob', interactive: true);
+        final disconnectedGuard = brain.incomingOfferGuards['bob'];
+        expect(disconnectedGuard, isNotNull);
+
+        await runtime.disconnectPeer('bob');
+
+        expect(
+          runtime.connectionCoordinatorSnapshotFor('bob').manualDisconnect,
+          isTrue,
+        );
+        expect((await disconnectedGuard!('bob')).allowed, isFalse);
+        expect(brain.unregisteredPeers, contains('bob'));
+
+        brain.seedSession('bob', SessionState.reconnecting);
+        final reconnect = runtime.connectPeer(
+          'bob',
+          interactive: true,
+          waitForConnected: true,
+          allowStalePresence: true,
+          bypassRetryBackoff: true,
+          connectionTimeout: const Duration(seconds: 2),
+        );
+        await _waitForCondition(
+          () => brain.connectedPeers.length == 2,
+          'fresh interactive reconnect attempt',
+        );
+        brain.markConnected('bob');
+        await reconnect;
+
+        expect(
+          runtime.connectionCoordinatorSnapshotFor('bob').manualDisconnect,
+          isFalse,
+        );
+        expect(brain.disconnectedPeers, <String>['bob', 'bob']);
+        expect(brain.connectedPeers, <String>['bob', 'bob']);
+        expect(brain.getSession('bob')?.state, SessionState.connected);
+        await runtime.dispose();
+      },
     );
 
     test(
@@ -5946,6 +6013,35 @@ class TestSessionManager implements SessionManager {
     );
     _sessions[peerId] = session;
     _sessionChangedController.add(session);
+  }
+
+  void seedSession(String peerId, SessionState state) {
+    final existing = _sessions[peerId];
+    final session =
+        existing?.copyWith(
+          state: state,
+          phase: _phaseForState(state),
+          updatedAt: DateTime.now().millisecondsSinceEpoch,
+        ) ??
+        Session(
+          peerId: peerId,
+          state: state,
+          connectionType: ConnectionType.signaling,
+          phase: _phaseForState(state),
+          updatedAt: DateTime.now().millisecondsSinceEpoch,
+          sender: (_) {},
+        );
+    _sessions[peerId] = session;
+    _sessionChangedController.add(session);
+  }
+
+  SessionPhase _phaseForState(SessionState state) {
+    return switch (state) {
+      SessionState.connecting => SessionPhase.openingDataChannels,
+      SessionState.connected => SessionPhase.connected,
+      SessionState.reconnecting => SessionPhase.reconnecting,
+      SessionState.failed => SessionPhase.failed,
+    };
   }
 
   void emitFileMessage(String peerId, Object data) {

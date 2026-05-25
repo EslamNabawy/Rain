@@ -570,9 +570,34 @@ void main() {
 
   test(
     'manual remote disconnect does not schedule endless reconnect recovery',
-    () async {},
-    skip:
-        'Phase 01 will replace this baseline with the protocol reconnect intent regression.',
+    () async {
+      final adapter = _RecordingSignalingAdapter();
+      final peers = <_FakePeerCore>[];
+      final brain = ProtocolBrainImpl(
+        selfUsername: 'alice',
+        adapter: adapter,
+        peerConfig: _fakePeerConfig(),
+        peerFactory: () {
+          final peer = _FakePeerCore();
+          peers.add(peer);
+          return peer;
+        },
+        connectionMemoryStore: _MemoryConnectionStore(),
+        reconnectGrace: Duration.zero,
+      );
+      final disconnected = brain.onPeerDisconnected.first;
+
+      await brain.connect('bob');
+      peers.single.emitConnected();
+      await pumpEventQueue(times: 3);
+
+      peers.single.emitClosed();
+
+      expect(await disconnected, 'bob');
+      await pumpEventQueue(times: 5);
+      expect(brain.getSession('bob'), isNull);
+      expect(peers, hasLength(1));
+    },
   );
 
   test('connected answerer ignores stale retry offers', () async {
@@ -1192,6 +1217,11 @@ class _FakePeerCore implements PeerCore {
     _state = PeerState.reconnecting;
     _stateController.add(_state);
     _disconnectedController.add(null);
+  }
+
+  void emitClosed() {
+    _state = PeerState.idle;
+    _stateController.add(_state);
   }
 
   void emitFailed() {
