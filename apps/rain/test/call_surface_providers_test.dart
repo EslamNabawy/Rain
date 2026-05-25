@@ -70,6 +70,7 @@ void main() {
   test('rendering contract separates media surface and manager bar', () {
     expect(const CallSurfaceState.hidden().showsManagerBar, isFalse);
     expect(const CallSurfaceState.hidden().showsMediaSurface, isFalse);
+    expect(const CallSurfaceState.hidden().showsExpandedOverlay, isFalse);
     expect(
       const CallSurfaceState.visible(
         peerId: 'bob',
@@ -88,9 +89,24 @@ void main() {
       const CallSurfaceState.visible(
         peerId: 'bob',
         callId: 'call-1',
+      ).showsExpandedOverlay,
+      isTrue,
+    );
+    expect(
+      const CallSurfaceState.visible(
+        peerId: 'bob',
+        callId: 'call-1',
         mode: CallSurfaceMode.fullscreen,
       ).showsManagerBar,
       isFalse,
+    );
+    expect(
+      const CallSurfaceState.visible(
+        peerId: 'bob',
+        callId: 'call-1',
+        mode: CallSurfaceMode.fullscreen,
+      ).showsExpandedOverlay,
+      isTrue,
     );
     expect(
       const CallSurfaceState.visible(
@@ -105,6 +121,15 @@ void main() {
       const CallSurfaceState.visible(
         peerId: 'bob',
         callId: 'call-1',
+        mode: CallSurfaceMode.pip,
+        mediaMode: CallMediaMode.video,
+      ).showsExpandedOverlay,
+      isFalse,
+    );
+    expect(
+      const CallSurfaceState.visible(
+        peerId: 'bob',
+        callId: 'call-1',
         mode: CallSurfaceMode.managerOnly,
       ).showsManagerBar,
       isTrue,
@@ -115,6 +140,14 @@ void main() {
         callId: 'call-1',
         mode: CallSurfaceMode.managerOnly,
       ).showsMediaSurface,
+      isFalse,
+    );
+    expect(
+      const CallSurfaceState.visible(
+        peerId: 'bob',
+        callId: 'call-1',
+        mode: CallSurfaceMode.managerOnly,
+      ).showsExpandedOverlay,
       isFalse,
     );
   });

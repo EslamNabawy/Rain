@@ -61,6 +61,10 @@ class CallSurfaceState {
   bool get showsMediaSurface =>
       isVisible && mode != CallSurfaceMode.managerOnly;
 
+  bool get showsExpandedOverlay =>
+      isVisible &&
+      (mode == CallSurfaceMode.expanded || mode == CallSurfaceMode.fullscreen);
+
   bool get showsManagerBar =>
       isVisible &&
       (mode == CallSurfaceMode.managerOnly || mode == CallSurfaceMode.pip);

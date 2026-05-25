@@ -4,6 +4,7 @@ import 'package:rain/application/runtime/voice_call_state.dart';
 import 'package:rain/application/state/call_surface_providers.dart';
 import 'package:rain/presentation/widgets/calls/rain_call_controls.dart';
 import 'package:rain/presentation/widgets/calls/rain_call_manager_bar.dart';
+import 'package:rain/presentation/widgets/calls/rain_call_overlay.dart';
 
 void main() {
   testWidgets('active call renders top manager identity and controls', (
@@ -157,8 +158,31 @@ void main() {
 
   testWidgets(
     'call overlay respects top safe area and does not overlap Android status bar',
-    (WidgetTester tester) async {},
-    skip: true,
+    (WidgetTester tester) async {
+      tester.view.physicalSize = const Size(360, 640);
+      tester.view.devicePixelRatio = 1;
+      tester.view.padding = const FakeViewPadding(top: 36);
+      addTearDown(tester.view.resetPhysicalSize);
+      addTearDown(tester.view.resetDevicePixelRatio);
+      addTearDown(tester.view.resetPadding);
+
+      await _pumpOverlay(
+        tester,
+        state: _activeCall(),
+        surface: const CallSurfaceState.visible(
+          peerId: 'bob',
+          callId: 'call-1',
+        ),
+      );
+
+      final panelTop = tester
+          .getTopLeft(
+            find.byKey(const ValueKey<String>('rain-call-panel-surface')),
+          )
+          .dy;
+
+      expect(panelTop, greaterThanOrEqualTo(48));
+    },
   );
 
   testWidgets('manager stays reachable in compact desktop bounds', (
@@ -299,6 +323,37 @@ Future<void> _pumpManager(
     home = MediaQuery(data: mediaQueryData, child: home);
   }
   await tester.pumpWidget(MaterialApp(home: home));
+}
+
+Future<void> _pumpOverlay(
+  WidgetTester tester, {
+  required VoiceCallState state,
+  required CallSurfaceState surface,
+}) async {
+  await tester.pumpWidget(
+    MaterialApp(
+      home: Scaffold(
+        body: Stack(
+          children: <Widget>[
+            Positioned.fill(
+              child: RainCallOverlay(
+                state: state,
+                surface: surface,
+                displayName: 'Bob',
+                onAccept: () {},
+                onReject: () {},
+                onHangUp: () {},
+                onRetry: () {},
+                onToggleMute: () {},
+                onMinimize: () {},
+                onExpand: () {},
+              ),
+            ),
+          ],
+        ),
+      ),
+    ),
+  );
 }
 
 VoiceCallState _activeCall({CallMediaMode mediaMode = CallMediaMode.audio}) {

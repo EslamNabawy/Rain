@@ -1472,6 +1472,33 @@ void main() {
     );
   });
 
+  testWidgets('video fullscreen overlay respects the Android status area', (
+    WidgetTester tester,
+  ) async {
+    tester.view.physicalSize = const Size(360, 640);
+    tester.view.devicePixelRatio = 1;
+    tester.view.padding = const FakeViewPadding(top: 36);
+    addTearDown(tester.view.resetPhysicalSize);
+    addTearDown(tester.view.resetDevicePixelRatio);
+    addTearDown(tester.view.resetPadding);
+
+    await _pumpCallOverlay(
+      tester,
+      _activeVoiceCall(mediaMode: CallMediaMode.video),
+      surfaceMode: CallSurfaceMode.fullscreen,
+    );
+
+    final stageTop = tester
+        .getTopLeft(
+          find.byKey(
+            const ValueKey<String>('rain-call-video-fullscreen-layout'),
+          ),
+        )
+        .dy;
+
+    expect(stageTop, greaterThanOrEqualTo(36));
+  });
+
   testWidgets('video overlay pip shows only the remote media window', (
     WidgetTester tester,
   ) async {

@@ -96,35 +96,42 @@ class RainCallOverlay extends StatelessWidget {
           );
         }
 
-        return Align(
-          alignment: Alignment.center,
-          child: Padding(
-            padding: const EdgeInsets.fromLTRB(16, 24, 16, 24),
-            child: _RainExpandedCallPanel(
-              state: state,
-              displayName: displayName,
-              gender: gender,
-              routeSummary: routeSummary,
-              panelWidth: _boundedWidth(
-                constraints.maxWidth,
-                _preferredPanelWidth(constraints.maxWidth, state),
-              ),
-              maxHeight: _boundedHeight(constraints.maxHeight),
-              videoRenderers: videoRenderers,
-              onAccept: onAccept,
-              onReject: onReject,
-              onHangUp: onHangUp,
-              onRetry: onRetry,
-              onToggleMute: onToggleMute,
-              onToggleDeafen: onToggleDeafen,
-              onToggleCamera: onToggleCamera,
-              onSwitchCamera: onSwitchCamera,
-              onSelectOutputRoute: onSelectOutputRoute,
-              controlCapabilities: controlCapabilities,
-              outputRouteOptions: outputRouteOptions,
-              onMinimize: onMinimize,
-              onFullscreen: onFullscreen,
-            ),
+        return SafeArea(
+          minimum: const EdgeInsets.all(12),
+          child: LayoutBuilder(
+            builder: (BuildContext context, BoxConstraints safeConstraints) {
+              return Align(
+                alignment: Alignment.center,
+                child: Padding(
+                  padding: const EdgeInsets.fromLTRB(4, 12, 4, 12),
+                  child: _RainExpandedCallPanel(
+                    state: state,
+                    displayName: displayName,
+                    gender: gender,
+                    routeSummary: routeSummary,
+                    panelWidth: _boundedWidth(
+                      safeConstraints.maxWidth,
+                      _preferredPanelWidth(safeConstraints.maxWidth, state),
+                    ),
+                    maxHeight: _boundedHeight(safeConstraints.maxHeight),
+                    videoRenderers: videoRenderers,
+                    onAccept: onAccept,
+                    onReject: onReject,
+                    onHangUp: onHangUp,
+                    onRetry: onRetry,
+                    onToggleMute: onToggleMute,
+                    onToggleDeafen: onToggleDeafen,
+                    onToggleCamera: onToggleCamera,
+                    onSwitchCamera: onSwitchCamera,
+                    onSelectOutputRoute: onSelectOutputRoute,
+                    controlCapabilities: controlCapabilities,
+                    outputRouteOptions: outputRouteOptions,
+                    onMinimize: onMinimize,
+                    onFullscreen: onFullscreen,
+                  ),
+                ),
+              );
+            },
           ),
         );
       },
@@ -180,11 +187,13 @@ class _RainFullscreenVideoSurface extends StatelessWidget {
     return ColoredBox(
       key: const ValueKey<String>('rain-call-video-fullscreen-surface'),
       color: scheme.surface,
-      child: RainVideoCallStage(
-        state: state,
-        accent: accent,
-        renderers: videoRenderers,
-        layout: RainVideoCallStageLayout.fullscreen,
+      child: SafeArea(
+        child: RainVideoCallStage(
+          state: state,
+          accent: accent,
+          renderers: videoRenderers,
+          layout: RainVideoCallStageLayout.fullscreen,
+        ),
       ),
     );
   }
