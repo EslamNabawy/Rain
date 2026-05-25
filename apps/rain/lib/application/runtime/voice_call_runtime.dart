@@ -42,6 +42,8 @@ extension VoiceCallRuntime on RainRuntimeController {
       'Video call ended because the app went to background.';
   static const String _voiceCallAudioRouteUnavailable =
       'Audio route unavailable.';
+  static const String _voiceCallReconnecting =
+      'Peer connection interrupted. Reconnecting...';
   static bool get _legacyControlChannelVoiceSignalingFrozen => true;
   static const Duration _voiceCallExpiry = Duration(minutes: 2);
   static const int _voiceCallTerminalSeq = 1 << 30;
@@ -1117,6 +1119,8 @@ extension VoiceCallRuntime on RainRuntimeController {
         ? previous.startedAt
         : null;
     final keepsLocalAudioControls = mappedPhase == VoiceCallPhase.active;
+    final mediaReconnecting =
+        mappedPhase == VoiceCallPhase.active && sessionState.mediaReconnecting;
 
     if (mappedPhase == VoiceCallPhase.idle) {
       _setVoiceCallState(const VoiceCallState.idle());
@@ -1141,6 +1145,10 @@ extension VoiceCallRuntime on RainRuntimeController {
         hasLocalVideo: isSameCall && previous.hasLocalVideo,
         hasRemoteVideo: isSameCall && previous.hasRemoteVideo,
         videoFirstFrameTimedOut: isSameCall && previous.videoFirstFrameTimedOut,
+        mediaReconnecting: mediaReconnecting,
+        reconnectingSince: mediaReconnecting
+            ? sessionState.reconnectingSince ?? previous.reconnectingSince
+            : null,
         outputRoute: isSameCall && keepsLocalAudioControls
             ? previous.outputRoute
             : VoiceCallOutputRoute.systemDefault,
@@ -1501,6 +1509,7 @@ extension VoiceCallRuntime on RainRuntimeController {
   }
 
   Future<void> _disposeCurrentVoiceCallSession() async {
+    _cancelVoiceCallReconnectGrace();
     await _cancelVoiceSignalingSubscriptions();
     final session = _voiceCallSession;
     if (session == null) {
@@ -1514,6 +1523,7 @@ extension VoiceCallRuntime on RainRuntimeController {
   Future<void> _disposeVoiceCallSession(VoiceCallSession session) async {
     if (_voiceCallSession == session) {
       _voiceCallSession = null;
+      _cancelVoiceCallReconnectGrace();
       await _cancelVoiceSignalingSubscriptions();
       await _voiceCallSessionSubscription?.cancel();
       _voiceCallSessionSubscription = null;
@@ -2002,10 +2012,12 @@ extension VoiceCallRuntime on RainRuntimeController {
       hasLocalVideo: false,
       hasRemoteVideo: false,
       videoFirstFrameTimedOut: false,
+      mediaReconnecting: false,
       outputRoute: VoiceCallOutputRoute.systemDefault,
       updatedAt: DateTime.now().millisecondsSinceEpoch,
       clearError: true,
       clearOutputRouteWarning: true,
+      clearReconnectingSince: true,
       audioLevel: const VoiceAudioLevel.unavailable(),
     );
   }
@@ -2032,19 +2044,86 @@ extension VoiceCallRuntime on RainRuntimeController {
 
   void _markVoiceCallReconnectingForPeer(String peerId) {
     final current = _voiceCallState;
-    if (current.peerId != _normalizedUsername(peerId) ||
+    final normalizedPeerId = _normalizedUsername(peerId);
+    if (current.peerId != normalizedPeerId ||
         current.phase == VoiceCallPhase.idle ||
         current.phase == VoiceCallPhase.failed ||
         current.phase == VoiceCallPhase.ending) {
       return;
     }
+    final now = DateTime.now().millisecondsSinceEpoch;
+    final session = _voiceCallSession;
+    if (session != null && session.callId == current.callId) {
+      session.markMediaReconnecting(detail: _voiceCallReconnecting);
+    }
     _setVoiceCallState(
       current.copyWith(
-        detail: 'Peer connection interrupted. Reconnecting...',
-        updatedAt: DateTime.now().millisecondsSinceEpoch,
+        mediaReconnecting: true,
+        reconnectingSince: current.reconnectingSince ?? now,
+        detail: _voiceCallReconnecting,
+        updatedAt: now,
         clearError: true,
       ),
     );
+    _armVoiceCallReconnectGrace(current.copyWith(updatedAt: now));
+  }
+
+  void _clearVoiceCallReconnectingForPeer(String peerId) {
+    final current = _voiceCallState;
+    if (current.peerId != _normalizedUsername(peerId) ||
+        !current.mediaReconnecting) {
+      return;
+    }
+    final session = _voiceCallSession;
+    if (session != null && session.callId == current.callId) {
+      session.clearMediaReconnecting();
+    }
+    _cancelVoiceCallReconnectGrace();
+    _setVoiceCallState(
+      current.copyWith(
+        mediaReconnecting: false,
+        detail: 'Voice call connected.',
+        updatedAt: DateTime.now().millisecondsSinceEpoch,
+        clearReconnectingSince: true,
+        clearError: true,
+      ),
+    );
+  }
+
+  void _armVoiceCallReconnectGrace(VoiceCallState call) {
+    final callId = call.callId;
+    final peerId = call.peerId;
+    if (callId == null ||
+        peerId == null ||
+        activeCallReconnectGrace <= Duration.zero) {
+      return;
+    }
+    _voiceCallReconnectGraceTimer?.cancel();
+    final sessionEpoch = call.sessionEpoch;
+    _voiceCallReconnectGraceTimer = Timer(activeCallReconnectGrace, () {
+      final current = _voiceCallState;
+      if (current.callId != callId ||
+          current.peerId != peerId ||
+          current.sessionEpoch != sessionEpoch ||
+          !current.mediaReconnecting ||
+          current.phase != VoiceCallPhase.active) {
+        return;
+      }
+      unawaited(
+        _endVoiceCallForPeer(
+          peerId,
+          notifyPeer: false,
+          detail: _voiceCallNetworkLost,
+          failureReason: VoiceCallFailureReason.networkLost,
+          failureDetail: _voiceCallNetworkLost,
+        ),
+      );
+    });
+  }
+
+  void _cancelVoiceCallReconnectGrace() {
+    _voiceCallReconnectGraceTimer?.cancel();
+    _voiceCallReconnectGraceTimer = null;
   }
 
   Future<void> _failVoiceCall(
@@ -2083,9 +2162,11 @@ extension VoiceCallRuntime on RainRuntimeController {
         hasLocalVideo: false,
         hasRemoteVideo: false,
         videoFirstFrameTimedOut: false,
+        mediaReconnecting: false,
         outputRoute: VoiceCallOutputRoute.systemDefault,
         updatedAt: DateTime.now().millisecondsSinceEpoch,
         clearOutputRouteWarning: true,
+        clearReconnectingSince: true,
         audioLevel: const VoiceAudioLevel.unavailable(),
       ),
     );
@@ -2155,6 +2236,12 @@ extension VoiceCallRuntime on RainRuntimeController {
   }
 
   void _setVoiceCallState(VoiceCallState state) {
+    if (!state.mediaReconnecting ||
+        state.phase == VoiceCallPhase.idle ||
+        state.phase == VoiceCallPhase.failed ||
+        state.phase == VoiceCallPhase.ending) {
+      _cancelVoiceCallReconnectGrace();
+    }
     _voiceCallState = state;
     if (!_voiceCallStateController.isClosed) {
       _voiceCallStateController.add(state);

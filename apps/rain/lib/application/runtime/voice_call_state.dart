@@ -61,6 +61,8 @@ class VoiceCallState {
     this.hasLocalVideo = false,
     this.hasRemoteVideo = false,
     this.videoFirstFrameTimedOut = false,
+    this.mediaReconnecting = false,
+    this.reconnectingSince,
     this.outputRoute = VoiceCallOutputRoute.systemDefault,
     this.outputRouteWarning,
     this.startedAt,
@@ -86,6 +88,8 @@ class VoiceCallState {
       hasLocalVideo = false,
       hasRemoteVideo = false,
       videoFirstFrameTimedOut = false,
+      mediaReconnecting = false,
+      reconnectingSince = null,
       outputRoute = VoiceCallOutputRoute.systemDefault,
       outputRouteWarning = null,
       startedAt = null,
@@ -109,6 +113,8 @@ class VoiceCallState {
   final bool hasLocalVideo;
   final bool hasRemoteVideo;
   final bool videoFirstFrameTimedOut;
+  final bool mediaReconnecting;
+  final int? reconnectingSince;
   final VoiceCallOutputRoute outputRoute;
   final String? outputRouteWarning;
   final int? startedAt;
@@ -174,6 +180,8 @@ class VoiceCallState {
     bool? hasLocalVideo,
     bool? hasRemoteVideo,
     bool? videoFirstFrameTimedOut,
+    bool? mediaReconnecting,
+    int? reconnectingSince,
     VoiceCallOutputRoute? outputRoute,
     String? outputRouteWarning,
     int? startedAt,
@@ -185,7 +193,10 @@ class VoiceCallState {
     bool clearError = false,
     bool clearFailureReason = false,
     bool clearOutputRouteWarning = false,
+    bool clearReconnectingSince = false,
   }) {
+    final effectiveMediaReconnecting =
+        mediaReconnecting ?? this.mediaReconnecting;
     return VoiceCallState(
       phase: phase ?? this.phase,
       peerId: peerId ?? this.peerId,
@@ -202,6 +213,10 @@ class VoiceCallState {
       hasRemoteVideo: hasRemoteVideo ?? this.hasRemoteVideo,
       videoFirstFrameTimedOut:
           videoFirstFrameTimedOut ?? this.videoFirstFrameTimedOut,
+      mediaReconnecting: effectiveMediaReconnecting,
+      reconnectingSince: !effectiveMediaReconnecting || clearReconnectingSince
+          ? null
+          : reconnectingSince ?? this.reconnectingSince,
       outputRoute: outputRoute ?? this.outputRoute,
       outputRouteWarning: clearOutputRouteWarning
           ? null

@@ -52,6 +52,8 @@ final class VoiceCallSessionState {
     this.audioLevel = const VoiceMediaAudioLevel.unavailable(),
     this.isRemoteMuted = false,
     this.isRemoteCameraMuted = false,
+    this.mediaReconnecting = false,
+    this.reconnectingSince,
     this.detail,
     this.error,
     this.reasonCode,
@@ -76,6 +78,8 @@ final class VoiceCallSessionState {
   final VoiceMediaAudioLevel audioLevel;
   final bool isRemoteMuted;
   final bool isRemoteCameraMuted;
+  final bool mediaReconnecting;
+  final int? reconnectingSince;
   final String? detail;
   final Object? error;
   final String? reasonCode;
@@ -385,6 +389,8 @@ final class VoiceCallSession {
       audioLevel: state.audioLevel,
       isRemoteMuted: frame.muted ?? state.isRemoteMuted,
       isRemoteCameraMuted: frame.cameraMuted ?? state.isRemoteCameraMuted,
+      mediaReconnecting: state.mediaReconnecting,
+      reconnectingSince: state.reconnectingSince,
       detail: state.detail,
       error: state.error,
       reasonCode: state.reasonCode,
@@ -630,6 +636,9 @@ final class VoiceCallSession {
                 VoiceCallSessionPhase.active,
                 detail: 'Voice call connected.',
               );
+            } else if (state.phase == VoiceCallSessionPhase.active &&
+                state.mediaReconnecting) {
+              _setMediaReconnecting(false, detail: 'Voice call connected.');
             }
           }),
         );
@@ -672,6 +681,8 @@ final class VoiceCallSession {
       audioLevel: audioLevel,
       isRemoteMuted: state.isRemoteMuted,
       isRemoteCameraMuted: state.isRemoteCameraMuted,
+      mediaReconnecting: state.mediaReconnecting,
+      reconnectingSince: state.reconnectingSince,
       detail: state.detail,
       error: state.error,
       reasonCode: state.reasonCode,
@@ -897,6 +908,42 @@ final class VoiceCallSession {
     }
   }
 
+  void markMediaReconnecting({String? detail}) {
+    if (_disposed || state.phase != VoiceCallSessionPhase.active) {
+      return;
+    }
+    _setMediaReconnecting(true, detail: detail ?? 'Call media reconnecting.');
+  }
+
+  void clearMediaReconnecting({String? detail}) {
+    if (_disposed || !state.mediaReconnecting) {
+      return;
+    }
+    _setMediaReconnecting(false, detail: detail ?? 'Voice call connected.');
+  }
+
+  void _setMediaReconnecting(bool reconnecting, {required String detail}) {
+    final now = clock().millisecondsSinceEpoch;
+    final updated = VoiceCallSessionState(
+      phase: state.phase,
+      updatedAt: now,
+      mediaMode: state.mediaMode,
+      audioLevel: state.audioLevel,
+      isRemoteMuted: state.isRemoteMuted,
+      isRemoteCameraMuted: state.isRemoteCameraMuted,
+      mediaReconnecting: reconnecting,
+      reconnectingSince: reconnecting ? state.reconnectingSince ?? now : null,
+      detail: detail,
+      error: reconnecting ? state.error : null,
+      reasonCode: reconnecting ? state.reasonCode : null,
+      mediaDiagnostics: state.mediaDiagnostics,
+    );
+    state = updated;
+    if (!_stateController.isClosed) {
+      _stateController.add(updated);
+    }
+  }
+
   bool _transitionTo(
     VoiceCallSessionPhase next, {
     String? detail,
@@ -916,6 +963,8 @@ final class VoiceCallSession {
           : const VoiceMediaAudioLevel.unavailable(),
       isRemoteMuted: state.isRemoteMuted,
       isRemoteCameraMuted: state.isRemoteCameraMuted,
+      mediaReconnecting: false,
+      reconnectingSince: null,
       detail: detail,
       error: error,
       reasonCode: reasonCode,

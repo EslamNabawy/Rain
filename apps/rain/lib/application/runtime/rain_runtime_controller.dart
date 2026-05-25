@@ -68,6 +68,7 @@ class RainRuntimeController with WidgetsBindingObserver {
     this.startupMediaPermissionWarmup,
     this.videoCallRendererFactory = const RtcVideoCallRendererFactory(),
     this.videoCallRemoteFirstFrameTimeout = const Duration(seconds: 8),
+    this.activeCallReconnectGrace = const Duration(seconds: 8),
     this.errorRecorder,
   }) : fileTransferStore = fileTransferStore ?? FileTransferStore(database),
        voiceSignalingAdapter =
@@ -109,6 +110,7 @@ class RainRuntimeController with WidgetsBindingObserver {
   final Future<void> Function()? startupMediaPermissionWarmup;
   final VideoCallRendererFactory videoCallRendererFactory;
   final Duration videoCallRemoteFirstFrameTimeout;
+  final Duration activeCallReconnectGrace;
   final Set<String> _manualDisconnectedPeers = <String>{};
   final Set<String> _registeredPeerListeners = <String>{};
   final Set<String> _passivePeerListeners = <String>{};
@@ -130,6 +132,7 @@ class RainRuntimeController with WidgetsBindingObserver {
   VoiceCallState _voiceCallState = const VoiceCallState.idle();
   VoiceCallSession? _voiceCallSession;
   StreamSubscription<VoiceCallSessionState>? _voiceCallSessionSubscription;
+  Timer? _voiceCallReconnectGraceTimer;
   CallMediaConnection? _videoCallMediaConnection;
   VideoCallRenderers? _videoCallRenderers;
   VideoCallRendererState? _lastVideoCallRendererState;
@@ -309,6 +312,7 @@ class RainRuntimeController with WidgetsBindingObserver {
           if (_manualDisconnectedPeers.contains(session.peerId)) {
             return;
           }
+          _clearVoiceCallReconnectingForPeer(session.peerId);
           _connectionCoordinator.recordAttemptSuccess(session.peerId);
           await _localMutations.run(
             () => messageDeliveryService.flushQueue(
@@ -1119,6 +1123,7 @@ class RainRuntimeController with WidgetsBindingObserver {
   void _recordSessionAttemptState(Session session) {
     switch (session.state) {
       case SessionState.connected:
+        _clearVoiceCallReconnectingForPeer(session.peerId);
         _connectionCoordinator.recordAttemptSuccess(session.peerId);
         break;
       case SessionState.failed:
@@ -1243,6 +1248,7 @@ class RainRuntimeController with WidgetsBindingObserver {
 
     WidgetsBinding.instance.removeObserver(this);
     _backgroundOfflineTimer?.cancel();
+    _cancelVoiceCallReconnectGrace();
     await _disposeCurrentVoiceCallSession();
     _heartbeatTimer?.cancel();
     _friendRequestRefreshTimer?.cancel();

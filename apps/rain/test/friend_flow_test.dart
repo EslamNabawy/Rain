@@ -4802,9 +4802,62 @@ void main() {
 
     test(
       'weak call transport enters reconnecting grace instead of immediate failed disconnect',
-      () async {},
-      skip:
-          'Phase 02 will replace this baseline with the active call recovery regression.',
+      () async {
+        final harness = await _createTwoUserCallHarness(
+          db,
+          alice,
+          activeCallReconnectGrace: const Duration(milliseconds: 120),
+        );
+        addTearDown(harness.dispose);
+        final aliceRuntime = harness.aliceRuntime;
+        final bobRuntime = harness.bobRuntime;
+
+        await aliceRuntime.start();
+        await bobRuntime.start();
+        final callId = await _startAndAcceptHarnessCall(
+          harness,
+          callerIsAlice: true,
+          mediaMode: protocol.CallMediaMode.audio,
+        );
+
+        harness.aliceBrain.emitTransientPeerDisconnect('bob');
+        await _waitForCondition(
+          () => aliceRuntime.voiceCallState.mediaReconnecting,
+          'active call to enter reconnecting grace',
+        );
+
+        expect(aliceRuntime.voiceCallState.phase, VoiceCallPhase.active);
+        expect(aliceRuntime.voiceCallState.detail, contains('Reconnecting'));
+        expect(aliceRuntime.voiceCallState.reconnectingSince, isNotNull);
+        expect(
+          harness.adapter.rooms[callId]?.status,
+          VoiceCallSignalingStatus.connected,
+        );
+
+        harness.aliceBrain.markConnected('bob');
+        await _waitForCondition(
+          () =>
+              aliceRuntime.voiceCallState.phase == VoiceCallPhase.active &&
+              !aliceRuntime.voiceCallState.mediaReconnecting,
+          'active call reconnecting grace to clear on recovery',
+        );
+        expect(
+          harness.adapter.rooms[callId]?.status,
+          VoiceCallSignalingStatus.connected,
+        );
+
+        harness.aliceBrain.emitTransientPeerDisconnect('bob');
+        await _waitForCondition(
+          () => aliceRuntime.voiceCallState.phase == VoiceCallPhase.failed,
+          'active call reconnecting grace to fail after timeout',
+        );
+
+        expect(
+          aliceRuntime.voiceCallState.failureReason,
+          VoiceCallFailureReason.networkLost,
+        );
+        expect(harness.adapter.rooms[callId]?.reasonCode, 'networkLost');
+      },
     );
 
     test('connectPeer interactive rejects pending relationships', () async {
@@ -5310,6 +5363,7 @@ RainRuntimeController _runtimeFor(
   VideoCallRendererFactory videoCallRendererFactory =
       const RtcVideoCallRendererFactory(),
   Duration videoCallRemoteFirstFrameTimeout = const Duration(seconds: 8),
+  Duration activeCallReconnectGrace = const Duration(seconds: 8),
 }) {
   final messageStore = MessageStore(database);
   final offlineQueueStore = OfflineQueueStore(database);
@@ -5327,6 +5381,7 @@ RainRuntimeController _runtimeFor(
     ),
     videoCallRendererFactory: videoCallRendererFactory,
     videoCallRemoteFirstFrameTimeout: videoCallRemoteFirstFrameTimeout,
+    activeCallReconnectGrace: activeCallReconnectGrace,
     errorRecorder: errorRecorder,
   );
 }
@@ -5336,6 +5391,7 @@ Future<_TwoUserCallHarness> _createTwoUserCallHarness(
   RainIdentity alice, {
   TestSessionManager? aliceBrain,
   TestSessionManager? bobBrain,
+  Duration activeCallReconnectGrace = const Duration(seconds: 8),
 }) async {
   final adapter = RecordingVoiceSignalingAdapter();
   final resolvedAliceBrain = aliceBrain ?? TestSessionManager();
@@ -5382,6 +5438,7 @@ Future<_TwoUserCallHarness> _createTwoUserCallHarness(
       alice,
       adapter,
       brain: resolvedAliceBrain,
+      activeCallReconnectGrace: activeCallReconnectGrace,
       videoCallRendererFactory: const _TestVideoCallRendererFactory(),
     ),
     bobRuntime: _runtimeFor(
@@ -5389,6 +5446,7 @@ Future<_TwoUserCallHarness> _createTwoUserCallHarness(
       bob,
       adapter,
       brain: resolvedBobBrain,
+      activeCallReconnectGrace: activeCallReconnectGrace,
       videoCallRendererFactory: const _TestVideoCallRendererFactory(),
     ),
   );
@@ -5992,6 +6050,8 @@ class TestSessionManager implements SessionManager {
     }
     final session = existing.copyWith(
       state: SessionState.connected,
+      phase: SessionPhase.connected,
+      detail: 'Connected.',
       connectedAt: DateTime.now().millisecondsSinceEpoch,
       isOfferOwner: isOfferOwner,
     );
@@ -6013,6 +6073,29 @@ class TestSessionManager implements SessionManager {
     );
     _sessions[peerId] = session;
     _sessionChangedController.add(session);
+  }
+
+  void emitTransientPeerDisconnect(String peerId) {
+    final existing = _sessions[peerId];
+    final session =
+        existing?.copyWith(
+          state: SessionState.reconnecting,
+          phase: SessionPhase.reconnecting,
+          detail: 'Peer transport reconnecting.',
+          updatedAt: DateTime.now().millisecondsSinceEpoch,
+        ) ??
+        Session(
+          peerId: peerId,
+          state: SessionState.reconnecting,
+          connectionType: ConnectionType.signaling,
+          phase: SessionPhase.reconnecting,
+          detail: 'Peer transport reconnecting.',
+          updatedAt: DateTime.now().millisecondsSinceEpoch,
+          sender: (_) {},
+        );
+    _sessions[peerId] = session;
+    _sessionChangedController.add(session);
+    _peerDisconnectedController.add(peerId);
   }
 
   void seedSession(String peerId, SessionState state) {

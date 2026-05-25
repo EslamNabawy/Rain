@@ -156,6 +156,40 @@ void main() {
     await subscription.cancel();
   });
 
+  test(
+    'active session exposes media reconnect metadata without failing',
+    () async {
+      final media = _FakeVoiceMediaConnection();
+      final sent = <VoiceCallFrame>[];
+      final session = _session(media: media, sent: sent);
+
+      await session.startOutgoing();
+      await session.handleFrame(
+        _frame(VoiceCallFrameType.accept, from: 'bob', to: 'alice', seq: 1),
+      );
+      media.emitState(const VoiceMediaState(phase: VoiceMediaPhase.connected));
+      await pumpEventQueue();
+
+      session.markMediaReconnecting(detail: 'Peer connection interrupted.');
+
+      expect(session.state.phase, VoiceCallSessionPhase.active);
+      expect(session.state.mediaReconnecting, isTrue);
+      expect(session.state.reconnectingSince, 1000);
+      expect(session.state.detail, 'Peer connection interrupted.');
+      expect(media.disposeCalls, 0);
+      expect(
+        sent.map((VoiceCallFrame frame) => frame.type),
+        isNot(contains(VoiceCallFrameType.hangup)),
+      );
+
+      session.clearMediaReconnecting();
+
+      expect(session.state.phase, VoiceCallSessionPhase.active);
+      expect(session.state.mediaReconnecting, isFalse);
+      expect(session.state.reconnectingSince, isNull);
+    },
+  );
+
   test('active session deafen and output route are local only', () async {
     final media = _FakeVoiceMediaConnection();
     final sent = <VoiceCallFrame>[];
