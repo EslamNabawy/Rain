@@ -138,6 +138,9 @@ final brainProvider = Provider<SessionManager?>((Ref ref) {
     selectedVideoInputDeviceIdProvider: ref
         .watch(appSettingsStoreProvider)
         .loadSelectedVideoInputDeviceId,
+    callMediaProcessingConfigProvider: ref
+        .watch(appSettingsStoreProvider)
+        .loadCallMediaProcessingConfig,
   );
 
   return brain;

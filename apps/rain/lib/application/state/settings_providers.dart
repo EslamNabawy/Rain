@@ -229,6 +229,61 @@ class VoiceAudioSettingsController extends AsyncNotifier<AppAudioSettings> {
   }
 }
 
+final callProcessingSettingsProvider =
+    AsyncNotifierProvider<
+      CallProcessingSettingsController,
+      AppCallProcessingSettings
+    >(CallProcessingSettingsController.new);
+
+class CallProcessingSettingsController
+    extends AsyncNotifier<AppCallProcessingSettings> {
+  @override
+  Future<AppCallProcessingSettings> build() {
+    return ref.watch(appSettingsStoreProvider).loadCallProcessingSettings();
+  }
+
+  Future<void> setClearVoiceEnabled(bool enabled) {
+    return _persist(
+      write: (AppSettingsStore store) => store.setClearVoiceEnabled(enabled),
+      apply: (AppCallProcessingSettings current) =>
+          current.copyWith(clearVoiceEnabled: enabled),
+    );
+  }
+
+  Future<void> setAutoVideoOptimizeEnabled(bool enabled) {
+    return _persist(
+      write: (AppSettingsStore store) =>
+          store.setAutoVideoOptimizeEnabled(enabled),
+      apply: (AppCallProcessingSettings current) =>
+          current.copyWith(autoVideoOptimizeEnabled: enabled),
+    );
+  }
+
+  Future<AppCallProcessingSettings> _currentSettings() async {
+    return state.value ??
+        ref.read(appSettingsStoreProvider).loadCallProcessingSettings();
+  }
+
+  Future<void> _persist({
+    required Future<void> Function(AppSettingsStore store) write,
+    required AppCallProcessingSettings Function(
+      AppCallProcessingSettings current,
+    )
+    apply,
+  }) async {
+    final store = ref.read(appSettingsStoreProvider);
+    final previous = await _currentSettings();
+    final next = apply(previous);
+    state = AsyncValue.data(next);
+    try {
+      await write(store);
+    } catch (error, stackTrace) {
+      state = AsyncValue.data(previous);
+      Error.throwWithStackTrace(error, stackTrace);
+    }
+  }
+}
+
 final audioOutputCapabilityProvider =
     AsyncNotifierProvider<
       AudioOutputCapabilityController,

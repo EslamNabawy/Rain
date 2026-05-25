@@ -1,6 +1,36 @@
 import 'package:shared_preferences/shared_preferences.dart';
 
+import 'package:protocol_brain/protocol_brain.dart';
+
 enum CallAudioOutputPreference { systemDefault, speaker, bluetooth }
+
+final class AppCallProcessingSettings {
+  const AppCallProcessingSettings({
+    this.clearVoiceEnabled = true,
+    this.autoVideoOptimizeEnabled = true,
+  });
+
+  final bool clearVoiceEnabled;
+  final bool autoVideoOptimizeEnabled;
+
+  CallMediaProcessingConfig toCallMediaProcessingConfig() {
+    return CallMediaProcessingConfig(
+      clearVoiceEnabled: clearVoiceEnabled,
+      autoVideoOptimizeEnabled: autoVideoOptimizeEnabled,
+    );
+  }
+
+  AppCallProcessingSettings copyWith({
+    bool? clearVoiceEnabled,
+    bool? autoVideoOptimizeEnabled,
+  }) {
+    return AppCallProcessingSettings(
+      clearVoiceEnabled: clearVoiceEnabled ?? this.clearVoiceEnabled,
+      autoVideoOptimizeEnabled:
+          autoVideoOptimizeEnabled ?? this.autoVideoOptimizeEnabled,
+    );
+  }
+}
 
 final class AppAudioSettings {
   const AppAudioSettings({
@@ -47,6 +77,8 @@ class AppSettingsStore {
   static const double defaultSoundEffectsVolume = 1.0;
   static const bool defaultCallSoundsEnabled = true;
   static const bool defaultReduceSoundsDuringCall = true;
+  static const bool defaultClearVoiceEnabled = true;
+  static const bool defaultAutoVideoOptimizeEnabled = true;
   static const CallAudioOutputPreference defaultCallAudioOutputPreference =
       CallAudioOutputPreference.systemDefault;
 
@@ -66,6 +98,9 @@ class AppSettingsStore {
   static const String _reduceSoundsDuringCallKey = 'reduce_sounds_during_call';
   static const String _defaultCallAudioOutputPreferenceKey =
       'default_call_audio_output_preference';
+  static const String _callClearVoiceEnabledKey = 'call_clear_voice_enabled';
+  static const String _callVideoAutoOptimizeEnabledKey =
+      'call_video_auto_optimize_enabled';
 
   final SharedPreferencesAsync _preferences;
 
@@ -217,5 +252,34 @@ class AppSettingsStore {
       _defaultCallAudioOutputPreferenceKey,
       preference.name,
     );
+  }
+
+  Future<AppCallProcessingSettings> loadCallProcessingSettings() async {
+    return AppCallProcessingSettings(
+      clearVoiceEnabled: await loadClearVoiceEnabled(),
+      autoVideoOptimizeEnabled: await loadAutoVideoOptimizeEnabled(),
+    );
+  }
+
+  Future<CallMediaProcessingConfig> loadCallMediaProcessingConfig() async {
+    return (await loadCallProcessingSettings()).toCallMediaProcessingConfig();
+  }
+
+  Future<bool> loadClearVoiceEnabled() async {
+    return await _preferences.getBool(_callClearVoiceEnabledKey) ??
+        defaultClearVoiceEnabled;
+  }
+
+  Future<void> setClearVoiceEnabled(bool enabled) async {
+    await _preferences.setBool(_callClearVoiceEnabledKey, enabled);
+  }
+
+  Future<bool> loadAutoVideoOptimizeEnabled() async {
+    return await _preferences.getBool(_callVideoAutoOptimizeEnabledKey) ??
+        defaultAutoVideoOptimizeEnabled;
+  }
+
+  Future<void> setAutoVideoOptimizeEnabled(bool enabled) async {
+    await _preferences.setBool(_callVideoAutoOptimizeEnabledKey, enabled);
   }
 }

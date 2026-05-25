@@ -45,6 +45,11 @@ void main() {
       findsOneWidget,
     );
     expect(find.text('Test microphone'), findsOneWidget);
+    expect(find.text('Clear voice'), findsOneWidget);
+    expect(
+      find.text('Clear voice reduces background noise during calls.'),
+      findsOneWidget,
+    );
     expect(find.text('Default call output'), findsOneWidget);
     expect(find.text('System default'), findsOneWidget);
     expect(find.text('Sound effects'), findsOneWidget);
@@ -264,6 +269,38 @@ void main() {
       await AppSettingsStore().loadSelectedVideoInputDeviceId(),
       'rear-camera',
     );
+  });
+
+  testWidgets('call processing toggles persist from settings', (
+    WidgetTester tester,
+  ) async {
+    _useTallView(tester);
+    final harness = _SettingsHarness();
+    addTearDown(harness.dispose);
+
+    await tester.pumpSettingsScreen(harness: harness);
+    await tester.tap(find.text('Clear voice'));
+    await tester.pump();
+    await tester.pump(const Duration(milliseconds: 300));
+
+    expect(await AppSettingsStore().loadClearVoiceEnabled(), isFalse);
+
+    await tester.drag(find.byType(ListView), const Offset(0, -500));
+    await tester.pumpSettingsFrame();
+
+    expect(find.text('Auto video optimize'), findsOneWidget);
+    expect(
+      find.text(
+        'Auto video optimize adjusts quality when the network is weak.',
+      ),
+      findsOneWidget,
+    );
+
+    await tester.tap(find.text('Auto video optimize'));
+    await tester.pump();
+    await tester.pump(const Duration(milliseconds: 300));
+
+    expect(await AppSettingsStore().loadAutoVideoOptimizeEnabled(), isFalse);
   });
 
   testWidgets('sound effects toggle persists from settings', (

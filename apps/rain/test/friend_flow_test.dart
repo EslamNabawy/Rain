@@ -6684,6 +6684,9 @@ class _TestCallMediaConnection implements CallMediaConnection {
   }
 
   @override
+  Future<void> refreshProcessingConfig() async {}
+
+  @override
   Future<void> dispose() async {
     if (disposed) {
       return;

@@ -4,6 +4,33 @@ import '../voice/voice_media_models.dart';
 
 enum CallMediaKind { audio, video }
 
+enum CallVideoOptimizationProfile {
+  excellent(maxBitrateBps: 1200000, maxFramerate: 30, scaleResolutionDownBy: 1),
+  good(maxBitrateBps: 800000, maxFramerate: 24, scaleResolutionDownBy: 1),
+  fair(maxBitrateBps: 450000, maxFramerate: 20, scaleResolutionDownBy: 1.5),
+  poor(maxBitrateBps: 250000, maxFramerate: 15, scaleResolutionDownBy: 2);
+
+  const CallVideoOptimizationProfile({
+    required this.maxBitrateBps,
+    required this.maxFramerate,
+    required this.scaleResolutionDownBy,
+  });
+
+  final int maxBitrateBps;
+  final int maxFramerate;
+  final double scaleResolutionDownBy;
+}
+
+final class CallMediaProcessingConfig {
+  const CallMediaProcessingConfig({
+    this.clearVoiceEnabled = true,
+    this.autoVideoOptimizeEnabled = true,
+  });
+
+  final bool clearVoiceEnabled;
+  final bool autoVideoOptimizeEnabled;
+}
+
 enum CallMediaPhase {
   idle,
   startingLocalMedia,
@@ -81,6 +108,8 @@ final class CallMediaDiagnostics {
     this.hasLocalVideo = false,
     this.peerConnectionClosed = false,
     this.disposed = false,
+    this.processingConfig = const CallMediaProcessingConfig(),
+    this.activeVideoOptimizationProfile,
     this.lastDetail,
     this.lastError,
     this.lastFailureReason,
@@ -99,6 +128,8 @@ final class CallMediaDiagnostics {
   final bool hasLocalVideo;
   final bool peerConnectionClosed;
   final bool disposed;
+  final CallMediaProcessingConfig processingConfig;
+  final CallVideoOptimizationProfile? activeVideoOptimizationProfile;
   final String? lastDetail;
   final String? lastError;
   final CallMediaFailureReason? lastFailureReason;

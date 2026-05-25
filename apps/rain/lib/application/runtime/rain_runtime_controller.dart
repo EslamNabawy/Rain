@@ -173,6 +173,14 @@ class RainRuntimeController with WidgetsBindingObserver {
 
   VideoCallRenderers? get videoCallRenderers => _videoCallRenderers;
 
+  Future<void> refreshCallMediaProcessingConfig() async {
+    final media = _videoCallMediaConnection;
+    if (media == null) {
+      return;
+    }
+    await media.refreshProcessingConfig();
+  }
+
   Stream<VoiceCallState> watchVoiceCallState() async* {
     yield _voiceCallState;
     yield* _voiceCallStateController.stream;

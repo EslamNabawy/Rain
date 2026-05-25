@@ -473,6 +473,9 @@ class _NoopCallMediaConnection implements CallMediaConnection {
   Future<void> setAudioOutputRoute(CallMediaOutputRoute route) async {}
 
   @override
+  Future<void> refreshProcessingConfig() async {}
+
+  @override
   Future<void> dispose() async {
     await _ice.close();
     await _tracks.close();

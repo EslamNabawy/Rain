@@ -89,6 +89,19 @@ void main() {
     );
   });
 
+  test('call processing settings load enabled defaults', () async {
+    final store = AppSettingsStore();
+
+    final settings = await store.loadCallProcessingSettings();
+
+    expect(settings.clearVoiceEnabled, isTrue);
+    expect(settings.autoVideoOptimizeEnabled, isTrue);
+    expect(
+      (await store.loadCallMediaProcessingConfig()).clearVoiceEnabled,
+      isTrue,
+    );
+  });
+
   test('sound effects toggle persists locally', () async {
     final store = AppSettingsStore();
 
@@ -154,6 +167,21 @@ void main() {
     expect(
       (await store.loadAudioSettings()).defaultOutputPreference,
       CallAudioOutputPreference.bluetooth,
+    );
+  });
+
+  test('call processing toggles persist locally', () async {
+    final store = AppSettingsStore();
+
+    await store.setClearVoiceEnabled(false);
+    await store.setAutoVideoOptimizeEnabled(false);
+
+    final settings = await store.loadCallProcessingSettings();
+    expect(settings.clearVoiceEnabled, isFalse);
+    expect(settings.autoVideoOptimizeEnabled, isFalse);
+    expect(
+      (await store.loadCallMediaProcessingConfig()).autoVideoOptimizeEnabled,
+      isFalse,
     );
   });
 }

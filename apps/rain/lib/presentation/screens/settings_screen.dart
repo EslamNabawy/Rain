@@ -57,6 +57,7 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen> {
     final microphones = ref.watch(microphoneSelectionProvider);
     final cameras = ref.watch(videoInputCapabilityProvider);
     final audioSettings = ref.watch(voiceAudioSettingsProvider);
+    final callProcessingSettings = ref.watch(callProcessingSettingsProvider);
     final audioOutputCapabilities = ref.watch(audioOutputCapabilityProvider);
     final outputCapabilities =
         audioOutputCapabilities.value ??
@@ -164,6 +165,34 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen> {
                       : () => _testMicrophone(context, ref),
                 ),
                 const Divider(height: 1),
+                callProcessingSettings.when(
+                  data: (settings) => _ClearVoiceTile(
+                    enabled: settings.clearVoiceEnabled,
+                    isBusy: false,
+                    onChanged: (bool enabled) =>
+                        _setClearVoiceEnabled(context, ref, enabled),
+                  ),
+                  error: (Object error, StackTrace stackTrace) => ListTile(
+                    leading: Icon(
+                      Icons.noise_control_off,
+                      color: Theme.of(context).colorScheme.error,
+                    ),
+                    title: const Text('Clear voice unavailable'),
+                    subtitle: Text(_formatSettingsError(error)),
+                    trailing: IconButton(
+                      tooltip: 'Retry clear voice',
+                      onPressed: () =>
+                          ref.invalidate(callProcessingSettingsProvider),
+                      icon: const Icon(Icons.refresh),
+                    ),
+                  ),
+                  loading: () => _ClearVoiceTile(
+                    enabled: true,
+                    isBusy: true,
+                    onChanged: (_) {},
+                  ),
+                ),
+                const Divider(height: 1),
                 audioSettings.when(
                   data: (settings) => _VoiceAudioSettingsControls(
                     settings: settings,
@@ -216,33 +245,65 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen> {
           const SizedBox(height: 24),
           const AppSectionTitle(title: 'Call Video'),
           AppSectionCard(
-            child: cameras.when(
-              data: (state) => RainCameraSelector(
-                state: state,
-                isBusy: false,
-                onRefresh: () => _refreshCameras(ref),
-                onSelected: (String? deviceId) =>
-                    _selectCamera(context, ref, deviceId),
-              ),
-              error: (Object error, StackTrace stackTrace) => ListTile(
-                leading: Icon(
-                  Icons.videocam_off,
-                  color: Theme.of(context).colorScheme.error,
+            child: Column(
+              children: <Widget>[
+                cameras.when(
+                  data: (state) => RainCameraSelector(
+                    state: state,
+                    isBusy: false,
+                    onRefresh: () => _refreshCameras(ref),
+                    onSelected: (String? deviceId) =>
+                        _selectCamera(context, ref, deviceId),
+                  ),
+                  error: (Object error, StackTrace stackTrace) => ListTile(
+                    leading: Icon(
+                      Icons.videocam_off,
+                      color: Theme.of(context).colorScheme.error,
+                    ),
+                    title: const Text('Cameras unavailable'),
+                    subtitle: Text(_formatSettingsError(error)),
+                    trailing: IconButton(
+                      tooltip: 'Refresh cameras',
+                      onPressed: () => _refreshCameras(ref),
+                      icon: const Icon(Icons.refresh),
+                    ),
+                  ),
+                  loading: () => RainCameraSelector(
+                    state: const VideoInputCapabilityState(devices: []),
+                    isBusy: true,
+                    onRefresh: () {},
+                    onSelected: (_) {},
+                  ),
                 ),
-                title: const Text('Cameras unavailable'),
-                subtitle: Text(_formatSettingsError(error)),
-                trailing: IconButton(
-                  tooltip: 'Refresh cameras',
-                  onPressed: () => _refreshCameras(ref),
-                  icon: const Icon(Icons.refresh),
+                const Divider(height: 1),
+                callProcessingSettings.when(
+                  data: (settings) => _AutoVideoOptimizeTile(
+                    enabled: settings.autoVideoOptimizeEnabled,
+                    isBusy: false,
+                    onChanged: (bool enabled) =>
+                        _setAutoVideoOptimizeEnabled(context, ref, enabled),
+                  ),
+                  error: (Object error, StackTrace stackTrace) => ListTile(
+                    leading: Icon(
+                      Icons.speed,
+                      color: Theme.of(context).colorScheme.error,
+                    ),
+                    title: const Text('Video optimization unavailable'),
+                    subtitle: Text(_formatSettingsError(error)),
+                    trailing: IconButton(
+                      tooltip: 'Retry video optimization',
+                      onPressed: () =>
+                          ref.invalidate(callProcessingSettingsProvider),
+                      icon: const Icon(Icons.refresh),
+                    ),
+                  ),
+                  loading: () => _AutoVideoOptimizeTile(
+                    enabled: true,
+                    isBusy: true,
+                    onChanged: (_) {},
+                  ),
                 ),
-              ),
-              loading: () => RainCameraSelector(
-                state: const VideoInputCapabilityState(devices: []),
-                isBusy: true,
-                onRefresh: () {},
-                onSelected: (_) {},
-              ),
+              ],
             ),
           ),
           const SizedBox(height: 24),
@@ -555,6 +616,38 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen> {
     );
   }
 
+  Future<void> _setClearVoiceEnabled(
+    BuildContext context,
+    WidgetRef ref,
+    bool enabled,
+  ) {
+    return _runCallProcessingSettingsAction(context, () async {
+      await ref
+          .read(callProcessingSettingsProvider.notifier)
+          .setClearVoiceEnabled(enabled);
+      await ref
+          .read(runtimeControllerProvider)
+          .value
+          ?.refreshCallMediaProcessingConfig();
+    });
+  }
+
+  Future<void> _setAutoVideoOptimizeEnabled(
+    BuildContext context,
+    WidgetRef ref,
+    bool enabled,
+  ) {
+    return _runCallProcessingSettingsAction(context, () async {
+      await ref
+          .read(callProcessingSettingsProvider.notifier)
+          .setAutoVideoOptimizeEnabled(enabled);
+      await ref
+          .read(runtimeControllerProvider)
+          .value
+          ?.refreshCallMediaProcessingConfig();
+    });
+  }
+
   Future<void> _runAudioSettingsAction(
     BuildContext context,
     Future<void> Function() action,
@@ -571,6 +664,29 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen> {
         SnackBar(
           content: Text(
             'Could not update audio setting: ${_formatSettingsError(error)}',
+          ),
+          backgroundColor: errorColor,
+        ),
+      );
+    }
+  }
+
+  Future<void> _runCallProcessingSettingsAction(
+    BuildContext context,
+    Future<void> Function() action,
+  ) async {
+    final messenger = ScaffoldMessenger.of(context);
+    final errorColor = Theme.of(context).colorScheme.error;
+    try {
+      await action();
+    } catch (error) {
+      if (!context.mounted) {
+        return;
+      }
+      messenger.showSnackBar(
+        SnackBar(
+          content: Text(
+            'Could not update call processing: ${_formatSettingsError(error)}',
           ),
           backgroundColor: errorColor,
         ),
@@ -744,6 +860,56 @@ class _MicrophoneTestTile extends StatelessWidget {
               )
             : const Icon(Icons.play_arrow),
       ),
+    );
+  }
+}
+
+class _ClearVoiceTile extends StatelessWidget {
+  const _ClearVoiceTile({
+    required this.enabled,
+    required this.isBusy,
+    required this.onChanged,
+  });
+
+  final bool enabled;
+  final bool isBusy;
+  final ValueChanged<bool> onChanged;
+
+  @override
+  Widget build(BuildContext context) {
+    return SwitchListTile(
+      secondary: const Icon(Icons.noise_control_off),
+      title: const Text('Clear voice'),
+      subtitle: const Text(
+        'Clear voice reduces background noise during calls.',
+      ),
+      value: enabled,
+      onChanged: isBusy ? null : onChanged,
+    );
+  }
+}
+
+class _AutoVideoOptimizeTile extends StatelessWidget {
+  const _AutoVideoOptimizeTile({
+    required this.enabled,
+    required this.isBusy,
+    required this.onChanged,
+  });
+
+  final bool enabled;
+  final bool isBusy;
+  final ValueChanged<bool> onChanged;
+
+  @override
+  Widget build(BuildContext context) {
+    return SwitchListTile(
+      secondary: const Icon(Icons.speed),
+      title: const Text('Auto video optimize'),
+      subtitle: const Text(
+        'Auto video optimize adjusts quality when the network is weak.',
+      ),
+      value: enabled,
+      onChanged: isBusy ? null : onChanged,
     );
   }
 }

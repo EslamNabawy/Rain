@@ -2,6 +2,7 @@ import 'dart:typed_data';
 
 import 'package:flutter_webrtc/flutter_webrtc.dart';
 
+import 'call/call_media_models.dart';
 import 'platform_bridge.dart';
 
 enum PeerState {
@@ -36,6 +37,7 @@ class PeerConfig {
     this.iceTransportPolicy = PeerIceTransportPolicy.all,
     this.selectedAudioInputDeviceIdProvider,
     this.selectedVideoInputDeviceIdProvider,
+    this.callMediaProcessingConfigProvider,
   });
 
   final List<Map<String, dynamic>> iceServers;
@@ -45,6 +47,8 @@ class PeerConfig {
   final PeerIceTransportPolicy iceTransportPolicy;
   final Future<String?> Function()? selectedAudioInputDeviceIdProvider;
   final Future<String?> Function()? selectedVideoInputDeviceIdProvider;
+  final Future<CallMediaProcessingConfig> Function()?
+  callMediaProcessingConfigProvider;
 
   Map<String, dynamic> toRtcConfiguration() {
     return <String, dynamic>{
@@ -65,6 +69,8 @@ class PeerConfig {
     PeerIceTransportPolicy? iceTransportPolicy,
     Future<String?> Function()? selectedAudioInputDeviceIdProvider,
     Future<String?> Function()? selectedVideoInputDeviceIdProvider,
+    Future<CallMediaProcessingConfig> Function()?
+    callMediaProcessingConfigProvider,
   }) {
     return PeerConfig(
       iceServers: iceServers ?? this.iceServers,
@@ -78,6 +84,9 @@ class PeerConfig {
       selectedVideoInputDeviceIdProvider:
           selectedVideoInputDeviceIdProvider ??
           this.selectedVideoInputDeviceIdProvider,
+      callMediaProcessingConfigProvider:
+          callMediaProcessingConfigProvider ??
+          this.callMediaProcessingConfigProvider,
     );
   }
 
