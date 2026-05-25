@@ -1321,6 +1321,7 @@ class _RainDeviceMenuRow extends StatelessWidget {
       origin: Alignment.centerLeft,
       pulseKey: label,
       pulseOnMount: selected,
+      minSize: const Size(48, 48),
       child: Padding(
         padding: const EdgeInsets.symmetric(horizontal: 4, vertical: 6),
         child: Row(

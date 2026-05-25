@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:go_router/go_router.dart';
+import 'package:rain/presentation/branding/rain_ripple_halo_surface.dart';
 import 'package:rain/presentation/branding/rain_streak_surface.dart';
 import 'package:rain/presentation/navigation/rain_navigation_shell.dart';
 
@@ -22,6 +23,9 @@ void main() {
 
     expect(find.byType(NavigationBar), findsOneWidget);
     expect(find.byType(RainStreakSurface), findsWidgets);
+    final selectedHalo = find.byType(RainRippleHaloSurface);
+    expect(selectedHalo, findsOneWidget);
+    expect(tester.getSize(selectedHalo), const Size.square(48));
     expect(find.text('Chats page'), findsOneWidget);
     expect(find.text('Search page'), findsNothing);
 
@@ -48,6 +52,9 @@ void main() {
 
     expect(find.byType(NavigationRail), findsOneWidget);
     expect(find.byType(RainStreakSurface), findsWidgets);
+    final selectedHalo = find.byType(RainRippleHaloSurface);
+    expect(selectedHalo, findsOneWidget);
+    expect(tester.getSize(selectedHalo), const Size.square(48));
     expect(builtPages, <String>['chats']);
 
     await tester.tap(find.text('Settings'));

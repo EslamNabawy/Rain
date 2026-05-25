@@ -132,6 +132,7 @@ class RainCallControls extends StatelessWidget {
       borderRadius: const BorderRadius.all(Radius.circular(20)),
       color: rainVoiceCallHaloColor(context, state),
       pulseKey: '${state.callId}:${state.phase}:${capability.name}',
+      minSize: const Size.square(48),
       child: control,
     );
   }

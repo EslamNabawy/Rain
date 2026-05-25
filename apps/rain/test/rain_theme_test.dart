@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
+import 'package:rain/presentation/branding/rain_ripple_halo_surface.dart';
 import 'package:rain/presentation/theme/rain_theme.dart';
 import 'package:rain/presentation/widgets/rain_backdrop.dart';
 
@@ -86,5 +87,27 @@ void main() {
     expect(gradient.colors, contains(const Color(0xFF092934)));
     expect(gradient.colors, isNot(contains(RainColors.backgroundMid)));
     expect(find.byType(CustomPaint), findsWidgets);
+  });
+
+  testWidgets('RainRippleHaloSurface paints at the configured component size', (
+    WidgetTester tester,
+  ) async {
+    await tester.pumpWidget(
+      const MaterialApp(
+        home: Center(
+          child: RainRippleHaloSurface(
+            enabled: true,
+            minSize: Size.square(48),
+            child: SizedBox.square(dimension: 24),
+          ),
+        ),
+      ),
+    );
+
+    final halo = find.byType(RainRippleHaloSurface);
+    expect(tester.getSize(halo), const Size.square(48));
+
+    final paint = find.descendant(of: halo, matching: find.byType(CustomPaint));
+    expect(tester.getSize(paint), const Size.square(48));
   });
 }

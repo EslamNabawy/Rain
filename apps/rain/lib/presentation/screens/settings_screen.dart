@@ -880,6 +880,7 @@ class _OutputPreferenceMenuRow extends StatelessWidget {
       origin: Alignment.centerLeft,
       pulseKey: preference.name,
       pulseOnMount: selected,
+      minSize: const Size(48, 48),
       child: Padding(
         padding: const EdgeInsets.symmetric(horizontal: 4, vertical: 6),
         child: Row(

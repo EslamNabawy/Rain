@@ -12,6 +12,7 @@ class RainRippleHaloSurface extends StatefulWidget {
     this.origin = Alignment.center,
     this.pulseKey,
     this.pulseOnMount = false,
+    this.minSize,
   });
 
   final Widget child;
@@ -21,6 +22,7 @@ class RainRippleHaloSurface extends StatefulWidget {
   final Alignment origin;
   final Object? pulseKey;
   final bool pulseOnMount;
+  final Size? minSize;
 
   @override
   State<RainRippleHaloSurface> createState() => _RainRippleHaloSurfaceState();
@@ -63,8 +65,9 @@ class _RainRippleHaloSurfaceState extends State<RainRippleHaloSurface>
 
   @override
   Widget build(BuildContext context) {
+    final child = _constrainedChild();
     if (!widget.enabled) {
-      return ClipRRect(borderRadius: widget.borderRadius, child: widget.child);
+      return ClipRRect(borderRadius: widget.borderRadius, child: child);
     }
 
     final scheme = Theme.of(context).colorScheme;
@@ -76,7 +79,7 @@ class _RainRippleHaloSurfaceState extends State<RainRippleHaloSurface>
       child: Stack(
         fit: StackFit.passthrough,
         children: <Widget>[
-          widget.child,
+          child,
           Positioned.fill(
             child: IgnorePointer(
               child: AnimatedBuilder(
@@ -100,6 +103,20 @@ class _RainRippleHaloSurfaceState extends State<RainRippleHaloSurface>
           ),
         ],
       ),
+    );
+  }
+
+  Widget _constrainedChild() {
+    final minSize = widget.minSize;
+    if (minSize == null) {
+      return widget.child;
+    }
+    return ConstrainedBox(
+      constraints: BoxConstraints(
+        minWidth: minSize.width,
+        minHeight: minSize.height,
+      ),
+      child: widget.child,
     );
   }
 

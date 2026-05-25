@@ -47,6 +47,7 @@ class _MobileLinkStatusBar extends StatelessWidget {
             pulseKey:
                 '${status.label}:${diagnostics.route.kind}:${status.isBusy}',
             pulseOnMount: showHalo,
+            minSize: const Size(48, 56),
             child: Ink(
               height: 56,
               decoration: BoxDecoration(

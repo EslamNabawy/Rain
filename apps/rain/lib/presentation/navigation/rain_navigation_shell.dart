@@ -235,6 +235,7 @@ class _RainNavigationHaloIcon extends StatelessWidget {
       borderRadius: const BorderRadius.all(Radius.circular(18)),
       pulseKey: icon,
       pulseOnMount: true,
+      minSize: const Size.square(48),
       child: Padding(padding: const EdgeInsets.all(8), child: Icon(icon)),
     );
   }
