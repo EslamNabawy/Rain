@@ -374,7 +374,7 @@ RainCallControlVisual rainVoiceCallTerminalActionVisual(VoiceCallState state) {
         : isIncoming
         ? 'Reject call'
         : 'Hang up',
-    icon: isFailed ? Icons.close : Icons.call_end,
+    icon: isFailed ? Icons.close : Icons.phone_disabled,
     danger: !isFailed,
   );
 }
@@ -489,7 +489,7 @@ List<VoiceCallOutputRouteOption> rainVoiceCallOutputRouteOptions({
     const VoiceCallOutputRouteOption(
       target: CallAudioOutputTarget.systemDefault(),
       label: 'Default',
-      icon: Icons.volume_up,
+      icon: Icons.speaker,
     ),
     const VoiceCallOutputRouteOption(
       target: CallAudioOutputTarget.androidSpeakerphone(),
@@ -509,52 +509,17 @@ List<VoiceCallOutputRouteOption> _adaptiveOutputRouteOptions(
   AudioOutputCapabilityState capabilities,
   AdaptiveDeviceProfile profile,
 ) {
-  if (profile.isDesktop) {
-    final outputs = capabilities.devices
-        .where((RainMediaDevice device) => device.isAudioOutput)
-        .toList(growable: false);
-    if (outputs.length <= 1) {
-      return const <VoiceCallOutputRouteOption>[];
-    }
-    return <VoiceCallOutputRouteOption>[
-      const VoiceCallOutputRouteOption(
-        target: CallAudioOutputTarget.systemDefault(),
-        label: 'System default',
-        icon: Icons.devices,
-      ),
-      for (var index = 0; index < outputs.length; index += 1)
-        VoiceCallOutputRouteOption(
-          target: CallAudioOutputTarget.desktopDevice(outputs[index].deviceId),
-          label: outputs[index].displayLabel(index),
-          icon: _deviceOutputIcon(outputs[index]),
-        ),
-    ];
-  }
-
-  final defaultLabel = capabilities.hasWiredOutput
-      ? 'Wired headset'
-      : 'Phone audio';
-  final defaultTarget = capabilities.hasWiredOutput
-      ? const CallAudioOutputTarget.wiredHeadset()
-      : const CallAudioOutputTarget.systemDefault();
+  final snapshot = AdaptiveMediaCapabilitySnapshot(
+    profile: profile,
+    videoInput: const VideoInputCapabilityState(devices: <RainMediaDevice>[]),
+    audioOutput: capabilities,
+  );
   return <VoiceCallOutputRouteOption>[
-    VoiceCallOutputRouteOption(
-      target: defaultTarget,
-      label: defaultLabel,
-      icon: capabilities.hasWiredOutput
-          ? Icons.headphones
-          : Icons.phone_in_talk,
-    ),
-    const VoiceCallOutputRouteOption(
-      target: CallAudioOutputTarget.androidSpeakerphone(),
-      label: 'Speakerphone',
-      icon: Icons.speaker_phone,
-    ),
-    if (capabilities.hasBluetoothOutput)
-      const VoiceCallOutputRouteOption(
-        target: CallAudioOutputTarget.bluetooth(),
-        label: 'Bluetooth',
-        icon: Icons.bluetooth_audio,
+    for (final target in snapshot.outputTargets)
+      VoiceCallOutputRouteOption(
+        target: target.target,
+        label: target.label,
+        icon: _adaptiveOutputTargetIcon(target),
       ),
   ];
 }
@@ -637,9 +602,23 @@ CallAudioOutputTarget _nextOutputTarget(
 
 IconData _outputRouteIcon(VoiceCallOutputRoute route) {
   return switch (route) {
-    VoiceCallOutputRoute.systemDefault => Icons.volume_up,
+    VoiceCallOutputRoute.systemDefault => Icons.speaker,
     VoiceCallOutputRoute.speaker => Icons.speaker_phone,
     VoiceCallOutputRoute.bluetooth => Icons.bluetooth_audio,
+  };
+}
+
+IconData _adaptiveOutputTargetIcon(AdaptiveAudioOutputTarget target) {
+  return switch (target.target.kind) {
+    CallAudioOutputTargetKind.systemDefault =>
+      target.label.toLowerCase().contains('phone')
+          ? Icons.phone_in_talk
+          : Icons.speaker,
+    CallAudioOutputTargetKind.androidSpeakerphone => Icons.speaker_phone,
+    CallAudioOutputTargetKind.bluetooth => Icons.bluetooth_audio,
+    CallAudioOutputTargetKind.wiredHeadset => Icons.headphones,
+    CallAudioOutputTargetKind.desktopDevice =>
+      target.device == null ? Icons.speaker : _deviceOutputIcon(target.device!),
   };
 }
 

@@ -776,6 +776,7 @@ void main() {
         CallAudioOutputTargetKind.desktopDevice,
       ],
     );
+    expect(options.first.icon, Icons.speaker);
     expect(
       options.any(
         (VoiceCallOutputRouteOption option) => option.label == 'Speaker',
@@ -814,6 +815,14 @@ void main() {
       options.map((VoiceCallOutputRouteOption option) => option.label),
       <String>['Phone audio', 'Speakerphone', 'Bluetooth'],
     );
+    expect(
+      options.map((VoiceCallOutputRouteOption option) => option.icon),
+      <IconData>[
+        Icons.phone_in_talk,
+        Icons.speaker_phone,
+        Icons.bluetooth_audio,
+      ],
+    );
   });
 
   test('deafen and output route use distinct semantic icons', () {
@@ -830,6 +839,7 @@ void main() {
       rainVoiceCallControlVisual(state, CallControlCapability.outputRoute).icon,
       Icons.speaker_phone,
     );
+    expect(rainVoiceCallTerminalActionVisual(state).icon, Icons.phone_disabled);
   });
 
   testWidgets(

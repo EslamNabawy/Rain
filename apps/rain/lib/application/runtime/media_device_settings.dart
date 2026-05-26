@@ -313,8 +313,7 @@ final class VideoInputCapabilityState {
       labelsAvailable &&
       devices.any((RainMediaDevice device) => device.isLikelyRearFacingCamera);
 
-  bool get supportsCameraSwitch =>
-      availableVideoInputCount > 1 && labelsAvailable;
+  bool get supportsCameraSwitch => availableVideoInputCount > 1;
 
   RainMediaDevice? get selectedDevice {
     final selected = selectedDeviceId;
@@ -362,6 +361,18 @@ final class AudioOutputCapabilityState {
   int get availableOutputCount => devices.length;
 }
 
+final class AdaptiveAudioOutputTarget {
+  const AdaptiveAudioOutputTarget({
+    required this.target,
+    required this.label,
+    this.device,
+  });
+
+  final CallAudioOutputTarget target;
+  final String label;
+  final RainMediaDevice? device;
+}
+
 final class AdaptiveMediaCapabilitySnapshot {
   const AdaptiveMediaCapabilitySnapshot({
     required this.profile,
@@ -379,16 +390,56 @@ final class AdaptiveMediaCapabilitySnapshot {
 
   bool get hasWiredOutput => audioOutput.hasWiredOutput;
 
-  bool get supportsAudioOutputSelection {
+  bool get shouldShowOutputSelector => outputTargets.length > 1;
+
+  bool get supportsAudioOutputSelection => shouldShowOutputSelector;
+
+  List<AdaptiveAudioOutputTarget> get outputTargets {
     if (profile.isAndroid) {
-      return true;
+      final defaultLabel = audioOutput.hasWiredOutput
+          ? 'Wired headset'
+          : 'Phone audio';
+      final defaultTarget = audioOutput.hasWiredOutput
+          ? const CallAudioOutputTarget.wiredHeadset()
+          : const CallAudioOutputTarget.systemDefault();
+      return <AdaptiveAudioOutputTarget>[
+        AdaptiveAudioOutputTarget(target: defaultTarget, label: defaultLabel),
+        const AdaptiveAudioOutputTarget(
+          target: CallAudioOutputTarget.androidSpeakerphone(),
+          label: 'Speakerphone',
+        ),
+        if (audioOutput.hasBluetoothOutput)
+          const AdaptiveAudioOutputTarget(
+            target: CallAudioOutputTarget.bluetooth(),
+            label: 'Bluetooth',
+          ),
+      ];
     }
+
     if (profile.isDesktop) {
-      return audioOutput.availableOutputCount > 1;
+      final outputs = audioOutput.devices
+          .where((RainMediaDevice device) => device.isAudioOutput)
+          .toList(growable: false);
+      if (outputs.length <= 1) {
+        return const <AdaptiveAudioOutputTarget>[];
+      }
+      return <AdaptiveAudioOutputTarget>[
+        const AdaptiveAudioOutputTarget(
+          target: CallAudioOutputTarget.systemDefault(),
+          label: 'System default',
+        ),
+        for (var index = 0; index < outputs.length; index += 1)
+          AdaptiveAudioOutputTarget(
+            target: CallAudioOutputTarget.desktopDevice(
+              outputs[index].deviceId,
+            ),
+            label: outputs[index].displayLabel(index),
+            device: outputs[index],
+          ),
+      ];
     }
-    return audioOutput.availableOutputCount > 1 ||
-        audioOutput.hasBluetoothOutput ||
-        audioOutput.hasWiredOutput;
+
+    return const <AdaptiveAudioOutputTarget>[];
   }
 
   List<CallControlCapability> filterCallControls(

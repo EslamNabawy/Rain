@@ -1368,7 +1368,7 @@ git commit -m "feat: add premium fullscreen call workspace"
 - Modify: `apps/rain/test/media_device_settings_test.dart`
 - Modify: `apps/rain/test/rain_chat_widgets_test.dart`
 
-- [ ] **Step 1: Lock output route visibility rules**
+- [x] **Step 1: Lock output route visibility rules**
 
 Rules:
 
@@ -1379,7 +1379,7 @@ Rules:
 - Android wired/headset connected: show wired/headset route.
 - Unsupported route switching: hide route button instead of showing a broken button.
 
-- [ ] **Step 2: Lock camera control visibility rules**
+- [x] **Step 2: Lock camera control visibility rules**
 
 Rules:
 
@@ -1388,7 +1388,7 @@ Rules:
 - Video muted is always visible during video call.
 - Voice call does not show camera controls except upgrade-to-video if that feature remains supported.
 
-- [ ] **Step 3: Fix semantic icons**
+- [x] **Step 3: Fix semantic icons**
 
 In `rain_call_controls.dart`:
 
@@ -1403,7 +1403,7 @@ fullscreen: maximize / minimize
 
 No speaker route button may use the mute icon.
 
-- [ ] **Step 4: Add tests**
+- [x] **Step 4: Add tests**
 
 In `apps/rain/test/media_device_settings_test.dart`:
 
@@ -1431,13 +1431,13 @@ test('windows multiple outputs exposes desktop output devices', () {
 });
 ```
 
-- [ ] **Step 5: Run tests**
+- [x] **Step 5: Run tests**
 
 ```powershell
 dart run melos exec --scope rain -- flutter test test/media_device_settings_test.dart test/rain_chat_widgets_test.dart
 ```
 
-- [ ] **Step 6: Commit**
+- [x] **Step 6: Commit**
 
 ```powershell
 git add apps/rain/lib/application/runtime/media_device_settings.dart apps/rain/lib/application/runtime/voice_call_state.dart apps/rain/lib/presentation/widgets/calls/rain_call_controls.dart apps/rain/lib/presentation/screens/settings_screen.dart apps/rain/test/media_device_settings_test.dart apps/rain/test/rain_chat_widgets_test.dart
