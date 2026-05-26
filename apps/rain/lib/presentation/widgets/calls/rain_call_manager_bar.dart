@@ -50,9 +50,8 @@ class RainCallManagerBar extends StatelessWidget {
     final performance = RainPerformanceScope.of(context);
     return Material(
       color: Colors.transparent,
-      child: SafeArea(
-        bottom: false,
-        minimum: const EdgeInsets.fromLTRB(12, 10, 12, 0),
+      child: Padding(
+        padding: const EdgeInsets.symmetric(horizontal: 12),
         child: Center(
           child: ConstrainedBox(
             constraints: const BoxConstraints(maxWidth: 980),

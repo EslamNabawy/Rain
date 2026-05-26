@@ -17,6 +17,7 @@ import 'package:rain/application/runtime/media_device_settings.dart';
 import 'package:rain/application/runtime/video_call_renderers.dart';
 import 'package:rain/application/runtime/voice_call_state.dart';
 import 'package:rain/application/state/app_providers.dart';
+import 'package:rain/application/state/call_surface_geometry.dart';
 import 'package:rain/application/state/connection_diagnostics.dart';
 import 'package:rain/application/state/file_transfer_view.dart';
 import 'package:rain/application/runtime/rain_runtime_controller.dart';
@@ -732,6 +733,13 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
             ),
           ),
         );
+        final rootCallLayout = RainCallLayoutContract.fromSurface(
+          callSurface,
+          isDesktop: !isCompact,
+        );
+        final managerTop = topCallManagerBarOffset(
+          MediaQuery.viewPaddingOf(context),
+        );
         final content = Stack(
           children: <Widget>[
             Positioned.fill(child: shell),
@@ -790,6 +798,28 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
                   sidePanelWidth: _fullscreenFriendsPanelWidth,
                   onToggleSidePanel: _toggleFullscreenFriendsPanel,
                   onResizeSidePanel: _resizeFullscreenFriendsPanel,
+                ),
+              ),
+            if (rootCallLayout.showTopManagerBar &&
+                voiceCall.phase != VoiceCallPhase.idle)
+              Positioned(
+                left: isCompact ? 0 : 321,
+                right: 0,
+                top: managerTop,
+                child: RainCallManagerBar(
+                  state: voiceCall,
+                  surface: callSurface,
+                  displayName: _voiceCallDisplayName(friends, voiceCall),
+                  gender: _voiceCallGender(friends, voiceCall),
+                  onToggleMute: () => _toggleVoiceMute(voiceCall),
+                  onToggleCamera: () => _toggleVoiceCamera(voiceCall),
+                  onToggleDeafen: () => _toggleVoiceDeafen(voiceCall),
+                  onRestore: () => _toggleCallSurfacePanel(callSurface),
+                  onFullscreen: () =>
+                      ref.read(callSurfaceProvider.notifier).enterFullscreen(),
+                  onHangUp: voiceCall.phase == VoiceCallPhase.incomingRinging
+                      ? _rejectVoiceCall
+                      : _hangUpVoiceCall,
                 ),
               ),
             if (callEndPresentation.summary case final summary?)
@@ -933,28 +963,6 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
                             safePadding: safePadding,
                             panelSize: panelSize,
                           ),
-            ),
-          ),
-        if (callLayout.showTopManagerBar &&
-            voiceCall.phase != VoiceCallPhase.idle)
-          Positioned(
-            left: isCompact ? 0 : 321,
-            right: 0,
-            top: 0,
-            child: RainCallManagerBar(
-              state: voiceCall,
-              surface: callSurface,
-              displayName: _voiceCallDisplayName(friends, voiceCall),
-              gender: _voiceCallGender(friends, voiceCall),
-              onToggleMute: () => _toggleVoiceMute(voiceCall),
-              onToggleCamera: () => _toggleVoiceCamera(voiceCall),
-              onToggleDeafen: () => _toggleVoiceDeafen(voiceCall),
-              onRestore: () => _toggleCallSurfacePanel(callSurface),
-              onFullscreen: () =>
-                  ref.read(callSurfaceProvider.notifier).enterFullscreen(),
-              onHangUp: voiceCall.phase == VoiceCallPhase.incomingRinging
-                  ? _rejectVoiceCall
-                  : _hangUpVoiceCall,
             ),
           ),
       ],

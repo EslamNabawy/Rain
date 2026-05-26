@@ -63,3 +63,7 @@ double _clampFinite(double value, double min, double max) {
   }
   return value.clamp(min, max).toDouble();
 }
+
+double topCallManagerBarOffset(EdgeInsets viewPadding, {double margin = 8}) {
+  return viewPadding.top + margin;
+}

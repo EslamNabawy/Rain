@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:rain/application/runtime/voice_call_state.dart';
+import 'package:rain/application/state/call_surface_geometry.dart';
 import 'package:rain/application/state/call_surface_providers.dart';
 import 'package:rain/presentation/branding/rain_ripple_halo_surface.dart';
 import 'package:rain/presentation/performance/rain_performance.dart';
@@ -11,6 +12,13 @@ import 'package:rain/presentation/widgets/calls/rain_call_overlay.dart';
 import 'package:rain/presentation/widgets/calls/rain_call_status_strip.dart';
 
 void main() {
+  test('top manager offset stays below Android status bar', () {
+    expect(
+      topCallManagerBarOffset(const EdgeInsets.only(top: 42)),
+      greaterThanOrEqualTo(50),
+    );
+  });
+
   testWidgets('active call renders top manager identity and controls', (
     WidgetTester tester,
   ) async {
