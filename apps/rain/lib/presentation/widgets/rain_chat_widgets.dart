@@ -1040,7 +1040,7 @@ class RainCallPanel extends StatelessWidget {
   final VoidCallback? onToggleDeafen;
   final VoidCallback? onToggleCamera;
   final VoidCallback? onSwitchCamera;
-  final ValueChanged<VoiceCallOutputRoute>? onSelectOutputRoute;
+  final ValueChanged<CallAudioOutputTarget>? onSelectOutputRoute;
   final List<VoiceCallOutputRouteOption>? outputRouteOptions;
 
   @override
@@ -1169,7 +1169,7 @@ class RainVoiceCallPanel extends StatelessWidget {
   final VoidCallback? onToggleDeafen;
   final VoidCallback? onToggleCamera;
   final VoidCallback? onSwitchCamera;
-  final ValueChanged<VoiceCallOutputRoute>? onSelectOutputRoute;
+  final ValueChanged<CallAudioOutputTarget>? onSelectOutputRoute;
   final List<VoiceCallOutputRouteOption>? outputRouteOptions;
 
   @override

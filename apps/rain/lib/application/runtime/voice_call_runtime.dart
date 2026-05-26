@@ -361,13 +361,28 @@ extension VoiceCallRuntime on RainRuntimeController {
   }
 
   Future<void> setVoiceCallOutputRoute(VoiceCallOutputRoute route) async {
+    await setVoiceCallOutputTarget(switch (route) {
+      VoiceCallOutputRoute.systemDefault =>
+        const CallAudioOutputTarget.systemDefault(),
+      VoiceCallOutputRoute.speaker =>
+        const CallAudioOutputTarget.androidSpeakerphone(),
+      VoiceCallOutputRoute.bluetooth => const CallAudioOutputTarget.bluetooth(),
+    }, label: null);
+  }
+
+  Future<void> setVoiceCallOutputTarget(
+    CallAudioOutputTarget target, {
+    required String? label,
+  }) async {
     final current = _voiceCallState;
     _recordRuntimeEvent(
       category: 'call',
       name: 'output_route_requested',
       context: <String, Object?>{
         ..._voiceCallEventContext(current),
-        'route': route.name,
+        'route': target.route.name,
+        'target': target.kind.name,
+        if (target.deviceId != null) 'deviceId': target.deviceId,
       },
     );
     final session = _voiceCallSession;
@@ -378,7 +393,11 @@ extension VoiceCallRuntime on RainRuntimeController {
       throw StateError('There is no active call to route audio.');
     }
     try {
-      await session.setAudioOutputRoute(_voiceMediaOutputRoute(route));
+      if (target.isDeviceBacked) {
+        await session.selectAudioOutputDevice(target.deviceId!);
+      } else {
+        await session.setAudioOutputRoute(_voiceMediaOutputRoute(target.route));
+      }
       if (!_isCurrentVoiceCall(
         current.peerId!,
         current.callId!,
@@ -388,9 +407,12 @@ extension VoiceCallRuntime on RainRuntimeController {
       }
       _setVoiceCallState(
         _voiceCallState.copyWith(
-          outputRoute: route,
+          outputRoute: target.route,
+          outputRouteDeviceId: target.isDeviceBacked ? target.deviceId : null,
+          outputRouteLabel: label,
           updatedAt: DateTime.now().millisecondsSinceEpoch,
           clearOutputRouteWarning: true,
+          clearOutputRouteTarget: !target.isDeviceBacked,
         ),
       );
     } catch (error, stackTrace) {
@@ -401,7 +423,9 @@ extension VoiceCallRuntime on RainRuntimeController {
         message: error.toString(),
         context: <String, Object?>{
           ..._voiceCallEventContext(current),
-          'route': route.name,
+          'route': target.route.name,
+          'target': target.kind.name,
+          if (target.deviceId != null) 'deviceId': target.deviceId,
         },
       );
       errorRecorder?.call(
@@ -1475,6 +1499,12 @@ extension VoiceCallRuntime on RainRuntimeController {
         outputRoute: isSameCall && keepsLocalAudioControls
             ? previous.outputRoute
             : VoiceCallOutputRoute.systemDefault,
+        outputRouteDeviceId: isSameCall && keepsLocalAudioControls
+            ? previous.outputRouteDeviceId
+            : null,
+        outputRouteLabel: isSameCall && keepsLocalAudioControls
+            ? previous.outputRouteLabel
+            : null,
         outputRouteWarning: isSameCall && keepsLocalAudioControls
             ? previous.outputRouteWarning
             : null,
@@ -2462,6 +2492,7 @@ extension VoiceCallRuntime on RainRuntimeController {
       updatedAt: DateTime.now().millisecondsSinceEpoch,
       clearError: true,
       clearOutputRouteWarning: true,
+      clearOutputRouteTarget: true,
       clearReconnectingSince: true,
       audioLevel: const VoiceAudioLevel.unavailable(),
     );
@@ -2633,6 +2664,7 @@ extension VoiceCallRuntime on RainRuntimeController {
         outputRoute: VoiceCallOutputRoute.systemDefault,
         updatedAt: DateTime.now().millisecondsSinceEpoch,
         clearOutputRouteWarning: true,
+        clearOutputRouteTarget: true,
         clearReconnectingSince: true,
         audioLevel: const VoiceAudioLevel.unavailable(),
       ),
@@ -3123,6 +3155,11 @@ final class _VideoVoiceMediaConnection implements VoiceMediaConnection {
   @override
   Future<void> setAudioOutputRoute(VoiceMediaOutputRoute route) {
     return _media.setAudioOutputRoute(route);
+  }
+
+  @override
+  Future<void> selectAudioOutputDevice(String deviceId) {
+    return _media.selectAudioOutputDevice(deviceId);
   }
 
   @override

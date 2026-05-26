@@ -2,6 +2,7 @@ import 'dart:async';
 import 'dart:io';
 
 import 'package:file_picker/file_picker.dart';
+import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/rendering.dart' show ScrollCacheExtent;
 import 'package:flutter/services.dart';
@@ -112,14 +113,16 @@ String _formatUiError(Object error) {
   return message;
 }
 
-VoiceCallOutputRoute _voiceCallOutputRouteForPreference(
+CallAudioOutputTarget _voiceCallOutputTargetForPreference(
   CallAudioOutputPreference preference,
 ) {
   return switch (preference) {
     CallAudioOutputPreference.systemDefault =>
-      VoiceCallOutputRoute.systemDefault,
-    CallAudioOutputPreference.speaker => VoiceCallOutputRoute.speaker,
-    CallAudioOutputPreference.bluetooth => VoiceCallOutputRoute.bluetooth,
+      const CallAudioOutputTarget.systemDefault(),
+    CallAudioOutputPreference.speaker =>
+      const CallAudioOutputTarget.androidSpeakerphone(),
+    CallAudioOutputPreference.bluetooth =>
+      const CallAudioOutputTarget.bluetooth(),
   };
 }
 
@@ -639,12 +642,6 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
     final audioOutputCapabilities = ref
         .watch(audioOutputCapabilityProvider)
         .value;
-    final callControlCapabilities =
-        (videoInputCapabilities ?? const VideoInputCapabilityState(devices: []))
-            .filterCallControls(voiceCall.controlCapabilities);
-    final outputRouteOptions = rainVoiceCallOutputRouteOptions(
-      hasBluetoothOutput: audioOutputCapabilities?.hasBluetoothOutput ?? false,
-    );
     ref.listen<VoiceCallState>(voiceCallProvider, _handleVoiceCallNavigation);
 
     return LayoutBuilder(
@@ -653,6 +650,27 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
         final scheme = Theme.of(context).colorScheme;
         final isDark = scheme.brightness == Brightness.dark;
         final lowPower = RainPerformanceScope.of(context).isLowPower;
+        final adaptiveProfile = AdaptiveDeviceProfile.resolve(
+          targetPlatform: defaultTargetPlatform,
+          width: constraints.maxWidth,
+          lowPower: lowPower,
+        );
+        final adaptiveCapabilities = AdaptiveMediaCapabilitySnapshot(
+          profile: adaptiveProfile,
+          videoInput:
+              videoInputCapabilities ??
+              const VideoInputCapabilityState(devices: []),
+          audioOutput:
+              audioOutputCapabilities ??
+              const AudioOutputCapabilityState(devices: []),
+        );
+        final callControlCapabilities = adaptiveCapabilities.filterCallControls(
+          voiceCall.controlCapabilities,
+        );
+        final outputRouteOptions = rainVoiceCallOutputRouteOptions(
+          capabilities: adaptiveCapabilities.audioOutput,
+          profile: adaptiveProfile,
+        );
 
         final showShellHeader = !isCompact || _selectedPeerId == null;
 
@@ -694,6 +712,7 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
                       voiceCall: voiceCall,
                       videoRenderers: videoRenderers,
                       callSurface: callSurface,
+                      adaptiveProfile: adaptiveProfile,
                       callControlCapabilities: callControlCapabilities,
                       outputRouteOptions: outputRouteOptions,
                     ),
@@ -734,6 +753,8 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
                     selectedPeerId: _selectedPeerId,
                     onSelect: _handleFriendSelection,
                     onRefresh: _refreshFriends,
+                    adaptiveProfile: adaptiveProfile,
+                    desktopHeaderTitle: null,
                   ),
                   showFriendsPanel: !isCompact,
                   friendsPanelCollapsed: _fullscreenFriendsPanelIsCollapsed,
@@ -805,12 +826,13 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
     required VoiceCallState voiceCall,
     required VideoCallRenderers? videoRenderers,
     required CallSurfaceState callSurface,
+    required AdaptiveDeviceProfile adaptiveProfile,
     required List<CallControlCapability> callControlCapabilities,
     required List<VoiceCallOutputRouteOption> outputRouteOptions,
   }) {
     final body = isCompact
-        ? _buildCompactBody(friends)
-        : _buildWideBody(friends);
+        ? _buildCompactBody(friends, adaptiveProfile)
+        : _buildWideBody(friends, adaptiveProfile);
     return Stack(
       children: <Widget>[
         Positioned.fill(child: body),
@@ -954,7 +976,10 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
     ref.read(callSurfaceProvider.notifier).toggleVideoPrimaryRole(callId);
   }
 
-  Widget _buildCompactBody(AsyncValue<List<FriendRecord>> friends) {
+  Widget _buildCompactBody(
+    AsyncValue<List<FriendRecord>> friends,
+    AdaptiveDeviceProfile adaptiveProfile,
+  ) {
     if (_selectedPeerId != null) {
       return _ChatPanel(
         peerId: _selectedPeerId!,
@@ -968,11 +993,15 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
       selectedPeerId: _selectedPeerId,
       onSelect: _handleFriendSelection,
       onRefresh: _refreshFriends,
+      adaptiveProfile: adaptiveProfile,
       compact: true,
     );
   }
 
-  Widget _buildWideBody(AsyncValue<List<FriendRecord>> friends) {
+  Widget _buildWideBody(
+    AsyncValue<List<FriendRecord>> friends,
+    AdaptiveDeviceProfile adaptiveProfile,
+  ) {
     return Row(
       children: <Widget>[
         SizedBox(
@@ -982,6 +1011,7 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
             selectedPeerId: _selectedPeerId,
             onSelect: _handleFriendSelection,
             onRefresh: _refreshFriends,
+            adaptiveProfile: adaptiveProfile,
           ),
         ),
         const VerticalDivider(width: 1),
@@ -1044,13 +1074,13 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
   Future<void> _applyDefaultVoiceOutput(String callId) async {
     try {
       final settings = await ref.read(voiceAudioSettingsProvider.future);
-      final route = _voiceCallOutputRouteForPreference(
+      final target = _voiceCallOutputTargetForPreference(
         settings.defaultOutputPreference,
       );
-      if (route == VoiceCallOutputRoute.systemDefault) {
+      if (target.kind == CallAudioOutputTargetKind.systemDefault) {
         return;
       }
-      if (!await _isVoiceOutputRouteAvailable(route)) {
+      if (!await _isVoiceOutputTargetAvailable(target)) {
         return;
       }
       if (!mounted) {
@@ -1060,7 +1090,9 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
       if (current.callId != callId || current.phase != VoiceCallPhase.active) {
         return;
       }
-      await ref.read(voiceCallProvider.notifier).setOutputRoute(route);
+      await ref
+          .read(voiceCallProvider.notifier)
+          .setOutputTarget(target, label: _outputTargetLabel(target));
     } catch (error) {
       if (mounted) {
         _showVoiceCallError(_formatUiError(error));
@@ -1264,14 +1296,16 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
     }
   }
 
-  Future<void> _selectVoiceOutputRoute(VoiceCallOutputRoute route) async {
+  Future<void> _selectVoiceOutputRoute(CallAudioOutputTarget target) async {
     final before = ref.read(voiceCallProvider);
     try {
-      if (!await _isVoiceOutputRouteAvailable(route)) {
-        _showVoiceCallError('Bluetooth audio output is unavailable.');
+      if (!await _isVoiceOutputTargetAvailable(target)) {
+        _showVoiceCallError(_outputTargetUnavailableMessage(target));
         return;
       }
-      await ref.read(voiceCallProvider.notifier).setOutputRoute(route);
+      await ref
+          .read(voiceCallProvider.notifier)
+          .setOutputTarget(target, label: _outputTargetLabel(target));
       _dispatchSoundEvent(_callControlRouteChangedEvent(before));
     } catch (error) {
       _dispatchVoiceCommandFailureSound(error, before: before);
@@ -1279,8 +1313,32 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
     }
   }
 
-  Future<bool> _isVoiceOutputRouteAvailable(VoiceCallOutputRoute route) async {
-    if (route != VoiceCallOutputRoute.bluetooth) {
+  Future<bool> _isVoiceOutputTargetAvailable(
+    CallAudioOutputTarget target,
+  ) async {
+    if (target.isDeviceBacked) {
+      final deviceId = target.deviceId;
+      if (deviceId == null || deviceId.trim().isEmpty) {
+        return false;
+      }
+      final cached = ref.read(audioOutputCapabilityProvider).value;
+      if (cached != null) {
+        return cached.devices.any(
+          (RainMediaDevice device) => device.deviceId == deviceId,
+        );
+      }
+      try {
+        final capabilities = await ref
+            .read(audioOutputCapabilityProvider.notifier)
+            .reload();
+        return capabilities.devices.any(
+          (RainMediaDevice device) => device.deviceId == deviceId,
+        );
+      } catch (_) {
+        return false;
+      }
+    }
+    if (target.kind != CallAudioOutputTargetKind.bluetooth) {
       return true;
     }
     final cached = ref.read(audioOutputCapabilityProvider).value;
@@ -1295,6 +1353,43 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
     } catch (_) {
       return false;
     }
+  }
+
+  String? _outputTargetLabel(CallAudioOutputTarget target) {
+    final options = rainVoiceCallOutputRouteOptions(
+      capabilities:
+          ref.read(audioOutputCapabilityProvider).value ??
+          const AudioOutputCapabilityState(devices: []),
+      profile: AdaptiveDeviceProfile.resolve(
+        targetPlatform: defaultTargetPlatform,
+        width: MediaQuery.sizeOf(context).width,
+        lowPower: RainPerformanceScope.read(context).isLowPower,
+      ),
+    );
+    for (final option in options) {
+      if (option.target.key == target.key) {
+        return option.label;
+      }
+    }
+    return switch (target.kind) {
+      CallAudioOutputTargetKind.systemDefault => null,
+      CallAudioOutputTargetKind.androidSpeakerphone => 'Speakerphone',
+      CallAudioOutputTargetKind.bluetooth => 'Bluetooth',
+      CallAudioOutputTargetKind.wiredHeadset => 'Wired headset',
+      CallAudioOutputTargetKind.desktopDevice => 'Audio device',
+    };
+  }
+
+  String _outputTargetUnavailableMessage(CallAudioOutputTarget target) {
+    return switch (target.kind) {
+      CallAudioOutputTargetKind.bluetooth =>
+        'Bluetooth audio output is unavailable.',
+      CallAudioOutputTargetKind.desktopDevice =>
+        'That audio output is unavailable.',
+      CallAudioOutputTargetKind.systemDefault ||
+      CallAudioOutputTargetKind.androidSpeakerphone ||
+      CallAudioOutputTargetKind.wiredHeadset => 'Audio output is unavailable.',
+    };
   }
 
   Future<void> _stopVoiceCallLoopsBeforeAccept() async {

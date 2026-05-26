@@ -631,7 +631,7 @@ void main() {
     WidgetTester tester,
   ) async {
     var deafened = false;
-    VoiceCallOutputRoute? route;
+    CallAudioOutputTarget? route;
 
     await tester.pumpWidget(
       MaterialApp(
@@ -655,7 +655,7 @@ void main() {
             onRetry: () {},
             onToggleMute: () {},
             onToggleDeafen: () => deafened = true,
-            onSelectOutputRoute: (VoiceCallOutputRoute value) => route = value,
+            onSelectOutputRoute: (CallAudioOutputTarget value) => route = value,
           ),
         ),
       ),
@@ -672,13 +672,13 @@ void main() {
     await tester.pumpAndSettle();
     await tester.tap(find.text('Bluetooth').last);
 
-    expect(route, VoiceCallOutputRoute.bluetooth);
+    expect(route?.kind, CallAudioOutputTargetKind.bluetooth);
   });
 
   testWidgets('voice call output route toggles when bluetooth is unavailable', (
     WidgetTester tester,
   ) async {
-    VoiceCallOutputRoute? route;
+    CallAudioOutputTarget? route;
 
     await tester.pumpWidget(
       MaterialApp(
@@ -701,7 +701,7 @@ void main() {
             onHangUp: () {},
             onRetry: () {},
             onToggleMute: () {},
-            onSelectOutputRoute: (VoiceCallOutputRoute value) => route = value,
+            onSelectOutputRoute: (CallAudioOutputTarget value) => route = value,
           ),
         ),
       ),
@@ -710,8 +710,126 @@ void main() {
     await tester.tap(find.byTooltip('Choose audio output'));
     await tester.pump();
 
-    expect(route, VoiceCallOutputRoute.speaker);
+    expect(route?.route, VoiceCallOutputRoute.speaker);
     expect(find.text('Bluetooth'), findsNothing);
+  });
+
+  test('desktop audio output options hide fake single-device speaker', () {
+    const capabilities = AudioOutputCapabilityState(
+      devices: <RainMediaDevice>[
+        RainMediaDevice(
+          deviceId: 'default-speakers',
+          label: 'Realtek Speakers',
+          kind: audioOutputDeviceKind,
+        ),
+      ],
+    );
+    final profile = AdaptiveDeviceProfile.resolve(
+      targetPlatform: TargetPlatform.windows,
+      width: 1280,
+      lowPower: false,
+    );
+
+    final options = rainVoiceCallOutputRouteOptions(
+      capabilities: capabilities,
+      profile: profile,
+    );
+
+    expect(options, isEmpty);
+  });
+
+  test('desktop audio output options use detected device labels', () {
+    const capabilities = AudioOutputCapabilityState(
+      devices: <RainMediaDevice>[
+        RainMediaDevice(
+          deviceId: 'default-speakers',
+          label: 'Realtek Speakers',
+          kind: audioOutputDeviceKind,
+        ),
+        RainMediaDevice(
+          deviceId: 'usb-headphones',
+          label: 'USB Headphones',
+          kind: audioOutputDeviceKind,
+        ),
+      ],
+    );
+    final profile = AdaptiveDeviceProfile.resolve(
+      targetPlatform: TargetPlatform.windows,
+      width: 1280,
+      lowPower: false,
+    );
+
+    final options = rainVoiceCallOutputRouteOptions(
+      capabilities: capabilities,
+      profile: profile,
+    );
+
+    expect(
+      options.map((VoiceCallOutputRouteOption option) => option.label),
+      <String>['System default', 'Realtek Speakers', 'USB Headphones'],
+    );
+    expect(
+      options.map((VoiceCallOutputRouteOption option) => option.target.kind),
+      <CallAudioOutputTargetKind>[
+        CallAudioOutputTargetKind.systemDefault,
+        CallAudioOutputTargetKind.desktopDevice,
+        CallAudioOutputTargetKind.desktopDevice,
+      ],
+    );
+    expect(
+      options.any(
+        (VoiceCallOutputRouteOption option) => option.label == 'Speaker',
+      ),
+      isFalse,
+    );
+  });
+
+  test('android output options expose phone, speakerphone and bluetooth', () {
+    const capabilities = AudioOutputCapabilityState(
+      devices: <RainMediaDevice>[
+        RainMediaDevice(
+          deviceId: 'speaker',
+          label: 'Built-in Speaker',
+          kind: audioOutputDeviceKind,
+        ),
+        RainMediaDevice(
+          deviceId: 'buds',
+          label: 'Galaxy Buds Bluetooth',
+          kind: audioOutputDeviceKind,
+        ),
+      ],
+    );
+    final profile = AdaptiveDeviceProfile.resolve(
+      targetPlatform: TargetPlatform.android,
+      width: 390,
+      lowPower: false,
+    );
+
+    final options = rainVoiceCallOutputRouteOptions(
+      capabilities: capabilities,
+      profile: profile,
+    );
+
+    expect(
+      options.map((VoiceCallOutputRouteOption option) => option.label),
+      <String>['Phone audio', 'Speakerphone', 'Bluetooth'],
+    );
+  });
+
+  test('deafen and output route use distinct semantic icons', () {
+    final state = _activeVoiceCall().copyWith(
+      isDeafened: true,
+      outputRoute: VoiceCallOutputRoute.speaker,
+    );
+
+    expect(
+      rainVoiceCallControlVisual(state, CallControlCapability.deafen).icon,
+      Icons.hearing_disabled,
+    );
+    expect(
+      rainVoiceCallControlVisual(state, CallControlCapability.outputRoute).icon,
+      Icons.speaker_phone,
+    );
   });
 
   testWidgets(
@@ -1314,7 +1432,7 @@ void main() {
     expect(accepted, isTrue);
   });
 
-  testWidgets('call overlay wave amplitude follows real audio level', (
+  testWidgets('call overlay emits audio waves from the Peer Core mark', (
     WidgetTester tester,
   ) async {
     await _pumpCallOverlay(
@@ -1328,11 +1446,15 @@ void main() {
         ),
       ),
     );
-    final lowHeight = tester
-        .getSize(
-          find.byKey(const ValueKey<String>('rain-call-audio-wave-bar-2')),
-        )
-        .height;
+    expect(
+      find.byKey(const ValueKey<String>('rain-call-audio-emitter')),
+      findsOneWidget,
+    );
+    expect(
+      find.byKey(const ValueKey<String>('rain-call-audio-emitter-mark')),
+      findsOneWidget,
+    );
+    expect(_findMeterCells('rain-call-audio-wave-bar-'), findsNothing);
 
     await _pumpCallOverlay(
       tester,
@@ -1346,13 +1468,12 @@ void main() {
       ),
     );
     await tester.pumpAndSettle();
-    final highHeight = tester
-        .getSize(
-          find.byKey(const ValueKey<String>('rain-call-audio-wave-bar-2')),
-        )
-        .height;
 
-    expect(highHeight, greaterThan(lowHeight));
+    expect(
+      find.byKey(const ValueKey<String>('rain-call-audio-emitter')),
+      findsOneWidget,
+    );
+    expect(_findMeterCells('rain-call-audio-wave-bar-'), findsNothing);
   });
 
   testWidgets('call overlay shows idle audio glyph when meter unavailable', (

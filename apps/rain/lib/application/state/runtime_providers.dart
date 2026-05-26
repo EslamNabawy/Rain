@@ -333,6 +333,13 @@ class VoiceCallController extends Notifier<VoiceCallState> {
     await _requireRuntime().setVoiceCallOutputRoute(route);
   }
 
+  Future<void> setOutputTarget(
+    CallAudioOutputTarget target, {
+    required String? label,
+  }) async {
+    await _requireRuntime().setVoiceCallOutputTarget(target, label: label);
+  }
+
   bool blocksFileTransfer(String peerId) {
     return state.blocksFileTransfersFor(peerId);
   }

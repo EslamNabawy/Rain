@@ -6,6 +6,8 @@ class _FriendsListView extends StatelessWidget {
     required this.selectedPeerId,
     required this.onSelect,
     required this.onRefresh,
+    required this.adaptiveProfile,
+    this.desktopHeaderTitle = 'Friends',
     this.compact = false,
   });
 
@@ -13,6 +15,8 @@ class _FriendsListView extends StatelessWidget {
   final String? selectedPeerId;
   final ValueChanged<FriendRecord> onSelect;
   final Future<void> Function() onRefresh;
+  final AdaptiveDeviceProfile adaptiveProfile;
+  final String? desktopHeaderTitle;
   final bool compact;
 
   @override
@@ -20,9 +24,9 @@ class _FriendsListView extends StatelessWidget {
     return friends.when(
       data: (List<FriendRecord> items) {
         if (items.isEmpty) {
-          return RefreshIndicator(
-            onRefresh: onRefresh,
-            child: ListView(
+          return _wrapRefresh(
+            context,
+            ListView(
               physics: const AlwaysScrollableScrollPhysics(),
               padding: EdgeInsets.fromLTRB(16, compact ? 72 : 96, 16, 24),
               children: <Widget>[
@@ -38,9 +42,9 @@ class _FriendsListView extends StatelessWidget {
           );
         }
 
-        return RefreshIndicator(
-          onRefresh: onRefresh,
-          child: ListView.builder(
+        return _wrapRefresh(
+          context,
+          ListView.builder(
             physics: const AlwaysScrollableScrollPhysics(),
             padding: EdgeInsets.symmetric(vertical: compact ? 6 : 0),
             itemCount: items.length,
@@ -72,6 +76,96 @@ class _FriendsListView extends StatelessWidget {
         ),
       ),
     );
+  }
+
+  Widget _wrapRefresh(BuildContext context, Widget child) {
+    if (adaptiveProfile.usesPullRefresh) {
+      return RefreshIndicator(onRefresh: onRefresh, child: child);
+    }
+    return Column(
+      children: <Widget>[
+        _DesktopFriendsRefreshHeader(
+          title: desktopHeaderTitle,
+          onRefresh: onRefresh,
+        ),
+        Expanded(child: child),
+      ],
+    );
+  }
+}
+
+class _DesktopFriendsRefreshHeader extends StatefulWidget {
+  const _DesktopFriendsRefreshHeader({
+    required this.title,
+    required this.onRefresh,
+  });
+
+  final String? title;
+  final Future<void> Function() onRefresh;
+
+  @override
+  State<_DesktopFriendsRefreshHeader> createState() =>
+      _DesktopFriendsRefreshHeaderState();
+}
+
+class _DesktopFriendsRefreshHeaderState
+    extends State<_DesktopFriendsRefreshHeader> {
+  bool _refreshing = false;
+
+  @override
+  Widget build(BuildContext context) {
+    final scheme = Theme.of(context).colorScheme;
+    return Padding(
+      padding: const EdgeInsets.fromLTRB(14, 10, 8, 8),
+      child: Row(
+        children: <Widget>[
+          if (widget.title case final title? when title.trim().isNotEmpty)
+            Expanded(
+              child: Text(
+                title,
+                maxLines: 1,
+                overflow: TextOverflow.ellipsis,
+                style: Theme.of(context).textTheme.titleSmall?.copyWith(
+                  fontWeight: FontWeight.w900,
+                  color: scheme.onSurface.withValues(alpha: 0.86),
+                ),
+              ),
+            )
+          else
+            const Spacer(),
+          Tooltip(
+            message: 'Refresh friends',
+            child: IconButton.filledTonal(
+              key: const ValueKey<String>(
+                'rain-friends-desktop-refresh-button',
+              ),
+              onPressed: _refreshing ? null : _refresh,
+              icon: _refreshing
+                  ? const SizedBox(
+                      width: 18,
+                      height: 18,
+                      child: CircularProgressIndicator(strokeWidth: 2),
+                    )
+                  : const Icon(Icons.refresh),
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
+  Future<void> _refresh() async {
+    if (_refreshing) {
+      return;
+    }
+    setState(() => _refreshing = true);
+    try {
+      await widget.onRefresh();
+    } finally {
+      if (mounted) {
+        setState(() => _refreshing = false);
+      }
+    }
   }
 }
 

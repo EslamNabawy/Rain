@@ -43,6 +43,7 @@ abstract class CallMediaConnection {
   Future<void> switchCamera();
   Future<void> setDeafened({required bool deafened});
   Future<void> setAudioOutputRoute(CallMediaOutputRoute route);
+  Future<void> selectAudioOutputDevice(String deviceId);
   Future<void> refreshProcessingConfig();
   Future<void> dispose();
 }
@@ -418,6 +419,17 @@ class DefaultCallMediaConnection implements CallMediaConnection {
         break;
     }
     _appendDiagnostic(_mediaStates, 'audioOutputRoute:${route.name}');
+  }
+
+  @override
+  Future<void> selectAudioOutputDevice(String deviceId) async {
+    _ensureNotDisposed();
+    final normalized = deviceId.trim();
+    if (normalized.isEmpty) {
+      throw ArgumentError.value(deviceId, 'deviceId', 'Must not be empty.');
+    }
+    await _config.platform.selectAudioOutput(normalized);
+    _appendDiagnostic(_mediaStates, 'audioOutputDevice');
   }
 
   @override

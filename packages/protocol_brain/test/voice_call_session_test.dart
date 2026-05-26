@@ -1035,6 +1035,9 @@ final class _FakeVoiceMediaConnection implements VoiceMediaConnection {
   }
 
   @override
+  Future<void> selectAudioOutputDevice(String deviceId) async {}
+
+  @override
   Future<void> dispose() async {
     disposeCalls += 1;
   }

@@ -325,6 +325,16 @@ final class VoiceCallSession {
     });
   }
 
+  Future<void> selectAudioOutputDevice(String deviceId) {
+    return _enqueue(() async {
+      if (state.phase != VoiceCallSessionPhase.active) {
+        _logInvalidEvent('audio output device in ${state.phase.name}');
+        return;
+      }
+      await media.selectAudioOutputDevice(deviceId);
+    });
+  }
+
   Future<void> dispose() {
     return _enqueue(() async {
       if (_disposed) {

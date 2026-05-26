@@ -403,6 +403,9 @@ class _NoopVoiceMediaConnection implements VoiceMediaConnection {
   Future<void> setAudioOutputRoute(VoiceMediaOutputRoute route) async {}
 
   @override
+  Future<void> selectAudioOutputDevice(String deviceId) async {}
+
+  @override
   Future<void> dispose() async {
     await _ice.close();
     await _tracks.close();
@@ -471,6 +474,9 @@ class _NoopCallMediaConnection implements CallMediaConnection {
 
   @override
   Future<void> setAudioOutputRoute(CallMediaOutputRoute route) async {}
+
+  @override
+  Future<void> selectAudioOutputDevice(String deviceId) async {}
 
   @override
   Future<void> refreshProcessingConfig() async {}

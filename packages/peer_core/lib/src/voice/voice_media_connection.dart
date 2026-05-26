@@ -30,6 +30,7 @@ abstract class VoiceMediaConnection {
   Future<void> setMuted({required bool muted});
   Future<void> setDeafened({required bool deafened});
   Future<void> setAudioOutputRoute(VoiceMediaOutputRoute route);
+  Future<void> selectAudioOutputDevice(String deviceId);
   Future<void> dispose();
 }
 
@@ -312,6 +313,23 @@ class DefaultVoiceMediaConnection implements VoiceMediaConnection {
       rethrow;
     }
     _appendDiagnostic(_mediaStates, 'audioOutputRoute:${route.name}');
+  }
+
+  @override
+  Future<void> selectAudioOutputDevice(String deviceId) async {
+    _ensureNotDisposed();
+    final normalized = deviceId.trim();
+    if (normalized.isEmpty) {
+      throw ArgumentError.value(deviceId, 'deviceId', 'Must not be empty.');
+    }
+    try {
+      await _config.platform.selectAudioOutput(normalized);
+    } catch (error) {
+      _appendDiagnostic(_mediaStates, 'audioOutputDevice failed | $error');
+      _lastError = error.toString();
+      rethrow;
+    }
+    _appendDiagnostic(_mediaStates, 'audioOutputDevice');
   }
 
   @override

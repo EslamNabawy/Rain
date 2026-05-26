@@ -939,7 +939,14 @@ class _VoiceAudioSettingsControls extends StatelessWidget {
   Widget build(BuildContext context) {
     final enabled = !isBusy;
     final soundControlsEnabled = enabled && settings.soundEffectsEnabled;
-    final outputPreferences = _outputPreferencesFor(outputCapabilities);
+    final outputPreferences = _outputPreferencesFor(
+      outputCapabilities,
+      AdaptiveDeviceProfile.resolve(
+        targetPlatform: defaultTargetPlatform,
+        width: MediaQuery.sizeOf(context).width,
+        lowPower: false,
+      ),
+    );
     final effectiveOutputPreference = _effectiveOutputPreference(
       settings.defaultOutputPreference,
       outputPreferences,
@@ -1089,7 +1096,14 @@ String _outputPreferenceLabel(CallAudioOutputPreference preference) {
 
 List<CallAudioOutputPreference> _outputPreferencesFor(
   AudioOutputCapabilityState capabilities,
+  AdaptiveDeviceProfile profile,
 ) {
+  if (profile.isDesktop) {
+    return <CallAudioOutputPreference>[
+      CallAudioOutputPreference.systemDefault,
+      if (capabilities.hasBluetoothOutput) CallAudioOutputPreference.bluetooth,
+    ];
+  }
   return <CallAudioOutputPreference>[
     CallAudioOutputPreference.systemDefault,
     CallAudioOutputPreference.speaker,

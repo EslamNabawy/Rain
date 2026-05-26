@@ -1,3 +1,4 @@
+import 'package:flutter/foundation.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:flutter_webrtc/flutter_webrtc.dart';
 import 'package:protocol_brain/protocol_brain.dart';
@@ -191,6 +192,96 @@ void main() {
       expect(state.hasWiredOutput, isTrue);
     },
   );
+
+  test('adaptive profile maps desktop to button refresh and pointer input', () {
+    final profile = AdaptiveDeviceProfile.resolve(
+      targetPlatform: TargetPlatform.windows,
+      width: 1280,
+      lowPower: false,
+    );
+
+    expect(profile.platform, AdaptiveDevicePlatform.windows);
+    expect(profile.interactionMode, AdaptiveInteractionMode.pointer);
+    expect(profile.viewportClass, AdaptiveViewportClass.desktop);
+    expect(profile.refreshMode, AdaptiveRefreshMode.button);
+    expect(profile.usesRefreshButton, isTrue);
+  });
+
+  test('adaptive profile maps Android compact to pull refresh', () {
+    final profile = AdaptiveDeviceProfile.resolve(
+      targetPlatform: TargetPlatform.android,
+      width: 390,
+      lowPower: true,
+    );
+
+    expect(profile.platform, AdaptiveDevicePlatform.android);
+    expect(profile.interactionMode, AdaptiveInteractionMode.touch);
+    expect(profile.viewportClass, AdaptiveViewportClass.compact);
+    expect(profile.refreshMode, AdaptiveRefreshMode.pull);
+    expect(profile.lowPower, isTrue);
+  });
+
+  test(
+    'adaptive media snapshot hides output control on single-output desktop',
+    () {
+      final snapshot = AdaptiveMediaCapabilitySnapshot(
+        profile: AdaptiveDeviceProfile.resolve(
+          targetPlatform: TargetPlatform.windows,
+          width: 1280,
+          lowPower: false,
+        ),
+        videoInput: const VideoInputCapabilityState(devices: []),
+        audioOutput: const AudioOutputCapabilityState(
+          devices: <RainMediaDevice>[
+            RainMediaDevice(
+              deviceId: 'speaker-1',
+              label: 'Laptop speaker',
+              kind: audioOutputDeviceKind,
+            ),
+          ],
+        ),
+      );
+
+      expect(snapshot.supportsAudioOutputSelection, isFalse);
+      expect(
+        snapshot.filterCallControls(const <CallControlCapability>[
+          CallControlCapability.microphone,
+          CallControlCapability.outputRoute,
+          CallControlCapability.hangUp,
+        ]),
+        const <CallControlCapability>[
+          CallControlCapability.microphone,
+          CallControlCapability.hangUp,
+        ],
+      );
+    },
+  );
+
+  test('adaptive media snapshot keeps Android speaker route available', () {
+    final snapshot = AdaptiveMediaCapabilitySnapshot(
+      profile: AdaptiveDeviceProfile.resolve(
+        targetPlatform: TargetPlatform.android,
+        width: 390,
+        lowPower: false,
+      ),
+      videoInput: const VideoInputCapabilityState(devices: []),
+      audioOutput: const AudioOutputCapabilityState(devices: []),
+    );
+
+    expect(snapshot.supportsAudioOutputSelection, isTrue);
+    expect(
+      snapshot.filterCallControls(const <CallControlCapability>[
+        CallControlCapability.microphone,
+        CallControlCapability.outputRoute,
+        CallControlCapability.hangUp,
+      ]),
+      const <CallControlCapability>[
+        CallControlCapability.microphone,
+        CallControlCapability.outputRoute,
+        CallControlCapability.hangUp,
+      ],
+    );
+  });
 
   test('selected microphone persists and resolves when available', () async {
     final platform = _FakePlatformBridge()

@@ -1,3 +1,4 @@
+import 'package:flutter/foundation.dart';
 import 'package:flutter_webrtc/flutter_webrtc.dart';
 import 'package:protocol_brain/protocol_brain.dart';
 
@@ -31,6 +32,90 @@ enum RainMediaDeviceKind {
 }
 
 enum RainCameraFacing { front, rear, external, unknown }
+
+enum AdaptiveDevicePlatform {
+  android,
+  windows,
+  macos,
+  linux,
+  ios,
+  fuchsia,
+  unknown,
+}
+
+enum AdaptiveInteractionMode { touch, pointer }
+
+enum AdaptiveViewportClass { compact, medium, desktop }
+
+enum AdaptiveRefreshMode { pull, button }
+
+final class AdaptiveDeviceProfile {
+  const AdaptiveDeviceProfile({
+    required this.platform,
+    required this.interactionMode,
+    required this.viewportClass,
+    required this.refreshMode,
+    required this.lowPower,
+  });
+
+  factory AdaptiveDeviceProfile.resolve({
+    required TargetPlatform targetPlatform,
+    required double width,
+    required bool lowPower,
+  }) {
+    final platform = _adaptivePlatformFor(targetPlatform);
+    final desktop = _desktopPlatforms.contains(platform);
+    final viewportClass = width >= 1100
+        ? AdaptiveViewportClass.desktop
+        : width >= 720
+        ? AdaptiveViewportClass.medium
+        : AdaptiveViewportClass.compact;
+    return AdaptiveDeviceProfile(
+      platform: platform,
+      interactionMode: desktop
+          ? AdaptiveInteractionMode.pointer
+          : AdaptiveInteractionMode.touch,
+      viewportClass: viewportClass,
+      refreshMode: desktop
+          ? AdaptiveRefreshMode.button
+          : AdaptiveRefreshMode.pull,
+      lowPower: lowPower,
+    );
+  }
+
+  final AdaptiveDevicePlatform platform;
+  final AdaptiveInteractionMode interactionMode;
+  final AdaptiveViewportClass viewportClass;
+  final AdaptiveRefreshMode refreshMode;
+  final bool lowPower;
+
+  bool get isDesktop => _desktopPlatforms.contains(platform);
+
+  bool get isAndroid => platform == AdaptiveDevicePlatform.android;
+
+  bool get usesPointer => interactionMode == AdaptiveInteractionMode.pointer;
+
+  bool get usesPullRefresh => refreshMode == AdaptiveRefreshMode.pull;
+
+  bool get usesRefreshButton => refreshMode == AdaptiveRefreshMode.button;
+}
+
+const Set<AdaptiveDevicePlatform> _desktopPlatforms = <AdaptiveDevicePlatform>{
+  AdaptiveDevicePlatform.windows,
+  AdaptiveDevicePlatform.macos,
+  AdaptiveDevicePlatform.linux,
+};
+
+AdaptiveDevicePlatform _adaptivePlatformFor(TargetPlatform platform) {
+  return switch (platform) {
+    TargetPlatform.android => AdaptiveDevicePlatform.android,
+    TargetPlatform.windows => AdaptiveDevicePlatform.windows,
+    TargetPlatform.macOS => AdaptiveDevicePlatform.macos,
+    TargetPlatform.linux => AdaptiveDevicePlatform.linux,
+    TargetPlatform.iOS => AdaptiveDevicePlatform.ios,
+    TargetPlatform.fuchsia => AdaptiveDevicePlatform.fuchsia,
+  };
+}
 
 final class RainMediaDevice {
   const RainMediaDevice({
@@ -273,6 +358,53 @@ final class AudioOutputCapabilityState {
 
   bool get hasWiredOutput =>
       devices.any((RainMediaDevice device) => device.isWiredAudioOutput);
+
+  int get availableOutputCount => devices.length;
+}
+
+final class AdaptiveMediaCapabilitySnapshot {
+  const AdaptiveMediaCapabilitySnapshot({
+    required this.profile,
+    required this.videoInput,
+    required this.audioOutput,
+  });
+
+  final AdaptiveDeviceProfile profile;
+  final VideoInputCapabilityState videoInput;
+  final AudioOutputCapabilityState audioOutput;
+
+  bool get supportsCameraSwitch => videoInput.supportsCameraSwitch;
+
+  bool get hasBluetoothOutput => audioOutput.hasBluetoothOutput;
+
+  bool get hasWiredOutput => audioOutput.hasWiredOutput;
+
+  bool get supportsAudioOutputSelection {
+    if (profile.isAndroid) {
+      return true;
+    }
+    if (profile.isDesktop) {
+      return audioOutput.availableOutputCount > 1;
+    }
+    return audioOutput.availableOutputCount > 1 ||
+        audioOutput.hasBluetoothOutput ||
+        audioOutput.hasWiredOutput;
+  }
+
+  List<CallControlCapability> filterCallControls(
+    Iterable<CallControlCapability> controls,
+  ) {
+    final videoFiltered = videoInput.filterCallControls(controls);
+    if (supportsAudioOutputSelection) {
+      return videoFiltered;
+    }
+    return videoFiltered
+        .where(
+          (CallControlCapability capability) =>
+              capability != CallControlCapability.outputRoute,
+        )
+        .toList(growable: false);
+  }
 }
 
 final class StartupMediaPermissionWarmupResult {

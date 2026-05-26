@@ -8,6 +8,7 @@ import 'package:rain/application/state/call_surface_geometry.dart';
 import 'package:rain/application/state/call_surface_providers.dart';
 import 'package:rain/presentation/branding/rain_peer_core_mark.dart';
 import 'package:rain/presentation/branding/rain_ripple_halo_surface.dart';
+import 'package:rain/presentation/performance/rain_performance.dart';
 import 'package:rain/presentation/theme/rain_theme.dart';
 import 'package:rain/presentation/widgets/calls/rain_call_controls.dart';
 import 'package:rain/presentation/widgets/rain_chat_widgets.dart';
@@ -61,7 +62,7 @@ class RainCallOverlay extends StatelessWidget {
   final VoidCallback? onToggleDeafen;
   final VoidCallback? onToggleCamera;
   final VoidCallback? onSwitchCamera;
-  final ValueChanged<VoiceCallOutputRoute>? onSelectOutputRoute;
+  final ValueChanged<CallAudioOutputTarget>? onSelectOutputRoute;
   final List<CallControlCapability>? controlCapabilities;
   final List<VoiceCallOutputRouteOption>? outputRouteOptions;
   final VoidCallback onMinimize;
@@ -266,7 +267,7 @@ class _RainFloatingExpandedCallOverlay extends StatefulWidget {
   final VoidCallback? onToggleDeafen;
   final VoidCallback? onToggleCamera;
   final VoidCallback? onSwitchCamera;
-  final ValueChanged<VoiceCallOutputRoute>? onSelectOutputRoute;
+  final ValueChanged<CallAudioOutputTarget>? onSelectOutputRoute;
   final List<CallControlCapability>? controlCapabilities;
   final List<VoiceCallOutputRouteOption>? outputRouteOptions;
   final VoidCallback onMinimize;
@@ -472,7 +473,7 @@ class RainFullscreenCallWorkspace extends StatelessWidget {
   final VoidCallback? onToggleDeafen;
   final VoidCallback? onToggleCamera;
   final VoidCallback? onSwitchCamera;
-  final ValueChanged<VoiceCallOutputRoute>? onSelectOutputRoute;
+  final ValueChanged<CallAudioOutputTarget>? onSelectOutputRoute;
   final List<CallControlCapability>? controlCapabilities;
   final List<VoiceCallOutputRouteOption>? outputRouteOptions;
   final VoidCallback onExitFullscreen;
@@ -860,61 +861,37 @@ class _RainFullscreenControlPanel extends StatelessWidget {
   final VoidCallback? onToggleDeafen;
   final VoidCallback? onToggleCamera;
   final VoidCallback? onSwitchCamera;
-  final ValueChanged<VoiceCallOutputRoute>? onSelectOutputRoute;
+  final ValueChanged<CallAudioOutputTarget>? onSelectOutputRoute;
   final List<CallControlCapability>? controlCapabilities;
   final List<VoiceCallOutputRouteOption>? outputRouteOptions;
 
   @override
   Widget build(BuildContext context) {
-    final scheme = Theme.of(context).colorScheme;
     return Align(
       alignment: Alignment.bottomCenter,
       child: ConstrainedBox(
         constraints: const BoxConstraints(maxWidth: 760),
-        child: Container(
-          key: const ValueKey<String>('rain-call-fullscreen-controls'),
-          padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
-          decoration: BoxDecoration(
-            color: scheme.surface.withValues(alpha: 0.86),
-            borderRadius: BorderRadius.circular(24),
-            border: Border.all(
-              color: scheme.outlineVariant.withValues(alpha: 0.30),
+        child: RainCallControlDock(
+          dockKey: const ValueKey<String>('rain-call-fullscreen-controls'),
+          state: state,
+          onAccept: onAccept,
+          onReject: onReject,
+          onHangUp: onHangUp,
+          onRetry: onRetry,
+          onToggleMute: onToggleMute,
+          onToggleDeafen: onToggleDeafen,
+          onToggleCamera: onToggleCamera,
+          onSwitchCamera: onSwitchCamera,
+          onSelectOutputRoute: onSelectOutputRoute,
+          controlCapabilities: controlCapabilities,
+          outputRouteOptions: outputRouteOptions,
+          trailingControls: <Widget>[
+            IconButton.filledTonal(
+              tooltip: 'Exit fullscreen',
+              onPressed: onExitFullscreen,
+              icon: const Icon(Icons.fullscreen_exit),
             ),
-            boxShadow: <BoxShadow>[
-              BoxShadow(
-                blurRadius: 26,
-                offset: const Offset(0, 14),
-                color: Colors.black.withValues(alpha: 0.26),
-              ),
-            ],
-          ),
-          child: Wrap(
-            alignment: WrapAlignment.center,
-            crossAxisAlignment: WrapCrossAlignment.center,
-            spacing: 10,
-            runSpacing: 8,
-            children: <Widget>[
-              RainCallControls(
-                state: state,
-                onAccept: onAccept,
-                onReject: onReject,
-                onHangUp: onHangUp,
-                onRetry: onRetry,
-                onToggleMute: onToggleMute,
-                onToggleDeafen: onToggleDeafen,
-                onToggleCamera: onToggleCamera,
-                onSwitchCamera: onSwitchCamera,
-                onSelectOutputRoute: onSelectOutputRoute,
-                controlCapabilities: controlCapabilities,
-                outputRouteOptions: outputRouteOptions,
-              ),
-              IconButton.filledTonal(
-                tooltip: 'Exit fullscreen',
-                onPressed: onExitFullscreen,
-                icon: const Icon(Icons.fullscreen_exit),
-              ),
-            ],
-          ),
+          ],
         ),
       ),
     );
@@ -966,7 +943,7 @@ class _RainExpandedCallPanel extends StatelessWidget {
   final VoidCallback? onToggleDeafen;
   final VoidCallback? onToggleCamera;
   final VoidCallback? onSwitchCamera;
-  final ValueChanged<VoiceCallOutputRoute>? onSelectOutputRoute;
+  final ValueChanged<CallAudioOutputTarget>? onSelectOutputRoute;
   final List<CallControlCapability>? controlCapabilities;
   final List<VoiceCallOutputRouteOption>? outputRouteOptions;
   final VoidCallback onMinimize;
@@ -1359,39 +1336,27 @@ class _RainCallControlDock extends StatelessWidget {
   final VoidCallback? onToggleDeafen;
   final VoidCallback? onToggleCamera;
   final VoidCallback? onSwitchCamera;
-  final ValueChanged<VoiceCallOutputRoute>? onSelectOutputRoute;
+  final ValueChanged<CallAudioOutputTarget>? onSelectOutputRoute;
   final List<CallControlCapability>? controlCapabilities;
   final List<VoiceCallOutputRouteOption>? outputRouteOptions;
 
   @override
   Widget build(BuildContext context) {
-    final scheme = Theme.of(context).colorScheme;
-    return Container(
-      key: const ValueKey<String>('rain-call-control-dock'),
-      padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
-      decoration: BoxDecoration(
-        color: scheme.surfaceContainerHighest.withValues(alpha: 0.52),
-        borderRadius: BorderRadius.circular(22),
-        border: Border.all(
-          color: scheme.outlineVariant.withValues(alpha: 0.28),
-        ),
-      ),
-      child: Align(
-        alignment: Alignment.center,
-        child: RainCallControls(
-          state: state,
-          onAccept: onAccept,
-          onReject: onReject,
-          onHangUp: onHangUp,
-          onRetry: onRetry,
-          onToggleMute: onToggleMute,
-          onToggleDeafen: onToggleDeafen,
-          onToggleCamera: onToggleCamera,
-          onSwitchCamera: onSwitchCamera,
-          onSelectOutputRoute: onSelectOutputRoute,
-          controlCapabilities: controlCapabilities,
-          outputRouteOptions: outputRouteOptions,
-        ),
+    return Align(
+      alignment: Alignment.center,
+      child: RainCallControlDock(
+        state: state,
+        onAccept: onAccept,
+        onReject: onReject,
+        onHangUp: onHangUp,
+        onRetry: onRetry,
+        onToggleMute: onToggleMute,
+        onToggleDeafen: onToggleDeafen,
+        onToggleCamera: onToggleCamera,
+        onSwitchCamera: onSwitchCamera,
+        onSelectOutputRoute: onSelectOutputRoute,
+        controlCapabilities: controlCapabilities,
+        outputRouteOptions: outputRouteOptions,
       ),
     );
   }
@@ -1464,57 +1429,89 @@ class _RainCallAudioActivity extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    return Column(
-      mainAxisSize: MainAxisSize.min,
-      children: <Widget>[
-        RainPeerCoreAnimatedMark(size: 38, animate: false),
-        const SizedBox(height: 4),
-        _RainCallAudioWave(level: level, accent: accent),
-      ],
-    );
-  }
-}
-
-class _RainCallAudioWave extends StatelessWidget {
-  const _RainCallAudioWave({required this.level, required this.accent});
-
-  final double level;
-  final Color accent;
-
-  @override
-  Widget build(BuildContext context) {
-    const multipliers = <double>[0.38, 0.68, 1, 0.68, 0.38];
+    final staticOnly =
+        MediaQuery.disableAnimationsOf(context) ||
+        RainPerformanceScope.read(context).isLowPower;
     return SizedBox(
-      width: 62,
-      height: 52,
-      child: Row(
-        mainAxisAlignment: MainAxisAlignment.spaceBetween,
-        crossAxisAlignment: CrossAxisAlignment.center,
+      key: const ValueKey<String>('rain-call-audio-emitter'),
+      width: 86,
+      height: 86,
+      child: Stack(
+        alignment: Alignment.center,
         children: <Widget>[
-          for (var index = 0; index < multipliers.length; index += 1)
-            AnimatedContainer(
-              key: ValueKey<String>('rain-call-audio-wave-bar-$index'),
-              duration: const Duration(milliseconds: 140),
-              curve: Curves.easeOutCubic,
-              width: 8,
-              height: _barHeight(level, multipliers[index]),
-              decoration: BoxDecoration(
-                color: accent.withValues(
-                  alpha: 0.58 + (0.36 * multipliers[index]),
-                ),
-                borderRadius: BorderRadius.circular(999),
+          Positioned.fill(
+            child: CustomPaint(
+              painter: _RainCallAudioEmitterPainter(
+                level: level,
+                accent: accent,
+                staticOnly: staticOnly,
               ),
             ),
+          ),
+          RainPeerCoreAnimatedMark(
+            key: const ValueKey<String>('rain-call-audio-emitter-mark'),
+            size: 42,
+            animate: false,
+          ),
         ],
       ),
     );
   }
+}
 
-  double _barHeight(double rawLevel, double multiplier) {
-    final clamped = rawLevel.isFinite
-        ? rawLevel.clamp(0.0, 1.0).toDouble()
-        : 0.0;
-    return 12 + (38 * clamped * multiplier);
+class _RainCallAudioEmitterPainter extends CustomPainter {
+  const _RainCallAudioEmitterPainter({
+    required this.level,
+    required this.accent,
+    required this.staticOnly,
+  });
+
+  final double level;
+  final Color accent;
+  final bool staticOnly;
+
+  @override
+  void paint(Canvas canvas, Size size) {
+    final clamped = level.isFinite ? level.clamp(0.0, 1.0).toDouble() : 0.0;
+    final intensity = staticOnly ? 0.34 : math.max(0.18, clamped);
+    final stroke = Paint()
+      ..style = PaintingStyle.stroke
+      ..strokeCap = StrokeCap.round
+      ..strokeWidth = 1.6;
+    final fill = Paint()..style = PaintingStyle.fill;
+    final nodes = <Offset>[
+      Offset(size.width * 0.35, size.height * 0.55),
+      Offset(size.width * 0.51, size.height * 0.35),
+      Offset(size.width * 0.61, size.height * 0.62),
+    ];
+
+    for (final node in nodes) {
+      for (var ring = 0; ring < 3; ring += 1) {
+        final radius = 7.0 + (ring * 9.0) + (intensity * 12.0);
+        stroke.color = accent.withValues(
+          alpha: (0.34 - (ring * 0.08)) * intensity,
+        );
+        canvas.drawCircle(node, radius, stroke);
+      }
+      fill.color = accent.withValues(alpha: 0.42 + (0.30 * intensity));
+      canvas.drawCircle(node, 3.2 + (2.0 * intensity), fill);
+    }
+
+    stroke
+      ..strokeWidth = 1.2
+      ..color = accent.withValues(alpha: 0.18 * intensity);
+    canvas.drawCircle(
+      Offset(size.width / 2, size.height / 2),
+      31 + (8 * intensity),
+      stroke,
+    );
+  }
+
+  @override
+  bool shouldRepaint(covariant _RainCallAudioEmitterPainter oldDelegate) {
+    return oldDelegate.level != level ||
+        oldDelegate.accent != accent ||
+        oldDelegate.staticOnly != staticOnly;
   }
 }
 

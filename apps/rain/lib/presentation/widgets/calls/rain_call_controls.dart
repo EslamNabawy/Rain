@@ -2,6 +2,7 @@ import 'dart:async';
 
 import 'package:flutter/material.dart';
 
+import 'package:rain/application/runtime/media_device_settings.dart';
 import 'package:rain/application/runtime/voice_call_state.dart';
 import 'package:rain/presentation/branding/rain_ripple_halo_surface.dart';
 import 'package:rain/presentation/theme/rain_theme.dart';
@@ -32,7 +33,7 @@ class RainCallControls extends StatelessWidget {
   final VoidCallback? onToggleDeafen;
   final VoidCallback? onToggleCamera;
   final VoidCallback? onSwitchCamera;
-  final ValueChanged<VoiceCallOutputRoute>? onSelectOutputRoute;
+  final ValueChanged<CallAudioOutputTarget>? onSelectOutputRoute;
   final List<CallControlCapability>? controlCapabilities;
   final List<VoiceCallOutputRouteOption>? outputRouteOptions;
 
@@ -123,31 +124,105 @@ class RainCallControls extends StatelessWidget {
 
   Widget _buildOutputRouteControl({required RainCallControlVisual visual}) {
     final options = _effectiveOutputRouteOptions(outputRouteOptions);
-    final enabled =
-        state.isActive && onSelectOutputRoute != null && options.length > 1;
-    final selected = _selectedOutputRouteOption(options, state.outputRoute);
+    if (options.length < 2) {
+      return const SizedBox.shrink();
+    }
+    final enabled = state.isActive && onSelectOutputRoute != null;
+    final selected = _selectedOutputRouteOption(options, state);
     if (options.length <= 2) {
       return IconButton(
         tooltip: visual.tooltip,
         onPressed: enabled
-            ? () => onSelectOutputRoute!(
-                _nextOutputRoute(options, state.outputRoute),
-              )
+            ? () => onSelectOutputRoute!(_nextOutputTarget(options, state))
             : null,
         icon: Icon(selected.icon),
       );
     }
-    return PopupMenuButton<VoiceCallOutputRoute>(
+    return PopupMenuButton<CallAudioOutputTarget>(
       tooltip: visual.tooltip,
       enabled: enabled,
       onSelected: onSelectOutputRoute,
       itemBuilder: (BuildContext context) {
-        return <PopupMenuEntry<VoiceCallOutputRoute>>[
+        return <PopupMenuEntry<CallAudioOutputTarget>>[
           for (final option in options)
-            _outputRouteMenuItem(option: option, current: state.outputRoute),
+            _outputRouteMenuItem(option: option, state: state),
         ];
       },
       icon: Icon(selected.icon),
+    );
+  }
+}
+
+class RainCallControlDock extends StatelessWidget {
+  const RainCallControlDock({
+    super.key,
+    this.dockKey = const ValueKey<String>('rain-call-control-dock'),
+    required this.state,
+    required this.onAccept,
+    required this.onReject,
+    required this.onHangUp,
+    required this.onRetry,
+    required this.onToggleMute,
+    this.onToggleDeafen,
+    this.onToggleCamera,
+    this.onSwitchCamera,
+    this.onSelectOutputRoute,
+    this.controlCapabilities,
+    this.outputRouteOptions,
+    this.trailingControls = const <Widget>[],
+  });
+
+  final Key dockKey;
+  final VoiceCallState state;
+  final VoidCallback onAccept;
+  final VoidCallback onReject;
+  final VoidCallback onHangUp;
+  final VoidCallback onRetry;
+  final VoidCallback onToggleMute;
+  final VoidCallback? onToggleDeafen;
+  final VoidCallback? onToggleCamera;
+  final VoidCallback? onSwitchCamera;
+  final ValueChanged<CallAudioOutputTarget>? onSelectOutputRoute;
+  final List<CallControlCapability>? controlCapabilities;
+  final List<VoiceCallOutputRouteOption>? outputRouteOptions;
+  final List<Widget> trailingControls;
+
+  @override
+  Widget build(BuildContext context) {
+    final scheme = Theme.of(context).colorScheme;
+    return Container(
+      key: dockKey,
+      padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
+      decoration: BoxDecoration(
+        color: scheme.surfaceContainerHighest.withValues(alpha: 0.52),
+        borderRadius: BorderRadius.circular(22),
+        border: Border.all(
+          color: scheme.outlineVariant.withValues(alpha: 0.28),
+        ),
+      ),
+      child: Wrap(
+        alignment: WrapAlignment.center,
+        crossAxisAlignment: WrapCrossAlignment.center,
+        spacing: 10,
+        runSpacing: 8,
+        children: <Widget>[
+          RainCallControls(
+            state: state,
+            onAccept: onAccept,
+            onReject: onReject,
+            onHangUp: onHangUp,
+            onRetry: onRetry,
+            onToggleMute: onToggleMute,
+            onToggleDeafen: onToggleDeafen,
+            onToggleCamera: onToggleCamera,
+            onSwitchCamera: onSwitchCamera,
+            onSelectOutputRoute: onSelectOutputRoute,
+            controlCapabilities: controlCapabilities,
+            outputRouteOptions: outputRouteOptions,
+          ),
+          ...trailingControls,
+        ],
+      ),
     );
   }
 }
@@ -279,7 +354,7 @@ RainCallControlVisual rainVoiceCallControlVisual(
     ),
     CallControlCapability.deafen => RainCallControlVisual(
       tooltip: state.isDeafened ? 'Undeafen audio' : 'Deafen audio',
-      icon: state.isDeafened ? Icons.volume_off : Icons.volume_up,
+      icon: state.isDeafened ? Icons.hearing_disabled : Icons.hearing,
     ),
     CallControlCapability.outputRoute => RainCallControlVisual(
       tooltip: 'Choose audio output',
@@ -403,34 +478,93 @@ class _RainCallTickerState extends State<RainCallTicker> {
 
 List<VoiceCallOutputRouteOption> rainVoiceCallOutputRouteOptions({
   bool hasBluetoothOutput = true,
+  AudioOutputCapabilityState? capabilities,
+  AdaptiveDeviceProfile? profile,
 }) {
+  if (capabilities != null && profile != null) {
+    return _adaptiveOutputRouteOptions(capabilities, profile);
+  }
   return <VoiceCallOutputRouteOption>[
     const VoiceCallOutputRouteOption(
-      route: VoiceCallOutputRoute.systemDefault,
+      target: CallAudioOutputTarget.systemDefault(),
       label: 'Default',
       icon: Icons.volume_up,
     ),
     const VoiceCallOutputRouteOption(
-      route: VoiceCallOutputRoute.speaker,
+      target: CallAudioOutputTarget.androidSpeakerphone(),
       label: 'Speaker',
       icon: Icons.speaker_phone,
     ),
     if (hasBluetoothOutput)
       const VoiceCallOutputRouteOption(
-        route: VoiceCallOutputRoute.bluetooth,
+        target: CallAudioOutputTarget.bluetooth(),
         label: 'Bluetooth',
         icon: Icons.bluetooth_audio,
       ),
   ];
 }
 
-PopupMenuItem<VoiceCallOutputRoute> _outputRouteMenuItem({
+List<VoiceCallOutputRouteOption> _adaptiveOutputRouteOptions(
+  AudioOutputCapabilityState capabilities,
+  AdaptiveDeviceProfile profile,
+) {
+  if (profile.isDesktop) {
+    final outputs = capabilities.devices
+        .where((RainMediaDevice device) => device.isAudioOutput)
+        .toList(growable: false);
+    if (outputs.length <= 1) {
+      return const <VoiceCallOutputRouteOption>[];
+    }
+    return <VoiceCallOutputRouteOption>[
+      const VoiceCallOutputRouteOption(
+        target: CallAudioOutputTarget.systemDefault(),
+        label: 'System default',
+        icon: Icons.devices,
+      ),
+      for (var index = 0; index < outputs.length; index += 1)
+        VoiceCallOutputRouteOption(
+          target: CallAudioOutputTarget.desktopDevice(outputs[index].deviceId),
+          label: outputs[index].displayLabel(index),
+          icon: _deviceOutputIcon(outputs[index]),
+        ),
+    ];
+  }
+
+  final defaultLabel = capabilities.hasWiredOutput
+      ? 'Wired headset'
+      : 'Phone audio';
+  final defaultTarget = capabilities.hasWiredOutput
+      ? const CallAudioOutputTarget.wiredHeadset()
+      : const CallAudioOutputTarget.systemDefault();
+  return <VoiceCallOutputRouteOption>[
+    VoiceCallOutputRouteOption(
+      target: defaultTarget,
+      label: defaultLabel,
+      icon: capabilities.hasWiredOutput
+          ? Icons.headphones
+          : Icons.phone_in_talk,
+    ),
+    const VoiceCallOutputRouteOption(
+      target: CallAudioOutputTarget.androidSpeakerphone(),
+      label: 'Speakerphone',
+      icon: Icons.speaker_phone,
+    ),
+    if (capabilities.hasBluetoothOutput)
+      const VoiceCallOutputRouteOption(
+        target: CallAudioOutputTarget.bluetooth(),
+        label: 'Bluetooth',
+        icon: Icons.bluetooth_audio,
+      ),
+  ];
+}
+
+PopupMenuItem<CallAudioOutputTarget> _outputRouteMenuItem({
   required VoiceCallOutputRouteOption option,
-  required VoiceCallOutputRoute current,
+  required VoiceCallState state,
 }) {
-  final selected = option.route == current;
-  return PopupMenuItem<VoiceCallOutputRoute>(
-    value: option.route,
+  final selected = option.target.matches(state);
+  return PopupMenuItem<CallAudioOutputTarget>(
+    value: option.target,
     child: Row(
       children: <Widget>[
         Icon(selected ? Icons.check_circle : option.icon, size: 20),
@@ -444,30 +578,26 @@ PopupMenuItem<VoiceCallOutputRoute> _outputRouteMenuItem({
 List<VoiceCallOutputRouteOption> _effectiveOutputRouteOptions(
   List<VoiceCallOutputRouteOption>? options,
 ) {
-  final filtered = (options ?? rainVoiceCallOutputRouteOptions())
+  final source = options ?? rainVoiceCallOutputRouteOptions();
+  final filtered = source
       .where(
         (VoiceCallOutputRouteOption option) =>
-            !_containsOutputRoute(options, option.route, before: option),
+            !_containsOutputTarget(source, option.target, before: option),
       )
       .toList(growable: false);
-  return filtered.isEmpty
-      ? rainVoiceCallOutputRouteOptions(hasBluetoothOutput: false)
-      : filtered;
+  return filtered;
 }
 
-bool _containsOutputRoute(
-  List<VoiceCallOutputRouteOption>? options,
-  VoiceCallOutputRoute route, {
+bool _containsOutputTarget(
+  List<VoiceCallOutputRouteOption> options,
+  CallAudioOutputTarget target, {
   required VoiceCallOutputRouteOption before,
 }) {
-  if (options == null) {
-    return false;
-  }
   for (final option in options) {
     if (identical(option, before)) {
       return false;
     }
-    if (option.route == route) {
+    if (option.target.key == target.key) {
       return true;
     }
   }
@@ -476,27 +606,32 @@ bool _containsOutputRoute(
 
 VoiceCallOutputRouteOption _selectedOutputRouteOption(
   List<VoiceCallOutputRouteOption> options,
-  VoiceCallOutputRoute route,
+  VoiceCallState state,
 ) {
   for (final option in options) {
-    if (option.route == route) {
+    if (option.target.matches(state)) {
+      return option;
+    }
+  }
+  for (final option in options) {
+    if (option.route == state.outputRoute && !option.target.isDeviceBacked) {
       return option;
     }
   }
   return options.first;
 }
 
-VoiceCallOutputRoute _nextOutputRoute(
+CallAudioOutputTarget _nextOutputTarget(
   List<VoiceCallOutputRouteOption> options,
-  VoiceCallOutputRoute current,
+  VoiceCallState state,
 ) {
   final currentIndex = options.indexWhere(
-    (VoiceCallOutputRouteOption option) => option.route == current,
+    (VoiceCallOutputRouteOption option) => option.target.matches(state),
   );
   if (currentIndex < 0) {
-    return options.first.route;
+    return options.first.target;
   }
-  return options[(currentIndex + 1) % options.length].route;
+  return options[(currentIndex + 1) % options.length].target;
 }
 
 IconData _outputRouteIcon(VoiceCallOutputRoute route) {
@@ -505,6 +640,16 @@ IconData _outputRouteIcon(VoiceCallOutputRoute route) {
     VoiceCallOutputRoute.speaker => Icons.speaker_phone,
     VoiceCallOutputRoute.bluetooth => Icons.bluetooth_audio,
   };
+}
+
+IconData _deviceOutputIcon(RainMediaDevice device) {
+  if (device.isBluetoothAudioOutput) {
+    return Icons.bluetooth_audio;
+  }
+  if (device.isWiredAudioOutput) {
+    return Icons.headphones;
+  }
+  return Icons.speaker;
 }
 
 IconData rainVoiceCallIcon(VoiceCallState state) {
@@ -606,7 +751,10 @@ String rainVoiceCallDetail(VoiceCallState state, int nowMs) {
     if (state.isVideo && state.isRemoteCameraMuted) {
       labels.add('Peer camera off');
     }
-    if (state.outputRoute != VoiceCallOutputRoute.systemDefault) {
+    final outputLabel = state.outputRouteLabel?.trim();
+    if (outputLabel != null && outputLabel.isNotEmpty) {
+      labels.add(outputLabel);
+    } else if (state.outputRoute != VoiceCallOutputRoute.systemDefault) {
       labels.add(_outputRouteLabel(state.outputRoute));
     }
     final warning = state.outputRouteWarning?.trim();

@@ -6510,6 +6510,9 @@ class _TestVoiceMediaConnection implements VoiceMediaConnection {
   }
 
   @override
+  Future<void> selectAudioOutputDevice(String deviceId) async {}
+
+  @override
   Future<void> dispose() async {
     if (disposed) {
       return;
@@ -6682,6 +6685,9 @@ class _TestCallMediaConnection implements CallMediaConnection {
         .putIfAbsent(peerId, () => <VoiceMediaOutputRoute>[])
         .add(route);
   }
+
+  @override
+  Future<void> selectAudioOutputDevice(String deviceId) async {}
 
   @override
   Future<void> refreshProcessingConfig() async {}
