@@ -1590,7 +1590,7 @@ git commit -m "test: cover cross-device call runtime flows"
 **Files:**
 - No source changes expected unless a validation failure identifies a real bug.
 
-- [ ] **Step 1: Restore dependencies**
+- [x] **Step 1: Restore dependencies**
 
 ```powershell
 dart pub get
@@ -1602,7 +1602,7 @@ Expected:
 Got dependencies
 ```
 
-- [ ] **Step 2: Analyze**
+- [x] **Step 2: Analyze**
 
 ```powershell
 dart run melos run analyze
@@ -1614,7 +1614,7 @@ Expected:
 No issues found
 ```
 
-- [ ] **Step 3: Test**
+- [x] **Step 3: Test**
 
 ```powershell
 dart run melos run test
@@ -1626,7 +1626,7 @@ Expected:
 All tests passed
 ```
 
-- [ ] **Step 4: Commit validation-only fixes if needed**
+- [x] **Step 4: Commit validation-only fixes if needed**
 
 If validation required code or test fixes:
 
