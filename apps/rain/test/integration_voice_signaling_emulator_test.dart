@@ -120,6 +120,24 @@ void main() {
         final ended = await adapterBob.fetchCall(callId);
         expect(ended?.status, VoiceCallSignalingStatus.ended);
         expect(ended?.endedBy, alice);
+
+        final retryCallId = 'voice-retry-$runId';
+        final retryRoom = await adapterAlice.createOutgoingCall(
+          callId: retryCallId,
+          caller: alice,
+          callee: bob,
+          createdAt: createdAt + 8,
+          expiresAt: createdAt + const Duration(minutes: 5).inMilliseconds + 8,
+        );
+        expect(retryRoom.status, VoiceCallSignalingStatus.ringing);
+        await adapterAlice.endCall(
+          callId: retryCallId,
+          username: alice,
+          status: VoiceCallSignalingStatus.ended,
+          endedAt: createdAt + 9,
+          reasonCode: 'cleanup',
+          reason: 'Test cleanup.',
+        );
       } finally {
         await adapterAlice.dispose();
         await adapterBob.dispose();

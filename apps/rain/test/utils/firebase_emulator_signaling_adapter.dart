@@ -723,14 +723,16 @@ class FirebaseEmulatorSignalingAdapter
     final normalizedCallee = normalizeVoiceCallUsername(callee);
     await _ensureSignedInAsUsername(normalizedCallee);
     _ensureVoiceRole(room, normalizedCallee, VoiceCallRole.callee);
+    final safeAcceptedAt = _safeVoiceRoomTimestamp(room, acceptedAt);
     await _patch(<String>[], <String, Object?>{
       'voiceCalls/${room.callId}/status':
           VoiceCallSignalingStatus.accepted.name,
-      'voiceCalls/${room.callId}/acceptedAt': acceptedAt,
-      'voiceCalls/${room.callId}/updatedAt': acceptedAt,
+      'voiceCalls/${room.callId}/acceptedAt': safeAcceptedAt,
+      'voiceCalls/${room.callId}/updatedAt': safeAcceptedAt,
       'voiceCallInboxes/${room.callee}/${room.callId}/status':
           VoiceCallSignalingStatus.accepted.name,
-      'voiceCallInboxes/${room.callee}/${room.callId}/updatedAt': acceptedAt,
+      'voiceCallInboxes/${room.callee}/${room.callId}/updatedAt':
+          safeAcceptedAt,
     });
   }
 
@@ -744,14 +746,16 @@ class FirebaseEmulatorSignalingAdapter
     final normalizedUsername = normalizeVoiceCallUsername(username);
     await _ensureSignedInAsUsername(normalizedUsername);
     _ensureVoiceParticipant(room, normalizedUsername);
+    final safeConnectedAt = _safeVoiceRoomTimestamp(room, connectedAt);
     await _patch(<String>[], <String, Object?>{
       'voiceCalls/${room.callId}/status':
           VoiceCallSignalingStatus.connected.name,
-      'voiceCalls/${room.callId}/connectedAt': connectedAt,
-      'voiceCalls/${room.callId}/updatedAt': connectedAt,
+      'voiceCalls/${room.callId}/connectedAt': safeConnectedAt,
+      'voiceCalls/${room.callId}/updatedAt': safeConnectedAt,
       'voiceCallInboxes/${room.callee}/${room.callId}/status':
           VoiceCallSignalingStatus.connected.name,
-      'voiceCallInboxes/${room.callee}/${room.callId}/updatedAt': connectedAt,
+      'voiceCallInboxes/${room.callee}/${room.callId}/updatedAt':
+          safeConnectedAt,
     });
   }
 
@@ -772,15 +776,16 @@ class FirebaseEmulatorSignalingAdapter
       await _deleteActiveVoiceLocksForRoomIfCurrent(room);
       return;
     }
+    final safeEndedAt = _safeVoiceRoomTimestamp(room, endedAt);
     await _patch(<String>[], <String, Object?>{
       'voiceCalls/${room.callId}/status': status.name,
-      'voiceCalls/${room.callId}/endedAt': endedAt,
+      'voiceCalls/${room.callId}/endedAt': safeEndedAt,
       'voiceCalls/${room.callId}/endedBy': normalizedUsername,
-      'voiceCalls/${room.callId}/updatedAt': endedAt,
+      'voiceCalls/${room.callId}/updatedAt': safeEndedAt,
       'voiceCalls/${room.callId}/reasonCode': reasonCode,
       'voiceCalls/${room.callId}/reason': reason,
       'voiceCallInboxes/${room.callee}/${room.callId}/status': status.name,
-      'voiceCallInboxes/${room.callee}/${room.callId}/updatedAt': endedAt,
+      'voiceCallInboxes/${room.callee}/${room.callId}/updatedAt': safeEndedAt,
     });
     await _deleteActiveVoiceLocksForRoomIfCurrent(room);
   }
@@ -796,9 +801,10 @@ class FirebaseEmulatorSignalingAdapter
     final normalizedUsername = normalizeVoiceCallUsername(username);
     await _ensureSignedInAsUsername(normalizedUsername);
     _ensureVoiceParticipant(room, normalizedUsername);
+    final safeUpdatedAt = _safeVoiceRoomTimestamp(room, updatedAt);
     await _patch(<String>[], <String, Object?>{
       'voiceCalls/${room.callId}/muted/$normalizedUsername': muted,
-      'voiceCalls/${room.callId}/updatedAt': updatedAt,
+      'voiceCalls/${room.callId}/updatedAt': safeUpdatedAt,
     });
   }
 
@@ -813,9 +819,10 @@ class FirebaseEmulatorSignalingAdapter
     final normalizedUsername = normalizeVoiceCallUsername(username);
     await _ensureSignedInAsUsername(normalizedUsername);
     _ensureVoiceParticipant(room, normalizedUsername);
+    final safeUpdatedAt = _safeVoiceRoomTimestamp(room, updatedAt);
     await _patch(<String>[], <String, Object?>{
       'voiceCalls/${room.callId}/cameraMuted/$normalizedUsername': cameraMuted,
-      'voiceCalls/${room.callId}/updatedAt': updatedAt,
+      'voiceCalls/${room.callId}/updatedAt': safeUpdatedAt,
     });
   }
 
@@ -830,16 +837,17 @@ class FirebaseEmulatorSignalingAdapter
     final normalizedCaller = normalizeVoiceCallUsername(caller);
     await _ensureSignedInAsUsername(normalizedCaller);
     _ensureVoiceRole(room, normalizedCaller, VoiceCallRole.caller);
+    final safeUpdatedAt = _safeVoiceRoomTimestamp(room, updatedAt);
     await _patch(<String>[], <String, Object?>{
       'voiceCalls/${room.callId}/status':
           VoiceCallSignalingStatus.negotiating.name,
       'voiceCalls/${room.callId}/offer': offer.toJson(
         maxCiphertextLength: VoiceSignalingEnvelope.maxSdpCiphertextLength,
       ),
-      'voiceCalls/${room.callId}/updatedAt': updatedAt,
+      'voiceCalls/${room.callId}/updatedAt': safeUpdatedAt,
       'voiceCallInboxes/${room.callee}/${room.callId}/status':
           VoiceCallSignalingStatus.negotiating.name,
-      'voiceCallInboxes/${room.callee}/${room.callId}/updatedAt': updatedAt,
+      'voiceCallInboxes/${room.callee}/${room.callId}/updatedAt': safeUpdatedAt,
     });
   }
 
@@ -854,11 +862,12 @@ class FirebaseEmulatorSignalingAdapter
     final normalizedCallee = normalizeVoiceCallUsername(callee);
     await _ensureSignedInAsUsername(normalizedCallee);
     _ensureVoiceRole(room, normalizedCallee, VoiceCallRole.callee);
+    final safeUpdatedAt = _safeVoiceRoomTimestamp(room, updatedAt);
     await _patch(<String>[], <String, Object?>{
       'voiceCalls/${room.callId}/answer': answer.toJson(
         maxCiphertextLength: VoiceSignalingEnvelope.maxSdpCiphertextLength,
       ),
-      'voiceCalls/${room.callId}/updatedAt': updatedAt,
+      'voiceCalls/${room.callId}/updatedAt': safeUpdatedAt,
     });
   }
 
@@ -896,13 +905,14 @@ class FirebaseEmulatorSignalingAdapter
     final normalizedUsername = normalizeVoiceCallUsername(username);
     await _ensureSignedInAsUsername(normalizedUsername);
     _ensureVoiceRole(room, normalizedUsername, role);
-    final candidateId = '${createdAt.toRadixString(36)}_${_pushCounter++}';
+    final safeCreatedAt = _safeVoiceRoomTimestamp(room, createdAt);
+    final candidateId = '${safeCreatedAt.toRadixString(36)}_${_pushCounter++}';
     await _patch(<String>[], <String, Object?>{
       'voiceCalls/${room.callId}/${_voiceIcePath(role)}/$candidateId': candidate
           .toJson(
             maxCiphertextLength: VoiceSignalingEnvelope.maxIceCiphertextLength,
           ),
-      'voiceCalls/${room.callId}/updatedAt': createdAt,
+      'voiceCalls/${room.callId}/updatedAt': safeCreatedAt,
     });
     return candidateId;
   }
@@ -962,7 +972,12 @@ class FirebaseEmulatorSignalingAdapter
 
   VoiceCallRoom? _voiceCallRoomFromValue(String callId, Object? value) {
     if (value is! Map) return null;
-    return VoiceCallRoom.fromJson(callId: callId, json: _asObjectMap(value));
+    final json = _asObjectMap(value);
+    try {
+      return VoiceCallRoom.fromJson(callId: callId, json: json);
+    } on FormatException {
+      return VoiceCallRoom.tryParseForCleanup(callId: callId, json: json);
+    }
   }
 
   Future<bool> _reclaimActiveVoicePairLockIfStale({
@@ -1149,6 +1164,14 @@ class FirebaseEmulatorSignalingAdapter
       createdAt: room.createdAt,
       updatedAt: room.createdAt,
       expiresAt: room.expiresAt,
+    );
+  }
+
+  int _safeVoiceRoomTimestamp(VoiceCallRoom room, int requestedAt) {
+    return VoiceCallTimestampClock.nextRoomTimestamp(
+      requestedAt: requestedAt,
+      roomCreatedAt: room.createdAt,
+      roomUpdatedAt: room.updatedAt,
     );
   }
 

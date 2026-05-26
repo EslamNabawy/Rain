@@ -518,7 +518,7 @@ git commit -m "fix: add monotonic voice call clock"
 - Modify: `backend/firebase/functions/index.js`
 - Modify: `packages/protocol_brain/test/firebase_contract_test.dart`
 
-- [ ] **Step 1: Make user lock claim transactional in Firebase adapter**
+- [x] **Step 1: Make user lock claim transactional in Firebase adapter**
 
 Replace blind user lock writes in `packages/protocol_brain/lib/adapters/firebase_adapter.dart`:
 
@@ -559,7 +559,7 @@ claimed = await _claimActiveVoiceUserLock(
 );
 ```
 
-- [ ] **Step 2: Normalize all room update timestamps**
+- [x] **Step 2: Normalize all room update timestamps**
 
 In `acceptCall`, `markConnected`, `endCall`, `setMuted`, `setCameraMuted`, `writeVoiceOffer`, `writeVoiceAnswer`, and `writeIceCandidate`, compute:
 
@@ -573,7 +573,7 @@ final safeUpdatedAt = VoiceCallTimestampClock.nextRoomTimestamp(
 
 Use `safeUpdatedAt` for room and inbox `updatedAt`. For terminal operations also use it for `endedAt`.
 
-- [ ] **Step 3: Make cleanup tolerate corrupt rooms**
+- [x] **Step 3: Make cleanup tolerate corrupt rooms**
 
 Change `_voiceCallRoomFromSnapshot`:
 
@@ -603,7 +603,7 @@ Future<VoiceCallRoom> _requireVoiceCall(String callId) async {
 }
 ```
 
-- [ ] **Step 4: Ensure terminal cleanup removes all matching locks**
+- [x] **Step 4: Ensure terminal cleanup removes all matching locks**
 
 In `endCall`, after updating terminal room state, always call:
 
@@ -613,7 +613,7 @@ await _removeActiveVoiceLocksForRoomIfCurrent(room);
 
 If the room was already terminal, still call the same cleanup helper and return.
 
-- [ ] **Step 5: Mirror behavior in fake adapters**
+- [x] **Step 5: Mirror behavior in fake adapters**
 
 Update:
 
@@ -629,7 +629,7 @@ The fake behavior must:
 - use monotonic timestamps,
 - clean pair and both user locks on terminal state.
 
-- [ ] **Step 6: Add lock tests**
+- [x] **Step 6: Add lock tests**
 
 In `packages/protocol_brain/test/voice_signaling_contract_test.dart`, add:
 
@@ -684,14 +684,14 @@ test('terminal call removes caller callee and pair locks', () async {
 });
 ```
 
-- [ ] **Step 7: Run tests**
+- [x] **Step 7: Run tests**
 
 ```powershell
 dart run melos exec --scope protocol_brain -- flutter test test/voice_signaling_contract_test.dart test/firebase_contract_test.dart
 dart run melos exec --scope rain -- flutter test test/integration_voice_signaling_emulator_test.dart
 ```
 
-- [ ] **Step 8: Commit**
+- [x] **Step 8: Commit**
 
 ```powershell
 git add packages/protocol_brain/lib/adapters/firebase_adapter.dart packages/protocol_brain/lib/src/testing/fake_voice_signaling_adapter.dart apps/rain/test/utils/firebase_emulator_signaling_adapter.dart packages/protocol_brain/test/voice_signaling_contract_test.dart apps/rain/test/integration_voice_signaling_emulator_test.dart backend/firebase/database.rules.json backend/firebase/functions/index.js packages/protocol_brain/test/firebase_contract_test.dart

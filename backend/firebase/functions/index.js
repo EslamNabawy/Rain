@@ -103,7 +103,7 @@ exports.cleanupVoiceCalls = onSchedule(
     ]);
 
     const updates = {};
-    const expiredLocks = [];
+    const expiredLocks = new Map();
     let deletedCalls = 0;
     let deletedLocks = 0;
 
@@ -114,6 +114,18 @@ exports.cleanupVoiceCalls = onSchedule(
         if (call.callee) {
           updates[`voiceCallInboxes/${call.callee}/${child.key}`] = null;
         }
+        queueExpiredVoiceLock(expiredLocks, {
+          path: call.pairId ? `activeVoicePairs/${call.pairId}` : null,
+          value: { callId: child.key },
+        });
+        queueExpiredVoiceLock(expiredLocks, {
+          path: call.caller ? `activeVoiceUsers/${call.caller}` : null,
+          value: { callId: child.key },
+        });
+        queueExpiredVoiceLock(expiredLocks, {
+          path: call.callee ? `activeVoiceUsers/${call.callee}` : null,
+          value: { callId: child.key },
+        });
         deletedCalls += 1;
         return false;
       });
@@ -121,7 +133,7 @@ exports.cleanupVoiceCalls = onSchedule(
 
     if (pairLocksSnapshot.exists()) {
       pairLocksSnapshot.forEach((child) => {
-        expiredLocks.push({
+        queueExpiredVoiceLock(expiredLocks, {
           path: `activeVoicePairs/${child.key}`,
           value: child.val() || {},
         });
@@ -131,7 +143,7 @@ exports.cleanupVoiceCalls = onSchedule(
 
     if (userLocksSnapshot.exists()) {
       userLocksSnapshot.forEach((child) => {
-        expiredLocks.push({
+        queueExpiredVoiceLock(expiredLocks, {
           path: `activeVoiceUsers/${child.key}`,
           value: child.val() || {},
         });
@@ -144,7 +156,7 @@ exports.cleanupVoiceCalls = onSchedule(
     }
 
     await Promise.all(
-      expiredLocks.map(async (lock) => {
+      Array.from(expiredLocks.values()).map(async (lock) => {
         const removed = await removeExpiredVoiceLockIfCurrent(
           root.child(lock.path),
           lock.value,
@@ -167,20 +179,38 @@ exports.cleanupVoiceCalls = onSchedule(
   },
 );
 
+function queueExpiredVoiceLock(lockMap, expected) {
+  if (!expected.path || !expected.value || !expected.value.callId) {
+    return;
+  }
+  const existing = lockMap.get(expected.path);
+  if (existing && existing.value.createdAt !== undefined) {
+    return;
+  }
+  lockMap.set(expected.path, expected);
+}
+
 async function removeExpiredVoiceLockIfCurrent(ref, expected) {
   const result = await ref.transaction((current) => {
     if (!current) {
       return undefined;
     }
-    if (
-      current.callId === expected.callId &&
-      current.createdAt === expected.createdAt &&
-      current.updatedAt === expected.updatedAt &&
-      current.expiresAt === expected.expiresAt
-    ) {
+    if (voiceLockMatchesExpected(current, expected)) {
       return null;
     }
     return undefined;
   }, undefined, false);
   return result.committed === true;
+}
+
+function voiceLockMatchesExpected(current, expected) {
+  if (current.callId !== expected.callId) {
+    return false;
+  }
+  for (const field of ["createdAt", "updatedAt", "expiresAt"]) {
+    if (expected[field] !== undefined && current[field] !== expected[field]) {
+      return false;
+    }
+  }
+  return true;
 }

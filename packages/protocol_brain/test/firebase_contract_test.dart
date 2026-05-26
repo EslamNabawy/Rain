@@ -252,29 +252,34 @@ void main() {
     );
   });
 
-  test(
-    'Firebase voice user locks are claimed transactionally',
-    () {
-      fail(
-        'Phase 02 must make activeVoiceUsers lock claims transactional so two '
-        'callers cannot overwrite each other and produce false busy or stale '
-        'callee state.',
-      );
-    },
-    skip: 'Phase 02 rewrites activeVoiceUsers lock claim behavior.',
-  );
+  test('Firebase voice user locks are claimed transactionally', () {
+    final adapter = _repoFile(
+      'packages/protocol_brain/lib/adapters/firebase_adapter.dart',
+    );
 
-  test(
-    'Firebase cleanup removes corrupt terminal call locks by callId',
-    () {
-      fail(
-        'Phase 02 must let cleanup remove activeVoicePairs and both '
-        'activeVoiceUsers entries when their callId matches a corrupt terminal '
-        'room repaired by the cleanup parser.',
-      );
-    },
-    skip: 'Phase 02 hardens Firebase cleanup.',
-  );
+    expect(adapter, contains('Future<bool> _claimActiveVoiceUserLock'));
+    expect(adapter, contains('required int createdAt'));
+    expect(adapter, contains('lockRef.runTransaction'));
+    expect(adapter, contains('VoiceActiveUserLock.fromJson'));
+    expect(adapter, contains('existing.expiresAt > createdAt'));
+    expect(adapter, contains('Transaction.abort()'));
+    expect(adapter, isNot(contains('await lockRef.set(lock.toJson())')));
+  });
+
+  test('Firebase cleanup removes corrupt terminal call locks by callId', () {
+    final adapter = _repoFile(
+      'packages/protocol_brain/lib/adapters/firebase_adapter.dart',
+    );
+    final functions = _repoFile('backend/firebase/functions/index.js');
+
+    expect(adapter, contains('VoiceCallRoom.tryParseForCleanup'));
+    expect(functions, contains('queueExpiredVoiceLock'));
+    expect(functions, contains("path: call.pairId ? `activeVoicePairs/"));
+    expect(functions, contains("path: call.caller ? `activeVoiceUsers/"));
+    expect(functions, contains("path: call.callee ? `activeVoiceUsers/"));
+    expect(functions, contains('voiceLockMatchesExpected'));
+    expect(functions, contains('current.callId !== expected.callId'));
+  });
 
   test('Firebase voice signaling stores encrypted SDP and ICE envelopes', () {
     final rules = _repoFile('backend/firebase/database.rules.json');

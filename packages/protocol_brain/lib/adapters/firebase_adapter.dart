@@ -4,6 +4,7 @@ import 'package:firebase_auth/firebase_auth.dart';
 import 'package:firebase_database/firebase_database.dart';
 import 'package:flutter_webrtc/flutter_webrtc.dart';
 
+import '../src/voice_call_clock.dart';
 import '../src/voice_call_frame.dart';
 import '../src/voice_signaling_contract.dart';
 import 'signaling_adapter.dart';
@@ -313,7 +314,11 @@ class FirebaseSignalingAdapter
     required String caller,
     required int createdAt,
   }) async {
-    var claimed = await _claimActiveVoiceUserLock(lockRef: lockRef, lock: lock);
+    var claimed = await _claimActiveVoiceUserLock(
+      lockRef: lockRef,
+      lock: lock,
+      createdAt: createdAt,
+    );
     if (!claimed &&
         await _tryReclaimStaleActiveVoiceUser(
           lockRef: lockRef,
@@ -321,7 +326,11 @@ class FirebaseSignalingAdapter
           caller: caller,
           createdAt: createdAt,
         )) {
-      claimed = await _claimActiveVoiceUserLock(lockRef: lockRef, lock: lock);
+      claimed = await _claimActiveVoiceUserLock(
+        lockRef: lockRef,
+        lock: lock,
+        createdAt: createdAt,
+      );
     }
     return claimed;
   }
@@ -354,13 +363,26 @@ class FirebaseSignalingAdapter
   Future<bool> _claimActiveVoiceUserLock({
     required DatabaseReference lockRef,
     required VoiceActiveUserLock lock,
+    required int createdAt,
   }) async {
-    try {
-      await lockRef.set(lock.toJson());
-      return true;
-    } catch (_) {
-      return false;
-    }
+    final now = DateTime.now().millisecondsSinceEpoch;
+    final transaction = await lockRef.runTransaction((Object? current) {
+      if (current is Map) {
+        try {
+          final existing = VoiceActiveUserLock.fromJson(
+            username: lock.username,
+            json: _asObjectMap(current),
+          );
+          if (existing.expiresAt > createdAt && existing.expiresAt > now) {
+            return Transaction.abort();
+          }
+        } catch (_) {
+          return Transaction.abort();
+        }
+      }
+      return Transaction.success(lock.toJson());
+    }, applyLocally: false);
+    return transaction.committed;
   }
 
   Future<bool> _tryReclaimStaleActiveVoicePair({
@@ -720,6 +742,14 @@ class FirebaseSignalingAdapter
     );
   }
 
+  int _safeVoiceRoomTimestamp(VoiceCallRoom room, int requestedAt) {
+    return VoiceCallTimestampClock.nextRoomTimestamp(
+      requestedAt: requestedAt,
+      roomCreatedAt: room.createdAt,
+      roomUpdatedAt: room.updatedAt,
+    );
+  }
+
   bool _lockMatchesVoicePair(
     VoiceActivePairLock lock,
     String caller,
@@ -839,14 +869,16 @@ class FirebaseSignalingAdapter
     _ensureVoiceStatus(room, const <VoiceCallSignalingStatus>{
       VoiceCallSignalingStatus.ringing,
     });
+    final safeAcceptedAt = _safeVoiceRoomTimestamp(room, acceptedAt);
     await _root.update(<String, Object?>{
       'voiceCalls/${room.callId}/status':
           VoiceCallSignalingStatus.accepted.name,
-      'voiceCalls/${room.callId}/acceptedAt': acceptedAt,
-      'voiceCalls/${room.callId}/updatedAt': acceptedAt,
+      'voiceCalls/${room.callId}/acceptedAt': safeAcceptedAt,
+      'voiceCalls/${room.callId}/updatedAt': safeAcceptedAt,
       'voiceCallInboxes/${room.callee}/${room.callId}/status':
           VoiceCallSignalingStatus.accepted.name,
-      'voiceCallInboxes/${room.callee}/${room.callId}/updatedAt': acceptedAt,
+      'voiceCallInboxes/${room.callee}/${room.callId}/updatedAt':
+          safeAcceptedAt,
     });
   }
 
@@ -865,14 +897,16 @@ class FirebaseSignalingAdapter
       VoiceCallSignalingStatus.negotiating,
       VoiceCallSignalingStatus.connected,
     });
+    final safeConnectedAt = _safeVoiceRoomTimestamp(room, connectedAt);
     await _root.update(<String, Object?>{
       'voiceCalls/${room.callId}/status':
           VoiceCallSignalingStatus.connected.name,
-      'voiceCalls/${room.callId}/connectedAt': connectedAt,
-      'voiceCalls/${room.callId}/updatedAt': connectedAt,
+      'voiceCalls/${room.callId}/connectedAt': safeConnectedAt,
+      'voiceCalls/${room.callId}/updatedAt': safeConnectedAt,
       'voiceCallInboxes/${room.callee}/${room.callId}/status':
           VoiceCallSignalingStatus.connected.name,
-      'voiceCallInboxes/${room.callee}/${room.callId}/updatedAt': connectedAt,
+      'voiceCallInboxes/${room.callee}/${room.callId}/updatedAt':
+          safeConnectedAt,
     });
   }
 
@@ -898,15 +932,16 @@ class FirebaseSignalingAdapter
       await _removeActiveVoiceLocksForRoomIfCurrent(room);
       return;
     }
+    final safeEndedAt = _safeVoiceRoomTimestamp(room, endedAt);
     await _root.update(<String, Object?>{
       'voiceCalls/${room.callId}/status': status.name,
-      'voiceCalls/${room.callId}/endedAt': endedAt,
+      'voiceCalls/${room.callId}/endedAt': safeEndedAt,
       'voiceCalls/${room.callId}/endedBy': normalizedUsername,
-      'voiceCalls/${room.callId}/updatedAt': endedAt,
+      'voiceCalls/${room.callId}/updatedAt': safeEndedAt,
       'voiceCalls/${room.callId}/reasonCode': reasonCode,
       'voiceCalls/${room.callId}/reason': reason,
       'voiceCallInboxes/${room.callee}/${room.callId}/status': status.name,
-      'voiceCallInboxes/${room.callee}/${room.callId}/updatedAt': endedAt,
+      'voiceCallInboxes/${room.callee}/${room.callId}/updatedAt': safeEndedAt,
     });
     await _removeActiveVoiceLocksForRoomIfCurrent(room);
   }
@@ -923,9 +958,10 @@ class FirebaseSignalingAdapter
     await _ensureSignedInAsUsername(normalizedUsername);
     _ensureVoiceParticipant(room, normalizedUsername);
     _ensureVoiceNonTerminal(room);
+    final safeUpdatedAt = _safeVoiceRoomTimestamp(room, updatedAt);
     await _root.update(<String, Object?>{
       'voiceCalls/${room.callId}/muted/$normalizedUsername': muted,
-      'voiceCalls/${room.callId}/updatedAt': updatedAt,
+      'voiceCalls/${room.callId}/updatedAt': safeUpdatedAt,
     });
   }
 
@@ -941,9 +977,10 @@ class FirebaseSignalingAdapter
     await _ensureSignedInAsUsername(normalizedUsername);
     _ensureVoiceParticipant(room, normalizedUsername);
     _ensureVoiceNonTerminal(room);
+    final safeUpdatedAt = _safeVoiceRoomTimestamp(room, updatedAt);
     await _root.update(<String, Object?>{
       'voiceCalls/${room.callId}/cameraMuted/$normalizedUsername': cameraMuted,
-      'voiceCalls/${room.callId}/updatedAt': updatedAt,
+      'voiceCalls/${room.callId}/updatedAt': safeUpdatedAt,
     });
   }
 
@@ -1468,16 +1505,17 @@ class FirebaseSignalingAdapter
       VoiceCallSignalingStatus.accepted,
       VoiceCallSignalingStatus.negotiating,
     });
+    final safeUpdatedAt = _safeVoiceRoomTimestamp(room, updatedAt);
     await _root.update(<String, Object?>{
       'voiceCalls/${room.callId}/status':
           VoiceCallSignalingStatus.negotiating.name,
       'voiceCalls/${room.callId}/offer': offer.toJson(
         maxCiphertextLength: VoiceSignalingEnvelope.maxSdpCiphertextLength,
       ),
-      'voiceCalls/${room.callId}/updatedAt': updatedAt,
+      'voiceCalls/${room.callId}/updatedAt': safeUpdatedAt,
       'voiceCallInboxes/${room.callee}/${room.callId}/status':
           VoiceCallSignalingStatus.negotiating.name,
-      'voiceCallInboxes/${room.callee}/${room.callId}/updatedAt': updatedAt,
+      'voiceCallInboxes/${room.callee}/${room.callId}/updatedAt': safeUpdatedAt,
     });
   }
 
@@ -1503,11 +1541,12 @@ class FirebaseSignalingAdapter
         'Cannot write voice answer before offer.',
       );
     }
+    final safeUpdatedAt = _safeVoiceRoomTimestamp(room, updatedAt);
     await _root.update(<String, Object?>{
       'voiceCalls/${room.callId}/answer': answer.toJson(
         maxCiphertextLength: VoiceSignalingEnvelope.maxSdpCiphertextLength,
       ),
-      'voiceCalls/${room.callId}/updatedAt': updatedAt,
+      'voiceCalls/${room.callId}/updatedAt': safeUpdatedAt,
     });
   }
 
@@ -1572,12 +1611,13 @@ class FirebaseSignalingAdapter
         'Failed to allocate voice ICE candidate key.',
       );
     }
+    final safeUpdatedAt = _safeVoiceRoomTimestamp(room, createdAt);
     await _root.update(<String, Object?>{
       'voiceCalls/${room.callId}/${_voiceIcePath(role)}/$candidateId': candidate
           .toJson(
             maxCiphertextLength: VoiceSignalingEnvelope.maxIceCiphertextLength,
           ),
-      'voiceCalls/${room.callId}/updatedAt': createdAt,
+      'voiceCalls/${room.callId}/updatedAt': safeUpdatedAt,
     });
     return candidateId;
   }
@@ -1731,7 +1771,12 @@ class FirebaseSignalingAdapter
     if (value is! Map) {
       return null;
     }
-    return VoiceCallRoom.fromJson(callId: callId, json: _asObjectMap(value));
+    final json = _asObjectMap(value);
+    try {
+      return VoiceCallRoom.fromJson(callId: callId, json: json);
+    } on FormatException {
+      return VoiceCallRoom.tryParseForCleanup(callId: callId, json: json);
+    }
   }
 
   Future<VoiceCallRoom> _requireVoiceCall(String callId) async {

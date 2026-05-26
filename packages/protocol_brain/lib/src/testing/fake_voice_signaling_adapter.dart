@@ -1,5 +1,6 @@
 import 'dart:async';
 
+import '../voice_call_clock.dart';
 import '../voice_call_frame.dart';
 import '../voice_signaling_contract.dart';
 
@@ -206,11 +207,12 @@ final class FakeVoiceSignalingAdapter implements VoiceSignalingAdapter {
       VoiceCallSignalingStatus.ringing,
     });
     _ensureRole(room, callee, VoiceCallRole.callee);
+    final safeAcceptedAt = _safeVoiceRoomTimestamp(room, acceptedAt);
     _putRoom(
       room.copyWith(
         status: VoiceCallSignalingStatus.accepted,
-        updatedAt: acceptedAt,
-        acceptedAt: acceptedAt,
+        updatedAt: safeAcceptedAt,
+        acceptedAt: safeAcceptedAt,
       ),
     );
   }
@@ -229,11 +231,12 @@ final class FakeVoiceSignalingAdapter implements VoiceSignalingAdapter {
       VoiceCallSignalingStatus.negotiating,
       VoiceCallSignalingStatus.connected,
     });
+    final safeConnectedAt = _safeVoiceRoomTimestamp(room, connectedAt);
     _putRoom(
       room.copyWith(
         status: VoiceCallSignalingStatus.connected,
-        updatedAt: connectedAt,
-        connectedAt: connectedAt,
+        updatedAt: safeConnectedAt,
+        connectedAt: safeConnectedAt,
       ),
     );
   }
@@ -260,11 +263,12 @@ final class FakeVoiceSignalingAdapter implements VoiceSignalingAdapter {
       return;
     }
     final normalizedUsername = normalizeVoiceCallUsername(username);
+    final safeEndedAt = _safeVoiceRoomTimestamp(room, endedAt);
     _putRoom(
       room.copyWith(
         status: status,
-        updatedAt: endedAt,
-        endedAt: endedAt,
+        updatedAt: safeEndedAt,
+        endedAt: safeEndedAt,
         endedBy: normalizedUsername,
         reasonCode: reasonCode,
         reason: reason,
@@ -285,9 +289,10 @@ final class FakeVoiceSignalingAdapter implements VoiceSignalingAdapter {
     _ensureParticipant(room, username);
     _ensureNonTerminal(room);
     final normalizedUsername = normalizeVoiceCallUsername(username);
+    final safeUpdatedAt = _safeVoiceRoomTimestamp(room, updatedAt);
     _putRoom(
       room.copyWith(
-        updatedAt: updatedAt,
+        updatedAt: safeUpdatedAt,
         muted: <String, bool>{...room.muted, normalizedUsername: muted},
       ),
     );
@@ -305,9 +310,10 @@ final class FakeVoiceSignalingAdapter implements VoiceSignalingAdapter {
     _ensureParticipant(room, username);
     _ensureNonTerminal(room);
     final normalizedUsername = normalizeVoiceCallUsername(username);
+    final safeUpdatedAt = _safeVoiceRoomTimestamp(room, updatedAt);
     _putRoom(
       room.copyWith(
-        updatedAt: updatedAt,
+        updatedAt: safeUpdatedAt,
         cameraMuted: <String, bool>{
           ...room.cameraMuted,
           normalizedUsername: cameraMuted,
@@ -333,10 +339,11 @@ final class FakeVoiceSignalingAdapter implements VoiceSignalingAdapter {
       VoiceCallSignalingStatus.accepted,
       VoiceCallSignalingStatus.negotiating,
     });
+    final safeUpdatedAt = _safeVoiceRoomTimestamp(room, updatedAt);
     _putRoom(
       room.copyWith(
         status: VoiceCallSignalingStatus.negotiating,
-        updatedAt: updatedAt,
+        updatedAt: safeUpdatedAt,
         offer: offer,
       ),
     );
@@ -364,10 +371,11 @@ final class FakeVoiceSignalingAdapter implements VoiceSignalingAdapter {
         'Cannot write voice answer before offer.',
       );
     }
+    final safeUpdatedAt = _safeVoiceRoomTimestamp(room, updatedAt);
     _putRoom(
       room.copyWith(
         status: VoiceCallSignalingStatus.negotiating,
-        updatedAt: updatedAt,
+        updatedAt: safeUpdatedAt,
         answer: answer,
       ),
     );
@@ -415,13 +423,14 @@ final class FakeVoiceSignalingAdapter implements VoiceSignalingAdapter {
       VoiceCallSignalingStatus.negotiating,
       VoiceCallSignalingStatus.connected,
     });
+    final safeCreatedAt = _safeVoiceRoomTimestamp(room, createdAt);
     final candidateId = 'ice-${++_nextIceId}';
     final record = VoiceCallIceCandidateRecord(
       callId: room.callId,
       candidateId: candidateId,
       role: role,
       envelope: candidate,
-      createdAt: createdAt,
+      createdAt: safeCreatedAt,
     );
     record.toJson();
     final key = _iceKey(room.callId, role);
@@ -429,6 +438,7 @@ final class FakeVoiceSignalingAdapter implements VoiceSignalingAdapter {
         .putIfAbsent(key, () => <VoiceCallIceCandidateRecord>[])
         .add(record);
     _iceController(key).add(record);
+    _putRoom(room.copyWith(updatedAt: safeCreatedAt));
     return candidateId;
   }
 
@@ -631,6 +641,14 @@ final class FakeVoiceSignalingAdapter implements VoiceSignalingAdapter {
       createdAt: room.createdAt,
       updatedAt: room.updatedAt,
       expiresAt: room.expiresAt,
+    );
+  }
+
+  int _safeVoiceRoomTimestamp(VoiceCallRoom room, int requestedAt) {
+    return VoiceCallTimestampClock.nextRoomTimestamp(
+      requestedAt: requestedAt,
+      roomCreatedAt: room.createdAt,
+      roomUpdatedAt: room.updatedAt,
     );
   }
 

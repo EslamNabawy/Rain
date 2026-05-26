@@ -583,6 +583,65 @@ void main() {
     },
   );
 
+  test('fake adapter normalizes skewed room write timestamps', () async {
+    final adapter = FakeVoiceSignalingAdapter();
+    addTearDown(adapter.dispose);
+
+    await adapter.createOutgoingCall(
+      callId: 'call-1',
+      caller: 'alice',
+      callee: 'bob',
+      createdAt: 1000,
+      expiresAt: 3000,
+    );
+
+    await adapter.acceptCall(callId: 'call-1', callee: 'bob', acceptedAt: 900);
+    await adapter.writeVoiceOffer(
+      callId: 'call-1',
+      caller: 'alice',
+      offer: _envelope(ciphertext: 'offer'),
+      updatedAt: 800,
+    );
+    await adapter.writeVoiceAnswer(
+      callId: 'call-1',
+      callee: 'bob',
+      answer: _envelope(ciphertext: 'answer'),
+      updatedAt: 700,
+    );
+    await adapter.writeIceCandidate(
+      callId: 'call-1',
+      username: 'alice',
+      role: VoiceCallRole.caller,
+      candidate: _envelope(ciphertext: 'caller-ice'),
+      createdAt: 600,
+    );
+    await adapter.markConnected(
+      callId: 'call-1',
+      username: 'alice',
+      connectedAt: 500,
+    );
+    await adapter.setMuted(
+      callId: 'call-1',
+      username: 'bob',
+      muted: true,
+      updatedAt: 400,
+    );
+    await adapter.endCall(
+      callId: 'call-1',
+      username: 'bob',
+      status: VoiceCallSignalingStatus.ended,
+      endedAt: 300,
+      reasonCode: 'hangup',
+      reason: 'Ended.',
+    );
+
+    final room = await adapter.fetchCall('call-1');
+    expect(room?.acceptedAt, 1001);
+    expect(room?.updatedAt, greaterThanOrEqualTo(room!.createdAt));
+    expect(room.endedAt, greaterThanOrEqualTo(room.createdAt));
+    expect(() => room.toJson(), returnsNormally);
+  });
+
   test(
     'normalizes terminal updatedAt when device clock is behind createdAt',
     () {
@@ -618,8 +677,10 @@ void main() {
         'endedAt': 1000,
         'endedBy': 'alice',
       };
-      final strictParse = () =>
-          VoiceCallRoom.fromJson(callId: 'call-1', json: corrupt);
+      VoiceCallRoom strictParse() {
+        return VoiceCallRoom.fromJson(callId: 'call-1', json: corrupt);
+      }
+
       final repaired = VoiceCallRoom.tryParseForCleanup(
         callId: 'call-1',
         json: corrupt,
