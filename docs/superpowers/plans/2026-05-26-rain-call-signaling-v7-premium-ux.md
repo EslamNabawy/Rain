@@ -1653,6 +1653,8 @@ no output
 
 **Why Here:** WebRTC call reliability cannot be proven only with unit tests. Do this before release builds.
 
+**Execution Status:** Pending real-device execution. Manual evidence template created at `docs/superpowers/manual-gates/2026-05-26-phase-12-manual-device-gate.md`. This phase must stay unchecked until the Windows and Android device runs are completed with results.
+
 **Devices:**
 
 - Windows PC signed in as user A.
