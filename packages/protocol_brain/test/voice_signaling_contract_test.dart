@@ -591,14 +591,15 @@ void main() {
         callee: 'bob',
         status: VoiceCallSignalingStatus.connected,
       );
-
-      expect(room.createdAt, 1000);
-      fail(
-        'Phase 01 must add VoiceCallClock.nextRoomTimestamp so a terminal '
-        'write requested before room.createdAt normalizes to room.updatedAt + 1.',
+      final endedAt = room.createdAt - 1000;
+      final normalized = VoiceCallTimestampClock.nextRoomTimestamp(
+        requestedAt: endedAt,
+        roomCreatedAt: room.createdAt,
+        roomUpdatedAt: room.updatedAt,
       );
+
+      expect(normalized, room.updatedAt + 1);
     },
-    skip: 'Phase 01 adds VoiceCallClock.',
   );
 
   test(
@@ -617,14 +618,20 @@ void main() {
         'endedAt': 1000,
         'endedBy': 'alice',
       };
-
-      expect(corrupt['status'], VoiceCallSignalingStatus.ended.name);
-      fail(
-        'Phase 01 must add VoiceCallRoom.tryParseForCleanup so corrupt '
-        'terminal rooms can still be cleaned and cannot remain as busy locks.',
+      final strictParse = () =>
+          VoiceCallRoom.fromJson(callId: 'call-1', json: corrupt);
+      final repaired = VoiceCallRoom.tryParseForCleanup(
+        callId: 'call-1',
+        json: corrupt,
+        now: 2500,
       );
+
+      expect(strictParse, throwsA(isA<FormatException>()));
+      expect(repaired, isNotNull);
+      expect(repaired!.status, VoiceCallSignalingStatus.ended);
+      expect(repaired.updatedAt, greaterThanOrEqualTo(repaired.createdAt));
+      expect(repaired.endedAt, greaterThanOrEqualTo(repaired.createdAt));
     },
-    skip: 'Phase 01 adds cleanup-safe room parsing.',
   );
 }
 

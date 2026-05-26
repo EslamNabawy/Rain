@@ -239,7 +239,7 @@ test('normalizes terminal updatedAt when device clock is behind createdAt', () {
   );
 
   final endedAt = room.createdAt - 1000;
-  final normalized = VoiceCallClock.nextRoomTimestamp(
+  final normalized = VoiceCallTimestampClock.nextRoomTimestamp(
     requestedAt: endedAt,
     roomCreatedAt: room.createdAt,
     roomUpdatedAt: room.updatedAt,
@@ -296,7 +296,7 @@ dart run melos exec --scope rain -- flutter test test/call_retry_policy_test.dar
 Expected:
 
 ```text
-Undefined name 'VoiceCallClock'
+Undefined name 'VoiceCallTimestampClock'
 The method 'tryParseForCleanup' is not defined
 Target of URI does not exist: call_retry_policy.dart
 ```
@@ -314,18 +314,20 @@ git commit -m "test: lock call false busy and timestamp failures"
 
 **Why Here:** False `peer busy` cannot be fixed reliably while hangup/end cleanup can fail on timestamp validation.
 
+**Execution note:** The existing public `VoiceCallClock` typedef is used by `VoiceCallSession`, so the timestamp helper is named `VoiceCallTimestampClock` to avoid a breaking API collision.
+
 **Files:**
 - Create: `packages/protocol_brain/lib/src/voice_call_clock.dart`
 - Modify: `packages/protocol_brain/lib/src/voice_signaling_contract.dart`
 - Modify: `packages/protocol_brain/test/voice_signaling_contract_test.dart`
 
-- [ ] **Step 1: Add the monotonic clock helper**
+- [x] **Step 1: Add the monotonic clock helper**
 
 Create `packages/protocol_brain/lib/src/voice_call_clock.dart`:
 
 ```dart
-final class VoiceCallClock {
-  const VoiceCallClock._();
+final class VoiceCallTimestampClock {
+  const VoiceCallTimestampClock._();
 
   static int nextRoomTimestamp({
     required int requestedAt,
@@ -360,7 +362,7 @@ final class VoiceCallClock {
 }
 ```
 
-- [ ] **Step 2: Export/import clock where the protocol package exposes internals**
+- [x] **Step 2: Export/import clock where the protocol package exposes internals**
 
 If `packages/protocol_brain/lib/protocol_brain.dart` exports selected source files, add:
 
@@ -370,7 +372,7 @@ export 'src/voice_call_clock.dart';
 
 If the package uses `src` imports only, import `voice_call_clock.dart` directly in files that need it.
 
-- [ ] **Step 3: Add cleanup-safe parser to VoiceCallRoom**
+- [x] **Step 3: Add cleanup-safe parser to VoiceCallRoom**
 
 In `packages/protocol_brain/lib/src/voice_signaling_contract.dart`, add a factory next to `VoiceCallRoom.fromJson`:
 
@@ -382,19 +384,19 @@ factory VoiceCallRoom.forCleanupFromJson({
   final createdAt = _requiredInt(json, 'createdAt');
   final rawUpdatedAt = _requiredInt(json, 'updatedAt');
   final rawExpiresAt = _requiredInt(json, 'expiresAt');
-  final updatedAt = VoiceCallClock.nextRoomTimestamp(
+  final updatedAt = VoiceCallTimestampClock.nextRoomTimestamp(
     requestedAt: rawUpdatedAt,
     roomCreatedAt: createdAt,
     roomUpdatedAt: createdAt,
   );
-  final expiresAt = VoiceCallClock.nextExpiry(
+  final expiresAt = VoiceCallTimestampClock.nextExpiry(
     createdAt: createdAt,
     requestedExpiresAt: rawExpiresAt,
   );
   final rawEndedAt = _optionalInt(json, 'endedAt');
   final endedAt = rawEndedAt == null
       ? null
-      : VoiceCallClock.nextRoomTimestamp(
+      : VoiceCallTimestampClock.nextRoomTimestamp(
           requestedAt: rawEndedAt,
           roomCreatedAt: createdAt,
           roomUpdatedAt: updatedAt,
@@ -452,7 +454,7 @@ static VoiceCallRoom? tryParseForCleanup({
       );
       if (!repaired.status.isTerminal &&
           repaired.expiresAt >
-              VoiceCallClock.nextInitialTimestamp(
+              VoiceCallTimestampClock.nextInitialTimestamp(
                 DateTime.now().millisecondsSinceEpoch,
               )) {
         return null;
@@ -471,7 +473,7 @@ Then import:
 import 'voice_call_clock.dart';
 ```
 
-- [ ] **Step 4: Keep normal parser strict**
+- [x] **Step 4: Keep normal parser strict**
 
 Do not weaken `VoiceCallRoom.fromJson` or `VoiceCallRoom.validate`. New clean rooms must still throw when:
 
@@ -481,7 +483,7 @@ expiresAt <= createdAt
 endedAt < createdAt
 ```
 
-- [ ] **Step 5: Run protocol tests**
+- [x] **Step 5: Run protocol tests**
 
 ```powershell
 dart run melos exec --scope protocol_brain -- flutter test test/voice_signaling_contract_test.dart
@@ -493,7 +495,7 @@ Expected:
 All tests passed
 ```
 
-- [ ] **Step 6: Commit**
+- [x] **Step 6: Commit**
 
 ```powershell
 git add packages/protocol_brain/lib/src/voice_call_clock.dart packages/protocol_brain/lib/src/voice_signaling_contract.dart packages/protocol_brain/test/voice_signaling_contract_test.dart
@@ -562,7 +564,7 @@ claimed = await _claimActiveVoiceUserLock(
 In `acceptCall`, `markConnected`, `endCall`, `setMuted`, `setCameraMuted`, `writeVoiceOffer`, `writeVoiceAnswer`, and `writeIceCandidate`, compute:
 
 ```dart
-final safeUpdatedAt = VoiceCallClock.nextRoomTimestamp(
+final safeUpdatedAt = VoiceCallTimestampClock.nextRoomTimestamp(
   requestedAt: requestedTimestamp,
   roomCreatedAt: room.createdAt,
   roomUpdatedAt: room.updatedAt,
