@@ -12,6 +12,7 @@ class _FriendsListView extends StatelessWidget {
     this.desktopHeaderTitle = 'Friends',
     this.compact = false,
     this.displayMode,
+    this.onExpandRail,
   });
 
   final AsyncValue<List<FriendRecord>> friends;
@@ -22,6 +23,7 @@ class _FriendsListView extends StatelessWidget {
   final String? desktopHeaderTitle;
   final bool compact;
   final FriendListDisplayMode? displayMode;
+  final VoidCallback? onExpandRail;
 
   FriendListDisplayMode get _effectiveDisplayMode {
     if (displayMode != null) {
@@ -110,13 +112,13 @@ class _FriendsListView extends StatelessWidget {
           Padding(
             padding: const EdgeInsets.fromLTRB(8, 8, 8, 4),
             child: Tooltip(
-              message: 'Refresh friends',
+              message: 'Expand friends',
               child: IconButton.filledTonal(
                 key: const ValueKey<String>(
-                  'rain-friends-desktop-rail-refresh-button',
+                  'rain-friends-desktop-rail-expand-button',
                 ),
-                onPressed: () => unawaited(onRefresh()),
-                icon: const Icon(Icons.refresh),
+                onPressed: onExpandRail,
+                icon: const Icon(Icons.keyboard_double_arrow_right),
               ),
             ),
           ),

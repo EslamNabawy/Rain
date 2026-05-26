@@ -1,11 +1,19 @@
 part of '../../screens/home_screen.dart';
 
 class _ChatPanel extends ConsumerStatefulWidget {
-  const _ChatPanel({required this.peerId, this.isCompact = false, this.onBack});
+  const _ChatPanel({
+    required this.peerId,
+    this.isCompact = false,
+    this.onBack,
+    this.desktopFocused = false,
+    this.onToggleDesktopFocus,
+  });
 
   final String peerId;
   final bool isCompact;
   final VoidCallback? onBack;
+  final bool desktopFocused;
+  final VoidCallback? onToggleDesktopFocus;
 
   @override
   ConsumerState<_ChatPanel> createState() => _ChatPanelState();
@@ -391,6 +399,21 @@ class _ChatPanelState extends ConsumerState<_ChatPanel> {
         ),
         if (!widget.isCompact && friend != null) ...<Widget>[
           const SizedBox(width: 8),
+          if (widget.onToggleDesktopFocus != null) ...<Widget>[
+            IconButton(
+              key: const ValueKey<String>('rain-desktop-chat-focus-toggle'),
+              tooltip: widget.desktopFocused
+                  ? 'Show friends'
+                  : 'Focus chat',
+              onPressed: widget.onToggleDesktopFocus,
+              icon: Icon(
+                widget.desktopFocused
+                    ? Icons.view_sidebar_outlined
+                    : Icons.fullscreen_outlined,
+              ),
+            ),
+            const SizedBox(width: 4),
+          ],
           _buildCallButton(
             voiceCall: voiceCall,
             isPeerOnline: isPeerOnline,
