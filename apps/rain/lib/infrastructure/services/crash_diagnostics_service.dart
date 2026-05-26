@@ -165,6 +165,7 @@ class CrashDiagnosticsService {
   final List<String> _queuedEventLines = <String>[];
   final LinkedHashMap<String, String> _coalescedEventLines =
       LinkedHashMap<String, String>();
+  final Map<String, int> _coalescedEventCounts = <String, int>{};
   Map<String, Object?>? _performanceProfile;
   _RainFrameTimingStats? _frameTimingStats;
   bool _frameTimingCaptureInstalled = false;
@@ -289,6 +290,7 @@ class CrashDiagnosticsService {
     if (directory == null) {
       _queuedEventLines.clear();
       _coalescedEventLines.clear();
+      _coalescedEventCounts.clear();
       return _eventFlushFuture ?? Future<void>.value();
     }
     final eventLines = <String>[
@@ -297,6 +299,7 @@ class CrashDiagnosticsService {
     ];
     _queuedEventLines.clear();
     _coalescedEventLines.clear();
+    _coalescedEventCounts.clear();
     if (eventLines.isEmpty) {
       return _eventFlushFuture ?? Future<void>.value();
     }
@@ -459,12 +462,16 @@ class CrashDiagnosticsService {
   }
 
   void _queueEventRecord(Map<String, Object?> record) {
-    final encoded = jsonEncode(record);
     final coalesceKey = _eventCoalesceKey(record);
     if (coalesceKey == null) {
-      _queuedEventLines.add(encoded);
+      _queuedEventLines.add(jsonEncode(record));
     } else {
-      _coalescedEventLines[coalesceKey] = encoded;
+      final count = (_coalescedEventCounts[coalesceKey] ?? 0) + 1;
+      _coalescedEventCounts[coalesceKey] = count;
+      _coalescedEventLines[coalesceKey] = jsonEncode(<String, Object?>{
+        ...record,
+        'count': count,
+      });
     }
     _capBufferedEvents();
     _scheduleEventFlush();
@@ -487,7 +494,9 @@ class CrashDiagnosticsService {
         _queuedEventLines.removeAt(0);
         continue;
       }
-      _coalescedEventLines.remove(_coalescedEventLines.keys.first);
+      final firstKey = _coalescedEventLines.keys.first;
+      _coalescedEventLines.remove(firstKey);
+      _coalescedEventCounts.remove(firstKey);
     }
   }
 
@@ -501,6 +510,12 @@ class CrashDiagnosticsService {
       return null;
     }
     final context = _stringMap(record['context']);
+    if (_isVoiceLockEvent(category, name)) {
+      final peerId = context['peerId']?.toString() ?? '';
+      final callId = context['callId']?.toString() ?? '';
+      final pairId = context['pairId']?.toString() ?? '';
+      return '$category:$name:$peerId:$callId:$pairId';
+    }
     final peerId = context['peerId']?.toString();
     final callId = context['callId']?.toString();
     final scope = callId?.isNotEmpty == true
@@ -509,6 +524,20 @@ class CrashDiagnosticsService {
         ? peerId
         : 'global';
     return '$category:$name:$scope';
+  }
+
+  bool _isVoiceLockEvent(String category, String name) {
+    if (category != 'call') {
+      return false;
+    }
+    return name == 'voice_lock_claim_started' ||
+        name == 'voice_lock_claim_blocked' ||
+        name == 'voice_lock_reclaim_started' ||
+        name == 'voice_lock_reclaim_completed' ||
+        name == 'voice_room_timestamp_repaired' ||
+        name == 'voice_terminal_cleanup_started' ||
+        name == 'voice_terminal_cleanup_completed' ||
+        name == 'voice_terminal_cleanup_failed';
   }
 
   bool _isNoisyEvent(String category, String name) {
@@ -526,6 +555,7 @@ class CrashDiagnosticsService {
           name == 'firebase_frame_received' ||
           name == 'firebase_frame_send_started' ||
           name == 'firebase_frame_send_completed' ||
+          _isVoiceLockEvent(category, name) ||
           name == 'video_renderer_state' ||
           name == 'media_processing_config_refreshed';
     }

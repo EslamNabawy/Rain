@@ -26,6 +26,17 @@ class VoiceCallDiagnostics {
     this.firstRemoteVideoFrameAt,
     this.selectedCandidateRoute,
     this.cameraPermissionFailureDetail,
+    this.lockClaimResult,
+    this.lockPath,
+    this.pairId,
+    this.callerUserLock,
+    this.calleeUserLock,
+    this.lockCallId,
+    this.lockExpiresAt,
+    this.lockWasReclaimed,
+    this.terminalRoomWasCleaned,
+    this.corruptRoomWasRepaired,
+    this.timestampRepair,
   });
 
   final String callId;
@@ -52,6 +63,17 @@ class VoiceCallDiagnostics {
   final String? firstRemoteVideoFrameAt;
   final String? selectedCandidateRoute;
   final String? cameraPermissionFailureDetail;
+  final String? lockClaimResult;
+  final String? lockPath;
+  final String? pairId;
+  final String? callerUserLock;
+  final String? calleeUserLock;
+  final String? lockCallId;
+  final int? lockExpiresAt;
+  final bool? lockWasReclaimed;
+  final bool? terminalRoomWasCleaned;
+  final bool? corruptRoomWasRepaired;
+  final bool? timestampRepair;
 
   Map<String, Object?> toJson() => <String, Object?>{
     'callId': callId,
@@ -79,6 +101,19 @@ class VoiceCallDiagnostics {
       'selectedCandidateRoute': selectedCandidateRoute,
     if (cameraPermissionFailureDetail != null)
       'cameraPermissionFailureDetail': cameraPermissionFailureDetail,
+    if (lockClaimResult != null) 'lockClaimResult': lockClaimResult,
+    if (lockPath != null) 'lockPath': lockPath,
+    if (pairId != null) 'pairId': pairId,
+    if (callerUserLock != null) 'callerUserLock': callerUserLock,
+    if (calleeUserLock != null) 'calleeUserLock': calleeUserLock,
+    if (lockCallId != null) 'lockCallId': lockCallId,
+    if (lockExpiresAt != null) 'lockExpiresAt': lockExpiresAt,
+    if (lockWasReclaimed != null) 'lockWasReclaimed': lockWasReclaimed,
+    if (terminalRoomWasCleaned != null)
+      'terminalRoomWasCleaned': terminalRoomWasCleaned,
+    if (corruptRoomWasRepaired != null)
+      'corruptRoomWasRepaired': corruptRoomWasRepaired,
+    if (timestampRepair != null) 'timestampRepair': timestampRepair,
     if (mediaStates.isNotEmpty) 'mediaStates': mediaStates,
     if (iceStates.isNotEmpty) 'iceStates': iceStates,
     if (iceStates.isNotEmpty) 'iceStateHistory': iceStates,

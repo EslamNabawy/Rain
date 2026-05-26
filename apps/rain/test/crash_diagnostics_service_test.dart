@@ -177,6 +177,72 @@ void main() {
     expect(lines.single, contains('"index":24'));
   });
 
+  test(
+    'coalesces repeated voice lock events without losing newest context',
+    () async {
+      final temp = await Directory.systemTemp.createTemp(
+        'rain-crash-diagnostics-lock-coalesce-test-',
+      );
+      addTearDown(() => temp.delete(recursive: true));
+      final exportPath = _join(temp.path, 'lock-diagnostics.json');
+
+      final service = CrashDiagnosticsService(
+        directoryProvider: () async => temp,
+        eventFlushInterval: const Duration(minutes: 1),
+        saveFile:
+            ({
+              String? dialogTitle,
+              String? fileName,
+              String? initialDirectory,
+              FileType type = FileType.any,
+              List<String>? allowedExtensions,
+              Uint8List? bytes,
+              bool lockParentWindow = false,
+            }) async {
+              return exportPath;
+            },
+      );
+
+      await service.initialize();
+      service.recordEventSync(
+        category: 'call',
+        name: 'voice_lock_claim_blocked',
+        severity: 'warning',
+        context: const <String, Object?>{
+          'peerId': 'bob',
+          'callId': 'call-1',
+          'pairId': 'alice:bob',
+          'lockExpiresAt': 1,
+        },
+      );
+      service.recordEventSync(
+        category: 'call',
+        name: 'voice_lock_claim_blocked',
+        severity: 'warning',
+        context: const <String, Object?>{
+          'peerId': 'bob',
+          'callId': 'call-1',
+          'pairId': 'alice:bob',
+          'lockExpiresAt': 2,
+        },
+      );
+
+      await service.exportDiagnostics();
+
+      final decoded =
+          jsonDecode(await File(exportPath).readAsString())
+              as Map<String, dynamic>;
+      final events = decoded['events'] as List<dynamic>;
+      expect(events, hasLength(1));
+      final event = events.single as Map<String, dynamic>;
+      expect(event['name'], 'voice_lock_claim_blocked');
+      expect(event['count'], 2);
+      final context = event['context'] as Map<String, dynamic>;
+      expect(context['lockExpiresAt'], 2);
+      expect(context['pairId'], 'alice:bob');
+    },
+  );
+
   test('app event log is bounded when exported', () async {
     final temp = await Directory.systemTemp.createTemp(
       'rain-crash-diagnostics-bound-test-',
@@ -245,6 +311,17 @@ void main() {
       selectedCandidateRoute: 'direct host->srflx udp pair:pair-1',
       iceStates: const <String>['checking', 'connected'],
       cameraPermissionFailureDetail: 'Camera permission required.',
+      lockClaimResult: 'peerBusy',
+      lockPath: 'activeVoiceUsers/bob',
+      pairId: 'alice:bob',
+      callerUserLock: 'alice',
+      calleeUserLock: 'bob',
+      lockCallId: 'call-0',
+      lockExpiresAt: 1778911256590,
+      lockWasReclaimed: false,
+      terminalRoomWasCleaned: false,
+      corruptRoomWasRepaired: false,
+      timestampRepair: false,
     );
 
     final encoded = diagnostics.toJson();
@@ -260,6 +337,17 @@ void main() {
     expect(encoded['iceStateHistory'], const <String>['checking', 'connected']);
     expect(encoded['sanitizedUiError'], 'Video could not connect. Try again.');
     expect(encoded['cameraPermissionFailureDetail'], contains('Camera'));
+    expect(encoded['lockClaimResult'], 'peerBusy');
+    expect(encoded['lockPath'], 'activeVoiceUsers/bob');
+    expect(encoded['pairId'], 'alice:bob');
+    expect(encoded['callerUserLock'], 'alice');
+    expect(encoded['calleeUserLock'], 'bob');
+    expect(encoded['lockCallId'], 'call-0');
+    expect(encoded['lockExpiresAt'], 1778911256590);
+    expect(encoded['lockWasReclaimed'], isFalse);
+    expect(encoded['terminalRoomWasCleaned'], isFalse);
+    expect(encoded['corruptRoomWasRepaired'], isFalse);
+    expect(encoded['timestampRepair'], isFalse);
   });
 
   test('diagnostics export preserves full native voice call error', () async {

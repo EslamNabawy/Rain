@@ -915,7 +915,7 @@ git commit -m "fix: clean stale call state before retry"
 - Modify: `apps/rain/lib/infrastructure/services/crash_diagnostics_service.dart`
 - Modify: `apps/rain/test/crash_diagnostics_service_test.dart`
 
-- [ ] **Step 1: Add structured lock diagnostics**
+- [x] **Step 1: Add structured lock diagnostics**
 
 Add fields to the call diagnostic event context:
 
@@ -933,7 +933,7 @@ Add fields to the call diagnostic event context:
 'timestampRepair': timestampRepair,
 ```
 
-- [ ] **Step 2: Add event names**
+- [x] **Step 2: Add event names**
 
 Record these names from runtime/Firebase adapter boundaries:
 
@@ -948,7 +948,7 @@ voice_terminal_cleanup_completed
 voice_terminal_cleanup_failed
 ```
 
-- [ ] **Step 3: Make diagnostics export compact**
+- [x] **Step 3: Make diagnostics export compact**
 
 In `crash_diagnostics_service.dart`, coalesce repeated lock events by:
 
@@ -958,7 +958,7 @@ category + name + peerId + callId + pairId
 
 Keep the newest payload and increment a `count`.
 
-- [ ] **Step 4: Add diagnostics tests**
+- [x] **Step 4: Add diagnostics tests**
 
 In `apps/rain/test/crash_diagnostics_service_test.dart`, add:
 
@@ -984,16 +984,16 @@ test('coalesces repeated voice lock events without losing newest context', () as
 });
 ```
 
-- [ ] **Step 5: Run tests**
+- [x] **Step 5: Run tests**
 
 ```powershell
 dart run melos exec --scope rain -- flutter test test/crash_diagnostics_service_test.dart
 ```
 
-- [ ] **Step 6: Commit**
+- [x] **Step 6: Commit**
 
 ```powershell
-git add apps/rain/lib/application/runtime/voice_call_diagnostics.dart apps/rain/lib/application/runtime/voice_call_runtime.dart apps/rain/lib/infrastructure/services/crash_diagnostics_service.dart apps/rain/test/crash_diagnostics_service_test.dart
+git add apps/rain/lib/application/runtime/voice_call_diagnostics.dart apps/rain/lib/application/runtime/voice_call_runtime.dart apps/rain/lib/infrastructure/services/crash_diagnostics_service.dart apps/rain/test/crash_diagnostics_service_test.dart docs/superpowers/plans/2026-05-26-rain-call-signaling-v7-premium-ux.md
 git commit -m "chore: explain call busy and cleanup diagnostics"
 ```
 

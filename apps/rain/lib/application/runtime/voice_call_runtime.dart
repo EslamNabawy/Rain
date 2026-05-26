@@ -130,10 +130,13 @@ extension VoiceCallRuntime on RainRuntimeController {
       );
       await session.startOutgoing();
     } catch (error) {
-      final retryDecision = _voiceCallRetryDecisionForError(
+      final retrySnapshot = _voiceCallSignalingFailureSnapshotForError(
         error,
         peerId: peerId,
       );
+      final retryDecision = retrySnapshot == null
+          ? null
+          : CallRetryPolicy.classifySignalingFailure(retrySnapshot);
       _recordRuntimeEvent(
         category: 'call',
         name: 'start_failed',
@@ -149,6 +152,15 @@ extension VoiceCallRuntime on RainRuntimeController {
           if (retryDecision != null)
             'canRetryImmediately': retryDecision.canRetryImmediately,
         },
+      );
+      _recordVoiceCallStartFailureDiagnostics(
+        error: error,
+        peerId: peerId,
+        callId: callId,
+        sessionEpoch: sessionEpoch,
+        mediaMode: mediaMode,
+        retryDecision: retryDecision,
+        retrySnapshot: retrySnapshot,
       );
       await _failVoiceCall(
         error,
@@ -1339,14 +1351,88 @@ extension VoiceCallRuntime on RainRuntimeController {
     );
     switch (frame.type) {
       case VoiceCallFrameType.invite:
-        await voiceAdapter.createOutgoingCall(
+        final callee = _normalizedUsername(peerId);
+        final lockContext = _voiceCallLockDiagnostics(
+          peerId: callee,
           callId: frame.callId,
-          caller: localUsername,
-          callee: _normalizedUsername(peerId),
-          createdAt: frame.sessionEpoch,
-          expiresAt: frame.sessionEpoch + _voiceCallExpiry.inMilliseconds,
-          mediaMode: frame.mediaMode,
+          sessionEpoch: frame.sessionEpoch,
+          lockClaimResult: 'started',
         );
+        _recordRuntimeEvent(
+          category: 'call',
+          name: 'voice_lock_claim_started',
+          context: <String, Object?>{
+            ..._voiceFrameEventContext(peerId, frame),
+            ...lockContext,
+          },
+        );
+        try {
+          await voiceAdapter.createOutgoingCall(
+            callId: frame.callId,
+            caller: localUsername,
+            callee: callee,
+            createdAt: frame.sessionEpoch,
+            expiresAt: frame.sessionEpoch + _voiceCallExpiry.inMilliseconds,
+            mediaMode: frame.mediaMode,
+          );
+        } catch (error) {
+          final retrySnapshot = _voiceCallSignalingFailureSnapshotForError(
+            error,
+            peerId: callee,
+          );
+          final retryDecision = retrySnapshot == null
+              ? null
+              : CallRetryPolicy.classifySignalingFailure(retrySnapshot);
+          final failedLockContext = _voiceCallLockDiagnostics(
+            peerId: callee,
+            callId: frame.callId,
+            sessionEpoch: frame.sessionEpoch,
+            retryDecision: retryDecision,
+            retrySnapshot: retrySnapshot,
+          );
+          final eventContext = <String, Object?>{
+            ..._voiceFrameEventContext(peerId, frame),
+            ...failedLockContext,
+            if (retryDecision != null)
+              'canRetryImmediately': retryDecision.canRetryImmediately,
+          };
+          if (retryDecision?.kind == CallRetryDecisionKind.cleanedStaleState) {
+            _recordRuntimeEvent(
+              category: 'call',
+              name: 'voice_lock_reclaim_completed',
+              severity: 'warning',
+              message: retryDecision?.userMessage,
+              context: eventContext,
+            );
+            if (failedLockContext['timestampRepair'] == true) {
+              _recordRuntimeEvent(
+                category: 'call',
+                name: 'voice_room_timestamp_repaired',
+                severity: 'warning',
+                message: retryDecision?.userMessage,
+                context: eventContext,
+              );
+            }
+          } else if (retryDecision?.kind ==
+              CallRetryDecisionKind.cleanupInProgress) {
+            _recordRuntimeEvent(
+              category: 'call',
+              name: 'voice_lock_reclaim_started',
+              severity: 'warning',
+              message: retryDecision?.userMessage,
+              context: eventContext,
+            );
+          } else {
+            _recordRuntimeEvent(
+              category: 'call',
+              name: 'voice_lock_claim_blocked',
+              severity: 'warning',
+              message: retryDecision?.userMessage ?? error.toString(),
+              context: eventContext,
+            );
+          }
+          rethrow;
+        }
         break;
       case VoiceCallFrameType.accept:
         await voiceAdapter.acceptCall(
@@ -1780,6 +1866,43 @@ extension VoiceCallRuntime on RainRuntimeController {
     );
   }
 
+  void _recordVoiceCallStartFailureDiagnostics({
+    required Object error,
+    required String peerId,
+    required String callId,
+    required int sessionEpoch,
+    required CallMediaMode mediaMode,
+    CallRetryDecision? retryDecision,
+    CallSignalingFailureSnapshot? retrySnapshot,
+  }) {
+    final reason =
+        _voiceCallFailureReasonForRetryDecision(retryDecision) ??
+        _voiceCallFailureReasonForError(error) ??
+        _localAudioFailureReason(error);
+    final detail =
+        _voiceCallFailureDetailForRetryDecision(retryDecision) ??
+        _voiceCallFailureDetailForError(error) ??
+        _localAudioFailureDetail(error) ??
+        _voiceCallErrorMessage(error);
+    _recordVoiceCallDiagnostics(
+      callId: callId,
+      sessionEpoch: sessionEpoch,
+      peerId: peerId,
+      isOutgoing: true,
+      mediaMode: mediaMode,
+      failureCode: reason?.name ?? retryDecision?.kind.name ?? 'unknown',
+      userMessage: detail,
+      nativeError: error.toString(),
+      lockDiagnostics: _voiceCallLockDiagnostics(
+        peerId: peerId,
+        callId: callId,
+        sessionEpoch: sessionEpoch,
+        retryDecision: retryDecision,
+        retrySnapshot: retrySnapshot,
+      ),
+    );
+  }
+
   void _recordVoiceCallDiagnostics({
     required String callId,
     required int sessionEpoch,
@@ -1792,6 +1915,7 @@ extension VoiceCallRuntime on RainRuntimeController {
     VoiceMediaDiagnostics? mediaDiagnostics,
     VideoCallRendererState? rendererState,
     String? cameraPermissionFailureDetail,
+    Map<String, Object?> lockDiagnostics = const <String, Object?>{},
   }) {
     errorRecorder?.call(
       VoiceCallDiagnostics(
@@ -1823,6 +1947,29 @@ extension VoiceCallRuntime on RainRuntimeController {
         ),
         selectedCandidateRoute: _selectedVoiceCallCandidateRoute(peerId),
         cameraPermissionFailureDetail: cameraPermissionFailureDetail,
+        lockClaimResult: lockDiagnostics['lockClaimResult']?.toString(),
+        lockPath: lockDiagnostics['lockPath']?.toString(),
+        pairId: lockDiagnostics['pairId']?.toString(),
+        callerUserLock: lockDiagnostics['callerUserLock']?.toString(),
+        calleeUserLock: lockDiagnostics['calleeUserLock']?.toString(),
+        lockCallId: lockDiagnostics['lockCallId']?.toString(),
+        lockExpiresAt: lockDiagnostics['lockExpiresAt'] is num
+            ? (lockDiagnostics['lockExpiresAt']! as num).toInt()
+            : null,
+        lockWasReclaimed: lockDiagnostics['lockWasReclaimed'] is bool
+            ? lockDiagnostics['lockWasReclaimed']! as bool
+            : null,
+        terminalRoomWasCleaned:
+            lockDiagnostics['terminalRoomWasCleaned'] is bool
+            ? lockDiagnostics['terminalRoomWasCleaned']! as bool
+            : null,
+        corruptRoomWasRepaired:
+            lockDiagnostics['corruptRoomWasRepaired'] is bool
+            ? lockDiagnostics['corruptRoomWasRepaired']! as bool
+            : null,
+        timestampRepair: lockDiagnostics['timestampRepair'] is bool
+            ? lockDiagnostics['timestampRepair']! as bool
+            : null,
       ),
       StackTrace.current,
       source: 'voice-call-media',
@@ -2335,17 +2482,23 @@ extension VoiceCallRuntime on RainRuntimeController {
     String? reasonCode,
     bool bestEffort = false,
   }) async {
+    final cleanupContext = <String, Object?>{
+      'callId': callId,
+      'status': status.name,
+      'reason': reason,
+      'reasonCode': reasonCode,
+      'bestEffort': bestEffort,
+    };
     try {
       _recordRuntimeEvent(
         category: 'call',
         name: 'signaling_end_call_started',
-        context: <String, Object?>{
-          'callId': callId,
-          'status': status.name,
-          'reason': reason,
-          'reasonCode': reasonCode,
-          'bestEffort': bestEffort,
-        },
+        context: cleanupContext,
+      );
+      _recordRuntimeEvent(
+        category: 'call',
+        name: 'voice_terminal_cleanup_started',
+        context: cleanupContext,
       );
       await _requireVoiceSignalingAdapter().endCall(
         callId: callId,
@@ -2364,6 +2517,11 @@ extension VoiceCallRuntime on RainRuntimeController {
           'reasonCode': reasonCode,
         },
       );
+      _recordRuntimeEvent(
+        category: 'call',
+        name: 'voice_terminal_cleanup_completed',
+        context: cleanupContext,
+      );
     } catch (error) {
       _recordRuntimeEvent(
         category: 'call',
@@ -2376,6 +2534,13 @@ extension VoiceCallRuntime on RainRuntimeController {
           'reasonCode': reasonCode,
           'bestEffort': bestEffort,
         },
+      );
+      _recordRuntimeEvent(
+        category: 'call',
+        name: 'voice_terminal_cleanup_failed',
+        severity: bestEffort ? 'warning' : 'error',
+        message: error.toString(),
+        context: cleanupContext,
       );
       if (!bestEffort) {
         rethrow;
@@ -2888,7 +3053,7 @@ extension VoiceCallRuntime on RainRuntimeController {
     return '${_normalizedUsername(selfIdentity.username)}:$peerId:$now';
   }
 
-  CallRetryDecision? _voiceCallRetryDecisionForError(
+  CallSignalingFailureSnapshot? _voiceCallSignalingFailureSnapshotForError(
     Object error, {
     String? peerId,
   }) {
@@ -2898,20 +3063,56 @@ extension VoiceCallRuntime on RainRuntimeController {
         !CallRetryPolicy.isCleanupConflictMessage(normalized)) {
       return null;
     }
-    return CallRetryPolicy.classifySignalingFailure(
-      CallSignalingFailureSnapshot(
-        message: normalized,
-        lockWasReclaimed: normalized.contains('lock was reclaimed'),
-        terminalRoomWasCleaned: normalized.contains('terminal room cleaned'),
-        corruptRoomWasRepaired:
-            normalized.contains('corrupt room repaired') ||
-            normalized.contains('corrupt terminal'),
-        cleanupInProgress:
-            normalized.contains('cleanup in progress') ||
-            normalized.contains('cleaning up'),
-        peerId: peerId ?? _voiceCallBusyUser(normalized),
-      ),
+    return CallSignalingFailureSnapshot(
+      message: normalized,
+      lockWasReclaimed:
+          normalized.contains('lock was reclaimed') ||
+          normalized.contains('old call state was cleaned'),
+      terminalRoomWasCleaned:
+          normalized.contains('terminal room cleaned') ||
+          normalized.contains('terminal room'),
+      corruptRoomWasRepaired:
+          normalized.contains('corrupt room repaired') ||
+          normalized.contains('corrupt terminal'),
+      cleanupInProgress:
+          normalized.contains('cleanup in progress') ||
+          normalized.contains('cleaning up'),
+      peerId: peerId ?? _voiceCallBusyUser(normalized),
     );
+  }
+
+  Map<String, Object?> _voiceCallLockDiagnostics({
+    required String peerId,
+    required String callId,
+    required int sessionEpoch,
+    String? lockClaimResult,
+    CallRetryDecision? retryDecision,
+    CallSignalingFailureSnapshot? retrySnapshot,
+  }) {
+    final caller = _normalizedUsername(selfIdentity.username);
+    final callee = _normalizedUsername(peerId);
+    final pairId = voiceCallPairId(caller, callee);
+    final message = retrySnapshot?.message ?? '';
+    final busyUser = _voiceCallBusyUser(message);
+    final lockPath = busyUser == null
+        ? 'activeVoicePairs/$pairId'
+        : 'activeVoiceUsers/$busyUser';
+    final timestampRepair =
+        message.contains('timestamp') ||
+        message.contains('timestamps are invalid');
+    return <String, Object?>{
+      'lockClaimResult': lockClaimResult ?? retryDecision?.kind.name,
+      'lockPath': lockPath,
+      'pairId': pairId,
+      'callerUserLock': caller,
+      'calleeUserLock': callee,
+      'lockCallId': null,
+      'lockExpiresAt': sessionEpoch + _voiceCallExpiry.inMilliseconds,
+      'lockWasReclaimed': retrySnapshot?.lockWasReclaimed ?? false,
+      'terminalRoomWasCleaned': retrySnapshot?.terminalRoomWasCleaned ?? false,
+      'corruptRoomWasRepaired': retrySnapshot?.corruptRoomWasRepaired ?? false,
+      'timestampRepair': timestampRepair,
+    };
   }
 
   VoiceCallFailureReason? _voiceCallFailureReasonForRetryDecision(
