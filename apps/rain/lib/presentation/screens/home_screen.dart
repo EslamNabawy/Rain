@@ -31,6 +31,7 @@ import 'package:rain/presentation/widgets/app_components.dart';
 import 'package:rain/presentation/widgets/chat_composer.dart';
 import 'package:rain/presentation/widgets/app_dialogs.dart';
 import 'package:rain/presentation/widgets/calls/rain_call_controls.dart';
+import 'package:rain/presentation/widgets/calls/rain_call_layout_contract.dart';
 import 'package:rain/presentation/widgets/calls/rain_call_manager_bar.dart';
 import 'package:rain/presentation/widgets/calls/rain_call_overlay.dart';
 import 'package:rain/presentation/widgets/rain_chat_widgets.dart';
@@ -833,12 +834,15 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
     final body = isCompact
         ? _buildCompactBody(friends, adaptiveProfile)
         : _buildWideBody(friends, adaptiveProfile);
+    final callLayout = RainCallLayoutContract.fromSurface(
+      callSurface,
+      isDesktop: !isCompact,
+    );
     return Stack(
       children: <Widget>[
         Positioned.fill(child: body),
-        if (callSurface.showsMediaSurface &&
-            !(callSurface.mode == CallSurfaceMode.fullscreen &&
-                voiceCall.isVideo) &&
+        if (callLayout.showMediaSurface &&
+            !(callLayout.isFullscreen && voiceCall.isVideo) &&
             voiceCall.phase != VoiceCallPhase.idle)
           Positioned.fill(
             left: isCompact ? 0 : 321,
@@ -893,7 +897,7 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
                           ),
             ),
           ),
-        if (callSurface.showsManagerBar &&
+        if (callLayout.showTopManagerBar &&
             voiceCall.phase != VoiceCallPhase.idle)
           Positioned(
             left: isCompact ? 0 : 321,
@@ -923,7 +927,11 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
     CallSurfaceState surface,
     VoiceCallState voiceCall,
   ) {
-    return surface.mode == CallSurfaceMode.fullscreen &&
+    final callLayout = RainCallLayoutContract.fromSurface(
+      surface,
+      isDesktop: true,
+    );
+    return callLayout.isFullscreen &&
         voiceCall.phase != VoiceCallPhase.idle &&
         voiceCall.isVideo;
   }

@@ -1088,7 +1088,7 @@ git commit -m "perf: simplify call surfaces on armv7"
 - Modify: `apps/rain/lib/presentation/widgets/calls/rain_call_controls.dart`
 - Modify: `apps/rain/test/rain_call_manager_bar_test.dart`
 
-- [ ] **Step 1: Define call surface modes**
+- [x] **Step 1: Define call surface modes**
 
 Create `rain_call_layout_contract.dart`:
 
@@ -1135,7 +1135,7 @@ final class RainCallLayoutContract {
 }
 ```
 
-- [ ] **Step 2: Define top status strip**
+- [x] **Step 2: Define top status strip**
 
 Create `rain_call_status_strip.dart`:
 
@@ -1180,7 +1180,7 @@ class RainCallStatusStrip extends StatelessWidget {
 }
 ```
 
-- [ ] **Step 3: Add duplication tests**
+- [x] **Step 3: Add duplication tests**
 
 In `apps/rain/test/rain_call_manager_bar_test.dart`:
 
@@ -1200,13 +1200,13 @@ testWidgets('top call manager appears only when call is minimized', (tester) asy
 });
 ```
 
-- [ ] **Step 4: Run tests**
+- [x] **Step 4: Run tests**
 
 ```powershell
 dart run melos exec --scope rain -- flutter test test/rain_call_manager_bar_test.dart
 ```
 
-- [ ] **Step 5: Commit**
+- [x] **Step 5: Commit**
 
 ```powershell
 git add apps/rain/lib/presentation/widgets/calls/rain_call_layout_contract.dart apps/rain/lib/presentation/widgets/calls/rain_call_status_strip.dart apps/rain/lib/presentation/widgets/calls/rain_call_controls.dart apps/rain/test/rain_call_manager_bar_test.dart

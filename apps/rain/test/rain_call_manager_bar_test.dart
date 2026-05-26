@@ -5,8 +5,10 @@ import 'package:rain/application/state/call_surface_providers.dart';
 import 'package:rain/presentation/branding/rain_ripple_halo_surface.dart';
 import 'package:rain/presentation/performance/rain_performance.dart';
 import 'package:rain/presentation/widgets/calls/rain_call_controls.dart';
+import 'package:rain/presentation/widgets/calls/rain_call_layout_contract.dart';
 import 'package:rain/presentation/widgets/calls/rain_call_manager_bar.dart';
 import 'package:rain/presentation/widgets/calls/rain_call_overlay.dart';
+import 'package:rain/presentation/widgets/calls/rain_call_status_strip.dart';
 
 void main() {
   testWidgets('active call renders top manager identity and controls', (
@@ -314,6 +316,129 @@ void main() {
     },
   );
 
+  test('layout contract maps call surfaces without duplicated controls', () {
+    final popup = RainCallLayoutContract.fromSurface(
+      const CallSurfaceState.visible(peerId: 'bob', callId: 'call-1'),
+      isDesktop: false,
+    );
+    expect(popup.surfaceMode, RainCallSurfaceMode.popup);
+    expect(popup.showTopManagerBar, isFalse);
+    expect(popup.showMediaSurface, isTrue);
+    expect(popup.showExpandedControls, isTrue);
+
+    final minimized = RainCallLayoutContract.fromSurface(
+      const CallSurfaceState.visible(
+        peerId: 'bob',
+        callId: 'call-1',
+        mode: CallSurfaceMode.managerOnly,
+      ),
+      isDesktop: false,
+    );
+    expect(minimized.surfaceMode, RainCallSurfaceMode.minimized);
+    expect(minimized.showTopManagerBar, isTrue);
+    expect(minimized.showMediaSurface, isFalse);
+    expect(minimized.showExpandedControls, isFalse);
+
+    final pip = RainCallLayoutContract.fromSurface(
+      const CallSurfaceState.visible(
+        peerId: 'bob',
+        callId: 'call-1',
+        mediaMode: CallMediaMode.video,
+        mode: CallSurfaceMode.pip,
+      ),
+      isDesktop: true,
+    );
+    expect(pip.surfaceMode, RainCallSurfaceMode.pip);
+    expect(pip.showTopManagerBar, isTrue);
+    expect(pip.showMediaSurface, isTrue);
+    expect(pip.showExpandedControls, isFalse);
+
+    final fullscreen = RainCallLayoutContract.fromSurface(
+      const CallSurfaceState.visible(
+        peerId: 'bob',
+        callId: 'call-1',
+        mediaMode: CallMediaMode.video,
+        mode: CallSurfaceMode.fullscreen,
+      ),
+      isDesktop: true,
+    );
+    expect(fullscreen.surfaceMode, RainCallSurfaceMode.fullscreen);
+    expect(fullscreen.showTopManagerBar, isFalse);
+    expect(fullscreen.showMediaSurface, isTrue);
+    expect(fullscreen.showExpandedControls, isTrue);
+    expect(fullscreen.showDesktopSidePanel, isTrue);
+  });
+
+  testWidgets('top call manager is hidden while popup is expanded', (
+    WidgetTester tester,
+  ) async {
+    await _pumpCallSurface(
+      tester,
+      state: _activeCall(),
+      surface: const CallSurfaceState.visible(peerId: 'bob', callId: 'call-1'),
+    );
+
+    expect(
+      find.byKey(const ValueKey<String>('rain-call-manager-bar')),
+      findsNothing,
+    );
+    expect(
+      find.byKey(const ValueKey<String>('rain-call-popup')),
+      findsOneWidget,
+    );
+    expect(
+      find.byKey(const ValueKey<String>('rain-call-control-dock')),
+      findsOneWidget,
+    );
+  });
+
+  testWidgets('top call manager appears only when call is minimized', (
+    WidgetTester tester,
+  ) async {
+    await _pumpCallSurface(
+      tester,
+      state: _activeCall(),
+      surface: const CallSurfaceState.visible(
+        peerId: 'bob',
+        callId: 'call-1',
+        mode: CallSurfaceMode.managerOnly,
+      ),
+    );
+
+    expect(
+      find.byKey(const ValueKey<String>('rain-call-manager-bar')),
+      findsOneWidget,
+    );
+    expect(find.byKey(const ValueKey<String>('rain-call-popup')), findsNothing);
+    expect(
+      find.byKey(const ValueKey<String>('rain-call-control-dock')),
+      findsNothing,
+    );
+  });
+
+  testWidgets('call status strip presents peer, state, duration, and quality', (
+    WidgetTester tester,
+  ) async {
+    await tester.pumpWidget(
+      const MaterialApp(
+        home: Scaffold(
+          body: RainCallStatusStrip(
+            peerLabel: 'Bob',
+            statusText: 'Video call with Bob',
+            durationText: '0:07',
+            qualityText: 'Direct route',
+          ),
+        ),
+      ),
+    );
+
+    expect(find.text('Bob'), findsOneWidget);
+    expect(
+      find.text('Video call with Bob / 0:07 / Direct route'),
+      findsOneWidget,
+    );
+  });
+
   testWidgets('manager does not block bottom composer taps', (
     WidgetTester tester,
   ) async {
@@ -429,6 +554,51 @@ Future<void> _pumpOverlay(
     home = RainPerformanceScope(profile: performanceProfile, child: home);
   }
   await tester.pumpWidget(MaterialApp(home: home));
+}
+
+Future<void> _pumpCallSurface(
+  WidgetTester tester, {
+  required VoiceCallState state,
+  required CallSurfaceState surface,
+}) async {
+  await tester.pumpWidget(
+    MaterialApp(
+      home: Scaffold(
+        body: Stack(
+          children: <Widget>[
+            Positioned.fill(
+              child: RainCallOverlay(
+                state: state,
+                surface: surface,
+                displayName: 'Bob',
+                onAccept: () {},
+                onReject: () {},
+                onHangUp: () {},
+                onRetry: () {},
+                onToggleMute: () {},
+                onMinimize: () {},
+                onExpand: () {},
+              ),
+            ),
+            Positioned(
+              left: 0,
+              right: 0,
+              top: 0,
+              child: RainCallManagerBar(
+                state: state,
+                surface: surface,
+                displayName: 'Bob',
+                onToggleMute: () {},
+                onRestore: () {},
+                onFullscreen: () {},
+                onHangUp: () {},
+              ),
+            ),
+          ],
+        ),
+      ),
+    ),
+  );
 }
 
 VoiceCallState _activeCall({CallMediaMode mediaMode = CallMediaMode.audio}) {

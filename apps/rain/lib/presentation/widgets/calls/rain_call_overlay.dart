@@ -11,6 +11,8 @@ import 'package:rain/presentation/branding/rain_ripple_halo_surface.dart';
 import 'package:rain/presentation/performance/rain_performance.dart';
 import 'package:rain/presentation/theme/rain_theme.dart';
 import 'package:rain/presentation/widgets/calls/rain_call_controls.dart';
+import 'package:rain/presentation/widgets/calls/rain_call_layout_contract.dart';
+import 'package:rain/presentation/widgets/calls/rain_call_status_strip.dart';
 import 'package:rain/presentation/widgets/rain_chat_widgets.dart';
 
 class RainCallOverlay extends StatelessWidget {
@@ -98,11 +100,15 @@ class RainCallOverlay extends StatelessWidget {
 
     return LayoutBuilder(
       builder: (BuildContext context, BoxConstraints constraints) {
-        if (surface.mode == CallSurfaceMode.managerOnly) {
+        final contract = RainCallLayoutContract.fromSurface(
+          surface,
+          isDesktop: constraints.maxWidth >= 720,
+        );
+        if (!contract.showMediaSurface) {
           return const SizedBox.shrink();
         }
 
-        if (surface.mode == CallSurfaceMode.fullscreen && state.isVideo) {
+        if (contract.isFullscreen && state.isVideo) {
           return RainFullscreenCallWorkspace(
             state: state,
             displayName: displayName,
@@ -132,7 +138,7 @@ class RainCallOverlay extends StatelessWidget {
           );
         }
 
-        if (surface.mode == CallSurfaceMode.pip && state.isVideo) {
+        if (contract.isPictureInPicture && state.isVideo) {
           return Align(
             alignment: Alignment.topRight,
             child: Padding(
@@ -333,38 +339,41 @@ class _RainFloatingExpandedCallOverlayState
             Positioned(
               left: offset.dx,
               top: offset.dy,
-              child: _RainExpandedCallPanel(
-                key: _panelKey,
-                state: widget.state,
-                displayName: widget.displayName,
-                gender: widget.gender,
-                routeSummary: widget.routeSummary,
-                panelWidth: widget.panelWidth,
-                maxHeight: widget.maxHeight,
-                videoRenderers: widget.videoRenderers,
-                primaryRole: widget.primaryRole,
-                onToggleVideoPrimaryRole: widget.onToggleVideoPrimaryRole,
-                onAccept: widget.onAccept,
-                onReject: widget.onReject,
-                onHangUp: widget.onHangUp,
-                onRetry: widget.onRetry,
-                onToggleMute: widget.onToggleMute,
-                onToggleDeafen: widget.onToggleDeafen,
-                onToggleCamera: widget.onToggleCamera,
-                onSwitchCamera: widget.onSwitchCamera,
-                onSelectOutputRoute: widget.onSelectOutputRoute,
-                controlCapabilities: widget.controlCapabilities,
-                outputRouteOptions: widget.outputRouteOptions,
-                onMinimize: widget.onMinimize,
-                onFullscreen: widget.onFullscreen,
-                onHeaderDragUpdate: (DragUpdateDetails details) {
-                  widget.onMoveFloating?.call(
-                    details.delta,
-                    viewportSize,
-                    safePadding,
-                    _panelSizeFromRenderBox() ?? panelSize,
-                  );
-                },
+              child: KeyedSubtree(
+                key: const ValueKey<String>('rain-call-popup'),
+                child: _RainExpandedCallPanel(
+                  key: _panelKey,
+                  state: widget.state,
+                  displayName: widget.displayName,
+                  gender: widget.gender,
+                  routeSummary: widget.routeSummary,
+                  panelWidth: widget.panelWidth,
+                  maxHeight: widget.maxHeight,
+                  videoRenderers: widget.videoRenderers,
+                  primaryRole: widget.primaryRole,
+                  onToggleVideoPrimaryRole: widget.onToggleVideoPrimaryRole,
+                  onAccept: widget.onAccept,
+                  onReject: widget.onReject,
+                  onHangUp: widget.onHangUp,
+                  onRetry: widget.onRetry,
+                  onToggleMute: widget.onToggleMute,
+                  onToggleDeafen: widget.onToggleDeafen,
+                  onToggleCamera: widget.onToggleCamera,
+                  onSwitchCamera: widget.onSwitchCamera,
+                  onSelectOutputRoute: widget.onSelectOutputRoute,
+                  controlCapabilities: widget.controlCapabilities,
+                  outputRouteOptions: widget.outputRouteOptions,
+                  onMinimize: widget.onMinimize,
+                  onFullscreen: widget.onFullscreen,
+                  onHeaderDragUpdate: (DragUpdateDetails details) {
+                    widget.onMoveFloating?.call(
+                      details.delta,
+                      viewportSize,
+                      safePadding,
+                      _panelSizeFromRenderBox() ?? panelSize,
+                    );
+                  },
+                ),
               ),
             ),
           ],
@@ -522,7 +531,7 @@ class RainFullscreenCallWorkspace extends StatelessWidget {
                       left: 16,
                       right: 16,
                       top: 16,
-                      child: _RainFullscreenStatusStrip(
+                      child: _RainFullscreenStatusStripAdapter(
                         state: state,
                         displayName: displayName,
                         gender: gender,
@@ -738,8 +747,8 @@ class _RainFullscreenVideoScrim extends StatelessWidget {
   }
 }
 
-class _RainFullscreenStatusStrip extends StatelessWidget {
-  const _RainFullscreenStatusStrip({
+class _RainFullscreenStatusStripAdapter extends StatelessWidget {
+  const _RainFullscreenStatusStripAdapter({
     required this.state,
     required this.displayName,
     required this.accent,
@@ -757,83 +766,29 @@ class _RainFullscreenStatusStrip extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final scheme = Theme.of(context).colorScheme;
-    return Align(
-      alignment: Alignment.topCenter,
-      child: ConstrainedBox(
-        constraints: const BoxConstraints(maxWidth: 860),
-        child: DecoratedBox(
+    return RainCallTicker(
+      state: state,
+      builder: (BuildContext context, int now) {
+        return RainCallStatusStrip(
           key: const ValueKey<String>('rain-call-fullscreen-status-strip'),
-          decoration: BoxDecoration(
-            color: scheme.surface.withValues(alpha: 0.82),
-            borderRadius: BorderRadius.circular(22),
-            border: Border.all(
-              color: scheme.outlineVariant.withValues(alpha: 0.30),
-            ),
+          peerLabel: displayName,
+          statusText: rainVoiceCallTitle(state, displayName),
+          durationText: rainVoiceCallDetail(state, now),
+          qualityText: routeSummary ?? '',
+          leading: RainAvatar(
+            name: displayName,
+            size: 38,
+            statusColor: accent,
+            gender: gender,
           ),
-          child: Padding(
-            padding: const EdgeInsets.fromLTRB(14, 10, 8, 10),
-            child: RainCallTicker(
-              state: state,
-              builder: (BuildContext context, int now) {
-                final detail = rainVoiceCallDetail(state, now);
-                final secondary = routeSummary == null || routeSummary!.isEmpty
-                    ? detail
-                    : '$detail / $routeSummary';
-                return Row(
-                  children: <Widget>[
-                    RainAvatar(
-                      name: displayName,
-                      size: 38,
-                      statusColor: accent,
-                      gender: gender,
-                    ),
-                    const SizedBox(width: 12),
-                    Expanded(
-                      child: Column(
-                        mainAxisSize: MainAxisSize.min,
-                        crossAxisAlignment: CrossAxisAlignment.start,
-                        children: <Widget>[
-                          Text(
-                            rainVoiceCallTitle(state, displayName),
-                            maxLines: 1,
-                            overflow: TextOverflow.ellipsis,
-                            style: Theme.of(context).textTheme.titleSmall
-                                ?.copyWith(fontWeight: FontWeight.w900),
-                          ),
-                          if (secondary.isNotEmpty) ...<Widget>[
-                            const SizedBox(height: 2),
-                            Text(
-                              secondary,
-                              maxLines: 1,
-                              overflow: TextOverflow.ellipsis,
-                              style: Theme.of(context).textTheme.bodySmall
-                                  ?.copyWith(
-                                    color: scheme.onSurface.withValues(
-                                      alpha: 0.66,
-                                    ),
-                                    fontWeight: FontWeight.w700,
-                                  ),
-                            ),
-                          ],
-                        ],
-                      ),
-                    ),
-                    IconButton.filledTonal(
-                      key: const ValueKey<String>(
-                        'rain-call-fullscreen-exit-button',
-                      ),
-                      tooltip: 'Exit fullscreen',
-                      onPressed: onExitFullscreen,
-                      icon: const Icon(Icons.fullscreen_exit),
-                    ),
-                  ],
-                );
-              },
-            ),
+          trailing: IconButton.filledTonal(
+            key: const ValueKey<String>('rain-call-fullscreen-exit-button'),
+            tooltip: 'Exit fullscreen',
+            onPressed: onExitFullscreen,
+            icon: const Icon(Icons.fullscreen_exit),
           ),
-        ),
-      ),
+        );
+      },
     );
   }
 }

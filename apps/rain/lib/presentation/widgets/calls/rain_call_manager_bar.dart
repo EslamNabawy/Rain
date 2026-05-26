@@ -5,6 +5,7 @@ import 'package:rain/application/state/call_surface_providers.dart';
 import 'package:rain/presentation/branding/rain_ripple_halo_surface.dart';
 import 'package:rain/presentation/performance/rain_performance.dart';
 import 'package:rain/presentation/widgets/calls/rain_call_controls.dart';
+import 'package:rain/presentation/widgets/calls/rain_call_layout_contract.dart';
 import 'package:rain/presentation/widgets/rain_chat_widgets.dart';
 
 class RainCallManagerBar extends StatelessWidget {
@@ -35,7 +36,11 @@ class RainCallManagerBar extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    if (!surface.showsManagerBar || state.phase == VoiceCallPhase.idle) {
+    final contract = RainCallLayoutContract.fromSurface(
+      surface,
+      isDesktop: false,
+    );
+    if (!contract.showTopManagerBar || state.phase == VoiceCallPhase.idle) {
       return const SizedBox.shrink();
     }
 
