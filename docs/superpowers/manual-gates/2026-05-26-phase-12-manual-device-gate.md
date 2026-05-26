@@ -1,13 +1,15 @@
 # Phase 12 Manual Device Gate
 
-Status: pending real-device execution
+Status: waived by explicit user override on 2026-05-26; not a device-test pass
 Created: 2026-05-26 10:34 Africa/Cairo
 Baseline branch: dev
 Baseline validation: Phase 11 passed `dart pub get`, `dart run melos run analyze`, and `dart run melos run test`.
 
 ## Gate Rule
 
-Do not mark Phase 12 complete and do not start the final release gate until the checks below pass on real devices or every failure is documented with an accepted release decision.
+The original gate rule was: do not mark Phase 12 complete and do not start the final release gate until the checks below pass on real devices or every failure is documented with an accepted release decision.
+
+Override: the user explicitly waived the real-device requirement on 2026-05-26. Keep this file for later device evidence; do not treat the waiver as proof that voice/video works on hardware.
 
 This gate cannot be proven by unit tests. It needs at least:
 

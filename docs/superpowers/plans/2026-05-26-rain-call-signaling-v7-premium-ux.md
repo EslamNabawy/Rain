@@ -1653,7 +1653,7 @@ no output
 
 **Why Here:** WebRTC call reliability cannot be proven only with unit tests. Do this before release builds.
 
-**Execution Status:** Pending real-device execution. Manual evidence template created at `docs/superpowers/manual-gates/2026-05-26-phase-12-manual-device-gate.md`. This phase must stay unchecked until the Windows and Android device runs are completed with results.
+**Execution Status:** Waived by explicit user override on 2026-05-26. Manual evidence template remains at `docs/superpowers/manual-gates/2026-05-26-phase-12-manual-device-gate.md` for later real-device evidence. This is not a device-test pass.
 
 **Devices:**
 
@@ -1770,7 +1770,7 @@ Do not release until failures have a root cause or are explicitly accepted.
 
 ## Phase 13: Final Build And Cloud Release Gate
 
-**Why Last:** Builds consume time and user bandwidth. Build only after tests and manual gate pass.
+**Why Last:** Builds consume time and user bandwidth. Build only after tests and manual gate pass, or after an explicit manual-gate override.
 
 **Files:**
 - No source changes expected.
@@ -1856,7 +1856,7 @@ Record latest commit SHA in the final response.
 - Do not weaken normal voice room validation; only add cleanup-safe parsing for stale/corrupt existing records.
 - Do not add new native DSP, ML, or media dependencies.
 - Do not make video calls renegotiate for UI-only changes.
-- Do not run release builds before validation and manual gate.
+- Do not run release builds before validation and manual gate unless the user explicitly overrides the manual gate.
 - Commit after each phase.
 
 ---
