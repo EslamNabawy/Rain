@@ -31,6 +31,7 @@ import 'package:rain/presentation/widgets/app_components.dart';
 import 'package:rain/presentation/widgets/chat_composer.dart';
 import 'package:rain/presentation/widgets/app_dialogs.dart';
 import 'package:rain/presentation/widgets/calls/rain_call_controls.dart';
+import 'package:rain/presentation/widgets/calls/rain_call_ended_surface.dart';
 import 'package:rain/presentation/widgets/calls/rain_call_layout_contract.dart';
 import 'package:rain/presentation/widgets/calls/rain_call_manager_bar.dart';
 import 'package:rain/presentation/widgets/calls/rain_call_overlay.dart';
@@ -627,19 +628,12 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
   String? _selectedPeerId;
   String? _defaultOutputAppliedCallId;
   String? _lastVoiceCallLifecycleSoundKey;
-  CallEndSummary? _lastEndedCallSummary;
-  Timer? _endedCallSummaryTimer;
+  CallSurfaceState? _lastActiveCallSurface;
   double _fullscreenFriendsPanelWidth = 280;
   bool _fullscreenFriendsPanelCollapsed = false;
   bool _fullscreenFriendsPanelForcedOpen = false;
   bool _desktopFriendsRailCollapsed = false;
   Future<void>? _refreshFriendsInFlight;
-
-  @override
-  void dispose() {
-    _endedCallSummaryTimer?.cancel();
-    super.dispose();
-  }
 
   @override
   Widget build(BuildContext context) {
@@ -648,6 +642,10 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
     final voiceCall = ref.watch(voiceCallProvider);
     final videoRenderers = ref.watch(videoCallRenderersProvider);
     final callSurface = ref.watch(callSurfaceProvider);
+    final callEndPresentation = ref.watch(callEndPresentationProvider);
+    if (voiceCall.phase != VoiceCallPhase.idle && callSurface.isVisible) {
+      _lastActiveCallSurface = callSurface;
+    }
     final videoInputCapabilities = ref
         .watch(videoInputCapabilityProvider)
         .value;
@@ -737,20 +735,6 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
         final content = Stack(
           children: <Widget>[
             Positioned.fill(child: shell),
-            if (_lastEndedCallSummary case final summary?)
-              Positioned(
-                left: isCompact ? 12 : 341,
-                right: 12,
-                top: 0,
-                child: SafeArea(
-                  bottom: false,
-                  child: _CallEndSummaryBanner(
-                    summary: summary,
-                    onDismiss: _dismissEndedCallSummary,
-                    onCallAgain: () => _callAgainFromSummary(summary),
-                  ),
-                ),
-              ),
             if (_shouldShowFullscreenCallWorkspace(callSurface, voiceCall))
               Positioned.fill(
                 child: RainCallWorkspace(
@@ -806,6 +790,16 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
                   sidePanelWidth: _fullscreenFriendsPanelWidth,
                   onToggleSidePanel: _toggleFullscreenFriendsPanel,
                   onResizeSidePanel: _resizeFullscreenFriendsPanel,
+                ),
+              ),
+            if (callEndPresentation.summary case final summary?)
+              Positioned.fill(
+                left: callEndPresentation.isFullscreen || isCompact ? 0 : 321,
+                child: RainCallEndedSurface(
+                  summary: summary,
+                  fullscreen: callEndPresentation.isFullscreen,
+                  onClose: _dismissEndedCallSummary,
+                  onCallAgain: () => _callAgainFromSummary(summary),
                 ),
               ),
           ],
@@ -1126,6 +1120,9 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
     }
 
     _handleVoiceCallSound(previous, next);
+    if (next.phase != VoiceCallPhase.idle) {
+      ref.read(callEndPresentationProvider.notifier).dismiss();
+    }
     _maybeShowEndedCallSummary(previous, next);
     _maybeApplyDefaultVoiceOutput(next);
 
@@ -1167,13 +1164,9 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
       reason: _callEndReason(previous),
       endedAt: now,
     );
-    _endedCallSummaryTimer?.cancel();
-    setState(() => _lastEndedCallSummary = summary);
-    _endedCallSummaryTimer = Timer(const Duration(seconds: 8), () {
-      if (mounted && identical(_lastEndedCallSummary, summary)) {
-        setState(() => _lastEndedCallSummary = null);
-      }
-    });
+    ref
+        .read(callEndPresentationProvider.notifier)
+        .show(summary, previousSurface: _lastActiveCallSurface);
   }
 
   CallEndInitiator _callEndInitiator(VoiceCallState previous) {
@@ -1198,10 +1191,7 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
   }
 
   void _dismissEndedCallSummary() {
-    _endedCallSummaryTimer?.cancel();
-    if (mounted) {
-      setState(() => _lastEndedCallSummary = null);
-    }
+    ref.read(callEndPresentationProvider.notifier).dismiss();
   }
 
   Future<void> _callAgainFromSummary(CallEndSummary summary) async {
@@ -1577,112 +1567,6 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
       SnackBar(
         content: Text(message),
         backgroundColor: Theme.of(context).colorScheme.error,
-      ),
-    );
-  }
-}
-
-class _CallEndSummaryBanner extends StatelessWidget {
-  const _CallEndSummaryBanner({
-    required this.summary,
-    required this.onDismiss,
-    required this.onCallAgain,
-  });
-
-  final CallEndSummary summary;
-  final VoidCallback onDismiss;
-  final VoidCallback onCallAgain;
-
-  @override
-  Widget build(BuildContext context) {
-    final scheme = Theme.of(context).colorScheme;
-    final mediaLabel = summary.isVideo
-        ? 'Video call ended'
-        : 'Voice call ended';
-    final initiatorLabel = switch (summary.initiator) {
-      CallEndInitiator.local => 'Ended by you',
-      CallEndInitiator.remote => 'Ended by ${summary.peerLabel}',
-      CallEndInitiator.system => 'Ended by Rain',
-    };
-    return Padding(
-      padding: const EdgeInsets.only(top: 8),
-      child: Center(
-        child: ConstrainedBox(
-          constraints: const BoxConstraints(maxWidth: 720),
-          child: Material(
-            color: Colors.transparent,
-            child: DecoratedBox(
-              decoration: BoxDecoration(
-                color: scheme.surface.withValues(
-                  alpha: scheme.brightness == Brightness.dark ? 0.97 : 0.99,
-                ),
-                borderRadius: BorderRadius.circular(22),
-                border: Border.all(
-                  color: scheme.primary.withValues(alpha: 0.26),
-                ),
-                boxShadow: <BoxShadow>[
-                  BoxShadow(
-                    blurRadius: 18,
-                    offset: const Offset(0, 8),
-                    color: Colors.black.withValues(
-                      alpha: scheme.brightness == Brightness.dark ? 0.28 : 0.10,
-                    ),
-                  ),
-                ],
-              ),
-              child: Padding(
-                padding: const EdgeInsets.fromLTRB(14, 10, 10, 10),
-                child: Row(
-                  children: <Widget>[
-                    Icon(
-                      summary.isVideo
-                          ? Icons.videocam_off_outlined
-                          : Icons.call_end_outlined,
-                      color: scheme.primary,
-                    ),
-                    const SizedBox(width: 12),
-                    Expanded(
-                      child: Column(
-                        mainAxisSize: MainAxisSize.min,
-                        crossAxisAlignment: CrossAxisAlignment.start,
-                        children: <Widget>[
-                          Text(
-                            '$mediaLabel with ${summary.peerLabel}',
-                            maxLines: 1,
-                            overflow: TextOverflow.ellipsis,
-                            style: Theme.of(context).textTheme.titleSmall
-                                ?.copyWith(fontWeight: FontWeight.w900),
-                          ),
-                          const SizedBox(height: 2),
-                          Text(
-                            '$initiatorLabel / ${rainFormatVoiceElapsed(summary.duration)}',
-                            maxLines: 1,
-                            overflow: TextOverflow.ellipsis,
-                            style: Theme.of(context).textTheme.bodySmall
-                                ?.copyWith(
-                                  color: scheme.onSurface.withValues(
-                                    alpha: 0.70,
-                                  ),
-                                ),
-                          ),
-                        ],
-                      ),
-                    ),
-                    TextButton(
-                      onPressed: onCallAgain,
-                      child: const Text('Call again'),
-                    ),
-                    IconButton(
-                      tooltip: 'Dismiss',
-                      onPressed: onDismiss,
-                      icon: const Icon(Icons.close),
-                    ),
-                  ],
-                ),
-              ),
-            ),
-          ),
-        ),
       ),
     );
   }

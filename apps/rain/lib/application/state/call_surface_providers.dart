@@ -1,3 +1,5 @@
+import 'dart:async';
+
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter/widgets.dart';
 
@@ -17,6 +19,11 @@ final voiceCallStateForCallSurfaceProvider = Provider<VoiceCallState>(
 final callSurfaceProvider =
     NotifierProvider<CallSurfaceController, CallSurfaceState>(
       CallSurfaceController.new,
+    );
+
+final callEndPresentationProvider =
+    NotifierProvider<CallEndPresentationController, CallEndPresentationState>(
+      CallEndPresentationController.new,
     );
 
 class CallSurfaceState {
@@ -176,6 +183,64 @@ class CallSurfaceState {
         'peerId: $peerId, '
         'callId: $callId'
         ')';
+  }
+}
+
+class CallEndPresentationState {
+  const CallEndPresentationState({
+    this.summary,
+    this.mode = CallSurfaceMode.expanded,
+    this.videoPrimaryRole = VideoPrimaryRole.remote,
+  });
+
+  const CallEndPresentationState.hidden()
+    : summary = null,
+      mode = CallSurfaceMode.expanded,
+      videoPrimaryRole = VideoPrimaryRole.remote;
+
+  final CallEndSummary? summary;
+  final CallSurfaceMode mode;
+  final VideoPrimaryRole videoPrimaryRole;
+
+  bool get isVisible => summary != null;
+
+  bool get isFullscreen =>
+      isVisible && mode == CallSurfaceMode.fullscreen && summary!.isVideo;
+}
+
+class CallEndPresentationController extends Notifier<CallEndPresentationState> {
+  Timer? _dismissTimer;
+
+  @override
+  CallEndPresentationState build() {
+    ref.onDispose(() => _dismissTimer?.cancel());
+    return const CallEndPresentationState.hidden();
+  }
+
+  void show(
+    CallEndSummary summary, {
+    required CallSurfaceState? previousSurface,
+  }) {
+    _dismissTimer?.cancel();
+    final surface = previousSurface;
+    final mode =
+        surface != null &&
+            surface.mode == CallSurfaceMode.fullscreen &&
+            summary.isVideo
+        ? CallSurfaceMode.fullscreen
+        : CallSurfaceMode.expanded;
+    state = CallEndPresentationState(
+      summary: summary,
+      mode: mode,
+      videoPrimaryRole: surface?.videoPrimaryRole ?? VideoPrimaryRole.remote,
+    );
+    _dismissTimer = Timer(const Duration(seconds: 6), dismiss);
+  }
+
+  void dismiss() {
+    _dismissTimer?.cancel();
+    _dismissTimer = null;
+    state = const CallEndPresentationState.hidden();
   }
 }
 
