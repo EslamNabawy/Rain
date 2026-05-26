@@ -5873,6 +5873,86 @@ void main() {
         );
       },
     );
+
+    test(
+      'local voice hangup writes terminal room before best-effort session hangup',
+      () async {
+        final harness = await _createTwoUserCallHarness(db, alice);
+        addTearDown(harness.dispose);
+
+        await harness.start();
+        final callId = await _startAndAcceptHarnessCall(
+          harness,
+          callerIsAlice: true,
+          mediaMode: protocol.CallMediaMode.audio,
+        );
+        harness.adapter.failEndCallAttempt = 2;
+
+        await harness.aliceRuntime.hangUpVoiceCall();
+
+        await _waitForHarnessCallIdle(
+          harness,
+          'Firebase terminal voice room to clear both peers',
+        );
+        expect(harness.adapter.endCallAttempts, 1);
+        expect(
+          harness.runtimeEvents,
+          contains('alice:voice_terminal_write_before_session_hangup'),
+        );
+        expect(
+          harness.runtimeEvents,
+          contains('alice:voice_late_hangup_frame_ignored'),
+        );
+        final room = harness.adapter.rooms[callId]!;
+        expect(room.status, VoiceCallSignalingStatus.ended);
+        expect(room.endedBy, 'alice');
+        expect(harness.adapter.activePairLocks, isEmpty);
+        expect(harness.adapter.activeUserLocks, isEmpty);
+        expect(
+          (harness.aliceBrain.voiceMediaConnections['bob']!
+                  as _TestVoiceMediaConnection)
+              .disposed,
+          isTrue,
+        );
+        expect(
+          (harness.bobBrain.voiceMediaConnections['alice']!
+                  as _TestVoiceMediaConnection)
+              .disposed,
+          isTrue,
+        );
+      },
+    );
+
+    test(
+      'terminal Firebase voice room clears active call without a hangup frame',
+      () async {
+        final harness = await _createTwoUserCallHarness(db, alice);
+        addTearDown(harness.dispose);
+
+        await harness.start();
+        final callId = await _startAndAcceptHarnessCall(
+          harness,
+          callerIsAlice: true,
+          mediaMode: protocol.CallMediaMode.audio,
+        );
+
+        await harness.adapter.endCall(
+          callId: callId,
+          username: 'bob',
+          status: VoiceCallSignalingStatus.ended,
+          endedAt: DateTime.now().millisecondsSinceEpoch,
+          reason: 'Call ended.',
+        );
+
+        await _waitForHarnessCallIdle(
+          harness,
+          'direct Firebase terminal voice room to clear both peers',
+        );
+        expect(harness.adapter.rooms[callId]?.endedBy, 'bob');
+        expect(harness.aliceBrain.stoppedAudioPeers, contains('bob'));
+        expect(harness.bobBrain.stoppedAudioPeers, contains('alice'));
+      },
+    );
   });
 }
 
@@ -5960,6 +6040,7 @@ RainRuntimeController _runtimeFor(
   NoopSignalingAdapter adapter, {
   SessionManager? brain,
   RuntimeErrorRecorder? errorRecorder,
+  RuntimeEventRecorder? eventRecorder,
   VideoCallRendererFactory videoCallRendererFactory =
       const RtcVideoCallRendererFactory(),
   Duration videoCallRemoteFirstFrameTimeout = const Duration(seconds: 8),
@@ -5983,6 +6064,7 @@ RainRuntimeController _runtimeFor(
     videoCallRemoteFirstFrameTimeout: videoCallRemoteFirstFrameTimeout,
     activeCallReconnectGrace: activeCallReconnectGrace,
     errorRecorder: errorRecorder,
+    eventRecorder: eventRecorder,
   );
 }
 
@@ -5996,6 +6078,7 @@ Future<_TwoUserCallHarness> _createTwoUserCallHarness(
   final adapter = RecordingVoiceSignalingAdapter();
   final resolvedAliceBrain = aliceBrain ?? TestSessionManager();
   final resolvedBobBrain = bobBrain ?? TestSessionManager();
+  final runtimeEvents = <String>[];
   final bobDb = RainDatabase(NativeDatabase.memory());
   final bob = RainIdentity(
     username: 'bob',
@@ -6040,6 +6123,7 @@ Future<_TwoUserCallHarness> _createTwoUserCallHarness(
       brain: resolvedAliceBrain,
       activeCallReconnectGrace: activeCallReconnectGrace,
       videoCallRendererFactory: const _TestVideoCallRendererFactory(),
+      eventRecorder: _recordRuntimeEventFor(runtimeEvents, 'alice'),
     ),
     bobRuntime: _runtimeFor(
       bobDb,
@@ -6048,8 +6132,22 @@ Future<_TwoUserCallHarness> _createTwoUserCallHarness(
       brain: resolvedBobBrain,
       activeCallReconnectGrace: activeCallReconnectGrace,
       videoCallRendererFactory: const _TestVideoCallRendererFactory(),
+      eventRecorder: _recordRuntimeEventFor(runtimeEvents, 'bob'),
     ),
+    runtimeEvents: runtimeEvents,
   );
+}
+
+RuntimeEventRecorder _recordRuntimeEventFor(List<String> events, String owner) {
+  return ({
+    required String category,
+    required String name,
+    String severity = 'info',
+    String? message,
+    Map<String, Object?> context = const <String, Object?>{},
+  }) {
+    events.add('$owner:$name');
+  };
 }
 
 Future<String> _startAndAcceptHarnessCall(
@@ -6135,6 +6233,7 @@ class _TwoUserCallHarness {
     required this.bobDb,
     required this.aliceRuntime,
     required this.bobRuntime,
+    required this.runtimeEvents,
   });
 
   final RecordingVoiceSignalingAdapter adapter;
@@ -6143,6 +6242,7 @@ class _TwoUserCallHarness {
   final RainDatabase bobDb;
   final RainRuntimeController aliceRuntime;
   final RainRuntimeController bobRuntime;
+  final List<String> runtimeEvents;
 
   Future<void> start() async {
     await aliceRuntime.start();
@@ -6225,6 +6325,8 @@ class RecordingVoiceSignalingAdapter extends RecordingNoopSignalingAdapter
     implements VoiceSignalingAdapter {
   final FakeVoiceSignalingAdapter _voice = FakeVoiceSignalingAdapter();
   Object? endCallError;
+  int endCallAttempts = 0;
+  int? failEndCallAttempt;
 
   Map<String, VoiceCallRoom> get rooms => _voice.rooms;
 
@@ -6296,6 +6398,10 @@ class RecordingVoiceSignalingAdapter extends RecordingNoopSignalingAdapter
     String? reasonCode,
     String? reason,
   }) {
+    endCallAttempts += 1;
+    if (failEndCallAttempt == endCallAttempts) {
+      throw StateError('failed to send hangup');
+    }
     final error = endCallError;
     if (error != null) {
       throw error;

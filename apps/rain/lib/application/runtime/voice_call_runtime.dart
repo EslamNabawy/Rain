@@ -46,7 +46,6 @@ extension VoiceCallRuntime on RainRuntimeController {
       'Peer connection interrupted. Reconnecting...';
   static bool get _legacyControlChannelVoiceSignalingFrozen => true;
   static const Duration _voiceCallExpiry = Duration(minutes: 2);
-  static const int _voiceCallTerminalSeq = 1 << 30;
 
   Future<void> startVoiceCall(String username) async {
     await _startCall(username, mediaMode: CallMediaMode.audio);
@@ -1167,29 +1166,19 @@ extension VoiceCallRuntime on RainRuntimeController {
       case VoiceCallSignalingStatus.ended:
       case VoiceCallSignalingStatus.failed:
       case VoiceCallSignalingStatus.expired:
-        if (room.endedBy == localUsername &&
-            (_voiceCallState.phase == VoiceCallPhase.idle ||
-                _voiceCallState.phase == VoiceCallPhase.ending)) {
-          return;
-        }
-        await session.handleFrame(
-          _terminalVoiceFrameFromRoom(
-            room: room,
-            from: peerId,
-            to: localUsername,
-          ),
-        );
-        await _forceTerminalRoomIfSessionStayedLive(
+        await _reconcileTerminalVoiceRoom(
           session: session,
           room: room,
+          peerId: peerId,
         );
         break;
     }
   }
 
-  Future<void> _forceTerminalRoomIfSessionStayedLive({
+  Future<void> _reconcileTerminalVoiceRoom({
     required VoiceCallSession session,
     required VoiceCallRoom room,
+    required String peerId,
   }) async {
     if (!room.status.isTerminal || !_isLiveVoiceCallSession(session)) {
       return;
@@ -1201,11 +1190,21 @@ extension VoiceCallRuntime on RainRuntimeController {
         current.phase == VoiceCallPhase.failed) {
       return;
     }
+    final localUsername = _normalizedUsername(selfIdentity.username);
+    final endedByLocal = room.endedBy == localUsername;
+    final detail =
+        _terminalVoiceCallReasonForRoom(room, peerId) ??
+        _terminalVoiceCallReason(room.status) ??
+        'Call ended.';
     _recordRuntimeEvent(
       category: 'call',
-      name: 'voice_terminal_room_forced_reconcile',
-      severity: 'warning',
-      message: 'Terminal Firebase room left the voice session live.',
+      name: endedByLocal
+          ? 'voice_terminal_room_forced_reconcile'
+          : 'voice_remote_terminal_room_reconciled',
+      severity: endedByLocal ? 'warning' : 'info',
+      message: endedByLocal
+          ? 'Terminal Firebase room left the local voice session live.'
+          : 'Remote terminal Firebase room ended the local voice session.',
       context: <String, Object?>{
         ..._voiceCallEventContext(current),
         'status': room.status.name,
@@ -1215,46 +1214,7 @@ extension VoiceCallRuntime on RainRuntimeController {
     );
     await _settleVoiceCallAfterTerminalRace(
       session,
-      detail: room.reason ?? 'Call ended.',
-    );
-  }
-
-  VoiceCallFrame _terminalVoiceFrameFromRoom({
-    required VoiceCallRoom room,
-    required String from,
-    required String to,
-  }) {
-    final type = switch (room.status) {
-      VoiceCallSignalingStatus.failed
-          when room.reasonCode == _voiceCallBusyReasonCode =>
-        VoiceCallFrameType.busy,
-      VoiceCallSignalingStatus.failed
-          when room.reasonCode == _voiceCallMicrophoneDeniedReasonCode =>
-        VoiceCallFrameType.reject,
-      VoiceCallSignalingStatus.failed
-          when room.reasonCode == _voiceCallCameraDeniedReasonCode =>
-        VoiceCallFrameType.reject,
-      VoiceCallSignalingStatus.failed
-          when room.reasonCode == _voiceCallRejectedReasonCode =>
-        VoiceCallFrameType.reject,
-      VoiceCallSignalingStatus.failed => VoiceCallFrameType.hangup,
-      VoiceCallSignalingStatus.expired => VoiceCallFrameType.hangup,
-      VoiceCallSignalingStatus.ended => VoiceCallFrameType.hangup,
-      VoiceCallSignalingStatus.ringing ||
-      VoiceCallSignalingStatus.accepted ||
-      VoiceCallSignalingStatus.negotiating ||
-      VoiceCallSignalingStatus.connected => VoiceCallFrameType.hangup,
-    };
-    return VoiceCallFrame(
-      type: type,
-      callId: room.callId,
-      from: from,
-      to: to,
-      sentAt: room.endedAt ?? room.updatedAt,
-      seq: _voiceCallTerminalSeq,
-      sessionEpoch: room.createdAt,
-      reason: _terminalVoiceCallReasonForRoom(room, to),
-      reasonCode: room.reasonCode ?? _terminalVoiceCallReasonCode(room.status),
+      detail: detail,
     );
   }
 
@@ -1273,14 +1233,6 @@ extension VoiceCallRuntime on RainRuntimeController {
   String? _terminalVoiceCallReason(VoiceCallSignalingStatus status) {
     return switch (status) {
       VoiceCallSignalingStatus.expired => _voiceCallTimedOut,
-      _ => null,
-    };
-  }
-
-  String? _terminalVoiceCallReasonCode(VoiceCallSignalingStatus status) {
-    return switch (status) {
-      VoiceCallSignalingStatus.expired => _voiceCallExpiredReasonCode,
-      VoiceCallSignalingStatus.failed => _voiceCallFailedReasonCode,
       _ => null,
     };
   }
@@ -1594,6 +1546,21 @@ extension VoiceCallRuntime on RainRuntimeController {
         );
         break;
       case VoiceCallFrameType.hangup:
+        final existingRoom = await voiceAdapter.fetchCall(frame.callId);
+        if (existingRoom?.status.isTerminal == true) {
+          _recordRuntimeEvent(
+            category: 'call',
+            name: 'voice_late_hangup_frame_ignored',
+            severity: 'info',
+            message: 'Late hangup frame ignored after terminal room state.',
+            context: <String, Object?>{
+              ..._voiceFrameEventContext(peerId, frame),
+              'status': existingRoom?.status.name,
+              'endedBy': existingRoom?.endedBy,
+            },
+          );
+          break;
+        }
         await voiceAdapter.endCall(
           callId: frame.callId,
           username: localUsername,
@@ -2828,19 +2795,18 @@ extension VoiceCallRuntime on RainRuntimeController {
         ),
       );
       if (notifyPeer) {
+        await _writeTerminalRoomBeforeSessionHangup(
+          callId: session.callId,
+          status: failureReason == null
+              ? VoiceCallSignalingStatus.ended
+              : VoiceCallSignalingStatus.failed,
+          detail: detail,
+          reasonCode: _voiceCallReasonCodeForFailure(failureReason),
+        );
         try {
           await session.hangUp(reason: detail);
         } catch (error, stackTrace) {
           _recordVoiceSignalingError(error, stackTrace);
-          await _endVoiceCallInSignaling(
-            callId: session.callId,
-            status: failureReason == null
-                ? VoiceCallSignalingStatus.ended
-                : VoiceCallSignalingStatus.failed,
-            reason: detail,
-            reasonCode: _voiceCallReasonCodeForFailure(failureReason),
-            bestEffort: true,
-          );
         } finally {
           await _disposeVoiceCallSession(session);
         }
@@ -2884,12 +2850,13 @@ extension VoiceCallRuntime on RainRuntimeController {
       ),
     );
     if (notifyPeer && current.callId != null) {
-      await _sendVoiceFrame(
-        current.peerId!,
-        VoiceCallFrameType.hangup,
+      await _writeTerminalRoomBeforeSessionHangup(
         callId: current.callId!,
-        reason: detail,
-        bestEffort: true,
+        status: failureReason == null
+            ? VoiceCallSignalingStatus.ended
+            : VoiceCallSignalingStatus.failed,
+        detail: detail,
+        reasonCode: _voiceCallReasonCodeForFailure(failureReason),
       );
     } else if (current.callId != null) {
       await _endVoiceCallInSignaling(
@@ -2909,6 +2876,30 @@ extension VoiceCallRuntime on RainRuntimeController {
         failureReason: failureReason,
         failureDetail: failureDetail,
       ),
+    );
+  }
+
+  Future<void> _writeTerminalRoomBeforeSessionHangup({
+    required String callId,
+    required VoiceCallSignalingStatus status,
+    required String detail,
+    String? reasonCode,
+  }) async {
+    _recordRuntimeEvent(
+      category: 'call',
+      name: 'voice_terminal_write_before_session_hangup',
+      context: <String, Object?>{
+        'callId': callId,
+        'status': status.name,
+        'reasonCode': reasonCode,
+      },
+    );
+    await _endVoiceCallInSignaling(
+      callId: callId,
+      status: status,
+      reason: detail,
+      reasonCode: reasonCode,
+      bestEffort: true,
     );
   }
 
