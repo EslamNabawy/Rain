@@ -1227,7 +1227,7 @@ git commit -m "feat: define shared call surface contract"
 - Create: `apps/rain/test/rain_call_stage_test.dart`
 - Create: `apps/rain/test/rain_call_workspace_test.dart`
 
-- [ ] **Step 1: Create call stage**
+- [x] **Step 1: Create call stage**
 
 Create `rain_call_stage.dart` with these widget keys:
 
@@ -1245,7 +1245,7 @@ Stage rules:
 - If remote video is missing, show waiting state, not blank black/white space.
 - If voice-only, show Peer Core mark audio visualizer.
 
-- [ ] **Step 2: Create fullscreen workspace**
+- [x] **Step 2: Create fullscreen workspace**
 
 Create `rain_call_workspace.dart` with:
 
@@ -1272,7 +1272,7 @@ Layout rules:
 - Desktop side panel width: default `280`, min `220`, max `380`, collapsed `56`.
 - Mobile: no side panel.
 
-- [ ] **Step 3: Add stage tests**
+- [x] **Step 3: Add stage tests**
 
 In `apps/rain/test/rain_call_stage_test.dart`:
 
@@ -1303,7 +1303,7 @@ testWidgets('tapping local preview swaps primary role', (tester) async {
 });
 ```
 
-- [ ] **Step 4: Add workspace tests**
+- [x] **Step 4: Add workspace tests**
 
 In `apps/rain/test/rain_call_workspace_test.dart`:
 
@@ -1327,7 +1327,7 @@ testWidgets('desktop workspace shows collapsible side panel', (tester) async {
 });
 ```
 
-- [ ] **Step 5: Wire overlay and home screen**
+- [x] **Step 5: Wire overlay and home screen**
 
 In `rain_call_overlay.dart`:
 
@@ -1341,13 +1341,13 @@ In `home_screen.dart`:
 - `exit fullscreen` returns to popup or minimized based on previous mode,
 - video call button cannot create duplicate fullscreen state.
 
-- [ ] **Step 6: Run tests**
+- [x] **Step 6: Run tests**
 
 ```powershell
 dart run melos exec --scope rain -- flutter test test/rain_call_stage_test.dart test/rain_call_workspace_test.dart test/rain_call_manager_bar_test.dart
 ```
 
-- [ ] **Step 7: Commit**
+- [x] **Step 7: Commit**
 
 ```powershell
 git add apps/rain/lib/presentation/widgets/calls/rain_call_stage.dart apps/rain/lib/presentation/widgets/calls/rain_call_workspace.dart apps/rain/lib/presentation/widgets/calls/rain_call_overlay.dart apps/rain/lib/presentation/screens/home_screen.dart apps/rain/test/rain_call_stage_test.dart apps/rain/test/rain_call_workspace_test.dart apps/rain/test/rain_call_manager_bar_test.dart

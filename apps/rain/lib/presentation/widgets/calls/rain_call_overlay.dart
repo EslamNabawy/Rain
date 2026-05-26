@@ -6,13 +6,14 @@ import 'package:rain/application/runtime/video_call_renderers.dart';
 import 'package:rain/application/runtime/voice_call_state.dart';
 import 'package:rain/application/state/call_surface_geometry.dart';
 import 'package:rain/application/state/call_surface_providers.dart';
-import 'package:rain/presentation/branding/rain_peer_core_mark.dart';
 import 'package:rain/presentation/branding/rain_ripple_halo_surface.dart';
 import 'package:rain/presentation/performance/rain_performance.dart';
 import 'package:rain/presentation/theme/rain_theme.dart';
 import 'package:rain/presentation/widgets/calls/rain_call_controls.dart';
 import 'package:rain/presentation/widgets/calls/rain_call_layout_contract.dart';
+import 'package:rain/presentation/widgets/calls/rain_call_stage.dart';
 import 'package:rain/presentation/widgets/calls/rain_call_status_strip.dart';
+import 'package:rain/presentation/widgets/calls/rain_call_workspace.dart';
 import 'package:rain/presentation/widgets/rain_chat_widgets.dart';
 
 class RainCallOverlay extends StatelessWidget {
@@ -109,32 +110,48 @@ class RainCallOverlay extends StatelessWidget {
         }
 
         if (contract.isFullscreen && state.isVideo) {
-          return RainFullscreenCallWorkspace(
-            state: state,
-            displayName: displayName,
-            gender: gender,
-            routeSummary: routeSummary,
-            videoRenderers: videoRenderers,
-            primaryRole: surface.videoPrimaryRole,
-            onToggleVideoPrimaryRole: onToggleVideoPrimaryRole,
-            onAccept: onAccept,
-            onReject: onReject,
-            onHangUp: onHangUp,
-            onRetry: onRetry,
-            onToggleMute: onToggleMute,
-            onToggleDeafen: onToggleDeafen,
-            onToggleCamera: onToggleCamera,
-            onSwitchCamera: onSwitchCamera,
-            onSelectOutputRoute: onSelectOutputRoute,
-            controlCapabilities: controlCapabilities,
-            outputRouteOptions: outputRouteOptions,
-            onExitFullscreen: onExitFullscreen ?? onExpand,
-            friendsPanel: friendsPanel,
-            showFriendsPanel: showFriendsPanel,
-            friendsPanelCollapsed: friendsPanelCollapsed,
-            friendsPanelWidth: friendsPanelWidth,
-            onToggleFriendsPanel: onToggleFriendsPanel,
-            onResizeFriendsPanel: onResizeFriendsPanel,
+          final exitFullscreen = onExitFullscreen ?? onExpand;
+          return RainCallWorkspace(
+            callState: state,
+            peerLabel: displayName,
+            qualityText: routeSummary,
+            stage: RainCallStage(
+              state: state,
+              accent: rainVoiceCallAccent(context, state),
+              renderers: videoRenderers,
+              layout: RainCallStageLayout.fullscreen,
+              primaryRole: surface.videoPrimaryRole,
+              onTogglePrimaryRole: onToggleVideoPrimaryRole,
+            ),
+            controls: RainCallControlDock(
+              dockKey: const ValueKey<String>('rain-call-fullscreen-controls'),
+              state: state,
+              onAccept: onAccept,
+              onReject: onReject,
+              onHangUp: onHangUp,
+              onRetry: onRetry,
+              onToggleMute: onToggleMute,
+              onToggleDeafen: onToggleDeafen,
+              onToggleCamera: onToggleCamera,
+              onSwitchCamera: onSwitchCamera,
+              onSelectOutputRoute: onSelectOutputRoute,
+              controlCapabilities: controlCapabilities,
+              outputRouteOptions: outputRouteOptions,
+              trailingControls: <Widget>[
+                IconButton.filledTonal(
+                  tooltip: 'Exit fullscreen',
+                  onPressed: exitFullscreen,
+                  icon: const Icon(Icons.fullscreen_exit),
+                ),
+              ],
+            ),
+            showDesktopSidePanel: showFriendsPanel,
+            onExitFullscreen: exitFullscreen,
+            sidePanel: friendsPanel,
+            sidePanelCollapsed: friendsPanelCollapsed,
+            sidePanelWidth: friendsPanelWidth,
+            onToggleSidePanel: onToggleFriendsPanel,
+            onResizeSidePanel: onResizeFriendsPanel,
           );
         }
 
@@ -146,11 +163,11 @@ class RainCallOverlay extends StatelessWidget {
               child: SizedBox(
                 key: const ValueKey<String>('rain-call-video-pip-window'),
                 width: _pipWidth(constraints.maxWidth),
-                child: RainVideoCallStage(
+                child: RainCallStage(
                   state: state,
                   accent: rainVoiceCallAccent(context, state),
                   renderers: videoRenderers,
-                  layout: RainVideoCallStageLayout.pip,
+                  layout: RainCallStageLayout.pip,
                   primaryRole: surface.videoPrimaryRole,
                 ),
               ),
@@ -1168,37 +1185,39 @@ class _RainCallMediaFrame extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final scheme = Theme.of(context).colorScheme;
-    final borderRadius = BorderRadius.circular(state.isVideo ? 20 : 28);
+    if (!state.isVideo) {
+      return KeyedSubtree(
+        key: const ValueKey<String>('rain-call-popup-media'),
+        child: RainCallStage(
+          state: state,
+          accent: accent,
+          renderers: videoRenderers,
+          layout: RainCallStageLayout.expanded,
+          primaryRole: primaryRole,
+          onTogglePrimaryRole: onToggleVideoPrimaryRole,
+        ),
+      );
+    }
+
+    final borderRadius = BorderRadius.circular(20);
     return Container(
       key: const ValueKey<String>('rain-call-popup-media'),
-      padding: EdgeInsets.all(state.isVideo ? 4 : 18),
+      padding: const EdgeInsets.all(4),
       decoration: BoxDecoration(
-        color: state.isVideo
-            ? Colors.black.withValues(alpha: 0.62)
-            : scheme.surfaceContainerHighest.withValues(alpha: 0.42),
+        color: Colors.black.withValues(alpha: 0.62),
         borderRadius: borderRadius,
         border: Border.all(color: accent.withValues(alpha: 0.22)),
       ),
       child: ClipRRect(
-        borderRadius: BorderRadius.circular(state.isVideo ? 16 : 22),
-        child: state.isVideo
-            ? RainVideoCallStage(
-                state: state,
-                accent: accent,
-                renderers: videoRenderers,
-                layout: RainVideoCallStageLayout.expanded,
-                primaryRole: primaryRole,
-                onTogglePrimaryRole: onToggleVideoPrimaryRole,
-              )
-            : SizedBox(
-                height: 172,
-                child: _RainCallStatusGlyph(
-                  key: const ValueKey<String>('rain-call-audio-stage'),
-                  state: state,
-                  accent: accent,
-                ),
-              ),
+        borderRadius: BorderRadius.circular(16),
+        child: RainCallStage(
+          state: state,
+          accent: accent,
+          renderers: videoRenderers,
+          layout: RainCallStageLayout.expanded,
+          primaryRole: primaryRole,
+          onTogglePrimaryRole: onToggleVideoPrimaryRole,
+        ),
       ),
     );
   }
@@ -1323,164 +1342,6 @@ class _RainCallControlDock extends StatelessWidget {
         outputRouteOptions: outputRouteOptions,
       ),
     );
-  }
-}
-
-class _RainCallStatusGlyph extends StatelessWidget {
-  const _RainCallStatusGlyph({
-    super.key,
-    required this.state,
-    required this.accent,
-  });
-
-  final VoiceCallState state;
-  final Color accent;
-
-  @override
-  Widget build(BuildContext context) {
-    final scheme = Theme.of(context).colorScheme;
-    final showPeerCoreMark =
-        state.phase == VoiceCallPhase.connectingPeer ||
-        state.phase == VoiceCallPhase.connectingMedia ||
-        state.phase == VoiceCallPhase.incomingRinging ||
-        state.phase == VoiceCallPhase.outgoingRinging;
-    return Center(
-      child: Container(
-        width: 116,
-        height: 116,
-        decoration: BoxDecoration(
-          shape: BoxShape.circle,
-          color: accent.withValues(alpha: 0.12),
-          border: Border.all(color: accent.withValues(alpha: 0.28), width: 2),
-        ),
-        child: Center(
-          child: showPeerCoreMark
-              ? RainPeerCoreAnimatedMark(
-                  key: const ValueKey<String>('rain-call-peer-core-mark'),
-                  size: 64,
-                  animate: state.isBusy || state.isRinging,
-                )
-              : state.isActive && state.audioLevel.isAvailable
-              ? _RainCallAudioActivity(
-                  level: state.audioLevel.displayLevel,
-                  accent: accent,
-                )
-              : state.isActive
-              ? Icon(
-                  rainVoiceCallIcon(state),
-                  key: const ValueKey<String>('rain-call-audio-unavailable'),
-                  size: 42,
-                  color: accent.withValues(alpha: 0.72),
-                )
-              : Icon(
-                  rainVoiceCallIcon(state),
-                  size: 42,
-                  color: state.phase == VoiceCallPhase.idle
-                      ? scheme.onSurfaceVariant
-                      : accent,
-                ),
-        ),
-      ),
-    );
-  }
-}
-
-class _RainCallAudioActivity extends StatelessWidget {
-  const _RainCallAudioActivity({required this.level, required this.accent});
-
-  final double level;
-  final Color accent;
-
-  @override
-  Widget build(BuildContext context) {
-    final performance = RainPerformanceScope.read(context);
-    final staticOnly =
-        MediaQuery.disableAnimationsOf(context) ||
-        !performance.allowContinuousCallAnimation;
-    return SizedBox(
-      key: const ValueKey<String>('rain-call-audio-emitter'),
-      width: 86,
-      height: 86,
-      child: Stack(
-        alignment: Alignment.center,
-        children: <Widget>[
-          Positioned.fill(
-            child: CustomPaint(
-              painter: _RainCallAudioEmitterPainter(
-                level: level,
-                accent: accent,
-                staticOnly: staticOnly,
-              ),
-            ),
-          ),
-          RainPeerCoreAnimatedMark(
-            key: const ValueKey<String>('rain-call-audio-emitter-mark'),
-            size: 42,
-            animate: false,
-          ),
-        ],
-      ),
-    );
-  }
-}
-
-class _RainCallAudioEmitterPainter extends CustomPainter {
-  const _RainCallAudioEmitterPainter({
-    required this.level,
-    required this.accent,
-    required this.staticOnly,
-  });
-
-  final double level;
-  final Color accent;
-  final bool staticOnly;
-
-  @override
-  void paint(Canvas canvas, Size size) {
-    final clamped = level.isFinite ? level.clamp(0.0, 1.0).toDouble() : 0.0;
-    final intensity = staticOnly ? 0.34 : math.max(0.18, clamped);
-    final stroke = Paint()
-      ..style = PaintingStyle.stroke
-      ..strokeCap = StrokeCap.round
-      ..strokeWidth = 1.6;
-    final fill = Paint()..style = PaintingStyle.fill;
-    final nodes = <Offset>[
-      Offset(size.width * 0.35, size.height * 0.55),
-      Offset(size.width * 0.51, size.height * 0.35),
-      Offset(size.width * 0.61, size.height * 0.62),
-    ];
-
-    for (final node in nodes) {
-      for (var ring = 0; ring < 3; ring += 1) {
-        final radius = 7.0 + (ring * 9.0) + (intensity * 12.0);
-        stroke.color = accent.withValues(
-          alpha: (0.34 - (ring * 0.08)) * intensity,
-        );
-        canvas.drawCircle(node, radius, stroke);
-      }
-      fill.color = accent.withValues(alpha: 0.42 + (0.30 * intensity));
-      canvas.drawCircle(node, 3.2 + (2.0 * intensity), fill);
-    }
-
-    stroke
-      ..strokeWidth = 1.2
-      ..color = accent.withValues(alpha: 0.18 * intensity);
-    canvas.drawCircle(
-      Offset(size.width / 2, size.height / 2),
-      31 + (8 * intensity),
-      stroke,
-    );
-  }
-
-  @override
-  bool shouldRepaint(covariant _RainCallAudioEmitterPainter oldDelegate) {
-    if (oldDelegate.accent != accent || oldDelegate.staticOnly != staticOnly) {
-      return true;
-    }
-    if (staticOnly && oldDelegate.staticOnly) {
-      return false;
-    }
-    return oldDelegate.level != level;
   }
 }
 

@@ -34,6 +34,8 @@ import 'package:rain/presentation/widgets/calls/rain_call_controls.dart';
 import 'package:rain/presentation/widgets/calls/rain_call_layout_contract.dart';
 import 'package:rain/presentation/widgets/calls/rain_call_manager_bar.dart';
 import 'package:rain/presentation/widgets/calls/rain_call_overlay.dart';
+import 'package:rain/presentation/widgets/calls/rain_call_stage.dart';
+import 'package:rain/presentation/widgets/calls/rain_call_workspace.dart';
 import 'package:rain/presentation/widgets/rain_chat_widgets.dart';
 
 part '../widgets/home/shell_header.dart';
@@ -728,28 +730,48 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
             Positioned.fill(child: shell),
             if (_shouldShowFullscreenCallWorkspace(callSurface, voiceCall))
               Positioned.fill(
-                child: RainFullscreenCallWorkspace(
-                  state: voiceCall,
-                  displayName: _voiceCallDisplayName(friends, voiceCall),
-                  gender: _voiceCallGender(friends, voiceCall),
-                  videoRenderers: videoRenderers,
-                  primaryRole: callSurface.videoPrimaryRole,
-                  onToggleVideoPrimaryRole: () =>
-                      _toggleVideoPrimaryRole(voiceCall),
-                  onAccept: _acceptVoiceCall,
-                  onReject: _rejectVoiceCall,
-                  onHangUp: _hangUpVoiceCall,
-                  onRetry: () => _retryVoiceCall(voiceCall),
-                  onToggleMute: () => _toggleVoiceMute(voiceCall),
-                  onToggleDeafen: () => _toggleVoiceDeafen(voiceCall),
-                  onToggleCamera: () => _toggleVoiceCamera(voiceCall),
-                  onSwitchCamera: _switchVoiceCamera,
-                  onSelectOutputRoute: _selectVoiceOutputRoute,
-                  controlCapabilities: callControlCapabilities,
-                  outputRouteOptions: outputRouteOptions,
+                child: RainCallWorkspace(
+                  callState: voiceCall,
+                  peerLabel: _voiceCallDisplayName(friends, voiceCall),
+                  stage: RainCallStage(
+                    state: voiceCall,
+                    accent: rainVoiceCallAccent(context, voiceCall),
+                    renderers: videoRenderers,
+                    layout: RainCallStageLayout.fullscreen,
+                    primaryRole: callSurface.videoPrimaryRole,
+                    onTogglePrimaryRole: () =>
+                        _toggleVideoPrimaryRole(voiceCall),
+                  ),
+                  controls: RainCallControlDock(
+                    dockKey: const ValueKey<String>(
+                      'rain-call-fullscreen-controls',
+                    ),
+                    state: voiceCall,
+                    onAccept: _acceptVoiceCall,
+                    onReject: _rejectVoiceCall,
+                    onHangUp: _hangUpVoiceCall,
+                    onRetry: () => _retryVoiceCall(voiceCall),
+                    onToggleMute: () => _toggleVoiceMute(voiceCall),
+                    onToggleDeafen: () => _toggleVoiceDeafen(voiceCall),
+                    onToggleCamera: () => _toggleVoiceCamera(voiceCall),
+                    onSwitchCamera: _switchVoiceCamera,
+                    onSelectOutputRoute: _selectVoiceOutputRoute,
+                    controlCapabilities: callControlCapabilities,
+                    outputRouteOptions: outputRouteOptions,
+                    trailingControls: <Widget>[
+                      IconButton.filledTonal(
+                        tooltip: 'Exit fullscreen',
+                        onPressed: () => ref
+                            .read(callSurfaceProvider.notifier)
+                            .exitFullscreen(),
+                        icon: const Icon(Icons.fullscreen_exit),
+                      ),
+                    ],
+                  ),
+                  showDesktopSidePanel: !isCompact,
                   onExitFullscreen: () =>
                       ref.read(callSurfaceProvider.notifier).exitFullscreen(),
-                  friendsPanel: _FriendsListView(
+                  sidePanel: _FriendsListView(
                     friends: friends,
                     selectedPeerId: _selectedPeerId,
                     onSelect: _handleFriendSelection,
@@ -757,11 +779,10 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
                     adaptiveProfile: adaptiveProfile,
                     desktopHeaderTitle: null,
                   ),
-                  showFriendsPanel: !isCompact,
-                  friendsPanelCollapsed: _fullscreenFriendsPanelIsCollapsed,
-                  friendsPanelWidth: _fullscreenFriendsPanelWidth,
-                  onToggleFriendsPanel: _toggleFullscreenFriendsPanel,
-                  onResizeFriendsPanel: _resizeFullscreenFriendsPanel,
+                  sidePanelCollapsed: _fullscreenFriendsPanelIsCollapsed,
+                  sidePanelWidth: _fullscreenFriendsPanelWidth,
+                  onToggleSidePanel: _toggleFullscreenFriendsPanel,
+                  onResizeSidePanel: _resizeFullscreenFriendsPanel,
                 ),
               ),
           ],
