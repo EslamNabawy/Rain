@@ -6,6 +6,7 @@ import 'package:flutter_test/flutter_test.dart';
 import 'package:flutter_webrtc/flutter_webrtc.dart'
     show MediaStream, MediaStreamTrack, RTCSessionDescription;
 import 'package:protocol_brain/protocol_brain.dart';
+import 'package:rain/application/runtime/connection_attempt_coordinator.dart';
 import 'package:rain/application/runtime/rain_runtime_controller.dart';
 import 'package:rain/infrastructure/signaling/noop_signaling_adapter.dart';
 import 'package:rain_core/rain_core.dart';
@@ -150,6 +151,10 @@ void main() {
     expect(failed?.state, FileTransferState.failed);
     expect(failed?.error, 'Connection lost. Transfer canceled.');
     expect(await tempFile.exists(), isFalse);
+    expect(
+      runtime.connectionCoordinatorSnapshotFor('bob').disconnectIntent,
+      PeerDisconnectIntent.remoteManual,
+    );
   });
 
   test('network recovery asks active peer manager to restart paths', () async {

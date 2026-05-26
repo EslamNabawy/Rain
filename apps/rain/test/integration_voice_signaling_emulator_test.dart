@@ -138,6 +138,28 @@ void main() {
           reasonCode: 'cleanup',
           reason: 'Test cleanup.',
         );
+
+        final reverseVideoCallId = 'video-reverse-$runId';
+        final reverseIncoming = adapterAlice.watchIncomingCalls(alice).first;
+        final reverseRoom = await adapterBob.createOutgoingCall(
+          callId: reverseVideoCallId,
+          caller: bob,
+          callee: alice,
+          createdAt: createdAt + 10,
+          expiresAt: createdAt + const Duration(minutes: 5).inMilliseconds + 10,
+          mediaMode: CallMediaMode.video,
+        );
+        expect(reverseRoom.status, VoiceCallSignalingStatus.ringing);
+        expect(reverseRoom.mediaMode, CallMediaMode.video);
+        expect((await reverseIncoming).callId, reverseVideoCallId);
+        await adapterAlice.endCall(
+          callId: reverseVideoCallId,
+          username: alice,
+          status: VoiceCallSignalingStatus.ended,
+          endedAt: createdAt + 11,
+          reasonCode: 'cleanup',
+          reason: 'Reverse video cleanup.',
+        );
       } finally {
         await adapterAlice.dispose();
         await adapterBob.dispose();

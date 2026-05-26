@@ -1533,11 +1533,12 @@ git commit -m "feat: polish voice call stage and incoming actions"
 **Why Here:** The backend and UI can pass separately but still fail together. This phase tests real app-level sequences.
 
 **Files:**
+- Modify: `apps/rain/lib/application/runtime/voice_call_runtime.dart`
 - Modify: `apps/rain/test/friend_flow_test.dart`
 - Modify: `apps/rain/test/integration_voice_signaling_emulator_test.dart`
 - Modify: `apps/rain/test/runtime_network_loss_test.dart`
 
-- [ ] **Step 1: Add PC-phone direction tests**
+- [x] **Step 1: Add PC-phone direction tests**
 
 Required scenarios:
 
@@ -1552,7 +1553,7 @@ Previous call ended by caller then callee can immediately call back.
 
 Use existing fake runtime/platform hooks. If the tests cannot truly simulate OS, name variables `pcUser` and `phoneUser` and simulate capability snapshots.
 
-- [ ] **Step 2: Add app-close cleanup tests**
+- [x] **Step 2: Add app-close cleanup tests**
 
 ```dart
 test('closing app during ringing ends call and removes locks', () async {});
@@ -1560,20 +1561,20 @@ test('closing app during active video call ends call and removes locks', () asyn
 test('remote app close shows connection ended instead of reconnecting forever', () async {});
 ```
 
-- [ ] **Step 3: Add weak transport grace tests**
+- [x] **Step 3: Add weak transport grace tests**
 
 ```dart
 test('temporary transport loss shows reconnecting grace before failing call', () async {});
 test('recovered transport clears reconnecting state and keeps call active', () async {});
 ```
 
-- [ ] **Step 4: Run integration tests**
+- [x] **Step 4: Run integration tests**
 
 ```powershell
 dart run melos exec --scope rain -- flutter test test/friend_flow_test.dart test/integration_voice_signaling_emulator_test.dart test/runtime_network_loss_test.dart
 ```
 
-- [ ] **Step 5: Commit**
+- [x] **Step 5: Commit**
 
 ```powershell
 git add apps/rain/test/friend_flow_test.dart apps/rain/test/integration_voice_signaling_emulator_test.dart apps/rain/test/runtime_network_loss_test.dart

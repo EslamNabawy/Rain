@@ -1116,6 +1116,39 @@ void main() {
     );
 
     test(
+      'integrated gate connects phone to PC voice on first attempt',
+      () async {
+        final harness = await _createTwoUserCallHarness(db, alice);
+        addTearDown(harness.dispose);
+
+        await harness.start();
+        final callId = await _startAndAcceptHarnessCall(
+          harness,
+          callerIsAlice: false,
+          mediaMode: protocol.CallMediaMode.audio,
+        );
+
+        final room = harness.adapter.rooms[callId]!;
+        expect(room.status, VoiceCallSignalingStatus.connected);
+        expect(room.caller, 'bob');
+        expect(room.callee, 'alice');
+        expect(room.mediaMode, protocol.CallMediaMode.audio);
+        expect(harness.adapter.activePairLocks.values.single.callId, callId);
+        expect(harness.bobRuntime.voiceCallState.phase, VoiceCallPhase.active);
+        expect(
+          harness.aliceRuntime.voiceCallState.phase,
+          VoiceCallPhase.active,
+        );
+        expect(harness.bobRuntime.voiceCallState.isOutgoing, isTrue);
+        expect(harness.aliceRuntime.voiceCallState.isOutgoing, isFalse);
+        expect(harness.bobBrain.startedAudioPeers, <String>['alice']);
+        expect(harness.aliceBrain.startedAudioPeers, <String>['bob']);
+        expect(harness.aliceBrain.connectedPeers, isEmpty);
+        expect(harness.bobBrain.connectedPeers, isEmpty);
+      },
+    );
+
+    test(
       'integrated gate connects PC to phone video on first attempt',
       () async {
         final harness = await _createTwoUserCallHarness(db, alice);
@@ -2031,6 +2064,46 @@ void main() {
     });
 
     test(
+      'integrated gate app close during ringing ends call and removes locks',
+      () async {
+        final harness = await _createTwoUserCallHarness(db, alice);
+        addTearDown(harness.dispose);
+
+        await harness.start();
+        await harness.aliceRuntime.startVoiceCall('bob');
+        final callId = harness.aliceRuntime.voiceCallState.callId!;
+        await _waitForCondition(
+          () =>
+              harness.bobRuntime.voiceCallState.phase ==
+              VoiceCallPhase.incomingRinging,
+          'Firebase voice invite to ring before callee closes app',
+        );
+
+        await harness.bobRuntime.dispose();
+
+        await _waitForCondition(
+          () =>
+              harness.adapter.rooms[callId]?.status ==
+              VoiceCallSignalingStatus.ended,
+          'Firebase ringing room to end when callee app closes',
+        );
+        await _waitForCondition(
+          () =>
+              harness.aliceRuntime.voiceCallState.phase == VoiceCallPhase.idle,
+          'caller runtime to clear ringing call after callee app closes',
+        );
+
+        final room = harness.adapter.rooms[callId]!;
+        expect(room.endedBy, 'bob');
+        expect(room.reason, 'Rain is closing.');
+        expect(harness.adapter.activePairLocks, isEmpty);
+        expect(harness.adapter.activeUserLocks, isEmpty);
+        expect(harness.aliceBrain.stoppedAudioPeers, contains('bob'));
+        expect(harness.bobBrain.stoppedAudioPeers, contains('alice'));
+      },
+    );
+
+    test(
       'integrated gate callee app close clears active Firebase video call',
       () async {
         final harness = await _createTwoUserCallHarness(db, alice);
@@ -2061,11 +2134,61 @@ void main() {
         expect(room.endedBy, 'bob');
         expect(room.reason, 'Rain is closing.');
         expect(harness.adapter.activePairLocks, isEmpty);
+        expect(harness.adapter.activeUserLocks, isEmpty);
         expect(harness.aliceRuntime.voiceCallState.isVideo, isFalse);
         expect(harness.aliceRuntime.voiceCallState.hasLocalVideo, isFalse);
         expect(harness.aliceRuntime.voiceCallState.hasRemoteVideo, isFalse);
         expect(harness.aliceBrain.stoppedAudioPeers, contains('bob'));
         expect(harness.bobBrain.stoppedAudioPeers, contains('alice'));
+      },
+    );
+
+    test(
+      'remote app close fails active call without reconnecting forever',
+      () async {
+        final harness = await _createTwoUserCallHarness(db, alice);
+        addTearDown(harness.dispose);
+
+        await harness.start();
+        final callId = await _startAndAcceptHarnessCall(
+          harness,
+          callerIsAlice: true,
+          mediaMode: protocol.CallMediaMode.audio,
+        );
+        harness.aliceBrain.seedSession('bob', SessionState.connected);
+
+        await harness.aliceBrain.disconnect('bob');
+
+        await _waitForCondition(
+          () =>
+              harness.aliceRuntime.voiceCallState.phase ==
+              VoiceCallPhase.failed,
+          'remote app close to fail the local active call',
+        );
+        expect(
+          harness.aliceRuntime.voiceCallState.detail,
+          'Peer closed Rain. Connection ended.',
+        );
+        expect(harness.aliceRuntime.voiceCallState.mediaReconnecting, isFalse);
+        expect(
+          harness.aliceRuntime.voiceCallState.failureReason,
+          VoiceCallFailureReason.networkLost,
+        );
+        await _waitForCondition(
+          () =>
+              harness.adapter.rooms[callId]?.status ==
+              VoiceCallSignalingStatus.failed,
+          'remote app close to mark Firebase room terminal',
+        );
+        expect(harness.adapter.rooms[callId]?.reason, contains('closed Rain'));
+        expect(harness.adapter.activePairLocks, isEmpty);
+        expect(harness.adapter.activeUserLocks, isEmpty);
+        expect(
+          harness.aliceRuntime
+              .connectionCoordinatorSnapshotFor('bob')
+              .manualDisconnect,
+          isFalse,
+        );
       },
     );
 
@@ -5048,19 +5171,16 @@ void main() {
     );
 
     test(
-      'weak call transport enters reconnecting grace instead of immediate failed disconnect',
+      'temporary transport loss shows reconnecting grace before failing call',
       () async {
         final harness = await _createTwoUserCallHarness(
           db,
           alice,
-          activeCallReconnectGrace: const Duration(milliseconds: 120),
+          activeCallReconnectGrace: const Duration(milliseconds: 80),
         );
         addTearDown(harness.dispose);
-        final aliceRuntime = harness.aliceRuntime;
-        final bobRuntime = harness.bobRuntime;
 
-        await aliceRuntime.start();
-        await bobRuntime.start();
+        await harness.start();
         final callId = await _startAndAcceptHarnessCall(
           harness,
           callerIsAlice: true,
@@ -5069,41 +5189,78 @@ void main() {
 
         harness.aliceBrain.emitTransientPeerDisconnect('bob');
         await _waitForCondition(
-          () => aliceRuntime.voiceCallState.mediaReconnecting,
+          () => harness.aliceRuntime.voiceCallState.mediaReconnecting,
           'active call to enter reconnecting grace',
         );
-
-        expect(aliceRuntime.voiceCallState.phase, VoiceCallPhase.active);
-        expect(aliceRuntime.voiceCallState.detail, contains('Reconnecting'));
-        expect(aliceRuntime.voiceCallState.reconnectingSince, isNotNull);
+        expect(
+          harness.aliceRuntime.voiceCallState.phase,
+          VoiceCallPhase.active,
+        );
+        expect(
+          harness.aliceRuntime.voiceCallState.detail,
+          contains('Reconnecting'),
+        );
         expect(
           harness.adapter.rooms[callId]?.status,
           VoiceCallSignalingStatus.connected,
         );
 
-        harness.aliceBrain.markConnected('bob');
         await _waitForCondition(
           () =>
-              aliceRuntime.voiceCallState.phase == VoiceCallPhase.active &&
-              !aliceRuntime.voiceCallState.mediaReconnecting,
-          'active call reconnecting grace to clear on recovery',
+              harness.aliceRuntime.voiceCallState.phase ==
+              VoiceCallPhase.failed,
+          'active call reconnecting grace to fail after timeout',
         );
         expect(
-          harness.adapter.rooms[callId]?.status,
-          VoiceCallSignalingStatus.connected,
+          harness.aliceRuntime.voiceCallState.failureReason,
+          VoiceCallFailureReason.networkLost,
+        );
+        expect(harness.aliceRuntime.voiceCallState.mediaReconnecting, isFalse);
+        expect(harness.adapter.rooms[callId]?.reasonCode, 'networkLost');
+      },
+    );
+
+    test(
+      'recovered transport clears reconnecting state and keeps call active',
+      () async {
+        final harness = await _createTwoUserCallHarness(
+          db,
+          alice,
+          activeCallReconnectGrace: const Duration(milliseconds: 160),
+        );
+        addTearDown(harness.dispose);
+
+        await harness.start();
+        final callId = await _startAndAcceptHarnessCall(
+          harness,
+          callerIsAlice: true,
+          mediaMode: protocol.CallMediaMode.audio,
         );
 
         harness.aliceBrain.emitTransientPeerDisconnect('bob');
         await _waitForCondition(
-          () => aliceRuntime.voiceCallState.phase == VoiceCallPhase.failed,
-          'active call reconnecting grace to fail after timeout',
+          () => harness.aliceRuntime.voiceCallState.mediaReconnecting,
+          'active call to enter reconnecting grace',
+        );
+        harness.aliceBrain.markConnected('bob');
+        await _waitForCondition(
+          () =>
+              harness.aliceRuntime.voiceCallState.phase ==
+                  VoiceCallPhase.active &&
+              !harness.aliceRuntime.voiceCallState.mediaReconnecting,
+          'active call reconnecting grace to clear on recovery',
         );
 
         expect(
-          aliceRuntime.voiceCallState.failureReason,
-          VoiceCallFailureReason.networkLost,
+          harness.adapter.rooms[callId]?.status,
+          VoiceCallSignalingStatus.connected,
         );
-        expect(harness.adapter.rooms[callId]?.reasonCode, 'networkLost');
+        expect(harness.aliceRuntime.voiceCallState.reconnectingSince, isNull);
+        await Future<void>.delayed(const Duration(milliseconds: 180));
+        expect(
+          harness.aliceRuntime.voiceCallState.phase,
+          VoiceCallPhase.active,
+        );
       },
     );
 
@@ -5522,7 +5679,7 @@ void main() {
     );
 
     test(
-      'pc caller can call phone after previous phone ended call without false busy',
+      'caller can immediately call back after previous call ended by callee',
       () async {
         final harness = await _createTwoUserCallHarness(db, alice);
         addTearDown(harness.dispose);
@@ -5530,48 +5687,116 @@ void main() {
         await harness.start();
         final firstCallId = await _startAndAcceptHarnessCall(
           harness,
-          callerIsAlice: false,
+          callerIsAlice: true,
           mediaMode: protocol.CallMediaMode.audio,
         );
+
         await harness.bobRuntime.hangUpVoiceCall();
-        await _waitForCondition(
-          () =>
-              harness.bobRuntime.voiceCallState.phase == VoiceCallPhase.idle &&
-              harness.aliceRuntime.voiceCallState.phase == VoiceCallPhase.idle,
-          'first call to end cleanly on both peers',
-        );
-        expect(harness.adapter.rooms[firstCallId]?.status, isNotNull);
+        await _waitForHarnessCallIdle(harness, 'callee hangup to clear');
         expect(harness.adapter.activePairLocks, isEmpty);
         expect(harness.adapter.activeUserLocks, isEmpty);
 
-        await harness.aliceRuntime.startVoiceCall('bob');
+        final secondCallId = await _startAndAcceptHarnessCall(
+          harness,
+          callerIsAlice: true,
+          mediaMode: protocol.CallMediaMode.audio,
+        );
 
-        expect(
-          harness.aliceRuntime.voiceCallState.phase,
-          VoiceCallPhase.outgoingRinging,
-        );
+        expect(secondCallId, isNot(firstCallId));
+        expect(harness.adapter.rooms[secondCallId]?.caller, 'alice');
+        expect(harness.adapter.rooms[secondCallId]?.callee, 'bob');
         expect(harness.aliceRuntime.voiceCallState.failureReason, isNull);
-        expect(
-          harness.adapter.activePairLocks.values.single.callId,
-          isNot(firstCallId),
+        expect(harness.bobRuntime.voiceCallState.failureReason, isNull);
+      },
+    );
+
+    test(
+      'callee can immediately call back after previous call ended by caller',
+      () async {
+        final harness = await _createTwoUserCallHarness(db, alice);
+        addTearDown(harness.dispose);
+
+        await harness.start();
+        final firstCallId = await _startAndAcceptHarnessCall(
+          harness,
+          callerIsAlice: true,
+          mediaMode: protocol.CallMediaMode.audio,
         );
-        expect(
-          harness.adapter.activePairLocks.values.single.callId,
-          harness.aliceRuntime.voiceCallState.callId,
+
+        await harness.aliceRuntime.hangUpVoiceCall();
+        await _waitForHarnessCallIdle(harness, 'caller hangup to clear');
+        expect(harness.adapter.activePairLocks, isEmpty);
+        expect(harness.adapter.activeUserLocks, isEmpty);
+
+        final secondCallId = await _startAndAcceptHarnessCall(
+          harness,
+          callerIsAlice: false,
+          mediaMode: protocol.CallMediaMode.audio,
         );
+
+        expect(secondCallId, isNot(firstCallId));
+        expect(harness.adapter.rooms[secondCallId]?.caller, 'bob');
+        expect(harness.adapter.rooms[secondCallId]?.callee, 'alice');
+        expect(harness.aliceRuntime.voiceCallState.failureReason, isNull);
+        expect(harness.bobRuntime.voiceCallState.failureReason, isNull);
       },
     );
 
     test(
       'phone caller retry succeeds after stale pc outgoing room is cleaned',
       () async {
-        fail(
-          'Phase 10 must cover the reported retry path: a stale PC outgoing '
-          'room or lock is cleaned, the phone caller retries, and the call '
-          'reaches ringing or active without requiring app restart.',
+        final harness = await _createTwoUserCallHarness(db, alice);
+        addTearDown(harness.dispose);
+        final staleCreatedAt =
+            DateTime.now().millisecondsSinceEpoch -
+            const Duration(minutes: 2).inMilliseconds;
+
+        await harness.start();
+        await harness.adapter.createOutgoingCall(
+          callId: 'stale-pc-outgoing',
+          caller: 'alice',
+          callee: 'bob',
+          createdAt: staleCreatedAt,
+          expiresAt: staleCreatedAt + const Duration(seconds: 1).inMilliseconds,
+        );
+        expect(
+          harness.adapter.activePairLocks.values.single.callId,
+          'stale-pc-outgoing',
+        );
+        expect(
+          harness.adapter.activeUserLocks['alice']?.callId,
+          'stale-pc-outgoing',
+        );
+        expect(
+          harness.adapter.activeUserLocks['bob']?.callId,
+          'stale-pc-outgoing',
+        );
+
+        final retryCallId = await _startAndAcceptHarnessCall(
+          harness,
+          callerIsAlice: false,
+          mediaMode: protocol.CallMediaMode.audio,
+        );
+
+        expect(retryCallId, isNot('stale-pc-outgoing'));
+        expect(harness.adapter.rooms['stale-pc-outgoing'], isNull);
+        expect(harness.adapter.rooms[retryCallId]?.caller, 'bob');
+        expect(harness.adapter.rooms[retryCallId]?.callee, 'alice');
+        expect(
+          harness.adapter.activePairLocks.values.single.callId,
+          retryCallId,
+        );
+        expect(harness.adapter.activeUserLocks['alice']?.callId, retryCallId);
+        expect(harness.adapter.activeUserLocks['bob']?.callId, retryCallId);
+        expect(
+          harness.bobRuntime.voiceCallState.failureReason,
+          isNot(VoiceCallFailureReason.peerBusy),
+        );
+        expect(
+          harness.aliceRuntime.voiceCallState.failureReason,
+          isNot(VoiceCallFailureReason.peerBusy),
         );
       },
-      skip: 'Phase 10 adds integrated cross-device call runtime coverage.',
     );
 
     test(
@@ -5843,6 +6068,18 @@ Future<String> _startAndAcceptHarnessCall(
   expect(caller.voiceCallState.mediaMode, mediaMode);
   expect(callee.voiceCallState.mediaMode, mediaMode);
   return callId;
+}
+
+Future<void> _waitForHarnessCallIdle(
+  _TwoUserCallHarness harness,
+  String reason,
+) {
+  return _waitForCondition(
+    () =>
+        harness.aliceRuntime.voiceCallState.phase == VoiceCallPhase.idle &&
+        harness.bobRuntime.voiceCallState.phase == VoiceCallPhase.idle,
+    reason,
+  );
 }
 
 class _TwoUserCallHarness {

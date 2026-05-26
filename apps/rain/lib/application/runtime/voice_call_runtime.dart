@@ -2711,7 +2711,7 @@ extension VoiceCallRuntime on RainRuntimeController {
         notifyPeer: false,
         detail: message,
         failureReason: VoiceCallFailureReason.networkLost,
-        failureDetail: 'Network connection lost. Call ended.',
+        failureDetail: message,
       ),
     );
   }
