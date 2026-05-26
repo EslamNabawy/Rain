@@ -708,12 +708,11 @@ git commit -m "fix: harden voice call locks and cleanup"
 - Create: `apps/rain/lib/application/runtime/call_retry_policy.dart`
 - Modify: `apps/rain/lib/application/runtime/voice_call_runtime.dart`
 - Modify: `apps/rain/lib/application/runtime/runtime_interaction_guard.dart`
-- Modify: `apps/rain/lib/application/runtime/voice_call_state.dart`
 - Modify: `apps/rain/test/call_retry_policy_test.dart`
 - Modify: `apps/rain/test/runtime_interaction_guard_test.dart`
 - Modify: `apps/rain/test/friend_flow_test.dart`
 
-- [ ] **Step 1: Implement retry policy model**
+- [x] **Step 1: Implement retry policy model**
 
 Create `apps/rain/lib/application/runtime/call_retry_policy.dart`:
 
@@ -786,7 +785,7 @@ final class CallRetryPolicy {
 }
 ```
 
-- [ ] **Step 2: Route outgoing create failures through cleanup policy**
+- [x] **Step 2: Route outgoing create failures through cleanup policy**
 
 In `VoiceCallRuntime.startVoiceCall`, when `session.startOutgoing()` or `_sendVoiceFrameObject(invite)` fails:
 
@@ -823,7 +822,7 @@ _setVoiceCallState(
 );
 ```
 
-- [ ] **Step 3: Make hangup cleanup idempotent**
+- [x] **Step 3: Make hangup cleanup idempotent**
 
 In `_endVoiceCallForPeer`, keep session disposal and UI terminal state even if signaling send fails:
 
@@ -848,7 +847,7 @@ try {
 
 The key rule: local call must not remain active because best-effort signaling failed.
 
-- [ ] **Step 4: Runtime guard messages**
+- [x] **Step 4: Runtime guard messages**
 
 In `runtime_interaction_guard.dart`, lock these messages:
 
@@ -871,7 +870,7 @@ enum RuntimeBlockReason {
 }
 ```
 
-- [ ] **Step 5: Add runtime tests**
+- [x] **Step 5: Add runtime tests**
 
 In `apps/rain/test/friend_flow_test.dart`, implement:
 
@@ -891,16 +890,16 @@ test('pc caller can call phone after previous phone ended call without false bus
 
 If `RainRuntimeHarness` does not exist, add equivalent helper methods inside the test file using existing fake runtime setup. Do not introduce a new external test dependency.
 
-- [ ] **Step 6: Run tests**
+- [x] **Step 6: Run tests**
 
 ```powershell
 dart run melos exec --scope rain -- flutter test test/call_retry_policy_test.dart test/runtime_interaction_guard_test.dart test/friend_flow_test.dart
 ```
 
-- [ ] **Step 7: Commit**
+- [x] **Step 7: Commit**
 
 ```powershell
-git add apps/rain/lib/application/runtime/call_retry_policy.dart apps/rain/lib/application/runtime/voice_call_runtime.dart apps/rain/lib/application/runtime/runtime_interaction_guard.dart apps/rain/lib/application/runtime/voice_call_state.dart apps/rain/test/call_retry_policy_test.dart apps/rain/test/runtime_interaction_guard_test.dart apps/rain/test/friend_flow_test.dart
+git add apps/rain/lib/application/runtime/call_retry_policy.dart apps/rain/lib/application/runtime/rain_runtime_controller.dart apps/rain/lib/application/runtime/voice_call_runtime.dart apps/rain/lib/application/runtime/runtime_interaction_guard.dart apps/rain/test/call_retry_policy_test.dart apps/rain/test/runtime_interaction_guard_test.dart apps/rain/test/friend_flow_test.dart docs/superpowers/plans/2026-05-26-rain-call-signaling-v7-premium-ux.md
 git commit -m "fix: clean stale call state before retry"
 ```
 

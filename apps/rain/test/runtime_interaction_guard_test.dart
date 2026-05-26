@@ -112,28 +112,52 @@ void main() {
       expect(decision.userMessage, 'Finish the call before sending files.');
     });
 
-    test(
-      'false busy cleanup becomes a retryable guard decision',
-      () {
-        fail(
-          'Phase 03 must add a stale-call cleanup/false-busy reason so the '
-          'UI can show "Old call state was cleaned. Try again." instead of '
-          'leaving the caller stuck as peer busy.',
-        );
-      },
-      skip: 'Phase 03 adds stale cleanup guard decisions.',
-    );
+    test('false busy cleanup becomes a retryable guard decision', () {
+      final decision = RuntimeInteractionGuard.staleCallCleanup(
+        peerId: 'bob',
+        callId: 'call-1',
+      );
+
+      expect(decision.allowed, isFalse);
+      expect(
+        decision.reasonCode,
+        RuntimeInteractionReasonCode.staleCallCleanup,
+      );
+      expect(decision.blockingPeerId, 'bob');
+      expect(decision.callId, 'call-1');
+      expect(decision.userMessage, 'Old call state was cleaned. Try again.');
+    });
 
     test(
       'call cleanup in progress blocks duplicate retry with explicit message',
       () {
-        fail(
-          'Phase 03 must expose a cleanup-in-progress decision that blocks a '
-          'duplicate call retry with "Call state is cleaning up. Try again in a moment.".',
+        final decision = RuntimeInteractionGuard.callCleanupInProgress(
+          peerId: 'bob',
+          callId: 'call-1',
+        );
+
+        expect(decision.allowed, isFalse);
+        expect(
+          decision.reasonCode,
+          RuntimeInteractionReasonCode.callCleanupInProgress,
+        );
+        expect(decision.blockingPeerId, 'bob');
+        expect(decision.callId, 'call-1');
+        expect(
+          decision.userMessage,
+          'Call state is cleaning up. Try again in a moment.',
         );
       },
-      skip: 'Phase 03 adds cleanup-in-progress guard decisions.',
     );
+
+    test('peer busy decision is peer-specific', () {
+      final decision = RuntimeInteractionGuard.peerBusy(peerId: 'bob');
+
+      expect(decision.allowed, isFalse);
+      expect(decision.reasonCode, RuntimeInteractionReasonCode.peerBusy);
+      expect(decision.userMessage, '@bob is busy in another call.');
+      expect(decision.blockingPeerId, 'bob');
+    });
   });
 }
 

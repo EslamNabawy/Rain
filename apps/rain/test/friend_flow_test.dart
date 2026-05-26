@@ -2462,7 +2462,7 @@ void main() {
         runtime.voiceCallState.failureReason,
         VoiceCallFailureReason.peerBusy,
       );
-      expect(runtime.voiceCallState.detail, 'Peer is busy.');
+      expect(runtime.voiceCallState.detail, '@bob is busy in another call.');
       expect(adapter.rooms, isEmpty);
       expect(adapter.activePairLocks['alice:bob']?.callId, 'existing-call');
     });
@@ -5524,13 +5524,42 @@ void main() {
     test(
       'pc caller can call phone after previous phone ended call without false busy',
       () async {
-        fail(
-          'Phase 10 must simulate a Windows-like caller and Android-like callee '
-          'where a previous callee-ended call is terminal and the next reverse '
-          'direction call starts ringing without VoiceCallFailureReason.peerBusy.',
+        final harness = await _createTwoUserCallHarness(db, alice);
+        addTearDown(harness.dispose);
+
+        await harness.start();
+        final firstCallId = await _startAndAcceptHarnessCall(
+          harness,
+          callerIsAlice: false,
+          mediaMode: protocol.CallMediaMode.audio,
+        );
+        await harness.bobRuntime.hangUpVoiceCall();
+        await _waitForCondition(
+          () =>
+              harness.bobRuntime.voiceCallState.phase == VoiceCallPhase.idle &&
+              harness.aliceRuntime.voiceCallState.phase == VoiceCallPhase.idle,
+          'first call to end cleanly on both peers',
+        );
+        expect(harness.adapter.rooms[firstCallId]?.status, isNotNull);
+        expect(harness.adapter.activePairLocks, isEmpty);
+        expect(harness.adapter.activeUserLocks, isEmpty);
+
+        await harness.aliceRuntime.startVoiceCall('bob');
+
+        expect(
+          harness.aliceRuntime.voiceCallState.phase,
+          VoiceCallPhase.outgoingRinging,
+        );
+        expect(harness.aliceRuntime.voiceCallState.failureReason, isNull);
+        expect(
+          harness.adapter.activePairLocks.values.single.callId,
+          isNot(firstCallId),
+        );
+        expect(
+          harness.adapter.activePairLocks.values.single.callId,
+          harness.aliceRuntime.voiceCallState.callId,
         );
       },
-      skip: 'Phase 10 adds integrated cross-device call runtime coverage.',
     );
 
     test(
@@ -5548,13 +5577,31 @@ void main() {
     test(
       'hangup cleanup is idempotent when signaling frame send fails',
       () async {
-        fail(
-          'Phase 03 must make local hangup dispose media/runtime state even '
-          'when the best-effort signaling hangup frame fails validation or '
-          'transport send.',
+        final harness = await _createTwoUserCallHarness(db, alice);
+        addTearDown(harness.dispose);
+
+        await harness.start();
+        final callId = await _startAndAcceptHarnessCall(
+          harness,
+          callerIsAlice: true,
+          mediaMode: protocol.CallMediaMode.audio,
+        );
+        final connection =
+            harness.aliceBrain.voiceMediaConnections['bob']!
+                as _TestVoiceMediaConnection;
+        harness.adapter.endCallError = StateError('end call write failed');
+
+        await harness.aliceRuntime.hangUpVoiceCall();
+
+        expect(harness.aliceRuntime.voiceCallState.phase, VoiceCallPhase.idle);
+        expect(harness.aliceRuntime.voiceCallState.callId, isNull);
+        expect(connection.disposed, isTrue);
+        expect(harness.aliceBrain.stoppedAudioPeers, contains('bob'));
+        expect(
+          harness.adapter.rooms[callId]?.status,
+          VoiceCallSignalingStatus.connected,
         );
       },
-      skip: 'Phase 03 hardens idempotent hangup cleanup.',
     );
   });
 }
@@ -5895,6 +5942,7 @@ class RecordingNoopSignalingAdapter extends NoopSignalingAdapter {
 class RecordingVoiceSignalingAdapter extends RecordingNoopSignalingAdapter
     implements VoiceSignalingAdapter {
   final FakeVoiceSignalingAdapter _voice = FakeVoiceSignalingAdapter();
+  Object? endCallError;
 
   Map<String, VoiceCallRoom> get rooms => _voice.rooms;
 
@@ -5966,6 +6014,10 @@ class RecordingVoiceSignalingAdapter extends RecordingNoopSignalingAdapter
     String? reasonCode,
     String? reason,
   }) {
+    final error = endCallError;
+    if (error != null) {
+      throw error;
+    }
     return _voice.endCall(
       callId: callId,
       username: username,

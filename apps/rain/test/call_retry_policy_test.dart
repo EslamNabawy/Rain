@@ -1,29 +1,89 @@
 import 'package:flutter_test/flutter_test.dart';
+import 'package:rain/application/runtime/call_retry_policy.dart';
 
 void main() {
   group('CallRetryPolicy evidence lock', () {
     test(
       'maps active user lock conflict to peer busy only when lock is live',
       () {
-        fail(
-          'Phase 03 must classify a live activeVoiceUsers conflict as '
-          'CallRetryDecisionKind.peerBusy and show '
-          '"@eslam is busy in another call.".',
+        final live = CallRetryPolicy.classifySignalingFailure(
+          const CallSignalingFailureSnapshot(
+            message: 'Active voice call already exists for user eslam.',
+            lockWasReclaimed: false,
+            terminalRoomWasCleaned: false,
+            corruptRoomWasRepaired: false,
+            peerId: 'eslam',
+          ),
         );
+        final reclaimed = CallRetryPolicy.classifySignalingFailure(
+          const CallSignalingFailureSnapshot(
+            message: 'Active voice call already exists for user eslam.',
+            lockWasReclaimed: true,
+            terminalRoomWasCleaned: false,
+            corruptRoomWasRepaired: false,
+            peerId: 'eslam',
+          ),
+        );
+
+        expect(live.kind, CallRetryDecisionKind.peerBusy);
+        expect(live.userMessage, '@eslam is busy in another call.');
+        expect(live.canRetryImmediately, isFalse);
+        expect(reclaimed.kind, CallRetryDecisionKind.cleanedStaleState);
+        expect(reclaimed.userMessage, 'Old call state was cleaned. Try again.');
+        expect(reclaimed.canRetryImmediately, isTrue);
       },
-      skip: 'Phase 03 adds CallRetryPolicy.',
     );
 
-    test(
-      'maps corrupt terminal room cleanup to retryable cleanup message',
-      () {
-        fail(
-          'Phase 03 must classify repaired corrupt terminal call state as '
-          'CallRetryDecisionKind.cleanedStaleState and show '
-          '"Old call state was cleaned. Try again.".',
-        );
-      },
-      skip: 'Phase 03 adds CallRetryPolicy.',
-    );
+    test('maps corrupt terminal room cleanup to retryable cleanup message', () {
+      final decision = CallRetryPolicy.classifySignalingFailure(
+        const CallSignalingFailureSnapshot(
+          message: 'Call room timestamps are invalid.',
+          lockWasReclaimed: false,
+          terminalRoomWasCleaned: true,
+          corruptRoomWasRepaired: true,
+          peerId: 'bob',
+        ),
+      );
+
+      expect(decision.kind, CallRetryDecisionKind.cleanedStaleState);
+      expect(decision.userMessage, 'Old call state was cleaned. Try again.');
+      expect(decision.canRetryImmediately, isTrue);
+    });
+
+    test('maps cleanup in progress to a non-retry-spam message', () {
+      final decision = CallRetryPolicy.classifySignalingFailure(
+        const CallSignalingFailureSnapshot(
+          message: 'Voice call cleanup in progress.',
+          lockWasReclaimed: false,
+          terminalRoomWasCleaned: false,
+          corruptRoomWasRepaired: false,
+          cleanupInProgress: true,
+          peerId: 'bob',
+        ),
+      );
+
+      expect(decision.kind, CallRetryDecisionKind.cleanupInProgress);
+      expect(
+        decision.userMessage,
+        'Call state is cleaning up. Try again in a moment.',
+      );
+      expect(decision.canRetryImmediately, isFalse);
+    });
+
+    test('maps generic signaling failures without claiming peer busy', () {
+      final decision = CallRetryPolicy.classifySignalingFailure(
+        const CallSignalingFailureSnapshot(
+          message: 'Firebase permission-denied at voiceCalls/call-1',
+          lockWasReclaimed: false,
+          terminalRoomWasCleaned: false,
+          corruptRoomWasRepaired: false,
+          peerId: 'bob',
+        ),
+      );
+
+      expect(decision.kind, CallRetryDecisionKind.signalingFailed);
+      expect(decision.userMessage, 'Call signaling failed. Try again.');
+      expect(decision.canRetryImmediately, isFalse);
+    });
   });
 }

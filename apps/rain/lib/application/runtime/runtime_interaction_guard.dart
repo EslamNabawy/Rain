@@ -9,6 +9,9 @@ enum RuntimeInteractionReasonCode {
   activeCall,
   noIncomingCall,
   activeFileTransfer,
+  peerBusy,
+  staleCallCleanup,
+  callCleanupInProgress,
 }
 
 final class RuntimeInteractionDecision {
@@ -59,6 +62,55 @@ final class RuntimeInteractionDecision {
 
 final class RuntimeInteractionGuard {
   const RuntimeInteractionGuard._();
+
+  static String peerBusyMessage(String peerId) {
+    final normalized = peerId.trim().replaceFirst(RegExp(r'^@+'), '');
+    if (normalized.isEmpty) {
+      return 'Peer is busy in another call.';
+    }
+    return '@$normalized is busy in another call.';
+  }
+
+  static const String staleCallCleanedMessage =
+      'Old call state was cleaned. Try again.';
+  static const String cleanupInProgressMessage =
+      'Call state is cleaning up. Try again in a moment.';
+
+  static RuntimeInteractionDecision peerBusy({
+    required String peerId,
+    String? callId,
+  }) {
+    return RuntimeInteractionDecision.deny(
+      reasonCode: RuntimeInteractionReasonCode.peerBusy,
+      userMessage: peerBusyMessage(peerId),
+      blockingPeerId: peerId,
+      callId: callId,
+    );
+  }
+
+  static RuntimeInteractionDecision staleCallCleanup({
+    String? peerId,
+    String? callId,
+  }) {
+    return RuntimeInteractionDecision.deny(
+      reasonCode: RuntimeInteractionReasonCode.staleCallCleanup,
+      userMessage: staleCallCleanedMessage,
+      blockingPeerId: peerId,
+      callId: callId,
+    );
+  }
+
+  static RuntimeInteractionDecision callCleanupInProgress({
+    String? peerId,
+    String? callId,
+  }) {
+    return RuntimeInteractionDecision.deny(
+      reasonCode: RuntimeInteractionReasonCode.callCleanupInProgress,
+      userMessage: cleanupInProgressMessage,
+      blockingPeerId: peerId,
+      callId: callId,
+    );
+  }
 
   static RuntimeInteractionDecision canConnectPeer({
     required String peerId,

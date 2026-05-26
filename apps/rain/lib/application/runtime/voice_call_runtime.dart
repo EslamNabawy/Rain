@@ -130,24 +130,34 @@ extension VoiceCallRuntime on RainRuntimeController {
       );
       await session.startOutgoing();
     } catch (error) {
+      final retryDecision = _voiceCallRetryDecisionForError(
+        error,
+        peerId: peerId,
+      );
       _recordRuntimeEvent(
         category: 'call',
         name: 'start_failed',
         severity: 'error',
-        message: error.toString(),
+        message: retryDecision?.userMessage ?? error.toString(),
         context: <String, Object?>{
           'peerId': peerId,
           'callId': callId,
           'sessionEpoch': sessionEpoch,
           'mediaMode': mediaMode.name,
+          if (retryDecision != null)
+            'retryDecisionKind': retryDecision.kind.name,
+          if (retryDecision != null)
+            'canRetryImmediately': retryDecision.canRetryImmediately,
         },
       );
       await _failVoiceCall(
         error,
         failureReason:
+            _voiceCallFailureReasonForRetryDecision(retryDecision) ??
             _voiceCallFailureReasonForError(error) ??
             _localAudioFailureReason(error),
         detail:
+            _voiceCallFailureDetailForRetryDecision(retryDecision) ??
             _voiceCallFailureDetailForError(error) ??
             _localAudioFailureDetail(error),
       );
@@ -2398,8 +2408,39 @@ extension VoiceCallRuntime on RainRuntimeController {
     }
     final session = _voiceCallSession;
     if (session != null && current.callId == session.callId) {
+      _setVoiceCallState(
+        current.copyWith(
+          phase: VoiceCallPhase.ending,
+          detail: detail,
+          updatedAt: DateTime.now().millisecondsSinceEpoch,
+          audioLevel: const VoiceAudioLevel.unavailable(),
+        ),
+      );
       if (notifyPeer) {
-        await session.hangUp(reason: detail);
+        try {
+          await session.hangUp(reason: detail);
+        } catch (error, stackTrace) {
+          _recordVoiceSignalingError(error, stackTrace);
+          await _endVoiceCallInSignaling(
+            callId: session.callId,
+            status: failureReason == null
+                ? VoiceCallSignalingStatus.ended
+                : VoiceCallSignalingStatus.failed,
+            reason: detail,
+            reasonCode: _voiceCallReasonCodeForFailure(failureReason),
+            bestEffort: true,
+          );
+        } finally {
+          await _disposeVoiceCallSession(session);
+        }
+        _setVoiceCallState(
+          _voiceCallStateAfterLocalEnd(
+            current,
+            detail: detail,
+            failureReason: failureReason,
+            failureDetail: failureDetail,
+          ),
+        );
       } else {
         await _endVoiceCallInSignaling(
           callId: session.callId,
@@ -2409,14 +2450,6 @@ extension VoiceCallRuntime on RainRuntimeController {
           reason: detail,
           reasonCode: _voiceCallReasonCodeForFailure(failureReason),
           bestEffort: true,
-        );
-        _setVoiceCallState(
-          current.copyWith(
-            phase: VoiceCallPhase.ending,
-            detail: detail,
-            updatedAt: DateTime.now().millisecondsSinceEpoch,
-            audioLevel: const VoiceAudioLevel.unavailable(),
-          ),
         );
         await _disposeVoiceCallSession(session);
         _setVoiceCallState(
@@ -2853,6 +2886,55 @@ extension VoiceCallRuntime on RainRuntimeController {
   String _newVoiceCallId(String peerId) {
     final now = DateTime.now().microsecondsSinceEpoch.toRadixString(36);
     return '${_normalizedUsername(selfIdentity.username)}:$peerId:$now';
+  }
+
+  CallRetryDecision? _voiceCallRetryDecisionForError(
+    Object error, {
+    String? peerId,
+  }) {
+    final normalized = _normalizedVoiceCallErrorText(error).toLowerCase();
+    if (!_isVoiceCallSignalingError(error, normalized) &&
+        !CallRetryPolicy.isBusyConflictMessage(normalized) &&
+        !CallRetryPolicy.isCleanupConflictMessage(normalized)) {
+      return null;
+    }
+    return CallRetryPolicy.classifySignalingFailure(
+      CallSignalingFailureSnapshot(
+        message: normalized,
+        lockWasReclaimed: normalized.contains('lock was reclaimed'),
+        terminalRoomWasCleaned: normalized.contains('terminal room cleaned'),
+        corruptRoomWasRepaired:
+            normalized.contains('corrupt room repaired') ||
+            normalized.contains('corrupt terminal'),
+        cleanupInProgress:
+            normalized.contains('cleanup in progress') ||
+            normalized.contains('cleaning up'),
+        peerId: peerId ?? _voiceCallBusyUser(normalized),
+      ),
+    );
+  }
+
+  VoiceCallFailureReason? _voiceCallFailureReasonForRetryDecision(
+    CallRetryDecision? decision,
+  ) {
+    return switch (decision?.kind) {
+      CallRetryDecisionKind.peerBusy => VoiceCallFailureReason.peerBusy,
+      CallRetryDecisionKind.cleanedStaleState ||
+      CallRetryDecisionKind.cleanupInProgress ||
+      CallRetryDecisionKind.signalingFailed =>
+        VoiceCallFailureReason.signalingFailed,
+      CallRetryDecisionKind.proceed || null => null,
+    };
+  }
+
+  String? _voiceCallFailureDetailForRetryDecision(CallRetryDecision? decision) {
+    return switch (decision?.kind) {
+      CallRetryDecisionKind.peerBusy ||
+      CallRetryDecisionKind.cleanedStaleState ||
+      CallRetryDecisionKind.cleanupInProgress ||
+      CallRetryDecisionKind.signalingFailed => decision?.userMessage,
+      CallRetryDecisionKind.proceed || null => null,
+    };
   }
 
   VoiceCallFailureReason? _voiceCallFailureReasonForError(Object error) {
