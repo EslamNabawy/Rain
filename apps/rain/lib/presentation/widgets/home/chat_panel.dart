@@ -18,6 +18,7 @@ class _ChatPanelState extends ConsumerState<_ChatPanel> {
   bool _isPickingFile = false;
   bool _isConnecting = false;
   bool _showJumpToLatest = false;
+  Future<void>? _refreshChatInFlight;
 
   @override
   void initState() {
@@ -678,57 +679,61 @@ class _ChatPanelState extends ConsumerState<_ChatPanel> {
                   ? transferByMessageId[message.id]
                   : null;
 
-              return Column(
+              return RepaintBoundary(
                 key: ValueKey<String>('message-row-${message.id}'),
-                crossAxisAlignment: CrossAxisAlignment.stretch,
-                children: <Widget>[
-                  if (showDayDivider)
-                    RainMessageDayDivider(
-                      label: _formatMessageDay(message.sentAt),
-                    ),
-                  if (transferView != null)
-                    Builder(
-                      builder: (BuildContext context) {
-                        final transfer = transferView.record;
-                        return _FileTransferBubble(
-                          transferView: transferView,
-                          timeLabel: _formatMessageTime(message.sentAt),
-                          startsCluster: startsCluster,
-                          endsCluster: endsCluster,
-                          maxWidth: maxBubbleWidth,
-                          onAccept: () =>
-                              unawaited(_acceptFileTransfer(transfer)),
-                          onReject: () =>
-                              unawaited(_rejectFileTransfer(transfer)),
-                          onCancel: () =>
-                              unawaited(_cancelFileTransfer(transfer)),
-                          onOpen: () => unawaited(_openFileTransfer(transfer)),
-                          onSave: () => unawaited(_saveFileTransfer(transfer)),
-                          onRetry: _canRetryFileTransfer(transfer)
-                              ? () => unawaited(_retryFileTransfer(transfer))
-                              : null,
-                        );
-                      },
-                    )
-                  else
-                    RainMessageBubble(
-                      text: message.content,
-                      timeLabel: _formatMessageTime(message.sentAt),
-                      isOutgoing: message.isOutgoing,
-                      startsCluster: startsCluster,
-                      endsCluster: endsCluster,
-                      maxWidth: maxBubbleWidth,
-                      deliveryLabel: deliveryLabel,
-                      deliveryColor: deliveryColor,
-                      onRetry:
-                          message.isOutgoing &&
-                              message.status == MessageStatus.failed
-                          ? () => unawaited(_resendMessage(message))
-                          : null,
-                      onOpenActions: () =>
-                          unawaited(_showMessageActions(message)),
-                    ),
-                ],
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.stretch,
+                  children: <Widget>[
+                    if (showDayDivider)
+                      RainMessageDayDivider(
+                        label: _formatMessageDay(message.sentAt),
+                      ),
+                    if (transferView != null)
+                      Builder(
+                        builder: (BuildContext context) {
+                          final transfer = transferView.record;
+                          return _FileTransferBubble(
+                            transferView: transferView,
+                            timeLabel: _formatMessageTime(message.sentAt),
+                            startsCluster: startsCluster,
+                            endsCluster: endsCluster,
+                            maxWidth: maxBubbleWidth,
+                            onAccept: () =>
+                                unawaited(_acceptFileTransfer(transfer)),
+                            onReject: () =>
+                                unawaited(_rejectFileTransfer(transfer)),
+                            onCancel: () =>
+                                unawaited(_cancelFileTransfer(transfer)),
+                            onOpen: () =>
+                                unawaited(_openFileTransfer(transfer)),
+                            onSave: () =>
+                                unawaited(_saveFileTransfer(transfer)),
+                            onRetry: _canRetryFileTransfer(transfer)
+                                ? () => unawaited(_retryFileTransfer(transfer))
+                                : null,
+                          );
+                        },
+                      )
+                    else
+                      RainMessageBubble(
+                        text: message.content,
+                        timeLabel: _formatMessageTime(message.sentAt),
+                        isOutgoing: message.isOutgoing,
+                        startsCluster: startsCluster,
+                        endsCluster: endsCluster,
+                        maxWidth: maxBubbleWidth,
+                        deliveryLabel: deliveryLabel,
+                        deliveryColor: deliveryColor,
+                        onRetry:
+                            message.isOutgoing &&
+                                message.status == MessageStatus.failed
+                            ? () => unawaited(_resendMessage(message))
+                            : null,
+                        onOpenActions: () =>
+                            unawaited(_showMessageActions(message)),
+                      ),
+                  ],
+                ),
               );
             },
           );
@@ -765,6 +770,22 @@ class _ChatPanelState extends ConsumerState<_ChatPanel> {
   }
 
   Future<void> _refreshChat() async {
+    final activeRefresh = _refreshChatInFlight;
+    if (activeRefresh != null) {
+      return activeRefresh;
+    }
+    final refresh = _runRefreshChat();
+    _refreshChatInFlight = refresh;
+    try {
+      await refresh;
+    } finally {
+      if (identical(_refreshChatInFlight, refresh)) {
+        _refreshChatInFlight = null;
+      }
+    }
+  }
+
+  Future<void> _runRefreshChat() async {
     final networkError = _networkActionError();
     if (networkError != null) {
       _showErrorSnack(networkError);

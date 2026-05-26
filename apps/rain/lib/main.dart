@@ -8,6 +8,7 @@ import 'core/config/app_environment.dart';
 import 'application/state/app_providers.dart';
 import 'infrastructure/services/crash_diagnostics_service.dart';
 import 'infrastructure/window/desktop_shell_controller.dart';
+import 'presentation/performance/rain_performance.dart';
 import 'presentation/screens/rain_app.dart';
 import 'presentation/screens/splash_screen.dart';
 
@@ -17,11 +18,21 @@ Future<void> main() async {
   await runZonedGuarded<Future<void>>(
     () async {
       WidgetsFlutterBinding.ensureInitialized();
+      final performanceProfile = RainPerformanceProfile.detect();
       diagnostics = CrashDiagnosticsService.instance;
       await diagnostics!.initialize();
+      diagnostics!.configureRuntimeDiagnostics(
+        performanceProfile: performanceProfile.toJson(),
+        captureFrameTimings: const bool.fromEnvironment(
+          'RAIN_FRAME_DIAGNOSTICS',
+        ),
+      );
       diagnostics!.installGlobalHandlers();
       await DesktopShellController().initializeBeforeRunApp();
-      await runRainApp(crashDiagnosticsService: diagnostics);
+      await runRainApp(
+        crashDiagnosticsService: diagnostics,
+        performanceProfile: performanceProfile,
+      );
     },
     (Object error, StackTrace stackTrace) {
       diagnostics?.recordErrorSync(
@@ -39,6 +50,7 @@ Future<void> runRainApp({
   AppEnvironment? environment,
   AppBootstrapper? bootstrapper,
   CrashDiagnosticsService? crashDiagnosticsService,
+  RainPerformanceProfile? performanceProfile,
 }) async {
   WidgetsFlutterBinding.ensureInitialized();
 
@@ -47,6 +59,7 @@ Future<void> runRainApp({
       environment: environment ?? AppEnvironment.fromEnvironment(),
       bootstrapper: bootstrapper ?? AppBootstrapper(),
       crashDiagnosticsService: crashDiagnosticsService,
+      performanceProfile: performanceProfile ?? RainPerformanceProfile.detect(),
     ),
   );
 }
@@ -56,12 +69,14 @@ class RainStartupApp extends StatefulWidget {
   const RainStartupApp({
     required this.environment,
     required this.bootstrapper,
+    required this.performanceProfile,
     this.crashDiagnosticsService,
     super.key,
   });
 
   final AppEnvironment environment;
   final AppBootstrapper bootstrapper;
+  final RainPerformanceProfile performanceProfile;
   final CrashDiagnosticsService? crashDiagnosticsService;
 
   @override
@@ -80,29 +95,32 @@ class _RainStartupAppState extends State<RainStartupApp> {
 
   @override
   Widget build(BuildContext context) {
-    return FutureBuilder<AppBootstrapState>(
-      future: _bootstrapFuture,
-      builder: (context, snapshot) {
-        if (snapshot.hasError) {
-          final error = snapshot.error!;
-          _logBootstrapError(error, snapshot.stackTrace);
-          return BootstrapFailureApp(error: error);
-        }
+    return RainPerformanceScope(
+      profile: widget.performanceProfile,
+      child: FutureBuilder<AppBootstrapState>(
+        future: _bootstrapFuture,
+        builder: (context, snapshot) {
+          if (snapshot.hasError) {
+            final error = snapshot.error!;
+            _logBootstrapError(error, snapshot.stackTrace);
+            return BootstrapFailureApp(error: error);
+          }
 
-        final bootstrap = snapshot.data;
-        if (bootstrap == null) {
-          return const MaterialApp(
-            title: 'Rain',
-            debugShowCheckedModeBanner: false,
-            home: RainSplashScreen(),
+          final bootstrap = snapshot.data;
+          if (bootstrap == null) {
+            return const MaterialApp(
+              title: 'Rain',
+              debugShowCheckedModeBanner: false,
+              home: RainSplashScreen(),
+            );
+          }
+
+          return ProviderScope(
+            overrides: [appBootstrapProvider.overrideWithValue(bootstrap)],
+            child: const RainApp(),
           );
-        }
-
-        return ProviderScope(
-          overrides: [appBootstrapProvider.overrideWithValue(bootstrap)],
-          child: const RainApp(),
-        );
-      },
+        },
+      ),
     );
   }
 

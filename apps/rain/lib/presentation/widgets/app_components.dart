@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:rain/presentation/branding/rain_ripple_halo_surface.dart';
 import 'package:rain/presentation/branding/rain_state_surfaces.dart';
+import 'package:rain/presentation/performance/rain_performance.dart';
 import 'package:rain/presentation/theme/rain_theme.dart';
 
 class AppSectionCard extends StatelessWidget {
@@ -22,6 +23,7 @@ class AppSectionCard extends StatelessWidget {
   Widget build(BuildContext context) {
     final scheme = Theme.of(context).colorScheme;
     final isDark = scheme.brightness == Brightness.dark;
+    final lowPower = RainPerformanceScope.of(context).isLowPower;
     final radius = BorderRadius.circular(18);
 
     return Padding(
@@ -49,7 +51,7 @@ class AppSectionCard extends StatelessWidget {
                       ),
             ),
             boxShadow: <BoxShadow>[
-              if (elevation > 0)
+              if (elevation > 0 && !lowPower)
                 BoxShadow(
                   blurRadius: 18 + elevation,
                   offset: const Offset(0, 10),
@@ -109,6 +111,7 @@ class AppPageFrame extends StatelessWidget {
   Widget build(BuildContext context) {
     final scheme = Theme.of(context).colorScheme;
     final isDark = scheme.brightness == Brightness.dark;
+    final lowPower = RainPerformanceScope.of(context).isLowPower;
 
     return LayoutBuilder(
       builder: (BuildContext context, BoxConstraints constraints) {
@@ -138,13 +141,14 @@ class AppPageFrame extends StatelessWidget {
                             .withValues(alpha: isDark ? 0.56 : 0.78),
                   ),
                   boxShadow: <BoxShadow>[
-                    BoxShadow(
-                      blurRadius: isDark ? 32 : 18,
-                      color: Colors.black.withValues(
-                        alpha: isDark ? 0.20 : 0.08,
+                    if (!lowPower)
+                      BoxShadow(
+                        blurRadius: isDark ? 32 : 18,
+                        color: Colors.black.withValues(
+                          alpha: isDark ? 0.20 : 0.08,
+                        ),
+                        offset: const Offset(0, 16),
                       ),
-                      offset: const Offset(0, 16),
-                    ),
                   ],
                 ),
                 child: Column(

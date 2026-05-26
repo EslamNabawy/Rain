@@ -122,6 +122,61 @@ void main() {
     },
   );
 
+  test('app event recorder buffers events until async flush', () async {
+    final temp = await Directory.systemTemp.createTemp(
+      'rain-crash-diagnostics-buffer-test-',
+    );
+    addTearDown(() => temp.delete(recursive: true));
+
+    final service = CrashDiagnosticsService(
+      directoryProvider: () async => temp,
+      eventFlushInterval: const Duration(minutes: 1),
+    );
+
+    await service.initialize();
+    service.recordEventSync(category: 'connection', name: 'connect_requested');
+
+    final eventLog = File(
+      _join(_join(temp.path, 'rain_diagnostics'), 'events.jsonl'),
+    );
+    expect(eventLog.existsSync(), isFalse);
+
+    await service.flushEvents();
+
+    expect(eventLog.existsSync(), isTrue);
+    expect(await eventLog.readAsString(), contains('connect_requested'));
+  });
+
+  test('app event recorder coalesces noisy repeated events', () async {
+    final temp = await Directory.systemTemp.createTemp(
+      'rain-crash-diagnostics-coalesce-test-',
+    );
+    addTearDown(() => temp.delete(recursive: true));
+
+    final service = CrashDiagnosticsService(
+      directoryProvider: () async => temp,
+      eventFlushInterval: const Duration(minutes: 1),
+      clock: () => DateTime.utc(2026, 5, 22, 1, 2, 3),
+    );
+
+    await service.initialize();
+    for (var index = 0; index < 25; index += 1) {
+      service.recordEventSync(
+        category: 'connection',
+        name: 'session_changed',
+        context: <String, Object?>{'peerId': 'bob', 'index': index},
+      );
+    }
+    await service.flushEvents();
+
+    final eventLog = File(
+      _join(_join(temp.path, 'rain_diagnostics'), 'events.jsonl'),
+    );
+    final lines = await eventLog.readAsLines();
+    expect(lines, hasLength(1));
+    expect(lines.single, contains('"index":24'));
+  });
+
   test('app event log is bounded when exported', () async {
     final temp = await Directory.systemTemp.createTemp(
       'rain-crash-diagnostics-bound-test-',

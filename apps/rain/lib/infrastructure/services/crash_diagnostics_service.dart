@@ -1,10 +1,13 @@
 import 'dart:async';
+import 'dart:collection';
 import 'dart:convert';
 import 'dart:io';
 import 'dart:ui' as ui;
 
 import 'package:file_picker/file_picker.dart';
 import 'package:flutter/foundation.dart';
+import 'package:flutter/scheduler.dart';
+import 'package:flutter/widgets.dart';
 import 'package:package_info_plus/package_info_plus.dart';
 import 'package:path_provider/path_provider.dart';
 
@@ -135,24 +138,37 @@ class CrashDiagnosticsService {
     CrashDiagnosticsAppInfoProvider? appInfoProvider,
     CrashDiagnosticsClock? clock,
     CrashDiagnosticsSaveFile? saveFile,
+    Duration eventFlushInterval = const Duration(milliseconds: 750),
   }) : _directoryProvider = directoryProvider ?? _defaultDirectoryProvider,
        _appInfoProvider = appInfoProvider ?? _defaultAppInfoProvider,
        _clock = clock ?? DateTime.now,
-       _saveFile = saveFile ?? FilePicker.saveFile;
+       _saveFile = saveFile ?? FilePicker.saveFile,
+       _eventFlushInterval = eventFlushInterval;
 
   static final CrashDiagnosticsService instance = CrashDiagnosticsService();
   static const int _maxEventLogBytes = 1024 * 1024;
   static const int _maxEventLogLines = 1000;
+  static const int _maxBufferedEventRecords = 256;
   static const int _maxEventContextStringLength = 512;
 
   final CrashDiagnosticsDirectoryProvider _directoryProvider;
   final CrashDiagnosticsAppInfoProvider _appInfoProvider;
   final CrashDiagnosticsClock _clock;
   final CrashDiagnosticsSaveFile _saveFile;
+  final Duration _eventFlushInterval;
 
   Directory? _directory;
   CrashDiagnosticsAppInfo _appInfo = const CrashDiagnosticsAppInfo.unknown();
   Future<void>? _initializeFuture;
+  Timer? _eventFlushTimer;
+  Future<void>? _eventFlushFuture;
+  final List<String> _queuedEventLines = <String>[];
+  final LinkedHashMap<String, String> _coalescedEventLines =
+      LinkedHashMap<String, String>();
+  Map<String, Object?>? _performanceProfile;
+  _RainFrameTimingStats? _frameTimingStats;
+  bool _frameTimingCaptureInstalled = false;
+  bool _lifecycleFlushInstalled = false;
 
   Future<void> initialize() {
     return _initializeFuture ??= _initialize();
@@ -173,6 +189,17 @@ class CrashDiagnosticsService {
           );
           return true;
         };
+    _installLifecycleFlush();
+  }
+
+  void configureRuntimeDiagnostics({
+    required Map<String, Object?> performanceProfile,
+    bool captureFrameTimings = false,
+  }) {
+    _performanceProfile = performanceProfile;
+    if (captureFrameTimings) {
+      _installFrameTimingCapture();
+    }
   }
 
   void recordFlutterError(FlutterErrorDetails details, {required bool fatal}) {
@@ -217,7 +244,7 @@ class CrashDiagnosticsService {
 
     try {
       _lastCrashFile(directory).writeAsStringSync(encoded, flush: true);
-      _appendEventRecordSync(directory, <String, Object?>{
+      _queueEventRecord(<String, Object?>{
         'kind': 'error',
         'record': record.toJson(),
       });
@@ -233,8 +260,7 @@ class CrashDiagnosticsService {
     String? message,
     Map<String, Object?> context = const <String, Object?>{},
   }) {
-    final directory = _directory;
-    if (directory == null) {
+    if (_directory == null) {
       return;
     }
     final normalizedCategory = category.trim();
@@ -243,21 +269,60 @@ class CrashDiagnosticsService {
       return;
     }
 
-    try {
-      _appendEventRecordSync(directory, <String, Object?>{
-        'kind': 'app_event',
-        'recordedAt': _clock().toUtc().toIso8601String(),
-        'category': normalizedCategory,
-        'name': normalizedName,
-        'severity': severity.trim().isEmpty ? 'info' : severity.trim(),
-        if (message != null && message.trim().isNotEmpty)
-          'message': _trimDiagnosticString(message),
-        if (context.isNotEmpty)
-          'context': _sanitizeDiagnosticMap(context, depth: 0),
-      });
-    } on FileSystemException catch (fileError) {
-      debugPrint('Rain diagnostics event write failed: $fileError');
+    _queueEventRecord(<String, Object?>{
+      'kind': 'app_event',
+      'recordedAt': _clock().toUtc().toIso8601String(),
+      'category': normalizedCategory,
+      'name': normalizedName,
+      'severity': severity.trim().isEmpty ? 'info' : severity.trim(),
+      if (message != null && message.trim().isNotEmpty)
+        'message': _trimDiagnosticString(message),
+      if (context.isNotEmpty)
+        'context': _sanitizeDiagnosticMap(context, depth: 0),
+    });
+  }
+
+  Future<void> flushEvents() {
+    _eventFlushTimer?.cancel();
+    _eventFlushTimer = null;
+    final directory = _directory;
+    if (directory == null) {
+      _queuedEventLines.clear();
+      _coalescedEventLines.clear();
+      return _eventFlushFuture ?? Future<void>.value();
     }
+    final eventLines = <String>[
+      ..._queuedEventLines,
+      ..._coalescedEventLines.values,
+    ];
+    _queuedEventLines.clear();
+    _coalescedEventLines.clear();
+    if (eventLines.isEmpty) {
+      return _eventFlushFuture ?? Future<void>.value();
+    }
+
+    final previousFlush = _eventFlushFuture ?? Future<void>.value();
+    late final Future<void> trackedFlush;
+    trackedFlush = previousFlush
+        .then((_) async {
+          final file = _eventLogFile(directory);
+          try {
+            await file.writeAsString(
+              '${eventLines.join('\n')}\n',
+              mode: FileMode.append,
+            );
+            await _trimEventLog(file);
+          } on FileSystemException catch (fileError) {
+            debugPrint('Rain diagnostics event write failed: $fileError');
+          }
+        })
+        .whenComplete(() {
+          if (identical(_eventFlushFuture, trackedFlush)) {
+            _eventFlushFuture = null;
+          }
+        });
+    _eventFlushFuture = trackedFlush;
+    return trackedFlush;
   }
 
   Future<CrashDiagnosticsRecord?> loadLastCrash() async {
@@ -283,6 +348,7 @@ class CrashDiagnosticsService {
 
   Future<CrashDiagnosticsExportResult> exportDiagnostics() async {
     await initialize();
+    await flushEvents();
     final directory = _requireDirectory();
     final exportedAt = _clock().toUtc();
     final payload = <String, Object?>{
@@ -293,6 +359,12 @@ class CrashDiagnosticsService {
         'operatingSystemVersion': Platform.operatingSystemVersion,
         'dartVersion': Platform.version,
       },
+      if (_performanceProfile != null)
+        'performance': <String, Object?>{
+          ..._performanceProfile!,
+          if (_frameTimingStats != null)
+            'frameTimings': _frameTimingStats!.toJson(),
+        },
       'lastCrash': (await loadLastCrash())?.toJson(),
       'events': await _readRecentEvents(directory, limit: 200),
     };
@@ -374,29 +446,111 @@ class CrashDiagnosticsService {
     }
   }
 
-  void _appendEventRecordSync(
-    Directory directory,
-    Map<String, Object?> record,
-  ) {
-    final file = _eventLogFile(directory);
-    file.writeAsStringSync(
-      '${jsonEncode(record)}\n',
-      mode: FileMode.append,
-      flush: true,
-    );
-    _trimEventLogSync(file);
-  }
-
-  void _trimEventLogSync(File file) {
-    if (!file.existsSync() || file.lengthSync() <= _maxEventLogBytes) {
+  Future<void> _trimEventLog(File file) async {
+    if (!await file.exists() || await file.length() <= _maxEventLogBytes) {
       return;
     }
-    final lines = file.readAsLinesSync();
+    final lines = await file.readAsLines();
     final start = lines.length > _maxEventLogLines
         ? lines.length - _maxEventLogLines
         : 0;
     final trimmed = lines.skip(start).join('\n');
-    file.writeAsStringSync(trimmed.isEmpty ? '' : '$trimmed\n', flush: true);
+    await file.writeAsString(trimmed.isEmpty ? '' : '$trimmed\n');
+  }
+
+  void _queueEventRecord(Map<String, Object?> record) {
+    final encoded = jsonEncode(record);
+    final coalesceKey = _eventCoalesceKey(record);
+    if (coalesceKey == null) {
+      _queuedEventLines.add(encoded);
+    } else {
+      _coalescedEventLines[coalesceKey] = encoded;
+    }
+    _capBufferedEvents();
+    _scheduleEventFlush();
+  }
+
+  void _scheduleEventFlush() {
+    if (_eventFlushTimer?.isActive == true) {
+      return;
+    }
+    _eventFlushTimer = Timer(_eventFlushInterval, () {
+      _eventFlushTimer = null;
+      unawaited(flushEvents());
+    });
+  }
+
+  void _capBufferedEvents() {
+    while (_queuedEventLines.length + _coalescedEventLines.length >
+        _maxBufferedEventRecords) {
+      if (_queuedEventLines.isNotEmpty) {
+        _queuedEventLines.removeAt(0);
+        continue;
+      }
+      _coalescedEventLines.remove(_coalescedEventLines.keys.first);
+    }
+  }
+
+  String? _eventCoalesceKey(Map<String, Object?> record) {
+    if (record['kind'] != 'app_event') {
+      return null;
+    }
+    final category = record['category']?.toString() ?? '';
+    final name = record['name']?.toString() ?? '';
+    if (!_isNoisyEvent(category, name)) {
+      return null;
+    }
+    final context = _stringMap(record['context']);
+    final peerId = context['peerId']?.toString();
+    final callId = context['callId']?.toString();
+    final scope = callId?.isNotEmpty == true
+        ? callId
+        : peerId?.isNotEmpty == true
+        ? peerId
+        : 'global';
+    return '$category:$name:$scope';
+  }
+
+  bool _isNoisyEvent(String category, String name) {
+    if (category == 'connection') {
+      return name == 'session_changed' ||
+          name == 'peer_connected' ||
+          name == 'peer_disconnected' ||
+          name == 'network_available' ||
+          name == 'auto_recovery_started' ||
+          name == 'auto_recovery_failed';
+    }
+    if (category == 'call') {
+      return name == 'state_changed' ||
+          name == 'firebase_room_update' ||
+          name == 'firebase_frame_received' ||
+          name == 'firebase_frame_send_started' ||
+          name == 'firebase_frame_send_completed' ||
+          name == 'video_renderer_state' ||
+          name == 'media_processing_config_refreshed';
+    }
+    return false;
+  }
+
+  void _installLifecycleFlush() {
+    if (_lifecycleFlushInstalled) {
+      return;
+    }
+    _lifecycleFlushInstalled = true;
+    WidgetsBinding.instance.addObserver(
+      _CrashDiagnosticsLifecycleObserver(flushEvents),
+    );
+  }
+
+  void _installFrameTimingCapture() {
+    if (_frameTimingCaptureInstalled) {
+      return;
+    }
+    _frameTimingCaptureInstalled = true;
+    _frameTimingStats = _RainFrameTimingStats();
+    SchedulerBinding.instance.addTimingsCallback((List<FrameTiming> timings) {
+      _frameTimingStats?.add(timings);
+    });
   }
 
   static Future<Directory> _defaultDirectoryProvider() {
@@ -507,4 +661,61 @@ class CrashDiagnosticsService {
     }
     return '${value.substring(0, _maxEventContextStringLength)}...';
   }
+}
+
+class _CrashDiagnosticsLifecycleObserver extends WidgetsBindingObserver {
+  _CrashDiagnosticsLifecycleObserver(this._flushEvents);
+
+  final Future<void> Function() _flushEvents;
+
+  @override
+  void didChangeAppLifecycleState(AppLifecycleState state) {
+    if (state == AppLifecycleState.inactive ||
+        state == AppLifecycleState.paused ||
+        state == AppLifecycleState.detached) {
+      unawaited(_flushEvents());
+    }
+  }
+}
+
+class _RainFrameTimingStats {
+  int frameCount = 0;
+  int droppedFrameCount = 0;
+  int totalBuildMicros = 0;
+  int totalRasterMicros = 0;
+  int worstBuildMicros = 0;
+  int worstRasterMicros = 0;
+
+  void add(List<FrameTiming> timings) {
+    for (final timing in timings) {
+      final buildMicros = timing.buildDuration.inMicroseconds;
+      final rasterMicros = timing.rasterDuration.inMicroseconds;
+      frameCount += 1;
+      totalBuildMicros += buildMicros;
+      totalRasterMicros += rasterMicros;
+      if (buildMicros > worstBuildMicros) {
+        worstBuildMicros = buildMicros;
+      }
+      if (rasterMicros > worstRasterMicros) {
+        worstRasterMicros = rasterMicros;
+      }
+      if (buildMicros > _frameBudgetMicros ||
+          rasterMicros > _frameBudgetMicros) {
+        droppedFrameCount += 1;
+      }
+    }
+  }
+
+  static const int _frameBudgetMicros = 16667;
+
+  Map<String, Object> toJson() => <String, Object>{
+    'frameCount': frameCount,
+    'droppedFrameCount': droppedFrameCount,
+    'averageBuildMicros': frameCount == 0 ? 0 : totalBuildMicros ~/ frameCount,
+    'averageRasterMicros': frameCount == 0
+        ? 0
+        : totalRasterMicros ~/ frameCount,
+    'worstBuildMicros': worstBuildMicros,
+    'worstRasterMicros': worstRasterMicros,
+  };
 }

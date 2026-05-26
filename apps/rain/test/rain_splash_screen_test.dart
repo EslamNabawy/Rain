@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:rain/presentation/branding/rain_peer_core_mark.dart';
+import 'package:rain/presentation/performance/rain_performance.dart';
 import 'package:rain/presentation/screens/splash_screen.dart';
 import 'package:rain/presentation/widgets/rain_backdrop.dart';
 
@@ -30,6 +31,29 @@ void main() {
         home: MediaQuery(
           data: MediaQueryData(disableAnimations: true),
           child: RainSplashScreen(),
+        ),
+      ),
+    );
+
+    expect(find.byType(RainPeerCoreMark), findsOneWidget);
+    expect(
+      find.byKey(const ValueKey<String>('rain_peer_core_orbital_mesh')),
+      findsNothing,
+    );
+    expect(tester.takeException(), isNull);
+  });
+
+  testWidgets('RainSplashScreen low power tier renders static mark path', (
+    WidgetTester tester,
+  ) async {
+    await tester.pumpWidget(
+      MaterialApp(
+        home: RainPerformanceScope(
+          profile: RainPerformanceProfile.detect(
+            override: 'low_power',
+            abiName: 'androidArm',
+          ),
+          child: const RainSplashScreen(),
         ),
       ),
     );

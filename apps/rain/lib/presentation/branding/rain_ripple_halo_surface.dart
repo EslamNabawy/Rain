@@ -1,6 +1,7 @@
 import 'dart:math' as math;
 
 import 'package:flutter/material.dart';
+import 'package:rain/presentation/performance/rain_performance.dart';
 
 class RainRippleHaloSurface extends StatefulWidget {
   const RainRippleHaloSurface({
@@ -72,7 +73,8 @@ class _RainRippleHaloSurfaceState extends State<RainRippleHaloSurface>
 
     final scheme = Theme.of(context).colorScheme;
     final color = widget.color ?? scheme.primary;
-    final reducedMotion = MediaQuery.of(context).disableAnimations;
+    final lowPower = RainPerformanceScope.of(context).isLowPower;
+    final reducedMotion = MediaQuery.of(context).disableAnimations || lowPower;
 
     return ClipRRect(
       borderRadius: widget.borderRadius,
@@ -95,6 +97,7 @@ class _RainRippleHaloSurfaceState extends State<RainRippleHaloSurface>
                       borderRadius: widget.borderRadius,
                       origin: widget.origin,
                       pulseProgress: progress,
+                      lowPower: lowPower,
                     ),
                   );
                 },
@@ -121,7 +124,9 @@ class _RainRippleHaloSurfaceState extends State<RainRippleHaloSurface>
   }
 
   void _emitPulse() {
-    if (!mounted || MediaQuery.maybeOf(context)?.disableAnimations == true) {
+    if (!mounted ||
+        MediaQuery.maybeOf(context)?.disableAnimations == true ||
+        RainPerformanceScope.read(context).isLowPower) {
       return;
     }
     _pulseController.forward(from: 0);
@@ -134,12 +139,14 @@ class _RainRippleHaloPainter extends CustomPainter {
     required this.borderRadius,
     required this.origin,
     required this.pulseProgress,
+    required this.lowPower,
   });
 
   final Color color;
   final BorderRadius borderRadius;
   final Alignment origin;
   final double? pulseProgress;
+  final bool lowPower;
 
   @override
   void paint(Canvas canvas, Size size) {
@@ -170,8 +177,10 @@ class _RainRippleHaloPainter extends CustomPainter {
     final softPaint = Paint()
       ..color = color.withValues(alpha: 0.12)
       ..style = PaintingStyle.stroke
-      ..strokeWidth = 2.0
-      ..maskFilter = const MaskFilter.blur(BlurStyle.normal, 1.2);
+      ..strokeWidth = lowPower ? 1.0 : 2.0;
+    if (!lowPower) {
+      softPaint.maskFilter = const MaskFilter.blur(BlurStyle.normal, 1.2);
+    }
     final crispPaint = Paint()
       ..color = color.withValues(alpha: 0.20)
       ..style = PaintingStyle.stroke
@@ -219,8 +228,10 @@ class _RainRippleHaloPainter extends CustomPainter {
     final pulsePaint = Paint()
       ..color = color.withValues(alpha: alpha)
       ..style = PaintingStyle.stroke
-      ..strokeWidth = 1.2
-      ..maskFilter = const MaskFilter.blur(BlurStyle.normal, 0.9);
+      ..strokeWidth = 1.2;
+    if (!lowPower) {
+      pulsePaint.maskFilter = const MaskFilter.blur(BlurStyle.normal, 0.9);
+    }
     canvas.drawCircle(center, radius, pulsePaint);
   }
 
@@ -229,6 +240,7 @@ class _RainRippleHaloPainter extends CustomPainter {
     return oldDelegate.color != color ||
         oldDelegate.borderRadius != borderRadius ||
         oldDelegate.origin != origin ||
-        oldDelegate.pulseProgress != pulseProgress;
+        oldDelegate.pulseProgress != pulseProgress ||
+        oldDelegate.lowPower != lowPower;
   }
 }

@@ -24,6 +24,7 @@ import 'package:rain/infrastructure/services/app_settings_store.dart';
 import 'package:rain/presentation/branding/rain_peer_core_mark.dart';
 import 'package:rain/presentation/branding/rain_ripple_halo_surface.dart';
 import 'package:rain/presentation/branding/rain_state_surfaces.dart';
+import 'package:rain/presentation/performance/rain_performance.dart';
 import 'package:rain/presentation/theme/rain_theme.dart';
 import 'package:rain/presentation/widgets/app_components.dart';
 import 'package:rain/presentation/widgets/chat_composer.dart';
@@ -623,6 +624,7 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
   double _fullscreenFriendsPanelWidth = 280;
   bool _fullscreenFriendsPanelCollapsed = false;
   bool _fullscreenFriendsPanelForcedOpen = false;
+  Future<void>? _refreshFriendsInFlight;
 
   @override
   Widget build(BuildContext context) {
@@ -650,6 +652,7 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
         final isCompact = constraints.maxWidth < _compactBreakpoint;
         final scheme = Theme.of(context).colorScheme;
         final isDark = scheme.brightness == Brightness.dark;
+        final lowPower = RainPerformanceScope.of(context).isLowPower;
 
         final showShellHeader = !isCompact || _selectedPeerId == null;
 
@@ -668,11 +671,14 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
                   ),
                 ),
                 boxShadow: <BoxShadow>[
-                  BoxShadow(
-                    blurRadius: 36,
-                    color: Colors.black.withValues(alpha: isDark ? 0.20 : 0.08),
-                    offset: const Offset(0, 20),
-                  ),
+                  if (!lowPower)
+                    BoxShadow(
+                      blurRadius: 36,
+                      color: Colors.black.withValues(
+                        alpha: isDark ? 0.20 : 0.08,
+                      ),
+                      offset: const Offset(0, 20),
+                    ),
                 ],
               ),
               child: Column(
@@ -1076,6 +1082,22 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
   }
 
   Future<void> _refreshFriends() async {
+    final activeRefresh = _refreshFriendsInFlight;
+    if (activeRefresh != null) {
+      return activeRefresh;
+    }
+    final refresh = _runRefreshFriends();
+    _refreshFriendsInFlight = refresh;
+    try {
+      await refresh;
+    } finally {
+      if (identical(_refreshFriendsInFlight, refresh)) {
+        _refreshFriendsInFlight = null;
+      }
+    }
+  }
+
+  Future<void> _runRefreshFriends() async {
     final status = ref.read(networkStatusProvider).value;
     if (status != null && status.blocksNetworkActions) {
       if (mounted) {
