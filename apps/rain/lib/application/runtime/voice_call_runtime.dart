@@ -1192,10 +1192,8 @@ extension VoiceCallRuntime on RainRuntimeController {
     }
     final localUsername = _normalizedUsername(selfIdentity.username);
     final endedByLocal = room.endedBy == localUsername;
-    final detail =
-        _terminalVoiceCallReasonForRoom(room, peerId) ??
-        _terminalVoiceCallReason(room.status) ??
-        'Call ended.';
+    final detail = _terminalVoiceCallDetailForRoom(room, localUsername);
+    final failureReason = _terminalVoiceCallFailureReasonForRoom(room);
     _recordRuntimeEvent(
       category: 'call',
       name: endedByLocal
@@ -1215,10 +1213,11 @@ extension VoiceCallRuntime on RainRuntimeController {
     await _settleVoiceCallAfterTerminalRace(
       session,
       detail: detail,
+      failureReason: failureReason,
     );
   }
 
-  String? _terminalVoiceCallReasonForRoom(
+  String _terminalVoiceCallDetailForRoom(
     VoiceCallRoom room,
     String localUser,
   ) {
@@ -1227,7 +1226,50 @@ extension VoiceCallRuntime on RainRuntimeController {
         room.endedBy != localUser) {
       return 'Peer ended the call.';
     }
-    return room.reason ?? _terminalVoiceCallReason(room.status);
+    if (room.status == VoiceCallSignalingStatus.ended) {
+      return room.reason ?? 'Call ended.';
+    }
+    final roomReason = room.reason?.trim();
+    if (roomReason != null &&
+        roomReason.isNotEmpty &&
+        !_isRemoteMediaPermissionCode(room.reasonCode)) {
+      return roomReason;
+    }
+    final syntheticState = _terminalVoiceCallSessionStateForRoom(room);
+    return _voiceCallDetailForSessionState(syntheticState) ??
+        room.reason ??
+        _terminalVoiceCallReason(room.status) ??
+        _voiceCallMediaFailed;
+  }
+
+  VoiceCallFailureReason? _terminalVoiceCallFailureReasonForRoom(
+    VoiceCallRoom room,
+  ) {
+    if (room.status == VoiceCallSignalingStatus.ended) {
+      return null;
+    }
+    return _voiceCallFailureReasonForSessionState(
+          _terminalVoiceCallSessionStateForRoom(room),
+        ) ??
+        VoiceCallFailureReason.mediaConnectionFailed;
+  }
+
+  VoiceCallSessionState _terminalVoiceCallSessionStateForRoom(
+    VoiceCallRoom room,
+  ) {
+    return VoiceCallSessionState(
+      phase: VoiceCallSessionPhase.failed,
+      updatedAt: room.endedAt ?? room.updatedAt,
+      mediaMode: room.mediaMode,
+      detail: room.reason ?? _terminalVoiceCallReason(room.status),
+      reasonCode:
+          room.reasonCode ??
+          switch (room.status) {
+            VoiceCallSignalingStatus.expired => _voiceCallExpiredReasonCode,
+            VoiceCallSignalingStatus.failed => _voiceCallFailedReasonCode,
+            _ => null,
+          },
+    );
   }
 
   String? _terminalVoiceCallReason(VoiceCallSignalingStatus status) {
@@ -2734,6 +2776,7 @@ extension VoiceCallRuntime on RainRuntimeController {
   Future<void> _settleVoiceCallAfterTerminalRace(
     VoiceCallSession session, {
     required String detail,
+    VoiceCallFailureReason? failureReason,
   }) async {
     if (!_isLiveVoiceCallSession(session)) {
       return;
@@ -2743,6 +2786,22 @@ extension VoiceCallRuntime on RainRuntimeController {
         current.sessionEpoch != session.sessionEpoch ||
         current.phase == VoiceCallPhase.idle ||
         current.phase == VoiceCallPhase.failed) {
+      return;
+    }
+    if (failureReason != null) {
+      final failedState = _voiceCallStateAfterLocalEnd(
+        current,
+        detail: detail,
+        failureReason: failureReason,
+        failureDetail: detail,
+      );
+      await _disposeVoiceCallSession(session);
+      final latest = _voiceCallState;
+      if (latest.callId == session.callId ||
+          latest.sessionEpoch == session.sessionEpoch ||
+          latest.phase == VoiceCallPhase.idle) {
+        _setVoiceCallState(failedState);
+      }
       return;
     }
     _setVoiceCallState(
