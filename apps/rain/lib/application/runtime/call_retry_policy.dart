@@ -1,6 +1,7 @@
 enum CallRetryDecisionKind {
   proceed,
   peerBusy,
+  peerOffline,
   cleanedStaleState,
   cleanupInProgress,
   signalingFailed,
@@ -72,6 +73,13 @@ final class CallRetryPolicy {
         canRetryImmediately: true,
       );
     }
+    if (isOfflineMessage(message)) {
+      return CallRetryDecision(
+        kind: CallRetryDecisionKind.peerOffline,
+        userMessage:
+            '${_peerLabel(failure.peerId)} is offline. Keep both apps open, then try again.',
+      );
+    }
     if (isBusyConflictMessage(message)) {
       return CallRetryDecision(
         kind: CallRetryDecisionKind.peerBusy,
@@ -103,6 +111,15 @@ final class CallRetryPolicy {
         normalized.contains('terminal room') ||
         normalized.contains('cleanup in progress') ||
         normalized.contains('cleaning up');
+  }
+
+  static bool isOfflineMessage(String message) {
+    final normalized = message.toLowerCase();
+    return normalized.contains(' is offline') ||
+        normalized.contains('peer is offline') ||
+        normalized.contains('could not confirm') ||
+        normalized.contains('presence unknown') ||
+        normalized.contains('callee presence');
   }
 
   static String _peerLabel(String? peerId) {

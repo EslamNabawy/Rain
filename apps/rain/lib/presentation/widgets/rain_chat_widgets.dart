@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_svg/flutter_svg.dart';
 import 'package:rain/application/runtime/media_device_settings.dart';
+import 'package:rain/application/runtime/runtime_interaction_guard.dart';
 import 'package:rain/application/runtime/video_call_renderers.dart';
 import 'package:rain/application/runtime/voice_call_state.dart';
 import 'package:rain/application/state/call_surface_providers.dart';
@@ -578,6 +579,7 @@ class RainVoiceCallButton extends StatelessWidget {
     super.key,
     required this.peerId,
     required this.state,
+    this.isPeerOnline = true,
     required this.canStart,
     required this.hasActiveTransfer,
     required this.onStart,
@@ -585,6 +587,7 @@ class RainVoiceCallButton extends StatelessWidget {
 
   final String peerId;
   final VoiceCallState state;
+  final bool isPeerOnline;
   final bool canStart;
   final bool hasActiveTransfer;
   final VoidCallback onStart;
@@ -596,6 +599,7 @@ class RainVoiceCallButton extends StatelessWidget {
       tooltip: _voiceCallButtonTooltip(
         peerId: peerId,
         state: state,
+        isPeerOnline: isPeerOnline,
         hasActiveTransfer: hasActiveTransfer,
       ),
       onPressed: canStart ? onStart : null,
@@ -609,6 +613,7 @@ class RainVideoCallButton extends StatelessWidget {
     super.key,
     required this.peerId,
     required this.state,
+    this.isPeerOnline = true,
     required this.canStart,
     required this.hasActiveTransfer,
     required this.onStart,
@@ -616,6 +621,7 @@ class RainVideoCallButton extends StatelessWidget {
 
   final String peerId;
   final VoiceCallState state;
+  final bool isPeerOnline;
   final bool canStart;
   final bool hasActiveTransfer;
   final VoidCallback onStart;
@@ -628,6 +634,7 @@ class RainVideoCallButton extends StatelessWidget {
       tooltip: _videoCallButtonTooltip(
         peerId: peerId,
         state: state,
+        isPeerOnline: isPeerOnline,
         hasActiveTransfer: hasActiveTransfer,
       ),
       onPressed: canStart ? onStart : null,
@@ -1466,11 +1473,13 @@ class _RainDeviceMenuRow extends StatelessWidget {
 String _voiceCallButtonTooltip({
   required String peerId,
   required VoiceCallState state,
+  required bool isPeerOnline,
   required bool hasActiveTransfer,
 }) {
   return _callButtonTooltip(
     peerId: peerId,
     state: state,
+    isPeerOnline: isPeerOnline,
     hasActiveTransfer: hasActiveTransfer,
     callLabel: 'voice call',
     currentCallLabel: 'Voice call',
@@ -1480,11 +1489,13 @@ String _voiceCallButtonTooltip({
 String _videoCallButtonTooltip({
   required String peerId,
   required VoiceCallState state,
+  required bool isPeerOnline,
   required bool hasActiveTransfer,
 }) {
   return _callButtonTooltip(
     peerId: peerId,
     state: state,
+    isPeerOnline: isPeerOnline,
     hasActiveTransfer: hasActiveTransfer,
     callLabel: 'video call',
     currentCallLabel: 'Video call',
@@ -1494,6 +1505,7 @@ String _videoCallButtonTooltip({
 String _callButtonTooltip({
   required String peerId,
   required VoiceCallState state,
+  required bool isPeerOnline,
   required bool hasActiveTransfer,
   required String callLabel,
   required String currentCallLabel,
@@ -1510,6 +1522,9 @@ String _callButtonTooltip({
           : '$activeKind in progress';
     }
     return 'Finish the active call with @$activePeerId first.';
+  }
+  if (!isPeerOnline) {
+    return RuntimeInteractionGuard.peerOfflineMessage(peerId);
   }
   return 'Start $callLabel';
 }

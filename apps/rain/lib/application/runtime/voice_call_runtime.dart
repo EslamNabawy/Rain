@@ -92,6 +92,7 @@ extension VoiceCallRuntime on RainRuntimeController {
     decision.throwIfDenied();
     _requireVoiceSignalingAdapter();
     await _assertVoiceCallPeerIsFriend(peerId);
+    await _assertVoiceCallPeerIsOnline(peerId, mediaMode: mediaMode);
 
     await _disposeCurrentVoiceCallSession();
     final callId = _newVoiceCallId(peerId);
@@ -2888,6 +2889,86 @@ extension VoiceCallRuntime on RainRuntimeController {
     }
   }
 
+  Future<void> _assertVoiceCallPeerIsOnline(
+    String peerId, {
+    required CallMediaMode mediaMode,
+  }) async {
+    final normalizedPeerId = _normalizedUsername(peerId);
+    BackendIdentity? identity;
+    try {
+      identity = await adapter.fetchIdentity(normalizedPeerId);
+    } catch (error, stackTrace) {
+      final decision = RuntimeInteractionGuard.presenceUnknown(
+        peerId: normalizedPeerId,
+      );
+      _recordRuntimeEvent(
+        category: 'call',
+        name: 'call_start_presence_unknown',
+        severity: 'warning',
+        message: decision.userMessage,
+        context: <String, Object?>{
+          'peerId': normalizedPeerId,
+          'mediaMode': mediaMode.name,
+          'reasonCode': decision.reasonCode.name,
+          'presenceSource': 'backend',
+          'error': error.toString(),
+        },
+      );
+      errorRecorder?.call(
+        error,
+        stackTrace,
+        source: 'voice-call-presence',
+        fatal: false,
+      );
+      decision.throwIfDenied();
+      return;
+    }
+
+    if (identity == null) {
+      final decision = RuntimeInteractionGuard.presenceUnknown(
+        peerId: normalizedPeerId,
+      );
+      _recordRuntimeEvent(
+        category: 'call',
+        name: 'call_start_presence_unknown',
+        severity: 'warning',
+        message: decision.userMessage,
+        context: <String, Object?>{
+          'peerId': normalizedPeerId,
+          'mediaMode': mediaMode.name,
+          'reasonCode': decision.reasonCode.name,
+          'presenceSource': 'backend',
+        },
+      );
+      decision.throwIfDenied();
+      return;
+    }
+
+    await _localMutations.run(
+      () => friendStore.updatePresence(normalizedPeerId, identity!.online),
+    );
+    if (!identity!.online) {
+      final decision = RuntimeInteractionGuard.peerOffline(
+        peerId: normalizedPeerId,
+      );
+      _recordRuntimeEvent(
+        category: 'call',
+        name: 'call_start_blocked_offline',
+        severity: 'warning',
+        message: decision.userMessage,
+        context: <String, Object?>{
+          'peerId': normalizedPeerId,
+          'mediaMode': mediaMode.name,
+          'reasonCode': decision.reasonCode.name,
+          'presenceSource': 'backend',
+          'lastHeartbeat': identity.lastHeartbeat,
+          'lastSeen': identity.lastSeen,
+        },
+      );
+      decision.throwIfDenied();
+    }
+  }
+
   Future<FileTransferRecord?> _firstActiveTransfer() async {
     final transfers = await fileTransferStore.loadActiveTransfers();
     return transfers.isEmpty ? null : transfers.first;
@@ -3120,6 +3201,7 @@ extension VoiceCallRuntime on RainRuntimeController {
   ) {
     return switch (decision?.kind) {
       CallRetryDecisionKind.peerBusy => VoiceCallFailureReason.peerBusy,
+      CallRetryDecisionKind.peerOffline ||
       CallRetryDecisionKind.cleanedStaleState ||
       CallRetryDecisionKind.cleanupInProgress ||
       CallRetryDecisionKind.signalingFailed =>
@@ -3131,6 +3213,7 @@ extension VoiceCallRuntime on RainRuntimeController {
   String? _voiceCallFailureDetailForRetryDecision(CallRetryDecision? decision) {
     return switch (decision?.kind) {
       CallRetryDecisionKind.peerBusy ||
+      CallRetryDecisionKind.peerOffline ||
       CallRetryDecisionKind.cleanedStaleState ||
       CallRetryDecisionKind.cleanupInProgress ||
       CallRetryDecisionKind.signalingFailed => decision?.userMessage,
@@ -3151,6 +3234,9 @@ extension VoiceCallRuntime on RainRuntimeController {
     }
     if (_isVoiceCallExpiredError(normalized)) {
       return VoiceCallFailureReason.expired;
+    }
+    if (_isVoiceCallOfflineError(normalized)) {
+      return VoiceCallFailureReason.signalingFailed;
     }
     if (_isVoiceCallSignalingError(error, normalized)) {
       return VoiceCallFailureReason.signalingFailed;
@@ -3184,6 +3270,17 @@ extension VoiceCallRuntime on RainRuntimeController {
     }
     if (_isVoiceCallExpiredError(normalized)) {
       return _voiceCallTimedOut;
+    }
+    if (_isVoiceCallOfflineError(normalized)) {
+      final unknownPeer = RuntimeInteractionGuard.presenceUnknownMessage(
+        _voiceCallState.peerId ?? '',
+      );
+      return normalized.contains('could not confirm') ||
+              normalized.contains('presence unknown')
+          ? unknownPeer
+          : RuntimeInteractionGuard.peerOfflineMessage(
+              _voiceCallState.peerId ?? '',
+            );
     }
     if (_isVoiceCallSignalingError(error, normalized)) {
       return _voiceCallSignalingFailed;
@@ -3231,7 +3328,13 @@ extension VoiceCallRuntime on RainRuntimeController {
         normalized == 'busy.' ||
         normalized.contains('active voice call already exists') ||
         normalized.contains('activevoicepairs') ||
-        normalized.contains('active voice pair');
+        normalized.contains('active voice pair') ||
+        normalized.contains('activevoiceusers') ||
+        normalized.contains('active voice user');
+  }
+
+  bool _isVoiceCallOfflineError(String normalized) {
+    return CallRetryPolicy.isOfflineMessage(normalized);
   }
 
   String? _voiceCallBusyUser(String normalized) {

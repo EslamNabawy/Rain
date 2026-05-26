@@ -65,6 +65,38 @@ void main() {
       expect(decision.allowed, isTrue);
     });
 
+    test('offline peer blocks call start before media setup', () {
+      final decision = RuntimeInteractionGuard.canStartCall(
+        peerId: 'bob',
+        mediaMode: CallMediaMode.audio,
+        voiceCallState: const VoiceCallState.idle(),
+        peerOnline: false,
+      );
+
+      expect(decision.allowed, isFalse);
+      expect(decision.reasonCode, RuntimeInteractionReasonCode.peerOffline);
+      expect(
+        decision.userMessage,
+        '@bob is offline. Keep both apps open, then try again.',
+      );
+    });
+
+    test('unknown presence blocks call start before media setup', () {
+      final decision = RuntimeInteractionGuard.canStartCall(
+        peerId: 'bob',
+        mediaMode: CallMediaMode.video,
+        voiceCallState: const VoiceCallState.idle(),
+        peerOnline: null,
+      );
+
+      expect(decision.allowed, isFalse);
+      expect(decision.reasonCode, RuntimeInteractionReasonCode.presenceUnknown);
+      expect(
+        decision.userMessage,
+        'Could not confirm @bob is online. Try again.',
+      );
+    });
+
     test('active transfer blocks starting and accepting calls globally', () {
       final transfer = _transfer(peerId: 'bob');
       final outgoing = RuntimeInteractionGuard.canStartCall(

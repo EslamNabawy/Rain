@@ -1012,6 +1012,50 @@ void main() {
     );
 
     test(
+      'startVoiceCall blocks offline peer before room or media setup',
+      () async {
+        final adapter = RecordingVoiceSignalingAdapter();
+        final brain = TestSessionManager();
+        await adapter.register('bob', 'bobpw');
+        await adapter.setPresence('bob', false);
+        await adapter.upsertFriendship('alice', 'bob');
+        await db
+            .into(db.friends)
+            .insert(
+              FriendsCompanion.insert(
+                username: 'bob',
+                displayName: 'Bob',
+                state: 'friend',
+                addedAt: 0,
+              ),
+            );
+        await FriendStore(db).updatePresence('bob', true);
+        final runtime = _runtimeFor(db, alice, adapter, brain: brain);
+        addTearDown(runtime.dispose);
+
+        await runtime.start();
+        await expectLater(
+          runtime.startVoiceCall('bob'),
+          throwsA(
+            isA<StateError>().having(
+              (error) => error.toString(),
+              'message',
+              contains('@bob is offline. Keep both apps open'),
+            ),
+          ),
+        );
+
+        expect(runtime.voiceCallState.phase, VoiceCallPhase.idle);
+        expect(adapter.rooms, isEmpty);
+        expect(adapter.activePairLocks, isEmpty);
+        expect(adapter.activeUserLocks, isEmpty);
+        expect(brain.startedAudioPeers, isEmpty);
+        final friend = await FriendStore(db).loadFriend('bob');
+        expect(friend?.isOnline, isFalse);
+      },
+    );
+
+    test(
       'Firebase voice signaling reaches active without chat peer link',
       () async {
         final adapter = RecordingVoiceSignalingAdapter();

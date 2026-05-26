@@ -162,6 +162,7 @@ class FirebaseSignalingAdapter
     final normalizedCaller = normalizeVoiceCallUsername(caller);
     final normalizedCallee = normalizeVoiceCallUsername(callee);
     await _ensureSignedInAsUsername(normalizedCaller);
+    await _assertVoiceCallCalleeOnline(normalizedCallee);
 
     final pairId = voiceCallPairId(normalizedCaller, normalizedCallee);
     final room = VoiceCallRoom(
@@ -277,6 +278,28 @@ class FirebaseSignalingAdapter
       rethrow;
     }
     return room;
+  }
+
+  Future<void> _assertVoiceCallCalleeOnline(String callee) async {
+    final normalizedCallee = normalizeVoiceCallUsername(callee);
+    final BackendIdentity? identity;
+    try {
+      identity = await fetchIdentity(normalizedCallee);
+    } catch (_) {
+      throw VoiceSignalingException(
+        'Could not confirm @$normalizedCallee is online. Try again.',
+      );
+    }
+    if (identity == null) {
+      throw VoiceSignalingException(
+        'Could not confirm @$normalizedCallee is online. Try again.',
+      );
+    }
+    if (!identity.online) {
+      throw VoiceSignalingException(
+        '@$normalizedCallee is offline. Keep both apps open, then try again.',
+      );
+    }
   }
 
   Future<bool> _claimActiveVoicePairLockWithReclaim({

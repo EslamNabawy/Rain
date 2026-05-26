@@ -10,6 +10,8 @@ enum RuntimeInteractionReasonCode {
   noIncomingCall,
   activeFileTransfer,
   peerBusy,
+  peerOffline,
+  presenceUnknown,
   staleCallCleanup,
   callCleanupInProgress,
 }
@@ -76,6 +78,22 @@ final class RuntimeInteractionGuard {
   static const String cleanupInProgressMessage =
       'Call state is cleaning up. Try again in a moment.';
 
+  static String peerOfflineMessage(String peerId) {
+    final normalized = peerId.trim().replaceFirst(RegExp(r'^@+'), '');
+    if (normalized.isEmpty) {
+      return 'Peer is offline. Keep both apps open, then try again.';
+    }
+    return '@$normalized is offline. Keep both apps open, then try again.';
+  }
+
+  static String presenceUnknownMessage(String peerId) {
+    final normalized = peerId.trim().replaceFirst(RegExp(r'^@+'), '');
+    if (normalized.isEmpty) {
+      return 'Could not confirm peer is online. Try again.';
+    }
+    return 'Could not confirm @$normalized is online. Try again.';
+  }
+
   static RuntimeInteractionDecision peerBusy({
     required String peerId,
     String? callId,
@@ -109,6 +127,22 @@ final class RuntimeInteractionGuard {
       userMessage: cleanupInProgressMessage,
       blockingPeerId: peerId,
       callId: callId,
+    );
+  }
+
+  static RuntimeInteractionDecision peerOffline({required String peerId}) {
+    return RuntimeInteractionDecision.deny(
+      reasonCode: RuntimeInteractionReasonCode.peerOffline,
+      userMessage: peerOfflineMessage(peerId),
+      blockingPeerId: peerId,
+    );
+  }
+
+  static RuntimeInteractionDecision presenceUnknown({required String peerId}) {
+    return RuntimeInteractionDecision.deny(
+      reasonCode: RuntimeInteractionReasonCode.presenceUnknown,
+      userMessage: presenceUnknownMessage(peerId),
+      blockingPeerId: peerId,
     );
   }
 
@@ -154,8 +188,15 @@ final class RuntimeInteractionGuard {
     required String peerId,
     required CallMediaMode mediaMode,
     required VoiceCallState voiceCallState,
+    bool? peerOnline = true,
     FileTransferRecord? activeTransfer,
   }) {
+    if (peerOnline == false) {
+      return RuntimeInteractionGuard.peerOffline(peerId: peerId);
+    }
+    if (peerOnline == null) {
+      return RuntimeInteractionGuard.presenceUnknown(peerId: peerId);
+    }
     final callBlock = _activeCallDecision(
       voiceCallState,
       attemptedPeerId: peerId,

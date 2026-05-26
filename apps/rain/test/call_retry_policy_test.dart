@@ -70,6 +70,25 @@ void main() {
       expect(decision.canRetryImmediately, isFalse);
     });
 
+    test('maps offline signaling failures without claiming peer busy', () {
+      final decision = CallRetryPolicy.classifySignalingFailure(
+        const CallSignalingFailureSnapshot(
+          message: '@bob is offline. Keep both apps open, then try again.',
+          lockWasReclaimed: false,
+          terminalRoomWasCleaned: false,
+          corruptRoomWasRepaired: false,
+          peerId: 'bob',
+        ),
+      );
+
+      expect(decision.kind, CallRetryDecisionKind.peerOffline);
+      expect(
+        decision.userMessage,
+        '@bob is offline. Keep both apps open, then try again.',
+      );
+      expect(decision.canRetryImmediately, isFalse);
+    });
+
     test('maps generic signaling failures without claiming peer busy', () {
       final decision = CallRetryPolicy.classifySignalingFailure(
         const CallSignalingFailureSnapshot(
