@@ -147,7 +147,7 @@ class RainCallControls extends StatelessWidget {
       borderRadius: const BorderRadius.all(Radius.circular(20)),
       color: rainVoiceCallHaloColor(context, state),
       pulseKey: '${state.callId}:${state.phase}:${capability.name}',
-      minSize: Size.square(compact ? 42 : 46),
+      minSize: Size.square(compact ? 42 : 48),
       callSurface: true,
       child: control,
     );
@@ -184,7 +184,7 @@ class RainCallControls extends StatelessWidget {
       borderRadius: const BorderRadius.all(Radius.circular(18)),
       color: rainVoiceCallHaloColor(context, state),
       pulseKey: '${state.callId}:${state.phase}:overflow',
-      minSize: Size.square(compact ? 42 : 46),
+      minSize: Size.square(compact ? 42 : 48),
       callSurface: true,
       child: PopupMenuButton<String>(
         tooltip: 'More call controls',
