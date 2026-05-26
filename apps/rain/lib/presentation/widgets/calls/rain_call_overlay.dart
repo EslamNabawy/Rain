@@ -582,6 +582,7 @@ class _RainFullscreenFriendsPanel extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final scheme = Theme.of(context).colorScheme;
+    final performance = RainPerformanceScope.of(context);
     final targetWidth = collapsed ? collapsedWidth : width.clamp(220, 380);
     return SafeArea(
       right: false,
@@ -589,7 +590,9 @@ class _RainFullscreenFriendsPanel extends StatelessWidget {
         children: <Widget>[
           AnimatedContainer(
             key: const ValueKey<String>('rain-call-fullscreen-friends-panel'),
-            duration: RainMotion.quick,
+            duration: performance.allowContinuousCallAnimation
+                ? RainMotion.quick
+                : Duration.zero,
             curve: Curves.easeOutCubic,
             width: targetWidth.toDouble(),
             margin: const EdgeInsets.fromLTRB(14, 14, 0, 14),
@@ -600,11 +603,12 @@ class _RainFullscreenFriendsPanel extends StatelessWidget {
                 color: scheme.outlineVariant.withValues(alpha: 0.26),
               ),
               boxShadow: <BoxShadow>[
-                BoxShadow(
-                  blurRadius: 28,
-                  offset: const Offset(0, 16),
-                  color: Colors.black.withValues(alpha: 0.22),
-                ),
+                if (performance.allowExpensiveCallEffects)
+                  BoxShadow(
+                    blurRadius: 28,
+                    offset: const Offset(0, 16),
+                    color: Colors.black.withValues(alpha: 0.22),
+                  ),
               ],
             ),
             child: ClipRRect(
@@ -955,6 +959,7 @@ class _RainExpandedCallPanel extends StatelessWidget {
     final scheme = Theme.of(context).colorScheme;
     final accent = rainVoiceCallAccent(context, state);
     final haloColor = rainVoiceCallHaloColor(context, state);
+    final performance = RainPerformanceScope.of(context);
     final canMinimize =
         state.phase != VoiceCallPhase.incomingRinging &&
         state.phase != VoiceCallPhase.failed;
@@ -976,8 +981,11 @@ class _RainExpandedCallPanel extends StatelessWidget {
         color: haloColor,
         pulseKey: '${state.callId}:${state.phase}:${state.isVideo}',
         pulseOnMount: rainVoiceCallShowsSignalHalo(state),
+        callSurface: true,
         child: AnimatedContainer(
-          duration: RainMotion.callSurface,
+          duration: performance.allowContinuousCallAnimation
+              ? RainMotion.callSurface
+              : Duration.zero,
           curve: Curves.easeOutCubic,
           width: panelWidth,
           constraints: BoxConstraints(
@@ -989,11 +997,12 @@ class _RainExpandedCallPanel extends StatelessWidget {
             borderRadius: BorderRadius.circular(24),
             border: Border.all(color: panelBorderColor),
             boxShadow: <BoxShadow>[
-              BoxShadow(
-                blurRadius: 34,
-                offset: const Offset(0, 18),
-                color: Colors.black.withValues(alpha: isDark ? 0.38 : 0.16),
-              ),
+              if (performance.allowExpensiveCallEffects)
+                BoxShadow(
+                  blurRadius: 34,
+                  offset: const Offset(0, 18),
+                  color: Colors.black.withValues(alpha: isDark ? 0.38 : 0.16),
+                ),
             ],
           ),
           child: ClipRRect(
@@ -1429,9 +1438,10 @@ class _RainCallAudioActivity extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    final performance = RainPerformanceScope.read(context);
     final staticOnly =
         MediaQuery.disableAnimationsOf(context) ||
-        RainPerformanceScope.read(context).isLowPower;
+        !performance.allowContinuousCallAnimation;
     return SizedBox(
       key: const ValueKey<String>('rain-call-audio-emitter'),
       width: 86,
@@ -1509,9 +1519,13 @@ class _RainCallAudioEmitterPainter extends CustomPainter {
 
   @override
   bool shouldRepaint(covariant _RainCallAudioEmitterPainter oldDelegate) {
-    return oldDelegate.level != level ||
-        oldDelegate.accent != accent ||
-        oldDelegate.staticOnly != staticOnly;
+    if (oldDelegate.accent != accent || oldDelegate.staticOnly != staticOnly) {
+      return true;
+    }
+    if (staticOnly && oldDelegate.staticOnly) {
+      return false;
+    }
+    return oldDelegate.level != level;
   }
 }
 

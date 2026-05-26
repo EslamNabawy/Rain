@@ -54,10 +54,26 @@ class RainPerformanceProfile {
 
   bool get isLowPower => tier == RainPerformanceTier.lowPower;
 
+  bool get isLowPowerCallSurface => tier == RainPerformanceTier.lowPower;
+
+  bool get allowContinuousCallAnimation => tier != RainPerformanceTier.lowPower;
+
+  bool get allowExpensiveCallEffects => tier != RainPerformanceTier.lowPower;
+
+  static RainPerformanceProfile detectForTest({
+    String? override,
+    String? abiName,
+  }) {
+    return RainPerformanceProfile.detect(override: override, abiName: abiName);
+  }
+
   Map<String, Object> toJson() => <String, Object>{
     'tier': tier.name,
     'reason': reason,
     'abiName': abiName,
+    'isLowPowerCallSurface': isLowPowerCallSurface,
+    'allowContinuousCallAnimation': allowContinuousCallAnimation,
+    'allowExpensiveCallEffects': allowExpensiveCallEffects,
   };
 
   static bool _isLowPowerOverride(String value) {

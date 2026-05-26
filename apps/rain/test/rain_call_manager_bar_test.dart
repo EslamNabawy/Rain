@@ -2,6 +2,8 @@ import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:rain/application/runtime/voice_call_state.dart';
 import 'package:rain/application/state/call_surface_providers.dart';
+import 'package:rain/presentation/branding/rain_ripple_halo_surface.dart';
+import 'package:rain/presentation/performance/rain_performance.dart';
 import 'package:rain/presentation/widgets/calls/rain_call_controls.dart';
 import 'package:rain/presentation/widgets/calls/rain_call_manager_bar.dart';
 import 'package:rain/presentation/widgets/calls/rain_call_overlay.dart';
@@ -244,6 +246,74 @@ void main() {
     }
   });
 
+  testWidgets('low-power manager bar disables call shadow and animated halo', (
+    WidgetTester tester,
+  ) async {
+    await _pumpManager(
+      tester,
+      state: _activeCall(),
+      surface: const CallSurfaceState.visible(
+        peerId: 'bob',
+        callId: 'call-1',
+        mode: CallSurfaceMode.managerOnly,
+      ),
+      performanceProfile: RainPerformanceProfile.detectForTest(
+        abiName: 'armeabi-v7a',
+      ),
+    );
+
+    final halo = tester.widget<RainRippleHaloSurface>(
+      find.byKey(const ValueKey<String>('rain-call-manager-bar')),
+    );
+    expect(halo.callSurface, isTrue);
+
+    final decoratedBox = tester.widget<DecoratedBox>(
+      find
+          .descendant(
+            of: find.byKey(const ValueKey<String>('rain-call-manager-bar')),
+            matching: find.byType(DecoratedBox),
+          )
+          .first,
+    );
+    final decoration = decoratedBox.decoration as BoxDecoration;
+    expect(decoration.boxShadow, isEmpty);
+  });
+
+  testWidgets(
+    'low-power overlay removes panel shadow and transition duration',
+    (WidgetTester tester) async {
+      await _pumpOverlay(
+        tester,
+        state: _activeCall(),
+        surface: const CallSurfaceState.visible(
+          peerId: 'bob',
+          callId: 'call-1',
+        ),
+        performanceProfile: RainPerformanceProfile.detectForTest(
+          abiName: 'armeabi-v7a',
+        ),
+      );
+
+      final halo = tester.widget<RainRippleHaloSurface>(
+        find.byKey(const ValueKey<String>('rain-call-panel-surface')),
+      );
+      expect(halo.callSurface, isTrue);
+
+      final animatedPanel = tester.widget<AnimatedContainer>(
+        find
+            .descendant(
+              of: find.byKey(const ValueKey<String>('rain-call-panel-surface')),
+              matching: find.byType(AnimatedContainer),
+            )
+            .first,
+      );
+      expect(animatedPanel.duration, Duration.zero);
+
+      final decoration = animatedPanel.decoration! as BoxDecoration;
+      expect(decoration.boxShadow, isEmpty);
+    },
+  );
+
   testWidgets('manager does not block bottom composer taps', (
     WidgetTester tester,
   ) async {
@@ -305,6 +375,7 @@ Future<void> _pumpManager(
   VoidCallback? onFullscreen,
   VoidCallback? onHangUp,
   MediaQueryData? mediaQueryData,
+  RainPerformanceProfile? performanceProfile,
 }) async {
   Widget home = Scaffold(
     body: RainCallManagerBar(
@@ -322,6 +393,9 @@ Future<void> _pumpManager(
   if (mediaQueryData != null) {
     home = MediaQuery(data: mediaQueryData, child: home);
   }
+  if (performanceProfile != null) {
+    home = RainPerformanceScope(profile: performanceProfile, child: home);
+  }
   await tester.pumpWidget(MaterialApp(home: home));
 }
 
@@ -329,31 +403,32 @@ Future<void> _pumpOverlay(
   WidgetTester tester, {
   required VoiceCallState state,
   required CallSurfaceState surface,
+  RainPerformanceProfile? performanceProfile,
 }) async {
-  await tester.pumpWidget(
-    MaterialApp(
-      home: Scaffold(
-        body: Stack(
-          children: <Widget>[
-            Positioned.fill(
-              child: RainCallOverlay(
-                state: state,
-                surface: surface,
-                displayName: 'Bob',
-                onAccept: () {},
-                onReject: () {},
-                onHangUp: () {},
-                onRetry: () {},
-                onToggleMute: () {},
-                onMinimize: () {},
-                onExpand: () {},
-              ),
-            ),
-          ],
+  Widget home = Scaffold(
+    body: Stack(
+      children: <Widget>[
+        Positioned.fill(
+          child: RainCallOverlay(
+            state: state,
+            surface: surface,
+            displayName: 'Bob',
+            onAccept: () {},
+            onReject: () {},
+            onHangUp: () {},
+            onRetry: () {},
+            onToggleMute: () {},
+            onMinimize: () {},
+            onExpand: () {},
+          ),
         ),
-      ),
+      ],
     ),
   );
+  if (performanceProfile != null) {
+    home = RainPerformanceScope(profile: performanceProfile, child: home);
+  }
+  await tester.pumpWidget(MaterialApp(home: home));
 }
 
 VoiceCallState _activeCall({CallMediaMode mediaMode = CallMediaMode.audio}) {

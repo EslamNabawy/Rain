@@ -3,6 +3,7 @@ import 'package:flutter/material.dart';
 import 'package:rain/application/runtime/voice_call_state.dart';
 import 'package:rain/application/state/call_surface_providers.dart';
 import 'package:rain/presentation/branding/rain_ripple_halo_surface.dart';
+import 'package:rain/presentation/performance/rain_performance.dart';
 import 'package:rain/presentation/widgets/calls/rain_call_controls.dart';
 import 'package:rain/presentation/widgets/rain_chat_widgets.dart';
 
@@ -41,6 +42,7 @@ class RainCallManagerBar extends StatelessWidget {
     final scheme = Theme.of(context).colorScheme;
     final accent = rainVoiceCallAccent(context, state);
     final haloColor = rainVoiceCallHaloColor(context, state);
+    final performance = RainPerformanceScope.of(context);
     return Material(
       color: Colors.transparent,
       child: SafeArea(
@@ -57,6 +59,7 @@ class RainCallManagerBar extends StatelessWidget {
                 color: haloColor,
                 pulseKey: '${state.callId}:${state.phase}:${surface.mode}',
                 pulseOnMount: rainVoiceCallShowsSignalHalo(state),
+                callSurface: true,
                 child: DecoratedBox(
                   decoration: BoxDecoration(
                     color: scheme.surface.withValues(
@@ -65,15 +68,16 @@ class RainCallManagerBar extends StatelessWidget {
                     borderRadius: BorderRadius.circular(22),
                     border: Border.all(color: accent.withValues(alpha: 0.34)),
                     boxShadow: <BoxShadow>[
-                      BoxShadow(
-                        blurRadius: 22,
-                        offset: const Offset(0, 10),
-                        color: Colors.black.withValues(
-                          alpha: scheme.brightness == Brightness.dark
-                              ? 0.34
-                              : 0.13,
+                      if (performance.allowExpensiveCallEffects)
+                        BoxShadow(
+                          blurRadius: 22,
+                          offset: const Offset(0, 10),
+                          color: Colors.black.withValues(
+                            alpha: scheme.brightness == Brightness.dark
+                                ? 0.34
+                                : 0.13,
+                          ),
                         ),
-                      ),
                     ],
                   ),
                   child: Padding(

@@ -1012,7 +1012,7 @@ git commit -m "chore: explain call busy and cleanup diagnostics"
 - Modify: `apps/rain/test/rain_performance_test.dart`
 - Modify: `apps/rain/test/rain_call_manager_bar_test.dart`
 
-- [ ] **Step 1: Lock ARMv7 low-power profile**
+- [x] **Step 1: Lock ARMv7 low-power profile**
 
 In `rain_performance.dart`, ensure:
 
@@ -1030,7 +1030,7 @@ bool get allowExpensiveCallEffects {
 }
 ```
 
-- [ ] **Step 2: Replace expensive effects on low-power**
+- [x] **Step 2: Replace expensive effects on low-power**
 
 For call surfaces on low power:
 
@@ -1049,7 +1049,7 @@ if (performance.isLowPowerCallSurface) {
 return AnimatedCallHalo(level: audioLevel);
 ```
 
-- [ ] **Step 3: Add tests**
+- [x] **Step 3: Add tests**
 
 In `apps/rain/test/rain_performance_test.dart`, add:
 
@@ -1063,16 +1063,16 @@ test('armeabi-v7a uses low power call surfaces', () {
 });
 ```
 
-- [ ] **Step 4: Run tests**
+- [x] **Step 4: Run tests**
 
 ```powershell
 dart run melos exec --scope rain -- flutter test test/rain_performance_test.dart test/rain_call_manager_bar_test.dart
 ```
 
-- [ ] **Step 5: Commit**
+- [x] **Step 5: Commit**
 
 ```powershell
-git add apps/rain/lib/presentation/performance/rain_performance.dart apps/rain/lib/presentation/widgets/calls/rain_call_overlay.dart apps/rain/lib/presentation/widgets/calls/rain_call_controls.dart apps/rain/lib/presentation/widgets/calls/rain_call_manager_bar.dart apps/rain/lib/presentation/branding/rain_ripple_halo_surface.dart apps/rain/test/rain_performance_test.dart apps/rain/test/rain_call_manager_bar_test.dart
+git add apps/rain/lib/presentation/performance/rain_performance.dart apps/rain/lib/presentation/widgets/calls/rain_call_overlay.dart apps/rain/lib/presentation/widgets/calls/rain_call_controls.dart apps/rain/lib/presentation/widgets/calls/rain_call_manager_bar.dart apps/rain/lib/presentation/branding/rain_ripple_halo_surface.dart apps/rain/test/rain_performance_test.dart apps/rain/test/rain_call_manager_bar_test.dart docs/superpowers/plans/2026-05-26-rain-call-signaling-v7-premium-ux.md
 git commit -m "perf: simplify call surfaces on armv7"
 ```
 

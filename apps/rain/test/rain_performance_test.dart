@@ -9,6 +9,17 @@ void main() {
     expect(profile.reason, 'android-armv7');
   });
 
+  test('armeabi-v7a uses low power call surfaces', () {
+    final profile = RainPerformanceProfile.detectForTest(
+      abiName: 'armeabi-v7a',
+    );
+
+    expect(profile.tier, RainPerformanceTier.lowPower);
+    expect(profile.isLowPowerCallSurface, isTrue);
+    expect(profile.allowContinuousCallAnimation, isFalse);
+    expect(profile.allowExpensiveCallEffects, isFalse);
+  });
+
   test('selects standard tier for ARM64 ABI', () {
     final profile = RainPerformanceProfile.detect(abiName: 'androidArm64');
 

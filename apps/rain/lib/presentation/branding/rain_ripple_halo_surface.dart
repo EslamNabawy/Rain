@@ -14,6 +14,7 @@ class RainRippleHaloSurface extends StatefulWidget {
     this.pulseKey,
     this.pulseOnMount = false,
     this.minSize,
+    this.callSurface = false,
   });
 
   final Widget child;
@@ -24,6 +25,7 @@ class RainRippleHaloSurface extends StatefulWidget {
   final Object? pulseKey;
   final bool pulseOnMount;
   final Size? minSize;
+  final bool callSurface;
 
   @override
   State<RainRippleHaloSurface> createState() => _RainRippleHaloSurfaceState();
@@ -73,8 +75,15 @@ class _RainRippleHaloSurfaceState extends State<RainRippleHaloSurface>
 
     final scheme = Theme.of(context).colorScheme;
     final color = widget.color ?? scheme.primary;
-    final lowPower = RainPerformanceScope.of(context).isLowPower;
-    final reducedMotion = MediaQuery.of(context).disableAnimations || lowPower;
+    final performance = RainPerformanceScope.of(context);
+    final lowPower = widget.callSurface
+        ? performance.isLowPowerCallSurface
+        : performance.isLowPower;
+    final reducedMotion =
+        MediaQuery.of(context).disableAnimations ||
+        (widget.callSurface
+            ? !performance.allowContinuousCallAnimation
+            : lowPower);
 
     return ClipRRect(
       borderRadius: widget.borderRadius,
@@ -126,7 +135,9 @@ class _RainRippleHaloSurfaceState extends State<RainRippleHaloSurface>
   void _emitPulse() {
     if (!mounted ||
         MediaQuery.maybeOf(context)?.disableAnimations == true ||
-        RainPerformanceScope.read(context).isLowPower) {
+        (widget.callSurface
+            ? !RainPerformanceScope.read(context).allowContinuousCallAnimation
+            : RainPerformanceScope.read(context).isLowPower)) {
       return;
     }
     _pulseController.forward(from: 0);

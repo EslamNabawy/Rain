@@ -118,6 +118,7 @@ class RainCallControls extends StatelessWidget {
       color: rainVoiceCallHaloColor(context, state),
       pulseKey: '${state.callId}:${state.phase}:${capability.name}',
       minSize: const Size.square(48),
+      callSurface: true,
       child: control,
     );
   }
