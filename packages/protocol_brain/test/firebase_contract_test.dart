@@ -252,6 +252,30 @@ void main() {
     );
   });
 
+  test(
+    'Firebase voice user locks are claimed transactionally',
+    () {
+      fail(
+        'Phase 02 must make activeVoiceUsers lock claims transactional so two '
+        'callers cannot overwrite each other and produce false busy or stale '
+        'callee state.',
+      );
+    },
+    skip: 'Phase 02 rewrites activeVoiceUsers lock claim behavior.',
+  );
+
+  test(
+    'Firebase cleanup removes corrupt terminal call locks by callId',
+    () {
+      fail(
+        'Phase 02 must let cleanup remove activeVoicePairs and both '
+        'activeVoiceUsers entries when their callId matches a corrupt terminal '
+        'room repaired by the cleanup parser.',
+      );
+    },
+    skip: 'Phase 02 hardens Firebase cleanup.',
+  );
+
   test('Firebase voice signaling stores encrypted SDP and ICE envelopes', () {
     final rules = _repoFile('backend/firebase/database.rules.json');
     final adapter = _repoFile(

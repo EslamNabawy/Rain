@@ -5520,6 +5520,42 @@ void main() {
         await _waitForFriendState(db, 'bob', FriendState.friend);
       },
     );
+
+    test(
+      'pc caller can call phone after previous phone ended call without false busy',
+      () async {
+        fail(
+          'Phase 10 must simulate a Windows-like caller and Android-like callee '
+          'where a previous callee-ended call is terminal and the next reverse '
+          'direction call starts ringing without VoiceCallFailureReason.peerBusy.',
+        );
+      },
+      skip: 'Phase 10 adds integrated cross-device call runtime coverage.',
+    );
+
+    test(
+      'phone caller retry succeeds after stale pc outgoing room is cleaned',
+      () async {
+        fail(
+          'Phase 10 must cover the reported retry path: a stale PC outgoing '
+          'room or lock is cleaned, the phone caller retries, and the call '
+          'reaches ringing or active without requiring app restart.',
+        );
+      },
+      skip: 'Phase 10 adds integrated cross-device call runtime coverage.',
+    );
+
+    test(
+      'hangup cleanup is idempotent when signaling frame send fails',
+      () async {
+        fail(
+          'Phase 03 must make local hangup dispose media/runtime state even '
+          'when the best-effort signaling hangup frame fails validation or '
+          'transport send.',
+        );
+      },
+      skip: 'Phase 03 hardens idempotent hangup cleanup.',
+    );
   });
 }
 

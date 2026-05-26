@@ -111,6 +111,29 @@ void main() {
       expect(decision.blockingPeerId, 'bob');
       expect(decision.userMessage, 'Finish the call before sending files.');
     });
+
+    test(
+      'false busy cleanup becomes a retryable guard decision',
+      () {
+        fail(
+          'Phase 03 must add a stale-call cleanup/false-busy reason so the '
+          'UI can show "Old call state was cleaned. Try again." instead of '
+          'leaving the caller stuck as peer busy.',
+        );
+      },
+      skip: 'Phase 03 adds stale cleanup guard decisions.',
+    );
+
+    test(
+      'call cleanup in progress blocks duplicate retry with explicit message',
+      () {
+        fail(
+          'Phase 03 must expose a cleanup-in-progress decision that blocks a '
+          'duplicate call retry with "Call state is cleaning up. Try again in a moment.".',
+        );
+      },
+      skip: 'Phase 03 adds cleanup-in-progress guard decisions.',
+    );
   });
 }
 

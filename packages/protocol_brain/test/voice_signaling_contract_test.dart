@@ -582,6 +582,50 @@ void main() {
       );
     },
   );
+
+  test(
+    'normalizes terminal updatedAt when device clock is behind createdAt',
+    () {
+      final room = _room(
+        caller: 'alice',
+        callee: 'bob',
+        status: VoiceCallSignalingStatus.connected,
+      );
+
+      expect(room.createdAt, 1000);
+      fail(
+        'Phase 01 must add VoiceCallClock.nextRoomTimestamp so a terminal '
+        'write requested before room.createdAt normalizes to room.updatedAt + 1.',
+      );
+    },
+    skip: 'Phase 01 adds VoiceCallClock.',
+  );
+
+  test(
+    'parses corrupt terminal room for cleanup without treating it as live',
+    () {
+      final corrupt = <Object?, Object?>{
+        'v': VoiceCallRoom.version,
+        'pairId': 'alice:bob',
+        'caller': 'alice',
+        'callee': 'bob',
+        'status': VoiceCallSignalingStatus.ended.name,
+        'mediaMode': CallMediaMode.audio.name,
+        'createdAt': 2000,
+        'updatedAt': 1000,
+        'expiresAt': 3000,
+        'endedAt': 1000,
+        'endedBy': 'alice',
+      };
+
+      expect(corrupt['status'], VoiceCallSignalingStatus.ended.name);
+      fail(
+        'Phase 01 must add VoiceCallRoom.tryParseForCleanup so corrupt '
+        'terminal rooms can still be cleaned and cannot remain as busy locks.',
+      );
+    },
+    skip: 'Phase 01 adds cleanup-safe room parsing.',
+  );
 }
 
 VoiceCallRoom _room({
