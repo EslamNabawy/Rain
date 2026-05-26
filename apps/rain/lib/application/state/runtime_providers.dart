@@ -216,6 +216,7 @@ class RuntimeController extends AsyncNotifier<RainRuntimeController?> {
                 .warmUpStartupCallPermissions()
           : null,
       errorRecorder: ref.watch(crashDiagnosticsServiceProvider).recordErrorSync,
+      eventRecorder: ref.watch(crashDiagnosticsServiceProvider).recordEventSync,
     );
 
     final exitRegistration = AppExitCoordinator.instance.register(

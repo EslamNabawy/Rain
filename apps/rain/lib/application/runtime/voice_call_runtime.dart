@@ -61,19 +61,52 @@ extension VoiceCallRuntime on RainRuntimeController {
     required CallMediaMode mediaMode,
   }) async {
     final peerId = _normalizedUsername(username);
+    _recordRuntimeEvent(
+      category: 'call',
+      name: 'start_requested',
+      context: <String, Object?>{'peerId': peerId, 'mediaMode': mediaMode.name},
+    );
     _assertVoiceCallCanStart();
-    RuntimeInteractionGuard.canStartCall(
+    final decision = RuntimeInteractionGuard.canStartCall(
       peerId: peerId,
       mediaMode: mediaMode,
       voiceCallState: _voiceCallState,
       activeTransfer: await _firstActiveTransfer(),
-    ).throwIfDenied();
+    );
+    if (!decision.allowed) {
+      _recordRuntimeEvent(
+        category: 'call',
+        name: 'start_blocked',
+        severity: 'warning',
+        message: decision.userMessage,
+        context: <String, Object?>{
+          'peerId': peerId,
+          'mediaMode': mediaMode.name,
+          'reasonCode': decision.reasonCode.name,
+          'blockingPeerId': decision.blockingPeerId,
+          'callId': decision.callId,
+          'transferId': decision.transferId,
+        },
+      );
+    }
+    decision.throwIfDenied();
     _requireVoiceSignalingAdapter();
     await _assertVoiceCallPeerIsFriend(peerId);
 
     await _disposeCurrentVoiceCallSession();
     final callId = _newVoiceCallId(peerId);
     final sessionEpoch = DateTime.now().millisecondsSinceEpoch;
+    _recordRuntimeEvent(
+      category: 'call',
+      name: 'created',
+      context: <String, Object?>{
+        'peerId': peerId,
+        'callId': callId,
+        'sessionEpoch': sessionEpoch,
+        'mediaMode': mediaMode.name,
+        'isOutgoing': true,
+      },
+    );
     _setVoiceCallState(
       VoiceCallState(
         phase: VoiceCallPhase.connectingMedia,
@@ -97,6 +130,18 @@ extension VoiceCallRuntime on RainRuntimeController {
       );
       await session.startOutgoing();
     } catch (error) {
+      _recordRuntimeEvent(
+        category: 'call',
+        name: 'start_failed',
+        severity: 'error',
+        message: error.toString(),
+        context: <String, Object?>{
+          'peerId': peerId,
+          'callId': callId,
+          'sessionEpoch': sessionEpoch,
+          'mediaMode': mediaMode.name,
+        },
+      );
       await _failVoiceCall(
         error,
         failureReason:
@@ -112,6 +157,11 @@ extension VoiceCallRuntime on RainRuntimeController {
 
   Future<void> acceptVoiceCall() async {
     final current = _voiceCallState;
+    _recordRuntimeEvent(
+      category: 'call',
+      name: 'accept_requested',
+      context: _voiceCallEventContext(current),
+    );
     if (current.phase != VoiceCallPhase.incomingRinging ||
         current.peerId == null ||
         current.callId == null) {
@@ -126,6 +176,18 @@ extension VoiceCallRuntime on RainRuntimeController {
     if (!acceptDecision.allowed &&
         acceptDecision.reasonCode ==
             RuntimeInteractionReasonCode.activeFileTransfer) {
+      _recordRuntimeEvent(
+        category: 'call',
+        name: 'accept_blocked',
+        severity: 'warning',
+        message: acceptDecision.userMessage,
+        context: <String, Object?>{
+          ..._voiceCallEventContext(current),
+          'reasonCode': acceptDecision.reasonCode.name,
+          'blockingPeerId': acceptDecision.blockingPeerId,
+          'transferId': acceptDecision.transferId,
+        },
+      );
       await _sendVoiceFrame(
         current.peerId!,
         VoiceCallFrameType.busy,
@@ -142,6 +204,20 @@ extension VoiceCallRuntime on RainRuntimeController {
       );
       return;
     }
+    if (!acceptDecision.allowed) {
+      _recordRuntimeEvent(
+        category: 'call',
+        name: 'accept_blocked',
+        severity: 'warning',
+        message: acceptDecision.userMessage,
+        context: <String, Object?>{
+          ..._voiceCallEventContext(current),
+          'reasonCode': acceptDecision.reasonCode.name,
+          'blockingPeerId': acceptDecision.blockingPeerId,
+          'transferId': acceptDecision.transferId,
+        },
+      );
+    }
     acceptDecision.throwIfDenied();
 
     final session = _voiceCallSession;
@@ -153,6 +229,13 @@ extension VoiceCallRuntime on RainRuntimeController {
     try {
       await session.acceptIncoming();
     } catch (error) {
+      _recordRuntimeEvent(
+        category: 'call',
+        name: 'accept_failed',
+        severity: 'error',
+        message: error.toString(),
+        context: _voiceCallEventContext(current),
+      );
       await _failVoiceCall(
         error,
         failureReason:
@@ -168,6 +251,11 @@ extension VoiceCallRuntime on RainRuntimeController {
 
   Future<void> rejectVoiceCall() async {
     final current = _voiceCallState;
+    _recordRuntimeEvent(
+      category: 'call',
+      name: 'reject_requested',
+      context: _voiceCallEventContext(current),
+    );
     if (current.phase != VoiceCallPhase.incomingRinging ||
         current.peerId == null ||
         current.callId == null) {
@@ -191,6 +279,11 @@ extension VoiceCallRuntime on RainRuntimeController {
 
   Future<void> hangUpVoiceCall() async {
     final current = _voiceCallState;
+    _recordRuntimeEvent(
+      category: 'call',
+      name: 'hangup_requested',
+      context: _voiceCallEventContext(current),
+    );
     if (!current.hasCall || current.peerId == null || current.callId == null) {
       return;
     }
@@ -203,6 +296,14 @@ extension VoiceCallRuntime on RainRuntimeController {
 
   Future<void> setVoiceCallMuted(bool muted) async {
     final current = _voiceCallState;
+    _recordRuntimeEvent(
+      category: 'call',
+      name: 'mute_requested',
+      context: <String, Object?>{
+        ..._voiceCallEventContext(current),
+        'muted': muted,
+      },
+    );
     final session = _voiceCallSession;
     if (!current.isActive ||
         current.peerId == null ||
@@ -228,6 +329,14 @@ extension VoiceCallRuntime on RainRuntimeController {
 
   Future<void> setVoiceCallDeafened(bool deafened) async {
     final current = _voiceCallState;
+    _recordRuntimeEvent(
+      category: 'call',
+      name: 'deafen_requested',
+      context: <String, Object?>{
+        ..._voiceCallEventContext(current),
+        'deafened': deafened,
+      },
+    );
     final session = _voiceCallSession;
     if (!current.isActive ||
         current.peerId == null ||
@@ -253,6 +362,14 @@ extension VoiceCallRuntime on RainRuntimeController {
 
   Future<void> setVoiceCallOutputRoute(VoiceCallOutputRoute route) async {
     final current = _voiceCallState;
+    _recordRuntimeEvent(
+      category: 'call',
+      name: 'output_route_requested',
+      context: <String, Object?>{
+        ..._voiceCallEventContext(current),
+        'route': route.name,
+      },
+    );
     final session = _voiceCallSession;
     if (!current.isActive ||
         current.peerId == null ||
@@ -277,6 +394,16 @@ extension VoiceCallRuntime on RainRuntimeController {
         ),
       );
     } catch (error, stackTrace) {
+      _recordRuntimeEvent(
+        category: 'call',
+        name: 'output_route_failed',
+        severity: 'warning',
+        message: error.toString(),
+        context: <String, Object?>{
+          ..._voiceCallEventContext(current),
+          'route': route.name,
+        },
+      );
       errorRecorder?.call(
         error,
         stackTrace,
@@ -301,6 +428,14 @@ extension VoiceCallRuntime on RainRuntimeController {
 
   Future<void> setVideoCallCameraMuted(bool muted) async {
     final current = _voiceCallState;
+    _recordRuntimeEvent(
+      category: 'call',
+      name: 'camera_mute_requested',
+      context: <String, Object?>{
+        ..._voiceCallEventContext(current),
+        'cameraMuted': muted,
+      },
+    );
     final session = _voiceCallSession;
     final media = _videoCallMediaConnection;
     if (!current.isActive ||
@@ -331,6 +466,11 @@ extension VoiceCallRuntime on RainRuntimeController {
 
   Future<void> switchVideoCallCamera() async {
     final current = _voiceCallState;
+    _recordRuntimeEvent(
+      category: 'call',
+      name: 'camera_switch_requested',
+      context: _voiceCallEventContext(current),
+    );
     final media = _videoCallMediaConnection;
     if (!current.isActive ||
         !current.isVideo ||
@@ -347,6 +487,17 @@ extension VoiceCallRuntime on RainRuntimeController {
   }
 
   Future<void> _handleIncomingVoiceCallEntry(VoiceCallInboxEntry entry) async {
+    _recordRuntimeEvent(
+      category: 'call',
+      name: 'incoming_inbox_entry',
+      context: <String, Object?>{
+        'peerId': _normalizedUsername(entry.from),
+        'callId': entry.callId,
+        'status': entry.status.name,
+        'createdAt': entry.createdAt,
+        'expiresAt': entry.expiresAt,
+      },
+    );
     if (entry.status != VoiceCallSignalingStatus.ringing) {
       return;
     }
@@ -365,6 +516,16 @@ extension VoiceCallRuntime on RainRuntimeController {
         room.pairId != entry.pairId ||
         _normalizedUsername(room.caller) != peerId ||
         _normalizedUsername(room.callee) != localUsername) {
+      _recordRuntimeEvent(
+        category: 'call',
+        name: 'incoming_inbox_entry_ignored',
+        context: <String, Object?>{
+          'peerId': peerId,
+          'callId': entry.callId,
+          'reason': room == null ? 'missingRoom' : 'roomMismatch',
+          'roomStatus': room?.status.name,
+        },
+      );
       return;
     }
 
@@ -385,6 +546,11 @@ extension VoiceCallRuntime on RainRuntimeController {
     String peerId,
     VoiceCallFrame frame,
   ) async {
+    _recordRuntimeEvent(
+      category: 'call',
+      name: 'control_frame_received',
+      context: _voiceFrameEventContext(peerId, frame),
+    );
     if (_legacyControlChannelVoiceSignalingFrozen) {
       errorRecorder?.call(
         StateError(
@@ -460,6 +626,14 @@ extension VoiceCallRuntime on RainRuntimeController {
     VoiceCallFrame frame, {
     required VoiceCallRoom room,
   }) async {
+    _recordRuntimeEvent(
+      category: 'call',
+      name: 'incoming_invite_received',
+      context: <String, Object?>{
+        ..._voiceFrameEventContext(peerId, frame),
+        'roomStatus': room.status.name,
+      },
+    );
     final localUsername = _normalizedUsername(selfIdentity.username);
     if (room.status != VoiceCallSignalingStatus.ringing ||
         frame.callId != room.callId ||
@@ -468,16 +642,39 @@ extension VoiceCallRuntime on RainRuntimeController {
         _normalizedUsername(room.callee) != localUsername ||
         _normalizedUsername(frame.from) != _normalizedUsername(room.caller) ||
         _normalizedUsername(frame.to) != localUsername) {
+      _recordRuntimeEvent(
+        category: 'call',
+        name: 'incoming_invite_ignored',
+        context: <String, Object?>{
+          ..._voiceFrameEventContext(peerId, frame),
+          'reason': 'roomMismatch',
+          'roomStatus': room.status.name,
+        },
+      );
       return;
     }
 
     final disposition = await _prepareIncomingVoiceInvite(peerId, frame);
+    _recordRuntimeEvent(
+      category: 'call',
+      name: 'incoming_invite_disposition',
+      context: <String, Object?>{
+        ..._voiceFrameEventContext(peerId, frame),
+        'disposition': disposition.name,
+      },
+    );
     if (disposition == _IncomingVoiceInviteDisposition.ignore) {
       await _voiceCallSession?.handleFrame(frame);
       return;
     }
     if (disposition == _IncomingVoiceInviteDisposition.busy ||
         await _firstActiveTransfer() != null) {
+      _recordRuntimeEvent(
+        category: 'call',
+        name: 'incoming_invite_busy',
+        severity: 'warning',
+        context: _voiceFrameEventContext(peerId, frame),
+      );
       await _endVoiceCallInSignaling(
         callId: frame.callId,
         status: VoiceCallSignalingStatus.failed,
@@ -491,6 +688,15 @@ extension VoiceCallRuntime on RainRuntimeController {
       () => friendStore.loadFriend(peerId),
     );
     if (friend?.state != FriendState.friend) {
+      _recordRuntimeEvent(
+        category: 'call',
+        name: 'incoming_invite_rejected_friend_state',
+        severity: 'warning',
+        context: <String, Object?>{
+          ..._voiceFrameEventContext(peerId, frame),
+          'friendState': friend?.state.name,
+        },
+      );
       await _endVoiceCallInSignaling(
         callId: frame.callId,
         status: VoiceCallSignalingStatus.failed,
@@ -512,13 +718,32 @@ extension VoiceCallRuntime on RainRuntimeController {
   }
 
   Future<void> _handleVoiceInvite(String peerId, VoiceCallFrame frame) async {
+    _recordRuntimeEvent(
+      category: 'call',
+      name: 'legacy_invite_received',
+      context: _voiceFrameEventContext(peerId, frame),
+    );
     final disposition = await _prepareIncomingVoiceInvite(peerId, frame);
+    _recordRuntimeEvent(
+      category: 'call',
+      name: 'legacy_invite_disposition',
+      context: <String, Object?>{
+        ..._voiceFrameEventContext(peerId, frame),
+        'disposition': disposition.name,
+      },
+    );
     if (disposition == _IncomingVoiceInviteDisposition.ignore) {
       await _voiceCallSession?.handleFrame(frame);
       return;
     }
     if (disposition == _IncomingVoiceInviteDisposition.busy ||
         await _firstActiveTransfer() != null) {
+      _recordRuntimeEvent(
+        category: 'call',
+        name: 'legacy_invite_busy',
+        severity: 'warning',
+        context: _voiceFrameEventContext(peerId, frame),
+      );
       await _sendVoiceFrame(
         peerId,
         VoiceCallFrameType.busy,
@@ -534,6 +759,15 @@ extension VoiceCallRuntime on RainRuntimeController {
       () => friendStore.loadFriend(peerId),
     );
     if (friend?.state != FriendState.friend) {
+      _recordRuntimeEvent(
+        category: 'call',
+        name: 'legacy_invite_rejected_friend_state',
+        severity: 'warning',
+        context: <String, Object?>{
+          ..._voiceFrameEventContext(peerId, frame),
+          'friendState': friend?.state.name,
+        },
+      );
       await _sendVoiceFrame(
         peerId,
         VoiceCallFrameType.reject,
@@ -661,6 +895,17 @@ extension VoiceCallRuntime on RainRuntimeController {
         peerId,
       ),
     };
+    _recordRuntimeEvent(
+      category: 'call',
+      name: 'session_created',
+      context: <String, Object?>{
+        'peerId': peerId,
+        'callId': callId,
+        'sessionEpoch': sessionEpoch,
+        'isOutgoing': isOutgoing,
+        'mediaMode': mediaMode.name,
+      },
+    );
     final session = VoiceCallSession(
       localPeerId: selfIdentity.username,
       remotePeerId: peerId,
@@ -671,6 +916,18 @@ extension VoiceCallRuntime on RainRuntimeController {
       isOfferOwner: isOutgoing,
       mediaMode: mediaMode,
       logger: (String message) {
+        _recordRuntimeEvent(
+          category: 'call',
+          name: 'signaling_event_ignored',
+          severity: 'warning',
+          message: message,
+          context: <String, Object?>{
+            'peerId': peerId,
+            'callId': callId,
+            'sessionEpoch': sessionEpoch,
+            'mediaMode': mediaMode.name,
+          },
+        );
         errorRecorder?.call(
           StateError('Voice call signaling ignored: $message'),
           StackTrace.current,
@@ -700,6 +957,17 @@ extension VoiceCallRuntime on RainRuntimeController {
   }) {
     final voiceAdapter = _requireVoiceSignalingAdapter();
     final remoteRole = isOutgoing ? VoiceCallRole.callee : VoiceCallRole.caller;
+    _recordRuntimeEvent(
+      category: 'call',
+      name: 'firebase_watch_started',
+      context: <String, Object?>{
+        'peerId': peerId,
+        'callId': session.callId,
+        'sessionEpoch': session.sessionEpoch,
+        'isOutgoing': isOutgoing,
+        'remoteRole': remoteRole.name,
+      },
+    );
 
     _voiceSignalingSubscriptions.add(
       voiceAdapter
@@ -709,6 +977,19 @@ extension VoiceCallRuntime on RainRuntimeController {
               if (room == null || !_isLiveVoiceCallSession(session)) {
                 return;
               }
+              _recordRuntimeEvent(
+                category: 'call',
+                name: 'firebase_room_update',
+                context: <String, Object?>{
+                  'peerId': peerId,
+                  'callId': room.callId,
+                  'sessionEpoch': session.sessionEpoch,
+                  'status': room.status.name,
+                  'reasonCode': room.reasonCode,
+                  'endedBy': room.endedBy,
+                  'mediaMode': room.mediaMode.name,
+                },
+              );
               await _handleFirebaseVoiceRoomUpdate(
                 session: session,
                 room: room,
@@ -949,6 +1230,14 @@ extension VoiceCallRuntime on RainRuntimeController {
         envelope: envelope,
         purpose: purpose,
       );
+      _recordRuntimeEvent(
+        category: 'call',
+        name: 'firebase_frame_received',
+        context: <String, Object?>{
+          ..._voiceFrameEventContext(peerId, frame),
+          'purpose': purpose,
+        },
+      );
       if (!_isLiveVoiceCallSession(session)) {
         _recordLateVoiceFrame(
           session,
@@ -974,6 +1263,18 @@ extension VoiceCallRuntime on RainRuntimeController {
       }
       await session.handleFrame(frame);
     } catch (error, stackTrace) {
+      _recordRuntimeEvent(
+        category: 'call',
+        name: 'firebase_frame_failed',
+        severity: 'error',
+        message: error.toString(),
+        context: <String, Object?>{
+          'peerId': peerId,
+          'callId': session.callId,
+          'sessionEpoch': session.sessionEpoch,
+          'purpose': purpose,
+        },
+      );
       _recordVoiceSignalingError(error, stackTrace);
       if (!_isLiveVoiceCallSession(session)) {
         _recordLateVoiceFrame(
@@ -997,6 +1298,11 @@ extension VoiceCallRuntime on RainRuntimeController {
     final voiceAdapter = _requireVoiceSignalingAdapter();
     final localUsername = _normalizedUsername(selfIdentity.username);
     final now = DateTime.now().millisecondsSinceEpoch;
+    _recordRuntimeEvent(
+      category: 'call',
+      name: 'firebase_frame_send_started',
+      context: _voiceFrameEventContext(peerId, frame),
+    );
     switch (frame.type) {
       case VoiceCallFrameType.invite:
         await voiceAdapter.createOutgoingCall(
@@ -1099,6 +1405,11 @@ extension VoiceCallRuntime on RainRuntimeController {
         }
         break;
     }
+    _recordRuntimeEvent(
+      category: 'call',
+      name: 'firebase_frame_send_completed',
+      context: _voiceFrameEventContext(peerId, frame),
+    );
   }
 
   void _applyVoiceSessionState(
@@ -1672,8 +1983,14 @@ extension VoiceCallRuntime on RainRuntimeController {
     String peerId,
   ) async {
     final media = await manager.createCallMediaConnection(peerId);
+    _recordRuntimeEvent(
+      category: 'call',
+      name: 'video_media_connection_created',
+      context: <String, Object?>{'peerId': peerId},
+    );
     _lastVideoCallRendererState = null;
     _handledVideoFirstFrameTimeoutCallId = null;
+    _lastLoggedVideoRendererSignature = null;
     _videoCallMediaConnection = media;
     final renderers = VideoCallRenderers(
       rendererFactory: videoCallRendererFactory,
@@ -1683,6 +2000,13 @@ extension VoiceCallRuntime on RainRuntimeController {
     _videoCallRendererSubscription = renderers.onStateChanged.listen(
       _handleVideoRendererState,
       onError: (Object error, StackTrace stackTrace) {
+        _recordRuntimeEvent(
+          category: 'call',
+          name: 'video_renderer_stream_error',
+          severity: 'error',
+          message: error.toString(),
+          context: <String, Object?>{'peerId': peerId},
+        );
         _handleVideoRendererFailure(peerId, error, stackTrace);
       },
     );
@@ -1706,6 +2030,28 @@ extension VoiceCallRuntime on RainRuntimeController {
 
   void _handleVideoRendererState(VideoCallRendererState rendererState) {
     _lastVideoCallRendererState = rendererState;
+    final signature = <Object?>[
+      rendererState.hasLocalStream,
+      rendererState.hasRemoteStream,
+      rendererState.localFirstFrameAt != null,
+      rendererState.remoteFirstFrameAt != null,
+      rendererState.remoteFirstFrameTimedOut,
+    ].join('|');
+    if (_lastLoggedVideoRendererSignature != signature) {
+      _lastLoggedVideoRendererSignature = signature;
+      _recordRuntimeEvent(
+        category: 'call',
+        name: 'video_renderer_state',
+        context: <String, Object?>{
+          ..._voiceCallEventContext(_voiceCallState),
+          'hasLocalStream': rendererState.hasLocalStream,
+          'hasRemoteStream': rendererState.hasRemoteStream,
+          'localFirstFrameAt': _isoTimestamp(rendererState.localFirstFrameAt),
+          'remoteFirstFrameAt': _isoTimestamp(rendererState.remoteFirstFrameAt),
+          'remoteFirstFrameTimedOut': rendererState.remoteFirstFrameTimedOut,
+        },
+      );
+    }
     final current = _voiceCallState;
     if (!current.hasCall || !current.isVideo) {
       return;
@@ -1764,6 +2110,13 @@ extension VoiceCallRuntime on RainRuntimeController {
     Object error,
     StackTrace stackTrace,
   ) {
+    _recordRuntimeEvent(
+      category: 'call',
+      name: 'video_renderer_failed',
+      severity: 'error',
+      message: error.toString(),
+      context: <String, Object?>{'peerId': peerId},
+    );
     errorRecorder?.call(
       error,
       stackTrace,
@@ -1815,6 +2168,15 @@ extension VoiceCallRuntime on RainRuntimeController {
         current.callId == null) {
       return;
     }
+    _recordRuntimeEvent(
+      category: 'call',
+      name: 'video_call_backgrounded',
+      severity: 'warning',
+      context: <String, Object?>{
+        ..._voiceCallEventContext(current),
+        'lifecycleState': state.name,
+      },
+    );
     _recordVoiceCallRuntimeFailure(
       current,
       failureCode: _voiceCallFailedReasonCode,
@@ -1852,8 +2214,16 @@ extension VoiceCallRuntime on RainRuntimeController {
 
   Future<void> _disposeVideoCallResources() async {
     final renderers = _videoCallRenderers;
+    if (renderers != null || _videoCallMediaConnection != null) {
+      _recordRuntimeEvent(
+        category: 'call',
+        name: 'video_resources_dispose_started',
+        context: _voiceCallEventContext(_voiceCallState),
+      );
+    }
     _videoCallRenderers = null;
     _videoCallMediaConnection = null;
+    _lastLoggedVideoRendererSignature = null;
     await _videoCallRendererSubscription?.cancel();
     _videoCallRendererSubscription = null;
     if (renderers == null) {
@@ -1862,7 +2232,19 @@ extension VoiceCallRuntime on RainRuntimeController {
     _lastVideoCallRendererState = renderers.state;
     try {
       await renderers.dispose();
+      _recordRuntimeEvent(
+        category: 'call',
+        name: 'video_resources_disposed',
+        context: _voiceCallEventContext(_voiceCallState),
+      );
     } catch (error, stackTrace) {
+      _recordRuntimeEvent(
+        category: 'call',
+        name: 'video_resources_dispose_failed',
+        severity: 'warning',
+        message: error.toString(),
+        context: _voiceCallEventContext(_voiceCallState),
+      );
       errorRecorder?.call(
         error,
         stackTrace,
@@ -1881,6 +2263,13 @@ extension VoiceCallRuntime on RainRuntimeController {
   }
 
   void _recordVoiceSignalingError(Object error, StackTrace stackTrace) {
+    _recordRuntimeEvent(
+      category: 'call',
+      name: 'signaling_error',
+      severity: 'error',
+      message: error.toString(),
+      context: _voiceCallEventContext(_voiceCallState),
+    );
     errorRecorder?.call(
       error,
       stackTrace,
@@ -1907,6 +2296,17 @@ extension VoiceCallRuntime on RainRuntimeController {
     bool bestEffort = false,
   }) async {
     try {
+      _recordRuntimeEvent(
+        category: 'call',
+        name: 'signaling_end_call_started',
+        context: <String, Object?>{
+          'callId': callId,
+          'status': status.name,
+          'reason': reason,
+          'reasonCode': reasonCode,
+          'bestEffort': bestEffort,
+        },
+      );
       await _requireVoiceSignalingAdapter().endCall(
         callId: callId,
         username: _normalizedUsername(selfIdentity.username),
@@ -1915,7 +2315,28 @@ extension VoiceCallRuntime on RainRuntimeController {
         reason: reason,
         reasonCode: reasonCode,
       );
-    } catch (_) {
+      _recordRuntimeEvent(
+        category: 'call',
+        name: 'signaling_end_call_completed',
+        context: <String, Object?>{
+          'callId': callId,
+          'status': status.name,
+          'reasonCode': reasonCode,
+        },
+      );
+    } catch (error) {
+      _recordRuntimeEvent(
+        category: 'call',
+        name: 'signaling_end_call_failed',
+        severity: bestEffort ? 'warning' : 'error',
+        message: error.toString(),
+        context: <String, Object?>{
+          'callId': callId,
+          'status': status.name,
+          'reasonCode': reasonCode,
+          'bestEffort': bestEffort,
+        },
+      );
       if (!bestEffort) {
         rethrow;
       }
@@ -1930,6 +2351,18 @@ extension VoiceCallRuntime on RainRuntimeController {
     String? failureDetail,
   }) async {
     final current = _voiceCallState;
+    _recordRuntimeEvent(
+      category: 'call',
+      name: 'end_for_peer_requested',
+      message: detail,
+      context: <String, Object?>{
+        ..._voiceCallEventContext(current),
+        'peerId': _normalizedUsername(peerId),
+        'notifyPeer': notifyPeer,
+        'failureReason': failureReason?.name,
+        'failureDetail': failureDetail,
+      },
+    );
     if (current.peerId != _normalizedUsername(peerId)) {
       return;
     }
@@ -2063,6 +2496,12 @@ extension VoiceCallRuntime on RainRuntimeController {
         current.phase == VoiceCallPhase.ending) {
       return;
     }
+    _recordRuntimeEvent(
+      category: 'call',
+      name: 'media_reconnecting_started',
+      severity: 'warning',
+      context: _voiceCallEventContext(current),
+    );
     final now = DateTime.now().millisecondsSinceEpoch;
     final session = _voiceCallSession;
     if (session != null && session.callId == current.callId) {
@@ -2086,6 +2525,11 @@ extension VoiceCallRuntime on RainRuntimeController {
         !current.mediaReconnecting) {
       return;
     }
+    _recordRuntimeEvent(
+      category: 'call',
+      name: 'media_reconnecting_cleared',
+      context: _voiceCallEventContext(current),
+    );
     final session = _voiceCallSession;
     if (session != null && session.callId == current.callId) {
       session.clearMediaReconnecting();
@@ -2150,6 +2594,17 @@ extension VoiceCallRuntime on RainRuntimeController {
         detail ??
         _voiceCallFailureDetailForError(error) ??
         _voiceCallErrorMessage(error);
+    _recordRuntimeEvent(
+      category: 'call',
+      name: 'failed',
+      severity: 'error',
+      message: effectiveDetail,
+      context: <String, Object?>{
+        ..._voiceCallEventContext(current),
+        'nativeError': error.toString(),
+        'failureReason': effectiveFailureReason?.name,
+      },
+    );
     if (current.callId != null) {
       await _endVoiceCallInSignaling(
         callId: current.callId!,
@@ -2236,6 +2691,18 @@ extension VoiceCallRuntime on RainRuntimeController {
   }
 
   void _recordLateVoiceFrame(VoiceCallSession session, String message) {
+    _recordRuntimeEvent(
+      category: 'call',
+      name: 'late_frame_ignored',
+      severity: 'warning',
+      message: message,
+      context: <String, Object?>{
+        'peerId': session.remotePeerId,
+        'callId': session.callId,
+        'sessionEpoch': session.sessionEpoch,
+        'mediaMode': session.mediaMode.name,
+      },
+    );
     errorRecorder?.call(
       StateError(
         'Ignored late voice signaling for ${session.callId}/'
@@ -2247,6 +2714,57 @@ extension VoiceCallRuntime on RainRuntimeController {
     );
   }
 
+  Map<String, Object?> _voiceCallEventContext(VoiceCallState state) {
+    return <String, Object?>{
+      'peerId': state.peerId,
+      'callId': state.callId,
+      'sessionEpoch': state.sessionEpoch,
+      'phase': state.phase.name,
+      'mediaMode': state.mediaMode.name,
+      'isOutgoing': state.isOutgoing,
+      'isMuted': state.isMuted,
+      'isRemoteMuted': state.isRemoteMuted,
+      'isCameraMuted': state.isCameraMuted,
+      'isRemoteCameraMuted': state.isRemoteCameraMuted,
+      'isDeafened': state.isDeafened,
+      'hasLocalVideo': state.hasLocalVideo,
+      'hasRemoteVideo': state.hasRemoteVideo,
+      'videoFirstFrameTimedOut': state.videoFirstFrameTimedOut,
+      'mediaReconnecting': state.mediaReconnecting,
+      'failureReason': state.failureReason?.name,
+      'detail': state.detail,
+      'error': state.error?.toString(),
+      'startedAt': state.startedAt,
+      'updatedAt': state.updatedAt,
+      'selectedCandidateRoute': state.peerId == null
+          ? null
+          : _selectedVoiceCallCandidateRoute(state.peerId!),
+    };
+  }
+
+  Map<String, Object?> _voiceFrameEventContext(
+    String peerId,
+    VoiceCallFrame frame,
+  ) {
+    return <String, Object?>{
+      'peerId': _normalizedUsername(peerId),
+      'callId': frame.callId,
+      'sessionEpoch': frame.sessionEpoch,
+      'frameType': frame.type.name,
+      'seq': frame.seq,
+      'from': _normalizedUsername(frame.from),
+      'to': _normalizedUsername(frame.to),
+      'mediaMode': frame.mediaMode.name,
+      'reasonCode': frame.reasonCode,
+      'reason': frame.reason,
+      'hasSdp': frame.sdp != null,
+      'sdpType': frame.sdpType,
+      'hasCandidate': frame.candidate != null,
+      'muted': frame.muted,
+      'cameraMuted': frame.cameraMuted,
+    };
+  }
+
   void _setVoiceCallState(VoiceCallState state) {
     if (!state.mediaReconnecting ||
         state.phase == VoiceCallPhase.idle ||
@@ -2254,10 +2772,50 @@ extension VoiceCallRuntime on RainRuntimeController {
         state.phase == VoiceCallPhase.ending) {
       _cancelVoiceCallReconnectGrace();
     }
+    _recordVoiceCallStateIfChanged(state);
     _voiceCallState = state;
     if (!_voiceCallStateController.isClosed) {
       _voiceCallStateController.add(state);
     }
+  }
+
+  void _recordVoiceCallStateIfChanged(VoiceCallState state) {
+    final signature = <Object?>[
+      state.peerId,
+      state.callId,
+      state.sessionEpoch,
+      state.phase,
+      state.mediaMode,
+      state.isOutgoing,
+      state.isMuted,
+      state.isRemoteMuted,
+      state.isCameraMuted,
+      state.isRemoteCameraMuted,
+      state.isDeafened,
+      state.hasLocalVideo,
+      state.hasRemoteVideo,
+      state.videoFirstFrameTimedOut,
+      state.mediaReconnecting,
+      state.failureReason,
+      state.detail,
+      state.error?.toString(),
+    ].join('|');
+    if (_lastLoggedVoiceCallStateSignature == signature) {
+      return;
+    }
+    _lastLoggedVoiceCallStateSignature = signature;
+    final severity = switch (state.phase) {
+      VoiceCallPhase.failed => 'error',
+      VoiceCallPhase.ending => 'warning',
+      _ => 'info',
+    };
+    _recordRuntimeEvent(
+      category: 'call',
+      name: 'state_changed',
+      severity: severity,
+      message: state.detail,
+      context: _voiceCallEventContext(state),
+    );
   }
 
   String _newVoiceCallId(String peerId) {

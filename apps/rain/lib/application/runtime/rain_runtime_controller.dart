@@ -34,6 +34,15 @@ typedef RuntimeErrorRecorder =
       String? flutterContext,
     });
 
+typedef RuntimeEventRecorder =
+    void Function({
+      required String category,
+      required String name,
+      String severity,
+      String? message,
+      Map<String, Object?> context,
+    });
+
 String _formatRetryDelay(Duration delay) {
   if (delay.inSeconds <= 1) {
     return '1 second';
@@ -72,6 +81,7 @@ class RainRuntimeController with WidgetsBindingObserver {
     this.videoCallRemoteFirstFrameTimeout = const Duration(seconds: 8),
     this.activeCallReconnectGrace = const Duration(seconds: 8),
     this.errorRecorder,
+    this.eventRecorder,
   }) : fileTransferStore = fileTransferStore ?? FileTransferStore(database),
        voiceSignalingAdapter =
            voiceSignalingAdapter ??
@@ -108,6 +118,7 @@ class RainRuntimeController with WidgetsBindingObserver {
   final int maxPassivePeerListeners;
   final Duration networkRecoveryDebounce;
   final RuntimeErrorRecorder? errorRecorder;
+  final RuntimeEventRecorder? eventRecorder;
   final Future<Directory> Function() _documentsDirectoryProvider;
   final Future<void> Function()? startupMediaPermissionWarmup;
   final VideoCallRendererFactory videoCallRendererFactory;
@@ -140,6 +151,8 @@ class RainRuntimeController with WidgetsBindingObserver {
   VideoCallRenderers? _videoCallRenderers;
   VideoCallRendererState? _lastVideoCallRendererState;
   String? _handledVideoFirstFrameTimeoutCallId;
+  String? _lastLoggedVoiceCallStateSignature;
+  String? _lastLoggedVideoRendererSignature;
   StreamSubscription<VideoCallRendererState>? _videoCallRendererSubscription;
   final List<StreamSubscription<dynamic>> _voiceSignalingSubscriptions =
       <StreamSubscription<dynamic>>[];
@@ -179,6 +192,15 @@ class RainRuntimeController with WidgetsBindingObserver {
       return;
     }
     await media.refreshProcessingConfig();
+    _recordRuntimeEvent(
+      category: 'call',
+      name: 'media_processing_config_refreshed',
+      context: <String, Object?>{
+        'callId': _voiceCallState.callId,
+        'peerId': _voiceCallState.peerId,
+        'mediaMode': _voiceCallState.mediaMode.name,
+      },
+    );
   }
 
   Stream<VoiceCallState> watchVoiceCallState() async* {
@@ -204,6 +226,7 @@ class RainRuntimeController with WidgetsBindingObserver {
       return;
     }
     _started = true;
+    _recordRuntimeEvent(category: 'runtime', name: 'start_requested');
     WidgetsBinding.instance.addObserver(this);
 
     try {
@@ -234,8 +257,16 @@ class RainRuntimeController with WidgetsBindingObserver {
     await _localMutations.run(offlineQueueStore.recoverInFlightMessages);
     await _syncRelationships();
     await _warmUpStartupMediaPermissions();
-
     final existingFriends = await friendStore.loadFriends();
+    _recordRuntimeEvent(
+      category: 'runtime',
+      name: 'started',
+      context: <String, Object?>{
+        'acceptedFriendCount': existingFriends.length,
+        'hasBrain': brain != null,
+      },
+    );
+
     for (final friend in existingFriends) {
       if (!_isBlockedState(friend.state)) {
         _watchPresence(friend.username);
@@ -310,7 +341,14 @@ class RainRuntimeController with WidgetsBindingObserver {
 
     if (brain != null) {
       _subscriptions.add(
-        brain!.onSessionChanged.listen(_recordSessionAttemptState),
+        brain!.onSessionChanged.listen((Session session) {
+          _recordRuntimeEvent(
+            category: 'connection',
+            name: 'session_changed',
+            context: _sessionEventContext(session),
+          );
+          _recordSessionAttemptState(session);
+        }),
       );
 
       _subscriptions.add(
@@ -322,8 +360,18 @@ class RainRuntimeController with WidgetsBindingObserver {
       _subscriptions.add(
         brain!.onPeerConnected.listen((Session session) async {
           if (_manualDisconnectedPeers.contains(session.peerId)) {
+            _recordRuntimeEvent(
+              category: 'connection',
+              name: 'peer_connected_ignored_manual_disconnect',
+              context: _sessionEventContext(session),
+            );
             return;
           }
+          _recordRuntimeEvent(
+            category: 'connection',
+            name: 'peer_connected',
+            context: _sessionEventContext(session),
+          );
           _recoverableDisconnectedPeers.remove(session.peerId);
           _clearVoiceCallReconnectingForPeer(session.peerId);
           _connectionCoordinator.recordAttemptSuccess(session.peerId);
@@ -343,6 +391,15 @@ class RainRuntimeController with WidgetsBindingObserver {
           final recordedIntent =
               pendingIntent ??
               _connectionCoordinator.disconnectIntentFor(peerId);
+          _recordRuntimeEvent(
+            category: 'connection',
+            name: 'peer_disconnected',
+            context: <String, Object?>{
+              'peerId': peerId,
+              'intent': recordedIntent?.name,
+              'hadPendingIntent': pendingIntent != null,
+            },
+          );
           if (recordedIntent == PeerDisconnectIntent.localManual ||
               recordedIntent == PeerDisconnectIntent.localShutdown ||
               recordedIntent == PeerDisconnectIntent.transportLost ||
@@ -428,6 +485,58 @@ class RainRuntimeController with WidgetsBindingObserver {
         }),
       );
     }
+  }
+
+  void _recordRuntimeEvent({
+    required String category,
+    required String name,
+    String severity = 'info',
+    String? message,
+    Map<String, Object?> context = const <String, Object?>{},
+  }) {
+    final recorder = eventRecorder;
+    if (recorder == null) {
+      return;
+    }
+    try {
+      recorder(
+        category: category,
+        name: name,
+        severity: severity,
+        message: message,
+        context: <String, Object?>{
+          'self': _normalizedUsername(selfIdentity.username),
+          'started': _started,
+          'shutDown': _shutDown,
+          ...context,
+        },
+      );
+    } catch (_) {
+      // Diagnostics must never affect runtime behavior.
+    }
+  }
+
+  Map<String, Object?> _sessionEventContext(Session session) {
+    final route = session.route;
+    return <String, Object?>{
+      'peerId': session.peerId,
+      'state': session.state.name,
+      'phase': session.phase.name,
+      'detail': session.detail,
+      'error': session.error,
+      'retryAttempt': session.retryAttempt,
+      'roomId': session.roomId,
+      'isOfferOwner': session.isOfferOwner,
+      'routeKind': route.kind.name,
+      'selectedCandidatePairId': route.selectedCandidatePairId,
+      'localCandidateType': route.localCandidateType,
+      'remoteCandidateType': route.remoteCandidateType,
+      'addressFamily': route.addressFamily.name,
+      'protocol': route.protocol,
+      'relayProtocol': route.relayProtocol,
+      'rtt': route.rtt,
+      'bitrate': route.bitrate,
+    };
   }
 
   Future<void> _warmUpStartupMediaPermissions() async {
@@ -527,6 +636,17 @@ class RainRuntimeController with WidgetsBindingObserver {
     Duration connectionTimeout = const Duration(seconds: 60),
   }) async {
     final normalizedUsername = _normalizedUsername(username);
+    _recordRuntimeEvent(
+      category: 'connection',
+      name: 'connect_requested',
+      context: <String, Object?>{
+        'peerId': normalizedUsername,
+        'interactive': interactive,
+        'waitForConnected': waitForConnected,
+        'allowStalePresence': allowStalePresence,
+        'bypassRetryBackoff': bypassRetryBackoff,
+      },
+    );
     final connectDecision = RuntimeInteractionGuard.canConnectPeer(
       peerId: normalizedUsername,
       interactive: interactive,
@@ -534,6 +654,19 @@ class RainRuntimeController with WidgetsBindingObserver {
       peerConnectionAvailable: brain != null,
     );
     if (!connectDecision.allowed) {
+      _recordRuntimeEvent(
+        category: 'connection',
+        name: 'connect_blocked',
+        severity: interactive ? 'warning' : 'info',
+        message: connectDecision.userMessage,
+        context: <String, Object?>{
+          'peerId': normalizedUsername,
+          'reasonCode': connectDecision.reasonCode.name,
+          'blockingPeerId': connectDecision.blockingPeerId,
+          'callId': connectDecision.callId,
+          'transferId': connectDecision.transferId,
+        },
+      );
       if (interactive) {
         connectDecision.throwIfDenied();
       }
@@ -563,6 +696,16 @@ class RainRuntimeController with WidgetsBindingObserver {
           null => 'Could not find @$normalizedUsername in your friends list.',
         };
         if (message != null) {
+          _recordRuntimeEvent(
+            category: 'connection',
+            name: 'connect_blocked_friend_state',
+            severity: 'warning',
+            message: message,
+            context: <String, Object?>{
+              'peerId': normalizedUsername,
+              'friendState': friend?.state.name,
+            },
+          );
           throw StateError(message);
         }
       }
@@ -570,14 +713,29 @@ class RainRuntimeController with WidgetsBindingObserver {
     }
     if (_manualDisconnectedPeers.contains(normalizedUsername)) {
       if (!interactive) {
+        _recordRuntimeEvent(
+          category: 'connection',
+          name: 'connect_skipped_manual_disconnect',
+          context: <String, Object?>{'peerId': normalizedUsername},
+        );
         return;
       }
+      _recordRuntimeEvent(
+        category: 'connection',
+        name: 'manual_disconnect_cleared',
+        context: <String, Object?>{'peerId': normalizedUsername},
+      );
       _manualDisconnectedPeers.remove(normalizedUsername);
       _connectionCoordinator.clearDisconnectIntent(normalizedUsername);
       _recoverableDisconnectedPeers.remove(normalizedUsername);
     }
     var current = brain!.getSession(normalizedUsername);
     if (current?.state == SessionState.connected) {
+      _recordRuntimeEvent(
+        category: 'connection',
+        name: 'connect_already_connected',
+        context: _sessionEventContext(current!),
+      );
       _recoverableDisconnectedPeers.remove(normalizedUsername);
       return;
     }
@@ -618,6 +776,19 @@ class RainRuntimeController with WidgetsBindingObserver {
       () => friendStore.updatePresence(normalizedUsername, isOnline),
     );
     if (!isOnline && !allowStalePresence) {
+      _recordRuntimeEvent(
+        category: 'connection',
+        name: 'connect_blocked_offline',
+        severity: interactive ? 'warning' : 'info',
+        message:
+            '@$normalizedUsername is offline. Keep both apps open, then try again.',
+        context: <String, Object?>{
+          'peerId': normalizedUsername,
+          'friendPresence': friend?.isOnline,
+          'backendPresence': backendIdentity?.online,
+          'allowStalePresence': allowStalePresence,
+        },
+      );
       if (interactive) {
         throw StateError(
           '@$normalizedUsername is offline. Keep both apps open, then try again.',
@@ -630,6 +801,17 @@ class RainRuntimeController with WidgetsBindingObserver {
     } else {
       final retryGate = _connectionCoordinator.retryGate(normalizedUsername);
       if (!retryGate.allowed) {
+        _recordRuntimeEvent(
+          category: 'connection',
+          name: 'connect_blocked_retry_backoff',
+          severity: interactive ? 'warning' : 'info',
+          message:
+              'Connection attempt is cooling down for ${_formatRetryDelay(retryGate.remaining)}.',
+          context: <String, Object?>{
+            'peerId': normalizedUsername,
+            'remainingMs': retryGate.remaining.inMilliseconds,
+          },
+        );
         if (interactive) {
           throw StateError(
             'Connection to @$normalizedUsername is cooling down after a failed attempt. Try again in ${_formatRetryDelay(retryGate.remaining)}.',
@@ -639,6 +821,11 @@ class RainRuntimeController with WidgetsBindingObserver {
       }
     }
     await _registerPeerListener(normalizedUsername, bestEffort: false);
+    _recordRuntimeEvent(
+      category: 'connection',
+      name: 'connect_signaling_started',
+      context: <String, Object?>{'peerId': normalizedUsername},
+    );
     await brain!.connect(normalizedUsername);
     _recoverableDisconnectedPeers.remove(normalizedUsername);
     if (waitForConnected) {
@@ -646,11 +833,21 @@ class RainRuntimeController with WidgetsBindingObserver {
         normalizedUsername,
         timeout: connectionTimeout,
       );
+      _recordRuntimeEvent(
+        category: 'connection',
+        name: 'connect_wait_completed',
+        context: <String, Object?>{'peerId': normalizedUsername},
+      );
     }
   }
 
   Future<void> disconnectPeer(String username) async {
     final normalizedUsername = _normalizedUsername(username);
+    _recordRuntimeEvent(
+      category: 'connection',
+      name: 'disconnect_manual_requested',
+      context: <String, Object?>{'peerId': normalizedUsername},
+    );
     _manualDisconnectedPeers.add(normalizedUsername);
     _recoverableDisconnectedPeers.remove(normalizedUsername);
     _connectionCoordinator.recordDisconnectIntent(
@@ -667,12 +864,23 @@ class RainRuntimeController with WidgetsBindingObserver {
       PeerDisconnectIntent.localManual,
     );
     await _unregisterPeerListener(normalizedUsername);
+    _recordRuntimeEvent(
+      category: 'connection',
+      name: 'disconnect_manual_completed',
+      context: <String, Object?>{'peerId': normalizedUsername},
+    );
   }
 
   Future<void> handleNetworkLost(String reason) async {
     if (_shutDown) {
       return;
     }
+    _recordRuntimeEvent(
+      category: 'connection',
+      name: 'network_lost',
+      severity: 'warning',
+      message: reason,
+    );
 
     List<FileTransferRecord> activeTransfers;
     try {
@@ -748,6 +956,11 @@ class RainRuntimeController with WidgetsBindingObserver {
     }
     _pendingPeerDisconnectIntents[peerId] = intent;
     _connectionCoordinator.recordDisconnectIntent(peerId, intent);
+    _recordRuntimeEvent(
+      category: 'connection',
+      name: 'brain_disconnect_requested',
+      context: <String, Object?>{'peerId': peerId, 'intent': intent.name},
+    );
     await manager.disconnect(peerId);
   }
 
@@ -755,6 +968,14 @@ class RainRuntimeController with WidgetsBindingObserver {
     if (_shutDown || !_started) {
       return;
     }
+    _recordRuntimeEvent(
+      category: 'connection',
+      name: 'network_available',
+      message: reason,
+      context: <String, Object?>{
+        'recoverablePeerCount': _recoverableDisconnectedPeers.length,
+      },
+    );
 
     try {
       await adapter.setPresence(selfIdentity.username, true);
@@ -774,15 +995,36 @@ class RainRuntimeController with WidgetsBindingObserver {
           manualDisconnectedPeers: _manualDisconnectedPeers,
         );
         if (!recoveryDecision.allowed) {
+          _recordRuntimeEvent(
+            category: 'connection',
+            name: 'auto_recovery_blocked',
+            context: <String, Object?>{
+              'peerId': peerId,
+              'reasonCode': recoveryDecision.reasonCode.name,
+              'blockingPeerId': recoveryDecision.blockingPeerId,
+            },
+          );
           continue;
         }
         try {
+          _recordRuntimeEvent(
+            category: 'connection',
+            name: 'auto_recovery_started',
+            context: <String, Object?>{'peerId': peerId},
+          );
           await connectPeer(
             peerId,
             allowStalePresence: true,
             bypassRetryBackoff: true,
           );
         } catch (error) {
+          _recordRuntimeEvent(
+            category: 'connection',
+            name: 'auto_recovery_failed',
+            severity: 'warning',
+            message: error.toString(),
+            context: <String, Object?>{'peerId': peerId},
+          );
           _connectionCoordinator.recordAttemptFailure(peerId, error);
         }
       }
@@ -805,6 +1047,11 @@ class RainRuntimeController with WidgetsBindingObserver {
   }
 
   Future<void> closeForAppExit(AppExitReason reason) async {
+    _recordRuntimeEvent(
+      category: 'runtime',
+      name: 'app_exit_requested',
+      context: <String, Object?>{'reason': reason.name},
+    );
     await _shutdown(
       markOffline: true,
       signOut: false,
@@ -813,6 +1060,7 @@ class RainRuntimeController with WidgetsBindingObserver {
   }
 
   Future<void> logOut() async {
+    _recordRuntimeEvent(category: 'runtime', name: 'logout_requested');
     await _shutdown(markOffline: true, signOut: true, clearLocalSession: true);
   }
 
@@ -1175,11 +1423,23 @@ class RainRuntimeController with WidgetsBindingObserver {
   void _recordSessionAttemptState(Session session) {
     switch (session.state) {
       case SessionState.connected:
+        _recordRuntimeEvent(
+          category: 'connection',
+          name: 'session_connected',
+          context: _sessionEventContext(session),
+        );
         _recoverableDisconnectedPeers.remove(session.peerId);
         _clearVoiceCallReconnectingForPeer(session.peerId);
         _connectionCoordinator.recordAttemptSuccess(session.peerId);
         break;
       case SessionState.failed:
+        _recordRuntimeEvent(
+          category: 'connection',
+          name: 'session_failed',
+          severity: 'warning',
+          message: session.error ?? session.detail,
+          context: _sessionEventContext(session),
+        );
         _connectionCoordinator.recordAttemptFailure(
           session.peerId,
           session.error ?? session.detail,
@@ -1244,6 +1504,15 @@ class RainRuntimeController with WidgetsBindingObserver {
       await existing;
       return;
     }
+    _recordRuntimeEvent(
+      category: 'runtime',
+      name: 'shutdown_started',
+      context: <String, Object?>{
+        'markOffline': markOffline,
+        'signOut': signOut,
+        'clearLocalSession': clearLocalSession,
+      },
+    );
     _shutDown = true;
     final shutdownFuture = _runShutdown(
       markOffline: markOffline,
@@ -1252,6 +1521,7 @@ class RainRuntimeController with WidgetsBindingObserver {
     );
     _shutdownFuture = shutdownFuture;
     await shutdownFuture;
+    _recordRuntimeEvent(category: 'runtime', name: 'shutdown_completed');
   }
 
   Future<void> _runShutdown({

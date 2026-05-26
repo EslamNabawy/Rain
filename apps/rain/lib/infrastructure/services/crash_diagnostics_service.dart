@@ -141,6 +141,9 @@ class CrashDiagnosticsService {
        _saveFile = saveFile ?? FilePicker.saveFile;
 
   static final CrashDiagnosticsService instance = CrashDiagnosticsService();
+  static const int _maxEventLogBytes = 1024 * 1024;
+  static const int _maxEventLogLines = 1000;
+  static const int _maxEventContextStringLength = 512;
 
   final CrashDiagnosticsDirectoryProvider _directoryProvider;
   final CrashDiagnosticsAppInfoProvider _appInfoProvider;
@@ -214,13 +217,46 @@ class CrashDiagnosticsService {
 
     try {
       _lastCrashFile(directory).writeAsStringSync(encoded, flush: true);
-      _eventLogFile(directory).writeAsStringSync(
-        '${jsonEncode(record.toJson())}\n',
-        mode: FileMode.append,
-        flush: true,
-      );
+      _appendEventRecordSync(directory, <String, Object?>{
+        'kind': 'error',
+        'record': record.toJson(),
+      });
     } on FileSystemException catch (fileError) {
       debugPrint('Rain diagnostics write failed: $fileError');
+    }
+  }
+
+  void recordEventSync({
+    required String category,
+    required String name,
+    String severity = 'info',
+    String? message,
+    Map<String, Object?> context = const <String, Object?>{},
+  }) {
+    final directory = _directory;
+    if (directory == null) {
+      return;
+    }
+    final normalizedCategory = category.trim();
+    final normalizedName = name.trim();
+    if (normalizedCategory.isEmpty || normalizedName.isEmpty) {
+      return;
+    }
+
+    try {
+      _appendEventRecordSync(directory, <String, Object?>{
+        'kind': 'app_event',
+        'recordedAt': _clock().toUtc().toIso8601String(),
+        'category': normalizedCategory,
+        'name': normalizedName,
+        'severity': severity.trim().isEmpty ? 'info' : severity.trim(),
+        if (message != null && message.trim().isNotEmpty)
+          'message': _trimDiagnosticString(message),
+        if (context.isNotEmpty)
+          'context': _sanitizeDiagnosticMap(context, depth: 0),
+      });
+    } on FileSystemException catch (fileError) {
+      debugPrint('Rain diagnostics event write failed: $fileError');
     }
   }
 
@@ -338,6 +374,31 @@ class CrashDiagnosticsService {
     }
   }
 
+  void _appendEventRecordSync(
+    Directory directory,
+    Map<String, Object?> record,
+  ) {
+    final file = _eventLogFile(directory);
+    file.writeAsStringSync(
+      '${jsonEncode(record)}\n',
+      mode: FileMode.append,
+      flush: true,
+    );
+    _trimEventLogSync(file);
+  }
+
+  void _trimEventLogSync(File file) {
+    if (!file.existsSync() || file.lengthSync() <= _maxEventLogBytes) {
+      return;
+    }
+    final lines = file.readAsLinesSync();
+    final start = lines.length > _maxEventLogLines
+        ? lines.length - _maxEventLogLines
+        : 0;
+    final trimmed = lines.skip(start).join('\n');
+    file.writeAsStringSync(trimmed.isEmpty ? '' : '$trimmed\n', flush: true);
+  }
+
   static Future<Directory> _defaultDirectoryProvider() {
     return getApplicationSupportDirectory();
   }
@@ -382,5 +443,68 @@ class CrashDiagnosticsService {
     return value.map<String, Object?>(
       (key, value) => MapEntry(key.toString(), value),
     );
+  }
+
+  static Map<String, Object?> _sanitizeDiagnosticMap(
+    Map<String, Object?> value, {
+    required int depth,
+  }) {
+    if (depth >= 3) {
+      return const <String, Object?>{};
+    }
+    final sanitized = <String, Object?>{};
+    for (final entry in value.entries) {
+      final key = entry.key.trim();
+      if (key.isEmpty) {
+        continue;
+      }
+      sanitized[key] = _sanitizeDiagnosticValue(entry.value, depth: depth + 1);
+    }
+    return sanitized;
+  }
+
+  static Object? _sanitizeDiagnosticValue(Object? value, {required int depth}) {
+    if (value == null || value is num || value is bool) {
+      return value;
+    }
+    if (value is DateTime) {
+      return value.toUtc().toIso8601String();
+    }
+    if (value is String) {
+      return _trimDiagnosticString(value);
+    }
+    if (value is Enum) {
+      return value.name;
+    }
+    if (value is Iterable) {
+      if (depth >= 3) {
+        return const <Object?>[];
+      }
+      return value
+          .take(20)
+          .map((Object? item) {
+            return _sanitizeDiagnosticValue(item, depth: depth + 1);
+          })
+          .toList(growable: false);
+    }
+    if (value is Map) {
+      if (depth >= 3) {
+        return const <String, Object?>{};
+      }
+      return _sanitizeDiagnosticMap(
+        value.map<String, Object?>(
+          (key, value) => MapEntry(key.toString(), value),
+        ),
+        depth: depth,
+      );
+    }
+    return _trimDiagnosticString(value.toString());
+  }
+
+  static String _trimDiagnosticString(String value) {
+    if (value.length <= _maxEventContextStringLength) {
+      return value;
+    }
+    return '${value.substring(0, _maxEventContextStringLength)}...';
   }
 }

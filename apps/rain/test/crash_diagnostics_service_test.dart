@@ -81,6 +81,16 @@ void main() {
       );
 
       await service.initialize();
+      service.recordEventSync(
+        category: 'call',
+        name: 'state_changed',
+        context: <String, Object?>{
+          'peerId': 'bob',
+          'callId': 'call-1',
+          'phase': 'connectingMedia',
+          'sdp': List<String>.filled(900, 'x').join(),
+        },
+      );
       service.recordErrorSync(
         ArgumentError('bad route'),
         StackTrace.fromString('stack-line-2'),
@@ -98,9 +108,66 @@ void main() {
       expect(decoded['exportedAt'], '2026-05-22T01:02:03.000Z');
       expect(decoded['lastCrash'], isA<Map<String, dynamic>>());
       expect(decoded['events'], isA<List<dynamic>>());
-      expect(decoded['events'] as List<dynamic>, isNotEmpty);
+      final events = decoded['events'] as List<dynamic>;
+      expect(events, isNotEmpty);
+      final appEvent = events.cast<Map<String, dynamic>>().firstWhere(
+        (event) => event['kind'] == 'app_event',
+      );
+      expect(appEvent['category'], 'call');
+      expect(appEvent['name'], 'state_changed');
+      expect(
+        ((appEvent['context'] as Map<String, dynamic>)['sdp'] as String).length,
+        lessThan(600),
+      );
     },
   );
+
+  test('app event log is bounded when exported', () async {
+    final temp = await Directory.systemTemp.createTemp(
+      'rain-crash-diagnostics-bound-test-',
+    );
+    addTearDown(() => temp.delete(recursive: true));
+    final exportPath = _join(temp.path, 'bounded-diagnostics.json');
+    var tick = 0;
+
+    final service = CrashDiagnosticsService(
+      directoryProvider: () async => temp,
+      clock: () => DateTime.utc(2026, 5, 22, 1, 2, tick++),
+      saveFile:
+          ({
+            String? dialogTitle,
+            String? fileName,
+            String? initialDirectory,
+            FileType type = FileType.any,
+            List<String>? allowedExtensions,
+            Uint8List? bytes,
+            bool lockParentWindow = false,
+          }) async {
+            return exportPath;
+          },
+    );
+
+    await service.initialize();
+    for (var index = 0; index < 220; index += 1) {
+      service.recordEventSync(
+        category: 'connection',
+        name: 'session_changed',
+        context: <String, Object?>{
+          'index': index,
+          'payload': 'network-state-${List<String>.filled(120, 'x').join()}',
+        },
+      );
+    }
+
+    await service.exportDiagnostics();
+
+    final decoded =
+        jsonDecode(await File(exportPath).readAsString())
+            as Map<String, dynamic>;
+    final events = decoded['events'] as List<dynamic>;
+    expect(events.length, lessThanOrEqualTo(200));
+    expect(jsonEncode(events), contains('session_changed'));
+  });
 
   test('voice call diagnostics include video counters', () {
     final diagnostics = VoiceCallDiagnostics(
