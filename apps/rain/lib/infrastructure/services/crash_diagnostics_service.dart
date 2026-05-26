@@ -167,6 +167,7 @@ class CrashDiagnosticsService {
       LinkedHashMap<String, String>();
   final Map<String, int> _coalescedEventCounts = <String, int>{};
   Map<String, Object?>? _performanceProfile;
+  Map<String, Object?>? _updateProfile;
   _RainFrameTimingStats? _frameTimingStats;
   bool _frameTimingCaptureInstalled = false;
   bool _lifecycleFlushInstalled = false;
@@ -201,6 +202,12 @@ class CrashDiagnosticsService {
     if (captureFrameTimings) {
       _installFrameTimingCapture();
     }
+  }
+
+  void configureUpdateDiagnostics({
+    required Map<String, Object?> updateProfile,
+  }) {
+    _updateProfile = updateProfile;
   }
 
   void recordFlutterError(FlutterErrorDetails details, {required bool fatal}) {
@@ -368,6 +375,7 @@ class CrashDiagnosticsService {
           if (_frameTimingStats != null)
             'frameTimings': _frameTimingStats!.toJson(),
         },
+      if (_updateProfile != null) 'update': _updateProfile,
       'lastCrash': (await loadLastCrash())?.toJson(),
       'events': await _readRecentEvents(directory, limit: 200),
     };

@@ -53,7 +53,13 @@ The Cloud Functions do two things:
 
 ## Remote Config
 
-Create these keys in Remote Config:
+Create this key in Remote Config:
+
+- `rain_release_manifest_v1`
+
+Use [../../docs/releases/rain_release_manifest_v1.example.json](../../docs/releases/rain_release_manifest_v1.example.json) as the template. Update the matching `stable` or `demo` channel for each platform after publishing a release. The app uses this manifest to show optional updates and block versions older than the configured minimum.
+
+Keep these legacy fallback keys until all installed builds support the manifest:
 
 - `min_required_version`
 - `update_url`

@@ -5,6 +5,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:flutter_webrtc/flutter_webrtc.dart';
+import 'package:package_info_plus/package_info_plus.dart';
 import 'package:protocol_brain/protocol_brain.dart';
 import 'package:rain/application/bootstrap/app_bootstrap.dart';
 import 'package:rain/application/runtime/rain_runtime_controller.dart';
@@ -13,6 +14,7 @@ import 'package:rain/core/config/app_environment.dart';
 import 'package:rain/infrastructure/services/app_settings_store.dart';
 import 'package:rain/infrastructure/services/crash_diagnostics_service.dart';
 import 'package:rain/infrastructure/services/force_update_service.dart';
+import 'package:rain/infrastructure/services/network_status_service.dart';
 import 'package:rain/infrastructure/signaling/noop_signaling_adapter.dart';
 import 'package:rain/presentation/screens/settings_screen.dart';
 import 'package:rain_core/rain_core.dart';
@@ -56,6 +58,24 @@ void main() {
     expect(find.text('100%'), findsOneWidget);
     expect(find.text('Call sounds'), findsOneWidget);
     expect(find.text('Reduce during calls'), findsOneWidget);
+  });
+
+  testWidgets('settings screen shows version and update actions', (
+    WidgetTester tester,
+  ) async {
+    final harness = _SettingsHarness();
+    addTearDown(harness.dispose);
+
+    await tester.pumpSettingsScreen(harness: harness);
+    await tester.drag(find.byType(ListView), const Offset(0, -1800));
+    await tester.pumpSettingsFrame();
+
+    expect(find.text('About Rain'), findsOneWidget);
+    expect(find.text('Rain 1.0.0'), findsOneWidget);
+    expect(find.textContaining('Build 1'), findsOneWidget);
+    expect(find.text('Rain is up to date'), findsOneWidget);
+    expect(find.text('Check for updates'), findsOneWidget);
+    expect(find.text('Open release page'), findsOneWidget);
   });
 
   testWidgets('settings screen exposes debug sound diagnostics', (
@@ -387,6 +407,11 @@ extension _SettingsPump on WidgetTester {
       ProviderScope(
         overrides: [
           appBootstrapProvider.overrideWithValue(harness.bootstrap),
+          networkStatusProvider.overrideWith(
+            (Ref ref) => Stream<NetworkStatusState>.value(
+              const NetworkStatusState.online(),
+            ),
+          ),
           platformBridgeProvider.overrideWithValue(harness.platformBridge),
           identityProvider.overrideWith(_NoIdentityController.new),
           runtimeControllerProvider.overrideWith(_NoRuntimeController.new),
@@ -427,6 +452,13 @@ class _SettingsHarness {
       forceUpdateService: ForceUpdateService(
         remoteConfig: null,
         updateUrl: 'https://example.com',
+        packageInfoLoader: () async => PackageInfo(
+          appName: 'Rain',
+          packageName: 'com.rainapp.rain',
+          version: '1.0.0',
+          buildNumber: '1',
+          buildSignature: '',
+        ),
       ),
     );
   }

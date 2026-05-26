@@ -101,6 +101,8 @@ class AppSettingsStore {
   static const String _callClearVoiceEnabledKey = 'call_clear_voice_enabled';
   static const String _callVideoAutoOptimizeEnabledKey =
       'call_video_auto_optimize_enabled';
+  static const String _dismissedOptionalUpdateKey =
+      'dismissed_optional_update_key';
 
   final SharedPreferencesAsync _preferences;
 
@@ -281,5 +283,27 @@ class AppSettingsStore {
 
   Future<void> setAutoVideoOptimizeEnabled(bool enabled) async {
     await _preferences.setBool(_callVideoAutoOptimizeEnabledKey, enabled);
+  }
+
+  Future<String?> loadDismissedOptionalUpdateKey() async {
+    final value = await _preferences.getString(_dismissedOptionalUpdateKey);
+    final normalized = value?.trim();
+    if (normalized == null || normalized.isEmpty) {
+      return null;
+    }
+    return normalized;
+  }
+
+  Future<void> setDismissedOptionalUpdateKey(String key) async {
+    final normalized = key.trim();
+    if (normalized.isEmpty) {
+      await _preferences.remove(_dismissedOptionalUpdateKey);
+      return;
+    }
+    await _preferences.setString(_dismissedOptionalUpdateKey, normalized);
+  }
+
+  Future<void> clearDismissedOptionalUpdateKey() async {
+    await _preferences.remove(_dismissedOptionalUpdateKey);
   }
 }

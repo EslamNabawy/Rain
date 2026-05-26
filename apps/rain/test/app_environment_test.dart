@@ -8,7 +8,16 @@ void main() {
     );
 
     expect(environment.backend, RainBackend.firebase);
+    expect(environment.updateChannel, 'stable');
     expect(environment.signalingEncryptionKey, demoSignalingEncryptionKey);
+  });
+
+  test('runtime environment can configure update channel', () {
+    final environment = AppEnvironment.fromEnvironment(
+      runtimeEnvironment: const <String, String>{'RAIN_UPDATE_CHANNEL': 'demo'},
+    );
+
+    expect(environment.updateChannel, 'demo');
   });
 
   test('runtime environment can configure signaling encryption key', () {

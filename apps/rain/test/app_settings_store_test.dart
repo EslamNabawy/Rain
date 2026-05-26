@@ -184,4 +184,19 @@ void main() {
       isFalse,
     );
   });
+
+  test('dismissed optional update key persists locally', () async {
+    final store = AppSettingsStore();
+
+    expect(await store.loadDismissedOptionalUpdateKey(), isNull);
+
+    await store.setDismissedOptionalUpdateKey(' demo|android|1.2.3|123 ');
+    expect(
+      await store.loadDismissedOptionalUpdateKey(),
+      'demo|android|1.2.3|123',
+    );
+
+    await store.clearDismissedOptionalUpdateKey();
+    expect(await store.loadDismissedOptionalUpdateKey(), isNull);
+  });
 }

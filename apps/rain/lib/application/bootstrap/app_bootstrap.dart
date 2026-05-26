@@ -80,6 +80,9 @@ class AppBootstrapper {
         forceUpdateService: ForceUpdateService(
           remoteConfig: remoteConfig,
           updateUrl: effectiveEnvironment.forceUpdateUrl,
+          updateChannel: AppUpdateChannel.parse(
+            effectiveEnvironment.updateChannel,
+          ),
         ),
       );
     } catch (_) {

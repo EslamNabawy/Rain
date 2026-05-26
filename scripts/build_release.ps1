@@ -191,6 +191,12 @@ function New-DemoDartDefinesFile([string]$Path, [string]$RepoRoot) {
     $defines.RAIN_SIGNALING_ENCRYPTION_KEY = $script:DemoSignalingEncryptionKey
   }
 
+  if ($null -eq $defines.PSObject.Properties['RAIN_UPDATE_CHANNEL']) {
+    $defines | Add-Member -NotePropertyName 'RAIN_UPDATE_CHANNEL' -NotePropertyValue 'demo'
+  } else {
+    $defines.RAIN_UPDATE_CHANNEL = 'demo'
+  }
+
   $tmpDir = Get-ReleaseTempDir $RepoRoot
   $demoDefinesPath = Join-Path $tmpDir 'rain-openrelay-demo-defines.generated.json'
   $defines | ConvertTo-Json -Depth 20 | Set-Content -LiteralPath $demoDefinesPath -Encoding utf8
@@ -258,6 +264,18 @@ function Assert-ReleaseDartDefines([string]$Path, [switch]$AllowPublicTurnForDem
       $signalingEncryptionKey.Equals($script:DemoSignalingEncryptionKey, [System.StringComparison]::Ordinal)
     ) {
       throw "Production release builds must not use the demo signaling encryption key."
+    }
+  }
+
+  $updateChannel = Get-JsonPropertyValue $defines 'RAIN_UPDATE_CHANNEL'
+  if (-not [string]::IsNullOrWhiteSpace($updateChannel)) {
+    $normalizedUpdateChannel = $updateChannel.Trim().ToLowerInvariant()
+    if ($AllowPublicTurnForDemo) {
+      if ($normalizedUpdateChannel -ne 'demo') {
+        throw "Demo release builds must use RAIN_UPDATE_CHANNEL=demo."
+      }
+    } elseif ($normalizedUpdateChannel -ne 'stable') {
+      throw "Production release builds must use RAIN_UPDATE_CHANNEL=stable."
     }
   }
 

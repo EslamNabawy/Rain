@@ -3,6 +3,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
 import 'package:rain_core/rain_core.dart';
+import 'package:url_launcher/url_launcher_string.dart';
 
 import 'package:rain/application/audio/sound_event_router.dart';
 import 'package:rain/presentation/navigation/app_routes.dart';
@@ -11,6 +12,7 @@ import 'package:rain/application/state/app_providers.dart';
 import 'package:rain/application/state/sound_event_providers.dart';
 import 'package:rain/infrastructure/services/crash_diagnostics_service.dart';
 import 'package:rain/infrastructure/services/app_settings_store.dart';
+import 'package:rain/infrastructure/services/force_update_service.dart';
 import 'package:rain/presentation/branding/rain_ripple_halo_surface.dart';
 import 'package:rain/presentation/branding/rain_state_surfaces.dart';
 import 'package:rain/presentation/screens/splash_screen.dart';
@@ -59,6 +61,7 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen> {
     final audioSettings = ref.watch(voiceAudioSettingsProvider);
     final callProcessingSettings = ref.watch(callProcessingSettingsProvider);
     final audioOutputCapabilities = ref.watch(audioOutputCapabilityProvider);
+    final updateStatus = ref.watch(forceUpdateProvider);
     final outputCapabilities =
         audioOutputCapabilities.value ??
         const AudioOutputCapabilityState(devices: []);
@@ -419,6 +422,19 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen> {
             ),
           ),
           const SizedBox(height: 24),
+          const AppSectionTitle(title: 'About Rain'),
+          AppSectionCard(
+            child: _AboutRainSection(
+              updateStatus: updateStatus,
+              onCheckForUpdates: () {
+                _checkForUpdates(context);
+              },
+              onOpenReleasePage: () {
+                _openReleasePage(context);
+              },
+            ),
+          ),
+          const SizedBox(height: 24),
           const AppSectionTitle(title: 'Blocked Users'),
           const _BlockedUsersList(),
         ],
@@ -694,6 +710,37 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen> {
     }
   }
 
+  Future<void> _checkForUpdates(BuildContext context) async {
+    final messenger = ScaffoldMessenger.of(context);
+    final errorColor = Theme.of(context).colorScheme.error;
+    await ref.read(forceUpdateProvider.notifier).refresh();
+    final result = ref.read(forceUpdateProvider);
+    if (!context.mounted) {
+      return;
+    }
+    if (result.hasError) {
+      messenger.showSnackBar(
+        SnackBar(
+          content: Text(
+            'Could not check for updates: ${_formatSettingsError(result.error!)}',
+          ),
+          backgroundColor: errorColor,
+        ),
+      );
+      return;
+    }
+    messenger.showSnackBar(const SnackBar(content: Text('Update check done.')));
+  }
+
+  Future<void> _openReleasePage(BuildContext context) async {
+    final result = ref.read(forceUpdateProvider).value;
+    final fallback = ref.read(appEnvironmentProvider).forceUpdateUrl;
+    final url = result?.updateUrl.trim().isNotEmpty == true
+        ? result!.updateUrl
+        : fallback;
+    await launchUrlString(url);
+  }
+
   Future<void> _confirmLogOut(BuildContext context) async {
     final messenger = ScaffoldMessenger.of(context);
     final errorColor = Theme.of(context).colorScheme.error;
@@ -826,6 +873,112 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen> {
 }
 
 enum _ProfileAction { editDisplayName, editGender }
+
+class _AboutRainSection extends StatelessWidget {
+  const _AboutRainSection({
+    required this.updateStatus,
+    required this.onCheckForUpdates,
+    required this.onOpenReleasePage,
+  });
+
+  final AsyncValue<VersionCheckResult> updateStatus;
+  final VoidCallback onCheckForUpdates;
+  final VoidCallback onOpenReleasePage;
+
+  @override
+  Widget build(BuildContext context) {
+    return updateStatus.when(
+      data: (result) => Column(
+        children: <Widget>[
+          ListTile(
+            leading: const Icon(Icons.info_outline),
+            title: Text('Rain ${result.currentVersion}'),
+            subtitle: Text(
+              'Build ${result.displayCurrentBuild} | ${result.platform} | ${result.channel.name}',
+            ),
+          ),
+          const Divider(height: 1),
+          ListTile(
+            leading: Icon(_updateStatusIcon(result.status)),
+            title: Text(_updateStatusLabel(result)),
+            subtitle: Text(_updateStatusDetail(result)),
+          ),
+          const Divider(height: 1),
+          OverflowBar(
+            alignment: MainAxisAlignment.end,
+            children: <Widget>[
+              TextButton.icon(
+                onPressed: onCheckForUpdates,
+                icon: const Icon(Icons.refresh),
+                label: const Text('Check for updates'),
+              ),
+              FilledButton.icon(
+                onPressed: onOpenReleasePage,
+                icon: const Icon(Icons.open_in_new),
+                label: const Text('Open release page'),
+              ),
+            ],
+          ),
+        ],
+      ),
+      error: (Object error, StackTrace stackTrace) => ListTile(
+        leading: Icon(
+          Icons.system_update_alt,
+          color: Theme.of(context).colorScheme.error,
+        ),
+        title: const Text('Update status unavailable'),
+        subtitle: Text(_formatSettingsError(error)),
+        trailing: IconButton(
+          tooltip: 'Check for updates',
+          onPressed: onCheckForUpdates,
+          icon: const Icon(Icons.refresh),
+        ),
+      ),
+      loading: () => const ListTile(
+        leading: SizedBox.square(
+          dimension: 22,
+          child: CircularProgressIndicator(strokeWidth: 2),
+        ),
+        title: Text('Checking app version'),
+      ),
+    );
+  }
+
+  IconData _updateStatusIcon(VersionCheckStatus status) {
+    return switch (status) {
+      VersionCheckStatus.current => Icons.verified_outlined,
+      VersionCheckStatus.optionalUpdateAvailable => Icons.system_update_alt,
+      VersionCheckStatus.updateRequired => Icons.warning_amber_outlined,
+      VersionCheckStatus.checkUnavailable => Icons.cloud_off_outlined,
+      VersionCheckStatus.invalidConfig => Icons.error_outline,
+    };
+  }
+
+  String _updateStatusLabel(VersionCheckResult result) {
+    return switch (result.status) {
+      VersionCheckStatus.current => 'Rain is up to date',
+      VersionCheckStatus.optionalUpdateAvailable => 'Update available',
+      VersionCheckStatus.updateRequired => 'Update required',
+      VersionCheckStatus.checkUnavailable => 'Update check unavailable',
+      VersionCheckStatus.invalidConfig => 'Update config invalid',
+    };
+  }
+
+  String _updateStatusDetail(VersionCheckResult result) {
+    return switch (result.status) {
+      VersionCheckStatus.current =>
+        'Latest known: ${result.displayLatestVersion}',
+      VersionCheckStatus.optionalUpdateAvailable =>
+        'Latest: ${result.displayLatestVersion} build ${result.displayLatestBuild}',
+      VersionCheckStatus.updateRequired =>
+        'Minimum: ${result.minVersion} build ${result.displayMinimumBuild}',
+      VersionCheckStatus.checkUnavailable =>
+        result.failureReason ?? 'Could not verify update status.',
+      VersionCheckStatus.invalidConfig =>
+        result.failureReason ?? 'Remote update config could not be parsed.',
+    };
+  }
+}
 
 class _MicrophoneTestTile extends StatelessWidget {
   const _MicrophoneTestTile({

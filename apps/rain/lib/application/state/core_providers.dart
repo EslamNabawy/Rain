@@ -140,10 +140,67 @@ final forceUpdateProvider =
 class ForceUpdateController extends AsyncNotifier<ForceUpdateResult> {
   @override
   Future<ForceUpdateResult> build() {
+    return _check();
+  }
+
+  Future<void> refresh() async {
+    state = const AsyncValue.loading();
+    state = await AsyncValue.guard(_check);
+  }
+
+  Future<ForceUpdateResult> _check() async {
     final networkStatus = ref.watch(networkStatusProvider).value;
+    late final ForceUpdateResult result;
     if (networkStatus != null && networkStatus.blocksNetworkActions) {
-      return ref.watch(forceUpdateServiceProvider).checkUnavailable();
+      result = await ref.watch(forceUpdateServiceProvider).checkUnavailable();
+    } else {
+      result = await ref.watch(forceUpdateServiceProvider).check();
     }
-    return ref.watch(forceUpdateServiceProvider).check();
+    ref
+        .read(crashDiagnosticsServiceProvider)
+        .configureUpdateDiagnostics(updateProfile: _updateDiagnostics(result));
+    return result;
+  }
+
+  Map<String, Object?> _updateDiagnostics(ForceUpdateResult result) {
+    return <String, Object?>{
+      'status': result.status.name,
+      'currentVersion': result.currentVersion,
+      'currentBuild': result.currentBuild,
+      'platform': result.platform,
+      'channel': result.channel.name,
+      'latestVersion': result.latestVersion,
+      'latestBuild': result.latestBuild,
+      'minimumVersion': result.minVersion,
+      'minimumBuild': result.minimumBuild,
+      'updateUrl': result.updateUrl,
+      'failureReason': result.failureReason,
+    };
+  }
+}
+
+final optionalUpdateDismissalProvider =
+    AsyncNotifierProvider<OptionalUpdateDismissalController, String?>(
+      OptionalUpdateDismissalController.new,
+    );
+
+class OptionalUpdateDismissalController extends AsyncNotifier<String?> {
+  @override
+  Future<String?> build() {
+    return ref.watch(appSettingsStoreProvider).loadDismissedOptionalUpdateKey();
+  }
+
+  Future<void> dismiss(VersionCheckResult result) async {
+    if (!result.hasOptionalUpdate) {
+      return;
+    }
+    final key = result.optionalUpdateDismissalKey;
+    state = AsyncValue.data(key);
+    await ref.read(appSettingsStoreProvider).setDismissedOptionalUpdateKey(key);
+  }
+
+  Future<void> clear() async {
+    state = const AsyncValue.data(null);
+    await ref.read(appSettingsStoreProvider).clearDismissedOptionalUpdateKey();
   }
 }

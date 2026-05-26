@@ -59,6 +59,50 @@ void main() {
     expect(find.text('Private peer link'), findsOneWidget);
     expect(find.byType(LinearProgressIndicator), findsNothing);
   });
+
+  testWidgets('RootScreen blocks when required update is configured', (
+    WidgetTester tester,
+  ) async {
+    final db = RainDatabase(NativeDatabase.memory());
+    addTearDown(db.close);
+
+    await tester.pumpWidget(
+      ProviderScope(
+        overrides: [
+          appBootstrapProvider.overrideWithValue(_bootstrap(db)),
+          forceUpdateProvider.overrideWith(_RequiredForceUpdateController.new),
+          identityProvider.overrideWith(_NoIdentityController.new),
+        ],
+        child: const MaterialApp(home: Scaffold(body: RootScreen())),
+      ),
+    );
+    await tester.pumpAndSettle();
+
+    expect(find.text('Update required'), findsOneWidget);
+    expect(find.text('Create account'), findsNothing);
+  });
+
+  testWidgets('RootScreen does not block optional update', (
+    WidgetTester tester,
+  ) async {
+    final db = RainDatabase(NativeDatabase.memory());
+    addTearDown(db.close);
+
+    await tester.pumpWidget(
+      ProviderScope(
+        overrides: [
+          appBootstrapProvider.overrideWithValue(_bootstrap(db)),
+          forceUpdateProvider.overrideWith(_OptionalForceUpdateController.new),
+          identityProvider.overrideWith(_NoIdentityController.new),
+        ],
+        child: const MaterialApp(home: Scaffold(body: RootScreen())),
+      ),
+    );
+    await tester.pumpAndSettle();
+
+    expect(find.text('Update required'), findsNothing);
+    expect(find.text('Create account'), findsOneWidget);
+  });
 }
 
 AppBootstrapState _bootstrap(RainDatabase db) {
@@ -90,6 +134,32 @@ class _UnavailableForceUpdateController extends ForceUpdateController {
 class _LoadingForceUpdateController extends ForceUpdateController {
   @override
   Future<ForceUpdateResult> build() => Completer<ForceUpdateResult>().future;
+}
+
+class _RequiredForceUpdateController extends ForceUpdateController {
+  @override
+  Future<ForceUpdateResult> build() async {
+    return const ForceUpdateResult(
+      status: ForceUpdateStatus.updateRequired,
+      currentVersion: '1.0.0',
+      minVersion: '1.1.0',
+      updateUrl: 'https://example.com',
+    );
+  }
+}
+
+class _OptionalForceUpdateController extends ForceUpdateController {
+  @override
+  Future<ForceUpdateResult> build() async {
+    return const ForceUpdateResult(
+      status: ForceUpdateStatus.optionalUpdateAvailable,
+      currentVersion: '1.0.0',
+      minVersion: '1.0.0',
+      latestVersion: '1.1.0',
+      latestBuild: 11,
+      updateUrl: 'https://example.com',
+    );
+  }
 }
 
 class _NoIdentityController extends IdentityController {

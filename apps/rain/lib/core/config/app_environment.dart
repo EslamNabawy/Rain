@@ -11,6 +11,7 @@ class AppEnvironment {
     required this.backend,
     required this.iceServers,
     required this.forceUpdateUrl,
+    required this.updateChannel,
     required this.backgroundHeartbeatSeconds,
     required this.allowPublicTurn,
     required this.smokeMode,
@@ -32,6 +33,7 @@ class AppEnvironment {
   final RainBackend backend;
   final List<Map<String, dynamic>> iceServers;
   final String forceUpdateUrl;
+  final String updateChannel;
   final int backgroundHeartbeatSeconds;
   final bool allowPublicTurn;
   final bool smokeMode;
@@ -134,6 +136,11 @@ class AppEnvironment {
         compileTimeValue: const String.fromEnvironment('RAIN_UPDATE_URL'),
         defaultValue: 'https://github.com/EslamNabawy/Rain/releases',
       ),
+      updateChannel: readString(
+        'RAIN_UPDATE_CHANNEL',
+        compileTimeValue: const String.fromEnvironment('RAIN_UPDATE_CHANNEL'),
+        defaultValue: 'stable',
+      ).toLowerCase(),
       backgroundHeartbeatSeconds: readInt(
         'RAIN_BACKGROUND_HEARTBEAT_SECONDS',
         compileTimeValue: const String.fromEnvironment(
@@ -312,6 +319,7 @@ class AppEnvironment {
         backend: backend,
         iceServers: releaseSafeIceServers,
         forceUpdateUrl: forceUpdateUrl,
+        updateChannel: updateChannel,
         backgroundHeartbeatSeconds: backgroundHeartbeatSeconds,
         allowPublicTurn: true,
         smokeMode: smokeMode,
@@ -351,6 +359,7 @@ class AppEnvironment {
       backend: backend,
       iceServers: nextIceServers,
       forceUpdateUrl: forceUpdateUrl,
+      updateChannel: updateChannel,
       backgroundHeartbeatSeconds: backgroundHeartbeatSeconds,
       allowPublicTurn: false,
       smokeMode: smokeMode,
