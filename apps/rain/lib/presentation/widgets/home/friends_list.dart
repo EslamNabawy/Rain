@@ -1,5 +1,7 @@
 part of '../../screens/home_screen.dart';
 
+enum FriendListDisplayMode { full, compact, rail }
+
 class _FriendsListView extends StatelessWidget {
   const _FriendsListView({
     required this.friends,
@@ -9,6 +11,7 @@ class _FriendsListView extends StatelessWidget {
     required this.adaptiveProfile,
     this.desktopHeaderTitle = 'Friends',
     this.compact = false,
+    this.displayMode,
   });
 
   final AsyncValue<List<FriendRecord>> friends;
@@ -18,9 +21,19 @@ class _FriendsListView extends StatelessWidget {
   final AdaptiveDeviceProfile adaptiveProfile;
   final String? desktopHeaderTitle;
   final bool compact;
+  final FriendListDisplayMode? displayMode;
+
+  FriendListDisplayMode get _effectiveDisplayMode {
+    if (displayMode != null) {
+      return displayMode!;
+    }
+    return compact ? FriendListDisplayMode.compact : FriendListDisplayMode.full;
+  }
 
   @override
   Widget build(BuildContext context) {
+    final mode = _effectiveDisplayMode;
+    final rail = mode == FriendListDisplayMode.rail;
     return friends.when(
       data: (List<FriendRecord> items) {
         if (items.isEmpty) {
@@ -28,15 +41,23 @@ class _FriendsListView extends StatelessWidget {
             context,
             ListView(
               physics: const AlwaysScrollableScrollPhysics(),
-              padding: EdgeInsets.fromLTRB(16, compact ? 72 : 96, 16, 24),
+              padding: EdgeInsets.fromLTRB(
+                rail ? 8 : 16,
+                rail ? 24 : (compact ? 72 : 96),
+                rail ? 8 : 16,
+                24,
+              ),
               children: <Widget>[
-                AppStateMessage(
-                  icon: Icons.group_outlined,
-                  title: 'No friends yet',
-                  message:
-                      'Find a friend to start chatting and testing the peer connection flow.',
-                  iconSize: compact ? 46 : 52,
-                ),
+                if (rail)
+                  const Icon(Icons.group_outlined)
+                else
+                  AppStateMessage(
+                    icon: Icons.group_outlined,
+                    title: 'No friends yet',
+                    message:
+                        'Find a friend to start chatting and testing the peer connection flow.',
+                    iconSize: compact ? 46 : 52,
+                  ),
               ],
             ),
           );
@@ -46,7 +67,7 @@ class _FriendsListView extends StatelessWidget {
           context,
           ListView.builder(
             physics: const AlwaysScrollableScrollPhysics(),
-            padding: EdgeInsets.symmetric(vertical: compact ? 6 : 0),
+            padding: EdgeInsets.symmetric(vertical: rail || compact ? 6 : 0),
             itemCount: items.length,
             itemBuilder: (BuildContext context, int index) {
               final friend = items[index];
@@ -55,7 +76,8 @@ class _FriendsListView extends StatelessWidget {
                 child: _FriendTile(
                   friend: friend,
                   selected: friend.username == selectedPeerId,
-                  compact: compact,
+                  compact: mode == FriendListDisplayMode.compact,
+                  rail: rail,
                   onTap: () => onSelect(friend),
                 ),
               );
@@ -81,6 +103,26 @@ class _FriendsListView extends StatelessWidget {
   Widget _wrapRefresh(BuildContext context, Widget child) {
     if (adaptiveProfile.usesPullRefresh) {
       return RefreshIndicator(onRefresh: onRefresh, child: child);
+    }
+    if (_effectiveDisplayMode == FriendListDisplayMode.rail) {
+      return Column(
+        children: <Widget>[
+          Padding(
+            padding: const EdgeInsets.fromLTRB(8, 8, 8, 4),
+            child: Tooltip(
+              message: 'Refresh friends',
+              child: IconButton.filledTonal(
+                key: const ValueKey<String>(
+                  'rain-friends-desktop-rail-refresh-button',
+                ),
+                onPressed: () => unawaited(onRefresh()),
+                icon: const Icon(Icons.refresh),
+              ),
+            ),
+          ),
+          Expanded(child: child),
+        ],
+      );
     }
     return Column(
       children: <Widget>[
@@ -175,11 +217,13 @@ class _FriendTile extends ConsumerWidget {
     required this.selected,
     required this.onTap,
     this.compact = false,
+    this.rail = false,
   });
 
   final FriendRecord friend;
   final bool selected;
   final bool compact;
+  final bool rail;
   final VoidCallback onTap;
 
   @override
@@ -225,7 +269,61 @@ class _FriendTile extends ConsumerWidget {
 
     final statusColor = _statusColorForFriend(friend);
     final statusLabel = _labelForState(friend.state);
-    final avatarSize = compact ? 42.0 : 44.0;
+    final avatarSize = rail
+        ? 40.0
+        : compact
+        ? 42.0
+        : 44.0;
+
+    if (rail) {
+      return Tooltip(
+        message: friend.displayName,
+        child: Padding(
+          padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 5),
+          child: Material(
+            color: selected
+                ? scheme.primaryContainer.withValues(
+                    alpha: scheme.brightness == Brightness.dark ? 0.30 : 0.52,
+                  )
+                : Colors.transparent,
+            borderRadius: BorderRadius.circular(18),
+            child: InkWell(
+              onTap: onTap,
+              onLongPress: openProfile,
+              borderRadius: BorderRadius.circular(18),
+              child: SizedBox(
+                height: 58,
+                child: Stack(
+                  alignment: Alignment.center,
+                  children: <Widget>[
+                    RainAvatar(
+                      name: friend.displayName,
+                      size: avatarSize,
+                      statusColor: statusColor,
+                      gender: friend.gender?.name,
+                    ),
+                    if (!selected && friend.unreadCount > 0)
+                      Positioned(
+                        top: 8,
+                        right: 10,
+                        child: Container(
+                          width: 12,
+                          height: 12,
+                          decoration: BoxDecoration(
+                            color: scheme.secondary,
+                            shape: BoxShape.circle,
+                            border: Border.all(color: scheme.surface, width: 2),
+                          ),
+                        ),
+                      ),
+                  ],
+                ),
+              ),
+            ),
+          ),
+        ),
+      );
+    }
 
     return Padding(
       padding: EdgeInsets.symmetric(horizontal: compact ? 6 : 10, vertical: 3),
@@ -272,7 +370,7 @@ class _FriendTile extends ConsumerWidget {
                                       ?.copyWith(fontWeight: FontWeight.w800),
                                 ),
                               ),
-                              if (friend.unreadCount > 0)
+                              if (!selected && friend.unreadCount > 0)
                                 Container(
                                   constraints: const BoxConstraints(
                                     minWidth: 22,

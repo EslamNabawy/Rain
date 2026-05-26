@@ -55,6 +55,49 @@ void main() {
     );
   });
 
+  testWidgets('compact video control dock stays short and uses overflow', (
+    WidgetTester tester,
+  ) async {
+    await tester.binding.setSurfaceSize(const Size(360, 220));
+    addTearDown(() => tester.binding.setSurfaceSize(null));
+
+    await tester.pumpWidget(
+      MaterialApp(
+        home: Scaffold(
+          body: Center(
+            child: SizedBox(
+              width: 320,
+              child: RainCallControlDock(
+                state: _activeVideoCall(),
+                onAccept: () {},
+                onReject: () {},
+                onHangUp: () {},
+                onRetry: () {},
+                onToggleMute: () {},
+                onToggleCamera: () {},
+                onSwitchCamera: () {},
+                onToggleDeafen: () {},
+                trailingControls: <Widget>[
+                  IconButton.filledTonal(
+                    tooltip: 'Exit fullscreen',
+                    onPressed: () {},
+                    icon: const Icon(Icons.fullscreen_exit),
+                  ),
+                ],
+              ),
+            ),
+          ),
+        ),
+      ),
+    );
+
+    expect(find.byTooltip('More call controls'), findsOneWidget);
+    final dockSize = tester.getSize(
+      find.byKey(const ValueKey<String>('rain-call-control-dock')),
+    );
+    expect(dockSize.height, lessThanOrEqualTo(82));
+  });
+
   testWidgets('mobile workspace hides desktop side panel', (
     WidgetTester tester,
   ) async {

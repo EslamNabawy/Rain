@@ -22,6 +22,7 @@ class RainCallControls extends StatelessWidget {
     this.onSelectOutputRoute,
     this.controlCapabilities,
     this.outputRouteOptions,
+    this.trailingControls = const <Widget>[],
   });
 
   final VoiceCallState state;
@@ -36,6 +37,7 @@ class RainCallControls extends StatelessWidget {
   final ValueChanged<CallAudioOutputTarget>? onSelectOutputRoute;
   final List<CallControlCapability>? controlCapabilities;
   final List<VoiceCallOutputRouteOption>? outputRouteOptions;
+  final List<Widget> trailingControls;
 
   @override
   Widget build(BuildContext context) {
@@ -64,22 +66,50 @@ class RainCallControls extends StatelessWidget {
       );
     }
 
-    return Wrap(
-      spacing: 8,
-      runSpacing: 8,
-      alignment: WrapAlignment.end,
-      children: <Widget>[
-        for (final capability
-            in controlCapabilities ?? state.controlCapabilities)
-          _buildActiveControl(context, capability),
-      ],
+    return LayoutBuilder(
+      builder: (BuildContext context, BoxConstraints constraints) {
+        final maxWidth = constraints.hasBoundedWidth
+            ? constraints.maxWidth
+            : 420.0;
+        final compact = maxWidth < 390;
+        final effectiveCapabilities =
+            controlCapabilities ?? state.controlCapabilities;
+        final visibleCapabilities = _visibleCapabilitiesForWidth(
+          effectiveCapabilities,
+          compact: compact,
+        );
+        final overflowCapabilities = effectiveCapabilities
+            .where(
+              (CallControlCapability capability) =>
+                  !visibleCapabilities.contains(capability),
+            )
+            .toList(growable: false);
+        return Wrap(
+          spacing: compact ? 6 : 8,
+          runSpacing: compact ? 6 : 8,
+          alignment: WrapAlignment.center,
+          crossAxisAlignment: WrapCrossAlignment.center,
+          children: <Widget>[
+            for (final capability in visibleCapabilities)
+              _buildActiveControl(context, capability, compact: compact),
+            if (overflowCapabilities.isNotEmpty)
+              _buildOverflowControl(
+                context,
+                overflowCapabilities,
+                compact: compact,
+              ),
+            ...trailingControls,
+          ],
+        );
+      },
     );
   }
 
   Widget _buildActiveControl(
     BuildContext context,
-    CallControlCapability capability,
-  ) {
+    CallControlCapability capability, {
+    required bool compact,
+  }) {
     final visual = rainVoiceCallControlVisual(state, capability);
     final control = switch (capability) {
       CallControlCapability.microphone => IconButton(
@@ -117,10 +147,146 @@ class RainCallControls extends StatelessWidget {
       borderRadius: const BorderRadius.all(Radius.circular(20)),
       color: rainVoiceCallHaloColor(context, state),
       pulseKey: '${state.callId}:${state.phase}:${capability.name}',
-      minSize: const Size.square(48),
+      minSize: Size.square(compact ? 42 : 46),
       callSurface: true,
       child: control,
     );
+  }
+
+  List<CallControlCapability> _visibleCapabilitiesForWidth(
+    List<CallControlCapability> capabilities, {
+    required bool compact,
+  }) {
+    if (!compact || capabilities.length <= 4) {
+      return capabilities;
+    }
+    final visible = <CallControlCapability>[
+      if (capabilities.contains(CallControlCapability.microphone))
+        CallControlCapability.microphone,
+      if (capabilities.contains(CallControlCapability.camera))
+        CallControlCapability.camera,
+      if (capabilities.contains(CallControlCapability.hangUp))
+        CallControlCapability.hangUp,
+    ];
+    return visible.isEmpty
+        ? capabilities.take(3).toList(growable: false)
+        : visible;
+  }
+
+  Widget _buildOverflowControl(
+    BuildContext context,
+    List<CallControlCapability> capabilities, {
+    required bool compact,
+  }) {
+    final enabled = state.isActive;
+    return RainRippleHaloSurface(
+      enabled: enabled,
+      borderRadius: const BorderRadius.all(Radius.circular(18)),
+      color: rainVoiceCallHaloColor(context, state),
+      pulseKey: '${state.callId}:${state.phase}:overflow',
+      minSize: Size.square(compact ? 42 : 46),
+      callSurface: true,
+      child: PopupMenuButton<String>(
+        tooltip: 'More call controls',
+        enabled: enabled,
+        onSelected: _handleOverflowSelection,
+        itemBuilder: (BuildContext context) {
+          return <PopupMenuEntry<String>>[
+            for (final capability in capabilities)
+              ..._overflowEntriesForCapability(capability),
+          ];
+        },
+        icon: const Icon(Icons.more_horiz),
+      ),
+    );
+  }
+
+  Iterable<PopupMenuEntry<String>> _overflowEntriesForCapability(
+    CallControlCapability capability,
+  ) sync* {
+    if (capability == CallControlCapability.outputRoute) {
+      final options = _effectiveOutputRouteOptions(outputRouteOptions);
+      if (options.length < 2 || onSelectOutputRoute == null) {
+        return;
+      }
+      if (options.length <= 2) {
+        final selected = _selectedOutputRouteOption(options, state);
+        yield PopupMenuItem<String>(
+          value: 'output:next',
+          child: Row(
+            children: <Widget>[
+              Icon(selected.icon, size: 20),
+              const SizedBox(width: 10),
+              const Text('Switch audio output'),
+            ],
+          ),
+        );
+        return;
+      }
+      for (final option in options) {
+        final selected = option.target.matches(state);
+        yield PopupMenuItem<String>(
+          value: 'output:${option.target.key}',
+          child: Row(
+            children: <Widget>[
+              Icon(selected ? Icons.check_circle : option.icon, size: 20),
+              const SizedBox(width: 10),
+              Expanded(child: Text(option.label)),
+            ],
+          ),
+        );
+      }
+      return;
+    }
+    final visual = rainVoiceCallControlVisual(state, capability);
+    yield PopupMenuItem<String>(
+      value: capability.name,
+      child: Row(
+        children: <Widget>[
+          Icon(visual.icon, size: 20),
+          const SizedBox(width: 10),
+          Text(visual.tooltip),
+        ],
+      ),
+    );
+  }
+
+  void _handleOverflowSelection(String value) {
+    if (value == CallControlCapability.switchCamera.name) {
+      onSwitchCamera?.call();
+      return;
+    }
+    if (value == CallControlCapability.deafen.name) {
+      onToggleDeafen?.call();
+      return;
+    }
+    if (value == CallControlCapability.camera.name) {
+      onToggleCamera?.call();
+      return;
+    }
+    if (value == CallControlCapability.microphone.name) {
+      onToggleMute();
+      return;
+    }
+    if (value == CallControlCapability.hangUp.name) {
+      onHangUp();
+      return;
+    }
+    if (!value.startsWith('output:') || onSelectOutputRoute == null) {
+      return;
+    }
+    final options = _effectiveOutputRouteOptions(outputRouteOptions);
+    if (value == 'output:next') {
+      onSelectOutputRoute!(_nextOutputTarget(options, state));
+      return;
+    }
+    final targetKey = value.substring('output:'.length);
+    for (final option in options) {
+      if (option.target.key == targetKey) {
+        onSelectOutputRoute!(option.target);
+        return;
+      }
+    }
   }
 
   Widget _buildOutputRouteControl({required RainCallControlVisual visual}) {
@@ -204,10 +370,15 @@ class RainCallControlDock extends StatelessWidget {
       onSelectOutputRoute: onSelectOutputRoute,
       controlCapabilities: controlCapabilities,
       outputRouteOptions: outputRouteOptions,
+      trailingControls: trailingControls,
     );
     return Container(
       key: dockKey,
-      padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
+      constraints: BoxConstraints(
+        maxWidth: state.isVideo ? 520 : 440,
+        minHeight: state.phase == VoiceCallPhase.incomingRinging ? 58 : 58,
+      ),
+      padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 8),
       decoration: BoxDecoration(
         color: scheme.surfaceContainerHighest.withValues(alpha: 0.52),
         borderRadius: BorderRadius.circular(22),
@@ -219,13 +390,7 @@ class RainCallControlDock extends StatelessWidget {
           state.phase == VoiceCallPhase.incomingRinging &&
               trailingControls.isEmpty
           ? controls
-          : Wrap(
-              alignment: WrapAlignment.center,
-              crossAxisAlignment: WrapCrossAlignment.center,
-              spacing: 10,
-              runSpacing: 8,
-              children: <Widget>[controls, ...trailingControls],
-            ),
+          : controls,
     );
   }
 }

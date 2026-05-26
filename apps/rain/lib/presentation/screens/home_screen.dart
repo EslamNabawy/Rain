@@ -632,6 +632,7 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
   double _fullscreenFriendsPanelWidth = 280;
   bool _fullscreenFriendsPanelCollapsed = false;
   bool _fullscreenFriendsPanelForcedOpen = false;
+  bool _desktopFriendsRailCollapsed = false;
   Future<void>? _refreshFriendsInFlight;
 
   @override
@@ -1053,18 +1054,47 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
     AsyncValue<List<FriendRecord>> friends,
     AdaptiveDeviceProfile adaptiveProfile,
   ) {
+    final showFriendsRail =
+        _selectedPeerId != null && _desktopFriendsRailCollapsed;
     return Row(
       children: <Widget>[
         SizedBox(
-          width: 320,
+          width: showFriendsRail ? 76 : 320,
           child: _FriendsListView(
             friends: friends,
             selectedPeerId: _selectedPeerId,
             onSelect: _handleFriendSelection,
             onRefresh: _refreshFriends,
             adaptiveProfile: adaptiveProfile,
+            desktopHeaderTitle: showFriendsRail ? null : 'Friends',
+            displayMode: showFriendsRail
+                ? FriendListDisplayMode.rail
+                : FriendListDisplayMode.full,
           ),
         ),
+        if (_selectedPeerId != null)
+          SizedBox(
+            width: 40,
+            child: Center(
+              child: Tooltip(
+                message: showFriendsRail
+                    ? 'Expand friends'
+                    : 'Focus chat and compact friends',
+                child: IconButton(
+                  key: const ValueKey<String>('rain-desktop-chat-focus-toggle'),
+                  onPressed: () {
+                    setState(
+                      () => _desktopFriendsRailCollapsed =
+                          !_desktopFriendsRailCollapsed,
+                    );
+                  },
+                  icon: Icon(
+                    showFriendsRail ? Icons.chevron_right : Icons.chevron_left,
+                  ),
+                ),
+              ),
+            ),
+          ),
         const VerticalDivider(width: 1),
         Expanded(
           child: _selectedPeerId == null
