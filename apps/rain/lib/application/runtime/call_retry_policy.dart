@@ -73,6 +73,12 @@ final class CallRetryPolicy {
         canRetryImmediately: true,
       );
     }
+    if (_isPresenceUnknownMessage(message)) {
+      return CallRetryDecision(
+        kind: CallRetryDecisionKind.peerOffline,
+        userMessage: 'Could not confirm $peer is online. Try again.',
+      );
+    }
     if (isOfflineMessage(message)) {
       return CallRetryDecision(
         kind: CallRetryDecisionKind.peerOffline,
@@ -118,6 +124,13 @@ final class CallRetryPolicy {
     return normalized.contains(' is offline') ||
         normalized.contains('peer is offline') ||
         normalized.contains('could not confirm') ||
+        normalized.contains('presence unknown') ||
+        normalized.contains('callee presence');
+  }
+
+  static bool _isPresenceUnknownMessage(String message) {
+    final normalized = message.toLowerCase();
+    return normalized.contains('could not confirm') ||
         normalized.contains('presence unknown') ||
         normalized.contains('callee presence');
   }

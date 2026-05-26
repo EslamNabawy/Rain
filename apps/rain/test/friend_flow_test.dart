@@ -3489,6 +3489,7 @@ void main() {
         final bobBrain = TestSessionManager();
         final bobDb = RainDatabase(NativeDatabase.memory());
         addTearDown(bobDb.close);
+        await adapter.register('alice', 'alicepw');
         await adapter.register('bob', 'bobpw');
         await adapter.upsertFriendship('alice', 'bob');
         await db

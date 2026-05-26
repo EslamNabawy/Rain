@@ -1405,6 +1405,13 @@ extension VoiceCallRuntime on RainRuntimeController {
               message: retryDecision?.userMessage,
               context: eventContext,
             );
+            _recordRuntimeEvent(
+              category: 'call',
+              name: 'stale_voice_lock_repaired',
+              severity: 'warning',
+              message: retryDecision?.userMessage,
+              context: eventContext,
+            );
             if (failedLockContext['timestampRepair'] == true) {
               _recordRuntimeEvent(
                 category: 'call',
@@ -1414,6 +1421,42 @@ extension VoiceCallRuntime on RainRuntimeController {
                 context: eventContext,
               );
             }
+            if (retryDecision?.canRetryImmediately == true) {
+              try {
+                await voiceAdapter.createOutgoingCall(
+                  callId: frame.callId,
+                  caller: localUsername,
+                  callee: callee,
+                  createdAt: frame.sessionEpoch,
+                  expiresAt:
+                      frame.sessionEpoch + _voiceCallExpiry.inMilliseconds,
+                  mediaMode: frame.mediaMode,
+                );
+                _recordRuntimeEvent(
+                  category: 'call',
+                  name: 'voice_lock_claim_retried',
+                  severity: 'info',
+                  message: retryDecision?.userMessage,
+                  context: <String, Object?>{
+                    ...eventContext,
+                    'retryResult': 'claimed',
+                  },
+                );
+                return;
+              } catch (retryError, retryStackTrace) {
+                _recordRuntimeEvent(
+                  category: 'call',
+                  name: 'voice_lock_claim_retry_failed',
+                  severity: 'warning',
+                  message: retryError.toString(),
+                  context: <String, Object?>{
+                    ...eventContext,
+                    'retryResult': 'failed',
+                  },
+                );
+                Error.throwWithStackTrace(retryError, retryStackTrace);
+              }
+            }
           } else if (retryDecision?.kind ==
               CallRetryDecisionKind.cleanupInProgress) {
             _recordRuntimeEvent(
@@ -1421,6 +1464,46 @@ extension VoiceCallRuntime on RainRuntimeController {
               name: 'voice_lock_reclaim_started',
               severity: 'warning',
               message: retryDecision?.userMessage,
+              context: eventContext,
+            );
+          } else if (retryDecision?.kind == CallRetryDecisionKind.peerOffline) {
+            final presenceMessage =
+                (retryDecision?.userMessage ?? error.toString()).toLowerCase();
+            final presenceEventName =
+                presenceMessage.contains('could not confirm') ||
+                    presenceMessage.contains('presence unknown')
+                ? 'call_start_presence_unknown'
+                : 'call_start_blocked_offline';
+            _recordRuntimeEvent(
+              category: 'call',
+              name: presenceEventName,
+              severity: 'warning',
+              message: retryDecision?.userMessage,
+              context: <String, Object?>{
+                ...eventContext,
+                'presenceSource': 'signaling',
+              },
+            );
+            _recordRuntimeEvent(
+              category: 'call',
+              name: 'voice_lock_claim_blocked',
+              severity: 'warning',
+              message: retryDecision?.userMessage ?? error.toString(),
+              context: eventContext,
+            );
+          } else if (retryDecision?.kind == CallRetryDecisionKind.peerBusy) {
+            _recordRuntimeEvent(
+              category: 'call',
+              name: 'voice_real_busy_lock',
+              severity: 'warning',
+              message: retryDecision?.userMessage,
+              context: eventContext,
+            );
+            _recordRuntimeEvent(
+              category: 'call',
+              name: 'voice_lock_claim_blocked',
+              severity: 'warning',
+              message: retryDecision?.userMessage ?? error.toString(),
               context: eventContext,
             );
           } else {
@@ -2524,6 +2607,24 @@ extension VoiceCallRuntime on RainRuntimeController {
         context: cleanupContext,
       );
     } catch (error) {
+      if (_isUnknownVoiceCallCleanupError(error)) {
+        _recordRuntimeEvent(
+          category: 'call',
+          name: 'voice_cleanup_already_completed',
+          severity: 'info',
+          message: error.toString(),
+          context: cleanupContext,
+        );
+        _recordRuntimeEvent(
+          category: 'call',
+          name: 'voice_terminal_cleanup_completed',
+          context: <String, Object?>{
+            ...cleanupContext,
+            'cleanupResult': 'alreadyCompleted',
+          },
+        );
+        return;
+      }
       _recordRuntimeEvent(
         category: 'call',
         name: 'signaling_end_call_failed',
@@ -2547,6 +2648,11 @@ extension VoiceCallRuntime on RainRuntimeController {
         rethrow;
       }
     }
+  }
+
+  bool _isUnknownVoiceCallCleanupError(Object error) {
+    final normalized = _normalizedVoiceCallErrorText(error).toLowerCase();
+    return normalized.contains('unknown voice call');
   }
 
   Future<void> _endVoiceCallForPeer(
@@ -2944,10 +3050,11 @@ extension VoiceCallRuntime on RainRuntimeController {
       return;
     }
 
+    final peerOnline = identity.online;
     await _localMutations.run(
-      () => friendStore.updatePresence(normalizedPeerId, identity!.online),
+      () => friendStore.updatePresence(normalizedPeerId, peerOnline),
     );
-    if (!identity!.online) {
+    if (!peerOnline) {
       final decision = RuntimeInteractionGuard.peerOffline(
         peerId: normalizedPeerId,
       );

@@ -589,6 +589,7 @@ class FirebaseEmulatorSignalingAdapter
     final normalizedCaller = normalizeVoiceCallUsername(caller);
     final normalizedCallee = normalizeVoiceCallUsername(callee);
     await _ensureSignedInAsUsername(normalizedCaller);
+    await _assertVoiceCallCalleeOnline(normalizedCallee);
     final pairId = voiceCallPairId(normalizedCaller, normalizedCallee);
     for (final username in <String>[normalizedCaller, normalizedCallee]) {
       final existingUserLockValue = await _get(<String>[
@@ -679,6 +680,21 @@ class FirebaseEmulatorSignalingAdapter
     return room;
   }
 
+  Future<void> _assertVoiceCallCalleeOnline(String callee) async {
+    final normalizedCallee = normalizeVoiceCallUsername(callee);
+    final identity = await fetchIdentity(normalizedCallee);
+    if (identity == null) {
+      throw VoiceSignalingException(
+        'Could not confirm @$normalizedCallee is online. Try again.',
+      );
+    }
+    if (!identity.online) {
+      throw VoiceSignalingException(
+        '@$normalizedCallee is offline. Keep both apps open, then try again.',
+      );
+    }
+  }
+
   @override
   Future<VoiceCallRoom?> fetchCall(String callId) async {
     await ensureAuthenticated();
@@ -701,14 +717,23 @@ class FirebaseEmulatorSignalingAdapter
 
   @override
   Stream<VoiceCallInboxEntry> watchIncomingCalls(String username) {
+    final normalizedUsername = normalizeVoiceCallUsername(username);
     return _pollChildren<VoiceCallInboxEntry>(
-      <String>['voiceCallInboxes', normalizeVoiceCallUsername(username)],
+      <String>['voiceCallInboxes', normalizedUsername],
       parse: (Object? value, String key) async {
-        if (value is! Map) return null;
-        return VoiceCallInboxEntry.fromJson(
-          callId: key,
-          json: _asObjectMap(value),
-        );
+        if (value is! Map) {
+          await _delete(<String>['voiceCallInboxes', normalizedUsername, key]);
+          return null;
+        }
+        try {
+          return VoiceCallInboxEntry.fromJson(
+            callId: key,
+            json: _asObjectMap(value),
+          );
+        } catch (_) {
+          await _delete(<String>['voiceCallInboxes', normalizedUsername, key]);
+          return null;
+        }
       },
     );
   }

@@ -845,7 +845,16 @@ class FirebaseSignalingAdapter
     void emitEntry(DatabaseEvent event) {
       final key = event.snapshot.key;
       final value = event.snapshot.value;
-      if (key == null || key.isEmpty || value is! Map) {
+      if (key == null || key.isEmpty) {
+        return;
+      }
+      if (value is! Map) {
+        unawaited(
+          _removeCorruptVoiceCallInboxEntry(
+            username: normalizedUsername,
+            callId: key,
+          ),
+        );
         return;
       }
       try {
@@ -856,10 +865,13 @@ class FirebaseSignalingAdapter
         if (!controller.isClosed) {
           controller.add(entry);
         }
-      } catch (error, stackTrace) {
-        if (!controller.isClosed) {
-          controller.addError(error, stackTrace);
-        }
+      } catch (_) {
+        unawaited(
+          _removeCorruptVoiceCallInboxEntry(
+            username: normalizedUsername,
+            callId: key,
+          ),
+        );
       }
     }
 
@@ -877,6 +889,19 @@ class FirebaseSignalingAdapter
       },
     );
     return controller.stream;
+  }
+
+  Future<void> _removeCorruptVoiceCallInboxEntry({
+    required String username,
+    required String callId,
+  }) async {
+    try {
+      await _root.child('voiceCallInboxes/$username/$callId').remove();
+    } catch (_) {
+      // A corrupt inbox item should never close the incoming-call stream. If
+      // cleanup fails, the scheduled cleanup path or a later watcher tick can
+      // retry without crashing the app.
+    }
   }
 
   @override

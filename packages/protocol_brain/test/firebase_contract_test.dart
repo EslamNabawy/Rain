@@ -223,6 +223,9 @@ void main() {
 
     expect(rules, contains('root.child(\'friendships/\''));
     expect(rules, contains('root.child(\'blocks/\''));
+    expect(rules, contains("root.child('presence/'"));
+    expect(rules, contains("'/lastHeartbeat').isNumber()"));
+    expect(rules, contains("< 90000"));
     expect(rules, contains('"activeVoicePairs"'));
     expect(rules, contains('"activeVoiceUsers"'));
     expect(rules, contains('"voiceCalls"'));
@@ -250,6 +253,34 @@ void main() {
         "root.child('friendships/' + newData.child('caller').val() + '/' + newData.child('callee').val()).exists()",
       ),
     );
+    expect(
+      rules,
+      contains(
+        "root.child('presence/' + newData.child('callee').val() + '/online').val() === true",
+      ),
+    );
+    expect(
+      rules,
+      contains(
+        "now - root.child('presence/' + newData.child('callee').val() + '/lastHeartbeat').val() < 90000",
+      ),
+    );
+    expect(
+      rules,
+      contains(
+        "root.child('presence/' + newData.child('to').val() + '/online').val() === true",
+      ),
+    );
+  });
+
+  test('Firebase incoming call watcher repairs corrupt inbox entries', () {
+    final adapter = _repoFile(
+      'packages/protocol_brain/lib/adapters/firebase_adapter.dart',
+    );
+
+    expect(adapter, contains('_removeCorruptVoiceCallInboxEntry'));
+    expect(adapter, contains(r'voiceCallInboxes/$username/$callId'));
+    expect(adapter, isNot(contains('controller.addError(error, stackTrace)')));
   });
 
   test('Firebase voice user locks are claimed transactionally', () {

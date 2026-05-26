@@ -89,6 +89,25 @@ void main() {
       expect(decision.canRetryImmediately, isFalse);
     });
 
+    test('maps presence confirmation failures without claiming peer busy', () {
+      final decision = CallRetryPolicy.classifySignalingFailure(
+        const CallSignalingFailureSnapshot(
+          message: 'Could not confirm @bob is online. Try again.',
+          lockWasReclaimed: false,
+          terminalRoomWasCleaned: false,
+          corruptRoomWasRepaired: false,
+          peerId: 'bob',
+        ),
+      );
+
+      expect(decision.kind, CallRetryDecisionKind.peerOffline);
+      expect(
+        decision.userMessage,
+        'Could not confirm @bob is online. Try again.',
+      );
+      expect(decision.canRetryImmediately, isFalse);
+    });
+
     test('maps generic signaling failures without claiming peer busy', () {
       final decision = CallRetryPolicy.classifySignalingFailure(
         const CallSignalingFailureSnapshot(
