@@ -14,6 +14,8 @@ const rainLocalPreviewVideoKey = Key('rain-local-preview-video');
 const rainVoiceOnlyStageKey = Key('rain-voice-only-stage');
 const rainLocalPrimaryVideoKey = Key('rain-local-primary-video');
 const rainRemotePreviewVideoKey = Key('rain-remote-preview-video');
+const rainCallAudioEmitterKey = Key('rain-call-audio-emitter');
+const rainCallAudioEmitterMarkKey = Key('rain-call-audio-emitter-mark');
 
 class RainCallStage extends StatelessWidget {
   const RainCallStage({
@@ -501,9 +503,9 @@ class _RainCallAudioActivity extends StatelessWidget {
         MediaQuery.disableAnimationsOf(context) ||
         !performance.allowContinuousCallAnimation;
     return SizedBox(
-      key: const ValueKey<String>('rain-call-audio-emitter'),
-      width: 86,
-      height: 86,
+      key: rainCallAudioEmitterKey,
+      width: 102,
+      height: 102,
       child: Stack(
         alignment: Alignment.center,
         children: <Widget>[
@@ -517,8 +519,8 @@ class _RainCallAudioActivity extends StatelessWidget {
             ),
           ),
           RainPeerCoreAnimatedMark(
-            key: const ValueKey<String>('rain-call-audio-emitter-mark'),
-            size: 42,
+            key: rainCallAudioEmitterMarkKey,
+            size: 46,
             animate: false,
           ),
         ],
@@ -542,37 +544,29 @@ class _RainCallAudioEmitterPainter extends CustomPainter {
   void paint(Canvas canvas, Size size) {
     final clamped = level.isFinite ? level.clamp(0.0, 1.0).toDouble() : 0.0;
     final intensity = staticOnly ? 0.34 : math.max(0.18, clamped);
+    final center = Offset(size.width / 2, size.height / 2);
     final stroke = Paint()
       ..style = PaintingStyle.stroke
       ..strokeCap = StrokeCap.round
       ..strokeWidth = 1.6;
-    final fill = Paint()..style = PaintingStyle.fill;
-    final nodes = <Offset>[
-      Offset(size.width * 0.35, size.height * 0.55),
-      Offset(size.width * 0.51, size.height * 0.35),
-      Offset(size.width * 0.61, size.height * 0.62),
-    ];
+    final glow = Paint()
+      ..style = PaintingStyle.fill
+      ..color = accent.withValues(alpha: 0.08 + (0.08 * intensity));
 
-    for (final node in nodes) {
-      for (var ring = 0; ring < 3; ring += 1) {
-        final radius = 7.0 + (ring * 9.0) + (intensity * 12.0);
-        stroke.color = accent.withValues(
-          alpha: (0.34 - (ring * 0.08)) * intensity,
-        );
-        canvas.drawCircle(node, radius, stroke);
-      }
-      fill.color = accent.withValues(alpha: 0.42 + (0.30 * intensity));
-      canvas.drawCircle(node, 3.2 + (2.0 * intensity), fill);
+    canvas.drawCircle(center, 24 + (10 * intensity), glow);
+
+    for (var ring = 0; ring < 4; ring += 1) {
+      final radius = 24.0 + (ring * 8.0) + (intensity * 10.0);
+      stroke
+        ..strokeWidth = 1.6 - (ring * 0.16)
+        ..color = accent.withValues(alpha: (0.34 - (ring * 0.065)) * intensity);
+      canvas.drawCircle(center, radius, stroke);
     }
 
     stroke
-      ..strokeWidth = 1.2
+      ..strokeWidth = 1.1
       ..color = accent.withValues(alpha: 0.18 * intensity);
-    canvas.drawCircle(
-      Offset(size.width / 2, size.height / 2),
-      31 + (8 * intensity),
-      stroke,
-    );
+    canvas.drawCircle(center, 18 + (6 * intensity), stroke);
   }
 
   @override

@@ -191,6 +191,20 @@ class RainCallControlDock extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final scheme = Theme.of(context).colorScheme;
+    final controls = RainCallControls(
+      state: state,
+      onAccept: onAccept,
+      onReject: onReject,
+      onHangUp: onHangUp,
+      onRetry: onRetry,
+      onToggleMute: onToggleMute,
+      onToggleDeafen: onToggleDeafen,
+      onToggleCamera: onToggleCamera,
+      onSwitchCamera: onSwitchCamera,
+      onSelectOutputRoute: onSelectOutputRoute,
+      controlCapabilities: controlCapabilities,
+      outputRouteOptions: outputRouteOptions,
+    );
     return Container(
       key: dockKey,
       padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
@@ -201,29 +215,17 @@ class RainCallControlDock extends StatelessWidget {
           color: scheme.outlineVariant.withValues(alpha: 0.28),
         ),
       ),
-      child: Wrap(
-        alignment: WrapAlignment.center,
-        crossAxisAlignment: WrapCrossAlignment.center,
-        spacing: 10,
-        runSpacing: 8,
-        children: <Widget>[
-          RainCallControls(
-            state: state,
-            onAccept: onAccept,
-            onReject: onReject,
-            onHangUp: onHangUp,
-            onRetry: onRetry,
-            onToggleMute: onToggleMute,
-            onToggleDeafen: onToggleDeafen,
-            onToggleCamera: onToggleCamera,
-            onSwitchCamera: onSwitchCamera,
-            onSelectOutputRoute: onSelectOutputRoute,
-            controlCapabilities: controlCapabilities,
-            outputRouteOptions: outputRouteOptions,
-          ),
-          ...trailingControls,
-        ],
-      ),
+      child:
+          state.phase == VoiceCallPhase.incomingRinging &&
+              trailingControls.isEmpty
+          ? controls
+          : Wrap(
+              alignment: WrapAlignment.center,
+              crossAxisAlignment: WrapCrossAlignment.center,
+              spacing: 10,
+              runSpacing: 8,
+              children: <Widget>[controls, ...trailingControls],
+            ),
     );
   }
 }
@@ -238,15 +240,16 @@ class _IncomingCallActions extends StatelessWidget {
   Widget build(BuildContext context) {
     return LayoutBuilder(
       builder: (BuildContext context, BoxConstraints constraints) {
-        final stackActions =
-            constraints.hasBoundedWidth && constraints.maxWidth < 340;
+        final width = constraints.hasBoundedWidth
+            ? constraints.maxWidth
+            : 320.0;
         final reject = _CallActionButton(
-          key: const ValueKey<String>('rain-call-reject-button'),
+          key: const ValueKey<String>('rain-call-decline-button'),
           semanticsLabel: 'Decline call',
           onPressed: onReject,
-          icon: Icons.call_end,
+          icon: Icons.phone_disabled,
           label: 'Decline',
-          filled: false,
+          tone: _CallActionTone.danger,
         );
         final accept = _CallActionButton(
           key: const ValueKey<String>('rain-call-accept-button'),
@@ -254,32 +257,38 @@ class _IncomingCallActions extends StatelessWidget {
           onPressed: onAccept,
           icon: Icons.call,
           label: 'Answer',
-          filled: true,
+          tone: _CallActionTone.success,
         );
 
-        if (stackActions) {
-          return Column(
-            mainAxisSize: MainAxisSize.min,
-            crossAxisAlignment: CrossAxisAlignment.stretch,
-            children: <Widget>[reject, const SizedBox(height: 8), accept],
-          );
-        }
-
-        if (!constraints.hasBoundedWidth) {
-          return Row(
-            mainAxisSize: MainAxisSize.min,
-            children: <Widget>[reject, const SizedBox(width: 10), accept],
-          );
-        }
-
-        return SizedBox(
-          width: constraints.maxWidth,
-          child: Row(
-            children: <Widget>[
-              Expanded(child: reject),
-              const SizedBox(width: 10),
-              Expanded(child: accept),
-            ],
+        return FocusTraversalGroup(
+          policy: OrderedTraversalPolicy(),
+          child: SizedBox(
+            width: width,
+            child: Row(
+              mainAxisSize: MainAxisSize.max,
+              children: <Widget>[
+                Expanded(
+                  child: SizedBox(
+                    key: const ValueKey<String>('rain-call-reject-button'),
+                    height: 58,
+                    child: FocusTraversalOrder(
+                      order: const NumericFocusOrder(1),
+                      child: reject,
+                    ),
+                  ),
+                ),
+                const SizedBox(width: 10),
+                Expanded(
+                  child: SizedBox(
+                    height: 58,
+                    child: FocusTraversalOrder(
+                      order: const NumericFocusOrder(2),
+                      child: accept,
+                    ),
+                  ),
+                ),
+              ],
+            ),
           ),
         );
       },
@@ -294,35 +303,46 @@ class _CallActionButton extends StatelessWidget {
     required this.onPressed,
     required this.icon,
     required this.label,
-    required this.filled,
+    required this.tone,
   });
 
   final String semanticsLabel;
   final VoidCallback onPressed;
   final IconData icon;
   final String label;
-  final bool filled;
+  final _CallActionTone tone;
 
   @override
   Widget build(BuildContext context) {
-    final child = filled
-        ? FilledButton.icon(
-            onPressed: onPressed,
-            icon: Icon(icon),
-            label: Text(label),
-          )
-        : OutlinedButton.icon(
-            onPressed: onPressed,
-            icon: Icon(icon),
-            label: Text(label),
-          );
+    final scheme = Theme.of(context).colorScheme;
+    final style = switch (tone) {
+      _CallActionTone.danger => FilledButton.styleFrom(
+        backgroundColor: scheme.errorContainer,
+        foregroundColor: scheme.onErrorContainer,
+      ),
+      _CallActionTone.success => FilledButton.styleFrom(
+        backgroundColor: RainColors.peerMint,
+        foregroundColor: Colors.black,
+      ),
+    };
+    final child = FilledButton.icon(
+      onPressed: onPressed,
+      style: style,
+      icon: Icon(icon),
+      label: FittedBox(
+        fit: BoxFit.scaleDown,
+        child: Text(label, maxLines: 1, softWrap: false),
+      ),
+    );
     return Semantics(
       button: true,
       label: semanticsLabel,
-      child: SizedBox(height: 52, child: child),
+      child: SizedBox(height: 58, child: child),
     );
   }
 }
+
+enum _CallActionTone { danger, success }
 
 class RainCallControlVisual {
   const RainCallControlVisual({

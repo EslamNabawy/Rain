@@ -6,6 +6,7 @@ import 'package:rain/application/runtime/video_call_renderers.dart';
 import 'package:rain/application/runtime/voice_call_state.dart';
 import 'package:rain/application/state/call_surface_geometry.dart';
 import 'package:rain/application/state/call_surface_providers.dart';
+import 'package:rain/presentation/branding/rain_peer_core_mark.dart';
 import 'package:rain/presentation/branding/rain_ripple_halo_surface.dart';
 import 'package:rain/presentation/performance/rain_performance.dart';
 import 'package:rain/presentation/theme/rain_theme.dart';
@@ -995,38 +996,51 @@ class _RainExpandedCallPanel extends StatelessWidget {
                             mainAxisSize: MainAxisSize.min,
                             crossAxisAlignment: CrossAxisAlignment.stretch,
                             children: <Widget>[
-                              _RainPopupHeader(
-                                state: state,
-                                displayName: displayName,
-                                gender: gender,
-                                accent: accent,
-                                canMinimize: canMinimize,
-                                onMinimize: onMinimize,
-                                onFullscreen: onFullscreen,
-                                onDragUpdate: onHeaderDragUpdate,
-                              ),
-                              SizedBox(
-                                height: state.phase == VoiceCallPhase.failed
-                                    ? 16
-                                    : 18,
-                              ),
-                              if (state.phase == VoiceCallPhase.failed)
-                                _RainFailureFocus(state: state, accent: accent)
-                              else
-                                _RainCallMediaFrame(
+                              if (state.phase == VoiceCallPhase.incomingRinging)
+                                _RainIncomingCallFocus(
                                   state: state,
+                                  displayName: displayName,
+                                  gender: gender,
                                   accent: accent,
-                                  videoRenderers: videoRenderers,
-                                  primaryRole: primaryRole,
-                                  onToggleVideoPrimaryRole:
-                                      onToggleVideoPrimaryRole,
+                                  onDragUpdate: onHeaderDragUpdate,
+                                )
+                              else ...<Widget>[
+                                _RainPopupHeader(
+                                  state: state,
+                                  displayName: displayName,
+                                  gender: gender,
+                                  accent: accent,
+                                  canMinimize: canMinimize,
+                                  onMinimize: onMinimize,
+                                  onFullscreen: onFullscreen,
+                                  onDragUpdate: onHeaderDragUpdate,
                                 ),
-                              const SizedBox(height: 18),
-                              _RainPopupStatusText(
-                                state: state,
-                                displayName: displayName,
-                                now: now,
-                              ),
+                                SizedBox(
+                                  height: state.phase == VoiceCallPhase.failed
+                                      ? 16
+                                      : 18,
+                                ),
+                                if (state.phase == VoiceCallPhase.failed)
+                                  _RainFailureFocus(
+                                    state: state,
+                                    accent: accent,
+                                  )
+                                else
+                                  _RainCallMediaFrame(
+                                    state: state,
+                                    accent: accent,
+                                    videoRenderers: videoRenderers,
+                                    primaryRole: primaryRole,
+                                    onToggleVideoPrimaryRole:
+                                        onToggleVideoPrimaryRole,
+                                  ),
+                                const SizedBox(height: 18),
+                                _RainPopupStatusText(
+                                  state: state,
+                                  displayName: displayName,
+                                  now: now,
+                                ),
+                              ],
                               if (routeSummary != null &&
                                   routeSummary!.isNotEmpty) ...[
                                 const SizedBox(height: 14),
@@ -1083,6 +1097,98 @@ class _RainExpandedCallPanel extends StatelessWidget {
         ? math.max(420.0, panelWidth * 0.72)
         : math.max(420.0, panelWidth);
     return math.min(target, maxHeight);
+  }
+}
+
+class _RainIncomingCallFocus extends StatelessWidget {
+  const _RainIncomingCallFocus({
+    required this.state,
+    required this.displayName,
+    required this.accent,
+    this.gender,
+    this.onDragUpdate,
+  });
+
+  final VoiceCallState state;
+  final String displayName;
+  final String? gender;
+  final Color accent;
+  final GestureDragUpdateCallback? onDragUpdate;
+
+  @override
+  Widget build(BuildContext context) {
+    final scheme = Theme.of(context).colorScheme;
+    final mediaLabel = state.isVideo
+        ? 'Incoming video call'
+        : 'Incoming voice call';
+    return GestureDetector(
+      key: const ValueKey<String>('rain-call-popup-drag-handle'),
+      behavior: HitTestBehavior.opaque,
+      onPanUpdate: onDragUpdate,
+      child: Column(
+        key: const ValueKey<String>('rain-call-incoming-focus'),
+        mainAxisSize: MainAxisSize.min,
+        children: <Widget>[
+          SizedBox(
+            height: 108,
+            width: 108,
+            child: Stack(
+              alignment: Alignment.center,
+              children: <Widget>[
+                Container(
+                  width: 104,
+                  height: 104,
+                  decoration: BoxDecoration(
+                    shape: BoxShape.circle,
+                    color: accent.withValues(alpha: 0.10),
+                    border: Border.all(
+                      color: accent.withValues(alpha: 0.30),
+                      width: 1.5,
+                    ),
+                  ),
+                ),
+                RainPeerCoreAnimatedMark(
+                  key: const ValueKey<String>('rain-call-peer-core-mark'),
+                  size: 74,
+                  animate: true,
+                ),
+                Positioned(
+                  right: 4,
+                  bottom: 6,
+                  child: RainAvatar(
+                    name: displayName,
+                    size: 34,
+                    statusColor: accent,
+                    gender: gender,
+                  ),
+                ),
+              ],
+            ),
+          ),
+          const SizedBox(height: 16),
+          Text(
+            displayName,
+            maxLines: 1,
+            overflow: TextOverflow.ellipsis,
+            textAlign: TextAlign.center,
+            style: Theme.of(
+              context,
+            ).textTheme.headlineSmall?.copyWith(fontWeight: FontWeight.w900),
+          ),
+          const SizedBox(height: 6),
+          Text(
+            mediaLabel,
+            maxLines: 1,
+            overflow: TextOverflow.ellipsis,
+            textAlign: TextAlign.center,
+            style: Theme.of(context).textTheme.titleSmall?.copyWith(
+              color: scheme.onSurface.withValues(alpha: 0.72),
+              fontWeight: FontWeight.w800,
+            ),
+          ),
+        ],
+      ),
+    );
   }
 }
 
@@ -1325,23 +1431,25 @@ class _RainCallControlDock extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    return Align(
-      alignment: Alignment.center,
-      child: RainCallControlDock(
-        state: state,
-        onAccept: onAccept,
-        onReject: onReject,
-        onHangUp: onHangUp,
-        onRetry: onRetry,
-        onToggleMute: onToggleMute,
-        onToggleDeafen: onToggleDeafen,
-        onToggleCamera: onToggleCamera,
-        onSwitchCamera: onSwitchCamera,
-        onSelectOutputRoute: onSelectOutputRoute,
-        controlCapabilities: controlCapabilities,
-        outputRouteOptions: outputRouteOptions,
-      ),
+    final dock = RainCallControlDock(
+      state: state,
+      onAccept: onAccept,
+      onReject: onReject,
+      onHangUp: onHangUp,
+      onRetry: onRetry,
+      onToggleMute: onToggleMute,
+      onToggleDeafen: onToggleDeafen,
+      onToggleCamera: onToggleCamera,
+      onSwitchCamera: onSwitchCamera,
+      onSelectOutputRoute: onSelectOutputRoute,
+      controlCapabilities: controlCapabilities,
+      outputRouteOptions: outputRouteOptions,
     );
+    if (state.phase == VoiceCallPhase.incomingRinging) {
+      return dock;
+    }
+
+    return Align(alignment: Alignment.center, child: dock);
   }
 }
 

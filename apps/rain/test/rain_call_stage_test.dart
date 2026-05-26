@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
+import 'package:rain/application/runtime/voice_audio_level.dart';
 import 'package:rain/application/runtime/voice_call_state.dart';
 import 'package:rain/application/state/call_surface_providers.dart';
 import 'package:rain/presentation/widgets/calls/rain_call_stage.dart';
@@ -78,6 +79,33 @@ void main() {
       findsOneWidget,
     );
   });
+
+  testWidgets('voice stage emits waves from Peer Core mark', (
+    WidgetTester tester,
+  ) async {
+    await tester.pumpWidget(
+      MaterialApp(
+        home: Scaffold(
+          body: RainCallStage(
+            state: _callState(
+              mediaMode: CallMediaMode.audio,
+              audioLevel: VoiceAudioLevel.available(
+                remoteLevel: 0.8,
+                localLevel: 0,
+                updatedAt: 1,
+                source: VoiceAudioLevelSource.audioLevel,
+              ),
+            ),
+            accent: Colors.teal,
+          ),
+        ),
+      ),
+    );
+
+    expect(find.byKey(rainCallAudioEmitterKey), findsOneWidget);
+    expect(find.byKey(rainCallAudioEmitterMarkKey), findsOneWidget);
+    expect(find.byKey(const Key('rain-detached-equalizer-bars')), findsNothing);
+  });
 }
 
 Future<void> _pumpVideoCallStage(
@@ -133,6 +161,7 @@ VoiceCallState _callState({
   required CallMediaMode mediaMode,
   bool hasRemoteVideo = false,
   bool hasLocalVideo = false,
+  VoiceAudioLevel audioLevel = const VoiceAudioLevel.unavailable(),
 }) {
   return VoiceCallState(
     phase: VoiceCallPhase.active,
@@ -141,6 +170,7 @@ VoiceCallState _callState({
     mediaMode: mediaMode,
     hasRemoteVideo: hasRemoteVideo,
     hasLocalVideo: hasLocalVideo,
+    audioLevel: audioLevel,
     startedAt: DateTime.now()
         .subtract(const Duration(seconds: 7))
         .millisecondsSinceEpoch,

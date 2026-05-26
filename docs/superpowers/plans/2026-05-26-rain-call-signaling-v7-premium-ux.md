@@ -1457,7 +1457,7 @@ git commit -m "fix: adapt call controls to real device capabilities"
 - Modify: `apps/rain/test/rain_call_stage_test.dart`
 - Modify: `apps/rain/test/rain_chat_widgets_test.dart`
 
-- [ ] **Step 1: Build Peer Core emitting visualizer**
+- [x] **Step 1: Build Peer Core emitting visualizer**
 
 Rules:
 
@@ -1473,7 +1473,7 @@ Widget key:
 const rainCallAudioEmitterKey = Key('rain-call-audio-emitter');
 ```
 
-- [ ] **Step 2: Fix incoming answer/decline layout**
+- [x] **Step 2: Fix incoming answer/decline layout**
 
 Mobile incoming call UI:
 
@@ -1493,7 +1493,7 @@ Desktop incoming call UI:
 - same labels/icons/actions,
 - keyboard focus order: Decline, Accept.
 
-- [ ] **Step 3: Add tests**
+- [x] **Step 3: Add tests**
 
 ```dart
 testWidgets('voice stage emits waves from Peer Core mark', (tester) async {
@@ -1513,13 +1513,13 @@ testWidgets('incoming call actions fit on compact mobile screen', (tester) async
 });
 ```
 
-- [ ] **Step 4: Run tests**
+- [x] **Step 4: Run tests**
 
 ```powershell
 dart run melos exec --scope rain -- flutter test test/rain_call_stage_test.dart test/rain_chat_widgets_test.dart
 ```
 
-- [ ] **Step 5: Commit**
+- [x] **Step 5: Commit**
 
 ```powershell
 git add apps/rain/lib/presentation/widgets/calls/rain_call_overlay.dart apps/rain/lib/presentation/widgets/calls/rain_call_stage.dart apps/rain/lib/presentation/widgets/calls/rain_call_controls.dart apps/rain/test/rain_call_stage_test.dart apps/rain/test/rain_chat_widgets_test.dart

@@ -2230,7 +2230,8 @@ void main() {
       ),
     );
 
-    expect(find.text('Bob is calling'), findsOneWidget);
+    expect(find.text('Bob'), findsWidgets);
+    expect(find.text('Incoming voice call'), findsOneWidget);
     expect(
       find.byKey(const ValueKey<String>('rain-call-voice-popup-layout')),
       findsOneWidget,
@@ -2254,6 +2255,79 @@ void main() {
       find.byKey(const ValueKey<String>('rain-call-reject-button')),
     );
     expect(rejected, isTrue);
+  });
+
+  testWidgets('incoming call actions fit on compact mobile screen', (
+    WidgetTester tester,
+  ) async {
+    tester.view.physicalSize = const Size(320, 640);
+    tester.view.devicePixelRatio = 1;
+    addTearDown(tester.view.resetPhysicalSize);
+    addTearDown(tester.view.resetDevicePixelRatio);
+    var accepted = false;
+    var rejected = false;
+
+    await tester.pumpWidget(
+      MaterialApp(
+        home: Scaffold(
+          body: Stack(
+            children: <Widget>[
+              Positioned.fill(
+                child: RainCallOverlay(
+                  state: const VoiceCallState(
+                    phase: VoiceCallPhase.incomingRinging,
+                    peerId: 'bob',
+                    callId: 'call-1',
+                  ),
+                  surface: const CallSurfaceState.visible(
+                    peerId: 'bob',
+                    callId: 'call-1',
+                  ),
+                  displayName: 'Bob',
+                  onAccept: () => accepted = true,
+                  onReject: () => rejected = true,
+                  onHangUp: () {},
+                  onRetry: () {},
+                  onToggleMute: () {},
+                  onMinimize: () {},
+                  onExpand: () {},
+                ),
+              ),
+            ],
+          ),
+        ),
+      ),
+    );
+    await tester.pumpAndSettle();
+
+    final declineFinder = find.byKey(
+      const ValueKey<String>('rain-call-decline-button'),
+    );
+    final acceptFinder = find.byKey(
+      const ValueKey<String>('rain-call-accept-button'),
+    );
+    final declineRect = tester.getRect(declineFinder);
+    final acceptRect = tester.getRect(acceptFinder);
+
+    expect(declineFinder, findsOneWidget);
+    expect(acceptFinder, findsOneWidget);
+    expect(
+      find.byKey(const ValueKey<String>('rain-call-incoming-focus')),
+      findsOneWidget,
+    );
+    expect(declineRect.height, greaterThanOrEqualTo(56));
+    expect(acceptRect.height, greaterThanOrEqualTo(56));
+    expect(declineRect.left, lessThan(acceptRect.left));
+    expect((declineRect.top - acceptRect.top).abs(), lessThan(1));
+    expect(acceptRect.bottom, lessThanOrEqualTo(640));
+    expect(declineRect.bottom, lessThanOrEqualTo(640));
+    expect(find.text('Decline'), findsOneWidget);
+    expect(find.text('Answer'), findsOneWidget);
+
+    await tester.tap(declineFinder);
+    await tester.tap(acceptFinder);
+    expect(rejected, isTrue);
+    expect(accepted, isTrue);
   });
 
   testWidgets('incoming call controls stay visible across viewport sizes', (
@@ -2322,9 +2396,9 @@ void main() {
         final rejectRect = tester.getRect(rejectFinder);
 
         expect(acceptRect.width, greaterThan(0));
-        expect(acceptRect.height, greaterThanOrEqualTo(48));
+        expect(acceptRect.height, greaterThanOrEqualTo(56));
         expect(rejectRect.width, greaterThan(0));
-        expect(rejectRect.height, greaterThanOrEqualTo(48));
+        expect(rejectRect.height, greaterThanOrEqualTo(56));
         expect(acceptRect.top, greaterThanOrEqualTo(0));
         expect(rejectRect.top, greaterThanOrEqualTo(0));
         expect(acceptRect.bottom, lessThanOrEqualTo(size.height));
