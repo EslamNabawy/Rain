@@ -627,10 +627,18 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
   String? _selectedPeerId;
   String? _defaultOutputAppliedCallId;
   String? _lastVoiceCallLifecycleSoundKey;
+  CallEndSummary? _lastEndedCallSummary;
+  Timer? _endedCallSummaryTimer;
   double _fullscreenFriendsPanelWidth = 280;
   bool _fullscreenFriendsPanelCollapsed = false;
   bool _fullscreenFriendsPanelForcedOpen = false;
   Future<void>? _refreshFriendsInFlight;
+
+  @override
+  void dispose() {
+    _endedCallSummaryTimer?.cancel();
+    super.dispose();
+  }
 
   @override
   Widget build(BuildContext context) {
@@ -728,6 +736,20 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
         final content = Stack(
           children: <Widget>[
             Positioned.fill(child: shell),
+            if (_lastEndedCallSummary case final summary?)
+              Positioned(
+                left: isCompact ? 12 : 341,
+                right: 12,
+                top: 0,
+                child: SafeArea(
+                  bottom: false,
+                  child: _CallEndSummaryBanner(
+                    summary: summary,
+                    onDismiss: _dismissEndedCallSummary,
+                    onCallAgain: () => _callAgainFromSummary(summary),
+                  ),
+                ),
+              ),
             if (_shouldShowFullscreenCallWorkspace(callSurface, voiceCall))
               Positioned.fill(
                 child: RainCallWorkspace(
@@ -1074,6 +1096,7 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
     }
 
     _handleVoiceCallSound(previous, next);
+    _maybeShowEndedCallSummary(previous, next);
     _maybeApplyDefaultVoiceOutput(next);
 
     if (next.phase != VoiceCallPhase.incomingRinging ||
@@ -1082,6 +1105,82 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
       return;
     }
     setState(() => _selectedPeerId = next.peerId);
+  }
+
+  void _maybeShowEndedCallSummary(
+    VoiceCallState? previous,
+    VoiceCallState next,
+  ) {
+    if (previous == null ||
+        next.phase != VoiceCallPhase.idle ||
+        previous.phase == VoiceCallPhase.idle ||
+        previous.phase == VoiceCallPhase.failed ||
+        previous.peerId == null) {
+      return;
+    }
+    final now = DateTime.now();
+    final startedAt = previous.startedAt;
+    final duration = startedAt == null
+        ? Duration.zero
+        : Duration(
+            milliseconds: (now.millisecondsSinceEpoch - startedAt).clamp(
+              0,
+              86400000,
+            ),
+          );
+    final summary = CallEndSummary(
+      peerId: previous.peerId!,
+      peerLabel: _voiceCallDisplayName(ref.read(friendsProvider), previous),
+      mediaMode: previous.mediaMode,
+      duration: duration,
+      initiator: _callEndInitiator(previous),
+      reason: _callEndReason(previous),
+      endedAt: now,
+    );
+    _endedCallSummaryTimer?.cancel();
+    setState(() => _lastEndedCallSummary = summary);
+    _endedCallSummaryTimer = Timer(const Duration(seconds: 8), () {
+      if (mounted && identical(_lastEndedCallSummary, summary)) {
+        setState(() => _lastEndedCallSummary = null);
+      }
+    });
+  }
+
+  CallEndInitiator _callEndInitiator(VoiceCallState previous) {
+    final detail = previous.detail?.toLowerCase() ?? '';
+    if (detail.contains('peer ended') || detail.contains('remote ended')) {
+      return CallEndInitiator.remote;
+    }
+    if (detail.contains('network') ||
+        detail.contains('timed out') ||
+        detail.contains('failed')) {
+      return CallEndInitiator.system;
+    }
+    return CallEndInitiator.local;
+  }
+
+  String _callEndReason(VoiceCallState previous) {
+    final detail = previous.detail?.trim();
+    if (detail != null && detail.isNotEmpty) {
+      return detail;
+    }
+    return previous.isVideo ? 'Video call ended.' : 'Voice call ended.';
+  }
+
+  void _dismissEndedCallSummary() {
+    _endedCallSummaryTimer?.cancel();
+    if (mounted) {
+      setState(() => _lastEndedCallSummary = null);
+    }
+  }
+
+  Future<void> _callAgainFromSummary(CallEndSummary summary) async {
+    _dismissEndedCallSummary();
+    if (summary.isVideo) {
+      await _startVideoCall(summary.peerId);
+    } else {
+      await _startVoiceCall(summary.peerId);
+    }
   }
 
   void _maybeApplyDefaultVoiceOutput(VoiceCallState call) {
@@ -1448,6 +1547,112 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
       SnackBar(
         content: Text(message),
         backgroundColor: Theme.of(context).colorScheme.error,
+      ),
+    );
+  }
+}
+
+class _CallEndSummaryBanner extends StatelessWidget {
+  const _CallEndSummaryBanner({
+    required this.summary,
+    required this.onDismiss,
+    required this.onCallAgain,
+  });
+
+  final CallEndSummary summary;
+  final VoidCallback onDismiss;
+  final VoidCallback onCallAgain;
+
+  @override
+  Widget build(BuildContext context) {
+    final scheme = Theme.of(context).colorScheme;
+    final mediaLabel = summary.isVideo
+        ? 'Video call ended'
+        : 'Voice call ended';
+    final initiatorLabel = switch (summary.initiator) {
+      CallEndInitiator.local => 'Ended by you',
+      CallEndInitiator.remote => 'Ended by ${summary.peerLabel}',
+      CallEndInitiator.system => 'Ended by Rain',
+    };
+    return Padding(
+      padding: const EdgeInsets.only(top: 8),
+      child: Center(
+        child: ConstrainedBox(
+          constraints: const BoxConstraints(maxWidth: 720),
+          child: Material(
+            color: Colors.transparent,
+            child: DecoratedBox(
+              decoration: BoxDecoration(
+                color: scheme.surface.withValues(
+                  alpha: scheme.brightness == Brightness.dark ? 0.97 : 0.99,
+                ),
+                borderRadius: BorderRadius.circular(22),
+                border: Border.all(
+                  color: scheme.primary.withValues(alpha: 0.26),
+                ),
+                boxShadow: <BoxShadow>[
+                  BoxShadow(
+                    blurRadius: 18,
+                    offset: const Offset(0, 8),
+                    color: Colors.black.withValues(
+                      alpha: scheme.brightness == Brightness.dark ? 0.28 : 0.10,
+                    ),
+                  ),
+                ],
+              ),
+              child: Padding(
+                padding: const EdgeInsets.fromLTRB(14, 10, 10, 10),
+                child: Row(
+                  children: <Widget>[
+                    Icon(
+                      summary.isVideo
+                          ? Icons.videocam_off_outlined
+                          : Icons.call_end_outlined,
+                      color: scheme.primary,
+                    ),
+                    const SizedBox(width: 12),
+                    Expanded(
+                      child: Column(
+                        mainAxisSize: MainAxisSize.min,
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: <Widget>[
+                          Text(
+                            '$mediaLabel with ${summary.peerLabel}',
+                            maxLines: 1,
+                            overflow: TextOverflow.ellipsis,
+                            style: Theme.of(context).textTheme.titleSmall
+                                ?.copyWith(fontWeight: FontWeight.w900),
+                          ),
+                          const SizedBox(height: 2),
+                          Text(
+                            '$initiatorLabel / ${rainFormatVoiceElapsed(summary.duration)}',
+                            maxLines: 1,
+                            overflow: TextOverflow.ellipsis,
+                            style: Theme.of(context).textTheme.bodySmall
+                                ?.copyWith(
+                                  color: scheme.onSurface.withValues(
+                                    alpha: 0.70,
+                                  ),
+                                ),
+                          ),
+                        ],
+                      ),
+                    ),
+                    TextButton(
+                      onPressed: onCallAgain,
+                      child: const Text('Call again'),
+                    ),
+                    IconButton(
+                      tooltip: 'Dismiss',
+                      onPressed: onDismiss,
+                      icon: const Icon(Icons.close),
+                    ),
+                  ],
+                ),
+              ),
+            ),
+          ),
+        ),
       ),
     );
   }

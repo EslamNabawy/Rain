@@ -963,18 +963,23 @@ extension VoiceCallRuntime on RainRuntimeController {
       isOfferOwner: isOutgoing,
       mediaMode: mediaMode,
       logger: (String message) {
+        final alreadyTerminal = _isVoiceTerminalAlreadyClosedMessage(message);
         _recordRuntimeEvent(
           category: 'call',
           name: 'signaling_event_ignored',
-          severity: 'warning',
+          severity: alreadyTerminal ? 'info' : 'warning',
           message: message,
           context: <String, Object?>{
             'peerId': peerId,
             'callId': callId,
             'sessionEpoch': sessionEpoch,
             'mediaMode': mediaMode.name,
+            'alreadyTerminal': alreadyTerminal,
           },
         );
+        if (alreadyTerminal) {
+          return;
+        }
         errorRecorder?.call(
           StateError('Voice call signaling ignored: $message'),
           StackTrace.current,
@@ -1174,8 +1179,44 @@ extension VoiceCallRuntime on RainRuntimeController {
             to: localUsername,
           ),
         );
+        await _forceTerminalRoomIfSessionStayedLive(
+          session: session,
+          room: room,
+        );
         break;
     }
+  }
+
+  Future<void> _forceTerminalRoomIfSessionStayedLive({
+    required VoiceCallSession session,
+    required VoiceCallRoom room,
+  }) async {
+    if (!room.status.isTerminal || !_isLiveVoiceCallSession(session)) {
+      return;
+    }
+    final current = _voiceCallState;
+    if (current.callId != room.callId ||
+        current.sessionEpoch != room.createdAt ||
+        current.phase == VoiceCallPhase.idle ||
+        current.phase == VoiceCallPhase.failed) {
+      return;
+    }
+    _recordRuntimeEvent(
+      category: 'call',
+      name: 'voice_terminal_room_forced_reconcile',
+      severity: 'warning',
+      message: 'Terminal Firebase room left the voice session live.',
+      context: <String, Object?>{
+        ..._voiceCallEventContext(current),
+        'status': room.status.name,
+        'endedBy': room.endedBy,
+        'reasonCode': room.reasonCode,
+      },
+    );
+    await _settleVoiceCallAfterTerminalRace(
+      session,
+      detail: room.reason ?? 'Call ended.',
+    );
   }
 
   VoiceCallFrame _terminalVoiceFrameFromRoom({
@@ -1212,9 +1253,21 @@ extension VoiceCallRuntime on RainRuntimeController {
       sentAt: room.endedAt ?? room.updatedAt,
       seq: _voiceCallTerminalSeq,
       sessionEpoch: room.createdAt,
-      reason: room.reason ?? _terminalVoiceCallReason(room.status),
+      reason: _terminalVoiceCallReasonForRoom(room, to),
       reasonCode: room.reasonCode ?? _terminalVoiceCallReasonCode(room.status),
     );
+  }
+
+  String? _terminalVoiceCallReasonForRoom(
+    VoiceCallRoom room,
+    String localUser,
+  ) {
+    if (room.status == VoiceCallSignalingStatus.ended &&
+        room.endedBy != null &&
+        room.endedBy != localUser) {
+      return 'Peer ended the call.';
+    }
+    return room.reason ?? _terminalVoiceCallReason(room.status);
   }
 
   String? _terminalVoiceCallReason(VoiceCallSignalingStatus status) {
@@ -1708,6 +1761,24 @@ extension VoiceCallRuntime on RainRuntimeController {
                 connectedAt: now,
               )
               .catchError((Object error, StackTrace stackTrace) {
+                if (_isVoiceTerminalAlreadyClosedError(error)) {
+                  _recordTerminalAlreadyClosed(
+                    error,
+                    name: 'voice_mark_connected_after_terminal',
+                    context: <String, Object?>{
+                      ..._voiceCallEventContext(_voiceCallState),
+                      'callId': session.callId,
+                      'sessionEpoch': session.sessionEpoch,
+                    },
+                  );
+                  unawaited(
+                    _settleVoiceCallAfterTerminalRace(
+                      session,
+                      detail: 'Call ended.',
+                    ),
+                  );
+                  return;
+                }
                 _recordVoiceSignalingError(error, stackTrace);
               }),
         );
@@ -2534,6 +2605,14 @@ extension VoiceCallRuntime on RainRuntimeController {
   }
 
   void _recordVoiceSignalingError(Object error, StackTrace stackTrace) {
+    if (_isVoiceTerminalAlreadyClosedError(error)) {
+      _recordTerminalAlreadyClosed(
+        error,
+        name: 'voice_cleanup_already_completed',
+        context: _voiceCallEventContext(_voiceCallState),
+      );
+      return;
+    }
     _recordRuntimeEvent(
       category: 'call',
       name: 'signaling_error',
@@ -2653,6 +2732,66 @@ extension VoiceCallRuntime on RainRuntimeController {
   bool _isUnknownVoiceCallCleanupError(Object error) {
     final normalized = _normalizedVoiceCallErrorText(error).toLowerCase();
     return normalized.contains('unknown voice call');
+  }
+
+  bool _isVoiceTerminalAlreadyClosedError(Object error) {
+    return _isVoiceTerminalAlreadyClosedMessage(
+      _normalizedVoiceCallErrorText(error),
+    );
+  }
+
+  bool _isVoiceTerminalAlreadyClosedMessage(String message) {
+    final normalized = message.toLowerCase();
+    return normalized.contains('unknown voice call') ||
+        normalized.contains('already ended') ||
+        normalized.contains('failed to send hangup');
+  }
+
+  void _recordTerminalAlreadyClosed(
+    Object error, {
+    required String name,
+    required Map<String, Object?> context,
+  }) {
+    _recordRuntimeEvent(
+      category: 'call',
+      name: name,
+      severity: 'info',
+      message: error.toString(),
+      context: <String, Object?>{
+        ...context,
+        'cleanupResult': 'alreadyCompleted',
+      },
+    );
+  }
+
+  Future<void> _settleVoiceCallAfterTerminalRace(
+    VoiceCallSession session, {
+    required String detail,
+  }) async {
+    if (!_isLiveVoiceCallSession(session)) {
+      return;
+    }
+    final current = _voiceCallState;
+    if (current.callId != session.callId ||
+        current.sessionEpoch != session.sessionEpoch ||
+        current.phase == VoiceCallPhase.idle ||
+        current.phase == VoiceCallPhase.failed) {
+      return;
+    }
+    _setVoiceCallState(
+      current.copyWith(
+        phase: VoiceCallPhase.ending,
+        detail: detail,
+        updatedAt: DateTime.now().millisecondsSinceEpoch,
+        audioLevel: const VoiceAudioLevel.unavailable(),
+      ),
+    );
+    await _disposeVoiceCallSession(session);
+    final latest = _voiceCallState;
+    if (latest.callId == session.callId ||
+        latest.sessionEpoch == session.sessionEpoch) {
+      _setVoiceCallState(const VoiceCallState.idle());
+    }
   }
 
   Future<void> _endVoiceCallForPeer(

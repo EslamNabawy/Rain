@@ -37,6 +37,30 @@ enum VoiceCallFailureReason {
 
 enum VoiceCallOutputRoute { systemDefault, speaker, bluetooth }
 
+enum CallEndInitiator { local, remote, system }
+
+final class CallEndSummary {
+  const CallEndSummary({
+    required this.peerId,
+    required this.peerLabel,
+    required this.mediaMode,
+    required this.duration,
+    required this.initiator,
+    required this.reason,
+    required this.endedAt,
+  });
+
+  final String peerId;
+  final String peerLabel;
+  final CallMediaMode mediaMode;
+  final Duration duration;
+  final CallEndInitiator initiator;
+  final String reason;
+  final DateTime endedAt;
+
+  bool get isVideo => mediaMode == CallMediaMode.video;
+}
+
 enum CallAudioOutputTargetKind {
   systemDefault,
   androidSpeakerphone,
