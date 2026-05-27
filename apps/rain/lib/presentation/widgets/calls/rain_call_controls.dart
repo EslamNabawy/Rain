@@ -110,6 +110,7 @@ class RainCallControls extends StatelessWidget {
     CallControlCapability capability, {
     required bool compact,
   }) {
+    final scheme = Theme.of(context).colorScheme;
     final visual = rainVoiceCallControlVisual(state, capability);
     final control = switch (capability) {
       CallControlCapability.microphone => IconButton(
@@ -138,6 +139,16 @@ class RainCallControls extends StatelessWidget {
       CallControlCapability.hangUp => IconButton.filled(
         tooltip: visual.tooltip,
         onPressed: onHangUp,
+        style: IconButton.styleFrom(
+          backgroundColor: scheme.errorContainer,
+          foregroundColor: scheme.onErrorContainer,
+          disabledBackgroundColor: scheme.errorContainer.withValues(
+            alpha: 0.46,
+          ),
+          disabledForegroundColor: scheme.onErrorContainer.withValues(
+            alpha: 0.50,
+          ),
+        ),
         icon: Icon(visual.icon),
       ),
     };
@@ -375,15 +386,16 @@ class RainCallControlDock extends StatelessWidget {
     return Container(
       key: dockKey,
       constraints: BoxConstraints(
-        maxWidth: state.isVideo ? 520 : 440,
-        minHeight: state.phase == VoiceCallPhase.incomingRinging ? 58 : 58,
+        maxWidth: state.isVideo ? 480 : 420,
+        minHeight: 56,
+        maxHeight: state.phase == VoiceCallPhase.incomingRinging ? 76 : 126,
       ),
-      padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 8),
+      padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 7),
       decoration: BoxDecoration(
-        color: scheme.surfaceContainerHighest.withValues(alpha: 0.52),
-        borderRadius: BorderRadius.circular(22),
+        color: scheme.surfaceContainerHighest.withValues(alpha: 0.66),
+        borderRadius: BorderRadius.circular(999),
         border: Border.all(
-          color: scheme.outlineVariant.withValues(alpha: 0.28),
+          color: scheme.outlineVariant.withValues(alpha: 0.30),
         ),
       ),
       child:

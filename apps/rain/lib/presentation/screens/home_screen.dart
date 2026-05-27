@@ -15,10 +15,8 @@ import 'package:url_launcher/url_launcher_string.dart';
 import 'package:rain/presentation/navigation/app_routes.dart';
 import 'package:rain/application/audio/rain_sound_event.dart';
 import 'package:rain/application/runtime/media_device_settings.dart';
-import 'package:rain/application/runtime/video_call_renderers.dart';
 import 'package:rain/application/runtime/voice_call_state.dart';
 import 'package:rain/application/state/app_providers.dart';
-import 'package:rain/application/state/call_surface_geometry.dart';
 import 'package:rain/application/state/connection_diagnostics.dart';
 import 'package:rain/application/state/file_transfer_view.dart';
 import 'package:rain/application/runtime/rain_runtime_controller.dart';
@@ -33,12 +31,7 @@ import 'package:rain/presentation/widgets/app_components.dart';
 import 'package:rain/presentation/widgets/chat_composer.dart';
 import 'package:rain/presentation/widgets/app_dialogs.dart';
 import 'package:rain/presentation/widgets/calls/rain_call_controls.dart';
-import 'package:rain/presentation/widgets/calls/rain_call_ended_surface.dart';
-import 'package:rain/presentation/widgets/calls/rain_call_layout_contract.dart';
-import 'package:rain/presentation/widgets/calls/rain_call_manager_bar.dart';
-import 'package:rain/presentation/widgets/calls/rain_call_overlay.dart';
-import 'package:rain/presentation/widgets/calls/rain_call_stage.dart';
-import 'package:rain/presentation/widgets/calls/rain_call_workspace.dart';
+import 'package:rain/presentation/widgets/calls/rain_call_suite.dart';
 import 'package:rain/presentation/widgets/rain_chat_widgets.dart';
 import 'package:rain/presentation/widgets/update/rain_update_prompt_banner.dart';
 
@@ -741,12 +734,7 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
                     child: _buildBodyWithCallSurface(
                       friends: friends,
                       isCompact: isCompact,
-                      voiceCall: voiceCall,
-                      videoRenderers: videoRenderers,
-                      callSurface: callSurface,
                       adaptiveProfile: adaptiveProfile,
-                      callControlCapabilities: callControlCapabilities,
-                      outputRouteOptions: outputRouteOptions,
                     ),
                   ),
                 ],
@@ -754,105 +742,84 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
             ),
           ),
         );
-        final rootCallLayout = RainCallLayoutContract.fromSurface(
-          callSurface,
-          isDesktop: !isCompact,
-        );
-        final managerTop = topCallManagerBarOffset(
-          MediaQuery.viewPaddingOf(context),
-        );
         final content = Stack(
           children: <Widget>[
             Positioned.fill(child: shell),
-            if (_shouldShowFullscreenCallWorkspace(callSurface, voiceCall))
-              Positioned.fill(
-                child: RainCallWorkspace(
-                  callState: voiceCall,
-                  peerLabel: _voiceCallDisplayName(friends, voiceCall),
-                  stage: RainCallStage(
-                    state: voiceCall,
-                    accent: rainVoiceCallAccent(context, voiceCall),
-                    renderers: videoRenderers,
-                    layout: RainCallStageLayout.fullscreen,
-                    primaryRole: callSurface.videoPrimaryRole,
-                    onTogglePrimaryRole: () =>
-                        _toggleVideoPrimaryRole(voiceCall),
-                  ),
-                  controls: RainCallControlDock(
-                    dockKey: const ValueKey<String>(
-                      'rain-call-fullscreen-controls',
-                    ),
-                    state: voiceCall,
-                    onAccept: _acceptVoiceCall,
-                    onReject: _rejectVoiceCall,
-                    onHangUp: _hangUpVoiceCall,
-                    onRetry: () => _retryVoiceCall(voiceCall),
-                    onToggleMute: () => _toggleVoiceMute(voiceCall),
-                    onToggleDeafen: () => _toggleVoiceDeafen(voiceCall),
-                    onToggleCamera: () => _toggleVoiceCamera(voiceCall),
-                    onSwitchCamera: _switchVoiceCamera,
-                    onSelectOutputRoute: _selectVoiceOutputRoute,
-                    controlCapabilities: callControlCapabilities,
-                    outputRouteOptions: outputRouteOptions,
-                    trailingControls: <Widget>[
-                      IconButton.filledTonal(
-                        tooltip: 'Exit fullscreen',
-                        onPressed: () => ref
-                            .read(callSurfaceProvider.notifier)
-                            .exitFullscreen(),
-                        icon: const Icon(Icons.fullscreen_exit),
-                      ),
-                    ],
-                  ),
-                  showDesktopSidePanel: !isCompact,
-                  onExitFullscreen: () =>
-                      ref.read(callSurfaceProvider.notifier).exitFullscreen(),
-                  sidePanel: _FriendsListView(
-                    friends: friends,
-                    selectedPeerId: _selectedPeerId,
-                    onSelect: _handleFriendSelection,
-                    onRefresh: _refreshFriends,
-                    adaptiveProfile: adaptiveProfile,
-                    desktopHeaderTitle: null,
-                  ),
-                  sidePanelCollapsed: _fullscreenFriendsPanelIsCollapsed,
-                  sidePanelWidth: _fullscreenFriendsPanelWidth,
-                  onToggleSidePanel: _toggleFullscreenFriendsPanel,
-                  onResizeSidePanel: _resizeFullscreenFriendsPanel,
+            Positioned.fill(
+              child: RainCallSuiteLayer(
+                state: voiceCall,
+                surface: callSurface,
+                endPresentation: callEndPresentation,
+                displayName: _voiceCallDisplayName(friends, voiceCall),
+                gender: _voiceCallGender(friends, voiceCall),
+                routeSummary: null,
+                videoRenderers: videoRenderers,
+                contentLeftInset: isCompact ? 0 : 321,
+                isDesktop: !isCompact,
+                lowPower: lowPower,
+                onAccept: _acceptVoiceCall,
+                onReject: _rejectVoiceCall,
+                onHangUp: _hangUpVoiceCall,
+                onRetry: () => _retryVoiceCall(voiceCall),
+                onToggleMute: () => _toggleVoiceMute(voiceCall),
+                onToggleDeafen: () => _toggleVoiceDeafen(voiceCall),
+                onToggleCamera: () => _toggleVoiceCamera(voiceCall),
+                onSwitchCamera: _switchVoiceCamera,
+                onSelectOutputRoute: _selectVoiceOutputRoute,
+                controlCapabilities: callControlCapabilities,
+                outputRouteOptions: outputRouteOptions,
+                onMinimize: () =>
+                    ref.read(callSurfaceProvider.notifier).minimize(),
+                onRestore: () => _toggleCallSurfacePanel(callSurface),
+                onFullscreen: () =>
+                    ref.read(callSurfaceProvider.notifier).enterFullscreen(),
+                onExitFullscreen: () =>
+                    ref.read(callSurfaceProvider.notifier).exitFullscreen(),
+                onToggleVideoPrimaryRole: () =>
+                    _toggleVideoPrimaryRole(voiceCall),
+                friendsPanel: _FriendsListView(
+                  friends: friends,
+                  selectedPeerId: _selectedPeerId,
+                  onSelect: _handleFriendSelection,
+                  onRefresh: _refreshFriends,
+                  adaptiveProfile: adaptiveProfile,
+                  desktopHeaderTitle: null,
                 ),
+                showFriendsPanel: !isCompact,
+                friendsPanelCollapsed: _fullscreenFriendsPanelIsCollapsed,
+                friendsPanelWidth: _fullscreenFriendsPanelWidth,
+                onToggleFriendsPanel: _toggleFullscreenFriendsPanel,
+                onResizeFriendsPanel: _resizeFullscreenFriendsPanel,
+                onMoveFloating:
+                    (
+                      Offset delta,
+                      Size viewportSize,
+                      EdgeInsets safePadding,
+                      Size panelSize,
+                    ) => ref
+                        .read(callSurfaceProvider.notifier)
+                        .moveFloatingPanel(
+                          delta: delta,
+                          viewportSize: viewportSize,
+                          safePadding: safePadding,
+                          panelSize: panelSize,
+                        ),
+                onClampFloating:
+                    (
+                      Size viewportSize,
+                      EdgeInsets safePadding,
+                      Size panelSize,
+                    ) => ref
+                        .read(callSurfaceProvider.notifier)
+                        .clampFloatingPanel(
+                          viewportSize: viewportSize,
+                          safePadding: safePadding,
+                          panelSize: panelSize,
+                        ),
+                onCloseEnded: _dismissEndedCallSummary,
+                onCallAgain: _callAgainFromSummary,
               ),
-            if (rootCallLayout.showTopManagerBar &&
-                voiceCall.phase != VoiceCallPhase.idle)
-              Positioned(
-                left: isCompact ? 0 : 321,
-                right: 0,
-                top: managerTop,
-                child: RainCallManagerBar(
-                  state: voiceCall,
-                  surface: callSurface,
-                  displayName: _voiceCallDisplayName(friends, voiceCall),
-                  gender: _voiceCallGender(friends, voiceCall),
-                  onToggleMute: () => _toggleVoiceMute(voiceCall),
-                  onToggleCamera: () => _toggleVoiceCamera(voiceCall),
-                  onToggleDeafen: () => _toggleVoiceDeafen(voiceCall),
-                  onRestore: () => _toggleCallSurfacePanel(callSurface),
-                  onFullscreen: () =>
-                      ref.read(callSurfaceProvider.notifier).enterFullscreen(),
-                  onHangUp: voiceCall.phase == VoiceCallPhase.incomingRinging
-                      ? _rejectVoiceCall
-                      : _hangUpVoiceCall,
-                ),
-              ),
-            if (callEndPresentation.summary case final summary?)
-              Positioned.fill(
-                left: callEndPresentation.isFullscreen || isCompact ? 0 : 321,
-                child: RainCallEndedSurface(
-                  summary: summary,
-                  fullscreen: callEndPresentation.isFullscreen,
-                  onClose: _dismissEndedCallSummary,
-                  onCallAgain: () => _callAgainFromSummary(summary),
-                ),
-              ),
+            ),
           ],
         );
 
@@ -913,94 +880,11 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
   Widget _buildBodyWithCallSurface({
     required AsyncValue<List<FriendRecord>> friends,
     required bool isCompact,
-    required VoiceCallState voiceCall,
-    required VideoCallRenderers? videoRenderers,
-    required CallSurfaceState callSurface,
     required AdaptiveDeviceProfile adaptiveProfile,
-    required List<CallControlCapability> callControlCapabilities,
-    required List<VoiceCallOutputRouteOption> outputRouteOptions,
   }) {
-    final body = isCompact
+    return isCompact
         ? _buildCompactBody(friends, adaptiveProfile)
         : _buildWideBody(friends, adaptiveProfile);
-    final callLayout = RainCallLayoutContract.fromSurface(
-      callSurface,
-      isDesktop: !isCompact,
-    );
-    return Stack(
-      children: <Widget>[
-        Positioned.fill(child: body),
-        if (callLayout.showMediaSurface &&
-            !(callLayout.isFullscreen && voiceCall.isVideo) &&
-            voiceCall.phase != VoiceCallPhase.idle)
-          Positioned.fill(
-            left: isCompact ? 0 : 321,
-            child: RainCallOverlay(
-              state: voiceCall,
-              surface: callSurface,
-              displayName: _voiceCallDisplayName(friends, voiceCall),
-              gender: _voiceCallGender(friends, voiceCall),
-              videoRenderers: videoRenderers,
-              onAccept: _acceptVoiceCall,
-              onReject: _rejectVoiceCall,
-              onHangUp: _hangUpVoiceCall,
-              onRetry: () => _retryVoiceCall(voiceCall),
-              onToggleMute: () => _toggleVoiceMute(voiceCall),
-              onToggleDeafen: () => _toggleVoiceDeafen(voiceCall),
-              onToggleCamera: () => _toggleVoiceCamera(voiceCall),
-              onSwitchCamera: _switchVoiceCamera,
-              onSelectOutputRoute: _selectVoiceOutputRoute,
-              controlCapabilities: callControlCapabilities,
-              outputRouteOptions: outputRouteOptions,
-              onMinimize: () =>
-                  ref.read(callSurfaceProvider.notifier).minimize(),
-              onExpand: () => _toggleCallSurfacePanel(callSurface),
-              onToggleVideoPrimaryRole: () =>
-                  _toggleVideoPrimaryRole(voiceCall),
-              onFullscreen: () =>
-                  ref.read(callSurfaceProvider.notifier).enterFullscreen(),
-              onExitFullscreen: () =>
-                  ref.read(callSurfaceProvider.notifier).exitFullscreen(),
-              onMoveFloating:
-                  (
-                    Offset delta,
-                    Size viewportSize,
-                    EdgeInsets safePadding,
-                    Size panelSize,
-                  ) => ref
-                      .read(callSurfaceProvider.notifier)
-                      .moveFloatingPanel(
-                        delta: delta,
-                        viewportSize: viewportSize,
-                        safePadding: safePadding,
-                        panelSize: panelSize,
-                      ),
-              onClampFloating:
-                  (Size viewportSize, EdgeInsets safePadding, Size panelSize) =>
-                      ref
-                          .read(callSurfaceProvider.notifier)
-                          .clampFloatingPanel(
-                            viewportSize: viewportSize,
-                            safePadding: safePadding,
-                            panelSize: panelSize,
-                          ),
-            ),
-          ),
-      ],
-    );
-  }
-
-  bool _shouldShowFullscreenCallWorkspace(
-    CallSurfaceState surface,
-    VoiceCallState voiceCall,
-  ) {
-    final callLayout = RainCallLayoutContract.fromSurface(
-      surface,
-      isDesktop: true,
-    );
-    return callLayout.isFullscreen &&
-        voiceCall.phase != VoiceCallPhase.idle &&
-        voiceCall.isVideo;
   }
 
   bool get _fullscreenFriendsPanelIsCollapsed {
