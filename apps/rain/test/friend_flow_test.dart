@@ -5953,6 +5953,53 @@ void main() {
         expect(harness.bobBrain.stoppedAudioPeers, contains('alice'));
       },
     );
+
+    test(
+      'terminal Firebase voice room blocks late active voice media state',
+      () async {
+        final harness = await _createTwoUserCallHarness(db, alice);
+        addTearDown(harness.dispose);
+
+        await harness.start();
+        final callId = await _startAndAcceptHarnessCall(
+          harness,
+          callerIsAlice: true,
+          mediaMode: protocol.CallMediaMode.audio,
+        );
+        final disposeGate = Completer<void>();
+        addTearDown(() {
+          if (!disposeGate.isCompleted) {
+            disposeGate.complete();
+          }
+        });
+        harness.bobBrain.voiceDisposeGate = disposeGate;
+        final bobConnection =
+            harness.bobBrain.voiceMediaConnections['alice']!
+                as _TestVoiceMediaConnection;
+
+        await harness.adapter.endCall(
+          callId: callId,
+          username: 'alice',
+          status: VoiceCallSignalingStatus.ended,
+          endedAt: DateTime.now().millisecondsSinceEpoch,
+          reason: 'Call ended.',
+        );
+        await _waitForCondition(
+          () => harness.bobRuntime.voiceCallState.phase == VoiceCallPhase.ending,
+          'remote voice call to enter terminal cleanup',
+        );
+
+        bobConnection.emitConnectedForTest();
+        await Future<void>.delayed(const Duration(milliseconds: 20));
+
+        expect(harness.bobRuntime.voiceCallState.phase, VoiceCallPhase.ending);
+        disposeGate.complete();
+        await _waitForHarnessCallIdle(
+          harness,
+          'terminal voice room to remain authoritative after late active state',
+        );
+      },
+    );
   });
 }
 
@@ -6596,6 +6643,7 @@ class TestSessionManager implements SessionManager {
   Object? applyMediaOfferError;
   Object? applyMediaAnswerError;
   Object? audioOutputRouteError;
+  Completer<void>? voiceDisposeGate;
   final Map<String, Session> _sessions = <String, Session>{};
   final StreamController<Session> _peerConnectedController =
       StreamController<Session>.broadcast();
@@ -6994,6 +7042,10 @@ class _TestVoiceMediaConnection implements VoiceMediaConnection {
       return;
     }
     disposed = true;
+    final gate = owner.voiceDisposeGate;
+    if (gate != null) {
+      await gate.future;
+    }
     owner.stoppedAudioPeers.add(peerId);
     await _iceController.close();
     await _remoteTrackController.close();
@@ -7007,6 +7059,10 @@ class _TestVoiceMediaConnection implements VoiceMediaConnection {
 
   void emitAudioLevel(VoiceMediaAudioLevel level) {
     _audioLevelController.add(level);
+  }
+
+  void emitConnectedForTest() {
+    _emitConnected();
   }
 
   void _emitConnected() {

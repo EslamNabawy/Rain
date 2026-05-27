@@ -148,6 +148,7 @@ class RainRuntimeController with WidgetsBindingObserver {
   VoiceCallSession? _voiceCallSession;
   StreamSubscription<VoiceCallSessionState>? _voiceCallSessionSubscription;
   Timer? _voiceCallReconnectGraceTimer;
+  final Set<String> _terminalVoiceCallSessionKeys = <String>{};
   CallMediaConnection? _videoCallMediaConnection;
   VideoCallRenderers? _videoCallRenderers;
   VideoCallRendererState? _lastVideoCallRendererState;

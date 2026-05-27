@@ -1183,6 +1183,7 @@ extension VoiceCallRuntime on RainRuntimeController {
     if (!room.status.isTerminal || !_isLiveVoiceCallSession(session)) {
       return;
     }
+    _latchTerminalVoiceCallSession(session);
     final current = _voiceCallState;
     if (current.callId != room.callId ||
         current.sessionEpoch != room.createdAt ||
@@ -1684,6 +1685,14 @@ extension VoiceCallRuntime on RainRuntimeController {
     required bool isOutgoing,
   }) {
     if (!_isLiveVoiceCallSession(session)) {
+      return;
+    }
+    if (_isTerminalVoiceCallSessionLatched(session) &&
+        sessionState.phase != VoiceCallSessionPhase.idle) {
+      _recordLateVoiceFrame(
+        session,
+        'ignored ${sessionState.phase.name} state after terminal room',
+      );
       return;
     }
     final mappedPhase = _mapVoiceCallSessionPhase(sessionState.phase);
@@ -2853,6 +2862,7 @@ extension VoiceCallRuntime on RainRuntimeController {
           audioLevel: const VoiceAudioLevel.unavailable(),
         ),
       );
+      _latchTerminalVoiceCallSession(session);
       if (notifyPeer) {
         await _writeTerminalRoomBeforeSessionHangup(
           callId: session.callId,
@@ -3289,6 +3299,22 @@ extension VoiceCallRuntime on RainRuntimeController {
       return false;
     }
     return true;
+  }
+
+  void _latchTerminalVoiceCallSession(VoiceCallSession session) {
+    _terminalVoiceCallSessionKeys.add(
+      _voiceCallSessionKey(session.callId, session.sessionEpoch),
+    );
+  }
+
+  bool _isTerminalVoiceCallSessionLatched(VoiceCallSession session) {
+    return _terminalVoiceCallSessionKeys.contains(
+      _voiceCallSessionKey(session.callId, session.sessionEpoch),
+    );
+  }
+
+  String _voiceCallSessionKey(String callId, int sessionEpoch) {
+    return '$callId@$sessionEpoch';
   }
 
   bool _isCurrentVoiceCall(String peerId, String callId, {int? sessionEpoch}) {
