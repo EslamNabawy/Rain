@@ -220,6 +220,10 @@ void main() {
       find.byKey(const ValueKey<String>('rain-call-manager-bar')),
       findsOneWidget,
     );
+    expect(
+      find.byKey(const ValueKey<String>('rain-call-manager-compact-row')),
+      findsOneWidget,
+    );
     expect(find.byTooltip('Fullscreen video'), findsOneWidget);
     expect(find.byTooltip('Hang up'), findsOneWidget);
     expect(tester.takeException(), isNull);

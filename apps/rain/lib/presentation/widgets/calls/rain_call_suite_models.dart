@@ -249,6 +249,10 @@ CallSuiteSurfaceMode _surfaceModeFor(
   return switch (callState.phase) {
     VoiceCallPhase.incomingRinging => CallSuiteSurfaceMode.incoming,
     VoiceCallPhase.outgoingRinging => CallSuiteSurfaceMode.outgoing,
+    VoiceCallPhase.connectingPeer when callState.isOutgoing =>
+      CallSuiteSurfaceMode.outgoing,
+    VoiceCallPhase.connectingMedia when callState.isOutgoing =>
+      CallSuiteSurfaceMode.outgoing,
     VoiceCallPhase.failed => CallSuiteSurfaceMode.failed,
     _ => switch (surface.mode) {
       CallSurfaceMode.fullscreen => CallSuiteSurfaceMode.activeFullscreen,

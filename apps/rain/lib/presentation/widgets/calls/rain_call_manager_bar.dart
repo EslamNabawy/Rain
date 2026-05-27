@@ -214,48 +214,40 @@ class _CompactCallManagerContent extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    return Column(
-      mainAxisSize: MainAxisSize.min,
-      crossAxisAlignment: CrossAxisAlignment.stretch,
+    return Row(
+      key: const ValueKey<String>('rain-call-manager-compact-row'),
       children: <Widget>[
-        Row(
-          children: <Widget>[
-            Expanded(
-              child: _CallIdentity(
-                state: state,
-                displayName: displayName,
-                gender: gender,
-                accent: accent,
-              ),
-            ),
-            _CallRestoreButton(surface: surface, onRestore: onRestore),
-            if (state.isVideo)
-              _CallFullscreenButton(
-                surface: surface,
-                onFullscreen: onFullscreen,
-                onRestore: onRestore,
-              ),
-            _HangUpButton(onHangUp: onHangUp, state: state),
-          ],
+        Expanded(
+          child: _CallIdentity(
+            state: state,
+            displayName: displayName,
+            gender: gender,
+            accent: accent,
+          ),
         ),
-        const SizedBox(height: 8),
-        Row(
-          children: <Widget>[
-            Expanded(
-              child: _CallStatusText(
-                state: state,
-                displayName: displayName,
-                maxLines: 1,
-              ),
-            ),
-            _CallPrimaryToggles(
-              state: state,
-              onToggleMute: onToggleMute,
-              onToggleCamera: onToggleCamera,
-              onToggleDeafen: onToggleDeafen,
-            ),
-          ],
+        _CallManagerIconButton(
+          visual: rainVoiceCallControlVisual(
+            state,
+            CallControlCapability.microphone,
+          ),
+          onPressed: state.isActive ? onToggleMute : null,
         ),
+        if (state.isVideo)
+          _CallManagerIconButton(
+            visual: rainVoiceCallControlVisual(
+              state,
+              CallControlCapability.camera,
+            ),
+            onPressed: state.isActive ? onToggleCamera : null,
+          ),
+        _CallRestoreButton(surface: surface, onRestore: onRestore),
+        if (state.isVideo)
+          _CallFullscreenButton(
+            surface: surface,
+            onFullscreen: onFullscreen,
+            onRestore: onRestore,
+          ),
+        _HangUpButton(onHangUp: onHangUp, state: state),
       ],
     );
   }
@@ -318,15 +310,10 @@ class _CallIdentity extends StatelessWidget {
 }
 
 class _CallStatusText extends StatelessWidget {
-  const _CallStatusText({
-    required this.state,
-    required this.displayName,
-    this.maxLines = 2,
-  });
+  const _CallStatusText({required this.state, required this.displayName});
 
   final VoiceCallState state;
   final String displayName;
-  final int maxLines;
 
   @override
   Widget build(BuildContext context) {
@@ -348,7 +335,7 @@ class _CallStatusText extends StatelessWidget {
             ),
             Text(
               rainVoiceCallDetail(state, now),
-              maxLines: maxLines,
+              maxLines: 2,
               overflow: TextOverflow.ellipsis,
               style: Theme.of(context).textTheme.labelMedium?.copyWith(
                 color: scheme.onSurface.withValues(alpha: 0.68),

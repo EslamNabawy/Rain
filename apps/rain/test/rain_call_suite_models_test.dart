@@ -39,6 +39,18 @@ void main() {
     expect(suite.showsManagerBar, isFalse);
   });
 
+  test('outgoing setup phases stay in outgoing suite mode', () {
+    final connectingPeer = _suiteFor(
+      _call(phase: VoiceCallPhase.connectingPeer),
+    );
+    final connectingMedia = _suiteFor(
+      _call(phase: VoiceCallPhase.connectingMedia),
+    );
+
+    expect(connectingPeer.surfaceMode, CallSuiteSurfaceMode.outgoing);
+    expect(connectingMedia.surfaceMode, CallSuiteSurfaceMode.outgoing);
+  });
+
   test(
     'capability-filtered controls hide unsupported output and camera switch',
     () {
