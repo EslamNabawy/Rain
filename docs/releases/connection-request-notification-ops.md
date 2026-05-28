@@ -1,9 +1,21 @@
 # Connection Request Notification Ops
 
-This runbook covers the backend-controlled guardrails for inbound/outbound
-connection request notifications. The Cloud Functions own writes to request
-inboxes, outboxes, pair locks, quota usage, reservations, and entitlement
-credits. Clients must not write these paths directly.
+This runbook covers inbound/outbound connection request notifications. Rain is
+moving to a Firebase Spark/free-tier `rtdbOnly` release path first. Cloud
+Functions remain in the repository as the stronger future backend, but free-tier
+app builds must not require deploying Functions.
+
+## Free-Tier Release Decision
+
+Rain connection request notifications ship in `rtdbOnly` mode until the Firebase
+project can use a server backend. Cloud Functions remain in the repository but
+are not required for free-tier app builds. The release gate deploys Realtime
+Database rules only.
+
+Free-tier V1 does not provide server-authoritative quotas, admin credits,
+scheduled cleanup, backend audit integrity, or closed-app push. These require a
+server backend such as Firebase Cloud Functions on Blaze or a separate free
+external backend.
 
 ## V1 Release Notes
 
@@ -23,18 +35,17 @@ V1 behavior:
 - App-open and app-minimized notification surfaces are supported through the
   app runtime and local notification abstraction where available.
 
-Quota and credit behavior:
+Free-tier quota and credit behavior:
 
-- Backend-owned daily free limit, sender-to-peer daily limit, burst limit,
-  cooldown, extra credits, temporary unlimited entitlement, and sender disable
-  guard all request creation.
+- Daily limit, sender-to-peer limit, burst cooldown, and duplicate suppression
+  are best-effort abuse friction enforced by client logic, RTDB transactions,
+  and security rules.
 - Duplicate pending requests, receiver mute, block, offline/stale presence, and
-  receiver inbox-full denials do not spend quota.
+  receiver inbox-full denials must not create receiver prompts.
 - Successfully created requests spend quota even when later canceled, rejected,
   ignored, or expired.
-- Operators may grant `extraCredits` or `unlimitedUntil` in
-  `connectionNotificationEntitlements/{username}`. Receiver protection and
-  per-target/burst controls still apply.
+- Admin extra credits and temporary unlimited entitlements are disabled in
+  free-tier `rtdbOnly` mode because there is no trusted server authority.
 
 V1 limitations:
 
@@ -49,16 +60,22 @@ Closed-app push is reserved for the separate V2 specification at
 
 ## Release Gate
 
-Before distributing app builds that include connection request notifications:
+Before distributing free-tier app builds that include connection request
+notifications:
 
 1. Run `dart pub get`.
 2. Run `dart run melos run analyze`.
 3. Run `dart run melos run test`.
-4. Run `npm test` in `backend/firebase/functions`.
-5. Run `.\scripts\ci_run_firebase_emulators.ps1` from the repository root.
-6. Deploy Firebase Realtime Database rules to the target backend project.
-7. Deploy Cloud Functions to the same target backend project.
-8. Build and publish app artifacts only after the backend deploy is complete.
+4. Run `.\scripts\ci_run_firebase_emulators.ps1` from the repository root.
+5. Deploy Firebase Realtime Database rules to the target backend project.
+6. Confirm the app build uses `CONNECTION_REQUEST_BACKEND_MODE=rtdbOnly`.
+7. Build and publish app artifacts.
+
+Do not deploy Cloud Functions for the free-tier release gate.
+
+Cloud Functions mode is stronger and may be used later only after the Firebase
+project can deploy Functions or the same server-owned logic is moved to a free
+external backend such as Cloudflare Workers.
 
 ## Firebase Paths
 

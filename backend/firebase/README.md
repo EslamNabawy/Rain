@@ -7,7 +7,24 @@ This directory contains the Firebase assets needed by Rain's Realtime Database s
 - Anonymous Authentication
 - Realtime Database
 - Remote Config
-- Cloud Functions
+- Cloud Functions, optional future stronger backend; not required for the
+  free-tier `rtdbOnly` release path.
+
+## Free-Tier Release Decision
+
+Rain connection request notifications ship in `rtdbOnly` mode until the Firebase
+project can use a server backend. Cloud Functions remain in the repository but
+are not required for free-tier app builds. The free-tier release gate deploys
+Realtime Database rules only.
+
+Free-tier V1 does not provide server-authoritative quotas, admin credits,
+scheduled cleanup, backend audit integrity, or closed-app push. These require a
+server backend such as Firebase Cloud Functions on Blaze or a separate free
+external backend.
+
+Do not distribute app artifacts that depend on callable connection request
+Functions unless those Functions are deployed successfully to the same Firebase
+project used by the app build.
 
 ## Data Layout
 
@@ -32,7 +49,12 @@ This directory contains the Firebase assets needed by Rain's Realtime Database s
 
 Room nodes never store chat message content.
 Voice call nodes are signaling state only and are removed by TTL cleanup; they are not call history.
-Connection notification nodes are mutated by Cloud Functions only. Clients may read their own inbox, outbox, quota summary, and mute projection, but direct writes to requests, counters, entitlements, pair locks, reservations, config, audit summaries, and audit records are denied by Realtime Database rules.
+In Cloud Functions mode, connection notification nodes are mutated by Cloud
+Functions only. In free-tier `rtdbOnly` mode, client writes are allowed only
+through strict Realtime Database rules and transactions. Clients may read their
+own inbox, outbox, quota summary, and mute projection, but direct writes to
+server-only counters, entitlements, reservations, config, audit summaries, and
+audit records remain denied.
 
 ## Deploy Realtime Database Rules
 
@@ -71,11 +93,26 @@ The Cloud Functions do two things:
   `muteConnectionRequestsFromPeer`, `unmuteConnectionRequestsFromPeer`, and
   `getConnectionRequestQuotaSummary`
 
-## Connection Request Notification Release Order
+## Free-Tier Connection Request Release Order
 
-Connection request notification clients require the backend contract to be
-deployed before app artifacts are distributed. Use this order for every staging
-or production release:
+Use this order for Spark/free-tier builds after the `rtdbOnly` implementation
+phases are complete:
+
+1. Run local validation from the repository root:
+   `dart pub get`, `dart run melos run analyze`, and
+   `dart run melos run test`.
+2. Run emulator smoke validation from the repository root:
+   `.\scripts\ci_run_firebase_emulators.ps1`.
+3. Deploy Realtime Database rules to the target Firebase project.
+4. Confirm the app build uses `CONNECTION_REQUEST_BACKEND_MODE=rtdbOnly`.
+5. Build and publish Android/Windows app artifacts.
+
+This path does not deploy Cloud Functions.
+
+## Cloud Functions Connection Request Release Order
+
+Use this stronger release order only when the Firebase project can deploy Cloud
+Functions:
 
 1. Run local validation from the repository root:
    `dart pub get`, `dart run melos run analyze`, and

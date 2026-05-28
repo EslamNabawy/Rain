@@ -260,7 +260,7 @@ They stay denied to clients until a server backend exists.
 - Modify: `docs/releases/connection-request-notification-ops.md`
 - Modify: `backend/firebase/README.md`
 
-- [ ] **Step 1: Document the free-tier release decision**
+- [x] **Step 1: Document the free-tier release decision**
 
 Add a section that states:
 
@@ -273,7 +273,7 @@ are not required for free-tier app builds. The release gate deploys Realtime
 Database rules only.
 ```
 
-- [ ] **Step 2: Document non-negotiable limitations**
+- [x] **Step 2: Document non-negotiable limitations**
 
 Add:
 
@@ -284,7 +284,7 @@ server backend such as Firebase Cloud Functions on Blaze or a separate free
 external backend.
 ```
 
-- [ ] **Step 3: Commit**
+- [x] **Step 3: Commit**
 
 ```powershell
 git add docs/superpowers/plans/2026-05-28-rain-inbound-outbound-connect-notifications.md docs/releases/connection-request-notification-ops.md backend/firebase/README.md

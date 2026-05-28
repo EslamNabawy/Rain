@@ -1323,6 +1323,19 @@ Partial on 2026-05-28:
 - `dev` was not pushed and the cloud build was not triggered because app
   artifacts must not ship until the backend functions deploy succeeds.
 
+Free-tier pivot on 2026-05-28:
+
+- Rain connection request notifications will ship in `rtdbOnly` mode until the
+  Firebase project can use a server backend.
+- Cloud Functions remain in the repository but are not required for free-tier
+  app builds.
+- The free-tier release gate deploys Realtime Database rules only after the
+  `rtdbOnly` implementation phases are complete.
+- Free-tier V1 does not provide server-authoritative quotas, admin credits,
+  scheduled cleanup, backend audit integrity, or closed-app push. These require
+  a server backend such as Firebase Cloud Functions on Blaze or a separate free
+  external backend.
+
 **Commit:**
 
 ```powershell
