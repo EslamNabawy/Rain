@@ -65,24 +65,26 @@ test("unknown user gets an exact denial response", async () => {
 });
 
 test("invalid peer is rejected before backend mutation", async () => {
+  const root = fakeRoot();
   const response = await connectionRequests.__test.createConnectionRequestCore(
     { peer: "../bob" },
-    { auth: { uid: "uid-alice" } },
-    { root: fakeRoot({ usersByUid: { "uid-alice": "alice" } }) },
+    authRequest(),
+    { root },
   );
 
   assertResponseShape(response);
   assert.equal(response.allowed, false);
   assert.equal(response.reasonCode, "invalidPeer");
   assert.match(response.userMessage, /valid peer/);
+  assert.equal(root.updates.length, 0);
 });
 
 test("self request is rejected with peer-specific diagnostics", async () => {
   const response = await connectionRequests.__test.createConnectionRequestCore(
     { peer: "Alice" },
-    { auth: { uid: "uid-alice" } },
+    authRequest(),
     {
-      root: fakeRoot({ usersByUid: { "uid-alice": "alice" } }),
+      root: fakeRoot(),
       clock: () => 3000,
     },
   );
@@ -97,8 +99,8 @@ test("self request is rejected with peer-specific diagnostics", async () => {
 test("malformed request data is rejected consistently", async () => {
   const response = await connectionRequests.__test.cancelConnectionRequestCore(
     null,
-    { auth: { uid: "uid-alice" } },
-    { root: fakeRoot({ usersByUid: { "uid-alice": "alice" } }) },
+    authRequest(),
+    { root: fakeRoot() },
   );
 
   assertResponseShape(response);
@@ -110,7 +112,7 @@ test("malformed request data is rejected consistently", async () => {
 test("backend lookup failure returns backendUnavailable", async () => {
   const response = await connectionRequests.__test.createConnectionRequestCore(
     { peer: "bob" },
-    { auth: { uid: "uid-alice" } },
+    authRequest(),
     {
       root: fakeRoot({ throwOnGet: true }),
       clock: () => 4000,
@@ -124,31 +126,46 @@ test("backend lookup failure returns backendUnavailable", async () => {
   assert.match(response.diagnostics.error, /simulated backend failure/);
 });
 
-test("valid create shell ignores client timestamps and returns not-ready denial", async () => {
+test("create writes server-owned request and outbox payloads", async () => {
+  const root = fakeRoot();
   const response = await connectionRequests.__test.createConnectionRequestCore(
-    { peer: "bob", createdAt: 1, updatedAt: 1 },
-    { auth: { uid: "uid-alice" } },
+    { peer: "bob", createdAt: 1, updatedAt: 1, senderDevice: "Android" },
+    authRequest(),
     {
-      root: fakeRoot({ usersByUid: { "uid-alice": "alice" } }),
+      root,
       clock: () => 4242,
+      requestIdFactory: () => "request-01",
     },
   );
 
   assertResponseShape(response);
-  assert.equal(response.allowed, false);
-  assert.equal(response.reasonCode, "backendUnavailable");
-  assert.equal(response.diagnostics.foundationReady, true);
+  assert.equal(response.allowed, true);
+  assert.equal(response.reasonCode, null);
+  assert.equal(response.requestId, "request-01");
+  assert.equal(response.status, "pending");
   assert.equal(response.diagnostics.serverNow, 4242);
   assert.equal(response.diagnostics.pairKey, "alice:bob");
-  assert.notEqual(response.diagnostics.serverNow, 1);
+  assert.equal(response.diagnostics.pairLockClaimed, true);
+
+  const inbox = getPath(root.state, "connectionRequests/bob/request-01");
+  const outbox = getPath(root.state, "connectionRequestOutboxes/alice/request-01");
+  const lock = getPath(root.state, "connectionRequestPairLocks/alice:bob");
+  assert.equal(inbox.createdAt, 4242);
+  assert.equal(inbox.updatedAt, 4242);
+  assert.equal(inbox.expiresAt, 49242);
+  assert.equal(inbox.senderDevice, "android");
+  assert.equal(outbox.from, "alice");
+  assert.equal(outbox.to, "bob");
+  assert.equal(lock.requestId, "request-01");
 });
 
 test("all action shells return the standard response shape", async () => {
   const deps = {
-    root: fakeRoot({ usersByUid: { "uid-alice": "alice" } }),
+    root: fakeRoot(),
     clock: () => 5000,
+    requestIdFactory: () => "request-shell",
   };
-  const request = { auth: { uid: "uid-alice" } };
+  const request = authRequest();
   const cases = [
     connectionRequests.__test.createConnectionRequestCore(
       { peer: "bob" },
@@ -199,6 +216,238 @@ test("all action shells return the standard response shape", async () => {
   }
 });
 
+test("duplicate live pair lock returns existing open request", async () => {
+  for (const status of ["pending", "seen"]) {
+    let quotaCalls = 0;
+    const root = fakeRoot({
+      state: {
+        connectionRequestPairLocks: {
+          "alice:bob": {
+            requestId: `existing-${status}`,
+            from: "alice",
+            to: "bob",
+            status,
+            expiresAt: 20_000,
+          },
+        },
+      },
+    });
+
+    const response = await connectionRequests.__test.createConnectionRequestCore(
+      { peer: "bob" },
+      authRequest(),
+      {
+        root,
+        clock: () => 10_000,
+        requestIdFactory: () => `new-${status}`,
+        reserveSenderQuota: async () => {
+          quotaCalls += 1;
+          return { allowed: true };
+        },
+      },
+    );
+
+    assertResponseShape(response);
+    assert.equal(response.allowed, false);
+    assert.equal(response.reasonCode, "duplicatePendingRequest");
+    assert.equal(response.requestId, `existing-${status}`);
+    assert.equal(quotaCalls, 0);
+    assert.equal(getPath(root.state, `connectionRequests/bob/new-${status}`), undefined);
+  }
+});
+
+test("expired and terminal pair locks can be replaced", async () => {
+  for (const [status, expiresAt] of [
+    ["pending", 9_999],
+    ["accepted", 30_000],
+  ]) {
+    const root = fakeRoot({
+      state: {
+        connectionRequestPairLocks: {
+          "alice:bob": {
+            requestId: `old-${status}`,
+            from: "alice",
+            to: "bob",
+            status,
+            expiresAt,
+          },
+        },
+      },
+    });
+
+    const response = await connectionRequests.__test.createConnectionRequestCore(
+      { peer: "bob" },
+      authRequest(),
+      {
+        root,
+        clock: () => 10_000,
+        requestIdFactory: () => `new-${status}`,
+      },
+    );
+
+    assertResponseShape(response);
+    assert.equal(response.allowed, true);
+    assert.equal(response.requestId, `new-${status}`);
+    assert.equal(
+      getPath(root.state, "connectionRequestPairLocks/alice:bob/requestId"),
+      `new-${status}`,
+    );
+  }
+});
+
+test("receiver protection denials do not write inbox or consume quota", async () => {
+  const cases = [
+    {
+      name: "muted receiver",
+      state: {
+        connectionNotificationMutes: { bob: { alice: { muted: true } } },
+      },
+      reasonCode: "mutedByReceiver",
+    },
+    {
+      name: "blocked peer",
+      state: { blocks: { bob: { alice: { createdAt: 1 } } } },
+      reasonCode: "blocked",
+    },
+    {
+      name: "offline peer",
+      state: { presence: { bob: { online: false, lastHeartbeat: 10_000 } } },
+      reasonCode: "peerOffline",
+    },
+    {
+      name: "missing accepted friendship",
+      state: { friendships: { alice: { bob: null }, bob: { alice: null } } },
+      reasonCode: "notAcceptedFriend",
+    },
+  ];
+
+  for (const testCase of cases) {
+    let quotaCalls = 0;
+    const root = fakeRoot({ state: testCase.state });
+    const response = await connectionRequests.__test.createConnectionRequestCore(
+      { peer: "bob" },
+      authRequest(),
+      {
+        root,
+        clock: () => 10_000,
+        requestIdFactory: () => `request-${testCase.name.replaceAll(" ", "-")}`,
+        reserveSenderQuota: async () => {
+          quotaCalls += 1;
+          return { allowed: true };
+        },
+      },
+    );
+
+    assertResponseShape(response);
+    assert.equal(response.allowed, false, testCase.name);
+    assert.equal(response.reasonCode, testCase.reasonCode, testCase.name);
+    assert.equal(quotaCalls, 0, testCase.name);
+    assert.equal(getPath(root.state, "connectionRequests/bob"), undefined);
+    assert.equal(getPath(root.state, "connectionRequestOutboxes/alice"), undefined);
+    assert.equal(getPath(root.state, "connectionRequestPairLocks/alice:bob"), undefined);
+  }
+});
+
+test("receiver inbox full rolls back pair lock before quota spend", async () => {
+  let quotaCalls = 0;
+  const root = fakeRoot({
+    state: {
+      connectionNotificationConfig: {
+        global: { enabled: true, maxPendingInboundPerUser: 1 },
+      },
+      connectionRequests: {
+        bob: {
+          pending_existing: {
+            requestId: "pending_existing",
+            status: "pending",
+            expiresAt: 20_000,
+          },
+        },
+      },
+    },
+  });
+
+  const response = await connectionRequests.__test.createConnectionRequestCore(
+    { peer: "bob" },
+    authRequest(),
+    {
+      root,
+      clock: () => 10_000,
+      requestIdFactory: () => "inbox-full-request",
+      reserveSenderQuota: async () => {
+        quotaCalls += 1;
+        return { allowed: true };
+      },
+    },
+  );
+
+  assertResponseShape(response);
+  assert.equal(response.allowed, false);
+  assert.equal(response.reasonCode, "receiverInboxFull");
+  assert.equal(quotaCalls, 0);
+  assert.equal(getPath(root.state, "connectionRequests/bob/inbox-full-request"), undefined);
+  assert.equal(getPath(root.state, "connectionRequestPairLocks/alice:bob"), undefined);
+});
+
+test("quota reservation failure rolls back pair lock and writes no rows", async () => {
+  const root = fakeRoot();
+  const response = await connectionRequests.__test.createConnectionRequestCore(
+    { peer: "bob" },
+    authRequest(),
+    {
+      root,
+      clock: () => 10_000,
+      requestIdFactory: () => "quota-denied",
+      reserveSenderQuota: async () => ({
+        allowed: false,
+        reasonCode: "rateLimited",
+        retryAfterMs: 30_000,
+        quota: { remaining: 0 },
+      }),
+    },
+  );
+
+  assertResponseShape(response);
+  assert.equal(response.allowed, false);
+  assert.equal(response.reasonCode, "rateLimited");
+  assert.equal(response.retryAfterMs, 30_000);
+  assert.deepEqual(response.quota, { remaining: 0 });
+  assert.equal(getPath(root.state, "connectionRequests/bob/quota-denied"), undefined);
+  assert.equal(getPath(root.state, "connectionRequestOutboxes/alice/quota-denied"), undefined);
+  assert.equal(getPath(root.state, "connectionRequestPairLocks/alice:bob"), undefined);
+});
+
+test("global kill switch and sender disable stop before pair lock claim", async () => {
+  const cases = [
+    {
+      state: { connectionNotificationConfig: { global: { enabled: false } } },
+      reasonCode: "notificationsDisabledByAdmin",
+    },
+    {
+      state: { connectionNotificationEntitlements: { alice: { disabled: true } } },
+      reasonCode: "permissionDenied",
+    },
+  ];
+
+  for (const testCase of cases) {
+    const root = fakeRoot({ state: testCase.state });
+    const response = await connectionRequests.__test.createConnectionRequestCore(
+      { peer: "bob" },
+      authRequest(),
+      {
+        root,
+        clock: () => 10_000,
+        requestIdFactory: () => "disabled-request",
+      },
+    );
+
+    assertResponseShape(response);
+    assert.equal(response.allowed, false);
+    assert.equal(response.reasonCode, testCase.reasonCode);
+    assert.equal(getPath(root.state, "connectionRequestPairLocks/alice:bob"), undefined);
+  }
+});
+
 function assertResponseShape(response) {
   assert.deepEqual(Object.keys(response), responseKeys);
   assert.equal(typeof response.allowed, "boolean");
@@ -206,56 +455,261 @@ function assertResponseShape(response) {
   assert.equal(typeof response.diagnostics, "object");
 }
 
+function authRequest(uid = "uid-alice") {
+  return { auth: { uid } };
+}
+
 function fakeRoot(options = {}) {
-  const usersByUid = options.usersByUid || {};
-  return {
+  const state = deepMerge(defaultState(), options.state || {});
+  const root = {
+    state,
+    throwOnGet: options.throwOnGet === true,
+    updates: [],
+    transactions: [],
     child(pathName) {
-      assert.equal(pathName, "users");
-      return fakeUsersQuery(usersByUid, options);
+      return fakeRef(root, pathName);
+    },
+    async update(updates) {
+      root.updates.push(deepClone(updates));
+      for (const [pathName, value] of Object.entries(updates)) {
+        setPath(root.state, pathName, value);
+      }
+    },
+  };
+  return root;
+}
+
+function defaultState() {
+  return {
+    users: {
+      alice: { uid: "uid-alice" },
+      bob: { uid: "uid-bob" },
+      cara: { uid: "uid-cara" },
+    },
+    friendships: {
+      alice: { bob: { acceptedAt: 1 } },
+      bob: { alice: { acceptedAt: 1 } },
+      cara: {},
+    },
+    blocks: {},
+    presence: {
+      bob: { online: true, lastHeartbeat: 10_000 },
+      cara: { online: true, lastHeartbeat: 10_000 },
+    },
+    connectionNotificationConfig: {
+      global: {
+        enabled: true,
+        requestTtlMs: 45_000,
+        maxPendingInboundPerUser: 25,
+      },
     },
   };
 }
 
-function fakeUsersQuery(usersByUid, options) {
-  const query = {
-    uid: null,
+function fakeRef(root, pathName) {
+  return {
+    child(childPath) {
+      return fakeRef(root, joinPath(pathName, childPath));
+    },
+    async get() {
+      if (root.throwOnGet) {
+        throw new Error("simulated backend failure");
+      }
+      return fakeSnapshotFromValue(getPath(root.state, pathName));
+    },
+    async update(updates) {
+      const absoluteUpdates = {};
+      for (const [childPath, value] of Object.entries(updates)) {
+        absoluteUpdates[joinPath(pathName, childPath)] = value;
+      }
+      await root.update(absoluteUpdates);
+    },
+    async transaction(updateFn) {
+      const current = deepClone(getPath(root.state, pathName));
+      const next = updateFn(current);
+      if (next === undefined) {
+        return {
+          committed: false,
+          snapshot: fakeSnapshotFromValue(current),
+        };
+      }
+      setPath(root.state, pathName, next);
+      root.transactions.push({
+        path: pathName,
+        current,
+        next: deepClone(next),
+      });
+      return {
+        committed: true,
+        snapshot: fakeSnapshotFromValue(next),
+      };
+    },
     orderByChild(field) {
-      assert.equal(field, "uid");
+      return fakeQuery(root, pathName, { orderByChild: field });
+    },
+  };
+}
+
+function fakeQuery(root, pathName, spec) {
+  const query = {
+    spec: { ...spec },
+    orderByChild(field) {
+      query.spec.orderByChild = field;
       return query;
     },
-    equalTo(uid) {
-      query.uid = uid;
+    equalTo(value) {
+      query.spec.equalTo = value;
       return query;
     },
     limitToFirst(limit) {
-      assert.equal(limit, 2);
+      query.spec.limitToFirst = limit;
       return query;
     },
     async get() {
-      if (options.throwOnGet) {
+      if (root.throwOnGet) {
         throw new Error("simulated backend failure");
       }
-      const username = usersByUid[query.uid];
-      const entries = username ? [[username, { uid: query.uid }]] : [];
-      return fakeSnapshot(entries);
+      const value = getPath(root.state, pathName);
+      const entries = [];
+      if (value && typeof value === "object") {
+        for (const [key, childValue] of Object.entries(value)) {
+          if (
+            Object.prototype.hasOwnProperty.call(query.spec, "equalTo") &&
+            (!childValue ||
+              typeof childValue !== "object" ||
+              childValue[query.spec.orderByChild] !== query.spec.equalTo)
+          ) {
+            continue;
+          }
+          entries.push([key, childValue]);
+          if (
+            Number.isInteger(query.spec.limitToFirst) &&
+            entries.length >= query.spec.limitToFirst
+          ) {
+            break;
+          }
+        }
+      }
+      return fakeSnapshotFromEntries(entries);
     },
   };
   return query;
 }
 
-function fakeSnapshot(entries) {
+function fakeSnapshotFromValue(value) {
+  const snapshotValue = deepClone(value);
   return {
     exists() {
-      return entries.length > 0;
+      return snapshotValue !== undefined && snapshotValue !== null;
+    },
+    val() {
+      return deepClone(snapshotValue);
     },
     forEach(callback) {
-      for (const [key, value] of entries) {
-        callback({
-          key,
-          val: () => value,
-        });
+      if (!snapshotValue || typeof snapshotValue !== "object") {
+        return false;
+      }
+      for (const [key, value] of Object.entries(snapshotValue)) {
+        if (callback({ key, val: () => deepClone(value) }) === true) {
+          return true;
+        }
       }
       return false;
     },
   };
+}
+
+function fakeSnapshotFromEntries(entries) {
+  return {
+    exists() {
+      return entries.length > 0;
+    },
+    val() {
+      return Object.fromEntries(entries.map(([key, value]) => [key, deepClone(value)]));
+    },
+    forEach(callback) {
+      for (const [key, value] of entries) {
+        if (callback({ key, val: () => deepClone(value) }) === true) {
+          return true;
+        }
+      }
+      return false;
+    },
+  };
+}
+
+function deepClone(value) {
+  if (value === undefined) {
+    return undefined;
+  }
+  return JSON.parse(JSON.stringify(value));
+}
+
+function deepMerge(base, override) {
+  const result = deepClone(base);
+  for (const [key, value] of Object.entries(override || {})) {
+    if (
+      value &&
+      typeof value === "object" &&
+      !Array.isArray(value) &&
+      result[key] &&
+      typeof result[key] === "object" &&
+      !Array.isArray(result[key])
+    ) {
+      result[key] = deepMerge(result[key], value);
+    } else {
+      result[key] = deepClone(value);
+    }
+  }
+  return result;
+}
+
+function getPath(root, pathName) {
+  const parts = splitPath(pathName);
+  let cursor = root;
+  for (const part of parts) {
+    if (!cursor || typeof cursor !== "object") {
+      return undefined;
+    }
+    cursor = cursor[part];
+  }
+  return cursor;
+}
+
+function setPath(root, pathName, value) {
+  const parts = splitPath(pathName);
+  if (parts.length === 0) {
+    throw new Error("cannot set root");
+  }
+  let cursor = root;
+  for (let i = 0; i < parts.length - 1; i += 1) {
+    const part = parts[i];
+    if (!cursor[part] || typeof cursor[part] !== "object") {
+      cursor[part] = {};
+    }
+    cursor = cursor[part];
+  }
+  if (value === null) {
+    delete cursor[parts[parts.length - 1]];
+  } else {
+    cursor[parts[parts.length - 1]] = deepClone(value);
+  }
+}
+
+function splitPath(pathName) {
+  return String(pathName || "")
+    .split("/")
+    .filter((part) => part.length > 0);
+}
+
+function joinPath(first, second) {
+  const left = splitPath(first).join("/");
+  const right = splitPath(second).join("/");
+  if (!left) {
+    return right;
+  }
+  if (!right) {
+    return left;
+  }
+  return `${left}/${right}`;
 }

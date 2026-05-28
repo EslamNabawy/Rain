@@ -2,6 +2,19 @@
 
 const USERNAME_PATTERN = /^[a-z0-9_]{3,24}$/;
 const REQUEST_ID_PATTERN = /^[A-Za-z0-9_-]{3,128}$/;
+const TERMINAL_REQUEST_STATUSES = Object.freeze(
+  new Set([
+    "accepted",
+    "rejected",
+    "canceled",
+    "cancelled",
+    "expired",
+    "failed",
+  ]),
+);
+const VALID_SENDER_DEVICES = Object.freeze(
+  new Set(["android", "windows", "unknown"]),
+);
 
 const reasonMessages = Object.freeze({
   authMissing: () => "Sign in before requesting a connection.",
@@ -108,6 +121,19 @@ function peerFromData(data) {
 function requestIdFromData(data) {
   const payload = requireObjectData(data);
   return validateRequestId(payload.requestId);
+}
+
+function senderDeviceFromData(data) {
+  const payload = requireObjectData(data);
+  if (typeof payload.senderDevice !== "string") {
+    return "unknown";
+  }
+  const normalized = payload.senderDevice.trim().toLowerCase();
+  return VALID_SENDER_DEVICES.has(normalized) ? normalized : "unknown";
+}
+
+function isTerminalRequestStatus(status) {
+  return TERMINAL_REQUEST_STATUSES.has(status);
 }
 
 async function resolveAuthUsername(root, request) {
@@ -272,10 +298,12 @@ class ConnectionRequestInputError extends Error {
 module.exports = {
   USERNAME_PATTERN,
   REQUEST_ID_PATTERN,
+  TERMINAL_REQUEST_STATUSES,
   ConnectionRequestInputError,
   allowedResponse,
   connectionRequestPairKey,
   denied,
+  isTerminalRequestStatus,
   messageForReason,
   normalizeUsername,
   peerFromData,
@@ -283,6 +311,7 @@ module.exports = {
   requestIdFromData,
   resolveAuthUsername,
   sanitizeError,
+  senderDeviceFromData,
   serverNow,
   standardResponse,
   validateRequestId,

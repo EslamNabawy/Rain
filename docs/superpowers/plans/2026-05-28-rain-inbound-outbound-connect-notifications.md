@@ -720,21 +720,21 @@ Expected: response-shape tests pass.
 
 **Steps:**
 
-- [ ] Implement receiver block/mute/offline checks before quota spend.
-- [ ] Implement deterministic `connectionRequestPairLocks/{pairKey}` transaction:
+- [x] Implement receiver block/mute/offline checks before quota spend.
+- [x] Implement deterministic `connectionRequestPairLocks/{pairKey}` transaction:
   - existing non-expired pending lock returns `duplicatePendingRequest`
   - expired lock can be replaced
   - terminal lock can be replaced
-- [ ] Implement receiver pending cap using a server-maintained count or bounded query plus pair lock. If a count is used, store and repair it in cleanup.
-- [ ] Add rollback of pair lock if later sender quota reservation fails.
-- [ ] Add tests:
+- [x] Implement receiver pending cap using a server-maintained count or bounded query plus pair lock. If a count is used, store and repair it in cleanup.
+- [x] Add rollback of pair lock if later sender quota reservation fails.
+- [x] Add tests:
   - duplicate tap returns existing request
   - muted receiver gets no inbox row
   - blocked peer gets no inbox row
   - offline peer gets no inbox row
   - receiver inbox full gets no inbox row
   - none of those consume sender quota
-- [ ] Commit: `feat(functions): add receiver protection and dedupe`
+- [x] Commit: `feat(functions): add receiver protection and dedupe`
 
 **Validation:**
 
