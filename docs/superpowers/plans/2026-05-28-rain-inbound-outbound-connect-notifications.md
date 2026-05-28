@@ -569,24 +569,24 @@ Expected: no new analyzer failures.
 
 **Steps:**
 
-- [ ] Define `ConnectionRequestStatus`, `ConnectionRequestReasonCode`, `ConnectionRequestDecision`, `ConnectionRequestQuotaSnapshot`, `ConnectionRequestPayload`, and `ConnectionRequestTransition`.
-- [ ] Implement username/request id/pair key validation using normalized usernames only.
-- [ ] Implement `isTerminalStatus(status)`.
-- [ ] Implement `canTransition(from, to, now, expiresAt)`.
-- [ ] Implement exhaustive `messageForConnectionRequestReason(reasonCode, peerLabel, retryAfter)`.
-- [ ] Define app presentation model contracts:
+- [x] Define `ConnectionRequestStatus`, `ConnectionRequestReasonCode`, `ConnectionRequestDecision`, `ConnectionRequestQuotaSnapshot`, `ConnectionRequestPayload`, and `ConnectionRequestTransition`.
+- [x] Implement username/request id/pair key validation using normalized usernames only.
+- [x] Implement `isTerminalStatus(status)`.
+- [x] Implement `canTransition(from, to, now, expiresAt)`.
+- [x] Implement exhaustive `messageForConnectionRequestReason(reasonCode, peerLabel, retryAfter)`.
+- [x] Define app presentation model contracts:
   - `ConnectionRequestSurfaceModel`
   - `ConnectionRequestActionModel`
   - `ConnectionRequestFeedbackModel`
-- [ ] Add parser tests for malformed status, invalid timestamps, path-injection usernames, expired payloads, unknown fields, and cleanup-safe parsing.
-- [ ] Add message coverage test that iterates every enum value and expects a non-empty message.
-- [ ] Add state transition tests for all allowed and forbidden transitions.
-- [ ] Commit: `feat(protocol): add connection request contract`
+- [x] Add parser tests for malformed status, invalid timestamps, path-injection usernames, expired payloads, unknown fields, and cleanup-safe parsing.
+- [x] Add message coverage test that iterates every enum value and expects a non-empty message.
+- [x] Add state transition tests for all allowed and forbidden transitions.
+- [x] Commit: `feat(protocol): add connection request contract`
 
 **Validation:**
 
 ```powershell
-dart test packages/protocol_brain/test/connection_request_contract_test.dart
+flutter test packages/protocol_brain/test/connection_request_contract_test.dart
 ```
 
 Expected: all tests pass.

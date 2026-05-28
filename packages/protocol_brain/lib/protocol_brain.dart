@@ -39,6 +39,7 @@ export 'adapters/firebase_adapter.dart';
 export 'adapters/signaling_adapter.dart';
 export 'adapters/signaling_cipher.dart';
 export 'src/connection_memory.dart';
+export 'src/connection_request_contract.dart';
 export 'src/default_protocol_brain.dart';
 export 'src/protocol_brain_impl.dart';
 export 'src/session_manager.dart';
