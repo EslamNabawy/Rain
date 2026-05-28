@@ -1208,10 +1208,10 @@ Expected: diagnostics tests pass.
 
 **Steps:**
 
-- [ ] Write v2 push spec.
-- [ ] Explicitly state v1 does not implement token storage.
-- [ ] Add security review checklist.
-- [ ] Commit: `docs: specify connection request push v2`
+- [x] Write v2 push spec.
+- [x] Explicitly state v1 does not implement token storage.
+- [x] Add security review checklist.
+- [x] Commit: `docs: specify connection request push v2`
 
 **Validation:**
 
