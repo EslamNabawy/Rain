@@ -14,6 +14,8 @@ Add a clear notification flow for manual peer connection attempts. When Alice wa
 - Inbound connect notifications are advisory; they do not auto-open a WebRTC session without user action.
 - Outbound notifications are local progress state plus optional cancellation.
 - The app may show OS/local notifications only while Rain is running or background-capable on the platform.
+- Usage limits, credits, cooldowns, and override values are stored in Firebase and enforced by backend code, not local storage.
+- Users can read their own remaining quota, but only backend/admin credentials can change quota grants or extra credits.
 - True closed-app push notification is a separate phase because it requires device tokens, Firebase Cloud Messaging, permissions, privacy policy updates, and backend token lifecycle.
 
 ## Existing Constraints
@@ -76,9 +78,62 @@ connectionRequestOutboxes/{from}/{requestId}
   createdAt: server timestamp millis
   updatedAt: server timestamp millis
   expiresAt: server timestamp millis
+
+connectionNotificationConfig/global
+  defaultDailyLimit: number
+  defaultCooldownMs: number
+  maxPendingOutboundPerUser: number
+  maxPendingInboundPerUser: number
+  requestTtlMs: number
+  maxBurstPerMinute: number
+  enabled: boolean
+  updatedAt: server timestamp millis
+
+connectionNotificationEntitlements/{username}
+  dailyLimitOverride: number | null
+  extraCredits: number
+  unlimitedUntil: millis | null
+  disabled: boolean
+  updatedAt: server timestamp millis
+  updatedBy: admin uid or operator label
+
+connectionNotificationUsage/{username}/{yyyyMMdd}
+  used: number
+  extraCreditsUsed: number
+  rejectedByCooldown: number
+  rejectedByLimit: number
+  lastRequestAt: millis
+  burstWindowStartedAt: millis
+  burstCount: number
 ```
 
 The inbox is authoritative for the receiver. The outbox is a mirrored status projection for the sender. Both are ephemeral and cleaned by TTL.
+
+The quota, entitlement, and usage paths are authoritative guardrail state. They must be updated with a transaction from trusted backend code. The Flutter app may read a sanitized quota summary for UI, but it must not write quota counters, grant credits, or bypass cooldowns.
+
+## Guardrail Model
+
+Connection notifications are intentionally rate-limited because every request creates Firebase writes, watcher events, optional local notifications, sound events, and user attention cost.
+
+Default policy for first implementation:
+
+- Daily free connect notifications per user: 30.
+- Extra credits: consumed after the daily free allowance.
+- Cooldown between requests to the same peer: 20 seconds.
+- Max pending outbound requests per user: 5.
+- Max pending inbound requests per receiver: 10.
+- Max burst: 6 requests per minute.
+- Request TTL: 45 seconds.
+
+Firebase/admin override examples:
+
+- Increase `connectionNotificationEntitlements/eslam/extraCredits` for one-off extra usage.
+- Set `dailyLimitOverride` for trusted testers.
+- Set `unlimitedUntil` for internal accounts.
+- Set `disabled: true` to shut off abuse from one account without blocking the whole app.
+- Change `connectionNotificationConfig/global/defaultDailyLimit` if production usage needs a different limit.
+
+Security rule: client writes must never be allowed to mutate `connectionNotificationConfig`, `connectionNotificationEntitlements`, or `connectionNotificationUsage`. Request creation should go through a backend function so quota checks and request writes happen as one server-side operation.
 
 ## Public Types
 
@@ -110,8 +165,22 @@ The inbox is authoritative for the receiver. The outbox is a mirrored status pro
   - `activeCall`
   - `activeTransfer`
   - `rateLimited`
+  - `dailyLimitExceeded`
+  - `extraCreditsExhausted`
+  - `tooManyPendingRequests`
+  - `notificationsDisabledByAdmin`
   - `expired`
   - `backendRejected`
+
+- `ConnectionNotificationQuotaSnapshot`
+  - `dailyLimit`
+  - `usedToday`
+  - `extraCreditsRemaining`
+  - `cooldownRemainingMs`
+  - `pendingOutboundCount`
+  - `pendingInboundCount`
+  - `unlimitedUntil`
+  - `disabled`
 
 ## Phase 00: Acceptance Lock And Baseline
 
@@ -151,30 +220,87 @@ The inbox is authoritative for the receiver. The outbox is a mirrored status pro
 
 - [ ] Add `connectionRequests/{to}/{requestId}` rules.
 - [ ] Add `connectionRequestOutboxes/{from}/{requestId}` rules.
+- [ ] Add read-only client access to sanitized quota summaries if needed.
+- [ ] Add admin-only paths:
+  - `connectionNotificationConfig/global`
+  - `connectionNotificationEntitlements/{username}`
+  - `connectionNotificationUsage/{username}/{yyyyMMdd}`
 - [ ] Require authenticated user ownership for writes.
 - [ ] Require accepted two-way friendship.
 - [ ] Require no block in either direction.
 - [ ] Require fresh receiver presence for creating new inbound requests.
 - [ ] Prevent users from writing requests on behalf of another sender.
+- [ ] Prevent client writes to config, entitlements, and usage counters.
+- [ ] Prevent direct client creation of request rows if the backend function owns quota enforcement.
 - [ ] Allow receiver to mark `seen`, `accepted`, or `rejected`.
 - [ ] Allow sender to mark `canceled`.
 - [ ] Add cleanup function support for expired request inbox/outbox entries.
+- [ ] Add cleanup or daily TTL rules for old usage/audit rows.
 - [ ] Add rule tests and cleanup tests.
 
 **Acceptance:**
 
 - Offline/stale receivers cannot receive new connection notification rows.
 - Blocked or unaccepted users cannot create requests.
+- Users cannot grant themselves credits or reset their own counters.
 - Expired rows are cleaned without deleting active newer requests.
 
-## Phase 03: Protocol Adapter API
+## Phase 03: Server Quota, Credit, And Rate-Limit Enforcement
+
+**Purpose:** Protect Firebase limits and user attention with backend-owned guardrails.
+
+- [ ] Add a trusted backend entry point for creating connection requests, preferably a callable/HTTPS Cloud Function:
+  - validates Firebase Auth
+  - resolves authenticated username
+  - validates target peer
+  - validates accepted friendship and block state
+  - validates fresh receiver presence
+  - checks global feature enabled flag
+  - checks per-user disabled flag
+  - checks same-peer cooldown
+  - checks burst window
+  - checks pending outbound count
+  - checks receiver pending inbound count
+  - checks daily free allowance
+  - consumes extra credits only after daily allowance is exhausted
+  - writes inbox/outbox request rows
+  - writes quota usage counters
+- [ ] Use transactions for usage counters and pending-request checks.
+- [ ] Make request creation idempotent for duplicate taps from the same sender/peer within the cooldown window.
+- [ ] Return a typed quota decision to the app:
+  - allowed
+  - blocked reason
+  - remaining daily requests
+  - remaining extra credits
+  - retry-after timestamp when applicable
+- [ ] Add an admin maintenance path or documented Firebase console workflow to grant extra credits.
+- [ ] Add diagnostics/audit rows that do not expose private data:
+  - request id
+  - sender
+  - receiver
+  - decision
+  - consumed free/extra credit
+  - retryAfter
+  - createdAt
+- [ ] Ensure cancel/reject/expire decrements pending counts or computes pending counts from live request rows.
+
+**Acceptance:**
+
+- Client cannot exceed limits by editing local storage, replaying UI actions, or writing directly to Firebase.
+- Admin can increase a user entitlement in Firebase and the next request uses the new value.
+- Extra credits are consumed only after free daily allowance.
+- Rate-limited attempts create no inbox/outbox request rows.
+- Quota failure messages are deterministic and user-safe.
+
+## Phase 04: Protocol Adapter API
 
 **Purpose:** Expose connection notifications through `protocol_brain`, not directly from widgets.
 
 - [ ] Add adapter methods:
-  - `createConnectionRequest(peerId)`
+  - `createConnectionRequest(peerId)` through the trusted backend entry point
   - `watchIncomingConnectionRequests(username)`
   - `watchOutgoingConnectionRequests(username)`
+  - `watchConnectionNotificationQuota(username)` or `fetchConnectionNotificationQuota(username)`
   - `markConnectionRequestSeen(requestId)`
   - `acceptConnectionRequest(requestId)`
   - `rejectConnectionRequest(requestId)`
@@ -188,8 +314,9 @@ The inbox is authoritative for the receiver. The outbox is a mirrored status pro
 
 - Adapter can create, observe, accept, reject, cancel, and expire requests in tests.
 - Duplicate create attempts for the same peer collapse or supersede cleanly.
+- Adapter exposes quota decisions without requiring widgets to understand Firebase internals.
 
-## Phase 04: Runtime Guard Integration
+## Phase 05: Runtime Guard Integration
 
 **Purpose:** Route all user connect actions through one central policy.
 
@@ -199,16 +326,18 @@ The inbox is authoritative for the receiver. The outbox is a mirrored status pro
   - `canCancelConnectionNotification(peerId, requestId)`
 - [ ] Use existing active call and active file transfer blocks.
 - [ ] Block notifications for offline, stale, unaccepted, blocked, or presence-unknown peers.
+- [ ] Block or delay attempts while server quota says cooldown, daily limit, pending limit, disabled, or extra credits exhausted.
 - [ ] Do not allow notification creation to clear manual disconnect by itself.
 - [ ] Clear manual disconnect only when the user explicitly accepts/connects.
 
 **Acceptance:**
 
 - Pressing `Connect` on an offline peer does not write a request.
+- Pressing `Connect` while out of credits does not write a request and shows remaining/retry information.
 - Manual-disconnected peer does not auto-recover from inbound request arrival.
 - Explicit inbound `Connect` clears manual intent only for that peer.
 
-## Phase 05: Outbound Runtime Flow
+## Phase 06: Outbound Runtime Flow
 
 **Purpose:** Make sender-side behavior predictable.
 
@@ -219,14 +348,20 @@ The inbox is authoritative for the receiver. The outbox is a mirrored status pro
 - [ ] If receiver accepts, call the existing connection path.
 - [ ] If receiver rejects or request expires, keep session disconnected and show a clear message.
 - [ ] If a direct passive offer succeeds before acceptance, reconcile the request to `accepted` or `connected` without duplicate UI.
+- [ ] Show guardrail messages:
+  - `Connection requests are cooling down. Try again in {n}s.`
+  - `Daily connection request limit reached.`
+  - `No extra connection request credits left.`
+  - `Too many pending connection requests.`
 
 **Acceptance:**
 
 - Sender never waits silently.
 - Sender can cancel.
 - Sender sees a terminal result for reject, expire, offline, and failed backend writes.
+- Sender sees no outbound pending state when backend denies quota.
 
-## Phase 06: Inbound Runtime Flow
+## Phase 07: Inbound Runtime Flow
 
 **Purpose:** Make receiver-side behavior reliable and non-invasive.
 
@@ -244,13 +379,17 @@ The inbox is authoritative for the receiver. The outbox is a mirrored status pro
 - Invalid or stale request rows do not crash the runtime.
 - Accepting one peer does not affect any other peer connection state.
 
-## Phase 07: In-App Notification UI
+## Phase 08: In-App Notification UI
 
 **Purpose:** Add visible prompts without making the app feel noisy.
 
 - [ ] Add a compact top-level notification tray for inbound connection requests.
 - [ ] Add per-chat outbound pending state near the connection/status area.
 - [ ] Add a connection request badge in the friends rail/list.
+- [ ] Add quota-aware outbound affordances:
+  - remaining requests today where space allows
+  - retry-after text when cooling down
+  - disabled state when admin-disabled
 - [ ] Add desktop-friendly hover tooltips and mobile-friendly tap targets.
 - [ ] Use Rain visual language: minimal dark ink surfaces, cyan/mint status, no noisy decorations.
 - [ ] Ensure prompts respect safe areas and do not overlap call UI, snackbars, keyboard, or bottom nav.
@@ -260,8 +399,9 @@ The inbox is authoritative for the receiver. The outbox is a mirrored status pro
 - Inbound request is visible when user is on any tab.
 - Outbound pending is visible in the relevant chat.
 - No duplicate prompts for the same peer.
+- Quota UI never implies the user can bypass server limits.
 
-## Phase 08: OS Local Notifications
+## Phase 09: OS Local Notifications
 
 **Purpose:** Notify the user outside the active Rain window where platform support allows.
 
@@ -278,14 +418,16 @@ The inbox is authoritative for the receiver. The outbox is a mirrored status pro
   - Fallback to in-app notification if unavailable.
 - [ ] Respect notification settings and quiet mode.
 - [ ] Do not add FCM tokens in this phase.
+- [ ] Do not show OS notifications for requests blocked by quota, cooldown, pending limits, or admin disable.
 
 **Acceptance:**
 
 - App-active and minimized notification behavior works without crashing when notification APIs are unavailable.
 - Permission denial leaves in-app notifications functional.
 - No notification appears for stale/invalid/blocked requests.
+- No notification appears for requests that were denied before inbox creation.
 
-## Phase 09: Sound, Rate Limit, And Abuse Controls
+## Phase 10: Sound, Rate Limit, And Abuse Controls
 
 **Purpose:** Make notifications noticeable without becoming annoying or abusable.
 
@@ -296,15 +438,16 @@ The inbox is authoritative for the receiver. The outbox is a mirrored status pro
 - [ ] Reuse central sound event router.
 - [ ] Burst-compress repeated requests from the same peer.
 - [ ] Add local cooldown for repeated requests.
-- [ ] Add backend rate guard if Firebase rules/functions can enforce it safely.
+- [ ] Treat backend quota decisions as authoritative; local cooldown only reduces accidental taps and noise.
 - [ ] Avoid counting normal chat messages as abuse.
 
 **Acceptance:**
 
 - Multiple quick requests from the same peer produce one prompt and controlled sound.
 - Repeated abusive requests are suppressed locally and diagnostically visible.
+- Backend-enforced quota still works if local cooldown is bypassed.
 
-## Phase 10: Diagnostics And Recovery
+## Phase 11: Diagnostics And Recovery
 
 **Purpose:** Make failures reportable.
 
@@ -319,15 +462,20 @@ The inbox is authoritative for the receiver. The outbox is a mirrored status pro
   - `connection_request_blocked`
   - `connection_request_corrupt_removed`
   - `connection_request_notification_permission_denied`
-- [ ] Include peer id, request id, direction, status, presence freshness, guard reason, and cleanup result.
+  - `connection_request_quota_allowed`
+  - `connection_request_quota_denied`
+  - `connection_request_credit_consumed`
+  - `connection_request_entitlement_loaded`
+- [ ] Include peer id, request id, direction, status, presence freshness, guard reason, quota decision, remaining daily allowance, remaining extra credits, retry-after, and cleanup result.
 - [ ] Ensure diagnostics buffering does not write synchronously per event.
 
 **Acceptance:**
 
 - Exported diagnostics explain why a request did or did not appear.
 - Corrupt request entries are removed or ignored without poisoning watcher streams.
+- Diagnostics can prove whether a blocked attempt was caused by cooldown, daily limit, pending limit, admin disable, or Firebase failure.
 
-## Phase 11: Settings And User Control
+## Phase 12: Settings And User Control
 
 **Purpose:** Let users control notification noise.
 
@@ -336,6 +484,11 @@ The inbox is authoritative for the receiver. The outbox is a mirrored status pro
   - `Connection request sound`
   - `Show notifications when minimized`
 - [ ] Show platform permission status.
+- [ ] Show a read-only quota summary:
+  - requests used today
+  - daily limit
+  - extra credits remaining
+  - cooldown status
 - [ ] Add `Test notification` only in diagnostics/developer area if useful.
 - [ ] Persist settings in the existing app settings store.
 
@@ -343,8 +496,9 @@ The inbox is authoritative for the receiver. The outbox is a mirrored status pro
 
 - Turning off connection request notifications suppresses OS notifications but keeps essential in-app prompts.
 - Turning off sounds does not suppress visual prompts.
+- Quota summary is read-only and updates from Firebase/backend state.
 
-## Phase 12: Optional Push Notification Architecture
+## Phase 13: Optional Push Notification Architecture
 
 **Purpose:** Define the future path for closed-app notification support without forcing it into v1.
 
@@ -352,6 +506,7 @@ The inbox is authoritative for the receiver. The outbox is a mirrored status pro
 - [ ] Introduce `notificationTokens/{username}/{deviceId}` only after security review.
 - [ ] Use Firebase Cloud Messaging for Android.
 - [ ] Define token rotation, logout deletion, blocked-user filtering, and rate limiting.
+- [ ] Reuse the same server quota/credit decision before sending push notifications.
 - [ ] Decide whether Windows needs push, local-only, or no closed-app notifications.
 - [ ] Update privacy policy and release notes before shipping.
 
@@ -359,19 +514,23 @@ The inbox is authoritative for the receiver. The outbox is a mirrored status pro
 
 - No FCM token schema is added accidentally in v1.
 - Closed-app notification support has a separate explicit approval gate.
+- Push cannot bypass connection request quota.
 
-## Phase 13: Automated Validation Gate
+## Phase 14: Automated Validation Gate
 
 **Unit Tests**
 
 - [ ] Contract parsing rejects malformed request payloads.
 - [ ] Fake adapter creates inbox/outbox entries and mirrors statuses.
 - [ ] Runtime guard denies offline, blocked, unaccepted, active-call, and active-transfer cases.
+- [ ] Runtime guard denies cooldown, daily limit, extra credit exhaustion, admin disable, and too many pending requests.
 - [ ] Manual disconnect blocks auto-connect from inbound request arrival.
 - [ ] Explicit inbound accept clears manual disconnect for only that peer.
 - [ ] Outbound cancel prevents later accept from starting a session.
 - [ ] Expired requests do not start sessions.
 - [ ] Duplicate requests collapse into one visible request.
+- [ ] Server quota decision consumes free allowance before extra credits.
+- [ ] Admin entitlement changes are reflected without app reinstall.
 
 **Widget Tests**
 
@@ -380,6 +539,8 @@ The inbox is authoritative for the receiver. The outbox is a mirrored status pro
 - [ ] Friend list badge appears for pending inbound request.
 - [ ] Prompt respects safe areas and does not overlap call surfaces.
 - [ ] Notification settings render and persist.
+- [ ] Quota summary renders as read-only state.
+- [ ] Cooldown and no-credit messages fit mobile and desktop.
 
 **Firebase Tests**
 
@@ -389,6 +550,9 @@ The inbox is authoritative for the receiver. The outbox is a mirrored status pro
 - [ ] Receiver can accept/reject.
 - [ ] Sender can cancel.
 - [ ] Cleanup removes expired inbox/outbox rows.
+- [ ] Client cannot write config, entitlements, or usage counters.
+- [ ] Backend function refuses quota-exceeded requests before writing inbox/outbox rows.
+- [ ] Extra credits can be granted by admin data and consumed by request creation.
 
 **Validation Commands**
 
@@ -398,7 +562,7 @@ dart run melos run analyze
 dart run melos run test
 ```
 
-## Phase 14: Release Gate
+## Phase 15: Release Gate
 
 - [ ] Commit each completed phase on `dev`.
 - [ ] Push `dev`.
@@ -415,12 +579,20 @@ dart run melos run test
 - No group connection requests.
 - No connection request history.
 - No automatic connection acceptance.
+- No local-storage-only quota or credit system.
+- No client-side bypass for admin/test accounts; admin/test usage still goes through Firebase entitlements.
+- No paid billing or purchase flow for extra credits.
 - No changes to voice/video media transport.
 - No changes to chat message encryption or delivery.
 
 ## Open Decisions
 
 - Should inbound request expiry be 30 seconds, 45 seconds, or 60 seconds?
+- What should the default daily free request limit be for normal users?
+- Should extra credits reset daily, monthly, or remain until consumed?
+- Should admin/test accounts use `extraCredits`, `dailyLimitOverride`, or `unlimitedUntil`?
+- Should blocked quota attempts be invisible to the receiver, or should repeated abuse produce moderation diagnostics only?
+- Should quota summaries be visible in Settings, beside the Connect button, or only after a quota error?
 - Should reject tell the sender `Rejected` or softer `Unavailable`?
 - Should Windows use real toast notifications in v1, or in-app/minimized-window notifications only?
 - Should an inbound request from the currently open chat show a prompt, inline status, or both?
