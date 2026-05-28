@@ -65,6 +65,9 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen> {
     final audioOutputCapabilities = ref.watch(audioOutputCapabilityProvider);
     final updateStatus = ref.watch(forceUpdateProvider);
     final connectionRequests = ref.watch(connectionRequestProvider);
+    final connectionRequestBackendMode = ref
+        .watch(appEnvironmentProvider)
+        .connectionRequestBackendMode;
     final connectionRequestSettings = ref.watch(
       connectionRequestSettingsProvider,
     );
@@ -383,6 +386,7 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen> {
             state: connectionRequests,
             settings: connectionRequestSettings,
             audioSettings: audioSettings,
+            backendMode: connectionRequestBackendMode,
             onNotificationsEnabledChanged: (bool enabled) =>
                 _setConnectionRequestNotificationsEnabled(
                   context,
@@ -986,6 +990,7 @@ class _ConnectionRequestSettingsSection extends StatelessWidget {
     required this.state,
     required this.settings,
     required this.audioSettings,
+    required this.backendMode,
     required this.onNotificationsEnabledChanged,
     required this.onSoundEnabledChanged,
     required this.onShowMinimizedChanged,
@@ -995,6 +1000,7 @@ class _ConnectionRequestSettingsSection extends StatelessWidget {
   final ConnectionRequestState state;
   final AsyncValue<AppConnectionRequestSettings> settings;
   final AsyncValue<AppAudioSettings> audioSettings;
+  final ConnectionRequestBackendMode backendMode;
   final ValueChanged<bool> onNotificationsEnabledChanged;
   final ValueChanged<bool> onSoundEnabledChanged;
   final ValueChanged<bool> onShowMinimizedChanged;
@@ -1011,6 +1017,7 @@ class _ConnectionRequestSettingsSection extends StatelessWidget {
         : audioSettings.hasError
         ? audioSettings.error
         : null;
+    final sparkMode = backendMode == ConnectionRequestBackendMode.rtdbOnly;
     final pendingInbound = state.incomingSurfaces
         .where((surface) => !surface.status.isTerminal)
         .length;
@@ -1036,6 +1043,14 @@ class _ConnectionRequestSettingsSection extends StatelessWidget {
             ),
           ),
           const Divider(height: 1),
+          if (sparkMode) ...<Widget>[
+            const ListTile(
+              leading: Icon(Icons.bolt_outlined),
+              title: Text('Spark mode'),
+              subtitle: Text('Spark mode uses best-effort request limits.'),
+            ),
+            const Divider(height: 1),
+          ],
           SwitchListTile(
             secondary: const Icon(Icons.notifications_outlined),
             title: const Text('Connection request notifications'),
@@ -1072,7 +1087,10 @@ class _ConnectionRequestSettingsSection extends StatelessWidget {
                 : onShowMinimizedChanged,
           ),
           const Divider(height: 1),
-          _ConnectionRequestQuotaTile(quota: state.quota),
+          _ConnectionRequestQuotaTile(
+            quota: state.quota,
+            showServerEntitlements: !sparkMode,
+          ),
           const Divider(height: 1),
           _MutedConnectionRequestSendersTile(
             senders: requestSettings.mutedRequestSenders,
@@ -1086,9 +1104,13 @@ class _ConnectionRequestSettingsSection extends StatelessWidget {
 }
 
 class _ConnectionRequestQuotaTile extends StatelessWidget {
-  const _ConnectionRequestQuotaTile({required this.quota});
+  const _ConnectionRequestQuotaTile({
+    required this.quota,
+    required this.showServerEntitlements,
+  });
 
   final ConnectionRequestQuotaSnapshot? quota;
+  final bool showServerEntitlements;
 
   @override
   Widget build(BuildContext context) {
@@ -1100,14 +1122,19 @@ class _ConnectionRequestQuotaTile extends StatelessWidget {
         subtitle: Text('Quota summary unavailable. Pull latest state first.'),
       );
     }
-    final remaining = _remainingConnectionRequests(quota);
+    final remaining = _remainingConnectionRequests(
+      quota,
+      includeExtraCredits: showServerEntitlements,
+    );
     final details = <String>[
       '$remaining request${remaining == 1 ? '' : 's'} left today',
       '${quota.perTargetRemainingToday} per peer',
       '${quota.pendingOutboundCount} outbound pending',
       '${quota.pendingInboundCount} inbound pending',
-      if (quota.extraCreditsRemaining > 0)
+      if (showServerEntitlements && quota.extraCreditsRemaining > 0)
         '${quota.extraCreditsRemaining} extra credit${quota.extraCreditsRemaining == 1 ? '' : 's'}',
+      if (showServerEntitlements && quota.unlimitedUntil != null)
+        'unlimited entitlement active',
       if (quota.disabled) 'feature disabled',
     ].join(' | ');
     return ListTile(
@@ -1164,9 +1191,14 @@ class _MutedConnectionRequestSendersTile extends StatelessWidget {
   }
 }
 
-int _remainingConnectionRequests(ConnectionRequestQuotaSnapshot quota) {
+int _remainingConnectionRequests(
+  ConnectionRequestQuotaSnapshot quota, {
+  required bool includeExtraCredits,
+}) {
   final remaining =
-      quota.dailyLimit + quota.extraCreditsRemaining - quota.usedToday;
+      quota.dailyLimit +
+      (includeExtraCredits ? quota.extraCreditsRemaining : 0) -
+      quota.usedToday;
   return remaining < 0 ? 0 : remaining;
 }
 

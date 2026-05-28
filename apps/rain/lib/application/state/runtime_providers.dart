@@ -6,6 +6,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:protocol_brain/protocol_brain.dart';
 import 'package:rain_core/rain_core.dart';
 
+import 'package:rain/core/config/app_environment.dart';
 import 'package:rain/application/runtime/rain_runtime_controller.dart';
 import 'package:rain/application/runtime/app_exit_coordinator.dart';
 import 'package:rain/application/runtime/connection_request_state.dart';
@@ -173,6 +174,65 @@ final rainNotificationServiceProvider = Provider<RainNotificationService>((
   return const NoopRainNotificationService();
 });
 
+@visibleForTesting
+ConnectionRequestAdapter? selectConnectionRequestAdapterForEnvironment({
+  required AppEnvironment environment,
+  required ConnectionRequestAdapter? cloudFunctionsAdapter,
+  required ConnectionRequestAdapter? rtdbOnlyAdapter,
+}) {
+  return switch (environment.connectionRequestBackendMode) {
+    ConnectionRequestBackendMode.cloudFunctions => cloudFunctionsAdapter,
+    ConnectionRequestBackendMode.rtdbOnly => rtdbOnlyAdapter,
+  };
+}
+
+final connectionRequestAdapterProvider = Provider<ConnectionRequestAdapter?>((
+  Ref ref,
+) {
+  final identity = ref.watch(identityProvider).value;
+  final environment = ref.watch(appEnvironmentProvider);
+  final adapter = ref.watch(adapterProvider);
+  final cloudFunctionsAdapter = adapter is ConnectionRequestAdapter
+      ? adapter as ConnectionRequestAdapter
+      : null;
+  ConnectionRequestAdapter? rtdbOnlyAdapter;
+  if (identity != null &&
+      environment.connectionRequestBackendMode ==
+          ConnectionRequestBackendMode.rtdbOnly) {
+    final firebaseDatabase = ref.watch(appBootstrapProvider).firebaseDatabase;
+    if (!environment.shouldUseFallbackAdapter && firebaseDatabase != null) {
+      final friendStore = ref.watch(friendStoreProvider);
+      rtdbOnlyAdapter = RtdbOnlyConnectionRequestAdapter(
+        root: firebaseDatabase.ref(),
+        currentUsername: () async => identity.username,
+        isAcceptedFriend: (String peerId) async {
+          final friend = await friendStore.loadFriend(peerId);
+          return friend?.state == FriendState.friend;
+        },
+        isPeerOnline: (String peerId) async {
+          final backendIdentity = await adapter.fetchIdentity(peerId);
+          return backendIdentity?.online ?? false;
+        },
+        diagnosticsSink: (ConnectionRequestAdapterDiagnosticEvent event) {
+          ref
+              .read(crashDiagnosticsServiceProvider)
+              .recordEventSync(
+                category: 'connection_request_adapter',
+                name: event.name,
+                severity: 'warning',
+                context: event.toJson(),
+              );
+        },
+      );
+    }
+  }
+  return selectConnectionRequestAdapterForEnvironment(
+    environment: environment,
+    cloudFunctionsAdapter: cloudFunctionsAdapter,
+    rtdbOnlyAdapter: rtdbOnlyAdapter,
+  );
+});
+
 class RuntimeController extends AsyncNotifier<RainRuntimeController?> {
   NetworkStatusKind? _lastNetworkKind;
   String? _lastNetworkPathKey;
@@ -232,6 +292,7 @@ class RuntimeController extends AsyncNotifier<RainRuntimeController?> {
       messageStore: ref.watch(messageStoreProvider),
       offlineQueueStore: ref.watch(offlineQueueStoreProvider),
       messageDeliveryService: ref.watch(messageDeliveryServiceProvider),
+      connectionRequestAdapter: ref.watch(connectionRequestAdapterProvider),
       fileTransferStore: ref.watch(fileTransferStoreProvider),
       heartbeatInterval: environment.heartbeatInterval,
       startupMediaPermissionWarmup:

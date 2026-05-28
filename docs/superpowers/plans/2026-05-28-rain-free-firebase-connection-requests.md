@@ -1017,7 +1017,7 @@ that require server authority.
 - Test: `apps/rain/test/connection_request_backend_mode_test.dart`
 - Test: `apps/rain/test/settings_screen_test.dart`
 
-- [ ] **Step 1: Wire adapter selection**
+- [x] **Step 1: Wire adapter selection**
 
 Runtime provider behavior:
 
@@ -1030,7 +1030,7 @@ switch (environment.connectionRequestBackendMode) {
 }
 ```
 
-- [ ] **Step 2: Update settings UI**
+- [x] **Step 2: Update settings UI**
 
 In `rtdbOnly`:
 
@@ -1040,7 +1040,7 @@ In `rtdbOnly`:
 - keep mute/unmute controls
 - keep local notification controls
 
-- [ ] **Step 3: Update cloud build defines**
+- [x] **Step 3: Update cloud build defines**
 
 For demo/free builds, ensure the workflow passes:
 
@@ -1060,7 +1060,7 @@ Production builds may pass:
 
 only after Functions deploy is available.
 
-- [ ] **Step 4: Add tests**
+- [x] **Step 4: Add tests**
 
 Required tests:
 
@@ -1069,7 +1069,7 @@ testWidgets('settings shows Spark best-effort note in rtdbOnly mode', (tester) a
 test('runtime provider selects rtdb adapter in default mode', () async {});
 ```
 
-- [ ] **Step 5: Validate and commit**
+- [x] **Step 5: Validate and commit**
 
 ```powershell
 flutter test --no-test-assets apps/rain/test/connection_request_backend_mode_test.dart apps/rain/test/settings_screen_test.dart

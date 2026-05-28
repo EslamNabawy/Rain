@@ -64,6 +64,13 @@ jobs:
             Set-Content -LiteralPath $definesPath -Value $env:RAIN_RELEASE_DART_DEFINES_JSON -Encoding utf8NoBOM
           } else {
             Copy-Item -LiteralPath 'apps\rain\tool\dart_defines.example.json' -Destination $definesPath -Force
+            $defines = Get-Content -Raw -LiteralPath $definesPath | ConvertFrom-Json -ErrorAction Stop
+            if ($null -eq $defines.PSObject.Properties['CONNECTION_REQUEST_BACKEND_MODE']) {
+              $defines | Add-Member -NotePropertyName 'CONNECTION_REQUEST_BACKEND_MODE' -NotePropertyValue 'rtdbOnly'
+            } else {
+              $defines.CONNECTION_REQUEST_BACKEND_MODE = 'rtdbOnly'
+            }
+            $defines | ConvertTo-Json -Depth 20 | Set-Content -LiteralPath $definesPath -Encoding utf8NoBOM
           }
           "RAIN_DART_DEFINES_FILE=$definesPath" | Out-File -FilePath $env:GITHUB_ENV -Encoding utf8 -Append
 
@@ -177,6 +184,13 @@ jobs:
             "RAIN_RELEASE_KEY_PASSWORD=$env:RAIN_RELEASE_KEY_PASSWORD" | Out-File -FilePath $env:GITHUB_ENV -Encoding utf8 -Append
           } else {
             Copy-Item -LiteralPath 'apps\rain\tool\dart_defines.example.json' -Destination $definesPath -Force
+            $defines = Get-Content -Raw -LiteralPath $definesPath | ConvertFrom-Json -ErrorAction Stop
+            if ($null -eq $defines.PSObject.Properties['CONNECTION_REQUEST_BACKEND_MODE']) {
+              $defines | Add-Member -NotePropertyName 'CONNECTION_REQUEST_BACKEND_MODE' -NotePropertyValue 'rtdbOnly'
+            } else {
+              $defines.CONNECTION_REQUEST_BACKEND_MODE = 'rtdbOnly'
+            }
+            $defines | ConvertTo-Json -Depth 20 | Set-Content -LiteralPath $definesPath -Encoding utf8NoBOM
           }
           "RAIN_DART_DEFINES_FILE=$definesPath" | Out-File -FilePath $env:GITHUB_ENV -Encoding utf8 -Append
 

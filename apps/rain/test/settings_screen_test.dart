@@ -371,7 +371,12 @@ void main() {
     expect(find.text('Connection request sound'), findsOneWidget);
     expect(find.text('Show notifications when minimized'), findsOneWidget);
     expect(find.text('Request quota'), findsOneWidget);
+    expect(
+      find.text('Spark mode uses best-effort request limits.'),
+      findsOneWidget,
+    );
     expect(find.textContaining('Read-only from Firebase'), findsOneWidget);
+    expect(find.textContaining('extra credit'), findsNothing);
 
     await tester.tap(find.text('Connection request notifications'));
     await tester.pumpSettingsFrame();
@@ -386,6 +391,27 @@ void main() {
       await AppSettingsStore().loadConnectionRequestSoundsEnabled(),
       isFalse,
     );
+  });
+
+  testWidgets('settings shows Spark best-effort note in rtdbOnly mode', (
+    WidgetTester tester,
+  ) async {
+    _useTallView(tester);
+    final harness = _SettingsHarness(
+      connectionRequestState: _connectionRequestStateWithQuota(),
+    );
+    addTearDown(harness.dispose);
+
+    await tester.pumpSettingsScreen(harness: harness);
+    await tester.drag(find.byType(ListView), const Offset(0, -1200));
+    await tester.pumpSettingsFrame();
+
+    expect(
+      find.text('Spark mode uses best-effort request limits.'),
+      findsOneWidget,
+    );
+    expect(find.textContaining('extra credit'), findsNothing);
+    expect(find.textContaining('unlimited entitlement'), findsNothing);
   });
 
   testWidgets('muted request sender unmute removes only that row', (
