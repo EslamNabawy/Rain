@@ -6,6 +6,7 @@ import 'package:rain_core/rain_core.dart';
 import 'package:url_launcher/url_launcher_string.dart';
 
 import 'package:rain/application/audio/sound_event_router.dart';
+import 'package:rain/application/runtime/connection_request_state.dart';
 import 'package:rain/presentation/navigation/app_routes.dart';
 import 'package:rain/application/runtime/media_device_settings.dart';
 import 'package:rain/application/state/app_providers.dart';
@@ -62,6 +63,7 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen> {
     final callProcessingSettings = ref.watch(callProcessingSettingsProvider);
     final audioOutputCapabilities = ref.watch(audioOutputCapabilityProvider);
     final updateStatus = ref.watch(forceUpdateProvider);
+    final connectionRequests = ref.watch(connectionRequestProvider);
     final outputCapabilities =
         audioOutputCapabilities.value ??
         const AudioOutputCapabilityState(devices: []);
@@ -370,6 +372,11 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen> {
                 ),
               ],
             ),
+          ),
+          const SizedBox(height: 24),
+          const AppSectionTitle(title: 'Connection Requests'),
+          AppSectionCard(
+            child: _ConnectionRequestSettingsSummary(state: connectionRequests),
           ),
           const SizedBox(height: 24),
           const AppSectionTitle(title: 'Diagnostics'),
@@ -873,6 +880,42 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen> {
 }
 
 enum _ProfileAction { editDisplayName, editGender }
+
+class _ConnectionRequestSettingsSummary extends StatelessWidget {
+  const _ConnectionRequestSettingsSummary({required this.state});
+
+  final ConnectionRequestState state;
+
+  @override
+  Widget build(BuildContext context) {
+    final pendingInbound = state.incomingSurfaces
+        .where((surface) => !surface.status.isTerminal)
+        .length;
+    final pendingOutbound = state.outgoingSurfaces
+        .where((surface) => !surface.status.isTerminal)
+        .length;
+    final status = state.available
+        ? '$pendingInbound inbound pending | $pendingOutbound outbound pending'
+        : 'Connection request service is unavailable.';
+    return Column(
+      children: <Widget>[
+        ListTile(
+          leading: const Icon(Icons.notifications_active_outlined),
+          title: const Text('Connection request prompts'),
+          subtitle: Text(status),
+        ),
+        const Divider(height: 1),
+        const ListTile(
+          leading: Icon(Icons.person_search_outlined),
+          title: Text('Muted peers'),
+          subtitle: Text(
+            'Open a friend profile to allow connection prompts from that peer again.',
+          ),
+        ),
+      ],
+    );
+  }
+}
 
 class _AboutRainSection extends StatelessWidget {
   const _AboutRainSection({

@@ -231,6 +231,7 @@ class _FriendTile extends ConsumerWidget {
   @override
   Widget build(BuildContext context, WidgetRef ref) {
     final friendsController = ref.read(friendsProvider.notifier);
+    final connectionRequests = ref.watch(connectionRequestProvider);
     final scheme = Theme.of(context).colorScheme;
 
     void openProfile() {
@@ -276,6 +277,14 @@ class _FriendTile extends ConsumerWidget {
         : compact
         ? 42.0
         : 44.0;
+    final inboundConnectionRequestCount = connectionRequests.incomingSurfaces
+        .where(
+          (surface) =>
+              surface.peerId == friend.username &&
+              surface.direction == ConnectionRequestDirection.inbound &&
+              !surface.status.isTerminal,
+        )
+        .length;
 
     if (rail) {
       return Tooltip(
@@ -316,6 +325,15 @@ class _FriendTile extends ConsumerWidget {
                             shape: BoxShape.circle,
                             border: Border.all(color: scheme.surface, width: 2),
                           ),
+                        ),
+                      ),
+                    if (inboundConnectionRequestCount > 0)
+                      Positioned(
+                        bottom: 8,
+                        right: 10,
+                        child: _ConnectionRequestFriendBadge(
+                          count: inboundConnectionRequestCount,
+                          compact: true,
                         ),
                       ),
                   ],
@@ -398,6 +416,13 @@ class _FriendTile extends ConsumerWidget {
                                     ),
                                   ),
                                 ),
+                              if (inboundConnectionRequestCount >
+                                  0) ...<Widget>[
+                                const SizedBox(width: 6),
+                                _ConnectionRequestFriendBadge(
+                                  count: inboundConnectionRequestCount,
+                                ),
+                              ],
                             ],
                           ),
                           const SizedBox(height: 4),
@@ -533,4 +558,60 @@ class _FriendTile extends ConsumerWidget {
     FriendState.blocked => 'Blocked',
     FriendState.blockedByPeer => 'Blocked you',
   };
+}
+
+class _ConnectionRequestFriendBadge extends StatelessWidget {
+  const _ConnectionRequestFriendBadge({
+    required this.count,
+    this.compact = false,
+  });
+
+  final int count;
+  final bool compact;
+
+  @override
+  Widget build(BuildContext context) {
+    final scheme = Theme.of(context).colorScheme;
+    final label = count > 1 ? '$count' : '';
+    return Tooltip(
+      message: count == 1
+          ? 'Pending connection request'
+          : '$count pending connection requests',
+      child: Semantics(
+        label: count == 1
+            ? 'Pending connection request'
+            : '$count pending connection requests',
+        child: DecoratedBox(
+          decoration: BoxDecoration(
+            color: RainColors.mistCyan,
+            borderRadius: BorderRadius.circular(999),
+            border: Border.all(
+              color: scheme.surface.withValues(alpha: 0.88),
+              width: 2,
+            ),
+          ),
+          child: SizedBox(
+            width: compact ? 16 : (label.isEmpty ? 18 : 24),
+            height: compact ? 16 : 18,
+            child: Center(
+              child: label.isEmpty
+                  ? Icon(
+                      Icons.hub_outlined,
+                      size: compact ? 10 : 11,
+                      color: RainColors.backgroundDark,
+                    )
+                  : Text(
+                      label,
+                      style: Theme.of(context).textTheme.labelSmall?.copyWith(
+                        color: RainColors.backgroundDark,
+                        fontWeight: FontWeight.w900,
+                        height: 1,
+                      ),
+                    ),
+            ),
+          ),
+        ),
+      ),
+    );
+  }
 }

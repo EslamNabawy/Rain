@@ -32,6 +32,7 @@ import 'package:rain/presentation/widgets/app_components.dart';
 import 'package:rain/presentation/widgets/chat_composer.dart';
 import 'package:rain/presentation/widgets/app_dialogs.dart';
 import 'package:rain/presentation/widgets/connection_requests/connection_request_status_chip.dart';
+import 'package:rain/presentation/widgets/connection_requests/connection_request_tray.dart';
 import 'package:rain/presentation/widgets/calls/rain_call_controls.dart';
 import 'package:rain/presentation/widgets/calls/rain_call_suite.dart';
 import 'package:rain/presentation/widgets/rain_chat_widgets.dart';
@@ -643,6 +644,7 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
     final videoRenderers = ref.watch(videoCallRenderersProvider);
     final callSurface = ref.watch(callSurfaceProvider);
     final callEndPresentation = ref.watch(callEndPresentationProvider);
+    final connectionRequests = ref.watch(connectionRequestProvider);
     final updateResult = ref.watch(forceUpdateProvider).value;
     final dismissedUpdateKey = ref.watch(optionalUpdateDismissalProvider).value;
     if (voiceCall.phase != VoiceCallPhase.idle && callSurface.isVisible) {
@@ -689,6 +691,11 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
             updateResult != null &&
             updateResult.hasOptionalUpdate &&
             dismissedUpdateKey != updateResult.optionalUpdateDismissalKey;
+        final showInboundConnectionRequestTray =
+            _shouldShowInboundConnectionRequestTray(
+              connectionRequests,
+              callSurface,
+            );
 
         final shell = SafeArea(
           child: Padding(
@@ -822,6 +829,30 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
                 onCallAgain: _callAgainFromSummary,
               ),
             ),
+            if (showInboundConnectionRequestTray)
+              Positioned(
+                top: 8,
+                left: isCompact ? 8 : null,
+                right: isCompact ? 8 : 24,
+                child: SafeArea(
+                  bottom: false,
+                  child: Align(
+                    alignment: isCompact
+                        ? Alignment.topCenter
+                        : Alignment.topRight,
+                    child: ConstrainedBox(
+                      constraints: BoxConstraints(
+                        maxWidth: isCompact ? double.infinity : 460,
+                      ),
+                      child: ConnectionRequestTray(
+                        surfaces: connectionRequests.incomingSurfaces,
+                        compact: isCompact,
+                        onAction: _handleInboundConnectionRequestAction,
+                      ),
+                    ),
+                  ),
+                ),
+              ),
           ],
         );
 
@@ -868,6 +899,20 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
       return true;
     }
     return isCompact && _selectedPeerId != null;
+  }
+
+  bool _shouldShowInboundConnectionRequestTray(
+    ConnectionRequestState requests,
+    CallSurfaceState callSurface,
+  ) {
+    if (callSurface.isVisible) {
+      return false;
+    }
+    return requests.incomingSurfaces.any(
+      (surface) =>
+          surface.direction == ConnectionRequestDirection.inbound &&
+          !surface.status.isTerminal,
+    );
   }
 
   void _handleSystemBack(bool isCompact) {
@@ -1179,6 +1224,45 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
         _refreshFriendsInFlight = null;
       }
     }
+  }
+
+  Future<void> _handleInboundConnectionRequestAction(
+    ConnectionRequestSurfaceModel surface,
+    ConnectionRequestActionModel action,
+  ) async {
+    try {
+      final decision = await ref
+          .read(connectionRequestProvider.notifier)
+          .perform(surface, action.kind);
+      if (!decision.allowed) {
+        _dispatchRainSoundEvent(
+          ref,
+          rainUiWarningSoundEvent('home.inbound_connection_request_denied'),
+        );
+        _showHomeSnack(decision.userMessage, error: true);
+        return;
+      }
+      _dispatchRainSoundEvent(ref, rainUiActionSoundEvent());
+      _showHomeSnack(decision.userMessage);
+    } catch (error) {
+      _dispatchRainSoundEvent(
+        ref,
+        rainUiWarningSoundEvent('home.inbound_connection_request_failed'),
+      );
+      _showHomeSnack(_formatUiError(error), error: true);
+    }
+  }
+
+  void _showHomeSnack(String message, {bool error = false}) {
+    if (!mounted || message.trim().isEmpty) {
+      return;
+    }
+    ScaffoldMessenger.of(context).showSnackBar(
+      SnackBar(
+        content: Text(message),
+        backgroundColor: error ? Theme.of(context).colorScheme.error : null,
+      ),
+    );
   }
 
   Future<void> _runRefreshFriends() async {

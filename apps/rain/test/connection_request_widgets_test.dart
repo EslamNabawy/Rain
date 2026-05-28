@@ -3,6 +3,7 @@ import 'package:flutter_test/flutter_test.dart';
 import 'package:protocol_brain/protocol_brain.dart';
 import 'package:rain/presentation/theme/rain_theme.dart';
 import 'package:rain/presentation/widgets/connection_requests/connection_request_status_chip.dart';
+import 'package:rain/presentation/widgets/connection_requests/connection_request_tray.dart';
 
 void main() {
   group('outbound connection request status chip', () {
@@ -195,6 +196,226 @@ void main() {
       expect(find.text('Expired'), findsOneWidget);
     });
   });
+
+  group('inbound connection request tray', () {
+    testWidgets('inbound prompt renders on mobile', (
+      WidgetTester tester,
+    ) async {
+      await tester.pumpWidget(
+        _hostSized(
+          size: const Size(360, 720),
+          child: ConnectionRequestTray(
+            surfaces: <ConnectionRequestSurfaceModel>[
+              _inboundSurface(requestId: 'in-1'),
+            ],
+            compact: true,
+          ),
+        ),
+      );
+
+      expect(
+        find.byKey(const ValueKey<String>('connection-request-inbound-tray')),
+        findsOneWidget,
+      );
+      expect(find.text('@bob wants to connect'), findsOneWidget);
+      expect(find.text('Connect'), findsOneWidget);
+      expect(find.text('Ignore'), findsOneWidget);
+    });
+
+    testWidgets('inbound prompt renders on desktop', (
+      WidgetTester tester,
+    ) async {
+      await tester.pumpWidget(
+        _hostSized(
+          size: const Size(1180, 720),
+          child: Align(
+            alignment: Alignment.topRight,
+            child: ConstrainedBox(
+              constraints: const BoxConstraints(maxWidth: 460),
+              child: ConnectionRequestTray(
+                surfaces: <ConnectionRequestSurfaceModel>[
+                  _inboundSurface(requestId: 'in-1'),
+                ],
+              ),
+            ),
+          ),
+        ),
+      );
+
+      expect(
+        find.byKey(const ValueKey<String>('connection-request-inbound-in-1')),
+        findsOneWidget,
+      );
+      expect(find.text('@bob wants to connect'), findsOneWidget);
+    });
+
+    testWidgets('inbound accept calls runtime', (WidgetTester tester) async {
+      ConnectionRequestActionKind? tappedAction;
+
+      await tester.pumpWidget(
+        _host(
+          ConnectionRequestTray(
+            surfaces: <ConnectionRequestSurfaceModel>[
+              _inboundSurface(requestId: 'in-accept'),
+            ],
+            onAction:
+                (
+                  ConnectionRequestSurfaceModel _,
+                  ConnectionRequestActionModel action,
+                ) async {
+                  tappedAction = action.kind;
+                },
+          ),
+        ),
+      );
+
+      await tester.tap(
+        find.byKey(
+          const ValueKey<String>(
+            'connection-request-inbound-action-in-accept-connect',
+          ),
+        ),
+      );
+      await tester.pump();
+
+      expect(tappedAction, ConnectionRequestActionKind.connect);
+    });
+
+    testWidgets('inbound reject calls runtime', (WidgetTester tester) async {
+      ConnectionRequestActionKind? tappedAction;
+
+      await tester.pumpWidget(
+        _host(
+          ConnectionRequestTray(
+            surfaces: <ConnectionRequestSurfaceModel>[
+              _inboundSurface(requestId: 'in-reject'),
+            ],
+            onAction:
+                (
+                  ConnectionRequestSurfaceModel _,
+                  ConnectionRequestActionModel action,
+                ) async {
+                  tappedAction = action.kind;
+                },
+          ),
+        ),
+      );
+
+      await tester.tap(
+        find.byKey(
+          const ValueKey<String>(
+            'connection-request-inbound-overflow-in-reject',
+          ),
+        ),
+      );
+      await tester.pumpAndSettle();
+      await tester.tap(find.text('Decline'));
+      await tester.pumpAndSettle();
+
+      expect(tappedAction, ConnectionRequestActionKind.reject);
+    });
+
+    testWidgets('inbound mute removes prompt', (WidgetTester tester) async {
+      var surfaces = <ConnectionRequestSurfaceModel>[
+        _inboundSurface(requestId: 'in-mute'),
+      ];
+
+      await tester.pumpWidget(
+        _host(
+          StatefulBuilder(
+            builder: (BuildContext context, StateSetter setState) {
+              return ConnectionRequestTray(
+                surfaces: surfaces,
+                onAction:
+                    (
+                      ConnectionRequestSurfaceModel _,
+                      ConnectionRequestActionModel action,
+                    ) async {
+                      if (action.kind == ConnectionRequestActionKind.mute) {
+                        setState(
+                          () => surfaces = <ConnectionRequestSurfaceModel>[],
+                        );
+                      }
+                    },
+              );
+            },
+          ),
+        ),
+      );
+
+      expect(
+        find.byKey(const ValueKey<String>('connection-request-inbound-tray')),
+        findsOneWidget,
+      );
+      await tester.tap(
+        find.byKey(
+          const ValueKey<String>('connection-request-inbound-overflow-in-mute'),
+        ),
+      );
+      await tester.pumpAndSettle();
+      await tester.tap(find.text('Mute requests from @bob'));
+      await tester.pumpAndSettle();
+
+      expect(
+        find.byKey(const ValueKey<String>('connection-request-inbound-tray')),
+        findsNothing,
+      );
+    });
+
+    testWidgets('inbound prompt does not overlap call overlay', (
+      WidgetTester tester,
+    ) async {
+      await tester.pumpWidget(
+        _hostSized(
+          size: const Size(390, 780),
+          child: const Stack(
+            children: <Widget>[
+              Positioned.fill(
+                child: ColoredBox(
+                  key: ValueKey<String>('active-call-overlay'),
+                  color: Colors.black,
+                ),
+              ),
+            ],
+          ),
+        ),
+      );
+
+      expect(
+        find.byKey(const ValueKey<String>('active-call-overlay')),
+        findsOneWidget,
+      );
+      expect(
+        find.byKey(const ValueKey<String>('connection-request-inbound-tray')),
+        findsNothing,
+      );
+    });
+
+    testWidgets('duplicate inbound prompt collapses', (
+      WidgetTester tester,
+    ) async {
+      await tester.pumpWidget(
+        _host(
+          ConnectionRequestTray(
+            surfaces: <ConnectionRequestSurfaceModel>[
+              _inboundSurface(requestId: 'in-1'),
+              _inboundSurface(requestId: 'in-2'),
+            ],
+          ),
+        ),
+      );
+
+      expect(find.text('@bob wants to connect'), findsOneWidget);
+      expect(
+        find.byKey(const ValueKey<String>('connection-request-inbound-in-1')),
+        findsOneWidget,
+      );
+      expect(
+        find.byKey(const ValueKey<String>('connection-request-inbound-in-2')),
+        findsNothing,
+      );
+    });
+  });
 }
 
 Widget _host(Widget child) {
@@ -206,6 +427,18 @@ Widget _host(Widget child) {
           constraints: const BoxConstraints(maxWidth: 420),
           child: child,
         ),
+      ),
+    ),
+  );
+}
+
+Widget _hostSized({required Size size, required Widget child}) {
+  return MaterialApp(
+    theme: RainTheme.dark(),
+    home: MediaQuery(
+      data: MediaQueryData(size: size),
+      child: Scaffold(
+        body: SizedBox.fromSize(size: size, child: child),
       ),
     ),
   );
@@ -254,5 +487,49 @@ ConnectionRequestSurfaceModel _surface({
                 ),
               ]),
     feedback: feedback,
+  );
+}
+
+ConnectionRequestSurfaceModel _inboundSurface({
+  String requestId = 'in-1',
+  String peerId = 'bob',
+  ConnectionRequestStatus status = ConnectionRequestStatus.pending,
+}) {
+  return ConnectionRequestSurfaceModel(
+    requestId: requestId,
+    peerId: peerId,
+    peerLabel: '@$peerId',
+    direction: ConnectionRequestDirection.inbound,
+    status: status,
+    title: '@$peerId wants to connect',
+    subtitle:
+        'Accept to open the peer lane. Ignore keeps your current connection state unchanged.',
+    actions: <ConnectionRequestActionModel>[
+      ConnectionRequestActionModel(
+        kind: ConnectionRequestActionKind.connect,
+        label: 'Connect',
+        semanticLabel: 'Accept connection request from @$peerId',
+        enabled: true,
+      ),
+      ConnectionRequestActionModel(
+        kind: ConnectionRequestActionKind.ignore,
+        label: 'Ignore',
+        semanticLabel: 'Ignore connection request from @$peerId',
+        enabled: true,
+      ),
+      ConnectionRequestActionModel(
+        kind: ConnectionRequestActionKind.reject,
+        label: 'Decline',
+        semanticLabel: 'Decline connection request from @$peerId',
+        enabled: true,
+      ),
+      ConnectionRequestActionModel(
+        kind: ConnectionRequestActionKind.mute,
+        label: 'Mute',
+        semanticLabel: 'Mute connection requests from @$peerId',
+        enabled: true,
+        tooltip: 'Hide future connection request prompts from this peer.',
+      ),
+    ],
   );
 }
