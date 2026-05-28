@@ -1,6 +1,8 @@
 import 'dart:convert';
 
 import 'package:flutter/foundation.dart';
+import 'package:protocol_brain/protocol_brain.dart'
+    show ConnectionRequestBackendMode;
 
 import 'runtime_environment.dart';
 
@@ -9,6 +11,7 @@ enum RainBackend { noop, firebase }
 class AppEnvironment {
   const AppEnvironment({
     required this.backend,
+    required this.connectionRequestBackendMode,
     required this.iceServers,
     required this.forceUpdateUrl,
     required this.updateChannel,
@@ -31,6 +34,7 @@ class AppEnvironment {
   });
 
   final RainBackend backend;
+  final ConnectionRequestBackendMode connectionRequestBackendMode;
   final List<Map<String, dynamic>> iceServers;
   final String forceUpdateUrl;
   final String updateChannel;
@@ -130,6 +134,15 @@ class AppEnvironment {
 
     return AppEnvironment(
       backend: backend,
+      connectionRequestBackendMode: ConnectionRequestBackendMode.parse(
+        readString(
+          'CONNECTION_REQUEST_BACKEND_MODE',
+          compileTimeValue: const String.fromEnvironment(
+            'CONNECTION_REQUEST_BACKEND_MODE',
+          ),
+          defaultValue: 'rtdbOnly',
+        ),
+      ),
       iceServers: iceServers,
       forceUpdateUrl: readString(
         'RAIN_UPDATE_URL',
@@ -317,6 +330,7 @@ class AppEnvironment {
       }
       return AppEnvironment(
         backend: backend,
+        connectionRequestBackendMode: connectionRequestBackendMode,
         iceServers: releaseSafeIceServers,
         forceUpdateUrl: forceUpdateUrl,
         updateChannel: updateChannel,
@@ -357,6 +371,7 @@ class AppEnvironment {
 
     return AppEnvironment(
       backend: backend,
+      connectionRequestBackendMode: connectionRequestBackendMode,
       iceServers: nextIceServers,
       forceUpdateUrl: forceUpdateUrl,
       updateChannel: updateChannel,

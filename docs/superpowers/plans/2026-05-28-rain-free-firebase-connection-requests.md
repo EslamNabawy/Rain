@@ -304,7 +304,7 @@ git commit -m "docs: lock free firebase connection request scope"
 - Modify: `apps/rain/lib/core/config/app_environment.dart`
 - Test: `apps/rain/test/connection_request_backend_mode_test.dart`
 
-- [ ] **Step 1: Add backend mode enum**
+- [x] **Step 1: Add backend mode enum**
 
 Create:
 
@@ -326,7 +326,7 @@ enum ConnectionRequestBackendMode {
 }
 ```
 
-- [ ] **Step 2: Export the enum**
+- [x] **Step 2: Export the enum**
 
 Add to `packages/protocol_brain/lib/protocol_brain.dart`:
 
@@ -334,7 +334,7 @@ Add to `packages/protocol_brain/lib/protocol_brain.dart`:
 export 'src/connection_request_backend_mode.dart';
 ```
 
-- [ ] **Step 3: Add app environment define**
+- [x] **Step 3: Add app environment define**
 
 Add `CONNECTION_REQUEST_BACKEND_MODE` to `AppEnvironment`.
 
@@ -350,7 +350,7 @@ final connectionRequestBackendMode =
     );
 ```
 
-- [ ] **Step 4: Add tests**
+- [x] **Step 4: Add tests**
 
 Test cases:
 
@@ -378,7 +378,7 @@ test('connection request backend parser rejects unknown mode', () {
 });
 ```
 
-- [ ] **Step 5: Validate**
+- [x] **Step 5: Validate**
 
 ```powershell
 flutter test --no-test-assets apps/rain/test/connection_request_backend_mode_test.dart
@@ -386,7 +386,7 @@ flutter test --no-test-assets apps/rain/test/connection_request_backend_mode_tes
 
 Expected: PASS.
 
-- [ ] **Step 6: Commit**
+- [x] **Step 6: Commit**
 
 ```powershell
 git add packages/protocol_brain/lib/src/connection_request_backend_mode.dart packages/protocol_brain/lib/protocol_brain.dart apps/rain/lib/core/config/app_environment.dart apps/rain/test/connection_request_backend_mode_test.dart
