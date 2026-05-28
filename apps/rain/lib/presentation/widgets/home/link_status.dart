@@ -6,6 +6,7 @@ class _MobileLinkStatusBar extends StatelessWidget {
     required this.diagnostics,
     required this.canConnectNow,
     required this.canDisconnectNow,
+    this.connectDisabledReason,
     required this.onConnect,
     required this.onDisconnect,
     required this.onTap,
@@ -16,6 +17,7 @@ class _MobileLinkStatusBar extends StatelessWidget {
   final ConnectionDiagnostics diagnostics;
   final bool canConnectNow;
   final bool canDisconnectNow;
+  final String? connectDisabledReason;
   final VoidCallback onConnect;
   final VoidCallback onDisconnect;
   final VoidCallback onTap;
@@ -25,9 +27,19 @@ class _MobileLinkStatusBar extends StatelessWidget {
   Widget build(BuildContext context) {
     final scheme = Theme.of(context).colorScheme;
     final action = status.isConnected ? onDisconnect : onConnect;
-    final actionEnabled = status.isConnected ? canDisconnectNow : canConnectNow;
+    final interceptDisabledConnect =
+        !status.isConnected &&
+        !canConnectNow &&
+        connectDisabledReason != null &&
+        connectDisabledReason!.trim().isNotEmpty;
+    final actionEnabled = status.isConnected
+        ? canDisconnectNow
+        : canConnectNow || interceptDisabledConnect;
     final actionIcon = status.isConnected ? Icons.link_off : Icons.hub_outlined;
     final actionLabel = status.isConnected ? 'Disconnect' : 'Connect';
+    final actionTooltip = !status.isConnected && connectDisabledReason != null
+        ? connectDisabledReason!
+        : actionLabel;
     final detail = _mobileLinkDetail(diagnostics, status);
     final showHalo = status.isConnected || status.isBusy;
 
@@ -108,16 +120,23 @@ class _MobileLinkStatusBar extends StatelessWidget {
                     const SizedBox(width: 8),
                     SizedBox.square(
                       dimension: 40,
-                      child: IconButton.filledTonal(
-                        tooltip: actionLabel,
-                        onPressed: actionEnabled ? action : null,
-                        style: const ButtonStyle(
-                          tapTargetSize: MaterialTapTargetSize.shrinkWrap,
-                          minimumSize: WidgetStatePropertyAll(Size.square(40)),
-                          fixedSize: WidgetStatePropertyAll(Size.square(40)),
-                          padding: WidgetStatePropertyAll(EdgeInsets.zero),
+                      child: Semantics(
+                        button: true,
+                        enabled: actionEnabled,
+                        label: actionTooltip,
+                        child: IconButton.filledTonal(
+                          tooltip: actionTooltip,
+                          onPressed: actionEnabled ? action : null,
+                          style: const ButtonStyle(
+                            tapTargetSize: MaterialTapTargetSize.shrinkWrap,
+                            minimumSize: WidgetStatePropertyAll(
+                              Size.square(40),
+                            ),
+                            fixedSize: WidgetStatePropertyAll(Size.square(40)),
+                            padding: WidgetStatePropertyAll(EdgeInsets.zero),
+                          ),
+                          icon: Icon(actionIcon, size: 20),
                         ),
-                        icon: Icon(actionIcon, size: 20),
                       ),
                     ),
                   ],
