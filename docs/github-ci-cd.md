@@ -45,6 +45,24 @@ Cloud Functions mode is stronger but blocked until the Firebase project can use
 Blaze or until the same server-owned logic is moved to an external free backend
 such as Cloudflare Workers.
 
+Latest verified free-tier demo build:
+
+- Date: 2026-05-28.
+- Branch/SHA: `dev` at `5d98ade32eb74174530bcc50aa7b52f8680d606d`.
+- Workflow run:
+  `https://github.com/EslamNabawy/Rain/actions/runs/26594423504`.
+- Direct download pre-release:
+  `https://github.com/EslamNabawy/Rain/releases/tag/rain-test-66-1`.
+- Published assets:
+  - `Rain-Demo-Android-v7a.apk`
+  - `Rain-Demo-Android-v8-v9.apk`
+  - `Rain-Demo-Windows-x64.zip`
+- Build inputs: `platform=all`, `build_profile=demo`,
+  `publish_test_release=true`.
+- Backend mode proof: successful Android and Windows demo jobs forced
+  `CONNECTION_REQUEST_BACKEND_MODE=rtdbOnly` in `rain-defines.json` before
+  building artifacts.
+
 For fast phone installs, keep `publish_test_release` enabled. The workflow
 creates a pre-release with individual APK assets, so Android devices can open
 the release page and download:

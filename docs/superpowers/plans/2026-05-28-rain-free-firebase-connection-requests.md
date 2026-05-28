@@ -1179,18 +1179,35 @@ git commit -m "test: validate free-tier connection requests"
 
 **Steps:**
 
-- [ ] Deploy RTDB rules to `rain-8fb4b`.
-- [ ] Confirm no Cloud Functions deploy is required.
-- [ ] Push `dev`.
-- [ ] Trigger the existing `Build Rain Apps` workflow with:
+- [x] Deploy RTDB rules to `rain-8fb4b`.
+- [x] Confirm no Cloud Functions deploy is required.
+- [x] Push `dev`.
+- [x] Trigger the existing `Build Rain Apps` workflow with:
   - `platform=all`
   - `build_profile=demo`
   - `publish_test_release=true`
-- [ ] Verify release assets include:
+- [x] Verify release assets include:
   - `Rain-Demo-Android-v7a.apk`
   - `Rain-Demo-Android-v8-v9.apk`
   - `Rain-Demo-Windows-x64.zip`
-- [ ] Confirm generated artifacts use `CONNECTION_REQUEST_BACKEND_MODE=rtdbOnly`.
+- [x] Confirm generated artifacts use `CONNECTION_REQUEST_BACKEND_MODE=rtdbOnly`.
+
+**Result:**
+
+- RTDB rules deploy succeeded for project `rain-8fb4b`; no Functions deploy was
+  run.
+- `dev` was pushed at `5d98ade32eb74174530bcc50aa7b52f8680d606d`.
+- Workflow run succeeded:
+  `https://github.com/EslamNabawy/Rain/actions/runs/26594423504`.
+- Direct test download pre-release:
+  `https://github.com/EslamNabawy/Rain/releases/tag/rain-test-66-1`.
+- Published assets:
+  - `Rain-Demo-Android-v7a.apk`
+  - `Rain-Demo-Android-v8-v9.apk`
+  - `Rain-Demo-Windows-x64.zip`
+- Workflow logs showed Android and Windows demo jobs writing
+  `CONNECTION_REQUEST_BACKEND_MODE=rtdbOnly` into `rain-defines.json` before
+  artifact builds.
 
 **Commit:**
 

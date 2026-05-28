@@ -86,6 +86,25 @@ Cloud Functions mode is stronger but blocked until the Firebase project can use
 Blaze or until the same server-owned logic is moved to an external free backend
 such as Cloudflare Workers.
 
+## Latest Free-Tier Build Gate
+
+Phase 11 was completed on 2026-05-28 for the free-tier `rtdbOnly` path.
+
+- RTDB rules were deployed to `rain-8fb4b` with `firebase deploy --project
+  rain-8fb4b --only database --non-interactive`.
+- No Cloud Functions deploy was required or performed.
+- `dev` was pushed at `5d98ade32eb74174530bcc50aa7b52f8680d606d`.
+- The `Build Rain Apps` workflow completed successfully:
+  `https://github.com/EslamNabawy/Rain/actions/runs/26594423504`.
+- The direct test download pre-release is:
+  `https://github.com/EslamNabawy/Rain/releases/tag/rain-test-66-1`.
+- Release assets:
+  - `Rain-Demo-Android-v7a.apk`
+  - `Rain-Demo-Android-v8-v9.apk`
+  - `Rain-Demo-Windows-x64.zip`
+- Workflow logs confirmed both Android and Windows demo jobs generated
+  `rain-defines.json` with `CONNECTION_REQUEST_BACKEND_MODE=rtdbOnly`.
+
 ## Firebase Paths
 
 - `connectionNotificationConfig/global`
