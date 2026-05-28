@@ -6,6 +6,7 @@ enum RuntimeInteractionReasonCode {
   none,
   manualDisconnectActive,
   peerConnectionUnavailable,
+  notAcceptedFriend,
   activeCall,
   noIncomingCall,
   activeFileTransfer,
@@ -179,6 +180,73 @@ final class RuntimeInteractionGuard {
         userMessage:
             'You disconnected @$peerId. Press Connect to open the peer lane again.',
         blockingPeerId: peerId,
+      );
+    }
+    return const RuntimeInteractionDecision.allow();
+  }
+
+  static RuntimeInteractionDecision canSendConnectionRequest({
+    required String peerId,
+    required FriendRecord? friend,
+    required Set<String> manualDisconnectedPeers,
+    required VoiceCallState voiceCallState,
+    FileTransferRecord? activeTransfer,
+  }) {
+    if (friend?.state != FriendState.friend) {
+      return const RuntimeInteractionDecision.deny(
+        reasonCode: RuntimeInteractionReasonCode.notAcceptedFriend,
+        userMessage: 'You can only request a connection with accepted friends.',
+      );
+    }
+    if (friend?.isOnline == false) {
+      return RuntimeInteractionGuard.peerOffline(peerId: peerId);
+    }
+    if (manualDisconnectedPeers.contains(peerId)) {
+      return RuntimeInteractionDecision.deny(
+        reasonCode: RuntimeInteractionReasonCode.manualDisconnectActive,
+        userMessage:
+            'You disconnected @$peerId. Press Connect to open the peer lane again.',
+        blockingPeerId: peerId,
+      );
+    }
+    final callBlock = _activeCallDecision(
+      voiceCallState,
+      attemptedPeerId: peerId,
+    );
+    if (callBlock != null) {
+      return callBlock;
+    }
+    if (activeTransfer != null) {
+      return RuntimeInteractionDecision.deny(
+        reasonCode: RuntimeInteractionReasonCode.activeFileTransfer,
+        userMessage:
+            'Finish the active file transfer before requesting a connection.',
+        blockingPeerId: activeTransfer.peerId,
+        transferId: activeTransfer.id,
+      );
+    }
+    return const RuntimeInteractionDecision.allow();
+  }
+
+  static RuntimeInteractionDecision canAcceptConnectionRequest({
+    required String peerId,
+    required VoiceCallState voiceCallState,
+    FileTransferRecord? activeTransfer,
+  }) {
+    final callBlock = _activeCallDecision(
+      voiceCallState,
+      attemptedPeerId: peerId,
+    );
+    if (callBlock != null) {
+      return callBlock;
+    }
+    if (activeTransfer != null) {
+      return RuntimeInteractionDecision.deny(
+        reasonCode: RuntimeInteractionReasonCode.activeFileTransfer,
+        userMessage:
+            'Finish the active file transfer before accepting a connection request.',
+        blockingPeerId: activeTransfer.peerId,
+        transferId: activeTransfer.id,
       );
     }
     return const RuntimeInteractionDecision.allow();

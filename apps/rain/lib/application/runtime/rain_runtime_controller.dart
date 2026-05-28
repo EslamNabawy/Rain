@@ -11,6 +11,8 @@ import 'package:rain_core/rain_core.dart';
 import 'connection_attempt_coordinator.dart';
 import 'app_exit_coordinator.dart';
 import 'call_retry_policy.dart';
+import 'connection_request_messages.dart';
+import 'connection_request_state.dart';
 import 'file_transfer_progress_batcher.dart';
 import 'runtime_interaction_guard.dart';
 import 'serialized_runtime_mutations.dart';
@@ -21,6 +23,7 @@ import 'voice_call_state.dart';
 
 part 'file_transfer_runtime.dart';
 part 'friend_runtime.dart';
+part 'connection_request_runtime.dart';
 part 'voice_call_runtime.dart';
 
 enum FriendRequestResult { sent, acceptedExisting }
@@ -70,6 +73,7 @@ class RainRuntimeController with WidgetsBindingObserver {
     FileTransferStore? fileTransferStore,
     VoiceSignalingAdapter? voiceSignalingAdapter,
     SignalingCipher? voiceSignalingCipher,
+    ConnectionRequestAdapter? connectionRequestAdapter,
     this.heartbeatInterval = const Duration(minutes: 3),
     this.friendRequestRefreshInterval = Duration.zero,
     this.maxPassivePeerListeners = 32,
@@ -88,6 +92,11 @@ class RainRuntimeController with WidgetsBindingObserver {
            voiceSignalingAdapter ??
            (adapter is VoiceSignalingAdapter
                ? adapter as VoiceSignalingAdapter
+               : null),
+       connectionRequestAdapter =
+           connectionRequestAdapter ??
+           (adapter is ConnectionRequestAdapter
+               ? adapter as ConnectionRequestAdapter
                : null),
        voiceSignalingCipher = voiceSignalingCipher ?? SignalingCipher.demo(),
        _documentsDirectoryProvider =
@@ -113,6 +122,7 @@ class RainRuntimeController with WidgetsBindingObserver {
   final MessageDeliveryService messageDeliveryService;
   final FileTransferStore fileTransferStore;
   final VoiceSignalingAdapter? voiceSignalingAdapter;
+  final ConnectionRequestAdapter? connectionRequestAdapter;
   final SignalingCipher voiceSignalingCipher;
   final Duration heartbeatInterval;
   final Duration friendRequestRefreshInterval;
@@ -158,6 +168,13 @@ class RainRuntimeController with WidgetsBindingObserver {
   StreamSubscription<VideoCallRendererState>? _videoCallRendererSubscription;
   final List<StreamSubscription<dynamic>> _voiceSignalingSubscriptions =
       <StreamSubscription<dynamic>>[];
+  final List<StreamSubscription<dynamic>> _connectionRequestSubscriptions =
+      <StreamSubscription<dynamic>>[];
+  final StreamController<ConnectionRequestState>
+  _connectionRequestStateController =
+      StreamController<ConnectionRequestState>.broadcast();
+  ConnectionRequestState _connectionRequestState =
+      const ConnectionRequestState.idle();
   late final FileTransferProgressBatcher _fileProgressBatcher;
   final ConnectionAttemptCoordinator _connectionCoordinator;
 
@@ -185,6 +202,8 @@ class RainRuntimeController with WidgetsBindingObserver {
   }
 
   VoiceCallState get voiceCallState => _voiceCallState;
+
+  ConnectionRequestState get connectionRequestState => _connectionRequestState;
 
   VideoCallRenderers? get videoCallRenderers => _videoCallRenderers;
 
@@ -260,6 +279,7 @@ class RainRuntimeController with WidgetsBindingObserver {
     await _syncRelationships();
     await _warmUpStartupMediaPermissions();
     final existingFriends = await friendStore.loadFriends();
+    await _startConnectionRequestRuntime();
     _recordRuntimeEvent(
       category: 'runtime',
       name: 'started',
@@ -1591,6 +1611,7 @@ class RainRuntimeController with WidgetsBindingObserver {
     _heartbeatTimer?.cancel();
     _friendRequestRefreshTimer?.cancel();
     _connectionCoordinator.dispose();
+    await _stopConnectionRequestRuntime();
 
     for (final subscription in _subscriptions) {
       await subscription.cancel();
@@ -1602,6 +1623,7 @@ class RainRuntimeController with WidgetsBindingObserver {
     }
     _presenceSubscriptions.clear();
     await _voiceCallStateController.close();
+    await _connectionRequestStateController.close();
 
     if (signOut) {
       await adapter.signOut();

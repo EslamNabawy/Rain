@@ -7,6 +7,7 @@ import 'package:rain_core/rain_core.dart';
 
 import 'package:rain/application/runtime/rain_runtime_controller.dart';
 import 'package:rain/application/runtime/app_exit_coordinator.dart';
+import 'package:rain/application/runtime/connection_request_state.dart';
 import 'package:rain/application/runtime/video_call_renderers.dart';
 import 'package:rain/application/runtime/voice_call_state.dart';
 import 'package:rain/infrastructure/services/app_settings_store.dart';
@@ -246,9 +247,117 @@ class RuntimeController extends AsyncNotifier<RainRuntimeController?> {
     ref.invalidate(identityProvider);
     ref.invalidate(friendsProvider);
     ref.invalidate(fileTransfersProvider);
+    ref.invalidate(connectionRequestProvider);
     ref.invalidate(voiceCallProvider);
     ref.invalidate(connectionsProvider);
     ref.invalidate(recentSearchesProvider);
+  }
+}
+
+final connectionRequestProvider =
+    NotifierProvider<ConnectionRequestController, ConnectionRequestState>(
+      ConnectionRequestController.new,
+    );
+
+class ConnectionRequestController extends Notifier<ConnectionRequestState> {
+  StreamSubscription<ConnectionRequestState>? _subscription;
+  RainRuntimeController? _runtime;
+
+  @override
+  ConnectionRequestState build() {
+    ref.listen<AsyncValue<RainRuntimeController?>>(runtimeControllerProvider, (
+      _,
+      AsyncValue<RainRuntimeController?> next,
+    ) {
+      unawaited(_replaceRuntime(next.value));
+    });
+    scheduleMicrotask(() {
+      unawaited(_replaceRuntime(ref.read(runtimeControllerProvider).value));
+    });
+    ref.onDispose(() => unawaited(_subscription?.cancel()));
+    return ref.read(runtimeControllerProvider).value?.connectionRequestState ??
+        const ConnectionRequestState.idle();
+  }
+
+  Future<ConnectionRequestDecision> send(String peerId) async {
+    assertNetworkReady(ref);
+    return _requireRuntime().sendConnectionRequest(peerId);
+  }
+
+  Future<ConnectionRequestDecision> accept(String requestId) async {
+    assertNetworkReady(ref);
+    return _requireRuntime().acceptConnectionRequest(requestId);
+  }
+
+  Future<ConnectionRequestDecision> cancel(String requestId) async {
+    assertNetworkReady(ref);
+    return _requireRuntime().cancelConnectionRequest(requestId);
+  }
+
+  Future<ConnectionRequestDecision> reject(String requestId) async {
+    assertNetworkReady(ref);
+    return _requireRuntime().rejectConnectionRequest(requestId);
+  }
+
+  Future<ConnectionRequestDecision> markSeen(String requestId) async {
+    assertNetworkReady(ref);
+    return _requireRuntime().markConnectionRequestSeen(requestId);
+  }
+
+  Future<ConnectionRequestDecision> mute(String peerId) async {
+    assertNetworkReady(ref);
+    return _requireRuntime().muteConnectionRequestsFromPeer(peerId);
+  }
+
+  Future<ConnectionRequestDecision> unmute(String peerId) async {
+    assertNetworkReady(ref);
+    return _requireRuntime().unmuteConnectionRequestsFromPeer(peerId);
+  }
+
+  Future<ConnectionRequestDecision> perform(
+    ConnectionRequestSurfaceModel surface,
+    ConnectionRequestActionKind action,
+  ) {
+    return switch (action) {
+      ConnectionRequestActionKind.connect => accept(surface.requestId),
+      ConnectionRequestActionKind.ignore => markSeen(surface.requestId),
+      ConnectionRequestActionKind.cancel => cancel(surface.requestId),
+      ConnectionRequestActionKind.reject => reject(surface.requestId),
+      ConnectionRequestActionKind.mute => mute(surface.peerId),
+      ConnectionRequestActionKind.unmute => unmute(surface.peerId),
+      ConnectionRequestActionKind.dismiss => markSeen(surface.requestId),
+    };
+  }
+
+  RainRuntimeController _requireRuntime() {
+    final runtime = _runtime ?? ref.read(runtimeControllerProvider).value;
+    if (runtime == null) {
+      throw StateError('Rain is still starting. Try again in a moment.');
+    }
+    return runtime;
+  }
+
+  Future<void> _replaceRuntime(RainRuntimeController? runtime) async {
+    _runtime = runtime;
+    await _subscription?.cancel();
+    _subscription = null;
+    if (runtime == null) {
+      state = const ConnectionRequestState.idle();
+      return;
+    }
+    state = runtime.connectionRequestState;
+    _subscription = runtime.watchConnectionRequestState().listen(
+      (ConnectionRequestState next) => state = next,
+      onError: (Object error, StackTrace stackTrace) {
+        state = state.copyWith(
+          lastUserMessage: ConnectionRequestUserMessage(
+            message: error.toString(),
+            createdAt: DateTime.now(),
+            reasonCode: ConnectionRequestReasonCode.backendRejected,
+          ),
+        );
+      },
+    );
   }
 }
 

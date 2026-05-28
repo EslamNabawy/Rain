@@ -451,6 +451,7 @@ extension FriendRuntime on RainRuntimeController {
       _watchPresence(username);
     }
     await _refreshPassivePeerListeners();
+    await _reconcileConnectionRequestsWithRelationships();
   }
 
   Future<void> _stopTrackingPeer(String username) async {
