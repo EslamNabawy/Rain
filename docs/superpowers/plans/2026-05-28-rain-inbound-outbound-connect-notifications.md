@@ -1,97 +1,258 @@
-# Rain Inbound And Outbound Connect Notification Plan
+# Rain Connection Request Notifications Implementation Plan
 
-> **For agentic workers:** implement this plan phase by phase on `dev`. Commit after each completed phase. Do not change the working chat, call, file transfer, login, or release workflows unless a phase explicitly requires it.
+> **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
 
-## Goal
+**Goal:** Add inbound and outbound notifications for manual peer connection requests, with Firebase-owned quotas, credits, receiver protection, clear error messages, and no silent blocking.
 
-Add a clear notification flow for manual peer connection attempts. When Alice wants to connect to Bob, Alice should see an outbound pending state and Bob should receive an inbound notification that Alice wants to connect. Bob can connect, ignore, or reject. The feature must make manual connection intent understandable without reintroducing unwanted auto-reconnect behavior.
+**Architecture:** All request creation and state transitions go through trusted backend functions. Flutter may watch request inbox/outbox state and render UI, but it cannot create request rows, mutate quota, grant credits, bypass receiver protections, or directly complete request lifecycle transitions that affect counters/locks. Backend guardrails run before any notification fan-out, sound, local notification, or WebRTC connection attempt.
 
-## Product Rules
+**Tech Stack:** Flutter, Dart, Riverpod, Firebase Auth, Firebase Realtime Database, Firebase Cloud Functions, existing Rain runtime diagnostics, existing sound router, optional local notification plugin behind an abstraction.
 
-- Accepted friends only.
-- No notification is created for blocked, unaccepted, offline, or stale-presence peers.
-- No notification is created for peers who muted connection requests from the sender.
-- Pressing `Disconnect` still means: do not reconnect until the user explicitly presses `Connect`.
-- Inbound connect notifications are advisory; they do not auto-open a WebRTC session without user action.
-- Outbound notifications are local progress state plus optional cancellation.
-- The app may show OS/local notifications only while Rain is running or background-capable on the platform.
-- Usage limits, credits, cooldowns, and override values are stored in Firebase and enforced by backend code, not local storage.
-- Users can read their own remaining quota, but only backend/admin credentials can change quota grants or extra credits.
-- Server-side dedupe guarantees one pending request per sender/receiver pair.
-- Receiver protection wins over sender credits: mute, block, offline, stale presence, and inbox caps reject before notification fan-out.
-- True closed-app push notification is a separate phase because it requires device tokens, Firebase Cloud Messaging, permissions, privacy policy updates, and backend token lifecycle.
+---
 
-## Existing Constraints
+## Critical Review Of The Previous Plan
 
-- Rain currently uses Firebase Realtime Database for identity, presence, friendships, signaling, and ephemeral call state.
-- `friendRequests/<to>/<from>` already exists for friendship requests and should not be reused for connection attempts.
-- Voice/video call inboxes already prove the app can watch ephemeral Firebase inbox paths.
-- Background service support is currently forced off in settings, and previous architecture docs explicitly mark push-notification ringing as unsupported.
-- Current Firebase rules intentionally do not expose an unused push notification token surface.
+The previous plan had the right intent, but it was not yet safe enough to implement. These are the weak or incomplete parts that must be fixed in the rewritten roadmap.
 
-## Target Behavior
+1. **Mutation boundary was not strict enough.**
+   The plan said request creation should go through backend code, but also allowed client status writes in places. That creates a bypass path for quota, locks, and audit. Fix: every lifecycle mutation that affects request state, quota, pending counts, locks, or notifications goes through Cloud Functions.
 
-### Outbound
+2. **Realtime Database transaction limits were under-specified.**
+   RTDB cannot atomically transact many unrelated paths in one operation. Multi-location updates are atomic writes, not conditional cross-path transactions. Fix: use deterministic claim/lock paths, per-request reservation records, idempotent functions, and rollback/finalizer cleanup.
 
-When the local user presses `Connect` for an online accepted friend:
+3. **Quota consumption rules were incomplete.**
+   The previous plan did not define exactly when a quota is consumed, when it is not consumed, and whether cancel/expire refunds. Fix: quota is consumed only after backend allows and writes a real request. Preflight denials, duplicate pending requests, receiver mute/block/offline, and inbox-full denials do not consume quota. Cancel/ignore/expire after delivery do not refund because Firebase work and receiver attention already happened.
 
-1. Runtime preflights accepted friendship, block state, network, local manual disconnect reset, and fresh peer presence.
-2. Runtime writes a short-lived connect notification request to Firebase.
-3. Sender UI shows:
-   - `Waiting for @peer to connect...`
-   - `Cancel`
-   - status updates: `Sent`, `Seen`, `Accepted`, `Rejected`, `Expired`, `Failed`.
-4. If the peer accepts, normal `connectPeer(peerId)` proceeds.
-5. If the peer rejects, cancels, expires, or goes offline, no session is started and the sender gets a clear message.
+4. **Receiver protection needed to run before sender quota spend.**
+   Spending credits before checking block, mute, stale presence, or receiver inbox cap would punish the sender for requests that never notify anyone. Fix: receiver protection gates run first.
 
-### Inbound
+5. **Duplicate request handling needed a server lock.**
+   Client-side collapse is not enough. Multiple devices, retries, or replay can still create duplicate Firebase rows. Fix: `connectionRequestPairLocks/{pairKey}` is server-owned and deterministic.
 
-When Rain receives an inbound connection notification:
+6. **Error handling did not cover every denied path.**
+   The plan said no silent blocking, but not every backend/runtime/UI path was required to return and render a message. Fix: every denied function response returns `reasonCode`, `userMessage`, and diagnostics detail. Every disabled UI action exposes a tooltip, inline helper, semantic label, or snackbar.
 
-1. Runtime validates sender is an accepted, non-blocked friend and presence is fresh.
-2. UI shows a compact inbound prompt:
-   - `@alice wants to connect`
-   - `Connect`
-   - `Ignore`
-   - `Block` only in overflow or profile-level actions.
-3. If the user taps `Connect`, Rain clears local manual-disconnect intent for that peer and starts the normal connection path.
-4. If the user ignores/rejects, no session starts and the sender sees a rejected/ignored state.
-5. Duplicate requests from the same peer collapse into one visible prompt.
+7. **Privacy-safe messages needed stronger rules.**
+   Some messages can reveal whether a peer muted, blocked, or is overloaded. Fix: the UI uses neutral wording for privacy-sensitive cases while diagnostics keep exact internal reasons.
 
-## Proposed Firebase Shape
+8. **Notification dependency was missing.**
+   Rain currently has `audioplayers`, but no proven local notification implementation and no FCM token surface. Background services are forced off. Fix: local notifications are a dedicated phase behind an abstraction. Closed-app push is explicitly future work and cannot be implied by v1.
+
+9. **Lifecycle races were incomplete.**
+   Missing cases: sender cancels while receiver accepts, request expires while user taps accept, relationship changes while request is pending, app restarts during pending request, function succeeds but client times out. Fix: server request status is the source of truth and transitions are idempotent.
+
+10. **Admin override safety was incomplete.**
+    Extra credits need traceability and expiry. Fix: entitlements require `updatedBy`, `reason`, and optional expiry; clients can only read sanitized summaries.
+
+11. **Cleanup and stale lock repair were not foundational enough.**
+    If cleanup fails, pair locks and counters can block users indefinitely. Fix: cleanup and stale repair are implemented before UI rollout.
+
+12. **Tests were too broad and late.**
+    Tests need to lock each foundation before dependent UI is added. Fix: each phase has targeted unit/Firebase/runtime/widget tests and must pass before the next phase.
+
+---
+
+## Dependency Order
+
+```text
+Phase 00 acceptance lock
+  -> Phase 01 contracts/messages
+    -> Phase 02 Firebase security boundaries
+      -> Phase 03 backend function foundation
+        -> Phase 04 receiver protection/dedupe
+          -> Phase 05 quota/credit engine
+            -> Phase 06 lifecycle cleanup/idempotency
+              -> Phase 07 protocol adapter
+                -> Phase 08 runtime integration
+                  -> Phase 09 outbound UI
+                    -> Phase 10 inbound UI
+                      -> Phase 11 local notification abstraction
+                        -> Phase 12 sounds/settings
+                          -> Phase 13 diagnostics/admin ops
+                            -> Phase 14 optional push spec
+                              -> Phase 15 validation
+                                -> Phase 16 release
+```
+
+No UI phase may start until backend responses are typed, idempotent, quota-safe, and testable with fake adapters.
+
+---
+
+## Final Product Rules
+
+- Only accepted friends can use connection request notifications.
+- A request is for manual data-peer connection only. It is not a friend request and not a voice/video call invite.
+- Request creation is server-only.
+- Flutter never directly writes request rows, quota counters, entitlements, pair locks, audit rows, or pending counters.
+- No notification is created for blocked, muted, unaccepted, offline, stale-presence, inbox-full, or quota-denied paths.
+- Receiver protection runs before sender quota spend.
+- One pending request per sender/receiver pair.
+- Pressing `Disconnect` still means no reconnect until explicit user action.
+- Inbound prompts never auto-connect without user action.
+- Every denied action shows a user-facing message.
+- Privacy-sensitive denials use neutral messages.
+- Diagnostics keep exact internal reason codes.
+- Closed-app push notifications are not v1.
+
+---
+
+## File Structure
+
+### New Files
+
+- `packages/protocol_brain/lib/src/connection_request_contract.dart`
+  - Request status enum, reason enum, decision objects, payload parser, message mapper, quota snapshot models.
+
+- `packages/protocol_brain/lib/src/connection_request_adapter.dart`
+  - Abstract adapter API used by app runtime.
+
+- `packages/protocol_brain/lib/src/testing/fake_connection_request_adapter.dart`
+  - In-memory fake for runtime tests.
+
+- `packages/protocol_brain/test/connection_request_contract_test.dart`
+  - Parser, reason mapping, status transition, and message coverage tests.
+
+- `packages/protocol_brain/test/connection_request_firebase_contract_test.dart`
+  - Rules/function contract expectations for forbidden direct writes and allowed reads.
+
+- `apps/rain/lib/application/runtime/connection_request_runtime.dart`
+  - Runtime watcher, outbound send/cancel, inbound accept/reject/mute, state reconciliation.
+
+- `apps/rain/lib/application/runtime/connection_request_state.dart`
+  - Immutable UI/runtime state models.
+
+- `apps/rain/lib/application/runtime/connection_request_messages.dart`
+  - App-level message formatting using protocol reason codes.
+
+- `apps/rain/lib/presentation/widgets/connection_requests/connection_request_tray.dart`
+  - Top-level inbound request prompt surface.
+
+- `apps/rain/lib/presentation/widgets/connection_requests/connection_request_status_chip.dart`
+  - Outbound pending and terminal status chip in chat/connection area.
+
+- `apps/rain/lib/infrastructure/notifications/rain_notification_service.dart`
+  - Platform abstraction for local notification behavior and fallback.
+
+- `apps/rain/test/connection_request_runtime_test.dart`
+  - Runtime guard, watcher, idempotency, restart, and race tests.
+
+- `apps/rain/test/connection_request_widgets_test.dart`
+  - Inbound/outbound UI, disabled reasons, safe-area, desktop/mobile behavior.
+
+- `backend/firebase/functions/connectionRequests.js`
+  - Callable/HTTPS function implementation for create/cancel/accept/reject/mute/quota summary.
+
+- `backend/firebase/functions/connectionRequestGuardrails.js`
+  - Pure guardrail helpers for quota, dedupe, receiver protection, messages, and audit payloads.
+
+- `backend/firebase/functions/connectionRequestCleanup.js`
+  - Cleanup/finalizer helpers for expired requests, stale pair locks, old audit rows, and stale reservations.
+
+- `backend/firebase/functions/test/connectionRequests.test.js`
+  - Backend function tests for lifecycle, quota, races, and denial responses.
+
+- `docs/releases/connection-request-notification-ops.md`
+  - Admin runbook for config, entitlements, audit, credits, and emergency kill switch.
+
+### Modified Files
+
+- `packages/protocol_brain/lib/protocol_brain.dart`
+  - Export connection request contracts and adapter interface.
+
+- `packages/protocol_brain/lib/adapters/firebase_adapter.dart`
+  - Wire Firebase function calls and RTDB watchers behind the adapter.
+
+- `apps/rain/lib/application/runtime/rain_runtime_controller.dart`
+  - Construct/start/stop connection request runtime; integrate with connect/disconnect intent.
+
+- `apps/rain/lib/application/runtime/runtime_interaction_guard.dart`
+  - Add connection request decisions and no-silent-blocking guarantees.
+
+- `apps/rain/lib/application/state/runtime_providers.dart`
+  - Expose request state and actions through Riverpod.
+
+- `apps/rain/lib/presentation/widgets/home/chat_panel.dart`
+  - Show outbound pending status, disabled reasons, and request action wiring.
+
+- `apps/rain/lib/presentation/widgets/home/friends_list.dart`
+  - Show inbound request badges and mute state on full friend rows and compact rail entries.
+
+- `apps/rain/lib/presentation/screens/home_screen.dart`
+  - Render top-level inbound tray and global request messages.
+
+- `apps/rain/lib/presentation/screens/settings_screen.dart`
+  - Add notification settings, quota summary, and muted-request senders list.
+
+- `apps/rain/lib/application/audio/sound_event_router.dart`
+  - Add controlled connection request sound events.
+
+- `apps/rain/lib/infrastructure/services/app_settings_store.dart`
+  - Persist local notification/sound preferences only; not quota.
+
+- `apps/rain/pubspec.yaml`
+  - Add local notification dependency only after the notification spike confirms Android and Windows support.
+
+- `backend/firebase/database.rules.json`
+  - Deny direct client mutation of server-owned paths; allow safe reads and receiver-owned mute writes if not function-owned.
+
+- `backend/firebase/functions/index.js`
+  - Export connection request functions and cleanup schedule.
+
+- `backend/firebase/README.md`
+  - Document new Firebase paths and deployment steps.
+
+---
+
+## Firebase Data Model
+
+All usernames are normalized before path construction. Any pair key must be generated with a single helper to avoid path injection or order bugs.
 
 ```text
 connectionRequests/{to}/{requestId}
   requestId: string
+  pairKey: string
   from: username
   to: username
   status: pending | seen | accepted | rejected | canceled | expired | failed
-  createdAt: server timestamp millis
-  updatedAt: server timestamp millis
-  expiresAt: server timestamp millis
-  senderPresenceAt: millis
-  senderDevice: android | windows | unknown
   reason: manualConnect
+  createdAt: server millis
+  updatedAt: server millis
+  expiresAt: server millis
+  senderPresenceAt: millis
+  receiverPresenceAt: millis
+  senderDevice: android | windows | unknown
 
 connectionRequestOutboxes/{from}/{requestId}
   requestId: string
+  pairKey: string
   from: username
   to: username
   status: pending | seen | accepted | rejected | canceled | expired | failed
-  createdAt: server timestamp millis
-  updatedAt: server timestamp millis
-  expiresAt: server timestamp millis
+  createdAt: server millis
+  updatedAt: server millis
+  expiresAt: server millis
+  lastReasonCode: string | null
+
+connectionRequestPairLocks/{pairKey}
+  requestId: string
+  from: username
+  to: username
+  status: pending
+  createdAt: server millis
+  expiresAt: server millis
 
 connectionNotificationConfig/global
+  enabled: boolean
   defaultDailyLimit: number
-  defaultCooldownMs: number
   defaultPerTargetDailyLimit: number
+  defaultCooldownMs: number
   maxPendingOutboundPerUser: number
   maxPendingInboundPerUser: number
-  requestTtlMs: number
   maxBurstPerMinute: number
-  enabled: boolean
-  updatedAt: server timestamp millis
+  requestTtlMs: number
+  auditRetentionDays: number
+  usageRetentionDays: number
+  updatedAt: server millis
 
 connectionNotificationEntitlements/{username}
   dailyLimitOverride: number | null
@@ -100,663 +261,892 @@ connectionNotificationEntitlements/{username}
   disabled: boolean
   reason: string
   expiresAt: millis | null
-  updatedAt: server timestamp millis
+  updatedAt: server millis
   updatedBy: admin uid or operator label
 
-connectionNotificationUsage/{username}/{yyyyMMdd}
+connectionNotificationUsage/{username}/{yyyyMMddUtc}
   used: number
   extraCreditsUsed: number
   rejectedByCooldown: number
   rejectedByLimit: number
-  lastRequestAt: millis
+  rejectedByPending: number
   burstWindowStartedAt: millis
   burstCount: number
+  lastRequestAt: millis
 
-connectionNotificationTargetUsage/{from}/{to}/{yyyyMMdd}
+connectionNotificationTargetUsage/{from}/{to}/{yyyyMMddUtc}
   used: number
   rejectedByCooldown: number
   rejectedByLimit: number
   lastRequestAt: millis
 
-connectionNotificationPairLocks/{fromToKey}
-  requestId: string
-  from: username
-  to: username
-  status: pending
-  expiresAt: server timestamp millis
-  createdAt: server timestamp millis
-
-connectionNotificationMutes/{username}/{peer}
+connectionNotificationMutes/{receiver}/{sender}
   muted: boolean
-  updatedAt: server timestamp millis
+  updatedAt: server millis
 
-connectionNotificationAudit/{yyyyMMdd}/{eventId}
+connectionNotificationAudit/{yyyyMMddUtc}/{eventId}
   from: username
   to: username
-  decision: allowed | denied
-  reason: string
   requestId: string | null
-  createdAt: server timestamp millis
+  pairKey: string | null
+  decision: allowed | denied | deduped | finalized
+  reasonCode: string
+  createdAt: server millis
+
+connectionNotificationReservations/{requestId}
+  from: username
+  to: username
+  pairKey: string
+  dayKey: string
+  consumedDaily: boolean
+  consumedExtraCredit: boolean
+  finalized: boolean
+  createdAt: server millis
+  expiresAt: server millis
 ```
 
-The inbox is authoritative for the receiver. The outbox is a mirrored status projection for the sender. Both are ephemeral and cleaned by TTL.
+`connectionNotificationReservations` exists because RTDB transactions are per-path. If a later write fails after quota reservation, cleanup/finalizer can identify and resolve stale reservations without guessing.
 
-The quota, entitlement, and usage paths are authoritative guardrail state. They must be updated with a transaction from trusted backend code. The Flutter app may read a sanitized quota summary for UI, but it must not write quota counters, grant credits, or bypass cooldowns.
+---
 
-## Guardrail Model
+## Status State Machine
 
-Connection notifications are intentionally rate-limited because every request creates Firebase writes, watcher events, optional local notifications, sound events, and user attention cost.
+Allowed server transitions:
 
-Default policy for first implementation:
+```text
+pending -> seen
+pending -> accepted
+pending -> rejected
+pending -> canceled
+pending -> expired
+pending -> failed
+seen -> accepted
+seen -> rejected
+seen -> canceled
+seen -> expired
+seen -> failed
+```
 
-- Daily free connect notifications per user: 30.
-- Extra credits: consumed after the daily free allowance.
-- Cooldown between requests to the same peer: 20 seconds.
-- Per-target daily limit: 8 requests to the same peer.
-- Max pending outbound requests per user: 5.
-- Max pending inbound requests per receiver: 10.
-- Max burst: 6 requests per minute.
-- Request TTL: 45 seconds.
+Forbidden:
 
-Firebase/admin override examples:
+- terminal -> non-terminal
+- accepted -> canceled
+- rejected -> accepted
+- expired -> accepted
+- failed -> accepted
 
-- Increase `connectionNotificationEntitlements/eslam/extraCredits` for one-off extra usage.
-- Set `dailyLimitOverride` for trusted testers.
-- Set `unlimitedUntil` for internal accounts.
-- Set `disabled: true` to shut off abuse from one account without blocking the whole app.
-- Change `connectionNotificationConfig/global/defaultDailyLimit` if production usage needs a different limit.
+Race rules:
 
-Security rule: client writes must never be allowed to mutate `connectionNotificationConfig`, `connectionNotificationEntitlements`, or `connectionNotificationUsage`. Request creation should go through a backend function so quota checks and request writes happen as one server-side operation.
+- If `accept` and `cancel` race, the first committed terminal transition wins. The loser receives the current terminal status and user message.
+- If `accept` and `expire` race, accept succeeds only when `now < expiresAt` at commit time.
+- If app restarts, runtime reloads inbox/outbox and resumes the current server state.
+- If sender function succeeds but client times out, retry returns `duplicatePendingRequest` with the existing request.
+- If friendship, block, or mute changes while pending, cleanup/finalizer moves the request to `failed` or `rejected` with a neutral message.
 
-## Critical Guardrails
+---
 
-These are non-negotiable for the feature to ship:
+## Error Message Matrix
 
-1. Server-only request creation.
-   Clients must call a trusted backend function. They must not directly create inbox/outbox request rows.
+Every denied action returns `allowed: false`, `reasonCode`, `userMessage`, `retryAfterMs` when relevant, and diagnostics detail. Widgets must show the message through tooltip, inline helper, snackbar, tray, or notification fallback.
 
-2. Firebase-owned quota and credits.
-   Daily usage, extra credits, admin overrides, and disabled flags live in Firebase/backend state and are updated transactionally.
-
-3. Pending request dedupe.
-   Only one pending request may exist for a sender/receiver pair. Repeated taps reuse the existing request or return its current status.
-
-4. Per-target cooldown and daily limit.
-   A sender cannot spend their whole global quota repeatedly pinging one peer.
-
-5. Receiver protection.
-   Receiver mute, block, inbox cap, offline, and stale presence checks happen before notifications, sounds, push, or inbox writes.
-
-6. Global kill switch.
-   `connectionNotificationConfig/global/enabled = false` disables new request creation immediately with a clean user message.
-
-7. Abuse audit diagnostics.
-   Allowed and denied backend decisions are recorded in a limited server audit log with reason and timestamp.
-
-8. Admin override traceability.
-   Extra credits and overrides include `updatedBy`, `reason`, and optional expiry so test/internal grants do not become invisible permanent state.
-
-9. No silent blocking.
-   Every denied, ignored, rate-limited, expired, disabled, or failed action must return a typed decision with a user-facing message and diagnostics reason. If exposing exact receiver state would leak privacy, use a neutral message but still explain what the user can do next.
-
-## User-Facing Error Message Matrix
-
-Every blocked action must map to one of these messages. Widgets must render the message through the normal error surface, toast/snackbar, inline status, or notification prompt. The runtime must also record the raw reason in diagnostics.
-
-| Reason code | User-facing message | Notes |
+| Reason Code | User Message | Privacy / Behavior |
 | --- | --- | --- |
-| `peerOffline` | `@peer is offline. Keep both apps open, then try again.` | No request row is created. |
-| `presenceUnknown` | `Could not confirm @peer is online. Try again.` | Fail closed; no request row is created. |
-| `notAcceptedFriend` | `You can only connect with accepted friends.` | Do not reveal hidden relationship data. |
-| `blocked` | `Connection request unavailable for this peer.` | Neutral wording to avoid leaking block direction. |
-| `mutedByReceiver` | `@peer is not receiving connection requests right now.` | Do not say they muted you. |
-| `manualDisconnectActive` | `You disconnected @peer. Press Connect again to send a request.` | Applies to local manual intent. |
-| `activeCall` | `Finish the active call before sending connection requests.` | Keep global one-call rule. |
-| `activeTransfer` | `Finish the active file transfer before sending connection requests.` | Keep transfer conflict rule. |
-| `rateLimited` | `Connection requests are cooling down. Try again in {seconds}s.` | Include retry-after when available. |
-| `dailyLimitExceeded` | `Daily connection request limit reached.` | If extra credits exist, message may append `Using extra credits.` before allowing. |
-| `extraCreditsExhausted` | `No extra connection request credits left.` | Include reset/renewal context if configured. |
-| `perTargetLimitExceeded` | `You have sent too many requests to @peer today.` | Protects one receiver from repeated pings. |
-| `tooManyPendingRequests` | `Too many connection requests are still pending. Cancel or wait for one to expire.` | Sender-side pending cap. |
-| `receiverInboxFull` | `@peer has too many pending requests right now. Try again later.` | Receiver protection before quota spend. |
-| `duplicatePendingRequest` | `Connection request already sent to @peer.` | Show existing pending request status instead of creating another row. |
-| `notificationsDisabledByAdmin` | `Connection requests are disabled for this account.` | Per-user disabled flag. |
+| `peerOffline` | `@peer is offline. Keep both apps open, then try again.` | No row, no quota spend. |
+| `presenceUnknown` | `Could not confirm @peer is online. Try again.` | No row, no quota spend. |
+| `notAcceptedFriend` | `You can only connect with accepted friends.` | No relationship detail leak. |
+| `blocked` | `Connection request unavailable for this peer.` | Neutral; exact block side only in diagnostics. |
+| `mutedByReceiver` | `@peer is unavailable for connection requests right now.` | Do not say "muted you". |
+| `manualDisconnectActive` | `You disconnected @peer. Press Connect again to send a request.` | Local-only state. |
+| `activeCall` | `Finish the active call before sending connection requests.` | Local conflict. |
+| `activeTransfer` | `Finish the active file transfer before sending connection requests.` | Local conflict. |
+| `rateLimited` | `Connection requests are cooling down. Try again in {seconds}s.` | Use backend retry-after. |
+| `dailyLimitExceeded` | `Daily connection request limit reached.` | No row; may mention reset if available. |
+| `extraCreditsExhausted` | `No extra connection request credits left.` | No row. |
+| `perTargetLimitExceeded` | `You have sent too many requests to @peer today.` | No row. |
+| `tooManyPendingRequests` | `Too many connection requests are still pending. Cancel or wait for one to expire.` | Sender pending cap. |
+| `receiverInboxFull` | `@peer is unavailable for connection requests right now. Try again later.` | Neutralized receiver state. |
+| `duplicatePendingRequest` | `Connection request already sent to @peer.` | Show existing request. |
+| `notificationsDisabledByAdmin` | `Connection requests are disabled for this account.` | Per-user admin flag. |
 | `notificationsTemporarilyDisabled` | `Connection requests are temporarily unavailable.` | Global kill switch. |
-| `expired` | `Connection request expired. Send a new request if you still want to connect.` | Sender and receiver terminal state. |
-| `backendRejected` | `Connection request could not be sent. Try again.` | Diagnostics keep raw Firebase/function error. |
-| `permissionDenied` | `Notifications are disabled. You will still see requests inside Rain.` | OS notification permission fallback. |
-| `notificationUnavailable` | `System notifications are unavailable. Rain will show in-app alerts instead.` | Platform/plugin fallback. |
+| `expired` | `Connection request expired. Send a new request if you still want to connect.` | Terminal. |
+| `backendRejected` | `Connection request could not be sent. Try again.` | Raw error only in diagnostics. |
+| `permissionDenied` | `Notifications are disabled. You will still see requests inside Rain.` | OS notification fallback. |
+| `notificationUnavailable` | `System notifications are unavailable. Rain will show in-app alerts instead.` | Platform fallback. |
+| `staleRequest` | `This connection request is no longer valid.` | For accept/reject on old request. |
+| `terminalRaceLost` | `This connection request was already handled.` | For accept/cancel race loser. |
 
-Message rules:
+Tests must fail if a reason code lacks a non-empty message.
 
-- Never disable a visible action without a tooltip, inline reason, or immediate feedback on tap.
-- Do not consume quota or extra credits for attempts blocked before request creation.
-- Do not show a receiver notification for any denied attempt.
-- Use neutral wording when exact state could expose privacy-sensitive information.
-- Diagnostics must keep the exact internal reason even when UI wording is neutral.
-- Tests must assert both the reason code and the user-facing message for every guardrail.
+---
 
-## Public Types
+## Phase 00: Scope, Threat Model, And Acceptance Lock
 
-- `ConnectionNotificationStatus`
-  - `pending`
-  - `seen`
-  - `accepted`
-  - `rejected`
-  - `canceled`
-  - `expired`
-  - `failed`
+**Purpose:** Freeze the exact feature boundary before any implementation.
 
-- `ConnectionNotificationDirection`
-  - `inbound`
-  - `outbound`
+**Files:**
 
-- `ConnectionNotificationDecision`
-  - `connect`
-  - `ignore`
-  - `cancel`
-  - `reject`
+- Modify: `docs/superpowers/plans/2026-05-28-rain-inbound-outbound-connect-notifications.md`
+- Create: `docs/qa/connection-request-notifications-acceptance.md`
 
-- `ConnectionNotificationFailureReason`
-  - `peerOffline`
-  - `presenceUnknown`
-  - `notAcceptedFriend`
-  - `blocked`
-  - `mutedByReceiver`
-  - `manualDisconnectActive`
-  - `activeCall`
-  - `activeTransfer`
-  - `rateLimited`
-  - `dailyLimitExceeded`
-  - `extraCreditsExhausted`
-  - `tooManyPendingRequests`
-  - `receiverInboxFull`
-  - `perTargetLimitExceeded`
-  - `duplicatePendingRequest`
-  - `notificationsDisabledByAdmin`
-  - `notificationsTemporarilyDisabled`
-  - `expired`
-  - `backendRejected`
-  - `permissionDenied`
-  - `notificationUnavailable`
+**Steps:**
 
-- `ConnectionNotificationQuotaSnapshot`
-  - `dailyLimit`
-  - `usedToday`
-  - `extraCreditsRemaining`
-  - `cooldownRemainingMs`
-  - `perTargetRemainingToday`
-  - `pendingOutboundCount`
-  - `pendingInboundCount`
-  - `unlimitedUntil`
-  - `disabled`
+- [ ] Write acceptance doc defining v1 as app-open/minimized connection request notifications only, not closed-app push.
+- [ ] Record that existing `friendRequests` and `voiceCallInboxes` are not reused.
+- [ ] Record threat model:
+  - client replay
+  - direct RTDB writes
+  - duplicate taps
+  - multi-device same account
+  - sender cancel vs receiver accept race
+  - stale pair locks
+  - entitlement abuse
+  - receiver harassment
+  - Firebase cost spike
+- [ ] Add skipped tests in `packages/protocol_brain/test/connection_request_contract_test.dart` for every reason code and state transition.
+- [ ] Commit: `docs: lock connection request notification acceptance`
 
-## Phase 00: Acceptance Lock And Baseline
+**Validation:**
 
-**Purpose:** Define exactly what the notification feature is allowed to change before implementation begins.
+```powershell
+dart run melos run analyze
+```
 
-- [ ] Confirm the feature is about data peer connection requests, not friend requests and not voice/video calls.
-- [ ] Capture current manual connect, disconnect, recovering, and passive listener behavior.
-- [ ] Lock the rule that inbound notifications never auto-connect without user action.
-- [ ] Lock the rule that manual disconnect still blocks auto-recovery.
-- [ ] Add skipped regression tests describing the desired inbound/outbound behavior.
-- [ ] Record current Firebase paths and rule boundaries.
+Expected: no new analyzer failures.
 
-**Acceptance:**
+---
 
-- Plan has explicit tests for outbound pending, inbound prompt, reject, cancel, expiry, and manual disconnect.
-- No implementation phase can reuse `friendRequests` for connection notifications.
+## Phase 01: Contract, Status Machine, And Message Mapper
 
-## Phase 01: Connection Notification Contract
+**Purpose:** Build the typed foundation used by backend, fake adapters, runtime, and UI.
 
-**Purpose:** Add typed models before touching runtime behavior.
+**Files:**
 
-- [ ] Add connection notification value types in `packages/protocol_brain`.
-- [ ] Add parser validation for username, request id, timestamps, status, expiry, and direction.
-- [ ] Add cleanup-safe parsing for corrupt old entries.
-- [ ] Add failure reason mapping for UI messages.
-- [ ] Add one exhaustive `ConnectionNotificationFailureReason -> userMessage` mapper.
-- [ ] Add tests that fail if any reason code lacks a non-empty message.
-- [ ] Add fake adapter support for tests.
+- Create: `packages/protocol_brain/lib/src/connection_request_contract.dart`
+- Modify: `packages/protocol_brain/lib/protocol_brain.dart`
+- Create: `packages/protocol_brain/test/connection_request_contract_test.dart`
 
-**Acceptance:**
+**Steps:**
 
-- Invalid payloads are rejected or cleanup-parsed without crashing streams.
-- Unknown statuses are ignored safely.
-- Expired entries are distinguishable from rejected/canceled entries.
-- Every typed failure reason has a stable user-facing message.
+- [ ] Define `ConnectionRequestStatus`, `ConnectionRequestReasonCode`, `ConnectionRequestDecision`, `ConnectionRequestQuotaSnapshot`, `ConnectionRequestPayload`, and `ConnectionRequestTransition`.
+- [ ] Implement username/request id/pair key validation using normalized usernames only.
+- [ ] Implement `isTerminalStatus(status)`.
+- [ ] Implement `canTransition(from, to, now, expiresAt)`.
+- [ ] Implement exhaustive `messageForConnectionRequestReason(reasonCode, peerLabel, retryAfter)`.
+- [ ] Add parser tests for malformed status, invalid timestamps, path-injection usernames, expired payloads, unknown fields, and cleanup-safe parsing.
+- [ ] Add message coverage test that iterates every enum value and expects a non-empty message.
+- [ ] Add state transition tests for all allowed and forbidden transitions.
+- [ ] Commit: `feat(protocol): add connection request contract`
 
-## Phase 02: Firebase Schema, Rules, And Cleanup
+**Validation:**
 
-**Purpose:** Add ephemeral backend support with strict safety rules.
+```powershell
+dart test packages/protocol_brain/test/connection_request_contract_test.dart
+```
 
-- [ ] Add `connectionRequests/{to}/{requestId}` rules.
-- [ ] Add `connectionRequestOutboxes/{from}/{requestId}` rules.
-- [ ] Add read-only client access to sanitized quota summaries if needed.
-- [ ] Add admin-only paths:
-  - `connectionNotificationConfig/global`
-  - `connectionNotificationEntitlements/{username}`
-  - `connectionNotificationUsage/{username}/{yyyyMMdd}`
-  - `connectionNotificationTargetUsage/{from}/{to}/{yyyyMMdd}`
-  - `connectionNotificationPairLocks/{fromToKey}`
-  - `connectionNotificationAudit/{yyyyMMdd}/{eventId}`
-- [ ] Add receiver-owned mute path:
-  - `connectionNotificationMutes/{username}/{peer}`
-- [ ] Require authenticated user ownership for writes.
-- [ ] Require accepted two-way friendship.
-- [ ] Require no block in either direction.
-- [ ] Require no receiver mute for the sender.
-- [ ] Require fresh receiver presence for creating new inbound requests.
-- [ ] Prevent users from writing requests on behalf of another sender.
-- [ ] Prevent client writes to config, entitlements, usage counters, target counters, pair locks, and audit rows.
-- [ ] Prevent direct client creation of request rows if the backend function owns quota enforcement.
-- [ ] Allow receiver to mark `seen`, `accepted`, or `rejected`.
-- [ ] Allow sender to mark `canceled`.
-- [ ] Allow receiver to create/update/delete their own mute rows.
-- [ ] Add cleanup function support for expired request inbox/outbox entries.
-- [ ] Add cleanup function support for expired `connectionNotificationPairLocks`.
-- [ ] Add cleanup or daily TTL rules for old usage/audit rows.
-- [ ] Add rule tests and cleanup tests.
+Expected: all tests pass.
 
-**Acceptance:**
+---
 
-- Offline/stale receivers cannot receive new connection notification rows.
-- Blocked or unaccepted users cannot create requests.
-- Muted senders cannot create requests to the receiver.
-- Users cannot grant themselves credits or reset their own counters.
-- Users cannot bypass dedupe by writing pair locks or request rows directly.
-- Expired rows are cleaned without deleting active newer requests.
+## Phase 02: Firebase Security Boundaries
 
-## Phase 03: Server Quota, Credit, And Rate-Limit Enforcement
+**Purpose:** Lock the database so clients cannot bypass backend guardrails.
 
-**Purpose:** Protect Firebase limits and user attention with backend-owned guardrails.
+**Files:**
 
-- [ ] Add a trusted backend entry point for creating connection requests, preferably a callable/HTTPS Cloud Function:
-  - validates Firebase Auth
-  - resolves authenticated username
-  - validates target peer
-  - validates accepted friendship and block state
-  - validates fresh receiver presence
-  - checks receiver mute state
-  - checks global feature enabled flag
-  - checks per-user disabled flag
-  - checks same-peer cooldown
-  - checks per-target daily limit
-  - checks burst window
-  - checks pair pending dedupe lock
-  - checks pending outbound count
-  - checks receiver pending inbound count
-  - checks daily free allowance
-  - consumes extra credits only after daily allowance is exhausted
-  - writes or reuses pair dedupe lock
-  - writes inbox/outbox request rows
-  - writes quota usage counters
-  - writes per-target usage counters
-- [ ] Check receiver protection before spending sender quota.
-- [ ] Use transactions for usage counters and pending-request checks.
-- [ ] Make request creation idempotent for duplicate taps from the same sender/peer within the cooldown window.
-- [ ] Return the existing pending request instead of creating a second Firebase row for duplicate pending sender/receiver attempts.
-- [ ] Return a typed quota decision to the app:
-  - allowed
-  - blocked reason
-  - user-facing message
-  - remaining daily requests
-  - remaining extra credits
-  - per-target remaining requests
-  - retry-after timestamp when applicable
-- [ ] Add an admin maintenance path or documented Firebase console workflow to grant extra credits.
-- [ ] Require admin override metadata:
-  - `updatedBy`
-  - `reason`
-  - `expiresAt` or `unlimitedUntil`
-- [ ] Add diagnostics/audit rows that do not expose private data:
-  - request id
-  - sender
-  - receiver
-  - decision
-  - denied reason
-  - consumed free/extra credit
-  - retryAfter
-  - createdAt
-- [ ] Ensure cancel/reject/expire decrements pending counts or computes pending counts from live request rows.
+- Modify: `backend/firebase/database.rules.json`
+- Modify: `backend/firebase/README.md`
+- Create: `packages/protocol_brain/test/connection_request_firebase_contract_test.dart`
 
-**Acceptance:**
+**Rules:**
 
-- Client cannot exceed limits by editing local storage, replaying UI actions, or writing directly to Firebase.
-- Admin can increase a user entitlement in Firebase and the next request uses the new value.
-- Extra credits are consumed only after free daily allowance.
-- Rate-limited attempts create no inbox/outbox request rows.
-- Receiver mute/block/offline/inbox-full checks reject before consuming sender quota.
-- Duplicate pending requests create no extra Firebase inbox/outbox rows.
-- Per-target limits stop harassment even when global quota or extra credits remain.
-- Global kill switch returns a clean `temporarily unavailable` decision.
-- Every denied backend decision returns a deterministic user-safe message.
+- Clients may read their own inbox: `connectionRequests/{self}`.
+- Clients may read their own outbox: `connectionRequestOutboxes/{self}`.
+- Clients may read sanitized quota summary if implemented as a read path.
+- Clients may not write:
+  - request rows
+  - outbox rows
+  - usage counters
+  - target usage counters
+  - entitlements
+  - global config
+  - pair locks
+  - reservations
+  - audit rows
+- Receiver-owned mute may either be function-owned or directly writable only at `connectionNotificationMutes/{authUsername}/{peer}`. Prefer function-owned if backend operations need audit.
 
-## Phase 04: Protocol Adapter API
+**Steps:**
 
-**Purpose:** Expose connection notifications through `protocol_brain`, not directly from widgets.
+- [ ] Add denied direct-write rules for server-owned paths.
+- [ ] Add safe read rules for own inbox/outbox.
+- [ ] Add safe read rules for own quota summary only if the summary path exists.
+- [ ] Add tests proving an authenticated user cannot create request rows directly.
+- [ ] Add tests proving an authenticated user cannot grant themselves credits.
+- [ ] Add tests proving an authenticated user cannot reset usage counters.
+- [ ] Add tests proving an authenticated user cannot write pair locks.
+- [ ] Add tests proving a user cannot read another user's inbox/outbox.
+- [ ] Commit: `feat(firebase): lock connection request rules`
 
-- [ ] Add adapter methods:
-  - `createConnectionRequest(peerId)` through the trusted backend entry point
-  - `watchIncomingConnectionRequests(username)`
-  - `watchOutgoingConnectionRequests(username)`
-  - `watchConnectionNotificationQuota(username)` or `fetchConnectionNotificationQuota(username)`
-  - `markConnectionRequestSeen(requestId)`
-  - `acceptConnectionRequest(requestId)`
-  - `rejectConnectionRequest(requestId)`
-  - `cancelConnectionRequest(requestId)`
-  - `cleanupConnectionRequest(requestId)`
-- [ ] Mirror behavior in fake adapter.
-- [ ] Add retry and idempotency rules.
-- [ ] Keep WebRTC room/session creation outside this adapter.
+**Validation:**
 
-**Acceptance:**
+```powershell
+dart test packages/protocol_brain/test/connection_request_firebase_contract_test.dart
+```
 
-- Adapter can create, observe, accept, reject, cancel, and expire requests in tests.
-- Duplicate create attempts for the same peer collapse or supersede cleanly.
-- Adapter exposes quota decisions without requiring widgets to understand Firebase internals.
+Expected: direct client bypass attempts are denied.
 
-## Phase 05: Runtime Guard Integration
+---
 
-**Purpose:** Route all user connect actions through one central policy.
+## Phase 03: Backend Function Foundation
 
-- [ ] Extend `RuntimeInteractionGuard` with:
-  - `canSendConnectionNotification(peerId)`
-  - `canAcceptConnectionNotification(peerId, requestId)`
-  - `canCancelConnectionNotification(peerId, requestId)`
-- [ ] Use existing active call and active file transfer blocks.
-- [ ] Block notifications for offline, stale, unaccepted, blocked, or presence-unknown peers.
-- [ ] Block or delay attempts while server quota says cooldown, per-target limit, daily limit, pending limit, disabled, receiver muted, or extra credits exhausted.
-- [ ] Surface the message for every blocked decision through UI, not only diagnostics.
-- [ ] Do not allow notification creation to clear manual disconnect by itself.
-- [ ] Clear manual disconnect only when the user explicitly accepts/connects.
+**Purpose:** Add trusted mutation entry points before any app runtime uses the feature.
 
-**Acceptance:**
+**Files:**
 
-- Pressing `Connect` on an offline peer does not write a request.
-- Pressing `Connect` while out of credits does not write a request and shows remaining/retry information.
-- Pressing `Connect` when the receiver muted requests does not write a request and does not notify the receiver.
-- No `canSendConnectionNotification` denial is silent.
-- Manual-disconnected peer does not auto-recover from inbound request arrival.
-- Explicit inbound `Connect` clears manual intent only for that peer.
+- Create: `backend/firebase/functions/connectionRequests.js`
+- Create: `backend/firebase/functions/connectionRequestGuardrails.js`
+- Modify: `backend/firebase/functions/index.js`
+- Create: `backend/firebase/functions/test/connectionRequests.test.js`
 
-## Phase 06: Outbound Runtime Flow
+**Callable functions:**
 
-**Purpose:** Make sender-side behavior predictable.
+- `createConnectionRequest`
+- `cancelConnectionRequest`
+- `acceptConnectionRequest`
+- `rejectConnectionRequest`
+- `markConnectionRequestSeen`
+- `muteConnectionRequestsFromPeer`
+- `unmuteConnectionRequestsFromPeer`
+- `getConnectionRequestQuotaSummary`
 
-- [ ] Change user-triggered `connectPeer(peerId)` to create an outbound notification before waiting on a peer when appropriate.
-- [ ] Show outbound pending state while request is pending.
-- [ ] Add timeout, default 45 seconds unless product decides otherwise.
-- [ ] Add `Cancel` behavior.
-- [ ] If receiver accepts, call the existing connection path.
-- [ ] If receiver rejects or request expires, keep session disconnected and show a clear message.
-- [ ] If a direct passive offer succeeds before acceptance, reconcile the request to `accepted` or `connected` without duplicate UI.
-- [ ] Show guardrail messages:
-  - `Connection requests are cooling down. Try again in {n}s.`
-  - `Daily connection request limit reached.`
-  - `No extra connection request credits left.`
-  - `Too many pending connection requests.`
-  - `You have sent too many requests to @peer today.`
-  - `@peer is not receiving connection requests right now.`
-  - `Connection requests are temporarily unavailable.`
+**Steps:**
 
-**Acceptance:**
+- [ ] Add shared auth resolver that maps Firebase Auth uid to Rain username.
+- [ ] Add normalized peer validation and pair key helper.
+- [ ] Add server clock helper. Never trust client timestamps.
+- [ ] Add standard response shape:
+  - `allowed`
+  - `requestId`
+  - `status`
+  - `reasonCode`
+  - `userMessage`
+  - `retryAfterMs`
+  - `quota`
+  - `diagnostics`
+- [ ] Add exact denial responses for auth missing, unknown user, invalid peer, self-request, backend unavailable, and malformed request.
+- [ ] Add unit tests for function response shape and message presence.
+- [ ] Commit: `feat(functions): add connection request function shell`
 
-- Sender never waits silently.
-- Sender can cancel.
-- Sender sees a terminal result for reject, expire, offline, and failed backend writes.
-- Sender sees no outbound pending state when backend denies quota.
+**Validation:**
 
-## Phase 07: Inbound Runtime Flow
+```powershell
+cd backend/firebase/functions
+npm test -- connectionRequests
+```
 
-**Purpose:** Make receiver-side behavior reliable and non-invasive.
+Expected: response-shape tests pass.
 
-- [ ] Start inbound watcher after login and accepted-friend sync.
-- [ ] Validate each inbound request through current relationship and block state.
-- [ ] Collapse multiple pending requests from the same sender.
-- [ ] Mark visible requests as `seen`.
-- [ ] Accept starts existing `connectPeer(peerId)` with explicit user intent.
-- [ ] Reject marks request terminal and leaves all sessions unchanged.
-- [ ] Add receiver-side `Mute requests from @peer` action that writes `connectionNotificationMutes/{self}/{peer}`.
-- [ ] If an active global call or transfer blocks acceptance, show a typed message and keep the request pending or reject based on product choice.
+---
 
-**Acceptance:**
+## Phase 04: Receiver Protection And Dedupe Claims
 
-- Inbound prompt appears only for valid accepted friends.
-- Invalid or stale request rows do not crash the runtime.
-- Muting a peer removes their pending prompts locally and prevents future request prompts server-side.
-- Accepting one peer does not affect any other peer connection state.
+**Purpose:** Prevent harassment and duplicate fan-out before quota is consumed.
 
-## Phase 08: In-App Notification UI
+**Files:**
 
-**Purpose:** Add visible prompts without making the app feel noisy.
+- Modify: `backend/firebase/functions/connectionRequestGuardrails.js`
+- Modify: `backend/firebase/functions/connectionRequests.js`
+- Modify: `backend/firebase/functions/test/connectionRequests.test.js`
 
-- [ ] Add a compact top-level notification tray for inbound connection requests.
-- [ ] Add per-chat outbound pending state near the connection/status area.
-- [ ] Add a connection request badge in the friends rail/list.
-- [ ] Add quota-aware outbound affordances:
-  - remaining requests today where space allows
-  - retry-after text when cooling down
-  - per-peer cooldown/per-target limit text only when relevant
-  - disabled state when admin-disabled
-- [ ] Add disabled-action explanations:
-  - tooltip on desktop
-  - inline helper or snackbar on mobile
-  - accessible semantic label for screen readers
-- [ ] Add receiver protection affordances:
-  - mute requests from this peer
-  - unmute requests from this peer in friend/profile/settings surface
-  - quiet rejection language that does not reveal more private state than needed
-- [ ] Add desktop-friendly hover tooltips and mobile-friendly tap targets.
-- [ ] Use Rain visual language: minimal dark ink surfaces, cyan/mint status, no noisy decorations.
-- [ ] Ensure prompts respect safe areas and do not overlap call UI, snackbars, keyboard, or bottom nav.
+**Guard order:**
 
-**Acceptance:**
+1. Auth and sender identity.
+2. Target username validation.
+3. Accepted friendship.
+4. Block state.
+5. Receiver mute.
+6. Receiver fresh presence.
+7. Global enabled flag.
+8. Per-user disabled flag.
+9. Pair lock dedupe.
+10. Receiver pending inbox cap.
+11. Sender quota/cooldown.
+12. Write request and outbox.
 
-- Inbound request is visible when user is on any tab.
-- Outbound pending is visible in the relevant chat.
-- No duplicate prompts for the same peer.
-- Quota UI never implies the user can bypass server limits.
-- Every disabled button or denied tap explains why.
-- Receiver mute controls are reachable without unfriending or blocking.
+**Steps:**
 
-## Phase 09: OS Local Notifications
+- [ ] Implement receiver block/mute/offline checks before quota spend.
+- [ ] Implement deterministic `connectionRequestPairLocks/{pairKey}` transaction:
+  - existing non-expired pending lock returns `duplicatePendingRequest`
+  - expired lock can be replaced
+  - terminal lock can be replaced
+- [ ] Implement receiver pending cap using a server-maintained count or bounded query plus pair lock. If a count is used, store and repair it in cleanup.
+- [ ] Add rollback of pair lock if later sender quota reservation fails.
+- [ ] Add tests:
+  - duplicate tap returns existing request
+  - muted receiver gets no inbox row
+  - blocked peer gets no inbox row
+  - offline peer gets no inbox row
+  - receiver inbox full gets no inbox row
+  - none of those consume sender quota
+- [ ] Commit: `feat(functions): add receiver protection and dedupe`
 
-**Purpose:** Notify the user outside the active Rain window where platform support allows.
+**Validation:**
 
-- [ ] Add a local notification abstraction:
-  - `showConnectionRequestNotification`
-  - `dismissConnectionRequestNotification`
-  - `showConnectionRequestResultNotification`
-- [ ] Android:
-  - Add runtime notification permission flow for Android 13+.
-  - Use a dedicated `Connection requests` notification channel.
-  - Only show local notifications while Rain runtime is active or platform lifecycle allows it.
-- [ ] Windows:
-  - Add local toast support only if the chosen package supports Windows reliably.
-  - Fallback to in-app notification if unavailable.
-- [ ] Respect notification settings and quiet mode.
-- [ ] Do not add FCM tokens in this phase.
-- [ ] Do not show OS notifications for requests blocked by quota, cooldown, pending limits, or admin disable.
-- [ ] Do not show OS notifications for duplicate pending requests, receiver-muted requests, blocked users, or offline/stale receivers.
-- [ ] When OS notifications cannot be shown, show the in-app fallback message instead of failing silently.
+```powershell
+cd backend/firebase/functions
+npm test -- connectionRequests
+```
 
-**Acceptance:**
+Expected: receiver protection and dedupe tests pass.
 
-- App-active and minimized notification behavior works without crashing when notification APIs are unavailable.
-- Permission denial leaves in-app notifications functional.
-- No notification appears for stale/invalid/blocked requests.
-- No notification appears for requests that were denied before inbox creation.
-- Duplicate pending requests do not create repeated local or OS notifications.
-- Notification permission/platform failures produce visible in-app fallback messaging.
+---
 
-## Phase 10: Sound, Rate Limit, And Abuse Controls
+## Phase 05: Quota, Credits, And Entitlements
 
-**Purpose:** Make notifications noticeable without becoming annoying or abusable.
+**Purpose:** Enforce cost and abuse limits from Firebase/backend state.
+
+**Files:**
+
+- Modify: `backend/firebase/functions/connectionRequestGuardrails.js`
+- Modify: `backend/firebase/functions/connectionRequests.js`
+- Modify: `backend/firebase/functions/test/connectionRequests.test.js`
+- Create: `docs/releases/connection-request-notification-ops.md`
+
+**Quota semantics:**
+
+- UTC day key only.
+- Free daily allowance is consumed before extra credits.
+- `unlimitedUntil` bypasses daily count while still recording audit.
+- `disabled` blocks immediately.
+- `expiresAt` on entitlement disables stale admin grants.
+- Duplicate pending attempts do not consume quota.
+- Receiver-protection denials do not consume quota.
+- Created request consumes quota even if later canceled, rejected, ignored, or expired.
+- Extra credit is decremented only by backend transaction and cannot go below zero.
+
+**Steps:**
+
+- [ ] Implement global config loader with safe defaults.
+- [ ] Implement entitlement loader with expiry handling.
+- [ ] Implement sender daily quota transaction.
+- [ ] Implement per-target daily quota transaction.
+- [ ] Implement burst window and cooldown.
+- [ ] Implement extra credit decrement transaction.
+- [ ] Implement quota reservation record for every successful spend.
+- [ ] Implement rollback/finalizer path for partial failures.
+- [ ] Add admin runbook explaining how to grant extra credits:
+  - set `extraCredits`
+  - set `reason`
+  - set `updatedBy`
+  - set `expiresAt` or `unlimitedUntil`
+- [ ] Add tests:
+  - daily limit denies after configured limit
+  - extra credits allow after free limit
+  - extra credits cannot go negative
+  - per-target limit denies while global remains
+  - cooldown denies with retry-after
+  - disabled user denied
+  - global kill switch denied
+  - expired entitlement ignored
+- [ ] Commit: `feat(functions): enforce connection request quotas`
+
+**Validation:**
+
+```powershell
+cd backend/firebase/functions
+npm test -- connectionRequests
+```
+
+Expected: quota and entitlement tests pass.
+
+---
+
+## Phase 06: Lifecycle Transitions, Cleanup, And Race Safety
+
+**Purpose:** Make request state self-healing before UI depends on it.
+
+**Files:**
+
+- Create: `backend/firebase/functions/connectionRequestCleanup.js`
+- Modify: `backend/firebase/functions/connectionRequests.js`
+- Modify: `backend/firebase/functions/index.js`
+- Modify: `backend/firebase/functions/test/connectionRequests.test.js`
+
+**Steps:**
+
+- [ ] Implement `acceptConnectionRequest` with terminal race handling.
+- [ ] Implement `cancelConnectionRequest` with terminal race handling.
+- [ ] Implement `rejectConnectionRequest` with terminal race handling.
+- [ ] Implement `markConnectionRequestSeen` as idempotent.
+- [ ] On terminal transition, clear pair lock only if request id matches.
+- [ ] On terminal transition, update inbox and outbox mirrors atomically.
+- [ ] On expired request cleanup:
+  - mark outbox expired or delete based on retention decision
+  - remove inbox row
+  - remove pair lock if matching
+  - finalize reservation
+- [ ] On corrupt row cleanup:
+  - remove unreadable inbox/outbox rows
+  - keep audit event
+  - do not delete newer matching pair lock
+- [ ] Add scheduled cleanup for:
+  - expired requests
+  - expired pair locks
+  - stale reservations
+  - old audit rows
+  - expired entitlement overrides
+- [ ] Add tests:
+  - accept vs cancel first terminal wins
+  - accept after expiry returns stale message
+  - retry after client timeout returns existing pending request
+  - cleanup removes stale pair lock
+  - cleanup does not delete newer pair lock
+  - corrupt row does not crash watcher-equivalent parser
+- [ ] Commit: `feat(functions): add connection request cleanup`
+
+**Validation:**
+
+```powershell
+cd backend/firebase/functions
+npm test -- connectionRequests
+```
+
+Expected: lifecycle and cleanup tests pass.
+
+---
+
+## Phase 07: Protocol Adapter
+
+**Purpose:** Hide Firebase/function details from Rain runtime and widgets.
+
+**Files:**
+
+- Create: `packages/protocol_brain/lib/src/connection_request_adapter.dart`
+- Create: `packages/protocol_brain/lib/src/testing/fake_connection_request_adapter.dart`
+- Modify: `packages/protocol_brain/lib/adapters/firebase_adapter.dart`
+- Modify: `packages/protocol_brain/lib/protocol_brain.dart`
+- Create: `packages/protocol_brain/test/connection_request_adapter_test.dart`
+
+**Adapter API:**
+
+- `Future<ConnectionRequestDecision> createConnectionRequest(String peerId)`
+- `Future<ConnectionRequestDecision> cancelConnectionRequest(String requestId)`
+- `Future<ConnectionRequestDecision> acceptConnectionRequest(String requestId)`
+- `Future<ConnectionRequestDecision> rejectConnectionRequest(String requestId)`
+- `Future<ConnectionRequestDecision> markConnectionRequestSeen(String requestId)`
+- `Future<ConnectionRequestDecision> muteConnectionRequestsFromPeer(String peerId)`
+- `Future<ConnectionRequestDecision> unmuteConnectionRequestsFromPeer(String peerId)`
+- `Future<ConnectionRequestQuotaSnapshot> fetchConnectionRequestQuota()`
+- `Stream<List<ConnectionRequestPayload>> watchIncomingConnectionRequests(String username)`
+- `Stream<List<ConnectionRequestPayload>> watchOutgoingConnectionRequests(String username)`
+
+**Steps:**
+
+- [ ] Implement adapter interface.
+- [ ] Implement fake adapter with the same state transition rules.
+- [ ] Implement Firebase adapter using Cloud Functions for mutations and RTDB watchers for reads.
+- [ ] Convert function/network errors into `backendRejected` with safe message and raw diagnostics.
+- [ ] Add tests:
+  - fake adapter mirrors status to inbox/outbox
+  - duplicate create returns existing pending request
+  - stream ignores corrupt rows and reports diagnostics
+  - network failure returns safe message
+- [ ] Commit: `feat(protocol): add connection request adapter`
+
+**Validation:**
+
+```powershell
+dart test packages/protocol_brain/test/connection_request_adapter_test.dart
+```
+
+Expected: adapter tests pass.
+
+---
+
+## Phase 08: Runtime Integration
+
+**Purpose:** Integrate request state with Rain connection intent without breaking manual disconnect.
+
+**Files:**
+
+- Create: `apps/rain/lib/application/runtime/connection_request_runtime.dart`
+- Create: `apps/rain/lib/application/runtime/connection_request_state.dart`
+- Create: `apps/rain/lib/application/runtime/connection_request_messages.dart`
+- Modify: `apps/rain/lib/application/runtime/rain_runtime_controller.dart`
+- Modify: `apps/rain/lib/application/runtime/runtime_interaction_guard.dart`
+- Modify: `apps/rain/lib/application/state/runtime_providers.dart`
+- Create: `apps/rain/test/connection_request_runtime_test.dart`
+
+**Runtime rules:**
+
+- Starting Rain subscribes to incoming/outgoing request streams after identity and accepted friends load.
+- Runtime does not auto-connect on inbound request arrival.
+- Runtime does not clear manual disconnect unless user explicitly accepts/connects.
+- Runtime displays every denied decision message.
+- Runtime reconciles pending outbox after restart.
+- Runtime handles relationship/block/mute changes by dismissing invalid prompts.
+
+**Steps:**
+
+- [ ] Add `ConnectionRequestRuntime` lifecycle start/stop/dispose.
+- [ ] Add Riverpod state projection for incoming requests, outgoing requests, quota summary, and last user message.
+- [ ] Add `sendConnectionRequest(peerId)` that calls adapter and never calls WebRTC directly on denial.
+- [ ] Add `acceptConnectionRequest(requestId)` that clears manual disconnect only for that peer, then starts existing `connectPeer`.
+- [ ] Add `cancel/reject/mute/unmute` actions.
+- [ ] Add interaction guard methods.
+- [ ] Add tests:
+  - offline denied with message
+  - duplicate pending shows existing status
+  - manual disconnected peer does not auto-connect on inbound request
+  - explicit accept clears manual disconnect for one peer only
+  - app restart restores pending outbound state
+  - active call/file transfer blocks with message
+  - adapter failure produces safe message
+- [ ] Commit: `feat(rain): add connection request runtime`
+
+**Validation:**
+
+```powershell
+dart test apps/rain/test/connection_request_runtime_test.dart
+```
+
+Expected: runtime tests pass.
+
+---
+
+## Phase 09: Outbound UI
+
+**Purpose:** Make the sender experience explicit and non-silent.
+
+**Files:**
+
+- Create: `apps/rain/lib/presentation/widgets/connection_requests/connection_request_status_chip.dart`
+- Modify: `apps/rain/lib/presentation/widgets/home/chat_panel.dart`
+- Modify: `apps/rain/lib/presentation/widgets/home/link_status.dart`
+- Create: `apps/rain/test/connection_request_widgets_test.dart`
+
+**Steps:**
+
+- [ ] Add outbound pending chip near existing connection status.
+- [ ] Add `Cancel` action for pending request.
+- [ ] Show status text for pending, seen, accepted, rejected, canceled, expired, failed.
+- [ ] Disable or intercept Connect with visible reason when guard denies.
+- [ ] Desktop: denied/disabled action shows tooltip and semantic label.
+- [ ] Mobile: denied tap shows snackbar or inline message.
+- [ ] Add tests:
+  - pending chip renders
+  - cancel button calls runtime
+  - duplicate pending message renders
+  - daily limit message renders
+  - cooldown retry-after renders
+  - disabled button exposes semantic reason
+- [ ] Commit: `feat(ui): add outbound connection request state`
+
+**Validation:**
+
+```powershell
+dart test apps/rain/test/connection_request_widgets_test.dart --name "outbound"
+```
+
+Expected: outbound widget tests pass.
+
+---
+
+## Phase 10: Inbound UI
+
+**Purpose:** Give receivers a clean prompt without forcing connection or harassment.
+
+**Files:**
+
+- Create: `apps/rain/lib/presentation/widgets/connection_requests/connection_request_tray.dart`
+- Modify: `apps/rain/lib/presentation/screens/home_screen.dart`
+- Modify: `apps/rain/lib/presentation/widgets/home/friends_list.dart`
+- Modify: `apps/rain/lib/presentation/screens/friend_profile_screen.dart`
+- Modify: `apps/rain/lib/presentation/screens/settings_screen.dart`
+- Modify: `apps/rain/test/connection_request_widgets_test.dart`
+
+**Steps:**
+
+- [ ] Add top-level inbound tray visible from any tab.
+- [ ] Add `Connect`, `Ignore`, and overflow `Mute requests from @peer`.
+- [ ] Add friend list badge for pending inbound request.
+- [ ] Collapse duplicate inbound requests from same peer.
+- [ ] Add unmute control in friend profile or settings.
+- [ ] Ensure tray respects call overlays, safe areas, keyboard, and bottom navigation.
+- [ ] Add tests:
+  - inbound prompt renders on mobile
+  - inbound prompt renders on desktop
+  - accept calls runtime
+  - reject calls runtime
+  - mute removes prompt
+  - prompt does not overlap call overlay
+  - duplicate inbound prompt collapses
+- [ ] Commit: `feat(ui): add inbound connection request tray`
+
+**Validation:**
+
+```powershell
+dart test apps/rain/test/connection_request_widgets_test.dart --name "inbound"
+```
+
+Expected: inbound widget tests pass.
+
+---
+
+## Phase 11: Local Notification Abstraction
+
+**Purpose:** Notify users when Rain is active/minimized without promising closed-app push.
+
+**Files:**
+
+- Create: `apps/rain/lib/infrastructure/notifications/rain_notification_service.dart`
+- Modify: `apps/rain/lib/application/state/runtime_providers.dart`
+- Modify: `apps/rain/lib/application/runtime/connection_request_runtime.dart`
+- Modify: `apps/rain/pubspec.yaml`
+- Create: `apps/rain/test/rain_notification_service_test.dart`
+
+**Dependency gate:**
+
+- [ ] Spike Android and Windows local notification support with a minimal abstraction.
+- [ ] Add dependency only after confirming it supports the maintained targets.
+- [ ] If Windows support is weak, keep Windows in-app only for v1.
+
+**Steps:**
+
+- [ ] Add `RainNotificationService` interface.
+- [ ] Add no-op fallback implementation.
+- [ ] Add Android permission handling for Android 13+ if plugin supports it.
+- [ ] Add notification channel/category for connection requests.
+- [ ] Show local notification only for valid inbound request rows.
+- [ ] Dismiss notification on accept/reject/mute/expire/cancel.
+- [ ] On permission denied or plugin unavailable, show in-app fallback message.
+- [ ] Add tests:
+  - permission denied returns `permissionDenied`
+  - unavailable plugin returns `notificationUnavailable`
+  - blocked/duplicate/muted requests do not show notifications
+  - notification dismissed on terminal state
+- [ ] Commit: `feat(rain): add connection request notification service`
+
+**Validation:**
+
+```powershell
+dart test apps/rain/test/rain_notification_service_test.dart
+```
+
+Expected: notification service tests pass.
+
+---
+
+## Phase 12: Sounds, Settings, And User Controls
+
+**Purpose:** Add controlled notification sound and user preferences without abusing attention.
+
+**Files:**
+
+- Modify: `apps/rain/lib/application/audio/sound_event_router.dart`
+- Modify: `apps/rain/lib/infrastructure/services/app_settings_store.dart`
+- Modify: `apps/rain/lib/presentation/screens/settings_screen.dart`
+- Modify: `apps/rain/test/sound_event_router_test.dart`
+- Modify: `apps/rain/test/settings_screen_test.dart`
+
+**Steps:**
 
 - [ ] Add sound events:
   - inbound connection request
   - outbound accepted
-  - outbound rejected/expired
-- [ ] Reuse central sound event router.
-- [ ] Burst-compress repeated requests from the same peer.
-- [ ] Add local cooldown for repeated requests.
-- [ ] Treat backend quota decisions as authoritative; local cooldown only reduces accidental taps and noise.
-- [ ] Avoid counting normal chat messages as abuse.
-
-**Acceptance:**
-
-- Multiple quick requests from the same peer produce one prompt and controlled sound.
-- Repeated abusive requests are suppressed locally and diagnostically visible.
-- Backend-enforced quota still works if local cooldown is bypassed.
-
-## Phase 11: Diagnostics And Recovery
-
-**Purpose:** Make failures reportable.
-
-- [ ] Add diagnostics:
-  - `connection_request_outbound_created`
-  - `connection_request_outbound_canceled`
-  - `connection_request_outbound_expired`
-  - `connection_request_inbound_received`
-  - `connection_request_inbound_seen`
-  - `connection_request_inbound_accepted`
-  - `connection_request_inbound_rejected`
-  - `connection_request_blocked`
-  - `connection_request_corrupt_removed`
-  - `connection_request_notification_permission_denied`
-  - `connection_request_quota_allowed`
-  - `connection_request_quota_denied`
-  - `connection_request_credit_consumed`
-  - `connection_request_entitlement_loaded`
-  - `connection_request_pair_deduped`
-  - `connection_request_target_limit_denied`
-  - `connection_request_receiver_muted_denied`
-  - `connection_request_global_disabled`
-- [ ] Include peer id, request id, direction, status, presence freshness, guard reason, quota decision, remaining daily allowance, remaining extra credits, per-target remaining allowance, retry-after, dedupe lock state, and cleanup result.
-- [ ] Include `userMessageKey` and rendered message in diagnostics for denied attempts.
-- [ ] Ensure diagnostics buffering does not write synchronously per event.
-
-**Acceptance:**
-
-- Exported diagnostics explain why a request did or did not appear.
-- Corrupt request entries are removed or ignored without poisoning watcher streams.
-- Diagnostics can prove whether a blocked attempt was caused by cooldown, daily limit, pending limit, admin disable, or Firebase failure.
-- Diagnostics can distinguish duplicate pending, receiver muted, per-target limit, and global kill-switch denials.
-- Diagnostics prove which user-facing message was shown.
-
-## Phase 12: Settings And User Control
-
-**Purpose:** Let users control notification noise.
-
+  - outbound rejected
+  - outbound expired
+- [ ] Add burst compression for repeated inbound prompts.
 - [ ] Add settings:
-  - `Connection request notifications`
-  - `Connection request sound`
-  - `Show notifications when minimized`
-- [ ] Add a manageable muted-request senders list if the user muted any peers.
-- [ ] Show platform permission status.
-- [ ] Show a read-only quota summary:
-  - requests used today
-  - daily limit
-  - extra credits remaining
-  - cooldown status
-- [ ] Add `Test notification` only in diagnostics/developer area if useful.
-- [ ] Persist settings in the existing app settings store.
+  - connection request notifications
+  - connection request sound
+  - show notifications when minimized
+  - muted request senders
+- [ ] Add read-only quota summary.
+- [ ] Ensure local settings never alter backend quota.
+- [ ] Add tests:
+  - repeated inbound request sound is compressed
+  - sound off suppresses sound only
+  - notification off suppresses OS notification only
+  - quota summary is read-only
+  - unmute removes only mute row
+- [ ] Commit: `feat(rain): add connection request settings and sounds`
 
-**Acceptance:**
+**Validation:**
 
-- Turning off connection request notifications suppresses OS notifications but keeps essential in-app prompts.
-- Turning off sounds does not suppress visual prompts.
-- Quota summary is read-only and updates from Firebase/backend state.
-- Unmuting a peer removes only `connectionNotificationMutes/{self}/{peer}` and does not alter friendships or blocks.
+```powershell
+dart test apps/rain/test/sound_event_router_test.dart
+dart test apps/rain/test/settings_screen_test.dart
+```
 
-## Phase 13: Optional Push Notification Architecture
+Expected: sound/settings tests pass.
 
-**Purpose:** Define the future path for closed-app notification support without forcing it into v1.
+---
 
-- [ ] Add a separate spec before implementation.
-- [ ] Introduce `notificationTokens/{username}/{deviceId}` only after security review.
-- [ ] Use Firebase Cloud Messaging for Android.
-- [ ] Define token rotation, logout deletion, blocked-user filtering, and rate limiting.
-- [ ] Reuse the same server quota/credit decision before sending push notifications.
-- [ ] Decide whether Windows needs push, local-only, or no closed-app notifications.
-- [ ] Update privacy policy and release notes before shipping.
+## Phase 13: Diagnostics, Admin Ops, And Cost Guardrails
 
-**Acceptance:**
+**Purpose:** Make production failures and Firebase usage spikes explainable.
 
-- No FCM token schema is added accidentally in v1.
-- Closed-app notification support has a separate explicit approval gate.
-- Push cannot bypass connection request quota.
+**Files:**
 
-## Phase 14: Automated Validation Gate
+- Modify: `apps/rain/lib/infrastructure/services/crash_diagnostics_service.dart`
+- Modify: `apps/rain/lib/application/runtime/connection_request_runtime.dart`
+- Modify: `backend/firebase/functions/connectionRequests.js`
+- Modify: `docs/releases/connection-request-notification-ops.md`
 
-**Unit Tests**
+**Steps:**
 
-- [ ] Contract parsing rejects malformed request payloads.
-- [ ] Fake adapter creates inbox/outbox entries and mirrors statuses.
-- [ ] Runtime guard denies offline, blocked, unaccepted, active-call, and active-transfer cases.
-- [ ] Runtime guard denies cooldown, per-target limit, daily limit, extra credit exhaustion, admin disable, receiver mute, global kill switch, and too many pending requests.
-- [ ] Every `ConnectionNotificationFailureReason` maps to a non-empty user-facing message.
-- [ ] Neutral privacy-safe messages still preserve exact internal diagnostics reason.
-- [ ] Manual disconnect blocks auto-connect from inbound request arrival.
-- [ ] Explicit inbound accept clears manual disconnect for only that peer.
-- [ ] Outbound cancel prevents later accept from starting a session.
-- [ ] Expired requests do not start sessions.
-- [ ] Duplicate requests collapse into one visible request.
-- [ ] Server quota decision consumes free allowance before extra credits.
-- [ ] Server quota decision does not consume quota for blocked, muted, offline, stale, inbox-full, or duplicate-pending attempts.
-- [ ] Admin entitlement changes are reflected without app reinstall.
+- [ ] Add client diagnostics:
+  - request id
+  - peer id
+  - direction
+  - status
+  - reason code
+  - user message key
+  - rendered message
+  - quota summary
+  - retry-after
+  - notification fallback state
+- [ ] Add backend audit for allowed, denied, deduped, terminal, cleanup, and rollback events.
+- [ ] Add cost guardrails:
+  - global daily created count in audit summary
+  - function log warning when denied/created ratio spikes
+  - global kill switch runbook
+- [ ] Add admin runbook:
+  - grant credits
+  - disable one account
+  - enable/disable global feature
+  - inspect audit
+  - cleanup stale locks
+- [ ] Add tests proving diagnostics include user-facing message and exact internal reason.
+- [ ] Commit: `docs: add connection request operations diagnostics`
 
-**Widget Tests**
+**Validation:**
 
-- [ ] Inbound prompt renders on mobile and desktop.
-- [ ] Outbound pending state renders in chat status area.
-- [ ] Friend list badge appears for pending inbound request.
-- [ ] Prompt respects safe areas and does not overlap call surfaces.
-- [ ] Notification settings render and persist.
-- [ ] Quota summary renders as read-only state.
-- [ ] Cooldown and no-credit messages fit mobile and desktop.
-- [ ] Disabled connect buttons expose reason through tooltip/semantics on desktop.
-- [ ] Denied mobile taps show snackbar/inline error with the mapped message.
-- [ ] Receiver mute/unmute controls render without exposing unrelated block/unfriend actions.
-- [ ] Duplicate pending requests do not create duplicate visible prompts.
+```powershell
+dart test apps/rain/test/connection_request_runtime_test.dart --name "diagnostics"
+cd backend/firebase/functions
+npm test -- connectionRequests
+```
 
-**Firebase Tests**
+Expected: diagnostics tests pass.
 
-- [ ] Offline receiver cannot receive request.
-- [ ] Unaccepted friend cannot receive request.
-- [ ] Blocked user cannot create request.
-- [ ] Receiver can accept/reject.
-- [ ] Sender can cancel.
-- [ ] Cleanup removes expired inbox/outbox rows.
-- [ ] Client cannot write config, entitlements, or usage counters.
-- [ ] Client cannot write target usage counters, pair locks, or audit rows.
-- [ ] Backend function refuses quota-exceeded requests before writing inbox/outbox rows.
-- [ ] Extra credits can be granted by admin data and consumed by request creation.
-- [ ] Backend function reuses or returns existing pending pair lock instead of creating duplicate request rows.
-- [ ] Backend function enforces per-target daily limit even when global quota remains.
-- [ ] Backend function refuses muted receivers before notification fan-out.
-- [ ] Global kill switch blocks request creation immediately.
-- [ ] Every denied backend function response includes reason code, user-safe message, and diagnostics-safe raw detail.
+---
 
-**Validation Commands**
+## Phase 14: Optional Closed-App Push Specification
+
+**Purpose:** Design future push without polluting v1.
+
+**Files:**
+
+- Create: `docs/superpowers/specs/connection-request-push-notifications-v2.md`
+
+**Scope:**
+
+- Android Firebase Cloud Messaging token registration.
+- Token lifecycle on login/logout/account switch.
+- Token deletion on uninstall/inactivity where possible.
+- User privacy controls.
+- App Check consideration.
+- Push send path must reuse the same server guardrail decision.
+- No push for blocked/muted/offline-denied/duplicate/quota-denied requests.
+- Windows decision: local-only, no push, or future provider.
+
+**Steps:**
+
+- [ ] Write v2 push spec.
+- [ ] Explicitly state v1 does not implement token storage.
+- [ ] Add security review checklist.
+- [ ] Commit: `docs: specify connection request push v2`
+
+**Validation:**
+
+No code validation; docs/spec only.
+
+---
+
+## Phase 15: Integrated Automated Validation Gate
+
+**Purpose:** Prove the full feature works before any build.
+
+**Commands:**
 
 ```powershell
 dart pub get
 dart run melos run analyze
 dart run melos run test
+cd backend/firebase/functions
+npm test
 ```
 
-## Phase 15: Release Gate
+**Must Pass:**
 
-- [ ] Commit each completed phase on `dev`.
-- [ ] Push `dev`.
-- [ ] Trigger cloud build only after automated validation passes.
-- [ ] Verify Android v7a, Android v8/v9, and Windows artifacts.
+- Contract tests.
+- Firebase rules tests.
+- Backend function tests.
+- Runtime tests.
+- Widget tests.
+- Settings tests.
+- Sound tests.
+- Diagnostics tests.
+
+**Scenario Coverage:**
+
+- Alice sends Bob a request; Bob accepts; connection starts.
+- Alice sends Bob a request; Bob rejects; Alice sees rejected message.
+- Alice sends Bob a request; Alice cancels; Bob prompt disappears.
+- Alice sends Bob a request; it expires; both sides reconcile.
+- Alice taps Connect repeatedly; one request row exists.
+- Alice exceeds global daily quota; no request row is created.
+- Alice exceeds per-target limit; no request row is created.
+- Alice has extra credits; request succeeds after free allowance.
+- Alice has no extra credits; request denied with message.
+- Bob mutes Alice; Alice gets neutral message; Bob gets no prompt.
+- Bob blocks Alice; Alice gets neutral message; no quota spend.
+- Bob offline/stale; no row and no quota spend.
+- Receiver inbox full; no row and no quota spend.
+- Sender cancel vs receiver accept race; first terminal state wins.
+- Function succeeds but client times out; retry returns existing pending request.
+- App restart restores pending inbox/outbox.
+- OS notification permission denied; in-app fallback appears.
+- Global kill switch blocks request creation immediately.
+
+**Commit:**
+
+```powershell
+git add .
+git commit -m "test: validate connection request notifications"
+```
+
+---
+
+## Phase 16: Release Gate
+
+**Purpose:** Ship only after the tested backend and app are aligned.
+
+**Steps:**
+
+- [ ] Deploy Firebase rules to staging/test project.
+- [ ] Deploy Cloud Functions to staging/test project.
+- [ ] Run emulator or staging smoke tests.
+- [ ] Update Firebase backend README.
 - [ ] Update release notes:
   - connection request notifications
-  - app-open/local notification limitation
-  - no closed-app push in v1 unless Phase 12 is separately implemented
+  - quota and credits
+  - app-open/minimized notification limitation
+  - no closed-app push in v1
+- [ ] Push `dev`.
+- [ ] Trigger cloud build only after validation passes.
+- [ ] Verify Android v7a, Android v8/v9, and Windows artifacts.
+
+**Commit:**
+
+```powershell
+git add backend/firebase/README.md docs/releases/connection-request-notification-ops.md
+git commit -m "docs: release connection request notifications"
+```
+
+---
 
 ## Non-Goals For V1
 
@@ -764,24 +1154,36 @@ dart run melos run test
 - No group connection requests.
 - No connection request history.
 - No automatic connection acceptance.
-- No local-storage-only quota or credit system.
-- No client-side bypass for admin/test accounts; admin/test usage still goes through Firebase entitlements.
-- No paid billing or purchase flow for extra credits.
-- No receiver-side forced notification delivery; receiver mute/block/offline protections always win.
+- No local-storage quota or credit authority.
+- No client-side admin/test bypass.
+- No paid purchase flow for extra credits.
+- No receiver-forced notification delivery.
 - No changes to voice/video media transport.
 - No changes to chat message encryption or delivery.
 
-## Open Decisions
+---
 
-- Should inbound request expiry be 30 seconds, 45 seconds, or 60 seconds?
-- What should the default daily free request limit be for normal users?
-- Should extra credits reset daily, monthly, or remain until consumed?
-- Should admin/test accounts use `extraCredits`, `dailyLimitOverride`, or `unlimitedUntil`?
-- Should blocked quota attempts be invisible to the receiver, or should repeated abuse produce moderation diagnostics only?
-- Should quota summaries be visible in Settings, beside the Connect button, or only after a quota error?
-- Should receiver mute be temporary by default, or permanent until manually removed?
-- Should duplicate pending taps refresh the existing request timestamp, or keep the original expiry to prevent nagging?
-- Should reject tell the sender `Rejected` or softer `Unavailable`?
-- Should Windows use real toast notifications in v1, or in-app/minimized-window notifications only?
-- Should an inbound request from the currently open chat show a prompt, inline status, or both?
-- Should accepting a connection request automatically select that chat?
+## Remaining Product Decisions
+
+These are not blockers for foundation work, but must be resolved before UI copy is finalized.
+
+- Is request TTL `45s` or another value?
+- Is normal user daily limit `30`, lower, or remote-config only?
+- Do extra credits persist until consumed, or expire monthly?
+- Should receiver mute default to permanent until unmuted?
+- Should duplicate pending taps refresh expiry or keep original expiry?
+- Should rejection copy say `Rejected`, `Unavailable`, or `No response`?
+- Should accepting a request auto-select that chat?
+- Should Windows v1 use system toast or in-app only?
+- Should quota summary show always in Settings, or only after a quota error?
+
+---
+
+## Execution Handoff
+
+Plan complete and saved to `docs/superpowers/plans/2026-05-28-rain-inbound-outbound-connect-notifications.md`.
+
+Execution options:
+
+1. **Subagent-driven implementation, recommended**: dispatch a fresh implementation worker per phase, review between phases, and keep commits small.
+2. **Inline implementation**: execute phases in this session with checkpoints after each dependency boundary.
