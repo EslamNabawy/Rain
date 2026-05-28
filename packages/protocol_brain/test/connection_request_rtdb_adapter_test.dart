@@ -192,6 +192,191 @@ void main() {
       expect(harness.valueAt('connectionRequests/bob'), isNull);
       expect(harness.valueAt('connectionRequestOutboxes/alice'), isNull);
     });
+
+    test('sender can cancel and receiver prompt disappears', () async {
+      final harness = _RtdbOnlyAdapterHarness(username: 'alice');
+      addTearDown(harness.dispose);
+      final payload = harness.seedPendingRequest(
+        requestId: 'request-01',
+        from: 'alice',
+        to: 'bob',
+      );
+
+      final decision = await harness.adapter.cancelConnectionRequest(
+        payload.requestId,
+      );
+
+      expect(decision.allowed, isTrue);
+      expect(decision.status, ConnectionRequestStatus.canceled);
+      expect(
+        harness.valueAt('connectionRequests/bob/request-01/status'),
+        ConnectionRequestStatus.canceled.name,
+      );
+      expect(
+        harness.valueAt('connectionRequestOutboxes/alice/request-01/status'),
+        ConnectionRequestStatus.canceled.name,
+      );
+      expect(
+        harness.valueAt('connectionRequestPairLocks/alice:bob/status'),
+        ConnectionRequestStatus.canceled.name,
+      );
+    });
+
+    test('receiver can accept and outbox becomes accepted', () async {
+      final harness = _RtdbOnlyAdapterHarness(username: 'bob');
+      addTearDown(harness.dispose);
+      final payload = harness.seedPendingRequest(
+        requestId: 'request-01',
+        from: 'alice',
+        to: 'bob',
+      );
+
+      final decision = await harness.adapter.acceptConnectionRequest(
+        payload.requestId,
+      );
+
+      expect(decision.allowed, isTrue);
+      expect(decision.status, ConnectionRequestStatus.accepted);
+      expect(
+        harness.valueAt('connectionRequests/bob/request-01/status'),
+        ConnectionRequestStatus.accepted.name,
+      );
+      expect(
+        harness.valueAt('connectionRequestOutboxes/alice/request-01/status'),
+        ConnectionRequestStatus.accepted.name,
+      );
+    });
+
+    test('receiver can reject and outbox becomes rejected', () async {
+      final harness = _RtdbOnlyAdapterHarness(username: 'bob');
+      addTearDown(harness.dispose);
+      final payload = harness.seedPendingRequest(
+        requestId: 'request-01',
+        from: 'alice',
+        to: 'bob',
+      );
+
+      final decision = await harness.adapter.rejectConnectionRequest(
+        payload.requestId,
+      );
+
+      expect(decision.allowed, isTrue);
+      expect(decision.status, ConnectionRequestStatus.rejected);
+      expect(
+        harness.valueAt('connectionRequests/bob/request-01/status'),
+        ConnectionRequestStatus.rejected.name,
+      );
+      expect(
+        harness.valueAt('connectionRequestOutboxes/alice/request-01/status'),
+        ConnectionRequestStatus.rejected.name,
+      );
+    });
+
+    test('cancel versus accept first terminal state wins', () async {
+      final harness = _RtdbOnlyAdapterHarness(username: 'alice');
+      addTearDown(harness.dispose);
+      final payload = harness.seedPendingRequest(
+        requestId: 'request-01',
+        from: 'alice',
+        to: 'bob',
+      );
+
+      final cancel = await harness.adapter.cancelConnectionRequest(
+        payload.requestId,
+      );
+      harness.username = 'bob';
+      final accept = await harness.adapter.acceptConnectionRequest(
+        payload.requestId,
+      );
+
+      expect(cancel.allowed, isTrue);
+      expect(accept.allowed, isFalse);
+      expect(accept.reasonCode, ConnectionRequestReasonCode.terminalRaceLost);
+      expect(
+        harness.valueAt('connectionRequests/bob/request-01/status'),
+        ConnectionRequestStatus.canceled.name,
+      );
+      expect(
+        harness.valueAt('connectionRequestPairLocks/alice:bob/status'),
+        ConnectionRequestStatus.canceled.name,
+      );
+    });
+
+    test('mark seen is idempotent', () async {
+      final harness = _RtdbOnlyAdapterHarness(username: 'bob');
+      addTearDown(harness.dispose);
+      final payload = harness.seedPendingRequest(
+        requestId: 'request-01',
+        from: 'alice',
+        to: 'bob',
+      );
+
+      final first = await harness.adapter.markConnectionRequestSeen(
+        payload.requestId,
+      );
+      final second = await harness.adapter.markConnectionRequestSeen(
+        payload.requestId,
+      );
+
+      expect(first.allowed, isTrue);
+      expect(first.status, ConnectionRequestStatus.seen);
+      expect(second.allowed, isTrue);
+      expect(second.status, ConnectionRequestStatus.seen);
+      expect(
+        harness.valueAt('connectionRequests/bob/request-01/status'),
+        ConnectionRequestStatus.seen.name,
+      );
+      expect(
+        harness.valueAt('connectionRequestOutboxes/alice/request-01/status'),
+        ConnectionRequestStatus.seen.name,
+      );
+    });
+
+    test('mute removes inbound prompts from that sender', () async {
+      final harness = _RtdbOnlyAdapterHarness(
+        username: 'alice',
+        acceptedPeers: <String>{'alice'},
+        onlinePeers: <String>{'alice'},
+      );
+      addTearDown(harness.dispose);
+
+      final mute = await harness.adapter.muteConnectionRequestsFromPeer('bob');
+      harness.username = 'bob';
+      final create = await harness.adapter.createConnectionRequest('alice');
+
+      expect(mute.allowed, isTrue);
+      expect(
+        harness.valueAt('connectionNotificationMutes/alice/bob/muted'),
+        isTrue,
+      );
+      expect(create.allowed, isFalse);
+      expect(create.reasonCode, ConnectionRequestReasonCode.mutedByReceiver);
+      expect(harness.valueAt('connectionRequests/alice'), isNull);
+    });
+
+    test('unmute removes only the selected muted sender', () async {
+      final harness = _RtdbOnlyAdapterHarness(username: 'alice');
+      addTearDown(harness.dispose);
+      harness.setValue(
+        'connectionNotificationMutes/alice/bob',
+        <String, Object?>{'muted': true, 'updatedAt': 1000},
+      );
+      harness.setValue(
+        'connectionNotificationMutes/alice/cara',
+        <String, Object?>{'muted': true, 'updatedAt': 1000},
+      );
+
+      final decision = await harness.adapter.unmuteConnectionRequestsFromPeer(
+        'bob',
+      );
+
+      expect(decision.allowed, isTrue);
+      expect(harness.valueAt('connectionNotificationMutes/alice/bob'), isNull);
+      expect(
+        harness.valueAt('connectionNotificationMutes/alice/cara/muted'),
+        isTrue,
+      );
+    });
   });
 }
 
@@ -237,7 +422,7 @@ final class _RtdbOnlyAdapterHarness {
     );
   }
 
-  final String username;
+  String username;
   final int now;
   final Set<String> acceptedPeers;
   final Set<String> onlinePeers;
@@ -273,6 +458,28 @@ final class _RtdbOnlyAdapterHarness {
 
   void failNextUpdateForTest(Object error) {
     _nextUpdateFailure = error;
+  }
+
+  ConnectionRequestPayload seedPendingRequest({
+    required String requestId,
+    required String from,
+    required String to,
+  }) {
+    final payload = _payload(requestId: requestId, from: from, to: to);
+    final json = payload.toJson();
+    setValue('connectionRequests/$to/$requestId', json);
+    setValue('connectionRequestOutboxes/$from/$requestId', json);
+    setValue('connectionRequestPairLocks/${payload.pairKey}', <String, Object?>{
+      'requestId': requestId,
+      'from': from,
+      'to': to,
+      'pairKey': payload.pairKey,
+      'status': ConnectionRequestStatus.pending.name,
+      'createdAt': payload.createdAt,
+      'updatedAt': payload.updatedAt,
+      'expiresAt': payload.expiresAt,
+    });
+    return payload;
   }
 
   Future<void> _updateValue(Map<String, Object?> updates) async {

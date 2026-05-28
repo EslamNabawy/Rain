@@ -640,10 +640,10 @@ Cloud Functions while preserving race safety.
 
 **Files:**
 
-- Modify: `packages/protocol_brain/lib/src/connection_request_rtdb_adapter.dart`
+- Modify: `packages/protocol_brain/lib/adapters/connection_request_rtdb_adapter.dart`
 - Test: `packages/protocol_brain/test/connection_request_rtdb_adapter_test.dart`
 
-- [ ] **Step 1: Implement request lookup**
+- [x] **Step 1: Implement request lookup**
 
 Lookup order:
 
@@ -654,7 +654,7 @@ connectionRequests/{self}/{requestId}
 
 Reject missing or malformed rows as `staleRequest`.
 
-- [ ] **Step 2: Implement valid actor checks**
+- [x] **Step 2: Implement valid actor checks**
 
 Rules in adapter:
 
@@ -665,7 +665,7 @@ Rules in adapter:
 - receiver can mute/unmute a sender
 - neither side can mutate terminal rows except idempotent no-op return
 
-- [ ] **Step 3: Implement terminal mirror update**
+- [x] **Step 3: Implement terminal mirror update**
 
 For `accepted`, `rejected`, `canceled`, and `expired`, write both mirrors:
 
@@ -680,12 +680,12 @@ Pair lock release:
 - If lock `requestId` matches, set terminal status or remove it.
 - If lock has another `requestId`, leave it untouched and emit diagnostic.
 
-- [ ] **Step 4: Implement seen**
+- [x] **Step 4: Implement seen**
 
 `markConnectionRequestSeen` updates receiver inbox and sender outbox to
 `seen` only when current status is `pending`.
 
-- [ ] **Step 5: Implement mute/unmute**
+- [x] **Step 5: Implement mute/unmute**
 
 Write:
 
@@ -704,7 +704,7 @@ Mute payload:
 
 Unmute removes that sender row only.
 
-- [ ] **Step 6: Add tests**
+- [x] **Step 6: Add tests**
 
 Required tests:
 
@@ -718,11 +718,13 @@ test('mute removes inbound prompts from that sender', () async {});
 test('unmute removes only the selected muted sender', () async {});
 ```
 
-- [ ] **Step 7: Validate and commit**
+- [x] **Step 7: Validate and commit**
 
 ```powershell
 flutter test --no-test-assets packages/protocol_brain/test/connection_request_rtdb_adapter_test.dart
-git add packages/protocol_brain/lib/src/connection_request_rtdb_adapter.dart packages/protocol_brain/test/connection_request_rtdb_adapter_test.dart
+dart run melos run analyze
+dart run melos run test
+git add packages/protocol_brain/lib/adapters/connection_request_rtdb_adapter.dart packages/protocol_brain/test/connection_request_rtdb_adapter_test.dart docs/superpowers/plans/2026-05-28-rain-free-firebase-connection-requests.md
 git commit -m "feat: handle rtdb connection request transitions"
 ```
 

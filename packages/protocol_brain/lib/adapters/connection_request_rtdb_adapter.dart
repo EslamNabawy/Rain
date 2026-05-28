@@ -249,6 +249,16 @@ final class RtdbOnlyConnectionRequestAdapter
       );
     }
 
+    if (await _isReceiverMuted(
+      receiver: normalizedPeer,
+      sender: currentUsername,
+    )) {
+      return _blocked(
+        ConnectionRequestReasonCode.mutedByReceiver,
+        peerId: normalizedPeer,
+      );
+    }
+
     final expiresAt = now + requestTtl.inMilliseconds;
     final requestId = createConnectionRequestId(
       from: currentUsername,
@@ -325,25 +335,34 @@ final class RtdbOnlyConnectionRequestAdapter
 
   @override
   Future<ConnectionRequestDecision> cancelConnectionRequest(String requestId) {
-    return _requestActionUnavailable(
-      action: 'cancelConnectionRequest',
+    return _transitionRequestToTerminal(
       requestId: requestId,
+      action: 'cancelConnectionRequest',
+      requiredMirror: _RtdbConnectionRequestMirror.outbox,
+      targetStatus: ConnectionRequestStatus.canceled,
+      successMessage: 'Connection request canceled.',
     );
   }
 
   @override
   Future<ConnectionRequestDecision> acceptConnectionRequest(String requestId) {
-    return _requestActionUnavailable(
-      action: 'acceptConnectionRequest',
+    return _transitionRequestToTerminal(
       requestId: requestId,
+      action: 'acceptConnectionRequest',
+      requiredMirror: _RtdbConnectionRequestMirror.inbox,
+      targetStatus: ConnectionRequestStatus.accepted,
+      successMessage: 'Connection request accepted.',
     );
   }
 
   @override
   Future<ConnectionRequestDecision> rejectConnectionRequest(String requestId) {
-    return _requestActionUnavailable(
-      action: 'rejectConnectionRequest',
+    return _transitionRequestToTerminal(
       requestId: requestId,
+      action: 'rejectConnectionRequest',
+      requiredMirror: _RtdbConnectionRequestMirror.inbox,
+      targetStatus: ConnectionRequestStatus.rejected,
+      successMessage: 'Connection request rejected.',
     );
   }
 
@@ -351,10 +370,7 @@ final class RtdbOnlyConnectionRequestAdapter
   Future<ConnectionRequestDecision> markConnectionRequestSeen(
     String requestId,
   ) {
-    return _requestActionUnavailable(
-      action: 'markConnectionRequestSeen',
-      requestId: requestId,
-    );
+    return _markConnectionRequestSeen(requestId);
   }
 
   @override
@@ -365,9 +381,39 @@ final class RtdbOnlyConnectionRequestAdapter
     if (normalizedPeer == null) {
       return _blocked(ConnectionRequestReasonCode.invalidPeer);
     }
-    return _foundationUnavailable(
-      action: 'muteConnectionRequestsFromPeer',
+    late final String currentUsername;
+    try {
+      currentUsername = normalizeConnectionRequestUsername(
+        await _currentUsername(),
+      );
+    } on Object catch (error) {
+      return _blocked(
+        ConnectionRequestReasonCode.authMissing,
+        peerId: normalizedPeer,
+        error: error,
+      );
+    }
+    final now = _clock().millisecondsSinceEpoch;
+    try {
+      await _updateValue(<String, Object?>{
+        'connectionNotificationMutes/$currentUsername/$normalizedPeer':
+            <String, Object?>{'muted': true, 'updatedAt': now},
+      });
+    } on Object catch (error) {
+      return _foundationUnavailable(
+        action: 'muteConnectionRequestsFromPeer',
+        peerId: normalizedPeer,
+        error: error,
+      );
+    }
+    return ConnectionRequestDecision(
+      allowed: true,
+      userMessage: 'Muted connection requests from @$normalizedPeer.',
       peerId: normalizedPeer,
+      diagnostics: const <String, Object?>{
+        'backendMode': 'rtdbOnly',
+        'authority': 'clientBestEffort',
+      },
     );
   }
 
@@ -379,9 +425,37 @@ final class RtdbOnlyConnectionRequestAdapter
     if (normalizedPeer == null) {
       return _blocked(ConnectionRequestReasonCode.invalidPeer);
     }
-    return _foundationUnavailable(
-      action: 'unmuteConnectionRequestsFromPeer',
+    late final String currentUsername;
+    try {
+      currentUsername = normalizeConnectionRequestUsername(
+        await _currentUsername(),
+      );
+    } on Object catch (error) {
+      return _blocked(
+        ConnectionRequestReasonCode.authMissing,
+        peerId: normalizedPeer,
+        error: error,
+      );
+    }
+    try {
+      await _updateValue(<String, Object?>{
+        'connectionNotificationMutes/$currentUsername/$normalizedPeer': null,
+      });
+    } on Object catch (error) {
+      return _foundationUnavailable(
+        action: 'unmuteConnectionRequestsFromPeer',
+        peerId: normalizedPeer,
+        error: error,
+      );
+    }
+    return ConnectionRequestDecision(
+      allowed: true,
+      userMessage: 'Unmuted connection requests from @$normalizedPeer.',
       peerId: normalizedPeer,
+      diagnostics: const <String, Object?>{
+        'backendMode': 'rtdbOnly',
+        'authority': 'clientBestEffort',
+      },
     );
   }
 
@@ -443,23 +517,323 @@ final class RtdbOnlyConnectionRequestAdapter
     );
   }
 
-  Future<ConnectionRequestDecision> _requestActionUnavailable({
-    required String action,
+  Future<ConnectionRequestDecision> _transitionRequestToTerminal({
     required String requestId,
+    required String action,
+    required _RtdbConnectionRequestMirror requiredMirror,
+    required ConnectionRequestStatus targetStatus,
+    required String successMessage,
+  }) async {
+    final lookup = await _lookupRequestForAction(
+      requestId: requestId,
+      action: action,
+      requiredMirror: requiredMirror,
+    );
+    final denied = lookup.deniedDecision;
+    if (denied != null) {
+      return denied;
+    }
+
+    final payload = lookup.payload!;
+    final peerId = _peerForPayload(payload, lookup.mirror!);
+    if (payload.status.isTerminal) {
+      if (payload.status == targetStatus) {
+        return _allowedNoopDecision(
+          payload: payload,
+          peerId: peerId,
+          userMessage: successMessage,
+        );
+      }
+      return _terminalRaceDecision(payload, peerId: peerId);
+    }
+
+    final now = _clock().millisecondsSinceEpoch;
+    final finalStatus =
+        canTransition(payload.status, targetStatus, now, payload.expiresAt)
+        ? targetStatus
+        : ConnectionRequestStatus.expired;
+    _RtdbConnectionRequestPairLock? raceLock;
+    var lockMismatch = false;
+    try {
+      final transaction = await _runTransaction(
+        'connectionRequestPairLocks/${payload.pairKey}',
+        (Object? current) {
+          if (current is! Map) {
+            lockMismatch = true;
+            return const RtdbOnlyConnectionRequestTransactionAction.abort();
+          }
+          try {
+            final lock = _RtdbConnectionRequestPairLock.fromJson(
+              pairKey: payload.pairKey,
+              json: connectionRequestObjectMap(current),
+            );
+            if (lock.requestId != payload.requestId) {
+              lockMismatch = true;
+              return const RtdbOnlyConnectionRequestTransactionAction.abort();
+            }
+            if (lock.status.isTerminal) {
+              raceLock = lock;
+              return const RtdbOnlyConnectionRequestTransactionAction.abort();
+            }
+            return RtdbOnlyConnectionRequestTransactionAction.success(
+              lock.copyWith(status: finalStatus, updatedAt: now).toJson(),
+            );
+          } on FormatException {
+            lockMismatch = true;
+            return const RtdbOnlyConnectionRequestTransactionAction.abort();
+          }
+        },
+      );
+      if (!transaction.committed) {
+        final terminalLock = raceLock;
+        if (terminalLock != null) {
+          return _terminalRaceDecision(
+            _copyPayload(
+              payload,
+              status: terminalLock.status,
+              updatedAt: terminalLock.updatedAt,
+              respondedAt: terminalLock.updatedAt,
+            ),
+            peerId: peerId,
+          );
+        }
+        if (lockMismatch) {
+          _emitDiagnostic(
+            name: 'connection_request_rtdb_pair_lock_mismatch',
+            path: 'connectionRequestPairLocks/${payload.pairKey}',
+            requestId: payload.requestId,
+          );
+          return _blocked(
+            ConnectionRequestReasonCode.rtdbConflict,
+            requestId: payload.requestId,
+            peerId: peerId,
+            diagnostics: <String, Object?>{'action': action},
+          );
+        }
+        return _foundationUnavailable(
+          action: '$action.pairLock',
+          requestId: payload.requestId,
+          peerId: peerId,
+        );
+      }
+    } on Object catch (error) {
+      return _foundationUnavailable(
+        action: '$action.pairLock',
+        requestId: payload.requestId,
+        peerId: peerId,
+        error: error,
+      );
+    }
+
+    final terminal = _copyPayload(
+      payload,
+      status: finalStatus,
+      updatedAt: now,
+      respondedAt: now,
+    );
+    try {
+      await _updateValue(_mirrorUpdates(terminal));
+    } on Object catch (error) {
+      return _foundationUnavailable(
+        action: '$action.mirrorWrite',
+        requestId: payload.requestId,
+        peerId: peerId,
+        error: error,
+      );
+    }
+
+    if (finalStatus == ConnectionRequestStatus.expired &&
+        targetStatus != ConnectionRequestStatus.expired) {
+      return _blocked(
+        ConnectionRequestReasonCode.expired,
+        requestId: terminal.requestId,
+        peerId: peerId,
+        status: terminal.status,
+      );
+    }
+    return ConnectionRequestDecision(
+      allowed: true,
+      userMessage: successMessage,
+      requestId: terminal.requestId,
+      status: terminal.status,
+      peerId: peerId,
+      quota: await fetchConnectionRequestQuota(),
+      diagnostics: <String, Object?>{
+        'backendMode': 'rtdbOnly',
+        'authority': 'clientBestEffort',
+        'pairKey': terminal.pairKey,
+        'action': action,
+      },
+    );
+  }
+
+  Future<ConnectionRequestDecision> _markConnectionRequestSeen(
+    String requestId,
+  ) async {
+    final lookup = await _lookupRequestForAction(
+      requestId: requestId,
+      action: 'markConnectionRequestSeen',
+      requiredMirror: _RtdbConnectionRequestMirror.inbox,
+    );
+    final denied = lookup.deniedDecision;
+    if (denied != null) {
+      return denied;
+    }
+
+    final payload = lookup.payload!;
+    if (payload.status.isTerminal) {
+      return _terminalRaceDecision(payload, peerId: payload.from);
+    }
+    if (payload.status == ConnectionRequestStatus.seen) {
+      return _allowedNoopDecision(
+        payload: payload,
+        peerId: payload.from,
+        userMessage: 'Connection request already seen.',
+      );
+    }
+
+    final now = _clock().millisecondsSinceEpoch;
+    final seen = _copyPayload(
+      payload,
+      status: ConnectionRequestStatus.seen,
+      updatedAt: now,
+      seenAt: now,
+    );
+    try {
+      await _updateValue(_mirrorUpdates(seen));
+    } on Object catch (error) {
+      return _foundationUnavailable(
+        action: 'markConnectionRequestSeen.mirrorWrite',
+        requestId: seen.requestId,
+        peerId: seen.from,
+        error: error,
+      );
+    }
+    return ConnectionRequestDecision(
+      allowed: true,
+      userMessage: 'Connection request marked seen.',
+      requestId: seen.requestId,
+      status: seen.status,
+      peerId: seen.from,
+      quota: await fetchConnectionRequestQuota(),
+      diagnostics: <String, Object?>{
+        'backendMode': 'rtdbOnly',
+        'authority': 'clientBestEffort',
+        'pairKey': seen.pairKey,
+      },
+    );
+  }
+
+  Future<_RtdbRequestLookup> _lookupRequestForAction({
+    required String requestId,
+    required String action,
+    required _RtdbConnectionRequestMirror requiredMirror,
   }) async {
     late final String normalizedRequestId;
     try {
       normalizedRequestId = validateConnectionRequestId(requestId);
     } on Object catch (error) {
-      return _blocked(
-        ConnectionRequestReasonCode.malformedRequest,
-        error: error,
+      return _RtdbRequestLookup.denied(
+        _blocked(ConnectionRequestReasonCode.malformedRequest, error: error),
       );
     }
-    return _foundationUnavailable(
-      action: action,
+
+    late final String currentUsername;
+    try {
+      currentUsername = normalizeConnectionRequestUsername(
+        await _currentUsername(),
+      );
+    } on Object catch (error) {
+      return _RtdbRequestLookup.denied(
+        _blocked(
+          ConnectionRequestReasonCode.authMissing,
+          requestId: normalizedRequestId,
+          error: error,
+        ),
+      );
+    }
+
+    final outbox = await _readRequestPayload(
+      path: 'connectionRequestOutboxes/$currentUsername/$normalizedRequestId',
       requestId: normalizedRequestId,
     );
+    if (outbox != null) {
+      if (requiredMirror != _RtdbConnectionRequestMirror.outbox) {
+        return _RtdbRequestLookup.denied(
+          _blocked(
+            ConnectionRequestReasonCode.permissionDenied,
+            requestId: normalizedRequestId,
+            peerId: outbox.to,
+            diagnostics: <String, Object?>{'action': action},
+          ),
+        );
+      }
+      return _RtdbRequestLookup.found(
+        payload: outbox,
+        mirror: _RtdbConnectionRequestMirror.outbox,
+      );
+    }
+
+    final inbox = await _readRequestPayload(
+      path: 'connectionRequests/$currentUsername/$normalizedRequestId',
+      requestId: normalizedRequestId,
+    );
+    if (inbox != null) {
+      if (requiredMirror != _RtdbConnectionRequestMirror.inbox) {
+        return _RtdbRequestLookup.denied(
+          _blocked(
+            ConnectionRequestReasonCode.permissionDenied,
+            requestId: normalizedRequestId,
+            peerId: inbox.from,
+            diagnostics: <String, Object?>{'action': action},
+          ),
+        );
+      }
+      return _RtdbRequestLookup.found(
+        payload: inbox,
+        mirror: _RtdbConnectionRequestMirror.inbox,
+      );
+    }
+
+    return _RtdbRequestLookup.denied(
+      _blocked(
+        ConnectionRequestReasonCode.staleRequest,
+        requestId: normalizedRequestId,
+        diagnostics: <String, Object?>{'action': action},
+      ),
+    );
+  }
+
+  Future<ConnectionRequestPayload?> _readRequestPayload({
+    required String path,
+    required String requestId,
+  }) async {
+    try {
+      final value = await _getValue(path);
+      if (value == null) {
+        return null;
+      }
+      return ConnectionRequestPayload.fromJson(
+        requestId: requestId,
+        json: connectionRequestObjectMap(value),
+      );
+    } on FormatException catch (error) {
+      _emitDiagnostic(
+        name: 'corrupt_connection_request_action_row_ignored',
+        path: path,
+        requestId: requestId,
+        error: error,
+      );
+      return null;
+    } on Object catch (error) {
+      _emitDiagnostic(
+        name: 'connection_request_rtdb_action_read_failed',
+        path: path,
+        requestId: requestId,
+        error: error,
+      );
+      return null;
+    }
   }
 
   Future<int> _countPendingPayloads(String path) async {
@@ -483,6 +857,32 @@ final class RtdbOnlyConnectionRequestAdapter
         error: error,
       );
       return 0;
+    }
+  }
+
+  Future<bool> _isReceiverMuted({
+    required String receiver,
+    required String sender,
+  }) async {
+    try {
+      final value = await _getValue(
+        'connectionNotificationMutes/$receiver/$sender',
+      );
+      if (value == true) {
+        return true;
+      }
+      if (value is Map) {
+        final mute = connectionRequestObjectMap(value);
+        return mute['muted'] == true;
+      }
+      return false;
+    } on Object catch (error) {
+      _emitDiagnostic(
+        name: 'connection_request_rtdb_mute_read_failed',
+        path: 'connectionNotificationMutes/$receiver/$sender',
+        error: error,
+      );
+      return false;
     }
   }
 
@@ -598,6 +998,81 @@ final class RtdbOnlyConnectionRequestAdapter
       );
       return false;
     }
+  }
+
+  Map<String, Object?> _mirrorUpdates(ConnectionRequestPayload payload) {
+    final json = payload.toJson();
+    return <String, Object?>{
+      'connectionRequests/${payload.to}/${payload.requestId}': json,
+      'connectionRequestOutboxes/${payload.from}/${payload.requestId}': json,
+    };
+  }
+
+  ConnectionRequestPayload _copyPayload(
+    ConnectionRequestPayload payload, {
+    required ConnectionRequestStatus status,
+    required int updatedAt,
+    int? seenAt,
+    int? respondedAt,
+  }) {
+    return ConnectionRequestPayload(
+      requestId: payload.requestId,
+      from: payload.from,
+      to: payload.to,
+      pairKey: payload.pairKey,
+      status: status,
+      reasonCode: payload.reasonCode,
+      createdAt: payload.createdAt,
+      updatedAt: updatedAt,
+      expiresAt: payload.expiresAt,
+      seenAt: seenAt ?? payload.seenAt,
+      respondedAt: respondedAt ?? payload.respondedAt,
+      senderPresenceAt: payload.senderPresenceAt,
+      receiverPresenceAt: payload.receiverPresenceAt,
+      v: payload.v,
+    );
+  }
+
+  ConnectionRequestDecision _allowedNoopDecision({
+    required ConnectionRequestPayload payload,
+    required String peerId,
+    required String userMessage,
+  }) {
+    return ConnectionRequestDecision(
+      allowed: true,
+      userMessage: userMessage,
+      requestId: payload.requestId,
+      status: payload.status,
+      peerId: peerId,
+      diagnostics: const <String, Object?>{
+        'backendMode': 'rtdbOnly',
+        'authority': 'clientBestEffort',
+        'idempotent': true,
+      },
+    );
+  }
+
+  ConnectionRequestDecision _terminalRaceDecision(
+    ConnectionRequestPayload payload, {
+    required String peerId,
+  }) {
+    return _blocked(
+      ConnectionRequestReasonCode.terminalRaceLost,
+      requestId: payload.requestId,
+      peerId: peerId,
+      status: payload.status,
+      diagnostics: <String, Object?>{'terminalStatus': payload.status.name},
+    );
+  }
+
+  String _peerForPayload(
+    ConnectionRequestPayload payload,
+    _RtdbConnectionRequestMirror mirror,
+  ) {
+    return switch (mirror) {
+      _RtdbConnectionRequestMirror.outbox => payload.to,
+      _RtdbConnectionRequestMirror.inbox => payload.from,
+    };
   }
 
   ConnectionRequestQuotaSnapshot _quotaSnapshot({
@@ -747,6 +1222,21 @@ final class _RtdbPairLockClaim {
   final ConnectionRequestDecision? decision;
 }
 
+enum _RtdbConnectionRequestMirror { outbox, inbox }
+
+final class _RtdbRequestLookup {
+  const _RtdbRequestLookup.found({required this.payload, required this.mirror})
+    : deniedDecision = null;
+
+  const _RtdbRequestLookup.denied(this.deniedDecision)
+    : payload = null,
+      mirror = null;
+
+  final ConnectionRequestPayload? payload;
+  final _RtdbConnectionRequestMirror? mirror;
+  final ConnectionRequestDecision? deniedDecision;
+}
+
 final class _RtdbConnectionRequestPairLock {
   const _RtdbConnectionRequestPairLock({
     required this.requestId,
@@ -808,6 +1298,22 @@ final class _RtdbConnectionRequestPairLock {
   final int expiresAt;
 
   bool isExpiredAt(int now) => now >= expiresAt;
+
+  _RtdbConnectionRequestPairLock copyWith({
+    ConnectionRequestStatus? status,
+    int? updatedAt,
+  }) {
+    return _RtdbConnectionRequestPairLock(
+      requestId: requestId,
+      from: from,
+      to: to,
+      pairKey: pairKey,
+      status: status ?? this.status,
+      createdAt: createdAt,
+      updatedAt: updatedAt ?? this.updatedAt,
+      expiresAt: expiresAt,
+    );
+  }
 
   Map<String, Object?> toJson() {
     return <String, Object?>{
