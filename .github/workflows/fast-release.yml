@@ -1,0 +1,604 @@
+name: Fast Release Apps
+
+on:
+  workflow_dispatch:
+    inputs:
+      target_ref:
+        description: Branch, tag, or SHA to release
+        required: true
+        default: dev
+        type: string
+      platform:
+        description: Platform artifacts to build
+        required: true
+        default: all
+        type: choice
+        options:
+          - all
+          - android
+          - windows
+      build_profile:
+        description: Demo is Spark/free-tier friendly; production requires release secrets
+        required: true
+        default: demo
+        type: choice
+        options:
+          - demo
+          - production
+      prerelease:
+        description: Mark the GitHub release as a pre-release
+        required: true
+        default: true
+        type: boolean
+      release_tag:
+        description: Optional release tag. Blank creates a rain-fast tag.
+        required: false
+        default: ''
+        type: string
+      clean_build:
+        description: Delete Flutter/Gradle project build state before building
+        required: true
+        default: false
+        type: boolean
+      ci_wait_minutes:
+        description: Minutes to wait for CI/CD success on the exact target SHA
+        required: true
+        default: 20
+        type: number
+
+permissions:
+  actions: read
+  contents: write
+
+concurrency:
+  group: fast-release-${{ github.workflow }}-${{ inputs.target_ref }}-${{ inputs.platform }}-${{ inputs.build_profile }}-${{ inputs.release_tag || github.run_number }}
+  cancel-in-progress: false
+
+env:
+  FLUTTER_VERSION: '3.44.0'
+  JAVA_VERSION: '21'
+  ARTIFACT_RETENTION_DAYS: '60'
+  BUILD_PROFILE: ${{ inputs.build_profile }}
+
+jobs:
+  resolve-target:
+    name: Resolve Target
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    outputs:
+      target_sha: ${{ steps.resolve.outputs.target_sha }}
+      short_sha: ${{ steps.resolve.outputs.short_sha }}
+    steps:
+      - uses: actions/checkout@v5
+        with:
+          ref: ${{ inputs.target_ref }}
+          fetch-depth: 0
+
+      - id: resolve
+        name: Capture release target
+        shell: bash
+        run: |
+          set -euo pipefail
+          target_sha="$(git rev-parse HEAD)"
+          {
+            echo "target_sha=${target_sha}"
+            echo "short_sha=${target_sha:0:7}"
+          } >> "${GITHUB_OUTPUT}"
+
+  ci-status-gate:
+    name: Require Existing CI Success
+    runs-on: ubuntu-latest
+    needs:
+      - resolve-target
+    timeout-minutes: 90
+    outputs:
+      ci_run_url: ${{ steps.wait-for-ci.outputs.ci_run_url }}
+    env:
+      GH_TOKEN: ${{ github.token }}
+      TARGET_SHA: ${{ needs.resolve-target.outputs.target_sha }}
+      CI_WAIT_MINUTES: ${{ inputs.ci_wait_minutes }}
+    steps:
+      - id: wait-for-ci
+        name: Wait for CI/CD success on target SHA
+        shell: bash
+        run: |
+          set -euo pipefail
+          if ! [[ "${CI_WAIT_MINUTES}" =~ ^[0-9]+$ ]]; then
+            echo "ci_wait_minutes must be a non-negative integer." >&2
+            exit 1
+          fi
+
+          deadline=$((SECONDS + CI_WAIT_MINUTES * 60))
+          while true; do
+            runs_json="$(gh run list \
+              --repo "${GITHUB_REPOSITORY}" \
+              --workflow ci.yml \
+              --commit "${TARGET_SHA}" \
+              --limit 10 \
+              --json databaseId,status,conclusion,url,createdAt 2>/tmp/rain-fast-release-gh-run-list.err || true)"
+
+            if [ -z "${runs_json}" ]; then
+              runs_json="[]"
+            fi
+
+            run_count="$(jq 'length' <<<"${runs_json}")"
+            if [ "${run_count}" -gt 0 ]; then
+              latest_status="$(jq -r '.[0].status // ""' <<<"${runs_json}")"
+              latest_conclusion="$(jq -r '.[0].conclusion // ""' <<<"${runs_json}")"
+              latest_url="$(jq -r '.[0].url // ""' <<<"${runs_json}")"
+
+              if [ "${latest_status}" = "completed" ] && [ "${latest_conclusion}" = "success" ]; then
+                echo "CI/CD succeeded for ${TARGET_SHA}: ${latest_url}"
+                echo "ci_run_url=${latest_url}" >> "${GITHUB_OUTPUT}"
+                {
+                  echo "## Fast release CI gate"
+                  echo
+                  echo "CI/CD succeeded for target SHA \`${TARGET_SHA}\`."
+                  echo
+                  echo "Run: ${latest_url}"
+                } >> "${GITHUB_STEP_SUMMARY}"
+                exit 0
+              fi
+
+              if [ "${latest_status}" = "completed" ]; then
+                echo "Latest CI/CD run for ${TARGET_SHA} ended with conclusion '${latest_conclusion}': ${latest_url}" >&2
+                exit 1
+              fi
+
+              echo "Latest CI/CD run is '${latest_status}' for ${TARGET_SHA}; waiting: ${latest_url}"
+            else
+              echo "No CI/CD run found yet for ${TARGET_SHA}; waiting."
+              if [ -s /tmp/rain-fast-release-gh-run-list.err ]; then
+                cat /tmp/rain-fast-release-gh-run-list.err >&2
+              fi
+            fi
+
+            if [ "${SECONDS}" -ge "${deadline}" ]; then
+              echo "Timed out waiting for CI/CD success on ${TARGET_SHA}." >&2
+              echo "Push the target ref or run CI/CD for that exact commit, then rerun Fast Release Apps." >&2
+              exit 1
+            fi
+
+            sleep 30
+          done
+
+  prepare-release:
+    name: Prepare Release Page
+    runs-on: ubuntu-latest
+    needs:
+      - resolve-target
+      - ci-status-gate
+    timeout-minutes: 10
+    outputs:
+      release_tag: ${{ steps.prepare.outputs.release_tag }}
+      release_url: ${{ steps.prepare.outputs.release_url }}
+    env:
+      GH_TOKEN: ${{ github.token }}
+      TARGET_SHA: ${{ needs.resolve-target.outputs.target_sha }}
+      SHORT_SHA: ${{ needs.resolve-target.outputs.short_sha }}
+      CI_RUN_URL: ${{ needs.ci-status-gate.outputs.ci_run_url }}
+      RELEASE_TAG_INPUT: ${{ inputs.release_tag }}
+      PRERELEASE: ${{ inputs.prerelease }}
+    steps:
+      - id: prepare
+        name: Create or reuse release shell
+        shell: bash
+        run: |
+          set -euo pipefail
+          if [ -n "${RELEASE_TAG_INPUT}" ]; then
+            tag="${RELEASE_TAG_INPUT}"
+          elif [ "${BUILD_PROFILE}" = "production" ]; then
+            tag="rain-fast-release-${GITHUB_RUN_NUMBER}-${GITHUB_RUN_ATTEMPT}"
+          else
+            tag="rain-fast-${GITHUB_RUN_NUMBER}-${GITHUB_RUN_ATTEMPT}"
+          fi
+
+          title="Rain ${BUILD_PROFILE} fast release ${GITHUB_RUN_NUMBER}.${GITHUB_RUN_ATTEMPT} (${SHORT_SHA})"
+          release_url="https://github.com/${GITHUB_REPOSITORY}/releases/tag/${tag}"
+          prerelease_args=()
+          if [ "${PRERELEASE}" = "true" ]; then
+            prerelease_args+=(--prerelease)
+          fi
+
+          cat > release-notes.md <<NOTES
+          Fast Rain ${BUILD_PROFILE} release from ${TARGET_SHA}.
+
+          This workflow does not drop tests. It requires the existing CI/CD workflow
+          to have succeeded for the exact target SHA before building release apps.
+
+          CI/CD proof:
+          ${CI_RUN_URL}
+
+          Build inputs:
+          - target_ref=${{ inputs.target_ref }}
+          - platform=${{ inputs.platform }}
+          - build_profile=${BUILD_PROFILE}
+          - clean_build=${{ inputs.clean_build }}
+
+          Android and Windows builds run in parallel. Android APK assets are uploaded
+          individually so phones can download them without extracting an archive.
+          NOTES
+
+          if gh release view "${tag}" --repo "${GITHUB_REPOSITORY}" >/dev/null 2>&1; then
+            echo "Release ${tag} already exists; assets will be uploaded with clobber."
+          else
+            gh release create "${tag}" \
+              --repo "${GITHUB_REPOSITORY}" \
+              --target "${TARGET_SHA}" \
+              --title "${title}" \
+              --notes-file release-notes.md \
+              "${prerelease_args[@]}"
+          fi
+
+          {
+            echo "release_tag=${tag}"
+            echo "release_url=${release_url}"
+          } >> "${GITHUB_OUTPUT}"
+
+          {
+            echo "## Fast release page"
+            echo
+            echo "Release: [${tag}](${release_url})"
+          } >> "${GITHUB_STEP_SUMMARY}"
+
+  build-android:
+    name: Build And Publish Android APKs
+    runs-on: windows-2022
+    needs:
+      - resolve-target
+      - prepare-release
+    if: ${{ inputs.platform == 'all' || inputs.platform == 'android' }}
+    timeout-minutes: 100
+    env:
+      CLEAN_BUILD: ${{ inputs.clean_build }}
+      GRADLE_OPTS: "-Dorg.gradle.jvmargs=-Xmx4g -Dorg.gradle.daemon=false -XX:MaxMetaspaceSize=1g -XX:ReservedCodeCacheSize=256m -XX:+HeapDumpOnOutOfMemoryError"
+    steps:
+      - uses: actions/checkout@v5
+        with:
+          ref: ${{ needs.resolve-target.outputs.target_sha }}
+
+      - uses: actions/setup-java@v5
+        with:
+          distribution: temurin
+          java-version: ${{ env.JAVA_VERSION }}
+          cache: gradle
+
+      - uses: subosito/flutter-action@v2
+        with:
+          flutter-version: ${{ env.FLUTTER_VERSION }}
+          channel: stable
+          cache: true
+
+      - name: Cache Pub dependencies
+        uses: actions/cache@v4
+        with:
+          path: ~\AppData\Local\Pub\Cache
+          key: pub-${{ runner.os }}-${{ env.FLUTTER_VERSION }}-${{ hashFiles('pubspec.lock', '**/pubspec.yaml') }}
+          restore-keys: |
+            pub-${{ runner.os }}-${{ env.FLUTTER_VERSION }}-
+
+      - name: Prepare dart defines and signing
+        shell: pwsh
+        env:
+          RAIN_RELEASE_DART_DEFINES_JSON: ${{ secrets.RAIN_RELEASE_DART_DEFINES_JSON }}
+          RAIN_RELEASE_KEYSTORE_BASE64: ${{ secrets.RAIN_RELEASE_KEYSTORE_BASE64 }}
+          RAIN_RELEASE_STORE_PASSWORD: ${{ secrets.RAIN_RELEASE_STORE_PASSWORD }}
+          RAIN_RELEASE_KEY_ALIAS: ${{ secrets.RAIN_RELEASE_KEY_ALIAS }}
+          RAIN_RELEASE_KEY_PASSWORD: ${{ secrets.RAIN_RELEASE_KEY_PASSWORD }}
+        run: |
+          function Set-ConnectionRequestBackendMode([string]$Path) {
+            $defines = Get-Content -Raw -LiteralPath $Path | ConvertFrom-Json -ErrorAction Stop
+            if ($null -eq $defines.PSObject.Properties['CONNECTION_REQUEST_BACKEND_MODE']) {
+              $defines | Add-Member -NotePropertyName 'CONNECTION_REQUEST_BACKEND_MODE' -NotePropertyValue 'rtdbOnly'
+            }
+            $defines | ConvertTo-Json -Depth 20 | Set-Content -LiteralPath $Path -Encoding utf8NoBOM
+            "RAIN_CONNECTION_REQUEST_BACKEND_MODE=$($defines.CONNECTION_REQUEST_BACKEND_MODE)" |
+              Out-File -FilePath $env:GITHUB_ENV -Encoding utf8 -Append
+            Write-Host "Connection request backend mode: $($defines.CONNECTION_REQUEST_BACKEND_MODE)"
+          }
+
+          $definesPath = Join-Path $env:RUNNER_TEMP 'rain-defines.json'
+          if ($env:BUILD_PROFILE -eq 'production') {
+            foreach ($required in @(
+              'RAIN_RELEASE_DART_DEFINES_JSON',
+              'RAIN_RELEASE_KEYSTORE_BASE64',
+              'RAIN_RELEASE_STORE_PASSWORD',
+              'RAIN_RELEASE_KEY_ALIAS',
+              'RAIN_RELEASE_KEY_PASSWORD'
+            )) {
+              if ([string]::IsNullOrWhiteSpace([Environment]::GetEnvironmentVariable($required))) {
+                throw "$required secret is required for production Android builds."
+              }
+            }
+
+            Set-Content -LiteralPath $definesPath -Value $env:RAIN_RELEASE_DART_DEFINES_JSON -Encoding utf8NoBOM
+            $keystorePath = Join-Path $env:RUNNER_TEMP 'rain-release.jks'
+            [IO.File]::WriteAllBytes($keystorePath, [Convert]::FromBase64String($env:RAIN_RELEASE_KEYSTORE_BASE64))
+            "RAIN_RELEASE_STORE_FILE=$keystorePath" | Out-File -FilePath $env:GITHUB_ENV -Encoding utf8 -Append
+            "RAIN_RELEASE_STORE_PASSWORD=$env:RAIN_RELEASE_STORE_PASSWORD" | Out-File -FilePath $env:GITHUB_ENV -Encoding utf8 -Append
+            "RAIN_RELEASE_KEY_ALIAS=$env:RAIN_RELEASE_KEY_ALIAS" | Out-File -FilePath $env:GITHUB_ENV -Encoding utf8 -Append
+            "RAIN_RELEASE_KEY_PASSWORD=$env:RAIN_RELEASE_KEY_PASSWORD" | Out-File -FilePath $env:GITHUB_ENV -Encoding utf8 -Append
+          } else {
+            Copy-Item -LiteralPath 'apps\rain\tool\dart_defines.example.json' -Destination $definesPath -Force
+          }
+          Set-ConnectionRequestBackendMode $definesPath
+          "RAIN_DART_DEFINES_FILE=$definesPath" | Out-File -FilePath $env:GITHUB_ENV -Encoding utf8 -Append
+
+      - name: Build Android APK artifacts
+        shell: pwsh
+        run: |
+          $buildArgs = @(
+            '-NoProfile',
+            '-File',
+            'scripts\build_release.ps1',
+            '-Platform',
+            'android',
+            '-OutputDir',
+            'artifacts',
+            '-DartDefinesFile',
+            $env:RAIN_DART_DEFINES_FILE,
+            '-AndroidArtifactSet',
+            'mobile'
+          )
+          if ($env:BUILD_PROFILE -eq 'demo') {
+            $buildArgs += '-AllowPublicTurnForDemo'
+            $buildArgs += '-UseDemoAndroidSigningKey'
+          }
+          if ($env:CLEAN_BUILD -eq 'true') {
+            $buildArgs += '-Clean'
+          }
+          pwsh @buildArgs
+
+      - name: Verify Android APK ABI set
+        shell: pwsh
+        run: |
+          if ($env:BUILD_PROFILE -eq 'demo') {
+            $expected = @(
+              @{ Label = 'Android ARM v7 APK (armeabi-v7a)'; Path = 'artifacts\Rain-Demo-Android-ARM-v7a-Build.apk' },
+              @{ Label = 'Android ARM v8/v9 APK (arm64-v8a)'; Path = 'artifacts\Rain-Demo-Android-ARM-v8-v9-Build.apk' }
+            )
+          } else {
+            $expected = @(
+              @{ Label = 'Android ARM v7 APK (armeabi-v7a)'; Path = 'artifacts\Rain-release-android-armeabi-v7a.apk' },
+              @{ Label = 'Android ARM v8/v9 APK (arm64-v8a)'; Path = 'artifacts\Rain-release-android-arm64-v8a.apk' }
+            )
+          }
+          foreach ($artifact in $expected) {
+            if (-not (Test-Path -LiteralPath $artifact.Path)) {
+              throw "Missing expected artifact for $($artifact.Label): $($artifact.Path)"
+            }
+            Write-Host "Verified $($artifact.Label): $($artifact.Path)"
+          }
+
+          Add-Type -AssemblyName System.IO.Compression -ErrorAction SilentlyContinue
+          Add-Type -AssemblyName System.IO.Compression.FileSystem -ErrorAction SilentlyContinue
+          function Assert-ApkEntry([string]$Path, [string]$Entry) {
+            $archive = [System.IO.Compression.ZipFile]::OpenRead($Path)
+            try {
+              $entryNames = @($archive.Entries | ForEach-Object { $_.FullName })
+              if ($entryNames -notcontains $Entry) {
+                throw "APK is missing required native runtime entry: $Path -> $Entry"
+              }
+            } finally {
+              $archive.Dispose()
+            }
+            Write-Host "Verified APK native runtime entry: $Path -> $Entry"
+          }
+          if ($env:BUILD_PROFILE -eq 'demo') {
+            Assert-ApkEntry 'artifacts\Rain-Demo-Android-ARM-v7a-Build.apk' 'lib/armeabi-v7a/libsqlite3.so'
+            Assert-ApkEntry 'artifacts\Rain-Demo-Android-ARM-v7a-Build.apk' 'lib/armeabi-v7a/libjingle_peerconnection_so.so'
+            Assert-ApkEntry 'artifacts\Rain-Demo-Android-ARM-v8-v9-Build.apk' 'lib/arm64-v8a/libsqlite3.so'
+            Assert-ApkEntry 'artifacts\Rain-Demo-Android-ARM-v8-v9-Build.apk' 'lib/arm64-v8a/libjingle_peerconnection_so.so'
+          } else {
+            Assert-ApkEntry 'artifacts\Rain-release-android-armeabi-v7a.apk' 'lib/armeabi-v7a/libsqlite3.so'
+            Assert-ApkEntry 'artifacts\Rain-release-android-armeabi-v7a.apk' 'lib/armeabi-v7a/libjingle_peerconnection_so.so'
+            Assert-ApkEntry 'artifacts\Rain-release-android-arm64-v8a.apk' 'lib/arm64-v8a/libsqlite3.so'
+            Assert-ApkEntry 'artifacts\Rain-release-android-arm64-v8a.apk' 'lib/arm64-v8a/libjingle_peerconnection_so.so'
+          }
+
+      - name: Prepare direct Android release assets
+        shell: pwsh
+        run: |
+          New-Item -ItemType Directory -Force -Path 'artifacts\publish' | Out-Null
+          if ($env:BUILD_PROFILE -eq 'demo') {
+            Copy-Item -LiteralPath 'artifacts\Rain-Demo-Android-ARM-v7a-Build.apk' -Destination 'artifacts\publish\Rain-Demo-Android-v7a.apk' -Force
+            Copy-Item -LiteralPath 'artifacts\Rain-Demo-Android-ARM-v8-v9-Build.apk' -Destination 'artifacts\publish\Rain-Demo-Android-v8-v9.apk' -Force
+          } else {
+            Copy-Item -LiteralPath 'artifacts\Rain-release-android-armeabi-v7a.apk' -Destination 'artifacts\publish\Rain-Release-Android-v7a.apk' -Force
+            Copy-Item -LiteralPath 'artifacts\Rain-release-android-arm64-v8a.apk' -Destination 'artifacts\publish\Rain-Release-Android-v8-v9.apk' -Force
+          }
+
+      - name: Upload Android APK artifacts
+        uses: actions/upload-artifact@v7
+        with:
+          name: ${{ env.BUILD_PROFILE == 'demo' && 'Rain-Demo-Android-Fast-Release' || 'Rain-Release-Android-Fast-Release' }}
+          path: artifacts/publish/*.apk
+          if-no-files-found: error
+          retention-days: ${{ env.ARTIFACT_RETENTION_DAYS }}
+
+      - name: Publish Android APKs to release page
+        uses: softprops/action-gh-release@v2
+        with:
+          tag_name: ${{ needs.prepare-release.outputs.release_tag }}
+          files: artifacts/publish/*.apk
+          fail_on_unmatched_files: true
+        env:
+          GITHUB_TOKEN: ${{ github.token }}
+
+  build-windows:
+    name: Build And Publish Windows App
+    runs-on: windows-2022
+    needs:
+      - resolve-target
+      - prepare-release
+    if: ${{ inputs.platform == 'all' || inputs.platform == 'windows' }}
+    timeout-minutes: 75
+    env:
+      CLEAN_BUILD: ${{ inputs.clean_build }}
+    steps:
+      - uses: actions/checkout@v5
+        with:
+          ref: ${{ needs.resolve-target.outputs.target_sha }}
+
+      - uses: subosito/flutter-action@v2
+        with:
+          flutter-version: ${{ env.FLUTTER_VERSION }}
+          channel: stable
+          cache: true
+
+      - name: Cache Pub dependencies
+        uses: actions/cache@v4
+        with:
+          path: ~\AppData\Local\Pub\Cache
+          key: pub-${{ runner.os }}-${{ env.FLUTTER_VERSION }}-${{ hashFiles('pubspec.lock', '**/pubspec.yaml') }}
+          restore-keys: |
+            pub-${{ runner.os }}-${{ env.FLUTTER_VERSION }}-
+
+      - name: Prepare dart defines
+        shell: pwsh
+        env:
+          RAIN_RELEASE_DART_DEFINES_JSON: ${{ secrets.RAIN_RELEASE_DART_DEFINES_JSON }}
+        run: |
+          function Set-ConnectionRequestBackendMode([string]$Path) {
+            $defines = Get-Content -Raw -LiteralPath $Path | ConvertFrom-Json -ErrorAction Stop
+            if ($null -eq $defines.PSObject.Properties['CONNECTION_REQUEST_BACKEND_MODE']) {
+              $defines | Add-Member -NotePropertyName 'CONNECTION_REQUEST_BACKEND_MODE' -NotePropertyValue 'rtdbOnly'
+            }
+            $defines | ConvertTo-Json -Depth 20 | Set-Content -LiteralPath $Path -Encoding utf8NoBOM
+            "RAIN_CONNECTION_REQUEST_BACKEND_MODE=$($defines.CONNECTION_REQUEST_BACKEND_MODE)" |
+              Out-File -FilePath $env:GITHUB_ENV -Encoding utf8 -Append
+            Write-Host "Connection request backend mode: $($defines.CONNECTION_REQUEST_BACKEND_MODE)"
+          }
+
+          $definesPath = Join-Path $env:RUNNER_TEMP 'rain-defines.json'
+          if ($env:BUILD_PROFILE -eq 'production') {
+            if ([string]::IsNullOrWhiteSpace($env:RAIN_RELEASE_DART_DEFINES_JSON)) {
+              throw "RAIN_RELEASE_DART_DEFINES_JSON secret is required for production builds."
+            }
+            Set-Content -LiteralPath $definesPath -Value $env:RAIN_RELEASE_DART_DEFINES_JSON -Encoding utf8NoBOM
+          } else {
+            Copy-Item -LiteralPath 'apps\rain\tool\dart_defines.example.json' -Destination $definesPath -Force
+          }
+          Set-ConnectionRequestBackendMode $definesPath
+          "RAIN_DART_DEFINES_FILE=$definesPath" | Out-File -FilePath $env:GITHUB_ENV -Encoding utf8 -Append
+
+      - name: Build Windows artifact
+        shell: pwsh
+        run: |
+          $buildArgs = @(
+            '-NoProfile',
+            '-File',
+            'scripts\build_release.ps1',
+            '-Platform',
+            'windows',
+            '-OutputDir',
+            'artifacts',
+            '-DartDefinesFile',
+            $env:RAIN_DART_DEFINES_FILE
+          )
+          if ($env:BUILD_PROFILE -eq 'demo') {
+            $buildArgs += '-AllowPublicTurnForDemo'
+          }
+          if ($env:CLEAN_BUILD -eq 'true') {
+            $buildArgs += '-Clean'
+          }
+          pwsh @buildArgs
+
+      - name: Verify Windows runtime bundle
+        shell: pwsh
+        run: |
+          $portableDir = if ($env:BUILD_PROFILE -eq 'demo') {
+            'artifacts\Rain-Demo-Windows-x64-Build'
+          } else {
+            'artifacts\Rain-windows-portable'
+          }
+          foreach ($fileName in @(
+            'rain.exe',
+            'flutter_windows.dll',
+            'flutter_webrtc_plugin.dll',
+            'libwebrtc.dll',
+            'sqlite3.dll',
+            'win32_windows_x64.dll',
+            'data'
+          )) {
+            $path = Join-Path $portableDir $fileName
+            if (-not (Test-Path -LiteralPath $path)) {
+              throw "Missing Windows runtime entry before upload: $path"
+            }
+            Write-Host "Verified Windows runtime entry: $path"
+          }
+
+      - name: Prepare direct Windows release asset
+        shell: pwsh
+        run: |
+          New-Item -ItemType Directory -Force -Path 'artifacts\publish' | Out-Null
+          if ($env:BUILD_PROFILE -eq 'demo') {
+            Copy-Item -LiteralPath 'artifacts\Rain-Demo-Windows-x64-Build.zip' -Destination 'artifacts\publish\Rain-Demo-Windows-x64.zip' -Force
+          } else {
+            Copy-Item -LiteralPath 'artifacts\Rain-windows-portable.zip' -Destination 'artifacts\publish\Rain-Release-Windows-x64.zip' -Force
+          }
+
+      - name: Upload Windows artifact
+        uses: actions/upload-artifact@v7
+        with:
+          name: ${{ env.BUILD_PROFILE == 'demo' && 'Rain-Demo-Windows-Fast-Release' || 'Rain-Release-Windows-Fast-Release' }}
+          path: artifacts/publish/*.zip
+          if-no-files-found: error
+          retention-days: ${{ env.ARTIFACT_RETENTION_DAYS }}
+
+      - name: Publish Windows app to release page
+        uses: softprops/action-gh-release@v2
+        with:
+          tag_name: ${{ needs.prepare-release.outputs.release_tag }}
+          files: artifacts/publish/*.zip
+          fail_on_unmatched_files: true
+        env:
+          GITHUB_TOKEN: ${{ github.token }}
+
+  required-checks:
+    name: Required Checks
+    runs-on: ubuntu-latest
+    if: always()
+    needs:
+      - ci-status-gate
+      - prepare-release
+      - build-android
+      - build-windows
+    steps:
+      - name: Fail if requested release jobs failed
+        shell: bash
+        run: |
+          set -euo pipefail
+          echo "ci-status-gate: ${{ needs.ci-status-gate.result }}"
+          echo "prepare-release: ${{ needs.prepare-release.result }}"
+          echo "build-android: ${{ needs.build-android.result }}"
+          echo "build-windows: ${{ needs.build-windows.result }}"
+          test "${{ needs.ci-status-gate.result }}" = "success"
+          test "${{ needs.prepare-release.result }}" = "success"
+          case "${{ inputs.platform }}" in
+            all)
+              test "${{ needs.build-android.result }}" = "success"
+              test "${{ needs.build-windows.result }}" = "success"
+              ;;
+            android)
+              test "${{ needs.build-android.result }}" = "success"
+              test "${{ needs.build-windows.result }}" = "skipped"
+              ;;
+            windows)
+              test "${{ needs.build-android.result }}" = "skipped"
+              test "${{ needs.build-windows.result }}" = "success"
+              ;;
+            *)
+              echo "Unsupported platform input: ${{ inputs.platform }}" >&2
+              exit 1
+              ;;
+          esac
+
+      - name: Print release page
+        shell: bash
+        run: |
+          {
+            echo "## Fast release complete"
+            echo
+            echo "Release: [${{ needs.prepare-release.outputs.release_tag }}](${{ needs.prepare-release.outputs.release_url }})"
+          } >> "${GITHUB_STEP_SUMMARY}"

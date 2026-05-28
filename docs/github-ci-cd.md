@@ -1,10 +1,14 @@
 # Rain GitHub CI/CD
 
-Rain uses three GitHub Actions workflow layers:
+Rain uses these GitHub Actions workflow layers:
 
 - `CI`: runs workflow lint, dependency lock drift checks, analyze, tests,
   Firebase emulator integration tests, and debug/demo artifact checks on pushes
   and pull requests.
+- `Fast Release Apps`: manually publishes Android and/or Windows release-page
+  assets after confirming the exact target SHA has already passed `CI/CD`.
+  Android and Windows build in parallel, and each platform uploads as soon as it
+  finishes.
 - `Validated Release Apps`: manually validates the selected ref, builds Android
   and Windows release artifacts only after validation succeeds, and uploads the
   final assets to a GitHub release page.
@@ -89,6 +93,49 @@ the release page and download:
 
 The workflow summary also prints direct links to each generated asset. Old
 `rain-test-*` pre-releases are pruned automatically after the latest ten builds.
+
+## Fast Release Apps
+
+Use **Actions -> Fast Release Apps -> Run workflow** when the target commit has
+already passed `CI/CD` and you want the release-page apps faster.
+
+This workflow does not remove validation. It waits for the newest `CI/CD` run
+for the exact target SHA to complete successfully. If that SHA has no successful
+`CI/CD` run, the fast release stops before building.
+
+Inputs:
+
+- `target_ref`: branch, tag, or SHA to release. Default: `dev`.
+- `platform`: `all`, `android`, or `windows`.
+- `build_profile`: `demo` or `production`.
+- `prerelease`: marks the release page as a pre-release.
+- `release_tag`: optional tag. If blank, the workflow creates a `rain-fast-*`
+  tag for demo builds or a `rain-fast-release-*` tag for production builds.
+- `clean_build`: when enabled, deletes Flutter/Gradle project build state before
+  building. Keep it disabled for normal fast builds; enable it only when
+  investigating stale build state or native/dependency changes.
+- `ci_wait_minutes`: how long to wait for `CI/CD` success on the exact SHA.
+
+Fast release behavior:
+
+- Creates the GitHub release page once after the CI gate passes.
+- Builds Android APKs and Windows portable zip in parallel.
+- Uploads Android APKs to the release page as soon as Android finishes; it does
+  not wait for Windows.
+- Uploads Windows zip as soon as Windows finishes.
+- Keeps direct phone-download APK names:
+  - `Rain-Demo-Android-v7a.apk` or `Rain-Release-Android-v7a.apk`
+  - `Rain-Demo-Android-v8-v9.apk` or `Rain-Release-Android-v8-v9.apk`
+  - `Rain-Demo-Windows-x64.zip` or `Rain-Release-Windows-x64.zip`
+
+Recommended fast testing flow:
+
+1. Push `dev`.
+2. Wait for `CI/CD` to pass on that commit.
+3. Run `Fast Release Apps` with `platform=android` for phone-only testing, or
+   `platform=all` when you also need Windows.
+4. Leave `clean_build=false` unless the artifact looks stale or native build
+   inputs changed.
 
 ## Validated Release Apps
 
