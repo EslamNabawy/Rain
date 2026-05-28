@@ -133,6 +133,7 @@ void main() {
       () {
         for (final path in <String>[
           'connectionNotificationAudit',
+          'connectionNotificationAuditSummary',
           'connectionNotificationConfig',
         ]) {
           final node = _node(rules, [path]);
@@ -155,6 +156,7 @@ void main() {
         'connectionNotificationTargetUsage/<from>/<to>/<yyyyMMddUtc>',
         'connectionNotificationMutes/<receiver>/<sender>',
         'connectionNotificationAudit/<yyyyMMddUtc>/<eventId>',
+        'connectionNotificationAuditSummary/<yyyyMMddUtc>',
         'connectionNotificationReservations/<requestId>',
       ]) {
         expect(readme, contains(path), reason: path);

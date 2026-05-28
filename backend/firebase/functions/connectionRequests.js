@@ -1,6 +1,7 @@
 "use strict";
 
 const admin = require("firebase-admin");
+const logger = require("firebase-functions/logger");
 const { onCall } = require("firebase-functions/v2/https");
 
 const guardrails = require("./connectionRequestGuardrails");
@@ -167,14 +168,14 @@ async function createConnectionRequestCore(data, request, deps = {}) {
   try {
     const protection = await evaluateReceiverProtections(root, prepared);
     if (!protection.allowed) {
-      return protection.response;
+      return auditPreparedResponse(root, deps, prepared, protection.response);
     }
 
     const requestId = createRequestId(prepared, deps);
     const expiresAt = prepared.now + protection.config.requestTtlMs;
     const pairClaim = await claimPairLock(root, prepared, requestId, expiresAt);
     if (!pairClaim.allowed) {
-      return pairClaim.response;
+      return auditPreparedResponse(root, deps, prepared, pairClaim.response);
     }
 
     const inboxCap = await evaluateReceiverPendingCap(
@@ -184,7 +185,10 @@ async function createConnectionRequestCore(data, request, deps = {}) {
     );
     if (!inboxCap.allowed) {
       await rollbackPairLock(root, prepared.pairKey, requestId);
-      return inboxCap.response;
+      return auditPreparedResponse(root, deps, prepared, inboxCap.response, {
+        eventName: "rollback",
+        rollbackPairLock: true,
+      });
     }
 
     const quota = await reserveSenderQuota(
@@ -196,7 +200,10 @@ async function createConnectionRequestCore(data, request, deps = {}) {
     );
     if (!quota.allowed) {
       await rollbackPairLock(root, prepared.pairKey, requestId);
-      return quota.response;
+      return auditPreparedResponse(root, deps, prepared, quota.response, {
+        eventName: "rollback",
+        rollbackPairLock: true,
+      });
     }
 
     const payload = buildConnectionRequestPayload({
@@ -222,17 +229,21 @@ async function createConnectionRequestCore(data, request, deps = {}) {
     } catch (error) {
       await rollbackPairLock(root, prepared.pairKey, requestId);
       await releaseSenderQuota(prepared, requestId, deps);
-      return denyPrepared(prepared, "backendUnavailable", {
+      return auditPreparedResponse(root, deps, prepared, denyPrepared(prepared, "backendUnavailable", {
         requestId,
         diagnostics: {
           error: guardrails.sanitizeError(error),
           rollbackPairLock: true,
           rollbackQuota: true,
         },
+      }), {
+        eventName: "rollback",
+        rollbackPairLock: true,
+        rollbackQuota: true,
       });
     }
 
-    return guardrails.allowedResponse({
+    return auditPreparedResponse(root, deps, prepared, guardrails.allowedResponse({
       requestId,
       status: "pending",
       userMessage: `Connection request sent to @${prepared.peer}.`,
@@ -245,13 +256,13 @@ async function createConnectionRequestCore(data, request, deps = {}) {
         pairLockClaimed: true,
         quotaFinalized: true,
       }),
-    });
+    }), { eventName: "allowed" });
   } catch (error) {
-    return denyPrepared(prepared, "backendUnavailable", {
+    return auditPreparedResponse(root, deps, prepared, denyPrepared(prepared, "backendUnavailable", {
       diagnostics: {
         error: guardrails.sanitizeError(error),
       },
-    });
+    }));
   }
 }
 
@@ -302,56 +313,56 @@ async function markConnectionRequestSeenCore(data, request, deps = {}) {
   try {
     const loaded = await loadRequestForActor(root, prepared, "receiver");
     if (!loaded.ok) {
-      return loaded.response;
+      return auditPreparedResponse(root, deps, prepared, loaded.response);
     }
     const record = loaded.record;
     if (isExpiredRequest(record, prepared.now)) {
       await expireRequest(root, record, prepared.now);
-      return requestDeniedFromRecord(
+      return auditPreparedResponse(root, deps, prepared, requestDeniedFromRecord(
         prepared,
         record,
         "expired",
         "expired",
-      );
+      ), { eventName: "terminal" });
     }
     if (guardrails.isTerminalRequestStatus(record.status)) {
-      return requestDeniedFromRecord(
+      return auditPreparedResponse(root, deps, prepared, requestDeniedFromRecord(
         prepared,
         record,
         "terminalRaceLost",
         record.status,
-      );
+      ), { eventName: "terminal" });
     }
     if (record.status === "seen") {
-      return requestAllowedFromRecord(
+      return auditPreparedResponse(root, deps, prepared, requestAllowedFromRecord(
         prepared,
         record,
         "seen",
         "Connection request already seen.",
-      );
+      ));
     }
 
     const pairClaim = await markPairLockSeen(root, record, prepared.now);
     if (!pairClaim.allowed) {
-      return requestDeniedFromRecord(
+      return auditPreparedResponse(root, deps, prepared, requestDeniedFromRecord(
         prepared,
         record,
         "terminalRaceLost",
         pairClaim.status,
-      );
+      ), { eventName: "deduped" });
     }
 
     await writeMirrorStatus(root, record, "seen", prepared.now, {
       seenAt: prepared.now,
     });
-    return requestAllowedFromRecord(
+    return auditPreparedResponse(root, deps, prepared, requestAllowedFromRecord(
       prepared,
       { ...record, status: "seen" },
       "seen",
       "Connection request marked seen.",
-    );
+    ));
   } catch (error) {
-    return guardrails.denied("backendUnavailable", {
+    return auditPreparedResponse(root, deps, prepared, guardrails.denied("backendUnavailable", {
       requestId: prepared.requestId,
       diagnostics: {
         action: prepared.action,
@@ -360,7 +371,7 @@ async function markConnectionRequestSeenCore(data, request, deps = {}) {
         requestId: prepared.requestId,
         error: guardrails.sanitizeError(error),
       },
-    });
+    }));
   }
 }
 
@@ -374,7 +385,7 @@ async function muteConnectionRequestsFromPeerCore(data, request, deps = {}) {
   if (!prepared.ok) {
     return prepared.response;
   }
-  return foundationNotReady(prepared);
+  return auditPreparedResponse(rootFromDeps(deps), deps, prepared, foundationNotReady(prepared));
 }
 
 async function unmuteConnectionRequestsFromPeerCore(data, request, deps = {}) {
@@ -387,7 +398,7 @@ async function unmuteConnectionRequestsFromPeerCore(data, request, deps = {}) {
   if (!prepared.ok) {
     return prepared.response;
   }
-  return foundationNotReady(prepared);
+  return auditPreparedResponse(rootFromDeps(deps), deps, prepared, foundationNotReady(prepared));
 }
 
 async function getConnectionRequestQuotaSummaryCore(_data, request, deps = {}) {
@@ -483,25 +494,25 @@ async function terminalRequestAction(
   try {
     const loaded = await loadRequestForActor(root, prepared, actorRole);
     if (!loaded.ok) {
-      return loaded.response;
+      return auditPreparedResponse(root, deps, prepared, loaded.response);
     }
     const record = loaded.record;
     if (isExpiredRequest(record, prepared.now)) {
       await expireRequest(root, record, prepared.now);
-      return requestDeniedFromRecord(
+      return auditPreparedResponse(root, deps, prepared, requestDeniedFromRecord(
         prepared,
         record,
         "expired",
         "expired",
-      );
+      ), { eventName: "terminal" });
     }
     if (guardrails.isTerminalRequestStatus(record.status)) {
-      return requestDeniedFromRecord(
+      return auditPreparedResponse(root, deps, prepared, requestDeniedFromRecord(
         prepared,
         record,
         "terminalRaceLost",
         record.status,
-      );
+      ), { eventName: "terminal" });
     }
 
     const claim = await claimTerminalPairLock(
@@ -511,12 +522,12 @@ async function terminalRequestAction(
       prepared.now,
     );
     if (!claim.allowed) {
-      return requestDeniedFromRecord(
+      return auditPreparedResponse(root, deps, prepared, requestDeniedFromRecord(
         prepared,
         record,
         "terminalRaceLost",
         claim.status,
-      );
+      ), { eventName: "terminal" });
     }
 
     await writeMirrorStatus(root, record, terminalStatus, prepared.now, {
@@ -525,14 +536,14 @@ async function terminalRequestAction(
       handledBy: prepared.sender,
     });
     await clearPairLockIfCurrent(root, record.pairKey, record.requestId);
-    return requestAllowedFromRecord(
+    return auditPreparedResponse(root, deps, prepared, requestAllowedFromRecord(
       prepared,
       { ...record, status: terminalStatus },
       terminalStatus,
       terminalMessage(terminalStatus),
-    );
+    ), { eventName: "terminal" });
   } catch (error) {
-    return guardrails.denied("backendUnavailable", {
+    return auditPreparedResponse(root, deps, prepared, guardrails.denied("backendUnavailable", {
       requestId: prepared.requestId,
       diagnostics: {
         action: prepared.action,
@@ -541,7 +552,7 @@ async function terminalRequestAction(
         requestId: prepared.requestId,
         error: guardrails.sanitizeError(error),
       },
-    });
+    }));
   }
 }
 
@@ -1768,6 +1779,208 @@ async function rollbackPairLock(root, pairKey, requestId) {
     undefined,
     false,
   );
+}
+
+async function auditPreparedResponse(
+  root,
+  deps,
+  prepared,
+  response,
+  options = {},
+) {
+  await recordConnectionRequestAudit(root, deps, prepared, response, options);
+  return response;
+}
+
+async function recordConnectionRequestAudit(
+  root,
+  deps,
+  prepared,
+  response,
+  options,
+) {
+  try {
+    const eventName =
+      options.eventName || auditEventNameForResponse(prepared, response);
+    const dayKey = guardrails.utcDayKey(prepared.now);
+    const requestId = response.requestId || prepared.requestId || null;
+    const eventId = auditEventId(prepared, response, eventName);
+    const event = {
+      eventName,
+      createdAt: prepared.now,
+      action: prepared.action,
+      requestId,
+      sender: prepared.sender,
+      peer: prepared.peer || response.peerId || null,
+      pairKey: prepared.pairKey || null,
+      allowed: response.allowed === true,
+      status: response.status || null,
+      reasonCode: response.reasonCode || null,
+      userMessageKey: connectionRequestMessageKey(response),
+      renderedMessage: response.userMessage || "",
+      retryAfterMs: response.retryAfterMs || null,
+      costEffect: costEffectForAudit(prepared, response, eventName),
+      rollbackPairLock: options.rollbackPairLock === true,
+      rollbackQuota: options.rollbackQuota === true,
+    };
+    await root.update({
+      [`connectionNotificationAudit/${dayKey}/${eventId}`]: event,
+    });
+    await updateConnectionNotificationAuditSummary(
+      root,
+      deps,
+      prepared.now,
+      event,
+    );
+  } catch (error) {
+    loggerFromDeps(deps).warn("Connection request audit write failed.", {
+      action: prepared.action,
+      sender: prepared.sender,
+      peer: prepared.peer,
+      requestId: response.requestId || prepared.requestId || null,
+      error: guardrails.sanitizeError(error),
+    });
+  }
+}
+
+async function updateConnectionNotificationAuditSummary(root, deps, now, event) {
+  const dayKey = guardrails.utcDayKey(now);
+  const result = await root
+    .child(`connectionNotificationAuditSummary/${dayKey}`)
+    .transaction(
+      (current) => {
+        const summary = normalizeAuditSummary(current);
+        if (!Number.isFinite(Number(summary.createdAt))) {
+          summary.createdAt = now;
+        }
+        summary.updatedAt = now;
+        summary.totalCount += 1;
+        if (event.allowed) {
+          summary.allowedCount += 1;
+        } else {
+          summary.deniedCount += 1;
+        }
+        if (event.status === "pending" && event.allowed) {
+          summary.createdCount += 1;
+        }
+        if (event.eventName === "deduped") {
+          summary.dedupedCount += 1;
+        }
+        if (event.eventName === "terminal") {
+          summary.terminalCount += 1;
+        }
+        if (event.eventName === "rollback") {
+          summary.rollbackCount += 1;
+        }
+        summary.lastEventName = event.eventName;
+        summary.lastReasonCode = event.reasonCode;
+        return summary;
+      },
+      undefined,
+      false,
+    );
+  const summary =
+    result && result.snapshot && typeof result.snapshot.val === "function"
+      ? result.snapshot.val()
+      : null;
+  warnIfDeniedCreatedRatioSpikes(deps, dayKey, summary);
+}
+
+function normalizeAuditSummary(value) {
+  const source = value && typeof value === "object" ? value : {};
+  return {
+    createdAt: Number.isFinite(Number(source.createdAt))
+      ? Number(source.createdAt)
+      : null,
+    updatedAt: Number.isFinite(Number(source.updatedAt))
+      ? Number(source.updatedAt)
+      : null,
+    totalCount: positiveIntegerOrDefault(source.totalCount, 0),
+    allowedCount: positiveIntegerOrDefault(source.allowedCount, 0),
+    deniedCount: positiveIntegerOrDefault(source.deniedCount, 0),
+    createdCount: positiveIntegerOrDefault(source.createdCount, 0),
+    dedupedCount: positiveIntegerOrDefault(source.dedupedCount, 0),
+    terminalCount: positiveIntegerOrDefault(source.terminalCount, 0),
+    rollbackCount: positiveIntegerOrDefault(source.rollbackCount, 0),
+    lastEventName:
+      typeof source.lastEventName === "string" ? source.lastEventName : null,
+    lastReasonCode:
+      typeof source.lastReasonCode === "string" ? source.lastReasonCode : null,
+  };
+}
+
+function warnIfDeniedCreatedRatioSpikes(deps, dayKey, summary) {
+  if (!summary || typeof summary !== "object") {
+    return;
+  }
+  const deniedCount = positiveIntegerOrDefault(summary.deniedCount, 0);
+  const createdCount = positiveIntegerOrDefault(summary.createdCount, 0);
+  if (deniedCount < 10 || deniedCount < Math.max(1, createdCount) * 3) {
+    return;
+  }
+  loggerFromDeps(deps).warn("Connection request denial ratio is elevated.", {
+    dayKey,
+    deniedCount,
+    createdCount,
+    ratio: deniedCount / Math.max(1, createdCount),
+  });
+}
+
+function auditEventNameForResponse(prepared, response) {
+  if (response.reasonCode === "duplicatePendingRequest") {
+    return "deduped";
+  }
+  if (guardrails.isTerminalRequestStatus(response.status)) {
+    return "terminal";
+  }
+  if (response.allowed === true) {
+    return "allowed";
+  }
+  return "denied";
+}
+
+function auditEventId(prepared, response, eventName) {
+  const requestId = response.requestId || prepared.requestId || "none";
+  return sanitizeAuditKey(
+    `connection_request_${prepared.now}_${eventName}_${prepared.action}_${requestId}`,
+  );
+}
+
+function sanitizeAuditKey(value) {
+  return String(value || "unknown").replace(/[^A-Za-z0-9_-]/g, "_");
+}
+
+function connectionRequestMessageKey(response) {
+  if (response.reasonCode) {
+    return `connectionRequest.reason.${response.reasonCode}`;
+  }
+  if (response.status) {
+    return `connectionRequest.status.${response.status}`;
+  }
+  return response.allowed === true
+    ? "connectionRequest.allowed"
+    : "connectionRequest.denied";
+}
+
+function costEffectForAudit(prepared, response, eventName) {
+  if (eventName === "rollback") {
+    return "rolled_back";
+  }
+  if (
+    prepared.action === actionTypes.createConnectionRequest &&
+    response.allowed === true &&
+    response.status === "pending"
+  ) {
+    return "quota_spent";
+  }
+  if (eventName === "deduped") {
+    return "no_quota_duplicate";
+  }
+  return "no_quota_change";
+}
+
+function loggerFromDeps(deps) {
+  return (deps && deps.logger) || logger;
 }
 
 async function readValue(root, path) {

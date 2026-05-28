@@ -518,6 +518,14 @@ class CrashDiagnosticsService {
       return null;
     }
     final context = _stringMap(record['context']);
+    if (_isConnectionRequestNoisyEvent(category, name)) {
+      final requestId = context['requestId']?.toString() ?? '';
+      final peerId = context['peerId']?.toString() ?? '';
+      final reasonCode = context['reasonCode']?.toString() ?? '';
+      final notificationResult =
+          context['notificationResult']?.toString() ?? '';
+      return '$category:$name:$requestId:$peerId:$reasonCode:$notificationResult';
+    }
     if (_isVoiceLockEvent(category, name)) {
       final peerId = context['peerId']?.toString() ?? '';
       final callId = context['callId']?.toString() ?? '';
@@ -567,7 +575,19 @@ class CrashDiagnosticsService {
           name == 'video_renderer_state' ||
           name == 'media_processing_config_refreshed';
     }
+    if (category == 'connection_request') {
+      return _isConnectionRequestNoisyEvent(category, name);
+    }
     return false;
+  }
+
+  bool _isConnectionRequestNoisyEvent(String category, String name) {
+    if (category != 'connection_request') {
+      return false;
+    }
+    return name == 'connection_request_notification_shown' ||
+        name == 'connection_request_notification_skipped' ||
+        name == 'connection_request_notification_dismissed';
   }
 
   void _installLifecycleFlush() {

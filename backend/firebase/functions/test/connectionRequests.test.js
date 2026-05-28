@@ -160,6 +160,37 @@ test("create writes server-owned request and outbox payloads", async () => {
   assert.equal(lock.requestId, "request-01");
 });
 
+test("create audits allowed decision and daily cost summary", async () => {
+  const root = fakeRoot();
+  const response = await connectionRequests.__test.createConnectionRequestCore(
+    { peer: "bob" },
+    authRequest(),
+    {
+      root,
+      clock: () => 4242,
+      requestIdFactory: () => "audit-created",
+    },
+  );
+
+  assertResponseShape(response);
+  assert.equal(response.allowed, true);
+  const audit = getPath(
+    root.state,
+    "connectionNotificationAudit/19700101/connection_request_4242_allowed_createConnectionRequest_audit-created",
+  );
+  assert.equal(audit.eventName, "allowed");
+  assert.equal(audit.requestId, "audit-created");
+  assert.equal(audit.reasonCode, null);
+  assert.equal(audit.userMessageKey, "connectionRequest.status.pending");
+  assert.equal(audit.renderedMessage, "Connection request sent to @bob.");
+  assert.equal(audit.costEffect, "quota_spent");
+
+  const summary = getPath(root.state, "connectionNotificationAuditSummary/19700101");
+  assert.equal(summary.createdCount, 1);
+  assert.equal(summary.allowedCount, 1);
+  assert.equal(summary.deniedCount, 0);
+});
+
 test("all action shells return the standard response shape", async () => {
   const deps = {
     root: fakeRoot(),
@@ -255,6 +286,46 @@ test("duplicate live pair lock returns existing open request", async () => {
     assert.equal(quotaCalls, 0);
     assert.equal(getPath(root.state, `connectionRequests/bob/new-${status}`), undefined);
   }
+});
+
+test("duplicate live pair lock audits dedupe without quota spend", async () => {
+  const root = fakeRoot({
+    state: {
+      connectionRequestPairLocks: {
+        "alice:bob": {
+          requestId: "existing-pending",
+          from: "alice",
+          to: "bob",
+          status: "pending",
+          expiresAt: 20_000,
+        },
+      },
+    },
+  });
+
+  const response = await connectionRequests.__test.createConnectionRequestCore(
+    { peer: "bob" },
+    authRequest(),
+    {
+      root,
+      clock: () => 10_000,
+      requestIdFactory: () => "dedupe-new",
+    },
+  );
+
+  assertResponseShape(response);
+  assert.equal(response.allowed, false);
+  assert.equal(response.reasonCode, "duplicatePendingRequest");
+  const audit = getPath(
+    root.state,
+    "connectionNotificationAudit/19700101/connection_request_10000_deduped_createConnectionRequest_existing-pending",
+  );
+  assert.equal(audit.eventName, "deduped");
+  assert.equal(audit.costEffect, "no_quota_duplicate");
+  const summary = getPath(root.state, "connectionNotificationAuditSummary/19700101");
+  assert.equal(summary.dedupedCount, 1);
+  assert.equal(summary.deniedCount, 1);
+  assert.equal(summary.createdCount, 0);
 });
 
 test("expired and terminal pair locks can be replaced", async () => {
@@ -418,6 +489,42 @@ test("quota reservation failure rolls back pair lock and writes no rows", async 
   assert.equal(getPath(root.state, "connectionRequestPairLocks/alice:bob"), undefined);
 });
 
+test("quota rollback is audited with exact reason and summary", async () => {
+  const root = fakeRoot();
+  const response = await connectionRequests.__test.createConnectionRequestCore(
+    { peer: "bob" },
+    authRequest(),
+    {
+      root,
+      clock: () => 10_000,
+      requestIdFactory: () => "quota-rollback",
+      reserveSenderQuota: async () => ({
+        allowed: false,
+        reasonCode: "rateLimited",
+        retryAfterMs: 30_000,
+        quota: { remaining: 0 },
+      }),
+    },
+  );
+
+  assertResponseShape(response);
+  assert.equal(response.allowed, false);
+  assert.equal(response.reasonCode, "rateLimited");
+  const audit = getPath(
+    root.state,
+    "connectionNotificationAudit/19700101/connection_request_10000_rollback_createConnectionRequest_quota-rollback",
+  );
+  assert.equal(audit.eventName, "rollback");
+  assert.equal(audit.reasonCode, "rateLimited");
+  assert.equal(audit.userMessageKey, "connectionRequest.reason.rateLimited");
+  assert.match(audit.renderedMessage, /Too many connection requests/);
+  assert.equal(audit.rollbackPairLock, true);
+  assert.equal(audit.costEffect, "rolled_back");
+  const summary = getPath(root.state, "connectionNotificationAuditSummary/19700101");
+  assert.equal(summary.rollbackCount, 1);
+  assert.equal(summary.deniedCount, 1);
+});
+
 test("global kill switch and sender disable stop before pair lock claim", async () => {
   const cases = [
     {
@@ -447,6 +554,46 @@ test("global kill switch and sender disable stop before pair lock claim", async 
     assert.equal(response.reasonCode, testCase.reasonCode);
     assert.equal(getPath(root.state, "connectionRequestPairLocks/alice:bob"), undefined);
   }
+});
+
+test("denied to created ratio spike writes function warning", async () => {
+  const warnings = [];
+  const root = fakeRoot({
+    state: {
+      connectionNotificationAuditSummary: {
+        19700101: {
+          deniedCount: 9,
+          createdCount: 0,
+        },
+      },
+      presence: {
+        bob: { online: false, lastHeartbeat: 10_000 },
+      },
+    },
+  });
+
+  const response = await connectionRequests.__test.createConnectionRequestCore(
+    { peer: "bob" },
+    authRequest(),
+    {
+      root,
+      clock: () => 10_000,
+      requestIdFactory: () => "warn-denied",
+      logger: {
+        warn(message, context) {
+          warnings.push({ message, context });
+        },
+      },
+    },
+  );
+
+  assertResponseShape(response);
+  assert.equal(response.allowed, false);
+  assert.equal(response.reasonCode, "peerOffline");
+  assert.equal(warnings.length, 1);
+  assert.equal(warnings[0].message, "Connection request denial ratio is elevated.");
+  assert.equal(warnings[0].context.deniedCount, 10);
+  assert.equal(warnings[0].context.createdCount, 0);
 });
 
 test("daily limit denies after configured free allowance", async () => {
@@ -722,6 +869,7 @@ test("write failure rolls back quota reservation and pair lock", async () => {
       root,
       clock: () => 10_000,
       requestIdFactory: () => "write-fails",
+      logger: { warn() {} },
     },
   );
 
@@ -1014,6 +1162,37 @@ test("cleanup removes corrupt request rows without crashing", async () => {
     undefined,
   );
   assert.ok(getPath(root.state, "connectionNotificationAudit/19700101"));
+});
+
+test("cleanup removes old audit rows and daily summaries", async () => {
+  const root = fakeRoot({
+    state: {
+      connectionNotificationAudit: {
+        19700101: { old_event: { eventName: "old", createdAt: 1 } },
+        19700215: { fresh_event: { eventName: "fresh", createdAt: 1 } },
+      },
+      connectionNotificationAuditSummary: {
+        19700101: { createdCount: 1 },
+        19700215: { createdCount: 2 },
+      },
+    },
+  });
+
+  const stats = await connectionRequestCleanup.__test.cleanupConnectionRequestsCore({
+    root,
+    clock: () => Date.UTC(1970, 1, 15),
+    auditRetentionMs: 24 * 60 * 60 * 1000,
+  });
+
+  assert.equal(stats.oldAuditDays, 1);
+  assert.equal(stats.oldAuditSummaryDays, 1);
+  assert.equal(getPath(root.state, "connectionNotificationAudit/19700101"), undefined);
+  assert.equal(
+    getPath(root.state, "connectionNotificationAuditSummary/19700101"),
+    undefined,
+  );
+  assert.ok(getPath(root.state, "connectionNotificationAudit/19700215"));
+  assert.ok(getPath(root.state, "connectionNotificationAuditSummary/19700215"));
 });
 
 test("cleanup rolls back stale reservations and expired entitlements", async () => {

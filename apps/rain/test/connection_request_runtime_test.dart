@@ -211,6 +211,45 @@ void main() {
         'Connection request could not be sent. Try again.',
       );
     });
+
+    test(
+      'diagnostics include user-facing message and exact internal reason',
+      () async {
+        final runtimeEvents = <Map<String, Object?>>[];
+        final harness = await _ConnectionRequestHarness.create(
+          bobOnline: false,
+          runtimeEvents: runtimeEvents,
+        );
+        addTearDown(harness.dispose);
+
+        final decision = await harness.runtime.sendConnectionRequest('bob');
+
+        expect(decision.allowed, isFalse);
+        final event = runtimeEvents.lastWhere(
+          (Map<String, Object?> event) =>
+              event['category'] == 'connection_request' &&
+              event['name'] == 'connection_request_decision_denied',
+        );
+        expect(event['message'], decision.userMessage);
+        final context = event['context']! as Map<String, Object?>;
+        expect(context['requestId'], isNull);
+        expect(context['peerId'], 'bob');
+        expect(context['direction'], ConnectionRequestDirection.outbound.name);
+        expect(context['status'], isNull);
+        expect(
+          context['reasonCode'],
+          ConnectionRequestReasonCode.peerOffline.name,
+        );
+        expect(
+          context['userMessageKey'],
+          'connectionRequest.reason.peerOffline',
+        );
+        expect(context['renderedMessage'], decision.userMessage);
+        expect(context['quotaSummary'], isA<Map<String, Object?>>());
+        expect(context['retryAfterMs'], isNull);
+        expect(context['notificationFallbackState'], 'notEvaluated');
+      },
+    );
   });
 
   group('RuntimeInteractionGuard connection requests', () {
@@ -264,6 +303,7 @@ final class _ConnectionRequestHarness {
     RainDatabase? database,
     _ConnectionRequestNoopSignalingAdapter? adapter,
     bool bobOnline = true,
+    List<Map<String, Object?>>? runtimeEvents,
   }) async {
     final db = database ?? RainDatabase(NativeDatabase.memory());
     final requestAdapter =
@@ -296,6 +336,23 @@ final class _ConnectionRequestHarness {
         offlineQueueStore: offlineQueueStore,
       ),
       fileTransferStore: fileTransferStore,
+      eventRecorder: runtimeEvents == null
+          ? null
+          : ({
+              required String category,
+              required String name,
+              String severity = 'info',
+              String? message,
+              Map<String, Object?> context = const <String, Object?>{},
+            }) {
+              runtimeEvents.add(<String, Object?>{
+                'category': category,
+                'name': name,
+                'severity': severity,
+                'message': message,
+                'context': context,
+              });
+            },
     );
     await runtime.start();
     return _ConnectionRequestHarness(

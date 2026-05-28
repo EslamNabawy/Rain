@@ -463,15 +463,74 @@ extension ConnectionRequestRuntime on RainRuntimeController {
           : 'connection_request_decision_denied',
       severity: decision.allowed ? 'info' : 'warning',
       message: decision.userMessage,
-      context: <String, Object?>{
-        'requestId': decision.requestId,
-        'peerId': decision.peerId,
-        'blockingPeerId': decision.blockingPeerId,
-        'reasonCode': decision.reasonCode?.name,
-        'status': decision.status?.name,
-        ...decision.diagnostics,
-      },
+      context: _connectionRequestDiagnosticContext(decision),
     );
+  }
+
+  Map<String, Object?> _connectionRequestDiagnosticContext(
+    ConnectionRequestDecision decision, {
+    String? notificationFallbackState,
+  }) {
+    final quota = decision.quota ?? _connectionRequestState.quota;
+    return <String, Object?>{
+      'requestId': decision.requestId,
+      'peerId': decision.peerId,
+      'blockingPeerId': decision.blockingPeerId,
+      'direction': _connectionRequestDirectionFor(decision)?.name,
+      'status': decision.status?.name,
+      'reasonCode': decision.reasonCode?.name,
+      'userMessageKey': _connectionRequestUserMessageKey(decision),
+      'renderedMessage': decision.userMessage,
+      'quotaSummary': quota?.toJson(),
+      'retryAfterMs': decision.retryAfterMs ?? quota?.retryAfterMs,
+      'notificationFallbackState':
+          notificationFallbackState ??
+          _connectionRequestNotificationFallbackState(decision.requestId),
+      ...decision.diagnostics,
+    };
+  }
+
+  ConnectionRequestDirection? _connectionRequestDirectionFor(
+    ConnectionRequestDecision decision,
+  ) {
+    final requestId = decision.requestId;
+    if (requestId != null) {
+      if (_connectionRequestState.incomingById(requestId) != null) {
+        return ConnectionRequestDirection.inbound;
+      }
+      if (_connectionRequestState.outgoingById(requestId) != null) {
+        return ConnectionRequestDirection.outbound;
+      }
+    }
+    if (decision.status == ConnectionRequestStatus.pending ||
+        decision.peerId != null) {
+      return ConnectionRequestDirection.outbound;
+    }
+    return null;
+  }
+
+  String _connectionRequestUserMessageKey(ConnectionRequestDecision decision) {
+    final reasonCode = decision.reasonCode;
+    if (reasonCode != null) {
+      return 'connectionRequest.reason.${reasonCode.name}';
+    }
+    final status = decision.status;
+    if (status != null) {
+      return 'connectionRequest.status.${status.name}';
+    }
+    return decision.allowed
+        ? 'connectionRequest.allowed'
+        : 'connectionRequest.denied';
+  }
+
+  String _connectionRequestNotificationFallbackState(String? requestId) {
+    if (requestId == null || requestId.isEmpty) {
+      return 'notEvaluated';
+    }
+    final hasFallback = _connectionRequestNotificationFallbackKeys.any(
+      (String key) => key.startsWith('$requestId:'),
+    );
+    return hasFallback ? 'inAppFallbackShown' : 'notEvaluated';
   }
 
   Future<FileTransferRecord?> _activeConnectionRequestBlockingTransfer() async {
@@ -570,6 +629,11 @@ extension ConnectionRequestRuntime on RainRuntimeController {
       context: <String, Object?>{
         'requestId': result.requestId,
         'peerId': result.peerId,
+        'notificationResult': result.kind.name,
+        'notificationFallbackState': result.needsInAppFallback
+            ? 'inAppFallbackRequired'
+            : 'notNeeded',
+        'renderedMessage': result.message,
       },
     );
     if (!result.needsInAppFallback) {

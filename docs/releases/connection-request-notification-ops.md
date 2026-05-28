@@ -29,6 +29,52 @@ credits. Clients must not write these paths directly.
   - Server-maintained sender-to-peer usage.
 - `connectionNotificationReservations/{requestId}`
   - Server-maintained quota reservation/finalization record.
+- `connectionNotificationAudit/{yyyyMMddUtc}/{eventId}`
+  - Server-maintained event stream for allowed, denied, deduped, terminal, cleanup, and rollback decisions.
+- `connectionNotificationAuditSummary/{yyyyMMddUtc}`
+  - Server-maintained daily counters for created, allowed, denied, deduped, terminal, and rollback events.
+
+## Diagnostics Contract
+
+Client diagnostics for every connection request decision must include:
+
+- `requestId`
+- `peerId`
+- `direction`
+- `status`
+- `reasonCode`
+- `userMessageKey`
+- `renderedMessage`
+- `quotaSummary`
+- `retryAfterMs`
+- `notificationFallbackState`
+
+The UI uses `renderedMessage`. The exact internal denial remains in
+`reasonCode`. Do not expose private receiver state in copy. For example,
+`mutedByReceiver` should remain a diagnostic reason while the UI says the peer
+is unavailable for connection requests.
+
+Backend audit rows must include:
+
+- `eventName`
+- `createdAt`
+- `action`
+- `requestId`
+- `sender`
+- `peer`
+- `pairKey`
+- `allowed`
+- `status`
+- `reasonCode`
+- `userMessageKey`
+- `renderedMessage`
+- `retryAfterMs`
+- `costEffect`
+- `rollbackPairLock`
+- `rollbackQuota`
+
+Use audit rows for incident reconstruction. Use the summary row for dashboards,
+daily limits, and quick cost checks.
 
 ## Grant Extra Credits
 
@@ -78,6 +124,64 @@ Set an active entitlement:
 If `expiresAt` is in the past, the entitlement is ignored and does not block the
 sender. Use the global kill switch for an incident affecting all users.
 
+## Enable Or Disable The Global Feature
+
+Set `connectionNotificationConfig/global/enabled`:
+
+```json
+{
+  "enabled": false
+}
+```
+
+This stops new connection request notifications before pair locks or quota
+reservations are created. Existing pending requests still expire or can be
+handled by their normal terminal actions.
+
+To re-enable:
+
+```json
+{
+  "enabled": true
+}
+```
+
+Do not delete the config node during an incident. Explicit `false` is easier to
+audit and easier to roll back.
+
+## Inspect Audit And Cost
+
+For one UTC day, inspect:
+
+- `connectionNotificationAuditSummary/{yyyyMMddUtc}`
+- `connectionNotificationAudit/{yyyyMMddUtc}`
+
+Important counters:
+
+- `createdCount`: successful request creations that spent quota.
+- `deniedCount`: denied attempts, including rate limits and receiver protection.
+- `dedupedCount`: duplicate pending requests that did not spend quota.
+- `terminalCount`: accepted, rejected, canceled, or expired transitions.
+- `rollbackCount`: failed creation paths where locks or quota were rolled back.
+
+The function logs a warning when the daily denied/created ratio is elevated.
+Use that warning as an abuse or rollout signal, not as a reason to block users
+silently. Every denied client action must still show a user-facing message.
+
+## Cleanup Stale Locks And Reservations
+
+The scheduled cleanup function owns stale repair. Run or wait for
+`cleanupConnectionRequests` when you see:
+
+- old `connectionRequestPairLocks` with expired `expiresAt`
+- `connectionNotificationReservations` stuck in `reserved`
+- corrupt request rows in `connectionRequests` or `connectionRequestOutboxes`
+- old `connectionNotificationAudit` and `connectionNotificationAuditSummary`
+  day buckets beyond retention
+
+Never manually delete a live pair lock unless you confirmed the request row is
+missing, terminal, corrupt, or expired and the `requestId` still matches.
+
 ## Operational Rules
 
 - Duplicate pending requests do not consume quota.
@@ -98,5 +202,9 @@ sender. Use the global kill switch for an incident affecting all users.
    `expiresAt`.
 4. For internal unlimited testing, set `unlimitedUntil` and keep the expiry
    short.
-5. Do not edit `connectionNotificationReservations` unless repairing a failed
+5. Check `connectionNotificationAuditSummary/{yyyyMMddUtc}` before raising
+   global limits.
+6. Inspect recent `connectionNotificationAudit/{yyyyMMddUtc}` rows for the
+   exact `reasonCode` and `costEffect`.
+7. Do not edit `connectionNotificationReservations` unless repairing a failed
    deployment with a known request id.

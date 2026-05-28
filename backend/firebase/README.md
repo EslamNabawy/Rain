@@ -27,11 +27,12 @@ This directory contains the Firebase assets needed by Rain's Realtime Database s
 - `connectionNotificationTargetUsage/<from>/<to>/<yyyyMMddUtc>`: server-owned per-target usage counters
 - `connectionNotificationMutes/<receiver>/<sender>`: server-owned mute state, readable by the receiver
 - `connectionNotificationAudit/<yyyyMMddUtc>/<eventId>`: server-owned audit records
+- `connectionNotificationAuditSummary/<yyyyMMddUtc>`: server-owned daily audit and cost summary
 - `connectionNotificationReservations/<requestId>`: server-owned quota reservation repair records
 
 Room nodes never store chat message content.
 Voice call nodes are signaling state only and are removed by TTL cleanup; they are not call history.
-Connection notification nodes are mutated by Cloud Functions only. Clients may read their own inbox, outbox, quota summary, and mute projection, but direct writes to requests, counters, entitlements, pair locks, reservations, config, and audit records are denied by Realtime Database rules.
+Connection notification nodes are mutated by Cloud Functions only. Clients may read their own inbox, outbox, quota summary, and mute projection, but direct writes to requests, counters, entitlements, pair locks, reservations, config, audit summaries, and audit records are denied by Realtime Database rules.
 
 ## Deploy Realtime Database Rules
 

@@ -40,6 +40,7 @@ async function cleanupConnectionRequestsCore(deps = {}) {
     expiredPairLocks: 0,
     staleReservations: 0,
     oldAuditDays: 0,
+    oldAuditSummaryDays: 0,
     expiredEntitlements: 0,
   };
 
@@ -219,20 +220,32 @@ async function cleanupOldAudit(root, now, stats, retentionMsOverride) {
     retentionMsOverride,
     DEFAULT_AUDIT_RETENTION_MS,
   );
-  const snapshot = await root.child("connectionNotificationAudit").get();
-  if (!snapshot.exists()) {
-    return;
-  }
+  const [auditSnapshot, summarySnapshot] = await Promise.all([
+    root.child("connectionNotificationAudit").get(),
+    root.child("connectionNotificationAuditSummary").get(),
+  ]);
   const cutoffDay = Number(guardrails.utcDayKey(now - retentionMs));
   const updates = {};
-  snapshot.forEach((child) => {
-    const day = Number(child.key);
-    if (Number.isFinite(day) && day < cutoffDay) {
-      updates[`connectionNotificationAudit/${child.key}`] = null;
-      stats.oldAuditDays += 1;
-    }
-    return false;
-  });
+  if (auditSnapshot.exists()) {
+    auditSnapshot.forEach((child) => {
+      const day = Number(child.key);
+      if (Number.isFinite(day) && day < cutoffDay) {
+        updates[`connectionNotificationAudit/${child.key}`] = null;
+        stats.oldAuditDays += 1;
+      }
+      return false;
+    });
+  }
+  if (summarySnapshot.exists()) {
+    summarySnapshot.forEach((child) => {
+      const day = Number(child.key);
+      if (Number.isFinite(day) && day < cutoffDay) {
+        updates[`connectionNotificationAuditSummary/${child.key}`] = null;
+        stats.oldAuditSummaryDays += 1;
+      }
+      return false;
+    });
+  }
   if (Object.keys(updates).length > 0) {
     await root.update(updates);
   }
