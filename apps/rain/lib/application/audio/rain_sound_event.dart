@@ -17,6 +17,10 @@ enum RainSoundEventKind {
   callControlCameraMute,
   callControlCameraUnmute,
   callRouteChanged,
+  connectionRequestInbound,
+  connectionRequestOutboundAccepted,
+  connectionRequestOutboundRejected,
+  connectionRequestOutboundExpired,
 }
 
 final class RainSoundEvent {
@@ -25,6 +29,7 @@ final class RainSoundEvent {
     String? conversationId,
     String? peerId,
     String? callId,
+    String? connectionRequestId,
     this.sessionEpoch,
     this.mediaMode = CallMediaMode.audio,
     String? errorKey,
@@ -32,6 +37,7 @@ final class RainSoundEvent {
   }) : conversationId = _normalizeOptionalToken(conversationId),
        peerId = _normalizeOptionalToken(peerId),
        callId = _normalizeOptionalToken(callId),
+       connectionRequestId = _normalizeOptionalToken(connectionRequestId),
        errorKey = _normalizeErrorKey(errorKey);
 
   factory RainSoundEvent.chatSend({
@@ -277,6 +283,58 @@ final class RainSoundEvent {
     );
   }
 
+  factory RainSoundEvent.connectionRequestInbound({
+    required String requestId,
+    String? peerId,
+    DateTime? occurredAt,
+  }) {
+    return RainSoundEvent._connectionRequest(
+      kind: RainSoundEventKind.connectionRequestInbound,
+      requestId: requestId,
+      peerId: peerId,
+      occurredAt: occurredAt,
+    );
+  }
+
+  factory RainSoundEvent.connectionRequestOutboundAccepted({
+    required String requestId,
+    String? peerId,
+    DateTime? occurredAt,
+  }) {
+    return RainSoundEvent._connectionRequest(
+      kind: RainSoundEventKind.connectionRequestOutboundAccepted,
+      requestId: requestId,
+      peerId: peerId,
+      occurredAt: occurredAt,
+    );
+  }
+
+  factory RainSoundEvent.connectionRequestOutboundRejected({
+    required String requestId,
+    String? peerId,
+    DateTime? occurredAt,
+  }) {
+    return RainSoundEvent._connectionRequest(
+      kind: RainSoundEventKind.connectionRequestOutboundRejected,
+      requestId: requestId,
+      peerId: peerId,
+      occurredAt: occurredAt,
+    );
+  }
+
+  factory RainSoundEvent.connectionRequestOutboundExpired({
+    required String requestId,
+    String? peerId,
+    DateTime? occurredAt,
+  }) {
+    return RainSoundEvent._connectionRequest(
+      kind: RainSoundEventKind.connectionRequestOutboundExpired,
+      requestId: requestId,
+      peerId: peerId,
+      occurredAt: occurredAt,
+    );
+  }
+
   factory RainSoundEvent._callLifecycle({
     required RainSoundEventKind kind,
     required String callId,
@@ -315,10 +373,25 @@ final class RainSoundEvent {
     );
   }
 
+  factory RainSoundEvent._connectionRequest({
+    required RainSoundEventKind kind,
+    required String requestId,
+    String? peerId,
+    DateTime? occurredAt,
+  }) {
+    return RainSoundEvent._(
+      kind: kind,
+      connectionRequestId: _requireConnectionRequestId(requestId),
+      peerId: peerId,
+      occurredAt: occurredAt,
+    );
+  }
+
   final RainSoundEventKind kind;
   final String? conversationId;
   final String? peerId;
   final String? callId;
+  final String? connectionRequestId;
   final int? sessionEpoch;
   final CallMediaMode mediaMode;
   final String? errorKey;
@@ -341,7 +414,11 @@ final class RainSoundEvent {
       RainSoundEventKind.callControlUndeafen ||
       RainSoundEventKind.callControlCameraMute ||
       RainSoundEventKind.callControlCameraUnmute ||
-      RainSoundEventKind.callRouteChanged => false,
+      RainSoundEventKind.callRouteChanged ||
+      RainSoundEventKind.connectionRequestInbound ||
+      RainSoundEventKind.connectionRequestOutboundAccepted ||
+      RainSoundEventKind.connectionRequestOutboundRejected ||
+      RainSoundEventKind.connectionRequestOutboundExpired => false,
     };
   }
 
@@ -362,7 +439,36 @@ final class RainSoundEvent {
       RainSoundEventKind.callOutgoingStarted ||
       RainSoundEventKind.callConnected ||
       RainSoundEventKind.callEnded ||
-      RainSoundEventKind.callFailed => false,
+      RainSoundEventKind.callFailed ||
+      RainSoundEventKind.connectionRequestInbound ||
+      RainSoundEventKind.connectionRequestOutboundAccepted ||
+      RainSoundEventKind.connectionRequestOutboundRejected ||
+      RainSoundEventKind.connectionRequestOutboundExpired => false,
+    };
+  }
+
+  bool get isConnectionRequestEvent {
+    return switch (kind) {
+      RainSoundEventKind.connectionRequestInbound ||
+      RainSoundEventKind.connectionRequestOutboundAccepted ||
+      RainSoundEventKind.connectionRequestOutboundRejected ||
+      RainSoundEventKind.connectionRequestOutboundExpired => true,
+      RainSoundEventKind.chatSend ||
+      RainSoundEventKind.chatReceive ||
+      RainSoundEventKind.uiAction ||
+      RainSoundEventKind.warning ||
+      RainSoundEventKind.callIncomingStarted ||
+      RainSoundEventKind.callOutgoingStarted ||
+      RainSoundEventKind.callConnected ||
+      RainSoundEventKind.callEnded ||
+      RainSoundEventKind.callFailed ||
+      RainSoundEventKind.callControlMute ||
+      RainSoundEventKind.callControlUnmute ||
+      RainSoundEventKind.callControlDeafen ||
+      RainSoundEventKind.callControlUndeafen ||
+      RainSoundEventKind.callControlCameraMute ||
+      RainSoundEventKind.callControlCameraUnmute ||
+      RainSoundEventKind.callRouteChanged => false,
     };
   }
 }
@@ -390,6 +496,18 @@ String _requireCallId(String value) {
       value,
       'callId',
       'Call sound event requires callId.',
+    );
+  }
+  return normalized;
+}
+
+String _requireConnectionRequestId(String value) {
+  final normalized = _normalizeOptionalToken(value);
+  if (normalized == null) {
+    throw ArgumentError.value(
+      value,
+      'requestId',
+      'Connection request sound event requires requestId.',
     );
   }
   return normalized;

@@ -82,6 +82,7 @@ void main() {
     expect(settings.soundEffectsEnabled, isTrue);
     expect(settings.soundEffectsVolume, 1.0);
     expect(settings.callSoundsEnabled, isTrue);
+    expect(settings.connectionRequestSoundsEnabled, isTrue);
     expect(settings.reduceSoundsDuringCall, isTrue);
     expect(
       settings.defaultOutputPreference,
@@ -118,6 +119,42 @@ void main() {
 
     expect(await store.loadCallSoundsEnabled(), isFalse);
     expect((await store.loadAudioSettings()).callSoundsEnabled, isFalse);
+  });
+
+  test('connection request sound toggle persists locally', () async {
+    final store = AppSettingsStore();
+
+    await store.setConnectionRequestSoundsEnabled(false);
+
+    expect(await store.loadConnectionRequestSoundsEnabled(), isFalse);
+    expect(
+      (await store.loadAudioSettings()).connectionRequestSoundsEnabled,
+      isFalse,
+    );
+  });
+
+  test('connection request notification settings persist locally', () async {
+    final store = AppSettingsStore();
+
+    var settings = await store.loadConnectionRequestSettings();
+    expect(settings.notificationsEnabled, isTrue);
+    expect(settings.showNotificationsWhenMinimized, isTrue);
+    expect(settings.mutedRequestSenders, isEmpty);
+
+    await store.setConnectionRequestNotificationsEnabled(false);
+    await store.setShowConnectionRequestNotificationsWhenMinimized(false);
+    await store.setMutedConnectionRequestSenders(<String>{' Bob ', 'cara'});
+
+    settings = await store.loadConnectionRequestSettings();
+    expect(settings.notificationsEnabled, isFalse);
+    expect(settings.showNotificationsWhenMinimized, isFalse);
+    expect(settings.mutedRequestSenders, <String>{'bob', 'cara'});
+
+    await store.removeMutedConnectionRequestSender('bob');
+    expect(
+      (await store.loadConnectionRequestSettings()).mutedRequestSenders,
+      <String>{'cara'},
+    );
   });
 
   test('reduce sounds during call toggle persists locally', () async {

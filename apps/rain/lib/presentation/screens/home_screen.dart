@@ -236,6 +236,67 @@ RainSoundEvent rainUiWarningSoundEvent(String errorKey) {
   return RainSoundEvent.warning(errorKey: errorKey);
 }
 
+List<RainSoundEvent> rainConnectionRequestSoundEventsFor({
+  required ConnectionRequestState? previous,
+  required ConnectionRequestState next,
+}) {
+  final events = <RainSoundEvent>[];
+  final previousIncomingIds = <String>{
+    for (final surface in previous?.incomingSurfaces ?? const [])
+      if (!surface.status.isTerminal) surface.requestId,
+  };
+  for (final surface in next.incomingSurfaces) {
+    if (surface.status.isTerminal ||
+        previousIncomingIds.contains(surface.requestId)) {
+      continue;
+    }
+    events.add(
+      RainSoundEvent.connectionRequestInbound(
+        requestId: surface.requestId,
+        peerId: surface.peerId,
+      ),
+    );
+  }
+
+  if (previous == null) {
+    return events;
+  }
+  final previousOutboundById = <String, ConnectionRequestSurfaceModel>{
+    for (final surface in previous.outgoingSurfaces) surface.requestId: surface,
+  };
+  for (final surface in next.outgoingSurfaces) {
+    final previousSurface = previousOutboundById[surface.requestId];
+    if (previousSurface == null || previousSurface.status == surface.status) {
+      continue;
+    }
+    final event = switch (surface.status) {
+      ConnectionRequestStatus.accepted =>
+        RainSoundEvent.connectionRequestOutboundAccepted(
+          requestId: surface.requestId,
+          peerId: surface.peerId,
+        ),
+      ConnectionRequestStatus.rejected =>
+        RainSoundEvent.connectionRequestOutboundRejected(
+          requestId: surface.requestId,
+          peerId: surface.peerId,
+        ),
+      ConnectionRequestStatus.expired =>
+        RainSoundEvent.connectionRequestOutboundExpired(
+          requestId: surface.requestId,
+          peerId: surface.peerId,
+        ),
+      ConnectionRequestStatus.pending ||
+      ConnectionRequestStatus.seen ||
+      ConnectionRequestStatus.canceled ||
+      ConnectionRequestStatus.failed => null,
+    };
+    if (event != null) {
+      events.add(event);
+    }
+  }
+  return events;
+}
+
 String? _latestIncomingMessageIdForSound(List<StoredMessage> messages) {
   for (final message in messages.reversed) {
     if (!message.isOutgoing) {
@@ -629,6 +690,7 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
   String? _selectedPeerId;
   String? _defaultOutputAppliedCallId;
   String? _lastVoiceCallLifecycleSoundKey;
+  final Set<String> _connectionRequestSoundKeys = <String>{};
   CallSurfaceState? _lastActiveCallSurface;
   double _fullscreenFriendsPanelWidth = 280;
   bool _fullscreenFriendsPanelCollapsed = false;
@@ -657,6 +719,10 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
         .watch(audioOutputCapabilityProvider)
         .value;
     ref.listen<VoiceCallState>(voiceCallProvider, _handleVoiceCallNavigation);
+    ref.listen<ConnectionRequestState>(
+      connectionRequestProvider,
+      _handleConnectionRequestSounds,
+    );
 
     return LayoutBuilder(
       builder: (BuildContext context, BoxConstraints constraints) {
@@ -1208,6 +1274,26 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
     }
     _lastVoiceCallLifecycleSoundKey = soundKey;
     _dispatchSoundEvent(event);
+  }
+
+  void _handleConnectionRequestSounds(
+    ConnectionRequestState? previous,
+    ConnectionRequestState next,
+  ) {
+    for (final event in rainConnectionRequestSoundEventsFor(
+      previous: previous,
+      next: next,
+    )) {
+      final requestId = event.connectionRequestId;
+      if (requestId == null) {
+        continue;
+      }
+      final soundKey = '${event.kind.name}:$requestId';
+      if (!_connectionRequestSoundKeys.add(soundKey)) {
+        continue;
+      }
+      _dispatchSoundEvent(event);
+    }
   }
 
   Future<void> _refreshFriends() async {

@@ -99,5 +99,23 @@ void main() {
       expect(receive.isCallLifecycleEvent, isFalse);
       expect(receive.isCallControlEvent, isFalse);
     });
+
+    test('connection request events require a request id', () {
+      final inbound = RainSoundEvent.connectionRequestInbound(
+        requestId: ' request-1 ',
+        peerId: ' Bob ',
+      );
+
+      expect(inbound.kind, RainSoundEventKind.connectionRequestInbound);
+      expect(inbound.connectionRequestId, 'request-1');
+      expect(inbound.peerId, 'Bob');
+      expect(inbound.isConnectionRequestEvent, isTrue);
+      expect(inbound.isCallLifecycleEvent, isFalse);
+      expect(inbound.isCallControlEvent, isFalse);
+      expect(
+        () => RainSoundEvent.connectionRequestOutboundAccepted(requestId: ' '),
+        throwsA(isA<ArgumentError>()),
+      );
+    });
   });
 }

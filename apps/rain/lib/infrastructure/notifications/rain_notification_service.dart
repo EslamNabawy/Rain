@@ -1,8 +1,15 @@
 import 'dart:async';
 
 import 'package:flutter/foundation.dart';
+import 'package:flutter/widgets.dart';
 import 'package:flutter_local_notifications/flutter_local_notifications.dart';
 import 'package:protocol_brain/protocol_brain.dart';
+
+import 'package:rain/infrastructure/services/app_settings_store.dart';
+
+typedef RainConnectionRequestSettingsLoader =
+    FutureOr<AppConnectionRequestSettings> Function();
+typedef RainAppLifecycleStateReader = AppLifecycleState? Function();
 
 enum RainNotificationPermissionStatus { granted, denied, unavailable }
 
@@ -135,9 +142,16 @@ final class NoopRainNotificationService implements RainNotificationService {
 final class LocalRainNotificationService implements RainNotificationService {
   LocalRainNotificationService({
     required RainLocalNotificationPlatform platform,
-  }) : _platform = platform;
+    RainConnectionRequestSettingsLoader? settingsLoader,
+    RainAppLifecycleStateReader? lifecycleStateReader,
+  }) : _platform = platform,
+       _settingsLoader =
+           settingsLoader ?? (() => const AppConnectionRequestSettings()),
+       _lifecycleStateReader = lifecycleStateReader ?? (() => null);
 
   final RainLocalNotificationPlatform _platform;
+  final RainConnectionRequestSettingsLoader _settingsLoader;
+  final RainAppLifecycleStateReader _lifecycleStateReader;
   final Map<String, int> _activeIdsByRequestId = <String, int>{};
   final Map<String, String> _activeRequestIdByPeerId = <String, String>{};
 
@@ -170,6 +184,21 @@ final class LocalRainNotificationService implements RainNotificationService {
         peerId: surface.peerId,
       );
     }
+    final settings = await Future<AppConnectionRequestSettings>.value(
+      _settingsLoader(),
+    );
+    if (!settings.notificationsEnabled) {
+      return _skipAndDismiss(
+        surface,
+        'Connection request notifications are disabled.',
+      );
+    }
+    if (!_shouldNotifyForLifecycle(settings)) {
+      return _skipAndDismiss(
+        surface,
+        'Connection request notifications are hidden while Rain is minimized.',
+      );
+    }
 
     final permission = await _platform.prepareConnectionRequestChannel();
     switch (permission) {
@@ -197,6 +226,18 @@ final class LocalRainNotificationService implements RainNotificationService {
     _activeIdsByRequestId[surface.requestId] = id;
     _activeRequestIdByPeerId[surface.peerId] = surface.requestId;
     return RainNotificationResult.shown(
+      requestId: surface.requestId,
+      peerId: surface.peerId,
+    );
+  }
+
+  Future<RainNotificationResult> _skipAndDismiss(
+    ConnectionRequestSurfaceModel surface,
+    String message,
+  ) async {
+    await dismissConnectionRequest(surface.requestId);
+    return RainNotificationResult.skipped(
+      message: message,
       requestId: surface.requestId,
       peerId: surface.peerId,
     );
@@ -255,6 +296,14 @@ final class LocalRainNotificationService implements RainNotificationService {
         'Duplicate connection requests do not notify.',
       _ => null,
     };
+  }
+
+  bool _shouldNotifyForLifecycle(AppConnectionRequestSettings settings) {
+    final lifecycleState = _lifecycleStateReader();
+    if (lifecycleState == null || lifecycleState == AppLifecycleState.resumed) {
+      return true;
+    }
+    return settings.showNotificationsWhenMinimized;
   }
 }
 

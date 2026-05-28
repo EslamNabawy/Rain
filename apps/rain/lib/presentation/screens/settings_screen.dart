@@ -2,6 +2,7 @@ import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
+import 'package:protocol_brain/protocol_brain.dart';
 import 'package:rain_core/rain_core.dart';
 import 'package:url_launcher/url_launcher_string.dart';
 
@@ -64,6 +65,9 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen> {
     final audioOutputCapabilities = ref.watch(audioOutputCapabilityProvider);
     final updateStatus = ref.watch(forceUpdateProvider);
     final connectionRequests = ref.watch(connectionRequestProvider);
+    final connectionRequestSettings = ref.watch(
+      connectionRequestSettingsProvider,
+    );
     final outputCapabilities =
         audioOutputCapabilities.value ??
         const AudioOutputCapabilityState(devices: []);
@@ -375,8 +379,26 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen> {
           ),
           const SizedBox(height: 24),
           const AppSectionTitle(title: 'Connection Requests'),
-          AppSectionCard(
-            child: _ConnectionRequestSettingsSummary(state: connectionRequests),
+          _ConnectionRequestSettingsSection(
+            state: connectionRequests,
+            settings: connectionRequestSettings,
+            audioSettings: audioSettings,
+            onNotificationsEnabledChanged: (bool enabled) =>
+                _setConnectionRequestNotificationsEnabled(
+                  context,
+                  ref,
+                  enabled,
+                ),
+            onSoundEnabledChanged: (bool enabled) =>
+                _setConnectionRequestSoundsEnabled(context, ref, enabled),
+            onShowMinimizedChanged: (bool enabled) =>
+                _setShowConnectionRequestNotificationsWhenMinimized(
+                  context,
+                  ref,
+                  enabled,
+                ),
+            onUnmute: (String peerId) =>
+                _unmuteConnectionRequestSender(context, ref, peerId),
           ),
           const SizedBox(height: 24),
           const AppSectionTitle(title: 'Diagnostics'),
@@ -613,6 +635,61 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen> {
     );
   }
 
+  Future<void> _setConnectionRequestSoundsEnabled(
+    BuildContext context,
+    WidgetRef ref,
+    bool enabled,
+  ) {
+    return _runConnectionRequestSettingsAction(
+      context,
+      () => ref
+          .read(voiceAudioSettingsProvider.notifier)
+          .setConnectionRequestSoundsEnabled(enabled),
+    );
+  }
+
+  Future<void> _setConnectionRequestNotificationsEnabled(
+    BuildContext context,
+    WidgetRef ref,
+    bool enabled,
+  ) {
+    return _runConnectionRequestSettingsAction(
+      context,
+      () => ref
+          .read(connectionRequestSettingsProvider.notifier)
+          .setNotificationsEnabled(enabled),
+    );
+  }
+
+  Future<void> _setShowConnectionRequestNotificationsWhenMinimized(
+    BuildContext context,
+    WidgetRef ref,
+    bool enabled,
+  ) {
+    return _runConnectionRequestSettingsAction(
+      context,
+      () => ref
+          .read(connectionRequestSettingsProvider.notifier)
+          .setShowNotificationsWhenMinimized(enabled),
+    );
+  }
+
+  Future<void> _unmuteConnectionRequestSender(
+    BuildContext context,
+    WidgetRef ref,
+    String peerId,
+  ) {
+    return _runConnectionRequestSettingsAction(context, () async {
+      final state = ref.read(connectionRequestProvider);
+      if (state.available) {
+        await ref.read(connectionRequestProvider.notifier).unmute(peerId);
+      }
+      await ref
+          .read(connectionRequestSettingsProvider.notifier)
+          .removeMutedSender(peerId);
+    });
+  }
+
   Future<void> _setReduceSoundsDuringCall(
     BuildContext context,
     WidgetRef ref,
@@ -687,6 +764,29 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen> {
         SnackBar(
           content: Text(
             'Could not update audio setting: ${_formatSettingsError(error)}',
+          ),
+          backgroundColor: errorColor,
+        ),
+      );
+    }
+  }
+
+  Future<void> _runConnectionRequestSettingsAction(
+    BuildContext context,
+    Future<void> Function() action,
+  ) async {
+    final messenger = ScaffoldMessenger.of(context);
+    final errorColor = Theme.of(context).colorScheme.error;
+    try {
+      await action();
+    } catch (error) {
+      if (!context.mounted) {
+        return;
+      }
+      messenger.showSnackBar(
+        SnackBar(
+          content: Text(
+            'Could not update connection request setting: ${_formatSettingsError(error)}',
           ),
           backgroundColor: errorColor,
         ),
@@ -881,13 +981,36 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen> {
 
 enum _ProfileAction { editDisplayName, editGender }
 
-class _ConnectionRequestSettingsSummary extends StatelessWidget {
-  const _ConnectionRequestSettingsSummary({required this.state});
+class _ConnectionRequestSettingsSection extends StatelessWidget {
+  const _ConnectionRequestSettingsSection({
+    required this.state,
+    required this.settings,
+    required this.audioSettings,
+    required this.onNotificationsEnabledChanged,
+    required this.onSoundEnabledChanged,
+    required this.onShowMinimizedChanged,
+    required this.onUnmute,
+  });
 
   final ConnectionRequestState state;
+  final AsyncValue<AppConnectionRequestSettings> settings;
+  final AsyncValue<AppAudioSettings> audioSettings;
+  final ValueChanged<bool> onNotificationsEnabledChanged;
+  final ValueChanged<bool> onSoundEnabledChanged;
+  final ValueChanged<bool> onShowMinimizedChanged;
+  final ValueChanged<String> onUnmute;
 
   @override
   Widget build(BuildContext context) {
+    final requestSettings =
+        settings.value ?? const AppConnectionRequestSettings();
+    final soundSettings = audioSettings.value ?? const AppAudioSettings();
+    final isBusy = settings.isLoading || audioSettings.isLoading;
+    final Object? error = settings.hasError
+        ? settings.error
+        : audioSettings.hasError
+        ? audioSettings.error
+        : null;
     final pendingInbound = state.incomingSurfaces
         .where((surface) => !surface.status.isTerminal)
         .length;
@@ -897,24 +1020,154 @@ class _ConnectionRequestSettingsSummary extends StatelessWidget {
     final status = state.available
         ? '$pendingInbound inbound pending | $pendingOutbound outbound pending'
         : 'Connection request service is unavailable.';
+    return AppSectionCard(
+      child: Column(
+        children: <Widget>[
+          ListTile(
+            leading: Icon(
+              error == null
+                  ? Icons.notifications_active_outlined
+                  : Icons.error_outline,
+              color: error == null ? null : Theme.of(context).colorScheme.error,
+            ),
+            title: const Text('Connection request prompts'),
+            subtitle: Text(
+              error == null ? status : _formatSettingsError(error),
+            ),
+          ),
+          const Divider(height: 1),
+          SwitchListTile(
+            secondary: const Icon(Icons.notifications_outlined),
+            title: const Text('Connection request notifications'),
+            subtitle: Text(
+              requestSettings.notificationsEnabled
+                  ? 'OS notifications are allowed.'
+                  : 'Only in-app prompts are shown.',
+            ),
+            value: requestSettings.notificationsEnabled,
+            onChanged: isBusy ? null : onNotificationsEnabledChanged,
+          ),
+          const Divider(height: 1),
+          SwitchListTile(
+            secondary: const Icon(Icons.water_drop_outlined),
+            title: const Text('Connection request sound'),
+            subtitle: Text(
+              soundSettings.connectionRequestSoundsEnabled ? 'On' : 'Off',
+            ),
+            value: soundSettings.connectionRequestSoundsEnabled,
+            onChanged: isBusy ? null : onSoundEnabledChanged,
+          ),
+          const Divider(height: 1),
+          SwitchListTile(
+            secondary: const Icon(Icons.web_asset_outlined),
+            title: const Text('Show notifications when minimized'),
+            subtitle: Text(
+              requestSettings.showNotificationsWhenMinimized
+                  ? 'Rain can notify while the window is hidden.'
+                  : 'Minimized windows use in-app prompts only.',
+            ),
+            value: requestSettings.showNotificationsWhenMinimized,
+            onChanged: isBusy || !requestSettings.notificationsEnabled
+                ? null
+                : onShowMinimizedChanged,
+          ),
+          const Divider(height: 1),
+          _ConnectionRequestQuotaTile(quota: state.quota),
+          const Divider(height: 1),
+          _MutedConnectionRequestSendersTile(
+            senders: requestSettings.mutedRequestSenders,
+            isBusy: isBusy,
+            onUnmute: onUnmute,
+          ),
+        ],
+      ),
+    );
+  }
+}
+
+class _ConnectionRequestQuotaTile extends StatelessWidget {
+  const _ConnectionRequestQuotaTile({required this.quota});
+
+  final ConnectionRequestQuotaSnapshot? quota;
+
+  @override
+  Widget build(BuildContext context) {
+    final quota = this.quota;
+    if (quota == null) {
+      return const ListTile(
+        leading: Icon(Icons.speed_outlined),
+        title: Text('Request quota'),
+        subtitle: Text('Quota summary unavailable. Pull latest state first.'),
+      );
+    }
+    final remaining = _remainingConnectionRequests(quota);
+    final details = <String>[
+      '$remaining request${remaining == 1 ? '' : 's'} left today',
+      '${quota.perTargetRemainingToday} per peer',
+      '${quota.pendingOutboundCount} outbound pending',
+      '${quota.pendingInboundCount} inbound pending',
+      if (quota.extraCreditsRemaining > 0)
+        '${quota.extraCreditsRemaining} extra credit${quota.extraCreditsRemaining == 1 ? '' : 's'}',
+      if (quota.disabled) 'feature disabled',
+    ].join(' | ');
+    return ListTile(
+      leading: const Icon(Icons.speed_outlined),
+      title: const Text('Request quota'),
+      subtitle: Text('Read-only from Firebase. $details.'),
+    );
+  }
+}
+
+class _MutedConnectionRequestSendersTile extends StatelessWidget {
+  const _MutedConnectionRequestSendersTile({
+    required this.senders,
+    required this.isBusy,
+    required this.onUnmute,
+  });
+
+  final Set<String> senders;
+  final bool isBusy;
+  final ValueChanged<String> onUnmute;
+
+  @override
+  Widget build(BuildContext context) {
+    final sorted = senders.toList(growable: false)..sort();
+    if (sorted.isEmpty) {
+      return const ListTile(
+        leading: Icon(Icons.notifications_active_outlined),
+        title: Text('Muted request senders'),
+        subtitle: Text('No muted senders.'),
+      );
+    }
     return Column(
       children: <Widget>[
-        ListTile(
-          leading: const Icon(Icons.notifications_active_outlined),
-          title: const Text('Connection request prompts'),
-          subtitle: Text(status),
-        ),
-        const Divider(height: 1),
         const ListTile(
-          leading: Icon(Icons.person_search_outlined),
-          title: Text('Muted peers'),
-          subtitle: Text(
-            'Open a friend profile to allow connection prompts from that peer again.',
-          ),
+          leading: Icon(Icons.notifications_off_outlined),
+          title: Text('Muted request senders'),
+          subtitle: Text('Unmute only changes the selected sender row.'),
         ),
+        for (final sender in sorted) ...<Widget>[
+          const Divider(height: 1),
+          ListTile(
+            key: ValueKey<String>('muted-connection-request-sender-$sender'),
+            leading: const Icon(Icons.person_off_outlined),
+            title: Text('@$sender'),
+            trailing: TextButton(
+              key: ValueKey<String>('unmute-connection-request-sender-$sender'),
+              onPressed: isBusy ? null : () => onUnmute(sender),
+              child: const Text('Unmute'),
+            ),
+          ),
+        ],
       ],
     );
   }
+}
+
+int _remainingConnectionRequests(ConnectionRequestQuotaSnapshot quota) {
+  final remaining =
+      quota.dailyLimit + quota.extraCreditsRemaining - quota.usedToday;
+  return remaining < 0 ? 0 : remaining;
 }
 
 class _AboutRainSection extends StatelessWidget {

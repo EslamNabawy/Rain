@@ -8,6 +8,7 @@ import 'package:flutter_webrtc/flutter_webrtc.dart';
 import 'package:package_info_plus/package_info_plus.dart';
 import 'package:protocol_brain/protocol_brain.dart';
 import 'package:rain/application/bootstrap/app_bootstrap.dart';
+import 'package:rain/application/runtime/connection_request_state.dart';
 import 'package:rain/application/runtime/rain_runtime_controller.dart';
 import 'package:rain/application/state/app_providers.dart';
 import 'package:rain/core/config/app_environment.dart';
@@ -86,7 +87,7 @@ void main() {
     addTearDown(harness.dispose);
 
     await tester.pumpSettingsScreen(harness: harness);
-    await tester.drag(find.byType(ListView), const Offset(0, -900));
+    await tester.drag(find.byType(ListView), const Offset(0, -1500));
     await tester.pump();
     await tester.pump(const Duration(milliseconds: 300));
 
@@ -353,6 +354,76 @@ void main() {
     expect(await AppSettingsStore().loadCallSoundsEnabled(), isFalse);
   });
 
+  testWidgets('connection request controls persist from settings', (
+    WidgetTester tester,
+  ) async {
+    _useTallView(tester);
+    final harness = _SettingsHarness(
+      connectionRequestState: _connectionRequestStateWithQuota(),
+    );
+    addTearDown(harness.dispose);
+
+    await tester.pumpSettingsScreen(harness: harness);
+    await tester.drag(find.byType(ListView), const Offset(0, -1200));
+    await tester.pumpSettingsFrame();
+
+    expect(find.text('Connection request notifications'), findsOneWidget);
+    expect(find.text('Connection request sound'), findsOneWidget);
+    expect(find.text('Show notifications when minimized'), findsOneWidget);
+    expect(find.text('Request quota'), findsOneWidget);
+    expect(find.textContaining('Read-only from Firebase'), findsOneWidget);
+
+    await tester.tap(find.text('Connection request notifications'));
+    await tester.pumpSettingsFrame();
+    await tester.tap(find.text('Connection request sound'));
+    await tester.pumpSettingsFrame();
+
+    expect(
+      await AppSettingsStore().loadConnectionRequestNotificationsEnabled(),
+      isFalse,
+    );
+    expect(
+      await AppSettingsStore().loadConnectionRequestSoundsEnabled(),
+      isFalse,
+    );
+  });
+
+  testWidgets('muted request sender unmute removes only that row', (
+    WidgetTester tester,
+  ) async {
+    _useTallView(tester);
+    await AppSettingsStore().setMutedConnectionRequestSenders(<String>{
+      'bob',
+      'cara',
+    });
+    final harness = _SettingsHarness(
+      connectionRequestState: _connectionRequestStateWithQuota(),
+    );
+    addTearDown(harness.dispose);
+
+    await tester.pumpSettingsScreen(harness: harness);
+    await tester.drag(find.byType(ListView), const Offset(0, -1400));
+    await tester.pumpSettingsFrame();
+
+    expect(find.text('@bob'), findsOneWidget);
+    expect(find.text('@cara'), findsOneWidget);
+
+    await tester.tap(
+      find.byKey(
+        const ValueKey<String>('unmute-connection-request-sender-bob'),
+      ),
+    );
+    await tester.pumpSettingsFrame();
+
+    expect(find.text('@bob'), findsNothing);
+    expect(find.text('@cara'), findsOneWidget);
+    expect(
+      (await AppSettingsStore().loadConnectionRequestSettings())
+          .mutedRequestSenders,
+      <String>{'cara'},
+    );
+  });
+
   testWidgets('device refresh handles permission denied', (
     WidgetTester tester,
   ) async {
@@ -401,6 +472,25 @@ void _useTallView(WidgetTester tester) {
   addTearDown(tester.view.resetDevicePixelRatio);
 }
 
+ConnectionRequestState _connectionRequestStateWithQuota() {
+  return ConnectionRequestState(
+    available: true,
+    incomingRequests: const <ConnectionRequestPayload>[],
+    outgoingRequests: const <ConnectionRequestPayload>[],
+    incomingSurfaces: const <ConnectionRequestSurfaceModel>[],
+    outgoingSurfaces: const <ConnectionRequestSurfaceModel>[],
+    quota: const ConnectionRequestQuotaSnapshot(
+      dailyLimit: 20,
+      usedToday: 15,
+      extraCreditsRemaining: 2,
+      perTargetRemainingToday: 1,
+      pendingOutboundCount: 2,
+      pendingInboundCount: 1,
+    ),
+    updatedAt: DateTime.utc(2026, 5, 28, 12),
+  );
+}
+
 extension _SettingsPump on WidgetTester {
   Future<void> pumpSettingsScreen({required _SettingsHarness harness}) async {
     await pumpWidget(
@@ -415,6 +505,11 @@ extension _SettingsPump on WidgetTester {
           platformBridgeProvider.overrideWithValue(harness.platformBridge),
           identityProvider.overrideWith(_NoIdentityController.new),
           runtimeControllerProvider.overrideWith(_NoRuntimeController.new),
+          connectionRequestProvider.overrideWith(
+            () => _FakeConnectionRequestController(
+              harness.connectionRequestState,
+            ),
+          ),
           friendsProvider.overrideWith(_NoFriendsController.new),
           crashDiagnosticsServiceProvider.overrideWithValue(
             harness.crashDiagnostics,
@@ -433,12 +528,16 @@ extension _SettingsPump on WidgetTester {
 }
 
 class _SettingsHarness {
-  _SettingsHarness({_FakePlatformBridge? platformBridge})
-    : platformBridge = platformBridge ?? _FakePlatformBridge(),
-      database = RainDatabase(NativeDatabase.memory()),
-      diagnosticsDirectory = Directory.systemTemp.createTempSync(
-        'rain_settings_test_',
-      ) {
+  _SettingsHarness({
+    _FakePlatformBridge? platformBridge,
+    ConnectionRequestState? connectionRequestState,
+  }) : platformBridge = platformBridge ?? _FakePlatformBridge(),
+       connectionRequestState =
+           connectionRequestState ?? const ConnectionRequestState.idle(),
+       database = RainDatabase(NativeDatabase.memory()),
+       diagnosticsDirectory = Directory.systemTemp.createTempSync(
+         'rain_settings_test_',
+       ) {
     crashDiagnostics = CrashDiagnosticsService(
       directoryProvider: () async => diagnosticsDirectory,
       appInfoProvider: () async => const CrashDiagnosticsAppInfo.unknown(),
@@ -464,6 +563,7 @@ class _SettingsHarness {
   }
 
   final _FakePlatformBridge platformBridge;
+  final ConnectionRequestState connectionRequestState;
   final RainDatabase database;
   final Directory diagnosticsDirectory;
   late final CrashDiagnosticsService crashDiagnostics;
@@ -554,6 +654,24 @@ class _NoIdentityController extends IdentityController {
 class _NoRuntimeController extends RuntimeController {
   @override
   Future<RainRuntimeController?> build() async => null;
+}
+
+class _FakeConnectionRequestController extends ConnectionRequestController {
+  _FakeConnectionRequestController(this.initialState);
+
+  final ConnectionRequestState initialState;
+
+  @override
+  ConnectionRequestState build() => initialState;
+
+  @override
+  Future<ConnectionRequestDecision> unmute(String peerId) async {
+    return ConnectionRequestDecision(
+      allowed: true,
+      userMessage: 'Unmuted connection requests from @$peerId.',
+      peerId: peerId,
+    );
+  }
 }
 
 class _NoFriendsController extends FriendsController {

@@ -1,5 +1,6 @@
 import 'package:flutter_test/flutter_test.dart';
 import 'package:protocol_brain/protocol_brain.dart';
+import 'package:rain/infrastructure/services/app_settings_store.dart';
 import 'package:rain/infrastructure/notifications/rain_notification_service.dart';
 
 void main() {
@@ -97,6 +98,21 @@ void main() {
       expect(dismissed.kind, RainNotificationResultKind.dismissed);
       expect(platform.dismissed, contains(id));
       expect(terminal.kind, RainNotificationResultKind.skipped);
+    });
+
+    test('notification off suppresses OS notification only', () async {
+      final platform = _FakeNotificationPlatform();
+      final service = LocalRainNotificationService(
+        platform: platform,
+        settingsLoader: () =>
+            const AppConnectionRequestSettings(notificationsEnabled: false),
+      );
+
+      final result = await service.showConnectionRequest(_surface());
+
+      expect(result.kind, RainNotificationResultKind.skipped);
+      expect(result.needsInAppFallback, isFalse);
+      expect(platform.shown, isEmpty);
     });
   });
 }

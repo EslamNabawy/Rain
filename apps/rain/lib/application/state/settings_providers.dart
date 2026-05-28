@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
+import 'package:protocol_brain/protocol_brain.dart';
 
 import 'package:rain/application/runtime/media_device_settings.dart';
 import 'package:rain/application/runtime/voice_call_state.dart';
@@ -187,6 +188,15 @@ class VoiceAudioSettingsController extends AsyncNotifier<AppAudioSettings> {
     );
   }
 
+  Future<void> setConnectionRequestSoundsEnabled(bool enabled) {
+    return _persist(
+      write: (AppSettingsStore store) =>
+          store.setConnectionRequestSoundsEnabled(enabled),
+      apply: (AppAudioSettings current) =>
+          current.copyWith(connectionRequestSoundsEnabled: enabled),
+    );
+  }
+
   Future<void> setReduceSoundsDuringCall(bool enabled) {
     return _persist(
       write: (AppSettingsStore store) =>
@@ -215,6 +225,94 @@ class VoiceAudioSettingsController extends AsyncNotifier<AppAudioSettings> {
   Future<void> _persist({
     required Future<void> Function(AppSettingsStore store) write,
     required AppAudioSettings Function(AppAudioSettings current) apply,
+  }) async {
+    final store = ref.read(appSettingsStoreProvider);
+    final previous = await _currentSettings();
+    final next = apply(previous);
+    state = AsyncValue.data(next);
+    try {
+      await write(store);
+    } catch (error, stackTrace) {
+      state = AsyncValue.data(previous);
+      Error.throwWithStackTrace(error, stackTrace);
+    }
+  }
+}
+
+final connectionRequestSettingsProvider =
+    AsyncNotifierProvider<
+      ConnectionRequestSettingsController,
+      AppConnectionRequestSettings
+    >(ConnectionRequestSettingsController.new);
+
+class ConnectionRequestSettingsController
+    extends AsyncNotifier<AppConnectionRequestSettings> {
+  @override
+  Future<AppConnectionRequestSettings> build() {
+    return ref.watch(appSettingsStoreProvider).loadConnectionRequestSettings();
+  }
+
+  Future<void> setNotificationsEnabled(bool enabled) {
+    return _persist(
+      write: (AppSettingsStore store) =>
+          store.setConnectionRequestNotificationsEnabled(enabled),
+      apply: (AppConnectionRequestSettings current) =>
+          current.copyWith(notificationsEnabled: enabled),
+    );
+  }
+
+  Future<void> setShowNotificationsWhenMinimized(bool enabled) {
+    return _persist(
+      write: (AppSettingsStore store) =>
+          store.setShowConnectionRequestNotificationsWhenMinimized(enabled),
+      apply: (AppConnectionRequestSettings current) =>
+          current.copyWith(showNotificationsWhenMinimized: enabled),
+    );
+  }
+
+  Future<void> addMutedSender(String peerId) {
+    return _persist(
+      write: (AppSettingsStore store) =>
+          store.addMutedConnectionRequestSender(peerId),
+      apply: (AppConnectionRequestSettings current) {
+        final next = <String>{...current.mutedRequestSenders};
+        try {
+          next.add(normalizeConnectionRequestUsername(peerId));
+        } on FormatException {
+          return current;
+        }
+        return current.copyWith(mutedRequestSenders: next);
+      },
+    );
+  }
+
+  Future<void> removeMutedSender(String peerId) {
+    return _persist(
+      write: (AppSettingsStore store) =>
+          store.removeMutedConnectionRequestSender(peerId),
+      apply: (AppConnectionRequestSettings current) {
+        final next = <String>{...current.mutedRequestSenders};
+        try {
+          next.remove(normalizeConnectionRequestUsername(peerId));
+        } on FormatException {
+          return current;
+        }
+        return current.copyWith(mutedRequestSenders: next);
+      },
+    );
+  }
+
+  Future<AppConnectionRequestSettings> _currentSettings() async {
+    return state.value ??
+        ref.read(appSettingsStoreProvider).loadConnectionRequestSettings();
+  }
+
+  Future<void> _persist({
+    required Future<void> Function(AppSettingsStore store) write,
+    required AppConnectionRequestSettings Function(
+      AppConnectionRequestSettings current,
+    )
+    apply,
   }) async {
     final store = ref.read(appSettingsStoreProvider);
     final previous = await _currentSettings();

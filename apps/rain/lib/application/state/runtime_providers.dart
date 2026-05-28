@@ -1,6 +1,7 @@
 import 'dart:async';
 
 import 'package:flutter/foundation.dart';
+import 'package:flutter/widgets.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:protocol_brain/protocol_brain.dart';
 import 'package:rain_core/rain_core.dart';
@@ -163,6 +164,10 @@ final rainNotificationServiceProvider = Provider<RainNotificationService>((
       defaultTargetPlatform == TargetPlatform.windows) {
     return LocalRainNotificationService(
       platform: FlutterLocalRainNotificationPlatform(),
+      settingsLoader: ref
+          .watch(appSettingsStoreProvider)
+          .loadConnectionRequestSettings,
+      lifecycleStateReader: () => WidgetsBinding.instance.lifecycleState,
     );
   }
   return const NoopRainNotificationService();
@@ -325,12 +330,28 @@ class ConnectionRequestController extends Notifier<ConnectionRequestState> {
 
   Future<ConnectionRequestDecision> mute(String peerId) async {
     assertNetworkReady(ref);
-    return _requireRuntime().muteConnectionRequestsFromPeer(peerId);
+    final decision = await _requireRuntime().muteConnectionRequestsFromPeer(
+      peerId,
+    );
+    if (decision.allowed) {
+      await ref
+          .read(connectionRequestSettingsProvider.notifier)
+          .addMutedSender(decision.peerId ?? peerId);
+    }
+    return decision;
   }
 
   Future<ConnectionRequestDecision> unmute(String peerId) async {
     assertNetworkReady(ref);
-    return _requireRuntime().unmuteConnectionRequestsFromPeer(peerId);
+    final decision = await _requireRuntime().unmuteConnectionRequestsFromPeer(
+      peerId,
+    );
+    if (decision.allowed) {
+      await ref
+          .read(connectionRequestSettingsProvider.notifier)
+          .removeMutedSender(decision.peerId ?? peerId);
+    }
+    return decision;
   }
 
   Future<ConnectionRequestDecision> perform(
