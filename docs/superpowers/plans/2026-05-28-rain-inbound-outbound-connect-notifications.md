@@ -524,9 +524,9 @@ Tests must fail if a reason code lacks a non-empty message.
 
 **Steps:**
 
-- [ ] Write acceptance doc defining v1 as app-open/minimized connection request notifications only, not closed-app push.
-- [ ] Record that existing `friendRequests` and `voiceCallInboxes` are not reused.
-- [ ] Record threat model:
+- [x] Write acceptance doc defining v1 as app-open/minimized connection request notifications only, not closed-app push.
+- [x] Record that existing `friendRequests` and `voiceCallInboxes` are not reused.
+- [x] Record threat model:
   - client replay
   - direct RTDB writes
   - duplicate taps
@@ -536,16 +536,16 @@ Tests must fail if a reason code lacks a non-empty message.
   - entitlement abuse
   - receiver harassment
   - Firebase cost spike
-- [ ] Assign phase owners for backend contract, Firebase rules, Cloud Functions, protocol adapter, runtime, UI/UX, QA, release/ops.
-- [ ] Define production success metrics:
+- [x] Assign phase owners for backend contract, Firebase rules, Cloud Functions, protocol adapter, runtime, UI/UX, QA, release/ops.
+- [x] Define production success metrics:
   - accepted request ratio
   - duplicate suppression ratio
   - denied reason distribution
   - stale cleanup count
   - notification fallback count
   - request function error rate
-- [ ] Add skipped tests in `packages/protocol_brain/test/connection_request_contract_test.dart` for every reason code and state transition.
-- [ ] Commit: `docs: lock connection request notification acceptance`
+- [x] Add skipped tests in `packages/protocol_brain/test/connection_request_contract_test.dart` for every reason code and state transition.
+- [x] Commit: `docs: lock connection request notification acceptance`
 
 **Validation:**
 
