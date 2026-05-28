@@ -35,14 +35,14 @@ project used by the app build.
 - `activeVoiceUsers/<username>`: ephemeral one-call lock for a user across all peers
 - `voiceCallInboxes/<username>/<callId>`: ephemeral incoming call pointer
 - `voiceCalls/<callId>`: ephemeral voice call state, encrypted SDP, and encrypted ICE
-- `connectionRequests/<username>/<requestId>`: read-only inbound connection notification projection for the receiver
-- `connectionRequestOutboxes/<username>/<requestId>`: read-only outbound connection notification projection for the sender
+- `connectionRequests/<username>/<requestId>`: inbound connection notification projection for the receiver; Spark `rtdbOnly` clients may create/transition only guarded request rows
+- `connectionRequestOutboxes/<username>/<requestId>`: outbound connection notification projection for the sender; Spark `rtdbOnly` clients may create/transition only guarded request rows
 - `connectionRequestQuotaSummaries/<username>`: sanitized read-only quota summary for the signed-in user
-- `connectionRequestPairLocks/<pairKey>`: server-owned pending request dedupe lock
+- `connectionRequestPairLocks/<pairKey>`: pending request dedupe lock; Spark `rtdbOnly` clients may create/terminal-transition only matching locks
 - `connectionNotificationEntitlements/<username>`: server-owned quota overrides and extra credits
 - `connectionNotificationUsage/<username>/<yyyyMMddUtc>`: server-owned per-user usage counters
 - `connectionNotificationTargetUsage/<from>/<to>/<yyyyMMddUtc>`: server-owned per-target usage counters
-- `connectionNotificationMutes/<receiver>/<sender>`: server-owned mute state, readable by the receiver
+- `connectionNotificationMutes/<receiver>/<sender>`: receiver-owned mute state in Spark `rtdbOnly`, readable by the receiver
 - `connectionNotificationAudit/<yyyyMMddUtc>/<eventId>`: server-owned audit records
 - `connectionNotificationAuditSummary/<yyyyMMddUtc>`: server-owned daily audit and cost summary
 - `connectionNotificationReservations/<requestId>`: server-owned quota reservation repair records

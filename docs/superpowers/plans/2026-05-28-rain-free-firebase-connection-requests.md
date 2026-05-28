@@ -738,9 +738,11 @@ Spark-safe client writes.
 **Files:**
 
 - Modify: `backend/firebase/database.rules.json`
+- Modify: `backend/firebase/README.md`
+- Test: `packages/protocol_brain/test/connection_request_firebase_contract_test.dart`
 - Test: `packages/protocol_brain/test/connection_request_rtdb_rules_contract_test.dart`
 
-- [ ] **Step 1: Define rule helpers**
+- [x] **Step 1: Define rule helpers**
 
 Rules must have helper predicates equivalent to:
 
@@ -761,7 +763,7 @@ Required checks:
 - terminal transitions only move from non-terminal to terminal
 - terminal rows cannot be overwritten
 
-- [ ] **Step 2: Allow sender create as multi-path-compatible writes**
+- [x] **Step 2: Allow sender create as multi-path-compatible writes**
 
 Allow sender to write own outbox row and receiver inbox row only when the new
 payload matches the same request id and pair key.
@@ -769,7 +771,7 @@ payload matches the same request id and pair key.
 Rules cannot perfectly guarantee multi-location atomicity. The adapter must
 repair partial mirrors opportunistically.
 
-- [ ] **Step 3: Allow pair lock writes narrowly**
+- [x] **Step 3: Allow pair lock writes narrowly**
 
 Allow pair lock create when:
 
@@ -786,7 +788,7 @@ Allow pair lock terminal/remove only when:
 - actor is receiver for accept/reject/seen-driven cleanup
 - lock is expired by timestamp
 
-- [ ] **Step 4: Deny server-only paths**
+- [x] **Step 4: Deny server-only paths**
 
 Keep these denied:
 
@@ -798,7 +800,7 @@ Keep these denied:
 "connectionRequestQuotaSummaries": { ".read": "auth-owned read only", ".write": false }
 ```
 
-- [ ] **Step 5: Add contract tests**
+- [x] **Step 5: Add contract tests**
 
 At minimum, assert rules text contains helper names and denies server-only paths.
 If the Firebase emulator rules harness is available, add live rules tests:
@@ -812,11 +814,14 @@ test('terminal request cannot be overwritten', () async {});
 test('pair lock request id mismatch is denied', () async {});
 ```
 
-- [ ] **Step 6: Validate and commit**
+- [x] **Step 6: Validate and commit**
 
 ```powershell
 flutter test --no-test-assets packages/protocol_brain/test/connection_request_rtdb_rules_contract_test.dart
-git add backend/firebase/database.rules.json packages/protocol_brain/test/connection_request_rtdb_rules_contract_test.dart
+flutter test --no-test-assets packages/protocol_brain/test/connection_request_firebase_contract_test.dart
+dart run melos run analyze
+dart run melos run test
+git add backend/firebase/database.rules.json backend/firebase/README.md packages/protocol_brain/test/connection_request_firebase_contract_test.dart packages/protocol_brain/test/connection_request_rtdb_rules_contract_test.dart docs/superpowers/plans/2026-05-28-rain-free-firebase-connection-requests.md
 git commit -m "security: allow spark-safe connection request writes"
 ```
 

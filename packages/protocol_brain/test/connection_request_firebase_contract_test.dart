@@ -34,30 +34,49 @@ void main() {
       );
     });
 
-    test('authenticated users cannot create request rows directly', () {
+    test('authenticated users can only write guarded request rows', () {
+      final inboxWrite = _node(rules, [
+        'connectionRequests',
+        r'$username',
+        r'$requestId',
+      ])['.write'];
+      final outboxWrite = _node(rules, [
+        'connectionRequestOutboxes',
+        r'$username',
+        r'$requestId',
+      ])['.write'];
+
       expect(
         _node(rules, ['connectionRequests', r'$username'])['.write'],
-        isFalse,
-      );
-      expect(
-        _node(rules, [
-          'connectionRequests',
-          r'$username',
-          r'$requestId',
-        ])['.write'],
         isFalse,
       );
       expect(
         _node(rules, ['connectionRequestOutboxes', r'$username'])['.write'],
         isFalse,
       );
+      expect(inboxWrite, isA<String>());
+      expect(outboxWrite, isA<String>());
       expect(
-        _node(rules, [
-          'connectionRequestOutboxes',
-          r'$username',
-          r'$requestId',
-        ])['.write'],
-        isFalse,
+        inboxWrite,
+        contains(
+          "root.child('users/' + newData.child('from').val() + '/uid').val() === auth.uid",
+        ),
+      );
+      expect(
+        outboxWrite,
+        contains("newData.child('from').val() === \$username"),
+      );
+      expect(
+        inboxWrite,
+        contains(
+          "root.child('friendships/' + newData.child('from').val() + '/' + newData.child('to').val()).exists()",
+        ),
+      );
+      expect(
+        outboxWrite,
+        contains(
+          "root.child('connectionRequestPairLocks/' + newData.child('pairKey').val() + '/requestId').val() === \$requestId",
+        ),
       );
     });
 
@@ -86,8 +105,12 @@ void main() {
       );
     });
 
-    test('authenticated users cannot write pair locks or reservations', () {
+    test('pair locks are guarded and reservations stay denied', () {
       expect(_node(rules, ['connectionRequestPairLocks'])['.write'], isFalse);
+      expect(
+        _node(rules, ['connectionRequestPairLocks', r'$pairKey'])['.write'],
+        isA<String>(),
+      );
       expect(
         _node(rules, ['connectionNotificationReservations'])['.write'],
         isFalse,
@@ -112,7 +135,7 @@ void main() {
       expect(summary['.write'], isFalse);
     });
 
-    test('connection notification mutes are function-owned', () {
+    test('connection notification mutes are receiver-owned', () {
       final receiver = _node(rules, [
         'connectionNotificationMutes',
         r'$receiver',
@@ -125,7 +148,13 @@ void main() {
 
       expect(receiver['.read'], _ownUserReadRule(r'$receiver'));
       expect(receiver['.write'], isFalse);
-      expect(sender['.write'], isFalse);
+      expect(sender['.write'], isA<String>());
+      expect(
+        sender['.write'],
+        contains(
+          "root.child('users/' + \$receiver + '/uid').val() === auth.uid",
+        ),
+      );
     });
 
     test(
@@ -143,7 +172,7 @@ void main() {
       },
     );
 
-    test('README documents the server-owned connection request paths', () {
+    test('README documents the Spark-safe connection request paths', () {
       final readme = _repoFile('backend/firebase/README.md');
 
       for (final path in <String>[
