@@ -402,11 +402,15 @@ without Cloud Functions.
 
 **Files:**
 
+- Create: `packages/protocol_brain/lib/adapters/connection_request_rtdb_adapter.dart`
 - Create: `packages/protocol_brain/lib/src/connection_request_rtdb_adapter.dart`
+  export shim
 - Modify: `packages/protocol_brain/lib/protocol_brain.dart`
+- Modify: `packages/protocol_brain/lib/adapters/firebase_adapter.dart`
+- Modify: `packages/protocol_brain/lib/src/connection_request_adapter.dart`
 - Test: `packages/protocol_brain/test/connection_request_rtdb_adapter_test.dart`
 
-- [ ] **Step 1: Create adapter skeleton**
+- [x] **Step 1: Create adapter skeleton**
 
 The adapter must implement:
 
@@ -462,7 +466,7 @@ final class RtdbOnlyConnectionRequestAdapter
 }
 ```
 
-- [ ] **Step 2: Implement watchers by reusing parsing behavior**
+- [x] **Step 2: Implement watchers by reusing parsing behavior**
 
 Move or duplicate the safe parser from `FirebaseSignalingAdapter`:
 
@@ -491,7 +495,7 @@ List<ConnectionRequestPayload> connectionRequestPayloadsFromSnapshotValue({
 });
 ```
 
-- [ ] **Step 3: Add first adapter tests**
+- [x] **Step 3: Add first adapter tests**
 
 Use a fake in-memory RTDB abstraction if available. If not, keep the adapter
 logic split so pure helpers can be tested without Firebase.
@@ -515,7 +519,7 @@ test('rtdbOnly quota summary uses best effort defaults', () async {
 });
 ```
 
-- [ ] **Step 4: Validate**
+- [x] **Step 4: Validate**
 
 ```powershell
 flutter test --no-test-assets packages/protocol_brain/test/connection_request_rtdb_adapter_test.dart
@@ -523,7 +527,7 @@ flutter test --no-test-assets packages/protocol_brain/test/connection_request_rt
 
 Expected: PASS.
 
-- [ ] **Step 5: Commit**
+- [x] **Step 5: Commit**
 
 ```powershell
 git add packages/protocol_brain/lib/src/connection_request_rtdb_adapter.dart packages/protocol_brain/lib/protocol_brain.dart packages/protocol_brain/test/connection_request_rtdb_adapter_test.dart

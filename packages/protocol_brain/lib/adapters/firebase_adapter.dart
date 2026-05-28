@@ -1516,68 +1516,12 @@ class FirebaseSignalingAdapter
         .child(path)
         .onValue
         .map(
-          (DatabaseEvent event) => _connectionRequestPayloadsFromSnapshotValue(
+          (DatabaseEvent event) => connectionRequestPayloadsFromSnapshotValue(
             path: path,
             value: event.snapshot.value,
+            diagnosticsSink: _emitConnectionRequestDiagnostic,
           ),
         );
-  }
-
-  List<ConnectionRequestPayload> _connectionRequestPayloadsFromSnapshotValue({
-    required String path,
-    required Object? value,
-  }) {
-    if (value == null) {
-      return const <ConnectionRequestPayload>[];
-    }
-    Map<Object?, Object?> rows;
-    try {
-      rows = connectionRequestObjectMap(value);
-    } on FormatException catch (error) {
-      _emitConnectionRequestDiagnostic(
-        ConnectionRequestAdapterDiagnosticEvent(
-          name: 'corrupt_connection_request_list_ignored',
-          path: path,
-          error: error,
-        ),
-      );
-      return const <ConnectionRequestPayload>[];
-    }
-
-    final payloads = <ConnectionRequestPayload>[];
-    for (final entry in rows.entries) {
-      final requestId = entry.key;
-      if (requestId is! String) {
-        _emitConnectionRequestDiagnostic(
-          ConnectionRequestAdapterDiagnosticEvent(
-            name: 'corrupt_connection_request_row_ignored',
-            path: path,
-            error: 'request id is not a string',
-          ),
-        );
-        continue;
-      }
-      try {
-        payloads.add(
-          ConnectionRequestPayload.fromJson(
-            requestId: requestId,
-            json: connectionRequestObjectMap(entry.value),
-          ),
-        );
-      } on FormatException catch (error) {
-        _emitConnectionRequestDiagnostic(
-          ConnectionRequestAdapterDiagnosticEvent(
-            name: 'corrupt_connection_request_row_ignored',
-            path: path,
-            requestId: requestId,
-            error: error,
-          ),
-        );
-        continue;
-      }
-    }
-    payloads.sort((left, right) => right.updatedAt.compareTo(left.updatedAt));
-    return List<ConnectionRequestPayload>.unmodifiable(payloads);
   }
 
   void _emitConnectionRequestDiagnostic(

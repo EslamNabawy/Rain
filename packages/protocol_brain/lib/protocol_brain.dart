@@ -42,6 +42,7 @@ export 'src/connection_memory.dart';
 export 'src/connection_request_adapter.dart';
 export 'src/connection_request_backend_mode.dart';
 export 'src/connection_request_contract.dart';
+export 'src/connection_request_rtdb_adapter.dart';
 export 'src/default_protocol_brain.dart';
 export 'src/protocol_brain_impl.dart';
 export 'src/session_manager.dart';
