@@ -5,6 +5,9 @@ Rain uses three GitHub Actions workflow layers:
 - `CI`: runs workflow lint, dependency lock drift checks, analyze, tests,
   Firebase emulator integration tests, and debug/demo artifact checks on pushes
   and pull requests.
+- `Validated Release Apps`: manually validates the selected ref, builds Android
+  and Windows release artifacts only after validation succeeds, and uploads the
+  final assets to a GitHub release page.
 - `Build Rain Apps`: builds downloadable Windows and Android artifacts through
   manual `workflow_dispatch`.
 - `Release Rain`: builds production artifacts and publishes a GitHub Release when a `v*` tag is pushed or the workflow is manually dispatched.
@@ -72,6 +75,44 @@ the release page and download:
 
 The workflow summary also prints direct links to each generated asset. Old
 `rain-test-*` pre-releases are pruned automatically after the latest ten builds.
+
+## Validated Release Apps
+
+Use **Actions -> Validated Release Apps -> Run workflow** when you want one
+workflow to test the selected ref, build the release apps, and publish the
+download files on a GitHub release page.
+
+Inputs:
+
+- `target_ref`: branch, tag, or SHA to validate. Default: `dev`.
+- `platform`: `all`, `android`, or `windows`.
+- `build_profile`: `demo` or `production`.
+- `publish_github_release`: uploads the built assets to a release page.
+- `prerelease`: marks the generated GitHub release as a pre-release.
+- `release_tag`: optional tag. If blank, the workflow creates a
+  `rain-validated-*` tag for demo builds or a `rain-release-*` tag for
+  production builds.
+
+Validation runs before any release artifact is built:
+
+- workflow lint
+- Dart formatting
+- workspace analyze
+- full workspace tests
+- Firebase JSON validation
+- Firebase Functions lint, audit, and tests
+- Firebase emulator integration tests
+
+The workflow publishes clean direct-download assets:
+
+- `Rain-Demo-Android-v7a.apk` or `Rain-Release-Android-v7a.apk`
+- `Rain-Demo-Android-v8-v9.apk` or `Rain-Release-Android-v8-v9.apk`
+- `Rain-Demo-Windows-x64.zip` or `Rain-Release-Windows-x64.zip`
+
+Demo builds use the Spark/free-tier `rtdbOnly` connection request backend by
+default. Production builds preserve the value in
+`RAIN_RELEASE_DART_DEFINES_JSON`; if it is missing, the workflow writes
+`CONNECTION_REQUEST_BACKEND_MODE=rtdbOnly` before building.
 
 Production builds require the secrets below.
 

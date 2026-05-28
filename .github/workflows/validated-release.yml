@@ -1,0 +1,688 @@
+name: Validated Release Apps
+
+on:
+  workflow_dispatch:
+    inputs:
+      target_ref:
+        description: Branch, tag, or SHA to validate and release
+        required: true
+        default: dev
+        type: string
+      platform:
+        description: Platform artifacts to build
+        required: true
+        default: all
+        type: choice
+        options:
+          - all
+          - android
+          - windows
+      build_profile:
+        description: Demo is Spark/free-tier friendly; production requires release secrets
+        required: true
+        default: demo
+        type: choice
+        options:
+          - demo
+          - production
+      publish_github_release:
+        description: Upload final assets to a GitHub release page
+        required: true
+        default: true
+        type: boolean
+      prerelease:
+        description: Mark the GitHub release as a pre-release
+        required: true
+        default: true
+        type: boolean
+      release_tag:
+        description: Optional release tag. Blank creates rain-validated/run tag.
+        required: false
+        default: ''
+        type: string
+
+permissions:
+  contents: write
+
+concurrency:
+  group: validated-release-${{ github.workflow }}-${{ inputs.target_ref }}-${{ inputs.platform }}-${{ inputs.build_profile }}
+  cancel-in-progress: false
+
+env:
+  FLUTTER_VERSION: '3.44.0'
+  JAVA_VERSION: '21'
+  NODE_VERSION: '20'
+  RAIN_APP_DIR: apps/rain
+  ARTIFACT_RETENTION_DAYS: '60'
+  BUILD_PROFILE: ${{ inputs.build_profile }}
+
+jobs:
+  resolve-target:
+    name: Resolve Target
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    outputs:
+      target_ref: ${{ steps.resolve.outputs.target_ref }}
+      target_sha: ${{ steps.resolve.outputs.target_sha }}
+      short_sha: ${{ steps.resolve.outputs.short_sha }}
+    steps:
+      - uses: actions/checkout@v5
+        with:
+          ref: ${{ inputs.target_ref }}
+          fetch-depth: 0
+
+      - id: resolve
+        name: Capture validated target
+        shell: bash
+        run: |
+          set -euo pipefail
+          target_sha="$(git rev-parse HEAD)"
+          {
+            echo "target_ref=${{ inputs.target_ref }}"
+            echo "target_sha=${target_sha}"
+            echo "short_sha=${target_sha:0:7}"
+          } >> "${GITHUB_OUTPUT}"
+
+  workflow-lint:
+    name: Workflow Lint
+    runs-on: ubuntu-latest
+    needs:
+      - resolve-target
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v5
+        with:
+          ref: ${{ needs.resolve-target.outputs.target_ref }}
+
+      - uses: actions/setup-go@v6
+        with:
+          go-version: stable
+          cache: false
+
+      - name: Install actionlint
+        run: go install github.com/rhysd/actionlint/cmd/actionlint@v1.7.8
+
+      - name: Lint GitHub Actions workflows
+        run: '"$(go env GOPATH)/bin/actionlint" -color'
+
+  workspace-validation:
+    name: Workspace Analyze And Test
+    runs-on: ubuntu-latest
+    needs:
+      - resolve-target
+    timeout-minutes: 90
+    steps:
+      - uses: actions/checkout@v5
+        with:
+          ref: ${{ needs.resolve-target.outputs.target_ref }}
+          fetch-depth: 0
+
+      - uses: actions/setup-java@v5
+        with:
+          distribution: temurin
+          java-version: ${{ env.JAVA_VERSION }}
+
+      - uses: subosito/flutter-action@v2
+        with:
+          flutter-version: ${{ env.FLUTTER_VERSION }}
+          channel: stable
+          cache: true
+
+      - name: Print toolchain versions
+        run: |
+          flutter doctor -v
+          flutter --version
+          dart --version
+
+      - name: Restore workspace dependencies
+        run: dart pub get
+
+      - name: Fail on dependency lock drift
+        run: git diff --exit-code -- pubspec.lock
+
+      - name: Enforce Dart formatting
+        run: |
+          dart format --output=none --set-exit-if-changed \
+            apps/rain/lib \
+            apps/rain/test \
+            apps/rain/tool \
+            packages/peer_core/lib \
+            packages/peer_core/test \
+            packages/protocol_brain/lib \
+            packages/protocol_brain/test \
+            packages/rain_core/lib \
+            packages/rain_core/test
+
+      - name: Require generated code artifacts
+        run: |
+          test -s apps/rain/lib/application/state/app_state.freezed.dart
+          test -s packages/rain_core/lib/database/rain_database.g.dart
+
+      - name: Run workspace analyzer
+        run: dart run melos run analyze
+
+      - name: Run full workspace tests
+        run: dart run melos run test
+
+  firebase-backend:
+    name: Firebase Backend
+    runs-on: ubuntu-latest
+    needs:
+      - resolve-target
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v5
+        with:
+          ref: ${{ needs.resolve-target.outputs.target_ref }}
+
+      - uses: actions/setup-node@v6
+        with:
+          node-version: ${{ env.NODE_VERSION }}
+          cache: npm
+          cache-dependency-path: backend/firebase/functions/package-lock.json
+
+      - name: Validate Firebase JSON files
+        run: |
+          node -e "JSON.parse(require('fs').readFileSync('backend/firebase/firebase.json', 'utf8'))"
+          node -e "JSON.parse(require('fs').readFileSync('backend/firebase/database.rules.json', 'utf8'))"
+
+      - name: Install Firebase function dependencies
+        working-directory: backend/firebase/functions
+        run: npm ci --ignore-scripts --no-audit
+
+      - name: Lint Firebase functions
+        working-directory: backend/firebase/functions
+        run: npm run lint
+
+      - name: Audit Firebase functions dependencies
+        working-directory: backend/firebase/functions
+        run: npm run audit:moderate
+
+      - name: Run Firebase function tests
+        working-directory: backend/firebase/functions
+        run: npm test --if-present
+
+  firebase-emulator-tests:
+    name: Firebase Emulator Integration
+    runs-on: ubuntu-latest
+    needs:
+      - resolve-target
+    timeout-minutes: 40
+    steps:
+      - uses: actions/checkout@v5
+        with:
+          ref: ${{ needs.resolve-target.outputs.target_ref }}
+
+      - uses: actions/setup-java@v5
+        with:
+          distribution: temurin
+          java-version: ${{ env.JAVA_VERSION }}
+
+      - uses: actions/setup-node@v6
+        with:
+          node-version: ${{ env.NODE_VERSION }}
+          cache: npm
+          cache-dependency-path: backend/firebase/functions/package-lock.json
+
+      - uses: subosito/flutter-action@v2
+        with:
+          flutter-version: ${{ env.FLUTTER_VERSION }}
+          channel: stable
+          cache: true
+
+      - name: Run Firebase emulator integration tests
+        run: bash scripts/ci_run_firebase_emulators.sh
+
+  validation-gate:
+    name: Validation Gate
+    runs-on: ubuntu-latest
+    if: always()
+    needs:
+      - workflow-lint
+      - workspace-validation
+      - firebase-backend
+      - firebase-emulator-tests
+    steps:
+      - name: Fail if any validation job failed
+        run: |
+          test "${{ needs.workflow-lint.result }}" = "success"
+          test "${{ needs.workspace-validation.result }}" = "success"
+          test "${{ needs.firebase-backend.result }}" = "success"
+          test "${{ needs.firebase-emulator-tests.result }}" = "success"
+
+  build-windows:
+    name: Build Windows Release App
+    runs-on: windows-2022
+    needs:
+      - resolve-target
+      - validation-gate
+    if: ${{ needs.validation-gate.result == 'success' && (inputs.platform == 'all' || inputs.platform == 'windows') }}
+    timeout-minutes: 75
+    steps:
+      - uses: actions/checkout@v5
+        with:
+          ref: ${{ needs.resolve-target.outputs.target_ref }}
+
+      - uses: subosito/flutter-action@v2
+        with:
+          flutter-version: ${{ env.FLUTTER_VERSION }}
+          channel: stable
+
+      - name: Prepare dart defines
+        shell: pwsh
+        env:
+          RAIN_RELEASE_DART_DEFINES_JSON: ${{ secrets.RAIN_RELEASE_DART_DEFINES_JSON }}
+        run: |
+          function Set-ConnectionRequestBackendMode([string]$Path) {
+            $defines = Get-Content -Raw -LiteralPath $Path | ConvertFrom-Json -ErrorAction Stop
+            if ($null -eq $defines.PSObject.Properties['CONNECTION_REQUEST_BACKEND_MODE']) {
+              $defines | Add-Member -NotePropertyName 'CONNECTION_REQUEST_BACKEND_MODE' -NotePropertyValue 'rtdbOnly'
+            }
+            $defines | ConvertTo-Json -Depth 20 | Set-Content -LiteralPath $Path -Encoding utf8NoBOM
+            "RAIN_CONNECTION_REQUEST_BACKEND_MODE=$($defines.CONNECTION_REQUEST_BACKEND_MODE)" |
+              Out-File -FilePath $env:GITHUB_ENV -Encoding utf8 -Append
+            Write-Host "Connection request backend mode: $($defines.CONNECTION_REQUEST_BACKEND_MODE)"
+          }
+
+          $definesPath = Join-Path $env:RUNNER_TEMP 'rain-defines.json'
+          if ($env:BUILD_PROFILE -eq 'production') {
+            if ([string]::IsNullOrWhiteSpace($env:RAIN_RELEASE_DART_DEFINES_JSON)) {
+              throw "RAIN_RELEASE_DART_DEFINES_JSON secret is required for production builds."
+            }
+            Set-Content -LiteralPath $definesPath -Value $env:RAIN_RELEASE_DART_DEFINES_JSON -Encoding utf8NoBOM
+          } else {
+            Copy-Item -LiteralPath 'apps\rain\tool\dart_defines.example.json' -Destination $definesPath -Force
+          }
+          Set-ConnectionRequestBackendMode $definesPath
+          "RAIN_DART_DEFINES_FILE=$definesPath" | Out-File -FilePath $env:GITHUB_ENV -Encoding utf8 -Append
+
+      - name: Build Windows artifact
+        shell: pwsh
+        run: |
+          $args = @(
+            '-NoProfile',
+            '-File',
+            'scripts\build_release.ps1',
+            '-Platform',
+            'windows',
+            '-OutputDir',
+            'artifacts',
+            '-DartDefinesFile',
+            $env:RAIN_DART_DEFINES_FILE,
+            '-Clean'
+          )
+          if ($env:BUILD_PROFILE -eq 'demo') {
+            $args += '-AllowPublicTurnForDemo'
+          }
+          pwsh @args
+
+      - name: Verify Windows runtime bundle
+        shell: pwsh
+        run: |
+          $portableDir = if ($env:BUILD_PROFILE -eq 'demo') {
+            'artifacts\Rain-Demo-Windows-x64-Build'
+          } else {
+            'artifacts\Rain-windows-portable'
+          }
+          foreach ($fileName in @(
+            'rain.exe',
+            'flutter_windows.dll',
+            'flutter_webrtc_plugin.dll',
+            'libwebrtc.dll',
+            'sqlite3.dll',
+            'win32_windows_x64.dll',
+            'data'
+          )) {
+            $path = Join-Path $portableDir $fileName
+            if (-not (Test-Path -LiteralPath $path)) {
+              throw "Missing Windows runtime entry before upload: $path"
+            }
+            Write-Host "Verified Windows runtime entry: $path"
+          }
+
+      - name: Upload Windows demo portable app
+        if: ${{ env.BUILD_PROFILE == 'demo' }}
+        uses: actions/upload-artifact@v7
+        with:
+          name: Rain-Demo-Windows-x64-Build
+          path: artifacts/Rain-Demo-Windows-x64-Build
+          if-no-files-found: error
+          retention-days: ${{ env.ARTIFACT_RETENTION_DAYS }}
+
+      - name: Upload Windows production portable app
+        if: ${{ env.BUILD_PROFILE == 'production' }}
+        uses: actions/upload-artifact@v7
+        with:
+          name: Rain-Release-Windows-x64-Build
+          path: artifacts/Rain-windows-portable
+          if-no-files-found: error
+          retention-days: ${{ env.ARTIFACT_RETENTION_DAYS }}
+
+  build-android:
+    name: Build Android Release APKs
+    runs-on: windows-2022
+    needs:
+      - resolve-target
+      - validation-gate
+    if: ${{ needs.validation-gate.result == 'success' && (inputs.platform == 'all' || inputs.platform == 'android') }}
+    timeout-minutes: 100
+    steps:
+      - uses: actions/checkout@v5
+        with:
+          ref: ${{ needs.resolve-target.outputs.target_ref }}
+
+      - uses: actions/setup-java@v5
+        with:
+          distribution: temurin
+          java-version: ${{ env.JAVA_VERSION }}
+
+      - uses: subosito/flutter-action@v2
+        with:
+          flutter-version: ${{ env.FLUTTER_VERSION }}
+          channel: stable
+
+      - name: Prepare dart defines and signing
+        shell: pwsh
+        env:
+          RAIN_RELEASE_DART_DEFINES_JSON: ${{ secrets.RAIN_RELEASE_DART_DEFINES_JSON }}
+          RAIN_RELEASE_KEYSTORE_BASE64: ${{ secrets.RAIN_RELEASE_KEYSTORE_BASE64 }}
+          RAIN_RELEASE_STORE_PASSWORD: ${{ secrets.RAIN_RELEASE_STORE_PASSWORD }}
+          RAIN_RELEASE_KEY_ALIAS: ${{ secrets.RAIN_RELEASE_KEY_ALIAS }}
+          RAIN_RELEASE_KEY_PASSWORD: ${{ secrets.RAIN_RELEASE_KEY_PASSWORD }}
+        run: |
+          function Set-ConnectionRequestBackendMode([string]$Path) {
+            $defines = Get-Content -Raw -LiteralPath $Path | ConvertFrom-Json -ErrorAction Stop
+            if ($null -eq $defines.PSObject.Properties['CONNECTION_REQUEST_BACKEND_MODE']) {
+              $defines | Add-Member -NotePropertyName 'CONNECTION_REQUEST_BACKEND_MODE' -NotePropertyValue 'rtdbOnly'
+            }
+            $defines | ConvertTo-Json -Depth 20 | Set-Content -LiteralPath $Path -Encoding utf8NoBOM
+            "RAIN_CONNECTION_REQUEST_BACKEND_MODE=$($defines.CONNECTION_REQUEST_BACKEND_MODE)" |
+              Out-File -FilePath $env:GITHUB_ENV -Encoding utf8 -Append
+            Write-Host "Connection request backend mode: $($defines.CONNECTION_REQUEST_BACKEND_MODE)"
+          }
+
+          $definesPath = Join-Path $env:RUNNER_TEMP 'rain-defines.json'
+          if ($env:BUILD_PROFILE -eq 'production') {
+            foreach ($required in @(
+              'RAIN_RELEASE_DART_DEFINES_JSON',
+              'RAIN_RELEASE_KEYSTORE_BASE64',
+              'RAIN_RELEASE_STORE_PASSWORD',
+              'RAIN_RELEASE_KEY_ALIAS',
+              'RAIN_RELEASE_KEY_PASSWORD'
+            )) {
+              if ([string]::IsNullOrWhiteSpace([Environment]::GetEnvironmentVariable($required))) {
+                throw "$required secret is required for production Android builds."
+              }
+            }
+
+            Set-Content -LiteralPath $definesPath -Value $env:RAIN_RELEASE_DART_DEFINES_JSON -Encoding utf8NoBOM
+            $keystorePath = Join-Path $env:RUNNER_TEMP 'rain-release.jks'
+            [IO.File]::WriteAllBytes($keystorePath, [Convert]::FromBase64String($env:RAIN_RELEASE_KEYSTORE_BASE64))
+            "RAIN_RELEASE_STORE_FILE=$keystorePath" | Out-File -FilePath $env:GITHUB_ENV -Encoding utf8 -Append
+            "RAIN_RELEASE_STORE_PASSWORD=$env:RAIN_RELEASE_STORE_PASSWORD" | Out-File -FilePath $env:GITHUB_ENV -Encoding utf8 -Append
+            "RAIN_RELEASE_KEY_ALIAS=$env:RAIN_RELEASE_KEY_ALIAS" | Out-File -FilePath $env:GITHUB_ENV -Encoding utf8 -Append
+            "RAIN_RELEASE_KEY_PASSWORD=$env:RAIN_RELEASE_KEY_PASSWORD" | Out-File -FilePath $env:GITHUB_ENV -Encoding utf8 -Append
+          } else {
+            Copy-Item -LiteralPath 'apps\rain\tool\dart_defines.example.json' -Destination $definesPath -Force
+          }
+          Set-ConnectionRequestBackendMode $definesPath
+          "RAIN_DART_DEFINES_FILE=$definesPath" | Out-File -FilePath $env:GITHUB_ENV -Encoding utf8 -Append
+
+      - name: Build Android APK artifacts
+        shell: pwsh
+        run: |
+          $args = @(
+            '-NoProfile',
+            '-File',
+            'scripts\build_release.ps1',
+            '-Platform',
+            'android',
+            '-OutputDir',
+            'artifacts',
+            '-DartDefinesFile',
+            $env:RAIN_DART_DEFINES_FILE,
+            '-AndroidArtifactSet',
+            'mobile',
+            '-Clean'
+          )
+          if ($env:BUILD_PROFILE -eq 'demo') {
+            $args += '-AllowPublicTurnForDemo'
+            $args += '-UseDemoAndroidSigningKey'
+          }
+          pwsh @args
+
+      - name: Verify Android APK ABI set
+        shell: pwsh
+        run: |
+          if ($env:BUILD_PROFILE -eq 'demo') {
+            $expected = @(
+              @{ Label = 'Android ARM v7 APK (armeabi-v7a)'; Path = 'artifacts\Rain-Demo-Android-ARM-v7a-Build.apk' },
+              @{ Label = 'Android ARM v8/v9 APK (arm64-v8a)'; Path = 'artifacts\Rain-Demo-Android-ARM-v8-v9-Build.apk' }
+            )
+          } else {
+            $expected = @(
+              @{ Label = 'Android ARM v7 APK (armeabi-v7a)'; Path = 'artifacts\Rain-release-android-armeabi-v7a.apk' },
+              @{ Label = 'Android ARM v8/v9 APK (arm64-v8a)'; Path = 'artifacts\Rain-release-android-arm64-v8a.apk' }
+            )
+          }
+          foreach ($artifact in $expected) {
+            if (-not (Test-Path -LiteralPath $artifact.Path)) {
+              throw "Missing expected artifact for $($artifact.Label): $($artifact.Path)"
+            }
+            Write-Host "Verified $($artifact.Label): $($artifact.Path)"
+          }
+
+          Add-Type -AssemblyName System.IO.Compression -ErrorAction SilentlyContinue
+          Add-Type -AssemblyName System.IO.Compression.FileSystem -ErrorAction SilentlyContinue
+          function Assert-ApkEntry([string]$Path, [string]$Entry) {
+            $archive = [System.IO.Compression.ZipFile]::OpenRead($Path)
+            try {
+              $entryNames = @($archive.Entries | ForEach-Object { $_.FullName })
+              if ($entryNames -notcontains $Entry) {
+                throw "APK is missing required native runtime entry: $Path -> $Entry"
+              }
+            } finally {
+              $archive.Dispose()
+            }
+            Write-Host "Verified APK native runtime entry: $Path -> $Entry"
+          }
+          if ($env:BUILD_PROFILE -eq 'demo') {
+            Assert-ApkEntry 'artifacts\Rain-Demo-Android-ARM-v7a-Build.apk' 'lib/armeabi-v7a/libsqlite3.so'
+            Assert-ApkEntry 'artifacts\Rain-Demo-Android-ARM-v7a-Build.apk' 'lib/armeabi-v7a/libjingle_peerconnection_so.so'
+            Assert-ApkEntry 'artifacts\Rain-Demo-Android-ARM-v8-v9-Build.apk' 'lib/arm64-v8a/libsqlite3.so'
+            Assert-ApkEntry 'artifacts\Rain-Demo-Android-ARM-v8-v9-Build.apk' 'lib/arm64-v8a/libjingle_peerconnection_so.so'
+          } else {
+            Assert-ApkEntry 'artifacts\Rain-release-android-armeabi-v7a.apk' 'lib/armeabi-v7a/libsqlite3.so'
+            Assert-ApkEntry 'artifacts\Rain-release-android-armeabi-v7a.apk' 'lib/armeabi-v7a/libjingle_peerconnection_so.so'
+            Assert-ApkEntry 'artifacts\Rain-release-android-arm64-v8a.apk' 'lib/arm64-v8a/libsqlite3.so'
+            Assert-ApkEntry 'artifacts\Rain-release-android-arm64-v8a.apk' 'lib/arm64-v8a/libjingle_peerconnection_so.so'
+          }
+
+      - name: Upload Android APK artifacts
+        uses: actions/upload-artifact@v7
+        with:
+          name: ${{ env.BUILD_PROFILE == 'demo' && 'Rain-Demo-Android-Builds' || 'Rain-Release-Android-Builds' }}
+          path: |
+            artifacts/Rain-Demo-Android-ARM-v7a-Build.apk
+            artifacts/Rain-Demo-Android-ARM-v8-v9-Build.apk
+            artifacts/Rain-release-android-armeabi-v7a.apk
+            artifacts/Rain-release-android-arm64-v8a.apk
+          if-no-files-found: error
+          retention-days: ${{ env.ARTIFACT_RETENTION_DAYS }}
+
+  publish-release:
+    name: Publish GitHub Release Page
+    runs-on: ubuntu-latest
+    if: ${{ always() && inputs.publish_github_release == true }}
+    needs:
+      - resolve-target
+      - validation-gate
+      - build-windows
+      - build-android
+    timeout-minutes: 25
+    steps:
+      - name: Validate requested build jobs
+        shell: bash
+        run: |
+          set -euo pipefail
+          test "${{ needs.validation-gate.result }}" = "success"
+          case "${{ inputs.platform }}" in
+            all)
+              test "${{ needs.build-windows.result }}" = "success"
+              test "${{ needs.build-android.result }}" = "success"
+              ;;
+            android)
+              test "${{ needs.build-android.result }}" = "success"
+              ;;
+            windows)
+              test "${{ needs.build-windows.result }}" = "success"
+              ;;
+            *)
+              echo "Unsupported platform input: ${{ inputs.platform }}" >&2
+              exit 1
+              ;;
+          esac
+
+      - name: Download Android APK artifacts
+        if: ${{ inputs.platform == 'all' || inputs.platform == 'android' }}
+        uses: actions/download-artifact@v8
+        with:
+          name: ${{ env.BUILD_PROFILE == 'demo' && 'Rain-Demo-Android-Builds' || 'Rain-Release-Android-Builds' }}
+          path: release-assets/android
+
+      - name: Download Windows portable artifact
+        if: ${{ inputs.platform == 'all' || inputs.platform == 'windows' }}
+        uses: actions/download-artifact@v8
+        with:
+          name: ${{ env.BUILD_PROFILE == 'demo' && 'Rain-Demo-Windows-x64-Build' || 'Rain-Release-Windows-x64-Build' }}
+          path: release-assets/windows
+
+      - name: Prepare release page assets
+        shell: bash
+        run: |
+          set -euo pipefail
+          mkdir -p release-assets/publish
+
+          if [ "${BUILD_PROFILE}" = "demo" ]; then
+            profile_label="Demo"
+            android_v7_source="release-assets/android/Rain-Demo-Android-ARM-v7a-Build.apk"
+            android_v8_source="release-assets/android/Rain-Demo-Android-ARM-v8-v9-Build.apk"
+            windows_root_name="Rain-Demo-Windows-x64-Build"
+          else
+            profile_label="Release"
+            android_v7_source="release-assets/android/Rain-release-android-armeabi-v7a.apk"
+            android_v8_source="release-assets/android/Rain-release-android-arm64-v8a.apk"
+            windows_root_name="Rain-Release-Windows-x64-Build"
+          fi
+
+          if [ -f "${android_v7_source}" ]; then
+            cp "${android_v7_source}" "release-assets/publish/Rain-${profile_label}-Android-v7a.apk"
+          fi
+          if [ -f "${android_v8_source}" ]; then
+            cp "${android_v8_source}" "release-assets/publish/Rain-${profile_label}-Android-v8-v9.apk"
+          fi
+
+          if [ -d release-assets/windows ]; then
+            mkdir -p "release-assets/windows-zip/${windows_root_name}"
+            cp -R release-assets/windows/. "release-assets/windows-zip/${windows_root_name}/"
+            (cd release-assets/windows-zip && zip -qr "../publish/Rain-${profile_label}-Windows-x64.zip" "${windows_root_name}")
+          fi
+
+          shopt -s nullglob
+          assets=(release-assets/publish/*)
+          if [ "${#assets[@]}" -eq 0 ]; then
+            echo "No release page assets were prepared." >&2
+            exit 1
+          fi
+          printf 'Prepared release page assets:\n'
+          printf ' - %s\n' "${assets[@]}"
+
+      - name: Publish release page
+        shell: bash
+        env:
+          GH_TOKEN: ${{ github.token }}
+          GH_REPO: ${{ github.repository }}
+          RELEASE_TAG_INPUT: ${{ inputs.release_tag }}
+          PRERELEASE: ${{ inputs.prerelease }}
+          TARGET_SHA: ${{ needs.resolve-target.outputs.target_sha }}
+          SHORT_SHA: ${{ needs.resolve-target.outputs.short_sha }}
+        run: |
+          set -euo pipefail
+          if [ -n "${RELEASE_TAG_INPUT}" ]; then
+            tag="${RELEASE_TAG_INPUT}"
+          elif [ "${BUILD_PROFILE}" = "production" ]; then
+            tag="rain-release-${GITHUB_RUN_NUMBER}-${GITHUB_RUN_ATTEMPT}"
+          else
+            tag="rain-validated-${GITHUB_RUN_NUMBER}-${GITHUB_RUN_ATTEMPT}"
+          fi
+
+          title="Rain ${BUILD_PROFILE} validated build ${GITHUB_RUN_NUMBER}.${GITHUB_RUN_ATTEMPT} (${SHORT_SHA})"
+          release_url="https://github.com/${GITHUB_REPOSITORY}/releases/tag/${tag}"
+          prerelease_args=()
+          if [ "${PRERELEASE}" = "true" ]; then
+            prerelease_args+=(--prerelease)
+          fi
+
+          cat > release-notes.md <<NOTES
+          Validated Rain ${BUILD_PROFILE} build from ${TARGET_SHA}.
+
+          Validation completed before publishing:
+          - workflow lint
+          - Dart formatting
+          - workspace analyze
+          - full workspace tests
+          - Firebase JSON validation
+          - Firebase Functions lint/audit/tests
+          - Firebase emulator integration tests
+
+          Build inputs:
+          - target_ref=${{ inputs.target_ref }}
+          - platform=${{ inputs.platform }}
+          - build_profile=${BUILD_PROFILE}
+          - connection request backend mode defaults to rtdbOnly when not explicitly provided
+
+          Android APKs are uploaded individually for direct phone download.
+          NOTES
+
+          if gh release view "${tag}" --repo "${GITHUB_REPOSITORY}" >/dev/null 2>&1; then
+            gh release upload "${tag}" release-assets/publish/* --repo "${GITHUB_REPOSITORY}" --clobber
+          else
+            gh release create "${tag}" release-assets/publish/* \
+              --repo "${GITHUB_REPOSITORY}" \
+              --target "${TARGET_SHA}" \
+              --title "${title}" \
+              --notes-file release-notes.md \
+              "${prerelease_args[@]}"
+          fi
+
+          {
+            echo "## Rain validated release downloads"
+            echo
+            echo "Release: [${tag}](${release_url})"
+            echo
+            for asset_path in release-assets/publish/*; do
+              asset_name="$(basename "${asset_path}")"
+              echo "- [${asset_name}](https://github.com/${GITHUB_REPOSITORY}/releases/download/${tag}/${asset_name})"
+            done
+          } >> "${GITHUB_STEP_SUMMARY}"
+
+  required-checks:
+    name: Required Checks
+    runs-on: ubuntu-latest
+    if: always()
+    needs:
+      - validation-gate
+      - build-windows
+      - build-android
+      - publish-release
+    steps:
+      - name: Fail if validation, builds, or publish failed
+        run: |
+          echo "validation-gate: ${{ needs.validation-gate.result }}"
+          echo "build-windows: ${{ needs.build-windows.result }}"
+          echo "build-android: ${{ needs.build-android.result }}"
+          echo "publish-release: ${{ needs.publish-release.result }}"
+          test "${{ needs.validation-gate.result }}" = "success"
+          test "${{ needs.build-windows.result }}" = "success" || test "${{ needs.build-windows.result }}" = "skipped"
+          test "${{ needs.build-android.result }}" = "success" || test "${{ needs.build-android.result }}" = "skipped"
+          test "${{ needs.publish-release.result }}" = "success" || test "${{ needs.publish-release.result }}" = "skipped"
