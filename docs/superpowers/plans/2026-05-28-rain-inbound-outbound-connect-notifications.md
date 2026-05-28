@@ -52,6 +52,137 @@ The previous plan had the right intent, but it was not yet safe enough to implem
 
 ---
 
+## Professional Production Review Register
+
+Each item is recorded as a discrete commit-style improvement so implementation work can be tracked without silently bundling risk.
+
+| ID | Weakness | Production / Technical Impact | Professional Solution | Roadmap Integration | Dependencies / Workflow Change | Commit-Style Update |
+| --- | --- | --- | --- | --- | --- | --- |
+| CRN-001 | Client and backend responsibilities could drift. | Security bypass, quota bypass, inconsistent UI state. | Define a single server-owned command boundary and a client read-only projection. | Phase 01 defines decision types; Phase 03 owns function shell; Phase 07 exposes adapter only. | Cloud Functions required for all mutations. | `arch: define connection request command boundary` |
+| CRN-002 | RTDB cannot guarantee multi-path conditional transactions. | Partial writes can leave locks, quotas, or inbox rows stale. | Use pair locks, reservations, idempotent commands, terminal finalizers, and scheduled cleanup. | Phases 04-06. | Backend tests must simulate partial failure and retry. | `feat(functions): add idempotent request reservations` |
+| CRN-003 | Quota semantics were not enforceable enough. | Users can be overcharged or Firebase usage can spike. | Define exact spend/no-spend/refund rules and test them. | Phase 05. | Admin runbook and backend audit required. | `feat(functions): enforce quota spend semantics` |
+| CRN-004 | Duplicate taps and retries can create repeated notifications. | Harassment risk, unnecessary Firebase writes, poor UX. | Deterministic pair lock and dedupe response. | Phase 04 before quota and UI. | Pair key helper shared by backend and protocol tests. | `feat(functions): dedupe pending pair requests` |
+| CRN-005 | Receiver protections were not first-class. | Muted/blocked/offline users can still be bothered or quota can be wasted. | Check block, mute, fresh presence, and inbox cap before spending quota. | Phase 04. | Requires mute path and receiver-owned controls. | `feat(functions): gate requests by receiver protection` |
+| CRN-006 | Error messaging could fragment across runtime, widgets, and backend. | Silent failures, inconsistent copy, hard-to-debug reports. | One reason-code enum and one exhaustive message mapper. | Phase 01; UI phases consume mapper only. | Tests fail on unmapped reason. | `feat(protocol): centralize request denial messages` |
+| CRN-007 | Privacy-sensitive denials can reveal mute/block state. | Trust and safety issue. | Use neutral UI copy while diagnostics retain exact reason. | Error matrix and Phase 13 diagnostics. | UX copy review required. | `ux: add privacy-safe denial copy` |
+| CRN-008 | Local notification dependency is unknown. | Build failures or unsupported Windows behavior late in production. | Spike dependency behind `RainNotificationService`; keep no-op fallback. | Phase 11 after runtime and UI. | Dependency decision gate before `pubspec.yaml` change. | `spike: validate local notification plugin support` |
+| CRN-009 | Closed-app push is a different product/system. | Scope creep, token security risk, privacy policy gap. | Keep push as v2 spec only. | Phase 14. | FCM token schema cannot enter v1. | `docs: separate push notification v2 scope` |
+| CRN-010 | Admin credits can become invisible permanent state. | Abuse, untraceable internal privileges. | Entitlements require `updatedBy`, `reason`, expiry, and audit. | Phase 05 and Phase 13. | Admin operations runbook required. | `ops: require traceable entitlement overrides` |
+| CRN-011 | No feature rollout or rollback plan. | Bad release can spam users or spike Firebase cost. | Add backend global kill switch, per-account disable, staged deployment, and rollback runbook. | Phase 13 and Phase 16. | Firebase config must be deployable before app release. | `ops: add connection request rollout controls` |
+| CRN-012 | Database index and query cost are not specified. | RTDB scans can become expensive or slow. | Define indexed fields for `expiresAt`, status, and day keys; avoid unbounded watchers. | Phase 02 and Phase 06. | Rules/index review required. | `perf(firebase): define request query indexes` |
+| CRN-013 | Audit retention can grow forever. | Cost growth and privacy risk. | Add retention config and cleanup of audit/usage rows. | Phase 06 and Phase 13. | Scheduled cleanup function. | `ops: add audit and usage retention cleanup` |
+| CRN-014 | Multi-device same-account behavior is undefined. | Duplicate prompts, stale status, inconsistent cancel/accept. | Server state is source of truth; devices subscribe to same inbox/outbox and terminal state. | Phase 06 and Phase 08. | Runtime tests with two fake clients. | `test: cover multi-device request reconciliation` |
+| CRN-015 | Relationship changes during pending request are not a first-class scenario. | Users can receive prompts after block/unfriend/mute. | Finalizer invalidates pending requests when relationship becomes invalid. | Phase 06 and Phase 08. | Friend/block sync events feed runtime dismissal. | `feat(runtime): reconcile pending requests with relationship changes` |
+| CRN-016 | UI components can fragment into tray, chip, badge, snackbar, and settings variants. | Inconsistent behavior and duplicated logic. | Build shared `ConnectionRequestSurfaceModel`, `ConnectionRequestActionModel`, and reusable status/action components. | Phase 08 before outbound/inbound UI. | Presentation widgets consume shared models only. | `ui: centralize connection request presentation models` |
+| CRN-017 | Accessibility was not specific enough. | Poor keyboard/screen-reader/touch usability. | Add semantic labels, focus order, keyboard actions, touch target minimums, reduced motion, contrast tests. | Phase 09-10 and Phase 15. | Widget tests include semantics. | `a11y: add connection request accessibility contract` |
+| CRN-018 | Responsive layout rules were vague. | Bad mobile/desktop behavior and overlay collisions. | Define compact/mobile/desktop placements and safe-area rules before implementation. | Phase 09-10. | Reuse existing Rain responsive patterns. | `ux: define responsive request notification layout` |
+| CRN-019 | Notification sounds can become noisy. | User annoyance and retention loss. | Burst compression, user settings, no sound for deduped/denied requests. | Phase 12. | Existing sound router reused. | `audio: add request notification burst policy` |
+| CRN-020 | Diagnostics might expose private data. | Privacy/security risk in exported diagnostics. | Store reason codes, ids, and state, not personal message content or sensitive receiver internals in UI. | Phase 13. | Diagnostics redaction review. | `sec: redact connection request diagnostics` |
+| CRN-021 | CI/CD lacks backend/app coordination. | App can ship before functions/rules, causing runtime failure. | Add release gate ordering: rules/functions staging deploy, backend tests, app build. | Phase 16. | CI workflow or release checklist update. | `ci: gate app build on connection request backend validation` |
+| CRN-022 | No production metrics or success criteria. | Feature can ship without knowing if it works or annoys users. | Track allowed/denied/deduped/accepted/rejected/expired ratios and notification fallback rates. | Phase 13. | Cloud logs/dashboard queries. | `ops: define connection request health metrics` |
+| CRN-023 | No onboarding or first-use explanation. | Users may not understand why Connect sends a request instead of instantly connecting. | Add concise first-use hint and empty/error states. | Phase 09-10. | Copy approval and settings discoverability. | `ux: add first-use connection request explanation` |
+| CRN-024 | App Check / abuse hardening not considered. | Callable functions can be abused outside the app. | Add App Check as a production hardening gate or document why deferred. | Phase 03 and Phase 16. | Firebase App Check setup decision. | `sec: evaluate App Check for request functions` |
+| CRN-025 | Large-team ownership is unclear. | Backend/UI/runtime changes can collide. | Split ownership by backend contract, protocol adapter, runtime, UI, QA, ops. | Phase 00 and release handoff. | Code review checklist and phase owners. | `prod: assign connection request phase ownership` |
+
+---
+
+## Unified Systems And Single Sources Of Truth
+
+To keep the implementation maintainable, no phase should create one-off logic where a shared model already exists or is planned.
+
+| System | Single Source | Consumers | Rule |
+| --- | --- | --- | --- |
+| Reason codes | `ConnectionRequestReasonCode` | Functions, adapter, runtime, UI, diagnostics | No stringly typed denial reason outside mapper/tests. |
+| User messages | `messageForConnectionRequestReason` | Widgets, snackbars, notifications, diagnostics | UI copy comes from mapper or localized wrapper only. |
+| Status machine | `canTransition` and backend transition helper | Functions and fake adapter | No widget/runtime invents state transitions. |
+| Pair key generation | shared normalized helper | Functions, tests, adapter fake | One deterministic format; no ad hoc concatenation. |
+| Command responses | `ConnectionRequestDecision` | Backend response, adapter, runtime | Every command returns allowed/status/reason/message. |
+| Presentation model | `ConnectionRequestSurfaceModel` | Tray, chip, badge, settings, notification service | UI renders model; it does not inspect raw backend payloads. |
+| Actions | `ConnectionRequestActionModel` | Connect/cancel/accept/reject/mute buttons | Same enabled state, tooltip, semantics, and callback shape. |
+| Quota display | `ConnectionRequestQuotaSnapshot` | Settings, outbound chip, diagnostics | Read-only projection; no local mutation. |
+| Notification delivery | `RainNotificationService` | Runtime only | Widgets never call platform notification APIs directly. |
+| Sound delivery | `SoundEventRouter` | Runtime only | Widgets emit state changes; sound router decides playback. |
+| Diagnostics | `CrashDiagnosticsService` structured events | Runtime/functions export | No raw Firebase errors in user copy. |
+
+Unification requirements:
+
+- Do not add connection request controls directly inside multiple widgets with separate logic.
+- Do not duplicate reason-message mapping in backend, runtime, and UI. Backend returns a safe message; client localization must go through one wrapper while keeping the reason enum identical.
+- Do not create separate inbound and outbound status enums.
+- Do not create separate quota models for settings and runtime.
+- Do not let notification, sound, and UI each independently decide whether a request is valid.
+
+---
+
+## Professional UI/UX Standards
+
+The feature must feel like part of Rain, not a bolt-on notification system.
+
+### Interface Clarity
+
+- Primary action labels: `Connect`, `Ignore`, `Cancel`, `Mute requests`.
+- Sender pending state must answer: who, what status, how long before timeout, and how to cancel.
+- Receiver prompt must answer: who wants to connect, what happens if accepted, and how to dismiss.
+- Denied actions must explain the next possible action, not just the failure.
+
+### Interaction Quality
+
+- Desktop: hover tooltip for disabled actions, keyboard focus, Enter/Space activation, Escape dismiss where safe.
+- Mobile: tap target minimum 44x44 logical pixels, snackbars or inline status for denied taps, no hover-only information.
+- Repeated taps: never duplicate prompts; update current status.
+- Accept/cancel race: loser gets `This connection request was already handled.`
+
+### Accessibility
+
+- All request surfaces need semantic labels with peer name, status, and action.
+- Badge-only information must also have text/semantics.
+- Color cannot be the only state indicator.
+- Focus order: prompt title -> status -> primary action -> secondary action -> overflow.
+- Reduced motion: no animated attention effects beyond existing Rain policy.
+
+### Responsiveness
+
+- Mobile compact: one prompt card in top safe area or app tray, not blocking call overlays.
+- Desktop: prompt tray can stack but must cap visible prompts and provide `View all`.
+- Friends rail: badge count only; full detail appears in tray or chat.
+- Chat open: outbound chip belongs near connection status, not message stream.
+
+### Feedback And Failure States
+
+- Every action has immediate optimistic or loading feedback.
+- Backend-denied actions show mapped message.
+- Notification permission failure falls back to in-app prompt.
+- Offline/stale state is visible before user attempts to send where possible.
+- Expired request state is visible and dismissible.
+
+### Cognitive Load
+
+- Do not show quota numbers everywhere. Show them in Settings and only near Connect after a quota-related denial.
+- Do not expose admin/internal words like `quota`, `entitlement`, or `pair lock` in normal UI.
+- Privacy-neutral messages should not cause users to infer block/mute state.
+
+---
+
+## Production Pipeline Standards
+
+- All backend function changes require unit tests before app runtime integration.
+- All RTDB rule changes require direct-write denial tests.
+- All UI changes require mobile and desktop widget tests.
+- All notification dependency changes require platform support spike before adding package.
+- Staging deployment order: rules -> functions -> app configured against staging.
+- Release order: backend production deploy -> app build -> smoke test -> release notes.
+- Rollback order: enable global kill switch -> inspect audit -> rollback functions/rules when validation identifies backend regression -> publish fixed app.
+- Metrics to inspect after rollout:
+  - created request count
+  - denied count by reason
+  - duplicate pending count
+  - accept/reject/cancel/expire ratio
+  - notification permission denied count
+  - function latency/error rate
+  - cleanup stale-lock count
+
+---
+
 ## Dependency Order
 
 ```text
@@ -123,6 +254,9 @@ No UI phase may start until backend responses are typed, idempotent, quota-safe,
 
 - `apps/rain/lib/application/runtime/connection_request_messages.dart`
   - App-level message formatting using protocol reason codes.
+
+- `apps/rain/lib/presentation/widgets/connection_requests/connection_request_presentation_models.dart`
+  - Shared `ConnectionRequestSurfaceModel` and `ConnectionRequestActionModel` consumed by tray, chip, badge, settings, and notification fallback UI.
 
 - `apps/rain/lib/presentation/widgets/connection_requests/connection_request_tray.dart`
   - Top-level inbound request prompt surface.
@@ -402,6 +536,14 @@ Tests must fail if a reason code lacks a non-empty message.
   - entitlement abuse
   - receiver harassment
   - Firebase cost spike
+- [ ] Assign phase owners for backend contract, Firebase rules, Cloud Functions, protocol adapter, runtime, UI/UX, QA, release/ops.
+- [ ] Define production success metrics:
+  - accepted request ratio
+  - duplicate suppression ratio
+  - denied reason distribution
+  - stale cleanup count
+  - notification fallback count
+  - request function error rate
 - [ ] Add skipped tests in `packages/protocol_brain/test/connection_request_contract_test.dart` for every reason code and state transition.
 - [ ] Commit: `docs: lock connection request notification acceptance`
 
@@ -432,6 +574,10 @@ Expected: no new analyzer failures.
 - [ ] Implement `isTerminalStatus(status)`.
 - [ ] Implement `canTransition(from, to, now, expiresAt)`.
 - [ ] Implement exhaustive `messageForConnectionRequestReason(reasonCode, peerLabel, retryAfter)`.
+- [ ] Define app presentation model contracts:
+  - `ConnectionRequestSurfaceModel`
+  - `ConnectionRequestActionModel`
+  - `ConnectionRequestFeedbackModel`
 - [ ] Add parser tests for malformed status, invalid timestamps, path-injection usernames, expired payloads, unknown fields, and cleanup-safe parsing.
 - [ ] Add message coverage test that iterates every enum value and expects a non-empty message.
 - [ ] Add state transition tests for all allowed and forbidden transitions.
@@ -790,6 +936,8 @@ Expected: adapter tests pass.
 
 - [ ] Add `ConnectionRequestRuntime` lifecycle start/stop/dispose.
 - [ ] Add Riverpod state projection for incoming requests, outgoing requests, quota summary, and last user message.
+- [ ] Convert raw runtime state into `ConnectionRequestSurfaceModel` before widgets consume it.
+- [ ] Convert available actions into `ConnectionRequestActionModel` with one enabled state, tooltip, semantic label, and callback per action.
 - [ ] Add `sendConnectionRequest(peerId)` that calls adapter and never calls WebRTC directly on denial.
 - [ ] Add `acceptConnectionRequest(requestId)` that clears manual disconnect only for that peer, then starts existing `connectPeer`.
 - [ ] Add `cancel/reject/mute/unmute` actions.
@@ -828,6 +976,7 @@ Expected: runtime tests pass.
 **Steps:**
 
 - [ ] Add outbound pending chip near existing connection status.
+- [ ] Build the chip from `ConnectionRequestSurfaceModel`; do not inspect raw request payloads in the widget.
 - [ ] Add `Cancel` action for pending request.
 - [ ] Show status text for pending, seen, accepted, rejected, canceled, expired, failed.
 - [ ] Disable or intercept Connect with visible reason when guard denies.
@@ -868,6 +1017,7 @@ Expected: outbound widget tests pass.
 **Steps:**
 
 - [ ] Add top-level inbound tray visible from any tab.
+- [ ] Build tray actions from `ConnectionRequestActionModel`; do not duplicate action enablement in the widget.
 - [ ] Add `Connect`, `Ignore`, and overflow `Mute requests from @peer`.
 - [ ] Add friend list badge for pending inbound request.
 - [ ] Collapse duplicate inbound requests from same peer.
