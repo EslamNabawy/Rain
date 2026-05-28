@@ -107,6 +107,15 @@ void main() {
 
     test('pair locks are guarded and reservations stay denied', () {
       expect(_node(rules, ['connectionRequestPairLocks'])['.write'], isFalse);
+      expect(_node(rules, ['connectionRequestPairLocks'])['.read'], isFalse);
+      expect(
+        _node(rules, ['connectionRequestPairLocks', r'$pairKey'])['.read'],
+        contains('!data.exists()'),
+      );
+      expect(
+        _node(rules, ['connectionRequestPairLocks', r'$pairKey'])['.read'],
+        contains("root.child('users/' + data.child('from').val() + '/uid')"),
+      );
       expect(
         _node(rules, ['connectionRequestPairLocks', r'$pairKey'])['.write'],
         isA<String>(),

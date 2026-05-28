@@ -419,34 +419,19 @@ function Assert-AndroidReleaseSigning() {
 }
 
 function Use-DemoAndroidSigningKey([string]$RepoRoot) {
-  $keytoolPath = Resolve-KeytoolPath
-  $jdkRoot = Split-Path (Split-Path $keytoolPath -Parent) -Parent
-  [System.Environment]::SetEnvironmentVariable('JAVA_HOME', $jdkRoot, 'Process')
-  $env:PATH = "$(Join-Path $jdkRoot 'bin');$env:PATH"
-
   $tmpDir = Get-ReleaseTempDir $RepoRoot
-  $keyPath = Join-Path $tmpDir 'rain-openrelay-demo-release.jks'
-  $password = 'rain-openrelay-demo'
-  $alias = 'rain-openrelay-demo'
+  $keyPath = Join-Path $tmpDir 'rain-demo-stable-release.jks'
+  $password = 'rain-demo-stable'
+  $alias = 'rain-demo-stable'
+  $publicDemoKeyBase64Path = Join-Path $RepoRoot 'apps\rain\android\demo\rain-demo-stable-release.jks.base64'
 
-  if (-not (Test-Path -LiteralPath $keyPath)) {
-    Write-Step "Creating demo Android signing key"
-    & $keytoolPath `
-      -genkeypair `
-      -noprompt `
-      -alias $alias `
-      -keyalg RSA `
-      -keysize 2048 `
-      -validity 10000 `
-      -keystore $keyPath `
-      -storepass $password `
-      -keypass $password `
-      -dname 'CN=Rain OpenRelay Demo,O=Rain,C=US' | Out-Host
-
-    if ($LASTEXITCODE -ne 0) {
-      throw "keytool failed to create demo Android signing key with exit code $LASTEXITCODE"
-    }
+  if (-not (Test-Path -LiteralPath $publicDemoKeyBase64Path)) {
+    throw "Stable public demo Android signing key is missing: $publicDemoKeyBase64Path. Refusing to create a throwaway key because it would break APK update installs."
   }
+
+  Write-Step "Using stable public demo Android signing key"
+  $base64 = (Get-Content -Raw -LiteralPath $publicDemoKeyBase64Path) -replace '\s', ''
+  [IO.File]::WriteAllBytes($keyPath, [Convert]::FromBase64String($base64))
 
   [System.Environment]::SetEnvironmentVariable('RAIN_RELEASE_STORE_FILE', $keyPath, 'Process')
   [System.Environment]::SetEnvironmentVariable('RAIN_RELEASE_STORE_PASSWORD', $password, 'Process')

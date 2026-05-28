@@ -10,6 +10,9 @@
   "database": {
     "rules": "database.rules.json"
   },
+  "remoteconfig": {
+    "template": "remoteconfig.template.json"
+  },
   "functions": {
     "source": "functions",
     "runtime": "nodejs20"

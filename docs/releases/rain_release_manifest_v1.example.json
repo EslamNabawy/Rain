@@ -3,41 +3,41 @@
   "channels": {
     "stable": {
       "android": {
-        "latestVersion": "1.0.0",
-        "latestBuild": 1,
+        "latestVersion": "1.0.1",
+        "latestBuild": 2,
         "minimumVersion": "1.0.0",
         "minimumBuild": 1,
         "updateUrl": "https://github.com/EslamNabawy/Rain/releases",
-        "notes": "Initial stable release.",
+        "notes": "Permission, update install, and free-tier connection fixes.",
         "publishedAt": 1770000000000
       },
       "windows": {
-        "latestVersion": "1.0.0",
-        "latestBuild": 1,
+        "latestVersion": "1.0.1",
+        "latestBuild": 2,
         "minimumVersion": "1.0.0",
         "minimumBuild": 1,
         "updateUrl": "https://github.com/EslamNabawy/Rain/releases",
-        "notes": "Initial stable release.",
+        "notes": "Permission, update install, and free-tier connection fixes.",
         "publishedAt": 1770000000000
       }
     },
     "demo": {
       "android": {
-        "latestVersion": "1.0.0",
-        "latestBuild": 1,
+        "latestVersion": "1.0.1",
+        "latestBuild": 2,
         "minimumVersion": "1.0.0",
         "minimumBuild": 1,
         "updateUrl": "https://github.com/EslamNabawy/Rain/releases",
-        "notes": "Latest direct-download test build.",
+        "notes": "Permission, update install, and free-tier connection fixes.",
         "publishedAt": 1770000000000
       },
       "windows": {
-        "latestVersion": "1.0.0",
-        "latestBuild": 1,
+        "latestVersion": "1.0.1",
+        "latestBuild": 2,
         "minimumVersion": "1.0.0",
         "minimumBuild": 1,
         "updateUrl": "https://github.com/EslamNabawy/Rain/releases",
-        "notes": "Latest direct-download test build.",
+        "notes": "Permission, update install, and free-tier connection fixes.",
         "publishedAt": 1770000000000
       }
     }

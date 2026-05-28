@@ -139,9 +139,19 @@ void main() {
         'connectionRequestPairLocks',
         r'$pairKey',
       ]);
+      final read = pairLock['.read'] as String;
       final write = pairLock['.write'] as String;
       final validate = pairLock['.validate'] as String;
 
+      expect(read, contains('!data.exists()'));
+      expect(
+        read,
+        contains("root.child('users/' + data.child('from').val() + '/uid')"),
+      );
+      expect(
+        read,
+        contains("root.child('users/' + data.child('to').val() + '/uid')"),
+      );
       expect(
         write,
         contains(

@@ -1,3 +1,4 @@
+import 'dart:convert';
 import 'dart:io';
 
 import 'package:flutter_test/flutter_test.dart';
@@ -130,10 +131,50 @@ void main() {
       ),
     );
     expect(script, contains('Resolve-KeytoolPath'));
+    expect(script, contains('rain-demo-stable-release.jks.base64'));
+    expect(script, contains('Using stable public demo Android signing key'));
+    expect(script, contains('Refusing to create a throwaway key'));
+    expect(script, isNot(contains('-genkeypair')));
     expect(script, contains('JAVA_HOME'));
     expect(script, contains('\$name is required for release signing.'));
     expect(script, contains('RAIN_RELEASE_STORE_FILE does not exist:'));
     expect(script, contains('\$LASTEXITCODE -ne 0'));
+  });
+
+  test('stable demo Android signing key is checked in', () {
+    final raw = _repoFile(
+      'apps/rain/android/demo/rain-demo-stable-release.jks.base64',
+    );
+    final decoded = base64Decode(raw.replaceAll(RegExp(r'\s+'), ''));
+
+    expect(decoded.length, greaterThan(1024));
+  });
+
+  test('Firebase Remote Config template publishes update manifest', () {
+    final firebaseJson = _repoFile('backend/firebase/firebase.json');
+    final template = _repoFile('backend/firebase/remoteconfig.template.json');
+    final decodedTemplate = jsonDecode(template) as Map<String, dynamic>;
+    final parameters = decodedTemplate['parameters'] as Map<String, dynamic>;
+    final manifestParameter =
+        parameters['rain_release_manifest_v1'] as Map<String, dynamic>;
+    final manifest =
+        jsonDecode(
+              (manifestParameter['defaultValue']
+                      as Map<String, dynamic>)['value']
+                  as String,
+            )
+            as Map<String, dynamic>;
+    final demoAndroid =
+        (((manifest['channels'] as Map<String, dynamic>)['demo']
+                as Map<String, dynamic>)['android']
+            as Map<String, dynamic>);
+
+    expect(firebaseJson, contains('"remoteconfig"'));
+    expect(firebaseJson, contains('"template": "remoteconfig.template.json"'));
+    expect(parameters, contains('min_required_version'));
+    expect(parameters, contains('update_url'));
+    expect(demoAndroid['latestVersion'], '1.0.1');
+    expect(demoAndroid['latestBuild'], 2);
   });
 
   test('Android release signing is required and never debug-signed', () {

@@ -15,11 +15,12 @@ Rain uses three GitHub Actions workflow layers:
 ## Build Artifacts
 
 For Spark/free-tier connection request builds, deploy Realtime Database rules
-before triggering app artifacts. Do not deploy Cloud Functions for this gate.
+and Remote Config before triggering app artifacts. Do not deploy Cloud Functions
+for this gate.
 
 ```powershell
 cd backend/firebase
-firebase deploy --project rain-8fb4b --only database --non-interactive
+firebase deploy --project rain-8fb4b --only database,remoteconfig --non-interactive
 ```
 
 Use **Actions -> Build Rain Apps -> Run workflow**.
@@ -31,15 +32,28 @@ Inputs:
 - `publish_test_release`: when enabled, publishes direct APK/Windows download
   assets to a `rain-test-*` GitHub pre-release.
 
-Demo builds use `apps/rain/tool/dart_defines.example.json`, OpenRelay demo TURN, and a generated demo Android signing key. Demo artifacts are for testing only.
+Demo builds use `apps/rain/tool/dart_defines.example.json`, OpenRelay demo TURN,
+and the checked-in public demo Android signing key at
+`apps/rain/android/demo/rain-demo-stable-release.jks.base64`. Demo artifacts are
+for testing only. The demo key is intentionally not a production secret; it
+exists so new demo APKs can install over previous demo APKs during device
+testing. The build fails if that stable demo key is missing; it must not fall
+back to a generated throwaway key because Android would reject later APK updates
+with a signature mismatch.
 The workflow forces `CONNECTION_REQUEST_BACKEND_MODE=rtdbOnly` for demo builds
 so downloadable free-tier artifacts do not depend on callable Cloud Functions.
+
+After every released build, update Firebase Remote Config key
+`rain_release_manifest_v1` from `docs/releases/rain_release_manifest_v1.example.json`.
+Old installed apps can only show optional or required update prompts after that
+remote manifest advertises a newer `latestVersion`/`latestBuild` for their
+channel and platform.
 
 Free-tier release order:
 
 1. Run Dart/Melos validation.
 2. Run Firebase emulator tests.
-3. Deploy RTDB rules.
+3. Deploy RTDB rules and Remote Config.
 4. Push `dev`.
 5. Trigger the app artifact workflow.
 6. Verify Android APK and Windows artifacts.

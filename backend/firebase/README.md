@@ -168,6 +168,14 @@ Create this key in Remote Config:
 
 Use [../../docs/releases/rain_release_manifest_v1.example.json](../../docs/releases/rain_release_manifest_v1.example.json) as the template. Update the matching `stable` or `demo` channel for each platform after publishing a release. The app uses this manifest to show optional updates and block versions older than the configured minimum.
 
+The deployable Firebase template lives at
+[remoteconfig.template.json](remoteconfig.template.json). Deploy it with the
+database rules for Spark/free-tier releases:
+
+```powershell
+firebase deploy --project rain-8fb4b --only database,remoteconfig --non-interactive
+```
+
 Keep these legacy fallback keys until all installed builds support the manifest:
 
 - `min_required_version`

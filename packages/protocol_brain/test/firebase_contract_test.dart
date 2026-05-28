@@ -147,10 +147,16 @@ void main() {
   });
 
   test('Firebase search uses bounded handle prefix lookups', () {
+    final rules = _repoFile('backend/firebase/database.rules.json');
     final adapter = _repoFile(
       'packages/protocol_brain/lib/adapters/firebase_adapter.dart',
     );
 
+    expect(
+      rules,
+      contains('''"userSearch": {
+      ".read": "auth != null"'''),
+    );
     expect(adapter, contains("child('userSearch')"));
     expect(adapter, contains('orderByKey()'));
     expect(adapter, contains('limitToFirst(_searchLimit)'));
