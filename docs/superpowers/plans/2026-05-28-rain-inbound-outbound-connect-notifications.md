@@ -196,6 +196,46 @@ These are non-negotiable for the feature to ship:
 8. Admin override traceability.
    Extra credits and overrides include `updatedBy`, `reason`, and optional expiry so test/internal grants do not become invisible permanent state.
 
+9. No silent blocking.
+   Every denied, ignored, rate-limited, expired, disabled, or failed action must return a typed decision with a user-facing message and diagnostics reason. If exposing exact receiver state would leak privacy, use a neutral message but still explain what the user can do next.
+
+## User-Facing Error Message Matrix
+
+Every blocked action must map to one of these messages. Widgets must render the message through the normal error surface, toast/snackbar, inline status, or notification prompt. The runtime must also record the raw reason in diagnostics.
+
+| Reason code | User-facing message | Notes |
+| --- | --- | --- |
+| `peerOffline` | `@peer is offline. Keep both apps open, then try again.` | No request row is created. |
+| `presenceUnknown` | `Could not confirm @peer is online. Try again.` | Fail closed; no request row is created. |
+| `notAcceptedFriend` | `You can only connect with accepted friends.` | Do not reveal hidden relationship data. |
+| `blocked` | `Connection request unavailable for this peer.` | Neutral wording to avoid leaking block direction. |
+| `mutedByReceiver` | `@peer is not receiving connection requests right now.` | Do not say they muted you. |
+| `manualDisconnectActive` | `You disconnected @peer. Press Connect again to send a request.` | Applies to local manual intent. |
+| `activeCall` | `Finish the active call before sending connection requests.` | Keep global one-call rule. |
+| `activeTransfer` | `Finish the active file transfer before sending connection requests.` | Keep transfer conflict rule. |
+| `rateLimited` | `Connection requests are cooling down. Try again in {seconds}s.` | Include retry-after when available. |
+| `dailyLimitExceeded` | `Daily connection request limit reached.` | If extra credits exist, message may append `Using extra credits.` before allowing. |
+| `extraCreditsExhausted` | `No extra connection request credits left.` | Include reset/renewal context if configured. |
+| `perTargetLimitExceeded` | `You have sent too many requests to @peer today.` | Protects one receiver from repeated pings. |
+| `tooManyPendingRequests` | `Too many connection requests are still pending. Cancel or wait for one to expire.` | Sender-side pending cap. |
+| `receiverInboxFull` | `@peer has too many pending requests right now. Try again later.` | Receiver protection before quota spend. |
+| `duplicatePendingRequest` | `Connection request already sent to @peer.` | Show existing pending request status instead of creating another row. |
+| `notificationsDisabledByAdmin` | `Connection requests are disabled for this account.` | Per-user disabled flag. |
+| `notificationsTemporarilyDisabled` | `Connection requests are temporarily unavailable.` | Global kill switch. |
+| `expired` | `Connection request expired. Send a new request if you still want to connect.` | Sender and receiver terminal state. |
+| `backendRejected` | `Connection request could not be sent. Try again.` | Diagnostics keep raw Firebase/function error. |
+| `permissionDenied` | `Notifications are disabled. You will still see requests inside Rain.` | OS notification permission fallback. |
+| `notificationUnavailable` | `System notifications are unavailable. Rain will show in-app alerts instead.` | Platform/plugin fallback. |
+
+Message rules:
+
+- Never disable a visible action without a tooltip, inline reason, or immediate feedback on tap.
+- Do not consume quota or extra credits for attempts blocked before request creation.
+- Do not show a receiver notification for any denied attempt.
+- Use neutral wording when exact state could expose privacy-sensitive information.
+- Diagnostics must keep the exact internal reason even when UI wording is neutral.
+- Tests must assert both the reason code and the user-facing message for every guardrail.
+
 ## Public Types
 
 - `ConnectionNotificationStatus`
@@ -237,6 +277,8 @@ These are non-negotiable for the feature to ship:
   - `notificationsTemporarilyDisabled`
   - `expired`
   - `backendRejected`
+  - `permissionDenied`
+  - `notificationUnavailable`
 
 - `ConnectionNotificationQuotaSnapshot`
   - `dailyLimit`
@@ -273,6 +315,8 @@ These are non-negotiable for the feature to ship:
 - [ ] Add parser validation for username, request id, timestamps, status, expiry, and direction.
 - [ ] Add cleanup-safe parsing for corrupt old entries.
 - [ ] Add failure reason mapping for UI messages.
+- [ ] Add one exhaustive `ConnectionNotificationFailureReason -> userMessage` mapper.
+- [ ] Add tests that fail if any reason code lacks a non-empty message.
 - [ ] Add fake adapter support for tests.
 
 **Acceptance:**
@@ -280,6 +324,7 @@ These are non-negotiable for the feature to ship:
 - Invalid payloads are rejected or cleanup-parsed without crashing streams.
 - Unknown statuses are ignored safely.
 - Expired entries are distinguishable from rejected/canceled entries.
+- Every typed failure reason has a stable user-facing message.
 
 ## Phase 02: Firebase Schema, Rules, And Cleanup
 
@@ -354,6 +399,7 @@ These are non-negotiable for the feature to ship:
 - [ ] Return a typed quota decision to the app:
   - allowed
   - blocked reason
+  - user-facing message
   - remaining daily requests
   - remaining extra credits
   - per-target remaining requests
@@ -384,7 +430,7 @@ These are non-negotiable for the feature to ship:
 - Duplicate pending requests create no extra Firebase inbox/outbox rows.
 - Per-target limits stop harassment even when global quota or extra credits remain.
 - Global kill switch returns a clean `temporarily unavailable` decision.
-- Quota failure messages are deterministic and user-safe.
+- Every denied backend decision returns a deterministic user-safe message.
 
 ## Phase 04: Protocol Adapter API
 
@@ -421,6 +467,7 @@ These are non-negotiable for the feature to ship:
 - [ ] Use existing active call and active file transfer blocks.
 - [ ] Block notifications for offline, stale, unaccepted, blocked, or presence-unknown peers.
 - [ ] Block or delay attempts while server quota says cooldown, per-target limit, daily limit, pending limit, disabled, receiver muted, or extra credits exhausted.
+- [ ] Surface the message for every blocked decision through UI, not only diagnostics.
 - [ ] Do not allow notification creation to clear manual disconnect by itself.
 - [ ] Clear manual disconnect only when the user explicitly accepts/connects.
 
@@ -429,6 +476,7 @@ These are non-negotiable for the feature to ship:
 - Pressing `Connect` on an offline peer does not write a request.
 - Pressing `Connect` while out of credits does not write a request and shows remaining/retry information.
 - Pressing `Connect` when the receiver muted requests does not write a request and does not notify the receiver.
+- No `canSendConnectionNotification` denial is silent.
 - Manual-disconnected peer does not auto-recover from inbound request arrival.
 - Explicit inbound `Connect` clears manual intent only for that peer.
 
@@ -491,6 +539,10 @@ These are non-negotiable for the feature to ship:
   - retry-after text when cooling down
   - per-peer cooldown/per-target limit text only when relevant
   - disabled state when admin-disabled
+- [ ] Add disabled-action explanations:
+  - tooltip on desktop
+  - inline helper or snackbar on mobile
+  - accessible semantic label for screen readers
 - [ ] Add receiver protection affordances:
   - mute requests from this peer
   - unmute requests from this peer in friend/profile/settings surface
@@ -505,6 +557,7 @@ These are non-negotiable for the feature to ship:
 - Outbound pending is visible in the relevant chat.
 - No duplicate prompts for the same peer.
 - Quota UI never implies the user can bypass server limits.
+- Every disabled button or denied tap explains why.
 - Receiver mute controls are reachable without unfriending or blocking.
 
 ## Phase 09: OS Local Notifications
@@ -526,6 +579,7 @@ These are non-negotiable for the feature to ship:
 - [ ] Do not add FCM tokens in this phase.
 - [ ] Do not show OS notifications for requests blocked by quota, cooldown, pending limits, or admin disable.
 - [ ] Do not show OS notifications for duplicate pending requests, receiver-muted requests, blocked users, or offline/stale receivers.
+- [ ] When OS notifications cannot be shown, show the in-app fallback message instead of failing silently.
 
 **Acceptance:**
 
@@ -534,6 +588,7 @@ These are non-negotiable for the feature to ship:
 - No notification appears for stale/invalid/blocked requests.
 - No notification appears for requests that were denied before inbox creation.
 - Duplicate pending requests do not create repeated local or OS notifications.
+- Notification permission/platform failures produce visible in-app fallback messaging.
 
 ## Phase 10: Sound, Rate Limit, And Abuse Controls
 
@@ -579,6 +634,7 @@ These are non-negotiable for the feature to ship:
   - `connection_request_receiver_muted_denied`
   - `connection_request_global_disabled`
 - [ ] Include peer id, request id, direction, status, presence freshness, guard reason, quota decision, remaining daily allowance, remaining extra credits, per-target remaining allowance, retry-after, dedupe lock state, and cleanup result.
+- [ ] Include `userMessageKey` and rendered message in diagnostics for denied attempts.
 - [ ] Ensure diagnostics buffering does not write synchronously per event.
 
 **Acceptance:**
@@ -587,6 +643,7 @@ These are non-negotiable for the feature to ship:
 - Corrupt request entries are removed or ignored without poisoning watcher streams.
 - Diagnostics can prove whether a blocked attempt was caused by cooldown, daily limit, pending limit, admin disable, or Firebase failure.
 - Diagnostics can distinguish duplicate pending, receiver muted, per-target limit, and global kill-switch denials.
+- Diagnostics prove which user-facing message was shown.
 
 ## Phase 12: Settings And User Control
 
@@ -639,6 +696,8 @@ These are non-negotiable for the feature to ship:
 - [ ] Fake adapter creates inbox/outbox entries and mirrors statuses.
 - [ ] Runtime guard denies offline, blocked, unaccepted, active-call, and active-transfer cases.
 - [ ] Runtime guard denies cooldown, per-target limit, daily limit, extra credit exhaustion, admin disable, receiver mute, global kill switch, and too many pending requests.
+- [ ] Every `ConnectionNotificationFailureReason` maps to a non-empty user-facing message.
+- [ ] Neutral privacy-safe messages still preserve exact internal diagnostics reason.
 - [ ] Manual disconnect blocks auto-connect from inbound request arrival.
 - [ ] Explicit inbound accept clears manual disconnect for only that peer.
 - [ ] Outbound cancel prevents later accept from starting a session.
@@ -657,6 +716,8 @@ These are non-negotiable for the feature to ship:
 - [ ] Notification settings render and persist.
 - [ ] Quota summary renders as read-only state.
 - [ ] Cooldown and no-credit messages fit mobile and desktop.
+- [ ] Disabled connect buttons expose reason through tooltip/semantics on desktop.
+- [ ] Denied mobile taps show snackbar/inline error with the mapped message.
 - [ ] Receiver mute/unmute controls render without exposing unrelated block/unfriend actions.
 - [ ] Duplicate pending requests do not create duplicate visible prompts.
 
@@ -676,6 +737,7 @@ These are non-negotiable for the feature to ship:
 - [ ] Backend function enforces per-target daily limit even when global quota remains.
 - [ ] Backend function refuses muted receivers before notification fan-out.
 - [ ] Global kill switch blocks request creation immediately.
+- [ ] Every denied backend function response includes reason code, user-safe message, and diagnostics-safe raw detail.
 
 **Validation Commands**
 
