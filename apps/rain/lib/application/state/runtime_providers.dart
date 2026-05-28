@@ -10,6 +10,7 @@ import 'package:rain/application/runtime/app_exit_coordinator.dart';
 import 'package:rain/application/runtime/connection_request_state.dart';
 import 'package:rain/application/runtime/video_call_renderers.dart';
 import 'package:rain/application/runtime/voice_call_state.dart';
+import 'package:rain/infrastructure/notifications/rain_notification_service.dart';
 import 'package:rain/infrastructure/services/app_settings_store.dart';
 import 'package:rain/infrastructure/services/background_services.dart';
 import 'package:rain/infrastructure/services/network_status_service.dart';
@@ -152,6 +153,21 @@ final runtimeControllerProvider =
       RuntimeController.new,
     );
 
+final rainNotificationServiceProvider = Provider<RainNotificationService>((
+  Ref ref,
+) {
+  if (kIsWeb) {
+    return const NoopRainNotificationService();
+  }
+  if (defaultTargetPlatform == TargetPlatform.android ||
+      defaultTargetPlatform == TargetPlatform.windows) {
+    return LocalRainNotificationService(
+      platform: FlutterLocalRainNotificationPlatform(),
+    );
+  }
+  return const NoopRainNotificationService();
+});
+
 class RuntimeController extends AsyncNotifier<RainRuntimeController?> {
   NetworkStatusKind? _lastNetworkKind;
   String? _lastNetworkPathKey;
@@ -201,6 +217,9 @@ class RuntimeController extends AsyncNotifier<RainRuntimeController?> {
       adapter: ref.watch(adapterProvider),
       voiceSignalingCipher: SignalingCipher.fromKeyMaterial(
         environment.signalingEncryptionKey,
+      ),
+      connectionRequestNotificationService: ref.watch(
+        rainNotificationServiceProvider,
       ),
       brain: ref.watch(brainProvider),
       database: ref.watch(databaseProvider),

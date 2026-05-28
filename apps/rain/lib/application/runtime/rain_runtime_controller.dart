@@ -8,6 +8,7 @@ import 'package:path_provider/path_provider.dart';
 import 'package:protocol_brain/protocol_brain.dart';
 import 'package:rain_core/rain_core.dart';
 
+import 'package:rain/infrastructure/notifications/rain_notification_service.dart';
 import 'connection_attempt_coordinator.dart';
 import 'app_exit_coordinator.dart';
 import 'call_retry_policy.dart';
@@ -74,6 +75,7 @@ class RainRuntimeController with WidgetsBindingObserver {
     VoiceSignalingAdapter? voiceSignalingAdapter,
     SignalingCipher? voiceSignalingCipher,
     ConnectionRequestAdapter? connectionRequestAdapter,
+    this.connectionRequestNotificationService,
     this.heartbeatInterval = const Duration(minutes: 3),
     this.friendRequestRefreshInterval = Duration.zero,
     this.maxPassivePeerListeners = 32,
@@ -123,6 +125,7 @@ class RainRuntimeController with WidgetsBindingObserver {
   final FileTransferStore fileTransferStore;
   final VoiceSignalingAdapter? voiceSignalingAdapter;
   final ConnectionRequestAdapter? connectionRequestAdapter;
+  final RainNotificationService? connectionRequestNotificationService;
   final SignalingCipher voiceSignalingCipher;
   final Duration heartbeatInterval;
   final Duration friendRequestRefreshInterval;
@@ -170,6 +173,8 @@ class RainRuntimeController with WidgetsBindingObserver {
       <StreamSubscription<dynamic>>[];
   final List<StreamSubscription<dynamic>> _connectionRequestSubscriptions =
       <StreamSubscription<dynamic>>[];
+  final Set<String> _activeConnectionRequestNotificationIds = <String>{};
+  final Set<String> _connectionRequestNotificationFallbackKeys = <String>{};
   final StreamController<ConnectionRequestState>
   _connectionRequestStateController =
       StreamController<ConnectionRequestState>.broadcast();

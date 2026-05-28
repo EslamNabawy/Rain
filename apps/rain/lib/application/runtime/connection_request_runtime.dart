@@ -50,6 +50,7 @@ extension ConnectionRequestRuntime on RainRuntimeController {
       await subscription.cancel();
     }
     _connectionRequestSubscriptions.clear();
+    await _dismissAllConnectionRequestNotifications();
   }
 
   Stream<ConnectionRequestState> watchConnectionRequestState() async* {
@@ -155,6 +156,7 @@ extension ConnectionRequestRuntime on RainRuntimeController {
 
     final decision = await adapter.acceptConnectionRequest(requestId);
     await _applyConnectionRequestDecision(decision);
+    await _dismissConnectionRequestNotification(requestId);
     if (decision.allowed) {
       await connectPeer(peerId, interactive: true, bypassRetryBackoff: true);
     }
@@ -174,6 +176,7 @@ extension ConnectionRequestRuntime on RainRuntimeController {
     }
     final decision = await adapter.cancelConnectionRequest(requestId);
     await _applyConnectionRequestDecision(decision);
+    await _dismissConnectionRequestNotification(requestId);
     return decision;
   }
 
@@ -190,6 +193,7 @@ extension ConnectionRequestRuntime on RainRuntimeController {
     }
     final decision = await adapter.rejectConnectionRequest(requestId);
     await _applyConnectionRequestDecision(decision);
+    await _dismissConnectionRequestNotification(requestId);
     return decision;
   }
 
@@ -206,6 +210,7 @@ extension ConnectionRequestRuntime on RainRuntimeController {
     }
     final decision = await adapter.markConnectionRequestSeen(requestId);
     await _applyConnectionRequestDecision(decision);
+    await _dismissConnectionRequestNotification(requestId);
     return decision;
   }
 
@@ -222,6 +227,7 @@ extension ConnectionRequestRuntime on RainRuntimeController {
     }
     final decision = await adapter.muteConnectionRequestsFromPeer(peerId);
     await _applyConnectionRequestDecision(decision);
+    await _dismissConnectionRequestNotificationsFromPeer(peerId);
     return decision;
   }
 
@@ -248,17 +254,19 @@ extension ConnectionRequestRuntime on RainRuntimeController {
       requests,
       direction: ConnectionRequestDirection.inbound,
     );
+    final surfaces = _connectionRequestSurfaces(
+      filtered,
+      direction: ConnectionRequestDirection.inbound,
+    );
     _setConnectionRequestState(
       _connectionRequestState.copyWith(
         available: connectionRequestAdapter != null,
         incomingRequests: filtered,
-        incomingSurfaces: _connectionRequestSurfaces(
-          filtered,
-          direction: ConnectionRequestDirection.inbound,
-        ),
+        incomingSurfaces: surfaces,
         updatedAt: DateTime.now(),
       ),
     );
+    unawaited(_syncConnectionRequestNotifications(surfaces));
   }
 
   Future<void> _handleOutgoingConnectionRequests(
@@ -481,6 +489,123 @@ extension ConnectionRequestRuntime on RainRuntimeController {
     if (!_connectionRequestStateController.isClosed) {
       _connectionRequestStateController.add(next);
     }
+  }
+
+  Future<void> _syncConnectionRequestNotifications(
+    List<ConnectionRequestSurfaceModel> surfaces,
+  ) async {
+    final notificationService = connectionRequestNotificationService;
+    if (notificationService == null) {
+      return;
+    }
+    final currentRequestIds = <String>{
+      for (final surface in surfaces)
+        if (!surface.status.isTerminal) surface.requestId,
+    };
+    for (final activeId in _activeConnectionRequestNotificationIds.toList()) {
+      if (!currentRequestIds.contains(activeId)) {
+        await _dismissConnectionRequestNotification(activeId);
+      }
+    }
+    for (final surface in surfaces) {
+      if (surface.status.isTerminal) {
+        await _dismissConnectionRequestNotification(surface.requestId);
+        continue;
+      }
+      final result = await notificationService.showConnectionRequest(surface);
+      if (result.kind == RainNotificationResultKind.shown) {
+        _activeConnectionRequestNotificationIds.add(surface.requestId);
+      }
+      _handleConnectionRequestNotificationResult(result);
+    }
+  }
+
+  Future<void> _dismissConnectionRequestNotification(String requestId) async {
+    final notificationService = connectionRequestNotificationService;
+    if (notificationService == null) {
+      return;
+    }
+    try {
+      await notificationService.dismissConnectionRequest(requestId);
+      _activeConnectionRequestNotificationIds.remove(requestId);
+    } catch (error, stackTrace) {
+      _recordConnectionRequestNotificationError(error, stackTrace);
+    }
+  }
+
+  Future<void> _dismissConnectionRequestNotificationsFromPeer(
+    String peerId,
+  ) async {
+    final notificationService = connectionRequestNotificationService;
+    if (notificationService == null) {
+      return;
+    }
+    try {
+      await notificationService.dismissConnectionRequestsFromPeer(peerId);
+      final currentIds = <String>{
+        for (final request in _connectionRequestState.incomingRequests)
+          if (request.from == peerId) request.requestId,
+      };
+      _activeConnectionRequestNotificationIds.removeAll(currentIds);
+    } catch (error, stackTrace) {
+      _recordConnectionRequestNotificationError(error, stackTrace);
+    }
+  }
+
+  Future<void> _dismissAllConnectionRequestNotifications() async {
+    for (final requestId in _activeConnectionRequestNotificationIds.toList()) {
+      await _dismissConnectionRequestNotification(requestId);
+    }
+    _activeConnectionRequestNotificationIds.clear();
+  }
+
+  void _handleConnectionRequestNotificationResult(
+    RainNotificationResult result,
+  ) {
+    _recordRuntimeEvent(
+      category: 'connection_request',
+      name: 'connection_request_notification_${result.kind.name}',
+      severity: result.needsInAppFallback ? 'warning' : 'info',
+      message: result.message,
+      context: <String, Object?>{
+        'requestId': result.requestId,
+        'peerId': result.peerId,
+      },
+    );
+    if (!result.needsInAppFallback) {
+      return;
+    }
+    final key = '${result.requestId}:${result.kind.name}';
+    if (!_connectionRequestNotificationFallbackKeys.add(key)) {
+      return;
+    }
+    final decision = deniedConnectionRequestDecision(
+      reasonCode: result.kind == RainNotificationResultKind.permissionDenied
+          ? ConnectionRequestReasonCode.permissionDenied
+          : ConnectionRequestReasonCode.notificationUnavailable,
+      peerId: result.peerId ?? '',
+      requestId: result.requestId,
+      userMessage: result.message,
+    );
+    _emitConnectionRequestMessage(decision);
+  }
+
+  void _recordConnectionRequestNotificationError(
+    Object error,
+    StackTrace stackTrace,
+  ) {
+    errorRecorder?.call(
+      error,
+      stackTrace,
+      source: 'connection-request-notifications',
+      fatal: false,
+    );
+    _recordRuntimeEvent(
+      category: 'connection_request',
+      name: 'connection_request_notification_error',
+      severity: 'warning',
+      message: error.toString(),
+    );
   }
 
   void _recordConnectionRequestAdapterError(
