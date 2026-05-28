@@ -1,3 +1,5 @@
+import 'dart:math';
+
 import 'package:firebase_database/firebase_database.dart';
 
 import '../src/connection_request_adapter.dart';
@@ -9,6 +11,55 @@ typedef RtdbOnlyConnectionRequestValueStream =
 typedef RtdbOnlyConnectionRequestValueGetter =
     Future<Object?> Function(String path);
 
+typedef RtdbOnlyConnectionRequestUpdate =
+    Future<void> Function(Map<String, Object?> updates);
+
+typedef RtdbOnlyConnectionRequestTransactionRunner =
+    Future<RtdbOnlyConnectionRequestTransactionResult> Function(
+      String path,
+      RtdbOnlyConnectionRequestTransactionHandler handler,
+    );
+
+typedef RtdbOnlyConnectionRequestTransactionHandler =
+    RtdbOnlyConnectionRequestTransactionAction Function(Object? current);
+
+String createConnectionRequestId({
+  required String from,
+  required String to,
+  required int now,
+  required String randomSuffix,
+}) {
+  final suffix = _validateRequestIdSuffix(randomSuffix);
+  final pair = connectionRequestPairKey(from, to).replaceAll(':', '_');
+  return validateConnectionRequestId('${now}_${pair}_$suffix');
+}
+
+final class RtdbOnlyConnectionRequestTransactionAction {
+  const RtdbOnlyConnectionRequestTransactionAction._({
+    required this.aborted,
+    this.value,
+  });
+
+  const RtdbOnlyConnectionRequestTransactionAction.success(Object? value)
+    : this._(aborted: false, value: value);
+
+  const RtdbOnlyConnectionRequestTransactionAction.abort()
+    : this._(aborted: true);
+
+  final bool aborted;
+  final Object? value;
+}
+
+final class RtdbOnlyConnectionRequestTransactionResult {
+  const RtdbOnlyConnectionRequestTransactionResult({
+    required this.committed,
+    this.value,
+  });
+
+  final bool committed;
+  final Object? value;
+}
+
 final class RtdbOnlyConnectionRequestAdapter
     implements ConnectionRequestAdapter {
   RtdbOnlyConnectionRequestAdapter({
@@ -18,12 +69,15 @@ final class RtdbOnlyConnectionRequestAdapter
     required Future<bool> Function(String peerId) isPeerOnline,
     ConnectionRequestAdapterDiagnosticsSink? diagnosticsSink,
     DateTime Function()? clock,
+    Duration localCreateCooldown = Duration.zero,
   }) : this._(
          currentUsername: currentUsername,
          isAcceptedFriend: isAcceptedFriend,
          isPeerOnline: isPeerOnline,
          diagnosticsSink: diagnosticsSink,
          clock: clock,
+         localCreateCooldown: localCreateCooldown,
+         randomSuffix: _randomAlphanumericSuffix,
          watchValue: (String path) {
            return root
                .child(path)
@@ -33,6 +87,22 @@ final class RtdbOnlyConnectionRequestAdapter
          getValue: (String path) async {
            return (await root.child(path).get()).value;
          },
+         updateValue: root.update,
+         runTransaction: (String path, handler) async {
+           final result = await root.child(path).runTransaction((
+             Object? current,
+           ) {
+             final action = handler(current);
+             if (action.aborted) {
+               return Transaction.abort();
+             }
+             return Transaction.success(action.value);
+           }, applyLocally: false);
+           return RtdbOnlyConnectionRequestTransactionResult(
+             committed: result.committed,
+             value: result.snapshot.value,
+           );
+         },
        );
 
   RtdbOnlyConnectionRequestAdapter.forTest({
@@ -41,16 +111,33 @@ final class RtdbOnlyConnectionRequestAdapter
     required Future<bool> Function(String peerId) isPeerOnline,
     required RtdbOnlyConnectionRequestValueStream watchValue,
     RtdbOnlyConnectionRequestValueGetter? getValue,
+    RtdbOnlyConnectionRequestUpdate? updateValue,
+    RtdbOnlyConnectionRequestTransactionRunner? runTransaction,
+    String Function()? randomSuffix,
     ConnectionRequestAdapterDiagnosticsSink? diagnosticsSink,
     DateTime Function()? clock,
+    Duration localCreateCooldown = Duration.zero,
   }) : this._(
          currentUsername: currentUsername,
          isAcceptedFriend: isAcceptedFriend,
          isPeerOnline: isPeerOnline,
          diagnosticsSink: diagnosticsSink,
          clock: clock,
+         localCreateCooldown: localCreateCooldown,
+         randomSuffix: randomSuffix ?? (() => 'test0'),
          watchValue: watchValue,
          getValue: getValue ?? ((String _) async => null),
+         updateValue: updateValue ?? ((Map<String, Object?> _) async {}),
+         runTransaction:
+             runTransaction ??
+             (
+               String ignoredPath,
+               RtdbOnlyConnectionRequestTransactionHandler ignoredHandler,
+             ) async {
+               return const RtdbOnlyConnectionRequestTransactionResult(
+                 committed: false,
+               );
+             },
        );
 
   RtdbOnlyConnectionRequestAdapter._({
@@ -59,26 +146,40 @@ final class RtdbOnlyConnectionRequestAdapter
     required Future<bool> Function(String peerId) isPeerOnline,
     required RtdbOnlyConnectionRequestValueStream watchValue,
     required RtdbOnlyConnectionRequestValueGetter getValue,
+    required RtdbOnlyConnectionRequestUpdate updateValue,
+    required RtdbOnlyConnectionRequestTransactionRunner runTransaction,
+    required String Function() randomSuffix,
     ConnectionRequestAdapterDiagnosticsSink? diagnosticsSink,
     DateTime Function()? clock,
+    required Duration localCreateCooldown,
   }) : _currentUsername = currentUsername,
        _isAcceptedFriend = isAcceptedFriend,
        _isPeerOnline = isPeerOnline,
        _watchValue = watchValue,
        _getValue = getValue,
+       _updateValue = updateValue,
+       _runTransaction = runTransaction,
+       _randomSuffix = randomSuffix,
        _diagnosticsSink = diagnosticsSink,
-       _clock = clock ?? DateTime.now;
+       _clock = clock ?? DateTime.now,
+       _localCreateCooldown = localCreateCooldown;
 
   static const int bestEffortDailyLimit = 20;
   static const int bestEffortPerTargetDailyLimit = 3;
+  static const Duration requestTtl = Duration(seconds: 45);
 
   final Future<String> Function() _currentUsername;
   final Future<bool> Function(String peerId) _isAcceptedFriend;
   final Future<bool> Function(String peerId) _isPeerOnline;
   final RtdbOnlyConnectionRequestValueStream _watchValue;
   final RtdbOnlyConnectionRequestValueGetter _getValue;
+  final RtdbOnlyConnectionRequestUpdate _updateValue;
+  final RtdbOnlyConnectionRequestTransactionRunner _runTransaction;
+  final String Function() _randomSuffix;
   final ConnectionRequestAdapterDiagnosticsSink? _diagnosticsSink;
   final DateTime Function() _clock;
+  final Duration _localCreateCooldown;
+  int? _lastSuccessfulCreateAt;
 
   @override
   Future<ConnectionRequestDecision> createConnectionRequest(
@@ -100,6 +201,15 @@ final class RtdbOnlyConnectionRequestAdapter
         peerId: normalizedPeer,
         error: error,
       );
+    }
+
+    final now = _clock().millisecondsSinceEpoch;
+    final cooldownDecision = _activeCooldownDecision(
+      now: now,
+      peerId: normalizedPeer,
+    );
+    if (cooldownDecision != null) {
+      return cooldownDecision;
     }
 
     if (currentUsername == normalizedPeer) {
@@ -139,9 +249,77 @@ final class RtdbOnlyConnectionRequestAdapter
       );
     }
 
-    return _foundationUnavailable(
-      action: 'createConnectionRequest',
+    final expiresAt = now + requestTtl.inMilliseconds;
+    final requestId = createConnectionRequestId(
+      from: currentUsername,
+      to: normalizedPeer,
+      now: now,
+      randomSuffix: _randomSuffix(),
+    );
+    final pairKey = connectionRequestPairKey(currentUsername, normalizedPeer);
+    final payload = ConnectionRequestPayload(
+      requestId: requestId,
+      from: currentUsername,
+      to: normalizedPeer,
+      pairKey: pairKey,
+      status: ConnectionRequestStatus.pending,
+      createdAt: now,
+      updatedAt: now,
+      expiresAt: expiresAt,
+    );
+    final lock = _RtdbConnectionRequestPairLock(
+      requestId: requestId,
+      from: currentUsername,
+      to: normalizedPeer,
+      pairKey: pairKey,
+      status: ConnectionRequestStatus.pending,
+      createdAt: now,
+      updatedAt: now,
+      expiresAt: expiresAt,
+    );
+
+    final lockClaim = await _claimPairLock(
+      path: 'connectionRequestPairLocks/$pairKey',
+      lock: lock,
+      now: now,
+    );
+    if (!lockClaim.allowed) {
+      return lockClaim.decision!;
+    }
+
+    final json = payload.toJson();
+    try {
+      await _updateValue(<String, Object?>{
+        'connectionRequests/$normalizedPeer/$requestId': json,
+        'connectionRequestOutboxes/$currentUsername/$requestId': json,
+      });
+    } on Object catch (error) {
+      final rolledBack = await _rollbackPairLock(
+        path: 'connectionRequestPairLocks/$pairKey',
+        requestId: requestId,
+      );
+      return _foundationUnavailable(
+        action: 'createConnectionRequest.mirrorWrite',
+        requestId: requestId,
+        peerId: normalizedPeer,
+        error: error,
+        diagnostics: <String, Object?>{'rollbackPairLock': rolledBack},
+      );
+    }
+
+    _lastSuccessfulCreateAt = now;
+    return ConnectionRequestDecision(
+      allowed: true,
+      userMessage: 'Connection request sent to @$normalizedPeer.',
+      requestId: requestId,
+      status: ConnectionRequestStatus.pending,
       peerId: normalizedPeer,
+      quota: await fetchConnectionRequestQuota(),
+      diagnostics: <String, Object?>{
+        'backendMode': 'rtdbOnly',
+        'authority': 'clientBestEffort',
+        'pairKey': pairKey,
+      },
     );
   }
 
@@ -308,6 +486,120 @@ final class RtdbOnlyConnectionRequestAdapter
     }
   }
 
+  Future<_RtdbPairLockClaim> _claimPairLock({
+    required String path,
+    required _RtdbConnectionRequestPairLock lock,
+    required int now,
+  }) async {
+    _RtdbConnectionRequestPairLock? duplicateLock;
+    var unknownConflict = false;
+    try {
+      final transaction = await _runTransaction(path, (Object? current) {
+        if (current == null) {
+          return RtdbOnlyConnectionRequestTransactionAction.success(
+            lock.toJson(),
+          );
+        }
+        if (current is Map) {
+          try {
+            final existing = _RtdbConnectionRequestPairLock.fromJson(
+              pairKey: lock.pairKey,
+              json: connectionRequestObjectMap(current),
+            );
+            if (existing.status.isTerminal || existing.isExpiredAt(now)) {
+              return RtdbOnlyConnectionRequestTransactionAction.success(
+                lock.toJson(),
+              );
+            }
+            if (existing.status == ConnectionRequestStatus.pending ||
+                existing.status == ConnectionRequestStatus.seen) {
+              duplicateLock = existing;
+              return const RtdbOnlyConnectionRequestTransactionAction.abort();
+            }
+          } on FormatException {
+            unknownConflict = true;
+            return const RtdbOnlyConnectionRequestTransactionAction.abort();
+          }
+        } else {
+          unknownConflict = true;
+          return const RtdbOnlyConnectionRequestTransactionAction.abort();
+        }
+        unknownConflict = true;
+        return const RtdbOnlyConnectionRequestTransactionAction.abort();
+      });
+      if (transaction.committed) {
+        return const _RtdbPairLockClaim.allowed();
+      }
+      final duplicate = duplicateLock;
+      if (duplicate != null) {
+        return _RtdbPairLockClaim.denied(
+          _blocked(
+            ConnectionRequestReasonCode.duplicatePendingRequest,
+            requestId: duplicate.requestId,
+            peerId: duplicate.from == lock.from ? duplicate.to : duplicate.from,
+            status: duplicate.status,
+            diagnostics: <String, Object?>{
+              'duplicateRequestId': duplicate.requestId,
+              'duplicateExpiresAt': duplicate.expiresAt,
+            },
+          ),
+        );
+      }
+      return _RtdbPairLockClaim.denied(
+        _blocked(
+          unknownConflict
+              ? ConnectionRequestReasonCode.rtdbConflict
+              : ConnectionRequestReasonCode.backendUnavailable,
+          requestId: lock.requestId,
+          peerId: lock.to,
+          diagnostics: <String, Object?>{'pairLockCommitted': false},
+        ),
+      );
+    } on Object catch (error) {
+      return _RtdbPairLockClaim.denied(
+        _foundationUnavailable(
+          action: 'createConnectionRequest.pairLock',
+          requestId: lock.requestId,
+          peerId: lock.to,
+          error: error,
+        ),
+      );
+    }
+  }
+
+  Future<bool> _rollbackPairLock({
+    required String path,
+    required String requestId,
+  }) async {
+    try {
+      final transaction = await _runTransaction(path, (Object? current) {
+        if (current is! Map) {
+          return const RtdbOnlyConnectionRequestTransactionAction.abort();
+        }
+        try {
+          final value = connectionRequestObjectMap(current);
+          if (value['requestId'] == requestId) {
+            return const RtdbOnlyConnectionRequestTransactionAction.success(
+              null,
+            );
+          }
+        } on FormatException {
+          return const RtdbOnlyConnectionRequestTransactionAction.abort();
+        }
+        return const RtdbOnlyConnectionRequestTransactionAction.abort();
+      });
+      return transaction.committed;
+    } on Object catch (error) {
+      _emitDiagnostic(
+        name: 'connection_request_rtdb_lock_rollback_failed',
+        path: path,
+        requestId: requestId,
+        error: error,
+      );
+      return false;
+    }
+  }
+
   ConnectionRequestQuotaSnapshot _quotaSnapshot({
     int pendingInboundCount = 0,
     int pendingOutboundCount = 0,
@@ -327,6 +619,9 @@ final class RtdbOnlyConnectionRequestAdapter
     ConnectionRequestReasonCode reasonCode, {
     String? requestId,
     String? peerId,
+    ConnectionRequestStatus? status,
+    int? retryAfterMs,
+    Map<String, Object?> diagnostics = const <String, Object?>{},
     Object? error,
   }) {
     final path = 'connectionRequestRtdb/blocked/${reasonCode.name}';
@@ -342,14 +637,18 @@ final class RtdbOnlyConnectionRequestAdapter
       userMessage: messageForConnectionRequestReason(
         reasonCode,
         peerId ?? 'Peer',
+        retryAfterMs == null ? null : Duration(milliseconds: retryAfterMs),
       ),
       requestId: requestId,
+      status: status,
       peerId: peerId,
+      retryAfterMs: retryAfterMs,
       diagnostics: <String, Object?>{
         'backendMode': 'rtdbOnly',
         'authority': 'clientBestEffort',
         'reasonCode': reasonCode.name,
         'path': path,
+        ...diagnostics,
         if (error != null) 'error': error.toString(),
       },
     );
@@ -359,6 +658,7 @@ final class RtdbOnlyConnectionRequestAdapter
     required String action,
     String? requestId,
     String? peerId,
+    Map<String, Object?> diagnostics = const <String, Object?>{},
     Object? error,
   }) {
     final path = 'connectionRequestRtdb/$action';
@@ -383,8 +683,33 @@ final class RtdbOnlyConnectionRequestAdapter
         'phase': 'foundation',
         'action': action,
         'now': _clock().millisecondsSinceEpoch,
+        ...diagnostics,
         if (error != null) 'error': error.toString(),
       },
+    );
+  }
+
+  ConnectionRequestDecision? _activeCooldownDecision({
+    required int now,
+    required String peerId,
+  }) {
+    if (_localCreateCooldown <= Duration.zero) {
+      return null;
+    }
+    final lastCreateAt = _lastSuccessfulCreateAt;
+    if (lastCreateAt == null) {
+      return null;
+    }
+    final retryAfterMs =
+        _localCreateCooldown.inMilliseconds - (now - lastCreateAt);
+    if (retryAfterMs <= 0) {
+      return null;
+    }
+    return _blocked(
+      ConnectionRequestReasonCode.rateLimited,
+      peerId: peerId,
+      retryAfterMs: retryAfterMs,
+      diagnostics: <String, Object?>{'localCooldown': true},
     );
   }
 
@@ -412,3 +737,133 @@ final class RtdbOnlyConnectionRequestAdapter
     );
   }
 }
+
+final class _RtdbPairLockClaim {
+  const _RtdbPairLockClaim.allowed() : allowed = true, decision = null;
+
+  const _RtdbPairLockClaim.denied(this.decision) : allowed = false;
+
+  final bool allowed;
+  final ConnectionRequestDecision? decision;
+}
+
+final class _RtdbConnectionRequestPairLock {
+  const _RtdbConnectionRequestPairLock({
+    required this.requestId,
+    required this.from,
+    required this.to,
+    required this.pairKey,
+    required this.status,
+    required this.createdAt,
+    required this.updatedAt,
+    required this.expiresAt,
+  });
+
+  factory _RtdbConnectionRequestPairLock.fromJson({
+    required String pairKey,
+    required Map<Object?, Object?> json,
+  }) {
+    final requestId = validateConnectionRequestId(
+      _requiredString(json, 'requestId'),
+    );
+    final from = normalizeConnectionRequestUsername(
+      _requiredString(json, 'from'),
+    );
+    final to = normalizeConnectionRequestUsername(_requiredString(json, 'to'));
+    final status = connectionRequestStatusFromName(
+      _requiredString(json, 'status'),
+    );
+    final actualPairKey = _requiredString(json, 'pairKey');
+    if (actualPairKey != pairKey ||
+        actualPairKey != connectionRequestPairKey(from, to)) {
+      throw const FormatException('Connection request lock pairKey invalid.');
+    }
+    final createdAt = _requiredInt(json, 'createdAt');
+    final updatedAt = _requiredInt(json, 'updatedAt');
+    final expiresAt = _requiredInt(json, 'expiresAt');
+    if (createdAt <= 0 || updatedAt < createdAt || expiresAt <= createdAt) {
+      throw const FormatException(
+        'Connection request lock timestamps are invalid.',
+      );
+    }
+    return _RtdbConnectionRequestPairLock(
+      requestId: requestId,
+      from: from,
+      to: to,
+      pairKey: actualPairKey,
+      status: status,
+      createdAt: createdAt,
+      updatedAt: updatedAt,
+      expiresAt: expiresAt,
+    );
+  }
+
+  final String requestId;
+  final String from;
+  final String to;
+  final String pairKey;
+  final ConnectionRequestStatus status;
+  final int createdAt;
+  final int updatedAt;
+  final int expiresAt;
+
+  bool isExpiredAt(int now) => now >= expiresAt;
+
+  Map<String, Object?> toJson() {
+    return <String, Object?>{
+      'requestId': requestId,
+      'from': from,
+      'to': to,
+      'pairKey': pairKey,
+      'status': status.name,
+      'createdAt': createdAt,
+      'updatedAt': updatedAt,
+      'expiresAt': expiresAt,
+    };
+  }
+}
+
+String _validateRequestIdSuffix(String value) {
+  final suffix = value.trim();
+  if (!_requestIdSuffixPattern.hasMatch(suffix)) {
+    throw const FormatException(
+      'Connection request id suffix must be short alphanumeric text.',
+    );
+  }
+  return suffix;
+}
+
+String _randomAlphanumericSuffix() {
+  final random = Random.secure();
+  return String.fromCharCodes(
+    List<int>.generate(
+      8,
+      (_) => _requestIdSuffixCharacters.codeUnitAt(
+        random.nextInt(_requestIdSuffixCharacters.length),
+      ),
+    ),
+  );
+}
+
+String _requiredString(Map<Object?, Object?> json, String key) {
+  final value = json[key];
+  if (value is String && value.isNotEmpty) {
+    return value;
+  }
+  throw FormatException('Connection request lock $key must be a string.');
+}
+
+int _requiredInt(Map<Object?, Object?> json, String key) {
+  final value = json[key];
+  if (value is int) {
+    return value;
+  }
+  if (value is num && value.isFinite && value.roundToDouble() == value) {
+    return value.toInt();
+  }
+  throw FormatException('Connection request lock $key must be an integer.');
+}
+
+final RegExp _requestIdSuffixPattern = RegExp(r'^[A-Za-z0-9]{1,16}$');
+const String _requestIdSuffixCharacters =
+    'abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789';

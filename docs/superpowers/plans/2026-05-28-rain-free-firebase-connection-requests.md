@@ -542,10 +542,11 @@ git commit -m "feat: add rtdb connection request adapter"
 
 **Files:**
 
-- Modify: `packages/protocol_brain/lib/src/connection_request_rtdb_adapter.dart`
+- Modify: `packages/protocol_brain/lib/adapters/connection_request_rtdb_adapter.dart`
+- Modify: `packages/protocol_brain/lib/src/connection_request_contract.dart`
 - Test: `packages/protocol_brain/test/connection_request_rtdb_adapter_test.dart`
 
-- [ ] **Step 1: Add request id helper**
+- [x] **Step 1: Add request id helper**
 
 Use a deterministic-enough client id:
 
@@ -564,7 +565,7 @@ String createConnectionRequestId({
 The random suffix must be alphanumeric and short enough to satisfy existing id
 validation.
 
-- [ ] **Step 2: Preflight before writes**
+- [x] **Step 2: Preflight before writes**
 
 `createConnectionRequest(peerId)` must deny before writing when:
 
@@ -578,7 +579,7 @@ validation.
 
 Return existing `ConnectionRequestDecision` values with user-facing messages.
 
-- [ ] **Step 3: Claim pair lock by transaction**
+- [x] **Step 3: Claim pair lock by transaction**
 
 Transaction behavior:
 
@@ -594,7 +595,7 @@ Return:
 - `duplicatePendingRequest` if a live pending lock exists.
 - `rtdbConflict` if the transaction aborts for an unknown live value.
 
-- [ ] **Step 4: Write inbox/outbox mirror**
+- [x] **Step 4: Write inbox/outbox mirror**
 
 After lock claim succeeds, write:
 
@@ -609,7 +610,7 @@ await root.update(updates);
 If mirror write fails, attempt best-effort lock rollback only when the lock
 still points to the same `requestId`.
 
-- [ ] **Step 5: Add tests**
+- [x] **Step 5: Add tests**
 
 Required tests:
 
@@ -620,11 +621,13 @@ test('create denied for offline peer writes no request rows', () async {});
 test('create mirror failure attempts matching lock rollback', () async {});
 ```
 
-- [ ] **Step 6: Validate and commit**
+- [x] **Step 6: Validate and commit**
 
 ```powershell
 flutter test --no-test-assets packages/protocol_brain/test/connection_request_rtdb_adapter_test.dart
-git add packages/protocol_brain/lib/src/connection_request_rtdb_adapter.dart packages/protocol_brain/test/connection_request_rtdb_adapter_test.dart
+dart run melos run analyze
+dart run melos run test
+git add packages/protocol_brain/lib/adapters/connection_request_rtdb_adapter.dart packages/protocol_brain/lib/src/connection_request_contract.dart packages/protocol_brain/test/connection_request_rtdb_adapter_test.dart docs/superpowers/plans/2026-05-28-rain-free-firebase-connection-requests.md
 git commit -m "feat: create connection requests without functions"
 ```
 
