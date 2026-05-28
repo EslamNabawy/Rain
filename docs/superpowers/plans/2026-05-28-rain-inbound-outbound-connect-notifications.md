@@ -622,20 +622,20 @@ Expected: all tests pass.
 
 **Steps:**
 
-- [ ] Add denied direct-write rules for server-owned paths.
-- [ ] Add safe read rules for own inbox/outbox.
-- [ ] Add safe read rules for own quota summary only if the summary path exists.
-- [ ] Add tests proving an authenticated user cannot create request rows directly.
-- [ ] Add tests proving an authenticated user cannot grant themselves credits.
-- [ ] Add tests proving an authenticated user cannot reset usage counters.
-- [ ] Add tests proving an authenticated user cannot write pair locks.
-- [ ] Add tests proving a user cannot read another user's inbox/outbox.
-- [ ] Commit: `feat(firebase): lock connection request rules`
+- [x] Add denied direct-write rules for server-owned paths.
+- [x] Add safe read rules for own inbox/outbox.
+- [x] Add safe read rules for own quota summary only if the summary path exists.
+- [x] Add tests proving an authenticated user cannot create request rows directly.
+- [x] Add tests proving an authenticated user cannot grant themselves credits.
+- [x] Add tests proving an authenticated user cannot reset usage counters.
+- [x] Add tests proving an authenticated user cannot write pair locks.
+- [x] Add tests proving a user cannot read another user's inbox/outbox.
+- [x] Commit: `feat(firebase): lock connection request rules`
 
 **Validation:**
 
 ```powershell
-dart test packages/protocol_brain/test/connection_request_firebase_contract_test.dart
+flutter test packages/protocol_brain/test/connection_request_firebase_contract_test.dart
 ```
 
 Expected: direct client bypass attempts are denied.

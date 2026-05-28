@@ -543,6 +543,71 @@
           ".validate": false
         }
       }
+    },
+    "connectionRequests": {
+      "$username": {
+        ".indexOn": ["expiresAt", "status"],
+        ".read": "auth != null && root.child('users/' + $username + '/uid').val() === auth.uid",
+        ".write": false,
+        "$requestId": {
+          ".write": false
+        }
+      }
+    },
+    "connectionRequestOutboxes": {
+      "$username": {
+        ".indexOn": ["expiresAt", "status"],
+        ".read": "auth != null && root.child('users/' + $username + '/uid').val() === auth.uid",
+        ".write": false,
+        "$requestId": {
+          ".write": false
+        }
+      }
+    },
+    "connectionRequestQuotaSummaries": {
+      "$username": {
+        ".read": "auth != null && root.child('users/' + $username + '/uid').val() === auth.uid",
+        ".write": false
+      }
+    },
+    "connectionRequestPairLocks": {
+      ".indexOn": ["expiresAt", "status"],
+      ".read": false,
+      ".write": false
+    },
+    "connectionNotificationConfig": {
+      ".read": false,
+      ".write": false
+    },
+    "connectionNotificationEntitlements": {
+      ".read": false,
+      ".write": false
+    },
+    "connectionNotificationUsage": {
+      ".read": false,
+      ".write": false
+    },
+    "connectionNotificationTargetUsage": {
+      ".read": false,
+      ".write": false
+    },
+    "connectionNotificationMutes": {
+      "$receiver": {
+        ".read": "auth != null && root.child('users/' + $receiver + '/uid').val() === auth.uid",
+        ".write": false,
+        "$sender": {
+          ".write": false
+        }
+      }
+    },
+    "connectionNotificationAudit": {
+      ".read": false,
+      ".write": false
+    },
+    "connectionNotificationReservations": {
+      ".indexOn": ["expiresAt", "finalized"],
+      ".read": false,
+      ".write": false
     }
   }
 }

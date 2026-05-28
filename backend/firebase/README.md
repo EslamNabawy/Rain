@@ -18,9 +18,20 @@ This directory contains the Firebase assets needed by Rain's Realtime Database s
 - `activeVoiceUsers/<username>`: ephemeral one-call lock for a user across all peers
 - `voiceCallInboxes/<username>/<callId>`: ephemeral incoming call pointer
 - `voiceCalls/<callId>`: ephemeral voice call state, encrypted SDP, and encrypted ICE
+- `connectionRequests/<username>/<requestId>`: read-only inbound connection notification projection for the receiver
+- `connectionRequestOutboxes/<username>/<requestId>`: read-only outbound connection notification projection for the sender
+- `connectionRequestQuotaSummaries/<username>`: sanitized read-only quota summary for the signed-in user
+- `connectionRequestPairLocks/<pairKey>`: server-owned pending request dedupe lock
+- `connectionNotificationEntitlements/<username>`: server-owned quota overrides and extra credits
+- `connectionNotificationUsage/<username>/<yyyyMMddUtc>`: server-owned per-user usage counters
+- `connectionNotificationTargetUsage/<from>/<to>/<yyyyMMddUtc>`: server-owned per-target usage counters
+- `connectionNotificationMutes/<receiver>/<sender>`: server-owned mute state, readable by the receiver
+- `connectionNotificationAudit/<yyyyMMddUtc>/<eventId>`: server-owned audit records
+- `connectionNotificationReservations/<requestId>`: server-owned quota reservation repair records
 
 Room nodes never store chat message content.
 Voice call nodes are signaling state only and are removed by TTL cleanup; they are not call history.
+Connection notification nodes are mutated by Cloud Functions only. Clients may read their own inbox, outbox, quota summary, and mute projection, but direct writes to requests, counters, entitlements, pair locks, reservations, config, and audit records are denied by Realtime Database rules.
 
 ## Deploy Realtime Database Rules
 
