@@ -124,8 +124,8 @@ firebase deploy --project rain-8fb4b --only database --non-interactive
 This path does not deploy Cloud Functions.
 
 Cloud Functions mode is stronger but blocked until the Firebase project can use
-Blaze or until the same server-owned logic is moved to an external free backend
-such as Cloudflare Workers.
+Blaze or until the same server-owned logic is moved to a separately hosted
+server backend.
 
 ## Cloud Functions Connection Request Release Order
 

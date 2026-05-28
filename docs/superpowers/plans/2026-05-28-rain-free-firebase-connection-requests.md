@@ -1153,10 +1153,21 @@ dart run melos run test
 - settings tests
 - emulator integration smoke tests
 
+**Result - 2026-05-28:**
+
+- `dart pub get` passed.
+- `dart run melos run analyze` passed on the final tree.
+- `dart run melos run test` passed on the final tree.
+- `.\scripts\ci_run_firebase_emulators.ps1` passed with Auth + RTDB emulator smoke tests.
+- Fixed the Spark-safe RTDB rules syntax so connection request inbound/outbound
+  write expressions load in the Firebase Database emulator.
+- Kept `backend/firebase/README.md` provider-neutral so Firebase backend docs do
+  not imply managed TURN/provider-secret dependencies.
+
 **Commit:**
 
 ```powershell
-git add docs/superpowers/plans/2026-05-28-rain-free-firebase-connection-requests.md
+git add backend/firebase/database.rules.json backend/firebase/README.md docs/superpowers/plans/2026-05-28-rain-free-firebase-connection-requests.md
 git commit -m "test: validate free-tier connection requests"
 ```
 
