@@ -104,6 +104,14 @@ function serverNow(clock) {
   return Date.now();
 }
 
+function utcDayKey(timestampMs) {
+  const value = Number(timestampMs);
+  if (!Number.isFinite(value)) {
+    throw new ConnectionRequestInputError("malformedRequest");
+  }
+  return new Date(value).toISOString().slice(0, 10).replaceAll("-", "");
+}
+
 function requireObjectData(data) {
   if (!data || typeof data !== "object" || Array.isArray(data)) {
     throw new ConnectionRequestInputError("malformedRequest");
@@ -314,5 +322,6 @@ module.exports = {
   senderDeviceFromData,
   serverNow,
   standardResponse,
+  utcDayKey,
   validateRequestId,
 };

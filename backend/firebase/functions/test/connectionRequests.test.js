@@ -448,6 +448,303 @@ test("global kill switch and sender disable stop before pair lock claim", async 
   }
 });
 
+test("daily limit denies after configured free allowance", async () => {
+  const root = fakeRoot({
+    state: {
+      connectionNotificationConfig: {
+        global: { dailyFreeLimit: 1 },
+      },
+      connectionNotificationUsage: {
+        alice: {
+          19700101: { freeUsed: 1, totalReserved: 1 },
+        },
+      },
+    },
+  });
+
+  const response = await connectionRequests.__test.createConnectionRequestCore(
+    { peer: "bob" },
+    authRequest(),
+    {
+      root,
+      clock: () => 10_000,
+      requestIdFactory: () => "daily-limit",
+    },
+  );
+
+  assertResponseShape(response);
+  assert.equal(response.allowed, false);
+  assert.equal(response.reasonCode, "dailyLimitExceeded");
+  assert.equal(getPath(root.state, "connectionRequests/bob/daily-limit"), undefined);
+  assert.equal(getPath(root.state, "connectionRequestPairLocks/alice:bob"), undefined);
+});
+
+test("extra credits allow after free limit and cannot go negative", async () => {
+  const root = fakeRoot({
+    state: {
+      friendships: {
+        alice: {
+          bob: { acceptedAt: 1 },
+          cara: { acceptedAt: 1 },
+        },
+        bob: { alice: { acceptedAt: 1 } },
+        cara: { alice: { acceptedAt: 1 } },
+      },
+      connectionNotificationConfig: {
+        global: { dailyFreeLimit: 0, perTargetDailyLimit: 2 },
+      },
+      connectionNotificationEntitlements: {
+        alice: { extraCredits: 1 },
+      },
+    },
+  });
+
+  const first = await connectionRequests.__test.createConnectionRequestCore(
+    { peer: "bob" },
+    authRequest(),
+    {
+      root,
+      clock: () => 10_000,
+      requestIdFactory: () => "credit-ok",
+    },
+  );
+
+  assertResponseShape(first);
+  assert.equal(first.allowed, true);
+  assert.equal(first.quota.extraCreditsRemaining, 0);
+  assert.equal(
+    getPath(root.state, "connectionNotificationEntitlements/alice/extraCredits"),
+    0,
+  );
+  assert.equal(
+    getPath(root.state, "connectionNotificationUsage/alice/19700101/extraUsed"),
+    1,
+  );
+  assert.equal(
+    getPath(root.state, "connectionNotificationReservations/credit-ok/status"),
+    "spent",
+  );
+
+  const second = await connectionRequests.__test.createConnectionRequestCore(
+    { peer: "cara" },
+    authRequest(),
+    {
+      root,
+      clock: () => 11_000,
+      requestIdFactory: () => "credit-denied",
+    },
+  );
+
+  assertResponseShape(second);
+  assert.equal(second.allowed, false);
+  assert.equal(second.reasonCode, "dailyLimitExceeded");
+  assert.equal(
+    getPath(root.state, "connectionNotificationEntitlements/alice/extraCredits"),
+    0,
+  );
+});
+
+test("per-target daily limit denies while global quota is rolled back", async () => {
+  const root = fakeRoot({
+    state: {
+      connectionNotificationConfig: {
+        global: { dailyFreeLimit: 10, perTargetDailyLimit: 1 },
+      },
+      connectionNotificationTargetUsage: {
+        alice: {
+          bob: {
+            19700101: { count: 1 },
+          },
+        },
+      },
+    },
+  });
+
+  const response = await connectionRequests.__test.createConnectionRequestCore(
+    { peer: "bob" },
+    authRequest(),
+    {
+      root,
+      clock: () => 10_000,
+      requestIdFactory: () => "target-limit",
+    },
+  );
+
+  assertResponseShape(response);
+  assert.equal(response.allowed, false);
+  assert.equal(response.reasonCode, "perTargetLimitExceeded");
+  assert.equal(
+    getPath(root.state, "connectionNotificationUsage/alice/19700101/freeUsed"),
+    0,
+  );
+  assert.equal(getPath(root.state, "connectionRequestPairLocks/alice:bob"), undefined);
+});
+
+test("cooldown and burst limits deny with retry guidance", async () => {
+  const cooldownRoot = fakeRoot({
+    state: {
+      connectionNotificationUsage: {
+        alice: {
+          19700101: { cooldownUntil: 20_000 },
+        },
+      },
+    },
+  });
+
+  const cooldown = await connectionRequests.__test.createConnectionRequestCore(
+    { peer: "bob" },
+    authRequest(),
+    {
+      root: cooldownRoot,
+      clock: () => 10_000,
+      requestIdFactory: () => "cooldown-denied",
+    },
+  );
+
+  assertResponseShape(cooldown);
+  assert.equal(cooldown.allowed, false);
+  assert.equal(cooldown.reasonCode, "rateLimited");
+  assert.equal(cooldown.retryAfterMs, 10_000);
+
+  const burstRoot = fakeRoot({
+    state: {
+      connectionNotificationConfig: {
+        global: { burstLimit: 1, burstWindowMs: 60_000, cooldownMs: 15_000 },
+      },
+      connectionNotificationUsage: {
+        alice: {
+          19700101: { recentRequestTimes: [9_900] },
+        },
+      },
+    },
+  });
+
+  const burst = await connectionRequests.__test.createConnectionRequestCore(
+    { peer: "bob" },
+    authRequest(),
+    {
+      root: burstRoot,
+      clock: () => 10_000,
+      requestIdFactory: () => "burst-denied",
+    },
+  );
+
+  assertResponseShape(burst);
+  assert.equal(burst.allowed, false);
+  assert.equal(burst.reasonCode, "rateLimited");
+  assert.equal(burst.retryAfterMs, 15_000);
+  assert.equal(
+    getPath(
+      burstRoot.state,
+      "connectionNotificationUsage/alice/19700101/cooldownUntil",
+    ),
+    25_000,
+  );
+  assert.equal(
+    getPath(burstRoot.state, "connectionNotificationUsage/alice/19700101/freeUsed"),
+    0,
+  );
+});
+
+test("expired entitlement is ignored instead of blocking or granting credits", async () => {
+  const root = fakeRoot({
+    state: {
+      connectionNotificationConfig: {
+        global: { dailyFreeLimit: 1 },
+      },
+      connectionNotificationEntitlements: {
+        alice: {
+          disabled: true,
+          extraCredits: 99,
+          expiresAt: 9_999,
+        },
+      },
+    },
+  });
+
+  const response = await connectionRequests.__test.createConnectionRequestCore(
+    { peer: "bob" },
+    authRequest(),
+    {
+      root,
+      clock: () => 10_000,
+      requestIdFactory: () => "expired-entitlement",
+    },
+  );
+
+  assertResponseShape(response);
+  assert.equal(response.allowed, true);
+  assert.equal(response.quota.extraCreditsRemaining, 0);
+  assert.equal(response.diagnostics.quotaFinalized, true);
+});
+
+test("unlimited entitlement bypasses daily free count but records usage", async () => {
+  const root = fakeRoot({
+    state: {
+      connectionNotificationConfig: {
+        global: { dailyFreeLimit: 0 },
+      },
+      connectionNotificationEntitlements: {
+        alice: { unlimitedUntil: 20_000 },
+      },
+    },
+  });
+
+  const response = await connectionRequests.__test.createConnectionRequestCore(
+    { peer: "bob" },
+    authRequest(),
+    {
+      root,
+      clock: () => 10_000,
+      requestIdFactory: () => "unlimited-ok",
+    },
+  );
+
+  assertResponseShape(response);
+  assert.equal(response.allowed, true);
+  assert.equal(
+    getPath(root.state, "connectionNotificationUsage/alice/19700101/freeUsed"),
+    0,
+  );
+  assert.equal(
+    getPath(root.state, "connectionNotificationUsage/alice/19700101/unlimitedUsed"),
+    1,
+  );
+});
+
+test("write failure rolls back quota reservation and pair lock", async () => {
+  const root = fakeRoot({ throwOnUpdate: true });
+  const response = await connectionRequests.__test.createConnectionRequestCore(
+    { peer: "bob" },
+    authRequest(),
+    {
+      root,
+      clock: () => 10_000,
+      requestIdFactory: () => "write-fails",
+    },
+  );
+
+  assertResponseShape(response);
+  assert.equal(response.allowed, false);
+  assert.equal(response.reasonCode, "backendUnavailable");
+  assert.equal(getPath(root.state, "connectionRequestPairLocks/alice:bob"), undefined);
+  assert.equal(
+    getPath(root.state, "connectionNotificationReservations/write-fails"),
+    undefined,
+  );
+  assert.equal(
+    getPath(root.state, "connectionNotificationUsage/alice/19700101/freeUsed"),
+    0,
+  );
+  assert.equal(
+    getPath(
+      root.state,
+      "connectionNotificationTargetUsage/alice/bob/19700101/count",
+    ),
+    0,
+  );
+});
+
 function assertResponseShape(response) {
   assert.deepEqual(Object.keys(response), responseKeys);
   assert.equal(typeof response.allowed, "boolean");
@@ -464,12 +761,16 @@ function fakeRoot(options = {}) {
   const root = {
     state,
     throwOnGet: options.throwOnGet === true,
+    throwOnUpdate: options.throwOnUpdate === true,
     updates: [],
     transactions: [],
     child(pathName) {
       return fakeRef(root, pathName);
     },
     async update(updates) {
+      if (root.throwOnUpdate) {
+        throw new Error("simulated update failure");
+      }
       root.updates.push(deepClone(updates));
       for (const [pathName, value] of Object.entries(updates)) {
         setPath(root.state, pathName, value);

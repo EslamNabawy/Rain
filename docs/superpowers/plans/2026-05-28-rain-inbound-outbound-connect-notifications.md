@@ -772,20 +772,20 @@ Expected: receiver protection and dedupe tests pass.
 
 **Steps:**
 
-- [ ] Implement global config loader with safe defaults.
-- [ ] Implement entitlement loader with expiry handling.
-- [ ] Implement sender daily quota transaction.
-- [ ] Implement per-target daily quota transaction.
-- [ ] Implement burst window and cooldown.
-- [ ] Implement extra credit decrement transaction.
-- [ ] Implement quota reservation record for every successful spend.
-- [ ] Implement rollback/finalizer path for partial failures.
-- [ ] Add admin runbook explaining how to grant extra credits:
+- [x] Implement global config loader with safe defaults.
+- [x] Implement entitlement loader with expiry handling.
+- [x] Implement sender daily quota transaction.
+- [x] Implement per-target daily quota transaction.
+- [x] Implement burst window and cooldown.
+- [x] Implement extra credit decrement transaction.
+- [x] Implement quota reservation record for every successful spend.
+- [x] Implement rollback/finalizer path for partial failures.
+- [x] Add admin runbook explaining how to grant extra credits:
   - set `extraCredits`
   - set `reason`
   - set `updatedBy`
   - set `expiresAt` or `unlimitedUntil`
-- [ ] Add tests:
+- [x] Add tests:
   - daily limit denies after configured limit
   - extra credits allow after free limit
   - extra credits cannot go negative
@@ -794,7 +794,7 @@ Expected: receiver protection and dedupe tests pass.
   - disabled user denied
   - global kill switch denied
   - expired entitlement ignored
-- [ ] Commit: `feat(functions): enforce connection request quotas`
+- [x] Commit: `feat(functions): enforce connection request quotas`
 
 **Validation:**
 
