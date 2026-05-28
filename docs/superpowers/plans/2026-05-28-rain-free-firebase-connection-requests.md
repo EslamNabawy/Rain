@@ -954,7 +954,7 @@ cleanup.
 - Modify: `apps/rain/lib/application/runtime/connection_request_runtime.dart`
 - Test: `packages/protocol_brain/test/connection_request_rtdb_adapter_test.dart`
 
-- [ ] **Step 1: Add cleanup trigger points**
+- [x] **Step 1: Add cleanup trigger points**
 
 Run cleanup on:
 
@@ -964,7 +964,7 @@ Run cleanup on:
 - accepting/rejecting/canceling
 - receiving an inbox/outbox snapshot
 
-- [ ] **Step 2: Cleanup rules**
+- [x] **Step 2: Cleanup rules**
 
 Only cleanup when:
 
@@ -975,7 +975,7 @@ Only cleanup when:
 
 Never delete a newer lock.
 
-- [ ] **Step 3: Add retention constants**
+- [x] **Step 3: Add retention constants**
 
 ```dart
 const connectionRequestTtl = Duration(seconds: 45);
@@ -983,7 +983,7 @@ const connectionRequestTerminalRetention = Duration(hours: 24);
 const connectionRequestMirrorRepairWindow = Duration(minutes: 2);
 ```
 
-- [ ] **Step 4: Add tests**
+- [x] **Step 4: Add tests**
 
 Required tests:
 
@@ -994,7 +994,7 @@ test('cleanup removes only matching pair lock request id', () async {});
 test('cleanup does not remove newer lock', () async {});
 ```
 
-- [ ] **Step 5: Validate and commit**
+- [x] **Step 5: Validate and commit**
 
 ```powershell
 flutter test --no-test-assets packages/protocol_brain/test/connection_request_rtdb_adapter_test.dart

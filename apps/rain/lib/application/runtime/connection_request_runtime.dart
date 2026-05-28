@@ -125,6 +125,11 @@ extension ConnectionRequestRuntime on RainRuntimeController {
     return decision;
   }
 
+  Future<void> cleanupConnectionRequestsForPeer(String username) async {
+    final peerId = _normalizedUsername(username);
+    await _runConnectionRequestCleanup(peerId: peerId);
+  }
+
   Future<ConnectionRequestDecision> acceptConnectionRequest(
     String requestId,
   ) async {
@@ -619,6 +624,18 @@ extension ConnectionRequestRuntime on RainRuntimeController {
     _connectionRequestState = next;
     if (!_connectionRequestStateController.isClosed) {
       _connectionRequestStateController.add(next);
+    }
+  }
+
+  Future<void> _runConnectionRequestCleanup({String? peerId}) async {
+    final adapter = connectionRequestAdapter;
+    if (adapter is! RtdbOnlyConnectionRequestAdapter) {
+      return;
+    }
+    try {
+      await adapter.cleanupConnectionRequests(peerId: peerId);
+    } on Object catch (error, stackTrace) {
+      _recordConnectionRequestAdapterError(error, stackTrace);
     }
   }
 

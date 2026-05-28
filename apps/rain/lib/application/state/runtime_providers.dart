@@ -308,6 +308,14 @@ class ConnectionRequestController extends Notifier<ConnectionRequestState> {
     return _requireRuntime().sendConnectionRequest(peerId);
   }
 
+  Future<void> cleanupForPeer(String peerId) async {
+    final status = ref.read(networkStatusProvider).value;
+    if (status != null && status.blocksNetworkActions) {
+      return;
+    }
+    await _requireRuntime().cleanupConnectionRequestsForPeer(peerId);
+  }
+
   Future<ConnectionRequestDecision> accept(String requestId) async {
     assertNetworkReady(ref);
     return _requireRuntime().acceptConnectionRequest(requestId);

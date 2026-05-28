@@ -1123,6 +1123,11 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
       _selectedPeerId = friend.username;
       _fullscreenFriendsPanelForcedOpen = false;
     });
+    unawaited(
+      ref
+          .read(connectionRequestProvider.notifier)
+          .cleanupForPeer(friend.username),
+    );
     await ref.read(messagesProvider(friend.username).notifier).markRead();
   }
 

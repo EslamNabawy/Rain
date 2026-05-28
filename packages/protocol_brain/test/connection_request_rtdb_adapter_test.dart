@@ -433,6 +433,121 @@ void main() {
       );
     });
 
+    test(
+      'expired request becomes expired on snapshot reconciliation',
+      () async {
+        final harness = _RtdbOnlyAdapterHarness(username: 'bob', now: 46000);
+        addTearDown(harness.dispose);
+        harness.seedPendingRequest(
+          requestId: 'request-01',
+          from: 'alice',
+          to: 'bob',
+        );
+
+        final payloads = await harness.adapter
+            .watchIncomingConnectionRequests('bob')
+            .first
+            .timeout(const Duration(seconds: 1));
+
+        expect(payloads, hasLength(1));
+        expect(payloads.single.status, ConnectionRequestStatus.expired);
+        expect(
+          harness.valueAt('connectionRequests/bob/request-01/status'),
+          ConnectionRequestStatus.expired.name,
+        );
+        expect(
+          harness.valueAt('connectionRequestOutboxes/alice/request-01/status'),
+          ConnectionRequestStatus.expired.name,
+        );
+        expect(
+          harness.valueAt('connectionRequestPairLocks/alice:bob/status'),
+          ConnectionRequestStatus.expired.name,
+        );
+      },
+    );
+
+    test(
+      'terminal rows older than retention are removed from own mirrors',
+      () async {
+        final harness = _RtdbOnlyAdapterHarness(
+          username: 'bob',
+          now: Duration(hours: 25).inMilliseconds,
+        );
+        addTearDown(harness.dispose);
+        harness.seedTerminalRequest(
+          requestId: 'request-01',
+          from: 'alice',
+          to: 'bob',
+          status: ConnectionRequestStatus.accepted,
+          updatedAt: 1000,
+        );
+
+        final payloads = await harness.adapter
+            .watchIncomingConnectionRequests('bob')
+            .first
+            .timeout(const Duration(seconds: 1));
+
+        expect(payloads, isEmpty);
+        expect(harness.valueAt('connectionRequests/bob/request-01'), isNull);
+        expect(
+          harness.valueAt('connectionRequestOutboxes/alice/request-01/status'),
+          ConnectionRequestStatus.accepted.name,
+        );
+      },
+    );
+
+    test('cleanup removes only matching pair lock request id', () async {
+      final harness = _RtdbOnlyAdapterHarness(
+        username: 'bob',
+        now: Duration(hours: 25).inMilliseconds,
+      );
+      addTearDown(harness.dispose);
+      harness.seedTerminalRequest(
+        requestId: 'request-01',
+        from: 'alice',
+        to: 'bob',
+        status: ConnectionRequestStatus.accepted,
+        updatedAt: 1000,
+      );
+
+      await harness.adapter.cleanupConnectionRequests();
+
+      expect(harness.valueAt('connectionRequestPairLocks/alice:bob'), isNull);
+    });
+
+    test('cleanup does not remove newer lock', () async {
+      final harness = _RtdbOnlyAdapterHarness(
+        username: 'bob',
+        now: Duration(hours: 25).inMilliseconds,
+      );
+      addTearDown(harness.dispose);
+      harness.seedTerminalRequest(
+        requestId: 'request-01',
+        from: 'alice',
+        to: 'bob',
+        status: ConnectionRequestStatus.accepted,
+        updatedAt: 1000,
+      );
+      harness
+          .setValue('connectionRequestPairLocks/alice:bob', <String, Object?>{
+            'requestId': 'request-02',
+            'from': 'alice',
+            'to': 'bob',
+            'pairKey': 'alice:bob',
+            'status': ConnectionRequestStatus.pending.name,
+            'createdAt': harness.now,
+            'updatedAt': harness.now,
+            'expiresAt': harness.now + 45000,
+          });
+
+      await harness.adapter.cleanupConnectionRequests();
+
+      expect(
+        harness.valueAt('connectionRequestPairLocks/alice:bob/requestId'),
+        'request-02',
+      );
+    });
+
     test('mute removes inbound prompts from that sender', () async {
       final harness = _RtdbOnlyAdapterHarness(
         username: 'alice',
@@ -485,16 +600,22 @@ ConnectionRequestPayload _payload({
   required String requestId,
   required String from,
   required String to,
+  ConnectionRequestStatus status = ConnectionRequestStatus.pending,
+  int createdAt = 1000,
+  int updatedAt = 1000,
+  int expiresAt = 45000,
+  int? respondedAt,
 }) {
   return ConnectionRequestPayload(
     requestId: requestId,
     from: from,
     to: to,
     pairKey: connectionRequestPairKey(from, to),
-    status: ConnectionRequestStatus.pending,
-    createdAt: 1000,
-    updatedAt: 1000,
-    expiresAt: 45000,
+    status: status,
+    createdAt: createdAt,
+    updatedAt: updatedAt,
+    expiresAt: expiresAt,
+    respondedAt: respondedAt,
   );
 }
 
@@ -585,6 +706,37 @@ final class _RtdbOnlyAdapterHarness {
       'to': to,
       'pairKey': payload.pairKey,
       'status': ConnectionRequestStatus.pending.name,
+      'createdAt': payload.createdAt,
+      'updatedAt': payload.updatedAt,
+      'expiresAt': payload.expiresAt,
+    });
+    return payload;
+  }
+
+  ConnectionRequestPayload seedTerminalRequest({
+    required String requestId,
+    required String from,
+    required String to,
+    required ConnectionRequestStatus status,
+    required int updatedAt,
+  }) {
+    final payload = _payload(
+      requestId: requestId,
+      from: from,
+      to: to,
+      status: status,
+      updatedAt: updatedAt,
+      respondedAt: updatedAt,
+    );
+    final json = payload.toJson();
+    setValue('connectionRequests/$to/$requestId', json);
+    setValue('connectionRequestOutboxes/$from/$requestId', json);
+    setValue('connectionRequestPairLocks/${payload.pairKey}', <String, Object?>{
+      'requestId': requestId,
+      'from': from,
+      'to': to,
+      'pairKey': payload.pairKey,
+      'status': status.name,
       'createdAt': payload.createdAt,
       'updatedAt': payload.updatedAt,
       'expiresAt': payload.expiresAt,

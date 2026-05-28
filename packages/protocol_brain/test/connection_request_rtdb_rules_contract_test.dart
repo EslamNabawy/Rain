@@ -159,7 +159,7 @@ void main() {
       expect(
         write,
         contains(
-          "data.exists() && !newData.exists() && data.child('status').val() === 'pending'",
+          "data.exists() && !newData.exists() && ((data.child('status').val() === 'pending'",
         ),
       );
       expect(
@@ -175,6 +175,54 @@ void main() {
         ),
       );
     });
+
+    test(
+      'opportunistic cleanup deletes only expired or terminal owned rows',
+      () {
+        final inboxWrite =
+            _node(rules, [
+                  'connectionRequests',
+                  r'$username',
+                  r'$requestId',
+                ])['.write']
+                as String;
+        final outboxWrite =
+            _node(rules, [
+                  'connectionRequestOutboxes',
+                  r'$username',
+                  r'$requestId',
+                ])['.write']
+                as String;
+        final pairLockWrite =
+            _node(rules, ['connectionRequestPairLocks', r'$pairKey'])['.write']
+                as String;
+
+        for (final writeRule in <String>[inboxWrite, outboxWrite]) {
+          expect(writeRule, contains('data.exists() && !newData.exists()'));
+          expect(
+            writeRule,
+            contains(
+              "root.child('users/' + \$username + '/uid').val() === auth.uid",
+            ),
+          );
+          expect(
+            writeRule,
+            contains("data.child('status').val() === 'expired'"),
+          );
+          expect(writeRule, contains("now >= data.child('expiresAt').val()"));
+        }
+
+        expect(pairLockWrite, contains('data.exists() && !newData.exists()'));
+        expect(
+          pairLockWrite,
+          contains("data.child('status').val() === 'expired'"),
+        );
+        expect(
+          pairLockWrite,
+          contains("root.child('users/' + data.child('to').val() + '/uid')"),
+        );
+      },
+    );
 
     test('usage and mute writes stay owner-scoped without admin paths', () {
       final usage = _node(rules, [
