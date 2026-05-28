@@ -77,8 +77,10 @@ extension ConnectionRequestRuntime on RainRuntimeController {
     var friend = await _localMutations.run(
       () => friendStore.loadFriend(peerId),
     );
+    bool? backendPeerOnline;
     try {
       final backendIdentity = await this.adapter.fetchIdentity(peerId);
+      backendPeerOnline = backendIdentity?.online;
       if (backendIdentity != null) {
         await _localMutations.run(
           () => friendStore.updatePresence(peerId, backendIdentity.online),
@@ -87,13 +89,21 @@ extension ConnectionRequestRuntime on RainRuntimeController {
           () => friendStore.loadFriend(peerId),
         );
       }
-    } catch (_) {
-      // Local presence is still a useful guard when backend preflight fails.
+    } catch (error, stackTrace) {
+      _recordRuntimeEvent(
+        category: 'connection_request',
+        name: 'connection_request_presence_preflight_failed',
+        severity: 'warning',
+        message: RuntimeInteractionGuard.presenceUnknownMessage(peerId),
+        context: <String, Object?>{'peerId': peerId, 'error': error.toString()},
+      );
+      _recordConnectionRequestAdapterError(error, stackTrace);
     }
     final activeTransfer = await _activeConnectionRequestBlockingTransfer();
     final guardDecision = RuntimeInteractionGuard.canSendConnectionRequest(
       peerId: peerId,
       friend: friend,
+      peerOnline: backendPeerOnline,
       manualDisconnectedPeers: _manualDisconnectedPeers,
       voiceCallState: _voiceCallState,
       activeTransfer: activeTransfer,
@@ -801,6 +811,8 @@ extension ConnectionRequestRuntime on RainRuntimeController {
         ConnectionRequestReasonCode.activeCall,
       RuntimeInteractionReasonCode.peerOffline =>
         ConnectionRequestReasonCode.peerOffline,
+      RuntimeInteractionReasonCode.peerAlreadyOnline =>
+        ConnectionRequestReasonCode.peerAlreadyOnline,
       RuntimeInteractionReasonCode.presenceUnknown =>
         ConnectionRequestReasonCode.presenceUnknown,
       RuntimeInteractionReasonCode.staleCallCleanup =>

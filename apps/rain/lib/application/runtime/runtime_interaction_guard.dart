@@ -12,6 +12,7 @@ enum RuntimeInteractionReasonCode {
   activeFileTransfer,
   peerBusy,
   peerOffline,
+  peerAlreadyOnline,
   presenceUnknown,
   staleCallCleanup,
   callCleanupInProgress,
@@ -87,6 +88,14 @@ final class RuntimeInteractionGuard {
     return '@$normalized is offline. Keep both apps open, then try again.';
   }
 
+  static String peerAlreadyOnlineMessage(String peerId) {
+    final normalized = peerId.trim().replaceFirst(RegExp(r'^@+'), '');
+    if (normalized.isEmpty) {
+      return 'Peer is online. Connect directly instead of sending a request notification.';
+    }
+    return '@$normalized is online. Connect directly instead of sending a request notification.';
+  }
+
   static String presenceUnknownMessage(String peerId) {
     final normalized = peerId.trim().replaceFirst(RegExp(r'^@+'), '');
     if (normalized.isEmpty) {
@@ -135,6 +144,16 @@ final class RuntimeInteractionGuard {
     return RuntimeInteractionDecision.deny(
       reasonCode: RuntimeInteractionReasonCode.peerOffline,
       userMessage: peerOfflineMessage(peerId),
+      blockingPeerId: peerId,
+    );
+  }
+
+  static RuntimeInteractionDecision peerAlreadyOnline({
+    required String peerId,
+  }) {
+    return RuntimeInteractionDecision.deny(
+      reasonCode: RuntimeInteractionReasonCode.peerAlreadyOnline,
+      userMessage: peerAlreadyOnlineMessage(peerId),
       blockingPeerId: peerId,
     );
   }
@@ -188,6 +207,7 @@ final class RuntimeInteractionGuard {
   static RuntimeInteractionDecision canSendConnectionRequest({
     required String peerId,
     required FriendRecord? friend,
+    required bool? peerOnline,
     required Set<String> manualDisconnectedPeers,
     required VoiceCallState voiceCallState,
     FileTransferRecord? activeTransfer,
@@ -198,8 +218,11 @@ final class RuntimeInteractionGuard {
         userMessage: 'You can only request a connection with accepted friends.',
       );
     }
-    if (friend?.isOnline == false) {
-      return RuntimeInteractionGuard.peerOffline(peerId: peerId);
+    if (peerOnline == true) {
+      return RuntimeInteractionGuard.peerAlreadyOnline(peerId: peerId);
+    }
+    if (peerOnline == null) {
+      return RuntimeInteractionGuard.presenceUnknown(peerId: peerId);
     }
     if (manualDisconnectedPeers.contains(peerId)) {
       return RuntimeInteractionDecision.deny(

@@ -26,6 +26,8 @@ const reasonMessages = Object.freeze({
   malformedRequest: () => "Connection request is malformed. Try again.",
   peerOffline: (peer) =>
     `${peer} is offline. Keep both apps open, then try again.`,
+  peerAlreadyOnline: (peer) =>
+    `${peer} is online. Connect directly instead of sending a request notification.`,
   presenceUnknown: (peer) => `Could not confirm ${peer} is online. Try again.`,
   notAcceptedFriend: () =>
     "You can only request a connection with accepted friends.",

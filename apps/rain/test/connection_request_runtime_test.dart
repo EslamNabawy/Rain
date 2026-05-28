@@ -15,25 +15,36 @@ void main() {
 
   group('ConnectionRequestRuntime', () {
     test(
-      'offline peer is denied with message before adapter mutation',
+      'online peer is denied with direct-connect message before adapter mutation',
       () async {
-        final harness = await _ConnectionRequestHarness.create(
-          bobOnline: false,
-        );
+        final harness = await _ConnectionRequestHarness.create(bobOnline: true);
         addTearDown(harness.dispose);
 
         final decision = await harness.runtime.sendConnectionRequest('bob');
 
         expect(decision.allowed, isFalse);
-        expect(decision.reasonCode, ConnectionRequestReasonCode.peerOffline);
-        expect(decision.userMessage, contains('@bob is offline'));
+        expect(
+          decision.reasonCode,
+          ConnectionRequestReasonCode.peerAlreadyOnline,
+        );
+        expect(decision.userMessage, contains('@bob is online'));
         expect(harness.adapter.outgoingForTest('alice'), isEmpty);
         expect(
           harness.runtime.connectionRequestState.lastUserMessage?.message,
-          contains('@bob is offline'),
+          contains('@bob is online'),
         );
       },
     );
+
+    test('offline peer sends connection request notification', () async {
+      final harness = await _ConnectionRequestHarness.create();
+      addTearDown(harness.dispose);
+
+      final decision = await harness.runtime.sendConnectionRequest('bob');
+
+      expect(decision.allowed, isTrue);
+      expect(harness.adapter.outgoingForTest('alice'), hasLength(1));
+    });
 
     test(
       'duplicate pending request exposes existing outbound status',
@@ -120,6 +131,7 @@ void main() {
     test('accept clears manual disconnect only for accepted peer', () async {
       final harness = await _ConnectionRequestHarness.create();
       addTearDown(harness.dispose);
+      await harness.adapter.ensurePeerIdentity('bob', online: true);
       await harness.addAcceptedFriend('cara', online: true);
 
       await harness.runtime.disconnectPeer('bob');
@@ -242,7 +254,7 @@ void main() {
       () async {
         final runtimeEvents = <Map<String, Object?>>[];
         final harness = await _ConnectionRequestHarness.create(
-          bobOnline: false,
+          bobOnline: true,
           runtimeEvents: runtimeEvents,
         );
         addTearDown(harness.dispose);
@@ -263,11 +275,11 @@ void main() {
         expect(context['status'], isNull);
         expect(
           context['reasonCode'],
-          ConnectionRequestReasonCode.peerOffline.name,
+          ConnectionRequestReasonCode.peerAlreadyOnline.name,
         );
         expect(
           context['userMessageKey'],
-          'connectionRequest.reason.peerOffline',
+          'connectionRequest.reason.peerAlreadyOnline',
         );
         expect(context['renderedMessage'], decision.userMessage);
         expect(context['quotaSummary'], isA<Map<String, Object?>>());
@@ -287,10 +299,11 @@ void main() {
           state: FriendState.friend,
           addedAt: 1,
           lastOnlineAt: null,
-          isOnline: true,
+          isOnline: false,
           unreadCount: 0,
           gender: null,
         ),
+        peerOnline: false,
         manualDisconnectedPeers: const <String>{},
         voiceCallState: const VoiceCallState(
           phase: VoiceCallPhase.active,
@@ -327,7 +340,7 @@ final class _ConnectionRequestHarness {
   static Future<_ConnectionRequestHarness> create({
     RainDatabase? database,
     _ConnectionRequestNoopSignalingAdapter? adapter,
-    bool bobOnline = true,
+    bool bobOnline = false,
     List<Map<String, Object?>>? runtimeEvents,
   }) async {
     final db = database ?? RainDatabase(NativeDatabase.memory());

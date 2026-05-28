@@ -861,12 +861,11 @@ async function evaluateReceiverProtections(root, prepared) {
   }
 
   const receiverPresence = await readValue(root, `presence/${prepared.peer}`);
-  if (!isFreshOnlinePresence(receiverPresence, prepared.now)) {
-    return denyResult(prepared, "peerOffline", {
+  if (isFreshOnlinePresence(receiverPresence, prepared.now)) {
+    return denyResult(prepared, "peerAlreadyOnline", {
       diagnostics: {
-        receiverOnline: receiverPresence && receiverPresence.online === true,
-        receiverLastHeartbeat:
-          receiverPresence && receiverPresence.lastHeartbeat,
+        receiverOnline: true,
+        receiverLastHeartbeat: receiverPresence.lastHeartbeat,
       },
     });
   }

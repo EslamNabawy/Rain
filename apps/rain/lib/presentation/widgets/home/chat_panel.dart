@@ -79,6 +79,7 @@ class _ChatPanelState extends ConsumerState<_ChatPanel> {
     );
     final hasPendingOutboundRequest =
         outboundRequest != null && !outboundRequest.status.isTerminal;
+    final usesOfflineConnectionRequest = !isPeerOnline;
     final connectionStatus = _connectionStatusForDiagnostics(diagnostics);
     final connectDeniedReason = _connectRequestUnavailableReason(
       runtime: runtime,
@@ -93,9 +94,8 @@ class _ChatPanelState extends ConsumerState<_ChatPanel> {
     final canConnectNow =
         runtime != null &&
         canChat &&
-        isPeerOnline &&
-        connectionRequests.available &&
-        !hasPendingOutboundRequest &&
+        (!usesOfflineConnectionRequest || connectionRequests.available) &&
+        (!usesOfflineConnectionRequest || !hasPendingOutboundRequest) &&
         !connectionStatus.isBusy &&
         !connectionStatus.isConnected &&
         !hasBlockingCall &&
@@ -1500,6 +1500,21 @@ class _ChatPanelState extends ConsumerState<_ChatPanel> {
       _showErrorSnack(unavailableReason);
       return;
     }
+
+    final friends = ref.read(friendsProvider);
+    final friend = _currentFriend(friends);
+    final canChat = friend?.state == FriendState.friend;
+    final isPeerOnline = canChat ? friend?.isOnline ?? false : false;
+    if (isPeerOnline) {
+      await _connectDirectlyToPeer();
+      return;
+    }
+
+    final confirmed = await _confirmOfflineConnectionRequest(friend);
+    if (confirmed != true || !mounted) {
+      return;
+    }
+
     setState(() => _isConnecting = true);
     try {
       final decision = await ref
@@ -1529,6 +1544,57 @@ class _ChatPanelState extends ConsumerState<_ChatPanel> {
         setState(() => _isConnecting = false);
       }
     }
+  }
+
+  Future<void> _connectDirectlyToPeer() async {
+    setState(() => _isConnecting = true);
+    try {
+      final connection = ref.read(connectionsProvider).peer(widget.peerId);
+      final retryFailedConnection =
+          connection.manualIntent == ManualConnectionIntent.failed ||
+          connection.session?.state == SessionState.failed;
+      await ref
+          .read(connectionsProvider.notifier)
+          .connect(
+            widget.peerId,
+            waitForConnected: true,
+            manualRetry: retryFailedConnection,
+          );
+      _dispatchSoundEvent(rainUiActionSoundEvent());
+      _showInfoSnack('Connected to @${widget.peerId}.');
+    } catch (error) {
+      _dispatchWarningSound('chat.peer.direct_connect_failed');
+      _showErrorSnack(_formatUiError(error));
+    } finally {
+      if (mounted) {
+        setState(() => _isConnecting = false);
+      }
+    }
+  }
+
+  Future<bool?> _confirmOfflineConnectionRequest(FriendRecord? friend) {
+    final peerLabel = '@${friend?.username ?? widget.peerId}';
+    return showDialog<bool>(
+      context: context,
+      builder: (BuildContext dialogContext) {
+        return AlertDialog(
+          title: Text('Notify $peerLabel?'),
+          content: Text(
+            '$peerLabel appears offline. Send a connection request notification so they can open Rain and connect back? This uses your request limit.',
+          ),
+          actions: <Widget>[
+            TextButton(
+              onPressed: () => Navigator.of(dialogContext).pop(false),
+              child: const Text('Cancel'),
+            ),
+            FilledButton(
+              onPressed: () => Navigator.of(dialogContext).pop(true),
+              child: const Text('Send request'),
+            ),
+          ],
+        );
+      },
+    );
   }
 
   Future<void> _handleConnectionRequestAction(
@@ -1624,7 +1690,10 @@ class _ChatPanelState extends ConsumerState<_ChatPanel> {
     if (connectionStatus.isConnected) {
       return null;
     }
-    if (outboundRequest != null && !outboundRequest.status.isTerminal) {
+    final requiresConnectionRequest = !isPeerOnline;
+    if (requiresConnectionRequest &&
+        outboundRequest != null &&
+        !outboundRequest.status.isTerminal) {
       return outboundRequest.feedback?.message ??
           'Connection request already sent to ${outboundRequest.peerLabel}.';
     }
@@ -1634,11 +1703,8 @@ class _ChatPanelState extends ConsumerState<_ChatPanel> {
     if (!canChat) {
       return 'You can only request a connection with accepted friends.';
     }
-    if (!connectionRequests.available) {
+    if (requiresConnectionRequest && !connectionRequests.available) {
       return 'Connection request service is unavailable. Try again.';
-    }
-    if (!isPeerOnline) {
-      return '@${widget.peerId} is offline. Keep both apps open, then try again.';
     }
     if (connectionStatus.isBusy) {
       return 'Connection is already changing. Try again in a moment.';

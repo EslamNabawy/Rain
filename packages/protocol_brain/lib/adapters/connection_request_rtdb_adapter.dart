@@ -211,13 +211,6 @@ final class RtdbOnlyConnectionRequestAdapter
 
     final now = _clock().millisecondsSinceEpoch;
     await cleanupConnectionRequests(peerId: normalizedPeer);
-    final cooldownDecision = _activeCooldownDecision(
-      now: now,
-      peerId: normalizedPeer,
-    );
-    if (cooldownDecision != null) {
-      return cooldownDecision;
-    }
 
     if (currentUsername == normalizedPeer) {
       return _blocked(
@@ -242,9 +235,9 @@ final class RtdbOnlyConnectionRequestAdapter
     }
 
     try {
-      if (!await _isPeerOnline(normalizedPeer)) {
+      if (await _isPeerOnline(normalizedPeer)) {
         return _blocked(
-          ConnectionRequestReasonCode.peerOffline,
+          ConnectionRequestReasonCode.peerAlreadyOnline,
           peerId: normalizedPeer,
         );
       }
@@ -254,6 +247,14 @@ final class RtdbOnlyConnectionRequestAdapter
         peerId: normalizedPeer,
         error: error,
       );
+    }
+
+    final cooldownDecision = _activeCooldownDecision(
+      now: now,
+      peerId: normalizedPeer,
+    );
+    if (cooldownDecision != null) {
+      return cooldownDecision;
     }
 
     if (await _isReceiverMuted(

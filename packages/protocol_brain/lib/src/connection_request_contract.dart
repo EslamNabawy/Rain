@@ -18,6 +18,7 @@ enum ConnectionRequestReasonCode {
   backendUnavailable,
   malformedRequest,
   peerOffline,
+  peerAlreadyOnline,
   presenceUnknown,
   notAcceptedFriend,
   blocked,
@@ -489,6 +490,8 @@ String messageForConnectionRequestReason(
       'Connection request is malformed. Try again.',
     ConnectionRequestReasonCode.peerOffline =>
       '$peer is offline. Keep both apps open, then try again.',
+    ConnectionRequestReasonCode.peerAlreadyOnline =>
+      '$peer is online. Connect directly instead of sending a request notification.',
     ConnectionRequestReasonCode.presenceUnknown =>
       'Could not confirm $peer is online. Try again.',
     ConnectionRequestReasonCode.notAcceptedFriend =>

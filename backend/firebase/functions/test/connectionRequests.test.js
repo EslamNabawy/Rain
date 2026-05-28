@@ -382,9 +382,9 @@ test("receiver protection denials do not write inbox or consume quota", async ()
       reasonCode: "blocked",
     },
     {
-      name: "offline peer",
-      state: { presence: { bob: { online: false, lastHeartbeat: 10_000 } } },
-      reasonCode: "peerOffline",
+      name: "online peer",
+      state: { presence: { bob: { online: true, lastHeartbeat: 10_000 } } },
+      reasonCode: "peerAlreadyOnline",
     },
     {
       name: "missing accepted friendship",
@@ -567,7 +567,7 @@ test("denied to created ratio spike writes function warning", async () => {
         },
       },
       presence: {
-        bob: { online: false, lastHeartbeat: 10_000 },
+        bob: { online: true, lastHeartbeat: 10_000 },
       },
     },
   });
@@ -589,7 +589,7 @@ test("denied to created ratio spike writes function warning", async () => {
 
   assertResponseShape(response);
   assert.equal(response.allowed, false);
-  assert.equal(response.reasonCode, "peerOffline");
+  assert.equal(response.reasonCode, "peerAlreadyOnline");
   assert.equal(warnings.length, 1);
   assert.equal(warnings[0].message, "Connection request denial ratio is elevated.");
   assert.equal(warnings[0].context.deniedCount, 10);
@@ -1353,8 +1353,8 @@ function defaultState() {
     },
     blocks: {},
     presence: {
-      bob: { online: true, lastHeartbeat: 10_000 },
-      cara: { online: true, lastHeartbeat: 10_000 },
+      bob: { online: false, lastHeartbeat: 10_000 },
+      cara: { online: false, lastHeartbeat: 10_000 },
     },
     connectionNotificationConfig: {
       global: {

@@ -79,28 +79,30 @@ void main() {
       expect(quota.pendingOutboundCount, 1);
     });
 
-    test(
-      'create preflight denies offline peer before foundation fallback',
-      () async {
-        final harness = _RtdbOnlyAdapterHarness(
-          username: 'alice',
-          acceptedPeers: <String>{'bob'},
-        );
-        addTearDown(harness.dispose);
+    test('create preflight denies online peer before quota mutation', () async {
+      final harness = _RtdbOnlyAdapterHarness(
+        username: 'alice',
+        acceptedPeers: <String>{'bob'},
+        onlinePeers: <String>{'bob'},
+      );
+      addTearDown(harness.dispose);
 
-        final decision = await harness.adapter.createConnectionRequest('bob');
+      final decision = await harness.adapter.createConnectionRequest('bob');
 
-        expect(decision.allowed, isFalse);
-        expect(decision.reasonCode, ConnectionRequestReasonCode.peerOffline);
-        expect(decision.userMessage, contains('@bob is offline'));
-      },
-    );
+      expect(decision.allowed, isFalse);
+      expect(
+        decision.reasonCode,
+        ConnectionRequestReasonCode.peerAlreadyOnline,
+      );
+      expect(decision.userMessage, contains('@bob is online'));
+      expect(harness.valueAt('connectionRequestUsage/alice'), isNull);
+      expect(harness.valueAt('connectionRequestTargetUsage/alice'), isNull);
+    });
 
     test('create writes receiver inbox and sender outbox', () async {
       final harness = _RtdbOnlyAdapterHarness(
         username: 'alice',
         acceptedPeers: <String>{'bob'},
-        onlinePeers: <String>{'bob'},
         randomSuffixes: <String>['a1b2'],
       );
       addTearDown(harness.dispose);
@@ -134,7 +136,6 @@ void main() {
       final harness = _RtdbOnlyAdapterHarness(
         username: 'alice',
         acceptedPeers: <String>{'bob'},
-        onlinePeers: <String>{'bob'},
         randomSuffixes: <String>['a1b2', 'c3d4'],
       );
       addTearDown(harness.dispose);
@@ -159,7 +160,6 @@ void main() {
       final harness = _RtdbOnlyAdapterHarness(
         username: 'alice',
         acceptedPeers: <String>{'bob', 'cara'},
-        onlinePeers: <String>{'bob', 'cara'},
         randomSuffixes: <String>['a1b2', 'c3d4'],
       );
       addTearDown(harness.dispose);
@@ -189,7 +189,6 @@ void main() {
       final harness = _RtdbOnlyAdapterHarness(
         username: 'alice',
         acceptedPeers: <String>{'bob'},
-        onlinePeers: <String>{'bob'},
         randomSuffixes: <String>['a1b2'],
       );
       addTearDown(harness.dispose);
@@ -217,7 +216,6 @@ void main() {
       final harness = _RtdbOnlyAdapterHarness(
         username: 'alice',
         acceptedPeers: <String>{'bob'},
-        onlinePeers: <String>{'bob'},
         randomSuffixes: <String>['a1b2', 'c3d4'],
       );
       addTearDown(harness.dispose);
@@ -242,7 +240,6 @@ void main() {
       final harness = _RtdbOnlyAdapterHarness(
         username: 'alice',
         acceptedPeers: <String>{'bob'},
-        onlinePeers: <String>{'bob'},
         randomSuffixes: <String>['a1b2'],
       );
       addTearDown(harness.dispose);
@@ -256,17 +253,17 @@ void main() {
       expect(decision.quota?.extraCreditsRemaining, 0);
     });
 
-    test('create denied for offline peer writes no request rows', () async {
+    test('presence unknown writes no request rows', () async {
       final harness = _RtdbOnlyAdapterHarness(
         username: 'alice',
         acceptedPeers: <String>{'bob'},
-      );
+      )..failPresenceCheckForTest(Exception('permission denied'));
       addTearDown(harness.dispose);
 
       final decision = await harness.adapter.createConnectionRequest('bob');
 
       expect(decision.allowed, isFalse);
-      expect(decision.reasonCode, ConnectionRequestReasonCode.peerOffline);
+      expect(decision.reasonCode, ConnectionRequestReasonCode.presenceUnknown);
       expect(harness.valueAt('connectionRequests/bob'), isNull);
       expect(harness.valueAt('connectionRequestOutboxes/alice'), isNull);
       expect(harness.valueAt('connectionRequestPairLocks/alice:bob'), isNull);
@@ -276,7 +273,6 @@ void main() {
       final harness = _RtdbOnlyAdapterHarness(
         username: 'alice',
         acceptedPeers: <String>{'bob'},
-        onlinePeers: <String>{'bob'},
         randomSuffixes: <String>['a1b2'],
       )..failNextUpdateForTest(Exception('permission denied'));
       addTearDown(harness.dispose);
@@ -552,7 +548,6 @@ void main() {
       final harness = _RtdbOnlyAdapterHarness(
         username: 'alice',
         acceptedPeers: <String>{'alice'},
-        onlinePeers: <String>{'alice'},
       );
       addTearDown(harness.dispose);
 
@@ -642,7 +637,14 @@ final class _RtdbOnlyAdapterHarness {
       currentUsername: () async => username,
       isAcceptedFriend: (String peerId) async =>
           this.acceptedPeers.contains(peerId),
-      isPeerOnline: (String peerId) async => this.onlinePeers.contains(peerId),
+      isPeerOnline: (String peerId) async {
+        final failure = _nextPresenceFailure;
+        if (failure != null) {
+          _nextPresenceFailure = null;
+          throw failure;
+        }
+        return this.onlinePeers.contains(peerId);
+      },
       watchValue: _watchValue,
       getValue: (String path) async => valueAt(path),
       updateValue: _updateValue,
@@ -665,6 +667,7 @@ final class _RtdbOnlyAdapterHarness {
       <String, StreamController<Object?>>{};
   var _randomSuffixIndex = 0;
   Object? _nextUpdateFailure;
+  Object? _nextPresenceFailure;
 
   late final RtdbOnlyConnectionRequestAdapter adapter;
 
@@ -689,6 +692,10 @@ final class _RtdbOnlyAdapterHarness {
 
   void failNextUpdateForTest(Object error) {
     _nextUpdateFailure = error;
+  }
+
+  void failPresenceCheckForTest(Object error) {
+    _nextPresenceFailure = error;
   }
 
   ConnectionRequestPayload seedPendingRequest({
