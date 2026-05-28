@@ -1265,6 +1265,23 @@ npm test
 - OS notification permission denied; in-app fallback appears.
 - Global kill switch blocks request creation immediately.
 
+**Validation Result:**
+
+Passed on 2026-05-28:
+
+- `dart pub get`
+- `dart run melos run analyze`
+- `dart run melos run test`
+- `npm test` in `backend/firebase/functions`
+
+Notes:
+
+- The full Melos suite completed successfully with the repository's existing
+  opt-in skips for Firebase emulator-only and frozen legacy control-channel
+  voice suites.
+- Backend function tests passed 37/37 connection request guardrail and cleanup
+  cases.
+
 **Commit:**
 
 ```powershell
