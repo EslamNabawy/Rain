@@ -179,6 +179,8 @@ void main() {
         'connectionRequests/<username>/<requestId>',
         'connectionRequestOutboxes/<username>/<requestId>',
         'connectionRequestQuotaSummaries/<username>',
+        'connectionRequestUsage/<username>/<yyyyMMddUtc>',
+        'connectionRequestTargetUsage/<from>/<to>/<yyyyMMddUtc>',
         'connectionRequestPairLocks/<pairKey>',
         'connectionNotificationEntitlements/<username>',
         'connectionNotificationUsage/<username>/<yyyyMMddUtc>',

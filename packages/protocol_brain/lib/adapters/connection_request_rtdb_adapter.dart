@@ -166,6 +166,8 @@ final class RtdbOnlyConnectionRequestAdapter
 
   static const int bestEffortDailyLimit = 20;
   static const int bestEffortPerTargetDailyLimit = 3;
+  static const String bestEffortServerAuthority = 'bestEffort';
+  static const String bestEffortSecurityLevel = 'sparkRules';
   static const Duration requestTtl = Duration(seconds: 45);
 
   final Future<String> Function() _currentUsername;
@@ -297,6 +299,19 @@ final class RtdbOnlyConnectionRequestAdapter
       return lockClaim.decision!;
     }
 
+    final quotaReservation = await _reserveBestEffortQuota(
+      from: currentUsername,
+      to: normalizedPeer,
+      now: now,
+    );
+    if (!quotaReservation.allowed) {
+      await _rollbackPairLock(
+        path: 'connectionRequestPairLocks/$pairKey',
+        requestId: requestId,
+      );
+      return quotaReservation.decision!;
+    }
+
     final json = payload.toJson();
     try {
       await _updateValue(<String, Object?>{
@@ -307,6 +322,12 @@ final class RtdbOnlyConnectionRequestAdapter
       final rolledBack = await _rollbackPairLock(
         path: 'connectionRequestPairLocks/$pairKey',
         requestId: requestId,
+      );
+      await _rollbackBestEffortQuota(
+        from: currentUsername,
+        to: normalizedPeer,
+        dayKey: quotaReservation.dayKey!,
+        now: now,
       );
       return _foundationUnavailable(
         action: 'createConnectionRequest.mirrorWrite',
@@ -324,10 +345,18 @@ final class RtdbOnlyConnectionRequestAdapter
       requestId: requestId,
       status: ConnectionRequestStatus.pending,
       peerId: normalizedPeer,
-      quota: await fetchConnectionRequestQuota(),
+      quota: await _fetchQuotaFor(
+        username: currentUsername,
+        targetPeer: normalizedPeer,
+      ),
       diagnostics: <String, Object?>{
         'backendMode': 'rtdbOnly',
         'authority': 'clientBestEffort',
+        'serverAuthority': bestEffortServerAuthority,
+        'securityLevel': bestEffortSecurityLevel,
+        'quotaDayKey': quotaReservation.dayKey,
+        'usedToday': quotaReservation.usedToday,
+        'targetUsedToday': quotaReservation.targetUsedToday,
         'pairKey': pairKey,
       },
     );
@@ -472,6 +501,18 @@ final class RtdbOnlyConnectionRequestAdapter
       );
       return _quotaSnapshot();
     }
+    return _fetchQuotaFor(username: username);
+  }
+
+  Future<ConnectionRequestQuotaSnapshot> _fetchQuotaFor({
+    required String username,
+    String? targetPeer,
+  }) async {
+    final normalizedTarget = targetPeer == null
+        ? null
+        : normalizeConnectionRequestUsername(targetPeer);
+    final now = _clock().millisecondsSinceEpoch;
+    final dayKey = _dayKeyUtc(now);
 
     final pendingInboundCount = await _countPendingPayloads(
       'connectionRequests/$username',
@@ -479,7 +520,18 @@ final class RtdbOnlyConnectionRequestAdapter
     final pendingOutboundCount = await _countPendingPayloads(
       'connectionRequestOutboxes/$username',
     );
+    final usedToday = await _readUsageCounter(
+      path: 'connectionRequestUsage/$username/$dayKey',
+    );
+    final targetUsedToday = normalizedTarget == null
+        ? 0
+        : await _readUsageCounter(
+            path:
+                'connectionRequestTargetUsage/$username/$normalizedTarget/$dayKey',
+          );
     return _quotaSnapshot(
+      usedToday: usedToday,
+      targetUsedToday: targetUsedToday,
       pendingInboundCount: pendingInboundCount,
       pendingOutboundCount: pendingOutboundCount,
     );
@@ -836,6 +888,216 @@ final class RtdbOnlyConnectionRequestAdapter
     }
   }
 
+  Future<_RtdbBestEffortQuotaReservation> _reserveBestEffortQuota({
+    required String from,
+    required String to,
+    required int now,
+  }) async {
+    final dayKey = _dayKeyUtc(now);
+    final usagePath = 'connectionRequestUsage/$from/$dayKey';
+    final targetUsagePath = 'connectionRequestTargetUsage/$from/$to/$dayKey';
+
+    final daily = await _incrementUsageCounter(
+      path: usagePath,
+      limit: bestEffortDailyLimit,
+      now: now,
+    );
+    if (!daily.allowed) {
+      return _RtdbBestEffortQuotaReservation.denied(
+        _quotaDeniedDecision(
+          reasonCode:
+              daily.reasonCode ??
+              ConnectionRequestReasonCode.backendUnavailable,
+          peerId: to,
+          dayKey: dayKey,
+          usedToday: daily.used,
+          targetUsedToday: 0,
+          path: usagePath,
+        ),
+      );
+    }
+
+    final target = await _incrementUsageCounter(
+      path: targetUsagePath,
+      limit: bestEffortPerTargetDailyLimit,
+      now: now,
+    );
+    if (!target.allowed) {
+      await _decrementUsageCounter(path: usagePath, now: now);
+      return _RtdbBestEffortQuotaReservation.denied(
+        _quotaDeniedDecision(
+          reasonCode:
+              target.reasonCode ??
+              ConnectionRequestReasonCode.backendUnavailable,
+          peerId: to,
+          dayKey: dayKey,
+          usedToday: max(0, daily.used - 1),
+          targetUsedToday: target.used,
+          path: targetUsagePath,
+        ),
+      );
+    }
+
+    return _RtdbBestEffortQuotaReservation.allowed(
+      dayKey: dayKey,
+      usedToday: daily.used,
+      targetUsedToday: target.used,
+    );
+  }
+
+  Future<void> _rollbackBestEffortQuota({
+    required String from,
+    required String to,
+    required String dayKey,
+    required int now,
+  }) async {
+    await _decrementUsageCounter(
+      path: 'connectionRequestUsage/$from/$dayKey',
+      now: now,
+    );
+    await _decrementUsageCounter(
+      path: 'connectionRequestTargetUsage/$from/$to/$dayKey',
+      now: now,
+    );
+  }
+
+  Future<_RtdbUsageCounterMutation> _incrementUsageCounter({
+    required String path,
+    required int limit,
+    required int now,
+  }) async {
+    var currentUsed = 0;
+    var malformed = false;
+    try {
+      final transaction = await _runTransaction(path, (Object? current) {
+        try {
+          final usage = _usageCounterFromValue(current);
+          currentUsed = usage.used;
+          if (usage.used >= limit) {
+            return const RtdbOnlyConnectionRequestTransactionAction.abort();
+          }
+          return RtdbOnlyConnectionRequestTransactionAction.success(
+            _usageCounterJson(usage.used + 1, now),
+          );
+        } on FormatException {
+          malformed = true;
+          return const RtdbOnlyConnectionRequestTransactionAction.abort();
+        }
+      });
+      if (!transaction.committed) {
+        return _RtdbUsageCounterMutation.denied(
+          malformed
+              ? ConnectionRequestReasonCode.repairNotAllowed
+              : ConnectionRequestReasonCode.bestEffortLimit,
+          used: currentUsed,
+        );
+      }
+      final committed = _usageCounterFromValue(transaction.value);
+      return _RtdbUsageCounterMutation.allowed(used: committed.used);
+    } on Object catch (error) {
+      _emitDiagnostic(
+        name: 'connection_request_rtdb_usage_increment_failed',
+        path: path,
+        error: error,
+      );
+      return _RtdbUsageCounterMutation.denied(
+        ConnectionRequestReasonCode.backendUnavailable,
+        used: currentUsed,
+      );
+    }
+  }
+
+  Future<void> _decrementUsageCounter({
+    required String path,
+    required int now,
+  }) async {
+    try {
+      await _runTransaction(path, (Object? current) {
+        try {
+          final usage = _usageCounterFromValue(current);
+          return RtdbOnlyConnectionRequestTransactionAction.success(
+            _usageCounterJson(max(0, usage.used - 1), now),
+          );
+        } on FormatException {
+          return const RtdbOnlyConnectionRequestTransactionAction.abort();
+        }
+      });
+    } on Object catch (error) {
+      _emitDiagnostic(
+        name: 'connection_request_rtdb_usage_rollback_failed',
+        path: path,
+        error: error,
+      );
+    }
+  }
+
+  Future<int> _readUsageCounter({required String path}) async {
+    try {
+      return _usageCounterFromValue(await _getValue(path)).used;
+    } on Object catch (error) {
+      _emitDiagnostic(
+        name: 'connection_request_rtdb_usage_read_failed',
+        path: path,
+        error: error,
+      );
+      return 0;
+    }
+  }
+
+  _RtdbUsageCounter _usageCounterFromValue(Object? value) {
+    if (value == null) {
+      return const _RtdbUsageCounter(used: 0);
+    }
+    if (value is int) {
+      if (value < 0) {
+        throw const FormatException('Connection request usage is negative.');
+      }
+      return _RtdbUsageCounter(used: value);
+    }
+    if (value is num && value.isFinite && value.roundToDouble() == value) {
+      final used = value.toInt();
+      if (used < 0) {
+        throw const FormatException('Connection request usage is negative.');
+      }
+      return _RtdbUsageCounter(used: used);
+    }
+    final map = connectionRequestObjectMap(value);
+    final used = map['used'];
+    if (used is int) {
+      if (used < 0) {
+        throw const FormatException('Connection request usage is negative.');
+      }
+      return _RtdbUsageCounter(used: used);
+    }
+    if (used is num && used.isFinite && used.roundToDouble() == used) {
+      final normalized = used.toInt();
+      if (normalized < 0) {
+        throw const FormatException('Connection request usage is negative.');
+      }
+      return _RtdbUsageCounter(used: normalized);
+    }
+    throw const FormatException('Connection request usage is invalid.');
+  }
+
+  Map<String, Object?> _usageCounterJson(int used, int now) {
+    return <String, Object?>{
+      'used': used,
+      'updatedAt': now,
+      'serverAuthority': bestEffortServerAuthority,
+      'securityLevel': bestEffortSecurityLevel,
+    };
+  }
+
+  String _dayKeyUtc(int millisecondsSinceEpoch) {
+    final date = DateTime.fromMillisecondsSinceEpoch(
+      millisecondsSinceEpoch,
+      isUtc: true,
+    );
+    return '${date.year.toString().padLeft(4, '0')}'
+        '${date.month.toString().padLeft(2, '0')}'
+        '${date.day.toString().padLeft(2, '0')}';
+  }
+
   Future<int> _countPendingPayloads(String path) async {
     try {
       final payloads = connectionRequestPayloadsFromSnapshotValue(
@@ -1076,17 +1338,53 @@ final class RtdbOnlyConnectionRequestAdapter
   }
 
   ConnectionRequestQuotaSnapshot _quotaSnapshot({
+    int usedToday = 0,
+    int targetUsedToday = 0,
     int pendingInboundCount = 0,
     int pendingOutboundCount = 0,
+    int? retryAfterMs,
   }) {
     return ConnectionRequestQuotaSnapshot(
       dailyLimit: bestEffortDailyLimit,
-      usedToday: 0,
+      usedToday: max(0, usedToday),
       extraCreditsRemaining: 0,
-      perTargetRemainingToday: bestEffortPerTargetDailyLimit,
+      perTargetRemainingToday: max(
+        0,
+        bestEffortPerTargetDailyLimit - targetUsedToday,
+      ),
       pendingOutboundCount: pendingOutboundCount,
       pendingInboundCount: pendingInboundCount,
+      retryAfterMs: retryAfterMs,
       disabled: false,
+    );
+  }
+
+  ConnectionRequestDecision _quotaDeniedDecision({
+    required ConnectionRequestReasonCode reasonCode,
+    required String peerId,
+    required String dayKey,
+    required int usedToday,
+    required int targetUsedToday,
+    required String path,
+  }) {
+    final quota = _quotaSnapshot(
+      usedToday: usedToday,
+      targetUsedToday: targetUsedToday,
+    );
+    return _blocked(
+      reasonCode,
+      peerId: peerId,
+      quota: quota,
+      diagnostics: <String, Object?>{
+        'quotaPath': path,
+        'quotaDayKey': dayKey,
+        'serverAuthority': bestEffortServerAuthority,
+        'securityLevel': bestEffortSecurityLevel,
+        'dailyLimit': bestEffortDailyLimit,
+        'usedToday': quota.usedToday,
+        'perTargetDailyLimit': bestEffortPerTargetDailyLimit,
+        'perTargetRemainingToday': quota.perTargetRemainingToday,
+      },
     );
   }
 
@@ -1096,6 +1394,7 @@ final class RtdbOnlyConnectionRequestAdapter
     String? peerId,
     ConnectionRequestStatus? status,
     int? retryAfterMs,
+    ConnectionRequestQuotaSnapshot? quota,
     Map<String, Object?> diagnostics = const <String, Object?>{},
     Object? error,
   }) {
@@ -1118,9 +1417,12 @@ final class RtdbOnlyConnectionRequestAdapter
       status: status,
       peerId: peerId,
       retryAfterMs: retryAfterMs,
+      quota: quota,
       diagnostics: <String, Object?>{
         'backendMode': 'rtdbOnly',
         'authority': 'clientBestEffort',
+        'serverAuthority': bestEffortServerAuthority,
+        'securityLevel': bestEffortSecurityLevel,
         'reasonCode': reasonCode.name,
         'path': path,
         ...diagnostics,
@@ -1220,6 +1522,46 @@ final class _RtdbPairLockClaim {
 
   final bool allowed;
   final ConnectionRequestDecision? decision;
+}
+
+final class _RtdbBestEffortQuotaReservation {
+  const _RtdbBestEffortQuotaReservation.allowed({
+    required this.dayKey,
+    required this.usedToday,
+    required this.targetUsedToday,
+  }) : allowed = true,
+       decision = null;
+
+  const _RtdbBestEffortQuotaReservation.denied(this.decision)
+    : allowed = false,
+      dayKey = null,
+      usedToday = 0,
+      targetUsedToday = 0;
+
+  final bool allowed;
+  final String? dayKey;
+  final int usedToday;
+  final int targetUsedToday;
+  final ConnectionRequestDecision? decision;
+}
+
+final class _RtdbUsageCounterMutation {
+  const _RtdbUsageCounterMutation.allowed({required this.used})
+    : allowed = true,
+      reasonCode = null;
+
+  const _RtdbUsageCounterMutation.denied(this.reasonCode, {required this.used})
+    : allowed = false;
+
+  final bool allowed;
+  final int used;
+  final ConnectionRequestReasonCode? reasonCode;
+}
+
+final class _RtdbUsageCounter {
+  const _RtdbUsageCounter({required this.used});
+
+  final int used;
 }
 
 enum _RtdbConnectionRequestMirror { outbox, inbox }

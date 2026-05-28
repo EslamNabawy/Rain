@@ -602,6 +602,39 @@
         ".write": false
       }
     },
+    "connectionRequestUsage": {
+      "$username": {
+        ".read": "auth != null && root.child('users/' + $username + '/uid').val() === auth.uid",
+        ".write": false,
+        "$dayKey": {
+          ".write": "auth != null && !root.child('security/blockedUids/' + auth.uid).exists() && root.child('users/' + $username + '/uid').val() === auth.uid",
+          ".validate": "!newData.exists() || (newData.hasChildren(['used', 'updatedAt', 'serverAuthority', 'securityLevel']) && newData.child('used').isNumber() && newData.child('used').val() >= 0 && newData.child('used').val() <= 1000 && newData.child('updatedAt').isNumber() && newData.child('serverAuthority').isString() && newData.child('serverAuthority').val() === 'bestEffort' && newData.child('securityLevel').isString() && newData.child('securityLevel').val() === 'sparkRules')",
+          "used": { ".validate": "newData.isNumber() && newData.val() >= 0 && newData.val() <= 1000" },
+          "updatedAt": { ".validate": "newData.isNumber()" },
+          "serverAuthority": { ".validate": "newData.isString() && newData.val() === 'bestEffort'" },
+          "securityLevel": { ".validate": "newData.isString() && newData.val() === 'sparkRules'" },
+          "$other": { ".validate": false }
+        }
+      }
+    },
+    "connectionRequestTargetUsage": {
+      "$username": {
+        ".read": "auth != null && root.child('users/' + $username + '/uid').val() === auth.uid",
+        ".write": false,
+        "$target": {
+          ".write": false,
+          "$dayKey": {
+            ".write": "auth != null && !root.child('security/blockedUids/' + auth.uid).exists() && root.child('users/' + $username + '/uid').val() === auth.uid && $username !== $target",
+            ".validate": "!newData.exists() || (newData.hasChildren(['used', 'updatedAt', 'serverAuthority', 'securityLevel']) && newData.child('used').isNumber() && newData.child('used').val() >= 0 && newData.child('used').val() <= 1000 && newData.child('updatedAt').isNumber() && newData.child('serverAuthority').isString() && newData.child('serverAuthority').val() === 'bestEffort' && newData.child('securityLevel').isString() && newData.child('securityLevel').val() === 'sparkRules')",
+            "used": { ".validate": "newData.isNumber() && newData.val() >= 0 && newData.val() <= 1000" },
+            "updatedAt": { ".validate": "newData.isNumber()" },
+            "serverAuthority": { ".validate": "newData.isString() && newData.val() === 'bestEffort'" },
+            "securityLevel": { ".validate": "newData.isString() && newData.val() === 'sparkRules'" },
+            "$other": { ".validate": false }
+          }
+        }
+      }
+    },
     "connectionRequestPairLocks": {
       ".indexOn": ["expiresAt", "status"],
       ".read": false,

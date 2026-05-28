@@ -176,50 +176,76 @@ void main() {
       );
     });
 
-    test(
-      'receiver-owned mute writes are allowed without opening admin paths',
-      () {
-        final mute = _node(rules, [
-          'connectionNotificationMutes',
-          r'$receiver',
-          r'$sender',
-        ]);
+    test('usage and mute writes stay owner-scoped without admin paths', () {
+      final usage = _node(rules, [
+        'connectionRequestUsage',
+        r'$username',
+        r'$dayKey',
+      ]);
+      expect(
+        usage['.write'],
+        contains(
+          "root.child('users/' + \$username + '/uid').val() === auth.uid",
+        ),
+      );
+      expect(
+        usage['.validate'],
+        allOf(
+          contains("newData.child('serverAuthority').val() === 'bestEffort'"),
+          contains("newData.child('securityLevel').val() === 'sparkRules'"),
+          contains("newData.child('used').val() <= 1000"),
+        ),
+      );
 
-        expect(
-          mute['.write'],
-          contains(
-            "root.child('users/' + \$receiver + '/uid').val() === auth.uid",
-          ),
-        );
-        expect(
-          mute['.validate'],
-          contains("newData.child('muted').val() === true"),
-        );
-        expect(
-          _node(rules, ['connectionNotificationEntitlements'])['.write'],
-          isFalse,
-        );
-        expect(
-          _node(rules, ['connectionNotificationReservations'])['.write'],
-          isFalse,
-        );
-        expect(
-          _node(rules, ['connectionNotificationAudit'])['.write'],
-          isFalse,
-        );
-        expect(
-          _node(rules, ['connectionNotificationAuditSummary'])['.write'],
-          isFalse,
-        );
-        expect(
-          _node(rules, [
-            'connectionRequestQuotaSummaries',
-            r'$username',
-          ])['.write'],
-          isFalse,
-        );
-      },
-    );
+      final targetUsage = _node(rules, [
+        'connectionRequestTargetUsage',
+        r'$username',
+        r'$target',
+        r'$dayKey',
+      ]);
+      expect(targetUsage['.write'], contains(r'$username !== $target'));
+      expect(
+        targetUsage['.validate'],
+        contains("newData.child('securityLevel').val() === 'sparkRules'"),
+      );
+
+      final mute = _node(rules, [
+        'connectionNotificationMutes',
+        r'$receiver',
+        r'$sender',
+      ]);
+
+      expect(
+        mute['.write'],
+        contains(
+          "root.child('users/' + \$receiver + '/uid').val() === auth.uid",
+        ),
+      );
+      expect(
+        mute['.validate'],
+        contains("newData.child('muted').val() === true"),
+      );
+      expect(
+        _node(rules, ['connectionNotificationEntitlements'])['.write'],
+        isFalse,
+      );
+      expect(
+        _node(rules, ['connectionNotificationReservations'])['.write'],
+        isFalse,
+      );
+      expect(_node(rules, ['connectionNotificationAudit'])['.write'], isFalse);
+      expect(
+        _node(rules, ['connectionNotificationAuditSummary'])['.write'],
+        isFalse,
+      );
+      expect(
+        _node(rules, [
+          'connectionRequestQuotaSummaries',
+          r'$username',
+        ])['.write'],
+        isFalse,
+      );
+    });
   });
 }
 

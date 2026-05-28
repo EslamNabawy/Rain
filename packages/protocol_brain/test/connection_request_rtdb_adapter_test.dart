@@ -155,6 +155,107 @@ void main() {
       );
     });
 
+    test('best effort daily limit blocks after configured sends', () async {
+      final harness = _RtdbOnlyAdapterHarness(
+        username: 'alice',
+        acceptedPeers: <String>{'bob', 'cara'},
+        onlinePeers: <String>{'bob', 'cara'},
+        randomSuffixes: <String>['a1b2', 'c3d4'],
+      );
+      addTearDown(harness.dispose);
+      harness.setValue(
+        'connectionRequestUsage/alice/19700101',
+        _usageCounter(19),
+      );
+
+      final allowed = await harness.adapter.createConnectionRequest('bob');
+      final denied = await harness.adapter.createConnectionRequest('cara');
+
+      expect(allowed.allowed, isTrue);
+      expect(harness.valueAt('connectionRequestUsage/alice/19700101/used'), 20);
+      expect(denied.allowed, isFalse);
+      expect(denied.reasonCode, ConnectionRequestReasonCode.bestEffortLimit);
+      expect(denied.quota?.dailyLimit, 20);
+      expect(denied.quota?.usedToday, 20);
+      expect(harness.valueAt('connectionRequests/cara'), isNull);
+      expect(
+        harness.valueAt('connectionRequestOutboxes/alice') as Map,
+        hasLength(1),
+      );
+      expect(harness.valueAt('connectionRequestPairLocks/alice:cara'), isNull);
+    });
+
+    test('per target limit blocks without creating rows', () async {
+      final harness = _RtdbOnlyAdapterHarness(
+        username: 'alice',
+        acceptedPeers: <String>{'bob'},
+        onlinePeers: <String>{'bob'},
+        randomSuffixes: <String>['a1b2'],
+      );
+      addTearDown(harness.dispose);
+      harness.setValue(
+        'connectionRequestTargetUsage/alice/bob/19700101',
+        _usageCounter(3),
+      );
+
+      final decision = await harness.adapter.createConnectionRequest('bob');
+
+      expect(decision.allowed, isFalse);
+      expect(decision.reasonCode, ConnectionRequestReasonCode.bestEffortLimit);
+      expect(decision.quota?.perTargetRemainingToday, 0);
+      expect(harness.valueAt('connectionRequests/bob'), isNull);
+      expect(harness.valueAt('connectionRequestOutboxes/alice'), isNull);
+      expect(harness.valueAt('connectionRequestPairLocks/alice:bob'), isNull);
+      expect(harness.valueAt('connectionRequestUsage/alice/19700101/used'), 0);
+      expect(
+        harness.valueAt('connectionRequestTargetUsage/alice/bob/19700101/used'),
+        3,
+      );
+    });
+
+    test('duplicate pending does not increment counters twice', () async {
+      final harness = _RtdbOnlyAdapterHarness(
+        username: 'alice',
+        acceptedPeers: <String>{'bob'},
+        onlinePeers: <String>{'bob'},
+        randomSuffixes: <String>['a1b2', 'c3d4'],
+      );
+      addTearDown(harness.dispose);
+
+      final first = await harness.adapter.createConnectionRequest('bob');
+      final second = await harness.adapter.createConnectionRequest('bob');
+
+      expect(first.allowed, isTrue);
+      expect(second.allowed, isFalse);
+      expect(
+        second.reasonCode,
+        ConnectionRequestReasonCode.duplicatePendingRequest,
+      );
+      expect(harness.valueAt('connectionRequestUsage/alice/19700101/used'), 1);
+      expect(
+        harness.valueAt('connectionRequestTargetUsage/alice/bob/19700101/used'),
+        1,
+      );
+    });
+
+    test('quota diagnostics say bestEffort and sparkRules', () async {
+      final harness = _RtdbOnlyAdapterHarness(
+        username: 'alice',
+        acceptedPeers: <String>{'bob'},
+        onlinePeers: <String>{'bob'},
+        randomSuffixes: <String>['a1b2'],
+      );
+      addTearDown(harness.dispose);
+
+      final decision = await harness.adapter.createConnectionRequest('bob');
+
+      expect(decision.allowed, isTrue);
+      expect(decision.diagnostics['serverAuthority'], 'bestEffort');
+      expect(decision.diagnostics['securityLevel'], 'sparkRules');
+      expect(decision.diagnostics['quotaDayKey'], '19700101');
+      expect(decision.quota?.extraCreditsRemaining, 0);
+    });
+
     test('create denied for offline peer writes no request rows', () async {
       final harness = _RtdbOnlyAdapterHarness(
         username: 'alice',
@@ -397,6 +498,15 @@ ConnectionRequestPayload _payload({
   );
 }
 
+Map<String, Object?> _usageCounter(int used) {
+  return <String, Object?>{
+    'used': used,
+    'updatedAt': 1000,
+    'serverAuthority': 'bestEffort',
+    'securityLevel': 'sparkRules',
+  };
+}
+
 final class _RtdbOnlyAdapterHarness {
   _RtdbOnlyAdapterHarness({
     required this.username,
@@ -423,7 +533,7 @@ final class _RtdbOnlyAdapterHarness {
   }
 
   String username;
-  final int now;
+  int now;
   final Set<String> acceptedPeers;
   final Set<String> onlinePeers;
   final List<String> _randomSuffixes;

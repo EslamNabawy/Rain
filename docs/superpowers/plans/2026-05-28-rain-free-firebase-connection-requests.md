@@ -833,13 +833,20 @@ git commit -m "security: allow spark-safe connection request writes"
 
 **Files:**
 
-- Modify: `packages/protocol_brain/lib/src/connection_request_rtdb_adapter.dart`
+- Modify: `packages/protocol_brain/lib/adapters/connection_request_rtdb_adapter.dart`
 - Modify: `packages/protocol_brain/lib/src/connection_request_contract.dart`
+- Modify: `apps/rain/lib/application/runtime/connection_request_messages.dart`
 - Modify: `apps/rain/lib/application/runtime/connection_request_runtime.dart`
+- Modify: `apps/rain/lib/application/runtime/rain_runtime_controller.dart`
+- Modify: `backend/firebase/database.rules.json`
+- Modify: `backend/firebase/README.md`
 - Test: `packages/protocol_brain/test/connection_request_rtdb_adapter_test.dart`
+- Test: `packages/protocol_brain/test/connection_request_rtdb_rules_contract_test.dart`
+- Test: `packages/protocol_brain/test/connection_request_firebase_contract_test.dart`
+- Test: `packages/protocol_brain/test/connection_request_contract_test.dart`
 - Test: `apps/rain/test/connection_request_runtime_test.dart`
 
-- [ ] **Step 1: Add mode-specific reason codes**
+- [x] **Step 1: Add mode-specific reason codes**
 
 Add:
 
@@ -857,7 +864,7 @@ rtdbConflict => 'Another request is already in progress.'
 repairNotAllowed => 'This request could not be repaired. Try again.'
 ```
 
-- [ ] **Step 2: Add local cooldown**
+- [x] **Step 2: Add local cooldown**
 
 Runtime keeps an in-memory cooldown per target:
 
@@ -868,7 +875,7 @@ Runtime keeps an in-memory cooldown per target:
 
 This protects normal users from accidental spam and duplicate taps.
 
-- [ ] **Step 3: Add RTDB daily counters**
+- [x] **Step 3: Add RTDB daily counters**
 
 Adapter updates:
 
@@ -893,7 +900,7 @@ Because clients write these counters, diagnostics must mark:
 }
 ```
 
-- [ ] **Step 4: Disable admin credits in Spark mode**
+- [x] **Step 4: Disable admin credits in Spark mode**
 
 Return quota snapshot:
 
@@ -909,7 +916,7 @@ ConnectionRequestQuotaSnapshot(
 )
 ```
 
-- [ ] **Step 5: Add tests**
+- [x] **Step 5: Add tests**
 
 Required tests:
 
@@ -920,12 +927,17 @@ test('duplicate pending does not increment counters twice', () async {});
 test('quota diagnostics say bestEffort and sparkRules', () async {});
 ```
 
-- [ ] **Step 6: Validate and commit**
+- [x] **Step 6: Validate and commit**
 
 ```powershell
 flutter test --no-test-assets packages/protocol_brain/test/connection_request_rtdb_adapter_test.dart
-flutter test --no-test-assets apps/rain/test/connection_request_runtime_test.dart
-git add packages/protocol_brain/lib/src/connection_request_rtdb_adapter.dart packages/protocol_brain/lib/src/connection_request_contract.dart apps/rain/lib/application/runtime/connection_request_runtime.dart packages/protocol_brain/test/connection_request_rtdb_adapter_test.dart apps/rain/test/connection_request_runtime_test.dart
+flutter test --no-test-assets packages/protocol_brain/test/connection_request_rtdb_rules_contract_test.dart
+flutter test --no-test-assets packages/protocol_brain/test/connection_request_firebase_contract_test.dart
+flutter test --no-test-assets packages/protocol_brain/test/connection_request_contract_test.dart
+cd apps/rain; flutter test test/connection_request_runtime_test.dart
+dart run melos run analyze
+dart run melos run test
+git add packages/protocol_brain/lib/adapters/connection_request_rtdb_adapter.dart packages/protocol_brain/lib/src/connection_request_contract.dart apps/rain/lib/application/runtime/connection_request_messages.dart apps/rain/lib/application/runtime/connection_request_runtime.dart apps/rain/lib/application/runtime/rain_runtime_controller.dart backend/firebase/database.rules.json backend/firebase/README.md packages/protocol_brain/test/connection_request_rtdb_adapter_test.dart packages/protocol_brain/test/connection_request_rtdb_rules_contract_test.dart packages/protocol_brain/test/connection_request_firebase_contract_test.dart packages/protocol_brain/test/connection_request_contract_test.dart apps/rain/test/connection_request_runtime_test.dart docs/superpowers/plans/2026-05-28-rain-free-firebase-connection-requests.md
 git commit -m "feat: add spark best-effort request limits"
 ```
 

@@ -61,6 +61,31 @@ void main() {
       },
     );
 
+    test('local burst cooldown blocks repeated sends to same peer', () async {
+      final harness = await _ConnectionRequestHarness.create();
+      addTearDown(harness.dispose);
+
+      for (var i = 0; i < 3; i++) {
+        final send = await harness.runtime.sendConnectionRequest('bob');
+        expect(send.allowed, isTrue, reason: 'send $i should be allowed');
+        final cancel = await harness.runtime.cancelConnectionRequest(
+          send.requestId!,
+        );
+        expect(cancel.allowed, isTrue, reason: 'cancel $i should be allowed');
+      }
+
+      final denied = await harness.runtime.sendConnectionRequest('bob');
+
+      expect(denied.allowed, isFalse);
+      expect(denied.reasonCode, ConnectionRequestReasonCode.bestEffortLimit);
+      expect(denied.retryAfterMs, greaterThan(0));
+      expect(denied.diagnostics['localBurstDenied'], isTrue);
+      expect(
+        harness.runtime.connectionRequestState.lastUserMessage?.message,
+        'Connection requests are cooling down. Try again soon.',
+      );
+    });
+
     test(
       'inbound request does not auto-connect manual disconnected peer',
       () async {

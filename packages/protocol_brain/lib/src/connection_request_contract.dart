@@ -32,7 +32,9 @@ enum ConnectionRequestReasonCode {
   tooManyPendingRequests,
   receiverInboxFull,
   duplicatePendingRequest,
+  bestEffortLimit,
   rtdbConflict,
+  repairNotAllowed,
   notificationsDisabledByAdmin,
   notificationsTemporarilyDisabled,
   expired,
@@ -515,8 +517,12 @@ String messageForConnectionRequestReason(
       '$peer has too many pending connection requests.',
     ConnectionRequestReasonCode.duplicatePendingRequest =>
       'A connection request to $peer is already pending.',
+    ConnectionRequestReasonCode.bestEffortLimit =>
+      'Connection requests are cooling down. Try again soon.',
     ConnectionRequestReasonCode.rtdbConflict =>
-      'Connection request state changed. Try again.',
+      'Another request is already in progress.',
+    ConnectionRequestReasonCode.repairNotAllowed =>
+      'This request could not be repaired. Try again.',
     ConnectionRequestReasonCode.notificationsDisabledByAdmin =>
       'Connection request notifications are temporarily disabled.',
     ConnectionRequestReasonCode.notificationsTemporarilyDisabled =>

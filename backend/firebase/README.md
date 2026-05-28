@@ -38,6 +38,8 @@ project used by the app build.
 - `connectionRequests/<username>/<requestId>`: inbound connection notification projection for the receiver; Spark `rtdbOnly` clients may create/transition only guarded request rows
 - `connectionRequestOutboxes/<username>/<requestId>`: outbound connection notification projection for the sender; Spark `rtdbOnly` clients may create/transition only guarded request rows
 - `connectionRequestQuotaSummaries/<username>`: sanitized read-only quota summary for the signed-in user
+- `connectionRequestUsage/<username>/<yyyyMMddUtc>`: Spark `rtdbOnly` best-effort client counter for per-user request friction
+- `connectionRequestTargetUsage/<from>/<to>/<yyyyMMddUtc>`: Spark `rtdbOnly` best-effort client counter for per-target request friction
 - `connectionRequestPairLocks/<pairKey>`: pending request dedupe lock; Spark `rtdbOnly` clients may create/terminal-transition only matching locks
 - `connectionNotificationEntitlements/<username>`: server-owned quota overrides and extra credits
 - `connectionNotificationUsage/<username>/<yyyyMMddUtc>`: server-owned per-user usage counters
@@ -52,9 +54,9 @@ Voice call nodes are signaling state only and are removed by TTL cleanup; they a
 In Cloud Functions mode, connection notification nodes are mutated by Cloud
 Functions only. In free-tier `rtdbOnly` mode, client writes are allowed only
 through strict Realtime Database rules and transactions. Clients may read their
-own inbox, outbox, quota summary, and mute projection, but direct writes to
-server-only counters, entitlements, reservations, config, audit summaries, and
-audit records remain denied.
+own inbox, outbox, quota summary, best-effort Spark usage counters, and mute
+projection, but direct writes to server-only counters, entitlements,
+reservations, config, audit summaries, and audit records remain denied.
 
 ## Deploy Realtime Database Rules
 

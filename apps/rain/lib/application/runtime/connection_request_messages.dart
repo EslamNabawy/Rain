@@ -46,6 +46,7 @@ ConnectionRequestDecision deniedConnectionRequestDecision({
   String? requestId,
   String? userMessage,
   String? blockingPeerId,
+  int? retryAfterMs,
   Map<String, Object?> diagnostics = const <String, Object?>{},
 }) {
   final normalizedPeerId = peerId.trim().replaceFirst(RegExp(r'^@+'), '');
@@ -54,10 +55,15 @@ ConnectionRequestDecision deniedConnectionRequestDecision({
     reasonCode: reasonCode,
     userMessage:
         userMessage ??
-        messageForConnectionRequestReason(reasonCode, normalizedPeerId),
+        messageForConnectionRequestReason(
+          reasonCode,
+          normalizedPeerId,
+          retryAfterMs == null ? null : Duration(milliseconds: retryAfterMs),
+        ),
     requestId: requestId,
     peerId: normalizedPeerId.isEmpty ? null : normalizedPeerId,
     blockingPeerId: blockingPeerId,
+    retryAfterMs: retryAfterMs,
     diagnostics: diagnostics,
   );
 }

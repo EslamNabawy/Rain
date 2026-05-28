@@ -175,6 +175,10 @@ class RainRuntimeController with WidgetsBindingObserver {
       <StreamSubscription<dynamic>>[];
   final Set<String> _activeConnectionRequestNotificationIds = <String>{};
   final Set<String> _connectionRequestNotificationFallbackKeys = <String>{};
+  final Map<String, List<int>> _connectionRequestSendHistoryByPeer =
+      <String, List<int>>{};
+  final Map<String, int> _connectionRequestCooldownUntilByPeer =
+      <String, int>{};
   final StreamController<ConnectionRequestState>
   _connectionRequestStateController =
       StreamController<ConnectionRequestState>.broadcast();

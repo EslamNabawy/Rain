@@ -1,5 +1,9 @@
 part of 'rain_runtime_controller.dart';
 
+const int _connectionRequestBurstLimit = 3;
+const Duration _connectionRequestBurstWindow = Duration(seconds: 60);
+const Duration _connectionRequestBurstCooldown = Duration(seconds: 15);
+
 extension ConnectionRequestRuntime on RainRuntimeController {
   Future<void> _startConnectionRequestRuntime() async {
     final requestAdapter = connectionRequestAdapter;
@@ -108,7 +112,15 @@ extension ConnectionRequestRuntime on RainRuntimeController {
       );
     }
 
+    final cooldownDecision = _connectionRequestLocalCooldownDecision(peerId);
+    if (cooldownDecision != null) {
+      return cooldownDecision;
+    }
+
     final decision = await adapter.createConnectionRequest(peerId);
+    if (decision.allowed) {
+      _recordConnectionRequestLocalSend(peerId);
+    }
     await _applyConnectionRequestDecision(decision);
     return decision;
   }
@@ -417,6 +429,7 @@ extension ConnectionRequestRuntime on RainRuntimeController {
     String? requestId,
     String? userMessage,
     String? blockingPeerId,
+    int? retryAfterMs,
     Map<String, Object?> diagnostics = const <String, Object?>{},
   }) {
     final decision = deniedConnectionRequestDecision(
@@ -425,10 +438,69 @@ extension ConnectionRequestRuntime on RainRuntimeController {
       requestId: requestId,
       userMessage: userMessage,
       blockingPeerId: blockingPeerId,
+      retryAfterMs: retryAfterMs,
       diagnostics: diagnostics,
     );
     _emitConnectionRequestMessage(decision);
     return decision;
+  }
+
+  ConnectionRequestDecision? _connectionRequestLocalCooldownDecision(
+    String peerId,
+  ) {
+    final now = DateTime.now().millisecondsSinceEpoch;
+    final cooldownUntil = _connectionRequestCooldownUntilByPeer[peerId];
+    if (cooldownUntil != null && cooldownUntil > now) {
+      return _emitDeniedConnectionRequest(
+        reasonCode: ConnectionRequestReasonCode.bestEffortLimit,
+        peerId: peerId,
+        retryAfterMs: cooldownUntil - now,
+        diagnostics: <String, Object?>{
+          'localBurstCooldown': true,
+          'burstLimit': _connectionRequestBurstLimit,
+          'burstWindowMs': _connectionRequestBurstWindow.inMilliseconds,
+          'cooldownUntil': cooldownUntil,
+          'serverAuthority': 'bestEffort',
+          'securityLevel': 'localRuntime',
+        },
+      );
+    }
+
+    final windowStart = now - _connectionRequestBurstWindow.inMilliseconds;
+    final history = _connectionRequestSendHistoryByPeer.putIfAbsent(
+      peerId,
+      () => <int>[],
+    )..removeWhere((int sentAt) => sentAt < windowStart);
+    if (history.length < _connectionRequestBurstLimit) {
+      return null;
+    }
+
+    final nextCooldownUntil =
+        now + _connectionRequestBurstCooldown.inMilliseconds;
+    _connectionRequestCooldownUntilByPeer[peerId] = nextCooldownUntil;
+    return _emitDeniedConnectionRequest(
+      reasonCode: ConnectionRequestReasonCode.bestEffortLimit,
+      peerId: peerId,
+      retryAfterMs: _connectionRequestBurstCooldown.inMilliseconds,
+      diagnostics: <String, Object?>{
+        'localBurstDenied': true,
+        'burstLimit': _connectionRequestBurstLimit,
+        'burstWindowMs': _connectionRequestBurstWindow.inMilliseconds,
+        'cooldownUntil': nextCooldownUntil,
+        'serverAuthority': 'bestEffort',
+        'securityLevel': 'localRuntime',
+      },
+    );
+  }
+
+  void _recordConnectionRequestLocalSend(String peerId) {
+    final now = DateTime.now().millisecondsSinceEpoch;
+    final windowStart = now - _connectionRequestBurstWindow.inMilliseconds;
+    final history = _connectionRequestSendHistoryByPeer.putIfAbsent(
+      peerId,
+      () => <int>[],
+    )..removeWhere((int sentAt) => sentAt < windowStart);
+    history.add(now);
   }
 
   void _emitConnectionRequestMessage(ConnectionRequestDecision decision) {
