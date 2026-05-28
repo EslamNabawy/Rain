@@ -4,6 +4,7 @@ const assert = require("node:assert/strict");
 const test = require("node:test");
 
 const guardrails = require("../connectionRequestGuardrails");
+const connectionRequestCleanup = require("../connectionRequestCleanup");
 const connectionRequests = require("../connectionRequests");
 
 const responseKeys = [
@@ -745,6 +746,341 @@ test("write failure rolls back quota reservation and pair lock", async () => {
   );
 });
 
+test("accept vs cancel first terminal transition wins", async () => {
+  const root = fakeRoot();
+  seedConnectionRequest(root, { requestId: "race-request" });
+
+  const accepted = await connectionRequests.__test.acceptConnectionRequestCore(
+    { requestId: "race-request" },
+    authRequest("uid-bob"),
+    { root, clock: () => 10_000 },
+  );
+
+  assertResponseShape(accepted);
+  assert.equal(accepted.allowed, true);
+  assert.equal(accepted.status, "accepted");
+  assert.equal(
+    getPath(root.state, "connectionRequests/bob/race-request/status"),
+    "accepted",
+  );
+  assert.equal(
+    getPath(root.state, "connectionRequestOutboxes/alice/race-request/status"),
+    "accepted",
+  );
+  assert.equal(getPath(root.state, "connectionRequestPairLocks/alice:bob"), undefined);
+
+  const canceled = await connectionRequests.__test.cancelConnectionRequestCore(
+    { requestId: "race-request" },
+    authRequest("uid-alice"),
+    { root, clock: () => 10_001 },
+  );
+
+  assertResponseShape(canceled);
+  assert.equal(canceled.allowed, false);
+  assert.equal(canceled.reasonCode, "terminalRaceLost");
+  assert.equal(canceled.status, "accepted");
+});
+
+test("cancel and reject update mirrors and clear pair lock", async () => {
+  const cases = [
+    {
+      action: connectionRequests.__test.cancelConnectionRequestCore,
+      uid: "uid-alice",
+      requestId: "cancel-ok",
+      status: "canceled",
+    },
+    {
+      action: connectionRequests.__test.rejectConnectionRequestCore,
+      uid: "uid-bob",
+      requestId: "reject-ok",
+      status: "rejected",
+    },
+  ];
+
+  for (const testCase of cases) {
+    const root = fakeRoot();
+    seedConnectionRequest(root, { requestId: testCase.requestId });
+
+    const response = await testCase.action(
+      { requestId: testCase.requestId },
+      authRequest(testCase.uid),
+      { root, clock: () => 10_000 },
+    );
+
+    assertResponseShape(response);
+    assert.equal(response.allowed, true);
+    assert.equal(response.status, testCase.status);
+    assert.equal(
+      getPath(root.state, `connectionRequests/bob/${testCase.requestId}/status`),
+      testCase.status,
+    );
+    assert.equal(
+      getPath(
+        root.state,
+        `connectionRequestOutboxes/alice/${testCase.requestId}/status`,
+      ),
+      testCase.status,
+    );
+    assert.equal(getPath(root.state, "connectionRequestPairLocks/alice:bob"), undefined);
+  }
+});
+
+test("accept after expiry returns stale message and expires mirrors", async () => {
+  const root = fakeRoot();
+  seedConnectionRequest(root, {
+    requestId: "expired-accept",
+    expiresAt: 9_999,
+  });
+
+  const response = await connectionRequests.__test.acceptConnectionRequestCore(
+    { requestId: "expired-accept" },
+    authRequest("uid-bob"),
+    { root, clock: () => 10_000 },
+  );
+
+  assertResponseShape(response);
+  assert.equal(response.allowed, false);
+  assert.equal(response.reasonCode, "expired");
+  assert.equal(response.status, "expired");
+  assert.equal(getPath(root.state, "connectionRequests/bob/expired-accept"), undefined);
+  assert.equal(
+    getPath(root.state, "connectionRequestOutboxes/alice/expired-accept/status"),
+    "expired",
+  );
+  assert.equal(getPath(root.state, "connectionRequestPairLocks/alice:bob"), undefined);
+});
+
+test("mark seen is idempotent and mirrors status", async () => {
+  const root = fakeRoot();
+  seedConnectionRequest(root, { requestId: "seen-request" });
+
+  const first = await connectionRequests.__test.markConnectionRequestSeenCore(
+    { requestId: "seen-request" },
+    authRequest("uid-bob"),
+    { root, clock: () => 10_000 },
+  );
+  const second = await connectionRequests.__test.markConnectionRequestSeenCore(
+    { requestId: "seen-request" },
+    authRequest("uid-bob"),
+    { root, clock: () => 10_001 },
+  );
+
+  assertResponseShape(first);
+  assertResponseShape(second);
+  assert.equal(first.allowed, true);
+  assert.equal(second.allowed, true);
+  assert.equal(first.status, "seen");
+  assert.equal(second.status, "seen");
+  assert.equal(
+    getPath(root.state, "connectionRequests/bob/seen-request/status"),
+    "seen",
+  );
+  assert.equal(
+    getPath(root.state, "connectionRequestOutboxes/alice/seen-request/status"),
+    "seen",
+  );
+  assert.equal(
+    getPath(root.state, "connectionRequestPairLocks/alice:bob/status"),
+    "seen",
+  );
+});
+
+test("retry after client timeout returns existing pending request", async () => {
+  const root = fakeRoot();
+  seedConnectionRequest(root, { requestId: "timeout-existing" });
+
+  const response = await connectionRequests.__test.createConnectionRequestCore(
+    { peer: "bob" },
+    authRequest("uid-alice"),
+    {
+      root,
+      clock: () => 10_000,
+      requestIdFactory: () => "timeout-new",
+    },
+  );
+
+  assertResponseShape(response);
+  assert.equal(response.allowed, false);
+  assert.equal(response.reasonCode, "duplicatePendingRequest");
+  assert.equal(response.requestId, "timeout-existing");
+  assert.equal(getPath(root.state, "connectionRequests/bob/timeout-new"), undefined);
+});
+
+test("cleanup removes stale pair lock and preserves newer lock", async () => {
+  const root = fakeRoot({
+    state: {
+      connectionRequestPairLocks: {
+        "alice:bob": {
+          requestId: "old-lock",
+          from: "alice",
+          to: "bob",
+          status: "pending",
+          expiresAt: 9_999,
+        },
+        "alice:cara": {
+          requestId: "new-lock",
+          from: "alice",
+          to: "cara",
+          status: "pending",
+          expiresAt: 20_000,
+        },
+      },
+    },
+  });
+
+  const stats = await connectionRequestCleanup.__test.cleanupConnectionRequestsCore({
+    root,
+    clock: () => 10_000,
+  });
+
+  assert.equal(stats.expiredPairLocks, 1);
+  assert.equal(getPath(root.state, "connectionRequestPairLocks/alice:bob"), undefined);
+  assert.equal(
+    getPath(root.state, "connectionRequestPairLocks/alice:cara/requestId"),
+    "new-lock",
+  );
+});
+
+test("cleanup expires requests and clears only matching pair lock", async () => {
+  const root = fakeRoot();
+  seedConnectionRequest(root, {
+    requestId: "cleanup-expired",
+    expiresAt: 9_999,
+  });
+  setPath(root.state, "connectionRequestPairLocks/alice:bob", {
+    requestId: "newer-request",
+    from: "alice",
+    to: "bob",
+    status: "pending",
+    expiresAt: 20_000,
+  });
+
+  const stats = await connectionRequestCleanup.__test.cleanupConnectionRequestsCore({
+    root,
+    clock: () => 10_000,
+  });
+
+  assert.equal(stats.expiredRequests, 1);
+  assert.equal(getPath(root.state, "connectionRequests/bob/cleanup-expired"), undefined);
+  assert.equal(
+    getPath(
+      root.state,
+      "connectionRequestOutboxes/alice/cleanup-expired/status",
+    ),
+    "expired",
+  );
+  assert.equal(
+    getPath(root.state, "connectionRequestPairLocks/alice:bob/requestId"),
+    "newer-request",
+  );
+});
+
+test("cleanup removes corrupt request rows without crashing", async () => {
+  const root = fakeRoot({
+    state: {
+      connectionRequests: {
+        bob: {
+          corrupt_request: {
+            requestId: "corrupt_request",
+            from: "alice",
+            to: "bob",
+            status: "pending",
+            createdAt: "bad",
+            updatedAt: 1,
+            expiresAt: 20_000,
+          },
+        },
+      },
+      connectionRequestOutboxes: {
+        alice: {
+          corrupt_request: {
+            requestId: "corrupt_request",
+            from: "alice",
+          },
+        },
+      },
+    },
+  });
+
+  const stats = await connectionRequestCleanup.__test.cleanupConnectionRequestsCore({
+    root,
+    clock: () => 10_000,
+  });
+
+  assert.equal(stats.corruptRequests, 1);
+  assert.equal(getPath(root.state, "connectionRequests/bob/corrupt_request"), undefined);
+  assert.equal(
+    getPath(root.state, "connectionRequestOutboxes/alice/corrupt_request"),
+    undefined,
+  );
+  assert.ok(getPath(root.state, "connectionNotificationAudit/19700101"));
+});
+
+test("cleanup rolls back stale reservations and expired entitlements", async () => {
+  const root = fakeRoot({
+    state: {
+      connectionNotificationEntitlements: {
+        alice: { extraCredits: 5, expiresAt: 9_999 },
+      },
+      connectionNotificationUsage: {
+        alice: {
+          19700101: { freeUsed: 1, totalReserved: 1 },
+        },
+      },
+      connectionNotificationTargetUsage: {
+        alice: {
+          bob: {
+            19700101: { count: 1 },
+          },
+        },
+      },
+      connectionNotificationReservations: {
+        stale_reservation: {
+          requestId: "stale_reservation",
+          sender: "alice",
+          peer: "bob",
+          pairKey: "alice:bob",
+          status: "reserved",
+          createdAt: 1,
+          updatedAt: 1,
+          dayKey: "19700101",
+          daily: {
+            usedFreeDaily: true,
+            usedExtraCredit: false,
+            unlimited: false,
+          },
+          target: { count: 1 },
+        },
+      },
+    },
+  });
+
+  const stats = await connectionRequestCleanup.__test.cleanupConnectionRequestsCore({
+    root,
+    clock: () => 10_000,
+    staleReservationMs: 1_000,
+  });
+
+  assert.equal(stats.staleReservations, 1);
+  assert.equal(stats.expiredEntitlements, 1);
+  assert.equal(
+    getPath(root.state, "connectionNotificationReservations/stale_reservation"),
+    undefined,
+  );
+  assert.equal(
+    getPath(root.state, "connectionNotificationUsage/alice/19700101/freeUsed"),
+    0,
+  );
+  assert.equal(
+    getPath(
+      root.state,
+      "connectionNotificationTargetUsage/alice/bob/19700101/count",
+    ),
+    0,
+  );
+  assert.equal(getPath(root.state, "connectionNotificationEntitlements/alice"), undefined);
+});
+
 function assertResponseShape(response) {
   assert.deepEqual(Object.keys(response), responseKeys);
   assert.equal(typeof response.allowed, "boolean");
@@ -754,6 +1090,50 @@ function assertResponseShape(response) {
 
 function authRequest(uid = "uid-alice") {
   return { auth: { uid } };
+}
+
+function seedConnectionRequest(root, options = {}) {
+  const requestId = options.requestId || "seed-request";
+  const from = options.from || "alice";
+  const to = options.to || "bob";
+  const pairKey = `${from}:${to}`;
+  const createdAt = options.createdAt ?? 9_000;
+  const updatedAt = options.updatedAt ?? createdAt;
+  const expiresAt = options.expiresAt ?? 20_000;
+  const status = options.status || "pending";
+  const payload = {
+    requestId,
+    pairKey,
+    from,
+    to,
+    status,
+    reason: "manualConnect",
+    senderDevice: "unknown",
+    createdAt,
+    updatedAt,
+    expiresAt,
+    receiverPresenceAt: createdAt,
+    quota: null,
+  };
+  setPath(root.state, `connectionRequests/${to}/${requestId}`, {
+    ...payload,
+    seenAt: null,
+  });
+  setPath(root.state, `connectionRequestOutboxes/${from}/${requestId}`, {
+    ...payload,
+    lastReasonCode: null,
+  });
+  setPath(root.state, `connectionRequestPairLocks/${pairKey}`, {
+    requestId,
+    pairKey,
+    from,
+    to,
+    status,
+    createdAt,
+    updatedAt,
+    expiresAt,
+  });
+  return payload;
 }
 
 function fakeRoot(options = {}) {

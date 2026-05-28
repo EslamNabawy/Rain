@@ -256,24 +256,112 @@ async function createConnectionRequestCore(data, request, deps = {}) {
 }
 
 async function cancelConnectionRequestCore(data, request, deps = {}) {
-  return requestShell(data, request, deps, actionTypes.cancelConnectionRequest);
+  return terminalRequestAction(
+    data,
+    request,
+    deps,
+    actionTypes.cancelConnectionRequest,
+    "canceled",
+    "sender",
+  );
 }
 
 async function acceptConnectionRequestCore(data, request, deps = {}) {
-  return requestShell(data, request, deps, actionTypes.acceptConnectionRequest);
+  return terminalRequestAction(
+    data,
+    request,
+    deps,
+    actionTypes.acceptConnectionRequest,
+    "accepted",
+    "receiver",
+  );
 }
 
 async function rejectConnectionRequestCore(data, request, deps = {}) {
-  return requestShell(data, request, deps, actionTypes.rejectConnectionRequest);
+  return terminalRequestAction(
+    data,
+    request,
+    deps,
+    actionTypes.rejectConnectionRequest,
+    "rejected",
+    "receiver",
+  );
 }
 
 async function markConnectionRequestSeenCore(data, request, deps = {}) {
-  return requestShell(
+  const prepared = await prepareRequestOperation(
     data,
     request,
     deps,
     actionTypes.markConnectionRequestSeen,
   );
+  if (!prepared.ok) {
+    return prepared.response;
+  }
+  const root = rootFromDeps(deps);
+  try {
+    const loaded = await loadRequestForActor(root, prepared, "receiver");
+    if (!loaded.ok) {
+      return loaded.response;
+    }
+    const record = loaded.record;
+    if (isExpiredRequest(record, prepared.now)) {
+      await expireRequest(root, record, prepared.now);
+      return requestDeniedFromRecord(
+        prepared,
+        record,
+        "expired",
+        "expired",
+      );
+    }
+    if (guardrails.isTerminalRequestStatus(record.status)) {
+      return requestDeniedFromRecord(
+        prepared,
+        record,
+        "terminalRaceLost",
+        record.status,
+      );
+    }
+    if (record.status === "seen") {
+      return requestAllowedFromRecord(
+        prepared,
+        record,
+        "seen",
+        "Connection request already seen.",
+      );
+    }
+
+    const pairClaim = await markPairLockSeen(root, record, prepared.now);
+    if (!pairClaim.allowed) {
+      return requestDeniedFromRecord(
+        prepared,
+        record,
+        "terminalRaceLost",
+        pairClaim.status,
+      );
+    }
+
+    await writeMirrorStatus(root, record, "seen", prepared.now, {
+      seenAt: prepared.now,
+    });
+    return requestAllowedFromRecord(
+      prepared,
+      { ...record, status: "seen" },
+      "seen",
+      "Connection request marked seen.",
+    );
+  } catch (error) {
+    return guardrails.denied("backendUnavailable", {
+      requestId: prepared.requestId,
+      diagnostics: {
+        action: prepared.action,
+        serverNow: prepared.now,
+        sender: prepared.sender,
+        requestId: prepared.requestId,
+        error: guardrails.sanitizeError(error),
+      },
+    });
+  }
 }
 
 async function muteConnectionRequestsFromPeerCore(data, request, deps = {}) {
@@ -377,6 +465,368 @@ function foundationNotReady(prepared) {
       requestId: prepared.requestId,
     },
   });
+}
+
+async function terminalRequestAction(
+  data,
+  request,
+  deps,
+  action,
+  terminalStatus,
+  actorRole,
+) {
+  const prepared = await prepareRequestOperation(data, request, deps, action);
+  if (!prepared.ok) {
+    return prepared.response;
+  }
+  const root = rootFromDeps(deps);
+  try {
+    const loaded = await loadRequestForActor(root, prepared, actorRole);
+    if (!loaded.ok) {
+      return loaded.response;
+    }
+    const record = loaded.record;
+    if (isExpiredRequest(record, prepared.now)) {
+      await expireRequest(root, record, prepared.now);
+      return requestDeniedFromRecord(
+        prepared,
+        record,
+        "expired",
+        "expired",
+      );
+    }
+    if (guardrails.isTerminalRequestStatus(record.status)) {
+      return requestDeniedFromRecord(
+        prepared,
+        record,
+        "terminalRaceLost",
+        record.status,
+      );
+    }
+
+    const claim = await claimTerminalPairLock(
+      root,
+      record,
+      terminalStatus,
+      prepared.now,
+    );
+    if (!claim.allowed) {
+      return requestDeniedFromRecord(
+        prepared,
+        record,
+        "terminalRaceLost",
+        claim.status,
+      );
+    }
+
+    await writeMirrorStatus(root, record, terminalStatus, prepared.now, {
+      terminalAt: prepared.now,
+      [`${terminalStatus}At`]: prepared.now,
+      handledBy: prepared.sender,
+    });
+    await clearPairLockIfCurrent(root, record.pairKey, record.requestId);
+    return requestAllowedFromRecord(
+      prepared,
+      { ...record, status: terminalStatus },
+      terminalStatus,
+      terminalMessage(terminalStatus),
+    );
+  } catch (error) {
+    return guardrails.denied("backendUnavailable", {
+      requestId: prepared.requestId,
+      diagnostics: {
+        action: prepared.action,
+        serverNow: prepared.now,
+        sender: prepared.sender,
+        requestId: prepared.requestId,
+        error: guardrails.sanitizeError(error),
+      },
+    });
+  }
+}
+
+async function loadRequestForActor(root, prepared, actorRole) {
+  const path =
+    actorRole === "sender"
+      ? `connectionRequestOutboxes/${prepared.sender}/${prepared.requestId}`
+      : `connectionRequests/${prepared.sender}/${prepared.requestId}`;
+  const value = await readValue(root, path);
+  const record = parseRequestRecord(value, prepared.requestId);
+  if (!record.ok) {
+    return {
+      ok: false,
+      response: guardrails.denied("staleRequest", {
+        requestId: prepared.requestId,
+        diagnostics: {
+          action: prepared.action,
+          serverNow: prepared.now,
+          sender: prepared.sender,
+          requestId: prepared.requestId,
+          requestPath: path,
+          parseError: record.error,
+        },
+      }),
+    };
+  }
+
+  if (actorRole === "sender" && record.value.from !== prepared.sender) {
+    return {
+      ok: false,
+      response: guardrails.denied("permissionDenied", {
+        requestId: prepared.requestId,
+        peerLabel: record.value.to,
+        diagnostics: unauthorizedRequestDiagnostics(prepared, record.value),
+      }),
+    };
+  }
+  if (actorRole === "receiver" && record.value.to !== prepared.sender) {
+    return {
+      ok: false,
+      response: guardrails.denied("permissionDenied", {
+        requestId: prepared.requestId,
+        peerLabel: record.value.from,
+        diagnostics: unauthorizedRequestDiagnostics(prepared, record.value),
+      }),
+    };
+  }
+
+  return {
+    ok: true,
+    record: record.value,
+  };
+}
+
+function parseRequestRecord(value, expectedRequestId) {
+  if (!value || typeof value !== "object" || Array.isArray(value)) {
+    return { ok: false, error: "missing" };
+  }
+  try {
+    const requestId = guardrails.validateRequestId(
+      value.requestId || expectedRequestId,
+    );
+    if (requestId !== expectedRequestId) {
+      return { ok: false, error: "requestIdMismatch" };
+    }
+    const from = guardrails.normalizeUsername(value.from);
+    const to = guardrails.normalizeUsername(value.to);
+    const status = String(value.status || "");
+    if (!isKnownRequestStatus(status)) {
+      return { ok: false, error: "invalidStatus" };
+    }
+    const createdAt = Number(value.createdAt);
+    const updatedAt = Number(value.updatedAt);
+    const expiresAt = Number(value.expiresAt);
+    if (
+      !Number.isFinite(createdAt) ||
+      !Number.isFinite(updatedAt) ||
+      !Number.isFinite(expiresAt)
+    ) {
+      return { ok: false, error: "invalidTimestamp" };
+    }
+    return {
+      ok: true,
+      value: {
+        ...value,
+        requestId,
+        from,
+        to,
+        status,
+        pairKey:
+          typeof value.pairKey === "string"
+            ? value.pairKey
+            : guardrails.connectionRequestPairKey(from, to),
+        createdAt,
+        updatedAt,
+        expiresAt,
+      },
+    };
+  } catch (error) {
+    return { ok: false, error: guardrails.sanitizeError(error) };
+  }
+}
+
+function isKnownRequestStatus(status) {
+  return (
+    status === "pending" ||
+    status === "seen" ||
+    guardrails.isTerminalRequestStatus(status)
+  );
+}
+
+function isExpiredRequest(record, now) {
+  return (
+    !guardrails.isTerminalRequestStatus(record.status) &&
+    Number.isFinite(record.expiresAt) &&
+    record.expiresAt <= now
+  );
+}
+
+async function claimTerminalPairLock(root, record, terminalStatus, now) {
+  let raceStatus = null;
+  const result = await root
+    .child(`connectionRequestPairLocks/${record.pairKey}`)
+    .transaction(
+      (current) => {
+        if (!current || current.requestId !== record.requestId) {
+          raceStatus = current && current.status ? current.status : "stale";
+          return undefined;
+        }
+        if (guardrails.isTerminalRequestStatus(current.status)) {
+          raceStatus = current.status;
+          return undefined;
+        }
+        return {
+          ...current,
+          status: terminalStatus,
+          terminalAt: now,
+          updatedAt: now,
+        };
+      },
+      undefined,
+      false,
+    );
+  return {
+    allowed: result && result.committed === true,
+    status: raceStatus,
+  };
+}
+
+async function markPairLockSeen(root, record, now) {
+  let raceStatus = null;
+  const result = await root
+    .child(`connectionRequestPairLocks/${record.pairKey}`)
+    .transaction(
+      (current) => {
+        if (!current || current.requestId !== record.requestId) {
+          raceStatus = current && current.status ? current.status : "stale";
+          return undefined;
+        }
+        if (guardrails.isTerminalRequestStatus(current.status)) {
+          raceStatus = current.status;
+          return undefined;
+        }
+        if (current.status === "seen") {
+          return current;
+        }
+        return {
+          ...current,
+          status: "seen",
+          seenAt: now,
+          updatedAt: now,
+        };
+      },
+      undefined,
+      false,
+    );
+  return {
+    allowed: result && result.committed === true,
+    status: raceStatus,
+  };
+}
+
+async function writeMirrorStatus(root, record, status, now, extra = {}) {
+  const next = {
+    ...record,
+    ...extra,
+    status,
+    updatedAt: now,
+  };
+  await root.update({
+    [`connectionRequests/${record.to}/${record.requestId}`]: {
+      ...next,
+      seenAt: next.seenAt === undefined ? record.seenAt || null : next.seenAt,
+    },
+    [`connectionRequestOutboxes/${record.from}/${record.requestId}`]: {
+      ...next,
+      lastReasonCode: null,
+    },
+  });
+}
+
+async function expireRequest(root, record, now) {
+  await root.update({
+    [`connectionRequests/${record.to}/${record.requestId}`]: null,
+    [`connectionRequestOutboxes/${record.from}/${record.requestId}`]: {
+      ...record,
+      status: "expired",
+      updatedAt: now,
+      expiredAt: now,
+    },
+  });
+  await clearPairLockIfCurrent(root, record.pairKey, record.requestId);
+}
+
+async function clearPairLockIfCurrent(root, pairKey, requestId) {
+  await root.child(`connectionRequestPairLocks/${pairKey}`).transaction(
+    (current) => {
+      if (current && current.requestId === requestId) {
+        return null;
+      }
+      return undefined;
+    },
+    undefined,
+    false,
+  );
+}
+
+function requestAllowedFromRecord(prepared, record, status, userMessage) {
+  return guardrails.allowedResponse({
+    requestId: record.requestId,
+    status,
+    userMessage,
+    diagnostics: {
+      action: prepared.action,
+      serverNow: prepared.now,
+      sender: prepared.sender,
+      requestId: record.requestId,
+      from: record.from,
+      to: record.to,
+      pairKey: record.pairKey,
+    },
+  });
+}
+
+function requestDeniedFromRecord(prepared, record, reasonCode, status) {
+  return guardrails.denied(reasonCode, {
+    requestId: record.requestId,
+    status,
+    peerLabel: record.from === prepared.sender ? record.to : record.from,
+    diagnostics: {
+      action: prepared.action,
+      serverNow: prepared.now,
+      sender: prepared.sender,
+      requestId: record.requestId,
+      from: record.from,
+      to: record.to,
+      pairKey: record.pairKey,
+      existingStatus: record.status,
+    },
+  });
+}
+
+function unauthorizedRequestDiagnostics(prepared, record) {
+  return {
+    action: prepared.action,
+    serverNow: prepared.now,
+    sender: prepared.sender,
+    requestId: prepared.requestId,
+    from: record.from,
+    to: record.to,
+    pairKey: record.pairKey,
+  };
+}
+
+function terminalMessage(status) {
+  switch (status) {
+    case "accepted":
+      return "Connection request accepted.";
+    case "rejected":
+      return "Connection request rejected.";
+    case "canceled":
+      return "Connection request canceled.";
+    default:
+      return "Connection request updated.";
+  }
 }
 
 async function evaluateReceiverProtections(root, prepared) {

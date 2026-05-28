@@ -820,35 +820,35 @@ Expected: quota and entitlement tests pass.
 
 **Steps:**
 
-- [ ] Implement `acceptConnectionRequest` with terminal race handling.
-- [ ] Implement `cancelConnectionRequest` with terminal race handling.
-- [ ] Implement `rejectConnectionRequest` with terminal race handling.
-- [ ] Implement `markConnectionRequestSeen` as idempotent.
-- [ ] On terminal transition, clear pair lock only if request id matches.
-- [ ] On terminal transition, update inbox and outbox mirrors atomically.
-- [ ] On expired request cleanup:
+- [x] Implement `acceptConnectionRequest` with terminal race handling.
+- [x] Implement `cancelConnectionRequest` with terminal race handling.
+- [x] Implement `rejectConnectionRequest` with terminal race handling.
+- [x] Implement `markConnectionRequestSeen` as idempotent.
+- [x] On terminal transition, clear pair lock only if request id matches.
+- [x] On terminal transition, update inbox and outbox mirrors atomically.
+- [x] On expired request cleanup:
   - mark outbox expired or delete based on retention decision
   - remove inbox row
   - remove pair lock if matching
   - finalize reservation
-- [ ] On corrupt row cleanup:
+- [x] On corrupt row cleanup:
   - remove unreadable inbox/outbox rows
   - keep audit event
   - do not delete newer matching pair lock
-- [ ] Add scheduled cleanup for:
+- [x] Add scheduled cleanup for:
   - expired requests
   - expired pair locks
   - stale reservations
   - old audit rows
   - expired entitlement overrides
-- [ ] Add tests:
+- [x] Add tests:
   - accept vs cancel first terminal wins
   - accept after expiry returns stale message
   - retry after client timeout returns existing pending request
   - cleanup removes stale pair lock
   - cleanup does not delete newer pair lock
   - corrupt row does not crash watcher-equivalent parser
-- [ ] Commit: `feat(functions): add connection request cleanup`
+- [x] Commit: `feat(functions): add connection request cleanup`
 
 **Validation:**
 
