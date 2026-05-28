@@ -1,9 +1,12 @@
 import 'dart:async';
 
+import 'package:cloud_functions/cloud_functions.dart';
 import 'package:firebase_auth/firebase_auth.dart';
 import 'package:firebase_database/firebase_database.dart';
 import 'package:flutter_webrtc/flutter_webrtc.dart';
 
+import '../src/connection_request_adapter.dart';
+import '../src/connection_request_contract.dart';
 import '../src/voice_call_clock.dart';
 import '../src/voice_call_frame.dart';
 import '../src/voice_signaling_contract.dart';
@@ -11,19 +14,29 @@ import 'signaling_adapter.dart';
 import 'signaling_cipher.dart';
 
 class FirebaseSignalingAdapter
-    implements SignalingAdapter, VoiceSignalingAdapter {
+    implements
+        SignalingAdapter,
+        VoiceSignalingAdapter,
+        ConnectionRequestAdapter {
   FirebaseSignalingAdapter({
     FirebaseAuth? auth,
     FirebaseDatabase? database,
+    FirebaseFunctions? functions,
+    ConnectionRequestAdapterDiagnosticsSink? connectionRequestDiagnosticsSink,
     SignalingCipher? signalingCipher,
     bool useEmulator = false,
   }) : _auth = auth ?? FirebaseAuth.instance,
        _database = database ?? FirebaseDatabase.instance,
+       _functions = functions ?? FirebaseFunctions.instance,
+       _connectionRequestDiagnosticsSink = connectionRequestDiagnosticsSink,
        _signalingCipher = signalingCipher ?? SignalingCipher.demo(),
        _useEmulator = useEmulator;
 
   final FirebaseAuth _auth;
   final FirebaseDatabase _database;
+  final FirebaseFunctions _functions;
+  final ConnectionRequestAdapterDiagnosticsSink?
+  _connectionRequestDiagnosticsSink;
   final SignalingCipher _signalingCipher;
   final bool _useEmulator;
   final String _sessionId = DateTime.now().microsecondsSinceEpoch.toRadixString(
@@ -72,9 +85,11 @@ class FirebaseSignalingAdapter
       const String host = 'localhost';
       const int authPort = 9099; // Firebase Auth emulator default
       const int dbPort = 9000; // Firebase Realtime Database emulator default
+      const int functionsPort = 5001; // Firebase Functions emulator default
       // Configure auth and database emulators. These calls are idempotent.
       _auth.useAuthEmulator(host, authPort);
       _database.useDatabaseEmulator(host, dbPort);
+      _functions.useFunctionsEmulator(host, functionsPort);
     } catch (_) {
       // If emulators are not available, fall back gracefully.
     }
@@ -1345,6 +1360,230 @@ class FirebaseSignalingAdapter
         .whereType<String>()
         .where((String value) => value.isNotEmpty)
         .toList(growable: false);
+  }
+
+  @override
+  Future<ConnectionRequestDecision> createConnectionRequest(
+    String peerId,
+  ) async {
+    final normalizedPeer = normalizeConnectionRequestUsername(peerId);
+    return _callConnectionRequestFunction(
+      'createConnectionRequest',
+      <String, Object?>{'peer': normalizedPeer},
+      fallbackPeerId: normalizedPeer,
+    );
+  }
+
+  @override
+  Future<ConnectionRequestDecision> cancelConnectionRequest(String requestId) {
+    return _callConnectionRequestFunction(
+      'cancelConnectionRequest',
+      <String, Object?>{'requestId': validateConnectionRequestId(requestId)},
+    );
+  }
+
+  @override
+  Future<ConnectionRequestDecision> acceptConnectionRequest(String requestId) {
+    return _callConnectionRequestFunction(
+      'acceptConnectionRequest',
+      <String, Object?>{'requestId': validateConnectionRequestId(requestId)},
+    );
+  }
+
+  @override
+  Future<ConnectionRequestDecision> rejectConnectionRequest(String requestId) {
+    return _callConnectionRequestFunction(
+      'rejectConnectionRequest',
+      <String, Object?>{'requestId': validateConnectionRequestId(requestId)},
+    );
+  }
+
+  @override
+  Future<ConnectionRequestDecision> markConnectionRequestSeen(
+    String requestId,
+  ) {
+    return _callConnectionRequestFunction(
+      'markConnectionRequestSeen',
+      <String, Object?>{'requestId': validateConnectionRequestId(requestId)},
+    );
+  }
+
+  @override
+  Future<ConnectionRequestDecision> muteConnectionRequestsFromPeer(
+    String peerId,
+  ) async {
+    final normalizedPeer = normalizeConnectionRequestUsername(peerId);
+    return _callConnectionRequestFunction(
+      'muteConnectionRequestsFromPeer',
+      <String, Object?>{'peer': normalizedPeer},
+      fallbackPeerId: normalizedPeer,
+    );
+  }
+
+  @override
+  Future<ConnectionRequestDecision> unmuteConnectionRequestsFromPeer(
+    String peerId,
+  ) async {
+    final normalizedPeer = normalizeConnectionRequestUsername(peerId);
+    return _callConnectionRequestFunction(
+      'unmuteConnectionRequestsFromPeer',
+      <String, Object?>{'peer': normalizedPeer},
+      fallbackPeerId: normalizedPeer,
+    );
+  }
+
+  @override
+  Future<ConnectionRequestQuotaSnapshot> fetchConnectionRequestQuota() async {
+    final decision = await _callConnectionRequestFunction(
+      'getConnectionRequestQuotaSummary',
+      const <String, Object?>{},
+    );
+    return decision.quota ??
+        const ConnectionRequestQuotaSnapshot(
+          dailyLimit: 0,
+          usedToday: 0,
+          extraCreditsRemaining: 0,
+          perTargetRemainingToday: 0,
+          pendingOutboundCount: 0,
+          pendingInboundCount: 0,
+          disabled: true,
+        );
+  }
+
+  @override
+  Stream<List<ConnectionRequestPayload>> watchIncomingConnectionRequests(
+    String username,
+  ) async* {
+    await _configureEmulatorsIfNeeded();
+    await ensureAuthenticated();
+    final normalizedUsername = normalizeConnectionRequestUsername(username);
+    yield* _watchConnectionRequestList(
+      path: 'connectionRequests/$normalizedUsername',
+    );
+  }
+
+  @override
+  Stream<List<ConnectionRequestPayload>> watchOutgoingConnectionRequests(
+    String username,
+  ) async* {
+    await _configureEmulatorsIfNeeded();
+    await ensureAuthenticated();
+    final normalizedUsername = normalizeConnectionRequestUsername(username);
+    yield* _watchConnectionRequestList(
+      path: 'connectionRequestOutboxes/$normalizedUsername',
+    );
+  }
+
+  Future<ConnectionRequestDecision> _callConnectionRequestFunction(
+    String functionName,
+    Map<String, Object?> data, {
+    String? fallbackPeerId,
+  }) async {
+    await _configureEmulatorsIfNeeded();
+    await ensureAuthenticated();
+    try {
+      final result = await _functions
+          .httpsCallable(functionName)
+          .call<Object?>(data);
+      return connectionRequestDecisionFromFunctionJson(
+        connectionRequestObjectMap(result.data),
+        fallbackPeerId: fallbackPeerId,
+      );
+    } on FirebaseFunctionsException catch (error) {
+      return backendRejectedConnectionRequestDecision(
+        peerId: fallbackPeerId,
+        error: error,
+        diagnostics: <String, Object?>{
+          'functionName': functionName,
+          'code': error.code,
+          if (error.message != null) 'message': error.message,
+          if (error.details != null) 'details': error.details.toString(),
+        },
+      );
+    } on Object catch (error) {
+      return backendRejectedConnectionRequestDecision(
+        peerId: fallbackPeerId,
+        error: error,
+        diagnostics: <String, Object?>{'functionName': functionName},
+      );
+    }
+  }
+
+  Stream<List<ConnectionRequestPayload>> _watchConnectionRequestList({
+    required String path,
+  }) {
+    return _root
+        .child(path)
+        .onValue
+        .map(
+          (DatabaseEvent event) => _connectionRequestPayloadsFromSnapshotValue(
+            path: path,
+            value: event.snapshot.value,
+          ),
+        );
+  }
+
+  List<ConnectionRequestPayload> _connectionRequestPayloadsFromSnapshotValue({
+    required String path,
+    required Object? value,
+  }) {
+    if (value == null) {
+      return const <ConnectionRequestPayload>[];
+    }
+    Map<Object?, Object?> rows;
+    try {
+      rows = connectionRequestObjectMap(value);
+    } on FormatException catch (error) {
+      _emitConnectionRequestDiagnostic(
+        ConnectionRequestAdapterDiagnosticEvent(
+          name: 'corrupt_connection_request_list_ignored',
+          path: path,
+          error: error,
+        ),
+      );
+      return const <ConnectionRequestPayload>[];
+    }
+
+    final payloads = <ConnectionRequestPayload>[];
+    for (final entry in rows.entries) {
+      final requestId = entry.key;
+      if (requestId is! String) {
+        _emitConnectionRequestDiagnostic(
+          ConnectionRequestAdapterDiagnosticEvent(
+            name: 'corrupt_connection_request_row_ignored',
+            path: path,
+            error: 'request id is not a string',
+          ),
+        );
+        continue;
+      }
+      try {
+        payloads.add(
+          ConnectionRequestPayload.fromJson(
+            requestId: requestId,
+            json: connectionRequestObjectMap(entry.value),
+          ),
+        );
+      } on FormatException catch (error) {
+        _emitConnectionRequestDiagnostic(
+          ConnectionRequestAdapterDiagnosticEvent(
+            name: 'corrupt_connection_request_row_ignored',
+            path: path,
+            requestId: requestId,
+            error: error,
+          ),
+        );
+        continue;
+      }
+    }
+    payloads.sort((left, right) => right.updatedAt.compareTo(left.updatedAt));
+    return List<ConnectionRequestPayload>.unmodifiable(payloads);
+  }
+
+  void _emitConnectionRequestDiagnostic(
+    ConnectionRequestAdapterDiagnosticEvent event,
+  ) {
+    _connectionRequestDiagnosticsSink?.call(event);
   }
 
   @override

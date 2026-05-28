@@ -888,16 +888,16 @@ Expected: lifecycle and cleanup tests pass.
 
 **Steps:**
 
-- [ ] Implement adapter interface.
-- [ ] Implement fake adapter with the same state transition rules.
-- [ ] Implement Firebase adapter using Cloud Functions for mutations and RTDB watchers for reads.
-- [ ] Convert function/network errors into `backendRejected` with safe message and raw diagnostics.
-- [ ] Add tests:
+- [x] Implement adapter interface.
+- [x] Implement fake adapter with the same state transition rules.
+- [x] Implement Firebase adapter using Cloud Functions for mutations and RTDB watchers for reads.
+- [x] Convert function/network errors into `backendRejected` with safe message and raw diagnostics.
+- [x] Add tests:
   - fake adapter mirrors status to inbox/outbox
   - duplicate create returns existing pending request
   - stream ignores corrupt rows and reports diagnostics
   - network failure returns safe message
-- [ ] Commit: `feat(protocol): add connection request adapter`
+- [x] Commit: `feat(protocol): add connection request adapter`
 
 **Validation:**
 
@@ -906,6 +906,10 @@ dart test packages/protocol_brain/test/connection_request_adapter_test.dart
 ```
 
 Expected: adapter tests pass.
+
+Actual runner note: this package uses Flutter test infrastructure, so Phase 07
+was validated with
+`flutter test packages/protocol_brain/test/connection_request_adapter_test.dart`.
 
 ---
 

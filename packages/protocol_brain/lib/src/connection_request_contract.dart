@@ -142,6 +142,7 @@ final class ConnectionRequestDecision {
     required this.userMessage,
     this.reasonCode,
     this.requestId,
+    this.status,
     this.peerId,
     this.blockingPeerId,
     this.retryAfterMs,
@@ -153,6 +154,7 @@ final class ConnectionRequestDecision {
   final ConnectionRequestReasonCode? reasonCode;
   final String userMessage;
   final String? requestId;
+  final ConnectionRequestStatus? status;
   final String? peerId;
   final String? blockingPeerId;
   final int? retryAfterMs;
@@ -233,7 +235,7 @@ final class ConnectionRequestPayload {
       updatedAt: _requiredInt(json, 'updatedAt'),
       expiresAt: _requiredInt(json, 'expiresAt'),
       seenAt: _optionalInt(json, 'seenAt'),
-      respondedAt: _optionalInt(json, 'respondedAt'),
+      respondedAt: _terminalResponseTimestamp(json),
       senderPresenceAt: _optionalInt(json, 'senderPresenceAt'),
       receiverPresenceAt: _optionalInt(json, 'receiverPresenceAt'),
     );
@@ -723,6 +725,16 @@ int? _optionalInt(Map<Object?, Object?> json, String key) {
     return value.toInt();
   }
   throw FormatException('Connection request $key must be an integer.');
+}
+
+int? _terminalResponseTimestamp(Map<Object?, Object?> json) {
+  return _optionalInt(json, 'respondedAt') ??
+      _optionalInt(json, 'terminalAt') ??
+      _optionalInt(json, 'acceptedAt') ??
+      _optionalInt(json, 'rejectedAt') ??
+      _optionalInt(json, 'canceledAt') ??
+      _optionalInt(json, 'expiredAt') ??
+      _optionalInt(json, 'failedAt');
 }
 
 bool? _optionalBool(Map<Object?, Object?> json, String key) {
