@@ -11,6 +11,12 @@ enum ConnectionRequestStatus {
 }
 
 enum ConnectionRequestReasonCode {
+  authMissing,
+  unknownUser,
+  invalidPeer,
+  selfRequest,
+  backendUnavailable,
+  malformedRequest,
   peerOffline,
   presenceUnknown,
   notAcceptedFriend,
@@ -464,6 +470,18 @@ String messageForConnectionRequestReason(
 ]) {
   final peer = _displayPeerLabel(peerLabel);
   return switch (reasonCode) {
+    ConnectionRequestReasonCode.authMissing =>
+      'Sign in before requesting a connection.',
+    ConnectionRequestReasonCode.unknownUser =>
+      'Could not find your Rain account. Sign in again.',
+    ConnectionRequestReasonCode.invalidPeer =>
+      'Choose a valid peer before requesting a connection.',
+    ConnectionRequestReasonCode.selfRequest =>
+      'You cannot request a connection with yourself.',
+    ConnectionRequestReasonCode.backendUnavailable =>
+      'Connection request service is unavailable. Try again.',
+    ConnectionRequestReasonCode.malformedRequest =>
+      'Connection request is malformed. Try again.',
     ConnectionRequestReasonCode.peerOffline =>
       '$peer is offline. Keep both apps open, then try again.',
     ConnectionRequestReasonCode.presenceUnknown =>

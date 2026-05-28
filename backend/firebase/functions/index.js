@@ -1,6 +1,7 @@
 const admin = require("firebase-admin");
 const { onSchedule } = require("firebase-functions/v2/scheduler");
 const logger = require("firebase-functions/logger");
+const connectionRequests = require("./connectionRequests");
 
 admin.initializeApp();
 
@@ -178,6 +179,19 @@ exports.cleanupVoiceCalls = onSchedule(
     });
   },
 );
+
+exports.createConnectionRequest = connectionRequests.createConnectionRequest;
+exports.cancelConnectionRequest = connectionRequests.cancelConnectionRequest;
+exports.acceptConnectionRequest = connectionRequests.acceptConnectionRequest;
+exports.rejectConnectionRequest = connectionRequests.rejectConnectionRequest;
+exports.markConnectionRequestSeen =
+  connectionRequests.markConnectionRequestSeen;
+exports.muteConnectionRequestsFromPeer =
+  connectionRequests.muteConnectionRequestsFromPeer;
+exports.unmuteConnectionRequestsFromPeer =
+  connectionRequests.unmuteConnectionRequestsFromPeer;
+exports.getConnectionRequestQuotaSummary =
+  connectionRequests.getConnectionRequestQuotaSummary;
 
 function queueExpiredVoiceLock(lockMap, expected) {
   if (!expected.path || !expected.value || !expected.value.callId) {

@@ -666,10 +666,10 @@ Expected: direct client bypass attempts are denied.
 
 **Steps:**
 
-- [ ] Add shared auth resolver that maps Firebase Auth uid to Rain username.
-- [ ] Add normalized peer validation and pair key helper.
-- [ ] Add server clock helper. Never trust client timestamps.
-- [ ] Add standard response shape:
+- [x] Add shared auth resolver that maps Firebase Auth uid to Rain username.
+- [x] Add normalized peer validation and pair key helper.
+- [x] Add server clock helper. Never trust client timestamps.
+- [x] Add standard response shape:
   - `allowed`
   - `requestId`
   - `status`
@@ -678,9 +678,9 @@ Expected: direct client bypass attempts are denied.
   - `retryAfterMs`
   - `quota`
   - `diagnostics`
-- [ ] Add exact denial responses for auth missing, unknown user, invalid peer, self-request, backend unavailable, and malformed request.
-- [ ] Add unit tests for function response shape and message presence.
-- [ ] Commit: `feat(functions): add connection request function shell`
+- [x] Add exact denial responses for auth missing, unknown user, invalid peer, self-request, backend unavailable, and malformed request.
+- [x] Add unit tests for function response shape and message presence.
+- [x] Commit: `feat(functions): add connection request function shell`
 
 **Validation:**
 

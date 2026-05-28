@@ -61,6 +61,11 @@ The Cloud Functions do two things:
 - mark users offline when `lastHeartbeat` is older than 7 minutes
 - remove abandoned signaling rooms after 15 minutes
 - remove expired voice call rooms, inbox pointers, and active pair/user locks
+- expose trusted callable shells for connection request notifications:
+  `createConnectionRequest`, `cancelConnectionRequest`, `acceptConnectionRequest`,
+  `rejectConnectionRequest`, `markConnectionRequestSeen`,
+  `muteConnectionRequestsFromPeer`, `unmuteConnectionRequestsFromPeer`, and
+  `getConnectionRequestQuotaSummary`
 
 ## Remote Config
 

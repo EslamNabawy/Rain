@@ -7,7 +7,8 @@
   "main": "index.js",
   "scripts": {
     "audit:moderate": "npm audit --omit=dev --audit-level=moderate",
-    "lint": "node --check index.js"
+    "lint": "node --check index.js && node --check connectionRequests.js && node --check connectionRequestGuardrails.js && node --check test/connectionRequests.test.js && node --check test/run-tests.js",
+    "test": "node test/run-tests.js"
   },
   "dependencies": {
     "firebase-admin": "^13.10.0",
