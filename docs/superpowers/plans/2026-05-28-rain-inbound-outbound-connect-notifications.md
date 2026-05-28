@@ -10,12 +10,15 @@ Add a clear notification flow for manual peer connection attempts. When Alice wa
 
 - Accepted friends only.
 - No notification is created for blocked, unaccepted, offline, or stale-presence peers.
+- No notification is created for peers who muted connection requests from the sender.
 - Pressing `Disconnect` still means: do not reconnect until the user explicitly presses `Connect`.
 - Inbound connect notifications are advisory; they do not auto-open a WebRTC session without user action.
 - Outbound notifications are local progress state plus optional cancellation.
 - The app may show OS/local notifications only while Rain is running or background-capable on the platform.
 - Usage limits, credits, cooldowns, and override values are stored in Firebase and enforced by backend code, not local storage.
 - Users can read their own remaining quota, but only backend/admin credentials can change quota grants or extra credits.
+- Server-side dedupe guarantees one pending request per sender/receiver pair.
+- Receiver protection wins over sender credits: mute, block, offline, stale presence, and inbox caps reject before notification fan-out.
 - True closed-app push notification is a separate phase because it requires device tokens, Firebase Cloud Messaging, permissions, privacy policy updates, and backend token lifecycle.
 
 ## Existing Constraints
@@ -82,6 +85,7 @@ connectionRequestOutboxes/{from}/{requestId}
 connectionNotificationConfig/global
   defaultDailyLimit: number
   defaultCooldownMs: number
+  defaultPerTargetDailyLimit: number
   maxPendingOutboundPerUser: number
   maxPendingInboundPerUser: number
   requestTtlMs: number
@@ -94,6 +98,8 @@ connectionNotificationEntitlements/{username}
   extraCredits: number
   unlimitedUntil: millis | null
   disabled: boolean
+  reason: string
+  expiresAt: millis | null
   updatedAt: server timestamp millis
   updatedBy: admin uid or operator label
 
@@ -105,6 +111,32 @@ connectionNotificationUsage/{username}/{yyyyMMdd}
   lastRequestAt: millis
   burstWindowStartedAt: millis
   burstCount: number
+
+connectionNotificationTargetUsage/{from}/{to}/{yyyyMMdd}
+  used: number
+  rejectedByCooldown: number
+  rejectedByLimit: number
+  lastRequestAt: millis
+
+connectionNotificationPairLocks/{fromToKey}
+  requestId: string
+  from: username
+  to: username
+  status: pending
+  expiresAt: server timestamp millis
+  createdAt: server timestamp millis
+
+connectionNotificationMutes/{username}/{peer}
+  muted: boolean
+  updatedAt: server timestamp millis
+
+connectionNotificationAudit/{yyyyMMdd}/{eventId}
+  from: username
+  to: username
+  decision: allowed | denied
+  reason: string
+  requestId: string | null
+  createdAt: server timestamp millis
 ```
 
 The inbox is authoritative for the receiver. The outbox is a mirrored status projection for the sender. Both are ephemeral and cleaned by TTL.
@@ -120,6 +152,7 @@ Default policy for first implementation:
 - Daily free connect notifications per user: 30.
 - Extra credits: consumed after the daily free allowance.
 - Cooldown between requests to the same peer: 20 seconds.
+- Per-target daily limit: 8 requests to the same peer.
 - Max pending outbound requests per user: 5.
 - Max pending inbound requests per receiver: 10.
 - Max burst: 6 requests per minute.
@@ -134,6 +167,34 @@ Firebase/admin override examples:
 - Change `connectionNotificationConfig/global/defaultDailyLimit` if production usage needs a different limit.
 
 Security rule: client writes must never be allowed to mutate `connectionNotificationConfig`, `connectionNotificationEntitlements`, or `connectionNotificationUsage`. Request creation should go through a backend function so quota checks and request writes happen as one server-side operation.
+
+## Critical Guardrails
+
+These are non-negotiable for the feature to ship:
+
+1. Server-only request creation.
+   Clients must call a trusted backend function. They must not directly create inbox/outbox request rows.
+
+2. Firebase-owned quota and credits.
+   Daily usage, extra credits, admin overrides, and disabled flags live in Firebase/backend state and are updated transactionally.
+
+3. Pending request dedupe.
+   Only one pending request may exist for a sender/receiver pair. Repeated taps reuse the existing request or return its current status.
+
+4. Per-target cooldown and daily limit.
+   A sender cannot spend their whole global quota repeatedly pinging one peer.
+
+5. Receiver protection.
+   Receiver mute, block, inbox cap, offline, and stale presence checks happen before notifications, sounds, push, or inbox writes.
+
+6. Global kill switch.
+   `connectionNotificationConfig/global/enabled = false` disables new request creation immediately with a clean user message.
+
+7. Abuse audit diagnostics.
+   Allowed and denied backend decisions are recorded in a limited server audit log with reason and timestamp.
+
+8. Admin override traceability.
+   Extra credits and overrides include `updatedBy`, `reason`, and optional expiry so test/internal grants do not become invisible permanent state.
 
 ## Public Types
 
@@ -161,6 +222,7 @@ Security rule: client writes must never be allowed to mutate `connectionNotifica
   - `presenceUnknown`
   - `notAcceptedFriend`
   - `blocked`
+  - `mutedByReceiver`
   - `manualDisconnectActive`
   - `activeCall`
   - `activeTransfer`
@@ -168,7 +230,11 @@ Security rule: client writes must never be allowed to mutate `connectionNotifica
   - `dailyLimitExceeded`
   - `extraCreditsExhausted`
   - `tooManyPendingRequests`
+  - `receiverInboxFull`
+  - `perTargetLimitExceeded`
+  - `duplicatePendingRequest`
   - `notificationsDisabledByAdmin`
+  - `notificationsTemporarilyDisabled`
   - `expired`
   - `backendRejected`
 
@@ -177,6 +243,7 @@ Security rule: client writes must never be allowed to mutate `connectionNotifica
   - `usedToday`
   - `extraCreditsRemaining`
   - `cooldownRemainingMs`
+  - `perTargetRemainingToday`
   - `pendingOutboundCount`
   - `pendingInboundCount`
   - `unlimitedUntil`
@@ -225,16 +292,24 @@ Security rule: client writes must never be allowed to mutate `connectionNotifica
   - `connectionNotificationConfig/global`
   - `connectionNotificationEntitlements/{username}`
   - `connectionNotificationUsage/{username}/{yyyyMMdd}`
+  - `connectionNotificationTargetUsage/{from}/{to}/{yyyyMMdd}`
+  - `connectionNotificationPairLocks/{fromToKey}`
+  - `connectionNotificationAudit/{yyyyMMdd}/{eventId}`
+- [ ] Add receiver-owned mute path:
+  - `connectionNotificationMutes/{username}/{peer}`
 - [ ] Require authenticated user ownership for writes.
 - [ ] Require accepted two-way friendship.
 - [ ] Require no block in either direction.
+- [ ] Require no receiver mute for the sender.
 - [ ] Require fresh receiver presence for creating new inbound requests.
 - [ ] Prevent users from writing requests on behalf of another sender.
-- [ ] Prevent client writes to config, entitlements, and usage counters.
+- [ ] Prevent client writes to config, entitlements, usage counters, target counters, pair locks, and audit rows.
 - [ ] Prevent direct client creation of request rows if the backend function owns quota enforcement.
 - [ ] Allow receiver to mark `seen`, `accepted`, or `rejected`.
 - [ ] Allow sender to mark `canceled`.
+- [ ] Allow receiver to create/update/delete their own mute rows.
 - [ ] Add cleanup function support for expired request inbox/outbox entries.
+- [ ] Add cleanup function support for expired `connectionNotificationPairLocks`.
 - [ ] Add cleanup or daily TTL rules for old usage/audit rows.
 - [ ] Add rule tests and cleanup tests.
 
@@ -242,7 +317,9 @@ Security rule: client writes must never be allowed to mutate `connectionNotifica
 
 - Offline/stale receivers cannot receive new connection notification rows.
 - Blocked or unaccepted users cannot create requests.
+- Muted senders cannot create requests to the receiver.
 - Users cannot grant themselves credits or reset their own counters.
+- Users cannot bypass dedupe by writing pair locks or request rows directly.
 - Expired rows are cleaned without deleting active newer requests.
 
 ## Phase 03: Server Quota, Credit, And Rate-Limit Enforcement
@@ -255,30 +332,43 @@ Security rule: client writes must never be allowed to mutate `connectionNotifica
   - validates target peer
   - validates accepted friendship and block state
   - validates fresh receiver presence
+  - checks receiver mute state
   - checks global feature enabled flag
   - checks per-user disabled flag
   - checks same-peer cooldown
+  - checks per-target daily limit
   - checks burst window
+  - checks pair pending dedupe lock
   - checks pending outbound count
   - checks receiver pending inbound count
   - checks daily free allowance
   - consumes extra credits only after daily allowance is exhausted
+  - writes or reuses pair dedupe lock
   - writes inbox/outbox request rows
   - writes quota usage counters
+  - writes per-target usage counters
+- [ ] Check receiver protection before spending sender quota.
 - [ ] Use transactions for usage counters and pending-request checks.
 - [ ] Make request creation idempotent for duplicate taps from the same sender/peer within the cooldown window.
+- [ ] Return the existing pending request instead of creating a second Firebase row for duplicate pending sender/receiver attempts.
 - [ ] Return a typed quota decision to the app:
   - allowed
   - blocked reason
   - remaining daily requests
   - remaining extra credits
+  - per-target remaining requests
   - retry-after timestamp when applicable
 - [ ] Add an admin maintenance path or documented Firebase console workflow to grant extra credits.
+- [ ] Require admin override metadata:
+  - `updatedBy`
+  - `reason`
+  - `expiresAt` or `unlimitedUntil`
 - [ ] Add diagnostics/audit rows that do not expose private data:
   - request id
   - sender
   - receiver
   - decision
+  - denied reason
   - consumed free/extra credit
   - retryAfter
   - createdAt
@@ -290,6 +380,10 @@ Security rule: client writes must never be allowed to mutate `connectionNotifica
 - Admin can increase a user entitlement in Firebase and the next request uses the new value.
 - Extra credits are consumed only after free daily allowance.
 - Rate-limited attempts create no inbox/outbox request rows.
+- Receiver mute/block/offline/inbox-full checks reject before consuming sender quota.
+- Duplicate pending requests create no extra Firebase inbox/outbox rows.
+- Per-target limits stop harassment even when global quota or extra credits remain.
+- Global kill switch returns a clean `temporarily unavailable` decision.
 - Quota failure messages are deterministic and user-safe.
 
 ## Phase 04: Protocol Adapter API
@@ -326,7 +420,7 @@ Security rule: client writes must never be allowed to mutate `connectionNotifica
   - `canCancelConnectionNotification(peerId, requestId)`
 - [ ] Use existing active call and active file transfer blocks.
 - [ ] Block notifications for offline, stale, unaccepted, blocked, or presence-unknown peers.
-- [ ] Block or delay attempts while server quota says cooldown, daily limit, pending limit, disabled, or extra credits exhausted.
+- [ ] Block or delay attempts while server quota says cooldown, per-target limit, daily limit, pending limit, disabled, receiver muted, or extra credits exhausted.
 - [ ] Do not allow notification creation to clear manual disconnect by itself.
 - [ ] Clear manual disconnect only when the user explicitly accepts/connects.
 
@@ -334,6 +428,7 @@ Security rule: client writes must never be allowed to mutate `connectionNotifica
 
 - Pressing `Connect` on an offline peer does not write a request.
 - Pressing `Connect` while out of credits does not write a request and shows remaining/retry information.
+- Pressing `Connect` when the receiver muted requests does not write a request and does not notify the receiver.
 - Manual-disconnected peer does not auto-recover from inbound request arrival.
 - Explicit inbound `Connect` clears manual intent only for that peer.
 
@@ -353,6 +448,9 @@ Security rule: client writes must never be allowed to mutate `connectionNotifica
   - `Daily connection request limit reached.`
   - `No extra connection request credits left.`
   - `Too many pending connection requests.`
+  - `You have sent too many requests to @peer today.`
+  - `@peer is not receiving connection requests right now.`
+  - `Connection requests are temporarily unavailable.`
 
 **Acceptance:**
 
@@ -371,12 +469,14 @@ Security rule: client writes must never be allowed to mutate `connectionNotifica
 - [ ] Mark visible requests as `seen`.
 - [ ] Accept starts existing `connectPeer(peerId)` with explicit user intent.
 - [ ] Reject marks request terminal and leaves all sessions unchanged.
+- [ ] Add receiver-side `Mute requests from @peer` action that writes `connectionNotificationMutes/{self}/{peer}`.
 - [ ] If an active global call or transfer blocks acceptance, show a typed message and keep the request pending or reject based on product choice.
 
 **Acceptance:**
 
 - Inbound prompt appears only for valid accepted friends.
 - Invalid or stale request rows do not crash the runtime.
+- Muting a peer removes their pending prompts locally and prevents future request prompts server-side.
 - Accepting one peer does not affect any other peer connection state.
 
 ## Phase 08: In-App Notification UI
@@ -389,7 +489,12 @@ Security rule: client writes must never be allowed to mutate `connectionNotifica
 - [ ] Add quota-aware outbound affordances:
   - remaining requests today where space allows
   - retry-after text when cooling down
+  - per-peer cooldown/per-target limit text only when relevant
   - disabled state when admin-disabled
+- [ ] Add receiver protection affordances:
+  - mute requests from this peer
+  - unmute requests from this peer in friend/profile/settings surface
+  - quiet rejection language that does not reveal more private state than needed
 - [ ] Add desktop-friendly hover tooltips and mobile-friendly tap targets.
 - [ ] Use Rain visual language: minimal dark ink surfaces, cyan/mint status, no noisy decorations.
 - [ ] Ensure prompts respect safe areas and do not overlap call UI, snackbars, keyboard, or bottom nav.
@@ -400,6 +505,7 @@ Security rule: client writes must never be allowed to mutate `connectionNotifica
 - Outbound pending is visible in the relevant chat.
 - No duplicate prompts for the same peer.
 - Quota UI never implies the user can bypass server limits.
+- Receiver mute controls are reachable without unfriending or blocking.
 
 ## Phase 09: OS Local Notifications
 
@@ -419,6 +525,7 @@ Security rule: client writes must never be allowed to mutate `connectionNotifica
 - [ ] Respect notification settings and quiet mode.
 - [ ] Do not add FCM tokens in this phase.
 - [ ] Do not show OS notifications for requests blocked by quota, cooldown, pending limits, or admin disable.
+- [ ] Do not show OS notifications for duplicate pending requests, receiver-muted requests, blocked users, or offline/stale receivers.
 
 **Acceptance:**
 
@@ -426,6 +533,7 @@ Security rule: client writes must never be allowed to mutate `connectionNotifica
 - Permission denial leaves in-app notifications functional.
 - No notification appears for stale/invalid/blocked requests.
 - No notification appears for requests that were denied before inbox creation.
+- Duplicate pending requests do not create repeated local or OS notifications.
 
 ## Phase 10: Sound, Rate Limit, And Abuse Controls
 
@@ -466,7 +574,11 @@ Security rule: client writes must never be allowed to mutate `connectionNotifica
   - `connection_request_quota_denied`
   - `connection_request_credit_consumed`
   - `connection_request_entitlement_loaded`
-- [ ] Include peer id, request id, direction, status, presence freshness, guard reason, quota decision, remaining daily allowance, remaining extra credits, retry-after, and cleanup result.
+  - `connection_request_pair_deduped`
+  - `connection_request_target_limit_denied`
+  - `connection_request_receiver_muted_denied`
+  - `connection_request_global_disabled`
+- [ ] Include peer id, request id, direction, status, presence freshness, guard reason, quota decision, remaining daily allowance, remaining extra credits, per-target remaining allowance, retry-after, dedupe lock state, and cleanup result.
 - [ ] Ensure diagnostics buffering does not write synchronously per event.
 
 **Acceptance:**
@@ -474,6 +586,7 @@ Security rule: client writes must never be allowed to mutate `connectionNotifica
 - Exported diagnostics explain why a request did or did not appear.
 - Corrupt request entries are removed or ignored without poisoning watcher streams.
 - Diagnostics can prove whether a blocked attempt was caused by cooldown, daily limit, pending limit, admin disable, or Firebase failure.
+- Diagnostics can distinguish duplicate pending, receiver muted, per-target limit, and global kill-switch denials.
 
 ## Phase 12: Settings And User Control
 
@@ -483,6 +596,7 @@ Security rule: client writes must never be allowed to mutate `connectionNotifica
   - `Connection request notifications`
   - `Connection request sound`
   - `Show notifications when minimized`
+- [ ] Add a manageable muted-request senders list if the user muted any peers.
 - [ ] Show platform permission status.
 - [ ] Show a read-only quota summary:
   - requests used today
@@ -497,6 +611,7 @@ Security rule: client writes must never be allowed to mutate `connectionNotifica
 - Turning off connection request notifications suppresses OS notifications but keeps essential in-app prompts.
 - Turning off sounds does not suppress visual prompts.
 - Quota summary is read-only and updates from Firebase/backend state.
+- Unmuting a peer removes only `connectionNotificationMutes/{self}/{peer}` and does not alter friendships or blocks.
 
 ## Phase 13: Optional Push Notification Architecture
 
@@ -523,13 +638,14 @@ Security rule: client writes must never be allowed to mutate `connectionNotifica
 - [ ] Contract parsing rejects malformed request payloads.
 - [ ] Fake adapter creates inbox/outbox entries and mirrors statuses.
 - [ ] Runtime guard denies offline, blocked, unaccepted, active-call, and active-transfer cases.
-- [ ] Runtime guard denies cooldown, daily limit, extra credit exhaustion, admin disable, and too many pending requests.
+- [ ] Runtime guard denies cooldown, per-target limit, daily limit, extra credit exhaustion, admin disable, receiver mute, global kill switch, and too many pending requests.
 - [ ] Manual disconnect blocks auto-connect from inbound request arrival.
 - [ ] Explicit inbound accept clears manual disconnect for only that peer.
 - [ ] Outbound cancel prevents later accept from starting a session.
 - [ ] Expired requests do not start sessions.
 - [ ] Duplicate requests collapse into one visible request.
 - [ ] Server quota decision consumes free allowance before extra credits.
+- [ ] Server quota decision does not consume quota for blocked, muted, offline, stale, inbox-full, or duplicate-pending attempts.
 - [ ] Admin entitlement changes are reflected without app reinstall.
 
 **Widget Tests**
@@ -541,6 +657,8 @@ Security rule: client writes must never be allowed to mutate `connectionNotifica
 - [ ] Notification settings render and persist.
 - [ ] Quota summary renders as read-only state.
 - [ ] Cooldown and no-credit messages fit mobile and desktop.
+- [ ] Receiver mute/unmute controls render without exposing unrelated block/unfriend actions.
+- [ ] Duplicate pending requests do not create duplicate visible prompts.
 
 **Firebase Tests**
 
@@ -551,8 +669,13 @@ Security rule: client writes must never be allowed to mutate `connectionNotifica
 - [ ] Sender can cancel.
 - [ ] Cleanup removes expired inbox/outbox rows.
 - [ ] Client cannot write config, entitlements, or usage counters.
+- [ ] Client cannot write target usage counters, pair locks, or audit rows.
 - [ ] Backend function refuses quota-exceeded requests before writing inbox/outbox rows.
 - [ ] Extra credits can be granted by admin data and consumed by request creation.
+- [ ] Backend function reuses or returns existing pending pair lock instead of creating duplicate request rows.
+- [ ] Backend function enforces per-target daily limit even when global quota remains.
+- [ ] Backend function refuses muted receivers before notification fan-out.
+- [ ] Global kill switch blocks request creation immediately.
 
 **Validation Commands**
 
@@ -582,6 +705,7 @@ dart run melos run test
 - No local-storage-only quota or credit system.
 - No client-side bypass for admin/test accounts; admin/test usage still goes through Firebase entitlements.
 - No paid billing or purchase flow for extra credits.
+- No receiver-side forced notification delivery; receiver mute/block/offline protections always win.
 - No changes to voice/video media transport.
 - No changes to chat message encryption or delivery.
 
@@ -593,6 +717,8 @@ dart run melos run test
 - Should admin/test accounts use `extraCredits`, `dailyLimitOverride`, or `unlimitedUntil`?
 - Should blocked quota attempts be invisible to the receiver, or should repeated abuse produce moderation diagnostics only?
 - Should quota summaries be visible in Settings, beside the Connect button, or only after a quota error?
+- Should receiver mute be temporary by default, or permanent until manually removed?
+- Should duplicate pending taps refresh the existing request timestamp, or keep the original expiry to prevent nagging?
 - Should reject tell the sender `Rejected` or softer `Unavailable`?
 - Should Windows use real toast notifications in v1, or in-app/minimized-window notifications only?
 - Should an inbound request from the currently open chat show a prompt, inline status, or both?
