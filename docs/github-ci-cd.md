@@ -11,6 +11,14 @@ Rain uses three GitHub Actions workflow layers:
 
 ## Build Artifacts
 
+For Spark/free-tier connection request builds, deploy Realtime Database rules
+before triggering app artifacts. Do not deploy Cloud Functions for this gate.
+
+```powershell
+cd backend/firebase
+firebase deploy --project rain-8fb4b --only database --non-interactive
+```
+
 Use **Actions -> Build Rain Apps -> Run workflow**.
 
 Inputs:
@@ -21,6 +29,21 @@ Inputs:
   assets to a `rain-test-*` GitHub pre-release.
 
 Demo builds use `apps/rain/tool/dart_defines.example.json`, OpenRelay demo TURN, and a generated demo Android signing key. Demo artifacts are for testing only.
+The workflow forces `CONNECTION_REQUEST_BACKEND_MODE=rtdbOnly` for demo builds
+so downloadable free-tier artifacts do not depend on callable Cloud Functions.
+
+Free-tier release order:
+
+1. Run Dart/Melos validation.
+2. Run Firebase emulator tests.
+3. Deploy RTDB rules.
+4. Push `dev`.
+5. Trigger the app artifact workflow.
+6. Verify Android APK and Windows artifacts.
+
+Cloud Functions mode is stronger but blocked until the Firebase project can use
+Blaze or until the same server-owned logic is moved to an external free backend
+such as Cloudflare Workers.
 
 For fast phone installs, keep `publish_test_release` enabled. The workflow
 creates a pre-release with individual APK assets, so Android devices can open

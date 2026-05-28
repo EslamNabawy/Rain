@@ -1089,7 +1089,7 @@ git commit -m "feat: wire free-tier connection request backend"
 - Modify: `docs/releases/connection-request-notification-ops.md`
 - Modify: `docs/github-ci-cd.md`
 
-- [ ] **Step 1: Update free-tier release command**
+- [x] **Step 1: Update free-tier release command**
 
 Document:
 
@@ -1098,7 +1098,7 @@ cd backend/firebase
 firebase deploy --project rain-8fb4b --only database --non-interactive
 ```
 
-- [ ] **Step 2: Remove Functions from free release checklist**
+- [x] **Step 2: Remove Functions from free release checklist**
 
 Free-tier release order:
 
@@ -1111,7 +1111,7 @@ Free-tier release order:
 6. Verify APK/Windows artifacts.
 ```
 
-- [ ] **Step 3: Keep Functions future path documented**
+- [x] **Step 3: Keep Functions future path documented**
 
 Add:
 
@@ -1121,7 +1121,7 @@ Blaze or until the same server-owned logic is moved to an external free backend
 such as Cloudflare Workers.
 ```
 
-- [ ] **Step 4: Commit**
+- [x] **Step 4: Commit**
 
 ```powershell
 git add backend/firebase/README.md docs/releases/connection-request-notification-ops.md docs/github-ci-cd.md

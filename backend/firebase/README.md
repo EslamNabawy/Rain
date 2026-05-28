@@ -66,6 +66,13 @@ From this directory:
 firebase deploy --project <staging-or-production-project-id> --only database
 ```
 
+For the current free-tier Rain project:
+
+```powershell
+cd backend/firebase
+firebase deploy --project rain-8fb4b --only database --non-interactive
+```
+
 The rules file is [database.rules.json](database.rules.json).
 
 ## Deploy Functions
@@ -100,16 +107,25 @@ The Cloud Functions do two things:
 Use this order for Spark/free-tier builds after the `rtdbOnly` implementation
 phases are complete:
 
-1. Run local validation from the repository root:
-   `dart pub get`, `dart run melos run analyze`, and
-   `dart run melos run test`.
-2. Run emulator smoke validation from the repository root:
-   `.\scripts\ci_run_firebase_emulators.ps1`.
-3. Deploy Realtime Database rules to the target Firebase project.
-4. Confirm the app build uses `CONNECTION_REQUEST_BACKEND_MODE=rtdbOnly`.
-5. Build and publish Android/Windows app artifacts.
+1. Run Dart/Melos validation.
+2. Run Firebase emulator tests.
+3. Deploy RTDB rules.
+4. Push `dev`.
+5. Trigger the app artifact workflow.
+6. Verify Android APK and Windows artifacts.
+
+Concrete free-tier rule deploy command:
+
+```powershell
+cd backend/firebase
+firebase deploy --project rain-8fb4b --only database --non-interactive
+```
 
 This path does not deploy Cloud Functions.
+
+Cloud Functions mode is stronger but blocked until the Firebase project can use
+Blaze or until the same server-owned logic is moved to an external free backend
+such as Cloudflare Workers.
 
 ## Cloud Functions Connection Request Release Order
 

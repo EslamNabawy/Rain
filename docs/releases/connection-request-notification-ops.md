@@ -63,19 +63,28 @@ Closed-app push is reserved for the separate V2 specification at
 Before distributing free-tier app builds that include connection request
 notifications:
 
-1. Run `dart pub get`.
-2. Run `dart run melos run analyze`.
-3. Run `dart run melos run test`.
-4. Run `.\scripts\ci_run_firebase_emulators.ps1` from the repository root.
-5. Deploy Firebase Realtime Database rules to the target backend project.
-6. Confirm the app build uses `CONNECTION_REQUEST_BACKEND_MODE=rtdbOnly`.
-7. Build and publish app artifacts.
+1. Run Dart/Melos validation.
+2. Run Firebase emulator tests.
+3. Deploy RTDB rules.
+4. Push `dev`.
+5. Trigger the app artifact workflow.
+6. Verify Android APK and Windows artifacts.
+
+Use this RTDB-only deploy command for the current free-tier project:
+
+```powershell
+cd backend/firebase
+firebase deploy --project rain-8fb4b --only database --non-interactive
+```
+
+Confirm the app build uses `CONNECTION_REQUEST_BACKEND_MODE=rtdbOnly` before
+publishing artifacts.
 
 Do not deploy Cloud Functions for the free-tier release gate.
 
-Cloud Functions mode is stronger and may be used later only after the Firebase
-project can deploy Functions or the same server-owned logic is moved to a free
-external backend such as Cloudflare Workers.
+Cloud Functions mode is stronger but blocked until the Firebase project can use
+Blaze or until the same server-owned logic is moved to an external free backend
+such as Cloudflare Workers.
 
 ## Firebase Paths
 
@@ -242,8 +251,13 @@ silently. Every denied client action must still show a user-facing message.
 
 ## Cleanup Stale Locks And Reservations
 
-The scheduled cleanup function owns stale repair. Run or wait for
-`cleanupConnectionRequests` when you see:
+In free-tier `rtdbOnly` mode, app clients perform opportunistic cleanup on app
+startup, chat open, request creation, terminal actions, and inbox/outbox
+snapshot reads. There is no scheduled cleanup function in the free release
+gate.
+
+Only the future Cloud Functions mode owns scheduled stale repair. In that mode,
+run or wait for `cleanupConnectionRequests` when you see:
 
 - old `connectionRequestPairLocks` with expired `expiresAt`
 - `connectionNotificationReservations` stuck in `reserved`
