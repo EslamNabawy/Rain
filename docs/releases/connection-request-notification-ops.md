@@ -5,6 +5,61 @@ connection request notifications. The Cloud Functions own writes to request
 inboxes, outboxes, pair locks, quota usage, reservations, and entitlement
 credits. Clients must not write these paths directly.
 
+## V1 Release Notes
+
+Connection request notifications let accepted friends ask each other to open the
+normal Rain peer lane without bypassing manual disconnect intent.
+
+V1 behavior:
+
+- Inbound and outbound request state is synchronized through Firebase-owned
+  request inbox and outbox projections.
+- Receivers can accept, reject, ignore, mute, and unmute request senders.
+- Senders see pending, accepted, rejected, canceled, expired, failed, duplicate,
+  quota, cooldown, and unavailable states with explicit user-facing messages.
+- A request never auto-connects the receiver; accepting remains a user action.
+- Active calls and active file transfers block new connection requests with a
+  visible explanation.
+- App-open and app-minimized notification surfaces are supported through the
+  app runtime and local notification abstraction where available.
+
+Quota and credit behavior:
+
+- Backend-owned daily free limit, sender-to-peer daily limit, burst limit,
+  cooldown, extra credits, temporary unlimited entitlement, and sender disable
+  guard all request creation.
+- Duplicate pending requests, receiver mute, block, offline/stale presence, and
+  receiver inbox-full denials do not spend quota.
+- Successfully created requests spend quota even when later canceled, rejected,
+  ignored, or expired.
+- Operators may grant `extraCredits` or `unlimitedUntil` in
+  `connectionNotificationEntitlements/{username}`. Receiver protection and
+  per-target/burst controls still apply.
+
+V1 limitations:
+
+- No closed-app push notification.
+- No Firebase Cloud Messaging token registration or storage.
+- No automatic connection acceptance.
+- No connection request history.
+- No group connection requests.
+
+Closed-app push is reserved for the separate V2 specification at
+`docs/superpowers/specs/connection-request-push-notifications-v2.md`.
+
+## Release Gate
+
+Before distributing app builds that include connection request notifications:
+
+1. Run `dart pub get`.
+2. Run `dart run melos run analyze`.
+3. Run `dart run melos run test`.
+4. Run `npm test` in `backend/firebase/functions`.
+5. Run `.\scripts\ci_run_firebase_emulators.ps1` from the repository root.
+6. Deploy Firebase Realtime Database rules to the target backend project.
+7. Deploy Cloud Functions to the same target backend project.
+8. Build and publish app artifacts only after the backend deploy is complete.
+
 ## Firebase Paths
 
 - `connectionNotificationConfig/global`

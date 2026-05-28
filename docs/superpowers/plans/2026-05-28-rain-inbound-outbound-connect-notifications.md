@@ -1297,11 +1297,11 @@ git commit -m "test: validate connection request notifications"
 
 **Steps:**
 
-- [ ] Deploy Firebase rules to staging/test project.
+- [x] Deploy Firebase rules to staging/test project.
 - [ ] Deploy Cloud Functions to staging/test project.
-- [ ] Run emulator or staging smoke tests.
-- [ ] Update Firebase backend README.
-- [ ] Update release notes:
+- [x] Run emulator or staging smoke tests.
+- [x] Update Firebase backend README.
+- [x] Update release notes:
   - connection request notifications
   - quota and credits
   - app-open/minimized notification limitation
@@ -1309,6 +1309,19 @@ git commit -m "test: validate connection request notifications"
 - [ ] Push `dev`.
 - [ ] Trigger cloud build only after validation passes.
 - [ ] Verify Android v7a, Android v8/v9, and Windows artifacts.
+
+**Release Gate Status:**
+
+Partial on 2026-05-28:
+
+- Realtime Database rules deployed successfully to `rain-8fb4b`.
+- Emulator smoke validation passed through
+  `.\scripts\ci_run_firebase_emulators.ps1`.
+- Cloud Functions deployment is blocked until the Firebase project is upgraded
+  to Blaze. Firebase reported that `artifactregistry.googleapis.com` cannot be
+  enabled on the current plan.
+- `dev` was not pushed and the cloud build was not triggered because app
+  artifacts must not ship until the backend functions deploy succeeds.
 
 **Commit:**
 

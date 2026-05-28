@@ -39,8 +39,7 @@ Connection notification nodes are mutated by Cloud Functions only. Clients may r
 From this directory:
 
 ```powershell
-firebase use --add
-firebase deploy --only database
+firebase deploy --project <staging-or-production-project-id> --only database
 ```
 
 The rules file is [database.rules.json](database.rules.json).
@@ -54,8 +53,12 @@ cd functions
 npm install
 npm run lint
 cd ..
-firebase deploy --only functions
+firebase deploy --project <staging-or-production-project-id> --only functions
 ```
+
+Cloud Functions deployment requires the Firebase project to be on the Blaze
+pay-as-you-go plan because Firebase must enable Cloud Build and Artifact
+Registry for function packaging.
 
 The Cloud Functions do two things:
 
@@ -67,6 +70,40 @@ The Cloud Functions do two things:
   `rejectConnectionRequest`, `markConnectionRequestSeen`,
   `muteConnectionRequestsFromPeer`, `unmuteConnectionRequestsFromPeer`, and
   `getConnectionRequestQuotaSummary`
+
+## Connection Request Notification Release Order
+
+Connection request notification clients require the backend contract to be
+deployed before app artifacts are distributed. Use this order for every staging
+or production release:
+
+1. Run local validation from the repository root:
+   `dart pub get`, `dart run melos run analyze`, and
+   `dart run melos run test`.
+2. Run backend validation from `backend/firebase/functions`: `npm test`.
+3. Run emulator smoke validation from the repository root:
+   `.\scripts\ci_run_firebase_emulators.ps1`.
+4. Deploy Realtime Database rules to the target Firebase project.
+5. Deploy Cloud Functions to the same target Firebase project.
+6. Confirm the callable functions exist in the Firebase console:
+   `createConnectionRequest`, `cancelConnectionRequest`,
+   `acceptConnectionRequest`, `rejectConnectionRequest`,
+   `markConnectionRequestSeen`, `muteConnectionRequestsFromPeer`,
+   `unmuteConnectionRequestsFromPeer`, and
+   `getConnectionRequestQuotaSummary`.
+7. Confirm these paths are not client-writable:
+   `connectionRequests`, `connectionRequestOutboxes`,
+   `connectionRequestPairLocks`, `connectionNotificationUsage`,
+   `connectionNotificationTargetUsage`,
+   `connectionNotificationReservations`,
+   `connectionNotificationEntitlements`, `connectionNotificationAudit`, and
+   `connectionNotificationAuditSummary`.
+8. Only after the backend is aligned, build and publish Android/Windows app
+   artifacts.
+
+V1 connection request notifications are app-open or app-minimized only. V1 does
+not register Firebase Cloud Messaging tokens and does not support closed-app
+push notifications.
 
 ## Remote Config
 
