@@ -2,7 +2,21 @@ part of 'rain_runtime_controller.dart';
 
 enum _IncomingVoiceInviteDisposition { accept, busy, ignore }
 
+final class _TerminalRoomWriteResult {
+  const _TerminalRoomWriteResult._({required this.durable, this.error});
+
+  const _TerminalRoomWriteResult.durable() : this._(durable: true);
+
+  const _TerminalRoomWriteResult.failed(Object? error)
+    : this._(durable: false, error: error);
+
+  final bool durable;
+  final Object? error;
+}
+
 extension VoiceCallRuntime on RainRuntimeController {
+  static const CallTerminalWritePolicy _voiceTerminalWritePolicy =
+      CallTerminalWritePolicy();
   static const String _voiceCallFailedReasonCode = 'failed';
   static const String _voiceCallBusyReasonCode = 'busy';
   static const String _voiceCallRejectedReasonCode = 'rejected';
@@ -2701,7 +2715,7 @@ extension VoiceCallRuntime on RainRuntimeController {
         context: cleanupContext,
       );
     } catch (error) {
-      if (_isUnknownVoiceCallCleanupError(error)) {
+      if (_isDurableVoiceCallTerminalStateError(error)) {
         _recordRuntimeEvent(
           category: 'call',
           name: 'voice_cleanup_already_completed',
@@ -2744,9 +2758,10 @@ extension VoiceCallRuntime on RainRuntimeController {
     }
   }
 
-  bool _isUnknownVoiceCallCleanupError(Object error) {
+  bool _isDurableVoiceCallTerminalStateError(Object error) {
     final normalized = _normalizedVoiceCallErrorText(error).toLowerCase();
-    return normalized.contains('unknown voice call');
+    return normalized.contains('unknown voice call') ||
+        normalized.contains('already ended');
   }
 
   bool _isVoiceTerminalAlreadyClosedError(Object error) {
@@ -2861,7 +2876,7 @@ extension VoiceCallRuntime on RainRuntimeController {
       );
       _latchTerminalVoiceCallSession(session);
       if (notifyPeer) {
-        await _writeTerminalRoomBeforeSessionHangup(
+        final terminalWrite = await _writeTerminalRoomBeforeSessionHangup(
           callId: session.callId,
           status: failureReason == null
               ? VoiceCallSignalingStatus.ended
@@ -2869,6 +2884,16 @@ extension VoiceCallRuntime on RainRuntimeController {
           detail: detail,
           reasonCode: _voiceCallReasonCodeForFailure(failureReason),
         );
+        if (!terminalWrite.durable) {
+          await _disposeVoiceCallSession(session);
+          _setVoiceCallState(
+            _voiceCallStateAfterTerminalWriteFailure(
+              current,
+              error: terminalWrite.error,
+            ),
+          );
+          return;
+        }
         try {
           await session.hangUp(reason: detail);
         } catch (error, stackTrace) {
@@ -2916,7 +2941,7 @@ extension VoiceCallRuntime on RainRuntimeController {
       ),
     );
     if (notifyPeer && current.callId != null) {
-      await _writeTerminalRoomBeforeSessionHangup(
+      final terminalWrite = await _writeTerminalRoomBeforeSessionHangup(
         callId: current.callId!,
         status: failureReason == null
             ? VoiceCallSignalingStatus.ended
@@ -2924,6 +2949,15 @@ extension VoiceCallRuntime on RainRuntimeController {
         detail: detail,
         reasonCode: _voiceCallReasonCodeForFailure(failureReason),
       );
+      if (!terminalWrite.durable) {
+        _setVoiceCallState(
+          _voiceCallStateAfterTerminalWriteFailure(
+            current,
+            error: terminalWrite.error,
+          ),
+        );
+        return;
+      }
     } else if (current.callId != null) {
       await _endVoiceCallInSignaling(
         callId: current.callId!,
@@ -2945,27 +2979,121 @@ extension VoiceCallRuntime on RainRuntimeController {
     );
   }
 
-  Future<void> _writeTerminalRoomBeforeSessionHangup({
+  Future<_TerminalRoomWriteResult> _writeTerminalRoomBeforeSessionHangup({
     required String callId,
     required VoiceCallSignalingStatus status,
     required String detail,
     String? reasonCode,
   }) async {
+    Object? lastError;
+    StackTrace? lastStackTrace;
+    for (
+      var attempt = 1;
+      attempt <= _voiceTerminalWritePolicy.maxAttempts;
+      attempt += 1
+    ) {
+      final context = <String, Object?>{
+        'callId': callId,
+        'status': status.name,
+        'reasonCode': reasonCode,
+        'attempt': attempt,
+        'maxAttempts': _voiceTerminalWritePolicy.maxAttempts,
+      };
+      _recordRuntimeEvent(
+        category: 'call',
+        name: 'voice_terminal_write_before_session_hangup',
+        context: context,
+      );
+      try {
+        await _endVoiceCallInSignaling(
+          callId: callId,
+          status: status,
+          reason: detail,
+          reasonCode: reasonCode,
+        );
+        _recordRuntimeEvent(
+          category: 'call',
+          name: 'voice_terminal_write_durable',
+          context: context,
+        );
+        return const _TerminalRoomWriteResult.durable();
+      } catch (error, stackTrace) {
+        if (_isDurableVoiceCallTerminalStateError(error)) {
+          _recordRuntimeEvent(
+            category: 'call',
+            name: 'voice_terminal_write_durable',
+            context: <String, Object?>{
+              ...context,
+              'cleanupResult': 'alreadyCompleted',
+            },
+          );
+          return const _TerminalRoomWriteResult.durable();
+        }
+        lastError = error;
+        lastStackTrace = stackTrace;
+        if (!_voiceTerminalWritePolicy.canRetryAfterAttempt(attempt)) {
+          break;
+        }
+        final delay = _voiceTerminalWritePolicy.retryDelayAfterAttempt(attempt);
+        _recordRuntimeEvent(
+          category: 'call',
+          name: 'voice_terminal_write_retry',
+          severity: 'warning',
+          message: error.toString(),
+          context: <String, Object?>{
+            ...context,
+            'nextAttempt': attempt + 1,
+            'retryDelayMs': delay.inMilliseconds,
+          },
+        );
+        await Future<void>.delayed(delay);
+      }
+    }
     _recordRuntimeEvent(
       category: 'call',
-      name: 'voice_terminal_write_before_session_hangup',
+      name: 'voice_terminal_write_failed',
+      severity: 'error',
+      message: lastError?.toString(),
       context: <String, Object?>{
         'callId': callId,
         'status': status.name,
         'reasonCode': reasonCode,
+        'maxAttempts': _voiceTerminalWritePolicy.maxAttempts,
       },
     );
-    await _endVoiceCallInSignaling(
-      callId: callId,
-      status: status,
-      reason: detail,
-      reasonCode: reasonCode,
-      bestEffort: true,
+    if (lastError != null) {
+      errorRecorder?.call(
+        lastError,
+        lastStackTrace,
+        source: 'voice-terminal-write',
+        fatal: false,
+      );
+    }
+    return _TerminalRoomWriteResult.failed(lastError);
+  }
+
+  VoiceCallState _voiceCallStateAfterTerminalWriteFailure(
+    VoiceCallState current, {
+    Object? error,
+  }) {
+    return current.copyWith(
+      phase: VoiceCallPhase.failed,
+      detail: 'Could not notify peer that the call ended. Try again.',
+      error: error,
+      failureReason: VoiceCallFailureReason.signalingFailed,
+      isCameraMuted: false,
+      isDeafened: false,
+      isRemoteCameraMuted: false,
+      hasLocalVideo: false,
+      hasRemoteVideo: false,
+      videoFirstFrameTimedOut: false,
+      mediaReconnecting: false,
+      outputRoute: VoiceCallOutputRoute.systemDefault,
+      updatedAt: DateTime.now().millisecondsSinceEpoch,
+      clearOutputRouteWarning: true,
+      clearOutputRouteTarget: true,
+      clearReconnectingSince: true,
+      audioLevel: const VoiceAudioLevel.unavailable(),
     );
   }
 

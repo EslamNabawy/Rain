@@ -6484,15 +6484,14 @@ class RecordingVoiceSignalingAdapter extends RecordingNoopSignalingAdapter
     final room = _voice.rooms[callId];
     final isTerminalWrite =
         status.isTerminal && room?.status.isTerminal != true;
-    if (isTerminalWrite && terminalRoomWriteAttempts == 0) {
+    if (isTerminalWrite) {
       terminalRoomWriteAttempts += 1;
       final error = terminalRoomWriteError;
-      if (error != null) {
+      if (terminalRoomWriteAttempts == 1 && error != null) {
         throw error;
       }
-      terminalRoomWriteSucceeded = true;
     }
-    return _voice.endCall(
+    final result = _voice.endCall(
       callId: callId,
       username: username,
       status: status,
@@ -6500,6 +6499,10 @@ class RecordingVoiceSignalingAdapter extends RecordingNoopSignalingAdapter
       reasonCode: reasonCode,
       reason: reason,
     );
+    if (isTerminalWrite) {
+      terminalRoomWriteSucceeded = true;
+    }
+    return result;
   }
 
   @override
