@@ -5859,7 +5859,9 @@ void main() {
         final connection =
             harness.aliceBrain.voiceMediaConnections['bob']!
                 as _TestVoiceMediaConnection;
-        harness.adapter.endCallError = StateError('end call write failed');
+        harness.adapter.sessionHangupFrameError = StateError(
+          'session hangup frame write failed',
+        );
 
         await harness.aliceRuntime.hangUpVoiceCall();
 
@@ -5869,7 +5871,7 @@ void main() {
         expect(harness.aliceBrain.stoppedAudioPeers, contains('bob'));
         expect(
           harness.adapter.rooms[callId]?.status,
-          VoiceCallSignalingStatus.connected,
+          VoiceCallSignalingStatus.ended,
         );
       },
     );
@@ -5884,12 +5886,13 @@ void main() {
         callerIsAlice: true,
         mediaMode: protocol.CallMediaMode.audio,
       );
-      harness.adapter.endCallError = StateError('terminal room write failed');
+      harness.adapter.terminalRoomWriteError = StateError(
+        'terminal room write failed',
+      );
 
       await harness.aliceRuntime.hangUpVoiceCall();
 
-      final room = harness.adapter.rooms[callId]!;
-      if (!room.status.isTerminal) {
+      if (!harness.adapter.terminalRoomWriteSucceeded) {
         expect(
           harness.aliceRuntime.voiceCallState.phase,
           isNot(VoiceCallPhase.idle),
@@ -5911,15 +5914,23 @@ void main() {
           callerIsAlice: true,
           mediaMode: protocol.CallMediaMode.audio,
         );
-        harness.adapter.failEndCallAttempts.addAll(<int>{1, 2});
+        harness.adapter.sessionHangupFrameError = StateError(
+          'session hangup frame write failed',
+        );
 
         await harness.aliceRuntime.hangUpVoiceCall();
 
         expect(
-          harness.adapter.endCallAttempts,
-          2,
+          harness.adapter.terminalRoomWriteSucceeded,
+          isTrue,
           reason:
-              'Attempt 1 is the terminal room write; attempt 2 is the session hangup frame write.',
+              'The terminal room write must succeed before the frame fails.',
+        );
+        expect(
+          harness.adapter.sessionHangupFrameFailureAttempts,
+          1,
+          reason:
+              'The test must fail only the post-terminal hangup frame path.',
         );
         await _waitForCondition(
           () => harness.bobRuntime.voiceCallState.phase == VoiceCallPhase.idle,
@@ -6386,10 +6397,14 @@ class RecordingNoopSignalingAdapter extends NoopSignalingAdapter {
 class RecordingVoiceSignalingAdapter extends RecordingNoopSignalingAdapter
     implements VoiceSignalingAdapter {
   final FakeVoiceSignalingAdapter _voice = FakeVoiceSignalingAdapter();
-  Object? endCallError;
+  Object? terminalRoomWriteError;
+  Object? sessionHangupFrameError;
   int endCallAttempts = 0;
   int? failEndCallAttempt;
   final Set<int> failEndCallAttempts = <int>{};
+  int terminalRoomWriteAttempts = 0;
+  bool terminalRoomWriteSucceeded = false;
+  int sessionHangupFrameFailureAttempts = 0;
 
   Map<String, VoiceCallRoom> get rooms => _voice.rooms;
 
@@ -6466,9 +6481,16 @@ class RecordingVoiceSignalingAdapter extends RecordingNoopSignalingAdapter
         failEndCallAttempts.contains(endCallAttempts)) {
       throw StateError('failed to send hangup');
     }
-    final error = endCallError;
-    if (error != null) {
-      throw error;
+    final room = _voice.rooms[callId];
+    final isTerminalWrite =
+        status.isTerminal && room?.status.isTerminal != true;
+    if (isTerminalWrite && terminalRoomWriteAttempts == 0) {
+      terminalRoomWriteAttempts += 1;
+      final error = terminalRoomWriteError;
+      if (error != null) {
+        throw error;
+      }
+      terminalRoomWriteSucceeded = true;
     }
     return _voice.endCall(
       callId: callId,
@@ -6481,7 +6503,15 @@ class RecordingVoiceSignalingAdapter extends RecordingNoopSignalingAdapter
   }
 
   @override
-  Future<VoiceCallRoom?> fetchCall(String callId) => _voice.fetchCall(callId);
+  Future<VoiceCallRoom?> fetchCall(String callId) async {
+    final room = await _voice.fetchCall(callId);
+    final error = sessionHangupFrameError;
+    if (error != null && room?.status.isTerminal == true) {
+      sessionHangupFrameFailureAttempts += 1;
+      throw error;
+    }
+    return room;
+  }
 
   @override
   Future<void> markConnected({
