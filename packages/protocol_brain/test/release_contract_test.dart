@@ -88,6 +88,13 @@ void main() {
       ),
     );
     expect(script, contains('RAIN_ALLOW_PUBLIC_TURN'));
+    expect(script, contains('RAIN_BACKGROUND_HEARTBEAT_SECONDS'));
+    expect(
+      script,
+      contains(
+        'RAIN_BACKGROUND_HEARTBEAT_SECONDS must be between 1 and 10 for release builds.',
+      ),
+    );
     expect(
       script,
       contains(
@@ -241,6 +248,18 @@ void main() {
       defines,
       contains('rain-demo-signaling-encryption-key-v1-change-me'),
     );
+  });
+
+  test('demo dart defines keep presence heartbeat safely below freshness', () {
+    final defines =
+        jsonDecode(_repoFile('apps/rain/tool/dart_defines.example.json'))
+            as Map<String, dynamic>;
+    final heartbeatSeconds = int.parse(
+      defines['RAIN_BACKGROUND_HEARTBEAT_SECONDS'] as String,
+    );
+
+    expect(heartbeatSeconds, greaterThan(0));
+    expect(heartbeatSeconds, lessThanOrEqualTo(10));
   });
 
   test('stable test pair script builds shared-key Windows and v7a APK', () {

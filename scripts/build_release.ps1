@@ -279,6 +279,17 @@ function Assert-ReleaseDartDefines([string]$Path, [switch]$AllowPublicTurnForDem
     }
   }
 
+  $heartbeatSecondsRaw = Get-JsonPropertyValue $defines 'RAIN_BACKGROUND_HEARTBEAT_SECONDS'
+  if (-not [string]::IsNullOrWhiteSpace($heartbeatSecondsRaw)) {
+    $heartbeatSeconds = 0
+    if (-not [int]::TryParse($heartbeatSecondsRaw.Trim(), [ref]$heartbeatSeconds)) {
+      throw "RAIN_BACKGROUND_HEARTBEAT_SECONDS must be an integer."
+    }
+    if ($heartbeatSeconds -le 0 -or $heartbeatSeconds -gt 10) {
+      throw "RAIN_BACKGROUND_HEARTBEAT_SECONDS must be between 1 and 10 for release builds."
+    }
+  }
+
   $rawIceServers = Get-JsonPropertyValue $defines 'RAIN_ICE_SERVERS'
   if ([string]::IsNullOrWhiteSpace($rawIceServers)) {
     throw "RAIN_ICE_SERVERS is required in release dart defines."
