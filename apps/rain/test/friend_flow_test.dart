@@ -5881,7 +5881,7 @@ void main() {
       addTearDown(harness.dispose);
 
       await harness.start();
-      final callId = await _startAndAcceptHarnessCall(
+      await _startAndAcceptHarnessCall(
         harness,
         callerIsAlice: true,
         mediaMode: protocol.CallMediaMode.audio,
