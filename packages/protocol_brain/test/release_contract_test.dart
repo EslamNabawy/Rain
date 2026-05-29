@@ -173,8 +173,8 @@ void main() {
     expect(firebaseJson, contains('"template": "remoteconfig.template.json"'));
     expect(parameters, contains('min_required_version'));
     expect(parameters, contains('update_url'));
-    expect(demoAndroid['latestVersion'], '1.0.1');
-    expect(demoAndroid['latestBuild'], 2);
+    expect(demoAndroid['latestVersion'], '1.0.2');
+    expect(demoAndroid['latestBuild'], 3);
   });
 
   test('Android release signing is required and never debug-signed', () {

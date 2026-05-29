@@ -3,8 +3,8 @@
   "channels": {
     "stable": {
       "android": {
-        "latestVersion": "1.0.1",
-        "latestBuild": 2,
+        "latestVersion": "1.0.2",
+        "latestBuild": 3,
         "minimumVersion": "1.0.0",
         "minimumBuild": 1,
         "updateUrl": "https://github.com/EslamNabawy/Rain/releases",
@@ -12,8 +12,8 @@
         "publishedAt": 1770000000000
       },
       "windows": {
-        "latestVersion": "1.0.1",
-        "latestBuild": 2,
+        "latestVersion": "1.0.2",
+        "latestBuild": 3,
         "minimumVersion": "1.0.0",
         "minimumBuild": 1,
         "updateUrl": "https://github.com/EslamNabawy/Rain/releases",
@@ -23,8 +23,8 @@
     },
     "demo": {
       "android": {
-        "latestVersion": "1.0.1",
-        "latestBuild": 2,
+        "latestVersion": "1.0.2",
+        "latestBuild": 3,
         "minimumVersion": "1.0.0",
         "minimumBuild": 1,
         "updateUrl": "https://github.com/EslamNabawy/Rain/releases",
@@ -32,8 +32,8 @@
         "publishedAt": 1770000000000
       },
       "windows": {
-        "latestVersion": "1.0.1",
-        "latestBuild": 2,
+        "latestVersion": "1.0.2",
+        "latestBuild": 3,
         "minimumVersion": "1.0.0",
         "minimumBuild": 1,
         "updateUrl": "https://github.com/EslamNabawy/Rain/releases",
