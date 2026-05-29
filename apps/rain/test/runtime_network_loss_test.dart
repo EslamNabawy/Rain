@@ -138,6 +138,7 @@ void main() {
       networkRecoveryDebounce: Duration.zero,
     );
     addTearDown(runtime.dispose);
+    await adapter.setPresence('bob', true);
     await runtime.start();
 
     brain.emitPeerDisconnected('bob');

@@ -76,7 +76,7 @@ class RainRuntimeController with WidgetsBindingObserver {
     SignalingCipher? voiceSignalingCipher,
     ConnectionRequestAdapter? connectionRequestAdapter,
     this.connectionRequestNotificationService,
-    this.heartbeatInterval = const Duration(minutes: 3),
+    this.heartbeatInterval = const Duration(seconds: 10),
     this.friendRequestRefreshInterval = Duration.zero,
     this.maxPassivePeerListeners = 32,
     this.networkRecoveryDebounce = const Duration(seconds: 2),
@@ -433,6 +433,7 @@ class RainRuntimeController with WidgetsBindingObserver {
           );
           if (recordedIntent == PeerDisconnectIntent.localManual ||
               recordedIntent == PeerDisconnectIntent.localShutdown ||
+              recordedIntent == PeerDisconnectIntent.presenceExpired ||
               recordedIntent == PeerDisconnectIntent.transportLost ||
               recordedIntent == PeerDisconnectIntent.networkLost) {
             if (recordedIntent != PeerDisconnectIntent.localManual) {

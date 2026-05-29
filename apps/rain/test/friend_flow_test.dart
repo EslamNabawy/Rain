@@ -2629,7 +2629,7 @@ void main() {
         runtime.voiceCallState.failureReason,
         VoiceCallFailureReason.peerBusy,
       );
-      expect(runtime.voiceCallState.detail, '@bob is busy in another call.');
+      expect(runtime.voiceCallState.detail, '@bob is already in a call.');
       expect(adapter.rooms, isEmpty);
       expect(adapter.activePairLocks['alice:bob']?.callId, 'existing-call');
     });
@@ -2678,7 +2678,7 @@ void main() {
           runtime.voiceCallState.failureReason,
           VoiceCallFailureReason.peerBusy,
         );
-        expect(runtime.voiceCallState.detail, '@bob is busy in another call.');
+        expect(runtime.voiceCallState.detail, '@bob is already in a call.');
         expect(adapter.rooms, isEmpty);
         expect(adapter.activeUserLocks['bob']?.callId, 'bob-cara-call');
       },
@@ -5985,7 +5985,8 @@ void main() {
           reason: 'Call ended.',
         );
         await _waitForCondition(
-          () => harness.bobRuntime.voiceCallState.phase == VoiceCallPhase.ending,
+          () =>
+              harness.bobRuntime.voiceCallState.phase == VoiceCallPhase.ending,
           'remote voice call to enter terminal cleanup',
         );
 

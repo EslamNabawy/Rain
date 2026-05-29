@@ -71,7 +71,7 @@ void main() {
         expect(
           writeRule,
           contains(
-            "now - root.child('presence/' + newData.child('to').val() + '/lastHeartbeat').val() >= 90000",
+            "now - root.child('presence/' + newData.child('to').val() + '/lastHeartbeat').val() >= 45000",
           ),
         );
       }
@@ -88,7 +88,7 @@ void main() {
       expect(
         outboxValidate,
         contains(
-          "newData.child('expiresAt').val() - newData.child('createdAt').val() <= 90000",
+          "newData.child('expiresAt').val() - newData.child('createdAt').val() <= 45000",
         ),
       );
       for (final validateRule in <String>[inboxValidate, outboxValidate]) {
@@ -212,7 +212,7 @@ void main() {
       expect(
         validate,
         contains(
-          "newData.child('expiresAt').val() - newData.child('createdAt').val() <= 90000",
+          "newData.child('expiresAt').val() - newData.child('createdAt').val() <= 45000",
         ),
       );
       expect(

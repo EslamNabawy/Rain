@@ -16,21 +16,52 @@ extension FriendRuntime on RainRuntimeController {
         await _localMutations.run(
           () => friendStore.updatePresence(username, isOnline),
         );
-        if (!isOnline) {
-          unawaited(
-            _endVoiceCallForPeer(
-              username,
-              notifyPeer: false,
-              detail: 'Peer went offline. Call ended.',
-              failureReason: VoiceCallFailureReason.networkLost,
-              failureDetail: 'Network connection lost. Call ended.',
-            ),
+        if (isOnline) {
+          final friend = await _localMutations.run(
+            () => friendStore.loadFriend(username),
           );
+          if (friend?.state == FriendState.friend &&
+              !_manualDisconnectedPeers.contains(username)) {
+            unawaited(_trackAcceptedPeer(username));
+          }
+        } else {
+          unawaited(_handlePeerPresenceExpired(username));
         }
       } catch (_) {
         // Ignore late presence callbacks during shutdown or store teardown.
       }
     });
+  }
+
+  Future<void> _handlePeerPresenceExpired(String username) async {
+    final peerId = _normalizedUsername(username);
+    _recordRuntimeEvent(
+      category: 'presence',
+      name: 'presence_session_expired',
+      severity: 'warning',
+      message: 'Peer presence expired.',
+      context: <String, Object?>{'peerId': peerId},
+    );
+    _recoverableDisconnectedPeers.remove(peerId);
+    await _endVoiceCallForPeer(
+      peerId,
+      notifyPeer: false,
+      detail: 'Peer closed Rain. Connection ended.',
+      failureReason: VoiceCallFailureReason.networkLost,
+      failureDetail: 'Peer closed Rain. Connection ended.',
+    );
+    unawaited(
+      _failActiveTransfersForPeer(
+        peerId,
+        'Peer closed Rain. Transfer canceled.',
+      ),
+    );
+    try {
+      await _disconnectBrainPeer(peerId, PeerDisconnectIntent.presenceExpired);
+      await _unregisterPeerListener(peerId);
+    } catch (_) {
+      // Presence expiry cleanup is best effort; the peer is already stale.
+    }
   }
 
   Future<void> _trackAcceptedPeer(String username) async {

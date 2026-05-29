@@ -1218,10 +1218,7 @@ extension VoiceCallRuntime on RainRuntimeController {
     );
   }
 
-  String _terminalVoiceCallDetailForRoom(
-    VoiceCallRoom room,
-    String localUser,
-  ) {
+  String _terminalVoiceCallDetailForRoom(VoiceCallRoom room, String localUser) {
     if (room.status == VoiceCallSignalingStatus.ended &&
         room.endedBy != null &&
         room.endedBy != localUser) {
@@ -1925,7 +1922,7 @@ extension VoiceCallRuntime on RainRuntimeController {
     }
     if (state.reasonCode == _voiceCallBusyReasonCode ||
         state.detail == 'Peer is busy.') {
-      return 'Peer is busy.';
+      return 'Peer is already in a call.';
     }
     if (state.reasonCode == _voiceCallRejectedReasonCode ||
         state.detail == 'Rejected.') {
@@ -3250,6 +3247,10 @@ extension VoiceCallRuntime on RainRuntimeController {
     }
 
     final peerOnline = identity.online;
+    final now = DateTime.now().millisecondsSinceEpoch;
+    final presenceAgeMs = identity.lastHeartbeat <= 0
+        ? null
+        : now - identity.lastHeartbeat;
     await _localMutations.run(
       () => friendStore.updatePresence(normalizedPeerId, peerOnline),
     );
@@ -3269,9 +3270,23 @@ extension VoiceCallRuntime on RainRuntimeController {
           'presenceSource': 'backend',
           'lastHeartbeat': identity.lastHeartbeat,
           'lastSeen': identity.lastSeen,
+          'presenceAgeMs': presenceAgeMs,
         },
       );
       decision.throwIfDenied();
+    } else {
+      _recordRuntimeEvent(
+        category: 'call',
+        name: 'call_start_presence_confirmed',
+        context: <String, Object?>{
+          'peerId': normalizedPeerId,
+          'mediaMode': mediaMode.name,
+          'presenceSource': 'backend',
+          'lastHeartbeat': identity.lastHeartbeat,
+          'lastSeen': identity.lastSeen,
+          'presenceAgeMs': presenceAgeMs,
+        },
+      );
     }
   }
 
@@ -3580,9 +3595,9 @@ extension VoiceCallRuntime on RainRuntimeController {
       final busyUser = _voiceCallBusyUser(normalized);
       if (busyUser != null &&
           busyUser != _normalizedUsername(selfIdentity.username)) {
-        return '@$busyUser is busy in another call.';
+        return '@$busyUser is already in a call.';
       }
-      return 'Peer is busy.';
+      return 'Peer is already in a call.';
     }
     if (_isVoiceCallRejectedError(normalized)) {
       return _voiceCallRejected;

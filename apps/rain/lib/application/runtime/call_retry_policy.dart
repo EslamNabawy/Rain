@@ -89,7 +89,7 @@ final class CallRetryPolicy {
     if (isBusyConflictMessage(message)) {
       return CallRetryDecision(
         kind: CallRetryDecisionKind.peerBusy,
-        userMessage: '$peer is busy in another call.',
+        userMessage: '$peer is already in a call.',
       );
     }
     return const CallRetryDecision(

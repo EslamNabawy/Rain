@@ -1238,7 +1238,7 @@ void main() {
       ),
     );
 
-    expect(find.text('Peer is busy.'), findsOneWidget);
+    expect(find.text('Peer is already in a call.'), findsOneWidget);
     expect(find.textContaining('Active voice call'), findsNothing);
     expect(find.text('Retry'), findsNothing);
   });
@@ -1305,7 +1305,7 @@ void main() {
     expect(selected, 'mic-1');
   });
 
-  testWidgets('call overlay expands and minimizes active calls', (
+  testWidgets('call overlay renders fullscreen active controls', (
     WidgetTester tester,
   ) async {
     var minimized = false;
@@ -1332,6 +1332,7 @@ void main() {
                   onToggleMute: () => muted = true,
                   onMinimize: () => minimized = true,
                   onExpand: () {},
+                  onExitFullscreen: () => minimized = true,
                 ),
               ),
             ],
@@ -1341,39 +1342,106 @@ void main() {
     );
 
     expect(
-      find.byKey(const ValueKey<String>('rain-call-voice-popup-layout')),
+      find.byKey(const ValueKey<String>('rain-call-video-fullscreen-surface')),
       findsOneWidget,
     );
     expect(
-      find.byKey(const ValueKey<String>('rain-call-popup-identity')),
+      find.byKey(const ValueKey<String>('rain-call-fullscreen-status-strip')),
       findsOneWidget,
     );
     expect(
-      find.byKey(const ValueKey<String>('rain-call-popup-media')),
+      find.byKey(const ValueKey<String>('rain-call-audio-stage')),
       findsOneWidget,
     );
     expect(
-      find.byKey(const ValueKey<String>('rain-call-control-dock')),
+      find.byKey(const ValueKey<String>('rain-call-fullscreen-controls')),
       findsOneWidget,
     );
-    expect(find.text('Voice call with Bob'), findsOneWidget);
-    expect(find.byTooltip('Minimize call'), findsOneWidget);
+    expect(find.byTooltip('Exit fullscreen'), findsWidgets);
 
     await tester.tap(find.byTooltip('Mute microphone'));
     expect(muted, isTrue);
 
-    await tester.tap(find.byTooltip('Minimize call'));
+    await tester.tap(find.byTooltip('Exit fullscreen').first);
     expect(minimized, isTrue);
 
     await tester.tap(find.byTooltip('Hang up'));
     expect(hungUp, isTrue);
   });
 
-  testWidgets('call overlay popup can be dragged without blocking actions', (
+  testWidgets('video PiP can be dragged and restored', (
+    WidgetTester tester,
+  ) async {
+    var restored = false;
+    var offset = const Offset(48, 56);
+    final videoCall = _activeVoiceCall(
+      mediaMode: CallMediaMode.video,
+      hasRemoteVideo: true,
+    );
+
+    await tester.pumpWidget(
+      MaterialApp(
+        home: Scaffold(
+          body: StatefulBuilder(
+            builder: (BuildContext context, StateSetter setState) {
+              return Stack(
+                children: <Widget>[
+                  Positioned.fill(
+                    child: RainCallOverlay(
+                      state: videoCall,
+                      surface: CallSurfaceState.visible(
+                        peerId: 'bob',
+                        callId: 'call-1',
+                        mediaMode: CallMediaMode.video,
+                        mode: CallSurfaceMode.pip,
+                        floatingOffset: offset,
+                      ),
+                      displayName: 'Bob',
+                      onAccept: () {},
+                      onReject: () {},
+                      onHangUp: () {},
+                      onRetry: () {},
+                      onToggleMute: () {},
+                      onMinimize: () {},
+                      onExpand: () => restored = true,
+                      onMoveFloating:
+                          (
+                            Offset delta,
+                            Size viewportSize,
+                            EdgeInsets safePadding,
+                            Size panelSize,
+                          ) => setState(() => offset += delta),
+                    ),
+                  ),
+                ],
+              );
+            },
+          ),
+        ),
+      ),
+    );
+
+    await tester.pumpAndSettle();
+    final pipFinder = find.byKey(
+      const ValueKey<String>('rain-call-video-pip-window'),
+    );
+    final before = tester.getTopLeft(pipFinder);
+
+    await tester.drag(pipFinder, const Offset(90, 60));
+    await tester.pumpAndSettle();
+
+    final after = tester.getTopLeft(pipFinder);
+    expect(after.dx, greaterThan(before.dx + 40));
+    expect(after.dy, greaterThan(before.dy + 30));
+
+    await tester.tap(pipFinder);
+    expect(restored, isTrue);
+  });
+
+  testWidgets('incoming fullscreen controls are not draggable popups', (
     WidgetTester tester,
   ) async {
     var accepted = false;
-    var offset = const Offset(48, 56);
     const incomingCall = VoiceCallState(
       phase: VoiceCallPhase.incomingRinging,
       peerId: 'bob',
@@ -1393,7 +1461,6 @@ void main() {
                       surface: CallSurfaceState.visible(
                         peerId: 'bob',
                         callId: 'call-1',
-                        floatingOffset: offset,
                       ),
                       displayName: 'Bob',
                       onAccept: () => accepted = true,
@@ -1403,13 +1470,6 @@ void main() {
                       onToggleMute: () {},
                       onMinimize: () {},
                       onExpand: () {},
-                      onMoveFloating:
-                          (
-                            Offset delta,
-                            Size viewportSize,
-                            EdgeInsets safePadding,
-                            Size panelSize,
-                          ) => setState(() => offset += delta),
                     ),
                   ),
                 ],
@@ -1421,20 +1481,14 @@ void main() {
     );
 
     await tester.pumpAndSettle();
-    final panelFinder = find.byKey(
-      const ValueKey<String>('rain-call-panel-surface'),
+    expect(
+      find.byKey(const ValueKey<String>('rain-call-video-fullscreen-surface')),
+      findsOneWidget,
     );
-    final before = tester.getTopLeft(panelFinder);
-
-    await tester.drag(
+    expect(
       find.byKey(const ValueKey<String>('rain-call-popup-drag-handle')),
-      const Offset(90, 60),
+      findsNothing,
     );
-    await tester.pumpAndSettle();
-
-    final after = tester.getTopLeft(panelFinder);
-    expect(after.dx, greaterThan(before.dx + 40));
-    expect(after.dy, greaterThan(before.dy + 30));
 
     await tester.tap(
       find.byKey(const ValueKey<String>('rain-call-accept-button')),
@@ -1515,7 +1569,7 @@ void main() {
     );
 
     expect(
-      find.byKey(const ValueKey<String>('rain-call-voice-popup-layout')),
+      find.byKey(const ValueKey<String>('rain-call-video-fullscreen-surface')),
       findsOneWidget,
     );
     expect(
@@ -1553,11 +1607,11 @@ void main() {
     );
 
     expect(
-      find.byKey(const ValueKey<String>('rain-call-video-popup-layout')),
+      find.byKey(const ValueKey<String>('rain-call-video-fullscreen-surface')),
       findsOneWidget,
     );
     expect(
-      find.byKey(const ValueKey<String>('rain-call-popup-media')),
+      find.byKey(const ValueKey<String>('rain-call-video-fullscreen-layout')),
       findsOneWidget,
     );
     expect(
@@ -1572,7 +1626,7 @@ void main() {
       find.byKey(const ValueKey<String>('rain-call-video-peer-core-mark')),
       findsOneWidget,
     );
-    expect(find.byTooltip('Fullscreen video'), findsOneWidget);
+    expect(find.byTooltip('Exit fullscreen'), findsWidgets);
     expect(_findRuntimeType('RTCVideoView'), findsNothing);
   });
 
@@ -1635,7 +1689,7 @@ void main() {
     );
 
     expect(
-      find.byKey(const ValueKey<String>('rain-call-video-popup-layout')),
+      find.byKey(const ValueKey<String>('rain-call-video-fullscreen-surface')),
       findsOneWidget,
     );
     expect(
@@ -1956,17 +2010,17 @@ void main() {
     );
   });
 
-  testWidgets('expanded call surface suppresses the top manager bar', (
+  testWidgets('fullscreen call surface suppresses the top manager bar', (
     WidgetTester tester,
   ) async {
     await _pumpCallSurfaceStack(
       tester,
       _activeVoiceCall(),
-      surfaceMode: CallSurfaceMode.expanded,
+      surfaceMode: CallSurfaceMode.fullscreen,
     );
 
     expect(
-      find.byKey(const ValueKey<String>('rain-call-panel-surface')),
+      find.byKey(const ValueKey<String>('rain-call-video-fullscreen-surface')),
       findsOneWidget,
     );
     expect(
@@ -2032,14 +2086,14 @@ void main() {
     );
   });
 
-  testWidgets('drag handle is available only on expanded call popup', (
+  testWidgets('popup drag handle is removed from all call surfaces', (
     WidgetTester tester,
   ) async {
     await _pumpCallOverlay(tester, _activeVoiceCall());
 
     expect(
       find.byKey(const ValueKey<String>('rain-call-popup-drag-handle')),
-      findsOneWidget,
+      findsNothing,
     );
 
     await _pumpCallOverlay(
@@ -2231,13 +2285,12 @@ void main() {
     );
 
     expect(find.text('Bob'), findsWidgets);
-    expect(find.text('Incoming voice call'), findsOneWidget);
     expect(
-      find.byKey(const ValueKey<String>('rain-call-voice-popup-layout')),
+      find.byKey(const ValueKey<String>('rain-call-video-fullscreen-surface')),
       findsOneWidget,
     );
     expect(
-      find.byKey(const ValueKey<String>('rain-call-control-dock')),
+      find.byKey(const ValueKey<String>('rain-call-fullscreen-controls')),
       findsOneWidget,
     );
     expect(
@@ -2312,7 +2365,7 @@ void main() {
     expect(declineFinder, findsOneWidget);
     expect(acceptFinder, findsOneWidget);
     expect(
-      find.byKey(const ValueKey<String>('rain-call-incoming-focus')),
+      find.byKey(const ValueKey<String>('rain-call-fullscreen-status-strip')),
       findsOneWidget,
     );
     expect(declineRect.height, greaterThanOrEqualTo(56));
@@ -2455,26 +2508,17 @@ void main() {
     );
 
     expect(
-      find.text('Call media could not connect. Try again.'),
+      find.byKey(const ValueKey<String>('rain-call-video-fullscreen-surface')),
       findsOneWidget,
     );
     expect(
-      find.byKey(const ValueKey<String>('rain-call-panel-surface')),
+      find.byKey(const ValueKey<String>('rain-call-fullscreen-status-strip')),
       findsOneWidget,
     );
     expect(
-      find.byKey(const ValueKey<String>('rain-call-failure-popup-layout')),
+      find.byKey(const ValueKey<String>('rain-call-fullscreen-controls')),
       findsOneWidget,
     );
-    expect(
-      find.byKey(const ValueKey<String>('rain-call-failure-focus')),
-      findsOneWidget,
-    );
-    expect(
-      find.byKey(const ValueKey<String>('rain-call-control-dock')),
-      findsOneWidget,
-    );
-    expect(find.byType(RainStreakSurface), findsWidgets);
     expect(find.textContaining('RTCRtpTransceiver'), findsNothing);
 
     await tester.tap(find.text('Retry'));

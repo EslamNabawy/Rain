@@ -159,7 +159,7 @@ class AppEnvironment {
         compileTimeValue: const String.fromEnvironment(
           'RAIN_BACKGROUND_HEARTBEAT_SECONDS',
         ),
-        defaultValue: 30,
+        defaultValue: 10,
       ),
       allowPublicTurn: readBool(
         'RAIN_ALLOW_PUBLIC_TURN',
@@ -442,7 +442,7 @@ class AppEnvironment {
   }
 
   Duration get heartbeatInterval => Duration(
-    seconds: backgroundHeartbeatSeconds > 0 ? backgroundHeartbeatSeconds : 30,
+    seconds: backgroundHeartbeatSeconds > 0 ? backgroundHeartbeatSeconds : 10,
   );
 
   String get backendLabel => switch (backend) {

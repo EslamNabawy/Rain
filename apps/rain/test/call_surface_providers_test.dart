@@ -5,7 +5,7 @@ import 'package:rain/application/runtime/voice_call_state.dart';
 import 'package:rain/application/state/call_surface_providers.dart';
 
 void main() {
-  test('new incoming call expands the call surface', () {
+  test('new incoming call opens fullscreen call surface', () {
     final harness = _CallSurfaceHarness();
     addTearDown(harness.dispose);
 
@@ -16,14 +16,14 @@ void main() {
     );
 
     expect(harness.surface.isVisible, isTrue);
-    expect(harness.surface.mode, CallSurfaceMode.expanded);
-    expect(harness.surface.restoreMode, CallSurfaceMode.expanded);
+    expect(harness.surface.mode, CallSurfaceMode.fullscreen);
+    expect(harness.surface.restoreMode, CallSurfaceMode.fullscreen);
     expect(harness.surface.mediaMode, CallMediaMode.audio);
     expect(harness.surface.peerId, 'bob');
     expect(harness.surface.callId, 'call-1');
   });
 
-  test('new outgoing call expands and resets older surface mode', () {
+  test('new outgoing call opens fullscreen and resets older surface mode', () {
     final harness = _CallSurfaceHarness();
     addTearDown(harness.dispose);
 
@@ -39,12 +39,12 @@ void main() {
     );
 
     expect(harness.surface.isVisible, isTrue);
-    expect(harness.surface.mode, CallSurfaceMode.expanded);
-    expect(harness.surface.restoreMode, CallSurfaceMode.expanded);
+    expect(harness.surface.mode, CallSurfaceMode.fullscreen);
+    expect(harness.surface.restoreMode, CallSurfaceMode.fullscreen);
     expect(harness.surface.callId, 'call-2');
   });
 
-  test('voice call minimize becomes manager-only and restores expanded', () {
+  test('voice call minimize becomes manager-only and restores fullscreen', () {
     final harness = _CallSurfaceHarness();
     addTearDown(harness.dispose);
 
@@ -52,19 +52,19 @@ void main() {
     harness.container.read(callSurfaceProvider.notifier).minimize();
 
     expect(harness.surface.mode, CallSurfaceMode.managerOnly);
-    expect(harness.surface.restoreMode, CallSurfaceMode.expanded);
+    expect(harness.surface.restoreMode, CallSurfaceMode.fullscreen);
     expect(harness.surface.hasMediaPanel, isFalse);
 
     harness.setVoiceCall(_voiceCall(updatedAt: 2));
 
     expect(harness.surface.isVisible, isTrue);
     expect(harness.surface.mode, CallSurfaceMode.managerOnly);
-    expect(harness.surface.restoreMode, CallSurfaceMode.expanded);
+    expect(harness.surface.restoreMode, CallSurfaceMode.fullscreen);
     expect(harness.surface.callId, 'call-1');
 
     harness.container.read(callSurfaceProvider.notifier).restore();
 
-    expect(harness.surface.mode, CallSurfaceMode.expanded);
+    expect(harness.surface.mode, CallSurfaceMode.fullscreen);
     expect(harness.surface.hasMediaPanel, isTrue);
   });
 
@@ -173,7 +173,7 @@ void main() {
 
     harness.container.read(callSurfaceProvider.notifier).restore();
 
-    expect(harness.surface.mode, CallSurfaceMode.pip);
+    expect(harness.surface.mode, CallSurfaceMode.fullscreen);
   });
 
   test('video primary role toggles for current video call only', () {
@@ -209,7 +209,7 @@ void main() {
     expect(harness.surface.videoPrimaryRole, VideoPrimaryRole.remote);
   });
 
-  test('fullscreen returns to the previous useful video mode', () {
+  test('fullscreen exit minimizes video to PiP', () {
     final harness = _CallSurfaceHarness();
     addTearDown(harness.dispose);
 
@@ -218,20 +218,19 @@ void main() {
     harness.container.read(callSurfaceProvider.notifier).enterFullscreen();
 
     expect(harness.surface.mode, CallSurfaceMode.fullscreen);
-    expect(harness.surface.restoreMode, CallSurfaceMode.expanded);
+    expect(harness.surface.restoreMode, CallSurfaceMode.fullscreen);
 
     harness.container.read(callSurfaceProvider.notifier).exitFullscreen();
 
-    expect(harness.surface.mode, CallSurfaceMode.expanded);
+    expect(harness.surface.mode, CallSurfaceMode.pip);
 
-    harness.container.read(callSurfaceProvider.notifier).minimize();
     harness.container.read(callSurfaceProvider.notifier).enterFullscreen();
     harness.container.read(callSurfaceProvider.notifier).restore();
 
     expect(harness.surface.mode, CallSurfaceMode.pip);
   });
 
-  test('back intent exits fullscreen before minimizing video', () {
+  test('back intent minimizes fullscreen video to PiP before manager-only', () {
     final harness = _CallSurfaceHarness();
     addTearDown(harness.dispose);
 
@@ -241,9 +240,6 @@ void main() {
     controller.enterFullscreen();
 
     expect(harness.surface.mode, CallSurfaceMode.fullscreen);
-    expect(controller.handleBackIntent(), isTrue);
-    expect(harness.surface.mode, CallSurfaceMode.expanded);
-
     expect(controller.handleBackIntent(), isTrue);
     expect(harness.surface.mode, CallSurfaceMode.pip);
 
@@ -268,32 +264,35 @@ void main() {
     expect(harness.surface.mode, CallSurfaceMode.managerOnly);
   });
 
-  test('failed call expands for action and ended call clears the surface', () {
-    final harness = _CallSurfaceHarness();
-    addTearDown(harness.dispose);
+  test(
+    'failed call opens fullscreen for action and ended call clears the surface',
+    () {
+      final harness = _CallSurfaceHarness();
+      addTearDown(harness.dispose);
 
-    harness.setVoiceCall(_voiceCall());
-    harness.container.read(callSurfaceProvider.notifier).minimize();
+      harness.setVoiceCall(_voiceCall());
+      harness.container.read(callSurfaceProvider.notifier).minimize();
 
-    harness.setVoiceCall(
-      _voiceCall(
-        phase: VoiceCallPhase.failed,
-        failureReason: VoiceCallFailureReason.mediaConnectionFailed,
-      ),
-    );
+      harness.setVoiceCall(
+        _voiceCall(
+          phase: VoiceCallPhase.failed,
+          failureReason: VoiceCallFailureReason.mediaConnectionFailed,
+        ),
+      );
 
-    expect(harness.surface.isVisible, isTrue);
-    expect(harness.surface.mode, CallSurfaceMode.expanded);
-    expect(harness.surface.restoreMode, CallSurfaceMode.expanded);
-    expect(harness.surface.callId, 'call-1');
+      expect(harness.surface.isVisible, isTrue);
+      expect(harness.surface.mode, CallSurfaceMode.fullscreen);
+      expect(harness.surface.restoreMode, CallSurfaceMode.fullscreen);
+      expect(harness.surface.callId, 'call-1');
 
-    harness.setVoiceCall(_voiceCall());
-    harness.setVoiceCall(const VoiceCallState.idle());
+      harness.setVoiceCall(_voiceCall());
+      harness.setVoiceCall(const VoiceCallState.idle());
 
-    expect(harness.surface, const CallSurfaceState.hidden());
-  });
+      expect(harness.surface, const CallSurfaceState.hidden());
+    },
+  );
 
-  test('audio call strips video-only pip and fullscreen modes', () {
+  test('audio call strips video-only pip mode', () {
     final harness = _CallSurfaceHarness();
     addTearDown(harness.dispose);
 
@@ -304,8 +303,8 @@ void main() {
 
     harness.setVoiceCall(_voiceCall(mediaMode: CallMediaMode.audio));
 
-    expect(harness.surface.mode, CallSurfaceMode.expanded);
-    expect(harness.surface.restoreMode, CallSurfaceMode.expanded);
+    expect(harness.surface.mode, CallSurfaceMode.managerOnly);
+    expect(harness.surface.restoreMode, CallSurfaceMode.fullscreen);
     expect(harness.surface.mediaMode, CallMediaMode.audio);
   });
 
@@ -346,6 +345,7 @@ void main() {
 
     harness.setVoiceCall(_voiceCall(mediaMode: CallMediaMode.video));
     final controller = harness.container.read(callSurfaceProvider.notifier);
+    controller.minimize();
     const viewportSize = Size(400, 600);
     const safePadding = EdgeInsets.only(top: 20, bottom: 30);
     const panelSize = Size(100, 120);
@@ -375,6 +375,7 @@ void main() {
 
     harness.setVoiceCall(_voiceCall(mediaMode: CallMediaMode.video));
     final controller = harness.container.read(callSurfaceProvider.notifier);
+    controller.minimize();
 
     controller.moveFloatingPanel(
       delta: const Offset(-10000, -10000),
@@ -392,6 +393,7 @@ void main() {
 
     harness.setVoiceCall(_voiceCall(mediaMode: CallMediaMode.video));
     final controller = harness.container.read(callSurfaceProvider.notifier);
+    controller.minimize();
     controller.moveFloatingPanel(
       delta: const Offset(40, 50),
       viewportSize: const Size(600, 800),
@@ -412,14 +414,15 @@ void main() {
     addTearDown(harness.dispose);
 
     harness.setVoiceCall(_voiceCall(mediaMode: CallMediaMode.video));
-    harness.container
-        .read(callSurfaceProvider.notifier)
-        .moveFloatingPanel(
-          delta: const Offset(40, 50),
-          viewportSize: const Size(600, 800),
-          safePadding: EdgeInsets.zero,
-          panelSize: const Size(300, 360),
-        );
+    final controller = harness.container.read(callSurfaceProvider.notifier);
+    controller.minimize();
+    controller.moveFloatingPanel(
+      delta: const Offset(40, 50),
+      viewportSize: const Size(600, 800),
+      safePadding: EdgeInsets.zero,
+      panelSize: const Size(300, 360),
+    );
+    expect(harness.surface.floatingOffset, isNotNull);
 
     harness.setVoiceCall(
       _voiceCall(mediaMode: CallMediaMode.video, callId: 'call-2'),

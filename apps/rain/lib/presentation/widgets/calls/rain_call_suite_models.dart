@@ -220,14 +220,12 @@ final class CallSuitePresentationState {
       surfaceMode == CallSuiteSurfaceMode.videoPip;
 
   bool get showsFullscreenWorkspace =>
-      surfaceMode == CallSuiteSurfaceMode.activeFullscreen;
-
-  bool get showsFloatingSurface =>
+      surfaceMode == CallSuiteSurfaceMode.activeFullscreen ||
       surfaceMode == CallSuiteSurfaceMode.incoming ||
       surfaceMode == CallSuiteSurfaceMode.outgoing ||
-      surfaceMode == CallSuiteSurfaceMode.activePopup ||
-      surfaceMode == CallSuiteSurfaceMode.failed ||
-      surfaceMode == CallSuiteSurfaceMode.videoPip;
+      surfaceMode == CallSuiteSurfaceMode.failed;
+
+  bool get showsFloatingSurface => surfaceMode == CallSuiteSurfaceMode.videoPip;
 
   bool get showsEndedSurface => surfaceMode == CallSuiteSurfaceMode.ended;
 
@@ -261,7 +259,7 @@ CallSuiteSurfaceMode _surfaceModeFor(
         callState.isVideo
             ? CallSuiteSurfaceMode.videoPip
             : CallSuiteSurfaceMode.minimizedBar,
-      CallSurfaceMode.expanded => CallSuiteSurfaceMode.activePopup,
+      CallSurfaceMode.expanded => CallSuiteSurfaceMode.activeFullscreen,
     },
   };
 }

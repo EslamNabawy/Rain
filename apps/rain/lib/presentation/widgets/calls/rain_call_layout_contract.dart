@@ -1,6 +1,6 @@
 import 'package:rain/application/state/call_surface_providers.dart';
 
-enum RainCallSurfaceMode { minimized, popup, fullscreen, pip }
+enum RainCallSurfaceMode { minimized, fullscreen, pip }
 
 enum RainVideoRole { remotePrimary, localPrimary }
 
@@ -37,9 +37,7 @@ final class RainCallLayoutContract {
           mode == RainCallSurfaceMode.minimized ||
           mode == RainCallSurfaceMode.pip,
       showMediaSurface: mode != RainCallSurfaceMode.minimized,
-      showExpandedControls:
-          mode == RainCallSurfaceMode.popup ||
-          mode == RainCallSurfaceMode.fullscreen,
+      showExpandedControls: mode == RainCallSurfaceMode.fullscreen,
       showDesktopSidePanel: mode == RainCallSurfaceMode.fullscreen && isDesktop,
     );
   }
@@ -59,7 +57,7 @@ final class RainCallLayoutContract {
 RainCallSurfaceMode _surfaceModeFor(CallSurfaceMode mode) {
   return switch (mode) {
     CallSurfaceMode.managerOnly => RainCallSurfaceMode.minimized,
-    CallSurfaceMode.expanded => RainCallSurfaceMode.popup,
+    CallSurfaceMode.expanded => RainCallSurfaceMode.fullscreen,
     CallSurfaceMode.fullscreen => RainCallSurfaceMode.fullscreen,
     CallSurfaceMode.pip => RainCallSurfaceMode.pip,
   };

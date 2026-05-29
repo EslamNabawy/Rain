@@ -45,7 +45,7 @@ void main() {
     expect(find.byTooltip('Hang up'), findsOneWidget);
   });
 
-  testWidgets('manager hides while expanded popup owns controls', (
+  testWidgets('manager hides while fullscreen surface owns controls', (
     WidgetTester tester,
   ) async {
     await _pumpManager(
@@ -187,13 +187,15 @@ void main() {
         ),
       );
 
-      final panelTop = tester
+      final stripTop = tester
           .getTopLeft(
-            find.byKey(const ValueKey<String>('rain-call-panel-surface')),
+            find.byKey(
+              const ValueKey<String>('rain-call-fullscreen-status-strip'),
+            ),
           )
           .dy;
 
-      expect(panelTop, greaterThanOrEqualTo(48));
+      expect(stripTop, greaterThanOrEqualTo(36));
     },
   );
 
@@ -293,50 +295,37 @@ void main() {
     expect(decoration.boxShadow, isEmpty);
   });
 
-  testWidgets(
-    'low-power overlay removes panel shadow and transition duration',
-    (WidgetTester tester) async {
-      await _pumpOverlay(
-        tester,
-        state: _activeCall(),
-        surface: const CallSurfaceState.visible(
-          peerId: 'bob',
-          callId: 'call-1',
-        ),
-        performanceProfile: RainPerformanceProfile.detectForTest(
-          abiName: 'armeabi-v7a',
-        ),
-      );
+  testWidgets('low-power overlay uses fullscreen surface without popup panel', (
+    WidgetTester tester,
+  ) async {
+    await _pumpOverlay(
+      tester,
+      state: _activeCall(),
+      surface: const CallSurfaceState.visible(peerId: 'bob', callId: 'call-1'),
+      performanceProfile: RainPerformanceProfile.detectForTest(
+        abiName: 'armeabi-v7a',
+      ),
+    );
 
-      final halo = tester.widget<RainRippleHaloSurface>(
-        find.byKey(const ValueKey<String>('rain-call-panel-surface')),
-      );
-      expect(halo.callSurface, isTrue);
-
-      final animatedPanel = tester.widget<AnimatedContainer>(
-        find
-            .descendant(
-              of: find.byKey(const ValueKey<String>('rain-call-panel-surface')),
-              matching: find.byType(AnimatedContainer),
-            )
-            .first,
-      );
-      expect(animatedPanel.duration, Duration.zero);
-
-      final decoration = animatedPanel.decoration! as BoxDecoration;
-      expect(decoration.boxShadow, isEmpty);
-    },
-  );
+    expect(
+      find.byKey(const ValueKey<String>('rain-call-video-fullscreen-surface')),
+      findsOneWidget,
+    );
+    expect(
+      find.byKey(const ValueKey<String>('rain-call-panel-surface')),
+      findsNothing,
+    );
+  });
 
   test('layout contract maps call surfaces without duplicated controls', () {
-    final popup = RainCallLayoutContract.fromSurface(
+    final defaultSurface = RainCallLayoutContract.fromSurface(
       const CallSurfaceState.visible(peerId: 'bob', callId: 'call-1'),
       isDesktop: false,
     );
-    expect(popup.surfaceMode, RainCallSurfaceMode.popup);
-    expect(popup.showTopManagerBar, isFalse);
-    expect(popup.showMediaSurface, isTrue);
-    expect(popup.showExpandedControls, isTrue);
+    expect(defaultSurface.surfaceMode, RainCallSurfaceMode.fullscreen);
+    expect(defaultSurface.showTopManagerBar, isFalse);
+    expect(defaultSurface.showMediaSurface, isTrue);
+    expect(defaultSurface.showExpandedControls, isTrue);
 
     final minimized = RainCallLayoutContract.fromSurface(
       const CallSurfaceState.visible(
@@ -381,7 +370,7 @@ void main() {
     expect(fullscreen.showDesktopSidePanel, isTrue);
   });
 
-  testWidgets('top call manager is hidden while popup is expanded', (
+  testWidgets('top call manager is hidden while fullscreen surface is active', (
     WidgetTester tester,
   ) async {
     await _pumpCallSurface(
@@ -394,12 +383,13 @@ void main() {
       find.byKey(const ValueKey<String>('rain-call-manager-bar')),
       findsNothing,
     );
+    expect(find.byKey(const ValueKey<String>('rain-call-popup')), findsNothing);
     expect(
-      find.byKey(const ValueKey<String>('rain-call-popup')),
+      find.byKey(const ValueKey<String>('rain-call-video-fullscreen-surface')),
       findsOneWidget,
     );
     expect(
-      find.byKey(const ValueKey<String>('rain-call-control-dock')),
+      find.byKey(const ValueKey<String>('rain-call-fullscreen-controls')),
       findsOneWidget,
     );
   });

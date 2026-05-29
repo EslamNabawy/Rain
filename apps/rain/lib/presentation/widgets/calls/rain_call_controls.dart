@@ -983,7 +983,7 @@ String rainVoiceCallFailureDetail(VoiceCallState state) {
     VoiceCallFailureReason.cameraDenied => 'Camera permission required.',
     VoiceCallFailureReason.remoteCameraDenied =>
       'Peer camera permission required.',
-    VoiceCallFailureReason.peerBusy => 'Peer is busy.',
+    VoiceCallFailureReason.peerBusy => 'Peer is already in a call.',
     VoiceCallFailureReason.fileTransferActive =>
       'Finish the active file transfer first.',
     VoiceCallFailureReason.rejected => 'Call declined.',
@@ -1063,7 +1063,7 @@ String rainSanitizeVoiceCallFailureDetail(String? detail) {
       normalized.contains('active voice call already exists') ||
       normalized.contains('activevoicepairs') ||
       normalized.contains('active voice pair')) {
-    return 'Peer is busy.';
+    return 'Peer is already in a call.';
   }
   if (normalized.contains('active file transfer')) {
     return 'Finish the active file transfer first.';

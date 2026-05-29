@@ -7,6 +7,7 @@ enum PeerDisconnectIntent {
   localManual,
   localShutdown,
   remoteManual,
+  presenceExpired,
   transportLost,
   networkLost,
 }

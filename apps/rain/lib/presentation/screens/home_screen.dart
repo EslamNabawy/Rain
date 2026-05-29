@@ -73,7 +73,7 @@ String _formatUiError(Object error) {
       normalized.contains('active voice call already exists') ||
       normalized.contains('activevoicepairs') ||
       normalized.contains('active voice pair')) {
-    return 'Peer is busy.';
+    return 'Peer is already in a call.';
   }
   if (normalized == 'rejected.' ||
       normalized.contains('call declined') ||

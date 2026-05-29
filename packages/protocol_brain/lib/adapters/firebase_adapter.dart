@@ -42,6 +42,7 @@ class FirebaseSignalingAdapter
   final String _sessionId = DateTime.now().microsecondsSinceEpoch.toRadixString(
     36,
   );
+  final int _sessionStartedAt = DateTime.now().millisecondsSinceEpoch;
   bool _emulatorsConfigured = false;
   String _emailFromUsername(String username) => '$username@rain.local';
 
@@ -98,7 +99,7 @@ class FirebaseSignalingAdapter
 
   DatabaseReference get _root => _database.ref();
 
-  static const int _presenceTimeoutMs = 90 * 1000;
+  static const int _presenceTimeoutMs = 30 * 1000;
   static const int _roomTtlMs = 15 * 60 * 1000;
   static const int _orphanVoiceLockGraceMs = 15000;
   static const int _searchLimit = 10;
@@ -123,6 +124,7 @@ class FirebaseSignalingAdapter
     required String uid,
     required bool online,
     required int now,
+    String state = 'online',
   }) {
     return <String, Object?>{
       'uid': uid,
@@ -131,7 +133,26 @@ class FirebaseSignalingAdapter
       'lastSeen': now,
       'updatedAt': now,
       'sessionId': _sessionId,
+      'startedAt': _sessionStartedAt,
       'platform': 'flutter',
+      'state': state,
+    };
+  }
+
+  Map<String, Object?> _offlinePresenceJson({
+    required String uid,
+    required int now,
+  }) {
+    return <String, Object?>{
+      'uid': uid,
+      'online': false,
+      'lastHeartbeat': now,
+      'lastSeen': now,
+      'updatedAt': now,
+      'sessionId': _sessionId,
+      'startedAt': _sessionStartedAt,
+      'platform': 'flutter',
+      'state': 'offline',
     };
   }
 
@@ -1648,9 +1669,18 @@ class FirebaseSignalingAdapter
     await _ensureSignedInAsUsername(username);
     final now = DateTime.now().millisecondsSinceEpoch;
     final uid = _auth.currentUser?.uid ?? '';
-    await _root
-        .child('presence/$username')
-        .update(_presenceJson(uid: uid, online: online, now: now));
+    final presenceRef = _root.child('presence/$username');
+    if (online) {
+      await _registerPresenceDisconnect(presenceRef, uid: uid);
+    }
+    await presenceRef.update(
+      _presenceJson(
+        uid: uid,
+        online: online,
+        now: now,
+        state: online ? 'online' : 'offline',
+      ),
+    );
   }
 
   @override
@@ -1878,9 +1908,24 @@ class FirebaseSignalingAdapter
     await _ensureSignedInAsUsername(username);
     final now = DateTime.now().millisecondsSinceEpoch;
     final uid = _auth.currentUser?.uid ?? '';
-    await _root
-        .child('presence/$username')
-        .update(_presenceJson(uid: uid, online: true, now: now));
+    final presenceRef = _root.child('presence/$username');
+    await _registerPresenceDisconnect(presenceRef, uid: uid);
+    await presenceRef.update(_presenceJson(uid: uid, online: true, now: now));
+  }
+
+  Future<void> _registerPresenceDisconnect(
+    DatabaseReference presenceRef, {
+    required String uid,
+  }) async {
+    final now = DateTime.now().millisecondsSinceEpoch;
+    try {
+      await presenceRef.onDisconnect().update(
+        _offlinePresenceJson(uid: uid, now: now),
+      );
+    } catch (_) {
+      // Presence is best effort. Heartbeat expiry still makes stale peers
+      // offline if onDisconnect cannot be registered on this platform.
+    }
   }
 
   @override

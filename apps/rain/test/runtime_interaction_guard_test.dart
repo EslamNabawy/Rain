@@ -187,7 +187,7 @@ void main() {
 
       expect(decision.allowed, isFalse);
       expect(decision.reasonCode, RuntimeInteractionReasonCode.peerBusy);
-      expect(decision.userMessage, '@bob is busy in another call.');
+      expect(decision.userMessage, '@bob is already in a call.');
       expect(decision.blockingPeerId, 'bob');
     });
   });

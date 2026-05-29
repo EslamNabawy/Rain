@@ -231,7 +231,7 @@ void main() {
     expect(rules, contains('root.child(\'blocks/\''));
     expect(rules, contains("root.child('presence/'"));
     expect(rules, contains("'/lastHeartbeat').isNumber()"));
-    expect(rules, contains("< 90000"));
+    expect(rules, contains("< 45000"));
     expect(rules, contains('"activeVoicePairs"'));
     expect(rules, contains('"activeVoiceUsers"'));
     expect(rules, contains('"voiceCalls"'));
@@ -268,7 +268,7 @@ void main() {
     expect(
       rules,
       contains(
-        "now - root.child('presence/' + newData.child('callee').val() + '/lastHeartbeat').val() < 90000",
+        "now - root.child('presence/' + newData.child('callee').val() + '/lastHeartbeat').val() < 45000",
       ),
     );
     expect(

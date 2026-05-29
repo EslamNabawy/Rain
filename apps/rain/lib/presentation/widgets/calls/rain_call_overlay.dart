@@ -110,7 +110,7 @@ class RainCallOverlay extends StatelessWidget {
           return const SizedBox.shrink();
         }
 
-        if (contract.isFullscreen && state.isVideo) {
+        if (contract.isFullscreen) {
           final exitFullscreen = onExitFullscreen ?? onExpand;
           return RainCallWorkspace(
             callState: state,
@@ -157,22 +157,58 @@ class RainCallOverlay extends StatelessWidget {
         }
 
         if (contract.isPictureInPicture && state.isVideo) {
-          return Align(
-            alignment: Alignment.topRight,
-            child: Padding(
-              padding: const EdgeInsets.fromLTRB(16, 96, 16, 0),
-              child: SizedBox(
-                key: const ValueKey<String>('rain-call-video-pip-window'),
-                width: _pipWidth(constraints.maxWidth),
-                child: RainCallStage(
-                  state: state,
-                  accent: rainVoiceCallAccent(context, state),
-                  renderers: videoRenderers,
-                  layout: RainCallStageLayout.pip,
-                  primaryRole: surface.videoPrimaryRole,
+          final safePadding = MediaQuery.viewPaddingOf(context);
+          final width = _pipWidth(constraints.maxWidth);
+          final panelSize = Size(width, width * 9 / 16);
+          final viewportSize = Size(
+            constraints.maxWidth,
+            constraints.maxHeight,
+          );
+          final bounds = CallSurfaceBounds(
+            viewportSize: viewportSize,
+            safePadding: safePadding,
+            panelSize: panelSize,
+          );
+          final defaultOffset = Offset(
+            math.max(
+              safePadding.left + 16,
+              constraints.maxWidth - width - safePadding.right - 16,
+            ),
+            safePadding.top + 88,
+          );
+          final offset = clampCallSurfaceOffset(
+            bounds,
+            surface.floatingOffset ?? defaultOffset,
+          );
+          return Stack(
+            clipBehavior: Clip.none,
+            children: <Widget>[
+              Positioned(
+                left: offset.dx,
+                top: offset.dy,
+                width: width,
+                child: GestureDetector(
+                  key: const ValueKey<String>('rain-call-video-pip-window'),
+                  behavior: HitTestBehavior.opaque,
+                  onTap: onExpand,
+                  onPanUpdate: (DragUpdateDetails details) {
+                    onMoveFloating?.call(
+                      details.delta,
+                      viewportSize,
+                      safePadding,
+                      panelSize,
+                    );
+                  },
+                  child: RainCallStage(
+                    state: state,
+                    accent: rainVoiceCallAccent(context, state),
+                    renderers: videoRenderers,
+                    layout: RainCallStageLayout.pip,
+                    primaryRole: surface.videoPrimaryRole,
+                  ),
                 ),
               ),
-            ),
+            ],
           );
         }
 

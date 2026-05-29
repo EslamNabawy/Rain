@@ -70,9 +70,9 @@ final class RuntimeInteractionGuard {
   static String peerBusyMessage(String peerId) {
     final normalized = peerId.trim().replaceFirst(RegExp(r'^@+'), '');
     if (normalized.isEmpty) {
-      return 'Peer is busy in another call.';
+      return 'Peer is already in a call.';
     }
-    return '@$normalized is busy in another call.';
+    return '@$normalized is already in a call.';
   }
 
   static const String staleCallCleanedMessage =

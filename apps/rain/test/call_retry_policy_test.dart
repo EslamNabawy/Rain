@@ -26,7 +26,7 @@ void main() {
         );
 
         expect(live.kind, CallRetryDecisionKind.peerBusy);
-        expect(live.userMessage, '@eslam is busy in another call.');
+        expect(live.userMessage, '@eslam is already in a call.');
         expect(live.canRetryImmediately, isFalse);
         expect(reclaimed.kind, CallRetryDecisionKind.cleanedStaleState);
         expect(reclaimed.userMessage, 'Old call state was cleaned. Try again.');

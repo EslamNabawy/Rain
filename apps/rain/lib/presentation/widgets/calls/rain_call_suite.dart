@@ -128,7 +128,7 @@ class RainCallSuiteLayer extends StatelessWidget {
         return Stack(
           key: const ValueKey<String>('rain-call-suite-layer'),
           children: <Widget>[
-            if (suite.showsFullscreenWorkspace && state.isVideo)
+            if (suite.showsFullscreenWorkspace)
               Positioned.fill(child: _buildFullscreenWorkspace(context)),
             if (suite.showsFloatingSurface &&
                 !suite.showsFullscreenWorkspace &&
