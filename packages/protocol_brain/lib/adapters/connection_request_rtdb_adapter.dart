@@ -236,25 +236,25 @@ final class RtdbOnlyConnectionRequestAdapter
 
     try {
       if (await _isPeerOnline(normalizedPeer)) {
+        _emitDiagnostic(
+          name: 'connection_request_blocked_online_rules',
+          path: 'presence/$normalizedPeer',
+        );
         return _blocked(
           ConnectionRequestReasonCode.peerAlreadyOnline,
           peerId: normalizedPeer,
         );
       }
+      _emitDiagnostic(
+        name: 'connection_request_presence_stale_allowed',
+        path: 'presence/$normalizedPeer',
+      );
     } on Object catch (error) {
       return _blocked(
         ConnectionRequestReasonCode.presenceUnknown,
         peerId: normalizedPeer,
         error: error,
       );
-    }
-
-    final cooldownDecision = _activeCooldownDecision(
-      now: now,
-      peerId: normalizedPeer,
-    );
-    if (cooldownDecision != null) {
-      return cooldownDecision;
     }
 
     if (await _isReceiverMuted(
@@ -265,6 +265,14 @@ final class RtdbOnlyConnectionRequestAdapter
         ConnectionRequestReasonCode.mutedByReceiver,
         peerId: normalizedPeer,
       );
+    }
+
+    final cooldownDecision = _activeCooldownDecision(
+      now: now,
+      peerId: normalizedPeer,
+    );
+    if (cooldownDecision != null) {
+      return cooldownDecision;
     }
 
     final expiresAt = now + requestTtl.inMilliseconds;

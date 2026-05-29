@@ -364,9 +364,15 @@ class ConnectionRequestController extends Notifier<ConnectionRequestState> {
         const ConnectionRequestState.idle();
   }
 
-  Future<ConnectionRequestDecision> send(String peerId) async {
+  Future<ConnectionRequestDecision> send(
+    String peerId, {
+    required bool confirmedOfflineNotification,
+  }) async {
     assertNetworkReady(ref);
-    return _requireRuntime().sendConnectionRequest(peerId);
+    return _requireRuntime().sendConnectionRequest(
+      peerId,
+      confirmedOfflineNotification: confirmedOfflineNotification,
+    );
   }
 
   Future<void> cleanupForPeer(String peerId) async {

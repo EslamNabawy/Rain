@@ -821,6 +821,18 @@ class RainRuntimeController with WidgetsBindingObserver {
         },
       );
       if (interactive) {
+        _recordRuntimeEvent(
+          category: 'connection_request',
+          name: 'connection_request_direct_failed_offline_fallback',
+          severity: 'warning',
+          message:
+              '@$normalizedUsername went offline during direct connect preflight.',
+          context: <String, Object?>{
+            'peerId': normalizedUsername,
+            'friendPresence': friend?.isOnline,
+            'backendPresence': backendIdentity?.online,
+          },
+        );
         throw StateError(
           '@$normalizedUsername is offline. Keep both apps open, then try again.',
         );

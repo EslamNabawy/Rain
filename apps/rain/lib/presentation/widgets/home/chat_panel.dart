@@ -1494,7 +1494,9 @@ class _ChatPanelState extends ConsumerState<_ChatPanel> {
       _showErrorSnack(networkError);
       return;
     }
-    final unavailableReason = _currentConnectRequestUnavailableReason();
+    final unavailableReason = _currentConnectRequestUnavailableReason(
+      peerOnlineOverride: true,
+    );
     if (unavailableReason != null) {
       _dispatchWarningSound('chat.peer.connection_request_blocked');
       _showErrorSnack(unavailableReason);
@@ -1503,15 +1505,70 @@ class _ChatPanelState extends ConsumerState<_ChatPanel> {
 
     final friends = ref.read(friendsProvider);
     final friend = _currentFriend(friends);
-    final canChat = friend?.state == FriendState.friend;
-    final isPeerOnline = canChat ? friend?.isOnline ?? false : false;
+    final runtime = ref.read(runtimeControllerProvider).value;
+    if (runtime == null) {
+      _showErrorSnack('Rain is still starting. Try again in a moment.');
+      return;
+    }
+
+    setState(() => _isConnecting = true);
+    bool? isPeerOnline;
+    try {
+      isPeerOnline = (await runtime.adapter.fetchIdentity(
+        widget.peerId,
+      ))?.online;
+    } catch (_) {
+      isPeerOnline = null;
+    } finally {
+      if (mounted) {
+        setState(() => _isConnecting = false);
+      }
+    }
+    if (!mounted) {
+      return;
+    }
+
+    if (isPeerOnline == null) {
+      _dispatchWarningSound('chat.peer.connection_request_presence_unknown');
+      _showErrorSnack(
+        RuntimeInteractionGuard.connectionRequestPresenceUnknownMessage(
+          widget.peerId,
+        ),
+      );
+      return;
+    }
     if (isPeerOnline) {
       await _connectDirectlyToPeer();
       return;
     }
 
-    final confirmed = await _confirmOfflineConnectionRequest(friend);
-    if (confirmed != true || !mounted) {
+    await _sendOfflineConnectionRequest(friend: friend);
+  }
+
+  Future<void> _sendOfflineConnectionRequest({
+    FriendRecord? friend,
+    bool alreadyConfirmed = false,
+    String? confirmationMessage,
+  }) async {
+    final unavailableReason = _currentConnectRequestUnavailableReason(
+      peerOnlineOverride: false,
+    );
+    if (unavailableReason != null) {
+      _dispatchWarningSound('chat.peer.connection_request_blocked');
+      _showErrorSnack(unavailableReason);
+      return;
+    }
+
+    var confirmed = alreadyConfirmed;
+    if (!confirmed) {
+      confirmed =
+          await _confirmOfflineConnectionRequest(
+            friend,
+            message: confirmationMessage,
+          ) ==
+          true;
+    }
+    if (!confirmed || !mounted) {
       return;
     }
 
@@ -1519,7 +1576,7 @@ class _ChatPanelState extends ConsumerState<_ChatPanel> {
     try {
       final decision = await ref
           .read(connectionRequestProvider.notifier)
-          .send(widget.peerId);
+          .send(widget.peerId, confirmedOfflineNotification: true);
       if (!decision.allowed) {
         _dispatchWarningSound(
           'chat.peer.connection_request_${decision.reasonCode?.name ?? 'denied'}',
@@ -1564,6 +1621,18 @@ class _ChatPanelState extends ConsumerState<_ChatPanel> {
       _showInfoSnack('Connected to @${widget.peerId}.');
     } catch (error) {
       _dispatchWarningSound('chat.peer.direct_connect_failed');
+      if (_isOfflineConnectionError(error)) {
+        if (mounted) {
+          setState(() => _isConnecting = false);
+        }
+        final friends = ref.read(friendsProvider);
+        await _sendOfflineConnectionRequest(
+          friend: _currentFriend(friends),
+          confirmationMessage:
+              '@${widget.peerId} went offline. Send a connection request notification instead? This uses your request limit.',
+        );
+        return;
+      }
       _showErrorSnack(_formatUiError(error));
     } finally {
       if (mounted) {
@@ -1572,7 +1641,15 @@ class _ChatPanelState extends ConsumerState<_ChatPanel> {
     }
   }
 
-  Future<bool?> _confirmOfflineConnectionRequest(FriendRecord? friend) {
+  bool _isOfflineConnectionError(Object error) {
+    final normalized = error.toString().toLowerCase();
+    return normalized.contains('offline. keep both apps open');
+  }
+
+  Future<bool?> _confirmOfflineConnectionRequest(
+    FriendRecord? friend, {
+    String? message,
+  }) {
     final peerLabel = '@${friend?.username ?? widget.peerId}';
     return showDialog<bool>(
       context: context,
@@ -1580,7 +1657,8 @@ class _ChatPanelState extends ConsumerState<_ChatPanel> {
         return AlertDialog(
           title: Text('Notify $peerLabel?'),
           content: Text(
-            '$peerLabel appears offline. Send a connection request notification so they can open Rain and connect back? This uses your request limit.',
+            message ??
+                '$peerLabel appears offline. Send a connection request notification so they can open Rain and connect back? This uses your request limit.',
           ),
           actions: <Widget>[
             TextButton(
@@ -1644,11 +1722,12 @@ class _ChatPanelState extends ConsumerState<_ChatPanel> {
         : null;
   }
 
-  String? _currentConnectRequestUnavailableReason() {
+  String? _currentConnectRequestUnavailableReason({bool? peerOnlineOverride}) {
     final friends = ref.read(friendsProvider);
     final friend = _currentFriend(friends);
     final canChat = friend?.state == FriendState.friend;
-    final isPeerOnline = canChat ? friend?.isOnline ?? false : false;
+    final isPeerOnline =
+        peerOnlineOverride ?? (canChat ? friend?.isOnline ?? false : false);
     final connection = ref.read(connectionsProvider).peer(widget.peerId);
     final runtime = ref.read(runtimeControllerProvider).value;
     final diagnostics = ConnectionDiagnostics.fromConnection(

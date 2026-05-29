@@ -144,6 +144,20 @@ void main() {
         ),
         contains('12s'),
       );
+      expect(
+        messageForConnectionRequestReason(
+          ConnectionRequestReasonCode.confirmationRequired,
+          'bob',
+        ),
+        'Confirm before sending a request notification.',
+      );
+      expect(
+        messageForConnectionRequestReason(
+          ConnectionRequestReasonCode.presenceUnknown,
+          'bob',
+        ),
+        'Could not confirm @bob is offline. Try again.',
+      );
     });
 
     test('allows every server-owned transition from the spec', () {

@@ -104,6 +104,14 @@ final class RuntimeInteractionGuard {
     return 'Could not confirm @$normalized is online. Try again.';
   }
 
+  static String connectionRequestPresenceUnknownMessage(String peerId) {
+    final normalized = peerId.trim().replaceFirst(RegExp(r'^@+'), '');
+    if (normalized.isEmpty) {
+      return 'Could not confirm peer is offline. Try again.';
+    }
+    return 'Could not confirm @$normalized is offline. Try again.';
+  }
+
   static RuntimeInteractionDecision peerBusy({
     required String peerId,
     String? callId,
@@ -222,7 +230,11 @@ final class RuntimeInteractionGuard {
       return RuntimeInteractionGuard.peerAlreadyOnline(peerId: peerId);
     }
     if (peerOnline == null) {
-      return RuntimeInteractionGuard.presenceUnknown(peerId: peerId);
+      return RuntimeInteractionDecision.deny(
+        reasonCode: RuntimeInteractionReasonCode.presenceUnknown,
+        userMessage: connectionRequestPresenceUnknownMessage(peerId),
+        blockingPeerId: peerId,
+      );
     }
     if (manualDisconnectedPeers.contains(peerId)) {
       return RuntimeInteractionDecision.deny(

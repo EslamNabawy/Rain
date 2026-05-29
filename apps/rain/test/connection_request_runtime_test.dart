@@ -14,13 +14,37 @@ void main() {
   TestWidgetsFlutterBinding.ensureInitialized();
 
   group('ConnectionRequestRuntime', () {
+    test('missing confirmation blocks before adapter mutation', () async {
+      final harness = await _ConnectionRequestHarness.create();
+      addTearDown(harness.dispose);
+
+      final decision = await harness.runtime.sendConnectionRequest(
+        'bob',
+        confirmedOfflineNotification: false,
+      );
+
+      expect(decision.allowed, isFalse);
+      expect(
+        decision.reasonCode,
+        ConnectionRequestReasonCode.confirmationRequired,
+      );
+      expect(
+        decision.userMessage,
+        'Confirm before sending a request notification.',
+      );
+      expect(harness.adapter.outgoingForTest('alice'), isEmpty);
+    });
+
     test(
       'online peer is denied with direct-connect message before adapter mutation',
       () async {
         final harness = await _ConnectionRequestHarness.create(bobOnline: true);
         addTearDown(harness.dispose);
 
-        final decision = await harness.runtime.sendConnectionRequest('bob');
+        final decision = await harness.runtime.sendConnectionRequest(
+          'bob',
+          confirmedOfflineNotification: true,
+        );
 
         expect(decision.allowed, isFalse);
         expect(
@@ -37,13 +61,44 @@ void main() {
     );
 
     test('offline peer sends connection request notification', () async {
-      final harness = await _ConnectionRequestHarness.create();
+      final runtimeEvents = <Map<String, Object?>>[];
+      final harness = await _ConnectionRequestHarness.create(
+        runtimeEvents: runtimeEvents,
+      );
       addTearDown(harness.dispose);
 
-      final decision = await harness.runtime.sendConnectionRequest('bob');
+      final decision = await harness.runtime.sendConnectionRequest(
+        'bob',
+        confirmedOfflineNotification: true,
+      );
 
       expect(decision.allowed, isTrue);
       expect(harness.adapter.outgoingForTest('alice'), hasLength(1));
+      expect(
+        runtimeEvents.map((event) => event['name']),
+        contains('connection_request_presence_stale_allowed'),
+      );
+    });
+
+    test('presence fetch failure blocks before adapter mutation', () async {
+      final harness = await _ConnectionRequestHarness.create();
+      addTearDown(harness.dispose);
+      harness.adapter.failNextFetchIdentityForTest(
+        StateError('presence backend down'),
+      );
+
+      final decision = await harness.runtime.sendConnectionRequest(
+        'bob',
+        confirmedOfflineNotification: true,
+      );
+
+      expect(decision.allowed, isFalse);
+      expect(decision.reasonCode, ConnectionRequestReasonCode.presenceUnknown);
+      expect(
+        decision.userMessage,
+        'Could not confirm @bob is offline. Try again.',
+      );
+      expect(harness.adapter.outgoingForTest('alice'), isEmpty);
     });
 
     test(
@@ -52,8 +107,14 @@ void main() {
         final harness = await _ConnectionRequestHarness.create();
         addTearDown(harness.dispose);
 
-        final first = await harness.runtime.sendConnectionRequest('bob');
-        final second = await harness.runtime.sendConnectionRequest('bob');
+        final first = await harness.runtime.sendConnectionRequest(
+          'bob',
+          confirmedOfflineNotification: true,
+        );
+        final second = await harness.runtime.sendConnectionRequest(
+          'bob',
+          confirmedOfflineNotification: true,
+        );
 
         expect(first.allowed, isTrue);
         expect(second.allowed, isFalse);
@@ -77,7 +138,10 @@ void main() {
       addTearDown(harness.dispose);
 
       for (var i = 0; i < 3; i++) {
-        final send = await harness.runtime.sendConnectionRequest('bob');
+        final send = await harness.runtime.sendConnectionRequest(
+          'bob',
+          confirmedOfflineNotification: true,
+        );
         expect(send.allowed, isTrue, reason: 'send $i should be allowed');
         final cancel = await harness.runtime.cancelConnectionRequest(
           send.requestId!,
@@ -85,7 +149,10 @@ void main() {
         expect(cancel.allowed, isTrue, reason: 'cancel $i should be allowed');
       }
 
-      final denied = await harness.runtime.sendConnectionRequest('bob');
+      final denied = await harness.runtime.sendConnectionRequest(
+        'bob',
+        confirmedOfflineNotification: true,
+      );
 
       expect(denied.allowed, isFalse);
       expect(denied.reasonCode, ConnectionRequestReasonCode.bestEffortLimit);
@@ -170,7 +237,10 @@ void main() {
     test('restart restores pending outbound state', () async {
       final harness = await _ConnectionRequestHarness.create();
 
-      final decision = await harness.runtime.sendConnectionRequest('bob');
+      final decision = await harness.runtime.sendConnectionRequest(
+        'bob',
+        confirmedOfflineNotification: true,
+      );
       expect(decision.allowed, isTrue);
       final database = harness.database;
       final adapter = harness.adapter;
@@ -220,7 +290,10 @@ void main() {
         ),
       );
 
-      final decision = await harness.runtime.sendConnectionRequest('bob');
+      final decision = await harness.runtime.sendConnectionRequest(
+        'bob',
+        confirmedOfflineNotification: true,
+      );
 
       expect(decision.allowed, isFalse);
       expect(decision.reasonCode, ConnectionRequestReasonCode.activeTransfer);
@@ -235,7 +308,10 @@ void main() {
         StateError('internal backend stack'),
       );
 
-      final decision = await harness.runtime.sendConnectionRequest('bob');
+      final decision = await harness.runtime.sendConnectionRequest(
+        'bob',
+        confirmedOfflineNotification: true,
+      );
 
       expect(decision.allowed, isFalse);
       expect(decision.reasonCode, ConnectionRequestReasonCode.backendRejected);
@@ -259,7 +335,10 @@ void main() {
         );
         addTearDown(harness.dispose);
 
-        final decision = await harness.runtime.sendConnectionRequest('bob');
+        final decision = await harness.runtime.sendConnectionRequest(
+          'bob',
+          confirmedOfflineNotification: true,
+        );
 
         expect(decision.allowed, isFalse);
         final event = runtimeEvents.lastWhere(
@@ -285,6 +364,10 @@ void main() {
         expect(context['quotaSummary'], isA<Map<String, Object?>>());
         expect(context['retryAfterMs'], isNull);
         expect(context['notificationFallbackState'], 'notEvaluated');
+        expect(
+          runtimeEvents.map((event) => event['name']),
+          contains('connection_request_blocked_online_rules'),
+        );
       },
     );
   });
@@ -429,6 +512,7 @@ final class _ConnectionRequestNoopSignalingAdapter extends NoopSignalingAdapter
       );
 
   final FakeConnectionRequestAdapter _requests;
+  Object? _nextFetchIdentityError;
 
   Future<void> ensurePeerIdentity(
     String username, {
@@ -484,6 +568,20 @@ final class _ConnectionRequestNoopSignalingAdapter extends NoopSignalingAdapter
 
   void failNextConnectionRequestMutationForTest(Object error) {
     _requests.failNextMutationForTest(error);
+  }
+
+  void failNextFetchIdentityForTest(Object error) {
+    _nextFetchIdentityError = error;
+  }
+
+  @override
+  Future<BackendIdentity?> fetchIdentity(String username) {
+    final error = _nextFetchIdentityError;
+    if (error != null) {
+      _nextFetchIdentityError = null;
+      return Future<BackendIdentity?>.error(error);
+    }
+    return super.fetchIdentity(username);
   }
 
   @override

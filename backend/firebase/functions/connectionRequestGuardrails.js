@@ -24,11 +24,12 @@ const reasonMessages = Object.freeze({
   backendUnavailable: () =>
     "Connection request service is unavailable. Try again.",
   malformedRequest: () => "Connection request is malformed. Try again.",
+  confirmationRequired: () => "Confirm before sending a request notification.",
   peerOffline: (peer) =>
     `${peer} is offline. Keep both apps open, then try again.`,
   peerAlreadyOnline: (peer) =>
     `${peer} is online. Connect directly instead of sending a request notification.`,
-  presenceUnknown: (peer) => `Could not confirm ${peer} is online. Try again.`,
+  presenceUnknown: (peer) => `Could not confirm ${peer} is offline. Try again.`,
   notAcceptedFriend: () =>
     "You can only request a connection with accepted friends.",
   blocked: () => "This connection request cannot be sent.",

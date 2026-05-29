@@ -97,6 +97,10 @@ void main() {
       expect(decision.userMessage, contains('@bob is online'));
       expect(harness.valueAt('connectionRequestUsage/alice'), isNull);
       expect(harness.valueAt('connectionRequestTargetUsage/alice'), isNull);
+      expect(
+        harness.diagnostics.map((event) => event.name),
+        contains('connection_request_blocked_online_rules'),
+      );
     });
 
     test('create writes receiver inbox and sender outbox', () async {
@@ -129,6 +133,10 @@ void main() {
       expect(
         harness.valueAt('connectionRequestPairLocks/alice:bob/requestId'),
         requestId,
+      );
+      expect(
+        harness.diagnostics.map((event) => event.name),
+        contains('connection_request_presence_stale_allowed'),
       );
     });
 
@@ -210,6 +218,31 @@ void main() {
         harness.valueAt('connectionRequestTargetUsage/alice/bob/19700101/used'),
         3,
       );
+    });
+
+    test('receiver mute is checked before local cooldown', () async {
+      final harness = _RtdbOnlyAdapterHarness(
+        username: 'alice',
+        acceptedPeers: <String>{'bob', 'cara'},
+        randomSuffixes: <String>['a1b2'],
+        localCreateCooldown: const Duration(minutes: 1),
+      );
+      addTearDown(harness.dispose);
+
+      final first = await harness.adapter.createConnectionRequest('bob');
+      harness.setValue(
+        'connectionNotificationMutes/cara/alice',
+        <String, Object?>{'muted': true, 'updatedAt': harness.now},
+      );
+
+      final muted = await harness.adapter.createConnectionRequest('cara');
+
+      expect(first.allowed, isTrue);
+      expect(muted.allowed, isFalse);
+      expect(muted.reasonCode, ConnectionRequestReasonCode.mutedByReceiver);
+      expect(harness.valueAt('connectionRequests/cara'), isNull);
+      expect(harness.valueAt('connectionRequestPairLocks/alice:cara'), isNull);
+      expect(harness.valueAt('connectionRequestUsage/alice/19700101/used'), 1);
     });
 
     test('duplicate pending does not increment counters twice', () async {
@@ -630,6 +663,7 @@ final class _RtdbOnlyAdapterHarness {
     Set<String>? acceptedPeers,
     Set<String>? onlinePeers,
     List<String>? randomSuffixes,
+    Duration localCreateCooldown = Duration.zero,
   }) : acceptedPeers = acceptedPeers ?? const <String>{},
        onlinePeers = onlinePeers ?? const <String>{},
        _randomSuffixes = randomSuffixes ?? const <String>[] {
@@ -652,6 +686,7 @@ final class _RtdbOnlyAdapterHarness {
       randomSuffix: _nextRandomSuffix,
       diagnosticsSink: diagnostics.add,
       clock: () => DateTime.fromMillisecondsSinceEpoch(now),
+      localCreateCooldown: localCreateCooldown,
     );
   }
 

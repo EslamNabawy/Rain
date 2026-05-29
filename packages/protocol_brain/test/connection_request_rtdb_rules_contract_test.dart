@@ -61,6 +61,20 @@ void main() {
         inboxWrite,
         contains("newData.child('requestId').val() === \$requestId"),
       );
+      for (final writeRule in <String>[inboxWrite, outboxWrite]) {
+        expect(
+          writeRule,
+          contains(
+            "root.child('presence/' + newData.child('to').val() + '/online').val() !== true",
+          ),
+        );
+        expect(
+          writeRule,
+          contains(
+            "now - root.child('presence/' + newData.child('to').val() + '/lastHeartbeat').val() >= 90000",
+          ),
+        );
+      }
       expect(
         outboxWrite,
         contains("newData.child('from').val() === \$username"),
@@ -77,6 +91,17 @@ void main() {
           "newData.child('expiresAt').val() - newData.child('createdAt').val() <= 90000",
         ),
       );
+      for (final validateRule in <String>[inboxValidate, outboxValidate]) {
+        expect(
+          validateRule,
+          contains("newData.child('createdAt').val() <= now + 30000"),
+        );
+        expect(
+          validateRule,
+          contains("newData.child('expiresAt').val() <= now + 120000"),
+        );
+        expect(validateRule, contains('data.exists() ||'));
+      }
     });
 
     test(
@@ -163,6 +188,12 @@ void main() {
       expect(
         write,
         contains(
+          "root.child('presence/' + newData.child('to').val() + '/online').val() !== true",
+        ),
+      );
+      expect(
+        write,
+        contains(
           "data.child('requestId').val() === newData.child('requestId').val()",
         ),
       );
@@ -183,6 +214,14 @@ void main() {
         contains(
           "newData.child('expiresAt').val() - newData.child('createdAt').val() <= 90000",
         ),
+      );
+      expect(
+        validate,
+        contains("newData.child('createdAt').val() <= now + 30000"),
+      );
+      expect(
+        validate,
+        contains("newData.child('expiresAt').val() <= now + 120000"),
       );
     });
 

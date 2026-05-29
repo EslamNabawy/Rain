@@ -78,6 +78,14 @@ void main() {
           "root.child('connectionRequestPairLocks/' + newData.child('pairKey').val() + '/requestId').val() === \$requestId",
         ),
       );
+      for (final writeRule in <Object?>[inboxWrite, outboxWrite]) {
+        expect(
+          writeRule,
+          contains(
+            "root.child('presence/' + newData.child('to').val() + '/online').val() !== true",
+          ),
+        );
+      }
     });
 
     test('authenticated users cannot grant themselves credits', () {
@@ -119,6 +127,12 @@ void main() {
       expect(
         _node(rules, ['connectionRequestPairLocks', r'$pairKey'])['.write'],
         isA<String>(),
+      );
+      expect(
+        _node(rules, ['connectionRequestPairLocks', r'$pairKey'])['.write'],
+        contains(
+          "root.child('presence/' + newData.child('to').val() + '/online').val() !== true",
+        ),
       );
       expect(
         _node(rules, ['connectionNotificationReservations'])['.write'],

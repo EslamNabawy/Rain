@@ -63,14 +63,33 @@ extension ConnectionRequestRuntime on RainRuntimeController {
   }
 
   Future<ConnectionRequestDecision> sendConnectionRequest(
-    String username,
-  ) async {
+    String username, {
+    required bool confirmedOfflineNotification,
+  }) async {
     final peerId = _normalizedUsername(username);
     final adapter = connectionRequestAdapter;
     if (adapter == null) {
       return _emitDeniedConnectionRequest(
         reasonCode: ConnectionRequestReasonCode.backendUnavailable,
         peerId: peerId,
+      );
+    }
+
+    if (!confirmedOfflineNotification) {
+      _recordRuntimeEvent(
+        category: 'connection_request',
+        name: 'connection_request_confirmation_missing',
+        severity: 'warning',
+        message: 'Confirm before sending a request notification.',
+        context: <String, Object?>{'peerId': peerId},
+      );
+      return _emitDeniedConnectionRequest(
+        reasonCode: ConnectionRequestReasonCode.confirmationRequired,
+        peerId: peerId,
+        diagnostics: <String, Object?>{
+          'confirmationRequired': true,
+          'serverAuthority': 'localRuntime',
+        },
       );
     }
 
@@ -94,10 +113,22 @@ extension ConnectionRequestRuntime on RainRuntimeController {
         category: 'connection_request',
         name: 'connection_request_presence_preflight_failed',
         severity: 'warning',
-        message: RuntimeInteractionGuard.presenceUnknownMessage(peerId),
+        message:
+            RuntimeInteractionGuard.connectionRequestPresenceUnknownMessage(
+              peerId,
+            ),
         context: <String, Object?>{'peerId': peerId, 'error': error.toString()},
       );
       _recordConnectionRequestAdapterError(error, stackTrace);
+    }
+    if (backendPeerOnline == false) {
+      _recordRuntimeEvent(
+        category: 'connection_request',
+        name: 'connection_request_presence_stale_allowed',
+        message:
+            'Peer presence is offline or stale; offline request flow is allowed.',
+        context: <String, Object?>{'peerId': peerId},
+      );
     }
     final activeTransfer = await _activeConnectionRequestBlockingTransfer();
     final guardDecision = RuntimeInteractionGuard.canSendConnectionRequest(
@@ -109,6 +140,16 @@ extension ConnectionRequestRuntime on RainRuntimeController {
       activeTransfer: activeTransfer,
     );
     if (!guardDecision.allowed) {
+      if (guardDecision.reasonCode ==
+          RuntimeInteractionReasonCode.peerAlreadyOnline) {
+        _recordRuntimeEvent(
+          category: 'connection_request',
+          name: 'connection_request_blocked_online_rules',
+          severity: 'warning',
+          message: guardDecision.userMessage,
+          context: <String, Object?>{'peerId': peerId},
+        );
+      }
       return _emitDeniedConnectionRequest(
         reasonCode: _connectionRequestReasonForRuntimeDecision(guardDecision),
         peerId: peerId,
