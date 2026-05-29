@@ -6475,7 +6475,7 @@ class RecordingVoiceSignalingAdapter extends RecordingNoopSignalingAdapter
     required int endedAt,
     String? reasonCode,
     String? reason,
-  }) {
+  }) async {
     endCallAttempts += 1;
     if (failEndCallAttempt == endCallAttempts ||
         failEndCallAttempts.contains(endCallAttempts)) {
@@ -6491,7 +6491,7 @@ class RecordingVoiceSignalingAdapter extends RecordingNoopSignalingAdapter
         throw error;
       }
     }
-    final result = _voice.endCall(
+    await _voice.endCall(
       callId: callId,
       username: username,
       status: status,
@@ -6502,7 +6502,6 @@ class RecordingVoiceSignalingAdapter extends RecordingNoopSignalingAdapter
     if (isTerminalWrite) {
       terminalRoomWriteSucceeded = true;
     }
-    return result;
   }
 
   @override

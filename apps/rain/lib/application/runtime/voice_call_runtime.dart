@@ -1209,6 +1209,21 @@ extension VoiceCallRuntime on RainRuntimeController {
     final endedByLocal = room.endedBy == localUsername;
     final detail = _terminalVoiceCallDetailForRoom(room, localUsername);
     final failureReason = _terminalVoiceCallFailureReasonForRoom(room);
+    if (endedByLocal && current.phase == VoiceCallPhase.ending) {
+      _recordRuntimeEvent(
+        category: 'call',
+        name: 'voice_terminal_room_local_echo_ignored',
+        severity: 'info',
+        message: 'Local terminal Firebase room echoed during local hangup.',
+        context: <String, Object?>{
+          ..._voiceCallEventContext(current),
+          'status': room.status.name,
+          'endedBy': room.endedBy,
+          'reasonCode': room.reasonCode,
+        },
+      );
+      return;
+    }
     _recordRuntimeEvent(
       category: 'call',
       name: endedByLocal
@@ -2884,31 +2899,38 @@ extension VoiceCallRuntime on RainRuntimeController {
           detail: detail,
           reasonCode: _voiceCallReasonCodeForFailure(failureReason),
         );
+        var latest = _voiceCallState;
+        if (!_isSameLiveVoiceCallStateForSession(latest, session)) {
+          return;
+        }
         if (!terminalWrite.durable) {
-          await _disposeVoiceCallSession(session);
           _setVoiceCallState(
             _voiceCallStateAfterTerminalWriteFailure(
-              current,
+              latest,
               error: terminalWrite.error,
             ),
           );
+          await _disposeVoiceCallSession(session);
           return;
         }
         try {
           await session.hangUp(reason: detail);
         } catch (error, stackTrace) {
           _recordVoiceSignalingError(error, stackTrace);
-        } finally {
-          await _disposeVoiceCallSession(session);
+        }
+        latest = _voiceCallState;
+        if (!_isSameLiveVoiceCallStateForSession(latest, session)) {
+          return;
         }
         _setVoiceCallState(
           _voiceCallStateAfterLocalEnd(
-            current,
+            latest,
             detail: detail,
             failureReason: failureReason,
             failureDetail: failureDetail,
           ),
         );
+        await _disposeVoiceCallSession(session);
       } else {
         await _endVoiceCallInSignaling(
           callId: session.callId,
@@ -2940,6 +2962,7 @@ extension VoiceCallRuntime on RainRuntimeController {
         audioLevel: const VoiceAudioLevel.unavailable(),
       ),
     );
+    var latest = current;
     if (notifyPeer && current.callId != null) {
       final terminalWrite = await _writeTerminalRoomBeforeSessionHangup(
         callId: current.callId!,
@@ -2949,10 +2972,14 @@ extension VoiceCallRuntime on RainRuntimeController {
         detail: detail,
         reasonCode: _voiceCallReasonCodeForFailure(failureReason),
       );
+      latest = _voiceCallState;
+      if (!_isSameLiveVoiceCallState(latest, current)) {
+        return;
+      }
       if (!terminalWrite.durable) {
         _setVoiceCallState(
           _voiceCallStateAfterTerminalWriteFailure(
-            current,
+            latest,
             error: terminalWrite.error,
           ),
         );
@@ -2971,7 +2998,7 @@ extension VoiceCallRuntime on RainRuntimeController {
     }
     _setVoiceCallState(
       _voiceCallStateAfterLocalEnd(
-        current,
+        latest,
         detail: detail,
         failureReason: failureReason,
         failureDetail: failureDetail,
@@ -3095,6 +3122,29 @@ extension VoiceCallRuntime on RainRuntimeController {
       clearReconnectingSince: true,
       audioLevel: const VoiceAudioLevel.unavailable(),
     );
+  }
+
+  bool _isSameLiveVoiceCallStateForSession(
+    VoiceCallState latest,
+    VoiceCallSession session,
+  ) {
+    if (_shutDown || _voiceCallSession != session) {
+      return false;
+    }
+    return latest.callId == session.callId &&
+        latest.sessionEpoch == session.sessionEpoch &&
+        latest.phase != VoiceCallPhase.idle &&
+        latest.phase != VoiceCallPhase.failed;
+  }
+
+  bool _isSameLiveVoiceCallState(
+    VoiceCallState latest,
+    VoiceCallState expected,
+  ) {
+    return latest.callId == expected.callId &&
+        latest.sessionEpoch == expected.sessionEpoch &&
+        latest.phase != VoiceCallPhase.idle &&
+        latest.phase != VoiceCallPhase.failed;
   }
 
   VoiceCallState _voiceCallStateAfterLocalEnd(
