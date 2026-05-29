@@ -259,6 +259,47 @@ void main() {
     await connection.dispose();
   });
 
+  test(
+    'disconnected peer state emits media recovery before failed timeout',
+    () async {
+      final platform = _FakeCallPlatformBridge();
+      final connection = _connection(platform);
+      final states = <CallMediaState>[];
+      final subscription = connection.onStateChanged.listen(states.add);
+
+      await connection.startLocalMedia(kind: CallMediaKind.video);
+      final peerConnection = platform.createdConnections.single;
+
+      peerConnection.emitConnectionState(
+        RTCPeerConnectionState.RTCPeerConnectionStateConnected,
+      );
+      await pumpEventQueue();
+      peerConnection.emitConnectionState(
+        RTCPeerConnectionState.RTCPeerConnectionStateDisconnected,
+      );
+      await pumpEventQueue();
+
+      expect(states.last.phase, CallMediaPhase.connecting);
+
+      peerConnection.emitConnectionState(
+        RTCPeerConnectionState.RTCPeerConnectionStateFailed,
+      );
+      await pumpEventQueue();
+
+      expect(
+        states.map((CallMediaState state) => state.phase),
+        containsAllInOrder(<CallMediaPhase>[
+          CallMediaPhase.connected,
+          CallMediaPhase.connecting,
+          CallMediaPhase.failed,
+        ]),
+      );
+
+      await subscription.cancel();
+      await connection.dispose();
+    },
+  );
+
   test('camera mute disables video track without renegotiation', () async {
     final platform = _FakeCallPlatformBridge();
     final connection = _connection(platform);
@@ -513,6 +554,14 @@ class _FakeCallPeerConnection extends Fake implements RTCPeerConnection {
 
   void emitTrack(MediaStreamTrack track, MediaStream stream) {
     onTrack?.call(RTCTrackEvent(streams: <MediaStream>[stream], track: track));
+  }
+
+  void emitConnectionState(RTCPeerConnectionState state) {
+    onConnectionState?.call(state);
+  }
+
+  void emitIceConnectionState(RTCIceConnectionState state) {
+    onIceConnectionState?.call(state);
   }
 
   @override

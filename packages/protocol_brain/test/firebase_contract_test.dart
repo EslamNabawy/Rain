@@ -346,6 +346,39 @@ void main() {
     expect(adapter, isNot(contains("'candidate':")));
   });
 
+  test('Firebase room ICE writes are guarded by explicit sender role', () {
+    final rules = _repoFile('backend/firebase/database.rules.json');
+
+    expect(
+      rules,
+      contains(r'''"callerICE": {
+          "$candidateId": {
+            ".write": "auth != null'''),
+      reason: 'callerICE candidates must not inherit broad room write access.',
+    );
+    expect(
+      rules,
+      contains(
+        "root.child('users/' + root.child('rooms/' + \$roomId + '/userA').val() + '/uid').val() === auth.uid",
+      ),
+      reason: 'callerICE writes must be limited to the canonical caller role.',
+    );
+    expect(
+      rules,
+      contains(r'''"calleeICE": {
+          "$candidateId": {
+            ".write": "auth != null'''),
+      reason: 'calleeICE candidates must not inherit broad room write access.',
+    );
+    expect(
+      rules,
+      contains(
+        "root.child('users/' + root.child('rooms/' + \$roomId + '/userB').val() + '/uid').val() === auth.uid",
+      ),
+      reason: 'calleeICE writes must be limited to the canonical callee role.',
+    );
+  });
+
   test('Firebase voice signaling validates video metadata fields', () {
     final rules = _repoFile('backend/firebase/database.rules.json');
     final adapter = _repoFile(

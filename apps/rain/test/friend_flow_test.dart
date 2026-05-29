@@ -5924,6 +5924,39 @@ void main() {
     );
 
     test(
+      'voice hangup still reaches remote when session hangup frame fails',
+      () async {
+        final harness = await _createTwoUserCallHarness(db, alice);
+        addTearDown(harness.dispose);
+
+        await harness.start();
+        final callId = await _startAndAcceptHarnessCall(
+          harness,
+          callerIsAlice: true,
+          mediaMode: protocol.CallMediaMode.audio,
+        );
+        harness.adapter.failFetchCallAfterTerminal = true;
+
+        await harness.aliceRuntime.hangUpVoiceCall();
+
+        await _waitForHarnessCallIdle(
+          harness,
+          'Firebase terminal voice room to reach remote after failed session hangup frame',
+        );
+        final room = harness.adapter.rooms[callId]!;
+        expect(room.status, VoiceCallSignalingStatus.ended);
+        expect(room.endedBy, 'alice');
+        expect(harness.adapter.fetchCallAfterTerminalFailures, 1);
+        expect(
+          (harness.bobBrain.voiceMediaConnections['alice']!
+                  as _TestVoiceMediaConnection)
+              .disposed,
+          isTrue,
+        );
+      },
+    );
+
+    test(
       'terminal Firebase voice room clears active call without a hangup frame',
       () async {
         final harness = await _createTwoUserCallHarness(db, alice);
@@ -6375,6 +6408,8 @@ class RecordingVoiceSignalingAdapter extends RecordingNoopSignalingAdapter
   Object? endCallError;
   int endCallAttempts = 0;
   int? failEndCallAttempt;
+  bool failFetchCallAfterTerminal = false;
+  int fetchCallAfterTerminalFailures = 0;
 
   Map<String, VoiceCallRoom> get rooms => _voice.rooms;
 
@@ -6465,7 +6500,14 @@ class RecordingVoiceSignalingAdapter extends RecordingNoopSignalingAdapter
   }
 
   @override
-  Future<VoiceCallRoom?> fetchCall(String callId) => _voice.fetchCall(callId);
+  Future<VoiceCallRoom?> fetchCall(String callId) async {
+    final room = await _voice.fetchCall(callId);
+    if (failFetchCallAfterTerminal && room?.status.isTerminal == true) {
+      fetchCallAfterTerminalFailures += 1;
+      throw StateError('failed to send hangup frame');
+    }
+    return room;
+  }
 
   @override
   Future<void> markConnected({

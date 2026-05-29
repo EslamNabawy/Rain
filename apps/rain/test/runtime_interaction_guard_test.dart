@@ -97,6 +97,21 @@ void main() {
       );
     });
 
+    test('call start requires an explicit peerOnline decision', () {
+      final decision = RuntimeInteractionGuard.canStartCall(
+        peerId: 'bob',
+        mediaMode: CallMediaMode.audio,
+        voiceCallState: const VoiceCallState.idle(),
+      );
+
+      expect(decision.allowed, isFalse);
+      expect(decision.reasonCode, RuntimeInteractionReasonCode.presenceUnknown);
+      expect(
+        decision.userMessage,
+        'Could not confirm @bob is online. Try again.',
+      );
+    });
+
     test('active transfer blocks starting and accepting calls globally', () {
       final transfer = _transfer(peerId: 'bob');
       final outgoing = RuntimeInteractionGuard.canStartCall(
