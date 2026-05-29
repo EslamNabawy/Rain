@@ -5874,54 +5874,30 @@ void main() {
       },
     );
 
-    test(
-      'local voice hangup writes terminal room before best-effort session hangup',
-      () async {
-        final harness = await _createTwoUserCallHarness(db, alice);
-        addTearDown(harness.dispose);
+    test('local voice hangup requires terminal room before local idle', () async {
+      final harness = await _createTwoUserCallHarness(db, alice);
+      addTearDown(harness.dispose);
 
-        await harness.start();
-        final callId = await _startAndAcceptHarnessCall(
-          harness,
-          callerIsAlice: true,
-          mediaMode: protocol.CallMediaMode.audio,
-        );
-        harness.adapter.failEndCallAttempt = 2;
+      await harness.start();
+      final callId = await _startAndAcceptHarnessCall(
+        harness,
+        callerIsAlice: true,
+        mediaMode: protocol.CallMediaMode.audio,
+      );
+      harness.adapter.endCallError = StateError('terminal room write failed');
 
-        await harness.aliceRuntime.hangUpVoiceCall();
+      await harness.aliceRuntime.hangUpVoiceCall();
 
-        await _waitForHarnessCallIdle(
-          harness,
-          'Firebase terminal voice room to clear both peers',
-        );
-        expect(harness.adapter.endCallAttempts, 1);
+      final room = harness.adapter.rooms[callId]!;
+      if (!room.status.isTerminal) {
         expect(
-          harness.runtimeEvents,
-          contains('alice:voice_terminal_write_before_session_hangup'),
+          harness.aliceRuntime.voiceCallState.phase,
+          isNot(VoiceCallPhase.idle),
+          reason:
+              'Local call state must not become idle before Firebase has a terminal room.',
         );
-        expect(
-          harness.runtimeEvents,
-          contains('alice:voice_late_hangup_frame_ignored'),
-        );
-        final room = harness.adapter.rooms[callId]!;
-        expect(room.status, VoiceCallSignalingStatus.ended);
-        expect(room.endedBy, 'alice');
-        expect(harness.adapter.activePairLocks, isEmpty);
-        expect(harness.adapter.activeUserLocks, isEmpty);
-        expect(
-          (harness.aliceBrain.voiceMediaConnections['bob']!
-                  as _TestVoiceMediaConnection)
-              .disposed,
-          isTrue,
-        );
-        expect(
-          (harness.bobBrain.voiceMediaConnections['alice']!
-                  as _TestVoiceMediaConnection)
-              .disposed,
-          isTrue,
-        );
-      },
-    );
+      }
+    });
 
     test(
       'voice hangup still reaches remote when session hangup frame fails',
@@ -5935,18 +5911,23 @@ void main() {
           callerIsAlice: true,
           mediaMode: protocol.CallMediaMode.audio,
         );
-        harness.adapter.failFetchCallAfterTerminal = true;
+        harness.adapter.failEndCallAttempts.addAll(<int>{1, 2});
 
         await harness.aliceRuntime.hangUpVoiceCall();
 
-        await _waitForHarnessCallIdle(
-          harness,
+        expect(
+          harness.adapter.endCallAttempts,
+          2,
+          reason:
+              'Attempt 1 is the terminal room write; attempt 2 is the session hangup frame write.',
+        );
+        await _waitForCondition(
+          () => harness.bobRuntime.voiceCallState.phase == VoiceCallPhase.idle,
           'Firebase terminal voice room to reach remote after failed session hangup frame',
         );
         final room = harness.adapter.rooms[callId]!;
         expect(room.status, VoiceCallSignalingStatus.ended);
         expect(room.endedBy, 'alice');
-        expect(harness.adapter.fetchCallAfterTerminalFailures, 1);
         expect(
           (harness.bobBrain.voiceMediaConnections['alice']!
                   as _TestVoiceMediaConnection)
@@ -6408,8 +6389,7 @@ class RecordingVoiceSignalingAdapter extends RecordingNoopSignalingAdapter
   Object? endCallError;
   int endCallAttempts = 0;
   int? failEndCallAttempt;
-  bool failFetchCallAfterTerminal = false;
-  int fetchCallAfterTerminalFailures = 0;
+  final Set<int> failEndCallAttempts = <int>{};
 
   Map<String, VoiceCallRoom> get rooms => _voice.rooms;
 
@@ -6482,7 +6462,8 @@ class RecordingVoiceSignalingAdapter extends RecordingNoopSignalingAdapter
     String? reason,
   }) {
     endCallAttempts += 1;
-    if (failEndCallAttempt == endCallAttempts) {
+    if (failEndCallAttempt == endCallAttempts ||
+        failEndCallAttempts.contains(endCallAttempts)) {
       throw StateError('failed to send hangup');
     }
     final error = endCallError;
@@ -6500,14 +6481,7 @@ class RecordingVoiceSignalingAdapter extends RecordingNoopSignalingAdapter
   }
 
   @override
-  Future<VoiceCallRoom?> fetchCall(String callId) async {
-    final room = await _voice.fetchCall(callId);
-    if (failFetchCallAfterTerminal && room?.status.isTerminal == true) {
-      fetchCallAfterTerminalFailures += 1;
-      throw StateError('failed to send hangup frame');
-    }
-    return room;
-  }
+  Future<VoiceCallRoom?> fetchCall(String callId) => _voice.fetchCall(callId);
 
   @override
   Future<void> markConnected({
