@@ -232,6 +232,8 @@ class ProtocolBrainImpl implements ProtocolBrain {
     String peerId,
     RTCSessionDescription offer,
   ) async {
+    // Legacy connected-session media support. App calls use dedicated media
+    // connections so chat/data peer lifecycle cannot dispose active call media.
     final active = _requireConnectedSession(peerId);
     _markPhase(
       active,
@@ -258,6 +260,8 @@ class ProtocolBrainImpl implements ProtocolBrain {
     String peerId,
     RTCSessionDescription answer,
   ) async {
+    // Legacy connected-session media support. App calls use dedicated media
+    // connections so chat/data peer lifecycle cannot dispose active call media.
     final active = _requireConnectedSession(peerId);
     _markPhase(
       active,
@@ -280,6 +284,8 @@ class ProtocolBrainImpl implements ProtocolBrain {
 
   @override
   Future<RTCSessionDescription> createMediaOffer(String peerId) async {
+    // Legacy connected-session media support. App calls use dedicated media
+    // connections so chat/data peer lifecycle cannot dispose active call media.
     final active = _requireConnectedSession(peerId);
     _markPhase(
       active,

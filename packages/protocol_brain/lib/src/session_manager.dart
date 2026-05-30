@@ -133,16 +133,32 @@ abstract class SessionManager {
   Future<void> openChannel(String peerId, SessionChannel channel);
   Future<int> bufferedAmount(String peerId, SessionChannel channel);
   bool isChannelOpen(String peerId, SessionChannel channel);
+
+  /// Legacy connected-session audio capture path.
+  ///
+  /// App voice/video calls should use [createVoiceMediaConnection] or
+  /// [createCallMediaConnection] so call media has its own peer connection.
   Future<void> startLocalAudio(String peerId);
+
+  /// Stops audio captured through the legacy connected-session media path.
   Future<void> stopLocalAudio(String peerId);
   Future<void> setMicrophoneMuted(String peerId, {required bool muted});
   Future<VoiceMediaConnection> createVoiceMediaConnection(String peerId);
   Future<CallMediaConnection> createCallMediaConnection(String peerId);
+
+  /// Legacy connected-session media renegotiation path.
+  ///
+  /// Kept for compatibility with old diagnostics/tests. App call flows must not
+  /// use this API because it couples call media to the chat/data peer.
   Future<RTCSessionDescription> createMediaOffer(String peerId);
+
+  /// Applies a media offer on the legacy connected-session media path.
   Future<RTCSessionDescription> applyMediaOffer(
     String peerId,
     RTCSessionDescription offer,
   );
+
+  /// Applies a media answer on the legacy connected-session media path.
   Future<void> applyMediaAnswer(String peerId, RTCSessionDescription answer);
 }
 

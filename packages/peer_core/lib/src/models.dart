@@ -573,11 +573,27 @@ abstract class PeerCore {
   Future<void> addIceCandidate(RTCIceCandidate candidate);
   List<RTCIceCandidate> getLocalCandidates();
 
+  /// Legacy connected-peer audio capture path.
+  ///
+  /// Production voice/video calls should use a dedicated media connection
+  /// (`DefaultVoiceMediaConnection` or `DefaultCallMediaConnection`) so call
+  /// media is isolated from chat/data-channel peer lifecycle.
   Future<void> startLocalAudio();
+
+  /// Stops audio captured through the legacy connected-peer media path.
   Future<void> stopLocalAudio();
   Future<void> setMicrophoneMuted({required bool muted});
+
+  /// Legacy connected-peer media renegotiation path.
+  ///
+  /// Kept for compatibility with old diagnostics/tests. App call flows must not
+  /// use this API because it couples call media to the chat/data peer.
   Future<RTCSessionDescription> createMediaOffer();
+
+  /// Applies a media offer on the legacy connected-peer media path.
   Future<RTCSessionDescription> applyMediaOffer(RTCSessionDescription offer);
+
+  /// Applies a media answer on the legacy connected-peer media path.
   Future<void> applyMediaAnswer(RTCSessionDescription answer);
 
   void send(String channelId, dynamic data);
