@@ -111,6 +111,7 @@ final class CallMediaDiagnostics {
     this.disposed = false,
     this.processingConfig = const CallMediaProcessingConfig(),
     this.activeVideoOptimizationProfile,
+    this.mediaInterruptions = const <String>[],
     this.lastDetail,
     this.lastError,
     this.lastFailureReason,
@@ -131,6 +132,7 @@ final class CallMediaDiagnostics {
   final bool disposed;
   final CallMediaProcessingConfig processingConfig;
   final CallVideoOptimizationProfile? activeVideoOptimizationProfile;
+  final List<String> mediaInterruptions;
   final String? lastDetail;
   final String? lastError;
   final CallMediaFailureReason? lastFailureReason;

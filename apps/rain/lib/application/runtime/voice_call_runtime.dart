@@ -2914,6 +2914,24 @@ extension VoiceCallRuntime on RainRuntimeController {
   }
 
   void _handleVoiceCallAppLifecycleState(AppLifecycleState state) {
+    final interruptionType = switch (state) {
+      AppLifecycleState.paused ||
+      AppLifecycleState.detached => MediaInterruptionType.appPaused,
+      AppLifecycleState.resumed => MediaInterruptionType.appResumed,
+      AppLifecycleState.inactive || AppLifecycleState.hidden => null,
+    };
+    final media = _videoCallMediaConnection;
+    if (media != null && interruptionType != null) {
+      unawaited(
+        media.handleMediaInterruption(
+          MediaInterruptionEvent(
+            type: interruptionType,
+            occurredAt: DateTime.now(),
+            detail: state.name,
+          ),
+        ),
+      );
+    }
     if (state != AppLifecycleState.paused &&
         state != AppLifecycleState.detached) {
       return;

@@ -1,5 +1,6 @@
 export 'src/call/call_media_connection.dart';
 export 'src/call/call_media_models.dart';
+export 'src/call/media_interruption.dart';
 export 'src/data_channel_backpressure.dart';
 export 'src/default_peer_core.dart';
 export 'src/models.dart';

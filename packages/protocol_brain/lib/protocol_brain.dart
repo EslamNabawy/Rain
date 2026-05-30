@@ -29,6 +29,8 @@ export 'package:peer_core/peer_core.dart'
         CallRemoteMediaTrack,
         CallSessionDescription,
         CallVideoOptimizationProfile,
+        MediaInterruptionEvent,
+        MediaInterruptionType,
         DefaultCallMediaConnection,
         VoiceIceCandidate,
         VoiceMediaDiagnostics,

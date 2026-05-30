@@ -5,6 +5,7 @@ import 'package:flutter_webrtc/flutter_webrtc.dart';
 import '../models.dart';
 import '../platform_bridge.dart';
 import 'call_media_models.dart';
+import 'media_interruption.dart';
 
 const Map<String, dynamic> _audioSdpConstraints = <String, dynamic>{
   'mandatory': <String, dynamic>{
@@ -26,6 +27,7 @@ abstract class CallMediaConnection {
   Stream<CallIceCandidate> get onIceCandidate;
   Stream<CallRemoteMediaTrack> get onRemoteTrack;
   Stream<CallMediaState> get onStateChanged;
+  Stream<MediaInterruptionEvent> get onMediaInterruption;
   CallMediaDiagnostics get diagnostics;
   MediaStream? get localStream;
   MediaStreamTrack? get localVideoTrack;
@@ -48,6 +50,7 @@ abstract class CallMediaConnection {
   Future<void> setAudioOutputRoute(CallMediaOutputRoute route);
   Future<void> selectAudioOutputDevice(String deviceId);
   Future<void> refreshProcessingConfig();
+  Future<void> handleMediaInterruption(MediaInterruptionEvent event);
   Future<void> dispose();
 }
 
@@ -66,8 +69,11 @@ class DefaultCallMediaConnection implements CallMediaConnection {
       StreamController<CallRemoteMediaTrack>.broadcast();
   final StreamController<CallMediaState> _stateController =
       StreamController<CallMediaState>.broadcast();
+  final StreamController<MediaInterruptionEvent> _interruptionController =
+      StreamController<MediaInterruptionEvent>.broadcast();
   final List<CallIceCandidate> _pendingRemoteCandidates = <CallIceCandidate>[];
   final List<String> _mediaStates = <String>[];
+  final List<String> _mediaInterruptions = <String>[];
   final List<String> _iceConnectionStates = <String>[];
   final List<String> _peerConnectionStates = <String>[];
   final List<MediaStreamTrack> _remoteAudioTracks = <MediaStreamTrack>[];
@@ -115,6 +121,10 @@ class DefaultCallMediaConnection implements CallMediaConnection {
   Stream<CallMediaState> get onStateChanged => _stateController.stream;
 
   @override
+  Stream<MediaInterruptionEvent> get onMediaInterruption =>
+      _interruptionController.stream;
+
+  @override
   MediaStream? get localStream => _localStream;
 
   @override
@@ -138,6 +148,7 @@ class DefaultCallMediaConnection implements CallMediaConnection {
       disposed: _disposed,
       processingConfig: _processingConfig,
       activeVideoOptimizationProfile: _activeVideoOptimizationProfile,
+      mediaInterruptions: List<String>.unmodifiable(_mediaInterruptions),
       lastDetail: _lastDetail,
       lastError: _lastError,
       lastFailureReason: _lastFailureReason,
@@ -467,6 +478,55 @@ class DefaultCallMediaConnection implements CallMediaConnection {
     } else {
       _stopVideoOptimization();
       _appendDiagnostic(_mediaStates, 'videoOptimizationDisabled');
+    }
+  }
+
+  @override
+  Future<void> handleMediaInterruption(MediaInterruptionEvent event) async {
+    if (_controllersClosed) {
+      return;
+    }
+    _recordMediaInterruption(event);
+    switch (event.type) {
+      case MediaInterruptionType.microphonePermissionRevoked:
+      case MediaInterruptionType.audioFocusLost:
+        _microphoneMuted = true;
+        final audioTrack = _localAudioTrack;
+        if (audioTrack != null) {
+          try {
+            await _config.platform.setMicrophoneMuted(audioTrack, muted: true);
+          } catch (error) {
+            _appendDiagnostic(
+              _mediaStates,
+              'microphone interruption failed | $error',
+            );
+            _lastError = error.toString();
+          }
+        }
+        break;
+      case MediaInterruptionType.audioFocusRestored:
+        _appendDiagnostic(_mediaStates, 'audioFocusRestored');
+        break;
+      case MediaInterruptionType.cameraPermissionRevoked:
+      case MediaInterruptionType.cameraDisconnected:
+        _cameraMuted = true;
+        final videoTrack = _localVideoTrack;
+        if (videoTrack != null) {
+          videoTrack.enabled = false;
+        }
+        _appendDiagnostic(
+          _mediaStates,
+          'localVideoDisabled:${event.type.name}',
+        );
+        break;
+      case MediaInterruptionType.routeChanged:
+      case MediaInterruptionType.appPaused:
+      case MediaInterruptionType.appResumed:
+        _appendDiagnostic(_mediaStates, event.type.name);
+        break;
+    }
+    if (!_interruptionController.isClosed) {
+      _interruptionController.add(event);
     }
   }
 
@@ -1322,6 +1382,7 @@ class DefaultCallMediaConnection implements CallMediaConnection {
       _iceController.close(),
       _remoteTrackController.close(),
       _stateController.close(),
+      _interruptionController.close(),
     ]);
   }
 
@@ -1337,5 +1398,17 @@ class DefaultCallMediaConnection implements CallMediaConnection {
     if (target.length > maxDiagnostics) {
       target.removeRange(0, target.length - maxDiagnostics);
     }
+  }
+
+  void _recordMediaInterruption(MediaInterruptionEvent event) {
+    final detail = event.detail?.trim();
+    _appendDiagnostic(
+      _mediaInterruptions,
+      <String>[
+        event.type.name,
+        event.occurredAt.toUtc().toIso8601String(),
+        if (detail != null && detail.isNotEmpty) detail,
+      ].join(' | '),
+    );
   }
 }

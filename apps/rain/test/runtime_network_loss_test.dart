@@ -428,6 +428,8 @@ class _NoopCallMediaConnection implements CallMediaConnection {
       StreamController<CallRemoteMediaTrack>.broadcast();
   final StreamController<CallMediaState> _states =
       StreamController<CallMediaState>.broadcast();
+  final StreamController<MediaInterruptionEvent> _interruptions =
+      StreamController<MediaInterruptionEvent>.broadcast();
 
   @override
   Stream<CallIceCandidate> get onIceCandidate => _ice.stream;
@@ -437,6 +439,10 @@ class _NoopCallMediaConnection implements CallMediaConnection {
 
   @override
   Stream<CallMediaState> get onStateChanged => _states.stream;
+
+  @override
+  Stream<MediaInterruptionEvent> get onMediaInterruption =>
+      _interruptions.stream;
 
   @override
   CallMediaDiagnostics get diagnostics => const CallMediaDiagnostics();
@@ -490,9 +496,15 @@ class _NoopCallMediaConnection implements CallMediaConnection {
   Future<void> refreshProcessingConfig() async {}
 
   @override
+  Future<void> handleMediaInterruption(MediaInterruptionEvent event) async {
+    _interruptions.add(event);
+  }
+
+  @override
   Future<void> dispose() async {
     await _ice.close();
     await _tracks.close();
     await _states.close();
+    await _interruptions.close();
   }
 }

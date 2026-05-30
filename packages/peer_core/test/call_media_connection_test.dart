@@ -69,6 +69,41 @@ void main() {
     await connection.dispose();
   });
 
+  test(
+    'camera interruption disables local video without failing call',
+    () async {
+      final platform = _FakeCallPlatformBridge();
+      final connection = _connection(platform);
+      final interruptions = <MediaInterruptionEvent>[];
+      final subscription = connection.onMediaInterruption.listen(
+        interruptions.add,
+      );
+
+      await connection.createOffer(kind: CallMediaKind.video);
+      await connection.handleMediaInterruption(
+        MediaInterruptionEvent(
+          type: MediaInterruptionType.cameraDisconnected,
+          occurredAt: DateTime.utc(2026),
+          detail: 'camera removed',
+        ),
+      );
+
+      expect(platform.videoStream.videoTrack?.enabled, isFalse);
+      expect(connection.diagnostics.hasLocalVideo, isTrue);
+      expect(
+        connection.diagnostics.mediaInterruptions.single,
+        contains('cameraDisconnected'),
+      );
+      expect(
+        interruptions.single.type,
+        MediaInterruptionType.cameraDisconnected,
+      );
+
+      await subscription.cancel();
+      await connection.dispose();
+    },
+  );
+
   test('video mode can request ICE restart offer', () async {
     final platform = _FakeCallPlatformBridge();
     final connection = _connection(platform);

@@ -2317,6 +2317,31 @@ void main() {
       },
     );
 
+    test('video call receives app pause media interruption', () async {
+      final harness = await _createTwoUserCallHarness(db, alice);
+      addTearDown(harness.dispose);
+
+      await harness.start();
+      await _startAndAcceptHarnessCall(
+        harness,
+        callerIsAlice: true,
+        mediaMode: protocol.CallMediaMode.video,
+      );
+      final media =
+          harness.aliceBrain.callMediaConnections['bob']!
+              as _TestCallMediaConnection;
+
+      harness.aliceRuntime.didChangeAppLifecycleState(AppLifecycleState.paused);
+
+      await _waitForCondition(
+        () => media.interruptions.any(
+          (MediaInterruptionEvent event) =>
+              event.type == MediaInterruptionType.appPaused,
+        ),
+        'video media interruption on app pause',
+      );
+    });
+
     test('remote hangup clears local Firebase video call state', () async {
       final adapter = RecordingVoiceSignalingAdapter();
       final aliceBrain = TestSessionManager();
@@ -7521,6 +7546,9 @@ class _TestCallMediaConnection implements CallMediaConnection {
       StreamController<CallRemoteMediaTrack>.broadcast();
   final StreamController<CallMediaState> _stateController =
       StreamController<CallMediaState>.broadcast();
+  final StreamController<MediaInterruptionEvent> _interruptionController =
+      StreamController<MediaInterruptionEvent>.broadcast();
+  final List<MediaInterruptionEvent> interruptions = <MediaInterruptionEvent>[];
   final List<CallIceCandidate> remoteCandidates = <CallIceCandidate>[];
   bool hasLocalAudio = false;
   bool hasLocalVideo = false;
@@ -7535,6 +7563,10 @@ class _TestCallMediaConnection implements CallMediaConnection {
 
   @override
   Stream<CallMediaState> get onStateChanged => _stateController.stream;
+
+  @override
+  Stream<MediaInterruptionEvent> get onMediaInterruption =>
+      _interruptionController.stream;
 
   @override
   CallMediaDiagnostics get diagnostics => CallMediaDiagnostics(
@@ -7661,6 +7693,12 @@ class _TestCallMediaConnection implements CallMediaConnection {
   Future<void> refreshProcessingConfig() async {}
 
   @override
+  Future<void> handleMediaInterruption(MediaInterruptionEvent event) async {
+    interruptions.add(event);
+    _interruptionController.add(event);
+  }
+
+  @override
   Future<void> dispose() async {
     if (disposed) {
       return;
@@ -7670,6 +7708,7 @@ class _TestCallMediaConnection implements CallMediaConnection {
     await _iceController.close();
     await _remoteTrackController.close();
     await _stateController.close();
+    await _interruptionController.close();
   }
 
   void _emitConnected() {
