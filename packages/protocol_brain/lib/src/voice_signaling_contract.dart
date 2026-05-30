@@ -1,4 +1,5 @@
 import 'voice_call_clock.dart';
+import 'voice_call_cleanup_janitor.dart';
 import 'voice_call_frame.dart';
 
 enum VoiceCallRole { caller, callee }
@@ -113,6 +114,12 @@ abstract interface class VoiceSignalingAdapter {
   Stream<VoiceCallIceCandidateRecord> watchIceCandidates({
     required String callId,
     required VoiceCallRole role,
+  });
+
+  Future<VoiceCallCleanupSummary> cleanupStaleVoiceCallArtifacts({
+    required String username,
+    required int now,
+    int limit = maxCallCleanupItemsPerRun,
   });
 
   Future<void> deleteCall(String callId);

@@ -354,6 +354,7 @@ class RainRuntimeController with WidgetsBindingObserver {
 
     final voiceAdapter = voiceSignalingAdapter;
     if (voiceAdapter != null) {
+      unawaited(_cleanupStaleVoiceCallArtifacts('startup'));
       _subscriptions.add(
         voiceAdapter
             .watchIncomingCalls(selfIdentity.username)
@@ -1518,6 +1519,7 @@ class RainRuntimeController with WidgetsBindingObserver {
     switch (state) {
       case AppLifecycleState.resumed:
         _backgroundOfflineTimer?.cancel();
+        unawaited(_cleanupStaleVoiceCallArtifacts('resume'));
         unawaited(
           handleNetworkAvailable(
             'App resumed. Refreshing peer connection paths.',

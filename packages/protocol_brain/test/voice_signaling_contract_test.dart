@@ -370,6 +370,101 @@ void main() {
     },
   );
 
+  test(
+    'cleanup janitor removes missing room locks and claim retries',
+    () async {
+      final adapter = FakeVoiceSignalingAdapter();
+      addTearDown(adapter.dispose);
+
+      adapter.seedActivePairLockForTest(
+        const VoiceActivePairLock(
+          pairId: 'alice:bob',
+          callId: 'missing-call',
+          caller: 'alice',
+          callee: 'bob',
+          createdAt: 1000,
+          updatedAt: 1000,
+          expiresAt: 60000,
+        ),
+      );
+      adapter.seedActiveUserLockForTest(
+        const VoiceActiveUserLock(
+          username: 'alice',
+          callId: 'missing-call',
+          pairId: 'alice:bob',
+          caller: 'alice',
+          callee: 'bob',
+          createdAt: 1000,
+          updatedAt: 1000,
+          expiresAt: 60000,
+        ),
+      );
+
+      final summary = await adapter.cleanupStaleVoiceCallArtifacts(
+        username: 'alice',
+        now: 1300,
+      );
+      expect(summary.cleanedAny, isTrue);
+      expect(
+        summary.decisions.map((decision) => decision.action),
+        containsAll(<VoiceCallCleanupAction>[
+          VoiceCallCleanupAction.deleteMatchingUserLock,
+          VoiceCallCleanupAction.deleteMatchingPairLock,
+        ]),
+      );
+
+      final room = await adapter.createOutgoingCall(
+        callId: 'call-2',
+        caller: 'alice',
+        callee: 'bob',
+        createdAt: 1400,
+        expiresAt: 61400,
+      );
+      expect(room.callId, 'call-2');
+      expect(adapter.activePairLocks['alice:bob']?.callId, 'call-2');
+      expect(adapter.activeUserLocks['alice']?.callId, 'call-2');
+    },
+  );
+
+  test('cleanup janitor does not delete newer active locks', () async {
+    final adapter = FakeVoiceSignalingAdapter();
+    addTearDown(adapter.dispose);
+
+    await adapter.createOutgoingCall(
+      callId: 'call-1',
+      caller: 'alice',
+      callee: 'bob',
+      createdAt: 1000,
+      expiresAt: 60000,
+    );
+    await adapter.endCall(
+      callId: 'call-1',
+      username: 'alice',
+      status: VoiceCallSignalingStatus.ended,
+      endedAt: 1100,
+      reasonCode: 'hangup',
+      reason: 'Ended.',
+    );
+    await adapter.createOutgoingCall(
+      callId: 'call-2',
+      caller: 'alice',
+      callee: 'bob',
+      createdAt: 1200,
+      expiresAt: 61200,
+    );
+
+    final summary = await adapter.cleanupStaleVoiceCallArtifacts(
+      username: 'alice',
+      now: 1300,
+    );
+
+    expect(summary.cleanedAny, isFalse);
+    expect(adapter.rooms.keys, contains('call-2'));
+    expect(adapter.activePairLocks['alice:bob']?.callId, 'call-2');
+    expect(adapter.activeUserLocks['alice']?.callId, 'call-2');
+    expect(adapter.activeUserLocks['bob']?.callId, 'call-2');
+  });
+
   test('fake adapter stores video media mode and camera mute state', () async {
     final adapter = FakeVoiceSignalingAdapter();
     addTearDown(adapter.dispose);

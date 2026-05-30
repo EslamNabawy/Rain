@@ -9,6 +9,7 @@ import '../src/connection_request_adapter.dart';
 import '../src/connection_request_contract.dart';
 import '../src/signaling_cost_budget.dart';
 import '../src/voice_call_clock.dart';
+import '../src/voice_call_cleanup_janitor.dart';
 import '../src/voice_call_frame.dart';
 import '../src/voice_signaling_contract.dart';
 import 'signaling_adapter.dart';
@@ -939,6 +940,163 @@ class FirebaseSignalingAdapter
       // cleanup fails, the scheduled cleanup path or a later watcher tick can
       // retry without crashing the app.
     }
+  }
+
+  @override
+  Future<VoiceCallCleanupSummary> cleanupStaleVoiceCallArtifacts({
+    required String username,
+    required int now,
+    int limit = maxCallCleanupItemsPerRun,
+  }) async {
+    await _configureEmulatorsIfNeeded();
+    final normalizedUsername = normalizeVoiceCallUsername(username);
+    await _ensureSignedInAsUsername(normalizedUsername);
+    final decisions = <VoiceCallCleanupDecision>[];
+    if (limit <= 0) {
+      return VoiceCallCleanupSummary(
+        username: normalizedUsername,
+        now: now,
+        decisions: decisions,
+      );
+    }
+
+    void addDecision(
+      VoiceCallCleanupAction action,
+      String callId,
+      String reason, {
+      String? path,
+    }) {
+      if (decisions.length >= limit) {
+        return;
+      }
+      decisions.add(
+        VoiceCallCleanupDecision(
+          action: action,
+          callId: callId,
+          reason: reason,
+          path: path,
+        ),
+      );
+    }
+
+    final userLockRef = _root.child('activeVoiceUsers/$normalizedUsername');
+    try {
+      final snapshot = await userLockRef.get();
+      final value = snapshot.value;
+      if (value is Map && decisions.length < limit) {
+        final lock = VoiceActiveUserLock.fromJson(
+          username: normalizedUsername,
+          json: _asObjectMap(value),
+        );
+        VoiceCallRoom? room;
+        try {
+          room = await fetchCall(lock.callId);
+        } catch (_) {
+          room = null;
+        }
+        if (room == null) {
+          final removed = await _removeActiveVoiceUserLockIfUnchanged(
+            lockRef: userLockRef,
+            lock: lock,
+          );
+          if (removed) {
+            addDecision(
+              VoiceCallCleanupAction.deleteMatchingUserLock,
+              lock.callId,
+              'missing room',
+              path: 'activeVoiceUsers/$normalizedUsername',
+            );
+          }
+          final pairLock = VoiceActivePairLock(
+            pairId: lock.pairId,
+            callId: lock.callId,
+            caller: lock.caller,
+            callee: lock.callee,
+            createdAt: lock.createdAt,
+            updatedAt: lock.updatedAt,
+            expiresAt: lock.expiresAt,
+          );
+          final pairRemoved = await _removeActiveVoicePairLockIfUnchanged(
+            lockRef: _root.child('activeVoicePairs/${lock.pairId}'),
+            lock: pairLock,
+          );
+          if (pairRemoved) {
+            addDecision(
+              VoiceCallCleanupAction.deleteMatchingPairLock,
+              lock.callId,
+              'missing room',
+              path: 'activeVoicePairs/${lock.pairId}',
+            );
+          }
+        } else if (room.isTerminal) {
+          await _deleteVoiceCallRoomArtifacts(room);
+          addDecision(
+            VoiceCallCleanupAction.deleteTerminalRoom,
+            room.callId,
+            'terminal room',
+            path: 'voiceCalls/${room.callId}',
+          );
+        } else if (room.status != VoiceCallSignalingStatus.connected &&
+            room.expiresAt <= now) {
+          await _deleteVoiceCallRoomArtifacts(room);
+          addDecision(
+            VoiceCallCleanupAction.deleteExpiredRoom,
+            room.callId,
+            'expired setup room',
+            path: 'voiceCalls/${room.callId}',
+          );
+        }
+      }
+    } catch (_) {
+      // Opportunistic cleanup must never block startup, resume, or call setup.
+    }
+
+    try {
+      final inboxSnapshot = await _root
+          .child('voiceCallInboxes/$normalizedUsername')
+          .limitToFirst(limit)
+          .get();
+      for (final child in inboxSnapshot.children) {
+        if (decisions.length >= limit) {
+          break;
+        }
+        final callId = child.key ?? '';
+        if (callId.isEmpty) {
+          continue;
+        }
+        try {
+          final entry = VoiceCallInboxEntry.fromJson(
+            callId: callId,
+            json: _asObjectMap(child.value),
+          );
+          if (entry.status.isTerminal || entry.expiresAt <= now) {
+            await child.ref.remove();
+            addDecision(
+              VoiceCallCleanupAction.deleteCorruptInbox,
+              callId,
+              entry.status.isTerminal ? 'terminal inbox' : 'expired inbox',
+              path: 'voiceCallInboxes/$normalizedUsername/$callId',
+            );
+          }
+        } catch (_) {
+          await child.ref.remove();
+          addDecision(
+            VoiceCallCleanupAction.deleteCorruptInbox,
+            callId,
+            'corrupt inbox',
+            path: 'voiceCallInboxes/$normalizedUsername/$callId',
+          );
+        }
+      }
+    } catch (_) {
+      // Inbox cleanup is best effort and must not close incoming-call streams.
+    }
+
+    return VoiceCallCleanupSummary(
+      username: normalizedUsername,
+      now: now,
+      decisions: List<VoiceCallCleanupDecision>.unmodifiable(decisions),
+    );
   }
 
   @override

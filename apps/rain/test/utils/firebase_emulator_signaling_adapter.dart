@@ -1032,6 +1032,19 @@ class FirebaseEmulatorSignalingAdapter
     );
   }
 
+  @override
+  Future<VoiceCallCleanupSummary> cleanupStaleVoiceCallArtifacts({
+    required String username,
+    required int now,
+    int limit = maxCallCleanupItemsPerRun,
+  }) async {
+    return VoiceCallCleanupSummary(
+      username: normalizeVoiceCallUsername(username),
+      now: now,
+      decisions: const <VoiceCallCleanupDecision>[],
+    );
+  }
+
   Future<int> _iceCandidateCount(String callId, VoiceCallRole role) async {
     final value = await _get(<String>[
       'voiceCalls',

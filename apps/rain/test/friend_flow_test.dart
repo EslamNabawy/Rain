@@ -6646,6 +6646,19 @@ class RecordingVoiceSignalingAdapter extends RecordingNoopSignalingAdapter
   }
 
   @override
+  Future<VoiceCallCleanupSummary> cleanupStaleVoiceCallArtifacts({
+    required String username,
+    required int now,
+    int limit = maxCallCleanupItemsPerRun,
+  }) {
+    return _voice.cleanupStaleVoiceCallArtifacts(
+      username: username,
+      now: now,
+      limit: limit,
+    );
+  }
+
+  @override
   Future<void> markConnected({
     required String callId,
     required String username,

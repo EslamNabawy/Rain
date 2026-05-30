@@ -2,6 +2,7 @@ import 'dart:async';
 
 import '../signaling_cost_budget.dart';
 import '../voice_call_clock.dart';
+import '../voice_call_cleanup_janitor.dart';
 import '../voice_call_frame.dart';
 import '../voice_signaling_contract.dart';
 
@@ -194,6 +195,101 @@ final class FakeVoiceSignalingAdapter implements VoiceSignalingAdapter {
       }
     }
     yield* _inboxController(normalizedUsername).stream;
+  }
+
+  @override
+  Future<VoiceCallCleanupSummary> cleanupStaleVoiceCallArtifacts({
+    required String username,
+    required int now,
+    int limit = maxCallCleanupItemsPerRun,
+  }) async {
+    _ensureOpen();
+    final normalizedUsername = normalizeVoiceCallUsername(username);
+    final decisions = <VoiceCallCleanupDecision>[];
+
+    void addDecision(
+      VoiceCallCleanupAction action,
+      String callId,
+      String reason, {
+      String? path,
+    }) {
+      if (decisions.length >= limit) {
+        return;
+      }
+      decisions.add(
+        VoiceCallCleanupDecision(
+          action: action,
+          callId: callId,
+          reason: reason,
+          path: path,
+        ),
+      );
+    }
+
+    final userLock = _userLocks[normalizedUsername];
+    if (userLock != null && decisions.length < limit) {
+      final room = _rooms[userLock.callId];
+      if (room == null) {
+        _userLocks.remove(normalizedUsername);
+        addDecision(
+          VoiceCallCleanupAction.deleteMatchingUserLock,
+          userLock.callId,
+          'missing room',
+          path: 'activeVoiceUsers/$normalizedUsername',
+        );
+        final pairLock = _pairLocks[userLock.pairId];
+        if (pairLock?.callId == userLock.callId && decisions.length < limit) {
+          _pairLocks.remove(userLock.pairId);
+          addDecision(
+            VoiceCallCleanupAction.deleteMatchingPairLock,
+            userLock.callId,
+            'missing room',
+            path: 'activeVoicePairs/${userLock.pairId}',
+          );
+        }
+      } else if (room.isTerminal) {
+        _removeCallArtifacts(room.callId);
+        addDecision(
+          VoiceCallCleanupAction.deleteTerminalRoom,
+          room.callId,
+          'terminal room',
+          path: 'voiceCalls/${room.callId}',
+        );
+      } else if (room.status != VoiceCallSignalingStatus.connected &&
+          room.expiresAt <= now) {
+        _removeCallArtifacts(room.callId);
+        addDecision(
+          VoiceCallCleanupAction.deleteExpiredRoom,
+          room.callId,
+          'expired setup room',
+          path: 'voiceCalls/${room.callId}',
+        );
+      }
+    }
+
+    final inbox = _inboxes[normalizedUsername];
+    if (inbox != null) {
+      for (final entry in List<VoiceCallInboxEntry>.of(inbox.values)) {
+        if (decisions.length >= limit) {
+          break;
+        }
+        if (entry.status.isTerminal || entry.expiresAt <= now) {
+          inbox.remove(entry.callId);
+          addDecision(
+            VoiceCallCleanupAction.deleteCorruptInbox,
+            entry.callId,
+            entry.status.isTerminal ? 'terminal inbox' : 'expired inbox',
+            path: 'voiceCallInboxes/$normalizedUsername/${entry.callId}',
+          );
+        }
+      }
+    }
+
+    return VoiceCallCleanupSummary(
+      username: normalizedUsername,
+      now: now,
+      decisions: List<VoiceCallCleanupDecision>.unmodifiable(decisions),
+    );
   }
 
   @override

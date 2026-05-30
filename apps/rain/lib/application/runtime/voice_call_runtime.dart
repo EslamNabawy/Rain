@@ -2991,6 +2991,40 @@ extension VoiceCallRuntime on RainRuntimeController {
     return voiceAdapter;
   }
 
+  Future<void> _cleanupStaleVoiceCallArtifacts(String reason) async {
+    final voiceAdapter = voiceSignalingAdapter;
+    if (voiceAdapter == null || _shutDown) {
+      return;
+    }
+    final now = DateTime.now().millisecondsSinceEpoch;
+    try {
+      final summary = await voiceAdapter.cleanupStaleVoiceCallArtifacts(
+        username: selfIdentity.username,
+        now: now,
+      );
+      _recordRuntimeEvent(
+        category: 'call',
+        name: 'voice_call_cleanup_janitor_completed',
+        severity: summary.cleanedAny ? 'warning' : 'info',
+        context: <String, Object?>{'reason': reason, ...summary.toJson()},
+      );
+    } catch (error, stackTrace) {
+      _recordRuntimeEvent(
+        category: 'call',
+        name: 'voice_call_cleanup_janitor_failed',
+        severity: 'warning',
+        message: error.toString(),
+        context: <String, Object?>{'reason': reason},
+      );
+      errorRecorder?.call(
+        error,
+        stackTrace,
+        source: 'voice-call-cleanup',
+        fatal: false,
+      );
+    }
+  }
+
   void _recordVoiceSignalingError(Object error, StackTrace stackTrace) {
     if (_isVoiceTerminalAlreadyClosedError(error)) {
       _recordTerminalAlreadyClosed(
