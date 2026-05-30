@@ -80,6 +80,93 @@ void main() {
       },
     );
 
+    test('heartbeat failures are captured without crashing runtime', () async {
+      final adapter = FailingHeartbeatNoopSignalingAdapter();
+      final eventNames = <String>[];
+      final errors = <Object>[];
+      final runtime = RainRuntimeController(
+        selfIdentity: alice,
+        adapter: adapter,
+        brain: null,
+        database: db,
+        friendStore: FriendStore(db),
+        messageStore: MessageStore(db),
+        offlineQueueStore: OfflineQueueStore(db),
+        messageDeliveryService: MessageDeliveryService(
+          messageStore: MessageStore(db),
+          offlineQueueStore: OfflineQueueStore(db),
+        ),
+        heartbeatInterval: const Duration(milliseconds: 10),
+        eventRecorder:
+            ({
+              required String category,
+              required String name,
+              String severity = 'info',
+              String? message,
+              Map<String, Object?> context = const <String, Object?>{},
+            }) {
+              eventNames.add(name);
+            },
+        errorRecorder:
+            (
+              Object error,
+              StackTrace? stackTrace, {
+              required String source,
+              required bool fatal,
+              String? flutterLibrary,
+              String? flutterContext,
+            }) {
+              errors.add(error);
+            },
+      );
+      addTearDown(runtime.dispose);
+
+      await runtime.start();
+      await _waitForCondition(
+        () => eventNames.contains('heartbeat_failed'),
+        'heartbeat failure diagnostic',
+      );
+
+      expect(errors, isNotEmpty);
+      expect(await adapter.fetchIdentity('alice'), isNotNull);
+    });
+
+    test('app pause marks presence offline and pauses heartbeats', () async {
+      final adapter = NoopSignalingAdapter();
+      final runtime = RainRuntimeController(
+        selfIdentity: alice,
+        adapter: adapter,
+        brain: null,
+        database: db,
+        friendStore: FriendStore(db),
+        messageStore: MessageStore(db),
+        offlineQueueStore: OfflineQueueStore(db),
+        messageDeliveryService: MessageDeliveryService(
+          messageStore: MessageStore(db),
+          offlineQueueStore: OfflineQueueStore(db),
+        ),
+        heartbeatInterval: const Duration(milliseconds: 10),
+      );
+      addTearDown(runtime.dispose);
+
+      await runtime.start();
+      expect((await adapter.fetchIdentity('alice'))?.online, isTrue);
+
+      runtime.didChangeAppLifecycleState(AppLifecycleState.paused);
+      await _waitForAsyncCondition(
+        () async => (await adapter.fetchIdentity('alice'))?.online == false,
+        'presence to be offline after pause',
+      );
+      await Future<void>.delayed(const Duration(milliseconds: 50));
+      expect((await adapter.fetchIdentity('alice'))?.online, isFalse);
+
+      runtime.didChangeAppLifecycleState(AppLifecycleState.resumed);
+      await _waitForAsyncCondition(
+        () async => (await adapter.fetchIdentity('alice'))?.online == true,
+        'presence to be online after resume',
+      );
+    });
+
     test(
       'sendFriendRequest removes stale local friendship before sending a new request',
       () async {
@@ -6297,6 +6384,21 @@ Future<void> _waitForCondition(
   fail('Timed out waiting for $description.');
 }
 
+Future<void> _waitForAsyncCondition(
+  Future<bool> Function() condition,
+  String description,
+) async {
+  final deadline = DateTime.now().add(const Duration(seconds: 2));
+  while (DateTime.now().isBefore(deadline)) {
+    if (await condition()) {
+      return;
+    }
+    await Future<void>.delayed(const Duration(milliseconds: 20));
+  }
+
+  fail('Timed out waiting for $description.');
+}
+
 Future<String> _nextString(Stream<String> stream) {
   final completer = Completer<String>();
   late final StreamSubscription<String> subscription;
@@ -6909,6 +7011,13 @@ class FailingFriendshipNoopSignalingAdapter extends NoopSignalingAdapter {
   @override
   Future<void> upsertFriendship(String firstUser, String secondUser) {
     throw Exception('friendship persistence failed');
+  }
+}
+
+class FailingHeartbeatNoopSignalingAdapter extends NoopSignalingAdapter {
+  @override
+  Future<void> sendHeartbeat(String username) {
+    throw StateError('heartbeat write failed');
   }
 }
 

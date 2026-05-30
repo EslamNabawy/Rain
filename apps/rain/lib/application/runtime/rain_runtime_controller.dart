@@ -201,6 +201,7 @@ class RainRuntimeController with WidgetsBindingObserver {
   Timer? _heartbeatTimer;
   Timer? _friendRequestRefreshTimer;
   Timer? _backgroundOfflineTimer;
+  bool _presenceHeartbeatPaused = false;
   bool _started = false;
   bool _shutDown = false;
   Future<void>? _shutdownFuture;
@@ -322,9 +323,7 @@ class RainRuntimeController with WidgetsBindingObserver {
     }
 
     _heartbeatTimer = Timer.periodic(heartbeatInterval, (_) {
-      if (!_shutDown && _started) {
-        adapter.sendHeartbeat(selfIdentity.username);
-      }
+      unawaited(_sendHeartbeatSafely(reason: 'timer'));
     });
 
     _subscriptions.add(
@@ -555,6 +554,92 @@ class RainRuntimeController with WidgetsBindingObserver {
       );
     } catch (_) {
       // Diagnostics must never affect runtime behavior.
+    }
+  }
+
+  Future<void> _sendHeartbeatSafely({required String reason}) async {
+    if (_shutDown || !_started || _presenceHeartbeatPaused) {
+      return;
+    }
+    try {
+      await adapter.sendHeartbeat(selfIdentity.username);
+      _recordRuntimeEvent(
+        category: 'presence',
+        name: 'heartbeat_sent',
+        context: <String, Object?>{'reason': reason},
+      );
+    } catch (error, stackTrace) {
+      _recordRuntimeEvent(
+        category: 'presence',
+        name: 'heartbeat_failed',
+        severity: 'warning',
+        message: error.toString(),
+        context: <String, Object?>{'reason': reason},
+      );
+      errorRecorder?.call(
+        error,
+        stackTrace,
+        source: 'presence-heartbeat',
+        fatal: false,
+      );
+    }
+  }
+
+  Future<void> _setPresenceOnlineSafely(String reason) async {
+    if (_shutDown || !_started || _presenceHeartbeatPaused) {
+      return;
+    }
+    try {
+      await adapter.setPresence(selfIdentity.username, true);
+      _recordRuntimeEvent(
+        category: 'presence',
+        name: 'presence_marked_online',
+        context: <String, Object?>{'reason': reason},
+      );
+    } catch (error, stackTrace) {
+      _recordRuntimeEvent(
+        category: 'presence',
+        name: 'presence_online_failed',
+        severity: 'warning',
+        message: error.toString(),
+        context: <String, Object?>{'reason': reason},
+      );
+      errorRecorder?.call(
+        error,
+        stackTrace,
+        source: 'presence-online',
+        fatal: false,
+      );
+      return;
+    }
+    await _sendHeartbeatSafely(reason: '$reason heartbeat');
+  }
+
+  Future<void> _setPresenceOfflineSafely(String reason) async {
+    if (_shutDown || !_started) {
+      return;
+    }
+    try {
+      await adapter.setPresence(selfIdentity.username, false);
+      _recordRuntimeEvent(
+        category: 'presence',
+        name: 'presence_marked_offline',
+        context: <String, Object?>{'reason': reason},
+      );
+    } catch (error, stackTrace) {
+      _recordRuntimeEvent(
+        category: 'presence',
+        name: 'presence_offline_failed',
+        severity: 'warning',
+        message: error.toString(),
+        context: <String, Object?>{'reason': reason},
+      );
+      errorRecorder?.call(
+        error,
+        stackTrace,
+        source: 'presence-offline',
+        fatal: false,
+      );
     }
   }
 
@@ -1031,12 +1116,7 @@ class RainRuntimeController with WidgetsBindingObserver {
       },
     );
 
-    try {
-      await adapter.setPresence(selfIdentity.username, true);
-      await adapter.sendHeartbeat(selfIdentity.username);
-    } catch (_) {
-      // Backend reachability is already reported by NetworkStatusService.
-    }
+    await _setPresenceOnlineSafely('network_available');
 
     await _safeSyncRelationships();
     await _connectionCoordinator.scheduleNetworkRecovery(reason, (
@@ -1524,6 +1604,7 @@ class RainRuntimeController with WidgetsBindingObserver {
 
     switch (state) {
       case AppLifecycleState.resumed:
+        _presenceHeartbeatPaused = false;
         _backgroundOfflineTimer?.cancel();
         unawaited(_cleanupStaleVoiceCallArtifacts('resume'));
         unawaited(
@@ -1533,16 +1614,15 @@ class RainRuntimeController with WidgetsBindingObserver {
         );
         break;
       case AppLifecycleState.inactive:
+        break;
       case AppLifecycleState.hidden:
       case AppLifecycleState.paused:
+        _presenceHeartbeatPaused = true;
         _backgroundOfflineTimer?.cancel();
-        _backgroundOfflineTimer = Timer(const Duration(seconds: 30), () {
-          if (_started && !_shutDown) {
-            unawaited(adapter.setPresence(selfIdentity.username, false));
-          }
-        });
+        unawaited(_setPresenceOfflineSafely('app_${state.name}'));
         break;
       case AppLifecycleState.detached:
+        _presenceHeartbeatPaused = true;
         _backgroundOfflineTimer?.cancel();
         unawaited(closeForAppExit(AppExitReason.lifecycleDetached));
         break;
