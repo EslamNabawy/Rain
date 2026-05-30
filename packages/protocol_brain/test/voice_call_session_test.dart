@@ -214,7 +214,7 @@ void main() {
 
       expect(session.state.phase, VoiceCallSessionPhase.active);
       expect(session.state.mediaReconnecting, isTrue);
-      expect(session.state.detail, 'Call media reconnecting.');
+      expect(session.state.detail, 'Waiting for call media restart.');
       expect(media.disposeCalls, 0);
 
       media.emitState(const VoiceMediaState(phase: VoiceMediaPhase.connected));
@@ -229,6 +229,94 @@ void main() {
       );
     },
   );
+
+  test(
+    'offer owner sends ICE restart offer when active media disconnects',
+    () async {
+      final media = _FakeVoiceMediaConnection();
+      final sent = <VoiceCallFrame>[];
+      final session = _session(media: media, sent: sent);
+
+      await session.startOutgoing();
+      await session.handleFrame(
+        _frame(VoiceCallFrameType.accept, from: 'bob', to: 'alice', seq: 1),
+      );
+      media.emitState(const VoiceMediaState(phase: VoiceMediaPhase.connected));
+      await pumpEventQueue();
+
+      media.emitState(
+        const VoiceMediaState(
+          phase: VoiceMediaPhase.reconnecting,
+          detail: 'Call media reconnecting.',
+        ),
+      );
+      await pumpEventQueue();
+
+      final offers = sent
+          .where(
+            (VoiceCallFrame frame) => frame.type == VoiceCallFrameType.offer,
+          )
+          .toList(growable: false);
+      expect(media.createOfferIceRestartFlags, <bool>[false, true]);
+      expect(offers, hasLength(2));
+      expect(offers.first.mediaSeq, 1);
+      expect(offers.last.mediaSeq, 2);
+      expect(session.state.phase, VoiceCallSessionPhase.active);
+      expect(session.state.mediaReconnecting, isTrue);
+    },
+  );
+
+  test('answerer accepts ICE restart offer while active', () async {
+    final media = _FakeVoiceMediaConnection();
+    final sent = <VoiceCallFrame>[];
+    final session = _session(
+      media: media,
+      sent: sent,
+      localPeerId: 'bob',
+      remotePeerId: 'alice',
+    );
+
+    await session.handleFrame(
+      _frame(VoiceCallFrameType.invite, from: 'alice', to: 'bob', seq: 1),
+    );
+    await session.acceptIncoming();
+    await session.handleFrame(
+      _frame(
+        VoiceCallFrameType.offer,
+        from: 'alice',
+        to: 'bob',
+        seq: 2,
+        sdp: 'initial-offer',
+        sdpType: 'offer',
+        mediaSeq: 1,
+      ),
+    );
+    media.emitState(const VoiceMediaState(phase: VoiceMediaPhase.connected));
+    await pumpEventQueue();
+
+    await session.handleFrame(
+      _frame(
+        VoiceCallFrameType.offer,
+        from: 'alice',
+        to: 'bob',
+        seq: 3,
+        sdp: 'restart-offer',
+        sdpType: 'offer',
+        mediaSeq: 2,
+      ),
+    );
+
+    final answers = sent
+        .where(
+          (VoiceCallFrame frame) => frame.type == VoiceCallFrameType.answer,
+        )
+        .toList(growable: false);
+    expect(media.acceptedOffers, <String>['initial-offer', 'restart-offer']);
+    expect(answers, hasLength(2));
+    expect(answers.last.mediaSeq, 2);
+    expect(session.state.phase, VoiceCallSessionPhase.active);
+    expect(session.state.mediaReconnecting, isTrue);
+  });
 
   test('active session deafen and output route are local only', () async {
     final media = _FakeVoiceMediaConnection();
@@ -963,6 +1051,7 @@ VoiceCallFrame _frame(
   String? reason,
   String? sdp,
   String? sdpType,
+  int? mediaSeq,
   String? candidate,
   String? sdpMid,
   int? sdpMLineIndex,
@@ -981,6 +1070,7 @@ VoiceCallFrame _frame(
     reason: reason,
     sdp: sdp,
     sdpType: sdpType,
+    mediaSeq: mediaSeq,
     candidate: candidate,
     sdpMid: sdpMid,
     sdpMLineIndex: sdpMLineIndex,
@@ -1003,6 +1093,7 @@ final class _FakeVoiceMediaConnection implements VoiceMediaConnection {
   int startLocalAudioCalls = 0;
   Object? startLocalAudioError;
   int createOfferCalls = 0;
+  final List<bool> createOfferIceRestartFlags = <bool>[];
   int disposeCalls = 0;
   final List<String> acceptedOffers = <String>[];
   final List<String> appliedAnswers = <String>[];
@@ -1038,8 +1129,9 @@ final class _FakeVoiceMediaConnection implements VoiceMediaConnection {
   }
 
   @override
-  Future<VoiceSessionDescription> createOffer() async {
+  Future<VoiceSessionDescription> createOffer({bool iceRestart = false}) async {
     createOfferCalls += 1;
+    createOfferIceRestartFlags.add(iceRestart);
     return const VoiceSessionDescription(sdp: 'local-offer', type: 'offer');
   }
 

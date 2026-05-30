@@ -7184,7 +7184,7 @@ class _TestVoiceMediaConnection implements VoiceMediaConnection {
   }
 
   @override
-  Future<VoiceSessionDescription> createOffer() async {
+  Future<VoiceSessionDescription> createOffer({bool iceRestart = false}) async {
     owner.mediaOfferPeers.add(peerId);
     final error = owner.createMediaOfferError;
     if (error != null) {
@@ -7356,6 +7356,7 @@ class _TestCallMediaConnection implements CallMediaConnection {
   @override
   Future<CallSessionDescription> createOffer({
     required CallMediaKind kind,
+    bool iceRestart = false,
   }) async {
     await startLocalMedia(kind: kind);
     owner.mediaOfferPeers.add(peerId);

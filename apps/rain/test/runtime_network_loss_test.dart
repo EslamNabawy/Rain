@@ -385,8 +385,9 @@ class _NoopVoiceMediaConnection implements VoiceMediaConnection {
   Future<void> startLocalAudio() async {}
 
   @override
-  Future<VoiceSessionDescription> createOffer() async =>
-      const VoiceSessionDescription(sdp: 'offer', type: 'offer');
+  Future<VoiceSessionDescription> createOffer({
+    bool iceRestart = false,
+  }) async => const VoiceSessionDescription(sdp: 'offer', type: 'offer');
 
   @override
   Future<VoiceSessionDescription> acceptOffer(
@@ -452,6 +453,7 @@ class _NoopCallMediaConnection implements CallMediaConnection {
   @override
   Future<CallSessionDescription> createOffer({
     required CallMediaKind kind,
+    bool iceRestart = false,
   }) async => const CallSessionDescription(sdp: 'offer', type: 'offer');
 
   @override

@@ -23,7 +23,7 @@ abstract class VoiceMediaConnection {
   VoiceMediaDiagnostics get diagnostics;
 
   Future<void> startLocalAudio();
-  Future<VoiceSessionDescription> createOffer();
+  Future<VoiceSessionDescription> createOffer({bool iceRestart = false});
   Future<VoiceSessionDescription> acceptOffer(VoiceSessionDescription offer);
   Future<void> applyAnswer(VoiceSessionDescription answer);
   Future<void> addRemoteCandidate(VoiceIceCandidate candidate);
@@ -198,7 +198,7 @@ class DefaultVoiceMediaConnection implements VoiceMediaConnection {
   }
 
   @override
-  Future<VoiceSessionDescription> createOffer() async {
+  Future<VoiceSessionDescription> createOffer({bool iceRestart = false}) async {
     return _runMediaOperation<VoiceSessionDescription>(
       'create offer',
       () async {
@@ -206,7 +206,9 @@ class DefaultVoiceMediaConnection implements VoiceMediaConnection {
         final connection = await _ensurePeerConnection();
         final epoch = _connectionEpoch;
         _emitState(VoiceMediaPhase.creatingOffer);
-        final offer = await connection.createOffer(_voiceSdpConstraints);
+        final offer = await connection.createOffer(
+          _voiceSdpConstraintsFor(iceRestart: iceRestart),
+        );
         _ensureCurrentPeerConnection(connection, epoch, 'creating offer');
         await connection.setLocalDescription(offer);
         _ensureCurrentPeerConnection(connection, epoch, 'setting local offer');
@@ -214,6 +216,17 @@ class DefaultVoiceMediaConnection implements VoiceMediaConnection {
         return VoiceSessionDescription.fromRtc(offer);
       },
     );
+  }
+
+  Map<String, dynamic> _voiceSdpConstraintsFor({required bool iceRestart}) {
+    if (!iceRestart) {
+      return _voiceSdpConstraints;
+    }
+    return <String, dynamic>{
+      'mandatory': _voiceSdpConstraints['mandatory'],
+      'optional': _voiceSdpConstraints['optional'],
+      'iceRestart': true,
+    };
   }
 
   @override

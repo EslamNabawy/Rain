@@ -210,6 +210,25 @@ void main() {
     await connection.dispose();
   });
 
+  test('dedicated voice media can request ICE restart offer', () async {
+    final platform = _FakeVoicePlatformBridge();
+    final connection = DefaultVoiceMediaConnection(
+      config: PeerConfig(
+        iceServers: const <Map<String, dynamic>>[],
+        platform: platform,
+      ),
+    );
+
+    await connection.createOffer(iceRestart: true);
+
+    expect(
+      platform.createdConnections.single.createOfferConstraints.single,
+      containsPair('iceRestart', true),
+    );
+
+    await connection.dispose();
+  });
+
   test('dedicated voice media accepts offer and creates answer', () async {
     final platform = _FakeVoicePlatformBridge();
     final connection = DefaultVoiceMediaConnection(

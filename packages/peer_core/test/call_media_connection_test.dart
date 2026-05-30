@@ -69,6 +69,20 @@ void main() {
     await connection.dispose();
   });
 
+  test('video mode can request ICE restart offer', () async {
+    final platform = _FakeCallPlatformBridge();
+    final connection = _connection(platform);
+
+    await connection.createOffer(kind: CallMediaKind.video, iceRestart: true);
+
+    expect(
+      platform.createdConnections.single.createOfferConstraints.single,
+      containsPair('iceRestart', true),
+    );
+
+    await connection.dispose();
+  });
+
   test('clear voice disabled keeps echo cancellation only', () async {
     final platform = _FakeCallPlatformBridge();
     final connection = _connection(

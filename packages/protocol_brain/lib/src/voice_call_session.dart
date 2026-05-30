@@ -146,6 +146,9 @@ final class VoiceCallSession {
   Timer? _mediaTimer;
   int _lastReceivedOrderedSeq = 0;
   int _lastSentSeq = 0;
+  int _localMediaSeq = 0;
+  int _lastRemoteOfferMediaSeq = 0;
+  int? _pendingOfferMediaSeq;
   final Set<String> _receivedCandidateKeys = <String>{};
   bool _negotiatingMedia = false;
   bool _disposed = false;
@@ -480,32 +483,54 @@ final class VoiceCallSession {
       _logInvalidEvent('remote offer from non-owner');
       return;
     }
-    if (state.phase != VoiceCallSessionPhase.connectingMedia ||
+    final isInitialOffer = state.phase == VoiceCallSessionPhase.connectingMedia;
+    final isRestartOffer = state.phase == VoiceCallSessionPhase.active;
+    if ((!isInitialOffer && !isRestartOffer) ||
         frame.sdp == null ||
         frame.sdpType != 'offer') {
       _logInvalidEvent('offer frame in ${state.phase.name}');
       return;
     }
+    final mediaSeq = frame.mediaSeq ?? 1;
+    if (mediaSeq <= _lastRemoteOfferMediaSeq) {
+      _logInvalidEvent('stale offer frame mediaSeq=$mediaSeq');
+      return;
+    }
     await _runMediaNegotiation(() async {
+      _lastRemoteOfferMediaSeq = mediaSeq;
       _clearAnswerTimeout();
-      _transitionTo(
-        VoiceCallSessionPhase.creatingMedia,
-        detail: 'Answering call media offer.',
-      );
+      if (isRestartOffer) {
+        _setMediaReconnecting(true, detail: 'Restarting call media.');
+      } else {
+        _transitionTo(
+          VoiceCallSessionPhase.creatingMedia,
+          detail: 'Answering call media offer.',
+        );
+      }
       try {
         final answer = await media.acceptOffer(
           VoiceSessionDescription(sdp: frame.sdp!, type: frame.sdpType!),
         );
-        _transitionTo(
-          VoiceCallSessionPhase.connectingMedia,
-          detail: 'Waiting for voice media connection.',
-        );
+        if (isInitialOffer) {
+          _transitionTo(
+            VoiceCallSessionPhase.connectingMedia,
+            detail: 'Waiting for voice media connection.',
+          );
+        } else {
+          _setMediaReconnecting(
+            true,
+            detail: 'Waiting for call media restart.',
+          );
+        }
         await _send(
           VoiceCallFrameType.answer,
           sdp: answer.sdp,
           sdpType: answer.type,
+          mediaSeq: mediaSeq,
         );
-        _armMediaTimeout();
+        if (isInitialOffer) {
+          _armMediaTimeout();
+        }
       } catch (error) {
         await _sendFailedHangup(error);
         await _fail(
@@ -522,10 +547,22 @@ final class VoiceCallSession {
       _logInvalidEvent('remote answer for non-owner');
       return;
     }
-    if (state.phase != VoiceCallSessionPhase.connectingMedia ||
+    final isInitialAnswer =
+        state.phase == VoiceCallSessionPhase.connectingMedia;
+    final isRestartAnswer =
+        state.phase == VoiceCallSessionPhase.active && state.mediaReconnecting;
+    if ((!isInitialAnswer && !isRestartAnswer) ||
         frame.sdp == null ||
         frame.sdpType != 'answer') {
       _logInvalidEvent('answer frame in ${state.phase.name}');
+      return;
+    }
+    final mediaSeq = frame.mediaSeq ?? 1;
+    final pendingMediaSeq = _pendingOfferMediaSeq;
+    if (pendingMediaSeq != null && mediaSeq != pendingMediaSeq) {
+      _logInvalidEvent(
+        'stale answer frame mediaSeq=$mediaSeq pending=$pendingMediaSeq',
+      );
       return;
     }
     await _runMediaNegotiation(() async {
@@ -534,11 +571,19 @@ final class VoiceCallSession {
         await media.applyAnswer(
           VoiceSessionDescription(sdp: frame.sdp!, type: frame.sdpType!),
         );
-        _transitionTo(
-          VoiceCallSessionPhase.connectingMedia,
-          detail: 'Waiting for voice media connection.',
-        );
-        _armMediaTimeout();
+        _pendingOfferMediaSeq = null;
+        if (isInitialAnswer) {
+          _transitionTo(
+            VoiceCallSessionPhase.connectingMedia,
+            detail: 'Waiting for voice media connection.',
+          );
+          _armMediaTimeout();
+        } else {
+          _setMediaReconnecting(
+            true,
+            detail: 'Waiting for call media restart.',
+          );
+        }
       } catch (error) {
         await _sendFailedHangup(error);
         await _fail(
@@ -577,27 +622,46 @@ final class VoiceCallSession {
     }
   }
 
-  Future<void> _createAndSendOffer() async {
+  Future<void> _createAndSendOffer({bool iceRestart = false}) async {
     await _runMediaNegotiation(() async {
-      if (!_transitionTo(
-        VoiceCallSessionPhase.creatingMedia,
-        detail: 'Creating call media offer.',
-      )) {
-        return;
+      final restartFromActive =
+          iceRestart && state.phase == VoiceCallSessionPhase.active;
+      if (restartFromActive) {
+        _setMediaReconnecting(true, detail: 'Restarting call media.');
+      } else {
+        if (!_transitionTo(
+          VoiceCallSessionPhase.creatingMedia,
+          detail: 'Creating call media offer.',
+        )) {
+          return;
+        }
       }
       try {
-        final offer = await media.createOffer();
-        _transitionTo(
-          VoiceCallSessionPhase.connectingMedia,
-          detail: 'Waiting for voice media answer.',
-        );
+        final mediaSeq = _nextMediaSeq();
+        final offer = await media.createOffer(iceRestart: iceRestart);
+        _pendingOfferMediaSeq = mediaSeq;
+        if (restartFromActive) {
+          _setMediaReconnecting(
+            true,
+            detail: 'Waiting for call media restart.',
+          );
+        } else {
+          _transitionTo(
+            VoiceCallSessionPhase.connectingMedia,
+            detail: 'Waiting for voice media answer.',
+          );
+        }
         await _send(
           VoiceCallFrameType.offer,
           sdp: offer.sdp,
           sdpType: offer.type,
+          mediaSeq: mediaSeq,
         );
-        _armAnswerTimeout('Timed out waiting for voice media answer.');
+        if (!restartFromActive) {
+          _armAnswerTimeout('Timed out waiting for voice media answer.');
+        }
       } catch (error) {
+        _pendingOfferMediaSeq = null;
         await _sendFailedHangup(error);
         await _fail(
           'Voice call media could not connect.',
@@ -642,12 +706,14 @@ final class VoiceCallSession {
             _clearMediaTimeout();
             if (state.phase == VoiceCallSessionPhase.connectingMedia ||
                 state.phase == VoiceCallSessionPhase.creatingMedia) {
+              _pendingOfferMediaSeq = null;
               _transitionTo(
                 VoiceCallSessionPhase.active,
                 detail: 'Voice call connected.',
               );
             } else if (state.phase == VoiceCallSessionPhase.active &&
                 state.mediaReconnecting) {
+              _pendingOfferMediaSeq = null;
               _setMediaReconnecting(false, detail: 'Voice call connected.');
             }
           }),
@@ -661,6 +727,9 @@ final class VoiceCallSession {
                 true,
                 detail: mediaState.detail ?? 'Call media reconnecting.',
               );
+              if (isOfferOwner && _pendingOfferMediaSeq == null) {
+                await _createAndSendOffer(iceRestart: true);
+              }
             }
           }),
         );
@@ -785,6 +854,7 @@ final class VoiceCallSession {
     bool? cameraMuted,
     String? sdp,
     String? sdpType,
+    int? mediaSeq,
     String? candidate,
     String? sdpMid,
     int? sdpMLineIndex,
@@ -807,6 +877,7 @@ final class VoiceCallSession {
           : CallMediaMode.audio,
       sdp: sdp,
       sdpType: sdpType,
+      mediaSeq: mediaSeq,
       candidate: candidate,
       sdpMid: sdpMid,
       sdpMLineIndex: sdpMLineIndex,
@@ -861,6 +932,11 @@ final class VoiceCallSession {
   int _nextSeq() {
     _lastSentSeq += 1;
     return _lastSentSeq;
+  }
+
+  int _nextMediaSeq() {
+    _localMediaSeq += 1;
+    return _localMediaSeq;
   }
 
   Future<void> _sendFailedHangup(Object error) {

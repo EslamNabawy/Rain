@@ -4419,8 +4419,8 @@ final class _VideoVoiceMediaConnection implements VoiceMediaConnection {
   }
 
   @override
-  Future<VoiceSessionDescription> createOffer() async {
-    final offer = await _media.createOffer(kind: _kind);
+  Future<VoiceSessionDescription> createOffer({bool iceRestart = false}) async {
+    final offer = await _media.createOffer(kind: _kind, iceRestart: iceRestart);
     await _attachLocalVideoStream();
     return offer;
   }

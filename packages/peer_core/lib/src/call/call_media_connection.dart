@@ -31,7 +31,10 @@ abstract class CallMediaConnection {
   MediaStreamTrack? get localVideoTrack;
 
   Future<void> startLocalMedia({required CallMediaKind kind});
-  Future<CallSessionDescription> createOffer({required CallMediaKind kind});
+  Future<CallSessionDescription> createOffer({
+    required CallMediaKind kind,
+    bool iceRestart = false,
+  });
   Future<CallSessionDescription> acceptOffer(
     CallSessionDescription offer, {
     required CallMediaKind kind,
@@ -297,13 +300,16 @@ class DefaultCallMediaConnection implements CallMediaConnection {
   @override
   Future<CallSessionDescription> createOffer({
     required CallMediaKind kind,
+    bool iceRestart = false,
   }) async {
     return _runMediaOperation<CallSessionDescription>('create offer', () async {
       await startLocalMedia(kind: kind);
       final connection = await _ensurePeerConnection();
       final epoch = _connectionEpoch;
       _emitState(CallMediaPhase.creatingOffer);
-      final offer = await connection.createOffer(_sdpConstraints(kind));
+      final offer = await connection.createOffer(
+        _sdpConstraints(kind, iceRestart: iceRestart),
+      );
       _ensureCurrentPeerConnection(connection, epoch, 'creating offer');
       await connection.setLocalDescription(offer);
       _ensureCurrentPeerConnection(connection, epoch, 'setting local offer');
@@ -500,10 +506,21 @@ class DefaultCallMediaConnection implements CallMediaConnection {
         (kind == CallMediaKind.audio || _localVideoTrack != null);
   }
 
-  Map<String, dynamic> _sdpConstraints(CallMediaKind kind) {
-    return kind == CallMediaKind.video
+  Map<String, dynamic> _sdpConstraints(
+    CallMediaKind kind, {
+    bool iceRestart = false,
+  }) {
+    final base = kind == CallMediaKind.video
         ? _videoSdpConstraints
         : _audioSdpConstraints;
+    if (!iceRestart) {
+      return base;
+    }
+    return <String, dynamic>{
+      'mandatory': base['mandatory'],
+      'optional': base['optional'],
+      'iceRestart': true,
+    };
   }
 
   Map<String, dynamic> _localMediaConstraints(
