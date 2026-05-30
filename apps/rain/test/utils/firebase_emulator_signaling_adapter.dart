@@ -576,6 +576,22 @@ class FirebaseEmulatorSignalingAdapter
     await _delete(<String>['rooms', roomId]);
   }
 
+  Future<Object?> getRawForTest(List<String> path) {
+    return _get(path);
+  }
+
+  Future<void> putRawForTest(List<String> path, Object? body) {
+    return _put(path, body);
+  }
+
+  Future<void> patchRawForTest(List<String> path, Map<String, Object?> body) {
+    return _patch(path, body);
+  }
+
+  Future<void> deleteRawForTest(List<String> path) {
+    return _delete(path);
+  }
+
   @override
   Future<VoiceCallRoom> createOutgoingCall({
     required String callId,

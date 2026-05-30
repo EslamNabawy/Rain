@@ -603,6 +603,41 @@ void main() {
         reason: '$field must not be accepted at call-room creation.',
       );
     }
+    expect(
+      voiceCallsRules,
+      contains(
+        "newData.child('muted').hasChildren([newData.child('caller').val(), newData.child('callee').val()])",
+      ),
+    );
+    expect(
+      voiceCallsRules,
+      contains(
+        "newData.child('muted/' + newData.child('caller').val()).val() === false",
+      ),
+    );
+    expect(
+      voiceCallsRules,
+      contains(
+        "newData.child('cameraMuted/' + newData.child('callee').val()).val() === false",
+      ),
+    );
+  });
+
+  test('Firebase voice inbox create is locked to ringing status', () {
+    final rules = _repoFile('backend/firebase/database.rules.json');
+    final inboxRules = _rulesSlice(rules, '"voiceCallInboxes"', '"voiceCalls"');
+
+    expect(
+      inboxRules,
+      contains("data.exists() || newData.child('status').val() === 'ringing'"),
+    );
+    expect(
+      inboxRules,
+      contains(
+        ".validate\": \"!newData.exists() || (newData.hasChildren(['from', 'to', 'pairId', 'status', 'createdAt', 'updatedAt', 'expiresAt']) && (data.exists() || newData.child('status').val() === 'ringing')",
+      ),
+      reason: 'Non-ringing statuses may only be written after inbox creation.',
+    );
   });
 
   test('Firebase active voice user locks cannot be deleted by stale calls', () {
