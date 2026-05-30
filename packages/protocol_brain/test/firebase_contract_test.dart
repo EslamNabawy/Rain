@@ -114,10 +114,7 @@ void main() {
       rules,
       contains("newData.child('userA').val() < newData.child('userB').val()"),
     );
-    expect(
-      rules,
-      contains("newData.child('userA').val() === data.child('userA').val()"),
-    );
+    expect(rules, contains('data.exists() && newData.val() === data.val()'));
     expect(rules, contains('!data.exists() && !newData.exists()'));
     expect(adapter, contains("'userA':"));
     expect(adapter, contains("'userB':"));
@@ -379,6 +376,78 @@ void main() {
     );
   });
 
+  test('Firebase room role rules reject cross-role ICE writes', () {
+    final rules = _repoFile('backend/firebase/database.rules.json');
+    final callerIceRules = _rulesSlice(rules, '"callerICE"', '"calleeICE"');
+    final calleeIceRules = _rulesSlice(
+      rules,
+      '"calleeICE"',
+      '"activeVoicePairs"',
+    );
+
+    expect(
+      callerIceRules,
+      contains(
+        "root.child('users/' + root.child('rooms/' + \$roomId + '/userA').val() + '/uid').val() === auth.uid",
+      ),
+    );
+    expect(
+      callerIceRules,
+      isNot(
+        contains(
+          "root.child('users/' + root.child('rooms/' + \$roomId + '/userB').val() + '/uid').val() === auth.uid",
+        ),
+      ),
+      reason: 'Canonical callee must not be able to write callerICE.',
+    );
+    expect(
+      calleeIceRules,
+      contains(
+        "root.child('users/' + root.child('rooms/' + \$roomId + '/userB').val() + '/uid').val() === auth.uid",
+      ),
+    );
+    expect(
+      calleeIceRules,
+      isNot(
+        contains(
+          "root.child('users/' + root.child('rooms/' + \$roomId + '/userA').val() + '/uid').val() === auth.uid",
+        ),
+      ),
+      reason: 'Canonical caller must not be able to write calleeICE.',
+    );
+  });
+
+  test('Firebase room identity metadata is immutable after create', () {
+    final rules = _repoFile('backend/firebase/database.rules.json');
+
+    expect(
+      rules,
+      contains(
+        '"userA": {\n          ".write": "auth != null && !root.child(\'security/blockedUids/\' + auth.uid).exists() && data.exists() && newData.val() === data.val()',
+      ),
+    );
+    expect(
+      rules,
+      contains(
+        '"userB": {\n          ".write": "auth != null && !root.child(\'security/blockedUids/\' + auth.uid).exists() && data.exists() && newData.val() === data.val()',
+      ),
+    );
+    expect(
+      rules,
+      contains(
+        "newData.child('attemptId').val() === \$roomId + ':' + newData.child('createdAt').val()",
+      ),
+      reason: 'New room attempts must bind attemptId to the createdAt reset.',
+    );
+    expect(
+      rules,
+      contains(
+        "newData.isString() && root.child('users/' + root.child('rooms/' + \$roomId + '/userA').val() + '/uid').val() === auth.uid",
+      ),
+      reason: 'Only the offer owner can start a new attemptId.',
+    );
+  });
+
   test('Firebase voice signaling validates video metadata fields', () {
     final rules = _repoFile('backend/firebase/database.rules.json');
     final adapter = _repoFile(
@@ -419,11 +488,91 @@ void main() {
       ),
     );
     expect(rules, contains("newData.val() === 'accepted'"));
+    expect(
+      rules,
+      contains(
+        "newData.val() === 'failed' && root.child('voiceCalls/' + \$callId + '/status').val() === 'ringing' && root.child('users/' + root.child('voiceCalls/' + \$callId + '/callee').val() + '/uid').val() === auth.uid",
+      ),
+      reason: 'Callee must be able to reject or busy an incoming ringing call.',
+    );
     expect(rules, contains("newData.val() === 'negotiating'"));
     expect(rules, contains("newData.val() === 'connected'"));
+    expect(
+      rules,
+      contains(
+        "newData.val() === 'ended' && root.child('voiceCalls/' + \$callId + '/status').val() !== 'ended'",
+      ),
+    );
+    expect(
+      rules,
+      contains(
+        "root.child('activeVoicePairs/' + root.child('voiceCalls/' + \$callId + '/pairId').val() + '/callId').val() === \$callId",
+      ),
+      reason: 'Terminal ended writes must match the active call lock.',
+    );
     expect(adapter, contains('_ensureVoiceRole'));
     expect(adapter, contains('VoiceCallRole.caller'));
     expect(adapter, contains('VoiceCallRole.callee'));
+  });
+
+  test('Firebase voice room participant fields are immutable after create', () {
+    final rules = _repoFile('backend/firebase/database.rules.json');
+    final voiceCallsRules = _rulesSlice(
+      rules,
+      '"voiceCalls"',
+      '"connectionRequests"',
+    );
+
+    for (final field in <String>[
+      'pairId',
+      'caller',
+      'callee',
+      'createdAt',
+      'expiresAt',
+    ]) {
+      expect(
+        voiceCallsRules,
+        contains(
+          '"$field": {\n          ".write": "auth != null && data.exists() && newData.val() === data.val()',
+        ),
+        reason: '$field must not be replaceable after call creation.',
+      );
+    }
+  });
+
+  test('Firebase active voice user locks cannot be deleted by stale calls', () {
+    final rules = _repoFile('backend/firebase/database.rules.json');
+    final activeVoiceUsersRules = _rulesSlice(
+      rules,
+      '"activeVoiceUsers"',
+      '"voiceCallInboxes"',
+    );
+
+    expect(
+      activeVoiceUsersRules,
+      contains(
+        "root.child('voiceCalls/' + data.child('callId').val() + '/pairId').val() === data.child('pairId').val()",
+      ),
+    );
+    expect(
+      activeVoiceUsersRules,
+      contains(
+        "root.child('voiceCalls/' + data.child('callId').val() + '/caller').val() === data.child('caller').val()",
+      ),
+    );
+    expect(
+      activeVoiceUsersRules,
+      contains(
+        "root.child('voiceCalls/' + data.child('callId').val() + '/callee').val() === data.child('callee').val()",
+      ),
+    );
+    expect(
+      activeVoiceUsersRules,
+      contains(
+        "root.child('voiceCalls/' + data.child('callId').val() + '/status').val() === 'ended'",
+      ),
+      reason: 'Newer non-terminal call locks must survive stale cleanup.',
+    );
   });
 
   test('Firebase backend does not depend on managed TURN provider secrets', () {
@@ -515,4 +664,16 @@ void main() {
     expect(rules, contains(r'$from !== $to'));
     expect(rules, contains(r'$username !== $friend'));
   });
+}
+
+String _rulesSlice(String source, String startMarker, String endMarker) {
+  final start = source.indexOf(startMarker);
+  if (start < 0) {
+    throw StateError('Missing rules marker: $startMarker');
+  }
+  final end = source.indexOf(endMarker, start + startMarker.length);
+  if (end < 0) {
+    throw StateError('Missing rules marker: $endMarker');
+  }
+  return source.substring(start, end);
 }
