@@ -503,6 +503,114 @@ void main() {
   );
 
   test(
+    'ICE candidate batcher flushes by size window and explicit flush',
+    () async {
+      final batches = <List<int>>[];
+      final batcher = IceCandidateBatcher<int>(
+        maxBatchSize: 3,
+        flushWindow: const Duration(milliseconds: 20),
+        onFlush: (List<int> candidates) async {
+          batches.add(candidates);
+        },
+      );
+      addTearDown(() => batcher.dispose());
+
+      await batcher.add(1);
+      await batcher.add(2);
+      expect(batches, isEmpty);
+
+      await batcher.add(3);
+      expect(batches, <List<int>>[
+        <int>[1, 2, 3],
+      ]);
+
+      await batcher.add(4);
+      await Future<void>.delayed(const Duration(milliseconds: 40));
+      expect(batches.last, <int>[4]);
+
+      await batcher.add(5);
+      await batcher.flush();
+      expect(batches.last, <int>[5]);
+    },
+  );
+
+  test(
+    'ICE batch writes preserve room timestamp and cap candidates per role',
+    () async {
+      final adapter = FakeVoiceSignalingAdapter();
+      addTearDown(adapter.dispose);
+      await adapter.createOutgoingCall(
+        callId: 'call-1',
+        caller: 'alice',
+        callee: 'bob',
+        createdAt: 1000,
+        expiresAt: 3000,
+      );
+      await adapter.acceptCall(
+        callId: 'call-1',
+        callee: 'bob',
+        acceptedAt: 1100,
+      );
+      final updatedAtBeforeIce = (await adapter.fetchCall('call-1'))!.updatedAt;
+
+      final iceEvents = adapter
+          .watchIceCandidates(callId: 'call-1', role: VoiceCallRole.caller)
+          .take(2)
+          .toList();
+      final candidateIds = await adapter.writeIceCandidates(
+        callId: 'call-1',
+        username: 'alice',
+        role: VoiceCallRole.caller,
+        candidates: <VoiceSignalingEnvelope>[
+          _envelope(ciphertext: 'caller-ice-1'),
+          _envelope(ciphertext: 'caller-ice-2'),
+        ],
+        createdAt: 1200,
+      );
+
+      expect(candidateIds, <String>['ice-1', 'ice-2']);
+      expect(
+        (await adapter.fetchCall('call-1'))!.updatedAt,
+        updatedAtBeforeIce,
+      );
+      expect(
+        (await iceEvents).map((record) => record.envelope.ciphertext),
+        <String>['caller-ice-1', 'caller-ice-2'],
+      );
+
+      final remaining = maxIceCandidatesPerRole - candidateIds.length;
+      for (var written = 0; written < remaining;) {
+        final remainingInBudget = remaining - written;
+        final count = remainingInBudget > maxIceCandidateBatchSize
+            ? maxIceCandidateBatchSize
+            : remainingInBudget;
+        await adapter.writeIceCandidates(
+          callId: 'call-1',
+          username: 'alice',
+          role: VoiceCallRole.caller,
+          candidates: List<VoiceSignalingEnvelope>.generate(
+            count,
+            (int index) =>
+                _envelope(ciphertext: 'caller-ice-fill-${written + index}'),
+          ),
+          createdAt: 1300 + written,
+        );
+        written += count;
+      }
+      await expectLater(
+        adapter.writeIceCandidate(
+          callId: 'call-1',
+          username: 'alice',
+          role: VoiceCallRole.caller,
+          candidate: _envelope(ciphertext: 'caller-ice-over'),
+          createdAt: 1400,
+        ),
+        throwsA(isA<SignalingCostBudgetExceeded>()),
+      );
+    },
+  );
+
+  test(
     'fake adapter updates state and releases lock on terminal status',
     () async {
       final adapter = FakeVoiceSignalingAdapter();

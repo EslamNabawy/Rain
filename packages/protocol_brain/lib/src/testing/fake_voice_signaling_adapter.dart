@@ -1,5 +1,6 @@
 import 'dart:async';
 
+import '../signaling_cost_budget.dart';
 import '../voice_call_clock.dart';
 import '../voice_call_frame.dart';
 import '../voice_signaling_contract.dart';
@@ -412,10 +413,44 @@ final class FakeVoiceSignalingAdapter implements VoiceSignalingAdapter {
     required VoiceSignalingEnvelope candidate,
     required int createdAt,
   }) async {
-    _ensureOpen();
-    candidate.validate(
-      maxCiphertextLength: VoiceSignalingEnvelope.maxIceCiphertextLength,
+    final candidateIds = await writeIceCandidates(
+      callId: callId,
+      username: username,
+      role: role,
+      candidates: <VoiceSignalingEnvelope>[candidate],
+      createdAt: createdAt,
     );
+    if (candidateIds.isEmpty) {
+      throw const SignalingCostBudgetExceeded(
+        'signaling_cost_budget_exceeded: ICE candidate budget exceeded.',
+      );
+    }
+    return candidateIds.single;
+  }
+
+  @override
+  Future<List<String>> writeIceCandidates({
+    required String callId,
+    required String username,
+    required VoiceCallRole role,
+    required List<VoiceSignalingEnvelope> candidates,
+    required int createdAt,
+  }) async {
+    _ensureOpen();
+    if (candidates.isEmpty) {
+      return const <String>[];
+    }
+    if (candidates.length > maxIceCandidateBatchSize) {
+      throw SignalingCostBudgetExceeded(
+        'signaling_cost_budget_exceeded: ICE candidate batch size '
+        '${candidates.length} exceeds $maxIceCandidateBatchSize.',
+      );
+    }
+    for (final candidate in candidates) {
+      candidate.validate(
+        maxCiphertextLength: VoiceSignalingEnvelope.maxIceCiphertextLength,
+      );
+    }
     final room = _requireRoom(callId);
     _ensureRole(room, username, role);
     _ensureStatus(room, const <VoiceCallSignalingStatus>{
@@ -424,22 +459,38 @@ final class FakeVoiceSignalingAdapter implements VoiceSignalingAdapter {
       VoiceCallSignalingStatus.connected,
     });
     final safeCreatedAt = _safeVoiceRoomTimestamp(room, createdAt);
-    final candidateId = 'ice-${++_nextIceId}';
-    final record = VoiceCallIceCandidateRecord(
-      callId: room.callId,
-      candidateId: candidateId,
-      role: role,
-      envelope: candidate,
-      createdAt: safeCreatedAt,
-    );
-    record.toJson();
     final key = _iceKey(room.callId, role);
+    final existingCount = _iceCandidates[key]?.length ?? 0;
+    final available = maxIceCandidatesPerRole - existingCount;
+    if (available <= 0) {
+      throw SignalingCostBudgetExceeded(
+        'signaling_cost_budget_exceeded: ICE candidate budget exceeded for '
+        '${room.callId}/${role.name}; limit=$maxIceCandidatesPerRole.',
+      );
+    }
+    final accepted = candidates.take(available).toList(growable: false);
+    final records = <VoiceCallIceCandidateRecord>[];
+    final candidateIds = <String>[];
+    for (final candidate in accepted) {
+      final candidateId = 'ice-${++_nextIceId}';
+      final record = VoiceCallIceCandidateRecord(
+        callId: room.callId,
+        candidateId: candidateId,
+        role: role,
+        envelope: candidate,
+        createdAt: safeCreatedAt,
+      );
+      record.toJson();
+      records.add(record);
+      candidateIds.add(candidateId);
+    }
     _iceCandidates
         .putIfAbsent(key, () => <VoiceCallIceCandidateRecord>[])
-        .add(record);
-    _iceController(key).add(record);
-    _putRoom(room.copyWith(updatedAt: safeCreatedAt));
-    return candidateId;
+        .addAll(records);
+    for (final record in records) {
+      _iceController(key).add(record);
+    }
+    return List<String>.unmodifiable(candidateIds);
   }
 
   @override

@@ -1031,7 +1031,7 @@ extension VoiceCallRuntime on RainRuntimeController {
     if (manager == null) {
       throw StateError('Peer connection is unavailable right now.');
     }
-    _requireVoiceSignalingAdapter();
+    final voiceAdapter = _requireVoiceSignalingAdapter();
 
     await _disposeCurrentVoiceCallSession();
     final media = switch (mediaMode) {
@@ -1050,6 +1050,33 @@ extension VoiceCallRuntime on RainRuntimeController {
         'sessionEpoch': sessionEpoch,
         'isOutgoing': isOutgoing,
         'mediaMode': mediaMode.name,
+      },
+    );
+    final localRole = isOutgoing ? VoiceCallRole.caller : VoiceCallRole.callee;
+    _voiceLocalIceCandidateCount = 0;
+    _voiceIceCandidateBatcher = IceCandidateBatcher<VoiceSignalingEnvelope>(
+      maxBatchSize: maxIceCandidateBatchSize,
+      flushWindow: iceCandidateBatchWindow,
+      onFlush: (List<VoiceSignalingEnvelope> candidates) {
+        return _flushVoiceIceCandidateBatch(
+          voiceAdapter: voiceAdapter,
+          peerId: peerId,
+          callId: callId,
+          sessionEpoch: sessionEpoch,
+          role: localRole,
+          candidates: candidates,
+        );
+      },
+      onError: (Object error, StackTrace stackTrace) {
+        _recordVoiceIceCandidateWriteFailed(
+          error,
+          stackTrace,
+          peerId: peerId,
+          callId: callId,
+          sessionEpoch: sessionEpoch,
+          role: localRole,
+          batchSize: 0,
+        );
       },
     );
     final session = VoiceCallSession(
@@ -1752,17 +1779,10 @@ extension VoiceCallRuntime on RainRuntimeController {
         );
         break;
       case VoiceCallFrameType.candidate:
-        final localRole = _localVoiceCallRole();
-        await voiceAdapter.writeIceCandidate(
-          callId: frame.callId,
-          username: localUsername,
-          role: localRole,
-          candidate: await _encryptVoiceFrame(
-            frame,
-            purpose: _voiceIcePurpose(localRole),
-            maxCiphertextLength: VoiceSignalingEnvelope.maxIceCiphertextLength,
-          ),
-          createdAt: now,
+        await _queueVoiceIceCandidate(
+          voiceAdapter: voiceAdapter,
+          peerId: peerId,
+          frame: frame,
         );
         break;
       case VoiceCallFrameType.mute:
@@ -1788,6 +1808,212 @@ extension VoiceCallRuntime on RainRuntimeController {
       category: 'call',
       name: 'firebase_frame_send_completed',
       context: _voiceFrameEventContext(peerId, frame),
+    );
+  }
+
+  Future<void> _queueVoiceIceCandidate({
+    required VoiceSignalingAdapter voiceAdapter,
+    required String peerId,
+    required VoiceCallFrame frame,
+  }) async {
+    final localRole = _localVoiceCallRole();
+    if (_voiceLocalIceCandidateCount >= maxIceCandidatesPerRole) {
+      _recordIceCandidateBudgetExceeded(
+        peerId: peerId,
+        callId: frame.callId,
+        sessionEpoch: frame.sessionEpoch,
+        role: localRole,
+        requestedCount: 1,
+        droppedCount: 1,
+      );
+      return;
+    }
+
+    final VoiceSignalingEnvelope envelope;
+    try {
+      envelope = await _encryptVoiceFrame(
+        frame,
+        purpose: _voiceIcePurpose(localRole),
+        maxCiphertextLength: VoiceSignalingEnvelope.maxIceCiphertextLength,
+      );
+    } catch (error, stackTrace) {
+      _recordVoiceIceCandidateWriteFailed(
+        error,
+        stackTrace,
+        peerId: peerId,
+        callId: frame.callId,
+        sessionEpoch: frame.sessionEpoch,
+        role: localRole,
+        batchSize: 1,
+      );
+      return;
+    }
+
+    _voiceLocalIceCandidateCount += 1;
+    final batcher = _voiceIceCandidateBatcher;
+    if (batcher == null) {
+      await _flushVoiceIceCandidateBatch(
+        voiceAdapter: voiceAdapter,
+        peerId: peerId,
+        callId: frame.callId,
+        sessionEpoch: frame.sessionEpoch,
+        role: localRole,
+        candidates: <VoiceSignalingEnvelope>[envelope],
+      );
+      return;
+    }
+
+    try {
+      await batcher.add(envelope);
+    } catch (error, stackTrace) {
+      _recordVoiceIceCandidateWriteFailed(
+        error,
+        stackTrace,
+        peerId: peerId,
+        callId: frame.callId,
+        sessionEpoch: frame.sessionEpoch,
+        role: localRole,
+        batchSize: batcher.pendingCount,
+      );
+    }
+  }
+
+  Future<void> _flushVoiceIceCandidateBatch({
+    required VoiceSignalingAdapter voiceAdapter,
+    required String peerId,
+    required String callId,
+    required int sessionEpoch,
+    required VoiceCallRole role,
+    required List<VoiceSignalingEnvelope> candidates,
+  }) async {
+    if (candidates.isEmpty) {
+      return;
+    }
+    try {
+      final candidateIds = await voiceAdapter.writeIceCandidates(
+        callId: callId,
+        username: _normalizedUsername(selfIdentity.username),
+        role: role,
+        candidates: candidates,
+        createdAt: DateTime.now().millisecondsSinceEpoch,
+      );
+      final droppedCount = candidates.length - candidateIds.length;
+      _recordRuntimeEvent(
+        category: 'call',
+        name: 'ice_candidate_batch_flushed',
+        context: <String, Object?>{
+          'peerId': peerId,
+          'callId': callId,
+          'sessionEpoch': sessionEpoch,
+          'role': role.name,
+          'batchSize': candidates.length,
+          'writtenCount': candidateIds.length,
+          'droppedCount': droppedCount,
+        },
+      );
+      if (droppedCount > 0) {
+        _recordIceCandidateBudgetExceeded(
+          peerId: peerId,
+          callId: callId,
+          sessionEpoch: sessionEpoch,
+          role: role,
+          requestedCount: candidates.length,
+          droppedCount: droppedCount,
+        );
+      }
+    } on SignalingCostBudgetExceeded catch (error, stackTrace) {
+      _recordIceCandidateBudgetExceeded(
+        peerId: peerId,
+        callId: callId,
+        sessionEpoch: sessionEpoch,
+        role: role,
+        requestedCount: candidates.length,
+        droppedCount: candidates.length,
+        error: error,
+      );
+      _recordVoiceIceCandidateWriteFailed(
+        error,
+        stackTrace,
+        peerId: peerId,
+        callId: callId,
+        sessionEpoch: sessionEpoch,
+        role: role,
+        batchSize: candidates.length,
+      );
+    } catch (error, stackTrace) {
+      _recordVoiceIceCandidateWriteFailed(
+        error,
+        stackTrace,
+        peerId: peerId,
+        callId: callId,
+        sessionEpoch: sessionEpoch,
+        role: role,
+        batchSize: candidates.length,
+      );
+    }
+  }
+
+  void _recordIceCandidateBudgetExceeded({
+    required String peerId,
+    required String callId,
+    required int sessionEpoch,
+    required VoiceCallRole role,
+    required int requestedCount,
+    required int droppedCount,
+    Object? error,
+  }) {
+    final context = <String, Object?>{
+      'peerId': peerId,
+      'callId': callId,
+      'sessionEpoch': sessionEpoch,
+      'role': role.name,
+      'requestedCount': requestedCount,
+      'droppedCount': droppedCount,
+      'limit': maxIceCandidatesPerRole,
+    };
+    _recordRuntimeEvent(
+      category: 'call',
+      name: 'ice_candidate_batch_dropped_limit',
+      severity: 'warning',
+      message: error?.toString(),
+      context: context,
+    );
+    _recordRuntimeEvent(
+      category: 'call',
+      name: 'signaling_cost_budget_exceeded',
+      severity: 'warning',
+      message: error?.toString(),
+      context: context,
+    );
+  }
+
+  void _recordVoiceIceCandidateWriteFailed(
+    Object error,
+    StackTrace stackTrace, {
+    required String peerId,
+    required String callId,
+    required int sessionEpoch,
+    required VoiceCallRole role,
+    required int batchSize,
+  }) {
+    _recordRuntimeEvent(
+      category: 'call',
+      name: 'ice_candidate_write_failed',
+      severity: 'warning',
+      message: error.toString(),
+      context: <String, Object?>{
+        'peerId': peerId,
+        'callId': callId,
+        'sessionEpoch': sessionEpoch,
+        'role': role.name,
+        'batchSize': batchSize,
+      },
+    );
+    errorRecorder?.call(
+      error,
+      stackTrace,
+      source: 'voice-ice-candidate-write',
+      fatal: false,
     );
   }
 
@@ -2305,6 +2531,7 @@ extension VoiceCallRuntime on RainRuntimeController {
 
   Future<void> _disposeCurrentVoiceCallSession() async {
     _cancelVoiceCallReconnectGrace();
+    await _disposeVoiceIceCandidateBatcher();
     await _cancelVoiceSignalingSubscriptions();
     final session = _voiceCallSession;
     if (session == null) {
@@ -2319,6 +2546,7 @@ extension VoiceCallRuntime on RainRuntimeController {
     if (_voiceCallSession == session) {
       _voiceCallSession = null;
       _cancelVoiceCallReconnectGrace();
+      await _disposeVoiceIceCandidateBatcher();
       await _cancelVoiceSignalingSubscriptions();
       await _voiceCallSessionSubscription?.cancel();
       _voiceCallSessionSubscription = null;
@@ -2329,6 +2557,35 @@ extension VoiceCallRuntime on RainRuntimeController {
       // Voice call cleanup is best effort once the call is terminal.
     } finally {
       await _disposeVideoCallResources();
+    }
+  }
+
+  Future<void> _disposeVoiceIceCandidateBatcher() async {
+    final batcher = _voiceIceCandidateBatcher;
+    _voiceIceCandidateBatcher = null;
+    _voiceLocalIceCandidateCount = 0;
+    if (batcher == null) {
+      return;
+    }
+    try {
+      await batcher.dispose();
+    } catch (error, stackTrace) {
+      final state = _voiceCallState;
+      final peerId = state.peerId;
+      final callId = state.callId;
+      final sessionEpoch = state.sessionEpoch;
+      if (peerId == null || callId == null || sessionEpoch == null) {
+        return;
+      }
+      _recordVoiceIceCandidateWriteFailed(
+        error,
+        stackTrace,
+        peerId: peerId,
+        callId: callId,
+        sessionEpoch: sessionEpoch,
+        role: _localVoiceCallRole(),
+        batchSize: 0,
+      );
     }
   }
 

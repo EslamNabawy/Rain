@@ -102,6 +102,14 @@ abstract interface class VoiceSignalingAdapter {
     required int createdAt,
   });
 
+  Future<List<String>> writeIceCandidates({
+    required String callId,
+    required String username,
+    required VoiceCallRole role,
+    required List<VoiceSignalingEnvelope> candidates,
+    required int createdAt,
+  });
+
   Stream<VoiceCallIceCandidateRecord> watchIceCandidates({
     required String callId,
     required VoiceCallRole role,

@@ -1219,6 +1219,53 @@ void main() {
     );
 
     test(
+      'Firebase voice ICE candidates are batched before adapter writes',
+      () async {
+        final harness = await _createTwoUserCallHarness(db, alice);
+        addTearDown(harness.dispose);
+
+        await harness.start();
+        final callId = await _startAndAcceptHarnessCall(
+          harness,
+          callerIsAlice: true,
+          mediaMode: protocol.CallMediaMode.audio,
+        );
+        final aliceMedia =
+            harness.aliceBrain.voiceMediaConnections['bob']!
+                as _TestVoiceMediaConnection;
+        final bobMedia =
+            harness.bobBrain.voiceMediaConnections['alice']!
+                as _TestVoiceMediaConnection;
+
+        for (var i = 0; i < 3; i += 1) {
+          aliceMedia.emitIceCandidate(
+            VoiceIceCandidate(
+              candidate: 'candidate:$i 1 udp 1 127.0.0.1 9 typ host',
+              sdpMid: '0',
+              sdpMLineIndex: i,
+            ),
+          );
+        }
+
+        await _waitForCondition(
+          () => bobMedia.remoteCandidates.length == 3,
+          'batched ICE candidates to reach remote media',
+        );
+        expect(
+          harness.runtimeEvents,
+          contains('alice:ice_candidate_batch_flushed'),
+        );
+        await expectLater(
+          harness.adapter
+              .watchIceCandidates(callId: callId, role: VoiceCallRole.caller)
+              .take(3)
+              .toList(),
+          completion(hasLength(3)),
+        );
+      },
+    );
+
+    test(
       'integrated gate connects phone to PC voice on first attempt',
       () async {
         final harness = await _createTwoUserCallHarness(db, alice);
@@ -6680,6 +6727,23 @@ class RecordingVoiceSignalingAdapter extends RecordingNoopSignalingAdapter
       username: username,
       role: role,
       candidate: candidate,
+      createdAt: createdAt,
+    );
+  }
+
+  @override
+  Future<List<String>> writeIceCandidates({
+    required String callId,
+    required String username,
+    required VoiceCallRole role,
+    required List<VoiceSignalingEnvelope> candidates,
+    required int createdAt,
+  }) {
+    return _voice.writeIceCandidates(
+      callId: callId,
+      username: username,
+      role: role,
+      candidates: candidates,
       createdAt: createdAt,
     );
   }

@@ -7,6 +7,7 @@ import 'package:flutter_webrtc/flutter_webrtc.dart';
 
 import '../src/connection_request_adapter.dart';
 import '../src/connection_request_contract.dart';
+import '../src/signaling_cost_budget.dart';
 import '../src/voice_call_clock.dart';
 import '../src/voice_call_frame.dart';
 import '../src/voice_signaling_contract.dart';
@@ -1851,9 +1852,43 @@ class FirebaseSignalingAdapter
     required VoiceSignalingEnvelope candidate,
     required int createdAt,
   }) async {
-    candidate.validate(
-      maxCiphertextLength: VoiceSignalingEnvelope.maxIceCiphertextLength,
+    final candidateIds = await writeIceCandidates(
+      callId: callId,
+      username: username,
+      role: role,
+      candidates: <VoiceSignalingEnvelope>[candidate],
+      createdAt: createdAt,
     );
+    if (candidateIds.isEmpty) {
+      throw const SignalingCostBudgetExceeded(
+        'signaling_cost_budget_exceeded: ICE candidate budget exceeded.',
+      );
+    }
+    return candidateIds.single;
+  }
+
+  @override
+  Future<List<String>> writeIceCandidates({
+    required String callId,
+    required String username,
+    required VoiceCallRole role,
+    required List<VoiceSignalingEnvelope> candidates,
+    required int createdAt,
+  }) async {
+    if (candidates.isEmpty) {
+      return const <String>[];
+    }
+    if (candidates.length > maxIceCandidateBatchSize) {
+      throw SignalingCostBudgetExceeded(
+        'signaling_cost_budget_exceeded: ICE candidate batch size '
+        '${candidates.length} exceeds $maxIceCandidateBatchSize.',
+      );
+    }
+    for (final candidate in candidates) {
+      candidate.validate(
+        maxCiphertextLength: VoiceSignalingEnvelope.maxIceCiphertextLength,
+      );
+    }
     final room = await _requireVoiceCall(callId);
     final normalizedUsername = normalizeVoiceCallUsername(username);
     await _ensureSignedInAsUsername(normalizedUsername);
@@ -1863,24 +1898,32 @@ class FirebaseSignalingAdapter
       VoiceCallSignalingStatus.negotiating,
       VoiceCallSignalingStatus.connected,
     });
-    final candidateRef = _root
-        .child('voiceCalls/${room.callId}/${_voiceIcePath(role)}')
-        .push();
-    final candidateId = candidateRef.key;
-    if (candidateId == null || candidateId.isEmpty) {
-      throw const VoiceSignalingException(
-        'Failed to allocate voice ICE candidate key.',
+    final existingCount = await _iceCandidateCount(room.callId, role);
+    final available = maxIceCandidatesPerRole - existingCount;
+    if (available <= 0) {
+      throw SignalingCostBudgetExceeded(
+        'signaling_cost_budget_exceeded: ICE candidate budget exceeded for '
+        '${room.callId}/${role.name}; limit=$maxIceCandidatesPerRole.',
       );
     }
-    final safeUpdatedAt = _safeVoiceRoomTimestamp(room, createdAt);
-    await _root.update(<String, Object?>{
-      'voiceCalls/${room.callId}/${_voiceIcePath(role)}/$candidateId': candidate
-          .toJson(
-            maxCiphertextLength: VoiceSignalingEnvelope.maxIceCiphertextLength,
-          ),
-      'voiceCalls/${room.callId}/updatedAt': safeUpdatedAt,
-    });
-    return candidateId;
+    final accepted = candidates.take(available).toList(growable: false);
+    final candidatePath = 'voiceCalls/${room.callId}/${_voiceIcePath(role)}';
+    final updates = <String, Object?>{};
+    final candidateIds = <String>[];
+    for (final candidate in accepted) {
+      final candidateId = _root.child(candidatePath).push().key;
+      if (candidateId == null || candidateId.isEmpty) {
+        throw const VoiceSignalingException(
+          'Failed to allocate voice ICE candidate key.',
+        );
+      }
+      updates['$candidatePath/$candidateId'] = candidate.toJson(
+        maxCiphertextLength: VoiceSignalingEnvelope.maxIceCiphertextLength,
+      );
+      candidateIds.add(candidateId);
+    }
+    await _root.update(updates);
+    return List<String>.unmodifiable(candidateIds);
   }
 
   @override
@@ -1901,6 +1944,28 @@ class FirebaseSignalingAdapter
             json: _asObjectMap(event.snapshot.value),
           ),
         );
+  }
+
+  Future<int> _iceCandidateCount(String callId, VoiceCallRole role) async {
+    final snapshot = await _root
+        .child('voiceCalls/${callId.trim()}/${_voiceIcePath(role)}')
+        .limitToFirst(maxIceCandidatesPerRole)
+        .get();
+    if (!snapshot.exists) {
+      return 0;
+    }
+    var count = 0;
+    for (final _ in snapshot.children) {
+      count += 1;
+    }
+    if (count > 0) {
+      return count;
+    }
+    final value = snapshot.value;
+    if (value is Map) {
+      return value.length;
+    }
+    return 0;
   }
 
   @override

@@ -942,20 +942,70 @@ class FirebaseEmulatorSignalingAdapter
     required VoiceSignalingEnvelope candidate,
     required int createdAt,
   }) async {
+    final candidateIds = await writeIceCandidates(
+      callId: callId,
+      username: username,
+      role: role,
+      candidates: <VoiceSignalingEnvelope>[candidate],
+      createdAt: createdAt,
+    );
+    if (candidateIds.isEmpty) {
+      throw const SignalingCostBudgetExceeded(
+        'signaling_cost_budget_exceeded: ICE candidate budget exceeded.',
+      );
+    }
+    return candidateIds.single;
+  }
+
+  @override
+  Future<List<String>> writeIceCandidates({
+    required String callId,
+    required String username,
+    required VoiceCallRole role,
+    required List<VoiceSignalingEnvelope> candidates,
+    required int createdAt,
+  }) async {
+    if (candidates.isEmpty) {
+      return const <String>[];
+    }
+    if (candidates.length > maxIceCandidateBatchSize) {
+      throw SignalingCostBudgetExceeded(
+        'signaling_cost_budget_exceeded: ICE candidate batch size '
+        '${candidates.length} exceeds $maxIceCandidateBatchSize.',
+      );
+    }
+    for (final candidate in candidates) {
+      candidate.validate(
+        maxCiphertextLength: VoiceSignalingEnvelope.maxIceCiphertextLength,
+      );
+    }
     final room = await _requireVoiceCall(callId);
     final normalizedUsername = normalizeVoiceCallUsername(username);
     await _ensureSignedInAsUsername(normalizedUsername);
     _ensureVoiceRole(room, normalizedUsername, role);
     final safeCreatedAt = _safeVoiceRoomTimestamp(room, createdAt);
-    final candidateId = '${safeCreatedAt.toRadixString(36)}_${_pushCounter++}';
-    await _patch(<String>[], <String, Object?>{
-      'voiceCalls/${room.callId}/${_voiceIcePath(role)}/$candidateId': candidate
-          .toJson(
+    final existingCount = await _iceCandidateCount(room.callId, role);
+    final available = maxIceCandidatesPerRole - existingCount;
+    if (available <= 0) {
+      throw SignalingCostBudgetExceeded(
+        'signaling_cost_budget_exceeded: ICE candidate budget exceeded for '
+        '${room.callId}/${role.name}; limit=$maxIceCandidatesPerRole.',
+      );
+    }
+    final accepted = candidates.take(available).toList(growable: false);
+    final updates = <String, Object?>{};
+    final candidateIds = <String>[];
+    for (final candidate in accepted) {
+      final candidateId =
+          '${safeCreatedAt.toRadixString(36)}_${_pushCounter++}';
+      updates['voiceCalls/${room.callId}/${_voiceIcePath(role)}/$candidateId'] =
+          candidate.toJson(
             maxCiphertextLength: VoiceSignalingEnvelope.maxIceCiphertextLength,
-          ),
-      'voiceCalls/${room.callId}/updatedAt': safeCreatedAt,
-    });
-    return candidateId;
+          );
+      candidateIds.add(candidateId);
+    }
+    await _patch(<String>[], updates);
+    return List<String>.unmodifiable(candidateIds);
   }
 
   @override
@@ -980,6 +1030,18 @@ class FirebaseEmulatorSignalingAdapter
         );
       },
     );
+  }
+
+  Future<int> _iceCandidateCount(String callId, VoiceCallRole role) async {
+    final value = await _get(<String>[
+      'voiceCalls',
+      callId.trim(),
+      ..._voiceIcePath(role).split('/'),
+    ]);
+    if (value is Map) {
+      return value.length;
+    }
+    return 0;
   }
 
   @override
