@@ -177,6 +177,13 @@ void main() {
         read,
         contains("root.child('users/' + data.child('to').val() + '/uid')"),
       );
+      expect(read, contains("data.child('pairKey').val() === \$pairKey"));
+      expect(
+        read,
+        contains(
+          "data.child('expiresAt').isNumber() && now >= data.child('expiresAt').val()",
+        ),
+      );
       expect(
         write,
         contains(
@@ -201,6 +208,18 @@ void main() {
         write,
         contains(
           "data.exists() && !newData.exists() && ((data.child('status').val() === 'pending'",
+        ),
+      );
+      expect(
+        write,
+        contains(
+          "!data.child('from').isString() || !data.child('to').isString()",
+        ),
+      );
+      expect(
+        write,
+        contains(
+          "data.child('pairKey').val() !== data.child('from').val() + ':' + data.child('to').val()",
         ),
       );
       expect(
