@@ -108,7 +108,7 @@ if ($env:RUN_TESTS -and $env:RUN_TESTS -ne 'true') {
 Write-Host '[CI] Running Firebase emulator integration tests...'
 Push-Location $repoRoot
 try {
-  $testCommand = 'dart pub get && cd apps/rain && flutter pub get && flutter test test/integration_two_users_end2end_test.dart test/integration_two_devices_handshake_full_test.dart test/integration_voice_signaling_emulator_test.dart --dart-define=RUN_RAIN_INTEGRATION_TESTS=true --reporter expanded'
+  $testCommand = 'dart pub get && cd apps/rain && flutter pub get && flutter test test/integration_two_users_end2end_test.dart --dart-define=RUN_RAIN_INTEGRATION_TESTS=true --reporter expanded && flutter test test/integration_two_devices_handshake_full_test.dart --dart-define=RUN_RAIN_INTEGRATION_TESTS=true --reporter expanded && flutter test test/integration_voice_signaling_emulator_test.dart --dart-define=RUN_RAIN_INTEGRATION_TESTS=true --reporter expanded'
   firebase --config $firebaseConfig emulators:exec `
     --project rain-8fb4b `
     --only auth,database `

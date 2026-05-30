@@ -75,4 +75,4 @@ firebase --config "$FIREBASE_CONFIG" emulators:exec \
   --project rain-8fb4b \
   --only auth,database \
   --non-interactive \
-  "dart pub get && cd apps/rain && flutter pub get && flutter test test/integration_two_users_end2end_test.dart test/integration_two_devices_handshake_full_test.dart test/integration_voice_signaling_emulator_test.dart --dart-define=RUN_RAIN_INTEGRATION_TESTS=true --reporter expanded"
+  "dart pub get && cd apps/rain && flutter pub get && flutter test test/integration_two_users_end2end_test.dart --dart-define=RUN_RAIN_INTEGRATION_TESTS=true --reporter expanded && flutter test test/integration_two_devices_handshake_full_test.dart --dart-define=RUN_RAIN_INTEGRATION_TESTS=true --reporter expanded && flutter test test/integration_voice_signaling_emulator_test.dart --dart-define=RUN_RAIN_INTEGRATION_TESTS=true --reporter expanded"
