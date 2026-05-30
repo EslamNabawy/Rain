@@ -1013,6 +1013,113 @@ void main() {
     );
 
     test(
+      'startVoiceCall surfaces missing TURN when relay is required',
+      () async {
+        final adapter = RecordingVoiceSignalingAdapter();
+        final brain = TestSessionManager()
+          ..createVoiceMediaConnectionError = const TurnUnavailableException(
+            TurnReadinessResult(
+              readiness: TurnReadiness.unavailableNoRelayServer,
+              hasRelayServer: false,
+            ),
+          );
+        final eventNames = <String>[];
+        await adapter.register('bob', 'bobpw');
+        await adapter.upsertFriendship('alice', 'bob');
+        await db
+            .into(db.friends)
+            .insert(
+              FriendsCompanion.insert(
+                username: 'bob',
+                displayName: 'Bob',
+                state: 'friend',
+                addedAt: 0,
+              ),
+            );
+        final runtime = _runtimeFor(
+          db,
+          alice,
+          adapter,
+          brain: brain,
+          eventRecorder:
+              ({
+                required String category,
+                required String name,
+                String severity = 'info',
+                String? message,
+                Map<String, Object?> context = const <String, Object?>{},
+              }) {
+                eventNames.add(name);
+              },
+        );
+        addTearDown(runtime.dispose);
+
+        await runtime.start();
+        await expectLater(
+          runtime.startVoiceCall('bob'),
+          throwsA(isA<TurnUnavailableException>()),
+        );
+
+        expect(runtime.voiceCallState.phase, VoiceCallPhase.failed);
+        expect(
+          runtime.voiceCallState.failureReason,
+          VoiceCallFailureReason.relayUnavailable,
+        );
+        expect(
+          runtime.voiceCallState.detail,
+          'Relay connection is unavailable. Check TURN configuration.',
+        );
+        expect(eventNames, contains('turn_unavailable_call_blocked'));
+        expect(adapter.rooms, isEmpty);
+      },
+    );
+
+    test(
+      'startVideoCall surfaces missing TURN when relay is required',
+      () async {
+        final adapter = RecordingVoiceSignalingAdapter();
+        final brain = TestSessionManager()
+          ..createCallMediaConnectionError = const TurnUnavailableException(
+            TurnReadinessResult(
+              readiness: TurnReadiness.unavailableNoRelayServer,
+              hasRelayServer: false,
+            ),
+          );
+        await adapter.register('bob', 'bobpw');
+        await adapter.upsertFriendship('alice', 'bob');
+        await db
+            .into(db.friends)
+            .insert(
+              FriendsCompanion.insert(
+                username: 'bob',
+                displayName: 'Bob',
+                state: 'friend',
+                addedAt: 0,
+              ),
+            );
+        final runtime = _runtimeFor(db, alice, adapter, brain: brain);
+        addTearDown(runtime.dispose);
+
+        await runtime.start();
+        await expectLater(
+          runtime.startVideoCall('bob'),
+          throwsA(isA<TurnUnavailableException>()),
+        );
+
+        expect(runtime.voiceCallState.phase, VoiceCallPhase.failed);
+        expect(
+          runtime.voiceCallState.failureReason,
+          VoiceCallFailureReason.relayUnavailable,
+        );
+        expect(
+          runtime.voiceCallState.detail,
+          'Relay connection is unavailable. Check TURN configuration.',
+        );
+        expect(adapter.rooms, isEmpty);
+      },
+    );
+
+    test(
       'startVoiceCall rechecks active call state after async preflight gaps',
       () async {
         final adapter = RecordingVoiceSignalingAdapter();
@@ -6851,6 +6958,8 @@ class TestSessionManager implements SessionManager {
   Object? createMediaOfferError;
   Object? applyMediaOfferError;
   Object? applyMediaAnswerError;
+  Object? createVoiceMediaConnectionError;
+  Object? createCallMediaConnectionError;
   Object? audioOutputRouteError;
   Completer<void>? voiceDisposeGate;
   final Map<String, Session> _sessions = <String, Session>{};
@@ -6980,6 +7089,10 @@ class TestSessionManager implements SessionManager {
 
   @override
   Future<VoiceMediaConnection> createVoiceMediaConnection(String peerId) async {
+    final error = createVoiceMediaConnectionError;
+    if (error != null) {
+      throw error;
+    }
     final connection = _TestVoiceMediaConnection(this, peerId);
     voiceMediaConnections[peerId] = connection;
     return connection;
@@ -6987,6 +7100,10 @@ class TestSessionManager implements SessionManager {
 
   @override
   Future<CallMediaConnection> createCallMediaConnection(String peerId) async {
+    final error = createCallMediaConnectionError;
+    if (error != null) {
+      throw error;
+    }
     final connection = _TestCallMediaConnection(this, peerId);
     callMediaConnections[peerId] = connection;
     return connection;

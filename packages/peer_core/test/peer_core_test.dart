@@ -80,6 +80,40 @@ void main() {
     );
   });
 
+  test('peer config reports TURN readiness for relay-only calls', () {
+    final relayOnlyWithoutTurn = PeerConfig(
+      iceServers: const <Map<String, dynamic>>[
+        <String, dynamic>{'urls': 'stun:stun.l.google.com:19302'},
+      ],
+      platform: _FakePlatformBridge(),
+      iceTransportPolicy: PeerIceTransportPolicy.relayOnly,
+    );
+
+    expect(
+      relayOnlyWithoutTurn.turnReadiness().readiness,
+      TurnReadiness.unavailableNoRelayServer,
+    );
+    expect(relayOnlyWithoutTurn.turnReadiness().hasRelayServer, isFalse);
+
+    final directWithoutTurn = relayOnlyWithoutTurn.copyWith(
+      iceTransportPolicy: PeerIceTransportPolicy.all,
+    );
+    expect(
+      directWithoutTurn.turnReadiness().readiness,
+      TurnReadiness.notRequiredForCurrentPolicy,
+    );
+
+    final brokerError = StateError('broker failed');
+    expect(
+      directWithoutTurn.turnReadiness(brokerError: brokerError).readiness,
+      TurnReadiness.unavailableBrokerFailed,
+    );
+    expect(
+      directWithoutTurn.turnReadiness(brokerError: brokerError).error,
+      brokerError,
+    );
+  });
+
   test('default peer core does not own dedicated voice media calls', () {
     final peer = DefaultPeerCore();
 

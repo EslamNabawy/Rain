@@ -36,6 +36,7 @@ extension VoiceCallRuntime on RainRuntimeController {
   static const String _voiceCallRingingTimeoutReasonCode = 'ringingTimeout';
   static const String _voiceCallIceTimeoutReasonCode = 'iceTimeout';
   static const String _voiceCallNoRemoteAudioReasonCode = 'noRemoteAudio';
+  static const String _voiceCallRelayUnavailableReasonCode = 'relayUnavailable';
   static const String _voiceCallVideoRendererFailedReasonCode =
       'videoRendererFailed';
   static const String _voiceCallVideoFirstFrameTimeoutReasonCode =
@@ -60,6 +61,8 @@ extension VoiceCallRuntime on RainRuntimeController {
   static const String _voiceCallTimedOut = 'Call timed out.';
   static const String _voiceCallMediaFailed =
       'Call media could not connect. Try again.';
+  static const String _voiceCallRelayUnavailable =
+      'Relay connection is unavailable. Check TURN configuration.';
   static const String _voiceCallVideoFailed =
       'Video could not connect. Try again.';
   static const String _voiceCallVideoBackgrounded =
@@ -160,6 +163,24 @@ extension VoiceCallRuntime on RainRuntimeController {
       );
       await session.startOutgoing();
     } catch (error) {
+      if (error is TurnUnavailableException) {
+        _recordRuntimeEvent(
+          category: 'call',
+          name: 'turn_unavailable_call_blocked',
+          severity: 'error',
+          message: _voiceCallRelayUnavailable,
+          context: <String, Object?>{
+            'peerId': peerId,
+            'callId': callId,
+            'sessionEpoch': sessionEpoch,
+            'mediaMode': mediaMode.name,
+            'readiness': error.readiness.readiness.name,
+            'hasRelayServer': error.readiness.hasRelayServer,
+            if (error.readiness.error != null)
+              'readinessError': error.readiness.error.toString(),
+          },
+        );
+      }
       final retrySnapshot = _voiceCallSignalingFailureSnapshotForError(
         error,
         peerId: peerId,
@@ -1440,6 +1461,8 @@ extension VoiceCallRuntime on RainRuntimeController {
       VoiceCallFailureReason.mediaIceTimeout => _voiceCallIceTimeoutReasonCode,
       VoiceCallFailureReason.mediaNoRemoteAudio =>
         _voiceCallNoRemoteAudioReasonCode,
+      VoiceCallFailureReason.relayUnavailable =>
+        _voiceCallRelayUnavailableReasonCode,
       VoiceCallFailureReason.videoRendererFailed =>
         _voiceCallVideoRendererFailedReasonCode,
       VoiceCallFailureReason.videoFirstFrameTimeout =>
@@ -2228,6 +2251,10 @@ extension VoiceCallRuntime on RainRuntimeController {
         state.detail == _voiceCallMediaFailed) {
       return VoiceCallFailureReason.mediaNoRemoteAudio;
     }
+    if (state.reasonCode == _voiceCallRelayUnavailableReasonCode ||
+        state.detail == _voiceCallRelayUnavailable) {
+      return VoiceCallFailureReason.relayUnavailable;
+    }
     if (state.reasonCode == _voiceCallVideoRendererFailedReasonCode) {
       return VoiceCallFailureReason.videoRendererFailed;
     }
@@ -2291,6 +2318,9 @@ extension VoiceCallRuntime on RainRuntimeController {
     }
     if (state.reasonCode == _voiceCallNoRemoteAudioReasonCode) {
       return _voiceCallMediaFailed;
+    }
+    if (state.reasonCode == _voiceCallRelayUnavailableReasonCode) {
+      return _voiceCallRelayUnavailable;
     }
     if (state.reasonCode == _voiceCallVideoRendererFailedReasonCode) {
       return _voiceCallVideoFailed;
@@ -4151,6 +4181,11 @@ extension VoiceCallRuntime on RainRuntimeController {
     if (_isVoiceCallExpiredError(normalized)) {
       return VoiceCallFailureReason.expired;
     }
+    if (error is TurnUnavailableException ||
+        normalized.contains('relay connection is unavailable') ||
+        normalized.contains('turn configuration')) {
+      return VoiceCallFailureReason.relayUnavailable;
+    }
     if (_isVoiceCallOfflineError(normalized)) {
       return VoiceCallFailureReason.signalingFailed;
     }
@@ -4186,6 +4221,11 @@ extension VoiceCallRuntime on RainRuntimeController {
     }
     if (_isVoiceCallExpiredError(normalized)) {
       return _voiceCallTimedOut;
+    }
+    if (error is TurnUnavailableException ||
+        normalized.contains('relay connection is unavailable') ||
+        normalized.contains('turn configuration')) {
+      return _voiceCallRelayUnavailable;
     }
     if (_isVoiceCallOfflineError(normalized)) {
       final unknownPeer = RuntimeInteractionGuard.presenceUnknownMessage(

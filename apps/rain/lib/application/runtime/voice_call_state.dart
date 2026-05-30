@@ -29,6 +29,7 @@ enum VoiceCallFailureReason {
   expired,
   ringingTimeout,
   mediaConnectionFailed,
+  relayUnavailable,
   mediaIceTimeout,
   mediaNoRemoteAudio,
   videoRendererFailed,

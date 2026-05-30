@@ -18,6 +18,38 @@ enum PeerState {
 
 enum PeerIceTransportPolicy { all, relayOnly }
 
+enum TurnReadiness {
+  available,
+  unavailableBrokerFailed,
+  unavailableNoRelayServer,
+  notRequiredForCurrentPolicy,
+}
+
+final class TurnReadinessResult {
+  const TurnReadinessResult({
+    required this.readiness,
+    required this.hasRelayServer,
+    this.error,
+  });
+
+  final TurnReadiness readiness;
+  final bool hasRelayServer;
+  final Object? error;
+
+  bool get canUseRelay => readiness == TurnReadiness.available;
+}
+
+final class TurnUnavailableException implements Exception {
+  const TurnUnavailableException(this.readiness);
+
+  final TurnReadinessResult readiness;
+
+  @override
+  String toString() {
+    return 'Relay connection is unavailable. Check TURN configuration.';
+  }
+}
+
 enum PeerAddressFamily { unknown, ipv4, ipv6, mixed }
 
 final class PeerChannels {
@@ -98,6 +130,33 @@ class PeerConfig {
       return normalized.startsWith('turn:') || normalized.startsWith('turns:');
     });
   });
+
+  TurnReadinessResult turnReadiness({Object? brokerError}) {
+    final hasRelay = hasRelayServer;
+    if (hasRelay) {
+      return TurnReadinessResult(
+        readiness: TurnReadiness.available,
+        hasRelayServer: true,
+        error: brokerError,
+      );
+    }
+    if (iceTransportPolicy != PeerIceTransportPolicy.relayOnly) {
+      return TurnReadinessResult(
+        readiness: brokerError == null
+            ? TurnReadiness.notRequiredForCurrentPolicy
+            : TurnReadiness.unavailableBrokerFailed,
+        hasRelayServer: false,
+        error: brokerError,
+      );
+    }
+    return TurnReadinessResult(
+      readiness: brokerError == null
+          ? TurnReadiness.unavailableNoRelayServer
+          : TurnReadiness.unavailableBrokerFailed,
+      hasRelayServer: false,
+      error: brokerError,
+    );
+  }
 
   RTCDataChannelInit defaultChannelOptions() {
     final options = RTCDataChannelInit()..ordered = ordered;

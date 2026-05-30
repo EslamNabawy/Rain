@@ -348,6 +348,9 @@ class ProtocolBrainImpl implements ProtocolBrain {
     final config = peerConfigProvider == null
         ? peerConfig.copyWith(iceTransportPolicy: policy)
         : await peerConfigProvider!(policy);
+    _throwIfRelayRequiredButUnavailable(
+      config.copyWith(iceTransportPolicy: policy),
+    );
     return DefaultVoiceMediaConnection(
       config: config.copyWith(iceTransportPolicy: policy),
     );
@@ -360,6 +363,9 @@ class ProtocolBrainImpl implements ProtocolBrain {
     final config = peerConfigProvider == null
         ? peerConfig.copyWith(iceTransportPolicy: policy)
         : await peerConfigProvider!(policy);
+    _throwIfRelayRequiredButUnavailable(
+      config.copyWith(iceTransportPolicy: policy),
+    );
     return DefaultCallMediaConnection(
       config: config.copyWith(iceTransportPolicy: policy),
     );
@@ -1457,6 +1463,14 @@ class ProtocolBrainImpl implements ProtocolBrain {
       return config.hasRelayServer;
     } catch (_) {
       return false;
+    }
+  }
+
+  void _throwIfRelayRequiredButUnavailable(PeerConfig config) {
+    final readiness = config.turnReadiness();
+    if (config.iceTransportPolicy == PeerIceTransportPolicy.relayOnly &&
+        !readiness.canUseRelay) {
+      throw TurnUnavailableException(readiness);
     }
   }
 

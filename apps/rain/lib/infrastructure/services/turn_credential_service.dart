@@ -4,6 +4,8 @@ import 'dart:io';
 
 import 'package:firebase_auth/firebase_auth.dart';
 import 'package:flutter/foundation.dart';
+import 'package:peer_core/peer_core.dart'
+    show PeerIceTransportPolicy, TurnReadiness, TurnReadinessResult;
 
 class TurnCredentialService {
   TurnCredentialService({
@@ -27,21 +29,67 @@ class TurnCredentialService {
   final DateTime Function() _now;
 
   _TurnCredentialCache? _cache;
+  TurnReadinessResult _lastReadiness = const TurnReadinessResult(
+    readiness: TurnReadiness.notRequiredForCurrentPolicy,
+    hasRelayServer: false,
+  );
+
+  TurnReadinessResult get lastReadiness => _lastReadiness;
 
   Future<List<Map<String, dynamic>>> iceServers() async {
     if (_brokerUrl.isEmpty) {
-      return _cloneIceServers(_baseIceServers);
+      final servers = _cloneIceServers(_baseIceServers);
+      _lastReadiness = _readinessForServers(
+        servers,
+        PeerIceTransportPolicy.all,
+      );
+      return servers;
     }
     final cached = _cache;
     if (cached != null && cached.isUsable(_now())) {
-      return _mergeIceServers(cached.iceServers);
+      final servers = _mergeIceServers(cached.iceServers);
+      _lastReadiness = _readinessForServers(
+        servers,
+        PeerIceTransportPolicy.all,
+      );
+      return servers;
     }
     try {
       final fetched = await _fetchBrokerCredentials();
       _cache = fetched;
-      return _mergeIceServers(fetched.iceServers);
-    } catch (_) {
-      return _cloneIceServers(_baseIceServers);
+      final servers = _mergeIceServers(fetched.iceServers);
+      _lastReadiness = _readinessForServers(
+        servers,
+        PeerIceTransportPolicy.all,
+      );
+      return servers;
+    } catch (error) {
+      final servers = _cloneIceServers(_baseIceServers);
+      _lastReadiness = _readinessForServers(
+        servers,
+        PeerIceTransportPolicy.all,
+        error: error,
+      );
+      return servers;
+    }
+  }
+
+  Future<TurnReadinessResult> turnReadiness(
+    PeerIceTransportPolicy policy,
+  ) async {
+    if (_brokerUrl.isEmpty) {
+      return _readinessForServers(_baseIceServers, policy);
+    }
+    final cached = _cache;
+    if (cached != null && cached.isUsable(_now())) {
+      return _readinessForServers(_mergeIceServers(cached.iceServers), policy);
+    }
+    try {
+      final fetched = await _fetchBrokerCredentials();
+      _cache = fetched;
+      return _readinessForServers(_mergeIceServers(fetched.iceServers), policy);
+    } catch (error) {
+      return _readinessForServers(_baseIceServers, policy, error: error);
     }
   }
 
@@ -155,6 +203,37 @@ DateTime _parseExpiresAt(Map<String, dynamic> decoded, DateTime now) {
 bool _hasIceUrls(Map<String, dynamic> server) => _urls(server).isNotEmpty;
 
 bool _hasTurnUrl(Map<String, dynamic> server) => _urls(server).any(_isTurnUrl);
+
+TurnReadinessResult _readinessForServers(
+  List<Map<String, dynamic>> servers,
+  PeerIceTransportPolicy policy, {
+  Object? error,
+}) {
+  final hasRelay = servers.any(_hasTurnUrl);
+  if (hasRelay) {
+    return TurnReadinessResult(
+      readiness: TurnReadiness.available,
+      hasRelayServer: true,
+      error: error,
+    );
+  }
+  if (policy != PeerIceTransportPolicy.relayOnly) {
+    return TurnReadinessResult(
+      readiness: error == null
+          ? TurnReadiness.notRequiredForCurrentPolicy
+          : TurnReadiness.unavailableBrokerFailed,
+      hasRelayServer: false,
+      error: error,
+    );
+  }
+  return TurnReadinessResult(
+    readiness: error == null
+        ? TurnReadiness.unavailableNoRelayServer
+        : TurnReadiness.unavailableBrokerFailed,
+    hasRelayServer: false,
+    error: error,
+  );
+}
 
 bool _isStunUrl(String url) => url.trim().toLowerCase().startsWith('stun:');
 
