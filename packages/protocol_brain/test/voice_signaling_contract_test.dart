@@ -1,3 +1,5 @@
+import 'dart:async';
+
 import 'package:flutter_test/flutter_test.dart';
 import 'package:protocol_brain/protocol_brain.dart';
 import 'package:protocol_brain/testing.dart';
@@ -533,6 +535,52 @@ void main() {
       expect(batches.last, <int>[5]);
     },
   );
+
+  test('ICE candidate batcher serializes overlapping flushes', () async {
+    final started = <List<int>>[];
+    final completions = <Completer<void>>[];
+    final batcher = IceCandidateBatcher<int>(
+      maxBatchSize: 2,
+      flushWindow: const Duration(minutes: 1),
+      onFlush: (List<int> candidates) {
+        started.add(candidates);
+        final completer = Completer<void>();
+        completions.add(completer);
+        return completer.future;
+      },
+    );
+    addTearDown(() async {
+      for (final completer in completions) {
+        if (!completer.isCompleted) {
+          completer.complete();
+        }
+      }
+      await batcher.dispose();
+    });
+
+    await batcher.add(1);
+    final firstFlush = batcher.add(2);
+    await Future<void>.delayed(Duration.zero);
+    expect(started, <List<int>>[
+      <int>[1, 2],
+    ]);
+
+    await batcher.add(3);
+    final secondFlush = batcher.flush();
+    await Future<void>.delayed(Duration.zero);
+    expect(started, hasLength(1));
+
+    completions[0].complete();
+    await firstFlush;
+    await Future<void>.delayed(Duration.zero);
+    expect(started, <List<int>>[
+      <int>[1, 2],
+      <int>[3],
+    ]);
+
+    completions[1].complete();
+    await secondFlush;
+  });
 
   test(
     'ICE batch writes preserve room timestamp and cap candidates per role',
