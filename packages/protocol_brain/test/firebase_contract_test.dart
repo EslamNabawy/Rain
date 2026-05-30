@@ -675,6 +675,28 @@ void main() {
     );
   });
 
+  test(
+    'Firebase expired missing-room user locks can be deleted by either side',
+    () {
+      final rules = _repoFile('backend/firebase/database.rules.json');
+      final activeVoiceUsersRules = _rulesSlice(
+        rules,
+        '"activeVoiceUsers"',
+        '"voiceCallInboxes"',
+      );
+
+      expect(
+        activeVoiceUsersRules,
+        contains(
+          "!root.child('voiceCalls/' + data.child('callId').val()).exists() && (root.child('users/' + data.child('caller').val() + '/uid').val() === auth.uid || (data.child('expiresAt').val() <= now && root.child('users/' + data.child('callee').val() + '/uid').val() === auth.uid))",
+        ),
+        reason:
+            'Expired missing-room locks must be cleanupable by the callee too; '
+            'otherwise a reverse-direction retry can stay blocked forever.',
+      );
+    },
+  );
+
   test('Firebase backend does not depend on managed TURN provider secrets', () {
     final functions = _repoFile('backend/firebase/functions/index.js');
     final readme = _repoFile('backend/firebase/README.md');
