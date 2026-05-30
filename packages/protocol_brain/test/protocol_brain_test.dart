@@ -194,6 +194,38 @@ void main() {
     await brain.disconnect('bob');
   });
 
+  test(
+    'local ICE write failure marks session failed without escaping',
+    () async {
+      final adapter = _RecordingSignalingAdapter()
+        ..writeIceError = Exception('permission denied');
+      late _FakePeerCore peer;
+      final brain = ProtocolBrainImpl(
+        selfUsername: 'alice',
+        adapter: adapter,
+        peerConfig: _fakePeerConfig(),
+        peerFactory: () {
+          peer = _FakePeerCore();
+          return peer;
+        },
+        connectionMemoryStore: _MemoryConnectionStore(),
+      );
+
+      await brain.connect('bob');
+      peer.emitIceCandidate(RTCIceCandidate('candidate:1 1 udp', '0', 0));
+      await pumpEventQueue(times: 3);
+
+      final failed = brain.getSession('bob');
+      expect(failed?.state, SessionState.failed);
+      expect(failed?.phase, SessionPhase.failed);
+      expect(failed?.detail, 'Signaling failed while sending ICE candidate.');
+      expect(failed?.error, contains('permission denied'));
+      expect(adapter.deletedRooms, contains('alice:bob'));
+
+      await brain.disconnect('bob');
+    },
+  );
+
   test('session changes are emitted when peer becomes connected', () async {
     final adapter = _RecordingSignalingAdapter();
     late _FakePeerCore peer;
@@ -839,6 +871,7 @@ class _RecordingSignalingAdapter implements SignalingAdapter {
   final List<SDPPayload> writtenOfferPayloads = <SDPPayload>[];
   final Map<String, SDPPayload> storedAnswers = <String, SDPPayload>{};
   Object? writeOfferError;
+  Object? writeIceError;
   final Map<String, StreamController<SDPPayload>> _offerControllers =
       <String, StreamController<SDPPayload>>{};
   final Map<String, StreamController<SDPPayload>> _answerControllers =
@@ -885,7 +918,12 @@ class _RecordingSignalingAdapter implements SignalingAdapter {
     String roomId,
     IceRole role,
     RTCIceCandidate candidate,
-  ) async {}
+  ) async {
+    final error = writeIceError;
+    if (error != null) {
+      throw error;
+    }
+  }
 
   @override
   Stream<SDPPayload> onAnswer(String roomId) {
@@ -1214,6 +1252,10 @@ class _FakePeerCore implements PeerCore {
     _state = PeerState.connected;
     _stateController.add(_state);
     _connectedController.add(null);
+  }
+
+  void emitIceCandidate(RTCIceCandidate candidate) {
+    _iceController.add(candidate);
   }
 
   void emitDisconnected() {

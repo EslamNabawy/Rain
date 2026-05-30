@@ -441,7 +441,11 @@ class ProtocolBrainImpl implements ProtocolBrain {
           SessionPhase.exchangingIce,
           'Sending local ICE candidate.',
         );
-        await adapter.writeICE(active.roomId, localRole, candidate);
+        try {
+          await adapter.writeICE(active.roomId, localRole, candidate);
+        } catch (error) {
+          _handleLocalIceWriteError(active, error);
+        }
       }),
     );
 
@@ -1301,6 +1305,27 @@ class ProtocolBrainImpl implements ProtocolBrain {
         route: PeerConnectionRoute.unknown(
           updatedAt: DateTime.now().millisecondsSinceEpoch,
         ),
+      ),
+    );
+  }
+
+  void _handleLocalIceWriteError(_ActiveSession active, Object error) {
+    if (_sessions[active.peerId] != active) {
+      return;
+    }
+    active.stopReconnecting();
+    unawaited(_deleteRoomSilently(active));
+    unawaited(active.disposePeerBindings());
+    final updatedAt = DateTime.now().millisecondsSinceEpoch;
+    _updateSession(
+      active.peerId,
+      active.snapshot.copyWith(
+        state: SessionState.failed,
+        phase: SessionPhase.failed,
+        detail: 'Signaling failed while sending ICE candidate.',
+        updatedAt: updatedAt,
+        error: 'Peer signaling data could not be written: $error',
+        route: PeerConnectionRoute.unknown(updatedAt: updatedAt),
       ),
     );
   }

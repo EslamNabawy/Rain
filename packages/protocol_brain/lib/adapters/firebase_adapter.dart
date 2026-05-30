@@ -2208,10 +2208,10 @@ class FirebaseSignalingAdapter
       receiver: context.receiver,
       payload: answer.toJson(),
     );
-    await _root.child('rooms/$roomId').update(<String, Object?>{
-      ..._roomParticipants(roomId),
-      ..._roomLifecycle(roomId: roomId, timestamp: timestamp),
-      'answer': encryptedAnswer,
+    await _root.update(<String, Object?>{
+      'rooms/$roomId/updatedAt': timestamp,
+      'rooms/$roomId/expiresAt': timestamp + _roomTtlMs,
+      'rooms/$roomId/answer': encryptedAnswer,
     });
   }
 
@@ -2276,10 +2276,10 @@ class FirebaseSignalingAdapter
       receiver: context.receiver,
       payload: iceCandidateToJson(candidate),
     );
-    await _root.child('rooms/$roomId').update(<String, Object?>{
-      ..._roomParticipants(roomId),
-      ..._roomLifecycle(roomId: roomId, timestamp: timestamp),
-      '$path/$candidateKey': encryptedCandidate,
+    await _root.update(<String, Object?>{
+      'rooms/$roomId/updatedAt': timestamp,
+      'rooms/$roomId/expiresAt': timestamp + _roomTtlMs,
+      'rooms/$roomId/$path/$candidateKey': encryptedCandidate,
     });
   }
 

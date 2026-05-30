@@ -345,6 +345,9 @@ void main() {
 
   test('Firebase room ICE writes are guarded by explicit sender role', () {
     final rules = _repoFile('backend/firebase/database.rules.json');
+    final adapter = _repoFile(
+      'packages/protocol_brain/lib/adapters/firebase_adapter.dart',
+    );
 
     expect(
       rules,
@@ -373,6 +376,21 @@ void main() {
         "root.child('users/' + root.child('rooms/' + \$roomId + '/userB').val() + '/uid').val() === auth.uid",
       ),
       reason: 'calleeICE writes must be limited to the canonical callee role.',
+    );
+    expect(
+      adapter,
+      contains("'rooms/\$roomId/\$path/\$candidateKey': encryptedCandidate"),
+      reason:
+          'ICE candidates must be written at the leaf path. Updating the room '
+          'parent re-enters the broad room write rule and is denied once ICE '
+          'branches exist.',
+    );
+    expect(
+      adapter,
+      contains("'rooms/\$roomId/answer': encryptedAnswer"),
+      reason:
+          'Answers also use leaf paths so existing caller ICE does not make '
+          'answer writes depend on the parent room update rule.',
     );
   });
 
