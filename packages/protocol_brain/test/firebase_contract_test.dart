@@ -419,6 +419,9 @@ void main() {
 
   test('Firebase room identity metadata is immutable after create', () {
     final rules = _repoFile('backend/firebase/database.rules.json');
+    final roomRules = _rulesSlice(rules, '"rooms"', '"activeVoicePairs"');
+    final attemptIdRules = _rulesSlice(roomRules, '"attemptId"', '"createdAt"');
+    final createdAtRules = _rulesSlice(roomRules, '"createdAt"', '"updatedAt"');
 
     expect(
       rules,
@@ -440,11 +443,42 @@ void main() {
       reason: 'New room attempts must bind attemptId to the createdAt reset.',
     );
     expect(
-      rules,
+      roomRules,
       contains(
-        "newData.isString() && root.child('users/' + root.child('rooms/' + \$roomId + '/userA').val() + '/uid').val() === auth.uid",
+        "data.exists() && newData.exists() && newData.hasChildren(['userA', 'userB', 'attemptId', 'createdAt', 'updatedAt', 'expiresAt', 'offer'])",
       ),
-      reason: 'Only the offer owner can start a new attemptId.',
+      reason: 'Existing-room resets must be full room replacements.',
+    );
+    expect(roomRules, contains("!newData.child('answer').exists()"));
+    expect(roomRules, contains("!newData.child('callerICE').exists()"));
+    expect(roomRules, contains("!newData.child('calleeICE').exists()"));
+    expect(
+      attemptIdRules,
+      contains('data.exists() && newData.val() === data.val()'),
+      reason: 'Isolated attemptId writes must be immutable.',
+    );
+    expect(
+      attemptIdRules,
+      isNot(
+        contains(
+          "newData.isString() && root.child('users/' + root.child('rooms/'",
+        ),
+      ),
+      reason: 'userA must not rewrite attemptId without clearing answer/ICE.',
+    );
+    expect(
+      createdAtRules,
+      contains('data.exists() && newData.val() === data.val()'),
+      reason: 'Isolated createdAt writes must be immutable.',
+    );
+    expect(
+      createdAtRules,
+      isNot(
+        contains(
+          "newData.isNumber() && root.child('users/' + root.child('rooms/'",
+        ),
+      ),
+      reason: 'userA must not rewrite createdAt without clearing answer/ICE.',
     );
   });
 
@@ -536,6 +570,37 @@ void main() {
           '"$field": {\n          ".write": "auth != null && data.exists() && newData.val() === data.val()',
         ),
         reason: '$field must not be replaceable after call creation.',
+      );
+    }
+  });
+
+  test('Firebase voice room create rejects preseeded SDP and ICE branches', () {
+    final rules = _repoFile('backend/firebase/database.rules.json');
+    final voiceCallsRules = _rulesSlice(
+      rules,
+      '"voiceCalls"',
+      '"connectionRequests"',
+    );
+
+    expect(voiceCallsRules, contains("!newData.child('offer').exists()"));
+    expect(voiceCallsRules, contains("!newData.child('answer').exists()"));
+    expect(
+      voiceCallsRules,
+      contains("!newData.child('ice').exists()"),
+      reason: 'Create must not be able to preseed caller or callee ICE.',
+    );
+    for (final field in <String>[
+      'acceptedAt',
+      'connectedAt',
+      'endedAt',
+      'endedBy',
+      'reasonCode',
+      'reason',
+    ]) {
+      expect(
+        voiceCallsRules,
+        contains("!newData.child('$field').exists()"),
+        reason: '$field must not be accepted at call-room creation.',
       );
     }
   });
