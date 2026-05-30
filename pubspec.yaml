@@ -22,4 +22,4 @@ melos:
   scripts:
     pub:get: dart run melos exec -- flutter pub get
     analyze: dart run melos exec -- flutter analyze
-    test: dart run melos exec -- flutter test
+    test: dart run melos exec --concurrency=1 -- flutter test
