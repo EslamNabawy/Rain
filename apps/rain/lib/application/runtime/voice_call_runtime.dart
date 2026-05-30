@@ -2665,6 +2665,8 @@ extension VoiceCallRuntime on RainRuntimeController {
       roomId: frame.callId,
       purpose: purpose,
       timestamp: frame.sentAt,
+      sender: frame.from,
+      receiver: frame.to,
       payload: frame.toJson(),
     );
     return VoiceSignalingEnvelope.fromJson(

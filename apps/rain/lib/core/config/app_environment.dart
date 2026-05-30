@@ -30,6 +30,7 @@ class AppEnvironment {
     required this.firebaseAuthDomain,
     required this.firebaseMeasurementId,
     required this.signalingEncryptionKey,
+    required this.signalingEncryptionKeyProvided,
     required this.turnBrokerUrl,
   });
 
@@ -53,6 +54,7 @@ class AppEnvironment {
   final String firebaseAuthDomain;
   final String firebaseMeasurementId;
   final String signalingEncryptionKey;
+  final bool signalingEncryptionKeyProvided;
   final String turnBrokerUrl;
 
   factory AppEnvironment.fromEnvironment({
@@ -131,6 +133,16 @@ class AppEnvironment {
             (jsonDecode(rawIceServers) as List<dynamic>)
                 .cast<Map<String, dynamic>>(),
           );
+
+    final compileTimeSignalingEncryptionKey = const String.fromEnvironment(
+      'RAIN_SIGNALING_ENCRYPTION_KEY',
+    );
+    final runtimeSignalingEncryptionKey =
+        environment['RAIN_SIGNALING_ENCRYPTION_KEY']?.trim();
+    final signalingEncryptionKeyProvided =
+        compileTimeSignalingEncryptionKey.isNotEmpty ||
+        (runtimeSignalingEncryptionKey != null &&
+            runtimeSignalingEncryptionKey.isNotEmpty);
 
     return AppEnvironment(
       backend: backend,
@@ -228,11 +240,10 @@ class AppEnvironment {
       ),
       signalingEncryptionKey: readString(
         'RAIN_SIGNALING_ENCRYPTION_KEY',
-        compileTimeValue: const String.fromEnvironment(
-          'RAIN_SIGNALING_ENCRYPTION_KEY',
-        ),
+        compileTimeValue: compileTimeSignalingEncryptionKey,
         defaultValue: demoSignalingEncryptionKey,
       ),
+      signalingEncryptionKeyProvided: signalingEncryptionKeyProvided,
       turnBrokerUrl: readString(
         'RAIN_TURN_BROKER_URL',
         compileTimeValue: const String.fromEnvironment('RAIN_TURN_BROKER_URL'),
@@ -349,6 +360,7 @@ class AppEnvironment {
         firebaseAuthDomain: firebaseAuthDomain,
         firebaseMeasurementId: firebaseMeasurementId,
         signalingEncryptionKey: signalingEncryptionKey,
+        signalingEncryptionKeyProvided: signalingEncryptionKeyProvided,
         turnBrokerUrl: turnBrokerUrl,
       );
     }
@@ -390,12 +402,29 @@ class AppEnvironment {
       firebaseAuthDomain: firebaseAuthDomain,
       firebaseMeasurementId: firebaseMeasurementId,
       signalingEncryptionKey: signalingEncryptionKey,
+      signalingEncryptionKeyProvided: signalingEncryptionKeyProvided,
       turnBrokerUrl: turnBrokerUrl,
     );
   }
 
   void validateForRelease() {
-    if (usesDemoSignalingEncryptionKey && !allowPublicTurn) {
+    if (updateChannel != 'stable' && updateChannel != 'demo') {
+      throw StateError(
+        'Release builds must use RAIN_UPDATE_CHANNEL=stable or demo.',
+      );
+    }
+    if (allowPublicTurn && updateChannel != 'demo') {
+      throw StateError(
+        'Demo release builds that allow public TURN must use RAIN_UPDATE_CHANNEL=demo.',
+      );
+    }
+    final isDemoRelease = updateChannel == 'demo' && allowPublicTurn;
+    if (!isDemoRelease && !signalingEncryptionKeyProvided) {
+      throw StateError(
+        'RAIN_SIGNALING_ENCRYPTION_KEY is required in production release builds.',
+      );
+    }
+    if (usesDemoSignalingEncryptionKey && !isDemoRelease) {
       throw StateError(
         'Production release builds must not use the demo signaling encryption key.',
       );

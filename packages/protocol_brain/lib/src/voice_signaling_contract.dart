@@ -132,6 +132,8 @@ final class VoiceSignalingEnvelope {
     required this.v,
     required this.alg,
     required this.ts,
+    this.sender,
+    this.receiver,
     required this.nonce,
     required this.ciphertext,
     required this.mac,
@@ -147,6 +149,8 @@ final class VoiceSignalingEnvelope {
   final int v;
   final String alg;
   final int ts;
+  final String? sender;
+  final String? receiver;
   final String nonce;
   final String ciphertext;
   final String mac;
@@ -157,6 +161,8 @@ final class VoiceSignalingEnvelope {
       'v': v,
       'alg': alg,
       'ts': ts,
+      if (sender != null) 'from': sender,
+      if (receiver != null) 'to': receiver,
       'nonce': nonce,
       'ciphertext': ciphertext,
       'mac': mac,
@@ -171,6 +177,8 @@ final class VoiceSignalingEnvelope {
       v: _requiredInt(json, 'v'),
       alg: _requiredString(json, 'alg', max: 64),
       ts: _requiredInt(json, 'ts'),
+      sender: _optionalString(json, 'from', max: _maxUsernameLength),
+      receiver: _optionalString(json, 'to', max: _maxUsernameLength),
       nonce: _requiredString(json, 'nonce', max: maxNonceLength),
       ciphertext: _requiredString(json, 'ciphertext', max: maxCiphertextLength),
       mac: _requiredString(json, 'mac', max: maxMacLength),
@@ -188,6 +196,12 @@ final class VoiceSignalingEnvelope {
     }
     if (ts <= 0) {
       throw const FormatException('Voice signaling envelope ts invalid.');
+    }
+    if (sender != null) {
+      _validateUsername(sender!);
+    }
+    if (receiver != null) {
+      _validateUsername(receiver!);
     }
     _validateRequiredString('nonce', nonce, max: maxNonceLength);
     _validateRequiredString('ciphertext', ciphertext, max: maxCiphertextLength);

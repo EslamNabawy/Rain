@@ -55,6 +55,16 @@ void main() {
         'Production release builds must not use the demo signaling encryption key.',
       ),
     );
+    expect(
+      script,
+      contains(
+        'Production release builds must use RAIN_UPDATE_CHANNEL=stable.',
+      ),
+    );
+    expect(
+      script,
+      contains('Demo release builds must use RAIN_UPDATE_CHANNEL=demo.'),
+    );
     expect(script, contains('Assert-ReleaseDartDefines -Path \$resolved'));
     expect(
       script,
@@ -248,6 +258,42 @@ void main() {
       defines,
       contains('rain-demo-signaling-encryption-key-v1-change-me'),
     );
+  });
+
+  test('app release validation distinguishes missing and demo signaling keys', () {
+    final environment = _repoFile(
+      'apps/rain/lib/core/config/app_environment.dart',
+    );
+
+    expect(environment, contains('signalingEncryptionKeyProvided'));
+    expect(
+      environment,
+      contains(
+        'RAIN_SIGNALING_ENCRYPTION_KEY is required in production release builds.',
+      ),
+    );
+    expect(
+      environment,
+      contains(
+        'Production release builds must not use the demo signaling encryption key.',
+      ),
+    );
+    expect(
+      environment,
+      contains(
+        'Demo release builds that allow public TURN must use RAIN_UPDATE_CHANNEL=demo.',
+      ),
+    );
+  });
+
+  test('signaling security model documents encrypted context and limits', () {
+    final docs = _repoFile('docs/security/signaling-security-model.md');
+
+    expect(docs, contains('sender username'));
+    expect(docs, contains('receiver username'));
+    expect(docs, contains('DTLS-SRTP'));
+    expect(docs, contains('not full verified end-to-end encryption'));
+    expect(docs, contains('Firebase and authorized database readers'));
   });
 
   test('demo dart defines keep presence heartbeat safely below freshness', () {

@@ -81,6 +81,28 @@ class FirebaseSignalingAdapter
     return <String, Object?>{'userA': users[0], 'userB': users[1]};
   }
 
+  ({String sender, String receiver}) _roomCipherContext(
+    String roomId,
+    String purpose,
+  ) {
+    final users = _roomUsers(roomId);
+    return switch (purpose) {
+      SignalingCipher.offerPurpose || SignalingCipher.callerIcePurpose => (
+        sender: users[0],
+        receiver: users[1],
+      ),
+      SignalingCipher.answerPurpose || SignalingCipher.calleeIcePurpose => (
+        sender: users[1],
+        receiver: users[0],
+      ),
+      _ => throw ArgumentError.value(
+        purpose,
+        'purpose',
+        'Unknown signaling purpose',
+      ),
+    };
+  }
+
   Future<void> _configureEmulatorsIfNeeded() async {
     if (!_useEmulator || _emulatorsConfigured) return;
     try {
@@ -1729,10 +1751,16 @@ class FirebaseSignalingAdapter
         .map((DatabaseEvent event) => event.snapshot.value)
         .where((Object? value) => value is Map<Object?, Object?>)
         .asyncMap((Object? value) async {
+          final context = _roomCipherContext(
+            roomId,
+            SignalingCipher.answerPurpose,
+          );
           final payload = await _signalingCipher.decryptPayload(
             roomId: roomId,
             purpose: SignalingCipher.answerPurpose,
             payload: value! as Map<Object?, Object?>,
+            sender: context.sender,
+            receiver: context.receiver,
           );
           return SDPPayload.fromJson(payload);
         });
@@ -1797,10 +1825,13 @@ class FirebaseSignalingAdapter
         .map((DatabaseEvent event) => event.snapshot.value)
         .where((Object? value) => value is Map<Object?, Object?>)
         .asyncMap((Object? value) async {
+          final context = _roomCipherContext(roomId, purpose);
           final payload = await _signalingCipher.decryptPayload(
             roomId: roomId,
             purpose: purpose,
             payload: value! as Map<Object?, Object?>,
+            sender: context.sender,
+            receiver: context.receiver,
           );
           return iceCandidateFromJson(payload);
         });
@@ -1814,10 +1845,16 @@ class FirebaseSignalingAdapter
         .map((DatabaseEvent event) => event.snapshot.value)
         .where((Object? value) => value is Map<Object?, Object?>)
         .asyncMap((Object? value) async {
+          final context = _roomCipherContext(
+            roomId,
+            SignalingCipher.offerPurpose,
+          );
           final payload = await _signalingCipher.decryptPayload(
             roomId: roomId,
             purpose: SignalingCipher.offerPurpose,
             payload: value! as Map<Object?, Object?>,
+            sender: context.sender,
+            receiver: context.receiver,
           );
           return SDPPayload.fromJson(payload);
         });
@@ -2153,7 +2190,8 @@ class FirebaseSignalingAdapter
 
   @override
   Future<void> writeAnswer(String roomId, SDPPayload answer) async {
-    await ensureAuthenticated();
+    final context = _roomCipherContext(roomId, SignalingCipher.answerPurpose);
+    await _ensureSignedInAsUsername(context.sender);
     final timestamp = answer.ts == 0
         ? DateTime.now().millisecondsSinceEpoch
         : answer.ts;
@@ -2161,6 +2199,8 @@ class FirebaseSignalingAdapter
       roomId: roomId,
       purpose: SignalingCipher.answerPurpose,
       timestamp: timestamp,
+      sender: context.sender,
+      receiver: context.receiver,
       payload: answer.toJson(),
     );
     await _root.child('rooms/$roomId').update(<String, Object?>{
@@ -2211,9 +2251,13 @@ class FirebaseSignalingAdapter
     IceRole role,
     RTCIceCandidate candidate,
   ) async {
-    await ensureAuthenticated();
     final timestamp = DateTime.now().millisecondsSinceEpoch;
     final path = role == IceRole.caller ? 'callerICE' : 'calleeICE';
+    final purpose = role == IceRole.caller
+        ? SignalingCipher.callerIcePurpose
+        : SignalingCipher.calleeIcePurpose;
+    final context = _roomCipherContext(roomId, purpose);
+    await _ensureSignedInAsUsername(context.sender);
     final candidateRef = _root.child('rooms/$roomId/$path').push();
     final candidateKey = candidateRef.key;
     if (candidateKey == null || candidateKey.isEmpty) {
@@ -2221,10 +2265,10 @@ class FirebaseSignalingAdapter
     }
     final encryptedCandidate = await _signalingCipher.encryptPayload(
       roomId: roomId,
-      purpose: role == IceRole.caller
-          ? SignalingCipher.callerIcePurpose
-          : SignalingCipher.calleeIcePurpose,
+      purpose: purpose,
       timestamp: timestamp,
+      sender: context.sender,
+      receiver: context.receiver,
       payload: iceCandidateToJson(candidate),
     );
     await _root.child('rooms/$roomId').update(<String, Object?>{
@@ -2236,7 +2280,8 @@ class FirebaseSignalingAdapter
 
   @override
   Future<void> writeOffer(String roomId, SDPPayload offer) async {
-    await ensureAuthenticated();
+    final context = _roomCipherContext(roomId, SignalingCipher.offerPurpose);
+    await _ensureSignedInAsUsername(context.sender);
     final timestamp = offer.ts == 0
         ? DateTime.now().millisecondsSinceEpoch
         : offer.ts;
@@ -2244,6 +2289,8 @@ class FirebaseSignalingAdapter
       roomId: roomId,
       purpose: SignalingCipher.offerPurpose,
       timestamp: timestamp,
+      sender: context.sender,
+      receiver: context.receiver,
       payload: offer.toJson(),
     );
     await _root.child('rooms/$roomId').update(<String, Object?>{
