@@ -297,10 +297,22 @@ void main() {
       peerId: 'bob',
       role: 'caller',
       mediaMode: 'video',
+      caller: 'alice',
+      callee: 'bob',
       failureCode: 'videoFirstFrameTimeout',
       userMessage: 'Video could not connect. Try again.',
       sanitizedUiError: 'Video could not connect. Try again.',
       nativeError: 'Remote video stream did not render.',
+      roomStatusTimeline: const <String>['ringing', 'negotiating', 'failed'],
+      iceCandidateWriteCount: 4,
+      iceCandidateReadCount: 3,
+      turnReadiness: 'available',
+      relayFallbackAttempted: true,
+      terminalWriteOutcome: 'durable',
+      cleanupOutcome: 'completed',
+      presenceAgeAtStartMs: 1200,
+      mediaFailureReason: 'videoFirstFrameTimeout',
+      failureTaxonomy: 'media_timeout',
       localAudioTrackCount: 1,
       remoteAudioTrackCount: 1,
       localVideoTrackCount: 1,
@@ -327,6 +339,22 @@ void main() {
     final encoded = diagnostics.toJson();
 
     expect(encoded['mediaMode'], 'video');
+    expect(encoded['caller'], 'alice');
+    expect(encoded['callee'], 'bob');
+    expect(encoded['roomStatusTimeline'], const <String>[
+      'ringing',
+      'negotiating',
+      'failed',
+    ]);
+    expect(encoded['iceCandidateWriteCount'], 4);
+    expect(encoded['iceCandidateReadCount'], 3);
+    expect(encoded['turnReadiness'], 'available');
+    expect(encoded['relayFallbackAttempted'], isTrue);
+    expect(encoded['terminalWriteOutcome'], 'durable');
+    expect(encoded['cleanupOutcome'], 'completed');
+    expect(encoded['presenceAgeAtStartMs'], 1200);
+    expect(encoded['mediaFailureReason'], 'videoFirstFrameTimeout');
+    expect(encoded['failureTaxonomy'], 'media_timeout');
     expect(encoded['localAudioTrackCount'], 1);
     expect(encoded['remoteAudioTrackCount'], 1);
     expect(encoded['localVideoTrackCount'], 1);
@@ -402,6 +430,125 @@ void main() {
     expect(encoded, contains('RTCRtpTransceiver::setDirection'));
     expect(encoded, contains('Video could not connect. Try again.'));
   });
+
+  test(
+    'diagnostics export includes call summaries and cost counters',
+    () async {
+      final temp = await Directory.systemTemp.createTemp(
+        'rain-crash-diagnostics-call-summary-test-',
+      );
+      addTearDown(() => temp.delete(recursive: true));
+      final exportPath = _join(temp.path, 'call-summary-diagnostics.json');
+
+      final service = CrashDiagnosticsService(
+        directoryProvider: () async => temp,
+        clock: () => DateTime.utc(2026, 5, 22, 1, 2, 3),
+        saveFile:
+            ({
+              String? dialogTitle,
+              String? fileName,
+              String? initialDirectory,
+              FileType type = FileType.any,
+              List<String>? allowedExtensions,
+              Uint8List? bytes,
+              bool lockParentWindow = false,
+            }) async {
+              return exportPath;
+            },
+      );
+
+      await service.initialize();
+      service.recordEventSync(
+        category: 'call',
+        name: 'firebase_room_update',
+        context: const <String, Object?>{
+          'callId': 'call-1',
+          'peerId': 'bob',
+          'mediaMode': 'video',
+          'status': 'negotiating',
+        },
+      );
+      service.recordEventSync(
+        category: 'call',
+        name: 'ice_candidate_batch_flushed',
+        context: const <String, Object?>{
+          'callId': 'call-1',
+          'peerId': 'bob',
+          'mediaMode': 'video',
+          'writtenCount': 2,
+        },
+      );
+      service.recordEventSync(
+        category: 'call',
+        name: 'firebase_frame_received',
+        context: const <String, Object?>{
+          'callId': 'call-1',
+          'peerId': 'bob',
+          'mediaMode': 'video',
+          'frameType': 'candidate',
+          'from': 'bob',
+          'to': 'alice',
+        },
+      );
+      service.recordEventSync(
+        category: 'call',
+        name: 'voice_terminal_write_durable',
+        context: const <String, Object?>{
+          'callId': 'call-1',
+          'peerId': 'bob',
+          'mediaMode': 'video',
+        },
+      );
+      service.recordErrorSync(
+        const VoiceCallDiagnostics(
+          callId: 'call-1',
+          sessionEpoch: 42,
+          peerId: 'bob',
+          role: 'caller',
+          mediaMode: 'video',
+          caller: 'alice',
+          callee: 'bob',
+          failureCode: 'iceTimeout',
+          userMessage: 'Call media could not connect. Try again.',
+          sanitizedUiError: 'Call media could not connect. Try again.',
+          nativeError: 'ICE timeout.',
+          mediaFailureReason: 'iceTimeout',
+          failureTaxonomy: 'ice_failed',
+        ),
+        StackTrace.fromString('voice-stack'),
+        source: 'voice-call-media',
+        fatal: false,
+      );
+
+      final result = await service.exportDiagnostics();
+
+      expect(result.saved, isTrue);
+      final decoded =
+          jsonDecode(await File(exportPath).readAsString())
+              as Map<String, dynamic>;
+      final summaries = decoded['callSummaries'] as List<dynamic>;
+      final summary = summaries.single as Map<String, dynamic>;
+      final costCounters =
+          decoded['firebaseCostCounters'] as Map<String, dynamic>;
+      final taxonomy = decoded['failureTaxonomy'] as Map<String, dynamic>;
+
+      expect(summary['callId'], 'call-1');
+      expect(summary['peerId'], 'bob');
+      expect(summary['mediaMode'], 'video');
+      expect(summary['caller'], 'alice');
+      expect(summary['callee'], 'bob');
+      expect(summary['roomStatusTimeline'], const <String>['negotiating']);
+      expect(summary['iceCandidateWriteCount'], 2);
+      expect(summary['iceCandidateReadCount'], 1);
+      expect(summary['terminalWriteOutcome'], 'durable');
+      expect(summary['mediaFailureReason'], 'iceTimeout');
+      expect(summary['failureTaxonomy'], 'ice_failed');
+      expect(costCounters['signalingReads'], 2);
+      expect(costCounters['signalingWrites'], greaterThanOrEqualTo(3));
+      expect(costCounters['iceCandidateWrites'], 2);
+      expect(taxonomy['ice_failed'], 1);
+    },
+  );
 
   test('export can be canceled without writing a file', () async {
     final temp = await Directory.systemTemp.createTemp(

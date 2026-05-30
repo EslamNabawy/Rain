@@ -7,10 +7,22 @@ class VoiceCallDiagnostics {
     required this.peerId,
     required this.role,
     required this.mediaMode,
+    this.caller,
+    this.callee,
     required this.failureCode,
     required this.userMessage,
     required this.sanitizedUiError,
     required this.nativeError,
+    this.roomStatusTimeline = const <String>[],
+    this.iceCandidateWriteCount = 0,
+    this.iceCandidateReadCount = 0,
+    this.turnReadiness,
+    this.relayFallbackAttempted = false,
+    this.terminalWriteOutcome,
+    this.cleanupOutcome,
+    this.presenceAgeAtStartMs,
+    this.mediaFailureReason,
+    this.failureTaxonomy,
     this.mediaStates = const <String>[],
     this.iceStates = const <String>[],
     this.connectionStates = const <String>[],
@@ -44,10 +56,22 @@ class VoiceCallDiagnostics {
   final String peerId;
   final String role;
   final String mediaMode;
+  final String? caller;
+  final String? callee;
   final String failureCode;
   final String userMessage;
   final String sanitizedUiError;
   final String nativeError;
+  final List<String> roomStatusTimeline;
+  final int iceCandidateWriteCount;
+  final int iceCandidateReadCount;
+  final String? turnReadiness;
+  final bool relayFallbackAttempted;
+  final String? terminalWriteOutcome;
+  final String? cleanupOutcome;
+  final int? presenceAgeAtStartMs;
+  final String? mediaFailureReason;
+  final String? failureTaxonomy;
   final List<String> mediaStates;
   final List<String> iceStates;
   final List<String> connectionStates;
@@ -81,10 +105,24 @@ class VoiceCallDiagnostics {
     'peerId': peerId,
     'role': role,
     'mediaMode': mediaMode,
+    if (caller != null) 'caller': caller,
+    if (callee != null) 'callee': callee,
     'failureCode': failureCode,
     'userMessage': userMessage,
     'sanitizedUiError': sanitizedUiError,
     'nativeError': nativeError,
+    if (roomStatusTimeline.isNotEmpty) 'roomStatusTimeline': roomStatusTimeline,
+    'iceCandidateWriteCount': iceCandidateWriteCount,
+    'iceCandidateReadCount': iceCandidateReadCount,
+    if (turnReadiness != null) 'turnReadiness': turnReadiness,
+    'relayFallbackAttempted': relayFallbackAttempted,
+    if (terminalWriteOutcome != null)
+      'terminalWriteOutcome': terminalWriteOutcome,
+    if (cleanupOutcome != null) 'cleanupOutcome': cleanupOutcome,
+    if (presenceAgeAtStartMs != null)
+      'presenceAgeAtStartMs': presenceAgeAtStartMs,
+    if (mediaFailureReason != null) 'mediaFailureReason': mediaFailureReason,
+    if (failureTaxonomy != null) 'failureTaxonomy': failureTaxonomy,
     'localCandidateCount': localCandidateCount,
     'remoteCandidateCount': remoteCandidateCount,
     'pendingRemoteCandidateCount': pendingRemoteCandidateCount,

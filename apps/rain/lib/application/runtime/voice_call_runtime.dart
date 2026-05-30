@@ -2458,17 +2458,37 @@ extension VoiceCallRuntime on RainRuntimeController {
     String? cameraPermissionFailureDetail,
     Map<String, Object?> lockDiagnostics = const <String, Object?>{},
   }) {
+    final localUsername = _normalizedUsername(selfIdentity.username);
+    final remoteUsername = _normalizedUsername(peerId);
     errorRecorder?.call(
       VoiceCallDiagnostics(
         callId: callId,
         sessionEpoch: sessionEpoch,
-        peerId: peerId,
+        peerId: remoteUsername,
         role: isOutgoing ? 'caller' : 'callee',
         mediaMode: mediaMode.name,
+        caller: isOutgoing ? localUsername : remoteUsername,
+        callee: isOutgoing ? remoteUsername : localUsername,
         failureCode: failureCode,
         userMessage: userMessage,
         sanitizedUiError: userMessage,
         nativeError: nativeError,
+        iceCandidateWriteCount: _voiceLocalIceCandidateCount,
+        iceCandidateReadCount: mediaDiagnostics?.remoteCandidateCount ?? 0,
+        relayFallbackAttempted:
+            lockDiagnostics['relayFallbackAttempted'] == true,
+        terminalWriteOutcome: lockDiagnostics['terminalWriteOutcome']
+            ?.toString(),
+        cleanupOutcome: lockDiagnostics['cleanupOutcome']?.toString(),
+        presenceAgeAtStartMs: lockDiagnostics['presenceAgeAtStartMs'] is num
+            ? (lockDiagnostics['presenceAgeAtStartMs']! as num).toInt()
+            : null,
+        mediaFailureReason: mediaDiagnostics?.lastFailureReason ?? failureCode,
+        failureTaxonomy: _voiceFailureTaxonomy(
+          failureCode: failureCode,
+          userMessage: userMessage,
+          nativeError: nativeError,
+        ),
         mediaStates: mediaDiagnostics?.mediaStates ?? const <String>[],
         iceStates: mediaDiagnostics?.iceConnectionStates ?? const <String>[],
         connectionStates:
@@ -4009,6 +4029,12 @@ extension VoiceCallRuntime on RainRuntimeController {
       'videoFirstFrameTimedOut': state.videoFirstFrameTimedOut,
       'mediaReconnecting': state.mediaReconnecting,
       'failureReason': state.failureReason?.name,
+      if (state.failureReason != null)
+        'failureTaxonomy': _voiceFailureTaxonomy(
+          failureCode: state.failureReason!.name,
+          userMessage: state.detail ?? '',
+          nativeError: state.error?.toString() ?? '',
+        ),
       'detail': state.detail,
       'error': state.error?.toString(),
       'startedAt': state.startedAt,
@@ -4185,6 +4211,52 @@ extension VoiceCallRuntime on RainRuntimeController {
       CallRetryDecisionKind.signalingFailed => decision?.userMessage,
       CallRetryDecisionKind.proceed || null => null,
     };
+  }
+
+  String _voiceFailureTaxonomy({
+    required String failureCode,
+    required String userMessage,
+    required String nativeError,
+  }) {
+    final normalized = '$failureCode $userMessage $nativeError'.toLowerCase();
+    if (CallRetryPolicy.isOfflineMessage(normalized) ||
+        normalized.contains('offline')) {
+      return 'presence_offline';
+    }
+    if (normalized.contains('could not confirm') ||
+        normalized.contains('presence unknown')) {
+      return 'presence_unknown';
+    }
+    if (normalized.contains('relay') || normalized.contains('turn')) {
+      return 'turn_unavailable';
+    }
+    if (normalized.contains('ice timeout') || normalized.contains('ice')) {
+      return 'ice_failed';
+    }
+    if (normalized.contains('timeout') || normalized.contains('timed out')) {
+      return 'media_timeout';
+    }
+    if (normalized.contains('terminal') && normalized.contains('write')) {
+      return 'terminal_write_failed';
+    }
+    if (normalized.contains('reclaimed') ||
+        normalized.contains('stale') ||
+        normalized.contains('cleaned')) {
+      return 'stale_lock_repaired';
+    }
+    if (CallRetryPolicy.isBusyConflictMessage(normalized) ||
+        normalized.contains('already in a call') ||
+        normalized.contains('busy')) {
+      return 'real_busy_lock';
+    }
+    if (normalized.contains('permission-denied') ||
+        normalized.contains('permission denied')) {
+      return 'firebase_permission_denied';
+    }
+    if (normalized.contains('rules') || normalized.contains('rejected write')) {
+      return 'rules_rejected_write';
+    }
+    return 'unknown';
   }
 
   VoiceCallFailureReason? _voiceCallFailureReasonForError(Object error) {

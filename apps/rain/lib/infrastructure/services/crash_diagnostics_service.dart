@@ -361,6 +361,7 @@ class CrashDiagnosticsService {
     await flushEvents();
     final directory = _requireDirectory();
     final exportedAt = _clock().toUtc();
+    final recentEvents = await _readRecentEvents(directory, limit: 200);
     final payload = <String, Object?>{
       'exportedAt': exportedAt.toIso8601String(),
       'app': _appInfo.toJson(),
@@ -377,7 +378,10 @@ class CrashDiagnosticsService {
         },
       if (_updateProfile != null) 'update': _updateProfile,
       'lastCrash': (await loadLastCrash())?.toJson(),
-      'events': await _readRecentEvents(directory, limit: 200),
+      'callSummaries': _buildCallDiagnosticSummaries(recentEvents),
+      'firebaseCostCounters': _buildFirebaseCostCounters(recentEvents),
+      'failureTaxonomy': _buildFailureTaxonomySummary(recentEvents),
+      'events': recentEvents,
     };
     final content = const JsonEncoder.withIndent('  ').convert(payload);
     final bytes = Uint8List.fromList(utf8.encode(content));
@@ -719,6 +723,272 @@ class CrashDiagnosticsService {
     }
     return '${value.substring(0, _maxEventContextStringLength)}...';
   }
+
+  static List<Map<String, Object?>> _buildCallDiagnosticSummaries(
+    List<Map<String, Object?>> events,
+  ) {
+    final summaries = <String, _CallDiagnosticSummary>{};
+    _CallDiagnosticSummary summaryFor(String callId) {
+      return summaries.putIfAbsent(
+        callId,
+        () => _CallDiagnosticSummary(callId),
+      );
+    }
+
+    for (final event in events) {
+      final kind = event['kind']?.toString();
+      if (kind == 'error') {
+        final record = _stringMap(event['record']);
+        final voice = _decodeVoiceDiagnostics(record['error']);
+        final callId = voice['callId']?.toString();
+        if (callId == null || callId.isEmpty) {
+          continue;
+        }
+        summaryFor(callId).mergeVoiceDiagnostics(voice);
+        continue;
+      }
+      if (kind != 'app_event' || event['category'] != 'call') {
+        continue;
+      }
+      final context = _stringMap(event['context']);
+      final callId = context['callId']?.toString() ?? '';
+      if (callId.isEmpty) {
+        continue;
+      }
+      final summary = summaryFor(callId);
+      summary.mergeEvent(event['name']?.toString() ?? '', context);
+    }
+
+    return summaries.values.map((summary) => summary.toJson()).toList();
+  }
+
+  static Map<String, Object> _buildFirebaseCostCounters(
+    List<Map<String, Object?>> events,
+  ) {
+    var signalingReads = 0;
+    var signalingWrites = 0;
+    var presenceWrites = 0;
+    var iceCandidateWrites = 0;
+    var cleanupWrites = 0;
+
+    for (final event in events) {
+      if (event['kind'] != 'app_event') {
+        continue;
+      }
+      final category = event['category']?.toString() ?? '';
+      final name = event['name']?.toString() ?? '';
+      final context = _stringMap(event['context']);
+
+      if (category == 'call') {
+        if (name == 'firebase_room_update' ||
+            name == 'firebase_frame_received') {
+          signalingReads += 1;
+        }
+        if (name == 'firebase_frame_send_completed' ||
+            name == 'voice_lock_claim_started' ||
+            name == 'voice_terminal_write_before_session_hangup' ||
+            name == 'voice_terminal_write_durable') {
+          signalingWrites += 1;
+        }
+        if (name == 'ice_candidate_batch_flushed') {
+          final writtenCount = _intFrom(context['writtenCount']) ?? 0;
+          iceCandidateWrites += writtenCount;
+          signalingWrites += writtenCount;
+        }
+        if (name == 'voice_terminal_cleanup_completed' ||
+            name == 'voice_cleanup_already_completed') {
+          cleanupWrites += 1;
+          signalingWrites += 1;
+        }
+      }
+
+      if (name.contains('presence') && name.contains('write')) {
+        presenceWrites += 1;
+      }
+    }
+
+    return <String, Object>{
+      'signalingReads': signalingReads,
+      'signalingWrites': signalingWrites,
+      'presenceWrites': presenceWrites,
+      'iceCandidateWrites': iceCandidateWrites,
+      'cleanupWrites': cleanupWrites,
+      'source': 'diagnostic_event_estimate',
+    };
+  }
+
+  static Map<String, int> _buildFailureTaxonomySummary(
+    List<Map<String, Object?>> events,
+  ) {
+    final counts = <String, int>{};
+    for (final event in events) {
+      final context = _stringMap(event['context']);
+      final taxonomy =
+          context['failureTaxonomy']?.toString() ??
+          _decodeVoiceDiagnostics(
+            _stringMap(event['record'])['error'],
+          )['failureTaxonomy']?.toString();
+      if (taxonomy == null || taxonomy.isEmpty) {
+        continue;
+      }
+      counts[taxonomy] = (counts[taxonomy] ?? 0) + 1;
+    }
+    return counts;
+  }
+
+  static Map<String, Object?> _decodeVoiceDiagnostics(Object? value) {
+    if (value is! String || value.trim().isEmpty) {
+      return const <String, Object?>{};
+    }
+    try {
+      final decoded = jsonDecode(value);
+      final json = _stringMap(decoded);
+      if (!json.containsKey('callId') || !json.containsKey('mediaMode')) {
+        return const <String, Object?>{};
+      }
+      return json;
+    } on FormatException {
+      return const <String, Object?>{};
+    }
+  }
+
+  static int? _intFrom(Object? value) {
+    if (value is num) {
+      return value.toInt();
+    }
+    if (value is String) {
+      return int.tryParse(value);
+    }
+    return null;
+  }
+}
+
+class _CallDiagnosticSummary {
+  _CallDiagnosticSummary(this.callId);
+
+  final String callId;
+  String? peerId;
+  String? mediaMode;
+  String? caller;
+  String? callee;
+  final List<String> roomStatusTimeline = <String>[];
+  int iceCandidateWriteCount = 0;
+  int iceCandidateReadCount = 0;
+  String? turnReadiness;
+  bool relayFallbackAttempted = false;
+  String? terminalWriteOutcome;
+  String? cleanupOutcome;
+  int? presenceAgeAtStartMs;
+  String? mediaFailureReason;
+  String? failureTaxonomy;
+
+  void mergeEvent(String name, Map<String, Object?> context) {
+    peerId ??= context['peerId']?.toString();
+    mediaMode ??= context['mediaMode']?.toString();
+    turnReadiness ??= context['turnReadiness']?.toString();
+    presenceAgeAtStartMs ??= CrashDiagnosticsService._intFrom(
+      context['presenceAgeMs'],
+    );
+    failureTaxonomy ??= context['failureTaxonomy']?.toString();
+    mediaFailureReason ??=
+        context['failureReason']?.toString() ??
+        context['reasonCode']?.toString();
+    final from = context['from']?.toString();
+    final to = context['to']?.toString();
+    if (from != null && from.isNotEmpty && to != null && to.isNotEmpty) {
+      caller ??= from;
+      callee ??= to;
+    }
+
+    if (name == 'firebase_room_update') {
+      final status = context['status']?.toString();
+      if (status != null &&
+          status.isNotEmpty &&
+          (roomStatusTimeline.isEmpty || roomStatusTimeline.last != status)) {
+        roomStatusTimeline.add(status);
+      }
+    }
+    if (name == 'ice_candidate_batch_flushed') {
+      iceCandidateWriteCount +=
+          CrashDiagnosticsService._intFrom(context['writtenCount']) ?? 0;
+    }
+    if (name == 'firebase_frame_received' &&
+        context['frameType']?.toString() == 'candidate') {
+      iceCandidateReadCount += 1;
+    }
+    if (name.contains('relay_fallback')) {
+      relayFallbackAttempted = true;
+    }
+    if (name == 'voice_terminal_write_durable') {
+      terminalWriteOutcome = 'durable';
+    } else if (name == 'voice_terminal_write_failed') {
+      terminalWriteOutcome = 'failed';
+    }
+    if (name == 'voice_terminal_cleanup_completed') {
+      cleanupOutcome = context['cleanupResult']?.toString() ?? 'completed';
+    } else if (name == 'voice_terminal_cleanup_failed') {
+      cleanupOutcome = 'failed';
+    } else if (name == 'voice_cleanup_already_completed') {
+      cleanupOutcome = 'alreadyCompleted';
+    }
+  }
+
+  void mergeVoiceDiagnostics(Map<String, Object?> diagnostics) {
+    peerId ??= diagnostics['peerId']?.toString();
+    mediaMode ??= diagnostics['mediaMode']?.toString();
+    caller ??= diagnostics['caller']?.toString();
+    callee ??= diagnostics['callee']?.toString();
+    turnReadiness ??= diagnostics['turnReadiness']?.toString();
+    terminalWriteOutcome ??= diagnostics['terminalWriteOutcome']?.toString();
+    cleanupOutcome ??= diagnostics['cleanupOutcome']?.toString();
+    presenceAgeAtStartMs ??= CrashDiagnosticsService._intFrom(
+      diagnostics['presenceAgeAtStartMs'],
+    );
+    mediaFailureReason ??= diagnostics['mediaFailureReason']?.toString();
+    failureTaxonomy ??= diagnostics['failureTaxonomy']?.toString();
+    iceCandidateWriteCount +=
+        CrashDiagnosticsService._intFrom(
+          diagnostics['iceCandidateWriteCount'],
+        ) ??
+        0;
+    iceCandidateReadCount +=
+        CrashDiagnosticsService._intFrom(
+          diagnostics['iceCandidateReadCount'],
+        ) ??
+        0;
+    relayFallbackAttempted =
+        relayFallbackAttempted || diagnostics['relayFallbackAttempted'] == true;
+    final timeline = diagnostics['roomStatusTimeline'];
+    if (timeline is Iterable) {
+      for (final status in timeline) {
+        final value = status.toString();
+        if (value.isNotEmpty &&
+            (roomStatusTimeline.isEmpty || roomStatusTimeline.last != value)) {
+          roomStatusTimeline.add(value);
+        }
+      }
+    }
+  }
+
+  Map<String, Object?> toJson() => <String, Object?>{
+    'callId': callId,
+    if (peerId != null) 'peerId': peerId,
+    if (mediaMode != null) 'mediaMode': mediaMode,
+    if (caller != null) 'caller': caller,
+    if (callee != null) 'callee': callee,
+    'roomStatusTimeline': List<String>.unmodifiable(roomStatusTimeline),
+    'iceCandidateWriteCount': iceCandidateWriteCount,
+    'iceCandidateReadCount': iceCandidateReadCount,
+    if (turnReadiness != null) 'turnReadiness': turnReadiness,
+    'relayFallbackAttempted': relayFallbackAttempted,
+    if (terminalWriteOutcome != null)
+      'terminalWriteOutcome': terminalWriteOutcome,
+    if (cleanupOutcome != null) 'cleanupOutcome': cleanupOutcome,
+    if (presenceAgeAtStartMs != null)
+      'presenceAgeAtStartMs': presenceAgeAtStartMs,
+    if (mediaFailureReason != null) 'mediaFailureReason': mediaFailureReason,
+    if (failureTaxonomy != null) 'failureTaxonomy': failureTaxonomy,
+  };
 }
 
 class _CrashDiagnosticsLifecycleObserver extends WidgetsBindingObserver {
