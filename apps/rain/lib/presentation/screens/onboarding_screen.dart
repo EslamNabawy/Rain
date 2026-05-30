@@ -354,6 +354,12 @@ class _OnboardingScreenState extends ConsumerState<OnboardingScreen>
                                     _mode == _AuthMode.login
                                         ? 'Sign in'
                                         : 'Create account',
+                                    key: const ValueKey<String>(
+                                      'qa.auth.mode.title',
+                                    ),
+                                    semanticsLabel: _mode == _AuthMode.login
+                                        ? 'Sign in mode'
+                                        : 'Create account mode',
                                     style: Theme.of(context)
                                         .textTheme
                                         .titleLarge
@@ -550,18 +556,27 @@ class _OnboardingScreenState extends ConsumerState<OnboardingScreen>
                                   ),
                                   const SizedBox(height: 10),
                                   Center(
-                                    child: TextButton(
-                                      onPressed: _submitting
-                                          ? null
-                                          : () => _setMode(
-                                              _mode == _AuthMode.login
-                                                  ? _AuthMode.register
-                                                  : _AuthMode.login,
-                                            ),
-                                      child: Text(
-                                        _mode == _AuthMode.login
-                                            ? 'Create account'
-                                            : 'Sign in',
+                                    child: Semantics(
+                                      button: true,
+                                      label: _mode == _AuthMode.login
+                                          ? 'Switch to create account'
+                                          : 'Switch to sign in',
+                                      child: TextButton(
+                                        key: const ValueKey<String>(
+                                          'qa.auth.mode.toggle',
+                                        ),
+                                        onPressed: _submitting
+                                            ? null
+                                            : () => _setMode(
+                                                _mode == _AuthMode.login
+                                                    ? _AuthMode.register
+                                                    : _AuthMode.login,
+                                              ),
+                                        child: Text(
+                                          _mode == _AuthMode.login
+                                              ? 'Create account'
+                                              : 'Sign in',
+                                        ),
                                       ),
                                     ),
                                   ),
