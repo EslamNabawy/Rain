@@ -43,6 +43,16 @@ class _RecordingPresenceAdapter extends NoopSignalingAdapter {
   }
 }
 
+class _RecordingAuthOwnershipAdapter extends NoopSignalingAdapter {
+  final List<String> checkedUsernames = <String>[];
+
+  @override
+  Future<void> ensureSignedInAs(String username) async {
+    checkedUsernames.add(username);
+    await super.ensureSignedInAs(username);
+  }
+}
+
 final class _RecordedRuntimeError {
   const _RecordedRuntimeError(this.error, this.source, this.fatal);
 
@@ -104,6 +114,35 @@ void main() {
         ),
       ),
     );
+  });
+
+  test('runtime startup verifies Firebase auth owns local identity', () async {
+    final db = RainDatabase(NativeDatabase.memory());
+    addTearDown(db.close);
+    final adapter = _RecordingAuthOwnershipAdapter();
+    final runtime = RainRuntimeController(
+      selfIdentity: const RainIdentity(
+        username: 'alice',
+        displayName: 'Alice',
+        createdAt: 0,
+        gender: RainGender.female,
+      ),
+      adapter: adapter,
+      brain: null,
+      database: db,
+      friendStore: FriendStore(db),
+      messageStore: MessageStore(db),
+      offlineQueueStore: OfflineQueueStore(db),
+      messageDeliveryService: MessageDeliveryService(
+        messageStore: MessageStore(db),
+        offlineQueueStore: OfflineQueueStore(db),
+      ),
+    );
+    addTearDown(runtime.dispose);
+
+    await runtime.start();
+
+    expect(adapter.checkedUsernames, <String>['alice']);
   });
 
   test('runtime does not poll friend relationships by default', () {

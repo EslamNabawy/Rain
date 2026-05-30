@@ -544,6 +544,47 @@ void main() {
       expect(harness.valueAt('connectionRequestPairLocks/alice:bob'), isNull);
     });
 
+    test('cleanup skips RTDB writes when auth ownership check fails', () async {
+      final diagnostics = <ConnectionRequestAdapterDiagnosticEvent>[];
+      var updateCalls = 0;
+      var transactionCalls = 0;
+      final adapter = RtdbOnlyConnectionRequestAdapter.forTest(
+        currentUsername: () async {
+          throw const SignalingSessionExpiredException('sign in again');
+        },
+        isAcceptedFriend: (String peerId) async => true,
+        isPeerOnline: (String peerId) async => false,
+        watchValue: (String path) => const Stream<Object?>.empty(),
+        getValue: (String path) async => <String, Object?>{
+          'request-01': _payload(
+            requestId: 'request-01',
+            from: 'alice',
+            to: 'bob',
+            status: ConnectionRequestStatus.accepted,
+          ).toJson(),
+        },
+        updateValue: (Map<String, Object?> updates) async {
+          updateCalls += 1;
+        },
+        runTransaction: (String path, handler) async {
+          transactionCalls += 1;
+          return const RtdbOnlyConnectionRequestTransactionResult(
+            committed: false,
+          );
+        },
+        diagnosticsSink: diagnostics.add,
+      );
+
+      await adapter.cleanupConnectionRequests(peerId: 'alice');
+
+      expect(updateCalls, 0);
+      expect(transactionCalls, 0);
+      expect(
+        diagnostics.map((event) => event.name),
+        contains('connection_request_rtdb_cleanup_identity_failed'),
+      );
+    });
+
     test('cleanup does not remove newer lock', () async {
       final harness = _RtdbOnlyAdapterHarness(
         username: 'bob',

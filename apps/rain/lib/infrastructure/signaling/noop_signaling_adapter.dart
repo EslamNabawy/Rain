@@ -43,6 +43,11 @@ class NoopSignalingAdapter implements SignalingAdapter {
   Future<void> ensureAuthenticated() async {}
 
   @override
+  Future<void> ensureSignedInAs(String username) async {
+    await ensureAuthenticated();
+  }
+
+  @override
   Future<void> signOut() async {}
 
   @override

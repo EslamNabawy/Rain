@@ -119,6 +119,11 @@ class FirebaseEmulatorSignalingAdapter
   }
 
   @override
+  Future<void> ensureSignedInAs(String username) {
+    return _ensureSignedInAsUsername(_normalizedUsername(username));
+  }
+
+  @override
   Future<String> currentUid() async {
     await ensureAuthenticated();
     return _uid!;

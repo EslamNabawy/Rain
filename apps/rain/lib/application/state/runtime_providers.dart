@@ -204,7 +204,10 @@ final connectionRequestAdapterProvider = Provider<ConnectionRequestAdapter?>((
       final friendStore = ref.watch(friendStoreProvider);
       rtdbOnlyAdapter = RtdbOnlyConnectionRequestAdapter(
         root: firebaseDatabase.ref(),
-        currentUsername: () async => identity.username,
+        currentUsername: () async {
+          await adapter.ensureSignedInAs(identity.username);
+          return identity.username;
+        },
         isAcceptedFriend: (String peerId) async {
           final friend = await friendStore.loadFriend(peerId);
           return friend?.state == FriendState.friend;

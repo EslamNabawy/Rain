@@ -270,7 +270,7 @@ class RainRuntimeController with WidgetsBindingObserver {
     WidgetsBinding.instance.addObserver(this);
 
     try {
-      await adapter.ensureAuthenticated();
+      await adapter.ensureSignedInAs(selfIdentity.username);
       final currentUid = await adapter.currentUid();
       final now = DateTime.now().millisecondsSinceEpoch;
       await adapter.upsertIdentity(

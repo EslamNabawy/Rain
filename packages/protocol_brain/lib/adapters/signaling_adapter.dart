@@ -2,6 +2,7 @@ import 'package:flutter_webrtc/flutter_webrtc.dart';
 
 abstract class SignalingAdapter {
   Future<void> ensureAuthenticated();
+  Future<void> ensureSignedInAs(String username);
   Future<String> currentUid();
   Future<void> signOut();
 

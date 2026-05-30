@@ -850,6 +850,9 @@ class _RecordingSignalingAdapter implements SignalingAdapter {
   Future<void> ensureAuthenticated() async {}
 
   @override
+  Future<void> ensureSignedInAs(String username) async {}
+
+  @override
   Future<String> currentUid() async => 'uid';
 
   @override

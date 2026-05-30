@@ -1268,6 +1268,11 @@ class FirebaseSignalingAdapter
   }
 
   @override
+  Future<void> ensureSignedInAs(String username) {
+    return _ensureSignedInAsUsername(username);
+  }
+
+  @override
   Future<String> register(String username, String password) async {
     await _configureEmulatorsIfNeeded();
     final normalizedUsername = _normalizedUsername(username);
