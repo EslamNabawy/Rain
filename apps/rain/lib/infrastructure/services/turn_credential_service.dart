@@ -4,7 +4,7 @@ import 'dart:io';
 
 import 'package:firebase_auth/firebase_auth.dart';
 import 'package:flutter/foundation.dart';
-import 'package:peer_core/peer_core.dart'
+import 'package:protocol_brain/protocol_brain.dart'
     show PeerIceTransportPolicy, TurnReadiness, TurnReadinessResult;
 
 class TurnCredentialService {
