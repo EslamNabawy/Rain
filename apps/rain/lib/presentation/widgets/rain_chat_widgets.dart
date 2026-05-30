@@ -582,6 +582,7 @@ class RainVoiceCallButton extends StatelessWidget {
     this.isPeerOnline = true,
     required this.canStart,
     required this.hasActiveTransfer,
+    this.preflight,
     required this.onStart,
   });
 
@@ -590,6 +591,7 @@ class RainVoiceCallButton extends StatelessWidget {
   final bool isPeerOnline;
   final bool canStart;
   final bool hasActiveTransfer;
+  final CallStartPreflightResult? preflight;
   final VoidCallback onStart;
 
   @override
@@ -601,6 +603,7 @@ class RainVoiceCallButton extends StatelessWidget {
         state: state,
         isPeerOnline: isPeerOnline,
         hasActiveTransfer: hasActiveTransfer,
+        preflight: preflight,
       ),
       onPressed: canStart ? onStart : null,
       icon: Icon(isCurrentCall ? Icons.call : Icons.call_outlined),
@@ -616,6 +619,7 @@ class RainVideoCallButton extends StatelessWidget {
     this.isPeerOnline = true,
     required this.canStart,
     required this.hasActiveTransfer,
+    this.preflight,
     required this.onStart,
   });
 
@@ -624,6 +628,7 @@ class RainVideoCallButton extends StatelessWidget {
   final bool isPeerOnline;
   final bool canStart;
   final bool hasActiveTransfer;
+  final CallStartPreflightResult? preflight;
   final VoidCallback onStart;
 
   @override
@@ -636,6 +641,7 @@ class RainVideoCallButton extends StatelessWidget {
         state: state,
         isPeerOnline: isPeerOnline,
         hasActiveTransfer: hasActiveTransfer,
+        preflight: preflight,
       ),
       onPressed: canStart ? onStart : null,
       icon: Icon(isCurrentVideoCall ? Icons.videocam : Icons.videocam_outlined),
@@ -1475,12 +1481,14 @@ String _voiceCallButtonTooltip({
   required VoiceCallState state,
   required bool isPeerOnline,
   required bool hasActiveTransfer,
+  CallStartPreflightResult? preflight,
 }) {
   return _callButtonTooltip(
     peerId: peerId,
     state: state,
     isPeerOnline: isPeerOnline,
     hasActiveTransfer: hasActiveTransfer,
+    preflight: preflight,
     callLabel: 'voice call',
     currentCallLabel: 'Voice call',
   );
@@ -1491,12 +1499,14 @@ String _videoCallButtonTooltip({
   required VoiceCallState state,
   required bool isPeerOnline,
   required bool hasActiveTransfer,
+  CallStartPreflightResult? preflight,
 }) {
   return _callButtonTooltip(
     peerId: peerId,
     state: state,
     isPeerOnline: isPeerOnline,
     hasActiveTransfer: hasActiveTransfer,
+    preflight: preflight,
     callLabel: 'video call',
     currentCallLabel: 'Video call',
   );
@@ -1507,9 +1517,13 @@ String _callButtonTooltip({
   required VoiceCallState state,
   required bool isPeerOnline,
   required bool hasActiveTransfer,
+  CallStartPreflightResult? preflight,
   required String callLabel,
   required String currentCallLabel,
 }) {
+  if (preflight != null && !preflight.allowed) {
+    return preflight.userMessage ?? 'Call cannot start right now.';
+  }
   if (hasActiveTransfer) {
     return 'Finish the active file transfer first.';
   }

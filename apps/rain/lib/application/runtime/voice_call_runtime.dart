@@ -94,12 +94,17 @@ extension VoiceCallRuntime on RainRuntimeController {
       peerId,
       mediaMode: mediaMode,
     );
+    final activeTransfer = await _firstActiveTransfer();
+    _requireVoiceSignalingAdapter();
+    await _assertVoiceCallPeerIsFriend(peerId);
+
     final decision = RuntimeInteractionGuard.canStartCall(
       peerId: peerId,
       mediaMode: mediaMode,
       voiceCallState: _voiceCallState,
       peerOnline: presence.peerOnline,
-      activeTransfer: await _firstActiveTransfer(),
+      activeTransfer: activeTransfer,
+      manualDisconnectedPeers: _manualDisconnectedPeers,
       diagnostics: presence.diagnostics,
     );
     if (!decision.allowed) {
@@ -118,10 +123,6 @@ extension VoiceCallRuntime on RainRuntimeController {
       );
     }
     decision.throwIfDenied();
-    _requireVoiceSignalingAdapter();
-    await _assertVoiceCallPeerIsFriend(peerId);
-
-    await _disposeCurrentVoiceCallSession();
     final callId = _newVoiceCallId(peerId);
     final sessionEpoch = DateTime.now().millisecondsSinceEpoch;
     _recordRuntimeEvent(

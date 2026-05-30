@@ -1013,6 +1013,64 @@ void main() {
     );
 
     test(
+      'startVoiceCall rechecks active call state after async preflight gaps',
+      () async {
+        final adapter = RecordingVoiceSignalingAdapter();
+        final brain = TestSessionManager();
+        final transferStore = _BlockingFirstActiveTransferStore(db);
+        addTearDown(transferStore.releaseFirstActiveLoad);
+        for (final username in <String>['bob', 'cara']) {
+          await adapter.register(username, '${username}pw');
+          await adapter.upsertFriendship('alice', username);
+          await db
+              .into(db.friends)
+              .insert(
+                FriendsCompanion.insert(
+                  username: username,
+                  displayName: username,
+                  state: 'friend',
+                  addedAt: 0,
+                ),
+              );
+        }
+        final runtime = _runtimeFor(
+          db,
+          alice,
+          adapter,
+          brain: brain,
+          fileTransferStore: transferStore,
+        );
+        addTearDown(runtime.dispose);
+
+        await runtime.start();
+        final firstStart = runtime.startVoiceCall('bob');
+        await transferStore.firstActiveLoadStarted.future;
+
+        await runtime.startVoiceCall('cara');
+        expect(runtime.voiceCallState.peerId, 'cara');
+        expect(runtime.voiceCallState.phase, VoiceCallPhase.outgoingRinging);
+        expect(adapter.rooms.values.single.callee, 'cara');
+
+        final firstStartExpectation = expectLater(
+          firstStart,
+          throwsA(
+            isA<StateError>().having(
+              (StateError error) => error.toString(),
+              'message',
+              contains('End the current call before starting another.'),
+            ),
+          ),
+        );
+        transferStore.releaseFirstActiveLoad();
+        await firstStartExpectation;
+
+        expect(adapter.rooms, hasLength(1));
+        expect(adapter.rooms.values.single.callee, 'cara');
+        expect(brain.startedAudioPeers, <String>['cara']);
+      },
+    );
+
+    test(
       'startVoiceCall blocks offline peer before room or media setup',
       () async {
         final adapter = RecordingVoiceSignalingAdapter();
@@ -6115,6 +6173,7 @@ RainRuntimeController _runtimeFor(
   SessionManager? brain,
   RuntimeErrorRecorder? errorRecorder,
   RuntimeEventRecorder? eventRecorder,
+  FileTransferStore? fileTransferStore,
   VideoCallRendererFactory videoCallRendererFactory =
       const RtcVideoCallRendererFactory(),
   Duration videoCallRemoteFirstFrameTimeout = const Duration(seconds: 8),
@@ -6134,6 +6193,7 @@ RainRuntimeController _runtimeFor(
       messageStore: messageStore,
       offlineQueueStore: offlineQueueStore,
     ),
+    fileTransferStore: fileTransferStore,
     videoCallRendererFactory: videoCallRendererFactory,
     videoCallRemoteFirstFrameTimeout: videoCallRemoteFirstFrameTimeout,
     activeCallReconnectGrace: activeCallReconnectGrace,
@@ -6392,6 +6452,30 @@ class RecordingNoopSignalingAdapter extends NoopSignalingAdapter {
   String _friendshipKey(String firstUser, String secondUser) {
     final users = <String>[firstUser, secondUser]..sort();
     return '${users[0]}::${users[1]}';
+  }
+}
+
+class _BlockingFirstActiveTransferStore extends FileTransferStore {
+  _BlockingFirstActiveTransferStore(super.database);
+
+  final Completer<void> firstActiveLoadStarted = Completer<void>();
+  final Completer<void> _releaseFirstActiveLoad = Completer<void>();
+  bool _blockedFirstLoad = false;
+
+  @override
+  Future<List<FileTransferRecord>> loadActiveTransfers({String? peerId}) async {
+    if (!_blockedFirstLoad) {
+      _blockedFirstLoad = true;
+      firstActiveLoadStarted.complete();
+      await _releaseFirstActiveLoad.future;
+    }
+    return super.loadActiveTransfers(peerId: peerId);
+  }
+
+  void releaseFirstActiveLoad() {
+    if (!_releaseFirstActiveLoad.isCompleted) {
+      _releaseFirstActiveLoad.complete();
+    }
   }
 }
 

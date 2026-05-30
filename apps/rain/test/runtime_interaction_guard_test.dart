@@ -115,6 +115,24 @@ void main() {
       );
     });
 
+    test('local manual disconnect blocks call start when peer is online', () {
+      final decision = RuntimeInteractionGuard.canStartCall(
+        peerId: 'bob',
+        mediaMode: CallMediaMode.audio,
+        voiceCallState: const VoiceCallState.idle(),
+        peerOnline: true,
+        manualDisconnectedPeers: const <String>{'bob'},
+      );
+
+      expect(decision.allowed, isFalse);
+      expect(
+        decision.decision,
+        CallStartPreflightDecision.localManualDisconnect,
+      );
+      expect(decision.blockingPeerId, 'bob');
+      expect(decision.userMessage, contains('Press Connect'));
+    });
+
     test('active transfer blocks starting and accepting calls globally', () {
       final transfer = _transfer(peerId: 'bob');
       final outgoing = RuntimeInteractionGuard.canStartCall(

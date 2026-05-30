@@ -110,6 +110,11 @@ class _ChatPanelState extends ConsumerState<_ChatPanel> {
             voiceCallState: voiceCall,
             peerOnline: isPeerOnline,
             activeTransfer: activeTransfer,
+            manualDisconnectedPeers:
+                connection.manualIntent ==
+                    ManualConnectionIntent.manualDisconnected
+                ? <String>{widget.peerId}
+                : const <String>{},
           )
         : null;
     final videoCallPreflight = canChat
@@ -119,6 +124,11 @@ class _ChatPanelState extends ConsumerState<_ChatPanel> {
             voiceCallState: voiceCall,
             peerOnline: isPeerOnline,
             activeTransfer: activeTransfer,
+            manualDisconnectedPeers:
+                connection.manualIntent ==
+                    ManualConnectionIntent.manualDisconnected
+                ? <String>{widget.peerId}
+                : const <String>{},
           )
         : null;
     final canStartVoiceCall =
@@ -160,6 +170,8 @@ class _ChatPanelState extends ConsumerState<_ChatPanel> {
                 canStartVoiceCall: canStartVoiceCall,
                 canStartVideoCall: canStartVideoCall,
                 hasActiveTransfer: hasActiveTransfer,
+                voiceCallPreflight: voiceCallPreflight,
+                videoCallPreflight: videoCallPreflight,
               ),
             ),
             Expanded(
@@ -286,6 +298,8 @@ class _ChatPanelState extends ConsumerState<_ChatPanel> {
     required bool canStartVoiceCall,
     required bool canStartVideoCall,
     required bool hasActiveTransfer,
+    required CallStartPreflightResult? voiceCallPreflight,
+    required CallStartPreflightResult? videoCallPreflight,
   }) {
     final displayName = friend?.displayName ?? widget.peerId;
     final scheme = Theme.of(context).colorScheme;
@@ -351,6 +365,8 @@ class _ChatPanelState extends ConsumerState<_ChatPanel> {
                   canStartVoiceCall: canStartVoiceCall,
                   canStartVideoCall: canStartVideoCall,
                   hasActiveTransfer: hasActiveTransfer,
+                  voiceCallPreflight: voiceCallPreflight,
+                  videoCallPreflight: videoCallPreflight,
                 ),
               if (friend != null)
                 IconButton(
@@ -484,6 +500,8 @@ class _ChatPanelState extends ConsumerState<_ChatPanel> {
             canStartVoiceCall: canStartVoiceCall,
             canStartVideoCall: canStartVideoCall,
             hasActiveTransfer: hasActiveTransfer,
+            voiceCallPreflight: voiceCallPreflight,
+            videoCallPreflight: videoCallPreflight,
           ),
           const SizedBox(width: 4),
           IconButton(
@@ -502,6 +520,8 @@ class _ChatPanelState extends ConsumerState<_ChatPanel> {
     required bool canStartVoiceCall,
     required bool canStartVideoCall,
     required bool hasActiveTransfer,
+    required CallStartPreflightResult? voiceCallPreflight,
+    required CallStartPreflightResult? videoCallPreflight,
   }) {
     return Row(
       mainAxisSize: MainAxisSize.min,
@@ -512,6 +532,7 @@ class _ChatPanelState extends ConsumerState<_ChatPanel> {
           isPeerOnline: isPeerOnline,
           canStart: canStartVoiceCall,
           hasActiveTransfer: hasActiveTransfer,
+          preflight: voiceCallPreflight,
           onStart: _startVoiceCall,
         ),
         RainVideoCallButton(
@@ -520,6 +541,7 @@ class _ChatPanelState extends ConsumerState<_ChatPanel> {
           isPeerOnline: isPeerOnline,
           canStart: canStartVideoCall,
           hasActiveTransfer: hasActiveTransfer,
+          preflight: videoCallPreflight,
           onStart: _startVideoCall,
         ),
       ],
