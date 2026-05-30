@@ -11,6 +11,7 @@ import 'package:rain_core/rain_core.dart';
 import 'package:rain/infrastructure/notifications/rain_notification_service.dart';
 import 'connection_attempt_coordinator.dart';
 import 'app_exit_coordinator.dart';
+import 'call_media_recovery_policy.dart';
 import 'call_retry_policy.dart';
 import 'call_terminal_write_policy.dart';
 import 'connection_request_messages.dart';
@@ -87,10 +88,14 @@ class RainRuntimeController with WidgetsBindingObserver {
     this.startupMediaPermissionWarmup,
     this.videoCallRendererFactory = const RtcVideoCallRendererFactory(),
     this.videoCallRemoteFirstFrameTimeout = const Duration(seconds: 8),
-    this.activeCallReconnectGrace = const Duration(seconds: 8),
+    this.callMediaRecoveryPolicy = const CallMediaRecoveryPolicy(),
+    Duration? activeCallReconnectGrace,
     this.errorRecorder,
     this.eventRecorder,
   }) : fileTransferStore = fileTransferStore ?? FileTransferStore(database),
+       activeCallReconnectGrace =
+           activeCallReconnectGrace ??
+           callMediaRecoveryPolicy.disconnectedGrace,
        voiceSignalingAdapter =
            voiceSignalingAdapter ??
            (adapter is VoiceSignalingAdapter
@@ -138,6 +143,7 @@ class RainRuntimeController with WidgetsBindingObserver {
   final Future<void> Function()? startupMediaPermissionWarmup;
   final VideoCallRendererFactory videoCallRendererFactory;
   final Duration videoCallRemoteFirstFrameTimeout;
+  final CallMediaRecoveryPolicy callMediaRecoveryPolicy;
   final Duration activeCallReconnectGrace;
   final Set<String> _manualDisconnectedPeers = <String>{};
   final Set<String> _recoverableDisconnectedPeers = <String>{};

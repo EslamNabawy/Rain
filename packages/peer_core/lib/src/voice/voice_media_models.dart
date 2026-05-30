@@ -13,6 +13,7 @@ enum VoiceMediaPhase {
   applyingAnswer,
   connecting,
   connected,
+  reconnecting,
   failed,
   disposed,
 }

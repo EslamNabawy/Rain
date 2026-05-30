@@ -766,9 +766,53 @@ void main() {
 
   test(
     'dedicated voice media keeps active call recoverable through transient transport weakness',
-    () async {},
-    skip:
-        'Phase 02 will replace this baseline with the voice media recovery regression.',
+    () async {
+      final platform = _FakeVoicePlatformBridge();
+      final connection = DefaultVoiceMediaConnection(
+        disconnectedFailureTimeout: const Duration(milliseconds: 5),
+        config: PeerConfig(
+          iceServers: const <Map<String, dynamic>>[],
+          platform: platform,
+        ),
+      );
+      final states = <VoiceMediaPhase>[];
+      final subscription = connection.onStateChanged.listen(
+        (VoiceMediaState state) => states.add(state.phase),
+      );
+
+      await connection.startLocalAudio();
+      final peerConnection = platform.createdConnections.single;
+
+      peerConnection.emitConnectionState(
+        RTCPeerConnectionState.RTCPeerConnectionStateConnected,
+      );
+      await pumpEventQueue();
+      peerConnection.emitConnectionState(
+        RTCPeerConnectionState.RTCPeerConnectionStateDisconnected,
+      );
+      await pumpEventQueue();
+
+      expect(states.last, VoiceMediaPhase.reconnecting);
+
+      peerConnection.emitConnectionState(
+        RTCPeerConnectionState.RTCPeerConnectionStateConnected,
+      );
+      await Future<void>.delayed(const Duration(milliseconds: 10));
+      await pumpEventQueue();
+
+      expect(
+        states,
+        containsAllInOrder(<VoiceMediaPhase>[
+          VoiceMediaPhase.connected,
+          VoiceMediaPhase.reconnecting,
+          VoiceMediaPhase.connected,
+        ]),
+      );
+      expect(states.last, VoiceMediaPhase.connected);
+
+      await subscription.cancel();
+      await connection.dispose();
+    },
   );
 
   test(
@@ -962,6 +1006,10 @@ class _FakeVoicePeerConnection extends Fake implements RTCPeerConnection {
 
   void emitTrack(MediaStreamTrack track, MediaStream stream) {
     onTrack?.call(RTCTrackEvent(streams: <MediaStream>[stream], track: track));
+  }
+
+  void emitConnectionState(RTCPeerConnectionState state) {
+    onConnectionState?.call(state);
   }
 
   @override

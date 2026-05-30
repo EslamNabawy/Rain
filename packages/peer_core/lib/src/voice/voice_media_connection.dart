@@ -38,11 +38,14 @@ class DefaultVoiceMediaConnection implements VoiceMediaConnection {
   DefaultVoiceMediaConnection({
     required PeerConfig config,
     Duration audioLevelSampleInterval = const Duration(milliseconds: 250),
+    Duration disconnectedFailureTimeout = const Duration(seconds: 12),
   }) : _config = config,
-       _audioLevelSampleInterval = audioLevelSampleInterval;
+       _audioLevelSampleInterval = audioLevelSampleInterval,
+       _disconnectedFailureTimeout = disconnectedFailureTimeout;
 
   final PeerConfig _config;
   final Duration _audioLevelSampleInterval;
+  final Duration _disconnectedFailureTimeout;
   final StreamController<VoiceIceCandidate> _iceController =
       StreamController<VoiceIceCandidate>.broadcast();
   final StreamController<VoiceRemoteAudioTrack> _remoteTrackController =
@@ -67,6 +70,7 @@ class DefaultVoiceMediaConnection implements VoiceMediaConnection {
   final _VoiceAudioLevelStatsSampler _audioLevelStatsSampler =
       _VoiceAudioLevelStatsSampler();
   Timer? _audioLevelTimer;
+  Timer? _disconnectedFailureTimer;
   int _localCandidateCount = 0;
   int _remoteCandidateCount = 0;
   int _connectionEpoch = 0;
@@ -342,6 +346,7 @@ class DefaultVoiceMediaConnection implements VoiceMediaConnection {
     _pendingRemoteCandidates.clear();
     _remoteDescriptionSet = false;
     _mediaOperation = null;
+    _cancelDisconnectedFailureTimer();
     _stopAudioLevelSampler();
     final stream = _localStream;
     _localStream = null;
@@ -419,21 +424,27 @@ class DefaultVoiceMediaConnection implements VoiceMediaConnection {
       switch (state) {
         case RTCIceConnectionState.RTCIceConnectionStateConnected:
         case RTCIceConnectionState.RTCIceConnectionStateCompleted:
+          _cancelDisconnectedFailureTimer();
           _emitState(VoiceMediaPhase.connected);
           break;
         case RTCIceConnectionState.RTCIceConnectionStateFailed:
+          _cancelDisconnectedFailureTimer();
           _emitState(VoiceMediaPhase.failed, detail: state.toString());
           break;
         case RTCIceConnectionState.RTCIceConnectionStateClosed:
+          _cancelDisconnectedFailureTimer();
           if (!_disposed) {
             _emitState(VoiceMediaPhase.failed, detail: state.toString());
           }
           break;
         case RTCIceConnectionState.RTCIceConnectionStateChecking:
-          _emitState(VoiceMediaPhase.connecting);
+          _emitConnectingUnlessReconnecting();
           break;
         case RTCIceConnectionState.RTCIceConnectionStateNew:
+          break;
         case RTCIceConnectionState.RTCIceConnectionStateDisconnected:
+          _beginDisconnectedRecovery(state.toString());
+          break;
         case RTCIceConnectionState.RTCIceConnectionStateCount:
           break;
       }
@@ -445,21 +456,26 @@ class DefaultVoiceMediaConnection implements VoiceMediaConnection {
       _appendDiagnostic(_peerConnectionStates, state.toString());
       switch (state) {
         case RTCPeerConnectionState.RTCPeerConnectionStateConnected:
+          _cancelDisconnectedFailureTimer();
           _emitState(VoiceMediaPhase.connected);
           break;
         case RTCPeerConnectionState.RTCPeerConnectionStateFailed:
+          _cancelDisconnectedFailureTimer();
           _emitState(VoiceMediaPhase.failed, detail: state.toString());
           break;
         case RTCPeerConnectionState.RTCPeerConnectionStateClosed:
+          _cancelDisconnectedFailureTimer();
           if (!_disposed) {
             _emitState(VoiceMediaPhase.failed, detail: state.toString());
           }
           break;
         case RTCPeerConnectionState.RTCPeerConnectionStateConnecting:
-          _emitState(VoiceMediaPhase.connecting);
+          _emitConnectingUnlessReconnecting();
           break;
         case RTCPeerConnectionState.RTCPeerConnectionStateNew:
+          break;
         case RTCPeerConnectionState.RTCPeerConnectionStateDisconnected:
+          _beginDisconnectedRecovery(state.toString());
           break;
       }
     };
@@ -511,6 +527,48 @@ class DefaultVoiceMediaConnection implements VoiceMediaConnection {
       }
       operationCompleter.complete();
     }
+  }
+
+  void _emitConnectingUnlessReconnecting() {
+    if (_lastPhase == VoiceMediaPhase.reconnecting) {
+      return;
+    }
+    _emitState(VoiceMediaPhase.connecting);
+  }
+
+  void _beginDisconnectedRecovery(String detail) {
+    if (_disposed ||
+        _lastPhase == VoiceMediaPhase.failed ||
+        _lastPhase == VoiceMediaPhase.disposed) {
+      return;
+    }
+    _emitState(VoiceMediaPhase.reconnecting, detail: detail);
+    _cancelDisconnectedFailureTimer();
+    if (_disconnectedFailureTimeout <= Duration.zero) {
+      _failDisconnectedRecovery(detail);
+      return;
+    }
+    _disconnectedFailureTimer = Timer(
+      _disconnectedFailureTimeout,
+      () => _failDisconnectedRecovery(detail),
+    );
+  }
+
+  void _failDisconnectedRecovery(String detail) {
+    if (_disposed ||
+        _lastPhase != VoiceMediaPhase.reconnecting ||
+        _controllersClosed) {
+      return;
+    }
+    _emitState(
+      VoiceMediaPhase.failed,
+      detail: 'Voice media reconnect timed out after $detail.',
+    );
+  }
+
+  void _cancelDisconnectedFailureTimer() {
+    _disconnectedFailureTimer?.cancel();
+    _disconnectedFailureTimer = null;
   }
 
   Future<void> _prepareVoiceAudio() async {

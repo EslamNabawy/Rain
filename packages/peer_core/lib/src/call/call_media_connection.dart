@@ -49,9 +49,14 @@ abstract class CallMediaConnection {
 }
 
 class DefaultCallMediaConnection implements CallMediaConnection {
-  DefaultCallMediaConnection({required PeerConfig config}) : _config = config;
+  DefaultCallMediaConnection({
+    required PeerConfig config,
+    Duration disconnectedFailureTimeout = const Duration(seconds: 12),
+  }) : _config = config,
+       _disconnectedFailureTimeout = disconnectedFailureTimeout;
 
   final PeerConfig _config;
+  final Duration _disconnectedFailureTimeout;
   final StreamController<CallIceCandidate> _iceController =
       StreamController<CallIceCandidate>.broadcast();
   final StreamController<CallRemoteMediaTrack> _remoteTrackController =
@@ -69,6 +74,7 @@ class DefaultCallMediaConnection implements CallMediaConnection {
   RTCPeerConnection? _peerConnection;
   RTCRtpSender? _localVideoSender;
   Timer? _videoOptimizationTimer;
+  Timer? _disconnectedFailureTimer;
   MediaStream? _localStream;
   MediaStreamTrack? _localAudioTrack;
   MediaStreamTrack? _localVideoTrack;
@@ -468,6 +474,7 @@ class DefaultCallMediaConnection implements CallMediaConnection {
     _pendingRemoteCandidates.clear();
     _remoteDescriptionSet = false;
     _mediaOperation = null;
+    _cancelDisconnectedFailureTimer();
     _stopVideoOptimization();
     final stream = _localStream;
     _localStream = null;
@@ -602,9 +609,11 @@ class DefaultCallMediaConnection implements CallMediaConnection {
       switch (state) {
         case RTCIceConnectionState.RTCIceConnectionStateConnected:
         case RTCIceConnectionState.RTCIceConnectionStateCompleted:
+          _cancelDisconnectedFailureTimer();
           _emitState(CallMediaPhase.connected);
           break;
         case RTCIceConnectionState.RTCIceConnectionStateFailed:
+          _cancelDisconnectedFailureTimer();
           _emitState(
             CallMediaPhase.failed,
             detail: state.toString(),
@@ -612,6 +621,7 @@ class DefaultCallMediaConnection implements CallMediaConnection {
           );
           break;
         case RTCIceConnectionState.RTCIceConnectionStateClosed:
+          _cancelDisconnectedFailureTimer();
           if (!_disposed) {
             _emitState(
               CallMediaPhase.failed,
@@ -621,10 +631,13 @@ class DefaultCallMediaConnection implements CallMediaConnection {
           }
           break;
         case RTCIceConnectionState.RTCIceConnectionStateChecking:
-          _emitState(CallMediaPhase.connecting);
+          _emitConnectingUnlessReconnecting();
           break;
         case RTCIceConnectionState.RTCIceConnectionStateNew:
+          break;
         case RTCIceConnectionState.RTCIceConnectionStateDisconnected:
+          _beginDisconnectedRecovery(state.toString());
+          break;
         case RTCIceConnectionState.RTCIceConnectionStateCount:
           break;
       }
@@ -636,9 +649,11 @@ class DefaultCallMediaConnection implements CallMediaConnection {
       _appendDiagnostic(_peerConnectionStates, state.toString());
       switch (state) {
         case RTCPeerConnectionState.RTCPeerConnectionStateConnected:
+          _cancelDisconnectedFailureTimer();
           _emitState(CallMediaPhase.connected);
           break;
         case RTCPeerConnectionState.RTCPeerConnectionStateFailed:
+          _cancelDisconnectedFailureTimer();
           _emitState(
             CallMediaPhase.failed,
             detail: state.toString(),
@@ -646,6 +661,7 @@ class DefaultCallMediaConnection implements CallMediaConnection {
           );
           break;
         case RTCPeerConnectionState.RTCPeerConnectionStateClosed:
+          _cancelDisconnectedFailureTimer();
           if (!_disposed) {
             _emitState(
               CallMediaPhase.failed,
@@ -655,10 +671,12 @@ class DefaultCallMediaConnection implements CallMediaConnection {
           }
           break;
         case RTCPeerConnectionState.RTCPeerConnectionStateConnecting:
-          _emitState(CallMediaPhase.connecting);
+          _emitConnectingUnlessReconnecting();
           break;
         case RTCPeerConnectionState.RTCPeerConnectionStateNew:
+          break;
         case RTCPeerConnectionState.RTCPeerConnectionStateDisconnected:
+          _beginDisconnectedRecovery(state.toString());
           break;
       }
     };
@@ -1200,6 +1218,49 @@ class DefaultCallMediaConnection implements CallMediaConnection {
       error: error,
       failureReason: reason,
     );
+  }
+
+  void _emitConnectingUnlessReconnecting() {
+    if (_lastPhase == CallMediaPhase.reconnecting) {
+      return;
+    }
+    _emitState(CallMediaPhase.connecting);
+  }
+
+  void _beginDisconnectedRecovery(String detail) {
+    if (_disposed ||
+        _lastPhase == CallMediaPhase.failed ||
+        _lastPhase == CallMediaPhase.disposed) {
+      return;
+    }
+    _emitState(CallMediaPhase.reconnecting, detail: detail);
+    _cancelDisconnectedFailureTimer();
+    if (_disconnectedFailureTimeout <= Duration.zero) {
+      _failDisconnectedRecovery(detail);
+      return;
+    }
+    _disconnectedFailureTimer = Timer(
+      _disconnectedFailureTimeout,
+      () => _failDisconnectedRecovery(detail),
+    );
+  }
+
+  void _failDisconnectedRecovery(String detail) {
+    if (_disposed ||
+        _lastPhase != CallMediaPhase.reconnecting ||
+        _controllersClosed) {
+      return;
+    }
+    _emitState(
+      CallMediaPhase.failed,
+      detail: 'Call media reconnect timed out after $detail.',
+      failureReason: CallMediaFailureReason.negotiationFailed,
+    );
+  }
+
+  void _cancelDisconnectedFailureTimer() {
+    _disconnectedFailureTimer?.cancel();
+    _disconnectedFailureTimer = null;
   }
 
   void _emitState(

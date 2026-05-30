@@ -40,6 +40,7 @@ enum CallMediaPhase {
   applyingAnswer,
   connecting,
   connected,
+  reconnecting,
   failed,
   disposed,
 }

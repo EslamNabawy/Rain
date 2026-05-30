@@ -4557,6 +4557,7 @@ VoiceMediaPhase _voiceMediaPhaseForCall(CallMediaPhase phase) {
     CallMediaPhase.applyingAnswer => VoiceMediaPhase.applyingAnswer,
     CallMediaPhase.connecting => VoiceMediaPhase.connecting,
     CallMediaPhase.connected => VoiceMediaPhase.connected,
+    CallMediaPhase.reconnecting => VoiceMediaPhase.reconnecting,
     CallMediaPhase.failed => VoiceMediaPhase.failed,
     CallMediaPhase.disposed => VoiceMediaPhase.disposed,
   };

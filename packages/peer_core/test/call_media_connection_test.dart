@@ -263,7 +263,10 @@ void main() {
     'disconnected peer state emits media recovery before failed timeout',
     () async {
       final platform = _FakeCallPlatformBridge();
-      final connection = _connection(platform);
+      final connection = _connection(
+        platform,
+        disconnectedFailureTimeout: const Duration(milliseconds: 5),
+      );
       final states = <CallMediaState>[];
       final subscription = connection.onStateChanged.listen(states.add);
 
@@ -279,18 +282,18 @@ void main() {
       );
       await pumpEventQueue();
 
-      expect(states.last.phase, CallMediaPhase.connecting);
+      expect(states.last.phase, CallMediaPhase.reconnecting);
 
-      peerConnection.emitConnectionState(
-        RTCPeerConnectionState.RTCPeerConnectionStateFailed,
-      );
+      await Future<void>.delayed(const Duration(milliseconds: 10));
       await pumpEventQueue();
+
+      expect(states.last.phase, CallMediaPhase.failed);
 
       expect(
         states.map((CallMediaState state) => state.phase),
         containsAllInOrder(<CallMediaPhase>[
           CallMediaPhase.connected,
-          CallMediaPhase.connecting,
+          CallMediaPhase.reconnecting,
           CallMediaPhase.failed,
         ]),
       );
@@ -299,6 +302,46 @@ void main() {
       await connection.dispose();
     },
   );
+
+  test('reconnected peer state clears media recovery timeout', () async {
+    final platform = _FakeCallPlatformBridge();
+    final connection = _connection(
+      platform,
+      disconnectedFailureTimeout: const Duration(milliseconds: 5),
+    );
+    final states = <CallMediaState>[];
+    final subscription = connection.onStateChanged.listen(states.add);
+
+    await connection.startLocalMedia(kind: CallMediaKind.video);
+    final peerConnection = platform.createdConnections.single;
+
+    peerConnection.emitConnectionState(
+      RTCPeerConnectionState.RTCPeerConnectionStateConnected,
+    );
+    await pumpEventQueue();
+    peerConnection.emitConnectionState(
+      RTCPeerConnectionState.RTCPeerConnectionStateDisconnected,
+    );
+    await pumpEventQueue();
+    peerConnection.emitConnectionState(
+      RTCPeerConnectionState.RTCPeerConnectionStateConnected,
+    );
+    await Future<void>.delayed(const Duration(milliseconds: 10));
+    await pumpEventQueue();
+
+    expect(
+      states.map((CallMediaState state) => state.phase),
+      containsAllInOrder(<CallMediaPhase>[
+        CallMediaPhase.connected,
+        CallMediaPhase.reconnecting,
+        CallMediaPhase.connected,
+      ]),
+    );
+    expect(states.last.phase, CallMediaPhase.connected);
+
+    await subscription.cancel();
+    await connection.dispose();
+  });
 
   test('camera mute disables video track without renegotiation', () async {
     final platform = _FakeCallPlatformBridge();
@@ -398,8 +441,10 @@ DefaultCallMediaConnection _connection(
   Future<String?> Function()? selectedVideoInputDeviceIdProvider,
   Future<CallMediaProcessingConfig> Function()?
   callMediaProcessingConfigProvider,
+  Duration disconnectedFailureTimeout = const Duration(seconds: 12),
 }) {
   return DefaultCallMediaConnection(
+    disconnectedFailureTimeout: disconnectedFailureTimeout,
     config: PeerConfig(
       iceServers: const <Map<String, dynamic>>[],
       platform: platform,

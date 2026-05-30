@@ -190,6 +190,46 @@ void main() {
     },
   );
 
+  test(
+    'active session follows media reconnecting and connected states',
+    () async {
+      final media = _FakeVoiceMediaConnection();
+      final sent = <VoiceCallFrame>[];
+      final session = _session(media: media, sent: sent);
+
+      await session.startOutgoing();
+      await session.handleFrame(
+        _frame(VoiceCallFrameType.accept, from: 'bob', to: 'alice', seq: 1),
+      );
+      media.emitState(const VoiceMediaState(phase: VoiceMediaPhase.connected));
+      await pumpEventQueue();
+
+      media.emitState(
+        const VoiceMediaState(
+          phase: VoiceMediaPhase.reconnecting,
+          detail: 'Call media reconnecting.',
+        ),
+      );
+      await pumpEventQueue();
+
+      expect(session.state.phase, VoiceCallSessionPhase.active);
+      expect(session.state.mediaReconnecting, isTrue);
+      expect(session.state.detail, 'Call media reconnecting.');
+      expect(media.disposeCalls, 0);
+
+      media.emitState(const VoiceMediaState(phase: VoiceMediaPhase.connected));
+      await pumpEventQueue();
+
+      expect(session.state.phase, VoiceCallSessionPhase.active);
+      expect(session.state.mediaReconnecting, isFalse);
+      expect(session.state.reconnectingSince, isNull);
+      expect(
+        sent.map((VoiceCallFrame frame) => frame.type),
+        isNot(contains(VoiceCallFrameType.hangup)),
+      );
+    },
+  );
+
   test('active session deafen and output route are local only', () async {
     final media = _FakeVoiceMediaConnection();
     final sent = <VoiceCallFrame>[];

@@ -653,6 +653,18 @@ final class VoiceCallSession {
           }),
         );
         break;
+      case VoiceMediaPhase.reconnecting:
+        unawaited(
+          _enqueue(() async {
+            if (state.phase == VoiceCallSessionPhase.active) {
+              _setMediaReconnecting(
+                true,
+                detail: mediaState.detail ?? 'Call media reconnecting.',
+              );
+            }
+          }),
+        );
+        break;
       case VoiceMediaPhase.failed:
         unawaited(
           _enqueue(
