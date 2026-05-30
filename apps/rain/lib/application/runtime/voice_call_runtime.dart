@@ -94,14 +94,14 @@ extension VoiceCallRuntime on RainRuntimeController {
       peerId,
       mediaMode: mediaMode,
     );
-    final activeTransfer = await _firstActiveTransfer();
-    _requireVoiceSignalingAdapter();
     await _assertVoiceCallPeerIsFriend(peerId);
+    final activeTransfer = await _firstActiveTransfer();
+    await _clearExpiredVoiceCallStartBlock();
 
     final decision = RuntimeInteractionGuard.canStartCall(
       peerId: peerId,
       mediaMode: mediaMode,
-      voiceCallState: _voiceCallState,
+      voiceCallState: _voiceCallStartPreflightState(),
       peerOnline: presence.peerOnline,
       activeTransfer: activeTransfer,
       manualDisconnectedPeers: _manualDisconnectedPeers,
@@ -123,6 +123,7 @@ extension VoiceCallRuntime on RainRuntimeController {
       );
     }
     decision.throwIfDenied();
+    _requireVoiceSignalingAdapter();
     final callId = _newVoiceCallId(peerId);
     final sessionEpoch = DateTime.now().millisecondsSinceEpoch;
     _recordRuntimeEvent(
@@ -204,6 +205,76 @@ extension VoiceCallRuntime on RainRuntimeController {
       );
       rethrow;
     }
+  }
+
+  Future<void> _clearExpiredVoiceCallStartBlock() async {
+    final current = _voiceCallState;
+    if (!await _isExpiredVoiceCallStartBlock(current)) {
+      return;
+    }
+    _recordRuntimeEvent(
+      category: 'call',
+      name: 'expired_call_state_cleared_before_start',
+      severity: 'warning',
+      message: 'Expired local call state was cleared before starting a call.',
+      context: _voiceCallEventContext(current),
+    );
+    await _disposeCurrentVoiceCallSession();
+    if (_voiceCallState.callId == current.callId &&
+        _voiceCallState.sessionEpoch == current.sessionEpoch) {
+      _setVoiceCallState(const VoiceCallState.idle());
+    }
+  }
+
+  VoiceCallState _voiceCallStartPreflightState() {
+    final current = _voiceCallState;
+    if (_isLocallyExpiredVoiceCallStartBlock(current)) {
+      return const VoiceCallState.idle();
+    }
+    return current;
+  }
+
+  Future<bool> _isExpiredVoiceCallStartBlock(VoiceCallState state) async {
+    if (!_canClearExpiredVoiceCallStartBlock(state.phase)) {
+      return false;
+    }
+    final now = DateTime.now().millisecondsSinceEpoch;
+    final callId = state.callId;
+    final voiceAdapter = voiceSignalingAdapter;
+    if (callId != null && voiceAdapter != null) {
+      try {
+        final room = await voiceAdapter.fetchCall(callId);
+        if (room == null || room.status.isTerminal) {
+          return true;
+        }
+        if (room.createdAt != state.sessionEpoch) {
+          return true;
+        }
+        return room.expiresAt <= now;
+      } catch (_) {
+        return false;
+      }
+    }
+    final sessionEpoch = state.sessionEpoch;
+    return sessionEpoch != null &&
+        now >= sessionEpoch + _voiceCallExpiry.inMilliseconds;
+  }
+
+  bool _isLocallyExpiredVoiceCallStartBlock(VoiceCallState state) {
+    if (!_canClearExpiredVoiceCallStartBlock(state.phase)) {
+      return false;
+    }
+    final sessionEpoch = state.sessionEpoch;
+    return sessionEpoch != null &&
+        DateTime.now().millisecondsSinceEpoch >=
+            sessionEpoch + _voiceCallExpiry.inMilliseconds;
+  }
+
+  bool _canClearExpiredVoiceCallStartBlock(VoiceCallPhase phase) {
+    return phase == VoiceCallPhase.connectingPeer ||
+        phase == VoiceCallPhase.connectingMedia ||
+        phase == VoiceCallPhase.incomingRinging ||
+        phase == VoiceCallPhase.outgoingRinging;
   }
 
   Future<void> acceptVoiceCall() async {

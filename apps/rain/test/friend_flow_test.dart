@@ -2054,9 +2054,7 @@ void main() {
             isA<StateError>().having(
               (error) => error.toString(),
               'message',
-              contains(
-                'You are already in a call with @bob. End it before calling @cara.',
-              ),
+              contains('End the current call before starting another.'),
             ),
           ),
         );
