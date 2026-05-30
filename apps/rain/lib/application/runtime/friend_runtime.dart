@@ -283,6 +283,7 @@ extension FriendRuntime on RainRuntimeController {
           gender: gender,
         );
       });
+      await _seedFriendPresenceFromBackend(normalizedFrom, backendIdentity);
     } else if (!_isBlockedState(existing?.state)) {
       await _localMutations.run(() {
         if (_shutDown) {
@@ -296,6 +297,7 @@ extension FriendRuntime on RainRuntimeController {
           gender: gender,
         );
       });
+      await _seedFriendPresenceFromBackend(normalizedFrom, backendIdentity);
     }
     if (existing?.state == FriendState.pendingOutgoing ||
         existing?.state == FriendState.friend) {
@@ -466,6 +468,7 @@ extension FriendRuntime on RainRuntimeController {
             gender: gender,
           ),
         );
+        await _seedFriendPresenceFromBackend(username, backendIdentity);
         _watchPresence(username);
         continue;
       }
@@ -479,10 +482,26 @@ extension FriendRuntime on RainRuntimeController {
           gender: gender,
         ),
       );
+      await _seedFriendPresenceFromBackend(username, backendIdentity);
       _watchPresence(username);
     }
     await _refreshPassivePeerListeners();
     await _reconcileConnectionRequestsWithRelationships();
+  }
+
+  Future<void> _seedFriendPresenceFromBackend(
+    String username,
+    BackendIdentity? backendIdentity,
+  ) async {
+    if (_shutDown || backendIdentity == null) {
+      return;
+    }
+    await _localMutations.run(() {
+      if (_shutDown) {
+        return Future<void>.value();
+      }
+      return friendStore.updatePresence(username, backendIdentity.online);
+    });
   }
 
   Future<void> _stopTrackingPeer(String username) async {

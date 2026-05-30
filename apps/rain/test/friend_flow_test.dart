@@ -168,6 +168,37 @@ void main() {
     });
 
     test(
+      'relationship sync seeds online status before presence stream emits',
+      () async {
+        final adapter = _SilentPresenceNoopSignalingAdapter();
+        await adapter.register('bob', 'bobpw');
+        await adapter.setPresence('bob', true);
+        await adapter.upsertFriendship('alice', 'bob');
+        final runtime = RainRuntimeController(
+          selfIdentity: alice,
+          adapter: adapter,
+          brain: null,
+          database: db,
+          friendStore: FriendStore(db),
+          messageStore: MessageStore(db),
+          offlineQueueStore: OfflineQueueStore(db),
+          messageDeliveryService: MessageDeliveryService(
+            messageStore: MessageStore(db),
+            offlineQueueStore: OfflineQueueStore(db),
+          ),
+          friendRequestRefreshInterval: Duration.zero,
+        );
+        addTearDown(runtime.dispose);
+
+        await runtime.start();
+
+        final friend = await FriendStore(db).loadFriend('bob');
+        expect(friend?.state, FriendState.friend);
+        expect(friend?.isOnline, isTrue);
+      },
+    );
+
+    test(
       'sendFriendRequest removes stale local friendship before sending a new request',
       () async {
         final adapter = NoopSignalingAdapter();
@@ -6732,6 +6763,11 @@ class RecordingNoopSignalingAdapter extends NoopSignalingAdapter {
     final users = <String>[firstUser, secondUser]..sort();
     return '${users[0]}::${users[1]}';
   }
+}
+
+class _SilentPresenceNoopSignalingAdapter extends NoopSignalingAdapter {
+  @override
+  Stream<bool> watchPresence(String username) => const Stream<bool>.empty();
 }
 
 class _BlockingFirstActiveTransferStore extends FileTransferStore {
