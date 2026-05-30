@@ -920,6 +920,7 @@ void main() {
       final adapter = NoopSignalingAdapter();
       final brain = TestSessionManager();
       final transferStore = FileTransferStore(db);
+      await adapter.register('bob', 'bobpw');
       await db
           .into(db.friends)
           .insert(

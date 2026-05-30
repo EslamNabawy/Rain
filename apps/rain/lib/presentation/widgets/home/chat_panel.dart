@@ -71,7 +71,8 @@ class _ChatPanelState extends ConsumerState<_ChatPanel> {
     final voiceCall = ref.watch(voiceCallProvider);
     final hasBlockingCall =
         voiceCall.hasCall && voiceCall.phase != VoiceCallPhase.failed;
-    final hasActiveTransfer = _hasActiveFileTransfer(transfers.value);
+    final activeTransfer = _activeFileTransfer(transfers.value);
+    final hasActiveTransfer = activeTransfer != null;
     final connectionRequests = ref.watch(connectionRequestProvider);
     final outboundRequest = _outboundConnectionRequestForPeer(
       connectionRequests,
@@ -102,13 +103,28 @@ class _ChatPanelState extends ConsumerState<_ChatPanel> {
         !hasActiveTransfer;
     final canDisconnectNow =
         runtime != null && canChat && connectionStatus.canDisconnect;
+    final voiceCallPreflight = canChat
+        ? RuntimeInteractionGuard.canStartCall(
+            peerId: widget.peerId,
+            mediaMode: CallMediaMode.audio,
+            voiceCallState: voiceCall,
+            peerOnline: isPeerOnline,
+            activeTransfer: activeTransfer,
+          )
+        : null;
+    final videoCallPreflight = canChat
+        ? RuntimeInteractionGuard.canStartCall(
+            peerId: widget.peerId,
+            mediaMode: CallMediaMode.video,
+            voiceCallState: voiceCall,
+            peerOnline: isPeerOnline,
+            activeTransfer: activeTransfer,
+          )
+        : null;
     final canStartVoiceCall =
-        runtime != null &&
-        canChat &&
-        isPeerOnline &&
-        !hasBlockingCall &&
-        !hasActiveTransfer;
-    final canStartVideoCall = canStartVoiceCall;
+        runtime != null && canChat && voiceCallPreflight?.allowed == true;
+    final canStartVideoCall =
+        runtime != null && canChat && videoCallPreflight?.allowed == true;
     ref.listen<AsyncValue<List<StoredMessage>>>(
       messagesProvider(widget.peerId),
       _handleMessageSound,
@@ -1225,7 +1241,16 @@ class _ChatPanelState extends ConsumerState<_ChatPanel> {
   }
 
   bool _hasActiveFileTransfer(List<FileTransferView>? transfers) {
-    return transfers?.any((view) => view.record.isActive) ?? false;
+    return _activeFileTransfer(transfers) != null;
+  }
+
+  FileTransferRecord? _activeFileTransfer(List<FileTransferView>? transfers) {
+    for (final view in transfers ?? const <FileTransferView>[]) {
+      if (view.record.isActive) {
+        return view.record;
+      }
+    }
+    return null;
   }
 
   Future<void> _runFileTransferAction(

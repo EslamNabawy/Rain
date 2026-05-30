@@ -1,6 +1,9 @@
 import 'package:rain_core/rain_core.dart';
 
+import 'call_start_preflight.dart';
 import 'voice_call_state.dart';
+
+export 'call_start_preflight.dart';
 
 enum RuntimeInteractionReasonCode {
   none,
@@ -287,35 +290,73 @@ final class RuntimeInteractionGuard {
     return const RuntimeInteractionDecision.allow();
   }
 
-  static RuntimeInteractionDecision canStartCall({
+  static CallStartPreflightResult canStartCall({
     required String peerId,
     required CallMediaMode mediaMode,
     required VoiceCallState voiceCallState,
-    bool? peerOnline = true,
+    required bool? peerOnline,
     FileTransferRecord? activeTransfer,
+    Set<String> manualDisconnectedPeers = const <String>{},
+    Map<String, Object?> diagnostics = const <String, Object?>{},
   }) {
     if (peerOnline == false) {
-      return RuntimeInteractionGuard.peerOffline(peerId: peerId);
+      return CallStartPreflightResult.deny(
+        decision: CallStartPreflightDecision.peerOffline,
+        peerId: peerId,
+        mediaMode: mediaMode,
+        userMessage: peerOfflineMessage(peerId),
+        blockingPeerId: peerId,
+        diagnostics: diagnostics,
+      );
     }
     if (peerOnline == null) {
-      return RuntimeInteractionGuard.presenceUnknown(peerId: peerId);
+      return CallStartPreflightResult.deny(
+        decision: CallStartPreflightDecision.presenceUnknown,
+        peerId: peerId,
+        mediaMode: mediaMode,
+        userMessage: presenceUnknownMessage(peerId),
+        blockingPeerId: peerId,
+        diagnostics: diagnostics,
+      );
     }
-    final callBlock = _activeCallDecision(
+    if (manualDisconnectedPeers.contains(peerId)) {
+      return CallStartPreflightResult.deny(
+        decision: CallStartPreflightDecision.localManualDisconnect,
+        peerId: peerId,
+        mediaMode: mediaMode,
+        userMessage:
+            'You disconnected @$peerId. Press Connect to open the peer lane again.',
+        blockingPeerId: peerId,
+        diagnostics: diagnostics,
+      );
+    }
+    final callBlock = _activeCallStartDecision(
       voiceCallState,
       attemptedPeerId: peerId,
+      mediaMode: mediaMode,
+      diagnostics: diagnostics,
     );
     if (callBlock != null) {
       return callBlock;
     }
     if (activeTransfer != null) {
-      return RuntimeInteractionDecision.deny(
-        reasonCode: RuntimeInteractionReasonCode.activeFileTransfer,
+      return CallStartPreflightResult.deny(
+        decision: CallStartPreflightDecision.activeTransferExists,
+        peerId: peerId,
+        mediaMode: mediaMode,
         userMessage: 'Finish the active file transfer before starting a call.',
         blockingPeerId: activeTransfer.peerId,
-        transferId: activeTransfer.id,
+        diagnostics: <String, Object?>{
+          ...diagnostics,
+          'transferId': activeTransfer.id,
+        },
       );
     }
-    return const RuntimeInteractionDecision.allow();
+    return CallStartPreflightResult.allow(
+      peerId: peerId,
+      mediaMode: mediaMode,
+      diagnostics: diagnostics,
+    );
   }
 
   static RuntimeInteractionDecision canAcceptCall({
@@ -391,6 +432,25 @@ final class RuntimeInteractionGuard {
       userMessage: message,
       blockingPeerId: blockingPeerId,
       callId: state.callId,
+    );
+  }
+
+  static CallStartPreflightResult? _activeCallStartDecision(
+    VoiceCallState state, {
+    required String attemptedPeerId,
+    required CallMediaMode mediaMode,
+    required Map<String, Object?> diagnostics,
+  }) {
+    if (!state.hasCall || state.phase == VoiceCallPhase.failed) {
+      return null;
+    }
+    return CallStartPreflightResult.deny(
+      decision: CallStartPreflightDecision.activeCallExists,
+      peerId: attemptedPeerId,
+      mediaMode: mediaMode,
+      userMessage: 'End the current call before starting another.',
+      blockingPeerId: state.peerId,
+      diagnostics: <String, Object?>{...diagnostics, 'callId': state.callId},
     );
   }
 

@@ -14,6 +14,16 @@ final class _TerminalRoomWriteResult {
   final Object? error;
 }
 
+final class _CallStartPresenceSnapshot {
+  const _CallStartPresenceSnapshot({
+    required this.peerOnline,
+    required this.diagnostics,
+  });
+
+  final bool? peerOnline;
+  final Map<String, Object?> diagnostics;
+}
+
 extension VoiceCallRuntime on RainRuntimeController {
   static const CallTerminalWritePolicy _voiceTerminalWritePolicy =
       CallTerminalWritePolicy();
@@ -80,11 +90,17 @@ extension VoiceCallRuntime on RainRuntimeController {
       context: <String, Object?>{'peerId': peerId, 'mediaMode': mediaMode.name},
     );
     _assertVoiceCallCanStart();
+    final presence = await _fetchVoiceCallPeerPresence(
+      peerId,
+      mediaMode: mediaMode,
+    );
     final decision = RuntimeInteractionGuard.canStartCall(
       peerId: peerId,
       mediaMode: mediaMode,
       voiceCallState: _voiceCallState,
+      peerOnline: presence.peerOnline,
       activeTransfer: await _firstActiveTransfer(),
+      diagnostics: presence.diagnostics,
     );
     if (!decision.allowed) {
       _recordRuntimeEvent(
@@ -95,17 +111,15 @@ extension VoiceCallRuntime on RainRuntimeController {
         context: <String, Object?>{
           'peerId': peerId,
           'mediaMode': mediaMode.name,
-          'reasonCode': decision.reasonCode.name,
+          'reasonCode': decision.decision.name,
           'blockingPeerId': decision.blockingPeerId,
-          'callId': decision.callId,
-          'transferId': decision.transferId,
+          ...decision.diagnostics,
         },
       );
     }
     decision.throwIfDenied();
     _requireVoiceSignalingAdapter();
     await _assertVoiceCallPeerIsFriend(peerId);
-    await _assertVoiceCallPeerIsOnline(peerId, mediaMode: mediaMode);
 
     await _disposeCurrentVoiceCallSession();
     final callId = _newVoiceCallId(peerId);
@@ -3369,7 +3383,7 @@ extension VoiceCallRuntime on RainRuntimeController {
     }
   }
 
-  Future<void> _assertVoiceCallPeerIsOnline(
+  Future<_CallStartPresenceSnapshot> _fetchVoiceCallPeerPresence(
     String peerId, {
     required CallMediaMode mediaMode,
   }) async {
@@ -3400,8 +3414,13 @@ extension VoiceCallRuntime on RainRuntimeController {
         source: 'voice-call-presence',
         fatal: false,
       );
-      decision.throwIfDenied();
-      return;
+      return _CallStartPresenceSnapshot(
+        peerOnline: null,
+        diagnostics: <String, Object?>{
+          'presenceSource': 'backend',
+          'presenceError': error.toString(),
+        },
+      );
     }
 
     if (identity == null) {
@@ -3420,8 +3439,10 @@ extension VoiceCallRuntime on RainRuntimeController {
           'presenceSource': 'backend',
         },
       );
-      decision.throwIfDenied();
-      return;
+      return const _CallStartPresenceSnapshot(
+        peerOnline: null,
+        diagnostics: <String, Object?>{'presenceSource': 'backend'},
+      );
     }
 
     final peerOnline = identity.online;
@@ -3451,7 +3472,15 @@ extension VoiceCallRuntime on RainRuntimeController {
           'presenceAgeMs': presenceAgeMs,
         },
       );
-      decision.throwIfDenied();
+      return _CallStartPresenceSnapshot(
+        peerOnline: false,
+        diagnostics: <String, Object?>{
+          'presenceSource': 'backend',
+          'lastHeartbeat': identity.lastHeartbeat,
+          'lastSeen': identity.lastSeen,
+          'presenceAgeMs': presenceAgeMs,
+        },
+      );
     } else {
       _recordRuntimeEvent(
         category: 'call',
@@ -3466,6 +3495,15 @@ extension VoiceCallRuntime on RainRuntimeController {
         },
       );
     }
+    return _CallStartPresenceSnapshot(
+      peerOnline: true,
+      diagnostics: <String, Object?>{
+        'presenceSource': 'backend',
+        'lastHeartbeat': identity.lastHeartbeat,
+        'lastSeen': identity.lastSeen,
+        'presenceAgeMs': presenceAgeMs,
+      },
+    );
   }
 
   Future<FileTransferRecord?> _firstActiveTransfer() async {

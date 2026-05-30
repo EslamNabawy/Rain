@@ -38,15 +38,16 @@ void main() {
           callId: 'call-1',
           sessionEpoch: 1,
         ),
+        peerOnline: true,
       );
 
       expect(decision.allowed, isFalse);
-      expect(decision.reasonCode, RuntimeInteractionReasonCode.activeCall);
+      expect(decision.decision, CallStartPreflightDecision.activeCallExists);
       expect(decision.blockingPeerId, 'bob');
-      expect(decision.callId, 'call-1');
+      expect(decision.diagnostics['callId'], 'call-1');
       expect(
         decision.userMessage,
-        'You are already in a call with @bob. End it before calling @cara.',
+        'End the current call before starting another.',
       );
     });
 
@@ -60,6 +61,7 @@ void main() {
           callId: 'call-1',
           sessionEpoch: 1,
         ),
+        peerOnline: true,
       );
 
       expect(decision.allowed, isTrue);
@@ -74,7 +76,7 @@ void main() {
       );
 
       expect(decision.allowed, isFalse);
-      expect(decision.reasonCode, RuntimeInteractionReasonCode.peerOffline);
+      expect(decision.decision, CallStartPreflightDecision.peerOffline);
       expect(
         decision.userMessage,
         '@bob is offline. Keep both apps open, then try again.',
@@ -90,7 +92,7 @@ void main() {
       );
 
       expect(decision.allowed, isFalse);
-      expect(decision.reasonCode, RuntimeInteractionReasonCode.presenceUnknown);
+      expect(decision.decision, CallStartPreflightDecision.presenceUnknown);
       expect(
         decision.userMessage,
         'Could not confirm @bob is online. Try again.',
@@ -102,10 +104,11 @@ void main() {
         peerId: 'bob',
         mediaMode: CallMediaMode.audio,
         voiceCallState: const VoiceCallState.idle(),
+        peerOnline: null,
       );
 
       expect(decision.allowed, isFalse);
-      expect(decision.reasonCode, RuntimeInteractionReasonCode.presenceUnknown);
+      expect(decision.decision, CallStartPreflightDecision.presenceUnknown);
       expect(
         decision.userMessage,
         'Could not confirm @bob is online. Try again.',
@@ -118,6 +121,7 @@ void main() {
         peerId: 'cara',
         mediaMode: CallMediaMode.audio,
         voiceCallState: const VoiceCallState.idle(),
+        peerOnline: true,
         activeTransfer: transfer,
       );
       final incoming = RuntimeInteractionGuard.canAcceptCall(
@@ -135,11 +139,12 @@ void main() {
       expect(outgoing.allowed, isFalse);
       expect(incoming.allowed, isFalse);
       expect(
-        outgoing.reasonCode,
-        RuntimeInteractionReasonCode.activeFileTransfer,
+        outgoing.decision,
+        CallStartPreflightDecision.activeTransferExists,
       );
       expect(incoming.transferId, 'transfer-1');
       expect(outgoing.blockingPeerId, 'bob');
+      expect(outgoing.diagnostics['transferId'], 'transfer-1');
     });
 
     test('active call blocks file transfers for every peer', () {
