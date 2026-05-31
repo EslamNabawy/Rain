@@ -40,7 +40,7 @@ class _ChatPanelState extends ConsumerState<_ChatPanel> {
     if (oldWidget.peerId != widget.peerId) {
       _composerController.clear();
       _setJumpToLatestVisible(false);
-      WidgetsBinding.instance.addPostFrameCallback((_) => _jumpToLatest());
+      _scheduleJumpToLatest();
     }
   }
 
@@ -250,6 +250,9 @@ class _ChatPanelState extends ConsumerState<_ChatPanel> {
   }
 
   void _jumpToLatest() {
+    if (!mounted) {
+      return;
+    }
     if (!_messageScrollController.hasClients) {
       return;
     }
@@ -258,6 +261,15 @@ class _ChatPanelState extends ConsumerState<_ChatPanel> {
       duration: RainMotion.standard,
       curve: Curves.easeOutCubic,
     );
+  }
+
+  void _scheduleJumpToLatest() {
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (!mounted) {
+        return;
+      }
+      _jumpToLatest();
+    });
   }
 
   void _handleMessageSound(
@@ -277,6 +289,9 @@ class _ChatPanelState extends ConsumerState<_ChatPanel> {
   }
 
   void _dispatchSoundEvent(RainSoundEvent event) {
+    if (!mounted) {
+      return;
+    }
     _dispatchRainSoundEvent(ref, event);
   }
 
@@ -1178,7 +1193,7 @@ class _ChatPanelState extends ConsumerState<_ChatPanel> {
             },
           );
       _dispatchSoundEvent(rainChatSendSoundEventFor(widget.peerId));
-      WidgetsBinding.instance.addPostFrameCallback((_) => _jumpToLatest());
+      _scheduleJumpToLatest();
     } catch (error) {
       _dispatchWarningSound('chat.file.send_failed');
       _showErrorSnack(_formatUiError(error));
@@ -1494,7 +1509,7 @@ class _ChatPanelState extends ConsumerState<_ChatPanel> {
     try {
       await runtime.sendMessage(widget.peerId, text);
       _dispatchSoundEvent(rainChatSendSoundEventFor(widget.peerId));
-      WidgetsBinding.instance.addPostFrameCallback((_) => _jumpToLatest());
+      _scheduleJumpToLatest();
     } catch (error) {
       _dispatchWarningSound('chat.message.send_failed');
       if (mounted) {
@@ -1518,6 +1533,9 @@ class _ChatPanelState extends ConsumerState<_ChatPanel> {
     try {
       await ref.read(voiceCallProvider.notifier).start(widget.peerId);
     } catch (error) {
+      if (!mounted) {
+        return;
+      }
       _dispatchVoiceCommandFailureSoundForRef(ref, error, before: before);
       _showErrorSnack(_formatUiError(error));
     }
@@ -1528,6 +1546,9 @@ class _ChatPanelState extends ConsumerState<_ChatPanel> {
     try {
       await ref.read(voiceCallProvider.notifier).startVideo(widget.peerId);
     } catch (error) {
+      if (!mounted) {
+        return;
+      }
       _dispatchVoiceCommandFailureSoundForRef(ref, error, before: before);
       _showErrorSnack(_formatUiError(error));
     }
@@ -1669,14 +1690,18 @@ class _ChatPanelState extends ConsumerState<_ChatPanel> {
             manualRetry: retryFailedConnection,
             allowStalePresence: allowStalePresence,
           );
+      if (!mounted) {
+        return;
+      }
       _dispatchSoundEvent(rainUiActionSoundEvent());
       _showInfoSnack('Connected to @${widget.peerId}.');
     } catch (error) {
+      if (!mounted) {
+        return;
+      }
       _dispatchWarningSound('chat.peer.direct_connect_failed');
       if (_isOfflineConnectionError(error)) {
-        if (mounted) {
-          setState(() => _isConnecting = false);
-        }
+        setState(() => _isConnecting = false);
         final friends = ref.read(friendsProvider);
         await _sendOfflineConnectionRequest(
           friend: _currentFriend(friends),
@@ -1738,6 +1763,9 @@ class _ChatPanelState extends ConsumerState<_ChatPanel> {
       final decision = await ref
           .read(connectionRequestProvider.notifier)
           .perform(surface, action.kind);
+      if (!mounted) {
+        return;
+      }
       if (decision.allowed) {
         _dispatchSoundEvent(rainUiActionSoundEvent());
         _showInfoSnack(decision.userMessage);
@@ -1748,6 +1776,9 @@ class _ChatPanelState extends ConsumerState<_ChatPanel> {
       );
       _showErrorSnack(decision.userMessage);
     } catch (error) {
+      if (!mounted) {
+        return;
+      }
       _dispatchWarningSound('chat.peer.connection_request_action_failed');
       _showErrorSnack(_formatUiError(error));
     }
@@ -1756,17 +1787,21 @@ class _ChatPanelState extends ConsumerState<_ChatPanel> {
   Future<void> _disconnectPeer() async {
     try {
       await ref.read(connectionsProvider.notifier).disconnect(widget.peerId);
+      if (!mounted) {
+        return;
+      }
       _dispatchSoundEvent(rainUiActionSoundEvent());
     } catch (error) {
-      _dispatchWarningSound('chat.peer.disconnect_failed');
-      if (mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(
-            content: Text(_formatUiError(error)),
-            backgroundColor: Theme.of(context).colorScheme.error,
-          ),
-        );
+      if (!mounted) {
+        return;
       }
+      _dispatchWarningSound('chat.peer.disconnect_failed');
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text(_formatUiError(error)),
+          backgroundColor: Theme.of(context).colorScheme.error,
+        ),
+      );
     }
   }
 

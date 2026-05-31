@@ -86,6 +86,9 @@ class _OnboardingScreenState extends ConsumerState<OnboardingScreen>
       setState(() {});
     }
     WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (!mounted) {
+        return;
+      }
       _ensureVisibleForFocusedField();
     });
   }
@@ -103,6 +106,9 @@ class _OnboardingScreenState extends ConsumerState<OnboardingScreen>
       }
     });
     WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (!mounted) {
+        return;
+      }
       _ensureVisibleForFocusedField();
     });
   }
@@ -176,6 +182,9 @@ class _OnboardingScreenState extends ConsumerState<OnboardingScreen>
   }
 
   void _ensureVisibleForFocusedField() {
+    if (!mounted) {
+      return;
+    }
     if (_usernameFocusNode.hasFocus) {
       _ensureFocusedFieldVisible(_usernameFocusNode, _usernameFieldKey);
     } else if (_displayNameFocusNode.hasFocus) {
@@ -659,8 +668,14 @@ class _OnboardingScreenState extends ConsumerState<OnboardingScreen>
             .read(identityProvider.notifier)
             .login(username: username, password: password);
       }
+      if (!mounted) {
+        return;
+      }
       _dispatchSoundEvent(RainSoundEvent.uiAction());
     } catch (error) {
+      if (!mounted) {
+        return;
+      }
       setState(() => _error = _formatError(error));
       _dispatchWarningSound(
         _mode == _AuthMode.register
@@ -679,6 +694,9 @@ class _OnboardingScreenState extends ConsumerState<OnboardingScreen>
   }
 
   void _dispatchSoundEvent(RainSoundEvent event) {
+    if (!mounted) {
+      return;
+    }
     unawaited(ref.read(soundEventRouterProvider).dispatch(event));
   }
 }

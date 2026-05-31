@@ -1327,6 +1327,9 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
       final decision = await ref
           .read(connectionRequestProvider.notifier)
           .perform(surface, action.kind);
+      if (!mounted) {
+        return;
+      }
       if (!decision.allowed) {
         _dispatchRainSoundEvent(
           ref,
@@ -1338,6 +1341,9 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
       _dispatchRainSoundEvent(ref, rainUiActionSoundEvent());
       _showHomeSnack(decision.userMessage);
     } catch (error) {
+      if (!mounted) {
+        return;
+      }
       _dispatchRainSoundEvent(
         ref,
         rainUiWarningSoundEvent('home.inbound_connection_request_failed'),
@@ -1425,6 +1431,9 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
     try {
       await ref.read(voiceCallProvider.notifier).start(peerId);
     } catch (error) {
+      if (!mounted) {
+        return;
+      }
       _dispatchVoiceCommandFailureSound(error, before: before);
       _showVoiceCallError(_formatUiError(error));
     }
@@ -1435,6 +1444,9 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
     try {
       await ref.read(voiceCallProvider.notifier).startVideo(peerId);
     } catch (error) {
+      if (!mounted) {
+        return;
+      }
       _dispatchVoiceCommandFailureSound(error, before: before);
       _showVoiceCallError(_formatUiError(error));
     }
@@ -1446,6 +1458,9 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
       await _stopVoiceCallLoopsBeforeAccept();
       await ref.read(voiceCallProvider.notifier).accept();
     } catch (error) {
+      if (!mounted) {
+        return;
+      }
       _dispatchVoiceCommandFailureSound(error, before: before);
       _showVoiceCallError(_formatUiError(error));
     }
@@ -1456,6 +1471,9 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
     try {
       await ref.read(voiceCallProvider.notifier).reject();
     } catch (error) {
+      if (!mounted) {
+        return;
+      }
       _dispatchVoiceCommandFailureSound(error, before: before);
       _showVoiceCallError(_formatUiError(error));
     }
@@ -1466,6 +1484,9 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
     try {
       await ref.read(voiceCallProvider.notifier).hangUp();
     } catch (error) {
+      if (!mounted) {
+        return;
+      }
       _dispatchVoiceCommandFailureSound(error, before: before);
       _showVoiceCallError(_formatUiError(error));
     }
@@ -1475,10 +1496,16 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
     final nextMuted = !call.isMuted;
     try {
       await ref.read(voiceCallProvider.notifier).setMuted(nextMuted);
+      if (!mounted) {
+        return;
+      }
       _dispatchSoundEvent(
         nextMuted ? _callControlMuteEvent(call) : _callControlUnmuteEvent(call),
       );
     } catch (error) {
+      if (!mounted) {
+        return;
+      }
       _dispatchVoiceCommandFailureSound(error, before: call);
       _showVoiceCallError(_formatUiError(error));
     }
@@ -1488,12 +1515,18 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
     final nextDeafened = !call.isDeafened;
     try {
       await ref.read(voiceCallProvider.notifier).setDeafened(nextDeafened);
+      if (!mounted) {
+        return;
+      }
       _dispatchSoundEvent(
         nextDeafened
             ? _callControlDeafenEvent(call)
             : _callControlUndeafenEvent(call),
       );
     } catch (error) {
+      if (!mounted) {
+        return;
+      }
       _dispatchVoiceCommandFailureSound(error, before: call);
       _showVoiceCallError(_formatUiError(error));
     }
@@ -1503,12 +1536,18 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
     final nextMuted = !call.isCameraMuted;
     try {
       await ref.read(voiceCallProvider.notifier).setCameraMuted(nextMuted);
+      if (!mounted) {
+        return;
+      }
       _dispatchSoundEvent(
         nextMuted
             ? _callControlCameraMuteEvent(call)
             : _callControlCameraUnmuteEvent(call),
       );
     } catch (error) {
+      if (!mounted) {
+        return;
+      }
       _dispatchVoiceCommandFailureSound(error, before: call);
       _showVoiceCallError(_formatUiError(error));
     }
@@ -1518,8 +1557,14 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
     final before = ref.read(voiceCallProvider);
     try {
       await ref.read(voiceCallProvider.notifier).switchCamera();
+      if (!mounted) {
+        return;
+      }
       _dispatchSoundEvent(_callControlRouteChangedEvent(before));
     } catch (error) {
+      if (!mounted) {
+        return;
+      }
       _dispatchVoiceCommandFailureSound(error, before: before);
       _showVoiceCallError(_formatUiError(error));
     }
@@ -1529,14 +1574,26 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
     final before = ref.read(voiceCallProvider);
     try {
       if (!await _isVoiceOutputTargetAvailable(target)) {
+        if (!mounted) {
+          return;
+        }
         _showVoiceCallError(_outputTargetUnavailableMessage(target));
+        return;
+      }
+      if (!mounted) {
         return;
       }
       await ref
           .read(voiceCallProvider.notifier)
           .setOutputTarget(target, label: _outputTargetLabel(target));
+      if (!mounted) {
+        return;
+      }
       _dispatchSoundEvent(_callControlRouteChangedEvent(before));
     } catch (error) {
+      if (!mounted) {
+        return;
+      }
       _dispatchVoiceCommandFailureSound(error, before: before);
       _showVoiceCallError(_formatUiError(error));
     }
@@ -1622,6 +1679,9 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
   }
 
   Future<void> _stopVoiceCallLoopsBeforeAccept() async {
+    if (!mounted) {
+      return;
+    }
     try {
       await ref.read(soundEventRouterProvider).stopAllLoops();
     } catch (error) {
@@ -1630,6 +1690,9 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
   }
 
   void _dispatchSoundEvent(RainSoundEvent event) {
+    if (!mounted) {
+      return;
+    }
     _dispatchRainSoundEvent(ref, event);
   }
 
@@ -1637,6 +1700,9 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
     Object error, {
     VoiceCallState? before,
   }) {
+    if (!mounted) {
+      return;
+    }
     _dispatchVoiceCommandFailureSoundForRef(ref, error, before: before);
   }
 
