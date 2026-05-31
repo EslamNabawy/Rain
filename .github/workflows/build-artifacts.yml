@@ -35,12 +35,104 @@ concurrency:
 
 env:
   FLUTTER_VERSION: '3.44.0'
+  JAVA_VERSION: '21'
+  NODE_VERSION: '20'
   BUILD_PROFILE: ${{ github.event_name == 'workflow_dispatch' && inputs.build_profile || 'demo' }}
 
 jobs:
+  hard-release-gate:
+    name: Hard Release Gate
+    runs-on: ubuntu-latest
+    timeout-minutes: 150
+    steps:
+      - uses: actions/checkout@v5
+        with:
+          fetch-depth: 0
+
+      - uses: actions/setup-java@v5
+        with:
+          distribution: temurin
+          java-version: ${{ env.JAVA_VERSION }}
+
+      - uses: actions/setup-node@v6
+        with:
+          node-version: ${{ env.NODE_VERSION }}
+          cache: npm
+          cache-dependency-path: backend/firebase/functions/package-lock.json
+
+      - uses: subosito/flutter-action@v2
+        with:
+          flutter-version: ${{ env.FLUTTER_VERSION }}
+          channel: stable
+          cache: true
+
+      - name: Print toolchain versions
+        run: |
+          flutter doctor -v
+          flutter --version
+          dart --version
+          node --version
+          npm --version
+
+      - name: Restore workspace dependencies
+        run: dart pub get
+
+      - name: Fail on dependency lock drift
+        run: git diff --exit-code -- pubspec.lock
+
+      - name: Enforce Dart formatting
+        run: |
+          dart format --output=none --set-exit-if-changed \
+            apps/rain/lib \
+            apps/rain/test \
+            apps/rain/tool \
+            packages/peer_core/lib \
+            packages/peer_core/test \
+            packages/protocol_brain/lib \
+            packages/protocol_brain/test \
+            packages/rain_core/lib \
+            packages/rain_core/test
+
+      - name: Require generated code artifacts
+        run: |
+          test -s apps/rain/lib/application/state/app_state.freezed.dart
+          test -s packages/rain_core/lib/database/rain_database.g.dart
+
+      - name: Run workspace analyzer
+        run: dart run melos run analyze
+
+      - name: Run full workspace tests
+        run: dart run melos run test
+
+      - name: Validate Firebase JSON files
+        run: |
+          node -e "JSON.parse(require('fs').readFileSync('backend/firebase/firebase.json', 'utf8'))"
+          node -e "JSON.parse(require('fs').readFileSync('backend/firebase/database.rules.json', 'utf8'))"
+
+      - name: Install Firebase function dependencies
+        working-directory: backend/firebase/functions
+        run: npm ci --ignore-scripts --no-audit
+
+      - name: Lint Firebase functions
+        working-directory: backend/firebase/functions
+        run: npm run lint
+
+      - name: Audit Firebase functions dependencies
+        working-directory: backend/firebase/functions
+        run: npm run audit:moderate
+
+      - name: Run Firebase function tests
+        working-directory: backend/firebase/functions
+        run: npm test --if-present
+
+      - name: Run Firebase emulator integration tests
+        run: bash scripts/ci_run_firebase_emulators.sh
+
   build-windows:
     name: Build Windows
     runs-on: windows-2022
+    needs:
+      - hard-release-gate
     if: ${{ github.event_name != 'workflow_dispatch' || inputs.platform == 'all' || inputs.platform == 'windows' }}
     timeout-minutes: 60
     steps:
@@ -137,6 +229,8 @@ jobs:
   build-android:
     name: Build Android APKs
     runs-on: windows-2022
+    needs:
+      - hard-release-gate
     if: ${{ github.event_name != 'workflow_dispatch' || inputs.platform == 'all' || inputs.platform == 'android' }}
     timeout-minutes: 90
     steps:
