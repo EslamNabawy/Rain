@@ -40,10 +40,7 @@ class RainCallEndedSurface extends StatelessWidget {
         key: const ValueKey<String>('rain-call-ended-fullscreen-surface'),
         color: scheme.surface,
         child: SafeArea(
-          child: Padding(
-            padding: const EdgeInsets.all(18),
-            child: content,
-          ),
+          child: Padding(padding: const EdgeInsets.all(18), child: content),
         ),
       );
     }
@@ -52,10 +49,7 @@ class RainCallEndedSurface extends StatelessWidget {
       ignoring: false,
       child: Center(
         key: const ValueKey<String>('rain-call-ended-popup-surface'),
-        child: Padding(
-          padding: const EdgeInsets.all(16),
-          child: content,
-        ),
+        child: Padding(padding: const EdgeInsets.all(16), child: content),
       ),
     );
   }
@@ -75,13 +69,17 @@ class _EndedCallCard extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final scheme = Theme.of(context).colorScheme;
-    final mediaLabel = summary.isVideo ? 'Video call ended' : 'Voice call ended';
+    final mediaLabel = summary.isVideo
+        ? 'Video call ended'
+        : 'Voice call ended';
     final initiatorLabel = switch (summary.initiator) {
       CallEndInitiator.local => 'Ended by you',
       CallEndInitiator.remote => 'Ended by ${summary.peerLabel}',
       CallEndInitiator.system => 'Ended by Rain',
     };
-    final reason = summary.reason.trim().isEmpty ? 'Call ended.' : summary.reason;
+    final reason = summary.reason.trim().isEmpty
+        ? 'Call ended.'
+        : summary.reason;
     return Material(
       color: Colors.transparent,
       child: DecoratedBox(
@@ -111,9 +109,9 @@ class _EndedCallCard extends StatelessWidget {
               Text(
                 mediaLabel,
                 textAlign: TextAlign.center,
-                style: Theme.of(context).textTheme.titleLarge?.copyWith(
-                  fontWeight: FontWeight.w900,
-                ),
+                style: Theme.of(
+                  context,
+                ).textTheme.titleLarge?.copyWith(fontWeight: FontWeight.w900),
               ),
               const SizedBox(height: 6),
               Text(
@@ -137,10 +135,7 @@ class _EndedCallCard extends StatelessWidget {
                 label: initiatorLabel,
               ),
               const SizedBox(height: 8),
-              _EndedCallInfoRow(
-                icon: Icons.info_outline,
-                label: reason,
-              ),
+              _EndedCallInfoRow(icon: Icons.info_outline, label: reason),
               const SizedBox(height: 20),
               Row(
                 children: <Widget>[
@@ -173,10 +168,7 @@ class _EndedCallCard extends StatelessWidget {
 }
 
 class _EndedCallInfoRow extends StatelessWidget {
-  const _EndedCallInfoRow({
-    required this.icon,
-    required this.label,
-  });
+  const _EndedCallInfoRow({required this.icon, required this.label});
 
   final IconData icon;
   final String label;
