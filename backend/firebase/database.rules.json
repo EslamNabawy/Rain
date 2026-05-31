@@ -177,7 +177,7 @@
         },
         "offer": {
           ".write": "auth != null && !root.child('security/blockedUids/' + auth.uid).exists() && root.child('rooms/' + $roomId).exists() && root.child('users/' + root.child('rooms/' + $roomId + '/userA').val() + '/uid').val() === auth.uid",
-          ".validate": "!newData.exists() || (newData.hasChildren(['v', 'alg', 'ts', 'nonce', 'ciphertext', 'mac']) && newData.child('v').isNumber() && newData.child('v').val() === 1 && newData.child('alg').isString() && newData.child('alg').val() === 'A256GCM-HKDF-SHA256' && newData.child('ts').isNumber() && newData.child('nonce').isString() && newData.child('nonce').val().length > 0 && newData.child('nonce').val().length <= 96 && newData.child('ciphertext').isString() && newData.child('ciphertext').val().length > 0 && newData.child('ciphertext').val().length <= 262144 && newData.child('mac').isString() && newData.child('mac').val().length > 0 && newData.child('mac').val().length <= 96)",
+          ".validate": "!newData.exists() || (newData.hasChildren(['v', 'alg', 'ts', 'from', 'to', 'nonce', 'ciphertext', 'mac']) && newData.child('v').isNumber() && newData.child('v').val() === 1 && newData.child('alg').isString() && newData.child('alg').val() === 'A256GCM-HKDF-SHA256' && newData.child('ts').isNumber() && newData.child('from').isString() && newData.child('from').val() === newData.parent().child('userA').val() && newData.child('to').isString() && newData.child('to').val() === newData.parent().child('userB').val() && newData.child('nonce').isString() && newData.child('nonce').val().length > 0 && newData.child('nonce').val().length <= 96 && newData.child('ciphertext').isString() && newData.child('ciphertext').val().length > 0 && newData.child('ciphertext').val().length <= 262144 && newData.child('mac').isString() && newData.child('mac').val().length > 0 && newData.child('mac').val().length <= 96)",
           "v": {
             ".validate": "newData.isNumber() && newData.val() === 1"
           },
@@ -186,6 +186,12 @@
           },
           "ts": {
             ".validate": "newData.isNumber()"
+          },
+          "from": {
+            ".validate": "newData.isString()"
+          },
+          "to": {
+            ".validate": "newData.isString()"
           },
           "nonce": {
             ".validate": "newData.isString()"
@@ -202,7 +208,7 @@
         },
         "answer": {
           ".write": "auth != null && !root.child('security/blockedUids/' + auth.uid).exists() && root.child('rooms/' + $roomId).exists() && root.child('users/' + root.child('rooms/' + $roomId + '/userB').val() + '/uid').val() === auth.uid",
-          ".validate": "!newData.exists() || (newData.hasChildren(['v', 'alg', 'ts', 'nonce', 'ciphertext', 'mac']) && newData.child('v').isNumber() && newData.child('v').val() === 1 && newData.child('alg').isString() && newData.child('alg').val() === 'A256GCM-HKDF-SHA256' && newData.child('ts').isNumber() && newData.child('nonce').isString() && newData.child('nonce').val().length > 0 && newData.child('nonce').val().length <= 96 && newData.child('ciphertext').isString() && newData.child('ciphertext').val().length > 0 && newData.child('ciphertext').val().length <= 262144 && newData.child('mac').isString() && newData.child('mac').val().length > 0 && newData.child('mac').val().length <= 96)",
+          ".validate": "!newData.exists() || (newData.hasChildren(['v', 'alg', 'ts', 'from', 'to', 'nonce', 'ciphertext', 'mac']) && newData.child('v').isNumber() && newData.child('v').val() === 1 && newData.child('alg').isString() && newData.child('alg').val() === 'A256GCM-HKDF-SHA256' && newData.child('ts').isNumber() && newData.child('from').isString() && newData.child('from').val() === newData.parent().child('userB').val() && newData.child('to').isString() && newData.child('to').val() === newData.parent().child('userA').val() && newData.child('nonce').isString() && newData.child('nonce').val().length > 0 && newData.child('nonce').val().length <= 96 && newData.child('ciphertext').isString() && newData.child('ciphertext').val().length > 0 && newData.child('ciphertext').val().length <= 262144 && newData.child('mac').isString() && newData.child('mac').val().length > 0 && newData.child('mac').val().length <= 96)",
           "v": {
             ".validate": "newData.isNumber() && newData.val() === 1"
           },
@@ -211,6 +217,12 @@
           },
           "ts": {
             ".validate": "newData.isNumber()"
+          },
+          "from": {
+            ".validate": "newData.isString()"
+          },
+          "to": {
+            ".validate": "newData.isString()"
           },
           "nonce": {
             ".validate": "newData.isString()"
@@ -228,7 +240,7 @@
         "callerICE": {
           "$candidateId": {
             ".write": "auth != null && !root.child('security/blockedUids/' + auth.uid).exists() && root.child('rooms/' + $roomId).exists() && root.child('users/' + root.child('rooms/' + $roomId + '/userA').val() + '/uid').val() === auth.uid",
-            ".validate": "!newData.exists() || (newData.hasChildren(['v', 'alg', 'ts', 'nonce', 'ciphertext', 'mac']) && newData.child('v').isNumber() && newData.child('v').val() === 1 && newData.child('alg').isString() && newData.child('alg').val() === 'A256GCM-HKDF-SHA256' && newData.child('ts').isNumber() && newData.child('nonce').isString() && newData.child('nonce').val().length > 0 && newData.child('nonce').val().length <= 96 && newData.child('ciphertext').isString() && newData.child('ciphertext').val().length > 0 && newData.child('ciphertext').val().length <= 32768 && newData.child('mac').isString() && newData.child('mac').val().length > 0 && newData.child('mac').val().length <= 96)",
+            ".validate": "!newData.exists() || (newData.hasChildren(['v', 'alg', 'ts', 'from', 'to', 'nonce', 'ciphertext', 'mac']) && newData.child('v').isNumber() && newData.child('v').val() === 1 && newData.child('alg').isString() && newData.child('alg').val() === 'A256GCM-HKDF-SHA256' && newData.child('ts').isNumber() && newData.child('from').isString() && newData.child('from').val() === newData.parent().parent().child('userA').val() && newData.child('to').isString() && newData.child('to').val() === newData.parent().parent().child('userB').val() && newData.child('nonce').isString() && newData.child('nonce').val().length > 0 && newData.child('nonce').val().length <= 96 && newData.child('ciphertext').isString() && newData.child('ciphertext').val().length > 0 && newData.child('ciphertext').val().length <= 32768 && newData.child('mac').isString() && newData.child('mac').val().length > 0 && newData.child('mac').val().length <= 96)",
             "v": {
               ".validate": "newData.isNumber() && newData.val() === 1"
             },
@@ -237,6 +249,12 @@
             },
             "ts": {
               ".validate": "newData.isNumber()"
+            },
+            "from": {
+              ".validate": "newData.isString()"
+            },
+            "to": {
+              ".validate": "newData.isString()"
             },
             "nonce": {
               ".validate": "newData.isString()"
@@ -255,7 +273,7 @@
         "calleeICE": {
           "$candidateId": {
             ".write": "auth != null && !root.child('security/blockedUids/' + auth.uid).exists() && root.child('rooms/' + $roomId).exists() && root.child('users/' + root.child('rooms/' + $roomId + '/userB').val() + '/uid').val() === auth.uid",
-            ".validate": "!newData.exists() || (newData.hasChildren(['v', 'alg', 'ts', 'nonce', 'ciphertext', 'mac']) && newData.child('v').isNumber() && newData.child('v').val() === 1 && newData.child('alg').isString() && newData.child('alg').val() === 'A256GCM-HKDF-SHA256' && newData.child('ts').isNumber() && newData.child('nonce').isString() && newData.child('nonce').val().length > 0 && newData.child('nonce').val().length <= 96 && newData.child('ciphertext').isString() && newData.child('ciphertext').val().length > 0 && newData.child('ciphertext').val().length <= 32768 && newData.child('mac').isString() && newData.child('mac').val().length > 0 && newData.child('mac').val().length <= 96)",
+            ".validate": "!newData.exists() || (newData.hasChildren(['v', 'alg', 'ts', 'from', 'to', 'nonce', 'ciphertext', 'mac']) && newData.child('v').isNumber() && newData.child('v').val() === 1 && newData.child('alg').isString() && newData.child('alg').val() === 'A256GCM-HKDF-SHA256' && newData.child('ts').isNumber() && newData.child('from').isString() && newData.child('from').val() === newData.parent().parent().child('userB').val() && newData.child('to').isString() && newData.child('to').val() === newData.parent().parent().child('userA').val() && newData.child('nonce').isString() && newData.child('nonce').val().length > 0 && newData.child('nonce').val().length <= 96 && newData.child('ciphertext').isString() && newData.child('ciphertext').val().length > 0 && newData.child('ciphertext').val().length <= 32768 && newData.child('mac').isString() && newData.child('mac').val().length > 0 && newData.child('mac').val().length <= 96)",
             "v": {
               ".validate": "newData.isNumber() && newData.val() === 1"
             },
@@ -264,6 +282,12 @@
             },
             "ts": {
               ".validate": "newData.isNumber()"
+            },
+            "from": {
+              ".validate": "newData.isString()"
+            },
+            "to": {
+              ".validate": "newData.isString()"
             },
             "nonce": {
               ".validate": "newData.isString()"
@@ -457,7 +481,7 @@
         },
         "offer": {
           ".write": "auth != null && root.child('voiceCalls/' + $callId).exists() && root.child('users/' + root.child('voiceCalls/' + $callId + '/caller').val() + '/uid').val() === auth.uid && (root.child('voiceCalls/' + $callId + '/status').val() === 'accepted' || root.child('voiceCalls/' + $callId + '/status').val() === 'negotiating')",
-          ".validate": "!newData.exists() || (newData.hasChildren(['v', 'alg', 'ts', 'nonce', 'ciphertext', 'mac']) && newData.child('v').isNumber() && newData.child('v').val() === 1 && newData.child('alg').isString() && newData.child('alg').val() === 'A256GCM-HKDF-SHA256' && newData.child('ts').isNumber() && newData.child('nonce').isString() && newData.child('nonce').val().length > 0 && newData.child('nonce').val().length <= 96 && newData.child('ciphertext').isString() && newData.child('ciphertext').val().length > 0 && newData.child('ciphertext').val().length <= 262144 && newData.child('mac').isString() && newData.child('mac').val().length > 0 && newData.child('mac').val().length <= 96)",
+          ".validate": "!newData.exists() || (newData.hasChildren(['v', 'alg', 'ts', 'from', 'to', 'nonce', 'ciphertext', 'mac']) && newData.child('v').isNumber() && newData.child('v').val() === 1 && newData.child('alg').isString() && newData.child('alg').val() === 'A256GCM-HKDF-SHA256' && newData.child('ts').isNumber() && newData.child('from').isString() && newData.child('from').val() === newData.parent().child('caller').val() && newData.child('to').isString() && newData.child('to').val() === newData.parent().child('callee').val() && newData.child('nonce').isString() && newData.child('nonce').val().length > 0 && newData.child('nonce').val().length <= 96 && newData.child('ciphertext').isString() && newData.child('ciphertext').val().length > 0 && newData.child('ciphertext').val().length <= 262144 && newData.child('mac').isString() && newData.child('mac').val().length > 0 && newData.child('mac').val().length <= 96)",
           "v": {
             ".validate": "newData.isNumber() && newData.val() === 1"
           },
@@ -466,6 +490,12 @@
           },
           "ts": {
             ".validate": "newData.isNumber()"
+          },
+          "from": {
+            ".validate": "newData.isString()"
+          },
+          "to": {
+            ".validate": "newData.isString()"
           },
           "nonce": {
             ".validate": "newData.isString()"
@@ -482,7 +512,7 @@
         },
         "answer": {
           ".write": "auth != null && root.child('voiceCalls/' + $callId).exists() && root.child('users/' + root.child('voiceCalls/' + $callId + '/callee').val() + '/uid').val() === auth.uid && root.child('voiceCalls/' + $callId + '/status').val() === 'negotiating' && root.child('voiceCalls/' + $callId + '/offer').exists()",
-          ".validate": "!newData.exists() || (newData.hasChildren(['v', 'alg', 'ts', 'nonce', 'ciphertext', 'mac']) && newData.child('v').isNumber() && newData.child('v').val() === 1 && newData.child('alg').isString() && newData.child('alg').val() === 'A256GCM-HKDF-SHA256' && newData.child('ts').isNumber() && newData.child('nonce').isString() && newData.child('nonce').val().length > 0 && newData.child('nonce').val().length <= 96 && newData.child('ciphertext').isString() && newData.child('ciphertext').val().length > 0 && newData.child('ciphertext').val().length <= 262144 && newData.child('mac').isString() && newData.child('mac').val().length > 0 && newData.child('mac').val().length <= 96)",
+          ".validate": "!newData.exists() || (newData.hasChildren(['v', 'alg', 'ts', 'from', 'to', 'nonce', 'ciphertext', 'mac']) && newData.child('v').isNumber() && newData.child('v').val() === 1 && newData.child('alg').isString() && newData.child('alg').val() === 'A256GCM-HKDF-SHA256' && newData.child('ts').isNumber() && newData.child('from').isString() && newData.child('from').val() === newData.parent().child('callee').val() && newData.child('to').isString() && newData.child('to').val() === newData.parent().child('caller').val() && newData.child('nonce').isString() && newData.child('nonce').val().length > 0 && newData.child('nonce').val().length <= 96 && newData.child('ciphertext').isString() && newData.child('ciphertext').val().length > 0 && newData.child('ciphertext').val().length <= 262144 && newData.child('mac').isString() && newData.child('mac').val().length > 0 && newData.child('mac').val().length <= 96)",
           "v": {
             ".validate": "newData.isNumber() && newData.val() === 1"
           },
@@ -491,6 +521,12 @@
           },
           "ts": {
             ".validate": "newData.isNumber()"
+          },
+          "from": {
+            ".validate": "newData.isString()"
+          },
+          "to": {
+            ".validate": "newData.isString()"
           },
           "nonce": {
             ".validate": "newData.isString()"
@@ -509,7 +545,7 @@
           "caller": {
             "$candidateId": {
               ".write": "auth != null && root.child('voiceCalls/' + $callId).exists() && root.child('users/' + root.child('voiceCalls/' + $callId + '/caller').val() + '/uid').val() === auth.uid && (root.child('voiceCalls/' + $callId + '/status').val() === 'accepted' || root.child('voiceCalls/' + $callId + '/status').val() === 'negotiating' || root.child('voiceCalls/' + $callId + '/status').val() === 'connected')",
-              ".validate": "!newData.exists() || (newData.hasChildren(['v', 'alg', 'ts', 'nonce', 'ciphertext', 'mac']) && newData.child('v').isNumber() && newData.child('v').val() === 1 && newData.child('alg').isString() && newData.child('alg').val() === 'A256GCM-HKDF-SHA256' && newData.child('ts').isNumber() && newData.child('nonce').isString() && newData.child('nonce').val().length > 0 && newData.child('nonce').val().length <= 96 && newData.child('ciphertext').isString() && newData.child('ciphertext').val().length > 0 && newData.child('ciphertext').val().length <= 32768 && newData.child('mac').isString() && newData.child('mac').val().length > 0 && newData.child('mac').val().length <= 96)",
+              ".validate": "!newData.exists() || (newData.hasChildren(['v', 'alg', 'ts', 'from', 'to', 'nonce', 'ciphertext', 'mac']) && newData.child('v').isNumber() && newData.child('v').val() === 1 && newData.child('alg').isString() && newData.child('alg').val() === 'A256GCM-HKDF-SHA256' && newData.child('ts').isNumber() && newData.child('from').isString() && newData.child('from').val() === newData.parent().parent().parent().child('caller').val() && newData.child('to').isString() && newData.child('to').val() === newData.parent().parent().parent().child('callee').val() && newData.child('nonce').isString() && newData.child('nonce').val().length > 0 && newData.child('nonce').val().length <= 96 && newData.child('ciphertext').isString() && newData.child('ciphertext').val().length > 0 && newData.child('ciphertext').val().length <= 32768 && newData.child('mac').isString() && newData.child('mac').val().length > 0 && newData.child('mac').val().length <= 96)",
               "v": {
                 ".validate": "newData.isNumber() && newData.val() === 1"
               },
@@ -518,6 +554,12 @@
               },
               "ts": {
                 ".validate": "newData.isNumber()"
+              },
+              "from": {
+                ".validate": "newData.isString()"
+              },
+              "to": {
+                ".validate": "newData.isString()"
               },
               "nonce": {
                 ".validate": "newData.isString()"
@@ -536,7 +578,7 @@
           "callee": {
             "$candidateId": {
               ".write": "auth != null && root.child('voiceCalls/' + $callId).exists() && root.child('users/' + root.child('voiceCalls/' + $callId + '/callee').val() + '/uid').val() === auth.uid && (root.child('voiceCalls/' + $callId + '/status').val() === 'accepted' || root.child('voiceCalls/' + $callId + '/status').val() === 'negotiating' || root.child('voiceCalls/' + $callId + '/status').val() === 'connected')",
-              ".validate": "!newData.exists() || (newData.hasChildren(['v', 'alg', 'ts', 'nonce', 'ciphertext', 'mac']) && newData.child('v').isNumber() && newData.child('v').val() === 1 && newData.child('alg').isString() && newData.child('alg').val() === 'A256GCM-HKDF-SHA256' && newData.child('ts').isNumber() && newData.child('nonce').isString() && newData.child('nonce').val().length > 0 && newData.child('nonce').val().length <= 96 && newData.child('ciphertext').isString() && newData.child('ciphertext').val().length > 0 && newData.child('ciphertext').val().length <= 32768 && newData.child('mac').isString() && newData.child('mac').val().length > 0 && newData.child('mac').val().length <= 96)",
+              ".validate": "!newData.exists() || (newData.hasChildren(['v', 'alg', 'ts', 'from', 'to', 'nonce', 'ciphertext', 'mac']) && newData.child('v').isNumber() && newData.child('v').val() === 1 && newData.child('alg').isString() && newData.child('alg').val() === 'A256GCM-HKDF-SHA256' && newData.child('ts').isNumber() && newData.child('from').isString() && newData.child('from').val() === newData.parent().parent().parent().child('callee').val() && newData.child('to').isString() && newData.child('to').val() === newData.parent().parent().parent().child('caller').val() && newData.child('nonce').isString() && newData.child('nonce').val().length > 0 && newData.child('nonce').val().length <= 96 && newData.child('ciphertext').isString() && newData.child('ciphertext').val().length > 0 && newData.child('ciphertext').val().length <= 32768 && newData.child('mac').isString() && newData.child('mac').val().length > 0 && newData.child('mac').val().length <= 96)",
               "v": {
                 ".validate": "newData.isNumber() && newData.val() === 1"
               },
@@ -545,6 +587,12 @@
               },
               "ts": {
                 ".validate": "newData.isNumber()"
+              },
+              "from": {
+                ".validate": "newData.isString()"
+              },
+              "to": {
+                ".validate": "newData.isString()"
               },
               "nonce": {
                 ".validate": "newData.isString()"

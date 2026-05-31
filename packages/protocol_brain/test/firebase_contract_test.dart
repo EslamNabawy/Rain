@@ -127,7 +127,21 @@ void main() {
     );
 
     expect(rules, contains('A256GCM-HKDF-SHA256'));
-    expect(rules, contains("'nonce', 'ciphertext', 'mac'"));
+    expect(rules, contains("'from', 'to', 'nonce', 'ciphertext', 'mac'"));
+    expect(rules, contains("newData.child('from').isString()"));
+    expect(rules, contains("newData.child('to').isString()"));
+    expect(
+      rules,
+      contains(
+        "newData.child('from').val() === newData.parent().child('userA').val()",
+      ),
+    );
+    expect(
+      rules,
+      contains(
+        "newData.child('to').val() === newData.parent().child('userB').val()",
+      ),
+    );
     expect(rules, contains("newData.child('ciphertext').isString()"));
     expect(rules, contains("newData.child('mac').isString()"));
     expect(rules, isNot(contains("newData.hasChildren(['sdp', 'ts'])")));
@@ -326,7 +340,19 @@ void main() {
     expect(rules, contains('"ice"'));
     expect(rules, contains('"caller"'));
     expect(rules, contains('"callee"'));
-    expect(rules, contains("'nonce', 'ciphertext', 'mac'"));
+    expect(rules, contains("'from', 'to', 'nonce', 'ciphertext', 'mac'"));
+    expect(
+      rules,
+      contains(
+        "newData.child('from').val() === newData.parent().child('caller').val()",
+      ),
+    );
+    expect(
+      rules,
+      contains(
+        "newData.child('to').val() === newData.parent().child('callee').val()",
+      ),
+    );
     expect(
       rules,
       contains("newData.child('ciphertext').val().length <= 262144"),

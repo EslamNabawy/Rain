@@ -1543,9 +1543,15 @@ class FirebaseEmulatorSignalingAdapter
     final text = await utf8.decodeStream(response);
     final decoded = text.isEmpty ? null : jsonDecode(text);
     if (response.statusCode >= 400) {
+      final requestBody = body == null ? '' : ' body=${jsonEncode(body)}';
+      final safeQueryParameters = Map<String, String>.from(uri.queryParameters);
+      if (safeQueryParameters.containsKey('auth')) {
+        safeQueryParameters['auth'] = '<redacted>';
+      }
+      final safeUri = uri.replace(queryParameters: safeQueryParameters);
       throw HttpException(
-        'HTTP ${response.statusCode} from $uri: ${decoded ?? text}',
-        uri: uri,
+        '$method HTTP ${response.statusCode} from $safeUri: ${decoded ?? text}$requestBody',
+        uri: safeUri,
       );
     }
     return decoded;

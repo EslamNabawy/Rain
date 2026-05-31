@@ -65,7 +65,12 @@ void main() {
         await adapterAlice.writeVoiceOffer(
           callId: callId,
           caller: alice,
-          offer: _envelope('encrypted-offer', createdAt + 2),
+          offer: _envelope(
+            'encrypted-offer',
+            createdAt + 2,
+            sender: alice,
+            receiver: bob,
+          ),
           updatedAt: createdAt + 2,
         );
         expect((await offerEvent).ciphertext, 'encrypted-offer');
@@ -74,7 +79,12 @@ void main() {
         await adapterBob.writeVoiceAnswer(
           callId: callId,
           callee: bob,
-          answer: _envelope('encrypted-answer', createdAt + 3),
+          answer: _envelope(
+            'encrypted-answer',
+            createdAt + 3,
+            sender: bob,
+            receiver: alice,
+          ),
           updatedAt: createdAt + 3,
         );
         expect((await answerEvent).ciphertext, 'encrypted-answer');
@@ -86,7 +96,12 @@ void main() {
           callId: callId,
           username: alice,
           role: VoiceCallRole.caller,
-          candidate: _envelope('encrypted-caller-ice', createdAt + 4),
+          candidate: _envelope(
+            'encrypted-caller-ice',
+            createdAt + 4,
+            sender: alice,
+            receiver: bob,
+          ),
           createdAt: createdAt + 4,
         );
         expect((await callerIce).envelope.ciphertext, 'encrypted-caller-ice');
@@ -98,7 +113,12 @@ void main() {
           callId: callId,
           username: bob,
           role: VoiceCallRole.callee,
-          candidate: _envelope('encrypted-callee-ice', createdAt + 5),
+          candidate: _envelope(
+            'encrypted-callee-ice',
+            createdAt + 5,
+            sender: bob,
+            receiver: alice,
+          ),
           createdAt: createdAt + 5,
         );
         expect((await calleeIce).envelope.ciphertext, 'encrypted-callee-ice');
@@ -198,13 +218,23 @@ void main() {
             'createdAt': createdAt,
             'updatedAt': createdAt,
             'expiresAt': expiresAt,
-            'offer': _rawEnvelope('offer', createdAt),
+            'offer': _rawEnvelope(
+              'offer',
+              createdAt,
+              sender: alice,
+              receiver: bob,
+            ),
           },
         );
         await adapterBob.patchRawForTest(
           <String>['rooms', roomId],
           <String, Object?>{
-            'answer': _rawEnvelope('answer', createdAt + 1),
+            'answer': _rawEnvelope(
+              'answer',
+              createdAt + 1,
+              sender: bob,
+              receiver: alice,
+            ),
             'updatedAt': createdAt + 1,
           },
         );
@@ -231,8 +261,18 @@ void main() {
               'createdAt': createdAt + 3,
               'updatedAt': createdAt + 3,
               'expiresAt': expiresAt + 3,
-              'offer': _rawEnvelope('new-offer', createdAt + 3),
-              'answer': _rawEnvelope('stale-answer', createdAt + 1),
+              'offer': _rawEnvelope(
+                'new-offer',
+                createdAt + 3,
+                sender: alice,
+                receiver: bob,
+              ),
+              'answer': _rawEnvelope(
+                'stale-answer',
+                createdAt + 1,
+                sender: bob,
+                receiver: alice,
+              ),
             },
           ),
         );
@@ -240,7 +280,12 @@ void main() {
           adapterBob.patchRawForTest(
             <String>['rooms', roomId],
             <String, Object?>{
-              'callerICE/bad': _rawEnvelope('caller-ice', createdAt + 4),
+              'callerICE/bad': _rawEnvelope(
+                'caller-ice',
+                createdAt + 4,
+                sender: bob,
+                receiver: alice,
+              ),
             },
           ),
         );
@@ -254,7 +299,12 @@ void main() {
             createdAt: createdAt + 10,
             expiresAt: expiresAt + 10,
             extra: <String, Object?>{
-              'offer': _rawEnvelope('offer', createdAt + 10),
+              'offer': _rawEnvelope(
+                'offer',
+                createdAt + 10,
+                sender: alice,
+                receiver: bob,
+              ),
             },
           ),
         );
@@ -267,7 +317,12 @@ void main() {
             createdAt: createdAt + 20,
             expiresAt: expiresAt + 20,
             extra: <String, Object?>{
-              'answer': _rawEnvelope('answer', createdAt + 20),
+              'answer': _rawEnvelope(
+                'answer',
+                createdAt + 20,
+                sender: bob,
+                receiver: alice,
+              ),
             },
           ),
         );
@@ -282,7 +337,12 @@ void main() {
             extra: <String, Object?>{
               'ice': <String, Object?>{
                 'callee': <String, Object?>{
-                  'bad': _rawEnvelope('callee-ice', createdAt + 30),
+                  'bad': _rawEnvelope(
+                    'callee-ice',
+                    createdAt + 30,
+                    sender: bob,
+                    receiver: alice,
+                  ),
                 },
               },
             },
@@ -364,33 +424,48 @@ void main() {
           acceptedAt: createdAt + 72,
         );
         await _expectDenied(
-          adapterBob.putRawForTest(<String>[
-            'voiceCalls',
-            callId,
-            'offer',
-          ], _rawEnvelope('callee-offer', createdAt + 73)),
+          adapterBob.putRawForTest(
+            <String>['voiceCalls', callId, 'offer'],
+            _rawEnvelope(
+              'callee-offer',
+              createdAt + 73,
+              sender: bob,
+              receiver: alice,
+            ),
+          ),
         );
         await adapterAlice.writeVoiceOffer(
           callId: callId,
           caller: alice,
-          offer: _envelope('caller-offer', createdAt + 74),
+          offer: _envelope(
+            'caller-offer',
+            createdAt + 74,
+            sender: alice,
+            receiver: bob,
+          ),
           updatedAt: createdAt + 74,
         );
         await _expectDenied(
-          adapterAlice.putRawForTest(<String>[
-            'voiceCalls',
-            callId,
-            'answer',
-          ], _rawEnvelope('caller-answer', createdAt + 75)),
+          adapterAlice.putRawForTest(
+            <String>['voiceCalls', callId, 'answer'],
+            _rawEnvelope(
+              'caller-answer',
+              createdAt + 75,
+              sender: alice,
+              receiver: bob,
+            ),
+          ),
         );
         await _expectDenied(
-          adapterBob.putRawForTest(<String>[
-            'voiceCalls',
-            callId,
-            'ice',
-            'caller',
-            'bad',
-          ], _rawEnvelope('callee-as-caller-ice', createdAt + 76)),
+          adapterBob.putRawForTest(
+            <String>['voiceCalls', callId, 'ice', 'caller', 'bad'],
+            _rawEnvelope(
+              'callee-as-caller-ice',
+              createdAt + 76,
+              sender: bob,
+              receiver: alice,
+            ),
+          ),
         );
       } finally {
         await adapterAlice.dispose();
@@ -528,18 +603,32 @@ Map<String, Object?> _voiceInboxJson({
   };
 }
 
-Map<String, Object?> _rawEnvelope(String ciphertext, int timestamp) {
+Map<String, Object?> _rawEnvelope(
+  String ciphertext,
+  int timestamp, {
+  required String sender,
+  required String receiver,
+}) {
   return _envelope(
     ciphertext,
     timestamp,
+    sender: sender,
+    receiver: receiver,
   ).toJson(maxCiphertextLength: VoiceSignalingEnvelope.maxSdpCiphertextLength);
 }
 
-VoiceSignalingEnvelope _envelope(String ciphertext, int timestamp) {
+VoiceSignalingEnvelope _envelope(
+  String ciphertext,
+  int timestamp, {
+  required String sender,
+  required String receiver,
+}) {
   return VoiceSignalingEnvelope(
     v: VoiceSignalingEnvelope.version,
     alg: VoiceSignalingEnvelope.algorithmName,
     ts: timestamp,
+    sender: sender,
+    receiver: receiver,
     nonce: 'nonce-$timestamp',
     ciphertext: ciphertext,
     mac: 'mac-$timestamp',
