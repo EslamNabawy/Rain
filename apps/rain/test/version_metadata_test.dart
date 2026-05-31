@@ -32,6 +32,36 @@ void main() {
     }
   });
 
+  test('remote config template advertises current app build or newer', () {
+    final match = _pubspecVersionMatch()!;
+    final version = '${match.group(1)}.${match.group(2)}.${match.group(3)}';
+    final build = int.parse(match.group(4)!);
+    final raw = File(
+      '../../backend/firebase/remoteconfig.template.json',
+    ).readAsStringSync();
+    final template = jsonDecode(raw) as Map<String, dynamic>;
+    final parameters = template['parameters'] as Map<String, dynamic>;
+    final manifestValue =
+        ((parameters['rain_release_manifest_v1']
+                    as Map<String, dynamic>)['defaultValue']
+                as Map<String, dynamic>)['value']
+            as String;
+    final manifest = jsonDecode(manifestValue) as Map<String, dynamic>;
+    final channels = manifest['channels'] as Map<String, dynamic>;
+
+    for (final channel in <String>['stable', 'demo']) {
+      final platforms = channels[channel] as Map<String, dynamic>;
+      for (final platform in <String>['android', 'windows']) {
+        final policy = platforms[platform] as Map<String, dynamic>;
+
+        expect(policy['latestVersion'], version);
+        expect(policy['latestBuild'], greaterThanOrEqualTo(build));
+        expect(policy['minimumVersion'], version);
+        expect(policy['minimumBuild'], greaterThanOrEqualTo(build));
+      }
+    }
+  });
+
   test('demo dart defines declare demo update channel', () {
     final raw = File('tool/dart_defines.example.json').readAsStringSync();
     final json = jsonDecode(raw) as Map<String, dynamic>;

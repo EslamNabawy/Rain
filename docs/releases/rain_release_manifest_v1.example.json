@@ -3,42 +3,42 @@
   "channels": {
     "stable": {
       "android": {
-        "latestVersion": "1.0.2",
-        "latestBuild": 3,
-        "minimumVersion": "1.0.0",
-        "minimumBuild": 1,
+        "latestVersion": "1.0.3",
+        "latestBuild": 4,
+        "minimumVersion": "1.0.3",
+        "minimumBuild": 4,
         "updateUrl": "https://github.com/EslamNabawy/Rain/releases",
-        "notes": "Permission, update install, and free-tier connection fixes.",
-        "publishedAt": 1770000000000
+        "notes": "Firebase signaling permission and update visibility fixes.",
+        "publishedAt": 1780192990349
       },
       "windows": {
-        "latestVersion": "1.0.2",
-        "latestBuild": 3,
-        "minimumVersion": "1.0.0",
-        "minimumBuild": 1,
+        "latestVersion": "1.0.3",
+        "latestBuild": 4,
+        "minimumVersion": "1.0.3",
+        "minimumBuild": 4,
         "updateUrl": "https://github.com/EslamNabawy/Rain/releases",
-        "notes": "Permission, update install, and free-tier connection fixes.",
-        "publishedAt": 1770000000000
+        "notes": "Firebase signaling permission and update visibility fixes.",
+        "publishedAt": 1780192990349
       }
     },
     "demo": {
       "android": {
-        "latestVersion": "1.0.2",
-        "latestBuild": 3,
-        "minimumVersion": "1.0.0",
-        "minimumBuild": 1,
+        "latestVersion": "1.0.3",
+        "latestBuild": 4,
+        "minimumVersion": "1.0.3",
+        "minimumBuild": 4,
         "updateUrl": "https://github.com/EslamNabawy/Rain/releases",
-        "notes": "Permission, update install, and free-tier connection fixes.",
-        "publishedAt": 1770000000000
+        "notes": "Firebase signaling permission and update visibility fixes.",
+        "publishedAt": 1780192990349
       },
       "windows": {
-        "latestVersion": "1.0.2",
-        "latestBuild": 3,
-        "minimumVersion": "1.0.0",
-        "minimumBuild": 1,
+        "latestVersion": "1.0.3",
+        "latestBuild": 4,
+        "minimumVersion": "1.0.3",
+        "minimumBuild": 4,
         "updateUrl": "https://github.com/EslamNabawy/Rain/releases",
-        "notes": "Permission, update install, and free-tier connection fixes.",
-        "publishedAt": 1770000000000
+        "notes": "Firebase signaling permission and update visibility fixes.",
+        "publishedAt": 1780192990349
       }
     }
   }
