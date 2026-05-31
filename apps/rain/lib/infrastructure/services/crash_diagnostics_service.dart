@@ -399,18 +399,36 @@ class CrashDiagnosticsService {
       return const CrashDiagnosticsExportResult.canceled();
     }
 
-    final destination = File(destinationPath);
-    try {
-      if (!await destination.exists() || await destination.length() == 0) {
-        await destination.parent.create(recursive: true);
-        await destination.writeAsBytes(bytes, flush: true);
+    final destination = _fileFromPickerPath(destinationPath);
+    if (destination != null) {
+      try {
+        if (!await destination.exists() || await destination.length() == 0) {
+          await destination.parent.create(recursive: true);
+          await destination.writeAsBytes(bytes, flush: true);
+        }
+      } on FileSystemException {
+        throw StateError(
+          'Could not export diagnostics. Choose another location.',
+        );
       }
-    } on FileSystemException {
-      throw StateError(
-        'Could not export diagnostics. Choose another location.',
-      );
     }
-    return CrashDiagnosticsExportResult.saved(destination.path);
+    return CrashDiagnosticsExportResult.saved(
+      destination?.path ?? destinationPath,
+    );
+  }
+
+  File? _fileFromPickerPath(String path) {
+    if (RegExp(r'^[a-zA-Z]:[\\/]').hasMatch(path)) {
+      return File(path);
+    }
+    final parsed = Uri.tryParse(path);
+    if (parsed != null && parsed.hasScheme) {
+      if (parsed.isScheme('file')) {
+        return File.fromUri(parsed);
+      }
+      return null;
+    }
+    return File(path);
   }
 
   Future<void> _initialize() async {

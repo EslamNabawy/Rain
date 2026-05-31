@@ -1588,6 +1588,10 @@ class _ChatPanelState extends ConsumerState<_ChatPanel> {
       await _connectDirectlyToPeer();
       return;
     }
+    if (friend?.isOnline == true) {
+      await _connectDirectlyToPeer(allowStalePresence: true);
+      return;
+    }
 
     await _sendOfflineConnectionRequest(friend: friend);
   }
@@ -1650,7 +1654,7 @@ class _ChatPanelState extends ConsumerState<_ChatPanel> {
     }
   }
 
-  Future<void> _connectDirectlyToPeer() async {
+  Future<void> _connectDirectlyToPeer({bool allowStalePresence = false}) async {
     setState(() => _isConnecting = true);
     try {
       final connection = ref.read(connectionsProvider).peer(widget.peerId);
@@ -1663,6 +1667,7 @@ class _ChatPanelState extends ConsumerState<_ChatPanel> {
             widget.peerId,
             waitForConnected: true,
             manualRetry: retryFailedConnection,
+            allowStalePresence: allowStalePresence,
           );
       _dispatchSoundEvent(rainUiActionSoundEvent());
       _showInfoSnack('Connected to @${widget.peerId}.');
@@ -1690,7 +1695,10 @@ class _ChatPanelState extends ConsumerState<_ChatPanel> {
 
   bool _isOfflineConnectionError(Object error) {
     final normalized = error.toString().toLowerCase();
-    return normalized.contains('offline. keep both apps open');
+    return normalized.contains('offline. keep both apps open') ||
+        normalized.contains('timed out. ask them to keep rain open') ||
+        (normalized.contains('connection to @') &&
+            normalized.contains('timed out'));
   }
 
   Future<bool?> _confirmOfflineConnectionRequest(

@@ -578,6 +578,43 @@ void main() {
     expect(result.saved, isFalse);
     expect(result.path, isNull);
   });
+
+  test(
+    'export accepts platform-managed picker paths without filesystem fallback',
+    () async {
+      final temp = await Directory.systemTemp.createTemp(
+        'rain-crash-diagnostics-content-uri-test-',
+      );
+      addTearDown(() => temp.delete(recursive: true));
+
+      const destinationUri =
+          'content://com.android.providers.downloads.documents/document/rain';
+      var pickerReceivedBytes = false;
+      final service = CrashDiagnosticsService(
+        directoryProvider: () async => temp,
+        saveFile:
+            ({
+              String? dialogTitle,
+              String? fileName,
+              String? initialDirectory,
+              FileType type = FileType.any,
+              List<String>? allowedExtensions,
+              Uint8List? bytes,
+              bool lockParentWindow = false,
+            }) async {
+              pickerReceivedBytes = bytes != null && bytes.isNotEmpty;
+              return destinationUri;
+            },
+      );
+
+      await service.initialize();
+      final result = await service.exportDiagnostics();
+
+      expect(pickerReceivedBytes, isTrue);
+      expect(result.saved, isTrue);
+      expect(result.path, destinationUri);
+    },
+  );
 }
 
 String _join(String parent, String child) {
