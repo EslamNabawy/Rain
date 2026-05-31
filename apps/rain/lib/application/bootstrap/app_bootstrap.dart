@@ -45,6 +45,12 @@ class AppBootstrapper {
           options: DefaultFirebaseOptions.currentPlatform,
         );
         remoteConfig = FirebaseRemoteConfig.instance;
+        await remoteConfig.setConfigSettings(
+          RemoteConfigSettings(
+            fetchTimeout: const Duration(seconds: 10),
+            minimumFetchInterval: const Duration(minutes: 1),
+          ),
+        );
         firebaseDatabase = FirebaseDatabase.instanceFor(
           app: Firebase.app(),
           databaseURL: effectiveEnvironment.firebaseDatabaseUrl,

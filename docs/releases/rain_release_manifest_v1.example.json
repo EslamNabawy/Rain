@@ -3,41 +3,41 @@
   "channels": {
     "stable": {
       "android": {
-        "latestVersion": "1.0.3",
-        "latestBuild": 4,
-        "minimumVersion": "1.0.3",
-        "minimumBuild": 4,
+        "latestVersion": "1.0.4",
+        "latestBuild": 5,
+        "minimumVersion": "1.0.4",
+        "minimumBuild": 5,
         "updateUrl": "https://github.com/EslamNabawy/Rain/releases",
-        "notes": "Firebase signaling permission and update visibility fixes.",
+        "notes": "Remote Config update visibility and signaling permission fixes.",
         "publishedAt": 1780192990349
       },
       "windows": {
-        "latestVersion": "1.0.3",
-        "latestBuild": 4,
-        "minimumVersion": "1.0.3",
-        "minimumBuild": 4,
+        "latestVersion": "1.0.4",
+        "latestBuild": 5,
+        "minimumVersion": "1.0.4",
+        "minimumBuild": 5,
         "updateUrl": "https://github.com/EslamNabawy/Rain/releases",
-        "notes": "Firebase signaling permission and update visibility fixes.",
+        "notes": "Remote Config update visibility and signaling permission fixes.",
         "publishedAt": 1780192990349
       }
     },
     "demo": {
       "android": {
-        "latestVersion": "1.0.3",
-        "latestBuild": 4,
-        "minimumVersion": "1.0.3",
-        "minimumBuild": 4,
+        "latestVersion": "1.0.4",
+        "latestBuild": 5,
+        "minimumVersion": "1.0.4",
+        "minimumBuild": 5,
         "updateUrl": "https://github.com/EslamNabawy/Rain/releases",
-        "notes": "Firebase signaling permission and update visibility fixes.",
+        "notes": "Remote Config update visibility and signaling permission fixes.",
         "publishedAt": 1780192990349
       },
       "windows": {
-        "latestVersion": "1.0.3",
-        "latestBuild": 4,
-        "minimumVersion": "1.0.3",
-        "minimumBuild": 4,
+        "latestVersion": "1.0.4",
+        "latestBuild": 5,
+        "minimumVersion": "1.0.4",
+        "minimumBuild": 5,
         "updateUrl": "https://github.com/EslamNabawy/Rain/releases",
-        "notes": "Firebase signaling permission and update visibility fixes.",
+        "notes": "Remote Config update visibility and signaling permission fixes.",
         "publishedAt": 1780192990349
       }
     }
