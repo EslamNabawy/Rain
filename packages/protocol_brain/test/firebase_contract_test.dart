@@ -379,7 +379,7 @@ void main() {
     );
     expect(
       adapter,
-      contains("'rooms/\$roomId/\$path/\$candidateKey': encryptedCandidate"),
+      contains('await candidateRef.set(encryptedCandidate);'),
       reason:
           'ICE candidates must be written at the leaf path. Updating the room '
           'parent re-enters the broad room write rule and is denied once ICE '
@@ -387,10 +387,16 @@ void main() {
     );
     expect(
       adapter,
-      contains("'rooms/\$roomId/answer': encryptedAnswer"),
+      contains("child('rooms/\$roomId/answer').set(encryptedAnswer)"),
       reason:
           'Answers also use leaf paths so existing caller ICE does not make '
           'answer writes depend on the parent room update rule.',
+    );
+    expect(
+      adapter,
+      contains('_refreshRoomLifecycleBestEffort'),
+      reason:
+          'Lifecycle metadata refresh must not make answer or ICE writes fail.',
     );
   });
 

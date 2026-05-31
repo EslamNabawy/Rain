@@ -2208,11 +2208,8 @@ class FirebaseSignalingAdapter
       receiver: context.receiver,
       payload: answer.toJson(),
     );
-    await _root.update(<String, Object?>{
-      'rooms/$roomId/updatedAt': timestamp,
-      'rooms/$roomId/expiresAt': timestamp + _roomTtlMs,
-      'rooms/$roomId/answer': encryptedAnswer,
-    });
+    await _root.child('rooms/$roomId/answer').set(encryptedAnswer);
+    await _refreshRoomLifecycleBestEffort(roomId, timestamp);
   }
 
   @override
@@ -2276,11 +2273,20 @@ class FirebaseSignalingAdapter
       receiver: context.receiver,
       payload: iceCandidateToJson(candidate),
     );
-    await _root.update(<String, Object?>{
-      'rooms/$roomId/updatedAt': timestamp,
-      'rooms/$roomId/expiresAt': timestamp + _roomTtlMs,
-      'rooms/$roomId/$path/$candidateKey': encryptedCandidate,
-    });
+    await candidateRef.set(encryptedCandidate);
+    await _refreshRoomLifecycleBestEffort(roomId, timestamp);
+  }
+
+  Future<void> _refreshRoomLifecycleBestEffort(
+    String roomId,
+    int timestamp,
+  ) async {
+    try {
+      await _root.child('rooms/$roomId/updatedAt').set(timestamp);
+      await _root.child('rooms/$roomId/expiresAt').set(timestamp + _roomTtlMs);
+    } catch (_) {
+      // The signaling payload is authoritative; room TTL refresh is best effort.
+    }
   }
 
   @override
