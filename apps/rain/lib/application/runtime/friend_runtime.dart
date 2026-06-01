@@ -43,13 +43,28 @@ extension FriendRuntime on RainRuntimeController {
       context: <String, Object?>{'peerId': peerId},
     );
     _recoverableDisconnectedPeers.remove(peerId);
-    await _endVoiceCallForPeer(
-      peerId,
-      notifyPeer: false,
-      detail: 'Peer closed Rain. Connection ended.',
-      failureReason: VoiceCallFailureReason.networkLost,
-      failureDetail: 'Peer closed Rain. Connection ended.',
-    );
+    final call = _voiceCallState;
+    final callMatchesPeer = call.peerId == peerId;
+    final isEstablishedCall =
+        call.phase == VoiceCallPhase.active ||
+        (call.phase == VoiceCallPhase.ending && call.startedAt != null);
+    if (callMatchesPeer && call.hasCall && !isEstablishedCall) {
+      await _endVoiceCallForPeer(
+        peerId,
+        notifyPeer: false,
+        detail: 'Call could not connect. Try again.',
+        failureReason: VoiceCallFailureReason.mediaConnectionFailed,
+        failureDetail: 'Call could not connect. Try again.',
+      );
+    } else {
+      await _endVoiceCallForPeer(
+        peerId,
+        notifyPeer: false,
+        detail: 'Peer closed Rain. Connection ended.',
+        failureReason: VoiceCallFailureReason.networkLost,
+        failureDetail: 'Peer closed Rain. Connection ended.',
+      );
+    }
     unawaited(
       _failActiveTransfersForPeer(
         peerId,

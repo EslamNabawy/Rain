@@ -437,6 +437,25 @@ extension VoiceCallRuntime on RainRuntimeController {
     );
   }
 
+  Future<void> dismissFailedVoiceCall() async {
+    final current = _voiceCallState;
+    _recordRuntimeEvent(
+      category: 'call',
+      name: 'failed_call_dismiss_requested',
+      context: _voiceCallEventContext(current),
+    );
+    if (current.phase != VoiceCallPhase.failed) {
+      return;
+    }
+    await _disposeCurrentVoiceCallSession();
+    final latest = _voiceCallState;
+    if (latest.callId == current.callId &&
+        latest.sessionEpoch == current.sessionEpoch &&
+        latest.phase == VoiceCallPhase.failed) {
+      _setVoiceCallState(const VoiceCallState.idle());
+    }
+  }
+
   Future<void> setVoiceCallMuted(bool muted) async {
     final current = _voiceCallState;
     _recordRuntimeEvent(

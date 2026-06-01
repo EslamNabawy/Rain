@@ -531,6 +531,10 @@ class VoiceCallController extends Notifier<VoiceCallState> {
   }
 
   Future<void> hangUp() async {
+    if (state.phase == VoiceCallPhase.failed) {
+      await _requireRuntime().dismissFailedVoiceCall();
+      return;
+    }
     await _requireRuntime().hangUpVoiceCall();
   }
 
