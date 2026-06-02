@@ -162,6 +162,11 @@ extension VoiceCallRuntime on RainRuntimeController {
         mediaMode: mediaMode,
       );
       await session.startOutgoing();
+      _watchFirebaseVoiceCall(
+        session: session,
+        peerId: peerId,
+        isOutgoing: true,
+      );
     } catch (error) {
       if (error is TurnUnavailableException) {
         _recordRuntimeEvent(
@@ -1160,11 +1165,13 @@ extension VoiceCallRuntime on RainRuntimeController {
     ) {
       _applyVoiceSessionState(session, state, isOutgoing: isOutgoing);
     });
-    _watchFirebaseVoiceCall(
-      session: session,
-      peerId: peerId,
-      isOutgoing: isOutgoing,
-    );
+    if (!isOutgoing) {
+      _watchFirebaseVoiceCall(
+        session: session,
+        peerId: peerId,
+        isOutgoing: false,
+      );
+    }
     return session;
   }
 

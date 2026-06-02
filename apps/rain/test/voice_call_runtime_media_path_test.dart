@@ -35,6 +35,44 @@ void main() {
       );
     }
   });
+
+  test('outgoing calls attach Firebase watchers after invite room creation', () {
+    final source = _readRuntimeSource();
+    final startCall = _sourceBetween(
+      source,
+      'Future<void> _startCall',
+      'Future<VoiceCallSession> _createVoiceCallSession',
+    );
+    final startOutgoing = startCall.indexOf('await session.startOutgoing();');
+    final watchOutgoing = startCall.indexOf(
+      '_watchFirebaseVoiceCall(',
+      startOutgoing,
+    );
+
+    expect(startOutgoing, isNonNegative);
+    expect(
+      watchOutgoing,
+      greaterThan(startOutgoing),
+      reason:
+          'Outgoing calls must create the Firebase call room through '
+          'session.startOutgoing() before room/offer/answer/ICE watchers are '
+          'attached. Attaching watchers first causes Windows caller permission '
+          'denials when the room does not exist yet.',
+    );
+
+    final createSession = _sourceBetween(
+      source,
+      'Future<VoiceCallSession> _createVoiceCallSession',
+      'void _watchFirebaseVoiceCall',
+    );
+    expect(
+      createSession,
+      contains('if (!isOutgoing)'),
+      reason:
+          'Incoming calls can watch immediately because the room already '
+          'exists; outgoing calls must wait until the invite writes the room.',
+    );
+  });
 }
 
 String _readRuntimeSource() {
@@ -48,4 +86,16 @@ String _readRuntimeSource() {
     }
   }
   fail('Could not locate voice_call_runtime.dart from ${Directory.current}.');
+}
+
+String _sourceBetween(String source, String start, String end) {
+  final startIndex = source.indexOf(start);
+  if (startIndex < 0) {
+    fail('Could not locate "$start" in voice_call_runtime.dart.');
+  }
+  final endIndex = source.indexOf(end, startIndex + start.length);
+  if (endIndex < 0) {
+    fail('Could not locate "$end" after "$start" in voice_call_runtime.dart.');
+  }
+  return source.substring(startIndex, endIndex);
 }
