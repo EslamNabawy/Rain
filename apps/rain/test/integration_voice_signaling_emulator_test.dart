@@ -160,7 +160,12 @@ void main() {
         );
 
         final reverseVideoCallId = 'video-reverse-$runId';
-        final reverseIncoming = adapterAlice.watchIncomingCalls(alice).first;
+        final reverseIncoming = adapterAlice
+            .watchIncomingCalls(alice)
+            .where(
+              (VoiceCallInboxEntry entry) => entry.callId == reverseVideoCallId,
+            )
+            .first;
         final reverseRoom = await adapterBob.createOutgoingCall(
           callId: reverseVideoCallId,
           caller: bob,
@@ -172,13 +177,61 @@ void main() {
         expect(reverseRoom.status, VoiceCallSignalingStatus.ringing);
         expect(reverseRoom.mediaMode, CallMediaMode.video);
         expect((await reverseIncoming).callId, reverseVideoCallId);
+
+        await _exerciseVoiceCallHandshake(
+          adapterCaller: adapterBob,
+          adapterCallee: adapterAlice,
+          caller: bob,
+          callee: alice,
+          callId: reverseVideoCallId,
+          createdAt: createdAt + 10,
+          mediaMode: CallMediaMode.video,
+        );
+
         await adapterAlice.endCall(
           callId: reverseVideoCallId,
           username: alice,
           status: VoiceCallSignalingStatus.ended,
-          endedAt: createdAt + 11,
+          endedAt: createdAt + 21,
           reasonCode: 'cleanup',
           reason: 'Reverse video cleanup.',
+        );
+
+        final reverseAudioCallId = 'voice-reverse-$runId';
+        final reverseAudioIncoming = adapterAlice
+            .watchIncomingCalls(alice)
+            .where(
+              (VoiceCallInboxEntry entry) => entry.callId == reverseAudioCallId,
+            )
+            .first;
+        final reverseAudioRoom = await adapterBob.createOutgoingCall(
+          callId: reverseAudioCallId,
+          caller: bob,
+          callee: alice,
+          createdAt: createdAt + 30,
+          expiresAt: createdAt + const Duration(minutes: 5).inMilliseconds + 30,
+        );
+        expect(reverseAudioRoom.status, VoiceCallSignalingStatus.ringing);
+        expect(reverseAudioRoom.mediaMode, CallMediaMode.audio);
+        expect((await reverseAudioIncoming).callId, reverseAudioCallId);
+
+        await _exerciseVoiceCallHandshake(
+          adapterCaller: adapterBob,
+          adapterCallee: adapterAlice,
+          caller: bob,
+          callee: alice,
+          callId: reverseAudioCallId,
+          createdAt: createdAt + 30,
+          mediaMode: CallMediaMode.audio,
+        );
+
+        await adapterBob.endCall(
+          callId: reverseAudioCallId,
+          username: bob,
+          status: VoiceCallSignalingStatus.ended,
+          endedAt: createdAt + 41,
+          reasonCode: 'cleanup',
+          reason: 'Reverse audio cleanup.',
         );
       } finally {
         await adapterAlice.dispose();
@@ -489,6 +542,93 @@ Future<void> _registerFriends({
   await adapterBob.login(bob, 'bob123');
   await adapterBob.upsertFriendship(bob, alice);
   await adapterAlice.login(alice, 'alicepw');
+}
+
+Future<void> _exerciseVoiceCallHandshake({
+  required FirebaseEmulatorSignalingAdapter adapterCaller,
+  required FirebaseEmulatorSignalingAdapter adapterCallee,
+  required String caller,
+  required String callee,
+  required String callId,
+  required int createdAt,
+  required CallMediaMode mediaMode,
+}) async {
+  await adapterCallee.acceptCall(
+    callId: callId,
+    callee: callee,
+    acceptedAt: createdAt + 1,
+  );
+
+  final offerEvent = adapterCallee.watchVoiceOffer(callId).first;
+  await adapterCaller.writeVoiceOffer(
+    callId: callId,
+    caller: caller,
+    offer: _envelope(
+      '$callId-offer',
+      createdAt + 2,
+      sender: caller,
+      receiver: callee,
+    ),
+    updatedAt: createdAt + 2,
+  );
+  expect((await offerEvent).ciphertext, '$callId-offer');
+
+  final answerEvent = adapterCaller.watchVoiceAnswer(callId).first;
+  await adapterCallee.writeVoiceAnswer(
+    callId: callId,
+    callee: callee,
+    answer: _envelope(
+      '$callId-answer',
+      createdAt + 3,
+      sender: callee,
+      receiver: caller,
+    ),
+    updatedAt: createdAt + 3,
+  );
+  expect((await answerEvent).ciphertext, '$callId-answer');
+
+  final callerIce = adapterCallee
+      .watchIceCandidates(callId: callId, role: VoiceCallRole.caller)
+      .first;
+  await adapterCaller.writeIceCandidate(
+    callId: callId,
+    username: caller,
+    role: VoiceCallRole.caller,
+    candidate: _envelope(
+      '$callId-caller-ice',
+      createdAt + 4,
+      sender: caller,
+      receiver: callee,
+    ),
+    createdAt: createdAt + 4,
+  );
+  expect((await callerIce).envelope.ciphertext, '$callId-caller-ice');
+
+  final calleeIce = adapterCaller
+      .watchIceCandidates(callId: callId, role: VoiceCallRole.callee)
+      .first;
+  await adapterCallee.writeIceCandidate(
+    callId: callId,
+    username: callee,
+    role: VoiceCallRole.callee,
+    candidate: _envelope(
+      '$callId-callee-ice',
+      createdAt + 5,
+      sender: callee,
+      receiver: caller,
+    ),
+    createdAt: createdAt + 5,
+  );
+  expect((await calleeIce).envelope.ciphertext, '$callId-callee-ice');
+
+  await adapterCaller.markConnected(
+    callId: callId,
+    username: caller,
+    connectedAt: createdAt + 6,
+  );
+  final connectedRoom = await adapterCallee.fetchCall(callId);
+  expect(connectedRoom?.status, VoiceCallSignalingStatus.connected);
+  expect(connectedRoom?.mediaMode, mediaMode);
 }
 
 Future<void> _expectDenied(Future<void> operation) async {

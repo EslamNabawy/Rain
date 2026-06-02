@@ -8,18 +8,20 @@ void main() {
 
     expect(
       source,
-      contains('manager.createVoiceMediaConnection(peerId)'),
-      reason: 'Audio calls must use the dedicated voice media peer connection.',
+      contains('manager.createCallMediaConnection(peerId)'),
+      reason: 'Video calls must use the dedicated call media peer connection.',
     );
     expect(
       source,
-      contains('manager.createCallMediaConnection(peerId)'),
-      reason: 'Video calls must use the dedicated call media peer connection.',
+      contains('_createAudioVoiceMediaConnection('),
+      reason:
+          'Audio calls must use the same hardened call media core as video.',
     );
 
     final forbiddenManagerCalls = <String>[
       'startLocalAudio',
       'stopLocalAudio',
+      'createVoiceMediaConnection',
       'createMediaOffer',
       'applyMediaOffer',
       'applyMediaAnswer',

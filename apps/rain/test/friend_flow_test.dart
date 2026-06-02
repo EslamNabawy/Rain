@@ -1135,7 +1135,7 @@ void main() {
       () async {
         final adapter = RecordingVoiceSignalingAdapter();
         final brain = TestSessionManager()
-          ..createVoiceMediaConnectionError = const TurnUnavailableException(
+          ..createCallMediaConnectionError = const TurnUnavailableException(
             TurnReadinessResult(
               readiness: TurnReadiness.unavailableNoRelayServer,
               hasRelayServer: false,
@@ -1456,11 +1456,11 @@ void main() {
           mediaMode: protocol.CallMediaMode.audio,
         );
         final aliceMedia =
-            harness.aliceBrain.voiceMediaConnections['bob']!
-                as _TestVoiceMediaConnection;
+            harness.aliceBrain.callMediaConnections['bob']!
+                as _TestCallMediaConnection;
         final bobMedia =
-            harness.bobBrain.voiceMediaConnections['alice']!
-                as _TestVoiceMediaConnection;
+            harness.bobBrain.callMediaConnections['alice']!
+                as _TestCallMediaConnection;
 
         for (var i = 0; i < 3; i += 1) {
           aliceMedia.emitIceCandidate(
@@ -1754,19 +1754,9 @@ void main() {
       );
 
       final bobConnection =
-          bobBrain.voiceMediaConnections['alice']! as _TestVoiceMediaConnection;
-      bobConnection.emitAudioLevel(
-        VoiceMediaAudioLevel(
-          remoteLevel: 0.42,
-          localLevel: 0.11,
-          updatedAt: DateTime.now().millisecondsSinceEpoch,
-          source: VoiceMediaAudioLevelSource.audioLevel,
-        ),
-      );
-      await _waitForCondition(
-        () => bobRuntime.voiceCallState.audioLevel.remoteLevel == 0.42,
-        'media session update to reach runtime',
-      );
+          bobBrain.callMediaConnections['alice']! as _TestCallMediaConnection;
+      bobConnection.emitConnectedForTest();
+      await Future<void>.delayed(const Duration(milliseconds: 20));
 
       expect(bobRuntime.voiceCallState.isRemoteMuted, isTrue);
       expect(bobRuntime.voiceCallState.startedAt, bobStartedAt);
@@ -6211,8 +6201,8 @@ void main() {
           mediaMode: protocol.CallMediaMode.audio,
         );
         final connection =
-            harness.aliceBrain.voiceMediaConnections['bob']!
-                as _TestVoiceMediaConnection;
+            harness.aliceBrain.callMediaConnections['bob']!
+                as _TestCallMediaConnection;
         harness.adapter.sessionHangupFrameError = StateError(
           'session hangup frame write failed',
         );
@@ -6294,8 +6284,8 @@ void main() {
         expect(room.status, VoiceCallSignalingStatus.ended);
         expect(room.endedBy, 'alice');
         expect(
-          (harness.bobBrain.voiceMediaConnections['alice']!
-                  as _TestVoiceMediaConnection)
+          (harness.bobBrain.callMediaConnections['alice']!
+                  as _TestCallMediaConnection)
               .disposed,
           isTrue,
         );
@@ -6353,8 +6343,8 @@ void main() {
         });
         harness.bobBrain.voiceDisposeGate = disposeGate;
         final bobConnection =
-            harness.bobBrain.voiceMediaConnections['alice']!
-                as _TestVoiceMediaConnection;
+            harness.bobBrain.callMediaConnections['alice']!
+                as _TestCallMediaConnection;
 
         await harness.adapter.endCall(
           callId: callId,
@@ -7740,11 +7730,23 @@ class _TestCallMediaConnection implements CallMediaConnection {
       return;
     }
     disposed = true;
+    final gate = owner.voiceDisposeGate;
+    if (gate != null) {
+      await gate.future;
+    }
     owner.stoppedAudioPeers.add(peerId);
     await _iceController.close();
     await _remoteTrackController.close();
     await _stateController.close();
     await _interruptionController.close();
+  }
+
+  void emitIceCandidate(VoiceIceCandidate candidate) {
+    _iceController.add(candidate);
+  }
+
+  void emitConnectedForTest() {
+    _emitConnected();
   }
 
   void _emitConnected() {

@@ -1080,7 +1080,10 @@ extension VoiceCallRuntime on RainRuntimeController {
 
     await _disposeCurrentVoiceCallSession();
     final media = switch (mediaMode) {
-      CallMediaMode.audio => await manager.createVoiceMediaConnection(peerId),
+      CallMediaMode.audio => await _createAudioVoiceMediaConnection(
+        manager,
+        peerId,
+      ),
       CallMediaMode.video => await _createVideoVoiceMediaConnection(
         manager,
         peerId,
@@ -2864,6 +2867,30 @@ extension VoiceCallRuntime on RainRuntimeController {
       },
       onRendererError: (Object error, StackTrace stackTrace) {
         _handleVideoRendererFailure(peerId, error, stackTrace);
+      },
+    );
+  }
+
+  Future<VoiceMediaConnection> _createAudioVoiceMediaConnection(
+    SessionManager manager,
+    String peerId,
+  ) async {
+    final media = await manager.createCallMediaConnection(peerId);
+    _recordRuntimeEvent(
+      category: 'call',
+      name: 'audio_call_media_connection_created',
+      context: <String, Object?>{'peerId': peerId},
+    );
+    return _CallVoiceMediaConnection(
+      media: media,
+      kind: CallMediaKind.audio,
+      onRemoteTrackError: (Object error, StackTrace stackTrace) {
+        errorRecorder?.call(
+          error,
+          stackTrace,
+          source: 'voice-call-media',
+          fatal: false,
+        );
       },
     );
   }
@@ -4727,6 +4754,126 @@ final class _VideoCallRendererException implements Exception {
 
   @override
   String toString() => '$message $cause';
+}
+
+final class _CallVoiceMediaConnection implements VoiceMediaConnection {
+  _CallVoiceMediaConnection({
+    required CallMediaConnection media,
+    required CallMediaKind kind,
+    required void Function(Object error, StackTrace stackTrace)
+    onRemoteTrackError,
+  }) : _media = media,
+       _kind = kind,
+       _onRemoteTrackError = onRemoteTrackError {
+    _remoteTrackSubscription = _media.onRemoteTrack.listen(
+      _handleRemoteTrack,
+      onError: (Object error, StackTrace stackTrace) {
+        _onRemoteTrackError(error, stackTrace);
+      },
+    );
+  }
+
+  final CallMediaConnection _media;
+  final CallMediaKind _kind;
+  final void Function(Object error, StackTrace stackTrace) _onRemoteTrackError;
+  final StreamController<VoiceRemoteAudioTrack> _remoteAudioController =
+      StreamController<VoiceRemoteAudioTrack>.broadcast();
+  final StreamController<VoiceMediaAudioLevel> _audioLevelController =
+      StreamController<VoiceMediaAudioLevel>.broadcast();
+
+  late final StreamSubscription<CallRemoteMediaTrack> _remoteTrackSubscription;
+  bool _disposed = false;
+
+  @override
+  Stream<VoiceIceCandidate> get onIceCandidate => _media.onIceCandidate;
+
+  @override
+  Stream<VoiceRemoteAudioTrack> get onRemoteAudioTrack =>
+      _remoteAudioController.stream;
+
+  @override
+  Stream<VoiceMediaAudioLevel> get onAudioLevelChanged =>
+      _audioLevelController.stream;
+
+  @override
+  Stream<VoiceMediaState> get onStateChanged {
+    return _media.onStateChanged.map(_voiceMediaStateForCall);
+  }
+
+  @override
+  VoiceMediaDiagnostics get diagnostics {
+    return _voiceMediaDiagnosticsForCall(_media.diagnostics);
+  }
+
+  @override
+  Future<void> startLocalAudio() {
+    return _media.startLocalMedia(kind: _kind);
+  }
+
+  @override
+  Future<VoiceSessionDescription> createOffer({bool iceRestart = false}) {
+    return _media.createOffer(kind: _kind, iceRestart: iceRestart);
+  }
+
+  @override
+  Future<VoiceSessionDescription> acceptOffer(VoiceSessionDescription offer) {
+    return _media.acceptOffer(offer, kind: _kind);
+  }
+
+  @override
+  Future<void> applyAnswer(VoiceSessionDescription answer) {
+    return _media.applyAnswer(answer);
+  }
+
+  @override
+  Future<void> addRemoteCandidate(VoiceIceCandidate candidate) {
+    return _media.addRemoteCandidate(candidate);
+  }
+
+  @override
+  Future<void> setMuted({required bool muted}) {
+    return _media.setMicrophoneMuted(muted: muted);
+  }
+
+  @override
+  Future<void> setDeafened({required bool deafened}) {
+    return _media.setDeafened(deafened: deafened);
+  }
+
+  @override
+  Future<void> setAudioOutputRoute(VoiceMediaOutputRoute route) {
+    return _media.setAudioOutputRoute(route);
+  }
+
+  @override
+  Future<void> selectAudioOutputDevice(String deviceId) {
+    return _media.selectAudioOutputDevice(deviceId);
+  }
+
+  @override
+  Future<void> dispose() async {
+    if (_disposed) {
+      return;
+    }
+    _disposed = true;
+    await _remoteTrackSubscription.cancel();
+    await _media.dispose();
+    await _remoteAudioController.close();
+    await _audioLevelController.close();
+  }
+
+  void _handleRemoteTrack(CallRemoteMediaTrack event) {
+    if (_disposed || !event.isAudio) {
+      return;
+    }
+    _remoteAudioController.add(
+      VoiceRemoteAudioTrack(
+        track: event.track,
+        streams: event.streams,
+        receivedAt: event.receivedAt,
+      ),
+    );
+  }
 }
 
 VoiceMediaState _voiceMediaStateForCall(CallMediaState state) {
