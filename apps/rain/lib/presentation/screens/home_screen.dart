@@ -170,6 +170,15 @@ RainSoundEvent? rainVoiceCallLifecycleSoundEventFor(
       errorKey: _voiceCallFailureErrorKey(next),
     ),
     VoiceCallPhase.idle
+        when previous != null && previous.phase == VoiceCallPhase.failed =>
+      RainSoundEvent.callFailed(
+        callId: callId,
+        peerId: previous.peerId,
+        sessionEpoch: previous.sessionEpoch,
+        mediaMode: previous.mediaMode,
+        errorKey: _voiceCallFailureErrorKey(previous),
+      ),
+    VoiceCallPhase.idle
         when previous != null &&
             previous.phase != VoiceCallPhase.idle &&
             previous.phase != VoiceCallPhase.failed =>

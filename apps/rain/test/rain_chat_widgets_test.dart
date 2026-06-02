@@ -256,6 +256,30 @@ void main() {
     expect(failure?.errorKey, 'voice.mediaconnectionfailed');
   });
 
+  test(
+    'failed call dismissal emits terminal failure event for loop cleanup',
+    () {
+      const failed = VoiceCallState(
+        phase: VoiceCallPhase.failed,
+        peerId: 'bob',
+        callId: 'call-failed',
+        sessionEpoch: 14,
+        failureReason: VoiceCallFailureReason.mediaConnectionFailed,
+      );
+      const idle = VoiceCallState.idle();
+
+      final event = rainVoiceCallLifecycleSoundEventFor(failed, idle);
+      final key = rainVoiceCallLifecycleSoundKeyFor(failed, idle);
+
+      expect(event?.kind, RainSoundEventKind.callFailed);
+      expect(event?.callId, 'call-failed');
+      expect(event?.peerId, 'bob');
+      expect(event?.sessionEpoch, 14);
+      expect(event?.errorKey, 'voice.mediaconnectionfailed');
+      expect(key, 'call-failed|14|idle');
+    },
+  );
+
   test('video call lifecycle reuses call sound policy with video mode', () {
     final event = rainVoiceCallLifecycleSoundEventFor(
       null,

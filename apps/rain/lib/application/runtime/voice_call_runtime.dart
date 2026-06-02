@@ -2185,24 +2185,57 @@ extension VoiceCallRuntime on RainRuntimeController {
 
     if (mappedPhase == VoiceCallPhase.failed) {
       unawaited(
-        _endVoiceCallInSignaling(
-          callId: session.callId,
-          status: VoiceCallSignalingStatus.failed,
-          reason: detail ?? sessionState.detail ?? _voiceCallMediaFailed,
-          reasonCode:
-              sessionState.reasonCode ??
-              _voiceCallReasonCodeForFailure(failureReason) ??
-              _voiceCallFailedReasonCode,
-          bestEffort: true,
+        _finalizeFailedVoiceCallSession(
+          session,
+          sessionState,
+          isOutgoing: isOutgoing,
+          detail: detail,
+          failureReason: failureReason,
         ),
       );
-      _recordVoiceCallSessionFailure(
-        session,
-        sessionState,
-        isOutgoing: isOutgoing,
-      );
-      unawaited(_disposeVoiceCallSession(session));
     }
+  }
+
+  Future<void> _finalizeFailedVoiceCallSession(
+    VoiceCallSession session,
+    VoiceCallSessionState sessionState, {
+    required bool isOutgoing,
+    required String? detail,
+    required VoiceCallFailureReason? failureReason,
+  }) async {
+    final terminalDetail =
+        detail ?? sessionState.detail ?? _voiceCallMediaFailed;
+    final terminalReasonCode =
+        sessionState.reasonCode ??
+        _voiceCallReasonCodeForFailure(failureReason) ??
+        _voiceCallFailedReasonCode;
+    final terminalWrite = await _writeTerminalRoomBeforeSessionHangup(
+      callId: session.callId,
+      status: VoiceCallSignalingStatus.failed,
+      detail: terminalDetail,
+      reasonCode: terminalReasonCode,
+    );
+    _recordVoiceCallSessionFailure(
+      session,
+      sessionState,
+      isOutgoing: isOutgoing,
+    );
+    if (!terminalWrite.durable) {
+      _recordRuntimeEvent(
+        category: 'call',
+        name: 'failed_session_terminal_write_not_durable',
+        severity: 'error',
+        message: terminalWrite.error?.toString(),
+        context: <String, Object?>{
+          'peerId': session.remotePeerId,
+          'callId': session.callId,
+          'sessionEpoch': session.sessionEpoch,
+          'mediaMode': session.mediaMode.name,
+          'reasonCode': terminalReasonCode,
+        },
+      );
+    }
+    await _disposeVoiceCallSession(session);
   }
 
   VoiceCallPhase _mapVoiceCallSessionPhase(VoiceCallSessionPhase phase) {
