@@ -799,10 +799,48 @@ void main() {
     );
     expect(
       adapter,
-      contains('catch (_) {\n      return false;\n    }'),
+      contains('Future<bool> _removeActiveVoicePairLockIfUnchangedDirect'),
+      reason:
+          'A denied or aborted stale-lock transaction must fall back to a '
+          'server re-read plus compare-delete before giving up.',
+    );
+    expect(
+      adapter,
+      contains('Future<bool> _removeActiveVoiceUserLockIfUnchangedDirect'),
       reason:
           'A denied stale-lock transaction after terminal room write must not '
           'turn a completed hangup into a user-visible signaling failure.',
+    );
+  });
+
+  test('Firebase active voice pair locks delete only safe stale rooms', () {
+    final rules = _repoFile('backend/firebase/database.rules.json');
+    final activeVoicePairsRules = _rulesSlice(
+      rules,
+      '"activeVoicePairs"',
+      '"activeVoiceUsers"',
+    );
+
+    expect(
+      activeVoicePairsRules,
+      contains(
+        "root.child('voiceCalls/' + data.child('callId').val() + '/pairId').val() === \$pairId",
+      ),
+      reason:
+          'Pair lock cleanup must verify the lock still points at the matching '
+          'room before a direct compare-delete fallback can remove it.',
+    );
+    expect(
+      activeVoicePairsRules,
+      contains(
+        "root.child('voiceCalls/' + data.child('callId').val() + '/status').val() === 'ended'",
+      ),
+    );
+    expect(
+      activeVoicePairsRules,
+      contains(
+        "root.child('voiceCalls/' + data.child('callId').val() + '/expiresAt').val() <= now",
+      ),
     );
   });
 

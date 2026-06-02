@@ -242,6 +242,106 @@ void main() {
   );
 
   test(
+    'Firebase emulator reclaims terminal leftover locks before reverse call',
+    () async {
+      final runId = DateTime.now().microsecondsSinceEpoch.toRadixString(36);
+      final alice = 'alicel$runId';
+      final bob = 'bobl$runId';
+      final createdAt = DateTime.now().millisecondsSinceEpoch;
+      final staleCallId = 'stale-locks-$runId';
+      final reverseCallId = 'reverse-after-stale-$runId';
+      final pairId = voiceCallPairId(alice, bob);
+
+      final adapterAlice = FirebaseEmulatorSignalingAdapter();
+      final adapterBob = FirebaseEmulatorSignalingAdapter();
+
+      try {
+        await _registerFriends(
+          adapterAlice: adapterAlice,
+          adapterBob: adapterBob,
+          alice: alice,
+          bob: bob,
+        );
+
+        await adapterAlice.createOutgoingCall(
+          callId: staleCallId,
+          caller: alice,
+          callee: bob,
+          createdAt: createdAt,
+          expiresAt: createdAt + const Duration(minutes: 5).inMilliseconds,
+        );
+        await adapterBob.endCall(
+          callId: staleCallId,
+          username: bob,
+          status: VoiceCallSignalingStatus.ended,
+          endedAt: createdAt + 1,
+          reasonCode: 'test-ended',
+          reason: 'Test terminal room.',
+        );
+
+        final stalePairLock = VoiceActivePairLock(
+          pairId: pairId,
+          callId: staleCallId,
+          caller: alice,
+          callee: bob,
+          createdAt: createdAt,
+          updatedAt: createdAt,
+          expiresAt: createdAt + const Duration(minutes: 5).inMilliseconds,
+        );
+        final staleBobLock = VoiceActiveUserLock(
+          username: bob,
+          callId: staleCallId,
+          pairId: pairId,
+          caller: alice,
+          callee: bob,
+          createdAt: createdAt,
+          updatedAt: createdAt,
+          expiresAt: createdAt + const Duration(minutes: 5).inMilliseconds,
+        );
+        await adapterAlice.patchRawForTest(<String>[], <String, Object?>{
+          'activeVoicePairs/$pairId': stalePairLock.toJson(),
+          'activeVoiceUsers/$bob': staleBobLock.toJson(),
+        });
+
+        final incoming = adapterAlice
+            .watchIncomingCalls(alice)
+            .where((VoiceCallInboxEntry entry) => entry.callId == reverseCallId)
+            .first;
+        final reverseRoom = await adapterBob.createOutgoingCall(
+          callId: reverseCallId,
+          caller: bob,
+          callee: alice,
+          createdAt: createdAt + 2,
+          expiresAt: createdAt + const Duration(minutes: 5).inMilliseconds + 2,
+        );
+
+        expect(reverseRoom.status, VoiceCallSignalingStatus.ringing);
+        expect((await incoming).callId, reverseCallId);
+        expect(
+          await adapterBob.getRawForTest(<String>[
+            'activeVoicePairs',
+            pairId,
+            'callId',
+          ]),
+          reverseCallId,
+        );
+        expect(
+          await adapterBob.getRawForTest(<String>[
+            'activeVoiceUsers',
+            bob,
+            'callId',
+          ]),
+          reverseCallId,
+        );
+      } finally {
+        await adapterAlice.dispose();
+        await adapterBob.dispose();
+      }
+    },
+    skip: runIntegrationTests ? null : 'Requires Firebase emulators',
+  );
+
+  test(
     'Firebase emulator rejects signaling rule bypasses',
     () async {
       final runId = DateTime.now().microsecondsSinceEpoch.toRadixString(36);

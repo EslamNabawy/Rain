@@ -746,10 +746,18 @@ class FirebaseSignalingAdapter
         }
         return Transaction.abort();
       }, applyLocally: false);
-      return transaction.committed;
+      if (transaction.committed) {
+        return true;
+      }
     } catch (_) {
-      return false;
+      // Fall through to the direct compare-delete fallback. Some RTDB clients
+      // surface transaction security failures without exposing whether the
+      // server state was already stale. The fallback re-reads before deleting.
     }
+    return _removeActiveVoicePairLockIfUnchangedDirect(
+      lockRef: lockRef,
+      lock: lock,
+    );
   }
 
   Future<bool> _removeActiveVoiceUserLockIfUnchanged({
@@ -774,7 +782,78 @@ class FirebaseSignalingAdapter
         }
         return Transaction.abort();
       }, applyLocally: false);
-      return transaction.committed;
+      if (transaction.committed) {
+        return true;
+      }
+    } catch (_) {
+      // Fall through to the direct compare-delete fallback. The delete is still
+      // protected by security rules and by the local equality check below.
+    }
+    return _removeActiveVoiceUserLockIfUnchangedDirect(
+      lockRef: lockRef,
+      lock: lock,
+    );
+  }
+
+  Future<bool> _removeActiveVoicePairLockIfUnchangedDirect({
+    required DatabaseReference lockRef,
+    required VoiceActivePairLock lock,
+  }) async {
+    try {
+      final snapshot = await lockRef.get();
+      final value = snapshot.value;
+      if (value is! Map) {
+        return false;
+      }
+      final existing = VoiceActivePairLock.fromJson(
+        pairId: lock.pairId,
+        json: _asObjectMap(value),
+      );
+      if (!_sameActiveVoicePairLock(existing, lock)) {
+        return false;
+      }
+      await lockRef.remove();
+      final after = await lockRef.get();
+      if (after.value is! Map) {
+        return true;
+      }
+      final remaining = VoiceActivePairLock.fromJson(
+        pairId: lock.pairId,
+        json: _asObjectMap(after.value),
+      );
+      return !_sameActiveVoicePairLock(remaining, lock);
+    } catch (_) {
+      return false;
+    }
+  }
+
+  Future<bool> _removeActiveVoiceUserLockIfUnchangedDirect({
+    required DatabaseReference lockRef,
+    required VoiceActiveUserLock lock,
+  }) async {
+    try {
+      final snapshot = await lockRef.get();
+      final value = snapshot.value;
+      if (value is! Map) {
+        return false;
+      }
+      final existing = VoiceActiveUserLock.fromJson(
+        username: lock.username,
+        json: _asObjectMap(value),
+      );
+      if (!_sameActiveVoiceUserLock(existing, lock)) {
+        return false;
+      }
+      await lockRef.remove();
+      final after = await lockRef.get();
+      if (after.value is! Map) {
+        return true;
+      }
+      final remaining = VoiceActiveUserLock.fromJson(
+        username: lock.username,
+        json: _asObjectMap(after.value),
+      );
+      return !_sameActiveVoiceUserLock(remaining, lock);
     } catch (_) {
       return false;
     }
