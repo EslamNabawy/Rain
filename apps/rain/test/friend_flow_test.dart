@@ -2698,7 +2698,10 @@ void main() {
 
         await Future<void>.delayed(Duration.zero);
         expect(aliceRuntime.voiceCallState.phase, VoiceCallPhase.active);
-        expect(adapter.rooms[callId]?.status, VoiceCallSignalingStatus.connected);
+        expect(
+          adapter.rooms[callId]?.status,
+          VoiceCallSignalingStatus.connected,
+        );
         expect(adapter.rooms[callId]?.reasonCode, isNull);
         expect(aliceRuntime.voiceCallState.failureReason, isNull);
         expect(aliceRuntime.voiceCallState.hasRemoteVideo, isFalse);
@@ -2904,7 +2907,10 @@ void main() {
           'caller to mark remote first-frame timeout',
         );
         expect(aliceRuntime.voiceCallState.phase, VoiceCallPhase.active);
-        expect(adapter.rooms[callId]?.status, VoiceCallSignalingStatus.connected);
+        expect(
+          adapter.rooms[callId]?.status,
+          VoiceCallSignalingStatus.connected,
+        );
         expect(adapter.rooms[callId]?.reasonCode, isNull);
         expect(aliceRuntime.voiceCallState.failureReason, isNull);
         expect(aliceRuntime.voiceCallState.hasRemoteVideo, isTrue);
@@ -2915,90 +2921,97 @@ void main() {
       },
     );
 
-    test('voice signaling watchers revalidate Firebase auth before listening', () async {
-      final adapter = RecordingVoiceSignalingAdapter();
-      final brain = TestSessionManager();
-      await adapter.register('bob', 'bobpw');
-      await adapter.upsertFriendship('alice', 'bob');
-      await db
-          .into(db.friends)
-          .insert(
-            FriendsCompanion.insert(
-              username: 'bob',
-              displayName: 'Bob',
-              state: 'friend',
-              addedAt: 0,
-            ),
-          );
-      final runtime = _runtimeFor(
-        db,
-        alice,
-        adapter,
-        brain: brain,
-        videoCallRendererFactory: const _TestVideoCallRendererFactory(),
-      );
-      addTearDown(runtime.dispose);
+    test(
+      'voice signaling watchers revalidate Firebase auth before listening',
+      () async {
+        final adapter = RecordingVoiceSignalingAdapter();
+        final brain = TestSessionManager();
+        await adapter.register('bob', 'bobpw');
+        await adapter.upsertFriendship('alice', 'bob');
+        await db
+            .into(db.friends)
+            .insert(
+              FriendsCompanion.insert(
+                username: 'bob',
+                displayName: 'Bob',
+                state: 'friend',
+                addedAt: 0,
+              ),
+            );
+        final runtime = _runtimeFor(
+          db,
+          alice,
+          adapter,
+          brain: brain,
+          videoCallRendererFactory: const _TestVideoCallRendererFactory(),
+        );
+        addTearDown(runtime.dispose);
 
-      await runtime.start();
-      adapter.authWatchEvents.clear();
-      await runtime.startVideoCall('bob');
+        await runtime.start();
+        adapter.authWatchEvents.clear();
+        await runtime.startVideoCall('bob');
 
-      final ensureIndex = adapter.authWatchEvents.indexOf('ensure:alice');
-      final watchIndex = adapter.authWatchEvents.indexWhere(
-        (String event) => event.startsWith('watchCall:'),
-      );
-      expect(ensureIndex, isNonNegative);
-      expect(watchIndex, isNonNegative);
-      expect(ensureIndex, lessThan(watchIndex));
-    });
+        final ensureIndex = adapter.authWatchEvents.indexOf('ensure:alice');
+        final watchIndex = adapter.authWatchEvents.indexWhere(
+          (String event) => event.startsWith('watchCall:'),
+        );
+        expect(ensureIndex, isNonNegative);
+        expect(watchIndex, isNonNegative);
+        expect(ensureIndex, lessThan(watchIndex));
+      },
+    );
 
-    test('voice signaling watcher permission error fails call immediately', () async {
-      final adapter = RecordingVoiceSignalingAdapter()
-        ..watchVoiceAnswerError = StateError('permission denied');
-      final brain = TestSessionManager();
-      await adapter.register('bob', 'bobpw');
-      await adapter.upsertFriendship('alice', 'bob');
-      await db
-          .into(db.friends)
-          .insert(
-            FriendsCompanion.insert(
-              username: 'bob',
-              displayName: 'Bob',
-              state: 'friend',
-              addedAt: 0,
-            ),
-          );
-      final runtime = _runtimeFor(
-        db,
-        alice,
-        adapter,
-        brain: brain,
-        videoCallRendererFactory: const _TestVideoCallRendererFactory(),
-      );
-      addTearDown(runtime.dispose);
+    test(
+      'voice signaling watcher permission error fails call immediately',
+      () async {
+        final adapter = RecordingVoiceSignalingAdapter()
+          ..watchVoiceAnswerError = StateError('permission denied');
+        final brain = TestSessionManager();
+        await adapter.register('bob', 'bobpw');
+        await adapter.upsertFriendship('alice', 'bob');
+        await db
+            .into(db.friends)
+            .insert(
+              FriendsCompanion.insert(
+                username: 'bob',
+                displayName: 'Bob',
+                state: 'friend',
+                addedAt: 0,
+              ),
+            );
+        final runtime = _runtimeFor(
+          db,
+          alice,
+          adapter,
+          brain: brain,
+          videoCallRendererFactory: const _TestVideoCallRendererFactory(),
+        );
+        addTearDown(runtime.dispose);
 
-      await runtime.start();
-      await runtime.startVoiceCall('bob');
-      expect(
-        adapter.authWatchEvents,
-        contains(
-          startsWith('watchVoiceAnswer:'),
-        ),
-      );
+        await runtime.start();
+        await runtime.startVoiceCall('bob');
+        expect(
+          adapter.authWatchEvents,
+          contains(startsWith('watchVoiceAnswer:')),
+        );
 
-      await _waitForCondition(
-        () => runtime.voiceCallState.phase == VoiceCallPhase.failed,
-        'voice signaling watcher error to fail call immediately',
-      );
-      expect(
-        runtime.voiceCallState.failureReason,
-        VoiceCallFailureReason.signalingFailed,
-      );
-      expect(runtime.voiceCallState.detail, 'Call setup failed. Try again.');
-      expect(adapter.rooms.values.single.status, VoiceCallSignalingStatus.failed);
-      expect(adapter.activePairLocks, isEmpty);
-      expect(adapter.activeUserLocks, isEmpty);
-    });
+        await _waitForCondition(
+          () => runtime.voiceCallState.phase == VoiceCallPhase.failed,
+          'voice signaling watcher error to fail call immediately',
+        );
+        expect(
+          runtime.voiceCallState.failureReason,
+          VoiceCallFailureReason.signalingFailed,
+        );
+        expect(runtime.voiceCallState.detail, 'Call setup failed. Try again.');
+        expect(
+          adapter.rooms.values.single.status,
+          VoiceCallSignalingStatus.failed,
+        );
+        expect(adapter.activePairLocks, isEmpty);
+        expect(adapter.activeUserLocks, isEmpty);
+      },
+    );
 
     test('active Firebase pair lock is surfaced as peer busy', () async {
       final adapter = RecordingVoiceSignalingAdapter();

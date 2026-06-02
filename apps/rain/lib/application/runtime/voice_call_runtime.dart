@@ -2992,8 +2992,7 @@ extension VoiceCallRuntime on RainRuntimeController {
         category: 'call',
         name: 'video_first_frame_timeout_warning',
         severity: 'warning',
-        message:
-            'Remote video stream attached but no rendered frame arrived.',
+        message: 'Remote video stream attached but no rendered frame arrived.',
         context: _voiceCallEventContext(current),
       );
     }
