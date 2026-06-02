@@ -62,6 +62,23 @@ void main() {
     }
   });
 
+  test('legacy remote config minimum version matches current app version', () {
+    final match = _pubspecVersionMatch()!;
+    final version = '${match.group(1)}.${match.group(2)}.${match.group(3)}';
+    final raw = File(
+      '../../backend/firebase/remoteconfig.template.json',
+    ).readAsStringSync();
+    final template = jsonDecode(raw) as Map<String, dynamic>;
+    final parameters = template['parameters'] as Map<String, dynamic>;
+    final minRequiredVersion =
+        ((parameters['min_required_version']
+                    as Map<String, dynamic>)['defaultValue']
+                as Map<String, dynamic>)['value']
+            as String;
+
+    expect(minRequiredVersion, version);
+  });
+
   test('demo dart defines declare demo update channel', () {
     final raw = File('tool/dart_defines.example.json').readAsStringSync();
     final json = jsonDecode(raw) as Map<String, dynamic>;

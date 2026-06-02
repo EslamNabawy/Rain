@@ -9,7 +9,7 @@
     },
     "min_required_version": {
       "defaultValue": {
-        "value": "1.0.5"
+        "value": "1.0.6"
       },
       "description": "Legacy fallback minimum version for old Rain builds that do not support rain_release_manifest_v1."
     },
