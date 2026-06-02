@@ -587,12 +587,22 @@ void main() {
         "newData.val() === 'ended' && root.child('voiceCalls/' + \$callId + '/status').val() !== 'ended'",
       ),
     );
-    expect(
+    final voiceCallsRules = _rulesSlice(
       rules,
-      contains(
-        "root.child('activeVoicePairs/' + root.child('voiceCalls/' + \$callId + '/pairId').val() + '/callId').val() === \$callId",
-      ),
-      reason: 'Terminal ended writes must match the active call lock.',
+      '"voiceCalls"',
+      '"connectionRequests"',
+    );
+    final statusRules = _rulesSlice(
+      voiceCallsRules,
+      '"status": {',
+      '"mediaMode"',
+    );
+    expect(
+      statusRules,
+      isNot(contains('activeVoicePairs')),
+      reason:
+          'Terminal ended writes must not depend on active locks; stale lock '
+          'cleanup happens after the room reaches terminal state.',
     );
     expect(adapter, contains('_ensureVoiceRole'));
     expect(adapter, contains('VoiceCallRole.caller'));
@@ -690,6 +700,55 @@ void main() {
     );
   });
 
+  test('Firebase voice inbox terminal updates do not require fresh presence', () {
+    final rules = _repoFile('backend/firebase/database.rules.json');
+    final inboxRules = _rulesSlice(rules, '"voiceCallInboxes"', '"voiceCalls"');
+    final inboxWrite = _rulesSlice(inboxRules, '".write"', '".validate"');
+
+    expect(
+      inboxWrite,
+      contains('!newData.exists() || (data.exists() && newData.exists()'),
+      reason:
+          'Existing inbox rows must be updatable to terminal state even when '
+          'the callee has just gone stale or closed the app.',
+    );
+    expect(
+      inboxWrite,
+      contains(
+        "!data.exists() && newData.child('status').val() === 'ringing' && root.child('presence/'",
+      ),
+      reason: 'Fresh presence is still required for new ringing inbox rows.',
+    );
+    expect(
+      inboxWrite,
+      isNot(
+        contains(
+          "(data.exists() || newData.child('status').val() === 'ringing') && root.child('presence/'",
+        ),
+      ),
+      reason:
+          'Presence gates on all inbox updates recreate the permission-denied '
+          'cleanup failure seen in production diagnostics.',
+    );
+  });
+
+  test('Firebase voice room reads tolerate missing or cleaned rooms', () {
+    final rules = _repoFile('backend/firebase/database.rules.json');
+    final voiceCallsRules = _rulesSlice(
+      rules,
+      '"voiceCalls"',
+      '"connectionRequests"',
+    );
+
+    expect(
+      voiceCallsRules,
+      contains('".read": "auth != null && (!data.exists() ||'),
+      reason:
+          'watchCall must see a null room instead of receiving permission '
+          'denied when a call room is deleted during cleanup.',
+    );
+  });
+
   test('Firebase active voice user locks cannot be deleted by stale calls', () {
     final rules = _repoFile('backend/firebase/database.rules.json');
     final activeVoiceUsersRules = _rulesSlice(
@@ -722,6 +781,28 @@ void main() {
         "root.child('voiceCalls/' + data.child('callId').val() + '/status').val() === 'ended'",
       ),
       reason: 'Newer non-terminal call locks must survive stale cleanup.',
+    );
+  });
+
+  test('Firebase voice lock cleanup is best-effort after terminal rooms', () {
+    final adapter = _repoFile(
+      'packages/protocol_brain/lib/adapters/firebase_adapter.dart',
+    );
+
+    expect(
+      adapter,
+      contains('Future<bool> _removeActiveVoicePairLockIfUnchanged'),
+    );
+    expect(
+      adapter,
+      contains('Future<bool> _removeActiveVoiceUserLockIfUnchanged'),
+    );
+    expect(
+      adapter,
+      contains('catch (_) {\n      return false;\n    }'),
+      reason:
+          'A denied stale-lock transaction after terminal room write must not '
+          'turn a completed hangup into a user-visible signaling failure.',
     );
   });
 

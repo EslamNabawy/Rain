@@ -728,48 +728,56 @@ class FirebaseSignalingAdapter
     required DatabaseReference lockRef,
     required VoiceActivePairLock lock,
   }) async {
-    final transaction = await lockRef.runTransaction((Object? current) {
-      if (current is! Map) {
-        return Transaction.abort();
-      }
-      try {
-        final existing = VoiceActivePairLock.fromJson(
-          pairId: lock.pairId,
-          json: _asObjectMap(current),
-        );
-        if (_sameActiveVoicePairLock(existing, lock)) {
-          return Transaction.success(null);
+    try {
+      final transaction = await lockRef.runTransaction((Object? current) {
+        if (current is! Map) {
+          return Transaction.abort();
         }
-      } catch (_) {
+        try {
+          final existing = VoiceActivePairLock.fromJson(
+            pairId: lock.pairId,
+            json: _asObjectMap(current),
+          );
+          if (_sameActiveVoicePairLock(existing, lock)) {
+            return Transaction.success(null);
+          }
+        } catch (_) {
+          return Transaction.abort();
+        }
         return Transaction.abort();
-      }
-      return Transaction.abort();
-    }, applyLocally: false);
-    return transaction.committed;
+      }, applyLocally: false);
+      return transaction.committed;
+    } catch (_) {
+      return false;
+    }
   }
 
   Future<bool> _removeActiveVoiceUserLockIfUnchanged({
     required DatabaseReference lockRef,
     required VoiceActiveUserLock lock,
   }) async {
-    final transaction = await lockRef.runTransaction((Object? current) {
-      if (current is! Map) {
-        return Transaction.abort();
-      }
-      try {
-        final existing = VoiceActiveUserLock.fromJson(
-          username: lock.username,
-          json: _asObjectMap(current),
-        );
-        if (_sameActiveVoiceUserLock(existing, lock)) {
-          return Transaction.success(null);
+    try {
+      final transaction = await lockRef.runTransaction((Object? current) {
+        if (current is! Map) {
+          return Transaction.abort();
         }
-      } catch (_) {
+        try {
+          final existing = VoiceActiveUserLock.fromJson(
+            username: lock.username,
+            json: _asObjectMap(current),
+          );
+          if (_sameActiveVoiceUserLock(existing, lock)) {
+            return Transaction.success(null);
+          }
+        } catch (_) {
+          return Transaction.abort();
+        }
         return Transaction.abort();
-      }
-      return Transaction.abort();
-    }, applyLocally: false);
-    return transaction.committed;
+      }, applyLocally: false);
+      return transaction.committed;
+    } catch (_) {
+      return false;
+    }
   }
 
   Future<void> _deleteVoiceCallRoomArtifacts(VoiceCallRoom room) async {
