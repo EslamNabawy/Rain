@@ -1,3 +1,4 @@
+import 'dart:convert';
 import 'dart:io';
 
 import 'package:drift/native.dart';
@@ -77,6 +78,43 @@ void main() {
     expect(find.text('Rain is up to date'), findsOneWidget);
     expect(find.text('Check for updates'), findsOneWidget);
     expect(find.text('Open release page'), findsOneWidget);
+  });
+
+  testWidgets('manual update check reports required update details', (
+    WidgetTester tester,
+  ) async {
+    final harness = _SettingsHarness(
+      manifestLoader: () async => jsonEncode(<String, Object?>{
+        'schema': 1,
+        'channels': <String, Object?>{
+          'stable': <String, Object?>{
+            'android': <String, Object?>{
+              'latestVersion': '1.0.1',
+              'latestBuild': 2,
+              'minimumVersion': '1.0.1',
+              'minimumBuild': 2,
+              'updateUrl': 'https://example.com/releases',
+            },
+          },
+        },
+      }),
+    );
+    addTearDown(harness.dispose);
+
+    await tester.pumpSettingsScreen(harness: harness);
+    await tester.scrollUntilVisible(
+      find.text('Check for updates'),
+      500,
+      scrollable: find.byType(Scrollable).first,
+    );
+    await tester.pumpSettingsFrame();
+    await tester.tap(find.text('Check for updates'));
+    await tester.pumpSettingsFrame();
+
+    expect(
+      find.text('Update required: Rain 1.0.1 build 2 is available.'),
+      findsOneWidget,
+    );
   });
 
   testWidgets('settings screen exposes debug sound diagnostics', (
@@ -557,6 +595,7 @@ class _SettingsHarness {
   _SettingsHarness({
     _FakePlatformBridge? platformBridge,
     ConnectionRequestState? connectionRequestState,
+    ReleaseManifestLoader? manifestLoader,
   }) : platformBridge = platformBridge ?? _FakePlatformBridge(),
        connectionRequestState =
            connectionRequestState ?? const ConnectionRequestState.idle(),
@@ -577,6 +616,7 @@ class _SettingsHarness {
       forceUpdateService: ForceUpdateService(
         remoteConfig: null,
         updateUrl: 'https://example.com',
+        manifestLoader: manifestLoader,
         packageInfoLoader: () async => PackageInfo(
           appName: 'Rain',
           packageName: 'com.rainapp.rain',

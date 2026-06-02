@@ -1,3 +1,5 @@
+import 'dart:async';
+
 import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
@@ -31,6 +33,21 @@ String _formatSettingsError(Object error) {
     }
   }
   return raw;
+}
+
+String _manualUpdateCheckMessage(VersionCheckResult result) {
+  return switch (result.status) {
+    VersionCheckStatus.updateRequired =>
+      'Update required: Rain ${result.displayLatestVersion} build ${result.displayLatestBuild} is available.',
+    VersionCheckStatus.optionalUpdateAvailable =>
+      'Update available: Rain ${result.displayLatestVersion} build ${result.displayLatestBuild}.',
+    VersionCheckStatus.current =>
+      'Rain is up to date: ${result.currentVersion} build ${result.displayCurrentBuild}.',
+    VersionCheckStatus.checkUnavailable =>
+      result.failureReason ?? 'Could not verify update status. Try again.',
+    VersionCheckStatus.invalidConfig =>
+      result.failureReason ?? 'Remote update config is invalid.',
+  };
 }
 
 class SettingsScreen extends ConsumerStatefulWidget {
@@ -824,6 +841,7 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen> {
   Future<void> _checkForUpdates(BuildContext context) async {
     final messenger = ScaffoldMessenger.of(context);
     final errorColor = Theme.of(context).colorScheme.error;
+    final environment = ref.read(appEnvironmentProvider);
     await ref.read(forceUpdateProvider.notifier).refresh();
     final result = ref.read(forceUpdateProvider);
     if (!context.mounted) {
@@ -840,7 +858,38 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen> {
       );
       return;
     }
-    messenger.showSnackBar(const SnackBar(content: Text('Update check done.')));
+    final value = result.value;
+    if (value == null) {
+      messenger.showSnackBar(
+        SnackBar(
+          content: const Text(
+            'Update check did not return a result. Try again.',
+          ),
+          backgroundColor: errorColor,
+        ),
+      );
+      return;
+    }
+
+    final updateUrl = value.updateUrl.trim().isNotEmpty
+        ? value.updateUrl
+        : environment.forceUpdateUrl;
+    messenger.showSnackBar(
+      SnackBar(
+        content: Text(_manualUpdateCheckMessage(value)),
+        backgroundColor: switch (value.status) {
+          VersionCheckStatus.invalidConfig ||
+          VersionCheckStatus.checkUnavailable => errorColor,
+          _ => null,
+        },
+        action: value.requiresUpdate || value.hasOptionalUpdate
+            ? SnackBarAction(
+                label: 'Open',
+                onPressed: () => unawaited(launchUrlString(updateUrl)),
+              )
+            : null,
+      ),
+    );
   }
 
   Future<void> _openReleasePage(BuildContext context) async {

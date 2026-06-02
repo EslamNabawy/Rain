@@ -149,12 +149,12 @@ class ForceUpdateController extends AsyncNotifier<ForceUpdateResult> {
   }
 
   Future<ForceUpdateResult> _check() async {
-    final networkStatus = ref.watch(networkStatusProvider).value;
+    final networkStatus = ref.read(networkStatusProvider).value;
     late final ForceUpdateResult result;
     if (networkStatus != null && networkStatus.blocksNetworkActions) {
-      result = await ref.watch(forceUpdateServiceProvider).checkUnavailable();
+      result = await ref.read(forceUpdateServiceProvider).checkUnavailable();
     } else {
-      result = await ref.watch(forceUpdateServiceProvider).check();
+      result = await ref.read(forceUpdateServiceProvider).check();
     }
     ref
         .read(crashDiagnosticsServiceProvider)
