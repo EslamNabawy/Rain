@@ -10,6 +10,20 @@ String _repoFile(String relativePath) {
   ).readAsStringSync().replaceAll('\r\n', '\n');
 }
 
+({String version, int build}) _appPubspecVersion() {
+  final pubspec = _repoFile('apps/rain/pubspec.yaml');
+  final match = RegExp(
+    r'^version:\s*([0-9]+\.[0-9]+\.[0-9]+)\+([0-9]+)\s*$',
+    multiLine: true,
+  ).firstMatch(pubspec);
+  if (match == null) {
+    throw StateError(
+      'apps/rain/pubspec.yaml has no valid version: x.y.z+build',
+    );
+  }
+  return (version: match.group(1)!, build: int.parse(match.group(2)!));
+}
+
 Directory _workspaceRoot() {
   var directory = Directory.current;
   while (true) {
@@ -170,6 +184,7 @@ void main() {
   test('Firebase Remote Config template publishes update manifest', () {
     final firebaseJson = _repoFile('backend/firebase/firebase.json');
     final template = _repoFile('backend/firebase/remoteconfig.template.json');
+    final appVersion = _appPubspecVersion();
     final decodedTemplate = jsonDecode(template) as Map<String, dynamic>;
     final parameters = decodedTemplate['parameters'] as Map<String, dynamic>;
     final manifestParameter =
@@ -190,10 +205,10 @@ void main() {
     expect(firebaseJson, contains('"template": "remoteconfig.template.json"'));
     expect(parameters, contains('min_required_version'));
     expect(parameters, contains('update_url'));
-    expect(demoAndroid['latestVersion'], '1.0.4');
-    expect(demoAndroid['latestBuild'], 5);
-    expect(demoAndroid['minimumVersion'], '1.0.4');
-    expect(demoAndroid['minimumBuild'], 5);
+    expect(demoAndroid['latestVersion'], appVersion.version);
+    expect(demoAndroid['latestBuild'], appVersion.build);
+    expect(demoAndroid['minimumVersion'], appVersion.version);
+    expect(demoAndroid['minimumBuild'], appVersion.build);
   });
 
   test('Android release signing is required and never debug-signed', () {
