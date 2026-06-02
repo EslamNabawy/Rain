@@ -1166,7 +1166,7 @@ class FirebaseEmulatorSignalingAdapter
       await _delete(<String>['activeVoicePairs', pairId]);
       final room = await fetchCall(lock.callId);
       if (room != null && _shouldDeleteReclaimedVoiceRoom(room, createdAt)) {
-        await _deleteVoiceCallRoomArtifacts(room);
+        await _tryDeleteReclaimedVoiceRoomArtifacts(room);
       }
       return true;
     }
@@ -1188,7 +1188,7 @@ class FirebaseEmulatorSignalingAdapter
         room.status != VoiceCallSignalingStatus.connected &&
         lock.caller == normalizeVoiceCallUsername(caller)) {
       await _delete(<String>['activeVoicePairs', pairId]);
-      await _deleteVoiceCallRoomArtifacts(room);
+      await _tryDeleteReclaimedVoiceRoomArtifacts(room);
       return true;
     }
 
@@ -1200,7 +1200,7 @@ class FirebaseEmulatorSignalingAdapter
     }
 
     await _delete(<String>['activeVoicePairs', pairId]);
-    await _deleteVoiceCallRoomArtifacts(room);
+    await _tryDeleteReclaimedVoiceRoomArtifacts(room);
     return true;
   }
 
@@ -1223,7 +1223,7 @@ class FirebaseEmulatorSignalingAdapter
       await _delete(<String>['activeVoiceUsers', username]);
       final room = await fetchCall(lock.callId);
       if (room != null && _shouldDeleteReclaimedVoiceRoom(room, createdAt)) {
-        await _deleteVoiceCallRoomArtifacts(room);
+        await _tryDeleteReclaimedVoiceRoomArtifacts(room);
       }
       return true;
     }
@@ -1245,7 +1245,7 @@ class FirebaseEmulatorSignalingAdapter
         room.status != VoiceCallSignalingStatus.connected &&
         lock.caller == normalizeVoiceCallUsername(caller)) {
       await _delete(<String>['activeVoiceUsers', username]);
-      await _deleteVoiceCallRoomArtifacts(room);
+      await _tryDeleteReclaimedVoiceRoomArtifacts(room);
       return true;
     }
 
@@ -1257,7 +1257,7 @@ class FirebaseEmulatorSignalingAdapter
     }
 
     await _delete(<String>['activeVoiceUsers', username]);
-    await _deleteVoiceCallRoomArtifacts(room);
+    await _tryDeleteReclaimedVoiceRoomArtifacts(room);
     return true;
   }
 
@@ -1316,6 +1316,15 @@ class FirebaseEmulatorSignalingAdapter
       'voiceCalls/${room.callId}': null,
       'voiceCallInboxes/${room.callee}/${room.callId}': null,
     });
+  }
+
+  Future<void> _tryDeleteReclaimedVoiceRoomArtifacts(VoiceCallRoom room) async {
+    try {
+      await _deleteVoiceCallRoomArtifacts(room);
+    } catch (_) {
+      // Stale lock reclaim is the user-visible fix. Terminal room and inbox
+      // artifact cleanup can be retried by normal cleanup paths.
+    }
   }
 
   VoiceActiveUserLock _activeVoiceUserLockForRoom(

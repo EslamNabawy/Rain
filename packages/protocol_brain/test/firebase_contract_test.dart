@@ -707,7 +707,9 @@ void main() {
 
     expect(
       inboxWrite,
-      contains('!newData.exists() || (data.exists() && newData.exists()'),
+      contains(
+        "data.exists() && newData.child('from').val() === data.child('from').val()",
+      ),
       reason:
           'Existing inbox rows must be updatable to terminal state even when '
           'the callee has just gone stale or closed the app.',
@@ -729,6 +731,32 @@ void main() {
       reason:
           'Presence gates on all inbox updates recreate the permission-denied '
           'cleanup failure seen in production diagnostics.',
+    );
+  });
+
+  test('Firebase voice inbox deletes use existing data only', () {
+    final rules = _repoFile('backend/firebase/database.rules.json');
+    final inboxRules = _rulesSlice(rules, '"voiceCallInboxes"', '"voiceCalls"');
+    final inboxWrite = _rulesSlice(inboxRules, '".write"', '".validate"');
+
+    expect(
+      inboxWrite,
+      contains('data.exists() && !newData.exists()'),
+      reason:
+          'Deleting terminal inbox artifacts must not require fields from '
+          'newData, because newData is null on deletes.',
+    );
+    expect(
+      inboxWrite,
+      contains(
+        "root.child('users/' + data.child('from').val() + '/uid').val() === auth.uid",
+      ),
+    );
+    expect(
+      inboxWrite,
+      contains(
+        "root.child('users/' + data.child('to').val() + '/uid').val() === auth.uid",
+      ),
     );
   });
 
@@ -810,6 +838,16 @@ void main() {
       reason:
           'A denied stale-lock transaction after terminal room write must not '
           'turn a completed hangup into a user-visible signaling failure.',
+    );
+    final emulatorAdapter = _repoFile(
+      'apps/rain/test/utils/firebase_emulator_signaling_adapter.dart',
+    );
+    expect(
+      emulatorAdapter,
+      contains('Future<void> _tryDeleteReclaimedVoiceRoomArtifacts'),
+      reason:
+          'The emulator adapter must mirror production: stale-lock reclaim '
+          'cannot fail only because terminal room artifact cleanup was denied.',
     );
   });
 
