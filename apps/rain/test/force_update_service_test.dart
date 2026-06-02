@@ -7,6 +7,8 @@ void main() {
     expect(compareVersionStrings('1.2.3+4', '1.2.3'), 0);
     expect(compareVersionStrings('1.2.3', '1.2.4'), -1);
     expect(compareVersionStrings('1.3.0', '1.2.99'), 1);
+    expect(compareVersionStrings('1.0.01', '1.0.02'), -1);
+    expect(compareVersionStrings('1.0.10', '1.0.2'), 1);
     expect(compareVersionStrings('bad', '0.0.1'), -1);
   });
 
@@ -115,6 +117,62 @@ void main() {
     expect(result.displayCurrentBuild, '123');
     expect(result.displayLatestBuild, '124');
   });
+
+  test(
+    'newer semantic latest wins even when current build is higher',
+    () async {
+      final service = ForceUpdateService(
+        remoteConfig: null,
+        updateUrl: 'https://example.com/update',
+        platform: 'android',
+        manifestLoader: () async => _manifest(
+          channel: 'stable',
+          platform: 'android',
+          latestVersion: '1.0.2',
+          latestBuild: 7,
+          minimumVersion: '1.0.1',
+          minimumBuild: 1,
+        ),
+        packageInfoLoader: () async =>
+            _packageInfo(version: '1.0.1', buildNumber: '2004'),
+      );
+
+      final result = await service.check();
+
+      expect(result.status, ForceUpdateStatus.optionalUpdateAvailable);
+      expect(result.currentVersion, '1.0.1');
+      expect(result.currentBuild, 2004);
+      expect(result.latestVersion, '1.0.2');
+      expect(result.latestBuild, 7);
+    },
+  );
+
+  test(
+    'older remote latest stays current when installed semantic is newer',
+    () async {
+      final service = ForceUpdateService(
+        remoteConfig: null,
+        updateUrl: 'https://example.com/update',
+        platform: 'android',
+        manifestLoader: () async => _manifest(
+          channel: 'stable',
+          platform: 'android',
+          latestVersion: '1.0.1',
+          latestBuild: 2004,
+          minimumVersion: '1.0.1',
+          minimumBuild: 1,
+        ),
+        packageInfoLoader: () async =>
+            _packageInfo(version: '1.0.2', buildNumber: '7'),
+      );
+
+      final result = await service.check();
+
+      expect(result.status, ForceUpdateStatus.current);
+      expect(result.currentVersion, '1.0.2');
+      expect(result.latestVersion, '1.0.1');
+    },
+  );
 
   test('invalid manifest reports invalid config without crashing', () async {
     final service = ForceUpdateService(

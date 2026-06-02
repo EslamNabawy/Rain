@@ -46,12 +46,18 @@ back to a generated throwaway key because Android would reject later APK updates
 with a signature mismatch.
 The workflow forces `CONNECTION_REQUEST_BACKEND_MODE=rtdbOnly` for demo builds
 so downloadable free-tier artifacts do not depend on callable Cloud Functions.
+The release script also passes Flutter `--build-name` and `--build-number`
+from `apps/rain/pubspec.yaml`, so APK/Windows metadata cannot drift from stale
+local Android build state.
 
 After every released build, update Firebase Remote Config key
 `rain_release_manifest_v1` from `docs/releases/rain_release_manifest_v1.example.json`.
 Old installed apps can only show optional or required update prompts after that
 remote manifest advertises a newer `latestVersion`/`latestBuild` for their
 channel and platform.
+Bump `apps/rain/pubspec.yaml` and both manifest files in the same commit before
+deploying Remote Config; otherwise old builds will correctly report that no
+newer app version exists.
 
 Free-tier release order:
 

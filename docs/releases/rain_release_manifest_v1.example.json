@@ -3,42 +3,42 @@
   "channels": {
     "stable": {
       "android": {
-        "latestVersion": "1.0.5",
-        "latestBuild": 6,
-        "minimumVersion": "1.0.5",
-        "minimumBuild": 6,
+        "latestVersion": "1.0.6",
+        "latestBuild": 7,
+        "minimumVersion": "1.0.6",
+        "minimumBuild": 7,
         "updateUrl": "https://github.com/EslamNabawy/Rain/releases",
-        "notes": "Call failure dismissal, update visibility, and release version tracking fixes.",
-        "publishedAt": 1780359900492
+        "notes": "Update version detection and release package stamping fixes.",
+        "publishedAt": 1780371417707
       },
       "windows": {
-        "latestVersion": "1.0.5",
-        "latestBuild": 6,
-        "minimumVersion": "1.0.5",
-        "minimumBuild": 6,
+        "latestVersion": "1.0.6",
+        "latestBuild": 7,
+        "minimumVersion": "1.0.6",
+        "minimumBuild": 7,
         "updateUrl": "https://github.com/EslamNabawy/Rain/releases",
-        "notes": "Call failure dismissal, update visibility, and release version tracking fixes.",
-        "publishedAt": 1780359900492
+        "notes": "Update version detection and release package stamping fixes.",
+        "publishedAt": 1780371417707
       }
     },
     "demo": {
       "android": {
-        "latestVersion": "1.0.5",
-        "latestBuild": 6,
-        "minimumVersion": "1.0.5",
-        "minimumBuild": 6,
+        "latestVersion": "1.0.6",
+        "latestBuild": 7,
+        "minimumVersion": "1.0.6",
+        "minimumBuild": 7,
         "updateUrl": "https://github.com/EslamNabawy/Rain/releases",
-        "notes": "Call failure dismissal, update visibility, and release version tracking fixes.",
-        "publishedAt": 1780359900492
+        "notes": "Update version detection and release package stamping fixes.",
+        "publishedAt": 1780371417707
       },
       "windows": {
-        "latestVersion": "1.0.5",
-        "latestBuild": 6,
-        "minimumVersion": "1.0.5",
-        "minimumBuild": 6,
+        "latestVersion": "1.0.6",
+        "latestBuild": 7,
+        "minimumVersion": "1.0.6",
+        "minimumBuild": 7,
         "updateUrl": "https://github.com/EslamNabawy/Rain/releases",
-        "notes": "Call failure dismissal, update visibility, and release version tracking fixes.",
-        "publishedAt": 1780359900492
+        "notes": "Update version detection and release package stamping fixes.",
+        "publishedAt": 1780371417707
       }
     }
   }

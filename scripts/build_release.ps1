@@ -17,7 +17,9 @@ param(
   [string]$AndroidArtifactSet = 'all',
   [switch]$AllowPublicTurnForDemo,
   [switch]$UseDemoAndroidSigningKey,
-  [switch]$Clean
+  [switch]$Clean,
+  [string]$BuildName = '',
+  [string]$BuildNumber = ''
 )
 
 $ErrorActionPreference = 'Stop'
@@ -457,6 +459,62 @@ function Invoke-FlutterBuild([string[]]$Arguments) {
   }
 }
 
+function Get-AppPubspecVersion([string]$FlutterProjectRoot) {
+  $pubspecPath = Join-Path $FlutterProjectRoot 'pubspec.yaml'
+  if (-not (Test-Path -LiteralPath $pubspecPath)) {
+    throw "App pubspec.yaml not found: $pubspecPath"
+  }
+
+  $pubspec = Get-Content -Raw -LiteralPath $pubspecPath
+  $match = [regex]::Match($pubspec, '(?m)^version:\s*(?<name>[0-9]+\.[0-9]+\.[0-9]+)\+(?<number>[0-9]+)\s*$')
+  if (-not $match.Success) {
+    throw "apps\rain\pubspec.yaml has no valid version: x.y.z+build"
+  }
+
+  return @{
+    Name = $match.Groups['name'].Value
+    Number = $match.Groups['number'].Value
+  }
+}
+
+function Resolve-ReleaseBuildStamp(
+  [string]$FlutterProjectRoot,
+  [string]$BuildName,
+  [string]$BuildNumber
+) {
+  $pubspecVersion = Get-AppPubspecVersion $FlutterProjectRoot
+  $resolvedBuildName = if ([string]::IsNullOrWhiteSpace($BuildName)) {
+    [string]$pubspecVersion.Name
+  } else {
+    $BuildName.Trim()
+  }
+  $resolvedBuildNumber = if ([string]::IsNullOrWhiteSpace($BuildNumber)) {
+    [string]$pubspecVersion.Number
+  } else {
+    $BuildNumber.Trim()
+  }
+
+  if ($resolvedBuildName -notmatch '^[0-9]+\.[0-9]+\.[0-9]+$') {
+    throw "Release build name must be x.y.z: $resolvedBuildName"
+  }
+
+  $parsedBuildNumber = 0
+  if (-not [int]::TryParse($resolvedBuildNumber, [ref]$parsedBuildNumber)) {
+    throw "Release build number must be a positive integer: $resolvedBuildNumber"
+  }
+  if ($parsedBuildNumber -le 0) {
+    throw "Release build number must be greater than zero: $resolvedBuildNumber"
+  }
+  if ($parsedBuildNumber -gt 2100000000) {
+    throw "Release build number is too large for Android versionCode: $resolvedBuildNumber"
+  }
+
+  return @{
+    Name = $resolvedBuildName
+    Number = $parsedBuildNumber
+  }
+}
+
 function Stop-GradleDaemons([string]$ProjectRoot) {
   $gradlewPath = Join-Path $ProjectRoot 'android\gradlew.bat'
   if (-not (Test-Path $gradlewPath)) {
@@ -697,6 +755,8 @@ if ($UseDemoAndroidSigningKey -and -not $isOpenRelayDemoBuild) {
 $androidArtifactPrefix = if ($isOpenRelayDemoBuild) { 'Rain-Demo' } else { 'Rain-release' }
 $windowsPortableName = if ($isOpenRelayDemoBuild) { 'Rain-Demo-Windows-x64-Build' } else { 'Rain-windows-portable' }
 $dartDefineArgs = Get-DartDefineArgs $appsRoot $DartDefinesFile $repoRoot $isOpenRelayDemoBuild
+$buildStamp = Resolve-ReleaseBuildStamp -FlutterProjectRoot $appsRoot -BuildName $BuildName -BuildNumber $BuildNumber
+$buildStampArgs = @("--build-name=$($buildStamp.Name)", "--build-number=$($buildStamp.Number)")
 if ($Platform -in @('all', 'android')) {
   if ($UseDemoAndroidSigningKey) {
     Use-DemoAndroidSigningKey $repoRoot
@@ -707,6 +767,8 @@ if ($Platform -in @('all', 'android')) {
 Ensure-Command flutter
 Ensure-Command dart
 Ensure-Command git
+
+Write-Step "Using app package version $($buildStamp.Name)+$($buildStamp.Number)"
 
 Write-Step "Syncing app icons"
 & (Join-Path $repoRoot 'scripts\sync_app_icons.ps1') -RepoRoot $repoRoot | Out-Host
@@ -748,7 +810,7 @@ if ($Platform -in @('all', 'windows')) {
     Write-Step "Cleaning Flutter project state for Windows build"
     Clean-FlutterProject $appsRoot
   }
-  $flutterArgs = @('build', 'windows', '--release') + $dartDefineArgs
+  $flutterArgs = @('build', 'windows', '--release') + $buildStampArgs + $dartDefineArgs
   Invoke-InDir $appsRoot {
     Invoke-FlutterBuild $flutterArgs
   }
@@ -813,7 +875,7 @@ if ($Platform -in @('all', 'android')) {
   }
   $androidTargetPlatformArgs = @('--target-platform', 'android-arm,android-arm64')
   Write-Step "Building Android per-ABI release APKs: armeabi-v7a and arm64-v8a"
-  $splitFlutterArgs = @('build', 'apk', '--release', '--split-per-abi') + $androidTargetPlatformArgs + $dartDefineArgs
+  $splitFlutterArgs = @('build', 'apk', '--release', '--split-per-abi') + $androidTargetPlatformArgs + $buildStampArgs + $dartDefineArgs
   Invoke-InDir $appsRoot {
     Invoke-FlutterBuild $splitFlutterArgs
   }

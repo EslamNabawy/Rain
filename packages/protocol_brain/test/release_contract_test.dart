@@ -45,8 +45,16 @@ void main() {
     final script = _repoFile('scripts/build_release.ps1');
 
     expect(script, contains('[string]\$DartDefinesFile'));
+    expect(script, contains('[string]\$BuildName'));
+    expect(script, contains('[string]\$BuildNumber'));
     expect(script, contains('[switch]\$AllowPublicTurnForDemo'));
     expect(script, contains('[switch]\$UseDemoAndroidSigningKey'));
+    expect(script, contains('--build-name='));
+    expect(script, contains('--build-number='));
+    expect(
+      script,
+      contains('apps\\rain\\pubspec.yaml has no valid version: x.y.z+build'),
+    );
     expect(
       script,
       contains(
