@@ -162,7 +162,7 @@ extension VoiceCallRuntime on RainRuntimeController {
         mediaMode: mediaMode,
       );
       await session.startOutgoing();
-      _watchFirebaseVoiceCall(
+      await _watchFirebaseVoiceCall(
         session: session,
         peerId: peerId,
         isOutgoing: true,
@@ -1169,7 +1169,7 @@ extension VoiceCallRuntime on RainRuntimeController {
       _applyVoiceSessionState(session, state, isOutgoing: isOutgoing);
     });
     if (!isOutgoing) {
-      _watchFirebaseVoiceCall(
+      await _watchFirebaseVoiceCall(
         session: session,
         peerId: peerId,
         isOutgoing: false,
@@ -1178,13 +1178,14 @@ extension VoiceCallRuntime on RainRuntimeController {
     return session;
   }
 
-  void _watchFirebaseVoiceCall({
+  Future<void> _watchFirebaseVoiceCall({
     required VoiceCallSession session,
     required String peerId,
     required bool isOutgoing,
-  }) {
+  }) async {
     final voiceAdapter = _requireVoiceSignalingAdapter();
     final remoteRole = isOutgoing ? VoiceCallRole.callee : VoiceCallRole.caller;
+    await adapter.ensureSignedInAs(selfIdentity.username);
     _recordRuntimeEvent(
       category: 'call',
       name: 'firebase_watch_started',
@@ -1226,7 +1227,12 @@ extension VoiceCallRuntime on RainRuntimeController {
               );
             },
             onError: (Object error, StackTrace stackTrace) {
-              _recordVoiceSignalingError(error, stackTrace);
+              _handleVoiceSignalingStreamError(
+                session,
+                peerId,
+                error,
+                stackTrace,
+              );
             },
           ),
     );
@@ -1243,7 +1249,12 @@ extension VoiceCallRuntime on RainRuntimeController {
               );
             },
             onError: (Object error, StackTrace stackTrace) {
-              _recordVoiceSignalingError(error, stackTrace);
+              _handleVoiceSignalingStreamError(
+                session,
+                peerId,
+                error,
+                stackTrace,
+              );
             },
           ),
     );
@@ -1260,7 +1271,12 @@ extension VoiceCallRuntime on RainRuntimeController {
               );
             },
             onError: (Object error, StackTrace stackTrace) {
-              _recordVoiceSignalingError(error, stackTrace);
+              _handleVoiceSignalingStreamError(
+                session,
+                peerId,
+                error,
+                stackTrace,
+              );
             },
           ),
     );
@@ -1277,9 +1293,44 @@ extension VoiceCallRuntime on RainRuntimeController {
               );
             },
             onError: (Object error, StackTrace stackTrace) {
-              _recordVoiceSignalingError(error, stackTrace);
+              _handleVoiceSignalingStreamError(
+                session,
+                peerId,
+                error,
+                stackTrace,
+              );
             },
           ),
+    );
+  }
+
+  void _handleVoiceSignalingStreamError(
+    VoiceCallSession session,
+    String peerId,
+    Object error,
+    StackTrace stackTrace,
+  ) {
+    _recordVoiceSignalingError(error, stackTrace);
+    if (!_isLiveVoiceCallSession(session) ||
+        _isTerminalVoiceCallSessionLatched(session)) {
+      return;
+    }
+    final current = _voiceCallState;
+    if (current.callId != session.callId ||
+        current.sessionEpoch != session.sessionEpoch ||
+        current.phase == VoiceCallPhase.idle ||
+        current.phase == VoiceCallPhase.failed ||
+        current.phase == VoiceCallPhase.ending) {
+      return;
+    }
+    unawaited(
+      _endVoiceCallForPeer(
+        peerId,
+        notifyPeer: false,
+        detail: _voiceCallSignalingFailed,
+        failureReason: VoiceCallFailureReason.signalingFailed,
+        failureDetail: _voiceCallSignalingFailed,
+      ),
     );
   }
 
@@ -2937,39 +2988,15 @@ extension VoiceCallRuntime on RainRuntimeController {
         current.callId != null &&
         _handledVideoFirstFrameTimeoutCallId != current.callId) {
       _handledVideoFirstFrameTimeoutCallId = current.callId;
-      unawaited(_failVideoCallForFirstFrameTimeout(current));
+      _recordRuntimeEvent(
+        category: 'call',
+        name: 'video_first_frame_timeout_warning',
+        severity: 'warning',
+        message:
+            'Remote video stream attached but no rendered frame arrived.',
+        context: _voiceCallEventContext(current),
+      );
     }
-  }
-
-  Future<void> _failVideoCallForFirstFrameTimeout(
-    VoiceCallState timedOutCall,
-  ) async {
-    final peerId = timedOutCall.peerId;
-    final callId = timedOutCall.callId;
-    if (peerId == null || callId == null) {
-      return;
-    }
-    if (!_isCurrentVoiceCall(
-      peerId,
-      callId,
-      sessionEpoch: timedOutCall.sessionEpoch,
-    )) {
-      return;
-    }
-    _recordVoiceCallRuntimeFailure(
-      timedOutCall,
-      failureCode: _voiceCallVideoFirstFrameTimeoutReasonCode,
-      userMessage: _voiceCallVideoFailed,
-      nativeError:
-          'Remote video stream was attached but no rendered frame arrived.',
-    );
-    await _endVoiceCallForPeer(
-      peerId,
-      notifyPeer: false,
-      detail: _voiceCallVideoFailed,
-      failureReason: VoiceCallFailureReason.videoFirstFrameTimeout,
-      failureDetail: _voiceCallVideoFailed,
-    );
   }
 
   void _handleVideoRendererFailure(
@@ -2989,35 +3016,6 @@ extension VoiceCallRuntime on RainRuntimeController {
       stackTrace,
       source: 'video-call-renderer',
       fatal: false,
-    );
-    final current = _voiceCallState;
-    if (!current.hasCall ||
-        !current.isVideo ||
-        current.phase == VoiceCallPhase.failed ||
-        current.phase == VoiceCallPhase.ending ||
-        current.peerId == null ||
-        current.callId == null ||
-        !_isCurrentVoiceCall(
-          peerId,
-          current.callId!,
-          sessionEpoch: current.sessionEpoch,
-        )) {
-      return;
-    }
-    _recordVoiceCallRuntimeFailure(
-      current,
-      failureCode: _voiceCallVideoRendererFailedReasonCode,
-      userMessage: _voiceCallVideoFailed,
-      nativeError: error.toString(),
-    );
-    unawaited(
-      _endVoiceCallForPeer(
-        peerId,
-        notifyPeer: false,
-        detail: _voiceCallVideoFailed,
-        failureReason: VoiceCallFailureReason.videoRendererFailed,
-        failureDetail: _voiceCallVideoFailed,
-      ),
     );
   }
 
@@ -4701,7 +4699,7 @@ final class _VideoVoiceMediaConnection implements VoiceMediaConnection {
     try {
       await _renderers.attachLocalStream(_media.localStream);
     } catch (error, stackTrace) {
-      Error.throwWithStackTrace(
+      _onRendererError(
         _VideoCallRendererException(
           'Video renderer failed while attaching local video stream.',
           error,

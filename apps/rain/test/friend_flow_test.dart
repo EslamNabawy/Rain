@@ -2581,7 +2581,7 @@ void main() {
     );
 
     test(
-      'local video renderer creation failure fails call without Firebase invite',
+      'local video renderer creation failure does not block Firebase invite',
       () async {
         final adapter = RecordingVoiceSignalingAdapter();
         final brain = TestSessionManager();
@@ -2609,33 +2609,22 @@ void main() {
         addTearDown(runtime.dispose);
 
         await runtime.start();
-        await expectLater(
-          runtime.startVideoCall('bob'),
-          throwsA(
-            isA<Exception>().having(
-              (Object error) => error.toString(),
-              'message',
-              contains('Video renderer failed'),
-            ),
-          ),
-        );
+        await expectLater(runtime.startVideoCall('bob'), completes);
 
-        expect(adapter.rooms, isEmpty);
-        expect(runtime.voiceCallState.phase, VoiceCallPhase.failed);
-        expect(
-          runtime.voiceCallState.failureReason,
-          VoiceCallFailureReason.videoRendererFailed,
-        );
+        expect(adapter.rooms, hasLength(1));
+        expect(runtime.voiceCallState.phase, VoiceCallPhase.outgoingRinging);
+        expect(runtime.voiceCallState.failureReason, isNull);
+        expect(runtime.voiceCallState.hasLocalVideo, isFalse);
         expect(
           (brain.callMediaConnections['bob']! as _TestCallMediaConnection)
               .disposed,
-          isTrue,
+          isFalse,
         );
       },
     );
 
     test(
-      'remote video renderer attach failure ends only the video call',
+      'remote video renderer attach failure keeps the video call alive',
       () async {
         final adapter = RecordingVoiceSignalingAdapter();
         final aliceBrain = TestSessionManager();
@@ -2707,20 +2696,16 @@ void main() {
         (aliceBrain.callMediaConnections['bob']! as _TestCallMediaConnection)
             .emitRemoteVideoTrack();
 
-        await _waitForCondition(
-          () => aliceRuntime.voiceCallState.phase == VoiceCallPhase.failed,
-          'caller to fail after remote renderer attach failure',
-        );
-        expect(adapter.rooms[callId]?.status, VoiceCallSignalingStatus.failed);
-        expect(adapter.rooms[callId]?.reasonCode, 'videoRendererFailed');
-        expect(
-          aliceRuntime.voiceCallState.failureReason,
-          VoiceCallFailureReason.videoRendererFailed,
-        );
+        await Future<void>.delayed(Duration.zero);
+        expect(aliceRuntime.voiceCallState.phase, VoiceCallPhase.active);
+        expect(adapter.rooms[callId]?.status, VoiceCallSignalingStatus.connected);
+        expect(adapter.rooms[callId]?.reasonCode, isNull);
+        expect(aliceRuntime.voiceCallState.failureReason, isNull);
+        expect(aliceRuntime.voiceCallState.hasRemoteVideo, isFalse);
         expect(
           (aliceBrain.callMediaConnections['bob']! as _TestCallMediaConnection)
               .disposed,
-          isTrue,
+          isFalse,
         );
         await expectLater(
           aliceRuntime.sendMessage('bob', 'chat still works after video fail'),
@@ -2841,7 +2826,7 @@ void main() {
     );
 
     test(
-      'remote video first-frame timeout ends the call without blocking chat',
+      'remote video first-frame timeout keeps the call alive with warning state',
       () async {
         final adapter = RecordingVoiceSignalingAdapter();
         final aliceBrain = TestSessionManager();
@@ -2915,22 +2900,105 @@ void main() {
             .emitRemoteVideoTrack();
 
         await _waitForCondition(
-          () => aliceRuntime.voiceCallState.phase == VoiceCallPhase.failed,
-          'caller to fail after remote first-frame timeout',
+          () => aliceRuntime.voiceCallState.videoFirstFrameTimedOut,
+          'caller to mark remote first-frame timeout',
         );
-        expect(adapter.rooms[callId]?.status, VoiceCallSignalingStatus.failed);
-        expect(adapter.rooms[callId]?.reasonCode, 'videoFirstFrameTimeout');
-        expect(
-          aliceRuntime.voiceCallState.failureReason,
-          VoiceCallFailureReason.videoFirstFrameTimeout,
-        );
-        expect(aliceRuntime.voiceCallState.hasRemoteVideo, isFalse);
+        expect(aliceRuntime.voiceCallState.phase, VoiceCallPhase.active);
+        expect(adapter.rooms[callId]?.status, VoiceCallSignalingStatus.connected);
+        expect(adapter.rooms[callId]?.reasonCode, isNull);
+        expect(aliceRuntime.voiceCallState.failureReason, isNull);
+        expect(aliceRuntime.voiceCallState.hasRemoteVideo, isTrue);
         await expectLater(
           aliceRuntime.sendMessage('bob', 'chat still works after timeout'),
           completes,
         );
       },
     );
+
+    test('voice signaling watchers revalidate Firebase auth before listening', () async {
+      final adapter = RecordingVoiceSignalingAdapter();
+      final brain = TestSessionManager();
+      await adapter.register('bob', 'bobpw');
+      await adapter.upsertFriendship('alice', 'bob');
+      await db
+          .into(db.friends)
+          .insert(
+            FriendsCompanion.insert(
+              username: 'bob',
+              displayName: 'Bob',
+              state: 'friend',
+              addedAt: 0,
+            ),
+          );
+      final runtime = _runtimeFor(
+        db,
+        alice,
+        adapter,
+        brain: brain,
+        videoCallRendererFactory: const _TestVideoCallRendererFactory(),
+      );
+      addTearDown(runtime.dispose);
+
+      await runtime.start();
+      adapter.authWatchEvents.clear();
+      await runtime.startVideoCall('bob');
+
+      final ensureIndex = adapter.authWatchEvents.indexOf('ensure:alice');
+      final watchIndex = adapter.authWatchEvents.indexWhere(
+        (String event) => event.startsWith('watchCall:'),
+      );
+      expect(ensureIndex, isNonNegative);
+      expect(watchIndex, isNonNegative);
+      expect(ensureIndex, lessThan(watchIndex));
+    });
+
+    test('voice signaling watcher permission error fails call immediately', () async {
+      final adapter = RecordingVoiceSignalingAdapter()
+        ..watchVoiceAnswerError = StateError('permission denied');
+      final brain = TestSessionManager();
+      await adapter.register('bob', 'bobpw');
+      await adapter.upsertFriendship('alice', 'bob');
+      await db
+          .into(db.friends)
+          .insert(
+            FriendsCompanion.insert(
+              username: 'bob',
+              displayName: 'Bob',
+              state: 'friend',
+              addedAt: 0,
+            ),
+          );
+      final runtime = _runtimeFor(
+        db,
+        alice,
+        adapter,
+        brain: brain,
+        videoCallRendererFactory: const _TestVideoCallRendererFactory(),
+      );
+      addTearDown(runtime.dispose);
+
+      await runtime.start();
+      await runtime.startVoiceCall('bob');
+      expect(
+        adapter.authWatchEvents,
+        contains(
+          startsWith('watchVoiceAnswer:'),
+        ),
+      );
+
+      await _waitForCondition(
+        () => runtime.voiceCallState.phase == VoiceCallPhase.failed,
+        'voice signaling watcher error to fail call immediately',
+      );
+      expect(
+        runtime.voiceCallState.failureReason,
+        VoiceCallFailureReason.signalingFailed,
+      );
+      expect(runtime.voiceCallState.detail, 'Call setup failed. Try again.');
+      expect(adapter.rooms.values.single.status, VoiceCallSignalingStatus.failed);
+      expect(adapter.activePairLocks, isEmpty);
+      expect(adapter.activeUserLocks, isEmpty);
+    });
 
     test('active Firebase pair lock is surfaced as peer busy', () async {
       final adapter = RecordingVoiceSignalingAdapter();
@@ -6724,6 +6792,13 @@ class RecordingNoopSignalingAdapter extends NoopSignalingAdapter {
   final List<String> writtenRequests = <String>[];
   final List<String> savedFriendships = <String>[];
   final List<String> deletedFriendships = <String>[];
+  final List<String> authWatchEvents = <String>[];
+
+  @override
+  Future<void> ensureSignedInAs(String username) async {
+    authWatchEvents.add('ensure:$username');
+    await super.ensureSignedInAs(username);
+  }
 
   @override
   Future<void> deleteFriendRequest(String to, String from) async {
@@ -6789,6 +6864,10 @@ class RecordingVoiceSignalingAdapter extends RecordingNoopSignalingAdapter
   final FakeVoiceSignalingAdapter _voice = FakeVoiceSignalingAdapter();
   Object? terminalRoomWriteError;
   Object? sessionHangupFrameError;
+  Object? watchCallError;
+  Object? watchVoiceOfferError;
+  Object? watchVoiceAnswerError;
+  Object? watchIceCandidatesError;
   int endCallAttempts = 0;
   int? failEndCallAttempt;
   final Set<int> failEndCallAttempts = <int>{};
@@ -6962,10 +7041,18 @@ class RecordingVoiceSignalingAdapter extends RecordingNoopSignalingAdapter
   }
 
   @override
-  Stream<VoiceCallRoom?> watchCall(String callId) => _voice.watchCall(callId);
+  Stream<VoiceCallRoom?> watchCall(String callId) {
+    authWatchEvents.add('watchCall:$callId');
+    final error = watchCallError;
+    if (error != null) {
+      return _asyncErrorStream<VoiceCallRoom?>(error);
+    }
+    return _voice.watchCall(callId);
+  }
 
   @override
   Stream<VoiceCallInboxEntry> watchIncomingCalls(String username) {
+    authWatchEvents.add('watchIncomingCalls:$username');
     return _voice.watchIncomingCalls(username);
   }
 
@@ -6974,17 +7061,41 @@ class RecordingVoiceSignalingAdapter extends RecordingNoopSignalingAdapter
     required String callId,
     required VoiceCallRole role,
   }) {
+    authWatchEvents.add('watchIceCandidates:$callId:${role.name}');
+    final error = watchIceCandidatesError;
+    if (error != null) {
+      return _asyncErrorStream<VoiceCallIceCandidateRecord>(error);
+    }
     return _voice.watchIceCandidates(callId: callId, role: role);
   }
 
   @override
   Stream<VoiceSignalingEnvelope> watchVoiceAnswer(String callId) {
+    authWatchEvents.add('watchVoiceAnswer:$callId');
+    final error = watchVoiceAnswerError;
+    if (error != null) {
+      return _asyncErrorStream<VoiceSignalingEnvelope>(error);
+    }
     return _voice.watchVoiceAnswer(callId);
   }
 
   @override
   Stream<VoiceSignalingEnvelope> watchVoiceOffer(String callId) {
+    authWatchEvents.add('watchVoiceOffer:$callId');
+    final error = watchVoiceOfferError;
+    if (error != null) {
+      return _asyncErrorStream<VoiceSignalingEnvelope>(error);
+    }
     return _voice.watchVoiceOffer(callId);
+  }
+
+  Stream<T> _asyncErrorStream<T>(Object error) {
+    final controller = StreamController<T>();
+    scheduleMicrotask(() {
+      controller.addError(error, StackTrace.current);
+      unawaited(controller.close());
+    });
+    return controller.stream;
   }
 
   @override

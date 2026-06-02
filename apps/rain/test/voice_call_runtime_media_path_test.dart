@@ -65,7 +65,7 @@ void main() {
     final createSession = _sourceBetween(
       source,
       'Future<VoiceCallSession> _createVoiceCallSession',
-      'void _watchFirebaseVoiceCall',
+      'Future<void> _watchFirebaseVoiceCall',
     );
     expect(
       createSession,
