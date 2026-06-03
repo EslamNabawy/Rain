@@ -6482,6 +6482,14 @@ void main() {
         await Future<void>.delayed(const Duration(milliseconds: 20));
 
         expect(harness.bobRuntime.voiceCallState.phase, VoiceCallPhase.ending);
+        expect(
+          harness.runtimeErrors,
+          isNot(contains('bob:voice-call-signaling')),
+          reason:
+              'Late voice media states after a terminal Firebase room are '
+              'expected race cleanup events. They must not replace the last '
+              'real crash/error in exported diagnostics.',
+        );
         disposeGate.complete();
         await _waitForHarnessCallIdle(
           harness,
@@ -6632,6 +6640,7 @@ Future<_TwoUserCallHarness> _createTwoUserCallHarness(
   final resolvedAliceBrain = aliceBrain ?? TestSessionManager();
   final resolvedBobBrain = bobBrain ?? TestSessionManager();
   final runtimeEvents = <String>[];
+  final runtimeErrors = <String>[];
   final bobDb = RainDatabase(NativeDatabase.memory());
   final bob = RainIdentity(
     username: 'bob',
@@ -6677,6 +6686,7 @@ Future<_TwoUserCallHarness> _createTwoUserCallHarness(
       activeCallReconnectGrace: activeCallReconnectGrace,
       videoCallRendererFactory: const _TestVideoCallRendererFactory(),
       eventRecorder: _recordRuntimeEventFor(runtimeEvents, 'alice'),
+      errorRecorder: _recordRuntimeErrorFor(runtimeErrors, 'alice'),
     ),
     bobRuntime: _runtimeFor(
       bobDb,
@@ -6686,8 +6696,10 @@ Future<_TwoUserCallHarness> _createTwoUserCallHarness(
       activeCallReconnectGrace: activeCallReconnectGrace,
       videoCallRendererFactory: const _TestVideoCallRendererFactory(),
       eventRecorder: _recordRuntimeEventFor(runtimeEvents, 'bob'),
+      errorRecorder: _recordRuntimeErrorFor(runtimeErrors, 'bob'),
     ),
     runtimeEvents: runtimeEvents,
+    runtimeErrors: runtimeErrors,
   );
 }
 
@@ -6700,6 +6712,19 @@ RuntimeEventRecorder _recordRuntimeEventFor(List<String> events, String owner) {
     Map<String, Object?> context = const <String, Object?>{},
   }) {
     events.add('$owner:$name');
+  };
+}
+
+RuntimeErrorRecorder _recordRuntimeErrorFor(List<String> errors, String owner) {
+  return (
+    Object error,
+    StackTrace? stackTrace, {
+    required String source,
+    required bool fatal,
+    String? flutterLibrary,
+    String? flutterContext,
+  }) {
+    errors.add('$owner:$source');
   };
 }
 
@@ -6787,6 +6812,7 @@ class _TwoUserCallHarness {
     required this.aliceRuntime,
     required this.bobRuntime,
     required this.runtimeEvents,
+    required this.runtimeErrors,
   });
 
   final RecordingVoiceSignalingAdapter adapter;
@@ -6796,6 +6822,7 @@ class _TwoUserCallHarness {
   final RainRuntimeController aliceRuntime;
   final RainRuntimeController bobRuntime;
   final List<String> runtimeEvents;
+  final List<String> runtimeErrors;
 
   Future<void> start() async {
     await aliceRuntime.start();

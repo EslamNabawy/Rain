@@ -4140,15 +4140,6 @@ extension VoiceCallRuntime on RainRuntimeController {
         'mediaMode': session.mediaMode.name,
       },
     );
-    errorRecorder?.call(
-      StateError(
-        'Ignored late voice signaling for ${session.callId}/'
-        '${session.sessionEpoch}: $message',
-      ),
-      StackTrace.current,
-      source: 'voice-call-signaling',
-      fatal: false,
-    );
   }
 
   Map<String, Object?> _voiceCallEventContext(VoiceCallState state) {

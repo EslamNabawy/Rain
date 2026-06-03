@@ -215,7 +215,7 @@ Highest-priority engineering areas:
 6. Improve diagnostics so user reports identify permission, Firebase, ICE/TURN, WebRTC, media, or UI state failures separately.
 7. Keep the Obsidian vault current as the project knowledge graph.
 
-Latest evidence lock: [ROOT_CAUSE_ANALYSIS.md](../../ROOT_CAUSE_ANALYSIS.md) correlates the 2026-06-03 Windows diagnostic export, Android screenshot, and manual failure report. Confirmed root causes are split call terminal authority, Android `signaling.endCall` permission denial, presence freshness races, terminal inbox exposure before cleanup, Android diagnostics export path failure, and platform build-number inconsistency in update policy.
+Latest evidence lock: [ROOT_CAUSE_ANALYSIS.md](../../ROOT_CAUSE_ANALYSIS.md) correlates the 2026-06-03 Windows diagnostic export, Android screenshot, and manual failure report. Confirmed root causes are split call terminal authority, Android `signaling.endCall` permission denial, presence freshness races, terminal inbox exposure before cleanup, Android diagnostics export path failure, and platform build-number inconsistency in update policy. First mitigation completed on 2026-06-03: late voice signaling frames after a terminal room are now logged as `late_frame_ignored` diagnostics only, not as `lastCrash` Flutter errors.
 
 ## Technical Debt
 
@@ -330,6 +330,7 @@ Validation defaults:
 
 - Creating duplicate Project Memory notes splits context. This file is the primary memory note.
 - Generic call errors hide root causes; classify signaling, permission, ICE/TURN, media, and terminal-state failures separately.
+- Expected terminal races must not call the crash/error recorder; otherwise diagnostics show a benign late-frame cleanup event as the "last Flutter error" and hide the real failure.
 - False busy usually means stale or partial Firebase call locks.
 - Firebase is signaling only; do not describe voice/video media as passing through Firebase.
 - Unit tests alone are not enough for WebRTC confidence.

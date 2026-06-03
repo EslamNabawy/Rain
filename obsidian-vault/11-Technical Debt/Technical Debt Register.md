@@ -145,6 +145,7 @@ Related: [[Debt Categories]], [[Debt Prioritization]], [[Architecture Debt]], [[
 - Related Systems: [[Call State Machine]], [[CallTerminalReconciler]], [[Voice Calls]], [[Video Calls]].
 - Roadmap Tasks: TASK-003, TASK-013.
 - Resolution Strategy: Define explicit allowed transitions, timeouts, terminal reconciliation, and late-frame ignore behavior, then test voice and video paths.
+- Progress Note 2026-06-03: Late voice signaling frames after terminal Firebase rooms now remain structured `late_frame_ignored` diagnostics and no longer replace the latest real crash/error in exports. Remaining debt is the full state-machine and terminal reconciliation split.
 
 ### TD-005: Fragmented Call Surface Model
 

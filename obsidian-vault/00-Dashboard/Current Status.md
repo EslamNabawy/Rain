@@ -27,6 +27,7 @@ Last updated: 2026-06-03
 - Update checks have been reported as not showing old-version prompts correctly.
 - File transfer implementation can cause allocation and I/O pressure for large files.
 - 2026-06-03 evidence review is captured in [ROOT_CAUSE_ANALYSIS.md](../../ROOT_CAUSE_ANALYSIS.md). It confirms call terminal authority conflicts, Android `signaling.endCall` permission denial, presence freshness races, stale terminal inbox exposure, Android diagnostics export failure, and update build-number inconsistency.
+- 2026-06-03 mitigation: late voice signaling frames after terminal room cleanup no longer write to crash diagnostics; they remain structured call events only. This improves report quality but does not yet fix the remaining call/presence/update failures.
 
 ## Documentation Status
 

@@ -149,6 +149,21 @@ No task is fully complete until the lesson check is done or explicitly marked "n
 - Owner: Engineering
 - Status: Open
 
+### LESSON-20260603-008: Expected Terminal Races Must Not Be Crash Diagnostics
+
+- Related task: [ROOT_CAUSE_ANALYSIS.md](../../ROOT_CAUSE_ANALYSIS.md) first mitigation
+- Related system: [[Voice Calls]], [[CallDiagnosticsRecorder]], [[Diagnostics And Logging]]
+- Related risk/debt: TD-004, TD-016
+- What was learned: The latest diagnostic export showed a benign late voice signaling state after terminal cleanup being stored as `lastCrash`, which hid the real call failure evidence.
+- What caused delays: The runtime treated an expected cleanup race as a non-fatal error instead of a structured diagnostic event.
+- What failed: Exported diagnostics became misleading because the "last Flutter error" pointed to `Ignored late voice signaling...` rather than the deeper signaling/media failure.
+- What succeeded: A regression now locks `_recordLateVoiceFrame` to emit `late_frame_ignored` without calling the crash/error recorder.
+- What should change: Expected races, cleanup echoes, and already-terminal state must be warning/info events unless they break user-visible behavior.
+- Pattern: Observability pollution from expected async races.
+- Follow-up improvement: Continue with Firebase end-call permission reproduction and richer call failure taxonomy.
+- Owner: Engineering
+- Status: Open
+
 ## Review Cadence
 
 - Review lessons at the end of every completed task.
