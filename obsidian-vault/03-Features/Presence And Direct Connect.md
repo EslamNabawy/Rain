@@ -35,7 +35,7 @@ Users need to know whether direct chat/file actions can work now.
 ## Known Issues
 
 - Users reported peers staying online until both apps restart.
-- Full app-close runtime regression coverage still needs CI or a fixed local Drift/sqlite test harness because the local Windows `friend_flow_test.dart` process fails before test logic on sqlite native asset loading.
+- Full app-close runtime regression coverage must use the app-package test wrapper, `scripts/run_rain_app_test.ps1`, so Windows Drift/sqlite native assets resolve from `apps/rain`.
 
 ## Testing Requirements
 

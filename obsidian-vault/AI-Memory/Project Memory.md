@@ -339,6 +339,7 @@ Validation defaults:
 - Online direct connect must not consume offline notification quota.
 - Closed app currently means offline; closed-app call/ring reliability is out of scope until push/foreground-service architecture exists.
 - Obsidian links must remain valid; run the vault checker after documentation changes.
+- Isolated app tests that touch Drift/SQLite must run from `apps/rain` or through `scripts/run_rain_app_test.ps1`; root-level `flutter test apps\rain\test\...` can fail to resolve SQLite native assets on Windows.
 - The vault has completed [[Engineering System Flaw Remediation Plan]] Phase 00 and Phase 01: canonical source notes are documented, secondary duplicate notes were renamed, and the vault checker now fails on uncontrolled duplicate note titles. Remaining governance flaws before full Phase 9 automation: static metrics, missing validation evidence ledger, weak stale-doc detection, and missing machine-readable status schema.
 
 ## Quick Start For Future AI Sessions

@@ -34,6 +34,6 @@ Detailed implementation planning: [[Presence Management Refactor Plan]].
 - Newer session id wins over old heartbeats.
 - Recovery does not reconnect manually disconnected peers.
 - Recovery does not reconnect stale/offline peers.
-- Local validation note: `friend_flow_test.dart` currently fails before test logic on Windows because sqlite native assets are not resolved by the local Flutter test process; CI or a repaired local Drift harness is still needed for full app-close runtime proof.
+- Local validation note: isolated app tests that touch Drift/SQLite must run through `scripts/run_rain_app_test.ps1` or from `apps/rain`, not from the repository root with a root-relative path.
 
 Related: [[Presence And Direct Connect]], [[Signaling Reliability Epic]].

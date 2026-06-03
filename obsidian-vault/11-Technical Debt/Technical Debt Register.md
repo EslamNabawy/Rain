@@ -334,6 +334,7 @@ Related: [[Debt Categories]], [[Debt Prioritization]], [[Architecture Debt]], [[
 - Related Systems: [[Test Strategy]], [[Emulator Coverage]], [[Emulator Test Matrix]], [[Release Gates]].
 - Roadmap Tasks: TASK-018.
 - Resolution Strategy: Create adapter contract matrix, fake parity tests, emulator RTDB tests, and stable smoke locators.
+- Progress Note 2026-06-03: Added `scripts/run_rain_app_test.ps1` so isolated Rain app tests run from `apps/rain` and resolve Drift/SQLite native assets on Windows. The targeted stale-presence friend-flow test passed through the wrapper, then full `friend_flow_test.dart` passed with 120 tests passing and 10 skipped legacy control-channel cases.
 
 ### TD-016: WebRTC Failure Classification Coverage
 

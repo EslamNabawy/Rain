@@ -27,4 +27,33 @@ Validation run:
 - `flutter test --reporter expanded` from `packages/protocol_brain`
 - `dart run melos run analyze`
 
-Known remaining test gap: local Windows `apps/rain/test/friend_flow_test.dart` still fails before runtime assertions because sqlite native assets are not resolved by the local Flutter test process. Full app-close/session-owned presence proof still needs a repaired Drift/sqlite harness or equivalent CI evidence.
+Known invocation rule: local Windows app tests that touch Drift/SQLite must run from `apps/rain` or through `scripts/run_rain_app_test.ps1`. Running a root-relative app test directly from the repository root can fail before runtime assertions because sqlite native assets are not resolved for the app package.
+
+## Rain App Isolated Test Invocation
+
+Do not run app tests that touch Drift/SQLite from the repository root with a root-relative test path, for example:
+
+```powershell
+flutter test apps\rain\test\friend_flow_test.dart
+```
+
+That invocation can fail on Windows before test logic with `Couldn't resolve native function 'sqlite3_initialize'` because native assets are not resolved for the app package.
+
+Use the wrapper instead:
+
+```powershell
+.\scripts\run_rain_app_test.ps1 apps\rain\test\friend_flow_test.dart
+```
+
+For a targeted test:
+
+```powershell
+.\scripts\run_rain_app_test.ps1 apps\rain\test\friend_flow_test.dart -PlainName "relationship sync does not seed stale backend presence as online"
+```
+
+The wrapper always runs `flutter test` from `apps/rain`, accepts either root-relative or app-relative test paths, and keeps isolated app tests aligned with the Melos package context.
+
+Validation evidence:
+
+- `.\scripts\run_rain_app_test.ps1 apps\rain\test\friend_flow_test.dart -PlainName "relationship sync does not seed stale backend presence as online"` passed on 2026-06-03.
+- `.\scripts\run_rain_app_test.ps1 apps\rain\test\friend_flow_test.dart -NoPubGet` passed on 2026-06-03 with 120 tests passing and 10 skipped legacy control-channel cases.

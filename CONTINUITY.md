@@ -39,6 +39,7 @@ Phase 8 - Self-Improvement Engine
 - Seventh mitigation from the RCA execution is complete: Phase 05 presence/session freshness now carries session metadata through backend identity snapshots, treats `presence.state != online` as offline, blocks UI Connect and auto-recovery through the shared fresh-presence resolver, and preserves `presenceExpired` as a terminal peer intent until a later successful explicit reconnect.
 - Phase 08 Regression Test Expansion is complete: targeted local tests now cover stable failure messages for WebRTC/Firebase/network call failures, failed call suite state and compact video dock behavior, terminal-room-before-session-hangup ordering, failed-media terminal write before session disposal, already-terminal cleanup classification, and session-owned Firebase presence contracts.
 - Phase 09 local pre-artifact release gate evidence is recorded: `dart pub get`, analyze, full Melos tests, Firebase JSON parsing, Firebase Functions tests, Firebase emulator integration tests, and Obsidian vault validation all passed on 2026-06-03. Cloud artifact build and release-page proof remain the hard-gate completion step.
+- Local Windows Drift/sqlite app-test invocation is repaired for isolated Rain app tests: `scripts/run_rain_app_test.ps1` runs tests from `apps/rain`, the targeted stale-presence friend-flow case passed, and full `friend_flow_test.dart` passed with 120 passing tests and 10 skipped legacy control-channel cases.
 - Phase 0 deliverables are complete.
 - Phase 1 vault structure is complete.
 - Phase 2 repository discovery is documented in `obsidian-vault/03-Architecture/Current Architecture.md`.
@@ -68,7 +69,7 @@ Phase 8 - Self-Improvement Engine
 
 ## Next Recommended Action
 
-Use `ROOT_CAUSE_ANALYSIS.md` to implement the next repair in evidence order: complete call setup media/ICE failure classification, repair or bypass the local Drift/sqlite runtime test harness, and keep release Remote Config deployment evidence tied to each build.
+Use `ROOT_CAUSE_ANALYSIS.md` to implement the next repair in evidence order: complete call setup media/ICE failure classification, keep isolated app runtime tests on `scripts/run_rain_app_test.ps1`, and keep release Remote Config deployment evidence tied to each build.
 
 ## Future Population Areas
 

@@ -259,13 +259,28 @@ No task is fully complete until the lesson check is done or explicitly marked "n
 - Related task: Phase 08 Regression Test Expansion, TASK-003, TASK-004, TASK-006, TASK-013, TASK-019
 - Related system: [[Voice Calls]], [[Video Calls]], [[Presence Management]], [[CallDiagnosticsRecorder]], [[Test Strategy]]
 - Related risk/debt: R-001, R-003, R-004, TD-004, TD-015, TD-016
-- What was learned: The full `friend_flow_test.dart` runtime harness is still important, but local Windows sqlite native-asset loading blocks it before app logic runs. Regression coverage should still move forward with smaller deterministic contract and widget/model tests.
-- What caused delays: The heaviest runtime tests cover the most important call and presence behavior, but they are not currently reliable as a local phase gate.
+- What was learned: The full `friend_flow_test.dart` runtime harness is still important, and it can run locally when invoked from the app package context through `scripts/run_rain_app_test.ps1`.
+- What caused delays: The heaviest runtime tests cover the most important call and presence behavior, but the root-level isolated invocation made them look unreliable by failing SQLite native-asset loading before app logic.
 - What failed: Treating only the heavy runtime harness as valid proof would block regression expansion.
 - What succeeded: Phase 08 added low-dependency tests for call failure messages, failed call suite states, compact video dock behavior, terminal-room-before-session-hangup ordering, failed-media terminal writes, already-terminal cleanup classification, and session-owned Firebase presence.
 - What should change: For every high-risk bug, add the smallest deterministic regression first, then add or restore full integration coverage once the harness is healthy.
 - Pattern: Heavy harness dependency blocks targeted regression coverage.
-- Follow-up improvement: Repair Drift/sqlite native-asset resolution or move the full friend-flow runtime suite into CI with reliable native assets.
+- Follow-up improvement: Keep future isolated app-test instructions on `scripts/run_rain_app_test.ps1` and use it for full friend-flow regression runs.
+- Owner: Engineering
+- Status: Open
+
+### LESSON-20260603-016: App Tests Must Run In Their Package Context
+
+- Related task: TASK-006, TASK-018
+- Related system: [[Test Strategy]], [[Presence Management]], [[Presence And Direct Connect]]
+- Related risk/debt: R-003, R-019, TD-015
+- What was learned: The SQLite native-asset failure came from invoking an app test from the repository root with a root-relative path. Running through `scripts/run_rain_app_test.ps1` keeps the test process in `apps/rain`, where native assets resolve correctly.
+- What caused delays: The failing command looked like a runtime SQLite failure even though full Melos tests and the app-package context could resolve native assets.
+- What failed: `flutter test apps\rain\test\friend_flow_test.dart` from the repository root is not a safe isolated app-test command on Windows.
+- What succeeded: `.\scripts\run_rain_app_test.ps1 apps\rain\test\friend_flow_test.dart -PlainName "relationship sync does not seed stale backend presence as online"` passed, and full `friend_flow_test.dart` passed through the wrapper with 120 passing tests and 10 skipped legacy control-channel cases.
+- What should change: Future isolated Rain app tests must use the wrapper or run from `apps/rain`.
+- Pattern: Package-context mismatch masquerading as native runtime failure.
+- Follow-up improvement: Use the wrapper for future app runtime regression expansion and avoid root-level isolated app-test commands.
 - Owner: Engineering
 - Status: Open
 
