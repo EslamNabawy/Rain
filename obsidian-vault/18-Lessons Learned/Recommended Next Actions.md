@@ -1,6 +1,6 @@
 # Recommended Next Actions
 
-Last updated: 2026-06-03
+Last updated: 2026-06-04
 
 ## Purpose
 
@@ -16,6 +16,8 @@ Use [AUTHENTICATION_AUDIT.md](../../AUTHENTICATION_AUDIT.md) and [ROOT_AUTH_STAR
 
 Auth Phase 1 progress 2026-06-03: cached Drift identity is now backend-validated before signed-in restoration. Deleted backend accounts and uid mismatches clear local session, and login/register save local identity only after backend identity/presence writes. Auth Phase 2 progress 2026-06-03: logout clears local session before best-effort backend sign-out, including failed sign-out and logout-after-app-exit shutdown cases. Auth Phase 3 progress 2026-06-03: `AppStartupState` centralizes update/session/runtime/router readiness and tests cover every startup phase. Auth Phase 4 progress 2026-06-03: `RainApp` globally replaces routed content with `RainStartupSurface` during blocked startup phases, and tests prove the navigation shell is absent. Auth Phase 5 progress 2026-06-03: protected routes use explicit readiness gates and signed-out auth renders outside the shell. Auth Phase 6 progress 2026-06-03: `AuthenticatedSession.sessionGeneration` scopes runtime/provider ownership and tests prove account state resets at session boundaries.
 
+Registration conflict progress 2026-06-04: live Firebase rules allowed fresh random account creation, while the reported `eslam` username already existed in RTDB. Registration now converts RTDB permission-denied on account-data creation into a friendly username/account conflict, avoids caching local identity on backend-save failure, and limits Auth rollback to failures before the durable user row exists.
+
 ## Top Recommended Actions
 
 | Rank | Action | Why Now | Dependencies | Success Criteria |
@@ -24,6 +26,7 @@ Auth Phase 1 progress 2026-06-03: cached Drift identity is now backend-validated
 | 2 | Enforce Firebase terminal room state as the call terminal source of truth across every runtime path. | Late-frame crash pollution and one `endCall` permission-denied path are mitigated, but terminal ownership still needs full reconciliation hardening. | TASK-003, [[Call State Machine]], [[CallTerminalReconciler]] | Remote terminal room ends local voice calls; late frames stay diagnostic-only; no peer remains active after terminal room state. |
 | 3 | Continue TASK-004 diagnostics taxonomy for ICE, route, and media lifecycle. | Room status timelines are now captured, but failed call exports still need stronger ICE candidate, selected route, track, renderer, and first-frame evidence. | [[CallDiagnosticsRecorder]] | Failed calls export categorized ICE/media lifecycle evidence without raw SDP or candidate strings. |
 | 4 | Add release evidence for deployed Remote Config manifests. | Code now detects stale release policy, but old clients can only prompt after Remote Config actually advertises the new build. | [[Version And Updates]], [[Release Gates]] | Each release records artifact version/build/channel plus the deployed `rain_release_manifest_v1` value or an explicit skipped-deploy reason. |
+| 5 | Add registration conflict emulator coverage if adapter seams allow it. | The app-side and UI regressions are covered, but direct Firebase adapter partial-write cases would be stronger with rules/emulator proof. | [[Authentication]], [[Rules Strategy]], TD-021 | Existing username, pre-user-row denial, and post-user-row secondary failure behavior are covered without requiring live Firebase probes. |
 
 ## Do Not Prioritize Yet
 

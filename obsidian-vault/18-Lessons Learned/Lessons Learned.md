@@ -1,6 +1,6 @@
 # Lessons Learned
 
-Last updated: 2026-06-03
+Last updated: 2026-06-04
 
 ## Purpose
 
@@ -176,6 +176,21 @@ No task is fully complete until the lesson check is done or explicitly marked "n
 - What should change: Authoritative state writes must be isolated from optional mirror cleanup. Mirror rows can be best-effort, but they must never block terminal state, lock release, or user-visible cleanup.
 - Pattern: Authoritative state coupled to optional mirror row.
 - Follow-up improvement: Continue terminal reconciliation hardening for every voice/video cleanup path and add more emulator cases for already-terminal/missing-room/idempotent cleanup.
+- Owner: Engineering
+- Status: Open
+
+### LESSON-20260604-001: Registration Permission Denied Can Be A Username Conflict
+
+- Related task: Create-account Firebase permission-denied investigation.
+- Related system: [[Authentication]], [[Rules Strategy]], [[Firebase Architecture]]
+- Related risk/debt: R-014, R-021, TD-021
+- What was learned: Live Firebase rules can allow fresh registration while a specific username still fails with RTDB permission denied because `users/{username}` already exists or is locked by another uid.
+- What caused delays: The raw Firebase message looked like a global rules failure, but a live random registration probe showed the rules were not broadly denying new users.
+- What failed: The app exposed `[firebase_database/unknown] Permission denied` directly and did not make failed backend registration cleanup explicit enough.
+- What succeeded: Checking live `/users/eslam` and a fresh random registration separated username-conflict evidence from rules-deployment evidence. Regression tests now cover backend-save failure sign-out/no-cache behavior and onboarding conflict copy.
+- What should change: Registration fixes must distinguish primary user-row failure from secondary backend-write failure. Delete the just-created Auth user only before the durable RTDB user row exists; after that, sign out and preserve the recoverable account.
+- Pattern: Raw backend errors hiding domain-specific conflicts.
+- Follow-up improvement: Add emulator/adapter coverage for registration username conflicts and partial secondary-write failure if the Firebase adapter becomes easier to fake.
 - Owner: Engineering
 - Status: Open
 

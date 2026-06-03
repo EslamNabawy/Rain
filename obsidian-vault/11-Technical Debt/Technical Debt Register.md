@@ -1,6 +1,6 @@
 # Technical Debt Register
 
-Last updated: 2026-06-03
+Last updated: 2026-06-04
 
 ## Purpose
 
@@ -182,7 +182,7 @@ Related: [[Debt Categories]], [[Debt Prioritization]], [[Architecture Debt]], [[
 - Related Systems: [[Authentication]], [AUTHENTICATION_AUDIT.md](../../AUTHENTICATION_AUDIT.md), [ACCOUNT_LIFECYCLE_ANALYSIS.md](../../ACCOUNT_LIFECYCLE_ANALYSIS.md), [STATE_MANAGEMENT_FAILURE_ANALYSIS.md](../../STATE_MANAGEMENT_FAILURE_ANALYSIS.md).
 - Roadmap Tasks: [ROOT_AUTH_STARTUP_REMEDIATION_ROADMAP.md](../../ROOT_AUTH_STARTUP_REMEDIATION_ROADMAP.md).
 - Resolution Strategy: Add an `AuthSessionCoordinator`, treat local identity as a session candidate only, validate Firebase/backend identity before runtime start, and clear local session in a guaranteed path during logout/reset/delete.
-- Progress Note 2026-06-03: Phase 1 reduced this debt by changing `IdentityController` to validate cached Drift identity against the backend user record and current auth uid before restoring signed-in state. Missing backend accounts, missing uid data, uid mismatch, and session-expired errors now clear local session data instead of publishing identity. Register/login now write backend profile and presence before saving local identity. Phase 2 made runtime logout deterministic by clearing local session before best-effort backend sign-out, covering failed sign-out and logout after a previous app-exit shutdown. Phase 6 added `AuthenticatedSession.sessionGeneration` as the account-scope boundary, keyed runtime reuse by username plus generation, and made account-owned providers reset from session generation instead of a broad manual invalidation list. Remaining debt: explicit account deletion workflow and a fuller `AuthSessionCoordinator` extraction if the current provider-based coordinator becomes insufficient.
+- Progress Note 2026-06-03: Phase 1 reduced this debt by changing `IdentityController` to validate cached Drift identity against the backend user record and current auth uid before restoring signed-in state. Missing backend accounts, missing uid data, uid mismatch, and session-expired errors now clear local session data instead of publishing identity. Register/login now write backend profile and presence before saving local identity. Phase 2 made runtime logout deterministic by clearing local session before best-effort backend sign-out, covering failed sign-out and logout after a previous app-exit shutdown. Phase 6 added `AuthenticatedSession.sessionGeneration` as the account-scope boundary, keyed runtime reuse by username plus generation, and made account-owned providers reset from session generation instead of a broad manual invalidation list. 2026-06-04 mitigation: registration backend-write failures now sign out and keep Drift identity empty; RTDB permission-denied on username row creation is mapped to a friendly account conflict; rollback deletes the just-created Auth user only before the durable user row exists. Remaining debt: explicit account deletion workflow and a fuller `AuthSessionCoordinator` extraction if the current provider-based coordinator becomes insufficient.
 
 ## Scalability Debt
 

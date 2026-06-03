@@ -1468,23 +1468,77 @@ class FirebaseSignalingAdapter
     }
     final uid = userCredential.user?.uid ?? '';
     final now = DateTime.now().millisecondsSinceEpoch;
+    var backendUserCreated = false;
 
-    await _root
-        .child('users/$normalizedUsername')
-        .set(
-          _identityJson(
-            username: normalizedUsername,
-            uid: uid,
-            displayName: normalizedUsername,
-            gender: null,
-            registeredAt: now,
-          ),
+    try {
+      await _root
+          .child('users/$normalizedUsername')
+          .set(
+            _identityJson(
+              username: normalizedUsername,
+              uid: uid,
+              displayName: normalizedUsername,
+              gender: null,
+              registeredAt: now,
+            ),
+          );
+      backendUserCreated = true;
+
+      await _root.child('userSearch/$normalizedUsername').set(true);
+      await setPresence(normalizedUsername, true);
+      await _auth.signInWithEmailAndPassword(email: email, password: password);
+    } catch (error) {
+      if (backendUserCreated) {
+        await _signOutAfterFailedRegistration();
+      } else {
+        await _rollbackNewlyCreatedAuthUser(userCredential.user);
+      }
+      if (_isPermissionDenied(error)) {
+        throw Exception(
+          'Username "$normalizedUsername" is already taken or locked. '
+          'Choose another unique username or sign in.',
         );
-
-    await _root.child('userSearch/$normalizedUsername').set(true);
-    await setPresence(normalizedUsername, true);
-    await _auth.signInWithEmailAndPassword(email: email, password: password);
+      }
+      rethrow;
+    }
     return uid;
+  }
+
+  Future<void> _rollbackNewlyCreatedAuthUser(User? user) async {
+    try {
+      final currentUser = _auth.currentUser;
+      if (user != null && currentUser?.uid == user.uid) {
+        await currentUser!.delete();
+      }
+    } catch (_) {
+      // Registration failed before local account state became valid. If Auth
+      // cleanup is rejected by Firebase, still clear the local session below.
+    }
+    try {
+      await _auth.signOut();
+    } catch (_) {
+      // Local sign-out is best effort during a failed registration rollback.
+    }
+  }
+
+  Future<void> _signOutAfterFailedRegistration() async {
+    try {
+      await _auth.signOut();
+    } catch (_) {
+      // If a secondary registration step failed after the durable user row was
+      // written, keep the backend/Auth account intact and only clear local auth.
+    }
+  }
+
+  bool _isPermissionDenied(Object error) {
+    if (error is FirebaseException) {
+      final code = error.code.toLowerCase();
+      final message = (error.message ?? '').toLowerCase();
+      return code.contains('permission') || message.contains('permission');
+    }
+    final text = error.toString().toLowerCase();
+    return text.contains('permission denied') ||
+        text.contains('permission-denied');
   }
 
   @override

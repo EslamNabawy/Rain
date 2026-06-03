@@ -196,6 +196,14 @@ class _OnboardingScreenState extends ConsumerState<OnboardingScreen>
 
   String _formatError(Object error) {
     final raw = error.toString().trim();
+    final normalized = raw.toLowerCase();
+    if ((normalized.contains('firebase_database') ||
+            normalized.contains('firebase database error')) &&
+        normalized.contains('permission denied')) {
+      return 'Rain could not create that account data. The username may '
+          'already be taken or locked. Try signing in or choose another '
+          'username.';
+    }
     const prefixes = <String>['Exception: ', 'Bad state: '];
     for (final prefix in prefixes) {
       if (raw.startsWith(prefix)) {

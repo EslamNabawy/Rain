@@ -6,6 +6,7 @@ import 'package:rain/application/bootstrap/app_bootstrap.dart';
 import 'package:rain/application/state/app_providers.dart';
 import 'package:rain/core/config/app_environment.dart';
 import 'package:rain/infrastructure/services/force_update_service.dart';
+import 'package:rain/infrastructure/services/network_status_service.dart';
 import 'package:rain/infrastructure/signaling/noop_signaling_adapter.dart';
 import 'package:rain_core/rain_core.dart';
 
@@ -103,6 +104,42 @@ void main() {
       expect(adapter.signOutCalls, 0);
     },
   );
+
+  test(
+    'registration backend save failure signs out and does not cache identity',
+    () async {
+      final database = RainDatabase(NativeDatabase.memory());
+      addTearDown(database.close);
+      final adapter = _AuthValidationAdapter(
+        currentUidValue: 'uid-alice',
+        backendIdentity: null,
+        upsertError: Exception('permission denied'),
+      );
+      final container = _container(database, adapter);
+      addTearDown(container.dispose);
+
+      await container.read(identityProvider.future);
+
+      await expectLater(
+        container
+            .read(identityProvider.notifier)
+            .register(
+              username: 'alice',
+              displayName: 'Alice',
+              password: 'secret1',
+              gender: RainGender.female,
+            ),
+        throwsA(isA<Exception>()),
+      );
+
+      expect(adapter.registerCalls, 1);
+      expect(adapter.addToUserSearchCalls, 1);
+      expect(adapter.upsertedIdentities, hasLength(1));
+      expect(adapter.setPresenceCalls, 0);
+      expect(adapter.signOutCalls, 1);
+      expect(await IdentityRepository(database).loadIdentity(), isNull);
+    },
+  );
 }
 
 ProviderContainer _container(
@@ -123,6 +160,10 @@ ProviderContainer _container(
             updateUrl: 'https://example.com',
           ),
         ),
+      ),
+      networkStatusProvider.overrideWith(
+        (Ref ref) =>
+            Stream<NetworkStatusState>.value(const NetworkStatusState.online()),
       ),
     ],
   );
@@ -150,13 +191,18 @@ final class _AuthValidationAdapter extends NoopSignalingAdapter {
   _AuthValidationAdapter({
     required this.currentUidValue,
     required this.backendIdentity,
+    this.upsertError,
   });
 
   final String currentUidValue;
   final BackendIdentity? backendIdentity;
+  final Object? upsertError;
   final List<BackendIdentity> upsertedIdentities = <BackendIdentity>[];
   int ensureSignedInAsCalls = 0;
   int fetchIdentityCalls = 0;
+  int registerCalls = 0;
+  int addToUserSearchCalls = 0;
+  int setPresenceCalls = 0;
   int signOutCalls = 0;
 
   @override
@@ -166,6 +212,12 @@ final class _AuthValidationAdapter extends NoopSignalingAdapter {
 
   @override
   Future<String> currentUid() async => currentUidValue;
+
+  @override
+  Future<String> register(String username, String password) async {
+    registerCalls += 1;
+    return currentUidValue;
+  }
 
   @override
   Future<BackendIdentity?> fetchIdentity(String username) async {
@@ -182,7 +234,21 @@ final class _AuthValidationAdapter extends NoopSignalingAdapter {
   }
 
   @override
+  Future<void> addToUserSearch(String username) async {
+    addToUserSearchCalls += 1;
+  }
+
+  @override
   Future<void> upsertIdentity(BackendIdentity identity) async {
     upsertedIdentities.add(identity);
+    final error = upsertError;
+    if (error != null) {
+      throw error;
+    }
+  }
+
+  @override
+  Future<void> setPresence(String username, bool online) async {
+    setPresenceCalls += 1;
   }
 }

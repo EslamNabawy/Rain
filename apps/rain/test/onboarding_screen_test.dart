@@ -267,6 +267,54 @@ void main() {
     expect(tester.takeException(), isNull);
     expect(effects.played, isEmpty);
   });
+
+  testWidgets('registration permission denial shows account conflict message', (
+    WidgetTester tester,
+  ) async {
+    final effects = _RecordingSoundEffectsService();
+
+    await tester.pumpWidget(
+      ProviderScope(
+        overrides: [
+          identityProvider.overrideWith(
+            () => _FailingRegisterIdentityController(
+              Exception(
+                '[firebase_database/unknown] Firebase Database error: '
+                'Permission denied',
+              ),
+            ),
+          ),
+          soundEventRouterProvider.overrideWithValue(
+            SoundEventRouter(
+              effects: effects,
+              settingsLoader: () => const AppAudioSettings(),
+              callStateReader: () => const VoiceCallState.idle(),
+            ),
+          ),
+        ],
+        child: const MaterialApp(home: Scaffold(body: OnboardingScreen())),
+      ),
+    );
+    await tester.pumpAndSettle();
+
+    await tester.tap(find.widgetWithText(TextButton, 'Create account'));
+    await tester.pumpAndSettle();
+    await tester.enterText(_textFieldWithLabel('Display name'), 'Alice');
+    await tester.enterText(_textFieldWithLabel('Unique Username'), 'alice');
+    await tester.enterText(_textFieldWithLabel('Password'), 'secret1');
+    await tester.tap(find.widgetWithText(FilledButton, 'Create account'));
+    await tester.pumpAndSettle();
+
+    expect(
+      find.text(
+        'Rain could not create that account data. The username may already '
+        'be taken or locked. Try signing in or choose another username.',
+      ),
+      findsOneWidget,
+    );
+    expect(find.textContaining('[firebase_database/unknown]'), findsNothing);
+    expect(effects.played, contains(RainSoundEffect.error));
+  });
 }
 
 Finder _textFieldWithLabel(String label) {
@@ -303,5 +351,24 @@ final class _BlockingLoginIdentityController extends IdentityController {
   @override
   Future<void> login({required String username, required String password}) {
     return _loginFuture;
+  }
+}
+
+final class _FailingRegisterIdentityController extends IdentityController {
+  _FailingRegisterIdentityController(this._error);
+
+  final Object _error;
+
+  @override
+  Future<RainIdentity?> build() async => null;
+
+  @override
+  Future<void> register({
+    required String username,
+    required String displayName,
+    required String password,
+    required RainGender gender,
+  }) async {
+    throw _error;
   }
 }

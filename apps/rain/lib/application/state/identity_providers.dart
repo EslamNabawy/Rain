@@ -130,16 +130,30 @@ class IdentityController extends AsyncNotifier<RainIdentity?> {
   }) async {
     assertNetworkReady(ref);
     final adapter = ref.read(adapterProvider);
-    await adapter.register(username, password);
-    final now = DateTime.now().millisecondsSinceEpoch;
-    await _saveBackendIdentity(
-      RainIdentity(
-        username: username,
-        displayName: displayName,
-        createdAt: now,
-        gender: gender,
-      ),
-    );
+    var authCreated = false;
+    try {
+      await adapter.register(username, password);
+      authCreated = true;
+      final now = DateTime.now().millisecondsSinceEpoch;
+      await _saveBackendIdentity(
+        RainIdentity(
+          username: username,
+          displayName: displayName,
+          createdAt: now,
+          gender: gender,
+        ),
+      );
+    } catch (_) {
+      if (authCreated) {
+        try {
+          await adapter.signOut();
+        } catch (_) {
+          // A failed backend registration must not keep a local Firebase session
+          // that the app could mistake for a valid Rain identity.
+        }
+      }
+      rethrow;
+    }
   }
 
   Future<void> login({

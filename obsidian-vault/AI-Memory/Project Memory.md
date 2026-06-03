@@ -1,6 +1,6 @@
 # Project Memory
 
-Last updated: 2026-06-03
+Last updated: 2026-06-04
 
 ## Purpose
 
@@ -214,6 +214,7 @@ Highest-priority engineering areas:
    - Phase 4 progress 2026-06-03: startup visual ownership moved above the routed shell. `RainApp` uses `MaterialApp.router.builder` and `AppStartupState.blocksRoutedSurface` to replace the routed child with `RainStartupSurface` while startup is loading, required-update, failed, or session-expired. Route tests prove no `RainNavigationShell`, bottom navigation, or rail is inserted during blocked startup.
    - Phase 5 progress 2026-06-03: protected navigation readiness is explicit. `AppStartupState.canRenderProtectedRoutes` guards protected content, settings/search/friend pages use a route-local protected gate, unresolved protected paths redirect to `/`, and signed-out auth renders outside the app shell through a standalone Navigator/Overlay.
    - Phase 6 progress 2026-06-03: state lifecycle hardening is complete. `AuthenticatedSession.sessionGeneration` is the account-scope boundary; runtime reuse requires matching username and generation; protocol brain, connection request, voice call, connection view, message, file transfer, user search, and recent search providers reset or reject stale runtime generations when the session ends/changes. Remaining auth/startup work: account deletion workflow and hard-release-gate integration.
+   - Registration conflict progress 2026-06-04: live Firebase rules allowed a fresh random registration, while `users/eslam` already existed. Registration now treats RTDB permission denied before the primary username row is created as an account conflict, rolls back the just-created Auth user, shows a friendly conflict message, and leaves Drift identity uncached. If the durable username row was already created and a later registration step fails, Rain signs out instead of deleting Auth so it does not create an unrecoverable Auth/RTDB orphan.
 1. Make voice/video calls reliable in both PC-to-mobile and mobile-to-PC directions.
 2. Split and stabilize `VoiceCallRuntime` through [[VoiceCallRuntime Refactor]].
 3. Harden Firebase call lease creation, repair, cleanup, and terminal reconciliation through [[CallLeaseManager]] and [[CallTerminalReconciler]].
@@ -337,6 +338,7 @@ Validation defaults:
 
 - Creating duplicate Project Memory notes splits context. This file is the primary memory note.
 - Auth/session bug pattern: deleting RTDB account data externally does not delete local Drift identity or Firebase Auth. Current runtime startup can recreate RTDB profile/presence from local identity after Firebase ownership validation. Do not treat local `RainIdentity?` as authenticated truth in future fixes.
+- Registration bug pattern: an existing or locked RTDB `users/{username}` row can appear as `[firebase_database/unknown] Permission denied` during account creation even when general registration rules are valid. Treat this as an account/username conflict, not as proof that rules globally deny registration.
 - Startup bug pattern: `AppStartupState` now centralizes post-bootstrap readiness. Phase 4 moved the visual startup gate above routed content, Phase 5 added protected-route redirects plus route-local guards for settings/search/friend pages, and Phase 6 scoped account-owned provider state by `AuthenticatedSession.sessionGeneration`. Remaining startup/auth risk is account deletion/reset ownership and release-gate coverage.
 - Generic call errors hide root causes; classify signaling, permission, ICE/TURN, media, and terminal-state failures separately.
 - Expected terminal races must not call the crash/error recorder; otherwise diagnostics show a benign late-frame cleanup event as the "last Flutter error" and hide the real failure.
