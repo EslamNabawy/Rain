@@ -14,6 +14,7 @@ Rain is a private peer-to-peer chat app for Android and Windows. It supports acc
 - `packages/peer_core` owns WebRTC peer primitives, media connections, platform bridge.
 - `backend/firebase` owns RTDB rules, Remote Config template, optional functions.
 - `/obsidian-vault` owns project memory, production-readiness execution, audit resolution, sprint tracking, risk tracking, and architecture decisions.
+- Phase 1 added the long-term vault categories for [[Lessons Learned Index]], [[AI Memory Index]], [[Knowledge Graph Index]], and [[Templates Index]].
 
 ## Business Rules
 
@@ -49,3 +50,4 @@ Related: [[AI Context]], [[Design Decisions]], [[Feature Index]].
 - Required call coordinators: [[CallStartCoordinator]], [[CallLeaseManager]], [[CallMediaCoordinator]], [[CallTerminalReconciler]], [[CallDiagnosticsRecorder]].
 - Required roadmap phases: [[Architecture Stabilization Epic]], [[Signaling Reliability Epic]], [[Database Scalability Epic]], [[File Transfer Optimization Epic]], [[Security Hardening Epic]], [[CI-CD Modernization Epic]], [[Production Validation Epic]].
 - Required trackers: [[Risk Register]], [[Technical Debt Register]], [[Audit Resolution Tracker]], [[Active Sprint]].
+- Required long-term memory surfaces: [[Durable Facts]], [[Session Handoff]], [[Continuous Improvement Log]], [[Knowledge Graph Index]].

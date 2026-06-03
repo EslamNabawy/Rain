@@ -6,16 +6,16 @@ Every future session must read this file before starting non-trivial work.
 
 ## Current Goal
 
-Phase 0 foundation files have been established for a long-term autonomous, self-documenting engineering system.
+Phase 1 Obsidian vault bootstrap has been completed at the structural level.
 
 ## Current Phase
 
-Phase 0 - Operating Model Foundation
+Phase 1 - Obsidian Vault Bootstrap
 
 ## Completed Phases
 
 - [x] Phase 0 - Operating Model Foundation
-- [ ] Phase 1 - Obsidian Vault Bootstrap
+- [x] Phase 1 - Obsidian Vault Bootstrap
 - [ ] Phase 2 - Repository Discovery
 - [ ] Phase 3 - Project Memory Generation
 - [ ] Phase 4 - Audit to Roadmap Conversion
@@ -29,14 +29,15 @@ Phase 0 - Operating Model Foundation
 ## Active Work
 
 - Phase 0 deliverables are complete.
-- Do not create detailed architecture documentation yet.
+- Phase 1 vault structure is complete.
+- Do not create detailed repository discovery notes yet.
 - Do not create implementation plans yet.
-- Do not perform app code modifications as part of Phase 0.
-- Wait for explicit user approval before starting Phase 1.
+- Do not perform app code modifications as part of vault bootstrap.
+- Wait for explicit user approval before starting Phase 2.
 
 ## Known Risks
 
-- The repository already contains prior documentation and an Obsidian vault; future phases must avoid duplicating or contradicting it.
+- The repository already contains prior documentation and an expanded Obsidian vault; future phases must avoid duplicating or contradicting it.
 - The active maintained repo must remain separate from `D:\old project\Rain`.
 - The project has high-risk runtime areas: Firebase signaling, WebRTC calls, presence, update checks, diagnostics, and release workflows.
 - Future phases must avoid overbuilding before discovery.
@@ -47,7 +48,7 @@ Phase 0 - Operating Model Foundation
 
 ## Next Recommended Action
 
-Stop after Phase 0 deliverables. Wait for explicit user approval before starting Phase 1 - Obsidian Vault Bootstrap.
+Stop after Phase 1 deliverables. Wait for explicit user approval before starting Phase 2 - Repository Discovery.
 
 ## Future Population Areas
 

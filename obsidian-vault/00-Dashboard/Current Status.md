@@ -31,6 +31,8 @@ Last updated: 2026-06-03
 
 This vault is now the main knowledge base. Older docs remain in `docs/`, but future source-of-truth updates should be mirrored here.
 
+Phase 1 vault bootstrap is now complete at the structural level. Detailed repository discovery, architecture mapping, audit conversion, and implementation planning remain future phases.
+
 ## Execution Status
 
 - Current production-readiness plan: [[Master Roadmap]]
@@ -39,3 +41,7 @@ This vault is now the main knowledge base. Older docs remain in `docs/`, but fut
 - Current blockers: [[BLOCKERS]]
 - Open risk register: [[Risk Register]]
 - Technical debt register: [[Technical Debt Register]]
+- Lessons learned: [[Lessons Learned Index]]
+- AI memory: [[AI Memory Index]]
+- Knowledge graph: [[Knowledge Graph Index]]
+- Templates: [[Templates Index]]
