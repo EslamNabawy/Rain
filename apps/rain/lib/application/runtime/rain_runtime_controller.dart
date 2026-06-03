@@ -166,6 +166,7 @@ class RainRuntimeController with WidgetsBindingObserver {
       StreamController<VoiceCallState>.broadcast();
   VoiceCallState _voiceCallState = const VoiceCallState.idle();
   VoiceCallSession? _voiceCallSession;
+  String? _acceptingVoiceCallId;
   StreamSubscription<VoiceCallSessionState>? _voiceCallSessionSubscription;
   Timer? _voiceCallReconnectGraceTimer;
   final Set<String> _terminalVoiceCallSessionKeys = <String>{};

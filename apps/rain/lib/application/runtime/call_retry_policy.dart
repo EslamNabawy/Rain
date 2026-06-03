@@ -100,6 +100,9 @@ final class CallRetryPolicy {
 
   static bool isBusyConflictMessage(String message) {
     final normalized = message.toLowerCase();
+    if (normalized.contains('firebase voice call create failed at')) {
+      return false;
+    }
     return normalized.contains('peer is busy') ||
         normalized == 'busy.' ||
         normalized.contains('active voice call already exists') ||

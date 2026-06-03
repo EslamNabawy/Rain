@@ -123,5 +123,22 @@ void main() {
       expect(decision.userMessage, 'Call signaling failed. Try again.');
       expect(decision.canRetryImmediately, isFalse);
     });
+
+    test('does not treat Firebase operation paths as real busy locks', () {
+      final decision = CallRetryPolicy.classifySignalingFailure(
+        const CallSignalingFailureSnapshot(
+          message:
+              'Firebase voice call create failed at activeVoicePairs/alice:bob '
+              'claim: [firebase_database/unknown]',
+          lockWasReclaimed: false,
+          terminalRoomWasCleaned: false,
+          corruptRoomWasRepaired: false,
+          peerId: 'bob',
+        ),
+      );
+
+      expect(decision.kind, CallRetryDecisionKind.signalingFailed);
+      expect(decision.userMessage, 'Call signaling failed. Try again.');
+    });
   });
 }

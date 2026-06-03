@@ -73,6 +73,9 @@ extension VoiceCallRuntime on RainRuntimeController {
       'Peer connection interrupted. Reconnecting...';
   static bool get _legacyControlChannelVoiceSignalingFrozen => true;
   static const Duration _voiceCallExpiry = Duration(minutes: 2);
+  static const Duration _voiceCallTransientCreateRetryDelay = Duration(
+    milliseconds: 300,
+  );
 
   Future<void> startVoiceCall(String username) async {
     await _startCall(username, mediaMode: CallMediaMode.audio);
@@ -310,6 +313,16 @@ extension VoiceCallRuntime on RainRuntimeController {
       name: 'accept_requested',
       context: _voiceCallEventContext(current),
     );
+    if (current.callId != null && _acceptingVoiceCallId == current.callId) {
+      _recordRuntimeEvent(
+        category: 'call',
+        name: 'accept_duplicate_ignored',
+        severity: 'info',
+        message: 'Duplicate incoming call accept ignored.',
+        context: _voiceCallEventContext(current),
+      );
+      return;
+    }
     if (current.phase != VoiceCallPhase.incomingRinging ||
         current.peerId == null ||
         current.callId == null) {
@@ -374,9 +387,13 @@ extension VoiceCallRuntime on RainRuntimeController {
       throw StateError('Voice call session is unavailable.');
     }
 
+    _acceptingVoiceCallId = current.callId!;
     try {
       await session.acceptIncoming();
     } catch (error) {
+      if (_acceptingVoiceCallId == current.callId) {
+        _acceptingVoiceCallId = null;
+      }
       _recordRuntimeEvent(
         category: 'call',
         name: 'accept_failed',
@@ -1649,6 +1666,17 @@ extension VoiceCallRuntime on RainRuntimeController {
           sessionEpoch: frame.sessionEpoch,
           lockClaimResult: 'started',
         );
+        Future<void> createOutgoingRoom() async {
+          await voiceAdapter.createOutgoingCall(
+            callId: frame.callId,
+            caller: localUsername,
+            callee: callee,
+            createdAt: frame.sessionEpoch,
+            expiresAt: frame.sessionEpoch + _voiceCallExpiry.inMilliseconds,
+            mediaMode: frame.mediaMode,
+          );
+        }
+
         _recordRuntimeEvent(
           category: 'call',
           name: 'voice_lock_claim_started',
@@ -1658,14 +1686,7 @@ extension VoiceCallRuntime on RainRuntimeController {
           },
         );
         try {
-          await voiceAdapter.createOutgoingCall(
-            callId: frame.callId,
-            caller: localUsername,
-            callee: callee,
-            createdAt: frame.sessionEpoch,
-            expiresAt: frame.sessionEpoch + _voiceCallExpiry.inMilliseconds,
-            mediaMode: frame.mediaMode,
-          );
+          await createOutgoingRoom();
         } catch (error) {
           final retrySnapshot = _voiceCallSignalingFailureSnapshotForError(
             error,
@@ -1713,15 +1734,7 @@ extension VoiceCallRuntime on RainRuntimeController {
             }
             if (retryDecision?.canRetryImmediately == true) {
               try {
-                await voiceAdapter.createOutgoingCall(
-                  callId: frame.callId,
-                  caller: localUsername,
-                  callee: callee,
-                  createdAt: frame.sessionEpoch,
-                  expiresAt:
-                      frame.sessionEpoch + _voiceCallExpiry.inMilliseconds,
-                  mediaMode: frame.mediaMode,
-                );
+                await createOutgoingRoom();
                 _recordRuntimeEvent(
                   category: 'call',
                   name: 'voice_lock_claim_retried',
@@ -1746,6 +1759,50 @@ extension VoiceCallRuntime on RainRuntimeController {
                 );
                 Error.throwWithStackTrace(retryError, retryStackTrace);
               }
+            }
+          } else if (_shouldRetryTransientVoiceCreateFailure(
+            error,
+            retryDecision,
+          )) {
+            _recordRuntimeEvent(
+              category: 'call',
+              name: 'voice_lock_claim_transient_retry_started',
+              severity: 'warning',
+              message: retryDecision?.userMessage ?? error.toString(),
+              context: <String, Object?>{
+                ...eventContext,
+                'retryDelayMs':
+                    _voiceCallTransientCreateRetryDelay.inMilliseconds,
+              },
+            );
+            await Future<void>.delayed(_voiceCallTransientCreateRetryDelay);
+            try {
+              await createOutgoingRoom();
+              _recordRuntimeEvent(
+                category: 'call',
+                name: 'voice_lock_claim_retried',
+                severity: 'info',
+                message: retryDecision?.userMessage,
+                context: <String, Object?>{
+                  ...eventContext,
+                  'retryResult': 'claimed',
+                  'retryReason': 'transientFirebaseCreateFailure',
+                },
+              );
+              return;
+            } catch (retryError, retryStackTrace) {
+              _recordRuntimeEvent(
+                category: 'call',
+                name: 'voice_lock_claim_retry_failed',
+                severity: 'warning',
+                message: retryError.toString(),
+                context: <String, Object?>{
+                  ...eventContext,
+                  'retryResult': 'failed',
+                  'retryReason': 'transientFirebaseCreateFailure',
+                },
+              );
+              Error.throwWithStackTrace(retryError, retryStackTrace);
             }
           } else if (retryDecision?.kind ==
               CallRetryDecisionKind.cleanupInProgress) {
@@ -4235,6 +4292,26 @@ extension VoiceCallRuntime on RainRuntimeController {
           normalized.contains('cleaning up'),
       peerId: peerId ?? _voiceCallBusyUser(normalized),
     );
+  }
+
+  bool _shouldRetryTransientVoiceCreateFailure(
+    Object error,
+    CallRetryDecision? decision,
+  ) {
+    if (decision?.kind != CallRetryDecisionKind.signalingFailed) {
+      return false;
+    }
+    final normalized = _normalizedVoiceCallErrorText(error).toLowerCase();
+    if (CallRetryPolicy.isBusyConflictMessage(normalized) ||
+        CallRetryPolicy.isOfflineMessage(normalized)) {
+      return false;
+    }
+    return normalized.contains('[firebase_database/unknown]') ||
+        normalized.contains('firebase database error') ||
+        normalized.contains('firebase voice call create failed at') ||
+        normalized.contains('permission-denied') ||
+        normalized.contains('permission denied') ||
+        normalized.trim().isEmpty;
   }
 
   Map<String, Object?> _voiceCallLockDiagnostics({

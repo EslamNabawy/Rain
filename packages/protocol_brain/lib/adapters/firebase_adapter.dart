@@ -274,11 +274,14 @@ class FirebaseSignalingAdapter
     final calleeLockRef = _root.child('activeVoiceUsers/$normalizedCallee');
     final lockRef = _root.child('activeVoicePairs/$pairId');
 
-    final claimedCallerLock = await _claimActiveVoiceUserLockWithReclaim(
-      lockRef: callerLockRef,
-      lock: callerUserLock,
-      caller: normalizedCaller,
-      createdAt: createdAt,
+    final claimedCallerLock = await _runVoiceCallCreateStep(
+      'activeVoiceUsers/$normalizedCaller claim',
+      () => _claimActiveVoiceUserLockWithReclaim(
+        lockRef: callerLockRef,
+        lock: callerUserLock,
+        caller: normalizedCaller,
+        createdAt: createdAt,
+      ),
     );
     if (!claimedCallerLock) {
       throw VoiceSignalingException(
@@ -289,11 +292,14 @@ class FirebaseSignalingAdapter
     var claimedCalleeLock = false;
     var claimedPairLock = false;
     try {
-      claimedCalleeLock = await _claimActiveVoiceUserLockWithReclaim(
-        lockRef: calleeLockRef,
-        lock: calleeUserLock,
-        caller: normalizedCaller,
-        createdAt: createdAt,
+      claimedCalleeLock = await _runVoiceCallCreateStep(
+        'activeVoiceUsers/$normalizedCallee claim',
+        () => _claimActiveVoiceUserLockWithReclaim(
+          lockRef: calleeLockRef,
+          lock: calleeUserLock,
+          caller: normalizedCaller,
+          createdAt: createdAt,
+        ),
       );
       if (!claimedCalleeLock) {
         throw VoiceSignalingException(
@@ -301,12 +307,15 @@ class FirebaseSignalingAdapter
         );
       }
 
-      claimedPairLock = await _claimActiveVoicePairLockWithReclaim(
-        lockRef: lockRef,
-        lock: lock,
-        caller: normalizedCaller,
-        callee: normalizedCallee,
-        createdAt: createdAt,
+      claimedPairLock = await _runVoiceCallCreateStep(
+        'activeVoicePairs/$pairId claim',
+        () => _claimActiveVoicePairLockWithReclaim(
+          lockRef: lockRef,
+          lock: lock,
+          caller: normalizedCaller,
+          callee: normalizedCallee,
+          createdAt: createdAt,
+        ),
       );
       if (!claimedPairLock) {
         throw VoiceSignalingException(
@@ -314,10 +323,14 @@ class FirebaseSignalingAdapter
         );
       }
 
-      await _root.update(<String, Object?>{
-        'voiceCalls/$normalizedCallId': room.toJson(),
-        'voiceCallInboxes/$normalizedCallee/$normalizedCallId': inbox.toJson(),
-      });
+      await _runVoiceCallCreateStep(
+        'voiceCalls/$normalizedCallId + voiceCallInboxes/$normalizedCallee/$normalizedCallId write',
+        () => _root.update(<String, Object?>{
+          'voiceCalls/$normalizedCallId': room.toJson(),
+          'voiceCallInboxes/$normalizedCallee/$normalizedCallId': inbox
+              .toJson(),
+        }),
+      );
     } catch (_) {
       if (claimedPairLock) {
         await _removeActiveVoicePairLockIfUnchanged(
@@ -338,6 +351,58 @@ class FirebaseSignalingAdapter
       rethrow;
     }
     return room;
+  }
+
+  Future<T> _runVoiceCallCreateStep<T>(
+    String operation,
+    Future<T> Function() action,
+  ) async {
+    try {
+      return await action();
+    } on VoiceSignalingException {
+      rethrow;
+    } on FirebaseException catch (error) {
+      throw VoiceSignalingException(
+        _firebaseVoiceCreateErrorMessage(operation, error),
+      );
+    } catch (error) {
+      final text = error.toString();
+      if (_looksLikeFirebaseDatabaseError(text)) {
+        throw VoiceSignalingException(
+          'Firebase voice call create failed at $operation: '
+          '${_compactErrorText(text)}',
+        );
+      }
+      rethrow;
+    }
+  }
+
+  String _firebaseVoiceCreateErrorMessage(
+    String operation,
+    FirebaseException error,
+  ) {
+    final parts = <String>[
+      if (error.plugin.isNotEmpty) error.plugin,
+      if (error.code.isNotEmpty) error.code,
+      if ((error.message ?? '').trim().isNotEmpty) error.message!.trim(),
+    ];
+    final detail = parts.isEmpty
+        ? 'database error without message'
+        : parts.join(': ');
+    return 'Firebase voice call create failed at $operation: $detail';
+  }
+
+  bool _looksLikeFirebaseDatabaseError(String text) {
+    final normalized = text.toLowerCase();
+    return normalized.contains('firebase_database') ||
+        normalized.contains('firebase database error') ||
+        normalized.contains('permission denied') ||
+        normalized.contains('permission-denied');
+  }
+
+  String _compactErrorText(String text) {
+    final compact = text.replaceAll(RegExp(r'\s+'), ' ').trim();
+    return compact.isEmpty ? 'database error without message' : compact;
   }
 
   Future<void> _assertVoiceCallCalleeOnline(String callee) async {

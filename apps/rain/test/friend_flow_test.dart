@@ -6270,6 +6270,44 @@ void main() {
     );
 
     test(
+      'transient Firebase create failure retries without a second call press',
+      () async {
+        final harness = await _createTwoUserCallHarness(db, alice);
+        addTearDown(harness.dispose);
+        harness.adapter.createOutgoingCallErrors.add(
+          const VoiceSignalingException(
+            'Firebase voice call create failed at activeVoicePairs/alice:bob '
+            'claim: [firebase_database/unknown]',
+          ),
+        );
+
+        await harness.start();
+        final callId = await _startAndAcceptHarnessCall(
+          harness,
+          callerIsAlice: true,
+          mediaMode: protocol.CallMediaMode.audio,
+        );
+
+        expect(harness.adapter.createOutgoingCallAttempts, 2);
+        expect(harness.adapter.rooms[callId]?.caller, 'alice');
+        expect(harness.adapter.rooms[callId]?.callee, 'bob');
+        expect(
+          harness.runtimeEvents,
+          contains('alice:voice_lock_claim_transient_retry_started'),
+        );
+        expect(
+          harness.runtimeEvents,
+          contains('alice:voice_lock_claim_retried'),
+        );
+        expect(
+          harness.aliceRuntime.voiceCallState.phase,
+          VoiceCallPhase.active,
+        );
+        expect(harness.bobRuntime.voiceCallState.phase, VoiceCallPhase.active);
+      },
+    );
+
+    test(
       'hangup cleanup is idempotent when signaling frame send fails',
       () async {
         final harness = await _createTwoUserCallHarness(db, alice);
@@ -6881,6 +6919,8 @@ class RecordingVoiceSignalingAdapter extends RecordingNoopSignalingAdapter
   Object? watchVoiceOfferError;
   Object? watchVoiceAnswerError;
   Object? watchIceCandidatesError;
+  final List<Object> createOutgoingCallErrors = <Object>[];
+  int createOutgoingCallAttempts = 0;
   int endCallAttempts = 0;
   int? failEndCallAttempt;
   final Set<int> failEndCallAttempts = <int>{};
@@ -6930,6 +6970,10 @@ class RecordingVoiceSignalingAdapter extends RecordingNoopSignalingAdapter
     required int expiresAt,
     protocol.CallMediaMode mediaMode = protocol.CallMediaMode.audio,
   }) {
+    createOutgoingCallAttempts += 1;
+    if (createOutgoingCallErrors.isNotEmpty) {
+      throw createOutgoingCallErrors.removeAt(0);
+    }
     return _voice.createOutgoingCall(
       callId: callId,
       caller: caller,
