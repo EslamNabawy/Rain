@@ -342,6 +342,80 @@ void main() {
   );
 
   test(
+    'Firebase emulator endCall survives already-cleaned callee inbox',
+    () async {
+      final runId = DateTime.now().microsecondsSinceEpoch.toRadixString(36);
+      final alice = 'alicei$runId';
+      final bob = 'bobi$runId';
+      final callId = 'cleaned-inbox-$runId';
+      final createdAt = DateTime.now().millisecondsSinceEpoch;
+      final pairId = voiceCallPairId(alice, bob);
+
+      final adapterAlice = FirebaseEmulatorSignalingAdapter();
+      final adapterBob = FirebaseEmulatorSignalingAdapter();
+
+      try {
+        await _registerFriends(
+          adapterAlice: adapterAlice,
+          adapterBob: adapterBob,
+          alice: alice,
+          bob: bob,
+        );
+
+        await adapterAlice.createOutgoingCall(
+          callId: callId,
+          caller: alice,
+          callee: bob,
+          createdAt: createdAt,
+          expiresAt: createdAt + const Duration(minutes: 5).inMilliseconds,
+        );
+        await adapterBob.acceptCall(
+          callId: callId,
+          callee: bob,
+          acceptedAt: createdAt + 1,
+        );
+        await adapterBob.deleteRawForTest(<String>[
+          'voiceCallInboxes',
+          bob,
+          callId,
+        ]);
+
+        await adapterAlice.endCall(
+          callId: callId,
+          username: alice,
+          status: VoiceCallSignalingStatus.ended,
+          endedAt: createdAt + 2,
+          reasonCode: 'hangup',
+          reason: 'Ended.',
+        );
+
+        final ended = await adapterBob.fetchCall(callId);
+        expect(ended?.status, VoiceCallSignalingStatus.ended);
+        expect(ended?.endedBy, alice);
+        expect(
+          await adapterAlice.getRawForTest(<String>[
+            'activeVoicePairs',
+            pairId,
+          ]),
+          isNull,
+        );
+        expect(
+          await adapterAlice.getRawForTest(<String>['activeVoiceUsers', alice]),
+          isNull,
+        );
+        expect(
+          await adapterAlice.getRawForTest(<String>['activeVoiceUsers', bob]),
+          isNull,
+        );
+      } finally {
+        await adapterAlice.dispose();
+        await adapterBob.dispose();
+      }
+    },
+    skip: runIntegrationTests ? null : 'Requires Firebase emulators',
+  );
+
+  test(
     'Firebase emulator rejects signaling rule bypasses',
     () async {
       final runId = DateTime.now().microsecondsSinceEpoch.toRadixString(36);

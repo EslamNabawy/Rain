@@ -129,6 +129,7 @@ Related: [[Debt Categories]], [[Debt Prioritization]], [[Architecture Debt]], [[
 - Related Systems: [[Lease Management]], [[CallLeaseManager]], [[CallTerminalReconciler]], [[Signaling Architecture]], [[Firebase Architecture]].
 - Roadmap Tasks: TASK-002.
 - Resolution Strategy: Make matching `callId` ownership the only cleanup authority, inspect referenced rooms before busy, and retry stale cleanup once.
+- Progress Note 2026-06-03: One denied terminal cleanup path is mitigated. `FirebaseSignalingAdapter.endCall` now writes terminal `voiceCalls/{callId}` state before best-effort callee inbox mirror updates, and emulator coverage proves a missing `voiceCallInboxes/{callee}/{callId}` row no longer blocks terminal state or lock release. Remaining debt is full lease manager extraction and all terminal transition coverage.
 
 ### TD-004: Implicit Async Call State Machine
 
@@ -230,6 +231,7 @@ Related: [[Debt Categories]], [[Debt Prioritization]], [[Architecture Debt]], [[
 - Related Systems: [[Rules Strategy]], [[Emulator Coverage]], [[Firebase Architecture]], [[Security Roadmap]].
 - Roadmap Tasks: TASK-005.
 - Resolution Strategy: Build a rules matrix for allowed and denied writes, run it locally or in CI, and document old-client compatibility assumptions.
+- Progress Note 2026-06-03: Added Firebase emulator regression for `endCall` when the callee inbox row was already cleaned. The test failed with RTDB permission denied before the adapter fix and now passes without broadening RTDB rules.
 
 ### TD-010: Diagnostics Privacy Exposure
 

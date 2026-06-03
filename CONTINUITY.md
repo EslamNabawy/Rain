@@ -31,6 +31,7 @@ Phase 8 - Self-Improvement Engine
 - `ROOT_CAUSE_ANALYSIS.md` was created on 2026-06-03 from the supplied Windows diagnostics JSON, Android screenshot, and manual failure report. It is the current evidence lock for call/presence/update/diagnostics failures.
 - The RCA confirmed these root-cause clusters: split call terminal authority, Android `signaling.endCall` permission denial, presence freshness races, terminal inbox exposure before cleanup, Android diagnostics export path failure, and update build-number inconsistency.
 - First mitigation from the RCA execution is complete: late voice signaling states after terminal Firebase rooms are recorded as `late_frame_ignored` events only and no longer overwrite crash diagnostics as `lastCrash`.
+- Second mitigation from the RCA execution is complete: Firebase `endCall` now writes the terminal `voiceCalls/{callId}` room state before any best-effort inbox mirror update, so an already-cleaned `voiceCallInboxes/{callee}/{callId}` row can no longer cause a permission-denied terminal cleanup failure.
 - Phase 0 deliverables are complete.
 - Phase 1 vault structure is complete.
 - Phase 2 repository discovery is documented in `obsidian-vault/03-Architecture/Current Architecture.md`.
@@ -60,7 +61,7 @@ Phase 8 - Self-Improvement Engine
 
 ## Next Recommended Action
 
-Use `ROOT_CAUSE_ANALYSIS.md` to implement the next repair in evidence order: reproduce and fix Android `signaling.endCall` permission denial in Firebase emulator/rules, then terminal-state reconciliation, presence availability unification, Android diagnostics export repair, and update metadata validation.
+Use `ROOT_CAUSE_ANALYSIS.md` to implement the next repair in evidence order: complete terminal-state reconciliation coverage, unify presence availability decisions, repair Android diagnostics export paths, and fix update metadata validation.
 
 ## Future Population Areas
 

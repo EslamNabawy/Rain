@@ -876,10 +876,30 @@ class FirebaseEmulatorSignalingAdapter
       'voiceCalls/${room.callId}/updatedAt': safeEndedAt,
       'voiceCalls/${room.callId}/reasonCode': reasonCode,
       'voiceCalls/${room.callId}/reason': reason,
-      'voiceCallInboxes/${room.callee}/${room.callId}/status': status.name,
-      'voiceCallInboxes/${room.callee}/${room.callId}/updatedAt': safeEndedAt,
     });
+    await _patchVoiceInboxStatusIfPresent(room, status, safeEndedAt);
     await _deleteActiveVoiceLocksForRoomIfCurrent(room);
+  }
+
+  Future<void> _patchVoiceInboxStatusIfPresent(
+    VoiceCallRoom room,
+    VoiceCallSignalingStatus status,
+    int updatedAt,
+  ) async {
+    try {
+      final path = <String>['voiceCallInboxes', room.callee, room.callId];
+      final value = await _get(path);
+      if (value is! Map) {
+        return;
+      }
+      await _patch(path, <String, Object?>{
+        'status': status.name,
+        'updatedAt': updatedAt,
+      });
+    } catch (_) {
+      // Inbox rows are only ringing pointers. The room terminal state above is
+      // the source of truth and must not be undone by a stale inbox cleanup race.
+    }
   }
 
   @override

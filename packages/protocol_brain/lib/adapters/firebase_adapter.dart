@@ -1357,10 +1357,30 @@ class FirebaseSignalingAdapter
       'voiceCalls/${room.callId}/updatedAt': safeEndedAt,
       'voiceCalls/${room.callId}/reasonCode': reasonCode,
       'voiceCalls/${room.callId}/reason': reason,
-      'voiceCallInboxes/${room.callee}/${room.callId}/status': status.name,
-      'voiceCallInboxes/${room.callee}/${room.callId}/updatedAt': safeEndedAt,
     });
+    await _updateVoiceInboxStatusIfPresent(room, status, safeEndedAt);
     await _removeActiveVoiceLocksForRoomIfCurrent(room);
+  }
+
+  Future<void> _updateVoiceInboxStatusIfPresent(
+    VoiceCallRoom room,
+    VoiceCallSignalingStatus status,
+    int updatedAt,
+  ) async {
+    try {
+      final ref = _root.child('voiceCallInboxes/${room.callee}/${room.callId}');
+      final snapshot = await ref.get();
+      if (!snapshot.exists || snapshot.value is! Map) {
+        return;
+      }
+      await ref.update(<String, Object?>{
+        'status': status.name,
+        'updatedAt': updatedAt,
+      });
+    } catch (_) {
+      // Inbox rows are only ringing pointers. The room terminal state above is
+      // the source of truth and must not be undone by a stale inbox cleanup race.
+    }
   }
 
   @override

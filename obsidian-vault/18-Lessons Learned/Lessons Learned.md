@@ -164,6 +164,21 @@ No task is fully complete until the lesson check is done or explicitly marked "n
 - Owner: Engineering
 - Status: Open
 
+### LESSON-20260603-009: Terminal Source Of Truth Must Not Depend On Mirror Rows
+
+- Related task: [ROOT_CAUSE_ANALYSIS.md](../../ROOT_CAUSE_ANALYSIS.md) second mitigation
+- Related system: [[Voice Calls]], [[Firebase Architecture]], [[Rules Strategy]], [[CallTerminalReconciler]]
+- Related risk/debt: TD-003, TD-009, TD-011
+- What was learned: `voiceCallInboxes` is a callee-facing invite mirror, not the authoritative terminal call record. When `endCall` wrote terminal room state and terminal inbox state in one multi-path update, a cleaned inbox row could make Firebase deny the whole terminal write.
+- What caused delays: The app treated room state and inbox mirror state as one atomic artifact even though the rules intentionally allow new inbox rows only for `ringing`.
+- What failed: A valid `endCall` could become `[firebase_database/unknown] Permission denied` when the callee inbox had already been removed by cleanup or watcher repair.
+- What succeeded: A Firebase emulator regression reproduced the exact denied write, then the adapter was changed to write terminal `voiceCalls/{callId}` state first and update the inbox mirror only if it still exists.
+- What should change: Authoritative state writes must be isolated from optional mirror cleanup. Mirror rows can be best-effort, but they must never block terminal state, lock release, or user-visible cleanup.
+- Pattern: Authoritative state coupled to optional mirror row.
+- Follow-up improvement: Continue terminal reconciliation hardening for every voice/video cleanup path and add more emulator cases for already-terminal/missing-room/idempotent cleanup.
+- Owner: Engineering
+- Status: Open
+
 ## Review Cadence
 
 - Review lessons at the end of every completed task.
