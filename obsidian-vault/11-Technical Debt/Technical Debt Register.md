@@ -385,6 +385,7 @@ Related: [[Debt Categories]], [[Debt Prioritization]], [[Architecture Debt]], [[
 - Related Systems: [[Version And Updates]], [[Release Gates]], [[Production Readiness]].
 - Roadmap Tasks: TASK-012.
 - Resolution Strategy: Add semantic/build comparison tests, manifest parser tests, required/optional prompt widget tests, and settings check behavior tests.
+- Progress Note 2026-06-03: Update service now has explicit `remotePolicyOutdated` status for stale release manifests, same-version minimum-build upgrades are required updates, optional update prompts render from the root app surface before login/home, and settings manual checks report stale policy instead of "up to date."
 
 ## UX Debt
 

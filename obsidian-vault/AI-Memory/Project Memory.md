@@ -215,7 +215,7 @@ Highest-priority engineering areas:
 6. Improve diagnostics so user reports identify permission, Firebase, ICE/TURN, WebRTC, media, or UI state failures separately.
 7. Keep the Obsidian vault current as the project knowledge graph.
 
-Latest evidence lock: [ROOT_CAUSE_ANALYSIS.md](../../ROOT_CAUSE_ANALYSIS.md) correlates the 2026-06-03 Windows diagnostic export, Android screenshot, and manual failure report. Confirmed root causes are split call terminal authority, Android `signaling.endCall` permission denial, presence freshness races, terminal inbox exposure before cleanup, Android diagnostics export path failure, and platform build-number inconsistency in update policy. Mitigations completed on 2026-06-03: late voice signaling frames after a terminal room are now logged as `late_frame_ignored` diagnostics only, not as `lastCrash` Flutter errors; Firebase `endCall` terminal room writes no longer depend on the callee inbox row still existing; Android SAF `/document/...` diagnostics export handles no longer get opened as raw files; backend presence is resolved through one 30 second `online + lastHeartbeat` freshness window before local friend seeding, direct Connect, connection-request routing, or call start; failed call setup diagnostics now include a bounded Firebase room status timeline and remote terminal-room failure reconciliation emits `VoiceCallDiagnostics`.
+Latest evidence lock: [ROOT_CAUSE_ANALYSIS.md](../../ROOT_CAUSE_ANALYSIS.md) correlates the 2026-06-03 Windows diagnostic export, Android screenshot, and manual failure report. Confirmed root causes are split call terminal authority, Android `signaling.endCall` permission denial, presence freshness races, terminal inbox exposure before cleanup, Android diagnostics export path failure, and platform build-number inconsistency in update policy. Mitigations completed on 2026-06-03: late voice signaling frames after a terminal room are now logged as `late_frame_ignored` diagnostics only, not as `lastCrash` Flutter errors; Firebase `endCall` terminal room writes no longer depend on the callee inbox row still existing; Android SAF `/document/...` diagnostics export handles no longer get opened as raw files; backend presence is resolved through one 30 second `online + lastHeartbeat` freshness window before local friend seeding, direct Connect, connection-request routing, or call start; failed call setup diagnostics now include a bounded Firebase room status timeline and remote terminal-room failure reconciliation emits `VoiceCallDiagnostics`; update checks classify stale Remote Config policy as `remotePolicyOutdated`, same-version minimum-build upgrades become required updates, and optional update prompts render from the root app surface before login/home.
 
 ## Technical Debt
 
@@ -240,7 +240,7 @@ Current top risks:
 - Voice/video call setup can fail or stick in connecting.
 - Stale Firebase locks can cause false busy.
 - Peer presence can be stale after app close or network loss.
-- Update checks have been reported unreliable for old-version prompts.
+- Update checks now distinguish required, optional, current, unavailable, invalid config, and stale Remote Config policy. Remote Config still must be deployed after each release for old clients to discover new builds.
 - Firebase free-tier constraint limits backend cleanup/authoritative guardrails.
 - Large file transfer can stress memory and data-channel buffers.
 - Diagnostics can become privacy risk if sanitization regresses.

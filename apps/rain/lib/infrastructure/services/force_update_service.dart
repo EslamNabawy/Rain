@@ -25,6 +25,7 @@ enum VersionCheckStatus {
   current,
   optionalUpdateAvailable,
   updateRequired,
+  remotePolicyOutdated,
   checkUnavailable,
   invalidConfig,
 }
@@ -148,6 +149,9 @@ class VersionCheckResult {
 
   bool get hasOptionalUpdate =>
       status == VersionCheckStatus.optionalUpdateAvailable;
+
+  bool get hasOutdatedRemotePolicy =>
+      status == VersionCheckStatus.remotePolicyOutdated;
 
   String get displayCurrentBuild =>
       currentBuild <= 0 ? 'unknown' : '$currentBuild';
@@ -384,12 +388,22 @@ class ForceUpdateService {
       version: policy.latestVersion,
       build: policy.latestBuild,
     );
+    final hasOutdatedRemotePolicy =
+        !requiresUpdate &&
+        !hasOptionalUpdate &&
+        _isPolicyOlderThanApp(
+          appVersion,
+          version: policy.latestVersion,
+          build: policy.latestBuild,
+        );
 
     return VersionCheckResult(
       status: requiresUpdate
           ? VersionCheckStatus.updateRequired
           : hasOptionalUpdate
           ? VersionCheckStatus.optionalUpdateAvailable
+          : hasOutdatedRemotePolicy
+          ? VersionCheckStatus.remotePolicyOutdated
           : VersionCheckStatus.current,
       currentVersion: appVersion.version,
       currentBuild: appVersion.buildNumber,
@@ -430,6 +444,31 @@ class ForceUpdateService {
       return false;
     }
     return appVersion.buildNumber < targetBuild;
+  }
+
+  bool _isPolicyOlderThanApp(
+    AppVersionInfo appVersion, {
+    required String? version,
+    required int? build,
+  }) {
+    if (version == null && build == null) {
+      return false;
+    }
+    final versionComparison = compareVersionStrings(
+      appVersion.version,
+      version ?? appVersion.version,
+    );
+    if (versionComparison > 0) {
+      return true;
+    }
+    if (versionComparison < 0) {
+      return false;
+    }
+    final targetBuild = build;
+    if (targetBuild == null || targetBuild <= 0) {
+      return false;
+    }
+    return appVersion.buildNumber > targetBuild;
   }
 }
 

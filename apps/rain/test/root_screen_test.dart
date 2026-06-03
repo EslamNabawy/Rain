@@ -93,6 +93,9 @@ void main() {
         overrides: [
           appBootstrapProvider.overrideWithValue(_bootstrap(db)),
           forceUpdateProvider.overrideWith(_OptionalForceUpdateController.new),
+          optionalUpdateDismissalProvider.overrideWith(
+            _OptionalUpdateDismissalTestController.new,
+          ),
           identityProvider.overrideWith(_NoIdentityController.new),
         ],
         child: const MaterialApp(home: Scaffold(body: RootScreen())),
@@ -101,6 +104,13 @@ void main() {
     await tester.pumpAndSettle();
 
     expect(find.text('Update required'), findsNothing);
+    expect(find.text('Rain 1.1.0 is available.'), findsOneWidget);
+    expect(find.text('Create account'), findsOneWidget);
+
+    await tester.tap(find.byTooltip('Dismiss update'));
+    await tester.pumpAndSettle();
+
+    expect(find.text('Rain 1.1.0 is available.'), findsNothing);
     expect(find.text('Create account'), findsOneWidget);
   });
 }
@@ -159,6 +169,20 @@ class _OptionalForceUpdateController extends ForceUpdateController {
       latestBuild: 11,
       updateUrl: 'https://example.com',
     );
+  }
+}
+
+class _OptionalUpdateDismissalTestController
+    extends OptionalUpdateDismissalController {
+  String? _dismissedKey;
+
+  @override
+  Future<String?> build() async => _dismissedKey;
+
+  @override
+  Future<void> dismiss(VersionCheckResult result) async {
+    _dismissedKey = result.optionalUpdateDismissalKey;
+    state = AsyncValue.data(_dismissedKey);
   }
 }
 

@@ -4,7 +4,7 @@
 
 - PC-to-mobile voice/video call setup fails or fails immediately on mobile.
 - Voice call hangup has been reported not closing on the other peer.
-- Update prompt/check has been reported incorrect for old versions.
+- Update prompt/check has been reported incorrect for old versions. Code mitigation exists; still needs release artifact plus deployed Remote Config verification before moving to fixed.
 
 ## High
 

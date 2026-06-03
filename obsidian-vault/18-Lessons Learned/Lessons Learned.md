@@ -224,6 +224,21 @@ No task is fully complete until the lesson check is done or explicitly marked "n
 - Owner: Engineering
 - Status: Open
 
+### LESSON-20260603-013: Current Is Not The Same As Trusted Update Policy
+
+- Related task: [ROOT_CAUSE_ANALYSIS.md](../../ROOT_CAUSE_ANALYSIS.md) Phase 07
+- Related system: [[Version And Updates]], [[Release Gates]]
+- Related risk/debt: R-006, TD-018, BLK-004
+- What was learned: An installed build can be newer than the Remote Config release policy. Reporting that as "Rain is up to date" hides stale release metadata and makes the settings text look contradictory.
+- What caused delays: The update state machine had only current/optional/required/unavailable/invalid states, so it collapsed stale Remote Config policy into current.
+- What failed: Manual update checks could show a lower latest-known version while still saying the app was up to date.
+- What succeeded: Update checks now expose `remotePolicyOutdated`, same-version minimum-build upgrades are required updates, and optional prompts render from the root app surface before login/home.
+- What should change: Each release must keep package metadata, release manifest, Remote Config template, and deployed Remote Config in sync.
+- Pattern: Missing state for stale control-plane data.
+- Follow-up improvement: Add release evidence that records the deployed Remote Config manifest for the artifact commit.
+- Owner: Engineering/DevOps
+- Status: Open
+
 ## Review Cadence
 
 - Review lessons at the end of every completed task.

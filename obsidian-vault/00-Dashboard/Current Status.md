@@ -24,7 +24,7 @@ Last updated: 2026-06-03
 - Voice/video calls still have reported PC-to-mobile failures.
 - Call state can be misleading because signaling, lock, and media failures collapse into similar UI messages.
 - Presence can be stale after app close or network loss.
-- Update checks have been reported as not showing old-version prompts correctly.
+- Update checks require Remote Config to be deployed after each release; stale policy is now visible but still blocks reliable old-client discovery if not deployed.
 - File transfer implementation can cause allocation and I/O pressure for large files.
 - 2026-06-03 evidence review is captured in [ROOT_CAUSE_ANALYSIS.md](../../ROOT_CAUSE_ANALYSIS.md). It confirms call terminal authority conflicts, Android `signaling.endCall` permission denial, presence freshness races, stale terminal inbox exposure, Android diagnostics export failure, and update build-number inconsistency.
 - 2026-06-03 mitigation: late voice signaling frames after terminal room cleanup no longer write to crash diagnostics; they remain structured call events only. This improves report quality but does not yet fix the remaining call/presence/update failures.
@@ -32,6 +32,7 @@ Last updated: 2026-06-03
 - 2026-06-03 mitigation: Android diagnostics export now treats SAF `/document/...` and `/tree/...` picker handles as platform-managed outputs, preventing the reported `PathNotFoundException` path from being opened through `dart:io`.
 - 2026-06-03 mitigation: runtime action gates now resolve backend presence with one 30 second `online + lastHeartbeat` freshness window before friend seeding, direct Connect, connection-request routing, or voice/video call start.
 - 2026-06-03 mitigation: failed voice/video setup diagnostics now preserve Firebase room status timelines and emit diagnostics from terminal-room failure reconciliation.
+- 2026-06-03 mitigation: update checks now report stale Remote Config policy as `remotePolicyOutdated`, same-version minimum-build upgrades are required updates, and optional update prompts render from the root app surface before login/home.
 
 ## Documentation Status
 

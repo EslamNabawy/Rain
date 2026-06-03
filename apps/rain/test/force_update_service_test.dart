@@ -119,6 +119,63 @@ void main() {
   });
 
   test(
+    'same semantic version uses minimum build for required updates',
+    () async {
+      final service = ForceUpdateService(
+        remoteConfig: null,
+        updateUrl: 'https://example.com/update',
+        platform: 'android',
+        manifestLoader: () async => _manifest(
+          channel: 'stable',
+          platform: 'android',
+          latestVersion: '1.2.3',
+          latestBuild: 124,
+          minimumVersion: '1.2.3',
+          minimumBuild: 124,
+        ),
+        packageInfoLoader: () async =>
+            _packageInfo(version: '1.2.3', buildNumber: '123'),
+      );
+
+      final result = await service.check();
+
+      expect(result.status, ForceUpdateStatus.updateRequired);
+      expect(result.requiresUpdate, isTrue);
+      expect(result.minVersion, '1.2.3');
+      expect(result.minimumBuild, 124);
+    },
+  );
+
+  test('remote policy behind installed app is not reported current', () async {
+    final service = ForceUpdateService(
+      remoteConfig: null,
+      updateUrl: 'https://example.com/update',
+      platform: 'android',
+      manifestLoader: () async => _manifest(
+        channel: 'stable',
+        platform: 'android',
+        latestVersion: '1.0.1',
+        latestBuild: 7,
+        minimumVersion: '1.0.1',
+        minimumBuild: 7,
+      ),
+      packageInfoLoader: () async =>
+          _packageInfo(version: '1.0.2', buildNumber: '1007'),
+    );
+
+    final result = await service.check();
+
+    expect(result.status, ForceUpdateStatus.remotePolicyOutdated);
+    expect(result.hasOutdatedRemotePolicy, isTrue);
+    expect(result.requiresUpdate, isFalse);
+    expect(result.hasOptionalUpdate, isFalse);
+    expect(result.currentVersion, '1.0.2');
+    expect(result.currentBuild, 1007);
+    expect(result.latestVersion, '1.0.1');
+    expect(result.latestBuild, 7);
+  });
+
+  test(
     'newer semantic latest wins even when current build is higher',
     () async {
       final service = ForceUpdateService(
@@ -148,7 +205,7 @@ void main() {
   );
 
   test(
-    'older remote latest stays current when installed semantic is newer',
+    'older remote latest is reported as an outdated update policy',
     () async {
       final service = ForceUpdateService(
         remoteConfig: null,
@@ -168,7 +225,8 @@ void main() {
 
       final result = await service.check();
 
-      expect(result.status, ForceUpdateStatus.current);
+      expect(result.status, ForceUpdateStatus.remotePolicyOutdated);
+      expect(result.hasOutdatedRemotePolicy, isTrue);
       expect(result.currentVersion, '1.0.2');
       expect(result.latestVersion, '1.0.1');
     },

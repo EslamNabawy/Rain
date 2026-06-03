@@ -12,8 +12,11 @@ Prevents old builds from using incompatible Firebase rules or broken protocols.
 
 - App reads current version/build/channel/platform from package/environment.
 - Firebase Remote Config provides `rain_release_manifest_v1`.
-- Result can be current, optional update, required update, unavailable, or invalid config.
+- Result can be current, optional update, required update, stale remote policy, unavailable, or invalid config.
 - Update destination is GitHub Releases.
+- Required updates block at the root gate before login/home.
+- Optional updates render from the root app surface before login/home and use the existing per-channel/platform/build dismissal key.
+- If the installed app is newer than the Remote Config release policy, Rain reports `remotePolicyOutdated` instead of saying "up to date."
 
 ## Edge Cases
 
@@ -25,8 +28,8 @@ Prevents old builds from using incompatible Firebase rules or broken protocols.
 
 ## Known Issues
 
-- User reported old app did not show update prompt.
-- User reported check update said current even when latest/current text differed.
+- 2026-06-03: Old app optional prompts now render from the root app surface, not only the signed-in home screen.
+- 2026-06-03: Manual check no longer reports "up to date" when the installed app is newer than the release policy; it reports stale policy.
 - Version parser currently treats invalid version parts as zero.
 
 ## Testing Requirements

@@ -10,7 +10,6 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:open_filex/open_filex.dart';
 import 'package:protocol_brain/protocol_brain.dart';
 import 'package:rain_core/rain_core.dart';
-import 'package:url_launcher/url_launcher_string.dart';
 
 import 'package:rain/presentation/navigation/app_routes.dart';
 import 'package:rain/application/audio/rain_sound_event.dart';
@@ -38,7 +37,6 @@ import 'package:rain/presentation/widgets/connection_requests/connection_request
 import 'package:rain/presentation/widgets/calls/rain_call_controls.dart';
 import 'package:rain/presentation/widgets/calls/rain_call_suite.dart';
 import 'package:rain/presentation/widgets/rain_chat_widgets.dart';
-import 'package:rain/presentation/widgets/update/rain_update_prompt_banner.dart';
 
 part '../widgets/home/shell_header.dart';
 part '../widgets/home/link_status.dart';
@@ -718,8 +716,6 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
     final callSurface = ref.watch(callSurfaceProvider);
     final callEndPresentation = ref.watch(callEndPresentationProvider);
     final connectionRequests = ref.watch(connectionRequestProvider);
-    final updateResult = ref.watch(forceUpdateProvider).value;
-    final dismissedUpdateKey = ref.watch(optionalUpdateDismissalProvider).value;
     if (voiceCall.phase != VoiceCallPhase.idle && callSurface.isVisible) {
       _lastActiveCallSurface = callSurface;
     }
@@ -764,10 +760,6 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
         );
 
         final showShellHeader = !isCompact || _selectedPeerId == null;
-        final showOptionalUpdateBanner =
-            updateResult != null &&
-            updateResult.hasOptionalUpdate &&
-            dismissedUpdateKey != updateResult.optionalUpdateDismissalKey;
         final showInboundConnectionRequestTray =
             _shouldShowInboundConnectionRequestTray(
               connectionRequests,
@@ -805,17 +797,6 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
                     _ShellHeader(identity: identity, isCompact: isCompact),
                     const Divider(height: 1),
                   ],
-                  if (showOptionalUpdateBanner)
-                    RainUpdatePromptBanner(
-                      result: updateResult,
-                      onUpdate: () =>
-                          unawaited(launchUrlString(updateResult.updateUrl)),
-                      onDismiss: () => unawaited(
-                        ref
-                            .read(optionalUpdateDismissalProvider.notifier)
-                            .dismiss(updateResult),
-                      ),
-                    ),
                   Expanded(
                     child: _buildBodyWithCallSurface(
                       friends: friends,

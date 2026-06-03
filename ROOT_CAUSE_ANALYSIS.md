@@ -29,11 +29,12 @@ Completed mitigations from this RCA:
 - 2026-06-03: Android diagnostics export no longer treats SAF `/document/...` or `/tree/...` handles as raw filesystem paths. A regression proves `/document/1282` can be returned by the picker without causing `PathNotFoundException`.
 - 2026-06-03: Runtime action gates now resolve backend presence from `online + lastHeartbeat` through one 30 second freshness window before seeding friend state, direct connect, offline connection requests, or voice/video call start. Stale backend `online: true` records are logged as `backend_presence_stale_resolved_offline` and treated as offline before room/media setup.
 - 2026-06-03: Call setup diagnostics now retain a bounded Firebase room status timeline inside the runtime and terminal-room failure reconciliation emits `VoiceCallDiagnostics`. A regression proves failed setup exports include `ringing -> accepted -> failed` instead of losing the room timeline.
+- 2026-06-03: Update checks now classify stale Remote Config release policy as `remotePolicyOutdated` instead of `current`, same-version minimum build upgrades become required updates, and optional update prompts render from the root app surface before login/home.
 
 Remaining evidence-backed repairs:
 
 - Complete terminal-state reconciliation coverage for all voice/video runtime paths.
-- Fix update metadata/build-number validation.
+- Keep each released build tied to deployed Remote Config evidence so old clients can discover new versions.
 
 ## Evidence Summary
 

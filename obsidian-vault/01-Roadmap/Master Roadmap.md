@@ -383,10 +383,11 @@ Related: [[Project Home]], [[Current Architecture]], [[Audit Resolution Tracker]
 - Affected architecture: [[Version And Updates]], [[Production Readiness]]
 - Success criteria: Old semantic versions and lower build numbers trigger required/optional update states correctly.
 - Definition of done: Unit and widget tests cover old/current/newer, invalid manifest, unavailable Remote Config, and dismissed optional prompt.
+- Progress 2026-06-03: Same-version minimum-build upgrades now become required updates; stale Remote Config policy is surfaced as `remotePolicyOutdated` instead of `current`; optional update prompts render from `RootScreen` before login/home and are dismissible through the existing per-build dismissal key.
 - Subtasks:
-  - [ ] TASK-012.1 Add semantic/build comparison tests.
-  - [ ] TASK-012.2 Add required/optional prompt tests.
-  - [ ] TASK-012.3 Add settings "Check for updates" behavior test.
+  - [x] TASK-012.1 Add semantic/build comparison tests.
+  - [x] TASK-012.2 Add required/optional prompt tests.
+  - [x] TASK-012.3 Add settings "Check for updates" behavior test.
 
 #### Feature PV-02: Adapter Contract Tests
 

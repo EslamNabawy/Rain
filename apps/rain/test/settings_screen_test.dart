@@ -117,6 +117,48 @@ void main() {
     );
   });
 
+  testWidgets('manual update check reports outdated remote policy', (
+    WidgetTester tester,
+  ) async {
+    final harness = _SettingsHarness(
+      packageVersion: '1.0.2',
+      packageBuildNumber: '1007',
+      manifestLoader: () async => jsonEncode(<String, Object?>{
+        'schema': 1,
+        'channels': <String, Object?>{
+          'stable': <String, Object?>{
+            'android': <String, Object?>{
+              'latestVersion': '1.0.1',
+              'latestBuild': 7,
+              'minimumVersion': '1.0.1',
+              'minimumBuild': 7,
+              'updateUrl': 'https://example.com/releases',
+            },
+          },
+        },
+      }),
+    );
+    addTearDown(harness.dispose);
+
+    await tester.pumpSettingsScreen(harness: harness);
+    await tester.scrollUntilVisible(
+      find.text('Check for updates'),
+      500,
+      scrollable: find.byType(Scrollable).first,
+    );
+    await tester.pumpSettingsFrame();
+
+    expect(find.text('Update policy outdated'), findsOneWidget);
+
+    await tester.tap(find.text('Check for updates'));
+    await tester.pumpSettingsFrame();
+
+    expect(
+      find.textContaining('Update policy is behind this app'),
+      findsOneWidget,
+    );
+  });
+
   testWidgets('settings screen exposes debug sound diagnostics', (
     WidgetTester tester,
   ) async {
@@ -596,6 +638,8 @@ class _SettingsHarness {
     _FakePlatformBridge? platformBridge,
     ConnectionRequestState? connectionRequestState,
     ReleaseManifestLoader? manifestLoader,
+    String packageVersion = '1.0.0',
+    String packageBuildNumber = '1',
   }) : platformBridge = platformBridge ?? _FakePlatformBridge(),
        connectionRequestState =
            connectionRequestState ?? const ConnectionRequestState.idle(),
@@ -620,8 +664,8 @@ class _SettingsHarness {
         packageInfoLoader: () async => PackageInfo(
           appName: 'Rain',
           packageName: 'com.rainapp.rain',
-          version: '1.0.0',
-          buildNumber: '1',
+          version: packageVersion,
+          buildNumber: packageBuildNumber,
           buildSignature: '',
         ),
       ),

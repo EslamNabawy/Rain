@@ -12,7 +12,7 @@ Stabilize the highest-risk call and release-readiness foundations from [[Critica
 - [ ] TASK-002: [[CallLeaseManager]]
 - [ ] TASK-003: [[Call State Machine]]
 - [ ] TASK-005: [[Rules Strategy]]
-- [ ] TASK-012: [[Version And Updates]]
+- [/] TASK-012: [[Version And Updates]]
 
 ## Out Of Scope
 
@@ -25,7 +25,7 @@ Stabilize the highest-risk call and release-readiness foundations from [[Critica
 
 - Call start/end behavior is easier to reason about.
 - Stale locks are tested.
-- Update prompt version comparison is tested.
+- Update prompt version comparison is tested; release artifact plus deployed Remote Config verification still required.
 - Release gate does not publish without critical tests.
 
 Related: [[Sprint Planning]], [[Backlog]], [[Weekly Progress]].

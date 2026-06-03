@@ -43,6 +43,8 @@ String _manualUpdateCheckMessage(VersionCheckResult result) {
       'Update available: Rain ${result.displayLatestVersion} build ${result.displayLatestBuild}.',
     VersionCheckStatus.current =>
       'Rain is up to date: ${result.currentVersion} build ${result.displayCurrentBuild}.',
+    VersionCheckStatus.remotePolicyOutdated =>
+      'Update policy is behind this app: installed Rain ${result.currentVersion} build ${result.displayCurrentBuild}, latest known ${result.displayLatestVersion} build ${result.displayLatestBuild}.',
     VersionCheckStatus.checkUnavailable =>
       result.failureReason ?? 'Could not verify update status. Try again.',
     VersionCheckStatus.invalidConfig =>
@@ -879,6 +881,7 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen> {
         content: Text(_manualUpdateCheckMessage(value)),
         backgroundColor: switch (value.status) {
           VersionCheckStatus.invalidConfig ||
+          VersionCheckStatus.remotePolicyOutdated ||
           VersionCheckStatus.checkUnavailable => errorColor,
           _ => null,
         },
@@ -1326,6 +1329,7 @@ class _AboutRainSection extends StatelessWidget {
       VersionCheckStatus.current => Icons.verified_outlined,
       VersionCheckStatus.optionalUpdateAvailable => Icons.system_update_alt,
       VersionCheckStatus.updateRequired => Icons.warning_amber_outlined,
+      VersionCheckStatus.remotePolicyOutdated => Icons.sync_problem_outlined,
       VersionCheckStatus.checkUnavailable => Icons.cloud_off_outlined,
       VersionCheckStatus.invalidConfig => Icons.error_outline,
     };
@@ -1336,6 +1340,7 @@ class _AboutRainSection extends StatelessWidget {
       VersionCheckStatus.current => 'Rain is up to date',
       VersionCheckStatus.optionalUpdateAvailable => 'Update available',
       VersionCheckStatus.updateRequired => 'Update required',
+      VersionCheckStatus.remotePolicyOutdated => 'Update policy outdated',
       VersionCheckStatus.checkUnavailable => 'Update check unavailable',
       VersionCheckStatus.invalidConfig => 'Update config invalid',
     };
@@ -1349,6 +1354,8 @@ class _AboutRainSection extends StatelessWidget {
         'Latest: ${result.displayLatestVersion} build ${result.displayLatestBuild}',
       VersionCheckStatus.updateRequired =>
         'Minimum: ${result.minVersion} build ${result.displayMinimumBuild}',
+      VersionCheckStatus.remotePolicyOutdated =>
+        'Installed: ${result.currentVersion} build ${result.displayCurrentBuild} | Latest known: ${result.displayLatestVersion} build ${result.displayLatestBuild}',
       VersionCheckStatus.checkUnavailable =>
         result.failureReason ?? 'Could not verify update status.',
       VersionCheckStatus.invalidConfig =>

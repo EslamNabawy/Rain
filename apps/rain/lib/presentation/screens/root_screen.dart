@@ -1,3 +1,5 @@
+import 'dart:async';
+
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:protocol_brain/protocol_brain.dart';
@@ -9,6 +11,7 @@ import 'package:rain/application/runtime/rain_runtime_controller.dart';
 import 'package:rain/application/state/app_providers.dart';
 import 'package:rain/presentation/branding/rain_state_surfaces.dart';
 import 'package:rain/presentation/widgets/backend_banner.dart';
+import 'package:rain/presentation/widgets/update/rain_update_prompt_banner.dart';
 import 'home_screen.dart';
 import 'onboarding_screen.dart';
 import 'splash_screen.dart';
@@ -30,19 +33,28 @@ class RootScreen extends ConsumerWidget {
         if (result.requiresUpdate) {
           return _ForceUpdateGate(result: result);
         }
+        final dismissedUpdateKey = result.hasOptionalUpdate
+            ? ref.watch(optionalUpdateDismissalProvider).value
+            : null;
 
         return identity.when(
           data: (value) {
             if (value == null) {
               return _withBanners(
+                ref: ref,
                 environment: environment,
+                updateResult: result,
+                dismissedUpdateKey: dismissedUpdateKey,
                 child: const OnboardingScreen(),
               );
             }
 
             return runtime.when(
               data: (_) => _withBanners(
+                ref: ref,
                 environment: environment,
+                updateResult: result,
+                dismissedUpdateKey: dismissedUpdateKey,
                 child: const HomeScreen(),
               ),
               error: (error, stackTrace) {
@@ -66,13 +78,30 @@ class RootScreen extends ConsumerWidget {
   }
 
   Widget _withBanners({
+    required WidgetRef ref,
     required AppEnvironment environment,
+    required ForceUpdateResult updateResult,
+    required String? dismissedUpdateKey,
     required Widget child,
   }) {
+    final showOptionalUpdateBanner =
+        updateResult.hasOptionalUpdate &&
+        dismissedUpdateKey != updateResult.optionalUpdateDismissalKey;
+
     return Column(
       children: <Widget>[
         if (environment.shouldUseFallbackAdapter)
           BackendBanner(message: environment.fallbackReason),
+        if (showOptionalUpdateBanner)
+          RainUpdatePromptBanner(
+            result: updateResult,
+            onUpdate: () => unawaited(launchUrlString(updateResult.updateUrl)),
+            onDismiss: () => unawaited(
+              ref
+                  .read(optionalUpdateDismissalProvider.notifier)
+                  .dismiss(updateResult),
+            ),
+          ),
         Expanded(child: child),
       ],
     );

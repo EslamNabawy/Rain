@@ -112,6 +112,7 @@ Related: [[Risk Register]], [[Risk Categories]], [[Risk Matrix]], [[Blocker Reso
   - Test required and optional update UI.
   - Test settings "Check for updates" behavior.
   - Include version/channel/build metadata in release artifacts.
+- Progress 2026-06-03: Same-version minimum-build policy now produces required updates, stale Remote Config policy is shown as `remotePolicyOutdated` instead of "up to date," optional prompts render from the root app surface before login/home, and settings manual check reports stale policy clearly.
 - Exit Criteria: Old stable/demo build simulations show required or optional update correctly.
 - Detection Strategy: Unit tests, widget tests, Remote Config manifest parser tests, release gate evidence.
 
