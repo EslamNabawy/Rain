@@ -421,6 +421,11 @@ class CrashDiagnosticsService {
   }
 
   File? _fileFromPickerPath(String path) {
+    final normalizedPath = path.replaceAll(r'\', '/');
+    if (normalizedPath.startsWith('/document/') ||
+        normalizedPath.startsWith('/tree/')) {
+      return null;
+    }
     if (RegExp(r'^[a-zA-Z]:[\\/]').hasMatch(path)) {
       return File(path);
     }

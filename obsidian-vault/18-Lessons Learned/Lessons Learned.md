@@ -179,6 +179,21 @@ No task is fully complete until the lesson check is done or explicitly marked "n
 - Owner: Engineering
 - Status: Open
 
+### LESSON-20260603-010: Picker Return Values Are Not Always Filesystem Paths
+
+- Related task: [ROOT_CAUSE_ANALYSIS.md](../../ROOT_CAUSE_ANALYSIS.md) Android diagnostics export mitigation
+- Related system: [[Diagnostics And Logging]], [[Diagnostics Sanitization]]
+- Related risk/debt: TD-010, TD-016
+- What was learned: Android SAF picker outputs can look like `/document/1282` instead of a `content://...` URI. Treating that value as a `dart:io` file path caused `PathNotFoundException` and blocked diagnostic exports.
+- What caused delays: The code already handled `content://` URIs but did not classify bare SAF handles as platform-managed outputs.
+- What failed: Export fallback tried to open `/document/1282` directly even though the picker had already received the JSON bytes.
+- What succeeded: A regression now locks `/document/...` handling so diagnostics export returns success without filesystem fallback.
+- What should change: Any file picker/save picker integration must distinguish platform-managed handles from real filesystem paths before using `File`.
+- Pattern: Platform handle mistaken for local path.
+- Follow-up improvement: Extend file-transfer save/export flows with similar SAF-handle tests if they accept picker results.
+- Owner: Engineering
+- Status: Open
+
 ## Review Cadence
 
 - Review lessons at the end of every completed task.

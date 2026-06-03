@@ -26,12 +26,12 @@ Completed mitigations from this RCA:
 
 - 2026-06-03: Late voice signaling frames after terminal Firebase rooms are now recorded as structured `late_frame_ignored` runtime events only, not as crash/error records.
 - 2026-06-03: Firebase `endCall` terminal room writes are independent from callee inbox mirror rows. A new emulator regression proves an already-cleaned `voiceCallInboxes/{callee}/{callId}` row no longer causes permission denied or prevents lock release.
+- 2026-06-03: Android diagnostics export no longer treats SAF `/document/...` or `/tree/...` handles as raw filesystem paths. A regression proves `/document/1282` can be returned by the picker without causing `PathNotFoundException`.
 
 Remaining evidence-backed repairs:
 
 - Complete terminal-state reconciliation coverage for all voice/video runtime paths.
 - Unify presence availability decisions.
-- Fix Android diagnostics export path handling.
 - Fix update metadata/build-number validation.
 
 ## Evidence Summary

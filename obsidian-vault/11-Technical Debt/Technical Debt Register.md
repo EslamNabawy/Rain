@@ -248,6 +248,7 @@ Related: [[Debt Categories]], [[Debt Prioritization]], [[Architecture Debt]], [[
 - Related Systems: [[Diagnostics And Logging]], [[Diagnostics Sanitization]], [[Privacy Review]], [[Security Roadmap]].
 - Roadmap Tasks: TASK-014.
 - Resolution Strategy: Add recursive denylist sanitization, string caps, export tests, and diagnostics-only summaries.
+- Progress Note 2026-06-03: The Android diagnostics export path failure from the RCA is mitigated. `CrashDiagnosticsService` now treats SAF `/document/...` and `/tree/...` handles as platform-managed picker outputs and does not open them through `dart:io`; regression coverage locks this behavior.
 
 ### TD-011: Malformed Signaling Write Protection
 

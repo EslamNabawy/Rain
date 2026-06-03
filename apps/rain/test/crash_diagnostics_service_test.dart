@@ -615,6 +615,56 @@ void main() {
       expect(result.path, destinationUri);
     },
   );
+
+  test(
+    'export accepts Android document handles without filesystem fallback',
+    () async {
+      final temp = await Directory.systemTemp.createTemp(
+        'rain-crash-diagnostics-document-handle-test-',
+      );
+      addTearDown(() => temp.delete(recursive: true));
+      final accidentalDocumentRoot = Directory('/document');
+      final documentRootExisted = accidentalDocumentRoot.existsSync();
+      addTearDown(() async {
+        if (!documentRootExisted && await accidentalDocumentRoot.exists()) {
+          await accidentalDocumentRoot.delete(recursive: true);
+        }
+      });
+
+      const destinationHandle = '/document/1282';
+      var pickerReceivedBytes = false;
+      final service = CrashDiagnosticsService(
+        directoryProvider: () async => temp,
+        saveFile:
+            ({
+              String? dialogTitle,
+              String? fileName,
+              String? initialDirectory,
+              FileType type = FileType.any,
+              List<String>? allowedExtensions,
+              Uint8List? bytes,
+              bool lockParentWindow = false,
+            }) async {
+              pickerReceivedBytes = bytes != null && bytes.isNotEmpty;
+              return destinationHandle;
+            },
+      );
+
+      await service.initialize();
+      final result = await service.exportDiagnostics();
+
+      expect(pickerReceivedBytes, isTrue);
+      expect(result.saved, isTrue);
+      expect(result.path, destinationHandle);
+      expect(
+        File(destinationHandle).existsSync(),
+        isFalse,
+        reason:
+            'Android SAF document handles are not filesystem paths and must '
+            'not be opened through dart:io.',
+      );
+    },
+  );
 }
 
 String _join(String parent, String child) {
