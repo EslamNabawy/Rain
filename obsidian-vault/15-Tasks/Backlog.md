@@ -308,6 +308,51 @@ This backlog converts the audit in [[Original Audit]] into executable work. Each
 - Definition of done: Widget tests cover rebuild isolation and low-power visual path.
 - Estimated effort: 4 days
 
+### TASK-021: Add ARMv7 and low-power performance budget
+
+- Status: [ ] Not Started
+- Epic: [[Production Validation Epic]]
+- Feature: [[Frontend Architecture]]
+- Description: Define and test the reduced visual/performance path for ARMv7 and low-power devices.
+- Business value: Slow devices get usable scrolling and call surfaces instead of premium effects that lag.
+- Technical value: Makes performance expectations measurable instead of subjective.
+- Risk level: High
+- Dependencies: [[Release Gates]], [[Coverage Dashboard]], TASK-020
+- Files affected: `apps/rain/lib/presentation/*`, `apps/rain/lib/application/diagnostics/*`, `obsidian-vault/09-Testing/*`
+- Acceptance criteria: Low-power mode disables expensive non-essential effects and exports frame/performance summaries safely.
+- Definition of done: Low-power widget tests and diagnostics summary tests pass.
+- Estimated effort: 3 days
+
+### TASK-022: Maintain vault and memory as release artifacts
+
+- Status: [ ] Not Started
+- Epic: [[Production Validation Epic]]
+- Feature: [[Project Memory]]
+- Description: Keep [[Project Memory]], roadmap, risk, debt, blocker, and lesson notes aligned with completed implementation work.
+- Business value: Future sessions and maintainers do not rediscover solved problems or repeat failed approaches.
+- Technical value: Keeps the Obsidian vault useful as an engineering control system.
+- Risk level: Medium
+- Dependencies: [[Documentation Workflow]], [[Knowledge Graph Index]]
+- Files affected: `obsidian-vault/**/*`, `scripts/check_obsidian_vault.ps1`
+- Acceptance criteria: Major changes update relevant vault notes and no broken wiki links remain.
+- Definition of done: Vault validation passes and release workflow treats documentation as required evidence.
+- Estimated effort: 1 day setup, ongoing per change
+
+### TASK-023: Enforce offline-only connection request messaging
+
+- Status: [ ] Not Started
+- Epic: [[Security Hardening Epic]]
+- Feature: [[Connection Request Notifications]]
+- Description: Ensure offline notification request limits are spent only when fresh backend presence proves the peer is offline/stale and the user confirms the action.
+- Business value: Users are not charged request quota for normal online direct connect, and every blocked action explains why.
+- Technical value: Prevents abuse and keeps Spark/free-tier request writes bounded.
+- Risk level: Critical
+- Dependencies: [[Presence Management]], [[Rules Strategy]], [[Connection Request Notifications]]
+- Files affected: `apps/rain/lib/application/connection_requests/*`, `packages/protocol_brain/lib/src/connection_requests/*`, `backend/firebase/database.rules.json`
+- Acceptance criteria: Online peers use direct connect; offline/stale peers require confirmation; unknown presence fails closed with a message.
+- Definition of done: Runtime, adapter, rules, and widget tests cover confirmation-required, online-denied, offline-allowed, stale-allowed, quota-exceeded, and presence-unknown cases.
+- Estimated effort: 3 days
+
 ## Backlog Links
 
 - Roadmap: [[Master Roadmap]]

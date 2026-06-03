@@ -253,14 +253,23 @@ Completed foundation phases:
 - Phase 0 - Operating Model Foundation.
 - Phase 1 - Obsidian Vault Bootstrap.
 - Phase 2 - Repository Discovery.
-
-Current phase:
-
 - Phase 3 - Project Memory Generation.
+- Phase 4 - Audit to Roadmap Conversion.
+
+Current roadmap source:
+
+- [[Master Roadmap]]
+- [[30 Day Plan]]
+- [[60 Day Plan]]
+- [[90 Day Plan]]
+- [[Critical Path]]
+- [[Parallel Work Streams]]
+- [[Launch Blockers]]
+- [[Quick Wins]]
+- [[High-Risk Work]]
 
 Next expected phases:
 
-- Phase 4 - Audit to Roadmap Conversion.
 - Phase 5 - Technical Debt System.
 - Phase 6 - Risk and Blocker Intelligence.
 - Phase 7 - Architecture Refactor Planning.

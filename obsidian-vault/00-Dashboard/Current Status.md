@@ -31,11 +31,16 @@ Last updated: 2026-06-03
 
 This vault is now the main knowledge base. Older docs remain in `docs/`, but future source-of-truth updates should be mirrored here.
 
-Phase 1 vault bootstrap is now complete at the structural level. Detailed repository discovery, architecture mapping, audit conversion, and implementation planning remain future phases.
+Phase 1 vault bootstrap, Phase 2 repository discovery, Phase 3 project memory generation, and Phase 4 audit-to-roadmap conversion are complete at the documentation level. The current execution roadmap is [[Master Roadmap]].
 
 ## Execution Status
 
 - Current production-readiness plan: [[Master Roadmap]]
+- 30/60/90 execution plan: [[30 Day Plan]], [[60 Day Plan]], [[90 Day Plan]]
+- Parallel work streams: [[Parallel Work Streams]]
+- Launch blockers: [[Launch Blockers]]
+- Quick wins: [[Quick Wins]]
+- High-risk work: [[High-Risk Work]]
 - Active sprint: [[Active Sprint]]
 - Audit tracker: [[Audit Resolution Tracker]]
 - Current blockers: [[BLOCKERS]]

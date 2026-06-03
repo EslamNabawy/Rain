@@ -4,30 +4,36 @@ Last updated: 2026-06-03
 
 ## Purpose
 
-Track every finding from [[Original Audit]] through roadmap, epic, task, and release readiness.
+Track every finding from [[Original Audit]] through epic, feature, task, subtasks, and release readiness.
 
-| Finding | Epic | Task | Risk/Debt | Status | Next Step |
-| --- | --- | --- | --- | --- | --- |
-| Oversized call runtime | [[Architecture Stabilization Epic]] | TASK-001 | TD-001 | [ ] Open | Define coordinator interfaces. |
-| False busy and stale locks | [[Signaling Reliability Epic]] | TASK-002 | R-002 | [ ] Open | Add lease repair tests. |
-| Implicit call phases | [[Signaling Reliability Epic]] | TASK-003 | TD-002 | [ ] Open | Add explicit state machine. |
-| Missing ICE/TURN classification | [[Signaling Reliability Epic]] | TASK-004 | R-001 | [ ] Open | Add WebRTC stats timeline. |
-| Rules coverage gaps | [[Security Hardening Epic]] | TASK-005 | R-005 | [ ] Open | Expand emulator matrix. |
-| Presence stale after app close | [[Signaling Reliability Epic]] | TASK-006 | R-009 | [ ] Open | Session-owned presence. |
-| Poisoned Firebase watches | [[Signaling Reliability Epic]] | TASK-007 | TD-003 | [ ] Open | Add corrupt entry handling. |
-| Missing local indexes | [[Database Scalability Epic]] | TASK-008 | TD-007 | [ ] Open | Plan Drift migration. |
-| Eager chat loading | [[Database Scalability Epic]] | TASK-009 | TD-007 | [ ] Open | Add pagination. |
-| File receive memory pressure | [[File Transfer Optimization Epic]] | TASK-010 | R-006 | [ ] Open | Persistent sink. |
-| File send buffer pressure | [[File Transfer Optimization Epic]] | TASK-011 | R-006 | [ ] Open | Data-channel backpressure. |
-| Update version failures | [[Production Validation Epic]] | TASK-012 | R-004 | [ ] Open | Fix semantic/build compare. |
-| Media capture order failures | [[Signaling Reliability Epic]] | TASK-013 | R-001 | [ ] Open | Create media coordinator. |
-| Diagnostics privacy risk | [[Security Hardening Epic]] | TASK-014 | R-007 | [ ] Open | Strengthen sanitizer. |
-| Weak release gate parity | [[CI-CD Modernization Epic]] | TASK-015 | R-008 | [ ] Open | Make hard gate fail early. |
-| Workflow duplication | [[CI-CD Modernization Epic]] | TASK-016 | TD-008 | [ ] Open | Consolidate purposes. |
-| Firebase cost exposure | [[Security Hardening Epic]] | TASK-017 | R-003 | [ ] Open | Add budgets and counters. |
-| Adapter contracts under-tested | [[Production Validation Epic]] | TASK-018 | R-005 | [ ] Open | Add fake/emulator tests. |
-| Fragmented call UI | [[Architecture Stabilization Epic]] | TASK-019 | TD-010 | [ ] Open | One call surface renderer. |
-| Broad UI rebuilds | [[Architecture Stabilization Epic]] | TASK-020 | TD-006 | [ ] Open | Provider boundary cleanup. |
+Do not add new audit findings here unless [[Original Audit]] is updated. This tracker is the execution ledger for the existing audit baseline.
+
+Related: [[Master Roadmap]], [[Backlog]], [[Epic Index]], [[Critical Path]], [[Risk Register]], [[Technical Debt Register]].
+
+## Resolution Matrix
+
+| # | Audit Finding | Epic | Feature | Task | Status | Next Step |
+| --- | --- | --- | --- | --- | --- | --- |
+| 1 | `VoiceCallRuntime` has too many responsibilities. | [[Architecture Stabilization Epic]] | Runtime Responsibility Split | TASK-001 | [ ] Open | Define coordinator interfaces and characterization tests. |
+| 2 | Call lease and terminal state handling can create false busy and stuck call states. | [[Signaling Reliability Epic]] | Call Lease Repair | TASK-002 | [ ] Open | Add stale/live lock repair tests. |
+| 3 | Presence freshness can lag behind app close or stale sessions. | [[Signaling Reliability Epic]] | Presence Freshness | TASK-006 | [ ] Open | Lock session-owned heartbeat and app-close tests. |
+| 4 | Firebase rules need broader emulator coverage. | [[Security Hardening Epic]] | Firebase Rule Coverage | TASK-005 | [ ] Open | Expand RTDB allow/deny matrix. |
+| 5 | Watch streams must survive corrupt room or inbox data. | [[Signaling Reliability Epic]] | Watch Stream Resilience | TASK-007 | [ ] Open | Add corrupt inbox/room stream tests. |
+| 6 | Update version validation has reported old-version prompt failures. | [[Production Validation Epic]] | Update Version Validation | TASK-012 | [ ] Open | Add semantic/build comparison tests. |
+| 7 | File transfer needs stronger streaming and backpressure. | [[File Transfer Optimization Epic]] | Persistent Receive Streaming; Data Channel Backpressure | TASK-010, TASK-011 | [ ] Open | Define receive sink lifecycle and bufferedAmount budgets. |
+| 8 | Local database needs index and pagination validation. | [[Database Scalability Epic]] | Index Strategy; Conversation Pagination | TASK-008, TASK-009 | [ ] Open | Plan Drift index migration and paginated query tests. |
+| 9 | Diagnostics must be useful without exposing sensitive data. | [[Security Hardening Epic]] | Diagnostics Privacy | TASK-014 | [ ] Open | Strengthen recursive sanitizer tests. |
+| 10 | Release workflows need clearer hard gates and faster test artifact paths. | [[CI-CD Modernization Epic]] | Release Gate Parity; Workflow Ownership | TASK-015, TASK-016 | [ ] Open | Define hard gate matrix and workflow ownership map. |
+| 11 | Call UI must use a single surface model. | [[Architecture Stabilization Epic]] | Call Surface Single Source | TASK-019 | [ ] Open | Define call surface rendering contract. |
+| 12 | ARMv7 and low-power device paths need performance budgets. | [[Production Validation Epic]] | Performance Tier Validation | TASK-021 | [ ] Open | Define low-power budget and static visual path tests. |
+| 13 | WebRTC ICE/TURN failure classification is incomplete. | [[Signaling Reliability Epic]] | WebRTC Failure Classification | TASK-004 | [ ] Open | Add sanitized call setup timeline schema. |
+| 14 | Async cancellation and terminal cleanup need stricter ownership. | [[Signaling Reliability Epic]] | Explicit Call State Machine; Media Capture Ordering | TASK-003, TASK-013 | [ ] Open | Define allowed transitions and timeout-to-terminal rules. |
+| 15 | Security rules must prevent malformed or unauthorized signaling writes. | [[Security Hardening Epic]] | Firebase Rule Coverage | TASK-005 | [ ] Open | Add denied malformed signaling write tests. |
+| 16 | Connection request notification limits must be offline-only and message every blocked action. | [[Security Hardening Epic]] | Offline Request Guardrails | TASK-023 | [ ] Open | Add confirmation, online-denial, and message-matrix tests. |
+| 17 | Firebase cost counters should be tracked because Spark/free tier is a hard constraint. | [[Security Hardening Epic]] | Firebase Cost Guardrails | TASK-017 | [ ] Open | Define operation budgets and diagnostics counters. |
+| 18 | Appium/local smoke tests need stable locators and repeatable setup. | [[Production Validation Epic]] | Adapter Contract Tests | TASK-018 | [ ] Open | Add fake/emulator adapter contract matrix and smoke checklist. |
+| 19 | Riverpod provider boundaries should avoid broad UI rebuilds. | [[Architecture Stabilization Epic]] | Provider Boundary Cleanup | TASK-020 | [ ] Open | Identify broad Home/Chat watches. |
+| 20 | Project knowledge must be maintained continuously in [[Project Memory]]. | [[Production Validation Epic]] | Continuous Knowledge Maintenance | TASK-022 | [ ] Open | Keep vault validation and memory updates in release workflow. |
 
 ## Status Legend
 
@@ -36,4 +42,8 @@ Track every finding from [[Original Audit]] through roadmap, epic, task, and rel
 - [x] Done
 - [-] Deferred
 
-Related: [[Backlog]], [[Risk Register]], [[Technical Debt Register]], [[Production Readiness]].
+## Tracker Definition Of Done
+
+- Every row has an epic, feature, task, and next step.
+- Completed tasks update [[Master Roadmap]], [[Backlog]], [[Risk Register]], [[Technical Debt Register]], and [[Project Memory]] where applicable.
+- Public release cannot proceed while any P0 row remains open without explicit acceptance in [[Launch Readiness]].
