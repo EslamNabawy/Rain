@@ -4,6 +4,8 @@
 
 Own Firebase call rooms, inboxes, user locks, pair locks, stale lock repair, and terminal cleanup.
 
+Detailed implementation planning: [[Firebase Lease Management Refactor Plan]].
+
 ## Responsibilities
 
 - Claim call lease.

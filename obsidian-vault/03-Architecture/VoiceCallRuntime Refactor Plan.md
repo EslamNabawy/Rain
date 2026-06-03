@@ -1,0 +1,111 @@
+# VoiceCallRuntime Refactor Plan
+
+Last updated: 2026-06-03
+
+## Purpose
+
+Define the target refactor for the call runtime without rewriting WebRTC media or Firebase signaling.
+
+Related: [[VoiceCallRuntime Refactor]], [[Target Architecture]], [[Refactoring Strategy]], [[Call State Machine]], [[Voice Calls]], [[Video Calls]], [[ADR-004]], [[Technical Debt Register]], [[Risk Register]].
+
+## Current State
+
+`VoiceCallRuntime` is the central call path for voice and video. It currently owns or coordinates:
+
+- friend and presence preflight,
+- global one-call policy,
+- outgoing/incoming call state,
+- Firebase room and inbox watches,
+- call locks and stale cleanup,
+- media permission and capture,
+- WebRTC media connection setup,
+- video renderer handling,
+- mute/camera/deafen/output route actions,
+- terminal cleanup,
+- UI-facing state mutation,
+- diagnostics.
+
+## Problems
+
+- Too many reasons to change in one runtime.
+- Lease, media, terminal, and diagnostics failures are difficult to test separately.
+- Late Firebase room events and late session frames can conflict with local state.
+- PC-to-mobile and mobile-to-PC failures are hard to classify.
+- Runtime state and call UI state can become coupled.
+
+## Risks
+
+| Risk | Severity | Link |
+| --- | --- | --- |
+| Call setup fails or sticks connecting. | Critical | R-001 |
+| Media capture order fails. | Critical | R-004 |
+| Oversized runtime causes regressions. | Critical | R-007 |
+| Terminal state has multiple truths. | Critical | R-009 |
+
+## Target Architecture
+
+`VoiceCallRuntime` becomes an orchestration facade. Coordinators own the risky domains.
+
+```mermaid
+flowchart LR
+  UI["Call UI / controllers"] --> Runtime["VoiceCallRuntime facade"]
+  Runtime --> Start["CallStartCoordinator"]
+  Runtime --> Lease["CallLeaseManager"]
+  Runtime --> Media["CallMediaCoordinator"]
+  Runtime --> Terminal["CallTerminalReconciler"]
+  Runtime --> Diagnostics["CallDiagnosticsRecorder"]
+  Start --> Guard["RuntimeInteractionGuard"]
+  Start --> Presence["Presence resolver"]
+  Lease --> Firebase["Firebase voice signaling"]
+  Media --> PeerCore["peer_core media"]
+  Terminal --> Lease
+  Terminal --> Media
+  Terminal --> Diagnostics
+```
+
+## New Components
+
+- `CallStartCoordinator`: validates friend state, presence, global call/file conflicts, and initial call phase.
+- `CallLeaseManager`: owns room, inbox, pair lock, user lock, stale repair, and release.
+- `CallMediaCoordinator`: owns mic/camera permission, capture, WebRTC media connection, renderer lifecycle, and media timeout.
+- `CallTerminalReconciler`: treats Firebase terminal room state as authoritative and performs idempotent cleanup.
+- `CallDiagnosticsRecorder`: records sanitized call timeline and failure taxonomy.
+
+Existing architecture notes: [[CallStartCoordinator]], [[CallLeaseManager]], [[CallMediaCoordinator]], [[CallTerminalReconciler]], [[CallDiagnosticsRecorder]].
+
+## Migration Strategy
+
+1. Add coordinator interfaces beside current runtime.
+2. Move diagnostics taxonomy first because it observes behavior without changing it.
+3. Move start/preflight logic into `CallStartCoordinator`.
+4. Move lease claim/repair/release into `CallLeaseManager`.
+5. Move terminal reconciliation into `CallTerminalReconciler`.
+6. Move media capture and renderer lifecycle into `CallMediaCoordinator`.
+7. Reduce `VoiceCallRuntime` to orchestration and state emission.
+8. Delete dead paths only after tests prove equivalent behavior.
+
+## Testing Strategy
+
+- Characterization tests around current call start/end behavior.
+- Coordinator contract tests.
+- Runtime integration tests for outgoing voice, outgoing video, incoming accept, reject, busy, timeout, and hangup.
+- Failure tests for mic denied, camera denied, renderer disposed, Firebase permission denied, corrupt room, stale lock, media timeout.
+- Regression tests for terminal room beating late frames.
+
+## Rollout Plan
+
+1. Land diagnostics coordinator as no-op behavior change.
+2. Land start coordinator behind existing public runtime API.
+3. Land lease manager with fake adapter tests before Firebase behavior changes.
+4. Land terminal reconciler and verify remote hangup behavior.
+5. Land media coordinator and verify voice/video setup.
+6. Run hard validation gate before deleting old methods.
+7. Treat all call artifacts as test builds until BLK-001 and BLK-002 exit criteria are met.
+
+## Definition Of Done
+
+- TASK-001, TASK-003, and TASK-013 validation passes.
+- [[Call State Machine]] reflects actual allowed transitions.
+- [[Risk Register]] status is updated for R-001, R-004, R-007, and R-009.
+- [[Technical Debt Register]] status is updated for TD-001 and TD-004.
+

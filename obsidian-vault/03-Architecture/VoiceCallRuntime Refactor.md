@@ -2,6 +2,8 @@
 
 ## Current Responsibilities
 
+Detailed implementation planning: [[VoiceCallRuntime Refactor Plan]].
+
 - Presence preflight.
 - Friend validation.
 - File/call conflict checks.

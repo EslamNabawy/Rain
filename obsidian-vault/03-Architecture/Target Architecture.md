@@ -23,4 +23,13 @@ flowchart LR
 - UI derives from runtime state and never invents call truth.
 - Firebase watch errors are typed and observable.
 
-Related: [[Current Architecture]], [[VoiceCallRuntime Refactor]], [[Call State Machine]].
+## Detailed Refactor Plans
+
+- [[Architecture Refactor Plan Index]]
+- [[VoiceCallRuntime Refactor Plan]]
+- [[Firebase Lease Management Refactor Plan]]
+- [[Presence Management Refactor Plan]]
+- [[Message Loading Refactor Plan]]
+- [[File Transfer Runtime Refactor Plan]]
+
+Related: [[Current Architecture]], [[VoiceCallRuntime Refactor]], [[Call State Machine]], [[ADR-004]], [[ADR-005]], [[ADR-006]], [[ADR-007]], [[ADR-008]].

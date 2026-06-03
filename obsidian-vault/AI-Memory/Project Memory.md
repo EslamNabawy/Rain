@@ -257,6 +257,7 @@ Completed foundation phases:
 - Phase 4 - Audit to Roadmap Conversion.
 - Phase 5 - Technical Debt System.
 - Phase 6 - Risk and Blocker Intelligence.
+- Phase 7 - Architecture Refactor Planning.
 
 Current roadmap source:
 
@@ -277,10 +278,20 @@ Current roadmap source:
 - [[Risk Matrix]]
 - [[BLOCKERS]]
 - [[Blocker Resolution Plan]]
+- [[Architecture Refactor Plan Index]]
+- [[VoiceCallRuntime Refactor Plan]]
+- [[Firebase Lease Management Refactor Plan]]
+- [[Presence Management Refactor Plan]]
+- [[Message Loading Refactor Plan]]
+- [[File Transfer Runtime Refactor Plan]]
+- [[ADR-004]]
+- [[ADR-005]]
+- [[ADR-006]]
+- [[ADR-007]]
+- [[ADR-008]]
 
 Next expected phases:
 
-- Phase 7 - Architecture Refactor Planning.
 - Phase 8 - Self-Improvement Engine.
 - Phase 9 - Codex Automation Layer.
 - Phase 10 - Continuous Project Evolution.

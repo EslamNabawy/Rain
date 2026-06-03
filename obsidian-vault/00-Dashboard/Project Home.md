@@ -10,7 +10,7 @@ Rain is a private peer-to-peer chat app for Android and Windows. It supports acc
 - User source: [[User Flows]], [[User Personas]]
 - Roadmap source: [[Master Roadmap]], [[Critical Path]], [[30 Day Plan]], [[60 Day Plan]], [[90 Day Plan]], [[Parallel Work Streams]], [[Launch Blockers]], [[Quick Wins]], [[High-Risk Work]]
 - Execution source: [[Backlog]], [[Active Sprint]], [[Audit Resolution Tracker]], [[Weekly Progress]]
-- Architecture source: [[System Architecture]], [[Current Architecture]], [[Target Architecture]], [[Refactoring Strategy]]
+- Architecture source: [[System Architecture]], [[Current Architecture]], [[Target Architecture]], [[Refactoring Strategy]], [[Architecture Refactor Plan Index]]
 - Diagram source: [[System Diagrams]], [[Sequence Diagrams]], [[Entity Relationships]]
 - API source: [[API Overview]], [[Endpoints]], [[Contracts]]
 - Runtime source: [[AI Context]], [[Project Memory]]
@@ -97,3 +97,4 @@ Top blockers:
 - Milestones: [[Milestones]]
 - Lessons: [[Lessons Learned Index]]
 - Knowledge graph: [[Knowledge Graph Index]]
+- Architecture refactors: [[Architecture Refactor Plan Index]]

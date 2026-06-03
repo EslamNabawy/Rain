@@ -6,11 +6,11 @@ Every future session must read this file before starting non-trivial work.
 
 ## Current Goal
 
-Phase 6 risk and blocker intelligence has been completed. The project risks and blockers are now managed through `obsidian-vault/12-Risks/Risk Register.md`, `obsidian-vault/12-Risks/Risk Matrix.md`, and `obsidian-vault/14-Blockers/BLOCKERS.md`.
+Phase 7 architecture refactor planning has been completed. The detailed system plans are now managed through `obsidian-vault/03-Architecture/Architecture Refactor Plan Index.md` and linked ADRs `ADR-004` through `ADR-008`.
 
 ## Current Phase
 
-Phase 6 - Risk and Blocker Intelligence
+Phase 7 - Architecture Refactor Planning
 
 ## Completed Phases
 
@@ -21,7 +21,7 @@ Phase 6 - Risk and Blocker Intelligence
 - [x] Phase 4 - Audit to Roadmap Conversion
 - [x] Phase 5 - Technical Debt System
 - [x] Phase 6 - Risk and Blocker Intelligence
-- [ ] Phase 7 - Architecture Refactor Planning
+- [x] Phase 7 - Architecture Refactor Planning
 - [ ] Phase 8 - Self-Improvement Engine
 - [ ] Phase 9 - Codex Automation Layer
 - [ ] Phase 10 - Continuous Project Evolution
@@ -35,8 +35,9 @@ Phase 6 - Risk and Blocker Intelligence
 - Phase 4 roadmap artifacts are documented in `obsidian-vault/01-Roadmap/`.
 - Phase 5 technical debt artifacts are documented in `obsidian-vault/11-Technical Debt/`.
 - Phase 6 risk and blocker artifacts are documented in `obsidian-vault/12-Risks/` and `obsidian-vault/14-Blockers/`.
+- Phase 7 architecture refactor plans are documented in `obsidian-vault/03-Architecture/`.
 - Do not perform app code modifications as part of documentation-only phase work.
-- Wait for explicit user approval before starting Phase 7.
+- Wait for explicit user approval before starting Phase 8.
 
 ## Known Risks
 
@@ -47,11 +48,11 @@ Phase 6 - Risk and Blocker Intelligence
 
 ## Known Blockers
 
-- None for Phase 6 risk and blocker system.
+- None for Phase 7 architecture refactor planning.
 
 ## Next Recommended Action
 
-Stop after Phase 6 deliverables. Wait for explicit user approval before starting Phase 7 - Architecture Refactor Planning.
+Stop after Phase 7 deliverables. Wait for explicit user approval before starting Phase 8 - Self-Improvement Engine.
 
 ## Future Population Areas
 

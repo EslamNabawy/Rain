@@ -4,6 +4,8 @@
 
 Current outgoing file transfer performs repeated list copies. Current incoming path opens and closes a sink for each chunk.
 
+Detailed implementation planning: [[File Transfer Runtime Refactor Plan]].
+
 ## Target
 
 - Sender slices stream chunks without front-removal lists.

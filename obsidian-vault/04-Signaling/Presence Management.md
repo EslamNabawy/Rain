@@ -2,6 +2,8 @@
 
 ## Current Model
 
+Detailed implementation planning: [[Presence Management Refactor Plan]].
+
 - Foreground heartbeat around 10 seconds.
 - Presence stored in RTDB `presence`.
 - Session id and platform state exist.

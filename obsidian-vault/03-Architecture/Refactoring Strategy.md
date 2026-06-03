@@ -4,6 +4,8 @@
 
 Use strangler refactoring. Introduce coordinators around existing behavior, move one responsibility at a time, and keep regression tests passing.
 
+The detailed Phase 7 planning entrypoint is [[Architecture Refactor Plan Index]].
+
 ## Order
 
 1. Extract diagnostics recording into [[CallDiagnosticsRecorder]].
@@ -20,3 +22,11 @@ Use strangler refactoring. Introduce coordinators around existing behavior, move
 - Keep old behavior covered before deleting old code.
 
 Related: [[VoiceCallRuntime Refactor]], [[Test Strategy]], [[Technical Debt Register]].
+
+## Detailed Plans
+
+- [[VoiceCallRuntime Refactor Plan]]
+- [[Firebase Lease Management Refactor Plan]]
+- [[Presence Management Refactor Plan]]
+- [[Message Loading Refactor Plan]]
+- [[File Transfer Runtime Refactor Plan]]

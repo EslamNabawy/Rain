@@ -4,6 +4,8 @@
 
 Conversation watch currently emits full ordered conversations.
 
+Detailed implementation planning: [[Message Loading Refactor Plan]].
+
 ## Target
 
 - Load older messages by page.
