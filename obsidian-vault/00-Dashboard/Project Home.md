@@ -23,6 +23,7 @@ Rain is a private peer-to-peer chat app for Android and Windows. It supports acc
 - Research source: [[Research Notes]], [[Competitor Analysis]]
 - Lessons source: [[Lessons Learned Index]], [[Lessons Learned]], [[Engineering Insights]], [[Continuous Learning Rules]], [[Continuous Improvement Log]]
 - Improvement source: [[Improvement Backlog]], [[Optimization Opportunities]], [[Project Metrics]], [[Recommended Next Actions]]
+- Engineering system remediation: [[Engineering System Flaw Remediation Plan]]
 - AI memory source: [[Project Memory]], [[AI Memory Index]], [[Durable Facts]], [[Session Handoff]]
 - Knowledge graph source: [[Knowledge Graph Index]], [[Domain Map]], [[Dependency Map]], [[Decision Map]], [[Feature Map]], [[System Ownership Map]]
 - Template source: [[Templates Index]]
@@ -72,10 +73,10 @@ Top blockers:
 
 ## Work Next
 
-1. Execute [[VoiceCallRuntime Refactor]] through [[CallStartCoordinator]], [[CallLeaseManager]], [[CallMediaCoordinator]], [[CallTerminalReconciler]], and [[CallDiagnosticsRecorder]].
-2. Harden [[Lease Management]], [[Presence Management]], and [[Call State Machine]].
-3. Fix strict app update version validation and Remote Config manifest handling in [[Version And Updates]].
-4. Add database indexes and message pagination through [[Index Strategy]] and [[Pagination Strategy]].
+1. Execute [[Engineering System Flaw Remediation Plan]] Phase 00 and Phase 01 before Phase 9 automation, so the vault has canonical sources.
+2. Execute [[VoiceCallRuntime Refactor]] through [[CallStartCoordinator]], [[CallLeaseManager]], [[CallMediaCoordinator]], [[CallTerminalReconciler]], and [[CallDiagnosticsRecorder]].
+3. Harden [[Lease Management]], [[Presence Management]], and [[Call State Machine]].
+4. Fix strict app update version validation and Remote Config manifest handling in [[Version And Updates]].
 5. Add WebRTC diagnostics that classify signaling, permission, ICE, TURN, and media failures separately.
 
 ## Production Execution

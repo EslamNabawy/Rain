@@ -297,6 +297,7 @@ Current roadmap source:
 - [[Optimization Opportunities]]
 - [[Project Metrics]]
 - [[Recommended Next Actions]]
+- [[Engineering System Flaw Remediation Plan]]
 
 Next expected phases:
 
@@ -335,6 +336,7 @@ Validation defaults:
 - Online direct connect must not consume offline notification quota.
 - Closed app currently means offline; closed-app call/ring reliability is out of scope until push/foreground-service architecture exists.
 - Obsidian links must remain valid; run the vault checker after documentation changes.
+- The vault currently has documented governance flaws to fix before Phase 9 automation: manual-only enforcement, duplicate note-title ambiguity, static metrics, missing validation evidence ledger, and weak stale-doc detection. Source: [[Engineering System Flaw Remediation Plan]].
 
 ## Quick Start For Future AI Sessions
 

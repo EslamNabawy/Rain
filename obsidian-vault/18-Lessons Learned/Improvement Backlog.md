@@ -24,6 +24,11 @@ Related: [[Continuous Improvement Log]], [[Optimization Opportunities]], [[Recom
 | IMP-010 | Process | Require lesson capture after completed tasks. | Knowledge loss | P1 | Engineering | Every completed task updates [[Lessons Learned]] or states no new lesson. | Open |
 | IMP-011 | Automation | Add recurring-pattern review to weekly progress. | Repeated failures | P2 | Engineering | [[Weekly Progress]] includes patterns and recommended next actions. | Open |
 | IMP-012 | Product | Maintain user-facing blocked-action message matrix. | Silent/unclear failures | P0 | Product/UI | Every guardrail denial has a deterministic message and widget test. | Open |
+| IMP-013 | Documentation | Canonicalize duplicate vault note titles before more automation. | Ambiguous knowledge graph sources | P0 | Engineering | Duplicate `Risk Register`, `BLOCKERS`, `Backlog`, `Test Strategy`, `Database Architecture`, and `ADR-001` sources are resolved or explicitly allowlisted. | Open |
+| IMP-014 | Automation | Extend vault validation beyond structure into governance checks. | Manual governance drift | P0 | Engineering | Validator checks duplicate titles, stale active notes, phase consistency, and required evidence links. | Open |
+| IMP-015 | Automation | Add validation evidence ledger for completed work. | Manual governance drift | P1 | Engineering/DevOps | Completed tasks link to command/workflow evidence before closure. | Open |
+| IMP-016 | Process | Add owner aging and review cadence to risks, blockers, and debt. | Manual governance drift | P1 | Engineering/Product | P0/P1 items include opened date, last reviewed date, owner, and next review date. | Open |
+| IMP-017 | Automation | Generate or verify project metrics from source registers. | Manual governance drift | P1 | Engineering | Dashboard counts match risk, blocker, debt, task, and lesson registers. | Open |
 
 ## Backlog Conversion Rule
 
@@ -34,10 +39,10 @@ Convert an improvement into a roadmap task when:
 - it maps to a Critical or High risk,
 - it can be automated,
 - it reduces repeated manual debugging.
+- it reduces single-source-of-truth ambiguity in [[Engineering System Flaw Remediation Plan]].
 
 ## Status Review
 
 - P0 improvements: review before release workflows.
 - P1 improvements: review during sprint planning.
 - P2 improvements: review weekly.
-

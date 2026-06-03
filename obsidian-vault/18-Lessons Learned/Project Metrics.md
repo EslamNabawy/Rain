@@ -28,15 +28,17 @@ Related: [[Project Home]], [[Production Readiness]], [[Launch Readiness]], [[Ris
 | Open blockers | 9 | 0 Critical before public launch | See [[BLOCKERS]]. |
 | P0 debt items | 7 | 0 before public launch | See [[Debt Prioritization]]. |
 | Required vault files validation | Passing | Always passing | Enforced by vault checker. |
-| Markdown files in vault | 180 | Healthy, no broken links | Last validated after Phase 7. |
-| Branch ahead of origin/dev | 11 commits before Phase 8 | Push when user requests | Local documentation commits are unpushed. |
+| Markdown files in vault | 188 | Healthy, no broken links | Counted during engineering-system flaw analysis. |
+| Branch ahead of origin/dev | 13 commits before this plan | Push when user requests | Local documentation commits are unpushed. |
+| Duplicate note titles | 6 uncontrolled duplicates detected | 0 uncontrolled duplicates | See [[Engineering System Flaw Remediation Plan]]. |
+| Governance enforcement depth | Structural vault validation only | Semantic governance validation | Current checker does not validate stale metrics, evidence links, or phase consistency. |
 
 ## Learning Metrics
 
 | Metric | Current | Target |
 | --- | --- | --- |
-| Lessons recorded | 4 initial lessons | Add one per completed implementation cycle when relevant. |
-| Improvement backlog items | 12 | Review weekly. |
+| Lessons recorded | 5 initial lessons | Add one per completed implementation cycle when relevant. |
+| Improvement backlog items | 17 | Review weekly. |
 | Optimization opportunities | 8 | Promote high-value items into tasks. |
 | ADR count | 8 | Add when decisions affect architecture/release policy. |
 
@@ -50,4 +52,3 @@ Update this note when:
 - a new phase completes,
 - a recurring pattern creates a new improvement item,
 - a hard release gate passes or fails for a new reason.
-

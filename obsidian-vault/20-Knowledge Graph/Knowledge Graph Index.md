@@ -32,6 +32,7 @@ This folder organizes cross-links between product, architecture, risk, decisions
 - [[Optimization Opportunities]]
 - [[Project Metrics]]
 - [[Recommended Next Actions]]
+- [[Engineering System Flaw Remediation Plan]]
 
 ## Future Population
 

@@ -104,10 +104,24 @@ No task is fully complete until the lesson check is done or explicitly marked "n
 - Owner: Engineering
 - Status: Open
 
+### LESSON-20260603-005: Governance Rules Need Enforcement, Not Just Good Intentions
+
+- Related task: [[Engineering System Flaw Remediation Plan]]
+- Related system: [[Project Memory]], [[Knowledge Graph Index]], [[Improvement Backlog]], [[Project Metrics]]
+- Related risk/debt: IMP-013, IMP-014, IMP-015, IMP-016, IMP-017
+- What was learned: A strong repository operating manual is not enough if validation cannot detect skipped evidence, stale metrics, duplicate source notes, or missing lessons.
+- What caused delays: The vault checker validates structure and links, but not the semantic truth of the operating model.
+- What failed: Treating "single source of truth" as a written rule while allowing duplicate note titles and manual-only status updates.
+- What succeeded: The flaw analysis identified a dependency order: canonicalize source notes first, then add schema, evidence, metrics, and automation gates.
+- What should change: Execute [[Engineering System Flaw Remediation Plan]] before building Phase 9 automation.
+- Pattern: Manual governance drift and ambiguous knowledge graph sources.
+- Follow-up improvement: IMP-013 through IMP-017 in [[Improvement Backlog]].
+- Owner: Engineering
+- Status: Open
+
 ## Review Cadence
 
 - Review lessons at the end of every completed task.
 - Review recurring patterns weekly.
 - Convert repeated patterns into items in [[Improvement Backlog]].
 - Promote major process decisions into ADRs when they affect architecture or release policy.
-

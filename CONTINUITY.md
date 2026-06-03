@@ -38,6 +38,7 @@ Phase 8 - Self-Improvement Engine
 - Phase 7 architecture refactor plans are documented in `obsidian-vault/03-Architecture/`.
 - Phase 8 self-improvement artifacts are documented in `obsidian-vault/18-Lessons Learned/`.
 - Repository-wide `AGENTS.md` now requires pre-implementation reading of project memory, roadmap, debt, risk, and blockers, plus a post-code Obsidian update gate.
+- `obsidian-vault/01-Roadmap/Engineering System Flaw Remediation Plan.md` has been created to fix flaws in the current documentation operating system before Phase 9 automation.
 - Do not perform app code modifications as part of documentation-only phase work.
 - Wait for explicit user approval before starting Phase 9.
 
@@ -47,6 +48,7 @@ Phase 8 - Self-Improvement Engine
 - The active maintained repo must remain separate from `D:\old project\Rain`.
 - The project has high-risk runtime areas: Firebase signaling, WebRTC calls, presence, update checks, diagnostics, and release workflows.
 - Future phases must avoid overbuilding before discovery.
+- The vault contains uncontrolled duplicate note titles and manual-only governance checks; automate only after canonical source cleanup.
 
 ## Known Blockers
 
@@ -54,7 +56,7 @@ Phase 8 - Self-Improvement Engine
 
 ## Next Recommended Action
 
-Stop after Phase 8 deliverables. Wait for explicit user approval before starting Phase 9 - Codex Automation Layer.
+Execute `obsidian-vault/01-Roadmap/Engineering System Flaw Remediation Plan.md` Phase 00 and Phase 01, then wait for explicit user approval before starting full Phase 9 - Codex Automation Layer.
 
 ## Future Population Areas
 
