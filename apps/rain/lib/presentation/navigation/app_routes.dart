@@ -13,26 +13,11 @@ import 'rain_navigation_shell.dart';
 
 @visibleForTesting
 final appShellReadinessProvider = Provider<AppShellReadiness>((Ref ref) {
-  final identity = ref.watch(identityProvider);
-  final forceUpdate = ref.watch(forceUpdateProvider);
-  final networkStatus = ref.watch(networkStatusProvider).value;
-
-  final signedIn = identity.hasValue && identity.value != null;
-  final canUseCurrentVersion =
-      forceUpdate.hasValue && !forceUpdate.requireValue.requiresUpdate;
-  final runtimeReady =
-      !signedIn ||
-      switch (ref.watch(runtimeControllerProvider)) {
-        AsyncData() => true,
-        _ => false,
-      };
-
+  final startup = ref.watch(appStartupStateProvider);
   return AppShellReadiness(
-    showNavigation: signedIn && canUseCurrentVersion && runtimeReady,
-    networkStatusMessage:
-        networkStatus != null && networkStatus.blocksNetworkActions
-        ? networkStatus.message
-        : null,
+    phase: startup.phase,
+    showNavigation: startup.showNavigation,
+    networkStatusMessage: startup.networkStatusMessage,
   );
 });
 
@@ -40,10 +25,12 @@ final appShellReadinessProvider = Provider<AppShellReadiness>((Ref ref) {
 @immutable
 class AppShellReadiness {
   const AppShellReadiness({
+    required this.phase,
     required this.showNavigation,
     this.networkStatusMessage,
   });
 
+  final AppStartupPhase phase;
   final bool showNavigation;
   final String? networkStatusMessage;
 }
@@ -55,12 +42,15 @@ final appRouterProvider = Provider<GoRouter>((Ref ref) {
   return GoRouter(
     refreshListenable: refreshListenable,
     redirect: (BuildContext context, GoRouterState state) {
-      final identity = ref.read(identityProvider);
-      if (!identity.hasValue) {
-        return null;
+      final startup = ref.read(appStartupStateProvider);
+      if (startup.isLoading) {
+        return state.uri.path == '/' ? null : '/';
       }
-      final isSignedIn = identity.value != null;
-      if (!isSignedIn && state.uri.path != '/') {
+      final mustUseRoot =
+          startup.phase == AppStartupPhase.signedOut ||
+          startup.phase == AppStartupPhase.updateRequired ||
+          startup.phase == AppStartupPhase.failed;
+      if (mustUseRoot && state.uri.path != '/') {
         return '/';
       }
       return null;
@@ -121,7 +111,7 @@ final appRouterProvider = Provider<GoRouter>((Ref ref) {
 
 class _RouterRefreshNotifier extends ChangeNotifier {
   _RouterRefreshNotifier(Ref ref) {
-    ref.listen<AsyncValue<RainIdentity?>>(identityProvider, (_, _) {
+    ref.listen<AppStartupState>(appStartupStateProvider, (_, _) {
       notifyListeners();
     });
   }

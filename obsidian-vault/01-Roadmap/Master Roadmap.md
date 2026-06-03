@@ -31,8 +31,8 @@ This work is a P0 launch-blocking remediation stream discovered after the origin
 | --- | --- | --- | --- | --- | --- |
 | Phase 1: Authentication Source Of Truth | P0 | Done 2026-06-03 | [AUTHENTICATION_AUDIT.md](../../AUTHENTICATION_AUDIT.md), [[Authentication]] | Deleted or wrong-owner backend accounts do not restore from cached Drift identity. | Backend validation tests pass; docs updated; one phase commit created. |
 | Phase 2: Deterministic Logout | P0 | Done 2026-06-03 | Phase 1 | Logout clears local session/runtime state even when backend cleanup fails. | Runtime logout clears local session before best-effort sign-out; logout after prior app-exit shutdown still clears local session; provider invalidation runs in `finally`; tests cover failed sign-out and existing shutdown. |
-| Phase 3: Startup State Machine | P0 | Next | Phase 1, Phase 2 | Startup phases are explicit and repeatable. | Bootstrap/auth/identity/runtime/presence/router readiness transitions are tested. |
-| Phase 4: Global Splash Architecture | P0 | Open | Phase 3 | Main UI cannot render before startup completes. | No navigation/runtime widgets/call overlays appear during startup loading. |
+| Phase 3: Startup State Machine | P0 | Done 2026-06-03 | Phase 1, Phase 2 | Startup phases are explicit and repeatable. | `AppStartupState` centralizes update/session/runtime/session-expired/router readiness; `RootScreen` and shell navigation consume it; tests cover loading, required update, session validation, signed-out, runtime loading, ready, and expired-session phases. |
+| Phase 4: Global Splash Architecture | P0 | Next | Phase 3 | Main UI cannot render before startup completes. | No navigation/runtime widgets/call overlays appear during startup loading. |
 | Phase 5: Navigation Readiness | P0 | Open | Phase 3, Phase 4 | Protected routes only exist after auth/runtime readiness. | Settings/search/friend routes cannot render protected content while loading. |
 | Phase 6: State Lifecycle Hardening | P0 | Open | Phase 2, Phase 3 | Session-scoped providers cannot leak account state across login/logout cycles. | Repeated login/logout tests prove disposal/recreation boundaries. |
 

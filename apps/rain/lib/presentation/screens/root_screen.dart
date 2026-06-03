@@ -2,12 +2,10 @@ import 'dart:async';
 
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
-import 'package:protocol_brain/protocol_brain.dart';
 import 'package:url_launcher/url_launcher_string.dart';
 
 import 'package:rain/core/config/app_environment.dart';
 import 'package:rain/infrastructure/services/force_update_service.dart';
-import 'package:rain/application/runtime/rain_runtime_controller.dart';
 import 'package:rain/application/state/app_providers.dart';
 import 'package:rain/presentation/branding/rain_state_surfaces.dart';
 import 'package:rain/presentation/widgets/backend_banner.dart';
@@ -22,68 +20,45 @@ class RootScreen extends ConsumerWidget {
   @override
   Widget build(BuildContext context, WidgetRef ref) {
     final environment = ref.watch(appEnvironmentProvider);
-    final forceUpdate = ref.watch(forceUpdateProvider);
-    final identity = ref.watch(identityProvider);
-    final runtime = identity.value == null
-        ? const AsyncValue<RainRuntimeController?>.data(null)
-        : ref.watch(runtimeControllerProvider);
+    final startup = ref.watch(appStartupStateProvider);
 
-    return forceUpdate.when(
-      data: (ForceUpdateResult result) {
-        if (result.requiresUpdate) {
-          return _ForceUpdateGate(result: result);
-        }
-        final dismissedUpdateKey = result.hasOptionalUpdate
-            ? ref.watch(optionalUpdateDismissalProvider).value
-            : null;
-
-        return identity.when(
-          data: (value) {
-            if (value == null) {
-              return _withBanners(
-                ref: ref,
-                environment: environment,
-                updateResult: result,
-                dismissedUpdateKey: dismissedUpdateKey,
-                child: const OnboardingScreen(),
-              );
-            }
-
-            return runtime.when(
-              data: (_) => _withBanners(
-                ref: ref,
-                environment: environment,
-                updateResult: result,
-                dismissedUpdateKey: dismissedUpdateKey,
-                child: const HomeScreen(),
-              ),
-              error: (error, stackTrace) {
-                if (error is SignalingSessionExpiredException) {
-                  return _SessionExpiredResetView(error: error.toString());
-                }
-                return _ErrorView(
-                  error: 'Rain could not start.\n${error.toString()}',
-                );
-              },
-              loading: () => const _LoadingView(),
-            );
-          },
-          error: (error, stackTrace) => _ErrorView(error: error.toString()),
-          loading: () => const _LoadingView(),
-        );
-      },
-      error: (error, stackTrace) => _ErrorView(error: error.toString()),
-      loading: () => const _LoadingView(),
-    );
+    return switch (startup.phase) {
+      AppStartupPhase.checkingUpdate ||
+      AppStartupPhase.validatingSession ||
+      AppStartupPhase.startingRuntime => const _LoadingView(),
+      AppStartupPhase.updateRequired => _ForceUpdateGate(
+        result: startup.updateResult!,
+      ),
+      AppStartupPhase.signedOut => _withBanners(
+        ref: ref,
+        environment: environment,
+        updateResult: startup.updateResult!,
+        child: const OnboardingScreen(),
+      ),
+      AppStartupPhase.ready => _withBanners(
+        ref: ref,
+        environment: environment,
+        updateResult: startup.updateResult!,
+        child: const HomeScreen(),
+      ),
+      AppStartupPhase.sessionExpired => _SessionExpiredResetView(
+        error: startup.error?.toString() ?? 'Session expired.',
+      ),
+      AppStartupPhase.failed => _ErrorView(
+        error: 'Rain could not start.\n${startup.error.toString()}',
+      ),
+    };
   }
 
   Widget _withBanners({
     required WidgetRef ref,
     required AppEnvironment environment,
     required ForceUpdateResult updateResult,
-    required String? dismissedUpdateKey,
     required Widget child,
   }) {
+    final dismissedUpdateKey = updateResult.hasOptionalUpdate
+        ? ref.watch(optionalUpdateDismissalProvider).value
+        : null;
     final showOptionalUpdateBanner =
         updateResult.hasOptionalUpdate &&
         dismissedUpdateKey != updateResult.optionalUpdateDismissalKey;

@@ -284,6 +284,21 @@ No task is fully complete until the lesson check is done or explicitly marked "n
 - Owner: Engineering
 - Status: Open
 
+### LESSON-20260603-017: Startup Readiness Needs One Typed Contract Before UI Gating
+
+- Related task: Auth/startup remediation Phase 3
+- Related system: [[Authentication]], [[Frontend Architecture]], [[Project Memory]]
+- Related risk/debt: R-022, TD-022, BLK-010
+- What was learned: Root loading, update gates, identity validation, runtime startup, session-expired reset, and navigation visibility must be derived from one typed state before global splash or protected-route work is reliable.
+- What caused delays: The previous logic split readiness between `RootScreen`, `appShellReadinessProvider`, identity, force-update, and runtime providers, which made it hard to prove the app could not show partial protected UI.
+- What failed: Route-local readiness checks were individually reasonable but not strong enough as a production startup contract.
+- What succeeded: `AppStartupState` now centralizes startup phases, and focused tests cover update loading, required update, session validation, signed-out, runtime loading, ready, and expired-session phases.
+- What should change: Future startup/navigation work should consume `AppStartupState` instead of re-deriving readiness from raw providers.
+- Pattern: Fragmented readiness logic creates impossible-to-prove startup behavior.
+- Follow-up improvement: Phase 4 should lift the visual splash/readiness gate above normal app chrome using the typed startup contract.
+- Owner: Engineering
+- Status: Open
+
 ## Review Cadence
 
 - Review lessons at the end of every completed task.
