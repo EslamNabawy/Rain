@@ -34,6 +34,7 @@ Last updated: 2026-06-03
 - 2026-06-03 mitigation: failed voice/video setup diagnostics now preserve Firebase room status timelines and emit diagnostics from terminal-room failure reconciliation.
 - 2026-06-03 mitigation: update checks now report stale Remote Config policy as `remotePolicyOutdated`, same-version minimum-build upgrades are required updates, and optional update prompts render from the root app surface before login/home.
 - 2026-06-03 Phase 09 local pre-artifact release gate passed `dart pub get`, analyze, full Melos tests, Firebase JSON parsing, Firebase Functions tests, Firebase emulator integration tests, and Obsidian vault validation. Cloud artifacts and release-page proof are still required for the hard release gate.
+- 2026-06-03 auth/startup investigation is captured in [AUTHENTICATION_AUDIT.md](../../AUTHENTICATION_AUDIT.md), [ACCOUNT_LIFECYCLE_ANALYSIS.md](../../ACCOUNT_LIFECYCLE_ANALYSIS.md), [STARTUP_SEQUENCE_ANALYSIS.md](../../STARTUP_SEQUENCE_ANALYSIS.md), [SPLASH_SCREEN_INVESTIGATION.md](../../SPLASH_SCREEN_INVESTIGATION.md), [NAVIGATION_INITIALIZATION_AUDIT.md](../../NAVIGATION_INITIALIZATION_AUDIT.md), and [STATE_MANAGEMENT_FAILURE_ANALYSIS.md](../../STATE_MANAGEMENT_FAILURE_ANALYSIS.md). Correlated finding: local Drift identity, Firebase Auth, RTDB user profile, runtime state, and router state are separate truths; deleted backend account data can be recreated from local identity during runtime startup.
 
 ## Documentation Status
 
@@ -64,6 +65,7 @@ Phase 1 vault bootstrap, Phase 2 repository discovery, Phase 3 project memory ge
 - Lessons learned: [[Lessons Learned Index]]
 - Self-improvement system: [[Lessons Learned]], [[Engineering Insights]], [[Continuous Learning Rules]], [[Improvement Backlog]], [[Optimization Opportunities]], [[Project Metrics]], [[Recommended Next Actions]]
 - Engineering system remediation: [[Engineering System Flaw Remediation Plan]]
+- Auth/startup remediation: [ROOT_AUTH_STARTUP_REMEDIATION_ROADMAP.md](../../ROOT_AUTH_STARTUP_REMEDIATION_ROADMAP.md)
 - AI memory: [[Project Memory]], [[AI Memory Index]]
 - Knowledge graph: [[Knowledge Graph Index]]
 - Templates: [[Templates Index]]

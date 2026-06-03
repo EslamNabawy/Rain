@@ -207,6 +207,7 @@ See [[Database Architecture]], [[Database Schema]], [[Migration Plan]], [[Index 
 
 Highest-priority engineering areas:
 
+0. Fix auth/session startup correctness: local Drift identity, Firebase Auth, RTDB user profile, runtime state, and router state currently act as separate truths. Latest investigation files are [AUTHENTICATION_AUDIT.md](../../AUTHENTICATION_AUDIT.md), [ACCOUNT_LIFECYCLE_ANALYSIS.md](../../ACCOUNT_LIFECYCLE_ANALYSIS.md), [STARTUP_SEQUENCE_ANALYSIS.md](../../STARTUP_SEQUENCE_ANALYSIS.md), [SPLASH_SCREEN_INVESTIGATION.md](../../SPLASH_SCREEN_INVESTIGATION.md), [NAVIGATION_INITIALIZATION_AUDIT.md](../../NAVIGATION_INITIALIZATION_AUDIT.md), [STATE_MANAGEMENT_FAILURE_ANALYSIS.md](../../STATE_MANAGEMENT_FAILURE_ANALYSIS.md), and [ROOT_AUTH_STARTUP_REMEDIATION_ROADMAP.md](../../ROOT_AUTH_STARTUP_REMEDIATION_ROADMAP.md). Local identity must become a session candidate, not authenticated truth; app shell/navigation must render only after a validated session and runtime readiness.
 1. Make voice/video calls reliable in both PC-to-mobile and mobile-to-PC directions.
 2. Split and stabilize `VoiceCallRuntime` through [[VoiceCallRuntime Refactor]].
 3. Harden Firebase call lease creation, repair, cleanup, and terminal reconciliation through [[CallLeaseManager]] and [[CallTerminalReconciler]].
@@ -329,6 +330,8 @@ Validation defaults:
 ## Known Pitfalls
 
 - Creating duplicate Project Memory notes splits context. This file is the primary memory note.
+- Auth/session bug pattern: deleting RTDB account data externally does not delete local Drift identity or Firebase Auth. Current runtime startup can recreate RTDB profile/presence from local identity after Firebase ownership validation. Do not treat local `RainIdentity?` as authenticated truth in future fixes.
+- Startup bug pattern: global bootstrap splash is correct before `AppBootstrapper` resolves, but post-bootstrap loading is route-local under `MaterialApp.router` / `ShellRoute`. Protected app routes need a global readiness gate before shell creation.
 - Generic call errors hide root causes; classify signaling, permission, ICE/TURN, media, and terminal-state failures separately.
 - Expected terminal races must not call the crash/error recorder; otherwise diagnostics show a benign late-frame cleanup event as the "last Flutter error" and hide the real failure.
 - False busy usually means stale or partial Firebase call locks.

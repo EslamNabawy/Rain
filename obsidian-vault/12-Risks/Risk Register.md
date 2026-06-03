@@ -33,8 +33,8 @@ Severity rule:
 
 | Metric | Value |
 | --- | --- |
-| Total active risks | 20 |
-| Critical risks | 8 |
+| Total active risks | 22 |
+| Critical risks | 10 |
 | High risks | 9 |
 | Medium risks | 3 |
 | Low risks | 0 |
@@ -65,6 +65,8 @@ Severity rule:
 | R-014 Rules allow malformed or deny valid writes | BLK-003 | TASK-005 | TD-009, TD-011 |
 | R-018 Release workflow can publish unproven artifacts | BLK-006 | TASK-015 | TD-017 |
 | R-020 Offline request guardrails fail silently or spend quota incorrectly | BLK-009 | TASK-023 | TD-020 |
+| R-021 Logout/account reset restores stale identity | BLK-010 | [ROOT_AUTH_STARTUP_REMEDIATION_ROADMAP.md](../../ROOT_AUTH_STARTUP_REMEDIATION_ROADMAP.md) | TD-021 |
+| R-022 Startup shell/protected navigation renders before readiness | BLK-010 | [ROOT_AUTH_STARTUP_REMEDIATION_ROADMAP.md](../../ROOT_AUTH_STARTUP_REMEDIATION_ROADMAP.md) | TD-022 |
 
 ## Active Risk Register
 
@@ -90,6 +92,8 @@ Severity rule:
 | R-018 | Operational | Release workflow can publish artifacts without enough proof. | Broken APK/EXE reaches testers and wastes install cycles. | Medium | Critical | Enforce hard release gates and artifact metadata. | Workflow dependency checks, release evidence, vault validation. | DevOps | [[Release Gates]], [[CI-CD Roadmap]], TASK-015, TD-017 | Open |
 | R-019 | Operational | Local Android/Appium smoke workflow is not stable enough as a release blocker. | Device regressions escape unit/widget tests. | Medium | High | Add stable locators, repeatable AVD smoke, and artifacts. | Appium smoke logs, integration test result, emulator artifacts. | QA/DevOps | [[Emulator Test Matrix]], [[Test Strategy]], TASK-018, TD-015 | Open |
 | R-020 | Product | Blocked actions may not show clear user-facing messages. | Users cannot understand connect/call/request failures. | Medium | Critical | Fixed message matrix for every guardrail denial and failed fallback. | Widget tests for blocked actions and runtime diagnostics. | Product/UI | [[Connection Request Notifications]], `RuntimeInteractionGuard`, TASK-023, TD-020 | Open |
+| R-021 | Architecture | Logout/account reset can restore stale identity or recreate deleted backend data. | Users cannot trust logout, account deletion, or clean reset. | High | Critical | Introduce an auth session coordinator, validate backend identity before runtime start, and clear local session before/beside backend cleanup. | Tests for stale local identity, deleted backend account, failed Firebase sign-out, and session-expired reset. | Engineering | [[Authentication]], [AUTHENTICATION_AUDIT.md](../../AUTHENTICATION_AUDIT.md), [ACCOUNT_LIFECYCLE_ANALYSIS.md](../../ACCOUNT_LIFECYCLE_ANALYSIS.md), TD-021 | Open |
+| R-022 | Product | Startup/loading can render shell or protected routes before session/runtime readiness. | Users see partial UI, navigation, or unknown profile state during startup. | High | Critical | Move splash/auth/runtime readiness to a global gate before protected router/shell creation. | Widget tests for `/`, `/settings`, `/search`, and friend routes during identity/runtime loading. | Product/UI | [[Authentication]], [SPLASH_SCREEN_INVESTIGATION.md](../../SPLASH_SCREEN_INVESTIGATION.md), [NAVIGATION_INITIALIZATION_AUDIT.md](../../NAVIGATION_INITIALIZATION_AUDIT.md), TD-022 | Open |
 
 ## Detection Strategy By Category
 

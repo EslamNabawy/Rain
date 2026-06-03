@@ -223,6 +223,28 @@ Related: [[Risk Register]], [[Risk Categories]], [[Risk Matrix]], [[Blocker Reso
 - Exit Criteria: Runtime, adapter, rules, and widget tests cover online, offline, stale, unknown, cancelled, quota exceeded, and confirmation missing.
 - Detection Strategy: Request diagnostics, RTDB rules tests, operation counters, blocked-action widget tests.
 
+### BLK-010: Auth Session And Startup Readiness Are Not Production-Safe
+
+- Status: Open
+- Severity: Critical
+- Owner: Engineering/Product
+- Type: Architecture/Product
+- Related Risks: R-021, R-022
+- Related Roadmap Tasks: [ROOT_AUTH_STARTUP_REMEDIATION_ROADMAP.md](../../ROOT_AUTH_STARTUP_REMEDIATION_ROADMAP.md)
+- Related Debt: TD-021, TD-022
+- Related Architecture: [[Authentication]], [AUTHENTICATION_AUDIT.md](../../AUTHENTICATION_AUDIT.md), [STARTUP_SEQUENCE_ANALYSIS.md](../../STARTUP_SEQUENCE_ANALYSIS.md), [STATE_MANAGEMENT_FAILURE_ANALYSIS.md](../../STATE_MANAGEMENT_FAILURE_ANALYSIS.md)
+- Impact: Public launch is blocked because logout/account reset can restore stale local identity and startup can render protected app surfaces before auth/runtime readiness.
+- Workaround Strategy: Treat current builds as test builds only for auth/session behavior. If accounts are reset externally, also clear local app storage before retesting until the app owns account deletion/reset.
+- Parallel Progress Path: Continue call diagnostics and release-gate work, but do not ship backend-incompatible changes or public builds until auth/session startup is fixed.
+- Resolution Plan:
+  - Add characterization tests for stale local identity, deleted backend user, failed sign-out, and protected route loading.
+  - Add `AuthSessionCoordinator`.
+  - Validate Firebase/backend identity before runtime start.
+  - Guarantee local session clearing on logout/reset/delete.
+  - Move splash/navigation readiness to a global startup gate.
+- Exit Criteria: Logout always clears local identity, deleted backend account cannot be recreated from local cache, protected app shell never renders before readiness, and all paths are covered by tests.
+- Detection Strategy: Auth/session widget and runtime tests, diagnostics for session validation failures, and release gate checks for protected-route startup behavior.
+
 ## Blocker Review Cadence
 
 - Critical blockers: review before every release workflow.

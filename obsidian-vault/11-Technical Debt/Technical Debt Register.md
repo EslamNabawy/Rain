@@ -39,8 +39,8 @@ Related: [[Debt Categories]], [[Debt Prioritization]], [[Architecture Debt]], [[
 
 | Metric | Value |
 | --- | --- |
-| Total debt items | 20 |
-| P0 items | 7 |
+| Total debt items | 22 |
+| P0 items | 9 |
 | P1 items | 10 |
 | P2 items | 3 |
 | P3 items | 0 |
@@ -52,13 +52,13 @@ Related: [[Debt Categories]], [[Debt Prioritization]], [[Architecture Debt]], [[
 
 | Category | Count | Priority Weight | Related Note |
 | --- | --- | --- | --- |
-| Architecture | 5 | Highest | [[Architecture Debt]] |
+| Architecture | 6 | Highest | [[Architecture Debt]] |
 | Scalability | 3 | High | [[Scalability Debt]] |
 | Security | 4 | Highest | [[Security Debt]] |
 | Performance | 2 | High | [[Performance Debt]] |
 | Testing | 2 | High | [[Testing Debt]] |
 | DevOps | 2 | High | [[DevOps Debt]] |
-| UX | 2 | Medium | [[UX Debt]] |
+| UX | 3 | Medium | [[UX Debt]] |
 
 ## Prioritization Summary
 
@@ -71,6 +71,8 @@ Related: [[Debt Categories]], [[Debt Prioritization]], [[Architecture Debt]], [[
 5. TD-009 - Firebase rules coverage gaps.
 6. TD-018 - Update validation failures.
 7. TD-017 - Weak release gate parity.
+8. TD-021 - Split authentication/session source of truth.
+9. TD-022 - Move startup/splash/navigation to a global readiness gate.
 
 ### Safe Parallel Work
 
@@ -164,6 +166,22 @@ Related: [[Debt Categories]], [[Debt Prioritization]], [[Architecture Debt]], [[
 - Related Systems: [[Frontend Architecture]], [[Voice Calls]], [[Video Calls]], [[Call State Machine]].
 - Roadmap Tasks: TASK-019.
 - Resolution Strategy: Render only one call surface from one presentation model and remove or make unreachable legacy popup/duplicate paths.
+
+### TD-021: Split Authentication And Session Source Of Truth
+
+- Category: Architecture
+- Status: Open
+- Priority: P0
+- Title: Authentication and session state have multiple truths.
+- Description: Drift local identity, Firebase Auth current user, RTDB user profile, RTDB presence, runtime state, and router state can disagree.
+- Cause: Local identity became the signed-in UI signal while backend validation happens later inside runtime startup.
+- Risk: Logout/reset can appear broken, deleted backend account data can be recreated from local identity, and stale users can reach protected app surfaces.
+- Cost to Fix: M, about 4 days.
+- Cost to Ignore: Users cannot trust logout/account deletion, stale profile/friend state can survive, and backend permission failures continue to appear as app instability.
+- Files Affected: `apps/rain/lib/application/state/identity_providers.dart`, `apps/rain/lib/application/state/runtime_providers.dart`, `apps/rain/lib/application/runtime/rain_runtime_controller.dart`, `packages/protocol_brain/lib/adapters/firebase_adapter.dart`, `packages/rain_core/lib/identity/identity.dart`.
+- Related Systems: [[Authentication]], [AUTHENTICATION_AUDIT.md](../../AUTHENTICATION_AUDIT.md), [ACCOUNT_LIFECYCLE_ANALYSIS.md](../../ACCOUNT_LIFECYCLE_ANALYSIS.md), [STATE_MANAGEMENT_FAILURE_ANALYSIS.md](../../STATE_MANAGEMENT_FAILURE_ANALYSIS.md).
+- Roadmap Tasks: [ROOT_AUTH_STARTUP_REMEDIATION_ROADMAP.md](../../ROOT_AUTH_STARTUP_REMEDIATION_ROADMAP.md).
+- Resolution Strategy: Add an `AuthSessionCoordinator`, treat local identity as a session candidate only, validate Firebase/backend identity before runtime start, and clear local session in a guaranteed path during logout/reset/delete.
 
 ## Scalability Debt
 
@@ -421,6 +439,22 @@ Related: [[Debt Categories]], [[Debt Prioritization]], [[Architecture Debt]], [[
 - Related Systems: [[Connection Request Notifications]], [[Presence Management]], [[Rules Strategy]], [[Firebase Architecture]].
 - Roadmap Tasks: TASK-023.
 - Resolution Strategy: Resolve online/offline/unknown presence before action, ask explicit confirmation for offline notification, and show fixed messages for every denial.
+
+### TD-022: Route-Local Splash And Protected Navigation Gate
+
+- Category: UX
+- Status: Open
+- Priority: P0
+- Title: Startup splash and navigation readiness are route-local instead of app-global.
+- Description: `RootScreen` owns loading/update/runtime gates only for `/`, while `ShellRoute` and protected sibling routes can exist before full app readiness.
+- Cause: The routed app shell is created immediately after infrastructure bootstrap; auth/session/runtime readiness is resolved inside providers and route children.
+- Risk: Navigation/app shell or protected route UI can render before authentication validation and runtime initialization finish.
+- Cost to Fix: M, about 3 days.
+- Cost to Ignore: Startup looks broken, protected screens can show `Unknown` identity, and loading/error states leak into normal app UI.
+- Files Affected: `apps/rain/lib/main.dart`, `apps/rain/lib/presentation/screens/rain_app.dart`, `apps/rain/lib/presentation/navigation/app_routes.dart`, `apps/rain/lib/presentation/navigation/rain_navigation_shell.dart`, `apps/rain/lib/presentation/screens/root_screen.dart`, `apps/rain/lib/presentation/screens/settings_screen.dart`, `apps/rain/lib/presentation/screens/search_screen.dart`.
+- Related Systems: [[Authentication]], [[Frontend Architecture]], [STARTUP_SEQUENCE_ANALYSIS.md](../../STARTUP_SEQUENCE_ANALYSIS.md), [SPLASH_SCREEN_INVESTIGATION.md](../../SPLASH_SCREEN_INVESTIGATION.md), [NAVIGATION_INITIALIZATION_AUDIT.md](../../NAVIGATION_INITIALIZATION_AUDIT.md).
+- Roadmap Tasks: [ROOT_AUTH_STARTUP_REMEDIATION_ROADMAP.md](../../ROOT_AUTH_STARTUP_REMEDIATION_ROADMAP.md).
+- Resolution Strategy: Add a global startup gate and split route trees so protected app shell renders only after session validation and runtime readiness.
 
 ## Debt Burn-Down Plan
 
