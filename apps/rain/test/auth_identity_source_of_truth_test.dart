@@ -10,36 +10,33 @@ import 'package:rain/infrastructure/signaling/noop_signaling_adapter.dart';
 import 'package:rain_core/rain_core.dart';
 
 void main() {
-  test(
-    'cached identity is cleared when backend account is deleted',
-    () async {
-      final database = RainDatabase(NativeDatabase.memory());
-      addTearDown(database.close);
-      await IdentityRepository(database).saveIdentity(
-        const RainIdentity(
-          username: 'alice',
-          displayName: 'Alice',
-          createdAt: 1,
-          gender: RainGender.female,
-        ),
-      );
-      final adapter = _AuthValidationAdapter(
-        currentUidValue: 'uid-alice',
-        backendIdentity: null,
-      );
-      final container = _container(database, adapter);
-      addTearDown(container.dispose);
+  test('cached identity is cleared when backend account is deleted', () async {
+    final database = RainDatabase(NativeDatabase.memory());
+    addTearDown(database.close);
+    await IdentityRepository(database).saveIdentity(
+      const RainIdentity(
+        username: 'alice',
+        displayName: 'Alice',
+        createdAt: 1,
+        gender: RainGender.female,
+      ),
+    );
+    final adapter = _AuthValidationAdapter(
+      currentUidValue: 'uid-alice',
+      backendIdentity: null,
+    );
+    final container = _container(database, adapter);
+    addTearDown(container.dispose);
 
-      final identity = await container.read(identityProvider.future);
+    final identity = await container.read(identityProvider.future);
 
-      expect(identity, isNull);
-      expect(await IdentityRepository(database).loadIdentity(), isNull);
-      expect(adapter.ensureSignedInAsCalls, 1);
-      expect(adapter.fetchIdentityCalls, 1);
-      expect(adapter.signOutCalls, 1);
-      expect(adapter.upsertedIdentities, isEmpty);
-    },
-  );
+    expect(identity, isNull);
+    expect(await IdentityRepository(database).loadIdentity(), isNull);
+    expect(adapter.ensureSignedInAsCalls, 1);
+    expect(adapter.fetchIdentityCalls, 1);
+    expect(adapter.signOutCalls, 1);
+    expect(adapter.upsertedIdentities, isEmpty);
+  });
 
   test(
     'cached identity is cleared when Firebase user does not own backend user',
