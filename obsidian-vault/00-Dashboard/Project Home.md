@@ -7,11 +7,18 @@ Rain is a private peer-to-peer chat app for Android and Windows. It supports acc
 ## Command Center
 
 - Product source: [[Vision]], [[Requirements]], [[Feature Matrix]]
-- Architecture source: [[System Architecture]], [[Design Decisions]], [[Technical Debt]]
+- User source: [[User Flows]], [[User Personas]]
+- Roadmap source: [[Master Roadmap]], [[Critical Path]], [[30 Day Plan]], [[60 Day Plan]], [[90 Day Plan]]
+- Execution source: [[Backlog]], [[Active Sprint]], [[Audit Resolution Tracker]], [[Weekly Progress]]
+- Architecture source: [[System Architecture]], [[Current Architecture]], [[Target Architecture]], [[Refactoring Strategy]]
+- Diagram source: [[System Diagrams]], [[Sequence Diagrams]], [[Entity Relationships]]
+- API source: [[API Overview]], [[Endpoints]], [[Contracts]]
 - Runtime source: [[AI Context]], [[Project Memory]]
 - QA source: [[Test Strategy]], [[QA Findings]], [[Launch Readiness]]
-- Security source: [[Security Review]], [[Risk Register]], [[Permissions Matrix]]
-- Operations source: [[Deployment]], [[Monitoring]], [[Incident Response]]
+- Security source: [[Security Review]], [[Security Roadmap]], [[Risk Register]], [[Permissions Matrix]]
+- Operations source: [[Deployment]], [[Monitoring]], [[Incident Response]], [[Backup Strategy]], [[Release Gates]]
+- Development source: [[Coding Standards]], [[Environment Setup]], [[Build Process]]
+- Research source: [[Research Notes]], [[Competitor Analysis]]
 
 ## Current Scores
 
@@ -54,11 +61,23 @@ Top blockers:
 - [[ADR-001]] - Firebase is signaling and coordination only, not media transport.
 - [[ADR-002]] - Stay on Firebase Spark/free tier where possible.
 - [[ADR-003]] - Obsidian vault is the living source of truth for project knowledge.
+- [[ADR-001]] - Production readiness vault owns audit execution.
 
 ## Work Next
 
-1. Harden the call signaling lease and terminal reconciliation path.
-2. Fix strict app update version validation and Remote Config manifest handling.
-3. Add database indexes and message pagination.
-4. Add WebRTC diagnostics that classify signaling, permission, ICE, TURN, and media failures separately.
-5. Split oversized runtime and UI files into maintainable coordinators.
+1. Execute [[VoiceCallRuntime Refactor]] through [[CallStartCoordinator]], [[CallLeaseManager]], [[CallMediaCoordinator]], [[CallTerminalReconciler]], and [[CallDiagnosticsRecorder]].
+2. Harden [[Lease Management]], [[Presence Management]], and [[Call State Machine]].
+3. Fix strict app update version validation and Remote Config manifest handling in [[Version And Updates]].
+4. Add database indexes and message pagination through [[Index Strategy]] and [[Pagination Strategy]].
+5. Add WebRTC diagnostics that classify signaling, permission, ICE, TURN, and media failures separately.
+
+## Production Execution
+
+- Readiness: [[Production Readiness]]
+- Roadmap: [[Master Roadmap]]
+- Critical path: [[Critical Path]]
+- Epics: [[Epic Index]]
+- Risks: [[Risk Register]]
+- Debt: [[Technical Debt Register]]
+- Blockers: [[BLOCKERS]]
+- Milestones: [[Milestones]]

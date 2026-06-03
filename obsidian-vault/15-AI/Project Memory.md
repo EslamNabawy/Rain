@@ -13,6 +13,7 @@ Rain is a private peer-to-peer chat app for Android and Windows. It supports acc
 - `packages/protocol_brain` owns Firebase signaling, sessions, retry policy, connection requests, voice call contracts.
 - `packages/peer_core` owns WebRTC peer primitives, media connections, platform bridge.
 - `backend/firebase` owns RTDB rules, Remote Config template, optional functions.
+- `/obsidian-vault` owns project memory, production-readiness execution, audit resolution, sprint tracking, risk tracking, and architecture decisions.
 
 ## Business Rules
 
@@ -32,6 +33,7 @@ Rain is a private peer-to-peer chat app for Android and Windows. It supports acc
 - Generic "media could not connect" is not enough; failures must be classified.
 - Unit tests are not enough for WebRTC real-device behavior.
 - Update prompts are critical because backend rules can make old apps unusable.
+- The audit must be executed through [[Master Roadmap]], [[Backlog]], [[Audit Resolution Tracker]], and [[Release Gates]], not scattered chat memory.
 
 ## Naming Conventions
 
@@ -40,3 +42,10 @@ Rain is a private peer-to-peer chat app for Android and Windows. It supports acc
 - Use `CallMediaMode.audio` and `CallMediaMode.video` to distinguish voice/video.
 
 Related: [[AI Context]], [[Design Decisions]], [[Feature Index]].
+
+## Production Execution Memory
+
+- Highest priority architecture work: [[VoiceCallRuntime Refactor]].
+- Required call coordinators: [[CallStartCoordinator]], [[CallLeaseManager]], [[CallMediaCoordinator]], [[CallTerminalReconciler]], [[CallDiagnosticsRecorder]].
+- Required roadmap phases: [[Architecture Stabilization Epic]], [[Signaling Reliability Epic]], [[Database Scalability Epic]], [[File Transfer Optimization Epic]], [[Security Hardening Epic]], [[CI-CD Modernization Epic]], [[Production Validation Epic]].
+- Required trackers: [[Risk Register]], [[Technical Debt Register]], [[Audit Resolution Tracker]], [[Active Sprint]].
