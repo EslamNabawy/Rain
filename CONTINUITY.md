@@ -6,11 +6,11 @@ Every future session must read this file before starting non-trivial work.
 
 ## Current Goal
 
-Phase 7 architecture refactor planning has been completed. The detailed system plans are now managed through `obsidian-vault/03-Architecture/Architecture Refactor Plan Index.md` and linked ADRs `ADR-004` through `ADR-008`.
+Phase 8 self-improvement engine has been completed. Lessons, recurring patterns, improvement backlog, optimization opportunities, metrics, and recommended next actions are now managed under `obsidian-vault/18-Lessons Learned/`.
 
 ## Current Phase
 
-Phase 7 - Architecture Refactor Planning
+Phase 8 - Self-Improvement Engine
 
 ## Completed Phases
 
@@ -22,7 +22,7 @@ Phase 7 - Architecture Refactor Planning
 - [x] Phase 5 - Technical Debt System
 - [x] Phase 6 - Risk and Blocker Intelligence
 - [x] Phase 7 - Architecture Refactor Planning
-- [ ] Phase 8 - Self-Improvement Engine
+- [x] Phase 8 - Self-Improvement Engine
 - [ ] Phase 9 - Codex Automation Layer
 - [ ] Phase 10 - Continuous Project Evolution
 
@@ -36,8 +36,9 @@ Phase 7 - Architecture Refactor Planning
 - Phase 5 technical debt artifacts are documented in `obsidian-vault/11-Technical Debt/`.
 - Phase 6 risk and blocker artifacts are documented in `obsidian-vault/12-Risks/` and `obsidian-vault/14-Blockers/`.
 - Phase 7 architecture refactor plans are documented in `obsidian-vault/03-Architecture/`.
+- Phase 8 self-improvement artifacts are documented in `obsidian-vault/18-Lessons Learned/`.
 - Do not perform app code modifications as part of documentation-only phase work.
-- Wait for explicit user approval before starting Phase 8.
+- Wait for explicit user approval before starting Phase 9.
 
 ## Known Risks
 
@@ -48,11 +49,11 @@ Phase 7 - Architecture Refactor Planning
 
 ## Known Blockers
 
-- None for Phase 7 architecture refactor planning.
+- None for Phase 8 self-improvement engine.
 
 ## Next Recommended Action
 
-Stop after Phase 7 deliverables. Wait for explicit user approval before starting Phase 8 - Self-Improvement Engine.
+Stop after Phase 8 deliverables. Wait for explicit user approval before starting Phase 9 - Codex Automation Layer.
 
 ## Future Population Areas
 

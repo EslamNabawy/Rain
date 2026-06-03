@@ -258,6 +258,7 @@ Completed foundation phases:
 - Phase 5 - Technical Debt System.
 - Phase 6 - Risk and Blocker Intelligence.
 - Phase 7 - Architecture Refactor Planning.
+- Phase 8 - Self-Improvement Engine.
 
 Current roadmap source:
 
@@ -289,10 +290,16 @@ Current roadmap source:
 - [[ADR-006]]
 - [[ADR-007]]
 - [[ADR-008]]
+- [[Lessons Learned]]
+- [[Engineering Insights]]
+- [[Continuous Learning Rules]]
+- [[Improvement Backlog]]
+- [[Optimization Opportunities]]
+- [[Project Metrics]]
+- [[Recommended Next Actions]]
 
 Next expected phases:
 
-- Phase 8 - Self-Improvement Engine.
 - Phase 9 - Codex Automation Layer.
 - Phase 10 - Continuous Project Evolution.
 

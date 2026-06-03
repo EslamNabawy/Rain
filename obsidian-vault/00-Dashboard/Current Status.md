@@ -31,7 +31,7 @@ Last updated: 2026-06-03
 
 This vault is now the main knowledge base. Older docs remain in `docs/`, but future source-of-truth updates should be mirrored here.
 
-Phase 1 vault bootstrap, Phase 2 repository discovery, Phase 3 project memory generation, Phase 4 audit-to-roadmap conversion, Phase 5 technical debt system, Phase 6 risk/blocker intelligence, and Phase 7 architecture refactor planning are complete at the documentation level. The current execution roadmap is [[Master Roadmap]].
+Phase 1 vault bootstrap, Phase 2 repository discovery, Phase 3 project memory generation, Phase 4 audit-to-roadmap conversion, Phase 5 technical debt system, Phase 6 risk/blocker intelligence, Phase 7 architecture refactor planning, and Phase 8 self-improvement engine are complete at the documentation level. The current execution roadmap is [[Master Roadmap]].
 
 ## Execution Status
 
@@ -52,6 +52,7 @@ Phase 1 vault bootstrap, Phase 2 repository discovery, Phase 3 project memory ge
 - Technical debt prioritization: [[Debt Prioritization]]
 - Technical debt categories: [[Debt Categories]]
 - Lessons learned: [[Lessons Learned Index]]
+- Self-improvement system: [[Lessons Learned]], [[Engineering Insights]], [[Continuous Learning Rules]], [[Improvement Backlog]], [[Optimization Opportunities]], [[Project Metrics]], [[Recommended Next Actions]]
 - AI memory: [[Project Memory]], [[AI Memory Index]]
 - Knowledge graph: [[Knowledge Graph Index]]
 - Templates: [[Templates Index]]

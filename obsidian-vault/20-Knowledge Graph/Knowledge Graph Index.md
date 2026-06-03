@@ -23,6 +23,16 @@ This folder organizes cross-links between product, architecture, risk, decisions
 - [[Message Loading Refactor Plan]]
 - [[File Transfer Runtime Refactor Plan]]
 
+## Self-Improvement Links
+
+- [[Lessons Learned]]
+- [[Engineering Insights]]
+- [[Continuous Learning Rules]]
+- [[Improvement Backlog]]
+- [[Optimization Opportunities]]
+- [[Project Metrics]]
+- [[Recommended Next Actions]]
+
 ## Future Population
 
 Future phases will enrich these maps with repository-discovered modules, data flows, state machines, and dependency edges.

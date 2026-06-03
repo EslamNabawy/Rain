@@ -8,6 +8,13 @@ This index collects lessons that future sessions must use to avoid repeating mis
 
 ## Sections
 
+- [[Lessons Learned]]
+- [[Engineering Insights]]
+- [[Continuous Learning Rules]]
+- [[Improvement Backlog]]
+- [[Optimization Opportunities]]
+- [[Project Metrics]]
+- [[Recommended Next Actions]]
 - [[Regression Lessons]]
 - [[Release Lessons]]
 - [[Architecture Lessons]]
@@ -24,4 +31,8 @@ Create a lesson when:
 
 Use [[Lesson Learned Template]].
 
-Related: [[Project Memory]], [[Continuous Improvement Log]], [[Knowledge Graph Index]], [[Project Home]].
+## Self-Improvement Rule
+
+After every completed task, update [[Lessons Learned]] or explicitly record that no new lesson was found. Recurring patterns must become items in [[Improvement Backlog]] and recommendations in [[Recommended Next Actions]].
+
+Related: [[Project Memory]], [[Continuous Improvement Log]], [[Knowledge Graph Index]], [[Project Home]], [[Project Metrics]].
