@@ -10,7 +10,7 @@ Execute the auth/account/startup/splash/navigation remediation roadmap phase by 
 
 ## Current Phase
 
-Auth/startup remediation - Phase 2 next: deterministic logout/reset.
+Auth/startup remediation - Phase 3 next: startup state machine.
 
 ## Completed Phases
 
@@ -29,7 +29,7 @@ Auth/startup remediation - Phase 2 next: deterministic logout/reset.
 ## Completed Auth/Startup Remediation Phases
 
 - [x] Phase 1 - Authentication source of truth: cached Drift identity is backend-validated before signed-in restoration; deleted backend accounts and uid mismatches clear local session; login/register write backend identity/presence before local identity cache.
-- [ ] Phase 2 - Deterministic Logout
+- [x] Phase 2 - Deterministic logout/reset: runtime logout clears local session before best-effort backend sign-out; failed Firebase sign-out no longer preserves cached identity; logout after a prior app-exit shutdown still clears local session; session-scoped providers are invalidated from a `finally` path.
 - [ ] Phase 3 - Startup State Machine
 - [ ] Phase 4 - Global Splash Architecture
 - [ ] Phase 5 - Navigation Readiness
@@ -49,6 +49,7 @@ Auth/startup remediation - Phase 2 next: deterministic logout/reset.
 - Phase 08 Regression Test Expansion is complete: targeted local tests now cover stable failure messages for WebRTC/Firebase/network call failures, failed call suite state and compact video dock behavior, terminal-room-before-session-hangup ordering, failed-media terminal write before session disposal, already-terminal cleanup classification, and session-owned Firebase presence contracts.
 - Phase 09 local pre-artifact release gate evidence is recorded: `dart pub get`, analyze, full Melos tests, Firebase JSON parsing, Firebase Functions tests, Firebase emulator integration tests, and Obsidian vault validation all passed on 2026-06-03. Cloud artifact build and release-page proof remain the hard-gate completion step.
 - Auth/startup remediation Phase 1 is complete on 2026-06-03. `apps/rain/lib/application/state/identity_providers.dart` validates cached identity through backend account existence and current auth uid before publishing signed-in state, clears local session on missing/deleted/mismatched backend identity, and saves local identity only after backend identity/presence writes during login/register. `apps/rain/test/auth_identity_source_of_truth_test.dart` covers backend deletion, uid mismatch, and backend profile refresh.
+- Auth/startup remediation Phase 2 is complete on 2026-06-03. `RainRuntimeController.logOut()` now guarantees local Drift session clearing before best-effort backend sign-out, even if `adapter.signOut()` fails or a previous app-exit shutdown already owns `_shutdownFuture`. `RuntimeController.logOut()` invalidates session-scoped Riverpod providers from `finally`. `apps/rain/test/runtime_startup_test.dart` covers failed sign-out and logout-after-app-exit shutdown.
 - Local Windows Drift/sqlite app-test invocation is repaired for isolated Rain app tests: `scripts/run_rain_app_test.ps1` runs tests from `apps/rain`, the targeted stale-presence friend-flow case passed, and full `friend_flow_test.dart` passed with 120 passing tests and 10 skipped legacy control-channel cases.
 - Phase 0 deliverables are complete.
 - Phase 1 vault structure is complete.
@@ -74,11 +75,11 @@ Auth/startup remediation - Phase 2 next: deterministic logout/reset.
 
 ## Known Blockers
 
-- BLK-010 remains open until deterministic logout, startup readiness, global splash/navigation gating, and session lifecycle hardening are implemented and validated.
+- BLK-010 remains open until startup readiness, global splash/navigation gating, and session lifecycle hardening are implemented and validated.
 
 ## Next Recommended Action
 
-Implement auth/startup remediation Phase 2: deterministic logout/reset. Add tests for backend sign-out or presence cleanup failure while local session still clears, runtime/session providers dispose, and reopening cannot restore the old identity.
+Implement auth/startup remediation Phase 3: startup state machine. Define explicit bootstrap, session validation, runtime initialization, presence readiness, and router readiness states before changing splash/navigation behavior.
 
 ## Future Population Areas
 

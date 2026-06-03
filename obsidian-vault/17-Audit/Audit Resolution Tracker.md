@@ -41,8 +41,8 @@ Source: [ROOT_AUTH_STARTUP_REMEDIATION_ROADMAP.md](../../ROOT_AUTH_STARTUP_REMED
 
 | Phase | Scope | Status | Evidence | Next Step |
 | --- | --- | --- | --- | --- |
-| Phase 1 | Authentication source of truth and cached identity validation. | [x] Complete | `IdentityController` validates cached identity against backend account existence and current auth uid before restoration; local identity saves after backend writes; tests cover deleted backend account, uid mismatch, and backend profile refresh. | Start deterministic logout/reset. |
-| Phase 2 | Deterministic logout/reset and full session destruction. | [ ] Open | Not implemented in this phase. | Add tests for Firebase sign-out/presence cleanup failure with guaranteed local clear. |
+| Phase 1 | Authentication source of truth and cached identity validation. | [x] Complete | `IdentityController` validates cached identity against backend account existence and current auth uid before restoration; local identity saves after backend writes; tests cover deleted backend account, uid mismatch, and backend profile refresh. | Completed; see Phase 2. |
+| Phase 2 | Deterministic logout/reset and full session destruction. | [x] Complete | `RainRuntimeController` clears local session before best-effort backend sign-out; existing shutdown futures still perform logout local clear; `RuntimeController.logOut()` invalidates session providers in `finally`; tests cover failed sign-out and logout-after-app-exit shutdown. | Start startup state machine. |
 | Phase 3 | Startup state machine. | [ ] Open | Not implemented in this phase. | Define explicit startup/session/runtime readiness phases. |
 | Phase 4 | Global splash architecture. | [ ] Open | Not implemented in this phase. | Gate app shell behind startup readiness. |
 | Phase 5 | Navigation readiness. | [ ] Open | Not implemented in this phase. | Ensure protected routes cannot render during auth/runtime loading. |

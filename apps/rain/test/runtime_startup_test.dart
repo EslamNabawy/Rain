@@ -1,3 +1,4 @@
+import 'dart:async';
 import 'dart:io';
 
 import 'package:drift/native.dart';
@@ -39,6 +40,30 @@ class _RecordingPresenceAdapter extends NoopSignalingAdapter {
   @override
   Future<void> setPresence(String username, bool online) async {
     presenceWrites.add(online);
+    await super.setPresence(username, online);
+  }
+}
+
+class _FailingSignOutAdapter extends _RecordingPresenceAdapter {
+  int signOutCalls = 0;
+
+  @override
+  Future<void> signOut() async {
+    signOutCalls += 1;
+    throw StateError('sign out denied');
+  }
+}
+
+class _BlockingOfflinePresenceAdapter extends _RecordingPresenceAdapter {
+  final Completer<void> offlineStarted = Completer<void>();
+  final Completer<void> releaseOffline = Completer<void>();
+
+  @override
+  Future<void> setPresence(String username, bool online) async {
+    if (!online && !offlineStarted.isCompleted) {
+      offlineStarted.complete();
+      await releaseOffline.future;
+    }
     await super.setPresence(username, online);
   }
 }
@@ -361,6 +386,106 @@ void main() {
 
     expect(await IdentityRepository(db).loadIdentity(), isNull);
   });
+
+  test(
+    'runtime logout clears local identity even when backend sign out fails',
+    () async {
+      final db = RainDatabase(NativeDatabase.memory());
+      addTearDown(db.close);
+      const identity = RainIdentity(
+        username: 'alice',
+        displayName: 'Alice',
+        createdAt: 0,
+        gender: RainGender.female,
+      );
+      await IdentityRepository(db).saveIdentity(identity);
+
+      final adapter = _FailingSignOutAdapter();
+      final recordedErrors = <_RecordedRuntimeError>[];
+      final messageStore = MessageStore(db);
+      final offlineQueueStore = OfflineQueueStore(db);
+      final runtime = RainRuntimeController(
+        selfIdentity: identity,
+        adapter: adapter,
+        brain: null,
+        database: db,
+        friendStore: FriendStore(db),
+        messageStore: messageStore,
+        offlineQueueStore: offlineQueueStore,
+        messageDeliveryService: MessageDeliveryService(
+          messageStore: messageStore,
+          offlineQueueStore: offlineQueueStore,
+        ),
+        friendRequestRefreshInterval: Duration.zero,
+        errorRecorder:
+            (
+              Object error,
+              StackTrace? stackTrace, {
+              required String source,
+              required bool fatal,
+              String? flutterLibrary,
+              String? flutterContext,
+            }) {
+              recordedErrors.add(_RecordedRuntimeError(error, source, fatal));
+            },
+      );
+      addTearDown(runtime.dispose);
+
+      await runtime.start();
+      await runtime.logOut();
+
+      expect(await IdentityRepository(db).loadIdentity(), isNull);
+      expect(adapter.signOutCalls, 1);
+      expect(adapter.presenceWrites, <bool>[true, false]);
+      expect(recordedErrors, hasLength(1));
+      expect(recordedErrors.single.source, 'runtime-sign-out');
+      expect(recordedErrors.single.fatal, isFalse);
+    },
+  );
+
+  test(
+    'runtime logout clears local identity after app-exit shutdown starts',
+    () async {
+      final db = RainDatabase(NativeDatabase.memory());
+      addTearDown(db.close);
+      const identity = RainIdentity(
+        username: 'alice',
+        displayName: 'Alice',
+        createdAt: 0,
+        gender: RainGender.female,
+      );
+      await IdentityRepository(db).saveIdentity(identity);
+
+      final adapter = _BlockingOfflinePresenceAdapter();
+      final messageStore = MessageStore(db);
+      final offlineQueueStore = OfflineQueueStore(db);
+      final runtime = RainRuntimeController(
+        selfIdentity: identity,
+        adapter: adapter,
+        brain: null,
+        database: db,
+        friendStore: FriendStore(db),
+        messageStore: messageStore,
+        offlineQueueStore: offlineQueueStore,
+        messageDeliveryService: MessageDeliveryService(
+          messageStore: messageStore,
+          offlineQueueStore: offlineQueueStore,
+        ),
+        friendRequestRefreshInterval: Duration.zero,
+      );
+      addTearDown(runtime.dispose);
+
+      await runtime.start();
+      final exitFuture = runtime.closeForAppExit(AppExitReason.windowClose);
+      await adapter.offlineStarted.future;
+      final logoutFuture = runtime.logOut();
+      adapter.releaseOffline.complete();
+      await Future.wait(<Future<void>>[exitFuture, logoutFuture]);
+
+      expect(await IdentityRepository(db).loadIdentity(), isNull);
+      expect(adapter.presenceWrites, <bool>[true, false]);
+    },
+  );
 
   test(
     'runtime marks the user offline immediately when app detaches',

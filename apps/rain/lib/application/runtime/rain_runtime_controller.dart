@@ -1783,7 +1783,14 @@ class RainRuntimeController with WidgetsBindingObserver {
   }) async {
     final existing = _shutdownFuture;
     if (existing != null) {
-      await existing;
+      try {
+        await existing;
+      } finally {
+        await _completeLogoutSessionClearIfNeeded(
+          signOut: signOut,
+          clearLocalSession: clearLocalSession,
+        );
+      }
       return;
     }
     _recordRuntimeEvent(
@@ -1813,84 +1820,158 @@ class RainRuntimeController with WidgetsBindingObserver {
   }) async {
     const keepBackgroundPresence = false;
 
-    final activeVoicePeer = _voiceCallState.peerId;
-    if (activeVoicePeer != null) {
-      try {
-        await _endVoiceCallForPeer(
-          activeVoicePeer,
-          notifyPeer: false,
-          detail: 'Rain is closing.',
-        );
-      } catch (_) {
-        // Ignore errors during cleanup
-      }
-    }
-
-    if (brain != null) {
-      for (final session in brain!.getSessions()) {
+    Object? cleanupError;
+    StackTrace? cleanupStackTrace;
+    try {
+      final activeVoicePeer = _voiceCallState.peerId;
+      if (activeVoicePeer != null) {
         try {
           await _endVoiceCallForPeer(
-            session.peerId,
+            activeVoicePeer,
             notifyPeer: false,
             detail: 'Rain is closing.',
           );
-          await _failActiveTransfersForPeer(
-            session.peerId,
-            'Transfer canceled because Rain is closing.',
-          );
-          await _disconnectBrainPeer(
-            session.peerId,
-            PeerDisconnectIntent.localShutdown,
-          );
-          await _unregisterPeerListener(session.peerId);
-        } catch (error) {
-          // Ignore errors during cleanup
-        }
-      }
-      for (final peerId in _registeredPeerListeners.toList()) {
-        try {
-          await _unregisterPeerListener(peerId);
         } catch (_) {
           // Ignore errors during cleanup
         }
       }
-    }
 
-    if (markOffline && _started && !keepBackgroundPresence) {
-      try {
-        await adapter.setPresence(selfIdentity.username, false);
-      } catch (error) {
-        // Ignore permission errors during logout
+      if (brain != null) {
+        for (final session in brain!.getSessions()) {
+          try {
+            await _endVoiceCallForPeer(
+              session.peerId,
+              notifyPeer: false,
+              detail: 'Rain is closing.',
+            );
+            await _failActiveTransfersForPeer(
+              session.peerId,
+              'Transfer canceled because Rain is closing.',
+            );
+            await _disconnectBrainPeer(
+              session.peerId,
+              PeerDisconnectIntent.localShutdown,
+            );
+            await _unregisterPeerListener(session.peerId);
+          } catch (error) {
+            // Ignore errors during cleanup
+          }
+        }
+        for (final peerId in _registeredPeerListeners.toList()) {
+          try {
+            await _unregisterPeerListener(peerId);
+          } catch (_) {
+            // Ignore errors during cleanup
+          }
+        }
       }
+
+      if (markOffline && _started && !keepBackgroundPresence) {
+        try {
+          await adapter.setPresence(selfIdentity.username, false);
+        } catch (error) {
+          // Ignore permission errors during logout
+        }
+      }
+
+      WidgetsBinding.instance.removeObserver(this);
+      _backgroundOfflineTimer?.cancel();
+      _cancelVoiceCallReconnectGrace();
+      await _disposeCurrentVoiceCallSession();
+      _heartbeatTimer?.cancel();
+      _friendRequestRefreshTimer?.cancel();
+      _connectionCoordinator.dispose();
+      await _stopConnectionRequestRuntime();
+
+      for (final subscription in _subscriptions) {
+        await subscription.cancel();
+      }
+      _subscriptions.clear();
+
+      for (final subscription in _presenceSubscriptions.values) {
+        await subscription.cancel();
+      }
+      _presenceSubscriptions.clear();
+      await _voiceCallStateController.close();
+      await _connectionRequestStateController.close();
+    } catch (error, stackTrace) {
+      cleanupError = error;
+      cleanupStackTrace = stackTrace;
+      _recordRuntimeEvent(
+        category: 'runtime',
+        name: 'shutdown_cleanup_failed',
+        severity: 'warning',
+        message: error.toString(),
+      );
+      errorRecorder?.call(
+        error,
+        stackTrace,
+        source: 'runtime-shutdown-cleanup',
+        fatal: false,
+      );
+    } finally {
+      await _completeLogoutSessionClearIfNeeded(
+        signOut: signOut,
+        clearLocalSession: clearLocalSession,
+      );
     }
 
-    WidgetsBinding.instance.removeObserver(this);
-    _backgroundOfflineTimer?.cancel();
-    _cancelVoiceCallReconnectGrace();
-    await _disposeCurrentVoiceCallSession();
-    _heartbeatTimer?.cancel();
-    _friendRequestRefreshTimer?.cancel();
-    _connectionCoordinator.dispose();
-    await _stopConnectionRequestRuntime();
-
-    for (final subscription in _subscriptions) {
-      await subscription.cancel();
+    if (cleanupError != null && !clearLocalSession) {
+      Error.throwWithStackTrace(cleanupError, cleanupStackTrace!);
     }
-    _subscriptions.clear();
+  }
 
-    for (final subscription in _presenceSubscriptions.values) {
-      await subscription.cancel();
+  Future<void> _completeLogoutSessionClearIfNeeded({
+    required bool signOut,
+    required bool clearLocalSession,
+  }) async {
+    if (clearLocalSession) {
+      await _clearLocalSessionDataForShutdown();
     }
-    _presenceSubscriptions.clear();
-    await _voiceCallStateController.close();
-    await _connectionRequestStateController.close();
 
     if (signOut) {
-      await adapter.signOut();
+      await _signOutSafely();
     }
+  }
 
-    if (clearLocalSession) {
+  Future<void> _clearLocalSessionDataForShutdown() async {
+    try {
       await _localMutations.run(database.clearSessionData);
+      _recordRuntimeEvent(category: 'runtime', name: 'local_session_cleared');
+    } catch (error, stackTrace) {
+      _recordRuntimeEvent(
+        category: 'runtime',
+        name: 'local_session_clear_failed',
+        severity: 'error',
+        message: error.toString(),
+      );
+      errorRecorder?.call(
+        error,
+        stackTrace,
+        source: 'runtime-local-session-clear',
+        fatal: true,
+      );
+      rethrow;
+    }
+  }
+
+  Future<void> _signOutSafely() async {
+    try {
+      await adapter.signOut();
+      _recordRuntimeEvent(category: 'runtime', name: 'sign_out_completed');
+    } catch (error, stackTrace) {
+      _recordRuntimeEvent(
+        category: 'runtime',
+        name: 'sign_out_failed_after_local_clear',
+        severity: 'warning',
+        message: error.toString(),
+      );
+      errorRecorder?.call(
+        error,
+        stackTrace,
+        source: 'runtime-sign-out',
+        fatal: false,
+      );
     }
   }
 }

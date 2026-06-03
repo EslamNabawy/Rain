@@ -13,7 +13,9 @@ Stabilize the highest-risk auth/startup, call, and release-readiness foundations
 - [ ] TASK-003: [[Call State Machine]]
 - [ ] TASK-005: [[Rules Strategy]]
 - [/] TASK-012: [[Version And Updates]]
-- [/] Auth/startup remediation Phase 1: [[Authentication]]
+- [x] Auth/startup remediation Phase 1: [[Authentication]]
+- [x] Auth/startup remediation Phase 2: deterministic logout/reset
+- [ ] Auth/startup remediation Phase 3: startup state machine
 
 ## Out Of Scope
 
@@ -26,6 +28,7 @@ Stabilize the highest-risk auth/startup, call, and release-readiness foundations
 
 - Call start/end behavior is easier to reason about.
 - Cached identity cannot restore a deleted or wrong-owner backend account.
+- Logout cannot preserve cached identity because backend sign-out failed or because app-exit shutdown started first.
 - Stale locks are tested.
 - Update prompt version comparison is tested; release artifact plus deployed Remote Config verification still required.
 - Release gate does not publish without critical tests.

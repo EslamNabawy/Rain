@@ -25,7 +25,8 @@ This roadmap consolidates the required fixes from:
 ## Implementation Progress
 
 - 2026-06-03 Phase 1 implementation complete: `IdentityController` now treats local Drift identity as a cached session candidate and validates it against backend account existence plus current auth uid ownership before restoring signed-in state. Missing/deleted backend account data, missing uid data, uid mismatch, and session-expired errors clear local session data. Register/login save local identity only after backend identity/presence writes. Tests cover deleted backend account, uid mismatch, and backend profile refresh.
-- Remaining phases: deterministic logout/reset, explicit startup state machine, global splash gate, navigation readiness, and session lifecycle hardening.
+- 2026-06-03 active overlay Phase 2 / roadmap Phase 03 implementation complete: runtime logout clears local Drift session data before best-effort backend sign-out, handles failed `adapter.signOut()` without preserving cached identity, clears local session even when a previous app-exit shutdown future exists, and invalidates session-scoped providers from a `finally` path. Tests cover failed sign-out and logout-after-app-exit shutdown.
+- Remaining phases: explicit startup state machine, global splash gate, navigation readiness, and session lifecycle hardening.
 
 ## Dependency-Ordered Plan
 
@@ -98,6 +99,10 @@ Definition of done:
 
 - Logout succeeds locally even with Firebase permission/sign-out failure.
 - Reopening after logout never restores old identity.
+
+Progress:
+
+- 2026-06-03: Complete under the active execution overlay as Phase 2. Local session clearing runs before best-effort backend sign-out, failed sign-out is diagnostic-only after local clear, logout after existing app-exit shutdown still clears local session, and runtime provider invalidation runs in `finally`.
 
 ### Phase 04: Backend Account Validation
 

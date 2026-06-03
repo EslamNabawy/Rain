@@ -391,9 +391,17 @@ class RuntimeController extends AsyncNotifier<RainRuntimeController?> {
   Future<void> logOut() async {
     final controller = state.value;
     if (controller == null) {
+      _clearSessionScopedProviders();
       return;
     }
-    await controller.logOut();
+    try {
+      await controller.logOut();
+    } finally {
+      _clearSessionScopedProviders();
+    }
+  }
+
+  void _clearSessionScopedProviders() {
     state = const AsyncValue.data(null);
     ref.invalidate(identityProvider);
     ref.invalidate(friendsProvider);
