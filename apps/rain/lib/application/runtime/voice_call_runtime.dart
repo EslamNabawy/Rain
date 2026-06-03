@@ -1367,6 +1367,7 @@ extension VoiceCallRuntime on RainRuntimeController {
       );
       return;
     }
+    _recordVoiceRoomStatusTransition(room.callId, room.status);
     final localUsername = _normalizedUsername(selfIdentity.username);
     final remoteMuted = room.muted[peerId];
     if (remoteMuted != null && _voiceCallState.isRemoteMuted != remoteMuted) {
@@ -1471,6 +1472,17 @@ extension VoiceCallRuntime on RainRuntimeController {
         'reasonCode': room.reasonCode,
       },
     );
+    if (failureReason != null) {
+      _recordVoiceCallRuntimeFailure(
+        current,
+        failureCode:
+            _voiceCallReasonCodeForFailure(failureReason) ??
+            room.reasonCode ??
+            _voiceCallFailedReasonCode,
+        userMessage: detail,
+        nativeError: room.reason ?? detail,
+      );
+    }
     await _settleVoiceCallAfterTerminalRace(
       session,
       detail: detail,
@@ -1667,7 +1679,7 @@ extension VoiceCallRuntime on RainRuntimeController {
           lockClaimResult: 'started',
         );
         Future<void> createOutgoingRoom() async {
-          await voiceAdapter.createOutgoingCall(
+          final room = await voiceAdapter.createOutgoingCall(
             callId: frame.callId,
             caller: localUsername,
             callee: callee,
@@ -1675,6 +1687,7 @@ extension VoiceCallRuntime on RainRuntimeController {
             expiresAt: frame.sessionEpoch + _voiceCallExpiry.inMilliseconds,
             mediaMode: frame.mediaMode,
           );
+          _recordVoiceRoomStatusTransition(frame.callId, room.status);
         }
 
         _recordRuntimeEvent(
@@ -1871,6 +1884,10 @@ extension VoiceCallRuntime on RainRuntimeController {
           callee: localUsername,
           acceptedAt: now,
         );
+        _recordVoiceRoomStatusTransition(
+          frame.callId,
+          VoiceCallSignalingStatus.accepted,
+        );
         break;
       case VoiceCallFrameType.reject:
       case VoiceCallFrameType.busy:
@@ -1885,6 +1902,10 @@ extension VoiceCallRuntime on RainRuntimeController {
                   ? _voiceCallBusyReasonCode
                   : _voiceCallRejectedReasonCode),
           reason: frame.reason,
+        );
+        _recordVoiceRoomStatusTransition(
+          frame.callId,
+          VoiceCallSignalingStatus.failed,
         );
         break;
       case VoiceCallFrameType.hangup:
@@ -1912,6 +1933,12 @@ extension VoiceCallRuntime on RainRuntimeController {
           endedAt: now,
           reasonCode: frame.reasonCode,
           reason: frame.reason,
+        );
+        _recordVoiceRoomStatusTransition(
+          frame.callId,
+          frame.reasonCode == null
+              ? VoiceCallSignalingStatus.ended
+              : VoiceCallSignalingStatus.failed,
         );
         break;
       case VoiceCallFrameType.offer:
@@ -2276,6 +2303,12 @@ extension VoiceCallRuntime on RainRuntimeController {
                 username: _normalizedUsername(selfIdentity.username),
                 connectedAt: now,
               )
+              .then((_) {
+                _recordVoiceRoomStatusTransition(
+                  session.callId,
+                  VoiceCallSignalingStatus.connected,
+                );
+              })
               .catchError((Object error, StackTrace stackTrace) {
                 if (_isVoiceTerminalAlreadyClosedError(error)) {
                   _recordTerminalAlreadyClosed(
@@ -2643,6 +2676,7 @@ extension VoiceCallRuntime on RainRuntimeController {
         userMessage: userMessage,
         sanitizedUiError: userMessage,
         nativeError: nativeError,
+        roomStatusTimeline: _voiceRoomStatusTimeline(callId),
         iceCandidateWriteCount: _voiceLocalIceCandidateCount,
         iceCandidateReadCount: mediaDiagnostics?.remoteCandidateCount ?? 0,
         relayFallbackAttempted:
@@ -3302,6 +3336,7 @@ extension VoiceCallRuntime on RainRuntimeController {
         reason: reason,
         reasonCode: reasonCode,
       );
+      _recordVoiceRoomStatusTransition(callId, status);
       _recordRuntimeEvent(
         category: 'call',
         name: 'signaling_end_call_completed',
@@ -3358,6 +3393,29 @@ extension VoiceCallRuntime on RainRuntimeController {
         rethrow;
       }
     }
+  }
+
+  void _recordVoiceRoomStatusTransition(
+    String callId,
+    VoiceCallSignalingStatus status,
+  ) {
+    final timeline = _voiceRoomStatusTimelineByCall.putIfAbsent(
+      callId,
+      () => <String>[],
+    );
+    final value = status.name;
+    if (timeline.isEmpty || timeline.last != value) {
+      timeline.add(value);
+    }
+    while (timeline.length > 16) {
+      timeline.removeAt(0);
+    }
+  }
+
+  List<String> _voiceRoomStatusTimeline(String callId) {
+    return List<String>.unmodifiable(
+      _voiceRoomStatusTimelineByCall[callId] ?? const <String>[],
+    );
   }
 
   bool _isDurableVoiceCallTerminalStateError(Object error) {

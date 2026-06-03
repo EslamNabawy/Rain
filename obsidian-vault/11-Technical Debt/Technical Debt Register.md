@@ -350,6 +350,7 @@ Related: [[Debt Categories]], [[Debt Prioritization]], [[Architecture Debt]], [[
 - Related Systems: [[CallDiagnosticsRecorder]], [[Signaling Architecture]], [[Voice Calls]], [[Video Calls]].
 - Roadmap Tasks: TASK-004.
 - Resolution Strategy: Add sanitized call setup timeline, candidate counts, selected route metadata, first-track/frame events, and taxonomy tests.
+- Progress Note 2026-06-03: Call setup diagnostics now retain Firebase room status transitions in the runtime and include them in `VoiceCallDiagnostics`. Remote terminal-room failure reconciliation also records diagnostics, so failed setup reports can show `ringing -> accepted -> failed` instead of an empty room timeline.
 
 ## DevOps Debt
 

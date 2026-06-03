@@ -14,6 +14,7 @@ Higher-context real-time communication.
 - Captures microphone and camera.
 - Remote video is primary; local preview is secondary.
 - Camera controls must reflect actual device inventory.
+- Failed video setup diagnostics include Firebase room status transitions and terminal-room failure context.
 
 ## Dependencies
 
@@ -35,6 +36,7 @@ Higher-context real-time communication.
 
 - PC-to-mobile call setup has been reported failing.
 - UI surface has required repeated redesign.
+- 2026-06-03 call setup diagnostics now preserve room timelines for failed setup, but actual cross-device reliability still requires smoke validation.
 
 ## Testing Requirements
 

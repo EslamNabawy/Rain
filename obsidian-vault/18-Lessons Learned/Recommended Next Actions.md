@@ -10,7 +10,7 @@ Related: [[Project Metrics]], [[Improvement Backlog]], [[Optimization Opportunit
 
 ## Current Recommendation Summary
 
-Use [ROOT_CAUSE_ANALYSIS.md](../../ROOT_CAUSE_ANALYSIS.md) as the current evidence lock for the call/presence/update/diagnostics failure cluster. Four mitigations are complete: late voice signaling frames after terminal rooms no longer become crash records, Firebase terminal room writes no longer depend on callee inbox rows, Android SAF document handles no longer break diagnostics export, and stale raw-online backend presence no longer seeds or starts user-facing actions. The next app work should complete terminal-state ownership, app-close/session presence ownership, and update metadata validation before more release builds are trusted.
+Use [ROOT_CAUSE_ANALYSIS.md](../../ROOT_CAUSE_ANALYSIS.md) as the current evidence lock for the call/presence/update/diagnostics failure cluster. Five mitigations are complete: late voice signaling frames after terminal rooms no longer become crash records, Firebase terminal room writes no longer depend on callee inbox rows, Android SAF document handles no longer break diagnostics export, stale raw-online backend presence no longer seeds or starts user-facing actions, and failed call setup diagnostics now include Firebase room status timelines. The next app work should complete app-close/session presence ownership, finish media lifecycle/ICE diagnostics, and fix update metadata validation before more release builds are trusted.
 
 ## Top Recommended Actions
 
@@ -18,7 +18,7 @@ Use [ROOT_CAUSE_ANALYSIS.md](../../ROOT_CAUSE_ANALYSIS.md) as the current eviden
 | --- | --- | --- | --- | --- |
 | 1 | Enforce Firebase terminal room state as the call terminal source of truth across every runtime path. | Late-frame crash pollution and one `endCall` permission-denied path are mitigated, but terminal ownership still needs full reconciliation hardening. | TASK-003, [[Call State Machine]], [[CallTerminalReconciler]] | Remote terminal room ends local voice calls; late frames stay diagnostic-only; no peer remains active after terminal room state. |
 | 2 | Complete app-close/session-owned presence cleanup. | Runtime action gates now reject stale raw-online records, but app-close detection and internal auto-recovery still need full session ownership proof. | [[Presence Management]], TASK-006 | Closed peers become offline quickly, old sessions cannot revive newer state, and auto-recovery does not reconnect stale/manual-disconnected peers. |
-| 3 | Execute TASK-004 diagnostics taxonomy early. | The export has empty failure taxonomy, zero Firebase counters, and no call room/media timeline. | [[CallDiagnosticsRecorder]] | Failed calls export categorized timeline and non-zero operation summaries. |
+| 3 | Continue TASK-004 diagnostics taxonomy for ICE, route, and media lifecycle. | Room status timelines are now captured, but failed call exports still need stronger ICE candidate, selected route, track, renderer, and first-frame evidence. | [[CallDiagnosticsRecorder]] | Failed calls export categorized ICE/media lifecycle evidence without raw SDP or candidate strings. |
 | 4 | Execute TASK-012 update validation tests with real platform build numbers. | The evidence shows Windows build 7 and Android build 1007 while Remote Config template says Android latest build 7. | [[Version And Updates]], [[Release Gates]] | Old/current/newer tests pass for Android and Windows artifact numbering. |
 
 ## Do Not Prioritize Yet

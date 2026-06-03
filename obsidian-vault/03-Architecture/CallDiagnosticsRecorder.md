@@ -11,7 +11,14 @@ Provide consistent, sanitized call diagnostics.
 - Sanitized context.
 - Operation durations.
 - Call summaries.
+- Firebase room status timeline for setup and terminal paths.
 - No raw SDP, ICE, message text, or secrets.
+
+## Current Implementation Notes
+
+- Runtime keeps a bounded per-call room status timeline and copies it into `VoiceCallDiagnostics`.
+- Terminal Firebase room reconciliation records diagnostics for failed remote setup paths, even when the local side did not own the low-level media error.
+- Diagnostics must remain metadata-only; room timelines use status names only.
 
 ## Required Taxonomy
 

@@ -209,6 +209,21 @@ No task is fully complete until the lesson check is done or explicitly marked "n
 - Owner: Engineering
 - Status: Open
 
+### LESSON-20260603-012: Terminal Room Failures Need Diagnostics On The Observing Side
+
+- Related task: [ROOT_CAUSE_ANALYSIS.md](../../ROOT_CAUSE_ANALYSIS.md) Phase 06
+- Related system: [[Voice Calls]], [[Video Calls]], [[CallDiagnosticsRecorder]], [[Call State Machine]]
+- Related risk/debt: R-001, R-004, R-009, TD-004, TD-016
+- What was learned: A peer can fail only by observing a terminal Firebase room written by the other side. If diagnostics are emitted only by the side that threw the native media error, the observing side can export a failed call with an empty room timeline.
+- What caused delays: Call diagnostics were coupled to local session failure events, while Firebase terminal reconciliation was treated mainly as state cleanup.
+- What failed: Failed setup reports could say media failed without preserving the room transition path that proved whether the call reached ringing, accepted, connected, or terminal state.
+- What succeeded: Runtime now records bounded room status timelines per call, includes them in `VoiceCallDiagnostics`, and emits diagnostics from remote terminal-room failure reconciliation.
+- What should change: Any terminal-room reconciliation path that changes user-visible call state should also produce diagnostics if the call ends as failed.
+- Pattern: Diagnostics owned by thrower instead of state observer.
+- Follow-up improvement: Continue expanding failure taxonomy with ICE candidate counts, selected route, media track/renderer lifecycle, and first-frame evidence.
+- Owner: Engineering
+- Status: Open
+
 ## Review Cadence
 
 - Review lessons at the end of every completed task.

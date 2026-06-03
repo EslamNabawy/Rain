@@ -47,6 +47,7 @@ Related: [[Risk Register]], [[Risk Categories]], [[Risk Matrix]], [[Blocker Reso
   - Add call setup timeline diagnostics.
   - Add runtime tests for success, timeout, media failure, permission denial, and terminal cleanup.
   - Prove both voice and video directions in automated or documented smoke evidence.
+- Progress 2026-06-03: Failed call setup diagnostics now preserve Firebase room status timelines inside `VoiceCallDiagnostics`, and remote terminal-room failures emit diagnostics even when the local side only observes Firebase terminal state.
 - Exit Criteria: PC-to-mobile and mobile-to-PC voice/video setup have deterministic pass/fail behavior, no stuck connecting state remains, and diagnostics classify the failure source.
 - Detection Strategy: Runtime tests, call diagnostics timeline, release smoke logs, and watcher for repeated failed media setup events.
 

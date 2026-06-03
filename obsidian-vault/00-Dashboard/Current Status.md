@@ -31,6 +31,7 @@ Last updated: 2026-06-03
 - 2026-06-03 mitigation: Firebase `endCall` now writes terminal room state independently from callee inbox mirror cleanup. Emulator regression coverage proves an already-cleaned `voiceCallInboxes` row no longer blocks room terminal status or lock release.
 - 2026-06-03 mitigation: Android diagnostics export now treats SAF `/document/...` and `/tree/...` picker handles as platform-managed outputs, preventing the reported `PathNotFoundException` path from being opened through `dart:io`.
 - 2026-06-03 mitigation: runtime action gates now resolve backend presence with one 30 second `online + lastHeartbeat` freshness window before friend seeding, direct Connect, connection-request routing, or voice/video call start.
+- 2026-06-03 mitigation: failed voice/video setup diagnostics now preserve Firebase room status timelines and emit diagnostics from terminal-room failure reconciliation.
 
 ## Documentation Status
 

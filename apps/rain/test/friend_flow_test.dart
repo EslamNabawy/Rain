@@ -14,6 +14,7 @@ import 'package:protocol_brain/testing.dart';
 import 'package:rain/infrastructure/signaling/noop_signaling_adapter.dart';
 import 'package:rain/application/runtime/rain_runtime_controller.dart';
 import 'package:rain/application/runtime/video_call_renderers.dart';
+import 'package:rain/application/runtime/voice_call_diagnostics.dart';
 import 'package:rain/application/runtime/voice_call_state.dart';
 import 'package:rain_core/rain_core.dart';
 
@@ -2112,6 +2113,101 @@ void main() {
       );
     });
 
+    test(
+      'callee setup failure retries terminal room write before leaving caller ringing',
+      () async {
+        final adapter = RecordingVoiceSignalingAdapter()
+          ..terminalRoomWriteError = StateError(
+            'transient terminal write denied',
+          );
+        final aliceBrain = TestSessionManager();
+        final bobBrain = TestSessionManager()
+          ..startLocalVideoError = const CallMediaException(
+            CallMediaFailureReason.cameraDenied,
+            'Camera permission is required.',
+          );
+        final bobDb = RainDatabase(NativeDatabase.memory());
+        addTearDown(bobDb.close);
+        await adapter.register('bob', 'bobpw');
+        await adapter.upsertFriendship('alice', 'bob');
+        await db
+            .into(db.friends)
+            .insert(
+              FriendsCompanion.insert(
+                username: 'bob',
+                displayName: 'Bob',
+                state: 'friend',
+                addedAt: 0,
+              ),
+            );
+        await bobDb
+            .into(bobDb.friends)
+            .insert(
+              FriendsCompanion.insert(
+                username: 'alice',
+                displayName: 'Alice',
+                state: 'friend',
+                addedAt: 0,
+              ),
+            );
+        final bob = RainIdentity(
+          username: 'bob',
+          displayName: 'Bob',
+          createdAt: DateTime.now().millisecondsSinceEpoch,
+          gender: RainGender.male,
+        );
+        final aliceRuntime = _runtimeFor(
+          db,
+          alice,
+          adapter,
+          brain: aliceBrain,
+          videoCallRendererFactory: const _TestVideoCallRendererFactory(),
+        );
+        final bobRuntime = _runtimeFor(
+          bobDb,
+          bob,
+          adapter,
+          brain: bobBrain,
+          videoCallRendererFactory: const _TestVideoCallRendererFactory(),
+        );
+        addTearDown(aliceRuntime.dispose);
+        addTearDown(bobRuntime.dispose);
+
+        await aliceRuntime.start();
+        await bobRuntime.start();
+        await aliceRuntime.startVideoCall('bob');
+        final callId = aliceRuntime.voiceCallState.callId!;
+        await _waitForCondition(
+          () =>
+              bobRuntime.voiceCallState.phase == VoiceCallPhase.incomingRinging,
+          'Firebase video invite to ring before callee setup failure',
+        );
+
+        await expectLater(
+          bobRuntime.acceptVoiceCall(),
+          throwsA(isA<CallMediaException>()),
+        );
+
+        await _waitForCondition(
+          () =>
+              adapter.rooms[callId]?.status == VoiceCallSignalingStatus.failed,
+          'callee setup failure to durably fail the Firebase room',
+        );
+        expect(adapter.terminalRoomWriteAttempts, greaterThanOrEqualTo(2));
+        expect(adapter.terminalRoomWriteSucceeded, isTrue);
+        expect(adapter.activePairLocks, isEmpty);
+        expect(adapter.activeUserLocks, isEmpty);
+        await _waitForCondition(
+          () => aliceRuntime.voiceCallState.phase == VoiceCallPhase.failed,
+          'caller to stop ringing after callee setup failure',
+        );
+        expect(
+          aliceRuntime.voiceCallState.failureReason,
+          VoiceCallFailureReason.remoteCameraDenied,
+        );
+      },
+    );
+
     test('active file transfer blocks starting a video call', () async {
       final adapter = RecordingVoiceSignalingAdapter();
       final brain = TestSessionManager();
@@ -3973,6 +4069,59 @@ void main() {
         );
         expect(aliceBrain.startedAudioPeers, <String>['bob', 'bob']);
         expect(aliceRuntime.voiceCallBlocksFileTransfer('bob'), isTrue);
+      },
+    );
+
+    test(
+      'failed call setup diagnostics include Firebase room status timeline',
+      () async {
+        final aliceBrain = TestSessionManager()
+          ..applyMediaAnswerError = StateError(
+            'Unable to RTCPeerConnection::setRemoteDescription',
+          );
+        final harness = await _createTwoUserCallHarness(
+          db,
+          alice,
+          aliceBrain: aliceBrain,
+        );
+        addTearDown(harness.dispose);
+
+        await harness.start();
+        await harness.aliceRuntime.startVoiceCall('bob');
+        final callId = harness.aliceRuntime.voiceCallState.callId!;
+        await _waitForCondition(
+          () =>
+              harness.bobRuntime.voiceCallState.phase ==
+              VoiceCallPhase.incomingRinging,
+          'Firebase voice invite to ring before diagnostics failure',
+        );
+        await harness.bobRuntime.acceptVoiceCall();
+        await _waitForCondition(
+          () =>
+              harness.aliceRuntime.voiceCallState.phase ==
+              VoiceCallPhase.failed,
+          'caller to fail after answer application failure',
+        );
+        await _waitForCondition(
+          () => harness.runtimeErrorObjects
+              .whereType<VoiceCallDiagnostics>()
+              .any((VoiceCallDiagnostics item) => item.callId == callId),
+          'call failure diagnostics to be recorded',
+        );
+
+        final diagnostics = harness.runtimeErrorObjects
+            .whereType<VoiceCallDiagnostics>()
+            .where((VoiceCallDiagnostics item) => item.callId == callId)
+            .toList(growable: false);
+        expect(diagnostics, isNotEmpty);
+        expect(
+          diagnostics.last.roomStatusTimeline,
+          containsAllInOrder(<String>['ringing', 'accepted', 'failed']),
+          reason:
+              'Call setup failures must export the Firebase room timeline so '
+              'support can distinguish signaling, accept, and terminal phases.',
+        );
+        expect(diagnostics.last.failureTaxonomy, isNotNull);
       },
     );
 
@@ -6762,6 +6911,7 @@ Future<_TwoUserCallHarness> _createTwoUserCallHarness(
   final resolvedBobBrain = bobBrain ?? TestSessionManager();
   final runtimeEvents = <String>[];
   final runtimeErrors = <String>[];
+  final runtimeErrorObjects = <Object>[];
   final bobDb = RainDatabase(NativeDatabase.memory());
   final bob = RainIdentity(
     username: 'bob',
@@ -6807,7 +6957,11 @@ Future<_TwoUserCallHarness> _createTwoUserCallHarness(
       activeCallReconnectGrace: activeCallReconnectGrace,
       videoCallRendererFactory: const _TestVideoCallRendererFactory(),
       eventRecorder: _recordRuntimeEventFor(runtimeEvents, 'alice'),
-      errorRecorder: _recordRuntimeErrorFor(runtimeErrors, 'alice'),
+      errorRecorder: _recordRuntimeErrorFor(
+        runtimeErrors,
+        'alice',
+        runtimeErrorObjects,
+      ),
     ),
     bobRuntime: _runtimeFor(
       bobDb,
@@ -6817,10 +6971,15 @@ Future<_TwoUserCallHarness> _createTwoUserCallHarness(
       activeCallReconnectGrace: activeCallReconnectGrace,
       videoCallRendererFactory: const _TestVideoCallRendererFactory(),
       eventRecorder: _recordRuntimeEventFor(runtimeEvents, 'bob'),
-      errorRecorder: _recordRuntimeErrorFor(runtimeErrors, 'bob'),
+      errorRecorder: _recordRuntimeErrorFor(
+        runtimeErrors,
+        'bob',
+        runtimeErrorObjects,
+      ),
     ),
     runtimeEvents: runtimeEvents,
     runtimeErrors: runtimeErrors,
+    runtimeErrorObjects: runtimeErrorObjects,
   );
 }
 
@@ -6836,7 +6995,11 @@ RuntimeEventRecorder _recordRuntimeEventFor(List<String> events, String owner) {
   };
 }
 
-RuntimeErrorRecorder _recordRuntimeErrorFor(List<String> errors, String owner) {
+RuntimeErrorRecorder _recordRuntimeErrorFor(
+  List<String> errors,
+  String owner,
+  List<Object>? objects,
+) {
   return (
     Object error,
     StackTrace? stackTrace, {
@@ -6845,6 +7008,7 @@ RuntimeErrorRecorder _recordRuntimeErrorFor(List<String> errors, String owner) {
     String? flutterLibrary,
     String? flutterContext,
   }) {
+    objects?.add(error);
     errors.add('$owner:$source');
   };
 }
@@ -6934,6 +7098,7 @@ class _TwoUserCallHarness {
     required this.bobRuntime,
     required this.runtimeEvents,
     required this.runtimeErrors,
+    required this.runtimeErrorObjects,
   });
 
   final RecordingVoiceSignalingAdapter adapter;
@@ -6944,6 +7109,7 @@ class _TwoUserCallHarness {
   final RainRuntimeController bobRuntime;
   final List<String> runtimeEvents;
   final List<String> runtimeErrors;
+  final List<Object> runtimeErrorObjects;
 
   Future<void> start() async {
     await aliceRuntime.start();

@@ -172,6 +172,7 @@ Related: [[Project Home]], [[Current Architecture]], [[Audit Resolution Tracker]
 - Affected architecture: [[CallDiagnosticsRecorder]], [[Signaling Architecture]], [[Voice Calls]], [[Video Calls]]
 - Success criteria: Diagnostics classify candidate count, selected route, relay/direct route, first frame, permission, Firebase, ICE, TURN, and media failures.
 - Definition of done: Diagnostics export includes a sanitized call setup timeline and test coverage for failure taxonomy.
+- Progress 2026-06-03: Runtime now keeps a bounded Firebase room status timeline per call and includes it in `VoiceCallDiagnostics`; remote terminal-room failure reconciliation records diagnostics even when the local side only observes the Firebase terminal room.
 - Subtasks:
   - [ ] TASK-004.1 Define call setup timeline schema.
   - [ ] TASK-004.2 Capture local/remote candidate counts.

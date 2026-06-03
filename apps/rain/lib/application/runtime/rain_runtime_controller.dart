@@ -205,6 +205,8 @@ class RainRuntimeController with WidgetsBindingObserver {
   StreamSubscription<VoiceCallSessionState>? _voiceCallSessionSubscription;
   Timer? _voiceCallReconnectGraceTimer;
   final Set<String> _terminalVoiceCallSessionKeys = <String>{};
+  final Map<String, List<String>> _voiceRoomStatusTimelineByCall =
+      <String, List<String>>{};
   IceCandidateBatcher<VoiceSignalingEnvelope>? _voiceIceCandidateBatcher;
   int _voiceLocalIceCandidateCount = 0;
   CallMediaConnection? _videoCallMediaConnection;

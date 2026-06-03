@@ -15,6 +15,7 @@ Real-time private communication.
 - SDP and ICE are encrypted before storage.
 - WebRTC media connection carries microphone audio.
 - Terminal Firebase room state should end both peers.
+- Failed setup diagnostics include Firebase room status transitions so reports can distinguish ringing, accepted, connected, failed, and ended phases.
 
 ## Dependencies
 
@@ -38,6 +39,7 @@ Real-time private communication.
 - PC-to-mobile call reliability has been repeatedly reported broken.
 - Call failures can be shown as media failures even when signaling failed.
 - Voice hangup reliability has been reported weaker than video.
+- Call setup diagnostics were strengthened on 2026-06-03, but full device-level reliability remains a launch blocker until smoke evidence proves both directions.
 
 ## Testing Requirements
 
