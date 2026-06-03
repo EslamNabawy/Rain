@@ -20,7 +20,6 @@ import 'package:rain/infrastructure/services/rain_debug_log_service.dart';
 import 'app_state.dart';
 import 'core_providers.dart';
 import 'identity_providers.dart';
-import 'messaging_providers.dart';
 import 'settings_providers.dart';
 
 RainDebugSeverity _rainDebugSeverityFromString(String value) {
@@ -31,6 +30,14 @@ RainDebugSeverity _rainDebugSeverityFromString(String value) {
     'fatal' => RainDebugSeverity.fatal,
     _ => RainDebugSeverity.info,
   };
+}
+
+bool _runtimeMatchesSession(
+  RainRuntimeController runtime,
+  AuthenticatedSession session,
+) {
+  return runtime.selfIdentity.username == session.identity.username &&
+      runtime.sessionGeneration == session.sessionGeneration;
 }
 
 final backgroundServiceProvider =
@@ -77,6 +84,12 @@ class FriendsController extends AsyncNotifier<List<FriendRecord>> {
 
   @override
   Future<List<FriendRecord>> build() async {
+    final session = ref.watch(authenticatedSessionProvider);
+    await _subscription?.cancel();
+    _subscription = null;
+    if (session == null) {
+      return const <FriendRecord>[];
+    }
     final store = ref.watch(friendStoreProvider);
     _subscription = store.watchFriends().listen(
       (List<FriendRecord> friends) => state = AsyncValue.data(friends),
@@ -124,8 +137,11 @@ class FriendsController extends AsyncNotifier<List<FriendRecord>> {
   }
 
   RainRuntimeController _runtime() {
+    final session = ref.read(authenticatedSessionProvider);
     final runtime = ref.read(runtimeControllerProvider).value;
-    if (runtime == null) {
+    if (runtime == null ||
+        session == null ||
+        !_runtimeMatchesSession(runtime, session)) {
       throw StateError('Rain is still starting. Try again in a moment.');
     }
     return runtime;
@@ -133,16 +149,16 @@ class FriendsController extends AsyncNotifier<List<FriendRecord>> {
 }
 
 final brainProvider = Provider<SessionManager?>((Ref ref) {
-  final identity = ref.watch(identityProvider).value;
+  final session = ref.watch(authenticatedSessionProvider);
   final environment = ref.watch(appEnvironmentProvider);
   final debugLog = ref.watch(rainDebugLogServiceProvider);
 
-  if (identity == null || environment.shouldUseFallbackAdapter) {
+  if (session == null || environment.shouldUseFallbackAdapter) {
     return null;
   }
 
   final brain = createDefaultProtocolBrain(
-    selfUsername: identity.username,
+    selfUsername: session.identity.username,
     adapter: ref.watch(adapterProvider),
     iceServers: environment.iceServers,
     iceServersProvider: ref.watch(turnCredentialServiceProvider).iceServers,
@@ -217,14 +233,14 @@ ConnectionRequestAdapter? selectConnectionRequestAdapterForEnvironment({
 final connectionRequestAdapterProvider = Provider<ConnectionRequestAdapter?>((
   Ref ref,
 ) {
-  final identity = ref.watch(identityProvider).value;
+  final session = ref.watch(authenticatedSessionProvider);
   final environment = ref.watch(appEnvironmentProvider);
   final adapter = ref.watch(adapterProvider);
   final cloudFunctionsAdapter = adapter is ConnectionRequestAdapter
       ? adapter as ConnectionRequestAdapter
       : null;
   ConnectionRequestAdapter? rtdbOnlyAdapter;
-  if (identity != null &&
+  if (session != null &&
       environment.connectionRequestBackendMode ==
           ConnectionRequestBackendMode.rtdbOnly) {
     final firebaseDatabase = ref.watch(appBootstrapProvider).firebaseDatabase;
@@ -233,8 +249,8 @@ final connectionRequestAdapterProvider = Provider<ConnectionRequestAdapter?>((
       rtdbOnlyAdapter = RtdbOnlyConnectionRequestAdapter(
         root: firebaseDatabase.ref(),
         currentUsername: () async {
-          await adapter.ensureSignedInAs(identity.username);
-          return identity.username;
+          await adapter.ensureSignedInAs(session.identity.username);
+          return session.identity.username;
         },
         isAcceptedFriend: (String peerId) async {
           final friend = await friendStore.loadFriend(peerId);
@@ -267,14 +283,22 @@ final connectionRequestAdapterProvider = Provider<ConnectionRequestAdapter?>((
 class RuntimeController extends AsyncNotifier<RainRuntimeController?> {
   NetworkStatusKind? _lastNetworkKind;
   String? _lastNetworkPathKey;
+  AppExitRegistration? _exitRegistration;
+  bool _disposeHookRegistered = false;
 
   @override
   Future<RainRuntimeController?> build() async {
-    final identity = ref.watch(identityProvider).value;
-    if (identity == null) {
+    _registerDisposeHook();
+    final session = ref.watch(authenticatedSessionProvider);
+    final current = state.value;
+    if (session == null) {
+      if (current != null) {
+        await _disposeRuntime(current);
+      }
+      _lastNetworkKind = null;
+      _lastNetworkPathKey = null;
       return null;
     }
-    final current = state.value;
     final networkStatus =
         ref.watch(networkStatusProvider).value ??
         const NetworkStatusState.checking();
@@ -287,16 +311,16 @@ class RuntimeController extends AsyncNotifier<RainRuntimeController?> {
         await current.handleNetworkLost(
           'Internet connection lost. Transfer canceled.',
         );
-        await current.dispose();
+        await _disposeRuntime(current);
       }
       return null;
     }
     if (networkStatus.kind == NetworkStatusKind.checking) {
-      return current?.selfIdentity.username == identity.username
+      return current != null && _runtimeMatchesSession(current, session)
           ? current
           : null;
     }
-    if (current != null && current.selfIdentity.username == identity.username) {
+    if (current != null && _runtimeMatchesSession(current, session)) {
       if (previousNetworkKind != null &&
           (previousNetworkKind != networkStatus.kind ||
               previousNetworkPathKey != networkStatus.pathKey)) {
@@ -306,11 +330,15 @@ class RuntimeController extends AsyncNotifier<RainRuntimeController?> {
       }
       return current;
     }
+    if (current != null) {
+      await _disposeRuntime(current);
+    }
     final environment = ref.watch(appEnvironmentProvider);
     final debugLog = ref.watch(rainDebugLogServiceProvider);
     await ref.read(backgroundServiceProvider.future);
     final controller = RainRuntimeController(
-      selfIdentity: identity,
+      selfIdentity: session.identity,
+      sessionGeneration: session.sessionGeneration,
       adapter: ref.watch(adapterProvider),
       voiceSignalingCipher: SignalingCipher.fromKeyMaterial(
         environment.signalingEncryptionKey,
@@ -371,18 +399,14 @@ class RuntimeController extends AsyncNotifier<RainRuntimeController?> {
           },
     );
 
-    final exitRegistration = AppExitCoordinator.instance.register(
+    _exitRegistration = AppExitCoordinator.instance.register(
       controller.closeForAppExit,
     );
-    ref.onDispose(() {
-      exitRegistration.unregister();
-      unawaited(controller.dispose());
-    });
 
     try {
       await controller.start();
     } catch (_) {
-      await controller.dispose();
+      await _disposeRuntime(controller);
       rethrow;
     }
     return controller;
@@ -391,25 +415,42 @@ class RuntimeController extends AsyncNotifier<RainRuntimeController?> {
   Future<void> logOut() async {
     final controller = state.value;
     if (controller == null) {
-      _clearSessionScopedProviders();
+      _endAuthenticatedSession();
       return;
     }
     try {
       await controller.logOut();
     } finally {
-      _clearSessionScopedProviders();
+      _exitRegistration?.unregister();
+      _exitRegistration = null;
+      _endAuthenticatedSession();
     }
   }
 
-  void _clearSessionScopedProviders() {
+  void _endAuthenticatedSession() {
     state = const AsyncValue.data(null);
+    ref.read(authenticatedSessionProvider.notifier).endSession();
     ref.invalidate(identityProvider);
-    ref.invalidate(friendsProvider);
-    ref.invalidate(fileTransfersProvider);
-    ref.invalidate(connectionRequestProvider);
-    ref.invalidate(voiceCallProvider);
-    ref.invalidate(connectionsProvider);
-    ref.invalidate(recentSearchesProvider);
+  }
+
+  Future<void> _disposeRuntime(RainRuntimeController runtime) async {
+    _exitRegistration?.unregister();
+    _exitRegistration = null;
+    await runtime.dispose();
+  }
+
+  void _registerDisposeHook() {
+    if (_disposeHookRegistered) {
+      return;
+    }
+    _disposeHookRegistered = true;
+    ref.onDispose(() {
+      _exitRegistration?.unregister();
+      final controller = state.value;
+      if (controller != null) {
+        unawaited(controller.dispose());
+      }
+    });
   }
 }
 
@@ -424,17 +465,28 @@ class ConnectionRequestController extends Notifier<ConnectionRequestState> {
 
   @override
   ConnectionRequestState build() {
+    final session = ref.watch(authenticatedSessionProvider);
     ref.listen<AsyncValue<RainRuntimeController?>>(runtimeControllerProvider, (
       _,
       AsyncValue<RainRuntimeController?> next,
     ) {
-      unawaited(_replaceRuntime(next.value));
+      unawaited(_replaceRuntime(_runtimeForSession(session, next.value)));
     });
     scheduleMicrotask(() {
-      unawaited(_replaceRuntime(ref.read(runtimeControllerProvider).value));
+      unawaited(
+        _replaceRuntime(
+          _runtimeForSession(
+            session,
+            ref.read(runtimeControllerProvider).value,
+          ),
+        ),
+      );
     });
     ref.onDispose(() => unawaited(_subscription?.cancel()));
-    return ref.read(runtimeControllerProvider).value?.connectionRequestState ??
+    return _runtimeForSession(
+          session,
+          ref.read(runtimeControllerProvider).value,
+        )?.connectionRequestState ??
         const ConnectionRequestState.idle();
   }
 
@@ -519,11 +571,24 @@ class ConnectionRequestController extends Notifier<ConnectionRequestState> {
   }
 
   RainRuntimeController _requireRuntime() {
-    final runtime = _runtime ?? ref.read(runtimeControllerProvider).value;
+    final session = ref.read(authenticatedSessionProvider);
+    final runtime =
+        _runtime ??
+        _runtimeForSession(session, ref.read(runtimeControllerProvider).value);
     if (runtime == null) {
       throw StateError('Rain is still starting. Try again in a moment.');
     }
     return runtime;
+  }
+
+  RainRuntimeController? _runtimeForSession(
+    AuthenticatedSession? session,
+    RainRuntimeController? runtime,
+  ) {
+    if (session == null || runtime == null) {
+      return null;
+    }
+    return _runtimeMatchesSession(runtime, session) ? runtime : null;
   }
 
   Future<void> _replaceRuntime(RainRuntimeController? runtime) async {
@@ -555,11 +620,18 @@ final voiceCallProvider = NotifierProvider<VoiceCallController, VoiceCallState>(
 );
 
 final videoCallRenderersProvider = Provider<VideoCallRenderers?>((Ref ref) {
+  final session = ref.watch(authenticatedSessionProvider);
   final call = ref.watch(voiceCallProvider);
   if (!call.isVideo || call.phase == VoiceCallPhase.idle) {
     return null;
   }
-  return ref.watch(runtimeControllerProvider).value?.videoCallRenderers;
+  final runtime = ref.watch(runtimeControllerProvider).value;
+  if (session == null ||
+      runtime == null ||
+      !_runtimeMatchesSession(runtime, session)) {
+    return null;
+  }
+  return runtime.videoCallRenderers;
 });
 
 class VoiceCallController extends Notifier<VoiceCallState> {
@@ -568,17 +640,28 @@ class VoiceCallController extends Notifier<VoiceCallState> {
 
   @override
   VoiceCallState build() {
+    final session = ref.watch(authenticatedSessionProvider);
     ref.listen<AsyncValue<RainRuntimeController?>>(runtimeControllerProvider, (
       _,
       AsyncValue<RainRuntimeController?> next,
     ) {
-      unawaited(_replaceRuntime(next.value));
+      unawaited(_replaceRuntime(_runtimeForSession(session, next.value)));
     });
     scheduleMicrotask(() {
-      unawaited(_replaceRuntime(ref.read(runtimeControllerProvider).value));
+      unawaited(
+        _replaceRuntime(
+          _runtimeForSession(
+            session,
+            ref.read(runtimeControllerProvider).value,
+          ),
+        ),
+      );
     });
     ref.onDispose(() => unawaited(_subscription?.cancel()));
-    return ref.read(runtimeControllerProvider).value?.voiceCallState ??
+    return _runtimeForSession(
+          session,
+          ref.read(runtimeControllerProvider).value,
+        )?.voiceCallState ??
         const VoiceCallState.idle();
   }
 
@@ -647,11 +730,24 @@ class VoiceCallController extends Notifier<VoiceCallState> {
   }
 
   RainRuntimeController _requireRuntime() {
-    final runtime = _runtime ?? ref.read(runtimeControllerProvider).value;
+    final session = ref.read(authenticatedSessionProvider);
+    final runtime =
+        _runtime ??
+        _runtimeForSession(session, ref.read(runtimeControllerProvider).value);
     if (runtime == null) {
       throw StateError('Peer connection is unavailable right now.');
     }
     return runtime;
+  }
+
+  RainRuntimeController? _runtimeForSession(
+    AuthenticatedSession? session,
+    RainRuntimeController? runtime,
+  ) {
+    if (session == null || runtime == null) {
+      return null;
+    }
+    return _runtimeMatchesSession(runtime, session) ? runtime : null;
   }
 
   Future<void> _replaceRuntime(RainRuntimeController? runtime) async {
@@ -684,14 +780,22 @@ class ConnectionsController extends Notifier<ConnectionsState> {
 
   @override
   ConnectionsState build() {
+    final session = ref.watch(authenticatedSessionProvider);
     ref.listen<AsyncValue<RainRuntimeController?>>(runtimeControllerProvider, (
       _,
       AsyncValue<RainRuntimeController?> next,
     ) {
-      unawaited(_replaceRuntime(next.value));
+      unawaited(_replaceRuntime(_runtimeForSession(session, next.value)));
     });
     scheduleMicrotask(() {
-      unawaited(_replaceRuntime(ref.read(runtimeControllerProvider).value));
+      unawaited(
+        _replaceRuntime(
+          _runtimeForSession(
+            session,
+            ref.read(runtimeControllerProvider).value,
+          ),
+        ),
+      );
     });
     ref.onDispose(() {
       for (final subscription in _brainSubscriptions) {
@@ -801,11 +905,24 @@ class ConnectionsController extends Notifier<ConnectionsState> {
   }
 
   RainRuntimeController _requireRuntime() {
-    final runtime = _runtime ?? ref.read(runtimeControllerProvider).value;
+    final session = ref.read(authenticatedSessionProvider);
+    final runtime =
+        _runtime ??
+        _runtimeForSession(session, ref.read(runtimeControllerProvider).value);
     if (runtime == null) {
       throw StateError('Peer connection is unavailable right now.');
     }
     return runtime;
+  }
+
+  RainRuntimeController? _runtimeForSession(
+    AuthenticatedSession? session,
+    RainRuntimeController? runtime,
+  ) {
+    if (session == null || runtime == null) {
+      return null;
+    }
+    return _runtimeMatchesSession(runtime, session) ? runtime : null;
   }
 
   Future<void> _replaceRuntime(RainRuntimeController? runtime) async {

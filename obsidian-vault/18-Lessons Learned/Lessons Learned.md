@@ -329,6 +329,21 @@ No task is fully complete until the lesson check is done or explicitly marked "n
 - Owner: Engineering
 - Status: Open
 
+### LESSON-20260603-020: Account State Needs A Session Generation Boundary
+
+- Related task: Auth/startup remediation Phase 6
+- Related system: [[Authentication]], [[Frontend Architecture]], [[Project Memory]]
+- Related risk/debt: R-021, TD-021, TD-022, BLK-010
+- What was learned: Logout, startup gates, and protected routes do not fully clear account-owned provider state unless every account-scoped provider has an explicit session boundary.
+- What caused delays: Runtime reuse and provider cleanup previously depended on username comparisons and broad manual invalidation lists, which are fragile with family providers and same-user relogin.
+- What failed: Treating provider invalidation as the primary lifecycle mechanism left too much room for stale searches, messages, transfers, and runtime references to survive account transitions.
+- What succeeded: `AuthenticatedSession.sessionGeneration` now scopes runtime ownership, account-owned providers watch the session boundary, stale runtimes are rejected, and focused tests cover session end, recent search reset, search reset, and message stream cleanup.
+- What should change: Every new account-owned provider must watch authenticated session generation or prove it is device-global state.
+- Pattern: State lifetime must be explicit, not inferred from route visibility or username equality.
+- Follow-up improvement: Complete or explicitly defer account deletion workflow, then add auth/startup regression coverage to the hard release gate.
+- Owner: Engineering
+- Status: Open
+
 ## Review Cadence
 
 - Review lessons at the end of every completed task.

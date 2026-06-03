@@ -110,6 +110,7 @@ final class _ResolvedBackendPresence {
 class RainRuntimeController with WidgetsBindingObserver {
   RainRuntimeController({
     required this.selfIdentity,
+    this.sessionGeneration = 0,
     required this.adapter,
     required this.brain,
     required this.database,
@@ -165,6 +166,7 @@ class RainRuntimeController with WidgetsBindingObserver {
   }
 
   final RainIdentity selfIdentity;
+  final int sessionGeneration;
   final SignalingAdapter adapter;
   final SessionManager? brain;
   final RainDatabase database;

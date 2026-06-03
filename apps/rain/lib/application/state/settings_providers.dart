@@ -6,6 +6,7 @@ import 'package:rain/application/runtime/media_device_settings.dart';
 import 'package:rain/application/runtime/voice_call_state.dart';
 import 'package:rain/infrastructure/services/app_settings_store.dart';
 import 'core_providers.dart';
+import 'identity_providers.dart';
 
 enum AppThemeMode { dark, light, system }
 
@@ -39,7 +40,14 @@ class RecentSearchesController extends Notifier<List<String>> {
   static const int maxRecentSearches = 5;
 
   @override
-  List<String> build() => const <String>[];
+  List<String> build() {
+    ref.watch(
+      authenticatedSessionProvider.select(
+        (AuthenticatedSession? session) => session?.sessionGeneration,
+      ),
+    );
+    return const <String>[];
+  }
 
   void add(String query) {
     final normalized = query.trim().toLowerCase();

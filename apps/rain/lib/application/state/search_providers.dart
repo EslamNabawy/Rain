@@ -3,6 +3,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:rain/application/runtime/rain_runtime_controller.dart';
 import 'app_state.dart';
 import 'core_providers.dart';
+import 'identity_providers.dart';
 import 'runtime_providers.dart';
 import 'settings_providers.dart';
 
@@ -15,9 +16,21 @@ class UserSearchController extends AsyncNotifier<UserSearchState> {
   int _searchSerial = 0;
 
   @override
-  UserSearchState build() => const UserSearchState();
+  UserSearchState build() {
+    ref.watch(
+      authenticatedSessionProvider.select(
+        (AuthenticatedSession? session) => session?.sessionGeneration,
+      ),
+    );
+    _searchSerial += 1;
+    return const UserSearchState();
+  }
 
   Future<void> search(String query) async {
+    if (ref.read(authenticatedSessionProvider) == null) {
+      state = const AsyncValue.data(UserSearchState());
+      return;
+    }
     final normalized = query.trim().toLowerCase();
     final searchSerial = ++_searchSerial;
     if (normalized.length < 2) {
@@ -65,8 +78,12 @@ class UserSearchController extends AsyncNotifier<UserSearchState> {
   }
 
   RainRuntimeController _runtime() {
+    final session = ref.read(authenticatedSessionProvider);
     final runtime = ref.read(runtimeControllerProvider).value;
-    if (runtime == null) {
+    if (runtime == null ||
+        session == null ||
+        runtime.selfIdentity.username != session.identity.username ||
+        runtime.sessionGeneration != session.sessionGeneration) {
       throw StateError('Rain is still starting. Try again in a moment.');
     }
     return runtime;

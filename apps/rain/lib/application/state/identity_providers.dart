@@ -15,6 +15,65 @@ final identityProvider =
       IdentityController.new,
     );
 
+final authenticatedSessionProvider =
+    NotifierProvider<AuthenticatedSessionController, AuthenticatedSession?>(
+      AuthenticatedSessionController.new,
+    );
+
+final class AuthenticatedSession {
+  const AuthenticatedSession({
+    required this.identity,
+    required this.sessionGeneration,
+  });
+
+  final RainIdentity identity;
+  final int sessionGeneration;
+}
+
+class AuthenticatedSessionController extends Notifier<AuthenticatedSession?> {
+  AuthenticatedSession? _current;
+  int _nextGeneration = 0;
+
+  @override
+  AuthenticatedSession? build() {
+    final identityState = ref.watch(identityProvider);
+    if (identityState.isLoading) {
+      return _current;
+    }
+    if (!identityState.hasValue) {
+      _current = null;
+      return null;
+    }
+
+    final identity = identityState.requireValue;
+    if (identity == null) {
+      _current = null;
+      return null;
+    }
+
+    final previous = _current;
+    if (previous != null && previous.identity.username == identity.username) {
+      _current = AuthenticatedSession(
+        identity: identity,
+        sessionGeneration: previous.sessionGeneration,
+      );
+      return _current;
+    }
+
+    _current = AuthenticatedSession(
+      identity: identity,
+      sessionGeneration: ++_nextGeneration,
+    );
+    return _current;
+  }
+
+  void endSession() {
+    _nextGeneration += 1;
+    _current = null;
+    state = null;
+  }
+}
+
 class IdentityController extends AsyncNotifier<RainIdentity?> {
   StreamSubscription<RainIdentity?>? _subscription;
   int _validationRequestId = 0;
@@ -41,15 +100,17 @@ class IdentityController extends AsyncNotifier<RainIdentity?> {
         }
         final requestId = ++_validationRequestId;
         unawaited(
-          _validateCachedIdentity(identity).then((RainIdentity? validated) {
-            if (ref.mounted && requestId == _validationRequestId) {
-              state = AsyncValue.data(validated);
-            }
-          }).catchError((Object error, StackTrace stackTrace) {
-            if (ref.mounted && requestId == _validationRequestId) {
-              state = AsyncValue.error(error, stackTrace);
-            }
-          }),
+          _validateCachedIdentity(identity)
+              .then((RainIdentity? validated) {
+                if (ref.mounted && requestId == _validationRequestId) {
+                  state = AsyncValue.data(validated);
+                }
+              })
+              .catchError((Object error, StackTrace stackTrace) {
+                if (ref.mounted && requestId == _validationRequestId) {
+                  state = AsyncValue.error(error, stackTrace);
+                }
+              }),
         );
       },
       onError: (Object error, StackTrace stackTrace) {

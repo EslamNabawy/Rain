@@ -192,13 +192,21 @@ final appStartupStateProvider = Provider<AppStartupState>((Ref ref) {
     );
   }
 
-  final currentIdentity = identity.requireValue;
-  if (currentIdentity == null) {
+  if (identity.requireValue == null) {
     return AppStartupState.signedOut(
       updateResult: updateResult,
       networkStatus: networkStatus,
     );
   }
+
+  final session = ref.watch(authenticatedSessionProvider);
+  if (session == null) {
+    return AppStartupState.signedOut(
+      updateResult: updateResult,
+      networkStatus: networkStatus,
+    );
+  }
+  final currentIdentity = session.identity;
 
   final runtime = ref.watch(runtimeControllerProvider);
   if (!runtime.hasValue) {

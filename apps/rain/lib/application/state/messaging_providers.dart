@@ -7,6 +7,7 @@ import 'package:rain_core/rain_core.dart';
 import 'package:rain/application/runtime/rain_runtime_controller.dart';
 import 'core_providers.dart';
 import 'file_transfer_view.dart';
+import 'identity_providers.dart';
 import 'runtime_providers.dart';
 
 final messagesProvider =
@@ -23,7 +24,13 @@ class MessagesController extends AsyncNotifier<List<StoredMessage>> {
   StreamSubscription<List<StoredMessage>>? _subscription;
 
   @override
-  Future<List<StoredMessage>> build() {
+  Future<List<StoredMessage>> build() async {
+    final session = ref.watch(authenticatedSessionProvider);
+    await _subscription?.cancel();
+    _subscription = null;
+    if (session == null) {
+      return const <StoredMessage>[];
+    }
     final completer = Completer<List<StoredMessage>>();
     var completed = false;
     _subscription = ref
@@ -82,8 +89,12 @@ class MessagesController extends AsyncNotifier<List<StoredMessage>> {
   }
 
   RainRuntimeController _runtime() {
+    final session = ref.read(authenticatedSessionProvider);
     final runtime = ref.read(runtimeControllerProvider).value;
-    if (runtime == null) {
+    if (runtime == null ||
+        session == null ||
+        runtime.selfIdentity.username != session.identity.username ||
+        runtime.sessionGeneration != session.sessionGeneration) {
       throw StateError('Rain is still starting. Try again in a moment.');
     }
     return runtime;
@@ -104,7 +115,13 @@ class FileTransfersController extends AsyncNotifier<List<FileTransferRecord>> {
   StreamSubscription<List<FileTransferRecord>>? _subscription;
 
   @override
-  Future<List<FileTransferRecord>> build() {
+  Future<List<FileTransferRecord>> build() async {
+    final session = ref.watch(authenticatedSessionProvider);
+    await _subscription?.cancel();
+    _subscription = null;
+    if (session == null) {
+      return const <FileTransferRecord>[];
+    }
     final completer = Completer<List<FileTransferRecord>>();
     var completed = false;
     _subscription = ref
@@ -168,8 +185,12 @@ class FileTransfersController extends AsyncNotifier<List<FileTransferRecord>> {
   }
 
   RainRuntimeController _runtime() {
+    final session = ref.read(authenticatedSessionProvider);
     final runtime = ref.read(runtimeControllerProvider).value;
-    if (runtime == null) {
+    if (runtime == null ||
+        session == null ||
+        runtime.selfIdentity.username != session.identity.username ||
+        runtime.sessionGeneration != session.sessionGeneration) {
       throw StateError('Rain is still starting. Try again in a moment.');
     }
     return runtime;

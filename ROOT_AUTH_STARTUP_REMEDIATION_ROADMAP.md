@@ -25,8 +25,9 @@ This roadmap consolidates the required fixes from:
 ## Implementation Progress
 
 - 2026-06-03 Phase 1 implementation complete: `IdentityController` now treats local Drift identity as a cached session candidate and validates it against backend account existence plus current auth uid ownership before restoring signed-in state. Missing/deleted backend account data, missing uid data, uid mismatch, and session-expired errors clear local session data. Register/login save local identity only after backend identity/presence writes. Tests cover deleted backend account, uid mismatch, and backend profile refresh.
-- 2026-06-03 active overlay Phase 2 / roadmap Phase 03 implementation complete: runtime logout clears local Drift session data before best-effort backend sign-out, handles failed `adapter.signOut()` without preserving cached identity, clears local session even when a previous app-exit shutdown future exists, and invalidates session-scoped providers from a `finally` path. Tests cover failed sign-out and logout-after-app-exit shutdown.
-- Remaining phases: explicit startup state machine, global splash gate, navigation readiness, and session lifecycle hardening.
+- 2026-06-03 active overlay Phase 2 / roadmap Phase 03 implementation complete: runtime logout clears local Drift session data before best-effort backend sign-out, handles failed `adapter.signOut()` without preserving cached identity, clears local session even when a previous app-exit shutdown future exists, and guarantees session teardown from a `finally` path. Tests cover failed sign-out and logout-after-app-exit shutdown.
+- 2026-06-03 Phase 06 implementation complete: `AuthenticatedSession` now carries a monotonic `sessionGeneration`; `RainRuntimeController` instances are keyed by username plus generation; runtime, brain, connection-request, voice-call, connection-view, message, file-transfer, search, and recent-search providers drop stale account state when the authenticated session ends or changes. Tests cover generation changes, recent/search reset, and signed-out message stream emptiness.
+- Remaining phase: account deletion workflow.
 
 ## Dependency-Ordered Plan
 
@@ -156,6 +157,10 @@ Tasks:
 Definition of done:
 
 - User A state cannot leak into user B after logout/login.
+
+Progress:
+
+- 2026-06-03: Complete. Added `authenticatedSessionProvider` and `AuthenticatedSession.sessionGeneration`, keyed runtime ownership and account-scoped providers to the active session generation, removed the broad manual invalidation list as the primary cleanup mechanism, and kept device-global settings outside the session scope. Regression tests cover explicit session end/relogin generation changes, recent-search reset, user-search reset, and signed-out message stream gating.
 
 ### Phase 07: Router Refactor
 

@@ -25,8 +25,10 @@ Provides simple identity for accepted-friend communication without social-networ
 - Backend `uid` must match the current Firebase/auth adapter uid. Missing backend account data, missing uid data, uid mismatch, or session-expired errors clear local session data instead of restoring the user.
 - Register/login write backend identity and presence before saving Drift identity locally, so local cache does not get ahead of backend truth.
 - Logout clears local Drift session data before best-effort backend sign-out, so Firebase permission/sign-out failures cannot keep the old cached identity alive.
-- Runtime-provider logout invalidates session-scoped providers from a `finally` path even when cleanup reports a non-local backend failure.
-- Runtime startup still depends on a validated local identity candidate and remains part of later startup/session hardening phases.
+- Runtime-provider logout ends the authenticated session from a `finally` path even when cleanup reports a non-local backend failure.
+- `AuthenticatedSession.sessionGeneration` is the account-scope boundary. Runtime reuse, protocol brain creation, request/call/connection state, messages, file transfers, user search, and recent searches must match the active generation or reset to empty/idle state.
+- Device-global settings such as theme, media device preferences, audio settings, and update settings stay outside the session scope.
+- Runtime startup depends on a validated local identity candidate plus active authenticated session generation.
 
 ## Current Investigation Findings
 
@@ -48,7 +50,8 @@ Target architecture: an `AuthSessionCoordinator` must own session discovery, Fir
 - 2026-06-03 Phase 3: `AppStartupState` centralizes update/session/runtime readiness and route refresh behavior.
 - 2026-06-03 Phase 4: `RainApp` renders `RainStartupSurface` globally above routed content while startup is loading, update-blocked, failed, or session-expired, preventing normal navigation shell insertion during those phases.
 - 2026-06-03 Phase 5: protected route readiness now uses `AppStartupState.canRenderProtectedRoutes`, route-local guards for settings/search/friend pages, and redirect-to-root behavior for unresolved protected paths. Signed-out auth renders outside the app shell through a standalone Navigator/Overlay.
-- Remaining: explicit `AuthSessionCoordinator`, account deletion workflow, and session-scoped provider disposal.
+- 2026-06-03 Phase 6: state lifecycle hardening now scopes account-owned providers by `AuthenticatedSession.sessionGeneration`; runtime reuse requires matching username and generation; logout ends the session instead of depending on a broad manual invalidation list. Tests cover generation changes, recent/search reset, signed-out message streams, startup routes, and full Melos validation.
+- Remaining: account deletion workflow and a fuller `AuthSessionCoordinator` extraction if the provider-based session coordinator becomes insufficient.
 
 ## Dependencies
 
@@ -67,6 +70,7 @@ Target architecture: an `AuthSessionCoordinator` must own session discovery, Fir
 - Logout after app-exit or lifecycle shutdown must still clear local session, even when an earlier `_shutdownFuture` already exists.
 - Protected routes must not render while auth/session validation is loading.
 - Global startup loading/update/error/session-expired surfaces are owned by `RainApp`, not only by `/`.
+- Account-scoped providers must reset on session end, same-user relogin, and user switch.
 - Smoke autoprovision must never be enabled in production/stable builds.
 
 ## Testing Requirements
