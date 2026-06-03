@@ -37,6 +37,7 @@ Phase 8 - Self-Improvement Engine
 - Fifth mitigation from the RCA execution is complete: call setup diagnostics now retain a per-call Firebase room status timeline and terminal-room failure reconciliation emits `VoiceCallDiagnostics`, so failed setup exports can show ringing/accepted/failed transitions instead of an empty room timeline.
 - Sixth mitigation from the RCA execution is complete: update checks now classify stale Remote Config release policy as `remotePolicyOutdated` instead of `current`, same-version minimum build upgrades become required updates, and optional update prompts render from the root app surface before login/home.
 - Seventh mitigation from the RCA execution is complete: Phase 05 presence/session freshness now carries session metadata through backend identity snapshots, treats `presence.state != online` as offline, blocks UI Connect and auto-recovery through the shared fresh-presence resolver, and preserves `presenceExpired` as a terminal peer intent until a later successful explicit reconnect.
+- Phase 08 Regression Test Expansion is complete: targeted local tests now cover stable failure messages for WebRTC/Firebase/network call failures, failed call suite state and compact video dock behavior, terminal-room-before-session-hangup ordering, failed-media terminal write before session disposal, already-terminal cleanup classification, and session-owned Firebase presence contracts.
 - Phase 0 deliverables are complete.
 - Phase 1 vault structure is complete.
 - Phase 2 repository discovery is documented in `obsidian-vault/03-Architecture/Current Architecture.md`.
@@ -66,7 +67,7 @@ Phase 8 - Self-Improvement Engine
 
 ## Next Recommended Action
 
-Use `ROOT_CAUSE_ANALYSIS.md` to implement the next repair in evidence order: complete call setup media/ICE failure classification and keep release Remote Config deployment evidence tied to each build.
+Use `ROOT_CAUSE_ANALYSIS.md` to implement the next repair in evidence order: complete call setup media/ICE failure classification, repair or bypass the local Drift/sqlite runtime test harness, and keep release Remote Config deployment evidence tied to each build.
 
 ## Future Population Areas
 

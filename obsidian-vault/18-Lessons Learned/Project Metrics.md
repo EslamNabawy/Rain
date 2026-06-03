@@ -18,7 +18,7 @@ Related: [[Project Home]], [[Production Readiness]], [[Launch Readiness]], [[Ris
 | Security score | 66/100 | 90/100 | [[Project Home]] |
 | Scalability score | 45/100 | 85/100 | [[Project Home]] |
 | Maintainability score | 50/100 | 85/100 | [[Project Home]] |
-| Test coverage score | 70/100 | 90/100 | [[Project Home]] |
+| Test coverage score | 72/100 | 90/100 | [[Project Home]] |
 
 ## Operating Metrics
 
@@ -37,7 +37,7 @@ Related: [[Project Home]], [[Production Readiness]], [[Launch Readiness]], [[Ris
 
 | Metric | Current | Target |
 | --- | --- | --- |
-| Lessons recorded | 6 initial lessons | Add one per completed implementation cycle when relevant. |
+| Lessons recorded | 15 | Add one per completed implementation cycle when relevant. |
 | Improvement backlog items | 17 | Review weekly. |
 | Optimization opportunities | 8 | Promote high-value items into tasks. |
 | ADR count | 8 | Add when decisions affect architecture/release policy. |

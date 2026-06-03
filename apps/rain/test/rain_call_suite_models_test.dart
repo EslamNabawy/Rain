@@ -116,6 +116,97 @@ void main() {
     expect(suite.showsManagerBar, isTrue);
     expect(suite.showsFloatingSurface, isTrue);
   });
+
+  test('failed outgoing video uses failed suite with retry and close only', () {
+    final suite = _suiteFor(
+      _call(
+        phase: VoiceCallPhase.failed,
+        mediaMode: CallMediaMode.video,
+      ).copyWith(
+        failureReason: VoiceCallFailureReason.mediaConnectionFailed,
+        detail: 'Unable to RTCRtpTransceiver::setDirection: disposed.',
+      ),
+      surface: const CallSurfaceState.visible(
+        peerId: 'bob',
+        callId: 'call-1',
+        mediaMode: CallMediaMode.video,
+        mode: CallSurfaceMode.managerOnly,
+      ),
+    );
+
+    expect(suite.surfaceMode, CallSuiteSurfaceMode.failed);
+    expect(suite.stage.kind, CallSuiteStageKind.video);
+    expect(suite.showsFullscreenWorkspace, isTrue);
+    expect(suite.showsManagerBar, isFalse);
+    expect(suite.showsFloatingSurface, isFalse);
+    expect(
+      suite.controls.map((CallSuiteControlModel control) => control.action),
+      <CallSuiteControlAction>[
+        CallSuiteControlAction.retry,
+        CallSuiteControlAction.close,
+      ],
+    );
+    expect(suite.overflowControls, isEmpty);
+  });
+
+  test('failed incoming network-loss call is dismiss only, not retry spam', () {
+    final suite = _suiteFor(
+      _call(
+        phase: VoiceCallPhase.failed,
+        isOutgoing: false,
+      ).copyWith(failureReason: VoiceCallFailureReason.networkLost),
+    );
+
+    expect(suite.surfaceMode, CallSuiteSurfaceMode.failed);
+    expect(
+      suite.controls.map((CallSuiteControlModel control) => control.action),
+      <CallSuiteControlAction>[CallSuiteControlAction.close],
+    );
+  });
+
+  test('narrow video dock keeps mic camera and hangup visible', () {
+    final suite = _suiteFor(
+      _call(mediaMode: CallMediaMode.video),
+      outputRouteOptions: const <VoiceCallOutputRouteOption>[
+        VoiceCallOutputRouteOption(
+          target: CallAudioOutputTarget.systemDefault(),
+          label: 'System default',
+          icon: IconData(0),
+        ),
+        VoiceCallOutputRouteOption(
+          target: CallAudioOutputTarget.androidSpeakerphone(),
+          label: 'Speaker',
+          icon: IconData(1),
+        ),
+      ],
+      layout: const CallSuiteLayoutSpec(
+        viewportSize: Size(320, 620),
+        safePadding: EdgeInsets.zero,
+        isDesktop: false,
+        lowPower: false,
+      ),
+    );
+
+    expect(
+      suite.controls.map((CallSuiteControlModel control) => control.action),
+      <CallSuiteControlAction>[
+        CallSuiteControlAction.microphone,
+        CallSuiteControlAction.camera,
+        CallSuiteControlAction.hangUp,
+      ],
+    );
+    expect(
+      suite.overflowControls.map(
+        (CallSuiteControlModel control) => control.action,
+      ),
+      containsAll(<CallSuiteControlAction>[
+        CallSuiteControlAction.deafen,
+        CallSuiteControlAction.outputRoute,
+        CallSuiteControlAction.exitFullscreen,
+        CallSuiteControlAction.minimize,
+      ]),
+    );
+  });
 }
 
 CallSuitePresentationState _suiteFor(
@@ -124,6 +215,14 @@ CallSuitePresentationState _suiteFor(
   CallEndPresentationState endPresentation =
       const CallEndPresentationState.hidden(),
   List<CallControlCapability>? capabilities,
+  List<VoiceCallOutputRouteOption> outputRouteOptions =
+      const <VoiceCallOutputRouteOption>[],
+  CallSuiteLayoutSpec layout = const CallSuiteLayoutSpec(
+    viewportSize: Size(390, 720),
+    safePadding: EdgeInsets.zero,
+    isDesktop: false,
+    lowPower: false,
+  ),
 }) {
   return CallSuitePresentationState.from(
     callState: call,
@@ -137,13 +236,8 @@ CallSuitePresentationState _suiteFor(
     endPresentation: endPresentation,
     displayName: 'Bob',
     controlCapabilities: capabilities ?? call.controlCapabilities,
-    outputRouteOptions: const <VoiceCallOutputRouteOption>[],
-    layout: const CallSuiteLayoutSpec(
-      viewportSize: Size(390, 720),
-      safePadding: EdgeInsets.zero,
-      isDesktop: false,
-      lowPower: false,
-    ),
+    outputRouteOptions: outputRouteOptions,
+    layout: layout,
   );
 }
 

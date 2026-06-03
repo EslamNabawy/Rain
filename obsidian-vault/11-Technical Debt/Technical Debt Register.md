@@ -113,7 +113,7 @@ Related: [[Debt Categories]], [[Debt Prioritization]], [[Architecture Debt]], [[
 - Related Systems: [[Current Architecture]], [[Target Architecture]], [[Refactoring Strategy]], [[Presence And Direct Connect]], [[File Transfer]], [[Voice Calls]], [[Connection Request Notifications]].
 - Roadmap Tasks: TASK-001, TASK-020.
 - Resolution Strategy: First split call runtime ownership, then progressively separate file, connection request, presence, and lifecycle adapters where tests prove stable seams.
-- Progress Note 2026-06-03: Presence resolution is now centralized inside `RainRuntimeController` for local friend seeding, direct Connect, chat Connect routing, connection-request routing, call start, and network auto-recovery. Stale raw-online backend records and non-`online` presence states are treated as offline before runtime actions proceed. Remaining debt is broader runtime domain extraction and full app-close regression proof under a working Drift/sqlite test harness.
+- Progress Note 2026-06-03: Presence resolution is now centralized inside `RainRuntimeController` for local friend seeding, direct Connect, chat Connect routing, connection-request routing, call start, and network auto-recovery. Stale raw-online backend records and non-`online` presence states are treated as offline before runtime actions proceed. Phase 08 added protocol contract coverage for session-owned presence, `onDisconnect` offline writes, and state-aware presence reads. Remaining debt is broader runtime domain extraction and full app-close regression proof under a working Drift/sqlite test harness.
 
 ### TD-003: Distributed Call Lease And Terminal Ownership
 
@@ -350,7 +350,7 @@ Related: [[Debt Categories]], [[Debt Prioritization]], [[Architecture Debt]], [[
 - Related Systems: [[CallDiagnosticsRecorder]], [[Signaling Architecture]], [[Voice Calls]], [[Video Calls]].
 - Roadmap Tasks: TASK-004.
 - Resolution Strategy: Add sanitized call setup timeline, candidate counts, selected route metadata, first-track/frame events, and taxonomy tests.
-- Progress Note 2026-06-03: Call setup diagnostics now retain Firebase room status transitions in the runtime and include them in `VoiceCallDiagnostics`. Remote terminal-room failure reconciliation also records diagnostics, so failed setup reports can show `ringing -> accepted -> failed` instead of an empty room timeline.
+- Progress Note 2026-06-03: Call setup diagnostics now retain Firebase room status transitions in the runtime and include them in `VoiceCallDiagnostics`. Remote terminal-room failure reconciliation also records diagnostics, so failed setup reports can show `ringing -> accepted -> failed` instead of an empty room timeline. Phase 08 added regressions for WebRTC transceiver/SDP native error sanitization, Firebase permission-denied setup messages, network-loss terminal messages, failed call suite state, terminal-room-before-session-hangup ordering, failed-media terminal writes, and already-terminal cleanup classification. Full ICE/TURN route and candidate classification remains open.
 
 ## DevOps Debt
 

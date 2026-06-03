@@ -218,6 +218,11 @@ No task is fully complete until the lesson check is done or explicitly marked "n
 - What caused delays: Call diagnostics were coupled to local session failure events, while Firebase terminal reconciliation was treated mainly as state cleanup.
 - What failed: Failed setup reports could say media failed without preserving the room transition path that proved whether the call reached ringing, accepted, connected, or terminal state.
 - What succeeded: Runtime now records bounded room status timelines per call, includes them in `VoiceCallDiagnostics`, and emits diagnostics from remote terminal-room failure reconciliation.
+- What should change: Any terminal-room reconciliation path that changes user-visible call state should also produce diagnostics if the call ends as failed.
+- Pattern: Diagnostics owned by thrower instead of state observer.
+- Follow-up improvement: Continue expanding failure taxonomy with ICE candidate counts, selected route, media track/renderer lifecycle, and first-frame evidence.
+- Owner: Engineering
+- Status: Open
 
 ### LESSON-20260603-013: UI Presence Checks Must Use The Runtime Resolver
 
@@ -233,13 +238,8 @@ No task is fully complete until the lesson check is done or explicitly marked "n
 - Follow-up improvement: Add a small widget/provider contract test once the local Drift/sqlite harness is fixed or run the full app runtime suite in CI.
 - Owner: Engineering
 - Status: Open
-- What should change: Any terminal-room reconciliation path that changes user-visible call state should also produce diagnostics if the call ends as failed.
-- Pattern: Diagnostics owned by thrower instead of state observer.
-- Follow-up improvement: Continue expanding failure taxonomy with ICE candidate counts, selected route, media track/renderer lifecycle, and first-frame evidence.
-- Owner: Engineering
-- Status: Open
 
-### LESSON-20260603-013: Current Is Not The Same As Trusted Update Policy
+### LESSON-20260603-014: Current Is Not The Same As Trusted Update Policy
 
 - Related task: [ROOT_CAUSE_ANALYSIS.md](../../ROOT_CAUSE_ANALYSIS.md) Phase 07
 - Related system: [[Version And Updates]], [[Release Gates]]
@@ -252,6 +252,21 @@ No task is fully complete until the lesson check is done or explicitly marked "n
 - Pattern: Missing state for stale control-plane data.
 - Follow-up improvement: Add release evidence that records the deployed Remote Config manifest for the artifact commit.
 - Owner: Engineering/DevOps
+- Status: Open
+
+### LESSON-20260603-015: Small Regression Tests Keep Progress Moving When Heavy Harnesses Fail
+
+- Related task: Phase 08 Regression Test Expansion, TASK-003, TASK-004, TASK-006, TASK-013, TASK-019
+- Related system: [[Voice Calls]], [[Video Calls]], [[Presence Management]], [[CallDiagnosticsRecorder]], [[Test Strategy]]
+- Related risk/debt: R-001, R-003, R-004, TD-004, TD-015, TD-016
+- What was learned: The full `friend_flow_test.dart` runtime harness is still important, but local Windows sqlite native-asset loading blocks it before app logic runs. Regression coverage should still move forward with smaller deterministic contract and widget/model tests.
+- What caused delays: The heaviest runtime tests cover the most important call and presence behavior, but they are not currently reliable as a local phase gate.
+- What failed: Treating only the heavy runtime harness as valid proof would block regression expansion.
+- What succeeded: Phase 08 added low-dependency tests for call failure messages, failed call suite states, compact video dock behavior, terminal-room-before-session-hangup ordering, failed-media terminal writes, already-terminal cleanup classification, and session-owned Firebase presence.
+- What should change: For every high-risk bug, add the smallest deterministic regression first, then add or restore full integration coverage once the harness is healthy.
+- Pattern: Heavy harness dependency blocks targeted regression coverage.
+- Follow-up improvement: Repair Drift/sqlite native-asset resolution or move the full friend-flow runtime suite into CI with reliable native assets.
+- Owner: Engineering
 - Status: Open
 
 ## Review Cadence

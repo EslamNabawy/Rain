@@ -189,6 +189,44 @@ void main() {
     expect(functions, isNot(contains('.ref("users")')));
   });
 
+  test('Firebase presence is session-owned and app-close aware', () {
+    final rules = _repoFile('backend/firebase/database.rules.json');
+    final adapter = _repoFile(
+      'packages/protocol_brain/lib/adapters/firebase_adapter.dart',
+    );
+
+    expect(rules, contains('"sessionId"'));
+    expect(rules, contains('"startedAt"'));
+    expect(rules, contains('"state"'));
+    expect(
+      rules,
+      contains(
+        "newData.child('sessionId').val() === data.child('sessionId').val()",
+      ),
+      reason:
+          'An older app session must not be able to overwrite newer presence '
+          'unless it still owns the same session id.',
+    );
+    expect(
+      rules,
+      contains(
+        "newData.child('startedAt').val() >= data.child('startedAt').val()",
+      ),
+      reason:
+          'Session freshness must advance monotonically so old heartbeat '
+          'writes cannot revive a closed app.',
+    );
+    expect(rules, contains("newData.child('sessionId').val().length <= 96"));
+    expect(adapter, contains("'sessionId': _sessionId"));
+    expect(adapter, contains("'startedAt': _sessionStartedAt"));
+    expect(adapter, contains("'state': state"));
+    expect(adapter, contains("'state': 'offline'"));
+    expect(adapter, contains('presenceRef.onDisconnect().update'));
+    expect(adapter, contains('_offlinePresenceJson(uid: uid, now: now)'));
+    expect(adapter, contains('stateAllowsOnline'));
+    expect(adapter, contains("normalizedState == 'online'"));
+  });
+
   test('Firebase rooms carry explicit lifecycle metadata', () {
     final rules = _repoFile('backend/firebase/database.rules.json');
     final adapter = _repoFile(

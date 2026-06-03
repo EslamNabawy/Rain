@@ -138,7 +138,7 @@ Related: [[Project Home]], [[Current Architecture]], [[Audit Resolution Tracker]
 - Affected architecture: [[Presence Management]], [[Presence And Direct Connect]], [[Connection Request Notifications]]
 - Success criteria: Stale/offline peers cannot be called or direct-connected as online; offline request notification eligibility updates from fresh backend state.
 - Definition of done: Tests cover stale heartbeat, old session heartbeat, app close, network loss, and manual disconnect.
-- Progress 2026-06-03: Stale raw-online backend identity records are now resolved offline before local friend seeding, direct Connect, connection-request routing, or voice/video call start. Phase 05 continuation now carries session metadata in backend identity snapshots, treats non-`online` presence state as offline, routes the chat Connect button through the shared fresh-presence resolver, blocks auto-recovery when backend presence is stale/offline, and preserves `presenceExpired` as a terminal peer intent until an explicit successful reconnect. Local Windows `friend_flow_test.dart` remains blocked before test logic by sqlite native asset resolution, so full app-close runtime proof still needs a working Drift test harness or CI evidence.
+- Progress 2026-06-03: Stale raw-online backend identity records are now resolved offline before local friend seeding, direct Connect, connection-request routing, or voice/video call start. Phase 05 continuation now carries session metadata in backend identity snapshots, treats non-`online` presence state as offline, routes the chat Connect button through the shared fresh-presence resolver, blocks auto-recovery when backend presence is stale/offline, and preserves `presenceExpired` as a terminal peer intent until an explicit successful reconnect. Phase 08 added a Firebase contract regression for session-owned presence, `onDisconnect` offline state, and state-aware presence reads. Local Windows `friend_flow_test.dart` remains blocked before test logic by sqlite native asset resolution, so full app-close runtime proof still needs a working Drift test harness or CI evidence.
 - Subtasks:
   - [ ] TASK-006.1 Define freshness thresholds.
   - [x] TASK-006.2 Validate session-owned heartbeat behavior.
@@ -172,7 +172,7 @@ Related: [[Project Home]], [[Current Architecture]], [[Audit Resolution Tracker]
 - Affected architecture: [[CallDiagnosticsRecorder]], [[Signaling Architecture]], [[Voice Calls]], [[Video Calls]]
 - Success criteria: Diagnostics classify candidate count, selected route, relay/direct route, first frame, permission, Firebase, ICE, TURN, and media failures.
 - Definition of done: Diagnostics export includes a sanitized call setup timeline and test coverage for failure taxonomy.
-- Progress 2026-06-03: Runtime now keeps a bounded Firebase room status timeline per call and includes it in `VoiceCallDiagnostics`; remote terminal-room failure reconciliation records diagnostics even when the local side only observes the Firebase terminal room.
+- Progress 2026-06-03: Runtime now keeps a bounded Firebase room status timeline per call and includes it in `VoiceCallDiagnostics`; remote terminal-room failure reconciliation records diagnostics even when the local side only observes the Firebase terminal room. Phase 08 added local regressions for WebRTC transceiver/SDP native error sanitization, Firebase permission-denied setup messages, network-loss messages, terminal-write ordering diagnostics, and already-terminal cleanup classification.
 - Subtasks:
   - [ ] TASK-004.1 Define call setup timeline schema.
   - [ ] TASK-004.2 Capture local/remote candidate counts.
@@ -190,6 +190,7 @@ Related: [[Project Home]], [[Current Architecture]], [[Audit Resolution Tracker]
 - Affected architecture: [[CallMediaCoordinator]], [[Voice Calls]], [[Video Calls]]
 - Success criteria: Permission/capture failure terminates cleanly and releases Firebase locks.
 - Definition of done: Tests simulate denied mic/camera, disposed transceiver/renderer, media timeout, and successful cleanup.
+- Progress 2026-06-03: Phase 08 added focused regressions for disposed transceiver/SDP native errors mapping to media failure, failed media sessions writing terminal Firebase state before session disposal, and failed call suite state rendering retry/close instead of remaining in connecting UI. Full media timeout and permission/capture cleanup tests remain open.
 - Subtasks:
   - [ ] TASK-013.1 Define audio/video capture preflight.
   - [ ] TASK-013.2 Add cleanup on capture failure.

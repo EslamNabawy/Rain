@@ -48,6 +48,7 @@ Related: [[Risk Register]], [[Risk Categories]], [[Risk Matrix]], [[Blocker Reso
   - Add runtime tests for success, timeout, media failure, permission denial, and terminal cleanup.
   - Prove both voice and video directions in automated or documented smoke evidence.
 - Progress 2026-06-03: Failed call setup diagnostics now preserve Firebase room status timelines inside `VoiceCallDiagnostics`, and remote terminal-room failures emit diagnostics even when the local side only observes Firebase terminal state.
+- Progress 2026-06-03 Phase 08: Local regression tests now lock WebRTC/Firebase/network call failure messages, failed call suite state, compact video dock behavior, terminal-room-before-session-hangup ordering, failed-media terminal write before disposal, and already-terminal cleanup classification.
 - Exit Criteria: PC-to-mobile and mobile-to-PC voice/video setup have deterministic pass/fail behavior, no stuck connecting state remains, and diagnostics classify the failure source.
 - Detection Strategy: Runtime tests, call diagnostics timeline, release smoke logs, and watcher for repeated failed media setup events.
 
@@ -196,7 +197,7 @@ Related: [[Risk Register]], [[Risk Categories]], [[Risk Matrix]], [[Blocker Reso
   - Use session-owned heartbeat and stale-session rejection.
   - Gate direct connect/call/request actions through fresh presence.
   - Add user messages for offline and presence-unknown outcomes.
-- Progress 2026-06-03: Direct friend seeding, Connect, connection-request routing, and voice/video call start now resolve backend `online + lastHeartbeat` through one 30 second app freshness window. Phase 05 continuation adds session metadata/state to backend identity snapshots, makes non-`online` presence state offline, routes chat Connect through the shared fresh-presence resolver, blocks network auto-recovery for stale/offline peers, and preserves `presenceExpired` as terminal UI/diagnostic intent until successful explicit reconnect. Remaining blocker is full app-close runtime proof under a working Drift/sqlite test harness or CI evidence.
+- Progress 2026-06-03: Direct friend seeding, Connect, connection-request routing, and voice/video call start now resolve backend `online + lastHeartbeat` through one 30 second app freshness window. Phase 05 continuation adds session metadata/state to backend identity snapshots, makes non-`online` presence state offline, routes chat Connect through the shared fresh-presence resolver, blocks network auto-recovery for stale/offline peers, and preserves `presenceExpired` as terminal UI/diagnostic intent until successful explicit reconnect. Phase 08 added protocol contract coverage for session-owned presence shape, `onDisconnect` offline state, and state-aware presence reads. Remaining blocker is full app-close runtime proof under a working Drift/sqlite test harness or CI evidence.
 - Exit Criteria: App-close, stale heartbeat, unknown presence, online direct connect, and offline request flows pass tests.
 - Detection Strategy: Presence diagnostics with heartbeat age, session id, action decision, and user message.
 
