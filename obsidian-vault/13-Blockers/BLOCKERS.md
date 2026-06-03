@@ -1,43 +1,36 @@
-# BLOCKERS
+# BLOCKERS Index
 
 Last updated: 2026-06-03
 
-## Active Blockers
+## Purpose
 
-### BLK-001: Call setup reliability is not production proven
+This note is a lightweight index for the operational blocker system. The detailed source of truth is [[BLOCKERS]] in `14-Blockers`.
 
-- Status: [ ] Open
-- Severity: Critical
-- Related: [[Signaling Reliability Epic]], [[VoiceCallRuntime Refactor]], [[Call State Machine]]
-- Impact: Voice/video cannot be trusted until PC-to-mobile, mobile-to-PC, Android-to-Android, and retry paths pass deterministic tests.
-- Current workaround: Keep releases as test builds only.
-- Exit criteria: Automated call-state tests pass and diagnostics distinguish permission, Firebase, ICE, TURN, and media failures.
+Related: [[Risk Register]], [[Blocker Resolution Plan]], [[Launch Blockers]], [[Critical Path]], [[Launch Readiness]].
 
-### BLK-002: Firebase rules and app behavior must stay Spark-safe
+## Active Blocker Summary
 
-- Status: [ ] Open
-- Severity: High
-- Related: [[Firebase Architecture]], [[Rules Strategy]], [[Emulator Coverage]]
-- Impact: No Cloud Functions can be required for core flows while Firebase free tier remains mandatory.
-- Current workaround: Use RTDB rules, client-side TTL cleanup, and emulator validation.
-- Exit criteria: Emulator rules cover call rooms, locks, presence, requests, messages, file metadata, and update policy reads.
+| Blocker | Severity | Owner | Main Workaround |
+| --- | --- | --- | --- |
+| BLK-001 Call setup reliability | Critical | Engineering | Keep releases as test builds and require diagnostics. |
+| BLK-002 False busy/stale locks | Critical | Engineering | Inspect room/lock evidence before treating busy as final. |
+| BLK-003 Spark-safe Firebase rules | High | Security/Engineering | Use RTDB rules, TTL fields, and client cleanup. |
+| BLK-004 Update prompt reliability | Critical | Product/DevOps | Keep manual downloads and avoid incompatible rule deployments. |
+| BLK-005 Diagnostics safety/usefulness | High | Security/Engineering | Local-only exports and schema review. |
+| BLK-006 Release gate evidence | High | DevOps | Treat artifacts as test builds until hard gate passes. |
+| BLK-007 Appium QA instability | Medium | QA/DevOps | Use Flutter tests and cloud artifacts while smoke harness stabilizes. |
+| BLK-008 Presence staleness | High | Engineering/Product | Fresh backend preflight before connect/call/request. |
+| BLK-009 Offline request guardrails | Critical | Product/Security | Avoid release candidate offline requests until guardrails pass. |
 
-### BLK-003: Update prompts have reported version-comparison failures
+## Rule
 
-- Status: [ ] Open
-- Severity: Critical
-- Related: [[Production Readiness]], [[Release Gates]], [[Version And Updates]]
-- Impact: Users can remain on broken versions after rules or protocol changes.
-- Current workaround: Manual reinstall and direct release download.
-- Exit criteria: Old-version simulation widget/unit tests prove required and optional update prompts.
+Blockers must never stop all work. They block unsafe release or unsafe promotion only.
 
-### BLK-004: Appium/local Android QA harness is not stable yet
+Use [[Blocker Resolution Plan]] to identify:
 
-- Status: [/] In Progress
-- Severity: Medium
-- Related: [[Emulator Test Matrix]], [[CI-CD Roadmap]]
-- Impact: External black-box smoke automation cannot yet be treated as a release blocker.
-- Current workaround: Flutter unit/widget tests and cloud build artifacts.
-- Exit criteria: A minimal Appium smoke test is repeatable on `QA_Medium_API_36_1`.
+- owner,
+- resolution plan,
+- workaround,
+- parallel work,
+- exit criteria.
 
-Related: [[Project Home]], [[Risk Register]], [[Active Sprint]].

@@ -6,11 +6,11 @@ Every future session must read this file before starting non-trivial work.
 
 ## Current Goal
 
-Phase 5 technical debt system has been completed. The audit findings are now managed through `obsidian-vault/11-Technical Debt/Technical Debt Register.md`, category notes, prioritization, and roadmap-linked debt items.
+Phase 6 risk and blocker intelligence has been completed. The project risks and blockers are now managed through `obsidian-vault/12-Risks/Risk Register.md`, `obsidian-vault/12-Risks/Risk Matrix.md`, and `obsidian-vault/14-Blockers/BLOCKERS.md`.
 
 ## Current Phase
 
-Phase 5 - Technical Debt System
+Phase 6 - Risk and Blocker Intelligence
 
 ## Completed Phases
 
@@ -20,7 +20,7 @@ Phase 5 - Technical Debt System
 - [x] Phase 3 - Project Memory Generation
 - [x] Phase 4 - Audit to Roadmap Conversion
 - [x] Phase 5 - Technical Debt System
-- [ ] Phase 6 - Risk and Blocker Intelligence
+- [x] Phase 6 - Risk and Blocker Intelligence
 - [ ] Phase 7 - Architecture Refactor Planning
 - [ ] Phase 8 - Self-Improvement Engine
 - [ ] Phase 9 - Codex Automation Layer
@@ -34,8 +34,9 @@ Phase 5 - Technical Debt System
 - Phase 3 primary AI memory is documented in `obsidian-vault/AI-Memory/Project Memory.md`.
 - Phase 4 roadmap artifacts are documented in `obsidian-vault/01-Roadmap/`.
 - Phase 5 technical debt artifacts are documented in `obsidian-vault/11-Technical Debt/`.
+- Phase 6 risk and blocker artifacts are documented in `obsidian-vault/12-Risks/` and `obsidian-vault/14-Blockers/`.
 - Do not perform app code modifications as part of documentation-only phase work.
-- Wait for explicit user approval before starting Phase 6.
+- Wait for explicit user approval before starting Phase 7.
 
 ## Known Risks
 
@@ -46,11 +47,11 @@ Phase 5 - Technical Debt System
 
 ## Known Blockers
 
-- None for Phase 5 technical debt system.
+- None for Phase 6 risk and blocker system.
 
 ## Next Recommended Action
 
-Stop after Phase 5 deliverables. Wait for explicit user approval before starting Phase 6 - Risk and Blocker Intelligence.
+Stop after Phase 6 deliverables. Wait for explicit user approval before starting Phase 7 - Architecture Refactor Planning.
 
 ## Future Population Areas
 

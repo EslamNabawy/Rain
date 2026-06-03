@@ -29,4 +29,4 @@ Rain is not ready for public production launch.
 - [ ] Diagnostics export works after fatal errors.
 - [ ] Release workflow publishes Android v7a, Android v8/v9, and Windows artifacts.
 
-Related notes: [[Risk Register]], [[QA Findings]], [[Technical Debt]], [[Deployment]].
+Related notes: [[Risk Register]], [[Risk Matrix]], [[BLOCKERS]], [[Blocker Resolution Plan]], [[QA Findings]], [[Technical Debt]], [[Deployment]].

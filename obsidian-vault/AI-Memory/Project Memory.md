@@ -256,6 +256,7 @@ Completed foundation phases:
 - Phase 3 - Project Memory Generation.
 - Phase 4 - Audit to Roadmap Conversion.
 - Phase 5 - Technical Debt System.
+- Phase 6 - Risk and Blocker Intelligence.
 
 Current roadmap source:
 
@@ -271,10 +272,14 @@ Current roadmap source:
 - [[Technical Debt Register]]
 - [[Debt Categories]]
 - [[Debt Prioritization]]
+- [[Risk Register]]
+- [[Risk Categories]]
+- [[Risk Matrix]]
+- [[BLOCKERS]]
+- [[Blocker Resolution Plan]]
 
 Next expected phases:
 
-- Phase 6 - Risk and Blocker Intelligence.
 - Phase 7 - Architecture Refactor Planning.
 - Phase 8 - Self-Improvement Engine.
 - Phase 9 - Codex Automation Layer.

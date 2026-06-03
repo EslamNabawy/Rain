@@ -34,4 +34,4 @@ Rain reaches 90/100 only when the seven roadmap phases in [[Master Roadmap]] are
 - File transfer I/O and allocation pressure.
 - Firebase rules complexity without exhaustive emulator coverage.
 
-Related notes: [[Project Home]], [[Critical Path]], [[Audit Resolution Tracker]], [[Risk Register]], [[BLOCKERS]].
+Related notes: [[Project Home]], [[Critical Path]], [[Audit Resolution Tracker]], [[Risk Register]], [[Risk Matrix]], [[BLOCKERS]], [[Blocker Resolution Plan]].

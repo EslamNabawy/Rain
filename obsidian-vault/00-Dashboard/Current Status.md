@@ -31,7 +31,7 @@ Last updated: 2026-06-03
 
 This vault is now the main knowledge base. Older docs remain in `docs/`, but future source-of-truth updates should be mirrored here.
 
-Phase 1 vault bootstrap, Phase 2 repository discovery, Phase 3 project memory generation, Phase 4 audit-to-roadmap conversion, and Phase 5 technical debt system are complete at the documentation level. The current execution roadmap is [[Master Roadmap]].
+Phase 1 vault bootstrap, Phase 2 repository discovery, Phase 3 project memory generation, Phase 4 audit-to-roadmap conversion, Phase 5 technical debt system, and Phase 6 risk/blocker intelligence are complete at the documentation level. The current execution roadmap is [[Master Roadmap]].
 
 ## Execution Status
 
@@ -45,6 +45,8 @@ Phase 1 vault bootstrap, Phase 2 repository discovery, Phase 3 project memory ge
 - Audit tracker: [[Audit Resolution Tracker]]
 - Current blockers: [[BLOCKERS]]
 - Open risk register: [[Risk Register]]
+- Risk model: [[Risk Categories]], [[Risk Matrix]]
+- Blocker resolution: [[Blocker Resolution Plan]]
 - Technical debt register: [[Technical Debt Register]]
 - Technical debt prioritization: [[Debt Prioritization]]
 - Technical debt categories: [[Debt Categories]]
