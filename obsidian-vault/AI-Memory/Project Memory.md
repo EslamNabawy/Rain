@@ -341,10 +341,18 @@ Validation defaults:
 1. Read root `AGENTS.md`.
 2. Read root `CONTINUITY.md`.
 3. Read this note.
-4. Read [[Current Architecture]] for discovered structure.
-5. Read [[Project Home]] for command-center links.
-6. Check `git status --short --branch`.
-7. For implementation work, inspect code before planning or editing.
+4. Read [[Master Roadmap]].
+5. Read [[Technical Debt Register]].
+6. Read [[Risk Register]].
+7. Read [[BLOCKERS]].
+8. Read [[Current Architecture]] and affected linked architecture notes.
+9. Review relevant ADRs in [[Decision Map]].
+10. Check `git status --short --branch`.
+11. For implementation work, inspect code before planning or editing.
+
+## Implementation Completion Rule
+
+No implementation is complete until affected Obsidian vault notes are updated. After code changes, update architecture, roadmap progress, technical debt, risks, blockers, lessons learned, project memory when needed, and [[Recommended Next Actions]].
 
 ## Related Primary Notes
 

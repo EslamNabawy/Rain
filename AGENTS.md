@@ -60,17 +60,31 @@ Do not touch `D:\old project\Rain`. The active maintained copy is expected to be
 
 For any non-trivial work:
 
-1. Read `CONTINUITY.md`.
-2. Read this `AGENTS.md`.
+1. Read this `AGENTS.md`.
+2. Read `CONTINUITY.md`.
 3. Check `git status --short --branch`.
 4. Inspect relevant code or docs before editing.
 5. Identify impacted documentation before implementing.
 
 If `CONTINUITY.md` is missing, create it before starting implementation work.
 
+## Mandatory Pre-Implementation Reading
+
+Before any implementation, read these source-of-truth notes:
+
+1. `obsidian-vault/AI-Memory/Project Memory.md`
+2. `obsidian-vault/01-Roadmap/Master Roadmap.md`
+3. `obsidian-vault/11-Technical Debt/Technical Debt Register.md`
+4. `obsidian-vault/12-Risks/Risk Register.md`
+5. `obsidian-vault/14-Blockers/BLOCKERS.md`
+
+Use these notes to identify the current priorities, critical path, risks, blockers, and known failure patterns before changing code.
+
 ## Documentation Requirements
 
 Documentation is part of the product.
+
+Documentation is mandatory. No implementation is considered complete until the Obsidian vault has been updated.
 
 When discovering or changing any important system, update the relevant Obsidian note and project memory. Important systems include:
 
@@ -99,7 +113,8 @@ After meaningful work:
 2. Update `obsidian-vault/AI-Memory/Project Memory.md` when a durable fact changes.
 3. Update risk, blocker, or debt notes when new issues are discovered.
 4. Update roadmap or sprint notes when scope changes.
-5. Run the vault validator when documentation changes.
+5. Update lessons learned and recommended next actions when implementation work completes.
+6. Run the vault validator when documentation changes.
 
 The current validator is:
 
@@ -107,20 +122,39 @@ The current validator is:
 .\scripts\check_obsidian_vault.ps1
 ```
 
-Future phases will populate architecture, risks, roadmaps, tasks, metrics, knowledge graph links, and self-improvement data. Do not overbuild those systems early.
+The vault now contains architecture, risks, roadmaps, tasks, metrics, knowledge graph links, and self-improvement data. Keep those systems current.
 
 ## Implementation Workflow
 
 Before editing code:
 
 1. Understand the current behavior from code, tests, diagnostics, or docs.
-2. Identify the smallest safe change.
-3. Check for related state, async, Firebase, WebRTC, security, and UI edge cases.
-4. Prefer existing abstractions and patterns.
-5. Add or update tests proportional to risk.
-6. Update documentation and continuity notes.
+2. Understand the affected architecture through relevant notes under `obsidian-vault/02-Architecture`, `obsidian-vault/03-Architecture`, and linked feature/system notes.
+3. Review existing ADRs in `obsidian-vault/11-Decisions`.
+4. Review linked notes from the affected architecture, roadmap, risks, blockers, and debt items.
+5. Identify the smallest safe change.
+6. Check for related state, async, Firebase, WebRTC, security, and UI edge cases.
+7. Prefer existing abstractions and patterns.
+8. Add or update tests proportional to risk.
+9. Update documentation and continuity notes.
 
 For high-risk systems such as calls, signaling, Firebase rules, update checks, file transfer, or authentication, do not rely only on visual/manual checks.
+
+## Post-Code Documentation Gate
+
+After modifying code:
+
+1. Update architecture docs for affected systems.
+2. Update roadmap progress.
+3. Update technical debt status or add new debt if created/discovered.
+4. Update risks.
+5. Update blockers.
+6. Update lessons learned.
+7. Update `obsidian-vault/AI-Memory/Project Memory.md` if durable project facts changed.
+8. Generate or update the next recommended task in `obsidian-vault/18-Lessons Learned/Recommended Next Actions.md`.
+9. Run `.\scripts\check_obsidian_vault.ps1`.
+
+No implementation is complete until this gate is satisfied or the final response clearly states which required updates could not be completed and why.
 
 ## Validation Workflow
 

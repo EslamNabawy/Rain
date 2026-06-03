@@ -37,6 +37,7 @@ Phase 8 - Self-Improvement Engine
 - Phase 6 risk and blocker artifacts are documented in `obsidian-vault/12-Risks/` and `obsidian-vault/14-Blockers/`.
 - Phase 7 architecture refactor plans are documented in `obsidian-vault/03-Architecture/`.
 - Phase 8 self-improvement artifacts are documented in `obsidian-vault/18-Lessons Learned/`.
+- Repository-wide `AGENTS.md` now requires pre-implementation reading of project memory, roadmap, debt, risk, and blockers, plus a post-code Obsidian update gate.
 - Do not perform app code modifications as part of documentation-only phase work.
 - Wait for explicit user approval before starting Phase 9.
 
