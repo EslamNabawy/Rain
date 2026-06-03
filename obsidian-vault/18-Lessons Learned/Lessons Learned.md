@@ -119,7 +119,22 @@ No task is fully complete until the lesson check is done or explicitly marked "n
 - Owner: Engineering
 - Status: Open
 
-### LESSON-20260603-006: Canonical Sources Must Be Locked Before Automation
+### LESSON-20260603-006: Evidence Must Correlate Across Devices Before Call Fixes
+
+- Related task: [ROOT_CAUSE_ANALYSIS.md](../../ROOT_CAUSE_ANALYSIS.md)
+- Related system: [[Voice Calls]], [[Video Calls]], [[Presence Management]], [[Rules Strategy]], [[Diagnostics Sanitization]], [[Version And Updates]]
+- Related risk/debt: R-001, R-003, R-006, R-014, TD-003, TD-004, TD-016, TD-018
+- What was learned: The 2026-06-03 evidence shows several visible failures share deeper causes: split call terminal authority, Firebase `signaling.endCall` permission denial, presence freshness races, terminal inbox exposure before cleanup, Android diagnostics export failure, and update build-number inconsistency.
+- What caused delays: Prior debugging often treated voice failure, video failure, false busy, stale presence, update prompts, and diagnostics export as separate issues.
+- What failed: Release-build retries without a correlated root-cause tree and without emulator proof for Firebase end-call rules.
+- What succeeded: Correlating the Windows diagnostic JSON with the Android screenshot proved the failures are primarily signaling/presence/rules/cleanup issues before proven ICE or TURN failure.
+- What should change: No more call reliability patch should be accepted until it maps to the RCA evidence and adds validation for the exact root-cause cluster it claims to fix.
+- Pattern: Multi-device symptoms from one fragmented lifecycle.
+- Follow-up improvement: Prioritize Firebase end-call emulator reproduction, terminal-state reconciliation, presence snapshot unification, and Android diagnostics export repair in [[Recommended Next Actions]].
+- Owner: Engineering
+- Status: Open
+
+### LESSON-20260603-007: Canonical Sources Must Be Locked Before Automation
 
 - Related task: [[Engineering System Flaw Remediation Plan]] Phase 00 and Phase 01
 - Related system: [[Knowledge Graph Index]], [[Project Home]], [[Project Metrics]]

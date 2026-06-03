@@ -28,6 +28,8 @@ Phase 8 - Self-Improvement Engine
 
 ## Active Work
 
+- `ROOT_CAUSE_ANALYSIS.md` was created on 2026-06-03 from the supplied Windows diagnostics JSON, Android screenshot, and manual failure report. It is the current evidence lock for call/presence/update/diagnostics failures.
+- The RCA confirmed these root-cause clusters: split call terminal authority, Android `signaling.endCall` permission denial, presence freshness races, terminal inbox exposure before cleanup, Android diagnostics export path failure, and update build-number inconsistency.
 - Phase 0 deliverables are complete.
 - Phase 1 vault structure is complete.
 - Phase 2 repository discovery is documented in `obsidian-vault/03-Architecture/Current Architecture.md`.
@@ -57,7 +59,7 @@ Phase 8 - Self-Improvement Engine
 
 ## Next Recommended Action
 
-Execute `obsidian-vault/01-Roadmap/Engineering System Flaw Remediation Plan.md` Phase 02, then continue to evidence-ledger and semantic validator phases before starting full Phase 9 - Codex Automation Layer.
+Use `ROOT_CAUSE_ANALYSIS.md` to implement the next repair in evidence order: first reproduce and fix Android `signaling.endCall` permission denial in Firebase emulator/rules, then terminal-state reconciliation, presence availability unification, Android diagnostics export repair, and update metadata validation.
 
 ## Future Population Areas
 
