@@ -63,6 +63,41 @@ String _formatRetryDelay(Duration delay) {
   return '${delay.inMinutes} minutes';
 }
 
+const Duration _peerPresenceFreshnessWindow = Duration(seconds: 30);
+
+final class _ResolvedBackendPresence {
+  const _ResolvedBackendPresence({
+    required this.online,
+    required this.rawOnline,
+    required this.lastHeartbeat,
+    required this.lastSeen,
+    required this.presenceAgeMs,
+    required this.freshnessWindowMs,
+  });
+
+  final bool online;
+  final bool rawOnline;
+  final int lastHeartbeat;
+  final int lastSeen;
+  final int? presenceAgeMs;
+  final int freshnessWindowMs;
+
+  bool get staleRawOnline => rawOnline && !online;
+
+  Map<String, Object?> toDiagnostics() {
+    return <String, Object?>{
+      'presenceSource': 'backend',
+      'rawOnline': rawOnline,
+      'resolvedOnline': online,
+      'lastHeartbeat': lastHeartbeat,
+      'lastSeen': lastSeen,
+      'presenceAgeMs': presenceAgeMs,
+      'freshnessWindowMs': freshnessWindowMs,
+      'staleRawOnline': staleRawOnline,
+    };
+  }
+}
+
 class RainRuntimeController with WidgetsBindingObserver {
   RainRuntimeController({
     required this.selfIdentity,
@@ -211,6 +246,28 @@ class RainRuntimeController with WidgetsBindingObserver {
 
   String _normalizedUsername(String username) {
     return username.trim().toLowerCase();
+  }
+
+  _ResolvedBackendPresence _resolveBackendPresence(
+    BackendIdentity identity, {
+    int? nowMs,
+  }) {
+    final now = nowMs ?? DateTime.now().millisecondsSinceEpoch;
+    final presenceAgeMs = identity.lastHeartbeat <= 0
+        ? null
+        : now - identity.lastHeartbeat;
+    final online =
+        identity.online &&
+        presenceAgeMs != null &&
+        presenceAgeMs < _peerPresenceFreshnessWindow.inMilliseconds;
+    return _ResolvedBackendPresence(
+      online: online,
+      rawOnline: identity.online,
+      lastHeartbeat: identity.lastHeartbeat,
+      lastSeen: identity.lastSeen,
+      presenceAgeMs: presenceAgeMs,
+      freshnessWindowMs: _peerPresenceFreshnessWindow.inMilliseconds,
+    );
   }
 
   ConnectionCoordinatorSnapshot connectionCoordinatorSnapshotFor(
@@ -899,10 +956,26 @@ class RainRuntimeController with WidgetsBindingObserver {
       return;
     }
     final backendIdentity = await adapter.fetchIdentity(normalizedUsername);
-    final isOnline = backendIdentity?.online ?? friend?.isOnline ?? false;
+    final presence = backendIdentity == null
+        ? null
+        : _resolveBackendPresence(backendIdentity);
+    final isOnline = presence?.online ?? friend?.isOnline ?? false;
     await _localMutations.run(
       () => friendStore.updatePresence(normalizedUsername, isOnline),
     );
+    if (presence?.staleRawOnline == true) {
+      _recordRuntimeEvent(
+        category: 'presence',
+        name: 'backend_presence_stale_resolved_offline',
+        severity: 'warning',
+        message: 'Backend presence heartbeat is stale.',
+        context: <String, Object?>{
+          'peerId': normalizedUsername,
+          'action': 'connect',
+          ...presence!.toDiagnostics(),
+        },
+      );
+    }
     if (!isOnline && !allowStalePresence) {
       _recordRuntimeEvent(
         category: 'connection',
@@ -913,7 +986,10 @@ class RainRuntimeController with WidgetsBindingObserver {
         context: <String, Object?>{
           'peerId': normalizedUsername,
           'friendPresence': friend?.isOnline,
-          'backendPresence': backendIdentity?.online,
+          'backendPresence': presence?.online,
+          'rawBackendPresence': presence?.rawOnline,
+          'presenceAgeMs': presence?.presenceAgeMs,
+          'freshnessWindowMs': presence?.freshnessWindowMs,
           'allowStalePresence': allowStalePresence,
         },
       );
@@ -927,7 +1003,9 @@ class RainRuntimeController with WidgetsBindingObserver {
           context: <String, Object?>{
             'peerId': normalizedUsername,
             'friendPresence': friend?.isOnline,
-            'backendPresence': backendIdentity?.online,
+            'backendPresence': presence?.online,
+            'rawBackendPresence': presence?.rawOnline,
+            'presenceAgeMs': presence?.presenceAgeMs,
           },
         );
         throw StateError(

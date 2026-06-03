@@ -4018,14 +4018,25 @@ extension VoiceCallRuntime on RainRuntimeController {
       );
     }
 
-    final peerOnline = identity.online;
-    final now = DateTime.now().millisecondsSinceEpoch;
-    final presenceAgeMs = identity.lastHeartbeat <= 0
-        ? null
-        : now - identity.lastHeartbeat;
+    final presence = _resolveBackendPresence(identity);
+    final peerOnline = presence.online;
     await _localMutations.run(
       () => friendStore.updatePresence(normalizedPeerId, peerOnline),
     );
+    if (presence.staleRawOnline) {
+      _recordRuntimeEvent(
+        category: 'presence',
+        name: 'backend_presence_stale_resolved_offline',
+        severity: 'warning',
+        message: 'Backend presence heartbeat is stale.',
+        context: <String, Object?>{
+          'peerId': normalizedPeerId,
+          'mediaMode': mediaMode.name,
+          'action': 'callStart',
+          ...presence.toDiagnostics(),
+        },
+      );
+    }
     if (!peerOnline) {
       final decision = RuntimeInteractionGuard.peerOffline(
         peerId: normalizedPeerId,
@@ -4039,20 +4050,12 @@ extension VoiceCallRuntime on RainRuntimeController {
           'peerId': normalizedPeerId,
           'mediaMode': mediaMode.name,
           'reasonCode': decision.reasonCode.name,
-          'presenceSource': 'backend',
-          'lastHeartbeat': identity.lastHeartbeat,
-          'lastSeen': identity.lastSeen,
-          'presenceAgeMs': presenceAgeMs,
+          ...presence.toDiagnostics(),
         },
       );
       return _CallStartPresenceSnapshot(
         peerOnline: false,
-        diagnostics: <String, Object?>{
-          'presenceSource': 'backend',
-          'lastHeartbeat': identity.lastHeartbeat,
-          'lastSeen': identity.lastSeen,
-          'presenceAgeMs': presenceAgeMs,
-        },
+        diagnostics: presence.toDiagnostics(),
       );
     } else {
       _recordRuntimeEvent(
@@ -4061,21 +4064,13 @@ extension VoiceCallRuntime on RainRuntimeController {
         context: <String, Object?>{
           'peerId': normalizedPeerId,
           'mediaMode': mediaMode.name,
-          'presenceSource': 'backend',
-          'lastHeartbeat': identity.lastHeartbeat,
-          'lastSeen': identity.lastSeen,
-          'presenceAgeMs': presenceAgeMs,
+          ...presence.toDiagnostics(),
         },
       );
     }
     return _CallStartPresenceSnapshot(
       peerOnline: true,
-      diagnostics: <String, Object?>{
-        'presenceSource': 'backend',
-        'lastHeartbeat': identity.lastHeartbeat,
-        'lastSeen': identity.lastSeen,
-        'presenceAgeMs': presenceAgeMs,
-      },
+      diagnostics: presence.toDiagnostics(),
     );
   }
 

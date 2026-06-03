@@ -511,11 +511,24 @@ extension FriendRuntime on RainRuntimeController {
     if (_shutDown || backendIdentity == null) {
       return;
     }
+    final presence = _resolveBackendPresence(backendIdentity);
+    if (presence.staleRawOnline) {
+      _recordRuntimeEvent(
+        category: 'presence',
+        name: 'backend_presence_stale_resolved_offline',
+        severity: 'warning',
+        message: 'Backend presence heartbeat is stale.',
+        context: <String, Object?>{
+          'peerId': _normalizedUsername(username),
+          ...presence.toDiagnostics(),
+        },
+      );
+    }
     await _localMutations.run(() {
       if (_shutDown) {
         return Future<void>.value();
       }
-      return friendStore.updatePresence(username, backendIdentity.online);
+      return friendStore.updatePresence(username, presence.online);
     });
   }
 

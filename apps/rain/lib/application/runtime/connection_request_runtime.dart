@@ -99,11 +99,27 @@ extension ConnectionRequestRuntime on RainRuntimeController {
     bool? backendPeerOnline;
     try {
       final backendIdentity = await this.adapter.fetchIdentity(peerId);
-      backendPeerOnline = backendIdentity?.online;
-      if (backendIdentity != null) {
+      final presence = backendIdentity == null
+          ? null
+          : _resolveBackendPresence(backendIdentity);
+      backendPeerOnline = presence?.online;
+      if (backendIdentity != null && presence != null) {
         await _localMutations.run(
-          () => friendStore.updatePresence(peerId, backendIdentity.online),
+          () => friendStore.updatePresence(peerId, presence.online),
         );
+        if (presence.staleRawOnline) {
+          _recordRuntimeEvent(
+            category: 'presence',
+            name: 'backend_presence_stale_resolved_offline',
+            severity: 'warning',
+            message: 'Backend presence heartbeat is stale.',
+            context: <String, Object?>{
+              'peerId': peerId,
+              'action': 'connectionRequest',
+              ...presence.toDiagnostics(),
+            },
+          );
+        }
         friend = await _localMutations.run(
           () => friendStore.loadFriend(peerId),
         );

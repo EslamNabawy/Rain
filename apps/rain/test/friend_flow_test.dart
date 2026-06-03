@@ -199,6 +199,36 @@ void main() {
     );
 
     test(
+      'relationship sync does not seed stale backend presence as online',
+      () async {
+        final adapter = _StaleOnlinePresenceNoopSignalingAdapter();
+        await adapter.register('bob', 'bobpw');
+        await adapter.upsertFriendship('alice', 'bob');
+        final runtime = RainRuntimeController(
+          selfIdentity: alice,
+          adapter: adapter,
+          brain: null,
+          database: db,
+          friendStore: FriendStore(db),
+          messageStore: MessageStore(db),
+          offlineQueueStore: OfflineQueueStore(db),
+          messageDeliveryService: MessageDeliveryService(
+            messageStore: MessageStore(db),
+            offlineQueueStore: OfflineQueueStore(db),
+          ),
+          friendRequestRefreshInterval: Duration.zero,
+        );
+        addTearDown(runtime.dispose);
+
+        await runtime.start();
+
+        final friend = await FriendStore(db).loadFriend('bob');
+        expect(friend?.state, FriendState.friend);
+        expect(friend?.isOnline, isFalse);
+      },
+    );
+
+    test(
       'sendFriendRequest removes stale local friendship before sending a new request',
       () async {
         final adapter = NoopSignalingAdapter();
@@ -1302,6 +1332,49 @@ void main() {
         final brain = TestSessionManager();
         await adapter.register('bob', 'bobpw');
         await adapter.setPresence('bob', false);
+        await adapter.upsertFriendship('alice', 'bob');
+        await db
+            .into(db.friends)
+            .insert(
+              FriendsCompanion.insert(
+                username: 'bob',
+                displayName: 'Bob',
+                state: 'friend',
+                addedAt: 0,
+              ),
+            );
+        await FriendStore(db).updatePresence('bob', true);
+        final runtime = _runtimeFor(db, alice, adapter, brain: brain);
+        addTearDown(runtime.dispose);
+
+        await runtime.start();
+        await expectLater(
+          runtime.startVoiceCall('bob'),
+          throwsA(
+            isA<StateError>().having(
+              (error) => error.toString(),
+              'message',
+              contains('@bob is offline. Keep both apps open'),
+            ),
+          ),
+        );
+
+        expect(runtime.voiceCallState.phase, VoiceCallPhase.idle);
+        expect(adapter.rooms, isEmpty);
+        expect(adapter.activePairLocks, isEmpty);
+        expect(adapter.activeUserLocks, isEmpty);
+        expect(brain.startedAudioPeers, isEmpty);
+        final friend = await FriendStore(db).loadFriend('bob');
+        expect(friend?.isOnline, isFalse);
+      },
+    );
+
+    test(
+      'startVoiceCall blocks stale backend online peer before room or media setup',
+      () async {
+        final adapter = _StaleOnlineVoiceSignalingAdapter();
+        final brain = TestSessionManager();
+        await adapter.register('bob', 'bobpw');
         await adapter.upsertFriendship('alice', 'bob');
         await db
             .into(db.friends)
@@ -5962,6 +6035,54 @@ void main() {
       expect(brain.connectedPeers, isEmpty);
     });
 
+    test(
+      'connectPeer interactive rejects stale backend online presence',
+      () async {
+        final adapter = _StaleOnlinePresenceNoopSignalingAdapter();
+        final brain = TestSessionManager();
+        await adapter.register('bob', 'bobpw');
+        await adapter.upsertFriendship('alice', 'bob');
+        await db
+            .into(db.friends)
+            .insert(
+              FriendsCompanion.insert(
+                username: 'bob',
+                displayName: 'Bob',
+                state: 'friend',
+                addedAt: 0,
+              ),
+            );
+        await FriendStore(db).updatePresence('bob', true);
+        final runtime = RainRuntimeController(
+          selfIdentity: alice,
+          adapter: adapter,
+          brain: brain,
+          database: db,
+          friendStore: FriendStore(db),
+          messageStore: MessageStore(db),
+          offlineQueueStore: OfflineQueueStore(db),
+          messageDeliveryService: MessageDeliveryService(
+            messageStore: MessageStore(db),
+            offlineQueueStore: OfflineQueueStore(db),
+          ),
+        );
+
+        await expectLater(
+          runtime.connectPeer('bob', interactive: true),
+          throwsA(
+            isA<StateError>().having(
+              (StateError error) => error.toString(),
+              'message',
+              contains('offline'),
+            ),
+          ),
+        );
+
+        expect(brain.connectedPeers, isEmpty);
+        expect((await FriendStore(db).loadFriend('bob'))?.isOnline, isFalse);
+      },
+    );
+
     test('connectPeer can try through stale offline presence', () async {
       final adapter = NoopSignalingAdapter();
       final brain = TestSessionManager();
@@ -6913,6 +7034,32 @@ class _SilentPresenceNoopSignalingAdapter extends NoopSignalingAdapter {
   Stream<bool> watchPresence(String username) => const Stream<bool>.empty();
 }
 
+class _StaleOnlinePresenceNoopSignalingAdapter extends NoopSignalingAdapter {
+  static const int staleHeartbeatAgeMs = 60000;
+
+  @override
+  Future<BackendIdentity?> fetchIdentity(String username) async {
+    final identity = await super.fetchIdentity(username);
+    if (identity == null || identity.username != 'bob') {
+      return identity;
+    }
+    final now = DateTime.now().millisecondsSinceEpoch;
+    return BackendIdentity(
+      username: identity.username,
+      uid: identity.uid,
+      displayName: identity.displayName,
+      gender: identity.gender,
+      registeredAt: identity.registeredAt,
+      lastSeen: now - staleHeartbeatAgeMs,
+      lastHeartbeat: now - staleHeartbeatAgeMs,
+      online: true,
+    );
+  }
+
+  @override
+  Stream<bool> watchPresence(String username) => const Stream<bool>.empty();
+}
+
 class _BlockingFirstActiveTransferStore extends FileTransferStore {
   _BlockingFirstActiveTransferStore(super.database);
 
@@ -7245,6 +7392,32 @@ class RecordingVoiceSignalingAdapter extends RecordingNoopSignalingAdapter
       updatedAt: updatedAt,
     );
   }
+}
+
+class _StaleOnlineVoiceSignalingAdapter extends RecordingVoiceSignalingAdapter {
+  static const int staleHeartbeatAgeMs = 60000;
+
+  @override
+  Future<BackendIdentity?> fetchIdentity(String username) async {
+    final identity = await super.fetchIdentity(username);
+    if (identity == null || identity.username != 'bob') {
+      return identity;
+    }
+    final now = DateTime.now().millisecondsSinceEpoch;
+    return BackendIdentity(
+      username: identity.username,
+      uid: identity.uid,
+      displayName: identity.displayName,
+      gender: identity.gender,
+      registeredAt: identity.registeredAt,
+      lastSeen: now - staleHeartbeatAgeMs,
+      lastHeartbeat: now - staleHeartbeatAgeMs,
+      online: true,
+    );
+  }
+
+  @override
+  Stream<bool> watchPresence(String username) => const Stream<bool>.empty();
 }
 
 class SilentFriendRequestAdapter extends NoopSignalingAdapter {

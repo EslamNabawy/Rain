@@ -33,6 +33,7 @@ Phase 8 - Self-Improvement Engine
 - First mitigation from the RCA execution is complete: late voice signaling states after terminal Firebase rooms are recorded as `late_frame_ignored` events only and no longer overwrite crash diagnostics as `lastCrash`.
 - Second mitigation from the RCA execution is complete: Firebase `endCall` now writes the terminal `voiceCalls/{callId}` room state before any best-effort inbox mirror update, so an already-cleaned `voiceCallInboxes/{callee}/{callId}` row can no longer cause a permission-denied terminal cleanup failure.
 - Third mitigation from the RCA execution is complete: diagnostics export treats Android SAF `/document/...` and `/tree/...` handles as platform-managed picker outputs and no longer opens them as raw filesystem paths.
+- Fourth mitigation from the RCA execution is complete: backend presence is resolved from `online + lastHeartbeat` with a shared 30 second runtime freshness window before local friend seeding, direct connect, connection-request routing, or voice/video call start. Stale raw-online records are treated as offline and logged as `backend_presence_stale_resolved_offline`.
 - Phase 0 deliverables are complete.
 - Phase 1 vault structure is complete.
 - Phase 2 repository discovery is documented in `obsidian-vault/03-Architecture/Current Architecture.md`.
@@ -62,7 +63,7 @@ Phase 8 - Self-Improvement Engine
 
 ## Next Recommended Action
 
-Use `ROOT_CAUSE_ANALYSIS.md` to implement the next repair in evidence order: complete terminal-state reconciliation coverage, unify presence availability decisions, and fix update metadata validation.
+Use `ROOT_CAUSE_ANALYSIS.md` to implement the next repair in evidence order: complete terminal-state reconciliation coverage for all voice/video paths and fix update metadata validation.
 
 ## Future Population Areas
 

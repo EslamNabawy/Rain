@@ -113,6 +113,7 @@ Related: [[Debt Categories]], [[Debt Prioritization]], [[Architecture Debt]], [[
 - Related Systems: [[Current Architecture]], [[Target Architecture]], [[Refactoring Strategy]], [[Presence And Direct Connect]], [[File Transfer]], [[Voice Calls]], [[Connection Request Notifications]].
 - Roadmap Tasks: TASK-001, TASK-020.
 - Resolution Strategy: First split call runtime ownership, then progressively separate file, connection request, presence, and lifecycle adapters where tests prove stable seams.
+- Progress Note 2026-06-03: Presence resolution is now centralized inside `RainRuntimeController` for local friend seeding, direct Connect, connection-request routing, and call start. Stale raw-online backend records are treated as offline before runtime actions proceed. Remaining debt is broader runtime domain extraction and auto-recovery contract cleanup.
 
 ### TD-003: Distributed Call Lease And Terminal Ownership
 

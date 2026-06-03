@@ -194,6 +194,21 @@ No task is fully complete until the lesson check is done or explicitly marked "n
 - Owner: Engineering
 - Status: Open
 
+### LESSON-20260603-011: Presence Truth Requires Heartbeat Age, Not Raw Online
+
+- Related task: [ROOT_CAUSE_ANALYSIS.md](../../ROOT_CAUSE_ANALYSIS.md) Phase 05
+- Related system: [[Presence Management]], [[Presence And Direct Connect]], [[Voice Calls]], [[Connection Request Notifications]]
+- Related risk/debt: R-003, R-016, R-020, TD-002
+- What was learned: A backend identity with `online: true` is not enough to safely mark a peer reachable. The runtime must also evaluate `lastHeartbeat` age using the same freshness window before seeding UI state or allowing user actions.
+- What caused delays: Friend sync, Connect, connection requests, and call start each trusted the collapsed `BackendIdentity.online` result instead of applying one local freshness contract at the action boundary.
+- What failed: A stale raw-online backend record could mark a friend online, allow direct Connect, or create call setup state even though the heartbeat was expired.
+- What succeeded: Runtime presence resolution now uses one 30 second freshness window for friend seeding, direct Connect, connection-request routing, and voice/video call start, and stale raw-online records produce `backend_presence_stale_resolved_offline` diagnostics.
+- What should change: Any future action that depends on presence must consume the shared resolver or a typed presence snapshot with heartbeat age, not a raw bool.
+- Pattern: Collapsed availability bool hides stale-state evidence.
+- Follow-up improvement: Continue with session-owned presence/app-close recovery and remove or narrow internal auto-recovery stale-presence bypasses.
+- Owner: Engineering
+- Status: Open
+
 ## Review Cadence
 
 - Review lessons at the end of every completed task.

@@ -13,6 +13,7 @@ Users need to know whether direct chat/file actions can work now.
 - Presence is stored in RTDB `presence`.
 - Runtime heartbeat interval is 10 seconds while foreground/running.
 - UI freshness target has been treated around 30 seconds.
+- Runtime now re-resolves backend presence with a 30 second `lastHeartbeat` freshness window before seeding local online state, direct Connect, connection-request routing, or call start.
 - Backend write freshness for calls/requests has used stricter RTDB rule checks.
 - Data-peer signaling uses Firebase rooms.
 - WebRTC data channels carry chat, control, and file traffic.
@@ -23,6 +24,7 @@ Users need to know whether direct chat/file actions can work now.
 - Network loss is not manual disconnect.
 - Manual disconnect blocks auto-recovery.
 - Stale presence must not allow misleading Connect or Call actions.
+- Stale raw-online backend records are treated as offline and logged for diagnostics.
 
 ## Known Issues
 

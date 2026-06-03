@@ -138,6 +138,7 @@ Related: [[Project Home]], [[Current Architecture]], [[Audit Resolution Tracker]
 - Affected architecture: [[Presence Management]], [[Presence And Direct Connect]], [[Connection Request Notifications]]
 - Success criteria: Stale/offline peers cannot be called or direct-connected as online; offline request notification eligibility updates from fresh backend state.
 - Definition of done: Tests cover stale heartbeat, old session heartbeat, app close, network loss, and manual disconnect.
+- Progress 2026-06-03: Stale raw-online backend identity records are now resolved offline before local friend seeding, direct Connect, connection-request routing, or voice/video call start. Remaining subtasks still need session ownership/app-close and auto-recovery coverage.
 - Subtasks:
   - [ ] TASK-006.1 Define freshness thresholds.
   - [ ] TASK-006.2 Validate session-owned heartbeat behavior.

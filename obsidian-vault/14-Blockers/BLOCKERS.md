@@ -194,6 +194,7 @@ Related: [[Risk Register]], [[Risk Categories]], [[Risk Matrix]], [[Blocker Reso
   - Use session-owned heartbeat and stale-session rejection.
   - Gate direct connect/call/request actions through fresh presence.
   - Add user messages for offline and presence-unknown outcomes.
+- Progress 2026-06-03: Direct friend seeding, Connect, connection-request routing, and voice/video call start now resolve backend `online + lastHeartbeat` through one 30 second app freshness window. Stale raw-online rows are logged and treated as offline. Remaining work is app-close/session ownership and auto-recovery behavior.
 - Exit Criteria: App-close, stale heartbeat, unknown presence, online direct connect, and offline request flows pass tests.
 - Detection Strategy: Presence diagnostics with heartbeat age, session id, action decision, and user message.
 
