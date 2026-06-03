@@ -73,6 +73,9 @@ final class _ResolvedBackendPresence {
     required this.lastSeen,
     required this.presenceAgeMs,
     required this.freshnessWindowMs,
+    required this.sessionId,
+    required this.startedAt,
+    required this.state,
   });
 
   final bool online;
@@ -81,6 +84,9 @@ final class _ResolvedBackendPresence {
   final int lastSeen;
   final int? presenceAgeMs;
   final int freshnessWindowMs;
+  final String? sessionId;
+  final int? startedAt;
+  final String? state;
 
   bool get staleRawOnline => rawOnline && !online;
 
@@ -93,6 +99,9 @@ final class _ResolvedBackendPresence {
       'lastSeen': lastSeen,
       'presenceAgeMs': presenceAgeMs,
       'freshnessWindowMs': freshnessWindowMs,
+      'presenceSessionId': sessionId,
+      'presenceStartedAt': startedAt,
+      'presenceState': state,
       'staleRawOnline': staleRawOnline,
     };
   }
@@ -258,8 +267,14 @@ class RainRuntimeController with WidgetsBindingObserver {
     final presenceAgeMs = identity.lastHeartbeat <= 0
         ? null
         : now - identity.lastHeartbeat;
+    final normalizedState = identity.presenceState?.trim().toLowerCase();
+    final stateAllowsOnline =
+        normalizedState == null ||
+        normalizedState.isEmpty ||
+        normalizedState == 'online';
     final online =
         identity.online &&
+        stateAllowsOnline &&
         presenceAgeMs != null &&
         presenceAgeMs < _peerPresenceFreshnessWindow.inMilliseconds;
     return _ResolvedBackendPresence(
@@ -269,7 +284,50 @@ class RainRuntimeController with WidgetsBindingObserver {
       lastSeen: identity.lastSeen,
       presenceAgeMs: presenceAgeMs,
       freshnessWindowMs: _peerPresenceFreshnessWindow.inMilliseconds,
+      sessionId: identity.presenceSessionId,
+      startedAt: identity.presenceStartedAt,
+      state: normalizedState,
     );
+  }
+
+  Future<_ResolvedBackendPresence?> _fetchPeerPresenceSnapshot(
+    String username, {
+    required String action,
+    bool updateLocalPresence = true,
+  }) async {
+    final normalizedUsername = _normalizedUsername(username);
+    final backendIdentity = await adapter.fetchIdentity(normalizedUsername);
+    if (backendIdentity == null) {
+      return null;
+    }
+    final presence = _resolveBackendPresence(backendIdentity);
+    if (updateLocalPresence) {
+      await _localMutations.run(
+        () => friendStore.updatePresence(normalizedUsername, presence.online),
+      );
+    }
+    if (presence.staleRawOnline) {
+      _recordRuntimeEvent(
+        category: 'presence',
+        name: 'backend_presence_stale_resolved_offline',
+        severity: 'warning',
+        message: 'Backend presence heartbeat is stale.',
+        context: <String, Object?>{
+          'peerId': normalizedUsername,
+          'action': action,
+          ...presence.toDiagnostics(),
+        },
+      );
+    }
+    return presence;
+  }
+
+  Future<bool?> isPeerFreshlyOnline(
+    String username, {
+    String action = 'presence_check',
+  }) async {
+    final presence = await _fetchPeerPresenceSnapshot(username, action: action);
+    return presence?.online;
   }
 
   ConnectionCoordinatorSnapshot connectionCoordinatorSnapshotFor(
@@ -505,7 +563,8 @@ class RainRuntimeController with WidgetsBindingObserver {
               recordedIntent == PeerDisconnectIntent.presenceExpired ||
               recordedIntent == PeerDisconnectIntent.transportLost ||
               recordedIntent == PeerDisconnectIntent.networkLost) {
-            if (recordedIntent != PeerDisconnectIntent.localManual) {
+            if (recordedIntent == PeerDisconnectIntent.transportLost ||
+                recordedIntent == PeerDisconnectIntent.networkLost) {
               _connectionCoordinator.clearDisconnectIntent(peerId);
             }
             return;
@@ -957,27 +1016,11 @@ class RainRuntimeController with WidgetsBindingObserver {
       }
       return;
     }
-    final backendIdentity = await adapter.fetchIdentity(normalizedUsername);
-    final presence = backendIdentity == null
-        ? null
-        : _resolveBackendPresence(backendIdentity);
-    final isOnline = presence?.online ?? friend?.isOnline ?? false;
-    await _localMutations.run(
-      () => friendStore.updatePresence(normalizedUsername, isOnline),
+    final presence = await _fetchPeerPresenceSnapshot(
+      normalizedUsername,
+      action: 'connect',
     );
-    if (presence?.staleRawOnline == true) {
-      _recordRuntimeEvent(
-        category: 'presence',
-        name: 'backend_presence_stale_resolved_offline',
-        severity: 'warning',
-        message: 'Backend presence heartbeat is stale.',
-        context: <String, Object?>{
-          'peerId': normalizedUsername,
-          'action': 'connect',
-          ...presence!.toDiagnostics(),
-        },
-      );
-    }
+    final isOnline = presence?.online ?? false;
     if (!isOnline && !allowStalePresence) {
       _recordRuntimeEvent(
         category: 'connection',
@@ -1222,16 +1265,39 @@ class RainRuntimeController with WidgetsBindingObserver {
           continue;
         }
         try {
+          final presence = await _fetchPeerPresenceSnapshot(
+            peerId,
+            action: 'auto_recovery',
+          );
+          if (presence?.online != true) {
+            _recoverableDisconnectedPeers.remove(peerId);
+            _connectionCoordinator.recordDisconnectIntent(
+              peerId,
+              PeerDisconnectIntent.presenceExpired,
+            );
+            _recordRuntimeEvent(
+              category: 'connection',
+              name: 'auto_recovery_blocked_stale_presence',
+              severity: 'warning',
+              message: 'Peer is not freshly online; skipping recovery.',
+              context: <String, Object?>{
+                'peerId': peerId,
+                'presenceKnown': presence != null,
+                if (presence != null) ...presence.toDiagnostics(),
+              },
+            );
+            continue;
+          }
+          final confirmedPresence = presence!;
           _recordRuntimeEvent(
             category: 'connection',
             name: 'auto_recovery_started',
-            context: <String, Object?>{'peerId': peerId},
+            context: <String, Object?>{
+              'peerId': peerId,
+              ...confirmedPresence.toDiagnostics(),
+            },
           );
-          await connectPeer(
-            peerId,
-            allowStalePresence: true,
-            bypassRetryBackoff: true,
-          );
+          await connectPeer(peerId, bypassRetryBackoff: true);
         } catch (error) {
           _recordRuntimeEvent(
             category: 'connection',

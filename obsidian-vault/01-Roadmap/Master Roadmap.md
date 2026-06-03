@@ -138,12 +138,12 @@ Related: [[Project Home]], [[Current Architecture]], [[Audit Resolution Tracker]
 - Affected architecture: [[Presence Management]], [[Presence And Direct Connect]], [[Connection Request Notifications]]
 - Success criteria: Stale/offline peers cannot be called or direct-connected as online; offline request notification eligibility updates from fresh backend state.
 - Definition of done: Tests cover stale heartbeat, old session heartbeat, app close, network loss, and manual disconnect.
-- Progress 2026-06-03: Stale raw-online backend identity records are now resolved offline before local friend seeding, direct Connect, connection-request routing, or voice/video call start. Remaining subtasks still need session ownership/app-close and auto-recovery coverage.
+- Progress 2026-06-03: Stale raw-online backend identity records are now resolved offline before local friend seeding, direct Connect, connection-request routing, or voice/video call start. Phase 05 continuation now carries session metadata in backend identity snapshots, treats non-`online` presence state as offline, routes the chat Connect button through the shared fresh-presence resolver, blocks auto-recovery when backend presence is stale/offline, and preserves `presenceExpired` as a terminal peer intent until an explicit successful reconnect. Local Windows `friend_flow_test.dart` remains blocked before test logic by sqlite native asset resolution, so full app-close runtime proof still needs a working Drift test harness or CI evidence.
 - Subtasks:
   - [ ] TASK-006.1 Define freshness thresholds.
-  - [ ] TASK-006.2 Validate session-owned heartbeat behavior.
-  - [ ] TASK-006.3 Add runtime tests for app-close and stale-session cases.
-  - [ ] TASK-006.4 Update [[Presence Management]].
+  - [x] TASK-006.2 Validate session-owned heartbeat behavior.
+  - [ ] TASK-006.3 Add or run full app-close and stale-session cases under a working Drift/sqlite test harness.
+  - [x] TASK-006.4 Update [[Presence Management]].
 
 #### Feature SR-04: Watch Stream Resilience
 

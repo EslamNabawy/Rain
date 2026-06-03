@@ -218,6 +218,21 @@ No task is fully complete until the lesson check is done or explicitly marked "n
 - What caused delays: Call diagnostics were coupled to local session failure events, while Firebase terminal reconciliation was treated mainly as state cleanup.
 - What failed: Failed setup reports could say media failed without preserving the room transition path that proved whether the call reached ringing, accepted, connected, or terminal state.
 - What succeeded: Runtime now records bounded room status timelines per call, includes them in `VoiceCallDiagnostics`, and emits diagnostics from remote terminal-room failure reconciliation.
+
+### LESSON-20260603-013: UI Presence Checks Must Use The Runtime Resolver
+
+- Related task: [ROOT_CAUSE_ANALYSIS.md](../../ROOT_CAUSE_ANALYSIS.md) Phase 05 continuation
+- Related system: [[Presence Management]], [[Presence And Direct Connect]], [[Connection Request Notifications]]
+- Related risk/debt: R-003, R-016, R-020, TD-002
+- What was learned: Even after runtime Connect and call paths used heartbeat freshness, the chat Connect button still read raw `BackendIdentity.online` directly, which could route stale peers into direct Connect instead of offline request notification.
+- What caused delays: Presence truth was improved in runtime code before every UI action surface was audited for direct backend reads.
+- What failed: A widget-side online/offline split could bypass `lastHeartbeat` and `presence.state` checks.
+- What succeeded: The chat Connect action now calls the runtime fresh-presence resolver, and auto-recovery also requires fresh backend presence before reconnecting.
+- What should change: Any future UI action that branches on online/offline must call a shared resolver or typed presence snapshot, never raw `online`.
+- Pattern: UI shortcut bypassed runtime truth.
+- Follow-up improvement: Add a small widget/provider contract test once the local Drift/sqlite harness is fixed or run the full app runtime suite in CI.
+- Owner: Engineering
+- Status: Open
 - What should change: Any terminal-room reconciliation path that changes user-visible call state should also produce diagnostics if the call ends as failed.
 - Pattern: Diagnostics owned by thrower instead of state observer.
 - Follow-up improvement: Continue expanding failure taxonomy with ICE candidate counts, selected route, media track/renderer lifecycle, and first-frame evidence.

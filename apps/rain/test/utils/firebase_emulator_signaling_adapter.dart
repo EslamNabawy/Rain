@@ -358,7 +358,9 @@ class FirebaseEmulatorSignalingAdapter
         'lastSeen': now,
         'updatedAt': now,
         'sessionId': _sessionId,
+        'startedAt': now,
         'platform': 'flutter-test',
+        'state': online ? 'online' : 'offline',
       },
     );
   }
@@ -377,7 +379,21 @@ class FirebaseEmulatorSignalingAdapter
           _normalizedUsername(username),
         ]);
         if (value is! Map) return false;
-        return value['online'] == true;
+        final normalizedState = (value['state'] as String?)
+            ?.trim()
+            .toLowerCase();
+        final stateAllowsOnline =
+            normalizedState == null ||
+            normalizedState.isEmpty ||
+            normalizedState == 'online';
+        final lastHeartbeat = (value['lastHeartbeat'] as num?)?.toInt() ?? 0;
+        final ageMs = lastHeartbeat <= 0
+            ? null
+            : DateTime.now().millisecondsSinceEpoch - lastHeartbeat;
+        return value['online'] == true &&
+            stateAllowsOnline &&
+            ageMs != null &&
+            ageMs < 30000;
       },
     );
   }
@@ -426,6 +442,9 @@ class FirebaseEmulatorSignalingAdapter
       lastSeen: (presenceMap['lastSeen'] as num?)?.toInt() ?? 0,
       lastHeartbeat: (presenceMap['lastHeartbeat'] as num?)?.toInt() ?? 0,
       online: presenceMap['online'] == true,
+      presenceSessionId: presenceMap['sessionId'] as String?,
+      presenceStartedAt: (presenceMap['startedAt'] as num?)?.toInt(),
+      presenceState: presenceMap['state'] as String?,
     );
   }
 

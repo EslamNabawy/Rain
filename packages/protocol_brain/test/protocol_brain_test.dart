@@ -855,6 +855,36 @@ void main() {
       'uid': 'uid-1',
     });
   });
+
+  test('backend identity serializes optional presence session metadata', () {
+    const identity = BackendIdentity(
+      username: 'alice',
+      uid: 'uid-1',
+      displayName: 'Alice',
+      gender: null,
+      registeredAt: 1,
+      lastSeen: 2,
+      lastHeartbeat: 3,
+      online: true,
+      presenceSessionId: 'session-1',
+      presenceStartedAt: 4,
+      presenceState: 'online',
+    );
+
+    expect(identity.toFirebaseJson(), <String, Object?>{
+      'username': 'alice',
+      'displayName': 'Alice',
+      'gender': null,
+      'registeredAt': 1,
+      'lastSeen': 2,
+      'lastHeartbeat': 3,
+      'online': true,
+      'uid': 'uid-1',
+      'presenceSessionId': 'session-1',
+      'presenceStartedAt': 4,
+      'presenceState': 'online',
+    });
+  });
 }
 
 PeerConfig _fakePeerConfig() {

@@ -1114,6 +1114,9 @@ Map<String, Object?> _identitySummary(BackendIdentity identity) {
     'lastSeen': identity.lastSeen,
     'lastHeartbeat': identity.lastHeartbeat,
     'online': identity.online,
+    'presenceSessionId': identity.presenceSessionId,
+    'presenceStartedAt': identity.presenceStartedAt,
+    'presenceState': identity.presenceState,
     'hasUid': identity.uid.isNotEmpty,
   };
 }

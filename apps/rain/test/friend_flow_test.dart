@@ -12,6 +12,7 @@ import 'package:protocol_brain/protocol_brain.dart';
 import 'package:protocol_brain/protocol_brain.dart' as protocol;
 import 'package:protocol_brain/testing.dart';
 import 'package:rain/infrastructure/signaling/noop_signaling_adapter.dart';
+import 'package:rain/application/runtime/connection_attempt_coordinator.dart';
 import 'package:rain/application/runtime/rain_runtime_controller.dart';
 import 'package:rain/application/runtime/video_call_renderers.dart';
 import 'package:rain/application/runtime/voice_call_diagnostics.dart';
@@ -228,6 +229,33 @@ void main() {
         expect(friend?.isOnline, isFalse);
       },
     );
+
+    test('relationship sync treats offline session state as offline', () async {
+      final adapter = _OfflineStateOnlinePresenceNoopSignalingAdapter();
+      await adapter.register('bob', 'bobpw');
+      await adapter.upsertFriendship('alice', 'bob');
+      final runtime = RainRuntimeController(
+        selfIdentity: alice,
+        adapter: adapter,
+        brain: null,
+        database: db,
+        friendStore: FriendStore(db),
+        messageStore: MessageStore(db),
+        offlineQueueStore: OfflineQueueStore(db),
+        messageDeliveryService: MessageDeliveryService(
+          messageStore: MessageStore(db),
+          offlineQueueStore: OfflineQueueStore(db),
+        ),
+        friendRequestRefreshInterval: Duration.zero,
+      );
+      addTearDown(runtime.dispose);
+
+      await runtime.start();
+
+      final friend = await FriendStore(db).loadFriend('bob');
+      expect(friend?.state, FriendState.friend);
+      expect(friend?.isOnline, isFalse);
+    });
 
     test(
       'sendFriendRequest removes stale local friendship before sending a new request',
@@ -5862,6 +5890,57 @@ void main() {
       },
     );
 
+    test('network recovery does not reconnect offline peer', () async {
+      final adapter = NoopSignalingAdapter();
+      final brain = TestSessionManager();
+      await adapter.register('bob', 'bobpw');
+      await adapter.upsertFriendship('alice', 'bob');
+      await db
+          .into(db.friends)
+          .insert(
+            FriendsCompanion.insert(
+              username: 'bob',
+              displayName: 'Bob',
+              state: 'friend',
+              addedAt: 0,
+              online: const Value(true),
+            ),
+          );
+      final runtime = RainRuntimeController(
+        selfIdentity: alice,
+        adapter: adapter,
+        brain: brain,
+        database: db,
+        friendStore: FriendStore(db),
+        messageStore: MessageStore(db),
+        offlineQueueStore: OfflineQueueStore(db),
+        messageDeliveryService: MessageDeliveryService(
+          messageStore: MessageStore(db),
+          offlineQueueStore: OfflineQueueStore(db),
+        ),
+        friendRequestRefreshInterval: Duration.zero,
+        networkRecoveryDebounce: Duration.zero,
+      );
+      addTearDown(runtime.dispose);
+
+      await runtime.start();
+      await runtime.connectPeer('bob', interactive: true);
+      brain.markConnected('bob');
+
+      await adapter.setPresence('bob', false);
+      await runtime.handleNetworkLost('Network lost.');
+      await runtime.handleNetworkAvailable('Network restored.');
+      await pumpEventQueue();
+
+      expect(brain.connectedPeers, <String>['bob']);
+      expect(brain.getSession('bob'), isNull);
+      expect((await FriendStore(db).loadFriend('bob'))?.isOnline, isFalse);
+      expect(
+        runtime.connectionCoordinatorSnapshotFor('bob').disconnectIntent,
+        PeerDisconnectIntent.presenceExpired,
+      );
+    });
+
     test(
       'temporary transport loss shows reconnecting grace before failing call',
       () async {
@@ -7219,6 +7298,34 @@ class _StaleOnlinePresenceNoopSignalingAdapter extends NoopSignalingAdapter {
       lastSeen: now - staleHeartbeatAgeMs,
       lastHeartbeat: now - staleHeartbeatAgeMs,
       online: true,
+    );
+  }
+
+  @override
+  Stream<bool> watchPresence(String username) => const Stream<bool>.empty();
+}
+
+class _OfflineStateOnlinePresenceNoopSignalingAdapter
+    extends NoopSignalingAdapter {
+  @override
+  Future<BackendIdentity?> fetchIdentity(String username) async {
+    final identity = await super.fetchIdentity(username);
+    if (identity == null || identity.username != 'bob') {
+      return identity;
+    }
+    final now = DateTime.now().millisecondsSinceEpoch;
+    return BackendIdentity(
+      username: identity.username,
+      uid: identity.uid,
+      displayName: identity.displayName,
+      gender: identity.gender,
+      registeredAt: identity.registeredAt,
+      lastSeen: now,
+      lastHeartbeat: now,
+      online: true,
+      presenceSessionId: 'old-session',
+      presenceStartedAt: now - 1000,
+      presenceState: 'offline',
     );
   }
 

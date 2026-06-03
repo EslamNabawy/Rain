@@ -4019,9 +4019,12 @@ extension VoiceCallRuntime on RainRuntimeController {
     required CallMediaMode mediaMode,
   }) async {
     final normalizedPeerId = _normalizedUsername(peerId);
-    BackendIdentity? identity;
+    _ResolvedBackendPresence? presence;
     try {
-      identity = await adapter.fetchIdentity(normalizedPeerId);
+      presence = await _fetchPeerPresenceSnapshot(
+        normalizedPeerId,
+        action: 'callStart',
+      );
     } catch (error, stackTrace) {
       final decision = RuntimeInteractionGuard.presenceUnknown(
         peerId: normalizedPeerId,
@@ -4054,7 +4057,7 @@ extension VoiceCallRuntime on RainRuntimeController {
       );
     }
 
-    if (identity == null) {
+    if (presence == null) {
       final decision = RuntimeInteractionGuard.presenceUnknown(
         peerId: normalizedPeerId,
       );
@@ -4076,25 +4079,7 @@ extension VoiceCallRuntime on RainRuntimeController {
       );
     }
 
-    final presence = _resolveBackendPresence(identity);
     final peerOnline = presence.online;
-    await _localMutations.run(
-      () => friendStore.updatePresence(normalizedPeerId, peerOnline),
-    );
-    if (presence.staleRawOnline) {
-      _recordRuntimeEvent(
-        category: 'presence',
-        name: 'backend_presence_stale_resolved_offline',
-        severity: 'warning',
-        message: 'Backend presence heartbeat is stale.',
-        context: <String, Object?>{
-          'peerId': normalizedPeerId,
-          'mediaMode': mediaMode.name,
-          'action': 'callStart',
-          ...presence.toDiagnostics(),
-        },
-      );
-    }
     if (!peerOnline) {
       final decision = RuntimeInteractionGuard.peerOffline(
         peerId: normalizedPeerId,

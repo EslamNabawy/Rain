@@ -843,6 +843,15 @@ Tasks:
 - Connect/call/request guards must consume the same snapshot.
 - Presence expiration should reconcile connection state once, not repeatedly.
 
+Implementation status 2026-06-03:
+
+- Runtime fresh-presence resolution now evaluates backend `online`, `lastHeartbeat` age, and presence `state` through one 30 second app-side window.
+- Backend identity snapshots now carry presence `sessionId`, `startedAt`, and `state` for diagnostics and stale-session reasoning.
+- Local friend seeding, runtime Connect, chat Connect routing, connection-request routing, voice/video call start, and network auto-recovery now consume the shared resolver instead of raw `BackendIdentity.online`.
+- Network auto-recovery removes stale/offline peers from the recoverable set and records `PeerDisconnectIntent.presenceExpired` instead of reconnecting through stale presence.
+- `presenceExpired` stays as a terminal peer intent until a later successful explicit reconnect, preserving the peer-closed reason for UI/diagnostics.
+- Full app-close runtime proof is still pending because local Windows `friend_flow_test.dart` fails before test logic on sqlite native asset resolution.
+
 Exit criteria:
 
 - No action can start from an online snapshot that expires in the same decision window.

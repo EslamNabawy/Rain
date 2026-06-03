@@ -15,6 +15,10 @@ class NoopSignalingAdapter implements SignalingAdapter {
       <String, StreamController<String>>{};
   final Map<String, StreamController<String>> _relationshipControllers =
       <String, StreamController<String>>{};
+  final String _sessionId = DateTime.now().microsecondsSinceEpoch.toRadixString(
+    36,
+  );
+  final int _sessionStartedAt = DateTime.now().millisecondsSinceEpoch;
 
   String _normalizedUsername(String username) {
     return username.trim().toLowerCase();
@@ -65,6 +69,9 @@ class NoopSignalingAdapter implements SignalingAdapter {
       lastSeen: DateTime.now().millisecondsSinceEpoch,
       lastHeartbeat: DateTime.now().millisecondsSinceEpoch,
       online: true,
+      presenceSessionId: _sessionId,
+      presenceStartedAt: _sessionStartedAt,
+      presenceState: 'online',
     );
     _presence[username] = true;
     return uid;
@@ -96,6 +103,9 @@ class NoopSignalingAdapter implements SignalingAdapter {
       lastSeen: identity.lastSeen,
       lastHeartbeat: identity.lastHeartbeat,
       online: isOnline,
+      presenceSessionId: identity.presenceSessionId,
+      presenceStartedAt: identity.presenceStartedAt,
+      presenceState: isOnline ? 'online' : 'offline',
     );
   }
 
@@ -248,6 +258,9 @@ class NoopSignalingAdapter implements SignalingAdapter {
         lastSeen: existing.lastSeen,
         lastHeartbeat: DateTime.now().millisecondsSinceEpoch,
         online: online,
+        presenceSessionId: _sessionId,
+        presenceStartedAt: _sessionStartedAt,
+        presenceState: online ? 'online' : 'offline',
       );
     }
     _presenceController(normalizedUsername).add(online);

@@ -1582,9 +1582,10 @@ class _ChatPanelState extends ConsumerState<_ChatPanel> {
     setState(() => _isConnecting = true);
     bool? isPeerOnline;
     try {
-      isPeerOnline = (await runtime.adapter.fetchIdentity(
+      isPeerOnline = await runtime.isPeerFreshlyOnline(
         widget.peerId,
-      ))?.online;
+        action: 'chat_connect_button',
+      );
     } catch (_) {
       isPeerOnline = null;
     } finally {
@@ -1607,10 +1608,6 @@ class _ChatPanelState extends ConsumerState<_ChatPanel> {
     }
     if (isPeerOnline) {
       await _connectDirectlyToPeer();
-      return;
-    }
-    if (friend?.isOnline == true) {
-      await _connectDirectlyToPeer(allowStalePresence: true);
       return;
     }
 

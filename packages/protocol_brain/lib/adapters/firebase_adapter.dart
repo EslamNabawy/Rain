@@ -1545,6 +1545,9 @@ class FirebaseSignalingAdapter
       lastSeen: (presence['lastSeen'] as num?)?.toInt() ?? 0,
       lastHeartbeat: lastHeartbeat,
       online: online,
+      presenceSessionId: presence['sessionId'] as String?,
+      presenceStartedAt: (presence['startedAt'] as num?)?.toInt(),
+      presenceState: presence['state'] as String?,
     );
     return identity;
   }
@@ -2083,12 +2086,17 @@ class FirebaseSignalingAdapter
 
     bool? lastEmitted;
 
-    void emitPresence(bool online, int lastHeartbeat) {
+    void emitPresence(bool online, int lastHeartbeat, String? state) {
       expiryTimer?.cancel();
       expiryTimer = null;
       final now = DateTime.now().millisecondsSinceEpoch;
       final expiresIn = _presenceTimeoutMs - (now - lastHeartbeat);
-      final isActuallyOnline = online && expiresIn > 0;
+      final normalizedState = state?.trim().toLowerCase();
+      final stateAllowsOnline =
+          normalizedState == null ||
+          normalizedState.isEmpty ||
+          normalizedState == 'online';
+      final isActuallyOnline = online && stateAllowsOnline && expiresIn > 0;
       if (lastEmitted != isActuallyOnline && !controller.isClosed) {
         lastEmitted = isActuallyOnline;
         controller.add(isActuallyOnline);
@@ -2096,20 +2104,21 @@ class FirebaseSignalingAdapter
       if (isActuallyOnline) {
         expiryTimer = Timer(
           Duration(milliseconds: expiresIn),
-          () => emitPresence(online, lastHeartbeat),
+          () => emitPresence(online, lastHeartbeat, state),
         );
       }
     }
 
     presenceSub = presenceRef.onValue.listen((DatabaseEvent event) {
       if (event.snapshot.value is! Map<Object?, Object?>) {
-        emitPresence(false, 0);
+        emitPresence(false, 0, null);
         return;
       }
       final value = event.snapshot.value! as Map<Object?, Object?>;
       emitPresence(
         value['online'] as bool? ?? false,
         (value['lastHeartbeat'] as num?)?.toInt() ?? 0,
+        value['state'] as String?,
       );
     });
 

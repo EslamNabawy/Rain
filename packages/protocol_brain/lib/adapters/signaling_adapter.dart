@@ -96,6 +96,9 @@ class BackendIdentity {
     required this.lastSeen,
     required this.lastHeartbeat,
     required this.online,
+    this.presenceSessionId,
+    this.presenceStartedAt,
+    this.presenceState,
   });
 
   final String username;
@@ -106,6 +109,9 @@ class BackendIdentity {
   final int lastSeen;
   final int lastHeartbeat;
   final bool online;
+  final String? presenceSessionId;
+  final int? presenceStartedAt;
+  final String? presenceState;
 
   Map<String, Object?> toFirebaseJson() {
     return <String, Object?>{
@@ -117,6 +123,9 @@ class BackendIdentity {
       'lastHeartbeat': lastHeartbeat,
       'online': online,
       'uid': uid,
+      if (presenceSessionId != null) 'presenceSessionId': presenceSessionId,
+      if (presenceStartedAt != null) 'presenceStartedAt': presenceStartedAt,
+      if (presenceState != null) 'presenceState': presenceState,
     };
   }
 }
