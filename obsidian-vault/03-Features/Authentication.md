@@ -47,7 +47,8 @@ Target architecture: an `AuthSessionCoordinator` must own session discovery, Fir
 - 2026-06-03 Phase 2: Deterministic logout/reset now clears local session before best-effort backend sign-out. Tests cover `adapter.signOut()` failure and logout arriving after app-exit shutdown has already started.
 - 2026-06-03 Phase 3: `AppStartupState` centralizes update/session/runtime readiness and route refresh behavior.
 - 2026-06-03 Phase 4: `RainApp` renders `RainStartupSurface` globally above routed content while startup is loading, update-blocked, failed, or session-expired, preventing normal navigation shell insertion during those phases.
-- Remaining: explicit `AuthSessionCoordinator`, protected-route gating, account deletion workflow, and session-scoped provider disposal.
+- 2026-06-03 Phase 5: protected route readiness now uses `AppStartupState.canRenderProtectedRoutes`, route-local guards for settings/search/friend pages, and redirect-to-root behavior for unresolved protected paths. Signed-out auth renders outside the app shell through a standalone Navigator/Overlay.
+- Remaining: explicit `AuthSessionCoordinator`, account deletion workflow, and session-scoped provider disposal.
 
 ## Dependencies
 

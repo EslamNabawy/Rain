@@ -21,10 +21,6 @@ class RootScreen extends ConsumerWidget {
     final environment = ref.watch(appEnvironmentProvider);
     final startup = ref.watch(appStartupStateProvider);
 
-    if (startup.blocksRoutedSurface) {
-      return RainStartupSurface(state: startup);
-    }
-
     return switch (startup.phase) {
       AppStartupPhase.signedOut => _withBanners(
         ref: ref,

@@ -8,6 +8,7 @@ import 'package:rain/presentation/screens/friend_profile_screen.dart';
 import 'package:rain/presentation/screens/root_screen.dart';
 import 'package:rain/presentation/screens/search_screen.dart';
 import 'package:rain/presentation/screens/settings_screen.dart';
+import 'package:rain/presentation/screens/startup_surface.dart';
 import 'package:rain/presentation/theme/rain_theme.dart';
 import 'rain_navigation_shell.dart';
 
@@ -43,17 +44,7 @@ final appRouterProvider = Provider<GoRouter>((Ref ref) {
     refreshListenable: refreshListenable,
     redirect: (BuildContext context, GoRouterState state) {
       final startup = ref.read(appStartupStateProvider);
-      if (startup.isLoading) {
-        return state.uri.path == '/' ? null : '/';
-      }
-      final mustUseRoot =
-          startup.phase == AppStartupPhase.signedOut ||
-          startup.phase == AppStartupPhase.updateRequired ||
-          startup.phase == AppStartupPhase.failed;
-      if (mustUseRoot && state.uri.path != '/') {
-        return '/';
-      }
-      return null;
+      return appStartupRedirectForPath(startup, state.uri.path);
     },
     routes: <RouteBase>[
       ShellRoute(
@@ -81,13 +72,13 @@ final appRouterProvider = Provider<GoRouter>((Ref ref) {
             path: '/settings',
             name: AppRoutes.settings,
             pageBuilder: (BuildContext context, GoRouterState state) =>
-                _rainPage(state, const SettingsScreen()),
+                _protectedRainPage(state, const SettingsScreen()),
           ),
           GoRoute(
             path: '/search',
             name: AppRoutes.search,
             pageBuilder: (BuildContext context, GoRouterState state) =>
-                _rainPage(state, const SearchScreen()),
+                _protectedRainPage(state, const SearchScreen()),
           ),
           GoRoute(
             path: '/friend/:username',
@@ -97,7 +88,7 @@ final appRouterProvider = Provider<GoRouter>((Ref ref) {
               final friend = state.extra is FriendRecord
                   ? state.extra! as FriendRecord
                   : null;
-              return _rainPage(
+              return _protectedRainPage(
                 state,
                 FriendProfileScreen(username: username, initialFriend: friend),
               );
@@ -109,12 +100,28 @@ final appRouterProvider = Provider<GoRouter>((Ref ref) {
   );
 });
 
+@visibleForTesting
+String? appStartupRedirectForPath(AppStartupState startup, String path) {
+  final normalizedPath = path.isEmpty ? '/' : path;
+  if (!startup.canRenderProtectedRoutes && normalizedPath != '/') {
+    return '/';
+  }
+  return null;
+}
+
 class _RouterRefreshNotifier extends ChangeNotifier {
   _RouterRefreshNotifier(Ref ref) {
     ref.listen<AppStartupState>(appStartupStateProvider, (_, _) {
       notifyListeners();
     });
   }
+}
+
+CustomTransitionPage<void> _protectedRainPage(
+  GoRouterState state,
+  Widget child,
+) {
+  return _rainPage(state, _ProtectedRouteGate(child: child));
 }
 
 CustomTransitionPage<void> _rainPage(GoRouterState state, Widget child) {
@@ -149,6 +156,24 @@ CustomTransitionPage<void> _rainPage(GoRouterState state, Widget child) {
           );
         },
   );
+}
+
+class _ProtectedRouteGate extends ConsumerWidget {
+  const _ProtectedRouteGate({required this.child});
+
+  final Widget child;
+
+  @override
+  Widget build(BuildContext context, WidgetRef ref) {
+    final startup = ref.watch(appStartupStateProvider);
+    if (startup.canRenderProtectedRoutes) {
+      return child;
+    }
+    if (startup.phase == AppStartupPhase.signedOut) {
+      return const RootScreen();
+    }
+    return RainStartupSurface(state: startup);
+  }
 }
 
 class AppRoutes {

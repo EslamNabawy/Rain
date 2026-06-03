@@ -14,7 +14,10 @@ import 'package:rain/infrastructure/services/network_status_service.dart';
 import 'package:rain/infrastructure/signaling/noop_signaling_adapter.dart';
 import 'package:rain/presentation/navigation/app_routes.dart';
 import 'package:rain/presentation/navigation/rain_navigation_shell.dart';
+import 'package:rain/presentation/screens/friend_profile_screen.dart';
 import 'package:rain/presentation/screens/rain_app.dart';
+import 'package:rain/presentation/screens/search_screen.dart';
+import 'package:rain/presentation/screens/settings_screen.dart';
 import 'package:rain/presentation/screens/splash_screen.dart';
 import 'package:rain_core/rain_core.dart';
 
@@ -158,6 +161,53 @@ void main() {
     expect(startup.showNavigation, isFalse);
   });
 
+  test('startup redirect blocks protected routes until ready', () async {
+    final update = const ForceUpdateResult(
+      status: ForceUpdateStatus.current,
+      currentVersion: '1.0.0',
+      minVersion: '1.0.0',
+      updateUrl: 'https://example.com',
+    );
+    final identity = const RainIdentity(
+      username: 'alice',
+      displayName: 'Alice',
+      createdAt: 1,
+      gender: null,
+    );
+
+    expect(
+      appStartupRedirectForPath(
+        AppStartupState.validatingSession(updateResult: update),
+        '/settings',
+      ),
+      '/',
+    );
+    expect(
+      appStartupRedirectForPath(
+        AppStartupState.signedOut(updateResult: update),
+        '/search',
+      ),
+      '/',
+    );
+    expect(
+      appStartupRedirectForPath(
+        AppStartupState.startingRuntime(
+          updateResult: update,
+          identity: identity,
+        ),
+        '/friend/bob',
+      ),
+      '/',
+    );
+    expect(
+      appStartupRedirectForPath(
+        AppStartupState.ready(updateResult: update, identity: identity),
+        '/settings',
+      ),
+      isNull,
+    );
+  });
+
   test('startup state reconciles expired sessions before home', () async {
     final db = RainDatabase(NativeDatabase.memory());
     addTearDown(db.close);
@@ -212,6 +262,83 @@ void main() {
       expect(find.byType(NavigationRail), findsNothing);
     },
   );
+
+  testWidgets('signed-out state renders auth flow without app shell', (
+    WidgetTester tester,
+  ) async {
+    tester.view.physicalSize = const Size(390, 800);
+    tester.view.devicePixelRatio = 1;
+    addTearDown(tester.view.resetPhysicalSize);
+    addTearDown(tester.view.resetDevicePixelRatio);
+
+    final db = RainDatabase(NativeDatabase.memory());
+    addTearDown(db.close);
+
+    await tester.pumpWidget(_signedOutScope(db, child: const RainApp()));
+    await tester.pump();
+    await tester.pump(const Duration(milliseconds: 50));
+
+    expect(find.text('Create account'), findsOneWidget);
+    expect(find.byType(RainNavigationShell), findsNothing);
+    expect(find.byType(NavigationBar), findsNothing);
+    expect(find.byType(NavigationRail), findsNothing);
+  });
+
+  testWidgets('protected routes do not render while runtime is loading', (
+    WidgetTester tester,
+  ) async {
+    tester.view.physicalSize = const Size(390, 800);
+    tester.view.devicePixelRatio = 1;
+    addTearDown(tester.view.resetPhysicalSize);
+    addTearDown(tester.view.resetDevicePixelRatio);
+
+    final db = RainDatabase(NativeDatabase.memory());
+    addTearDown(db.close);
+    final container = _runtimeLoadingContainer(db);
+    addTearDown(container.dispose);
+
+    await tester.pumpWidget(
+      UncontrolledProviderScope(container: container, child: const RainApp()),
+    );
+    await tester.pump();
+    container.read(appRouterProvider).go('/settings');
+    await tester.pump();
+    await tester.pump();
+
+    expect(find.byType(RainSplashScreen), findsOneWidget);
+    expect(find.byType(SettingsScreen), findsNothing);
+    expect(find.byType(SearchScreen), findsNothing);
+    expect(find.byType(FriendProfileScreen), findsNothing);
+    expect(find.byType(RainNavigationShell), findsNothing);
+  });
+
+  testWidgets('protected routes do not render while signed out', (
+    WidgetTester tester,
+  ) async {
+    tester.view.physicalSize = const Size(390, 800);
+    tester.view.devicePixelRatio = 1;
+    addTearDown(tester.view.resetPhysicalSize);
+    addTearDown(tester.view.resetDevicePixelRatio);
+
+    final db = RainDatabase(NativeDatabase.memory());
+    addTearDown(db.close);
+    final container = _signedOutContainer(db);
+    addTearDown(container.dispose);
+
+    await tester.pumpWidget(
+      UncontrolledProviderScope(container: container, child: const RainApp()),
+    );
+    await tester.pump();
+    container.read(appRouterProvider).go('/search');
+    await tester.pump();
+    await tester.pump(const Duration(milliseconds: 50));
+
+    expect(find.text('Create account'), findsOneWidget);
+    expect(find.byType(SettingsScreen), findsNothing);
+    expect(find.byType(SearchScreen), findsNothing);
+    expect(find.byType(FriendProfileScreen), findsNothing);
+    expect(find.byType(RainNavigationShell), findsNothing);
+  });
 
   testWidgets('required update blocks the routed shell globally', (
     WidgetTester tester,
@@ -285,6 +412,21 @@ ProviderContainer _runtimeSettledContainer(RainDatabase db) {
   );
 }
 
+ProviderContainer _signedOutContainer(RainDatabase db) {
+  return ProviderContainer(
+    overrides: [
+      appBootstrapProvider.overrideWithValue(_bootstrap(db, fallback: false)),
+      networkStatusProvider.overrideWith(
+        (Ref ref) =>
+            Stream<NetworkStatusState>.value(const NetworkStatusState.online()),
+      ),
+      forceUpdateProvider.overrideWith(_ReadyForceUpdateController.new),
+      identityProvider.overrideWith(_SignedOutIdentityController.new),
+      runtimeControllerProvider.overrideWith(_LoadingRuntimeController.new),
+    ],
+  );
+}
+
 ProviderScope _runtimeLoadingScope(RainDatabase db, {required Widget child}) {
   return ProviderScope(
     overrides: [
@@ -295,6 +437,22 @@ ProviderScope _runtimeLoadingScope(RainDatabase db, {required Widget child}) {
       ),
       forceUpdateProvider.overrideWith(_ReadyForceUpdateController.new),
       identityProvider.overrideWith(_SignedInIdentityController.new),
+      runtimeControllerProvider.overrideWith(_LoadingRuntimeController.new),
+    ],
+    child: child,
+  );
+}
+
+ProviderScope _signedOutScope(RainDatabase db, {required Widget child}) {
+  return ProviderScope(
+    overrides: [
+      appBootstrapProvider.overrideWithValue(_bootstrap(db, fallback: false)),
+      networkStatusProvider.overrideWith(
+        (Ref ref) =>
+            Stream<NetworkStatusState>.value(const NetworkStatusState.online()),
+      ),
+      forceUpdateProvider.overrideWith(_ReadyForceUpdateController.new),
+      identityProvider.overrideWith(_SignedOutIdentityController.new),
       runtimeControllerProvider.overrideWith(_LoadingRuntimeController.new),
     ],
     child: child,
@@ -333,10 +491,12 @@ ProviderScope _failedUpdateScope(RainDatabase db, {required Widget child}) {
   );
 }
 
-AppBootstrapState _bootstrap(RainDatabase db) {
+AppBootstrapState _bootstrap(RainDatabase db, {bool fallback = true}) {
   return AppBootstrapState(
     environment: AppEnvironment.fromEnvironment(
-      runtimeEnvironment: const <String, String>{'RAIN_BACKEND': 'noop'},
+      runtimeEnvironment: fallback
+          ? const <String, String>{'RAIN_BACKEND': 'noop'}
+          : const <String, String>{'RAIN_BACKEND': 'firebase'},
     ),
     database: db,
     adapter: NoopSignalingAdapter(),

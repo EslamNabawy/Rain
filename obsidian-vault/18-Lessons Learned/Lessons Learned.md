@@ -310,7 +310,22 @@ No task is fully complete until the lesson check is done or explicitly marked "n
 - What succeeded: `RainApp` now uses `MaterialApp.router.builder` to render `RainStartupSurface` instead of the routed child whenever `AppStartupState.blocksRoutedSurface` is true, and tests prove blocked startup states do not insert `RainNavigationShell`.
 - What should change: Future protected-route work should build on the global gate instead of adding more route-local splash checks.
 - Pattern: Route-local loading screens cannot prove app-global readiness.
-- Follow-up improvement: Phase 5 should harden protected route availability and stale route state after the global visual gate.
+- Follow-up improvement: Phase 5 hardened protected route availability; Phase 6 should harden session-scoped provider lifecycle after the global visual gate.
+- Owner: Engineering
+- Status: Open
+
+### LESSON-20260603-019: Protected Routes Need Both Redirects And Local Guards
+
+- Related task: Auth/startup remediation Phase 5
+- Related system: [[Authentication]], [[Frontend Architecture]], [[Project Memory]]
+- Related risk/debt: R-022, TD-022, BLK-010
+- What was learned: A router redirect is necessary but not sufficient for protected navigation readiness. Protected pages also need a route-local guard because stale route state or delayed refreshes can still build a page widget during startup transitions.
+- What caused delays: Signed-out auth needed to render outside the normal shell, but rendering it directly from `MaterialApp.router.builder` removed the Navigator/Overlay subtree required by tooltips and other overlay-aware widgets.
+- What failed: Treating signed-out auth exactly like a splash surface created an overlay boundary bug in tests.
+- What succeeded: `AppStartupState.canRenderProtectedRoutes` makes the contract explicit, protected settings/search/friend pages use `_ProtectedRouteGate`, unresolved protected paths redirect to `/`, and signed-out auth gets a standalone Navigator/Overlay without inserting `RainNavigationShell`.
+- What should change: Future protected features should expose one readiness predicate and use both router-level redirects and widget-level guards when stale navigation state can exist.
+- Pattern: Navigation protection needs defense in depth.
+- Follow-up improvement: Phase 6 should scope account-owned providers so guarded routes cannot retain stale provider state after logout/login or session reset.
 - Owner: Engineering
 - Status: Open
 

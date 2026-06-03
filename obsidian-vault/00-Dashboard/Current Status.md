@@ -39,6 +39,7 @@ Last updated: 2026-06-03
 - 2026-06-03 auth Phase 2 mitigation: logout now clears local Drift session data before best-effort backend sign-out, ignores backend sign-out failure after local clear, handles logout after a previous app-exit shutdown, and invalidates session-scoped Riverpod providers from a `finally` path. Protected-route readiness and session-scoped provider architecture remain open.
 - 2026-06-03 auth Phase 3 mitigation: startup readiness now has one typed state machine. `AppStartupState` drives root screen rendering, shell navigation visibility, and router refresh/redirect logic for update loading, required update, session validation, signed-out, runtime loading, ready, session-expired, and failed states.
 - 2026-06-03 auth Phase 4 mitigation: `RainApp` now owns a global `RainStartupSurface` above routed content. Loading, required-update, failed, and session-expired phases do not insert `RainNavigationShell`, bottom navigation, or rail, and `RootScreen` reuses the same surface for route-local consistency. Protected-route hardening and session-scoped provider architecture remain open.
+- 2026-06-03 auth Phase 5 mitigation: protected navigation readiness is now explicit. Settings/search/friend routes cannot render protected content until startup is ready, stale protected paths redirect to `/`, signed-out auth renders outside the app shell with a standalone Navigator/Overlay, and route tests cover runtime-loading and signed-out protected-route attempts. Session-scoped provider architecture remains open.
 
 ## Documentation Status
 

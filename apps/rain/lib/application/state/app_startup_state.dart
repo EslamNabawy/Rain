@@ -132,15 +132,11 @@ class AppStartupState {
 
   bool get showNavigation => phase == AppStartupPhase.ready;
 
-  bool get blocksRoutedSurface => switch (phase) {
-    AppStartupPhase.checkingUpdate ||
-    AppStartupPhase.updateRequired ||
-    AppStartupPhase.validatingSession ||
-    AppStartupPhase.startingRuntime ||
-    AppStartupPhase.sessionExpired ||
-    AppStartupPhase.failed => true,
-    AppStartupPhase.signedOut || AppStartupPhase.ready => false,
-  };
+  bool get canRenderProtectedRoutes => phase == AppStartupPhase.ready;
+
+  bool get usesRoutedAppShell => phase == AppStartupPhase.ready;
+
+  bool get blocksRoutedSurface => !usesRoutedAppShell;
 
   bool get isLoading => switch (phase) {
     AppStartupPhase.checkingUpdate ||

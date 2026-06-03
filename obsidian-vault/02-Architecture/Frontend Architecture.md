@@ -27,15 +27,16 @@ Important provider domains:
 
 - `AppStartupState` is the single UI-facing startup readiness contract for update checks, identity validation, runtime startup, session-expired reset, failures, and ready state.
 - `RainApp` owns the global visual startup gate. Its `MaterialApp.router.builder` replaces routed content with `RainStartupSurface` whenever `AppStartupState.blocksRoutedSurface` is true.
+- `RainApp` renders signed-out auth through a standalone Navigator/Overlay while `usesRoutedAppShell` is false, so sign-in widgets can use tooltips/overlays without inserting `RainNavigationShell`.
 - `RootScreen` reuses the same `RainStartupSurface` for route-local consistency, but `/` no longer owns the only startup splash/update/error surfaces.
 - `RainNavigationShell` must not be inserted while startup is loading, update-blocked, failed, or session-expired.
-- Protected-route readiness hardening remains a later phase: settings/search/friend routes still need stronger guarantees against stale route state once auth/runtime readiness changes.
+- Protected route readiness is now explicit through `AppStartupState.canRenderProtectedRoutes`. Settings/search/friend pages are wrapped in a route-local guard, and unresolved protected paths redirect to `/` before protected content can render.
 
 ## UI Risks
 
 - Large screens such as `home_screen.dart`, `settings_screen.dart`, and `chat_panel.dart` carry too much behavior.
 - Call UI has gone through multiple iterations and must keep one source of truth for surface mode and controls.
 - Safe-area behavior is critical on Android call overlays.
-- Protected route state can still need hardening after the global startup visual gate.
+- Session-scoped provider lifecycle still needs hardening after the global startup and protected-route gates.
 
 Related: [[Branding And UI]], [[Voice Calls]], [[Video Calls]], [[UI State Map]].

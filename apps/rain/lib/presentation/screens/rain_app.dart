@@ -1,8 +1,9 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
-import 'package:rain/presentation/navigation/app_routes.dart';
 import 'package:rain/application/state/app_providers.dart';
+import 'package:rain/presentation/navigation/app_routes.dart';
+import 'package:rain/presentation/screens/root_screen.dart';
 import 'package:rain/presentation/screens/startup_surface.dart';
 import 'package:rain/presentation/theme/rain_theme.dart';
 
@@ -23,10 +24,42 @@ class RainApp extends ConsumerWidget {
       darkTheme: RainTheme.dark(),
       routerConfig: router,
       builder: (BuildContext context, Widget? child) {
-        if (startup.blocksRoutedSurface) {
+        if (!startup.usesRoutedAppShell) {
+          if (startup.phase == AppStartupPhase.signedOut) {
+            return _StandaloneSurfaceNavigator(child: const RootScreen());
+          }
           return RainStartupSurface(state: startup);
         }
         return child ?? const SizedBox.shrink();
+      },
+    );
+  }
+}
+
+class _StandaloneSurfaceNavigator extends StatelessWidget {
+  const _StandaloneSurfaceNavigator({required this.child});
+
+  final Widget child;
+
+  @override
+  Widget build(BuildContext context) {
+    return Navigator(
+      onGenerateRoute: (_) {
+        return PageRouteBuilder<void>(
+          pageBuilder:
+              (
+                BuildContext context,
+                Animation<double> animation,
+                Animation<double> secondaryAnimation,
+              ) => child,
+          transitionsBuilder:
+              (
+                BuildContext context,
+                Animation<double> animation,
+                Animation<double> secondaryAnimation,
+                Widget child,
+              ) => child,
+        );
       },
     );
   }

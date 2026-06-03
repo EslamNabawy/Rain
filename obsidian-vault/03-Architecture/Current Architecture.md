@@ -299,7 +299,8 @@ Main app dependencies discovered from `apps/rain/pubspec.yaml`:
 7. `AppBootstrapper.bootstrap()` creates `RainDatabase`, initializes Firebase when enabled, creates signaling cipher, selects Firebase or noop adapter, wraps adapter with debug logging, creates `ForceUpdateService`, and optionally seeds smoke identity.
 8. `ProviderScope` receives bootstrap overrides and starts `RainApp`.
 9. `AppStartupState` composes Remote Config update status, validated local/backend identity, runtime startup, session-expired reset, failed, and ready phases.
-10. `RainApp` owns the global startup surface. While `AppStartupState.blocksRoutedSurface` is true, `MaterialApp.router.builder` renders `RainStartupSurface` instead of the routed child, so `RainNavigationShell` and normal app chrome are not inserted during loading, required-update, failed, or session-expired startup.
+10. `RainApp` owns the global startup surface. While `AppStartupState.usesRoutedAppShell` is false, `MaterialApp.router.builder` prevents the normal shell from rendering. Loading, required-update, failed, and session-expired states render `RainStartupSurface`; signed-out auth renders through a standalone Navigator/Overlay.
+11. Protected route readiness is explicit. `AppStartupState.canRenderProtectedRoutes` is true only for `ready`; settings/search/friend routes redirect to `/` while unresolved and are also wrapped by a route-local guard that renders the startup/auth surface instead of protected content.
 
 ### Authentication And Identity Flow
 
