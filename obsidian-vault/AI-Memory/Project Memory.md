@@ -255,6 +255,7 @@ Completed foundation phases:
 - Phase 2 - Repository Discovery.
 - Phase 3 - Project Memory Generation.
 - Phase 4 - Audit to Roadmap Conversion.
+- Phase 5 - Technical Debt System.
 
 Current roadmap source:
 
@@ -267,10 +268,12 @@ Current roadmap source:
 - [[Launch Blockers]]
 - [[Quick Wins]]
 - [[High-Risk Work]]
+- [[Technical Debt Register]]
+- [[Debt Categories]]
+- [[Debt Prioritization]]
 
 Next expected phases:
 
-- Phase 5 - Technical Debt System.
 - Phase 6 - Risk and Blocker Intelligence.
 - Phase 7 - Architecture Refactor Planning.
 - Phase 8 - Self-Improvement Engine.

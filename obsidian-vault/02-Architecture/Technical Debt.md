@@ -1,27 +1,42 @@
 # Technical Debt
 
-Technical debt score: 72/100 risk.
+Last updated: 2026-06-03
 
-## Critical Debt
+## Purpose
 
-- `VoiceCallRuntime` is a god object.
-- `RainRuntimeController` owns many unrelated workflows.
-- Firebase call lock lifecycle is too distributed.
-- Call UI and runtime state names blur signaling and media phases.
+This architecture note summarizes debt that affects system shape. The detailed management system lives in [[Technical Debt Register]].
 
-## High Debt
+Related: [[Debt Categories]], [[Debt Prioritization]], [[Architecture Debt]], [[Scalability Debt]], [[Security Debt]], [[Performance Debt]], [[Testing Debt]], [[DevOps Debt]], [[UX Debt]].
 
-- Missing Drift indexes.
-- Conversation streams are not paginated.
-- File transfer chunk handling causes allocation and I/O pressure.
-- Firebase rules are too complex to reason about without exhaustive emulator tests.
-- Update validation accepts malformed versions too easily.
+## Current Debt Score
 
-## Medium Debt
+- Current debt risk score: 72/100.
+- Target before public release: 30/100 or lower.
+- P0 debt items: 7.
+- P1 debt items: 10.
+- P2 debt items: 3.
 
-- Weak analyzer settings.
-- Duplicated CI workflow logic.
-- Large presentation files make UI regressions likely.
-- Diagnostics error strings need stronger sanitization.
+## Critical Architecture Debt
 
-Related: [[Prioritized Remediation Roadmap]], [[Open Bugs]], [[Launch Readiness]].
+- TD-001: `VoiceCallRuntime` is oversized and must be split through [[VoiceCallRuntime Refactor]].
+- TD-003: Call lease and terminal state ownership is distributed across Firebase, runtime, and session paths.
+- TD-004: Call phases need one explicit [[Call State Machine]].
+- TD-005: Call UI surfaces need one rendering contract.
+
+## Systemic Debt Themes
+
+- Runtime ownership is too concentrated.
+- Firebase signaling rules and leases need stronger proof.
+- Local data and file transfers need bounded growth behavior.
+- Diagnostics need to explain failures without exposing private payloads.
+- Release workflows need hard gate parity.
+- UI and provider boundaries need performance validation.
+
+## Execution Links
+
+- Register: [[Technical Debt Register]]
+- Prioritization: [[Debt Prioritization]]
+- Roadmap: [[Master Roadmap]]
+- Critical path: [[Critical Path]]
+- Launch blockers: [[Launch Blockers]]
+- High-risk work: [[High-Risk Work]]

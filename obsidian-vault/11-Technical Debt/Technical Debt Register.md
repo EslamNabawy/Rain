@@ -4,27 +4,427 @@ Last updated: 2026-06-03
 
 ## Purpose
 
-This register turns audit findings from [[Original Audit]] into owned debt items connected to [[Master Roadmap]], [[Epic Index]], and [[Audit Resolution Tracker]].
+This register converts [[Original Audit]], [[Current Architecture]], and [[Master Roadmap]] into a technical debt management system.
 
-## Debt Items
+Debt is not a complaint list. Each item has a category, cost, priority, affected files, related systems, and a resolution strategy tied to roadmap tasks.
 
-| ID | Debt | Severity | Source | Resolution Path | Status |
-| --- | --- | --- | --- | --- | --- |
-| TD-001 | Oversized voice/video runtime mixes presence, leases, media, diagnostics, and UI state mutation. | Critical | [[Original Audit]] | [[VoiceCallRuntime Refactor]], [[Architecture Stabilization Epic]] | [ ] Open |
-| TD-002 | Call lease and terminal state logic is not isolated enough to prove no false busy or stale call state. | Critical | [[Original Audit]] | [[CallLeaseManager]], [[CallTerminalReconciler]] | [ ] Open |
-| TD-003 | Presence freshness and session ownership are shared across UI, connect, call, and request flows without a single canonical adapter contract. | High | [[Original Audit]] | [[Presence Management]], [[Signaling Reliability Epic]] | [ ] Open |
-| TD-004 | Firebase RTDB rules and emulator coverage lag behind app behavior. | Critical | [[Original Audit]] | [[Rules Strategy]], [[Emulator Coverage]] | [ ] Open |
-| TD-005 | Call diagnostics have improved but still need one taxonomy that can explain permission, Firebase, ICE, TURN, and media failures separately. | High | [[Original Audit]] | [[CallDiagnosticsRecorder]], [[Diagnostics Sanitization]] | [ ] Open |
-| TD-006 | File transfer uses WebRTC data channels but needs stricter persistent streaming and backpressure proof. | High | [[Original Audit]] | [[Streaming Architecture]], [[Backpressure Strategy]] | [ ] Open |
-| TD-007 | Local database query paths need index and pagination validation before large conversation growth. | High | [[Original Audit]] | [[Index Strategy]], [[Pagination Strategy]] | [ ] Open |
-| TD-008 | CI/CD has several workflows with overlapping responsibility and inconsistent gate strictness. | High | [[Original Audit]] | [[CI-CD Roadmap]], [[Release Gates]] | [ ] Open |
-| TD-009 | Version/update behavior has user-reported comparison and prompt failures. | Critical | [[Original Audit]] | [[Production Readiness]], [[Release Gates]] | [ ] Open |
-| TD-010 | UI call surfaces have churned through multiple implementations; the target call-suite contract needs to be the only source. | High | [[Original Audit]] | [[Target Architecture]], [[Voice Calls]], [[Video Calls]] | [ ] Open |
+Related: [[Debt Categories]], [[Debt Prioritization]], [[Architecture Debt]], [[Scalability Debt]], [[Security Debt]], [[Performance Debt]], [[Testing Debt]], [[DevOps Debt]], [[UX Debt]], [[Audit Resolution Tracker]], [[Critical Path]].
 
-## Scoring
+## Management Model
 
-- Current debt risk score: 72/100.
-- Target before production: 30/100 or lower.
-- Critical debt must be closed before [[Launch Readiness]] can move past limited testing.
+### Status Values
 
-Related: [[Risk Register]], [[Backlog]], [[Critical Path]].
+- Open: debt exists and has no implementation evidence yet.
+- In Progress: active task is underway.
+- Mitigated: risk reduced but not fully removed.
+- Closed: validation evidence exists and related docs are updated.
+- Accepted: owner explicitly accepts remaining risk in [[Launch Readiness]].
+
+### Priority Values
+
+- P0: Blocks public release.
+- P1: Blocks production readiness but may allow internal test artifacts.
+- P2: Improves maintainability, scale, or operational confidence.
+- P3: Useful cleanup with no near-term launch impact.
+
+### Cost Scale
+
+- XS: less than 1 day.
+- S: 1-2 days.
+- M: 3-5 days.
+- L: 6-10 days.
+- XL: more than 10 days or multi-system coordination.
+
+## Debt Statistics
+
+| Metric | Value |
+| --- | --- |
+| Total debt items | 20 |
+| P0 items | 7 |
+| P1 items | 10 |
+| P2 items | 3 |
+| P3 items | 0 |
+| Critical launch-path items | 7 |
+| Current debt risk score | 72/100 |
+| Target debt risk before public release | 30/100 or lower |
+
+## Category Distribution
+
+| Category | Count | Priority Weight | Related Note |
+| --- | --- | --- | --- |
+| Architecture | 5 | Highest | [[Architecture Debt]] |
+| Scalability | 3 | High | [[Scalability Debt]] |
+| Security | 4 | Highest | [[Security Debt]] |
+| Performance | 2 | High | [[Performance Debt]] |
+| Testing | 2 | High | [[Testing Debt]] |
+| DevOps | 2 | High | [[DevOps Debt]] |
+| UX | 2 | Medium | [[UX Debt]] |
+
+## Prioritization Summary
+
+### Must Fix First
+
+1. TD-001 - Oversized voice/video call runtime.
+2. TD-003 - Distributed call lease and terminal ownership.
+3. TD-004 - Implicit async call state machine.
+4. TD-016 - Media capture and ICE/TURN failures are not classified well enough.
+5. TD-009 - Firebase rules coverage gaps.
+6. TD-018 - Update validation failures.
+7. TD-017 - Weak release gate parity.
+
+### Safe Parallel Work
+
+- TD-006 and TD-007 can proceed after database migration planning.
+- TD-008 can proceed after file transfer characterization tests.
+- TD-010 can proceed without changing signaling behavior.
+- TD-015 can proceed as test harness work.
+- TD-020 can proceed as documentation process work.
+
+## Architecture Debt
+
+### TD-001: Oversized VoiceCallRuntime
+
+- Category: Architecture
+- Status: Open
+- Priority: P0
+- Title: Oversized voice/video call runtime.
+- Description: `VoiceCallRuntime` mixes call start, presence checks, leases, media setup, terminal reconciliation, diagnostics, renderer handling, and UI-facing state mutation.
+- Cause: Iterative feature additions landed in the existing runtime path instead of being split into coordinators.
+- Risk: One fix can regress unrelated call phases, and tests cannot isolate lease, media, or terminal behavior.
+- Cost to Fix: M, about 5 days.
+- Cost to Ignore: Repeated PC-to-mobile and mobile-to-PC call regressions, false busy, stuck connecting, and hard-to-debug production failures.
+- Files Affected: `apps/rain/lib/application/calls/*`, `apps/rain/lib/application/runtime/*`, `packages/protocol_brain/lib/*`, `packages/peer_core/lib/*`.
+- Related Systems: [[VoiceCallRuntime Refactor]], [[CallStartCoordinator]], [[CallLeaseManager]], [[CallMediaCoordinator]], [[CallTerminalReconciler]], [[CallDiagnosticsRecorder]], [[Voice Calls]], [[Video Calls]].
+- Roadmap Tasks: TASK-001.
+- Resolution Strategy: Extract call start, lease, media, terminal, and diagnostics ownership behind coordinator contracts, then add characterization and regression tests.
+
+### TD-002: RainRuntimeController Domain Concentration
+
+- Category: Architecture
+- Status: Open
+- Priority: P1
+- Title: Runtime controller owns too many domains.
+- Description: `RainRuntimeController` coordinates presence, friends, sessions, messages, files, calls, lifecycle, connection requests, diagnostics, and shutdown.
+- Cause: The runtime controller became the integration point for every feature.
+- Risk: Hidden cross-feature coupling makes fixes brittle and can cause unrelated regressions in chat, files, calls, and presence.
+- Cost to Fix: L, 6-10 days across phases.
+- Cost to Ignore: New features will keep increasing coupling and make root-cause isolation slower.
+- Files Affected: `apps/rain/lib/application/runtime/*`, `apps/rain/lib/application/state/*`.
+- Related Systems: [[Current Architecture]], [[Target Architecture]], [[Refactoring Strategy]], [[Presence And Direct Connect]], [[File Transfer]], [[Voice Calls]], [[Connection Request Notifications]].
+- Roadmap Tasks: TASK-001, TASK-020.
+- Resolution Strategy: First split call runtime ownership, then progressively separate file, connection request, presence, and lifecycle adapters where tests prove stable seams.
+
+### TD-003: Distributed Call Lease And Terminal Ownership
+
+- Category: Architecture
+- Status: Open
+- Priority: P0
+- Title: Call lease and terminal state are not owned by one component.
+- Description: Active user locks, pair locks, room status, inboxes, local runtime state, and session frames can disagree.
+- Cause: Firebase signaling, local runtime, and WebRTC session cleanup evolved as separate paths.
+- Risk: False busy, stale locks, duplicate terminal cleanup, or deleting live locks.
+- Cost to Fix: M, about 4 days.
+- Cost to Ignore: Users can become unable to call until data is repaired, and stale locks can block valid peers.
+- Files Affected: `packages/protocol_brain/lib/src/voice/*`, `apps/rain/lib/application/calls/*`, `backend/firebase/database.rules.json`.
+- Related Systems: [[Lease Management]], [[CallLeaseManager]], [[CallTerminalReconciler]], [[Signaling Architecture]], [[Firebase Architecture]].
+- Roadmap Tasks: TASK-002.
+- Resolution Strategy: Make matching `callId` ownership the only cleanup authority, inspect referenced rooms before busy, and retry stale cleanup once.
+
+### TD-004: Implicit Async Call State Machine
+
+- Category: Architecture
+- Status: Open
+- Priority: P0
+- Title: Call phases and terminal transitions are not strict enough.
+- Description: Incoming, outgoing, media connecting, active, reconnecting, ending, failed, and ended presentation states can be inferred from mixed sources.
+- Cause: Runtime state, Firebase terminal status, late frames, and UI presentation were layered incrementally.
+- Risk: Stuck connecting, late frame reversal, remote not hanging up, or UI still showing failed call surfaces.
+- Cost to Fix: M, about 4 days.
+- Cost to Ignore: Voice/video reliability remains unstable even if individual media bugs are fixed.
+- Files Affected: `apps/rain/lib/application/calls/*`, `apps/rain/lib/presentation/calls/*`.
+- Related Systems: [[Call State Machine]], [[CallTerminalReconciler]], [[Voice Calls]], [[Video Calls]].
+- Roadmap Tasks: TASK-003, TASK-013.
+- Resolution Strategy: Define explicit allowed transitions, timeouts, terminal reconciliation, and late-frame ignore behavior, then test voice and video paths.
+
+### TD-005: Fragmented Call Surface Model
+
+- Category: Architecture
+- Status: Open
+- Priority: P1
+- Title: Call UI has multiple historical surface implementations.
+- Description: Fullscreen, minimized, popup, PiP, ended, failed, voice, and video surfaces have had inconsistent control ownership.
+- Cause: UI iterations were added before one presentation contract was frozen.
+- Risk: Duplicate bars, unsafe-area overlap, inconsistent icons, missing hangup/answer actions, and confusing failure states.
+- Cost to Fix: M, about 4 days.
+- Cost to Ignore: Users will perceive the app as unreliable even when signaling works.
+- Files Affected: `apps/rain/lib/presentation/calls/*`, `apps/rain/lib/presentation/home/*`.
+- Related Systems: [[Frontend Architecture]], [[Voice Calls]], [[Video Calls]], [[Call State Machine]].
+- Roadmap Tasks: TASK-019.
+- Resolution Strategy: Render only one call surface from one presentation model and remove or make unreachable legacy popup/duplicate paths.
+
+## Scalability Debt
+
+### TD-006: Missing Local Database Index Validation
+
+- Category: Scalability
+- Status: Open
+- Priority: P1
+- Title: Drift query paths need index validation.
+- Description: Conversation, unread, transfer, friend, and queue queries need explicit index coverage before large accounts.
+- Cause: Local database grew around feature needs without a documented query plan.
+- Risk: Slow startup, slow chat open, and expensive table scans under real user histories.
+- Cost to Fix: M, about 3 days.
+- Cost to Ignore: Performance degrades as message and transfer records grow.
+- Files Affected: `packages/rain_core/lib/src/storage/*`.
+- Related Systems: [[Database Architecture]], [[Index Strategy]], [[Migration Plan]], [[Database Schema]].
+- Roadmap Tasks: TASK-008.
+- Resolution Strategy: Identify critical queries, add safe Drift migration indexes, and validate migration from current schema.
+
+### TD-007: Eager Conversation Loading
+
+- Category: Scalability
+- Status: Open
+- Priority: P1
+- Title: Conversation loading is not proven to be bounded.
+- Description: Large conversations need paginated reads and stable UI anchors instead of full-list assumptions.
+- Cause: Early chat flows optimized for small test conversations.
+- Risk: Memory pressure, slow scroll, broad provider rebuilds, and ARMv7 lag.
+- Cost to Fix: M, about 4 days.
+- Cost to Ignore: Chat becomes unusable as real message histories grow.
+- Files Affected: `apps/rain/lib/presentation/chat/*`, `packages/rain_core/lib/src/messages/*`, `packages/rain_core/lib/src/storage/*`.
+- Related Systems: [[Pagination Strategy]], [[Peer Chat]], [[Frontend Architecture]], [[Database Architecture]].
+- Roadmap Tasks: TASK-009, TASK-020.
+- Resolution Strategy: Add page windows, anchor behavior, paginated store queries, and provider/widget tests.
+
+### TD-008: File Transfer Streaming And Backpressure Proof
+
+- Category: Scalability
+- Status: Open
+- Priority: P1
+- Title: Large file transfer behavior is not sufficiently bounded.
+- Description: Receive path and send path need hard proof around persistent streaming, temp cleanup, and RTCDataChannel buffered amount.
+- Cause: File transfer feature exists, but large-file pressure and slow-receiver behavior need stronger validation.
+- Risk: Memory spikes, channel crashes, failed transfers, and corrupted temp state.
+- Cost to Fix: L, 7 days across receive and send work.
+- Cost to Ignore: Large transfers can destabilize the app and degrade peer sessions.
+- Files Affected: `packages/peer_core/lib/src/file_transfer/*`, `packages/rain_core/lib/src/files/*`, `apps/rain/lib/application/files/*`.
+- Related Systems: [[File Transfer]], [[Streaming Architecture]], [[Backpressure Strategy]].
+- Roadmap Tasks: TASK-010, TASK-011.
+- Resolution Strategy: Stream incoming chunks to temp files, add high/low water marks, pause/resume sends, and test slow receivers and cancellation.
+
+## Security Debt
+
+### TD-009: Firebase Rule Coverage Gaps
+
+- Category: Security
+- Status: Open
+- Priority: P0
+- Title: RTDB rules are too important to remain under-tested.
+- Description: Presence, friendships, signaling rooms, voice calls, locks, inboxes, requests, and metadata need allow/deny emulator coverage.
+- Cause: Rules evolved with multiple feature passes and free-tier constraints.
+- Risk: Permission-denied regressions, unauthorized writes, malformed signaling state, or accidental lockouts of valid clients.
+- Cost to Fix: M, about 4 days.
+- Cost to Ignore: Production failures can only be found after shipping, and security assumptions remain unproven.
+- Files Affected: `backend/firebase/database.rules.json`, `backend/firebase/test/*`, `packages/protocol_brain/test/*`.
+- Related Systems: [[Rules Strategy]], [[Emulator Coverage]], [[Firebase Architecture]], [[Security Roadmap]].
+- Roadmap Tasks: TASK-005.
+- Resolution Strategy: Build a rules matrix for allowed and denied writes, run it locally or in CI, and document old-client compatibility assumptions.
+
+### TD-010: Diagnostics Privacy Exposure
+
+- Category: Security
+- Status: Open
+- Priority: P1
+- Title: Diagnostics must stay useful without private payloads.
+- Description: Diagnostics should never export raw SDP, ICE candidate strings, tokens, passwords, ciphertext, message text, or file bytes.
+- Cause: Debugging pressure can lead to verbose logs unless sanitization is enforced centrally.
+- Risk: User-shared diagnostics could expose private data or sensitive signaling metadata.
+- Cost to Fix: S, about 2 days.
+- Cost to Ignore: Support logs become unsafe to request or inspect.
+- Files Affected: `apps/rain/lib/application/diagnostics/*`, `apps/rain/lib/infrastructure/services/*`.
+- Related Systems: [[Diagnostics And Logging]], [[Diagnostics Sanitization]], [[Privacy Review]], [[Security Roadmap]].
+- Roadmap Tasks: TASK-014.
+- Resolution Strategy: Add recursive denylist sanitization, string caps, export tests, and diagnostics-only summaries.
+
+### TD-011: Malformed Signaling Write Protection
+
+- Category: Security
+- Status: Open
+- Priority: P0
+- Title: Security rules must reject malformed or unauthorized signaling artifacts.
+- Description: Signaling paths must reject wrong owners, invalid statuses, stale timestamps, oversized payloads, and unauthorized lock writes.
+- Cause: Client-driven signaling has many paths and no Cloud Functions authority on Spark/free-tier mode.
+- Risk: Bad or malicious clients can create corrupt rooms, stale busy locks, or unauthorized call/request records.
+- Cost to Fix: M, folded into rules coverage.
+- Cost to Ignore: Signaling state can be corrupted by old or modified clients.
+- Files Affected: `backend/firebase/database.rules.json`, `backend/firebase/test/*`.
+- Related Systems: [[Firebase Architecture]], [[Rules Strategy]], [[Signaling Architecture]], [[Lease Management]].
+- Roadmap Tasks: TASK-005.
+- Resolution Strategy: Encode shape, ownership, timestamp, and state-transition guards in RTDB rules and prove them with emulator tests.
+
+### TD-012: Spark-Free-Tier Guardrails Are Not Fully Instrumented
+
+- Category: Security
+- Status: Open
+- Priority: P1
+- Title: Firebase operation budgets and offline request abuse controls need stronger tracking.
+- Description: Presence, call signaling, ICE, connection requests, and update checks need counters and budget expectations because paid backend escalation is not allowed.
+- Cause: Free-tier operation cost is a hard product constraint, but not all write-heavy flows have budget visibility.
+- Risk: Excess reads/writes can hit Spark limits or create poor user experience without warning.
+- Cost to Fix: S, about 2 days.
+- Cost to Ignore: The app may become unreliable under normal testing or small growth due to quota pressure.
+- Files Affected: `packages/protocol_brain/lib/src/firebase/*`, `apps/rain/lib/application/diagnostics/*`, `backend/firebase/database.rules.json`.
+- Related Systems: [[Firebase Architecture]], [[Connection Request Notifications]], [[Diagnostics And Logging]], [[Release Gates]].
+- Roadmap Tasks: TASK-017, TASK-023.
+- Resolution Strategy: Add operation counters, define budgets, enforce offline-only request writes, and message every blocked action.
+
+## Performance Debt
+
+### TD-013: ARMv7 And Low-Power Budget Missing
+
+- Category: Performance
+- Status: Open
+- Priority: P1
+- Title: Low-power devices need a defined performance tier.
+- Description: ARMv7 and low-RAM devices should not run the same expensive visual/diagnostic paths as standard devices.
+- Cause: Premium UI and diagnostics were added before a strict low-power budget was documented.
+- Risk: Laggy scrolling, pull-refresh freezes, expensive effects, and poor tester confidence on low-end devices.
+- Cost to Fix: M, about 3 days.
+- Cost to Ignore: V7 builds remain visibly worse than ARM64 builds.
+- Files Affected: `apps/rain/lib/presentation/*`, `apps/rain/lib/application/diagnostics/*`.
+- Related Systems: [[Frontend Architecture]], [[Coverage Dashboard]], [[Release Gates]].
+- Roadmap Tasks: TASK-021.
+- Resolution Strategy: Define low-power visual policy, static effect fallbacks, frame summary diagnostics, and widget/performance tests.
+
+### TD-014: Broad UI Rebuild Boundaries
+
+- Category: Performance
+- Status: Open
+- Priority: P2
+- Title: Riverpod provider boundaries can trigger broad UI rebuilds.
+- Description: Message, friend, connection, call, diagnostics, and media state updates need tighter selected watches and consumer islands.
+- Cause: Large screens and runtime providers were composed quickly as feature count grew.
+- Risk: Scroll lag, chat jank, and unstable pull-refresh on lower-performance devices.
+- Cost to Fix: M, about 4 days.
+- Cost to Ignore: UI remains fragile as features and data volume grow.
+- Files Affected: `apps/rain/lib/presentation/home/*`, `apps/rain/lib/presentation/chat/*`, `apps/rain/lib/application/state/*`.
+- Related Systems: [[Frontend Architecture]], [[Peer Chat]], [[Voice Calls]], [[Performance Debt]].
+- Roadmap Tasks: TASK-020.
+- Resolution Strategy: Replace broad watches with `select`ed slices, add rebuild isolation tests, and pair with pagination work.
+
+## Testing Debt
+
+### TD-015: Adapter Contract And Smoke Test Gaps
+
+- Category: Testing
+- Status: Open
+- Priority: P1
+- Title: Adapter contracts and Appium smoke setup need repeatable coverage.
+- Description: Fake and Firebase-backed adapters need parity tests for success, permission denied, malformed data, cancellation, stale records, and cleanup.
+- Cause: UI/device testing has been added reactively after failures.
+- Risk: Release builds can pass unit tests but fail on Firebase permissions, watcher data, or Android smoke startup.
+- Cost to Fix: L, about 5 days.
+- Cost to Ignore: Broken release artifacts reach testers and failures remain expensive to reproduce.
+- Files Affected: `packages/protocol_brain/test/*`, `backend/firebase/test/*`, `apps/rain/integration_test/*`, `qa.appium.json`.
+- Related Systems: [[Test Strategy]], [[Emulator Coverage]], [[Emulator Test Matrix]], [[Release Gates]].
+- Roadmap Tasks: TASK-018.
+- Resolution Strategy: Create adapter contract matrix, fake parity tests, emulator RTDB tests, and stable smoke locators.
+
+### TD-016: WebRTC Failure Classification Coverage
+
+- Category: Testing
+- Status: Open
+- Priority: P1
+- Title: ICE, TURN, and media failure diagnostics need testable taxonomy.
+- Description: Call failures should identify permission, Firebase, ICE, TURN, media capture, first-frame, and terminal-state causes separately.
+- Cause: WebRTC failures are currently difficult to infer from app-level messages alone.
+- Risk: Debugging remains guesswork and fixes target symptoms instead of root causes.
+- Cost to Fix: M, about 3 days.
+- Cost to Ignore: PC-to-mobile and mobile-to-PC failures continue cycling through unproven fixes.
+- Files Affected: `packages/peer_core/lib/*`, `apps/rain/lib/application/diagnostics/*`, `packages/protocol_brain/test/*`.
+- Related Systems: [[CallDiagnosticsRecorder]], [[Signaling Architecture]], [[Voice Calls]], [[Video Calls]].
+- Roadmap Tasks: TASK-004.
+- Resolution Strategy: Add sanitized call setup timeline, candidate counts, selected route metadata, first-track/frame events, and taxonomy tests.
+
+## DevOps Debt
+
+### TD-017: Weak Release Gate Parity
+
+- Category: DevOps
+- Status: Open
+- Priority: P0
+- Title: Release artifacts can be built without enough proof.
+- Description: Workflows need a hard gate that blocks publish when analyze, tests, rules, vault validation, or artifact metadata fail.
+- Cause: Fast test builds and release builds were added for speed, then gate strictness became inconsistent.
+- Risk: Broken APKs/Windows artifacts reach testers, wasting install cycles and masking real regressions.
+- Cost to Fix: S, about 2 days.
+- Cost to Ignore: Release confidence remains low and every build becomes a manual gamble.
+- Files Affected: `.github/workflows/*`, `scripts/*`, `melos.yaml`.
+- Related Systems: [[CI-CD Roadmap]], [[Release Gates]], [[Coverage Dashboard]].
+- Roadmap Tasks: TASK-015.
+- Resolution Strategy: Define hard gate matrix, enforce workflow dependencies, and include commit/version/channel evidence in artifacts.
+
+### TD-018: Update Version Validation Failures
+
+- Category: DevOps
+- Status: Open
+- Priority: P0
+- Title: App update policy has reported wrong old-version behavior.
+- Description: Old versions have not reliably shown update prompts, and manual check behavior has been reported misleading.
+- Cause: Version/build comparison and Remote Config manifest behavior need stricter tests.
+- Risk: Old clients can continue running against incompatible backend rules or show "up to date" incorrectly.
+- Cost to Fix: S, about 2 days.
+- Cost to Ignore: Backend changes can break old apps without warning or safe upgrade path.
+- Files Affected: `apps/rain/lib/application/update/*`, `apps/rain/lib/infrastructure/services/force_update*`, `apps/rain/test/*`.
+- Related Systems: [[Version And Updates]], [[Release Gates]], [[Production Readiness]].
+- Roadmap Tasks: TASK-012.
+- Resolution Strategy: Add semantic/build comparison tests, manifest parser tests, required/optional prompt widget tests, and settings check behavior tests.
+
+## UX Debt
+
+### TD-019: Call UI Surface Instability
+
+- Category: UX
+- Status: Open
+- Priority: P1
+- Title: Voice/video call presentation has not stabilized into a mature call suite.
+- Description: Users have reported bad control layout, overlap, stuck failure screens, duplicate management surfaces, and confusing minimized behavior.
+- Cause: Runtime reliability and UI surface redesign progressed in overlapping iterations.
+- Risk: Even working calls can feel broken or unsafe to use.
+- Cost to Fix: M, about 4 days.
+- Cost to Ignore: Users lose trust in calls and confuse UI bugs with media failures.
+- Files Affected: `apps/rain/lib/presentation/calls/*`, `apps/rain/lib/presentation/home/*`.
+- Related Systems: [[Voice Calls]], [[Video Calls]], [[Frontend Architecture]], [[Call State Machine]].
+- Roadmap Tasks: TASK-019.
+- Resolution Strategy: Unify fullscreen, minimized bar, video PiP, ended, and failed surfaces under one control model and safe-area contract.
+
+### TD-020: Blocked Action Messaging And Offline Request UX
+
+- Category: UX
+- Status: Open
+- Priority: P0
+- Title: Connection request guardrails must explain every blocked action.
+- Description: Offline notification requests must require confirmation, should not count online direct connect attempts, and must message every denied rule.
+- Cause: Connection request behavior changed from direct connect fallback to quota-governed offline notifications.
+- Risk: Users burn quota unintentionally or see silent failures when Firebase rules deny writes.
+- Cost to Fix: M, about 3 days.
+- Cost to Ignore: Users cannot understand connect/request behavior and support load increases.
+- Files Affected: `apps/rain/lib/application/connection_requests/*`, `apps/rain/lib/presentation/*`, `packages/protocol_brain/lib/src/connection_requests/*`, `backend/firebase/database.rules.json`.
+- Related Systems: [[Connection Request Notifications]], [[Presence Management]], [[Rules Strategy]], [[Firebase Architecture]].
+- Roadmap Tasks: TASK-023.
+- Resolution Strategy: Resolve online/offline/unknown presence before action, ask explicit confirmation for offline notification, and show fixed messages for every denial.
+
+## Debt Burn-Down Plan
+
+| Window | Close First | Expected Debt Score Impact |
+| --- | --- | --- |
+| 30 days | TD-001, TD-003, TD-004, TD-009, TD-010, TD-017, TD-018 | Reduce from 72 to about 50 if validated. |
+| 60 days | TD-006, TD-007, TD-008, TD-015, TD-019 | Reduce from about 50 to about 38 if validated. |
+| 90 days | TD-012, TD-013, TD-014, TD-016, TD-020, TD-002 | Reduce to target 30 or lower if residual risks are accepted. |
+
+## Register Definition Of Done
+
+- Every open debt item links to roadmap tasks and architecture notes.
+- Closed debt items include validation evidence in [[Audit Resolution Tracker]] or [[Coverage Dashboard]].
+- Accepted debt items have explicit owner acceptance in [[Launch Readiness]].
+- [[Project Memory]] is updated when a debt item changes durable project facts.
