@@ -381,6 +381,9 @@ class CrashDiagnosticsService {
       'callSummaries': _buildCallDiagnosticSummaries(recentEvents),
       'firebaseCostCounters': _buildFirebaseCostCounters(recentEvents),
       'failureTaxonomy': _buildFailureTaxonomySummary(recentEvents),
+      'debugEventSummary': _buildDebugEventSummary(recentEvents),
+      'networkTraceSummary': _buildNetworkTraceSummary(recentEvents),
+      'uiStateSummary': _buildUiStateSummary(recentEvents),
       'events': recentEvents,
     };
     final content = const JsonEncoder.withIndent('  ').convert(payload);
@@ -548,6 +551,15 @@ class CrashDiagnosticsService {
           context['notificationResult']?.toString() ?? '';
       return '$category:$name:$requestId:$peerId:$reasonCode:$notificationResult';
     }
+    if (category == 'ui_state') {
+      return '$category:$name:${context['provider'] ?? 'unknown'}';
+    }
+    if (category == 'network') {
+      return '$category:$name:${context['operation'] ?? context['kind'] ?? 'unknown'}';
+    }
+    if (category == 'webrtc') {
+      return '$category:$name:${context['scope'] ?? 'unknown'}:${context['state'] ?? context['phase'] ?? 'global'}';
+    }
     if (_isVoiceLockEvent(category, name)) {
       final peerId = context['peerId']?.toString() ?? '';
       final callId = context['callId']?.toString() ?? '';
@@ -599,6 +611,30 @@ class CrashDiagnosticsService {
     }
     if (category == 'connection_request') {
       return _isConnectionRequestNoisyEvent(category, name);
+    }
+    if (category == 'ui_state') {
+      return name == 'provider_added' ||
+          name == 'provider_updated' ||
+          name == 'provider_disposed';
+    }
+    if (category == 'network') {
+      return name == 'operation_started' ||
+          name == 'operation_completed' ||
+          name == 'stream_subscribed' ||
+          name == 'stream_event' ||
+          name == 'stream_cancelled' ||
+          name == 'stream_completed';
+    }
+    if (category == 'webrtc') {
+      return name == 'peer_state_changed' ||
+          name == 'media_state_changed' ||
+          name == 'peer_connection_state' ||
+          name == 'ice_connection_state' ||
+          name == 'local_ice_candidate' ||
+          name == 'remote_ice_candidate_added' ||
+          name == 'data_channel_state' ||
+          name == 'data_channel_message_received' ||
+          name == 'remote_track_received';
     }
     return false;
   }
@@ -692,6 +728,10 @@ class CrashDiagnosticsService {
       if (key.isEmpty) {
         continue;
       }
+      if (_isSensitiveDiagnosticKey(key)) {
+        sanitized[key] = '[redacted]';
+        continue;
+      }
       sanitized[key] = _sanitizeDiagnosticValue(entry.value, depth: depth + 1);
     }
     return sanitized;
@@ -740,6 +780,23 @@ class CrashDiagnosticsService {
       return value;
     }
     return '${value.substring(0, _maxEventContextStringLength)}...';
+  }
+
+  static bool _isSensitiveDiagnosticKey(String key) {
+    final normalized = key.trim().toLowerCase();
+    if (normalized.contains('password') ||
+        normalized.contains('token') ||
+        normalized.contains('credential') ||
+        normalized.contains('secret')) {
+      return true;
+    }
+    return normalized == 'sdp' ||
+        normalized == 'candidate' ||
+        normalized == 'ciphertext' ||
+        normalized == 'nonce' ||
+        normalized == 'mac' ||
+        normalized == 'messagetext' ||
+        normalized == 'filebytes';
   }
 
   static List<Map<String, Object?>> _buildCallDiagnosticSummaries(
@@ -852,6 +909,169 @@ class CrashDiagnosticsService {
       counts[taxonomy] = (counts[taxonomy] ?? 0) + 1;
     }
     return counts;
+  }
+
+  static Map<String, Object?> _buildDebugEventSummary(
+    List<Map<String, Object?>> events,
+  ) {
+    final byCategory = <String, int>{};
+    final bySeverity = <String, int>{};
+    final bySource = <String, int>{};
+    var appEventCount = 0;
+    var errorCount = 0;
+    var fatalCount = 0;
+
+    for (final event in events) {
+      final kind = event['kind']?.toString();
+      if (kind == 'error') {
+        errorCount += 1;
+        final record = _stringMap(event['record']);
+        final source = record['source']?.toString() ?? 'unknown';
+        bySource[source] = (bySource[source] ?? 0) + 1;
+        if (record['fatal'] == true) {
+          fatalCount += 1;
+        }
+        continue;
+      }
+      if (kind != 'app_event') {
+        continue;
+      }
+      appEventCount += 1;
+      final category = event['category']?.toString() ?? 'unknown';
+      final severity = event['severity']?.toString() ?? 'info';
+      byCategory[category] = (byCategory[category] ?? 0) + 1;
+      bySeverity[severity] = (bySeverity[severity] ?? 0) + 1;
+      final context = _stringMap(event['context']);
+      final source =
+          context['source']?.toString() ??
+          context['operation']?.toString() ??
+          event['name']?.toString() ??
+          'unknown';
+      bySource[source] = (bySource[source] ?? 0) + 1;
+    }
+
+    return <String, Object?>{
+      'appEventCount': appEventCount,
+      'errorCount': errorCount,
+      'fatalCount': fatalCount,
+      'byCategory': _topCounts(byCategory, limit: 20),
+      'bySeverity': _topCounts(bySeverity, limit: 10),
+      'bySource': _topCounts(bySource, limit: 20),
+    };
+  }
+
+  static Map<String, Object?> _buildNetworkTraceSummary(
+    List<Map<String, Object?>> events,
+  ) {
+    final operationCounts = <String, int>{};
+    final operationFailures = <String, int>{};
+    final watchEventCounts = <String, int>{};
+    final slowest = <Map<String, Object?>>[];
+    var totalOperations = 0;
+    var totalFailures = 0;
+
+    for (final event in events) {
+      if (event['kind'] != 'app_event' || event['category'] != 'network') {
+        continue;
+      }
+      final name = event['name']?.toString() ?? '';
+      final context = _stringMap(event['context']);
+      final operation = context['operation']?.toString() ?? 'unknown';
+      if (name == 'operation_completed' || name == 'operation_failed') {
+        totalOperations += 1;
+        operationCounts[operation] = (operationCounts[operation] ?? 0) + 1;
+        final durationMs = _intFrom(context['durationMs']) ?? 0;
+        slowest.add(<String, Object?>{
+          'operation': operation,
+          'kind': context['kind']?.toString(),
+          'durationMs': durationMs,
+          'failed': name == 'operation_failed',
+        });
+      }
+      if (name == 'operation_failed' || name == 'stream_failed') {
+        totalFailures += 1;
+        operationFailures[operation] = (operationFailures[operation] ?? 0) + 1;
+      }
+      if (name == 'stream_event') {
+        watchEventCounts[operation] = (watchEventCounts[operation] ?? 0) + 1;
+      }
+    }
+
+    slowest.sort((left, right) {
+      final leftDuration = _intFrom(left['durationMs']) ?? 0;
+      final rightDuration = _intFrom(right['durationMs']) ?? 0;
+      return rightDuration.compareTo(leftDuration);
+    });
+
+    return <String, Object?>{
+      'totalOperations': totalOperations,
+      'totalFailures': totalFailures,
+      'operationCounts': _topCounts(operationCounts, limit: 20),
+      'operationFailures': _topCounts(operationFailures, limit: 20),
+      'watchEventCounts': _topCounts(watchEventCounts, limit: 20),
+      'slowestOperations': slowest.take(10).toList(growable: false),
+    };
+  }
+
+  static Map<String, Object?> _buildUiStateSummary(
+    List<Map<String, Object?>> events,
+  ) {
+    final providerEvents = <String, int>{};
+    final providerFailures = <String, int>{};
+    final transitions = <Map<String, Object?>>[];
+
+    for (final event in events) {
+      if (event['kind'] != 'app_event' || event['category'] != 'ui_state') {
+        continue;
+      }
+      final name = event['name']?.toString() ?? '';
+      final context = _stringMap(event['context']);
+      final provider = context['provider']?.toString() ?? 'unknown';
+      providerEvents[provider] = (providerEvents[provider] ?? 0) + 1;
+      if (name == 'provider_failed') {
+        providerFailures[provider] = (providerFailures[provider] ?? 0) + 1;
+      }
+      if (name == 'provider_updated') {
+        final previous = _stringMap(context['previous']);
+        final next = _stringMap(context['next']);
+        transitions.add(<String, Object?>{
+          'provider': provider,
+          'previousType': previous['type']?.toString(),
+          'nextType': next['type']?.toString(),
+          if (next['phase'] != null) 'phase': next['phase']?.toString(),
+          if (next['state'] != null) 'state': next['state']?.toString(),
+          if (next['peerId'] != null) 'peerId': next['peerId']?.toString(),
+          if (next['callId'] != null) 'callId': next['callId']?.toString(),
+        });
+      }
+    }
+
+    return <String, Object?>{
+      'providerFailureCount': providerFailures.values.fold<int>(
+        0,
+        (int sum, int count) => sum + count,
+      ),
+      'mostNoisyProviders': _topCounts(providerEvents, limit: 20),
+      'providerFailures': _topCounts(providerFailures, limit: 20),
+      'lastStateTransitions': transitions.length <= 20
+          ? transitions
+          : transitions.sublist(transitions.length - 20),
+    };
+  }
+
+  static Map<String, int> _topCounts(
+    Map<String, int> counts, {
+    required int limit,
+  }) {
+    final entries = counts.entries.toList(growable: false)
+      ..sort((left, right) {
+        final byCount = right.value.compareTo(left.value);
+        if (byCount != 0) {
+          return byCount;
+        }
+        return left.key.compareTo(right.key);
+      });
+    return Map<String, int>.fromEntries(entries.take(limit));
   }
 
   static Map<String, Object?> _decodeVoiceDiagnostics(Object? value) {

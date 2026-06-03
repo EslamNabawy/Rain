@@ -10,6 +10,7 @@ import 'package:rain/infrastructure/services/app_settings_store.dart';
 import 'package:rain/infrastructure/services/crash_diagnostics_service.dart';
 import 'package:rain/infrastructure/services/force_update_service.dart';
 import 'package:rain/infrastructure/services/network_status_service.dart';
+import 'package:rain/infrastructure/services/rain_debug_log_service.dart';
 import 'package:rain/infrastructure/services/received_file_export_service.dart';
 import 'package:rain/infrastructure/services/sound_effects_service.dart';
 import 'package:rain/infrastructure/services/turn_credential_service.dart';
@@ -99,6 +100,10 @@ final receivedFileExportServiceProvider = Provider(
 
 final crashDiagnosticsServiceProvider = Provider<CrashDiagnosticsService>(
   (Ref ref) => CrashDiagnosticsService.instance,
+);
+
+final rainDebugLogServiceProvider = Provider<RainDebugLogService>(
+  (Ref ref) => const NoopRainDebugLogService(),
 );
 
 final lastCrashDiagnosticsProvider = FutureProvider<CrashDiagnosticsRecord?>((

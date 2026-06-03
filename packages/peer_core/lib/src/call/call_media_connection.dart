@@ -373,6 +373,14 @@ class DefaultCallMediaConnection implements CallMediaConnection {
       throw StateError('Call media peer connection has already been closed.');
     }
     _remoteCandidateCount += 1;
+    _emitDebugEvent(
+      'remote_ice_candidate_added',
+      context: <String, Object?>{
+        'remoteCandidateCount': _remoteCandidateCount,
+        'pendingRemoteCandidateCount': _pendingRemoteCandidates.length,
+        'candidateLength': candidate.candidate.length,
+      },
+    );
     if (!_remoteDescriptionSet) {
       _pendingRemoteCandidates.add(candidate);
       return;
@@ -654,6 +662,13 @@ class DefaultCallMediaConnection implements CallMediaConnection {
         return;
       }
       _localCandidateCount += 1;
+      _emitDebugEvent(
+        'local_ice_candidate',
+        context: <String, Object?>{
+          'candidateCount': _localCandidateCount,
+          'candidateLength': callCandidate.candidate.length,
+        },
+      );
       _iceController.add(callCandidate);
     };
     connection.onTrack = (RTCTrackEvent event) {
@@ -670,6 +685,15 @@ class DefaultCallMediaConnection implements CallMediaConnection {
         default:
           return;
       }
+      _emitDebugEvent(
+        'remote_track_received',
+        context: <String, Object?>{
+          'kind': event.track.kind,
+          'streamCount': event.streams.length,
+          'remoteAudioTrackCount': _remoteAudioTracks.length,
+          'remoteVideoTrackCount': _remoteVideoTracks.length,
+        },
+      );
       _remoteTrackController.add(
         CallRemoteMediaTrack(
           track: event.track,
@@ -683,6 +707,10 @@ class DefaultCallMediaConnection implements CallMediaConnection {
         return;
       }
       _appendDiagnostic(_iceConnectionStates, state.toString());
+      _emitDebugEvent(
+        'ice_connection_state',
+        context: <String, Object?>{'state': state.toString()},
+      );
       switch (state) {
         case RTCIceConnectionState.RTCIceConnectionStateConnected:
         case RTCIceConnectionState.RTCIceConnectionStateCompleted:
@@ -724,6 +752,10 @@ class DefaultCallMediaConnection implements CallMediaConnection {
         return;
       }
       _appendDiagnostic(_peerConnectionStates, state.toString());
+      _emitDebugEvent(
+        'peer_connection_state',
+        context: <String, Object?>{'state': state.toString()},
+      );
       switch (state) {
         case RTCPeerConnectionState.RTCPeerConnectionStateConnected:
           _cancelDisconnectedFailureTimer();
@@ -992,6 +1024,11 @@ class DefaultCallMediaConnection implements CallMediaConnection {
     } catch (error) {
       _appendDiagnostic(_mediaStates, 'videoStats failed | $error');
       _lastError = error.toString();
+      _emitDebugEvent(
+        'video_stats_failed',
+        severity: 'warning',
+        message: error.toString(),
+      );
       return null;
     }
   }
@@ -1073,12 +1110,28 @@ class DefaultCallMediaConnection implements CallMediaConnection {
         _mediaStates,
         'videoOptimization:${profile.name}:$reason',
       );
+      _emitDebugEvent(
+        'video_optimization_profile_applied',
+        context: <String, Object?>{
+          'profile': profile.name,
+          'reason': reason,
+          'maxBitrateBps': profile.maxBitrateBps,
+          'maxFramerate': profile.maxFramerate,
+          'scaleResolutionDownBy': profile.scaleResolutionDownBy,
+        },
+      );
     } catch (error) {
       _appendDiagnostic(
         _mediaStates,
         'videoOptimization failed:${profile.name}:$reason | $error',
       );
       _lastError = error.toString();
+      _emitDebugEvent(
+        'video_optimization_profile_failed',
+        severity: 'warning',
+        message: error.toString(),
+        context: <String, Object?>{'profile': profile.name, 'reason': reason},
+      );
     }
   }
 
@@ -1349,6 +1402,16 @@ class DefaultCallMediaConnection implements CallMediaConnection {
     if (_controllersClosed) {
       return;
     }
+    _emitDebugEvent(
+      'media_state_changed',
+      severity: error == null ? 'debug' : 'error',
+      message: error?.toString(),
+      context: <String, Object?>{
+        'phase': phase.name,
+        'detail': ?detail,
+        'failureReason': ?failureReason?.name,
+      },
+    );
     _lastPhase = phase;
     _lastDetail = detail ?? _lastDetail;
     _lastError = error?.toString() ?? _lastError;
@@ -1370,6 +1433,34 @@ class DefaultCallMediaConnection implements CallMediaConnection {
         failureReason: failureReason,
         updatedAt: DateTime.now().millisecondsSinceEpoch,
       ),
+    );
+  }
+
+  void _emitDebugEvent(
+    String name, {
+    String severity = 'debug',
+    String? message,
+    Map<String, Object?> context = const <String, Object?>{},
+  }) {
+    _config.debugEventSink?.call(
+      category: 'webrtc',
+      name: name,
+      severity: severity,
+      message: message,
+      context: <String, Object?>{
+        'scope': 'call_media',
+        'phase': _lastPhase.name,
+        'localCandidateCount': _localCandidateCount,
+        'remoteCandidateCount': _remoteCandidateCount,
+        'pendingRemoteCandidateCount': _pendingRemoteCandidates.length,
+        'remoteAudioTrackCount': _remoteAudioTracks.length,
+        'remoteVideoTrackCount': _remoteVideoTracks.length,
+        'peerConnectionClosed': _peerConnectionClosed,
+        'disposed': _disposed,
+        if (_activeVideoOptimizationProfile != null)
+          'activeVideoProfile': _activeVideoOptimizationProfile!.name,
+        ...context,
+      },
     );
   }
 

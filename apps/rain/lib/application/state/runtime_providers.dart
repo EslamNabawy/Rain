@@ -16,11 +16,22 @@ import 'package:rain/infrastructure/notifications/rain_notification_service.dart
 import 'package:rain/infrastructure/services/app_settings_store.dart';
 import 'package:rain/infrastructure/services/background_services.dart';
 import 'package:rain/infrastructure/services/network_status_service.dart';
+import 'package:rain/infrastructure/services/rain_debug_log_service.dart';
 import 'app_state.dart';
 import 'core_providers.dart';
 import 'identity_providers.dart';
 import 'messaging_providers.dart';
 import 'settings_providers.dart';
+
+RainDebugSeverity _rainDebugSeverityFromString(String value) {
+  return switch (value.trim().toLowerCase()) {
+    'debug' => RainDebugSeverity.debug,
+    'warning' || 'warn' => RainDebugSeverity.warning,
+    'error' => RainDebugSeverity.error,
+    'fatal' => RainDebugSeverity.fatal,
+    _ => RainDebugSeverity.info,
+  };
+}
 
 final backgroundServiceProvider =
     AsyncNotifierProvider<BackgroundServiceController, bool>(
@@ -124,6 +135,7 @@ class FriendsController extends AsyncNotifier<List<FriendRecord>> {
 final brainProvider = Provider<SessionManager?>((Ref ref) {
   final identity = ref.watch(identityProvider).value;
   final environment = ref.watch(appEnvironmentProvider);
+  final debugLog = ref.watch(rainDebugLogServiceProvider);
 
   if (identity == null || environment.shouldUseFallbackAdapter) {
     return null;
@@ -145,6 +157,22 @@ final brainProvider = Provider<SessionManager?>((Ref ref) {
     callMediaProcessingConfigProvider: ref
         .watch(appSettingsStoreProvider)
         .loadCallMediaProcessingConfig,
+    debugEventSink:
+        ({
+          required String category,
+          required String name,
+          String severity = 'info',
+          String? message,
+          Map<String, Object?> context = const <String, Object?>{},
+        }) {
+          debugLog.event(
+            category: category,
+            name: name,
+            severity: _rainDebugSeverityFromString(severity),
+            message: message,
+            context: context,
+          );
+        },
   );
 
   return brain;
@@ -218,11 +246,11 @@ final connectionRequestAdapterProvider = Provider<ConnectionRequestAdapter?>((
         },
         diagnosticsSink: (ConnectionRequestAdapterDiagnosticEvent event) {
           ref
-              .read(crashDiagnosticsServiceProvider)
-              .recordEventSync(
+              .read(rainDebugLogServiceProvider)
+              .event(
                 category: 'connection_request_adapter',
                 name: event.name,
-                severity: 'warning',
+                severity: RainDebugSeverity.warning,
                 context: event.toJson(),
               );
         },
@@ -279,6 +307,7 @@ class RuntimeController extends AsyncNotifier<RainRuntimeController?> {
       return current;
     }
     final environment = ref.watch(appEnvironmentProvider);
+    final debugLog = ref.watch(rainDebugLogServiceProvider);
     await ref.read(backgroundServiceProvider.future);
     final controller = RainRuntimeController(
       selfIdentity: identity,
@@ -304,8 +333,42 @@ class RuntimeController extends AsyncNotifier<RainRuntimeController?> {
                 .read(mediaDeviceSettingsProvider)
                 .warmUpStartupCallPermissions()
           : null,
-      errorRecorder: ref.watch(crashDiagnosticsServiceProvider).recordErrorSync,
-      eventRecorder: ref.watch(crashDiagnosticsServiceProvider).recordEventSync,
+      errorRecorder:
+          (
+            Object error,
+            StackTrace? stackTrace, {
+            required String source,
+            required bool fatal,
+            String? flutterLibrary,
+            String? flutterContext,
+          }) {
+            debugLog.error(
+              error,
+              stackTrace,
+              source: source,
+              fatal: fatal,
+              context: <String, Object?>{
+                'flutterLibrary': ?flutterLibrary,
+                'flutterContext': ?flutterContext,
+              },
+            );
+          },
+      eventRecorder:
+          ({
+            required String category,
+            required String name,
+            String severity = 'info',
+            String? message,
+            Map<String, Object?> context = const <String, Object?>{},
+          }) {
+            debugLog.event(
+              category: category,
+              name: name,
+              severity: _rainDebugSeverityFromString(severity),
+              message: message,
+              context: context,
+            );
+          },
     );
 
     final exitRegistration = AppExitCoordinator.instance.register(

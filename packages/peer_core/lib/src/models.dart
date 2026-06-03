@@ -60,6 +60,15 @@ final class PeerChannels {
   const PeerChannels._();
 }
 
+typedef PeerDebugEventSink =
+    void Function({
+      required String category,
+      required String name,
+      String severity,
+      String? message,
+      Map<String, Object?> context,
+    });
+
 class PeerConfig {
   const PeerConfig({
     required this.iceServers,
@@ -70,6 +79,7 @@ class PeerConfig {
     this.selectedAudioInputDeviceIdProvider,
     this.selectedVideoInputDeviceIdProvider,
     this.callMediaProcessingConfigProvider,
+    this.debugEventSink,
   });
 
   final List<Map<String, dynamic>> iceServers;
@@ -81,6 +91,7 @@ class PeerConfig {
   final Future<String?> Function()? selectedVideoInputDeviceIdProvider;
   final Future<CallMediaProcessingConfig> Function()?
   callMediaProcessingConfigProvider;
+  final PeerDebugEventSink? debugEventSink;
 
   Map<String, dynamic> toRtcConfiguration() {
     return <String, dynamic>{
@@ -103,6 +114,7 @@ class PeerConfig {
     Future<String?> Function()? selectedVideoInputDeviceIdProvider,
     Future<CallMediaProcessingConfig> Function()?
     callMediaProcessingConfigProvider,
+    PeerDebugEventSink? debugEventSink,
   }) {
     return PeerConfig(
       iceServers: iceServers ?? this.iceServers,
@@ -119,6 +131,7 @@ class PeerConfig {
       callMediaProcessingConfigProvider:
           callMediaProcessingConfigProvider ??
           this.callMediaProcessingConfigProvider,
+      debugEventSink: debugEventSink ?? this.debugEventSink,
     );
   }
 

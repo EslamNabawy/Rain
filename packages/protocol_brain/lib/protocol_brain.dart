@@ -2,6 +2,7 @@ export 'package:peer_core/peer_core.dart'
     show
         PeerAddressFamily,
         PeerConfig,
+        PeerDebugEventSink,
         PeerConnectionRoute,
         PeerIceTransportPolicy,
         PeerRemoteTrack,

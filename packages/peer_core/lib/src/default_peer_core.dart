@@ -89,6 +89,14 @@ class DefaultPeerCore implements PeerCore {
 
   @override
   Future<void> addIceCandidate(RTCIceCandidate candidate) async {
+    _emitDebugEvent(
+      'remote_ice_candidate_added',
+      context: <String, Object?>{
+        'candidateLength': candidate.candidate?.length ?? 0,
+        'hasSdpMid': candidate.sdpMid?.isNotEmpty == true,
+        'sdpMLineIndex': candidate.sdpMLineIndex,
+      },
+    );
     await _requirePeerConnection().addCandidate(candidate);
   }
 
@@ -472,6 +480,13 @@ class DefaultPeerCore implements PeerCore {
       if (!_isCurrentPeer(connection, epoch)) {
         return;
       }
+      _emitDebugEvent(
+        'data_channel_state',
+        context: <String, Object?>{
+          'channelId': channelId,
+          'state': state.toString(),
+        },
+      );
       if (state == RTCDataChannelState.RTCDataChannelOpen) {
         _openChannels.add(channelId);
         _channelOpenController.add(channelId);
@@ -502,6 +517,16 @@ class DefaultPeerCore implements PeerCore {
       final payload = message.isBinary
           ? Uint8List.fromList(message.binary)
           : message.text;
+      _emitDebugEvent(
+        'data_channel_message_received',
+        context: <String, Object?>{
+          'channelId': channelId,
+          'isBinary': message.isBinary,
+          'byteLength': message.isBinary
+              ? message.binary.lengthInBytes
+              : utf8.encode(message.text).length,
+        },
+      );
       _emitIncomingMessage(channelId, payload);
     };
   }
@@ -740,8 +765,34 @@ class DefaultPeerCore implements PeerCore {
     if (state == next) {
       return;
     }
+    final previous = state;
     _stateMachine.transition(next);
+    _emitDebugEvent(
+      'peer_state_changed',
+      context: <String, Object?>{'from': previous.name, 'to': next.name},
+    );
     _stateController.add(next);
+  }
+
+  void _emitDebugEvent(
+    String name, {
+    String severity = 'debug',
+    String? message,
+    Map<String, Object?> context = const <String, Object?>{},
+  }) {
+    _config?.debugEventSink?.call(
+      category: 'webrtc',
+      name: name,
+      severity: severity,
+      message: message,
+      context: <String, Object?>{
+        'scope': 'peer_core',
+        'peerState': state.name,
+        'localCandidateCount': _localCandidates.length,
+        'openChannelCount': _openChannels.length,
+        ...context,
+      },
+    );
   }
 
   bool get _requiredDataChannelsOpen {
@@ -774,6 +825,10 @@ class DefaultPeerCore implements PeerCore {
       if (!_isCurrentPeer(connection, epoch)) {
         return;
       }
+      _emitDebugEvent(
+        'remote_data_channel_received',
+        context: <String, Object?>{'channelId': channel.label},
+      );
       _attachChannel(
         channel.label ?? 'rain.remote',
         channel,
@@ -789,6 +844,13 @@ class DefaultPeerCore implements PeerCore {
       if (event.track.kind != 'audio') {
         return;
       }
+      _emitDebugEvent(
+        'remote_track_received',
+        context: <String, Object?>{
+          'kind': event.track.kind,
+          'streamCount': event.streams.length,
+        },
+      );
       _remoteTrackController.add(
         PeerRemoteTrack(
           track: event.track,
@@ -806,6 +868,15 @@ class DefaultPeerCore implements PeerCore {
         return;
       }
       _localCandidates.add(candidate);
+      _emitDebugEvent(
+        'local_ice_candidate',
+        context: <String, Object?>{
+          'candidateCount': _localCandidates.length,
+          'candidateLength': candidate.candidate?.length ?? 0,
+          'hasSdpMid': candidate.sdpMid?.isNotEmpty == true,
+          'sdpMLineIndex': candidate.sdpMLineIndex,
+        },
+      );
       _iceController.add(candidate);
     };
 
@@ -813,6 +884,10 @@ class DefaultPeerCore implements PeerCore {
       if (!_isCurrentPeer(connection, epoch)) {
         return;
       }
+      _emitDebugEvent(
+        'peer_connection_state',
+        context: <String, Object?>{'state': state.toString()},
+      );
       switch (state) {
         case RTCPeerConnectionState.RTCPeerConnectionStateConnected:
           _cancelPendingDisconnect();

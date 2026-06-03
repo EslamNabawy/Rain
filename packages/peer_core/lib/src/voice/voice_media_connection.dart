@@ -275,6 +275,15 @@ class DefaultVoiceMediaConnection implements VoiceMediaConnection {
       throw StateError('Voice media peer connection has already been closed.');
     }
     _remoteCandidateCount += 1;
+    _emitDebugEvent(
+      'remote_ice_candidate_added',
+      context: <String, Object?>{
+        'scope': 'voice_media',
+        'remoteCandidateCount': _remoteCandidateCount,
+        'pendingRemoteCandidateCount': _pendingRemoteCandidates.length,
+        'candidateLength': candidate.candidate.length,
+      },
+    );
     if (!_remoteDescriptionSet) {
       _pendingRemoteCandidates.add(candidate);
       return;
@@ -413,6 +422,13 @@ class DefaultVoiceMediaConnection implements VoiceMediaConnection {
         return;
       }
       _localCandidateCount += 1;
+      _emitDebugEvent(
+        'local_ice_candidate',
+        context: <String, Object?>{
+          'candidateCount': _localCandidateCount,
+          'candidateLength': voiceCandidate.candidate.length,
+        },
+      );
       _iceController.add(voiceCandidate);
     };
     connection.onTrack = (RTCTrackEvent event) {
@@ -421,6 +437,14 @@ class DefaultVoiceMediaConnection implements VoiceMediaConnection {
         return;
       }
       _retainRemoteAudio(event.track, event.streams);
+      _emitDebugEvent(
+        'remote_track_received',
+        context: <String, Object?>{
+          'kind': event.track.kind,
+          'streamCount': event.streams.length,
+          'remoteAudioTrackCount': _remoteAudioTracks.length,
+        },
+      );
       _remoteTrackController.add(
         VoiceRemoteAudioTrack(
           track: event.track,
@@ -434,6 +458,10 @@ class DefaultVoiceMediaConnection implements VoiceMediaConnection {
         return;
       }
       _appendDiagnostic(_iceConnectionStates, state.toString());
+      _emitDebugEvent(
+        'ice_connection_state',
+        context: <String, Object?>{'state': state.toString()},
+      );
       switch (state) {
         case RTCIceConnectionState.RTCIceConnectionStateConnected:
         case RTCIceConnectionState.RTCIceConnectionStateCompleted:
@@ -467,6 +495,10 @@ class DefaultVoiceMediaConnection implements VoiceMediaConnection {
         return;
       }
       _appendDiagnostic(_peerConnectionStates, state.toString());
+      _emitDebugEvent(
+        'peer_connection_state',
+        context: <String, Object?>{'state': state.toString()},
+      );
       switch (state) {
         case RTCPeerConnectionState.RTCPeerConnectionStateConnected:
           _cancelDisconnectedFailureTimer();
@@ -812,6 +844,11 @@ class DefaultVoiceMediaConnection implements VoiceMediaConnection {
       if (!_disposed && !_controllersClosed) {
         _appendDiagnostic(_mediaStates, 'audio level stats failed | $error');
         _lastError = error.toString();
+        _emitDebugEvent(
+          'audio_level_stats_failed',
+          severity: 'warning',
+          message: error.toString(),
+        );
         _emitAudioLevel(
           VoiceMediaAudioLevel.unavailable(
             updatedAt: DateTime.now().millisecondsSinceEpoch,
@@ -854,6 +891,12 @@ class DefaultVoiceMediaConnection implements VoiceMediaConnection {
     if (_controllersClosed) {
       return;
     }
+    _emitDebugEvent(
+      'media_state_changed',
+      severity: error == null ? 'debug' : 'error',
+      message: error?.toString(),
+      context: <String, Object?>{'phase': phase.name, 'detail': ?detail},
+    );
     _lastPhase = phase;
     _lastDetail = detail ?? _lastDetail;
     _lastError = error?.toString() ?? _lastError;
@@ -872,6 +915,31 @@ class DefaultVoiceMediaConnection implements VoiceMediaConnection {
         error: error,
         updatedAt: DateTime.now().millisecondsSinceEpoch,
       ),
+    );
+  }
+
+  void _emitDebugEvent(
+    String name, {
+    String severity = 'debug',
+    String? message,
+    Map<String, Object?> context = const <String, Object?>{},
+  }) {
+    _config.debugEventSink?.call(
+      category: 'webrtc',
+      name: name,
+      severity: severity,
+      message: message,
+      context: <String, Object?>{
+        'scope': 'voice_media',
+        'phase': _lastPhase.name,
+        'localCandidateCount': _localCandidateCount,
+        'remoteCandidateCount': _remoteCandidateCount,
+        'pendingRemoteCandidateCount': _pendingRemoteCandidates.length,
+        'remoteAudioTrackCount': _remoteAudioTracks.length,
+        'peerConnectionClosed': _peerConnectionClosed,
+        'disposed': _disposed,
+        ...context,
+      },
     );
   }
 
