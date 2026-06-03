@@ -33,6 +33,7 @@ Last updated: 2026-06-03
 - 2026-06-03 mitigation: runtime action gates now resolve backend presence with one 30 second `online + lastHeartbeat` freshness window before friend seeding, direct Connect, connection-request routing, or voice/video call start.
 - 2026-06-03 mitigation: failed voice/video setup diagnostics now preserve Firebase room status timelines and emit diagnostics from terminal-room failure reconciliation.
 - 2026-06-03 mitigation: update checks now report stale Remote Config policy as `remotePolicyOutdated`, same-version minimum-build upgrades are required updates, and optional update prompts render from the root app surface before login/home.
+- 2026-06-03 Phase 09 local pre-artifact release gate passed `dart pub get`, analyze, full Melos tests, Firebase JSON parsing, Firebase Functions tests, Firebase emulator integration tests, and Obsidian vault validation. Cloud artifacts and release-page proof are still required for the hard release gate.
 
 ## Documentation Status
 
