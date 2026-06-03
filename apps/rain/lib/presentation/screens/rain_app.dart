@@ -3,6 +3,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import 'package:rain/presentation/navigation/app_routes.dart';
 import 'package:rain/application/state/app_providers.dart';
+import 'package:rain/presentation/screens/startup_surface.dart';
 import 'package:rain/presentation/theme/rain_theme.dart';
 
 class RainApp extends ConsumerWidget {
@@ -12,6 +13,7 @@ class RainApp extends ConsumerWidget {
   Widget build(BuildContext context, WidgetRef ref) {
     final themeMode = ref.watch(themeModeProvider);
     final router = ref.watch(appRouterProvider);
+    final startup = ref.watch(appStartupStateProvider);
 
     return MaterialApp.router(
       title: 'Rain',
@@ -20,6 +22,12 @@ class RainApp extends ConsumerWidget {
       theme: RainTheme.light(),
       darkTheme: RainTheme.dark(),
       routerConfig: router,
+      builder: (BuildContext context, Widget? child) {
+        if (startup.blocksRoutedSurface) {
+          return RainStartupSurface(state: startup);
+        }
+        return child ?? const SizedBox.shrink();
+      },
     );
   }
 }

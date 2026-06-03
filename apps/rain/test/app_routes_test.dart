@@ -13,6 +13,7 @@ import 'package:rain/infrastructure/services/force_update_service.dart';
 import 'package:rain/infrastructure/services/network_status_service.dart';
 import 'package:rain/infrastructure/signaling/noop_signaling_adapter.dart';
 import 'package:rain/presentation/navigation/app_routes.dart';
+import 'package:rain/presentation/navigation/rain_navigation_shell.dart';
 import 'package:rain/presentation/screens/rain_app.dart';
 import 'package:rain/presentation/screens/splash_screen.dart';
 import 'package:rain_core/rain_core.dart';
@@ -206,10 +207,52 @@ void main() {
       await tester.pump();
 
       expect(find.byType(RainSplashScreen), findsOneWidget);
+      expect(find.byType(RainNavigationShell), findsNothing);
       expect(find.byType(NavigationBar), findsNothing);
       expect(find.byType(NavigationRail), findsNothing);
     },
   );
+
+  testWidgets('required update blocks the routed shell globally', (
+    WidgetTester tester,
+  ) async {
+    tester.view.physicalSize = const Size(390, 800);
+    tester.view.devicePixelRatio = 1;
+    addTearDown(tester.view.resetPhysicalSize);
+    addTearDown(tester.view.resetDevicePixelRatio);
+
+    final db = RainDatabase(NativeDatabase.memory());
+    addTearDown(db.close);
+
+    await tester.pumpWidget(_requiredUpdateScope(db, child: const RainApp()));
+    await tester.pumpAndSettle();
+
+    expect(find.text('Update required'), findsOneWidget);
+    expect(find.byType(RainNavigationShell), findsNothing);
+    expect(find.byType(NavigationBar), findsNothing);
+    expect(find.byType(NavigationRail), findsNothing);
+  });
+
+  testWidgets('startup failures block the routed shell globally', (
+    WidgetTester tester,
+  ) async {
+    tester.view.physicalSize = const Size(390, 800);
+    tester.view.devicePixelRatio = 1;
+    addTearDown(tester.view.resetPhysicalSize);
+    addTearDown(tester.view.resetDevicePixelRatio);
+
+    final db = RainDatabase(NativeDatabase.memory());
+    addTearDown(db.close);
+
+    await tester.pumpWidget(_failedUpdateScope(db, child: const RainApp()));
+    await tester.pump();
+    await tester.pump(const Duration(milliseconds: 50));
+
+    expect(find.text('Rain could not start.'), findsOneWidget);
+    expect(find.byType(RainNavigationShell), findsNothing);
+    expect(find.byType(NavigationBar), findsNothing);
+    expect(find.byType(NavigationRail), findsNothing);
+  });
 }
 
 ProviderContainer _runtimeLoadingContainer(RainDatabase db) {
@@ -258,6 +301,38 @@ ProviderScope _runtimeLoadingScope(RainDatabase db, {required Widget child}) {
   );
 }
 
+ProviderScope _requiredUpdateScope(RainDatabase db, {required Widget child}) {
+  return ProviderScope(
+    overrides: [
+      appBootstrapProvider.overrideWithValue(_bootstrap(db)),
+      networkStatusProvider.overrideWith(
+        (Ref ref) =>
+            Stream<NetworkStatusState>.value(const NetworkStatusState.online()),
+      ),
+      forceUpdateProvider.overrideWith(_RequiredForceUpdateController.new),
+      identityProvider.overrideWith(_SignedInIdentityController.new),
+      runtimeControllerProvider.overrideWith(_SettledRuntimeController.new),
+    ],
+    child: child,
+  );
+}
+
+ProviderScope _failedUpdateScope(RainDatabase db, {required Widget child}) {
+  return ProviderScope(
+    overrides: [
+      appBootstrapProvider.overrideWithValue(_bootstrap(db)),
+      networkStatusProvider.overrideWith(
+        (Ref ref) =>
+            Stream<NetworkStatusState>.value(const NetworkStatusState.online()),
+      ),
+      forceUpdateProvider.overrideWith(_FailedForceUpdateController.new),
+      identityProvider.overrideWith(_SignedInIdentityController.new),
+      runtimeControllerProvider.overrideWith(_SettledRuntimeController.new),
+    ],
+    child: child,
+  );
+}
+
 AppBootstrapState _bootstrap(RainDatabase db) {
   return AppBootstrapState(
     environment: AppEnvironment.fromEnvironment(
@@ -300,6 +375,13 @@ class _RequiredForceUpdateController extends ForceUpdateController {
       minVersion: '2.0.0',
       updateUrl: 'https://example.com',
     );
+  }
+}
+
+class _FailedForceUpdateController extends ForceUpdateController {
+  @override
+  Future<ForceUpdateResult> build() {
+    throw StateError('update check failed');
   }
 }
 

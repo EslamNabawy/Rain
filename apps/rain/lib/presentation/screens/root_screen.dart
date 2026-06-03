@@ -7,12 +7,11 @@ import 'package:url_launcher/url_launcher_string.dart';
 import 'package:rain/core/config/app_environment.dart';
 import 'package:rain/infrastructure/services/force_update_service.dart';
 import 'package:rain/application/state/app_providers.dart';
-import 'package:rain/presentation/branding/rain_state_surfaces.dart';
 import 'package:rain/presentation/widgets/backend_banner.dart';
 import 'package:rain/presentation/widgets/update/rain_update_prompt_banner.dart';
 import 'home_screen.dart';
 import 'onboarding_screen.dart';
-import 'splash_screen.dart';
+import 'startup_surface.dart';
 
 class RootScreen extends ConsumerWidget {
   const RootScreen({super.key});
@@ -22,13 +21,11 @@ class RootScreen extends ConsumerWidget {
     final environment = ref.watch(appEnvironmentProvider);
     final startup = ref.watch(appStartupStateProvider);
 
+    if (startup.blocksRoutedSurface) {
+      return RainStartupSurface(state: startup);
+    }
+
     return switch (startup.phase) {
-      AppStartupPhase.checkingUpdate ||
-      AppStartupPhase.validatingSession ||
-      AppStartupPhase.startingRuntime => const _LoadingView(),
-      AppStartupPhase.updateRequired => _ForceUpdateGate(
-        result: startup.updateResult!,
-      ),
       AppStartupPhase.signedOut => _withBanners(
         ref: ref,
         environment: environment,
@@ -41,12 +38,7 @@ class RootScreen extends ConsumerWidget {
         updateResult: startup.updateResult!,
         child: const HomeScreen(),
       ),
-      AppStartupPhase.sessionExpired => _SessionExpiredResetView(
-        error: startup.error?.toString() ?? 'Session expired.',
-      ),
-      AppStartupPhase.failed => _ErrorView(
-        error: 'Rain could not start.\n${startup.error.toString()}',
-      ),
+      _ => RainStartupSurface(state: startup),
     };
   }
 
@@ -79,116 +71,6 @@ class RootScreen extends ConsumerWidget {
           ),
         Expanded(child: child),
       ],
-    );
-  }
-}
-
-class _SessionExpiredResetView extends ConsumerStatefulWidget {
-  const _SessionExpiredResetView({required this.error});
-
-  final String error;
-
-  @override
-  ConsumerState<_SessionExpiredResetView> createState() =>
-      _SessionExpiredResetViewState();
-}
-
-class _SessionExpiredResetViewState
-    extends ConsumerState<_SessionExpiredResetView> {
-  bool _resetStarted = false;
-
-  @override
-  void didChangeDependencies() {
-    super.didChangeDependencies();
-    if (_resetStarted) {
-      return;
-    }
-    _resetStarted = true;
-    WidgetsBinding.instance.addPostFrameCallback((_) {
-      _reset();
-    });
-  }
-
-  Future<void> _reset() async {
-    try {
-      await ref.read(identityProvider.notifier).resetExpiredSession();
-    } catch (_) {
-      // If cleanup fails, the next app launch will surface the original
-      // backend error again.
-    }
-  }
-
-  @override
-  Widget build(BuildContext context) {
-    return const _LoadingView();
-  }
-}
-
-class _ForceUpdateGate extends StatelessWidget {
-  const _ForceUpdateGate({required this.result});
-
-  final ForceUpdateResult result;
-
-  @override
-  Widget build(BuildContext context) {
-    return Center(
-      child: ConstrainedBox(
-        constraints: const BoxConstraints(maxWidth: 520),
-        child: Card(
-          elevation: 18,
-          shape: RoundedRectangleBorder(
-            borderRadius: BorderRadius.circular(28),
-          ),
-          child: Padding(
-            padding: const EdgeInsets.all(32),
-            child: Column(
-              mainAxisSize: MainAxisSize.min,
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: <Widget>[
-                Text(
-                  'Update required',
-                  style: Theme.of(context).textTheme.headlineMedium,
-                ),
-                const SizedBox(height: 12),
-                Text(
-                  'Rain ${result.currentVersion} can no longer connect. Install at least ${result.minVersion} to continue.',
-                ),
-                const SizedBox(height: 24),
-                FilledButton.icon(
-                  onPressed: () => launchUrlString(result.updateUrl),
-                  icon: const Icon(Icons.system_update_alt),
-                  label: const Text('Open update page'),
-                ),
-              ],
-            ),
-          ),
-        ),
-      ),
-    );
-  }
-}
-
-class _LoadingView extends StatelessWidget {
-  const _LoadingView();
-
-  @override
-  Widget build(BuildContext context) {
-    return const RainSplashScreen();
-  }
-}
-
-class _ErrorView extends StatelessWidget {
-  const _ErrorView({required this.error});
-
-  final String error;
-
-  @override
-  Widget build(BuildContext context) {
-    return RainMistStateCard(
-      icon: Icons.error_outline,
-      title: 'Rain could not start.',
-      message: error,
-      severity: RainStateSeverity.error,
     );
   }
 }

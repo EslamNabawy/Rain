@@ -298,6 +298,8 @@ Main app dependencies discovered from `apps/rain/pubspec.yaml`:
 6. `DesktopShellController` initializes desktop window shell behavior.
 7. `AppBootstrapper.bootstrap()` creates `RainDatabase`, initializes Firebase when enabled, creates signaling cipher, selects Firebase or noop adapter, wraps adapter with debug logging, creates `ForceUpdateService`, and optionally seeds smoke identity.
 8. `ProviderScope` receives bootstrap overrides and starts `RainApp`.
+9. `AppStartupState` composes Remote Config update status, validated local/backend identity, runtime startup, session-expired reset, failed, and ready phases.
+10. `RainApp` owns the global startup surface. While `AppStartupState.blocksRoutedSurface` is true, `MaterialApp.router.builder` renders `RainStartupSurface` instead of the routed child, so `RainNavigationShell` and normal app chrome are not inserted during loading, required-update, failed, or session-expired startup.
 
 ### Authentication And Identity Flow
 
@@ -370,7 +372,7 @@ Related: [[Connection Request Notifications]], [[Firebase Architecture]], [[Rule
 1. `ForceUpdateController` calls `ForceUpdateService.check()`.
 2. `ForceUpdateService` reads Firebase Remote Config when available.
 3. The app compares current version/build/channel/platform against release policy.
-4. Required updates block at `RootScreen`; optional updates show banner state and can be dismissed.
+4. Required updates block through the global `RainStartupSurface`; optional updates show banner state and can be dismissed.
 5. Diagnostics record update status.
 
 Related: [[Version And Updates]], [[Release Gates]], [[Production Readiness]].

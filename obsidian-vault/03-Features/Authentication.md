@@ -45,7 +45,9 @@ Target architecture: an `AuthSessionCoordinator` must own session discovery, Fir
 
 - 2026-06-03 Phase 1: Cached identity restoration now performs backend validation before publishing signed-in state. Deleted backend accounts and Firebase/backend uid mismatches clear local session data and sign out best-effort. Backend profile data wins over stale local display/gender/created-at cache. Tests cover deleted backend account, uid mismatch, and backend profile refresh.
 - 2026-06-03 Phase 2: Deterministic logout/reset now clears local session before best-effort backend sign-out. Tests cover `adapter.signOut()` failure and logout arriving after app-exit shutdown has already started.
-- Remaining: explicit `AuthSessionCoordinator`, global startup readiness, protected-route gating, account deletion workflow, and session-scoped provider disposal.
+- 2026-06-03 Phase 3: `AppStartupState` centralizes update/session/runtime readiness and route refresh behavior.
+- 2026-06-03 Phase 4: `RainApp` renders `RainStartupSurface` globally above routed content while startup is loading, update-blocked, failed, or session-expired, preventing normal navigation shell insertion during those phases.
+- Remaining: explicit `AuthSessionCoordinator`, protected-route gating, account deletion workflow, and session-scoped provider disposal.
 
 ## Dependencies
 
@@ -63,6 +65,7 @@ Target architecture: an `AuthSessionCoordinator` must own session discovery, Fir
 - Logout must clear local session even when backend sign-out or presence cleanup fails.
 - Logout after app-exit or lifecycle shutdown must still clear local session, even when an earlier `_shutdownFuture` already exists.
 - Protected routes must not render while auth/session validation is loading.
+- Global startup loading/update/error/session-expired surfaces are owned by `RainApp`, not only by `/`.
 - Smoke autoprovision must never be enabled in production/stable builds.
 
 ## Testing Requirements

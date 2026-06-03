@@ -299,6 +299,21 @@ No task is fully complete until the lesson check is done or explicitly marked "n
 - Owner: Engineering
 - Status: Open
 
+### LESSON-20260603-018: Global Visual Gates Must Sit Above Routed Shells
+
+- Related task: Auth/startup remediation Phase 4
+- Related system: [[Authentication]], [[Frontend Architecture]], [[Project Memory]]
+- Related risk/debt: R-022, TD-022, BLK-010
+- What was learned: Redirecting protected routes to `/` and hiding bottom navigation is not enough if the routed shell still wraps the loading/update/error child. The visual gate needs to replace the router child from the app root.
+- What caused delays: `RootScreen` owned the startup surfaces, while `MaterialApp.router` and `ShellRoute` were already active after infrastructure bootstrap.
+- What failed: A route-local splash could avoid visible nav controls but still leave normal shell/backdrop infrastructure in the widget tree.
+- What succeeded: `RainApp` now uses `MaterialApp.router.builder` to render `RainStartupSurface` instead of the routed child whenever `AppStartupState.blocksRoutedSurface` is true, and tests prove blocked startup states do not insert `RainNavigationShell`.
+- What should change: Future protected-route work should build on the global gate instead of adding more route-local splash checks.
+- Pattern: Route-local loading screens cannot prove app-global readiness.
+- Follow-up improvement: Phase 5 should harden protected route availability and stale route state after the global visual gate.
+- Owner: Engineering
+- Status: Open
+
 ## Review Cadence
 
 - Review lessons at the end of every completed task.
