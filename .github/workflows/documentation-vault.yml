@@ -1,0 +1,29 @@
+name: Documentation Vault
+
+on:
+  push:
+    branches:
+      - dev
+      - main
+    paths:
+      - 'obsidian-vault/**'
+      - 'scripts/check_obsidian_vault.ps1'
+      - '.github/workflows/documentation-vault.yml'
+  pull_request:
+    paths:
+      - 'obsidian-vault/**'
+      - 'scripts/check_obsidian_vault.ps1'
+      - '.github/workflows/documentation-vault.yml'
+
+jobs:
+  obsidian-vault:
+    name: Validate Obsidian vault
+    runs-on: windows-latest
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Validate required notes and wiki links
+        shell: pwsh
+        run: ./scripts/check_obsidian_vault.ps1
