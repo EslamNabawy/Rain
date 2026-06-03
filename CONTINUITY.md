@@ -6,11 +6,11 @@ Every future session must read this file before starting non-trivial work.
 
 ## Current Goal
 
-Phase 8 self-improvement engine has been completed. Lessons, recurring patterns, improvement backlog, optimization opportunities, metrics, and recommended next actions are now managed under `obsidian-vault/18-Lessons Learned/`.
+Execute the auth/account/startup/splash/navigation remediation roadmap phase by phase without another audit. The current evidence source is `ROOT_AUTH_STARTUP_REMEDIATION_ROADMAP.md` plus its linked investigation documents.
 
 ## Current Phase
 
-Phase 8 - Self-Improvement Engine
+Auth/startup remediation - Phase 2 next: deterministic logout/reset.
 
 ## Completed Phases
 
@@ -26,6 +26,15 @@ Phase 8 - Self-Improvement Engine
 - [ ] Phase 9 - Codex Automation Layer
 - [ ] Phase 10 - Continuous Project Evolution
 
+## Completed Auth/Startup Remediation Phases
+
+- [x] Phase 1 - Authentication source of truth: cached Drift identity is backend-validated before signed-in restoration; deleted backend accounts and uid mismatches clear local session; login/register write backend identity/presence before local identity cache.
+- [ ] Phase 2 - Deterministic Logout
+- [ ] Phase 3 - Startup State Machine
+- [ ] Phase 4 - Global Splash Architecture
+- [ ] Phase 5 - Navigation Readiness
+- [ ] Phase 6 - State Lifecycle Hardening
+
 ## Active Work
 
 - `ROOT_CAUSE_ANALYSIS.md` was created on 2026-06-03 from the supplied Windows diagnostics JSON, Android screenshot, and manual failure report. It is the current evidence lock for call/presence/update/diagnostics failures.
@@ -39,6 +48,7 @@ Phase 8 - Self-Improvement Engine
 - Seventh mitigation from the RCA execution is complete: Phase 05 presence/session freshness now carries session metadata through backend identity snapshots, treats `presence.state != online` as offline, blocks UI Connect and auto-recovery through the shared fresh-presence resolver, and preserves `presenceExpired` as a terminal peer intent until a later successful explicit reconnect.
 - Phase 08 Regression Test Expansion is complete: targeted local tests now cover stable failure messages for WebRTC/Firebase/network call failures, failed call suite state and compact video dock behavior, terminal-room-before-session-hangup ordering, failed-media terminal write before session disposal, already-terminal cleanup classification, and session-owned Firebase presence contracts.
 - Phase 09 local pre-artifact release gate evidence is recorded: `dart pub get`, analyze, full Melos tests, Firebase JSON parsing, Firebase Functions tests, Firebase emulator integration tests, and Obsidian vault validation all passed on 2026-06-03. Cloud artifact build and release-page proof remain the hard-gate completion step.
+- Auth/startup remediation Phase 1 is complete on 2026-06-03. `apps/rain/lib/application/state/identity_providers.dart` validates cached identity through backend account existence and current auth uid before publishing signed-in state, clears local session on missing/deleted/mismatched backend identity, and saves local identity only after backend identity/presence writes during login/register. `apps/rain/test/auth_identity_source_of_truth_test.dart` covers backend deletion, uid mismatch, and backend profile refresh.
 - Local Windows Drift/sqlite app-test invocation is repaired for isolated Rain app tests: `scripts/run_rain_app_test.ps1` runs tests from `apps/rain`, the targeted stale-presence friend-flow case passed, and full `friend_flow_test.dart` passed with 120 passing tests and 10 skipped legacy control-channel cases.
 - Phase 0 deliverables are complete.
 - Phase 1 vault structure is complete.
@@ -52,8 +62,7 @@ Phase 8 - Self-Improvement Engine
 - Repository-wide `AGENTS.md` now requires pre-implementation reading of project memory, roadmap, debt, risk, and blockers, plus a post-code Obsidian update gate.
 - `obsidian-vault/01-Roadmap/Engineering System Flaw Remediation Plan.md` has been created to fix flaws in the current documentation operating system before Phase 9 automation.
 - Engineering System Flaw Remediation Phase 00 and Phase 01 are complete: canonical source views are documented, duplicate note titles were removed, and the vault checker now fails on uncontrolled duplicate note titles.
-- Do not perform app code modifications as part of documentation-only phase work.
-- Wait for explicit user approval before starting Phase 9.
+- Continue remediation with one logical phase per commit. Do not perform another audit unless explicitly requested.
 
 ## Known Risks
 
@@ -65,11 +74,11 @@ Phase 8 - Self-Improvement Engine
 
 ## Known Blockers
 
-- None for Phase 8 self-improvement engine.
+- BLK-010 remains open until deterministic logout, startup readiness, global splash/navigation gating, and session lifecycle hardening are implemented and validated.
 
 ## Next Recommended Action
 
-Use `ROOT_CAUSE_ANALYSIS.md` to implement the next repair in evidence order: complete call setup media/ICE failure classification, keep isolated app runtime tests on `scripts/run_rain_app_test.ps1`, and keep release Remote Config deployment evidence tied to each build.
+Implement auth/startup remediation Phase 2: deterministic logout/reset. Add tests for backend sign-out or presence cleanup failure while local session still clears, runtime/session providers dispose, and reopening cannot restore the old identity.
 
 ## Future Population Areas
 

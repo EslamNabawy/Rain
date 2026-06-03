@@ -242,6 +242,7 @@ Related: [[Risk Register]], [[Risk Categories]], [[Risk Matrix]], [[Blocker Reso
   - Validate Firebase/backend identity before runtime start.
   - Guarantee local session clearing on logout/reset/delete.
   - Move splash/navigation readiness to a global startup gate.
+- Progress 2026-06-03 Phase 1: Cached Drift identity is now treated as a candidate. `IdentityController` validates backend account existence and current auth uid ownership before restoring signed-in state, clears local session on deleted/mismatched backend identity, and saves local identity only after backend identity/presence writes during login/register. New tests cover backend deletion, uid mismatch, and backend profile winning over stale local cache.
 - Exit Criteria: Logout always clears local identity, deleted backend account cannot be recreated from local cache, protected app shell never renders before readiness, and all paths are covered by tests.
 - Detection Strategy: Auth/session widget and runtime tests, diagnostics for session validation failures, and release gate checks for protected-route startup behavior.
 

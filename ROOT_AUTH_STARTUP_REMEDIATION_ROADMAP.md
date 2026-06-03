@@ -22,6 +22,11 @@ This roadmap consolidates the required fixes from:
 7. Protected routes are siblings of `/` and can bypass `RootScreen` gates.
 8. Account-scoped providers are manually invalidated rather than disposed by a session scope.
 
+## Implementation Progress
+
+- 2026-06-03 Phase 1 implementation complete: `IdentityController` now treats local Drift identity as a cached session candidate and validates it against backend account existence plus current auth uid ownership before restoring signed-in state. Missing/deleted backend account data, missing uid data, uid mismatch, and session-expired errors clear local session data. Register/login save local identity only after backend identity/presence writes. Tests cover deleted backend account, uid mismatch, and backend profile refresh.
+- Remaining phases: deterministic logout/reset, explicit startup state machine, global splash gate, navigation readiness, and session lifecycle hardening.
+
 ## Dependency-Ordered Plan
 
 ### Phase 00: Evidence And Test Lock
@@ -109,6 +114,10 @@ Tasks:
 Definition of done:
 
 - External backend deletion does not get undone by app startup.
+
+Progress:
+
+- 2026-06-03: Cached identity restoration path is guarded by backend account validation and current auth uid matching. Runtime startup profile/presence behavior still needs to be placed behind an explicit validated-session permission in a later startup/session phase.
 
 ### Phase 05: Account Deletion Workflow
 

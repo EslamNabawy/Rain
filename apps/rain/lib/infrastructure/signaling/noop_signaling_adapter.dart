@@ -19,13 +19,20 @@ class NoopSignalingAdapter implements SignalingAdapter {
     36,
   );
   final int _sessionStartedAt = DateTime.now().millisecondsSinceEpoch;
+  String? _currentUsername;
 
   String _normalizedUsername(String username) {
     return username.trim().toLowerCase();
   }
 
   @override
-  Future<String> currentUid() async => 'local-demo-user';
+  Future<String> currentUid() async {
+    final currentUsername = _currentUsername;
+    if (currentUsername == null) {
+      return 'local-demo-user';
+    }
+    return _identities[currentUsername]?.uid ?? 'local-demo-user';
+  }
 
   @override
   Future<void> deleteRoom(String roomId) async {}
@@ -52,7 +59,9 @@ class NoopSignalingAdapter implements SignalingAdapter {
   }
 
   @override
-  Future<void> signOut() async {}
+  Future<void> signOut() async {
+    _currentUsername = null;
+  }
 
   @override
   Future<String> register(String username, String password) async {
@@ -74,6 +83,7 @@ class NoopSignalingAdapter implements SignalingAdapter {
       presenceState: 'online',
     );
     _presence[username] = true;
+    _currentUsername = username;
     return uid;
   }
 
@@ -83,6 +93,7 @@ class NoopSignalingAdapter implements SignalingAdapter {
     if (identity == null) {
       throw Exception('User "$username" not found');
     }
+    _currentUsername = username;
     return identity.uid;
   }
 
@@ -275,6 +286,7 @@ class NoopSignalingAdapter implements SignalingAdapter {
   Future<void> upsertIdentity(BackendIdentity identity) async {
     _identities[identity.username] = identity;
     _presence[identity.username] = identity.online;
+    _currentUsername ??= identity.username;
   }
 
   @override

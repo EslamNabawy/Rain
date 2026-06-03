@@ -17,18 +17,48 @@ final identityProvider =
 
 class IdentityController extends AsyncNotifier<RainIdentity?> {
   StreamSubscription<RainIdentity?>? _subscription;
+  int _validationRequestId = 0;
 
   @override
   Future<RainIdentity?> build() async {
     final repository = ref.watch(identityRepositoryProvider);
+    ref.onDispose(() {
+      _validationRequestId += 1;
+      unawaited(_subscription?.cancel());
+    });
+    final cachedIdentity = await repository.loadIdentity();
+    if (!ref.mounted) {
+      return null;
+    }
+    final restoredIdentity = await _validateCachedIdentity(cachedIdentity);
+    if (!ref.mounted) {
+      return restoredIdentity;
+    }
     _subscription = repository.watchIdentity().listen(
-      (RainIdentity? identity) => state = AsyncValue.data(identity),
+      (RainIdentity? identity) {
+        if (!ref.mounted) {
+          return;
+        }
+        final requestId = ++_validationRequestId;
+        unawaited(
+          _validateCachedIdentity(identity).then((RainIdentity? validated) {
+            if (ref.mounted && requestId == _validationRequestId) {
+              state = AsyncValue.data(validated);
+            }
+          }).catchError((Object error, StackTrace stackTrace) {
+            if (ref.mounted && requestId == _validationRequestId) {
+              state = AsyncValue.error(error, stackTrace);
+            }
+          }),
+        );
+      },
       onError: (Object error, StackTrace stackTrace) {
-        state = AsyncValue.error(error, stackTrace);
+        if (ref.mounted) {
+          state = AsyncValue.error(error, stackTrace);
+        }
       },
     );
-    ref.onDispose(() => unawaited(_subscription?.cancel()));
-    return repository.loadIdentity();
+    return restoredIdentity;
   }
 
   Future<void> register({
@@ -91,14 +121,13 @@ class IdentityController extends AsyncNotifier<RainIdentity?> {
   }
 
   Future<void> resetExpiredSession() async {
-    await ref.read(adapterProvider).signOut();
-    await ref.read(databaseProvider).clearSessionData();
+    await _clearInvalidCachedSession();
   }
 
   Future<void> _saveBackendIdentity(RainIdentity identity) async {
     final adapter = ref.read(adapterProvider);
+    final repository = ref.read(identityRepositoryProvider);
     await adapter.addToUserSearch(identity.username);
-    await ref.read(identityRepositoryProvider).saveIdentity(identity);
     final now = DateTime.now().millisecondsSinceEpoch;
     await adapter.upsertIdentity(
       BackendIdentity(
@@ -113,5 +142,90 @@ class IdentityController extends AsyncNotifier<RainIdentity?> {
       ),
     );
     await adapter.setPresence(identity.username, true);
+    await repository.saveIdentity(identity);
+  }
+
+  Future<RainIdentity?> _validateCachedIdentity(RainIdentity? identity) async {
+    if (identity == null) {
+      return null;
+    }
+
+    final adapter = ref.read(adapterProvider);
+    final repository = ref.read(identityRepositoryProvider);
+    try {
+      await adapter.ensureSignedInAs(identity.username);
+      if (!ref.mounted) {
+        return null;
+      }
+      final backendIdentity = await adapter.fetchIdentity(identity.username);
+      if (!ref.mounted) {
+        return null;
+      }
+      final currentUid = (await adapter.currentUid()).trim();
+      if (!ref.mounted) {
+        return null;
+      }
+      final backendUid = backendIdentity?.uid.trim() ?? '';
+      if (backendIdentity == null ||
+          currentUid.isEmpty ||
+          backendUid.isEmpty ||
+          backendUid != currentUid) {
+        await _clearInvalidCachedSession();
+        return null;
+      }
+
+      final validated = RainIdentity(
+        username: backendIdentity.username,
+        displayName: backendIdentity.displayName,
+        createdAt: backendIdentity.registeredAt == 0
+            ? identity.createdAt
+            : backendIdentity.registeredAt,
+        gender: _backendGender(backendIdentity.gender),
+      );
+      if (!_sameIdentity(identity, validated)) {
+        if (!ref.mounted) {
+          return null;
+        }
+        await repository.saveIdentity(validated);
+      }
+      return validated;
+    } on SignalingSessionExpiredException {
+      await _clearInvalidCachedSession();
+      return null;
+    }
+  }
+
+  Future<void> _clearInvalidCachedSession() async {
+    if (!ref.mounted) {
+      return;
+    }
+    final adapter = ref.read(adapterProvider);
+    final database = ref.read(databaseProvider);
+    try {
+      await adapter.signOut();
+    } catch (_) {
+      // Local session clearing must not depend on backend sign-out success.
+    }
+    await database.clearSessionData();
+  }
+
+  RainGender? _backendGender(String? value) {
+    final normalized = value?.trim().toLowerCase();
+    if (normalized == null || normalized.isEmpty) {
+      return null;
+    }
+    for (final gender in RainGender.values) {
+      if (gender.name == normalized) {
+        return gender;
+      }
+    }
+    return null;
+  }
+
+  bool _sameIdentity(RainIdentity left, RainIdentity right) {
+    return left.username == right.username &&
+        left.displayName == right.displayName &&
+        left.createdAt == right.createdAt &&
+        left.gender == right.gender;
   }
 }

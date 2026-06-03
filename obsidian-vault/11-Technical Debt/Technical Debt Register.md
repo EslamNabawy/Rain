@@ -170,7 +170,7 @@ Related: [[Debt Categories]], [[Debt Prioritization]], [[Architecture Debt]], [[
 ### TD-021: Split Authentication And Session Source Of Truth
 
 - Category: Architecture
-- Status: Open
+- Status: In Progress
 - Priority: P0
 - Title: Authentication and session state have multiple truths.
 - Description: Drift local identity, Firebase Auth current user, RTDB user profile, RTDB presence, runtime state, and router state can disagree.
@@ -182,6 +182,7 @@ Related: [[Debt Categories]], [[Debt Prioritization]], [[Architecture Debt]], [[
 - Related Systems: [[Authentication]], [AUTHENTICATION_AUDIT.md](../../AUTHENTICATION_AUDIT.md), [ACCOUNT_LIFECYCLE_ANALYSIS.md](../../ACCOUNT_LIFECYCLE_ANALYSIS.md), [STATE_MANAGEMENT_FAILURE_ANALYSIS.md](../../STATE_MANAGEMENT_FAILURE_ANALYSIS.md).
 - Roadmap Tasks: [ROOT_AUTH_STARTUP_REMEDIATION_ROADMAP.md](../../ROOT_AUTH_STARTUP_REMEDIATION_ROADMAP.md).
 - Resolution Strategy: Add an `AuthSessionCoordinator`, treat local identity as a session candidate only, validate Firebase/backend identity before runtime start, and clear local session in a guaranteed path during logout/reset/delete.
+- Progress Note 2026-06-03: Phase 1 reduced this debt by changing `IdentityController` to validate cached Drift identity against the backend user record and current auth uid before restoring signed-in state. Missing backend accounts, missing uid data, uid mismatch, and session-expired errors now clear local session data instead of publishing identity. Register/login now write backend profile and presence before saving local identity. Remaining debt: deterministic logout, explicit `AuthSessionCoordinator`, startup state machine, protected-route gate, account deletion workflow, and session-scoped provider disposal.
 
 ## Scalability Debt
 

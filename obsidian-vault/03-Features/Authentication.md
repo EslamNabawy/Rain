@@ -20,8 +20,11 @@ Provides simple identity for accepted-friend communication without social-networ
 - App uses Firebase Auth.
 - Username maps to Rain user records in RTDB.
 - Local identity is stored in Drift.
-- Current implementation uses Drift `identity_table` as the first signed-in UI signal, then validates Firebase Auth during runtime startup.
-- Runtime startup can write RTDB `users/{username}` and `presence/{username}` from local identity after Firebase ownership validation.
+- Current implementation treats Drift `identity_table` as a cached session candidate, not authenticated truth.
+- `IdentityController` validates the cached username against Firebase/Auth adapter state and the backend `users/{username}` record before restoring a signed-in app identity.
+- Backend `uid` must match the current Firebase/auth adapter uid. Missing backend account data, missing uid data, uid mismatch, or session-expired errors clear local session data instead of restoring the user.
+- Register/login write backend identity and presence before saving Drift identity locally, so local cache does not get ahead of backend truth.
+- Runtime startup still depends on a validated local identity candidate and remains part of later startup/session hardening phases.
 
 ## Current Investigation Findings
 
@@ -35,6 +38,11 @@ Related root-cause documents:
 Critical finding: authentication currently has multiple sources of truth. Local Drift identity, Firebase Auth, RTDB user profile, presence, runtime controller state, and router state can disagree. If RTDB account data is deleted externally but local identity and cached Firebase Auth remain, runtime startup can recreate backend profile/presence from the local identity.
 
 Target architecture: an `AuthSessionCoordinator` must own session discovery, Firebase/backend validation, logout, local reset, account deletion, and provider-scope disposal. Local identity should be treated as a session candidate, not authenticated truth.
+
+## Implementation Progress
+
+- 2026-06-03 Phase 1: Cached identity restoration now performs backend validation before publishing signed-in state. Deleted backend accounts and Firebase/backend uid mismatches clear local session data and sign out best-effort. Backend profile data wins over stale local display/gender/created-at cache. Tests cover deleted backend account, uid mismatch, and backend profile refresh.
+- Remaining: deterministic logout/reset, explicit `AuthSessionCoordinator`, global startup readiness, protected-route gating, account deletion workflow, and session-scoped provider disposal.
 
 ## Dependencies
 
@@ -62,6 +70,8 @@ Target architecture: an `AuthSessionCoordinator` must own session discovery, Fir
 - Logout clears local identity even if Firebase sign-out throws.
 - Startup with local identity but missing backend user routes to signed-out flow and does not recreate backend data.
 - Startup with invalid/deleted Firebase user clears local session before protected UI renders.
+- Cached local identity with mismatched Firebase/backend uid clears local session before restoration.
+- Stale local profile fields are refreshed from backend identity during restoration.
 - Settings/search/friend routes do not render protected content while auth/session is loading.
 - Account deletion is a first-class workflow once implemented.
 

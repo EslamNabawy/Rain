@@ -35,6 +35,19 @@ Related: [[Master Roadmap]], [[Backlog]], [[Epic Index]], [[Critical Path]], [[R
 | 19 | Riverpod provider boundaries should avoid broad UI rebuilds. | [[Architecture Stabilization Epic]] | Provider Boundary Cleanup | TASK-020 | [ ] Open | Identify broad Home/Chat watches. |
 | 20 | Project knowledge must be maintained continuously in [[Project Memory]]. | [[Production Validation Epic]] | Continuous Knowledge Maintenance | TASK-022 | [ ] Open | Keep vault validation and memory updates in release workflow. |
 
+## Auth/Startup Remediation Tracker
+
+Source: [ROOT_AUTH_STARTUP_REMEDIATION_ROADMAP.md](../../ROOT_AUTH_STARTUP_REMEDIATION_ROADMAP.md)
+
+| Phase | Scope | Status | Evidence | Next Step |
+| --- | --- | --- | --- | --- |
+| Phase 1 | Authentication source of truth and cached identity validation. | [x] Complete | `IdentityController` validates cached identity against backend account existence and current auth uid before restoration; local identity saves after backend writes; tests cover deleted backend account, uid mismatch, and backend profile refresh. | Start deterministic logout/reset. |
+| Phase 2 | Deterministic logout/reset and full session destruction. | [ ] Open | Not implemented in this phase. | Add tests for Firebase sign-out/presence cleanup failure with guaranteed local clear. |
+| Phase 3 | Startup state machine. | [ ] Open | Not implemented in this phase. | Define explicit startup/session/runtime readiness phases. |
+| Phase 4 | Global splash architecture. | [ ] Open | Not implemented in this phase. | Gate app shell behind startup readiness. |
+| Phase 5 | Navigation readiness. | [ ] Open | Not implemented in this phase. | Ensure protected routes cannot render during auth/runtime loading. |
+| Phase 6 | State lifecycle hardening. | [ ] Open | Not implemented in this phase. | Scope account providers by validated session generation. |
+
 ## Status Legend
 
 - [ ] Open
