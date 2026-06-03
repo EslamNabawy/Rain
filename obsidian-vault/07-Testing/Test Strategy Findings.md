@@ -1,4 +1,6 @@
-# Test Strategy
+# Test Strategy Findings
+
+This note captures audit-derived testing findings. The canonical production test strategy is [[Test Strategy]].
 
 ## Existing Test Areas
 

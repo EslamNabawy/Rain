@@ -9,14 +9,14 @@ Rain is a private peer-to-peer chat app for Android and Windows. It supports acc
 - Product source: [[Vision]], [[Requirements]], [[Feature Matrix]]
 - User source: [[User Flows]], [[User Personas]]
 - Roadmap source: [[Master Roadmap]], [[Critical Path]], [[30 Day Plan]], [[60 Day Plan]], [[90 Day Plan]], [[Parallel Work Streams]], [[Launch Blockers]], [[Quick Wins]], [[High-Risk Work]]
-- Execution source: [[Backlog]], [[Active Sprint]], [[Audit Resolution Tracker]], [[Weekly Progress]]
+- Execution source: [[Backlog]], [[Audit Task Summary]], [[Active Sprint]], [[Audit Resolution Tracker]], [[Weekly Progress]]
 - Architecture source: [[System Architecture]], [[Current Architecture]], [[Target Architecture]], [[Refactoring Strategy]], [[Architecture Refactor Plan Index]]
 - Diagram source: [[System Diagrams]], [[Sequence Diagrams]], [[Entity Relationships]]
 - API source: [[API Overview]], [[Endpoints]], [[Contracts]]
 - Runtime source: [[AI Context]], [[Project Memory]]
-- QA source: [[Test Strategy]], [[QA Findings]], [[Launch Readiness]]
+- QA source: [[Test Strategy]], [[Test Strategy Findings]], [[QA Findings]], [[Launch Readiness]]
 - Risk source: [[Risk Register]], [[Risk Categories]], [[Risk Matrix]], [[Blocker Resolution Plan]]
-- Security source: [[Security Review]], [[Security Roadmap]], [[Risk Register]], [[Permissions Matrix]]
+- Security source: [[Security Review]], [[Security Roadmap]], [[Security Risk View]], [[Risk Register]], [[Permissions Matrix]]
 - Operations source: [[Deployment]], [[Monitoring]], [[Incident Response]], [[Backup Strategy]], [[Release Gates]]
 - Technical debt source: [[Technical Debt Register]], [[Debt Categories]], [[Debt Prioritization]]
 - Development source: [[Coding Standards]], [[Environment Setup]], [[Build Process]]
@@ -69,7 +69,7 @@ Top blockers:
 - [[ADR-001]] - Firebase is signaling and coordination only, not media transport.
 - [[ADR-002]] - Stay on Firebase Spark/free tier where possible.
 - [[ADR-003]] - Obsidian vault is the living source of truth for project knowledge.
-- [[ADR-001]] - Production readiness vault owns audit execution.
+- [[ADR-009]] - Production readiness vault owns audit execution.
 
 ## Work Next
 
@@ -104,3 +104,4 @@ Top blockers:
 - Recommended next actions: [[Recommended Next Actions]]
 - Knowledge graph: [[Knowledge Graph Index]]
 - Architecture refactors: [[Architecture Refactor Plan Index]]
+- Legacy/context views: [[Database Architecture Overview]], [[Blocker Index]], [[Security Risk View]], [[Test Strategy Findings]], [[Audit Task Summary]]

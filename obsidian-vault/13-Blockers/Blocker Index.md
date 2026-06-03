@@ -1,4 +1,4 @@
-# BLOCKERS Index
+# Blocker Index
 
 Last updated: 2026-06-03
 
@@ -33,4 +33,3 @@ Use [[Blocker Resolution Plan]] to identify:
 - workaround,
 - parallel work,
 - exit criteria.
-

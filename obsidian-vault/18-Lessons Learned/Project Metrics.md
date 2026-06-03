@@ -30,14 +30,14 @@ Related: [[Project Home]], [[Production Readiness]], [[Launch Readiness]], [[Ris
 | Required vault files validation | Passing | Always passing | Enforced by vault checker. |
 | Markdown files in vault | 188 | Healthy, no broken links | Counted during engineering-system flaw analysis. |
 | Branch ahead of origin/dev | 13 commits before this plan | Push when user requests | Local documentation commits are unpushed. |
-| Duplicate note titles | 6 uncontrolled duplicates detected | 0 uncontrolled duplicates | See [[Engineering System Flaw Remediation Plan]]. |
-| Governance enforcement depth | Structural vault validation only | Semantic governance validation | Current checker does not validate stale metrics, evidence links, or phase consistency. |
+| Duplicate note titles | 0 uncontrolled duplicates | 0 uncontrolled duplicates | Duplicate-title validation now fails the vault check. See [[Engineering System Flaw Remediation Plan]]. |
+| Governance enforcement depth | Required files, links, inbound/outbound links, and duplicate titles | Semantic governance validation | Stale metrics, evidence links, and phase consistency checks are still pending. |
 
 ## Learning Metrics
 
 | Metric | Current | Target |
 | --- | --- | --- |
-| Lessons recorded | 5 initial lessons | Add one per completed implementation cycle when relevant. |
+| Lessons recorded | 6 initial lessons | Add one per completed implementation cycle when relevant. |
 | Improvement backlog items | 17 | Review weekly. |
 | Optimization opportunities | 8 | Promote high-value items into tasks. |
 | ADR count | 8 | Add when decisions affect architecture/release policy. |

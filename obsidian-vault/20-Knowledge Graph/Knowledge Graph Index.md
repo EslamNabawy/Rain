@@ -14,6 +14,19 @@ This folder organizes cross-links between product, architecture, risk, decisions
 - [[Feature Map]]
 - [[System Ownership Map]]
 
+## Canonical Source Views
+
+- [[Backlog]] is the canonical detailed task backlog.
+- [[Audit Task Summary]] is a compact audit-derived task summary.
+- [[BLOCKERS]] is the canonical blocker register.
+- [[Blocker Index]] is a lightweight blocker index.
+- [[Risk Register]] is the canonical risk register.
+- [[Security Risk View]] is the security-focused risk view.
+- [[Test Strategy]] is the canonical production test strategy.
+- [[Test Strategy Findings]] captures audit-derived test gaps.
+- [[Database Architecture]] is the canonical database architecture note.
+- [[Database Architecture Overview]] captures audit-derived database risks.
+
 ## Refactor Planning Links
 
 - [[Architecture Refactor Plan Index]]

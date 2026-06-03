@@ -32,7 +32,7 @@ $requiredFiles = @(
   '02-Architecture/System Architecture.md',
   '02-Architecture/Frontend Architecture.md',
   '02-Architecture/Backend Architecture.md',
-  '02-Architecture/Database Architecture.md',
+  '02-Architecture/Database Architecture Overview.md',
   '02-Architecture/Infrastructure Architecture.md',
   '02-Architecture/Design Decisions.md',
   '02-Architecture/Technical Debt.md',
@@ -82,7 +82,7 @@ $requiredFiles = @(
   '06-Development/Build Process.md',
   '07-File Transfers/Streaming Architecture.md',
   '07-File Transfers/Backpressure Strategy.md',
-  '07-Testing/Test Strategy.md',
+  '07-Testing/Test Strategy Findings.md',
   '07-Testing/Coverage Report.md',
   '07-Testing/QA Findings.md',
   '08-Security/Security Roadmap.md',
@@ -90,7 +90,7 @@ $requiredFiles = @(
   '08-Security/Diagnostics Sanitization.md',
   '08-Security/Security Review.md',
   '08-Security/Permissions Matrix.md',
-  '08-Security/Risk Register.md',
+  '08-Security/Security Risk View.md',
   '09-Operations/Deployment.md',
   '09-Operations/Monitoring.md',
   '09-Operations/Incident Response.md',
@@ -110,6 +110,7 @@ $requiredFiles = @(
   '11-Decisions/ADR-006.md',
   '11-Decisions/ADR-007.md',
   '11-Decisions/ADR-008.md',
+  '11-Decisions/ADR-009.md',
   '11-Technical Debt/Technical Debt Register.md',
   '11-Technical Debt/Debt Categories.md',
   '11-Technical Debt/Debt Prioritization.md',
@@ -123,15 +124,14 @@ $requiredFiles = @(
   '12-Risks/Risk Register.md',
   '12-Risks/Risk Categories.md',
   '12-Risks/Risk Matrix.md',
-  '12-Tasks/Backlog.md',
+  '12-Tasks/Audit Task Summary.md',
   '12-Tasks/Current Sprint.md',
   '12-Tasks/Technical Tasks.md',
-  '13-Blockers/BLOCKERS.md',
+  '13-Blockers/Blocker Index.md',
   '13-Bugs/Open Bugs.md',
   '13-Bugs/Fixed Bugs.md',
   '14-Blockers/BLOCKERS.md',
   '14-Blockers/Blocker Resolution Plan.md',
-  '14-Decisions/ADR-001.md',
   '15-AI/AI Context.md',
   '15-AI/AI Instructions.md',
   '15-Tasks/Backlog.md',
@@ -198,9 +198,31 @@ if ($markdownFiles.Count -eq 0) {
   Write-Error 'Obsidian vault contains no Markdown files.'
 }
 
-$noteTitles = @{}
+$titleToPaths = @{}
 foreach ($file in $markdownFiles) {
-  $noteTitles[[System.IO.Path]::GetFileNameWithoutExtension($file.Name)] = $true
+  $title = [System.IO.Path]::GetFileNameWithoutExtension($file.Name)
+  if (-not $titleToPaths.ContainsKey($title)) {
+    $titleToPaths[$title] = New-Object System.Collections.Generic.List[string]
+  }
+  $relative = Resolve-Path -Path $file.FullName -Relative
+  $titleToPaths[$title].Add($relative)
+}
+
+$duplicateTitles = New-Object System.Collections.Generic.List[string]
+foreach ($entry in $titleToPaths.GetEnumerator()) {
+  if ($entry.Value.Count -gt 1) {
+    $duplicateTitles.Add("$($entry.Key): $($entry.Value -join ' | ')")
+  }
+}
+
+if ($duplicateTitles.Count -gt 0) {
+  $uniqueDuplicateTitles = $duplicateTitles | Sort-Object -Unique
+  Write-Error ("Duplicate Obsidian note titles:`n" + ($uniqueDuplicateTitles -join "`n"))
+}
+
+$noteTitles = @{}
+foreach ($title in $titleToPaths.Keys) {
+  $noteTitles[$title] = $true
 }
 
 $missingLinks = New-Object System.Collections.Generic.List[string]

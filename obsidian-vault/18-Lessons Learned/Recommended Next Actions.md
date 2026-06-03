@@ -10,14 +10,14 @@ Related: [[Project Metrics]], [[Improvement Backlog]], [[Optimization Opportunit
 
 ## Current Recommendation Summary
 
-Before Phase 9 automation, fix the engineering system foundations that automation will rely on. The current vault has strong rules, but duplicate note titles and manual-only governance checks make the single-source-of-truth model weaker than intended.
+Before Phase 9 automation, continue hardening the engineering system foundations that automation will rely on. Duplicate title ambiguity is fixed; the next gap is parseable status/evidence.
 
 ## Top Recommended Actions
 
 | Rank | Action | Why Now | Dependencies | Success Criteria |
 | --- | --- | --- | --- | --- |
-| 1 | Execute [[Engineering System Flaw Remediation Plan]] Phase 00 and Phase 01. | Automation built on ambiguous source notes will preserve bad structure. | [[Project Home]], [[Knowledge Graph Index]] | Canonical sources are locked and duplicate note-title ambiguity is removed or allowlisted. |
-| 2 | Extend vault validation for duplicate titles, stale notes, phase consistency, and evidence links. | The current checker validates structure, not governance truth. | Phase 00/01 of [[Engineering System Flaw Remediation Plan]] | `check_obsidian_vault.ps1` catches known governance flaws. |
+| 1 | Execute [[Engineering System Flaw Remediation Plan]] Phase 02. | Semantic validation needs parseable source fields before scripts can enforce status truth. | Completed Phase 00/01 | Task, risk, debt, blocker, improvement, and lesson notes have documented machine-readable fields. |
+| 2 | Execute [[Engineering System Flaw Remediation Plan]] Phase 03 and Phase 04. | Completed work needs evidence links, and the checker should enforce the next governance layer. | Phase 02 | Evidence ledger exists and `check_obsidian_vault.ps1` validates the first semantic rules. |
 | 3 | Execute TASK-001 using [[VoiceCallRuntime Refactor Plan]]. | It unlocks call lease, media, terminal, and diagnostics isolation. | [[Architecture Refactor Plan Index]], [[ADR-004]] | Coordinator contracts and characterization tests exist. |
 | 4 | Execute TASK-004 diagnostics taxonomy early. | Fixes must stop guessing whether failures are Firebase, permission, ICE, TURN, media, or UI. | [[CallDiagnosticsRecorder]] | Failed calls export categorized timeline. |
 | 5 | Execute TASK-002 using [[Firebase Lease Management Refactor Plan]]. | False busy blocks core call reliability. | TASK-001, [[ADR-005]] | Stale locks repair once; live locks stay protected. |

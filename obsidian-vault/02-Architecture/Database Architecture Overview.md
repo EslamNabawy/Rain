@@ -1,4 +1,6 @@
-# Database Architecture
+# Database Architecture Overview
+
+This architecture overview captures the high-level database risks discovered during audit. The canonical database architecture note is [[Database Architecture]].
 
 Rain uses Drift/SQLite for local persistence.
 

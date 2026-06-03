@@ -16,6 +16,14 @@ The repository has a strong written operating model, but the current system stil
 
 The operating system is useful, but it is not yet production-grade. It must become measurable, canonical, and gate-enforced.
 
+## Execution Status
+
+| Phase | Status | Evidence |
+| --- | --- | --- |
+| Phase 00: Canonical Source Lock | Completed 2026-06-03 | Canonical source map documented in [[Knowledge Graph Index]] and linked from [[Project Home]]. |
+| Phase 01: Duplicate Note And Link Ambiguity Cleanup | Completed 2026-06-03 | Secondary duplicate notes were renamed, canonical notes retained, and `scripts/check_obsidian_vault.ps1` now fails on duplicate note titles. |
+| Phase 02: Machine-Readable Task, Risk, Debt, And Blocker Schema | Next | Not started. |
+
 ## Flaw Register
 
 | ID | Severity | Flaw | Impact | Root Cause | Professional Fix |
@@ -37,6 +45,7 @@ The operating system is useful, but it is not yet production-grade. It must beco
 
 ### Phase 00: Canonical Source Lock
 
+- Status: Completed 2026-06-03.
 - Purpose: Decide which notes are authoritative before changing validators or automations.
 - Dependencies: Existing vault structure, [[Project Memory]], [[Master Roadmap]], [[Technical Debt Register]], [[Risk Register]], [[BLOCKERS]].
 - Actions:
@@ -53,6 +62,7 @@ The operating system is useful, but it is not yet production-grade. It must beco
 
 ### Phase 01: Duplicate Note And Link Ambiguity Cleanup
 
+- Status: Completed 2026-06-03.
 - Purpose: Remove the highest-risk knowledge graph ambiguity.
 - Dependencies: Phase 00.
 - Actions:
@@ -199,7 +209,7 @@ These are discrete improvements that should not be bundled silently:
 
 ## Immediate Next Action
 
-Start with Phase 00 and Phase 01 before writing more automation. Automation built on ambiguous sources will preserve the current flaws instead of fixing them.
+Start Phase 02. Define machine-readable task, risk, debt, blocker, improvement, and lesson status fields before extending semantic validation further.
 
 ## Non-Goals
 

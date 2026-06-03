@@ -1,10 +1,10 @@
-# Backlog
+# Audit Task Summary
 
 Last updated: 2026-06-03
 
 ## Purpose
 
-This backlog is the execution queue generated from [[Original Audit]]. The full Epic -> Feature -> Task -> Subtask hierarchy is in [[Master Roadmap]].
+This summary is the compact execution queue generated from [[Original Audit]]. The detailed canonical task backlog is [[Backlog]]. The full Epic -> Feature -> Task -> Subtask hierarchy is in [[Master Roadmap]].
 
 Related: [[Epic Index]], [[Audit Resolution Tracker]], [[Critical Path]], [[Active Sprint]], [[Technical Tasks]].
 

@@ -33,6 +33,8 @@ This vault is now the main knowledge base. Older docs remain in `docs/`, but fut
 
 Phase 1 vault bootstrap, Phase 2 repository discovery, Phase 3 project memory generation, Phase 4 audit-to-roadmap conversion, Phase 5 technical debt system, Phase 6 risk/blocker intelligence, Phase 7 architecture refactor planning, and Phase 8 self-improvement engine are complete at the documentation level. The current execution roadmap is [[Master Roadmap]].
 
+[[Engineering System Flaw Remediation Plan]] Phase 00 and Phase 01 are complete. Canonical source views are documented, secondary duplicate notes have unique names, and the vault checker now fails on uncontrolled duplicate note titles.
+
 ## Execution Status
 
 - Current production-readiness plan: [[Master Roadmap]]
@@ -53,6 +55,7 @@ Phase 1 vault bootstrap, Phase 2 repository discovery, Phase 3 project memory ge
 - Technical debt categories: [[Debt Categories]]
 - Lessons learned: [[Lessons Learned Index]]
 - Self-improvement system: [[Lessons Learned]], [[Engineering Insights]], [[Continuous Learning Rules]], [[Improvement Backlog]], [[Optimization Opportunities]], [[Project Metrics]], [[Recommended Next Actions]]
+- Engineering system remediation: [[Engineering System Flaw Remediation Plan]]
 - AI memory: [[Project Memory]], [[AI Memory Index]]
 - Knowledge graph: [[Knowledge Graph Index]]
 - Templates: [[Templates Index]]

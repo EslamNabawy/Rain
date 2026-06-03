@@ -1,4 +1,4 @@
-# Security Risk Register
+# Security Risk View
 
 Last updated: 2026-06-03
 
@@ -24,4 +24,3 @@ Related: [[Security Roadmap]], [[Rules Strategy]], [[Diagnostics Sanitization]],
 - BLK-009: Offline request guardrails can spend quota or block silently.
 
 See [[Blocker Resolution Plan]] for ownership and workaround details.
-

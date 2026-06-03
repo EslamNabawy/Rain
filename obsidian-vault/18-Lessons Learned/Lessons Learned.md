@@ -119,6 +119,21 @@ No task is fully complete until the lesson check is done or explicitly marked "n
 - Owner: Engineering
 - Status: Open
 
+### LESSON-20260603-006: Canonical Sources Must Be Locked Before Automation
+
+- Related task: [[Engineering System Flaw Remediation Plan]] Phase 00 and Phase 01
+- Related system: [[Knowledge Graph Index]], [[Project Home]], [[Project Metrics]]
+- Related risk/debt: IMP-013, IMP-014
+- What was learned: Automation should not be added on top of ambiguous note titles because it would make the wrong structure harder to unwind.
+- What caused delays: Several canonical domains had duplicate note titles even though one note was only a view or index.
+- What failed: The previous validator allowed duplicate titles because its note-title map overwrote earlier paths.
+- What succeeded: Secondary notes were renamed into unique view/index names, the canonical source map was documented, and the validator now fails on duplicate titles.
+- What should change: Future vault bootstrapping must check duplicate titles before link validation.
+- Pattern: Ambiguous knowledge graph sources.
+- Follow-up improvement: IMP-013 completed; IMP-014 remains in progress for deeper semantic validation.
+- Owner: Engineering
+- Status: Open
+
 ## Review Cadence
 
 - Review lessons at the end of every completed task.

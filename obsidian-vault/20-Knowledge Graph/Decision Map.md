@@ -16,6 +16,7 @@ Connect architecture decisions to the systems and risks they affect.
 - [[ADR-006]] affects [[Presence Management Refactor Plan]], [[Presence Management]], [[Presence And Direct Connect]], and [[Connection Request Notifications]].
 - [[ADR-007]] affects [[Message Loading Refactor Plan]], [[Pagination Strategy]], [[Index Strategy]], and [[Peer Chat]].
 - [[ADR-008]] affects [[File Transfer Runtime Refactor Plan]], [[Streaming Architecture]], [[Backpressure Strategy]], and [[File Transfer]].
+- [[ADR-009]] affects [[Project Memory]], [[Master Roadmap]], [[Audit Resolution Tracker]], and [[Release Gates]].
 
 ## Future Population
 
