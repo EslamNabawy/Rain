@@ -15,6 +15,6 @@ Map major systems to expected source locations. Phase 2 will verify and refine t
 | Signaling/session logic | `packages/protocol_brain` | [[Lease Management]], [[Call State Machine]] |
 | Core storage/domain | `packages/rain_core` | [[Database Architecture]], [[Database Schema]] |
 | Firebase rules/config | `backend/firebase` | [[Firebase Architecture]], [[Rules Strategy]] |
-| Documentation system | `obsidian-vault` | [[Project Home]], [[AI Memory Index]] |
+| Documentation system | `obsidian-vault` | [[Project Home]], [[Project Memory]], [[AI Memory Index]] |
 
 Related: [[Knowledge Graph Index]], [[Repository Map]], [[Current Architecture]].

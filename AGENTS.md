@@ -96,7 +96,7 @@ The Obsidian vault must evolve with the project.
 After meaningful work:
 
 1. Update affected feature or architecture notes.
-2. Update `obsidian-vault/15-AI/Project Memory.md` when a durable fact changes.
+2. Update `obsidian-vault/AI-Memory/Project Memory.md` when a durable fact changes.
 3. Update risk, blocker, or debt notes when new issues are discovered.
 4. Update roadmap or sprint notes when scope changes.
 5. Run the vault validator when documentation changes.

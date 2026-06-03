@@ -20,7 +20,7 @@ Rain is a private peer-to-peer chat app for Android and Windows. It supports acc
 - Development source: [[Coding Standards]], [[Environment Setup]], [[Build Process]]
 - Research source: [[Research Notes]], [[Competitor Analysis]]
 - Lessons source: [[Lessons Learned Index]], [[Continuous Improvement Log]]
-- AI memory source: [[AI Memory Index]], [[Durable Facts]], [[Session Handoff]]
+- AI memory source: [[Project Memory]], [[AI Memory Index]], [[Durable Facts]], [[Session Handoff]]
 - Knowledge graph source: [[Knowledge Graph Index]], [[Domain Map]], [[Dependency Map]], [[Decision Map]], [[Feature Map]], [[System Ownership Map]]
 - Template source: [[Templates Index]]
 

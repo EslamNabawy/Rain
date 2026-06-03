@@ -15,8 +15,8 @@ Record concise state that a future session needs before continuing work.
 
 ## Handoff Checklist
 
-- [ ] Read [[AI Memory Index]].
 - [ ] Read [[Project Memory]].
+- [ ] Read [[AI Memory Index]].
 - [ ] Read [[Project Home]].
 - [ ] Read repository root `CONTINUITY.md`.
 - [ ] Check branch and working tree.

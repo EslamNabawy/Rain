@@ -19,4 +19,4 @@ Store durable project facts that future sessions can trust unless code or owner 
 
 Future phases will add verified facts discovered during repository discovery, architecture mapping, audit conversion, and implementation.
 
-Related: [[AI Memory Index]], [[Project Memory]], [[Current Status]], [[Repository Map]].
+Related: [[Project Memory]], [[AI Memory Index]], [[Current Status]], [[Repository Map]].

@@ -4,10 +4,11 @@ Last updated: 2026-06-03
 
 ## Purpose
 
-This folder gives future AI sessions a stable memory structure separate from temporary chat history. It complements [[Project Memory]] and [[AI Context]].
+This folder gives future AI sessions a stable memory structure separate from temporary chat history. [[Project Memory]] is the primary context note for future AI sessions, and [[AI Context]] provides supporting operational context.
 
 ## Notes
 
+- [[Project Memory]]
 - [[Durable Facts]]
 - [[Session Handoff]]
 - [[Prompt Library]]

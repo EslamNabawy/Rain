@@ -42,6 +42,6 @@ Phase 1 vault bootstrap is now complete at the structural level. Detailed reposi
 - Open risk register: [[Risk Register]]
 - Technical debt register: [[Technical Debt Register]]
 - Lessons learned: [[Lessons Learned Index]]
-- AI memory: [[AI Memory Index]]
+- AI memory: [[Project Memory]], [[AI Memory Index]]
 - Knowledge graph: [[Knowledge Graph Index]]
 - Templates: [[Templates Index]]
