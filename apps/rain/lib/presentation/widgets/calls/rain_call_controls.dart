@@ -838,6 +838,7 @@ IconData rainVoiceCallIcon(VoiceCallState state) {
     VoiceCallPhase.connectingPeer ||
     VoiceCallPhase.connectingMedia ||
     VoiceCallPhase.ending ||
+    VoiceCallPhase.ended ||
     VoiceCallPhase.idle => Icons.call_outlined,
   };
 }
@@ -865,6 +866,7 @@ Color rainVoiceCallAccent(BuildContext context, VoiceCallState state) {
     VoiceCallPhase.connectingPeer ||
     VoiceCallPhase.connectingMedia ||
     VoiceCallPhase.ending ||
+    VoiceCallPhase.ended ||
     VoiceCallPhase.idle => scheme.primary,
   };
 }
@@ -878,7 +880,7 @@ Color rainVoiceCallHaloColor(BuildContext context, VoiceCallState state) {
     VoiceCallPhase.connectingPeer ||
     VoiceCallPhase.connectingMedia => RainColors.mistCyan,
     VoiceCallPhase.failed => scheme.error,
-    VoiceCallPhase.ending || VoiceCallPhase.idle => scheme.primary,
+    VoiceCallPhase.ending || VoiceCallPhase.ended || VoiceCallPhase.idle => scheme.primary,
   };
 }
 
@@ -891,6 +893,7 @@ bool rainVoiceCallShowsSignalHalo(VoiceCallState state) {
     VoiceCallPhase.active => true,
     VoiceCallPhase.failed ||
     VoiceCallPhase.ending ||
+    VoiceCallPhase.ended ||
     VoiceCallPhase.idle => false,
   };
 }
@@ -903,6 +906,7 @@ String rainVoiceCallTitle(VoiceCallState state, String displayName) {
     VoiceCallPhase.active => '${_capitalize(callKind)} with $displayName',
     VoiceCallPhase.failed => '${_capitalize(callKind)} failed',
     VoiceCallPhase.ending => 'Ending $callKind',
+    VoiceCallPhase.ended => 'Call ended',
     VoiceCallPhase.connectingPeer ||
     VoiceCallPhase.connectingMedia => 'Connecting $callKind',
     VoiceCallPhase.idle => _capitalize(callKind),
@@ -953,6 +957,8 @@ String rainVoiceCallDetail(VoiceCallState state, int nowMs) {
       state.isVideo
           ? 'Closing camera and microphone.'
           : 'Closing microphone audio.',
+    VoiceCallPhase.ended =>
+      state.isVideo ? 'Video call ended.' : 'Voice call ended.',
     VoiceCallPhase.failed => rainVoiceCallFailureDetail(state),
     VoiceCallPhase.idle => '',
     VoiceCallPhase.active => 'Connected.',

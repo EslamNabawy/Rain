@@ -1,5 +1,4 @@
 import 'package:protocol_brain/protocol_brain.dart';
-import 'package:rain_core/rain_core.dart';
 
 /// Authoritative snapshot of a peer's connectivity state.
 ///

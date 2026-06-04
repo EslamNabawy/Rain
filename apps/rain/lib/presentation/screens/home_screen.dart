@@ -186,6 +186,12 @@ RainSoundEvent? rainVoiceCallLifecycleSoundEventFor(
         sessionEpoch: previous.sessionEpoch,
         mediaMode: previous.mediaMode,
       ),
+    VoiceCallPhase.ended => RainSoundEvent.callEnded(
+      callId: callId,
+      peerId: next.peerId,
+      sessionEpoch: next.sessionEpoch,
+      mediaMode: next.mediaMode,
+    ),
     VoiceCallPhase.idle ||
     VoiceCallPhase.connectingPeer ||
     VoiceCallPhase.connectingMedia ||

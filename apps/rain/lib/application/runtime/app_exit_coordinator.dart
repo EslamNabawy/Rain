@@ -82,7 +82,11 @@ final class AppExitCoordinator {
       return;
     }
     final futures = critical.map((h) => Future<void>(() => h(reason)));
-    await Future.wait(futures).timeout(criticalTimeout, onTimeout: () {});
+    try {
+      await Future.wait(futures).timeout(criticalTimeout);
+    } on TimeoutException {
+      // Best-effort: critical phase exceeded budget, proceed anyway.
+    }
   }
 
   Future<void> _runShutdown(AppExitReason reason) async {
@@ -91,6 +95,10 @@ final class AppExitCoordinator {
       return;
     }
     final futures = handlers.map((h) => Future<void>(() => h(reason)));
-    await Future.wait(futures).timeout(timeout, onTimeout: () {});
+    try {
+      await Future.wait(futures).timeout(timeout);
+    } on TimeoutException {
+      // Best-effort: shutdown exceeded budget, proceed anyway.
+    }
   }
 }

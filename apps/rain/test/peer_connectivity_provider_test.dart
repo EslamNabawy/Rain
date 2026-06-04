@@ -53,17 +53,19 @@ void main() {
         ),
       ];
       final container = ProviderContainer(
-        overrides: <Override>[
+        overrides: [
           runtimeControllerProvider.overrideWith(
             () => _StaticRuntimeController(runtime),
           ),
           friendsProvider.overrideWith(() => _StaticFriendsController(friends)),
         ],
       );
-      addTearDown(container.dispose);
-      addTearDown(runtime.dispose);
-      addTearDown(database.close);
-      addTearDown(brain.dispose);
+      addTearDown(() async {
+        container.dispose();
+        await runtime.dispose();
+        await brain.dispose();
+        await database.close();
+      });
 
       await container.read(runtimeControllerProvider.future);
       await container.read(friendsProvider.future);
