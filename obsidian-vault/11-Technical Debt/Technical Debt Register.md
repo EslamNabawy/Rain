@@ -408,7 +408,7 @@ Related: [[Debt Categories]], [[Debt Prioritization]], [[Architecture Debt]], [[
 - Roadmap Tasks: TASK-012.
 - Resolution Strategy: Add semantic/build comparison tests, manifest parser tests, required/optional prompt widget tests, and settings check behavior tests.
 - Progress Note 2026-06-03: Update service now has explicit `remotePolicyOutdated` status for stale release manifests, same-version minimum-build upgrades are required updates, optional update prompts render from the root app surface before login/home, and settings manual checks report stale policy instead of "up to date."
-- Progress Note 2026-06-04: Release metadata drift for the current test build is mitigated. The app is bumped to `1.0.7+8`, both release manifests advertise `1.0.7+8`, and `version_metadata_test.dart` proves previous `1.0.6+7` installs now receive `updateRequired` from the checked-in Remote Config template. Remaining debt is deploy evidence that production Remote Config was actually updated for the published artifacts.
+- Progress Note 2026-06-04: Release metadata drift for the current test build is mitigated. The app is bumped to `1.0.7+8`, both release manifests advertise `1.0.7+8`, and `version_metadata_test.dart` proves previous `1.0.6+7` installs now receive `updateRequired` from the checked-in Remote Config template. `Build Rain Apps` run 26963049075 published `rain-test-109-1` Android/Windows artifacts for SHA `f1904e7`. Remaining debt is deploy evidence that production Remote Config was actually updated for the published artifacts.
 
 ## UX Debt
 

@@ -29,8 +29,8 @@ Related: [[Project Home]], [[Production Readiness]], [[Launch Readiness]], [[Ris
 | P0 debt items | 7 | 0 before public launch | See [[Debt Prioritization]]. |
 | Required vault files validation | Passing | Always passing | Enforced by vault checker. |
 | Markdown files in vault | 195 | Healthy, no broken links | Counted during 2026-06-04 vault validation. |
-| Branch ahead of origin/dev | Synced after push through `883886a`; root `.obsidian/` remains intentionally untracked | Keep release candidates pushed before cloud gates | `dev` and `origin/dev` matched after account-deletion release-gate commit push. |
-| Latest cloud hard release gate | Passed for `dev` `883886a` | Pass on release candidate SHA | `Build Rain Apps` run 26957834309 passed hard gate, auth scenario tests, emulator tests, vault validation, Android/Windows artifacts, and `rain-test-108-1` publication. |
+| Branch ahead of origin/dev | Synced after push through `f1904e7`; root `.obsidian/` remains intentionally untracked | Keep release candidates pushed before cloud gates | `dev` and `origin/dev` matched after the update-warning metadata fix was pushed. |
+| Latest cloud hard release gate | Passed for `dev` `f1904e7` | Pass on release candidate SHA | `Build Rain Apps` run 26963049075 passed hard gate, auth scenario tests, emulator tests, vault validation, Android/Windows artifacts, and `rain-test-109-1` publication. |
 | Duplicate note titles | 0 uncontrolled duplicates | 0 uncontrolled duplicates | Duplicate-title validation now fails the vault check. See [[Engineering System Flaw Remediation Plan]]. |
 | Governance enforcement depth | Required files, links, inbound/outbound links, and duplicate titles | Semantic governance validation | Stale metrics, evidence links, and phase consistency checks are still pending. |
 

@@ -15,6 +15,23 @@
 
 ## Latest Local Gate Evidence
 
+### 2026-06-04 Cloud Update Warning Gate And Artifact Proof
+
+- Workflow: `Build Rain Apps`
+- Run: https://github.com/EslamNabawy/Rain/actions/runs/26963049075
+- Trigger: `workflow_dispatch`
+- Inputs: `platform=all`, `build_profile=demo`, `publish_test_release=true`
+- Branch/SHA validated: `dev` / `f1904e72f1c16773700f0bfa6bcc8ac0fcd7706d`
+- Passed: Hard Release Gate in 4m18s.
+- Passed: workspace dependency restore, lock drift check, Dart formatting, generated artifact presence, analyzer, full Melos tests, explicit auth lifecycle scenario tests, Firebase JSON parsing, Firebase Functions install/lint/audit/tests, Firebase emulator integration tests, and Obsidian vault validation.
+- Passed: Windows demo portable artifact build and native runtime verification.
+- Passed: Android APK artifact build and ABI verification.
+- Passed: GitHub pre-release publication.
+- Published release: https://github.com/EslamNabawy/Rain/releases/tag/rain-test-109-1
+- Published assets: `Rain-Demo-Android-v7a.apk`, `Rain-Demo-Android-v8-v9.apk`, `Rain-Demo-Windows-x64.zip`.
+- Scope: validates pushed `1.0.7+8` update-warning metadata, checked-in Remote Config template behavior, hard release gate, Android demo APKs, and Windows demo portable artifact at commit `f1904e7`.
+- Remaining operational dependency: deploy Firebase Remote Config so already-installed `1.0.6+7` clients can read the newer `1.0.7+8` policy.
+
 ### 2026-06-04 Local Auth Scenario Gate Integration
 
 - Added explicit hard-gate auth lifecycle scenario step for `SCN-AUTH-001` through `SCN-AUTH-004` in `build-artifacts.yml` and `validated-release.yml`.
