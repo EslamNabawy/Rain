@@ -6,19 +6,35 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:flutter_webrtc/flutter_webrtc.dart';
 import 'package:protocol_brain/protocol_brain.dart';
+import 'package:rain/application/audio/sound_event_router.dart';
 import 'package:rain/application/bootstrap/app_bootstrap.dart';
 import 'package:rain/application/runtime/rain_runtime_controller.dart';
+import 'package:rain/application/runtime/voice_call_state.dart';
 import 'package:rain/application/state/app_providers.dart';
+import 'package:rain/application/state/sound_event_providers.dart';
 import 'package:rain/core/config/app_environment.dart';
+import 'package:rain/infrastructure/services/app_settings_store.dart';
 import 'package:rain/infrastructure/services/force_update_service.dart';
 import 'package:rain/infrastructure/services/network_status_service.dart';
+import 'package:rain/infrastructure/services/sound_effects_service.dart';
 import 'package:rain/infrastructure/signaling/noop_signaling_adapter.dart';
 import 'package:rain/presentation/screens/home_screen.dart';
 import 'package:rain/presentation/widgets/chat_composer.dart';
 import 'package:rain_core/rain_core.dart';
+import 'package:shared_preferences_platform_interface/in_memory_shared_preferences_async.dart';
+import 'package:shared_preferences_platform_interface/shared_preferences_async_platform_interface.dart';
 
 void main() {
   TestWidgetsFlutterBinding.ensureInitialized();
+
+  setUp(() {
+    SharedPreferencesAsyncPlatform.instance =
+        InMemorySharedPreferencesAsync.empty();
+  });
+
+  tearDown(() {
+    SharedPreferencesAsyncPlatform.instance = null;
+  });
 
   testWidgets('ChatPanel sends while accepted-friend presence is stale', (
     WidgetTester tester,
@@ -42,6 +58,17 @@ void main() {
       ..setChannelOpen('bob', SessionChannel.chat, true);
     final messageStore = MessageStore(database);
     final offlineQueueStore = OfflineQueueStore(database);
+    final messageDeliveryService = MessageDeliveryService(
+      messageStore: messageStore,
+      offlineQueueStore: offlineQueueStore,
+      ackTimeout: const Duration(milliseconds: 1),
+      autoResendLimit: 0,
+    );
+    final soundRouter = SoundEventRouter(
+      effects: _RecordingSoundEffectsService(),
+      settingsLoader: () => const AppAudioSettings(),
+      callStateReader: () => const VoiceCallState.idle(),
+    );
     final runtime = RainRuntimeController(
       selfIdentity: const RainIdentity(
         username: 'alice',
@@ -56,10 +83,7 @@ void main() {
       friendStore: friendStore,
       messageStore: messageStore,
       offlineQueueStore: offlineQueueStore,
-      messageDeliveryService: MessageDeliveryService(
-        messageStore: messageStore,
-        offlineQueueStore: offlineQueueStore,
-      ),
+      messageDeliveryService: messageDeliveryService,
     );
     final container = ProviderContainer(
       overrides: [
@@ -74,12 +98,15 @@ void main() {
           () => _StaticRuntimeController(runtime),
         ),
         friendsProvider.overrideWith(() => _StaticFriendsController(friends)),
+        soundEventRouterProvider.overrideWithValue(soundRouter),
       ],
     );
     addTearDown(() async {
       container.dispose();
       await runtime.dispose();
       await brain.dispose();
+      messageDeliveryService.dispose();
+      await soundRouter.dispose();
       await database.close();
     });
 
@@ -114,6 +141,7 @@ void main() {
     await tester.pump(const Duration(milliseconds: 300));
 
     expect(sentPayloads, isNotEmpty);
+    messageDeliveryService.dispose();
   });
 }
 
@@ -215,6 +243,18 @@ final class _FakePlatformBridge implements PlatformBridge {
 
   @override
   Future<void> setSpeakerphoneOnButPreferBluetooth() async {}
+}
+
+final class _RecordingSoundEffectsService extends SoundEffectsService {
+  _RecordingSoundEffectsService() : super();
+
+  @override
+  Future<void> play(
+    RainSoundEffect effect, {
+    bool voiceCallActive = false,
+    bool allowDuringCall = false,
+    double volumeScale = 1.0,
+  }) async {}
 }
 
 final class _WidgetTestSessionManager implements SessionManager {

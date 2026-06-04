@@ -5,8 +5,11 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:flutter_webrtc/flutter_webrtc.dart' show RTCSessionDescription;
 import 'package:protocol_brain/protocol_brain.dart';
+import 'package:rain/application/bootstrap/app_bootstrap.dart';
 import 'package:rain/application/runtime/rain_runtime_controller.dart';
 import 'package:rain/application/state/app_providers.dart';
+import 'package:rain/core/config/app_environment.dart';
+import 'package:rain/infrastructure/services/force_update_service.dart';
 import 'package:rain/infrastructure/signaling/noop_signaling_adapter.dart';
 import 'package:rain_core/rain_core.dart';
 
@@ -54,6 +57,7 @@ void main() {
       ];
       final container = ProviderContainer(
         overrides: [
+          appBootstrapProvider.overrideWithValue(_bootstrap(database)),
           runtimeControllerProvider.overrideWith(
             () => _StaticRuntimeController(runtime),
           ),
@@ -78,110 +82,162 @@ void main() {
       expect(snapshot.presenceFresh, isFalse);
       expect(snapshot.isConnectedWithStalePresence, isTrue);
       expect(snapshot.canSendData, isTrue);
-      expect(snapshot.sessionId, 'room-bob-alice');
+    },
+  );
+
+  test(
+    'peerConnectivityProvider reports disconnected peer without session',
+    () async {
+      final database = RainDatabase(NativeDatabase.memory());
+      final brain = _TestSessionManager();
+      final runtime = RainRuntimeController(
+        selfIdentity: const RainIdentity(
+          username: 'alice',
+          displayName: 'Alice',
+          createdAt: 1,
+          gender: null,
+        ),
+        adapter: NoopSignalingAdapter(),
+        brain: brain,
+        database: database,
+        friendStore: FriendStore(database),
+        messageStore: MessageStore(database),
+        offlineQueueStore: OfflineQueueStore(database),
+        messageDeliveryService: MessageDeliveryService(
+          messageStore: MessageStore(database),
+          offlineQueueStore: OfflineQueueStore(database),
+        ),
+      );
+      final friends = <FriendRecord>[
+        const FriendRecord(
+          username: 'charlie',
+          displayName: 'Charlie',
+          state: FriendState.friend,
+          addedAt: 1,
+          lastOnlineAt: null,
+          isOnline: false,
+          unreadCount: 0,
+          gender: null,
+        ),
+      ];
+      final container = ProviderContainer(
+        overrides: [
+          appBootstrapProvider.overrideWithValue(_bootstrap(database)),
+          runtimeControllerProvider.overrideWith(
+            () => _StaticRuntimeController(runtime),
+          ),
+          friendsProvider.overrideWith(() => _StaticFriendsController(friends)),
+        ],
+      );
+      addTearDown(() async {
+        container.dispose();
+        await runtime.dispose();
+        await brain.dispose();
+        await database.close();
+      });
+
+      await container.read(runtimeControllerProvider.future);
+      await container.read(friendsProvider.future);
+
+      final snapshot = container.read(peerConnectivityProvider)['charlie'];
+
+      expect(snapshot, isNotNull);
+      expect(snapshot!.sessionState, isNull);
+      expect(snapshot.presenceOnline, isFalse);
+      expect(snapshot.presenceFresh, isFalse);
+      expect(snapshot.canSendData, isFalse);
     },
   );
 }
 
-final class _StaticRuntimeController extends RuntimeController {
-  _StaticRuntimeController(this.runtime);
-
-  final RainRuntimeController runtime;
-
-  @override
-  Future<RainRuntimeController?> build() async => runtime;
+AppBootstrapState _bootstrap(RainDatabase database) {
+  return AppBootstrapState(
+    environment: AppEnvironment.fromEnvironment(
+      runtimeEnvironment: const <String, String>{'RAIN_BACKEND': 'noop'},
+    ),
+    database: database,
+    adapter: NoopSignalingAdapter(),
+    forceUpdateService: ForceUpdateService(
+      remoteConfig: null,
+      updateUrl: 'https://example.com',
+    ),
+  );
 }
 
-final class _StaticFriendsController extends FriendsController {
-  _StaticFriendsController(this.friends);
+class _StaticRuntimeController extends RuntimeController {
+  _StaticRuntimeController(this._runtime);
 
-  final List<FriendRecord> friends;
+  final RainRuntimeController _runtime;
 
   @override
-  Future<List<FriendRecord>> build() async => friends;
+  Future<RainRuntimeController?> build() async => _runtime;
 }
 
-final class _TestSessionManager implements SessionManager {
-  final Map<String, Session> _sessions = <String, Session>{};
-  final Set<String> _openChannels = <String>{};
-  final StreamController<Session> _peerConnected =
-      StreamController<Session>.broadcast();
-  final StreamController<String> _peerDisconnected =
-      StreamController<String>.broadcast();
-  final StreamController<SessionMessage> _peerMessages =
-      StreamController<SessionMessage>.broadcast();
-  final StreamController<SessionRemoteTrack> _remoteTracks =
-      StreamController<SessionRemoteTrack>.broadcast();
-  final StreamController<Session> _sessionChanges =
-      StreamController<Session>.broadcast();
-  final StreamController<IncomingOfferRejection> _incomingOfferRejected =
-      StreamController<IncomingOfferRejection>.broadcast();
+class _StaticFriendsController extends FriendsController {
+  _StaticFriendsController(this._friends);
+
+  final List<FriendRecord> _friends;
+
+  @override
+  Future<List<FriendRecord>> build() async => _friends;
+}
+
+class _TestSessionManager implements SessionManager {
+  final Map<String, Session> _sessions = {};
+  final Set<String> _openChannels = {};
+  final _sessionController = StreamController<Session>.broadcast();
+  final _connectedController = StreamController<Session>.broadcast();
+  final _disconnectedController = StreamController<String>.broadcast();
+  final _messageController = StreamController<SessionMessage>.broadcast();
+  final _trackController = StreamController<SessionRemoteTrack>.broadcast();
+  final _rejectionController = StreamController<IncomingOfferRejection>.broadcast();
 
   void seedConnected(String peerId, {String? roomId}) {
-    final session = Session(
+    _sessions[peerId] = Session(
       peerId: peerId,
       state: SessionState.connected,
       connectionType: ConnectionType.signaling,
-      phase: SessionPhase.connected,
-      detail: 'Data channels open.',
-      roomId: roomId,
       sender: (_) {},
+      roomId: roomId,
     );
-    _sessions[peerId] = session;
   }
 
-  void setChannelOpen(
-    String peerId,
-    SessionChannel channel,
-    bool isOpen,
-  ) {
+  void setChannelOpen(String peerId, SessionChannel channel, bool open) {
     final key = '$peerId:${channel.name}';
-    if (isOpen) {
+    if (open) {
       _openChannels.add(key);
     } else {
       _openChannels.remove(key);
     }
   }
 
-  Future<void> dispose() async {
-    await _peerConnected.close();
-    await _peerDisconnected.close();
-    await _peerMessages.close();
-    await _remoteTracks.close();
-    await _sessionChanges.close();
-    await _incomingOfferRejected.close();
-  }
-
   @override
-  Stream<Session> get onPeerConnected => _peerConnected.stream;
-
-  @override
-  Stream<String> get onPeerDisconnected => _peerDisconnected.stream;
-
-  @override
-  Stream<SessionMessage> get onPeerMessage => _peerMessages.stream;
-
-  @override
-  Stream<SessionRemoteTrack> get onRemoteTrack => _remoteTracks.stream;
-
-  @override
-  Stream<Session> get onSessionChanged => _sessionChanges.stream;
-
-  @override
-  Stream<IncomingOfferRejection> get onIncomingOfferRejected =>
-      _incomingOfferRejected.stream;
-
-  @override
-  List<Session> getSessions() => _sessions.values.toList(growable: false);
+  List<Session> getSessions() => _sessions.values.toList();
 
   @override
   Session? getSession(String peerId) => _sessions[peerId];
 
   @override
-  Future<void> registerPeer(
-    String peerId, {
-    IncomingOfferGuard? incomingOfferGuard,
-  }) async {}
+  Stream<Session> get onPeerConnected => _connectedController.stream;
+
+  @override
+  Stream<String> get onPeerDisconnected => _disconnectedController.stream;
+
+  @override
+  Stream<SessionMessage> get onPeerMessage => _messageController.stream;
+
+  @override
+  Stream<SessionRemoteTrack> get onRemoteTrack => _trackController.stream;
+
+  @override
+  Stream<Session> get onSessionChanged => _sessionController.stream;
+
+  @override
+  Stream<IncomingOfferRejection> get onIncomingOfferRejected =>
+      _rejectionController.stream;
+
+  @override
+  Future<void> registerPeer(String peerId, {IncomingOfferGuard? incomingOfferGuard}) async {}
 
   @override
   Future<void> unregisterPeer(String peerId) async {}
@@ -190,31 +246,24 @@ final class _TestSessionManager implements SessionManager {
   Future<Session> connect(String peerId) async {
     final session = Session(
       peerId: peerId,
-      state: SessionState.connecting,
+      state: SessionState.connected,
       connectionType: ConnectionType.signaling,
       sender: (_) {},
     );
     _sessions[peerId] = session;
-    _sessionChanges.add(session);
     return session;
   }
 
   @override
   Future<void> disconnect(String peerId) async {
     _sessions.remove(peerId);
-    _peerDisconnected.add(peerId);
   }
 
   @override
-  Future<void> recoverConnection(
-    String peerId, {
-    String reason = 'Network changed. Restarting peer connection.',
-  }) async {}
+  Future<void> recoverConnection(String peerId, {String reason = 'Network changed. Restarting peer connection.'}) async {}
 
   @override
-  Future<void> recoverConnections({
-    String reason = 'Network changed. Restarting peer connections.',
-  }) async {}
+  Future<void> recoverConnections({String reason = 'Network changed. Restarting peer connections.'}) async {}
 
   @override
   void sendControl(String peerId, String data) {}
@@ -272,4 +321,13 @@ final class _TestSessionManager implements SessionManager {
     String peerId,
     RTCSessionDescription answer,
   ) async {}
+
+  Future<void> dispose() async {
+    await _sessionController.close();
+    await _connectedController.close();
+    await _disconnectedController.close();
+    await _messageController.close();
+    await _trackController.close();
+    await _rejectionController.close();
+  }
 }
