@@ -3,13 +3,13 @@
   "parameters": {
     "rain_release_manifest_v1": {
       "defaultValue": {
-        "value": "{\"schema\":1,\"channels\":{\"stable\":{\"android\":{\"latestVersion\":\"1.0.6\",\"latestBuild\":7,\"minimumVersion\":\"1.0.6\",\"minimumBuild\":7,\"updateUrl\":\"https://github.com/EslamNabawy/Rain/releases\",\"notes\":\"Update version detection and release package stamping fixes.\",\"publishedAt\":1780371417707},\"windows\":{\"latestVersion\":\"1.0.6\",\"latestBuild\":7,\"minimumVersion\":\"1.0.6\",\"minimumBuild\":7,\"updateUrl\":\"https://github.com/EslamNabawy/Rain/releases\",\"notes\":\"Update version detection and release package stamping fixes.\",\"publishedAt\":1780371417707}},\"demo\":{\"android\":{\"latestVersion\":\"1.0.6\",\"latestBuild\":7,\"minimumVersion\":\"1.0.6\",\"minimumBuild\":7,\"updateUrl\":\"https://github.com/EslamNabawy/Rain/releases\",\"notes\":\"Update version detection and release package stamping fixes.\",\"publishedAt\":1780371417707},\"windows\":{\"latestVersion\":\"1.0.6\",\"latestBuild\":7,\"minimumVersion\":\"1.0.6\",\"minimumBuild\":7,\"updateUrl\":\"https://github.com/EslamNabawy/Rain/releases\",\"notes\":\"Update version detection and release package stamping fixes.\",\"publishedAt\":1780371417707}}}}"
+        "value": "{\"schema\":1,\"channels\":{\"stable\":{\"android\":{\"latestVersion\":\"1.0.7\",\"latestBuild\":8,\"minimumVersion\":\"1.0.7\",\"minimumBuild\":8,\"updateUrl\":\"https://github.com/EslamNabawy/Rain/releases\",\"notes\":\"Terminal call cleanup and update policy warning fixes.\",\"publishedAt\":1780531200000},\"windows\":{\"latestVersion\":\"1.0.7\",\"latestBuild\":8,\"minimumVersion\":\"1.0.7\",\"minimumBuild\":8,\"updateUrl\":\"https://github.com/EslamNabawy/Rain/releases\",\"notes\":\"Terminal call cleanup and update policy warning fixes.\",\"publishedAt\":1780531200000}},\"demo\":{\"android\":{\"latestVersion\":\"1.0.7\",\"latestBuild\":8,\"minimumVersion\":\"1.0.7\",\"minimumBuild\":8,\"updateUrl\":\"https://github.com/EslamNabawy/Rain/releases\",\"notes\":\"Terminal call cleanup and update policy warning fixes.\",\"publishedAt\":1780531200000},\"windows\":{\"latestVersion\":\"1.0.7\",\"latestBuild\":8,\"minimumVersion\":\"1.0.7\",\"minimumBuild\":8,\"updateUrl\":\"https://github.com/EslamNabawy/Rain/releases\",\"notes\":\"Terminal call cleanup and update policy warning fixes.\",\"publishedAt\":1780531200000}}}}"
       },
       "description": "Rain release manifest used by installed apps to show optional update prompts and required update gates."
     },
     "min_required_version": {
       "defaultValue": {
-        "value": "1.0.6"
+        "value": "1.0.7"
       },
       "description": "Legacy fallback minimum version for old Rain builds that do not support rain_release_manifest_v1."
     },

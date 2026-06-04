@@ -3,42 +3,42 @@
   "channels": {
     "stable": {
       "android": {
-        "latestVersion": "1.0.6",
-        "latestBuild": 7,
-        "minimumVersion": "1.0.6",
-        "minimumBuild": 7,
+        "latestVersion": "1.0.7",
+        "latestBuild": 8,
+        "minimumVersion": "1.0.7",
+        "minimumBuild": 8,
         "updateUrl": "https://github.com/EslamNabawy/Rain/releases",
-        "notes": "Update version detection and release package stamping fixes.",
-        "publishedAt": 1780371417707
+        "notes": "Terminal call cleanup and update policy warning fixes.",
+        "publishedAt": 1780531200000
       },
       "windows": {
-        "latestVersion": "1.0.6",
-        "latestBuild": 7,
-        "minimumVersion": "1.0.6",
-        "minimumBuild": 7,
+        "latestVersion": "1.0.7",
+        "latestBuild": 8,
+        "minimumVersion": "1.0.7",
+        "minimumBuild": 8,
         "updateUrl": "https://github.com/EslamNabawy/Rain/releases",
-        "notes": "Update version detection and release package stamping fixes.",
-        "publishedAt": 1780371417707
+        "notes": "Terminal call cleanup and update policy warning fixes.",
+        "publishedAt": 1780531200000
       }
     },
     "demo": {
       "android": {
-        "latestVersion": "1.0.6",
-        "latestBuild": 7,
-        "minimumVersion": "1.0.6",
-        "minimumBuild": 7,
+        "latestVersion": "1.0.7",
+        "latestBuild": 8,
+        "minimumVersion": "1.0.7",
+        "minimumBuild": 8,
         "updateUrl": "https://github.com/EslamNabawy/Rain/releases",
-        "notes": "Update version detection and release package stamping fixes.",
-        "publishedAt": 1780371417707
+        "notes": "Terminal call cleanup and update policy warning fixes.",
+        "publishedAt": 1780531200000
       },
       "windows": {
-        "latestVersion": "1.0.6",
-        "latestBuild": 7,
-        "minimumVersion": "1.0.6",
-        "minimumBuild": 7,
+        "latestVersion": "1.0.7",
+        "latestBuild": 8,
+        "minimumVersion": "1.0.7",
+        "minimumBuild": 8,
         "updateUrl": "https://github.com/EslamNabawy/Rain/releases",
-        "notes": "Update version detection and release package stamping fixes.",
-        "publishedAt": 1780371417707
+        "notes": "Terminal call cleanup and update policy warning fixes.",
+        "publishedAt": 1780531200000
       }
     }
   }

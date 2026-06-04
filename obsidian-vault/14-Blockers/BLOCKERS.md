@@ -116,6 +116,7 @@ Related: [[Risk Register]], [[Risk Categories]], [[Risk Matrix]], [[Blocker Reso
   - Test settings "Check for updates" behavior.
   - Include version/channel/build metadata in release artifacts.
 - Progress 2026-06-03: Same-version minimum-build policy now produces required updates, stale Remote Config policy is shown as `remotePolicyOutdated` instead of "up to date," optional prompts render from the root app surface before login/home, and settings manual check reports stale policy clearly.
+- Progress 2026-06-04: The reported missing warning was reproduced as metadata equality: `1.0.6+7` installs saw a `1.0.6+7` Remote Config policy and correctly reported `current`. App and manifests are now `1.0.7+8`, and the checked-in Remote Config template test proves previous `1.0.6+7` installs are `updateRequired`. Closing this blocker still requires deployed Remote Config evidence and fresh artifact proof.
 - Exit Criteria: Old stable/demo build simulations show required or optional update correctly.
 - Detection Strategy: Unit tests, widget tests, Remote Config manifest parser tests, release gate evidence.
 

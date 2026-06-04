@@ -2,6 +2,8 @@ import 'dart:convert';
 import 'dart:io';
 
 import 'package:flutter_test/flutter_test.dart';
+import 'package:package_info_plus/package_info_plus.dart';
+import 'package:rain/infrastructure/services/force_update_service.dart';
 
 void main() {
   test('pubspec app version has numeric build metadata', () {
@@ -62,6 +64,39 @@ void main() {
     }
   });
 
+  test('remote config template warns the previous 1.0.6 build 7 app', () async {
+    final manifest = _remoteConfigManifest();
+
+    for (final channel in AppUpdateChannel.values) {
+      for (final platform in <String>['android', 'windows']) {
+        final service = ForceUpdateService(
+          remoteConfig: null,
+          updateUrl: 'https://github.com/EslamNabawy/Rain/releases',
+          updateChannel: channel,
+          platform: platform,
+          manifestLoader: () async => manifest,
+          packageInfoLoader: () async => PackageInfo(
+            appName: 'Rain',
+            packageName: 'com.rainapp.rain',
+            version: '1.0.6',
+            buildNumber: '7',
+            buildSignature: '',
+          ),
+        );
+
+        final result = await service.check();
+
+        expect(
+          result.status,
+          ForceUpdateStatus.updateRequired,
+          reason:
+              'Remote Config must warn previous 1.0.6+7 $channel/$platform '
+              'installs after a newer test build is published.',
+        );
+      }
+    }
+  });
+
   test('legacy remote config minimum version matches current app version', () {
     final match = _pubspecVersionMatch()!;
     final version = '${match.group(1)}.${match.group(2)}.${match.group(3)}';
@@ -94,4 +129,16 @@ RegExpMatch? _pubspecVersionMatch() {
     r'^version:\s*(\d+)\.(\d+)\.(\d+)\+(\d+)\s*$',
     multiLine: true,
   ).firstMatch(pubspec);
+}
+
+String _remoteConfigManifest() {
+  final raw = File(
+    '../../backend/firebase/remoteconfig.template.json',
+  ).readAsStringSync();
+  final template = jsonDecode(raw) as Map<String, dynamic>;
+  final parameters = template['parameters'] as Map<String, dynamic>;
+  return ((parameters['rain_release_manifest_v1']
+              as Map<String, dynamic>)['defaultValue']
+          as Map<String, dynamic>)['value']
+      as String;
 }

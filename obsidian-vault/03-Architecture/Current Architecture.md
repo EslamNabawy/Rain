@@ -379,8 +379,9 @@ Related: [[Connection Request Notifications]], [[Firebase Architecture]], [[Rule
 1. `ForceUpdateController` calls `ForceUpdateService.check()`.
 2. `ForceUpdateService` reads Firebase Remote Config when available.
 3. The app compares current version/build/channel/platform against release policy.
-4. Required updates block through the global `RainStartupSurface`; optional updates show banner state and can be dismissed.
-5. Diagnostics record update status.
+4. A warning or gate only appears when the remote manifest advertises a newer semantic version or build than the installed package metadata for the same channel/platform; equal metadata is intentionally `current`.
+5. Required updates block through the global `RainStartupSurface`; optional updates show banner state and can be dismissed.
+6. Diagnostics record update status.
 
 Related: [[Version And Updates]], [[Release Gates]], [[Production Readiness]].
 

@@ -403,6 +403,7 @@ This work is a P0 launch-blocking remediation stream discovered after the origin
 - Success criteria: Old semantic versions and lower build numbers trigger required/optional update states correctly.
 - Definition of done: Unit and widget tests cover old/current/newer, invalid manifest, unavailable Remote Config, and dismissed optional prompt.
 - Progress 2026-06-03: Same-version minimum-build upgrades now become required updates; stale Remote Config policy is surfaced as `remotePolicyOutdated` instead of `current`; optional update prompts render from `RootScreen` before login/home and are dismissible through the existing per-build dismissal key.
+- Progress 2026-06-04: The app and release manifests were bumped to `1.0.7+8` after update warnings did not appear for `1.0.6+7`. A new regression proves the checked-in Remote Config template reports `updateRequired` for previous `1.0.6+7` Android/Windows stable/demo installs. Remote Config deployment and fresh artifact publication remain operational follow-up.
 - Subtasks:
   - [x] TASK-012.1 Add semantic/build comparison tests.
   - [x] TASK-012.2 Add required/optional prompt tests.

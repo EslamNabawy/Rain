@@ -114,6 +114,7 @@ Build/automation:
 - GitHub Actions for CI, merge gates, releases, fast artifacts, validated releases, and vault validation.
 - 2026-06-04 cloud gate evidence: `Build Rain Apps` run 26957834309 passed the hard release gate, explicit auth lifecycle scenario tests, Firebase emulator integration including account deletion, Obsidian vault validation, Android APK artifacts, Windows demo portable artifact, and `rain-test-108-1` pre-release publication for pushed `dev` SHA `883886a`.
 - 2026-06-04 gate integration update: `build-artifacts.yml` and `validated-release.yml` run explicit `SCN-AUTH-001` through `SCN-AUTH-004` auth lifecycle tests and Obsidian vault validation. Firebase emulator scripts include `integration_account_deletion_emulator_test.dart`, covering account tombstone cleanup and surviving-Auth no-recreate behavior.
+- 2026-06-04 update warning fix: current app metadata is `1.0.7+8`, and both release manifests advertise `1.0.7+8`. The previous `1.0.6+7` app did not show an update warning because checked-in Remote Config also advertised `1.0.6+7`, which correctly evaluated as `current`. `version_metadata_test.dart` now proves the checked-in Remote Config template returns `updateRequired` for previous `1.0.6+7` stable/demo Android/Windows installs. Remote Config still must be deployed for installed apps to see the warning.
 - Windows PowerShell local QA/tooling.
 
 ## Domain Concepts
@@ -254,6 +255,7 @@ Current top risks:
 - Stale Firebase locks can cause false busy.
 - Peer presence can be stale after app close or network loss.
 - Update checks now distinguish required, optional, current, unavailable, invalid config, and stale Remote Config policy. Remote Config still must be deployed after each release for old clients to discover new builds.
+- Update warnings require release metadata and deployed Remote Config to be newer than the installed package metadata. Equality means `current` by design.
 - Firebase free-tier constraint limits backend cleanup/authoritative guardrails.
 - Large file transfer can stress memory and data-channel buffers.
 - Diagnostics can become privacy risk if sanitization regresses.
