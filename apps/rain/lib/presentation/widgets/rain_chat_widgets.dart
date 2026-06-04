@@ -1,3 +1,4 @@
+import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_svg/flutter_svg.dart';
 import 'package:rain/application/runtime/media_device_settings.dart';
@@ -9,8 +10,8 @@ import 'package:rain/presentation/branding/rain_peer_core_mark.dart';
 import 'package:rain/presentation/branding/rain_ripple_halo_surface.dart';
 import 'package:rain/presentation/widgets/calls/rain_call_controls.dart';
 
-const String _maleAvatarAsset = 'assets/gender avatar/man-avatar.svg';
-const String _femaleAvatarAsset = 'assets/gender avatar/woman-avatar.svg';
+const String _maleAvatarAsset = 'assets/gender_avatar/man-avatar.svg';
+const String _femaleAvatarAsset = 'assets/gender_avatar/woman-avatar.svg';
 const String _defaultMicrophoneMenuValue = '__rain_default_microphone__';
 
 class RainAvatar extends StatelessWidget {
@@ -33,6 +34,17 @@ class RainAvatar extends StatelessWidget {
     final initial = name.trim().isEmpty ? '?' : name.trim()[0].toUpperCase();
     final borderRadius = BorderRadius.circular(size * 0.34);
     final avatarAsset = _avatarAssetForGender(gender);
+
+    if (avatarAsset == null && gender != null && gender!.trim().isNotEmpty) {
+      // Gender was provided but not recognized — log for diagnostics.
+      // This helps identify backend gender values that don't match 'male'/'female'.
+      if (kDebugMode) {
+        debugPrint(
+          '[RainAvatar] Unrecognized gender "$gender" for user "$name", '
+          'falling back to initial. Expected "male" or "female".',
+        );
+      }
+    }
 
     return SizedBox.square(
       dimension: size,

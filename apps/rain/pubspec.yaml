@@ -74,5 +74,5 @@ flutter:
     - assets/branding/runtime/peer_core/node_a.svg
     - assets/branding/runtime/peer_core/node_b.svg
     - assets/branding/runtime/peer_core/node_c.svg
-    - "assets/gender avatar/"
+    - assets/gender_avatar/
     - assets/sounds/
