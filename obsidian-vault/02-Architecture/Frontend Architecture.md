@@ -31,6 +31,7 @@ Important provider domains:
 - `RootScreen` reuses the same `RainStartupSurface` for route-local consistency, but `/` no longer owns the only startup splash/update/error surfaces.
 - `RainNavigationShell` must not be inserted while startup is loading, update-blocked, failed, or session-expired.
 - Protected route readiness is now explicit through `AppStartupState.canRenderProtectedRoutes`. Settings/search/friend pages are wrapped in a route-local guard, and unresolved protected paths redirect to `/` before protected content can render.
+- Android startup uses the same dark `@drawable/launch_background` for both `LaunchTheme` and `NormalTheme` in light and night resource variants, preventing a platform white flash before Flutter draws the splash.
 
 ## UI Risks
 

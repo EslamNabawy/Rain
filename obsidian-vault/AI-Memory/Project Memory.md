@@ -355,6 +355,13 @@ Scenario intelligence update 2026-06-04:
 - Every testing cycle should violate relevant assumptions, trace downstream failure chains, and convert uncovered gaps into deterministic tests, risks, debt, blockers, or recommended next actions.
 - [[Scenario Coverage Matrix]] is the current applied pass over launch-blocker scenarios. It marks auth/account deletion, stale presence, terminal call races, Firebase mirror cleanup, diagnostics export, update policy, connection request quota, and file-transfer cases as covered, partially covered, or gaps.
 
+Multi-issue stability investigation update 2026-06-04:
+
+- [[2026-06-04 Multi-Issue Stability Investigation]] documents the reported connection-status, Windows shutdown, splash flash, PC restart presence desync, desktop camera, delayed call-end, and mobile gender-avatar issues.
+- The investigation phase made no production code changes. It found a shared root in split runtime/provider/presence/call state ownership, plus local call terminal UI being delayed by cleanup/write waits.
+- Recommended next implementation order: authoritative peer/call capability snapshot, immediate local call-ended presentation before cleanup waits, shutdown critical-vs-best-effort split with timing diagnostics, desktop video preflight, Android startup theme alignment, and gender-avatar data-path proof.
+- Phase E splash remediation 2026-06-04: Android `LaunchTheme` and `NormalTheme` in both `values` and `values-night` now use `@drawable/launch_background`; the default and v21 launch drawables remain dark `#061017`. `apps/rain/test/android_splash_resources_test.dart` locks the platform theme/drawable contract and passed locally with `flutter test test/android_splash_resources_test.dart --reporter expanded` from `apps/rain`.
+
 ## Known Pitfalls
 
 - Creating duplicate Project Memory notes splits context. This file is the primary memory note.

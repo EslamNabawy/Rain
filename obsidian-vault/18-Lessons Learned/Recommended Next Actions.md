@@ -24,6 +24,8 @@ Registration conflict progress 2026-06-04: live Firebase rules allowed fresh ran
 
 Terminal cleanup progress 2026-06-04: `rain-diagnostics-2026-06-04T144952-237539Z.json` showed mobile-to-PC media reached `connected`, Firebase ended as `busy`, local call cleanup stalled, file transfer was blocked by stale active-call state, and Windows shutdown did not complete. Runtime now publishes terminal state before bounded cleanup, and desktop close has bounded close/destroy plus a Windows exit fallback. The next proof is real Android-to-Windows smoke on a fresh build.
 
+Splash Phase E progress 2026-06-04: Android light and night `LaunchTheme` plus `NormalTheme` now all use the dark `@drawable/launch_background`, and a resource contract test locks the `#061017` launch drawable so the native window does not flash white before Flutter renders the splash.
+
 Update warning progress 2026-06-04: the missing warning was traced to release metadata equality. Installed `1.0.6+7` apps saw a `1.0.6+7` Remote Config policy, so they correctly reported `current`. The app and release manifests are now `1.0.7+8`, and `version_metadata_test.dart` proves checked-in Remote Config requires update for previous `1.0.6+7` stable/demo Android/Windows installs. `Build Rain Apps` run 26963049075 published fresh `rain-test-109-1` Android/Windows artifacts for SHA `f1904e7`. The next proof is deploying Remote Config and confirming old installed apps read the live `1.0.7+8` policy.
 
 ## Top Recommended Actions

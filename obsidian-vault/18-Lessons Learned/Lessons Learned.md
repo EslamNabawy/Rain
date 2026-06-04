@@ -449,6 +449,22 @@ No task is fully complete until the lesson check is done or explicitly marked "n
 - Owner: Engineering
 - Status: Open
 
+### LESSON-20260604-027: Native Android Themes Must Match Flutter Splash
+
+- Date: 2026-06-04
+- Related task: Phase E Android splash flash remediation.
+- Related system: [[Branding And UI]], [[Frontend Architecture]]
+- Related risk/debt: R-022, TD-022
+- What was learned: A correct Flutter splash surface is not enough if Android switches from `LaunchTheme` to a light `NormalTheme` before Flutter draws the first frame.
+- What caused delays: The launch drawable was already dark, so the remaining white flash came from the post-launch native theme handoff rather than the Flutter widget tree.
+- What failed: `NormalTheme` in both light and night resources still used the platform background.
+- What succeeded: Both `LaunchTheme` and `NormalTheme` now use `@drawable/launch_background`, and `apps/rain/test/android_splash_resources_test.dart` locks the theme and drawable colors.
+- What should change: Any future splash/branding change must check Android platform resources as well as Flutter widgets.
+- Pattern: Native shell state can break a Flutter-owned visual contract.
+- Follow-up improvement: Add platform resource contract tests when Android or Windows shell resources affect startup or branding.
+- Owner: Engineering
+- Status: Open
+
 ## Review Cadence
 
 - Review lessons at the end of every completed task.

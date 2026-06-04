@@ -23,6 +23,7 @@ Provide a premium minimal Rain identity across Android and Windows.
 - Desktop needs mouse-friendly refresh and controls.
 - Mobile needs touch-friendly targets.
 - Low-power devices use reduced visual effects.
+- Android platform launch and normal window themes must use the dark `#061017` launch background so the native-to-Flutter splash handoff does not flash white.
 
 ## Known Issues
 
