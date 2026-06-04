@@ -15,6 +15,7 @@ Private peer-to-peer file movement without a cloud file store.
 - File is chunked and sent over file data channel.
 - Progress is stored in Drift.
 - Receiver writes chunks to a temporary file and exports/saves completed files.
+- File transfer presentation watches the live peer connection lane. When the lane is no longer connected, transfer speed samples reset so stale progress/speed state does not survive route or connection churn.
 
 ## Dependencies
 
@@ -41,5 +42,6 @@ Private peer-to-peer file movement without a cloud file store.
 - Congestion backpressure.
 - Cancel and retry.
 - Disconnect mid-transfer.
+- Disconnect/reconnect while transfer views are visible.
 
 Related: [[Peer Chat]], [[Technical Debt]].

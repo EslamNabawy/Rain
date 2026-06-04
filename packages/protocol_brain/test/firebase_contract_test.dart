@@ -772,6 +772,55 @@ void main() {
     );
   });
 
+  test('Firebase voice terminal fields are writable by either participant', () {
+    final rules = _repoFile('backend/firebase/database.rules.json');
+    final voiceCallsRules = _rulesSlice(
+      rules,
+      '"voiceCalls"',
+      '"connectionRequests"',
+    );
+    const participantWrite =
+        "root.child('users/' + root.child('voiceCalls/' + \$callId + '/caller').val() + '/uid').val() === auth.uid || root.child('users/' + root.child('voiceCalls/' + \$callId + '/callee').val() + '/uid').val() === auth.uid";
+
+    for (final field in <String>[
+      '"status"',
+      '"updatedAt"',
+      '"endedAt"',
+      '"reasonCode"',
+      '"reason"',
+    ]) {
+      final fieldRules = _rulesSlice(voiceCallsRules, field, '"muted"');
+      expect(
+        fieldRules,
+        contains(participantWrite),
+        reason:
+            '$field must allow caller or callee terminal writes. A callee '
+            'hangup/reject can otherwise become RTDB permission denied.',
+      );
+    }
+
+    final endedByRules = _rulesSlice(
+      voiceCallsRules,
+      '"endedBy"',
+      '"reasonCode"',
+    );
+    expect(
+      endedByRules,
+      contains(
+        "newData.val() === root.child('voiceCalls/' + \$callId + '/caller').val() || newData.val() === root.child('voiceCalls/' + \$callId + '/callee').val()",
+      ),
+    );
+    expect(
+      endedByRules,
+      contains(
+        "root.child('users/' + newData.val() + '/uid').val() === auth.uid",
+      ),
+      reason:
+          'endedBy must be self-owned by whichever participant ended the call, '
+          'not hard-coded to the offer owner.',
+    );
+  });
+
   test('Firebase voice inbox deletes use existing data only', () {
     final rules = _repoFile('backend/firebase/database.rules.json');
     final inboxRules = _rulesSlice(rules, '"voiceCallInboxes"', '"voiceCalls"');

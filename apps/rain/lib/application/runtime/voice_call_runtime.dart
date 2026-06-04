@@ -1669,6 +1669,13 @@ extension VoiceCallRuntime on RainRuntimeController {
       name: 'firebase_frame_send_started',
       context: _voiceFrameEventContext(peerId, frame),
     );
+    if (await _shouldSkipTerminalSensitiveVoiceFrame(
+      voiceAdapter: voiceAdapter,
+      peerId: peerId,
+      frame: frame,
+    )) {
+      return;
+    }
     switch (frame.type) {
       case VoiceCallFrameType.invite:
         final callee = _normalizedUsername(peerId);
@@ -1996,6 +2003,83 @@ extension VoiceCallRuntime on RainRuntimeController {
       name: 'firebase_frame_send_completed',
       context: _voiceFrameEventContext(peerId, frame),
     );
+  }
+
+  Future<bool> _shouldSkipTerminalSensitiveVoiceFrame({
+    required VoiceSignalingAdapter voiceAdapter,
+    required String peerId,
+    required VoiceCallFrame frame,
+  }) async {
+    final session = _voiceCallSession;
+    if (session != null &&
+        session.callId == frame.callId &&
+        session.sessionEpoch == frame.sessionEpoch &&
+        _isTerminalVoiceCallSessionLatched(session)) {
+      _recordLateVoiceFrame(
+        session,
+        'ignored ${frame.type.name} send after terminal room latch',
+      );
+      return true;
+    }
+
+    if (!_requiresTerminalVoiceRoomPreflight(frame.type)) {
+      return false;
+    }
+
+    final room = await voiceAdapter.fetchCall(frame.callId);
+    if (room == null) {
+      _recordRuntimeEvent(
+        category: 'call',
+        name: 'voice_late_media_frame_ignored_after_terminal',
+        severity: 'info',
+        message: 'Voice media signaling frame ignored after room cleanup.',
+        context: <String, Object?>{
+          ..._voiceFrameEventContext(peerId, frame),
+          'roomStatus': 'missing',
+        },
+      );
+      return true;
+    }
+    if (!room.status.isTerminal) {
+      return false;
+    }
+
+    _recordRuntimeEvent(
+      category: 'call',
+      name: 'voice_late_media_frame_ignored_after_terminal',
+      severity: 'info',
+      message: 'Voice media signaling frame ignored after terminal room state.',
+      context: <String, Object?>{
+        ..._voiceFrameEventContext(peerId, frame),
+        'roomStatus': room.status.name,
+        'endedBy': room.endedBy,
+        'reasonCode': room.reasonCode,
+      },
+    );
+    if (session != null &&
+        session.callId == frame.callId &&
+        session.sessionEpoch == frame.sessionEpoch) {
+      await _reconcileTerminalVoiceRoom(
+        session: session,
+        room: room,
+        peerId: peerId,
+      );
+    }
+    return true;
+  }
+
+  bool _requiresTerminalVoiceRoomPreflight(VoiceCallFrameType type) {
+    return switch (type) {
+      VoiceCallFrameType.accept ||
+      VoiceCallFrameType.offer ||
+      VoiceCallFrameType.answer ||
+      VoiceCallFrameType.mute => true,
+      VoiceCallFrameType.invite ||
+      VoiceCallFrameType.reject ||
+      VoiceCallFrameType.busy ||
+      VoiceCallFrameType.hangup ||
+      VoiceCallFrameType.candidate => false,
+    };
   }
 
   Future<void> _queueVoiceIceCandidate({

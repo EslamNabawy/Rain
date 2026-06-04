@@ -16,6 +16,7 @@ Real-time private communication.
 - WebRTC media connection carries microphone audio.
 - Terminal Firebase room state should end both peers.
 - Failed setup diagnostics include Firebase room status transitions so reports can distinguish ringing, accepted, connected, failed, and ended phases.
+- Late terminal-sensitive media signaling sends (`accept`, `offer`, `answer`, `mute`) preflight the Firebase call room before writing. If the room is missing or terminal, Rain records `voice_late_media_frame_ignored_after_terminal`, reconciles the active session, and does not let the debug signaling adapter record a crash-level write failure.
 
 ## Dependencies
 
@@ -40,6 +41,7 @@ Real-time private communication.
 - Call failures can be shown as media failures even when signaling failed.
 - Voice hangup reliability has been reported weaker than video.
 - Call setup diagnostics were strengthened on 2026-06-03, but full device-level reliability remains a launch blocker until smoke evidence proves both directions.
+- 2026-06-04 mitigation: a PC-side crash after the remote peer ended the call was traced to `_createAndSendOffer` writing an offer after Firebase room status was already terminal. Runtime now skips late terminal-sensitive media signaling writes before they reach `writeVoiceOffer`/`writeVoiceAnswer`.
 
 ## Testing Requirements
 

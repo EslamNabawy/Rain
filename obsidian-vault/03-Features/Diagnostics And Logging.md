@@ -15,6 +15,7 @@ Improves bug reproduction for WebRTC, Firebase, UI state, and runtime failures.
 - Riverpod observer logs provider transitions.
 - Debug signaling adapter logs Firebase/API operation metadata.
 - Diagnostics export includes summaries.
+- Diagnostics export passes bytes to the platform picker, but Android SAF handles such as `content://...` and `/document/...` are not treated as filesystem paths. Rain writes a real fallback JSON copy under the diagnostics export folder and reports that path when the picker returns a platform-managed handle.
 
 ## Privacy Rules
 
@@ -33,6 +34,7 @@ Improves bug reproduction for WebRTC, Firebase, UI state, and runtime failures.
 - Sanitization.
 - Event caps and trimming.
 - Export after fatal error.
+- Export through Android scoped-storage picker handles.
 - No sensitive payload leaks.
 
 Related: [[Security Review]], [[Monitoring]], [[Incident Response]].

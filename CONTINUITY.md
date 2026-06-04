@@ -38,6 +38,7 @@ Auth/startup remediation - Phase 6 complete. Next auth/startup work is Phase 5 f
 ## Active Work
 
 - 2026-06-04 registration permission-denied investigation is complete for the supplied create-account screenshot. Live Firebase checks showed current rules allow fresh random registration, while `/users/eslam` already exists. The app now maps RTDB permission-denied during registration to an account conflict message, rolls back the just-created Auth user only before the durable user row exists, signs out without caching Drift identity on backend-save failures, and includes targeted auth/onboarding regression tests.
+- 2026-06-04 terminal/media-write and diagnostics-export follow-up is implemented and awaiting validation. The supplied Windows diagnostic showed `signaling.writeVoiceOffer` throwing after the Firebase room was already `ended`; runtime now preflights terminal-sensitive media signaling sends before `accept`, `offer`, `answer`, and `mute` writes. Firebase rules contract tests now assert voice terminal fields are writable by either participant. Diagnostics export now reports a real fallback JSON file when Android returns a content URI or `/document/...` picker handle. File-transfer views now reset speed samples when the peer lane is not connected.
 - `ROOT_CAUSE_ANALYSIS.md` was created on 2026-06-03 from the supplied Windows diagnostics JSON, Android screenshot, and manual failure report. It is the current evidence lock for call/presence/update/diagnostics failures.
 - The RCA confirmed these root-cause clusters: split call terminal authority, Android `signaling.endCall` permission denial, presence freshness races, terminal inbox exposure before cleanup, Android diagnostics export path failure, and update build-number inconsistency.
 - First mitigation from the RCA execution is complete: late voice signaling states after terminal Firebase rooms are recorded as `late_frame_ignored` events only and no longer overwrite crash diagnostics as `lastCrash`.
@@ -84,7 +85,7 @@ Auth/startup remediation - Phase 6 complete. Next auth/startup work is Phase 5 f
 
 ## Next Recommended Action
 
-Implement or explicitly defer the remaining account deletion workflow from `ROOT_AUTH_STARTUP_REMEDIATION_ROADMAP.md`, then add the auth/startup regression set to the hard release gate.
+Run validation for the 2026-06-04 terminal/media-write, diagnostics-export, rules-contract, and file-transfer-view fixes. After that, implement or explicitly defer the remaining account deletion workflow from `ROOT_AUTH_STARTUP_REMEDIATION_ROADMAP.md`, then add the auth/startup regression set to the hard release gate.
 
 ## Future Population Areas
 

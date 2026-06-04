@@ -415,9 +415,27 @@ class CrashDiagnosticsService {
         );
       }
     }
-    return CrashDiagnosticsExportResult.saved(
-      destination?.path ?? destinationPath,
-    );
+    if (destination == null) {
+      final fallback = await _writeDiagnosticsExportFile(
+        directory: directory,
+        fileName: fileName,
+        bytes: bytes,
+      );
+      return CrashDiagnosticsExportResult.saved(fallback.path);
+    }
+    return CrashDiagnosticsExportResult.saved(destination.path);
+  }
+
+  Future<File> _writeDiagnosticsExportFile({
+    required Directory directory,
+    required String fileName,
+    required Uint8List bytes,
+  }) async {
+    final exportDirectory = Directory(_join(directory.path, 'exports'));
+    await exportDirectory.create(recursive: true);
+    final file = File(_join(exportDirectory.path, fileName));
+    await file.writeAsBytes(bytes, flush: true);
+    return file;
   }
 
   File? _fileFromPickerPath(String path) {

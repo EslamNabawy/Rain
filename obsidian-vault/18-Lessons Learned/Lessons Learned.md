@@ -359,6 +359,36 @@ No task is fully complete until the lesson check is done or explicitly marked "n
 - Owner: Engineering
 - Status: Open
 
+### LESSON-20260604-021: Terminal Firebase Rooms Must Gate Late Media Writes Before Debug Instrumentation
+
+- Related task: TASK-003, TASK-004
+- Related system: [[Voice Calls]], [[Signaling Architecture]], [[Call State Machine]], [[Diagnostics And Logging]]
+- Related risk/debt: R-001, R-009, TD-004
+- What was learned: Catching an already-terminal call-room error after `writeVoiceOffer` is too late because `DebugSignalingAdapter` records the failed Firebase operation as `signaling.writeVoiceOffer` before runtime can classify it as a terminal race.
+- What caused delays: Earlier mitigations handled late received frames and terminal cleanup, but local media negotiation could still start a fresh SDP write after the room had already ended.
+- What failed: A PC runtime in `_createAndSendOffer` attempted to write an offer for a call that Firebase already marked `ended`, creating a false crash diagnostic.
+- What succeeded: Runtime now preflights terminal-sensitive media signaling sends (`accept`, `offer`, `answer`, `mute`) with `fetchCall`; missing or terminal rooms are skipped and reconciled before write calls reach the debug adapter.
+- What should change: Any future call signaling write that can happen after async media awaits must pass through the same terminal-room gate or an equivalent coordinator.
+- Pattern: Expected terminal races must be classified before instrumentation layers that record operation failures.
+- Follow-up improvement: Extract this into [[CallTerminalReconciler]] when `VoiceCallRuntime` is split.
+- Owner: Engineering
+- Status: Open
+
+### LESSON-20260604-022: Android Picker Handles Need A Real Export Fallback
+
+- Related task: TASK-014
+- Related system: [[Diagnostics And Logging]], [[Diagnostics Sanitization]]
+- Related risk/debt: R-015, TD-010
+- What was learned: Avoiding `File('/document/...')` prevents the crash, but it does not guarantee the user has a real file path to share when Android returns a scoped-storage handle.
+- What caused delays: The first mitigation treated SAF handles as non-files but still returned the handle as the export result.
+- What failed: Users could still see export failures or unusable `/document/...` paths on OEM Android storage pickers.
+- What succeeded: Diagnostics export now writes a real fallback JSON copy under Rain diagnostics exports whenever the picker returns a content URI or `/document/...` handle.
+- What should change: Any export flow using Android storage access handles should either rely entirely on plugin-provided bytes or keep a real app-owned fallback file.
+- Pattern: Platform-managed handles are not filesystem paths.
+- Follow-up improvement: Consider a dedicated share action for diagnostics once release stability is higher.
+- Owner: Engineering
+- Status: Open
+
 ## Review Cadence
 
 - Review lessons at the end of every completed task.

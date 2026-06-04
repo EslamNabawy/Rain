@@ -213,6 +213,12 @@ class FileTransferViewsController
 
   @override
   AsyncValue<List<FileTransferView>> build() {
+    final connection = ref.watch(
+      connectionsProvider.select((state) => state.peer(_peerId)),
+    );
+    if (!connection.isConnected) {
+      _speedTracker.reset();
+    }
     final transfers = ref.watch(fileTransfersProvider(_peerId));
     return transfers.whenData(_speedTracker.apply);
   }

@@ -6715,7 +6715,7 @@ void main() {
     });
 
     test(
-      'voice hangup still reaches remote when session hangup frame fails',
+      'voice hangup reaches remote through terminal room without session frame',
       () async {
         final harness = await _createTwoUserCallHarness(db, alice);
         addTearDown(harness.dispose);
@@ -6740,9 +6740,9 @@ void main() {
         );
         expect(
           harness.adapter.sessionHangupFrameFailureAttempts,
-          1,
+          0,
           reason:
-              'The test must fail only the post-terminal hangup frame path.',
+              'Terminal room reconciliation must avoid the post-terminal hangup frame path.',
         );
         await _waitForCondition(
           () => harness.bobRuntime.voiceCallState.phase == VoiceCallPhase.idle,

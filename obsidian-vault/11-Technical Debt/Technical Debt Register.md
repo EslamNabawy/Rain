@@ -149,7 +149,7 @@ Related: [[Debt Categories]], [[Debt Prioritization]], [[Architecture Debt]], [[
 - Related Systems: [[Call State Machine]], [[CallTerminalReconciler]], [[Voice Calls]], [[Video Calls]].
 - Roadmap Tasks: TASK-003, TASK-013.
 - Resolution Strategy: Define explicit allowed transitions, timeouts, terminal reconciliation, and late-frame ignore behavior, then test voice and video paths.
-- Progress Note 2026-06-03: Late voice signaling frames after terminal Firebase rooms now remain structured `late_frame_ignored` diagnostics and no longer replace the latest real crash/error in exports. Remaining debt is the full state-machine and terminal reconciliation split.
+- Progress Note 2026-06-03: Late voice signaling frames after terminal Firebase rooms now remain structured `late_frame_ignored` diagnostics and no longer replace the latest real crash/error in exports. 2026-06-04 mitigation: terminal-sensitive media signaling sends now preflight the Firebase room before `accept`, `offer`, `answer`, and `mute` writes; missing or terminal rooms are skipped and reconciled before `writeVoiceOffer`/`writeVoiceAnswer` can become debug-adapter crash records. Remaining debt is the full state-machine and terminal reconciliation split.
 
 ### TD-005: Fragmented Call Surface Model
 
@@ -268,7 +268,7 @@ Related: [[Debt Categories]], [[Debt Prioritization]], [[Architecture Debt]], [[
 - Related Systems: [[Diagnostics And Logging]], [[Diagnostics Sanitization]], [[Privacy Review]], [[Security Roadmap]].
 - Roadmap Tasks: TASK-014.
 - Resolution Strategy: Add recursive denylist sanitization, string caps, export tests, and diagnostics-only summaries.
-- Progress Note 2026-06-03: The Android diagnostics export path failure from the RCA is mitigated. `CrashDiagnosticsService` now treats SAF `/document/...` and `/tree/...` handles as platform-managed picker outputs and does not open them through `dart:io`; regression coverage locks this behavior.
+- Progress Note 2026-06-03: The Android diagnostics export path failure from the RCA is mitigated. `CrashDiagnosticsService` now treats SAF `/document/...` and `/tree/...` handles as platform-managed picker outputs and does not open them through `dart:io`. 2026-06-04 strengthening: when the picker returns a platform-managed handle, Rain writes and reports a real fallback JSON file under the diagnostics export folder; regression coverage locks both content URI and `/document/...` behavior.
 
 ### TD-011: Malformed Signaling Write Protection
 

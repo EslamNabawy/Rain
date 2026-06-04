@@ -85,6 +85,48 @@ void main() {
     expect(terminalWrite, contains("'cleanupResult': 'alreadyCompleted'"));
     expect(terminalWrite, contains('_TerminalRoomWriteResult.durable()'));
   });
+
+  test('terminal room preflight runs before media signaling writes', () {
+    final runtimeSource = _runtimeSource();
+    final sendFrame = _sliceFunction(
+      runtimeSource,
+      'Future<void> _sendVoiceFrameObject',
+      'Future<bool> _shouldSkipTerminalSensitiveVoiceFrame',
+    );
+    final terminalPreflightIndex = sendFrame.indexOf(
+      '_shouldSkipTerminalSensitiveVoiceFrame',
+    );
+    final writeOfferIndex = sendFrame.indexOf('writeVoiceOffer');
+    final writeAnswerIndex = sendFrame.indexOf('writeVoiceAnswer');
+    final acceptIndex = sendFrame.indexOf('acceptCall');
+
+    expect(terminalPreflightIndex, greaterThanOrEqualTo(0));
+    expect(writeOfferIndex, greaterThanOrEqualTo(0));
+    expect(writeAnswerIndex, greaterThanOrEqualTo(0));
+    expect(acceptIndex, greaterThanOrEqualTo(0));
+    expect(terminalPreflightIndex, lessThan(writeOfferIndex));
+    expect(terminalPreflightIndex, lessThan(writeAnswerIndex));
+    expect(terminalPreflightIndex, lessThan(acceptIndex));
+
+    final terminalPreflight = _sliceFunction(
+      runtimeSource,
+      'Future<bool> _shouldSkipTerminalSensitiveVoiceFrame',
+      'bool _requiresTerminalVoiceRoomPreflight',
+    );
+    expect(terminalPreflight, contains('voiceAdapter.fetchCall(frame.callId)'));
+    expect(
+      terminalPreflight,
+      contains('voice_late_media_frame_ignored_after_terminal'),
+    );
+    expect(terminalPreflight, contains('_reconcileTerminalVoiceRoom'));
+    expect(
+      terminalPreflight,
+      isNot(contains('errorRecorder?.call')),
+      reason:
+          'Terminal room races during late media signaling are expected cleanup '
+          'events and must not replace the latest real diagnostics error.',
+    );
+  });
 }
 
 String _runtimeSource() {

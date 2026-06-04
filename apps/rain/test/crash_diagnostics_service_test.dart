@@ -612,7 +612,9 @@ void main() {
 
       expect(pickerReceivedBytes, isTrue);
       expect(result.saved, isTrue);
-      expect(result.path, destinationUri);
+      expect(result.path, isNot(destinationUri));
+      expect(result.path, isNotNull);
+      expect(File(result.path!).existsSync(), isTrue);
     },
   );
 
@@ -655,7 +657,9 @@ void main() {
 
       expect(pickerReceivedBytes, isTrue);
       expect(result.saved, isTrue);
-      expect(result.path, destinationHandle);
+      expect(result.path, isNot(destinationHandle));
+      expect(result.path, isNotNull);
+      expect(File(result.path!).existsSync(), isTrue);
       expect(
         File(destinationHandle).existsSync(),
         isFalse,
