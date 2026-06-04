@@ -1,4 +1,5 @@
 import 'package:flutter/foundation.dart';
+import 'package:flutter/services.dart';
 import 'package:flutter_webrtc/flutter_webrtc.dart';
 import 'package:protocol_brain/protocol_brain.dart';
 
@@ -724,6 +725,118 @@ class MediaDeviceSettings {
       kind: device.kind ?? '',
       groupId: device.groupId,
     );
+  }
+
+  /// Validates that the currently selected video input can be used.
+  ///
+  /// Returns a [VideoPreflightResult] indicating success or the specific
+  /// failure reason. This should be called before starting a video call
+  /// on desktop to provide clear error messages.
+  Future<VideoPreflightResult> validateVideoInputAsync() async {
+    final devices = await loadVideoInputDevices();
+    if (devices.isEmpty) {
+      return VideoPreflightResult.noCamera;
+    }
+
+    final storedDeviceId = await settingsStore.loadSelectedVideoInputDeviceId();
+    final selectedDeviceId = storedDeviceId != null &&
+            devices.any((device) => device.deviceId == storedDeviceId)
+        ? storedDeviceId
+        : null;
+
+    // Clear stale selected device id.
+    if (storedDeviceId != null && selectedDeviceId == null) {
+      await settingsStore.setSelectedVideoInputDeviceId(null);
+    }
+
+    final effectiveDeviceId = selectedDeviceId ?? devices.first.deviceId;
+    final constraints = <String, dynamic>{
+      'audio': false,
+      'video': <String, dynamic>{
+        'deviceId': effectiveDeviceId,
+        'width': <String, dynamic>{'ideal': 640},
+        'height': <String, dynamic>{'ideal': 480},
+      },
+    };
+
+    MediaStream? stream;
+    try {
+      stream = await platformBridge.getUserMedia(constraints);
+      if (stream.getVideoTracks().isEmpty) {
+        return VideoPreflightResult.noCamera;
+      }
+      return VideoPreflightResult.success;
+    } on PlatformException catch (error) {
+      final message = error.message?.toLowerCase() ?? '';
+      final code = error.code.toLowerCase();
+      if (message.contains('permission') ||
+          message.contains('denied') ||
+          message.contains('notallowed') ||
+          code.contains('permission') ||
+          code.contains('denied')) {
+        return VideoPreflightResult.permissionDenied;
+      }
+      if (message.contains('busy') ||
+          message.contains('in use') ||
+          message.contains('already') ||
+          code.contains('busy')) {
+        return VideoPreflightResult.busy;
+      }
+      if (message.contains('constraint') ||
+          message.contains('could not satisfy') ||
+          code.contains('constraint')) {
+        return VideoPreflightResult.constraintFailed;
+      }
+      return VideoPreflightResult.captureFailed;
+    } catch (error) {
+      final message = error.toString().toLowerCase();
+      if (message.contains('permission') || message.contains('denied')) {
+        return VideoPreflightResult.permissionDenied;
+      }
+      if (message.contains('busy') || message.contains('in use')) {
+        return VideoPreflightResult.busy;
+      }
+      return VideoPreflightResult.captureFailed;
+    } finally {
+      if (stream != null) {
+        await _disposeMediaStream(stream);
+      }
+    }
+  }
+}
+
+/// Result of a video input preflight check.
+enum VideoPreflightResult {
+  success,
+  noCamera,
+  selectedCameraMissing,
+  permissionDenied,
+  busy,
+  constraintFailed,
+  captureFailed,
+  rendererFailed,
+}
+
+extension VideoPreflightResultExtension on VideoPreflightResult {
+  bool get isSuccess => this == VideoPreflightResult.success;
+
+  String get userMessage {
+    return switch (this) {
+      VideoPreflightResult.success => 'Camera ready.',
+      VideoPreflightResult.noCamera => 'No camera found on this device.',
+      VideoPreflightResult.selectedCameraMissing =>
+        'Selected camera is no longer available. Choose another camera.',
+      VideoPreflightResult.permissionDenied =>
+        'Camera permission denied. Allow camera access in settings.',
+      VideoPreflightResult.busy =>
+        'Camera is in use by another application.',
+      VideoPreflightResult.constraintFailed =>
+        'Camera does not support the required video format.',
+      VideoPreflightResult.captureFailed =>
+        'Camera capture failed. Try again or choose another camera.',
+      VideoPreflightResult.rendererFailed =>
+        'Camera initialized but video renderer failed.',
+    };
   }
 }
 
