@@ -60,11 +60,14 @@ class _ChatPanelState extends ConsumerState<_ChatPanel> {
     final canChat = friend?.state == FriendState.friend;
     final isPeerOnline = canChat ? friend?.isOnline ?? false : false;
     final connection = ref.watch(connectionsProvider).peer(widget.peerId);
+    final connectivity = ref.watch(peerConnectivityProvider);
+    final connectivitySnapshot = connectivity[widget.peerId];
     final diagnostics = ConnectionDiagnostics.fromConnection(
       canChat: canChat,
       isPeerOnline: isPeerOnline,
       connection: connection,
       coordinator: runtime?.connectionCoordinatorSnapshotFor(widget.peerId),
+      snapshot: connectivitySnapshot,
     );
     final messages = ref.watch(messagesProvider(widget.peerId));
     final transfers = ref.watch(fileTransferViewsProvider(widget.peerId));
@@ -1817,11 +1820,13 @@ class _ChatPanelState extends ConsumerState<_ChatPanel> {
         peerOnlineOverride ?? (canChat ? friend?.isOnline ?? false : false);
     final connection = ref.read(connectionsProvider).peer(widget.peerId);
     final runtime = ref.read(runtimeControllerProvider).value;
+    final connectivitySnapshot = ref.read(peerConnectivityProvider)[widget.peerId];
     final diagnostics = ConnectionDiagnostics.fromConnection(
       canChat: canChat,
       isPeerOnline: isPeerOnline,
       connection: connection,
       coordinator: runtime?.connectionCoordinatorSnapshotFor(widget.peerId),
+      snapshot: connectivitySnapshot,
     );
     final connectionRequests = ref.read(connectionRequestProvider);
     final outboundRequest = _outboundConnectionRequestForPeer(

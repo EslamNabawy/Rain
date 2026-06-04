@@ -544,7 +544,9 @@ extension FriendRuntime on RainRuntimeController {
       'Transfer canceled because the peer link closed.',
     );
     await _presenceSubscriptions.remove(normalizedUsername)?.cancel();
-    _manualDisconnectedPeers.remove(normalizedUsername);
+    if (_manualDisconnectedPeers.remove(normalizedUsername)) {
+      _notifyPeerConnectivityChanged();
+    }
     _recoverableDisconnectedPeers.remove(normalizedUsername);
     _connectionCoordinator.clearRetry(normalizedUsername);
     await brain?.disconnect(normalizedUsername);

@@ -621,6 +621,33 @@ _ConnectionStatus _connectionStatusForDiagnostics(
         color: Color(0xFF52646D),
         detail: 'Manual disconnect. Press Connect to open the peer lane again.',
       );
+    case 'Connected':
+      return _ConnectionStatus(
+        label: 'Connected',
+        icon: Icons.hub_outlined,
+        color: const Color(0xFF2DD4A3),
+        detail: diagnostics.detail,
+        isConnected: true,
+        canDisconnect: true,
+      );
+    case 'Connected (presence stale)':
+      return _ConnectionStatus(
+        label: 'Connected (presence stale)',
+        icon: Icons.warning_amber_rounded,
+        color: const Color(0xFFFBBF24),
+        detail: diagnostics.detail,
+        isConnected: true,
+        canDisconnect: true,
+      );
+    case 'Reconnecting...':
+      return _ConnectionStatus(
+        label: 'Reconnecting...',
+        icon: Icons.sync,
+        color: const Color(0xFFFBBF24),
+        detail: diagnostics.detail,
+        isBusy: true,
+        canDisconnect: true,
+      );
     case 'Direct':
       return _ConnectionStatus(
         label: 'Direct',

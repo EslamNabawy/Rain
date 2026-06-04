@@ -193,6 +193,7 @@ class RainRuntimeController with WidgetsBindingObserver {
   final Duration activeCallReconnectGrace;
   final Set<String> _manualDisconnectedPeers = <String>{};
   final Set<String> _recoverableDisconnectedPeers = <String>{};
+  final Map<String, int> _lastDataEventTimestamps = <String, int>{};
   final Set<String> _registeredPeerListeners = <String>{};
   final Set<String> _passivePeerListeners = <String>{};
   final Set<String> _unblockingPeers = <String>{};
@@ -210,6 +211,8 @@ class RainRuntimeController with WidgetsBindingObserver {
   final Set<String> _canceledTransfers = <String>{};
   final StreamController<VoiceCallState> _voiceCallStateController =
       StreamController<VoiceCallState>.broadcast();
+  final StreamController<void> _peerConnectivityChangeController =
+      StreamController<void>.broadcast();
   VoiceCallState _voiceCallState = const VoiceCallState.idle();
   VoiceCallSession? _voiceCallSession;
   String? _acceptingVoiceCallId;
@@ -259,6 +262,33 @@ class RainRuntimeController with WidgetsBindingObserver {
 
   String _normalizedUsername(String username) {
     return username.trim().toLowerCase();
+  }
+
+  Set<String> get manualDisconnectedPeers =>
+      Set<String>.unmodifiable(_manualDisconnectedPeers);
+
+  Map<String, int> get lastDataEventTimestamps =>
+      Map<String, int>.unmodifiable(_lastDataEventTimestamps);
+
+  Stream<void> watchPeerConnectivityChanges() async* {
+    yield null;
+    yield* _peerConnectivityChangeController.stream;
+  }
+
+  void _notifyPeerConnectivityChanged() {
+    if (!_peerConnectivityChangeController.isClosed) {
+      _peerConnectivityChangeController.add(null);
+    }
+  }
+
+  void _recordDataEvent(String peerId, int timestamp) {
+    final normalizedPeerId = _normalizedUsername(peerId);
+    final previous = _lastDataEventTimestamps[normalizedPeerId];
+    if (previous != null && previous >= timestamp) {
+      return;
+    }
+    _lastDataEventTimestamps[normalizedPeerId] = timestamp;
+    _notifyPeerConnectivityChanged();
   }
 
   _ResolvedBackendPresence _resolveBackendPresence(
@@ -601,6 +631,7 @@ class RainRuntimeController with WidgetsBindingObserver {
           if (peerId == null) {
             return;
           }
+          _recordDataEvent(peerId, message.receivedAt.millisecondsSinceEpoch);
 
           if (message.channel == SessionChannel.control) {
             final text = message.text;
@@ -974,6 +1005,7 @@ class RainRuntimeController with WidgetsBindingObserver {
         context: <String, Object?>{'peerId': normalizedUsername},
       );
       _manualDisconnectedPeers.remove(normalizedUsername);
+      _notifyPeerConnectivityChanged();
       _connectionCoordinator.clearDisconnectIntent(normalizedUsername);
       _recoverableDisconnectedPeers.remove(normalizedUsername);
     }
@@ -1114,6 +1146,7 @@ class RainRuntimeController with WidgetsBindingObserver {
       context: <String, Object?>{'peerId': normalizedUsername},
     );
     _manualDisconnectedPeers.add(normalizedUsername);
+    _notifyPeerConnectivityChanged();
     _recoverableDisconnectedPeers.remove(normalizedUsername);
     _connectionCoordinator.recordDisconnectIntent(
       normalizedUsername,
@@ -1587,6 +1620,7 @@ class RainRuntimeController with WidgetsBindingObserver {
         sendChat: (String payload) async => session!.send(payload),
       ),
     );
+    _recordDataEvent(peerId, DateTime.now().millisecondsSinceEpoch);
     await _localMutations.run(() => friendStore.clearUnread(peerId));
   }
 
@@ -1693,6 +1727,7 @@ class RainRuntimeController with WidgetsBindingObserver {
     );
     try {
       brain!.send(normalizedPeerId, SessionChannel.file, offer.encode());
+      _recordDataEvent(normalizedPeerId, DateTime.now().millisecondsSinceEpoch);
       await messageStore.markMessageStatus(envelope.id, MessageStatus.sent);
     } catch (error) {
       await _markTransferFailed(transferId, 'File offer failed: $error');
@@ -1963,6 +1998,7 @@ class RainRuntimeController with WidgetsBindingObserver {
       }
       _presenceSubscriptions.clear();
       await _voiceCallStateController.close();
+      await _peerConnectivityChangeController.close();
       await _connectionRequestStateController.close();
     } catch (error, stackTrace) {
       cleanupError = error;

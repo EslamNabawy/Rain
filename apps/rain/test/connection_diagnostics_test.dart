@@ -2,6 +2,7 @@ import 'package:flutter_test/flutter_test.dart';
 import 'package:protocol_brain/protocol_brain.dart';
 import 'package:rain/application/state/app_state.dart';
 import 'package:rain/application/state/connection_diagnostics.dart';
+import 'package:rain/application/state/peer_connectivity_snapshot.dart';
 
 void main() {
   test('connected direct session reports direct route diagnostics', () {
@@ -138,4 +139,43 @@ void main() {
       expect(remoteOffline.isConnected, isFalse);
     },
   );
+
+  test('connected snapshot overrides offline presence', () {
+    final diagnostics = ConnectionDiagnostics.fromConnection(
+      canChat: true,
+      isPeerOnline: false,
+      connection: const PeerConnectionView(peerId: 'bob'),
+      snapshot: const PeerConnectivitySnapshot(
+        peerId: 'bob',
+        sessionState: SessionState.connected,
+        presenceOnline: true,
+        presenceFresh: true,
+        canSendData: true,
+      ),
+    );
+
+    expect(diagnostics.label, 'Connected');
+    expect(diagnostics.isConnected, isTrue);
+    expect(diagnostics.canDisconnect, isTrue);
+  });
+
+  test('superseded snapshot shows reconnecting', () {
+    final diagnostics = ConnectionDiagnostics.fromConnection(
+      canChat: true,
+      isPeerOnline: true,
+      connection: const PeerConnectionView(peerId: 'bob'),
+      snapshot: const PeerConnectivitySnapshot(
+        peerId: 'bob',
+        sessionState: SessionState.connected,
+        sessionId: 'local-session',
+        presenceOnline: true,
+        presenceFresh: true,
+        backendSessionId: 'backend-session',
+      ),
+    );
+
+    expect(diagnostics.label, 'Reconnecting...');
+    expect(diagnostics.isBusy, isTrue);
+    expect(diagnostics.canDisconnect, isTrue);
+  });
 }

@@ -21,6 +21,7 @@ import 'app_state.dart';
 import 'core_providers.dart';
 import 'identity_providers.dart';
 import 'settings_providers.dart';
+import 'peer_connectivity_snapshot.dart';
 
 RainDebugSeverity _rainDebugSeverityFromString(String value) {
   return switch (value.trim().toLowerCase()) {
@@ -198,6 +199,134 @@ final runtimeControllerProvider =
     AsyncNotifierProvider<RuntimeController, RainRuntimeController?>(
       RuntimeController.new,
     );
+
+final peerConnectivityProvider =
+    NotifierProvider<
+      PeerConnectivityController,
+      Map<String, PeerConnectivitySnapshot>
+    >(PeerConnectivityController.new);
+
+@visibleForTesting
+Map<String, PeerConnectivitySnapshot> buildPeerConnectivitySnapshots({
+  required SessionManager? brain,
+  required Iterable<FriendRecord> friends,
+  required Set<String> manualDisconnectedPeers,
+  required Map<String, int> lastDataEventTimestamps,
+  int? nowMs,
+}) {
+  final now = nowMs ?? DateTime.now().millisecondsSinceEpoch;
+  final sessionsByPeer = <String, Session>{
+    for (final session in brain?.getSessions() ?? const <Session>[])
+      session.peerId: session,
+  };
+  final friendsByPeer = <String, FriendRecord>{
+    for (final friend in friends) friend.username: friend,
+  };
+  final peerIds = <String>{
+    ...friendsByPeer.keys,
+    ...sessionsByPeer.keys,
+    ...manualDisconnectedPeers,
+    ...lastDataEventTimestamps.keys,
+  };
+
+  final snapshots = <String, PeerConnectivitySnapshot>{};
+  for (final peerId in peerIds) {
+    final friend = friendsByPeer[peerId];
+    final session = sessionsByPeer[peerId];
+    final presenceAgeMs = friend?.lastOnlineAt == null
+        ? null
+        : now - friend!.lastOnlineAt!;
+    snapshots[peerId] = PeerConnectivitySnapshot(
+      peerId: peerId,
+      sessionState: session?.state,
+      sessionId: session?.roomId,
+      presenceOnline: friend?.isOnline,
+      presenceFresh: friend?.isOnline ?? false,
+      presenceAgeMs: presenceAgeMs,
+      manualDisconnected: manualDisconnectedPeers.contains(peerId),
+      lastDataEventAt: lastDataEventTimestamps[peerId],
+      connectionRoute: session?.route,
+      canSendData:
+          session?.state == SessionState.connected &&
+          !manualDisconnectedPeers.contains(peerId) &&
+          (brain?.isChannelOpen(peerId, SessionChannel.chat) ?? false),
+    );
+  }
+  return Map<String, PeerConnectivitySnapshot>.unmodifiable(snapshots);
+}
+
+class PeerConnectivityController
+    extends Notifier<Map<String, PeerConnectivitySnapshot>> {
+  final List<StreamSubscription<dynamic>> _subscriptions =
+      <StreamSubscription<dynamic>>[];
+  RainRuntimeController? _runtime;
+  SessionManager? _brain;
+  bool _disposeHookRegistered = false;
+
+  @override
+  Map<String, PeerConnectivitySnapshot> build() {
+    final runtime = ref.watch(runtimeControllerProvider).value;
+    final providerBrain = ref.watch(brainProvider);
+    final friends = ref.watch(friendsProvider).value ?? const <FriendRecord>[];
+    final brain = runtime?.brain ?? providerBrain;
+
+    _replaceSources(runtime: runtime, brain: brain);
+    if (!_disposeHookRegistered) {
+      _disposeHookRegistered = true;
+      ref.onDispose(_cancelSubscriptions);
+    }
+    return buildPeerConnectivitySnapshots(
+      brain: brain,
+      friends: friends,
+      manualDisconnectedPeers: runtime?.manualDisconnectedPeers ?? const {},
+      lastDataEventTimestamps: runtime?.lastDataEventTimestamps ?? const {},
+    );
+  }
+
+  void _replaceSources({
+    required RainRuntimeController? runtime,
+    required SessionManager? brain,
+  }) {
+    if (identical(_runtime, runtime) && identical(_brain, brain)) {
+      return;
+    }
+    _runtime = runtime;
+    _brain = brain;
+    _cancelSubscriptions();
+    if (runtime != null) {
+      _subscriptions.add(
+        runtime.watchPeerConnectivityChanges().listen((_) => _refresh()),
+      );
+    }
+    if (brain != null) {
+      _subscriptions.addAll(<StreamSubscription<dynamic>>[
+        brain.onSessionChanged.listen((_) => _refresh()),
+        brain.onPeerConnected.listen((_) => _refresh()),
+        brain.onPeerDisconnected.listen((_) => _refresh()),
+        brain.onPeerMessage.listen((_) => _refresh()),
+      ]);
+    }
+  }
+
+  void _refresh() {
+    final runtime = ref.read(runtimeControllerProvider).value;
+    final brain = runtime?.brain ?? ref.read(brainProvider);
+    final friends = ref.read(friendsProvider).value ?? const <FriendRecord>[];
+    state = buildPeerConnectivitySnapshots(
+      brain: brain,
+      friends: friends,
+      manualDisconnectedPeers: runtime?.manualDisconnectedPeers ?? const {},
+      lastDataEventTimestamps: runtime?.lastDataEventTimestamps ?? const {},
+    );
+  }
+
+  void _cancelSubscriptions() {
+    for (final subscription in _subscriptions) {
+      unawaited(subscription.cancel());
+    }
+    _subscriptions.clear();
+  }
+}
 
 final rainNotificationServiceProvider = Provider<RainNotificationService>((
   Ref ref,

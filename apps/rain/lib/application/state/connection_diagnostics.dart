@@ -2,6 +2,7 @@ import 'package:protocol_brain/protocol_brain.dart';
 
 import '../runtime/connection_attempt_coordinator.dart';
 import 'app_state.dart';
+import 'peer_connectivity_snapshot.dart';
 
 class ConnectionDiagnostics {
   const ConnectionDiagnostics({
@@ -73,10 +74,15 @@ class ConnectionDiagnostics {
     required bool isPeerOnline,
     required PeerConnectionView connection,
     ConnectionCoordinatorSnapshot? coordinator,
+    PeerConnectivitySnapshot? snapshot,
   }) {
     final session = connection.session;
-    final baseRoute = session?.route ?? const PeerConnectionRoute.unknown();
-    final safeRoute = session?.state == SessionState.connected
+    final baseRoute =
+        session?.route ??
+        snapshot?.connectionRoute ??
+        const PeerConnectionRoute.unknown();
+    final effectiveSessionState = session?.state ?? snapshot?.sessionState;
+    final safeRoute = effectiveSessionState == SessionState.connected
         ? baseRoute
         : PeerConnectionRoute.unknown(
             updatedAt: baseRoute.updatedAt ?? session?.updatedAt,
@@ -130,6 +136,48 @@ class ConnectionDiagnostics {
         detail: 'Only accepted friends can chat.',
         route: const PeerConnectionRoute.unknown(),
       );
+    }
+
+    if (snapshot != null) {
+      if (snapshot.sessionSuperseded) {
+        return build(
+          label: 'Reconnecting...',
+          detail: 'Peer session changed. Reopening data lane.',
+          route: safeRoute,
+          isBusy: true,
+          canDisconnect: true,
+        );
+      }
+      if (snapshot.hasActiveSession && !snapshot.isReachable) {
+        return build(
+          label: 'Disconnecting',
+          detail: 'Closing peer session.',
+          route: safeRoute,
+          isBusy: true,
+          canDisconnect: true,
+        );
+      }
+      if (snapshot.isConnectedWithStalePresence) {
+        return build(
+          label: 'Connected (presence stale)',
+          detail: 'Data lane is open, but presence is stale.',
+          route: baseRoute,
+          isConnected: true,
+          canDisconnect: true,
+        );
+      }
+      if (snapshot.isConnected) {
+        return build(
+          label: 'Connected',
+          detail:
+              connection.localDetail ??
+              session?.detail ??
+              'Encrypted peer lane is open.',
+          route: baseRoute,
+          isConnected: true,
+          canDisconnect: true,
+        );
+      }
     }
 
     if (connection.disconnecting) {
