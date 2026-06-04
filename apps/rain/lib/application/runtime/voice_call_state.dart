@@ -13,6 +13,7 @@ enum VoiceCallPhase {
   connectingMedia,
   active,
   ending,
+  ended,
   failed,
 }
 

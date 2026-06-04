@@ -3698,6 +3698,16 @@ extension VoiceCallRuntime on RainRuntimeController {
           audioLevel: const VoiceAudioLevel.unavailable(),
         ),
       );
+      // Immediately publish "ended" so the UI shows the ended screen
+      // without waiting for the Firebase terminal write.
+      _setVoiceCallState(
+        current.copyWith(
+          phase: VoiceCallPhase.ended,
+          detail: detail,
+          updatedAt: DateTime.now().millisecondsSinceEpoch,
+          audioLevel: const VoiceAudioLevel.unavailable(),
+        ),
+      );
       _latchTerminalVoiceCallSession(session);
       if (notifyPeer) {
         final terminalWrite = await _writeTerminalRoomBeforeSessionHangup(
@@ -3770,6 +3780,15 @@ extension VoiceCallRuntime on RainRuntimeController {
     _setVoiceCallState(
       current.copyWith(
         phase: VoiceCallPhase.ending,
+        detail: detail,
+        updatedAt: DateTime.now().millisecondsSinceEpoch,
+        audioLevel: const VoiceAudioLevel.unavailable(),
+      ),
+    );
+    // Immediately publish "ended" for UI responsiveness.
+    _setVoiceCallState(
+      current.copyWith(
+        phase: VoiceCallPhase.ended,
         detail: detail,
         updatedAt: DateTime.now().millisecondsSinceEpoch,
         audioLevel: const VoiceAudioLevel.unavailable(),
