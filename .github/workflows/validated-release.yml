@@ -164,6 +164,20 @@ jobs:
       - name: Run full workspace tests
         run: dart run melos run test
 
+      - name: Run auth lifecycle scenario tests
+        run: |
+          echo "SCN-AUTH-001 cached identity restore after backend deletion"
+          echo "SCN-AUTH-002 login after account tombstone with surviving Auth"
+          echo "SCN-AUTH-003 delete account bad password"
+          echo "SCN-AUTH-004 delete account backend partial failure"
+          cd apps/rain
+          flutter test \
+            test/auth_identity_source_of_truth_test.dart \
+            test/runtime_startup_test.dart \
+            test/settings_screen_test.dart \
+            test/app_routes_test.dart \
+            --reporter expanded
+
   firebase-backend:
     name: Firebase Backend
     runs-on: ubuntu-latest
@@ -232,6 +246,10 @@ jobs:
 
       - name: Run Firebase emulator integration tests
         run: bash scripts/ci_run_firebase_emulators.sh
+
+      - name: Validate Obsidian vault
+        shell: pwsh
+        run: ./scripts/check_obsidian_vault.ps1
 
   validation-gate:
     name: Validation Gate

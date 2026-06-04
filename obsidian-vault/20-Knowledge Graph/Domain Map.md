@@ -1,6 +1,6 @@
 # Domain Map
 
-Last updated: 2026-06-03
+Last updated: 2026-06-04
 
 ## Purpose
 
@@ -14,9 +14,10 @@ Map the main product domains and their documentation homes.
 - Files: [[File Transfer]], [[Streaming Architecture]], [[Backpressure Strategy]]
 - Calls: [[Voice Calls]], [[Video Calls]], [[Call State Machine]]
 - Operations: [[Release Gates]], [[Monitoring]], [[Incident Response]]
+- Scenario intelligence: [[System Model]], [[State Graph]], [[Business Rule Graph]], [[Failure Graph]], [[Assumption Register]]
 
 ## Future Population
 
 Phase 2 will verify domains against actual code and update this map.
 
-Related: [[Knowledge Graph Index]], [[Feature Map]], [[System Ownership Map]].
+Related: [[Knowledge Graph Index]], [[Feature Map]], [[System Ownership Map]], [[Scenario Intelligence Agent]].

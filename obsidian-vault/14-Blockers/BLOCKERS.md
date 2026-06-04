@@ -1,6 +1,6 @@
 # BLOCKERS
 
-Last updated: 2026-06-03
+Last updated: 2026-06-04
 
 ## Purpose
 
@@ -225,7 +225,7 @@ Related: [[Risk Register]], [[Risk Categories]], [[Risk Matrix]], [[Blocker Reso
 
 ### BLK-010: Auth Session And Startup Readiness Are Not Production-Safe
 
-- Status: Open
+- Status: Open, mitigated locally pending release-gate proof
 - Severity: Critical
 - Owner: Engineering/Product
 - Type: Architecture/Product
@@ -234,7 +234,7 @@ Related: [[Risk Register]], [[Risk Categories]], [[Risk Matrix]], [[Blocker Reso
 - Related Debt: TD-021, TD-022
 - Related Architecture: [[Authentication]], [AUTHENTICATION_AUDIT.md](../../AUTHENTICATION_AUDIT.md), [STARTUP_SEQUENCE_ANALYSIS.md](../../STARTUP_SEQUENCE_ANALYSIS.md), [STATE_MANAGEMENT_FAILURE_ANALYSIS.md](../../STATE_MANAGEMENT_FAILURE_ANALYSIS.md)
 - Impact: Public launch is blocked because logout/account reset can restore stale local identity and startup can render protected app surfaces before auth/runtime readiness.
-- Workaround Strategy: Treat current builds as test builds only for auth/session behavior. If accounts are reset externally, also clear local app storage before retesting until the app owns account deletion/reset.
+- Workaround Strategy: Treat current builds as test builds only for auth/session behavior until the hard release gate records the auth/startup/account-deletion regression set. If accounts are reset externally outside the app, clear local app storage before retesting unless the app-owned delete-account path was used.
 - Parallel Progress Path: Continue call diagnostics and release-gate work, but do not ship backend-incompatible changes or public builds until auth/session startup is fixed.
 - Resolution Plan:
   - Add characterization tests for stale local identity, deleted backend user, failed sign-out, and protected route loading.
@@ -248,7 +248,9 @@ Related: [[Risk Register]], [[Risk Categories]], [[Risk Matrix]], [[Blocker Reso
 - Progress 2026-06-03 Phase 4: Global startup visual ownership is now above the router shell. `RainApp` uses `MaterialApp.router.builder` to show `RainStartupSurface` instead of the routed child while startup is loading, update-blocked, failed, or session-expired; `RootScreen` reuses the same surface. Tests prove blocked startup states do not insert `RainNavigationShell`, bottom navigation, or navigation rail.
 - Progress 2026-06-03 Phase 5: Protected navigation readiness is now explicit. `canRenderProtectedRoutes` blocks settings/search/friend rendering until startup is ready, `_ProtectedRouteGate` provides route-local defense, protected paths redirect to `/` while unresolved, and signed-out auth renders outside `RainNavigationShell` through a standalone Navigator/Overlay. Tests prove protected routes do not render while runtime is loading or signed out.
 - Progress 2026-06-03 Phase 6: State lifecycle hardening is complete. `AuthenticatedSession.sessionGeneration` scopes runtime reuse and account-owned providers; logout ends the authenticated session instead of relying on a broad manual invalidation list; request/call/connection/message/file/search/recent providers reject stale runtime generations or reset to empty state. Tests cover session generation changes, recent/search reset, signed-out message stream gating, startup routes, and full Melos analyze/test.
-- Exit Criteria: Logout always clears local identity, deleted backend account cannot be recreated from local cache, protected app shell never renders before readiness, session-scoped providers do not leak across account cycles, and all paths are covered by tests.
+- Progress 2026-06-04 Phase 05: Account deletion is implemented locally. Settings prompts for confirmation plus password reauth; bad-password reauth does not clear the active session; destructive deletion shuts down runtime best-effort, tombstones backend identity, removes account-owned mirrors where authorized, deletes Firebase Auth last, and clears local Drift/authenticated-session state even on backend/Auth partial failure. Follow-up hardening prevents login/upsert/search writes from recreating missing or tombstoned backend identity after Auth succeeds. `dart run melos run analyze` and `dart run melos run test` passed.
+- Progress 2026-06-04 release-gate integration: Hard release workflows now run explicit `SCN-AUTH-001` through `SCN-AUTH-004` app tests and Obsidian vault validation. Firebase emulator integration now includes account tombstone cleanup plus surviving-Auth no-recreate proof through `integration_account_deletion_emulator_test.dart`. Local emulator integration passed; cloud proof on the new pushed commit is pending.
+- Exit Criteria: Logout always clears local identity, deleted backend account cannot be recreated from local cache, protected app shell never renders before readiness, session-scoped providers do not leak across account cycles, account deletion cannot reopen into a deleted identity, and all paths are covered by tests plus release-gate evidence.
 - Detection Strategy: Auth/session widget and runtime tests, diagnostics for session validation failures, and release gate checks for protected-route startup behavior.
 
 ## Blocker Review Cadence

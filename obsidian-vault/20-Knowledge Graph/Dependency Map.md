@@ -1,6 +1,6 @@
 # Dependency Map
 
-Last updated: 2026-06-03
+Last updated: 2026-06-04
 
 ## Purpose
 
@@ -12,6 +12,7 @@ Track dependencies between features, architecture systems, validation gates, and
 - [[Video Calls]] depends on [[Voice Calls]], [[CallMediaCoordinator]], and [[Release Gates]].
 - [[File Transfer]] depends on [[Streaming Architecture]] and [[Backpressure Strategy]].
 - [[Production Readiness]] depends on [[Risk Register]], [[Technical Debt Register]], [[Coverage Dashboard]], and [[Release Gates]].
+- Scenario generation depends on [[System Model]], [[State Graph]], [[Business Rule Graph]], [[Assumption Register]], and [[Failure Graph]].
 
 ## Refactor Dependencies
 
@@ -30,6 +31,6 @@ flowchart TD
 
 ## Future Population
 
-Phase 2 and Phase 4 will replace these starter links with verified dependency edges.
+Future graph work should replace starter links with verified dependency edges and scenario-derived failure edges.
 
-Related: [[Knowledge Graph Index]], [[Critical Path]], [[Master Roadmap]], [[Audit Resolution Tracker]].
+Related: [[Knowledge Graph Index]], [[Critical Path]], [[Master Roadmap]], [[Audit Resolution Tracker]], [[Scenario Intelligence Agent]].

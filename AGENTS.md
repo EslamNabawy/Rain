@@ -99,6 +99,18 @@ Workflow nodes:
 
 Do not code before planning for non-trivial work. Do not consider implementation complete until code and vault state are synchronized or the final response explicitly states what could not be synchronized.
 
+For testing strategy, scenario generation, QA intelligence, failure analysis, or risk discovery, use the vault's scenario-intelligence layer after the normal startup set:
+
+1. `obsidian-vault/15-AI/Scenario Intelligence Agent.md`
+2. `obsidian-vault/20-Knowledge Graph/System Model.md`
+3. `obsidian-vault/20-Knowledge Graph/State Graph.md`
+4. `obsidian-vault/20-Knowledge Graph/Business Rule Graph.md`
+5. `obsidian-vault/12-Risks/Assumption Register.md`
+6. `obsidian-vault/09-Testing/Failure Graph.md`
+7. `obsidian-vault/09-Testing/Scenario Coverage Matrix.md`
+
+Scenario work must derive tests from explicit assumptions, state paths, business rules, and failure chains. Do not mark a scenario covered unless the named validation was actually executed or previously recorded.
+
 ## Required Session Startup
 
 For any non-trivial work:

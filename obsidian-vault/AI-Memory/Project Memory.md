@@ -112,6 +112,8 @@ Build/automation:
 - Root Dart workspace.
 - Melos scripts through root `pubspec.yaml`.
 - GitHub Actions for CI, merge gates, releases, fast artifacts, validated releases, and vault validation.
+- 2026-06-04 cloud gate evidence: `Build Rain Apps` run 26931788461 passed the hard release gate, Android APK artifacts, Windows demo portable artifact, and `rain-test-107-1` pre-release publication for pushed `origin/dev` SHA `d58b7b5`. This evidence does not cover the current dirty local worktree.
+- 2026-06-04 local gate integration update: `build-artifacts.yml` and `validated-release.yml` now run explicit `SCN-AUTH-001` through `SCN-AUTH-004` auth lifecycle tests and Obsidian vault validation. Firebase emulator scripts now include `integration_account_deletion_emulator_test.dart`, covering account tombstone cleanup and surviving-Auth no-recreate behavior.
 - Windows PowerShell local QA/tooling.
 
 ## Domain Concepts
@@ -213,8 +215,9 @@ Highest-priority engineering areas:
    - Phase 3 progress 2026-06-03: startup readiness now has one typed state model in `AppStartupState`. Update loading/required-update, identity validation, signed-out, runtime loading, session-expired reset, failed, and ready phases are explicit; `RootScreen`, shell navigation visibility, and router refresh consume that model; tests cover every phase.
    - Phase 4 progress 2026-06-03: startup visual ownership moved above the routed shell. `RainApp` uses `MaterialApp.router.builder` and `AppStartupState.blocksRoutedSurface` to replace the routed child with `RainStartupSurface` while startup is loading, required-update, failed, or session-expired. Route tests prove no `RainNavigationShell`, bottom navigation, or rail is inserted during blocked startup.
    - Phase 5 progress 2026-06-03: protected navigation readiness is explicit. `AppStartupState.canRenderProtectedRoutes` guards protected content, settings/search/friend pages use a route-local protected gate, unresolved protected paths redirect to `/`, and signed-out auth renders outside the app shell through a standalone Navigator/Overlay.
-   - Phase 6 progress 2026-06-03: state lifecycle hardening is complete. `AuthenticatedSession.sessionGeneration` is the account-scope boundary; runtime reuse requires matching username and generation; protocol brain, connection request, voice call, connection view, message, file transfer, user search, and recent search providers reset or reject stale runtime generations when the session ends/changes. Remaining auth/startup work: account deletion workflow and hard-release-gate integration.
+   - Phase 6 progress 2026-06-03: state lifecycle hardening is complete. `AuthenticatedSession.sessionGeneration` is the account-scope boundary; runtime reuse requires matching username and generation; protocol brain, connection request, voice call, connection view, message, file transfer, user search, and recent search providers reset or reject stale runtime generations when the session ends/changes. This left account deletion and hard-release-gate integration; the 2026-06-04 account deletion progress below closes the local implementation gap.
    - Registration conflict progress 2026-06-04: live Firebase rules allowed a fresh random registration, while `users/eslam` already existed. Registration now treats RTDB permission denied before the primary username row is created as an account conflict, rolls back the just-created Auth user, shows a friendly conflict message, and leaves Drift identity uncached. If the durable username row was already created and a later registration step fails, Rain signs out instead of deleting Auth so it does not create an unrecoverable Auth/RTDB orphan.
+   - Account deletion progress 2026-06-04: first-class account deletion is implemented. Settings prompts for confirmation and password reauthentication; bad password/non-destructive reauth failures leave the signed-in session intact. Once reauth succeeds, runtime shutdown runs best-effort, backend cleanup tombstones `users/{username}`, removes search and relationship/request/block mirrors where authorized, sets presence offline, ends active calls best-effort, deletes Firebase Auth last, and clears local Drift/authenticated-session state even if backend/Auth deletion reports a partial failure. Follow-up hardening prevents a surviving Firebase Auth user from recreating a missing/tombstoned backend account through login, identity upsert, or `userSearch`. Validation evidence: `dart run melos run analyze` passed; `dart run melos run test` passed; targeted account-deletion runtime/settings and auth source-of-truth tests passed. Remaining auth/startup work: hard-release-gate integration and stronger Firebase emulator/device proof for deletion cleanup if required.
 1. Make voice/video calls reliable in both PC-to-mobile and mobile-to-PC directions.
 2. Split and stabilize `VoiceCallRuntime` through [[VoiceCallRuntime Refactor]].
 3. Harden Firebase call lease creation, repair, cleanup, and terminal reconciliation through [[CallLeaseManager]] and [[CallTerminalReconciler]].
@@ -341,12 +344,19 @@ Governance update 2026-06-04:
 - Agents must not claim file changes, tests, builds, validation, CI, git commits, or vault updates unless those actions were actually executed.
 - Documentation/vault changes require `.\scripts\check_obsidian_vault.ps1` or an explicit `Vault validation not executed.` report.
 
+Scenario intelligence update 2026-06-04:
+
+- Testing/intelligence agents should use [[Scenario Intelligence Agent]] after the normal startup set.
+- Scenario generation must be derived from [[System Model]], [[Feature Map]], [[Dependency Map]], [[State Graph]], [[Business Rule Graph]], [[Assumption Register]], [[Failure Graph]], and [[Scenario Coverage Matrix]].
+- Every testing cycle should violate relevant assumptions, trace downstream failure chains, and convert uncovered gaps into deterministic tests, risks, debt, blockers, or recommended next actions.
+- [[Scenario Coverage Matrix]] is the current applied pass over launch-blocker scenarios. It marks auth/account deletion, stale presence, terminal call races, Firebase mirror cleanup, diagnostics export, update policy, connection request quota, and file-transfer cases as covered, partially covered, or gaps.
+
 ## Known Pitfalls
 
 - Creating duplicate Project Memory notes splits context. This file is the primary memory note.
 - Auth/session bug pattern: deleting RTDB account data externally does not delete local Drift identity or Firebase Auth. Current runtime startup can recreate RTDB profile/presence from local identity after Firebase ownership validation. Do not treat local `RainIdentity?` as authenticated truth in future fixes.
 - Registration bug pattern: an existing or locked RTDB `users/{username}` row can appear as `[firebase_database/unknown] Permission denied` during account creation even when general registration rules are valid. Treat this as an account/username conflict, not as proof that rules globally deny registration.
-- Startup bug pattern: `AppStartupState` now centralizes post-bootstrap readiness. Phase 4 moved the visual startup gate above routed content, Phase 5 added protected-route redirects plus route-local guards for settings/search/friend pages, and Phase 6 scoped account-owned provider state by `AuthenticatedSession.sessionGeneration`. Remaining startup/auth risk is account deletion/reset ownership and release-gate coverage.
+- Startup bug pattern: `AppStartupState` now centralizes post-bootstrap readiness. Phase 4 moved the visual startup gate above routed content, Phase 5 added protected-route redirects plus route-local guards for settings/search/friend pages, Phase 6 scoped account-owned provider state by `AuthenticatedSession.sessionGeneration`, and 2026-06-04 account deletion added the destructive lifecycle path plus no-recreate guards for missing/tombstoned backend accounts after Auth succeeds. Remaining startup/auth risk is release-gate coverage and Firebase emulator/device proof for account deletion cleanup.
 - Generic call errors hide root causes; classify signaling, permission, ICE/TURN, media, and terminal-state failures separately.
 - Expected terminal races must not call the crash/error recorder; otherwise diagnostics show a benign late-frame cleanup event as the "last Flutter error" and hide the real failure.
 - False busy usually means stale or partial Firebase call locks.
@@ -370,9 +380,10 @@ Governance update 2026-06-04:
 6. Read [[Risk Register]].
 7. Read [[BLOCKERS]].
 8. Read [[Current Architecture]] and affected linked architecture notes.
-9. Review relevant ADRs in [[Decision Map]].
-10. Check `git status --short --branch`.
-11. For implementation work, inspect code before planning or editing.
+9. For testing, QA, scenario generation, or failure analysis, read [[Scenario Intelligence Agent]], [[System Model]], [[State Graph]], [[Business Rule Graph]], [[Assumption Register]], [[Failure Graph]], and [[Scenario Coverage Matrix]].
+10. Review relevant ADRs in [[Decision Map]].
+11. Check `git status --short --branch`.
+12. For implementation work, inspect code before planning or editing.
 
 ## Implementation Completion Rule
 
@@ -387,8 +398,13 @@ No implementation is complete until affected Obsidian vault notes are updated. A
 - [[System Ownership Map]]
 - [[Feature Map]]
 - [[Risk Register]]
+- [[Assumption Register]]
 - [[Technical Debt Register]]
 - [[Audit Resolution Tracker]]
 - [[Release Gates]]
+- [[Scenario Intelligence Agent]]
+- [[System Model]]
+- [[Failure Graph]]
+- [[Scenario Coverage Matrix]]
 - [[AI Memory Index]]
 - [[Session Handoff]]

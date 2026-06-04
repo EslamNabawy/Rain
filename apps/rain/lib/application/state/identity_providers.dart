@@ -164,15 +164,30 @@ class IdentityController extends AsyncNotifier<RainIdentity?> {
     final adapter = ref.read(adapterProvider);
     await adapter.login(username, password);
     final existing = await adapter.fetchIdentity(username);
+    final currentUid = (await adapter.currentUid()).trim();
+    final backendUid = existing?.uid.trim() ?? '';
+    if (existing == null ||
+        currentUid.isEmpty ||
+        backendUid.isEmpty ||
+        backendUid != currentUid) {
+      try {
+        await adapter.signOut();
+      } catch (_) {
+        // A backend-missing login must not keep a Firebase session that the app
+        // could later use to recreate a deleted Rain account.
+      }
+      throw const SignalingSessionExpiredException(
+        'This Rain account no longer exists. Create a new account or use another username.',
+      );
+    }
     await _saveBackendIdentity(
       RainIdentity(
         username: username,
-        displayName: existing?.displayName ?? username,
-        createdAt:
-            existing?.registeredAt ?? DateTime.now().millisecondsSinceEpoch,
-        gender: existing?.gender == null
+        displayName: existing.displayName,
+        createdAt: existing.registeredAt,
+        gender: existing.gender == null
             ? null
-            : RainGender.values.byName(existing!.gender!),
+            : RainGender.values.byName(existing.gender!),
       ),
     );
   }

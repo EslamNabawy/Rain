@@ -427,6 +427,32 @@ class RuntimeController extends AsyncNotifier<RainRuntimeController?> {
     }
   }
 
+  Future<void> deleteAccount({required String password}) async {
+    final controller = state.value;
+    if (controller == null) {
+      throw StateError('Runtime is not ready. Try again after Rain starts.');
+    }
+
+    var shouldEndSession = false;
+    try {
+      await controller.deleteAccount(password);
+      shouldEndSession = true;
+    } catch (error) {
+      if (error is AccountDeletionException &&
+          !error.destructiveActionStarted) {
+        rethrow;
+      }
+      shouldEndSession = true;
+      rethrow;
+    } finally {
+      if (shouldEndSession) {
+        _exitRegistration?.unregister();
+        _exitRegistration = null;
+        _endAuthenticatedSession();
+      }
+    }
+  }
+
   void _endAuthenticatedSession() {
     state = const AsyncValue.data(null);
     ref.read(authenticatedSessionProvider.notifier).endSession();

@@ -7,9 +7,24 @@
 - Firebase emulator pass rate.
 - Release artifact smoke pass rate.
 - Documentation vault check pass rate.
+- Scenario coverage status from [[Scenario Coverage Matrix]].
 
 ## Missing Signal
 
 Line coverage alone is not enough. The real target is critical workflow coverage.
 
-Related: [[Test Strategy]], [[Release Gates]].
+## Scenario Coverage Signal
+
+Critical workflow coverage should track:
+
+- Covered scenario IDs.
+- Partially covered scenario IDs.
+- Gap scenario IDs.
+- Release-gate scenario IDs executed for a build.
+- Explicitly skipped scenario IDs and reason.
+
+Current auth gate update 2026-06-04: `SCN-AUTH-001` through `SCN-AUTH-004` now have explicit hard-gate workflow commands, and `SCN-AUTH-002`/`SCN-AUTH-004` have local Firebase emulator proof through `integration_account_deletion_emulator_test.dart`. Cloud proof on the new commit is pending.
+
+Initial source: [[Scenario Coverage Matrix]].
+
+Related: [[Test Strategy]], [[Release Gates]], [[Scenario Coverage Matrix]], [[Failure Graph]], [[Assumption Register]].

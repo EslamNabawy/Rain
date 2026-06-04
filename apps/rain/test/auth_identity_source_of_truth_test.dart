@@ -140,6 +140,37 @@ void main() {
       expect(await IdentityRepository(database).loadIdentity(), isNull);
     },
   );
+
+  test(
+    'login does not recreate a missing backend account after authentication',
+    () async {
+      final database = RainDatabase(NativeDatabase.memory());
+      addTearDown(database.close);
+      final adapter = _AuthValidationAdapter(
+        currentUidValue: 'uid-alice',
+        backendIdentity: null,
+      );
+      final container = _container(database, adapter);
+      addTearDown(container.dispose);
+
+      await container.read(identityProvider.future);
+
+      await expectLater(
+        container
+            .read(identityProvider.notifier)
+            .login(username: 'alice', password: 'secret1'),
+        throwsA(isA<SignalingSessionExpiredException>()),
+      );
+
+      expect(adapter.loginCalls, 1);
+      expect(adapter.fetchIdentityCalls, 1);
+      expect(adapter.addToUserSearchCalls, 0);
+      expect(adapter.upsertedIdentities, isEmpty);
+      expect(adapter.setPresenceCalls, 0);
+      expect(adapter.signOutCalls, 1);
+      expect(await IdentityRepository(database).loadIdentity(), isNull);
+    },
+  );
 }
 
 ProviderContainer _container(
@@ -201,6 +232,7 @@ final class _AuthValidationAdapter extends NoopSignalingAdapter {
   int ensureSignedInAsCalls = 0;
   int fetchIdentityCalls = 0;
   int registerCalls = 0;
+  int loginCalls = 0;
   int addToUserSearchCalls = 0;
   int setPresenceCalls = 0;
   int signOutCalls = 0;
@@ -216,6 +248,12 @@ final class _AuthValidationAdapter extends NoopSignalingAdapter {
   @override
   Future<String> register(String username, String password) async {
     registerCalls += 1;
+    return currentUidValue;
+  }
+
+  @override
+  Future<String> login(String username, String password) async {
+    loginCalls += 1;
     return currentUidValue;
   }
 

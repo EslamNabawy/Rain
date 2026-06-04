@@ -21,6 +21,12 @@
         "registeredAt": {
           ".validate": "newData.isNumber()"
         },
+        "accountState": {
+          ".validate": "newData.isString() && (newData.val() === 'active' || newData.val() === 'deleted')"
+        },
+        "deletedAt": {
+          ".validate": "newData.isNumber()"
+        },
         "$other": {
           ".validate": false
         }
@@ -142,7 +148,7 @@
       ".read": "auth != null",
       "$username": {
         ".read": "auth != null",
-        ".write": "auth != null && !root.child('security/blockedUids/' + auth.uid).exists() && root.child('users/' + $username + '/uid').val() === auth.uid"
+        ".write": "auth != null && !root.child('security/blockedUids/' + auth.uid).exists() && root.child('users/' + $username + '/uid').val() === auth.uid && root.child('users/' + $username + '/accountState').val() !== 'deleted'"
       }
     },
     "rooms": {

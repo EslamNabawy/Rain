@@ -1,6 +1,6 @@
 # Feature Map
 
-Last updated: 2026-06-03
+Last updated: 2026-06-04
 
 ## Purpose
 
@@ -27,5 +27,10 @@ Provide a graph-oriented index of product features and their support systems.
 - [[Test Strategy]]
 - [[Release Gates]]
 - [[Project Memory]]
+- [[System Model]]
+- [[State Graph]]
+- [[Business Rule Graph]]
+- [[Failure Graph]]
+- [[Assumption Register]]
 
-Related: [[Knowledge Graph Index]], [[Domain Map]], [[Feature Index]].
+Related: [[Knowledge Graph Index]], [[Domain Map]], [[Feature Index]], [[Scenario Intelligence Agent]].

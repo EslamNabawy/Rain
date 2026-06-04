@@ -9,7 +9,35 @@
 5. Release artifact smoke tests.
 6. Manual Android/Windows WebRTC smoke checks.
 
-Related: [[Coverage Dashboard]], [[Emulator Test Matrix]], [[Production Validation Epic]].
+Related: [[Coverage Dashboard]], [[Emulator Test Matrix]], [[Production Validation Epic]], [[Scenario Intelligence Agent]], [[Failure Graph]], [[Assumption Register]].
+
+## Scenario Intelligence Testing
+
+Testing and release-gate planning should be derived from the graph set:
+
+- [[System Model]]
+- [[Feature Map]]
+- [[Dependency Map]]
+- [[State Graph]]
+- [[Business Rule Graph]]
+- [[Assumption Register]]
+- [[Failure Graph]]
+- [[Scenario Coverage Matrix]]
+
+For each target flow, generate scenarios by violating relevant assumptions and tracing the downstream failure chain. Promote high-impact uncovered chains into deterministic tests, release-gate checks, risks, debt, or blockers.
+
+Minimum scenario batch output:
+
+- target flow,
+- state path,
+- violated assumption,
+- critical assets touched,
+- expected fail-closed or recovery behavior,
+- existing test evidence,
+- missing test or risk record,
+- scenario coverage status.
+
+The [[Scenario Coverage Matrix]] is the source for scenario IDs, covered status, and release-gate gaps.
 
 ## Regression Expansion - 2026-06-03
 

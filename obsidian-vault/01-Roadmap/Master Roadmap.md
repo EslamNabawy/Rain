@@ -1,6 +1,6 @@
 # Master Roadmap
 
-Last updated: 2026-06-03
+Last updated: 2026-06-04
 
 ## Purpose
 
@@ -35,6 +35,7 @@ This work is a P0 launch-blocking remediation stream discovered after the origin
 | Phase 4: Global Splash Architecture | P0 | Done 2026-06-03 | Phase 3 | Main UI cannot render before startup completes. | `RainApp` gates the routed child through `RainStartupSurface` while `AppStartupState.blocksRoutedSurface` is true; tests prove loading, required-update, and failed startup states render no `RainNavigationShell`, bottom navigation, or rail. |
 | Phase 5: Navigation Readiness | P0 | Done 2026-06-03 | Phase 3, Phase 4 | Protected routes only exist after auth/runtime readiness. | `AppStartupState.canRenderProtectedRoutes` guards route rendering; unresolved protected paths redirect to `/`; settings/search/friend pages use a route-local guard; signed-out auth renders outside the app shell with its own Navigator/Overlay; route tests prove protected content cannot render while loading or signed out. |
 | Phase 6: State Lifecycle Hardening | P0 | Done 2026-06-03 | Phase 2, Phase 3 | Session-scoped providers cannot leak account state across login/logout cycles. | `AuthenticatedSession.sessionGeneration` scopes runtime/provider ownership; account-owned providers reset on session end/change; tests cover generation changes, recent/search reset, signed-out message streams, startup routes, and full Melos validation. |
+| Root Phase 05: Account Deletion Workflow | P1 | Done 2026-06-04 | Phase 1, Phase 2, Phase 6 | User can delete an account from the app and cannot reopen into the deleted identity locally. | Settings delete-account UI, signaling adapter contract, Firebase reauth/delete/tombstone cleanup, runtime/provider destructive-session handling, no-recreate login/upsert/search guards, and local tests are implemented. `dart run melos run analyze` and `dart run melos run test` passed. Hard release-gate integration and optional Firebase emulator/device cleanup proof remain next. |
 
 ## Epic Map
 

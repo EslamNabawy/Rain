@@ -30,6 +30,8 @@ Provides simple identity for accepted-friend communication without social-networ
 - `AuthenticatedSession.sessionGeneration` is the account-scope boundary. Runtime reuse, protocol brain creation, request/call/connection state, messages, file transfers, user search, and recent searches must match the active generation or reset to empty/idle state.
 - Device-global settings such as theme, media device preferences, audio settings, and update settings stay outside the session scope.
 - Runtime startup depends on a validated local identity candidate plus active authenticated session generation.
+- Account deletion is a first-class destructive lifecycle path. It reauthenticates with the user's password before destructive backend work, shuts down runtime sessions best-effort, tombstones the backend user row instead of hard-deleting it, removes search and account-owned mirror data where client rules allow, deletes Firebase Auth last, and clears local Drift/authenticated-session state after the destructive path starts.
+- Login requires the backend identity row to still exist and belong to the current Firebase uid after Firebase Auth succeeds. Missing, tombstoned, empty-uid, or wrong-owner backend identity signs out and does not recreate local or backend identity.
 
 ## Current Investigation Findings
 
@@ -53,7 +55,36 @@ Target architecture: an `AuthSessionCoordinator` must own session discovery, Fir
 - 2026-06-03 Phase 5: protected route readiness now uses `AppStartupState.canRenderProtectedRoutes`, route-local guards for settings/search/friend pages, and redirect-to-root behavior for unresolved protected paths. Signed-out auth renders outside the app shell through a standalone Navigator/Overlay.
 - 2026-06-03 Phase 6: state lifecycle hardening now scopes account-owned providers by `AuthenticatedSession.sessionGeneration`; runtime reuse requires matching username and generation; logout ends the session instead of depending on a broad manual invalidation list. Tests cover generation changes, recent/search reset, signed-out message streams, startup routes, and full Melos validation.
 - 2026-06-04 registration conflict hardening: live Firebase evidence showed fresh random registration succeeds, while `users/eslam` already exists. The app now maps RTDB permission-denied during registration to an account conflict message, rolls back Auth only when the primary username row was not created, signs out on secondary backend-save failures, and keeps Drift identity uncached until backend identity/presence writes succeed. Regression tests cover backend-save failure cleanup and onboarding error copy.
-- Remaining: account deletion workflow and a fuller `AuthSessionCoordinator` extraction if the provider-based session coordinator becomes insufficient.
+- 2026-06-04 account deletion workflow: settings exposes delete account behind confirmation plus password prompt; `SignalingAdapter` now includes `reauthenticate` and `deleteAccount`; `FirebaseSignalingAdapter` reauthenticates, cleans/tombstones RTDB account data while ownership still exists, deletes Firebase Auth last, and filters tombstoned identities from restoration; runtime/provider code clears local session only after the destructive path starts and preserves the session on bad-password reauth. Follow-up hardening rejects login when backend identity is missing after Auth succeeds, rejects upsert to tombstoned users, and blocks `userSearch` writes for deleted users. Targeted runtime/settings/auth/protocol tests and full Melos analyze/test passed.
+- Remaining: hard-release-gate integration for auth/startup/account-deletion regressions, Firebase emulator/device proof for account deletion cleanup if required, and a fuller `AuthSessionCoordinator` extraction if the provider-based session coordinator becomes insufficient.
+
+## Account Deletion Architecture Plan
+
+2026-06-04 Phase 3 review targeted first-class account deletion. Phase 4 implementation completed the local app/runtime/adapter/rules path and local validation.
+
+Required ownership:
+
+- `apps/rain` owns confirmation UI, destructive-flow state, provider/session teardown, and user-facing partial-failure messages.
+- `packages/protocol_brain` owns the account deletion signaling contract and Firebase adapter implementation because account cleanup touches Auth and RTDB identity/signaling data.
+- `packages/rain_core` owns local session clearing only; no schema migration is currently required.
+- `backend/firebase` owns any rules changes needed to delete or tombstone account-owned RTDB data safely.
+
+Sequencing constraints:
+
+- Reauthenticate before the destructive path if Firebase Auth requires recent sign-in.
+- Clean up RTDB account data while the Firebase Auth user and `users/{username}` row still exist, because rules authorize many paths through that ownership row.
+- Delete or tombstone `users/{username}` late; current rules do not allow deleting an existing user row.
+- Delete the Firebase Auth user last.
+- Clear local session and end the authenticated session generation in all destructive outcomes.
+- Keep WebRTC cleanup as runtime shutdown/disconnect behavior; account deletion must not move peer/media ownership into auth code.
+
+Implementation notes:
+
+- Reauthentication failures before destructive work do not clear local identity.
+- Backend cleanup failures after destructive work starts clear local identity and authenticated-session generation, then surface a partial-failure message.
+- `users/{username}` is tombstoned with `accountState: deleted` and `deletedAt`, not removed, so the username stays locked and stale cached identity cannot restore the account.
+- A remaining Firebase Auth user cannot use normal login to recreate the backend row after tombstoning; login now requires backend identity proof before local/backend save.
+- The current local validation did not include a dedicated live Firebase emulator account-deletion integration test; add that to the release gate if account cleanup proof is required.
 
 ## Dependencies
 
@@ -90,7 +121,8 @@ Target architecture: an `AuthSessionCoordinator` must own session discovery, Fir
 - Cached local identity with mismatched Firebase/backend uid clears local session before restoration.
 - Stale local profile fields are refreshed from backend identity during restoration.
 - Settings/search/friend routes do not render protected content while auth/session is loading.
-- Account deletion is a first-class workflow once implemented.
+- Account deletion requires password reauthentication, does not clear local session on bad password, clears local session after destructive backend work starts, and does not restore a tombstoned backend identity.
+- Login after backend account deletion must fail without calling `upsertIdentity`, `addToUserSearch`, `setPresence`, or local identity save.
 - Registration backend-write failure signs out and leaves Drift identity empty.
 - Onboarding registration permission denial shows a friendly conflict message and hides raw Firebase error text.
 

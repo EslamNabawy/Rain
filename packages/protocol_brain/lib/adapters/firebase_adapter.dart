@@ -1574,6 +1574,230 @@ class FirebaseSignalingAdapter
   }
 
   @override
+  Future<void> reauthenticate(String username, String password) async {
+    await _configureEmulatorsIfNeeded();
+    final normalizedUsername = _normalizedUsername(username);
+    try {
+      await _ensureSignedInAsUsername(normalizedUsername);
+      final user = _auth.currentUser;
+      if (user == null) {
+        throw const SignalingSessionExpiredException(
+          'Sign in again before deleting this account.',
+        );
+      }
+      final credential = EmailAuthProvider.credential(
+        email: _emailFromUsername(normalizedUsername),
+        password: password,
+      );
+      await user.reauthenticateWithCredential(credential);
+    } on FirebaseAuthException catch (error) {
+      throw AccountDeletionException(
+        kind: AccountDeletionFailureKind.reauthenticationFailed,
+        message: _accountDeletionAuthMessage(error),
+        destructiveActionStarted: false,
+        cause: error,
+      );
+    } on SignalingSessionExpiredException catch (error) {
+      throw AccountDeletionException(
+        kind: AccountDeletionFailureKind.sessionExpired,
+        message: error.message,
+        destructiveActionStarted: false,
+        cause: error,
+      );
+    }
+  }
+
+  @override
+  Future<void> deleteAccount(String username) async {
+    await _configureEmulatorsIfNeeded();
+    final normalizedUsername = _normalizedUsername(username);
+    await _ensureSignedInAsUsername(normalizedUsername);
+    final user = _auth.currentUser;
+    if (user == null) {
+      throw const AccountDeletionException(
+        kind: AccountDeletionFailureKind.sessionExpired,
+        message: 'Sign in again before deleting this account.',
+        destructiveActionStarted: false,
+      );
+    }
+
+    final now = DateTime.now().millisecondsSinceEpoch;
+    try {
+      await _cleanupAccountOwnedRealtimeData(
+        username: normalizedUsername,
+        uid: user.uid,
+        deletedAt: now,
+      );
+    } on Object catch (error) {
+      throw AccountDeletionException(
+        kind: _isPermissionDenied(error)
+            ? AccountDeletionFailureKind.permissionDenied
+            : AccountDeletionFailureKind.backendCleanupFailed,
+        message:
+            'Could not finish deleting backend account data. '
+            'Local session will still be cleared.',
+        destructiveActionStarted: true,
+        cause: error,
+      );
+    }
+
+    try {
+      await user.delete();
+    } on FirebaseAuthException catch (error) {
+      try {
+        await _auth.signOut();
+      } catch (_) {
+        // The account is already tombstoned. Local session cleanup happens in
+        // the app runtime even if Firebase Auth sign-out also fails here.
+      }
+      throw AccountDeletionException(
+        kind: AccountDeletionFailureKind.authDeletionFailed,
+        message:
+            'Backend account data was deleted, but Firebase Auth could not '
+            'delete the sign-in user. Sign in again to retry final cleanup.',
+        destructiveActionStarted: true,
+        cause: error,
+      );
+    }
+  }
+
+  String _accountDeletionAuthMessage(FirebaseAuthException error) {
+    return switch (error.code) {
+      'invalid-credential' ||
+      'wrong-password' => 'Wrong password. Account deletion was not started.',
+      'requires-recent-login' => 'Sign in again before deleting this account.',
+      'user-mismatch' || 'user-not-found' =>
+        'Sign in again as this Rain account before deleting it.',
+      'network-request-failed' =>
+        'Network connection failed. Account deletion was not started.',
+      'too-many-requests' =>
+        'Too many attempts. Wait a moment, then try again.',
+      _ => error.message ?? 'Could not verify the password.',
+    };
+  }
+
+  Future<void> _cleanupAccountOwnedRealtimeData({
+    required String username,
+    required String uid,
+    required int deletedAt,
+  }) async {
+    final userSnapshot = await _root.child('users/$username').get();
+    final userData = userSnapshot.value is Map<Object?, Object?>
+        ? userSnapshot.value! as Map<Object?, Object?>
+        : const <Object?, Object?>{};
+    final registeredAt =
+        (userData['registeredAt'] as num?)?.toInt() ?? deletedAt;
+
+    await _endActiveVoiceCallForAccount(username, deletedAt);
+    await _cleanupConnectionRequestsForAccount(username);
+
+    try {
+      await setPresence(username, false);
+    } on Object {
+      // The final tombstone is the durable account-deletion marker. Presence
+      // offline is useful but must not block deletion after reauthentication.
+    }
+
+    final friends = await loadAcceptedFriends(username);
+    final incomingRequests = await loadIncomingFriendRequests(username);
+    final outgoingRequests = await loadOutgoingFriendRequests(username);
+    final blockedUsers = await loadBlockedUsers(username);
+
+    final updates = <String, Object?>{
+      'userSearch/$username': null,
+      'users/$username': <String, Object?>{
+        'username': username,
+        'uid': uid,
+        'displayName': 'Deleted account',
+        'registeredAt': registeredAt,
+        'accountState': 'deleted',
+        'deletedAt': deletedAt,
+      },
+    };
+
+    for (final friend in friends) {
+      final normalizedFriend = _normalizedUsername(friend);
+      updates['friendships/$username/$normalizedFriend'] = null;
+      updates['friendships/$normalizedFriend/$username'] = null;
+      updates['friendRequests/$username/$normalizedFriend'] = null;
+      updates['friendRequests/$normalizedFriend/$username'] = null;
+      updates['outgoingFriendRequests/$username/$normalizedFriend'] = null;
+      updates['outgoingFriendRequests/$normalizedFriend/$username'] = null;
+    }
+    for (final from in incomingRequests) {
+      final normalizedFrom = _normalizedUsername(from);
+      updates['friendRequests/$username/$normalizedFrom'] = null;
+      updates['outgoingFriendRequests/$normalizedFrom/$username'] = null;
+    }
+    for (final to in outgoingRequests) {
+      final normalizedTo = _normalizedUsername(to);
+      updates['friendRequests/$normalizedTo/$username'] = null;
+      updates['outgoingFriendRequests/$username/$normalizedTo'] = null;
+    }
+    for (final blocked in blockedUsers) {
+      final normalizedBlocked = _normalizedUsername(blocked);
+      updates['blocks/$username/$normalizedBlocked'] = null;
+      updates['blockedBy/$normalizedBlocked/$username'] = null;
+    }
+
+    await _root.update(updates);
+  }
+
+  Future<void> _endActiveVoiceCallForAccount(
+    String username,
+    int endedAt,
+  ) async {
+    try {
+      final snapshot = await _root.child('activeVoiceUsers/$username').get();
+      final value = snapshot.value;
+      if (value is! Map<Object?, Object?>) {
+        return;
+      }
+      final callId = value['callId'] as String?;
+      if (callId == null || callId.trim().isEmpty) {
+        return;
+      }
+      await endCall(
+        callId: callId.trim(),
+        username: username,
+        status: VoiceCallSignalingStatus.ended,
+        endedAt: endedAt,
+        reasonCode: 'account_deleted',
+        reason: 'Account deleted.',
+      );
+    } catch (_) {
+      // Voice cleanup is best effort during account deletion. The tombstone and
+      // local session clear are the account-lifecycle source of truth.
+    }
+  }
+
+  Future<void> _cleanupConnectionRequestsForAccount(String username) async {
+    final requestActions = <Future<ConnectionRequestDecision>>[];
+    try {
+      final incoming = await _root.child('connectionRequests/$username').get();
+      for (final child in incoming.children) {
+        final requestId = child.key;
+        if (requestId != null && requestId.isNotEmpty) {
+          requestActions.add(rejectConnectionRequest(requestId));
+        }
+      }
+      final outgoing = await _root
+          .child('connectionRequestOutboxes/$username')
+          .get();
+      for (final child in outgoing.children) {
+        final requestId = child.key;
+        if (requestId != null && requestId.isNotEmpty) {
+          requestActions.add(cancelConnectionRequest(requestId));
+        }
+      }
+      await Future.wait(requestActions);
+    } catch (_) {
+      // Function-backed connection request cleanup is not allowed to keep a
+      // reauthenticated destructive account deletion from reaching tombstone.
+    }
+  }
+
+  @override
   Future<BackendIdentity?> fetchIdentity(String username) async {
     await ensureAuthenticated();
     final snapshot = await _root.child('users/$username').get();
@@ -1581,6 +1805,9 @@ class FirebaseSignalingAdapter
       return null;
     }
     final value = snapshot.value! as Map<Object?, Object?>;
+    if (_isDeletedBackendAccount(value)) {
+      return null;
+    }
     final presenceSnapshot = await _root.child('presence/$username').get();
     final presence = presenceSnapshot.value is Map<Object?, Object?>
         ? presenceSnapshot.value! as Map<Object?, Object?>
@@ -1604,6 +1831,10 @@ class FirebaseSignalingAdapter
       presenceState: presence['state'] as String?,
     );
     return identity;
+  }
+
+  bool _isDeletedBackendAccount(Map<Object?, Object?> value) {
+    return value['accountState'] == 'deleted' || value['deletedAt'] is num;
   }
 
   @override
@@ -2116,17 +2347,25 @@ class FirebaseSignalingAdapter
   @override
   Future<void> upsertIdentity(BackendIdentity identity) async {
     await _ensureSignedInAsUsername(identity.username);
-    await _root
-        .child('users/${identity.username}')
-        .update(
-          _identityJson(
-            username: identity.username,
-            uid: identity.uid,
-            displayName: identity.displayName,
-            gender: identity.gender,
-            registeredAt: identity.registeredAt,
-          ),
-        );
+    final userRef = _root.child('users/${identity.username}');
+    final existingSnapshot = await userRef.get();
+    if (existingSnapshot.value is Map<Object?, Object?> &&
+        _isDeletedBackendAccount(
+          existingSnapshot.value! as Map<Object?, Object?>,
+        )) {
+      throw const SignalingSessionExpiredException(
+        'This Rain account has been deleted.',
+      );
+    }
+    await userRef.update(
+      _identityJson(
+        username: identity.username,
+        uid: identity.uid,
+        displayName: identity.displayName,
+        gender: identity.gender,
+        registeredAt: identity.registeredAt,
+      ),
+    );
     await _root.child('userSearch/${identity.username}').set(true);
   }
 

@@ -1,6 +1,6 @@
 # Audit Resolution Tracker
 
-Last updated: 2026-06-03
+Last updated: 2026-06-04
 
 ## Purpose
 
@@ -46,7 +46,8 @@ Source: [ROOT_AUTH_STARTUP_REMEDIATION_ROADMAP.md](../../ROOT_AUTH_STARTUP_REMED
 | Phase 3 | Startup state machine. | [x] Complete | `AppStartupState`/`AppStartupPhase` centralizes update, session validation, signed-out, runtime loading, session-expired, failed, and ready phases; `RootScreen`, shell readiness, and router refresh/redirect consume it; tests cover every startup phase. | Completed; see Phase 4. |
 | Phase 4 | Global splash architecture. | [x] Complete | `RainApp` uses `MaterialApp.router.builder` to replace the routed child with `RainStartupSurface` while startup is loading, update-blocked, failed, or session-expired; `RootScreen` reuses the same surface; route tests prove no `RainNavigationShell`, bottom navigation, or rail is inserted during blocked startup. | Completed; see Phase 5. |
 | Phase 5 | Navigation readiness. | [x] Complete | `AppStartupState.canRenderProtectedRoutes` and `usesRoutedAppShell` define protected readiness; unresolved protected paths redirect to `/`; settings/search/friend pages are wrapped in `_ProtectedRouteGate`; signed-out auth uses a standalone Navigator/Overlay and never inserts `RainNavigationShell`; tests cover protected routes while runtime is loading and signed out. | Completed; see Phase 6. |
-| Phase 6 | State lifecycle hardening. | [x] Complete | `AuthenticatedSession.sessionGeneration` scopes runtime ownership; `RainRuntimeController` reuse requires matching username and generation; runtime/brain/request/call/connection/message/file/search/recent providers reset on session end or user switch. Tests cover generation changes, recent/search reset, signed-out message streams, startup routes, and full Melos validation. | Remaining root-roadmap work is account deletion workflow or explicit release-gate acceptance/deferment. |
+| Phase 6 | State lifecycle hardening. | [x] Complete | `AuthenticatedSession.sessionGeneration` scopes runtime ownership; `RainRuntimeController` reuse requires matching username and generation; runtime/brain/request/call/connection/message/file/search/recent providers reset on session end or user switch. Tests cover generation changes, recent/search reset, signed-out message streams, startup routes, and full Melos validation. | Completed; see account deletion. |
+| Root Phase 05 | Account deletion workflow. | [x] Complete locally | Settings delete-account confirmation/password UI, signaling reauth/delete contract, Firebase cleanup/tombstone/Auth-delete-last path, runtime/provider destructive-session handling, no-recreate login/upsert/search guards, and targeted tests are implemented. `dart run melos run analyze` and `dart run melos run test` passed on 2026-06-04. | Add auth/startup/account-deletion regressions to the hard release gate and add Firebase emulator/device cleanup proof if required. |
 
 ## Status Legend
 

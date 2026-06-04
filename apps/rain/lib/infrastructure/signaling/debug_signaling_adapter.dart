@@ -65,6 +65,29 @@ class DebugSignalingAdapter implements SignalingAdapter {
   }
 
   @override
+  Future<void> reauthenticate(String username, String password) {
+    return _traceFuture<void>(
+      operation: 'reauthenticate',
+      kind: 'auth',
+      context: <String, Object?>{
+        'username': username,
+        'passwordProvided': password.isNotEmpty,
+      },
+      action: () => _inner.reauthenticate(username, password),
+    );
+  }
+
+  @override
+  Future<void> deleteAccount(String username) {
+    return _traceFuture<void>(
+      operation: 'deleteAccount',
+      kind: 'auth',
+      context: <String, Object?>{'username': username},
+      action: () => _inner.deleteAccount(username),
+    );
+  }
+
+  @override
   Future<String> register(String username, String password) {
     return _traceFuture<String>(
       operation: 'register',

@@ -1,6 +1,6 @@
 # Current Status
 
-Last updated: 2026-06-03
+Last updated: 2026-06-04
 
 ## Repository State
 
@@ -33,14 +33,17 @@ Last updated: 2026-06-03
 - 2026-06-03 mitigation: runtime action gates now resolve backend presence with one 30 second `online + lastHeartbeat` freshness window before friend seeding, direct Connect, connection-request routing, or voice/video call start.
 - 2026-06-03 mitigation: failed voice/video setup diagnostics now preserve Firebase room status timelines and emit diagnostics from terminal-room failure reconciliation.
 - 2026-06-03 mitigation: update checks now report stale Remote Config policy as `remotePolicyOutdated`, same-version minimum-build upgrades are required updates, and optional update prompts render from the root app surface before login/home.
-- 2026-06-03 Phase 09 local pre-artifact release gate passed `dart pub get`, analyze, full Melos tests, Firebase JSON parsing, Firebase Functions tests, Firebase emulator integration tests, and Obsidian vault validation. Cloud artifacts and release-page proof are still required for the hard release gate.
+- 2026-06-03 Phase 09 local pre-artifact release gate passed `dart pub get`, analyze, full Melos tests, Firebase JSON parsing, Firebase Functions tests, Firebase emulator integration tests, and Obsidian vault validation.
+- 2026-06-04 cloud hard-gate/artifact proof passed for pushed `origin/dev` SHA `d58b7b5` in `Build Rain Apps` run 26931788461. The run passed the hard release gate, Android v7/v8-v9 APK builds, Windows demo portable build, and published pre-release `rain-test-107-1`. This does not validate the current dirty local worktree or unpushed account-deletion/scenario-intelligence changes.
+- 2026-06-04 local auth scenario gate integration: hard release workflows now run explicit `SCN-AUTH-001` through `SCN-AUTH-004` tests, run Obsidian vault validation, and the Firebase emulator runner includes account-deletion tombstone/no-recreate proof. Local emulator integration passed; cloud proof on the new pushed commit is pending.
 - 2026-06-03 auth/startup investigation is captured in [AUTHENTICATION_AUDIT.md](../../AUTHENTICATION_AUDIT.md), [ACCOUNT_LIFECYCLE_ANALYSIS.md](../../ACCOUNT_LIFECYCLE_ANALYSIS.md), [STARTUP_SEQUENCE_ANALYSIS.md](../../STARTUP_SEQUENCE_ANALYSIS.md), [SPLASH_SCREEN_INVESTIGATION.md](../../SPLASH_SCREEN_INVESTIGATION.md), [NAVIGATION_INITIALIZATION_AUDIT.md](../../NAVIGATION_INITIALIZATION_AUDIT.md), and [STATE_MANAGEMENT_FAILURE_ANALYSIS.md](../../STATE_MANAGEMENT_FAILURE_ANALYSIS.md). Correlated finding: local Drift identity, Firebase Auth, RTDB user profile, runtime state, and router state are separate truths; deleted backend account data can be recreated from local identity during runtime startup.
 - 2026-06-03 auth Phase 1 mitigation: Drift identity is now restored only after backend validation confirms the cached username still exists and belongs to the current auth uid. Deleted backend accounts and uid mismatches clear local session data before signed-in state is published; register/login save local identity only after backend identity/presence writes succeed.
 - 2026-06-03 auth Phase 2 mitigation: logout now clears local Drift session data before best-effort backend sign-out, ignores backend sign-out failure after local clear, handles logout after a previous app-exit shutdown, and ends authenticated session state from a `finally` path. Protected-route readiness and session-scoped provider architecture were completed in later phases.
 - 2026-06-03 auth Phase 3 mitigation: startup readiness now has one typed state machine. `AppStartupState` drives root screen rendering, shell navigation visibility, and router refresh/redirect logic for update loading, required update, session validation, signed-out, runtime loading, ready, session-expired, and failed states.
 - 2026-06-03 auth Phase 4 mitigation: `RainApp` now owns a global `RainStartupSurface` above routed content. Loading, required-update, failed, and session-expired phases do not insert `RainNavigationShell`, bottom navigation, or rail, and `RootScreen` reuses the same surface for route-local consistency. Protected-route hardening and session-scoped provider architecture were completed in later phases.
 - 2026-06-03 auth Phase 5 mitigation: protected navigation readiness is now explicit. Settings/search/friend routes cannot render protected content until startup is ready, stale protected paths redirect to `/`, signed-out auth renders outside the app shell with a standalone Navigator/Overlay, and route tests cover runtime-loading and signed-out protected-route attempts.
-- 2026-06-03 auth Phase 6 mitigation: state lifecycle hardening is complete. `AuthenticatedSession.sessionGeneration` is the account-scope boundary, runtime/controller reuse requires matching username and generation, account-scoped providers reset on session end/change, and tests cover generation changes plus recent/search/message state reset. Remaining auth lifecycle gap: first-class account deletion workflow.
+- 2026-06-03 auth Phase 6 mitigation: state lifecycle hardening is complete. `AuthenticatedSession.sessionGeneration` is the account-scope boundary, runtime/controller reuse requires matching username and generation, account-scoped providers reset on session end/change, and tests cover generation changes plus recent/search/message state reset.
+- 2026-06-04 auth account deletion mitigation: Settings now exposes first-class delete account behind confirmation and password reauth. Backend cleanup tombstones identity, removes search/mirror data where authorized, deletes Firebase Auth last, and clears local session after destructive work starts. Bad-password reauth does not clear the active session. Login/upsert/search writes cannot recreate missing or tombstoned backend identity after Auth succeeds. Full Melos analyze/test passed; hard release-gate integration and Firebase emulator account-deletion proof are implemented locally, with cloud proof pending on the new commit.
 
 ## Documentation Status
 
@@ -49,6 +52,8 @@ This vault is now the main knowledge base. Older docs remain in `docs/`, but fut
 Phase 1 vault bootstrap, Phase 2 repository discovery, Phase 3 project memory generation, Phase 4 audit-to-roadmap conversion, Phase 5 technical debt system, Phase 6 risk/blocker intelligence, Phase 7 architecture refactor planning, and Phase 8 self-improvement engine are complete at the documentation level. The current execution roadmap is [[Master Roadmap]].
 
 [[Engineering System Flaw Remediation Plan]] Phase 00 and Phase 01 are complete. Canonical source views are documented, secondary duplicate notes have unique names, and the vault checker now fails on uncontrolled duplicate note titles.
+
+Scenario-intelligence documentation was added and hardened on 2026-06-04. Future testing/intelligence agents should use [[Scenario Intelligence Agent]], [[System Model]], [[State Graph]], [[Business Rule Graph]], [[Assumption Register]], [[Failure Graph]], and [[Scenario Coverage Matrix]] to generate scenario tests from assumptions and failure chains, then track coverage status.
 
 ## Execution Status
 

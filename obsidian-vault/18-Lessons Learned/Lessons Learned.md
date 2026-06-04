@@ -355,7 +355,7 @@ No task is fully complete until the lesson check is done or explicitly marked "n
 - What succeeded: `AuthenticatedSession.sessionGeneration` now scopes runtime ownership, account-owned providers watch the session boundary, stale runtimes are rejected, and focused tests cover session end, recent search reset, search reset, and message stream cleanup.
 - What should change: Every new account-owned provider must watch authenticated session generation or prove it is device-global state.
 - Pattern: State lifetime must be explicit, not inferred from route visibility or username equality.
-- Follow-up improvement: Complete or explicitly defer account deletion workflow, then add auth/startup regression coverage to the hard release gate.
+- Follow-up improvement: Account deletion workflow was implemented on 2026-06-04; add auth/startup/account-deletion regression coverage to the hard release gate.
 - Owner: Engineering
 - Status: Open
 
@@ -401,6 +401,51 @@ No task is fully complete until the lesson check is done or explicitly marked "n
 - What should change: Future governance automation should parse node/completion evidence rather than relying only on human discipline.
 - Pattern: Manual governance drift.
 - Follow-up improvement: Continue [[Engineering System Flaw Remediation Plan]] Phase 02 and Phase 03 with parseable status schema and validation evidence ledger.
+- Owner: Engineering
+- Status: Open
+
+### LESSON-20260604-024: Destructive Account Flows Need Two Failure Classes
+
+- Related task: [ROOT_AUTH_STARTUP_REMEDIATION_ROADMAP.md](../../ROOT_AUTH_STARTUP_REMEDIATION_ROADMAP.md) Phase 05
+- Related system: [[Authentication]], [[Firebase Architecture]], [[Rules Strategy]]
+- Related risk/debt: R-021, TD-021, BLK-010
+- What was learned: Account deletion cannot use one generic error path. A failed password reauthentication is non-destructive and must preserve the current session, while backend/Auth failures after cleanup starts are destructive partial failures and must clear local session state.
+- What caused delays: The original account-lifecycle gap mixed reauthentication, runtime shutdown, RTDB cleanup, Auth deletion, and local session reset into one conceptual "delete" action.
+- What failed: Without an explicit failure class, a bad password could accidentally behave like account deletion, or a partial backend delete could leave stale local identity able to restore.
+- What succeeded: `AccountDeletionException.destructiveActionStarted` now separates pre-destructive failures from partial destructive failures; runtime/provider tests cover preserving identity before reauth and clearing identity after backend failure.
+- What should change: Every future destructive lifecycle flow should expose whether durable state was touched before deciding local cleanup and user messaging.
+- Pattern: Destructive workflows need irreversible-boundary tracking.
+- Follow-up improvement: Add Firebase emulator/device proof for account deletion tombstone cleanup and include the targeted account-deletion tests in the hard release gate.
+- Owner: Engineering
+- Status: Open
+
+### LESSON-20260604-025: Login Must Not Repair Deleted Backend Accounts
+
+- Related task: [ROOT_AUTH_STARTUP_REMEDIATION_ROADMAP.md](../../ROOT_AUTH_STARTUP_REMEDIATION_ROADMAP.md) Phase 05
+- Related system: [[Authentication]], [[Firebase Architecture]]
+- Related risk/debt: R-021, TD-021, BLK-010
+- What was learned: After account deletion tombstones RTDB, Firebase Auth deletion can still fail. If normal login treats a missing backend identity as a profile creation opportunity, the deleted account can be revived.
+- What caused delays: The earlier source-of-truth fix guarded cached identity restoration, but the explicit login path still wrote backend identity when `fetchIdentity` returned null.
+- What failed: A surviving Auth user after partial delete could authenticate, then `_saveBackendIdentity` could recreate `users/{username}` and `userSearch/{username}`.
+- What succeeded: Login now requires backend identity proof after Auth succeeds, signs out on missing/wrong-owner backend identity, and does not upsert, set presence, or cache Drift identity. Firebase and emulator upsert paths also reject tombstoned users, and rules block `userSearch` writes for deleted users.
+- What should change: Login and registration must stay separate lifecycle operations. Login validates durable backend account existence; registration creates it.
+- Pattern: Recovery path accidentally became account recreation.
+- Follow-up improvement: Add Firebase emulator proof that tombstoned accounts cannot re-add `userSearch` or upsert profile data.
+- Owner: Engineering
+- Status: Open
+
+### LESSON-20260604-026: Testing Agents Need Graphs, Not Just Handoffs
+
+- Related task: Scenario-intelligence operating layer.
+- Related system: [[Scenario Intelligence Agent]], [[System Model]], [[Failure Graph]], [[Assumption Register]]
+- Related risk/debt: R-001, R-003, R-014, R-021, TD-015, TD-016
+- What was learned: A developer handoff explains where to work, but a testing/intelligence agent needs explicit system, state, business-rule, assumption, and failure graphs to generate useful scenarios.
+- What caused delays: Existing notes had feature and dependency maps, but assumptions and cross-domain failure chains were not first-class testing inputs.
+- What failed: Ad hoc scenario generation risks producing broad but shallow test lists that do not target Rain's interaction failures.
+- What succeeded: The vault now includes [[Scenario Intelligence Agent]], [[System Model]], [[State Graph]], [[Business Rule Graph]], [[Assumption Register]], and [[Failure Graph]], and the AI/testing/knowledge indexes link them.
+- What should change: Future QA and risk-analysis passes should start by violating assumptions and tracing failure chains before proposing tests, then record coverage in [[Scenario Coverage Matrix]].
+- Pattern: Model-driven scenario generation.
+- Follow-up improvement: Close the Gap and Partially Covered rows in [[Scenario Coverage Matrix]] with named tests, emulator proof, device proof, or explicit owner acceptance.
 - Owner: Engineering
 - Status: Open
 

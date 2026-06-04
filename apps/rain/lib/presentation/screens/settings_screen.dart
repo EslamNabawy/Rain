@@ -61,6 +61,7 @@ class SettingsScreen extends ConsumerStatefulWidget {
 
 class _SettingsScreenState extends ConsumerState<SettingsScreen> {
   bool _loggingOut = false;
+  bool _deletingAccount = false;
   bool _exportingDiagnostics = false;
   bool _testingMicrophone = false;
   bool _microphoneTestFailed = false;
@@ -68,7 +69,7 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen> {
 
   @override
   Widget build(BuildContext context) {
-    if (_loggingOut) {
+    if (_loggingOut || _deletingAccount) {
       return const RainSplashScreen();
     }
 
@@ -143,14 +144,32 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen> {
           const SizedBox(height: 24),
           const AppSectionTitle(title: 'Session'),
           AppSectionCard(
-            child: ListTile(
-              leading: Icon(
-                Icons.logout,
-                color: Theme.of(context).colorScheme.error,
-              ),
-              title: const Text('Log out'),
-              subtitle: const Text('Clear Rain session on this device'),
-              onTap: runtime == null ? null : () => _confirmLogOut(context),
+            child: Column(
+              children: <Widget>[
+                ListTile(
+                  leading: Icon(
+                    Icons.logout,
+                    color: Theme.of(context).colorScheme.error,
+                  ),
+                  title: const Text('Log out'),
+                  subtitle: const Text('Clear Rain session on this device'),
+                  onTap: runtime == null ? null : () => _confirmLogOut(context),
+                ),
+                const Divider(height: 1),
+                ListTile(
+                  leading: Icon(
+                    Icons.delete_forever,
+                    color: Theme.of(context).colorScheme.error,
+                  ),
+                  title: const Text('Delete account'),
+                  subtitle: const Text(
+                    'Delete backend account data and clear this device',
+                  ),
+                  onTap: runtime == null || identity == null
+                      ? null
+                      : () => _confirmDeleteAccount(context, identity),
+                ),
+              ],
             ),
           ),
           const SizedBox(height: 24),
@@ -935,6 +954,63 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen> {
       messenger.showSnackBar(
         SnackBar(
           content: Text('Could not log out: ${_formatSettingsError(error)}'),
+          backgroundColor: errorColor,
+        ),
+      );
+    }
+  }
+
+  Future<void> _confirmDeleteAccount(
+    BuildContext context,
+    RainIdentity identity,
+  ) async {
+    final messenger = ScaffoldMessenger.of(context);
+    final errorColor = Theme.of(context).colorScheme.error;
+
+    final confirmed = await showAppConfirmDialog(
+      context: context,
+      title: 'Delete account',
+      message:
+          'This will delete @${identity.username}, remove account-owned Rain backend data, and clear this device. This cannot be undone.',
+      confirmLabel: 'Delete account',
+      confirmStyle: FilledButton.styleFrom(backgroundColor: errorColor),
+    );
+    if (confirmed != true || !context.mounted) {
+      return;
+    }
+
+    final password = await showAppTextInputDialog(
+      context: context,
+      title: 'Confirm password',
+      labelText: 'Password',
+      helperText: 'Required before account deletion starts',
+      confirmLabel: 'Delete account',
+      obscureText: true,
+      maxLength: 50,
+    );
+    if (password == null || password.isEmpty || !context.mounted) {
+      return;
+    }
+
+    setState(() => _deletingAccount = true);
+    try {
+      await ref
+          .read(runtimeControllerProvider.notifier)
+          .deleteAccount(password: password);
+      if (!context.mounted) {
+        return;
+      }
+      context.goNamed(AppRoutes.home);
+    } catch (error) {
+      if (!context.mounted) {
+        return;
+      }
+      setState(() => _deletingAccount = false);
+      messenger.showSnackBar(
+        SnackBar(
+          content: Text(
+            'Could not delete account: ${_formatSettingsError(error)}',
+          ),
           backgroundColor: errorColor,
         ),
       );

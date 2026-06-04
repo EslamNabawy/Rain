@@ -62,6 +62,40 @@ void main() {
     expect(find.text('Reduce during calls'), findsOneWidget);
   });
 
+  testWidgets('settings account deletion asks for password', (
+    WidgetTester tester,
+  ) async {
+    final runtimeController = _RecordingRuntimeController();
+    final harness = _SettingsHarness(
+      identity: const RainIdentity(
+        username: 'alice',
+        displayName: 'Alice',
+        createdAt: 1,
+        gender: RainGender.female,
+      ),
+      runtimeController: runtimeController,
+    );
+    addTearDown(harness.dispose);
+
+    await tester.pumpSettingsScreen(harness: harness);
+    await tester.tap(find.text('Delete account'));
+    await tester.pumpSettingsFrame();
+    await tester.tap(find.widgetWithText(FilledButton, 'Delete account'));
+    await tester.pumpSettingsFrame();
+
+    expect(find.text('Confirm password'), findsOneWidget);
+
+    await tester.enterText(find.byType(TextField), 'secret1');
+    await tester.tap(find.widgetWithText(FilledButton, 'Delete account'));
+    await tester.pumpSettingsFrame();
+
+    expect(runtimeController.deleteAccountPasswords, <String>['secret1']);
+    expect(
+      find.textContaining('Could not delete account: Wrong password'),
+      findsOneWidget,
+    );
+  });
+
   testWidgets('settings screen shows version and update actions', (
     WidgetTester tester,
   ) async {
@@ -69,7 +103,11 @@ void main() {
     addTearDown(harness.dispose);
 
     await tester.pumpSettingsScreen(harness: harness);
-    await tester.drag(find.byType(ListView), const Offset(0, -1800));
+    await tester.scrollUntilVisible(
+      find.text('About Rain'),
+      500,
+      scrollable: find.byType(Scrollable).first,
+    );
     await tester.pumpSettingsFrame();
 
     expect(find.text('About Rain'), findsOneWidget);
@@ -609,8 +647,16 @@ extension _SettingsPump on WidgetTester {
             ),
           ),
           platformBridgeProvider.overrideWithValue(harness.platformBridge),
-          identityProvider.overrideWith(_NoIdentityController.new),
-          runtimeControllerProvider.overrideWith(_NoRuntimeController.new),
+          identityProvider.overrideWith(
+            harness.identity == null
+                ? _NoIdentityController.new
+                : () => _StaticIdentityController(harness.identity!),
+          ),
+          runtimeControllerProvider.overrideWith(
+            harness.runtimeController == null
+                ? _NoRuntimeController.new
+                : () => harness.runtimeController!,
+          ),
           connectionRequestProvider.overrideWith(
             () => _FakeConnectionRequestController(
               harness.connectionRequestState,
@@ -640,6 +686,8 @@ class _SettingsHarness {
     ReleaseManifestLoader? manifestLoader,
     String packageVersion = '1.0.0',
     String packageBuildNumber = '1',
+    this.identity,
+    this.runtimeController,
   }) : platformBridge = platformBridge ?? _FakePlatformBridge(),
        connectionRequestState =
            connectionRequestState ?? const ConnectionRequestState.idle(),
@@ -647,6 +695,7 @@ class _SettingsHarness {
        diagnosticsDirectory = Directory.systemTemp.createTempSync(
          'rain_settings_test_',
        ) {
+    runtimeController?.database = database;
     crashDiagnostics = CrashDiagnosticsService(
       directoryProvider: () async => diagnosticsDirectory,
       appInfoProvider: () async => const CrashDiagnosticsAppInfo.unknown(),
@@ -674,6 +723,8 @@ class _SettingsHarness {
 
   final _FakePlatformBridge platformBridge;
   final ConnectionRequestState connectionRequestState;
+  final RainIdentity? identity;
+  final _RecordingRuntimeController? runtimeController;
   final RainDatabase database;
   final Directory diagnosticsDirectory;
   late final CrashDiagnosticsService crashDiagnostics;
@@ -761,9 +812,58 @@ class _NoIdentityController extends IdentityController {
   Future<RainIdentity?> build() async => null;
 }
 
+class _StaticIdentityController extends IdentityController {
+  _StaticIdentityController(this.identity);
+
+  final RainIdentity identity;
+
+  @override
+  Future<RainIdentity?> build() async => identity;
+}
+
 class _NoRuntimeController extends RuntimeController {
   @override
   Future<RainRuntimeController?> build() async => null;
+}
+
+class _RecordingRuntimeController extends RuntimeController {
+  late RainDatabase database;
+  final List<String> deleteAccountPasswords = <String>[];
+
+  @override
+  Future<RainRuntimeController?> build() async {
+    final messageStore = MessageStore(database);
+    final offlineQueueStore = OfflineQueueStore(database);
+    return RainRuntimeController(
+      selfIdentity: const RainIdentity(
+        username: 'alice',
+        displayName: 'Alice',
+        createdAt: 1,
+        gender: RainGender.female,
+      ),
+      adapter: NoopSignalingAdapter(),
+      brain: null,
+      database: database,
+      friendStore: FriendStore(database),
+      messageStore: messageStore,
+      offlineQueueStore: offlineQueueStore,
+      messageDeliveryService: MessageDeliveryService(
+        messageStore: messageStore,
+        offlineQueueStore: offlineQueueStore,
+      ),
+      friendRequestRefreshInterval: Duration.zero,
+    );
+  }
+
+  @override
+  Future<void> deleteAccount({required String password}) async {
+    deleteAccountPasswords.add(password);
+    throw const AccountDeletionException(
+      kind: AccountDeletionFailureKind.reauthenticationFailed,
+      message: 'Wrong password. Account deletion was not started.',
+      destructiveActionStarted: false,
+    );
+  }
 }
 
 class _FakeConnectionRequestController extends ConnectionRequestController {

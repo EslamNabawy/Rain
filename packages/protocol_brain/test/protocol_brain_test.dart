@@ -922,6 +922,12 @@ class _RecordingSignalingAdapter implements SignalingAdapter {
   Future<void> signOut() async {}
 
   @override
+  Future<void> reauthenticate(String username, String password) async {}
+
+  @override
+  Future<void> deleteAccount(String username) async {}
+
+  @override
   Future<String> register(String username, String password) async => 'uid';
 
   @override

@@ -1347,6 +1347,74 @@ class RainRuntimeController with WidgetsBindingObserver {
     await _shutdown(markOffline: true, signOut: true, clearLocalSession: true);
   }
 
+  Future<void> deleteAccount(String password) async {
+    _recordRuntimeEvent(category: 'runtime', name: 'account_delete_requested');
+    try {
+      await adapter.reauthenticate(selfIdentity.username, password);
+    } on AccountDeletionException {
+      rethrow;
+    } on Object catch (error) {
+      throw AccountDeletionException(
+        kind: AccountDeletionFailureKind.reauthenticationFailed,
+        message: error.toString(),
+        destructiveActionStarted: false,
+        cause: error,
+      );
+    }
+
+    Object? deletionError;
+    StackTrace? deletionStackTrace;
+    try {
+      try {
+        await _shutdown(
+          markOffline: true,
+          signOut: false,
+          clearLocalSession: false,
+        );
+      } catch (error, stackTrace) {
+        _recordRuntimeEvent(
+          category: 'runtime',
+          name: 'account_delete_runtime_shutdown_failed',
+          severity: 'warning',
+          message: error.toString(),
+        );
+        errorRecorder?.call(
+          error,
+          stackTrace,
+          source: 'runtime-account-delete-shutdown',
+          fatal: false,
+        );
+      }
+
+      await adapter.deleteAccount(selfIdentity.username);
+      _recordRuntimeEvent(
+        category: 'runtime',
+        name: 'account_delete_completed',
+      );
+    } catch (error, stackTrace) {
+      deletionError = error;
+      deletionStackTrace = stackTrace;
+      _recordRuntimeEvent(
+        category: 'runtime',
+        name: 'account_delete_backend_failed',
+        severity: 'warning',
+        message: error.toString(),
+      );
+      errorRecorder?.call(
+        error,
+        stackTrace,
+        source: 'runtime-account-delete',
+        fatal: false,
+      );
+    } finally {
+      await _clearLocalSessionDataForShutdown();
+    }
+
+    if (deletionError != null) {
+      Error.throwWithStackTrace(deletionError, deletionStackTrace!);
+    }
+  }
+
   Future<void> markConversationRead(String username) {
     return _localMutations.run(() => friendStore.clearUnread(username));
   }

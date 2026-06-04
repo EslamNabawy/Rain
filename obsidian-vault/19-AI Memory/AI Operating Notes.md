@@ -56,4 +56,20 @@ Workflow nodes:
 | 13 | Version Control Preparation |
 | 14 | Completion Report |
 
-Related: [[AI Memory Index]], [[Project Memory]], [[AI Instructions]], [[Continuous Improvement Log]].
+## Scenario Intelligence Mode
+
+When the task is testing strategy, scenario generation, risk discovery, QA intelligence, or failure analysis, use [[Scenario Intelligence Agent]] after the normal Rain Autonomous Engineering System startup.
+
+Scenario-intelligence work must derive scenarios from:
+
+- [[System Model]]
+- [[Feature Map]]
+- [[Dependency Map]]
+- [[State Graph]]
+- [[Business Rule Graph]]
+- [[Assumption Register]]
+- [[Failure Graph]]
+
+Durable findings belong in the vault graph notes, risk register, debt register, blockers, or recommended next actions. Do not treat generated scenarios as validated unless the named test or check was actually executed.
+
+Related: [[AI Memory Index]], [[Project Memory]], [[AI Instructions]], [[Continuous Improvement Log]], [[Scenario Intelligence Agent]].

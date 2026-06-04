@@ -1,6 +1,6 @@
 # Current Architecture
 
-Last updated: 2026-06-03
+Last updated: 2026-06-04
 
 ## Purpose
 
@@ -41,7 +41,7 @@ flowchart LR
 
 The discovered feature set maps to [[Feature Index]] and [[Feature Map]]:
 
-- [[Authentication]] - username/password auth through the signaling adapter and Firebase Auth when Firebase backend is active.
+- [[Authentication]] - username/password auth, cached identity validation, logout/reset, and account deletion through the signaling adapter and Firebase Auth when Firebase backend is active.
 - [[Friendship And Blocking]] - friend requests, friendships, block lists, and local friend records.
 - [[Presence And Direct Connect]] - Firebase presence, heartbeat, peer connect/disconnect, direct WebRTC data sessions, recovery, and manual disconnect intent.
 - [[Peer Chat]] - text messages over WebRTC data channel with local Drift storage, offline queue, sequence tracking, and delivery service.
@@ -121,7 +121,7 @@ Discovered components:
 - `SessionManager`/`ProtocolBrain` - peer registration, connect/disconnect, recovery, data-channel send/open, buffered amount, media offer/answer, local audio, and remote track events.
 - `Session`, `SessionState`, `SessionPhase`, `SessionChannel`.
 - `ProtocolBrainImpl` and `createDefaultProtocolBrain`.
-- `SignalingAdapter` - auth, identity, relationship, presence, room, offer/answer, ICE, and voice signaling surface.
+- `SignalingAdapter` - auth, reauthentication, account deletion, identity, relationship, presence, room, offer/answer, ICE, and voice signaling surface.
 - `FirebaseSignalingAdapter` - RTDB-backed implementation and `VoiceSignalingAdapter`.
 - `SignalingCipher` - encrypted signaling envelope helper.
 - `IceCandidateBatcher`, `IceCandidatePolicy`, `SignalingCostBudgetExceeded`.
@@ -309,6 +309,10 @@ Main app dependencies discovered from `apps/rain/pubspec.yaml`:
 3. Local `IdentityRepository` stores identity in Drift.
 4. Backend user identity is stored under Firebase `users`.
 5. Presence begins after runtime startup.
+6. Delete account from Settings requires confirmation plus password reauthentication before destructive cleanup.
+7. Once deletion enters the destructive path, runtime shutdown runs best-effort, backend account data is cleaned/tombstoned while ownership still exists, Firebase Auth deletion runs last, and local Drift/authenticated-session state is cleared.
+8. Tombstoned backend identities are not restored during cached identity validation.
+9. Login refuses to recreate missing or tombstoned backend identity after Firebase Auth succeeds; it signs out and leaves Drift identity empty.
 
 Related: [[Authentication]], [[Firebase Architecture]], [[Database Schema]].
 

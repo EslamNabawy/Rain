@@ -27,7 +27,8 @@ This roadmap consolidates the required fixes from:
 - 2026-06-03 Phase 1 implementation complete: `IdentityController` now treats local Drift identity as a cached session candidate and validates it against backend account existence plus current auth uid ownership before restoring signed-in state. Missing/deleted backend account data, missing uid data, uid mismatch, and session-expired errors clear local session data. Register/login save local identity only after backend identity/presence writes. Tests cover deleted backend account, uid mismatch, and backend profile refresh.
 - 2026-06-03 active overlay Phase 2 / roadmap Phase 03 implementation complete: runtime logout clears local Drift session data before best-effort backend sign-out, handles failed `adapter.signOut()` without preserving cached identity, clears local session even when a previous app-exit shutdown future exists, and guarantees session teardown from a `finally` path. Tests cover failed sign-out and logout-after-app-exit shutdown.
 - 2026-06-03 Phase 06 implementation complete: `AuthenticatedSession` now carries a monotonic `sessionGeneration`; `RainRuntimeController` instances are keyed by username plus generation; runtime, brain, connection-request, voice-call, connection-view, message, file-transfer, search, and recent-search providers drop stale account state when the authenticated session ends or changes. Tests cover generation changes, recent/search reset, and signed-out message stream emptiness.
-- Remaining phase: account deletion workflow.
+- 2026-06-04 Phase 05 account deletion workflow implementation complete: `SignalingAdapter`/`FirebaseSignalingAdapter` now expose reauthentication and account deletion; Settings exposes a confirmation/password delete flow; runtime/provider teardown preserves the session on pre-destructive reauth failure and clears local session after destructive work starts; Firebase cleanup tombstones `users/{username}`, removes search/mirror data where authorized, sets presence offline, ends active calls best-effort, and deletes Firebase Auth last. Follow-up hardening prevents a remaining Firebase Auth user from recreating a missing/tombstoned backend account through login/upsert/search writes. Validation evidence: full Melos analyze and test passed.
+- Remaining phase: Phase 09 release-gate integration for auth/startup/account-deletion regressions.
 
 ## Dependency-Ordered Plan
 
@@ -141,6 +142,21 @@ Tasks:
 Definition of done:
 
 - User can delete account from the app and cannot reopen into the deleted identity.
+
+2026-06-04 Phase 3 architecture review:
+
+- Assumed next implementation target: first-class account deletion workflow.
+- Add the account deletion contract at the signaling/auth boundary before UI work.
+- Preserve the existing local-clear-first session invariant: once deletion enters the destructive path, local Drift session data and authenticated-session generation must be cleared even if backend cleanup or Auth deletion reports a partial failure.
+- Perform RTDB cleanup while the Firebase Auth user and `users/{username}` ownership row still exist, because many rules authorize by `root.child('users/{username}/uid')`.
+- Delete or tombstone `users/{username}` late in the sequence; current rules do not allow removing an existing user row, so rules or a tombstone strategy must be part of implementation.
+- Delete the Firebase Auth user last and handle FlutterFire's recent-login requirement with an explicit reauthentication retry path.
+- Do not put account deletion in WebRTC packages. Runtime shutdown should disconnect active WebRTC sessions/calls; backend account cleanup belongs to the signaling adapter/auth lifecycle.
+- Add focused tests before implementation: adapter contract, rules cleanup authorization, local clear on partial failure, UI confirmation/error copy, and restart-after-delete signed-out behavior.
+
+Progress:
+
+- 2026-06-04: Complete locally. Added adapter contract methods, Firebase adapter reauthentication/deletion/tombstone logic, RTDB rules support for tombstone fields, runtime/provider destructive-session handling, Settings delete-account UI, fake/emulator adapter parity methods, and targeted runtime/settings/protocol tests. Follow-up hardening rejects login when backend identity is missing/tombstoned after Auth succeeds, rejects upsert to tombstoned users, and blocks `userSearch` writes for deleted users. `dart run melos run analyze` and `dart run melos run test` passed. Dedicated live Firebase emulator account-deletion cleanup proof is still recommended for the hard release gate.
 
 ### Phase 06: Session-Scoped Providers
 

@@ -54,6 +54,46 @@ class _FailingSignOutAdapter extends _RecordingPresenceAdapter {
   }
 }
 
+class _FailingReauthAccountDeletionAdapter extends _RecordingPresenceAdapter {
+  int reauthCalls = 0;
+  int deleteAccountCalls = 0;
+
+  @override
+  Future<void> reauthenticate(String username, String password) async {
+    reauthCalls += 1;
+    throw const AccountDeletionException(
+      kind: AccountDeletionFailureKind.reauthenticationFailed,
+      message: 'Wrong password. Account deletion was not started.',
+      destructiveActionStarted: false,
+    );
+  }
+
+  @override
+  Future<void> deleteAccount(String username) async {
+    deleteAccountCalls += 1;
+  }
+}
+
+class _FailingBackendAccountDeletionAdapter extends _RecordingPresenceAdapter {
+  int reauthCalls = 0;
+  int deleteAccountCalls = 0;
+
+  @override
+  Future<void> reauthenticate(String username, String password) async {
+    reauthCalls += 1;
+  }
+
+  @override
+  Future<void> deleteAccount(String username) async {
+    deleteAccountCalls += 1;
+    throw const AccountDeletionException(
+      kind: AccountDeletionFailureKind.backendCleanupFailed,
+      message: 'Could not finish deleting backend account data.',
+      destructiveActionStarted: true,
+    );
+  }
+}
+
 class _BlockingOfflinePresenceAdapter extends _RecordingPresenceAdapter {
   final Completer<void> offlineStarted = Completer<void>();
   final Completer<void> releaseOffline = Completer<void>();
@@ -483,6 +523,110 @@ void main() {
       await Future.wait(<Future<void>>[exitFuture, logoutFuture]);
 
       expect(await IdentityRepository(db).loadIdentity(), isNull);
+      expect(adapter.presenceWrites, <bool>[true, false]);
+    },
+  );
+
+  test(
+    'runtime account deletion does not clear local identity before reauth',
+    () async {
+      final db = RainDatabase(NativeDatabase.memory());
+      addTearDown(db.close);
+      const identity = RainIdentity(
+        username: 'alice',
+        displayName: 'Alice',
+        createdAt: 0,
+        gender: RainGender.female,
+      );
+      await IdentityRepository(db).saveIdentity(identity);
+
+      final adapter = _FailingReauthAccountDeletionAdapter();
+      final messageStore = MessageStore(db);
+      final offlineQueueStore = OfflineQueueStore(db);
+      final runtime = RainRuntimeController(
+        selfIdentity: identity,
+        adapter: adapter,
+        brain: null,
+        database: db,
+        friendStore: FriendStore(db),
+        messageStore: messageStore,
+        offlineQueueStore: offlineQueueStore,
+        messageDeliveryService: MessageDeliveryService(
+          messageStore: messageStore,
+          offlineQueueStore: offlineQueueStore,
+        ),
+        friendRequestRefreshInterval: Duration.zero,
+      );
+      addTearDown(runtime.dispose);
+
+      await runtime.start();
+
+      await expectLater(
+        runtime.deleteAccount('wrong-password'),
+        throwsA(
+          isA<AccountDeletionException>().having(
+            (error) => error.destructiveActionStarted,
+            'destructiveActionStarted',
+            isFalse,
+          ),
+        ),
+      );
+
+      expect(await IdentityRepository(db).loadIdentity(), isNotNull);
+      expect(adapter.reauthCalls, 1);
+      expect(adapter.deleteAccountCalls, 0);
+      expect(adapter.presenceWrites, <bool>[true]);
+    },
+  );
+
+  test(
+    'runtime account deletion clears local identity after backend failure',
+    () async {
+      final db = RainDatabase(NativeDatabase.memory());
+      addTearDown(db.close);
+      const identity = RainIdentity(
+        username: 'alice',
+        displayName: 'Alice',
+        createdAt: 0,
+        gender: RainGender.female,
+      );
+      await IdentityRepository(db).saveIdentity(identity);
+
+      final adapter = _FailingBackendAccountDeletionAdapter();
+      final messageStore = MessageStore(db);
+      final offlineQueueStore = OfflineQueueStore(db);
+      final runtime = RainRuntimeController(
+        selfIdentity: identity,
+        adapter: adapter,
+        brain: null,
+        database: db,
+        friendStore: FriendStore(db),
+        messageStore: messageStore,
+        offlineQueueStore: offlineQueueStore,
+        messageDeliveryService: MessageDeliveryService(
+          messageStore: messageStore,
+          offlineQueueStore: offlineQueueStore,
+        ),
+        friendRequestRefreshInterval: Duration.zero,
+      );
+      addTearDown(runtime.dispose);
+
+      await runtime.start();
+
+      await expectLater(
+        runtime.deleteAccount('secret1'),
+        throwsA(
+          isA<AccountDeletionException>().having(
+            (error) => error.destructiveActionStarted,
+            'destructiveActionStarted',
+            isTrue,
+          ),
+        ),
+      );
+
+      expect(await IdentityRepository(db).loadIdentity(), isNull);
+      expect(adapter.reauthCalls, 1);
+      expect(adapter.deleteAccountCalls, 1);
       expect(adapter.presenceWrites, <bool>[true, false]);
     },
   );

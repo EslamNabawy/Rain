@@ -1,6 +1,6 @@
 # Knowledge Graph Index
 
-Last updated: 2026-06-03
+Last updated: 2026-06-04
 
 ## Purpose
 
@@ -8,11 +8,17 @@ This folder organizes cross-links between product, architecture, risk, decisions
 
 ## Maps
 
+- [[System Model]]
 - [[Domain Map]]
 - [[Dependency Map]]
 - [[Decision Map]]
 - [[Feature Map]]
+- [[State Graph]]
+- [[Business Rule Graph]]
 - [[System Ownership Map]]
+- [[Failure Graph]]
+- [[Assumption Register]]
+- [[Scenario Coverage Matrix]]
 
 ## Canonical Source Views
 
@@ -47,8 +53,19 @@ This folder organizes cross-links between product, architecture, risk, decisions
 - [[Recommended Next Actions]]
 - [[Engineering System Flaw Remediation Plan]]
 
+## Scenario Intelligence Links
+
+- [[Scenario Intelligence Agent]]
+- [[System Model]]
+- [[State Graph]]
+- [[Business Rule Graph]]
+- [[Failure Graph]]
+- [[Assumption Register]]
+- [[Scenario Coverage Matrix]]
+- [[Test Strategy]]
+
 ## Future Population
 
-Future phases will enrich these maps with repository-discovered modules, data flows, state machines, and dependency edges.
+Future phases will enrich these maps with repository-discovered modules, data flows, machine-readable state transitions, business rules, failure chains, and dependency edges.
 
 Related: [[Project Home]], [[System Architecture]], [[Feature Index]], [[Risk Register]], [[AI Memory Index]].

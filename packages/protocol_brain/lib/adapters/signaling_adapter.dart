@@ -5,6 +5,8 @@ abstract class SignalingAdapter {
   Future<void> ensureSignedInAs(String username);
   Future<String> currentUid();
   Future<void> signOut();
+  Future<void> reauthenticate(String username, String password);
+  Future<void> deleteAccount(String username);
 
   Future<String> register(String username, String password);
   Future<String> login(String username, String password);
@@ -50,6 +52,32 @@ class SignalingSessionExpiredException implements Exception {
   const SignalingSessionExpiredException(this.message);
 
   final String message;
+
+  @override
+  String toString() => message;
+}
+
+enum AccountDeletionFailureKind {
+  reauthenticationFailed,
+  backendCleanupFailed,
+  authDeletionFailed,
+  sessionExpired,
+  permissionDenied,
+  unknown,
+}
+
+class AccountDeletionException implements Exception {
+  const AccountDeletionException({
+    required this.kind,
+    required this.message,
+    required this.destructiveActionStarted,
+    this.cause,
+  });
+
+  final AccountDeletionFailureKind kind;
+  final String message;
+  final bool destructiveActionStarted;
+  final Object? cause;
 
   @override
   String toString() => message;

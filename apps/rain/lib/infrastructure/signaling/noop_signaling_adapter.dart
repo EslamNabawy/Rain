@@ -64,15 +64,57 @@ class NoopSignalingAdapter implements SignalingAdapter {
   }
 
   @override
+  Future<void> reauthenticate(String username, String password) async {
+    final normalizedUsername = _normalizedUsername(username);
+    if (_normalizedUsername(_currentUsername ?? '') != normalizedUsername ||
+        !_identities.containsKey(normalizedUsername)) {
+      throw const SignalingSessionExpiredException(
+        'Sign in again before deleting this account.',
+      );
+    }
+  }
+
+  @override
+  Future<void> deleteAccount(String username) async {
+    final normalizedUsername = _normalizedUsername(username);
+    await ensureSignedInAs(normalizedUsername);
+    final friends = await loadAcceptedFriends(normalizedUsername);
+    final incomingRequests = await loadIncomingFriendRequests(
+      normalizedUsername,
+    );
+    final outgoingRequests = await loadOutgoingFriendRequests(
+      normalizedUsername,
+    );
+    final blocked = await loadBlockedUsers(normalizedUsername);
+    for (final friend in friends) {
+      await deleteFriendship(normalizedUsername, friend);
+    }
+    for (final from in incomingRequests) {
+      await deleteFriendRequest(normalizedUsername, from);
+    }
+    for (final to in outgoingRequests) {
+      await deleteFriendRequest(to, normalizedUsername);
+    }
+    for (final blockedUser in blocked) {
+      await unblockUser(normalizedUsername, blockedUser);
+    }
+    _presence.remove(normalizedUsername);
+    _identities.remove(normalizedUsername);
+    _currentUsername = null;
+    _presenceController(normalizedUsername).add(false);
+  }
+
+  @override
   Future<String> register(String username, String password) async {
-    if (_identities.containsKey(username)) {
-      throw Exception('Username "$username" is already taken');
+    final normalizedUsername = _normalizedUsername(username);
+    if (_identities.containsKey(normalizedUsername)) {
+      throw Exception('Username "$normalizedUsername" is already taken');
     }
     final uid = 'local-${DateTime.now().millisecondsSinceEpoch}';
-    _identities[username] = BackendIdentity(
-      username: username,
+    _identities[normalizedUsername] = BackendIdentity(
+      username: normalizedUsername,
       uid: uid,
-      displayName: username,
+      displayName: normalizedUsername,
       gender: null,
       registeredAt: DateTime.now().millisecondsSinceEpoch,
       lastSeen: DateTime.now().millisecondsSinceEpoch,
@@ -82,18 +124,19 @@ class NoopSignalingAdapter implements SignalingAdapter {
       presenceStartedAt: _sessionStartedAt,
       presenceState: 'online',
     );
-    _presence[username] = true;
-    _currentUsername = username;
+    _presence[normalizedUsername] = true;
+    _currentUsername = normalizedUsername;
     return uid;
   }
 
   @override
   Future<String> login(String username, String password) async {
-    final identity = _identities[username];
+    final normalizedUsername = _normalizedUsername(username);
+    final identity = _identities[normalizedUsername];
     if (identity == null) {
-      throw Exception('User "$username" not found');
+      throw Exception('User "$normalizedUsername" not found');
     }
-    _currentUsername = username;
+    _currentUsername = normalizedUsername;
     return identity.uid;
   }
 
@@ -232,7 +275,7 @@ class NoopSignalingAdapter implements SignalingAdapter {
 
   @override
   Future<bool> isUsernameAvailable(String username) async {
-    return !_identities.containsKey(username);
+    return !_identities.containsKey(_normalizedUsername(username));
   }
 
   @override
@@ -284,15 +327,29 @@ class NoopSignalingAdapter implements SignalingAdapter {
 
   @override
   Future<void> upsertIdentity(BackendIdentity identity) async {
-    _identities[identity.username] = identity;
-    _presence[identity.username] = identity.online;
-    _currentUsername ??= identity.username;
+    final normalizedUsername = _normalizedUsername(identity.username);
+    _identities[normalizedUsername] = BackendIdentity(
+      username: normalizedUsername,
+      uid: identity.uid,
+      displayName: identity.displayName,
+      gender: identity.gender,
+      registeredAt: identity.registeredAt,
+      lastSeen: identity.lastSeen,
+      lastHeartbeat: identity.lastHeartbeat,
+      online: identity.online,
+      presenceSessionId: identity.presenceSessionId,
+      presenceStartedAt: identity.presenceStartedAt,
+      presenceState: identity.presenceState,
+    );
+    _presence[normalizedUsername] = identity.online;
+    _currentUsername ??= normalizedUsername;
   }
 
   @override
   Stream<bool> watchPresence(String username) async* {
-    yield _presence[username] ?? false;
-    yield* _presenceController(username).stream;
+    final normalizedUsername = _normalizedUsername(username);
+    yield _presence[normalizedUsername] ?? false;
+    yield* _presenceController(normalizedUsername).stream;
   }
 
   @override

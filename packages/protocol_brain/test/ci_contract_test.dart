@@ -73,6 +73,48 @@ void main() {
       contains('integration_two_devices_handshake_full_test.dart'),
     );
     expect(script, contains('integration_voice_signaling_emulator_test.dart'));
+    expect(script, contains('integration_account_deletion_emulator_test.dart'));
+  });
+
+  test('hard release gates name auth lifecycle scenario tests', () {
+    final buildArtifactsWorkflow = _repoFile(
+      '.github/workflows/build-artifacts.yml',
+    );
+    final validatedReleaseWorkflow = _repoFile(
+      '.github/workflows/validated-release.yml',
+    );
+
+    for (final workflow in <String>[
+      buildArtifactsWorkflow,
+      validatedReleaseWorkflow,
+    ]) {
+      expect(workflow, contains('Run auth lifecycle scenario tests'));
+      expect(workflow, contains('SCN-AUTH-001'));
+      expect(workflow, contains('SCN-AUTH-002'));
+      expect(workflow, contains('SCN-AUTH-003'));
+      expect(workflow, contains('SCN-AUTH-004'));
+      expect(workflow, contains('auth_identity_source_of_truth_test.dart'));
+      expect(workflow, contains('runtime_startup_test.dart'));
+      expect(workflow, contains('settings_screen_test.dart'));
+      expect(workflow, contains('app_routes_test.dart'));
+    }
+  });
+
+  test('hard release gates validate the Obsidian vault', () {
+    final buildArtifactsWorkflow = _repoFile(
+      '.github/workflows/build-artifacts.yml',
+    );
+    final validatedReleaseWorkflow = _repoFile(
+      '.github/workflows/validated-release.yml',
+    );
+
+    for (final workflow in <String>[
+      buildArtifactsWorkflow,
+      validatedReleaseWorkflow,
+    ]) {
+      expect(workflow, contains('Validate Obsidian vault'));
+      expect(workflow, contains('./scripts/check_obsidian_vault.ps1'));
+    }
   });
 
   test('Firebase backend CI audits moderate and higher dependency issues', () {

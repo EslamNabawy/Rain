@@ -201,6 +201,12 @@ String _join(String parent, String child) {
 
 final class _FakeSignalingAdapter implements SignalingAdapter {
   @override
+  Future<void> reauthenticate(String username, String password) async {}
+
+  @override
+  Future<void> deleteAccount(String username) async {}
+
+  @override
   Future<void> writeOffer(String roomId, SDPPayload offer) async {}
 
   @override

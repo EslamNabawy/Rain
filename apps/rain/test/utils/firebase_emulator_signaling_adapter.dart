@@ -137,6 +137,47 @@ class FirebaseEmulatorSignalingAdapter
   }
 
   @override
+  Future<void> reauthenticate(String username, String password) async {
+    final normalizedUsername = _normalizedUsername(username);
+    final response =
+        await _authRequest('accounts:signInWithPassword', <String, Object?>{
+          'email': _emailFromUsername(normalizedUsername),
+          'password': password,
+          'returnSecureToken': true,
+        });
+    _setAuth(response);
+    await _ensureSignedInAsUsername(normalizedUsername);
+  }
+
+  @override
+  Future<void> deleteAccount(String username) async {
+    final normalizedUsername = _normalizedUsername(username);
+    await _ensureSignedInAsUsername(normalizedUsername);
+    final now = DateTime.now().millisecondsSinceEpoch;
+    final identity = await _get(<String>['users', normalizedUsername]);
+    final registeredAt = identity is Map
+        ? (identity['registeredAt'] as num?)?.toInt() ?? now
+        : now;
+    await setPresence(normalizedUsername, false);
+    await _delete(<String>['userSearch', normalizedUsername]);
+    await _put(
+      <String>['users', normalizedUsername],
+      <String, Object?>{
+        'username': normalizedUsername,
+        'uid': _uid,
+        'displayName': 'Deleted account',
+        'registeredAt': registeredAt,
+        'accountState': 'deleted',
+        'deletedAt': now,
+      },
+    );
+    await _authRequest('accounts:delete', <String, Object?>{
+      'idToken': _idToken,
+    });
+    await signOut();
+  }
+
+  @override
   Future<String> register(String username, String password) async {
     final normalizedUsername = _normalizedUsername(username);
     final response = await _authRequest('accounts:signUp', <String, Object?>{
@@ -409,6 +450,17 @@ class FirebaseEmulatorSignalingAdapter
   @override
   Future<void> upsertIdentity(BackendIdentity identity) async {
     await _ensureSignedInAsUsername(identity.username);
+    final existing = await _get(<String>[
+      'users',
+      _normalizedUsername(identity.username),
+    ]);
+    if (existing is Map &&
+        (existing['accountState'] == 'deleted' ||
+            existing['deletedAt'] is num)) {
+      throw const SignalingSessionExpiredException(
+        'This Rain account has been deleted.',
+      );
+    }
     await _patch(
       <String>['users', _normalizedUsername(identity.username)],
       {
@@ -431,6 +483,9 @@ class FirebaseEmulatorSignalingAdapter
     final normalizedUsername = _normalizedUsername(username);
     final identity = await _get(<String>['users', normalizedUsername]);
     if (identity is! Map) return null;
+    if (identity['accountState'] == 'deleted' || identity['deletedAt'] is num) {
+      return null;
+    }
     final presence = await _get(<String>['presence', normalizedUsername]);
     final presenceMap = presence is Map ? presence : const <Object?, Object?>{};
     return BackendIdentity(
