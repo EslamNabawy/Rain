@@ -2641,6 +2641,13 @@ void main() {
       expect(aliceRuntime.voiceCallState.hasLocalVideo, isFalse);
       expect(aliceRuntime.voiceCallState.hasRemoteVideo, isFalse);
       expect(aliceRuntime.voiceCallState.isVideo, isFalse);
+      await _waitForCondition(
+        () =>
+            (aliceBrain.callMediaConnections['bob']!
+                    as _TestCallMediaConnection)
+                .disposed,
+        'local video media to dispose after remote hangup',
+      );
       expect(
         (aliceBrain.callMediaConnections['bob']! as _TestCallMediaConnection)
             .disposed,
@@ -3921,6 +3928,14 @@ void main() {
         );
         expect(adapter.rooms[callId]?.reasonCode, 'networkLost');
         expect(adapter.activePairLocks, isEmpty);
+        await _waitForCondition(
+          () => aliceBrain.stoppedAudioPeers.contains('bob'),
+          'local audio media to stop after data disconnect',
+        );
+        await _waitForCondition(
+          () => bobBrain.stoppedAudioPeers.contains('alice'),
+          'remote audio media to stop after data disconnect',
+        );
         expect(aliceBrain.stoppedAudioPeers, contains('bob'));
         expect(bobBrain.stoppedAudioPeers, contains('alice'));
       },
@@ -6786,6 +6801,14 @@ void main() {
           'direct Firebase terminal voice room to clear both peers',
         );
         expect(harness.adapter.rooms[callId]?.endedBy, 'bob');
+        await _waitForCondition(
+          () => harness.aliceBrain.stoppedAudioPeers.contains('bob'),
+          'caller audio media to stop after direct Firebase terminal room',
+        );
+        await _waitForCondition(
+          () => harness.bobBrain.stoppedAudioPeers.contains('alice'),
+          'callee audio media to stop after direct Firebase terminal room',
+        );
         expect(harness.aliceBrain.stoppedAudioPeers, contains('bob'));
         expect(harness.bobBrain.stoppedAudioPeers, contains('alice'));
       },
@@ -6822,15 +6845,14 @@ void main() {
           reason: 'Call ended.',
         );
         await _waitForCondition(
-          () =>
-              harness.bobRuntime.voiceCallState.phase == VoiceCallPhase.ending,
-          'remote voice call to enter terminal cleanup',
+          () => harness.bobRuntime.voiceCallState.phase == VoiceCallPhase.idle,
+          'remote voice call to leave active state before terminal cleanup',
         );
 
         bobConnection.emitConnectedForTest();
         await Future<void>.delayed(const Duration(milliseconds: 20));
 
-        expect(harness.bobRuntime.voiceCallState.phase, VoiceCallPhase.ending);
+        expect(harness.bobRuntime.voiceCallState.phase, VoiceCallPhase.idle);
         expect(
           harness.runtimeErrors,
           isNot(contains('bob:voice-call-signaling')),
@@ -6843,6 +6865,10 @@ void main() {
         await _waitForHarnessCallIdle(
           harness,
           'terminal voice room to remain authoritative after late active state',
+        );
+        await _waitForCondition(
+          () => harness.bobBrain.stoppedAudioPeers.contains('alice'),
+          'remote audio media to stop after terminal room cleanup is released',
         );
       },
     );

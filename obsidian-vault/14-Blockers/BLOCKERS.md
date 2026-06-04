@@ -49,6 +49,7 @@ Related: [[Risk Register]], [[Risk Categories]], [[Risk Matrix]], [[Blocker Reso
   - Prove both voice and video directions in automated or documented smoke evidence.
 - Progress 2026-06-03: Failed call setup diagnostics now preserve Firebase room status timelines inside `VoiceCallDiagnostics`, and remote terminal-room failures emit diagnostics even when the local side only observes Firebase terminal state.
 - Progress 2026-06-03 Phase 08: Local regression tests now lock WebRTC/Firebase/network call failure messages, failed call suite state, compact video dock behavior, terminal-room-before-session-hangup ordering, failed-media terminal write before disposal, and already-terminal cleanup classification.
+- Progress 2026-06-04 terminal cleanup: `rain-diagnostics-2026-06-04T144952-237539Z.json` showed media reaching `connected`, then a Firebase `busy` terminal room and stalled local cleanup that hid the call UI, blocked file transfer, and delayed Windows shutdown. `VoiceCallRuntime` now publishes terminal failed/idle state before bounded cleanup; targeted runtime/contract/terminal friend-flow tests, analyze, and full Melos tests passed. Device-direction smoke proof is still required before closing this blocker.
 - Exit Criteria: PC-to-mobile and mobile-to-PC voice/video setup have deterministic pass/fail behavior, no stuck connecting state remains, and diagnostics classify the failure source.
 - Detection Strategy: Runtime tests, call diagnostics timeline, release smoke logs, and watcher for repeated failed media setup events.
 
@@ -71,6 +72,7 @@ Related: [[Risk Register]], [[Risk Categories]], [[Risk Matrix]], [[Blocker Reso
   - Delete only matching `callId` locks.
   - Retry internally once after cleanup.
   - Prove live newer locks are never deleted.
+- Progress 2026-06-04 terminal cleanup: A terminal `busy` room can still be a real remote-side outcome, but it no longer leaves the local runtime in an active call state while cleanup stalls. This mitigates the user-visible false file-transfer block; full stale/live/newer lock repair proof remains open.
 - Exit Criteria: Emulator/fake tests cover stale, missing, terminal, corrupt, live, and newer-lock cases.
 - Detection Strategy: Diagnostics with pair/user lock path, call id, room status, cleanup action, and retry result.
 

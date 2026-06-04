@@ -76,6 +76,7 @@ extension VoiceCallRuntime on RainRuntimeController {
   static const Duration _voiceCallTransientCreateRetryDelay = Duration(
     milliseconds: 300,
   );
+  static const Duration _voiceCallCleanupStepTimeout = Duration(seconds: 2);
 
   Future<void> startVoiceCall(String username) async {
     await _startCall(username, mediaMode: CallMediaMode.audio);
@@ -1049,7 +1050,15 @@ extension VoiceCallRuntime on RainRuntimeController {
 
     final session = _voiceCallSession;
     if (session != null && current.callId == session.callId) {
-      await session.hangUp(reason: 'Replaced by newer voice call invite.');
+      await _runBoundedVoiceCleanupStep(
+        'voice_call_stale_retry_hangup',
+        () => session.hangUp(reason: 'Replaced by newer voice call invite.'),
+        context: <String, Object?>{
+          'peerId': session.remotePeerId,
+          'callId': session.callId,
+          'sessionEpoch': session.sessionEpoch,
+        },
+      );
     } else if (current.callId != null) {
       await _sendVoiceFrame(
         peerId,
@@ -2873,29 +2882,94 @@ extension VoiceCallRuntime on RainRuntimeController {
     await _cancelVoiceSignalingSubscriptions();
     final session = _voiceCallSession;
     if (session == null) {
-      await _voiceCallSessionSubscription?.cancel();
+      final subscription = _voiceCallSessionSubscription;
       _voiceCallSessionSubscription = null;
+      if (subscription != null) {
+        await _runBoundedVoiceCleanupStep(
+          'voice_call_session_subscription_cancel',
+          subscription.cancel,
+        );
+      }
       return;
     }
     await _disposeVoiceCallSession(session);
   }
 
   Future<void> _disposeVoiceCallSession(VoiceCallSession session) async {
+    var ownsRuntimeResources = false;
     if (_voiceCallSession == session) {
+      ownsRuntimeResources = true;
       _voiceCallSession = null;
       _cancelVoiceCallReconnectGrace();
       await _disposeVoiceIceCandidateBatcher();
       await _cancelVoiceSignalingSubscriptions();
-      await _voiceCallSessionSubscription?.cancel();
+      final subscription = _voiceCallSessionSubscription;
       _voiceCallSessionSubscription = null;
-    }
-    try {
-      await session.dispose();
-    } catch (_) {
-      // Voice call cleanup is best effort once the call is terminal.
-    } finally {
+      if (subscription != null) {
+        await _runBoundedVoiceCleanupStep(
+          'voice_call_session_subscription_cancel',
+          subscription.cancel,
+          context: <String, Object?>{
+            'peerId': session.remotePeerId,
+            'callId': session.callId,
+            'sessionEpoch': session.sessionEpoch,
+          },
+        );
+      }
       await _disposeVideoCallResources();
     }
+    await _runBoundedVoiceCleanupStep(
+      'voice_call_session_dispose',
+      session.dispose,
+      context: <String, Object?>{
+        'peerId': session.remotePeerId,
+        'callId': session.callId,
+        'sessionEpoch': session.sessionEpoch,
+        'ownsRuntimeResources': ownsRuntimeResources,
+      },
+    );
+  }
+
+  Future<bool> _runBoundedVoiceCleanupStep(
+    String step,
+    Future<void> Function() cleanup, {
+    Map<String, Object?> context = const <String, Object?>{},
+  }) async {
+    var completed = true;
+    try {
+      await cleanup().timeout(
+        _voiceCallCleanupStepTimeout,
+        onTimeout: () {
+          completed = false;
+          _recordRuntimeEvent(
+            category: 'call',
+            name: '${step}_timeout',
+            severity: 'warning',
+            message: 'Voice call cleanup step timed out.',
+            context: <String, Object?>{
+              ...context,
+              'timeoutMs': _voiceCallCleanupStepTimeout.inMilliseconds,
+            },
+          );
+        },
+      );
+    } catch (error, stackTrace) {
+      completed = false;
+      _recordRuntimeEvent(
+        category: 'call',
+        name: '${step}_failed',
+        severity: 'warning',
+        message: error.toString(),
+        context: context,
+      );
+      errorRecorder?.call(
+        error,
+        stackTrace,
+        source: 'voice-call-cleanup',
+        fatal: false,
+      );
+    }
+    return completed;
   }
 
   Future<void> _disposeVoiceIceCandidateBatcher() async {
@@ -2906,7 +2980,18 @@ extension VoiceCallRuntime on RainRuntimeController {
       return;
     }
     try {
-      await batcher.dispose();
+      await batcher.dispose().timeout(
+        _voiceCallCleanupStepTimeout,
+        onTimeout: () {
+          _recordRuntimeEvent(
+            category: 'call',
+            name: 'voice_ice_candidate_batcher_dispose_timeout',
+            severity: 'warning',
+            message: 'Voice call ICE candidate cleanup timed out.',
+            context: _voiceCallEventContext(_voiceCallState),
+          );
+        },
+      );
     } catch (error, stackTrace) {
       final state = _voiceCallState;
       final peerId = state.peerId;
@@ -3281,32 +3366,29 @@ extension VoiceCallRuntime on RainRuntimeController {
     _videoCallRenderers = null;
     _videoCallMediaConnection = null;
     _lastLoggedVideoRendererSignature = null;
-    await _videoCallRendererSubscription?.cancel();
+    final subscription = _videoCallRendererSubscription;
     _videoCallRendererSubscription = null;
+    if (subscription != null) {
+      await _runBoundedVoiceCleanupStep(
+        'video_renderer_subscription_cancel',
+        subscription.cancel,
+        context: _voiceCallEventContext(_voiceCallState),
+      );
+    }
     if (renderers == null) {
       return;
     }
     _lastVideoCallRendererState = renderers.state;
-    try {
-      await renderers.dispose();
+    final disposed = await _runBoundedVoiceCleanupStep(
+      'video_resources_dispose',
+      renderers.dispose,
+      context: _voiceCallEventContext(_voiceCallState),
+    );
+    if (disposed) {
       _recordRuntimeEvent(
         category: 'call',
         name: 'video_resources_disposed',
         context: _voiceCallEventContext(_voiceCallState),
-      );
-    } catch (error, stackTrace) {
-      _recordRuntimeEvent(
-        category: 'call',
-        name: 'video_resources_dispose_failed',
-        severity: 'warning',
-        message: error.toString(),
-        context: _voiceCallEventContext(_voiceCallState),
-      );
-      errorRecorder?.call(
-        error,
-        stackTrace,
-        source: 'video-call-renderer',
-        fatal: false,
       );
     }
   }
@@ -3382,8 +3464,15 @@ extension VoiceCallRuntime on RainRuntimeController {
       _voiceSignalingSubscriptions,
     );
     _voiceSignalingSubscriptions.clear();
-    for (final subscription in subscriptions) {
-      await subscription.cancel();
+    for (var index = 0; index < subscriptions.length; index += 1) {
+      await _runBoundedVoiceCleanupStep(
+        'voice_signaling_subscription_cancel',
+        subscriptions[index].cancel,
+        context: <String, Object?>{
+          'subscriptionIndex': index,
+          'subscriptionCount': subscriptions.length,
+        },
+      );
     }
   }
 
@@ -3560,13 +3649,8 @@ extension VoiceCallRuntime on RainRuntimeController {
         failureReason: failureReason,
         failureDetail: detail,
       );
+      _setVoiceCallState(failedState);
       await _disposeVoiceCallSession(session);
-      final latest = _voiceCallState;
-      if (latest.callId == session.callId ||
-          latest.sessionEpoch == session.sessionEpoch ||
-          latest.phase == VoiceCallPhase.idle) {
-        _setVoiceCallState(failedState);
-      }
       return;
     }
     _setVoiceCallState(
@@ -3577,12 +3661,8 @@ extension VoiceCallRuntime on RainRuntimeController {
         audioLevel: const VoiceAudioLevel.unavailable(),
       ),
     );
+    _setVoiceCallState(const VoiceCallState.idle());
     await _disposeVoiceCallSession(session);
-    final latest = _voiceCallState;
-    if (latest.callId == session.callId ||
-        latest.sessionEpoch == session.sessionEpoch) {
-      _setVoiceCallState(const VoiceCallState.idle());
-    }
   }
 
   Future<void> _endVoiceCallForPeer(
@@ -3642,11 +3722,6 @@ extension VoiceCallRuntime on RainRuntimeController {
           await _disposeVoiceCallSession(session);
           return;
         }
-        try {
-          await session.hangUp(reason: detail);
-        } catch (error, stackTrace) {
-          _recordVoiceSignalingError(error, stackTrace);
-        }
         latest = _voiceCallState;
         if (!_isSameLiveVoiceCallStateForSession(latest, session)) {
           return;
@@ -3659,6 +3734,15 @@ extension VoiceCallRuntime on RainRuntimeController {
             failureDetail: failureDetail,
           ),
         );
+        await _runBoundedVoiceCleanupStep(
+          'voice_call_session_hangup',
+          () => session.hangUp(reason: detail),
+          context: <String, Object?>{
+            'peerId': session.remotePeerId,
+            'callId': session.callId,
+            'sessionEpoch': session.sessionEpoch,
+          },
+        );
         await _disposeVoiceCallSession(session);
       } else {
         await _endVoiceCallInSignaling(
@@ -3670,7 +3754,6 @@ extension VoiceCallRuntime on RainRuntimeController {
           reasonCode: _voiceCallReasonCodeForFailure(failureReason),
           bestEffort: true,
         );
-        await _disposeVoiceCallSession(session);
         _setVoiceCallState(
           _voiceCallStateAfterLocalEnd(
             current,
@@ -3679,6 +3762,7 @@ extension VoiceCallRuntime on RainRuntimeController {
             failureDetail: failureDetail,
           ),
         );
+        await _disposeVoiceCallSession(session);
       }
       return;
     }
@@ -4055,7 +4139,6 @@ extension VoiceCallRuntime on RainRuntimeController {
         bestEffort: true,
       );
     }
-    await _disposeCurrentVoiceCallSession();
     _setVoiceCallState(
       current.copyWith(
         phase: VoiceCallPhase.failed,
@@ -4077,6 +4160,7 @@ extension VoiceCallRuntime on RainRuntimeController {
         audioLevel: const VoiceAudioLevel.unavailable(),
       ),
     );
+    await _disposeCurrentVoiceCallSession();
   }
 
   void _assertVoiceCallCanStart() {

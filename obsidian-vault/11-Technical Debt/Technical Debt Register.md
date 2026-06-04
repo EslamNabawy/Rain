@@ -133,6 +133,7 @@ Related: [[Debt Categories]], [[Debt Prioritization]], [[Architecture Debt]], [[
 - Roadmap Tasks: TASK-002.
 - Resolution Strategy: Make matching `callId` ownership the only cleanup authority, inspect referenced rooms before busy, and retry stale cleanup once.
 - Progress Note 2026-06-03: One denied terminal cleanup path is mitigated. `FirebaseSignalingAdapter.endCall` now writes terminal `voiceCalls/{callId}` state before best-effort callee inbox mirror updates, and emulator coverage proves a missing `voiceCallInboxes/{callee}/{callId}` row no longer blocks terminal state or lock release. Remaining debt is full lease manager extraction and all terminal transition coverage.
+- Progress Note 2026-06-04: The diagnostic-driven terminal `busy` case no longer leaves the local runtime in an active call phase while cleanup stalls. `VoiceCallRuntime` now publishes terminal state before session/media disposal and bounds cleanup, so false local call state should not block file transfer or later call actions. Remaining debt is still centralized lease ownership and emulator proof for stale/live/newer lock variants.
 
 ### TD-004: Implicit Async Call State Machine
 
@@ -150,6 +151,7 @@ Related: [[Debt Categories]], [[Debt Prioritization]], [[Architecture Debt]], [[
 - Roadmap Tasks: TASK-003, TASK-013.
 - Resolution Strategy: Define explicit allowed transitions, timeouts, terminal reconciliation, and late-frame ignore behavior, then test voice and video paths.
 - Progress Note 2026-06-03: Late voice signaling frames after terminal Firebase rooms now remain structured `late_frame_ignored` diagnostics and no longer replace the latest real crash/error in exports. 2026-06-04 mitigation: terminal-sensitive media signaling sends now preflight the Firebase room before `accept`, `offer`, `answer`, and `mute` writes; missing or terminal rooms are skipped and reconciled before `writeVoiceOffer`/`writeVoiceAnswer` can become debug-adapter crash records. Remaining debt is the full state-machine and terminal reconciliation split.
+- Progress Note 2026-06-04: Terminal reconciliation now has state-before-cleanup ordering. `_settleVoiceCallAfterTerminalRace`, local hangup/fail paths, and cleanup helpers publish failed/idle state before bounded WebRTC/session cleanup, and tests lock that terminal calls do not keep file-transfer guards blocked. Remaining debt is extracting a strict call state machine instead of keeping transition ordering inside the large runtime.
 
 ### TD-005: Fragmented Call Surface Model
 

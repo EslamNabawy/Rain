@@ -176,7 +176,7 @@ App infrastructure services:
 - `RainNotificationService` - local notification abstraction for connection request notifications.
 - `ReceivedFileExportService` - save/export received files.
 - `BackgroundServices` - currently represented as a service surface, with runtime providers disabling background behavior in current controller code.
-- `DesktopShellController` - desktop window shell integration.
+- `DesktopShellController` - desktop window shell integration, including bounded close/destroy handling and a Windows process-exit fallback after close handling.
 
 ## Controller Inventory
 
@@ -217,7 +217,7 @@ Runtime state domains:
 - Peer session runtime: `SessionManager`, active sessions, manual disconnect intent, reconnect/recovery, data channels.
 - Message runtime: send/resend, incoming delivery, ack tracking, offline queue.
 - File transfer runtime: send/accept/reject/cancel, progress batching, metadata, chunk transfer.
-- Voice/video runtime: global one-call policy, invite/accept/reject/busy/hangup, media setup, terminal cleanup, mute/deafen/output/camera controls, renderer handling.
+- Voice/video runtime: global one-call policy, invite/accept/reject/busy/hangup, media setup, terminal state publication, bounded terminal cleanup, mute/deafen/output/camera controls, renderer handling.
 - Connection request runtime: offline notification request, confirmation, quota/cooldown, inbound/outbound UI state.
 - Presence runtime: Firebase presence, heartbeats, lifecycle online/offline, freshness checks.
 - Network runtime: connectivity status, backend probe, network lost/available handling.
@@ -358,7 +358,9 @@ Related: [[File Transfer]], [[Streaming Architecture]], [[Backpressure Strategy]
 5. Callee watches `voiceCallInboxes/{username}` and then `voiceCalls/{callId}`.
 6. Accept/reject/busy/hangup frames and SDP/ICE use Firebase voice signaling artifacts.
 7. Media uses WebRTC through `peer_core` voice/call media connection abstractions.
-8. UI state is exposed through `voiceCallProvider`, `videoCallRenderersProvider`, and call surface providers.
+8. Firebase terminal room state is authoritative for ending/failed calls. Runtime publishes terminal failed/idle UI state before awaiting WebRTC/session cleanup so file-transfer and call guards cannot observe a stale active phase.
+9. WebRTC/session/renderer cleanup is best-effort and bounded; cleanup failures are diagnostics, not a reason to keep a terminal call active in UI state.
+10. UI state is exposed through `voiceCallProvider`, `videoCallRenderersProvider`, and call surface providers.
 
 Related: [[Voice Calls]], [[Video Calls]], [[Call State Machine]], [[Lease Management]], [[CallMediaCoordinator]].
 
@@ -526,7 +528,7 @@ This discovery does not re-audit, but the current structure confirms the already
 - `VoiceCallRuntime` centralizes too many responsibilities and is tracked in [[VoiceCallRuntime Refactor]].
 - `RainRuntimeController` owns many runtime domains at once.
 - Firebase call lease flow depends on sequential client-side operations and lock repair.
-- UI state, signaling state, media state, and terminal call state require strict reconciliation.
+- UI state, signaling state, media state, and terminal call state require strict reconciliation. Terminal room state must clear UI-facing call state before asynchronous media/session cleanup.
 - Presence, direct connect, call eligibility, and offline request notification all depend on fresh backend presence.
 - File transfer has data-channel backpressure support, but end-to-end large-transfer behavior remains a known area for [[Backpressure Strategy]].
 - Release workflows are numerous and need clear ownership in [[CI-CD Roadmap]] and [[Release Gates]].

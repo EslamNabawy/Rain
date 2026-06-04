@@ -746,6 +746,9 @@ void main() {
     expect(source, contains('AppExitCoordinator.instance.shutdown'));
     expect(source, contains('AppExitReason.windowClose'));
     expect(source, contains('windowManager.destroy()'));
+    expect(source, contains('_runBoundedCloseStep'));
+    expect(source, contains('Platform.isWindows'));
+    expect(source, contains('exit(0)'));
     expect(source, isNot(contains('windowManager.hide()')));
     expect(source, isNot(contains('trayManager')));
   });

@@ -33,6 +33,7 @@ Related: [[Risk Register]], [[Risk Matrix]], [[Failure Graph]], [[System Model]]
 | ASSUMP-010 | Offline connection request quota applies only to offline notification requests. | [[Connection Request Notifications]], [[Presence Management]] | Stale presence routes online direct connect attempt into offline quota. | Use fresh presence resolver and require explicit offline-notification confirmation. | Active |
 | ASSUMP-011 | Diagnostics sanitization keeps useful failure evidence without private payloads. | [[Diagnostics And Logging]], [[Diagnostics Sanitization]] | New diagnostic field stores raw SDP, ICE candidate, password, message text, or file bytes. | Recursive sanitizer and tests must redact sensitive values. | Active |
 | ASSUMP-012 | Local app tests run with correct package-native assets. | [[Test Strategy]] | Root-level app test invocation cannot resolve sqlite native assets on Windows. | Use `scripts/run_rain_app_test.ps1` or run from `apps/rain`. | Mitigated |
+| ASSUMP-013 | WebRTC/session cleanup completes quickly enough to drive user-facing call state. | [[Voice Calls]], [[Video Calls]], [[Call State Machine]] | Media stream disposal, session hangup, subscription cancel, or renderer cleanup stalls after Firebase reaches a terminal room state. | Publish terminal UI state before cleanup and bound cleanup steps; record cleanup failures as diagnostics. | Mitigated |
 
 ## Scenario Cycle
 

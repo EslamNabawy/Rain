@@ -32,7 +32,9 @@ void main() {
     final terminalWriteIndex = endForPeer.indexOf(
       '_writeTerminalRoomBeforeSessionHangup',
     );
-    final sessionHangupIndex = endForPeer.indexOf('await session.hangUp');
+    final sessionHangupIndex = endForPeer.indexOf(
+      "'voice_call_session_hangup'",
+    );
 
     expect(terminalWriteIndex, greaterThanOrEqualTo(0));
     expect(sessionHangupIndex, greaterThanOrEqualTo(0));
@@ -70,6 +72,84 @@ void main() {
       reason:
           'A failed media setup must leave a diagnostic when terminal Firebase '
           'state cannot be written, instead of silently sticking the peer.',
+    );
+  });
+
+  test('terminal failure state is published before session cleanup', () {
+    final runtimeSource = _runtimeSource();
+    final settleTerminal = _sliceFunction(
+      runtimeSource,
+      'Future<void> _settleVoiceCallAfterTerminalRace',
+      'Future<void> _endVoiceCallForPeer',
+    );
+
+    final failureBranchIndex = settleTerminal.indexOf(
+      'if (failureReason != null)',
+    );
+    final publishFailedIndex = settleTerminal.indexOf(
+      '_setVoiceCallState(failedState)',
+      failureBranchIndex,
+    );
+    final disposeIndex = settleTerminal.indexOf(
+      'await _disposeVoiceCallSession(session)',
+      failureBranchIndex,
+    );
+
+    expect(failureBranchIndex, greaterThanOrEqualTo(0));
+    expect(publishFailedIndex, greaterThanOrEqualTo(0));
+    expect(disposeIndex, greaterThanOrEqualTo(0));
+    expect(
+      publishFailedIndex,
+      lessThan(disposeIndex),
+      reason:
+          'A terminal Firebase failure must unblock file transfer and call '
+          'retry state before WebRTC cleanup can stall.',
+    );
+  });
+
+  test('voice call cleanup is bounded during terminal disposal', () {
+    final runtimeSource = _runtimeSource();
+    final cleanupStep = _sliceFunction(
+      runtimeSource,
+      'Future<bool> _runBoundedVoiceCleanupStep',
+      'Future<void> _disposeVoiceIceCandidateBatcher',
+    );
+    final disposeSession = _sliceFunction(
+      runtimeSource,
+      'Future<void> _disposeVoiceCallSession',
+      'Future<bool> _runBoundedVoiceCleanupStep',
+    );
+
+    expect(cleanupStep, contains('_voiceCallCleanupStepTimeout'));
+    expect(cleanupStep, contains('.timeout('));
+    expect(cleanupStep, contains("name: '\${step}_timeout'"));
+    expect(disposeSession, contains("_runBoundedVoiceCleanupStep("));
+    expect(disposeSession, contains("'voice_call_session_dispose'"));
+  });
+
+  test('local hangup publishes terminal state before session hangup', () {
+    final runtimeSource = _runtimeSource();
+    final endForPeer = _sliceFunction(
+      runtimeSource,
+      'Future<void> _endVoiceCallForPeer',
+      'Future<_TerminalRoomWriteResult> _writeTerminalRoomBeforeSessionHangup',
+    );
+
+    final terminalStateIndex = endForPeer.indexOf(
+      '_voiceCallStateAfterLocalEnd',
+    );
+    final sessionHangupIndex = endForPeer.indexOf(
+      "'voice_call_session_hangup'",
+    );
+
+    expect(terminalStateIndex, greaterThanOrEqualTo(0));
+    expect(sessionHangupIndex, greaterThanOrEqualTo(0));
+    expect(
+      terminalStateIndex,
+      lessThan(sessionHangupIndex),
+      reason:
+          'The UI state must leave active/ending before best-effort media '
+          'session hangup can block cleanup.',
     );
   });
 

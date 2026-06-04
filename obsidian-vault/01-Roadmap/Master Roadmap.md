@@ -119,6 +119,7 @@ This work is a P0 launch-blocking remediation stream discovered after the origin
 - Affected architecture: [[CallLeaseManager]], [[CallTerminalReconciler]], [[Signaling Architecture]]
 - Success criteria: Stale, terminal, missing, corrupt, and caller-owned failed setup locks repair once before busy is shown.
 - Definition of done: Emulator/fake-adapter tests prove live locks stay busy, stale locks repair, and newer locks are never deleted.
+- Progress 2026-06-04: A diagnostic-driven terminal `busy` case no longer leaves local runtime state active while media/session cleanup stalls. This reduces false local busy/file-transfer blocking, but full stale/live/newer lock repair proof remains open.
 - Subtasks:
   - [ ] TASK-002.1 Define matching-lock ownership rules by `callId`.
   - [ ] TASK-002.2 Implement pair-lock repair tests.
@@ -137,6 +138,7 @@ This work is a P0 launch-blocking remediation stream discovered after the origin
 - Affected architecture: [[Call State Machine]], [[CallTerminalReconciler]], [[Voice Calls]], [[Video Calls]]
 - Success criteria: Incoming, outgoing, connecting, active, reconnecting, ending, failed, and ended states are explicit and terminal-safe.
 - Definition of done: No call can remain connecting past timeout; terminal Firebase room beats late frames; runtime returns to idle after terminal cleanup.
+- Progress 2026-06-04: Terminal reconciliation now publishes failed/idle UI state before bounded WebRTC/session cleanup, and regression tests cover state-before-cleanup plus file-transfer guard recovery after failed terminal calls. Remaining work is extracting the explicit state machine and adding device-direction proof.
 - Subtasks:
   - [ ] TASK-003.1 Define allowed transitions.
   - [ ] TASK-003.2 Add timeout-to-terminal rules.

@@ -7,6 +7,8 @@ import 'package:window_manager/window_manager.dart';
 import 'package:rain/application/runtime/app_exit_coordinator.dart';
 
 class DesktopShellController with WindowListener {
+  static const Duration _closeStepTimeout = Duration(seconds: 2);
+
   bool _initialized = false;
   bool _closing = false;
 
@@ -40,8 +42,19 @@ class DesktopShellController with WindowListener {
     try {
       await AppExitCoordinator.instance.shutdown(AppExitReason.windowClose);
     } finally {
-      await windowManager.setPreventClose(false);
-      await windowManager.destroy();
+      await _runBoundedCloseStep(() => windowManager.setPreventClose(false));
+      await _runBoundedCloseStep(() => windowManager.destroy());
+      if (Platform.isWindows) {
+        exit(0);
+      }
+    }
+  }
+
+  Future<void> _runBoundedCloseStep(Future<void> Function() action) async {
+    try {
+      await action().timeout(_closeStepTimeout, onTimeout: () {});
+    } catch (_) {
+      // The user has already requested process exit; close remains best effort.
     }
   }
 

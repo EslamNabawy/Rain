@@ -182,6 +182,21 @@ void main() {
       expect(decision.userMessage, 'Finish the call before sending files.');
     });
 
+    test('failed terminal call does not block file transfers', () {
+      final decision = RuntimeInteractionGuard.canStartFileTransfer(
+        peerId: 'cara',
+        voiceCallState: const VoiceCallState(
+          phase: VoiceCallPhase.failed,
+          peerId: 'bob',
+          callId: 'call-1',
+          sessionEpoch: 1,
+          detail: 'Busy.',
+        ),
+      );
+
+      expect(decision.allowed, isTrue);
+    });
+
     test('false busy cleanup becomes a retryable guard decision', () {
       final decision = RuntimeInteractionGuard.staleCallCleanup(
         peerId: 'bob',
