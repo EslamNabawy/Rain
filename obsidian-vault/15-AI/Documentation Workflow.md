@@ -1,5 +1,7 @@
 # Documentation Workflow
 
+Last updated: 2026-06-04
+
 ## Rule
 
 Documentation changes are part of implementation, not cleanup.
@@ -18,6 +20,14 @@ Documentation changes are part of implementation, not cleanup.
 `scripts/check_obsidian_vault.ps1` validates that required vault notes exist and that Obsidian wiki links resolve to real note titles.
 
 The `Documentation Vault` GitHub workflow runs that check when the vault, documentation check script, or workflow changes.
+
+For any documentation change, run:
+
+```powershell
+.\scripts\check_obsidian_vault.ps1
+```
+
+If the check is not executed, the final report must state `Vault validation not executed.`
 
 ## Minimum Documentation For A New Feature
 

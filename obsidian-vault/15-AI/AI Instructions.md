@@ -1,5 +1,7 @@
 # AI Instructions
 
+Last updated: 2026-06-04
+
 ## Working Rules
 
 - Be direct and technical.
@@ -8,6 +10,9 @@
 - Document every important discovery in this vault.
 - Update impacted feature, architecture, security, and task notes after code changes.
 - Do not hide blockers. Log them in [[BLOCKERS]].
+- Follow the Rain Autonomous Engineering System in [[AI Operating Notes]] for non-trivial work.
+- Treat repository implementation, root `AGENTS.md`, and root `CONTINUITY.md` as higher priority than generated plans or external examples.
+- Never claim tests, builds, validation, commits, or vault updates unless they were actually executed.
 
 ## Debugging Rules
 

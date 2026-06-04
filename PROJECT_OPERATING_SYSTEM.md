@@ -1,5 +1,7 @@
 # Rain Project Operating System
 
+Last updated: 2026-06-04
+
 This file is the project constitution. It defines how Rain should be engineered, documented, validated, and improved over time.
 
 Phase 0 establishes the operating model only. Future phases will populate architecture, risks, roadmaps, tasks, metrics, knowledge graph data, and self-improvement systems.
@@ -20,6 +22,33 @@ The long-term project vision is not only to build the app, but to build a reposi
 - Every critical failure should be diagnosable.
 - Every important decision should be recorded.
 - Every release should be gated by validation appropriate to its risk.
+
+## Governance Priority Order
+
+When instructions or sources conflict, resolve them in this order:
+
+1. Actual repository implementation.
+2. `AGENTS.md`.
+3. `CONTINUITY.md`.
+4. [[Current Architecture]].
+5. [[Project Memory]].
+6. [[Risk Register]].
+7. [[BLOCKERS]].
+8. [[Technical Debt Register]].
+9. User request.
+10. External examples.
+
+Repository implementation is the primary source of truth. External examples and generated plans are advisory only until reconciled with repository behavior and vault source notes.
+
+## Reality Enforcement
+
+Rain governance requires verifiable reporting:
+
+- Do not claim a file changed unless the file actually changed.
+- Do not claim tests, builds, vault validation, CI, or commits succeeded unless they were run and verified.
+- If validation was not run, report `Not executed.`
+- If vault validation was not run after documentation changes, report `Vault validation not executed.`
+- If a blocker prevents completion, record it in [[BLOCKERS]] or `CONTINUITY.md` when it affects active work.
 
 ## Documentation Philosophy
 
@@ -70,6 +99,28 @@ Quality means:
 - The documentation records important implications.
 
 Quality does not mean adding abstractions without a concrete reliability or maintainability benefit.
+
+## Autonomous Workflow Nodes
+
+Meaningful work should move through these nodes. The current node should be stated during non-trivial work so future sessions can reconstruct progress without guessing.
+
+| Node | Name | Required Output |
+| --- | --- | --- |
+| 0 | Environment Verification | Repository path, branch, git status, workspace health, vault availability. |
+| 1 | Knowledge Synchronization | Mission summary, relevant architecture, risks, blockers, and debt. |
+| 2 | Repository Discovery | Existing implementation, related modules, abstractions, tests, and TODOs. |
+| 3 | Task Understanding | Requested change, scope, assumptions, and unknowns. |
+| 4 | Impact Analysis | Architecture, database, Firebase, WebRTC, security, performance, operational, migration, and documentation impact. |
+| 5 | Pattern Discovery | Existing Rain patterns first; external references only after internal review. |
+| 6 | Architecture Validation | Riverpod, package, Firebase, WebRTC, and ownership-boundary compliance. |
+| 7 | Implementation Plan | Ordered plan before coding. |
+| 8 | Execution | Production-quality implementation within established patterns. |
+| 9 | Validation | Executed checks or explicit `Not executed.` |
+| 10 | Obsidian Synchronization | Updated affected vault notes or explicit reason not updated. |
+| 11 | Vault Validation | `.\scripts\check_obsidian_vault.ps1` result or explicit `Vault validation not executed.` |
+| 12 | Production Readiness Review | Security, error handling, logging, offline behavior, Firebase quota, WebRTC failure modes, and recovery paths. |
+| 13 | Version Control Preparation | Focused git add/commit preparation when the task is complete and committable. |
+| 14 | Completion Report | Work completed, files changed, validation, vault updates, risks, debt, and follow-up work. |
 
 ## Testing Standards
 

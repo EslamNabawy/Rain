@@ -334,6 +334,13 @@ Validation defaults:
 - Docs: `.\scripts\check_obsidian_vault.ps1`
 - Code: `dart pub get`, `dart run melos run analyze`, `dart run melos run test`
 
+Governance update 2026-06-04:
+
+- Non-trivial Rain work must identify the active Rain Autonomous Engineering System workflow node.
+- Repository implementation, root `AGENTS.md`, and root `CONTINUITY.md` outrank vault summaries, user-provided phase text, and external examples when sources conflict.
+- Agents must not claim file changes, tests, builds, validation, CI, git commits, or vault updates unless those actions were actually executed.
+- Documentation/vault changes require `.\scripts\check_obsidian_vault.ps1` or an explicit `Vault validation not executed.` report.
+
 ## Known Pitfalls
 
 - Creating duplicate Project Memory notes splits context. This file is the primary memory note.

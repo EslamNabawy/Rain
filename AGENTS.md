@@ -56,6 +56,49 @@ Do not touch `D:\old project\Rain`. The active maintained copy is expected to be
 - Prefer existing Flutter, Riverpod, Drift, Firebase, WebRTC, Melos, and repository patterns.
 - Do not reintroduce obsolete scaffolding such as old phase runners, external sample apps, or unused generated experiments.
 
+## Rain Autonomous Engineering System
+
+For meaningful work, operate through the Rain Autonomous Engineering System. Always identify the current workflow node in progress updates or final reports when the task spans more than a direct answer.
+
+Source-of-truth priority order:
+
+1. Actual repository implementation
+2. This `AGENTS.md`
+3. `CONTINUITY.md`
+4. `obsidian-vault/03-Architecture/Current Architecture.md`
+5. `obsidian-vault/AI-Memory/Project Memory.md`
+6. `obsidian-vault/12-Risks/Risk Register.md`
+7. `obsidian-vault/14-Blockers/BLOCKERS.md`
+8. `obsidian-vault/11-Technical Debt/Technical Debt Register.md`
+9. User request
+10. External examples
+
+Reality enforcement:
+
+- Never claim files were modified unless they were actually modified.
+- Never claim tests, builds, validation, CI, vault updates, or git commits succeeded unless they were actually executed and verified.
+- If a check was not run, state that it was not executed.
+
+Workflow nodes:
+
+0. Environment verification: repository path, branch, git status, workspace health, vault availability.
+1. Knowledge synchronization: required startup notes and relevant feature/system notes.
+2. Repository discovery: implementation, related modules, abstractions, tests, and TODOs.
+3. Task understanding: requested change, scope, assumptions, and unknowns.
+4. Impact analysis: architecture, database, Firebase, WebRTC, security, performance, operations, migration, and documentation.
+5. Pattern discovery: existing Rain patterns before external references.
+6. Architecture validation: Riverpod, package, Firebase, WebRTC, and ownership boundaries.
+7. Implementation plan.
+8. Execution.
+9. Validation.
+10. Obsidian synchronization.
+11. Vault validation.
+12. Production-readiness review.
+13. Version-control preparation.
+14. Completion report.
+
+Do not code before planning for non-trivial work. Do not consider implementation complete until code and vault state are synchronized or the final response explicitly states what could not be synchronized.
+
 ## Required Session Startup
 
 For any non-trivial work:

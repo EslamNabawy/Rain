@@ -389,6 +389,21 @@ No task is fully complete until the lesson check is done or explicitly marked "n
 - Owner: Engineering
 - Status: Open
 
+### LESSON-20260604-023: Governance Needs A Visible Workflow State
+
+- Related task: Phase 1 governance and operating system synchronization.
+- Related system: [[AI Operating Notes]], [[Project Memory]], [[Documentation Workflow]]
+- Related risk/debt: ESF-001, ESF-003, ESF-006
+- What was learned: Strong rules in prose are easier to follow when every non-trivial session declares its current workflow node and reports skipped validation explicitly.
+- What caused delays: The root operating manual and Obsidian AI notes did not yet share the exact same autonomous workflow vocabulary.
+- What failed: Relying on chat-only instructions makes future handoffs weaker because the rules can disappear outside repository state.
+- What succeeded: The source-of-truth priority order, reality-enforcement rule, and node-based workflow are now written into root and vault governance docs.
+- What should change: Future governance automation should parse node/completion evidence rather than relying only on human discipline.
+- Pattern: Manual governance drift.
+- Follow-up improvement: Continue [[Engineering System Flaw Remediation Plan]] Phase 02 and Phase 03 with parseable status schema and validation evidence ledger.
+- Owner: Engineering
+- Status: Open
+
 ## Review Cadence
 
 - Review lessons at the end of every completed task.

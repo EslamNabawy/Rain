@@ -1,6 +1,6 @@
 # Continuous Improvement Log
 
-Last updated: 2026-06-03
+Last updated: 2026-06-04
 
 ## Purpose
 
@@ -18,6 +18,7 @@ Related: [[Lessons Learned]], [[Engineering Insights]], [[Continuous Learning Ru
 | CI-004 | Phase 6 risk/blocker intelligence | [[Risk Register]] | Added risk matrix, categories, detailed blockers, and workaround plans. | Blockers now block unsafe release, not progress. | [x] Done |
 | CI-005 | Phase 7 architecture refactor planning | [[Architecture Refactor Plan Index]] | Added five refactor plans and ADR-004 through ADR-008. | High-risk systems now have target architecture and rollout plans. | [x] Done |
 | CI-006 | Phase 8 self-improvement engine | [[Lessons Learned]] | Added learning rules, metrics, insights, backlog, opportunities, and recommended actions. | The vault now records and converts lessons into future improvements. | [x] Done |
+| CI-007 | Autonomous workflow governance lock | [[AI Operating Notes]] | Root and vault governance docs now encode source-of-truth priority, reality enforcement, and workflow node reporting. | Future sessions have one explicit operating protocol for non-trivial work. | [x] Done |
 
 ## Continuous Improvement Rule
 
@@ -36,4 +37,3 @@ Any repeated failure should create at least one of:
 - Review [[Project Metrics]] after validation, release, or phase completion.
 - Review [[Engineering Insights]] weekly for recurring patterns.
 - Review [[Improvement Backlog]] during sprint planning.
-
