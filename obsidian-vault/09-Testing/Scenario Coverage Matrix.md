@@ -19,10 +19,10 @@ This is the applied bridge between [[Scenario Intelligence Agent]], [[Assumption
 
 | Scenario ID | Target Flow | State Path | Violated Assumption | Failure Chain | Existing Evidence | Gap / Next Test | Related Blocker | Status |
 | --- | --- | --- | --- | --- | --- | --- | --- | --- |
-| SCN-AUTH-001 | Cached identity restore after backend deletion | Authenticated -> session validation -> LoggedOut | ASSUMP-007 | FG-004 | `apps/rain/test/auth_identity_source_of_truth_test.dart` covers deleted backend identity and uid mismatch; hard release workflows now run this scenario ID explicitly. | Cloud gate proof on the new commit is pending. | BLK-010 | Covered |
-| SCN-AUTH-002 | Login after account tombstone with surviving Auth | Authenticated Auth user -> login -> backend proof missing -> LoggedOut | ASSUMP-007 | FG-004 | `auth_identity_source_of_truth_test.dart` covers login refusing to recreate missing backend account; `integration_account_deletion_emulator_test.dart` proves a tombstoned surviving Auth user cannot recreate profile or `userSearch`. | Cloud gate proof on the new commit is pending. | BLK-010, BLK-003 | Covered |
-| SCN-AUTH-003 | Delete account bad password | Authenticated -> DeletingAccount preflight -> Authenticated | ASSUMP-001, ASSUMP-007 | FG-004 | `apps/rain/test/runtime_startup_test.dart` covers preserving local identity before failed reauth; `settings_screen_test.dart` covers password prompt/error; hard release workflows now run this scenario ID explicitly. | Cloud gate proof on the new commit is pending. | BLK-010 | Covered |
-| SCN-AUTH-004 | Delete account backend partial failure | Authenticated -> DeletingAccount destructive -> LoggedOut with error | ASSUMP-002 | FG-004 | `apps/rain/test/runtime_startup_test.dart` covers local clear after backend failure; `integration_account_deletion_emulator_test.dart` proves emulator tombstone/search cleanup. | Cloud gate proof on the new commit is pending. | BLK-010, BLK-003 | Covered |
+| SCN-AUTH-001 | Cached identity restore after backend deletion | Authenticated -> session validation -> LoggedOut | ASSUMP-007 | FG-004 | `apps/rain/test/auth_identity_source_of_truth_test.dart` covers deleted backend identity and uid mismatch; hard release workflows run this scenario ID explicitly. | Cloud gate passed in `Build Rain Apps` run 26957834309 at `883886a`. | BLK-010 | Covered |
+| SCN-AUTH-002 | Login after account tombstone with surviving Auth | Authenticated Auth user -> login -> backend proof missing -> LoggedOut | ASSUMP-007 | FG-004 | `auth_identity_source_of_truth_test.dart` covers login refusing to recreate missing backend account; `integration_account_deletion_emulator_test.dart` proves a tombstoned surviving Auth user cannot recreate profile or `userSearch`. | Cloud gate passed in `Build Rain Apps` run 26957834309 at `883886a`. | BLK-010, BLK-003 | Covered |
+| SCN-AUTH-003 | Delete account bad password | Authenticated -> DeletingAccount preflight -> Authenticated | ASSUMP-001, ASSUMP-007 | FG-004 | `apps/rain/test/runtime_startup_test.dart` covers preserving local identity before failed reauth; `settings_screen_test.dart` covers password prompt/error; hard release workflows run this scenario ID explicitly. | Cloud gate passed in `Build Rain Apps` run 26957834309 at `883886a`. | BLK-010 | Covered |
+| SCN-AUTH-004 | Delete account backend partial failure | Authenticated -> DeletingAccount destructive -> LoggedOut with error | ASSUMP-002 | FG-004 | `apps/rain/test/runtime_startup_test.dart` covers local clear after backend failure; `integration_account_deletion_emulator_test.dart` proves emulator tombstone/search cleanup. | Cloud gate passed in `Build Rain Apps` run 26957834309 at `883886a`. | BLK-010, BLK-003 | Covered |
 | SCN-PRES-001 | Stale raw-online presence before call/connect/request | Online -> Stale -> Offline decision | ASSUMP-003 | FG-001, FG-008 | `friend_flow_test.dart` stale backend presence cases; protocol presence contract tests. | Add release-gate targeted presence scenario and Android/Windows smoke proof if needed. | BLK-008, BLK-009 | Partially Covered |
 | SCN-CALL-001 | Terminal room before late local SDP write | Negotiating -> terminal room observed -> Failed/Ended without write crash | ASSUMP-002, ASSUMP-009 | FG-002 | Runtime terminal-sensitive write preflight tests from Phase 08/2026-06-04 validation. | Add device-direction proof for PC-to-mobile and mobile-to-PC. | BLK-001 | Partially Covered |
 | SCN-CALL-002 | Optional inbox mirror missing during end-call cleanup | Ending -> terminal room authoritative -> mirror cleanup best-effort | ASSUMP-002 | FG-003 | Firebase emulator regression for missing `voiceCallInboxes` row during `endCall`. | Add all terminal-room mirror variants to emulator matrix. | BLK-002, BLK-003 | Partially Covered |
@@ -66,7 +66,7 @@ Next tests:
 
 Scenario-derived weak points:
 
-- Local validation exists, and hard release workflows now name auth scenario IDs plus vault validation. Release-gate metadata still must prove exact commit, version, channel, Remote Config manifest, and scenario IDs in run evidence.
+- Local validation exists, and hard release workflows now name auth scenario IDs plus vault validation. `Build Rain Apps` run 26957834309 proves exact commit, scenario gate, Android/Windows artifacts, and release-page publication for the account-deletion change. Remote Config manifest deployment proof remains missing.
 
 Next tests:
 
@@ -80,7 +80,7 @@ Scenario-derived weak points:
 
 Next tests:
 
-- Run the updated cloud gate on the new pushed commit before promotion.
+- Keep these auth scenario IDs in the hard release gate and add device/emulator proof for the remaining partially covered call, presence, request, update, and diagnostics scenarios.
 
 ## Maintenance Rules
 

@@ -112,8 +112,8 @@ Build/automation:
 - Root Dart workspace.
 - Melos scripts through root `pubspec.yaml`.
 - GitHub Actions for CI, merge gates, releases, fast artifacts, validated releases, and vault validation.
-- 2026-06-04 cloud gate evidence: `Build Rain Apps` run 26931788461 passed the hard release gate, Android APK artifacts, Windows demo portable artifact, and `rain-test-107-1` pre-release publication for pushed `origin/dev` SHA `d58b7b5`. This evidence does not cover the current dirty local worktree.
-- 2026-06-04 local gate integration update: `build-artifacts.yml` and `validated-release.yml` now run explicit `SCN-AUTH-001` through `SCN-AUTH-004` auth lifecycle tests and Obsidian vault validation. Firebase emulator scripts now include `integration_account_deletion_emulator_test.dart`, covering account tombstone cleanup and surviving-Auth no-recreate behavior.
+- 2026-06-04 cloud gate evidence: `Build Rain Apps` run 26957834309 passed the hard release gate, explicit auth lifecycle scenario tests, Firebase emulator integration including account deletion, Obsidian vault validation, Android APK artifacts, Windows demo portable artifact, and `rain-test-108-1` pre-release publication for pushed `dev` SHA `883886a`.
+- 2026-06-04 gate integration update: `build-artifacts.yml` and `validated-release.yml` run explicit `SCN-AUTH-001` through `SCN-AUTH-004` auth lifecycle tests and Obsidian vault validation. Firebase emulator scripts include `integration_account_deletion_emulator_test.dart`, covering account tombstone cleanup and surviving-Auth no-recreate behavior.
 - Windows PowerShell local QA/tooling.
 
 ## Domain Concepts

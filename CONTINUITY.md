@@ -10,7 +10,7 @@ Execute the auth/account/startup/splash/navigation remediation roadmap phase by 
 
 ## Current Phase
 
-Auth/startup remediation - account deletion workflow implemented and locally validated on 2026-06-04. Next auth/startup work is Phase 09 release-gate integration plus any Firebase emulator or device smoke proof required before promotion.
+Auth/startup remediation - account deletion workflow implemented, locally validated, pushed, and release-gate proven on 2026-06-04. Next auth/startup work is closing remaining device/emulator scenario gaps outside the account-deletion path.
 
 ## Completed Phases
 
@@ -38,8 +38,8 @@ Auth/startup remediation - account deletion workflow implemented and locally val
 ## Active Work
 
 - 2026-06-04 scenario-intelligence operating layer was added and hardened in the Obsidian vault. New graph notes now define [[System Model]], [[State Graph]], [[Business Rule Graph]], [[Assumption Register]], [[Failure Graph]], [[Scenario Intelligence Agent]], and [[Scenario Coverage Matrix]]. Future testing/intelligence agents should derive scenarios by violating assumptions, tracing state/business-rule/failure graph edges, mapping coverage status, and recording findings in risks, debt, blockers, tests, or next actions.
-- 2026-06-04 auth scenario release-gate integration is implemented locally. `build-artifacts.yml` and `validated-release.yml` now run explicit `SCN-AUTH-001` through `SCN-AUTH-004` app tests, both hard release workflows run Obsidian vault validation, and the Firebase emulator runner includes `integration_account_deletion_emulator_test.dart` for tombstone cleanup plus surviving-Auth no-recreate proof. Local `.\scripts\ci_run_firebase_emulators.ps1` passed after this change. Cloud proof on the new pushed commit is pending.
-- 2026-06-04 cloud release-gate proof passed for pushed `origin/dev` SHA `d58b7b5`: GitHub `Build Rain Apps` run 26931788461 passed the `Hard Release Gate`, Android v7/v8-v9 APK builds, Windows demo portable build, and `rain-test-107-1` pre-release publication. This validates the pushed remote SHA, not the current dirty local worktree or unpushed account-deletion/scenario-intelligence changes.
+- 2026-06-04 auth scenario release-gate integration is implemented and cloud proven. `build-artifacts.yml` and `validated-release.yml` run explicit `SCN-AUTH-001` through `SCN-AUTH-004` app tests, both hard release workflows run Obsidian vault validation, and the Firebase emulator runner includes `integration_account_deletion_emulator_test.dart` for tombstone cleanup plus surviving-Auth no-recreate proof. Local `.\scripts\ci_run_firebase_emulators.ps1` passed after this change. `Build Rain Apps` run 26957834309 passed on pushed `dev` SHA `883886a2e81ee370e3641ddcefce8d62942a3566` and published `rain-test-108-1`.
+- 2026-06-04 cloud release-gate proof passed for pushed `origin/dev` SHA `d58b7b5`: GitHub `Build Rain Apps` run 26931788461 passed the `Hard Release Gate`, Android v7/v8-v9 APK builds, Windows demo portable build, and `rain-test-107-1` pre-release publication. This earlier proof was superseded for account-deletion/scenario-gate work by run 26957834309 at `883886a`.
 - 2026-06-04 account deletion workflow is implemented and validated locally. Settings now exposes a destructive delete-account flow with password reauthentication; `SignalingAdapter`/`FirebaseSignalingAdapter` own reauth and account deletion; backend cleanup tombstones `users/{username}`, removes `userSearch`, clears relationship/request/block mirrors where rules allow, sets presence offline best-effort, ends active calls best-effort, and deletes Firebase Auth last. Runtime shutdown and local session clearing run after the destructive path starts, including backend/Auth partial failures. Bad-password reauth failures do not clear the current local identity/session. Follow-up hardening prevents login, identity upsert, or `userSearch` writes from reviving a missing/tombstoned backend account after Auth succeeds. Validation executed: `dart run melos run analyze` passed; `dart run melos run test` passed for `peer_core`, `protocol_brain`, `rain`, and `rain_core`; targeted auth/source-of-truth app test passed through the app test wrapper.
 - 2026-06-04 Phase 2 discovery for the current handoff request completed before implementation. It found no first-class account deletion UI, adapter contract, Firebase adapter method, or delete-account tests at that time; the later 2026-06-04 account deletion implementation supersedes that discovery gap.
 - 2026-06-04 governance/operating-system synchronization is complete. Root `AGENTS.md`, `PROJECT_OPERATING_SYSTEM.md`, and Obsidian AI operating notes now encode the Rain Autonomous Engineering System priority order, reality-enforcement rules, and workflow node state machine. Vault validation passed for this documentation/governance change. No application code, Firebase rules, database schema, or WebRTC behavior changed.
@@ -87,11 +87,11 @@ Auth/startup remediation - account deletion workflow implemented and locally val
 
 ## Known Blockers
 
-- BLK-010 is mitigated for local auth/session behavior after the account deletion implementation, but remains a release blocker until the hard release gate includes the auth/startup/account-deletion regression set and any required Firebase emulator/device proof is recorded.
+- BLK-010 is mitigated and release-gate proven for auth/session/account-deletion behavior after `Build Rain Apps` run 26957834309, but remains open for broader production readiness until remaining startup/device proof and cross-flow scenario gaps are closed.
 
 ## Next Recommended Action
 
-Use [[Scenario Coverage Matrix]] as the next planning surface: add the auth/startup/account-deletion scenario IDs to the hard release gate, add Firebase emulator coverage for tombstoned account cleanup/search/upsert denial, and add call/presence/connection-request emulator/device proof for the remaining partially covered or gap scenarios.
+Use [[Scenario Coverage Matrix]] as the next planning surface: add call/presence/connection-request/update/diagnostics emulator or device proof for the remaining partially covered or gap scenarios, starting with terminal call device-direction proof and connection-request quota non-consumption.
 
 ## Future Population Areas
 

@@ -23,7 +23,7 @@ Critical workflow coverage should track:
 - Release-gate scenario IDs executed for a build.
 - Explicitly skipped scenario IDs and reason.
 
-Current auth gate update 2026-06-04: `SCN-AUTH-001` through `SCN-AUTH-004` now have explicit hard-gate workflow commands, and `SCN-AUTH-002`/`SCN-AUTH-004` have local Firebase emulator proof through `integration_account_deletion_emulator_test.dart`. Cloud proof on the new commit is pending.
+Current auth gate update 2026-06-04: `SCN-AUTH-001` through `SCN-AUTH-004` have explicit hard-gate workflow commands, and `SCN-AUTH-002`/`SCN-AUTH-004` have Firebase emulator proof through `integration_account_deletion_emulator_test.dart`. Cloud proof passed in `Build Rain Apps` run 26957834309 at `883886a`.
 
 Initial source: [[Scenario Coverage Matrix]].
 

@@ -22,7 +22,23 @@
 - Added Firebase emulator account deletion coverage in `apps/rain/test/integration_account_deletion_emulator_test.dart`.
 - Added the account deletion emulator test to `scripts/ci_run_firebase_emulators.sh` and `scripts/ci_run_firebase_emulators.ps1`.
 - Passed locally: `.\scripts\ci_run_firebase_emulators.ps1`, including account tombstone cleanup and surviving-Auth no-recreate proof.
-- Cloud proof on the new pushed commit is pending.
+- Cloud proof passed in `Build Rain Apps` run 26957834309 for pushed `dev` SHA `883886a2e81ee370e3641ddcefce8d62942a3566`.
+
+### 2026-06-04 Cloud Auth Scenario Gate And Artifact Proof
+
+- Workflow: `Build Rain Apps`
+- Run: https://github.com/EslamNabawy/Rain/actions/runs/26957834309
+- Trigger: `workflow_dispatch`
+- Inputs: `platform=all`, `build_profile=demo`, `publish_test_release=true`
+- Branch/SHA validated: `dev` / `883886a2e81ee370e3641ddcefce8d62942a3566`
+- Passed: Hard Release Gate in 4m16s.
+- Passed: workspace dependency restore, lock drift check, Dart formatting, generated artifact presence, analyzer, full Melos tests, explicit auth lifecycle scenario tests, Firebase JSON parsing, Firebase Functions install/lint/audit/tests, Firebase emulator integration tests, and Obsidian vault validation.
+- Passed: Android APK artifact build and ABI verification in 14m4s.
+- Passed: Windows demo portable artifact build and native runtime verification in 7m11s.
+- Passed: GitHub pre-release publication.
+- Published release: https://github.com/EslamNabawy/Rain/releases/tag/rain-test-108-1
+- Published assets: `Rain-Demo-Android-v7a.apk`, `Rain-Demo-Android-v8-v9.apk`, `Rain-Demo-Windows-x64.zip`.
+- Scope: validates the account-deletion workflow, scenario-gate integration, vault sync, Android demo APKs, and Windows demo portable artifact at commit `883886a`.
 
 ### 2026-06-04 Cloud Hard Gate And Artifact Proof
 
@@ -38,7 +54,7 @@
 - Passed: GitHub pre-release publication.
 - Published release: https://github.com/EslamNabawy/Rain/releases/tag/rain-test-107-1
 - Published assets: `Rain-Demo-Android-v7a.apk`, `Rain-Demo-Android-v8-v9.apk`, `Rain-Demo-Windows-x64.zip`.
-- Scope caveat: this cloud run validated the pushed `origin/dev` SHA `d58b7b5`. It did not validate the current dirty local worktree or unpushed account-deletion/scenario-intelligence changes.
+- Scope caveat: this cloud run validated the pushed `origin/dev` SHA `d58b7b5`. Account-deletion/scenario-intelligence changes were later validated by run 26957834309 at `883886a`.
 
 ### 2026-06-03 Phase 09 Pre-Artifact Gate
 
