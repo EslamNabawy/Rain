@@ -738,7 +738,8 @@ class MediaDeviceSettings {
     }
 
     final storedDeviceId = await settingsStore.loadSelectedVideoInputDeviceId();
-    final selectedDeviceId = storedDeviceId != null &&
+    final selectedDeviceId =
+        storedDeviceId != null &&
             devices.any((device) => device.deviceId == storedDeviceId)
         ? storedDeviceId
         : null;
@@ -827,8 +828,7 @@ extension VideoPreflightResultExtension on VideoPreflightResult {
         'Selected camera is no longer available. Choose another camera.',
       VideoPreflightResult.permissionDenied =>
         'Camera permission denied. Allow camera access in settings.',
-      VideoPreflightResult.busy =>
-        'Camera is in use by another application.',
+      VideoPreflightResult.busy => 'Camera is in use by another application.',
       VideoPreflightResult.constraintFailed =>
         'Camera does not support the required video format.',
       VideoPreflightResult.captureFailed =>

@@ -880,7 +880,9 @@ Color rainVoiceCallHaloColor(BuildContext context, VoiceCallState state) {
     VoiceCallPhase.connectingPeer ||
     VoiceCallPhase.connectingMedia => RainColors.mistCyan,
     VoiceCallPhase.failed => scheme.error,
-    VoiceCallPhase.ending || VoiceCallPhase.ended || VoiceCallPhase.idle => scheme.primary,
+    VoiceCallPhase.ending ||
+    VoiceCallPhase.ended ||
+    VoiceCallPhase.idle => scheme.primary,
   };
 }
 

@@ -44,8 +44,7 @@ class PeerConnectivitySnapshot {
   /// Returns true when there is an active data session AND the peer
   /// has not been manually disconnected. This is the authoritative
   /// "can I send messages to this peer?" check.
-  bool get isReachable =>
-      hasActiveSession && !manualDisconnected;
+  bool get isReachable => hasActiveSession && !manualDisconnected;
 
   /// Whether the UI should show a "connected" indicator.
   ///

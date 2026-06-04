@@ -1820,7 +1820,9 @@ class _ChatPanelState extends ConsumerState<_ChatPanel> {
         peerOnlineOverride ?? (canChat ? friend?.isOnline ?? false : false);
     final connection = ref.read(connectionsProvider).peer(widget.peerId);
     final runtime = ref.read(runtimeControllerProvider).value;
-    final connectivitySnapshot = ref.read(peerConnectivityProvider)[widget.peerId];
+    final connectivitySnapshot = ref.read(
+      peerConnectivityProvider,
+    )[widget.peerId];
     final diagnostics = ConnectionDiagnostics.fromConnection(
       canChat: canChat,
       isPeerOnline: isPeerOnline,

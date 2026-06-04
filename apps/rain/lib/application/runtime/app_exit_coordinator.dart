@@ -81,7 +81,9 @@ final class AppExitCoordinator {
     if (critical.isEmpty) {
       return;
     }
-    final futures = critical.map((h) => Future<void>(() => h(reason)).catchError((_) {}));
+    final futures = critical.map(
+      (h) => Future<void>(() => h(reason)).catchError((_) {}),
+    );
     try {
       await Future.wait(futures).timeout(criticalTimeout);
     } on TimeoutException {
@@ -94,7 +96,9 @@ final class AppExitCoordinator {
     if (handlers.isEmpty) {
       return;
     }
-    final futures = handlers.map((h) => Future<void>(() => h(reason)).catchError((_) {}));
+    final futures = handlers.map(
+      (h) => Future<void>(() => h(reason)).catchError((_) {}),
+    );
     try {
       await Future.wait(futures).timeout(timeout);
     } on TimeoutException {

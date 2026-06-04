@@ -77,14 +77,17 @@ class DesktopShellController with WindowListener {
       // This covers presence offline write and terminal state publish.
       await AppExitCoordinator.instance
           .shutdown(AppExitReason.windowClose)
-          .timeout(_criticalCloseBudget, onTimeout: () {
-        if (kDebugMode) {
-          debugPrint(
-            '[DesktopShellController] Critical close budget '
-            'exceeded after ${criticalStopwatch.elapsedMilliseconds}ms',
+          .timeout(
+            _criticalCloseBudget,
+            onTimeout: () {
+              if (kDebugMode) {
+                debugPrint(
+                  '[DesktopShellController] Critical close budget '
+                  'exceeded after ${criticalStopwatch.elapsedMilliseconds}ms',
+                );
+              }
+            },
           );
-        }
-      });
     } catch (error) {
       if (kDebugMode) {
         debugPrint(

@@ -190,7 +190,8 @@ class _TestSessionManager implements SessionManager {
   final _disconnectedController = StreamController<String>.broadcast();
   final _messageController = StreamController<SessionMessage>.broadcast();
   final _trackController = StreamController<SessionRemoteTrack>.broadcast();
-  final _rejectionController = StreamController<IncomingOfferRejection>.broadcast();
+  final _rejectionController =
+      StreamController<IncomingOfferRejection>.broadcast();
 
   void seedConnected(String peerId, {String? roomId}) {
     _sessions[peerId] = Session(
@@ -237,7 +238,10 @@ class _TestSessionManager implements SessionManager {
       _rejectionController.stream;
 
   @override
-  Future<void> registerPeer(String peerId, {IncomingOfferGuard? incomingOfferGuard}) async {}
+  Future<void> registerPeer(
+    String peerId, {
+    IncomingOfferGuard? incomingOfferGuard,
+  }) async {}
 
   @override
   Future<void> unregisterPeer(String peerId) async {}
@@ -260,10 +264,15 @@ class _TestSessionManager implements SessionManager {
   }
 
   @override
-  Future<void> recoverConnection(String peerId, {String reason = 'Network changed. Restarting peer connection.'}) async {}
+  Future<void> recoverConnection(
+    String peerId, {
+    String reason = 'Network changed. Restarting peer connection.',
+  }) async {}
 
   @override
-  Future<void> recoverConnections({String reason = 'Network changed. Restarting peer connections.'}) async {}
+  Future<void> recoverConnections({
+    String reason = 'Network changed. Restarting peer connections.',
+  }) async {}
 
   @override
   void sendControl(String peerId, String data) {}

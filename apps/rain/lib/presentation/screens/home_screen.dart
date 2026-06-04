@@ -1183,18 +1183,19 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
     VoiceCallState? previous,
     VoiceCallState next,
   ) {
-    if (previous == null ||
-        previous.peerId == null) {
+    if (previous == null || previous.peerId == null) {
       return;
     }
     // React to immediate "ended" phase (local hangup) instead of waiting
     // for "idle" which is delayed by Firebase terminal write.
-    final isImmediateEnd = next.phase == VoiceCallPhase.ended &&
+    final isImmediateEnd =
+        next.phase == VoiceCallPhase.ended &&
         previous.phase != VoiceCallPhase.idle &&
         previous.phase != VoiceCallPhase.failed &&
         previous.phase != VoiceCallPhase.ended;
     // Also handle the final idle transition for remote-initiated endings.
-    final isIdleTransition = next.phase == VoiceCallPhase.idle &&
+    final isIdleTransition =
+        next.phase == VoiceCallPhase.idle &&
         previous.phase != VoiceCallPhase.idle &&
         previous.phase != VoiceCallPhase.failed;
     if (!isImmediateEnd && !isIdleTransition) {

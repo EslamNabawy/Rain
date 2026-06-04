@@ -89,8 +89,9 @@ void main() {
       overrides: [
         appBootstrapProvider.overrideWithValue(_bootstrap(database)),
         networkStatusProvider.overrideWith(
-          (Ref ref) =>
-              Stream<NetworkStatusState>.value(const NetworkStatusState.online()),
+          (Ref ref) => Stream<NetworkStatusState>.value(
+            const NetworkStatusState.online(),
+          ),
         ),
         platformBridgeProvider.overrideWithValue(_FakePlatformBridge()),
         identityProvider.overrideWith(_SignedInIdentityController.new),
@@ -289,11 +290,7 @@ final class _WidgetTestSessionManager implements SessionManager {
     _sessions[peerId] = session;
   }
 
-  void setChannelOpen(
-    String peerId,
-    SessionChannel channel,
-    bool isOpen,
-  ) {
+  void setChannelOpen(String peerId, SessionChannel channel, bool isOpen) {
     final key = '$peerId:${channel.name}';
     if (isOpen) {
       _openChannels.add(key);
