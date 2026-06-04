@@ -743,7 +743,10 @@ void main() {
     ).readAsStringSync().replaceAll('\r\n', '\n');
 
     expect(source, contains('windowManager.setPreventClose(true)'));
-    expect(source, contains('AppExitCoordinator.instance.shutdown'));
+    expect(source, contains('AppExitCoordinator.instance'));
+    expect(source, contains('.shutdown(AppExitReason.windowClose)'));
+    expect(source, contains('_runBestEffortCleanup'));
+    expect(source, contains('_criticalCloseBudget'));
     expect(source, contains('AppExitReason.windowClose'));
     expect(source, contains('windowManager.destroy()'));
     expect(source, contains('_runBoundedCloseStep'));
