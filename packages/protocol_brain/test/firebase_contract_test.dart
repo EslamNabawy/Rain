@@ -338,17 +338,18 @@ void main() {
     expect(adapter, isNot(contains('controller.addError(error, stackTrace)')));
   });
 
-  test('Firebase voice user locks are claimed transactionally', () {
+  test('Firebase voice user locks reclaim stale state before retry', () {
     final adapter = _repoFile(
       'packages/protocol_brain/lib/adapters/firebase_adapter.dart',
     );
 
     expect(adapter, contains('Future<bool> _claimActiveVoiceUserLock'));
-    expect(adapter, contains('required int createdAt'));
     expect(adapter, contains('lockRef.runTransaction'));
-    expect(adapter, contains('VoiceActiveUserLock.fromJson'));
-    expect(adapter, contains('existing.expiresAt > createdAt'));
+    expect(adapter, contains('if (current is Map)'));
     expect(adapter, contains('Transaction.abort()'));
+    expect(adapter, contains('VoiceLockReclaimPolicy.forUserLock'));
+    expect(adapter, contains('_removeActiveVoiceUserLockIfUnchanged'));
+    expect(adapter, contains('Old call state was cleaned'));
     expect(adapter, isNot(contains('await lockRef.set(lock.toJson())')));
   });
 

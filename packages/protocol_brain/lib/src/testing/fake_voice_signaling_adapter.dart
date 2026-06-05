@@ -4,11 +4,10 @@ import '../signaling_cost_budget.dart';
 import '../voice_call_clock.dart';
 import '../voice_call_cleanup_janitor.dart';
 import '../voice_call_frame.dart';
+import '../voice_lock_reclaim_policy.dart';
 import '../voice_signaling_contract.dart';
 
 final class FakeVoiceSignalingAdapter implements VoiceSignalingAdapter {
-  static const int _orphanVoiceLockGraceMs = 15000;
-
   final Map<String, VoiceCallRoom> _rooms = <String, VoiceCallRoom>{};
   final Map<String, VoiceActivePairLock> _pairLocks =
       <String, VoiceActivePairLock>{};
@@ -88,6 +87,7 @@ final class FakeVoiceSignalingAdapter implements VoiceSignalingAdapter {
           existingLock,
           createdAt,
           caller: normalizedCaller,
+          callee: normalizedCallee,
         )) {
       throw VoiceSignalingException(
         'Active voice call already exists for pair $pairId.',
@@ -100,6 +100,7 @@ final class FakeVoiceSignalingAdapter implements VoiceSignalingAdapter {
             existingUserLock,
             createdAt,
             caller: normalizedCaller,
+            callee: normalizedCallee,
           )) {
         throw VoiceSignalingException(
           'Active voice call already exists for user $username.',
@@ -656,44 +657,23 @@ final class FakeVoiceSignalingAdapter implements VoiceSignalingAdapter {
     VoiceActivePairLock lock,
     int createdAt, {
     required String caller,
+    required String callee,
   }) {
     final room = _rooms[lock.callId];
-    if (lock.expiresAt <= createdAt) {
-      if (room != null && _shouldDeleteReclaimedVoiceRoom(room, createdAt)) {
-        _removeCallArtifacts(lock.callId);
-      }
-      _pairLocks.remove(lock.pairId);
-      return true;
-    }
-
-    if (room == null) {
-      if (lock.caller == normalizeVoiceCallUsername(caller)) {
-        _pairLocks.remove(lock.pairId);
-        return true;
-      }
-      if (createdAt - lock.updatedAt < _orphanVoiceLockGraceMs) {
-        return false;
-      }
-      _pairLocks.remove(lock.pairId);
-      return true;
-    }
-
-    if (!room.isTerminal &&
-        room.status != VoiceCallSignalingStatus.connected &&
-        lock.caller == normalizeVoiceCallUsername(caller)) {
-      _removeCallArtifacts(room.callId);
-      _pairLocks.remove(lock.pairId);
-      return true;
-    }
-
-    final setupExpired =
-        room.status != VoiceCallSignalingStatus.connected &&
-        room.expiresAt <= createdAt;
-    if (!room.isTerminal && !setupExpired) {
+    final decision = VoiceLockReclaimPolicy.forPairLock(
+      lock: lock,
+      room: room,
+      caller: caller,
+      callee: callee,
+      createdAt: createdAt,
+      now: createdAt,
+    );
+    if (!decision.shouldReclaimLock) {
       return false;
     }
-
-    _removeCallArtifacts(room.callId);
+    if (room != null && decision.shouldDeleteRoomArtifacts) {
+      _removeCallArtifacts(room.callId);
+    }
     _pairLocks.remove(lock.pairId);
     return true;
   }
@@ -702,44 +682,23 @@ final class FakeVoiceSignalingAdapter implements VoiceSignalingAdapter {
     VoiceActiveUserLock lock,
     int createdAt, {
     required String caller,
+    required String callee,
   }) {
     final room = _rooms[lock.callId];
-    if (lock.expiresAt <= createdAt) {
-      if (room != null && _shouldDeleteReclaimedVoiceRoom(room, createdAt)) {
-        _removeCallArtifacts(lock.callId);
-      }
-      _userLocks.remove(lock.username);
-      return true;
-    }
-
-    if (room == null) {
-      if (lock.caller == normalizeVoiceCallUsername(caller)) {
-        _userLocks.remove(lock.username);
-        return true;
-      }
-      if (createdAt - lock.updatedAt < _orphanVoiceLockGraceMs) {
-        return false;
-      }
-      _userLocks.remove(lock.username);
-      return true;
-    }
-
-    if (!room.isTerminal &&
-        room.status != VoiceCallSignalingStatus.connected &&
-        lock.caller == normalizeVoiceCallUsername(caller)) {
-      _removeCallArtifacts(room.callId);
-      _userLocks.remove(lock.username);
-      return true;
-    }
-
-    final setupExpired =
-        room.status != VoiceCallSignalingStatus.connected &&
-        room.expiresAt <= createdAt;
-    if (!room.isTerminal && !setupExpired) {
+    final decision = VoiceLockReclaimPolicy.forUserLock(
+      lock: lock,
+      room: room,
+      caller: caller,
+      callee: callee,
+      createdAt: createdAt,
+      now: createdAt,
+    );
+    if (!decision.shouldReclaimLock) {
       return false;
     }
-
-    _removeCallArtifacts(room.callId);
+    if (room != null && decision.shouldDeleteRoomArtifacts) {
+      _removeCallArtifacts(room.callId);
+    }
     _userLocks.remove(lock.username);
     return true;
   }
@@ -753,14 +712,6 @@ final class FakeVoiceSignalingAdapter implements VoiceSignalingAdapter {
         _userLocks.remove(username);
       }
     }
-  }
-
-  bool _shouldDeleteReclaimedVoiceRoom(VoiceCallRoom room, int createdAt) {
-    if (room.isTerminal) {
-      return true;
-    }
-    return room.status != VoiceCallSignalingStatus.connected &&
-        room.expiresAt <= createdAt;
   }
 
   void _removeCallArtifacts(String callId) {

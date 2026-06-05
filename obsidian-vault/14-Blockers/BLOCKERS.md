@@ -1,6 +1,6 @@
 # BLOCKERS
 
-Last updated: 2026-06-04
+Last updated: 2026-06-05
 
 ## Purpose
 
@@ -73,6 +73,7 @@ Related: [[Risk Register]], [[Risk Categories]], [[Risk Matrix]], [[Blocker Reso
   - Retry internally once after cleanup.
   - Prove live newer locks are never deleted.
 - Progress 2026-06-04 terminal cleanup: A terminal `busy` room can still be a real remote-side outcome, but it no longer leaves the local runtime in an active call state while cleanup stalls. This mitigates the user-visible false file-transfer block; full stale/live/newer lock repair proof remains open.
+- Progress 2026-06-05 stale lock reclaim: Firebase and fake voice signaling now use shared `VoiceLockReclaimPolicy` during `createOutgoingCall`. Stale expired locks, caller-owned or orphan-aged missing-room locks, terminal rooms, caller-owned setup rooms, and expired setup rooms are reclaimed; live connected rooms, fresh other-owned setup, mismatched participants, and newer/different locks stay busy. Firebase compare-deletes before cleanup and retries the claim exactly once. A local terminal echo race after locally initiated hangup is fixed so the original hangup path still awaits session/media cleanup. Focused policy/signaling tests, targeted stale-lock app scenarios, `call_retry_policy_test.dart`, analyze, full Melos tests, and vault validation passed. Closing this blocker still requires emulator/live Firebase proof across the stale/live/newer-lock matrix.
 - Exit Criteria: Emulator/fake tests cover stale, missing, terminal, corrupt, live, and newer-lock cases.
 - Detection Strategy: Diagnostics with pair/user lock path, call id, room status, cleanup action, and retry result.
 

@@ -6,11 +6,11 @@ Every future session must read this file before starting non-trivial work.
 
 ## Current Goal
 
-Execute the auth/account/startup/splash/navigation remediation roadmap phase by phase without another audit. The current evidence source is `ROOT_AUTH_STARTUP_REMEDIATION_ROADMAP.md` plus its linked investigation documents.
+Stabilize Rain call reliability without another audit. The active implementation focus is false `peer busy` from stale Firebase voice-call locks in `activeVoiceUsers`, `activeVoicePairs`, and `voiceCalls`.
 
 ## Current Phase
 
-Auth/startup remediation - account deletion workflow implemented, locally validated, pushed, and release-gate proven on 2026-06-04. Next auth/startup work is closing remaining device/emulator scenario gaps outside the account-deletion path.
+False busy/stale voice lock remediation is implemented in the real Rain repo as of 2026-06-05 and local release-gate validation is clean. `dart run melos run analyze`, full `dart run melos run test`, and Obsidian vault validation passed after also fixing a local terminal-room echo race in `VoiceCallRuntime`.
 
 ## Completed Phases
 
@@ -37,6 +37,8 @@ Auth/startup remediation - account deletion workflow implemented, locally valida
 
 ## Active Work
 
+- 2026-06-05 false busy/stale Firebase voice lock remediation is implemented and locally release-gate validated. `packages/protocol_brain/lib/src/voice_lock_reclaim_policy.dart` now owns the shared decision policy for keep-busy vs reclaim-lock vs reclaim-lock-and-delete-room-artifacts. `FirebaseSignalingAdapter.createOutgoingCall` routes pair/user lock conflicts through that policy, uses compare-delete before reclaiming, retries the claim once, and reports retryable cleanup when old state was cleaned but a newer lock wins. `FakeVoiceSignalingAdapter` uses the same policy. A related `VoiceCallRuntime` fix now ignores locally initiated terminal Firebase room echoes while the latched local hangup is still ending/ended, so the original hangup path still awaits session/media cleanup. Validation executed: focused stale-lock tests passed, the previously failing hangup/media cleanup cases passed, `dart run melos run analyze` passed, full `dart run melos run test` passed, and `.\scripts\check_obsidian_vault.ps1` passed.
+- 2026-06-05 AI tooling overlay is installed in the active Rain repo at `C:\Users\eslam\OneDrive\Desktop\GoodStuff\Rain`. The overlay adds `.ai/` guidance, `scripts/ai/` helper commands, and a marked `AGENTS.md` block for Context7, OpenViking, Promptfoo, Impeccable, and agency-role routing. It does not change app runtime code, Flutter/Firebase dependencies, CI gates, hooks, or deployment behavior. Promptfoo remains opt-in because Rain has AI operating docs but no runtime LLM behavior.
 - 2026-06-04 Phase E Android splash flash mitigation is implemented and locally validated. `values/styles.xml` and `values-night/styles.xml` now set both `LaunchTheme` and `NormalTheme` `android:windowBackground` to `@drawable/launch_background`; default and v21 launch drawables remain dark `#061017`. Added `apps/rain/test/android_splash_resources_test.dart`; `flutter test test/android_splash_resources_test.dart --reporter expanded` passed from `apps/rain`. Next requested phase is Phase C shutdown split/budget.
 - 2026-06-04 multi-issue stability investigation is documented in [[2026-06-04 Multi-Issue Stability Investigation]]. Scope was investigation/planning only; no production code changed. The dominant finding is split runtime/provider/presence/call state ownership. Recommended next implementation starts with an authoritative peer/call capability snapshot, then local call-ended presentation before cleanup waits, shutdown critical-vs-best-effort split, desktop video preflight, Android splash theme alignment, and gender-avatar data-path proof.
 - 2026-06-04 update warning metadata fix is implemented, locally validated, pushed, and cloud release-gate proven. Root cause: the app package, deployable Remote Config template, and release manifest example all advertised `1.0.6+7`, so installed `1.0.6+7` apps correctly evaluated update status as `current` and showed no warning. The app is now bumped to `1.0.7+8`; `backend/firebase/remoteconfig.template.json` and `docs/releases/rain_release_manifest_v1.example.json` advertise `1.0.7+8`; `version_metadata_test.dart` now proves the checked-in Remote Config template reports `updateRequired` for previous `1.0.6+7` Android/Windows stable/demo installs. Validation executed: the regression failed before the metadata bump, then passed after the bump; release contract test passed. `Build Rain Apps` run 26963049075 passed on pushed `dev` SHA `f1904e72f1c16773700f0bfa6bcc8ac0fcd7706d` and published `rain-test-109-1`. Remote Config deployment was not executed.
@@ -91,6 +93,7 @@ Auth/startup remediation - account deletion workflow implemented, locally valida
 
 ## Known Blockers
 
+- BLK-002 is mitigated for the implemented false-busy stale-lock policy, but remains open until emulator/live Firebase proof covers the same stale, missing, terminal, live, and newer-lock cases.
 - BLK-010 is mitigated and release-gate proven for auth/session/account-deletion behavior after `Build Rain Apps` run 26957834309, but remains open for broader production readiness until remaining startup/device proof and cross-flow scenario gaps are closed.
 
 ## Next Recommended Action

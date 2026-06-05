@@ -1,6 +1,6 @@
 # Project Memory
 
-Last updated: 2026-06-04
+Last updated: 2026-06-05
 
 ## Purpose
 
@@ -127,6 +127,7 @@ Build/automation:
 - Voice call room: Firebase call signaling record under `voiceCalls`.
 - Voice call inbox: callee-facing Firebase invite record under `voiceCallInboxes`.
 - Active voice locks: Firebase pair/user locks under `activeVoicePairs` and `activeVoiceUsers`.
+- Voice lock reclaim policy: an internal `protocol_brain` policy decides whether a blocked call should keep reporting real busy, reclaim only the stale lock, or reclaim the lock and delete old room artifacts. Production Firebase signaling and the fake voice adapter must use the same policy.
 - Call media mode: audio or video, using shared voice-call signaling naming.
 - Connection request notification: offline-only request to ask another accepted peer to open/connect.
 - Offline request quota: request limits should apply to offline notification requests, not normal online direct connect.
@@ -230,6 +231,8 @@ Highest-priority engineering areas:
 Latest evidence lock: [ROOT_CAUSE_ANALYSIS.md](../../ROOT_CAUSE_ANALYSIS.md) correlates the 2026-06-03 Windows diagnostic export, Android screenshot, and manual failure report. Confirmed root causes are split call terminal authority, Android `signaling.endCall` permission denial, presence freshness races, terminal inbox exposure before cleanup, Android diagnostics export path failure, and platform build-number inconsistency in update policy. Mitigations completed on 2026-06-03: late voice signaling frames after a terminal room are now logged as `late_frame_ignored` diagnostics only, not as `lastCrash` Flutter errors; Firebase `endCall` terminal room writes no longer depend on the callee inbox row still existing; Android SAF `/document/...` diagnostics export handles no longer get opened as raw files; backend presence is resolved through one 30 second `online + lastHeartbeat + state` freshness window before local friend seeding, direct Connect, chat Connect routing, connection-request routing, call start, or network auto-recovery; failed call setup diagnostics now include a bounded Firebase room status timeline and remote terminal-room failure reconciliation emits `VoiceCallDiagnostics`; update checks classify stale Remote Config policy as `remotePolicyOutdated`, same-version minimum-build upgrades become required updates, and optional update prompts render from the root app surface before login/home; Phase 08 added targeted regressions for call failure messages, failed call surfaces, compact video dock behavior, terminal write ordering, already-terminal cleanup, and session-owned Firebase presence. `presenceExpired` is now retained as a terminal peer intent until a later successful explicit reconnect. 2026-06-04 evidence update: `rain-diagnostics-2026-06-04T021020-922123Z.json` showed `signaling.writeVoiceOffer` throwing because the Firebase room was already `ended` while the PC was still in `_createAndSendOffer`. Runtime now preflights terminal-sensitive media signaling sends (`accept`, `offer`, `answer`, `mute`) with `fetchCall`; missing or terminal rooms are cleanup/reconciliation events before `writeVoiceOffer`/`writeVoiceAnswer` can hit the debug signaling adapter. The same pass added explicit rules-contract coverage that voice terminal fields stay writable by either participant, diagnostics export now creates a real fallback JSON file for Android SAF/content handles, and file-transfer view speed samples reset when the peer lane is not connected.
 
 2026-06-04 diagnostics update: `rain-diagnostics-2026-06-04T144952-237539Z.json` showed mobile-to-PC voice setup reaching WebRTC media `connected`, then the Firebase room failing as `busy` while local cleanup/disposal stalled. The stale local call phase made accept show "Voice call session is unavailable", made file transfer report "Finish the call before sending files", and left Windows shutdown stuck after `shutdown_started`. The runtime contract is now: publish terminal failed/idle call state before awaiting WebRTC/session cleanup; clear current session resources before disposal; bound cleanup/cancel/hangup/renderer disposal steps; and keep terminal cleanup diagnostic-only if disposal times out. The desktop shell close path also bounds close/destroy work and uses a Windows process-exit fallback after close handling. Validation evidence: targeted call/file/shutdown contract tests passed, targeted terminal `friend_flow_test.dart` cases passed, `dart run melos run analyze` passed, and full `dart run melos run test` passed.
+
+2026-06-05 false busy update: call creation now routes `activeVoicePairs`, `activeVoiceUsers`, and referenced `voiceCalls` through a shared `VoiceLockReclaimPolicy`. The policy reclaims expired locks, caller-owned or orphan-aged missing-room locks, terminal rooms, caller-owned setup rooms, and expired setup rooms; it does not reclaim live connected rooms, fresh other-owned setup rooms, mismatched participant pairs, or rooms whose call id no longer matches the lock. Firebase claim now retries exactly once after compare-delete cleanup and reports "old call state was cleaned" if a newer lock wins after cleanup so existing retry classification treats it as retryable cleanup, not real busy. A related terminal cleanup fix ignores locally initiated terminal Firebase room echoes while the latched local hangup is still ending/ended, preventing the echo watcher from returning before the original hangup path awaits session/media disposal. Validation evidence: focused protocol policy/signaling tests passed; previously failing hangup/media cleanup cases passed; workspace analyze passed; full `dart run melos run test` passed; Obsidian vault validation passed.
 
 ## Technical Debt
 
@@ -348,6 +351,14 @@ Governance update 2026-06-04:
 - Agents must not claim file changes, tests, builds, validation, CI, git commits, or vault updates unless those actions were actually executed.
 - Documentation/vault changes require `.\scripts\check_obsidian_vault.ps1` or an explicit `Vault validation not executed.` report.
 
+AI tooling overlay update 2026-06-05:
+
+- The active Rain repo now contains `.ai/` overlay guidance and `scripts/ai/` helper commands.
+- Context7 is the expected route for current third-party docs.
+- OpenViking is the expected route for private/project context, with separate imports for repository files and `obsidian-vault/`.
+- Promptfoo is intentionally opt-in until Rain contains concrete prompts, agents, RAG retrieval, model calls, generated text behavior, or eval targets.
+- The overlay must not alter app runtime code, Flutter/Firebase dependencies, CI gates, hooks, release workflows, or deployment behavior unless explicitly requested.
+
 Scenario intelligence update 2026-06-04:
 
 - Testing/intelligence agents should use [[Scenario Intelligence Agent]] after the normal startup set.
@@ -371,7 +382,7 @@ Multi-issue stability investigation update 2026-06-04:
 - Generic call errors hide root causes; classify signaling, permission, ICE/TURN, media, and terminal-state failures separately.
 - Expected terminal races must not call the crash/error recorder; otherwise diagnostics show a benign late-frame cleanup event as the "last Flutter error" and hide the real failure.
 - Terminal call state must be published to the UI before awaiting media/session cleanup. Otherwise a hung WebRTC disposal can leave `VoiceCallState` active and falsely block file transfers or later accept actions.
-- False busy usually means stale or partial Firebase call locks.
+- False busy can mean stale or partial Firebase call locks. New lock handling must go through `VoiceLockReclaimPolicy`; do not add ad hoc busy/reclaim predicates in Firebase or fake adapters.
 - Firebase is signaling only; do not describe voice/video media as passing through Firebase.
 - Unit tests alone are not enough for WebRTC confidence.
 - Old app versions can become incompatible with backend rules, so update validation must work.

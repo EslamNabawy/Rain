@@ -1450,7 +1450,10 @@ extension VoiceCallRuntime on RainRuntimeController {
     final endedByLocal = room.endedBy == localUsername;
     final detail = _terminalVoiceCallDetailForRoom(room, localUsername);
     final failureReason = _terminalVoiceCallFailureReasonForRoom(room);
-    if (endedByLocal && current.phase == VoiceCallPhase.ending) {
+    if (endedByLocal &&
+        _isTerminalVoiceCallSessionLatched(session) &&
+        (current.phase == VoiceCallPhase.ending ||
+            current.phase == VoiceCallPhase.ended)) {
       _recordRuntimeEvent(
         category: 'call',
         name: 'voice_terminal_room_local_echo_ignored',

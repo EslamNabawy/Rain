@@ -1,6 +1,6 @@
 # AI Operating Notes
 
-Last updated: 2026-06-04
+Last updated: 2026-06-05
 
 ## Purpose
 
@@ -12,6 +12,16 @@ Track operating notes for AI sessions that are too specific for root `AGENTS.md`
 - Do not edit `D:\old project\Rain`.
 - Do not modify application code during vault bootstrap work.
 - Keep documentation changes linked through the vault command center and [[Templates Index]].
+
+## AI Tooling Overlay
+
+Installed in the active Rain repo on 2026-06-05.
+
+- Root `AGENTS.md` contains a marked AI overlay block.
+- `.ai/tool-routing.md` routes Context7, OpenViking, Promptfoo, Impeccable, and agency-role usage.
+- `scripts/ai/import-openviking.ps1` imports repository context, Obsidian context, or both.
+- Promptfoo is not enabled by default because Rain has AI operating docs but no runtime LLM behavior.
+- The overlay is guidance/tooling only and must not change app runtime behavior, dependency graph, CI gates, hooks, release workflows, or deployment behavior by default.
 
 ## Rain Autonomous Engineering System
 

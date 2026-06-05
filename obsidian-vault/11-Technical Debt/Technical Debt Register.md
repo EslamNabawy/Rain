@@ -1,6 +1,6 @@
 # Technical Debt Register
 
-Last updated: 2026-06-04
+Last updated: 2026-06-05
 
 ## Purpose
 
@@ -120,7 +120,7 @@ Related: [[Debt Categories]], [[Debt Prioritization]], [[Architecture Debt]], [[
 ### TD-003: Distributed Call Lease And Terminal Ownership
 
 - Category: Architecture
-- Status: Open
+- Status: Mitigating
 - Priority: P0
 - Title: Call lease and terminal state are not owned by one component.
 - Description: Active user locks, pair locks, room status, inboxes, local runtime state, and session frames can disagree.
@@ -134,6 +134,7 @@ Related: [[Debt Categories]], [[Debt Prioritization]], [[Architecture Debt]], [[
 - Resolution Strategy: Make matching `callId` ownership the only cleanup authority, inspect referenced rooms before busy, and retry stale cleanup once.
 - Progress Note 2026-06-03: One denied terminal cleanup path is mitigated. `FirebaseSignalingAdapter.endCall` now writes terminal `voiceCalls/{callId}` state before best-effort callee inbox mirror updates, and emulator coverage proves a missing `voiceCallInboxes/{callee}/{callId}` row no longer blocks terminal state or lock release. Remaining debt is full lease manager extraction and all terminal transition coverage.
 - Progress Note 2026-06-04: The diagnostic-driven terminal `busy` case no longer leaves the local runtime in an active call phase while cleanup stalls. `VoiceCallRuntime` now publishes terminal state before session/media disposal and bounds cleanup, so false local call state should not block file transfer or later call actions. Remaining debt is still centralized lease ownership and emulator proof for stale/live/newer lock variants.
+- Progress Note 2026-06-05: False-busy stale lock reclamation now has a shared `VoiceLockReclaimPolicy` used by Firebase and fake voice signaling. `createOutgoingCall` inspects existing pair/user locks, referenced rooms, participant match, terminal/expired/setup state, and uses compare-delete plus one retry before reporting busy. A local terminal echo race in `VoiceCallRuntime` was also fixed so local hangup still awaits session/media cleanup after its own terminal room write. Focused policy/signaling tests, workspace analyze, full Melos tests, and vault validation passed. Remaining debt is emulator/live Firebase proof and eventual extraction of a first-class lease manager.
 
 ### TD-004: Implicit Async Call State Machine
 

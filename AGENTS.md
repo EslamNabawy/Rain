@@ -316,3 +316,19 @@ C:\android-flutter-qa-toolkit\scripts\run-appium-smoke.ps1 -ProjectRoot "<projec
 Phase 0 creates the operating model only.
 
 Do not use Phase 0 to produce detailed architecture documentation, implementation plans, audits, or code changes. Future phases will populate the vault and knowledge graph.
+
+<!-- AI-OVERLAY:START -->
+## AI Tooling Overlay
+
+Use Context7 for current third-party documentation: Flutter, Dart, Riverpod, Drift, Firebase, WebRTC, Melos, Node, npm, SDKs, APIs, libraries, and CLI tools.
+
+Use OpenViking for private/project context: architecture notes, prior decisions, Obsidian notes, memory, and repo-specific knowledge. Keep OpenViking indexes and config outside this repository.
+
+Use Promptfoo only when changing prompts, agent behavior, RAG retrieval, model routing, model configuration, or generated text behavior. Promptfoo is not a runtime dependency and is not enabled as a CI gate by default.
+
+Use `.ai/impeccable.md` for frontend, UI, UX, and visual design work.
+
+Use agency role files only when the task matches the role. Do not load every role into every task.
+
+Preserve Rain's existing architecture, Firebase Spark/free-tier constraint, Obsidian documentation gates, and validation workflow. The overlay must not force unrelated rewrites, runtime dependency changes, CI changes, hooks, or deployment behavior.
+<!-- AI-OVERLAY:END -->
