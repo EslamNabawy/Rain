@@ -555,11 +555,8 @@ jobs:
           GH_REPO: ${{ github.repository }}
         run: |
           set -euo pipefail
-          keep=10
           mapfile -t old_tags < <(
-            gh release list --repo "${GITHUB_REPOSITORY}" --limit 100 --json tagName --jq '.[].tagName' |
-              grep '^rain-tested-' |
-              sed -n "$((keep + 1)),\$p"
+            gh release list --repo "${GITHUB_REPOSITORY}" --limit 100 --json tagName,publishedAt --jq '[.[] | select(.tagName | startswith("rain-tested-"))] | sort_by(.publishedAt) | reverse | .[10:][]? | .tagName'
           )
           for old_tag in "${old_tags[@]}"; do
             echo "Deleting old tested release: ${old_tag}"
