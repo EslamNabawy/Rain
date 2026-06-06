@@ -4,7 +4,7 @@
 
 - PC-to-mobile voice/video call setup fails or fails immediately on mobile.
 - Voice call hangup has been reported not closing on the other peer.
-- Update prompt/check has been reported incorrect for old versions. Code mitigation now bumps metadata to `1.0.8+9` and covers previous `1.0.7+8`; still needs release artifact plus deployed Remote Config verification before moving to fixed.
+- Update prompt/check has been reported incorrect for old versions. Code mitigation now bumps metadata to `1.0.8+9`, covers previous `1.0.7+8`, published `rain-test-118-1`, and deployed/read back live Remote Config version 9. Still needs installed old/current app proof before moving to fixed.
 
 ## High
 

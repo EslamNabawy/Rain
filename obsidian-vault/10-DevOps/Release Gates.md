@@ -33,6 +33,32 @@ Local Phase 8 proof is structural. Cloud release proof still requires running th
 
 ## Latest Local Gate Evidence
 
+### 2026-06-06 Cloud Update Warning Gate And Live Policy Proof
+
+- Workflow: `Build Rain Apps`
+- Run: https://github.com/EslamNabawy/Rain/actions/runs/27062729519
+- Trigger: `workflow_dispatch`
+- Inputs: `platform=all`, `build_profile=demo`, `publish_test_release=true`
+- Branch/SHA validated: `dev` / `06e878e550879f787c84ca254d0bc325befc93e4`
+- Commit: `Fix update warning metadata and diagnostics export`
+- Passed: Hard Release Gate, workspace analyzer, full Melos tests, auth lifecycle scenario tests, Firebase JSON parsing, Firebase Functions install/lint/audit/tests, Firebase emulator integration tests, and Obsidian vault validation.
+- Passed: Android APK artifact build and ABI verification.
+- Passed: Windows demo portable artifact build and native runtime verification.
+- Published release: https://github.com/EslamNabawy/Rain/releases/tag/rain-test-118-1
+- Published assets: `Rain-Demo-Android-v7a.apk`, `Rain-Demo-Android-v8-v9.apk`, `Rain-Demo-Windows-x64.zip`.
+- Scope: validates pushed `1.0.8+9` update-warning metadata and diagnostics export/taxonomy hardening at commit `06e878e`.
+
+### 2026-06-06 Live Remote Config Deploy And Readback For 1.0.8
+
+- Firebase project: `rain-8fb4b`
+- Command: `firebase deploy --project rain-8fb4b --only remoteconfig --non-interactive --json`
+- Published live Remote Config version: 9.
+- CLI version list update time: `2026-06-06 16:09:17` local time.
+- After readback: stable/demo Android/Windows advertise `1.0.8+9`.
+- Legacy fallback `min_required_version`: `1.0.8`.
+- Local evidence folder: `artifacts\remoteconfig\2026-06-06-update-warning-1.0.8`.
+- Remaining proof: launch old `1.0.7+8` and current `1.0.8+9` installed apps against live Remote Config to verify user-facing required/current states.
+
 ### 2026-06-06 Live Remote Config Deploy And Readback
 
 - Firebase project: `rain-8fb4b`
@@ -52,7 +78,7 @@ Local Phase 8 proof is structural. Cloud release proof still requires running th
 - Root cause: `rain-test-116-1` and `rain-test-117-1` were both app metadata `1.0.7+8`, and live Remote Config also advertised `1.0.7+8`; installed `1.0.7+8` clients therefore correctly evaluated as `current`.
 - Local fix: app package metadata, checked-in Remote Config template, and release manifest example now advertise `1.0.8+9`.
 - Regression: `apps/rain/test/version_metadata_test.dart` now proves both `1.0.6+7` and `1.0.7+8` installed builds receive `updateRequired` from the checked-in template.
-- Operational gate: publish matching `1.0.8+9` artifacts before deploying the `1.0.8+9` Remote Config policy, then read live policy back and verify old installed apps show the update gate.
+- Operational gate status: matching `1.0.8+9` artifacts were published as `rain-test-118-1`, then live Remote Config was deployed/read back as version 9 advertising `1.0.8+9`.
 
 ### 2026-06-04 Cloud Update Warning Gate And Artifact Proof
 

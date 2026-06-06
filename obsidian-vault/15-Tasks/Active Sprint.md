@@ -30,7 +30,7 @@ Stabilize the highest-risk auth/startup, call, and release-readiness foundations
 - Cached identity cannot restore a deleted or wrong-owner backend account.
 - Logout cannot preserve cached identity because backend sign-out failed or because app-exit shutdown started first.
 - Stale locks are tested.
-- Update prompt version comparison is tested; release artifact plus deployed Remote Config verification still required.
+- Update prompt version comparison is tested; `rain-test-118-1` and live Remote Config version 9 prove artifact plus deployed policy for `1.0.8+9`; installed old/current app verification is still required.
 - Release gate does not publish without critical tests.
 
 Related: [[Sprint Planning]], [[Backlog]], [[Weekly Progress]].
