@@ -151,6 +151,9 @@ class DebugSignalingAdapter implements SignalingAdapter {
       context: <String, Object?>{
         'roomId': roomId,
         'role': role.name,
+        'pathTemplate': role == IceRole.caller
+            ? 'rooms/{roomId}/callerICE/{candidateId}'
+            : 'rooms/{roomId}/calleeICE/{candidateId}',
         ..._iceCandidateSummary(candidate),
       },
       action: () => _inner.writeICE(roomId, role, candidate),

@@ -14,6 +14,8 @@ Improves bug reproduction for WebRTC, Firebase, UI state, and runtime failures.
 - `RainDebugLogService` provides a debug facade.
 - Riverpod observer logs provider transitions.
 - Debug signaling adapter logs Firebase/API operation metadata.
+- Debug signaling write failures include sanitized operation context. ICE failures include a path template such as `rooms/{roomId}/callerICE/{candidateId}` or `rooms/{roomId}/calleeICE/{candidateId}`, not the real room id or candidate payload.
+- `lastCrash.context` is exported after sanitizer processing so crash records keep useful non-secret failure metadata even when older debug events are trimmed.
 - Diagnostics export includes summaries.
 - Diagnostics export passes bytes to the platform picker, but Android SAF handles such as `content://...` and `/document/...` are not treated as filesystem paths. Rain writes a real fallback JSON copy under the diagnostics export folder and reports that path when the picker returns a platform-managed handle.
 
@@ -21,6 +23,7 @@ Improves bug reproduction for WebRTC, Firebase, UI state, and runtime failures.
 
 - No raw SDP.
 - No raw ICE candidate strings.
+- No raw Firebase room ids in path diagnostics; use templates or pseudonyms.
 - No message text.
 - No file bytes.
 - No passwords, tokens, secrets, credentials.

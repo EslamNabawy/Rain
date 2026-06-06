@@ -104,6 +104,7 @@ final class CrashDiagnosticsDebugLogService implements RainDebugLogService {
       stackTrace,
       source: source,
       fatal: fatal,
+      context: context,
     );
     _diagnostics.recordEventSync(
       category: 'debug_error',

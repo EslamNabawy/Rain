@@ -226,6 +226,28 @@ void main() {
     },
   );
 
+  test('queued local ICE after disconnect does not write stale room', () async {
+    final adapter = _RecordingSignalingAdapter();
+    late _FakePeerCore peer;
+    final brain = ProtocolBrainImpl(
+      selfUsername: 'alice',
+      adapter: adapter,
+      peerConfig: _fakePeerConfig(),
+      peerFactory: () {
+        peer = _FakePeerCore();
+        return peer;
+      },
+      connectionMemoryStore: _MemoryConnectionStore(),
+    );
+
+    await brain.connect('bob');
+    peer.emitIceCandidate(RTCIceCandidate('candidate:1 1 udp', '0', 0));
+    await brain.disconnect('bob');
+    await pumpEventQueue(times: 4);
+
+    expect(adapter.writtenIce, isEmpty);
+  });
+
   test('session changes are emitted when peer becomes connected', () async {
     final adapter = _RecordingSignalingAdapter();
     late _FakePeerCore peer;
@@ -897,6 +919,7 @@ PeerConfig _fakePeerConfig() {
 class _RecordingSignalingAdapter implements SignalingAdapter {
   final List<String> writtenOffers = <String>[];
   final List<String> writtenAnswers = <String>[];
+  final List<String> writtenIce = <String>[];
   final List<String> deletedRooms = <String>[];
   final List<SDPPayload> writtenOfferPayloads = <SDPPayload>[];
   final Map<String, SDPPayload> storedAnswers = <String, SDPPayload>{};
@@ -959,6 +982,7 @@ class _RecordingSignalingAdapter implements SignalingAdapter {
     if (error != null) {
       throw error;
     }
+    writtenIce.add('$roomId:${role.name}');
   }
 
   @override

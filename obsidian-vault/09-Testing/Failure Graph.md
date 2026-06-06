@@ -164,6 +164,23 @@ Current local evidence: `connection_diagnostics_test.dart`, `chat_panel_connecti
 Related assumptions: ASSUMP-003, ASSUMP-009, ASSUMP-013.
 Related risks: R-005, R-009, R-020.
 
+### FG-011: Stale Data ICE Callback To Permission Denied
+
+```text
+Disconnect, reconnect, or room cleanup starts while local ICE callback is queued
+  -> Firebase data-peer room is deleted or replaced
+  -> Stale callback writes old `callerICE` or `calleeICE` path
+  -> RTDB role/existence rule denies `signaling.writeICE`
+  -> Direct connect attempt dies or diagnostic points at Firebase permission
+  -> Need generation-bound local ICE writes plus room deletion after peer binding disposal
+```
+
+Interruption point: local ICE write listener in `ProtocolBrainImpl`.
+Current local evidence: `packages/protocol_brain/test/protocol_brain_test.dart --plain-name "ICE"` covers both live ICE write failure surfacing as a failed session and queued local ICE after disconnect not writing a stale room.
+
+Related assumptions: ASSUMP-002, ASSUMP-011.
+Related risks: R-014, R-015.
+
 ## Scenario Generation Rule
 
 For each new bug, RCA, or failed test:

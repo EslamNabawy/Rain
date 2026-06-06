@@ -57,6 +57,7 @@ class _ActiveSession {
   }
 
   Future<void> disposePeerBindings() async {
+    bound = false;
     cancelHandshakeTimeout();
     await answerSubscription?.cancel();
     answerSubscription = null;

@@ -117,9 +117,9 @@ class ProtocolBrainImpl implements ProtocolBrain {
     }
     _sessions.remove(peerId);
     if (active != null) {
+      await active.dispose();
       await _deleteRoomSilently(active);
     }
-    await active?.dispose();
     _peerDisconnectedController.add(peerId);
   }
 
@@ -433,19 +433,48 @@ class ProtocolBrainImpl implements ProtocolBrain {
       return;
     }
     active.bound = true;
+    final boundPeer = active.peer;
+    final boundGeneration = active.peerGeneration;
+    final boundRoomId = active.roomId;
 
     active.subscriptions.add(
       active.peer.onIceCandidate.listen((RTCIceCandidate candidate) async {
-        _markPhase(
-          active,
-          SessionPhase.exchangingIce,
-          'Sending local ICE candidate.',
-        );
-        try {
-          await adapter.writeICE(active.roomId, localRole, candidate);
-        } catch (error) {
-          _handleLocalIceWriteError(active, error);
-        }
+        await active.runPeerOperation(() async {
+          if (!_canWriteLocalIce(
+            active,
+            boundPeer: boundPeer,
+            boundGeneration: boundGeneration,
+            boundRoomId: boundRoomId,
+          )) {
+            return;
+          }
+          _markPhase(
+            active,
+            SessionPhase.exchangingIce,
+            'Sending local ICE candidate.',
+          );
+          if (!_canWriteLocalIce(
+            active,
+            boundPeer: boundPeer,
+            boundGeneration: boundGeneration,
+            boundRoomId: boundRoomId,
+          )) {
+            return;
+          }
+          try {
+            await adapter.writeICE(active.roomId, localRole, candidate);
+          } catch (error) {
+            if (!_canWriteLocalIce(
+              active,
+              boundPeer: boundPeer,
+              boundGeneration: boundGeneration,
+              boundRoomId: boundRoomId,
+            )) {
+              return;
+            }
+            _handleLocalIceWriteError(active, error);
+          }
+        });
       }),
     );
 
@@ -542,6 +571,21 @@ class ProtocolBrainImpl implements ProtocolBrain {
         }
       }),
     );
+  }
+
+  bool _canWriteLocalIce(
+    _ActiveSession active, {
+    required PeerCore boundPeer,
+    required int boundGeneration,
+    required String boundRoomId,
+  }) {
+    return _sessions[active.peerId] == active &&
+        active.shouldReconnect &&
+        active.bound &&
+        active.roomId == boundRoomId &&
+        active.peerGeneration == boundGeneration &&
+        identical(active.peer, boundPeer) &&
+        active.snapshot.state != SessionState.failed;
   }
 
   Future<void> _handlePeerClosed(_ActiveSession active) async {

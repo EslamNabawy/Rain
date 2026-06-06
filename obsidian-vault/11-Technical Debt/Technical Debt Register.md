@@ -309,6 +309,7 @@ Source: [[2026-06-05 Senior Audit Remediation Plan]]
 - Resolution Strategy: Add recursive denylist sanitization, string caps, export tests, and diagnostics-only summaries.
 - Progress Note 2026-06-03: The Android diagnostics export path failure from the RCA is mitigated. `CrashDiagnosticsService` now treats SAF `/document/...` and `/tree/...` handles as platform-managed picker outputs and does not open them through `dart:io`. 2026-06-04 strengthening: when the picker returns a platform-managed handle, Rain writes and reports a real fallback JSON file under the diagnostics export folder; regression coverage locks both content URI and `/document/...` behavior.
 - Progress Note 2026-06-05: Senior audit Phase 4 added `DiagnosticsSanitizer` as the shared recursive sanitizer for crash diagnostics and debug logs. It pseudonymizes peer/call/room/user/pair/file/path/Firebase path values, redacts secrets, message-like payloads, SDP, ICE candidates, ciphertext, nonce/MAC, and file bytes, and re-sanitizes final export payloads before JSON encoding. Focused diagnostics export and sanitizer regression tests passed locally; future diagnostic fields that can carry private data still need focused redaction proof.
+- Progress Note 2026-06-06: `CrashDiagnosticsRecord` now supports sanitized context metadata, and `RainDebugLogService` passes operation context into `recordErrorSync`. The debug signaling adapter includes ICE path templates for `writeICE` failures, so diagnostics can identify `rooms/{roomId}/callerICE/{candidateId}` or `rooms/{roomId}/calleeICE/{candidateId}` without exposing actual room ids or raw candidates. Focused debug-log and crash-diagnostics tests passed locally.
 
 ### TD-011: Malformed Signaling Write Protection
 
@@ -326,6 +327,7 @@ Source: [[2026-06-05 Senior Audit Remediation Plan]]
 - Related Systems: [[Firebase Architecture]], [[Rules Strategy]], [[Signaling Architecture]], [[Lease Management]].
 - Roadmap Tasks: TASK-005.
 - Resolution Strategy: Encode shape, ownership, timestamp, and state-transition guards in RTDB rules and prove them with emulator tests.
+- Progress Note 2026-06-06: Data-peer ICE rules remain intentionally role-owned. Existing rules-contract tests assert `callerICE` cannot be written by the canonical callee and `calleeICE` cannot be written by the canonical caller. The `signaling.writeICE` diagnostic was handled by preventing stale queued local ICE callbacks after disconnect/room deletion, not by loosening RTDB ownership.
 
 ### TD-012: Spark-Free-Tier Guardrails Are Not Fully Instrumented
 
@@ -420,6 +422,7 @@ Source: [[2026-06-05 Senior Audit Remediation Plan]]
 - Progress Note 2026-06-03: Call setup diagnostics now retain Firebase room status transitions in the runtime and include them in `VoiceCallDiagnostics`. Remote terminal-room failure reconciliation also records diagnostics, so failed setup reports can show `ringing -> accepted -> failed` instead of an empty room timeline. Phase 08 added regressions for WebRTC transceiver/SDP native error sanitization, Firebase permission-denied setup messages, network-loss terminal messages, failed call suite state, terminal-room-before-session-hangup ordering, failed-media terminal writes, and already-terminal cleanup classification. Full ICE/TURN route and candidate classification remains open.
 - Progress Note 2026-06-05: `CallErrorClassifier` now centralizes call failure reason/message/taxonomy/retry classification and focused tests cover native media errors, TURN failures, local camera/microphone permission, stale lock repair, Firebase permission denied, terminal rooms, and malformed remote signaling data. Full selected-route, candidate, first-track, and first-frame diagnostics remain open.
 - Progress Note 2026-06-06: Renderer diagnostics now distinguish `video_renderer_failed`, `stale_renderer_callback_ignored`, and `peer_ui_state_split_detected`; focused renderer regression tests prove live local/remote renderer failures become `videoRendererFailed`. Full ICE/TURN route and real device media proof remain open.
+- Progress Note 2026-06-06: Direct data-peer ICE lifecycle diagnostics now have one deterministic local regression: queued local ICE after disconnect does not write the stale Firebase room, while active current-session ICE write failure still fails the session. This reduces false Firebase-permission root-cause ambiguity but does not replace selected-route/candidate-pair/first-frame diagnostics.
 
 ## DevOps Debt
 

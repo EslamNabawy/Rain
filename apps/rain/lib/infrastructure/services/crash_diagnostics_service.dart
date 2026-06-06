@@ -68,6 +68,7 @@ class CrashDiagnosticsRecord {
     required this.dartVersion,
     this.flutterLibrary,
     this.flutterContext,
+    this.context = const <String, Object?>{},
   });
 
   factory CrashDiagnosticsRecord.fromJson(Map<String, Object?> json) {
@@ -92,6 +93,7 @@ class CrashDiagnosticsRecord {
       dartVersion: (json['dartVersion'] ?? 'unknown').toString(),
       flutterLibrary: json['flutterLibrary']?.toString(),
       flutterContext: json['flutterContext']?.toString(),
+      context: CrashDiagnosticsService._stringMap(json['context']),
     );
   }
 
@@ -106,6 +108,7 @@ class CrashDiagnosticsRecord {
   final String dartVersion;
   final String? flutterLibrary;
   final String? flutterContext;
+  final Map<String, Object?> context;
 
   Map<String, Object?> toJson() => <String, Object?>{
     'recordedAt': recordedAt.toUtc().toIso8601String(),
@@ -119,6 +122,7 @@ class CrashDiagnosticsRecord {
     'dartVersion': dartVersion,
     if (flutterLibrary != null) 'flutterLibrary': flutterLibrary,
     if (flutterContext != null) 'flutterContext': flutterContext,
+    if (context.isNotEmpty) 'context': context,
   };
 }
 
@@ -229,6 +233,7 @@ class CrashDiagnosticsService {
     required bool fatal,
     String? flutterLibrary,
     String? flutterContext,
+    Map<String, Object?> context = const <String, Object?>{},
   }) {
     final directory = _directory;
     if (directory == null) {
@@ -267,6 +272,7 @@ class CrashDiagnosticsService {
               flutterContext,
               key: 'flutterContext',
             ),
+      context: DiagnosticsSanitizer.sanitizeMap(context),
     );
     final encoded = const JsonEncoder.withIndent('  ').convert(record.toJson());
 

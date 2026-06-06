@@ -125,6 +125,7 @@ Build/automation:
 - 2026-06-04 gate integration update: `build-artifacts.yml` and `validated-release.yml` run explicit `SCN-AUTH-001` through `SCN-AUTH-004` auth lifecycle tests and Obsidian vault validation. Firebase emulator scripts include `integration_account_deletion_emulator_test.dart`, covering account tombstone cleanup and surviving-Auth no-recreate behavior.
 - 2026-06-05 Phase 8 release gate update: `release.yml` is no longer a direct tag-push publish path. It is manual-only, validates before build/publish, requires Remote Config deploy/readback evidence, and publishes `rain-release-metadata.json`. `build-artifacts.yml`, `fast-release.yml`, and `validated-release.yml` also attach metadata. `rain-test-*` releases are test artifacts only; production fast/validated/stable publishing requires Remote Config evidence. Fresh cloud workflow proof remains required before promoting any specific artifact.
 - 2026-06-05 Phase 9 vault enforcement update: `scripts/check_obsidian_vault.ps1` now performs semantic validation for operational register fields in [[Audit Resolution Tracker]], [[Technical Debt Register]], [[Risk Register]], [[BLOCKERS]], [[Project Metrics]], [[Recommended Next Actions]], and [[Repository Map]]. It fails missing owner/priority/evidence/review fields, unsupported active risk/debt statuses, closed blockers without evidence, evidence-ledger gaps, and P0/P1 items without next-action-equivalent fields.
+- 2026-06-06 Phase 3 release proof: `Build Rain Apps` run 27051067657 passed against pushed `dev` SHA `71f02e5b16614fe4c8b40fb9b6ba32ebf8f009cb` and published the Phase 3 call state projection/renderer failure slice. Duplicate dispatch attempts from that session were canceled.
 - 2026-06-04 update warning fix: current app metadata is `1.0.7+8`, and both release manifests advertise `1.0.7+8`. The previous `1.0.6+7` app did not show an update warning because checked-in Remote Config also advertised `1.0.6+7`, which correctly evaluated as `current`. `version_metadata_test.dart` now proves the checked-in Remote Config template returns `updateRequired` for previous `1.0.6+7` stable/demo Android/Windows installs. `Build Rain Apps` run 26963049075 passed on pushed `dev` SHA `f1904e72f1c16773700f0bfa6bcc8ac0fcd7706d` and published `rain-test-109-1` with Android/Windows demo artifacts. Remote Config still must be deployed for installed apps to see the warning.
 - Windows PowerShell local QA/tooling.
 
@@ -133,6 +134,7 @@ Build/automation:
 - Accepted friend: only accepted friends should communicate.
 - Presence: backend online/offline heartbeat with session ownership and freshness.
 - Direct connect: WebRTC data session between accepted peers.
+- Direct connect ICE role rule: `callerICE` is canonical `userA` only and `calleeICE` is canonical `userB` only. Do not fix `writeICE` permission-denied diagnostics by allowing both participants to write both buckets unless the room role model is redesigned and rules/tests are updated.
 - Manual disconnect: user intent that must block automatic recovery until explicit connect.
 - Peer connection UI projection: `ConnectionDiagnostics` is the app-level status projection for link/chat/call/file gates. It separates visual `isConnected` from `canSendData`, so stale data-lane-only states can still send messages without showing false connected UI.
 - Session: protocol-brain peer connection state with chat/control/file channels.
@@ -266,6 +268,8 @@ Latest evidence lock: [ROOT_CAUSE_ANALYSIS.md](../../ROOT_CAUSE_ANALYSIS.md) cor
 
 2026-06-05 false busy update: call creation now routes `activeVoicePairs`, `activeVoiceUsers`, and referenced `voiceCalls` through a shared `VoiceLockReclaimPolicy`. The policy reclaims expired locks, caller-owned or orphan-aged missing-room locks, terminal rooms, caller-owned setup rooms, and expired setup rooms; it does not reclaim live connected rooms, fresh other-owned setup rooms, mismatched participant pairs, or rooms whose call id no longer matches the lock. Firebase claim now retries exactly once after compare-delete cleanup and reports "old call state was cleaned" if a newer lock wins after cleanup so existing retry classification treats it as retryable cleanup, not real busy. A related terminal cleanup fix ignores locally initiated terminal Firebase room echoes while the latched local hangup is still ending/ended, preventing the echo watcher from returning before the original hangup path awaits session/media disposal. Validation evidence: focused protocol policy/signaling tests passed; previously failing hangup/media cleanup cases passed; workspace analyze passed; full `dart run melos run test` passed; Obsidian vault validation passed.
 
+2026-06-06 direct-connect ICE diagnostics update: `rain-diagnostics-2026-06-06T034623-022529Z.json` showed nonfatal `signaling.writeICE` permission denied shortly before a reconnect that stayed in `waitingForOffer`. The checked-in RTDB rules intentionally bind `callerICE` to canonical `userA` and `calleeICE` to canonical `userB`; loosening those buckets to either participant would weaken role integrity. The implemented mitigation is lifecycle ordering: disconnect disposes/cancels peer bindings before deleting the room, and local ICE callbacks must match the active session, peer generation, room id, peer instance, binding state, and non-failed state before writing Firebase. Diagnostics now include sanitized ICE path templates in debug events and `lastCrash.context`. Validation passed: focused protocol ICE, debug-log, and crash-diagnostics tests; `dart pub get`; `dart run melos run analyze`; full `dart run melos run test`; and vault validation.
+
 ## Technical Debt
 
 Primary debt items:
@@ -371,6 +375,7 @@ Hard constraints:
 - Do not introduce paid Firebase requirements unless owner explicitly changes the free-tier constraint.
 - Do not claim local database encryption or encrypted local message history unless [[ADR-010]] is superseded by an implemented, migration-tested encryption phase.
 - No raw SDP, ICE candidate strings, tokens, passwords, ciphertext, message text, or file bytes in diagnostics.
+- Sanitized path templates such as `rooms/{roomId}/callerICE/{candidateId}` are allowed in diagnostics; real Firebase ids and candidate payloads are not.
 - Commit every completed change when work is done, unless user says not to.
 
 Validation defaults:

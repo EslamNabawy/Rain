@@ -17,6 +17,7 @@ Prevents old builds from using incompatible Firebase rules or broken protocols.
 - Required updates block at the root gate before login/home.
 - Optional updates render from the root app surface before login/home and use the existing per-channel/platform/build dismissal key.
 - If the installed app is newer than the Remote Config release policy, Rain reports `remotePolicyOutdated` instead of saying "up to date."
+- The checked-in template currently advertises `1.0.7+8`; an installed `1.0.7+8` app reporting remote `1.0.6+7` means the live Remote Config value was not deployed or read back, not that app metadata is stale in the repository.
 
 ## Edge Cases
 
@@ -25,12 +26,14 @@ Prevents old builds from using incompatible Firebase rules or broken protocols.
 - Invalid remote manifest.
 - Demo vs stable channel.
 - Android build number mismatch.
+- Installed app ahead of live Remote Config policy.
 
 ## Known Issues
 
 - 2026-06-03: Old app optional prompts now render from the root app surface, not only the signed-in home screen.
 - 2026-06-03: Manual check no longer reports "up to date" when the installed app is newer than the release policy; it reports stale policy.
 - Version parser currently treats invalid version parts as zero.
+- 2026-06-06 diagnostics showed `remotePolicyOutdated` because the running app was `1.0.7+8` while live Remote Config still advertised `1.0.6+7`; deploy/readback evidence remains required after release builds.
 
 ## Testing Requirements
 

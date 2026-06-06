@@ -149,10 +149,8 @@ void main() {
       diagnostics: diagnostics,
       enabled: true,
     );
-    final adapter = wrapSignalingAdapterWithDebugLogging(
-      _FakeSignalingAdapter(),
-      debugLog,
-    );
+    final fake = _FakeSignalingAdapter();
+    final adapter = wrapSignalingAdapterWithDebugLogging(fake, debugLog);
 
     await adapter.writeOffer(
       'room-1',
@@ -161,14 +159,38 @@ void main() {
         ts: 1,
       ),
     );
+    await adapter.writeICE(
+      'room-1',
+      IceRole.caller,
+      RTCIceCandidate('candidate:1 1 udp raw', '0', 0),
+    );
+    fake.writeIceError = StateError('permission denied');
+    await expectLater(
+      adapter.writeICE(
+        'room-1',
+        IceRole.caller,
+        RTCIceCandidate('candidate:2 1 udp raw', '0', 0),
+      ),
+      throwsStateError,
+    );
 
     await diagnostics.exportDiagnostics();
     final encoded = await File(exportPath).readAsString();
     final decoded = jsonDecode(encoded) as Map<String, dynamic>;
+    final lastCrash = decoded['lastCrash'] as Map<String, dynamic>;
+    final lastCrashContext = lastCrash['context'] as Map<String, dynamic>;
 
     expect(encoded, contains('writeOffer'));
+    expect(encoded, contains('writeICE'));
+    expect(encoded, contains('rooms/{roomId}/callerICE/{candidateId}'));
     expect(encoded, contains('sdpLength'));
     expect(encoded, isNot(contains('RAW-SDP-SHOULD-NOT-BE-LOGGED')));
+    expect(encoded, isNot(contains('candidate:1 1 udp raw')));
+    expect(encoded, isNot(contains('candidate:2 1 udp raw')));
+    expect(
+      lastCrashContext['pathTemplate'],
+      'rooms/{roomId}/callerICE/{candidateId}',
+    );
     expect(decoded['networkTraceSummary'], isA<Map<String, dynamic>>());
   });
 }
@@ -200,6 +222,8 @@ String _join(String parent, String child) {
 }
 
 final class _FakeSignalingAdapter implements SignalingAdapter {
+  Object? writeIceError;
+
   @override
   Future<void> reauthenticate(String username, String password) async {}
 
@@ -208,6 +232,18 @@ final class _FakeSignalingAdapter implements SignalingAdapter {
 
   @override
   Future<void> writeOffer(String roomId, SDPPayload offer) async {}
+
+  @override
+  Future<void> writeICE(
+    String roomId,
+    IceRole role,
+    RTCIceCandidate candidate,
+  ) async {
+    final error = writeIceError;
+    if (error != null) {
+      throw error;
+    }
+  }
 
   @override
   dynamic noSuchMethod(Invocation invocation) => super.noSuchMethod(invocation);
