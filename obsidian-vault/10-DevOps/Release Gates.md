@@ -33,6 +33,20 @@ Local Phase 8 proof is structural. Cloud release proof still requires running th
 
 ## Latest Local Gate Evidence
 
+### 2026-06-06 Live Remote Config Deploy And Readback
+
+- Firebase project: `rain-8fb4b`
+- Command: `firebase deploy --project rain-8fb4b --only remoteconfig --non-interactive`
+- Previous live Remote Config version: 7.
+- Deployed/read-back live Remote Config version: 8.
+- Readback update time: `2026-06-06T04:43:11.527989Z`.
+- Before readback: stable/demo Android/Windows advertised `1.0.6+7`.
+- After readback: stable/demo Android/Windows advertise `1.0.7+8`.
+- Legacy fallback `min_required_version`: `1.0.7`.
+- Local evidence folder: `artifacts\remoteconfig\2026-06-06-live-policy-fix`.
+- Validation: `flutter test test/version_metadata_test.dart --reporter expanded` from `apps\rain` passed after deployment; `.\scripts\check_obsidian_vault.ps1` must be rerun after this documentation update.
+- Remaining proof: launch an old `1.0.6+7` app and current `1.0.7+8` app against live Remote Config to verify user-facing update behavior.
+
 ### 2026-06-04 Cloud Update Warning Gate And Artifact Proof
 
 - Workflow: `Build Rain Apps`
@@ -48,7 +62,7 @@ Local Phase 8 proof is structural. Cloud release proof still requires running th
 - Published release: https://github.com/EslamNabawy/Rain/releases/tag/rain-test-109-1
 - Published assets: `Rain-Demo-Android-v7a.apk`, `Rain-Demo-Android-v8-v9.apk`, `Rain-Demo-Windows-x64.zip`.
 - Scope: validates pushed `1.0.7+8` update-warning metadata, checked-in Remote Config template behavior, hard release gate, Android demo APKs, and Windows demo portable artifact at commit `f1904e7`.
-- Remaining operational dependency: deploy Firebase Remote Config so already-installed `1.0.6+7` clients can read the newer `1.0.7+8` policy.
+- Remaining operational dependency: device/app read proof that already-installed `1.0.6+7` clients read the newer live `1.0.7+8` policy.
 
 ### 2026-06-04 Local Auth Scenario Gate Integration
 
