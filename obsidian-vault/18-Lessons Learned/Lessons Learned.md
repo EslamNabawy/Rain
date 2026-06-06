@@ -577,6 +577,22 @@ No task is fully complete until the lesson check is done or explicitly marked "n
 - Owner: Engineering/DevOps
 - Status: Open
 
+### LESSON-20260606-035: Android Build Warnings Need Ownership Split
+
+- Date: 2026-06-06
+- Related task: Android run-log follow-up
+- Related system: [[Build Process]], [[Version And Updates]]
+- Related risk/debt: R-018, R-019, TD-023
+- What was learned: Flutter's Android Kotlin Gradle Plugin warning can come from Rain-owned app code and plugin-owned Android modules at the same time. The app-owned warning is actionable locally; plugin-owned warnings require dependency upgrades or upstream plugin migration.
+- What caused delays: Removing the Kotlin plugin declaration entirely let plugin modules fall back to an older Kotlin compiler, which failed against current Kotlin metadata. The correct local boundary is Java app activity plus a `settings.gradle.kts` Kotlin version declaration with `apply false`.
+- What failed: Treating the warning as one problem initially mixed app migration with plugin toolchain selection.
+- What succeeded: Moving `MainActivity` to Java removed the app module's direct KGP application, while keeping Kotlin `2.2.20` in settings preserved third-party plugin compilation. `flutter build apk --debug` passed with only plugin-owned warnings remaining.
+- What should change: Do not re-add app-level `kotlin-android`. Track plugin-owned warnings as dependency debt and upgrade plugins when built-in Kotlin-compatible releases are available.
+- Pattern: Build warnings should be split by ownership before changing dependencies.
+- Follow-up improvement: Keep Remote Config ABT/Analytics warnings separate from update-check failures; do not add Firebase Analytics without a privacy/telemetry decision.
+- Owner: DevOps/Engineering
+- Status: Open
+
 ## Review Cadence
 
 - Review lessons at the end of every completed task.

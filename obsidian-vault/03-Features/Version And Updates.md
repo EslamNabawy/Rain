@@ -19,6 +19,7 @@ Prevents old builds from using incompatible Firebase rules or broken protocols.
 - If the installed app is newer than the Remote Config release policy, Rain reports `remotePolicyOutdated` instead of saying "up to date."
 - The checked-in template currently advertises `1.0.8+9`, because `rain-test-116-1` and `rain-test-117-1` were both `1.0.7+8`; same-version artifacts cannot trigger version-based update warnings.
 - Live Remote Config was deployed/read back on 2026-06-06 as version 9 after `rain-test-118-1` published matching `1.0.8+9` Android/Windows artifacts. Stable/demo Android/Windows now advertise `1.0.8+9`; legacy `min_required_version` is `1.0.8`.
+- Android can log `Could not update ABT experiments` when Remote Config activates without Firebase Analytics. Rain does not use Analytics for update checks, and adding Analytics would change the privacy/telemetry surface; treat this warning as non-blocking unless a future decision explicitly enables Remote Config A/B Testing or personalization.
 
 ## Edge Cases
 

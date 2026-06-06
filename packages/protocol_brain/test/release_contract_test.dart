@@ -234,6 +234,29 @@ void main() {
     expect(gradle, isNot(contains('Signing with the debug keys')));
   });
 
+  test('Android app module does not apply the Kotlin Gradle Plugin', () {
+    final appGradle = _repoFile('apps/rain/android/app/build.gradle.kts');
+    final settingsGradle = _repoFile('apps/rain/android/settings.gradle.kts');
+    final mainActivity = _repoFile(
+      'apps/rain/android/app/src/main/java/com/rainapp/rain/MainActivity.java',
+    );
+
+    expect(appGradle, isNot(contains('id("kotlin-android")')));
+    expect(appGradle, isNot(contains('org.jetbrains.kotlin.android')));
+    expect(appGradle, isNot(contains('kotlinOptions')));
+    expect(
+      settingsGradle,
+      contains(
+        'id("org.jetbrains.kotlin.android") version "2.2.20" apply false',
+      ),
+    );
+    expect(
+      mainActivity,
+      contains('class MainActivity extends FlutterActivity'),
+    );
+    expect(mainActivity, contains('"rain/file_export"'));
+  });
+
   test('Android manifest keeps call permissions install-safe', () {
     final manifest = _repoFile(
       'apps/rain/android/app/src/main/AndroidManifest.xml',

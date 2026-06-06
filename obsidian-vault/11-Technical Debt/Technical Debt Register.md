@@ -464,6 +464,24 @@ Source: [[2026-06-05 Senior Audit Remediation Plan]]
 - Progress Note 2026-06-04: Release metadata drift for the current test build is mitigated. The app is bumped to `1.0.7+8`, both release manifests advertise `1.0.7+8`, and `version_metadata_test.dart` proves previous `1.0.6+7` installs now receive `updateRequired` from the checked-in Remote Config template. `Build Rain Apps` run 26963049075 published `rain-test-109-1` Android/Windows artifacts for SHA `f1904e7`. Remaining debt is deploy evidence that production Remote Config was actually updated for the published artifacts.
 - Progress Note 2026-06-06: Repeated update-warning miss was caused by same-version test artifacts (`1.0.7+8` published again as `rain-test-117-1`). The app and manifests are bumped to `1.0.8+9`, regression coverage proves previous `1.0.7+8` installs receive `updateRequired`, `Build Rain Apps` run 27062729519 published `rain-test-118-1`, and live Remote Config version 9 was deployed/read back advertising `1.0.8+9`. Remaining debt is installed old/current app proof against the live policy.
 
+### TD-023: Plugin-Owned Kotlin Gradle Plugin Warnings
+
+- Category: Operational
+- Status: Open
+- Priority: P2
+- Owner: DevOps/Engineering
+- Title: Flutter plugin Android modules still apply the legacy Kotlin Gradle Plugin.
+- Description: Android debug logs can warn that several third-party Flutter plugins apply the Kotlin Gradle Plugin and may fail in future Flutter/AGP versions.
+- Cause: Plugin Android modules must migrate to AGP built-in Kotlin or publish compatible versions; Rain only controls its own app module.
+- Risk: Future Flutter upgrades can fail Android builds even when Rain's app module no longer applies `kotlin-android`.
+- Cost to Fix: M, about 1-2 days after compatible plugin versions exist.
+- Cost to Ignore: Android release gates can start failing after Flutter/AGP upgrades.
+- Files Affected: `apps/rain/pubspec.yaml`, `apps/rain/android/settings.gradle.kts`, `apps/rain/android/app/build.gradle.kts`.
+- Related Systems: [[Build Process]], [[Release Gates]].
+- Roadmap Tasks: TASK-015, TASK-021.
+- Resolution Strategy: Keep Rain's app module Java/no-KGP, keep the Kotlin plugin version declared in `settings.gradle.kts` with `apply false` for dependency modules, monitor plugin changelogs, and upgrade plugins when built-in Kotlin-compatible versions are available. Do not re-add app-level `kotlin-android` to silence plugin-owned warnings.
+- Progress Note 2026-06-06: Rain's `MainActivity` shim was moved from Kotlin to Java and the app module no longer applies the Kotlin Gradle Plugin. `settings.gradle.kts` still pins Kotlin `2.2.20` for third-party plugin compilation. Remaining KGP warnings are owned by third-party plugin Android modules.
+
 ## UX Debt
 
 ### TD-019: Call UI Surface Instability
