@@ -26,18 +26,21 @@ class _MobileLinkStatusBar extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final scheme = Theme.of(context).colorScheme;
-    final action = status.isConnected ? onDisconnect : onConnect;
+    final useDisconnectAction = status.usesDisconnectAction;
+    final action = useDisconnectAction ? onDisconnect : onConnect;
     final interceptDisabledConnect =
-        !status.isConnected &&
+        !useDisconnectAction &&
         !canConnectNow &&
         connectDisabledReason != null &&
         connectDisabledReason!.trim().isNotEmpty;
-    final actionEnabled = status.isConnected
+    final actionEnabled = useDisconnectAction
         ? canDisconnectNow
         : canConnectNow || interceptDisabledConnect;
-    final actionIcon = status.isConnected ? Icons.link_off : Icons.hub_outlined;
-    final actionLabel = status.isConnected ? 'Disconnect' : 'Connect';
-    final actionTooltip = !status.isConnected && connectDisabledReason != null
+    final actionIcon = useDisconnectAction
+        ? Icons.link_off
+        : Icons.hub_outlined;
+    final actionLabel = useDisconnectAction ? 'Disconnect' : 'Connect';
+    final actionTooltip = !useDisconnectAction && connectDisabledReason != null
         ? connectDisabledReason!
         : actionLabel;
     final detail = _mobileLinkDetail(diagnostics, status);
@@ -165,6 +168,8 @@ Color _linkHaloColor(_ConnectionStatus status) {
   return switch (status.label) {
     'Direct' => RainColors.peerMint,
     'Relay' ||
+    'Data lane only' ||
+    'Out of sync' ||
     'Connecting' ||
     'Recovering' ||
     'Disconnecting' => RainColors.mistCyan,

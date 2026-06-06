@@ -25,6 +25,7 @@ import 'video_call_renderers.dart';
 import 'voice_audio_level.dart';
 import 'voice_call_diagnostics.dart';
 import 'voice_call_state.dart';
+import 'voice_call_terminal_reconciler.dart';
 
 part 'file_transfer_runtime.dart';
 part 'friend_runtime.dart';
@@ -334,6 +335,7 @@ class RainRuntimeController with WidgetsBindingObserver {
   VideoCallRendererState? _lastVideoCallRendererState;
   String? _handledVideoFirstFrameTimeoutCallId;
   String? _lastLoggedVoiceCallStateSignature;
+  String? _lastLoggedPeerUiSplitSignature;
   String? _lastLoggedVideoRendererSignature;
   StreamSubscription<VideoCallRendererState>? _videoCallRendererSubscription;
   final List<StreamSubscription<dynamic>> _voiceSignalingSubscriptions =

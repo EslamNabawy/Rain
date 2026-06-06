@@ -1,6 +1,6 @@
 # Current Architecture
 
-Last updated: 2026-06-05
+Last updated: 2026-06-06
 
 ## Purpose
 
@@ -75,7 +75,7 @@ Layer structure:
 Key app runtimes/controllers:
 
 - `RainRuntimeController` - central app runtime for presence, friends, sessions, messages, files, calls, network loss, app exit, and shutdown.
-- `VoiceCallRuntime` - call runtime extension/path for voice/video call state, signaling, command orchestration, room reconciliation, lock coordination, terminal cleanup, and state mutation. 2026-06-05 Phase 3 moved pure call error classification to `CallErrorClassifier` and app-side voice/video media adapters plus diagnostics mapping to `call_media_session_coordinator.dart`; the remaining runtime decomposition is still open.
+- `VoiceCallRuntime` - call runtime extension/path for voice/video call state, signaling, command orchestration, room reconciliation, lock coordination, terminal cleanup, and state mutation. 2026-06-05 Phase 3 moved pure call error classification to `CallErrorClassifier` and app-side voice/video media adapters plus diagnostics mapping to `call_media_session_coordinator.dart`; 2026-06-06 added renderer target failure authority and pure terminal session-state reconciliation through `VoiceCallTerminalReconciler`. Command, room, and lock extraction remains open.
 - `ConnectionAttemptCoordinator` - peer connect/retry/disconnect intent and recovery state.
 - `RuntimeInteractionGuard` - typed action guard for connect, call, and file-transfer conflicts.
 - `ConnectionRequestRuntime` - offline connection request workflow.
@@ -89,7 +89,7 @@ Key Riverpod systems:
 - `appBootstrapProvider`, `appEnvironmentProvider`, `databaseProvider`, `adapterProvider`, `forceUpdateServiceProvider`.
 - `networkStatusProvider`, `soundEffectsProvider`, `mediaDeviceSettingsProvider`, `turnCredentialServiceProvider`.
 - `identityProvider`, `friendsProvider`, `messagesProvider`, `fileTransfersProvider`.
-- `runtimeControllerProvider`, `connectionsProvider`, `voiceCallProvider`, `videoCallRenderersProvider`.
+- `runtimeControllerProvider`, `connectionsProvider`, `peerConnectionDiagnosticsProvider`, `voiceCallProvider`, `videoCallRenderersProvider`.
 - `connectionRequestProvider`, `connectionRequestAdapterProvider`.
 - `forceUpdateProvider`, `optionalUpdateDismissalProvider`.
 - `callSurfaceProvider`, `callEndPresentationProvider`.
@@ -218,6 +218,7 @@ Runtime state domains:
 - Message runtime: send/resend, incoming delivery, ack tracking, offline queue.
 - File transfer runtime: send/accept/reject/cancel, progress batching, metadata, chunk transfer.
 - Voice/video runtime: global one-call policy, invite/accept/reject/busy/hangup, media setup, terminal state publication, bounded terminal cleanup, mute/deafen/output/camera controls, renderer handling.
+- Peer status projection runtime: `ConnectionDiagnostics` projects peer UI truth from presence freshness, data-session state, manual disconnect intent, connection coordinator state, and active call state. UI should use this projection instead of recomputing connected/failed/recovering/offline status from raw providers.
 - Connection request runtime: offline notification request, confirmation, quota/cooldown, inbound/outbound UI state.
 - Presence runtime: Firebase presence, heartbeats, lifecycle online/offline, freshness checks.
 - Network runtime: connectivity status, backend probe, network lost/available handling.

@@ -62,6 +62,9 @@ class _ChatPanelState extends ConsumerState<_ChatPanel> {
     final connectivitySnapshot = ref.watch(
       peerConnectivityProvider.select((snapshots) => snapshots[widget.peerId]),
     );
+    final diagnostics = ref.watch(
+      peerConnectionDiagnosticsProvider(widget.peerId),
+    );
     final peerOnlineForAction = canChat
         ? connectivitySnapshot?.peerOnlineForAction
         : false;
@@ -69,13 +72,6 @@ class _ChatPanelState extends ConsumerState<_ChatPanel> {
     final usesOfflineConnectionRequest =
         canChat &&
         (connectivitySnapshot?.requiresOfflineConnectionRequest ?? false);
-    final diagnostics = ConnectionDiagnostics.fromConnection(
-      canChat: canChat,
-      isPeerOnline: isPeerOnline,
-      connection: connection,
-      coordinator: runtime?.connectionCoordinatorSnapshotFor(widget.peerId),
-      snapshot: connectivitySnapshot,
-    );
     final messages = ref.watch(messagesProvider(widget.peerId));
     final transfers = ref.watch(fileTransferViewsProvider(widget.peerId));
     final voiceCall = ref.watch(voiceCallProvider);
@@ -108,6 +104,7 @@ class _ChatPanelState extends ConsumerState<_ChatPanel> {
         (!usesOfflineConnectionRequest || !hasPendingOutboundRequest) &&
         !connectionStatus.isBusy &&
         !connectionStatus.isConnected &&
+        !connectionStatus.canSendData &&
         !hasBlockingCall &&
         !hasActiveTransfer;
     final canDisconnectNow =
@@ -1152,7 +1149,7 @@ class _ChatPanelState extends ConsumerState<_ChatPanel> {
       _showErrorSnack(networkError);
       return;
     }
-    if (runtime == null || !connectionStatus.isConnected) {
+    if (runtime == null || !connectionStatus.canSendData) {
       _dispatchWarningSound('chat.file.connect_first');
       _showErrorSnack('Connect first.');
       return;
@@ -1823,14 +1820,6 @@ class _ChatPanelState extends ConsumerState<_ChatPanel> {
     final friends = ref.read(friendsProvider);
     final friend = _currentFriend(friends);
     final canChat = friend?.state == FriendState.friend;
-    final isPeerOnline =
-        peerOnlineOverride ??
-        (canChat
-            ? ref
-                  .read(peerConnectivityProvider)[widget.peerId]
-                  ?.peerOnlineForAction
-            : false) ??
-        false;
     final requiresConnectionRequest = peerOnlineOverride == null
         ? canChat &&
               (ref
@@ -1838,17 +1827,9 @@ class _ChatPanelState extends ConsumerState<_ChatPanel> {
                       ?.requiresOfflineConnectionRequest ??
                   false)
         : !peerOnlineOverride;
-    final connection = ref.read(connectionsProvider).peer(widget.peerId);
     final runtime = ref.read(runtimeControllerProvider).value;
-    final connectivitySnapshot = ref.read(
-      peerConnectivityProvider,
-    )[widget.peerId];
-    final diagnostics = ConnectionDiagnostics.fromConnection(
-      canChat: canChat,
-      isPeerOnline: isPeerOnline,
-      connection: connection,
-      coordinator: runtime?.connectionCoordinatorSnapshotFor(widget.peerId),
-      snapshot: connectivitySnapshot,
+    final diagnostics = ref.read(
+      peerConnectionDiagnosticsProvider(widget.peerId),
     );
     final connectionRequests = ref.read(connectionRequestProvider);
     final outboundRequest = _outboundConnectionRequestForPeer(
@@ -1880,7 +1861,7 @@ class _ChatPanelState extends ConsumerState<_ChatPanel> {
     required bool hasBlockingCall,
     required bool hasActiveTransfer,
   }) {
-    if (connectionStatus.isConnected) {
+    if (connectionStatus.isConnected || connectionStatus.canSendData) {
       return null;
     }
     if (requiresConnectionRequest &&

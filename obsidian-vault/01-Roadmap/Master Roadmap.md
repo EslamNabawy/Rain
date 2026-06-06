@@ -1,6 +1,6 @@
 # Master Roadmap
 
-Last updated: 2026-06-05
+Last updated: 2026-06-06
 
 ## Purpose
 
@@ -32,7 +32,7 @@ This work is the active execution overlay created from the 2026-06-05 senior aud
 | Phase 0: Evidence Lock And Planning Hygiene | P0 | Complete 2026-06-05 | [[2026-06-05 Senior Audit Remediation Plan]], [[Audit Resolution Tracker]], [[Technical Debt Register]], [[Risk Register]], [[BLOCKERS]] | SAR-001 through SAR-012 are visible in tracker/risk/debt/blocker notes with owner, priority, evidence, and release impact. | Vault validation passes and [[Project Metrics]] records branch, commit, command, result, and date. |
 | Phase 1: Peer Presence And Action Authority | P0 | Complete local proof 2026-06-05 | Phase 0, [[Presence Management]], [[Connection Request Notifications]] | Connect, call, and offline request actions use one authoritative peer connectivity snapshot. | `dart pub get`, `dart run melos run analyze`, and `dart run melos run test` passed; Firebase emulator/rules quota proof remains Phase 2. |
 | Phase 2: Firebase Call Lock And Rule Proof | P0 | Complete rule/emulator proof 2026-06-05 | Phase 0, [[Lease Management]], [[Rules Strategy]], [[Emulator Test Matrix]] | Stale/live/newer call locks and malformed call transitions are proven by emulator/rules tests. | Firebase emulator script, backend functions lint/test/audit, Melos analyze/test, and vault validation passed. |
-| Phase 3: Voice Call Runtime Decomposition | P0 | Not Started | Phases 1-2, [[VoiceCallRuntime Refactor]], [[Call State Machine]] | Call command, media, lock, room reconciliation, and error classification ownership is split. | Characterization tests pass before and after extraction. |
+| Phase 3: Voice Call Runtime Decomposition | P0 | Partial local proof 2026-06-06 | Phases 1-2, [[VoiceCallRuntime Refactor]], [[Call State Machine]] | Call command, media, lock, room reconciliation, terminal reconciliation, peer UI projection, renderer failure authority, and error classification ownership are split or explicitly bounded. | Characterization tests pass before and after extraction; 2026-06-06 focused projection, renderer, terminal reconciler, and split-state tests passed locally. Full room/lock/command extraction and device proof remain. |
 | Phase 4: Diagnostics Privacy And Failure Taxonomy | P0/P1 | Mitigated locally 2026-06-05 | Phase 0, [[Diagnostics Sanitization]], [[Privacy Review]] | Diagnostics classify failures without leaking sensitive values. | Recursive sanitizer/export and failure taxonomy tests passed locally; every new private diagnostics field still needs sanitizer regression proof. |
 | Phase 5: Local Data Security Decision | P1 | Not Started | Phase 0, [[Security Roadmap]], [[Privacy Review]] | Local plaintext storage is either accepted explicitly or encryption work is planned separately. | Security/product docs match implementation truth. |
 | Phase 6: Database Scalability | P1 | Mitigated locally 2026-06-05 | Phase 0, [[Index Strategy]], [[Pagination Strategy]], [[Migration Plan]] | Message queries are indexed and conversation loading is bounded. | Drift migration, index, store pagination, provider pagination, workspace analyze/test, and vault validation passed locally; low-power/device frame-budget proof remains follow-up evidence. |
@@ -85,12 +85,13 @@ This work is a P0 launch-blocking remediation stream discovered after the origin
 - Success criteria: Call start, media setup, lease handling, terminal reconciliation, and diagnostics are separable and testable.
 - Definition of done: Coordinator interfaces exist, old behavior is covered by targeted tests, no duplicate runtime truth is introduced, and [[Current Architecture]] is updated.
 - Subtasks:
-  - [ ] TASK-001.1 Define coordinator boundaries and method contracts.
-  - [ ] TASK-001.2 Move diagnostics-only helpers into [[CallDiagnosticsRecorder]].
+  - [x] TASK-001.1 Define coordinator boundaries and method contracts.
+  - [x] TASK-001.2 Move diagnostics-only helpers into [[CallDiagnosticsRecorder]].
   - [ ] TASK-001.3 Move start eligibility into [[CallStartCoordinator]].
   - [ ] TASK-001.4 Move lease creation/repair into [[CallLeaseManager]].
   - [ ] TASK-001.5 Move media capture/session ownership into [[CallMediaCoordinator]].
   - [ ] TASK-001.6 Move terminal state cleanup into [[CallTerminalReconciler]].
+  - [x] TASK-001.7 Add unified peer status projection for split call/data/presence UI truth.
 
 #### Feature AS-02: Call Surface Single Source
 
@@ -159,6 +160,7 @@ This work is a P0 launch-blocking remediation stream discovered after the origin
 - Success criteria: Incoming, outgoing, connecting, active, reconnecting, ending, failed, and ended states are explicit and terminal-safe.
 - Definition of done: No call can remain connecting past timeout; terminal Firebase room beats late frames; runtime returns to idle after terminal cleanup.
 - Progress 2026-06-04: Terminal reconciliation now publishes failed/idle UI state before bounded WebRTC/session cleanup, and regression tests cover state-before-cleanup plus file-transfer guard recovery after failed terminal calls. Remaining work is extracting the explicit state machine and adding device-direction proof.
+- Progress 2026-06-06: Live video renderer failure now writes terminal failed call state with `videoRendererFailed`; late local session idle after terminal failure cannot overwrite failed UI. Unified peer status projection prevents stale data lanes or connected data sessions from showing false Connected when call state is failed/recovering. Remaining work is full state-machine extraction and device-direction proof.
 - Subtasks:
   - [ ] TASK-003.1 Define allowed transitions.
   - [ ] TASK-003.2 Add timeout-to-terminal rules.

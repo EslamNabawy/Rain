@@ -128,7 +128,7 @@ void main() {
     await tester.pump();
     await tester.pump(const Duration(milliseconds: 300));
 
-    expect(find.text('Connected (presence stale)'), findsOneWidget);
+    expect(find.text('Data lane only'), findsOneWidget);
 
     await tester.enterText(find.byType(TextField), 'stale presence send');
     await tester.pump();

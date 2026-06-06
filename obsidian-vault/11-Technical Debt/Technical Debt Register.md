@@ -1,6 +1,6 @@
 # Technical Debt Register
 
-Last updated: 2026-06-05
+Last updated: 2026-06-06
 
 ## Purpose
 
@@ -88,9 +88,9 @@ Source: [[2026-06-05 Senior Audit Remediation Plan]]
 
 | SAR ID | Debt Mapping | Owner | Priority | Dependency | Evidence Required | Release Impact |
 | --- | --- | --- | --- | --- | --- | --- |
-| SAR-001 | TD-001, TD-003, TD-004, TD-016 | Engineering | P0 | Phases 1-2 proof first | Characterization tests, extracted call coordinator tests, and Phase 10 device/media proof. | Public launch blocked while unproven. |
+| SAR-001 | TD-001, TD-003, TD-004, TD-016 | Engineering | P0 | Phases 1-2 proof first | Characterization tests, extracted call coordinator tests, renderer failure tests, split-state projection tests, and Phase 10 device/media proof. | Public launch blocked while unproven. |
 | SAR-002 | TD-002, TD-014, TD-020 | Engineering | P0 | Phase 0 | Phase 1 added authoritative runtime-backed peer snapshot freshness tests; Firebase emulator/device proof remains. | Unsafe action routing is locally mitigated; release confidence still needs Phase 2/10 proof. |
-| SAR-003 | TD-014, TD-020 | Engineering/Product | P0 | SAR-002 | Phase 1 removed `friend.isOnline` from chat action truth and routes through `PeerConnectivitySnapshot.peerOnlineForAction`. | Unsafe connect/request/call UI is locally mitigated; device proof remains. |
+| SAR-003 | TD-014, TD-020 | Engineering/Product | P0 | SAR-002 | Phase 1 removed `friend.isOnline` from chat action truth and routes through `PeerConnectivitySnapshot.peerOnlineForAction`; 2026-06-06 added unified `ConnectionDiagnostics` projection for peer status display/action gates. | Unsafe connect/request/call UI is locally mitigated; device proof remains. |
 | SAR-004 | TD-003, TD-009, TD-011 | Engineering/Security | P0 | Phase 0 | Emulator/rules stale/live/newer-lock matrix. | Call reliability and security blocked. |
 | SAR-005 | TD-010 plus accepted local-data decision | Security/Product | P1 | Phase 0 | Option A accepted 2026-06-05 in [[ADR-010]]; privacy/security docs now state local Drift/SQLite content is plaintext. | Strong local privacy claims remain blocked unless future encryption work lands with migration proof. |
 | SAR-006 | TD-006, TD-007 | Engineering | P1 | Phase 0 | Drift schema/index migration tests and store/provider pagination tests passed locally on 2026-06-05. | Local scale-readiness structure is mitigated; low-power/device frame-budget proof remains before release-scale closure. |
@@ -120,6 +120,7 @@ Source: [[2026-06-05 Senior Audit Remediation Plan]]
 - Roadmap Tasks: TASK-001.
 - Resolution Strategy: Extract call start, lease, media, terminal, and diagnostics ownership behind coordinator contracts, then add characterization and regression tests.
 - Progress Note 2026-06-05: First Phase 3 decomposition slice is complete. `CallErrorClassifier` now owns call failure reason/message/taxonomy/retry classification, and `call_media_session_coordinator.dart` owns app-side audio/video media adapters plus media diagnostics mapping. `VoiceCallRuntime` still owns command orchestration, room reconciliation, lock coordination, state mutation, and terminal cleanup, so TD-001 remains open until those seams are extracted and validated.
+- Progress Note 2026-06-06: Combined Phase 3 slice reduced runtime/state ambiguity but does not close TD-001. Added `VoiceCallTerminalReconciler` for terminal-session-state policy, added renderer target classification in `call_media_session_coordinator.dart`, and moved peer UI truth into `ConnectionDiagnostics`/`peerConnectionDiagnosticsProvider`. Command orchestration, Firebase room reconciliation, lock/lease coordination, and most terminal cleanup remain in `VoiceCallRuntime`.
 
 ### TD-002: RainRuntimeController Domain Concentration
 
@@ -177,6 +178,7 @@ Source: [[2026-06-05 Senior Audit Remediation Plan]]
 - Resolution Strategy: Define explicit allowed transitions, timeouts, terminal reconciliation, and late-frame ignore behavior, then test voice and video paths.
 - Progress Note 2026-06-03: Late voice signaling frames after terminal Firebase rooms now remain structured `late_frame_ignored` diagnostics and no longer replace the latest real crash/error in exports. 2026-06-04 mitigation: terminal-sensitive media signaling sends now preflight the Firebase room before `accept`, `offer`, `answer`, and `mute` writes; missing or terminal rooms are skipped and reconciled before `writeVoiceOffer`/`writeVoiceAnswer` can become debug-adapter crash records. Remaining debt is the full state-machine and terminal reconciliation split.
 - Progress Note 2026-06-04: Terminal reconciliation now has state-before-cleanup ordering. `_settleVoiceCallAfterTerminalRace`, local hangup/fail paths, and cleanup helpers publish failed/idle state before bounded WebRTC/session cleanup, and tests lock that terminal calls do not keep file-transfer guards blocked. Remaining debt is extracting a strict call state machine instead of keeping transition ordering inside the large runtime.
+- Progress Note 2026-06-06: Video renderer failure now follows the terminal state machine instead of remaining a warning-only media issue. Live local renderer failure fails call start with `videoRendererFailed`; live remote renderer attach failure writes terminal failed room state; failed terminal UI state cannot be overwritten by late session idle during cleanup. Remaining debt is full state-machine extraction and device-direction proof.
 
 ### TD-005: Fragmented Call Surface Model
 
@@ -417,6 +419,7 @@ Source: [[2026-06-05 Senior Audit Remediation Plan]]
 - Resolution Strategy: Add sanitized call setup timeline, candidate counts, selected route metadata, first-track/frame events, and taxonomy tests.
 - Progress Note 2026-06-03: Call setup diagnostics now retain Firebase room status transitions in the runtime and include them in `VoiceCallDiagnostics`. Remote terminal-room failure reconciliation also records diagnostics, so failed setup reports can show `ringing -> accepted -> failed` instead of an empty room timeline. Phase 08 added regressions for WebRTC transceiver/SDP native error sanitization, Firebase permission-denied setup messages, network-loss terminal messages, failed call suite state, terminal-room-before-session-hangup ordering, failed-media terminal writes, and already-terminal cleanup classification. Full ICE/TURN route and candidate classification remains open.
 - Progress Note 2026-06-05: `CallErrorClassifier` now centralizes call failure reason/message/taxonomy/retry classification and focused tests cover native media errors, TURN failures, local camera/microphone permission, stale lock repair, Firebase permission denied, terminal rooms, and malformed remote signaling data. Full selected-route, candidate, first-track, and first-frame diagnostics remain open.
+- Progress Note 2026-06-06: Renderer diagnostics now distinguish `video_renderer_failed`, `stale_renderer_callback_ignored`, and `peer_ui_state_split_detected`; focused renderer regression tests prove live local/remote renderer failures become `videoRendererFailed`. Full ICE/TURN route and real device media proof remain open.
 
 ## DevOps Debt
 
@@ -492,6 +495,7 @@ Source: [[2026-06-05 Senior Audit Remediation Plan]]
 - Related Systems: [[Connection Request Notifications]], [[Presence Management]], [[Rules Strategy]], [[Firebase Architecture]].
 - Roadmap Tasks: TASK-023.
 - Resolution Strategy: Resolve online/offline/unknown presence before action, ask explicit confirmation for offline notification, and show fixed messages for every denial.
+- Progress Note 2026-06-06: Chat/link status now consumes `ConnectionDiagnostics` from `peerConnectionDiagnosticsProvider`. `Data lane only` can keep message/file gates aligned through `canSendData` without visually showing `Connected`; manual disconnect, recovering, failed, out-of-sync, connected, stale, ready, and offline states have explicit projection precedence.
 
 ### TD-022: Route-Local Splash And Protected Navigation Gate
 

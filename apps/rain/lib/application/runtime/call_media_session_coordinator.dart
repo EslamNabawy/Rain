@@ -130,13 +130,13 @@ final class VideoVoiceMediaConnection implements VoiceMediaConnection {
     try {
       await _renderers.attachLocalStream(_media.localStream);
     } catch (error, stackTrace) {
-      _onRendererError(
-        VideoCallRendererException(
-          'Video renderer failed while attaching local video stream.',
-          error,
-        ),
-        stackTrace,
+      final rendererError = VideoCallRendererException(
+        'Video renderer failed while attaching local video stream.',
+        error,
+        target: VideoCallRendererTarget.local,
       );
+      _onRendererError(rendererError, stackTrace);
+      Error.throwWithStackTrace(rendererError, stackTrace);
     }
   }
 
@@ -159,27 +159,34 @@ final class VideoVoiceMediaConnection implements VoiceMediaConnection {
     }
     final stream = event.streams.isEmpty ? null : event.streams.first;
     unawaited(
-      _renderers.attachRemoteStream(stream).catchError((
-        Object error,
-        StackTrace stackTrace,
-      ) {
-        _onRendererError(
-          VideoCallRendererException(
-            'Video renderer failed while attaching remote video stream.',
-            error,
-          ),
-          stackTrace,
-        );
-      }),
+      Future<void>.sync(() => _renderers.attachRemoteStream(stream)).catchError(
+        (Object error, StackTrace stackTrace) {
+          _onRendererError(
+            VideoCallRendererException(
+              'Video renderer failed while attaching remote video stream.',
+              error,
+              target: VideoCallRendererTarget.remote,
+            ),
+            stackTrace,
+          );
+        },
+      ),
     );
   }
 }
 
+enum VideoCallRendererTarget { local, remote, unknown }
+
 final class VideoCallRendererException implements Exception {
-  const VideoCallRendererException(this.message, this.cause);
+  const VideoCallRendererException(
+    this.message,
+    this.cause, {
+    this.target = VideoCallRendererTarget.unknown,
+  });
 
   final String message;
   final Object cause;
+  final VideoCallRendererTarget target;
 
   @override
   String toString() => '$message $cause';

@@ -564,6 +564,17 @@ String _mobileLinkDetail(
   ConnectionDiagnostics diagnostics,
   _ConnectionStatus status,
 ) {
+  if (status.statusKind == PeerConnectionUiStatusKind.dataLaneOnly ||
+      status.statusKind == PeerConnectionUiStatusKind.outOfSync ||
+      status.statusKind == PeerConnectionUiStatusKind.recovering ||
+      status.statusKind == PeerConnectionUiStatusKind.failed ||
+      status.statusKind == PeerConnectionUiStatusKind.manuallyDisconnected ||
+      status.statusKind == PeerConnectionUiStatusKind.offline) {
+    return diagnostics.lastError != null &&
+            diagnostics.lastError!.trim().isNotEmpty
+        ? diagnostics.lastError!.trim()
+        : status.detail;
+  }
   if (diagnostics.route.kind == PeerRouteKind.direct) {
     return 'Direct peer route${_routeAddressFamilySuffix(diagnostics.route)}';
   }
@@ -582,132 +593,150 @@ String _mobileLinkDetail(
 
 class _ConnectionStatus {
   const _ConnectionStatus({
+    required this.statusKind,
     required this.label,
     required this.icon,
     required this.color,
     required this.detail,
     this.isBusy = false,
     this.isConnected = false,
+    this.canSendData = false,
     this.canDisconnect = false,
+    this.usesDisconnectAction = false,
   });
 
+  final PeerConnectionUiStatusKind statusKind;
   final String label;
   final IconData icon;
   final Color color;
   final String detail;
   final bool isBusy;
   final bool isConnected;
+  final bool canSendData;
   final bool canDisconnect;
+  final bool usesDisconnectAction;
 }
 
 _ConnectionStatus _connectionStatusForDiagnostics(
   ConnectionDiagnostics diagnostics,
 ) {
-  switch (diagnostics.label) {
-    case 'Unavailable':
+  switch (diagnostics.statusKind) {
+    case PeerConnectionUiStatusKind.unavailable:
       return const _ConnectionStatus(
+        statusKind: PeerConnectionUiStatusKind.unavailable,
         label: 'Unavailable',
         icon: Icons.lock_outline,
         color: Color(0xFF52646D),
         detail: 'Only accepted friends can chat.',
       );
-    case 'Disconnecting':
-      return const _ConnectionStatus(
+    case PeerConnectionUiStatusKind.disconnecting:
+      return _ConnectionStatus(
+        statusKind: PeerConnectionUiStatusKind.disconnecting,
         label: 'Disconnecting',
         icon: Icons.link_off,
-        color: Color(0xFFFBBF24),
-        detail: 'Closing peer session.',
+        color: const Color(0xFFFBBF24),
+        detail: diagnostics.detail,
         isBusy: true,
-        canDisconnect: true,
+        canSendData: diagnostics.canSendData,
+        canDisconnect: diagnostics.canDisconnect,
+        usesDisconnectAction: diagnostics.canDisconnect,
       );
-    case 'Disconnected':
-      return const _ConnectionStatus(
+    case PeerConnectionUiStatusKind.manuallyDisconnected:
+      return _ConnectionStatus(
+        statusKind: PeerConnectionUiStatusKind.manuallyDisconnected,
         label: 'Disconnected',
         icon: Icons.link_off,
-        color: Color(0xFF52646D),
-        detail: 'Manual disconnect. Press Connect to open the peer lane again.',
+        color: const Color(0xFF52646D),
+        detail: diagnostics.detail,
       );
-    case 'Connected':
+    case PeerConnectionUiStatusKind.connected:
       return _ConnectionStatus(
-        label: 'Connected',
-        icon: Icons.hub_outlined,
-        color: const Color(0xFF2DD4A3),
+        statusKind: PeerConnectionUiStatusKind.connected,
+        label: diagnostics.label,
+        icon: diagnostics.route.kind == PeerRouteKind.relay
+            ? Icons.alt_route
+            : Icons.hub_outlined,
+        color: diagnostics.route.kind == PeerRouteKind.relay
+            ? const Color(0xFF7DD3FC)
+            : const Color(0xFF2DD4A3),
         detail: diagnostics.detail,
         isConnected: true,
+        canSendData: diagnostics.canSendData,
         canDisconnect: true,
+        usesDisconnectAction: true,
       );
-    case 'Connected (presence stale)':
+    case PeerConnectionUiStatusKind.dataLaneOnly:
       return _ConnectionStatus(
-        label: 'Connected (presence stale)',
+        statusKind: PeerConnectionUiStatusKind.dataLaneOnly,
+        label: diagnostics.label,
         icon: Icons.warning_amber_rounded,
         color: const Color(0xFFFBBF24),
         detail: diagnostics.detail,
-        isConnected: true,
-        canDisconnect: true,
+        canSendData: diagnostics.canSendData,
+        canDisconnect: diagnostics.canDisconnect,
+        usesDisconnectAction: diagnostics.canDisconnect,
       );
-    case 'Reconnecting...':
+    case PeerConnectionUiStatusKind.outOfSync:
       return _ConnectionStatus(
-        label: 'Reconnecting...',
+        statusKind: PeerConnectionUiStatusKind.outOfSync,
+        label: diagnostics.label,
         icon: Icons.sync,
         color: const Color(0xFFFBBF24),
         detail: diagnostics.detail,
         isBusy: true,
-        canDisconnect: true,
+        canSendData: diagnostics.canSendData,
+        canDisconnect: diagnostics.canDisconnect,
+        usesDisconnectAction: diagnostics.canDisconnect,
       );
-    case 'Direct':
+    case PeerConnectionUiStatusKind.recovering:
       return _ConnectionStatus(
-        label: 'Direct',
-        icon: Icons.hub_outlined,
-        color: const Color(0xFF2DD4A3),
-        detail: diagnostics.detail,
-        isConnected: true,
-        canDisconnect: true,
-      );
-    case 'Relay':
-      return _ConnectionStatus(
-        label: 'Relay',
-        icon: Icons.alt_route,
-        color: const Color(0xFF7DD3FC),
-        detail: diagnostics.detail,
-        isConnected: true,
-        canDisconnect: true,
-      );
-    case 'Recovering':
-      return _ConnectionStatus(
-        label: 'Recovering',
+        statusKind: PeerConnectionUiStatusKind.recovering,
+        label: diagnostics.label,
         icon: Icons.sync,
         color: const Color(0xFFFBBF24),
         detail: diagnostics.detail,
         isBusy: true,
-        canDisconnect: true,
+        canSendData: diagnostics.canSendData,
+        canDisconnect: diagnostics.canDisconnect,
+        usesDisconnectAction: diagnostics.canDisconnect,
       );
-    case 'Connecting':
+    case PeerConnectionUiStatusKind.connecting:
       return _ConnectionStatus(
-        label: 'Connecting',
+        statusKind: PeerConnectionUiStatusKind.connecting,
+        label: diagnostics.label,
         icon: Icons.sync,
         color: const Color(0xFFFBBF24),
         detail: diagnostics.detail,
         isBusy: diagnostics.isBusy,
         isConnected: diagnostics.isConnected,
+        canSendData: diagnostics.canSendData,
         canDisconnect: diagnostics.canDisconnect,
+        usesDisconnectAction: diagnostics.canDisconnect,
       );
-    case 'Failed':
+    case PeerConnectionUiStatusKind.failed:
       return _ConnectionStatus(
-        label: 'Failed',
+        statusKind: PeerConnectionUiStatusKind.failed,
+        label: diagnostics.label,
         icon: Icons.error_outline,
         color: const Color(0xFFFF6B6B),
         detail: diagnostics.detail,
+        canSendData: diagnostics.canSendData,
+        canDisconnect: diagnostics.canDisconnect,
+        usesDisconnectAction:
+            diagnostics.canDisconnect && diagnostics.canSendData,
       );
-    case 'Offline':
-      return const _ConnectionStatus(
+    case PeerConnectionUiStatusKind.offline:
+      return _ConnectionStatus(
+        statusKind: PeerConnectionUiStatusKind.offline,
         label: 'Offline',
         icon: Icons.cloud_off_outlined,
-        color: Color(0xFF52646D),
-        detail: 'Peer is offline. Keep both apps open.',
+        color: const Color(0xFF52646D),
+        detail: diagnostics.detail,
       );
-    default:
+    case PeerConnectionUiStatusKind.ready:
       return _ConnectionStatus(
-        label: 'Ready',
+        statusKind: PeerConnectionUiStatusKind.ready,
+        label: diagnostics.label,
         icon: Icons.wifi_tethering,
         color: const Color(0xFF7DD3FC),
         detail: diagnostics.detail,

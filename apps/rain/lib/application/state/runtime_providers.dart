@@ -18,6 +18,7 @@ import 'package:rain/infrastructure/services/background_services.dart';
 import 'package:rain/infrastructure/services/network_status_service.dart';
 import 'package:rain/infrastructure/services/rain_debug_log_service.dart';
 import 'app_state.dart';
+import 'connection_diagnostics.dart';
 import 'core_providers.dart';
 import 'identity_providers.dart';
 import 'settings_providers.dart';
@@ -205,6 +206,43 @@ final peerConnectivityProvider =
       PeerConnectivityController,
       Map<String, PeerConnectivitySnapshot>
     >(PeerConnectivityController.new);
+
+final peerConnectionDiagnosticsProvider =
+    Provider.family<ConnectionDiagnostics, String>((Ref ref, String peerId) {
+      final normalizedPeerId = peerId.trim().toLowerCase();
+      final friends =
+          ref.watch(friendsProvider).value ?? const <FriendRecord>[];
+      final canChat = friends.any(
+        (FriendRecord friend) =>
+            friend.username == normalizedPeerId &&
+            friend.state == FriendState.friend,
+      );
+      final connection = ref.watch(
+        connectionsProvider.select((ConnectionsState state) {
+          return state.peer(normalizedPeerId);
+        }),
+      );
+      final connectivitySnapshot = ref.watch(
+        peerConnectivityProvider.select((snapshots) {
+          return snapshots[normalizedPeerId];
+        }),
+      );
+      final runtime = ref.watch(runtimeControllerProvider).value;
+      final voiceCall = ref.watch(voiceCallProvider);
+      final peerOnlineForAction = canChat
+          ? connectivitySnapshot?.peerOnlineForAction
+          : false;
+      return ConnectionDiagnostics.fromConnection(
+        canChat: canChat,
+        isPeerOnline: peerOnlineForAction == true,
+        connection: connection,
+        coordinator: runtime?.connectionCoordinatorSnapshotFor(
+          normalizedPeerId,
+        ),
+        snapshot: connectivitySnapshot,
+        voiceCall: voiceCall,
+      );
+    });
 
 @visibleForTesting
 Map<String, PeerConnectivitySnapshot> buildPeerConnectivitySnapshots({

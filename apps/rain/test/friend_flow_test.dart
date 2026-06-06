@@ -13,6 +13,7 @@ import 'package:protocol_brain/protocol_brain.dart';
 import 'package:protocol_brain/protocol_brain.dart' as protocol;
 import 'package:protocol_brain/testing.dart';
 import 'package:rain/infrastructure/signaling/noop_signaling_adapter.dart';
+import 'package:rain/application/runtime/call_media_session_coordinator.dart';
 import 'package:rain/application/runtime/connection_attempt_coordinator.dart';
 import 'package:rain/application/runtime/rain_runtime_controller.dart';
 import 'package:rain/application/runtime/video_call_renderers.dart';
@@ -2786,7 +2787,7 @@ void main() {
     );
 
     test(
-      'local video renderer creation failure does not block Firebase invite',
+      'local video renderer creation failure fails the current video call',
       () async {
         final adapter = RecordingVoiceSignalingAdapter();
         final brain = TestSessionManager();
@@ -2814,22 +2815,27 @@ void main() {
         addTearDown(runtime.dispose);
 
         await runtime.start();
-        await expectLater(runtime.startVideoCall('bob'), completes);
+        await expectLater(
+          runtime.startVideoCall('bob'),
+          throwsA(isA<VideoCallRendererException>()),
+        );
 
-        expect(adapter.rooms, hasLength(1));
-        expect(runtime.voiceCallState.phase, VoiceCallPhase.outgoingRinging);
-        expect(runtime.voiceCallState.failureReason, isNull);
+        expect(runtime.voiceCallState.phase, VoiceCallPhase.failed);
+        expect(
+          runtime.voiceCallState.failureReason,
+          VoiceCallFailureReason.videoRendererFailed,
+        );
         expect(runtime.voiceCallState.hasLocalVideo, isFalse);
         expect(
           (brain.callMediaConnections['bob']! as _TestCallMediaConnection)
               .disposed,
-          isFalse,
+          isTrue,
         );
       },
     );
 
     test(
-      'remote video renderer attach failure keeps the video call alive',
+      'remote video renderer attach failure fails the current video call',
       () async {
         final adapter = RecordingVoiceSignalingAdapter();
         final aliceBrain = TestSessionManager();
@@ -2864,6 +2870,8 @@ void main() {
           createdAt: DateTime.now().millisecondsSinceEpoch,
           gender: RainGender.male,
         );
+        final runtimeEvents = <String>[];
+        final runtimeErrors = <Object>[];
         final aliceRuntime = _runtimeFor(
           db,
           alice,
@@ -2872,6 +2880,31 @@ void main() {
           videoCallRendererFactory: _FailingTestVideoCallRendererFactory(
             throwOnRemoteAttach: true,
           ),
+          eventRecorder:
+              ({
+                required String category,
+                required String name,
+                String severity = 'info',
+                String? message,
+                Map<String, Object?> context = const <String, Object?>{},
+              }) {
+                if (category == 'call' || category == 'connection') {
+                  runtimeEvents.add(
+                    '$category:$name:${context['callPhase']}:${context['rendererTarget']}',
+                  );
+                }
+              },
+          errorRecorder:
+              (
+                Object error,
+                StackTrace? stackTrace, {
+                required String source,
+                required bool fatal,
+                String? flutterLibrary,
+                String? flutterContext,
+              }) {
+                runtimeErrors.add(error);
+              },
         );
         final bobRuntime = _runtimeFor(
           bobDb,
@@ -2884,6 +2917,8 @@ void main() {
         addTearDown(bobRuntime.dispose);
 
         await aliceRuntime.start();
+        await aliceBrain.connect('bob');
+        aliceBrain.markConnected('bob');
         await bobRuntime.start();
         await aliceRuntime.startVideoCall('bob');
         final callId = aliceRuntime.voiceCallState.callId!;
@@ -2901,19 +2936,43 @@ void main() {
         (aliceBrain.callMediaConnections['bob']! as _TestCallMediaConnection)
             .emitRemoteVideoTrack();
 
-        await Future<void>.delayed(Duration.zero);
-        expect(aliceRuntime.voiceCallState.phase, VoiceCallPhase.active);
+        final deadline = DateTime.now().add(const Duration(seconds: 2));
+        while (DateTime.now().isBefore(deadline) &&
+            aliceRuntime.voiceCallState.phase != VoiceCallPhase.failed) {
+          await Future<void>.delayed(const Duration(milliseconds: 20));
+        }
+        if (aliceRuntime.voiceCallState.phase != VoiceCallPhase.failed) {
+          fail(
+            'Timed out waiting for caller video call to fail after remote '
+            'renderer failure; phase=${aliceRuntime.voiceCallState.phase.name}; '
+            'events=$runtimeEvents; errors=$runtimeErrors.',
+          );
+        }
         expect(
-          adapter.rooms[callId]?.status,
-          VoiceCallSignalingStatus.connected,
+          runtimeEvents.any(
+            (event) => event.startsWith('call:video_renderer_failed:'),
+          ),
+          isTrue,
         );
-        expect(adapter.rooms[callId]?.reasonCode, isNull);
-        expect(aliceRuntime.voiceCallState.failureReason, isNull);
+        expect(
+          runtimeEvents.any(
+            (event) =>
+                event.startsWith('connection:peer_ui_state_split_detected:'),
+          ),
+          isTrue,
+        );
+        expect(runtimeErrors, contains(isA<VideoCallRendererException>()));
+        expect(adapter.rooms[callId]?.status, VoiceCallSignalingStatus.failed);
+        expect(adapter.rooms[callId]?.reasonCode, 'videoRendererFailed');
+        expect(
+          aliceRuntime.voiceCallState.failureReason,
+          VoiceCallFailureReason.videoRendererFailed,
+        );
         expect(aliceRuntime.voiceCallState.hasRemoteVideo, isFalse);
         expect(
           (aliceBrain.callMediaConnections['bob']! as _TestCallMediaConnection)
               .disposed,
-          isFalse,
+          isTrue,
         );
         await expectLater(
           aliceRuntime.sendMessage('bob', 'chat still works after video fail'),

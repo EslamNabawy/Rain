@@ -2316,12 +2316,15 @@ extension VoiceCallRuntime on RainRuntimeController {
     if (!_isLiveVoiceCallSession(session)) {
       return;
     }
-    if (_isTerminalVoiceCallSessionLatched(session) &&
-        sessionState.phase != VoiceCallSessionPhase.idle) {
-      _recordLateVoiceFrame(
-        session,
-        'ignored ${sessionState.phase.name} state after terminal room',
-      );
+    final terminalDecision = VoiceCallTerminalReconciler.sessionStateDecision(
+      terminalLatched: _isTerminalVoiceCallSessionLatched(session),
+      current: _voiceCallState,
+      callId: session.callId,
+      sessionEpoch: session.sessionEpoch,
+      incomingPhase: sessionState.phase,
+    );
+    if (!terminalDecision.shouldApply) {
+      _recordLateVoiceFrame(session, terminalDecision.ignoredReason!);
       return;
     }
     final mappedPhase = _mapVoiceCallSessionPhase(sessionState.phase);
@@ -3274,18 +3277,69 @@ extension VoiceCallRuntime on RainRuntimeController {
     Object error,
     StackTrace stackTrace,
   ) {
+    final normalizedPeerId = _normalizedUsername(peerId);
+    final current = _voiceCallState;
+    final isCurrentLiveVideoCall =
+        current.peerId == normalizedPeerId &&
+        current.isVideo &&
+        current.phase != VoiceCallPhase.idle &&
+        current.phase != VoiceCallPhase.failed &&
+        current.phase != VoiceCallPhase.ending &&
+        current.phase != VoiceCallPhase.ended;
+    final rendererTarget = error is VideoCallRendererException
+        ? error.target.name
+        : VideoCallRendererTarget.unknown.name;
+    if (!isCurrentLiveVideoCall) {
+      _recordRuntimeEvent(
+        category: 'call',
+        name: 'stale_renderer_callback_ignored',
+        severity: 'warning',
+        message: error.toString(),
+        context: <String, Object?>{
+          'peerId': normalizedPeerId,
+          'rendererTarget': rendererTarget,
+          'currentPeerId': current.peerId,
+          'currentCallId': current.callId,
+          'currentPhase': current.phase.name,
+        },
+      );
+      return;
+    }
     _recordRuntimeEvent(
       category: 'call',
       name: 'video_renderer_failed',
       severity: 'error',
       message: error.toString(),
-      context: <String, Object?>{'peerId': peerId},
+      context: <String, Object?>{
+        ..._voiceCallEventContext(current),
+        'peerId': normalizedPeerId,
+        'rendererTarget': rendererTarget,
+      },
     );
     errorRecorder?.call(
       error,
       stackTrace,
       source: 'video-call-renderer',
       fatal: false,
+    );
+    _recordVoiceCallRuntimeFailure(
+      current,
+      failureCode: _voiceCallVideoRendererFailedReasonCode,
+      userMessage: _voiceCallVideoFailed,
+      nativeError: error.toString(),
+    );
+    if (error is VideoCallRendererException &&
+        error.target == VideoCallRendererTarget.local) {
+      return;
+    }
+    unawaited(
+      _endVoiceCallForPeer(
+        normalizedPeerId,
+        notifyPeer: true,
+        detail: _voiceCallVideoFailed,
+        failureReason: VoiceCallFailureReason.videoRendererFailed,
+        failureDetail: _voiceCallVideoFailed,
+      ),
     );
   }
 
@@ -4485,6 +4539,55 @@ extension VoiceCallRuntime on RainRuntimeController {
       severity: severity,
       message: state.detail,
       context: _voiceCallEventContext(state),
+    );
+    _recordPeerUiStateSplitIfNeeded(state);
+  }
+
+  void _recordPeerUiStateSplitIfNeeded(VoiceCallState state) {
+    final peerId = state.peerId;
+    if (peerId == null) {
+      return;
+    }
+    final callSideIsTerminalOrRecovering =
+        state.phase == VoiceCallPhase.failed || state.mediaReconnecting;
+    if (!callSideIsTerminalOrRecovering) {
+      return;
+    }
+    final session = brain?.getSession(peerId);
+    if (session == null ||
+        (session.state != SessionState.connected &&
+            session.state != SessionState.reconnecting)) {
+      return;
+    }
+    final signature = <Object?>[
+      peerId,
+      state.callId,
+      state.sessionEpoch,
+      state.phase,
+      state.mediaReconnecting,
+      state.failureReason,
+      session.state,
+      session.roomId,
+    ].join('|');
+    if (_lastLoggedPeerUiSplitSignature == signature) {
+      return;
+    }
+    _lastLoggedPeerUiSplitSignature = signature;
+    _recordRuntimeEvent(
+      category: 'connection',
+      name: 'peer_ui_state_split_detected',
+      severity: 'warning',
+      message:
+          'Call state and peer data-session state require projected UI precedence.',
+      context: <String, Object?>{
+        'peerId': peerId,
+        'callId': state.callId,
+        'callPhase': state.phase.name,
+        'callMediaReconnecting': state.mediaReconnecting,
+        'failureReason': state.failureReason?.name,
+        'sessionState': session.state.name,
+        'sessionId': session.roomId,
+      },
     );
   }
 

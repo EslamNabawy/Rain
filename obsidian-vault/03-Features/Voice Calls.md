@@ -17,6 +17,7 @@ Real-time private communication.
 - Terminal Firebase room state should end both peers.
 - Failed setup diagnostics include Firebase room status transitions so reports can distinguish ringing, accepted, connected, failed, and ended phases.
 - Late terminal-sensitive media signaling sends (`accept`, `offer`, `answer`, `mute`) preflight the Firebase call room before writing. If the room is missing or terminal, Rain records `voice_late_media_frame_ignored_after_terminal`, reconciles the active session, and does not let the debug signaling adapter record a crash-level write failure.
+- Peer link surfaces must not display `Connected` only because a data channel is open while call state is failed or recovering. Call terminal/recovery state wins in the unified peer status projection.
 
 ## Dependencies
 
@@ -34,6 +35,7 @@ Real-time private communication.
 - Stale call lock.
 - App closed mid-call.
 - Network switch mid-call.
+- Data lane remains open while call state is failed, recovering, or terminal.
 
 ## Known Issues
 
@@ -42,6 +44,7 @@ Real-time private communication.
 - Voice hangup reliability has been reported weaker than video.
 - Call setup diagnostics were strengthened on 2026-06-03, but full device-level reliability remains a launch blocker until smoke evidence proves both directions.
 - 2026-06-04 mitigation: a PC-side crash after the remote peer ended the call was traced to `_createAndSendOffer` writing an offer after Firebase room status was already terminal. Runtime now skips late terminal-sensitive media signaling writes before they reach `writeVoiceOffer`/`writeVoiceAnswer`.
+- 2026-06-06 mitigation: split call/data-session UI truth is reduced through `peerConnectionDiagnosticsProvider`. Failed call and media-recovering state take precedence over connected data-session status, and split cases emit `peer_ui_state_split_detected`.
 
 ## Testing Requirements
 

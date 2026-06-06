@@ -1,6 +1,6 @@
 # Failure Graph
 
-Last updated: 2026-06-05
+Last updated: 2026-06-06
 
 ## Purpose
 
@@ -147,6 +147,22 @@ Large file or slow receiver
 
 Related assumptions: ASSUMP-014, ASSUMP-011.
 Related risks: R-011.
+
+### FG-010: Split Peer UI Truth To False Connected
+
+```text
+Data lane remains open while presence is stale or call state is failed/recovering
+  -> One UI surface reads data-session truth and another reads call/presence truth
+  -> User sees Connected beside Failed, Recovering, Offline, or stale state
+  -> User starts wrong action or mistrusts call/chat status
+  -> Need one peer status projection plus split-state diagnostics
+```
+
+Interruption point: `ConnectionDiagnostics` projection precedence and `peerConnectionDiagnosticsProvider`.
+Current local evidence: `connection_diagnostics_test.dart`, `chat_panel_connectivity_test.dart`, and `friend_flow_test.dart --plain-name "video renderer"` cover failed/recovering/data-lane split behavior and `peer_ui_state_split_detected`.
+
+Related assumptions: ASSUMP-003, ASSUMP-009, ASSUMP-013.
+Related risks: R-005, R-009, R-020.
 
 ## Scenario Generation Rule
 

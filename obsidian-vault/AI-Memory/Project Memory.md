@@ -1,6 +1,6 @@
 # Project Memory
 
-Last updated: 2026-06-05
+Last updated: 2026-06-06
 
 ## Purpose
 
@@ -81,6 +81,8 @@ Main ownership:
 
 2026-06-05 Phase 2 senior audit remediation: Firebase call lock/rule proof is locally complete. Emulator tests cover terminal leftover locks, missing inbox cleanup, malformed voice lock/inbox writes, unauthorized transitions, oversized terminal payload denial, and denied-write state preservation. Contract tests lock server-authoritative voice lock transactions and compare-delete fallback behavior. Device media-direction proof remains separate Phase 10 evidence.
 
+2026-06-06 Phase 3 combined remediation: peer UI status now comes from one `ConnectionDiagnostics` projection exposed by `peerConnectionDiagnosticsProvider`, combining data session, backend presence freshness, manual disconnect intent, connection coordinator state, and active call state. Stale presence plus open data lane renders as `Data lane only`, not `Connected`, while messaging can still be allowed through `canSendData`. Failed/terminal state, manual disconnect, recovering, out-of-sync, connected, data-lane-only, and ready/offline precedence is covered by focused tests. Video renderer failure is terminal for live video calls: local renderer failure fails start with `videoRendererFailed`, remote renderer attach failure writes terminal failed Firebase room state, and failed terminal UI state cannot be overwritten by late local session idle during cleanup. Split call/data-session truth records `peer_ui_state_split_detected`. Full `VoiceCallRuntime` command, lock, and room reconciliation extraction remains open.
+
 2026-06-05 Phase 10 senior audit remediation: device/media proof is scoped but not release-proven. `apps/rain/integration_test/device_media_reality_proof_test.dart` is an opt-in Flutter integration test that uses the real `FlutterWebRTCBridge` and `DefaultCallMediaConnection` to require microphone and, by default, camera tracks. It must be run with `--dart-define=RAIN_DEVICE_MEDIA_PROOF=true` on an attached device/emulator. The 2026-06-05 environment probe found no attached Android device; `QA_Medium_API_36_1` exists but was not running, and saved Appium artifacts only show auth-smoke WebDriver timeouts. BLK-001/BLK-007 remain open for actual device/cross-peer evidence.
 
 Primary architecture source: [[Current Architecture]].
@@ -132,6 +134,7 @@ Build/automation:
 - Presence: backend online/offline heartbeat with session ownership and freshness.
 - Direct connect: WebRTC data session between accepted peers.
 - Manual disconnect: user intent that must block automatic recovery until explicit connect.
+- Peer connection UI projection: `ConnectionDiagnostics` is the app-level status projection for link/chat/call/file gates. It separates visual `isConnected` from `canSendData`, so stale data-lane-only states can still send messages without showing false connected UI.
 - Session: protocol-brain peer connection state with chat/control/file channels.
 - Voice call room: Firebase call signaling record under `voiceCalls`.
 - Voice call inbox: callee-facing Firebase invite record under `voiceCallInboxes`.

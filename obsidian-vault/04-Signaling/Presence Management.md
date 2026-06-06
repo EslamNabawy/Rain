@@ -15,6 +15,7 @@ Detailed implementation planning: [[Presence Management Refactor Plan]].
 - Records whose presence `state` is not `online` are treated as offline even if raw `online` is true.
 - Chat Connect, runtime Connect, connection-request routing, voice/video call start, and network auto-recovery use the shared runtime fresh-presence resolver or authoritative `PeerConnectivitySnapshot`.
 - `friend.isOnline` is display state only for chat actions; action authority comes from runtime-backed peer connectivity snapshots.
+- Peer link display now uses the unified `ConnectionDiagnostics` projection. Stale presence plus an open data session renders as `Data lane only`, so `canSendData` and visual connected state are no longer the same field.
 - Auto-recovery removes stale/offline peers from the recoverable set and records `PeerDisconnectIntent.presenceExpired` instead of reconnecting through stale presence.
 - `presenceExpired` is retained as a terminal peer intent until a later successful explicit reconnect, so UI/diagnostics can distinguish peer-close from transient transport loss.
 
@@ -25,6 +26,7 @@ Detailed implementation planning: [[Presence Management Refactor Plan]].
 - Presence unknown blocks calls and offline request notifications.
 - Auto-recovery must not bypass stale peer truth.
 - UI components must not read raw `BackendIdentity.online` directly for user actions.
+- UI components must not infer visual `Connected` directly from an open data lane when presence is stale or call state is failed/recovering.
 
 ## Required Tests
 
@@ -39,5 +41,6 @@ Detailed implementation planning: [[Presence Management Refactor Plan]].
 - Recovery does not reconnect manually disconnected peers.
 - Recovery does not reconnect stale/offline peers.
 - Local validation note: isolated app tests that touch Drift/SQLite must run through `scripts/run_rain_app_test.ps1` or from `apps/rain`, not from the repository root with a root-relative path.
+- Projection validation note: `connection_diagnostics_test.dart` covers manual disconnect, recovering call precedence, superseded session, connected, and stale data-lane-only states.
 
 Related: [[Presence And Direct Connect]], [[Signaling Reliability Epic]].

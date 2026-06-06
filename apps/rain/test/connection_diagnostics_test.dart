@@ -1,5 +1,6 @@
 import 'package:flutter_test/flutter_test.dart';
 import 'package:protocol_brain/protocol_brain.dart';
+import 'package:rain/application/runtime/voice_call_state.dart';
 import 'package:rain/application/state/app_state.dart';
 import 'package:rain/application/state/connection_diagnostics.dart';
 import 'package:rain/application/state/peer_connectivity_snapshot.dart';
@@ -100,7 +101,8 @@ void main() {
     expect(diagnostics.label, 'Connecting');
     expect(diagnostics.phase, SessionPhase.openingDataChannels);
     expect(diagnostics.detail, 'Detecting route...');
-    expect(diagnostics.isConnected, isTrue);
+    expect(diagnostics.isConnected, isFalse);
+    expect(diagnostics.canSendData, isTrue);
     expect(diagnostics.routeKind, PeerRouteKind.unknown);
   });
 
@@ -140,6 +142,64 @@ void main() {
     },
   );
 
+  test('manual disconnect beats stale data lane and call recovery', () {
+    final diagnostics = ConnectionDiagnostics.fromConnection(
+      canChat: true,
+      isPeerOnline: true,
+      connection: const PeerConnectionView(
+        peerId: 'bob',
+        manualIntent: ManualConnectionIntent.manualDisconnected,
+      ),
+      snapshot: const PeerConnectivitySnapshot(
+        peerId: 'bob',
+        sessionState: SessionState.connected,
+        presenceOnline: false,
+        presenceFresh: false,
+        canSendData: true,
+      ),
+      voiceCall: const VoiceCallState(
+        phase: VoiceCallPhase.active,
+        peerId: 'bob',
+        mediaReconnecting: true,
+      ),
+    );
+
+    expect(
+      diagnostics.statusKind,
+      PeerConnectionUiStatusKind.manuallyDisconnected,
+    );
+    expect(diagnostics.label, 'Disconnected');
+    expect(diagnostics.canSendData, isFalse);
+    expect(diagnostics.isConnected, isFalse);
+  });
+
+  test('recovering call status beats superseded data session', () {
+    final diagnostics = ConnectionDiagnostics.fromConnection(
+      canChat: true,
+      isPeerOnline: true,
+      connection: const PeerConnectionView(peerId: 'bob'),
+      snapshot: const PeerConnectivitySnapshot(
+        peerId: 'bob',
+        sessionState: SessionState.connected,
+        sessionId: 'local-session',
+        presenceOnline: true,
+        presenceFresh: true,
+        backendSessionId: 'backend-session',
+        canSendData: true,
+      ),
+      voiceCall: const VoiceCallState(
+        phase: VoiceCallPhase.active,
+        peerId: 'bob',
+        mediaReconnecting: true,
+      ),
+    );
+
+    expect(diagnostics.statusKind, PeerConnectionUiStatusKind.recovering);
+    expect(diagnostics.label, 'Recovering');
+    expect(diagnostics.isBusy, isTrue);
+    expect(diagnostics.canSendData, isTrue);
+  });
+
   test('connected snapshot overrides offline presence', () {
     final diagnostics = ConnectionDiagnostics.fromConnection(
       canChat: true,
@@ -155,7 +215,30 @@ void main() {
     );
 
     expect(diagnostics.label, 'Connected');
+    expect(diagnostics.statusKind, PeerConnectionUiStatusKind.connected);
     expect(diagnostics.isConnected, isTrue);
+    expect(diagnostics.canSendData, isTrue);
+    expect(diagnostics.canDisconnect, isTrue);
+  });
+
+  test('stale presence with open data lane is not visually connected', () {
+    final diagnostics = ConnectionDiagnostics.fromConnection(
+      canChat: true,
+      isPeerOnline: false,
+      connection: const PeerConnectionView(peerId: 'bob'),
+      snapshot: const PeerConnectivitySnapshot(
+        peerId: 'bob',
+        sessionState: SessionState.connected,
+        presenceOnline: false,
+        presenceFresh: false,
+        canSendData: true,
+      ),
+    );
+
+    expect(diagnostics.statusKind, PeerConnectionUiStatusKind.dataLaneOnly);
+    expect(diagnostics.label, 'Data lane only');
+    expect(diagnostics.isConnected, isFalse);
+    expect(diagnostics.canSendData, isTrue);
     expect(diagnostics.canDisconnect, isTrue);
   });
 
@@ -174,8 +257,36 @@ void main() {
       ),
     );
 
-    expect(diagnostics.label, 'Reconnecting...');
+    expect(diagnostics.statusKind, PeerConnectionUiStatusKind.outOfSync);
+    expect(diagnostics.label, 'Out of sync');
     expect(diagnostics.isBusy, isTrue);
     expect(diagnostics.canDisconnect, isTrue);
+  });
+
+  test('failed call status beats connected data lane', () {
+    final diagnostics = ConnectionDiagnostics.fromConnection(
+      canChat: true,
+      isPeerOnline: true,
+      connection: const PeerConnectionView(peerId: 'bob'),
+      snapshot: const PeerConnectivitySnapshot(
+        peerId: 'bob',
+        sessionState: SessionState.connected,
+        presenceOnline: true,
+        presenceFresh: true,
+        canSendData: true,
+      ),
+      voiceCall: const VoiceCallState(
+        phase: VoiceCallPhase.failed,
+        peerId: 'bob',
+        detail: 'Video renderer failed.',
+        failureReason: VoiceCallFailureReason.videoRendererFailed,
+      ),
+    );
+
+    expect(diagnostics.statusKind, PeerConnectionUiStatusKind.failed);
+    expect(diagnostics.label, 'Failed');
+    expect(diagnostics.isConnected, isFalse);
+    expect(diagnostics.canSendData, isTrue);
+    expect(diagnostics.detail, 'Video renderer failed.');
   });
 }
