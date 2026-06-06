@@ -23,12 +23,14 @@ Rain uses these GitHub Actions workflow layers:
 ## Build Artifacts
 
 For Spark/free-tier connection request builds, deploy Realtime Database rules
-and Remote Config before triggering app artifacts. Do not deploy Cloud Functions
-for this gate.
+before triggering app artifacts. Do not deploy Cloud Functions for this gate.
+Deploy Remote Config only after the matching app artifacts are published when
+the policy is a required update; otherwise old clients can be blocked before a
+download exists.
 
 ```powershell
 cd backend/firebase
-firebase deploy --project rain-8fb4b --only database,remoteconfig --non-interactive
+firebase deploy --project rain-8fb4b --only database --non-interactive
 ```
 
 Use **Actions -> Build Rain Apps -> Run workflow**.
@@ -72,10 +74,11 @@ Free-tier release order:
 
 1. Run Dart/Melos validation.
 2. Run Firebase emulator tests.
-3. Deploy RTDB rules and Remote Config.
+3. Deploy RTDB rules if rules changed.
 4. Push `dev`.
 5. Trigger the app artifact workflow.
 6. Verify Android APK and Windows artifacts.
+7. Deploy Remote Config and read it back after the matching artifacts exist.
 
 Cloud Functions mode is stronger but blocked until the Firebase project can use
 Blaze or until the same server-owned logic is moved to an external free backend

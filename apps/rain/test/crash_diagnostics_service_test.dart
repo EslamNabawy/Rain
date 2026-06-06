@@ -377,8 +377,8 @@ void main() {
     await service.initialize();
     for (var index = 0; index < 220; index += 1) {
       service.recordEventSync(
-        category: 'connection',
-        name: 'session_changed',
+        category: 'diagnostics',
+        name: 'unique_event',
         context: <String, Object?>{
           'index': index,
           'payload': 'network-state-${List<String>.filled(120, 'x').join()}',
@@ -392,8 +392,14 @@ void main() {
         jsonDecode(await File(exportPath).readAsString())
             as Map<String, dynamic>;
     final events = decoded['events'] as List<dynamic>;
-    expect(events.length, lessThanOrEqualTo(200));
-    expect(jsonEncode(events), contains('session_changed'));
+    expect(events, hasLength(200));
+    expect(jsonEncode(events), contains('unique_event'));
+    final firstEvent = events.first as Map<String, dynamic>;
+    final firstContext = firstEvent['context'] as Map<String, dynamic>;
+    final lastEvent = events.last as Map<String, dynamic>;
+    final lastContext = lastEvent['context'] as Map<String, dynamic>;
+    expect(firstContext['index'], 20);
+    expect(lastContext['index'], 219);
   });
 
   test('voice call diagnostics include video counters', () {

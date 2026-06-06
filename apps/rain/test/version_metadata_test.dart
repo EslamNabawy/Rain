@@ -65,36 +65,17 @@ void main() {
   });
 
   test('remote config template warns the previous 1.0.6 build 7 app', () async {
-    final manifest = _remoteConfigManifest();
+    await _expectRemoteConfigWarnsInstalledBuild(
+      version: '1.0.6',
+      buildNumber: '7',
+    );
+  });
 
-    for (final channel in AppUpdateChannel.values) {
-      for (final platform in <String>['android', 'windows']) {
-        final service = ForceUpdateService(
-          remoteConfig: null,
-          updateUrl: 'https://github.com/EslamNabawy/Rain/releases',
-          updateChannel: channel,
-          platform: platform,
-          manifestLoader: () async => manifest,
-          packageInfoLoader: () async => PackageInfo(
-            appName: 'Rain',
-            packageName: 'com.rainapp.rain',
-            version: '1.0.6',
-            buildNumber: '7',
-            buildSignature: '',
-          ),
-        );
-
-        final result = await service.check();
-
-        expect(
-          result.status,
-          ForceUpdateStatus.updateRequired,
-          reason:
-              'Remote Config must warn previous 1.0.6+7 $channel/$platform '
-              'installs after a newer test build is published.',
-        );
-      }
-    }
+  test('remote config template warns the previous 1.0.7 build 8 app', () async {
+    await _expectRemoteConfigWarnsInstalledBuild(
+      version: '1.0.7',
+      buildNumber: '8',
+    );
   });
 
   test('legacy remote config minimum version matches current app version', () {
@@ -141,4 +122,41 @@ String _remoteConfigManifest() {
               as Map<String, dynamic>)['defaultValue']
           as Map<String, dynamic>)['value']
       as String;
+}
+
+Future<void> _expectRemoteConfigWarnsInstalledBuild({
+  required String version,
+  required String buildNumber,
+}) async {
+  final manifest = _remoteConfigManifest();
+
+  for (final channel in AppUpdateChannel.values) {
+    for (final platform in <String>['android', 'windows']) {
+      final service = ForceUpdateService(
+        remoteConfig: null,
+        updateUrl: 'https://github.com/EslamNabawy/Rain/releases',
+        updateChannel: channel,
+        platform: platform,
+        manifestLoader: () async => manifest,
+        packageInfoLoader: () async => PackageInfo(
+          appName: 'Rain',
+          packageName: 'com.rainapp.rain',
+          version: version,
+          buildNumber: buildNumber,
+          buildSignature: '',
+        ),
+      );
+
+      final result = await service.check();
+
+      expect(
+        result.status,
+        ForceUpdateStatus.updateRequired,
+        reason:
+            'Remote Config must warn previous $version+$buildNumber '
+            '$channel/$platform installs after a newer test build is '
+            'published.',
+      );
+    }
+  }
 }

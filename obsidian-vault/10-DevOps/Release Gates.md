@@ -47,6 +47,13 @@ Local Phase 8 proof is structural. Cloud release proof still requires running th
 - Validation: `flutter test test/version_metadata_test.dart --reporter expanded` from `apps\rain` passed after deployment; `.\scripts\check_obsidian_vault.ps1` must be rerun after this documentation update.
 - Remaining proof: launch an old `1.0.6+7` app and current `1.0.7+8` app against live Remote Config to verify user-facing update behavior.
 
+### 2026-06-06 Local Update Warning Metadata Bump
+
+- Root cause: `rain-test-116-1` and `rain-test-117-1` were both app metadata `1.0.7+8`, and live Remote Config also advertised `1.0.7+8`; installed `1.0.7+8` clients therefore correctly evaluated as `current`.
+- Local fix: app package metadata, checked-in Remote Config template, and release manifest example now advertise `1.0.8+9`.
+- Regression: `apps/rain/test/version_metadata_test.dart` now proves both `1.0.6+7` and `1.0.7+8` installed builds receive `updateRequired` from the checked-in template.
+- Operational gate: publish matching `1.0.8+9` artifacts before deploying the `1.0.8+9` Remote Config policy, then read live policy back and verify old installed apps show the update gate.
+
 ### 2026-06-04 Cloud Update Warning Gate And Artifact Proof
 
 - Workflow: `Build Rain Apps`

@@ -462,6 +462,7 @@ Source: [[2026-06-05 Senior Audit Remediation Plan]]
 - Resolution Strategy: Add semantic/build comparison tests, manifest parser tests, required/optional prompt widget tests, and settings check behavior tests.
 - Progress Note 2026-06-03: Update service now has explicit `remotePolicyOutdated` status for stale release manifests, same-version minimum-build upgrades are required updates, optional update prompts render from the root app surface before login/home, and settings manual checks report stale policy instead of "up to date."
 - Progress Note 2026-06-04: Release metadata drift for the current test build is mitigated. The app is bumped to `1.0.7+8`, both release manifests advertise `1.0.7+8`, and `version_metadata_test.dart` proves previous `1.0.6+7` installs now receive `updateRequired` from the checked-in Remote Config template. `Build Rain Apps` run 26963049075 published `rain-test-109-1` Android/Windows artifacts for SHA `f1904e7`. Remaining debt is deploy evidence that production Remote Config was actually updated for the published artifacts.
+- Progress Note 2026-06-06: Repeated update-warning miss was caused by same-version test artifacts (`1.0.7+8` published again as `rain-test-117-1`). The app and manifests are bumped to `1.0.8+9`, and regression coverage now proves previous `1.0.7+8` installs receive `updateRequired` from the checked-in template. Remaining debt is artifact publication plus live Remote Config deploy/readback evidence for `1.0.8+9`.
 
 ## UX Debt
 

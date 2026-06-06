@@ -135,6 +135,22 @@ void main() {
         ),
         'turn_unavailable',
       );
+      expect(
+        CallErrorClassifier.failureTaxonomy(
+          failureCode: 'busy',
+          userMessage: 'Busy.',
+          nativeError: 'Busy.',
+        ),
+        'peer_busy_response',
+      );
+      expect(
+        CallErrorClassifier.failureTaxonomy(
+          failureCode: 'signalingFailed',
+          userMessage: 'Peer is busy.',
+          nativeError: 'activeVoiceUsers/bob already in a call',
+        ),
+        'real_busy_lock',
+      );
     });
   });
 }

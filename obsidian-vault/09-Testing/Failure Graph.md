@@ -181,6 +181,23 @@ Current local evidence: `packages/protocol_brain/test/protocol_brain_test.dart -
 Related assumptions: ASSUMP-002, ASSUMP-011.
 Related risks: R-014, R-015.
 
+### FG-012: Diagnostics Sanitizer To Lost Causal Events
+
+```text
+Crash diagnostics builds summaries from 200 recent events
+  -> Recursive sanitizer applies the generic 20-item list cap to top-level `events`
+  -> Export keeps only heartbeat/UI tail records
+  -> Call/failure events appear in summaries but not in raw event evidence
+  -> Postmortem cannot prove why a room went terminal or busy
+  -> Need top-level event-window preservation plus focused export tests
+```
+
+Interruption point: `CrashDiagnosticsService.exportDiagnostics`.
+Current local evidence: `crash_diagnostics_service_test.dart --plain-name "app event log is bounded when exported"` proves the sanitized export keeps the 200-record window.
+
+Related assumptions: ASSUMP-008, ASSUMP-011.
+Related risks: R-015.
+
 ## Scenario Generation Rule
 
 For each new bug, RCA, or failed test:

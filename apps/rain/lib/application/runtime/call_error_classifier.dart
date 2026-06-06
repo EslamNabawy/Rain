@@ -157,7 +157,11 @@ final class CallErrorClassifier {
         normalized.contains('candidate frame')) {
       return 'malformed_remote_data';
     }
-    if (normalized.contains('ice timeout') || normalized.contains('ice')) {
+    if (normalized.contains('ice timeout') ||
+        normalized.contains('ice failed') ||
+        normalized.contains('ice failure') ||
+        normalized.contains('ice connection') ||
+        RegExp(r'\bice\b').hasMatch(normalized)) {
       return 'ice_failed';
     }
     if (normalized.contains('timeout') || normalized.contains('timed out')) {
@@ -179,9 +183,11 @@ final class CallErrorClassifier {
       return 'room_terminal';
     }
     if (CallRetryPolicy.isBusyConflictMessage(normalized) ||
-        normalized.contains('already in a call') ||
-        normalized.contains('busy')) {
+        normalized.contains('already in a call')) {
       return 'real_busy_lock';
+    }
+    if (failureCode == busyReasonCode || normalized.contains('busy')) {
+      return 'peer_busy_response';
     }
     if (normalized.contains('rules') || normalized.contains('rejected write')) {
       return 'rules_rejected_write';

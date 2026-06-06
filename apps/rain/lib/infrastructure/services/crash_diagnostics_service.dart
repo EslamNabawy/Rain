@@ -418,9 +418,13 @@ class CrashDiagnosticsService {
       'uiStateSummary': _buildUiStateSummary(recentEvents),
       'events': recentEvents,
     };
+    final sanitizedPayload = DiagnosticsSanitizer.sanitizeMap(payload);
+    sanitizedPayload['events'] = recentEvents
+        .map(DiagnosticsSanitizer.sanitizeMap)
+        .toList(growable: false);
     final content = const JsonEncoder.withIndent(
       '  ',
-    ).convert(DiagnosticsSanitizer.sanitizeMap(payload));
+    ).convert(sanitizedPayload);
     final bytes = Uint8List.fromList(utf8.encode(content));
     final fileName = _diagnosticsFileName(exportedAt);
 

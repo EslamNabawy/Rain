@@ -17,6 +17,8 @@ Improves bug reproduction for WebRTC, Firebase, UI state, and runtime failures.
 - Debug signaling write failures include sanitized operation context. ICE failures include a path template such as `rooms/{roomId}/callerICE/{candidateId}` or `rooms/{roomId}/calleeICE/{candidateId}`, not the real room id or candidate payload.
 - `lastCrash.context` is exported after sanitizer processing so crash records keep useful non-secret failure metadata even when older debug events are trimmed.
 - Diagnostics export includes summaries.
+- Diagnostics export preserves the 200-record recent event window after sanitizer processing. The generic sanitizer still caps nested lists, but the top-level `events` array must not be reduced to 20 records because call failures often age behind heartbeat/UI events.
+- Voice-call failure taxonomy separates a callee terminal busy response (`peer_busy_response`) from a real active Firebase voice lock conflict (`real_busy_lock`).
 - Diagnostics export passes bytes to the platform picker, but Android SAF handles such as `content://...` and `/document/...` are not treated as filesystem paths. Rain writes a real fallback JSON copy under the diagnostics export folder and reports that path when the picker returns a platform-managed handle.
 
 ## Privacy Rules
@@ -36,6 +38,8 @@ Improves bug reproduction for WebRTC, Firebase, UI state, and runtime failures.
 
 - Sanitization.
 - Event caps and trimming.
+- Top-level event export window preservation after recursive sanitizer processing.
+- Busy-response versus busy-lock taxonomy.
 - Export after fatal error.
 - Export through Android scoped-storage picker handles.
 - No sensitive payload leaks.

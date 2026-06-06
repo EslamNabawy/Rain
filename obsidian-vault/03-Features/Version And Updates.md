@@ -17,7 +17,8 @@ Prevents old builds from using incompatible Firebase rules or broken protocols.
 - Required updates block at the root gate before login/home.
 - Optional updates render from the root app surface before login/home and use the existing per-channel/platform/build dismissal key.
 - If the installed app is newer than the Remote Config release policy, Rain reports `remotePolicyOutdated` instead of saying "up to date."
-- The checked-in template currently advertises `1.0.7+8`. Live Remote Config was deployed/read back on 2026-06-06 as version 8 after diagnostics showed version 7 still advertising `1.0.6+7`.
+- The checked-in template currently advertises `1.0.8+9`, because `rain-test-116-1` and `rain-test-117-1` were both `1.0.7+8`; same-version artifacts cannot trigger version-based update warnings.
+- Live Remote Config was deployed/read back on 2026-06-06 as version 8 after diagnostics showed version 7 still advertising `1.0.6+7`. The next live deploy must advertise `1.0.8+9` after matching artifacts are published.
 
 ## Edge Cases
 
@@ -27,6 +28,7 @@ Prevents old builds from using incompatible Firebase rules or broken protocols.
 - Demo vs stable channel.
 - Android build number mismatch.
 - Installed app ahead of live Remote Config policy.
+- New GitHub release tag but unchanged app version/build metadata.
 
 ## Known Issues
 
@@ -34,6 +36,7 @@ Prevents old builds from using incompatible Firebase rules or broken protocols.
 - 2026-06-03: Manual check no longer reports "up to date" when the installed app is newer than the release policy; it reports stale policy.
 - Version parser currently treats invalid version parts as zero.
 - 2026-06-06 diagnostics showed `remotePolicyOutdated` because the running app was `1.0.7+8` while live Remote Config still advertised `1.0.6+7`; this live deployment gap was fixed by deploying `rain-8fb4b` Remote Config version 8 at `2026-06-06T04:43:11Z`.
+- 2026-06-06 follow-up: update warning still did not appear for `1.0.7+8` installs after `rain-test-117-1` because the published artifact and Remote Config policy were both still `1.0.7+8`. The app and manifests are now bumped to `1.0.8+9`, and regression coverage proves `1.0.7+8` installs are `updateRequired` from the checked-in template.
 
 ## Testing Requirements
 
