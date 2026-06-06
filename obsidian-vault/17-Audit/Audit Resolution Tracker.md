@@ -1,6 +1,6 @@
 # Audit Resolution Tracker
 
-Last updated: 2026-06-04
+Last updated: 2026-06-05
 
 ## Purpose
 
@@ -8,21 +8,21 @@ Track every finding from [[Original Audit]] through epic, feature, task, subtask
 
 Do not add new audit findings here unless [[Original Audit]] is updated. This tracker is the execution ledger for the existing audit baseline.
 
-Related: [[Master Roadmap]], [[Backlog]], [[Epic Index]], [[Critical Path]], [[Risk Register]], [[Technical Debt Register]].
+Related: [[Master Roadmap]], [[Backlog]], [[Epic Index]], [[Critical Path]], [[Risk Register]], [[Technical Debt Register]], [[2026-06-05 Senior Audit Remediation Plan]].
 
 ## Resolution Matrix
 
 | # | Audit Finding | Epic | Feature | Task | Status | Next Step |
 | --- | --- | --- | --- | --- | --- | --- |
-| 1 | `VoiceCallRuntime` has too many responsibilities. | [[Architecture Stabilization Epic]] | Runtime Responsibility Split | TASK-001 | [ ] Open | Define coordinator interfaces and characterization tests. |
+| 1 | `VoiceCallRuntime` has too many responsibilities. | [[Architecture Stabilization Epic]] | Runtime Responsibility Split | TASK-001 | [ ] Partial 2026-06-05 | First slice extracted `CallErrorClassifier` and media adapters; next extract room reconciliation and lock coordination behind characterization tests. |
 | 2 | Call lease and terminal state handling can create false busy and stuck call states. | [[Signaling Reliability Epic]] | Call Lease Repair | TASK-002 | [ ] Open | Add stale/live lock repair tests. |
 | 3 | Presence freshness can lag behind app close or stale sessions. | [[Signaling Reliability Epic]] | Presence Freshness | TASK-006 | [ ] Open | Lock session-owned heartbeat and app-close tests. |
 | 4 | Firebase rules need broader emulator coverage. | [[Security Hardening Epic]] | Firebase Rule Coverage | TASK-005 | [ ] Open | Expand RTDB allow/deny matrix. |
 | 5 | Watch streams must survive corrupt room or inbox data. | [[Signaling Reliability Epic]] | Watch Stream Resilience | TASK-007 | [ ] Open | Add corrupt inbox/room stream tests. |
 | 6 | Update version validation has reported old-version prompt failures. | [[Production Validation Epic]] | Update Version Validation | TASK-012 | [x] Mitigated | Same-version minimum-build required updates, stale-policy detection, root optional prompt, and settings manual-check tests added 2026-06-03. |
-| 7 | File transfer needs stronger streaming and backpressure. | [[File Transfer Optimization Epic]] | Persistent Receive Streaming; Data Channel Backpressure | TASK-010, TASK-011 | [ ] Open | Define receive sink lifecycle and bufferedAmount budgets. |
-| 8 | Local database needs index and pagination validation. | [[Database Scalability Epic]] | Index Strategy; Conversation Pagination | TASK-008, TASK-009 | [ ] Open | Plan Drift index migration and paginated query tests. |
-| 9 | Diagnostics must be useful without exposing sensitive data. | [[Security Hardening Epic]] | Diagnostics Privacy | TASK-014 | [ ] Open | Strengthen recursive sanitizer tests. |
+| 7 | File transfer needs stronger streaming and backpressure. | [[File Transfer Optimization Epic]] | Persistent Receive Streaming; Data Channel Backpressure | TASK-010, TASK-011 | [/] Mitigated locally 2026-06-05 | Add real-network/device-scale large-file proof if release closure requires more than local runtime tests. |
+| 8 | Local database needs index and pagination validation. | [[Database Scalability Epic]] | Index Strategy; Conversation Pagination | TASK-008, TASK-009 | [/] Mitigated locally 2026-06-05 | Add device/frame-budget evidence for large conversations before closing release-scale risk. |
+| 9 | Diagnostics must be useful without exposing sensitive data. | [[Security Hardening Epic]] | Diagnostics Privacy | TASK-014 | [/] Mitigated locally 2026-06-05 | Keep sanitizer regressions mandatory for new diagnostic fields and run workspace/vault gates before release claims. |
 | 10 | Release workflows need clearer hard gates and faster test artifact paths. | [[CI-CD Modernization Epic]] | Release Gate Parity; Workflow Ownership | TASK-015, TASK-016 | [ ] Open | Define hard gate matrix and workflow ownership map. |
 | 11 | Call UI must use a single surface model. | [[Architecture Stabilization Epic]] | Call Surface Single Source | TASK-019 | [ ] Open | Define call surface rendering contract. |
 | 12 | ARMv7 and low-power device paths need performance budgets. | [[Production Validation Epic]] | Performance Tier Validation | TASK-021 | [ ] Open | Define low-power budget and static visual path tests. |
@@ -34,6 +34,27 @@ Related: [[Master Roadmap]], [[Backlog]], [[Epic Index]], [[Critical Path]], [[R
 | 18 | Appium/local smoke tests need stable locators and repeatable setup. | [[Production Validation Epic]] | Adapter Contract Tests | TASK-018 | [ ] Open | Add fake/emulator adapter contract matrix and smoke checklist. |
 | 19 | Riverpod provider boundaries should avoid broad UI rebuilds. | [[Architecture Stabilization Epic]] | Provider Boundary Cleanup | TASK-020 | [ ] Open | Identify broad Home/Chat watches. |
 | 20 | Project knowledge must be maintained continuously in [[Project Memory]]. | [[Production Validation Epic]] | Continuous Knowledge Maintenance | TASK-022 | [ ] Open | Keep vault validation and memory updates in release workflow. |
+
+## 2026-06-05 Senior Audit SAR Overlay
+
+Source: [[2026-06-05 Senior Audit Remediation Plan]]
+
+This overlay maps the fresh senior audit issue IDs to the existing audit execution system. It does not mutate the original finding numbers.
+
+| SAR ID | Existing Audit Rows | Primary Phase | Owner | Priority | Evidence Required | Release Impact | Status |
+| --- | --- | --- | --- | --- | --- | --- | --- |
+| SAR-001 | 1, 13, 14 | Phase 3 | Engineering | P0 | First slice: classifier/media adapter tests passed. Phase 10 added an opt-in real media capture proof hook. Remaining: terminal room, late Firebase update, room reconciliation, lock coordination, command/media ownership, and passed device-direction proof. | Blocks public launch while call setup reliability is unproven. | Partial 2026-06-05 |
+| SAR-002 | 3, 16, 19 | Phase 1 | Engineering | P0 | Provider/runtime tests for stale heartbeat, backend presence session id, freshness, unknown local-only presence, and stale receiver routing. | Blocks safe connect/call/request action routing until Firebase emulator/device proof lands. | Mitigated locally 2026-06-05 |
+| SAR-003 | 3, 16, 19 | Phase 1 | Engineering/Product | P0 | Chat action routing consumes `PeerConnectivitySnapshot.peerOnlineForAction`; focused provider tests cover stale/unknown/fresh routing. | Blocks safe user action behavior until Firebase emulator/device proof lands. | Mitigated locally 2026-06-05 |
+| SAR-004 | 2, 4, 14, 15 | Phase 2 | Engineering/Security | P0 | Emulator/rules tests for terminal leftover locks, malformed lock/inbox writes, invalid transitions, denied-write state preservation, and server-authoritative transactions. Phase 10 device matrix is defined but not run. | Device media-direction proof remains open, but Firebase call lock/rule proof is complete locally. | Complete local emulator proof 2026-06-05 |
+| SAR-005 | 9 | Phase 5 | Security/Product | P1 | Option A accepted 2026-06-05 in [[ADR-010]]; privacy/security/readiness docs state local Drift/SQLite storage is plaintext and no local encryption claim is allowed. | Blocks strong local privacy claims unless future encrypted-storage implementation lands. | Accepted/documented 2026-06-05 |
+| SAR-006 | 8 | Phase 6 | Engineering | P1 | `rain_core` schema/index migration tests and app provider pagination tests passed locally on 2026-06-05. Remaining evidence: low-power/device frame-budget proof. | No longer blocks local query-structure confidence; still blocks device-scale performance confidence. | Mitigated locally 2026-06-05 |
+| SAR-007 | 7 | Phase 7 | Engineering | P1 | Focused local tests passed for large transfer receive, scripted slow receiver/backpressure, cancel cleanup, hash failure cleanup, disk write failure, and temp cleanup. | Local runtime reliability is mitigated; device-scale real-network confidence remains follow-up evidence. | Mitigated locally 2026-06-05 |
+| SAR-008 | 9, 13 | Phase 4 | Security/Engineering | P0/P1 | Recursive sanitizer/export tests and call failure taxonomy tests passed locally on 2026-06-05. | Safe local diagnostic export is mitigated for covered samples; new diagnostic fields still require sanitizer proof. | Mitigated locally 2026-06-05 |
+| SAR-009 | 10 | Phase 8 | DevOps | P0/P1 | Local workflow contract tests require validation gates, metadata, and production Remote Config evidence before publish. | Fresh cloud workflow run remains required before promoting a specific artifact. | Mitigated locally 2026-06-05 |
+| SAR-010 | 20 | Phase 9 | DevOps/Engineering | P1 | `scripts/check_obsidian_vault.ps1` now validates operational owner/priority/evidence fields, evidence ledger rows, stale review dates, closed-blocker evidence, and P0/P1 next-action coverage. | Trustworthy governance claims now have local semantic validation; generated metric reconciliation remains future hardening. | Mitigated locally 2026-06-05 |
+| SAR-011 | 10 | Phase 8 | DevOps/Security | P2 | `rain-test-*` direct-download releases are labeled `TEST ARTIFACT ONLY`; metadata records artifact purpose/build profile. | Demo artifacts still cannot be represented as production-trust artifacts. | Mitigated locally 2026-06-05 |
+| SAR-012 | 19 | Phase 1/6 | Engineering/UI | P2 | Chat panel now watches the selected immutable peer snapshot; rebuild isolation proof remains Phase 6. | Impacts performance and UI stability. | Partial 2026-06-05 |
 
 ## Auth/Startup Remediation Tracker
 

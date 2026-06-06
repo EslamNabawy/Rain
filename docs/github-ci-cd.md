@@ -13,8 +13,12 @@ Rain uses these GitHub Actions workflow layers:
   and Windows release artifacts only after validation succeeds, and uploads the
   final assets to a GitHub release page.
 - `Build Rain Apps`: builds downloadable Windows and Android artifacts through
-  manual `workflow_dispatch`.
-- `Release Rain`: builds production artifacts and publishes a GitHub Release when a `v*` tag is pushed or the workflow is manually dispatched.
+  manual `workflow_dispatch`. Published `rain-test-*` pages are test artifacts
+  only, even when the build profile is `production`.
+- `Release Rain`: manually validates an existing tag/ref, requires Remote
+  Config deploy/readback evidence, builds production artifacts only after the
+  hard gate passes, and publishes a GitHub Release with
+  `rain-release-metadata.json`.
 
 ## Build Artifacts
 
@@ -35,6 +39,11 @@ Inputs:
 - `build_profile`: `demo` or `production`.
 - `publish_test_release`: when enabled, publishes direct APK/Windows download
   assets to a `rain-test-*` GitHub pre-release.
+
+`rain-test-*` releases are **test artifacts only**. They are useful for direct
+device installs and QA loops, but they are not production-trust releases. The
+published assets include `rain-release-metadata.json` with target ref, commit,
+version, update channel, build profile, artifact purpose, and validation run.
 
 Demo builds use `apps/rain/tool/dart_defines.example.json`, OpenRelay demo TURN,
 and the checked-in public demo Android signing key at
@@ -125,6 +134,9 @@ Inputs:
 Fast release behavior:
 
 - Creates the GitHub release page once after the CI gate passes.
+- Production fast releases require `remote_config_evidence_url` proving Remote
+  Config deploy/readback before the release shell is created.
+- Uploads `rain-release-metadata.json` with the CI proof URL and target SHA.
 - Builds Android APKs and Windows portable zip in parallel.
 - Uploads Android APKs to the release page as soon as Android finishes; it does
   not wait for Windows.
@@ -159,6 +171,8 @@ Inputs:
 - `release_tag`: optional tag. If blank, the workflow creates a
   `rain-validated-*` tag for demo builds or a `rain-release-*` tag for
   production builds.
+- `remote_config_evidence_url`: required for production publishing; use the URL
+  for the Remote Config deploy/readback proof.
 
 Validation runs before any release artifact is built:
 
@@ -169,12 +183,15 @@ Validation runs before any release artifact is built:
 - Firebase JSON validation
 - Firebase Functions lint, audit, and tests
 - Firebase emulator integration tests
+- Obsidian vault validation
+- release evidence gate
 
 The workflow publishes clean direct-download assets:
 
 - `Rain-Demo-Android-v7a.apk` or `Rain-Release-Android-v7a.apk`
 - `Rain-Demo-Android-v8-v9.apk` or `Rain-Release-Android-v8-v9.apk`
 - `Rain-Demo-Windows-x64.zip` or `Rain-Release-Windows-x64.zip`
+- `rain-release-metadata.json`
 
 Demo builds use the Spark/free-tier `rtdbOnly` connection request backend by
 default. Production builds preserve the value in
@@ -197,13 +214,17 @@ Add these under **Repository Settings -> Secrets and variables -> Actions**:
 
 ## Release
 
-Push a tag like `v1.0.0`, or run **Actions -> Release Rain -> Run workflow** with an existing tag.
+Create the release tag first, then run **Actions -> Release Rain -> Run
+workflow** with that tag and a `remote_config_evidence_url`. Direct tag-push
+publishing is intentionally disabled so production releases cannot bypass the
+hard validation gate or update-policy evidence.
 
 The release workflow publishes:
 
 - Windows portable zip.
 - Android ARM v7 APK: `Rain-release-android-armeabi-v7a.apk`.
 - Android ARM v8/v9 APK: `Rain-release-android-arm64-v8a.apk`.
+- Release metadata: `rain-release-metadata.json`.
 
 The demo artifact workflow publishes:
 

@@ -20,4 +20,6 @@ Rules are currently long and hard to audit manually.
 
 Every rules change must update [[Emulator Coverage]].
 
+2026-06-05 Phase 2 proof: Firebase emulator coverage now asserts malformed voice lock/inbox writes are denied without mutation, unauthorized voice transitions are denied, oversized terminal reason payloads are denied, live locks are preserved after denied cleanup, and terminal leftover locks can be reclaimed. The matching contract test locks server-authoritative voice lock transactions and compare-delete fallback behavior.
+
 Related: [[Security Roadmap]], [[Firebase Architecture]].

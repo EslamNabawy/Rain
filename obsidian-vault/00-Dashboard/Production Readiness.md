@@ -1,6 +1,6 @@
 # Production Readiness
 
-Last updated: 2026-06-03
+Last updated: 2026-06-05
 
 ## Scoreboard
 
@@ -33,5 +33,6 @@ Rain reaches 90/100 only when the seven roadmap phases in [[Master Roadmap]] are
 - Missing database indexes and pagination.
 - File transfer I/O and allocation pressure.
 - Firebase rules complexity without exhaustive emulator coverage.
+- Plaintext local Drift/SQLite storage is accepted for current scope, but any stronger local privacy claim is blocked until encrypted storage is implemented and migration-tested.
 
 Related notes: [[Project Home]], [[Critical Path]], [[Audit Resolution Tracker]], [[Risk Register]], [[Risk Matrix]], [[BLOCKERS]], [[Blocker Resolution Plan]].

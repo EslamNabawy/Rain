@@ -27,50 +27,58 @@ final class _CallStartPresenceSnapshot {
 extension VoiceCallRuntime on RainRuntimeController {
   static const CallTerminalWritePolicy _voiceTerminalWritePolicy =
       CallTerminalWritePolicy();
-  static const String _voiceCallFailedReasonCode = 'failed';
-  static const String _voiceCallBusyReasonCode = 'busy';
-  static const String _voiceCallRejectedReasonCode = 'rejected';
-  static const String _voiceCallSignalingFailedReasonCode = 'signalingFailed';
-  static const String _voiceCallNetworkLostReasonCode = 'networkLost';
-  static const String _voiceCallExpiredReasonCode = 'expired';
-  static const String _voiceCallRingingTimeoutReasonCode = 'ringingTimeout';
-  static const String _voiceCallIceTimeoutReasonCode = 'iceTimeout';
-  static const String _voiceCallNoRemoteAudioReasonCode = 'noRemoteAudio';
-  static const String _voiceCallRelayUnavailableReasonCode = 'relayUnavailable';
+  static const String _voiceCallFailedReasonCode =
+      CallErrorClassifier.failedReasonCode;
+  static const String _voiceCallBusyReasonCode =
+      CallErrorClassifier.busyReasonCode;
+  static const String _voiceCallRejectedReasonCode =
+      CallErrorClassifier.rejectedReasonCode;
+  static const String _voiceCallSignalingFailedReasonCode =
+      CallErrorClassifier.signalingFailedReasonCode;
+  static const String _voiceCallNetworkLostReasonCode =
+      CallErrorClassifier.networkLostReasonCode;
+  static const String _voiceCallExpiredReasonCode =
+      CallErrorClassifier.expiredReasonCode;
+  static const String _voiceCallRingingTimeoutReasonCode =
+      CallErrorClassifier.ringingTimeoutReasonCode;
+  static const String _voiceCallIceTimeoutReasonCode =
+      CallErrorClassifier.iceTimeoutReasonCode;
+  static const String _voiceCallNoRemoteAudioReasonCode =
+      CallErrorClassifier.noRemoteAudioReasonCode;
+  static const String _voiceCallRelayUnavailableReasonCode =
+      CallErrorClassifier.relayUnavailableReasonCode;
   static const String _voiceCallVideoRendererFailedReasonCode =
-      'videoRendererFailed';
+      CallErrorClassifier.videoRendererFailedReasonCode;
   static const String _voiceCallVideoFirstFrameTimeoutReasonCode =
-      'videoFirstFrameTimeout';
-  static const String _voiceCallMicrophoneDeniedReasonCode = 'microphoneDenied';
-  static const String _voiceCallCameraDeniedReasonCode = 'cameraDenied';
-  static const String _voiceCallMicrophonePermissionRequired =
-      'Microphone permission required.';
+      CallErrorClassifier.videoFirstFrameTimeoutReasonCode;
+  static const String _voiceCallMicrophoneDeniedReasonCode =
+      CallErrorClassifier.microphoneDeniedReasonCode;
+  static const String _voiceCallCameraDeniedReasonCode =
+      CallErrorClassifier.cameraDeniedReasonCode;
   static const String _voiceCallRemoteMicrophonePermissionRequired =
-      'Peer microphone permission required.';
-  static const String _voiceCallCameraPermissionRequired =
-      'Camera permission required.';
+      CallErrorClassifier.remoteMicrophonePermissionRequired;
   static const String _voiceCallRemoteCameraPermissionRequired =
-      'Peer camera permission required.';
+      CallErrorClassifier.remoteCameraPermissionRequired;
   static const String _voiceCallFileTransferRequired =
-      'Finish the active file transfer first.';
-  static const String _voiceCallRejected = 'Call declined.';
+      CallErrorClassifier.fileTransferRequired;
+  static const String _voiceCallRejected = CallErrorClassifier.rejectedMessage;
   static const String _voiceCallNetworkLost =
-      'Network connection lost. Call ended.';
+      CallErrorClassifier.networkLostMessage;
   static const String _voiceCallSignalingFailed =
-      'Call setup failed. Try again.';
-  static const String _voiceCallTimedOut = 'Call timed out.';
+      CallErrorClassifier.signalingFailedMessage;
+  static const String _voiceCallTimedOut = CallErrorClassifier.timedOutMessage;
   static const String _voiceCallMediaFailed =
-      'Call media could not connect. Try again.';
+      CallErrorClassifier.mediaFailedMessage;
   static const String _voiceCallRelayUnavailable =
-      'Relay connection is unavailable. Check TURN configuration.';
+      CallErrorClassifier.relayUnavailableMessage;
   static const String _voiceCallVideoFailed =
-      'Video could not connect. Try again.';
+      CallErrorClassifier.videoFailedMessage;
   static const String _voiceCallVideoBackgrounded =
-      'Video call ended because the app went to background.';
+      CallErrorClassifier.videoBackgroundedMessage;
   static const String _voiceCallAudioRouteUnavailable =
-      'Audio route unavailable.';
+      CallErrorClassifier.audioRouteUnavailableMessage;
   static const String _voiceCallReconnecting =
-      'Peer connection interrupted. Reconnecting...';
+      CallErrorClassifier.reconnectingMessage;
   static bool get _legacyControlChannelVoiceSignalingFrozen => true;
   static const Duration _voiceCallExpiry = Duration(minutes: 2);
   static const Duration _voiceCallTransientCreateRetryDelay = Duration(
@@ -2701,7 +2709,7 @@ extension VoiceCallRuntime on RainRuntimeController {
       nativeError: nativeError,
       mediaDiagnostics: callDiagnostics == null
           ? _voiceCallSession?.state.mediaDiagnostics
-          : _voiceMediaDiagnosticsForCall(callDiagnostics),
+          : voiceMediaDiagnosticsForCall(callDiagnostics),
       rendererState: state.isVideo ? _lastVideoCallRendererState : null,
     );
   }
@@ -3167,7 +3175,7 @@ extension VoiceCallRuntime on RainRuntimeController {
         _handleVideoRendererFailure(peerId, error, stackTrace);
       },
     );
-    return _VideoVoiceMediaConnection(
+    return VideoVoiceMediaConnection(
       media: media,
       renderers: renderers,
       kind: CallMediaKind.video,
@@ -3195,7 +3203,7 @@ extension VoiceCallRuntime on RainRuntimeController {
       name: 'audio_call_media_connection_created',
       context: <String, Object?>{'peerId': peerId},
     );
-    return _CallVoiceMediaConnection(
+    return CallVoiceMediaConnection(
       media: media,
       kind: CallMediaKind.audio,
       onRemoteTrackError: (Object error, StackTrace stackTrace) {
@@ -4489,27 +4497,9 @@ extension VoiceCallRuntime on RainRuntimeController {
     Object error, {
     String? peerId,
   }) {
-    final normalized = _normalizedVoiceCallErrorText(error).toLowerCase();
-    if (!_isVoiceCallSignalingError(error, normalized) &&
-        !CallRetryPolicy.isBusyConflictMessage(normalized) &&
-        !CallRetryPolicy.isCleanupConflictMessage(normalized)) {
-      return null;
-    }
-    return CallSignalingFailureSnapshot(
-      message: normalized,
-      lockWasReclaimed:
-          normalized.contains('lock was reclaimed') ||
-          normalized.contains('old call state was cleaned'),
-      terminalRoomWasCleaned:
-          normalized.contains('terminal room cleaned') ||
-          normalized.contains('terminal room'),
-      corruptRoomWasRepaired:
-          normalized.contains('corrupt room repaired') ||
-          normalized.contains('corrupt terminal'),
-      cleanupInProgress:
-          normalized.contains('cleanup in progress') ||
-          normalized.contains('cleaning up'),
-      peerId: peerId ?? _voiceCallBusyUser(normalized),
+    return CallErrorClassifier.signalingFailureSnapshotForError(
+      error,
+      peerId: peerId,
     );
   }
 
@@ -4517,20 +4507,10 @@ extension VoiceCallRuntime on RainRuntimeController {
     Object error,
     CallRetryDecision? decision,
   ) {
-    if (decision?.kind != CallRetryDecisionKind.signalingFailed) {
-      return false;
-    }
-    final normalized = _normalizedVoiceCallErrorText(error).toLowerCase();
-    if (CallRetryPolicy.isBusyConflictMessage(normalized) ||
-        CallRetryPolicy.isOfflineMessage(normalized)) {
-      return false;
-    }
-    return normalized.contains('[firebase_database/unknown]') ||
-        normalized.contains('firebase database error') ||
-        normalized.contains('firebase voice call create failed at') ||
-        normalized.contains('permission-denied') ||
-        normalized.contains('permission denied') ||
-        normalized.trim().isEmpty;
+    return CallErrorClassifier.shouldRetryTransientCreateFailure(
+      error,
+      decision,
+    );
   }
 
   Map<String, Object?> _voiceCallLockDiagnostics({
@@ -4570,26 +4550,11 @@ extension VoiceCallRuntime on RainRuntimeController {
   VoiceCallFailureReason? _voiceCallFailureReasonForRetryDecision(
     CallRetryDecision? decision,
   ) {
-    return switch (decision?.kind) {
-      CallRetryDecisionKind.peerBusy => VoiceCallFailureReason.peerBusy,
-      CallRetryDecisionKind.peerOffline ||
-      CallRetryDecisionKind.cleanedStaleState ||
-      CallRetryDecisionKind.cleanupInProgress ||
-      CallRetryDecisionKind.signalingFailed =>
-        VoiceCallFailureReason.signalingFailed,
-      CallRetryDecisionKind.proceed || null => null,
-    };
+    return CallErrorClassifier.failureReasonForRetryDecision(decision);
   }
 
   String? _voiceCallFailureDetailForRetryDecision(CallRetryDecision? decision) {
-    return switch (decision?.kind) {
-      CallRetryDecisionKind.peerBusy ||
-      CallRetryDecisionKind.peerOffline ||
-      CallRetryDecisionKind.cleanedStaleState ||
-      CallRetryDecisionKind.cleanupInProgress ||
-      CallRetryDecisionKind.signalingFailed => decision?.userMessage,
-      CallRetryDecisionKind.proceed || null => null,
-    };
+    return CallErrorClassifier.failureDetailForRetryDecision(decision);
   }
 
   String _voiceFailureTaxonomy({
@@ -4597,630 +4562,46 @@ extension VoiceCallRuntime on RainRuntimeController {
     required String userMessage,
     required String nativeError,
   }) {
-    final normalized = '$failureCode $userMessage $nativeError'.toLowerCase();
-    if (CallRetryPolicy.isOfflineMessage(normalized) ||
-        normalized.contains('offline')) {
-      return 'presence_offline';
-    }
-    if (normalized.contains('could not confirm') ||
-        normalized.contains('presence unknown')) {
-      return 'presence_unknown';
-    }
-    if (normalized.contains('relay') || normalized.contains('turn')) {
-      return 'turn_unavailable';
-    }
-    if (normalized.contains('ice timeout') || normalized.contains('ice')) {
-      return 'ice_failed';
-    }
-    if (normalized.contains('timeout') || normalized.contains('timed out')) {
-      return 'media_timeout';
-    }
-    if (normalized.contains('terminal') && normalized.contains('write')) {
-      return 'terminal_write_failed';
-    }
-    if (normalized.contains('reclaimed') ||
-        normalized.contains('stale') ||
-        normalized.contains('cleaned')) {
-      return 'stale_lock_repaired';
-    }
-    if (CallRetryPolicy.isBusyConflictMessage(normalized) ||
-        normalized.contains('already in a call') ||
-        normalized.contains('busy')) {
-      return 'real_busy_lock';
-    }
-    if (normalized.contains('permission-denied') ||
-        normalized.contains('permission denied')) {
-      return 'firebase_permission_denied';
-    }
-    if (normalized.contains('rules') || normalized.contains('rejected write')) {
-      return 'rules_rejected_write';
-    }
-    return 'unknown';
+    return CallErrorClassifier.failureTaxonomy(
+      failureCode: failureCode,
+      userMessage: userMessage,
+      nativeError: nativeError,
+    );
   }
 
   VoiceCallFailureReason? _voiceCallFailureReasonForError(Object error) {
-    final normalized = _normalizedVoiceCallErrorText(error).toLowerCase();
-    if (_isVoiceCallBusyError(normalized)) {
-      return VoiceCallFailureReason.peerBusy;
-    }
-    if (_isVoiceCallRejectedError(normalized)) {
-      return VoiceCallFailureReason.rejected;
-    }
-    if (_isVoiceCallNetworkLostError(normalized)) {
-      return VoiceCallFailureReason.networkLost;
-    }
-    if (_isVoiceCallExpiredError(normalized)) {
-      return VoiceCallFailureReason.expired;
-    }
-    if (error is TurnUnavailableException ||
-        normalized.contains('relay connection is unavailable') ||
-        normalized.contains('turn configuration')) {
-      return VoiceCallFailureReason.relayUnavailable;
-    }
-    if (_isVoiceCallOfflineError(normalized)) {
-      return VoiceCallFailureReason.signalingFailed;
-    }
-    if (_isVoiceCallSignalingError(error, normalized)) {
-      return VoiceCallFailureReason.signalingFailed;
-    }
-    if (_isVoiceCallVideoRendererError(normalized)) {
-      return VoiceCallFailureReason.videoRendererFailed;
-    }
-    if (_isVoiceCallNativeMediaError(normalized) ||
-        normalized.contains('ice timeout') ||
-        normalized.contains('no remote audio')) {
-      return VoiceCallFailureReason.mediaConnectionFailed;
-    }
-    return null;
+    return CallErrorClassifier.failureReasonForError(error);
   }
 
   String? _voiceCallFailureDetailForError(Object error) {
-    final normalized = _normalizedVoiceCallErrorText(error).toLowerCase();
-    if (_isVoiceCallBusyError(normalized)) {
-      final busyUser = _voiceCallBusyUser(normalized);
-      if (busyUser != null &&
-          busyUser != _normalizedUsername(selfIdentity.username)) {
-        return '@$busyUser is already in a call.';
-      }
-      return 'Peer is already in a call.';
-    }
-    if (_isVoiceCallRejectedError(normalized)) {
-      return _voiceCallRejected;
-    }
-    if (_isVoiceCallNetworkLostError(normalized)) {
-      return _voiceCallNetworkLost;
-    }
-    if (_isVoiceCallExpiredError(normalized)) {
-      return _voiceCallTimedOut;
-    }
-    if (error is TurnUnavailableException ||
-        normalized.contains('relay connection is unavailable') ||
-        normalized.contains('turn configuration')) {
-      return _voiceCallRelayUnavailable;
-    }
-    if (_isVoiceCallOfflineError(normalized)) {
-      final unknownPeer = RuntimeInteractionGuard.presenceUnknownMessage(
-        _voiceCallState.peerId ?? '',
-      );
-      return normalized.contains('could not confirm') ||
-              normalized.contains('presence unknown')
-          ? unknownPeer
-          : RuntimeInteractionGuard.peerOfflineMessage(
-              _voiceCallState.peerId ?? '',
-            );
-    }
-    if (_isVoiceCallSignalingError(error, normalized)) {
-      return _voiceCallSignalingFailed;
-    }
-    if (_isVoiceCallVideoRendererError(normalized)) {
-      return _voiceCallVideoFailed;
-    }
-    if (_isVoiceCallNativeMediaError(normalized) ||
-        normalized.contains('ice timeout') ||
-        normalized.contains('no remote audio')) {
-      return _voiceCallMediaFailed;
-    }
-    return null;
+    return CallErrorClassifier.failureDetailForError(
+      error,
+      currentPeerId: _voiceCallState.peerId,
+      selfUsername: selfIdentity.username,
+    );
   }
 
   String _normalizedVoiceCallErrorText(Object error) {
-    final raw = error.toString().trim();
-    const prefixes = <String>[
-      'Exception: ',
-      'Bad state: ',
-      'StateError: ',
-      'VoiceSignalingException: ',
-    ];
-    var message = raw;
-    for (final prefix in prefixes) {
-      if (raw.startsWith(prefix)) {
-        message = raw.substring(prefix.length).trim();
-        break;
-      }
-    }
-    return message;
+    return CallErrorClassifier.normalizeErrorText(error);
   }
 
   String _voiceCallErrorMessage(Object error) {
-    final message = _normalizedVoiceCallErrorText(error);
-    final typedDetail = _voiceCallFailureDetailForError(error);
-    if (typedDetail != null) {
-      return typedDetail;
-    }
-    return message;
-  }
-
-  bool _isVoiceCallBusyError(String normalized) {
-    return normalized.contains('peer is busy') ||
-        normalized == 'busy.' ||
-        normalized.contains('active voice call already exists') ||
-        normalized.contains('activevoicepairs') ||
-        normalized.contains('active voice pair') ||
-        normalized.contains('activevoiceusers') ||
-        normalized.contains('active voice user');
-  }
-
-  bool _isVoiceCallOfflineError(String normalized) {
-    return CallRetryPolicy.isOfflineMessage(normalized);
+    return CallErrorClassifier.errorMessage(
+      error,
+      currentPeerId: _voiceCallState.peerId,
+      selfUsername: selfIdentity.username,
+    );
   }
 
   String? _voiceCallBusyUser(String normalized) {
-    const marker = 'active voice call already exists for user ';
-    final markerIndex = normalized.indexOf(marker);
-    if (markerIndex < 0) {
-      return null;
-    }
-    final tail = normalized.substring(markerIndex + marker.length).trim();
-    if (tail.isEmpty) {
-      return null;
-    }
-    return _normalizedUsername(tail.split(RegExp(r'[\s.]')).first);
-  }
-
-  bool _isVoiceCallRejectedError(String normalized) {
-    return normalized == 'rejected.' ||
-        normalized.contains('call declined') ||
-        normalized.contains('call rejected');
-  }
-
-  bool _isVoiceCallNetworkLostError(String normalized) {
-    return normalized.contains('network connection lost') ||
-        normalized.contains('network lost') ||
-        normalized.contains('internet connection') ||
-        normalized.contains('network is unavailable') ||
-        normalized.contains('network unavailable');
-  }
-
-  bool _isVoiceCallExpiredError(String normalized) {
-    return normalized.contains('call timed out') ||
-        normalized.contains('voice call expired') ||
-        normalized.contains('call room expired') ||
-        normalized == 'expired.';
-  }
-
-  bool _isVoiceCallSignalingError(Object error, String normalized) {
-    return error is VoiceSignalingException ||
-        normalized.contains('voice signaling') ||
-        normalized.contains('firebase') ||
-        normalized.contains('unknown voice call') ||
-        normalized.contains('voice call already exists') ||
-        normalized.contains('already ended') ||
-        normalized.contains('permission-denied') ||
-        normalized.contains('database');
-  }
-
-  bool _isVoiceCallNativeMediaError(String normalized) {
-    return normalized.contains('rtcrtptransceiver') ||
-        normalized.contains('setdirection') ||
-        normalized.contains('setremotedescription') ||
-        normalized.contains('peerconnectionsetremotedescription') ||
-        normalized.contains('m-line') ||
-        normalized.contains('peer connection changed while');
-  }
-
-  bool _isVoiceCallVideoRendererError(String normalized) {
-    return normalized.contains('video renderer') ||
-        normalized.contains('rtc video renderer') ||
-        normalized.contains('rtcvideorenderer');
+    return CallErrorClassifier.busyUser(normalized);
   }
 
   VoiceCallFailureReason? _localAudioFailureReason(Object error) {
-    if (error is _VideoCallRendererException ||
-        _isVoiceCallVideoRendererError(error.toString().toLowerCase())) {
-      return VoiceCallFailureReason.videoRendererFailed;
-    }
-    if (error is CallMediaException) {
-      return switch (error.reason) {
-        CallMediaFailureReason.cameraDenied ||
-        CallMediaFailureReason.cameraUnavailable =>
-          VoiceCallFailureReason.cameraDenied,
-        CallMediaFailureReason.microphoneDenied =>
-          VoiceCallFailureReason.microphoneDenied,
-        CallMediaFailureReason.mediaCaptureFailed ||
-        CallMediaFailureReason.negotiationFailed => null,
-      };
-    }
-    final normalized = error.toString().toLowerCase();
-    if (normalized.contains('camera') &&
-        (normalized.contains('permission') ||
-            normalized.contains('denied') ||
-            normalized.contains('unavailable'))) {
-      return VoiceCallFailureReason.cameraDenied;
-    }
-    final permissionDenied =
-        normalized.contains('notallowed') ||
-        normalized.contains('not allowed') ||
-        normalized.contains('permission denied') ||
-        normalized.contains('permission was denied') ||
-        normalized.contains('denied permission') ||
-        normalized.contains('microphone permission');
-    return permissionDenied ? VoiceCallFailureReason.microphoneDenied : null;
+    return CallErrorClassifier.localMediaFailureReason(error);
   }
 
   String? _localAudioFailureDetail(Object error) {
-    return switch (_localAudioFailureReason(error)) {
-      VoiceCallFailureReason.microphoneDenied =>
-        _voiceCallMicrophonePermissionRequired,
-      VoiceCallFailureReason.cameraDenied => _voiceCallCameraPermissionRequired,
-      VoiceCallFailureReason.videoRendererFailed => _voiceCallVideoFailed,
-      _ => null,
-    };
+    return CallErrorClassifier.localMediaFailureDetail(error);
   }
-}
-
-final class _VideoVoiceMediaConnection implements VoiceMediaConnection {
-  _VideoVoiceMediaConnection({
-    required CallMediaConnection media,
-    required VideoCallRenderers renderers,
-    required CallMediaKind kind,
-    required void Function(Object error, StackTrace stackTrace)
-    onRemoteTrackError,
-    required void Function(Object error, StackTrace stackTrace) onRendererError,
-  }) : _media = media,
-       _renderers = renderers,
-       _kind = kind,
-       _onRemoteTrackError = onRemoteTrackError,
-       _onRendererError = onRendererError {
-    _remoteTrackSubscription = _media.onRemoteTrack.listen(
-      _handleRemoteTrack,
-      onError: (Object error, StackTrace stackTrace) {
-        _onRemoteTrackError(error, stackTrace);
-      },
-    );
-  }
-
-  final CallMediaConnection _media;
-  final VideoCallRenderers _renderers;
-  final CallMediaKind _kind;
-  final void Function(Object error, StackTrace stackTrace) _onRemoteTrackError;
-  final void Function(Object error, StackTrace stackTrace) _onRendererError;
-  final StreamController<VoiceRemoteAudioTrack> _remoteAudioController =
-      StreamController<VoiceRemoteAudioTrack>.broadcast();
-  final StreamController<VoiceMediaAudioLevel> _audioLevelController =
-      StreamController<VoiceMediaAudioLevel>.broadcast();
-
-  late final StreamSubscription<CallRemoteMediaTrack> _remoteTrackSubscription;
-  bool _disposed = false;
-
-  @override
-  Stream<VoiceIceCandidate> get onIceCandidate => _media.onIceCandidate;
-
-  @override
-  Stream<VoiceRemoteAudioTrack> get onRemoteAudioTrack =>
-      _remoteAudioController.stream;
-
-  @override
-  Stream<VoiceMediaAudioLevel> get onAudioLevelChanged =>
-      _audioLevelController.stream;
-
-  @override
-  Stream<VoiceMediaState> get onStateChanged {
-    return _media.onStateChanged.map(_voiceMediaStateForCall);
-  }
-
-  @override
-  VoiceMediaDiagnostics get diagnostics {
-    return _voiceMediaDiagnosticsForCall(_media.diagnostics);
-  }
-
-  @override
-  Future<void> startLocalAudio() async {
-    await _media.startLocalMedia(kind: _kind);
-    await _attachLocalVideoStream();
-  }
-
-  @override
-  Future<VoiceSessionDescription> createOffer({bool iceRestart = false}) async {
-    final offer = await _media.createOffer(kind: _kind, iceRestart: iceRestart);
-    await _attachLocalVideoStream();
-    return offer;
-  }
-
-  @override
-  Future<VoiceSessionDescription> acceptOffer(
-    VoiceSessionDescription offer,
-  ) async {
-    final answer = await _media.acceptOffer(offer, kind: _kind);
-    await _attachLocalVideoStream();
-    return answer;
-  }
-
-  @override
-  Future<void> applyAnswer(VoiceSessionDescription answer) async {
-    await _media.applyAnswer(answer);
-  }
-
-  @override
-  Future<void> addRemoteCandidate(VoiceIceCandidate candidate) {
-    return _media.addRemoteCandidate(candidate);
-  }
-
-  @override
-  Future<void> setMuted({required bool muted}) {
-    return _media.setMicrophoneMuted(muted: muted);
-  }
-
-  @override
-  Future<void> setDeafened({required bool deafened}) {
-    return _media.setDeafened(deafened: deafened);
-  }
-
-  @override
-  Future<void> setAudioOutputRoute(VoiceMediaOutputRoute route) {
-    return _media.setAudioOutputRoute(route);
-  }
-
-  @override
-  Future<void> selectAudioOutputDevice(String deviceId) {
-    return _media.selectAudioOutputDevice(deviceId);
-  }
-
-  @override
-  Future<void> dispose() async {
-    if (_disposed) {
-      return;
-    }
-    _disposed = true;
-    await _remoteTrackSubscription.cancel();
-    await _media.dispose();
-    await _remoteAudioController.close();
-    await _audioLevelController.close();
-  }
-
-  Future<void> _attachLocalVideoStream() async {
-    if (_kind != CallMediaKind.video) {
-      return;
-    }
-    try {
-      await _renderers.attachLocalStream(_media.localStream);
-    } catch (error, stackTrace) {
-      _onRendererError(
-        _VideoCallRendererException(
-          'Video renderer failed while attaching local video stream.',
-          error,
-        ),
-        stackTrace,
-      );
-    }
-  }
-
-  void _handleRemoteTrack(CallRemoteMediaTrack event) {
-    if (_disposed) {
-      return;
-    }
-    if (event.isAudio) {
-      _remoteAudioController.add(
-        VoiceRemoteAudioTrack(
-          track: event.track,
-          streams: event.streams,
-          receivedAt: event.receivedAt,
-        ),
-      );
-      return;
-    }
-    if (!event.isVideo) {
-      return;
-    }
-    final stream = event.streams.isEmpty ? null : event.streams.first;
-    unawaited(
-      _renderers.attachRemoteStream(stream).catchError((
-        Object error,
-        StackTrace stackTrace,
-      ) {
-        _onRendererError(
-          _VideoCallRendererException(
-            'Video renderer failed while attaching remote video stream.',
-            error,
-          ),
-          stackTrace,
-        );
-      }),
-    );
-  }
-}
-
-final class _VideoCallRendererException implements Exception {
-  const _VideoCallRendererException(this.message, this.cause);
-
-  final String message;
-  final Object cause;
-
-  @override
-  String toString() => '$message $cause';
-}
-
-final class _CallVoiceMediaConnection implements VoiceMediaConnection {
-  _CallVoiceMediaConnection({
-    required CallMediaConnection media,
-    required CallMediaKind kind,
-    required void Function(Object error, StackTrace stackTrace)
-    onRemoteTrackError,
-  }) : _media = media,
-       _kind = kind,
-       _onRemoteTrackError = onRemoteTrackError {
-    _remoteTrackSubscription = _media.onRemoteTrack.listen(
-      _handleRemoteTrack,
-      onError: (Object error, StackTrace stackTrace) {
-        _onRemoteTrackError(error, stackTrace);
-      },
-    );
-  }
-
-  final CallMediaConnection _media;
-  final CallMediaKind _kind;
-  final void Function(Object error, StackTrace stackTrace) _onRemoteTrackError;
-  final StreamController<VoiceRemoteAudioTrack> _remoteAudioController =
-      StreamController<VoiceRemoteAudioTrack>.broadcast();
-  final StreamController<VoiceMediaAudioLevel> _audioLevelController =
-      StreamController<VoiceMediaAudioLevel>.broadcast();
-
-  late final StreamSubscription<CallRemoteMediaTrack> _remoteTrackSubscription;
-  bool _disposed = false;
-
-  @override
-  Stream<VoiceIceCandidate> get onIceCandidate => _media.onIceCandidate;
-
-  @override
-  Stream<VoiceRemoteAudioTrack> get onRemoteAudioTrack =>
-      _remoteAudioController.stream;
-
-  @override
-  Stream<VoiceMediaAudioLevel> get onAudioLevelChanged =>
-      _audioLevelController.stream;
-
-  @override
-  Stream<VoiceMediaState> get onStateChanged {
-    return _media.onStateChanged.map(_voiceMediaStateForCall);
-  }
-
-  @override
-  VoiceMediaDiagnostics get diagnostics {
-    return _voiceMediaDiagnosticsForCall(_media.diagnostics);
-  }
-
-  @override
-  Future<void> startLocalAudio() {
-    return _media.startLocalMedia(kind: _kind);
-  }
-
-  @override
-  Future<VoiceSessionDescription> createOffer({bool iceRestart = false}) {
-    return _media.createOffer(kind: _kind, iceRestart: iceRestart);
-  }
-
-  @override
-  Future<VoiceSessionDescription> acceptOffer(VoiceSessionDescription offer) {
-    return _media.acceptOffer(offer, kind: _kind);
-  }
-
-  @override
-  Future<void> applyAnswer(VoiceSessionDescription answer) {
-    return _media.applyAnswer(answer);
-  }
-
-  @override
-  Future<void> addRemoteCandidate(VoiceIceCandidate candidate) {
-    return _media.addRemoteCandidate(candidate);
-  }
-
-  @override
-  Future<void> setMuted({required bool muted}) {
-    return _media.setMicrophoneMuted(muted: muted);
-  }
-
-  @override
-  Future<void> setDeafened({required bool deafened}) {
-    return _media.setDeafened(deafened: deafened);
-  }
-
-  @override
-  Future<void> setAudioOutputRoute(VoiceMediaOutputRoute route) {
-    return _media.setAudioOutputRoute(route);
-  }
-
-  @override
-  Future<void> selectAudioOutputDevice(String deviceId) {
-    return _media.selectAudioOutputDevice(deviceId);
-  }
-
-  @override
-  Future<void> dispose() async {
-    if (_disposed) {
-      return;
-    }
-    _disposed = true;
-    await _remoteTrackSubscription.cancel();
-    await _media.dispose();
-    await _remoteAudioController.close();
-    await _audioLevelController.close();
-  }
-
-  void _handleRemoteTrack(CallRemoteMediaTrack event) {
-    if (_disposed || !event.isAudio) {
-      return;
-    }
-    _remoteAudioController.add(
-      VoiceRemoteAudioTrack(
-        track: event.track,
-        streams: event.streams,
-        receivedAt: event.receivedAt,
-      ),
-    );
-  }
-}
-
-VoiceMediaState _voiceMediaStateForCall(CallMediaState state) {
-  return VoiceMediaState(
-    phase: _voiceMediaPhaseForCall(state.phase),
-    detail: state.detail,
-    error: state.error,
-    updatedAt: state.updatedAt,
-  );
-}
-
-VoiceMediaPhase _voiceMediaPhaseForCall(CallMediaPhase phase) {
-  return switch (phase) {
-    CallMediaPhase.idle => VoiceMediaPhase.idle,
-    CallMediaPhase.startingLocalMedia => VoiceMediaPhase.startingLocalAudio,
-    CallMediaPhase.localMediaReady => VoiceMediaPhase.localAudioReady,
-    CallMediaPhase.creatingOffer => VoiceMediaPhase.creatingOffer,
-    CallMediaPhase.applyingOffer => VoiceMediaPhase.applyingOffer,
-    CallMediaPhase.applyingAnswer => VoiceMediaPhase.applyingAnswer,
-    CallMediaPhase.connecting => VoiceMediaPhase.connecting,
-    CallMediaPhase.connected => VoiceMediaPhase.connected,
-    CallMediaPhase.reconnecting => VoiceMediaPhase.reconnecting,
-    CallMediaPhase.failed => VoiceMediaPhase.failed,
-    CallMediaPhase.disposed => VoiceMediaPhase.disposed,
-  };
-}
-
-VoiceMediaDiagnostics _voiceMediaDiagnosticsForCall(
-  CallMediaDiagnostics diagnostics,
-) {
-  return VoiceMediaDiagnostics(
-    mediaStates: <String>[
-      ...diagnostics.mediaStates,
-      'remoteVideoTrackCount:${diagnostics.remoteVideoTrackCount}',
-      'hasLocalVideo:${diagnostics.hasLocalVideo}',
-      if (diagnostics.lastFailureReason != null)
-        'lastFailureReason:${diagnostics.lastFailureReason!.name}',
-    ],
-    iceConnectionStates: diagnostics.iceConnectionStates,
-    peerConnectionStates: diagnostics.peerConnectionStates,
-    localCandidateCount: diagnostics.localCandidateCount,
-    remoteCandidateCount: diagnostics.remoteCandidateCount,
-    pendingRemoteCandidateCount: diagnostics.pendingRemoteCandidateCount,
-    localAudioTrackCount: diagnostics.hasLocalAudio ? 1 : 0,
-    remoteAudioTrackCount: diagnostics.remoteAudioTrackCount,
-    localVideoTrackCount: diagnostics.hasLocalVideo ? 1 : 0,
-    remoteVideoTrackCount: diagnostics.remoteVideoTrackCount,
-    remoteStreamCount: diagnostics.remoteStreamCount,
-    hasLocalAudio: diagnostics.hasLocalAudio,
-    hasLocalVideo: diagnostics.hasLocalVideo,
-    peerConnectionClosed: diagnostics.peerConnectionClosed,
-    disposed: diagnostics.disposed,
-    lastDetail: diagnostics.lastDetail,
-    lastError: diagnostics.lastError,
-    lastFailureReason: diagnostics.lastFailureReason?.name,
-  );
 }

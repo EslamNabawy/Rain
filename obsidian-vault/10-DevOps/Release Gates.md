@@ -13,6 +13,24 @@
 - Windows artifact.
 - Version/channel/commit artifact proof.
 
+## Phase 8 Gate Ownership Map
+
+As of 2026-06-05, release workflows have these owners:
+
+| Workflow | Purpose | Publish Capability | Required Evidence |
+| --- | --- | --- | --- |
+| `ci.yml` / `CI/CD` | Push/PR quality gate and conditional debug/demo artifacts. | Workflow artifacts only. | Workflow lint, dependency/format/generated checks, analyze/test matrix, Firebase backend validation, Firebase emulator integration, optional debug/demo artifact checks. |
+| `documentation-vault.yml` | Vault-only documentation gate. | None. | `./scripts/check_obsidian_vault.ps1`. |
+| `main-merge-gate.yml` | Main-branch merge gate. | Workflow artifacts only. | Workflow lint, analyze/test, Firebase backend, Firebase emulator integration, Android debug ABI, Windows demo artifact, Android demo artifacts. |
+| `build-artifacts.yml` / `Build Rain Apps` | Direct test downloads for QA. | `rain-test-*` GitHub pre-release only. | Hard Release Gate, Obsidian vault validation, artifact verification, `rain-release-metadata.json`; release notes label assets as `TEST ARTIFACT ONLY`. |
+| `fast-release.yml` / `Fast Release Apps` | Faster release-page upload for a SHA already proven by `CI/CD`. | GitHub release page. | Exact-target `CI/CD` success URL, metadata asset, and production Remote Config evidence URL when `build_profile=production`. |
+| `validated-release.yml` / `Validated Release Apps` | One workflow to validate selected ref, build apps, and publish. | GitHub release page. | Workflow lint, analyze/test, Firebase backend, Firebase emulator, vault validation, release-evidence gate, metadata asset; production requires Remote Config deploy/readback URL. |
+| `release.yml` / `Release Rain` | Stable production release from an existing tag/ref. | GitHub release page. | Workflow lint, analyze/test, auth lifecycle scenarios, Firebase backend, Firebase emulator, vault validation, Remote Config deploy/readback URL, metadata asset. Direct tag-push publishing is disabled. |
+
+All publish-capable workflows now attach `rain-release-metadata.json` recording target ref, target SHA, app version/build, update channel, build profile, artifact purpose, validation workflow, validation run URL, and Remote Config evidence URL when applicable.
+
+Local Phase 8 proof is structural. Cloud release proof still requires running the target workflow and recording the resulting run URL before claiming a specific artifact is release-proven.
+
 ## Latest Local Gate Evidence
 
 ### 2026-06-04 Cloud Update Warning Gate And Artifact Proof

@@ -1,6 +1,6 @@
 # Master Roadmap
 
-Last updated: 2026-06-04
+Last updated: 2026-06-05
 
 ## Purpose
 
@@ -10,7 +10,7 @@ Do not treat this as a new audit. The source of truth is [[Original Audit]]. Thi
 
 Epic -> Feature -> Task -> Subtask
 
-Related: [[Project Home]], [[Current Architecture]], [[Audit Resolution Tracker]], [[Critical Path]], [[30 Day Plan]], [[60 Day Plan]], [[90 Day Plan]], [[Parallel Work Streams]], [[Launch Blockers]], [[Quick Wins]], [[High-Risk Work]].
+Related: [[Project Home]], [[Current Architecture]], [[Audit Resolution Tracker]], [[Critical Path]], [[30 Day Plan]], [[60 Day Plan]], [[90 Day Plan]], [[Parallel Work Streams]], [[Launch Blockers]], [[Quick Wins]], [[High-Risk Work]], [[2026-06-05 Senior Audit Remediation Plan]].
 
 ## Roadmap Rules
 
@@ -20,6 +20,26 @@ Related: [[Project Home]], [[Current Architecture]], [[Audit Resolution Tracker]
 - Every task must have dependencies, estimated effort, success criteria, and definition of done.
 - Every implementation task must update related notes, especially [[Project Memory]], [[Technical Debt Register]], [[Risk Register]], and [[Audit Resolution Tracker]].
 - No roadmap item is complete until validation is recorded.
+
+## Active Senior Audit Remediation Overlay
+
+Source: [[2026-06-05 Senior Audit Remediation Plan]]
+
+This work is the active execution overlay created from the 2026-06-05 senior audit. It does not replace [[Original Audit]]; it binds fresh repository/vault findings to the existing roadmap, blocker, risk, debt, and validation system.
+
+| Phase | Priority | Status | Dependencies | Success Criteria | Definition Of Done |
+| --- | --- | --- | --- | --- | --- |
+| Phase 0: Evidence Lock And Planning Hygiene | P0 | Complete 2026-06-05 | [[2026-06-05 Senior Audit Remediation Plan]], [[Audit Resolution Tracker]], [[Technical Debt Register]], [[Risk Register]], [[BLOCKERS]] | SAR-001 through SAR-012 are visible in tracker/risk/debt/blocker notes with owner, priority, evidence, and release impact. | Vault validation passes and [[Project Metrics]] records branch, commit, command, result, and date. |
+| Phase 1: Peer Presence And Action Authority | P0 | Complete local proof 2026-06-05 | Phase 0, [[Presence Management]], [[Connection Request Notifications]] | Connect, call, and offline request actions use one authoritative peer connectivity snapshot. | `dart pub get`, `dart run melos run analyze`, and `dart run melos run test` passed; Firebase emulator/rules quota proof remains Phase 2. |
+| Phase 2: Firebase Call Lock And Rule Proof | P0 | Complete rule/emulator proof 2026-06-05 | Phase 0, [[Lease Management]], [[Rules Strategy]], [[Emulator Test Matrix]] | Stale/live/newer call locks and malformed call transitions are proven by emulator/rules tests. | Firebase emulator script, backend functions lint/test/audit, Melos analyze/test, and vault validation passed. |
+| Phase 3: Voice Call Runtime Decomposition | P0 | Not Started | Phases 1-2, [[VoiceCallRuntime Refactor]], [[Call State Machine]] | Call command, media, lock, room reconciliation, and error classification ownership is split. | Characterization tests pass before and after extraction. |
+| Phase 4: Diagnostics Privacy And Failure Taxonomy | P0/P1 | Mitigated locally 2026-06-05 | Phase 0, [[Diagnostics Sanitization]], [[Privacy Review]] | Diagnostics classify failures without leaking sensitive values. | Recursive sanitizer/export and failure taxonomy tests passed locally; every new private diagnostics field still needs sanitizer regression proof. |
+| Phase 5: Local Data Security Decision | P1 | Not Started | Phase 0, [[Security Roadmap]], [[Privacy Review]] | Local plaintext storage is either accepted explicitly or encryption work is planned separately. | Security/product docs match implementation truth. |
+| Phase 6: Database Scalability | P1 | Mitigated locally 2026-06-05 | Phase 0, [[Index Strategy]], [[Pagination Strategy]], [[Migration Plan]] | Message queries are indexed and conversation loading is bounded. | Drift migration, index, store pagination, provider pagination, workspace analyze/test, and vault validation passed locally; low-power/device frame-budget proof remains follow-up evidence. |
+| Phase 7: File Transfer Streaming And Backpressure | P1 | Mitigated locally 2026-06-05 | Phase 0, [[Streaming Architecture]], [[Backpressure Strategy]] | Large transfers use bounded IO/memory and clean failure paths. | Focused large receive, slow receiver/backpressure, cancel, hash failure, disk write failure, and temp cleanup tests passed locally; device-scale real-network proof remains follow-up evidence. |
+| Phase 8: Release Gate Unification | P0/P1 | Mitigated locally 2026-06-05 | Phase 0, [[Release Gates]], [[CI-CD Roadmap]] | No release path can publish without hard validation evidence. | Local workflow contract tests require hard gates, metadata, and production Remote Config evidence; fresh cloud workflow proof remains required per release. |
+| Phase 9: Obsidian Vault Semantic Enforcement | P1 | Mitigated locally 2026-06-05 | Phase 0, [[Engineering System Flaw Remediation Plan]] | Vault checks semantic truth, not only links/files. | `scripts/check_obsidian_vault.ps1` now enforces operational owner/priority/evidence/review fields, closed-blocker evidence, and P0/P1 next-action coverage; vault validation passed locally. |
+| Phase 10: Device And Media Reality Proof | P0 | Scoped/blocked 2026-06-05 | Phases 1-4, [[Emulator Test Matrix]], [[Scenario Coverage Matrix]] | Voice/video reliability is proven across target device directions or explicitly scoped down. | Target matrix and opt-in real media capture proof exist; Android endpoint was not attached, so device/cross-peer evidence remains required before public release. |
 
 ## Active Auth/Startup Remediation Overlay
 
@@ -228,11 +248,12 @@ This work is a P0 launch-blocking remediation stream discovered after the origin
 - Affected architecture: [[Database Architecture]], [[Database Schema]]
 - Success criteria: Conversation, unread, transfer, friend, and queue queries have explicit index coverage.
 - Definition of done: Migration tests pass from current schema and query behavior is documented.
+- Progress 2026-06-05: Drift schema v6 adds named indexes for message conversation reads, queued-message drain/recovery, file-transfer peer/message/state lookup, and friend display ordering. New-schema and v5-to-v6 migration tests pass locally.
 - Subtasks:
-  - [ ] TASK-008.1 Identify critical query paths.
-  - [ ] TASK-008.2 Add index migration.
-  - [ ] TASK-008.3 Add migration tests.
-  - [ ] TASK-008.4 Update [[Index Strategy]].
+  - [x] TASK-008.1 Identify critical query paths.
+  - [x] TASK-008.2 Add index migration.
+  - [x] TASK-008.3 Add migration tests.
+  - [x] TASK-008.4 Update [[Index Strategy]].
 
 #### Feature DB-02: Conversation Pagination
 
@@ -245,11 +266,12 @@ This work is a P0 launch-blocking remediation stream discovered after the origin
 - Affected architecture: [[Database Architecture]], [[Peer Chat]], [[Frontend Architecture]]
 - Success criteria: Initial conversation load is bounded and older messages load on demand.
 - Definition of done: Widget/provider tests prove pagination and no full-list rebuild on append/page load.
+- Progress 2026-06-05: `MessageStore` now exposes bounded live-tail and cursor page APIs. `MessagesController` starts with the default 50-message live tail and merges older local pages on pull-to-refresh. Provider tests cover bounded initial load, older-page loading, ordering, and duplicate prevention. Device frame-budget proof remains open.
 - Subtasks:
-  - [ ] TASK-009.1 Define page window and anchor behavior.
-  - [ ] TASK-009.2 Add paginated store query.
-  - [ ] TASK-009.3 Update chat provider.
-  - [ ] TASK-009.4 Add pagination tests.
+  - [x] TASK-009.1 Define page window and anchor behavior.
+  - [x] TASK-009.2 Add paginated store query.
+  - [x] TASK-009.3 Update chat provider.
+  - [x] TASK-009.4 Add pagination tests.
 
 ### E04: File Transfer Optimization
 
@@ -264,11 +286,12 @@ This work is a P0 launch-blocking remediation stream discovered after the origin
 - Affected architecture: [[Streaming Architecture]], [[File Transfer]]
 - Success criteria: Incoming chunks stream to a temp file without holding large payloads in memory.
 - Definition of done: Large-file tests pass under bounded memory and failed transfers clean temp paths.
+- Progress 2026-06-05: Incoming file chunks now write through one persistent per-transfer temp-file sink in `file_transfer_runtime.dart`. Complete, cancel, failure, network loss, and shutdown close active receive sinks; hash mismatch, disk write failure, invalid chunks, and cancellation clean temp files. Focused `friend_flow_test.dart` cases prove large receive, cancel cleanup, hash mismatch cleanup, and disk write failure behavior.
 - Subtasks:
-  - [ ] TASK-010.1 Define temp file lifecycle.
-  - [ ] TASK-010.2 Stream chunks into persistent sink.
-  - [ ] TASK-010.3 Add cleanup on cancel/failure.
-  - [ ] TASK-010.4 Add large-transfer tests.
+  - [x] TASK-010.1 Define temp file lifecycle.
+  - [x] TASK-010.2 Stream chunks into persistent sink.
+  - [x] TASK-010.3 Add cleanup on cancel/failure.
+  - [x] TASK-010.4 Add large-transfer tests.
 
 #### Feature FT-02: Data Channel Backpressure
 
@@ -281,11 +304,12 @@ This work is a P0 launch-blocking remediation stream discovered after the origin
 - Affected architecture: [[Backpressure Strategy]], [[Streaming Architecture]]
 - Success criteria: Sender pauses when buffered amount exceeds budget and resumes when safe.
 - Definition of done: Slow-receiver tests prove bounded buffered amount and transfer recovery/termination behavior.
+- Progress 2026-06-05: File-transfer backpressure now uses shared `rain_core` protocol constants for chunk size, high/low watermarks, poll interval, and timeout. The sender waits on `SessionManager.bufferedAmount` before each file chunk and records privacy-safe wait/complete/timeout diagnostics. Focused `friend_flow_test.dart` scripts high-to-low buffered amounts and proves binary send waits until drain.
 - Subtasks:
-  - [ ] TASK-011.1 Define high/low water marks.
-  - [ ] TASK-011.2 Wire send loop to backpressure.
-  - [ ] TASK-011.3 Add slow receiver tests.
-  - [ ] TASK-011.4 Update [[Backpressure Strategy]].
+  - [x] TASK-011.1 Define high/low water marks.
+  - [x] TASK-011.2 Wire send loop to backpressure.
+  - [x] TASK-011.3 Add slow receiver tests.
+  - [x] TASK-011.4 Update [[Backpressure Strategy]].
 
 ### E05: Security Hardening
 
@@ -317,10 +341,11 @@ This work is a P0 launch-blocking remediation stream discovered after the origin
 - Affected architecture: [[Diagnostics And Logging]], [[Security Roadmap]]
 - Success criteria: Sensitive keys and payload-like values are recursively redacted.
 - Definition of done: Sanitizer tests cover tokens, passwords, SDP, ICE candidates, ciphertext, message text, file bytes, nested maps, and lists.
+- Progress 2026-06-05: `DiagnosticsSanitizer` is now the central recursive sanitizer for crash diagnostics, debug logs, coalesced records, write-failure debug output, and final export payloads. Focused diagnostics export, debug log, and call taxonomy tests passed locally; new private diagnostics fields still require redaction samples.
 - Subtasks:
-  - [ ] TASK-014.1 Define denylist.
-  - [ ] TASK-014.2 Add recursive sanitizer tests.
-  - [ ] TASK-014.3 Verify export summaries remain useful.
+  - [x] TASK-014.1 Define denylist.
+  - [x] TASK-014.2 Add recursive sanitizer tests.
+  - [x] TASK-014.3 Verify export summaries remain useful.
 
 #### Feature SEC-03: Firebase Cost Guardrails
 
@@ -369,9 +394,10 @@ This work is a P0 launch-blocking remediation stream discovered after the origin
 - Success criteria: Release artifact jobs cannot publish when analyze, tests, vault validation, or Firebase rules gates fail.
 - Definition of done: Workflow status clearly identifies failing gate and artifact output references exact commit/version.
 - Subtasks:
-  - [ ] TASK-015.1 Define hard gate matrix.
-  - [ ] TASK-015.2 Update workflow dependencies.
-  - [ ] TASK-015.3 Add release gate documentation.
+  - [x] TASK-015.1 Define hard gate matrix.
+  - [x] TASK-015.2 Update workflow dependencies.
+  - [x] TASK-015.3 Add release gate documentation.
+- Progress 2026-06-05: Phase 8 local contract proof added metadata, production Remote Config evidence requirements, and validate-first stable publishing. Fresh GitHub Actions proof remains required before promoting any specific artifact.
 
 #### Feature CI-02: Workflow Ownership
 

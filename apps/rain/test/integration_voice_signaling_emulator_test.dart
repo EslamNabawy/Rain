@@ -701,6 +701,177 @@ void main() {
     },
     skip: runIntegrationTests ? null : 'Requires Firebase emulators',
   );
+
+  test(
+    'Firebase emulator rejects malformed voice lock writes without mutation',
+    () async {
+      final runId = DateTime.now().microsecondsSinceEpoch.toRadixString(36);
+      final alice = 'alicem$runId';
+      final bob = 'bobm$runId';
+      final createdAt = DateTime.now().millisecondsSinceEpoch;
+      final expiresAt = createdAt + const Duration(minutes: 5).inMilliseconds;
+      final pairId = voiceCallPairId(alice, bob);
+
+      final adapterAlice = FirebaseEmulatorSignalingAdapter();
+      final adapterBob = FirebaseEmulatorSignalingAdapter();
+
+      try {
+        await _registerFriends(
+          adapterAlice: adapterAlice,
+          adapterBob: adapterBob,
+          alice: alice,
+          bob: bob,
+        );
+
+        await _expectDeniedPreservingPaths(
+          reads: <String, Future<Object?> Function()>{
+            'activeVoicePairs/$pairId': () => adapterAlice.getRawForTest(
+              <String>['activeVoicePairs', pairId],
+            ),
+          },
+          operation: () => adapterAlice.putRawForTest(
+            <String>['activeVoicePairs', pairId],
+            <String, Object?>{
+              'callId': 'bad-pair-lock-$runId',
+              'caller': alice,
+              'callee': bob,
+              'createdAt': createdAt,
+              'updatedAt': createdAt,
+              'expiresAt': expiresAt,
+              'unexpected': true,
+            },
+          ),
+        );
+
+        await _expectDeniedPreservingPaths(
+          reads: <String, Future<Object?> Function()>{
+            'activeVoiceUsers/$alice': () =>
+                adapterAlice.getRawForTest(<String>['activeVoiceUsers', alice]),
+          },
+          operation: () => adapterAlice.putRawForTest(
+            <String>['activeVoiceUsers', alice],
+            <String, Object?>{
+              'callId': 'bad-user-lock-$runId',
+              'caller': alice,
+              'callee': bob,
+              'createdAt': createdAt,
+              'updatedAt': createdAt,
+              'expiresAt': expiresAt,
+            },
+          ),
+        );
+
+        await _expectDeniedPreservingPaths(
+          reads: <String, Future<Object?> Function()>{
+            'voiceCallInboxes/$bob/bad-inbox-shape-$runId': () =>
+                adapterBob.getRawForTest(<String>[
+                  'voiceCallInboxes',
+                  bob,
+                  'bad-inbox-shape-$runId',
+                ]),
+          },
+          operation: () => adapterAlice.putRawForTest(
+            <String>['voiceCallInboxes', bob, 'bad-inbox-shape-$runId'],
+            <String, Object?>{
+              ..._voiceInboxJson(
+                from: alice,
+                to: bob,
+                createdAt: createdAt + 1,
+                expiresAt: expiresAt + 1,
+                status: 'ringing',
+              ),
+              'unexpected': true,
+            },
+          ),
+        );
+      } finally {
+        await adapterAlice.dispose();
+        await adapterBob.dispose();
+      }
+    },
+    skip: runIntegrationTests ? null : 'Requires Firebase emulators',
+  );
+
+  test(
+    'Firebase emulator denied voice writes preserve live locks and room state',
+    () async {
+      final runId = DateTime.now().microsecondsSinceEpoch.toRadixString(36);
+      final alice = 'alicep$runId';
+      final bob = 'bobp$runId';
+      final callId = 'preserve-live-$runId';
+      final createdAt = DateTime.now().millisecondsSinceEpoch;
+      final expiresAt = createdAt + const Duration(minutes: 5).inMilliseconds;
+      final pairId = voiceCallPairId(alice, bob);
+
+      final adapterAlice = FirebaseEmulatorSignalingAdapter();
+      final adapterBob = FirebaseEmulatorSignalingAdapter();
+
+      try {
+        await _registerFriends(
+          adapterAlice: adapterAlice,
+          adapterBob: adapterBob,
+          alice: alice,
+          bob: bob,
+        );
+
+        await adapterAlice.createOutgoingCall(
+          callId: callId,
+          caller: alice,
+          callee: bob,
+          createdAt: createdAt,
+          expiresAt: expiresAt,
+        );
+
+        final liveReads = <String, Future<Object?> Function()>{
+          'activeVoicePairs/$pairId': () =>
+              adapterAlice.getRawForTest(<String>['activeVoicePairs', pairId]),
+          'activeVoiceUsers/$alice': () =>
+              adapterAlice.getRawForTest(<String>['activeVoiceUsers', alice]),
+          'activeVoiceUsers/$bob': () =>
+              adapterAlice.getRawForTest(<String>['activeVoiceUsers', bob]),
+          'voiceCalls/$callId': () =>
+              adapterAlice.getRawForTest(<String>['voiceCalls', callId]),
+          'voiceCallInboxes/$bob/$callId': () => adapterBob.getRawForTest(
+            <String>['voiceCallInboxes', bob, callId],
+          ),
+        };
+
+        await _expectDeniedPreservingPaths(
+          reads: liveReads,
+          operation: () => adapterAlice.deleteRawForTest(<String>[
+            'activeVoicePairs',
+            pairId,
+          ]),
+        );
+        await _expectDeniedPreservingPaths(
+          reads: liveReads,
+          operation: () => adapterAlice.deleteRawForTest(<String>[
+            'activeVoiceUsers',
+            alice,
+          ]),
+        );
+        await _expectDeniedPreservingPaths(
+          reads: liveReads,
+          operation: () => adapterAlice.patchRawForTest(
+            <String>['voiceCalls', callId],
+            <String, Object?>{'status': 'accepted', 'updatedAt': createdAt + 1},
+          ),
+        );
+        await _expectDeniedPreservingPaths(
+          reads: liveReads,
+          operation: () => adapterAlice.putRawForTest(<String>[
+            'voiceCalls',
+            callId,
+            'reason',
+          ], 'x' * 257),
+        );
+      } finally {
+        await adapterAlice.dispose();
+        await adapterBob.dispose();
+      }
+    },
+    skip: runIntegrationTests ? null : 'Requires Firebase emulators',
+  );
 }
 
 Future<void> _registerFriends({
@@ -816,6 +987,26 @@ Future<void> _expectDenied(Future<void> operation) async {
       ),
     ),
   );
+}
+
+Future<void> _expectDeniedPreservingPaths({
+  required Map<String, Future<Object?> Function()> reads,
+  required Future<void> Function() operation,
+}) async {
+  final before = <String, Object?>{};
+  for (final entry in reads.entries) {
+    before[entry.key] = await entry.value();
+  }
+
+  await _expectDenied(operation());
+
+  for (final entry in reads.entries) {
+    expect(
+      await entry.value(),
+      before[entry.key],
+      reason: 'Denied write mutated ${entry.key}',
+    );
+  }
 }
 
 Future<void> _createMaliciousVoiceCall({

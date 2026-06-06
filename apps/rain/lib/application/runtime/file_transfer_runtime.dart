@@ -303,11 +303,29 @@ extension FileTransferRuntime on RainRuntimeController {
       return;
     }
 
-    final tempFile = File(transfer.tempPath!);
-    await tempFile.parent.create(recursive: true);
-    final sink = tempFile.openWrite(mode: FileMode.append);
-    sink.add(bytes);
-    await sink.close();
+    try {
+      await _writeReceiveChunk(transfer, bytes);
+    } catch (error) {
+      const reason = 'Could not write received file chunk.';
+      _recordRuntimeEvent(
+        category: 'file_transfer',
+        name: 'receive_chunk_write_failed',
+        severity: 'warning',
+        message: _formatTransferError(error),
+        context: <String, Object?>{
+          'peerId': peerId,
+          'transferId': transfer.id,
+          'byteCount': bytes.lengthInBytes,
+          'offset': expectedOffset,
+        },
+      );
+      await _markTransferFailed(transfer.id, reason);
+      _sendFileControlIfConnected(
+        peerId,
+        FileTransferFrame.fail(transfer.id, reason),
+      );
+      return;
+    }
     final nextOffset = expectedOffset + bytes.lengthInBytes;
     _receiveProgressOffsets[transfer.id] = nextOffset;
     await _fileProgressBatcher.record(transfer.id, nextOffset);
@@ -339,6 +357,28 @@ extension FileTransferRuntime on RainRuntimeController {
           transfer.id,
           'Receiver reported incomplete file.',
         ),
+      );
+      return;
+    }
+    try {
+      await _closeReceiveSink(transfer.id, reason: 'complete');
+    } catch (error) {
+      const reason = 'Could not finalize received file.';
+      _recordRuntimeEvent(
+        category: 'file_transfer',
+        name: 'receive_sink_close_failed',
+        severity: 'warning',
+        message: _formatTransferError(error),
+        context: <String, Object?>{
+          'peerId': peerId,
+          'transferId': transfer.id,
+          'reason': 'complete',
+        },
+      );
+      await _markTransferFailed(transfer.id, reason);
+      _sendFileControlIfConnected(
+        peerId,
+        FileTransferFrame.fail(transfer.id, reason),
       );
       return;
     }
@@ -560,24 +600,62 @@ extension FileTransferRuntime on RainRuntimeController {
           source?.openRead ?? () => File(activeTransfer.localPath!).openRead();
       var offset = 0;
       var index = 0;
-      final pending = <int>[];
+      final pending = Uint8List(fileTransferChunkBytes);
+      var pendingLength = 0;
       final hashOutput = _DigestSink();
       final hashInput = sha256.startChunkedConversion(hashOutput);
       await for (final bytes in openRead()) {
         hashInput.add(bytes);
-        pending.addAll(bytes);
-        while (pending.length >= fileTransferChunkBytes) {
-          final chunk = Uint8List.fromList(
-            pending.take(fileTransferChunkBytes).toList(growable: false),
+        final sourceBytes = bytes is Uint8List
+            ? bytes
+            : Uint8List.fromList(bytes);
+        var cursor = 0;
+
+        if (pendingLength > 0) {
+          final needed = fileTransferChunkBytes - pendingLength;
+          final available = sourceBytes.lengthInBytes;
+          final copied = available < needed ? available : needed;
+          pending.setRange(
+            pendingLength,
+            pendingLength + copied,
+            sourceBytes,
+            0,
           );
-          pending.removeRange(0, fileTransferChunkBytes);
+          pendingLength += copied;
+          cursor += copied;
+          if (pendingLength == fileTransferChunkBytes) {
+            await _sendFileChunk(
+              transferId,
+              peerId,
+              Uint8List.sublistView(pending, 0, pendingLength),
+              index,
+              offset,
+            );
+            offset += pendingLength;
+            index += 1;
+            pendingLength = 0;
+          }
+        }
+
+        while (cursor + fileTransferChunkBytes <= sourceBytes.lengthInBytes) {
+          final chunk = Uint8List.sublistView(
+            sourceBytes,
+            cursor,
+            cursor + fileTransferChunkBytes,
+          );
           await _sendFileChunk(transferId, peerId, chunk, index, offset);
           offset += chunk.lengthInBytes;
           index += 1;
+          cursor += fileTransferChunkBytes;
+        }
+
+        if (cursor < sourceBytes.lengthInBytes) {
+          pendingLength = sourceBytes.lengthInBytes - cursor;
+          pending.setRange(0, pendingLength, sourceBytes, cursor);
         }
       }
-      if (pending.isNotEmpty) {
-        final chunk = Uint8List.fromList(pending);
+      if (pendingLength > 0) {
+        final chunk = Uint8List.sublistView(pending, 0, pendingLength);
         await _sendFileChunk(transferId, peerId, chunk, index, offset);
         offset += chunk.lengthInBytes;
       }
@@ -633,7 +711,11 @@ extension FileTransferRuntime on RainRuntimeController {
     if (_connectedSession(peerId) == null) {
       throw StateError('Peer disconnected.');
     }
-    await _waitForFileBuffer(peerId);
+    await _waitForFileBuffer(
+      peerId,
+      transferId: transferId,
+      nextByteCount: offset + chunk.lengthInBytes,
+    );
     brain!.send(
       peerId,
       SessionChannel.file,
@@ -650,17 +732,60 @@ extension FileTransferRuntime on RainRuntimeController {
     await _fileProgressBatcher.record(transferId, offset + chunk.lengthInBytes);
   }
 
-  Future<void> _waitForFileBuffer(String peerId) async {
-    final deadline = DateTime.now().add(const Duration(seconds: 30));
+  Future<void> _waitForFileBuffer(
+    String peerId, {
+    required String transferId,
+    required int nextByteCount,
+  }) async {
+    final startedAt = DateTime.now();
+    final deadline = startedAt.add(fileTransferBufferTimeout);
+    var waiting = false;
+    var samples = 0;
     while (DateTime.now().isBefore(deadline)) {
       if (_connectedSession(peerId) == null) {
         throw StateError('Peer disconnected.');
       }
       final buffered = await brain!.bufferedAmount(peerId, SessionChannel.file);
+      samples += 1;
       if (buffered <= fileTransferHighWatermarkBytes) {
+        if (waiting) {
+          _recordRuntimeEvent(
+            category: 'file_transfer',
+            name: 'send_backpressure_wait_completed',
+            context: <String, Object?>{
+              'peerId': peerId,
+              'transferId': transferId,
+              'bufferedAmountBytes': buffered,
+              'highWatermarkBytes': fileTransferHighWatermarkBytes,
+              'lowWatermarkBytes': fileTransferLowWatermarkBytes,
+              'waitDurationMs': DateTime.now()
+                  .difference(startedAt)
+                  .inMilliseconds,
+              'samples': samples,
+              'nextByteCount': nextByteCount,
+            },
+          );
+        }
         return;
       }
-      await Future<void>.delayed(const Duration(milliseconds: 25));
+      if (!waiting) {
+        waiting = true;
+        _recordRuntimeEvent(
+          category: 'file_transfer',
+          name: 'send_backpressure_wait_started',
+          severity: 'warning',
+          context: <String, Object?>{
+            'peerId': peerId,
+            'transferId': transferId,
+            'bufferedAmountBytes': buffered,
+            'highWatermarkBytes': fileTransferHighWatermarkBytes,
+            'lowWatermarkBytes': fileTransferLowWatermarkBytes,
+            'timeoutMs': fileTransferBufferTimeout.inMilliseconds,
+            'nextByteCount': nextByteCount,
+          },
+        );
+      }
+      await Future<void>.delayed(fileTransferBufferPollInterval);
       while (DateTime.now().isBefore(deadline)) {
         if (_connectedSession(peerId) == null) {
           throw StateError('Peer disconnected.');
@@ -669,12 +794,43 @@ extension FileTransferRuntime on RainRuntimeController {
           peerId,
           SessionChannel.file,
         );
+        samples += 1;
         if (drained <= fileTransferLowWatermarkBytes) {
+          _recordRuntimeEvent(
+            category: 'file_transfer',
+            name: 'send_backpressure_wait_completed',
+            context: <String, Object?>{
+              'peerId': peerId,
+              'transferId': transferId,
+              'bufferedAmountBytes': drained,
+              'highWatermarkBytes': fileTransferHighWatermarkBytes,
+              'lowWatermarkBytes': fileTransferLowWatermarkBytes,
+              'waitDurationMs': DateTime.now()
+                  .difference(startedAt)
+                  .inMilliseconds,
+              'samples': samples,
+              'nextByteCount': nextByteCount,
+            },
+          );
           return;
         }
-        await Future<void>.delayed(const Duration(milliseconds: 25));
+        await Future<void>.delayed(fileTransferBufferPollInterval);
       }
     }
+    _recordRuntimeEvent(
+      category: 'file_transfer',
+      name: 'send_backpressure_timeout',
+      severity: 'warning',
+      context: <String, Object?>{
+        'peerId': peerId,
+        'transferId': transferId,
+        'highWatermarkBytes': fileTransferHighWatermarkBytes,
+        'lowWatermarkBytes': fileTransferLowWatermarkBytes,
+        'timeoutMs': fileTransferBufferTimeout.inMilliseconds,
+        'samples': samples,
+        'nextByteCount': nextByteCount,
+      },
+    );
     throw StateError('File channel is congested. Try again.');
   }
 
@@ -689,6 +845,88 @@ extension FileTransferRuntime on RainRuntimeController {
       input.close();
     }
     return output.value.toString();
+  }
+
+  Future<void> _writeReceiveChunk(
+    FileTransferRecord transfer,
+    Uint8List bytes,
+  ) async {
+    final sink = await _receiveSinkFor(transfer);
+    sink.add(bytes);
+    await sink.flush();
+  }
+
+  Future<IOSink> _receiveSinkFor(FileTransferRecord transfer) async {
+    final tempPath = transfer.tempPath;
+    if (tempPath == null || tempPath.isEmpty) {
+      throw StateError('Transfer temp path is missing.');
+    }
+    final existing = _receiveFileSinks[transfer.id];
+    if (existing != null && _receiveFileSinkPaths[transfer.id] == tempPath) {
+      return existing;
+    }
+    if (existing != null) {
+      await _closeReceiveSink(transfer.id, reason: 'path_changed');
+    }
+
+    final tempFile = File(tempPath);
+    await tempFile.parent.create(recursive: true);
+    final sink = tempFile.openWrite(mode: FileMode.append);
+    _receiveFileSinks[transfer.id] = sink;
+    _receiveFileSinkPaths[transfer.id] = tempPath;
+    _recordRuntimeEvent(
+      category: 'file_transfer',
+      name: 'receive_sink_opened',
+      context: <String, Object?>{
+        'peerId': transfer.peerId,
+        'transferId': transfer.id,
+        'bytesTransferred': transfer.bytesTransferred,
+      },
+    );
+    return sink;
+  }
+
+  Future<void> _closeReceiveSink(
+    String transferId, {
+    required String reason,
+  }) async {
+    final sink = _receiveFileSinks.remove(transferId);
+    _receiveFileSinkPaths.remove(transferId);
+    if (sink == null) {
+      return;
+    }
+    await sink.close();
+    _recordRuntimeEvent(
+      category: 'file_transfer',
+      name: 'receive_sink_closed',
+      context: <String, Object?>{'transferId': transferId, 'reason': reason},
+    );
+  }
+
+  Future<void> _closeAllReceiveSinks({required String reason}) async {
+    final transferIds = _receiveFileSinks.keys.toList(growable: false);
+    for (final transferId in transferIds) {
+      try {
+        await _closeReceiveSink(transferId, reason: reason);
+      } catch (error, stackTrace) {
+        _recordRuntimeEvent(
+          category: 'file_transfer',
+          name: 'receive_sink_close_failed',
+          severity: 'warning',
+          message: _formatTransferError(error),
+          context: <String, Object?>{
+            'transferId': transferId,
+            'reason': reason,
+          },
+        );
+        errorRecorder?.call(
+          error,
+          stackTrace,
+          source: 'file-transfer-sink-close',
+          fatal: false,
+        );
+      }
+    }
   }
 
   void _clearTransferRuntimeState(String transferId) {
@@ -840,6 +1078,27 @@ extension FileTransferRuntime on RainRuntimeController {
   }
 
   Future<void> _deleteTempFile(FileTransferRecord transfer) async {
+    try {
+      await _closeReceiveSink(transfer.id, reason: 'cleanup');
+    } catch (error, stackTrace) {
+      _recordRuntimeEvent(
+        category: 'file_transfer',
+        name: 'receive_sink_close_failed',
+        severity: 'warning',
+        message: _formatTransferError(error),
+        context: <String, Object?>{
+          'peerId': transfer.peerId,
+          'transferId': transfer.id,
+          'reason': 'cleanup',
+        },
+      );
+      errorRecorder?.call(
+        error,
+        stackTrace,
+        source: 'file-transfer-temp-cleanup',
+        fatal: false,
+      );
+    }
     final tempPath = transfer.tempPath;
     if (tempPath == null || tempPath.isEmpty) {
       return;
@@ -847,6 +1106,14 @@ extension FileTransferRuntime on RainRuntimeController {
     final tempFile = File(tempPath);
     if (await tempFile.exists()) {
       await tempFile.delete();
+      _recordRuntimeEvent(
+        category: 'file_transfer',
+        name: 'temp_file_deleted',
+        context: <String, Object?>{
+          'peerId': transfer.peerId,
+          'transferId': transfer.id,
+        },
+      );
     }
   }
 

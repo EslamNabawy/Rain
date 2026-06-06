@@ -6,6 +6,10 @@ import 'package:sqlite3/common.dart';
 
 part 'rain_database.g.dart';
 
+@TableIndex(
+  name: 'messages_peer_sent_seq_id_idx',
+  columns: <Symbol>{#peerId, #sentAt, #seq, #id},
+)
 class Messages extends Table {
   TextColumn get id => text()();
   TextColumn get peerId => text()();
@@ -20,6 +24,7 @@ class Messages extends Table {
   Set<Column<Object>> get primaryKey => <Column<Object>>{id};
 }
 
+@TableIndex(name: 'friends_display_name_idx', columns: <Symbol>{#displayName})
 class Friends extends Table {
   TextColumn get username => text()();
   TextColumn get displayName => text()();
@@ -34,6 +39,14 @@ class Friends extends Table {
   Set<Column<Object>> get primaryKey => <Column<Object>>{username};
 }
 
+@TableIndex(
+  name: 'queued_messages_to_status_seq_sent_idx',
+  columns: <Symbol>{#to, #status, #seq, #sentAt},
+)
+@TableIndex(
+  name: 'queued_messages_status_to_idx',
+  columns: <Symbol>{#status, #to},
+)
 class QueuedMessages extends Table {
   TextColumn get id => text()();
   TextColumn get to => text()();
@@ -46,6 +59,18 @@ class QueuedMessages extends Table {
   Set<Column<Object>> get primaryKey => <Column<Object>>{id};
 }
 
+@TableIndex(
+  name: 'file_transfers_peer_created_idx',
+  columns: <Symbol>{#peerId, #createdAt},
+)
+@TableIndex(
+  name: 'file_transfers_message_id_idx',
+  columns: <Symbol>{#messageId},
+)
+@TableIndex(
+  name: 'file_transfers_state_peer_idx',
+  columns: <Symbol>{#state, #peerId},
+)
 class FileTransfers extends Table {
   TextColumn get id => text()();
   TextColumn get peerId => text()();
@@ -111,7 +136,7 @@ class RainDatabase extends _$RainDatabase {
   Future<void> _serializedWriteQueue = Future<void>.value();
 
   @override
-  int get schemaVersion => 5;
+  int get schemaVersion => 6;
 
   @override
   MigrationStrategy get migration => MigrationStrategy(
@@ -131,8 +156,61 @@ class RainDatabase extends _$RainDatabase {
       if (from < 5) {
         await m.createTable(fileTransfers);
       }
+      if (from < 6) {
+        await _createScalabilityIndexes();
+      }
     },
   );
+
+  Future<void> _createScalabilityIndexes() async {
+    if (await _hasTable('messages')) {
+      await customStatement(
+        'CREATE INDEX IF NOT EXISTS messages_peer_sent_seq_id_idx '
+        'ON messages (peer_id, sent_at, seq, id);',
+      );
+    }
+    if (await _hasTable('friends')) {
+      await customStatement(
+        'CREATE INDEX IF NOT EXISTS friends_display_name_idx '
+        'ON friends (display_name);',
+      );
+    }
+    if (await _hasTable('queued_messages')) {
+      await customStatement(
+        'CREATE INDEX IF NOT EXISTS queued_messages_to_status_seq_sent_idx '
+        'ON queued_messages ("to", status, seq, sent_at);',
+      );
+      await customStatement(
+        'CREATE INDEX IF NOT EXISTS queued_messages_status_to_idx '
+        'ON queued_messages (status, "to");',
+      );
+    }
+    if (await _hasTable('file_transfers')) {
+      await customStatement(
+        'CREATE INDEX IF NOT EXISTS file_transfers_peer_created_idx '
+        'ON file_transfers (peer_id, created_at);',
+      );
+      await customStatement(
+        'CREATE INDEX IF NOT EXISTS file_transfers_message_id_idx '
+        'ON file_transfers (message_id);',
+      );
+      await customStatement(
+        'CREATE INDEX IF NOT EXISTS file_transfers_state_peer_idx '
+        'ON file_transfers (state, peer_id);',
+      );
+    }
+  }
+
+  Future<bool> _hasTable(String tableName) async {
+    final rows = await customSelect(
+      'SELECT name FROM sqlite_master WHERE type = ? AND name = ?;',
+      variables: <Variable<Object>>[
+        const Variable<String>('table'),
+        Variable<String>(tableName),
+      ],
+    ).get();
+    return rows.isNotEmpty;
+  }
 
   Future<bool> _hasColumn(String tableName, String columnName) async {
     final rows = await customSelect('PRAGMA table_info($tableName);').get();

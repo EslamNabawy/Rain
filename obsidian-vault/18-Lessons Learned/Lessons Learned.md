@@ -1,6 +1,6 @@
 # Lessons Learned
 
-Last updated: 2026-06-04
+Last updated: 2026-06-05
 
 ## Purpose
 
@@ -463,6 +463,118 @@ No task is fully complete until the lesson check is done or explicitly marked "n
 - Pattern: Native shell state can break a Flutter-owned visual contract.
 - Follow-up improvement: Add platform resource contract tests when Android or Windows shell resources affect startup or branding.
 - Owner: Engineering
+- Status: Open
+
+### LESSON-20260605-028: Rule Denials Need State-Preservation Proof
+
+- Date: 2026-06-05
+- Related task: Senior Audit Phase 2 Firebase call lock and rule proof.
+- Related system: [[Rules Strategy]], [[Lease Management]], [[Firebase Architecture]], [[Emulator Test Matrix]]
+- Related risk/debt: R-002, R-014, R-017, BLK-002, BLK-003
+- What was learned: A Firebase rule test that only expects permission denied is incomplete. For call locks, denied writes must also prove the existing pair lock, user locks, room, and inbox were not partially mutated.
+- What caused delays: The first emulator proof helper read Bob's protected inbox with Alice's auth token, so the test failed for the wrong reason before the actual state-preservation assertion could run.
+- What failed: Auth-scoped RTDB paths cannot be checked with one generic reader when the test spans caller-owned and callee-owned data.
+- What succeeded: The helper now accepts path-specific readers, so protected inbox rows are read by the callee and shared call/lock rows are read by a participant with rule access. The rerun passed with malformed lock/inbox denial, unauthorized transition denial, oversized reason denial, live-lock preservation, and terminal leftover lock reclamation covered.
+- What should change: Future emulator tests for protected mirrors should name the actor used for every pre/post read, especially when the write is expected to fail.
+- Pattern: Denial assertions must prove no side effects under the correct actor.
+- Follow-up improvement: Apply the same state-preservation pattern to connection-request quota non-consumption proof under BLK-009.
+- Owner: Engineering
+- Status: Open
+
+### LESSON-20260605-029: Runtime Decomposition Needs Small Proven Seams
+
+- Date: 2026-06-05
+- Related task: Senior Audit Phase 3 Voice Call Runtime Decomposition.
+- Related system: [[VoiceCallRuntime Refactor]], [[Call State Machine]], [[Current Architecture]]
+- Related risk/debt: R-001, R-007, TD-001, TD-016, BLK-001
+- What was learned: Pulling pure classification and media adapter classes out first creates a low-risk seam before touching room reconciliation, locks, command handling, or cleanup order.
+- What caused delays: `VoiceCallRuntime` had private helper logic and media adapter classes mixed with stateful room/session orchestration, making broad extraction risky.
+- What failed: The first classifier test assumed a stronger nested-prefix normalization than the current runtime actually implements; characterization must preserve current behavior unless the change is intentional.
+- What succeeded: `CallErrorClassifier` and `call_media_session_coordinator.dart` were extracted with focused classifier, media-path, diagnostics-contract, failure-message, analyze, and full Melos validation passing.
+- What should change: Continue Phase 3 by adding terminal-room and late-Firebase-update characterization tests, then extract room reconciliation and lock coordination in separate slices.
+- Pattern: Decompose stateful runtime code by extracting pure seams first.
+- Follow-up improvement: Keep each Phase 3 extraction slice tied to a named test group and explicit vault evidence before deleting old helper paths.
+- Owner: Engineering
+- Status: Open
+
+### LESSON-20260605-030: Security Acceptance Is Not Security Implementation
+
+- Date: 2026-06-05
+- Related task: Senior Audit Phase 5 Local Data Security Decision
+- Related system: [[Privacy Review]], [[Security Roadmap]], [[ADR-010]]
+- Related risk/debt: SAR-005
+- What was learned: A privacy gap can be closed as an honest scope decision, but that must not be confused with implementing protection.
+- What caused delays: The project had private-communication goals and sanitized-diagnostics rules, but the local database storage position was implicit rather than stated.
+- What failed: Without an explicit ADR, future release or support copy could imply local database encryption that the code does not provide.
+- What succeeded: Code inspection and Context7 Drift documentation confirmed the implementation reality, then the vault recorded Option A as accepted plaintext local storage.
+- What should change: Any future local encryption work must be planned as Option B with key management, migration, rollback, recovery, and tests before touching storage code.
+- Pattern: Scope acceptance must be visible where claims are made.
+- Follow-up improvement: Add a release-copy checklist item that rejects local encryption claims unless [[ADR-010]] has been superseded by implementation evidence.
+- Owner: Security/Product
+- Status: Open
+
+### LESSON-20260605-031: Diagnostics Need Ingestion And Export Guards
+
+- Date: 2026-06-05
+- Related task: Senior Audit Phase 4 Diagnostics Privacy And Failure Taxonomy
+- Related system: [[Diagnostics And Logging]], [[Diagnostics Sanitization]], [[Privacy Review]]
+- Related risk/debt: SAR-008, R-015, TD-010, TD-016
+- What was learned: Key-only sanitization is not enough for support diagnostics. Privacy-sensitive values can arrive through nested maps, lists, free-text stack traces, JSON strings, coalesced event keys, debug write failures, and derived export summaries.
+- What caused delays: The first sanitizer pass still leaked a token-like value in a stack trace, then over-redacted a useful provider name and truncated nested SDP/ICE evidence before the export assertion could see it.
+- What failed: Treating every secret-looking word as sensitive loses diagnostic value, while missing standalone token values leaves exports unsafe.
+- What succeeded: A central recursive `DiagnosticsSanitizer` plus a final export guard removed raw identifiers, paths, files, SDP, ICE candidates, secrets, message-like content, and binary payloads while keeping taxonomy/status metadata. Focused diagnostics and failure taxonomy tests passed locally.
+- What should change: Every new diagnostic field that can carry identifiers, paths, content, signaling frames, files, or secrets needs a redaction regression sample before release claims.
+- Pattern: Observability privacy needs both ingestion-time sanitization and final export-time sanitization.
+- Follow-up improvement: Add a release checklist or validator rule that requires sanitizer regression evidence when diagnostics schemas change.
+- Owner: Security/Engineering
+- Status: Open
+
+### LESSON-20260605-032: File Transfer Pressure Needs Both Stream Ownership And Channel Ownership
+
+- Date: 2026-06-05
+- Related task: Senior Audit Phase 7 File Transfer Streaming And Backpressure
+- Related system: [[File Transfer]], [[Streaming Architecture]], [[Backpressure Strategy]]
+- Related risk/debt: SAR-007, R-011, TD-008
+- What was learned: Fixing large file transfer pressure is two separate ownership problems. The receiver needs explicit sink lifecycle ownership, while the sender needs a single backpressure contract tied to the data-channel buffer.
+- What caused delays: The old receive path hid lifecycle bugs by opening and closing the temp file for every chunk, and the old send path hid memory pressure inside a growable pending list.
+- What failed: Per-chunk sink open/close could not prove cleanup on cancel/failure, and repeated list copies made large transfer behavior harder to reason about.
+- What succeeded: A persistent receive-sink registry plus terminal cleanup tests made temp lifecycle explicit. Shared protocol constants and scripted `bufferedAmount` tests made sender backpressure behavior deterministic.
+- What should change: Future file-transfer changes must update both receive lifecycle tests and send backpressure tests when touching chunks, temp paths, or data-channel sends.
+- Pattern: Streaming reliability requires explicit resource lifetime and explicit flow-control contracts.
+- Follow-up improvement: Add real-network/device-scale large-transfer proof once the local runtime gates are green.
+- Owner: Engineering
+- Status: Open
+
+### LESSON-20260605-033: Release Paths Need Contract Tests, Not Trust
+
+- Date: 2026-06-05
+- Related task: Senior Audit Phase 8 Release Gate Unification
+- Related system: [[Release Gates]], [[CI-CD Roadmap]]
+- Related risk/debt: SAR-009, SAR-011, R-018, TD-017, BLK-006
+- What was learned: A release workflow can become a bypass even when a stronger validated workflow exists beside it.
+- What caused delays: The repo had several release-oriented workflows with overlapping names and different proof levels, making it easy to treat all release pages as equally trusted.
+- What failed: Direct tag-push publishing in `release.yml` did not enforce the same analyze/test/Firebase/emulator/vault evidence or Remote Config deploy/readback proof as the validated path.
+- What succeeded: Phase 8 made the stable path manual and validate-first, added shared metadata, labeled test downloads clearly, and added contract tests that fail if publish-capable workflows drop metadata or evidence gates.
+- What should change: Every new publish-capable workflow must define artifact purpose, validation source, release metadata, and production Remote Config evidence behavior before it can upload assets.
+- Pattern: Parallel release workflows drift unless tests lock the dependency graph.
+- Follow-up improvement: Run the changed GitHub Actions workflow once and record the cloud run URL before promoting any artifact.
+- Owner: DevOps
+- Status: Open
+
+### LESSON-20260605-034: Governance Validators Must Match The Real Registers
+
+- Date: 2026-06-05
+- Related task: Senior Audit Phase 9 Obsidian Vault Semantic Enforcement
+- Related system: [[Repository Map]], [[Project Metrics]], [[Audit Resolution Tracker]]
+- Related risk/debt: SAR-010, BLK-006
+- What was learned: Semantic validation is useful only when it enforces the vault's real schemas. Treating a narrative `Impact` field as an enum or rejecting markdown-formatted commit hashes creates false failures.
+- What caused delays: The first validator pass had to be adjusted after it over-constrained existing table fields.
+- What failed: A generic schema assumption did not match the active risk register or evidence ledger formatting.
+- What succeeded: The final validator enforces concrete operational truth: owner, priority, evidence, review date, fixed status values where the register defines them, closed-blocker evidence, and P0/P1 next-action coverage.
+- What should change: Future vault validator extensions must first document the target schema in [[Repository Map]], then validate against that schema with one clean local vault run.
+- Pattern: Automation must encode actual contracts, not inferred prose.
+- Follow-up improvement: Add generated metric reconciliation for blocker/risk/debt counts after the current semantic checks stay stable.
+- Owner: Engineering/DevOps
 - Status: Open
 
 ## Review Cadence

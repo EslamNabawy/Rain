@@ -145,7 +145,7 @@ This backlog converts the audit in [[Original Audit]] into executable work. Each
 
 ### TASK-010: Use persistent file receive sink
 
-- Status: [ ] Not Started
+- Status: [/] Mitigated locally 2026-06-05
 - Epic: [[File Transfer Optimization Epic]]
 - Feature: [[Streaming Architecture]]
 - Description: Stream incoming file chunks directly to a temporary file instead of holding large payloads in memory.
@@ -153,14 +153,15 @@ This backlog converts the audit in [[Original Audit]] into executable work. Each
 - Technical value: Makes receive path scalable.
 - Risk level: High
 - Dependencies: [[Backpressure Strategy]]
-- Files affected: `packages/peer_core/lib/src/file_transfer/*`, `apps/rain/lib/application/files/*`
+- Files affected: `apps/rain/lib/application/runtime/file_transfer_runtime.dart`, `apps/rain/lib/application/runtime/rain_runtime_controller.dart`, `apps/rain/test/friend_flow_test.dart`
 - Acceptance criteria: Receive path writes chunks incrementally and verifies final size/hash if available.
 - Definition of done: Large-file unit/integration tests pass under bounded memory.
 - Estimated effort: 4 days
+- Progress: Incoming file chunks now use one persistent temp-file sink per active transfer. Focused local tests cover large receive, hash mismatch cleanup, cancel cleanup after a written chunk, and disk write failure.
 
 ### TASK-011: Add data-channel send backpressure gate
 
-- Status: [ ] Not Started
+- Status: [/] Mitigated locally 2026-06-05
 - Epic: [[File Transfer Optimization Epic]]
 - Feature: [[Backpressure Strategy]]
 - Description: Pause chunk sends when `bufferedAmount` exceeds threshold and resume only after low-water signal or timer.
@@ -168,10 +169,11 @@ This backlog converts the audit in [[Original Audit]] into executable work. Each
 - Technical value: Honors RTCDataChannel capacity instead of flooding it.
 - Risk level: High
 - Dependencies: TASK-010
-- Files affected: `packages/peer_core/lib/src/file_transfer/*`
+- Files affected: `apps/rain/lib/application/runtime/file_transfer_runtime.dart`, `packages/rain_core/lib/file_transfer/file_transfer_protocol.dart`, `apps/rain/test/friend_flow_test.dart`, `packages/rain_core/test/file_transfer_protocol_test.dart`
 - Acceptance criteria: Large sends do not exceed configured buffer budget.
 - Definition of done: Backpressure tests simulate slow receiver and disconnect.
 - Estimated effort: 3 days
+- Progress: Shared chunk/high/low/poll/timeout constants now define the file-transfer backpressure contract; sender waits on file-channel `bufferedAmount` before each chunk. Focused local tests cover scripted slow receiver drain behavior.
 
 ### TASK-012: Fix strict update version validation
 
@@ -205,7 +207,7 @@ This backlog converts the audit in [[Original Audit]] into executable work. Each
 
 ### TASK-014: Strengthen diagnostics sanitization
 
-- Status: [ ] Not Started
+- Status: [/] Mitigated locally 2026-06-05; new private diagnostics fields still require regression samples
 - Epic: [[Security Hardening Epic]]
 - Feature: [[Diagnostics Sanitization]]
 - Description: Denylist raw SDP, ICE candidates, tokens, ciphertext, passwords, message text, and file bytes from all diagnostics.
@@ -213,9 +215,10 @@ This backlog converts the audit in [[Original Audit]] into executable work. Each
 - Technical value: Makes logging safe enough for support.
 - Risk level: High
 - Dependencies: [[Privacy Review]]
-- Files affected: `apps/rain/lib/application/diagnostics/*`
+- Files affected: `apps/rain/lib/infrastructure/services/*`
 - Acceptance criteria: Recursive sanitizer redacts sensitive keys and caps string length.
 - Definition of done: Tests prove redaction for nested maps/lists.
+- Progress 2026-06-05: `DiagnosticsSanitizer` centralizes crash/debug/export sanitization and focused diagnostics export/debug-log/classifier tests passed locally.
 - Estimated effort: 2 days
 
 ### TASK-015: Turn analyzer warnings into release blockers

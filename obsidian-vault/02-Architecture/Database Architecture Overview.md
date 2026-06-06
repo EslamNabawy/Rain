@@ -16,17 +16,18 @@ Rain uses Drift/SQLite for local persistence.
 
 ## Current Risks
 
-- Secondary indexes are missing for high-frequency queries.
-- `watchConversation(peerId)` returns the full conversation ordered by `sentAt` and `seq`.
-- File transfer records are watched by peer without known indexes.
-- Message pagination is not yet implemented.
+- Local query structure was mitigated on 2026-06-05 with Drift schema v6 indexes.
+- Chat startup now uses a bounded live tail plus older-page loading.
+- Remaining risk is device/low-power performance proof for large histories.
 
-## Required Indexes
+## Implemented Indexes
 
-- `messages(peer_id, sent_at, seq)`
-- `friends(display_name)`
-- `file_transfers(peer_id, created_at)`
-- `file_transfers(state)`
-- `queued_messages(to, status, sent_at)`
+- `messages_peer_sent_seq_id_idx`
+- `friends_display_name_idx`
+- `queued_messages_to_status_seq_sent_idx`
+- `queued_messages_status_to_idx`
+- `file_transfers_peer_created_idx`
+- `file_transfers_message_id_idx`
+- `file_transfers_state_peer_idx`
 
 Related: [[Database Schema]], [[Migrations]], [[Technical Debt]].

@@ -600,6 +600,7 @@ void main() {
 
     expect(workflow, contains('publish_test_release'));
     expect(workflow, contains('Publish Direct Test Downloads'));
+    expect(workflow, contains('TEST ARTIFACT ONLY'));
     expect(workflow, contains('actions/download-artifact@v8'));
     expect(workflow, contains('gh release create'));
     expect(workflow, contains(r'--repo "${GITHUB_REPOSITORY}"'));
@@ -610,10 +611,94 @@ void main() {
     expect(workflow, contains('GITHUB_STEP_SUMMARY'));
     expect(workflow, contains('rain-test-'));
     expect(workflow, contains('Delete old Rain test releases'));
+    expect(workflow, contains('rain-release-metadata.json'));
     expect(docs, contains('publish_test_release'));
     expect(docs, contains('individual APK assets'));
     expect(docs, contains('Rain-Demo-Android-v7a.apk'));
     expect(docs, contains('Rain-Release-Android-v8-v9.apk'));
+  });
+
+  test('stable release workflow cannot publish before hard validation', () {
+    final workflow = _repoFile('.github/workflows/release.yml');
+
+    expect(workflow, isNot(contains("tags:\n      - 'v*'")));
+    expect(workflow, contains('remote_config_evidence_url'));
+    expect(
+      workflow,
+      contains('Release Rain requires an existing v* release tag'),
+    );
+    expect(workflow, contains('Workflow Lint'));
+    expect(workflow, contains('Workspace Analyze And Test'));
+    expect(workflow, contains('Firebase Backend'));
+    expect(workflow, contains('Firebase Emulator Integration'));
+    expect(workflow, contains('Validate Obsidian vault'));
+    expect(workflow, contains('Remote Config Evidence'));
+    expect(workflow, contains('Validation Gate'));
+    expect(
+      workflow,
+      contains(r'test "${{ needs.workflow-lint.result }}" = "success"'),
+    );
+    expect(
+      workflow,
+      contains(r'test "${{ needs.workspace-validation.result }}" = "success"'),
+    );
+    expect(
+      workflow,
+      contains(r'test "${{ needs.firebase-backend.result }}" = "success"'),
+    );
+    expect(
+      workflow,
+      contains(
+        r'test "${{ needs.firebase-emulator-tests.result }}" = "success"',
+      ),
+    );
+    expect(
+      workflow,
+      contains(
+        r'test "${{ needs.remote-config-evidence.result }}" = "success"',
+      ),
+    );
+    expect(
+      workflow,
+      contains(r"if: ${{ needs.validation-gate.result == 'success' }}"),
+    );
+    expect(workflow, contains('rain-release-metadata.json'));
+    expect(
+      workflow,
+      contains('artifacts/release-metadata/rain-release-metadata.json'),
+    );
+    expect(workflow, contains('Create GitHub Release'));
+  });
+
+  test('publish-capable workflows emit release metadata evidence', () {
+    final workflows = <String>[
+      _repoFile('.github/workflows/build-artifacts.yml'),
+      _repoFile('.github/workflows/fast-release.yml'),
+      _repoFile('.github/workflows/validated-release.yml'),
+      _repoFile('.github/workflows/release.yml'),
+    ];
+
+    for (final workflow in workflows) {
+      expect(workflow, contains('write_release_metadata.ps1'));
+      expect(workflow, contains('rain-release-metadata.json'));
+      expect(workflow, contains('ValidationWorkflow'));
+      expect(workflow, contains('ValidationRunUrl'));
+      expect(workflow, contains('ArtifactPurpose'));
+    }
+  });
+
+  test('production release workflows require Remote Config evidence', () {
+    final workflows = <String>[
+      _repoFile('.github/workflows/fast-release.yml'),
+      _repoFile('.github/workflows/validated-release.yml'),
+      _repoFile('.github/workflows/release.yml'),
+    ];
+
+    for (final workflow in workflows) {
+      expect(workflow, contains('remote_config_evidence_url'));
+      expect(workflow, contains('Remote Config'));
+      expect(workflow, contains('must be an https URL'));
+    }
   });
 
   test('release workflow verifies native voice runtimes before upload', () {

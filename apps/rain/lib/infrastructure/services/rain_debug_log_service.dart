@@ -3,6 +3,7 @@ import 'dart:async';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import 'crash_diagnostics_service.dart';
+import 'diagnostics_sanitizer.dart';
 
 enum RainDebugSeverity { debug, info, warning, error, fatal }
 
@@ -110,7 +111,10 @@ final class CrashDiagnosticsDebugLogService implements RainDebugLogService {
       severity: fatal
           ? RainDebugSeverity.fatal.name
           : RainDebugSeverity.error.name,
-      message: error.toString(),
+      message: DiagnosticsSanitizer.sanitizeString(
+        error.toString(),
+        key: 'error',
+      ),
       context: sanitizeContext(<String, Object?>{
         'source': source,
         'fatal': fatal,
@@ -123,90 +127,7 @@ final class CrashDiagnosticsDebugLogService implements RainDebugLogService {
   Future<void> flush() => _diagnostics.flushEvents();
 
   static Map<String, Object?> sanitizeContext(Map<String, Object?> context) {
-    return _sanitizeMap(context, depth: 0);
-  }
-
-  static Map<String, Object?> _sanitizeMap(
-    Map<String, Object?> value, {
-    required int depth,
-  }) {
-    if (depth >= 4) {
-      return const <String, Object?>{};
-    }
-    final sanitized = <String, Object?>{};
-    for (final entry in value.entries) {
-      final key = entry.key.trim();
-      if (key.isEmpty) {
-        continue;
-      }
-      if (_isSensitiveKey(key)) {
-        sanitized[key] = '[redacted]';
-        continue;
-      }
-      sanitized[key] = _sanitizeValue(entry.value, depth: depth + 1);
-    }
-    return sanitized;
-  }
-
-  static Object? _sanitizeValue(Object? value, {required int depth}) {
-    if (value == null || value is num || value is bool) {
-      return value;
-    }
-    if (value is DateTime) {
-      return value.toUtc().toIso8601String();
-    }
-    if (value is Enum) {
-      return value.name;
-    }
-    if (value is String) {
-      return _trim(value);
-    }
-    if (value is Iterable) {
-      if (depth >= 4) {
-        return const <Object?>[];
-      }
-      return value
-          .take(20)
-          .map((Object? item) => _sanitizeValue(item, depth: depth + 1))
-          .toList(growable: false);
-    }
-    if (value is Map) {
-      if (depth >= 4) {
-        return const <String, Object?>{};
-      }
-      return _sanitizeMap(
-        value.map<String, Object?>(
-          (Object? key, Object? value) => MapEntry(key.toString(), value),
-        ),
-        depth: depth,
-      );
-    }
-    return _trim(value.toString());
-  }
-
-  static bool _isSensitiveKey(String key) {
-    final normalized = key.trim().toLowerCase();
-    if (normalized.contains('password') ||
-        normalized.contains('token') ||
-        normalized.contains('credential') ||
-        normalized.contains('secret')) {
-      return true;
-    }
-    return normalized == 'sdp' ||
-        normalized == 'candidate' ||
-        normalized == 'ciphertext' ||
-        normalized == 'nonce' ||
-        normalized == 'mac' ||
-        normalized == 'messagetext' ||
-        normalized == 'filebytes';
-  }
-
-  static String _trim(String value) {
-    const max = 512;
-    if (value.length <= max) {
-      return value;
-    }
-    return '${value.substring(0, max)}...';
+    return DiagnosticsSanitizer.sanitizeMap(context);
   }
 }
 

@@ -11,6 +11,8 @@ import 'package:rain_core/rain_core.dart';
 import 'package:rain/infrastructure/notifications/rain_notification_service.dart';
 import 'connection_attempt_coordinator.dart';
 import 'app_exit_coordinator.dart';
+import 'call_error_classifier.dart';
+import 'call_media_session_coordinator.dart';
 import 'call_media_recovery_policy.dart';
 import 'call_retry_policy.dart';
 import 'call_terminal_write_policy.dart';
@@ -63,7 +65,101 @@ String _formatRetryDelay(Duration delay) {
   return '${delay.inMinutes} minutes';
 }
 
-const Duration _peerPresenceFreshnessWindow = Duration(seconds: 30);
+const int peerPresenceFreshnessWindowMs = 30000;
+const Duration peerPresenceFreshnessWindow = Duration(
+  milliseconds: peerPresenceFreshnessWindowMs,
+);
+const Duration _peerPresenceFreshnessWindow = peerPresenceFreshnessWindow;
+
+bool backendIdentityIsFreshlyOnline(
+  BackendIdentity identity, {
+  int? nowMs,
+  int freshnessWindowMs = peerPresenceFreshnessWindowMs,
+}) {
+  final now = nowMs ?? DateTime.now().millisecondsSinceEpoch;
+  final presenceAgeMs = identity.lastHeartbeat <= 0
+      ? null
+      : now - identity.lastHeartbeat;
+  final normalizedState = identity.presenceState?.trim().toLowerCase();
+  final stateAllowsOnline =
+      normalizedState == null ||
+      normalizedState.isEmpty ||
+      normalizedState == 'online';
+  return identity.online &&
+      stateAllowsOnline &&
+      presenceAgeMs != null &&
+      presenceAgeMs < freshnessWindowMs;
+}
+
+final class RuntimePeerPresenceSnapshot {
+  const RuntimePeerPresenceSnapshot({
+    required this.peerId,
+    required this.online,
+    required this.rawOnline,
+    required this.observedAtMs,
+    this.lastHeartbeat,
+    this.lastSeen,
+    this.presenceAgeMs,
+    this.freshnessWindowMs = peerPresenceFreshnessWindowMs,
+    this.presenceSessionId,
+    this.presenceStartedAt,
+    this.presenceState,
+  });
+
+  final String peerId;
+  final bool online;
+  final bool rawOnline;
+  final int observedAtMs;
+  final int? lastHeartbeat;
+  final int? lastSeen;
+  final int? presenceAgeMs;
+  final int freshnessWindowMs;
+  final String? presenceSessionId;
+  final int? presenceStartedAt;
+  final String? presenceState;
+
+  factory RuntimePeerPresenceSnapshot._fromResolved({
+    required String peerId,
+    required _ResolvedBackendPresence presence,
+    required int observedAtMs,
+  }) {
+    return RuntimePeerPresenceSnapshot(
+      peerId: peerId,
+      online: presence.online,
+      rawOnline: presence.rawOnline,
+      observedAtMs: observedAtMs,
+      lastHeartbeat: presence.lastHeartbeat,
+      lastSeen: presence.lastSeen,
+      presenceAgeMs: presence.presenceAgeMs,
+      freshnessWindowMs: presence.freshnessWindowMs,
+      presenceSessionId: presence.sessionId,
+      presenceStartedAt: presence.startedAt,
+      presenceState: presence.state,
+    );
+  }
+
+  factory RuntimePeerPresenceSnapshot.fromPresenceStream({
+    required String peerId,
+    required bool online,
+    required int observedAtMs,
+    RuntimePeerPresenceSnapshot? previous,
+  }) {
+    return RuntimePeerPresenceSnapshot(
+      peerId: peerId,
+      online: online,
+      rawOnline: online,
+      observedAtMs: observedAtMs,
+      lastHeartbeat: online ? observedAtMs : previous?.lastHeartbeat,
+      lastSeen: online ? observedAtMs : previous?.lastSeen,
+      presenceAgeMs: online ? 0 : previous?.presenceAgeMs,
+      freshnessWindowMs:
+          previous?.freshnessWindowMs ?? peerPresenceFreshnessWindowMs,
+      presenceSessionId: previous?.presenceSessionId,
+      presenceStartedAt: previous?.presenceStartedAt,
+      presenceState: online ? 'online' : 'offline',
+    );
+  }
+}
 
 final class _ResolvedBackendPresence {
   const _ResolvedBackendPresence({
@@ -135,9 +231,13 @@ class RainRuntimeController with WidgetsBindingObserver {
     this.videoCallRemoteFirstFrameTimeout = const Duration(seconds: 8),
     this.callMediaRecoveryPolicy = const CallMediaRecoveryPolicy(),
     Duration? activeCallReconnectGrace,
+    this.fileTransferBufferPollInterval = fileTransferBackpressurePollInterval,
+    this.fileTransferBufferTimeout = fileTransferBackpressureTimeout,
     this.errorRecorder,
     this.eventRecorder,
-  }) : fileTransferStore = fileTransferStore ?? FileTransferStore(database),
+  }) : assert(fileTransferBufferPollInterval > Duration.zero),
+       assert(fileTransferBufferTimeout > Duration.zero),
+       fileTransferStore = fileTransferStore ?? FileTransferStore(database),
        activeCallReconnectGrace =
            activeCallReconnectGrace ??
            callMediaRecoveryPolicy.disconnectedGrace,
@@ -191,9 +291,13 @@ class RainRuntimeController with WidgetsBindingObserver {
   final Duration videoCallRemoteFirstFrameTimeout;
   final CallMediaRecoveryPolicy callMediaRecoveryPolicy;
   final Duration activeCallReconnectGrace;
+  final Duration fileTransferBufferPollInterval;
+  final Duration fileTransferBufferTimeout;
   final Set<String> _manualDisconnectedPeers = <String>{};
   final Set<String> _recoverableDisconnectedPeers = <String>{};
   final Map<String, int> _lastDataEventTimestamps = <String, int>{};
+  final Map<String, RuntimePeerPresenceSnapshot> _peerPresenceSnapshots =
+      <String, RuntimePeerPresenceSnapshot>{};
   final Set<String> _registeredPeerListeners = <String>{};
   final Set<String> _passivePeerListeners = <String>{};
   final Set<String> _unblockingPeers = <String>{};
@@ -204,6 +308,8 @@ class RainRuntimeController with WidgetsBindingObserver {
   final Map<String, FileTransferFrame> _pendingFileChunks =
       <String, FileTransferFrame>{};
   final Map<String, int> _receiveProgressOffsets = <String, int>{};
+  final Map<String, IOSink> _receiveFileSinks = <String, IOSink>{};
+  final Map<String, String> _receiveFileSinkPaths = <String, String>{};
   final Map<String, Future<void>> _fileMessageQueues = <String, Future<void>>{};
   final Map<String, _OutgoingFileSource> _outgoingFileSources =
       <String, _OutgoingFileSource>{};
@@ -270,6 +376,11 @@ class RainRuntimeController with WidgetsBindingObserver {
   Map<String, int> get lastDataEventTimestamps =>
       Map<String, int>.unmodifiable(_lastDataEventTimestamps);
 
+  Map<String, RuntimePeerPresenceSnapshot> get peerPresenceSnapshots =>
+      Map<String, RuntimePeerPresenceSnapshot>.unmodifiable(
+        _peerPresenceSnapshots,
+      );
+
   Stream<void> watchPeerConnectivityChanges() async* {
     yield null;
     yield* _peerConnectivityChangeController.stream;
@@ -291,6 +402,34 @@ class RainRuntimeController with WidgetsBindingObserver {
     _notifyPeerConnectivityChanged();
   }
 
+  void _cacheResolvedPeerPresence(
+    String username,
+    _ResolvedBackendPresence presence, {
+    int? observedAtMs,
+  }) {
+    final normalizedUsername = _normalizedUsername(username);
+    _peerPresenceSnapshots[normalizedUsername] =
+        RuntimePeerPresenceSnapshot._fromResolved(
+          peerId: normalizedUsername,
+          presence: presence,
+          observedAtMs: observedAtMs ?? DateTime.now().millisecondsSinceEpoch,
+        );
+    _notifyPeerConnectivityChanged();
+  }
+
+  void _cachePresenceStreamValue(String username, bool isOnline) {
+    final normalizedUsername = _normalizedUsername(username);
+    final observedAtMs = DateTime.now().millisecondsSinceEpoch;
+    _peerPresenceSnapshots[normalizedUsername] =
+        RuntimePeerPresenceSnapshot.fromPresenceStream(
+          peerId: normalizedUsername,
+          online: isOnline,
+          observedAtMs: observedAtMs,
+          previous: _peerPresenceSnapshots[normalizedUsername],
+        );
+    _notifyPeerConnectivityChanged();
+  }
+
   _ResolvedBackendPresence _resolveBackendPresence(
     BackendIdentity identity, {
     int? nowMs,
@@ -300,15 +439,7 @@ class RainRuntimeController with WidgetsBindingObserver {
         ? null
         : now - identity.lastHeartbeat;
     final normalizedState = identity.presenceState?.trim().toLowerCase();
-    final stateAllowsOnline =
-        normalizedState == null ||
-        normalizedState.isEmpty ||
-        normalizedState == 'online';
-    final online =
-        identity.online &&
-        stateAllowsOnline &&
-        presenceAgeMs != null &&
-        presenceAgeMs < _peerPresenceFreshnessWindow.inMilliseconds;
+    final online = backendIdentityIsFreshlyOnline(identity, nowMs: now);
     return _ResolvedBackendPresence(
       online: online,
       rawOnline: identity.online,
@@ -333,6 +464,7 @@ class RainRuntimeController with WidgetsBindingObserver {
       return null;
     }
     final presence = _resolveBackendPresence(backendIdentity);
+    _cacheResolvedPeerPresence(normalizedUsername, presence);
     if (updateLocalPresence) {
       await _localMutations.run(
         () => friendStore.updatePresence(normalizedUsername, presence.online),
@@ -1242,6 +1374,7 @@ class RainRuntimeController with WidgetsBindingObserver {
     _pendingFileChunks.clear();
     _fileMessageQueues.clear();
     _outgoingFileSources.clear();
+    await _closeAllReceiveSinks(reason: 'network_lost');
   }
 
   Future<void> _disconnectBrainPeer(
@@ -1987,6 +2120,7 @@ class RainRuntimeController with WidgetsBindingObserver {
       _friendRequestRefreshTimer?.cancel();
       _connectionCoordinator.dispose();
       await _stopConnectionRequestRuntime();
+      await _closeAllReceiveSinks(reason: 'shutdown');
 
       for (final subscription in _subscriptions) {
         await subscription.cancel();

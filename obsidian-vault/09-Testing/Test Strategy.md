@@ -39,6 +39,24 @@ Minimum scenario batch output:
 
 The [[Scenario Coverage Matrix]] is the source for scenario IDs, covered status, and release-gate gaps.
 
+## Phase 10 Device And Media Proof
+
+Phase 10 separates three proof levels:
+
+- Single-device media capture through the real WebRTC plugin and Rain call media stack.
+- Cross-peer voice/video call setup across Android/Windows target directions.
+- Appium black-box smoke, which remains optional development evidence until it is repeatable and call-aware.
+
+Opt-in media capture command from `apps\rain`:
+
+```powershell
+flutter test integration_test\device_media_reality_proof_test.dart -d emulator-5554 --dart-define=RAIN_DEVICE_MEDIA_PROOF=true
+```
+
+Use `--dart-define=RAIN_DEVICE_MEDIA_REQUIRE_VIDEO=false` only for an explicitly scoped audio-only proof. A public voice/video release cannot use the audio-only run as video proof.
+
+2026-06-05 evidence status: `C:\android-flutter-qa-toolkit\scripts\test-env.ps1` passed and `QA_Medium_API_36_1` exists, but no Android device/emulator was attached. Existing Rain Appium artifacts timed out in WebDriver and cover only auth toggle smoke. No call/media device proof passed in that session.
+
 ## Regression Expansion - 2026-06-03
 
 Phase 08 added low-dependency regression tests around the current RCA failure cluster:
@@ -47,6 +65,7 @@ Phase 08 added low-dependency regression tests around the current RCA failure cl
 - `apps/rain/test/rain_call_suite_models_test.dart` now covers failed outgoing video state, failed incoming network-loss dismissal, and narrow-phone video dock overflow so compact controls keep mic/camera/hangup visible.
 - `apps/rain/test/voice_call_runtime_diagnostics_contract_test.dart` now locks terminal-room-before-session-hangup ordering, failed-media terminal write before session disposal, and already-terminal Firebase cleanup classification.
 - `packages/protocol_brain/test/firebase_contract_test.dart` now locks session-owned presence shape, `onDisconnect` offline state, and state-aware presence reads.
+- 2026-06-05 Phase 2 extends Firebase proof: `apps/rain/test/integration_voice_signaling_emulator_test.dart` covers terminal leftover voice locks, missing inbox cleanup, malformed voice lock/inbox denial, unauthorized transition denial, oversized terminal reason denial, and denied-write state preservation. `packages/protocol_brain/test/firebase_contract_test.dart` locks server-authoritative voice lock transactions and compare-delete fallback behavior.
 
 Validation run:
 

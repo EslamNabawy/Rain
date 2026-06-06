@@ -11,6 +11,8 @@ import 'package:flutter/widgets.dart';
 import 'package:package_info_plus/package_info_plus.dart';
 import 'package:path_provider/path_provider.dart';
 
+import 'diagnostics_sanitizer.dart';
+
 typedef CrashDiagnosticsDirectoryProvider = Future<Directory> Function();
 typedef CrashDiagnosticsClock = DateTime Function();
 typedef CrashDiagnosticsAppInfoProvider =
@@ -149,7 +151,6 @@ class CrashDiagnosticsService {
   static const int _maxEventLogBytes = 1024 * 1024;
   static const int _maxEventLogLines = 1000;
   static const int _maxBufferedEventRecords = 256;
-  static const int _maxEventContextStringLength = 512;
 
   final CrashDiagnosticsDirectoryProvider _directoryProvider;
   final CrashDiagnosticsAppInfoProvider _appInfoProvider;
@@ -231,7 +232,10 @@ class CrashDiagnosticsService {
   }) {
     final directory = _directory;
     if (directory == null) {
-      debugPrint('Rain diagnostics not initialized: $error');
+      debugPrint(
+        'Rain diagnostics not initialized: '
+        '${DiagnosticsSanitizer.sanitizeString(error.toString())}',
+      );
       return;
     }
 
@@ -239,14 +243,30 @@ class CrashDiagnosticsService {
       recordedAt: _clock(),
       source: source,
       fatal: fatal,
-      error: error.toString(),
-      stackTrace: (stackTrace ?? StackTrace.current).toString(),
+      error: DiagnosticsSanitizer.sanitizeString(
+        error.toString(),
+        key: 'error',
+      ),
+      stackTrace: DiagnosticsSanitizer.sanitizeString(
+        (stackTrace ?? StackTrace.current).toString(),
+        key: 'stackTrace',
+      ),
       appInfo: _appInfo,
       operatingSystem: Platform.operatingSystem,
       operatingSystemVersion: Platform.operatingSystemVersion,
       dartVersion: Platform.version,
-      flutterLibrary: flutterLibrary,
-      flutterContext: flutterContext,
+      flutterLibrary: flutterLibrary == null
+          ? null
+          : DiagnosticsSanitizer.sanitizeString(
+              flutterLibrary,
+              key: 'flutterLibrary',
+            ),
+      flutterContext: flutterContext == null
+          ? null
+          : DiagnosticsSanitizer.sanitizeString(
+              flutterContext,
+              key: 'flutterContext',
+            ),
     );
     final encoded = const JsonEncoder.withIndent('  ').convert(record.toJson());
 
@@ -257,7 +277,10 @@ class CrashDiagnosticsService {
         'record': record.toJson(),
       });
     } on FileSystemException catch (fileError) {
-      debugPrint('Rain diagnostics write failed: $fileError');
+      debugPrint(
+        'Rain diagnostics write failed: '
+        '${DiagnosticsSanitizer.sanitizeString(fileError.toString())}',
+      );
     }
   }
 
@@ -284,9 +307,9 @@ class CrashDiagnosticsService {
       'name': normalizedName,
       'severity': severity.trim().isEmpty ? 'info' : severity.trim(),
       if (message != null && message.trim().isNotEmpty)
-        'message': _trimDiagnosticString(message),
+        'message': DiagnosticsSanitizer.sanitizeString(message, key: 'message'),
       if (context.isNotEmpty)
-        'context': _sanitizeDiagnosticMap(context, depth: 0),
+        'context': DiagnosticsSanitizer.sanitizeMap(context),
     });
   }
 
@@ -323,7 +346,10 @@ class CrashDiagnosticsService {
             );
             await _trimEventLog(file);
           } on FileSystemException catch (fileError) {
-            debugPrint('Rain diagnostics event write failed: $fileError');
+            debugPrint(
+              'Rain diagnostics event write failed: '
+              '${DiagnosticsSanitizer.sanitizeString(fileError.toString())}',
+            );
           }
         })
         .whenComplete(() {
@@ -386,7 +412,9 @@ class CrashDiagnosticsService {
       'uiStateSummary': _buildUiStateSummary(recentEvents),
       'events': recentEvents,
     };
-    final content = const JsonEncoder.withIndent('  ').convert(payload);
+    final content = const JsonEncoder.withIndent(
+      '  ',
+    ).convert(DiagnosticsSanitizer.sanitizeMap(payload));
     final bytes = Uint8List.fromList(utf8.encode(content));
     final fileName = _diagnosticsFileName(exportedAt);
 
@@ -518,14 +546,15 @@ class CrashDiagnosticsService {
   }
 
   void _queueEventRecord(Map<String, Object?> record) {
-    final coalesceKey = _eventCoalesceKey(record);
+    final sanitizedRecord = DiagnosticsSanitizer.sanitizeMap(record);
+    final coalesceKey = _eventCoalesceKey(sanitizedRecord);
     if (coalesceKey == null) {
-      _queuedEventLines.add(jsonEncode(record));
+      _queuedEventLines.add(jsonEncode(sanitizedRecord));
     } else {
       final count = (_coalescedEventCounts[coalesceKey] ?? 0) + 1;
       _coalescedEventCounts[coalesceKey] = count;
       _coalescedEventLines[coalesceKey] = jsonEncode(<String, Object?>{
-        ...record,
+        ...sanitizedRecord,
         'count': count,
       });
     }
@@ -736,90 +765,6 @@ class CrashDiagnosticsService {
     return value.map<String, Object?>(
       (key, value) => MapEntry(key.toString(), value),
     );
-  }
-
-  static Map<String, Object?> _sanitizeDiagnosticMap(
-    Map<String, Object?> value, {
-    required int depth,
-  }) {
-    if (depth >= 3) {
-      return const <String, Object?>{};
-    }
-    final sanitized = <String, Object?>{};
-    for (final entry in value.entries) {
-      final key = entry.key.trim();
-      if (key.isEmpty) {
-        continue;
-      }
-      if (_isSensitiveDiagnosticKey(key)) {
-        sanitized[key] = '[redacted]';
-        continue;
-      }
-      sanitized[key] = _sanitizeDiagnosticValue(entry.value, depth: depth + 1);
-    }
-    return sanitized;
-  }
-
-  static Object? _sanitizeDiagnosticValue(Object? value, {required int depth}) {
-    if (value == null || value is num || value is bool) {
-      return value;
-    }
-    if (value is DateTime) {
-      return value.toUtc().toIso8601String();
-    }
-    if (value is String) {
-      return _trimDiagnosticString(value);
-    }
-    if (value is Enum) {
-      return value.name;
-    }
-    if (value is Iterable) {
-      if (depth >= 3) {
-        return const <Object?>[];
-      }
-      return value
-          .take(20)
-          .map((Object? item) {
-            return _sanitizeDiagnosticValue(item, depth: depth + 1);
-          })
-          .toList(growable: false);
-    }
-    if (value is Map) {
-      if (depth >= 3) {
-        return const <String, Object?>{};
-      }
-      return _sanitizeDiagnosticMap(
-        value.map<String, Object?>(
-          (key, value) => MapEntry(key.toString(), value),
-        ),
-        depth: depth,
-      );
-    }
-    return _trimDiagnosticString(value.toString());
-  }
-
-  static String _trimDiagnosticString(String value) {
-    if (value.length <= _maxEventContextStringLength) {
-      return value;
-    }
-    return '${value.substring(0, _maxEventContextStringLength)}...';
-  }
-
-  static bool _isSensitiveDiagnosticKey(String key) {
-    final normalized = key.trim().toLowerCase();
-    if (normalized.contains('password') ||
-        normalized.contains('token') ||
-        normalized.contains('credential') ||
-        normalized.contains('secret')) {
-      return true;
-    }
-    return normalized == 'sdp' ||
-        normalized == 'candidate' ||
-        normalized == 'ciphertext' ||
-        normalized == 'nonce' ||
-        normalized == 'mac' ||
-        normalized == 'messagetext' ||
-        normalized == 'filebytes';
   }
 
   static List<Map<String, Object?>> _buildCallDiagnosticSummaries(

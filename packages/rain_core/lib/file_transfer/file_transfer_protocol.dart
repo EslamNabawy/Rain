@@ -8,6 +8,10 @@ const int maxFileTransferBytes = 100 * 1024 * 1024;
 const int fileTransferChunkBytes = 32 * 1024;
 const int fileTransferHighWatermarkBytes = 4 * 1024 * 1024;
 const int fileTransferLowWatermarkBytes = 1024 * 1024;
+const Duration fileTransferBackpressurePollInterval = Duration(
+  milliseconds: 25,
+);
+const Duration fileTransferBackpressureTimeout = Duration(seconds: 30);
 
 const List<int> _fileChunkPacketMagic = <int>[
   0x52,

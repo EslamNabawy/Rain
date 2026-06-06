@@ -212,9 +212,8 @@ Map<String, PeerConnectivitySnapshot> buildPeerConnectivitySnapshots({
   required Iterable<FriendRecord> friends,
   required Set<String> manualDisconnectedPeers,
   required Map<String, int> lastDataEventTimestamps,
-  int? nowMs,
+  Map<String, RuntimePeerPresenceSnapshot> backendPresenceSnapshots = const {},
 }) {
-  final now = nowMs ?? DateTime.now().millisecondsSinceEpoch;
   final sessionsByPeer = <String, Session>{
     for (final session in brain?.getSessions() ?? const <Session>[])
       session.peerId: session,
@@ -233,16 +232,20 @@ Map<String, PeerConnectivitySnapshot> buildPeerConnectivitySnapshots({
   for (final peerId in peerIds) {
     final friend = friendsByPeer[peerId];
     final session = sessionsByPeer[peerId];
-    final presenceAgeMs = friend?.lastOnlineAt == null
-        ? null
-        : now - friend!.lastOnlineAt!;
+    final backendPresence = backendPresenceSnapshots[peerId];
+    final presenceOnline =
+        backendPresence?.online ?? (friend?.isOnline == false ? false : null);
     snapshots[peerId] = PeerConnectivitySnapshot(
       peerId: peerId,
       sessionState: session?.state,
       sessionId: session?.roomId,
-      presenceOnline: friend?.isOnline,
-      presenceFresh: friend?.isOnline ?? false,
-      presenceAgeMs: presenceAgeMs,
+      presenceOnline: presenceOnline,
+      presenceFresh: backendPresence?.online == true,
+      backendPresenceSessionId: backendPresence?.presenceSessionId,
+      presenceAgeMs: backendPresence?.presenceAgeMs,
+      presenceFreshnessWindowMs: backendPresence?.freshnessWindowMs,
+      presenceObservedAtMs: backendPresence?.observedAtMs,
+      presenceState: backendPresence?.presenceState,
       manualDisconnected: manualDisconnectedPeers.contains(peerId),
       lastDataEventAt: lastDataEventTimestamps[peerId],
       connectionRoute: session?.route,
@@ -280,6 +283,7 @@ class PeerConnectivityController
       friends: friends,
       manualDisconnectedPeers: runtime?.manualDisconnectedPeers ?? const {},
       lastDataEventTimestamps: runtime?.lastDataEventTimestamps ?? const {},
+      backendPresenceSnapshots: runtime?.peerPresenceSnapshots ?? const {},
     );
   }
 
@@ -317,6 +321,7 @@ class PeerConnectivityController
       friends: friends,
       manualDisconnectedPeers: runtime?.manualDisconnectedPeers ?? const {},
       lastDataEventTimestamps: runtime?.lastDataEventTimestamps ?? const {},
+      backendPresenceSnapshots: runtime?.peerPresenceSnapshots ?? const {},
     );
   }
 
@@ -387,7 +392,12 @@ final connectionRequestAdapterProvider = Provider<ConnectionRequestAdapter?>((
         },
         isPeerOnline: (String peerId) async {
           final backendIdentity = await adapter.fetchIdentity(peerId);
-          return backendIdentity?.online ?? false;
+          return backendIdentity == null
+              ? false
+              : backendIdentityIsFreshlyOnline(
+                  backendIdentity,
+                  freshnessWindowMs: connectionRequestTtl.inMilliseconds,
+                );
         },
         diagnosticsSink: (ConnectionRequestAdapterDiagnosticEvent event) {
           ref

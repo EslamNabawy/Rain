@@ -77,6 +77,12 @@ Main ownership:
 - `backend/firebase` owns RTDB rules, Remote Config template, optional functions, and backend tests.
 - `obsidian-vault` owns project knowledge, architecture docs, roadmap, risk/debt/blocker tracking, AI memory, decisions, and lessons.
 
+2026-06-05 Phase 1 senior audit remediation: chat/connect/call/offline-request action authority is runtime-backed `PeerConnectivitySnapshot`, not local `friend.isOnline`. Snapshots carry backend presence freshness, heartbeat age, state, observation time, freshness window, and backend presence session id. Local app/provider proof passed; Firebase emulator/device proof remains separate release evidence.
+
+2026-06-05 Phase 2 senior audit remediation: Firebase call lock/rule proof is locally complete. Emulator tests cover terminal leftover locks, missing inbox cleanup, malformed voice lock/inbox writes, unauthorized transitions, oversized terminal payload denial, and denied-write state preservation. Contract tests lock server-authoritative voice lock transactions and compare-delete fallback behavior. Device media-direction proof remains separate Phase 10 evidence.
+
+2026-06-05 Phase 10 senior audit remediation: device/media proof is scoped but not release-proven. `apps/rain/integration_test/device_media_reality_proof_test.dart` is an opt-in Flutter integration test that uses the real `FlutterWebRTCBridge` and `DefaultCallMediaConnection` to require microphone and, by default, camera tracks. It must be run with `--dart-define=RAIN_DEVICE_MEDIA_PROOF=true` on an attached device/emulator. The 2026-06-05 environment probe found no attached Android device; `QA_Medium_API_36_1` exists but was not running, and saved Appium artifacts only show auth-smoke WebDriver timeouts. BLK-001/BLK-007 remain open for actual device/cross-peer evidence.
+
 Primary architecture source: [[Current Architecture]].
 
 ## Technologies
@@ -92,6 +98,7 @@ Local storage:
 
 - Drift SQLite.
 - SharedPreferences for settings.
+- Local Drift/SQLite database encryption is not implemented. As of [[ADR-010]], Rain accepts plaintext local storage for the current scope and must not claim encrypted local message history.
 
 Backend/integration:
 
@@ -114,6 +121,8 @@ Build/automation:
 - GitHub Actions for CI, merge gates, releases, fast artifacts, validated releases, and vault validation.
 - 2026-06-04 cloud gate evidence: `Build Rain Apps` run 26957834309 passed the hard release gate, explicit auth lifecycle scenario tests, Firebase emulator integration including account deletion, Obsidian vault validation, Android APK artifacts, Windows demo portable artifact, and `rain-test-108-1` pre-release publication for pushed `dev` SHA `883886a`.
 - 2026-06-04 gate integration update: `build-artifacts.yml` and `validated-release.yml` run explicit `SCN-AUTH-001` through `SCN-AUTH-004` auth lifecycle tests and Obsidian vault validation. Firebase emulator scripts include `integration_account_deletion_emulator_test.dart`, covering account tombstone cleanup and surviving-Auth no-recreate behavior.
+- 2026-06-05 Phase 8 release gate update: `release.yml` is no longer a direct tag-push publish path. It is manual-only, validates before build/publish, requires Remote Config deploy/readback evidence, and publishes `rain-release-metadata.json`. `build-artifacts.yml`, `fast-release.yml`, and `validated-release.yml` also attach metadata. `rain-test-*` releases are test artifacts only; production fast/validated/stable publishing requires Remote Config evidence. Fresh cloud workflow proof remains required before promoting any specific artifact.
+- 2026-06-05 Phase 9 vault enforcement update: `scripts/check_obsidian_vault.ps1` now performs semantic validation for operational register fields in [[Audit Resolution Tracker]], [[Technical Debt Register]], [[Risk Register]], [[BLOCKERS]], [[Project Metrics]], [[Recommended Next Actions]], and [[Repository Map]]. It fails missing owner/priority/evidence/review fields, unsupported active risk/debt statuses, closed blockers without evidence, evidence-ledger gaps, and P0/P1 items without next-action-equivalent fields.
 - 2026-06-04 update warning fix: current app metadata is `1.0.7+8`, and both release manifests advertise `1.0.7+8`. The previous `1.0.6+7` app did not show an update warning because checked-in Remote Config also advertised `1.0.6+7`, which correctly evaluated as `current`. `version_metadata_test.dart` now proves the checked-in Remote Config template returns `updateRequired` for previous `1.0.6+7` stable/demo Android/Windows installs. `Build Rain Apps` run 26963049075 passed on pushed `dev` SHA `f1904e72f1c16773700f0bfa6bcc8ac0fcd7706d` and published `rain-test-109-1` with Android/Windows demo artifacts. Remote Config still must be deployed for installed apps to see the warning.
 - Windows PowerShell local QA/tooling.
 
@@ -185,7 +194,7 @@ Important rule: Firebase does not carry audio/video packets. Firebase is signali
 
 ## Database Structure
 
-Drift database schema version: 5.
+Drift database schema version: 6.
 
 Tables:
 
@@ -204,6 +213,26 @@ SQLite settings:
 - Normal synchronous mode.
 - Foreign keys enabled.
 - Serialized write queue and retry on busy/locked writes.
+
+Phase 6 database scalability progress 2026-06-05:
+
+- Schema v6 adds named secondary indexes for message conversation reads, queued-message drain/recovery, file-transfer peer/message/state lookup, and friend display ordering.
+- `MessageStore.watchConversationTail` watches the newest bounded page, default 50 messages.
+- `MessageStore.loadConversationPage` loads older history before a stable `MessagePageCursor(sentAt, seq, id)`.
+- `MessagesController` starts chat state from the bounded live tail and merges older local pages on demand.
+- Remaining database scalability evidence is low-power/device frame-budget proof, not missing local query/index structure.
+
+Phase 7 file-transfer scalability progress 2026-06-05:
+
+- Incoming accepted file transfers now keep one persistent temp-file `IOSink` per active transfer.
+- Complete, cancel, failure, network loss, and runtime shutdown close receive sinks.
+- Hash mismatch, disk write failure, invalid chunks, and cancellation clean temp files when a temp path exists.
+- Outgoing file sends carry one partial chunk between stream events instead of growing and front-removing from a pending list.
+- `rain_core` now owns the file-transfer chunk/backpressure contract: 32 KiB chunks, 4 MiB high watermark, 1 MiB low watermark, 25 ms poll interval, and 30 second congestion timeout.
+- Sender-side backpressure waits on file-channel `bufferedAmount` before each binary chunk and records privacy-safe wait/complete/timeout diagnostics.
+- Focused local validation passed for large receive, scripted slow receiver/backpressure, cancel cleanup, hash mismatch cleanup, disk write failure, and protocol constants. Remaining evidence is real-network/device-scale large-transfer proof, not missing local runtime mechanics.
+
+Local data security decision 2026-06-05: `messages.content`, `queued_messages.content`, `file_transfers.fileName`, and `file_transfers.localPath` are stored as normal Drift/SQLite fields. Rain does not currently protect those local records from device compromise or direct app-data access. Future local database encryption requires a separate implementation plan with key management and migration tests. See [[ADR-010]] and [[Privacy Review]].
 
 See [[Database Architecture]], [[Database Schema]], [[Migration Plan]], [[Index Strategy]], and [[Pagination Strategy]].
 
@@ -256,11 +285,12 @@ Current top risks:
 
 - Voice/video call setup can fail or stick in connecting.
 - Stale Firebase locks can cause false busy.
+- Local Drift/SQLite storage is plaintext by accepted current scope; strong local privacy claims are blocked until encrypted storage is implemented and migration-tested.
 - Peer presence can be stale after app close or network loss.
 - Update checks now distinguish required, optional, current, unavailable, invalid config, and stale Remote Config policy. Remote Config still must be deployed after each release for old clients to discover new builds.
 - Update warnings require release metadata and deployed Remote Config to be newer than the installed package metadata. Equality means `current` by design.
 - Firebase free-tier constraint limits backend cleanup/authoritative guardrails.
-- Large file transfer can stress memory and data-channel buffers.
+- Large file transfer local runtime pressure is mitigated by persistent receive sinks, bounded send chunk assembly, and backpressure constants; real-network/device-scale proof is still needed before closing release-scale risk.
 - Diagnostics can become privacy risk if sanitization regresses.
 - Release workflows can publish artifacts if gates are weak or bypassed.
 
@@ -336,6 +366,7 @@ Hard constraints:
 - Do not modify app code for documentation-only phases.
 - Do not hardcode secrets or credentials.
 - Do not introduce paid Firebase requirements unless owner explicitly changes the free-tier constraint.
+- Do not claim local database encryption or encrypted local message history unless [[ADR-010]] is superseded by an implemented, migration-tested encryption phase.
 - No raw SDP, ICE candidate strings, tokens, passwords, ciphertext, message text, or file bytes in diagnostics.
 - Commit every completed change when work is done, unless user says not to.
 
@@ -358,6 +389,28 @@ AI tooling overlay update 2026-06-05:
 - OpenViking is the expected route for private/project context, with separate imports for repository files and `obsidian-vault/`.
 - Promptfoo is intentionally opt-in until Rain contains concrete prompts, agents, RAG retrieval, model calls, generated text behavior, or eval targets.
 - The overlay must not alter app runtime code, Flutter/Firebase dependencies, CI gates, hooks, release workflows, or deployment behavior unless explicitly requested.
+
+Senior audit Phase 3 first-slice update 2026-06-05:
+
+- `CallErrorClassifier` is the current owner of voice/video call failure reason codes, user-facing failure messages, retry/failure taxonomy, Firebase signaling snapshot classification, busy user extraction, and local media failure classification.
+- `call_media_session_coordinator.dart` is the current owner of app-side `CallVoiceMediaConnection`, `VideoVoiceMediaConnection`, `VideoCallRendererException`, and voice media diagnostics mapping.
+- `VoiceCallRuntime` still owns command orchestration, room reconciliation, lock coordination, state mutation, and terminal cleanup. Continue Phase 3 with room reconciliation and lock coordination extraction before calling SAR-001 mitigated.
+- Validation passed for focused classifier/media/failure-message tests, `dart run melos run analyze`, and full `dart run melos run test`. Vault validation must be rerun after every documentation sync.
+
+Senior audit Phase 4 diagnostics privacy update 2026-06-05:
+
+- `DiagnosticsSanitizer` is the current central sanitizer for crash diagnostics, debug logs, event contexts, event coalescing records, write-failure debug output, and final diagnostics export payloads.
+- Diagnostic exports pseudonymize peer/call/room/user/caller/callee/pair identifiers, file names, local paths, and Firebase paths, and redact secrets, message-like content, SDP, ICE candidates, ciphertext, nonces/MACs, and file bytes while preserving useful status/taxonomy/counter metadata.
+- `CallErrorClassifier.failureTaxonomy` now separates Firebase permission denial, local media permission denial, room terminal state, stale lock repair, malformed remote data, ICE failure, and TURN unavailability for focused diagnostics.
+- Focused validation passed for `flutter test test\crash_diagnostics_service_test.dart test\rain_debug_log_service_test.dart test\call_error_classifier_test.dart --reporter expanded` from `apps/rain`; broad `dart run melos run analyze`, full `dart run melos run test`, and `.\scripts\check_obsidian_vault.ps1` also passed.
+- Future diagnostic fields that can carry identifiers, paths, content, signaling frames, files, or secrets require sanitizer regression samples before release claims.
+
+Senior audit Phase 5 local-data decision 2026-06-05:
+
+- [[ADR-010]] accepts plaintext local Drift/SQLite storage for the current implementation.
+- Message content, queued message content, file-transfer names, and local file paths are not app-layer encrypted at rest.
+- Local device compromise is outside Rain's current implemented protection scope.
+- Strong local privacy claims remain blocked until encrypted storage, key management, and plaintext migration proof are implemented.
 
 Scenario intelligence update 2026-06-04:
 
@@ -384,6 +437,7 @@ Multi-issue stability investigation update 2026-06-04:
 - Terminal call state must be published to the UI before awaiting media/session cleanup. Otherwise a hung WebRTC disposal can leave `VoiceCallState` active and falsely block file transfers or later accept actions.
 - False busy can mean stale or partial Firebase call locks. New lock handling must go through `VoiceLockReclaimPolicy`; do not add ad hoc busy/reclaim predicates in Firebase or fake adapters.
 - Firebase is signaling only; do not describe voice/video media as passing through Firebase.
+- Private peer-to-peer communication does not mean encrypted local database history. Keep local-at-rest claims aligned with [[ADR-010]].
 - Unit tests alone are not enough for WebRTC confidence.
 - Old app versions can become incompatible with backend rules, so update validation must work.
 - Manual disconnect must not silently auto-reconnect.
@@ -391,7 +445,7 @@ Multi-issue stability investigation update 2026-06-04:
 - Closed app currently means offline; closed-app call/ring reliability is out of scope until push/foreground-service architecture exists.
 - Obsidian links must remain valid; run the vault checker after documentation changes.
 - Isolated app tests that touch Drift/SQLite must run from `apps/rain` or through `scripts/run_rain_app_test.ps1`; root-level `flutter test apps\rain\test\...` can fail to resolve SQLite native assets on Windows.
-- The vault has completed [[Engineering System Flaw Remediation Plan]] Phase 00 and Phase 01: canonical source notes are documented, secondary duplicate notes were renamed, and the vault checker now fails on uncontrolled duplicate note titles. Remaining governance flaws before full Phase 9 automation: static metrics, missing validation evidence ledger, weak stale-doc detection, and missing machine-readable status schema.
+- The vault has completed the governance checks needed for senior audit Phase 9: canonical source notes are documented, uncontrolled duplicate titles fail validation, and operational register semantics are checked by `scripts/check_obsidian_vault.ps1`. Remaining governance hardening is generated metric reconciliation and release-artifact evidence automation.
 
 ## Quick Start For Future AI Sessions
 

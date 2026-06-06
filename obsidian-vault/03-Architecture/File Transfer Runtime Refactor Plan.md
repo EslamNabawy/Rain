@@ -53,13 +53,15 @@ flowchart LR
 
 ## Migration Strategy
 
-1. Characterize current file transfer behavior with small and large transfer tests.
-2. Introduce receive sink registry and keep one sink open per active transfer.
-3. Add temp file lifecycle and cleanup coordinator.
-4. Replace send list-copy loop with stream slicing.
-5. Wire data-channel send loop through backpressure high/low water marks.
-6. Batch progress updates and diagnostics.
-7. Remove old per-chunk sink/list-copy paths after tests pass.
+1. [x] Characterize current file transfer behavior with small and large transfer tests.
+2. [x] Introduce receive sink registry and keep one sink open per active transfer.
+3. [x] Add temp file lifecycle cleanup in terminal paths.
+4. [x] Replace send list-copy loop with bounded stream slicing.
+5. [x] Wire data-channel send loop through backpressure high/low water marks.
+6. [x] Batch progress updates and add privacy-safe backpressure/cleanup diagnostics.
+7. [x] Remove old per-chunk sink/list-copy paths after tests pass.
+
+2026-06-05 status: this plan is locally implemented for the existing runtime boundaries. The named standalone coordinator classes remain a future extraction option, not required for the current Phase 7 behavior.
 
 ## Testing Strategy
 
@@ -70,6 +72,8 @@ flowchart LR
 - Data-channel close during transfer terminates safely.
 - Progress batching does not flood UI/database.
 - Final size and hash verification where available.
+
+Focused local tests added 2026-06-05 cover large receive, cancel cleanup, hash mismatch cleanup, disk write failure, scripted slow receiver/backpressure, and protocol constants. Remaining proof is real-network/device-scale large-transfer validation.
 
 ## Rollout Plan
 
@@ -85,4 +89,3 @@ flowchart LR
 - Large file transfer no longer depends on unbounded memory growth.
 - Slow receiver behavior is deterministic.
 - Transfer cleanup is idempotent and observable.
-

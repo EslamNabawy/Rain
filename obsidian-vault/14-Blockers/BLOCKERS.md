@@ -17,7 +17,7 @@ Blockers must never stop progress. A blocker only prevents unsafe release or uns
 - exit criteria,
 - parallel progress path.
 
-Related: [[Risk Register]], [[Risk Categories]], [[Risk Matrix]], [[Blocker Resolution Plan]], [[Launch Blockers]], [[Critical Path]], [[Technical Debt Register]].
+Related: [[Risk Register]], [[Risk Categories]], [[Risk Matrix]], [[Blocker Resolution Plan]], [[Launch Blockers]], [[Critical Path]], [[Technical Debt Register]], [[2026-06-05 Senior Audit Remediation Plan]].
 
 ## Blocker Rules
 
@@ -29,9 +29,28 @@ Related: [[Risk Register]], [[Risk Categories]], [[Risk Matrix]], [[Blocker Reso
 
 ## Active Blockers
 
+## 2026-06-05 Senior Audit Blocker Overlay
+
+Source: [[2026-06-05 Senior Audit Remediation Plan]]
+
+| SAR ID | Blocking Status | Mapped Blockers | Owner | Exit Evidence |
+| --- | --- | --- | --- | --- |
+| SAR-001 | Release-blocking, partial Phase 3 progress | BLK-001, BLK-002, BLK-005 | Engineering | First Phase 3 slice extracted `CallErrorClassifier` and media adapters; remaining exit evidence is room reconciliation, lock coordination, command/media ownership, terminal characterization, diagnostics, and device-direction proof. |
+| SAR-002 | Release-blocking | BLK-008, BLK-009 | Engineering | Phase 1 local proof added authoritative peer snapshot tests for stale, unknown, fresh, and stale receiver presence; emulator/device proof still required. |
+| SAR-003 | Release-blocking | BLK-008, BLK-009 | Engineering/Product | Phase 1 local proof routes chat actions through peer snapshots instead of stale friend booleans; emulator/device proof still required. |
+| SAR-004 | Release-blocking | BLK-001, BLK-002, BLK-003 | Engineering/Security | Phase 2 local emulator proof passed for stale/terminal/live locks, malformed writes, denied transitions, and state preservation; device-direction proof remains Phase 10. |
+| SAR-005 | Conditional blocker accepted for current scope | BLK-005 if diagnostics/privacy claims imply local secrecy | Security/Product | Option A accepted 2026-06-05 in [[ADR-010]]: local Drift/SQLite storage is plaintext and release/support/privacy claims must not imply local database encryption. |
+| SAR-006 | Locally mitigated; production-scale evidence still useful | No direct blocker; maps to scalability debt | Engineering | Drift schema/index migration and pagination validation passed locally on 2026-06-05; low-power/device frame-budget proof remains follow-up evidence. |
+| SAR-007 | Locally mitigated; production-scale evidence still useful | No direct blocker; maps to file-transfer debt | Engineering | Phase 7 focused tests passed locally for large receive, slow receiver/backpressure, cancel cleanup, hash mismatch cleanup, disk write failure, and temp cleanup. Real-network/device-scale large-file proof remains follow-up evidence before release-scale closure. |
+| SAR-008 | Locally mitigated for covered export privacy; residual taxonomy work | BLK-005, BLK-001 for route/media lifecycle proof | Security/Engineering | Recursive sanitizer/export and failure taxonomy tests passed locally on 2026-06-05; selected-route, first-track, and first-frame diagnostics remain open. |
+| SAR-009 | Release-blocking | BLK-006 | DevOps | Release workflow gate parity and artifact evidence. |
+| SAR-010 | Locally mitigated governance gap | BLK-006 for release evidence trust | DevOps/Engineering | Phase 9 semantic vault validation passed locally; generated metric reconciliation and fresh cloud release evidence remain future hardening. |
+| SAR-011 | Conditional blocker | BLK-006 if demo artifacts are promoted as trusted release artifacts | DevOps/Security | Signing/artifact labeling policy. |
+| SAR-012 | Non-blocking now | No direct blocker; performance risk | Engineering/UI | Phase 1 selected immutable chat snapshot landed; rebuild isolation tests remain Phase 6. |
+
 ### BLK-001: Voice/Video Call Setup Reliability Is Not Proven
 
-- Status: Open
+- Status: Mitigating; covered export privacy locally mitigated 2026-06-05
 - Severity: Critical
 - Owner: Engineering
 - Type: Technical
@@ -50,12 +69,14 @@ Related: [[Risk Register]], [[Risk Categories]], [[Risk Matrix]], [[Blocker Reso
 - Progress 2026-06-03: Failed call setup diagnostics now preserve Firebase room status timelines inside `VoiceCallDiagnostics`, and remote terminal-room failures emit diagnostics even when the local side only observes Firebase terminal state.
 - Progress 2026-06-03 Phase 08: Local regression tests now lock WebRTC/Firebase/network call failure messages, failed call suite state, compact video dock behavior, terminal-room-before-session-hangup ordering, failed-media terminal write before disposal, and already-terminal cleanup classification.
 - Progress 2026-06-04 terminal cleanup: `rain-diagnostics-2026-06-04T144952-237539Z.json` showed media reaching `connected`, then a Firebase `busy` terminal room and stalled local cleanup that hid the call UI, blocked file transfer, and delayed Windows shutdown. `VoiceCallRuntime` now publishes terminal failed/idle state before bounded cleanup; targeted runtime/contract/terminal friend-flow tests, analyze, and full Melos tests passed. Device-direction smoke proof is still required before closing this blocker.
+- Progress 2026-06-05 Phase 3 first slice: `CallErrorClassifier` now owns call failure reason/message/taxonomy/retry classification, and `call_media_session_coordinator.dart` owns app-side audio/video media adapters plus media diagnostics mapping. Focused classifier, media-path, diagnostics-contract, failure-message, analyze, and full Melos tests passed. This reduces runtime concentration but does not close BLK-001 because room reconciliation, lock coordination, command orchestration, full media session ownership, and device-direction proof remain.
+- Progress 2026-06-05 Phase 10 scope: `apps/rain/integration_test/device_media_reality_proof_test.dart` now provides an opt-in real media capture proof through `FlutterWebRTCBridge` and `DefaultCallMediaConnection`. Local environment probes found no attached Android device (`flutter devices` showed Windows/web only; `adb devices` was empty), so no Android or cross-peer media proof was executed. `QA_Medium_API_36_1` exists but was not running. BLK-001 remains release-blocking until Android/Windows direction proof passes or launch scope is explicitly reduced.
 - Exit Criteria: PC-to-mobile and mobile-to-PC voice/video setup have deterministic pass/fail behavior, no stuck connecting state remains, and diagnostics classify the failure source.
 - Detection Strategy: Runtime tests, call diagnostics timeline, release smoke logs, and watcher for repeated failed media setup events.
 
 ### BLK-002: False Busy And Stale Call Locks Can Block Calls
 
-- Status: Open
+- Status: Mitigating; local workflow contract proof added 2026-06-05
 - Severity: Critical
 - Owner: Engineering
 - Type: Architecture/Technical
@@ -73,7 +94,8 @@ Related: [[Risk Register]], [[Risk Categories]], [[Risk Matrix]], [[Blocker Reso
   - Retry internally once after cleanup.
   - Prove live newer locks are never deleted.
 - Progress 2026-06-04 terminal cleanup: A terminal `busy` room can still be a real remote-side outcome, but it no longer leaves the local runtime in an active call state while cleanup stalls. This mitigates the user-visible false file-transfer block; full stale/live/newer lock repair proof remains open.
-- Progress 2026-06-05 stale lock reclaim: Firebase and fake voice signaling now use shared `VoiceLockReclaimPolicy` during `createOutgoingCall`. Stale expired locks, caller-owned or orphan-aged missing-room locks, terminal rooms, caller-owned setup rooms, and expired setup rooms are reclaimed; live connected rooms, fresh other-owned setup, mismatched participants, and newer/different locks stay busy. Firebase compare-deletes before cleanup and retries the claim exactly once. A local terminal echo race after locally initiated hangup is fixed so the original hangup path still awaits session/media cleanup. Focused policy/signaling tests, targeted stale-lock app scenarios, `call_retry_policy_test.dart`, analyze, full Melos tests, and vault validation passed. Closing this blocker still requires emulator/live Firebase proof across the stale/live/newer-lock matrix.
+- Progress 2026-06-05 stale lock reclaim: Firebase and fake voice signaling now use shared `VoiceLockReclaimPolicy` during `createOutgoingCall`. Stale expired locks, caller-owned or orphan-aged missing-room locks, terminal rooms, caller-owned setup rooms, and expired setup rooms are reclaimed; live connected rooms, fresh other-owned setup, mismatched participants, and newer/different locks stay busy. Firebase compare-deletes before cleanup and retries the claim exactly once. A local terminal echo race after locally initiated hangup is fixed so the original hangup path still awaits session/media cleanup. Focused policy/signaling tests, targeted stale-lock app scenarios, `call_retry_policy_test.dart`, analyze, full Melos tests, and vault validation passed.
+- Progress 2026-06-05 Phase 2 emulator proof: `.\scripts\ci_run_firebase_emulators.ps1` passed after adding RTDB emulator assertions for terminal leftover lock reclamation, missing inbox cleanup, malformed voice lock/inbox denial, unauthorized transition denial, oversized terminal reason denial, and denied-write state preservation. Backend functions lint/test/audit also passed. Live Firebase/device smoke proof remains separate release evidence.
 - Exit Criteria: Emulator/fake tests cover stale, missing, terminal, corrupt, live, and newer-lock cases.
 - Detection Strategy: Diagnostics with pair/user lock path, call id, room status, cleanup action, and retry result.
 
@@ -95,6 +117,7 @@ Related: [[Risk Register]], [[Risk Categories]], [[Risk Matrix]], [[Blocker Reso
   - Add presence freshness checks where writes depend on online/offline state.
   - Add malformed payload deny tests.
   - Add operation counters for quota-sensitive flows.
+- Progress 2026-06-05 Phase 2 emulator proof: Voice call RTDB rules now have local emulator proof for malformed lock/inbox writes, unauthorized transitions, live-lock preservation after denied cleanup, and terminal leftover lock reclamation. Connection-request quota proof remains tracked separately under BLK-009.
 - Exit Criteria: Emulator rules cover presence, call rooms, locks, inboxes, connection requests, messages, and file metadata.
 - Detection Strategy: Firebase emulator test results, permission-denied diagnostics, Firebase operation counters.
 
@@ -131,14 +154,16 @@ Related: [[Risk Register]], [[Risk Categories]], [[Risk Matrix]], [[Blocker Reso
 - Related Roadmap Tasks: TASK-004, TASK-014
 - Related Debt: TD-010, TD-016
 - Related Architecture: [[Diagnostics Sanitization]], [[CallDiagnosticsRecorder]], [[Privacy Review]]
-- Impact: Debugging remains guesswork or diagnostics become unsafe for users to share.
-- Workaround Strategy: Keep exports local-only and require manual review of new diagnostic fields before release.
-- Parallel Progress Path: Work on call/runtime tests while diagnostics schema and sanitizer tests are added.
+- Impact: Covered diagnostics exports are safer for user-shared reports; debugging still remains incomplete for selected ICE route, first-track, first-frame, and full media lifecycle failures.
+- Workaround Strategy: Keep exports local-only, require sanitizer regression samples for every new private diagnostic field, and avoid raw SDP/ICE/content/path/file/secrets in support reports.
+- Parallel Progress Path: Continue call/runtime route and media lifecycle taxonomy while keeping diagnostics sanitization centralized.
 - Resolution Plan:
-  - Add recursive denylist sanitizer.
-  - Add call setup timeline without raw SDP, ICE candidate strings, tokens, ciphertext, message text, or file bytes.
-  - Add summaries for Firebase, permission, ICE, TURN, media, and terminal failures.
-- Exit Criteria: Export tests prove sensitive values are redacted and failure taxonomy is present.
+  - [x] Add recursive denylist sanitizer.
+  - [x] Add current call failure taxonomy buckets without raw SDP, ICE candidate strings, tokens, ciphertext, message text, or file bytes.
+  - [x] Add summaries for Firebase, permission, ICE, TURN, media, and terminal failures.
+  - [ ] Add selected route, candidate count, first-track, first-frame, and cleanup-lifecycle summaries without raw payloads.
+- Progress 2026-06-05 Phase 4: `DiagnosticsSanitizer` now recursively sanitizes crash diagnostics, debug logs, coalesced event records, write-failure debug output, and final export payloads. Focused diagnostics export/debug-log/classifier tests passed locally.
+- Exit Criteria: Export tests prove sensitive values are redacted, failure taxonomy is present, and remaining route/media lifecycle summaries are useful without raw private payloads.
 - Detection Strategy: Sanitizer tests, diagnostics export tests, failure taxonomy tests.
 
 ### BLK-006: Release Workflow Gate Evidence Is Not Strong Enough
@@ -155,11 +180,14 @@ Related: [[Risk Register]], [[Risk Categories]], [[Risk Matrix]], [[Blocker Reso
 - Workaround Strategy: Treat cloud artifacts as test builds unless hard gate evidence is present.
 - Parallel Progress Path: Continue docs, debt/risk, and test harness work while hard gate dependencies are clarified.
 - Resolution Plan:
-  - Define fast artifact workflow vs hard release gate.
-  - Require analyze/test/rules/vault validation before publish.
-  - Include commit, version, channel, and artifact metadata.
-  - Document failure ownership.
-- Exit Criteria: Release workflow blocks publish on failed gates and reports exact failing stage.
+  - [x] Define fast artifact workflow vs hard release gate.
+  - [x] Require analyze/test/rules/vault validation before publish.
+  - [x] Include commit, version, channel, and artifact metadata.
+  - [x] Document failure ownership.
+  - [ ] Record fresh cloud workflow proof for the changed release path before artifact promotion.
+- Progress 2026-06-05 Phase 8: `release.yml` now validates before build/publish and requires Remote Config deploy/readback evidence; publish-capable workflows attach `rain-release-metadata.json`; `rain-test-*` direct-download releases are labeled `TEST ARTIFACT ONLY`; contract tests lock these requirements locally.
+- Progress 2026-06-05 Phase 9: `scripts/check_obsidian_vault.ps1` now fails on missing operational owner/priority/evidence fields, stale reviewed dates, unsupported fixed-schema statuses, evidence-ledger gaps, closed blockers without evidence, and P0/P1 items without a next-action-equivalent field. This improves release evidence trust but does not replace the required fresh GitHub Actions proof.
+- Exit Criteria: Release workflow blocks publish on failed gates, reports exact failing stage, and a fresh GitHub Actions run proves the changed workflow for the artifact being promoted.
 - Detection Strategy: Workflow run summaries, artifact metadata, gate dependency graph, vault validation.
 
 ### BLK-007: Local Android/Appium QA Harness Is Not Release-Blocking Yet
@@ -180,6 +208,7 @@ Related: [[Risk Register]], [[Risk Categories]], [[Risk Matrix]], [[Blocker Reso
   - Update `qa.appium.json`.
   - Run shared local QA scripts when explicitly requested.
   - Store artifacts in the configured artifact path.
+- Progress 2026-06-05 Phase 10 scope: Android QA tooling is installed and `test-env.ps1` passed. `apps\rain\qa.appium.json` currently proves only the standalone auth toggle smoke path, not calls/media. The latest saved Rain Appium artifacts from 2026-05-30 timed out in WebDriver, so Appium remains development-supporting evidence only. Phase 10 added an opt-in Flutter integration proof for real mic/camera capture, but it was not executed successfully because no Android endpoint was attached.
 - Exit Criteria: Minimal Appium smoke test repeats on `QA_Medium_API_36_1`.
 - Detection Strategy: Appium logs, adb logcat, integration artifacts, smoke workflow output.
 

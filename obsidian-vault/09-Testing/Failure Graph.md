@@ -1,6 +1,6 @@
 # Failure Graph
 
-Last updated: 2026-06-04
+Last updated: 2026-06-05
 
 ## Purpose
 
@@ -133,6 +133,20 @@ Peer backend presence is stale
 
 Related assumptions: ASSUMP-003, ASSUMP-010.
 Related risks: R-016, R-020.
+
+### FG-009: File Buffer Pressure To Corrupt Or Unbounded Transfer
+
+```text
+Large file or slow receiver
+  -> Sender continues writing chunks while file data channel remains above high watermark
+  -> Buffered data grows or transfer stalls without a clear terminal reason
+  -> Receiver may hold stale temp sink or partial temp file after failure/cancel
+  -> User sees failed/corrupt transfer or degraded peer session
+  -> Need persistent receive sink cleanup plus high/low watermark send proof
+```
+
+Related assumptions: ASSUMP-014, ASSUMP-011.
+Related risks: R-011.
 
 ## Scenario Generation Rule
 

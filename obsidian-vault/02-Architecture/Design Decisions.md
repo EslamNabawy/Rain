@@ -1,6 +1,6 @@
 # Design Decisions
 
-Design decisions are tracked as ADRs under [[ADR-001]], [[ADR-002]], [[ADR-003]], [[ADR-004]], [[ADR-005]], [[ADR-006]], [[ADR-007]], [[ADR-008]], and [[ADR-009]].
+Design decisions are tracked as ADRs under [[ADR-001]], [[ADR-002]], [[ADR-003]], [[ADR-004]], [[ADR-005]], [[ADR-006]], [[ADR-007]], [[ADR-008]], [[ADR-009]], and [[ADR-010]].
 
 ## Current Decisions
 
@@ -16,5 +16,6 @@ Design decisions are tracked as ADRs under [[ADR-001]], [[ADR-002]], [[ADR-003]]
 - Presence resolver owns peer availability decisions.
 - Message loading uses bounded live tail plus pagination.
 - File transfer uses streaming sinks and data-channel backpressure.
+- Local Drift/SQLite storage is plaintext in the current product scope; local database encryption requires a future explicit implementation and migration plan.
 
 Related: [[Project Memory]], [[Technical Debt]], [[System Architecture]], [[Architecture Refactor Plan Index]], [[Decision Map]].

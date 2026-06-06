@@ -28,6 +28,29 @@ class StoredMessage {
   final bool isOutgoing;
 }
 
+const int defaultConversationPageSize = 50;
+const int maxConversationPageSize = 250;
+
+class MessagePageCursor {
+  const MessagePageCursor({
+    required this.sentAt,
+    required this.seq,
+    required this.id,
+  });
+
+  factory MessagePageCursor.fromMessage(StoredMessage message) {
+    return MessagePageCursor(
+      sentAt: message.sentAt,
+      seq: message.seq,
+      id: message.id,
+    );
+  }
+
+  final int sentAt;
+  final int seq;
+  final String id;
+}
+
 class IncomingMessageResult {
   const IncomingMessageResult({required this.disposition, this.message});
 
@@ -52,6 +75,51 @@ class MessageStore {
       (List<Message> rows) =>
           rows.map(_mapStoredMessage).toList(growable: false),
     );
+  }
+
+  Stream<List<StoredMessage>> watchConversationTail(
+    String peerId, {
+    int limit = defaultConversationPageSize,
+  }) {
+    final query = _database.select(_database.messages)
+      ..where((Messages row) => row.peerId.equals(peerId))
+      ..orderBy(<OrderingTerm Function(Messages)>[
+        (Messages row) => OrderingTerm.desc(row.sentAt),
+        (Messages row) => OrderingTerm.desc(row.seq),
+        (Messages row) => OrderingTerm.desc(row.id),
+      ])
+      ..limit(_boundedPageSize(limit));
+    return query.watch().map(_mapDescendingRowsToAscendingMessages);
+  }
+
+  Future<List<StoredMessage>> loadConversationPage(
+    String peerId, {
+    int limit = defaultConversationPageSize,
+    MessagePageCursor? before,
+  }) async {
+    final query = _database.select(_database.messages)
+      ..where((Messages row) {
+        final peerFilter = row.peerId.equals(peerId);
+        if (before == null) {
+          return peerFilter;
+        }
+        final beforeSentAt = row.sentAt.isSmallerThanValue(before.sentAt);
+        final sameSentAt = row.sentAt.equals(before.sentAt);
+        final beforeSeq = row.seq.isSmallerThanValue(before.seq);
+        final sameSeq = row.seq.equals(before.seq);
+        final beforeId = row.id.isSmallerThanValue(before.id);
+        return peerFilter &
+            (beforeSentAt |
+                (sameSentAt & beforeSeq) |
+                (sameSentAt & sameSeq & beforeId));
+      })
+      ..orderBy(<OrderingTerm Function(Messages)>[
+        (Messages row) => OrderingTerm.desc(row.sentAt),
+        (Messages row) => OrderingTerm.desc(row.seq),
+        (Messages row) => OrderingTerm.desc(row.id),
+      ])
+      ..limit(_boundedPageSize(limit));
+    return _mapDescendingRowsToAscendingMessages(await query.get());
   }
 
   Future<bool> containsMessage(String id) async {
@@ -256,6 +324,22 @@ class MessageStore {
       status: MessageStatus.values.byName(row.status),
       isOutgoing: row.isOutgoing,
     );
+  }
+
+  List<StoredMessage> _mapDescendingRowsToAscendingMessages(
+    List<Message> rows,
+  ) {
+    return rows.reversed.map(_mapStoredMessage).toList(growable: false);
+  }
+
+  int _boundedPageSize(int limit) {
+    if (limit <= 0) {
+      return defaultConversationPageSize;
+    }
+    if (limit > maxConversationPageSize) {
+      return maxConversationPageSize;
+    }
+    return limit;
   }
 
   String _incomingSeqKey(String peerId) => 'in:$peerId';

@@ -58,10 +58,17 @@ class _ChatPanelState extends ConsumerState<_ChatPanel> {
     final runtime = ref.watch(runtimeControllerProvider).value;
     final friend = _currentFriend(friends);
     final canChat = friend?.state == FriendState.friend;
-    final isPeerOnline = canChat ? friend?.isOnline ?? false : false;
     final connection = ref.watch(connectionsProvider).peer(widget.peerId);
-    final connectivity = ref.watch(peerConnectivityProvider);
-    final connectivitySnapshot = connectivity[widget.peerId];
+    final connectivitySnapshot = ref.watch(
+      peerConnectivityProvider.select((snapshots) => snapshots[widget.peerId]),
+    );
+    final peerOnlineForAction = canChat
+        ? connectivitySnapshot?.peerOnlineForAction
+        : false;
+    final isPeerOnline = peerOnlineForAction == true;
+    final usesOfflineConnectionRequest =
+        canChat &&
+        (connectivitySnapshot?.requiresOfflineConnectionRequest ?? false);
     final diagnostics = ConnectionDiagnostics.fromConnection(
       canChat: canChat,
       isPeerOnline: isPeerOnline,
@@ -83,12 +90,11 @@ class _ChatPanelState extends ConsumerState<_ChatPanel> {
     );
     final hasPendingOutboundRequest =
         outboundRequest != null && !outboundRequest.status.isTerminal;
-    final usesOfflineConnectionRequest = !isPeerOnline;
     final connectionStatus = _connectionStatusForDiagnostics(diagnostics);
     final connectDeniedReason = _connectRequestUnavailableReason(
       runtime: runtime,
       canChat: canChat,
-      isPeerOnline: isPeerOnline,
+      requiresConnectionRequest: usesOfflineConnectionRequest,
       connectionStatus: connectionStatus,
       connectionRequests: connectionRequests,
       outboundRequest: outboundRequest,
@@ -111,7 +117,7 @@ class _ChatPanelState extends ConsumerState<_ChatPanel> {
             peerId: widget.peerId,
             mediaMode: CallMediaMode.audio,
             voiceCallState: voiceCall,
-            peerOnline: isPeerOnline,
+            peerOnline: peerOnlineForAction,
             activeTransfer: activeTransfer,
             manualDisconnectedPeers:
                 connection.manualIntent ==
@@ -125,7 +131,7 @@ class _ChatPanelState extends ConsumerState<_ChatPanel> {
             peerId: widget.peerId,
             mediaMode: CallMediaMode.video,
             voiceCallState: voiceCall,
-            peerOnline: isPeerOnline,
+            peerOnline: peerOnlineForAction,
             activeTransfer: activeTransfer,
             manualDisconnectedPeers:
                 connection.manualIntent ==
@@ -925,6 +931,7 @@ class _ChatPanelState extends ConsumerState<_ChatPanel> {
   }
 
   Future<void> _runRefreshChat() async {
+    await ref.read(messagesProvider(widget.peerId).notifier).loadOlder();
     final networkError = _networkActionError();
     if (networkError != null) {
       _showErrorSnack(networkError);
@@ -1817,7 +1824,20 @@ class _ChatPanelState extends ConsumerState<_ChatPanel> {
     final friend = _currentFriend(friends);
     final canChat = friend?.state == FriendState.friend;
     final isPeerOnline =
-        peerOnlineOverride ?? (canChat ? friend?.isOnline ?? false : false);
+        peerOnlineOverride ??
+        (canChat
+            ? ref
+                  .read(peerConnectivityProvider)[widget.peerId]
+                  ?.peerOnlineForAction
+            : false) ??
+        false;
+    final requiresConnectionRequest = peerOnlineOverride == null
+        ? canChat &&
+              (ref
+                      .read(peerConnectivityProvider)[widget.peerId]
+                      ?.requiresOfflineConnectionRequest ??
+                  false)
+        : !peerOnlineOverride;
     final connection = ref.read(connectionsProvider).peer(widget.peerId);
     final runtime = ref.read(runtimeControllerProvider).value;
     final connectivitySnapshot = ref.read(
@@ -1840,7 +1860,7 @@ class _ChatPanelState extends ConsumerState<_ChatPanel> {
     return _connectRequestUnavailableReason(
       runtime: runtime,
       canChat: canChat,
-      isPeerOnline: isPeerOnline,
+      requiresConnectionRequest: requiresConnectionRequest,
       connectionStatus: _connectionStatusForDiagnostics(diagnostics),
       connectionRequests: connectionRequests,
       outboundRequest: outboundRequest,
@@ -1853,7 +1873,7 @@ class _ChatPanelState extends ConsumerState<_ChatPanel> {
   String? _connectRequestUnavailableReason({
     required RainRuntimeController? runtime,
     required bool canChat,
-    required bool isPeerOnline,
+    required bool requiresConnectionRequest,
     required _ConnectionStatus connectionStatus,
     required ConnectionRequestState connectionRequests,
     required ConnectionRequestSurfaceModel? outboundRequest,
@@ -1863,7 +1883,6 @@ class _ChatPanelState extends ConsumerState<_ChatPanel> {
     if (connectionStatus.isConnected) {
       return null;
     }
-    final requiresConnectionRequest = !isPeerOnline;
     if (requiresConnectionRequest &&
         outboundRequest != null &&
         !outboundRequest.status.isTerminal) {

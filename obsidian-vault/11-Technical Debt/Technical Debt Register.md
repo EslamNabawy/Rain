@@ -6,9 +6,9 @@ Last updated: 2026-06-05
 
 This register converts [[Original Audit]], [[Current Architecture]], and [[Master Roadmap]] into a technical debt management system.
 
-Debt is not a complaint list. Each item has a category, cost, priority, affected files, related systems, and a resolution strategy tied to roadmap tasks.
+Debt is not a complaint list. Each item has a category, owner, cost, priority, affected files, related systems, and a resolution strategy tied to roadmap tasks.
 
-Related: [[Debt Categories]], [[Debt Prioritization]], [[Architecture Debt]], [[Scalability Debt]], [[Security Debt]], [[Performance Debt]], [[Testing Debt]], [[DevOps Debt]], [[UX Debt]], [[Audit Resolution Tracker]], [[Critical Path]].
+Related: [[Debt Categories]], [[Debt Prioritization]], [[Architecture Debt]], [[Scalability Debt]], [[Security Debt]], [[Performance Debt]], [[Testing Debt]], [[DevOps Debt]], [[UX Debt]], [[Audit Resolution Tracker]], [[Critical Path]], [[2026-06-05 Senior Audit Remediation Plan]].
 
 ## Management Model
 
@@ -40,9 +40,9 @@ Related: [[Debt Categories]], [[Debt Prioritization]], [[Architecture Debt]], [[
 | Metric | Value |
 | --- | --- |
 | Total debt items | 22 |
-| P0 items | 9 |
-| P1 items | 10 |
-| P2 items | 3 |
+| P0 items | 10 |
+| P1 items | 11 |
+| P2 items | 1 |
 | P3 items | 0 |
 | Critical launch-path items | 7 |
 | Current debt risk score | 72/100 |
@@ -82,13 +82,33 @@ Related: [[Debt Categories]], [[Debt Prioritization]], [[Architecture Debt]], [[
 - TD-015 can proceed as test harness work.
 - TD-020 can proceed as documentation process work.
 
+## 2026-06-05 Senior Audit Debt Overlay
+
+Source: [[2026-06-05 Senior Audit Remediation Plan]]
+
+| SAR ID | Debt Mapping | Owner | Priority | Dependency | Evidence Required | Release Impact |
+| --- | --- | --- | --- | --- | --- | --- |
+| SAR-001 | TD-001, TD-003, TD-004, TD-016 | Engineering | P0 | Phases 1-2 proof first | Characterization tests, extracted call coordinator tests, and Phase 10 device/media proof. | Public launch blocked while unproven. |
+| SAR-002 | TD-002, TD-014, TD-020 | Engineering | P0 | Phase 0 | Phase 1 added authoritative runtime-backed peer snapshot freshness tests; Firebase emulator/device proof remains. | Unsafe action routing is locally mitigated; release confidence still needs Phase 2/10 proof. |
+| SAR-003 | TD-014, TD-020 | Engineering/Product | P0 | SAR-002 | Phase 1 removed `friend.isOnline` from chat action truth and routes through `PeerConnectivitySnapshot.peerOnlineForAction`. | Unsafe connect/request/call UI is locally mitigated; device proof remains. |
+| SAR-004 | TD-003, TD-009, TD-011 | Engineering/Security | P0 | Phase 0 | Emulator/rules stale/live/newer-lock matrix. | Call reliability and security blocked. |
+| SAR-005 | TD-010 plus accepted local-data decision | Security/Product | P1 | Phase 0 | Option A accepted 2026-06-05 in [[ADR-010]]; privacy/security docs now state local Drift/SQLite content is plaintext. | Strong local privacy claims remain blocked unless future encryption work lands with migration proof. |
+| SAR-006 | TD-006, TD-007 | Engineering | P1 | Phase 0 | Drift schema/index migration tests and store/provider pagination tests passed locally on 2026-06-05. | Local scale-readiness structure is mitigated; low-power/device frame-budget proof remains before release-scale closure. |
+| SAR-007 | TD-008 | Engineering | P1 | Phase 0 | Phase 7 focused tests passed locally for large receive, scripted slow receiver/backpressure, cancel cleanup, hash mismatch cleanup, disk write failure, and temp cleanup. | Local large-file confidence is mitigated; device-scale real-network proof remains before release-scale closure. |
+| SAR-008 | TD-010, TD-016 | Security/Engineering | P0/P1 | Phase 0 | Recursive sanitizer/export and taxonomy tests passed locally on 2026-06-05; new diagnostic fields require sanitizer regressions. | Covered diagnostic export safety is locally mitigated; deeper ICE route and media lifecycle taxonomy remains TD-016 work. |
+| SAR-009 | TD-017, TD-018 | DevOps | P0/P1 | Phase 0 | Phase 8 local workflow contract proof requires validation gates, metadata, and production Remote Config evidence before publish. | Fresh cloud workflow proof remains required before promoting a specific artifact. |
+| SAR-010 | TD-020 and engineering-system governance debt | DevOps/Engineering | P1 | Phase 0 | Phase 9 local semantic vault validation now enforces operational owner/priority/evidence/review fields, evidence ledger rows, closed-blocker proof, and P0/P1 next-action coverage. | Trustworthy status claims have a local validation gate; generated metric reconciliation remains future hardening. |
+| SAR-011 | TD-017 | DevOps/Security | P2 | Phase 8 | `rain-test-*` releases are labeled test-only and metadata records artifact purpose/build profile. | Demo artifacts remain unsuitable for production-trust claims. |
+| SAR-012 | TD-014 | Engineering/UI | P2 | Phase 1/6 | Chat panel selected-slice proof landed; rebuild isolation and low-power proof remain. | Broad rebuild debt is reduced, not closed. |
+
 ## Architecture Debt
 
 ### TD-001: Oversized VoiceCallRuntime
 
 - Category: Architecture
-- Status: Open
+- Status: Mitigating
 - Priority: P0
+- Owner: Engineering
 - Title: Oversized voice/video call runtime.
 - Description: `VoiceCallRuntime` mixes call start, presence checks, leases, media setup, terminal reconciliation, diagnostics, renderer handling, and UI-facing state mutation.
 - Cause: Iterative feature additions landed in the existing runtime path instead of being split into coordinators.
@@ -99,12 +119,14 @@ Related: [[Debt Categories]], [[Debt Prioritization]], [[Architecture Debt]], [[
 - Related Systems: [[VoiceCallRuntime Refactor]], [[CallStartCoordinator]], [[CallLeaseManager]], [[CallMediaCoordinator]], [[CallTerminalReconciler]], [[CallDiagnosticsRecorder]], [[Voice Calls]], [[Video Calls]].
 - Roadmap Tasks: TASK-001.
 - Resolution Strategy: Extract call start, lease, media, terminal, and diagnostics ownership behind coordinator contracts, then add characterization and regression tests.
+- Progress Note 2026-06-05: First Phase 3 decomposition slice is complete. `CallErrorClassifier` now owns call failure reason/message/taxonomy/retry classification, and `call_media_session_coordinator.dart` owns app-side audio/video media adapters plus media diagnostics mapping. `VoiceCallRuntime` still owns command orchestration, room reconciliation, lock coordination, state mutation, and terminal cleanup, so TD-001 remains open until those seams are extracted and validated.
 
 ### TD-002: RainRuntimeController Domain Concentration
 
 - Category: Architecture
-- Status: Open
+- Status: Mitigated
 - Priority: P1
+- Owner: Engineering
 - Title: Runtime controller owns too many domains.
 - Description: `RainRuntimeController` coordinates presence, friends, sessions, messages, files, calls, lifecycle, connection requests, diagnostics, and shutdown.
 - Cause: The runtime controller became the integration point for every feature.
@@ -122,6 +144,7 @@ Related: [[Debt Categories]], [[Debt Prioritization]], [[Architecture Debt]], [[
 - Category: Architecture
 - Status: Mitigating
 - Priority: P0
+- Owner: Engineering
 - Title: Call lease and terminal state are not owned by one component.
 - Description: Active user locks, pair locks, room status, inboxes, local runtime state, and session frames can disagree.
 - Cause: Firebase signaling, local runtime, and WebRTC session cleanup evolved as separate paths.
@@ -139,8 +162,9 @@ Related: [[Debt Categories]], [[Debt Prioritization]], [[Architecture Debt]], [[
 ### TD-004: Implicit Async Call State Machine
 
 - Category: Architecture
-- Status: Open
+- Status: Mitigating
 - Priority: P0
+- Owner: Engineering
 - Title: Call phases and terminal transitions are not strict enough.
 - Description: Incoming, outgoing, media connecting, active, reconnecting, ending, failed, and ended presentation states can be inferred from mixed sources.
 - Cause: Runtime state, Firebase terminal status, late frames, and UI presentation were layered incrementally.
@@ -157,8 +181,9 @@ Related: [[Debt Categories]], [[Debt Prioritization]], [[Architecture Debt]], [[
 ### TD-005: Fragmented Call Surface Model
 
 - Category: Architecture
-- Status: Open
+- Status: Mitigated
 - Priority: P1
+- Owner: Product/UI
 - Title: Call UI has multiple historical surface implementations.
 - Description: Fullscreen, minimized, popup, PiP, ended, failed, voice, and video surfaces have had inconsistent control ownership.
 - Cause: UI iterations were added before one presentation contract was frozen.
@@ -175,6 +200,7 @@ Related: [[Debt Categories]], [[Debt Prioritization]], [[Architecture Debt]], [[
 - Category: Architecture
 - Status: Mitigated
 - Priority: P0
+- Owner: Engineering/Product
 - Title: Authentication and session state have multiple truths.
 - Description: Drift local identity, Firebase Auth current user, RTDB user profile, RTDB presence, runtime state, and router state can disagree.
 - Cause: Local identity became the signed-in UI signal while backend validation happens later inside runtime startup.
@@ -194,6 +220,7 @@ Related: [[Debt Categories]], [[Debt Prioritization]], [[Architecture Debt]], [[
 - Category: Scalability
 - Status: Open
 - Priority: P1
+- Owner: Engineering
 - Title: Drift query paths need index validation.
 - Description: Conversation, unread, transfer, friend, and queue queries need explicit index coverage before large accounts.
 - Cause: Local database grew around feature needs without a documented query plan.
@@ -204,12 +231,14 @@ Related: [[Debt Categories]], [[Debt Prioritization]], [[Architecture Debt]], [[
 - Related Systems: [[Database Architecture]], [[Index Strategy]], [[Migration Plan]], [[Database Schema]].
 - Roadmap Tasks: TASK-008.
 - Resolution Strategy: Identify critical queries, add safe Drift migration indexes, and validate migration from current schema.
+- Progress Note 2026-06-05: Drift schema v6 adds explicit indexes for conversation reads, queued-message drain/recovery, file-transfer peer/message/state lookup, and friend display ordering. `rain_database_test.dart` verifies new-schema index creation and v5-to-v6 index migration. Remaining work is device-scale performance evidence, not missing index structure.
 
 ### TD-007: Eager Conversation Loading
 
 - Category: Scalability
-- Status: Open
+- Status: Mitigating
 - Priority: P1
+- Owner: Engineering/UI
 - Title: Conversation loading is not proven to be bounded.
 - Description: Large conversations need paginated reads and stable UI anchors instead of full-list assumptions.
 - Cause: Early chat flows optimized for small test conversations.
@@ -220,22 +249,25 @@ Related: [[Debt Categories]], [[Debt Prioritization]], [[Architecture Debt]], [[
 - Related Systems: [[Pagination Strategy]], [[Peer Chat]], [[Frontend Architecture]], [[Database Architecture]].
 - Roadmap Tasks: TASK-009, TASK-020.
 - Resolution Strategy: Add page windows, anchor behavior, paginated store queries, and provider/widget tests.
+- Progress Note 2026-06-05: `MessageStore.watchConversationTail` and `MessageStore.loadConversationPage` now provide a bounded live tail plus cursor-based older pages. `MessagesController` starts from the default 50-message tail and merges older local pages on demand. Store/provider tests cover ordering, older-page loading, and duplicate prevention. Remaining work is low-power/device frame-budget proof and any UX refinement for older-message loading.
 
 ### TD-008: File Transfer Streaming And Backpressure Proof
 
 - Category: Scalability
 - Status: Open
 - Priority: P1
+- Owner: Engineering
 - Title: Large file transfer behavior is not sufficiently bounded.
 - Description: Receive path and send path need hard proof around persistent streaming, temp cleanup, and RTCDataChannel buffered amount.
 - Cause: File transfer feature exists, but large-file pressure and slow-receiver behavior need stronger validation.
 - Risk: Memory spikes, channel crashes, failed transfers, and corrupted temp state.
 - Cost to Fix: L, 7 days across receive and send work.
 - Cost to Ignore: Large transfers can destabilize the app and degrade peer sessions.
-- Files Affected: `packages/peer_core/lib/src/file_transfer/*`, `packages/rain_core/lib/src/files/*`, `apps/rain/lib/application/files/*`.
+- Files Affected: `apps/rain/lib/application/runtime/file_transfer_runtime.dart`, `apps/rain/lib/application/runtime/rain_runtime_controller.dart`, `packages/rain_core/lib/file_transfer/file_transfer_protocol.dart`, `apps/rain/test/friend_flow_test.dart`, `packages/rain_core/test/file_transfer_protocol_test.dart`.
 - Related Systems: [[File Transfer]], [[Streaming Architecture]], [[Backpressure Strategy]].
 - Roadmap Tasks: TASK-010, TASK-011.
 - Resolution Strategy: Stream incoming chunks to temp files, add high/low water marks, pause/resume sends, and test slow receivers and cancellation.
+- Progress Note 2026-06-05: Phase 7 local mitigation is implemented. Incoming chunks now use a persistent receive sink per active transfer and close it on complete, cancel, failure, network loss, and shutdown. Terminal cleanup deletes temp files for cancellation, hash mismatch, invalid chunks, and disk write failure. The outgoing send loop carries one partial chunk instead of growing/removing from a pending list. Backpressure constants for chunk size, high/low watermarks, poll interval, and timeout now live in the protocol contract, and the sender records privacy-safe wait/complete/timeout diagnostics. Focused large receive, cancel cleanup, hash mismatch cleanup, disk write failure, and scripted backpressure tests passed locally; real-network/device-scale proof remains follow-up evidence.
 
 ## Security Debt
 
@@ -244,6 +276,7 @@ Related: [[Debt Categories]], [[Debt Prioritization]], [[Architecture Debt]], [[
 - Category: Security
 - Status: Open
 - Priority: P0
+- Owner: Security/Engineering
 - Title: RTDB rules are too important to remain under-tested.
 - Description: Presence, friendships, signaling rooms, voice calls, locks, inboxes, requests, and metadata need allow/deny emulator coverage.
 - Cause: Rules evolved with multiple feature passes and free-tier constraints.
@@ -261,6 +294,7 @@ Related: [[Debt Categories]], [[Debt Prioritization]], [[Architecture Debt]], [[
 - Category: Security
 - Status: Open
 - Priority: P1
+- Owner: Security/Engineering
 - Title: Diagnostics must stay useful without private payloads.
 - Description: Diagnostics should never export raw SDP, ICE candidate strings, tokens, passwords, ciphertext, message text, or file bytes.
 - Cause: Debugging pressure can lead to verbose logs unless sanitization is enforced centrally.
@@ -272,12 +306,14 @@ Related: [[Debt Categories]], [[Debt Prioritization]], [[Architecture Debt]], [[
 - Roadmap Tasks: TASK-014.
 - Resolution Strategy: Add recursive denylist sanitization, string caps, export tests, and diagnostics-only summaries.
 - Progress Note 2026-06-03: The Android diagnostics export path failure from the RCA is mitigated. `CrashDiagnosticsService` now treats SAF `/document/...` and `/tree/...` handles as platform-managed picker outputs and does not open them through `dart:io`. 2026-06-04 strengthening: when the picker returns a platform-managed handle, Rain writes and reports a real fallback JSON file under the diagnostics export folder; regression coverage locks both content URI and `/document/...` behavior.
+- Progress Note 2026-06-05: Senior audit Phase 4 added `DiagnosticsSanitizer` as the shared recursive sanitizer for crash diagnostics and debug logs. It pseudonymizes peer/call/room/user/pair/file/path/Firebase path values, redacts secrets, message-like payloads, SDP, ICE candidates, ciphertext, nonce/MAC, and file bytes, and re-sanitizes final export payloads before JSON encoding. Focused diagnostics export and sanitizer regression tests passed locally; future diagnostic fields that can carry private data still need focused redaction proof.
 
 ### TD-011: Malformed Signaling Write Protection
 
 - Category: Security
 - Status: Open
 - Priority: P0
+- Owner: Security/Engineering
 - Title: Security rules must reject malformed or unauthorized signaling artifacts.
 - Description: Signaling paths must reject wrong owners, invalid statuses, stale timestamps, oversized payloads, and unauthorized lock writes.
 - Cause: Client-driven signaling has many paths and no Cloud Functions authority on Spark/free-tier mode.
@@ -294,6 +330,7 @@ Related: [[Debt Categories]], [[Debt Prioritization]], [[Architecture Debt]], [[
 - Category: Security
 - Status: Open
 - Priority: P1
+- Owner: Engineering/Ops
 - Title: Firebase operation budgets and offline request abuse controls need stronger tracking.
 - Description: Presence, call signaling, ICE, connection requests, and update checks need counters and budget expectations because paid backend escalation is not allowed.
 - Cause: Free-tier operation cost is a hard product constraint, but not all write-heavy flows have budget visibility.
@@ -312,6 +349,7 @@ Related: [[Debt Categories]], [[Debt Prioritization]], [[Architecture Debt]], [[
 - Category: Performance
 - Status: Open
 - Priority: P1
+- Owner: Engineering/UI
 - Title: Low-power devices need a defined performance tier.
 - Description: ARMv7 and low-RAM devices should not run the same expensive visual/diagnostic paths as standard devices.
 - Cause: Premium UI and diagnostics were added before a strict low-power budget was documented.
@@ -328,6 +366,7 @@ Related: [[Debt Categories]], [[Debt Prioritization]], [[Architecture Debt]], [[
 - Category: Performance
 - Status: Open
 - Priority: P2
+- Owner: Engineering/UI
 - Title: Riverpod provider boundaries can trigger broad UI rebuilds.
 - Description: Message, friend, connection, call, diagnostics, and media state updates need tighter selected watches and consumer islands.
 - Cause: Large screens and runtime providers were composed quickly as feature count grew.
@@ -346,6 +385,7 @@ Related: [[Debt Categories]], [[Debt Prioritization]], [[Architecture Debt]], [[
 - Category: Testing
 - Status: Open
 - Priority: P1
+- Owner: QA/DevOps
 - Title: Adapter contracts and Appium smoke setup need repeatable coverage.
 - Description: Fake and Firebase-backed adapters need parity tests for success, permission denied, malformed data, cancellation, stale records, and cleanup.
 - Cause: UI/device testing has been added reactively after failures.
@@ -357,12 +397,14 @@ Related: [[Debt Categories]], [[Debt Prioritization]], [[Architecture Debt]], [[
 - Roadmap Tasks: TASK-018.
 - Resolution Strategy: Create adapter contract matrix, fake parity tests, emulator RTDB tests, and stable smoke locators.
 - Progress Note 2026-06-03: Added `scripts/run_rain_app_test.ps1` so isolated Rain app tests run from `apps/rain` and resolve Drift/SQLite native assets on Windows. The targeted stale-presence friend-flow test passed through the wrapper, then full `friend_flow_test.dart` passed with 120 tests passing and 10 skipped legacy control-channel cases.
+- Progress Note 2026-06-05: Phase 10 added `apps/rain/integration_test/device_media_reality_proof_test.dart` as an opt-in Flutter integration proof for real microphone/camera capture through `FlutterWebRTCBridge` and `DefaultCallMediaConnection`. The Android QA toolkit is installed and `QA_Medium_API_36_1` exists, but no Android device/emulator was attached in this session and saved Appium artifacts timed out in WebDriver. TD-015 remains open until the smoke path repeats with artifacts.
 
 ### TD-016: WebRTC Failure Classification Coverage
 
 - Category: Testing
 - Status: Open
 - Priority: P1
+- Owner: Engineering
 - Title: ICE, TURN, and media failure diagnostics need testable taxonomy.
 - Description: Call failures should identify permission, Firebase, ICE, TURN, media capture, first-frame, and terminal-state causes separately.
 - Cause: WebRTC failures are currently difficult to infer from app-level messages alone.
@@ -374,14 +416,16 @@ Related: [[Debt Categories]], [[Debt Prioritization]], [[Architecture Debt]], [[
 - Roadmap Tasks: TASK-004.
 - Resolution Strategy: Add sanitized call setup timeline, candidate counts, selected route metadata, first-track/frame events, and taxonomy tests.
 - Progress Note 2026-06-03: Call setup diagnostics now retain Firebase room status transitions in the runtime and include them in `VoiceCallDiagnostics`. Remote terminal-room failure reconciliation also records diagnostics, so failed setup reports can show `ringing -> accepted -> failed` instead of an empty room timeline. Phase 08 added regressions for WebRTC transceiver/SDP native error sanitization, Firebase permission-denied setup messages, network-loss terminal messages, failed call suite state, terminal-room-before-session-hangup ordering, failed-media terminal writes, and already-terminal cleanup classification. Full ICE/TURN route and candidate classification remains open.
+- Progress Note 2026-06-05: `CallErrorClassifier` now centralizes call failure reason/message/taxonomy/retry classification and focused tests cover native media errors, TURN failures, local camera/microphone permission, stale lock repair, Firebase permission denied, terminal rooms, and malformed remote signaling data. Full selected-route, candidate, first-track, and first-frame diagnostics remain open.
 
 ## DevOps Debt
 
 ### TD-017: Weak Release Gate Parity
 
 - Category: DevOps
-- Status: Open
+- Status: Mitigated
 - Priority: P0
+- Owner: DevOps
 - Title: Release artifacts can be built without enough proof.
 - Description: Workflows need a hard gate that blocks publish when analyze, tests, rules, vault validation, or artifact metadata fail.
 - Cause: Fast test builds and release builds were added for speed, then gate strictness became inconsistent.
@@ -392,12 +436,14 @@ Related: [[Debt Categories]], [[Debt Prioritization]], [[Architecture Debt]], [[
 - Related Systems: [[CI-CD Roadmap]], [[Release Gates]], [[Coverage Dashboard]].
 - Roadmap Tasks: TASK-015.
 - Resolution Strategy: Define hard gate matrix, enforce workflow dependencies, and include commit/version/channel evidence in artifacts.
+- Progress Note 2026-06-05: Phase 8 local mitigation is implemented. `release.yml` is manual-only, validates before build/publish, requires Remote Config deploy/readback evidence, and publishes `rain-release-metadata.json`; `build-artifacts.yml`, `fast-release.yml`, and `validated-release.yml` also attach metadata; production fast/validated releases require Remote Config evidence; test-download releases are labeled `TEST ARTIFACT ONLY`. Remaining debt is fresh GitHub Actions proof for the changed workflows before artifact promotion.
 
 ### TD-018: Update Version Validation Failures
 
 - Category: DevOps
 - Status: Open
 - Priority: P0
+- Owner: Product/DevOps
 - Title: App update policy has reported wrong old-version behavior.
 - Description: Old versions have not reliably shown update prompts, and manual check behavior has been reported misleading.
 - Cause: Version/build comparison and Remote Config manifest behavior need stricter tests.
@@ -418,6 +464,7 @@ Related: [[Debt Categories]], [[Debt Prioritization]], [[Architecture Debt]], [[
 - Category: UX
 - Status: Open
 - Priority: P1
+- Owner: Product/UI
 - Title: Voice/video call presentation has not stabilized into a mature call suite.
 - Description: Users have reported bad control layout, overlap, stuck failure screens, duplicate management surfaces, and confusing minimized behavior.
 - Cause: Runtime reliability and UI surface redesign progressed in overlapping iterations.
@@ -434,6 +481,7 @@ Related: [[Debt Categories]], [[Debt Prioritization]], [[Architecture Debt]], [[
 - Category: UX
 - Status: Open
 - Priority: P0
+- Owner: Product/Security
 - Title: Connection request guardrails must explain every blocked action.
 - Description: Offline notification requests must require confirmation, should not count online direct connect attempts, and must message every denied rule.
 - Cause: Connection request behavior changed from direct connect fallback to quota-governed offline notifications.
@@ -450,6 +498,7 @@ Related: [[Debt Categories]], [[Debt Prioritization]], [[Architecture Debt]], [[
 - Category: UX
 - Status: Mitigated
 - Priority: P0
+- Owner: Engineering/Product
 - Title: Startup splash and navigation readiness are route-local instead of app-global.
 - Description: `RootScreen` owns loading/update/runtime gates only for `/`, while `ShellRoute` and protected sibling routes can exist before full app readiness.
 - Cause: The routed app shell is created immediately after infrastructure bootstrap; auth/session/runtime readiness is resolved inside providers and route children.
@@ -472,7 +521,7 @@ Related: [[Debt Categories]], [[Debt Prioritization]], [[Architecture Debt]], [[
 
 ## Register Definition Of Done
 
-- Every open debt item links to roadmap tasks and architecture notes.
+- Every open debt item has an owner and links to roadmap tasks and architecture notes.
 - Closed debt items include validation evidence in [[Audit Resolution Tracker]] or [[Coverage Dashboard]].
 - Accepted debt items have explicit owner acceptance in [[Launch Readiness]].
 - [[Project Memory]] is updated when a debt item changes durable project facts.

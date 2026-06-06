@@ -40,6 +40,11 @@ on:
         required: false
         default: ''
         type: string
+      remote_config_evidence_url:
+        description: Required for production publishing; URL proving Remote Config deploy/readback.
+        required: false
+        default: ''
+        type: string
 
 permissions:
   contents: write
@@ -251,6 +256,42 @@ jobs:
         shell: pwsh
         run: ./scripts/check_obsidian_vault.ps1
 
+  release-evidence:
+    name: Release Evidence
+    runs-on: ubuntu-latest
+    needs:
+      - resolve-target
+    timeout-minutes: 5
+    steps:
+      - name: Require production Remote Config evidence
+        shell: bash
+        run: |
+          set -euo pipefail
+          evidence_url="${{ inputs.remote_config_evidence_url }}"
+          if [ "${{ inputs.build_profile }}" = "production" ]; then
+            if [ -z "${evidence_url}" ]; then
+              echo "remote_config_evidence_url is required for production validated releases." >&2
+              exit 1
+            fi
+            case "${evidence_url}" in
+              https://*) ;;
+              *)
+                echo "remote_config_evidence_url must be an https URL." >&2
+                exit 1
+                ;;
+            esac
+          fi
+          {
+            echo "## Release evidence"
+            echo
+            echo "Build profile: ${{ inputs.build_profile }}"
+            if [ -n "${evidence_url}" ]; then
+              echo "Remote Config deploy/readback proof: ${evidence_url}"
+            else
+              echo "Remote Config deploy/readback proof: not required for demo/test artifacts"
+            fi
+          } >> "${GITHUB_STEP_SUMMARY}"
+
   validation-gate:
     name: Validation Gate
     runs-on: ubuntu-latest
@@ -260,6 +301,7 @@ jobs:
       - workspace-validation
       - firebase-backend
       - firebase-emulator-tests
+      - release-evidence
     steps:
       - name: Fail if any validation job failed
         run: |
@@ -267,6 +309,7 @@ jobs:
           test "${{ needs.workspace-validation.result }}" = "success"
           test "${{ needs.firebase-backend.result }}" = "success"
           test "${{ needs.firebase-emulator-tests.result }}" = "success"
+          test "${{ needs.release-evidence.result }}" = "success"
 
   build-windows:
     name: Build Windows Release App
@@ -539,6 +582,10 @@ jobs:
       - build-android
     timeout-minutes: 25
     steps:
+      - uses: actions/checkout@v5
+        with:
+          ref: ${{ needs.resolve-target.outputs.target_sha }}
+
       - name: Validate requested build jobs
         shell: bash
         run: |
@@ -615,6 +662,21 @@ jobs:
           printf 'Prepared release page assets:\n'
           printf ' - %s\n' "${assets[@]}"
 
+      - name: Write release metadata
+        shell: pwsh
+        run: |
+          $channel = if ($env:BUILD_PROFILE -eq 'demo') { 'demo' } else { 'stable' }
+          ./scripts/write_release_metadata.ps1 `
+            -OutputPath release-assets/publish/rain-release-metadata.json `
+            -TargetRef '${{ inputs.target_ref }}' `
+            -TargetSha '${{ needs.resolve-target.outputs.target_sha }}' `
+            -Channel $channel `
+            -BuildProfile $env:BUILD_PROFILE `
+            -ArtifactPurpose validated-release `
+            -ValidationWorkflow 'Validated Release Apps' `
+            -ValidationRunUrl '${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}' `
+            -RemoteConfigEvidenceUrl '${{ inputs.remote_config_evidence_url }}'
+
       - name: Publish release page
         shell: bash
         env:
@@ -652,12 +714,16 @@ jobs:
           - Firebase JSON validation
           - Firebase Functions lint/audit/tests
           - Firebase emulator integration tests
+          - Obsidian vault validation
+          - release evidence gate
 
           Build inputs:
           - target_ref=${{ inputs.target_ref }}
           - platform=${{ inputs.platform }}
           - build_profile=${BUILD_PROFILE}
           - connection request backend mode defaults to rtdbOnly when not explicitly provided
+          - metadata=rain-release-metadata.json
+          - remote_config_evidence_url=${{ inputs.remote_config_evidence_url }}
 
           Android APKs are uploaded individually for direct phone download.
           NOTES

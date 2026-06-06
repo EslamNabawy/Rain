@@ -1,6 +1,6 @@
 # Migrations
 
-Current Drift schema version observed: 5.
+Current Drift schema version observed: 6.
 
 ## Known Migration History
 
@@ -8,16 +8,19 @@ Current Drift schema version observed: 5.
 - v3 added `friends.online`.
 - v4 added `friends.gender`.
 - v5 added `file_transfers`.
+- v6 added secondary indexes for messages, friends, queued messages, and file transfers.
 
-## Required Future Migration
+## Implemented v6 Index Migration
 
-Add secondary indexes:
+- `messages_peer_sent_seq_id_idx`
+- `friends_display_name_idx`
+- `queued_messages_to_status_seq_sent_idx`
+- `queued_messages_status_to_idx`
+- `file_transfers_peer_created_idx`
+- `file_transfers_message_id_idx`
+- `file_transfers_state_peer_idx`
 
-- `messages(peer_id, sent_at, seq)`
-- `friends(display_name)`
-- `file_transfers(peer_id, created_at)`
-- `file_transfers(state)`
-- `queued_messages(to, status, sent_at)`
+Migration proof is in `packages/rain_core/test/rain_database_test.dart`.
 
 ## Migration Rules
 

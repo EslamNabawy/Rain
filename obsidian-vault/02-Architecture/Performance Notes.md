@@ -4,7 +4,7 @@
 
 - ARMv7 devices are a low-power tier and should not run heavy visual effects.
 - Diagnostics must not write frequent normal events synchronously on the UI isolate.
-- Message streams need pagination for large conversations.
+- Message streams now use a bounded live tail plus cursor pagination; remaining proof is device/frame-budget validation on large histories.
 - File transfer chunk handling needs lower allocation and persistent file sinks.
 - Large call UI trees should avoid unnecessary rebuilds.
 

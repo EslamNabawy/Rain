@@ -396,6 +396,8 @@ jobs:
     if: ${{ always() && github.event_name == 'workflow_dispatch' && inputs.publish_test_release == true }}
     timeout-minutes: 20
     steps:
+      - uses: actions/checkout@v5
+
       - name: Validate requested build jobs
         shell: bash
         run: |
@@ -471,6 +473,20 @@ jobs:
           printf 'Prepared direct release assets:\n'
           printf ' - %s\n' "${assets[@]}"
 
+      - name: Write release metadata
+        shell: pwsh
+        run: |
+          $channel = if ($env:BUILD_PROFILE -eq 'demo') { 'demo' } else { 'stable' }
+          ./scripts/write_release_metadata.ps1 `
+            -OutputPath release-assets/publish/rain-release-metadata.json `
+            -TargetRef '${{ github.ref_name }}' `
+            -TargetSha '${{ github.sha }}' `
+            -Channel $channel `
+            -BuildProfile $env:BUILD_PROFILE `
+            -ArtifactPurpose test-artifact `
+            -ValidationWorkflow 'Build Rain Apps' `
+            -ValidationRunUrl '${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}'
+
       - name: Publish GitHub pre-release
         shell: bash
         env:
@@ -488,7 +504,7 @@ jobs:
             --repo "${GITHUB_REPOSITORY}" \
             --target "${GITHUB_SHA}" \
             --title "${title}" \
-            --notes "Direct device downloads for Rain ${BUILD_PROFILE} build from ${GITHUB_SHA}. APK assets are uploaded individually so Android phones can download them without extracting an archive." \
+            --notes "TEST ARTIFACT ONLY. Direct device downloads for Rain ${BUILD_PROFILE} build from ${GITHUB_SHA}. Demo signing is not production trust. APK assets are uploaded individually so Android phones can download them without extracting an archive. See rain-release-metadata.json for validation evidence." \
             --prerelease
 
           {

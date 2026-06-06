@@ -14,8 +14,8 @@ Related: [[Master Roadmap]], [[Parallel Work Streams]], [[Database Scalability E
 | --- | --- | --- | --- | --- | --- |
 | TASK-008: [[Index Strategy]] migration | P1 | [[Database Architecture]], [[Migration Plan]] | 3 days | Critical local queries have index coverage. | Migration tests pass from current schema. |
 | TASK-009: [[Pagination Strategy]] | P1 | TASK-008 | 4 days | Conversation loading is bounded and page-based. | Widget/provider tests prove paginated load and no full-list rebuild. |
-| TASK-010: [[Streaming Architecture]] receive sink | P1 | [[File Transfer]] | 4 days | Incoming chunks stream to temp file. | Large-file tests pass and temp cleanup is verified. |
-| TASK-011: [[Backpressure Strategy]] send gate | P1 | TASK-010 | 3 days | Buffered amount stays within budget. | Slow receiver tests prove pause/resume behavior. |
+| TASK-010: [[Streaming Architecture]] receive sink | P1 | [[File Transfer]] | Mitigated locally 2026-06-05 | Incoming chunks stream to temp file. | Large receive, cancel, hash mismatch, disk write failure, and temp cleanup tests passed locally. |
+| TASK-011: [[Backpressure Strategy]] send gate | P1 | TASK-010 | Mitigated locally 2026-06-05 | Buffered amount stays within budget. | Scripted slow receiver/backpressure and protocol contract tests passed locally. |
 
 ## Day 46-60: UI Performance, Contracts, Workflow Ownership
 

@@ -148,6 +148,219 @@ void main() {
       expect(snapshot.canSendData, isFalse);
     },
   );
+
+  test(
+    'buildPeerConnectivitySnapshots does not trust local online without backend presence',
+    () {
+      final brain = _TestSessionManager()
+        ..seedConnected('bob', roomId: 'room-bob-alice')
+        ..setChannelOpen('bob', SessionChannel.chat, true);
+      addTearDown(brain.dispose);
+
+      final snapshots = buildPeerConnectivitySnapshots(
+        brain: brain,
+        friends: const <FriendRecord>[
+          FriendRecord(
+            username: 'bob',
+            displayName: 'Bob',
+            state: FriendState.friend,
+            addedAt: 1,
+            lastOnlineAt: null,
+            isOnline: true,
+            unreadCount: 0,
+            gender: null,
+          ),
+        ],
+        manualDisconnectedPeers: const <String>{},
+        lastDataEventTimestamps: const <String, int>{},
+      );
+
+      final snapshot = snapshots['bob'];
+
+      expect(snapshot, isNotNull);
+      expect(snapshot!.presenceOnline, isNull);
+      expect(snapshot.presenceFresh, isFalse);
+      expect(snapshot.peerOnlineForAction, isNull);
+      expect(snapshot.requiresOfflineConnectionRequest, isFalse);
+      expect(snapshot.isConnected, isFalse);
+      expect(snapshot.isConnectedWithStalePresence, isTrue);
+      expect(snapshot.canSendData, isTrue);
+    },
+  );
+
+  test(
+    'buildPeerConnectivitySnapshots uses cached backend presence for direct actions',
+    () {
+      final brain = _TestSessionManager()
+        ..seedConnected('bob', roomId: 'room-bob-alice')
+        ..setChannelOpen('bob', SessionChannel.chat, true);
+      addTearDown(brain.dispose);
+
+      final snapshots = buildPeerConnectivitySnapshots(
+        brain: brain,
+        friends: const <FriendRecord>[
+          FriendRecord(
+            username: 'bob',
+            displayName: 'Bob',
+            state: FriendState.friend,
+            addedAt: 1,
+            lastOnlineAt: null,
+            isOnline: true,
+            unreadCount: 0,
+            gender: null,
+          ),
+        ],
+        manualDisconnectedPeers: const <String>{},
+        lastDataEventTimestamps: const <String, int>{},
+        backendPresenceSnapshots: const <String, RuntimePeerPresenceSnapshot>{
+          'bob': RuntimePeerPresenceSnapshot(
+            peerId: 'bob',
+            online: true,
+            rawOnline: true,
+            observedAtMs: 1000,
+            lastHeartbeat: 990,
+            lastSeen: 990,
+            presenceAgeMs: 10,
+            presenceSessionId: 'presence-session-1',
+            presenceStartedAt: 900,
+            presenceState: 'online',
+          ),
+        },
+      );
+
+      final snapshot = snapshots['bob'];
+
+      expect(snapshot, isNotNull);
+      expect(snapshot!.presenceOnline, isTrue);
+      expect(snapshot.presenceFresh, isTrue);
+      expect(snapshot.peerOnlineForAction, isTrue);
+      expect(snapshot.requiresOfflineConnectionRequest, isFalse);
+      expect(snapshot.backendPresenceSessionId, 'presence-session-1');
+      expect(snapshot.presenceAgeMs, 10);
+      expect(snapshot.isConnected, isTrue);
+    },
+  );
+
+  test(
+    'buildPeerConnectivitySnapshots uses cached stale backend presence for offline request routing',
+    () {
+      final brain = _TestSessionManager()
+        ..seedConnected('bob', roomId: 'room-bob-alice');
+      addTearDown(brain.dispose);
+
+      final snapshots = buildPeerConnectivitySnapshots(
+        brain: brain,
+        friends: const <FriendRecord>[
+          FriendRecord(
+            username: 'bob',
+            displayName: 'Bob',
+            state: FriendState.friend,
+            addedAt: 1,
+            lastOnlineAt: null,
+            isOnline: true,
+            unreadCount: 0,
+            gender: null,
+          ),
+        ],
+        manualDisconnectedPeers: const <String>{},
+        lastDataEventTimestamps: const <String, int>{},
+        backendPresenceSnapshots: const <String, RuntimePeerPresenceSnapshot>{
+          'bob': RuntimePeerPresenceSnapshot(
+            peerId: 'bob',
+            online: false,
+            rawOnline: true,
+            observedAtMs: 1000,
+            lastHeartbeat: 1,
+            lastSeen: 1,
+            presenceAgeMs: 45000,
+            presenceSessionId: 'presence-session-1',
+            presenceStartedAt: 1,
+            presenceState: 'online',
+          ),
+        },
+      );
+
+      final snapshot = snapshots['bob'];
+
+      expect(snapshot, isNotNull);
+      expect(snapshot!.presenceOnline, isFalse);
+      expect(snapshot.presenceFresh, isFalse);
+      expect(snapshot.peerOnlineForAction, isFalse);
+      expect(snapshot.requiresOfflineConnectionRequest, isTrue);
+      expect(snapshot.isConnected, isFalse);
+      expect(snapshot.isConnectedWithStalePresence, isTrue);
+    },
+  );
+
+  test('backendIdentityIsFreshlyOnline rejects stale raw-online presence', () {
+    const now = 60000;
+
+    expect(
+      backendIdentityIsFreshlyOnline(
+        _backendIdentity(
+          online: true,
+          lastHeartbeat: now - 1000,
+          presenceState: 'online',
+        ),
+        nowMs: now,
+      ),
+      isTrue,
+    );
+    expect(
+      backendIdentityIsFreshlyOnline(
+        _backendIdentity(
+          online: true,
+          lastHeartbeat: now - peerPresenceFreshnessWindowMs - 1,
+          presenceState: 'online',
+        ),
+        nowMs: now,
+      ),
+      isFalse,
+    );
+    expect(
+      backendIdentityIsFreshlyOnline(
+        _backendIdentity(
+          online: true,
+          lastHeartbeat: now - peerPresenceFreshnessWindowMs - 1,
+          presenceState: 'online',
+        ),
+        nowMs: now,
+        freshnessWindowMs: connectionRequestTtl.inMilliseconds,
+      ),
+      isTrue,
+    );
+    expect(
+      backendIdentityIsFreshlyOnline(
+        _backendIdentity(
+          online: true,
+          lastHeartbeat: now - 1000,
+          presenceState: 'offline',
+        ),
+        nowMs: now,
+      ),
+      isFalse,
+    );
+  });
+}
+
+BackendIdentity _backendIdentity({
+  required bool online,
+  required int lastHeartbeat,
+  String? presenceState,
+}) {
+  return BackendIdentity(
+    username: 'bob',
+    uid: 'uid-bob',
+    displayName: 'Bob',
+    gender: null,
+    registeredAt: 1,
+    lastSeen: lastHeartbeat,
+    lastHeartbeat: lastHeartbeat,
+    online: online,
+    presenceSessionId: 'presence-session-1',
+    presenceStartedAt: 1,
+    presenceState: presenceState,
+  );
 }
 
 AppBootstrapState _bootstrap(RainDatabase database) {

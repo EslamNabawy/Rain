@@ -1,6 +1,6 @@
 # Current Architecture
 
-Last updated: 2026-06-04
+Last updated: 2026-06-05
 
 ## Purpose
 
@@ -50,7 +50,7 @@ The discovered feature set maps to [[Feature Index]] and [[Feature Map]]:
 - [[Video Calls]] - shares the voice call runtime/signaling path with video media mode, video renderers, call workspace, and call suite widgets.
 - [[Connection Request Notifications]] - offline-only connection request protocol backed by RTDB or optional Cloud Functions mode.
 - [[Version And Updates]] - Remote Config update manifest/fallback checks through `ForceUpdateService`.
-- [[Diagnostics And Logging]] - crash diagnostics, debug logging facade, provider observer, signaling adapter debug wrapper, export path, and frame timing diagnostics.
+- [[Diagnostics And Logging]] - crash diagnostics, shared recursive diagnostics sanitization, debug logging facade, provider observer, signaling adapter debug wrapper, export path, and frame timing diagnostics.
 - [[Sound System]] - sound event router and sound effects service using app settings and audio assets.
 - [[Branding And UI]] - Rain visual system, brand assets, ripple halo surfaces, splash, navigation shell, theme, and call surfaces.
 
@@ -75,7 +75,7 @@ Layer structure:
 Key app runtimes/controllers:
 
 - `RainRuntimeController` - central app runtime for presence, friends, sessions, messages, files, calls, network loss, app exit, and shutdown.
-- `VoiceCallRuntime` - large call runtime extension/path for voice/video call state, signaling, media setup, terminal reconciliation, and renderer handling.
+- `VoiceCallRuntime` - call runtime extension/path for voice/video call state, signaling, command orchestration, room reconciliation, lock coordination, terminal cleanup, and state mutation. 2026-06-05 Phase 3 moved pure call error classification to `CallErrorClassifier` and app-side voice/video media adapters plus diagnostics mapping to `call_media_session_coordinator.dart`; the remaining runtime decomposition is still open.
 - `ConnectionAttemptCoordinator` - peer connect/retry/disconnect intent and recovery state.
 - `RuntimeInteractionGuard` - typed action guard for connect, call, and file-transfer conflicts.
 - `ConnectionRequestRuntime` - offline connection request workflow.
@@ -167,8 +167,8 @@ Discovered assets:
 App infrastructure services:
 
 - `AppSettingsStore` - shared preferences for theme, audio, media devices, connection request settings, and call processing.
-- `CrashDiagnosticsService` - crash/error/event capture, export, frame timing stats, call summaries, Firebase cost counters.
-- `RainDebugLogService` and `RainDebugProviderObserver` - local debug logging facade and Riverpod observer.
+- `CrashDiagnosticsService` - crash/error/event capture, shared sanitizer enforcement for diagnostic records and final exports, export, frame timing stats, call summaries, Firebase cost counters.
+- `RainDebugLogService` and `RainDebugProviderObserver` - local debug logging facade and Riverpod observer; debug log context sanitization uses the same diagnostics sanitizer as crash export.
 - `ForceUpdateService` - Remote Config update checking and version policy.
 - `NetworkStatusService` - connectivity and backend reachability.
 - `TurnCredentialService` - base ICE server list and optional TURN broker cache.
@@ -222,7 +222,7 @@ Runtime state domains:
 - Presence runtime: Firebase presence, heartbeats, lifecycle online/offline, freshness checks.
 - Network runtime: connectivity status, backend probe, network lost/available handling.
 - Update runtime: required/optional/check-unavailable update states.
-- Diagnostics runtime: crash/global error handlers, debug events, network/signaling metadata, frame timing summaries.
+- Diagnostics runtime: crash/global error handlers, sanitized debug events, network/signaling metadata, frame timing summaries, and final export redaction.
 
 Known high-risk runtime concentration:
 
@@ -344,8 +344,11 @@ Related: [[Peer Chat]], [[Database Schema]], [[Signaling Architecture]].
 3. `FileTransferStore` records metadata and progress.
 4. File metadata uses message/file protocol frames.
 5. Binary chunks flow over WebRTC data channel.
-6. Progress is batched by `FileTransferProgressBatcher`.
-7. Received files can be exported through `ReceivedFileExportService`.
+6. Sender-side file chunks wait on the file channel `bufferedAmount` high/low watermark contract before each binary packet.
+7. Incoming accepted transfers write through one persistent temp-file sink per active transfer.
+8. Complete, cancel, failure, network loss, and shutdown close active receive sinks; cancel/failure paths delete temp files when present.
+9. Progress is batched by `FileTransferProgressBatcher`.
+10. Received files can be exported through `ReceivedFileExportService`.
 
 Related: [[File Transfer]], [[Streaming Architecture]], [[Backpressure Strategy]].
 
@@ -357,10 +360,11 @@ Related: [[File Transfer]], [[Streaming Architecture]], [[Backpressure Strategy]
 4. `VoiceSignalingAdapter.createOutgoingCall()` creates or repairs Firebase `activeVoiceUsers`, `activeVoicePairs`, `voiceCalls`, and `voiceCallInboxes`.
 5. Callee watches `voiceCallInboxes/{username}` and then `voiceCalls/{callId}`.
 6. Accept/reject/busy/hangup frames and SDP/ICE use Firebase voice signaling artifacts.
-7. Media uses WebRTC through `peer_core` voice/call media connection abstractions.
+7. Media uses WebRTC through `peer_core` voice/call media connection abstractions. App-side audio/video adapter ownership is now in `call_media_session_coordinator.dart`.
 8. Firebase terminal room state is authoritative for ending/failed calls. Runtime publishes terminal failed/idle UI state before awaiting WebRTC/session cleanup so file-transfer and call guards cannot observe a stale active phase.
 9. WebRTC/session/renderer cleanup is best-effort and bounded; cleanup failures are diagnostics, not a reason to keep a terminal call active in UI state.
-10. UI state is exposed through `voiceCallProvider`, `videoCallRenderersProvider`, and call surface providers.
+10. Failure reason/message classification runs through `CallErrorClassifier` before user-facing call state is published.
+11. UI state is exposed through `voiceCallProvider`, `videoCallRenderersProvider`, and call surface providers.
 
 Related: [[Voice Calls]], [[Video Calls]], [[Call State Machine]], [[Lease Management]], [[CallMediaCoordinator]].
 
@@ -388,10 +392,11 @@ Related: [[Version And Updates]], [[Release Gates]], [[Production Readiness]].
 ### Diagnostics Flow
 
 1. `CrashDiagnosticsService` captures Dart zone errors, Flutter errors, runtime events, update diagnostics, call summaries, cost counters, and frame timings.
-2. `RainDebugLogService` provides a sanitized event/error facade.
-3. `RainDebugProviderObserver` logs provider-level metadata.
-4. `DebugSignalingAdapter` logs signaling operation metadata.
-5. Exported diagnostics stay local.
+2. `DiagnosticsSanitizer` recursively redacts secrets, message-like content, SDP, ICE candidates, ciphertext, file bytes, and pseudonymizes identifiers, file names, local paths, and Firebase paths at ingestion and again before final export JSON encoding.
+3. `RainDebugLogService` provides a sanitized event/error facade.
+4. `RainDebugProviderObserver` logs provider-level metadata.
+5. `DebugSignalingAdapter` logs signaling operation metadata.
+6. Exported diagnostics stay local and must not contain raw private payloads.
 
 Related: [[Diagnostics And Logging]], [[Diagnostics Sanitization]], [[Privacy Review]].
 
@@ -456,7 +461,7 @@ Related: [[Signaling Architecture]], [[Voice Calls]], [[Video Calls]], [[File Tr
 
 Drift/SQLite database:
 
-- Schema version: 5.
+- Schema version: 6.
 - Tables: `messages`, `friends`, `queued_messages`, `file_transfers`, `connection_memory_table`, `identity_table`, `message_seq_tracker`.
 - SQLite settings: busy timeout, WAL journal mode, normal synchronous mode, foreign keys on.
 - Serialized write queue and busy/locked retry logic exist in `RainDatabase`.
@@ -481,6 +486,7 @@ Migration history from source:
 - Version 3: `friends.online`
 - Version 4: `friends.gender`
 - Version 5: `file_transfers`
+- Version 6: explicit indexes for conversation reads, queued-message drain/recovery, file-transfer peer/message/state lookup, and friend display ordering.
 
 ## Build System Inventory
 
@@ -515,6 +521,7 @@ Test surfaces discovered:
 
 - `apps/rain/test` - app services, runtime, UI widgets, call suite, update prompt, settings, sound, diagnostics, network, integration harness tests.
 - `apps/rain/integration_test/smoke_test.dart` - Flutter integration smoke.
+- `apps/rain/integration_test/device_media_reality_proof_test.dart` - opt-in Phase 10 device/media proof that uses real `FlutterWebRTCBridge` and `DefaultCallMediaConnection`; requires `RAIN_DEVICE_MEDIA_PROOF=true` and an attached microphone/camera-capable device or emulator.
 - `packages/peer_core/test` - WebRTC/media/core tests.
 - `packages/protocol_brain/test` - signaling, connection request, Firebase contract, voice signaling/session, release/workspace contract tests.
 - `packages/rain_core/test` - database, messages, files, session reset, voice call frame tests.
@@ -526,12 +533,12 @@ Related: [[Test Strategy]], [[Coverage Dashboard]], [[Emulator Test Matrix]].
 
 This discovery does not re-audit, but the current structure confirms the already tracked risk areas:
 
-- `VoiceCallRuntime` centralizes too many responsibilities and is tracked in [[VoiceCallRuntime Refactor]].
+- `VoiceCallRuntime` still centralizes command orchestration, room reconciliation, lock coordination, state mutation, and cleanup. The first Phase 3 extraction moved error classification and media adapter ownership out, but the oversized-runtime debt remains tracked in [[VoiceCallRuntime Refactor]].
 - `RainRuntimeController` owns many runtime domains at once.
 - Firebase call lease flow depends on sequential client-side operations and lock repair.
 - UI state, signaling state, media state, and terminal call state require strict reconciliation. Terminal room state must clear UI-facing call state before asynchronous media/session cleanup.
 - Presence, direct connect, call eligibility, and offline request notification all depend on fresh backend presence.
-- File transfer has data-channel backpressure support, but end-to-end large-transfer behavior remains a known area for [[Backpressure Strategy]].
+- File transfer has local persistent receive-sink and data-channel backpressure proof, but end-to-end real-network/device-scale large-transfer behavior remains a known area for [[Backpressure Strategy]].
 - Release workflows are numerous and need clear ownership in [[CI-CD Roadmap]] and [[Release Gates]].
 
 Related: [[Technical Debt Register]], [[Risk Register]], [[Audit Resolution Tracker]].

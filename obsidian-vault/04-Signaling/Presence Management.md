@@ -9,10 +9,12 @@ Detailed implementation planning: [[Presence Management Refactor Plan]].
 - Session id and platform state exist.
 - Runtime action gates resolve backend presence from both `online` and `lastHeartbeat`.
 - Backend identity snapshots also carry presence `sessionId`, `startedAt`, and `state` for diagnostics and stale-session reasoning.
-- The app-side freshness window is 30 seconds for friend seeding, direct Connect, offline request routing, and voice/video call start.
+- The app-side freshness window is 30 seconds for friend seeding, direct Connect, chat action availability, and voice/video call start.
+- RTDB offline connection-request preflight uses the 45 second rules freshness window so app decisions align with `database.rules.json`.
 - Stale backend records with raw `online: true` are treated as offline and recorded as `backend_presence_stale_resolved_offline`.
 - Records whose presence `state` is not `online` are treated as offline even if raw `online` is true.
-- Chat Connect, runtime Connect, connection-request routing, voice/video call start, and network auto-recovery use the shared runtime fresh-presence resolver.
+- Chat Connect, runtime Connect, connection-request routing, voice/video call start, and network auto-recovery use the shared runtime fresh-presence resolver or authoritative `PeerConnectivitySnapshot`.
+- `friend.isOnline` is display state only for chat actions; action authority comes from runtime-backed peer connectivity snapshots.
 - Auto-recovery removes stale/offline peers from the recoverable set and records `PeerDisconnectIntent.presenceExpired` instead of reconnecting through stale presence.
 - `presenceExpired` is retained as a terminal peer intent until a later successful explicit reconnect, so UI/diagnostics can distinguish peer-close from transient transport loss.
 
@@ -30,6 +32,8 @@ Detailed implementation planning: [[Presence Management Refactor Plan]].
 - Expired heartbeat marks stale/offline.
 - Stale backend `online: true` cannot seed local friend state as online.
 - Stale backend `online: true` cannot start direct Connect or voice/video call setup.
+- Local `friend.isOnline: true` without fresh backend presence cannot enable chat panel direct actions.
+- Stale backend presence routes offline-request preflight instead of direct actions.
 - Presence `state: offline` overrides raw `online: true`.
 - Newer session id wins over old heartbeats.
 - Recovery does not reconnect manually disconnected peers.

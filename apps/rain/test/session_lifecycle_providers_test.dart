@@ -99,6 +99,54 @@ void main() {
       expect(messages, isEmpty);
     },
   );
+
+  test(
+    'message provider starts with bounded tail and loads older pages',
+    () async {
+      final database = RainDatabase(NativeDatabase.memory());
+      addTearDown(database.close);
+      final store = MessageStore(database);
+      const base = 1770000000000;
+      for (var index = 1; index <= 75; index += 1) {
+        await store.storeOutgoingEnvelope(
+          MessageEnvelope(
+            id: 'm-$index',
+            from: 'alice',
+            to: 'bob',
+            content: 'message $index',
+            sentAt: base + index,
+            seq: index,
+            type: MessageType.text,
+          ),
+        );
+      }
+
+      final container = _container(database: database);
+      addTearDown(container.dispose);
+      final identity =
+          container.read(identityProvider.notifier)
+              as _MutableIdentityController;
+      await container.read(identityProvider.future);
+      identity.setIdentity(_identity('alice'));
+
+      final initial = await container.read(messagesProvider('bob').future);
+
+      expect(initial, hasLength(defaultConversationPageSize));
+      expect(initial.first.id, 'm-26');
+      expect(initial.last.id, 'm-75');
+
+      await container.read(messagesProvider('bob').notifier).loadOlder();
+      final afterOlder = container.read(messagesProvider('bob')).requireValue;
+
+      expect(afterOlder, hasLength(75));
+      expect(afterOlder.first.id, 'm-1');
+      expect(afterOlder.last.id, 'm-75');
+      expect(
+        afterOlder.map((message) => message.id).toSet(),
+        hasLength(afterOlder.length),
+      );
+    },
+  );
 }
 
 ProviderContainer _container({RainDatabase? database}) {

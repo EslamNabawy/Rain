@@ -939,6 +939,29 @@ void main() {
     );
   });
 
+  test('Firebase voice lock transactions are server-authoritative', () {
+    final adapter = _repoFile(
+      'packages/protocol_brain/lib/adapters/firebase_adapter.dart',
+    );
+
+    expect(
+      RegExp(
+        r'runTransaction\([\s\S]*?applyLocally: false\)',
+      ).allMatches(adapter).length,
+      greaterThanOrEqualTo(4),
+      reason:
+          'Voice call lock claim and compare-delete transactions must not rely '
+          'on queued local RTDB transaction state surviving restart.',
+    );
+    expect(
+      adapter,
+      contains('final snapshot = await lockRef.get();'),
+      reason:
+          'Denied or aborted cleanup transactions must re-read before any '
+          'direct compare-delete fallback.',
+    );
+  });
+
   test('Firebase active voice pair locks delete only safe stale rooms', () {
     final rules = _repoFile('backend/firebase/database.rules.json');
     final activeVoicePairsRules = _rulesSlice(

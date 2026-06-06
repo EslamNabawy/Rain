@@ -1,6 +1,6 @@
 # Decision Map
 
-Last updated: 2026-06-03
+Last updated: 2026-06-05
 
 ## Purpose
 
@@ -17,6 +17,7 @@ Connect architecture decisions to the systems and risks they affect.
 - [[ADR-007]] affects [[Message Loading Refactor Plan]], [[Pagination Strategy]], [[Index Strategy]], and [[Peer Chat]].
 - [[ADR-008]] affects [[File Transfer Runtime Refactor Plan]], [[Streaming Architecture]], [[Backpressure Strategy]], and [[File Transfer]].
 - [[ADR-009]] affects [[Project Memory]], [[Master Roadmap]], [[Audit Resolution Tracker]], and [[Release Gates]].
+- [[ADR-010]] affects [[Privacy Review]], [[Security Roadmap]], [[Risk Register]], [[Launch Readiness]], and [[Production Readiness]].
 
 ## Future Population
 

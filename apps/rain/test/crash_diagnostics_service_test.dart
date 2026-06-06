@@ -122,6 +122,112 @@ void main() {
     },
   );
 
+  test(
+    'diagnostics export recursively redacts private values and payloads',
+    () async {
+      final temp = await Directory.systemTemp.createTemp(
+        'rain-crash-diagnostics-privacy-test-',
+      );
+      addTearDown(() => temp.delete(recursive: true));
+      final exportPath = _join(temp.path, 'privacy-diagnostics.json');
+
+      final service = CrashDiagnosticsService(
+        directoryProvider: () async => temp,
+        clock: () => DateTime.utc(2026, 5, 22, 1, 2, 3),
+        saveFile:
+            ({
+              String? dialogTitle,
+              String? fileName,
+              String? initialDirectory,
+              FileType type = FileType.any,
+              List<String>? allowedExtensions,
+              Uint8List? bytes,
+              bool lockParentWindow = false,
+            }) async {
+              return exportPath;
+            },
+      );
+
+      await service.initialize();
+      service.recordEventSync(
+        category: 'call',
+        name: 'privacy_probe',
+        message: 'failed at /voiceCalls/raw-room-123 with token=raw-token-123',
+        context: <String, Object?>{
+          'peerId': 'raw-peer-bob',
+          'callId': 'raw-call-123',
+          'roomId': 'raw-room-123',
+          'username': 'bob@example.test',
+          'firebasePath': '/voiceCalls/raw-room-123/offer/sdp',
+          'fileName': 'private-report.pdf',
+          'localPath': r'C:\Users\eslam\private-report.pdf',
+          'messageText': 'meet me at the private location',
+          'token': 'raw-token-123',
+          'password': 'raw-password-123',
+          'nested': <String, Object?>{
+            'items': <Object?>[
+              <String, Object?>{
+                'sdp': 'v=0\r\na=ice-ufrag:raw-ufrag\r\na=fingerprint:raw',
+                'iceCandidate':
+                    'candidate:842163049 1 udp 1677729535 192.0.2.1 54400 typ host',
+              },
+            ],
+          },
+        },
+      );
+      service.recordErrorSync(
+        StateError(
+          'Firebase denied /activeVoicePairs/alice:bob '
+          'password=raw-password-123 fileName=private-report.pdf',
+        ),
+        StackTrace.fromString(
+          r'C:\Users\eslam\private-report.pdf:1 raw-token-123',
+        ),
+        source: 'privacy-test',
+        fatal: false,
+      );
+
+      final result = await service.exportDiagnostics();
+
+      expect(result.saved, isTrue);
+      final encoded = await File(exportPath).readAsString();
+      final decoded = jsonDecode(encoded) as Map<String, dynamic>;
+      final event = (decoded['events'] as List<dynamic>)
+          .cast<Map<String, dynamic>>()
+          .firstWhere((event) => event['name'] == 'privacy_probe');
+      final context = event['context'] as Map<String, dynamic>;
+
+      for (final raw in const <String>[
+        'raw-peer-bob',
+        'raw-call-123',
+        'raw-room-123',
+        'bob@example.test',
+        '/voiceCalls/raw-room-123',
+        'private-report.pdf',
+        r'C:\Users\eslam',
+        'meet me at the private location',
+        'raw-token-123',
+        'raw-password-123',
+        'raw-ufrag',
+        'candidate:842163049',
+        '192.0.2.1',
+        '/activeVoicePairs/alice:bob',
+      ]) {
+        expect(encoded, isNot(contains(raw)), reason: raw);
+      }
+      expect(context['peerId'], startsWith('[id:'));
+      expect(context['callId'], startsWith('[id:'));
+      expect(context['firebasePath'], startsWith('[firebase-path:'));
+      expect(context['fileName'], startsWith('[file:'));
+      expect(context['localPath'], startsWith('[path:'));
+      expect(context['messageText'], '[redacted]');
+      expect(encoded, contains('[redacted]'));
+      expect(encoded, contains('[redacted:sdp]'));
+      expect(encoded, contains('[redacted:ice-candidate]'));
+      expect(encoded, contains('privacy-test'));
+    },
+  );
+
   test('app event recorder buffers events until async flush', () async {
     final temp = await Directory.systemTemp.createTemp(
       'rain-crash-diagnostics-buffer-test-',
@@ -239,7 +345,7 @@ void main() {
       expect(event['count'], 2);
       final context = event['context'] as Map<String, dynamic>;
       expect(context['lockExpiresAt'], 2);
-      expect(context['pairId'], 'alice:bob');
+      expect(context['pairId'], startsWith('[id:'));
     },
   );
 
@@ -532,11 +638,14 @@ void main() {
           decoded['firebaseCostCounters'] as Map<String, dynamic>;
       final taxonomy = decoded['failureTaxonomy'] as Map<String, dynamic>;
 
-      expect(summary['callId'], 'call-1');
-      expect(summary['peerId'], 'bob');
+      expect(summary['callId'], startsWith('[id:'));
+      expect(summary['peerId'], startsWith('[id:'));
       expect(summary['mediaMode'], 'video');
-      expect(summary['caller'], 'alice');
-      expect(summary['callee'], 'bob');
+      expect(summary['caller'], startsWith('[id:'));
+      expect(summary['callee'], startsWith('[id:'));
+      expect(jsonEncode(decoded), isNot(contains('"call-1"')));
+      expect(jsonEncode(decoded), isNot(contains('"bob"')));
+      expect(jsonEncode(decoded), isNot(contains('"alice"')));
       expect(summary['roomStatusTimeline'], const <String>['negotiating']);
       expect(summary['iceCandidateWriteCount'], 2);
       expect(summary['iceCandidateReadCount'], 1);

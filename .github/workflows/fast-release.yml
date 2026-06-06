@@ -45,6 +45,11 @@ on:
         required: true
         default: 20
         type: number
+      remote_config_evidence_url:
+        description: Required for production publishing; URL proving Remote Config deploy/readback.
+        required: false
+        default: ''
+        type: string
 
 permissions:
   actions: read
@@ -179,12 +184,31 @@ jobs:
       CI_RUN_URL: ${{ needs.ci-status-gate.outputs.ci_run_url }}
       RELEASE_TAG_INPUT: ${{ inputs.release_tag }}
       PRERELEASE: ${{ inputs.prerelease }}
+      REMOTE_CONFIG_EVIDENCE_URL: ${{ inputs.remote_config_evidence_url }}
     steps:
+      - uses: actions/checkout@v5
+        with:
+          ref: ${{ needs.resolve-target.outputs.target_sha }}
+
       - id: prepare
         name: Create or reuse release shell
         shell: bash
         run: |
           set -euo pipefail
+          if [ "${BUILD_PROFILE}" = "production" ]; then
+            if [ -z "${REMOTE_CONFIG_EVIDENCE_URL}" ]; then
+              echo "remote_config_evidence_url is required for production fast releases." >&2
+              exit 1
+            fi
+            case "${REMOTE_CONFIG_EVIDENCE_URL}" in
+              https://*) ;;
+              *)
+                echo "remote_config_evidence_url must be an https URL." >&2
+                exit 1
+                ;;
+            esac
+          fi
+
           if [ -n "${RELEASE_TAG_INPUT}" ]; then
             tag="${RELEASE_TAG_INPUT}"
           elif [ "${BUILD_PROFILE}" = "production" ]; then
@@ -214,6 +238,8 @@ jobs:
           - platform=${{ inputs.platform }}
           - build_profile=${BUILD_PROFILE}
           - clean_build=${{ inputs.clean_build }}
+          - metadata=rain-release-metadata.json
+          - remote_config_evidence_url=${REMOTE_CONFIG_EVIDENCE_URL}
 
           Android and Windows builds run in parallel. Android APK assets are uploaded
           individually so phones can download them without extracting an archive.
@@ -235,10 +261,28 @@ jobs:
             echo "release_url=${release_url}"
           } >> "${GITHUB_OUTPUT}"
 
+          mkdir -p release-assets/metadata
+          pwsh -NoProfile -File scripts/write_release_metadata.ps1 \
+            -OutputPath release-assets/metadata/rain-release-metadata.json \
+            -TargetRef '${{ inputs.target_ref }}' \
+            -TargetSha "${TARGET_SHA}" \
+            -Channel "$([ "${BUILD_PROFILE}" = "demo" ] && echo demo || echo stable)" \
+            -BuildProfile "${BUILD_PROFILE}" \
+            -ArtifactPurpose fast-release \
+            -ValidationWorkflow 'Fast Release Apps' \
+            -ValidationRunUrl "${CI_RUN_URL}" \
+            -RemoteConfigEvidenceUrl "${REMOTE_CONFIG_EVIDENCE_URL}"
+
+          gh release upload "${tag}" release-assets/metadata/rain-release-metadata.json \
+            --repo "${GITHUB_REPOSITORY}" \
+            --clobber
+
           {
             echo "## Fast release page"
             echo
             echo "Release: [${tag}](${release_url})"
+            echo
+            echo "Metadata: rain-release-metadata.json"
           } >> "${GITHUB_STEP_SUMMARY}"
 
   build-android:

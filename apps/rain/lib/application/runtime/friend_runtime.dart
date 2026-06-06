@@ -13,6 +13,7 @@ extension FriendRuntime on RainRuntimeController {
         return;
       }
       try {
+        _cachePresenceStreamValue(username, isOnline);
         await _localMutations.run(
           () => friendStore.updatePresence(username, isOnline),
         );
@@ -512,6 +513,7 @@ extension FriendRuntime on RainRuntimeController {
       return;
     }
     final presence = _resolveBackendPresence(backendIdentity);
+    _cacheResolvedPeerPresence(username, presence);
     if (presence.staleRawOnline) {
       _recordRuntimeEvent(
         category: 'presence',
@@ -544,6 +546,9 @@ extension FriendRuntime on RainRuntimeController {
       'Transfer canceled because the peer link closed.',
     );
     await _presenceSubscriptions.remove(normalizedUsername)?.cancel();
+    if (_peerPresenceSnapshots.remove(normalizedUsername) != null) {
+      _notifyPeerConnectivityChanged();
+    }
     if (_manualDisconnectedPeers.remove(normalizedUsername)) {
       _notifyPeerConnectivityChanged();
     }

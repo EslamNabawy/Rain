@@ -14,7 +14,11 @@ class PeerConnectivitySnapshot {
     this.presenceOnline,
     required this.presenceFresh,
     this.backendSessionId,
+    this.backendPresenceSessionId,
     this.presenceAgeMs,
+    this.presenceFreshnessWindowMs,
+    this.presenceObservedAtMs,
+    this.presenceState,
     this.manualDisconnected = false,
     this.lastDataEventAt,
     this.connectionRoute,
@@ -27,7 +31,11 @@ class PeerConnectivitySnapshot {
   final bool? presenceOnline;
   final bool presenceFresh;
   final String? backendSessionId;
+  final String? backendPresenceSessionId;
   final int? presenceAgeMs;
+  final int? presenceFreshnessWindowMs;
+  final int? presenceObservedAtMs;
+  final String? presenceState;
   final bool manualDisconnected;
   final int? lastDataEventAt;
   final PeerConnectionRoute? connectionRoute;
@@ -49,12 +57,18 @@ class PeerConnectivitySnapshot {
   /// Whether the UI should show a "connected" indicator.
   ///
   /// Connected requires a confirmed data session AND fresh presence.
-  bool get isConnected =>
-      hasActiveSession && (presenceOnline == true || presenceFresh);
+  bool get isConnected => hasActiveSession && hasFreshOnlinePresence;
 
   /// Whether the connection state is ambiguous (data works but presence is stale).
   bool get isConnectedWithStalePresence =>
-      hasActiveSession && presenceOnline == false && !presenceFresh;
+      hasActiveSession && !hasFreshOnlinePresence;
+
+  bool get hasFreshOnlinePresence => presenceOnline == true && presenceFresh;
+
+  bool get requiresOfflineConnectionRequest => presenceOnline == false;
+
+  bool? get peerOnlineForAction =>
+      presenceOnline == null ? null : hasFreshOnlinePresence;
 
   /// Whether the peer's session has been superseded by a newer session ID.
   bool get sessionSuperseded =>
@@ -69,7 +83,11 @@ class PeerConnectivitySnapshot {
     bool? presenceOnline,
     bool? presenceFresh,
     String? backendSessionId,
+    String? backendPresenceSessionId,
     int? presenceAgeMs,
+    int? presenceFreshnessWindowMs,
+    int? presenceObservedAtMs,
+    String? presenceState,
     bool? manualDisconnected,
     int? lastDataEventAt,
     PeerConnectionRoute? connectionRoute,
@@ -82,7 +100,13 @@ class PeerConnectivitySnapshot {
       presenceOnline: presenceOnline ?? this.presenceOnline,
       presenceFresh: presenceFresh ?? this.presenceFresh,
       backendSessionId: backendSessionId ?? this.backendSessionId,
+      backendPresenceSessionId:
+          backendPresenceSessionId ?? this.backendPresenceSessionId,
       presenceAgeMs: presenceAgeMs ?? this.presenceAgeMs,
+      presenceFreshnessWindowMs:
+          presenceFreshnessWindowMs ?? this.presenceFreshnessWindowMs,
+      presenceObservedAtMs: presenceObservedAtMs ?? this.presenceObservedAtMs,
+      presenceState: presenceState ?? this.presenceState,
       manualDisconnected: manualDisconnected ?? this.manualDisconnected,
       lastDataEventAt: lastDataEventAt ?? this.lastDataEventAt,
       connectionRoute: connectionRoute ?? this.connectionRoute,
