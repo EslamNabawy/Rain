@@ -15,6 +15,7 @@ enum AppStartupPhase {
   validatingSession,
   signedOut,
   startingRuntime,
+  deletingAccount,
   sessionExpired,
   failed,
   ready,
@@ -78,6 +79,17 @@ class AppStartupState {
          networkStatus: networkStatus,
        );
 
+  const AppStartupState.deletingAccount({
+    required ForceUpdateResult updateResult,
+    required RainIdentity identity,
+    NetworkStatusState? networkStatus,
+  }) : this._(
+         phase: AppStartupPhase.deletingAccount,
+         updateResult: updateResult,
+         identity: identity,
+         networkStatus: networkStatus,
+       );
+
   const AppStartupState.sessionExpired({
     required ForceUpdateResult updateResult,
     required RainIdentity identity,
@@ -132,9 +144,13 @@ class AppStartupState {
 
   bool get showNavigation => phase == AppStartupPhase.ready;
 
-  bool get canRenderProtectedRoutes => phase == AppStartupPhase.ready;
+  bool get canRenderProtectedRoutes =>
+      phase == AppStartupPhase.ready ||
+      phase == AppStartupPhase.deletingAccount;
 
-  bool get usesRoutedAppShell => phase == AppStartupPhase.ready;
+  bool get usesRoutedAppShell =>
+      phase == AppStartupPhase.ready ||
+      phase == AppStartupPhase.deletingAccount;
 
   bool get blocksRoutedSurface => !usesRoutedAppShell;
 
@@ -142,6 +158,7 @@ class AppStartupState {
     AppStartupPhase.checkingUpdate ||
     AppStartupPhase.validatingSession ||
     AppStartupPhase.startingRuntime ||
+    AppStartupPhase.deletingAccount ||
     AppStartupPhase.sessionExpired => true,
     _ => false,
   };
@@ -207,6 +224,14 @@ final appStartupStateProvider = Provider<AppStartupState>((Ref ref) {
     );
   }
   final currentIdentity = session.identity;
+  final deletingAccount = ref.watch(accountDeletionInProgressProvider);
+  if (deletingAccount) {
+    return AppStartupState.deletingAccount(
+      updateResult: updateResult,
+      identity: currentIdentity,
+      networkStatus: networkStatus,
+    );
+  }
 
   final runtime = ref.watch(runtimeControllerProvider);
   if (runtime.hasError) {

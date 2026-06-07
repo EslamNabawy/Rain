@@ -32,6 +32,15 @@ class RainStartupFailureScreen extends StatelessWidget {
   }
 }
 
+class RainAccountDeletionScreen extends StatelessWidget {
+  const RainAccountDeletionScreen({super.key});
+
+  @override
+  Widget build(BuildContext context) {
+    return const _SplashScaffold(child: _DeletionProgressBody());
+  }
+}
+
 class _SplashScaffold extends StatelessWidget {
   const _SplashScaffold({required this.child});
 
@@ -51,6 +60,49 @@ class _SplashScaffold extends StatelessWidget {
             ),
           ),
         ),
+      ),
+    );
+  }
+}
+
+class _DeletionProgressBody extends StatelessWidget {
+  const _DeletionProgressBody();
+
+  @override
+  Widget build(BuildContext context) {
+    return Semantics(
+      label: 'Deleting account',
+      child: Column(
+        mainAxisSize: MainAxisSize.min,
+        children: <Widget>[
+          const SizedBox(
+            width: 48,
+            height: 48,
+            child: CircularProgressIndicator(strokeWidth: 4),
+          ),
+          const SizedBox(height: 24),
+          const Text(
+            'Deleting account',
+            textAlign: TextAlign.center,
+            style: TextStyle(
+              color: Colors.white,
+              fontSize: 28,
+              fontWeight: FontWeight.w900,
+              letterSpacing: 0,
+            ),
+          ),
+          const SizedBox(height: 8),
+          Text(
+            'Removing backend account data and closing this session.',
+            textAlign: TextAlign.center,
+            style: TextStyle(
+              color: Colors.white.withValues(alpha: 0.72),
+              fontSize: 14,
+              height: 1.45,
+              letterSpacing: 0,
+            ),
+          ),
+        ],
       ),
     );
   }

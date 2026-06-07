@@ -21,6 +21,7 @@ class RainStartupSurface extends StatelessWidget {
       AppStartupPhase.checkingUpdate ||
       AppStartupPhase.validatingSession ||
       AppStartupPhase.startingRuntime => const RainSplashScreen(),
+      AppStartupPhase.deletingAccount => const RainAccountDeletionScreen(),
       AppStartupPhase.updateRequired => RainForceUpdateGate(
         result: state.updateResult,
       ),

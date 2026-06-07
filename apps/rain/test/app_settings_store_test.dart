@@ -74,6 +74,18 @@ void main() {
     expect(await store.loadStartupCameraWarmupCompleted(), isFalse);
   });
 
+  test('deleted Rain usernames persist as normalized local hints', () async {
+    final store = AppSettingsStore();
+
+    expect(await store.wasRainUsernameDeletedOnThisDevice('Alice'), isFalse);
+
+    await store.rememberDeletedRainUsername(' Alice ');
+    await store.rememberDeletedRainUsername('alice');
+
+    expect(await store.wasRainUsernameDeletedOnThisDevice('ALICE'), isTrue);
+    expect(await store.wasRainUsernameDeletedOnThisDevice('bob'), isFalse);
+  });
+
   test('audio settings load defaults', () async {
     final store = AppSettingsStore();
 

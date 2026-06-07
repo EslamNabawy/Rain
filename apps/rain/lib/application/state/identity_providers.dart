@@ -162,7 +162,18 @@ class IdentityController extends AsyncNotifier<RainIdentity?> {
   }) async {
     assertNetworkReady(ref);
     final adapter = ref.read(adapterProvider);
-    await adapter.login(username, password);
+    try {
+      await adapter.login(username, password);
+    } catch (error, stackTrace) {
+      if (await ref
+          .read(appSettingsStoreProvider)
+          .wasRainUsernameDeletedOnThisDevice(username)) {
+        throw Exception(
+          'This Rain account was deleted on this device and cannot be used to sign in again. Create a new account with another username.',
+        );
+      }
+      Error.throwWithStackTrace(error, stackTrace);
+    }
     final existing = await adapter.fetchIdentity(username);
     final currentUid = (await adapter.currentUid()).trim();
     final backendUid = existing?.uid.trim() ?? '';

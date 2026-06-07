@@ -42,6 +42,24 @@ bool _runtimeMatchesSession(
       runtime.sessionGeneration == session.sessionGeneration;
 }
 
+final accountDeletionInProgressProvider =
+    NotifierProvider<AccountDeletionProgressController, bool>(
+      AccountDeletionProgressController.new,
+    );
+
+class AccountDeletionProgressController extends Notifier<bool> {
+  @override
+  bool build() => false;
+
+  void start() {
+    state = true;
+  }
+
+  void stop() {
+    state = false;
+  }
+}
+
 final backgroundServiceProvider =
     AsyncNotifierProvider<BackgroundServiceController, bool>(
       BackgroundServiceController.new,
@@ -624,16 +642,25 @@ class RuntimeController extends AsyncNotifier<RainRuntimeController?> {
       throw StateError('Runtime is not ready. Try again after Rain starts.');
     }
 
+    final deletedUsername = controller.selfIdentity.username;
     var shouldEndSession = false;
     try {
-      await controller.beginDeleteAccount(password);
+      await controller.beginDeleteAccount(
+        password,
+        onDestructiveActionStarting: () {
+          ref.read(accountDeletionInProgressProvider.notifier).start();
+        },
+      );
+      await _rememberDeletedRainUsername(deletedUsername);
       shouldEndSession = true;
     } catch (error) {
       if (error is AccountDeletionException &&
           !error.destructiveActionStarted) {
+        ref.read(accountDeletionInProgressProvider.notifier).stop();
         state = AsyncValue.data(controller);
         rethrow;
       }
+      await _rememberDeletedRainUsername(deletedUsername);
       shouldEndSession = true;
       rethrow;
     } finally {
@@ -644,8 +671,20 @@ class RuntimeController extends AsyncNotifier<RainRuntimeController?> {
         _exitRegistration = null;
         _activeRuntime = null;
         _endAuthenticatedSession();
+        ref.read(accountDeletionInProgressProvider.notifier).stop();
         _teardownInProgress = false;
       }
+    }
+  }
+
+  Future<void> _rememberDeletedRainUsername(String username) async {
+    try {
+      await ref
+          .read(appSettingsStoreProvider)
+          .rememberDeletedRainUsername(username);
+    } catch (_) {
+      // A same-device deleted-account hint improves login copy, but deletion
+      // completion and local session teardown must not depend on preferences.
     }
   }
 

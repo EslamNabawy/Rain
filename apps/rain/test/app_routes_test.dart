@@ -201,6 +201,16 @@ void main() {
     );
     expect(
       appStartupRedirectForPath(
+        AppStartupState.deletingAccount(
+          updateResult: update,
+          identity: identity,
+        ),
+        '/settings',
+      ),
+      isNull,
+    );
+    expect(
+      appStartupRedirectForPath(
         AppStartupState.ready(updateResult: update, identity: identity),
         '/settings',
       ),

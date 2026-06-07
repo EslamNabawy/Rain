@@ -2879,11 +2879,14 @@ class FirebaseSignalingAdapter
       'operation-not-allowed' => Exception(
         'Enable Email/Password sign-in in Firebase Console > Authentication > Sign-in method.',
       ),
-      'invalid-credential' || 'wrong-password' => Exception(
+      'invalid-credential' => Exception(
+        'Username or password did not match an active Rain sign-in. If this account was deleted, it cannot be used again.',
+      ),
+      'wrong-password' => Exception(
         'Wrong password. Check the password and try again.',
       ),
       'user-not-found' => Exception(
-        'Unknown user. Check the unique username or create an account.',
+        'No active Rain sign-in exists for this username. It may have been deleted or never created.',
       ),
       'email-already-in-use' => Exception(
         'Username is already taken. Choose another unique username.',

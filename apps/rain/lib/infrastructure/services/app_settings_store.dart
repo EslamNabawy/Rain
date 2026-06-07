@@ -149,6 +149,7 @@ class AppSettingsStore {
       'call_video_auto_optimize_enabled';
   static const String _dismissedOptionalUpdateKey =
       'dismissed_optional_update_key';
+  static const String _deletedRainUsernamesKey = 'deleted_rain_usernames';
 
   final SharedPreferencesAsync _preferences;
 
@@ -223,6 +224,41 @@ class AppSettingsStore {
 
   Future<void> setStartupCameraWarmupCompleted(bool completed) async {
     await _preferences.setBool(_startupCameraWarmupCompletedKey, completed);
+  }
+
+  Future<void> rememberDeletedRainUsername(String username) async {
+    final normalized = _normalizeUsername(username);
+    if (normalized.isEmpty) {
+      return;
+    }
+    final existing =
+        await _preferences.getStringList(_deletedRainUsernamesKey) ??
+        const <String>[];
+    final values = <String>[
+      normalized,
+      ...existing.map(_normalizeUsername).where((String value) {
+        return value.isNotEmpty && value != normalized;
+      }),
+    ];
+    await _preferences.setStringList(
+      _deletedRainUsernamesKey,
+      values.take(50).toList(growable: false),
+    );
+  }
+
+  Future<bool> wasRainUsernameDeletedOnThisDevice(String username) async {
+    final normalized = _normalizeUsername(username);
+    if (normalized.isEmpty) {
+      return false;
+    }
+    final existing =
+        await _preferences.getStringList(_deletedRainUsernamesKey) ??
+        const <String>[];
+    return existing.map(_normalizeUsername).contains(normalized);
+  }
+
+  String _normalizeUsername(String username) {
+    return username.trim().toLowerCase();
   }
 
   Future<AppAudioSettings> loadAudioSettings() async {

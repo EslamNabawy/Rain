@@ -16,6 +16,7 @@ import 'package:rain/application/state/app_startup_state.dart';
 import 'package:rain/application/state/core_providers.dart';
 import 'package:rain/application/state/identity_providers.dart';
 import 'package:rain/application/state/runtime_providers.dart';
+import 'package:rain/infrastructure/services/app_settings_store.dart';
 import 'package:rain/infrastructure/services/force_update_service.dart';
 import 'package:rain/infrastructure/services/network_status_service.dart';
 import 'package:rain_core/rain_core.dart';
@@ -126,6 +127,27 @@ class _FailingBackendAccountDeletionAdapter extends _RecordingPresenceAdapter {
       message: 'Could not finish deleting backend account data.',
       destructiveActionStarted: false,
     );
+  }
+}
+
+class _BlockingAccountDeletionAdapter extends _RecordingPresenceAdapter {
+  final Completer<void> deleteStarted = Completer<void>();
+  final Completer<void> releaseDelete = Completer<void>();
+  int reauthCalls = 0;
+  int deleteAccountCalls = 0;
+
+  @override
+  Future<void> reauthenticate(String username, String password) async {
+    reauthCalls += 1;
+  }
+
+  @override
+  Future<void> deleteAccount(String username) async {
+    deleteAccountCalls += 1;
+    if (!deleteStarted.isCompleted) {
+      deleteStarted.complete();
+    }
+    await releaseDelete.future;
   }
 }
 
@@ -847,6 +869,50 @@ void main() {
         AppStartupPhase.ready,
       );
       expect(adapter.deleteAccountCalls, 0);
+    },
+  );
+
+  test(
+    'runtime provider shows deleting-account app phase after password verification',
+    () async {
+      final db = RainDatabase(NativeDatabase.memory());
+      addTearDown(db.close);
+      final adapter = _BlockingAccountDeletionAdapter();
+      final container = _runtimeProviderContainer(db, adapter);
+      addTearDown(container.dispose);
+
+      final runtime = await _readReadyRuntime(container);
+      expect(runtime, isNotNull);
+      expect(
+        container.read(appStartupStateProvider).phase,
+        AppStartupPhase.ready,
+      );
+
+      final deleteFuture = container
+          .read(runtimeControllerProvider.notifier)
+          .deleteAccount(password: 'secret1');
+      await adapter.deleteStarted.future;
+
+      final startup = container.read(appStartupStateProvider);
+      expect(startup.phase, AppStartupPhase.deletingAccount);
+      expect(startup.showNavigation, isFalse);
+      expect(startup.canRenderProtectedRoutes, isTrue);
+      expect(container.read(accountDeletionInProgressProvider), isTrue);
+
+      adapter.releaseDelete.complete();
+      await deleteFuture;
+
+      expect(
+        await AppSettingsStore().wasRainUsernameDeletedOnThisDevice('alice'),
+        isTrue,
+      );
+      expect(
+        container.read(appStartupStateProvider).phase,
+        AppStartupPhase.signedOut,
+      );
+      expect(container.read(accountDeletionInProgressProvider), isFalse);
+      expect(adapter.reauthCalls, 1);
+      expect(adapter.deleteAccountCalls, 1);
     },
   );
 

@@ -609,6 +609,22 @@ No task is fully complete until the lesson check is done or explicitly marked "n
 - Owner: Engineering/DevOps
 - Status: Open
 
+### LESSON-20260607-037: Destructive Progress Must Be App-Wide Without Losing Error Context
+
+- Date: 2026-06-07
+- Related task: Delete-account Android UX follow-up.
+- Related system: [[Authentication]], [[Frontend Architecture]]
+- Related risk/debt: R-021, R-022, TD-021, TD-022, BLK-010
+- What was learned: Keeping Settings mounted for password and backend error dialogs is correct, but destructive delete progress cannot be a local Settings loading surface. It must block the whole app and hide navigation without destroying the route that owns error recovery.
+- What caused delays: Earlier fixes used runtime readiness as the only global gate. That avoided wrong-password splash loss, but it had no explicit phase for the irreversible delete window after password verification.
+- What failed: A local loading splash inside Settings left bottom navigation visible and let the user switch tabs while account deletion was active.
+- What succeeded: A dedicated `deletingAccount` app phase now shows a full-screen blocking overlay after password verification, keeps the protected route mounted for backend-failure modal recovery, and records a local deleted-username marker for clearer same-device login copy.
+- What should change: Future destructive account/session flows should define separate preflight, irreversible-progress, success, and recoverable-failure phases instead of reusing generic runtime loading.
+- Pattern: Full-screen progress can be an overlay when the underlying route must survive failure recovery.
+- Follow-up improvement: Add an Android smoke for delete-account progress once the next APK is installed.
+- Owner: Engineering/Product
+- Status: Open
+
 ## Review Cadence
 
 - Review lessons at the end of every completed task.

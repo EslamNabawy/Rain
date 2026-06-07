@@ -5,12 +5,26 @@ import 'package:protocol_brain/protocol_brain.dart';
 import 'package:rain/application/bootstrap/app_bootstrap.dart';
 import 'package:rain/application/state/app_providers.dart';
 import 'package:rain/core/config/app_environment.dart';
+import 'package:rain/infrastructure/services/app_settings_store.dart';
 import 'package:rain/infrastructure/services/force_update_service.dart';
 import 'package:rain/infrastructure/services/network_status_service.dart';
 import 'package:rain/infrastructure/signaling/noop_signaling_adapter.dart';
 import 'package:rain_core/rain_core.dart';
+import 'package:shared_preferences_platform_interface/in_memory_shared_preferences_async.dart';
+import 'package:shared_preferences_platform_interface/shared_preferences_async_platform_interface.dart';
 
 void main() {
+  TestWidgetsFlutterBinding.ensureInitialized();
+
+  setUp(() {
+    SharedPreferencesAsyncPlatform.instance =
+        InMemorySharedPreferencesAsync.empty();
+  });
+
+  tearDown(() {
+    SharedPreferencesAsyncPlatform.instance = null;
+  });
+
   test('cached identity is cleared when backend account is deleted', () async {
     final database = RainDatabase(NativeDatabase.memory());
     addTearDown(database.close);
@@ -171,6 +185,44 @@ void main() {
       expect(await IdentityRepository(database).loadIdentity(), isNull);
     },
   );
+
+  test(
+    'login reports deleted account when local delete marker exists',
+    () async {
+      final database = RainDatabase(NativeDatabase.memory());
+      addTearDown(database.close);
+      await AppSettingsStore().rememberDeletedRainUsername('alice');
+      final adapter = _AuthValidationAdapter(
+        currentUidValue: 'uid-alice',
+        backendIdentity: null,
+        loginError: Exception(
+          'Wrong password. Check the password and try again.',
+        ),
+      );
+      final container = _container(database, adapter);
+      addTearDown(container.dispose);
+
+      await container.read(identityProvider.future);
+
+      await expectLater(
+        container
+            .read(identityProvider.notifier)
+            .login(username: 'Alice', password: 'secret1'),
+        throwsA(
+          isA<Exception>().having(
+            (error) => error.toString(),
+            'message',
+            contains('was deleted on this device'),
+          ),
+        ),
+      );
+
+      expect(adapter.loginCalls, 1);
+      expect(adapter.fetchIdentityCalls, 0);
+      expect(adapter.signOutCalls, 0);
+      expect(await IdentityRepository(database).loadIdentity(), isNull);
+    },
+  );
 }
 
 ProviderContainer _container(
@@ -223,11 +275,13 @@ final class _AuthValidationAdapter extends NoopSignalingAdapter {
     required this.currentUidValue,
     required this.backendIdentity,
     this.upsertError,
+    this.loginError,
   });
 
   final String currentUidValue;
   final BackendIdentity? backendIdentity;
   final Object? upsertError;
+  final Object? loginError;
   final List<BackendIdentity> upsertedIdentities = <BackendIdentity>[];
   int ensureSignedInAsCalls = 0;
   int fetchIdentityCalls = 0;
@@ -254,6 +308,10 @@ final class _AuthValidationAdapter extends NoopSignalingAdapter {
   @override
   Future<String> login(String username, String password) async {
     loginCalls += 1;
+    final error = loginError;
+    if (error != null) {
+      throw error;
+    }
     return currentUidValue;
   }
 

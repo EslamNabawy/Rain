@@ -60,7 +60,6 @@ class SettingsScreen extends ConsumerStatefulWidget {
 
 class _SettingsScreenState extends ConsumerState<SettingsScreen> {
   bool _loggingOut = false;
-  bool _deletingAccount = false;
   bool _exportingDiagnostics = false;
   bool _testingMicrophone = false;
   bool _microphoneTestFailed = false;
@@ -68,7 +67,7 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen> {
 
   @override
   Widget build(BuildContext context) {
-    if (_loggingOut || _deletingAccount) {
+    if (_loggingOut) {
       return const RainSplashScreen();
     }
 
@@ -990,7 +989,6 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen> {
       return;
     }
 
-    setState(() => _deletingAccount = true);
     try {
       await ref
           .read(runtimeControllerProvider.notifier)
@@ -1003,7 +1001,6 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen> {
       if (!context.mounted) {
         return;
       }
-      setState(() => _deletingAccount = false);
       await _showSettingsErrorDialog(
         context: context,
         title: 'Could not delete account',

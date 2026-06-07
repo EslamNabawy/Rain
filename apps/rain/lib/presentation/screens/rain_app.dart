@@ -30,6 +30,16 @@ class RainApp extends ConsumerWidget {
           }
           return RainStartupSurface(state: startup);
         }
+        if (startup.phase == AppStartupPhase.deletingAccount) {
+          return Stack(
+            fit: StackFit.expand,
+            children: <Widget>[
+              child ?? const SizedBox.shrink(),
+              const ModalBarrier(color: Colors.transparent, dismissible: false),
+              RainStartupSurface(state: startup),
+            ],
+          );
+        }
         return child ?? const SizedBox.shrink();
       },
     );

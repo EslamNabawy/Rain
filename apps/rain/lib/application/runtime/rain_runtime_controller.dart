@@ -1547,9 +1547,13 @@ class RainRuntimeController with WidgetsBindingObserver {
     await _finishAccountDeletionAfterReauth(waitForRuntimeCleanup: true);
   }
 
-  Future<void> beginDeleteAccount(String password) async {
+  Future<void> beginDeleteAccount(
+    String password, {
+    void Function()? onDestructiveActionStarting,
+  }) async {
     _recordRuntimeEvent(category: 'runtime', name: 'account_delete_requested');
     await _reauthenticateForAccountDeletion(password);
+    onDestructiveActionStarting?.call();
     await _finishAccountDeletionAfterReauth(waitForRuntimeCleanup: false);
   }
 
