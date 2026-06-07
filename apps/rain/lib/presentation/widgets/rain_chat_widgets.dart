@@ -7,7 +7,6 @@ import 'package:rain/application/runtime/video_call_renderers.dart';
 import 'package:rain/application/runtime/voice_call_state.dart';
 import 'package:rain/application/state/call_surface_providers.dart';
 import 'package:rain/presentation/branding/rain_peer_core_mark.dart';
-import 'package:rain/presentation/branding/rain_ripple_halo_surface.dart';
 import 'package:rain/presentation/widgets/calls/rain_call_controls.dart';
 
 const String _maleAvatarAsset = 'assets/gender_avatar/man-avatar.svg';
@@ -1437,14 +1436,8 @@ class _RainDeviceMenuRow extends StatelessWidget {
   Widget build(BuildContext context) {
     final scheme = Theme.of(context).colorScheme;
     final subtitle = this.subtitle;
-    return RainRippleHaloSurface(
-      enabled: selected,
-      borderRadius: BorderRadius.circular(12),
-      color: warning ? scheme.error : scheme.primary,
-      origin: Alignment.centerLeft,
-      pulseKey: label,
-      pulseOnMount: selected,
-      minSize: const Size(48, 48),
+    return ConstrainedBox(
+      constraints: const BoxConstraints(minWidth: 48, minHeight: 48),
       child: Padding(
         padding: const EdgeInsets.symmetric(horizontal: 4, vertical: 6),
         child: Row(

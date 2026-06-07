@@ -2,7 +2,6 @@ import 'package:flutter/material.dart';
 
 import 'package:rain/application/runtime/voice_call_state.dart';
 import 'package:rain/application/state/call_surface_providers.dart';
-import 'package:rain/presentation/branding/rain_ripple_halo_surface.dart';
 import 'package:rain/presentation/performance/rain_performance.dart';
 import 'package:rain/presentation/widgets/calls/rain_call_controls.dart';
 import 'package:rain/presentation/widgets/calls/rain_call_layout_contract.dart';
@@ -46,7 +45,6 @@ class RainCallManagerBar extends StatelessWidget {
 
     final scheme = Theme.of(context).colorScheme;
     final accent = rainVoiceCallAccent(context, state);
-    final haloColor = rainVoiceCallHaloColor(context, state);
     final performance = RainPerformanceScope.of(context);
     return Material(
       color: Colors.transparent,
@@ -55,69 +53,60 @@ class RainCallManagerBar extends StatelessWidget {
         child: Center(
           child: ConstrainedBox(
             constraints: const BoxConstraints(maxWidth: 980),
-            child: RainRippleHaloSurface(
+            child: DecoratedBox(
               key: const ValueKey<String>('rain-call-manager-bar'),
-              enabled: rainVoiceCallShowsSignalHalo(state),
-              borderRadius: BorderRadius.circular(22),
-              color: haloColor,
-              pulseKey: '${state.callId}:${state.phase}:${surface.mode}',
-              pulseOnMount: rainVoiceCallShowsSignalHalo(state),
-              callSurface: true,
-              child: DecoratedBox(
-                decoration: BoxDecoration(
-                  color: scheme.surface.withValues(
-                    alpha: scheme.brightness == Brightness.dark ? 0.96 : 0.98,
-                  ),
-                  borderRadius: BorderRadius.circular(22),
-                  border: Border.all(color: accent.withValues(alpha: 0.34)),
-                  boxShadow: <BoxShadow>[
-                    if (performance.allowExpensiveCallEffects)
-                      BoxShadow(
-                        blurRadius: 22,
-                        offset: const Offset(0, 10),
-                        color: Colors.black.withValues(
-                          alpha: scheme.brightness == Brightness.dark
-                              ? 0.34
-                              : 0.13,
-                        ),
-                      ),
-                  ],
+              decoration: BoxDecoration(
+                color: scheme.surface.withValues(
+                  alpha: scheme.brightness == Brightness.dark ? 0.96 : 0.98,
                 ),
-                child: Padding(
-                  padding: const EdgeInsets.fromLTRB(12, 10, 10, 10),
-                  child: LayoutBuilder(
-                    builder:
-                        (BuildContext context, BoxConstraints constraints) {
-                          final compact = constraints.maxWidth < 560;
-                          return compact
-                              ? _CompactCallManagerContent(
-                                  state: state,
-                                  surface: surface,
-                                  displayName: displayName,
-                                  gender: gender,
-                                  accent: accent,
-                                  onToggleMute: onToggleMute,
-                                  onToggleCamera: onToggleCamera,
-                                  onToggleDeafen: onToggleDeafen,
-                                  onRestore: onRestore,
-                                  onFullscreen: onFullscreen,
-                                  onHangUp: onHangUp,
-                                )
-                              : _WideCallManagerContent(
-                                  state: state,
-                                  surface: surface,
-                                  displayName: displayName,
-                                  gender: gender,
-                                  accent: accent,
-                                  onToggleMute: onToggleMute,
-                                  onToggleCamera: onToggleCamera,
-                                  onToggleDeafen: onToggleDeafen,
-                                  onRestore: onRestore,
-                                  onFullscreen: onFullscreen,
-                                  onHangUp: onHangUp,
-                                );
-                        },
-                  ),
+                borderRadius: BorderRadius.circular(22),
+                border: Border.all(color: accent.withValues(alpha: 0.34)),
+                boxShadow: <BoxShadow>[
+                  if (performance.allowExpensiveCallEffects)
+                    BoxShadow(
+                      blurRadius: 22,
+                      offset: const Offset(0, 10),
+                      color: Colors.black.withValues(
+                        alpha: scheme.brightness == Brightness.dark
+                            ? 0.34
+                            : 0.13,
+                      ),
+                    ),
+                ],
+              ),
+              child: Padding(
+                padding: const EdgeInsets.fromLTRB(12, 10, 10, 10),
+                child: LayoutBuilder(
+                  builder: (BuildContext context, BoxConstraints constraints) {
+                    final compact = constraints.maxWidth < 560;
+                    return compact
+                        ? _CompactCallManagerContent(
+                            state: state,
+                            surface: surface,
+                            displayName: displayName,
+                            gender: gender,
+                            accent: accent,
+                            onToggleMute: onToggleMute,
+                            onToggleCamera: onToggleCamera,
+                            onToggleDeafen: onToggleDeafen,
+                            onRestore: onRestore,
+                            onFullscreen: onFullscreen,
+                            onHangUp: onHangUp,
+                          )
+                        : _WideCallManagerContent(
+                            state: state,
+                            surface: surface,
+                            displayName: displayName,
+                            gender: gender,
+                            accent: accent,
+                            onToggleMute: onToggleMute,
+                            onToggleCamera: onToggleCamera,
+                            onToggleDeafen: onToggleDeafen,
+                            onRestore: onRestore,
+                            onFullscreen: onFullscreen,
+                            onHangUp: onHangUp,
+                          );
+                  },
                 ),
               ),
             ),

@@ -461,13 +461,18 @@ class RuntimeController extends AsyncNotifier<RainRuntimeController?> {
   NetworkStatusKind? _lastNetworkKind;
   String? _lastNetworkPathKey;
   AppExitRegistration? _exitRegistration;
+  RainRuntimeController? _activeRuntime;
+  bool _teardownInProgress = false;
   bool _disposeHookRegistered = false;
 
   @override
   Future<RainRuntimeController?> build() async {
     _registerDisposeHook();
     final session = ref.watch(authenticatedSessionProvider);
-    final current = state.value;
+    final current = _activeRuntime ?? state.value;
+    if (_teardownInProgress) {
+      return null;
+    }
     if (session == null) {
       if (current != null) {
         await _disposeRuntime(current);
@@ -586,6 +591,7 @@ class RuntimeController extends AsyncNotifier<RainRuntimeController?> {
       await _disposeRuntime(controller);
       rethrow;
     }
+    _activeRuntime = controller;
     return controller;
   }
 
@@ -595,12 +601,20 @@ class RuntimeController extends AsyncNotifier<RainRuntimeController?> {
       _endAuthenticatedSession();
       return;
     }
+    _teardownInProgress = true;
+    state = const AsyncValue<RainRuntimeController?>.loading();
+    var localSessionCleared = false;
     try {
-      await controller.logOut();
+      await controller.beginLogOut();
+      localSessionCleared = true;
     } finally {
-      _exitRegistration?.unregister();
-      _exitRegistration = null;
-      _endAuthenticatedSession();
+      if (localSessionCleared) {
+        _exitRegistration?.unregister();
+        _exitRegistration = null;
+        _activeRuntime = null;
+        _endAuthenticatedSession();
+      }
+      _teardownInProgress = false;
     }
   }
 
@@ -612,20 +626,25 @@ class RuntimeController extends AsyncNotifier<RainRuntimeController?> {
 
     var shouldEndSession = false;
     try {
-      await controller.deleteAccount(password);
+      await controller.beginDeleteAccount(password);
       shouldEndSession = true;
     } catch (error) {
       if (error is AccountDeletionException &&
           !error.destructiveActionStarted) {
+        state = AsyncValue.data(controller);
         rethrow;
       }
       shouldEndSession = true;
       rethrow;
     } finally {
       if (shouldEndSession) {
+        _teardownInProgress = true;
+        state = const AsyncValue<RainRuntimeController?>.loading();
         _exitRegistration?.unregister();
         _exitRegistration = null;
+        _activeRuntime = null;
         _endAuthenticatedSession();
+        _teardownInProgress = false;
       }
     }
   }
@@ -639,7 +658,13 @@ class RuntimeController extends AsyncNotifier<RainRuntimeController?> {
   Future<void> _disposeRuntime(RainRuntimeController runtime) async {
     _exitRegistration?.unregister();
     _exitRegistration = null;
-    await runtime.dispose();
+    try {
+      await runtime.dispose();
+    } finally {
+      if (identical(_activeRuntime, runtime)) {
+        _activeRuntime = null;
+      }
+    }
   }
 
   void _registerDisposeHook() {
@@ -649,7 +674,8 @@ class RuntimeController extends AsyncNotifier<RainRuntimeController?> {
     _disposeHookRegistered = true;
     ref.onDispose(() {
       _exitRegistration?.unregister();
-      final controller = state.value;
+      final controller = _activeRuntime;
+      _activeRuntime = null;
       if (controller != null) {
         unawaited(controller.dispose());
       }

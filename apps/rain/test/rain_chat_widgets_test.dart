@@ -8,8 +8,6 @@ import 'package:rain/application/runtime/voice_audio_level.dart';
 import 'package:rain/application/runtime/voice_call_state.dart';
 import 'package:rain/application/state/call_surface_providers.dart';
 import 'package:rain/application/audio/rain_sound_event.dart';
-import 'package:rain/presentation/branding/rain_ripple_halo_surface.dart';
-import 'package:rain/presentation/branding/rain_streak_surface.dart';
 import 'package:rain/presentation/screens/home_screen.dart';
 import 'package:rain/presentation/widgets/calls/rain_call_controls.dart';
 import 'package:rain/presentation/widgets/calls/rain_call_manager_bar.dart';
@@ -534,7 +532,7 @@ void main() {
     );
 
     expect(find.text('Voice call with Bob'), findsOneWidget);
-    expect(find.byType(RainStreakSurface), findsWidgets);
+    expect(find.byTooltip('Mute microphone'), findsOneWidget);
     await tester.tap(find.byTooltip('Mute microphone'));
     expect(muted, isTrue);
 
@@ -866,39 +864,37 @@ void main() {
     expect(rainVoiceCallTerminalActionVisual(state).icon, Icons.phone_disabled);
   });
 
-  testWidgets(
-    'ripple halo wraps the component bounds instead of only the icon glyph',
-    (WidgetTester tester) async {
-      await tester.pumpWidget(
-        MaterialApp(
-          home: Scaffold(
-            body: Center(
-              child: RainCallControls(
-                state: _activeVoiceCall(),
-                onAccept: () {},
-                onReject: () {},
-                onHangUp: () {},
-                onRetry: () {},
-                onToggleMute: () {},
-              ),
+  testWidgets('call controls reserve stable component bounds', (
+    WidgetTester tester,
+  ) async {
+    await tester.pumpWidget(
+      MaterialApp(
+        home: Scaffold(
+          body: Center(
+            child: RainCallControls(
+              state: _activeVoiceCall(),
+              onAccept: () {},
+              onReject: () {},
+              onHangUp: () {},
+              onRetry: () {},
+              onToggleMute: () {},
             ),
           ),
         ),
-      );
+      ),
+    );
 
-      final callControlHalos = find.byWidgetPredicate(
-        (Widget widget) =>
-            widget is RainRippleHaloSurface &&
-            widget.minSize == const Size.square(48),
-      );
-      expect(callControlHalos, findsNWidgets(4));
-      for (var index = 0; index < 4; index += 1) {
-        final size = tester.getSize(callControlHalos.at(index));
-        expect(size.width, greaterThanOrEqualTo(48));
-        expect(size.height, greaterThanOrEqualTo(48));
-      }
-    },
-  );
+    final controlSlots = find.byWidgetPredicate(
+      (Widget widget) =>
+          widget is SizedBox && widget.width == 48 && widget.height == 48,
+    );
+    expect(controlSlots, findsAtLeastNWidgets(4));
+    for (var index = 0; index < 4; index += 1) {
+      final size = tester.getSize(controlSlots.at(index));
+      expect(size.width, greaterThanOrEqualTo(48));
+      expect(size.height, greaterThanOrEqualTo(48));
+    }
+  });
 
   testWidgets('audio-only call controls do not render future video controls', (
     WidgetTester tester,

@@ -9,11 +9,12 @@ Provide a premium minimal Rain identity across Android and Windows.
 - Dark ink surfaces.
 - Cyan/mint accents.
 - Peer Core mark.
-- Ripple halo states.
+- Static status accents.
 - Restrained motion.
 - No childish raindrops.
 - No mascots.
 - No random glow blobs.
+- No animated ring effects.
 - No diagonal stroke overlays.
 
 ## UI Requirements

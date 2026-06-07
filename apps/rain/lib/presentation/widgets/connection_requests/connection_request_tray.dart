@@ -1,7 +1,6 @@
 import 'package:flutter/material.dart';
 import 'package:protocol_brain/protocol_brain.dart';
 
-import 'package:rain/presentation/branding/rain_ripple_halo_surface.dart';
 import 'package:rain/presentation/theme/rain_theme.dart';
 import 'connection_request_status_chip.dart';
 
@@ -113,66 +112,53 @@ class _InboundConnectionRequestPrompt extends StatelessWidget {
         .toList(growable: false);
     final tone = RainColors.mistCyan;
 
-    return RainRippleHaloSurface(
-      enabled: true,
-      color: tone,
-      borderRadius: BorderRadius.circular(22),
-      pulseKey: 'inbound:${surface.requestId}:${surface.status.name}',
-      pulseOnMount: true,
-      child: DecoratedBox(
-        key: ValueKey<String>(
-          'connection-request-inbound-${surface.requestId}',
+    return DecoratedBox(
+      key: ValueKey<String>('connection-request-inbound-${surface.requestId}'),
+      decoration: BoxDecoration(
+        color: Color.alphaBlend(
+          tone.withValues(alpha: 0.07),
+          scheme.surfaceContainerHighest.withValues(alpha: 0.86),
         ),
-        decoration: BoxDecoration(
-          color: Color.alphaBlend(
-            tone.withValues(alpha: 0.07),
-            scheme.surfaceContainerHighest.withValues(alpha: 0.86),
+        borderRadius: BorderRadius.circular(22),
+        border: Border.all(color: tone.withValues(alpha: 0.34)),
+        boxShadow: <BoxShadow>[
+          BoxShadow(
+            color: Colors.black.withValues(alpha: 0.22),
+            blurRadius: 20,
+            offset: const Offset(0, 14),
           ),
-          borderRadius: BorderRadius.circular(22),
-          border: Border.all(color: tone.withValues(alpha: 0.34)),
-          boxShadow: <BoxShadow>[
-            BoxShadow(
-              color: Colors.black.withValues(alpha: 0.22),
-              blurRadius: 20,
-              offset: const Offset(0, 14),
-            ),
-          ],
-        ),
-        child: Padding(
-          padding: EdgeInsets.all(compact ? 12 : 14),
-          child: LayoutBuilder(
-            builder: (BuildContext context, BoxConstraints constraints) {
-              final stackActions = compact || constraints.maxWidth < 360;
-              final header = _InboundPromptHeader(surface: surface, tone: tone);
-              final actions = _InboundPromptActions(
-                surface: surface,
-                connectAction: connectAction,
-                ignoreAction: ignoreAction,
-                overflowActions: overflowActions,
-                stackActions: stackActions,
-                onAction: onAction,
+        ],
+      ),
+      child: Padding(
+        padding: EdgeInsets.all(compact ? 12 : 14),
+        child: LayoutBuilder(
+          builder: (BuildContext context, BoxConstraints constraints) {
+            final stackActions = compact || constraints.maxWidth < 360;
+            final header = _InboundPromptHeader(surface: surface, tone: tone);
+            final actions = _InboundPromptActions(
+              surface: surface,
+              connectAction: connectAction,
+              ignoreAction: ignoreAction,
+              overflowActions: overflowActions,
+              stackActions: stackActions,
+              onAction: onAction,
+            );
+            if (stackActions) {
+              return Column(
+                mainAxisSize: MainAxisSize.min,
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: <Widget>[header, const SizedBox(height: 12), actions],
               );
-              if (stackActions) {
-                return Column(
-                  mainAxisSize: MainAxisSize.min,
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: <Widget>[
-                    header,
-                    const SizedBox(height: 12),
-                    actions,
-                  ],
-                );
-              }
-              return Row(
-                crossAxisAlignment: CrossAxisAlignment.center,
-                children: <Widget>[
-                  Expanded(child: header),
-                  const SizedBox(width: 12),
-                  actions,
-                ],
-              );
-            },
-          ),
+            }
+            return Row(
+              crossAxisAlignment: CrossAxisAlignment.center,
+              children: <Widget>[
+                Expanded(child: header),
+                const SizedBox(width: 12),
+                actions,
+              ],
+            );
+          },
         ),
       ),
     );

@@ -90,11 +90,51 @@ void main() {
     await tester.pumpSettingsFrame();
 
     expect(runtimeController.deleteAccountPasswords, <String>['secret1']);
-    expect(
-      find.textContaining('Could not delete account: Wrong password'),
-      findsOneWidget,
-    );
+    expect(find.text('Could not delete account'), findsOneWidget);
+    expect(find.textContaining('Wrong password'), findsOneWidget);
   });
+
+  testWidgets(
+    'settings account deletion backend cleanup failure keeps settings open',
+    (WidgetTester tester) async {
+      final runtimeController = _RecordingRuntimeController(
+        deleteAccountError: const AccountDeletionException(
+          kind: AccountDeletionFailureKind.backendCleanupFailed,
+          message:
+              'Could not finish deleting backend account data. '
+              'Account deletion was not completed.',
+          destructiveActionStarted: false,
+        ),
+      );
+      final harness = _SettingsHarness(
+        identity: const RainIdentity(
+          username: 'alice',
+          displayName: 'Alice',
+          createdAt: 1,
+          gender: RainGender.female,
+        ),
+        runtimeController: runtimeController,
+      );
+      addTearDown(harness.dispose);
+
+      await tester.pumpSettingsScreen(harness: harness);
+      await tester.tap(find.text('Delete account'));
+      await tester.pumpSettingsFrame();
+      await tester.tap(find.widgetWithText(FilledButton, 'Delete account'));
+      await tester.pumpSettingsFrame();
+      await tester.enterText(find.byType(TextField), 'secret1');
+      await tester.tap(find.widgetWithText(FilledButton, 'Delete account'));
+      await tester.pumpSettingsFrame();
+
+      expect(runtimeController.deleteAccountPasswords, <String>['secret1']);
+      expect(find.text('Settings'), findsOneWidget);
+      expect(find.text('Could not delete account'), findsOneWidget);
+      expect(
+        find.textContaining('Account deletion was not completed'),
+        findsOneWidget,
+      );
+    },
+  );
 
   testWidgets('settings screen shows version and update actions', (
     WidgetTester tester,
@@ -827,8 +867,17 @@ class _NoRuntimeController extends RuntimeController {
 }
 
 class _RecordingRuntimeController extends RuntimeController {
+  _RecordingRuntimeController({
+    this.deleteAccountError = const AccountDeletionException(
+      kind: AccountDeletionFailureKind.reauthenticationFailed,
+      message: 'Wrong password. Account deletion was not started.',
+      destructiveActionStarted: false,
+    ),
+  });
+
   late RainDatabase database;
   final List<String> deleteAccountPasswords = <String>[];
+  final Object? deleteAccountError;
 
   @override
   Future<RainRuntimeController?> build() async {
@@ -858,11 +907,10 @@ class _RecordingRuntimeController extends RuntimeController {
   @override
   Future<void> deleteAccount({required String password}) async {
     deleteAccountPasswords.add(password);
-    throw const AccountDeletionException(
-      kind: AccountDeletionFailureKind.reauthenticationFailed,
-      message: 'Wrong password. Account deletion was not started.',
-      destructiveActionStarted: false,
-    );
+    final error = deleteAccountError;
+    if (error != null) {
+      throw error;
+    }
   }
 }
 

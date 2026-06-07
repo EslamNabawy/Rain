@@ -1,6 +1,6 @@
 # Lessons Learned
 
-Last updated: 2026-06-05
+Last updated: 2026-06-07
 
 ## Purpose
 
@@ -202,7 +202,7 @@ No task is fully complete until the lesson check is done or explicitly marked "n
 - What was learned: Android SAF picker outputs can look like `/document/1282` instead of a `content://...` URI. Treating that value as a `dart:io` file path caused `PathNotFoundException` and blocked diagnostic exports.
 - What caused delays: The code already handled `content://` URIs but did not classify bare SAF handles as platform-managed outputs.
 - What failed: Export fallback tried to open `/document/1282` directly even though the picker had already received the JSON bytes.
-- What succeeded: A regression now locks `/document/...` handling so diagnostics export returns success without filesystem fallback.
+- What succeeded: Regressions now lock `/document/...`, newline-split `/\ndocument/...`, content URI, and legacy wrapper `FileSystemException('/document/12')` behavior so diagnostics export returns success without opening SAF handles through `dart:io`.
 - What should change: Any file picker/save picker integration must distinguish platform-managed handles from real filesystem paths before using `File`.
 - Pattern: Platform handle mistaken for local path.
 - Follow-up improvement: Extend file-transfer save/export flows with similar SAF-handle tests if they accept picker results.
@@ -409,10 +409,10 @@ No task is fully complete until the lesson check is done or explicitly marked "n
 - Related task: [ROOT_AUTH_STARTUP_REMEDIATION_ROADMAP.md](../../ROOT_AUTH_STARTUP_REMEDIATION_ROADMAP.md) Phase 05
 - Related system: [[Authentication]], [[Firebase Architecture]], [[Rules Strategy]]
 - Related risk/debt: R-021, TD-021, BLK-010
-- What was learned: Account deletion cannot use one generic error path. A failed password reauthentication is non-destructive and must preserve the current session, while backend/Auth failures after cleanup starts are destructive partial failures and must clear local session state.
+- What was learned: Account deletion cannot use one generic error path. Failed password reauthentication and required tombstone failure are non-destructive and must preserve the current session. They also must not publish global runtime loading, because unmounting Settings before the exception returns drops the visible error. Optional RTDB cleanup after tombstone is not a reason to keep the account active. Only successful deletion or a post-tombstone destructive failure should clear local session state.
 - What caused delays: The original account-lifecycle gap mixed reauthentication, runtime shutdown, RTDB cleanup, Auth deletion, and local session reset into one conceptual "delete" action.
-- What failed: Without an explicit failure class, a bad password could accidentally behave like account deletion, or a partial backend delete could leave stale local identity able to restore.
-- What succeeded: `AccountDeletionException.destructiveActionStarted` now separates pre-destructive failures from partial destructive failures; runtime/provider tests cover preserving identity before reauth and clearing identity after backend failure.
+- What failed: Without an explicit irreversible-boundary contract, a bad password or required tombstone failure could accidentally behave like logout/account deletion, while optional cleanup could abort the whole delete and look like a no-op after a loading splash. A provider-level loading transition before password verification could also unmount Settings and swallow the wrong-password dialog.
+- What succeeded: `AccountDeletionException.destructiveActionStarted` now separates pre-destructive failures from partial destructive failures; runtime/provider tests cover preserving identity before reauth, preserving identity when the required backend delete fails before tombstone, keeping app startup ready while password verification is pending, clearing identity after successful/post-tombstone destructive deletion, and Settings now shows a modal delete error.
 - What should change: Every future destructive lifecycle flow should expose whether durable state was touched before deciding local cleanup and user messaging.
 - Pattern: Destructive workflows need irreversible-boundary tracking.
 - Follow-up improvement: Add Firebase emulator/device proof for account deletion tombstone cleanup and include the targeted account-deletion tests in the hard release gate.
@@ -591,6 +591,22 @@ No task is fully complete until the lesson check is done or explicitly marked "n
 - Pattern: Build warnings should be split by ownership before changing dependencies.
 - Follow-up improvement: Keep Remote Config ABT/Analytics warnings separate from update-check failures; do not add Firebase Analytics without a privacy/telemetry decision.
 - Owner: DevOps/Engineering
+- Status: Open
+
+### LESSON-20260607-036: Account Deletion Fixes Need Live Rules Readback
+
+- Date: 2026-06-07
+- Related task: Delete-account Android failure follow-up.
+- Related system: [[Authentication]], [[Rules Strategy]], [[Emulator Coverage]]
+- Related risk/debt: R-014, R-021, TD-021, BLK-003, BLK-010
+- What was learned: A correct local app flow can still fail if the live RTDB rule or legacy backend row shape denies the required `users/{username}` tombstone. The UI showing a modal error was progress: it proved the session was preserved instead of silently logging out.
+- What caused delays: Earlier fixes focused on app teardown order and optional cleanup. The final observed modal showed the remaining failure had moved to the required backend tombstone boundary.
+- What failed: Treating checked-in rules and local tests as enough missed the live deployment/data-shape dependency. Legacy rows without `uid` need a narrow repair path, not a broad ownership bypass.
+- What succeeded: The adapter now separates the tombstone from optional cleanup, Settings remains mounted for the error, and the live `rain-8fb4b-default-rtdb` rule was deployed/read back with an email-bound missing-uid branch.
+- What should change: Any future account deletion or Firebase ownership change must include local contract tests, emulator proof, live rules deploy/readback evidence, and a real app retry before closing the user-visible bug.
+- Pattern: Backend lifecycle bugs need both code proof and deployed-rule proof.
+- Follow-up improvement: Add a small release-gate/readback artifact for RTDB rules changes, similar to Remote Config evidence.
+- Owner: Engineering/DevOps
 - Status: Open
 
 ## Review Cadence

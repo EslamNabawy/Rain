@@ -578,12 +578,39 @@ class _LoadingRuntimeController extends RuntimeController {
 
 class _SettledRuntimeController extends RuntimeController {
   @override
-  Future<RainRuntimeController?> build() async => null;
+  Future<RainRuntimeController?> build() async {
+    final database = ref.watch(databaseProvider);
+    final messageStore = MessageStore(database);
+    final offlineQueueStore = OfflineQueueStore(database);
+    final runtime = RainRuntimeController(
+      selfIdentity: const RainIdentity(
+        username: 'alice',
+        displayName: 'Alice',
+        createdAt: 1,
+        gender: null,
+      ),
+      adapter: NoopSignalingAdapter(),
+      brain: null,
+      database: database,
+      friendStore: FriendStore(database),
+      messageStore: messageStore,
+      offlineQueueStore: offlineQueueStore,
+      messageDeliveryService: MessageDeliveryService(
+        messageStore: messageStore,
+        offlineQueueStore: offlineQueueStore,
+      ),
+      friendRequestRefreshInterval: Duration.zero,
+    );
+    ref.onDispose(() => unawaited(runtime.dispose()));
+    return runtime;
+  }
 }
 
 class _SessionExpiredRuntimeController extends RuntimeController {
   @override
-  Future<RainRuntimeController?> build() async {
-    throw const SignalingSessionExpiredException('sign in again');
-  }
+  Future<RainRuntimeController?> build() =>
+      Future<RainRuntimeController?>.error(
+        const SignalingSessionExpiredException('sign in again'),
+        StackTrace.current,
+      );
 }

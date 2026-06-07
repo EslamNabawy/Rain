@@ -1060,6 +1060,24 @@ class RainRuntimeController with WidgetsBindingObserver {
         'bypassRetryBackoff': bypassRetryBackoff,
       },
     );
+    if (_shutDown) {
+      const message = 'Rain is signing out. Sign in again before connecting.';
+      _recordRuntimeEvent(
+        category: 'connection',
+        name: 'connect_blocked_runtime_unavailable',
+        severity: interactive ? 'warning' : 'info',
+        message: message,
+        context: <String, Object?>{
+          'peerId': normalizedUsername,
+          'started': _started,
+          'shutDown': _shutDown,
+        },
+      );
+      if (interactive) {
+        throw StateError(message);
+      }
+      return;
+    }
     final connectDecision = RuntimeInteractionGuard.canConnectPeer(
       peerId: normalizedUsername,
       interactive: interactive,
@@ -1512,11 +1530,30 @@ class RainRuntimeController with WidgetsBindingObserver {
 
   Future<void> logOut() async {
     _recordRuntimeEvent(category: 'runtime', name: 'logout_requested');
-    await _shutdown(markOffline: true, signOut: true, clearLocalSession: true);
+    await _clearLocalSessionDataForShutdown();
+    await _finishLogoutAfterLocalSessionClear();
+  }
+
+  Future<void> beginLogOut() async {
+    _recordRuntimeEvent(category: 'runtime', name: 'logout_requested');
+    _shutDown = true;
+    await _clearLocalSessionDataForShutdown();
+    unawaited(_finishLogoutAfterLocalSessionClear());
   }
 
   Future<void> deleteAccount(String password) async {
     _recordRuntimeEvent(category: 'runtime', name: 'account_delete_requested');
+    await _reauthenticateForAccountDeletion(password);
+    await _finishAccountDeletionAfterReauth(waitForRuntimeCleanup: true);
+  }
+
+  Future<void> beginDeleteAccount(String password) async {
+    _recordRuntimeEvent(category: 'runtime', name: 'account_delete_requested');
+    await _reauthenticateForAccountDeletion(password);
+    await _finishAccountDeletionAfterReauth(waitForRuntimeCleanup: false);
+  }
+
+  Future<void> _reauthenticateForAccountDeletion(String password) async {
     try {
       await adapter.reauthenticate(selfIdentity.username, password);
     } on AccountDeletionException {
@@ -1529,16 +1566,52 @@ class RainRuntimeController with WidgetsBindingObserver {
         cause: error,
       );
     }
+  }
 
+  Future<void> _finishAccountDeletionAfterReauth({
+    required bool waitForRuntimeCleanup,
+  }) async {
     Object? deletionError;
     StackTrace? deletionStackTrace;
+    var shouldClearLocalSession = false;
     try {
+      await adapter.deleteAccount(selfIdentity.username);
+      shouldClearLocalSession = true;
+      _recordRuntimeEvent(
+        category: 'runtime',
+        name: 'account_delete_completed',
+      );
+    } catch (error, stackTrace) {
+      deletionError = error;
+      deletionStackTrace = stackTrace;
+      shouldClearLocalSession =
+          error is AccountDeletionException && error.destructiveActionStarted;
+      _recordRuntimeEvent(
+        category: 'runtime',
+        name: 'account_delete_backend_failed',
+        severity: 'warning',
+        message: error.toString(),
+      );
+      errorRecorder?.call(
+        error,
+        stackTrace,
+        source: 'runtime-account-delete',
+        fatal: false,
+      );
+    }
+
+    if (!shouldClearLocalSession) {
+      Error.throwWithStackTrace(deletionError!, deletionStackTrace!);
+    }
+
+    final cleanupFuture = _shutdown(
+      markOffline: true,
+      signOut: false,
+      clearLocalSession: false,
+    );
+    if (waitForRuntimeCleanup) {
       try {
-        await _shutdown(
-          markOffline: true,
-          signOut: false,
-          clearLocalSession: false,
-        );
+        await cleanupFuture;
       } catch (error, stackTrace) {
         _recordRuntimeEvent(
           category: 'runtime',
@@ -1553,33 +1626,68 @@ class RainRuntimeController with WidgetsBindingObserver {
           fatal: false,
         );
       }
+    } else {
+      unawaited(
+        cleanupFuture.catchError((Object error, StackTrace stackTrace) {
+          _recordRuntimeEvent(
+            category: 'runtime',
+            name: 'account_delete_runtime_shutdown_failed',
+            severity: 'warning',
+            message: error.toString(),
+          );
+          errorRecorder?.call(
+            error,
+            stackTrace,
+            source: 'runtime-account-delete-shutdown',
+            fatal: false,
+          );
+        }),
+      );
+    }
 
-      await adapter.deleteAccount(selfIdentity.username);
+    try {
+      await _clearLocalSessionDataForShutdown();
+    } catch (error, stackTrace) {
       _recordRuntimeEvent(
         category: 'runtime',
-        name: 'account_delete_completed',
+        name: 'local_session_clear_failed_after_account_delete',
+        severity: 'error',
+        message: error.toString(),
+      );
+      errorRecorder?.call(
+        error,
+        stackTrace,
+        source: 'runtime-account-delete-local-clear',
+        fatal: true,
+      );
+      rethrow;
+    }
+
+    if (deletionError != null) {
+      Error.throwWithStackTrace(deletionError, deletionStackTrace!);
+    }
+  }
+
+  Future<void> _finishLogoutAfterLocalSessionClear() async {
+    try {
+      await _shutdown(
+        markOffline: true,
+        signOut: true,
+        clearLocalSession: false,
       );
     } catch (error, stackTrace) {
-      deletionError = error;
-      deletionStackTrace = stackTrace;
       _recordRuntimeEvent(
         category: 'runtime',
-        name: 'account_delete_backend_failed',
+        name: 'logout_cleanup_failed',
         severity: 'warning',
         message: error.toString(),
       );
       errorRecorder?.call(
         error,
         stackTrace,
-        source: 'runtime-account-delete',
+        source: 'runtime-logout-cleanup',
         fatal: false,
       );
-    } finally {
-      await _clearLocalSessionDataForShutdown();
-    }
-
-    if (deletionError != null) {
-      Error.throwWithStackTrace(deletionError, deletionStackTrace!);
     }
   }
 

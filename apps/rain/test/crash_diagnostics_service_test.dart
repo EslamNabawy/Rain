@@ -695,7 +695,7 @@ void main() {
   });
 
   test(
-    'export accepts platform-managed picker paths without filesystem fallback',
+    'export accepts platform-managed picker paths without filesystem writes',
     () async {
       final temp = await Directory.systemTemp.createTemp(
         'rain-crash-diagnostics-content-uri-test-',
@@ -727,14 +727,13 @@ void main() {
 
       expect(pickerReceivedBytes, isTrue);
       expect(result.saved, isTrue);
-      expect(result.path, isNot(destinationUri));
-      expect(result.path, isNotNull);
-      expect(File(result.path!).existsSync(), isTrue);
+      expect(result.platformManaged, isTrue);
+      expect(result.path, destinationUri);
     },
   );
 
   test(
-    'export accepts Android document handles without filesystem fallback',
+    'export accepts Android document handles without filesystem writes',
     () async {
       final temp = await Directory.systemTemp.createTemp(
         'rain-crash-diagnostics-document-handle-test-',
@@ -772,9 +771,8 @@ void main() {
 
       expect(pickerReceivedBytes, isTrue);
       expect(result.saved, isTrue);
-      expect(result.path, isNot(destinationHandle));
-      expect(result.path, isNotNull);
-      expect(File(result.path!).existsSync(), isTrue);
+      expect(result.platformManaged, isTrue);
+      expect(result.path, destinationHandle);
       expect(
         File(destinationHandle).existsSync(),
         isFalse,
@@ -782,6 +780,84 @@ void main() {
             'Android SAF document handles are not filesystem paths and must '
             'not be opened through dart:io.',
       );
+    },
+  );
+
+  test(
+    'export accepts Android document handles with embedded newline',
+    () async {
+      final temp = await Directory.systemTemp.createTemp(
+        'rain-crash-diagnostics-newline-document-handle-test-',
+      );
+      addTearDown(() => temp.delete(recursive: true));
+
+      const destinationHandle = '/\ndocument/11';
+      var pickerReceivedBytes = false;
+      final service = CrashDiagnosticsService(
+        directoryProvider: () async => temp,
+        saveFile:
+            ({
+              String? dialogTitle,
+              String? fileName,
+              String? initialDirectory,
+              FileType type = FileType.any,
+              List<String>? allowedExtensions,
+              Uint8List? bytes,
+              bool lockParentWindow = false,
+            }) async {
+              pickerReceivedBytes = bytes != null && bytes.isNotEmpty;
+              return destinationHandle;
+            },
+      );
+
+      await service.initialize();
+      final result = await service.exportDiagnostics();
+
+      expect(pickerReceivedBytes, isTrue);
+      expect(result.saved, isTrue);
+      expect(result.platformManaged, isTrue);
+      expect(result.path, destinationHandle);
+    },
+  );
+
+  test(
+    'export falls back when Android picker wrapper opens SAF handle as File',
+    () async {
+      final temp = await Directory.systemTemp.createTemp(
+        'rain-crash-diagnostics-document-fallback-test-',
+      );
+      addTearDown(() => temp.delete(recursive: true));
+
+      var pickerReceivedBytes = false;
+      final service = CrashDiagnosticsService(
+        directoryProvider: () async => temp,
+        saveFile:
+            ({
+              String? dialogTitle,
+              String? fileName,
+              String? initialDirectory,
+              FileType type = FileType.any,
+              List<String>? allowedExtensions,
+              Uint8List? bytes,
+              bool lockParentWindow = false,
+            }) async {
+              pickerReceivedBytes = bytes != null && bytes.isNotEmpty;
+              throw const FileSystemException(
+                'Cannot open file',
+                '/document/12',
+              );
+            },
+      );
+
+      await service.initialize();
+      final result = await service.exportDiagnostics();
+
+      expect(pickerReceivedBytes, isTrue);
+      expect(result.saved, isTrue);
+      expect(result.platformManaged, isFalse);
+      expect(result.path, isNot('/document/12'));
+      expect(result.path, isNotNull);
+      expect(File(result.path!).existsSync(), isTrue);
     },
   );
 }

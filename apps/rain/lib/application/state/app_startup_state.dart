@@ -209,27 +209,42 @@ final appStartupStateProvider = Provider<AppStartupState>((Ref ref) {
   final currentIdentity = session.identity;
 
   final runtime = ref.watch(runtimeControllerProvider);
-  if (!runtime.hasValue) {
-    if (runtime.hasError) {
-      final error = runtime.error!;
-      if (error is SignalingSessionExpiredException) {
-        return AppStartupState.sessionExpired(
-          updateResult: updateResult,
-          identity: currentIdentity,
-          error: error,
-          stackTrace: runtime.stackTrace,
-          networkStatus: networkStatus,
-        );
-      }
-      return AppStartupState.failed(
-        error: error,
-        stackTrace: runtime.stackTrace,
-        failureSource: AppStartupFailureSource.runtime,
+  if (runtime.hasError) {
+    final error = runtime.error!;
+    if (error is SignalingSessionExpiredException) {
+      return AppStartupState.sessionExpired(
         updateResult: updateResult,
         identity: currentIdentity,
+        error: error,
+        stackTrace: runtime.stackTrace,
         networkStatus: networkStatus,
       );
     }
+    return AppStartupState.failed(
+      error: error,
+      stackTrace: runtime.stackTrace,
+      failureSource: AppStartupFailureSource.runtime,
+      updateResult: updateResult,
+      identity: currentIdentity,
+      networkStatus: networkStatus,
+    );
+  }
+  if (runtime.isLoading) {
+    return AppStartupState.startingRuntime(
+      updateResult: updateResult,
+      identity: currentIdentity,
+      networkStatus: networkStatus,
+    );
+  }
+  if (!runtime.hasValue || runtime.requireValue == null) {
+    return AppStartupState.startingRuntime(
+      updateResult: updateResult,
+      identity: currentIdentity,
+      networkStatus: networkStatus,
+    );
+  }
+
+  if (runtime.requireValue == null) {
     return AppStartupState.startingRuntime(
       updateResult: updateResult,
       identity: currentIdentity,

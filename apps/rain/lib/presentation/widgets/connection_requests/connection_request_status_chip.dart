@@ -1,7 +1,6 @@
 import 'package:flutter/material.dart';
 import 'package:protocol_brain/protocol_brain.dart';
 
-import 'package:rain/presentation/branding/rain_ripple_halo_surface.dart';
 import 'package:rain/presentation/theme/rain_theme.dart';
 
 typedef ConnectionRequestActionCallback =
@@ -41,71 +40,61 @@ class ConnectionRequestStatusChip extends StatelessWidget {
     return Semantics(
       container: true,
       label: semantic.toString(),
-      child: RainRippleHaloSurface(
-        enabled: !surface.status.isTerminal,
-        color: tone,
-        borderRadius: BorderRadius.circular(16),
-        pulseKey:
-            '${surface.requestId}:${surface.direction.name}:${surface.status.name}',
-        pulseOnMount: !surface.status.isTerminal,
-        child: DecoratedBox(
-          key: ValueKey<String>(
-            'connection-request-status-${surface.requestId}',
+      child: DecoratedBox(
+        key: ValueKey<String>('connection-request-status-${surface.requestId}'),
+        decoration: BoxDecoration(
+          color: Color.alphaBlend(
+            tone.withValues(alpha: 0.08),
+            scheme.surfaceContainerHighest.withValues(alpha: 0.58),
           ),
-          decoration: BoxDecoration(
-            color: Color.alphaBlend(
-              tone.withValues(alpha: 0.08),
-              scheme.surfaceContainerHighest.withValues(alpha: 0.58),
-            ),
-            borderRadius: BorderRadius.circular(16),
-            border: Border.all(color: tone.withValues(alpha: 0.34)),
-          ),
-          child: Padding(
-            padding: EdgeInsets.fromLTRB(12, compact ? 8 : 10, 10, 10),
-            child: LayoutBuilder(
-              builder: (BuildContext context, BoxConstraints constraints) {
-                final stackActions = compact || constraints.maxWidth < 340;
-                final content = _ConnectionRequestChipContent(
-                  surface: surface,
-                  tone: tone,
-                  feedbackText: feedbackText,
-                  quotaText: quotaText,
-                );
-                final actionButton = action == null
-                    ? null
-                    : _ConnectionRequestChipAction(
-                        surface: surface,
-                        action: action,
-                        tone: tone,
-                        onAction: onAction,
-                      );
-                if (actionButton == null) {
-                  return content;
-                }
-                if (stackActions) {
-                  return Column(
-                    mainAxisSize: MainAxisSize.min,
-                    crossAxisAlignment: CrossAxisAlignment.start,
-                    children: <Widget>[
-                      content,
-                      const SizedBox(height: 8),
-                      Align(
-                        alignment: Alignment.centerRight,
-                        child: actionButton,
-                      ),
-                    ],
-                  );
-                }
-                return Row(
-                  crossAxisAlignment: CrossAxisAlignment.center,
+          borderRadius: BorderRadius.circular(16),
+          border: Border.all(color: tone.withValues(alpha: 0.34)),
+        ),
+        child: Padding(
+          padding: EdgeInsets.fromLTRB(12, compact ? 8 : 10, 10, 10),
+          child: LayoutBuilder(
+            builder: (BuildContext context, BoxConstraints constraints) {
+              final stackActions = compact || constraints.maxWidth < 340;
+              final content = _ConnectionRequestChipContent(
+                surface: surface,
+                tone: tone,
+                feedbackText: feedbackText,
+                quotaText: quotaText,
+              );
+              final actionButton = action == null
+                  ? null
+                  : _ConnectionRequestChipAction(
+                      surface: surface,
+                      action: action,
+                      tone: tone,
+                      onAction: onAction,
+                    );
+              if (actionButton == null) {
+                return content;
+              }
+              if (stackActions) {
+                return Column(
+                  mainAxisSize: MainAxisSize.min,
+                  crossAxisAlignment: CrossAxisAlignment.start,
                   children: <Widget>[
-                    Expanded(child: content),
-                    const SizedBox(width: 10),
-                    actionButton,
+                    content,
+                    const SizedBox(height: 8),
+                    Align(
+                      alignment: Alignment.centerRight,
+                      child: actionButton,
+                    ),
                   ],
                 );
-              },
-            ),
+              }
+              return Row(
+                crossAxisAlignment: CrossAxisAlignment.center,
+                children: <Widget>[
+                  Expanded(child: content),
+                  const SizedBox(width: 10),
+                  actionButton,
+                ],
+              );
+            },
           ),
         ),
       ),

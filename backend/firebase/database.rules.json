@@ -5,7 +5,7 @@
     "users": {
       "$username": {
         ".read": "auth != null",
-        ".write": "auth != null && !root.child('security/blockedUids/' + auth.uid).exists() && ((!data.exists() && auth.token.email === $username + '@rain.local' && newData.child('uid').val() === auth.uid) || (data.exists() && data.child('uid').val() === auth.uid && newData.child('uid').val() === data.child('uid').val()))",
+        ".write": "auth != null && !root.child('security/blockedUids/' + auth.uid).exists() && auth.token.email === $username + '@rain.local' && ((!data.exists() && newData.child('uid').val() === auth.uid) || (data.exists() && ((data.child('uid').exists() && data.child('uid').val() === auth.uid && newData.child('uid').val() === data.child('uid').val()) || (!data.child('uid').exists() && newData.child('uid').val() === auth.uid))))",
         "username": {
           ".validate": "newData.isString() && newData.val() === $username"
         },

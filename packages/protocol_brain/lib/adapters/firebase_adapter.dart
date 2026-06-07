@@ -1490,24 +1490,51 @@ class FirebaseSignalingAdapter
     }
 
     final now = DateTime.now().millisecondsSinceEpoch;
+    final deletionMetadata = await _loadAccountDeletionMetadata(
+      normalizedUsername,
+      fallbackRegisteredAt: now,
+    );
+    if (deletionMetadata.backendUid.isNotEmpty &&
+        deletionMetadata.backendUid != user.uid) {
+      throw const AccountDeletionException(
+        kind: AccountDeletionFailureKind.permissionDenied,
+        message:
+            'This signed-in Firebase user does not own the backend account row. '
+            'Log out, sign in as this Rain account, then retry deletion.',
+        destructiveActionStarted: false,
+      );
+    }
     try {
-      await _cleanupAccountOwnedRealtimeData(
+      await _runBestEffortAccountDeletionCleanup(
+        () => _removeAccountFromSearchBeforeTombstone(normalizedUsername),
+      );
+      await _tombstoneBackendIdentity(
         username: normalizedUsername,
         uid: user.uid,
+        registeredAt: deletionMetadata.registeredAt,
         deletedAt: now,
       );
     } on Object catch (error) {
+      final permissionDenied = _isPermissionDenied(error);
       throw AccountDeletionException(
-        kind: _isPermissionDenied(error)
+        kind: permissionDenied
             ? AccountDeletionFailureKind.permissionDenied
             : AccountDeletionFailureKind.backendCleanupFailed,
-        message:
-            'Could not finish deleting backend account data. '
-            'Local session will still be cleared.',
-        destructiveActionStarted: true,
+        message: permissionDenied
+            ? _accountDeletionTombstonePermissionMessage(
+                backendUid: deletionMetadata.backendUid,
+              )
+            : 'Could not finish deleting backend account data. '
+                  'Account deletion was not completed.',
+        destructiveActionStarted: false,
         cause: error,
       );
     }
+
+    await _cleanupAccountOwnedRealtimeData(
+      username: normalizedUsername,
+      deletedAt: now,
+    );
 
     try {
       await user.delete();
@@ -1544,44 +1571,86 @@ class FirebaseSignalingAdapter
     };
   }
 
-  Future<void> _cleanupAccountOwnedRealtimeData({
+  Future<({String backendUid, int registeredAt})> _loadAccountDeletionMetadata(
+    String username, {
+    required int fallbackRegisteredAt,
+  }) async {
+    try {
+      final userSnapshot = await _root.child('users/$username').get();
+      final userData = userSnapshot.value is Map<Object?, Object?>
+          ? userSnapshot.value! as Map<Object?, Object?>
+          : const <Object?, Object?>{};
+      return (
+        backendUid: (userData['uid'] as String?)?.trim() ?? '',
+        registeredAt:
+            (userData['registeredAt'] as num?)?.toInt() ?? fallbackRegisteredAt,
+      );
+    } on Object {
+      return (backendUid: '', registeredAt: fallbackRegisteredAt);
+    }
+  }
+
+  String _accountDeletionTombstonePermissionMessage({
+    required String backendUid,
+  }) {
+    if (backendUid.isEmpty) {
+      return 'Firebase rules rejected the required account delete marker. '
+          'The backend account row is missing its owner uid; deploy the current '
+          'Realtime Database rules, then retry deletion.';
+    }
+    return 'Firebase rules rejected the required account delete marker. '
+        'Deploy the current Realtime Database rules, then retry deletion.';
+  }
+
+  Future<void> _removeAccountFromSearchBeforeTombstone(String username) async {
+    await _root.child('userSearch/$username').remove();
+  }
+
+  Future<void> _tombstoneBackendIdentity({
     required String username,
     required String uid,
+    required int registeredAt,
     required int deletedAt,
   }) async {
-    final userSnapshot = await _root.child('users/$username').get();
-    final userData = userSnapshot.value is Map<Object?, Object?>
-        ? userSnapshot.value! as Map<Object?, Object?>
-        : const <Object?, Object?>{};
-    final registeredAt =
-        (userData['registeredAt'] as num?)?.toInt() ?? deletedAt;
+    await _root.child('users/$username').set(<String, Object?>{
+      'username': username,
+      'uid': uid,
+      'displayName': 'Deleted account',
+      'registeredAt': registeredAt,
+      'accountState': 'deleted',
+      'deletedAt': deletedAt,
+    });
+  }
 
-    await _endActiveVoiceCallForAccount(username, deletedAt);
-    await _cleanupConnectionRequestsForAccount(username);
+  Future<void> _cleanupAccountOwnedRealtimeData({
+    required String username,
+    required int deletedAt,
+  }) async {
+    await _runBestEffortAccountDeletionCleanup(
+      () => _endActiveVoiceCallForAccount(username, deletedAt),
+    );
+    await _runBestEffortAccountDeletionCleanup(
+      () => _cleanupConnectionRequestsForAccount(username),
+    );
 
-    try {
-      await setPresence(username, false);
-    } on Object {
-      // The final tombstone is the durable account-deletion marker. Presence
-      // offline is useful but must not block deletion after reauthentication.
-    }
+    await _runBestEffortAccountDeletionCleanup(
+      () => setPresence(username, false),
+    );
 
-    final friends = await loadAcceptedFriends(username);
-    final incomingRequests = await loadIncomingFriendRequests(username);
-    final outgoingRequests = await loadOutgoingFriendRequests(username);
-    final blockedUsers = await loadBlockedUsers(username);
+    final friends = await _loadBestEffortAccountDeletionList(
+      () => loadAcceptedFriends(username),
+    );
+    final incomingRequests = await _loadBestEffortAccountDeletionList(
+      () => loadIncomingFriendRequests(username),
+    );
+    final outgoingRequests = await _loadBestEffortAccountDeletionList(
+      () => loadOutgoingFriendRequests(username),
+    );
+    final blockedUsers = await _loadBestEffortAccountDeletionList(
+      () => loadBlockedUsers(username),
+    );
 
-    final updates = <String, Object?>{
-      'userSearch/$username': null,
-      'users/$username': <String, Object?>{
-        'username': username,
-        'uid': uid,
-        'displayName': 'Deleted account',
-        'registeredAt': registeredAt,
-        'accountState': 'deleted',
-        'deletedAt': deletedAt,
-      },
-    };
+    final updates = <String, Object?>{};
 
     for (final friend in friends) {
       final normalizedFriend = _normalizedUsername(friend);
@@ -1608,7 +1677,56 @@ class FirebaseSignalingAdapter
       updates['blockedBy/$normalizedBlocked/$username'] = null;
     }
 
-    await _root.update(updates);
+    await _applyBestEffortAccountDeletionUpdates(updates);
+  }
+
+  Future<List<String>> _loadBestEffortAccountDeletionList(
+    Future<List<String>> Function() load,
+  ) async {
+    try {
+      return await load();
+    } on Object {
+      return const <String>[];
+    }
+  }
+
+  Future<void> _applyBestEffortAccountDeletionUpdates(
+    Map<String, Object?> updates,
+  ) async {
+    if (updates.isEmpty) {
+      return;
+    }
+    try {
+      await _root.update(updates);
+      return;
+    } on Object {
+      // Retry path-by-path below. Multi-location updates are all-or-nothing:
+      // one denied optional mirror must not block already-tombstoned account
+      // deletion from finishing.
+    }
+    for (final entry in updates.entries) {
+      await _runBestEffortAccountDeletionCleanup(() async {
+        final ref = _root.child(entry.key);
+        final value = entry.value;
+        if (value == null) {
+          await ref.remove();
+        } else {
+          await ref.set(value);
+        }
+      });
+    }
+  }
+
+  Future<void> _runBestEffortAccountDeletionCleanup(
+    Future<void> Function() cleanup,
+  ) async {
+    try {
+      await cleanup();
+    } on Object {
+      // The durable delete marker is users/{username}. Optional mirrors,
+      // presence, and active-call cleanup must not make a reauthenticated
+      // account delete look like a no-op.
+    }
   }
 
   Future<void> _endActiveVoiceCallForAccount(

@@ -2,7 +2,6 @@ import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_test/flutter_test.dart';
-import 'package:rain/presentation/branding/rain_streak_surface.dart';
 import 'package:rain/presentation/widgets/chat_composer.dart';
 
 void main() {
@@ -35,7 +34,7 @@ void main() {
 
     await tester.tap(find.byType(TextField));
     await tester.enterText(find.byType(TextField), '  hello rain  ');
-    expect(find.byType(RainStreakSurface), findsOneWidget);
+    expect(find.byIcon(Icons.send_rounded), findsOneWidget);
     await tester.testTextInput.receiveAction(TextInputAction.send);
     await tester.pump();
 

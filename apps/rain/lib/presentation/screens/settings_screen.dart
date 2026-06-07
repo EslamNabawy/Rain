@@ -17,7 +17,6 @@ import 'package:rain/application/state/sound_event_providers.dart';
 import 'package:rain/infrastructure/services/crash_diagnostics_service.dart';
 import 'package:rain/infrastructure/services/app_settings_store.dart';
 import 'package:rain/infrastructure/services/force_update_service.dart';
-import 'package:rain/presentation/branding/rain_ripple_halo_surface.dart';
 import 'package:rain/presentation/branding/rain_state_surfaces.dart';
 import 'package:rain/presentation/screens/splash_screen.dart';
 import 'package:rain/presentation/widgets/app_components.dart';
@@ -964,7 +963,6 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen> {
     BuildContext context,
     RainIdentity identity,
   ) async {
-    final messenger = ScaffoldMessenger.of(context);
     final errorColor = Theme.of(context).colorScheme.error;
 
     final confirmed = await showAppConfirmDialog(
@@ -1006,15 +1004,37 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen> {
         return;
       }
       setState(() => _deletingAccount = false);
-      messenger.showSnackBar(
-        SnackBar(
-          content: Text(
-            'Could not delete account: ${_formatSettingsError(error)}',
-          ),
-          backgroundColor: errorColor,
-        ),
+      await _showSettingsErrorDialog(
+        context: context,
+        title: 'Could not delete account',
+        message: _formatSettingsError(error),
+        errorColor: errorColor,
       );
     }
+  }
+
+  Future<void> _showSettingsErrorDialog({
+    required BuildContext context,
+    required String title,
+    required String message,
+    required Color errorColor,
+  }) {
+    return showDialog<void>(
+      context: context,
+      builder: (BuildContext context) {
+        return AlertDialog(
+          title: Text(title),
+          content: Text(message),
+          actions: <Widget>[
+            FilledButton(
+              style: FilledButton.styleFrom(backgroundColor: errorColor),
+              onPressed: () => Navigator.of(context).pop(),
+              child: const Text('OK'),
+            ),
+          ],
+        );
+      },
+    );
   }
 
   Future<void> _showEditGender(
@@ -1087,8 +1107,11 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen> {
         return;
       }
       if (result.saved) {
+        final location = result.platformManaged
+            ? 'selected document'
+            : result.path;
         messenger.showSnackBar(
-          SnackBar(content: Text('Diagnostics exported to ${result.path}')),
+          SnackBar(content: Text('Diagnostics exported to $location')),
         );
       }
     } catch (error) {
@@ -1659,14 +1682,8 @@ class _OutputPreferenceMenuRow extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final scheme = Theme.of(context).colorScheme;
-    return RainRippleHaloSurface(
-      enabled: selected,
-      borderRadius: BorderRadius.circular(12),
-      color: scheme.primary,
-      origin: Alignment.centerLeft,
-      pulseKey: preference.name,
-      pulseOnMount: selected,
-      minSize: const Size(48, 48),
+    return ConstrainedBox(
+      constraints: const BoxConstraints(minWidth: 48, minHeight: 48),
       child: Padding(
         padding: const EdgeInsets.symmetric(horizontal: 4, vertical: 6),
         child: Row(

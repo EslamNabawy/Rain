@@ -7,7 +7,6 @@ import 'package:rain/application/runtime/voice_call_state.dart';
 import 'package:rain/application/state/call_surface_geometry.dart';
 import 'package:rain/application/state/call_surface_providers.dart';
 import 'package:rain/presentation/branding/rain_peer_core_mark.dart';
-import 'package:rain/presentation/branding/rain_ripple_halo_surface.dart';
 import 'package:rain/presentation/performance/rain_performance.dart';
 import 'package:rain/presentation/theme/rain_theme.dart';
 import 'package:rain/presentation/widgets/calls/rain_call_controls.dart';
@@ -967,7 +966,6 @@ class _RainExpandedCallPanel extends StatelessWidget {
   Widget build(BuildContext context) {
     final scheme = Theme.of(context).colorScheme;
     final accent = rainVoiceCallAccent(context, state);
-    final haloColor = rainVoiceCallHaloColor(context, state);
     final performance = RainPerformanceScope.of(context);
     final canMinimize =
         state.phase != VoiceCallPhase.incomingRinging &&
@@ -983,128 +981,114 @@ class _RainExpandedCallPanel extends StatelessWidget {
 
     return Material(
       color: Colors.transparent,
-      child: RainRippleHaloSurface(
+      child: AnimatedContainer(
         key: const ValueKey<String>('rain-call-panel-surface'),
-        enabled: rainVoiceCallShowsSignalHalo(state),
-        borderRadius: BorderRadius.circular(24),
-        color: haloColor,
-        pulseKey: '${state.callId}:${state.phase}:${state.isVideo}',
-        pulseOnMount: rainVoiceCallShowsSignalHalo(state),
-        callSurface: true,
-        child: AnimatedContainer(
-          duration: performance.allowContinuousCallAnimation
-              ? RainMotion.callSurface
-              : Duration.zero,
-          curve: Curves.easeOutCubic,
-          width: panelWidth,
-          constraints: BoxConstraints(
-            minHeight: minHeight,
-            maxHeight: maxHeight,
-          ),
-          decoration: BoxDecoration(
-            color: scheme.surface.withValues(alpha: isDark ? 0.94 : 0.98),
-            borderRadius: BorderRadius.circular(24),
-            border: Border.all(color: panelBorderColor),
-            boxShadow: <BoxShadow>[
-              if (performance.allowExpensiveCallEffects)
-                BoxShadow(
-                  blurRadius: 34,
-                  offset: const Offset(0, 18),
-                  color: Colors.black.withValues(alpha: isDark ? 0.38 : 0.16),
-                ),
-            ],
-          ),
-          child: ClipRRect(
-            borderRadius: BorderRadius.circular(24),
-            child: Padding(
-              padding: EdgeInsets.all(panelPadding),
-              child: RainCallTicker(
-                state: state,
-                builder: (BuildContext context, int now) {
-                  return Column(
-                    key: ValueKey<String>(_popupLayoutKey(state)),
-                    mainAxisSize: MainAxisSize.min,
-                    crossAxisAlignment: CrossAxisAlignment.stretch,
-                    children: <Widget>[
-                      Flexible(
-                        child: SingleChildScrollView(
-                          child: Column(
-                            mainAxisSize: MainAxisSize.min,
-                            crossAxisAlignment: CrossAxisAlignment.stretch,
-                            children: <Widget>[
-                              if (state.phase == VoiceCallPhase.incomingRinging)
-                                _RainIncomingCallFocus(
+        duration: performance.allowContinuousCallAnimation
+            ? RainMotion.callSurface
+            : Duration.zero,
+        curve: Curves.easeOutCubic,
+        width: panelWidth,
+        constraints: BoxConstraints(minHeight: minHeight, maxHeight: maxHeight),
+        decoration: BoxDecoration(
+          color: scheme.surface.withValues(alpha: isDark ? 0.94 : 0.98),
+          borderRadius: BorderRadius.circular(24),
+          border: Border.all(color: panelBorderColor),
+          boxShadow: <BoxShadow>[
+            if (performance.allowExpensiveCallEffects)
+              BoxShadow(
+                blurRadius: 34,
+                offset: const Offset(0, 18),
+                color: Colors.black.withValues(alpha: isDark ? 0.38 : 0.16),
+              ),
+          ],
+        ),
+        child: ClipRRect(
+          borderRadius: BorderRadius.circular(24),
+          child: Padding(
+            padding: EdgeInsets.all(panelPadding),
+            child: RainCallTicker(
+              state: state,
+              builder: (BuildContext context, int now) {
+                return Column(
+                  key: ValueKey<String>(_popupLayoutKey(state)),
+                  mainAxisSize: MainAxisSize.min,
+                  crossAxisAlignment: CrossAxisAlignment.stretch,
+                  children: <Widget>[
+                    Flexible(
+                      child: SingleChildScrollView(
+                        child: Column(
+                          mainAxisSize: MainAxisSize.min,
+                          crossAxisAlignment: CrossAxisAlignment.stretch,
+                          children: <Widget>[
+                            if (state.phase == VoiceCallPhase.incomingRinging)
+                              _RainIncomingCallFocus(
+                                state: state,
+                                displayName: displayName,
+                                gender: gender,
+                                accent: accent,
+                                onDragUpdate: onHeaderDragUpdate,
+                              )
+                            else ...<Widget>[
+                              _RainPopupHeader(
+                                state: state,
+                                displayName: displayName,
+                                gender: gender,
+                                accent: accent,
+                                canMinimize: canMinimize,
+                                onMinimize: onMinimize,
+                                onFullscreen: onFullscreen,
+                                onDragUpdate: onHeaderDragUpdate,
+                              ),
+                              SizedBox(
+                                height: state.phase == VoiceCallPhase.failed
+                                    ? 16
+                                    : 18,
+                              ),
+                              if (state.phase == VoiceCallPhase.failed)
+                                _RainFailureFocus(state: state, accent: accent)
+                              else
+                                _RainCallMediaFrame(
                                   state: state,
-                                  displayName: displayName,
-                                  gender: gender,
                                   accent: accent,
-                                  onDragUpdate: onHeaderDragUpdate,
-                                )
-                              else ...<Widget>[
-                                _RainPopupHeader(
-                                  state: state,
-                                  displayName: displayName,
-                                  gender: gender,
-                                  accent: accent,
-                                  canMinimize: canMinimize,
-                                  onMinimize: onMinimize,
-                                  onFullscreen: onFullscreen,
-                                  onDragUpdate: onHeaderDragUpdate,
+                                  videoRenderers: videoRenderers,
+                                  primaryRole: primaryRole,
+                                  onToggleVideoPrimaryRole:
+                                      onToggleVideoPrimaryRole,
                                 ),
-                                SizedBox(
-                                  height: state.phase == VoiceCallPhase.failed
-                                      ? 16
-                                      : 18,
-                                ),
-                                if (state.phase == VoiceCallPhase.failed)
-                                  _RainFailureFocus(
-                                    state: state,
-                                    accent: accent,
-                                  )
-                                else
-                                  _RainCallMediaFrame(
-                                    state: state,
-                                    accent: accent,
-                                    videoRenderers: videoRenderers,
-                                    primaryRole: primaryRole,
-                                    onToggleVideoPrimaryRole:
-                                        onToggleVideoPrimaryRole,
-                                  ),
-                                const SizedBox(height: 18),
-                                _RainPopupStatusText(
-                                  state: state,
-                                  displayName: displayName,
-                                  now: now,
-                                ),
-                              ],
-                              if (routeSummary != null &&
-                                  routeSummary!.isNotEmpty) ...[
-                                const SizedBox(height: 14),
-                                _RainRouteSummary(label: routeSummary!),
-                              ],
+                              const SizedBox(height: 18),
+                              _RainPopupStatusText(
+                                state: state,
+                                displayName: displayName,
+                                now: now,
+                              ),
                             ],
-                          ),
+                            if (routeSummary != null &&
+                                routeSummary!.isNotEmpty) ...<Widget>[
+                              const SizedBox(height: 14),
+                              _RainRouteSummary(label: routeSummary!),
+                            ],
+                          ],
                         ),
                       ),
-                      const SizedBox(height: 16),
-                      _RainCallControlDock(
-                        state: state,
-                        onAccept: onAccept,
-                        onReject: onReject,
-                        onHangUp: onHangUp,
-                        onRetry: onRetry,
-                        onToggleMute: onToggleMute,
-                        onToggleDeafen: onToggleDeafen,
-                        onToggleCamera: onToggleCamera,
-                        onSwitchCamera: onSwitchCamera,
-                        onSelectOutputRoute: onSelectOutputRoute,
-                        controlCapabilities: controlCapabilities,
-                        outputRouteOptions: outputRouteOptions,
-                      ),
-                    ],
-                  );
-                },
-              ),
+                    ),
+                    const SizedBox(height: 16),
+                    _RainCallControlDock(
+                      state: state,
+                      onAccept: onAccept,
+                      onReject: onReject,
+                      onHangUp: onHangUp,
+                      onRetry: onRetry,
+                      onToggleMute: onToggleMute,
+                      onToggleDeafen: onToggleDeafen,
+                      onToggleCamera: onToggleCamera,
+                      onSwitchCamera: onSwitchCamera,
+                      onSelectOutputRoute: onSelectOutputRoute,
+                      controlCapabilities: controlCapabilities,
+                      outputRouteOptions: outputRouteOptions,
+                    ),
+                  ],
+                );
+              },
             ),
           ),
         ),

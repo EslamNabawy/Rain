@@ -7,6 +7,7 @@ import 'dart:ui' as ui;
 import 'package:file_picker/file_picker.dart';
 import 'package:flutter/foundation.dart';
 import 'package:flutter/scheduler.dart';
+import 'package:flutter/services.dart';
 import 'package:flutter/widgets.dart';
 import 'package:package_info_plus/package_info_plus.dart';
 import 'package:path_provider/path_provider.dart';
@@ -127,15 +128,22 @@ class CrashDiagnosticsRecord {
 }
 
 class CrashDiagnosticsExportResult {
-  const CrashDiagnosticsExportResult._({required this.saved, this.path});
+  const CrashDiagnosticsExportResult._({
+    required this.saved,
+    this.path,
+    this.platformManaged = false,
+  });
 
   const CrashDiagnosticsExportResult.saved(String path)
     : this._(saved: true, path: path);
+  const CrashDiagnosticsExportResult.savedPlatformManaged(String path)
+    : this._(saved: true, path: path, platformManaged: true);
   const CrashDiagnosticsExportResult.canceled()
     : this._(saved: false, path: null);
 
   final bool saved;
   final String? path;
+  final bool platformManaged;
 }
 
 class CrashDiagnosticsService {
@@ -148,10 +156,14 @@ class CrashDiagnosticsService {
   }) : _directoryProvider = directoryProvider ?? _defaultDirectoryProvider,
        _appInfoProvider = appInfoProvider ?? _defaultAppInfoProvider,
        _clock = clock ?? DateTime.now,
-       _saveFile = saveFile ?? FilePicker.saveFile,
+       _saveFile = saveFile ?? _defaultSaveFile,
        _eventFlushInterval = eventFlushInterval;
 
   static final CrashDiagnosticsService instance = CrashDiagnosticsService();
+  static const MethodChannel _filePickerChannel = MethodChannel(
+    'miguelruivo.flutter.plugins.filepicker',
+    StandardMethodCodec(),
+  );
   static const int _maxEventLogBytes = 1024 * 1024;
   static const int _maxEventLogLines = 1000;
   static const int _maxBufferedEventRecords = 256;
@@ -428,14 +440,27 @@ class CrashDiagnosticsService {
     final bytes = Uint8List.fromList(utf8.encode(content));
     final fileName = _diagnosticsFileName(exportedAt);
 
-    final destinationPath = await _saveFile(
-      dialogTitle: 'Export Rain diagnostics',
-      fileName: fileName,
-      type: FileType.custom,
-      allowedExtensions: const <String>['json'],
-      bytes: bytes,
-      lockParentWindow: true,
-    );
+    final String? destinationPath;
+    try {
+      destinationPath = await _saveFile(
+        dialogTitle: 'Export Rain diagnostics',
+        fileName: fileName,
+        type: FileType.custom,
+        allowedExtensions: const <String>['json'],
+        bytes: bytes,
+        lockParentWindow: true,
+      );
+    } on FileSystemException catch (error) {
+      if (!_isPlatformManagedPickerPath(error.path)) {
+        rethrow;
+      }
+      final fallback = await _writeDiagnosticsExportFile(
+        directory: directory,
+        fileName: fileName,
+        bytes: bytes,
+      );
+      return CrashDiagnosticsExportResult.saved(fallback.path);
+    }
     if (destinationPath == null || destinationPath.isEmpty) {
       return const CrashDiagnosticsExportResult.canceled();
     }
@@ -454,12 +479,7 @@ class CrashDiagnosticsService {
       }
     }
     if (destination == null) {
-      final fallback = await _writeDiagnosticsExportFile(
-        directory: directory,
-        fileName: fileName,
-        bytes: bytes,
-      );
-      return CrashDiagnosticsExportResult.saved(fallback.path);
+      return CrashDiagnosticsExportResult.savedPlatformManaged(destinationPath);
     }
     return CrashDiagnosticsExportResult.saved(destination.path);
   }
@@ -477,9 +497,7 @@ class CrashDiagnosticsService {
   }
 
   File? _fileFromPickerPath(String path) {
-    final normalizedPath = path.replaceAll(r'\', '/');
-    if (normalizedPath.startsWith('/document/') ||
-        normalizedPath.startsWith('/tree/')) {
+    if (_isPlatformManagedPickerPath(path)) {
       return null;
     }
     if (RegExp(r'^[a-zA-Z]:[\\/]').hasMatch(path)) {
@@ -493,6 +511,29 @@ class CrashDiagnosticsService {
       return null;
     }
     return File(path);
+  }
+
+  static bool _isPlatformManagedPickerPath(String? path) {
+    if (path == null) {
+      return false;
+    }
+    final normalizedPath = path.replaceAll(r'\', '/').trim();
+    if (normalizedPath.isEmpty) {
+      return false;
+    }
+    if (RegExp(r'^[a-zA-Z]:/').hasMatch(normalizedPath)) {
+      return false;
+    }
+    final parsed = Uri.tryParse(normalizedPath);
+    if (parsed != null && parsed.hasScheme && !parsed.isScheme('file')) {
+      return true;
+    }
+    final androidHandlePath = normalizedPath.replaceFirst(
+      RegExp(r'^[\s/]+'),
+      '',
+    );
+    return androidHandlePath.startsWith('document/') ||
+        androidHandlePath.startsWith('tree/');
   }
 
   Future<void> _initialize() async {
@@ -733,6 +774,61 @@ class CrashDiagnosticsService {
 
   static Future<Directory> _defaultDirectoryProvider() {
     return getApplicationSupportDirectory();
+  }
+
+  static Future<String?> _defaultSaveFile({
+    String? dialogTitle,
+    String? fileName,
+    String? initialDirectory,
+    FileType type = FileType.any,
+    List<String>? allowedExtensions,
+    Uint8List? bytes,
+    bool lockParentWindow = false,
+  }) {
+    if (Platform.isAndroid) {
+      final exportBytes = bytes;
+      if (exportBytes == null || exportBytes.isEmpty) {
+        throw ArgumentError(
+          'The "bytes" parameter is required on Android diagnostics export.',
+        );
+      }
+      return _saveAndroidFileWithBytes(
+        fileName: fileName,
+        initialDirectory: initialDirectory,
+        type: type,
+        allowedExtensions: allowedExtensions,
+        bytes: exportBytes,
+      );
+    }
+    return FilePicker.saveFile(
+      dialogTitle: dialogTitle,
+      fileName: fileName,
+      initialDirectory: initialDirectory,
+      type: type,
+      allowedExtensions: allowedExtensions,
+      bytes: bytes,
+      lockParentWindow: lockParentWindow,
+    );
+  }
+
+  static Future<String?> _saveAndroidFileWithBytes({
+    required String? fileName,
+    required String? initialDirectory,
+    required FileType type,
+    required List<String>? allowedExtensions,
+    required Uint8List bytes,
+  }) {
+    // file_picker 12.0.0-beta.3 omits `bytes` from its Android method-channel
+    // call, then tries to write the returned SAF `/document/...` handle with
+    // dart:io. Include the bytes in the native call so Android writes through
+    // ContentResolver.openOutputStream and Rain never opens the SAF handle.
+    return _filePickerChannel.invokeMethod<String>('save', <String, Object?>{
+      'fileName': fileName,
+      'fileType': type.name,
+      'initialDirectory': initialDirectory,
+      'allowedExtensions': allowedExtensions,
+      'bytes': bytes,
+    });
   }
 
   static Future<CrashDiagnosticsAppInfo> _defaultAppInfoProvider() async {

@@ -8,6 +8,7 @@ Firebase signaling coordinates connection setup. It does not carry media packets
 - Room id is canonical by sorted peer usernames and RTDB role ownership remains canonical: `callerICE` is written only by `userA`, and `calleeICE` is written only by `userB`.
 - Candidate paths are leaf writes: `rooms/{roomId}/callerICE/{candidateId}` and `rooms/{roomId}/calleeICE/{candidateId}`.
 - Broadening ICE writes so either participant can write either bucket is a security regression unless the role model changes everywhere. The current fix for `signaling.writeICE` permission-denied diagnostics is lifecycle hardening: dispose peer bindings before room deletion and ignore queued local ICE callbacks when session, peer generation, room id, or binding state no longer match.
+- Data-peer room cleanup is a session cleanup action, not a connected-state action. The active room stays alive while the data session is connected because valid local trickle ICE can arrive after the data channel opens; deleting the room at `connected` can make current-room ICE fail the RTDB room-existence rule.
 - WebRTC data channels carry chat, control, and file transfer traffic.
 
 ## Call Signaling

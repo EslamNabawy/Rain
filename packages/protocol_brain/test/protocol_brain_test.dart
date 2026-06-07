@@ -297,6 +297,41 @@ void main() {
     await brain.disconnect('bob');
   });
 
+  test(
+    'connected session keeps signaling room alive for late local ICE',
+    () async {
+      final adapter = _RecordingSignalingAdapter()
+        ..denyIceWritesAfterRoomDelete = true;
+      late _FakePeerCore peer;
+      final brain = ProtocolBrainImpl(
+        selfUsername: 'alice',
+        adapter: adapter,
+        peerConfig: _fakePeerConfig(),
+        peerFactory: () {
+          peer = _FakePeerCore();
+          return peer;
+        },
+        connectionMemoryStore: _MemoryConnectionStore(),
+      );
+
+      await brain.connect('bob');
+      peer.emitConnected();
+      await pumpEventQueue(times: 3);
+
+      expect(brain.getSession('bob')?.state, SessionState.connected);
+      expect(adapter.roomExists('alice:bob'), isTrue);
+
+      peer.emitIceCandidate(RTCIceCandidate('candidate:late 1 udp', '0', 0));
+      await pumpEventQueue(times: 3);
+
+      expect(adapter.writtenIce, <String>['alice:bob:caller']);
+      expect(brain.getSession('bob')?.state, SessionState.connected);
+
+      await brain.disconnect('bob');
+      expect(adapter.roomExists('alice:bob'), isFalse);
+    },
+  );
+
   test('reconnect clears stale route until a new route is detected', () async {
     final adapter = _RecordingSignalingAdapter();
     late _FakePeerCore peer;
@@ -921,10 +956,12 @@ class _RecordingSignalingAdapter implements SignalingAdapter {
   final List<String> writtenAnswers = <String>[];
   final List<String> writtenIce = <String>[];
   final List<String> deletedRooms = <String>[];
+  final Set<String> _existingRooms = <String>{};
   final List<SDPPayload> writtenOfferPayloads = <SDPPayload>[];
   final Map<String, SDPPayload> storedAnswers = <String, SDPPayload>{};
   Object? writeOfferError;
   Object? writeIceError;
+  bool denyIceWritesAfterRoomDelete = false;
   final Map<String, StreamController<SDPPayload>> _offerControllers =
       <String, StreamController<SDPPayload>>{};
   final Map<String, StreamController<SDPPayload>> _answerControllers =
@@ -962,12 +999,14 @@ class _RecordingSignalingAdapter implements SignalingAdapter {
     if (error != null) {
       throw error;
     }
+    _existingRooms.add(roomId);
     writtenOffers.add(roomId);
     writtenOfferPayloads.add(offer);
   }
 
   @override
   Future<void> writeAnswer(String roomId, SDPPayload answer) async {
+    _existingRooms.add(roomId);
     writtenAnswers.add(roomId);
     storedAnswers[roomId] = answer;
   }
@@ -981,6 +1020,9 @@ class _RecordingSignalingAdapter implements SignalingAdapter {
     final error = writeIceError;
     if (error != null) {
       throw error;
+    }
+    if (denyIceWritesAfterRoomDelete && !_existingRooms.contains(roomId)) {
+      throw Exception('room deleted');
     }
     writtenIce.add('$roomId:${role.name}');
   }
@@ -1016,6 +1058,7 @@ class _RecordingSignalingAdapter implements SignalingAdapter {
   }
 
   void emitOffer(String roomId, SDPPayload offer) {
+    _existingRooms.add(roomId);
     _offerControllers
         .putIfAbsent(roomId, () => StreamController<SDPPayload>.broadcast())
         .add(offer);
@@ -1113,8 +1156,11 @@ class _RecordingSignalingAdapter implements SignalingAdapter {
   @override
   Future<void> deleteRoom(String roomId) async {
     deletedRooms.add(roomId);
+    _existingRooms.remove(roomId);
     storedAnswers.remove(roomId);
   }
+
+  bool roomExists(String roomId) => _existingRooms.contains(roomId);
 
   @override
   Future<void> dispose() async {

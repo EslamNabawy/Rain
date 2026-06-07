@@ -3,7 +3,6 @@ import 'package:flutter_test/flutter_test.dart';
 import 'package:rain/application/runtime/voice_call_state.dart';
 import 'package:rain/application/state/call_surface_geometry.dart';
 import 'package:rain/application/state/call_surface_providers.dart';
-import 'package:rain/presentation/branding/rain_ripple_halo_surface.dart';
 import 'package:rain/presentation/performance/rain_performance.dart';
 import 'package:rain/presentation/widgets/calls/rain_call_controls.dart';
 import 'package:rain/presentation/widgets/calls/rain_call_layout_contract.dart';
@@ -262,7 +261,7 @@ void main() {
     }
   });
 
-  testWidgets('low-power manager bar disables call shadow and animated halo', (
+  testWidgets('low-power manager bar disables call shadow', (
     WidgetTester tester,
   ) async {
     await _pumpManager(
@@ -278,18 +277,8 @@ void main() {
       ),
     );
 
-    final halo = tester.widget<RainRippleHaloSurface>(
-      find.byKey(const ValueKey<String>('rain-call-manager-bar')),
-    );
-    expect(halo.callSurface, isTrue);
-
     final decoratedBox = tester.widget<DecoratedBox>(
-      find
-          .descendant(
-            of: find.byKey(const ValueKey<String>('rain-call-manager-bar')),
-            matching: find.byType(DecoratedBox),
-          )
-          .first,
+      find.byKey(const ValueKey<String>('rain-call-manager-bar')),
     );
     final decoration = decoratedBox.decoration as BoxDecoration;
     expect(decoration.boxShadow, isEmpty);

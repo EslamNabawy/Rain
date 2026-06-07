@@ -19,7 +19,8 @@ Improves bug reproduction for WebRTC, Firebase, UI state, and runtime failures.
 - Diagnostics export includes summaries.
 - Diagnostics export preserves the 200-record recent event window after sanitizer processing. The generic sanitizer still caps nested lists, but the top-level `events` array must not be reduced to 20 records because call failures often age behind heartbeat/UI events.
 - Voice-call failure taxonomy separates a callee terminal busy response (`peer_busy_response`) from a real active Firebase voice lock conflict (`real_busy_lock`).
-- Diagnostics export passes bytes to the platform picker, but Android SAF handles such as `content://...` and `/document/...` are not treated as filesystem paths. Rain writes a real fallback JSON copy under the diagnostics export folder and reports that path when the picker returns a platform-managed handle.
+- Diagnostics export passes bytes to the platform picker. On Android, Rain bypasses the `file_picker 12.0.0-beta.3` Dart wrapper and sends bytes through the plugin method channel because that wrapper can return `/document/...` and then reopen it through `dart:io`. SAF handles such as `content://...`, `/document/...`, `/tree/...`, and newline-split picker handles such as `/\ndocument/...` are platform-managed documents, not filesystem paths.
+- If a legacy picker wrapper still throws a `FileSystemException` for a platform-managed handle, Rain writes a real fallback JSON copy under the diagnostics export folder instead of surfacing `PathNotFoundException`.
 
 ## Privacy Rules
 
@@ -41,7 +42,7 @@ Improves bug reproduction for WebRTC, Firebase, UI state, and runtime failures.
 - Top-level event export window preservation after recursive sanitizer processing.
 - Busy-response versus busy-lock taxonomy.
 - Export after fatal error.
-- Export through Android scoped-storage picker handles.
+- Export through Android scoped-storage picker handles, including the `file_picker 12.0.0-beta.3` `/document/...` double-write regression.
 - No sensitive payload leaks.
 
 Related: [[Security Review]], [[Monitoring]], [[Incident Response]].

@@ -1,6 +1,6 @@
 # Failure Graph
 
-Last updated: 2026-06-06
+Last updated: 2026-06-07
 
 ## Purpose
 
@@ -111,14 +111,15 @@ Related risks: R-006, R-018.
 ```text
 Diagnostics export uses Android picker
   -> Picker returns content URI or `/document/...`
-  -> App treats handle as filesystem path
+  -> App or picker wrapper treats handle as filesystem path
   -> File write fails with path error
   -> User cannot share diagnostics for failure
-  -> Need platform-handle detection and app-owned fallback JSON file
+  -> Need native Android SAF write with bytes, platform-handle detection, and app-owned fallback JSON file for wrapper failures
 ```
 
 Related assumptions: ASSUMP-008.
 Related risks: R-015.
+Current local evidence: `crash_diagnostics_service_test.dart` covers content URI, `/document/...`, newline-split `/\ndocument/...`, and the `file_picker 12.0.0-beta.3` wrapper failure path that throws `FileSystemException` for `/document/12`.
 
 ### FG-008: Offline Request Quota From Stale Online Split
 
@@ -164,19 +165,26 @@ Current local evidence: `connection_diagnostics_test.dart`, `chat_panel_connecti
 Related assumptions: ASSUMP-003, ASSUMP-009, ASSUMP-013.
 Related risks: R-005, R-009, R-020.
 
-### FG-011: Stale Data ICE Callback To Permission Denied
+### FG-011: Data ICE Lifecycle To Permission Denied
 
 ```text
-Disconnect, reconnect, or room cleanup starts while local ICE callback is queued
+Disconnect, reconnect, or cleanup starts while local ICE callback is queued
   -> Firebase data-peer room is deleted or replaced
   -> Stale callback writes old `callerICE` or `calleeICE` path
   -> RTDB role/existence rule denies `signaling.writeICE`
   -> Direct connect attempt dies or diagnostic points at Firebase permission
   -> Need generation-bound local ICE writes plus room deletion after peer binding disposal
+
+Data channel reaches connected while local trickle ICE is still arriving
+  -> Connected-state handler deletes the active Firebase room as early cleanup
+  -> Current-session late ICE writes the correct `callerICE` or `calleeICE` bucket
+  -> RTDB room-existence rule denies a valid write because the active room is gone
+  -> Direct route briefly connects, then the session fails on Firebase permission denied
+  -> Need active room lifetime to extend until disconnect/failure/session cleanup
 ```
 
 Interruption point: local ICE write listener in `ProtocolBrainImpl`.
-Current local evidence: `packages/protocol_brain/test/protocol_brain_test.dart --plain-name "ICE"` covers both live ICE write failure surfacing as a failed session and queued local ICE after disconnect not writing a stale room.
+Current local evidence: `packages/protocol_brain/test/protocol_brain_test.dart --plain-name "ICE"` covers live ICE write failure surfacing as a failed session, queued local ICE after disconnect not writing a stale room, and connected sessions keeping the signaling room alive for late local ICE.
 
 Related assumptions: ASSUMP-002, ASSUMP-011.
 Related risks: R-014, R-015.
@@ -197,6 +205,24 @@ Current local evidence: `crash_diagnostics_service_test.dart --plain-name "app e
 
 Related assumptions: ASSUMP-008, ASSUMP-011.
 Related risks: R-015.
+
+### FG-013: Pending Logout/Delete To Interactive Shell
+
+```text
+User taps logout or delete account
+  -> Delete path starts runtime shutdown before backend/Auth deletion, or logout waits on presence/session/backend cleanup before ending local authority
+  -> Runtime provider remains ready or loading with a previous runtime value
+  -> AppStartupState treats the previous/null runtime as ready
+  -> Account deletion publishes global loading before password/tombstone preflight finishes, or Settings shows a local splash while bottom navigation remains interactive
+  -> User can switch tabs, trigger connect/account actions, gets stuck after logout, loses wrong-password feedback, or delete account behaves like plain logout
+  -> Need logout local-session clear before cleanup wait, delete-account backend/Auth delete before runtime/local teardown, required tombstone failure session restoration with visible error, no global runtime loading during non-destructive delete preflight, optional account cleanup decoupled from the tombstone write, signed-out authority handoff, non-null runtime readiness, and shutdown action guards
+```
+
+Interruption point: `runtimeControllerProvider`, `AppStartupState`, and runtime action preflights.
+Current local/live evidence: `apps/rain/test/runtime_startup_test.dart` covers logout reaching signed-out while cleanup is blocked, destructive deletion calling backend delete while runtime cleanup is blocked, bad-password delete restoration, Settings staying mounted while password verification is pending, required tombstone failure preserving the session/local identity, and connect rejection after shutdown; `apps/rain/test/settings_screen_test.dart` covers visible delete-error feedback; `apps/rain/test/app_routes_test.dart` covers protected shell absence during blocked startup; `packages/protocol_brain/test/firebase_contract_test.dart` locks that optional account cleanup is not bundled with the required tombstone in one all-or-nothing RTDB update and that legacy missing-uid account rows require email-bound ownership before tombstone. The 2026-06-07 Firebase emulator account-deletion gate passed, and live `rain-8fb4b-default-rtdb` rules were deployed/read back with the missing-uid branch.
+
+Related assumptions: ASSUMP-001, ASSUMP-007, ASSUMP-013.
+Related risks: R-021, R-022.
 
 ## Scenario Generation Rule
 

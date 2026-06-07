@@ -11,7 +11,6 @@ import 'package:rain/infrastructure/services/app_settings_store.dart';
 import 'package:rain/infrastructure/services/network_status_service.dart';
 import 'package:rain/infrastructure/services/sound_effects_service.dart';
 import 'package:rain/presentation/branding/rain_peer_core_mark.dart';
-import 'package:rain/presentation/branding/rain_streak_surface.dart';
 import 'package:rain/presentation/screens/onboarding_screen.dart';
 import 'package:rain_core/rain_core.dart';
 
@@ -54,7 +53,6 @@ void main() {
       findsOneWidget,
     );
     expect(find.byType(RainPeerCoreMark), findsWidgets);
-    expect(find.byType(RainStreakSurface), findsWidgets);
   });
 
   testWidgets('focused credential field stays above the mobile keyboard', (

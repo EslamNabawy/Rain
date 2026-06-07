@@ -623,7 +623,6 @@ class ProtocolBrainImpl implements ProtocolBrain {
       Future<void>.delayed(_routeRefreshDelay, () => _refreshRoute(active)),
     );
     _peerConnectedController.add(active.snapshot);
-    unawaited(adapter.deleteRoom(active.roomId));
     unawaited(
       connectionMemoryStore.write(
         ConnectionMemory(

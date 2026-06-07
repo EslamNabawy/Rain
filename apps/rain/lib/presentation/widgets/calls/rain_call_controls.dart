@@ -4,7 +4,6 @@ import 'package:flutter/material.dart';
 
 import 'package:rain/application/runtime/media_device_settings.dart';
 import 'package:rain/application/runtime/voice_call_state.dart';
-import 'package:rain/presentation/branding/rain_ripple_halo_surface.dart';
 import 'package:rain/presentation/theme/rain_theme.dart';
 
 class RainCallControls extends StatelessWidget {
@@ -153,14 +152,9 @@ class RainCallControls extends StatelessWidget {
       ),
     };
 
-    return RainRippleHaloSurface(
-      enabled: state.isActive,
-      borderRadius: const BorderRadius.all(Radius.circular(20)),
-      color: rainVoiceCallHaloColor(context, state),
-      pulseKey: '${state.callId}:${state.phase}:${capability.name}',
-      minSize: Size.square(compact ? 42 : 48),
-      callSurface: true,
-      child: control,
+    return SizedBox.square(
+      dimension: compact ? 42 : 48,
+      child: Center(child: control),
     );
   }
 
@@ -190,13 +184,8 @@ class RainCallControls extends StatelessWidget {
     required bool compact,
   }) {
     final enabled = state.isActive;
-    return RainRippleHaloSurface(
-      enabled: enabled,
-      borderRadius: const BorderRadius.all(Radius.circular(18)),
-      color: rainVoiceCallHaloColor(context, state),
-      pulseKey: '${state.callId}:${state.phase}:overflow',
-      minSize: Size.square(compact ? 42 : 48),
-      callSurface: true,
+    return SizedBox.square(
+      dimension: compact ? 42 : 48,
       child: PopupMenuButton<String>(
         tooltip: 'More call controls',
         enabled: enabled,
@@ -868,35 +857,6 @@ Color rainVoiceCallAccent(BuildContext context, VoiceCallState state) {
     VoiceCallPhase.ending ||
     VoiceCallPhase.ended ||
     VoiceCallPhase.idle => scheme.primary,
-  };
-}
-
-Color rainVoiceCallHaloColor(BuildContext context, VoiceCallState state) {
-  final scheme = Theme.of(context).colorScheme;
-  return switch (state.phase) {
-    VoiceCallPhase.active => RainColors.peerMint,
-    VoiceCallPhase.incomingRinging ||
-    VoiceCallPhase.outgoingRinging ||
-    VoiceCallPhase.connectingPeer ||
-    VoiceCallPhase.connectingMedia => RainColors.mistCyan,
-    VoiceCallPhase.failed => scheme.error,
-    VoiceCallPhase.ending ||
-    VoiceCallPhase.ended ||
-    VoiceCallPhase.idle => scheme.primary,
-  };
-}
-
-bool rainVoiceCallShowsSignalHalo(VoiceCallState state) {
-  return switch (state.phase) {
-    VoiceCallPhase.connectingPeer ||
-    VoiceCallPhase.connectingMedia ||
-    VoiceCallPhase.incomingRinging ||
-    VoiceCallPhase.outgoingRinging ||
-    VoiceCallPhase.active => true,
-    VoiceCallPhase.failed ||
-    VoiceCallPhase.ending ||
-    VoiceCallPhase.ended ||
-    VoiceCallPhase.idle => false,
   };
 }
 

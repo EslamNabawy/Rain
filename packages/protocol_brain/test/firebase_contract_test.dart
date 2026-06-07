@@ -86,7 +86,36 @@ void main() {
       rules,
       contains("newData.child('uid').val() === data.child('uid').val()"),
     );
+    expect(rules, contains("auth.token.email === \$username + '@rain.local'"));
+    expect(
+      rules,
+      contains("!data.child('uid').exists()"),
+      reason:
+          'Legacy account rows without uid must be claimable only by the '
+          'matching Firebase Auth email so account deletion can tombstone them.',
+    );
   });
+
+  test(
+    'Firebase account deletion separates tombstone from optional cleanup',
+    () {
+      final adapter = _repoFile(
+        'packages/protocol_brain/lib/adapters/firebase_adapter.dart',
+      );
+
+      expect(adapter, contains(r"child('users/$username').set"));
+      expect(adapter, contains('_tombstoneBackendIdentity'));
+      expect(adapter, contains('_applyBestEffortAccountDeletionUpdates'));
+      expect(
+        adapter,
+        contains('Multi-location updates are all-or-nothing'),
+        reason:
+            'Optional relationship/request/block mirror cleanup must not share '
+            'one all-or-nothing RTDB write with the required account tombstone.',
+      );
+      expect(adapter, isNot(contains(r"'users/$username': <String, Object?>")));
+    },
+  );
 
   test('Firebase rooms require participant metadata and ownership checks', () {
     final rules = _repoFile('backend/firebase/database.rules.json');

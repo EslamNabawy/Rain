@@ -1,7 +1,6 @@
 import 'package:flutter/material.dart';
 
 import 'package:rain/presentation/branding/rain_peer_core_mark.dart';
-import 'package:rain/presentation/branding/rain_ripple_halo_surface.dart';
 import 'package:rain/presentation/performance/rain_performance.dart';
 import 'package:rain/presentation/theme/rain_theme.dart';
 import 'package:rain/presentation/widgets/rain_backdrop.dart';
@@ -77,18 +76,11 @@ class _SplashBody extends StatelessWidget {
       child: Column(
         mainAxisSize: MainAxisSize.min,
         children: <Widget>[
-          RainRippleHaloSurface(
-            enabled: true,
-            borderRadius: BorderRadius.circular(56),
-            color: RainColors.peerMint,
-            pulseKey: 'splash-logo',
-            pulseOnMount: true,
-            child: RainPeerCoreAnimatedMark(
-              key: const ValueKey<String>('rain-splash-peer-core-mark'),
-              size: 112,
-              motion: RainPeerCoreMotion.orbitalMesh,
-              reducedMotion: reducedMotion,
-            ),
+          RainPeerCoreAnimatedMark(
+            key: const ValueKey<String>('rain-splash-peer-core-mark'),
+            size: 112,
+            motion: RainPeerCoreMotion.orbitalMesh,
+            reducedMotion: reducedMotion,
           ),
           const SizedBox(height: 22),
           Text(

@@ -52,7 +52,7 @@ The discovered feature set maps to [[Feature Index]] and [[Feature Map]]:
 - [[Version And Updates]] - Remote Config update manifest/fallback checks through `ForceUpdateService`.
 - [[Diagnostics And Logging]] - crash diagnostics, shared recursive diagnostics sanitization, debug logging facade, provider observer, signaling adapter debug wrapper, export path, and frame timing diagnostics.
 - [[Sound System]] - sound event router and sound effects service using app settings and audio assets.
-- [[Branding And UI]] - Rain visual system, brand assets, ripple halo surfaces, splash, navigation shell, theme, and call surfaces.
+- [[Branding And UI]] - Rain visual system, brand assets, static status accents, splash, navigation shell, theme, and call surfaces.
 
 ## Module Inventory
 
@@ -302,6 +302,7 @@ Main app dependencies discovered from `apps/rain/pubspec.yaml`:
 9. `AppStartupState` composes Remote Config update status, validated local/backend identity, runtime startup, session-expired reset, failed, and ready phases.
 10. `RainApp` owns the global startup surface. While `AppStartupState.usesRoutedAppShell` is false, `MaterialApp.router.builder` prevents the normal shell from rendering. Loading, required-update, failed, and session-expired states render `RainStartupSurface`; signed-out auth renders through a standalone Navigator/Overlay.
 11. Protected route readiness is explicit. `AppStartupState.canRenderProtectedRoutes` is true only for `ready`; settings/search/friend routes redirect to `/` while unresolved and are also wrapped by a route-local guard that renders the startup/auth surface instead of protected content.
+12. Runtime readiness requires a non-null runtime value. Runtime-provider loading blocks the protected shell even when a previous runtime value exists. Logout clears local session then renders signed-out without waiting for best-effort runtime/Firebase cleanup to finish; destructive account deletion reauthenticates and invokes backend/Auth deletion before local sign-out.
 
 ### Authentication And Identity Flow
 
@@ -314,6 +315,8 @@ Main app dependencies discovered from `apps/rain/pubspec.yaml`:
 7. Once deletion enters the destructive path, runtime shutdown runs best-effort, backend account data is cleaned/tombstoned while ownership still exists, Firebase Auth deletion runs last, and local Drift/authenticated-session state is cleared.
 8. Tombstoned backend identities are not restored during cached identity validation.
 9. Login refuses to recreate missing or tombstoned backend identity after Firebase Auth succeeds; it signs out and leaves Drift identity empty.
+10. Logout clears local session data before waiting on shutdown/backend cleanup, detaches protected-session authority, and allows cleanup to continue best-effort in the background. Destructive account deletion starts runtime cleanup best-effort but waits for the backend/Auth deletion path before clearing local session. Non-destructive delete preflight failures restore the active runtime/session.
+11. Runtime actions such as direct connect are rejected after shutdown starts.
 
 Related: [[Authentication]], [[Firebase Architecture]], [[Database Schema]].
 
@@ -325,6 +328,8 @@ Related: [[Authentication]], [[Firebase Architecture]], [[Database Schema]].
 4. `SessionManager.connect()` uses Firebase signaling rooms plus `PeerCore` WebRTC offer/answer/ICE.
 5. Session events update `ConnectionsState`.
 6. Manual disconnect records intent and prevents automatic recovery for that peer.
+7. Data-peer signaling rooms remain alive while the data session is connected because local trickle ICE can arrive after the data channel opens.
+8. Disconnect, failure, retry, or timeout cleanup deletes the signaling room after active peer bindings are disposed or no longer allowed to write.
 
 Related: [[Presence And Direct Connect]], [[Presence Management]], [[Signaling Architecture]].
 

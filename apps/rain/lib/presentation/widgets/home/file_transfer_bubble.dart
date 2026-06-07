@@ -81,78 +81,68 @@ class _FileTransferBubble extends StatelessWidget {
             top: startsCluster ? 8 : 2,
             bottom: endsCluster ? 8 : 1,
           ),
-          child: RainRippleHaloSurface(
-            enabled: _isActive,
-            borderRadius: radius,
-            color: statusColor,
-            origin: _isOutgoing ? Alignment.centerRight : Alignment.centerLeft,
-            pulseKey: '${transfer.id}:${transfer.state}',
-            pulseOnMount: _isActive,
-            child: Container(
-              key: const ValueKey<String>('rain-file-transfer-surface'),
-              padding: const EdgeInsets.fromLTRB(14, 12, 12, 10),
-              decoration: BoxDecoration(
-                color: bubbleColor,
-                borderRadius: radius,
-                border: Border.all(color: borderColor),
-              ),
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: <Widget>[
-                  _FileTransferHeader(
-                    fileName: transfer.fileName,
-                    fileSize: transfer.fileSize,
-                    textColor: textColor,
-                    mutedColor: muted,
+          child: Container(
+            key: const ValueKey<String>('rain-file-transfer-surface'),
+            padding: const EdgeInsets.fromLTRB(14, 12, 12, 10),
+            decoration: BoxDecoration(
+              color: bubbleColor,
+              borderRadius: radius,
+              border: Border.all(color: borderColor),
+            ),
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: <Widget>[
+                _FileTransferHeader(
+                  fileName: transfer.fileName,
+                  fileSize: transfer.fileSize,
+                  textColor: textColor,
+                  mutedColor: muted,
+                ),
+                if (_isActive) ...<Widget>[
+                  const SizedBox(height: 10),
+                  ClipRRect(
+                    borderRadius: BorderRadius.circular(4),
+                    child: LinearProgressIndicator(
+                      value: transfer.fileSize <= 0 ? null : transfer.progress,
+                      minHeight: 5,
+                      color: statusColor,
+                      backgroundColor: textColor.withValues(alpha: 0.14),
+                    ),
                   ),
-                  if (_isActive) ...<Widget>[
-                    const SizedBox(height: 10),
-                    ClipRRect(
-                      borderRadius: BorderRadius.circular(4),
-                      child: LinearProgressIndicator(
-                        value: transfer.fileSize <= 0
-                            ? null
-                            : transfer.progress,
-                        minHeight: 5,
-                        color: statusColor,
-                        backgroundColor: textColor.withValues(alpha: 0.14),
-                      ),
-                    ),
-                  ],
-                  if (transfer.error != null && transfer.error!.isNotEmpty) ...[
-                    const SizedBox(height: 8),
-                    Text(
-                      transfer.error!,
-                      style: Theme.of(context).textTheme.labelMedium?.copyWith(
-                        color: statusColor,
-                        fontWeight: FontWeight.w800,
-                      ),
-                    ),
-                  ],
-                  const SizedBox(height: 9),
-                  _FileTransferMetaRow(
-                    timeLabel: timeLabel,
-                    statusLabel: _fileTransferStatusLabel(transferView),
-                    mutedColor: muted,
-                    statusColor: statusColor,
-                  ),
-                  if (_hasActions) ...<Widget>[
-                    const SizedBox(height: 10),
-                    _FileTransferActions(
-                      transfer: transfer,
-                      isActive: _isActive,
-                      canOpen: _canOpen,
-                      canSave: _canSave,
-                      onAccept: onAccept,
-                      onReject: onReject,
-                      onCancel: onCancel,
-                      onOpen: onOpen,
-                      onSave: onSave,
-                      onRetry: onRetry,
-                    ),
-                  ],
                 ],
-              ),
+                if (transfer.error != null && transfer.error!.isNotEmpty) ...[
+                  const SizedBox(height: 8),
+                  Text(
+                    transfer.error!,
+                    style: Theme.of(context).textTheme.labelMedium?.copyWith(
+                      color: statusColor,
+                      fontWeight: FontWeight.w800,
+                    ),
+                  ),
+                ],
+                const SizedBox(height: 9),
+                _FileTransferMetaRow(
+                  timeLabel: timeLabel,
+                  statusLabel: _fileTransferStatusLabel(transferView),
+                  mutedColor: muted,
+                  statusColor: statusColor,
+                ),
+                if (_hasActions) ...<Widget>[
+                  const SizedBox(height: 10),
+                  _FileTransferActions(
+                    transfer: transfer,
+                    isActive: _isActive,
+                    canOpen: _canOpen,
+                    canSave: _canSave,
+                    onAccept: onAccept,
+                    onReject: onReject,
+                    onCancel: onCancel,
+                    onOpen: onOpen,
+                    onSave: onSave,
+                    onRetry: onRetry,
+                  ),
+                ],
+              ],
             ),
           ),
         ),

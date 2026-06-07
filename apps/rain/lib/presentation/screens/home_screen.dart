@@ -25,7 +25,6 @@ import 'package:rain/application/runtime/rain_runtime_controller.dart';
 import 'package:rain/application/state/sound_event_providers.dart';
 import 'package:rain/infrastructure/services/app_settings_store.dart';
 import 'package:rain/presentation/branding/rain_peer_core_mark.dart';
-import 'package:rain/presentation/branding/rain_ripple_halo_surface.dart';
 import 'package:rain/presentation/branding/rain_state_surfaces.dart';
 import 'package:rain/presentation/performance/rain_performance.dart';
 import 'package:rain/presentation/theme/rain_theme.dart';
