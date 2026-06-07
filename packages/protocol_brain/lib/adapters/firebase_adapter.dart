@@ -1476,7 +1476,10 @@ class FirebaseSignalingAdapter
   }
 
   @override
-  Future<void> deleteAccount(String username) async {
+  Future<void> deleteAccount(
+    String username, {
+    Future<void> Function()? beforeAuthDeletion,
+  }) async {
     await _configureEmulatorsIfNeeded();
     final normalizedUsername = _normalizedUsername(username);
     await _ensureSignedInAsUsername(normalizedUsername);
@@ -1535,6 +1538,8 @@ class FirebaseSignalingAdapter
       username: normalizedUsername,
       deletedAt: now,
     );
+
+    await beforeAuthDeletion?.call();
 
     try {
       await user.delete();

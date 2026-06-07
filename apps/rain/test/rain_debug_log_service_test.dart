@@ -228,7 +228,12 @@ final class _FakeSignalingAdapter implements SignalingAdapter {
   Future<void> reauthenticate(String username, String password) async {}
 
   @override
-  Future<void> deleteAccount(String username) async {}
+  Future<void> deleteAccount(
+    String username, {
+    Future<void> Function()? beforeAuthDeletion,
+  }) async {
+    await beforeAuthDeletion?.call();
+  }
 
   @override
   Future<void> writeOffer(String roomId, SDPPayload offer) async {}

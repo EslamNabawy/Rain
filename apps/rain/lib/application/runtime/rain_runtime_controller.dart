@@ -1579,7 +1579,10 @@ class RainRuntimeController with WidgetsBindingObserver {
     StackTrace? deletionStackTrace;
     var shouldClearLocalSession = false;
     try {
-      await adapter.deleteAccount(selfIdentity.username);
+      await adapter.deleteAccount(
+        selfIdentity.username,
+        beforeAuthDeletion: _prepareForAccountAuthDeletion,
+      );
       shouldClearLocalSession = true;
       _recordRuntimeEvent(
         category: 'runtime',
@@ -1690,6 +1693,85 @@ class RainRuntimeController with WidgetsBindingObserver {
         error,
         stackTrace,
         source: 'runtime-logout-cleanup',
+        fatal: false,
+      );
+    }
+  }
+
+  Future<void> _prepareForAccountAuthDeletion() async {
+    _recordRuntimeEvent(
+      category: 'runtime',
+      name: 'account_delete_auth_boundary_prepare_started',
+    );
+    _shutDown = true;
+    final errors = <Object>[];
+    final stacks = <StackTrace>[];
+
+    Future<void> runStep(Future<void> Function() step) async {
+      try {
+        await step();
+      } catch (error, stackTrace) {
+        errors.add(error);
+        stacks.add(stackTrace);
+      }
+    }
+
+    _heartbeatTimer?.cancel();
+    _heartbeatTimer = null;
+    _friendRequestRefreshTimer?.cancel();
+    _friendRequestRefreshTimer = null;
+    _backgroundOfflineTimer?.cancel();
+    _backgroundOfflineTimer = null;
+    _cancelVoiceCallReconnectGrace();
+
+    final sessions = brain?.getSessions() ?? const <Session>[];
+    for (final session in sessions) {
+      await runStep(() async {
+        await _endVoiceCallForPeer(
+          session.peerId,
+          notifyPeer: false,
+          detail: 'Rain account is being deleted.',
+        );
+        await _failActiveTransfersForPeer(
+          session.peerId,
+          'Transfer canceled because this account is being deleted.',
+        );
+        await _disconnectBrainPeer(
+          session.peerId,
+          PeerDisconnectIntent.localShutdown,
+        );
+        await _unregisterPeerListener(session.peerId);
+      });
+    }
+    for (final peerId in _registeredPeerListeners.toList()) {
+      await runStep(() => _unregisterPeerListener(peerId));
+    }
+    _connectionCoordinator.dispose();
+
+    await runStep(_cancelVoiceSignalingSubscriptions);
+    await runStep(_stopConnectionRequestRuntime);
+
+    for (final subscription in _subscriptions.toList()) {
+      await runStep(subscription.cancel);
+    }
+    _subscriptions.clear();
+
+    for (final subscription in _presenceSubscriptions.values.toList()) {
+      await runStep(subscription.cancel);
+    }
+    _presenceSubscriptions.clear();
+
+    _recordRuntimeEvent(
+      category: 'runtime',
+      name: 'account_delete_auth_boundary_prepare_completed',
+      severity: errors.isEmpty ? 'info' : 'warning',
+      context: <String, Object?>{'errorCount': errors.length},
+    );
+    if (errors.isNotEmpty) {
+      errorRecorder?.call(
+        errors.first,
+        stacks.first,
+        source: 'runtime-account-delete-auth-boundary',
         fatal: false,
       );
     }

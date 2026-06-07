@@ -625,6 +625,22 @@ No task is fully complete until the lesson check is done or explicitly marked "n
 - Owner: Engineering/Product
 - Status: Open
 
+### LESSON-20260607-038: Delete Auth Only After Account Listeners Are Detached
+
+- Date: 2026-06-07
+- Related task: Delete-account Android post-delete crash follow-up.
+- Related system: [[Authentication]], [[Rules Strategy]], [[Frontend Architecture]]
+- Related risk/debt: R-021, R-022, TD-021, TD-022, BLK-010
+- What was learned: Deleting the Firebase Auth user changes RTDB permission state immediately. Any still-subscribed account listener can receive permission-denied errors during the transition to the login screen.
+- What caused delays: Earlier fixes ordered backend tombstone, optional cleanup, Auth deletion, and local session clear correctly, but they did not define an explicit hook between "backend account is irreversibly tombstoned" and "Auth user is deleted."
+- What failed: Account-scoped listeners for requests, friendships, presence, voice inboxes, and data rooms could remain active until runtime shutdown cleanup after Auth deletion.
+- What succeeded: `SignalingAdapter.deleteAccount` now exposes a `beforeAuthDeletion` boundary, Firebase calls it after tombstone/optional cleanup and before `user.delete()`, and runtime cancels heartbeat, active protocol/data-room sessions, relationship, presence, voice signaling, and connection-request listeners at that boundary.
+- What should change: Future Auth lifecycle changes must treat RTDB listener detachment and protocol-session shutdown as first-class steps before any Auth sign-out/delete operation that removes read permissions.
+- Pattern: Auth boundary callbacks are useful when backend cleanup owns the irreversible server transition but app runtime owns local stream subscriptions.
+- Follow-up improvement: Add Android log proof that delete-to-login no longer emits stale RTDB permission-denied listener errors.
+- Owner: Engineering/Product
+- Status: Open
+
 ## Review Cadence
 
 - Review lessons at the end of every completed task.

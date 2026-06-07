@@ -6,7 +6,10 @@ abstract class SignalingAdapter {
   Future<String> currentUid();
   Future<void> signOut();
   Future<void> reauthenticate(String username, String password);
-  Future<void> deleteAccount(String username);
+  Future<void> deleteAccount(
+    String username, {
+    Future<void> Function()? beforeAuthDeletion,
+  });
 
   Future<String> register(String username, String password);
   Future<String> login(String username, String password);

@@ -78,12 +78,18 @@ class DebugSignalingAdapter implements SignalingAdapter {
   }
 
   @override
-  Future<void> deleteAccount(String username) {
+  Future<void> deleteAccount(
+    String username, {
+    Future<void> Function()? beforeAuthDeletion,
+  }) {
     return _traceFuture<void>(
       operation: 'deleteAccount',
       kind: 'auth',
       context: <String, Object?>{'username': username},
-      action: () => _inner.deleteAccount(username),
+      action: () => _inner.deleteAccount(
+        username,
+        beforeAuthDeletion: beforeAuthDeletion,
+      ),
     );
   }
 

@@ -150,7 +150,10 @@ class FirebaseEmulatorSignalingAdapter
   }
 
   @override
-  Future<void> deleteAccount(String username) async {
+  Future<void> deleteAccount(
+    String username, {
+    Future<void> Function()? beforeAuthDeletion,
+  }) async {
     final normalizedUsername = _normalizedUsername(username);
     await _ensureSignedInAsUsername(normalizedUsername);
     final now = DateTime.now().millisecondsSinceEpoch;
@@ -171,6 +174,7 @@ class FirebaseEmulatorSignalingAdapter
         'deletedAt': now,
       },
     );
+    await beforeAuthDeletion?.call();
     await _authRequest('accounts:delete', <String, Object?>{
       'idToken': _idToken,
     });

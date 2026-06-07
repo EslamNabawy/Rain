@@ -75,7 +75,10 @@ class NoopSignalingAdapter implements SignalingAdapter {
   }
 
   @override
-  Future<void> deleteAccount(String username) async {
+  Future<void> deleteAccount(
+    String username, {
+    Future<void> Function()? beforeAuthDeletion,
+  }) async {
     final normalizedUsername = _normalizedUsername(username);
     await ensureSignedInAs(normalizedUsername);
     final friends = await loadAcceptedFriends(normalizedUsername);
@@ -98,6 +101,7 @@ class NoopSignalingAdapter implements SignalingAdapter {
     for (final blockedUser in blocked) {
       await unblockUser(normalizedUsername, blockedUser);
     }
+    await beforeAuthDeletion?.call();
     _presence.remove(normalizedUsername);
     _identities.remove(normalizedUsername);
     _currentUsername = null;

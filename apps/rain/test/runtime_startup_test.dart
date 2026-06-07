@@ -5,6 +5,7 @@ import 'package:drift/native.dart';
 import 'package:flutter/widgets.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_test/flutter_test.dart';
+import 'package:flutter_webrtc/flutter_webrtc.dart';
 import 'package:rain/application/bootstrap/app_bootstrap.dart';
 import 'package:rain/core/config/app_environment.dart';
 import 'package:rain/main.dart' as rain_app;
@@ -79,8 +80,12 @@ class _FailingReauthAccountDeletionAdapter extends _RecordingPresenceAdapter {
   }
 
   @override
-  Future<void> deleteAccount(String username) async {
+  Future<void> deleteAccount(
+    String username, {
+    Future<void> Function()? beforeAuthDeletion,
+  }) async {
     deleteAccountCalls += 1;
+    await beforeAuthDeletion?.call();
   }
 }
 
@@ -105,8 +110,12 @@ class _BlockingReauthFailureAdapter extends _RecordingPresenceAdapter {
   }
 
   @override
-  Future<void> deleteAccount(String username) async {
+  Future<void> deleteAccount(
+    String username, {
+    Future<void> Function()? beforeAuthDeletion,
+  }) async {
     deleteAccountCalls += 1;
+    await beforeAuthDeletion?.call();
   }
 }
 
@@ -120,7 +129,10 @@ class _FailingBackendAccountDeletionAdapter extends _RecordingPresenceAdapter {
   }
 
   @override
-  Future<void> deleteAccount(String username) async {
+  Future<void> deleteAccount(
+    String username, {
+    Future<void> Function()? beforeAuthDeletion,
+  }) async {
     deleteAccountCalls += 1;
     throw const AccountDeletionException(
       kind: AccountDeletionFailureKind.backendCleanupFailed,
@@ -142,12 +154,250 @@ class _BlockingAccountDeletionAdapter extends _RecordingPresenceAdapter {
   }
 
   @override
-  Future<void> deleteAccount(String username) async {
+  Future<void> deleteAccount(
+    String username, {
+    Future<void> Function()? beforeAuthDeletion,
+  }) async {
     deleteAccountCalls += 1;
     if (!deleteStarted.isCompleted) {
       deleteStarted.complete();
     }
     await releaseDelete.future;
+    await beforeAuthDeletion?.call();
+  }
+}
+
+class _AuthBoundaryListenerAccountDeletionAdapter
+    extends _RecordingPresenceAdapter {
+  final Completer<void> beforeAuthDeletionReached = Completer<void>();
+  final Completer<void> releaseAuthDeletion = Completer<void>();
+  final List<StreamController<dynamic>> _controllers =
+      <StreamController<dynamic>>[];
+  int reauthCalls = 0;
+  int deleteAccountCalls = 0;
+  int friendRequestCancelCount = 0;
+  int relationshipCancelCount = 0;
+  int presenceCancelCount = 0;
+  bool authDeleted = false;
+
+  @override
+  Future<void> reauthenticate(String username, String password) async {
+    reauthCalls += 1;
+  }
+
+  @override
+  Stream<String> onFriendRequest(String username) {
+    final controller = StreamController<String>.broadcast(
+      onCancel: () {
+        friendRequestCancelCount += 1;
+      },
+    );
+    _controllers.add(controller);
+    return controller.stream;
+  }
+
+  @override
+  Stream<String> onRelationshipChanged(String username) {
+    final controller = StreamController<String>.broadcast(
+      onCancel: () {
+        relationshipCancelCount += 1;
+      },
+    );
+    _controllers.add(controller);
+    return controller.stream;
+  }
+
+  @override
+  Stream<bool> watchPresence(String username) {
+    late final StreamController<bool> controller;
+    controller = StreamController<bool>.broadcast(
+      onListen: () {
+        if (!controller.isClosed) {
+          controller.add(true);
+        }
+      },
+      onCancel: () {
+        presenceCancelCount += 1;
+      },
+    );
+    _controllers.add(controller);
+    return controller.stream;
+  }
+
+  @override
+  Future<void> deleteAccount(
+    String username, {
+    Future<void> Function()? beforeAuthDeletion,
+  }) async {
+    deleteAccountCalls += 1;
+    await beforeAuthDeletion?.call();
+    if (!beforeAuthDeletionReached.isCompleted) {
+      beforeAuthDeletionReached.complete();
+    }
+    await releaseAuthDeletion.future;
+    authDeleted = true;
+  }
+
+  @override
+  Future<void> dispose() async {
+    for (final controller in _controllers) {
+      await controller.close();
+    }
+    _controllers.clear();
+    await super.dispose();
+  }
+}
+
+class _AuthBoundarySessionManager implements SessionManager {
+  _AuthBoundarySessionManager(String peerId)
+    : _sessions = <Session>[
+        Session(
+          peerId: peerId,
+          state: SessionState.connected,
+          connectionType: ConnectionType.signaling,
+          phase: SessionPhase.connected,
+          sender: (_) {},
+        ),
+      ];
+
+  final List<Session> _sessions;
+  final List<String> disconnectedPeers = <String>[];
+  final List<String> unregisteredPeers = <String>[];
+  final StreamController<Session> _connected =
+      StreamController<Session>.broadcast();
+  final StreamController<String> _disconnected =
+      StreamController<String>.broadcast();
+  final StreamController<SessionMessage> _messages =
+      StreamController<SessionMessage>.broadcast();
+  final StreamController<SessionRemoteTrack> _remoteTracks =
+      StreamController<SessionRemoteTrack>.broadcast();
+  final StreamController<Session> _changes =
+      StreamController<Session>.broadcast();
+  final StreamController<IncomingOfferRejection> _incomingOfferRejected =
+      StreamController<IncomingOfferRejection>.broadcast();
+
+  @override
+  Future<void> applyMediaAnswer(
+    String peerId,
+    RTCSessionDescription answer,
+  ) async {}
+
+  @override
+  Future<RTCSessionDescription> applyMediaOffer(
+    String peerId,
+    RTCSessionDescription offer,
+  ) async => RTCSessionDescription('answer', 'answer');
+
+  @override
+  Future<int> bufferedAmount(String peerId, SessionChannel channel) async => 0;
+
+  @override
+  Future<Session> connect(String peerId) async {
+    throw UnimplementedError();
+  }
+
+  @override
+  Future<RTCSessionDescription> createMediaOffer(String peerId) async =>
+      RTCSessionDescription('offer', 'offer');
+
+  @override
+  Future<CallMediaConnection> createCallMediaConnection(String peerId) {
+    throw UnimplementedError();
+  }
+
+  @override
+  Future<VoiceMediaConnection> createVoiceMediaConnection(String peerId) {
+    throw UnimplementedError();
+  }
+
+  @override
+  Future<void> disconnect(String peerId) async {
+    disconnectedPeers.add(peerId);
+    _sessions.removeWhere((session) => session.peerId == peerId);
+  }
+
+  Future<void> dispose() async {
+    await _connected.close();
+    await _disconnected.close();
+    await _messages.close();
+    await _remoteTracks.close();
+    await _changes.close();
+    await _incomingOfferRejected.close();
+  }
+
+  @override
+  Session? getSession(String peerId) {
+    for (final session in _sessions) {
+      if (session.peerId == peerId) {
+        return session;
+      }
+    }
+    return null;
+  }
+
+  @override
+  List<Session> getSessions() => List<Session>.of(_sessions);
+
+  @override
+  bool isChannelOpen(String peerId, SessionChannel channel) => false;
+
+  @override
+  Stream<IncomingOfferRejection> get onIncomingOfferRejected =>
+      _incomingOfferRejected.stream;
+
+  @override
+  Stream<Session> get onPeerConnected => _connected.stream;
+
+  @override
+  Stream<String> get onPeerDisconnected => _disconnected.stream;
+
+  @override
+  Stream<SessionMessage> get onPeerMessage => _messages.stream;
+
+  @override
+  Stream<SessionRemoteTrack> get onRemoteTrack => _remoteTracks.stream;
+
+  @override
+  Stream<Session> get onSessionChanged => _changes.stream;
+
+  @override
+  Future<void> openChannel(String peerId, SessionChannel channel) async {}
+
+  @override
+  Future<void> recoverConnection(
+    String peerId, {
+    String reason = 'Network changed. Restarting peer connection.',
+  }) async {}
+
+  @override
+  Future<void> recoverConnections({
+    String reason = 'Network changed. Restarting peer connections.',
+  }) async {}
+
+  @override
+  Future<void> registerPeer(
+    String peerId, {
+    IncomingOfferGuard? incomingOfferGuard,
+  }) async {}
+
+  @override
+  void send(String peerId, SessionChannel channel, Object data) {}
+
+  @override
+  void sendControl(String peerId, String data) {}
+
+  @override
+  Future<void> setMicrophoneMuted(String peerId, {required bool muted}) async {}
+
+  @override
+  Future<void> startLocalAudio(String peerId) async {}
+
+  @override
+  Future<void> stopLocalAudio(String peerId) async {}
+
+  @override
+  Future<void> unregisterPeer(String peerId) async {
+    unregisteredPeers.add(peerId);
   }
 }
 
@@ -166,8 +416,12 @@ class _BlockingOfflinePresenceAdapter extends _RecordingPresenceAdapter {
   }
 
   @override
-  Future<void> deleteAccount(String username) async {
+  Future<void> deleteAccount(
+    String username, {
+    Future<void> Function()? beforeAuthDeletion,
+  }) async {
     deleteAccountCalls += 1;
+    await beforeAuthDeletion?.call();
   }
 }
 
@@ -220,8 +474,9 @@ final class _RecordedRuntimeError {
 
 ProviderContainer _runtimeProviderContainer(
   RainDatabase db,
-  SignalingAdapter adapter,
-) {
+  SignalingAdapter adapter, {
+  SessionManager? brain,
+}) {
   return ProviderContainer(
     overrides: [
       appBootstrapProvider.overrideWithValue(
@@ -242,6 +497,7 @@ ProviderContainer _runtimeProviderContainer(
       ),
       forceUpdateProvider.overrideWith(_ReadyForceUpdateController.new),
       identityProvider.overrideWith(_SignedInIdentityController.new),
+      if (brain != null) brainProvider.overrideWithValue(brain),
       backgroundServiceProvider.overrideWith(
         _DisabledBackgroundServiceController.new,
       ),
@@ -906,6 +1162,65 @@ void main() {
         await AppSettingsStore().wasRainUsernameDeletedOnThisDevice('alice'),
         isTrue,
       );
+      expect(
+        container.read(appStartupStateProvider).phase,
+        AppStartupPhase.signedOut,
+      );
+      expect(container.read(accountDeletionInProgressProvider), isFalse);
+      expect(adapter.reauthCalls, 1);
+      expect(adapter.deleteAccountCalls, 1);
+    },
+  );
+
+  test(
+    'runtime cancels account listeners before Firebase Auth deletion',
+    () async {
+      final db = RainDatabase(NativeDatabase.memory());
+      addTearDown(db.close);
+      final adapter = _AuthBoundaryListenerAccountDeletionAdapter();
+      final brain = _AuthBoundarySessionManager('bob');
+      addTearDown(adapter.dispose);
+      addTearDown(brain.dispose);
+      await adapter.register('alice', 'secret1');
+      await adapter.upsertIdentity(
+        BackendIdentity(
+          username: 'bob',
+          uid: 'uid-bob',
+          displayName: 'Bob',
+          gender: null,
+          registeredAt: 1,
+          lastSeen: 1,
+          lastHeartbeat: DateTime.now().millisecondsSinceEpoch,
+          online: true,
+        ),
+      );
+      await adapter.upsertFriendship('alice', 'bob');
+      final container = _runtimeProviderContainer(db, adapter, brain: brain);
+      addTearDown(container.dispose);
+
+      final runtime = await _readReadyRuntime(container);
+      expect(runtime, isNotNull);
+      expect(adapter.friendRequestCancelCount, 0);
+      expect(adapter.relationshipCancelCount, 0);
+      expect(adapter.presenceCancelCount, 0);
+
+      final deleteFuture = container
+          .read(runtimeControllerProvider.notifier)
+          .deleteAccount(password: 'secret1');
+      await adapter.beforeAuthDeletionReached.future;
+
+      expect(adapter.authDeleted, isFalse);
+      expect(adapter.friendRequestCancelCount, 1);
+      expect(adapter.relationshipCancelCount, 1);
+      expect(adapter.presenceCancelCount, greaterThanOrEqualTo(1));
+      expect(brain.disconnectedPeers, contains('bob'));
+      expect(brain.unregisteredPeers, contains('bob'));
+      expect(container.read(accountDeletionInProgressProvider), isTrue);
+
+      adapter.releaseAuthDeletion.complete();
+      await deleteFuture;
+
+      expect(adapter.authDeleted, isTrue);
       expect(
         container.read(appStartupStateProvider).phase,
         AppStartupPhase.signedOut,
