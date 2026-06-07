@@ -121,9 +121,7 @@ final class _VoiceAudioEnergyPoint {
 
   static _VoiceAudioEnergyPoint? fromStats(Map<dynamic, dynamic> values) {
     final energy = doubleStat(values, const <String>['totalAudioEnergy']);
-    final duration = doubleStat(values, const <String>[
-      'totalSamplesDuration',
-    ]);
+    final duration = doubleStat(values, const <String>['totalSamplesDuration']);
     if (energy == null ||
         duration == null ||
         !energy.isFinite ||

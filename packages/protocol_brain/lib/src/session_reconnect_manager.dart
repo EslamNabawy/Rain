@@ -117,18 +117,26 @@ class SessionReconnectManager {
     String detail, {
     SessionState? state,
     String? error,
-  }) markPhase;
+  })
+  markPhase;
 
   /// Best-effort deletes the signaling room.
   final Future<void> Function(ReconnectSessionOps active) deleteRoomSilently;
 
   /// Starts an offer for the given session.
-  final Future<void> Function(ReconnectSessionOps active,
-      {required bool isRetry, bool isRestart}) startOffer;
+  final Future<void> Function(
+    ReconnectSessionOps active, {
+    required bool isRetry,
+    bool isRestart,
+  })
+  startOffer;
 
   /// Waits for an offer for the given session.
-  final Future<void> Function(ReconnectSessionOps active,
-      {required bool isRetry}) waitForOffer;
+  final Future<void> Function(
+    ReconnectSessionOps active, {
+    required bool isRetry,
+  })
+  waitForOffer;
 
   /// Schedules a reconnect (used by handshake timeout to reschedule).
   final void Function(String peerId, {Duration minimumDelay}) scheduleReconnect;
@@ -197,8 +205,7 @@ class SessionReconnectManager {
         active.peerId,
         errorClassifier.sessionForNetworkRecoveryFailed(
           currentSnapshot: active.snapshot,
-          errorMessage:
-              errorClassifier.classifyConnectSetupFailure(error),
+          errorMessage: errorClassifier.classifyConnectSetupFailure(error),
         ),
       );
     } finally {
@@ -226,8 +233,11 @@ class SessionReconnectManager {
     await active.peer.destroy();
     await deleteRoomSilently(active);
 
-    if (await tryRelayFallback(active, 'Direct path timed out.',
-        isOfferOwner: isOfferOwner)) {
+    if (await tryRelayFallback(
+      active,
+      'Direct path timed out.',
+      isOfferOwner: isOfferOwner,
+    )) {
       return;
     }
     if (!active.shouldReconnect) {
@@ -311,8 +321,7 @@ class SessionReconnectManager {
         active.peerId,
         errorClassifier.sessionForRelayFallbackFailed(
           currentSnapshot: active.snapshot,
-          errorMessage:
-              errorClassifier.classifyConnectSetupFailure(error),
+          errorMessage: errorClassifier.classifyConnectSetupFailure(error),
         ),
       );
       return false;

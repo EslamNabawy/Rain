@@ -4,14 +4,16 @@ import 'package:flutter_webrtc/flutter_webrtc.dart';
 
 import 'call_media_models.dart';
 
-typedef OptimizationDiagnosticAppender = void Function(List<String> states, String value);
+typedef OptimizationDiagnosticAppender =
+    void Function(List<String> states, String value);
 typedef OptimizationErrorRecorder = void Function(String? error);
-typedef OptimizationDebugEmitter = void Function(
-  String name, {
-  String severity,
-  String? message,
-  Map<String, Object?> context,
-});
+typedef OptimizationDebugEmitter =
+    void Function(
+      String name, {
+      String severity,
+      String? message,
+      Map<String, Object?> context,
+    });
 
 class VideoOptimizationManager {
   VideoOptimizationManager({
@@ -60,14 +62,16 @@ class VideoOptimizationManager {
     }
     _videoOptimizationTimer = Timer.periodic(
       const Duration(seconds: 3),
-      (_) => unawaited(_sampleOptimization(
-        connection: connection,
-        epoch: epoch,
-        localVideoSender: localVideoSender,
-        localVideoTrack: localVideoTrack,
-        shouldIgnoreCallback: shouldIgnoreCallback,
-        isEpochValid: isEpochValid,
-      )),
+      (_) => unawaited(
+        _sampleOptimization(
+          connection: connection,
+          epoch: epoch,
+          localVideoSender: localVideoSender,
+          localVideoTrack: localVideoTrack,
+          shouldIgnoreCallback: shouldIgnoreCallback,
+          isEpochValid: isEpochValid,
+        ),
+      ),
     );
   }
 
@@ -93,12 +97,18 @@ class VideoOptimizationManager {
       return;
     }
 
-    final current = _activeVideoOptimizationProfile ?? CallVideoOptimizationProfile.excellent;
+    final current =
+        _activeVideoOptimizationProfile ??
+        CallVideoOptimizationProfile.excellent;
     if (target.index > current.index) {
       _videoPressureSampleCount += 1;
       _videoStableSampleCount = 0;
       if (_videoPressureSampleCount >= 2) {
-        await _applyProfile(target, reason: 'pressure', sender: localVideoSender);
+        await _applyProfile(
+          target,
+          reason: 'pressure',
+          sender: localVideoSender,
+        );
         _videoPressureSampleCount = 0;
       }
       return;
@@ -108,8 +118,13 @@ class VideoOptimizationManager {
       _videoStableSampleCount += 1;
       _videoPressureSampleCount = 0;
       if (_videoStableSampleCount >= 5) {
-        final nextProfile = CallVideoOptimizationProfile.values[current.index - 1];
-        await _applyProfile(nextProfile, reason: 'recovery', sender: localVideoSender);
+        final nextProfile =
+            CallVideoOptimizationProfile.values[current.index - 1];
+        await _applyProfile(
+          nextProfile,
+          reason: 'recovery',
+          sender: localVideoSender,
+        );
         _videoStableSampleCount = 0;
       }
       return;
@@ -143,7 +158,8 @@ class VideoOptimizationManager {
       'roundTripTime',
     ]);
     final legacyRttMs = _maxStat(reports, const <String>['googRtt']);
-    final effectiveRtt = rtt ?? (legacyRttMs == null ? null : legacyRttMs / 1000);
+    final effectiveRtt =
+        rtt ?? (legacyRttMs == null ? null : legacyRttMs / 1000);
     final outgoingBitrate = _maxStat(reports, const <String>[
       'availableOutgoingBitrate',
       'googAvailableSendBandwidth',
@@ -207,7 +223,10 @@ class VideoOptimizationManager {
       parameters.degradationPreference = RTCDegradationPreference.BALANCED;
       await sender.setParameters(parameters);
       _activeVideoOptimizationProfile = profile;
-      _appendDiagnostic(<String>[], 'videoOptimization:${profile.name}:$reason');
+      _appendDiagnostic(
+        <String>[],
+        'videoOptimization:${profile.name}:$reason',
+      );
       _emitDebugEvent(
         'video_optimization_profile_applied',
         context: <String, Object?>{

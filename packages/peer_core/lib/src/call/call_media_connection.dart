@@ -160,7 +160,8 @@ class DefaultCallMediaConnection implements CallMediaConnection {
       peerConnectionClosed: _peerConnectionClosed,
       disposed: _disposed,
       processingConfig: _processingConfig,
-      activeVideoOptimizationProfile: _videoOptimizationManager.activeVideoOptimizationProfile,
+      activeVideoOptimizationProfile:
+          _videoOptimizationManager.activeVideoOptimizationProfile,
       mediaInterruptions: List<String>.unmodifiable(_mediaInterruptions),
       lastDetail: _lastDetail,
       lastError: _lastError,
@@ -202,7 +203,8 @@ class DefaultCallMediaConnection implements CallMediaConnection {
       _emitState(CallMediaPhase.startingLocalMedia);
       await _prepareVoiceAudio();
       _ensureCurrentPeerConnection(connection, epoch, 'preparing local media');
-      final selectedAudioInputDeviceId = await _deviceSelector.selectedAudioInputDeviceId();
+      final selectedAudioInputDeviceId = await _deviceSelector
+          .selectedAudioInputDeviceId();
       _ensureCurrentPeerConnection(
         connection,
         epoch,
@@ -898,6 +900,7 @@ class DefaultCallMediaConnection implements CallMediaConnection {
       'autoVideo=${config.autoVideoOptimizeEnabled}',
     );
   }
+
   Future<void> _clearVoiceAudioIfPrepared() async {
     if (!_voiceAudioPrepared) {
       return;
@@ -1168,7 +1171,8 @@ class DefaultCallMediaConnection implements CallMediaConnection {
         'peerConnectionClosed': _peerConnectionClosed,
         'disposed': _disposed,
         if (_videoOptimizationManager.activeVideoOptimizationProfile != null)
-          'activeVideoProfile': _videoOptimizationManager.activeVideoOptimizationProfile!.name,
+          'activeVideoProfile':
+              _videoOptimizationManager.activeVideoOptimizationProfile!.name,
         ...context,
       },
     );

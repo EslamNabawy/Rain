@@ -970,4 +970,3 @@ class DefaultVoiceMediaConnection implements VoiceMediaConnection {
     }
   }
 }
-

@@ -75,9 +75,7 @@ class ProtocolErrorClassifier {
   }
 
   /// Builds a [Session] snapshot representing a handshake timeout.
-  Session sessionForHandshakeTimeout({
-    required Session currentSnapshot,
-  }) {
+  Session sessionForHandshakeTimeout({required Session currentSnapshot}) {
     return currentSnapshot.copyWith(
       state: SessionState.failed,
       phase: SessionPhase.failed,
@@ -91,9 +89,7 @@ class ProtocolErrorClassifier {
   }
 
   /// Builds a [Session] snapshot representing failure after exhausting retries.
-  Session sessionForRetriesExhausted({
-    required Session currentSnapshot,
-  }) {
+  Session sessionForRetriesExhausted({required Session currentSnapshot}) {
     return currentSnapshot.copyWith(
       state: SessionState.failed,
       phase: SessionPhase.failed,
@@ -116,8 +112,7 @@ class ProtocolErrorClassifier {
       phase: SessionPhase.failed,
       detail: 'Direct path blocked. Relay fallback unavailable.',
       updatedAt: DateTime.now().millisecondsSinceEpoch,
-      error:
-          'Direct path blocked. No TURN relay is configured for this build.',
+      error: 'Direct path blocked. No TURN relay is configured for this build.',
       route: PeerConnectionRoute.unknown(
         updatedAt: DateTime.now().millisecondsSinceEpoch,
       ),

@@ -2,7 +2,8 @@ import 'package:flutter_webrtc/flutter_webrtc.dart';
 
 import '../platform_bridge.dart';
 
-typedef DeviceDiagnosticAppender = void Function(List<String> states, String value);
+typedef DeviceDiagnosticAppender =
+    void Function(List<String> states, String value);
 typedef DeviceErrorRecorder = void Function(String? error);
 
 class MediaDeviceSelector {
