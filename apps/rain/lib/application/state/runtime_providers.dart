@@ -740,16 +740,6 @@ class ConnectionRequestController extends Notifier<ConnectionRequestState> {
     ) {
       unawaited(_replaceRuntime(_runtimeForSession(session, next.value)));
     });
-    scheduleMicrotask(() {
-      unawaited(
-        _replaceRuntime(
-          _runtimeForSession(
-            session,
-            ref.read(runtimeControllerProvider).value,
-          ),
-        ),
-      );
-    });
     ref.onDispose(() => unawaited(_subscription?.cancel()));
     return _runtimeForSession(
           session,
@@ -915,16 +905,6 @@ class VoiceCallController extends Notifier<VoiceCallState> {
     ) {
       unawaited(_replaceRuntime(_runtimeForSession(session, next.value)));
     });
-    scheduleMicrotask(() {
-      unawaited(
-        _replaceRuntime(
-          _runtimeForSession(
-            session,
-            ref.read(runtimeControllerProvider).value,
-          ),
-        ),
-      );
-    });
     ref.onDispose(() => unawaited(_subscription?.cancel()));
     return _runtimeForSession(
           session,
@@ -1054,16 +1034,6 @@ class ConnectionsController extends Notifier<ConnectionsState> {
       AsyncValue<RainRuntimeController?> next,
     ) {
       unawaited(_replaceRuntime(_runtimeForSession(session, next.value)));
-    });
-    scheduleMicrotask(() {
-      unawaited(
-        _replaceRuntime(
-          _runtimeForSession(
-            session,
-            ref.read(runtimeControllerProvider).value,
-          ),
-        ),
-      );
     });
     ref.onDispose(() {
       for (final subscription in _brainSubscriptions) {
