@@ -4,7 +4,7 @@ import 'package:flutter_webrtc/flutter_webrtc.dart';
 
 import 'call_media_models.dart';
 
-typedef OptimizationDiagnosticAppender = void Function(String value);
+typedef OptimizationDiagnosticAppender = void Function(List<String> states, String value);
 typedef OptimizationErrorRecorder = void Function(String? error);
 typedef OptimizationDebugEmitter = void Function(
   String name, {
@@ -47,7 +47,7 @@ class VideoOptimizationManager {
     _videoPressureSampleCount = 0;
     _videoStableSampleCount = 0;
     if (!autoVideoOptimizeEnabled) {
-      _appendDiagnostic('videoOptimizationDisabled');
+      _appendDiagnostic(<String>[], 'videoOptimizationDisabled');
       return;
     }
     await _applyProfile(
@@ -126,7 +126,7 @@ class VideoOptimizationManager {
     try {
       return await connection.getStats(localVideoTrack);
     } catch (error) {
-      _appendDiagnostic('videoStats failed | $error');
+      _appendDiagnostic(<String>[], 'videoStats failed | $error');
       _recordError(error.toString());
       _emitDebugEvent(
         'video_stats_failed',
@@ -207,7 +207,7 @@ class VideoOptimizationManager {
       parameters.degradationPreference = RTCDegradationPreference.BALANCED;
       await sender.setParameters(parameters);
       _activeVideoOptimizationProfile = profile;
-      _appendDiagnostic('videoOptimization:${profile.name}:$reason');
+      _appendDiagnostic(<String>[], 'videoOptimization:${profile.name}:$reason');
       _emitDebugEvent(
         'video_optimization_profile_applied',
         context: <String, Object?>{
@@ -220,6 +220,7 @@ class VideoOptimizationManager {
       );
     } catch (error) {
       _appendDiagnostic(
+        <String>[],
         'videoOptimization failed:${profile.name}:$reason | $error',
       );
       _recordError(error.toString());

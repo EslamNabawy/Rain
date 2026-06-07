@@ -79,7 +79,6 @@ extension VoiceCallRuntime on RainRuntimeController {
       CallErrorClassifier.audioRouteUnavailableMessage;
   static const String _voiceCallReconnecting =
       CallErrorClassifier.reconnectingMessage;
-  static bool get _legacyControlChannelVoiceSignalingFrozen => true;
   static const Duration _voiceCallExpiry = Duration(minutes: 2);
   static const Duration _voiceCallTransientCreateRetryDelay = Duration(
     milliseconds: 300,

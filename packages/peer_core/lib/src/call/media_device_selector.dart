@@ -2,7 +2,7 @@ import 'package:flutter_webrtc/flutter_webrtc.dart';
 
 import '../platform_bridge.dart';
 
-typedef DeviceDiagnosticAppender = void Function(String value);
+typedef DeviceDiagnosticAppender = void Function(List<String> states, String value);
 typedef DeviceErrorRecorder = void Function(String? error);
 
 class MediaDeviceSelector {
@@ -30,7 +30,7 @@ class MediaDeviceSelector {
     try {
       selected = (await provider?.call())?.trim();
     } catch (error) {
-      _appendDiagnostic('selectedAudioInputLoad failed | $error');
+      _appendDiagnostic(<String>[], 'selectedAudioInputLoad failed | $error');
       _recordError(error.toString());
       return null;
     }
@@ -47,18 +47,18 @@ class MediaDeviceSelector {
           !audioInputs.any(
             (MediaDeviceInfo device) => device.deviceId == selected,
           )) {
-        _appendDiagnostic('selectedAudioInputMissing');
+        _appendDiagnostic(<String>[], 'selectedAudioInputMissing');
         return null;
       }
     } catch (error) {
-      _appendDiagnostic('enumerateMediaDevices failed | $error');
+      _appendDiagnostic(<String>[], 'enumerateMediaDevices failed | $error');
       _recordError(error.toString());
     }
 
     try {
       await _platform.selectAudioInput(selected);
     } catch (error) {
-      _appendDiagnostic('selectAudioInput failed | $error');
+      _appendDiagnostic(<String>[], 'selectAudioInput failed | $error');
       _recordError(error.toString());
     }
     return selected;
@@ -70,7 +70,7 @@ class MediaDeviceSelector {
     try {
       selected = (await provider?.call())?.trim();
     } catch (error) {
-      _appendDiagnostic('selectedVideoInputLoad failed | $error');
+      _appendDiagnostic(<String>[], 'selectedVideoInputLoad failed | $error');
       _recordError(error.toString());
       return null;
     }
@@ -87,11 +87,11 @@ class MediaDeviceSelector {
           !videoInputs.any(
             (MediaDeviceInfo device) => device.deviceId == selected,
           )) {
-        _appendDiagnostic('selectedVideoInputMissing');
+        _appendDiagnostic(<String>[], 'selectedVideoInputMissing');
         return null;
       }
     } catch (error) {
-      _appendDiagnostic('enumerateMediaDevices failed | $error');
+      _appendDiagnostic(<String>[], 'enumerateMediaDevices failed | $error');
       _recordError(error.toString());
     }
 

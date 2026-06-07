@@ -1,8 +1,8 @@
 import 'dart:async';
 
-import 'package:flutter_webrtc/flutter_webrtc.dart';
 import 'package:peer_core/peer_core.dart';
 
+import '../adapters/signaling_adapter.dart';
 import 'connection_memory.dart';
 import 'protocol_error_classifier.dart';
 import 'session_manager.dart';
