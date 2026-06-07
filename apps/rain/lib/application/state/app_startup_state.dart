@@ -269,14 +269,6 @@ final appStartupStateProvider = Provider<AppStartupState>((Ref ref) {
     );
   }
 
-  if (runtime.requireValue == null) {
-    return AppStartupState.startingRuntime(
-      updateResult: updateResult,
-      identity: currentIdentity,
-      networkStatus: networkStatus,
-    );
-  }
-
   return AppStartupState.ready(
     updateResult: updateResult,
     identity: currentIdentity,

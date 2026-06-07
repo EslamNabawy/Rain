@@ -5,7 +5,9 @@ import 'package:flutter_webrtc/flutter_webrtc.dart';
 import '../models.dart';
 import '../platform_bridge.dart';
 import 'call_media_models.dart';
+import 'media_device_selector.dart';
 import 'media_interruption.dart';
+import 'video_optimization_manager.dart';
 
 const Map<String, dynamic> _audioSdpConstraints = <String, dynamic>{
   'mandatory': <String, dynamic>{
@@ -59,7 +61,20 @@ class DefaultCallMediaConnection implements CallMediaConnection {
     required PeerConfig config,
     Duration disconnectedFailureTimeout = const Duration(seconds: 12),
   }) : _config = config,
-       _disconnectedFailureTimeout = disconnectedFailureTimeout;
+       _disconnectedFailureTimeout = disconnectedFailureTimeout {
+    _deviceSelector = MediaDeviceSelector(
+      platform: config.platform,
+      audioInputDeviceIdProvider: config.selectedAudioInputDeviceIdProvider,
+      videoInputDeviceIdProvider: config.selectedVideoInputDeviceIdProvider,
+      appendDiagnostic: _appendDiagnostic,
+      recordError: (String? error) => _lastError = error,
+    );
+    _videoOptimizationManager = VideoOptimizationManager(
+      appendDiagnostic: _appendDiagnostic,
+      recordError: (String? error) => _lastError = error,
+      emitDebugEvent: _emitDebugEvent,
+    );
+  }
 
   final PeerConfig _config;
   final Duration _disconnectedFailureTimeout;
@@ -79,6 +94,9 @@ class DefaultCallMediaConnection implements CallMediaConnection {
   final List<MediaStreamTrack> _remoteAudioTracks = <MediaStreamTrack>[];
   final List<MediaStreamTrack> _remoteVideoTracks = <MediaStreamTrack>[];
   final List<MediaStream> _remoteStreams = <MediaStream>[];
+
+  late final MediaDeviceSelector _deviceSelector;
+  late final VideoOptimizationManager _videoOptimizationManager;
 
   RTCPeerConnection? _peerConnection;
   RTCRtpSender? _localVideoSender;
@@ -147,7 +165,7 @@ class DefaultCallMediaConnection implements CallMediaConnection {
       peerConnectionClosed: _peerConnectionClosed,
       disposed: _disposed,
       processingConfig: _processingConfig,
-      activeVideoOptimizationProfile: _activeVideoOptimizationProfile,
+      activeVideoOptimizationProfile: _videoOptimizationManager.activeVideoOptimizationProfile,
       mediaInterruptions: List<String>.unmodifiable(_mediaInterruptions),
       lastDetail: _lastDetail,
       lastError: _lastError,
@@ -189,14 +207,14 @@ class DefaultCallMediaConnection implements CallMediaConnection {
       _emitState(CallMediaPhase.startingLocalMedia);
       await _prepareVoiceAudio();
       _ensureCurrentPeerConnection(connection, epoch, 'preparing local media');
-      final selectedAudioInputDeviceId = await _selectedAudioInputDeviceId();
+      final selectedAudioInputDeviceId = await _deviceSelector.selectedAudioInputDeviceId();
       _ensureCurrentPeerConnection(
         connection,
         epoch,
         'selecting local audio input',
       );
       final selectedVideoInputDeviceId = kind == CallMediaKind.video
-          ? await _selectedVideoInputDeviceId()
+          ? await _deviceSelector.selectedVideoInputDeviceId()
           : null;
       _ensureCurrentPeerConnection(
         connection,
@@ -256,7 +274,15 @@ class DefaultCallMediaConnection implements CallMediaConnection {
         videoTrack.enabled = false;
       }
       if (videoTrack != null) {
-        await _startVideoOptimizationIfEnabled(connection, epoch);
+        await _videoOptimizationManager.startOptimization(
+          connection: connection,
+          epoch: epoch,
+          autoVideoOptimizeEnabled: _processingConfig.autoVideoOptimizeEnabled,
+          localVideoSender: _localVideoSender,
+          localVideoTrack: videoTrack,
+          shouldIgnoreCallback: _shouldIgnorePeerCallback,
+          isEpochValid: () => _connectionEpoch == epoch,
+        );
       }
       _emitState(CallMediaPhase.localMediaReady);
     } catch (error) {
@@ -482,9 +508,17 @@ class DefaultCallMediaConnection implements CallMediaConnection {
       return;
     }
     if (next.autoVideoOptimizeEnabled) {
-      await _startVideoOptimizationIfEnabled(connection, _connectionEpoch);
+      await _videoOptimizationManager.startOptimization(
+        connection: connection,
+        epoch: _connectionEpoch,
+        autoVideoOptimizeEnabled: next.autoVideoOptimizeEnabled,
+        localVideoSender: _localVideoSender,
+        localVideoTrack: _localVideoTrack,
+        shouldIgnoreCallback: _shouldIgnorePeerCallback,
+        isEpochValid: () => _connectionEpoch == _connectionEpoch,
+      );
     } else {
-      _stopVideoOptimization();
+      _videoOptimizationManager.stopOptimization();
       _appendDiagnostic(_mediaStates, 'videoOptimizationDisabled');
     }
   }
@@ -549,7 +583,7 @@ class DefaultCallMediaConnection implements CallMediaConnection {
     _remoteDescriptionSet = false;
     _mediaOperation = null;
     _cancelDisconnectedFailureTimer();
-    _stopVideoOptimization();
+    _videoOptimizationManager.stopOptimization();
     final stream = _localStream;
     _localStream = null;
     _localAudioTrack = null;
@@ -842,80 +876,6 @@ class DefaultCallMediaConnection implements CallMediaConnection {
   Future<void> _prepareVoiceAudio() async {
     await _config.platform.prepareVoiceAudio();
     _voiceAudioPrepared = true;
-  }
-
-  Future<String?> _selectedAudioInputDeviceId() async {
-    final provider = _config.selectedAudioInputDeviceIdProvider;
-    String? selected;
-    try {
-      selected = (await provider?.call())?.trim();
-    } catch (error) {
-      _appendDiagnostic(_mediaStates, 'selectedAudioInputLoad failed | $error');
-      _lastError = error.toString();
-      return null;
-    }
-    if (selected == null || selected.isEmpty) {
-      return null;
-    }
-
-    try {
-      final devices = await _config.platform.enumerateMediaDevices();
-      final audioInputs = devices
-          .where((MediaDeviceInfo device) => device.isAudioInputDevice)
-          .toList(growable: false);
-      if (audioInputs.isNotEmpty &&
-          !audioInputs.any(
-            (MediaDeviceInfo device) => device.deviceId == selected,
-          )) {
-        _appendDiagnostic(_mediaStates, 'selectedAudioInputMissing');
-        return null;
-      }
-    } catch (error) {
-      _appendDiagnostic(_mediaStates, 'enumerateMediaDevices failed | $error');
-      _lastError = error.toString();
-    }
-
-    try {
-      await _config.platform.selectAudioInput(selected);
-    } catch (error) {
-      _appendDiagnostic(_mediaStates, 'selectAudioInput failed | $error');
-      _lastError = error.toString();
-    }
-    return selected;
-  }
-
-  Future<String?> _selectedVideoInputDeviceId() async {
-    final provider = _config.selectedVideoInputDeviceIdProvider;
-    String? selected;
-    try {
-      selected = (await provider?.call())?.trim();
-    } catch (error) {
-      _appendDiagnostic(_mediaStates, 'selectedVideoInputLoad failed | $error');
-      _lastError = error.toString();
-      return null;
-    }
-    if (selected == null || selected.isEmpty) {
-      return null;
-    }
-
-    try {
-      final devices = await _config.platform.enumerateMediaDevices();
-      final videoInputs = devices
-          .where((MediaDeviceInfo device) => device.isVideoInputDevice)
-          .toList(growable: false);
-      if (videoInputs.isNotEmpty &&
-          !videoInputs.any(
-            (MediaDeviceInfo device) => device.deviceId == selected,
-          )) {
-        _appendDiagnostic(_mediaStates, 'selectedVideoInputMissing');
-        return null;
-      }
-    } catch (error) {
-      _appendDiagnostic(_mediaStates, 'enumerateMediaDevices failed | $error');
-      _lastError = error.toString();
-    }
-
-    return selected;
   }
 
   Future<CallMediaProcessingConfig> _loadProcessingConfig() async {
@@ -1287,7 +1247,7 @@ class DefaultCallMediaConnection implements CallMediaConnection {
   }
 
   Future<void> _closePeerConnection() async {
-    _stopVideoOptimization();
+    _videoOptimizationManager.stopOptimization();
     final connection = _peerConnection;
     if (connection == null) {
       return;
@@ -1457,8 +1417,8 @@ class DefaultCallMediaConnection implements CallMediaConnection {
         'remoteVideoTrackCount': _remoteVideoTracks.length,
         'peerConnectionClosed': _peerConnectionClosed,
         'disposed': _disposed,
-        if (_activeVideoOptimizationProfile != null)
-          'activeVideoProfile': _activeVideoOptimizationProfile!.name,
+        if (_videoOptimizationManager.activeVideoOptimizationProfile != null)
+          'activeVideoProfile': _videoOptimizationManager.activeVideoOptimizationProfile!.name,
         ...context,
       },
     );

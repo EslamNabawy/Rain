@@ -9,7 +9,7 @@ class RainIdentity {
     required this.username,
     required this.displayName,
     required this.createdAt,
-    required this.gender,
+    this.gender,
   });
 
   final String username;

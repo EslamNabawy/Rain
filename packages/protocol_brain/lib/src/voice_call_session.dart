@@ -350,6 +350,7 @@ final class VoiceCallSession {
       await _audioLevelSubscription.cancel();
       await _disposeMedia();
       await _stateController.close();
+      _receivedCandidateKeys.clear();
     });
   }
 
@@ -955,6 +956,10 @@ final class VoiceCallSession {
     String? reasonCode,
   }) async {
     _clearTimers();
+    // Guard against concurrent _fail calls (e.g., media timeout + hangup race).
+    if (_disposed || state.phase == VoiceCallSessionPhase.failed) {
+      return;
+    }
     final effectiveReasonCode =
         reasonCode ?? (notifyPeer ? _voiceCallFailedReasonCode : null);
     final mediaDiagnostics = media.diagnostics;
@@ -1199,7 +1204,7 @@ final class VoiceCallSession {
 bool isVoiceCallOfferOwner(String localPeerId, String remotePeerId) {
   return _normalizePeerId(
         localPeerId,
-      ).compareTo(_normalizePeerId(remotePeerId)) <=
+      ).compareTo(_normalizePeerId(remotePeerId)) <
       0;
 }
 

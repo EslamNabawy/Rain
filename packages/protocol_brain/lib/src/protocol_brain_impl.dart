@@ -106,7 +106,7 @@ class ProtocolBrainImpl implements ProtocolBrain {
 
   @override
   Future<void> disconnect(String peerId) async {
-    final active = _sessions[peerId];
+    final active = _sessions.remove(peerId);
     active?.shouldReconnect = false;
     if (active != null) {
       _markPhase(
@@ -115,7 +115,6 @@ class ProtocolBrainImpl implements ProtocolBrain {
         'Disconnecting from peer.',
       );
     }
-    _sessions.remove(peerId);
     if (active != null) {
       await active.dispose();
       await _deleteRoomSilently(active);
@@ -1136,7 +1135,7 @@ class ProtocolBrainImpl implements ProtocolBrain {
   bool _isOfferOwner(String peerId) {
     return _normalizedPeerId(
           selfUsername,
-        ).compareTo(_normalizedPeerId(peerId)) <=
+        ).compareTo(_normalizedPeerId(peerId)) <
         0;
   }
 

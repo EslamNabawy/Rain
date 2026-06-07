@@ -399,6 +399,7 @@ extension VoiceCallRuntime on RainRuntimeController {
     _acceptingVoiceCallId = current.callId!;
     try {
       await session.acceptIncoming();
+      _acceptingVoiceCallId = null;
     } catch (error) {
       if (_acceptingVoiceCallId == current.callId) {
         _acceptingVoiceCallId = null;
@@ -768,19 +769,24 @@ extension VoiceCallRuntime on RainRuntimeController {
       name: 'control_frame_received',
       context: _voiceFrameEventContext(peerId, frame),
     );
-    if (_legacyControlChannelVoiceSignalingFrozen) {
-      errorRecorder?.call(
-        StateError(
-          'Ignored legacy control-channel voice frame: '
-          '${frame.type.name} ${frame.callId}',
-        ),
-        StackTrace.current,
-        source: 'voice-call-legacy-control',
-        fatal: false,
-      );
-      return;
-    }
+    // Legacy control-channel voice signaling is permanently frozen.
+    errorRecorder?.call(
+      StateError(
+        'Ignored legacy control-channel voice frame: '
+        '${frame.type.name} ${frame.callId}',
+      ),
+      StackTrace.current,
+      source: 'voice-call-legacy-control',
+      fatal: false,
+    );
+    return;
+  }
 
+  // ignore: unused_element
+  Future<void> _handleVoiceInviteLegacy(
+    String peerId,
+    VoiceCallFrame frame,
+  ) async {
     final normalizedPeerId = _normalizedUsername(peerId);
     if (_normalizedUsername(frame.from) != normalizedPeerId ||
         _normalizedUsername(frame.to) !=
@@ -2931,6 +2937,13 @@ extension VoiceCallRuntime on RainRuntimeController {
         );
       }
       await _disposeVideoCallResources();
+      // Clean up per-call diagnostics to prevent unbounded memory growth.
+      final sessionKey = _voiceCallSessionKey(
+        session.callId,
+        session.sessionEpoch,
+      );
+      _terminalVoiceCallSessionKeys.remove(sessionKey);
+      _voiceRoomStatusTimelineByCall.remove(session.callId);
     }
     await _runBoundedVoiceCleanupStep(
       'voice_call_session_dispose',
@@ -3731,6 +3744,35 @@ extension VoiceCallRuntime on RainRuntimeController {
   }
 
   Future<void> _endVoiceCallForPeer(
+    String peerId, {
+    required bool notifyPeer,
+    required String detail,
+    VoiceCallFailureReason? failureReason,
+    String? failureDetail,
+  }) async {
+    final normalizedPeerId = _normalizedUsername(peerId);
+    // Guard against concurrent end calls (e.g., multiple signaling streams
+    // failing at once). Only the first caller proceeds.
+    if (_endingCallPeerId != null) {
+      return;
+    }
+    _endingCallPeerId = normalizedPeerId;
+    try {
+      await _endVoiceCallForPeerImpl(
+        normalizedPeerId,
+        notifyPeer: notifyPeer,
+        detail: detail,
+        failureReason: failureReason,
+        failureDetail: failureDetail,
+      );
+    } finally {
+      if (_endingCallPeerId == normalizedPeerId) {
+        _endingCallPeerId = null;
+      }
+    }
+  }
+
+  Future<void> _endVoiceCallForPeerImpl(
     String peerId, {
     required bool notifyPeer,
     required String detail,
