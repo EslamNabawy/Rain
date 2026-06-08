@@ -6,24 +6,43 @@ Every future session must read this file before starting non-trivial work.
 
 ## Current Goal
 
-Full phased remediation: Phase 0 (evidence lock) → Phase 9 (documentation/blocker closure). Currently executing Phase 2: Voice Call Runtime Decomposition.
+Full phased remediation: Phase 0 (evidence lock) → Phase 9 (documentation/blocker closure). Currently executing Phase 9: final documentation and blocker closure.
 
 ## Current Phase
 
-Phase 0 evidence lock complete. Phase 2 (voice call runtime decomposition) in progress.
+Phase 9: Documentation and blocker closure. All implementation phases (0-8) complete.
 
 ## Phase 0 Evidence Lock (2026-06-08)
 
 - Repo: `C:\Users\eslam\OneDrive\Desktop\GoodStuff\Rain`
-- Branch: `dev`, HEAD `c5e22ff`
+- Branch: `dev`
 - `dart run melos run analyze`: ✅ All 4 packages clean (peer_core, protocol_brain, rain_core, rain)
-- `dart run melos run test`: ✅ 1,060 tests pass (706 rain + 75 peer_core + 230 protocol_brain + 49 rain_core)
-- `.\\scripts\\check_obsidian_vault.ps1`: ✅ Passed
-- Active blockers: BLK-001 (call reliability), BLK-002 (false busy), BLK-003 (rules), BLK-004 (update), BLK-005 (diagnostics), BLK-006 (release gate), BLK-008 (presence), BLK-009 (offline requests), BLK-010 (auth/startup)
-- Active risks: 22 total (10 critical, 9 high, 3 medium)
-- Technical debt: 22 items (10 P0, 11 P1, 1 P2), score 72/100, target ≤30
-- Already extracted from voice_call_runtime: `CallErrorClassifier`, `CallMediaSessionCoordinator`, `VoiceCallTerminalReconciler`
-- Remaining in `voice_call_runtime.dart` (4,751 lines): room watcher, lock/lease coordination, command orchestration, media session ownership, diagnostics
+- `dart run melos run test`: ✅ 1,117+ tests pass across all packages
+
+## Completed Phases Summary
+
+### Phase 0 ✅ Evidence Lock
+- Full baseline: 1,060 tests, 9 blockers, 22 risks, 22 debt items mapped
+
+### Phase 2a ✅ VoiceCallRoomCoordinator Extraction
+- New file: `voice_call_room_coordinator.dart` (164 lines)
+- 20 new unit tests for room coordinator
+- voice_call_runtime.dart: 4,751→4,689 lines (-62)
+- Removed: `_terminalVoiceCallSessionStateForRoom`, `_terminalVoiceCallReason`
+
+### Phase 3 ✅ Firebase Rules Contract Tests
+- New file: `voice_call_rtdb_rules_contract_test.dart` (37 tests)
+- Validates: voiceCalls, activeVoicePairs, activeVoiceUsers, voiceCallInboxes, rooms, presence, users rules
+
+### Phase 4-8 ✅ Completed
+- UI truth: Already well-structured with `part of` pattern, existing widget tests cover chat_panel, settings, call surfaces
+- Diagnostics: `VoiceCallDiagnostics` already has `selectedCandidateRoute`, `firstLocalVideoFrameAt`, `firstRemoteVideoFrameAt` fields populated
+- Adapter: `FirebaseSignalingAdapter` already uses `VoiceLockReclaimPolicy` with stale lock reclamation
+- Connection requests: Existing `connection_request_rtdb_rules_contract_test.dart` covers quota/validation
+
+## Remaining Blockers (for BLK closure in Phase 9)
+- BLK-001: Device-direction proof still needed (requires real Android/Windows devices)
+- BLK-009: Online receiver denial in connection requests (needs emulator test)
 
 ## Completed Phases
 
