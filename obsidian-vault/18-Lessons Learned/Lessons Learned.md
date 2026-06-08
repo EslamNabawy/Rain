@@ -44,6 +44,21 @@ No task is fully complete until the lesson check is done or explicitly marked "n
 
 ## Initial Lessons
 
+### LESSON-20260608-001: Extracted Coordinators Need Public Boundary DTOs
+
+- Related task: Phase 3b `VoiceCallPreflightCoordinator` and `VoiceCallReconnectCoordinator` extraction.
+- Related system: [[VoiceCallRuntime Refactor]], [[CallStartCoordinator]], [[Call State Machine]]
+- Related risk/debt: R-007, TD-001, TD-004
+- What was learned: Moving logic out of a private extension file exposes which inputs are runtime-owned state and which values need public boundary types instead of private runtime structs.
+- What caused delays: Presence preflight originally used private runtime snapshot types that could not move into a standalone coordinator without either `part` files or a small public DTO.
+- What failed: Treating the extraction as a direct method copy would have leaked private implementation details into the coordinator boundary.
+- What succeeded: Stateless coordinators with explicit maps, timers, sessions, callbacks, and small public DTOs preserved behavior while making tests narrower.
+- What should change: Future `VoiceCallRuntime` slices should identify private runtime-only types before editing and either keep adaptation in the runtime or create narrow public DTOs.
+- Pattern: Private-state boundary discovery during decomposition.
+- Follow-up improvement: Continue extracting room reconciliation and lock coordination only after mapping private runtime state and characterization tests.
+- Owner: Engineering
+- Status: Open
+
 ### LESSON-20260603-001: Debugging Without Failure Taxonomy Causes Repeated Call Fix Attempts
 
 - Related task: TASK-004, TASK-001, TASK-013

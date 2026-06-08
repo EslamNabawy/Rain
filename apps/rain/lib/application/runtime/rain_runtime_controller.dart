@@ -25,6 +25,8 @@ import 'video_call_renderers.dart';
 import 'voice_audio_level.dart';
 import 'voice_call/voice_call_diagnostics.dart';
 import 'voice_call/voice_call_error_coordinator.dart';
+import 'voice_call/voice_call_preflight_coordinator.dart';
+import 'voice_call/voice_call_reconnect_coordinator.dart';
 import 'voice_call/voice_call_room_coordinator.dart';
 import 'voice_call/voice_call_state_coordinator.dart';
 import 'voice_call/voice_call_terminal_reconciler.dart';

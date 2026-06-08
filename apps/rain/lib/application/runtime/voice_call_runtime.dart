@@ -14,16 +14,6 @@ final class _TerminalRoomWriteResult {
   final Object? error;
 }
 
-final class _CallStartPresenceSnapshot {
-  const _CallStartPresenceSnapshot({
-    required this.peerOnline,
-    required this.diagnostics,
-  });
-
-  final bool? peerOnline;
-  final Map<String, Object?> diagnostics;
-}
-
 extension VoiceCallRuntime on RainRuntimeController {
   static const CallTerminalWritePolicy _voiceTerminalWritePolicy =
       CallTerminalWritePolicy();
@@ -1014,40 +1004,33 @@ extension VoiceCallRuntime on RainRuntimeController {
   }
 
   bool _canReplaceVoiceCallWithRetry(VoiceCallState current) {
-    return !current.isOutgoing &&
-        current.phase == VoiceCallPhase.incomingRinging;
+    return VoiceCallPreflightCoordinator.instance.canReplaceVoiceCallWithRetry(
+      current,
+    );
   }
 
   Future<void> _replaceStaleVoiceCallForRetry(VoiceCallState current) async {
-    final peerId = current.peerId;
-    if (peerId == null) {
-      await _disposeCurrentVoiceCallSession();
-      _setVoiceCallState(const VoiceCallState.idle());
-      return;
-    }
-
-    final session = _voiceCallSession;
-    if (session != null && current.callId == session.callId) {
-      await _runBoundedVoiceCleanupStep(
-        'voice_call_stale_retry_hangup',
-        () => session.hangUp(reason: 'Replaced by newer voice call invite.'),
-        context: <String, Object?>{
-          'peerId': session.remotePeerId,
-          'callId': session.callId,
-          'sessionEpoch': session.sessionEpoch,
-        },
-      );
-    } else if (current.callId != null) {
-      await _sendVoiceFrame(
-        peerId,
-        VoiceCallFrameType.hangup,
-        callId: current.callId!,
-        reason: 'Replaced by newer voice call invite.',
-        bestEffort: true,
-      );
-    }
-    await _disposeCurrentVoiceCallSession();
-    _setVoiceCallState(const VoiceCallState.idle());
+    await VoiceCallPreflightCoordinator.instance.replaceStaleVoiceCallForRetry(
+      current,
+      currentSession: _voiceCallSession,
+      runBoundedCleanupStep: _runBoundedVoiceCleanupStep,
+      sendHangupFrame:
+          ({
+            required String peerId,
+            required String callId,
+            required String reason,
+          }) {
+            return _sendVoiceFrame(
+              peerId,
+              VoiceCallFrameType.hangup,
+              callId: callId,
+              reason: reason,
+              bestEffort: true,
+            );
+          },
+      disposeCurrentVoiceCallSession: _disposeCurrentVoiceCallSession,
+      setVoiceCallState: _setVoiceCallState,
+    );
   }
 
   void _handleVoiceMute(String peerId, VoiceCallFrame frame) {
@@ -3855,118 +3838,142 @@ extension VoiceCallRuntime on RainRuntimeController {
   }
 
   void _failVoiceCallForPeer(String peerId, String message) {
-    final normalizedPeerId = _normalizedUsername(peerId);
-    final current = _voiceCallState;
-    if (current.peerId != normalizedPeerId ||
-        current.phase == VoiceCallPhase.idle ||
-        current.phase == VoiceCallPhase.failed ||
-        current.phase == VoiceCallPhase.ending) {
-      return;
-    }
-    unawaited(
-      _endVoiceCallForPeer(
-        normalizedPeerId,
-        notifyPeer: false,
-        detail: message,
-        failureReason: VoiceCallFailureReason.networkLost,
-        failureDetail: message,
-      ),
+    VoiceCallReconnectCoordinator.instance.failVoiceCallForPeer(
+      peerId,
+      message,
+      normalizeUsername: _normalizedUsername,
+      currentState: _voiceCallState,
+      failPeer: (normalizedPeerId, failureMessage) {
+        return _endVoiceCallForPeer(
+          normalizedPeerId,
+          notifyPeer: false,
+          detail: failureMessage,
+          failureReason: VoiceCallFailureReason.networkLost,
+          failureDetail: failureMessage,
+        );
+      },
     );
   }
 
   void _markVoiceCallReconnectingForPeer(String peerId) {
-    final current = _voiceCallState;
-    final normalizedPeerId = _normalizedUsername(peerId);
-    if (current.peerId != normalizedPeerId ||
-        current.phase == VoiceCallPhase.idle ||
-        current.phase == VoiceCallPhase.failed ||
-        current.phase == VoiceCallPhase.ending) {
-      return;
-    }
-    _recordRuntimeEvent(
-      category: 'call',
-      name: 'media_reconnecting_started',
-      severity: 'warning',
-      context: _voiceCallEventContext(current),
+    VoiceCallReconnectCoordinator.instance.markVoiceCallReconnectingForPeer(
+      peerId,
+      normalizeUsername: _normalizedUsername,
+      currentState: _voiceCallState,
+      currentSession: _voiceCallSession,
+      recordRuntimeEvent: _recordRuntimeEvent,
+      eventContext: _voiceCallEventContext,
+      setVoiceCallState: _setVoiceCallState,
+      armReconnectGrace: _armVoiceCallReconnectGrace,
+      reconnectingDetail: _voiceCallReconnecting,
+      nowMs: DateTime.now().millisecondsSinceEpoch,
     );
-    final now = DateTime.now().millisecondsSinceEpoch;
-    final session = _voiceCallSession;
-    if (session != null && session.callId == current.callId) {
-      session.markMediaReconnecting(detail: _voiceCallReconnecting);
-    }
-    _setVoiceCallState(
-      current.copyWith(
-        mediaReconnecting: true,
-        reconnectingSince: current.reconnectingSince ?? now,
-        detail: _voiceCallReconnecting,
-        updatedAt: now,
-        clearError: true,
-      ),
-    );
-    _armVoiceCallReconnectGrace(current.copyWith(updatedAt: now));
   }
 
   void _clearVoiceCallReconnectingForPeer(String peerId) {
-    final current = _voiceCallState;
-    if (current.peerId != _normalizedUsername(peerId) ||
-        !current.mediaReconnecting) {
-      return;
-    }
-    _recordRuntimeEvent(
-      category: 'call',
-      name: 'media_reconnecting_cleared',
-      context: _voiceCallEventContext(current),
-    );
-    final session = _voiceCallSession;
-    if (session != null && session.callId == current.callId) {
-      session.clearMediaReconnecting();
-    }
-    _cancelVoiceCallReconnectGrace();
-    _setVoiceCallState(
-      current.copyWith(
-        mediaReconnecting: false,
-        detail: 'Voice call connected.',
-        updatedAt: DateTime.now().millisecondsSinceEpoch,
-        clearReconnectingSince: true,
-        clearError: true,
-      ),
+    VoiceCallReconnectCoordinator.instance.clearVoiceCallReconnectingForPeer(
+      peerId,
+      normalizeUsername: _normalizedUsername,
+      currentState: _voiceCallState,
+      currentSession: _voiceCallSession,
+      recordRuntimeEvent: _recordRuntimeEvent,
+      eventContext: _voiceCallEventContext,
+      setVoiceCallState: _setVoiceCallState,
+      cancelReconnectGrace: _cancelVoiceCallReconnectGrace,
+      nowMs: DateTime.now().millisecondsSinceEpoch,
     );
   }
 
   void _armVoiceCallReconnectGrace(VoiceCallState call) {
-    final callId = call.callId;
-    final peerId = call.peerId;
-    if (callId == null ||
-        peerId == null ||
-        activeCallReconnectGrace <= Duration.zero) {
-      return;
-    }
-    _voiceCallReconnectGraceTimer?.cancel();
-    final sessionEpoch = call.sessionEpoch;
-    _voiceCallReconnectGraceTimer = Timer(activeCallReconnectGrace, () {
-      final current = _voiceCallState;
-      if (current.callId != callId ||
-          current.peerId != peerId ||
-          current.sessionEpoch != sessionEpoch ||
-          !current.mediaReconnecting ||
-          current.phase != VoiceCallPhase.active) {
-        return;
-      }
-      unawaited(
-        _endVoiceCallForPeer(
+    VoiceCallReconnectCoordinator.instance.armVoiceCallReconnectGrace(
+      call,
+      gracePeriod: activeCallReconnectGrace,
+      reconnectGraceTimer: _voiceCallReconnectGraceTimer,
+      setReconnectGraceTimer: (timer) => _voiceCallReconnectGraceTimer = timer,
+      currentState: () => _voiceCallState,
+      failPeer: (peerId, failureMessage) {
+        return _endVoiceCallForPeer(
           peerId,
           notifyPeer: false,
-          detail: _voiceCallNetworkLost,
+          detail: failureMessage,
           failureReason: VoiceCallFailureReason.networkLost,
-          failureDetail: _voiceCallNetworkLost,
-        ),
-      );
-    });
+          failureDetail: failureMessage,
+        );
+      },
+      networkLostMessage: _voiceCallNetworkLost,
+    );
   }
 
   void _cancelVoiceCallReconnectGrace() {
-    _voiceCallReconnectGraceTimer?.cancel();
-    _voiceCallReconnectGraceTimer = null;
+    VoiceCallReconnectCoordinator.instance.cancelVoiceCallReconnectGrace(
+      reconnectGraceTimer: _voiceCallReconnectGraceTimer,
+      setReconnectGraceTimer: (timer) => _voiceCallReconnectGraceTimer = timer,
+    );
+  }
+
+  void _assertVoiceCallCanStart() {
+    VoiceCallPreflightCoordinator.instance.assertVoiceCallCanStart(
+      peerConnectionAvailable: brain != null,
+    );
+  }
+
+  Future<void> _assertVoiceCallPeerIsFriend(String peerId) async {
+    await VoiceCallPreflightCoordinator.instance.assertVoiceCallPeerIsFriend(
+      peerId,
+      isAcceptedFriend: (username) async {
+        final friend = await _localMutations.run(
+          () => friendStore.loadFriend(username),
+        );
+        return friend?.state == FriendState.friend;
+      },
+      syncRelationships: (username) =>
+          _syncRelationships(onlyUsername: username),
+    );
+  }
+
+  Future<VoiceCallStartPresenceSnapshot> _fetchVoiceCallPeerPresence(
+    String peerId, {
+    required CallMediaMode mediaMode,
+  }) {
+    return VoiceCallPreflightCoordinator.instance.fetchVoiceCallPeerPresence(
+      peerId,
+      mediaMode: mediaMode,
+      normalizeUsername: _normalizedUsername,
+      fetchPresence: (username, {required String action}) async {
+        final presence = await _fetchPeerPresenceSnapshot(
+          username,
+          action: action,
+        );
+        if (presence == null) {
+          return null;
+        }
+        return VoiceCallPeerPresence(
+          online: presence.online,
+          diagnostics: presence.toDiagnostics(),
+        );
+      },
+      recordRuntimeEvent: _recordRuntimeEvent,
+      errorRecorder: errorRecorder == null
+          ? null
+          : (
+              error,
+              stackTrace, {
+              required String source,
+              required bool fatal,
+            }) {
+              errorRecorder?.call(
+                error,
+                stackTrace,
+                source: source,
+                fatal: fatal,
+              );
+            },
+    );
+  }
+
+  Future<FileTransferRecord?> _firstActiveTransfer() async {
+    final transfers = await fileTransferStore.loadActiveTransfers();
+    return transfers.isEmpty ? null : transfers.first;
   }
 
   Future<void> _failVoiceCall(
@@ -4025,133 +4032,6 @@ extension VoiceCallRuntime on RainRuntimeController {
       ),
     );
     await _disposeCurrentVoiceCallSession();
-  }
-
-  void _assertVoiceCallCanStart() {
-    if (brain == null) {
-      throw StateError('Peer connection is unavailable right now.');
-    }
-  }
-
-  Future<void> _assertVoiceCallPeerIsFriend(String peerId) async {
-    var friend = await _localMutations.run(
-      () => friendStore.loadFriend(peerId),
-    );
-    if (friend?.state != FriendState.friend) {
-      await _syncRelationships(onlyUsername: peerId);
-      friend = await _localMutations.run(() => friendStore.loadFriend(peerId));
-    }
-    if (friend?.state != FriendState.friend) {
-      throw StateError('Only accepted friends can call.');
-    }
-  }
-
-  Future<_CallStartPresenceSnapshot> _fetchVoiceCallPeerPresence(
-    String peerId, {
-    required CallMediaMode mediaMode,
-  }) async {
-    final normalizedPeerId = _normalizedUsername(peerId);
-    _ResolvedBackendPresence? presence;
-    try {
-      presence = await _fetchPeerPresenceSnapshot(
-        normalizedPeerId,
-        action: 'callStart',
-      );
-    } catch (error, stackTrace) {
-      final decision = RuntimeInteractionGuard.presenceUnknown(
-        peerId: normalizedPeerId,
-      );
-      _recordRuntimeEvent(
-        category: 'call',
-        name: 'call_start_presence_unknown',
-        severity: 'warning',
-        message: decision.userMessage,
-        context: <String, Object?>{
-          'peerId': normalizedPeerId,
-          'mediaMode': mediaMode.name,
-          'reasonCode': decision.reasonCode.name,
-          'presenceSource': 'backend',
-          'error': error.toString(),
-        },
-      );
-      errorRecorder?.call(
-        error,
-        stackTrace,
-        source: 'voice-call-presence',
-        fatal: false,
-      );
-      return _CallStartPresenceSnapshot(
-        peerOnline: null,
-        diagnostics: <String, Object?>{
-          'presenceSource': 'backend',
-          'presenceError': error.toString(),
-        },
-      );
-    }
-
-    if (presence == null) {
-      final decision = RuntimeInteractionGuard.presenceUnknown(
-        peerId: normalizedPeerId,
-      );
-      _recordRuntimeEvent(
-        category: 'call',
-        name: 'call_start_presence_unknown',
-        severity: 'warning',
-        message: decision.userMessage,
-        context: <String, Object?>{
-          'peerId': normalizedPeerId,
-          'mediaMode': mediaMode.name,
-          'reasonCode': decision.reasonCode.name,
-          'presenceSource': 'backend',
-        },
-      );
-      return const _CallStartPresenceSnapshot(
-        peerOnline: null,
-        diagnostics: <String, Object?>{'presenceSource': 'backend'},
-      );
-    }
-
-    final peerOnline = presence.online;
-    if (!peerOnline) {
-      final decision = RuntimeInteractionGuard.peerOffline(
-        peerId: normalizedPeerId,
-      );
-      _recordRuntimeEvent(
-        category: 'call',
-        name: 'call_start_blocked_offline',
-        severity: 'warning',
-        message: decision.userMessage,
-        context: <String, Object?>{
-          'peerId': normalizedPeerId,
-          'mediaMode': mediaMode.name,
-          'reasonCode': decision.reasonCode.name,
-          ...presence.toDiagnostics(),
-        },
-      );
-      return _CallStartPresenceSnapshot(
-        peerOnline: false,
-        diagnostics: presence.toDiagnostics(),
-      );
-    } else {
-      _recordRuntimeEvent(
-        category: 'call',
-        name: 'call_start_presence_confirmed',
-        context: <String, Object?>{
-          'peerId': normalizedPeerId,
-          'mediaMode': mediaMode.name,
-          ...presence.toDiagnostics(),
-        },
-      );
-    }
-    return _CallStartPresenceSnapshot(
-      peerOnline: true,
-      diagnostics: presence.toDiagnostics(),
-    );
-  }
-
-  Future<FileTransferRecord?> _firstActiveTransfer() async {
-    final transfers = await fileTransferStore.loadActiveTransfers();
-    return transfers.isEmpty ? null : transfers.first;
   }
 
   bool _isLiveVoiceCallSession(VoiceCallSession session) {

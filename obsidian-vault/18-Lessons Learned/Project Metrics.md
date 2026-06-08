@@ -78,6 +78,13 @@ Related: [[Project Home]], [[Production Readiness]], [[Launch Readiness]], [[Ris
 | 2026-06-08 | `dev` | `27a8c8e8df53d8fe1079f0011e60442891c8fceb` | Phase 3a workspace analyzer | `dart run melos run analyze` | Passed | Melos analyze passed for all four workspace packages. |
 | 2026-06-08 | `dev` | `27a8c8e8df53d8fe1079f0011e60442891c8fceb` | Phase 3a workspace tests | `dart run melos run test` | Passed | Full Melos test suite passed across `peer_core`, `protocol_brain`, `rain`, and `rain_core`; `rain` reported 730 passing tests and 20 skipped cases. |
 | 2026-06-08 | `dev` | `27a8c8e8df53d8fe1079f0011e60442891c8fceb` | Phase 3a vault synchronization | `.\scripts\check_obsidian_vault.ps1` | Passed | `Obsidian vault check passed. Markdown files: 198.` |
+| 2026-06-08 | `dev` | `476562f0b5ed7e70ff0c53369b9133d91a6fcb3e` | Phase 3b focused reconnect/preflight proof | `flutter test test\voice_call_reconnect_coordinator_test.dart test\voice_call_preflight_coordinator_test.dart test\voice_call_state_coordinator_test.dart test\voice_call_room_coordinator_test.dart test\voice_call_terminal_reconciler_test.dart --reporter expanded` from `apps/rain` | Passed | 37 focused coordinator tests passed. |
+| 2026-06-08 | `dev` | `476562f0b5ed7e70ff0c53369b9133d91a6fcb3e` | Phase 3b app analyzer | `dart analyze` from `apps/rain` | Passed | App analyzer reported no issues after extracting preflight and reconnect coordinators. |
+| 2026-06-08 | `dev` | `476562f0b5ed7e70ff0c53369b9133d91a6fcb3e` | Phase 3b workspace dependency resolution | `dart pub get` | Passed | Dependencies resolved before workspace validation. |
+| 2026-06-08 | `dev` | `476562f0b5ed7e70ff0c53369b9133d91a6fcb3e` | Phase 3b workspace analyzer | `dart run melos run analyze` | Passed | Melos analyze passed for all four workspace packages. |
+| 2026-06-08 | `dev` | `476562f0b5ed7e70ff0c53369b9133d91a6fcb3e` | Phase 3b workspace tests | `dart run melos run test` | Passed | Full Melos test suite passed across `peer_core`, `protocol_brain`, `rain`, and `rain_core`; `rain` reported 739 passing tests and 20 skipped cases. |
+| 2026-06-08 | `dev` | `476562f0b5ed7e70ff0c53369b9133d91a6fcb3e` | Phase 3b vault synchronization | `.\scripts\check_obsidian_vault.ps1` | Passed | `Obsidian vault check passed. Markdown files: 198.` |
+| 2026-06-08 | `dev` | `476562f0b5ed7e70ff0c53369b9133d91a6fcb3e` | Phase 3b diff hygiene | `git diff --check` | Passed | Exit code 0; Git reported only the existing CRLF normalization warning for `voice_call_runtime.dart`. |
 
 ## Senior Audit Phase 5 Evidence
 

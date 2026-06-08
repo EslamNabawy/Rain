@@ -46,6 +46,13 @@ Detailed implementation planning: [[VoiceCallRuntime Refactor Plan]].
 - `VoiceCallDiagnostics` and `VoiceCallTerminalReconciler` live beside the other voice-call coordinators in the same folder.
 - `VoiceCallRuntime` still owns command orchestration, Firebase room watch/reconciliation, lock coordination, media/session orchestration, and cleanup.
 
+2026-06-08 Phase 3b preflight/reconnect coordinator slice:
+
+- `VoiceCallPreflightCoordinator` owns peer-connection availability assertions, accepted-friend validation with one relationship sync, backend presence fetch conversion into call-start guards, and stale retry replacement cleanup.
+- `VoiceCallReconnectCoordinator` owns live peer failure mutation, reconnecting-state mutation, session reconnect markers, and reconnect grace timer arming/cancel guards.
+- Both coordinators are stateless; `VoiceCallRuntime` passes mutable state, timers, sessions, and side-effect callbacks at the delegation boundary.
+- `VoiceCallRuntime` still owns command orchestration, Firebase room watch/reconciliation, lock coordination, media/session orchestration, terminal cleanup, and full call-start conflict policy.
+
 ## Future Architecture
 
 - [[CallStartCoordinator]] handles start eligibility and explicit phase transitions.
@@ -58,7 +65,7 @@ Detailed implementation planning: [[VoiceCallRuntime Refactor Plan]].
 
 1. Add interfaces beside current runtime.
 2. Move diagnostics and pure error-classification helpers first. Status: partial complete through `CallErrorClassifier`.
-3. Move start preflight next. Status: partial complete for pure local start-block expiry mapping through `VoiceCallStateCoordinator`; friend/presence/conflict preflight remains in `VoiceCallRuntime`.
+3. Move start preflight next. Status: partial complete for pure local start-block expiry mapping through `VoiceCallStateCoordinator` and friend/presence availability plus stale retry replacement through `VoiceCallPreflightCoordinator`; file/call conflict policy and command orchestration remain in `VoiceCallRuntime`.
 4. Move lease creation/repair.
 5. Move terminal reconciliation. Status: pure terminal session-state decision extracted to `VoiceCallTerminalReconciler`; room watch/write orchestration remains in `VoiceCallRuntime`.
 6. Move media coordination. Status: partial complete for app-side media adapters and renderer-failure target classification; full session orchestration remains.
@@ -105,5 +112,10 @@ Detailed implementation planning: [[VoiceCallRuntime Refactor Plan]].
 - `dart pub get` passed.
 - `dart run melos run analyze` passed.
 - `dart run melos run test` passed.
+
+2026-06-08 Phase 3b focused/local evidence:
+
+- `dart analyze lib\application\runtime\voice_call_runtime.dart lib\application\runtime\rain_runtime_controller.dart lib\application\runtime\voice_call\voice_call_reconnect_coordinator.dart lib\application\runtime\voice_call\voice_call_preflight_coordinator.dart test\voice_call_reconnect_coordinator_test.dart test\voice_call_preflight_coordinator_test.dart` passed from `apps\rain`.
+- `flutter test test\voice_call_reconnect_coordinator_test.dart test\voice_call_preflight_coordinator_test.dart test\voice_call_state_coordinator_test.dart test\voice_call_room_coordinator_test.dart test\voice_call_terminal_reconciler_test.dart --reporter expanded` passed from `apps\rain`.
 
 Related: [[Architecture Stabilization Epic]], [[Target Architecture]], [[Refactoring Strategy]].

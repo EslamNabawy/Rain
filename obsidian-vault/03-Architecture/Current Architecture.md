@@ -75,7 +75,7 @@ Layer structure:
 Key app runtimes/controllers:
 
 - `RainRuntimeController` - central app runtime for presence, friends, sessions, messages, files, calls, network loss, app exit, and shutdown.
-- `VoiceCallRuntime` - call runtime extension/path for voice/video call state, signaling, command orchestration, room reconciliation, lock coordination, terminal cleanup, and state mutation. 2026-06-05 Phase 3 moved pure call error classification to `CallErrorClassifier` and app-side voice/video media adapters plus diagnostics mapping to `call_media_session_coordinator.dart`; 2026-06-06 added renderer target failure authority and pure terminal session-state reconciliation through `VoiceCallTerminalReconciler`; 2026-06-08 grouped extracted call files under `application/runtime/voice_call/` and added `VoiceCallStateCoordinator` for pure state mapping/reset policy. Command, Firebase room reconciliation, lock coordination, media/session orchestration, and most cleanup remain open.
+- `VoiceCallRuntime` - call runtime extension/path for voice/video call state, signaling, command orchestration, room reconciliation, lock coordination, terminal cleanup, and state mutation. 2026-06-05 Phase 3 moved pure call error classification to `CallErrorClassifier` and app-side voice/video media adapters plus diagnostics mapping to `call_media_session_coordinator.dart`; 2026-06-06 added renderer target failure authority and pure terminal session-state reconciliation through `VoiceCallTerminalReconciler`; 2026-06-08 grouped extracted call files under `application/runtime/voice_call/`, added `VoiceCallStateCoordinator` for pure state mapping/reset policy, and added `VoiceCallPreflightCoordinator` plus `VoiceCallReconnectCoordinator` for call-start validation, stale retry replacement, and reconnect grace state. Command orchestration, Firebase room reconciliation, lock coordination, media/session orchestration, terminal cleanup, and full start conflict policy remain open.
 - `ConnectionAttemptCoordinator` - peer connect/retry/disconnect intent and recovery state.
 - `RuntimeInteractionGuard` - typed action guard for connect, call, and file-transfer conflicts.
 - `ConnectionRequestRuntime` - offline connection request workflow.
@@ -362,7 +362,7 @@ Related: [[File Transfer]], [[Streaming Architecture]], [[Backpressure Strategy]
 
 1. UI calls `VoiceCallController.start()` or `startVideo()`.
 2. `RainRuntimeController` delegates to call runtime path.
-3. Presence and conflict checks run before signaling.
+3. Friend and backend presence checks now delegate to `VoiceCallPreflightCoordinator` before signaling; file/call conflict checks still run in `VoiceCallRuntime`.
 4. `VoiceSignalingAdapter.createOutgoingCall()` creates or repairs Firebase `activeVoiceUsers`, `activeVoicePairs`, `voiceCalls`, and `voiceCallInboxes`.
 5. Callee watches `voiceCallInboxes/{username}` and then `voiceCalls/{callId}`.
 6. Accept/reject/busy/hangup frames and SDP/ICE use Firebase voice signaling artifacts.
@@ -371,7 +371,8 @@ Related: [[File Transfer]], [[Streaming Architecture]], [[Backpressure Strategy]
 9. WebRTC/session/renderer cleanup is best-effort and bounded; cleanup failures are diagnostics, not a reason to keep a terminal call active in UI state.
 10. Failure reason/message classification runs through `CallErrorClassifier` and `VoiceCallErrorCoordinator` before user-facing call state is published.
 11. Pure UI-facing call-state mapping and terminal reset decisions run through `VoiceCallStateCoordinator`.
-12. UI state is exposed through `voiceCallProvider`, `videoCallRenderersProvider`, and call surface providers.
+12. Reconnecting/failure grace timer state runs through `VoiceCallReconnectCoordinator`.
+13. UI state is exposed through `voiceCallProvider`, `videoCallRenderersProvider`, and call surface providers.
 
 Related: [[Voice Calls]], [[Video Calls]], [[Call State Machine]], [[Lease Management]], [[CallMediaCoordinator]].
 
@@ -540,7 +541,7 @@ Related: [[Test Strategy]], [[Coverage Dashboard]], [[Emulator Test Matrix]].
 
 This discovery does not re-audit, but the current structure confirms the already tracked risk areas:
 
-- `VoiceCallRuntime` still centralizes command orchestration, Firebase room reconciliation, lock coordination, media/session orchestration, and cleanup. Phase 3 extractions moved error classification, media adapter ownership, terminal-session-state decisions, room helper policy, and pure call-state mapping/reset decisions out, but the oversized-runtime debt remains tracked in [[VoiceCallRuntime Refactor]].
+- `VoiceCallRuntime` still centralizes command orchestration, Firebase room reconciliation, lock coordination, media/session orchestration, terminal cleanup, and full start conflict policy. Phase 3 extractions moved error classification, media adapter ownership, terminal-session-state decisions, room helper policy, pure call-state mapping/reset decisions, call-start friend/presence preflight, stale retry replacement, and reconnect grace state out, but the oversized-runtime debt remains tracked in [[VoiceCallRuntime Refactor]].
 - `RainRuntimeController` owns many runtime domains at once.
 - Firebase call lease flow depends on sequential client-side operations and lock repair.
 - UI state, signaling state, media state, and terminal call state require strict reconciliation. Terminal room state must clear UI-facing call state before asynchronous media/session cleanup.
