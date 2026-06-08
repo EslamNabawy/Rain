@@ -1,6 +1,6 @@
 # Technical Debt Register
 
-Last updated: 2026-06-07
+Last updated: 2026-06-08
 
 ## Purpose
 
@@ -123,6 +123,7 @@ Source: [[2026-06-05 Senior Audit Remediation Plan]]
 - Progress Note 2026-06-06: Combined Phase 3 slice reduced runtime/state ambiguity but does not close TD-001. Added `VoiceCallTerminalReconciler` for terminal-session-state policy, added renderer target classification in `call_media_session_coordinator.dart`, and moved peer UI truth into `ConnectionDiagnostics`/`peerConnectionDiagnosticsProvider`. Command orchestration, Firebase room reconciliation, lock/lease coordination, and most terminal cleanup remain in `VoiceCallRuntime`.
 - Progress Note 2026-06-08: Phase 2a extracted `VoiceCallRoomCoordinator` (164 lines, 20 tests). Room status tracking, terminal room detail/reason resolution, reason code mapping, and terminal write error detection moved to coordinator. voice_call_runtime.dart reduced 4751→4689 lines.
 - Progress Note 2026-06-08: Phase 3 added `voice_call_rtdb_rules_contract_test.dart` (37 tests) validating all voice call RTDB rules paths. TD-009 rule coverage gaps now have static test validation. TD-011 malformed write protection validated through existing emulator tests.
+- Progress Note 2026-06-08: Phase 3a grouped `VoiceCallRoomCoordinator`, `VoiceCallErrorCoordinator`, `VoiceCallDiagnostics`, `VoiceCallTerminalReconciler`, and new `VoiceCallStateCoordinator` under `apps/rain/lib/application/runtime/voice_call/`. `VoiceCallStateCoordinator` owns pure call-state mapping/reset policy and focused coordinator tests plus full Melos analyze/test passed. `VoiceCallRuntime` is now 4,480 lines, but command orchestration, Firebase room reconciliation, lock coordination, media/session orchestration, and most cleanup remain.
 
 ### TD-002: RainRuntimeController Domain Concentration
 
@@ -181,6 +182,7 @@ Source: [[2026-06-05 Senior Audit Remediation Plan]]
 - Progress Note 2026-06-03: Late voice signaling frames after terminal Firebase rooms now remain structured `late_frame_ignored` diagnostics and no longer replace the latest real crash/error in exports. 2026-06-04 mitigation: terminal-sensitive media signaling sends now preflight the Firebase room before `accept`, `offer`, `answer`, and `mute` writes; missing or terminal rooms are skipped and reconciled before `writeVoiceOffer`/`writeVoiceAnswer` can become debug-adapter crash records. Remaining debt is the full state-machine and terminal reconciliation split.
 - Progress Note 2026-06-04: Terminal reconciliation now has state-before-cleanup ordering. `_settleVoiceCallAfterTerminalRace`, local hangup/fail paths, and cleanup helpers publish failed/idle state before bounded WebRTC/session cleanup, and tests lock that terminal calls do not keep file-transfer guards blocked. Remaining debt is extracting a strict call state machine instead of keeping transition ordering inside the large runtime.
 - Progress Note 2026-06-06: Video renderer failure now follows the terminal state machine instead of remaining a warning-only media issue. Live local renderer failure fails call start with `videoRendererFailed`; live remote renderer attach failure writes terminal failed room state; failed terminal UI state cannot be overwritten by late session idle during cleanup. Remaining debt is full state-machine extraction and device-direction proof.
+- Progress Note 2026-06-08: `VoiceCallStateCoordinator` now owns pure phase/detail/failure mapping from `VoiceCallSessionState` into `VoiceCallState` plus terminal write/local end reset policy. This reduces state-machine logic inside `VoiceCallRuntime`, but allowed transitions, timeout-to-terminal rules, and device-direction proof remain open.
 
 ### TD-005: Fragmented Call Surface Model
 

@@ -1,7 +1,7 @@
 import 'package:flutter_test/flutter_test.dart';
 import 'package:protocol_brain/protocol_brain.dart';
+import 'package:rain/application/runtime/voice_call/voice_call_terminal_reconciler.dart';
 import 'package:rain/application/runtime/voice_call_state.dart';
-import 'package:rain/application/runtime/voice_call_terminal_reconciler.dart';
 
 void main() {
   test('allows session state when terminal room is not latched', () {

@@ -4,7 +4,7 @@ import 'dart:typed_data';
 
 import 'package:file_picker/file_picker.dart';
 import 'package:flutter_test/flutter_test.dart';
-import 'package:rain/application/runtime/voice_call_diagnostics.dart';
+import 'package:rain/application/runtime/voice_call/voice_call_diagnostics.dart';
 import 'package:rain/infrastructure/services/crash_diagnostics_service.dart';
 
 void main() {

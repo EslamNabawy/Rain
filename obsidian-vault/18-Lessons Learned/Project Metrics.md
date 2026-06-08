@@ -1,6 +1,6 @@
 # Project Metrics
 
-Last updated: 2026-06-05
+Last updated: 2026-06-08
 
 ## Purpose
 
@@ -72,6 +72,12 @@ Related: [[Project Home]], [[Production Readiness]], [[Launch Readiness]], [[Ris
 | 2026-06-05 | `dev` | `05e08dd8c160219d5e77467787555286d6fe3788` | Phase 3 first slice workspace validation | `dart run melos run analyze` | Passed | Melos analyze passed for all workspace packages after removing stale private wrapper helpers. |
 | 2026-06-05 | `dev` | `05e08dd8c160219d5e77467787555286d6fe3788` | Phase 3 first slice workspace validation | `dart run melos run test` | Passed | Full Melos test suite passed; `rain` reported 677 passed and 20 skipped. |
 | 2026-06-05 | `dev` | `05e08dd8c160219d5e77467787555286d6fe3788` | Phase 3 first slice vault synchronization | `./scripts/check_obsidian_vault.ps1` | Passed | `Obsidian vault check passed. Markdown files: 197.` |
+| 2026-06-08 | `dev` | `27a8c8e8df53d8fe1079f0011e60442891c8fceb` | Phase 3a voice-call state coordinator app analyzer | `dart analyze` from `apps/rain` | Passed | App analyzer reported no issues after moving extracted coordinators under `runtime/voice_call/` and adding `VoiceCallStateCoordinator`. |
+| 2026-06-08 | `dev` | `27a8c8e8df53d8fe1079f0011e60442891c8fceb` | Phase 3a focused coordinator proof | `flutter test test\voice_call_state_coordinator_test.dart test\voice_call_room_coordinator_test.dart test\voice_call_terminal_reconciler_test.dart --reporter expanded` from `apps/rain` | Passed | 28 focused state, room, and terminal coordinator tests passed. |
+| 2026-06-08 | `dev` | `27a8c8e8df53d8fe1079f0011e60442891c8fceb` | Phase 3a workspace dependency resolution | `dart pub get` | Passed | Dependencies resolved before workspace validation. |
+| 2026-06-08 | `dev` | `27a8c8e8df53d8fe1079f0011e60442891c8fceb` | Phase 3a workspace analyzer | `dart run melos run analyze` | Passed | Melos analyze passed for all four workspace packages. |
+| 2026-06-08 | `dev` | `27a8c8e8df53d8fe1079f0011e60442891c8fceb` | Phase 3a workspace tests | `dart run melos run test` | Passed | Full Melos test suite passed across `peer_core`, `protocol_brain`, `rain`, and `rain_core`; `rain` reported 730 passing tests and 20 skipped cases. |
+| 2026-06-08 | `dev` | `27a8c8e8df53d8fe1079f0011e60442891c8fceb` | Phase 3a vault synchronization | `.\scripts\check_obsidian_vault.ps1` | Passed | `Obsidian vault check passed. Markdown files: 198.` |
 
 ## Senior Audit Phase 5 Evidence
 

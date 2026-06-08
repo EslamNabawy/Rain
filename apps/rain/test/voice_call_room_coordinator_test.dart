@@ -2,7 +2,7 @@ import 'package:flutter_test/flutter_test.dart';
 import 'package:protocol_brain/protocol_brain.dart';
 
 import 'package:rain/application/runtime/call_error_classifier.dart';
-import 'package:rain/application/runtime/voice_call_room_coordinator.dart';
+import 'package:rain/application/runtime/voice_call/voice_call_room_coordinator.dart';
 import 'package:rain/application/runtime/voice_call_state.dart';
 
 void main() {
@@ -102,8 +102,7 @@ void main() {
         expect(detail, 'Something went wrong');
       });
 
-      test('delegates to detailForSessionState when room reason is empty',
-          () {
+      test('delegates to detailForSessionState when room reason is empty', () {
         final room = const VoiceCallRoom(
           v: 1,
           callId: 'c1',
@@ -238,7 +237,8 @@ void main() {
       test('maps microphoneDenied correctly', () {
         expect(
           coordinator.reasonCodeForFailure(
-              VoiceCallFailureReason.microphoneDenied),
+            VoiceCallFailureReason.microphoneDenied,
+          ),
           CallErrorClassifier.microphoneDeniedReasonCode,
         );
       });
@@ -246,7 +246,8 @@ void main() {
       test('maps remoteMicrophoneDenied to microphoneDenied code', () {
         expect(
           coordinator.reasonCodeForFailure(
-              VoiceCallFailureReason.remoteMicrophoneDenied),
+            VoiceCallFailureReason.remoteMicrophoneDenied,
+          ),
           CallErrorClassifier.microphoneDeniedReasonCode,
         );
       });
@@ -254,7 +255,8 @@ void main() {
       test('maps fileTransferActive to busy code', () {
         expect(
           coordinator.reasonCodeForFailure(
-              VoiceCallFailureReason.fileTransferActive),
+            VoiceCallFailureReason.fileTransferActive,
+          ),
           CallErrorClassifier.busyReasonCode,
         );
       });
@@ -262,7 +264,8 @@ void main() {
       test('maps videoRendererFailed correctly', () {
         expect(
           coordinator.reasonCodeForFailure(
-              VoiceCallFailureReason.videoRendererFailed),
+            VoiceCallFailureReason.videoRendererFailed,
+          ),
           CallErrorClassifier.videoRendererFailedReasonCode,
         );
       });
@@ -270,7 +273,8 @@ void main() {
       test('maps mediaConnectionFailed correctly', () {
         expect(
           coordinator.reasonCodeForFailure(
-              VoiceCallFailureReason.mediaConnectionFailed),
+            VoiceCallFailureReason.mediaConnectionFailed,
+          ),
           CallErrorClassifier.failedReasonCode,
         );
       });
@@ -280,7 +284,8 @@ void main() {
       test('detects PERMISSION_DENIED', () {
         expect(
           coordinator.isTerminalRoomWriteError(
-              StateError('PERMISSION_DENIED: write denied')),
+            StateError('PERMISSION_DENIED: write denied'),
+          ),
           isTrue,
         );
       });
@@ -288,7 +293,8 @@ void main() {
       test('detects already deleted', () {
         expect(
           coordinator.isTerminalRoomWriteError(
-              StateError('Node already deleted')),
+            StateError('Node already deleted'),
+          ),
           isTrue,
         );
       });

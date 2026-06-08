@@ -1,6 +1,6 @@
 import 'package:protocol_brain/protocol_brain.dart';
 
-import 'voice_call_state.dart';
+import '../voice_call_state.dart';
 
 final class VoiceCallTerminalSessionDecision {
   const VoiceCallTerminalSessionDecision.apply() : ignoredReason = null;

@@ -1,5 +1,7 @@
 # CallTerminalReconciler
 
+Last updated: 2026-06-08
+
 ## Purpose
 
 Make Firebase terminal room state authoritative for both peers.
@@ -15,7 +17,7 @@ Make Firebase terminal room state authoritative for both peers.
 
 ## Current Implementation
 
-As of 2026-06-06, `apps/rain/lib/application/runtime/voice_call_terminal_reconciler.dart` owns the pure decision for whether a latched terminal call session state may still update UI state. Failed terminal call state ignores later `idle` or `ending` states emitted by local `session.hangUp()` cleanup, so video renderer failures and terminal Firebase failed rooms cannot be visually resurrected or collapsed to false idle before the failed result is shown.
+As of 2026-06-08, `apps/rain/lib/application/runtime/voice_call/voice_call_terminal_reconciler.dart` owns the pure decision for whether a latched terminal call session state may still update UI state. Failed terminal call state ignores later `idle` or `ending` states emitted by local `session.hangUp()` cleanup, so video renderer failures and terminal Firebase failed rooms cannot be visually resurrected or collapsed to false idle before the failed result is shown.
 
 `VoiceCallRuntime` still owns Firebase room writes, room watches, lock cleanup, and session disposal. Those paths remain future extraction work.
 

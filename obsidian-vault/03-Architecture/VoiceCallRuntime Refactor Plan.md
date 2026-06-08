@@ -1,6 +1,6 @@
 # VoiceCallRuntime Refactor Plan
 
-Last updated: 2026-06-03
+Last updated: 2026-06-08
 
 ## Purpose
 
@@ -24,6 +24,8 @@ Related: [[VoiceCallRuntime Refactor]], [[Target Architecture]], [[Refactoring S
 - terminal cleanup,
 - UI-facing state mutation,
 - diagnostics.
+
+As of 2026-06-08, extracted stateless/pure call helpers are grouped under `apps/rain/lib/application/runtime/voice_call/`. `VoiceCallStateCoordinator` owns pure runtime state mapping and terminal reset decisions, `VoiceCallRoomCoordinator` owns room helper policy, `VoiceCallErrorCoordinator` delegates runtime error classification, `VoiceCallTerminalReconciler` owns terminal-session-state decisions, and `VoiceCallDiagnostics` owns the diagnostic record shape.
 
 ## Problems
 
@@ -77,7 +79,7 @@ Existing architecture notes: [[CallStartCoordinator]], [[CallLeaseManager]], [[C
 
 1. Add coordinator interfaces beside current runtime.
 2. Move diagnostics taxonomy first because it observes behavior without changing it.
-3. Move start/preflight logic into `CallStartCoordinator`.
+3. Move start/preflight logic into `CallStartCoordinator`. Partial 2026-06-08: local start-block expiry mapping moved to `VoiceCallStateCoordinator`; friend/presence/conflict preflight remains in `VoiceCallRuntime`.
 4. Move lease claim/repair/release into `CallLeaseManager`.
 5. Move terminal reconciliation into `CallTerminalReconciler`.
 6. Move media capture and renderer lifecycle into `CallMediaCoordinator`.
@@ -91,6 +93,7 @@ Existing architecture notes: [[CallStartCoordinator]], [[CallLeaseManager]], [[C
 - Runtime integration tests for outgoing voice, outgoing video, incoming accept, reject, busy, timeout, and hangup.
 - Failure tests for mic denied, camera denied, renderer disposed, Firebase permission denied, corrupt room, stale lock, media timeout.
 - Regression tests for terminal room beating late frames.
+- Coordinator tests for pure state, room, error, and terminal decision policies.
 
 ## Rollout Plan
 
@@ -108,4 +111,3 @@ Existing architecture notes: [[CallStartCoordinator]], [[CallLeaseManager]], [[C
 - [[Call State Machine]] reflects actual allowed transitions.
 - [[Risk Register]] status is updated for R-001, R-004, R-007, and R-009.
 - [[Technical Debt Register]] status is updated for TD-001 and TD-004.
-

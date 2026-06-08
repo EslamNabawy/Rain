@@ -1,7 +1,7 @@
 import 'package:protocol_brain/protocol_brain.dart';
 
-import 'call_error_classifier.dart';
-import 'voice_call_state.dart';
+import '../call_error_classifier.dart';
+import '../voice_call_state.dart';
 
 /// Tracks Firebase voice call room status transitions and provides
 /// terminal room detail/reason resolution without owning runtime state.
@@ -68,7 +68,7 @@ final class VoiceCallRoomCoordinator {
   VoiceCallFailureReason? terminalRoomFailureReason(
     VoiceCallRoom room, {
     required VoiceCallFailureReason? Function(VoiceCallSessionState)
-        failureReasonForSessionState,
+    failureReasonForSessionState,
   }) {
     if (room.status == VoiceCallSignalingStatus.ended) {
       return null;
@@ -131,13 +131,16 @@ final class VoiceCallRoomCoordinator {
   // Private helpers
   // ---------------------------------------------------------------------------
 
-  static VoiceCallSessionState _terminalSessionStateForRoom(VoiceCallRoom room) {
+  static VoiceCallSessionState _terminalSessionStateForRoom(
+    VoiceCallRoom room,
+  ) {
     return VoiceCallSessionState(
       phase: VoiceCallSessionPhase.failed,
       updatedAt: room.endedAt ?? room.updatedAt,
       mediaMode: room.mediaMode,
       detail: room.reason ?? _terminalReasonForStatus(room.status),
-      reasonCode: room.reasonCode ??
+      reasonCode:
+          room.reasonCode ??
           switch (room.status) {
             VoiceCallSignalingStatus.expired =>
               CallErrorClassifier.expiredReasonCode,

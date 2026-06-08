@@ -1,6 +1,6 @@
 # Lessons Learned
 
-Last updated: 2026-06-07
+Last updated: 2026-06-08
 
 ## Purpose
 
@@ -639,6 +639,22 @@ No task is fully complete until the lesson check is done or explicitly marked "n
 - Pattern: Auth boundary callbacks are useful when backend cleanup owns the irreversible server transition but app runtime owns local stream subscriptions.
 - Follow-up improvement: Add Android log proof that delete-to-login no longer emits stale RTDB permission-denied listener errors.
 - Owner: Engineering/Product
+- Status: Open
+
+### LESSON-20260608-039: Missing Extracted Files Need Import Graph Validation
+
+- Date: 2026-06-08
+- Related task: Phase 3a voice-call coordinator layout and `VoiceCallStateCoordinator` recreation.
+- Related system: [[VoiceCallRuntime Refactor]], [[Call State Machine]]
+- Related risk/debt: R-007, TD-001, TD-004, BLK-001
+- What was learned: A partial coordinator extraction can leave the runtime delegating to a class that does not exist yet, and moving helper files without updating every app/test import breaks the package graph.
+- What caused delays: The worktree already contained a partial refactor with `VoiceCallRuntime` calls to `VoiceCallStateCoordinator` and an untracked `VoiceCallErrorCoordinator`, but the target `voice_call/` directory had not been created.
+- What failed: The initial app analyzer reported only warnings after code creation, but those warnings still failed the analyzer command and would have blocked Melos validation if left as stale private helpers.
+- What succeeded: `rg` import discovery plus focused coordinator tests caught the affected runtime/test import surfaces; the final gate passed `dart analyze`, focused coordinator tests, Melos analyze, and full Melos tests.
+- What should change: Future extraction slices should move files, update import graph, create missing target classes, and remove stale private delegates in the same change before claiming the slice is analyzable.
+- Pattern: Incremental extraction must validate both file layout and dead private API cleanup.
+- Follow-up improvement: Continue Phase 3 with room reconciliation and lock coordination extraction only after adding characterization tests for the next private helper group.
+- Owner: Engineering
 - Status: Open
 
 ## Review Cadence

@@ -1,6 +1,6 @@
 # Audit Resolution Tracker
 
-Last updated: 2026-06-05
+Last updated: 2026-06-08
 
 ## Purpose
 
@@ -14,7 +14,7 @@ Related: [[Master Roadmap]], [[Backlog]], [[Epic Index]], [[Critical Path]], [[R
 
 | # | Audit Finding | Epic | Feature | Task | Status | Next Step |
 | --- | --- | --- | --- | --- | --- | --- |
-| 1 | `VoiceCallRuntime` has too many responsibilities. | [[Architecture Stabilization Epic]] | Runtime Responsibility Split | TASK-001 | [ ] Partial 2026-06-05 | First slice extracted `CallErrorClassifier` and media adapters; next extract room reconciliation and lock coordination behind characterization tests. |
+| 1 | `VoiceCallRuntime` has too many responsibilities. | [[Architecture Stabilization Epic]] | Runtime Responsibility Split | TASK-001 | [ ] Partial 2026-06-08 | Classifier/media adapters, terminal-session policy, room helper policy, and state mapping/reset policy are extracted; next extract Firebase room reconciliation and lock coordination behind characterization tests. |
 | 2 | Call lease and terminal state handling can create false busy and stuck call states. | [[Signaling Reliability Epic]] | Call Lease Repair | TASK-002 | [ ] Open | Add stale/live lock repair tests. |
 | 3 | Presence freshness can lag behind app close or stale sessions. | [[Signaling Reliability Epic]] | Presence Freshness | TASK-006 | [ ] Open | Lock session-owned heartbeat and app-close tests. |
 | 4 | Firebase rules need broader emulator coverage. | [[Security Hardening Epic]] | Firebase Rule Coverage | TASK-005 | [ ] Open | Expand RTDB allow/deny matrix. |
@@ -43,7 +43,7 @@ This overlay maps the fresh senior audit issue IDs to the existing audit executi
 
 | SAR ID | Existing Audit Rows | Primary Phase | Owner | Priority | Evidence Required | Release Impact | Status |
 | --- | --- | --- | --- | --- | --- | --- | --- |
-| SAR-001 | 1, 13, 14 | Phase 3 | Engineering | P0 | First slice: classifier/media adapter tests passed. Phase 10 added an opt-in real media capture proof hook. Remaining: terminal room, late Firebase update, room reconciliation, lock coordination, command/media ownership, and passed device-direction proof. | Blocks public launch while call setup reliability is unproven. | Partial 2026-06-05 |
+| SAR-001 | 1, 13, 14 | Phase 3 | Engineering | P0 | Classifier/media adapter tests passed; 2026-06-08 focused state/room/terminal coordinator tests passed; Phase 10 added an opt-in real media capture proof hook. Remaining: Firebase room reconciliation, lock coordination, command/media ownership, and passed cross-peer device-direction proof. | Blocks public launch while call setup reliability is unproven. | Partial 2026-06-08 |
 | SAR-002 | 3, 16, 19 | Phase 1 | Engineering | P0 | Provider/runtime tests for stale heartbeat, backend presence session id, freshness, unknown local-only presence, and stale receiver routing. | Blocks safe connect/call/request action routing until Firebase emulator/device proof lands. | Mitigated locally 2026-06-05 |
 | SAR-003 | 3, 16, 19 | Phase 1 | Engineering/Product | P0 | Chat action routing consumes `PeerConnectivitySnapshot.peerOnlineForAction`; focused provider tests cover stale/unknown/fresh routing. | Blocks safe user action behavior until Firebase emulator/device proof lands. | Mitigated locally 2026-06-05 |
 | SAR-004 | 2, 4, 14, 15 | Phase 2 | Engineering/Security | P0 | Emulator/rules tests for terminal leftover locks, malformed lock/inbox writes, invalid transitions, denied-write state preservation, and server-authoritative transactions. Phase 10 device matrix is defined but not run. | Device media-direction proof remains open, but Firebase call lock/rule proof is complete locally. | Complete local emulator proof 2026-06-05 |

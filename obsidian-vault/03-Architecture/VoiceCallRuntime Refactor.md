@@ -1,5 +1,7 @@
 # VoiceCallRuntime Refactor
 
+Last updated: 2026-06-08
+
 ## Current Responsibilities
 
 Detailed implementation planning: [[VoiceCallRuntime Refactor Plan]].
@@ -35,6 +37,15 @@ Detailed implementation planning: [[VoiceCallRuntime Refactor Plan]].
 - Renderer errors after no current live video call are warning diagnostics named `stale_renderer_callback_ignored`.
 - Split call/data-session truth records `peer_ui_state_split_detected`.
 
+2026-06-08 Phase 3a state/room coordinator layout slice:
+
+- Extracted voice-call coordinator files are grouped under `apps/rain/lib/application/runtime/voice_call/`.
+- `VoiceCallRoomCoordinator` owns room status transition recording, terminal room detail/failure mapping, reason-code mapping, and terminal room write error classification.
+- `VoiceCallErrorCoordinator` owns app-runtime delegation to `CallErrorClassifier`.
+- `VoiceCallStateCoordinator` owns pure start-block expiry checks, protocol session phase/detail/failure mapping, remote media permission mapping, terminal-write failure state, same-live-session guards, and local-end terminal state reset.
+- `VoiceCallDiagnostics` and `VoiceCallTerminalReconciler` live beside the other voice-call coordinators in the same folder.
+- `VoiceCallRuntime` still owns command orchestration, Firebase room watch/reconciliation, lock coordination, media/session orchestration, and cleanup.
+
 ## Future Architecture
 
 - [[CallStartCoordinator]] handles start eligibility and explicit phase transitions.
@@ -47,7 +58,7 @@ Detailed implementation planning: [[VoiceCallRuntime Refactor Plan]].
 
 1. Add interfaces beside current runtime.
 2. Move diagnostics and pure error-classification helpers first. Status: partial complete through `CallErrorClassifier`.
-3. Move start preflight next.
+3. Move start preflight next. Status: partial complete for pure local start-block expiry mapping through `VoiceCallStateCoordinator`; friend/presence/conflict preflight remains in `VoiceCallRuntime`.
 4. Move lease creation/repair.
 5. Move terminal reconciliation. Status: pure terminal session-state decision extracted to `VoiceCallTerminalReconciler`; room watch/write orchestration remains in `VoiceCallRuntime`.
 6. Move media coordination. Status: partial complete for app-side media adapters and renderer-failure target classification; full session orchestration remains.
@@ -86,5 +97,13 @@ Detailed implementation planning: [[VoiceCallRuntime Refactor Plan]].
 - `dart run melos run analyze` passed.
 - `dart run melos run test` passed.
 - `.\scripts\check_obsidian_vault.ps1` passed.
+
+2026-06-08 Phase 3a focused/local evidence:
+
+- `dart analyze` passed from `apps\rain`.
+- `flutter test test\voice_call_state_coordinator_test.dart test\voice_call_room_coordinator_test.dart test\voice_call_terminal_reconciler_test.dart --reporter expanded` passed from `apps\rain`.
+- `dart pub get` passed.
+- `dart run melos run analyze` passed.
+- `dart run melos run test` passed.
 
 Related: [[Architecture Stabilization Epic]], [[Target Architecture]], [[Refactoring Strategy]].

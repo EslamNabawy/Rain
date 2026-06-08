@@ -23,10 +23,12 @@ import 'runtime_interaction_guard.dart';
 import 'serialized_runtime_mutations.dart';
 import 'video_call_renderers.dart';
 import 'voice_audio_level.dart';
-import 'voice_call_diagnostics.dart';
-import 'voice_call_room_coordinator.dart';
+import 'voice_call/voice_call_diagnostics.dart';
+import 'voice_call/voice_call_error_coordinator.dart';
+import 'voice_call/voice_call_room_coordinator.dart';
+import 'voice_call/voice_call_state_coordinator.dart';
+import 'voice_call/voice_call_terminal_reconciler.dart';
 import 'voice_call_state.dart';
-import 'voice_call_terminal_reconciler.dart';
 
 part 'file_transfer_runtime.dart';
 part 'friend_runtime.dart';

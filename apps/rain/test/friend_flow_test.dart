@@ -17,7 +17,7 @@ import 'package:rain/application/runtime/call_media_session_coordinator.dart';
 import 'package:rain/application/runtime/connection_attempt_coordinator.dart';
 import 'package:rain/application/runtime/rain_runtime_controller.dart';
 import 'package:rain/application/runtime/video_call_renderers.dart';
-import 'package:rain/application/runtime/voice_call_diagnostics.dart';
+import 'package:rain/application/runtime/voice_call/voice_call_diagnostics.dart';
 import 'package:rain/application/runtime/voice_call_state.dart';
 import 'package:rain_core/rain_core.dart';
 
