@@ -17,6 +17,14 @@ Run Flutter integration tests explicitly when you want the slower device build p
 C:\android-flutter-qa-toolkit\scripts\run-local-quality.ps1 -ProjectRoot "C:\path\to\project" -IncludeIntegration -Udid emulator-5554
 ```
 
+Run the Rain media proof with deterministic Android camera/microphone permission setup. The proof also requests/verifies Android media permission through Rain's native permission channel before WebRTC capture:
+
+```powershell
+.\scripts\run_device_media_proof.ps1 -Udid emulator-5554
+```
+
+Use `-AudioOnly` only when isolating microphone proof from camera/video proof.
+
 Run the Appium smoke path when the project has `qa.appium.json` selectors mapped to real widgets:
 
 ```powershell

@@ -527,7 +527,7 @@ Test surfaces discovered:
 
 - `apps/rain/test` - app services, runtime, UI widgets, call suite, update prompt, settings, sound, diagnostics, network, integration harness tests.
 - `apps/rain/integration_test/smoke_test.dart` - Flutter integration smoke.
-- `apps/rain/integration_test/device_media_reality_proof_test.dart` - opt-in Phase 10 device/media proof that uses real `FlutterWebRTCBridge` and `DefaultCallMediaConnection`; requires `RAIN_DEVICE_MEDIA_PROOF=true` and an attached microphone/camera-capable device or emulator.
+- `apps/rain/integration_test/device_media_reality_proof_test.dart` - opt-in Phase 10 device/media proof that uses real `FlutterWebRTCBridge` and `DefaultCallMediaConnection`; requires `RAIN_DEVICE_MEDIA_PROOF=true` and an attached microphone/camera-capable device or emulator. On Android, it requests/verifies microphone/camera permission through `MainActivity` channel `rain/media_permissions` before WebRTC capture.
 - `packages/peer_core/test` - WebRTC/media/core tests.
 - `packages/protocol_brain/test` - signaling, connection request, Firebase contract, voice signaling/session, release/workspace contract tests.
 - `packages/rain_core/test` - database, messages, files, session reset, voice call frame tests.
