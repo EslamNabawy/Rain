@@ -672,6 +672,22 @@ No task is fully complete until the lesson check is done or explicitly marked "n
 - Owner: Engineering
 - Status: Open
 
+### LESSON-20260608-040: Source Contract Tests Should Follow Ownership, Not File Size
+
+- Date: 2026-06-08
+- Related task: Phase 3c voice-call media/session/signaling coordinator extraction.
+- Related system: [[VoiceCallRuntime Refactor]], [[Call State Machine]], [[CallDiagnosticsRecorder]]
+- Related risk/debt: R-007, TD-001, TD-004, BLK-001
+- What was learned: Source-contract tests that assert important runtime behavior by scanning one large file become stale when ownership intentionally moves to coordinators.
+- What caused delays: After media, diagnostics, and signaling helpers were extracted, the first full Melos test run failed because diagnostics/media contract tests still expected implementation details in `voice_call_runtime.dart`.
+- What failed: The tests encoded location instead of ownership and did not include the new coordinator files in their source search.
+- What succeeded: Updating the contracts to scan the owning coordinator files preserved the same behavioral guardrails while allowing `VoiceCallRuntime` to shrink to orchestration.
+- What should change: Future extraction slices should update source-contract tests in the same commit as the moved implementation, with assertions pointed at the new owner and a thin-delegation check only when that is the actual contract.
+- Pattern: Ownership-aware tests survive refactors better than large-file tests.
+- Follow-up improvement: Continue Phase 3 with command and lease orchestration characterization before moving the next stateful methods.
+- Owner: Engineering
+- Status: Open
+
 ## Review Cadence
 
 - Review lessons at the end of every completed task.

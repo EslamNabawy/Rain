@@ -85,6 +85,11 @@ Related: [[Project Home]], [[Production Readiness]], [[Launch Readiness]], [[Ris
 | 2026-06-08 | `dev` | `476562f0b5ed7e70ff0c53369b9133d91a6fcb3e` | Phase 3b workspace tests | `dart run melos run test` | Passed | Full Melos test suite passed across `peer_core`, `protocol_brain`, `rain`, and `rain_core`; `rain` reported 739 passing tests and 20 skipped cases. |
 | 2026-06-08 | `dev` | `476562f0b5ed7e70ff0c53369b9133d91a6fcb3e` | Phase 3b vault synchronization | `.\scripts\check_obsidian_vault.ps1` | Passed | `Obsidian vault check passed. Markdown files: 198.` |
 | 2026-06-08 | `dev` | `476562f0b5ed7e70ff0c53369b9133d91a6fcb3e` | Phase 3b diff hygiene | `git diff --check` | Passed | Exit code 0; Git reported only the existing CRLF normalization warning for `voice_call_runtime.dart`. |
+| 2026-06-08 | `dev` | `7a0099a1a4570e7cf155753cf6d9c3d7257c3016` | Phase 3c app analyzer | `dart analyze` | Passed | App analyzer reported no issues after extracting media, session-state, and signaling-cleanup coordinators. |
+| 2026-06-08 | `dev` | `7a0099a1a4570e7cf155753cf6d9c3d7257c3016` | Phase 3c diagnostics/media contract ownership | `flutter test apps/rain/test/voice_call_runtime_diagnostics_contract_test.dart apps/rain/test/voice_call_runtime_media_path_test.dart` | Passed | Source-contract tests passed after updating assertions to inspect the new coordinator ownership boundaries. |
+| 2026-06-08 | `dev` | `7a0099a1a4570e7cf155753cf6d9c3d7257c3016` | Phase 3c workspace tests | `dart run melos run test` | Passed | Full Melos test suite passed across `peer_core`, `protocol_brain`, `rain`, and `rain_core`. |
+| 2026-06-08 | `dev` | `7a0099a1a4570e7cf155753cf6d9c3d7257c3016` | Phase 3c runtime size check | `(Get-Content apps/rain/lib/application/runtime/voice_call_runtime.dart).Length` | Passed | `voice_call_runtime.dart` is 2,917 lines, under the 3,000-line target. |
+| 2026-06-08 | `dev` | `7a0099a1a4570e7cf155753cf6d9c3d7257c3016` | Phase 3c vault synchronization | `.\scripts\check_obsidian_vault.ps1` | Passed | `Obsidian vault check passed. Markdown files: 198.` |
 
 ## Senior Audit Phase 5 Evidence
 

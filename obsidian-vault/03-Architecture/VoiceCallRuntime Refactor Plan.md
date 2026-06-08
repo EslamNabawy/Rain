@@ -25,7 +25,7 @@ Related: [[VoiceCallRuntime Refactor]], [[Target Architecture]], [[Refactoring S
 - UI-facing state mutation,
 - diagnostics.
 
-As of 2026-06-08, extracted stateless/pure call helpers are grouped under `apps/rain/lib/application/runtime/voice_call/`. `VoiceCallStateCoordinator` owns pure runtime state mapping and terminal reset decisions, `VoiceCallRoomCoordinator` owns room helper policy, `VoiceCallErrorCoordinator` delegates runtime error classification, `VoiceCallTerminalReconciler` owns terminal-session-state decisions, `VoiceCallPreflightCoordinator` owns call-start friend/presence availability guards plus stale retry replacement, `VoiceCallReconnectCoordinator` owns reconnecting/failure grace state, and `VoiceCallDiagnostics` owns the diagnostic record shape.
+As of 2026-06-08, extracted stateless/pure call helpers are grouped under `apps/rain/lib/application/runtime/voice_call/`. `VoiceCallStateCoordinator` owns pure runtime state mapping and terminal reset decisions, `VoiceCallRoomCoordinator` owns room helper policy, `VoiceCallErrorCoordinator` delegates runtime error classification, `VoiceCallTerminalReconciler` owns terminal-session-state decisions, `VoiceCallPreflightCoordinator` owns call-start friend/presence availability guards plus stale retry replacement, `VoiceCallReconnectCoordinator` owns reconnecting/failure grace state, `VoiceCallMediaCoordinator` owns app-side media connection creation and renderer/resource lifecycle, `VoiceCallSessionStateCoordinator` owns protocol-session-to-runtime projection and diagnostics recording, `VoiceCallSignalingCleanupCoordinator` owns Firebase room watches, frame/ICE handling, terminal writes, stale cleanup, and bounded cleanup, and `VoiceCallDiagnostics` owns the diagnostic record shape. `voice_call_runtime.dart` is now 2,917 lines and remains the public command/orchestration facade.
 
 ## Problems
 
@@ -81,8 +81,8 @@ Existing architecture notes: [[CallStartCoordinator]], [[CallLeaseManager]], [[C
 2. Move diagnostics taxonomy first because it observes behavior without changing it.
 3. Move start/preflight logic into `CallStartCoordinator`. Partial 2026-06-08: local start-block expiry mapping moved to `VoiceCallStateCoordinator`; friend/presence availability and stale retry replacement moved to `VoiceCallPreflightCoordinator`; file/call conflict policy remains in `VoiceCallRuntime`.
 4. Move lease claim/repair/release into `CallLeaseManager`.
-5. Move terminal reconciliation into `CallTerminalReconciler`.
-6. Move media capture and renderer lifecycle into `CallMediaCoordinator`.
+5. Move terminal reconciliation into `CallTerminalReconciler`. Partial 2026-06-08: terminal-session decisions live in `VoiceCallTerminalReconciler`, while terminal writes, stale cleanup, room status timelines, and terminal-already-closed classification live in `VoiceCallSignalingCleanupCoordinator`; lease ownership remains.
+6. Move media capture and renderer lifecycle into `CallMediaCoordinator`. Partial 2026-06-08: app-side media connection creation, renderer lifecycle, app lifecycle video failure handling, camera-muted signaling, and video resource cleanup live in `VoiceCallMediaCoordinator`; command-level start/end orchestration remains.
 7. Reduce `VoiceCallRuntime` to orchestration and state emission.
 8. Delete dead paths only after tests prove equivalent behavior.
 
@@ -93,7 +93,7 @@ Existing architecture notes: [[CallStartCoordinator]], [[CallLeaseManager]], [[C
 - Runtime integration tests for outgoing voice, outgoing video, incoming accept, reject, busy, timeout, and hangup.
 - Failure tests for mic denied, camera denied, renderer disposed, Firebase permission denied, corrupt room, stale lock, media timeout.
 - Regression tests for terminal room beating late frames.
-- Coordinator tests for pure state, room, error, preflight, reconnect, and terminal decision policies.
+- Coordinator tests for pure state, room, error, preflight, reconnect, media-path ownership, diagnostics contract ownership, and terminal decision policies.
 
 ## Rollout Plan
 

@@ -4,7 +4,8 @@ import 'package:flutter_test/flutter_test.dart';
 
 void main() {
   test('voice call runtime uses dedicated media connections for app calls', () {
-    final source = _readRuntimeSource();
+    final source =
+        '${_readRuntimeSource()}\n${_readVoiceCallSourceFile('voice_call_media_coordinator.dart')}';
 
     expect(
       source,
@@ -88,6 +89,19 @@ String _readRuntimeSource() {
     }
   }
   fail('Could not locate voice_call_runtime.dart from ${Directory.current}.');
+}
+
+String _readVoiceCallSourceFile(String fileName) {
+  final candidates = <File>[
+    File('lib/application/runtime/voice_call/$fileName'),
+    File('apps/rain/lib/application/runtime/voice_call/$fileName'),
+  ];
+  for (final candidate in candidates) {
+    if (candidate.existsSync()) {
+      return candidate.readAsStringSync();
+    }
+  }
+  fail('Could not locate $fileName from ${Directory.current}.');
 }
 
 String _sourceBetween(String source, String start, String end) {

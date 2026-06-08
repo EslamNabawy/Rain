@@ -1170,124 +1170,20 @@ extension VoiceCallRuntime on RainRuntimeController {
     required String peerId,
     required bool isOutgoing,
   }) async {
-    final voiceAdapter = _requireVoiceSignalingAdapter();
-    final remoteRole = isOutgoing ? VoiceCallRole.callee : VoiceCallRole.caller;
-    await adapter.ensureSignedInAs(selfIdentity.username);
-    _recordRuntimeEvent(
-      category: 'call',
-      name: 'firebase_watch_started',
-      context: <String, Object?>{
-        'peerId': peerId,
-        'callId': session.callId,
-        'sessionEpoch': session.sessionEpoch,
-        'isOutgoing': isOutgoing,
-        'remoteRole': remoteRole.name,
-      },
-    );
-
-    _voiceSignalingSubscriptions.add(
-      voiceAdapter
-          .watchCall(session.callId)
-          .listen(
-            (VoiceCallRoom? room) async {
-              if (room == null || !_isLiveVoiceCallSession(session)) {
-                return;
-              }
-              _recordRuntimeEvent(
-                category: 'call',
-                name: 'firebase_room_update',
-                context: <String, Object?>{
-                  'peerId': peerId,
-                  'callId': room.callId,
-                  'sessionEpoch': session.sessionEpoch,
-                  'status': room.status.name,
-                  'reasonCode': room.reasonCode,
-                  'endedBy': room.endedBy,
-                  'mediaMode': room.mediaMode.name,
-                },
-              );
-              await _handleFirebaseVoiceRoomUpdate(
-                session: session,
-                room: room,
-                peerId: peerId,
-                isOutgoing: isOutgoing,
-              );
-            },
-            onError: (Object error, StackTrace stackTrace) {
-              _handleVoiceSignalingStreamError(
-                session,
-                peerId,
-                error,
-                stackTrace,
-              );
-            },
-          ),
-    );
-    _voiceSignalingSubscriptions.add(
-      voiceAdapter
-          .watchVoiceOffer(session.callId)
-          .listen(
-            (VoiceSignalingEnvelope envelope) async {
-              await _handleFirebaseVoiceEnvelope(
-                session: session,
-                peerId: peerId,
-                envelope: envelope,
-                purpose: SignalingCipher.offerPurpose,
-              );
-            },
-            onError: (Object error, StackTrace stackTrace) {
-              _handleVoiceSignalingStreamError(
-                session,
-                peerId,
-                error,
-                stackTrace,
-              );
-            },
-          ),
-    );
-    _voiceSignalingSubscriptions.add(
-      voiceAdapter
-          .watchVoiceAnswer(session.callId)
-          .listen(
-            (VoiceSignalingEnvelope envelope) async {
-              await _handleFirebaseVoiceEnvelope(
-                session: session,
-                peerId: peerId,
-                envelope: envelope,
-                purpose: SignalingCipher.answerPurpose,
-              );
-            },
-            onError: (Object error, StackTrace stackTrace) {
-              _handleVoiceSignalingStreamError(
-                session,
-                peerId,
-                error,
-                stackTrace,
-              );
-            },
-          ),
-    );
-    _voiceSignalingSubscriptions.add(
-      voiceAdapter
-          .watchIceCandidates(callId: session.callId, role: remoteRole)
-          .listen(
-            (VoiceCallIceCandidateRecord record) async {
-              await _handleFirebaseVoiceEnvelope(
-                session: session,
-                peerId: peerId,
-                envelope: record.envelope,
-                purpose: _voiceIcePurpose(remoteRole),
-              );
-            },
-            onError: (Object error, StackTrace stackTrace) {
-              _handleVoiceSignalingStreamError(
-                session,
-                peerId,
-                error,
-                stackTrace,
-              );
-            },
-          ),
+    await VoiceCallSignalingCleanupCoordinator.instance.watchFirebaseVoiceCall(
+      session: session,
+      peerId: peerId,
+      isOutgoing: isOutgoing,
+      requireVoiceSignalingAdapter: _requireVoiceSignalingAdapter,
+      adapter: adapter,
+      selfUsername: selfIdentity.username,
+      subscriptions: _voiceSignalingSubscriptions,
+      isLiveVoiceCallSession: _isLiveVoiceCallSession,
+      recordRuntimeEvent: _recordRuntimeEvent,
+      handleFirebaseVoiceRoomUpdate: _handleFirebaseVoiceRoomUpdate,
+      handleFirebaseVoiceEnvelope: _handleFirebaseVoiceEnvelope,
+      handleVoiceSignalingStreamError: _handleVoiceSignalingStreamError,
+      voiceIcePurpose: _voiceIcePurpose,
     );
   }
 
@@ -1297,28 +1193,19 @@ extension VoiceCallRuntime on RainRuntimeController {
     Object error,
     StackTrace stackTrace,
   ) {
-    _recordVoiceSignalingError(error, stackTrace);
-    if (!_isLiveVoiceCallSession(session) ||
-        _isTerminalVoiceCallSessionLatched(session)) {
-      return;
-    }
-    final current = _voiceCallState;
-    if (current.callId != session.callId ||
-        current.sessionEpoch != session.sessionEpoch ||
-        current.phase == VoiceCallPhase.idle ||
-        current.phase == VoiceCallPhase.failed ||
-        current.phase == VoiceCallPhase.ending) {
-      return;
-    }
-    unawaited(
-      _endVoiceCallForPeer(
-        peerId,
-        notifyPeer: false,
-        detail: _voiceCallSignalingFailed,
-        failureReason: VoiceCallFailureReason.signalingFailed,
-        failureDetail: _voiceCallSignalingFailed,
-      ),
-    );
+    VoiceCallSignalingCleanupCoordinator.instance
+        .handleVoiceSignalingStreamError(
+          session,
+          peerId,
+          error,
+          stackTrace,
+          recordVoiceSignalingError: _recordVoiceSignalingError,
+          isLiveVoiceCallSession: _isLiveVoiceCallSession,
+          isTerminalSessionLatched: _isTerminalVoiceCallSessionLatched,
+          currentState: _voiceCallState,
+          endVoiceCallForPeer: _endVoiceCallForPeer,
+          signalingFailedMessage: _voiceCallSignalingFailed,
+        );
   }
 
   Future<void> _handleFirebaseVoiceRoomUpdate({
@@ -1327,68 +1214,21 @@ extension VoiceCallRuntime on RainRuntimeController {
     required String peerId,
     required bool isOutgoing,
   }) async {
-    if (!_isLiveVoiceCallSession(session) || room.callId != session.callId) {
-      return;
-    }
-    if (room.createdAt != session.sessionEpoch) {
-      _recordLateVoiceFrame(
-        session,
-        'ignored room update for stale epoch ${room.createdAt}',
-      );
-      return;
-    }
-    _recordVoiceRoomStatusTransition(room.callId, room.status);
-    final localUsername = _normalizedUsername(selfIdentity.username);
-    final remoteMuted = room.muted[peerId];
-    if (remoteMuted != null && _voiceCallState.isRemoteMuted != remoteMuted) {
-      _setVoiceCallState(
-        _voiceCallState.copyWith(
-          isRemoteMuted: remoteMuted,
-          updatedAt: DateTime.now().millisecondsSinceEpoch,
-        ),
-      );
-    }
-    final remoteCameraMuted = room.cameraMuted[peerId];
-    if (remoteCameraMuted != null &&
-        _voiceCallState.isRemoteCameraMuted != remoteCameraMuted) {
-      _setVoiceCallState(
-        _voiceCallState.copyWith(
-          isRemoteCameraMuted: remoteCameraMuted,
-          updatedAt: DateTime.now().millisecondsSinceEpoch,
-        ),
-      );
-    }
-
-    switch (room.status) {
-      case VoiceCallSignalingStatus.ringing:
-      case VoiceCallSignalingStatus.negotiating:
-      case VoiceCallSignalingStatus.connected:
-        break;
-      case VoiceCallSignalingStatus.accepted:
-        if (isOutgoing) {
-          await session.handleFrame(
-            VoiceCallFrame(
-              type: VoiceCallFrameType.accept,
-              callId: room.callId,
-              from: peerId,
-              to: localUsername,
-              sentAt: room.acceptedAt ?? room.updatedAt,
-              seq: 1,
-              sessionEpoch: room.createdAt,
-            ),
-          );
-        }
-        break;
-      case VoiceCallSignalingStatus.ended:
-      case VoiceCallSignalingStatus.failed:
-      case VoiceCallSignalingStatus.expired:
-        await _reconcileTerminalVoiceRoom(
+    await VoiceCallSignalingCleanupCoordinator.instance
+        .handleFirebaseVoiceRoomUpdate(
           session: session,
           room: room,
           peerId: peerId,
+          isOutgoing: isOutgoing,
+          isLiveVoiceCallSession: _isLiveVoiceCallSession,
+          recordLateVoiceFrame: _recordLateVoiceFrame,
+          recordRoomStatusTransition: _recordVoiceRoomStatusTransition,
+          localUsername: selfIdentity.username,
+          normalizeUsername: _normalizedUsername,
+          currentState: () => _voiceCallState,
+          setVoiceCallState: _setVoiceCallState,
+          reconcileTerminalVoiceRoom: _reconcileTerminalVoiceRoom,
         );
-        break;
-    }
   }
 
   Future<void> _reconcileTerminalVoiceRoom({
@@ -1396,71 +1236,26 @@ extension VoiceCallRuntime on RainRuntimeController {
     required VoiceCallRoom room,
     required String peerId,
   }) async {
-    if (!room.status.isTerminal || !_isLiveVoiceCallSession(session)) {
-      return;
-    }
-    _latchTerminalVoiceCallSession(session);
-    final current = _voiceCallState;
-    if (current.callId != room.callId ||
-        current.sessionEpoch != room.createdAt ||
-        current.phase == VoiceCallPhase.idle ||
-        current.phase == VoiceCallPhase.failed) {
-      return;
-    }
-    final localUsername = _normalizedUsername(selfIdentity.username);
-    final endedByLocal = room.endedBy == localUsername;
-    final detail = _terminalVoiceCallDetailForRoom(room, localUsername);
-    final failureReason = _terminalVoiceCallFailureReasonForRoom(room);
-    if (endedByLocal &&
-        _isTerminalVoiceCallSessionLatched(session) &&
-        (current.phase == VoiceCallPhase.ending ||
-            current.phase == VoiceCallPhase.ended)) {
-      _recordRuntimeEvent(
-        category: 'call',
-        name: 'voice_terminal_room_local_echo_ignored',
-        severity: 'info',
-        message: 'Local terminal Firebase room echoed during local hangup.',
-        context: <String, Object?>{
-          ..._voiceCallEventContext(current),
-          'status': room.status.name,
-          'endedBy': room.endedBy,
-          'reasonCode': room.reasonCode,
-        },
-      );
-      return;
-    }
-    _recordRuntimeEvent(
-      category: 'call',
-      name: endedByLocal
-          ? 'voice_terminal_room_forced_reconcile'
-          : 'voice_remote_terminal_room_reconciled',
-      severity: endedByLocal ? 'warning' : 'info',
-      message: endedByLocal
-          ? 'Terminal Firebase room left the local voice session live.'
-          : 'Remote terminal Firebase room ended the local voice session.',
-      context: <String, Object?>{
-        ..._voiceCallEventContext(current),
-        'status': room.status.name,
-        'endedBy': room.endedBy,
-        'reasonCode': room.reasonCode,
-      },
-    );
-    if (failureReason != null) {
-      _recordVoiceCallRuntimeFailure(
-        current,
-        failureCode:
-            _voiceCallReasonCodeForFailure(failureReason) ??
-            room.reasonCode ??
-            _voiceCallFailedReasonCode,
-        userMessage: detail,
-        nativeError: room.reason ?? detail,
-      );
-    }
-    await _settleVoiceCallAfterTerminalRace(
-      session,
-      detail: detail,
-      failureReason: failureReason,
-    );
+    await VoiceCallSignalingCleanupCoordinator.instance
+        .reconcileTerminalVoiceRoom(
+          session: session,
+          room: room,
+          peerId: peerId,
+          isLiveVoiceCallSession: _isLiveVoiceCallSession,
+          latchTerminalSession: _latchTerminalVoiceCallSession,
+          isTerminalSessionLatched: _isTerminalVoiceCallSessionLatched,
+          currentState: _voiceCallState,
+          localUsername: selfIdentity.username,
+          normalizeUsername: _normalizedUsername,
+          terminalRoomDetail: _terminalVoiceCallDetailForRoom,
+          terminalRoomFailureReason: _terminalVoiceCallFailureReasonForRoom,
+          recordRuntimeEvent: _recordRuntimeEvent,
+          eventContext: _voiceCallEventContext,
+          reasonCodeForFailure: _voiceCallReasonCodeForFailure,
+          failedReasonCode: _voiceCallFailedReasonCode,
+          recordRuntimeFailure: _recordVoiceCallRuntimeFailure,
+          settleVoiceCallAfterTerminalRace: _settleVoiceCallAfterTerminalRace,
+        );
   }
 
   String _terminalVoiceCallDetailForRoom(VoiceCallRoom room, String localUser) {
@@ -1493,421 +1288,51 @@ extension VoiceCallRuntime on RainRuntimeController {
     required VoiceSignalingEnvelope envelope,
     required String purpose,
   }) async {
-    if (!_isLiveVoiceCallSession(session)) {
-      return;
-    }
-    try {
-      final frame = await _decryptVoiceFrame(
-        callId: session.callId,
-        envelope: envelope,
-        purpose: purpose,
-      );
-      _recordRuntimeEvent(
-        category: 'call',
-        name: 'firebase_frame_received',
-        context: <String, Object?>{
-          ..._voiceFrameEventContext(peerId, frame),
-          'purpose': purpose,
-        },
-      );
-      if (!_isLiveVoiceCallSession(session)) {
-        _recordLateVoiceFrame(
-          session,
-          'late decrypted ${frame.type.name} frame after call moved on',
+    await VoiceCallSignalingCleanupCoordinator.instance
+        .handleFirebaseVoiceEnvelope(
+          session: session,
+          peerId: peerId,
+          envelope: envelope,
+          purpose: purpose,
+          isLiveVoiceCallSession: _isLiveVoiceCallSession,
+          decryptVoiceFrame: _decryptVoiceFrame,
+          recordRuntimeEvent: _recordRuntimeEvent,
+          frameEventContext: _voiceFrameEventContext,
+          recordLateVoiceFrame: _recordLateVoiceFrame,
+          normalizeUsername: _normalizedUsername,
+          localUsername: selfIdentity.username,
+          recordVoiceSignalingError: _recordVoiceSignalingError,
+          failVoiceCall: _failVoiceCall,
+          mediaFailedMessage: _voiceCallMediaFailed,
         );
-        return;
-      }
-      if (frame.callId != session.callId ||
-          frame.sessionEpoch != session.sessionEpoch) {
-        _recordLateVoiceFrame(
-          session,
-          'late ${frame.type.name} frame for '
-          '${frame.callId}/${frame.sessionEpoch}',
-        );
-        return;
-      }
-      if (_normalizedUsername(frame.from) ==
-          _normalizedUsername(selfIdentity.username)) {
-        return;
-      }
-      if (_normalizedUsername(frame.from) != _normalizedUsername(peerId)) {
-        return;
-      }
-      await session.handleFrame(frame);
-    } catch (error, stackTrace) {
-      _recordRuntimeEvent(
-        category: 'call',
-        name: 'firebase_frame_failed',
-        severity: 'error',
-        message: error.toString(),
-        context: <String, Object?>{
-          'peerId': peerId,
-          'callId': session.callId,
-          'sessionEpoch': session.sessionEpoch,
-          'purpose': purpose,
-        },
-      );
-      _recordVoiceSignalingError(error, stackTrace);
-      if (!_isLiveVoiceCallSession(session)) {
-        _recordLateVoiceFrame(
-          session,
-          'ignored signaling error after call moved on: $error',
-        );
-        return;
-      }
-      await _failVoiceCall(
-        error,
-        failureReason: VoiceCallFailureReason.mediaConnectionFailed,
-        detail: _voiceCallMediaFailed,
-      );
-    }
   }
 
   Future<void> _sendVoiceFrameObject(
     String peerId,
     VoiceCallFrame frame,
   ) async {
-    final voiceAdapter = _requireVoiceSignalingAdapter();
-    final localUsername = _normalizedUsername(selfIdentity.username);
-    final now = DateTime.now().millisecondsSinceEpoch;
-    _recordRuntimeEvent(
-      category: 'call',
-      name: 'firebase_frame_send_started',
-      context: _voiceFrameEventContext(peerId, frame),
-    );
-    if (await _shouldSkipTerminalSensitiveVoiceFrame(
-      voiceAdapter: voiceAdapter,
-      peerId: peerId,
-      frame: frame,
-    )) {
-      return;
-    }
-    switch (frame.type) {
-      case VoiceCallFrameType.invite:
-        final callee = _normalizedUsername(peerId);
-        final lockContext = _voiceCallLockDiagnostics(
-          peerId: callee,
-          callId: frame.callId,
-          sessionEpoch: frame.sessionEpoch,
-          lockClaimResult: 'started',
-        );
-        Future<void> createOutgoingRoom() async {
-          final room = await voiceAdapter.createOutgoingCall(
-            callId: frame.callId,
-            caller: localUsername,
-            callee: callee,
-            createdAt: frame.sessionEpoch,
-            expiresAt: frame.sessionEpoch + _voiceCallExpiry.inMilliseconds,
-            mediaMode: frame.mediaMode,
-          );
-          _recordVoiceRoomStatusTransition(frame.callId, room.status);
-        }
-
-        _recordRuntimeEvent(
-          category: 'call',
-          name: 'voice_lock_claim_started',
-          context: <String, Object?>{
-            ..._voiceFrameEventContext(peerId, frame),
-            ...lockContext,
-          },
-        );
-        try {
-          await createOutgoingRoom();
-        } catch (error) {
-          final retrySnapshot = _voiceCallSignalingFailureSnapshotForError(
-            error,
-            peerId: callee,
-          );
-          final retryDecision = retrySnapshot == null
-              ? null
-              : CallRetryPolicy.classifySignalingFailure(retrySnapshot);
-          final failedLockContext = _voiceCallLockDiagnostics(
-            peerId: callee,
-            callId: frame.callId,
-            sessionEpoch: frame.sessionEpoch,
-            retryDecision: retryDecision,
-            retrySnapshot: retrySnapshot,
-          );
-          final eventContext = <String, Object?>{
-            ..._voiceFrameEventContext(peerId, frame),
-            ...failedLockContext,
-            if (retryDecision != null)
-              'canRetryImmediately': retryDecision.canRetryImmediately,
-          };
-          if (retryDecision?.kind == CallRetryDecisionKind.cleanedStaleState) {
-            _recordRuntimeEvent(
-              category: 'call',
-              name: 'voice_lock_reclaim_completed',
-              severity: 'warning',
-              message: retryDecision?.userMessage,
-              context: eventContext,
-            );
-            _recordRuntimeEvent(
-              category: 'call',
-              name: 'stale_voice_lock_repaired',
-              severity: 'warning',
-              message: retryDecision?.userMessage,
-              context: eventContext,
-            );
-            if (failedLockContext['timestampRepair'] == true) {
-              _recordRuntimeEvent(
-                category: 'call',
-                name: 'voice_room_timestamp_repaired',
-                severity: 'warning',
-                message: retryDecision?.userMessage,
-                context: eventContext,
-              );
-            }
-            if (retryDecision?.canRetryImmediately == true) {
-              try {
-                await createOutgoingRoom();
-                _recordRuntimeEvent(
-                  category: 'call',
-                  name: 'voice_lock_claim_retried',
-                  severity: 'info',
-                  message: retryDecision?.userMessage,
-                  context: <String, Object?>{
-                    ...eventContext,
-                    'retryResult': 'claimed',
-                  },
-                );
-                return;
-              } catch (retryError, retryStackTrace) {
-                _recordRuntimeEvent(
-                  category: 'call',
-                  name: 'voice_lock_claim_retry_failed',
-                  severity: 'warning',
-                  message: retryError.toString(),
-                  context: <String, Object?>{
-                    ...eventContext,
-                    'retryResult': 'failed',
-                  },
-                );
-                Error.throwWithStackTrace(retryError, retryStackTrace);
-              }
-            }
-          } else if (_shouldRetryTransientVoiceCreateFailure(
-            error,
-            retryDecision,
-          )) {
-            _recordRuntimeEvent(
-              category: 'call',
-              name: 'voice_lock_claim_transient_retry_started',
-              severity: 'warning',
-              message: retryDecision?.userMessage ?? error.toString(),
-              context: <String, Object?>{
-                ...eventContext,
-                'retryDelayMs':
-                    _voiceCallTransientCreateRetryDelay.inMilliseconds,
-              },
-            );
-            await Future<void>.delayed(_voiceCallTransientCreateRetryDelay);
-            try {
-              await createOutgoingRoom();
-              _recordRuntimeEvent(
-                category: 'call',
-                name: 'voice_lock_claim_retried',
-                severity: 'info',
-                message: retryDecision?.userMessage,
-                context: <String, Object?>{
-                  ...eventContext,
-                  'retryResult': 'claimed',
-                  'retryReason': 'transientFirebaseCreateFailure',
-                },
-              );
-              return;
-            } catch (retryError, retryStackTrace) {
-              _recordRuntimeEvent(
-                category: 'call',
-                name: 'voice_lock_claim_retry_failed',
-                severity: 'warning',
-                message: retryError.toString(),
-                context: <String, Object?>{
-                  ...eventContext,
-                  'retryResult': 'failed',
-                  'retryReason': 'transientFirebaseCreateFailure',
-                },
-              );
-              Error.throwWithStackTrace(retryError, retryStackTrace);
-            }
-          } else if (retryDecision?.kind ==
-              CallRetryDecisionKind.cleanupInProgress) {
-            _recordRuntimeEvent(
-              category: 'call',
-              name: 'voice_lock_reclaim_started',
-              severity: 'warning',
-              message: retryDecision?.userMessage,
-              context: eventContext,
-            );
-          } else if (retryDecision?.kind == CallRetryDecisionKind.peerOffline) {
-            final presenceMessage =
-                (retryDecision?.userMessage ?? error.toString()).toLowerCase();
-            final presenceEventName =
-                presenceMessage.contains('could not confirm') ||
-                    presenceMessage.contains('presence unknown')
-                ? 'call_start_presence_unknown'
-                : 'call_start_blocked_offline';
-            _recordRuntimeEvent(
-              category: 'call',
-              name: presenceEventName,
-              severity: 'warning',
-              message: retryDecision?.userMessage,
-              context: <String, Object?>{
-                ...eventContext,
-                'presenceSource': 'signaling',
-              },
-            );
-            _recordRuntimeEvent(
-              category: 'call',
-              name: 'voice_lock_claim_blocked',
-              severity: 'warning',
-              message: retryDecision?.userMessage ?? error.toString(),
-              context: eventContext,
-            );
-          } else if (retryDecision?.kind == CallRetryDecisionKind.peerBusy) {
-            _recordRuntimeEvent(
-              category: 'call',
-              name: 'voice_real_busy_lock',
-              severity: 'warning',
-              message: retryDecision?.userMessage,
-              context: eventContext,
-            );
-            _recordRuntimeEvent(
-              category: 'call',
-              name: 'voice_lock_claim_blocked',
-              severity: 'warning',
-              message: retryDecision?.userMessage ?? error.toString(),
-              context: eventContext,
-            );
-          } else {
-            _recordRuntimeEvent(
-              category: 'call',
-              name: 'voice_lock_claim_blocked',
-              severity: 'warning',
-              message: retryDecision?.userMessage ?? error.toString(),
-              context: eventContext,
-            );
-          }
-          rethrow;
-        }
-        break;
-      case VoiceCallFrameType.accept:
-        await voiceAdapter.acceptCall(
-          callId: frame.callId,
-          callee: localUsername,
-          acceptedAt: now,
-        );
-        _recordVoiceRoomStatusTransition(
-          frame.callId,
-          VoiceCallSignalingStatus.accepted,
-        );
-        break;
-      case VoiceCallFrameType.reject:
-      case VoiceCallFrameType.busy:
-        await voiceAdapter.endCall(
-          callId: frame.callId,
-          username: localUsername,
-          status: VoiceCallSignalingStatus.failed,
-          endedAt: now,
-          reasonCode:
-              frame.reasonCode ??
-              (frame.type == VoiceCallFrameType.busy
-                  ? _voiceCallBusyReasonCode
-                  : _voiceCallRejectedReasonCode),
-          reason: frame.reason,
-        );
-        _recordVoiceRoomStatusTransition(
-          frame.callId,
-          VoiceCallSignalingStatus.failed,
-        );
-        break;
-      case VoiceCallFrameType.hangup:
-        final existingRoom = await voiceAdapter.fetchCall(frame.callId);
-        if (existingRoom?.status.isTerminal == true) {
-          _recordRuntimeEvent(
-            category: 'call',
-            name: 'voice_late_hangup_frame_ignored',
-            severity: 'info',
-            message: 'Late hangup frame ignored after terminal room state.',
-            context: <String, Object?>{
-              ..._voiceFrameEventContext(peerId, frame),
-              'status': existingRoom?.status.name,
-              'endedBy': existingRoom?.endedBy,
-            },
-          );
-          break;
-        }
-        await voiceAdapter.endCall(
-          callId: frame.callId,
-          username: localUsername,
-          status: frame.reasonCode == null
-              ? VoiceCallSignalingStatus.ended
-              : VoiceCallSignalingStatus.failed,
-          endedAt: now,
-          reasonCode: frame.reasonCode,
-          reason: frame.reason,
-        );
-        _recordVoiceRoomStatusTransition(
-          frame.callId,
-          frame.reasonCode == null
-              ? VoiceCallSignalingStatus.ended
-              : VoiceCallSignalingStatus.failed,
-        );
-        break;
-      case VoiceCallFrameType.offer:
-        await voiceAdapter.writeVoiceOffer(
-          callId: frame.callId,
-          caller: localUsername,
-          offer: await _encryptVoiceFrame(
-            frame,
-            purpose: SignalingCipher.offerPurpose,
-            maxCiphertextLength: VoiceSignalingEnvelope.maxSdpCiphertextLength,
-          ),
-          updatedAt: now,
-        );
-        break;
-      case VoiceCallFrameType.answer:
-        await voiceAdapter.writeVoiceAnswer(
-          callId: frame.callId,
-          callee: localUsername,
-          answer: await _encryptVoiceFrame(
-            frame,
-            purpose: SignalingCipher.answerPurpose,
-            maxCiphertextLength: VoiceSignalingEnvelope.maxSdpCiphertextLength,
-          ),
-          updatedAt: now,
-        );
-        break;
-      case VoiceCallFrameType.candidate:
-        await _queueVoiceIceCandidate(
-          voiceAdapter: voiceAdapter,
-          peerId: peerId,
-          frame: frame,
-        );
-        break;
-      case VoiceCallFrameType.mute:
-        if (frame.muted != null) {
-          await voiceAdapter.setMuted(
-            callId: frame.callId,
-            username: localUsername,
-            muted: frame.muted!,
-            updatedAt: now,
-          );
-        }
-        if (frame.cameraMuted != null) {
-          await voiceAdapter.setCameraMuted(
-            callId: frame.callId,
-            username: localUsername,
-            cameraMuted: frame.cameraMuted!,
-            updatedAt: now,
-          );
-        }
-        break;
-    }
-    _recordRuntimeEvent(
-      category: 'call',
-      name: 'firebase_frame_send_completed',
-      context: _voiceFrameEventContext(peerId, frame),
+    await VoiceCallSignalingCleanupCoordinator.instance.sendVoiceFrameObject(
+      peerId,
+      frame,
+      requireVoiceSignalingAdapter: _requireVoiceSignalingAdapter,
+      localUsername: selfIdentity.username,
+      normalizeUsername: _normalizedUsername,
+      voiceCallExpiry: _voiceCallExpiry,
+      transientCreateRetryDelay: _voiceCallTransientCreateRetryDelay,
+      busyReasonCode: _voiceCallBusyReasonCode,
+      rejectedReasonCode: _voiceCallRejectedReasonCode,
+      recordRuntimeEvent: _recordRuntimeEvent,
+      frameEventContext: _voiceFrameEventContext,
+      shouldSkipTerminalSensitiveVoiceFrame:
+          _shouldSkipTerminalSensitiveVoiceFrame,
+      voiceCallLockDiagnostics: _voiceCallLockDiagnostics,
+      signalingFailureSnapshotForError:
+          _voiceCallSignalingFailureSnapshotForError,
+      shouldRetryTransientCreateFailure:
+          _shouldRetryTransientVoiceCreateFailure,
+      recordRoomStatusTransition: _recordVoiceRoomStatusTransition,
+      encryptVoiceFrame: _encryptVoiceFrame,
+      queueVoiceIceCandidate: _queueVoiceIceCandidate,
     );
   }
 
@@ -1916,76 +1341,25 @@ extension VoiceCallRuntime on RainRuntimeController {
     required String peerId,
     required VoiceCallFrame frame,
   }) async {
-    final session = _voiceCallSession;
-    if (session != null &&
-        session.callId == frame.callId &&
-        session.sessionEpoch == frame.sessionEpoch &&
-        _isTerminalVoiceCallSessionLatched(session)) {
-      _recordLateVoiceFrame(
-        session,
-        'ignored ${frame.type.name} send after terminal room latch',
-      );
-      return true;
-    }
-
-    if (!_requiresTerminalVoiceRoomPreflight(frame.type)) {
-      return false;
-    }
-
-    final room = await voiceAdapter.fetchCall(frame.callId);
-    if (room == null) {
-      _recordRuntimeEvent(
-        category: 'call',
-        name: 'voice_late_media_frame_ignored_after_terminal',
-        severity: 'info',
-        message: 'Voice media signaling frame ignored after room cleanup.',
-        context: <String, Object?>{
-          ..._voiceFrameEventContext(peerId, frame),
-          'roomStatus': 'missing',
-        },
-      );
-      return true;
-    }
-    if (!room.status.isTerminal) {
-      return false;
-    }
-
-    _recordRuntimeEvent(
-      category: 'call',
-      name: 'voice_late_media_frame_ignored_after_terminal',
-      severity: 'info',
-      message: 'Voice media signaling frame ignored after terminal room state.',
-      context: <String, Object?>{
-        ..._voiceFrameEventContext(peerId, frame),
-        'roomStatus': room.status.name,
-        'endedBy': room.endedBy,
-        'reasonCode': room.reasonCode,
-      },
-    );
-    if (session != null &&
-        session.callId == frame.callId &&
-        session.sessionEpoch == frame.sessionEpoch) {
-      await _reconcileTerminalVoiceRoom(
-        session: session,
-        room: room,
-        peerId: peerId,
-      );
-    }
-    return true;
+    return VoiceCallSignalingCleanupCoordinator.instance
+        .shouldSkipTerminalSensitiveVoiceFrame(
+          voiceAdapter: voiceAdapter,
+          peerId: peerId,
+          frame: frame,
+          currentSession: _voiceCallSession,
+          isTerminalSessionLatched: _isTerminalVoiceCallSessionLatched,
+          recordLateVoiceFrame: _recordLateVoiceFrame,
+          requiresTerminalVoiceRoomPreflight:
+              _requiresTerminalVoiceRoomPreflight,
+          recordRuntimeEvent: _recordRuntimeEvent,
+          frameEventContext: _voiceFrameEventContext,
+          reconcileTerminalVoiceRoom: _reconcileTerminalVoiceRoom,
+        );
   }
 
   bool _requiresTerminalVoiceRoomPreflight(VoiceCallFrameType type) {
-    return switch (type) {
-      VoiceCallFrameType.accept ||
-      VoiceCallFrameType.offer ||
-      VoiceCallFrameType.answer ||
-      VoiceCallFrameType.mute => true,
-      VoiceCallFrameType.invite ||
-      VoiceCallFrameType.reject ||
-      VoiceCallFrameType.busy ||
-      VoiceCallFrameType.hangup ||
-      VoiceCallFrameType.candidate => false,
-    };
+    return VoiceCallSignalingCleanupCoordinator.instance
+        .requiresTerminalVoiceRoomPreflight(type);
   }
 
   Future<void> _queueVoiceIceCandidate({
@@ -1993,66 +1367,23 @@ extension VoiceCallRuntime on RainRuntimeController {
     required String peerId,
     required VoiceCallFrame frame,
   }) async {
-    final localRole = _localVoiceCallRole();
-    if (_voiceLocalIceCandidateCount >= maxIceCandidatesPerRole) {
-      _recordIceCandidateBudgetExceeded(
-        peerId: peerId,
-        callId: frame.callId,
-        sessionEpoch: frame.sessionEpoch,
-        role: localRole,
-        requestedCount: 1,
-        droppedCount: 1,
-      );
-      return;
-    }
-
-    final VoiceSignalingEnvelope envelope;
-    try {
-      envelope = await _encryptVoiceFrame(
-        frame,
-        purpose: _voiceIcePurpose(localRole),
-        maxCiphertextLength: VoiceSignalingEnvelope.maxIceCiphertextLength,
-      );
-    } catch (error, stackTrace) {
-      _recordVoiceIceCandidateWriteFailed(
-        error,
-        stackTrace,
-        peerId: peerId,
-        callId: frame.callId,
-        sessionEpoch: frame.sessionEpoch,
-        role: localRole,
-        batchSize: 1,
-      );
-      return;
-    }
-
-    _voiceLocalIceCandidateCount += 1;
-    final batcher = _voiceIceCandidateBatcher;
-    if (batcher == null) {
-      await _flushVoiceIceCandidateBatch(
-        voiceAdapter: voiceAdapter,
-        peerId: peerId,
-        callId: frame.callId,
-        sessionEpoch: frame.sessionEpoch,
-        role: localRole,
-        candidates: <VoiceSignalingEnvelope>[envelope],
-      );
-      return;
-    }
-
-    try {
-      await batcher.add(envelope);
-    } catch (error, stackTrace) {
-      _recordVoiceIceCandidateWriteFailed(
-        error,
-        stackTrace,
-        peerId: peerId,
-        callId: frame.callId,
-        sessionEpoch: frame.sessionEpoch,
-        role: localRole,
-        batchSize: batcher.pendingCount,
-      );
-    }
+    await VoiceCallSignalingCleanupCoordinator.instance.queueVoiceIceCandidate(
+      voiceAdapter: voiceAdapter,
+      peerId: peerId,
+      frame: frame,
+      localRole: _localVoiceCallRole(),
+      localIceCandidateCount: _voiceLocalIceCandidateCount,
+      maxIceCandidatesPerRole: maxIceCandidatesPerRole,
+      setLocalIceCandidateCount: (count) {
+        _voiceLocalIceCandidateCount = count;
+      },
+      recordIceCandidateBudgetExceeded: _recordIceCandidateBudgetExceeded,
+      encryptVoiceFrame: _encryptVoiceFrame,
+      voiceIcePurpose: _voiceIcePurpose,
+      recordVoiceIceCandidateWriteFailed: _recordVoiceIceCandidateWriteFailed,
+      batcher: _voiceIceCandidateBatcher,
+      flushVoiceIceCandidateBatch: _flushVoiceIceCandidateBatch,
+    );
   }
 
   Future<void> _flushVoiceIceCandidateBatch({
@@ -2063,71 +1394,20 @@ extension VoiceCallRuntime on RainRuntimeController {
     required VoiceCallRole role,
     required List<VoiceSignalingEnvelope> candidates,
   }) async {
-    if (candidates.isEmpty) {
-      return;
-    }
-    try {
-      final candidateIds = await voiceAdapter.writeIceCandidates(
-        callId: callId,
-        username: _normalizedUsername(selfIdentity.username),
-        role: role,
-        candidates: candidates,
-        createdAt: DateTime.now().millisecondsSinceEpoch,
-      );
-      final droppedCount = candidates.length - candidateIds.length;
-      _recordRuntimeEvent(
-        category: 'call',
-        name: 'ice_candidate_batch_flushed',
-        context: <String, Object?>{
-          'peerId': peerId,
-          'callId': callId,
-          'sessionEpoch': sessionEpoch,
-          'role': role.name,
-          'batchSize': candidates.length,
-          'writtenCount': candidateIds.length,
-          'droppedCount': droppedCount,
-        },
-      );
-      if (droppedCount > 0) {
-        _recordIceCandidateBudgetExceeded(
+    await VoiceCallSignalingCleanupCoordinator.instance
+        .flushVoiceIceCandidateBatch(
+          voiceAdapter: voiceAdapter,
           peerId: peerId,
           callId: callId,
           sessionEpoch: sessionEpoch,
           role: role,
-          requestedCount: candidates.length,
-          droppedCount: droppedCount,
+          candidates: candidates,
+          username: _normalizedUsername(selfIdentity.username),
+          recordRuntimeEvent: _recordRuntimeEvent,
+          recordIceCandidateBudgetExceeded: _recordIceCandidateBudgetExceeded,
+          recordVoiceIceCandidateWriteFailed:
+              _recordVoiceIceCandidateWriteFailed,
         );
-      }
-    } on SignalingCostBudgetExceeded catch (error, stackTrace) {
-      _recordIceCandidateBudgetExceeded(
-        peerId: peerId,
-        callId: callId,
-        sessionEpoch: sessionEpoch,
-        role: role,
-        requestedCount: candidates.length,
-        droppedCount: candidates.length,
-        error: error,
-      );
-      _recordVoiceIceCandidateWriteFailed(
-        error,
-        stackTrace,
-        peerId: peerId,
-        callId: callId,
-        sessionEpoch: sessionEpoch,
-        role: role,
-        batchSize: candidates.length,
-      );
-    } catch (error, stackTrace) {
-      _recordVoiceIceCandidateWriteFailed(
-        error,
-        stackTrace,
-        peerId: peerId,
-        callId: callId,
-        sessionEpoch: sessionEpoch,
-        role: role,
-        batchSize: candidates.length,
-      );
-    }
   }
 
   void _recordIceCandidateBudgetExceeded({
@@ -2139,29 +1419,18 @@ extension VoiceCallRuntime on RainRuntimeController {
     required int droppedCount,
     Object? error,
   }) {
-    final context = <String, Object?>{
-      'peerId': peerId,
-      'callId': callId,
-      'sessionEpoch': sessionEpoch,
-      'role': role.name,
-      'requestedCount': requestedCount,
-      'droppedCount': droppedCount,
-      'limit': maxIceCandidatesPerRole,
-    };
-    _recordRuntimeEvent(
-      category: 'call',
-      name: 'ice_candidate_batch_dropped_limit',
-      severity: 'warning',
-      message: error?.toString(),
-      context: context,
-    );
-    _recordRuntimeEvent(
-      category: 'call',
-      name: 'signaling_cost_budget_exceeded',
-      severity: 'warning',
-      message: error?.toString(),
-      context: context,
-    );
+    VoiceCallSignalingCleanupCoordinator.instance
+        .recordIceCandidateBudgetExceeded(
+          peerId: peerId,
+          callId: callId,
+          sessionEpoch: sessionEpoch,
+          role: role,
+          requestedCount: requestedCount,
+          droppedCount: droppedCount,
+          maxIceCandidatesPerRole: maxIceCandidatesPerRole,
+          recordRuntimeEvent: _recordRuntimeEvent,
+          error: error,
+        );
   }
 
   void _recordVoiceIceCandidateWriteFailed(
@@ -2173,25 +1442,18 @@ extension VoiceCallRuntime on RainRuntimeController {
     required VoiceCallRole role,
     required int batchSize,
   }) {
-    _recordRuntimeEvent(
-      category: 'call',
-      name: 'ice_candidate_write_failed',
-      severity: 'warning',
-      message: error.toString(),
-      context: <String, Object?>{
-        'peerId': peerId,
-        'callId': callId,
-        'sessionEpoch': sessionEpoch,
-        'role': role.name,
-        'batchSize': batchSize,
-      },
-    );
-    errorRecorder?.call(
-      error,
-      stackTrace,
-      source: 'voice-ice-candidate-write',
-      fatal: false,
-    );
+    VoiceCallSignalingCleanupCoordinator.instance
+        .recordVoiceIceCandidateWriteFailed(
+          error,
+          stackTrace,
+          peerId: peerId,
+          callId: callId,
+          sessionEpoch: sessionEpoch,
+          role: role,
+          batchSize: batchSize,
+          recordRuntimeEvent: _recordRuntimeEvent,
+          errorRecorder: errorRecorder,
+        );
   }
 
   void _applyVoiceSessionState(
@@ -2199,145 +1461,30 @@ extension VoiceCallRuntime on RainRuntimeController {
     VoiceCallSessionState sessionState, {
     required bool isOutgoing,
   }) {
-    if (!_isLiveVoiceCallSession(session)) {
-      return;
-    }
-    final terminalDecision = VoiceCallTerminalReconciler.sessionStateDecision(
-      terminalLatched: _isTerminalVoiceCallSessionLatched(session),
-      current: _voiceCallState,
-      callId: session.callId,
-      sessionEpoch: session.sessionEpoch,
-      incomingPhase: sessionState.phase,
+    VoiceCallSessionStateCoordinator.instance.applyVoiceSessionState(
+      session,
+      sessionState,
+      isOutgoing: isOutgoing,
+      isLiveVoiceCallSession: _isLiveVoiceCallSession,
+      isTerminalSessionLatched: _isTerminalVoiceCallSessionLatched,
+      currentState: () => _voiceCallState,
+      recordLateVoiceFrame: _recordLateVoiceFrame,
+      localMediaFailureReason: _localAudioFailureReason,
+      localMediaFailureDetail: _localAudioFailureDetail,
+      voiceCallErrorMessage: _voiceCallErrorMessage,
+      setVoiceCallState: _setVoiceCallState,
+      disposeVoiceCallSession: _disposeVoiceCallSession,
+      voiceSignalingAdapter: voiceSignalingAdapter,
+      localUsername: selfIdentity.username,
+      normalizeUsername: _normalizedUsername,
+      recordRoomStatusTransition: _recordVoiceRoomStatusTransition,
+      isVoiceTerminalAlreadyClosedError: _isVoiceTerminalAlreadyClosedError,
+      recordTerminalAlreadyClosed: _recordTerminalAlreadyClosed,
+      eventContext: _voiceCallEventContext,
+      settleVoiceCallAfterTerminalRace: _settleVoiceCallAfterTerminalRace,
+      recordVoiceSignalingError: _recordVoiceSignalingError,
+      finalizeFailedVoiceCallSession: _finalizeFailedVoiceCallSession,
     );
-    if (!terminalDecision.shouldApply) {
-      _recordLateVoiceFrame(session, terminalDecision.ignoredReason!);
-      return;
-    }
-    final mappedPhase = _mapVoiceCallSessionPhase(sessionState.phase);
-    if (_voiceCallState.phase == VoiceCallPhase.failed &&
-        _voiceCallState.callId == session.callId &&
-        _voiceCallState.sessionEpoch == session.sessionEpoch &&
-        mappedPhase == VoiceCallPhase.active) {
-      _recordLateVoiceFrame(session, 'ignored active state after failure');
-      return;
-    }
-    final previous = _voiceCallState;
-    final isSameCall =
-        previous.callId == session.callId &&
-        previous.sessionEpoch == session.sessionEpoch;
-    final now = sessionState.updatedAt;
-    final error = sessionState.error;
-    final failureReason = _voiceCallFailureReasonForSessionState(sessionState);
-    final detail = _voiceCallDetailForSessionState(sessionState);
-    final startedAt = mappedPhase == VoiceCallPhase.active
-        ? (isSameCall ? previous.startedAt : null) ?? now
-        : isSameCall
-        ? previous.startedAt
-        : null;
-    final keepsLocalAudioControls = mappedPhase == VoiceCallPhase.active;
-    final mediaReconnecting =
-        mappedPhase == VoiceCallPhase.active && sessionState.mediaReconnecting;
-
-    if (mappedPhase == VoiceCallPhase.idle) {
-      _setVoiceCallState(const VoiceCallState.idle());
-      unawaited(_disposeVoiceCallSession(session));
-      return;
-    }
-
-    _setVoiceCallState(
-      VoiceCallState(
-        phase: mappedPhase,
-        peerId: session.remotePeerId,
-        callId: session.callId,
-        sessionEpoch: session.sessionEpoch,
-        mediaMode: sessionState.mediaMode,
-        isOutgoing: isOutgoing,
-        isMuted: isSameCall && previous.isMuted,
-        isCameraMuted: isSameCall && previous.isCameraMuted,
-        isDeafened:
-            isSameCall && keepsLocalAudioControls && previous.isDeafened,
-        isRemoteMuted: isSameCall && previous.isRemoteMuted,
-        isRemoteCameraMuted: isSameCall && previous.isRemoteCameraMuted,
-        hasLocalVideo: isSameCall && previous.hasLocalVideo,
-        hasRemoteVideo: isSameCall && previous.hasRemoteVideo,
-        videoFirstFrameTimedOut: isSameCall && previous.videoFirstFrameTimedOut,
-        mediaReconnecting: mediaReconnecting,
-        reconnectingSince: mediaReconnecting
-            ? sessionState.reconnectingSince ?? previous.reconnectingSince
-            : null,
-        outputRoute: isSameCall && keepsLocalAudioControls
-            ? previous.outputRoute
-            : VoiceCallOutputRoute.systemDefault,
-        outputRouteDeviceId: isSameCall && keepsLocalAudioControls
-            ? previous.outputRouteDeviceId
-            : null,
-        outputRouteLabel: isSameCall && keepsLocalAudioControls
-            ? previous.outputRouteLabel
-            : null,
-        outputRouteWarning: isSameCall && keepsLocalAudioControls
-            ? previous.outputRouteWarning
-            : null,
-        startedAt: startedAt,
-        updatedAt: now,
-        detail: detail,
-        error: error,
-        failureReason: failureReason,
-        audioLevel: VoiceAudioLevel.fromMedia(sessionState.audioLevel),
-      ),
-    );
-
-    if (mappedPhase == VoiceCallPhase.active) {
-      final voiceAdapter = voiceSignalingAdapter;
-      if (voiceAdapter != null) {
-        unawaited(
-          voiceAdapter
-              .markConnected(
-                callId: session.callId,
-                username: _normalizedUsername(selfIdentity.username),
-                connectedAt: now,
-              )
-              .then((_) {
-                _recordVoiceRoomStatusTransition(
-                  session.callId,
-                  VoiceCallSignalingStatus.connected,
-                );
-              })
-              .catchError((Object error, StackTrace stackTrace) {
-                if (_isVoiceTerminalAlreadyClosedError(error)) {
-                  _recordTerminalAlreadyClosed(
-                    error,
-                    name: 'voice_mark_connected_after_terminal',
-                    context: <String, Object?>{
-                      ..._voiceCallEventContext(_voiceCallState),
-                      'callId': session.callId,
-                      'sessionEpoch': session.sessionEpoch,
-                    },
-                  );
-                  unawaited(
-                    _settleVoiceCallAfterTerminalRace(
-                      session,
-                      detail: 'Call ended.',
-                    ),
-                  );
-                  return;
-                }
-                _recordVoiceSignalingError(error, stackTrace);
-              }),
-        );
-      }
-    }
-
-    if (mappedPhase == VoiceCallPhase.failed) {
-      unawaited(
-        _finalizeFailedVoiceCallSession(
-          session,
-          sessionState,
-          isOutgoing: isOutgoing,
-          detail: detail,
-          failureReason: failureReason,
-        ),
-      );
-    }
   }
 
   Future<void> _finalizeFailedVoiceCallSession(
@@ -2347,43 +1494,39 @@ extension VoiceCallRuntime on RainRuntimeController {
     required String? detail,
     required VoiceCallFailureReason? failureReason,
   }) async {
-    final terminalDetail =
-        detail ?? sessionState.detail ?? _voiceCallMediaFailed;
-    final terminalReasonCode =
-        sessionState.reasonCode ??
-        _voiceCallReasonCodeForFailure(failureReason) ??
-        _voiceCallFailedReasonCode;
-    final terminalWrite = await _writeTerminalRoomBeforeSessionHangup(
-      callId: session.callId,
-      status: VoiceCallSignalingStatus.failed,
-      detail: terminalDetail,
-      reasonCode: terminalReasonCode,
-    );
-    _recordVoiceCallSessionFailure(
-      session,
-      sessionState,
-      isOutgoing: isOutgoing,
-    );
-    if (!terminalWrite.durable) {
-      _recordRuntimeEvent(
-        category: 'call',
-        name: 'failed_session_terminal_write_not_durable',
-        severity: 'error',
-        message: terminalWrite.error?.toString(),
-        context: <String, Object?>{
-          'peerId': session.remotePeerId,
-          'callId': session.callId,
-          'sessionEpoch': session.sessionEpoch,
-          'mediaMode': session.mediaMode.name,
-          'reasonCode': terminalReasonCode,
-        },
-      );
-    }
-    await _disposeVoiceCallSession(session);
-  }
-
-  VoiceCallPhase _mapVoiceCallSessionPhase(VoiceCallSessionPhase phase) {
-    return VoiceCallStateCoordinator.instance.mapSessionPhase(phase);
+    await VoiceCallSessionStateCoordinator.instance
+        .finalizeFailedVoiceCallSession(
+          session,
+          sessionState,
+          isOutgoing: isOutgoing,
+          detail: detail,
+          failureReason: failureReason,
+          mediaFailedMessage: _voiceCallMediaFailed,
+          failedReasonCode: _voiceCallFailedReasonCode,
+          reasonCodeForFailure: _voiceCallReasonCodeForFailure,
+          writeTerminalRoomBeforeSessionHangup:
+              ({
+                required callId,
+                required status,
+                required detail,
+                reasonCode,
+              }) async {
+                final terminalWrite =
+                    await _writeTerminalRoomBeforeSessionHangup(
+                      callId: callId,
+                      status: status,
+                      detail: detail,
+                      reasonCode: reasonCode,
+                    );
+                return (
+                  durable: terminalWrite.durable,
+                  error: terminalWrite.error,
+                );
+              },
+          recordVoiceCallSessionFailure: _recordVoiceCallSessionFailure,
+          recordRuntimeEvent: _recordRuntimeEvent,
+          disposeVoiceCallSession: _disposeVoiceCallSession,
+        );
   }
 
   VoiceCallFailureReason? _voiceCallFailureReasonForSessionState(
@@ -2408,39 +1551,17 @@ extension VoiceCallRuntime on RainRuntimeController {
     VoiceCallSessionState state, {
     required bool isOutgoing,
   }) {
-    final error = state.error;
-    final localFailure = error == null ? null : _localAudioFailureReason(error);
-    if (localFailure == VoiceCallFailureReason.microphoneDenied) {
-      return;
-    }
-    final detail =
-        _voiceCallDetailForSessionState(state) ?? _voiceCallMediaFailed;
-    final failureCode =
-        state.reasonCode ??
-        _voiceCallFailureReasonForSessionState(state)?.name ??
-        'unknown';
-    _recordVoiceCallDiagnostics(
-      callId: session.callId,
-      sessionEpoch: session.sessionEpoch,
-      peerId: session.remotePeerId,
+    VoiceCallSessionStateCoordinator.instance.recordVoiceCallSessionFailure(
+      session,
+      state,
       isOutgoing: isOutgoing,
-      mediaMode: state.mediaMode,
-      failureCode: failureCode,
-      userMessage: detail,
-      nativeError:
-          error?.toString() ??
-          state.mediaDiagnostics?.lastError ??
-          state.mediaDiagnostics?.lastDetail ??
-          state.detail ??
-          'No native error captured.',
-      mediaDiagnostics: state.mediaDiagnostics,
-      rendererState: state.mediaMode == CallMediaMode.video
-          ? _lastVideoCallRendererState
-          : null,
-      cameraPermissionFailureDetail: _cameraPermissionFailureDetail(
-        error,
-        state.reasonCode,
-      ),
+      localMediaFailureReason: _localAudioFailureReason,
+      localMediaFailureDetail: _localAudioFailureDetail,
+      voiceCallErrorMessage: _voiceCallErrorMessage,
+      mediaFailedMessage: _voiceCallMediaFailed,
+      lastVideoCallRendererState: _lastVideoCallRendererState,
+      cameraPermissionFailureDetail: _cameraPermissionFailureDetail,
+      recordVoiceCallDiagnostics: _recordVoiceCallDiagnostics,
     );
   }
 
@@ -2450,26 +1571,15 @@ extension VoiceCallRuntime on RainRuntimeController {
     required String userMessage,
     required String nativeError,
   }) {
-    final callId = state.callId;
-    final peerId = state.peerId;
-    final sessionEpoch = state.sessionEpoch;
-    if (callId == null || peerId == null || sessionEpoch == null) {
-      return;
-    }
-    final callDiagnostics = _videoCallMediaConnection?.diagnostics;
-    _recordVoiceCallDiagnostics(
-      callId: callId,
-      sessionEpoch: sessionEpoch,
-      peerId: peerId,
-      isOutgoing: state.isOutgoing,
-      mediaMode: state.mediaMode,
+    VoiceCallSessionStateCoordinator.instance.recordVoiceCallRuntimeFailure(
+      state,
       failureCode: failureCode,
       userMessage: userMessage,
       nativeError: nativeError,
-      mediaDiagnostics: callDiagnostics == null
-          ? _voiceCallSession?.state.mediaDiagnostics
-          : voiceMediaDiagnosticsForCall(callDiagnostics),
-      rendererState: state.isVideo ? _lastVideoCallRendererState : null,
+      callMediaDiagnostics: _videoCallMediaConnection?.diagnostics,
+      sessionMediaDiagnostics: _voiceCallSession?.state.mediaDiagnostics,
+      lastVideoCallRendererState: _lastVideoCallRendererState,
+      recordVoiceCallDiagnostics: _recordVoiceCallDiagnostics,
     );
   }
 
@@ -2482,32 +1592,27 @@ extension VoiceCallRuntime on RainRuntimeController {
     CallRetryDecision? retryDecision,
     CallSignalingFailureSnapshot? retrySnapshot,
   }) {
-    final reason =
-        _voiceCallFailureReasonForRetryDecision(retryDecision) ??
-        _voiceCallFailureReasonForError(error) ??
-        _localAudioFailureReason(error);
-    final detail =
-        _voiceCallFailureDetailForRetryDecision(retryDecision) ??
-        _voiceCallFailureDetailForError(error) ??
-        _localAudioFailureDetail(error) ??
-        _voiceCallErrorMessage(error);
-    _recordVoiceCallDiagnostics(
-      callId: callId,
-      sessionEpoch: sessionEpoch,
-      peerId: peerId,
-      isOutgoing: true,
-      mediaMode: mediaMode,
-      failureCode: reason?.name ?? retryDecision?.kind.name ?? 'unknown',
-      userMessage: detail,
-      nativeError: error.toString(),
-      lockDiagnostics: _voiceCallLockDiagnostics(
-        peerId: peerId,
-        callId: callId,
-        sessionEpoch: sessionEpoch,
-        retryDecision: retryDecision,
-        retrySnapshot: retrySnapshot,
-      ),
-    );
+    VoiceCallSessionStateCoordinator.instance
+        .recordVoiceCallStartFailureDiagnostics(
+          error: error,
+          peerId: peerId,
+          callId: callId,
+          sessionEpoch: sessionEpoch,
+          mediaMode: mediaMode,
+          failureReasonForRetryDecision:
+              _voiceCallFailureReasonForRetryDecision,
+          failureDetailForRetryDecision:
+              _voiceCallFailureDetailForRetryDecision,
+          failureReasonForError: _voiceCallFailureReasonForError,
+          failureDetailForError: _voiceCallFailureDetailForError,
+          localMediaFailureReason: _localAudioFailureReason,
+          localMediaFailureDetail: _localAudioFailureDetail,
+          voiceCallErrorMessage: _voiceCallErrorMessage,
+          voiceCallLockDiagnostics: _voiceCallLockDiagnostics,
+          recordVoiceCallDiagnostics: _recordVoiceCallDiagnostics,
+          retryDecision: retryDecision,
+          retrySnapshot: retrySnapshot,
+        );
   }
 
   void _recordVoiceCallDiagnostics({
@@ -2524,84 +1629,27 @@ extension VoiceCallRuntime on RainRuntimeController {
     String? cameraPermissionFailureDetail,
     Map<String, Object?> lockDiagnostics = const <String, Object?>{},
   }) {
-    final localUsername = _normalizedUsername(selfIdentity.username);
-    final remoteUsername = _normalizedUsername(peerId);
-    errorRecorder?.call(
-      VoiceCallDiagnostics(
-        callId: callId,
-        sessionEpoch: sessionEpoch,
-        peerId: remoteUsername,
-        role: isOutgoing ? 'caller' : 'callee',
-        mediaMode: mediaMode.name,
-        caller: isOutgoing ? localUsername : remoteUsername,
-        callee: isOutgoing ? remoteUsername : localUsername,
-        failureCode: failureCode,
-        userMessage: userMessage,
-        sanitizedUiError: userMessage,
-        nativeError: nativeError,
-        roomStatusTimeline: _voiceRoomStatusTimeline(callId),
-        iceCandidateWriteCount: _voiceLocalIceCandidateCount,
-        iceCandidateReadCount: mediaDiagnostics?.remoteCandidateCount ?? 0,
-        relayFallbackAttempted:
-            lockDiagnostics['relayFallbackAttempted'] == true,
-        terminalWriteOutcome: lockDiagnostics['terminalWriteOutcome']
-            ?.toString(),
-        cleanupOutcome: lockDiagnostics['cleanupOutcome']?.toString(),
-        presenceAgeAtStartMs: lockDiagnostics['presenceAgeAtStartMs'] is num
-            ? (lockDiagnostics['presenceAgeAtStartMs']! as num).toInt()
-            : null,
-        mediaFailureReason: mediaDiagnostics?.lastFailureReason ?? failureCode,
-        failureTaxonomy: _voiceFailureTaxonomy(
-          failureCode: failureCode,
-          userMessage: userMessage,
-          nativeError: nativeError,
-        ),
-        mediaStates: mediaDiagnostics?.mediaStates ?? const <String>[],
-        iceStates: mediaDiagnostics?.iceConnectionStates ?? const <String>[],
-        connectionStates:
-            mediaDiagnostics?.peerConnectionStates ?? const <String>[],
-        localCandidateCount: mediaDiagnostics?.localCandidateCount ?? 0,
-        remoteCandidateCount: mediaDiagnostics?.remoteCandidateCount ?? 0,
-        pendingRemoteCandidateCount:
-            mediaDiagnostics?.pendingRemoteCandidateCount ?? 0,
-        localAudioTrackCount: mediaDiagnostics?.localAudioTrackCount ?? 0,
-        remoteAudioTrackCount: mediaDiagnostics?.remoteAudioTrackCount ?? 0,
-        localVideoTrackCount: mediaDiagnostics?.localVideoTrackCount ?? 0,
-        remoteVideoTrackCount: mediaDiagnostics?.remoteVideoTrackCount ?? 0,
-        remoteStreamCount: mediaDiagnostics?.remoteStreamCount ?? 0,
-        firstLocalVideoFrameAt: _isoTimestamp(rendererState?.localFirstFrameAt),
-        firstRemoteVideoFrameAt: _isoTimestamp(
-          rendererState?.remoteFirstFrameAt,
-        ),
-        selectedCandidateRoute: _selectedVoiceCallCandidateRoute(peerId),
-        cameraPermissionFailureDetail: cameraPermissionFailureDetail,
-        lockClaimResult: lockDiagnostics['lockClaimResult']?.toString(),
-        lockPath: lockDiagnostics['lockPath']?.toString(),
-        pairId: lockDiagnostics['pairId']?.toString(),
-        callerUserLock: lockDiagnostics['callerUserLock']?.toString(),
-        calleeUserLock: lockDiagnostics['calleeUserLock']?.toString(),
-        lockCallId: lockDiagnostics['lockCallId']?.toString(),
-        lockExpiresAt: lockDiagnostics['lockExpiresAt'] is num
-            ? (lockDiagnostics['lockExpiresAt']! as num).toInt()
-            : null,
-        lockWasReclaimed: lockDiagnostics['lockWasReclaimed'] is bool
-            ? lockDiagnostics['lockWasReclaimed']! as bool
-            : null,
-        terminalRoomWasCleaned:
-            lockDiagnostics['terminalRoomWasCleaned'] is bool
-            ? lockDiagnostics['terminalRoomWasCleaned']! as bool
-            : null,
-        corruptRoomWasRepaired:
-            lockDiagnostics['corruptRoomWasRepaired'] is bool
-            ? lockDiagnostics['corruptRoomWasRepaired']! as bool
-            : null,
-        timestampRepair: lockDiagnostics['timestampRepair'] is bool
-            ? lockDiagnostics['timestampRepair']! as bool
-            : null,
-      ),
-      StackTrace.current,
-      source: 'voice-call-media',
-      fatal: false,
+    VoiceCallSessionStateCoordinator.instance.recordVoiceCallDiagnostics(
+      callId: callId,
+      sessionEpoch: sessionEpoch,
+      peerId: peerId,
+      isOutgoing: isOutgoing,
+      mediaMode: mediaMode,
+      failureCode: failureCode,
+      userMessage: userMessage,
+      nativeError: nativeError,
+      localUsername: selfIdentity.username,
+      normalizeUsername: _normalizedUsername,
+      errorRecorder: errorRecorder,
+      roomStatusTimeline: _voiceRoomStatusTimeline,
+      iceCandidateWriteCount: _voiceLocalIceCandidateCount,
+      failureTaxonomy: _voiceFailureTaxonomy,
+      isoTimestamp: _isoTimestamp,
+      selectedCandidateRoute: _selectedVoiceCallCandidateRoute,
+      mediaDiagnostics: mediaDiagnostics,
+      rendererState: rendererState,
+      cameraPermissionFailureDetail: cameraPermissionFailureDetail,
+      lockDiagnostics: lockDiagnostics,
     );
   }
 
@@ -2647,63 +1695,41 @@ extension VoiceCallRuntime on RainRuntimeController {
   }
 
   Future<void> _disposeCurrentVoiceCallSession() async {
-    _cancelVoiceCallReconnectGrace();
-    await _disposeVoiceIceCandidateBatcher();
-    await _cancelVoiceSignalingSubscriptions();
-    final session = _voiceCallSession;
-    if (session == null) {
-      final subscription = _voiceCallSessionSubscription;
-      _voiceCallSessionSubscription = null;
-      if (subscription != null) {
-        await _runBoundedVoiceCleanupStep(
-          'voice_call_session_subscription_cancel',
-          subscription.cancel,
+    await VoiceCallSignalingCleanupCoordinator.instance
+        .disposeCurrentVoiceCallSession(
+          cancelReconnectGrace: _cancelVoiceCallReconnectGrace,
+          disposeVoiceIceCandidateBatcher: _disposeVoiceIceCandidateBatcher,
+          cancelVoiceSignalingSubscriptions: _cancelVoiceSignalingSubscriptions,
+          currentSession: _voiceCallSession,
+          sessionSubscription: _voiceCallSessionSubscription,
+          setSessionSubscription: (subscription) {
+            _voiceCallSessionSubscription = subscription;
+          },
+          runBoundedCleanupStep: _runBoundedVoiceCleanupStep,
+          disposeVoiceCallSession: _disposeVoiceCallSession,
         );
-      }
-      return;
-    }
-    await _disposeVoiceCallSession(session);
   }
 
   Future<void> _disposeVoiceCallSession(VoiceCallSession session) async {
-    var ownsRuntimeResources = false;
-    if (_voiceCallSession == session) {
-      ownsRuntimeResources = true;
-      _voiceCallSession = null;
-      _cancelVoiceCallReconnectGrace();
-      await _disposeVoiceIceCandidateBatcher();
-      await _cancelVoiceSignalingSubscriptions();
-      final subscription = _voiceCallSessionSubscription;
-      _voiceCallSessionSubscription = null;
-      if (subscription != null) {
-        await _runBoundedVoiceCleanupStep(
-          'voice_call_session_subscription_cancel',
-          subscription.cancel,
-          context: <String, Object?>{
-            'peerId': session.remotePeerId,
-            'callId': session.callId,
-            'sessionEpoch': session.sessionEpoch,
-          },
-        );
-      }
-      await _disposeVideoCallResources();
-      // Clean up per-call diagnostics to prevent unbounded memory growth.
-      final sessionKey = _voiceCallSessionKey(
-        session.callId,
-        session.sessionEpoch,
-      );
-      _terminalVoiceCallSessionKeys.remove(sessionKey);
-      _voiceRoomStatusTimelineByCall.remove(session.callId);
-    }
-    await _runBoundedVoiceCleanupStep(
-      'voice_call_session_dispose',
-      session.dispose,
-      context: <String, Object?>{
-        'peerId': session.remotePeerId,
-        'callId': session.callId,
-        'sessionEpoch': session.sessionEpoch,
-        'ownsRuntimeResources': ownsRuntimeResources,
+    await VoiceCallSignalingCleanupCoordinator.instance.disposeVoiceCallSession(
+      session,
+      currentSession: _voiceCallSession,
+      setCurrentSession: (session) => _voiceCallSession = session,
+      cancelReconnectGrace: _cancelVoiceCallReconnectGrace,
+      disposeVoiceIceCandidateBatcher: _disposeVoiceIceCandidateBatcher,
+      cancelVoiceSignalingSubscriptions: _cancelVoiceSignalingSubscriptions,
+      sessionSubscription: _voiceCallSessionSubscription,
+      setSessionSubscription: (subscription) {
+        _voiceCallSessionSubscription = subscription;
       },
+      disposeVideoCallResources: _disposeVideoCallResources,
+      removeTerminalSessionKey: (callId, sessionEpoch) {
+        _terminalVoiceCallSessionKeys.remove(
+          _voiceCallSessionKey(callId, sessionEpoch),
+        );
+      },
+      removeRoomStatusTimeline: _voiceRoomStatusTimelineByCall.remove,
+      runBoundedCleanupStep: _runBoundedVoiceCleanupStep,
     );
   }
 
@@ -2712,81 +1738,33 @@ extension VoiceCallRuntime on RainRuntimeController {
     Future<void> Function() cleanup, {
     Map<String, Object?> context = const <String, Object?>{},
   }) async {
-    var completed = true;
-    try {
-      await cleanup().timeout(
-        _voiceCallCleanupStepTimeout,
-        onTimeout: () {
-          completed = false;
-          _recordRuntimeEvent(
-            category: 'call',
-            name: '${step}_timeout',
-            severity: 'warning',
-            message: 'Voice call cleanup step timed out.',
-            context: <String, Object?>{
-              ...context,
-              'timeoutMs': _voiceCallCleanupStepTimeout.inMilliseconds,
-            },
-          );
-        },
-      );
-    } catch (error, stackTrace) {
-      completed = false;
-      _recordRuntimeEvent(
-        category: 'call',
-        name: '${step}_failed',
-        severity: 'warning',
-        message: error.toString(),
-        context: context,
-      );
-      errorRecorder?.call(
-        error,
-        stackTrace,
-        source: 'voice-call-cleanup',
-        fatal: false,
-      );
-    }
-    return completed;
+    return VoiceCallSignalingCleanupCoordinator.instance
+        .runBoundedVoiceCleanupStep(
+          step,
+          cleanup,
+          cleanupStepTimeout: _voiceCallCleanupStepTimeout,
+          recordRuntimeEvent: _recordRuntimeEvent,
+          errorRecorder: errorRecorder,
+          context: context,
+        );
   }
 
   Future<void> _disposeVoiceIceCandidateBatcher() async {
-    final batcher = _voiceIceCandidateBatcher;
-    _voiceIceCandidateBatcher = null;
-    _voiceLocalIceCandidateCount = 0;
-    if (batcher == null) {
-      return;
-    }
-    try {
-      await batcher.dispose().timeout(
-        _voiceCallCleanupStepTimeout,
-        onTimeout: () {
-          _recordRuntimeEvent(
-            category: 'call',
-            name: 'voice_ice_candidate_batcher_dispose_timeout',
-            severity: 'warning',
-            message: 'Voice call ICE candidate cleanup timed out.',
-            context: _voiceCallEventContext(_voiceCallState),
-          );
-        },
-      );
-    } catch (error, stackTrace) {
-      final state = _voiceCallState;
-      final peerId = state.peerId;
-      final callId = state.callId;
-      final sessionEpoch = state.sessionEpoch;
-      if (peerId == null || callId == null || sessionEpoch == null) {
-        return;
-      }
-      _recordVoiceIceCandidateWriteFailed(
-        error,
-        stackTrace,
-        peerId: peerId,
-        callId: callId,
-        sessionEpoch: sessionEpoch,
-        role: _localVoiceCallRole(),
-        batchSize: 0,
-      );
-    }
+    await VoiceCallSignalingCleanupCoordinator.instance
+        .disposeVoiceIceCandidateBatcher(
+          batcher: _voiceIceCandidateBatcher,
+          setBatcher: (batcher) => _voiceIceCandidateBatcher = batcher,
+          setLocalIceCandidateCount: (count) {
+            _voiceLocalIceCandidateCount = count;
+          },
+          cleanupStepTimeout: _voiceCallCleanupStepTimeout,
+          currentState: _voiceCallState,
+          eventContext: _voiceCallEventContext,
+          recordRuntimeEvent: _recordRuntimeEvent,
+          recordVoiceIceCandidateWriteFailed:
+              _recordVoiceIceCandidateWriteFailed,
+          localVoiceCallRole: _localVoiceCallRole(),
+        );
   }
 
   Future<void> _sendVoiceFrame(
@@ -2911,49 +1889,27 @@ extension VoiceCallRuntime on RainRuntimeController {
     SessionManager manager,
     String peerId,
   ) async {
-    final media = await manager.createCallMediaConnection(peerId);
-    _recordRuntimeEvent(
-      category: 'call',
-      name: 'video_media_connection_created',
-      context: <String, Object?>{'peerId': peerId},
-    );
-    _lastVideoCallRendererState = null;
-    _handledVideoFirstFrameTimeoutCallId = null;
-    _lastLoggedVideoRendererSignature = null;
-    _videoCallMediaConnection = media;
-    final renderers = VideoCallRenderers(
+    return VoiceCallMediaCoordinator.instance.createVideoVoiceMediaConnection(
+      manager,
+      peerId,
       rendererFactory: videoCallRendererFactory,
       remoteFirstFrameTimeout: videoCallRemoteFirstFrameTimeout,
-    );
-    _videoCallRenderers = renderers;
-    _videoCallRendererSubscription = renderers.onStateChanged.listen(
-      _handleVideoRendererState,
-      onError: (Object error, StackTrace stackTrace) {
-        _recordRuntimeEvent(
-          category: 'call',
-          name: 'video_renderer_stream_error',
-          severity: 'error',
-          message: error.toString(),
-          context: <String, Object?>{'peerId': peerId},
-        );
-        _handleVideoRendererFailure(peerId, error, stackTrace);
+      recordRuntimeEvent: _recordRuntimeEvent,
+      setLastRendererState: (state) => _lastVideoCallRendererState = state,
+      setHandledFirstFrameTimeoutCallId: (callId) {
+        _handledVideoFirstFrameTimeoutCallId = callId;
       },
-    );
-    return VideoVoiceMediaConnection(
-      media: media,
-      renderers: renderers,
-      kind: CallMediaKind.video,
-      onRemoteTrackError: (Object error, StackTrace stackTrace) {
-        errorRecorder?.call(
-          error,
-          stackTrace,
-          source: 'video-call-media',
-          fatal: false,
-        );
+      setLastLoggedRendererSignature: (signature) {
+        _lastLoggedVideoRendererSignature = signature;
       },
-      onRendererError: (Object error, StackTrace stackTrace) {
-        _handleVideoRendererFailure(peerId, error, stackTrace);
+      setVideoCallMediaConnection: (media) => _videoCallMediaConnection = media,
+      setVideoCallRenderers: (renderers) => _videoCallRenderers = renderers,
+      setVideoCallRendererSubscription: (subscription) {
+        _videoCallRendererSubscription = subscription;
       },
+      handleRendererState: _handleVideoRendererState,
+      handleRendererFailure: _handleVideoRendererFailure,
+      errorRecorder: errorRecorder,
     );
   }
 
@@ -2961,76 +1917,33 @@ extension VoiceCallRuntime on RainRuntimeController {
     SessionManager manager,
     String peerId,
   ) async {
-    final media = await manager.createCallMediaConnection(peerId);
-    _recordRuntimeEvent(
-      category: 'call',
-      name: 'audio_call_media_connection_created',
-      context: <String, Object?>{'peerId': peerId},
-    );
-    return CallVoiceMediaConnection(
-      media: media,
-      kind: CallMediaKind.audio,
-      onRemoteTrackError: (Object error, StackTrace stackTrace) {
-        errorRecorder?.call(
-          error,
-          stackTrace,
-          source: 'voice-call-media',
-          fatal: false,
-        );
-      },
+    return VoiceCallMediaCoordinator.instance.createAudioVoiceMediaConnection(
+      manager,
+      peerId,
+      recordRuntimeEvent: _recordRuntimeEvent,
+      errorRecorder: errorRecorder,
     );
   }
 
   void _handleVideoRendererState(VideoCallRendererState rendererState) {
-    _lastVideoCallRendererState = rendererState;
-    final signature = <Object?>[
-      rendererState.hasLocalStream,
-      rendererState.hasRemoteStream,
-      rendererState.localFirstFrameAt != null,
-      rendererState.remoteFirstFrameAt != null,
-      rendererState.remoteFirstFrameTimedOut,
-    ].join('|');
-    if (_lastLoggedVideoRendererSignature != signature) {
-      _lastLoggedVideoRendererSignature = signature;
-      _recordRuntimeEvent(
-        category: 'call',
-        name: 'video_renderer_state',
-        context: <String, Object?>{
-          ..._voiceCallEventContext(_voiceCallState),
-          'hasLocalStream': rendererState.hasLocalStream,
-          'hasRemoteStream': rendererState.hasRemoteStream,
-          'localFirstFrameAt': _isoTimestamp(rendererState.localFirstFrameAt),
-          'remoteFirstFrameAt': _isoTimestamp(rendererState.remoteFirstFrameAt),
-          'remoteFirstFrameTimedOut': rendererState.remoteFirstFrameTimedOut,
-        },
-      );
-    }
-    final current = _voiceCallState;
-    if (!current.hasCall || !current.isVideo) {
-      return;
-    }
-    _setVoiceCallState(
-      current.copyWith(
-        hasLocalVideo: rendererState.hasLocalStream,
-        hasRemoteVideo: rendererState.hasRemoteStream,
-        videoFirstFrameTimedOut: rendererState.remoteFirstFrameTimedOut,
-        updatedAt: DateTime.now().millisecondsSinceEpoch,
-      ),
+    VoiceCallMediaCoordinator.instance.handleVideoRendererState(
+      rendererState,
+      currentState: _voiceCallState,
+      lastLoggedRendererSignature: _lastLoggedVideoRendererSignature,
+      handledFirstFrameTimeoutCallId: _handledVideoFirstFrameTimeoutCallId,
+      setLastRendererState: (state) => _lastVideoCallRendererState = state,
+      setLastLoggedRendererSignature: (signature) {
+        _lastLoggedVideoRendererSignature = signature;
+      },
+      setHandledFirstFrameTimeoutCallId: (callId) {
+        _handledVideoFirstFrameTimeoutCallId = callId;
+      },
+      recordRuntimeEvent: _recordRuntimeEvent,
+      eventContext: _voiceCallEventContext,
+      isoTimestamp: _isoTimestamp,
+      setVoiceCallState: _setVoiceCallState,
+      nowMs: DateTime.now().millisecondsSinceEpoch,
     );
-    if (rendererState.remoteFirstFrameTimedOut &&
-        current.phase == VoiceCallPhase.active &&
-        !current.isRemoteCameraMuted &&
-        current.callId != null &&
-        _handledVideoFirstFrameTimeoutCallId != current.callId) {
-      _handledVideoFirstFrameTimeoutCallId = current.callId;
-      _recordRuntimeEvent(
-        category: 'call',
-        name: 'video_first_frame_timeout_warning',
-        severity: 'warning',
-        message: 'Remote video stream attached but no rendered frame arrived.',
-        context: _voiceCallEventContext(current),
-      );
-    }
   }
 
   void _handleVideoRendererFailure(
@@ -3038,185 +1951,66 @@ extension VoiceCallRuntime on RainRuntimeController {
     Object error,
     StackTrace stackTrace,
   ) {
-    final normalizedPeerId = _normalizedUsername(peerId);
-    final current = _voiceCallState;
-    final isCurrentLiveVideoCall =
-        current.peerId == normalizedPeerId &&
-        current.isVideo &&
-        current.phase != VoiceCallPhase.idle &&
-        current.phase != VoiceCallPhase.failed &&
-        current.phase != VoiceCallPhase.ending &&
-        current.phase != VoiceCallPhase.ended;
-    final rendererTarget = error is VideoCallRendererException
-        ? error.target.name
-        : VideoCallRendererTarget.unknown.name;
-    if (!isCurrentLiveVideoCall) {
-      _recordRuntimeEvent(
-        category: 'call',
-        name: 'stale_renderer_callback_ignored',
-        severity: 'warning',
-        message: error.toString(),
-        context: <String, Object?>{
-          'peerId': normalizedPeerId,
-          'rendererTarget': rendererTarget,
-          'currentPeerId': current.peerId,
-          'currentCallId': current.callId,
-          'currentPhase': current.phase.name,
-        },
-      );
-      return;
-    }
-    _recordRuntimeEvent(
-      category: 'call',
-      name: 'video_renderer_failed',
-      severity: 'error',
-      message: error.toString(),
-      context: <String, Object?>{
-        ..._voiceCallEventContext(current),
-        'peerId': normalizedPeerId,
-        'rendererTarget': rendererTarget,
-      },
-    );
-    errorRecorder?.call(
+    VoiceCallMediaCoordinator.instance.handleVideoRendererFailure(
+      peerId,
       error,
       stackTrace,
-      source: 'video-call-renderer',
-      fatal: false,
-    );
-    _recordVoiceCallRuntimeFailure(
-      current,
-      failureCode: _voiceCallVideoRendererFailedReasonCode,
-      userMessage: _voiceCallVideoFailed,
-      nativeError: error.toString(),
-    );
-    if (error is VideoCallRendererException &&
-        error.target == VideoCallRendererTarget.local) {
-      return;
-    }
-    unawaited(
-      _endVoiceCallForPeer(
-        normalizedPeerId,
-        notifyPeer: true,
-        detail: _voiceCallVideoFailed,
-        failureReason: VoiceCallFailureReason.videoRendererFailed,
-        failureDetail: _voiceCallVideoFailed,
-      ),
+      normalizeUsername: _normalizedUsername,
+      currentState: _voiceCallState,
+      recordRuntimeEvent: _recordRuntimeEvent,
+      eventContext: _voiceCallEventContext,
+      errorRecorder: errorRecorder,
+      recordRuntimeFailure: _recordVoiceCallRuntimeFailure,
+      endVoiceCallForPeer: _endVoiceCallForPeer,
+      rendererFailedReasonCode: _voiceCallVideoRendererFailedReasonCode,
+      videoFailedMessage: _voiceCallVideoFailed,
     );
   }
 
   void _handleVoiceCallAppLifecycleState(AppLifecycleState state) {
-    final interruptionType = switch (state) {
-      AppLifecycleState.paused ||
-      AppLifecycleState.detached => MediaInterruptionType.appPaused,
-      AppLifecycleState.resumed => MediaInterruptionType.appResumed,
-      AppLifecycleState.inactive || AppLifecycleState.hidden => null,
-    };
-    final media = _videoCallMediaConnection;
-    if (media != null && interruptionType != null) {
-      unawaited(
-        media.handleMediaInterruption(
-          MediaInterruptionEvent(
-            type: interruptionType,
-            occurredAt: DateTime.now(),
-            detail: state.name,
-          ),
-        ),
-      );
-    }
-    if (state != AppLifecycleState.paused &&
-        state != AppLifecycleState.detached) {
-      return;
-    }
-    final current = _voiceCallState;
-    if (!current.hasCall ||
-        !current.isVideo ||
-        current.phase == VoiceCallPhase.failed ||
-        current.phase == VoiceCallPhase.ending ||
-        current.peerId == null ||
-        current.callId == null) {
-      return;
-    }
-    _recordRuntimeEvent(
-      category: 'call',
-      name: 'video_call_backgrounded',
-      severity: 'warning',
-      context: <String, Object?>{
-        ..._voiceCallEventContext(current),
-        'lifecycleState': state.name,
-      },
-    );
-    _recordVoiceCallRuntimeFailure(
-      current,
-      failureCode: _voiceCallFailedReasonCode,
-      userMessage: _voiceCallVideoBackgrounded,
-      nativeError: _voiceCallVideoBackgrounded,
-    );
-    unawaited(
-      _endVoiceCallForPeer(
-        current.peerId!,
-        notifyPeer: false,
-        detail: _voiceCallVideoBackgrounded,
-        failureReason: VoiceCallFailureReason.mediaConnectionFailed,
-        failureDetail: _voiceCallVideoBackgrounded,
-      ),
+    VoiceCallMediaCoordinator.instance.handleVoiceCallAppLifecycleState(
+      state,
+      videoCallMediaConnection: _videoCallMediaConnection,
+      currentState: _voiceCallState,
+      recordRuntimeEvent: _recordRuntimeEvent,
+      eventContext: _voiceCallEventContext,
+      recordRuntimeFailure: _recordVoiceCallRuntimeFailure,
+      endVoiceCallForPeer: _endVoiceCallForPeer,
+      failedReasonCode: _voiceCallFailedReasonCode,
+      videoBackgroundedMessage: _voiceCallVideoBackgrounded,
     );
   }
 
   Future<void> _setVideoCallCameraMutedInSignaling(bool muted) async {
-    final current = _voiceCallState;
-    final callId = current.callId;
-    if (callId == null) {
-      return;
-    }
-    try {
-      await _requireVoiceSignalingAdapter().setCameraMuted(
-        callId: callId,
-        username: _normalizedUsername(selfIdentity.username),
-        cameraMuted: muted,
-        updatedAt: DateTime.now().millisecondsSinceEpoch,
-      );
-    } catch (error, stackTrace) {
-      _recordVoiceSignalingError(error, stackTrace);
-    }
+    await VoiceCallMediaCoordinator.instance.setVideoCallCameraMutedInSignaling(
+      muted,
+      currentState: _voiceCallState,
+      requireVoiceSignalingAdapter: _requireVoiceSignalingAdapter,
+      username: _normalizedUsername(selfIdentity.username),
+      updatedAt: DateTime.now().millisecondsSinceEpoch,
+      recordVoiceSignalingError: _recordVoiceSignalingError,
+    );
   }
 
   Future<void> _disposeVideoCallResources() async {
-    final renderers = _videoCallRenderers;
-    if (renderers != null || _videoCallMediaConnection != null) {
-      _recordRuntimeEvent(
-        category: 'call',
-        name: 'video_resources_dispose_started',
-        context: _voiceCallEventContext(_voiceCallState),
-      );
-    }
-    _videoCallRenderers = null;
-    _videoCallMediaConnection = null;
-    _lastLoggedVideoRendererSignature = null;
-    final subscription = _videoCallRendererSubscription;
-    _videoCallRendererSubscription = null;
-    if (subscription != null) {
-      await _runBoundedVoiceCleanupStep(
-        'video_renderer_subscription_cancel',
-        subscription.cancel,
-        context: _voiceCallEventContext(_voiceCallState),
-      );
-    }
-    if (renderers == null) {
-      return;
-    }
-    _lastVideoCallRendererState = renderers.state;
-    final disposed = await _runBoundedVoiceCleanupStep(
-      'video_resources_dispose',
-      renderers.dispose,
-      context: _voiceCallEventContext(_voiceCallState),
+    await VoiceCallMediaCoordinator.instance.disposeVideoCallResources(
+      renderers: _videoCallRenderers,
+      mediaConnection: _videoCallMediaConnection,
+      rendererSubscription: _videoCallRendererSubscription,
+      setVideoCallRenderers: (renderers) => _videoCallRenderers = renderers,
+      setVideoCallMediaConnection: (media) => _videoCallMediaConnection = media,
+      setVideoCallRendererSubscription: (subscription) {
+        _videoCallRendererSubscription = subscription;
+      },
+      setLastLoggedRendererSignature: (signature) {
+        _lastLoggedVideoRendererSignature = signature;
+      },
+      setLastRendererState: (state) => _lastVideoCallRendererState = state,
+      runBoundedCleanupStep: _runBoundedVoiceCleanupStep,
+      recordRuntimeEvent: _recordRuntimeEvent,
+      eventContext: _voiceCallEventContext,
+      currentState: _voiceCallState,
     );
-    if (disposed) {
-      _recordRuntimeEvent(
-        category: 'call',
-        name: 'video_resources_disposed',
-        context: _voiceCallEventContext(_voiceCallState),
-      );
-    }
   }
 
   VoiceSignalingAdapter _requireVoiceSignalingAdapter() {
@@ -3228,78 +2022,35 @@ extension VoiceCallRuntime on RainRuntimeController {
   }
 
   Future<void> _cleanupStaleVoiceCallArtifacts(String reason) async {
-    final voiceAdapter = voiceSignalingAdapter;
-    if (voiceAdapter == null || _shutDown) {
-      return;
-    }
-    final now = DateTime.now().millisecondsSinceEpoch;
-    try {
-      final summary = await voiceAdapter.cleanupStaleVoiceCallArtifacts(
-        username: selfIdentity.username,
-        now: now,
-      );
-      _recordRuntimeEvent(
-        category: 'call',
-        name: 'voice_call_cleanup_janitor_completed',
-        severity: summary.cleanedAny ? 'warning' : 'info',
-        context: <String, Object?>{'reason': reason, ...summary.toJson()},
-      );
-    } catch (error, stackTrace) {
-      _recordRuntimeEvent(
-        category: 'call',
-        name: 'voice_call_cleanup_janitor_failed',
-        severity: 'warning',
-        message: error.toString(),
-        context: <String, Object?>{'reason': reason},
-      );
-      errorRecorder?.call(
-        error,
-        stackTrace,
-        source: 'voice-call-cleanup',
-        fatal: false,
-      );
-    }
+    await VoiceCallSignalingCleanupCoordinator.instance
+        .cleanupStaleVoiceCallArtifacts(
+          reason,
+          voiceSignalingAdapter: voiceSignalingAdapter,
+          runtimeShutDown: _shutDown,
+          username: selfIdentity.username,
+          recordRuntimeEvent: _recordRuntimeEvent,
+          errorRecorder: errorRecorder,
+        );
   }
 
   void _recordVoiceSignalingError(Object error, StackTrace stackTrace) {
-    if (_isVoiceTerminalAlreadyClosedError(error)) {
-      _recordTerminalAlreadyClosed(
-        error,
-        name: 'voice_cleanup_already_completed',
-        context: _voiceCallEventContext(_voiceCallState),
-      );
-      return;
-    }
-    _recordRuntimeEvent(
-      category: 'call',
-      name: 'signaling_error',
-      severity: 'error',
-      message: error.toString(),
-      context: _voiceCallEventContext(_voiceCallState),
-    );
-    errorRecorder?.call(
+    VoiceCallSignalingCleanupCoordinator.instance.recordVoiceSignalingError(
       error,
       stackTrace,
-      source: 'voice-call-signaling',
-      fatal: false,
+      isVoiceTerminalAlreadyClosedError: _isVoiceTerminalAlreadyClosedError,
+      recordTerminalAlreadyClosed: _recordTerminalAlreadyClosed,
+      context: _voiceCallEventContext(_voiceCallState),
+      recordRuntimeEvent: _recordRuntimeEvent,
+      errorRecorder: errorRecorder,
     );
   }
 
   Future<void> _cancelVoiceSignalingSubscriptions() async {
-    final subscriptions = List<StreamSubscription<dynamic>>.of(
-      _voiceSignalingSubscriptions,
-    );
-    _voiceSignalingSubscriptions.clear();
-    for (var index = 0; index < subscriptions.length; index += 1) {
-      await _runBoundedVoiceCleanupStep(
-        'voice_signaling_subscription_cancel',
-        subscriptions[index].cancel,
-        context: <String, Object?>{
-          'subscriptionIndex': index,
-          'subscriptionCount': subscriptions.length,
-        },
-      );
-    }
+    await VoiceCallSignalingCleanupCoordinator.instance
+        .cancelVoiceSignalingSubscriptions(
+          subscriptions: _voiceSignalingSubscriptions,
+          runBoundedCleanupStep: _runBoundedVoiceCleanupStep,
+        );
   }
 
   Future<void> _endVoiceCallInSignaling({
@@ -3309,136 +2060,57 @@ extension VoiceCallRuntime on RainRuntimeController {
     String? reasonCode,
     bool bestEffort = false,
   }) async {
-    final cleanupContext = <String, Object?>{
-      'callId': callId,
-      'status': status.name,
-      'reason': reason,
-      'reasonCode': reasonCode,
-      'bestEffort': bestEffort,
-    };
-    try {
-      _recordRuntimeEvent(
-        category: 'call',
-        name: 'signaling_end_call_started',
-        context: cleanupContext,
-      );
-      _recordRuntimeEvent(
-        category: 'call',
-        name: 'voice_terminal_cleanup_started',
-        context: cleanupContext,
-      );
-      await _requireVoiceSignalingAdapter().endCall(
-        callId: callId,
-        username: _normalizedUsername(selfIdentity.username),
-        status: status,
-        endedAt: DateTime.now().millisecondsSinceEpoch,
-        reason: reason,
-        reasonCode: reasonCode,
-      );
-      _recordVoiceRoomStatusTransition(callId, status);
-      _recordRuntimeEvent(
-        category: 'call',
-        name: 'signaling_end_call_completed',
-        context: <String, Object?>{
-          'callId': callId,
-          'status': status.name,
-          'reasonCode': reasonCode,
-        },
-      );
-      _recordRuntimeEvent(
-        category: 'call',
-        name: 'voice_terminal_cleanup_completed',
-        context: cleanupContext,
-      );
-    } catch (error) {
-      if (_isDurableVoiceCallTerminalStateError(error)) {
-        _recordRuntimeEvent(
-          category: 'call',
-          name: 'voice_cleanup_already_completed',
-          severity: 'info',
-          message: error.toString(),
-          context: cleanupContext,
-        );
-        _recordRuntimeEvent(
-          category: 'call',
-          name: 'voice_terminal_cleanup_completed',
-          context: <String, Object?>{
-            ...cleanupContext,
-            'cleanupResult': 'alreadyCompleted',
-          },
-        );
-        return;
-      }
-      _recordRuntimeEvent(
-        category: 'call',
-        name: 'signaling_end_call_failed',
-        severity: bestEffort ? 'warning' : 'error',
-        message: error.toString(),
-        context: <String, Object?>{
-          'callId': callId,
-          'status': status.name,
-          'reasonCode': reasonCode,
-          'bestEffort': bestEffort,
-        },
-      );
-      _recordRuntimeEvent(
-        category: 'call',
-        name: 'voice_terminal_cleanup_failed',
-        severity: bestEffort ? 'warning' : 'error',
-        message: error.toString(),
-        context: cleanupContext,
-      );
-      if (!bestEffort) {
-        rethrow;
-      }
-    }
+    await VoiceCallSignalingCleanupCoordinator.instance.endVoiceCallInSignaling(
+      callId: callId,
+      status: status,
+      requireVoiceSignalingAdapter: _requireVoiceSignalingAdapter,
+      username: _normalizedUsername(selfIdentity.username),
+      recordRoomStatusTransition: _recordVoiceRoomStatusTransition,
+      isDurableTerminalStateError: _isDurableVoiceCallTerminalStateError,
+      recordRuntimeEvent: _recordRuntimeEvent,
+      reason: reason,
+      reasonCode: reasonCode,
+      bestEffort: bestEffort,
+    );
   }
 
   void _recordVoiceRoomStatusTransition(
     String callId,
     VoiceCallSignalingStatus status,
   ) {
-    final timeline = _voiceRoomStatusTimelineByCall.putIfAbsent(
-      callId,
-      () => <String>[],
-    );
-    final value = status.name;
-    if (timeline.isEmpty || timeline.last != value) {
-      timeline.add(value);
-    }
-    while (timeline.length > 16) {
-      timeline.removeAt(0);
-    }
-    VoiceCallRoomCoordinator.instance.recordRoomStatusTransition(
-      _voiceRoomSignalingStatusByCall,
-      callId,
-      status,
-    );
+    VoiceCallSignalingCleanupCoordinator.instance
+        .recordVoiceRoomStatusTransition(
+          _voiceRoomStatusTimelineByCall,
+          _voiceRoomSignalingStatusByCall,
+          callId,
+          status,
+        );
   }
 
   List<String> _voiceRoomStatusTimeline(String callId) {
-    return List<String>.unmodifiable(
-      _voiceRoomStatusTimelineByCall[callId] ?? const <String>[],
-    );
+    return VoiceCallSignalingCleanupCoordinator.instance
+        .voiceRoomStatusTimeline(_voiceRoomStatusTimelineByCall, callId);
   }
 
   bool _isDurableVoiceCallTerminalStateError(Object error) {
-    final normalized = _normalizedVoiceCallErrorText(error).toLowerCase();
-    return normalized.contains('unknown voice call') ||
-        normalized.contains('already ended');
+    return VoiceCallSignalingCleanupCoordinator.instance
+        .isDurableVoiceCallTerminalStateError(
+          error,
+          normalizeErrorText: _normalizedVoiceCallErrorText,
+        );
   }
 
   bool _isVoiceTerminalAlreadyClosedError(Object error) {
-    return _isVoiceTerminalAlreadyClosedMessage(
-      _normalizedVoiceCallErrorText(error),
-    );
+    return VoiceCallSignalingCleanupCoordinator.instance
+        .isVoiceTerminalAlreadyClosedError(
+          error,
+          normalizeErrorText: _normalizedVoiceCallErrorText,
+        );
   }
 
   bool _isVoiceTerminalAlreadyClosedMessage(String message) {
-    final normalized = message.toLowerCase();
-    return normalized.contains('unknown voice call') ||
-        normalized.contains('already ended') ||
-        normalized.contains('failed to send hangup');
+    return VoiceCallSignalingCleanupCoordinator.instance
+        .isVoiceTerminalAlreadyClosedMessage(message);
   }
 
   void _recordTerminalAlreadyClosed(
@@ -3446,15 +2118,11 @@ extension VoiceCallRuntime on RainRuntimeController {
     required String name,
     required Map<String, Object?> context,
   }) {
-    _recordRuntimeEvent(
-      category: 'call',
+    VoiceCallSignalingCleanupCoordinator.instance.recordTerminalAlreadyClosed(
+      error,
       name: name,
-      severity: 'info',
-      message: error.toString(),
-      context: <String, Object?>{
-        ...context,
-        'cleanupResult': 'alreadyCompleted',
-      },
+      context: context,
+      recordRuntimeEvent: _recordRuntimeEvent,
     );
   }
 
@@ -3704,91 +2372,21 @@ extension VoiceCallRuntime on RainRuntimeController {
     required String detail,
     String? reasonCode,
   }) async {
-    Object? lastError;
-    StackTrace? lastStackTrace;
-    for (
-      var attempt = 1;
-      attempt <= _voiceTerminalWritePolicy.maxAttempts;
-      attempt += 1
-    ) {
-      final context = <String, Object?>{
-        'callId': callId,
-        'status': status.name,
-        'reasonCode': reasonCode,
-        'attempt': attempt,
-        'maxAttempts': _voiceTerminalWritePolicy.maxAttempts,
-      };
-      _recordRuntimeEvent(
-        category: 'call',
-        name: 'voice_terminal_write_before_session_hangup',
-        context: context,
-      );
-      try {
-        await _endVoiceCallInSignaling(
+    final result = await VoiceCallSignalingCleanupCoordinator.instance
+        .writeTerminalRoomBeforeSessionHangup(
           callId: callId,
           status: status,
-          reason: detail,
+          detail: detail,
           reasonCode: reasonCode,
+          terminalWritePolicy: _voiceTerminalWritePolicy,
+          endVoiceCallInSignaling: _endVoiceCallInSignaling,
+          isDurableTerminalStateError: _isDurableVoiceCallTerminalStateError,
+          recordRuntimeEvent: _recordRuntimeEvent,
+          errorRecorder: errorRecorder,
         );
-        _recordRuntimeEvent(
-          category: 'call',
-          name: 'voice_terminal_write_durable',
-          context: context,
-        );
-        return const _TerminalRoomWriteResult.durable();
-      } catch (error, stackTrace) {
-        if (_isDurableVoiceCallTerminalStateError(error)) {
-          _recordRuntimeEvent(
-            category: 'call',
-            name: 'voice_terminal_write_durable',
-            context: <String, Object?>{
-              ...context,
-              'cleanupResult': 'alreadyCompleted',
-            },
-          );
-          return const _TerminalRoomWriteResult.durable();
-        }
-        lastError = error;
-        lastStackTrace = stackTrace;
-        if (!_voiceTerminalWritePolicy.canRetryAfterAttempt(attempt)) {
-          break;
-        }
-        final delay = _voiceTerminalWritePolicy.retryDelayAfterAttempt(attempt);
-        _recordRuntimeEvent(
-          category: 'call',
-          name: 'voice_terminal_write_retry',
-          severity: 'warning',
-          message: error.toString(),
-          context: <String, Object?>{
-            ...context,
-            'nextAttempt': attempt + 1,
-            'retryDelayMs': delay.inMilliseconds,
-          },
-        );
-        await Future<void>.delayed(delay);
-      }
-    }
-    _recordRuntimeEvent(
-      category: 'call',
-      name: 'voice_terminal_write_failed',
-      severity: 'error',
-      message: lastError?.toString(),
-      context: <String, Object?>{
-        'callId': callId,
-        'status': status.name,
-        'reasonCode': reasonCode,
-        'maxAttempts': _voiceTerminalWritePolicy.maxAttempts,
-      },
-    );
-    if (lastError != null) {
-      errorRecorder?.call(
-        lastError,
-        lastStackTrace,
-        source: 'voice-terminal-write',
-        fatal: false,
-      );
-    }
-    return _TerminalRoomWriteResult.failed(lastError);
+    return result.durable
+        ? const _TerminalRoomWriteResult.durable()
+        : _TerminalRoomWriteResult.failed(result.error);
   }
 
   VoiceCallState _voiceCallStateAfterTerminalWriteFailure(
@@ -4199,50 +2797,14 @@ extension VoiceCallRuntime on RainRuntimeController {
   }
 
   void _recordPeerUiStateSplitIfNeeded(VoiceCallState state) {
-    final peerId = state.peerId;
-    if (peerId == null) {
-      return;
-    }
-    final callSideIsTerminalOrRecovering =
-        state.phase == VoiceCallPhase.failed || state.mediaReconnecting;
-    if (!callSideIsTerminalOrRecovering) {
-      return;
-    }
-    final session = brain?.getSession(peerId);
-    if (session == null ||
-        (session.state != SessionState.connected &&
-            session.state != SessionState.reconnecting)) {
-      return;
-    }
-    final signature = <Object?>[
-      peerId,
-      state.callId,
-      state.sessionEpoch,
-      state.phase,
-      state.mediaReconnecting,
-      state.failureReason,
-      session.state,
-      session.roomId,
-    ].join('|');
-    if (_lastLoggedPeerUiSplitSignature == signature) {
-      return;
-    }
-    _lastLoggedPeerUiSplitSignature = signature;
-    _recordRuntimeEvent(
-      category: 'connection',
-      name: 'peer_ui_state_split_detected',
-      severity: 'warning',
-      message:
-          'Call state and peer data-session state require projected UI precedence.',
-      context: <String, Object?>{
-        'peerId': peerId,
-        'callId': state.callId,
-        'callPhase': state.phase.name,
-        'callMediaReconnecting': state.mediaReconnecting,
-        'failureReason': state.failureReason?.name,
-        'sessionState': session.state.name,
-        'sessionId': session.roomId,
+    VoiceCallSessionStateCoordinator.instance.recordPeerUiStateSplitIfNeeded(
+      state,
+      getSession: (peerId) => brain?.getSession(peerId),
+      lastLoggedSignature: _lastLoggedPeerUiSplitSignature,
+      setLastLoggedSignature: (signature) {
+        _lastLoggedPeerUiSplitSignature = signature;
       },
+      recordRuntimeEvent: _recordRuntimeEvent,
     );
   }
 

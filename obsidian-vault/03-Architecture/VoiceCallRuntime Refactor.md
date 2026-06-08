@@ -53,6 +53,14 @@ Detailed implementation planning: [[VoiceCallRuntime Refactor Plan]].
 - Both coordinators are stateless; `VoiceCallRuntime` passes mutable state, timers, sessions, and side-effect callbacks at the delegation boundary.
 - `VoiceCallRuntime` still owns command orchestration, Firebase room watch/reconciliation, lock coordination, media/session orchestration, terminal cleanup, and full call-start conflict policy.
 
+2026-06-08 Phase 3c media/session/signaling coordinator slice:
+
+- `VoiceCallMediaCoordinator` owns app-side audio/video media connection creation, video renderer state/failure handling, app lifecycle video failure handling, camera-muted signaling, and video renderer/resource cleanup.
+- `VoiceCallSessionStateCoordinator` owns protocol-session-to-runtime state projection, failed-session finalization, runtime/session/start failure diagnostics, diagnostics payload construction, and peer UI split diagnostics.
+- `VoiceCallSignalingCleanupCoordinator` owns Firebase voice room watch setup, room/envelope/frame handling, terminal-sensitive send preflight, ICE candidate queue/batch/write diagnostics, stale artifact cleanup, signaling subscription cancellation, terminal room writes, bounded cleanup, room status timelines, and terminal-already-closed classification.
+- These coordinators remain stateless; `VoiceCallRuntime` passes maps, sessions, subscriptions, timers, diagnostics callbacks, and signaling/media side effects through narrow method parameters.
+- `voice_call_runtime.dart` is now 2,917 lines. `VoiceCallRuntime` still owns public command orchestration, call/file conflict policy, lock/lease orchestration, and some local end-state sequencing.
+
 ## Future Architecture
 
 - [[CallStartCoordinator]] handles start eligibility and explicit phase transitions.
@@ -67,8 +75,8 @@ Detailed implementation planning: [[VoiceCallRuntime Refactor Plan]].
 2. Move diagnostics and pure error-classification helpers first. Status: partial complete through `CallErrorClassifier`.
 3. Move start preflight next. Status: partial complete for pure local start-block expiry mapping through `VoiceCallStateCoordinator` and friend/presence availability plus stale retry replacement through `VoiceCallPreflightCoordinator`; file/call conflict policy and command orchestration remain in `VoiceCallRuntime`.
 4. Move lease creation/repair.
-5. Move terminal reconciliation. Status: pure terminal session-state decision extracted to `VoiceCallTerminalReconciler`; room watch/write orchestration remains in `VoiceCallRuntime`.
-6. Move media coordination. Status: partial complete for app-side media adapters and renderer-failure target classification; full session orchestration remains.
+5. Move terminal reconciliation. Status: pure terminal session-state decision extracted to `VoiceCallTerminalReconciler`; Phase 3c also moved terminal room writes, room status timelines, terminal-already-closed classification, and bounded cleanup helpers to `VoiceCallSignalingCleanupCoordinator`; lock/lease ownership remains.
+6. Move media coordination. Status: partial complete for app-side media adapters, renderer-failure target classification, media connection creation, renderer lifecycle, app lifecycle video failure handling, camera mute signaling, and video resource cleanup; command-level media start/end orchestration remains.
 7. Reduce `VoiceCallRuntime` to orchestration.
 
 ## Rollout Strategy
@@ -117,5 +125,13 @@ Detailed implementation planning: [[VoiceCallRuntime Refactor Plan]].
 
 - `dart analyze lib\application\runtime\voice_call_runtime.dart lib\application\runtime\rain_runtime_controller.dart lib\application\runtime\voice_call\voice_call_reconnect_coordinator.dart lib\application\runtime\voice_call\voice_call_preflight_coordinator.dart test\voice_call_reconnect_coordinator_test.dart test\voice_call_preflight_coordinator_test.dart` passed from `apps\rain`.
 - `flutter test test\voice_call_reconnect_coordinator_test.dart test\voice_call_preflight_coordinator_test.dart test\voice_call_state_coordinator_test.dart test\voice_call_room_coordinator_test.dart test\voice_call_terminal_reconciler_test.dart --reporter expanded` passed from `apps\rain`.
+
+2026-06-08 Phase 3c focused/local evidence:
+
+- `dart analyze` passed.
+- `flutter test apps/rain/test/voice_call_runtime_diagnostics_contract_test.dart apps/rain/test/voice_call_runtime_media_path_test.dart` passed.
+- `dart run melos run test` passed.
+- `.\scripts\check_obsidian_vault.ps1` passed.
+- `voice_call_runtime.dart` line count is 2,917.
 
 Related: [[Architecture Stabilization Epic]], [[Target Architecture]], [[Refactoring Strategy]].

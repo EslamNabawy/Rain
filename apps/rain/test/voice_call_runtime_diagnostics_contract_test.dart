@@ -49,18 +49,20 @@ void main() {
   });
 
   test('failed media sessions write terminal room before disposal', () {
-    final runtimeSource = _runtimeSource();
+    final sessionStateSource = _sourceFile(
+      'voice_call_session_state_coordinator.dart',
+    );
     final finalizeFailure = _sliceFunction(
-      runtimeSource,
-      'Future<void> _finalizeFailedVoiceCallSession',
-      'VoiceCallPhase _mapVoiceCallSessionPhase',
+      sessionStateSource,
+      'Future<void> finalizeFailedVoiceCallSession',
+      'void recordVoiceCallSessionFailure',
     );
 
     final terminalWriteIndex = finalizeFailure.indexOf(
-      '_writeTerminalRoomBeforeSessionHangup',
+      'writeTerminalRoomBeforeSessionHangup',
     );
     final disposeIndex = finalizeFailure.indexOf(
-      'await _disposeVoiceCallSession(session)',
+      'await disposeVoiceCallSession(session)',
     );
 
     expect(terminalWriteIndex, greaterThanOrEqualTo(0));
@@ -108,22 +110,24 @@ void main() {
   });
 
   test('voice call cleanup is bounded during terminal disposal', () {
-    final runtimeSource = _runtimeSource();
+    final cleanupSource = _sourceFile(
+      'voice_call_signaling_cleanup_coordinator.dart',
+    );
     final cleanupStep = _sliceFunction(
-      runtimeSource,
-      'Future<bool> _runBoundedVoiceCleanupStep',
-      'Future<void> _disposeVoiceIceCandidateBatcher',
+      cleanupSource,
+      'Future<bool> runBoundedVoiceCleanupStep',
+      'Future<void> disposeVoiceIceCandidateBatcher',
     );
     final disposeSession = _sliceFunction(
-      runtimeSource,
-      'Future<void> _disposeVoiceCallSession',
-      'Future<bool> _runBoundedVoiceCleanupStep',
+      cleanupSource,
+      'Future<void> disposeVoiceCallSession',
+      'Future<bool> runBoundedVoiceCleanupStep',
     );
 
-    expect(cleanupStep, contains('_voiceCallCleanupStepTimeout'));
+    expect(cleanupStep, contains('cleanupStepTimeout'));
     expect(cleanupStep, contains('.timeout('));
     expect(cleanupStep, contains("name: '\${step}_timeout'"));
-    expect(disposeSession, contains("_runBoundedVoiceCleanupStep("));
+    expect(disposeSession, contains("runBoundedCleanupStep("));
     expect(disposeSession, contains("'voice_call_session_dispose'"));
   });
 
@@ -154,27 +158,33 @@ void main() {
   });
 
   test('already-terminal Firebase errors are treated as durable cleanup', () {
-    final runtimeSource = _runtimeSource();
-    final terminalWrite = _sliceFunction(
-      runtimeSource,
-      'Future<_TerminalRoomWriteResult> _writeTerminalRoomBeforeSessionHangup',
-      'VoiceCallState _voiceCallStateAfterTerminalWriteFailure',
+    final cleanupSource = _sourceFile(
+      'voice_call_signaling_cleanup_coordinator.dart',
+    );
+    final terminalWrite = _sourceFrom(
+      cleanupSource,
+      'writeTerminalRoomBeforeSessionHangup',
     );
 
-    expect(terminalWrite, contains('_isDurableVoiceCallTerminalStateError'));
+    expect(terminalWrite, contains('isDurableTerminalStateError'));
     expect(terminalWrite, contains("'cleanupResult': 'alreadyCompleted'"));
-    expect(terminalWrite, contains('_TerminalRoomWriteResult.durable()'));
+    expect(
+      terminalWrite,
+      contains('VoiceCallSignalingTerminalWriteOutcome.durable()'),
+    );
   });
 
   test('terminal room preflight runs before media signaling writes', () {
-    final runtimeSource = _runtimeSource();
+    final cleanupSource = _sourceFile(
+      'voice_call_signaling_cleanup_coordinator.dart',
+    );
     final sendFrame = _sliceFunction(
-      runtimeSource,
-      'Future<void> _sendVoiceFrameObject',
-      'Future<bool> _shouldSkipTerminalSensitiveVoiceFrame',
+      cleanupSource,
+      'Future<void> sendVoiceFrameObject',
+      'Future<bool> shouldSkipTerminalSensitiveVoiceFrame',
     );
     final terminalPreflightIndex = sendFrame.indexOf(
-      '_shouldSkipTerminalSensitiveVoiceFrame',
+      'shouldSkipTerminalSensitiveVoiceFrame',
     );
     final writeOfferIndex = sendFrame.indexOf('writeVoiceOffer');
     final writeAnswerIndex = sendFrame.indexOf('writeVoiceAnswer');
@@ -189,16 +199,16 @@ void main() {
     expect(terminalPreflightIndex, lessThan(acceptIndex));
 
     final terminalPreflight = _sliceFunction(
-      runtimeSource,
-      'Future<bool> _shouldSkipTerminalSensitiveVoiceFrame',
-      'bool _requiresTerminalVoiceRoomPreflight',
+      cleanupSource,
+      'Future<bool> shouldSkipTerminalSensitiveVoiceFrame',
+      'bool requiresTerminalVoiceRoomPreflight',
     );
     expect(terminalPreflight, contains('voiceAdapter.fetchCall(frame.callId)'));
     expect(
       terminalPreflight,
       contains('voice_late_media_frame_ignored_after_terminal'),
     );
-    expect(terminalPreflight, contains('_reconcileTerminalVoiceRoom'));
+    expect(terminalPreflight, contains('reconcileTerminalVoiceRoom'));
     expect(
       terminalPreflight,
       isNot(contains('errorRecorder?.call')),
@@ -222,6 +232,19 @@ String _runtimeSource() {
   throw StateError('Could not locate voice_call_runtime.dart.');
 }
 
+String _sourceFile(String fileName) {
+  for (final path in <String>[
+    'lib/application/runtime/voice_call/$fileName',
+    'apps/rain/lib/application/runtime/voice_call/$fileName',
+  ]) {
+    final file = File(path);
+    if (file.existsSync()) {
+      return file.readAsStringSync();
+    }
+  }
+  throw StateError('Could not locate $fileName.');
+}
+
 String _sliceFunction(String source, String startMarker, String endMarker) {
   final start = source.indexOf(startMarker);
   final end = source.indexOf(endMarker, start);
@@ -229,4 +252,12 @@ String _sliceFunction(String source, String startMarker, String endMarker) {
     throw StateError('Could not slice $startMarker from runtime source.');
   }
   return source.substring(start, end);
+}
+
+String _sourceFrom(String source, String startMarker) {
+  final start = source.indexOf(startMarker);
+  if (start < 0) {
+    throw StateError('Could not slice $startMarker from source.');
+  }
+  return source.substring(start);
 }
