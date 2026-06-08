@@ -35,8 +35,9 @@ String _repoFile(String relativePath) {
   // Fallback: try the path relative to this file
   final scriptDir = Directory(Platform.script.toFilePath()).parent;
   final fallback = File('${scriptDir.path}/../../../$relativePath');
-  if (fallback.existsSync())
+  if (fallback.existsSync()) {
     return fallback.readAsStringSync().replaceAll('\r\n', '\n');
+  }
   throw StateError('Could not find $relativePath from ${cwd.path}');
 }
 
