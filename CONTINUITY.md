@@ -6,11 +6,24 @@ Every future session must read this file before starting non-trivial work.
 
 ## Current Goal
 
-Stabilize Rain call reliability without another audit. The active implementation focus is false `peer busy` from stale Firebase voice-call locks in `activeVoiceUsers`, `activeVoicePairs`, and `voiceCalls`.
+Full phased remediation: Phase 0 (evidence lock) → Phase 9 (documentation/blocker closure). Currently executing Phase 2: Voice Call Runtime Decomposition.
 
 ## Current Phase
 
-False busy/stale voice lock remediation is implemented in the real Rain repo as of 2026-06-05 and local release-gate validation is clean. `dart run melos run analyze`, full `dart run melos run test`, and Obsidian vault validation passed after also fixing a local terminal-room echo race in `VoiceCallRuntime`.
+Phase 0 evidence lock complete. Phase 2 (voice call runtime decomposition) in progress.
+
+## Phase 0 Evidence Lock (2026-06-08)
+
+- Repo: `C:\Users\eslam\OneDrive\Desktop\GoodStuff\Rain`
+- Branch: `dev`, HEAD `c5e22ff`
+- `dart run melos run analyze`: ✅ All 4 packages clean (peer_core, protocol_brain, rain_core, rain)
+- `dart run melos run test`: ✅ 1,060 tests pass (706 rain + 75 peer_core + 230 protocol_brain + 49 rain_core)
+- `.\\scripts\\check_obsidian_vault.ps1`: ✅ Passed
+- Active blockers: BLK-001 (call reliability), BLK-002 (false busy), BLK-003 (rules), BLK-004 (update), BLK-005 (diagnostics), BLK-006 (release gate), BLK-008 (presence), BLK-009 (offline requests), BLK-010 (auth/startup)
+- Active risks: 22 total (10 critical, 9 high, 3 medium)
+- Technical debt: 22 items (10 P0, 11 P1, 1 P2), score 72/100, target ≤30
+- Already extracted from voice_call_runtime: `CallErrorClassifier`, `CallMediaSessionCoordinator`, `VoiceCallTerminalReconciler`
+- Remaining in `voice_call_runtime.dart` (4,751 lines): room watcher, lock/lease coordination, command orchestration, media session ownership, diagnostics
 
 ## Completed Phases
 
