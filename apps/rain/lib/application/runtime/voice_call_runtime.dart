@@ -3955,12 +3955,7 @@ extension VoiceCallRuntime on RainRuntimeController {
       recordRuntimeEvent: _recordRuntimeEvent,
       errorRecorder: errorRecorder == null
           ? null
-          : (
-              error,
-              stackTrace, {
-              required String source,
-              required bool fatal,
-            }) {
+          : (error, stackTrace, {required String source, required bool fatal}) {
               errorRecorder?.call(
                 error,
                 stackTrace,
