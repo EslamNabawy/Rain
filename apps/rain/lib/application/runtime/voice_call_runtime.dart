@@ -1,4 +1,25 @@
-part of 'rain_runtime_controller.dart';
+import 'dart:async';
+
+import 'package:flutter/widgets.dart';
+import 'package:protocol_brain/protocol_brain.dart';
+import 'package:rain_core/rain_core.dart';
+
+import 'call_error_classifier.dart';
+import 'call_retry_policy.dart';
+import 'call_terminal_write_policy.dart';
+import 'rain_runtime_controller.dart';
+import 'runtime_interaction_guard.dart';
+import 'video_call_renderers.dart';
+import 'voice_audio_level.dart';
+import 'voice_call/voice_call_error_coordinator.dart';
+import 'voice_call/voice_call_media_coordinator.dart';
+import 'voice_call/voice_call_preflight_coordinator.dart';
+import 'voice_call/voice_call_reconnect_coordinator.dart';
+import 'voice_call/voice_call_room_coordinator.dart';
+import 'voice_call/voice_call_session_state_coordinator.dart';
+import 'voice_call/voice_call_signaling_cleanup_coordinator.dart';
+import 'voice_call/voice_call_state_coordinator.dart';
+import 'voice_call_state.dart';
 
 enum _IncomingVoiceInviteDisposition { accept, busy, ignore }
 
@@ -65,8 +86,8 @@ extension VoiceCallRuntime on RainRuntimeController {
     String username, {
     required CallMediaMode mediaMode,
   }) async {
-    final peerId = _normalizedUsername(username);
-    _recordRuntimeEvent(
+    final peerId = normalizeUsername(username);
+    recordRuntimeEvent(
       category: 'call',
       name: 'start_requested',
       context: <String, Object?>{'peerId': peerId, 'mediaMode': mediaMode.name},
@@ -86,11 +107,11 @@ extension VoiceCallRuntime on RainRuntimeController {
       voiceCallState: _voiceCallStartPreflightState(),
       peerOnline: presence.peerOnline,
       activeTransfer: activeTransfer,
-      manualDisconnectedPeers: _manualDisconnectedPeers,
+      manualDisconnectedPeers: mutableManualDisconnectedPeers,
       diagnostics: presence.diagnostics,
     );
     if (!decision.allowed) {
-      _recordRuntimeEvent(
+      recordRuntimeEvent(
         category: 'call',
         name: 'start_blocked',
         severity: 'warning',
@@ -108,7 +129,7 @@ extension VoiceCallRuntime on RainRuntimeController {
     _requireVoiceSignalingAdapter();
     final callId = _newVoiceCallId(peerId);
     final sessionEpoch = DateTime.now().millisecondsSinceEpoch;
-    _recordRuntimeEvent(
+    recordRuntimeEvent(
       category: 'call',
       name: 'created',
       context: <String, Object?>{
@@ -148,7 +169,7 @@ extension VoiceCallRuntime on RainRuntimeController {
       );
     } catch (error) {
       if (error is TurnUnavailableException) {
-        _recordRuntimeEvent(
+        recordRuntimeEvent(
           category: 'call',
           name: 'turn_unavailable_call_blocked',
           severity: 'error',
@@ -172,7 +193,7 @@ extension VoiceCallRuntime on RainRuntimeController {
       final retryDecision = retrySnapshot == null
           ? null
           : CallRetryPolicy.classifySignalingFailure(retrySnapshot);
-      _recordRuntimeEvent(
+      recordRuntimeEvent(
         category: 'call',
         name: 'start_failed',
         severity: 'error',
@@ -213,27 +234,27 @@ extension VoiceCallRuntime on RainRuntimeController {
   }
 
   Future<void> _clearExpiredVoiceCallStartBlock() async {
-    final current = _voiceCallState;
+    final current = voiceCallState;
     if (!await _isExpiredVoiceCallStartBlock(current)) {
       return;
     }
-    _recordRuntimeEvent(
+    recordRuntimeEvent(
       category: 'call',
       name: 'expired_call_state_cleared_before_start',
       severity: 'warning',
       message: 'Expired local call state was cleared before starting a call.',
       context: _voiceCallEventContext(current),
     );
-    await _disposeCurrentVoiceCallSession();
-    if (_voiceCallState.callId == current.callId &&
-        _voiceCallState.sessionEpoch == current.sessionEpoch) {
+    await disposeCurrentVoiceCallSession();
+    if (voiceCallState.callId == current.callId &&
+        voiceCallState.sessionEpoch == current.sessionEpoch) {
       _setVoiceCallState(const VoiceCallState.idle());
     }
   }
 
   VoiceCallState _voiceCallStartPreflightState() {
     return VoiceCallStateCoordinator.instance.startPreflightState(
-      _voiceCallState,
+      voiceCallState,
       expiry: _voiceCallExpiry,
       nowMs: DateTime.now().millisecondsSinceEpoch,
     );
@@ -270,14 +291,14 @@ extension VoiceCallRuntime on RainRuntimeController {
   }
 
   Future<void> acceptVoiceCall() async {
-    final current = _voiceCallState;
-    _recordRuntimeEvent(
+    final current = voiceCallState;
+    recordRuntimeEvent(
       category: 'call',
       name: 'accept_requested',
       context: _voiceCallEventContext(current),
     );
-    if (current.callId != null && _acceptingVoiceCallId == current.callId) {
-      _recordRuntimeEvent(
+    if (current.callId != null && acceptingVoiceCallId == current.callId) {
+      recordRuntimeEvent(
         category: 'call',
         name: 'accept_duplicate_ignored',
         severity: 'info',
@@ -300,7 +321,7 @@ extension VoiceCallRuntime on RainRuntimeController {
     if (!acceptDecision.allowed &&
         acceptDecision.reasonCode ==
             RuntimeInteractionReasonCode.activeFileTransfer) {
-      _recordRuntimeEvent(
+      recordRuntimeEvent(
         category: 'call',
         name: 'accept_blocked',
         severity: 'warning',
@@ -316,7 +337,7 @@ extension VoiceCallRuntime on RainRuntimeController {
         current.peerId!,
         VoiceCallFrameType.busy,
         callId: current.callId!,
-        sessionEpoch: _voiceCallSession?.sessionEpoch,
+        sessionEpoch: voiceCallSession?.sessionEpoch,
         reason: _voiceCallFileTransferRequired,
         reasonCode: _voiceCallBusyReasonCode,
         bestEffort: true,
@@ -329,7 +350,7 @@ extension VoiceCallRuntime on RainRuntimeController {
       return;
     }
     if (!acceptDecision.allowed) {
-      _recordRuntimeEvent(
+      recordRuntimeEvent(
         category: 'call',
         name: 'accept_blocked',
         severity: 'warning',
@@ -344,21 +365,21 @@ extension VoiceCallRuntime on RainRuntimeController {
     }
     acceptDecision.throwIfDenied();
 
-    final session = _voiceCallSession;
+    final session = voiceCallSession;
     if (session == null || session.callId != current.callId) {
       await _failVoiceCall('Voice call session is unavailable.');
       throw StateError('Voice call session is unavailable.');
     }
 
-    _acceptingVoiceCallId = current.callId!;
+    acceptingVoiceCallId = current.callId!;
     try {
       await session.acceptIncoming();
-      _acceptingVoiceCallId = null;
+      acceptingVoiceCallId = null;
     } catch (error) {
-      if (_acceptingVoiceCallId == current.callId) {
-        _acceptingVoiceCallId = null;
+      if (acceptingVoiceCallId == current.callId) {
+        acceptingVoiceCallId = null;
       }
-      _recordRuntimeEvent(
+      recordRuntimeEvent(
         category: 'call',
         name: 'accept_failed',
         severity: 'error',
@@ -379,8 +400,8 @@ extension VoiceCallRuntime on RainRuntimeController {
   }
 
   Future<void> rejectVoiceCall() async {
-    final current = _voiceCallState;
-    _recordRuntimeEvent(
+    final current = voiceCallState;
+    recordRuntimeEvent(
       category: 'call',
       name: 'reject_requested',
       context: _voiceCallEventContext(current),
@@ -390,7 +411,7 @@ extension VoiceCallRuntime on RainRuntimeController {
         current.callId == null) {
       return;
     }
-    final session = _voiceCallSession;
+    final session = voiceCallSession;
     if (session != null && session.callId == current.callId) {
       await session.rejectIncoming(reason: 'Rejected.');
       return;
@@ -407,8 +428,8 @@ extension VoiceCallRuntime on RainRuntimeController {
   }
 
   Future<void> hangUpVoiceCall() async {
-    final current = _voiceCallState;
-    _recordRuntimeEvent(
+    final current = voiceCallState;
+    recordRuntimeEvent(
       category: 'call',
       name: 'hangup_requested',
       context: _voiceCallEventContext(current),
@@ -416,7 +437,7 @@ extension VoiceCallRuntime on RainRuntimeController {
     if (!current.hasCall || current.peerId == null || current.callId == null) {
       return;
     }
-    await _endVoiceCallForPeer(
+    await endVoiceCallForPeer(
       current.peerId!,
       notifyPeer: true,
       detail: 'Call ended.',
@@ -424,8 +445,8 @@ extension VoiceCallRuntime on RainRuntimeController {
   }
 
   Future<void> dismissFailedVoiceCall() async {
-    final current = _voiceCallState;
-    _recordRuntimeEvent(
+    final current = voiceCallState;
+    recordRuntimeEvent(
       category: 'call',
       name: 'failed_call_dismiss_requested',
       context: _voiceCallEventContext(current),
@@ -433,8 +454,8 @@ extension VoiceCallRuntime on RainRuntimeController {
     if (current.phase != VoiceCallPhase.failed) {
       return;
     }
-    await _disposeCurrentVoiceCallSession();
-    final latest = _voiceCallState;
+    await disposeCurrentVoiceCallSession();
+    final latest = voiceCallState;
     if (latest.callId == current.callId &&
         latest.sessionEpoch == current.sessionEpoch &&
         latest.phase == VoiceCallPhase.failed) {
@@ -443,8 +464,8 @@ extension VoiceCallRuntime on RainRuntimeController {
   }
 
   Future<void> setVoiceCallMuted(bool muted) async {
-    final current = _voiceCallState;
-    _recordRuntimeEvent(
+    final current = voiceCallState;
+    recordRuntimeEvent(
       category: 'call',
       name: 'mute_requested',
       context: <String, Object?>{
@@ -452,7 +473,7 @@ extension VoiceCallRuntime on RainRuntimeController {
         'muted': muted,
       },
     );
-    final session = _voiceCallSession;
+    final session = voiceCallSession;
     if (!current.isActive ||
         current.peerId == null ||
         current.callId == null ||
@@ -468,7 +489,7 @@ extension VoiceCallRuntime on RainRuntimeController {
       return;
     }
     _setVoiceCallState(
-      _voiceCallState.copyWith(
+      voiceCallState.copyWith(
         isMuted: muted,
         updatedAt: DateTime.now().millisecondsSinceEpoch,
       ),
@@ -476,8 +497,8 @@ extension VoiceCallRuntime on RainRuntimeController {
   }
 
   Future<void> setVoiceCallDeafened(bool deafened) async {
-    final current = _voiceCallState;
-    _recordRuntimeEvent(
+    final current = voiceCallState;
+    recordRuntimeEvent(
       category: 'call',
       name: 'deafen_requested',
       context: <String, Object?>{
@@ -485,7 +506,7 @@ extension VoiceCallRuntime on RainRuntimeController {
         'deafened': deafened,
       },
     );
-    final session = _voiceCallSession;
+    final session = voiceCallSession;
     if (!current.isActive ||
         current.peerId == null ||
         current.callId == null ||
@@ -501,7 +522,7 @@ extension VoiceCallRuntime on RainRuntimeController {
       return;
     }
     _setVoiceCallState(
-      _voiceCallState.copyWith(
+      voiceCallState.copyWith(
         isDeafened: deafened,
         updatedAt: DateTime.now().millisecondsSinceEpoch,
       ),
@@ -522,8 +543,8 @@ extension VoiceCallRuntime on RainRuntimeController {
     CallAudioOutputTarget target, {
     required String? label,
   }) async {
-    final current = _voiceCallState;
-    _recordRuntimeEvent(
+    final current = voiceCallState;
+    recordRuntimeEvent(
       category: 'call',
       name: 'output_route_requested',
       context: <String, Object?>{
@@ -533,7 +554,7 @@ extension VoiceCallRuntime on RainRuntimeController {
         if (target.deviceId != null) 'deviceId': target.deviceId,
       },
     );
-    final session = _voiceCallSession;
+    final session = voiceCallSession;
     if (!current.isActive ||
         current.peerId == null ||
         current.callId == null ||
@@ -554,7 +575,7 @@ extension VoiceCallRuntime on RainRuntimeController {
         return;
       }
       _setVoiceCallState(
-        _voiceCallState.copyWith(
+        voiceCallState.copyWith(
           outputRoute: target.route,
           outputRouteDeviceId: target.isDeviceBacked ? target.deviceId : null,
           outputRouteLabel: label,
@@ -564,7 +585,7 @@ extension VoiceCallRuntime on RainRuntimeController {
         ),
       );
     } catch (error, stackTrace) {
-      _recordRuntimeEvent(
+      recordRuntimeEvent(
         category: 'call',
         name: 'output_route_failed',
         severity: 'warning',
@@ -590,7 +611,7 @@ extension VoiceCallRuntime on RainRuntimeController {
         return;
       }
       _setVoiceCallState(
-        _voiceCallState.copyWith(
+        voiceCallState.copyWith(
           outputRouteWarning: _voiceCallAudioRouteUnavailable,
           updatedAt: DateTime.now().millisecondsSinceEpoch,
         ),
@@ -599,8 +620,8 @@ extension VoiceCallRuntime on RainRuntimeController {
   }
 
   Future<void> setVideoCallCameraMuted(bool muted) async {
-    final current = _voiceCallState;
-    _recordRuntimeEvent(
+    final current = voiceCallState;
+    recordRuntimeEvent(
       category: 'call',
       name: 'camera_mute_requested',
       context: <String, Object?>{
@@ -608,8 +629,8 @@ extension VoiceCallRuntime on RainRuntimeController {
         'cameraMuted': muted,
       },
     );
-    final session = _voiceCallSession;
-    final media = _videoCallMediaConnection;
+    final session = voiceCallSession;
+    final media = videoCallMediaConnection;
     if (!current.isActive ||
         !current.isVideo ||
         current.peerId == null ||
@@ -628,7 +649,7 @@ extension VoiceCallRuntime on RainRuntimeController {
       return;
     }
     _setVoiceCallState(
-      _voiceCallState.copyWith(
+      voiceCallState.copyWith(
         isCameraMuted: muted,
         updatedAt: DateTime.now().millisecondsSinceEpoch,
       ),
@@ -637,13 +658,13 @@ extension VoiceCallRuntime on RainRuntimeController {
   }
 
   Future<void> switchVideoCallCamera() async {
-    final current = _voiceCallState;
-    _recordRuntimeEvent(
+    final current = voiceCallState;
+    recordRuntimeEvent(
       category: 'call',
       name: 'camera_switch_requested',
       context: _voiceCallEventContext(current),
     );
-    final media = _videoCallMediaConnection;
+    final media = videoCallMediaConnection;
     if (!current.isActive ||
         !current.isVideo ||
         current.peerId == null ||
@@ -655,15 +676,15 @@ extension VoiceCallRuntime on RainRuntimeController {
   }
 
   bool voiceCallBlocksFileTransfer(String peerId) {
-    return _voiceCallState.blocksFileTransfersFor(_normalizedUsername(peerId));
+    return voiceCallState.blocksFileTransfersFor(normalizeUsername(peerId));
   }
 
-  Future<void> _handleIncomingVoiceCallEntry(VoiceCallInboxEntry entry) async {
-    _recordRuntimeEvent(
+  Future<void> handleIncomingVoiceCallEntry(VoiceCallInboxEntry entry) async {
+    recordRuntimeEvent(
       category: 'call',
       name: 'incoming_inbox_entry',
       context: <String, Object?>{
-        'peerId': _normalizedUsername(entry.from),
+        'peerId': normalizeUsername(entry.from),
         'callId': entry.callId,
         'status': entry.status.name,
         'createdAt': entry.createdAt,
@@ -673,9 +694,9 @@ extension VoiceCallRuntime on RainRuntimeController {
     if (entry.status != VoiceCallSignalingStatus.ringing) {
       return;
     }
-    final peerId = _normalizedUsername(entry.from);
-    final localUsername = _normalizedUsername(selfIdentity.username);
-    if (_normalizedUsername(entry.to) != localUsername ||
+    final peerId = normalizeUsername(entry.from);
+    final localUsername = normalizeUsername(selfIdentity.username);
+    if (normalizeUsername(entry.to) != localUsername ||
         peerId == localUsername) {
       return;
     }
@@ -686,9 +707,9 @@ extension VoiceCallRuntime on RainRuntimeController {
         room.createdAt != entry.createdAt ||
         room.expiresAt != entry.expiresAt ||
         room.pairId != entry.pairId ||
-        _normalizedUsername(room.caller) != peerId ||
-        _normalizedUsername(room.callee) != localUsername) {
-      _recordRuntimeEvent(
+        normalizeUsername(room.caller) != peerId ||
+        normalizeUsername(room.callee) != localUsername) {
+      recordRuntimeEvent(
         category: 'call',
         name: 'incoming_inbox_entry_ignored',
         context: <String, Object?>{
@@ -714,11 +735,8 @@ extension VoiceCallRuntime on RainRuntimeController {
     await _handleFirebaseVoiceInvite(peerId, invite, room: room);
   }
 
-  Future<void> _handleVoiceCallFrame(
-    String peerId,
-    VoiceCallFrame frame,
-  ) async {
-    _recordRuntimeEvent(
+  Future<void> handleVoiceCallFrame(String peerId, VoiceCallFrame frame) async {
+    recordRuntimeEvent(
       category: 'call',
       name: 'control_frame_received',
       context: _voiceFrameEventContext(peerId, frame),
@@ -741,10 +759,10 @@ extension VoiceCallRuntime on RainRuntimeController {
     String peerId,
     VoiceCallFrame frame,
   ) async {
-    final normalizedPeerId = _normalizedUsername(peerId);
-    if (_normalizedUsername(frame.from) != normalizedPeerId ||
-        _normalizedUsername(frame.to) !=
-            _normalizedUsername(selfIdentity.username)) {
+    final normalizedPeerId = normalizeUsername(peerId);
+    if (normalizeUsername(frame.from) != normalizedPeerId ||
+        normalizeUsername(frame.to) !=
+            normalizeUsername(selfIdentity.username)) {
       return;
     }
 
@@ -761,7 +779,7 @@ extension VoiceCallRuntime on RainRuntimeController {
       return;
     }
 
-    final session = _voiceCallSession;
+    final session = voiceCallSession;
     if (session == null) {
       return;
     }
@@ -774,7 +792,7 @@ extension VoiceCallRuntime on RainRuntimeController {
         await session.handleFrame(frame);
         if (_isRemoteMediaPermissionCode(frame.reasonCode)) {
           _setVoiceCallState(
-            _voiceCallState.copyWith(
+            voiceCallState.copyWith(
               phase: VoiceCallPhase.failed,
               detail: _remoteMediaPermissionDetail(frame.reasonCode),
               failureReason: _remoteMediaPermissionFailure(frame.reasonCode),
@@ -803,7 +821,7 @@ extension VoiceCallRuntime on RainRuntimeController {
     VoiceCallFrame frame, {
     required VoiceCallRoom room,
   }) async {
-    _recordRuntimeEvent(
+    recordRuntimeEvent(
       category: 'call',
       name: 'incoming_invite_received',
       context: <String, Object?>{
@@ -811,15 +829,15 @@ extension VoiceCallRuntime on RainRuntimeController {
         'roomStatus': room.status.name,
       },
     );
-    final localUsername = _normalizedUsername(selfIdentity.username);
+    final localUsername = normalizeUsername(selfIdentity.username);
     if (room.status != VoiceCallSignalingStatus.ringing ||
         frame.callId != room.callId ||
         frame.sessionEpoch != room.createdAt ||
-        _normalizedUsername(room.caller) != _normalizedUsername(peerId) ||
-        _normalizedUsername(room.callee) != localUsername ||
-        _normalizedUsername(frame.from) != _normalizedUsername(room.caller) ||
-        _normalizedUsername(frame.to) != localUsername) {
-      _recordRuntimeEvent(
+        normalizeUsername(room.caller) != normalizeUsername(peerId) ||
+        normalizeUsername(room.callee) != localUsername ||
+        normalizeUsername(frame.from) != normalizeUsername(room.caller) ||
+        normalizeUsername(frame.to) != localUsername) {
+      recordRuntimeEvent(
         category: 'call',
         name: 'incoming_invite_ignored',
         context: <String, Object?>{
@@ -832,7 +850,7 @@ extension VoiceCallRuntime on RainRuntimeController {
     }
 
     final disposition = await _prepareIncomingVoiceInvite(peerId, frame);
-    _recordRuntimeEvent(
+    recordRuntimeEvent(
       category: 'call',
       name: 'incoming_invite_disposition',
       context: <String, Object?>{
@@ -841,12 +859,12 @@ extension VoiceCallRuntime on RainRuntimeController {
       },
     );
     if (disposition == _IncomingVoiceInviteDisposition.ignore) {
-      await _voiceCallSession?.handleFrame(frame);
+      await voiceCallSession?.handleFrame(frame);
       return;
     }
     if (disposition == _IncomingVoiceInviteDisposition.busy ||
         await _firstActiveTransfer() != null) {
-      _recordRuntimeEvent(
+      recordRuntimeEvent(
         category: 'call',
         name: 'incoming_invite_busy',
         severity: 'warning',
@@ -861,11 +879,11 @@ extension VoiceCallRuntime on RainRuntimeController {
       );
       return;
     }
-    final friend = await _localMutations.run(
+    final friend = await localMutations.run(
       () => friendStore.loadFriend(peerId),
     );
     if (friend?.state != FriendState.friend) {
-      _recordRuntimeEvent(
+      recordRuntimeEvent(
         category: 'call',
         name: 'incoming_invite_rejected_friend_state',
         severity: 'warning',
@@ -895,13 +913,13 @@ extension VoiceCallRuntime on RainRuntimeController {
   }
 
   Future<void> _handleVoiceInvite(String peerId, VoiceCallFrame frame) async {
-    _recordRuntimeEvent(
+    recordRuntimeEvent(
       category: 'call',
       name: 'legacy_invite_received',
       context: _voiceFrameEventContext(peerId, frame),
     );
     final disposition = await _prepareIncomingVoiceInvite(peerId, frame);
-    _recordRuntimeEvent(
+    recordRuntimeEvent(
       category: 'call',
       name: 'legacy_invite_disposition',
       context: <String, Object?>{
@@ -910,12 +928,12 @@ extension VoiceCallRuntime on RainRuntimeController {
       },
     );
     if (disposition == _IncomingVoiceInviteDisposition.ignore) {
-      await _voiceCallSession?.handleFrame(frame);
+      await voiceCallSession?.handleFrame(frame);
       return;
     }
     if (disposition == _IncomingVoiceInviteDisposition.busy ||
         await _firstActiveTransfer() != null) {
-      _recordRuntimeEvent(
+      recordRuntimeEvent(
         category: 'call',
         name: 'legacy_invite_busy',
         severity: 'warning',
@@ -932,11 +950,11 @@ extension VoiceCallRuntime on RainRuntimeController {
       );
       return;
     }
-    final friend = await _localMutations.run(
+    final friend = await localMutations.run(
       () => friendStore.loadFriend(peerId),
     );
     if (friend?.state != FriendState.friend) {
-      _recordRuntimeEvent(
+      recordRuntimeEvent(
         category: 'call',
         name: 'legacy_invite_rejected_friend_state',
         severity: 'warning',
@@ -970,12 +988,12 @@ extension VoiceCallRuntime on RainRuntimeController {
     String peerId,
     VoiceCallFrame frame,
   ) async {
-    if (_shutDown || !_started) {
+    if (runtimeShutDown || !runtimeStarted) {
       return _IncomingVoiceInviteDisposition.busy;
     }
 
-    final current = _voiceCallState;
-    final normalizedPeerId = _normalizedUsername(peerId);
+    final current = voiceCallState;
+    final normalizedPeerId = normalizeUsername(peerId);
 
     if (!current.hasCall) {
       return _IncomingVoiceInviteDisposition.accept;
@@ -986,7 +1004,7 @@ extension VoiceCallRuntime on RainRuntimeController {
     }
 
     if (current.phase == VoiceCallPhase.failed) {
-      await _disposeCurrentVoiceCallSession();
+      await disposeCurrentVoiceCallSession();
       _setVoiceCallState(const VoiceCallState.idle());
       return _IncomingVoiceInviteDisposition.accept;
     }
@@ -1012,7 +1030,7 @@ extension VoiceCallRuntime on RainRuntimeController {
   Future<void> _replaceStaleVoiceCallForRetry(VoiceCallState current) async {
     await VoiceCallPreflightCoordinator.instance.replaceStaleVoiceCallForRetry(
       current,
-      currentSession: _voiceCallSession,
+      currentSession: voiceCallSession,
       runBoundedCleanupStep: _runBoundedVoiceCleanupStep,
       sendHangupFrame:
           ({
@@ -1028,7 +1046,7 @@ extension VoiceCallRuntime on RainRuntimeController {
               bestEffort: true,
             );
           },
-      disposeCurrentVoiceCallSession: _disposeCurrentVoiceCallSession,
+      disposeCurrentVoiceCallSession: disposeCurrentVoiceCallSession,
       setVoiceCallState: _setVoiceCallState,
     );
   }
@@ -1043,10 +1061,10 @@ extension VoiceCallRuntime on RainRuntimeController {
       return;
     }
     _setVoiceCallState(
-      _voiceCallState.copyWith(
-        isRemoteMuted: frame.muted ?? _voiceCallState.isRemoteMuted,
+      voiceCallState.copyWith(
+        isRemoteMuted: frame.muted ?? voiceCallState.isRemoteMuted,
         isRemoteCameraMuted:
-            frame.cameraMuted ?? _voiceCallState.isRemoteCameraMuted,
+            frame.cameraMuted ?? voiceCallState.isRemoteCameraMuted,
         updatedAt: DateTime.now().millisecondsSinceEpoch,
       ),
     );
@@ -1065,7 +1083,7 @@ extension VoiceCallRuntime on RainRuntimeController {
     }
     final voiceAdapter = _requireVoiceSignalingAdapter();
 
-    await _disposeCurrentVoiceCallSession();
+    await disposeCurrentVoiceCallSession();
     final media = switch (mediaMode) {
       CallMediaMode.audio => await _createAudioVoiceMediaConnection(
         manager,
@@ -1076,7 +1094,7 @@ extension VoiceCallRuntime on RainRuntimeController {
         peerId,
       ),
     };
-    _recordRuntimeEvent(
+    recordRuntimeEvent(
       category: 'call',
       name: 'session_created',
       context: <String, Object?>{
@@ -1088,8 +1106,8 @@ extension VoiceCallRuntime on RainRuntimeController {
       },
     );
     final localRole = isOutgoing ? VoiceCallRole.caller : VoiceCallRole.callee;
-    _voiceLocalIceCandidateCount = 0;
-    _voiceIceCandidateBatcher = IceCandidateBatcher<VoiceSignalingEnvelope>(
+    voiceLocalIceCandidateCount = 0;
+    voiceIceCandidateBatcher = IceCandidateBatcher<VoiceSignalingEnvelope>(
       maxBatchSize: maxIceCandidateBatchSize,
       flushWindow: iceCandidateBatchWindow,
       onFlush: (List<VoiceSignalingEnvelope> candidates) {
@@ -1125,7 +1143,7 @@ extension VoiceCallRuntime on RainRuntimeController {
       mediaMode: mediaMode,
       logger: (String message) {
         final alreadyTerminal = _isVoiceTerminalAlreadyClosedMessage(message);
-        _recordRuntimeEvent(
+        recordRuntimeEvent(
           category: 'call',
           name: 'signaling_event_ignored',
           severity: alreadyTerminal ? 'info' : 'warning',
@@ -1149,8 +1167,8 @@ extension VoiceCallRuntime on RainRuntimeController {
         );
       },
     );
-    _voiceCallSession = session;
-    _voiceCallSessionSubscription = session.onStateChanged.listen((
+    voiceCallSession = session;
+    voiceCallSessionSubscription = session.onStateChanged.listen((
       VoiceCallSessionState state,
     ) {
       _applyVoiceSessionState(session, state, isOutgoing: isOutgoing);
@@ -1177,9 +1195,9 @@ extension VoiceCallRuntime on RainRuntimeController {
       requireVoiceSignalingAdapter: _requireVoiceSignalingAdapter,
       adapter: adapter,
       selfUsername: selfIdentity.username,
-      subscriptions: _voiceSignalingSubscriptions,
+      subscriptions: voiceSignalingSubscriptions,
       isLiveVoiceCallSession: _isLiveVoiceCallSession,
-      recordRuntimeEvent: _recordRuntimeEvent,
+      recordRuntimeEvent: recordRuntimeEvent,
       handleFirebaseVoiceRoomUpdate: _handleFirebaseVoiceRoomUpdate,
       handleFirebaseVoiceEnvelope: _handleFirebaseVoiceEnvelope,
       handleVoiceSignalingStreamError: _handleVoiceSignalingStreamError,
@@ -1202,8 +1220,8 @@ extension VoiceCallRuntime on RainRuntimeController {
           recordVoiceSignalingError: _recordVoiceSignalingError,
           isLiveVoiceCallSession: _isLiveVoiceCallSession,
           isTerminalSessionLatched: _isTerminalVoiceCallSessionLatched,
-          currentState: _voiceCallState,
-          endVoiceCallForPeer: _endVoiceCallForPeer,
+          currentState: voiceCallState,
+          endVoiceCallForPeer: endVoiceCallForPeer,
           signalingFailedMessage: _voiceCallSignalingFailed,
         );
   }
@@ -1224,8 +1242,8 @@ extension VoiceCallRuntime on RainRuntimeController {
           recordLateVoiceFrame: _recordLateVoiceFrame,
           recordRoomStatusTransition: _recordVoiceRoomStatusTransition,
           localUsername: selfIdentity.username,
-          normalizeUsername: _normalizedUsername,
-          currentState: () => _voiceCallState,
+          normalizeUsername: normalizeUsername,
+          currentState: () => voiceCallState,
           setVoiceCallState: _setVoiceCallState,
           reconcileTerminalVoiceRoom: _reconcileTerminalVoiceRoom,
         );
@@ -1244,12 +1262,12 @@ extension VoiceCallRuntime on RainRuntimeController {
           isLiveVoiceCallSession: _isLiveVoiceCallSession,
           latchTerminalSession: _latchTerminalVoiceCallSession,
           isTerminalSessionLatched: _isTerminalVoiceCallSessionLatched,
-          currentState: _voiceCallState,
+          currentState: voiceCallState,
           localUsername: selfIdentity.username,
-          normalizeUsername: _normalizedUsername,
+          normalizeUsername: normalizeUsername,
           terminalRoomDetail: _terminalVoiceCallDetailForRoom,
           terminalRoomFailureReason: _terminalVoiceCallFailureReasonForRoom,
-          recordRuntimeEvent: _recordRuntimeEvent,
+          recordRuntimeEvent: recordRuntimeEvent,
           eventContext: _voiceCallEventContext,
           reasonCodeForFailure: _voiceCallReasonCodeForFailure,
           failedReasonCode: _voiceCallFailedReasonCode,
@@ -1296,10 +1314,10 @@ extension VoiceCallRuntime on RainRuntimeController {
           purpose: purpose,
           isLiveVoiceCallSession: _isLiveVoiceCallSession,
           decryptVoiceFrame: _decryptVoiceFrame,
-          recordRuntimeEvent: _recordRuntimeEvent,
+          recordRuntimeEvent: recordRuntimeEvent,
           frameEventContext: _voiceFrameEventContext,
           recordLateVoiceFrame: _recordLateVoiceFrame,
-          normalizeUsername: _normalizedUsername,
+          normalizeUsername: normalizeUsername,
           localUsername: selfIdentity.username,
           recordVoiceSignalingError: _recordVoiceSignalingError,
           failVoiceCall: _failVoiceCall,
@@ -1316,12 +1334,12 @@ extension VoiceCallRuntime on RainRuntimeController {
       frame,
       requireVoiceSignalingAdapter: _requireVoiceSignalingAdapter,
       localUsername: selfIdentity.username,
-      normalizeUsername: _normalizedUsername,
+      normalizeUsername: normalizeUsername,
       voiceCallExpiry: _voiceCallExpiry,
       transientCreateRetryDelay: _voiceCallTransientCreateRetryDelay,
       busyReasonCode: _voiceCallBusyReasonCode,
       rejectedReasonCode: _voiceCallRejectedReasonCode,
-      recordRuntimeEvent: _recordRuntimeEvent,
+      recordRuntimeEvent: recordRuntimeEvent,
       frameEventContext: _voiceFrameEventContext,
       shouldSkipTerminalSensitiveVoiceFrame:
           _shouldSkipTerminalSensitiveVoiceFrame,
@@ -1346,12 +1364,12 @@ extension VoiceCallRuntime on RainRuntimeController {
           voiceAdapter: voiceAdapter,
           peerId: peerId,
           frame: frame,
-          currentSession: _voiceCallSession,
+          currentSession: voiceCallSession,
           isTerminalSessionLatched: _isTerminalVoiceCallSessionLatched,
           recordLateVoiceFrame: _recordLateVoiceFrame,
           requiresTerminalVoiceRoomPreflight:
               _requiresTerminalVoiceRoomPreflight,
-          recordRuntimeEvent: _recordRuntimeEvent,
+          recordRuntimeEvent: recordRuntimeEvent,
           frameEventContext: _voiceFrameEventContext,
           reconcileTerminalVoiceRoom: _reconcileTerminalVoiceRoom,
         );
@@ -1372,16 +1390,16 @@ extension VoiceCallRuntime on RainRuntimeController {
       peerId: peerId,
       frame: frame,
       localRole: _localVoiceCallRole(),
-      localIceCandidateCount: _voiceLocalIceCandidateCount,
+      localIceCandidateCount: voiceLocalIceCandidateCount,
       maxIceCandidatesPerRole: maxIceCandidatesPerRole,
       setLocalIceCandidateCount: (count) {
-        _voiceLocalIceCandidateCount = count;
+        voiceLocalIceCandidateCount = count;
       },
       recordIceCandidateBudgetExceeded: _recordIceCandidateBudgetExceeded,
       encryptVoiceFrame: _encryptVoiceFrame,
       voiceIcePurpose: _voiceIcePurpose,
       recordVoiceIceCandidateWriteFailed: _recordVoiceIceCandidateWriteFailed,
-      batcher: _voiceIceCandidateBatcher,
+      batcher: voiceIceCandidateBatcher,
       flushVoiceIceCandidateBatch: _flushVoiceIceCandidateBatch,
     );
   }
@@ -1402,8 +1420,8 @@ extension VoiceCallRuntime on RainRuntimeController {
           sessionEpoch: sessionEpoch,
           role: role,
           candidates: candidates,
-          username: _normalizedUsername(selfIdentity.username),
-          recordRuntimeEvent: _recordRuntimeEvent,
+          username: normalizeUsername(selfIdentity.username),
+          recordRuntimeEvent: recordRuntimeEvent,
           recordIceCandidateBudgetExceeded: _recordIceCandidateBudgetExceeded,
           recordVoiceIceCandidateWriteFailed:
               _recordVoiceIceCandidateWriteFailed,
@@ -1428,7 +1446,7 @@ extension VoiceCallRuntime on RainRuntimeController {
           requestedCount: requestedCount,
           droppedCount: droppedCount,
           maxIceCandidatesPerRole: maxIceCandidatesPerRole,
-          recordRuntimeEvent: _recordRuntimeEvent,
+          recordRuntimeEvent: recordRuntimeEvent,
           error: error,
         );
   }
@@ -1451,7 +1469,7 @@ extension VoiceCallRuntime on RainRuntimeController {
           sessionEpoch: sessionEpoch,
           role: role,
           batchSize: batchSize,
-          recordRuntimeEvent: _recordRuntimeEvent,
+          recordRuntimeEvent: recordRuntimeEvent,
           errorRecorder: errorRecorder,
         );
   }
@@ -1467,7 +1485,7 @@ extension VoiceCallRuntime on RainRuntimeController {
       isOutgoing: isOutgoing,
       isLiveVoiceCallSession: _isLiveVoiceCallSession,
       isTerminalSessionLatched: _isTerminalVoiceCallSessionLatched,
-      currentState: () => _voiceCallState,
+      currentState: () => voiceCallState,
       recordLateVoiceFrame: _recordLateVoiceFrame,
       localMediaFailureReason: _localAudioFailureReason,
       localMediaFailureDetail: _localAudioFailureDetail,
@@ -1476,7 +1494,7 @@ extension VoiceCallRuntime on RainRuntimeController {
       disposeVoiceCallSession: _disposeVoiceCallSession,
       voiceSignalingAdapter: voiceSignalingAdapter,
       localUsername: selfIdentity.username,
-      normalizeUsername: _normalizedUsername,
+      normalizeUsername: normalizeUsername,
       recordRoomStatusTransition: _recordVoiceRoomStatusTransition,
       isVoiceTerminalAlreadyClosedError: _isVoiceTerminalAlreadyClosedError,
       recordTerminalAlreadyClosed: _recordTerminalAlreadyClosed,
@@ -1524,7 +1542,7 @@ extension VoiceCallRuntime on RainRuntimeController {
                 );
               },
           recordVoiceCallSessionFailure: _recordVoiceCallSessionFailure,
-          recordRuntimeEvent: _recordRuntimeEvent,
+          recordRuntimeEvent: recordRuntimeEvent,
           disposeVoiceCallSession: _disposeVoiceCallSession,
         );
   }
@@ -1559,7 +1577,7 @@ extension VoiceCallRuntime on RainRuntimeController {
       localMediaFailureDetail: _localAudioFailureDetail,
       voiceCallErrorMessage: _voiceCallErrorMessage,
       mediaFailedMessage: _voiceCallMediaFailed,
-      lastVideoCallRendererState: _lastVideoCallRendererState,
+      lastVideoCallRendererState: lastVideoCallRendererState,
       cameraPermissionFailureDetail: _cameraPermissionFailureDetail,
       recordVoiceCallDiagnostics: _recordVoiceCallDiagnostics,
     );
@@ -1576,9 +1594,9 @@ extension VoiceCallRuntime on RainRuntimeController {
       failureCode: failureCode,
       userMessage: userMessage,
       nativeError: nativeError,
-      callMediaDiagnostics: _videoCallMediaConnection?.diagnostics,
-      sessionMediaDiagnostics: _voiceCallSession?.state.mediaDiagnostics,
-      lastVideoCallRendererState: _lastVideoCallRendererState,
+      callMediaDiagnostics: videoCallMediaConnection?.diagnostics,
+      sessionMediaDiagnostics: voiceCallSession?.state.mediaDiagnostics,
+      lastVideoCallRendererState: lastVideoCallRendererState,
       recordVoiceCallDiagnostics: _recordVoiceCallDiagnostics,
     );
   }
@@ -1639,10 +1657,10 @@ extension VoiceCallRuntime on RainRuntimeController {
       userMessage: userMessage,
       nativeError: nativeError,
       localUsername: selfIdentity.username,
-      normalizeUsername: _normalizedUsername,
+      normalizeUsername: normalizeUsername,
       errorRecorder: errorRecorder,
       roomStatusTimeline: _voiceRoomStatusTimeline,
-      iceCandidateWriteCount: _voiceLocalIceCandidateCount,
+      iceCandidateWriteCount: voiceLocalIceCandidateCount,
       failureTaxonomy: _voiceFailureTaxonomy,
       isoTimestamp: _isoTimestamp,
       selectedCandidateRoute: _selectedVoiceCallCandidateRoute,
@@ -1670,7 +1688,7 @@ extension VoiceCallRuntime on RainRuntimeController {
   }
 
   String? _selectedVoiceCallCandidateRoute(String peerId) {
-    final route = brain?.getSession(_normalizedUsername(peerId))?.route;
+    final route = brain?.getSession(normalizeUsername(peerId))?.route;
     if (route == null || route.kind.name == 'unknown') {
       return null;
     }
@@ -1694,16 +1712,16 @@ extension VoiceCallRuntime on RainRuntimeController {
     return parts.join(' ');
   }
 
-  Future<void> _disposeCurrentVoiceCallSession() async {
+  Future<void> disposeCurrentVoiceCallSession() async {
     await VoiceCallSignalingCleanupCoordinator.instance
         .disposeCurrentVoiceCallSession(
-          cancelReconnectGrace: _cancelVoiceCallReconnectGrace,
+          cancelReconnectGrace: cancelVoiceCallReconnectGrace,
           disposeVoiceIceCandidateBatcher: _disposeVoiceIceCandidateBatcher,
-          cancelVoiceSignalingSubscriptions: _cancelVoiceSignalingSubscriptions,
-          currentSession: _voiceCallSession,
-          sessionSubscription: _voiceCallSessionSubscription,
+          cancelVoiceSignalingSubscriptions: cancelVoiceSignalingSubscriptions,
+          currentSession: voiceCallSession,
+          sessionSubscription: voiceCallSessionSubscription,
           setSessionSubscription: (subscription) {
-            _voiceCallSessionSubscription = subscription;
+            voiceCallSessionSubscription = subscription;
           },
           runBoundedCleanupStep: _runBoundedVoiceCleanupStep,
           disposeVoiceCallSession: _disposeVoiceCallSession,
@@ -1713,22 +1731,22 @@ extension VoiceCallRuntime on RainRuntimeController {
   Future<void> _disposeVoiceCallSession(VoiceCallSession session) async {
     await VoiceCallSignalingCleanupCoordinator.instance.disposeVoiceCallSession(
       session,
-      currentSession: _voiceCallSession,
-      setCurrentSession: (session) => _voiceCallSession = session,
-      cancelReconnectGrace: _cancelVoiceCallReconnectGrace,
+      currentSession: voiceCallSession,
+      setCurrentSession: (session) => voiceCallSession = session,
+      cancelReconnectGrace: cancelVoiceCallReconnectGrace,
       disposeVoiceIceCandidateBatcher: _disposeVoiceIceCandidateBatcher,
-      cancelVoiceSignalingSubscriptions: _cancelVoiceSignalingSubscriptions,
-      sessionSubscription: _voiceCallSessionSubscription,
+      cancelVoiceSignalingSubscriptions: cancelVoiceSignalingSubscriptions,
+      sessionSubscription: voiceCallSessionSubscription,
       setSessionSubscription: (subscription) {
-        _voiceCallSessionSubscription = subscription;
+        voiceCallSessionSubscription = subscription;
       },
       disposeVideoCallResources: _disposeVideoCallResources,
       removeTerminalSessionKey: (callId, sessionEpoch) {
-        _terminalVoiceCallSessionKeys.remove(
+        terminalVoiceCallSessionKeys.remove(
           _voiceCallSessionKey(callId, sessionEpoch),
         );
       },
-      removeRoomStatusTimeline: _voiceRoomStatusTimelineByCall.remove,
+      removeRoomStatusTimeline: voiceRoomStatusTimelineByCall.remove,
       runBoundedCleanupStep: _runBoundedVoiceCleanupStep,
     );
   }
@@ -1743,7 +1761,7 @@ extension VoiceCallRuntime on RainRuntimeController {
           step,
           cleanup,
           cleanupStepTimeout: _voiceCallCleanupStepTimeout,
-          recordRuntimeEvent: _recordRuntimeEvent,
+          recordRuntimeEvent: recordRuntimeEvent,
           errorRecorder: errorRecorder,
           context: context,
         );
@@ -1752,15 +1770,15 @@ extension VoiceCallRuntime on RainRuntimeController {
   Future<void> _disposeVoiceIceCandidateBatcher() async {
     await VoiceCallSignalingCleanupCoordinator.instance
         .disposeVoiceIceCandidateBatcher(
-          batcher: _voiceIceCandidateBatcher,
-          setBatcher: (batcher) => _voiceIceCandidateBatcher = batcher,
+          batcher: voiceIceCandidateBatcher,
+          setBatcher: (batcher) => voiceIceCandidateBatcher = batcher,
           setLocalIceCandidateCount: (count) {
-            _voiceLocalIceCandidateCount = count;
+            voiceLocalIceCandidateCount = count;
           },
           cleanupStepTimeout: _voiceCallCleanupStepTimeout,
-          currentState: _voiceCallState,
+          currentState: voiceCallState,
           eventContext: _voiceCallEventContext,
-          recordRuntimeEvent: _recordRuntimeEvent,
+          recordRuntimeEvent: recordRuntimeEvent,
           recordVoiceIceCandidateWriteFailed:
               _recordVoiceIceCandidateWriteFailed,
           localVoiceCallRole: _localVoiceCallRole(),
@@ -1785,11 +1803,11 @@ extension VoiceCallRuntime on RainRuntimeController {
         VoiceCallFrame(
           type: type,
           callId: callId,
-          from: _normalizedUsername(selfIdentity.username),
+          from: normalizeUsername(selfIdentity.username),
           to: peerId,
           sentAt: DateTime.now().millisecondsSinceEpoch,
           seq: 1,
-          sessionEpoch: sessionEpoch ?? _voiceCallSession?.sessionEpoch ?? 1,
+          sessionEpoch: sessionEpoch ?? voiceCallSession?.sessionEpoch ?? 1,
           reason: reason,
           reasonCode: reasonCode,
           muted: muted,
@@ -1843,7 +1861,7 @@ extension VoiceCallRuntime on RainRuntimeController {
   }
 
   VoiceCallRole _localVoiceCallRole() {
-    return _voiceCallState.isOutgoing
+    return voiceCallState.isOutgoing
         ? VoiceCallRole.caller
         : VoiceCallRole.callee;
   }
@@ -1894,18 +1912,18 @@ extension VoiceCallRuntime on RainRuntimeController {
       peerId,
       rendererFactory: videoCallRendererFactory,
       remoteFirstFrameTimeout: videoCallRemoteFirstFrameTimeout,
-      recordRuntimeEvent: _recordRuntimeEvent,
-      setLastRendererState: (state) => _lastVideoCallRendererState = state,
+      recordRuntimeEvent: recordRuntimeEvent,
+      setLastRendererState: (state) => lastVideoCallRendererState = state,
       setHandledFirstFrameTimeoutCallId: (callId) {
-        _handledVideoFirstFrameTimeoutCallId = callId;
+        handledVideoFirstFrameTimeoutCallId = callId;
       },
       setLastLoggedRendererSignature: (signature) {
-        _lastLoggedVideoRendererSignature = signature;
+        lastLoggedVideoRendererSignature = signature;
       },
-      setVideoCallMediaConnection: (media) => _videoCallMediaConnection = media,
-      setVideoCallRenderers: (renderers) => _videoCallRenderers = renderers,
+      setVideoCallMediaConnection: (media) => videoCallMediaConnection = media,
+      setVideoCallRenderers: (renderers) => videoCallRenderers = renderers,
       setVideoCallRendererSubscription: (subscription) {
-        _videoCallRendererSubscription = subscription;
+        videoCallRendererSubscription = subscription;
       },
       handleRendererState: _handleVideoRendererState,
       handleRendererFailure: _handleVideoRendererFailure,
@@ -1920,7 +1938,7 @@ extension VoiceCallRuntime on RainRuntimeController {
     return VoiceCallMediaCoordinator.instance.createAudioVoiceMediaConnection(
       manager,
       peerId,
-      recordRuntimeEvent: _recordRuntimeEvent,
+      recordRuntimeEvent: recordRuntimeEvent,
       errorRecorder: errorRecorder,
     );
   }
@@ -1928,17 +1946,17 @@ extension VoiceCallRuntime on RainRuntimeController {
   void _handleVideoRendererState(VideoCallRendererState rendererState) {
     VoiceCallMediaCoordinator.instance.handleVideoRendererState(
       rendererState,
-      currentState: _voiceCallState,
-      lastLoggedRendererSignature: _lastLoggedVideoRendererSignature,
-      handledFirstFrameTimeoutCallId: _handledVideoFirstFrameTimeoutCallId,
-      setLastRendererState: (state) => _lastVideoCallRendererState = state,
+      currentState: voiceCallState,
+      lastLoggedRendererSignature: lastLoggedVideoRendererSignature,
+      handledFirstFrameTimeoutCallId: handledVideoFirstFrameTimeoutCallId,
+      setLastRendererState: (state) => lastVideoCallRendererState = state,
       setLastLoggedRendererSignature: (signature) {
-        _lastLoggedVideoRendererSignature = signature;
+        lastLoggedVideoRendererSignature = signature;
       },
       setHandledFirstFrameTimeoutCallId: (callId) {
-        _handledVideoFirstFrameTimeoutCallId = callId;
+        handledVideoFirstFrameTimeoutCallId = callId;
       },
-      recordRuntimeEvent: _recordRuntimeEvent,
+      recordRuntimeEvent: recordRuntimeEvent,
       eventContext: _voiceCallEventContext,
       isoTimestamp: _isoTimestamp,
       setVoiceCallState: _setVoiceCallState,
@@ -1955,27 +1973,27 @@ extension VoiceCallRuntime on RainRuntimeController {
       peerId,
       error,
       stackTrace,
-      normalizeUsername: _normalizedUsername,
-      currentState: _voiceCallState,
-      recordRuntimeEvent: _recordRuntimeEvent,
+      normalizeUsername: normalizeUsername,
+      currentState: voiceCallState,
+      recordRuntimeEvent: recordRuntimeEvent,
       eventContext: _voiceCallEventContext,
       errorRecorder: errorRecorder,
       recordRuntimeFailure: _recordVoiceCallRuntimeFailure,
-      endVoiceCallForPeer: _endVoiceCallForPeer,
+      endVoiceCallForPeer: endVoiceCallForPeer,
       rendererFailedReasonCode: _voiceCallVideoRendererFailedReasonCode,
       videoFailedMessage: _voiceCallVideoFailed,
     );
   }
 
-  void _handleVoiceCallAppLifecycleState(AppLifecycleState state) {
+  void handleVoiceCallAppLifecycleState(AppLifecycleState state) {
     VoiceCallMediaCoordinator.instance.handleVoiceCallAppLifecycleState(
       state,
-      videoCallMediaConnection: _videoCallMediaConnection,
-      currentState: _voiceCallState,
-      recordRuntimeEvent: _recordRuntimeEvent,
+      videoCallMediaConnection: videoCallMediaConnection,
+      currentState: voiceCallState,
+      recordRuntimeEvent: recordRuntimeEvent,
       eventContext: _voiceCallEventContext,
       recordRuntimeFailure: _recordVoiceCallRuntimeFailure,
-      endVoiceCallForPeer: _endVoiceCallForPeer,
+      endVoiceCallForPeer: endVoiceCallForPeer,
       failedReasonCode: _voiceCallFailedReasonCode,
       videoBackgroundedMessage: _voiceCallVideoBackgrounded,
     );
@@ -1984,9 +2002,9 @@ extension VoiceCallRuntime on RainRuntimeController {
   Future<void> _setVideoCallCameraMutedInSignaling(bool muted) async {
     await VoiceCallMediaCoordinator.instance.setVideoCallCameraMutedInSignaling(
       muted,
-      currentState: _voiceCallState,
+      currentState: voiceCallState,
       requireVoiceSignalingAdapter: _requireVoiceSignalingAdapter,
-      username: _normalizedUsername(selfIdentity.username),
+      username: normalizeUsername(selfIdentity.username),
       updatedAt: DateTime.now().millisecondsSinceEpoch,
       recordVoiceSignalingError: _recordVoiceSignalingError,
     );
@@ -1994,22 +2012,22 @@ extension VoiceCallRuntime on RainRuntimeController {
 
   Future<void> _disposeVideoCallResources() async {
     await VoiceCallMediaCoordinator.instance.disposeVideoCallResources(
-      renderers: _videoCallRenderers,
-      mediaConnection: _videoCallMediaConnection,
-      rendererSubscription: _videoCallRendererSubscription,
-      setVideoCallRenderers: (renderers) => _videoCallRenderers = renderers,
-      setVideoCallMediaConnection: (media) => _videoCallMediaConnection = media,
+      renderers: videoCallRenderers,
+      mediaConnection: videoCallMediaConnection,
+      rendererSubscription: videoCallRendererSubscription,
+      setVideoCallRenderers: (renderers) => videoCallRenderers = renderers,
+      setVideoCallMediaConnection: (media) => videoCallMediaConnection = media,
       setVideoCallRendererSubscription: (subscription) {
-        _videoCallRendererSubscription = subscription;
+        videoCallRendererSubscription = subscription;
       },
       setLastLoggedRendererSignature: (signature) {
-        _lastLoggedVideoRendererSignature = signature;
+        lastLoggedVideoRendererSignature = signature;
       },
-      setLastRendererState: (state) => _lastVideoCallRendererState = state,
+      setLastRendererState: (state) => lastVideoCallRendererState = state,
       runBoundedCleanupStep: _runBoundedVoiceCleanupStep,
-      recordRuntimeEvent: _recordRuntimeEvent,
+      recordRuntimeEvent: recordRuntimeEvent,
       eventContext: _voiceCallEventContext,
-      currentState: _voiceCallState,
+      currentState: voiceCallState,
     );
   }
 
@@ -2021,14 +2039,14 @@ extension VoiceCallRuntime on RainRuntimeController {
     return voiceAdapter;
   }
 
-  Future<void> _cleanupStaleVoiceCallArtifacts(String reason) async {
+  Future<void> cleanupStaleVoiceCallArtifacts(String reason) async {
     await VoiceCallSignalingCleanupCoordinator.instance
         .cleanupStaleVoiceCallArtifacts(
           reason,
           voiceSignalingAdapter: voiceSignalingAdapter,
-          runtimeShutDown: _shutDown,
+          runtimeShutDown: runtimeShutDown,
           username: selfIdentity.username,
-          recordRuntimeEvent: _recordRuntimeEvent,
+          recordRuntimeEvent: recordRuntimeEvent,
           errorRecorder: errorRecorder,
         );
   }
@@ -2039,16 +2057,16 @@ extension VoiceCallRuntime on RainRuntimeController {
       stackTrace,
       isVoiceTerminalAlreadyClosedError: _isVoiceTerminalAlreadyClosedError,
       recordTerminalAlreadyClosed: _recordTerminalAlreadyClosed,
-      context: _voiceCallEventContext(_voiceCallState),
-      recordRuntimeEvent: _recordRuntimeEvent,
+      context: _voiceCallEventContext(voiceCallState),
+      recordRuntimeEvent: recordRuntimeEvent,
       errorRecorder: errorRecorder,
     );
   }
 
-  Future<void> _cancelVoiceSignalingSubscriptions() async {
+  Future<void> cancelVoiceSignalingSubscriptions() async {
     await VoiceCallSignalingCleanupCoordinator.instance
         .cancelVoiceSignalingSubscriptions(
-          subscriptions: _voiceSignalingSubscriptions,
+          subscriptions: voiceSignalingSubscriptions,
           runBoundedCleanupStep: _runBoundedVoiceCleanupStep,
         );
   }
@@ -2064,10 +2082,10 @@ extension VoiceCallRuntime on RainRuntimeController {
       callId: callId,
       status: status,
       requireVoiceSignalingAdapter: _requireVoiceSignalingAdapter,
-      username: _normalizedUsername(selfIdentity.username),
+      username: normalizeUsername(selfIdentity.username),
       recordRoomStatusTransition: _recordVoiceRoomStatusTransition,
       isDurableTerminalStateError: _isDurableVoiceCallTerminalStateError,
-      recordRuntimeEvent: _recordRuntimeEvent,
+      recordRuntimeEvent: recordRuntimeEvent,
       reason: reason,
       reasonCode: reasonCode,
       bestEffort: bestEffort,
@@ -2080,8 +2098,8 @@ extension VoiceCallRuntime on RainRuntimeController {
   ) {
     VoiceCallSignalingCleanupCoordinator.instance
         .recordVoiceRoomStatusTransition(
-          _voiceRoomStatusTimelineByCall,
-          _voiceRoomSignalingStatusByCall,
+          voiceRoomStatusTimelineByCall,
+          voiceRoomSignalingStatusByCall,
           callId,
           status,
         );
@@ -2089,7 +2107,7 @@ extension VoiceCallRuntime on RainRuntimeController {
 
   List<String> _voiceRoomStatusTimeline(String callId) {
     return VoiceCallSignalingCleanupCoordinator.instance
-        .voiceRoomStatusTimeline(_voiceRoomStatusTimelineByCall, callId);
+        .voiceRoomStatusTimeline(voiceRoomStatusTimelineByCall, callId);
   }
 
   bool _isDurableVoiceCallTerminalStateError(Object error) {
@@ -2122,7 +2140,7 @@ extension VoiceCallRuntime on RainRuntimeController {
       error,
       name: name,
       context: context,
-      recordRuntimeEvent: _recordRuntimeEvent,
+      recordRuntimeEvent: recordRuntimeEvent,
     );
   }
 
@@ -2134,7 +2152,7 @@ extension VoiceCallRuntime on RainRuntimeController {
     if (!_isLiveVoiceCallSession(session)) {
       return;
     }
-    final current = _voiceCallState;
+    final current = voiceCallState;
     if (current.callId != session.callId ||
         current.sessionEpoch != session.sessionEpoch ||
         current.phase == VoiceCallPhase.idle ||
@@ -2164,20 +2182,20 @@ extension VoiceCallRuntime on RainRuntimeController {
     await _disposeVoiceCallSession(session);
   }
 
-  Future<void> _endVoiceCallForPeer(
+  Future<void> endVoiceCallForPeer(
     String peerId, {
     required bool notifyPeer,
     required String detail,
     VoiceCallFailureReason? failureReason,
     String? failureDetail,
   }) async {
-    final normalizedPeerId = _normalizedUsername(peerId);
+    final normalizedPeerId = normalizeUsername(peerId);
     // Guard against concurrent end calls (e.g., multiple signaling streams
     // failing at once). Only the first caller proceeds.
-    if (_endingCallPeerId != null) {
+    if (endingCallPeerId != null) {
       return;
     }
-    _endingCallPeerId = normalizedPeerId;
+    endingCallPeerId = normalizedPeerId;
     try {
       await _endVoiceCallForPeerImpl(
         normalizedPeerId,
@@ -2187,8 +2205,8 @@ extension VoiceCallRuntime on RainRuntimeController {
         failureDetail: failureDetail,
       );
     } finally {
-      if (_endingCallPeerId == normalizedPeerId) {
-        _endingCallPeerId = null;
+      if (endingCallPeerId == normalizedPeerId) {
+        endingCallPeerId = null;
       }
     }
   }
@@ -2200,23 +2218,23 @@ extension VoiceCallRuntime on RainRuntimeController {
     VoiceCallFailureReason? failureReason,
     String? failureDetail,
   }) async {
-    final current = _voiceCallState;
-    _recordRuntimeEvent(
+    final current = voiceCallState;
+    recordRuntimeEvent(
       category: 'call',
       name: 'end_for_peer_requested',
       message: detail,
       context: <String, Object?>{
         ..._voiceCallEventContext(current),
-        'peerId': _normalizedUsername(peerId),
+        'peerId': normalizeUsername(peerId),
         'notifyPeer': notifyPeer,
         'failureReason': failureReason?.name,
         'failureDetail': failureDetail,
       },
     );
-    if (current.peerId != _normalizedUsername(peerId)) {
+    if (current.peerId != normalizeUsername(peerId)) {
       return;
     }
-    final session = _voiceCallSession;
+    final session = voiceCallSession;
     if (session != null && current.callId == session.callId) {
       _setVoiceCallState(
         current.copyWith(
@@ -2246,7 +2264,7 @@ extension VoiceCallRuntime on RainRuntimeController {
           detail: detail,
           reasonCode: _voiceCallReasonCodeForFailure(failureReason),
         );
-        var latest = _voiceCallState;
+        var latest = voiceCallState;
         if (!_isSameLiveVoiceCallStateForSession(latest, session)) {
           return;
         }
@@ -2260,7 +2278,7 @@ extension VoiceCallRuntime on RainRuntimeController {
           await _disposeVoiceCallSession(session);
           return;
         }
-        latest = _voiceCallState;
+        latest = voiceCallState;
         if (!_isSameLiveVoiceCallStateForSession(latest, session)) {
           return;
         }
@@ -2332,7 +2350,7 @@ extension VoiceCallRuntime on RainRuntimeController {
         detail: detail,
         reasonCode: _voiceCallReasonCodeForFailure(failureReason),
       );
-      latest = _voiceCallState;
+      latest = voiceCallState;
       if (!_isSameLiveVoiceCallState(latest, current)) {
         return;
       }
@@ -2381,7 +2399,7 @@ extension VoiceCallRuntime on RainRuntimeController {
           terminalWritePolicy: _voiceTerminalWritePolicy,
           endVoiceCallInSignaling: _endVoiceCallInSignaling,
           isDurableTerminalStateError: _isDurableVoiceCallTerminalStateError,
-          recordRuntimeEvent: _recordRuntimeEvent,
+          recordRuntimeEvent: recordRuntimeEvent,
           errorRecorder: errorRecorder,
         );
     return result.durable
@@ -2406,8 +2424,8 @@ extension VoiceCallRuntime on RainRuntimeController {
   ) {
     return VoiceCallStateCoordinator.instance.isSameLiveSessionState(
       latest,
-      runtimeShutDown: _shutDown,
-      ownsRuntimeSession: _voiceCallSession == session,
+      runtimeShutDown: runtimeShutDown,
+      ownsRuntimeSession: voiceCallSession == session,
       callId: session.callId,
       sessionEpoch: session.sessionEpoch,
     );
@@ -2435,14 +2453,14 @@ extension VoiceCallRuntime on RainRuntimeController {
     );
   }
 
-  void _failVoiceCallForPeer(String peerId, String message) {
+  void failVoiceCallForPeer(String peerId, String message) {
     VoiceCallReconnectCoordinator.instance.failVoiceCallForPeer(
       peerId,
       message,
-      normalizeUsername: _normalizedUsername,
-      currentState: _voiceCallState,
+      normalizeUsername: normalizeUsername,
+      currentState: voiceCallState,
       failPeer: (normalizedPeerId, failureMessage) {
-        return _endVoiceCallForPeer(
+        return endVoiceCallForPeer(
           normalizedPeerId,
           notifyPeer: false,
           detail: failureMessage,
@@ -2453,13 +2471,13 @@ extension VoiceCallRuntime on RainRuntimeController {
     );
   }
 
-  void _markVoiceCallReconnectingForPeer(String peerId) {
+  void markVoiceCallReconnectingForPeer(String peerId) {
     VoiceCallReconnectCoordinator.instance.markVoiceCallReconnectingForPeer(
       peerId,
-      normalizeUsername: _normalizedUsername,
-      currentState: _voiceCallState,
-      currentSession: _voiceCallSession,
-      recordRuntimeEvent: _recordRuntimeEvent,
+      normalizeUsername: normalizeUsername,
+      currentState: voiceCallState,
+      currentSession: voiceCallSession,
+      recordRuntimeEvent: recordRuntimeEvent,
       eventContext: _voiceCallEventContext,
       setVoiceCallState: _setVoiceCallState,
       armReconnectGrace: _armVoiceCallReconnectGrace,
@@ -2468,16 +2486,16 @@ extension VoiceCallRuntime on RainRuntimeController {
     );
   }
 
-  void _clearVoiceCallReconnectingForPeer(String peerId) {
+  void clearVoiceCallReconnectingForPeer(String peerId) {
     VoiceCallReconnectCoordinator.instance.clearVoiceCallReconnectingForPeer(
       peerId,
-      normalizeUsername: _normalizedUsername,
-      currentState: _voiceCallState,
-      currentSession: _voiceCallSession,
-      recordRuntimeEvent: _recordRuntimeEvent,
+      normalizeUsername: normalizeUsername,
+      currentState: voiceCallState,
+      currentSession: voiceCallSession,
+      recordRuntimeEvent: recordRuntimeEvent,
       eventContext: _voiceCallEventContext,
       setVoiceCallState: _setVoiceCallState,
-      cancelReconnectGrace: _cancelVoiceCallReconnectGrace,
+      cancelReconnectGrace: cancelVoiceCallReconnectGrace,
       nowMs: DateTime.now().millisecondsSinceEpoch,
     );
   }
@@ -2486,11 +2504,11 @@ extension VoiceCallRuntime on RainRuntimeController {
     VoiceCallReconnectCoordinator.instance.armVoiceCallReconnectGrace(
       call,
       gracePeriod: activeCallReconnectGrace,
-      reconnectGraceTimer: _voiceCallReconnectGraceTimer,
-      setReconnectGraceTimer: (timer) => _voiceCallReconnectGraceTimer = timer,
-      currentState: () => _voiceCallState,
+      reconnectGraceTimer: voiceCallReconnectGraceTimer,
+      setReconnectGraceTimer: (timer) => voiceCallReconnectGraceTimer = timer,
+      currentState: () => voiceCallState,
       failPeer: (peerId, failureMessage) {
-        return _endVoiceCallForPeer(
+        return endVoiceCallForPeer(
           peerId,
           notifyPeer: false,
           detail: failureMessage,
@@ -2502,10 +2520,10 @@ extension VoiceCallRuntime on RainRuntimeController {
     );
   }
 
-  void _cancelVoiceCallReconnectGrace() {
+  void cancelVoiceCallReconnectGrace() {
     VoiceCallReconnectCoordinator.instance.cancelVoiceCallReconnectGrace(
-      reconnectGraceTimer: _voiceCallReconnectGraceTimer,
-      setReconnectGraceTimer: (timer) => _voiceCallReconnectGraceTimer = timer,
+      reconnectGraceTimer: voiceCallReconnectGraceTimer,
+      setReconnectGraceTimer: (timer) => voiceCallReconnectGraceTimer = timer,
     );
   }
 
@@ -2519,13 +2537,13 @@ extension VoiceCallRuntime on RainRuntimeController {
     await VoiceCallPreflightCoordinator.instance.assertVoiceCallPeerIsFriend(
       peerId,
       isAcceptedFriend: (username) async {
-        final friend = await _localMutations.run(
+        final friend = await localMutations.run(
           () => friendStore.loadFriend(username),
         );
         return friend?.state == FriendState.friend;
       },
       syncRelationships: (username) =>
-          _syncRelationships(onlyUsername: username),
+          syncRelationships(onlyUsername: username),
     );
   }
 
@@ -2536,9 +2554,9 @@ extension VoiceCallRuntime on RainRuntimeController {
     return VoiceCallPreflightCoordinator.instance.fetchVoiceCallPeerPresence(
       peerId,
       mediaMode: mediaMode,
-      normalizeUsername: _normalizedUsername,
+      normalizeUsername: normalizeUsername,
       fetchPresence: (username, {required String action}) async {
-        final presence = await _fetchPeerPresenceSnapshot(
+        final presence = await fetchPeerPresenceSnapshot(
           username,
           action: action,
         );
@@ -2550,7 +2568,7 @@ extension VoiceCallRuntime on RainRuntimeController {
           diagnostics: presence.toDiagnostics(),
         );
       },
-      recordRuntimeEvent: _recordRuntimeEvent,
+      recordRuntimeEvent: recordRuntimeEvent,
       errorRecorder: errorRecorder == null
           ? null
           : (error, stackTrace, {required String source, required bool fatal}) {
@@ -2574,14 +2592,14 @@ extension VoiceCallRuntime on RainRuntimeController {
     VoiceCallFailureReason? failureReason,
     String? detail,
   }) async {
-    final current = _voiceCallState;
+    final current = voiceCallState;
     final effectiveFailureReason =
         failureReason ?? _voiceCallFailureReasonForError(error);
     final effectiveDetail =
         detail ??
         _voiceCallFailureDetailForError(error) ??
         _voiceCallErrorMessage(error);
-    _recordRuntimeEvent(
+    recordRuntimeEvent(
       category: 'call',
       name: 'failed',
       severity: 'error',
@@ -2624,17 +2642,17 @@ extension VoiceCallRuntime on RainRuntimeController {
         audioLevel: const VoiceAudioLevel.unavailable(),
       ),
     );
-    await _disposeCurrentVoiceCallSession();
+    await disposeCurrentVoiceCallSession();
   }
 
   bool _isLiveVoiceCallSession(VoiceCallSession session) {
-    if (_shutDown || _voiceCallSession != session) {
+    if (runtimeShutDown || voiceCallSession != session) {
       return false;
     }
-    final currentCallId = _voiceCallState.callId;
-    final currentEpoch = _voiceCallState.sessionEpoch;
+    final currentCallId = voiceCallState.callId;
+    final currentEpoch = voiceCallState.sessionEpoch;
     final currentCanBePreviousTerminal =
-        _voiceCallState.phase == VoiceCallPhase.failed;
+        voiceCallState.phase == VoiceCallPhase.failed;
     if (currentCallId != null &&
         currentCallId != session.callId &&
         !currentCanBePreviousTerminal) {
@@ -2649,13 +2667,13 @@ extension VoiceCallRuntime on RainRuntimeController {
   }
 
   void _latchTerminalVoiceCallSession(VoiceCallSession session) {
-    _terminalVoiceCallSessionKeys.add(
+    terminalVoiceCallSessionKeys.add(
       _voiceCallSessionKey(session.callId, session.sessionEpoch),
     );
   }
 
   bool _isTerminalVoiceCallSessionLatched(VoiceCallSession session) {
-    return _terminalVoiceCallSessionKeys.contains(
+    return terminalVoiceCallSessionKeys.contains(
       _voiceCallSessionKey(session.callId, session.sessionEpoch),
     );
   }
@@ -2665,13 +2683,13 @@ extension VoiceCallRuntime on RainRuntimeController {
   }
 
   bool _isCurrentVoiceCall(String peerId, String callId, {int? sessionEpoch}) {
-    return _voiceCallState.peerId == _normalizedUsername(peerId) &&
-        _voiceCallState.callId == callId &&
-        (sessionEpoch == null || _voiceCallState.sessionEpoch == sessionEpoch);
+    return voiceCallState.peerId == normalizeUsername(peerId) &&
+        voiceCallState.callId == callId &&
+        (sessionEpoch == null || voiceCallState.sessionEpoch == sessionEpoch);
   }
 
   void _recordLateVoiceFrame(VoiceCallSession session, String message) {
-    _recordRuntimeEvent(
+    recordRuntimeEvent(
       category: 'call',
       name: 'late_frame_ignored',
       severity: 'warning',
@@ -2724,13 +2742,13 @@ extension VoiceCallRuntime on RainRuntimeController {
     VoiceCallFrame frame,
   ) {
     return <String, Object?>{
-      'peerId': _normalizedUsername(peerId),
+      'peerId': normalizeUsername(peerId),
       'callId': frame.callId,
       'sessionEpoch': frame.sessionEpoch,
       'frameType': frame.type.name,
       'seq': frame.seq,
-      'from': _normalizedUsername(frame.from),
-      'to': _normalizedUsername(frame.to),
+      'from': normalizeUsername(frame.from),
+      'to': normalizeUsername(frame.to),
       'mediaMode': frame.mediaMode.name,
       'reasonCode': frame.reasonCode,
       'reason': frame.reason,
@@ -2747,12 +2765,12 @@ extension VoiceCallRuntime on RainRuntimeController {
         state.phase == VoiceCallPhase.idle ||
         state.phase == VoiceCallPhase.failed ||
         state.phase == VoiceCallPhase.ending) {
-      _cancelVoiceCallReconnectGrace();
+      cancelVoiceCallReconnectGrace();
     }
     _recordVoiceCallStateIfChanged(state);
-    _voiceCallState = state;
-    if (!_voiceCallStateController.isClosed) {
-      _voiceCallStateController.add(state);
+    voiceCallState = state;
+    if (!voiceCallStateController.isClosed) {
+      voiceCallStateController.add(state);
     }
   }
 
@@ -2777,16 +2795,16 @@ extension VoiceCallRuntime on RainRuntimeController {
       state.detail,
       state.error?.toString(),
     ].join('|');
-    if (_lastLoggedVoiceCallStateSignature == signature) {
+    if (lastLoggedVoiceCallStateSignature == signature) {
       return;
     }
-    _lastLoggedVoiceCallStateSignature = signature;
+    lastLoggedVoiceCallStateSignature = signature;
     final severity = switch (state.phase) {
       VoiceCallPhase.failed => 'error',
       VoiceCallPhase.ending => 'warning',
       _ => 'info',
     };
-    _recordRuntimeEvent(
+    recordRuntimeEvent(
       category: 'call',
       name: 'state_changed',
       severity: severity,
@@ -2800,17 +2818,17 @@ extension VoiceCallRuntime on RainRuntimeController {
     VoiceCallSessionStateCoordinator.instance.recordPeerUiStateSplitIfNeeded(
       state,
       getSession: (peerId) => brain?.getSession(peerId),
-      lastLoggedSignature: _lastLoggedPeerUiSplitSignature,
+      lastLoggedSignature: lastLoggedPeerUiSplitSignature,
       setLastLoggedSignature: (signature) {
-        _lastLoggedPeerUiSplitSignature = signature;
+        lastLoggedPeerUiSplitSignature = signature;
       },
-      recordRuntimeEvent: _recordRuntimeEvent,
+      recordRuntimeEvent: recordRuntimeEvent,
     );
   }
 
   String _newVoiceCallId(String peerId) {
     final now = DateTime.now().microsecondsSinceEpoch.toRadixString(36);
-    return '${_normalizedUsername(selfIdentity.username)}:$peerId:$now';
+    return '${normalizeUsername(selfIdentity.username)}:$peerId:$now';
   }
 
   // ---------------------------------------------------------------------------
@@ -2841,8 +2859,8 @@ extension VoiceCallRuntime on RainRuntimeController {
     CallRetryDecision? retryDecision,
     CallSignalingFailureSnapshot? retrySnapshot,
   }) {
-    final caller = _normalizedUsername(selfIdentity.username);
-    final callee = _normalizedUsername(peerId);
+    final caller = normalizeUsername(selfIdentity.username);
+    final callee = normalizeUsername(peerId);
     final pairId = voiceCallPairId(caller, callee);
     final message = retrySnapshot?.message ?? '';
     final busyUser = VoiceCallErrorCoordinator.instance.busyUser(message);
@@ -2895,7 +2913,7 @@ extension VoiceCallRuntime on RainRuntimeController {
   String? _voiceCallFailureDetailForError(Object error) =>
       VoiceCallErrorCoordinator.instance.failureDetailForError(
         error,
-        currentPeerId: _voiceCallState.peerId,
+        currentPeerId: voiceCallState.peerId,
         selfUsername: selfIdentity.username,
       );
 
@@ -2905,7 +2923,7 @@ extension VoiceCallRuntime on RainRuntimeController {
   String _voiceCallErrorMessage(Object error) =>
       VoiceCallErrorCoordinator.instance.errorMessage(
         error,
-        currentPeerId: _voiceCallState.peerId,
+        currentPeerId: voiceCallState.peerId,
         selfUsername: selfIdentity.username,
       );
 

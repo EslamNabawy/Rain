@@ -1,6 +1,6 @@
 # VoiceCallRuntime Refactor Plan
 
-Last updated: 2026-06-08
+Last updated: 2026-06-09
 
 ## Purpose
 
@@ -25,7 +25,7 @@ Related: [[VoiceCallRuntime Refactor]], [[Target Architecture]], [[Refactoring S
 - UI-facing state mutation,
 - diagnostics.
 
-As of 2026-06-08, extracted stateless/pure call helpers are grouped under `apps/rain/lib/application/runtime/voice_call/`. `VoiceCallStateCoordinator` owns pure runtime state mapping and terminal reset decisions, `VoiceCallRoomCoordinator` owns room helper policy, `VoiceCallErrorCoordinator` delegates runtime error classification, `VoiceCallTerminalReconciler` owns terminal-session-state decisions, `VoiceCallPreflightCoordinator` owns call-start friend/presence availability guards plus stale retry replacement, `VoiceCallReconnectCoordinator` owns reconnecting/failure grace state, `VoiceCallMediaCoordinator` owns app-side media connection creation and renderer/resource lifecycle, `VoiceCallSessionStateCoordinator` owns protocol-session-to-runtime projection and diagnostics recording, `VoiceCallSignalingCleanupCoordinator` owns Firebase room watches, frame/ICE handling, terminal writes, stale cleanup, and bounded cleanup, and `VoiceCallDiagnostics` owns the diagnostic record shape. `voice_call_runtime.dart` is now 2,917 lines and remains the public command/orchestration facade.
+As of 2026-06-09, extracted stateless/pure call helpers are grouped under `apps/rain/lib/application/runtime/voice_call/`. `VoiceCallStateCoordinator` owns pure runtime state mapping and terminal reset decisions, `VoiceCallRoomCoordinator` owns room helper policy, `VoiceCallErrorCoordinator` delegates runtime error classification, `VoiceCallTerminalReconciler` owns terminal-session-state decisions, `VoiceCallPreflightCoordinator` owns call-start friend/presence availability guards plus stale retry replacement, `VoiceCallReconnectCoordinator` owns reconnecting/failure grace state, `VoiceCallMediaCoordinator` owns app-side media connection creation and renderer/resource lifecycle, `VoiceCallSessionStateCoordinator` owns protocol-session-to-runtime projection and diagnostics recording, `VoiceCallSignalingCleanupCoordinator` owns Firebase room watches, frame/ICE handling, terminal writes, stale cleanup, and bounded cleanup, and `VoiceCallDiagnostics` owns the diagnostic record shape. `voice_call_runtime.dart` is now 2,935 lines after converting runtime extension files from `part of` declarations to imported/exported Dart libraries. It remains the public command/orchestration facade.
 
 ## Problems
 
@@ -85,6 +85,7 @@ Existing architecture notes: [[CallStartCoordinator]], [[CallLeaseManager]], [[C
 6. Move media capture and renderer lifecycle into `CallMediaCoordinator`. Partial 2026-06-08: app-side media connection creation, renderer lifecycle, app lifecycle video failure handling, camera-muted signaling, and video resource cleanup live in `VoiceCallMediaCoordinator`; command-level start/end orchestration remains.
 7. Reduce `VoiceCallRuntime` to orchestration and state emission.
 8. Delete dead paths only after tests prove equivalent behavior.
+9. Keep runtime extension libraries imported/exported through `rain_runtime_controller.dart` until callers are migrated to narrower feature imports.
 
 ## Testing Strategy
 

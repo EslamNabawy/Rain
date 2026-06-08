@@ -1,8 +1,8 @@
+// ignore_for_file: unnecessary_getters_setters
+
 import 'dart:async';
 import 'dart:io';
-import 'dart:typed_data';
 
-import 'package:crypto/crypto.dart';
 import 'package:flutter/widgets.dart';
 import 'package:path_provider/path_provider.dart';
 import 'package:protocol_brain/protocol_brain.dart';
@@ -11,31 +11,22 @@ import 'package:rain_core/rain_core.dart';
 import 'package:rain/infrastructure/notifications/rain_notification_service.dart';
 import 'connection_attempt_coordinator.dart';
 import 'app_exit_coordinator.dart';
-import 'call_error_classifier.dart';
 import 'call_media_recovery_policy.dart';
-import 'call_retry_policy.dart';
-import 'call_terminal_write_policy.dart';
-import 'connection_request_messages.dart';
+import 'connection_request_runtime.dart';
 import 'connection_request_state.dart';
+import 'file_transfer_runtime.dart';
 import 'file_transfer_progress_batcher.dart';
+import 'friend_runtime.dart';
 import 'runtime_interaction_guard.dart';
 import 'serialized_runtime_mutations.dart';
 import 'video_call_renderers.dart';
-import 'voice_audio_level.dart';
-import 'voice_call/voice_call_error_coordinator.dart';
-import 'voice_call/voice_call_media_coordinator.dart';
-import 'voice_call/voice_call_preflight_coordinator.dart';
-import 'voice_call/voice_call_reconnect_coordinator.dart';
-import 'voice_call/voice_call_room_coordinator.dart';
-import 'voice_call/voice_call_session_state_coordinator.dart';
-import 'voice_call/voice_call_signaling_cleanup_coordinator.dart';
-import 'voice_call/voice_call_state_coordinator.dart';
+import 'voice_call_runtime.dart';
 import 'voice_call_state.dart';
 
-part 'file_transfer_runtime.dart';
-part 'friend_runtime.dart';
-part 'connection_request_runtime.dart';
-part 'voice_call_runtime.dart';
+export 'connection_request_runtime.dart';
+export 'file_transfer_runtime.dart';
+export 'friend_runtime.dart';
+export 'voice_call_runtime.dart';
 
 enum FriendRequestResult { sent, acceptedExisting }
 
@@ -126,7 +117,7 @@ final class RuntimePeerPresenceSnapshot {
 
   factory RuntimePeerPresenceSnapshot._fromResolved({
     required String peerId,
-    required _ResolvedBackendPresence presence,
+    required ResolvedBackendPresence presence,
     required int observedAtMs,
   }) {
     return RuntimePeerPresenceSnapshot(
@@ -167,8 +158,8 @@ final class RuntimePeerPresenceSnapshot {
   }
 }
 
-final class _ResolvedBackendPresence {
-  const _ResolvedBackendPresence({
+final class ResolvedBackendPresence {
+  const ResolvedBackendPresence({
     required this.online,
     required this.rawOnline,
     required this.lastHeartbeat,
@@ -317,8 +308,8 @@ class RainRuntimeController with WidgetsBindingObserver {
   final Map<String, IOSink> _receiveFileSinks = <String, IOSink>{};
   final Map<String, String> _receiveFileSinkPaths = <String, String>{};
   final Map<String, Future<void>> _fileMessageQueues = <String, Future<void>>{};
-  final Map<String, _OutgoingFileSource> _outgoingFileSources =
-      <String, _OutgoingFileSource>{};
+  final Map<String, OutgoingFileSource> _outgoingFileSources =
+      <String, OutgoingFileSource>{};
   final Map<String, String> _outgoingFileHashes = <String, String>{};
   final Set<String> _canceledTransfers = <String>{};
   final StreamController<VoiceCallState> _voiceCallStateController =
@@ -380,6 +371,162 @@ class RainRuntimeController with WidgetsBindingObserver {
     return username.trim().toLowerCase();
   }
 
+  // Internal accessors used by imported runtime extension libraries.
+  Future<Directory> Function() get documentsDirectoryProvider =>
+      _documentsDirectoryProvider;
+  SerializedRuntimeMutations get localMutations => _localMutations;
+  Set<String> get mutableManualDisconnectedPeers => _manualDisconnectedPeers;
+  Set<String> get recoverableDisconnectedPeers => _recoverableDisconnectedPeers;
+  Map<String, RuntimePeerPresenceSnapshot> get peerPresenceSnapshotCache =>
+      _peerPresenceSnapshots;
+  Set<String> get registeredPeerListeners => _registeredPeerListeners;
+  Set<String> get passivePeerListeners => _passivePeerListeners;
+  Set<String> get unblockingPeers => _unblockingPeers;
+  Map<String, StreamSubscription<bool>> get presenceSubscriptions =>
+      _presenceSubscriptions;
+  Map<String, FileTransferFrame> get pendingFileChunks => _pendingFileChunks;
+  Map<String, int> get receiveProgressOffsets => _receiveProgressOffsets;
+  Map<String, IOSink> get receiveFileSinks => _receiveFileSinks;
+  Map<String, String> get receiveFileSinkPaths => _receiveFileSinkPaths;
+  Map<String, Future<void>> get fileMessageQueues => _fileMessageQueues;
+  Map<String, OutgoingFileSource> get outgoingFileSources =>
+      _outgoingFileSources;
+  Map<String, String> get outgoingFileHashes => _outgoingFileHashes;
+  Set<String> get canceledTransfers => _canceledTransfers;
+  FileTransferProgressBatcher get fileProgressBatcher => _fileProgressBatcher;
+  StreamController<VoiceCallState> get voiceCallStateController =>
+      _voiceCallStateController;
+  VoiceCallSession? get voiceCallSession => _voiceCallSession;
+  set voiceCallSession(VoiceCallSession? value) => _voiceCallSession = value;
+  String? get acceptingVoiceCallId => _acceptingVoiceCallId;
+  set acceptingVoiceCallId(String? value) => _acceptingVoiceCallId = value;
+  String? get endingCallPeerId => _endingCallPeerId;
+  set endingCallPeerId(String? value) => _endingCallPeerId = value;
+  StreamSubscription<VoiceCallSessionState>? get voiceCallSessionSubscription =>
+      _voiceCallSessionSubscription;
+  set voiceCallSessionSubscription(
+    StreamSubscription<VoiceCallSessionState>? value,
+  ) => _voiceCallSessionSubscription = value;
+  Timer? get voiceCallReconnectGraceTimer => _voiceCallReconnectGraceTimer;
+  set voiceCallReconnectGraceTimer(Timer? value) =>
+      _voiceCallReconnectGraceTimer = value;
+  Set<String> get terminalVoiceCallSessionKeys => _terminalVoiceCallSessionKeys;
+  Map<String, List<String>> get voiceRoomStatusTimelineByCall =>
+      _voiceRoomStatusTimelineByCall;
+  Map<String, VoiceCallSignalingStatus> get voiceRoomSignalingStatusByCall =>
+      _voiceRoomSignalingStatusByCall;
+  IceCandidateBatcher<VoiceSignalingEnvelope>? get voiceIceCandidateBatcher =>
+      _voiceIceCandidateBatcher;
+  set voiceIceCandidateBatcher(
+    IceCandidateBatcher<VoiceSignalingEnvelope>? value,
+  ) => _voiceIceCandidateBatcher = value;
+  int get voiceLocalIceCandidateCount => _voiceLocalIceCandidateCount;
+  set voiceLocalIceCandidateCount(int value) =>
+      _voiceLocalIceCandidateCount = value;
+  CallMediaConnection? get videoCallMediaConnection =>
+      _videoCallMediaConnection;
+  set videoCallMediaConnection(CallMediaConnection? value) =>
+      _videoCallMediaConnection = value;
+  VideoCallRendererState? get lastVideoCallRendererState =>
+      _lastVideoCallRendererState;
+  set lastVideoCallRendererState(VideoCallRendererState? value) =>
+      _lastVideoCallRendererState = value;
+  String? get handledVideoFirstFrameTimeoutCallId =>
+      _handledVideoFirstFrameTimeoutCallId;
+  set handledVideoFirstFrameTimeoutCallId(String? value) =>
+      _handledVideoFirstFrameTimeoutCallId = value;
+  String? get lastLoggedVoiceCallStateSignature =>
+      _lastLoggedVoiceCallStateSignature;
+  set lastLoggedVoiceCallStateSignature(String? value) =>
+      _lastLoggedVoiceCallStateSignature = value;
+  String? get lastLoggedPeerUiSplitSignature => _lastLoggedPeerUiSplitSignature;
+  set lastLoggedPeerUiSplitSignature(String? value) =>
+      _lastLoggedPeerUiSplitSignature = value;
+  String? get lastLoggedVideoRendererSignature =>
+      _lastLoggedVideoRendererSignature;
+  set lastLoggedVideoRendererSignature(String? value) =>
+      _lastLoggedVideoRendererSignature = value;
+  StreamSubscription<VideoCallRendererState>?
+  get videoCallRendererSubscription => _videoCallRendererSubscription;
+  set videoCallRendererSubscription(
+    StreamSubscription<VideoCallRendererState>? value,
+  ) => _videoCallRendererSubscription = value;
+  List<StreamSubscription<dynamic>> get voiceSignalingSubscriptions =>
+      _voiceSignalingSubscriptions;
+  List<StreamSubscription<dynamic>> get connectionRequestSubscriptions =>
+      _connectionRequestSubscriptions;
+  Set<String> get activeConnectionRequestNotificationIds =>
+      _activeConnectionRequestNotificationIds;
+  Set<String> get connectionRequestNotificationFallbackKeys =>
+      _connectionRequestNotificationFallbackKeys;
+  Map<String, List<int>> get connectionRequestSendHistoryByPeer =>
+      _connectionRequestSendHistoryByPeer;
+  Map<String, int> get connectionRequestCooldownUntilByPeer =>
+      _connectionRequestCooldownUntilByPeer;
+  StreamController<ConnectionRequestState>
+  get connectionRequestStateController => _connectionRequestStateController;
+  ConnectionAttemptCoordinator get connectionCoordinator =>
+      _connectionCoordinator;
+  bool get runtimeStarted => _started;
+  bool get runtimeShutDown => _shutDown;
+
+  String normalizeUsername(String username) => _normalizedUsername(username);
+
+  void notifyPeerConnectivityChanged() => _notifyPeerConnectivityChanged();
+
+  void cacheResolvedPeerPresence(
+    String username,
+    ResolvedBackendPresence presence, {
+    int? observedAtMs,
+  }) {
+    _cacheResolvedPeerPresence(username, presence, observedAtMs: observedAtMs);
+  }
+
+  void cachePresenceStreamValue(String username, bool isOnline) {
+    _cachePresenceStreamValue(username, isOnline);
+  }
+
+  ResolvedBackendPresence resolveBackendPresence(
+    BackendIdentity identity, {
+    int? nowMs,
+  }) {
+    return _resolveBackendPresence(identity, nowMs: nowMs);
+  }
+
+  Future<ResolvedBackendPresence?> fetchPeerPresenceSnapshot(
+    String username, {
+    required String action,
+    bool updateLocalPresence = true,
+  }) {
+    return _fetchPeerPresenceSnapshot(
+      username,
+      action: action,
+      updateLocalPresence: updateLocalPresence,
+    );
+  }
+
+  RainGender? backendGender(String? value) => _backendGender(value);
+
+  void recordRuntimeEvent({
+    required String category,
+    required String name,
+    String severity = 'info',
+    String? message,
+    Map<String, Object?> context = const <String, Object?>{},
+  }) {
+    _recordRuntimeEvent(
+      category: category,
+      name: name,
+      severity: severity,
+      message: message,
+      context: context,
+    );
+  }
+
+  Future<void> disconnectBrainPeer(String peerId, PeerDisconnectIntent intent) {
+    return _disconnectBrainPeer(peerId, intent);
+  }
+
   Set<String> get manualDisconnectedPeers =>
       Set<String>.unmodifiable(_manualDisconnectedPeers);
 
@@ -414,7 +561,7 @@ class RainRuntimeController with WidgetsBindingObserver {
 
   void _cacheResolvedPeerPresence(
     String username,
-    _ResolvedBackendPresence presence, {
+    ResolvedBackendPresence presence, {
     int? observedAtMs,
   }) {
     final normalizedUsername = _normalizedUsername(username);
@@ -440,7 +587,7 @@ class RainRuntimeController with WidgetsBindingObserver {
     _notifyPeerConnectivityChanged();
   }
 
-  _ResolvedBackendPresence _resolveBackendPresence(
+  ResolvedBackendPresence _resolveBackendPresence(
     BackendIdentity identity, {
     int? nowMs,
   }) {
@@ -450,7 +597,7 @@ class RainRuntimeController with WidgetsBindingObserver {
         : now - identity.lastHeartbeat;
     final normalizedState = identity.presenceState?.trim().toLowerCase();
     final online = backendIdentityIsFreshlyOnline(identity, nowMs: now);
-    return _ResolvedBackendPresence(
+    return ResolvedBackendPresence(
       online: online,
       rawOnline: identity.online,
       lastHeartbeat: identity.lastHeartbeat,
@@ -463,7 +610,7 @@ class RainRuntimeController with WidgetsBindingObserver {
     );
   }
 
-  Future<_ResolvedBackendPresence?> _fetchPeerPresenceSnapshot(
+  Future<ResolvedBackendPresence?> _fetchPeerPresenceSnapshot(
     String username, {
     required String action,
     bool updateLocalPresence = true,
@@ -513,10 +660,15 @@ class RainRuntimeController with WidgetsBindingObserver {
   }
 
   VoiceCallState get voiceCallState => _voiceCallState;
+  set voiceCallState(VoiceCallState value) => _voiceCallState = value;
 
   ConnectionRequestState get connectionRequestState => _connectionRequestState;
+  set connectionRequestState(ConnectionRequestState value) =>
+      _connectionRequestState = value;
 
   VideoCallRenderers? get videoCallRenderers => _videoCallRenderers;
+  set videoCallRenderers(VideoCallRenderers? value) =>
+      _videoCallRenderers = value;
 
   Future<void> refreshCallMediaProcessingConfig() async {
     final media = _videoCallMediaConnection;
@@ -587,10 +739,10 @@ class RainRuntimeController with WidgetsBindingObserver {
       );
     }
     await _localMutations.run(offlineQueueStore.recoverInFlightMessages);
-    await _syncRelationships();
+    await syncRelationships();
     await _warmUpStartupMediaPermissions();
     final existingFriends = await friendStore.loadFriends();
-    await _startConnectionRequestRuntime();
+    await startConnectionRequestRuntime();
     _recordRuntimeEvent(
       category: 'runtime',
       name: 'started',
@@ -601,16 +753,16 @@ class RainRuntimeController with WidgetsBindingObserver {
     );
 
     for (final friend in existingFriends) {
-      if (!_isBlockedState(friend.state)) {
-        _watchPresence(friend.username);
+      if (!isBlockedState(friend.state)) {
+        watchPresence(friend.username);
       }
     }
-    await _reconcilePassivePeerListeners(existingFriends);
+    await reconcilePassivePeerListeners(existingFriends);
 
     if (friendRequestRefreshInterval > Duration.zero) {
       _friendRequestRefreshTimer = Timer.periodic(
         friendRequestRefreshInterval,
-        (_) => _refreshRelationshipsSilently(),
+        (_) => refreshRelationshipsSilently(),
       );
     }
 
@@ -623,10 +775,10 @@ class RainRuntimeController with WidgetsBindingObserver {
           .onFriendRequest(selfIdentity.username)
           .listen(
             (String from) async {
-              await _processIncomingFriendRequest(from);
+              await processIncomingFriendRequest(from);
             },
             onError: (Object error, StackTrace stackTrace) {
-              _refreshRelationshipsSilently();
+              refreshRelationshipsSilently();
             },
           ),
     );
@@ -640,24 +792,24 @@ class RainRuntimeController with WidgetsBindingObserver {
               if (normalizedUsername.isNotEmpty &&
                   normalizedUsername !=
                       _normalizedUsername(selfIdentity.username)) {
-                _refreshRelationshipsSilently(onlyUsername: normalizedUsername);
+                refreshRelationshipsSilently(onlyUsername: normalizedUsername);
               }
             },
             onError: (Object error, StackTrace stackTrace) {
-              _refreshRelationshipsSilently();
+              refreshRelationshipsSilently();
             },
           ),
     );
 
     final voiceAdapter = voiceSignalingAdapter;
     if (voiceAdapter != null) {
-      unawaited(_cleanupStaleVoiceCallArtifacts('startup'));
+      unawaited(cleanupStaleVoiceCallArtifacts('startup'));
       _subscriptions.add(
         voiceAdapter
             .watchIncomingCalls(selfIdentity.username)
             .listen(
               (VoiceCallInboxEntry entry) async {
-                await _handleIncomingVoiceCallEntry(entry);
+                await handleIncomingVoiceCallEntry(entry);
               },
               onError: (Object error, StackTrace stackTrace) {
                 errorRecorder?.call(
@@ -705,7 +857,7 @@ class RainRuntimeController with WidgetsBindingObserver {
             context: _sessionEventContext(session),
           );
           _recoverableDisconnectedPeers.remove(session.peerId);
-          _clearVoiceCallReconnectingForPeer(session.peerId);
+          clearVoiceCallReconnectingForPeer(session.peerId);
           _connectionCoordinator.recordAttemptSuccess(session.peerId);
           await _localMutations.run(
             () => messageDeliveryService.flushQueue(
@@ -750,16 +902,16 @@ class RainRuntimeController with WidgetsBindingObserver {
               peerId,
               PeerDisconnectIntent.transportLost,
             );
-            _markVoiceCallReconnectingForPeer(peerId);
+            markVoiceCallReconnectingForPeer(peerId);
             return;
           }
           _connectionCoordinator.recordDisconnectIntent(
             peerId,
             PeerDisconnectIntent.remoteManual,
           );
-          _failVoiceCallForPeer(peerId, 'Peer closed Rain. Connection ended.');
+          failVoiceCallForPeer(peerId, 'Peer closed Rain. Connection ended.');
           unawaited(
-            _failActiveTransfersForPeer(
+            failActiveTransfersForPeer(
               peerId,
               'Connection lost. Transfer canceled.',
             ),
@@ -782,7 +934,7 @@ class RainRuntimeController with WidgetsBindingObserver {
             }
             final voiceFrame = VoiceCallFrame.tryDecode(text);
             if (voiceFrame != null) {
-              await _handleVoiceCallFrame(peerId, voiceFrame);
+              await handleVoiceCallFrame(peerId, voiceFrame);
               return;
             }
             await _localMutations.run(
@@ -815,7 +967,7 @@ class RainRuntimeController with WidgetsBindingObserver {
           }
 
           if (message.channel == SessionChannel.file) {
-            unawaited(_enqueueFileChannelMessage(peerId, message));
+            unawaited(enqueueFileChannelMessage(peerId, message));
           }
         }),
       );
@@ -981,7 +1133,7 @@ class RainRuntimeController with WidgetsBindingObserver {
     final normalizedUsername = _normalizedUsername(username);
     // Prefer using an existing displayName if available to preserve
     // the user's chosen display name instead of falling back to the username.
-    await _syncRelationships(onlyUsername: normalizedUsername);
+    await syncRelationships(onlyUsername: normalizedUsername);
     final existing = await _localMutations.run(
       () => friendStore.loadFriend(normalizedUsername),
     );
@@ -1001,20 +1153,20 @@ class RainRuntimeController with WidgetsBindingObserver {
         gender: existing?.gender,
       ),
     );
-    await _refreshPassivePeerListeners();
+    await refreshPassivePeerListeners();
   }
 
   Future<void> blockFriend(String username) async {
     final normalizedUsername = _normalizedUsername(username);
-    await _failActiveTransfersForPeer(
+    await failActiveTransfersForPeer(
       normalizedUsername,
       'Transfer canceled because the peer was blocked.',
     );
     await adapter.blockUser(selfIdentity.username, normalizedUsername);
-    await _clearFriendRequests(normalizedUsername);
+    await clearFriendRequests(normalizedUsername);
     await adapter.deleteFriendship(selfIdentity.username, normalizedUsername);
     await _localMutations.run(() => friendStore.block(normalizedUsername));
-    await _stopTrackingPeer(normalizedUsername);
+    await stopTrackingPeer(normalizedUsername);
   }
 
   Future<void> unblockFriend(String username) async {
@@ -1023,7 +1175,7 @@ class RainRuntimeController with WidgetsBindingObserver {
     try {
       await adapter.unblockUser(selfIdentity.username, normalizedUsername);
       await _localMutations.run(() => friendStore.unblock(normalizedUsername));
-      await _stopTrackingPeer(normalizedUsername);
+      await stopTrackingPeer(normalizedUsername);
     } finally {
       _unblockingPeers.remove(normalizedUsername);
     }
@@ -1031,7 +1183,7 @@ class RainRuntimeController with WidgetsBindingObserver {
 
   Future<void> unfriend(String username) async {
     final normalizedUsername = _normalizedUsername(username);
-    await _failActiveTransfersForPeer(
+    await failActiveTransfersForPeer(
       normalizedUsername,
       'Transfer canceled because the peer was removed.',
     );
@@ -1045,7 +1197,7 @@ class RainRuntimeController with WidgetsBindingObserver {
 
     await adapter.deleteFriendship(selfIdentity.username, normalizedUsername);
     await _localMutations.run(() => friendStore.reject(normalizedUsername));
-    await _stopTrackingPeer(normalizedUsername);
+    await stopTrackingPeer(normalizedUsername);
   }
 
   Future<void> connectPeer(
@@ -1115,7 +1267,7 @@ class RainRuntimeController with WidgetsBindingObserver {
       () => friendStore.loadFriend(normalizedUsername),
     );
     if (friend?.state != FriendState.friend) {
-      await _syncRelationships(onlyUsername: normalizedUsername);
+      await syncRelationships(onlyUsername: normalizedUsername);
       friend = await _localMutations.run(
         () => friendStore.loadFriend(normalizedUsername),
       );
@@ -1189,7 +1341,7 @@ class RainRuntimeController with WidgetsBindingObserver {
         current = brain!.getSession(normalizedUsername);
       } else {
         if (waitForConnected) {
-          await _waitForPeerConnection(
+          await waitForPeerConnection(
             normalizedUsername,
             timeout: connectionTimeout,
           );
@@ -1203,7 +1355,7 @@ class RainRuntimeController with WidgetsBindingObserver {
     if (current?.state == SessionState.connecting ||
         current?.state == SessionState.reconnecting) {
       if (waitForConnected) {
-        await _waitForPeerConnection(
+        await waitForPeerConnection(
           normalizedUsername,
           timeout: connectionTimeout,
         );
@@ -1277,7 +1429,7 @@ class RainRuntimeController with WidgetsBindingObserver {
         return;
       }
     }
-    await _registerPeerListener(normalizedUsername, bestEffort: false);
+    await registerPeerListener(normalizedUsername, bestEffort: false);
     _recordRuntimeEvent(
       category: 'connection',
       name: 'connect_signaling_started',
@@ -1286,7 +1438,7 @@ class RainRuntimeController with WidgetsBindingObserver {
     await brain!.connect(normalizedUsername);
     _recoverableDisconnectedPeers.remove(normalizedUsername);
     if (waitForConnected) {
-      await _waitForPeerConnection(
+      await waitForPeerConnection(
         normalizedUsername,
         timeout: connectionTimeout,
       );
@@ -1313,7 +1465,7 @@ class RainRuntimeController with WidgetsBindingObserver {
       PeerDisconnectIntent.localManual,
     );
     _connectionCoordinator.clearRetry(normalizedUsername);
-    await _failActiveTransfersForPeer(
+    await failActiveTransfersForPeer(
       normalizedUsername,
       'Transfer canceled because the peer link was disconnected.',
     );
@@ -1321,7 +1473,7 @@ class RainRuntimeController with WidgetsBindingObserver {
       normalizedUsername,
       PeerDisconnectIntent.localManual,
     );
-    await _unregisterPeerListener(normalizedUsername);
+    await unregisterPeerListener(normalizedUsername);
     _recordRuntimeEvent(
       category: 'connection',
       name: 'disconnect_manual_completed',
@@ -1348,7 +1500,7 @@ class RainRuntimeController with WidgetsBindingObserver {
     }
     for (final transfer in activeTransfers) {
       try {
-        await _markTransferFailed(transfer.id, reason);
+        await markTransferFailed(transfer.id, reason);
       } catch (_) {
         // Network-loss cleanup is best effort; the next launch can retry cleanup.
       }
@@ -1356,7 +1508,7 @@ class RainRuntimeController with WidgetsBindingObserver {
 
     final activeVoicePeer = _voiceCallState.peerId;
     if (_voiceCallState.hasCall && activeVoicePeer != null) {
-      await _endVoiceCallForPeer(
+      await endVoiceCallForPeer(
         activeVoicePeer,
         notifyPeer: false,
         detail: reason,
@@ -1374,7 +1526,7 @@ class RainRuntimeController with WidgetsBindingObserver {
         session.peerId,
         PeerDisconnectIntent.networkLost,
       );
-      await _endVoiceCallForPeer(
+      await endVoiceCallForPeer(
         session.peerId,
         notifyPeer: false,
         detail: reason,
@@ -1386,14 +1538,14 @@ class RainRuntimeController with WidgetsBindingObserver {
           session.peerId,
           PeerDisconnectIntent.networkLost,
         );
-        await _unregisterPeerListener(session.peerId);
+        await unregisterPeerListener(session.peerId);
       } catch (_) {
         // The network is already unavailable; stale peer cleanup is best effort.
       }
     }
     for (final peerId in _registeredPeerListeners.toList()) {
       try {
-        await _unregisterPeerListener(peerId);
+        await unregisterPeerListener(peerId);
       } catch (_) {
         // The network is already unavailable; stale listener cleanup is best effort.
       }
@@ -1402,7 +1554,7 @@ class RainRuntimeController with WidgetsBindingObserver {
     _pendingFileChunks.clear();
     _fileMessageQueues.clear();
     _outgoingFileSources.clear();
-    await _closeAllReceiveSinks(reason: 'network_lost');
+    await closeAllReceiveSinks(reason: 'network_lost');
   }
 
   Future<void> _disconnectBrainPeer(
@@ -1438,7 +1590,7 @@ class RainRuntimeController with WidgetsBindingObserver {
 
     await _setPresenceOnlineSafely('network_available');
 
-    await _safeSyncRelationships();
+    await safeSyncRelationships();
     await _connectionCoordinator.scheduleNetworkRecovery(reason, (
       String recoveryReason,
     ) async {
@@ -1730,17 +1882,17 @@ class RainRuntimeController with WidgetsBindingObserver {
     _friendRequestRefreshTimer = null;
     _backgroundOfflineTimer?.cancel();
     _backgroundOfflineTimer = null;
-    _cancelVoiceCallReconnectGrace();
+    cancelVoiceCallReconnectGrace();
 
     final sessions = brain?.getSessions() ?? const <Session>[];
     for (final session in sessions) {
       await runStep(() async {
-        await _endVoiceCallForPeer(
+        await endVoiceCallForPeer(
           session.peerId,
           notifyPeer: false,
           detail: 'Rain account is being deleted.',
         );
-        await _failActiveTransfersForPeer(
+        await failActiveTransfersForPeer(
           session.peerId,
           'Transfer canceled because this account is being deleted.',
         );
@@ -1748,16 +1900,16 @@ class RainRuntimeController with WidgetsBindingObserver {
           session.peerId,
           PeerDisconnectIntent.localShutdown,
         );
-        await _unregisterPeerListener(session.peerId);
+        await unregisterPeerListener(session.peerId);
       });
     }
     for (final peerId in _registeredPeerListeners.toList()) {
-      await runStep(() => _unregisterPeerListener(peerId));
+      await runStep(() => unregisterPeerListener(peerId));
     }
     _connectionCoordinator.dispose();
 
-    await runStep(_cancelVoiceSignalingSubscriptions);
-    await runStep(_stopConnectionRequestRuntime);
+    await runStep(cancelVoiceSignalingSubscriptions);
+    await runStep(stopConnectionRequestRuntime);
 
     for (final subscription in _subscriptions.toList()) {
       await runStep(subscription.cancel);
@@ -1790,7 +1942,7 @@ class RainRuntimeController with WidgetsBindingObserver {
   }
 
   Future<void> refreshRelationships({String? onlyUsername}) {
-    return _syncRelationships(
+    return syncRelationships(
       onlyUsername: onlyUsername == null
           ? null
           : _normalizedUsername(onlyUsername),
@@ -1803,7 +1955,7 @@ class RainRuntimeController with WidgetsBindingObserver {
 
   Future<void> rejectFriend(String username) async {
     final normalizedUsername = _normalizedUsername(username);
-    await _failActiveTransfersForPeer(
+    await failActiveTransfersForPeer(
       normalizedUsername,
       'Transfer canceled because the relationship changed.',
     );
@@ -1826,7 +1978,7 @@ class RainRuntimeController with WidgetsBindingObserver {
       );
     }
     await _localMutations.run(() => friendStore.reject(normalizedUsername));
-    await _stopTrackingPeer(normalizedUsername);
+    await stopTrackingPeer(normalizedUsername);
   }
 
   Future<void> resendMessage(String messageId) async {
@@ -1876,7 +2028,7 @@ class RainRuntimeController with WidgetsBindingObserver {
       throw Exception('Cannot send friend request to yourself');
     }
 
-    await _syncRelationships(onlyUsername: targetUsername);
+    await syncRelationships(onlyUsername: targetUsername);
 
     final existing = await _localMutations.run(
       () => friendStore.loadFriend(targetUsername),
@@ -1920,7 +2072,7 @@ class RainRuntimeController with WidgetsBindingObserver {
         gender: _backendGender(targetIdentity.gender),
       ),
     );
-    _watchPresence(targetUsername);
+    watchPresence(targetUsername);
     return FriendRequestResult.sent;
   }
 
@@ -1929,7 +2081,7 @@ class RainRuntimeController with WidgetsBindingObserver {
       () => friendStore.loadFriend(peerId),
     );
     if (friend?.state != FriendState.friend) {
-      await _syncRelationships(onlyUsername: peerId);
+      await syncRelationships(onlyUsername: peerId);
       friend = await _localMutations.run(() => friendStore.loadFriend(peerId));
     }
     if (friend?.state != FriendState.friend) {
@@ -1979,19 +2131,19 @@ class RainRuntimeController with WidgetsBindingObserver {
       throw StateError('File size is invalid.');
     }
 
-    await _assertCanTransferFile(normalizedPeerId);
+    await assertCanTransferFile(normalizedPeerId);
     RuntimeInteractionGuard.canStartFileTransfer(
       peerId: normalizedPeerId,
       voiceCallState: _voiceCallState,
     ).throwIfDenied();
-    final session = _connectedSession(normalizedPeerId);
+    final session = connectedSession(normalizedPeerId);
     if (session == null) {
       throw StateError('Connect first.');
     }
     if (await fileTransferStore.hasActiveTransferForPeer(normalizedPeerId)) {
       throw StateError('Finish the active file transfer first.');
     }
-    await _ensureFileChannelReady(normalizedPeerId);
+    await ensureFileChannelReady(normalizedPeerId);
 
     final safeName = sanitizeFileName(fileName);
     final transferEnvelope = await _localMutations.run(
@@ -2025,7 +2177,7 @@ class RainRuntimeController with WidgetsBindingObserver {
       type: MessageType.file,
     );
     final now = DateTime.now().millisecondsSinceEpoch;
-    _outgoingFileSources[transferId] = _OutgoingFileSource(
+    _outgoingFileSources[transferId] = OutgoingFileSource(
       openRead: openRead,
       localPath: localPath,
     );
@@ -2067,7 +2219,7 @@ class RainRuntimeController with WidgetsBindingObserver {
       _recordDataEvent(normalizedPeerId, DateTime.now().millisecondsSinceEpoch);
       await messageStore.markMessageStatus(envelope.id, MessageStatus.sent);
     } catch (error) {
-      await _markTransferFailed(transferId, 'File offer failed: $error');
+      await markTransferFailed(transferId, 'File offer failed: $error');
       rethrow;
     }
   }
@@ -2081,17 +2233,17 @@ class RainRuntimeController with WidgetsBindingObserver {
         transfer.state != FileTransferState.offered) {
       throw StateError('This file transfer cannot be accepted.');
     }
-    await _assertCanTransferFile(transfer.peerId);
+    await assertCanTransferFile(transfer.peerId);
     RuntimeInteractionGuard.canAcceptFileTransfer(
       peerId: transfer.peerId,
       transferId: transfer.id,
       voiceCallState: _voiceCallState,
     ).throwIfDenied();
-    if (_connectedSession(transfer.peerId) == null) {
+    if (connectedSession(transfer.peerId) == null) {
       throw StateError('Connect first.');
     }
-    await _ensureFileChannelReady(transfer.peerId);
-    final paths = await _prepareReceivePaths(transfer);
+    await ensureFileChannelReady(transfer.peerId);
+    final paths = await prepareReceivePaths(transfer);
     await fileTransferStore.markState(
       transfer.id,
       FileTransferState.receiving,
@@ -2117,8 +2269,8 @@ class RainRuntimeController with WidgetsBindingObserver {
       FileTransferState.rejected,
       error: 'Rejected.',
     );
-    _clearTransferRuntimeState(transfer.id);
-    _sendFileControlIfConnected(
+    clearTransferRuntimeState(transfer.id);
+    sendFileControlIfConnected(
       transfer.peerId,
       FileTransferFrame.reject(transfer.id, 'Rejected.'),
     );
@@ -2130,14 +2282,14 @@ class RainRuntimeController with WidgetsBindingObserver {
       return;
     }
     _canceledTransfers.add(transfer.id);
-    await _deleteTempFile(transfer);
+    await deleteTempFile(transfer);
     await fileTransferStore.markState(
       transfer.id,
       FileTransferState.canceled,
       error: 'Canceled.',
     );
-    _clearTransferRuntimeState(transfer.id);
-    _sendFileControlIfConnected(
+    clearTransferRuntimeState(transfer.id);
+    sendFileControlIfConnected(
       transfer.peerId,
       FileTransferFrame.cancel(transfer.id, 'Canceled.'),
     );
@@ -2152,7 +2304,7 @@ class RainRuntimeController with WidgetsBindingObserver {
           context: _sessionEventContext(session),
         );
         _recoverableDisconnectedPeers.remove(session.peerId);
-        _clearVoiceCallReconnectingForPeer(session.peerId);
+        clearVoiceCallReconnectingForPeer(session.peerId);
         _connectionCoordinator.recordAttemptSuccess(session.peerId);
         break;
       case SessionState.failed:
@@ -2167,12 +2319,12 @@ class RainRuntimeController with WidgetsBindingObserver {
           session.peerId,
           session.error ?? session.detail,
         );
-        _failVoiceCallForPeer(
+        failVoiceCallForPeer(
           session.peerId,
           'Peer connection failed. Voice call ended.',
         );
         unawaited(
-          _failActiveTransfersForPeer(
+          failActiveTransfersForPeer(
             session.peerId,
             'Connection lost. Transfer canceled.',
           ),
@@ -2189,13 +2341,13 @@ class RainRuntimeController with WidgetsBindingObserver {
     if (!_started || _shutDown) {
       return;
     }
-    _handleVoiceCallAppLifecycleState(state);
+    handleVoiceCallAppLifecycleState(state);
 
     switch (state) {
       case AppLifecycleState.resumed:
         _presenceHeartbeatPaused = false;
         _backgroundOfflineTimer?.cancel();
-        unawaited(_cleanupStaleVoiceCallArtifacts('resume'));
+        unawaited(cleanupStaleVoiceCallArtifacts('resume'));
         unawaited(
           handleNetworkAvailable(
             'App resumed. Refreshing peer connection paths.',
@@ -2268,7 +2420,7 @@ class RainRuntimeController with WidgetsBindingObserver {
       final activeVoicePeer = _voiceCallState.peerId;
       if (activeVoicePeer != null) {
         try {
-          await _endVoiceCallForPeer(
+          await endVoiceCallForPeer(
             activeVoicePeer,
             notifyPeer: false,
             detail: 'Rain is closing.',
@@ -2281,12 +2433,12 @@ class RainRuntimeController with WidgetsBindingObserver {
       if (brain != null) {
         for (final session in brain!.getSessions()) {
           try {
-            await _endVoiceCallForPeer(
+            await endVoiceCallForPeer(
               session.peerId,
               notifyPeer: false,
               detail: 'Rain is closing.',
             );
-            await _failActiveTransfersForPeer(
+            await failActiveTransfersForPeer(
               session.peerId,
               'Transfer canceled because Rain is closing.',
             );
@@ -2294,14 +2446,14 @@ class RainRuntimeController with WidgetsBindingObserver {
               session.peerId,
               PeerDisconnectIntent.localShutdown,
             );
-            await _unregisterPeerListener(session.peerId);
+            await unregisterPeerListener(session.peerId);
           } catch (error) {
             // Ignore errors during cleanup
           }
         }
         for (final peerId in _registeredPeerListeners.toList()) {
           try {
-            await _unregisterPeerListener(peerId);
+            await unregisterPeerListener(peerId);
           } catch (_) {
             // Ignore errors during cleanup
           }
@@ -2318,13 +2470,13 @@ class RainRuntimeController with WidgetsBindingObserver {
 
       WidgetsBinding.instance.removeObserver(this);
       _backgroundOfflineTimer?.cancel();
-      _cancelVoiceCallReconnectGrace();
-      await _disposeCurrentVoiceCallSession();
+      cancelVoiceCallReconnectGrace();
+      await disposeCurrentVoiceCallSession();
       _heartbeatTimer?.cancel();
       _friendRequestRefreshTimer?.cancel();
       _connectionCoordinator.dispose();
-      await _stopConnectionRequestRuntime();
-      await _closeAllReceiveSinks(reason: 'shutdown');
+      await stopConnectionRequestRuntime();
+      await closeAllReceiveSinks(reason: 'shutdown');
 
       for (final subscription in _subscriptions) {
         await subscription.cancel();

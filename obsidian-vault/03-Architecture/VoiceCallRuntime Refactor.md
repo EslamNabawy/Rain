@@ -1,6 +1,6 @@
 # VoiceCallRuntime Refactor
 
-Last updated: 2026-06-08
+Last updated: 2026-06-09
 
 ## Current Responsibilities
 
@@ -60,6 +60,14 @@ Detailed implementation planning: [[VoiceCallRuntime Refactor Plan]].
 - `VoiceCallSignalingCleanupCoordinator` owns Firebase voice room watch setup, room/envelope/frame handling, terminal-sensitive send preflight, ICE candidate queue/batch/write diagnostics, stale artifact cleanup, signaling subscription cancellation, terminal room writes, bounded cleanup, room status timelines, and terminal-already-closed classification.
 - These coordinators remain stateless; `VoiceCallRuntime` passes maps, sessions, subscriptions, timers, diagnostics callbacks, and signaling/media side effects through narrow method parameters.
 - `voice_call_runtime.dart` is now 2,917 lines. `VoiceCallRuntime` still owns public command orchestration, call/file conflict policy, lock/lease orchestration, and some local end-state sequencing.
+
+2026-06-09 Phase 4 runtime extension import slice:
+
+- `voice_call_runtime.dart`, `connection_request_runtime.dart`, `file_transfer_runtime.dart`, and `friend_runtime.dart` are standalone imported Dart libraries instead of `part of 'rain_runtime_controller.dart'`.
+- `rain_runtime_controller.dart` imports those libraries for its own internal calls and exports them so existing callers that import the controller still see the public extension methods.
+- `RainRuntimeController` now exposes explicit internal accessors/wrappers for the extension libraries while the backing runtime fields remain private.
+- Small internal value types that must cross the controller/extension boundary are public Dart types: `ResolvedBackendPresence`, `OutgoingFileSource`, and `ReceivePaths`.
+- Current line counts: `rain_runtime_controller.dart` 2,573; `voice_call_runtime.dart` 2,935; `connection_request_runtime.dart` 870; `file_transfer_runtime.dart` 1,166; `friend_runtime.dart` 565.
 
 ## Future Architecture
 
@@ -133,5 +141,14 @@ Detailed implementation planning: [[VoiceCallRuntime Refactor Plan]].
 - `dart run melos run test` passed.
 - `.\scripts\check_obsidian_vault.ps1` passed.
 - `voice_call_runtime.dart` line count is 2,917.
+
+2026-06-09 Phase 4 focused/local evidence:
+
+- `dart format apps/rain/lib/application/runtime/rain_runtime_controller.dart apps/rain/lib/application/runtime/voice_call_runtime.dart apps/rain/lib/application/runtime/connection_request_runtime.dart apps/rain/lib/application/runtime/file_transfer_runtime.dart apps/rain/lib/application/runtime/friend_runtime.dart` passed.
+- `dart analyze` passed.
+- `flutter test test/voice_call_runtime_diagnostics_contract_test.dart` passed from `apps/rain`.
+- `dart run melos run test` passed.
+- `.\scripts\check_obsidian_vault.ps1` passed.
+- Runtime line counts are recorded above.
 
 Related: [[Architecture Stabilization Epic]], [[Target Architecture]], [[Refactoring Strategy]].

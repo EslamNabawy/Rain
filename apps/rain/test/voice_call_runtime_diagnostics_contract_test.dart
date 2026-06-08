@@ -11,7 +11,7 @@ void main() {
       'Map<String, Object?> _voiceCallEventContext',
     );
 
-    expect(lateFrameHandler, contains("_recordRuntimeEvent("));
+    expect(lateFrameHandler, contains("recordRuntimeEvent("));
     expect(
       lateFrameHandler,
       isNot(contains('errorRecorder?.call')),

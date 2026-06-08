@@ -688,6 +688,22 @@ No task is fully complete until the lesson check is done or explicitly marked "n
 - Owner: Engineering
 - Status: Open
 
+### LESSON-20260609-041: Part-To-Import Refactors Need Export And Contract Updates
+
+- Date: 2026-06-09
+- Related task: Phase 4 runtime extension import conversion.
+- Related system: [[VoiceCallRuntime Refactor]], [[Current Architecture]]
+- Related risk/debt: R-007, TD-001, TD-002
+- What was learned: Converting Dart `part of` runtime files to normal imports is not only a header change because callers previously saw extension methods through the controller library and the controller itself called private helpers from the part files.
+- What caused delays: The first full test run failed only because a source-contract test still asserted the old private recorder name after the extension started using the public `recordRuntimeEvent` wrapper.
+- What failed: Mechanical private-to-public renaming can collide with local variable names when the new method name is a noun instead of an action.
+- What succeeded: Importing and exporting the extension libraries from `rain_runtime_controller.dart`, adding explicit internal accessors, and using the verb `normalizeUsername` preserved public extension availability while removing all `part` directives.
+- What should change: Future part-to-import conversions should first inventory controller-to-extension helper calls and extension-to-controller private state, then update source-contract tests to assert behavior rather than private method names.
+- Pattern: Extension libraries need both an import path for implementation and an export path for existing consumers.
+- Follow-up improvement: Continue by extracting command and lease orchestration behind smaller public runtime APIs instead of expanding the internal accessor surface further.
+- Owner: Engineering
+- Status: Open
+
 ## Review Cadence
 
 - Review lessons at the end of every completed task.

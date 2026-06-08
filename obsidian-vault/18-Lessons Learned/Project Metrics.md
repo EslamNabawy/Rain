@@ -90,6 +90,12 @@ Related: [[Project Home]], [[Production Readiness]], [[Launch Readiness]], [[Ris
 | 2026-06-08 | `dev` | `7a0099a1a4570e7cf155753cf6d9c3d7257c3016` | Phase 3c workspace tests | `dart run melos run test` | Passed | Full Melos test suite passed across `peer_core`, `protocol_brain`, `rain`, and `rain_core`. |
 | 2026-06-08 | `dev` | `7a0099a1a4570e7cf155753cf6d9c3d7257c3016` | Phase 3c runtime size check | `(Get-Content apps/rain/lib/application/runtime/voice_call_runtime.dart).Length` | Passed | `voice_call_runtime.dart` is 2,917 lines, under the 3,000-line target. |
 | 2026-06-08 | `dev` | `7a0099a1a4570e7cf155753cf6d9c3d7257c3016` | Phase 3c vault synchronization | `.\scripts\check_obsidian_vault.ps1` | Passed | `Obsidian vault check passed. Markdown files: 198.` |
+| 2026-06-09 | `dev` | `d8483606cefb421eb303098f7293c436dc469e22` | Phase 4 runtime extension format | `dart format apps/rain/lib/application/runtime/rain_runtime_controller.dart apps/rain/lib/application/runtime/voice_call_runtime.dart apps/rain/lib/application/runtime/connection_request_runtime.dart apps/rain/lib/application/runtime/file_transfer_runtime.dart apps/rain/lib/application/runtime/friend_runtime.dart` | Passed | Changed runtime files were formatted after converting from `part of` to imports/exports. |
+| 2026-06-09 | `dev` | `d8483606cefb421eb303098f7293c436dc469e22` | Phase 4 workspace analyzer | `dart analyze` | Passed | Analyzer reported no issues after runtime extension import conversion. |
+| 2026-06-09 | `dev` | `d8483606cefb421eb303098f7293c436dc469e22` | Phase 4 diagnostics contract proof | `flutter test test/voice_call_runtime_diagnostics_contract_test.dart` from `apps/rain` | Passed | Contract test passed after updating the source assertion to the imported-extension recorder wrapper. |
+| 2026-06-09 | `dev` | `d8483606cefb421eb303098f7293c436dc469e22` | Phase 4 workspace tests | `dart run melos run test` | Passed | Full Melos test suite passed across `peer_core`, `protocol_brain`, `rain`, and `rain_core`. |
+| 2026-06-09 | `dev` | `d8483606cefb421eb303098f7293c436dc469e22` | Phase 4 runtime line counts | `Get-Content ... .Length` | Passed | `rain_runtime_controller.dart` 2,573; `voice_call_runtime.dart` 2,935; `connection_request_runtime.dart` 870; `file_transfer_runtime.dart` 1,166; `friend_runtime.dart` 565. |
+| 2026-06-09 | `dev` | `d8483606cefb421eb303098f7293c436dc469e22` | Phase 4 vault synchronization | `.\scripts\check_obsidian_vault.ps1` | Passed | `Obsidian vault check passed. Markdown files: 198.` |
 
 ## Senior Audit Phase 5 Evidence
 
