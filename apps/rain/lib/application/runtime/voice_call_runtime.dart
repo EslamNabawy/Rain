@@ -1516,94 +1516,27 @@ extension VoiceCallRuntime on RainRuntimeController {
   }
 
   String _terminalVoiceCallDetailForRoom(VoiceCallRoom room, String localUser) {
-    if (room.status == VoiceCallSignalingStatus.ended &&
-        room.endedBy != null &&
-        room.endedBy != localUser) {
-      return 'Peer ended the call.';
-    }
-    if (room.status == VoiceCallSignalingStatus.ended) {
-      return room.reason ?? 'Call ended.';
-    }
-    final roomReason = room.reason?.trim();
-    if (roomReason != null &&
-        roomReason.isNotEmpty &&
-        !_isRemoteMediaPermissionCode(room.reasonCode)) {
-      return roomReason;
-    }
-    final syntheticState = _terminalVoiceCallSessionStateForRoom(room);
-    return _voiceCallDetailForSessionState(syntheticState) ??
-        room.reason ??
-        _terminalVoiceCallReason(room.status) ??
-        _voiceCallMediaFailed;
+    return VoiceCallRoomCoordinator.instance.terminalRoomDetail(
+      room,
+      localUser,
+      detailForSessionState: _voiceCallDetailForSessionState,
+    );
   }
 
   VoiceCallFailureReason? _terminalVoiceCallFailureReasonForRoom(
     VoiceCallRoom room,
   ) {
-    if (room.status == VoiceCallSignalingStatus.ended) {
-      return null;
-    }
-    return _voiceCallFailureReasonForSessionState(
-          _terminalVoiceCallSessionStateForRoom(room),
-        ) ??
-        VoiceCallFailureReason.mediaConnectionFailed;
-  }
-
-  VoiceCallSessionState _terminalVoiceCallSessionStateForRoom(
-    VoiceCallRoom room,
-  ) {
-    return VoiceCallSessionState(
-      phase: VoiceCallSessionPhase.failed,
-      updatedAt: room.endedAt ?? room.updatedAt,
-      mediaMode: room.mediaMode,
-      detail: room.reason ?? _terminalVoiceCallReason(room.status),
-      reasonCode:
-          room.reasonCode ??
-          switch (room.status) {
-            VoiceCallSignalingStatus.expired => _voiceCallExpiredReasonCode,
-            VoiceCallSignalingStatus.failed => _voiceCallFailedReasonCode,
-            _ => null,
-          },
+    return VoiceCallRoomCoordinator.instance.terminalRoomFailureReason(
+      room,
+      failureReasonForSessionState: _voiceCallFailureReasonForSessionState,
     );
   }
+  // _terminalVoiceCallSessionStateForRoom removed — now in VoiceCallRoomCoordinator.
 
-  String? _terminalVoiceCallReason(VoiceCallSignalingStatus status) {
-    return switch (status) {
-      VoiceCallSignalingStatus.expired => _voiceCallTimedOut,
-      _ => null,
-    };
-  }
+  // _terminalVoiceCallReason removed — now in VoiceCallRoomCoordinator._terminalReasonForStatus.
 
   String? _voiceCallReasonCodeForFailure(VoiceCallFailureReason? reason) {
-    return switch (reason) {
-      null => null,
-      VoiceCallFailureReason.microphoneDenied ||
-      VoiceCallFailureReason.remoteMicrophoneDenied =>
-        _voiceCallMicrophoneDeniedReasonCode,
-      VoiceCallFailureReason.cameraDenied ||
-      VoiceCallFailureReason.remoteCameraDenied =>
-        _voiceCallCameraDeniedReasonCode,
-      VoiceCallFailureReason.peerBusy ||
-      VoiceCallFailureReason.fileTransferActive => _voiceCallBusyReasonCode,
-      VoiceCallFailureReason.rejected => _voiceCallRejectedReasonCode,
-      VoiceCallFailureReason.networkLost => _voiceCallNetworkLostReasonCode,
-      VoiceCallFailureReason.signalingFailed =>
-        _voiceCallSignalingFailedReasonCode,
-      VoiceCallFailureReason.expired => _voiceCallExpiredReasonCode,
-      VoiceCallFailureReason.ringingTimeout =>
-        _voiceCallRingingTimeoutReasonCode,
-      VoiceCallFailureReason.mediaIceTimeout => _voiceCallIceTimeoutReasonCode,
-      VoiceCallFailureReason.mediaNoRemoteAudio =>
-        _voiceCallNoRemoteAudioReasonCode,
-      VoiceCallFailureReason.relayUnavailable =>
-        _voiceCallRelayUnavailableReasonCode,
-      VoiceCallFailureReason.videoRendererFailed =>
-        _voiceCallVideoRendererFailedReasonCode,
-      VoiceCallFailureReason.videoFirstFrameTimeout =>
-        _voiceCallVideoFirstFrameTimeoutReasonCode,
-      VoiceCallFailureReason.mediaConnectionFailed =>
-        _voiceCallFailedReasonCode,
-    };
+    return VoiceCallRoomCoordinator.instance.reasonCodeForFailure(reason);
   }
 
   Future<void> _handleFirebaseVoiceEnvelope({
@@ -3660,6 +3593,11 @@ extension VoiceCallRuntime on RainRuntimeController {
     while (timeline.length > 16) {
       timeline.removeAt(0);
     }
+    VoiceCallRoomCoordinator.instance.recordRoomStatusTransition(
+      _voiceRoomSignalingStatusByCall,
+      callId,
+      status,
+    );
   }
 
   List<String> _voiceRoomStatusTimeline(String callId) {

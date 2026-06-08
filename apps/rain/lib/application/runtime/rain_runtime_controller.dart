@@ -24,6 +24,7 @@ import 'serialized_runtime_mutations.dart';
 import 'video_call_renderers.dart';
 import 'voice_audio_level.dart';
 import 'voice_call_diagnostics.dart';
+import 'voice_call_room_coordinator.dart';
 import 'voice_call_state.dart';
 import 'voice_call_terminal_reconciler.dart';
 
@@ -329,6 +330,8 @@ class RainRuntimeController with WidgetsBindingObserver {
   final Set<String> _terminalVoiceCallSessionKeys = <String>{};
   final Map<String, List<String>> _voiceRoomStatusTimelineByCall =
       <String, List<String>>{};
+  final Map<String, VoiceCallSignalingStatus> _voiceRoomSignalingStatusByCall =
+      <String, VoiceCallSignalingStatus>{};
   IceCandidateBatcher<VoiceSignalingEnvelope>? _voiceIceCandidateBatcher;
   int _voiceLocalIceCandidateCount = 0;
   CallMediaConnection? _videoCallMediaConnection;
