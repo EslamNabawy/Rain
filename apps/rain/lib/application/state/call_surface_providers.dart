@@ -1,3 +1,5 @@
+import 'dart:async';
+
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter/widgets.dart';
 
@@ -19,6 +21,11 @@ final callSurfaceProvider =
       CallSurfaceController.new,
     );
 
+final callEndPresentationProvider =
+    NotifierProvider<CallEndPresentationController, CallEndPresentationState>(
+      CallEndPresentationController.new,
+    );
+
 class CallSurfaceState {
   const CallSurfaceState({
     required this.isVisible,
@@ -34,8 +41,8 @@ class CallSurfaceState {
 
   const CallSurfaceState.hidden()
     : isVisible = false,
-      mode = CallSurfaceMode.expanded,
-      restoreMode = CallSurfaceMode.expanded,
+      mode = CallSurfaceMode.fullscreen,
+      restoreMode = CallSurfaceMode.fullscreen,
       mediaMode = CallMediaMode.audio,
       videoPrimaryRole = VideoPrimaryRole.remote,
       floatingOffset = null,
@@ -46,8 +53,8 @@ class CallSurfaceState {
   const CallSurfaceState.visible({
     required this.peerId,
     required this.callId,
-    this.mode = CallSurfaceMode.expanded,
-    this.restoreMode = CallSurfaceMode.expanded,
+    this.mode = CallSurfaceMode.fullscreen,
+    this.restoreMode = CallSurfaceMode.fullscreen,
     this.mediaMode = CallMediaMode.audio,
     this.videoPrimaryRole = VideoPrimaryRole.remote,
     this.floatingOffset,
@@ -179,6 +186,58 @@ class CallSurfaceState {
   }
 }
 
+class CallEndPresentationState {
+  const CallEndPresentationState({
+    this.summary,
+    this.mode = CallSurfaceMode.fullscreen,
+    this.videoPrimaryRole = VideoPrimaryRole.remote,
+  });
+
+  const CallEndPresentationState.hidden()
+    : summary = null,
+      mode = CallSurfaceMode.fullscreen,
+      videoPrimaryRole = VideoPrimaryRole.remote;
+
+  final CallEndSummary? summary;
+  final CallSurfaceMode mode;
+  final VideoPrimaryRole videoPrimaryRole;
+
+  bool get isVisible => summary != null;
+
+  bool get isFullscreen => isVisible && mode == CallSurfaceMode.fullscreen;
+}
+
+class CallEndPresentationController extends Notifier<CallEndPresentationState> {
+  Timer? _dismissTimer;
+
+  @override
+  CallEndPresentationState build() {
+    ref.onDispose(() => _dismissTimer?.cancel());
+    return const CallEndPresentationState.hidden();
+  }
+
+  void show(
+    CallEndSummary summary, {
+    required CallSurfaceState? previousSurface,
+  }) {
+    _dismissTimer?.cancel();
+    final surface = previousSurface;
+    final mode = CallSurfaceMode.fullscreen;
+    state = CallEndPresentationState(
+      summary: summary,
+      mode: mode,
+      videoPrimaryRole: surface?.videoPrimaryRole ?? VideoPrimaryRole.remote,
+    );
+    _dismissTimer = Timer(const Duration(seconds: 6), dismiss);
+  }
+
+  void dismiss() {
+    _dismissTimer?.cancel();
+    _dismissTimer = null;
+    state = const CallEndPresentationState.hidden();
+  }
+}
+
 class CallSurfaceController extends Notifier<CallSurfaceState> {
   CallSurfaceState? _lastState;
 
@@ -197,8 +256,8 @@ class CallSurfaceController extends Notifier<CallSurfaceState> {
     }
     _setState(
       current.copyWith(
-        mode: CallSurfaceMode.expanded,
-        restoreMode: CallSurfaceMode.expanded,
+        mode: CallSurfaceMode.fullscreen,
+        restoreMode: CallSurfaceMode.fullscreen,
       ),
     );
   }
@@ -238,7 +297,7 @@ class CallSurfaceController extends Notifier<CallSurfaceState> {
 
   void enterFullscreen() {
     final current = state;
-    if (!current.isVisible || current.mediaMode != CallMediaMode.video) {
+    if (!current.isVisible) {
       return;
     }
     _setState(
@@ -272,7 +331,9 @@ class CallSurfaceController extends Notifier<CallSurfaceState> {
     required Size panelSize,
   }) {
     final current = state;
-    if (!current.isVisible || current.mode != CallSurfaceMode.expanded) {
+    if (!current.isVisible ||
+        (current.mode != CallSurfaceMode.expanded &&
+            current.mode != CallSurfaceMode.pip)) {
       return;
     }
     final bounds = CallSurfaceBounds(
@@ -295,7 +356,9 @@ class CallSurfaceController extends Notifier<CallSurfaceState> {
     required Size panelSize,
   }) {
     final current = state;
-    if (!current.isVisible || current.mode != CallSurfaceMode.expanded) {
+    if (!current.isVisible ||
+        (current.mode != CallSurfaceMode.expanded &&
+            current.mode != CallSurfaceMode.pip)) {
       return;
     }
     final bounds = CallSurfaceBounds(
@@ -317,7 +380,9 @@ class CallSurfaceController extends Notifier<CallSurfaceState> {
     required Size panelSize,
   }) {
     final current = state;
-    if (!current.isVisible || current.mode != CallSurfaceMode.expanded) {
+    if (!current.isVisible ||
+        (current.mode != CallSurfaceMode.expanded &&
+            current.mode != CallSurfaceMode.pip)) {
       return;
     }
     final bounds = CallSurfaceBounds(
@@ -339,7 +404,7 @@ class CallSurfaceController extends Notifier<CallSurfaceState> {
     if (!current.isVisible || current.mode != CallSurfaceMode.fullscreen) {
       return;
     }
-    _setState(current.copyWith(mode: _safeRestoreMode(current)));
+    _setState(_nextMinimizedState(current));
   }
 
   bool handleBackIntent() {
@@ -373,6 +438,8 @@ class CallSurfaceController extends Notifier<CallSurfaceState> {
         peerId: call.peerId,
         callId: call.callId,
         mediaMode: call.mediaMode,
+        mode: CallSurfaceMode.fullscreen,
+        restoreMode: CallSurfaceMode.fullscreen,
       );
     }
 
@@ -384,6 +451,8 @@ class CallSurfaceController extends Notifier<CallSurfaceState> {
       peerId: call.peerId,
       callId: call.callId,
       mediaMode: call.mediaMode,
+      mode: CallSurfaceMode.fullscreen,
+      restoreMode: CallSurfaceMode.fullscreen,
     );
   }
 
@@ -408,7 +477,7 @@ class CallSurfaceController extends Notifier<CallSurfaceState> {
             : CallSurfaceMode.managerOnly,
         restoreMode: current.mediaMode == CallMediaMode.video
             ? CallSurfaceMode.pip
-            : CallSurfaceMode.expanded,
+            : CallSurfaceMode.fullscreen,
       ),
       CallSurfaceMode.managerOnly => current,
       CallSurfaceMode.expanded => current.copyWith(
@@ -420,9 +489,9 @@ class CallSurfaceController extends Notifier<CallSurfaceState> {
 
   CallSurfaceMode _usefulRestoreModeFor(CallSurfaceState state) {
     return switch (state.mode) {
-      CallSurfaceMode.pip => CallSurfaceMode.pip,
+      CallSurfaceMode.pip => CallSurfaceMode.fullscreen,
       CallSurfaceMode.expanded ||
-      CallSurfaceMode.fullscreen => CallSurfaceMode.expanded,
+      CallSurfaceMode.fullscreen => CallSurfaceMode.fullscreen,
       CallSurfaceMode.managerOnly => _safeRestoreMode(state),
     };
   }
@@ -442,9 +511,9 @@ CallSurfaceMode _modeForMediaMode(
     return mode;
   }
   return switch (mode) {
-    CallSurfaceMode.fullscreen ||
-    CallSurfaceMode.pip => CallSurfaceMode.expanded,
-    CallSurfaceMode.managerOnly || CallSurfaceMode.expanded => mode,
+    CallSurfaceMode.pip => CallSurfaceMode.managerOnly,
+    CallSurfaceMode.expanded || CallSurfaceMode.managerOnly => mode,
+    CallSurfaceMode.fullscreen => CallSurfaceMode.fullscreen,
   };
 }
 
@@ -452,8 +521,5 @@ CallSurfaceMode _restoreModeForMediaMode(
   CallSurfaceMode mode,
   CallMediaMode mediaMode,
 ) {
-  if (mediaMode == CallMediaMode.video && mode == CallSurfaceMode.pip) {
-    return CallSurfaceMode.pip;
-  }
-  return CallSurfaceMode.expanded;
+  return CallSurfaceMode.fullscreen;
 }

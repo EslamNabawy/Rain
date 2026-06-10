@@ -20,6 +20,10 @@ const Duration _uiActionWindow = Duration(milliseconds: 140);
 const Duration _warningKeyWindow = Duration(milliseconds: 1500);
 const Duration _warningRollingWindow = Duration(seconds: 5);
 const int _maxWarningsPerRollingWindow = 3;
+const Duration _connectionRequestInboundWindow = Duration(milliseconds: 1400);
+const Duration _connectionRequestRollingWindow = Duration(seconds: 8);
+const int _maxConnectionRequestSoundsPerRollingWindow = 3;
+const Duration _connectionRequestTerminalWindow = Duration(milliseconds: 500);
 const Duration _callLifecycleDedupeWindow = Duration(minutes: 10);
 const Duration _callFailureWindow = Duration(milliseconds: 1200);
 const double _sendBurstTrailingVolumeScale = 0.62;
@@ -49,6 +53,7 @@ final class SoundEventRouter {
   final List<DateTime> _recentReceivePlays = <DateTime>[];
   final Map<String, DateTime> _lastWarningByKey = <String, DateTime>{};
   final List<DateTime> _recentWarningPlays = <DateTime>[];
+  final List<DateTime> _recentConnectionRequestPlays = <DateTime>[];
   final Map<String, DateTime> _playedCallLifecycleByKey = <String, DateTime>{};
   Timer? _pendingSendBurstTick;
   DateTime? _lastSendBurstSuppressedAt;
@@ -220,6 +225,17 @@ final class SoundEventRouter {
         'uiActionWindow',
       ),
       RainSoundEventKind.warning => _warningSuppressionReason(event, now),
+      RainSoundEventKind.connectionRequestInbound =>
+        _connectionRequestInboundSuppressionReason(event, now),
+      RainSoundEventKind.connectionRequestOutboundAccepted ||
+      RainSoundEventKind.connectionRequestOutboundRejected ||
+      RainSoundEventKind.connectionRequestOutboundExpired =>
+        _kindCooldownSuppressionReason(
+          event.kind,
+          now,
+          _connectionRequestTerminalWindow,
+          'connectionRequestTerminalWindow',
+        ),
       RainSoundEventKind.callIncomingStarted ||
       RainSoundEventKind.callOutgoingStarted ||
       RainSoundEventKind.callConnected ||
@@ -288,6 +304,30 @@ final class SoundEventRouter {
     return null;
   }
 
+  String? _connectionRequestInboundSuppressionReason(
+    RainSoundEvent event,
+    DateTime now,
+  ) {
+    if (event.connectionRequestId == null) {
+      return 'missingConnectionRequestId';
+    }
+    _pruneOlderThan(
+      _recentConnectionRequestPlays,
+      now,
+      _connectionRequestRollingWindow,
+    );
+    if (_recentConnectionRequestPlays.length >=
+        _maxConnectionRequestSoundsPerRollingWindow) {
+      return 'connectionRequestRollingLimit';
+    }
+    return _kindCooldownSuppressionReason(
+      event.kind,
+      now,
+      _connectionRequestInboundWindow,
+      'connectionRequestInboundWindow',
+    );
+  }
+
   String? _callLifecycleSuppressionReason(RainSoundEvent event, DateTime now) {
     if (!event.isCallLifecycleEvent) {
       return null;
@@ -327,8 +367,14 @@ final class SoundEventRouter {
         _lastWarningByKey[event.errorKey ?? 'global'] = now;
         _recentWarningPlays.add(now);
         break;
+      case RainSoundEventKind.connectionRequestInbound:
+        _recentConnectionRequestPlays.add(now);
+        break;
       case RainSoundEventKind.chatSend:
       case RainSoundEventKind.uiAction:
+      case RainSoundEventKind.connectionRequestOutboundAccepted:
+      case RainSoundEventKind.connectionRequestOutboundRejected:
+      case RainSoundEventKind.connectionRequestOutboundExpired:
       case RainSoundEventKind.callIncomingStarted:
       case RainSoundEventKind.callOutgoingStarted:
       case RainSoundEventKind.callConnected:
@@ -509,6 +555,10 @@ String? _settingsSuppressionReason(
   if (!settings.callSoundsEnabled && _isCallSoundEvent(event)) {
     return 'callSoundsDisabled';
   }
+  if (!settings.connectionRequestSoundsEnabled &&
+      event.isConnectionRequestEvent) {
+    return 'connectionRequestSoundsDisabled';
+  }
   return null;
 }
 
@@ -533,7 +583,11 @@ bool _isTerminalCallLifecycle(RainSoundEventKind kind) {
     RainSoundEventKind.callControlUndeafen ||
     RainSoundEventKind.callControlCameraMute ||
     RainSoundEventKind.callControlCameraUnmute ||
-    RainSoundEventKind.callRouteChanged => false,
+    RainSoundEventKind.callRouteChanged ||
+    RainSoundEventKind.connectionRequestInbound ||
+    RainSoundEventKind.connectionRequestOutboundAccepted ||
+    RainSoundEventKind.connectionRequestOutboundRejected ||
+    RainSoundEventKind.connectionRequestOutboundExpired => false,
   };
 }
 
@@ -554,7 +608,11 @@ bool _shouldDedupeCallLifecycle(RainSoundEventKind kind) {
     RainSoundEventKind.callControlUndeafen ||
     RainSoundEventKind.callControlCameraMute ||
     RainSoundEventKind.callControlCameraUnmute ||
-    RainSoundEventKind.callRouteChanged => false,
+    RainSoundEventKind.callRouteChanged ||
+    RainSoundEventKind.connectionRequestInbound ||
+    RainSoundEventKind.connectionRequestOutboundAccepted ||
+    RainSoundEventKind.connectionRequestOutboundRejected ||
+    RainSoundEventKind.connectionRequestOutboundExpired => false,
   };
 }
 
@@ -576,6 +634,12 @@ RainSoundEffect _effectFor(RainSoundEvent event) {
     RainSoundEventKind.callControlCameraMute ||
     RainSoundEventKind.callControlCameraUnmute ||
     RainSoundEventKind.callRouteChanged => RainSoundEffect.action,
+    RainSoundEventKind.connectionRequestInbound => RainSoundEffect.receive,
+    RainSoundEventKind.connectionRequestOutboundAccepted =>
+      RainSoundEffect.action,
+    RainSoundEventKind.connectionRequestOutboundRejected ||
+    RainSoundEventKind.connectionRequestOutboundExpired =>
+      RainSoundEffect.error,
   };
 }
 

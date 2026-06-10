@@ -1,13 +1,14 @@
 name: Release Rain
 
 on:
-  push:
-    tags:
-      - 'v*'
   workflow_dispatch:
     inputs:
       tag_name:
-        description: Existing tag to publish
+        description: Existing v* release tag to validate and publish
+        required: true
+        type: string
+      remote_config_evidence_url:
+        description: URL proving Firebase Remote Config deploy/readback for this release
         required: true
         type: string
 
@@ -15,21 +16,314 @@ permissions:
   contents: write
 
 concurrency:
-  group: release-rain-${{ github.workflow }}-${{ github.ref }}
+  group: release-rain-${{ github.workflow }}-${{ inputs.tag_name }}
   cancel-in-progress: false
 
 env:
   FLUTTER_VERSION: '3.44.0'
+  JAVA_VERSION: '21'
+  NODE_VERSION: '20'
+  ARTIFACT_RETENTION_DAYS: '60'
+  BUILD_PROFILE: production
 
 jobs:
-  build-windows:
-    name: Build Windows Release
-    runs-on: windows-2022
-    timeout-minutes: 60
+  resolve-target:
+    name: Resolve Release Target
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    outputs:
+      target_ref: ${{ steps.resolve.outputs.target_ref }}
+      target_sha: ${{ steps.resolve.outputs.target_sha }}
+      short_sha: ${{ steps.resolve.outputs.short_sha }}
+      release_tag: ${{ steps.resolve.outputs.release_tag }}
     steps:
       - uses: actions/checkout@v5
         with:
-          ref: ${{ github.event_name == 'workflow_dispatch' && inputs.tag_name || github.ref }}
+          ref: ${{ inputs.tag_name }}
+          fetch-depth: 0
+
+      - id: resolve
+        name: Capture validated release target
+        shell: bash
+        run: |
+          set -euo pipefail
+          case "${{ inputs.tag_name }}" in
+            v*) ;;
+            *)
+              echo "Release Rain requires an existing v* release tag. Use Validated Release Apps for branch/SHA builds." >&2
+              exit 1
+              ;;
+          esac
+          target_sha="$(git rev-parse HEAD)"
+          {
+            echo "target_ref=${{ inputs.tag_name }}"
+            echo "target_sha=${target_sha}"
+            echo "short_sha=${target_sha:0:7}"
+            echo "release_tag=${{ inputs.tag_name }}"
+          } >> "${GITHUB_OUTPUT}"
+
+  workflow-lint:
+    name: Workflow Lint
+    runs-on: ubuntu-latest
+    needs:
+      - resolve-target
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v5
+        with:
+          ref: ${{ needs.resolve-target.outputs.target_sha }}
+
+      - uses: actions/setup-go@v6
+        with:
+          go-version: stable
+          cache: false
+
+      - name: Install actionlint
+        run: go install github.com/rhysd/actionlint/cmd/actionlint@v1.7.8
+
+      - name: Lint GitHub Actions workflows
+        run: '"$(go env GOPATH)/bin/actionlint" -color'
+
+  workspace-validation:
+    name: Workspace Analyze And Test
+    runs-on: ubuntu-latest
+    needs:
+      - resolve-target
+    timeout-minutes: 90
+    steps:
+      - uses: actions/checkout@v5
+        with:
+          ref: ${{ needs.resolve-target.outputs.target_sha }}
+          fetch-depth: 0
+
+      - uses: actions/setup-java@v5
+        with:
+          distribution: temurin
+          java-version: '21'
+
+      - uses: subosito/flutter-action@v2
+        with:
+          flutter-version: ${{ env.FLUTTER_VERSION }}
+          channel: stable
+          cache: true
+
+      - name: Print toolchain versions
+        run: |
+          flutter doctor -v
+          flutter --version
+          dart --version
+
+      - name: Restore workspace dependencies
+        run: dart pub get
+
+      - name: Fail on dependency lock drift
+        run: git diff --exit-code -- pubspec.lock
+
+      - name: Enforce Dart formatting
+        run: |
+          dart format --output=none --set-exit-if-changed \
+            apps/rain/lib \
+            apps/rain/test \
+            apps/rain/tool \
+            packages/peer_core/lib \
+            packages/peer_core/test \
+            packages/protocol_brain/lib \
+            packages/protocol_brain/test \
+            packages/rain_core/lib \
+            packages/rain_core/test
+
+      - name: Require generated code artifacts
+        run: |
+          test -s apps/rain/lib/application/state/app_state.freezed.dart
+          test -s packages/rain_core/lib/database/rain_database.g.dart
+
+      - name: Run workspace analyzer
+        run: dart run melos run analyze
+
+      - name: Run full workspace tests
+        run: dart run melos run test
+
+      - name: Run auth lifecycle scenario tests
+        run: |
+          echo "SCN-AUTH-001 cached identity restore after backend deletion"
+          echo "SCN-AUTH-002 login after account tombstone with surviving Auth"
+          echo "SCN-AUTH-003 delete account bad password"
+          echo "SCN-AUTH-004 delete account backend partial failure"
+          cd apps/rain
+          flutter test \
+            test/auth_identity_source_of_truth_test.dart \
+            test/runtime_startup_test.dart \
+            test/settings_screen_test.dart \
+            test/app_routes_test.dart \
+            --reporter expanded
+
+  firebase-backend:
+    name: Firebase Backend
+    runs-on: ubuntu-latest
+    needs:
+      - resolve-target
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v5
+        with:
+          ref: ${{ needs.resolve-target.outputs.target_sha }}
+
+      - uses: actions/setup-node@v6
+        with:
+          node-version: ${{ env.NODE_VERSION }}
+          cache: npm
+          cache-dependency-path: backend/firebase/functions/package-lock.json
+
+      - name: Validate Firebase JSON files
+        run: |
+          node -e "JSON.parse(require('fs').readFileSync('backend/firebase/firebase.json', 'utf8'))"
+          node -e "JSON.parse(require('fs').readFileSync('backend/firebase/database.rules.json', 'utf8'))"
+          node -e "JSON.parse(require('fs').readFileSync('backend/firebase/remoteconfig.template.json', 'utf8'))"
+
+      - name: Install Firebase function dependencies
+        working-directory: backend/firebase/functions
+        run: npm ci --ignore-scripts --no-audit
+
+      - name: Lint Firebase functions
+        working-directory: backend/firebase/functions
+        run: npm run lint
+
+      - name: Audit Firebase functions dependencies
+        working-directory: backend/firebase/functions
+        run: npm run audit:moderate
+
+      - name: Run Firebase function tests
+        working-directory: backend/firebase/functions
+        run: npm test --if-present
+
+  firebase-emulator-tests:
+    name: Firebase Emulator Integration
+    runs-on: ubuntu-latest
+    needs:
+      - resolve-target
+    timeout-minutes: 40
+    steps:
+      - uses: actions/checkout@v5
+        with:
+          ref: ${{ needs.resolve-target.outputs.target_sha }}
+
+      - uses: actions/setup-java@v5
+        with:
+          distribution: temurin
+          java-version: '21'
+
+      - uses: actions/setup-node@v6
+        with:
+          node-version: ${{ env.NODE_VERSION }}
+          cache: npm
+          cache-dependency-path: backend/firebase/functions/package-lock.json
+
+      - uses: subosito/flutter-action@v2
+        with:
+          flutter-version: ${{ env.FLUTTER_VERSION }}
+          channel: stable
+          cache: true
+
+      - name: Run Firebase emulator integration tests
+        run: bash scripts/ci_run_firebase_emulators.sh
+
+      - name: Validate Obsidian vault
+        shell: pwsh
+        run: ./scripts/check_obsidian_vault.ps1
+
+  remote-config-evidence:
+    name: Remote Config Evidence
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - name: Require deploy/readback evidence URL
+        shell: bash
+        run: |
+          set -euo pipefail
+          evidence_url="${{ inputs.remote_config_evidence_url }}"
+          if [ -z "${evidence_url}" ]; then
+            echo "remote_config_evidence_url is required for stable release publication." >&2
+            exit 1
+          fi
+          case "${evidence_url}" in
+            https://*) ;;
+            *)
+              echo "remote_config_evidence_url must be an https URL." >&2
+              exit 1
+              ;;
+          esac
+          {
+            echo "## Remote Config release evidence"
+            echo
+            echo "Deploy/readback proof: ${evidence_url}"
+          } >> "${GITHUB_STEP_SUMMARY}"
+
+  validation-gate:
+    name: Validation Gate
+    runs-on: ubuntu-latest
+    if: always()
+    needs:
+      - workflow-lint
+      - workspace-validation
+      - firebase-backend
+      - firebase-emulator-tests
+      - remote-config-evidence
+    steps:
+      - name: Fail if any validation job failed
+        run: |
+          test "${{ needs.workflow-lint.result }}" = "success"
+          test "${{ needs.workspace-validation.result }}" = "success"
+          test "${{ needs.firebase-backend.result }}" = "success"
+          test "${{ needs.firebase-emulator-tests.result }}" = "success"
+          test "${{ needs.remote-config-evidence.result }}" = "success"
+
+  release-metadata:
+    name: Release Metadata
+    runs-on: ubuntu-latest
+    needs:
+      - resolve-target
+      - validation-gate
+    if: ${{ needs.validation-gate.result == 'success' }}
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v5
+        with:
+          ref: ${{ needs.resolve-target.outputs.target_sha }}
+
+      - name: Write release metadata
+        shell: pwsh
+        run: |
+          ./scripts/write_release_metadata.ps1 `
+            -OutputPath artifacts/release-metadata/rain-release-metadata.json `
+            -TargetRef '${{ needs.resolve-target.outputs.target_ref }}' `
+            -TargetSha '${{ needs.resolve-target.outputs.target_sha }}' `
+            -Channel stable `
+            -BuildProfile production `
+            -ArtifactPurpose stable-release `
+            -ValidationWorkflow 'Release Rain' `
+            -ValidationRunUrl '${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}' `
+            -RemoteConfigEvidenceUrl '${{ inputs.remote_config_evidence_url }}'
+
+      - name: Upload release metadata
+        uses: actions/upload-artifact@v7
+        with:
+          name: rain-release-metadata
+          path: artifacts/release-metadata/rain-release-metadata.json
+          if-no-files-found: error
+          retention-days: ${{ env.ARTIFACT_RETENTION_DAYS }}
+
+  build-windows:
+    name: Build Windows Release
+    runs-on: windows-2022
+    needs:
+      - resolve-target
+      - validation-gate
+    if: ${{ needs.validation-gate.result == 'success' }}
+    timeout-minutes: 75
+    steps:
+      - uses: actions/checkout@v5
+        with:
+          ref: ${{ needs.resolve-target.outputs.target_sha }}
 
       - uses: subosito/flutter-action@v2
         with:
@@ -82,15 +376,20 @@ jobs:
           name: release-windows
           path: artifacts/Rain-windows-portable.zip
           if-no-files-found: error
+          retention-days: ${{ env.ARTIFACT_RETENTION_DAYS }}
 
   build-android:
     name: Build Android Release APKs
     runs-on: windows-2022
-    timeout-minutes: 90
+    needs:
+      - resolve-target
+      - validation-gate
+    if: ${{ needs.validation-gate.result == 'success' }}
+    timeout-minutes: 100
     steps:
       - uses: actions/checkout@v5
         with:
-          ref: ${{ github.event_name == 'workflow_dispatch' && inputs.tag_name || github.ref }}
+          ref: ${{ needs.resolve-target.outputs.target_sha }}
 
       - uses: actions/setup-java@v5
         with:
@@ -182,13 +481,19 @@ jobs:
           name: release-android
           path: artifacts/*.apk
           if-no-files-found: error
+          retention-days: ${{ env.ARTIFACT_RETENTION_DAYS }}
 
   create-release:
     name: Create GitHub Release
     runs-on: ubuntu-latest
     needs:
+      - resolve-target
+      - validation-gate
+      - release-metadata
       - build-windows
       - build-android
+    if: ${{ needs.validation-gate.result == 'success' }}
+    timeout-minutes: 25
     steps:
       - name: Download Windows artifact
         uses: actions/download-artifact@v8
@@ -202,11 +507,44 @@ jobs:
           name: release-android
           path: artifacts
 
+      - name: Download release metadata
+        uses: actions/download-artifact@v8
+        with:
+          name: rain-release-metadata
+          path: artifacts/release-metadata
+
       - name: Publish release
         uses: softprops/action-gh-release@v2
         with:
-          tag_name: ${{ github.event_name == 'workflow_dispatch' && inputs.tag_name || github.ref_name }}
-          files: artifacts/*
+          tag_name: ${{ needs.resolve-target.outputs.release_tag }}
+          files: |
+            artifacts/Rain-windows-portable.zip
+            artifacts/*.apk
+            artifacts/release-metadata/rain-release-metadata.json
           generate_release_notes: true
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
+  required-checks:
+    name: Required Checks
+    runs-on: ubuntu-latest
+    if: always()
+    needs:
+      - validation-gate
+      - release-metadata
+      - build-windows
+      - build-android
+      - create-release
+    steps:
+      - name: Fail if validation, metadata, builds, or publish failed
+        run: |
+          echo "validation-gate: ${{ needs.validation-gate.result }}"
+          echo "release-metadata: ${{ needs.release-metadata.result }}"
+          echo "build-windows: ${{ needs.build-windows.result }}"
+          echo "build-android: ${{ needs.build-android.result }}"
+          echo "create-release: ${{ needs.create-release.result }}"
+          test "${{ needs.validation-gate.result }}" = "success"
+          test "${{ needs.release-metadata.result }}" = "success"
+          test "${{ needs.build-windows.result }}" = "success"
+          test "${{ needs.build-android.result }}" = "success"
+          test "${{ needs.create-release.result }}" = "success"

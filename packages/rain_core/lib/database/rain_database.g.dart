@@ -3199,6 +3199,34 @@ abstract class _$RainDatabase extends GeneratedDatabase {
   late final $IdentityTableTable identityTable = $IdentityTableTable(this);
   late final $MessageSeqTrackerTable messageSeqTracker =
       $MessageSeqTrackerTable(this);
+  late final Index messagesPeerSentSeqIdIdx = Index(
+    'messages_peer_sent_seq_id_idx',
+    'CREATE INDEX messages_peer_sent_seq_id_idx ON messages (peer_id, sent_at, seq, id)',
+  );
+  late final Index friendsDisplayNameIdx = Index(
+    'friends_display_name_idx',
+    'CREATE INDEX friends_display_name_idx ON friends (display_name)',
+  );
+  late final Index queuedMessagesToStatusSeqSentIdx = Index(
+    'queued_messages_to_status_seq_sent_idx',
+    'CREATE INDEX queued_messages_to_status_seq_sent_idx ON queued_messages ("to", status, seq, sent_at)',
+  );
+  late final Index queuedMessagesStatusToIdx = Index(
+    'queued_messages_status_to_idx',
+    'CREATE INDEX queued_messages_status_to_idx ON queued_messages (status, "to")',
+  );
+  late final Index fileTransfersPeerCreatedIdx = Index(
+    'file_transfers_peer_created_idx',
+    'CREATE INDEX file_transfers_peer_created_idx ON file_transfers (peer_id, created_at)',
+  );
+  late final Index fileTransfersMessageIdIdx = Index(
+    'file_transfers_message_id_idx',
+    'CREATE INDEX file_transfers_message_id_idx ON file_transfers (message_id)',
+  );
+  late final Index fileTransfersStatePeerIdx = Index(
+    'file_transfers_state_peer_idx',
+    'CREATE INDEX file_transfers_state_peer_idx ON file_transfers (state, peer_id)',
+  );
   @override
   Iterable<TableInfo<Table, Object?>> get allTables =>
       allSchemaEntities.whereType<TableInfo<Table, Object?>>();
@@ -3211,6 +3239,13 @@ abstract class _$RainDatabase extends GeneratedDatabase {
     connectionMemoryTable,
     identityTable,
     messageSeqTracker,
+    messagesPeerSentSeqIdIdx,
+    friendsDisplayNameIdx,
+    queuedMessagesToStatusSeqSentIdx,
+    queuedMessagesStatusToIdx,
+    fileTransfersPeerCreatedIdx,
+    fileTransfersMessageIdIdx,
+    fileTransfersStatePeerIdx,
   ];
 }
 

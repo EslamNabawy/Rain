@@ -47,20 +47,32 @@ class SignalingCipher {
     required String roomId,
     required String purpose,
     required int timestamp,
+    required String sender,
+    required String receiver,
     required Map<String, Object?> payload,
   }) async {
+    final normalizedSender = _normalizeContextPeer('sender', sender);
+    final normalizedReceiver = _normalizeContextPeer('receiver', receiver);
     final secretKey = await _deriveRoomKey(roomId: roomId, purpose: purpose);
     final clearText = utf8.encode(jsonEncode(payload));
     final secretBox = await _cipher.encrypt(
       clearText,
       secretKey: secretKey,
-      aad: _aad(roomId: roomId, purpose: purpose, timestamp: timestamp),
+      aad: _aad(
+        roomId: roomId,
+        purpose: purpose,
+        timestamp: timestamp,
+        sender: normalizedSender,
+        receiver: normalizedReceiver,
+      ),
     );
 
     return <String, Object?>{
       'v': envelopeVersion,
       'alg': algorithmName,
       'ts': timestamp,
+      'from': normalizedSender,
+      'to': normalizedReceiver,
       'nonce': base64Url.encode(secretBox.nonce),
       'ciphertext': base64Url.encode(secretBox.cipherText),
       'mac': base64Url.encode(secretBox.mac.bytes),
@@ -71,6 +83,8 @@ class SignalingCipher {
     required String roomId,
     required String purpose,
     required Map<Object?, Object?> payload,
+    String? sender,
+    String? receiver,
   }) async {
     if (!isEncryptedEnvelope(payload)) {
       return payload;
@@ -84,11 +98,39 @@ class SignalingCipher {
       final nonce = _decodeRequiredBase64(payload, 'nonce');
       final cipherText = _decodeRequiredBase64(payload, 'ciphertext');
       final mac = _decodeRequiredBase64(payload, 'mac');
+      final envelopeSender = _optionalContextPeer(payload, 'from');
+      final envelopeReceiver = _optionalContextPeer(payload, 'to');
+      final expectedSender = sender == null
+          ? null
+          : _normalizeContextPeer('sender', sender);
+      final expectedReceiver = receiver == null
+          ? null
+          : _normalizeContextPeer('receiver', receiver);
+      if (envelopeSender != null &&
+          expectedSender != null &&
+          envelopeSender != expectedSender) {
+        throw FormatException(
+          'Encrypted signaling sender mismatch: expected $expectedSender.',
+        );
+      }
+      if (envelopeReceiver != null &&
+          expectedReceiver != null &&
+          envelopeReceiver != expectedReceiver) {
+        throw FormatException(
+          'Encrypted signaling receiver mismatch: expected $expectedReceiver.',
+        );
+      }
       final secretKey = await _deriveRoomKey(roomId: roomId, purpose: purpose);
       final clearText = await _cipher.decrypt(
         SecretBox(cipherText, nonce: nonce, mac: Mac(mac)),
         secretKey: secretKey,
-        aad: _aad(roomId: roomId, purpose: purpose, timestamp: timestamp),
+        aad: _aad(
+          roomId: roomId,
+          purpose: purpose,
+          timestamp: timestamp,
+          sender: envelopeSender,
+          receiver: envelopeReceiver,
+        ),
       );
       final decoded = jsonDecode(utf8.decode(clearText));
       if (decoded is! Map) {
@@ -128,9 +170,16 @@ class SignalingCipher {
     required String roomId,
     required String purpose,
     required int timestamp,
+    String? sender,
+    String? receiver,
   }) {
+    if (sender == null || receiver == null) {
+      return utf8.encode(
+        'rain.signaling|v=$envelopeVersion|alg=$algorithmName|room=$roomId|purpose=$purpose|ts=$timestamp',
+      );
+    }
     return utf8.encode(
-      'rain.signaling|v=$envelopeVersion|alg=$algorithmName|room=$roomId|purpose=$purpose|ts=$timestamp',
+      'rain.signaling|v=$envelopeVersion|alg=$algorithmName|room=$roomId|purpose=$purpose|from=$sender|to=$receiver|ts=$timestamp',
     );
   }
 
@@ -140,6 +189,25 @@ class SignalingCipher {
       throw FormatException('Missing encrypted signaling $field.');
     }
     return base64Url.decode(value);
+  }
+
+  String _normalizeContextPeer(String field, String value) {
+    final normalized = value.trim().toLowerCase();
+    if (normalized.isEmpty) {
+      throw FormatException('Encrypted signaling $field is empty.');
+    }
+    return normalized;
+  }
+
+  String? _optionalContextPeer(Map<Object?, Object?> payload, String field) {
+    final value = payload[field];
+    if (value == null) {
+      return null;
+    }
+    if (value is! String || value.trim().isEmpty) {
+      throw FormatException('Encrypted signaling $field is invalid.');
+    }
+    return value.trim().toLowerCase();
   }
 }
 

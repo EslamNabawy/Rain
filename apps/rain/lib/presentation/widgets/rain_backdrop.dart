@@ -2,6 +2,7 @@ import 'dart:math' as math;
 
 import 'package:flutter/material.dart';
 
+import 'package:rain/presentation/performance/rain_performance.dart';
 import 'package:rain/presentation/theme/rain_theme.dart';
 
 enum RainBackdropVariant { shell, splash, call, settings }
@@ -31,6 +32,7 @@ class RainBackdrop extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final isDark = Theme.of(context).colorScheme.brightness == Brightness.dark;
+    final lowPower = RainPerformanceScope.of(context).isLowPower;
     final style = _RainBackdropStyle.resolve(variant, isDark: isDark);
 
     return DecoratedBox(
@@ -45,7 +47,7 @@ class RainBackdrop extends StatelessWidget {
       child: Stack(
         fit: StackFit.expand,
         children: <Widget>[
-          _RainAtmosphere(isDark: isDark, variant: variant),
+          _RainAtmosphere(isDark: isDark, variant: variant, lowPower: lowPower),
           child,
         ],
       ),
@@ -205,16 +207,25 @@ class _RainBackdropStyle {
 }
 
 class _RainAtmosphere extends StatelessWidget {
-  const _RainAtmosphere({required this.isDark, required this.variant});
+  const _RainAtmosphere({
+    required this.isDark,
+    required this.variant,
+    required this.lowPower,
+  });
 
   final bool isDark;
   final RainBackdropVariant variant;
+  final bool lowPower;
 
   @override
   Widget build(BuildContext context) {
     return IgnorePointer(
       child: CustomPaint(
-        painter: _RainSignalMistPainter(isDark: isDark, variant: variant),
+        painter: _RainSignalMistPainter(
+          isDark: isDark,
+          variant: variant,
+          lowPower: lowPower,
+        ),
         child: const SizedBox.expand(),
       ),
     );
@@ -222,10 +233,15 @@ class _RainAtmosphere extends StatelessWidget {
 }
 
 class _RainSignalMistPainter extends CustomPainter {
-  const _RainSignalMistPainter({required this.isDark, required this.variant});
+  const _RainSignalMistPainter({
+    required this.isDark,
+    required this.variant,
+    required this.lowPower,
+  });
 
   final bool isDark;
   final RainBackdropVariant variant;
+  final bool lowPower;
 
   @override
   void paint(Canvas canvas, Size size) {
@@ -242,8 +258,9 @@ class _RainSignalMistPainter extends CustomPainter {
         : RainTextureTokens.signalAccentLight;
 
     final glowPaint = Paint()
-      ..color = signalLineColor.withValues(alpha: style.glowAlpha)
-      ..maskFilter = const MaskFilter.blur(BlurStyle.normal, 42);
+      ..color = signalLineColor.withValues(
+        alpha: lowPower ? 0 : style.glowAlpha,
+      );
     final linePaint = Paint()
       ..color = signalLineColor.withValues(alpha: style.mistAlpha)
       ..strokeWidth = style.lineStrokeWidth
@@ -267,18 +284,24 @@ class _RainSignalMistPainter extends CustomPainter {
           RainBackdropVariant.settings => 0.22,
           RainBackdropVariant.shell => 0.26,
         };
-    canvas.drawCircle(
-      Offset(size.width * 0.72, size.height * 0.24),
-      glowRadius,
-      glowPaint,
-    );
-    canvas.drawCircle(
-      Offset(size.width * 0.22, size.height * 0.88),
-      glowRadius * 0.72,
-      glowPaint..color = signalAccentColor.withValues(alpha: style.glowAlpha),
-    );
+    if (!lowPower) {
+      glowPaint.maskFilter = const MaskFilter.blur(BlurStyle.normal, 42);
+      canvas.drawCircle(
+        Offset(size.width * 0.72, size.height * 0.24),
+        glowRadius,
+        glowPaint,
+      );
+      canvas.drawCircle(
+        Offset(size.width * 0.22, size.height * 0.88),
+        glowRadius * 0.72,
+        glowPaint..color = signalAccentColor.withValues(alpha: style.glowAlpha),
+      );
+    }
 
-    final spacing = style.spacing * (size.shortestSide < 520 ? 0.88 : 1.18);
+    final spacing =
+        style.spacing *
+        (size.shortestSide < 520 ? 0.88 : 1.18) *
+        (lowPower ? 1.7 : 1);
     for (var x = -size.height; x < size.width + size.height; x += spacing) {
       canvas.drawLine(
         Offset(x, size.height),
@@ -287,19 +310,22 @@ class _RainSignalMistPainter extends CustomPainter {
       );
     }
 
-    for (var x = -size.height * 0.35; x < size.width; x += spacing * 1.85) {
-      canvas.drawLine(
-        Offset(x, size.height * 0.84),
-        Offset(x + size.height * 0.28, size.height * 0.22),
-        accentPaint,
-      );
+    if (!lowPower) {
+      for (var x = -size.height * 0.35; x < size.width; x += spacing * 1.85) {
+        canvas.drawLine(
+          Offset(x, size.height * 0.84),
+          Offset(x + size.height * 0.28, size.height * 0.22),
+          accentPaint,
+        );
+      }
     }
 
     final waveRect = Rect.fromCircle(
       center: Offset(size.width * 0.78, size.height * 0.24),
       radius: size.shortestSide * 0.34,
     );
-    for (final inset in <double>[0, 28, 56]) {
+    for (final inset
+        in lowPower ? const <double>[28] : const <double>[0, 28, 56]) {
       canvas.drawArc(waveRect.deflate(inset), 2.45, 1.05, false, wavePaint);
     }
 
@@ -307,9 +333,11 @@ class _RainSignalMistPainter extends CustomPainter {
       center: Offset(size.width * 0.18, size.height * 0.88),
       radius: size.shortestSide * 0.26,
     );
-    canvas.drawArc(lowerWaveRect, -0.72, 0.82, false, accentPaint);
+    if (!lowPower) {
+      canvas.drawArc(lowerWaveRect, -0.72, 0.82, false, accentPaint);
+    }
 
-    if (style.showNodes) {
+    if (style.showNodes && !lowPower) {
       _paintSignalNodes(
         canvas,
         size,
@@ -345,6 +373,8 @@ class _RainSignalMistPainter extends CustomPainter {
 
   @override
   bool shouldRepaint(covariant _RainSignalMistPainter oldDelegate) {
-    return oldDelegate.isDark != isDark || oldDelegate.variant != variant;
+    return oldDelegate.isDark != isDark ||
+        oldDelegate.variant != variant ||
+        oldDelegate.lowPower != lowPower;
   }
 }

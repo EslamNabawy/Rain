@@ -1,0 +1,45 @@
+{
+  "schema": 1,
+  "channels": {
+    "stable": {
+      "android": {
+        "latestVersion": "1.0.8",
+        "latestBuild": 9,
+        "minimumVersion": "1.0.8",
+        "minimumBuild": 9,
+        "updateUrl": "https://github.com/EslamNabawy/Rain/releases",
+        "notes": "Diagnostics export and update policy warning fixes.",
+        "publishedAt": 1780704000000
+      },
+      "windows": {
+        "latestVersion": "1.0.8",
+        "latestBuild": 9,
+        "minimumVersion": "1.0.8",
+        "minimumBuild": 9,
+        "updateUrl": "https://github.com/EslamNabawy/Rain/releases",
+        "notes": "Diagnostics export and update policy warning fixes.",
+        "publishedAt": 1780704000000
+      }
+    },
+    "demo": {
+      "android": {
+        "latestVersion": "1.0.8",
+        "latestBuild": 9,
+        "minimumVersion": "1.0.8",
+        "minimumBuild": 9,
+        "updateUrl": "https://github.com/EslamNabawy/Rain/releases",
+        "notes": "Diagnostics export and update policy warning fixes.",
+        "publishedAt": 1780704000000
+      },
+      "windows": {
+        "latestVersion": "1.0.8",
+        "latestBuild": 9,
+        "minimumVersion": "1.0.8",
+        "minimumBuild": 9,
+        "updateUrl": "https://github.com/EslamNabawy/Rain/releases",
+        "notes": "Diagnostics export and update policy warning fixes.",
+        "publishedAt": 1780704000000
+      }
+    }
+  }
+}

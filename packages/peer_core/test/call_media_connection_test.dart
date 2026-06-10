@@ -69,6 +69,111 @@ void main() {
     await connection.dispose();
   });
 
+  test(
+    'camera interruption disables local video without failing call',
+    () async {
+      final platform = _FakeCallPlatformBridge();
+      final connection = _connection(platform);
+      final interruptions = <MediaInterruptionEvent>[];
+      final subscription = connection.onMediaInterruption.listen(
+        interruptions.add,
+      );
+
+      await connection.createOffer(kind: CallMediaKind.video);
+      await connection.handleMediaInterruption(
+        MediaInterruptionEvent(
+          type: MediaInterruptionType.cameraDisconnected,
+          occurredAt: DateTime.utc(2026),
+          detail: 'camera removed',
+        ),
+      );
+
+      expect(platform.videoStream.videoTrack?.enabled, isFalse);
+      expect(connection.diagnostics.hasLocalVideo, isTrue);
+      expect(
+        connection.diagnostics.mediaInterruptions.single,
+        contains('cameraDisconnected'),
+      );
+      expect(
+        interruptions.single.type,
+        MediaInterruptionType.cameraDisconnected,
+      );
+
+      await subscription.cancel();
+      await connection.dispose();
+    },
+  );
+
+  test('video mode can request ICE restart offer', () async {
+    final platform = _FakeCallPlatformBridge();
+    final connection = _connection(platform);
+
+    await connection.createOffer(kind: CallMediaKind.video, iceRestart: true);
+
+    expect(
+      platform.createdConnections.single.createOfferConstraints.single,
+      containsPair('iceRestart', true),
+    );
+
+    await connection.dispose();
+  });
+
+  test('clear voice disabled keeps echo cancellation only', () async {
+    final platform = _FakeCallPlatformBridge();
+    final connection = _connection(
+      platform,
+      callMediaProcessingConfigProvider: () async =>
+          const CallMediaProcessingConfig(clearVoiceEnabled: false),
+    );
+
+    await connection.createOffer(kind: CallMediaKind.audio);
+
+    expect(platform.userMediaConstraints.single, <String, dynamic>{
+      'audio': <String, dynamic>{
+        'echoCancellation': true,
+        'noiseSuppression': false,
+        'autoGainControl': false,
+      },
+      'video': false,
+    });
+    expect(connection.diagnostics.processingConfig.clearVoiceEnabled, isFalse);
+
+    await connection.dispose();
+  });
+
+  test('video optimization applies initial sender profile', () async {
+    final platform = _FakeCallPlatformBridge();
+    final connection = _connection(platform);
+
+    await connection.createOffer(kind: CallMediaKind.video);
+
+    final videoSender = platform.createdConnections.single.fakeSenders.last;
+    final encoding = videoSender.parameters.encodings!.single;
+    expect(encoding.maxBitrate, 1200000);
+    expect(encoding.maxFramerate, 30);
+    expect(encoding.scaleResolutionDownBy, 1.0);
+    expect(
+      connection.diagnostics.activeVideoOptimizationProfile,
+      CallVideoOptimizationProfile.excellent,
+    );
+
+    await connection.dispose();
+  });
+
+  test('video optimization failure does not fail the call', () async {
+    final platform = _FakeCallPlatformBridge()..setParametersError = true;
+    final connection = _connection(platform);
+
+    await connection.createOffer(kind: CallMediaKind.video);
+
+    expect(connection.diagnostics.hasLocalVideo, isTrue);
+    expect(connection.diagnostics.disposed, isFalse);
+    expect(connection.diagnostics.activeVideoOptimizationProfile, isNull);
+    expect(connection.diagnostics.lastError, contains('set parameters failed'));
+
+    await connection.dispose();
+  });
+
   test('video mode uses selected camera device id when available', () async {
     final platform = _FakeCallPlatformBridge()
       ..devices = <MediaDeviceInfo>[
@@ -203,6 +308,90 @@ void main() {
     await connection.dispose();
   });
 
+  test(
+    'disconnected peer state emits media recovery before failed timeout',
+    () async {
+      final platform = _FakeCallPlatformBridge();
+      final connection = _connection(
+        platform,
+        disconnectedFailureTimeout: const Duration(milliseconds: 5),
+      );
+      final states = <CallMediaState>[];
+      final subscription = connection.onStateChanged.listen(states.add);
+
+      await connection.startLocalMedia(kind: CallMediaKind.video);
+      final peerConnection = platform.createdConnections.single;
+
+      peerConnection.emitConnectionState(
+        RTCPeerConnectionState.RTCPeerConnectionStateConnected,
+      );
+      await pumpEventQueue();
+      peerConnection.emitConnectionState(
+        RTCPeerConnectionState.RTCPeerConnectionStateDisconnected,
+      );
+      await pumpEventQueue();
+
+      expect(states.last.phase, CallMediaPhase.reconnecting);
+
+      await Future<void>.delayed(const Duration(milliseconds: 10));
+      await pumpEventQueue();
+
+      expect(states.last.phase, CallMediaPhase.failed);
+
+      expect(
+        states.map((CallMediaState state) => state.phase),
+        containsAllInOrder(<CallMediaPhase>[
+          CallMediaPhase.connected,
+          CallMediaPhase.reconnecting,
+          CallMediaPhase.failed,
+        ]),
+      );
+
+      await subscription.cancel();
+      await connection.dispose();
+    },
+  );
+
+  test('reconnected peer state clears media recovery timeout', () async {
+    final platform = _FakeCallPlatformBridge();
+    final connection = _connection(
+      platform,
+      disconnectedFailureTimeout: const Duration(milliseconds: 5),
+    );
+    final states = <CallMediaState>[];
+    final subscription = connection.onStateChanged.listen(states.add);
+
+    await connection.startLocalMedia(kind: CallMediaKind.video);
+    final peerConnection = platform.createdConnections.single;
+
+    peerConnection.emitConnectionState(
+      RTCPeerConnectionState.RTCPeerConnectionStateConnected,
+    );
+    await pumpEventQueue();
+    peerConnection.emitConnectionState(
+      RTCPeerConnectionState.RTCPeerConnectionStateDisconnected,
+    );
+    await pumpEventQueue();
+    peerConnection.emitConnectionState(
+      RTCPeerConnectionState.RTCPeerConnectionStateConnected,
+    );
+    await Future<void>.delayed(const Duration(milliseconds: 10));
+    await pumpEventQueue();
+
+    expect(
+      states.map((CallMediaState state) => state.phase),
+      containsAllInOrder(<CallMediaPhase>[
+        CallMediaPhase.connected,
+        CallMediaPhase.reconnecting,
+        CallMediaPhase.connected,
+      ]),
+    );
+    expect(states.last.phase, CallMediaPhase.connected);
+
+    await subscription.cancel();
+    await connection.dispose();
+  });
+
   test('camera mute disables video track without renegotiation', () async {
     final platform = _FakeCallPlatformBridge();
     final connection = _connection(platform);
@@ -299,12 +488,17 @@ void main() {
 DefaultCallMediaConnection _connection(
   _FakeCallPlatformBridge platform, {
   Future<String?> Function()? selectedVideoInputDeviceIdProvider,
+  Future<CallMediaProcessingConfig> Function()?
+  callMediaProcessingConfigProvider,
+  Duration disconnectedFailureTimeout = const Duration(seconds: 12),
 }) {
   return DefaultCallMediaConnection(
+    disconnectedFailureTimeout: disconnectedFailureTimeout,
     config: PeerConfig(
       iceServers: const <Map<String, dynamic>>[],
       platform: platform,
       selectedVideoInputDeviceIdProvider: selectedVideoInputDeviceIdProvider,
+      callMediaProcessingConfigProvider: callMediaProcessingConfigProvider,
     ),
   );
 }
@@ -335,13 +529,14 @@ class _FakeCallPlatformBridge implements PlatformBridge {
   ];
   Object? getUserMediaError;
   Object? switchCameraError;
+  bool setParametersError = false;
   bool omitVideoTrack = false;
 
   @override
   Future<RTCPeerConnection> createPeerConnection(
     Map<String, dynamic> config,
   ) async {
-    final connection = _FakeCallPeerConnection();
+    final connection = _FakeCallPeerConnection(this);
     createdConnections.add(connection);
     return connection;
   }
@@ -421,9 +616,13 @@ class _FakeCallPlatformBridge implements PlatformBridge {
 }
 
 class _FakeCallPeerConnection extends Fake implements RTCPeerConnection {
+  _FakeCallPeerConnection(this.platform);
+
+  final _FakeCallPlatformBridge platform;
   final List<String?> addedTracks = <String?>[];
   final List<String> addedCandidates = <String>[];
   final List<String> operations = <String>[];
+  final List<_FakeRtpSender> fakeSenders = <_FakeRtpSender>[];
   final List<Map<String, dynamic>?> createOfferConstraints =
       <Map<String, dynamic>?>[];
   final List<Map<String, dynamic>?> createAnswerConstraints =
@@ -451,6 +650,14 @@ class _FakeCallPeerConnection extends Fake implements RTCPeerConnection {
     onTrack?.call(RTCTrackEvent(streams: <MediaStream>[stream], track: track));
   }
 
+  void emitConnectionState(RTCPeerConnectionState state) {
+    onConnectionState?.call(state);
+  }
+
+  void emitIceConnectionState(RTCIceConnectionState state) {
+    onIceConnectionState?.call(state);
+  }
+
   @override
   Future<RTCRtpSender> addTrack(
     MediaStreamTrack track, [
@@ -458,7 +665,13 @@ class _FakeCallPeerConnection extends Fake implements RTCPeerConnection {
   ]) async {
     operations.add('addTrack:${track.id}');
     addedTracks.add(track.id);
-    return _FakeRtpSender('sender-${track.id}', track);
+    final sender = _FakeRtpSender(
+      'sender-${track.id}',
+      track,
+      platform: platform,
+    );
+    fakeSenders.add(sender);
+    return sender;
   }
 
   @override
@@ -503,19 +716,40 @@ class _FakeCallPeerConnection extends Fake implements RTCPeerConnection {
   Future<void> dispose() async {
     disposeCalls += 1;
   }
+
+  @override
+  Future<List<StatsReport>> getStats([MediaStreamTrack? track]) async {
+    return const <StatsReport>[];
+  }
 }
 
 class _FakeRtpSender extends Fake implements RTCRtpSender {
-  _FakeRtpSender(this.id, this._track);
+  _FakeRtpSender(this.id, this._track, {required this.platform});
 
   final String id;
+  final _FakeCallPlatformBridge platform;
   MediaStreamTrack? _track;
+  RTCRtpParameters _parameters = RTCRtpParameters(
+    encodings: <RTCRtpEncoding>[RTCRtpEncoding()],
+  );
 
   @override
   String get senderId => id;
 
   @override
+  RTCRtpParameters get parameters => _parameters;
+
+  @override
   MediaStreamTrack? get track => _track;
+
+  @override
+  Future<bool> setParameters(RTCRtpParameters parameters) async {
+    if (platform.setParametersError) {
+      throw StateError('set parameters failed');
+    }
+    _parameters = parameters;
+    return true;
+  }
 
   @override
   Future<void> replaceTrack(MediaStreamTrack? track) async {

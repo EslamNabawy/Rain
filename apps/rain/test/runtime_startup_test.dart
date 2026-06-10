@@ -1,8 +1,11 @@
+import 'dart:async';
 import 'dart:io';
 
 import 'package:drift/native.dart';
 import 'package:flutter/widgets.dart';
+import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_test/flutter_test.dart';
+import 'package:flutter_webrtc/flutter_webrtc.dart';
 import 'package:rain/application/bootstrap/app_bootstrap.dart';
 import 'package:rain/core/config/app_environment.dart';
 import 'package:rain/main.dart' as rain_app;
@@ -10,7 +13,16 @@ import 'package:protocol_brain/protocol_brain.dart';
 import 'package:rain/infrastructure/signaling/noop_signaling_adapter.dart';
 import 'package:rain/application/runtime/app_exit_coordinator.dart';
 import 'package:rain/application/runtime/rain_runtime_controller.dart';
+import 'package:rain/application/state/app_startup_state.dart';
+import 'package:rain/application/state/core_providers.dart';
+import 'package:rain/application/state/identity_providers.dart';
+import 'package:rain/application/state/runtime_providers.dart';
+import 'package:rain/infrastructure/services/app_settings_store.dart';
+import 'package:rain/infrastructure/services/force_update_service.dart';
+import 'package:rain/infrastructure/services/network_status_service.dart';
 import 'package:rain_core/rain_core.dart';
+import 'package:shared_preferences_platform_interface/in_memory_shared_preferences_async.dart';
+import 'package:shared_preferences_platform_interface/shared_preferences_async_platform_interface.dart';
 
 class _FailingBootstrapper extends AppBootstrapper {
   @override
@@ -43,6 +55,415 @@ class _RecordingPresenceAdapter extends NoopSignalingAdapter {
   }
 }
 
+class _FailingSignOutAdapter extends _RecordingPresenceAdapter {
+  int signOutCalls = 0;
+
+  @override
+  Future<void> signOut() async {
+    signOutCalls += 1;
+    throw StateError('sign out denied');
+  }
+}
+
+class _FailingReauthAccountDeletionAdapter extends _RecordingPresenceAdapter {
+  int reauthCalls = 0;
+  int deleteAccountCalls = 0;
+
+  @override
+  Future<void> reauthenticate(String username, String password) async {
+    reauthCalls += 1;
+    throw const AccountDeletionException(
+      kind: AccountDeletionFailureKind.reauthenticationFailed,
+      message: 'Wrong password. Account deletion was not started.',
+      destructiveActionStarted: false,
+    );
+  }
+
+  @override
+  Future<void> deleteAccount(
+    String username, {
+    Future<void> Function()? beforeAuthDeletion,
+  }) async {
+    deleteAccountCalls += 1;
+    await beforeAuthDeletion?.call();
+  }
+}
+
+class _BlockingReauthFailureAdapter extends _RecordingPresenceAdapter {
+  final Completer<void> reauthStarted = Completer<void>();
+  final Completer<void> releaseReauth = Completer<void>();
+  int reauthCalls = 0;
+  int deleteAccountCalls = 0;
+
+  @override
+  Future<void> reauthenticate(String username, String password) async {
+    reauthCalls += 1;
+    if (!reauthStarted.isCompleted) {
+      reauthStarted.complete();
+    }
+    await releaseReauth.future;
+    throw const AccountDeletionException(
+      kind: AccountDeletionFailureKind.reauthenticationFailed,
+      message: 'Wrong password. Account deletion was not started.',
+      destructiveActionStarted: false,
+    );
+  }
+
+  @override
+  Future<void> deleteAccount(
+    String username, {
+    Future<void> Function()? beforeAuthDeletion,
+  }) async {
+    deleteAccountCalls += 1;
+    await beforeAuthDeletion?.call();
+  }
+}
+
+class _FailingBackendAccountDeletionAdapter extends _RecordingPresenceAdapter {
+  int reauthCalls = 0;
+  int deleteAccountCalls = 0;
+
+  @override
+  Future<void> reauthenticate(String username, String password) async {
+    reauthCalls += 1;
+  }
+
+  @override
+  Future<void> deleteAccount(
+    String username, {
+    Future<void> Function()? beforeAuthDeletion,
+  }) async {
+    deleteAccountCalls += 1;
+    throw const AccountDeletionException(
+      kind: AccountDeletionFailureKind.backendCleanupFailed,
+      message: 'Could not finish deleting backend account data.',
+      destructiveActionStarted: false,
+    );
+  }
+}
+
+class _BlockingAccountDeletionAdapter extends _RecordingPresenceAdapter {
+  final Completer<void> deleteStarted = Completer<void>();
+  final Completer<void> releaseDelete = Completer<void>();
+  int reauthCalls = 0;
+  int deleteAccountCalls = 0;
+
+  @override
+  Future<void> reauthenticate(String username, String password) async {
+    reauthCalls += 1;
+  }
+
+  @override
+  Future<void> deleteAccount(
+    String username, {
+    Future<void> Function()? beforeAuthDeletion,
+  }) async {
+    deleteAccountCalls += 1;
+    if (!deleteStarted.isCompleted) {
+      deleteStarted.complete();
+    }
+    await releaseDelete.future;
+    await beforeAuthDeletion?.call();
+  }
+}
+
+class _AuthBoundaryListenerAccountDeletionAdapter
+    extends _RecordingPresenceAdapter {
+  final Completer<void> beforeAuthDeletionReached = Completer<void>();
+  final Completer<void> releaseAuthDeletion = Completer<void>();
+  final List<StreamController<dynamic>> _controllers =
+      <StreamController<dynamic>>[];
+  int reauthCalls = 0;
+  int deleteAccountCalls = 0;
+  int friendRequestCancelCount = 0;
+  int relationshipCancelCount = 0;
+  int presenceCancelCount = 0;
+  bool authDeleted = false;
+
+  @override
+  Future<void> reauthenticate(String username, String password) async {
+    reauthCalls += 1;
+  }
+
+  @override
+  Stream<String> onFriendRequest(String username) {
+    final controller = StreamController<String>.broadcast(
+      onCancel: () {
+        friendRequestCancelCount += 1;
+      },
+    );
+    _controllers.add(controller);
+    return controller.stream;
+  }
+
+  @override
+  Stream<String> onRelationshipChanged(String username) {
+    final controller = StreamController<String>.broadcast(
+      onCancel: () {
+        relationshipCancelCount += 1;
+      },
+    );
+    _controllers.add(controller);
+    return controller.stream;
+  }
+
+  @override
+  Stream<bool> watchPresence(String username) {
+    late final StreamController<bool> controller;
+    controller = StreamController<bool>.broadcast(
+      onListen: () {
+        if (!controller.isClosed) {
+          controller.add(true);
+        }
+      },
+      onCancel: () {
+        presenceCancelCount += 1;
+      },
+    );
+    _controllers.add(controller);
+    return controller.stream;
+  }
+
+  @override
+  Future<void> deleteAccount(
+    String username, {
+    Future<void> Function()? beforeAuthDeletion,
+  }) async {
+    deleteAccountCalls += 1;
+    await beforeAuthDeletion?.call();
+    if (!beforeAuthDeletionReached.isCompleted) {
+      beforeAuthDeletionReached.complete();
+    }
+    await releaseAuthDeletion.future;
+    authDeleted = true;
+  }
+
+  @override
+  Future<void> dispose() async {
+    for (final controller in _controllers) {
+      await controller.close();
+    }
+    _controllers.clear();
+    await super.dispose();
+  }
+}
+
+class _AuthBoundarySessionManager implements SessionManager {
+  _AuthBoundarySessionManager(String peerId)
+    : _sessions = <Session>[
+        Session(
+          peerId: peerId,
+          state: SessionState.connected,
+          connectionType: ConnectionType.signaling,
+          phase: SessionPhase.connected,
+          sender: (_) {},
+        ),
+      ];
+
+  final List<Session> _sessions;
+  final List<String> disconnectedPeers = <String>[];
+  final List<String> unregisteredPeers = <String>[];
+  final StreamController<Session> _connected =
+      StreamController<Session>.broadcast();
+  final StreamController<String> _disconnected =
+      StreamController<String>.broadcast();
+  final StreamController<SessionMessage> _messages =
+      StreamController<SessionMessage>.broadcast();
+  final StreamController<SessionRemoteTrack> _remoteTracks =
+      StreamController<SessionRemoteTrack>.broadcast();
+  final StreamController<Session> _changes =
+      StreamController<Session>.broadcast();
+  final StreamController<IncomingOfferRejection> _incomingOfferRejected =
+      StreamController<IncomingOfferRejection>.broadcast();
+
+  @override
+  Future<void> applyMediaAnswer(
+    String peerId,
+    RTCSessionDescription answer,
+  ) async {}
+
+  @override
+  Future<RTCSessionDescription> applyMediaOffer(
+    String peerId,
+    RTCSessionDescription offer,
+  ) async => RTCSessionDescription('answer', 'answer');
+
+  @override
+  Future<int> bufferedAmount(String peerId, SessionChannel channel) async => 0;
+
+  @override
+  Future<Session> connect(String peerId) async {
+    throw UnimplementedError();
+  }
+
+  @override
+  Future<RTCSessionDescription> createMediaOffer(String peerId) async =>
+      RTCSessionDescription('offer', 'offer');
+
+  @override
+  Future<CallMediaConnection> createCallMediaConnection(String peerId) {
+    throw UnimplementedError();
+  }
+
+  @override
+  Future<VoiceMediaConnection> createVoiceMediaConnection(String peerId) {
+    throw UnimplementedError();
+  }
+
+  @override
+  Future<void> disconnect(String peerId) async {
+    disconnectedPeers.add(peerId);
+    _sessions.removeWhere((session) => session.peerId == peerId);
+  }
+
+  Future<void> dispose() async {
+    await _connected.close();
+    await _disconnected.close();
+    await _messages.close();
+    await _remoteTracks.close();
+    await _changes.close();
+    await _incomingOfferRejected.close();
+  }
+
+  @override
+  Session? getSession(String peerId) {
+    for (final session in _sessions) {
+      if (session.peerId == peerId) {
+        return session;
+      }
+    }
+    return null;
+  }
+
+  @override
+  List<Session> getSessions() => List<Session>.of(_sessions);
+
+  @override
+  bool isChannelOpen(String peerId, SessionChannel channel) => false;
+
+  @override
+  Stream<IncomingOfferRejection> get onIncomingOfferRejected =>
+      _incomingOfferRejected.stream;
+
+  @override
+  Stream<Session> get onPeerConnected => _connected.stream;
+
+  @override
+  Stream<String> get onPeerDisconnected => _disconnected.stream;
+
+  @override
+  Stream<SessionMessage> get onPeerMessage => _messages.stream;
+
+  @override
+  Stream<SessionRemoteTrack> get onRemoteTrack => _remoteTracks.stream;
+
+  @override
+  Stream<Session> get onSessionChanged => _changes.stream;
+
+  @override
+  Future<void> openChannel(String peerId, SessionChannel channel) async {}
+
+  @override
+  Future<void> recoverConnection(
+    String peerId, {
+    String reason = 'Network changed. Restarting peer connection.',
+  }) async {}
+
+  @override
+  Future<void> recoverConnections({
+    String reason = 'Network changed. Restarting peer connections.',
+  }) async {}
+
+  @override
+  Future<void> registerPeer(
+    String peerId, {
+    IncomingOfferGuard? incomingOfferGuard,
+  }) async {}
+
+  @override
+  void send(String peerId, SessionChannel channel, Object data) {}
+
+  @override
+  void sendControl(String peerId, String data) {}
+
+  @override
+  Future<void> setMicrophoneMuted(String peerId, {required bool muted}) async {}
+
+  @override
+  Future<void> startLocalAudio(String peerId) async {}
+
+  @override
+  Future<void> stopLocalAudio(String peerId) async {}
+
+  @override
+  Future<void> unregisterPeer(String peerId) async {
+    unregisteredPeers.add(peerId);
+  }
+}
+
+class _BlockingOfflinePresenceAdapter extends _RecordingPresenceAdapter {
+  final Completer<void> offlineStarted = Completer<void>();
+  final Completer<void> releaseOffline = Completer<void>();
+  int deleteAccountCalls = 0;
+
+  @override
+  Future<void> setPresence(String username, bool online) async {
+    if (!online && !offlineStarted.isCompleted) {
+      offlineStarted.complete();
+      await releaseOffline.future;
+    }
+    await super.setPresence(username, online);
+  }
+
+  @override
+  Future<void> deleteAccount(
+    String username, {
+    Future<void> Function()? beforeAuthDeletion,
+  }) async {
+    deleteAccountCalls += 1;
+    await beforeAuthDeletion?.call();
+  }
+}
+
+class _SignedInIdentityController extends IdentityController {
+  @override
+  Future<RainIdentity?> build() async {
+    return const RainIdentity(
+      username: 'alice',
+      displayName: 'Alice',
+      createdAt: 1,
+      gender: RainGender.female,
+    );
+  }
+}
+
+class _ReadyForceUpdateController extends ForceUpdateController {
+  @override
+  Future<ForceUpdateResult> build() async {
+    return const ForceUpdateResult(
+      status: ForceUpdateStatus.current,
+      currentVersion: '1.0.8',
+      minVersion: '1.0.8',
+      updateUrl: 'https://example.com',
+    );
+  }
+}
+
+class _DisabledBackgroundServiceController extends BackgroundServiceController {
+  @override
+  Future<bool> build() async => false;
+}
+
+class _RecordingAuthOwnershipAdapter extends NoopSignalingAdapter {
+  final List<String> checkedUsernames = <String>[];
+
+  @override
+  Future<void> ensureSignedInAs(String username) async {
+    checkedUsernames.add(username);
+    await super.ensureSignedInAs(username);
+  }
+}
+
 final class _RecordedRuntimeError {
   const _RecordedRuntimeError(this.error, this.source, this.fatal);
 
@@ -51,8 +472,60 @@ final class _RecordedRuntimeError {
   final bool fatal;
 }
 
+ProviderContainer _runtimeProviderContainer(
+  RainDatabase db,
+  SignalingAdapter adapter, {
+  SessionManager? brain,
+}) {
+  return ProviderContainer(
+    overrides: [
+      appBootstrapProvider.overrideWithValue(
+        AppBootstrapState(
+          environment: AppEnvironment.fromEnvironment(
+            runtimeEnvironment: const <String, String>{'RAIN_BACKEND': 'noop'},
+          ),
+          database: db,
+          adapter: adapter,
+          forceUpdateService: ForceUpdateService(
+            remoteConfig: null,
+            updateUrl: 'https://example.com',
+          ),
+        ),
+      ),
+      networkStatusProvider.overrideWithValue(
+        const AsyncData<NetworkStatusState>(NetworkStatusState.online()),
+      ),
+      forceUpdateProvider.overrideWith(_ReadyForceUpdateController.new),
+      identityProvider.overrideWith(_SignedInIdentityController.new),
+      if (brain != null) brainProvider.overrideWithValue(brain),
+      backgroundServiceProvider.overrideWith(
+        _DisabledBackgroundServiceController.new,
+      ),
+    ],
+  );
+}
+
+Future<RainRuntimeController?> _readReadyRuntime(
+  ProviderContainer container,
+) async {
+  await container.read(identityProvider.future);
+  await container.read(forceUpdateProvider.future);
+  await container.pump();
+  expect(container.read(authenticatedSessionProvider), isNotNull);
+  return container.read(runtimeControllerProvider.future);
+}
+
 void main() {
   TestWidgetsFlutterBinding.ensureInitialized();
+
+  setUp(() {
+    SharedPreferencesAsyncPlatform.instance =
+        InMemorySharedPreferencesAsync.empty();
+  });
+
+  tearDown(() {
+    SharedPreferencesAsyncPlatform.instance = null;
+  });
 
   testWidgets('app startup failure renders a visible error screen', (
     tester,
@@ -104,6 +577,35 @@ void main() {
         ),
       ),
     );
+  });
+
+  test('runtime startup verifies Firebase auth owns local identity', () async {
+    final db = RainDatabase(NativeDatabase.memory());
+    addTearDown(db.close);
+    final adapter = _RecordingAuthOwnershipAdapter();
+    final runtime = RainRuntimeController(
+      selfIdentity: const RainIdentity(
+        username: 'alice',
+        displayName: 'Alice',
+        createdAt: 0,
+        gender: RainGender.female,
+      ),
+      adapter: adapter,
+      brain: null,
+      database: db,
+      friendStore: FriendStore(db),
+      messageStore: MessageStore(db),
+      offlineQueueStore: OfflineQueueStore(db),
+      messageDeliveryService: MessageDeliveryService(
+        messageStore: MessageStore(db),
+        offlineQueueStore: OfflineQueueStore(db),
+      ),
+    );
+    addTearDown(runtime.dispose);
+
+    await runtime.start();
+
+    expect(adapter.checkedUsernames, <String>['alice']);
   });
 
   test('runtime does not poll friend relationships by default', () {
@@ -324,6 +826,564 @@ void main() {
   });
 
   test(
+    'runtime logout clears local identity even when backend sign out fails',
+    () async {
+      final db = RainDatabase(NativeDatabase.memory());
+      addTearDown(db.close);
+      const identity = RainIdentity(
+        username: 'alice',
+        displayName: 'Alice',
+        createdAt: 0,
+        gender: RainGender.female,
+      );
+      await IdentityRepository(db).saveIdentity(identity);
+
+      final adapter = _FailingSignOutAdapter();
+      final recordedErrors = <_RecordedRuntimeError>[];
+      final messageStore = MessageStore(db);
+      final offlineQueueStore = OfflineQueueStore(db);
+      final runtime = RainRuntimeController(
+        selfIdentity: identity,
+        adapter: adapter,
+        brain: null,
+        database: db,
+        friendStore: FriendStore(db),
+        messageStore: messageStore,
+        offlineQueueStore: offlineQueueStore,
+        messageDeliveryService: MessageDeliveryService(
+          messageStore: messageStore,
+          offlineQueueStore: offlineQueueStore,
+        ),
+        friendRequestRefreshInterval: Duration.zero,
+        errorRecorder:
+            (
+              Object error,
+              StackTrace? stackTrace, {
+              required String source,
+              required bool fatal,
+              String? flutterLibrary,
+              String? flutterContext,
+            }) {
+              recordedErrors.add(_RecordedRuntimeError(error, source, fatal));
+            },
+      );
+      addTearDown(runtime.dispose);
+
+      await runtime.start();
+      await runtime.logOut();
+
+      expect(await IdentityRepository(db).loadIdentity(), isNull);
+      expect(adapter.signOutCalls, 1);
+      expect(adapter.presenceWrites, <bool>[true, false]);
+      expect(recordedErrors, hasLength(1));
+      expect(recordedErrors.single.source, 'runtime-sign-out');
+      expect(recordedErrors.single.fatal, isFalse);
+    },
+  );
+
+  test(
+    'runtime logout clears local identity after app-exit shutdown starts',
+    () async {
+      final db = RainDatabase(NativeDatabase.memory());
+      addTearDown(db.close);
+      const identity = RainIdentity(
+        username: 'alice',
+        displayName: 'Alice',
+        createdAt: 0,
+        gender: RainGender.female,
+      );
+      await IdentityRepository(db).saveIdentity(identity);
+
+      final adapter = _BlockingOfflinePresenceAdapter();
+      final messageStore = MessageStore(db);
+      final offlineQueueStore = OfflineQueueStore(db);
+      final runtime = RainRuntimeController(
+        selfIdentity: identity,
+        adapter: adapter,
+        brain: null,
+        database: db,
+        friendStore: FriendStore(db),
+        messageStore: messageStore,
+        offlineQueueStore: offlineQueueStore,
+        messageDeliveryService: MessageDeliveryService(
+          messageStore: messageStore,
+          offlineQueueStore: offlineQueueStore,
+        ),
+        friendRequestRefreshInterval: Duration.zero,
+      );
+      addTearDown(runtime.dispose);
+
+      await runtime.start();
+      final exitFuture = runtime.closeForAppExit(AppExitReason.windowClose);
+      await adapter.offlineStarted.future;
+      final logoutFuture = runtime.logOut();
+      adapter.releaseOffline.complete();
+      await Future.wait(<Future<void>>[exitFuture, logoutFuture]);
+
+      expect(await IdentityRepository(db).loadIdentity(), isNull);
+      expect(adapter.presenceWrites, <bool>[true, false]);
+    },
+  );
+
+  test('runtime rejects connect actions once shutdown has started', () async {
+    final db = RainDatabase(NativeDatabase.memory());
+    addTearDown(db.close);
+    const identity = RainIdentity(
+      username: 'alice',
+      displayName: 'Alice',
+      createdAt: 0,
+      gender: RainGender.female,
+    );
+
+    final adapter = _BlockingOfflinePresenceAdapter();
+    final messageStore = MessageStore(db);
+    final offlineQueueStore = OfflineQueueStore(db);
+    final runtime = RainRuntimeController(
+      selfIdentity: identity,
+      adapter: adapter,
+      brain: null,
+      database: db,
+      friendStore: FriendStore(db),
+      messageStore: messageStore,
+      offlineQueueStore: offlineQueueStore,
+      messageDeliveryService: MessageDeliveryService(
+        messageStore: messageStore,
+        offlineQueueStore: offlineQueueStore,
+      ),
+      friendRequestRefreshInterval: Duration.zero,
+    );
+    addTearDown(runtime.dispose);
+
+    await runtime.start();
+    final shutdownFuture = runtime.closeForAppExit(AppExitReason.windowClose);
+    await adapter.offlineStarted.future;
+
+    await expectLater(
+      runtime.connectPeer('bob', interactive: true),
+      throwsA(
+        isA<StateError>().having(
+          (error) => error.message,
+          'message',
+          contains('signing out'),
+        ),
+      ),
+    );
+
+    adapter.releaseOffline.complete();
+    await shutdownFuture;
+  });
+
+  test('runtime provider signs out while logout cleanup is pending', () async {
+    final db = RainDatabase(NativeDatabase.memory());
+    addTearDown(db.close);
+    final adapter = _BlockingOfflinePresenceAdapter();
+    final container = _runtimeProviderContainer(db, adapter);
+    addTearDown(container.dispose);
+
+    final runtime = await _readReadyRuntime(container);
+    expect(runtime, isNotNull);
+    expect(
+      container.read(appStartupStateProvider).phase,
+      AppStartupPhase.ready,
+    );
+
+    final logoutFuture = container
+        .read(runtimeControllerProvider.notifier)
+        .logOut();
+    await adapter.offlineStarted.future;
+
+    await expectLater(
+      logoutFuture.timeout(const Duration(milliseconds: 100)),
+      completes,
+    );
+    expect(
+      container.read(appStartupStateProvider).phase,
+      AppStartupPhase.signedOut,
+    );
+    expect(container.read(runtimeControllerProvider).value, isNull);
+    expect(container.read(authenticatedSessionProvider), isNull);
+
+    adapter.releaseOffline.complete();
+    await Future<void>.delayed(Duration.zero);
+  });
+
+  test(
+    'runtime provider signs out while destructive account deletion cleanup is pending',
+    () async {
+      final db = RainDatabase(NativeDatabase.memory());
+      addTearDown(db.close);
+      final adapter = _BlockingOfflinePresenceAdapter();
+      final container = _runtimeProviderContainer(db, adapter);
+      addTearDown(container.dispose);
+
+      final runtime = await _readReadyRuntime(container);
+      expect(runtime, isNotNull);
+      expect(
+        container.read(appStartupStateProvider).phase,
+        AppStartupPhase.ready,
+      );
+
+      final deleteFuture = container
+          .read(runtimeControllerProvider.notifier)
+          .deleteAccount(password: 'secret1');
+      await adapter.offlineStarted.future;
+
+      await expectLater(
+        deleteFuture.timeout(const Duration(milliseconds: 100)),
+        completes,
+      );
+      expect(
+        container.read(appStartupStateProvider).phase,
+        AppStartupPhase.signedOut,
+      );
+      expect(container.read(runtimeControllerProvider).value, isNull);
+      expect(container.read(authenticatedSessionProvider), isNull);
+      expect(adapter.deleteAccountCalls, 1);
+
+      adapter.releaseOffline.complete();
+      await Future<void>.delayed(Duration.zero);
+    },
+  );
+
+  test(
+    'runtime provider restores session after non-destructive account deletion failure',
+    () async {
+      final db = RainDatabase(NativeDatabase.memory());
+      addTearDown(db.close);
+      final adapter = _FailingReauthAccountDeletionAdapter();
+      final container = _runtimeProviderContainer(db, adapter);
+      addTearDown(container.dispose);
+
+      final runtime = await _readReadyRuntime(container);
+      expect(runtime, isNotNull);
+
+      await expectLater(
+        container
+            .read(runtimeControllerProvider.notifier)
+            .deleteAccount(password: 'wrong-password'),
+        throwsA(
+          isA<AccountDeletionException>().having(
+            (error) => error.destructiveActionStarted,
+            'destructiveActionStarted',
+            isFalse,
+          ),
+        ),
+      );
+
+      expect(container.read(runtimeControllerProvider).value, isNotNull);
+      expect(container.read(authenticatedSessionProvider), isNotNull);
+      expect(
+        container.read(appStartupStateProvider).phase,
+        AppStartupPhase.ready,
+      );
+    },
+  );
+
+  test(
+    'runtime provider keeps settings mounted while account password check is pending',
+    () async {
+      final db = RainDatabase(NativeDatabase.memory());
+      addTearDown(db.close);
+      final adapter = _BlockingReauthFailureAdapter();
+      final container = _runtimeProviderContainer(db, adapter);
+      addTearDown(container.dispose);
+
+      final runtime = await _readReadyRuntime(container);
+      expect(runtime, isNotNull);
+      expect(
+        container.read(appStartupStateProvider).phase,
+        AppStartupPhase.ready,
+      );
+
+      final deleteFuture = container
+          .read(runtimeControllerProvider.notifier)
+          .deleteAccount(password: 'wrong-password');
+      await adapter.reauthStarted.future;
+
+      expect(
+        container.read(appStartupStateProvider).phase,
+        AppStartupPhase.ready,
+      );
+      expect(container.read(runtimeControllerProvider).value, isNotNull);
+
+      adapter.releaseReauth.complete();
+      await expectLater(
+        deleteFuture,
+        throwsA(
+          isA<AccountDeletionException>().having(
+            (error) => error.destructiveActionStarted,
+            'destructiveActionStarted',
+            isFalse,
+          ),
+        ),
+      );
+
+      expect(container.read(runtimeControllerProvider).value, isNotNull);
+      expect(container.read(authenticatedSessionProvider), isNotNull);
+      expect(
+        container.read(appStartupStateProvider).phase,
+        AppStartupPhase.ready,
+      );
+      expect(adapter.deleteAccountCalls, 0);
+    },
+  );
+
+  test(
+    'runtime provider shows deleting-account app phase after password verification',
+    () async {
+      final db = RainDatabase(NativeDatabase.memory());
+      addTearDown(db.close);
+      final adapter = _BlockingAccountDeletionAdapter();
+      final container = _runtimeProviderContainer(db, adapter);
+      addTearDown(container.dispose);
+
+      final runtime = await _readReadyRuntime(container);
+      expect(runtime, isNotNull);
+      expect(
+        container.read(appStartupStateProvider).phase,
+        AppStartupPhase.ready,
+      );
+
+      final deleteFuture = container
+          .read(runtimeControllerProvider.notifier)
+          .deleteAccount(password: 'secret1');
+      await adapter.deleteStarted.future;
+
+      final startup = container.read(appStartupStateProvider);
+      expect(startup.phase, AppStartupPhase.deletingAccount);
+      expect(startup.showNavigation, isFalse);
+      expect(startup.canRenderProtectedRoutes, isTrue);
+      expect(container.read(accountDeletionInProgressProvider), isTrue);
+
+      adapter.releaseDelete.complete();
+      await deleteFuture;
+
+      expect(
+        await AppSettingsStore().wasRainUsernameDeletedOnThisDevice('alice'),
+        isTrue,
+      );
+      expect(
+        container.read(appStartupStateProvider).phase,
+        AppStartupPhase.signedOut,
+      );
+      expect(container.read(accountDeletionInProgressProvider), isFalse);
+      expect(adapter.reauthCalls, 1);
+      expect(adapter.deleteAccountCalls, 1);
+    },
+  );
+
+  test(
+    'runtime cancels account listeners before Firebase Auth deletion',
+    () async {
+      final db = RainDatabase(NativeDatabase.memory());
+      addTearDown(db.close);
+      final adapter = _AuthBoundaryListenerAccountDeletionAdapter();
+      final brain = _AuthBoundarySessionManager('bob');
+      addTearDown(adapter.dispose);
+      addTearDown(brain.dispose);
+      await adapter.register('alice', 'secret1');
+      await adapter.upsertIdentity(
+        BackendIdentity(
+          username: 'bob',
+          uid: 'uid-bob',
+          displayName: 'Bob',
+          gender: null,
+          registeredAt: 1,
+          lastSeen: 1,
+          lastHeartbeat: DateTime.now().millisecondsSinceEpoch,
+          online: true,
+        ),
+      );
+      await adapter.upsertFriendship('alice', 'bob');
+      final container = _runtimeProviderContainer(db, adapter, brain: brain);
+      addTearDown(container.dispose);
+
+      final runtime = await _readReadyRuntime(container);
+      expect(runtime, isNotNull);
+      expect(adapter.friendRequestCancelCount, 0);
+      expect(adapter.relationshipCancelCount, 0);
+      expect(adapter.presenceCancelCount, 0);
+
+      final deleteFuture = container
+          .read(runtimeControllerProvider.notifier)
+          .deleteAccount(password: 'secret1');
+      await adapter.beforeAuthDeletionReached.future;
+
+      expect(adapter.authDeleted, isFalse);
+      expect(adapter.friendRequestCancelCount, 1);
+      expect(adapter.relationshipCancelCount, 1);
+      expect(adapter.presenceCancelCount, greaterThanOrEqualTo(1));
+      expect(brain.disconnectedPeers, contains('bob'));
+      expect(brain.unregisteredPeers, contains('bob'));
+      expect(container.read(accountDeletionInProgressProvider), isTrue);
+
+      adapter.releaseAuthDeletion.complete();
+      await deleteFuture;
+
+      expect(adapter.authDeleted, isTrue);
+      expect(
+        container.read(appStartupStateProvider).phase,
+        AppStartupPhase.signedOut,
+      );
+      expect(container.read(accountDeletionInProgressProvider), isFalse);
+      expect(adapter.reauthCalls, 1);
+      expect(adapter.deleteAccountCalls, 1);
+    },
+  );
+
+  test(
+    'runtime provider stays signed in when backend account deletion fails before tombstone',
+    () async {
+      final db = RainDatabase(NativeDatabase.memory());
+      addTearDown(db.close);
+      final adapter = _FailingBackendAccountDeletionAdapter();
+      final container = _runtimeProviderContainer(db, adapter);
+      addTearDown(container.dispose);
+
+      final runtime = await _readReadyRuntime(container);
+      expect(runtime, isNotNull);
+
+      await expectLater(
+        container
+            .read(runtimeControllerProvider.notifier)
+            .deleteAccount(password: 'secret1'),
+        throwsA(
+          isA<AccountDeletionException>()
+              .having(
+                (error) => error.kind,
+                'kind',
+                AccountDeletionFailureKind.backendCleanupFailed,
+              )
+              .having(
+                (error) => error.destructiveActionStarted,
+                'destructiveActionStarted',
+                isFalse,
+              ),
+        ),
+      );
+
+      expect(container.read(runtimeControllerProvider).value, isNotNull);
+      expect(container.read(authenticatedSessionProvider), isNotNull);
+      expect(
+        container.read(appStartupStateProvider).phase,
+        AppStartupPhase.ready,
+      );
+      expect(adapter.reauthCalls, 1);
+      expect(adapter.deleteAccountCalls, 1);
+    },
+  );
+
+  test(
+    'runtime account deletion does not clear local identity before reauth',
+    () async {
+      final db = RainDatabase(NativeDatabase.memory());
+      addTearDown(db.close);
+      const identity = RainIdentity(
+        username: 'alice',
+        displayName: 'Alice',
+        createdAt: 0,
+        gender: RainGender.female,
+      );
+      await IdentityRepository(db).saveIdentity(identity);
+
+      final adapter = _FailingReauthAccountDeletionAdapter();
+      final messageStore = MessageStore(db);
+      final offlineQueueStore = OfflineQueueStore(db);
+      final runtime = RainRuntimeController(
+        selfIdentity: identity,
+        adapter: adapter,
+        brain: null,
+        database: db,
+        friendStore: FriendStore(db),
+        messageStore: messageStore,
+        offlineQueueStore: offlineQueueStore,
+        messageDeliveryService: MessageDeliveryService(
+          messageStore: messageStore,
+          offlineQueueStore: offlineQueueStore,
+        ),
+        friendRequestRefreshInterval: Duration.zero,
+      );
+      addTearDown(runtime.dispose);
+
+      await runtime.start();
+
+      await expectLater(
+        runtime.deleteAccount('wrong-password'),
+        throwsA(
+          isA<AccountDeletionException>().having(
+            (error) => error.destructiveActionStarted,
+            'destructiveActionStarted',
+            isFalse,
+          ),
+        ),
+      );
+
+      expect(await IdentityRepository(db).loadIdentity(), isNotNull);
+      expect(adapter.reauthCalls, 1);
+      expect(adapter.deleteAccountCalls, 0);
+      expect(adapter.presenceWrites, <bool>[true]);
+    },
+  );
+
+  test(
+    'runtime account deletion keeps local identity after backend cleanup failure',
+    () async {
+      final db = RainDatabase(NativeDatabase.memory());
+      addTearDown(db.close);
+      const identity = RainIdentity(
+        username: 'alice',
+        displayName: 'Alice',
+        createdAt: 0,
+        gender: RainGender.female,
+      );
+      await IdentityRepository(db).saveIdentity(identity);
+
+      final adapter = _FailingBackendAccountDeletionAdapter();
+      final messageStore = MessageStore(db);
+      final offlineQueueStore = OfflineQueueStore(db);
+      final runtime = RainRuntimeController(
+        selfIdentity: identity,
+        adapter: adapter,
+        brain: null,
+        database: db,
+        friendStore: FriendStore(db),
+        messageStore: messageStore,
+        offlineQueueStore: offlineQueueStore,
+        messageDeliveryService: MessageDeliveryService(
+          messageStore: messageStore,
+          offlineQueueStore: offlineQueueStore,
+        ),
+        friendRequestRefreshInterval: Duration.zero,
+      );
+      addTearDown(runtime.dispose);
+
+      await runtime.start();
+
+      await expectLater(
+        runtime.deleteAccount('secret1'),
+        throwsA(
+          isA<AccountDeletionException>()
+              .having(
+                (error) => error.kind,
+                'kind',
+                AccountDeletionFailureKind.backendCleanupFailed,
+              )
+              .having(
+                (error) => error.destructiveActionStarted,
+                'destructiveActionStarted',
+                isFalse,
+              ),
+        ),
+      );
+
+      expect(await IdentityRepository(db).loadIdentity(), isNotNull);
+      expect(adapter.reauthCalls, 1);
+      expect(adapter.deleteAccountCalls, 1);
+      expect(adapter.presenceWrites, <bool>[true]);
+    },
+  );
+
+  test(
     'runtime marks the user offline immediately when app detaches',
     () async {
       final db = RainDatabase(NativeDatabase.memory());
@@ -435,9 +1495,15 @@ void main() {
     ).readAsStringSync().replaceAll('\r\n', '\n');
 
     expect(source, contains('windowManager.setPreventClose(true)'));
-    expect(source, contains('AppExitCoordinator.instance.shutdown'));
+    expect(source, contains('AppExitCoordinator.instance'));
+    expect(source, contains('.shutdown(AppExitReason.windowClose)'));
+    expect(source, contains('_runBestEffortCleanup'));
+    expect(source, contains('_criticalCloseBudget'));
     expect(source, contains('AppExitReason.windowClose'));
     expect(source, contains('windowManager.destroy()'));
+    expect(source, contains('_runBoundedCloseStep'));
+    expect(source, contains('Platform.isWindows'));
+    expect(source, contains('exit(0)'));
     expect(source, isNot(contains('windowManager.hide()')));
     expect(source, isNot(contains('trayManager')));
   });

@@ -1,7 +1,7 @@
 import 'package:flutter/material.dart';
 
 import 'package:rain/presentation/branding/rain_peer_core_mark.dart';
-import 'package:rain/presentation/branding/rain_ripple_halo_surface.dart';
+import 'package:rain/presentation/performance/rain_performance.dart';
 import 'package:rain/presentation/theme/rain_theme.dart';
 import 'package:rain/presentation/widgets/rain_backdrop.dart';
 
@@ -32,6 +32,15 @@ class RainStartupFailureScreen extends StatelessWidget {
   }
 }
 
+class RainAccountDeletionScreen extends StatelessWidget {
+  const RainAccountDeletionScreen({super.key});
+
+  @override
+  Widget build(BuildContext context) {
+    return const _SplashScaffold(child: _DeletionProgressBody());
+  }
+}
+
 class _SplashScaffold extends StatelessWidget {
   const _SplashScaffold({required this.child});
 
@@ -56,6 +65,49 @@ class _SplashScaffold extends StatelessWidget {
   }
 }
 
+class _DeletionProgressBody extends StatelessWidget {
+  const _DeletionProgressBody();
+
+  @override
+  Widget build(BuildContext context) {
+    return Semantics(
+      label: 'Deleting account',
+      child: Column(
+        mainAxisSize: MainAxisSize.min,
+        children: <Widget>[
+          const SizedBox(
+            width: 48,
+            height: 48,
+            child: CircularProgressIndicator(strokeWidth: 4),
+          ),
+          const SizedBox(height: 24),
+          const Text(
+            'Deleting account',
+            textAlign: TextAlign.center,
+            style: TextStyle(
+              color: Colors.white,
+              fontSize: 28,
+              fontWeight: FontWeight.w900,
+              letterSpacing: 0,
+            ),
+          ),
+          const SizedBox(height: 8),
+          Text(
+            'Removing backend account data and closing this session.',
+            textAlign: TextAlign.center,
+            style: TextStyle(
+              color: Colors.white.withValues(alpha: 0.72),
+              fontSize: 14,
+              height: 1.45,
+              letterSpacing: 0,
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+}
+
 class _SplashBody extends StatelessWidget {
   const _SplashBody({required this.title, required this.subtitle});
 
@@ -64,7 +116,8 @@ class _SplashBody extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final reducedMotion = MediaQuery.of(context).disableAnimations;
+    final lowPower = RainPerformanceScope.of(context).isLowPower;
+    final reducedMotion = MediaQuery.of(context).disableAnimations || lowPower;
     return TweenAnimationBuilder<double>(
       tween: Tween<double>(begin: 0.92, end: 1),
       duration: reducedMotion ? Duration.zero : RainMotion.splashIntro,
@@ -75,18 +128,11 @@ class _SplashBody extends StatelessWidget {
       child: Column(
         mainAxisSize: MainAxisSize.min,
         children: <Widget>[
-          RainRippleHaloSurface(
-            enabled: true,
-            borderRadius: BorderRadius.circular(56),
-            color: RainColors.peerMint,
-            pulseKey: 'splash-logo',
-            pulseOnMount: true,
-            child: RainPeerCoreAnimatedMark(
-              key: const ValueKey<String>('rain-splash-peer-core-mark'),
-              size: 112,
-              motion: RainPeerCoreMotion.orbitalMesh,
-              reducedMotion: reducedMotion,
-            ),
+          RainPeerCoreAnimatedMark(
+            key: const ValueKey<String>('rain-splash-peer-core-mark'),
+            size: 112,
+            motion: RainPeerCoreMotion.orbitalMesh,
+            reducedMotion: reducedMotion,
           ),
           const SizedBox(height: 22),
           Text(

@@ -74,6 +74,18 @@ void main() {
     expect(await store.loadStartupCameraWarmupCompleted(), isFalse);
   });
 
+  test('deleted Rain usernames persist as normalized local hints', () async {
+    final store = AppSettingsStore();
+
+    expect(await store.wasRainUsernameDeletedOnThisDevice('Alice'), isFalse);
+
+    await store.rememberDeletedRainUsername(' Alice ');
+    await store.rememberDeletedRainUsername('alice');
+
+    expect(await store.wasRainUsernameDeletedOnThisDevice('ALICE'), isTrue);
+    expect(await store.wasRainUsernameDeletedOnThisDevice('bob'), isFalse);
+  });
+
   test('audio settings load defaults', () async {
     final store = AppSettingsStore();
 
@@ -82,10 +94,24 @@ void main() {
     expect(settings.soundEffectsEnabled, isTrue);
     expect(settings.soundEffectsVolume, 1.0);
     expect(settings.callSoundsEnabled, isTrue);
+    expect(settings.connectionRequestSoundsEnabled, isTrue);
     expect(settings.reduceSoundsDuringCall, isTrue);
     expect(
       settings.defaultOutputPreference,
       CallAudioOutputPreference.systemDefault,
+    );
+  });
+
+  test('call processing settings load enabled defaults', () async {
+    final store = AppSettingsStore();
+
+    final settings = await store.loadCallProcessingSettings();
+
+    expect(settings.clearVoiceEnabled, isTrue);
+    expect(settings.autoVideoOptimizeEnabled, isTrue);
+    expect(
+      (await store.loadCallMediaProcessingConfig()).clearVoiceEnabled,
+      isTrue,
     );
   });
 
@@ -105,6 +131,42 @@ void main() {
 
     expect(await store.loadCallSoundsEnabled(), isFalse);
     expect((await store.loadAudioSettings()).callSoundsEnabled, isFalse);
+  });
+
+  test('connection request sound toggle persists locally', () async {
+    final store = AppSettingsStore();
+
+    await store.setConnectionRequestSoundsEnabled(false);
+
+    expect(await store.loadConnectionRequestSoundsEnabled(), isFalse);
+    expect(
+      (await store.loadAudioSettings()).connectionRequestSoundsEnabled,
+      isFalse,
+    );
+  });
+
+  test('connection request notification settings persist locally', () async {
+    final store = AppSettingsStore();
+
+    var settings = await store.loadConnectionRequestSettings();
+    expect(settings.notificationsEnabled, isTrue);
+    expect(settings.showNotificationsWhenMinimized, isTrue);
+    expect(settings.mutedRequestSenders, isEmpty);
+
+    await store.setConnectionRequestNotificationsEnabled(false);
+    await store.setShowConnectionRequestNotificationsWhenMinimized(false);
+    await store.setMutedConnectionRequestSenders(<String>{' Bob ', 'cara'});
+
+    settings = await store.loadConnectionRequestSettings();
+    expect(settings.notificationsEnabled, isFalse);
+    expect(settings.showNotificationsWhenMinimized, isFalse);
+    expect(settings.mutedRequestSenders, <String>{'bob', 'cara'});
+
+    await store.removeMutedConnectionRequestSender('bob');
+    expect(
+      (await store.loadConnectionRequestSettings()).mutedRequestSenders,
+      <String>{'cara'},
+    );
   });
 
   test('reduce sounds during call toggle persists locally', () async {
@@ -155,5 +217,35 @@ void main() {
       (await store.loadAudioSettings()).defaultOutputPreference,
       CallAudioOutputPreference.bluetooth,
     );
+  });
+
+  test('call processing toggles persist locally', () async {
+    final store = AppSettingsStore();
+
+    await store.setClearVoiceEnabled(false);
+    await store.setAutoVideoOptimizeEnabled(false);
+
+    final settings = await store.loadCallProcessingSettings();
+    expect(settings.clearVoiceEnabled, isFalse);
+    expect(settings.autoVideoOptimizeEnabled, isFalse);
+    expect(
+      (await store.loadCallMediaProcessingConfig()).autoVideoOptimizeEnabled,
+      isFalse,
+    );
+  });
+
+  test('dismissed optional update key persists locally', () async {
+    final store = AppSettingsStore();
+
+    expect(await store.loadDismissedOptionalUpdateKey(), isNull);
+
+    await store.setDismissedOptionalUpdateKey(' demo|android|1.2.3|123 ');
+    expect(
+      await store.loadDismissedOptionalUpdateKey(),
+      'demo|android|1.2.3|123',
+    );
+
+    await store.clearDismissedOptionalUpdateKey();
+    expect(await store.loadDismissedOptionalUpdateKey(), isNull);
   });
 }

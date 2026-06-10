@@ -3,6 +3,15 @@ import 'package:package_info_plus/package_info_plus.dart';
 import 'package:rain/infrastructure/services/force_update_service.dart';
 
 void main() {
+  test('version comparison handles patch and build precedence', () {
+    expect(compareVersionStrings('1.2.3+4', '1.2.3'), 0);
+    expect(compareVersionStrings('1.2.3', '1.2.4'), -1);
+    expect(compareVersionStrings('1.3.0', '1.2.99'), 1);
+    expect(compareVersionStrings('1.0.01', '1.0.02'), -1);
+    expect(compareVersionStrings('1.0.10', '1.0.2'), 1);
+    expect(compareVersionStrings('bad', '0.0.1'), -1);
+  });
+
   test('custom config loader enforces configured min version', () async {
     final service = ForceUpdateService(
       remoteConfig: null,
@@ -27,6 +36,216 @@ void main() {
     expect(result.currentVersion, '1.2.3');
     expect(result.minVersion, '1.2.4');
     expect(result.updateUrl, 'https://example.com/releases');
+  });
+
+  test('manifest loader selects channel and platform policy', () async {
+    final service = ForceUpdateService(
+      remoteConfig: null,
+      updateUrl: 'https://example.com/update',
+      updateChannel: AppUpdateChannel.demo,
+      platform: 'android',
+      manifestLoader: () async => _manifest(
+        channel: 'demo',
+        platform: 'android',
+        latestVersion: '1.2.4',
+        latestBuild: 124,
+        minimumVersion: '1.2.0',
+        minimumBuild: 120,
+      ),
+      packageInfoLoader: () async =>
+          _packageInfo(version: '1.2.3', buildNumber: '123'),
+    );
+
+    final result = await service.check();
+
+    expect(result.status, ForceUpdateStatus.optionalUpdateAvailable);
+    expect(result.hasOptionalUpdate, isTrue);
+    expect(result.requiresUpdate, isFalse);
+    expect(result.latestVersion, '1.2.4');
+    expect(result.latestBuild, 124);
+    expect(result.minVersion, '1.2.0');
+    expect(result.minimumBuild, 120);
+    expect(result.platform, 'android');
+    expect(result.channel, AppUpdateChannel.demo);
+  });
+
+  test('required update wins over optional update', () async {
+    final service = ForceUpdateService(
+      remoteConfig: null,
+      updateUrl: 'https://example.com/update',
+      updateChannel: AppUpdateChannel.stable,
+      platform: 'windows',
+      manifestLoader: () async => _manifest(
+        channel: 'stable',
+        platform: 'windows',
+        latestVersion: '1.3.0',
+        latestBuild: 130,
+        minimumVersion: '1.2.4',
+        minimumBuild: 124,
+      ),
+      packageInfoLoader: () async =>
+          _packageInfo(version: '1.2.3', buildNumber: '123'),
+    );
+
+    final result = await service.check();
+
+    expect(result.status, ForceUpdateStatus.updateRequired);
+    expect(result.requiresUpdate, isTrue);
+    expect(result.hasOptionalUpdate, isFalse);
+  });
+
+  test('same semantic version uses build number for update checks', () async {
+    final service = ForceUpdateService(
+      remoteConfig: null,
+      updateUrl: 'https://example.com/update',
+      platform: 'android',
+      manifestLoader: () async => _manifest(
+        channel: 'stable',
+        platform: 'android',
+        latestVersion: '1.2.3',
+        latestBuild: 124,
+        minimumVersion: '1.2.3',
+        minimumBuild: 120,
+      ),
+      packageInfoLoader: () async =>
+          _packageInfo(version: '1.2.3', buildNumber: '123'),
+    );
+
+    final result = await service.check();
+
+    expect(result.status, ForceUpdateStatus.optionalUpdateAvailable);
+    expect(result.displayCurrentBuild, '123');
+    expect(result.displayLatestBuild, '124');
+  });
+
+  test(
+    'same semantic version uses minimum build for required updates',
+    () async {
+      final service = ForceUpdateService(
+        remoteConfig: null,
+        updateUrl: 'https://example.com/update',
+        platform: 'android',
+        manifestLoader: () async => _manifest(
+          channel: 'stable',
+          platform: 'android',
+          latestVersion: '1.2.3',
+          latestBuild: 124,
+          minimumVersion: '1.2.3',
+          minimumBuild: 124,
+        ),
+        packageInfoLoader: () async =>
+            _packageInfo(version: '1.2.3', buildNumber: '123'),
+      );
+
+      final result = await service.check();
+
+      expect(result.status, ForceUpdateStatus.updateRequired);
+      expect(result.requiresUpdate, isTrue);
+      expect(result.minVersion, '1.2.3');
+      expect(result.minimumBuild, 124);
+    },
+  );
+
+  test('remote policy behind installed app is not reported current', () async {
+    final service = ForceUpdateService(
+      remoteConfig: null,
+      updateUrl: 'https://example.com/update',
+      platform: 'android',
+      manifestLoader: () async => _manifest(
+        channel: 'stable',
+        platform: 'android',
+        latestVersion: '1.0.1',
+        latestBuild: 7,
+        minimumVersion: '1.0.1',
+        minimumBuild: 7,
+      ),
+      packageInfoLoader: () async =>
+          _packageInfo(version: '1.0.2', buildNumber: '1007'),
+    );
+
+    final result = await service.check();
+
+    expect(result.status, ForceUpdateStatus.remotePolicyOutdated);
+    expect(result.hasOutdatedRemotePolicy, isTrue);
+    expect(result.requiresUpdate, isFalse);
+    expect(result.hasOptionalUpdate, isFalse);
+    expect(result.currentVersion, '1.0.2');
+    expect(result.currentBuild, 1007);
+    expect(result.latestVersion, '1.0.1');
+    expect(result.latestBuild, 7);
+  });
+
+  test(
+    'newer semantic latest wins even when current build is higher',
+    () async {
+      final service = ForceUpdateService(
+        remoteConfig: null,
+        updateUrl: 'https://example.com/update',
+        platform: 'android',
+        manifestLoader: () async => _manifest(
+          channel: 'stable',
+          platform: 'android',
+          latestVersion: '1.0.2',
+          latestBuild: 7,
+          minimumVersion: '1.0.1',
+          minimumBuild: 1,
+        ),
+        packageInfoLoader: () async =>
+            _packageInfo(version: '1.0.1', buildNumber: '2004'),
+      );
+
+      final result = await service.check();
+
+      expect(result.status, ForceUpdateStatus.optionalUpdateAvailable);
+      expect(result.currentVersion, '1.0.1');
+      expect(result.currentBuild, 2004);
+      expect(result.latestVersion, '1.0.2');
+      expect(result.latestBuild, 7);
+    },
+  );
+
+  test(
+    'older remote latest is reported as an outdated update policy',
+    () async {
+      final service = ForceUpdateService(
+        remoteConfig: null,
+        updateUrl: 'https://example.com/update',
+        platform: 'android',
+        manifestLoader: () async => _manifest(
+          channel: 'stable',
+          platform: 'android',
+          latestVersion: '1.0.1',
+          latestBuild: 2004,
+          minimumVersion: '1.0.1',
+          minimumBuild: 1,
+        ),
+        packageInfoLoader: () async =>
+            _packageInfo(version: '1.0.2', buildNumber: '7'),
+      );
+
+      final result = await service.check();
+
+      expect(result.status, ForceUpdateStatus.remotePolicyOutdated);
+      expect(result.hasOutdatedRemotePolicy, isTrue);
+      expect(result.currentVersion, '1.0.2');
+      expect(result.latestVersion, '1.0.1');
+    },
+  );
+
+  test('invalid manifest reports invalid config without crashing', () async {
+    final service = ForceUpdateService(
+      remoteConfig: null,
+      updateUrl: 'https://example.com/update',
+      manifestLoader: () async => '{"schema":2}',
+      packageInfoLoader: () async =>
+          _packageInfo(version: '1.2.3', buildNumber: '123'),
+    );
+
+    final result = await service.check();
+
+    expect(result.status, ForceUpdateStatus.invalidConfig);
+    expect(result.requiresUpdate, isFalse);
+    expect(result.failureReason, isNotEmpty);
   });
 
   test(
@@ -92,4 +311,45 @@ void main() {
       expect(second.updateUrl, 'https://example.com/releases');
     },
   );
+}
+
+PackageInfo _packageInfo({
+  required String version,
+  required String buildNumber,
+}) {
+  return PackageInfo(
+    appName: 'Rain',
+    packageName: 'com.rainapp.rain',
+    version: version,
+    buildNumber: buildNumber,
+    buildSignature: '',
+  );
+}
+
+String _manifest({
+  required String channel,
+  required String platform,
+  required String latestVersion,
+  required int latestBuild,
+  required String minimumVersion,
+  required int minimumBuild,
+}) {
+  return '''
+{
+  "schema": 1,
+  "channels": {
+    "$channel": {
+      "$platform": {
+        "latestVersion": "$latestVersion",
+        "latestBuild": $latestBuild,
+        "minimumVersion": "$minimumVersion",
+        "minimumBuild": $minimumBuild,
+        "updateUrl": "https://example.com/releases",
+        "notes": "Release notes",
+        "publishedAt": 1770000000000
+      }
+    }
+  }
+}
+''';
 }

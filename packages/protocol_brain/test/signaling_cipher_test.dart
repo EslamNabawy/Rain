@@ -20,11 +20,15 @@ void main() {
       roomId: 'alice:bob',
       purpose: SignalingCipher.offerPurpose,
       timestamp: 1778911256590,
+      sender: 'alice',
+      receiver: 'bob',
       payload: payload,
     );
 
     final envelopeJson = jsonEncode(encrypted);
     expect(encrypted['alg'], SignalingCipher.algorithmName);
+    expect(encrypted['from'], 'alice');
+    expect(encrypted['to'], 'bob');
     expect(encrypted, isNot(contains('sdp')));
     expect(envelopeJson, isNot(contains('private-address')));
     expect(envelopeJson, isNot(contains('candidate:')));
@@ -33,6 +37,8 @@ void main() {
       roomId: 'alice:bob',
       purpose: SignalingCipher.offerPurpose,
       payload: Map<Object?, Object?>.from(encrypted),
+      sender: 'alice',
+      receiver: 'bob',
     );
     final sdp = Map<Object?, Object?>.from(decrypted['sdp']! as Map);
 
@@ -49,6 +55,8 @@ void main() {
       roomId: 'alice:bob',
       purpose: SignalingCipher.offerPurpose,
       timestamp: 1,
+      sender: 'alice',
+      receiver: 'bob',
       payload: <String, Object?>{
         'sdp': <String, Object?>{'type': 'offer', 'sdp': 'v=0'},
         'ts': 1,
@@ -60,6 +68,8 @@ void main() {
         roomId: 'alice:bob',
         purpose: SignalingCipher.answerPurpose,
         payload: Map<Object?, Object?>.from(encrypted),
+        sender: 'alice',
+        receiver: 'bob',
       ),
       throwsA(isA<SignalingEncryptionException>()),
     );
@@ -69,6 +79,30 @@ void main() {
         roomId: 'alice:carol',
         purpose: SignalingCipher.offerPurpose,
         payload: Map<Object?, Object?>.from(encrypted),
+        sender: 'alice',
+        receiver: 'bob',
+      ),
+      throwsA(isA<SignalingEncryptionException>()),
+    );
+
+    await expectLater(
+      cipher.decryptPayload(
+        roomId: 'alice:bob',
+        purpose: SignalingCipher.offerPurpose,
+        payload: Map<Object?, Object?>.from(encrypted),
+        sender: 'bob',
+        receiver: 'alice',
+      ),
+      throwsA(isA<SignalingEncryptionException>()),
+    );
+
+    final tamperedContext = Map<Object?, Object?>.from(encrypted);
+    tamperedContext['from'] = 'mallory';
+    await expectLater(
+      cipher.decryptPayload(
+        roomId: 'alice:bob',
+        purpose: SignalingCipher.offerPurpose,
+        payload: tamperedContext,
       ),
       throwsA(isA<SignalingEncryptionException>()),
     );

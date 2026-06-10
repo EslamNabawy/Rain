@@ -80,6 +80,40 @@ void main() {
     );
   });
 
+  test('peer config reports TURN readiness for relay-only calls', () {
+    final relayOnlyWithoutTurn = PeerConfig(
+      iceServers: const <Map<String, dynamic>>[
+        <String, dynamic>{'urls': 'stun:stun.l.google.com:19302'},
+      ],
+      platform: _FakePlatformBridge(),
+      iceTransportPolicy: PeerIceTransportPolicy.relayOnly,
+    );
+
+    expect(
+      relayOnlyWithoutTurn.turnReadiness().readiness,
+      TurnReadiness.unavailableNoRelayServer,
+    );
+    expect(relayOnlyWithoutTurn.turnReadiness().hasRelayServer, isFalse);
+
+    final directWithoutTurn = relayOnlyWithoutTurn.copyWith(
+      iceTransportPolicy: PeerIceTransportPolicy.all,
+    );
+    expect(
+      directWithoutTurn.turnReadiness().readiness,
+      TurnReadiness.notRequiredForCurrentPolicy,
+    );
+
+    final brokerError = StateError('broker failed');
+    expect(
+      directWithoutTurn.turnReadiness(brokerError: brokerError).readiness,
+      TurnReadiness.unavailableBrokerFailed,
+    );
+    expect(
+      directWithoutTurn.turnReadiness(brokerError: brokerError).error,
+      brokerError,
+    );
+  });
+
   test('default peer core does not own dedicated voice media calls', () {
     final peer = DefaultPeerCore();
 
@@ -333,6 +367,38 @@ void main() {
     expect(receivedMessages.single.data, Uint8List.fromList(payload));
 
     await subscription.cancel();
+  });
+
+  test('default peer waits for chat channel backpressure to drain', () async {
+    final platform = _FakePlatformBridge();
+    final peer = DefaultPeerCore();
+
+    await peer.init(
+      PeerConfig(
+        iceServers: const <Map<String, dynamic>>[],
+        platform: platform,
+      ),
+    );
+    await peer.createOffer();
+    await peer.setAnswer(RTCSessionDescription('answer-sdp', 'answer'));
+    platform.channel(PeerChannels.chat).emitOpen();
+    platform.channel(PeerChannels.control).emitOpen();
+    await pumpEventQueue();
+
+    final chat = platform.channel(PeerChannels.chat)
+      ..currentBufferedAmount = 2 * 1024 * 1024;
+    peer.send(PeerChannels.chat, 'queued while congested');
+    await pumpEventQueue();
+
+    expect(chat.sentMessages, isEmpty);
+
+    chat.currentBufferedAmount = 0;
+    await _waitForCondition(
+      () => chat.sentMessages.isNotEmpty,
+      'chat message to send after bufferedAmount drains',
+    );
+
+    expect(chat.sentMessages.single.text, 'queued while congested');
   });
 
   test('default peer drops malformed zero-total chunk frames', () async {
@@ -892,6 +958,20 @@ void main() {
   });
 }
 
+Future<void> _waitForCondition(
+  bool Function() condition,
+  String description,
+) async {
+  final deadline = DateTime.now().add(const Duration(seconds: 2));
+  while (DateTime.now().isBefore(deadline)) {
+    if (condition()) {
+      return;
+    }
+    await Future<void>.delayed(const Duration(milliseconds: 20));
+  }
+  fail('Timed out waiting for $description.');
+}
+
 List<StatsReport> _routeStats({
   required String localType,
   required String remoteType,
@@ -1210,6 +1290,7 @@ class _FakeRtcDataChannel extends Fake implements RTCDataChannel {
   final String _label;
   RTCDataChannelState? _state = RTCDataChannelState.RTCDataChannelConnecting;
   final List<RTCDataChannelMessage> sentMessages = <RTCDataChannelMessage>[];
+  int currentBufferedAmount = 0;
 
   @override
   Function(RTCDataChannelState state)? onDataChannelState;
@@ -1227,7 +1308,7 @@ class _FakeRtcDataChannel extends Fake implements RTCDataChannel {
   int? get id => _label.hashCode;
 
   @override
-  int? get bufferedAmount => 0;
+  int? get bufferedAmount => currentBufferedAmount;
 
   @override
   int? bufferedAmountLowThreshold;

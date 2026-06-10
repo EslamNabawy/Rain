@@ -1,11 +1,19 @@
 part of '../../screens/home_screen.dart';
 
 class _ChatPanel extends ConsumerStatefulWidget {
-  const _ChatPanel({required this.peerId, this.isCompact = false, this.onBack});
+  const _ChatPanel({
+    required this.peerId,
+    this.isCompact = false,
+    this.onBack,
+    this.desktopFocused = false,
+    this.onToggleDesktopFocus,
+  });
 
   final String peerId;
   final bool isCompact;
   final VoidCallback? onBack;
+  final bool desktopFocused;
+  final VoidCallback? onToggleDesktopFocus;
 
   @override
   ConsumerState<_ChatPanel> createState() => _ChatPanelState();
@@ -18,6 +26,7 @@ class _ChatPanelState extends ConsumerState<_ChatPanel> {
   bool _isPickingFile = false;
   bool _isConnecting = false;
   bool _showJumpToLatest = false;
+  Future<void>? _refreshChatInFlight;
 
   @override
   void initState() {
@@ -31,7 +40,7 @@ class _ChatPanelState extends ConsumerState<_ChatPanel> {
     if (oldWidget.peerId != widget.peerId) {
       _composerController.clear();
       _setJumpToLatestVisible(false);
-      WidgetsBinding.instance.addPostFrameCallback((_) => _jumpToLatest());
+      _scheduleJumpToLatest();
     }
   }
 
@@ -49,32 +58,89 @@ class _ChatPanelState extends ConsumerState<_ChatPanel> {
     final runtime = ref.watch(runtimeControllerProvider).value;
     final friend = _currentFriend(friends);
     final canChat = friend?.state == FriendState.friend;
-    final isPeerOnline = canChat ? friend?.isOnline ?? false : false;
     final connection = ref.watch(connectionsProvider).peer(widget.peerId);
-    final diagnostics = ConnectionDiagnostics.fromConnection(
-      canChat: canChat,
-      isPeerOnline: isPeerOnline,
-      connection: connection,
-      coordinator: runtime?.connectionCoordinatorSnapshotFor(widget.peerId),
+    final connectivitySnapshot = ref.watch(
+      peerConnectivityProvider.select((snapshots) => snapshots[widget.peerId]),
     );
-    final connectionStatus = _connectionStatusForDiagnostics(diagnostics);
-    final canConnectNow =
-        runtime != null &&
+    final diagnostics = ref.watch(
+      peerConnectionDiagnosticsProvider(widget.peerId),
+    );
+    final peerOnlineForAction = canChat
+        ? connectivitySnapshot?.peerOnlineForAction
+        : false;
+    final isPeerOnline = peerOnlineForAction == true;
+    final usesOfflineConnectionRequest =
         canChat &&
-        isPeerOnline &&
-        !connectionStatus.isBusy &&
-        !connectionStatus.isConnected;
-    final canDisconnectNow =
-        runtime != null && canChat && connectionStatus.canDisconnect;
+        (connectivitySnapshot?.requiresOfflineConnectionRequest ?? false);
     final messages = ref.watch(messagesProvider(widget.peerId));
     final transfers = ref.watch(fileTransferViewsProvider(widget.peerId));
     final voiceCall = ref.watch(voiceCallProvider);
     final hasBlockingCall =
         voiceCall.hasCall && voiceCall.phase != VoiceCallPhase.failed;
-    final hasActiveTransfer = _hasActiveFileTransfer(transfers.value);
+    final activeTransfer = _activeFileTransfer(transfers.value);
+    final hasActiveTransfer = activeTransfer != null;
+    final connectionRequests = ref.watch(connectionRequestProvider);
+    final outboundRequest = _outboundConnectionRequestForPeer(
+      connectionRequests,
+      widget.peerId,
+    );
+    final hasPendingOutboundRequest =
+        outboundRequest != null && !outboundRequest.status.isTerminal;
+    final connectionStatus = _connectionStatusForDiagnostics(diagnostics);
+    final connectDeniedReason = _connectRequestUnavailableReason(
+      runtime: runtime,
+      canChat: canChat,
+      requiresConnectionRequest: usesOfflineConnectionRequest,
+      connectionStatus: connectionStatus,
+      connectionRequests: connectionRequests,
+      outboundRequest: outboundRequest,
+      hasBlockingCall: hasBlockingCall,
+      hasActiveTransfer: hasActiveTransfer,
+    );
+    final canConnectNow =
+        runtime != null &&
+        canChat &&
+        (!usesOfflineConnectionRequest || connectionRequests.available) &&
+        (!usesOfflineConnectionRequest || !hasPendingOutboundRequest) &&
+        !connectionStatus.isBusy &&
+        !connectionStatus.isConnected &&
+        !connectionStatus.canSendData &&
+        !hasBlockingCall &&
+        !hasActiveTransfer;
+    final canDisconnectNow =
+        runtime != null && canChat && connectionStatus.canDisconnect;
+    final voiceCallPreflight = canChat
+        ? RuntimeInteractionGuard.canStartCall(
+            peerId: widget.peerId,
+            mediaMode: CallMediaMode.audio,
+            voiceCallState: voiceCall,
+            peerOnline: peerOnlineForAction,
+            activeTransfer: activeTransfer,
+            manualDisconnectedPeers:
+                connection.manualIntent ==
+                    ManualConnectionIntent.manualDisconnected
+                ? <String>{widget.peerId}
+                : const <String>{},
+          )
+        : null;
+    final videoCallPreflight = canChat
+        ? RuntimeInteractionGuard.canStartCall(
+            peerId: widget.peerId,
+            mediaMode: CallMediaMode.video,
+            voiceCallState: voiceCall,
+            peerOnline: peerOnlineForAction,
+            activeTransfer: activeTransfer,
+            manualDisconnectedPeers:
+                connection.manualIntent ==
+                    ManualConnectionIntent.manualDisconnected
+                ? <String>{widget.peerId}
+                : const <String>{},
+          )
+        : null;
     final canStartVoiceCall =
-        runtime != null && canChat && !hasBlockingCall && !hasActiveTransfer;
-    final canStartVideoCall = canStartVoiceCall;
+        runtime != null && canChat && voiceCallPreflight?.allowed == true;
+    final canStartVideoCall =
+        runtime != null && canChat && videoCallPreflight?.allowed == true;
     ref.listen<AsyncValue<List<StoredMessage>>>(
       messagesProvider(widget.peerId),
       _handleMessageSound,
@@ -103,10 +169,15 @@ class _ChatPanelState extends ConsumerState<_ChatPanel> {
                 connectionStatus: connectionStatus,
                 canConnectNow: canConnectNow,
                 canDisconnectNow: canDisconnectNow,
+                connectDeniedReason: connectDeniedReason,
+                outboundRequest: outboundRequest,
                 voiceCall: voiceCall,
+                isPeerOnline: isPeerOnline,
                 canStartVoiceCall: canStartVoiceCall,
                 canStartVideoCall: canStartVideoCall,
                 hasActiveTransfer: hasActiveTransfer,
+                voiceCallPreflight: voiceCallPreflight,
+                videoCallPreflight: videoCallPreflight,
               ),
             ),
             Expanded(
@@ -185,6 +256,9 @@ class _ChatPanelState extends ConsumerState<_ChatPanel> {
   }
 
   void _jumpToLatest() {
+    if (!mounted) {
+      return;
+    }
     if (!_messageScrollController.hasClients) {
       return;
     }
@@ -193,6 +267,15 @@ class _ChatPanelState extends ConsumerState<_ChatPanel> {
       duration: RainMotion.standard,
       curve: Curves.easeOutCubic,
     );
+  }
+
+  void _scheduleJumpToLatest() {
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (!mounted) {
+        return;
+      }
+      _jumpToLatest();
+    });
   }
 
   void _handleMessageSound(
@@ -212,6 +295,9 @@ class _ChatPanelState extends ConsumerState<_ChatPanel> {
   }
 
   void _dispatchSoundEvent(RainSoundEvent event) {
+    if (!mounted) {
+      return;
+    }
     _dispatchRainSoundEvent(ref, event);
   }
 
@@ -226,10 +312,15 @@ class _ChatPanelState extends ConsumerState<_ChatPanel> {
     required _ConnectionStatus connectionStatus,
     required bool canConnectNow,
     required bool canDisconnectNow,
+    required String? connectDeniedReason,
+    required ConnectionRequestSurfaceModel? outboundRequest,
     required VoiceCallState voiceCall,
+    required bool isPeerOnline,
     required bool canStartVoiceCall,
     required bool canStartVideoCall,
     required bool hasActiveTransfer,
+    required CallStartPreflightResult? voiceCallPreflight,
+    required CallStartPreflightResult? videoCallPreflight,
   }) {
     final displayName = friend?.displayName ?? widget.peerId;
     final scheme = Theme.of(context).colorScheme;
@@ -240,6 +331,7 @@ class _ChatPanelState extends ConsumerState<_ChatPanel> {
         connectionStatus: connectionStatus,
         canConnectNow: canConnectNow,
         canDisconnectNow: canDisconnectNow,
+        connectDeniedReason: connectDeniedReason,
       );
     }
 
@@ -290,9 +382,12 @@ class _ChatPanelState extends ConsumerState<_ChatPanel> {
               if (canChat)
                 _buildCallButton(
                   voiceCall: voiceCall,
+                  isPeerOnline: isPeerOnline,
                   canStartVoiceCall: canStartVoiceCall,
                   canStartVideoCall: canStartVideoCall,
                   hasActiveTransfer: hasActiveTransfer,
+                  voiceCallPreflight: voiceCallPreflight,
+                  videoCallPreflight: videoCallPreflight,
                 ),
               if (friend != null)
                 IconButton(
@@ -308,11 +403,20 @@ class _ChatPanelState extends ConsumerState<_ChatPanel> {
             diagnostics: diagnostics,
             canConnectNow: canConnectNow,
             canDisconnectNow: canDisconnectNow,
+            connectDisabledReason: connectDeniedReason,
             onConnect: _connectToPeer,
             onDisconnect: _disconnectPeer,
             onTap: openLinkDialog,
             enabled: canChat,
           ),
+          if (outboundRequest != null) ...<Widget>[
+            const SizedBox(height: 8),
+            ConnectionRequestStatusChip(
+              surface: outboundRequest,
+              compact: true,
+              onAction: _handleConnectionRequestAction,
+            ),
+          ],
         ],
       );
     }
@@ -368,26 +472,57 @@ class _ChatPanelState extends ConsumerState<_ChatPanel> {
             alignment: Alignment.centerRight,
             child: ConstrainedBox(
               constraints: const BoxConstraints(maxWidth: 420),
-              child: _MobileLinkStatusBar(
-                status: connectionStatus,
-                diagnostics: diagnostics,
-                canConnectNow: canConnectNow,
-                canDisconnectNow: canDisconnectNow,
-                onConnect: _connectToPeer,
-                onDisconnect: _disconnectPeer,
-                onTap: openLinkDialog,
-                enabled: canChat,
+              child: Column(
+                mainAxisSize: MainAxisSize.min,
+                crossAxisAlignment: CrossAxisAlignment.stretch,
+                children: <Widget>[
+                  _MobileLinkStatusBar(
+                    status: connectionStatus,
+                    diagnostics: diagnostics,
+                    canConnectNow: canConnectNow,
+                    canDisconnectNow: canDisconnectNow,
+                    connectDisabledReason: connectDeniedReason,
+                    onConnect: _connectToPeer,
+                    onDisconnect: _disconnectPeer,
+                    onTap: openLinkDialog,
+                    enabled: canChat,
+                  ),
+                  if (outboundRequest != null) ...<Widget>[
+                    const SizedBox(height: 8),
+                    ConnectionRequestStatusChip(
+                      surface: outboundRequest,
+                      compact: true,
+                      onAction: _handleConnectionRequestAction,
+                    ),
+                  ],
+                ],
               ),
             ),
           ),
         ),
         if (!widget.isCompact && friend != null) ...<Widget>[
           const SizedBox(width: 8),
+          if (widget.onToggleDesktopFocus != null) ...<Widget>[
+            IconButton(
+              key: const ValueKey<String>('rain-desktop-chat-focus-toggle'),
+              tooltip: widget.desktopFocused ? 'Show friends' : 'Focus chat',
+              onPressed: widget.onToggleDesktopFocus,
+              icon: Icon(
+                widget.desktopFocused
+                    ? Icons.view_sidebar_outlined
+                    : Icons.fullscreen_outlined,
+              ),
+            ),
+            const SizedBox(width: 4),
+          ],
           _buildCallButton(
             voiceCall: voiceCall,
+            isPeerOnline: isPeerOnline,
             canStartVoiceCall: canStartVoiceCall,
             canStartVideoCall: canStartVideoCall,
             hasActiveTransfer: hasActiveTransfer,
+            voiceCallPreflight: voiceCallPreflight,
+            videoCallPreflight: videoCallPreflight,
           ),
           const SizedBox(width: 4),
           IconButton(
@@ -402,9 +537,12 @@ class _ChatPanelState extends ConsumerState<_ChatPanel> {
 
   Widget _buildCallButton({
     required VoiceCallState voiceCall,
+    required bool isPeerOnline,
     required bool canStartVoiceCall,
     required bool canStartVideoCall,
     required bool hasActiveTransfer,
+    required CallStartPreflightResult? voiceCallPreflight,
+    required CallStartPreflightResult? videoCallPreflight,
   }) {
     return Row(
       mainAxisSize: MainAxisSize.min,
@@ -412,15 +550,19 @@ class _ChatPanelState extends ConsumerState<_ChatPanel> {
         RainVoiceCallButton(
           peerId: widget.peerId,
           state: voiceCall,
+          isPeerOnline: isPeerOnline,
           canStart: canStartVoiceCall,
           hasActiveTransfer: hasActiveTransfer,
+          preflight: voiceCallPreflight,
           onStart: _startVoiceCall,
         ),
         RainVideoCallButton(
           peerId: widget.peerId,
           state: voiceCall,
+          isPeerOnline: isPeerOnline,
           canStart: canStartVideoCall,
           hasActiveTransfer: hasActiveTransfer,
+          preflight: videoCallPreflight,
           onStart: _startVideoCall,
         ),
       ],
@@ -432,6 +574,7 @@ class _ChatPanelState extends ConsumerState<_ChatPanel> {
     required _ConnectionStatus connectionStatus,
     required bool canConnectNow,
     required bool canDisconnectNow,
+    required String? connectDeniedReason,
   }) {
     final route = diagnostics.route;
     final updatedAt = diagnostics.updatedAt;
@@ -591,7 +734,7 @@ class _ChatPanelState extends ConsumerState<_ChatPanel> {
               label: const Text('Disconnect'),
             ),
             FilledButton.icon(
-              onPressed: canConnectNow
+              onPressed: canConnectNow || connectDeniedReason != null
                   ? () {
                       Navigator.of(dialogContext).pop();
                       _connectToPeer();
@@ -678,57 +821,61 @@ class _ChatPanelState extends ConsumerState<_ChatPanel> {
                   ? transferByMessageId[message.id]
                   : null;
 
-              return Column(
+              return RepaintBoundary(
                 key: ValueKey<String>('message-row-${message.id}'),
-                crossAxisAlignment: CrossAxisAlignment.stretch,
-                children: <Widget>[
-                  if (showDayDivider)
-                    RainMessageDayDivider(
-                      label: _formatMessageDay(message.sentAt),
-                    ),
-                  if (transferView != null)
-                    Builder(
-                      builder: (BuildContext context) {
-                        final transfer = transferView.record;
-                        return _FileTransferBubble(
-                          transferView: transferView,
-                          timeLabel: _formatMessageTime(message.sentAt),
-                          startsCluster: startsCluster,
-                          endsCluster: endsCluster,
-                          maxWidth: maxBubbleWidth,
-                          onAccept: () =>
-                              unawaited(_acceptFileTransfer(transfer)),
-                          onReject: () =>
-                              unawaited(_rejectFileTransfer(transfer)),
-                          onCancel: () =>
-                              unawaited(_cancelFileTransfer(transfer)),
-                          onOpen: () => unawaited(_openFileTransfer(transfer)),
-                          onSave: () => unawaited(_saveFileTransfer(transfer)),
-                          onRetry: _canRetryFileTransfer(transfer)
-                              ? () => unawaited(_retryFileTransfer(transfer))
-                              : null,
-                        );
-                      },
-                    )
-                  else
-                    RainMessageBubble(
-                      text: message.content,
-                      timeLabel: _formatMessageTime(message.sentAt),
-                      isOutgoing: message.isOutgoing,
-                      startsCluster: startsCluster,
-                      endsCluster: endsCluster,
-                      maxWidth: maxBubbleWidth,
-                      deliveryLabel: deliveryLabel,
-                      deliveryColor: deliveryColor,
-                      onRetry:
-                          message.isOutgoing &&
-                              message.status == MessageStatus.failed
-                          ? () => unawaited(_resendMessage(message))
-                          : null,
-                      onOpenActions: () =>
-                          unawaited(_showMessageActions(message)),
-                    ),
-                ],
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.stretch,
+                  children: <Widget>[
+                    if (showDayDivider)
+                      RainMessageDayDivider(
+                        label: _formatMessageDay(message.sentAt),
+                      ),
+                    if (transferView != null)
+                      Builder(
+                        builder: (BuildContext context) {
+                          final transfer = transferView.record;
+                          return _FileTransferBubble(
+                            transferView: transferView,
+                            timeLabel: _formatMessageTime(message.sentAt),
+                            startsCluster: startsCluster,
+                            endsCluster: endsCluster,
+                            maxWidth: maxBubbleWidth,
+                            onAccept: () =>
+                                unawaited(_acceptFileTransfer(transfer)),
+                            onReject: () =>
+                                unawaited(_rejectFileTransfer(transfer)),
+                            onCancel: () =>
+                                unawaited(_cancelFileTransfer(transfer)),
+                            onOpen: () =>
+                                unawaited(_openFileTransfer(transfer)),
+                            onSave: () =>
+                                unawaited(_saveFileTransfer(transfer)),
+                            onRetry: _canRetryFileTransfer(transfer)
+                                ? () => unawaited(_retryFileTransfer(transfer))
+                                : null,
+                          );
+                        },
+                      )
+                    else
+                      RainMessageBubble(
+                        text: message.content,
+                        timeLabel: _formatMessageTime(message.sentAt),
+                        isOutgoing: message.isOutgoing,
+                        startsCluster: startsCluster,
+                        endsCluster: endsCluster,
+                        maxWidth: maxBubbleWidth,
+                        deliveryLabel: deliveryLabel,
+                        deliveryColor: deliveryColor,
+                        onRetry:
+                            message.isOutgoing &&
+                                message.status == MessageStatus.failed
+                            ? () => unawaited(_resendMessage(message))
+                            : null,
+                        onOpenActions: () =>
+                            unawaited(_showMessageActions(message)),
+                      ),
+                  ],
+                ),
               );
             },
           );
@@ -765,6 +912,23 @@ class _ChatPanelState extends ConsumerState<_ChatPanel> {
   }
 
   Future<void> _refreshChat() async {
+    final activeRefresh = _refreshChatInFlight;
+    if (activeRefresh != null) {
+      return activeRefresh;
+    }
+    final refresh = _runRefreshChat();
+    _refreshChatInFlight = refresh;
+    try {
+      await refresh;
+    } finally {
+      if (identical(_refreshChatInFlight, refresh)) {
+        _refreshChatInFlight = null;
+      }
+    }
+  }
+
+  Future<void> _runRefreshChat() async {
+    await ref.read(messagesProvider(widget.peerId).notifier).loadOlder();
     final networkError = _networkActionError();
     if (networkError != null) {
       _showErrorSnack(networkError);
@@ -985,7 +1149,7 @@ class _ChatPanelState extends ConsumerState<_ChatPanel> {
       _showErrorSnack(networkError);
       return;
     }
-    if (runtime == null || !connectionStatus.isConnected) {
+    if (runtime == null || !connectionStatus.canSendData) {
       _dispatchWarningSound('chat.file.connect_first');
       _showErrorSnack('Connect first.');
       return;
@@ -1036,7 +1200,7 @@ class _ChatPanelState extends ConsumerState<_ChatPanel> {
             },
           );
       _dispatchSoundEvent(rainChatSendSoundEventFor(widget.peerId));
-      WidgetsBinding.instance.addPostFrameCallback((_) => _jumpToLatest());
+      _scheduleJumpToLatest();
     } catch (error) {
       _dispatchWarningSound('chat.file.send_failed');
       _showErrorSnack(_formatUiError(error));
@@ -1121,7 +1285,16 @@ class _ChatPanelState extends ConsumerState<_ChatPanel> {
   }
 
   bool _hasActiveFileTransfer(List<FileTransferView>? transfers) {
-    return transfers?.any((view) => view.record.isActive) ?? false;
+    return _activeFileTransfer(transfers) != null;
+  }
+
+  FileTransferRecord? _activeFileTransfer(List<FileTransferView>? transfers) {
+    for (final view in transfers ?? const <FileTransferView>[]) {
+      if (view.record.isActive) {
+        return view.record;
+      }
+    }
+    return null;
   }
 
   Future<void> _runFileTransferAction(
@@ -1343,7 +1516,7 @@ class _ChatPanelState extends ConsumerState<_ChatPanel> {
     try {
       await runtime.sendMessage(widget.peerId, text);
       _dispatchSoundEvent(rainChatSendSoundEventFor(widget.peerId));
-      WidgetsBinding.instance.addPostFrameCallback((_) => _jumpToLatest());
+      _scheduleJumpToLatest();
     } catch (error) {
       _dispatchWarningSound('chat.message.send_failed');
       if (mounted) {
@@ -1367,6 +1540,9 @@ class _ChatPanelState extends ConsumerState<_ChatPanel> {
     try {
       await ref.read(voiceCallProvider.notifier).start(widget.peerId);
     } catch (error) {
+      if (!mounted) {
+        return;
+      }
       _dispatchVoiceCommandFailureSoundForRef(ref, error, before: before);
       _showErrorSnack(_formatUiError(error));
     }
@@ -1377,6 +1553,9 @@ class _ChatPanelState extends ConsumerState<_ChatPanel> {
     try {
       await ref.read(voiceCallProvider.notifier).startVideo(widget.peerId);
     } catch (error) {
+      if (!mounted) {
+        return;
+      }
       _dispatchVoiceCommandFailureSoundForRef(ref, error, before: before);
       _showErrorSnack(_formatUiError(error));
     }
@@ -1390,25 +1569,101 @@ class _ChatPanelState extends ConsumerState<_ChatPanel> {
       _showErrorSnack(networkError);
       return;
     }
-    final offlineError = _offlineConnectError();
-    if (offlineError != null) {
-      _dispatchWarningSound('chat.peer.offline_blocked');
-      _showErrorSnack(offlineError);
+    final unavailableReason = _currentConnectRequestUnavailableReason(
+      peerOnlineOverride: true,
+    );
+    if (unavailableReason != null) {
+      _dispatchWarningSound('chat.peer.connection_request_blocked');
+      _showErrorSnack(unavailableReason);
       return;
     }
+
+    final friends = ref.read(friendsProvider);
+    final friend = _currentFriend(friends);
+    final runtime = ref.read(runtimeControllerProvider).value;
+    if (runtime == null) {
+      _showErrorSnack('Rain is still starting. Try again in a moment.');
+      return;
+    }
+
+    setState(() => _isConnecting = true);
+    bool? isPeerOnline;
+    try {
+      isPeerOnline = await runtime.isPeerFreshlyOnline(
+        widget.peerId,
+        action: 'chat_connect_button',
+      );
+    } catch (_) {
+      isPeerOnline = null;
+    } finally {
+      if (mounted) {
+        setState(() => _isConnecting = false);
+      }
+    }
+    if (!mounted) {
+      return;
+    }
+
+    if (isPeerOnline == null) {
+      _dispatchWarningSound('chat.peer.connection_request_presence_unknown');
+      _showErrorSnack(
+        RuntimeInteractionGuard.connectionRequestPresenceUnknownMessage(
+          widget.peerId,
+        ),
+      );
+      return;
+    }
+    if (isPeerOnline) {
+      await _connectDirectlyToPeer();
+      return;
+    }
+
+    await _sendOfflineConnectionRequest(friend: friend);
+  }
+
+  Future<void> _sendOfflineConnectionRequest({
+    FriendRecord? friend,
+    bool alreadyConfirmed = false,
+    String? confirmationMessage,
+  }) async {
+    final unavailableReason = _currentConnectRequestUnavailableReason(
+      peerOnlineOverride: false,
+    );
+    if (unavailableReason != null) {
+      _dispatchWarningSound('chat.peer.connection_request_blocked');
+      _showErrorSnack(unavailableReason);
+      return;
+    }
+
+    var confirmed = alreadyConfirmed;
+    if (!confirmed) {
+      confirmed =
+          await _confirmOfflineConnectionRequest(
+            friend,
+            message: confirmationMessage,
+          ) ==
+          true;
+    }
+    if (!confirmed || !mounted) {
+      return;
+    }
+
     setState(() => _isConnecting = true);
     try {
-      await ref
-          .read(connectionsProvider.notifier)
-          .connect(widget.peerId, waitForConnected: true, manualRetry: true);
-      _dispatchSoundEvent(rainUiActionSoundEvent());
-      if (mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(content: Text('Connected to @${widget.peerId}.')),
+      final decision = await ref
+          .read(connectionRequestProvider.notifier)
+          .send(widget.peerId, confirmedOfflineNotification: true);
+      if (!decision.allowed) {
+        _dispatchWarningSound(
+          'chat.peer.connection_request_${decision.reasonCode?.name ?? 'denied'}',
         );
+        _showErrorSnack(decision.userMessage);
+        return;
       }
+      _dispatchSoundEvent(rainUiActionSoundEvent());
+      _showInfoSnack(decision.userMessage);
     } catch (error) {
-      _dispatchWarningSound('chat.peer.connect_failed');
+      _dispatchWarningSound('chat.peer.connection_request_failed');
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
           SnackBar(
@@ -1424,20 +1679,133 @@ class _ChatPanelState extends ConsumerState<_ChatPanel> {
     }
   }
 
+  Future<void> _connectDirectlyToPeer({bool allowStalePresence = false}) async {
+    setState(() => _isConnecting = true);
+    try {
+      final connection = ref.read(connectionsProvider).peer(widget.peerId);
+      final retryFailedConnection =
+          connection.manualIntent == ManualConnectionIntent.failed ||
+          connection.session?.state == SessionState.failed;
+      await ref
+          .read(connectionsProvider.notifier)
+          .connect(
+            widget.peerId,
+            waitForConnected: true,
+            manualRetry: retryFailedConnection,
+            allowStalePresence: allowStalePresence,
+          );
+      if (!mounted) {
+        return;
+      }
+      _dispatchSoundEvent(rainUiActionSoundEvent());
+      _showInfoSnack('Connected to @${widget.peerId}.');
+    } catch (error) {
+      if (!mounted) {
+        return;
+      }
+      _dispatchWarningSound('chat.peer.direct_connect_failed');
+      if (_isOfflineConnectionError(error)) {
+        setState(() => _isConnecting = false);
+        final friends = ref.read(friendsProvider);
+        await _sendOfflineConnectionRequest(
+          friend: _currentFriend(friends),
+          confirmationMessage:
+              '@${widget.peerId} went offline. Send a connection request notification instead? This uses your request limit.',
+        );
+        return;
+      }
+      _showErrorSnack(_formatUiError(error));
+    } finally {
+      if (mounted) {
+        setState(() => _isConnecting = false);
+      }
+    }
+  }
+
+  bool _isOfflineConnectionError(Object error) {
+    final normalized = error.toString().toLowerCase();
+    return normalized.contains('offline. keep both apps open') ||
+        normalized.contains('timed out. ask them to keep rain open') ||
+        (normalized.contains('connection to @') &&
+            normalized.contains('timed out'));
+  }
+
+  Future<bool?> _confirmOfflineConnectionRequest(
+    FriendRecord? friend, {
+    String? message,
+  }) {
+    final peerLabel = '@${friend?.username ?? widget.peerId}';
+    return showDialog<bool>(
+      context: context,
+      builder: (BuildContext dialogContext) {
+        return AlertDialog(
+          title: Text('Notify $peerLabel?'),
+          content: Text(
+            message ??
+                '$peerLabel appears offline. Send a connection request notification so they can open Rain and connect back? This uses your request limit.',
+          ),
+          actions: <Widget>[
+            TextButton(
+              onPressed: () => Navigator.of(dialogContext).pop(false),
+              child: const Text('Cancel'),
+            ),
+            FilledButton(
+              onPressed: () => Navigator.of(dialogContext).pop(true),
+              child: const Text('Send request'),
+            ),
+          ],
+        );
+      },
+    );
+  }
+
+  Future<void> _handleConnectionRequestAction(
+    ConnectionRequestSurfaceModel surface,
+    ConnectionRequestActionModel action,
+  ) async {
+    try {
+      final decision = await ref
+          .read(connectionRequestProvider.notifier)
+          .perform(surface, action.kind);
+      if (!mounted) {
+        return;
+      }
+      if (decision.allowed) {
+        _dispatchSoundEvent(rainUiActionSoundEvent());
+        _showInfoSnack(decision.userMessage);
+        return;
+      }
+      _dispatchWarningSound(
+        'chat.peer.connection_request_${decision.reasonCode?.name ?? 'denied'}',
+      );
+      _showErrorSnack(decision.userMessage);
+    } catch (error) {
+      if (!mounted) {
+        return;
+      }
+      _dispatchWarningSound('chat.peer.connection_request_action_failed');
+      _showErrorSnack(_formatUiError(error));
+    }
+  }
+
   Future<void> _disconnectPeer() async {
     try {
       await ref.read(connectionsProvider.notifier).disconnect(widget.peerId);
+      if (!mounted) {
+        return;
+      }
       _dispatchSoundEvent(rainUiActionSoundEvent());
     } catch (error) {
-      _dispatchWarningSound('chat.peer.disconnect_failed');
-      if (mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(
-            content: Text(_formatUiError(error)),
-            backgroundColor: Theme.of(context).colorScheme.error,
-          ),
-        );
+      if (!mounted) {
+        return;
       }
+      _dispatchWarningSound('chat.peer.disconnect_failed');
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text(_formatUiError(error)),
+          backgroundColor: Theme.of(context).colorScheme.error,
+        ),
+      );
     }
   }
 
@@ -1448,14 +1816,99 @@ class _ChatPanelState extends ConsumerState<_ChatPanel> {
         : null;
   }
 
-  String? _offlineConnectError() {
-    final friend = _currentFriend(ref.read(friendsProvider));
-    if (friend == null || friend.state != FriendState.friend) {
+  String? _currentConnectRequestUnavailableReason({bool? peerOnlineOverride}) {
+    final friends = ref.read(friendsProvider);
+    final friend = _currentFriend(friends);
+    final canChat = friend?.state == FriendState.friend;
+    final requiresConnectionRequest = peerOnlineOverride == null
+        ? canChat &&
+              (ref
+                      .read(peerConnectivityProvider)[widget.peerId]
+                      ?.requiresOfflineConnectionRequest ??
+                  false)
+        : !peerOnlineOverride;
+    final runtime = ref.read(runtimeControllerProvider).value;
+    final diagnostics = ref.read(
+      peerConnectionDiagnosticsProvider(widget.peerId),
+    );
+    final connectionRequests = ref.read(connectionRequestProvider);
+    final outboundRequest = _outboundConnectionRequestForPeer(
+      connectionRequests,
+      widget.peerId,
+    );
+    final transfers = ref.read(fileTransferViewsProvider(widget.peerId));
+    final voiceCall = ref.read(voiceCallProvider);
+    return _connectRequestUnavailableReason(
+      runtime: runtime,
+      canChat: canChat,
+      requiresConnectionRequest: requiresConnectionRequest,
+      connectionStatus: _connectionStatusForDiagnostics(diagnostics),
+      connectionRequests: connectionRequests,
+      outboundRequest: outboundRequest,
+      hasBlockingCall:
+          voiceCall.hasCall && voiceCall.phase != VoiceCallPhase.failed,
+      hasActiveTransfer: _hasActiveFileTransfer(transfers.value),
+    );
+  }
+
+  String? _connectRequestUnavailableReason({
+    required RainRuntimeController? runtime,
+    required bool canChat,
+    required bool requiresConnectionRequest,
+    required _ConnectionStatus connectionStatus,
+    required ConnectionRequestState connectionRequests,
+    required ConnectionRequestSurfaceModel? outboundRequest,
+    required bool hasBlockingCall,
+    required bool hasActiveTransfer,
+  }) {
+    if (connectionStatus.isConnected || connectionStatus.canSendData) {
       return null;
     }
-    if (friend.isOnline) {
-      return null;
+    if (requiresConnectionRequest &&
+        outboundRequest != null &&
+        !outboundRequest.status.isTerminal) {
+      return outboundRequest.feedback?.message ??
+          'Connection request already sent to ${outboundRequest.peerLabel}.';
     }
-    return '@${friend.username} is offline. Keep both apps open, then try again.';
+    if (runtime == null) {
+      return 'Rain is still starting. Try again in a moment.';
+    }
+    if (!canChat) {
+      return 'You can only request a connection with accepted friends.';
+    }
+    if (requiresConnectionRequest && !connectionRequests.available) {
+      return 'Connection request service is unavailable. Try again.';
+    }
+    if (connectionStatus.isBusy) {
+      return 'Connection is already changing. Try again in a moment.';
+    }
+    if (hasBlockingCall) {
+      return 'Finish the call before requesting another connection.';
+    }
+    if (hasActiveTransfer) {
+      return 'Finish the active file transfer before requesting a connection.';
+    }
+    return null;
+  }
+
+  ConnectionRequestSurfaceModel? _outboundConnectionRequestForPeer(
+    ConnectionRequestState state,
+    String peerId,
+  ) {
+    final normalizedPeerId = peerId
+        .trim()
+        .replaceFirst(RegExp(r'^@+'), '')
+        .toLowerCase();
+    ConnectionRequestSurfaceModel? terminal;
+    for (final surface in state.outgoingSurfaces) {
+      if (surface.peerId.toLowerCase() != normalizedPeerId) {
+        continue;
+      }
+      if (!surface.status.isTerminal) {
+        return surface;
+      }
+      terminal ??= surface;
+    }
+    return terminal;
   }
 }

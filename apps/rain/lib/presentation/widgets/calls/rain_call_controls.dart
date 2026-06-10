@@ -2,8 +2,8 @@ import 'dart:async';
 
 import 'package:flutter/material.dart';
 
+import 'package:rain/application/runtime/media_device_settings.dart';
 import 'package:rain/application/runtime/voice_call_state.dart';
-import 'package:rain/presentation/branding/rain_ripple_halo_surface.dart';
 import 'package:rain/presentation/theme/rain_theme.dart';
 
 class RainCallControls extends StatelessWidget {
@@ -21,6 +21,7 @@ class RainCallControls extends StatelessWidget {
     this.onSelectOutputRoute,
     this.controlCapabilities,
     this.outputRouteOptions,
+    this.trailingControls = const <Widget>[],
   });
 
   final VoiceCallState state;
@@ -32,9 +33,10 @@ class RainCallControls extends StatelessWidget {
   final VoidCallback? onToggleDeafen;
   final VoidCallback? onToggleCamera;
   final VoidCallback? onSwitchCamera;
-  final ValueChanged<VoiceCallOutputRoute>? onSelectOutputRoute;
+  final ValueChanged<CallAudioOutputTarget>? onSelectOutputRoute;
   final List<CallControlCapability>? controlCapabilities;
   final List<VoiceCallOutputRouteOption>? outputRouteOptions;
+  final List<Widget> trailingControls;
 
   @override
   Widget build(BuildContext context) {
@@ -63,22 +65,51 @@ class RainCallControls extends StatelessWidget {
       );
     }
 
-    return Wrap(
-      spacing: 8,
-      runSpacing: 8,
-      alignment: WrapAlignment.end,
-      children: <Widget>[
-        for (final capability
-            in controlCapabilities ?? state.controlCapabilities)
-          _buildActiveControl(context, capability),
-      ],
+    return LayoutBuilder(
+      builder: (BuildContext context, BoxConstraints constraints) {
+        final maxWidth = constraints.hasBoundedWidth
+            ? constraints.maxWidth
+            : 420.0;
+        final compact = maxWidth < 390;
+        final effectiveCapabilities =
+            controlCapabilities ?? state.controlCapabilities;
+        final visibleCapabilities = _visibleCapabilitiesForWidth(
+          effectiveCapabilities,
+          compact: compact,
+        );
+        final overflowCapabilities = effectiveCapabilities
+            .where(
+              (CallControlCapability capability) =>
+                  !visibleCapabilities.contains(capability),
+            )
+            .toList(growable: false);
+        return Wrap(
+          spacing: compact ? 6 : 8,
+          runSpacing: compact ? 6 : 8,
+          alignment: WrapAlignment.center,
+          crossAxisAlignment: WrapCrossAlignment.center,
+          children: <Widget>[
+            for (final capability in visibleCapabilities)
+              _buildActiveControl(context, capability, compact: compact),
+            if (overflowCapabilities.isNotEmpty)
+              _buildOverflowControl(
+                context,
+                overflowCapabilities,
+                compact: compact,
+              ),
+            ...trailingControls,
+          ],
+        );
+      },
     );
   }
 
   Widget _buildActiveControl(
     BuildContext context,
-    CallControlCapability capability,
-  ) {
+    CallControlCapability capability, {
+    required bool compact,
+  }) {
+    final scheme = Theme.of(context).colorScheme;
     final visual = rainVoiceCallControlVisual(state, capability);
     final control = switch (capability) {
       CallControlCapability.microphone => IconButton(
@@ -107,47 +138,260 @@ class RainCallControls extends StatelessWidget {
       CallControlCapability.hangUp => IconButton.filled(
         tooltip: visual.tooltip,
         onPressed: onHangUp,
+        style: IconButton.styleFrom(
+          backgroundColor: scheme.errorContainer,
+          foregroundColor: scheme.onErrorContainer,
+          disabledBackgroundColor: scheme.errorContainer.withValues(
+            alpha: 0.46,
+          ),
+          disabledForegroundColor: scheme.onErrorContainer.withValues(
+            alpha: 0.50,
+          ),
+        ),
         icon: Icon(visual.icon),
       ),
     };
 
-    return RainRippleHaloSurface(
-      enabled: state.isActive,
-      borderRadius: const BorderRadius.all(Radius.circular(20)),
-      color: rainVoiceCallHaloColor(context, state),
-      pulseKey: '${state.callId}:${state.phase}:${capability.name}',
-      minSize: const Size.square(48),
-      child: control,
+    return SizedBox.square(
+      dimension: compact ? 42 : 48,
+      child: Center(child: control),
     );
+  }
+
+  List<CallControlCapability> _visibleCapabilitiesForWidth(
+    List<CallControlCapability> capabilities, {
+    required bool compact,
+  }) {
+    if (!compact || capabilities.length <= 4) {
+      return capabilities;
+    }
+    final visible = <CallControlCapability>[
+      if (capabilities.contains(CallControlCapability.microphone))
+        CallControlCapability.microphone,
+      if (capabilities.contains(CallControlCapability.camera))
+        CallControlCapability.camera,
+      if (capabilities.contains(CallControlCapability.hangUp))
+        CallControlCapability.hangUp,
+    ];
+    return visible.isEmpty
+        ? capabilities.take(3).toList(growable: false)
+        : visible;
+  }
+
+  Widget _buildOverflowControl(
+    BuildContext context,
+    List<CallControlCapability> capabilities, {
+    required bool compact,
+  }) {
+    final enabled = state.isActive;
+    return SizedBox.square(
+      dimension: compact ? 42 : 48,
+      child: PopupMenuButton<String>(
+        tooltip: 'More call controls',
+        enabled: enabled,
+        onSelected: _handleOverflowSelection,
+        itemBuilder: (BuildContext context) {
+          return <PopupMenuEntry<String>>[
+            for (final capability in capabilities)
+              ..._overflowEntriesForCapability(capability),
+          ];
+        },
+        icon: const Icon(Icons.more_horiz),
+      ),
+    );
+  }
+
+  Iterable<PopupMenuEntry<String>> _overflowEntriesForCapability(
+    CallControlCapability capability,
+  ) sync* {
+    if (capability == CallControlCapability.outputRoute) {
+      final options = _effectiveOutputRouteOptions(outputRouteOptions);
+      if (options.length < 2 || onSelectOutputRoute == null) {
+        return;
+      }
+      if (options.length <= 2) {
+        final selected = _selectedOutputRouteOption(options, state);
+        yield PopupMenuItem<String>(
+          value: 'output:next',
+          child: Row(
+            children: <Widget>[
+              Icon(selected.icon, size: 20),
+              const SizedBox(width: 10),
+              const Text('Switch audio output'),
+            ],
+          ),
+        );
+        return;
+      }
+      for (final option in options) {
+        final selected = option.target.matches(state);
+        yield PopupMenuItem<String>(
+          value: 'output:${option.target.key}',
+          child: Row(
+            children: <Widget>[
+              Icon(selected ? Icons.check_circle : option.icon, size: 20),
+              const SizedBox(width: 10),
+              Expanded(child: Text(option.label)),
+            ],
+          ),
+        );
+      }
+      return;
+    }
+    final visual = rainVoiceCallControlVisual(state, capability);
+    yield PopupMenuItem<String>(
+      value: capability.name,
+      child: Row(
+        children: <Widget>[
+          Icon(visual.icon, size: 20),
+          const SizedBox(width: 10),
+          Text(visual.tooltip),
+        ],
+      ),
+    );
+  }
+
+  void _handleOverflowSelection(String value) {
+    if (value == CallControlCapability.switchCamera.name) {
+      onSwitchCamera?.call();
+      return;
+    }
+    if (value == CallControlCapability.deafen.name) {
+      onToggleDeafen?.call();
+      return;
+    }
+    if (value == CallControlCapability.camera.name) {
+      onToggleCamera?.call();
+      return;
+    }
+    if (value == CallControlCapability.microphone.name) {
+      onToggleMute();
+      return;
+    }
+    if (value == CallControlCapability.hangUp.name) {
+      onHangUp();
+      return;
+    }
+    if (!value.startsWith('output:') || onSelectOutputRoute == null) {
+      return;
+    }
+    final options = _effectiveOutputRouteOptions(outputRouteOptions);
+    if (value == 'output:next') {
+      onSelectOutputRoute!(_nextOutputTarget(options, state));
+      return;
+    }
+    final targetKey = value.substring('output:'.length);
+    for (final option in options) {
+      if (option.target.key == targetKey) {
+        onSelectOutputRoute!(option.target);
+        return;
+      }
+    }
   }
 
   Widget _buildOutputRouteControl({required RainCallControlVisual visual}) {
     final options = _effectiveOutputRouteOptions(outputRouteOptions);
-    final enabled =
-        state.isActive && onSelectOutputRoute != null && options.length > 1;
-    final selected = _selectedOutputRouteOption(options, state.outputRoute);
+    if (options.length < 2) {
+      return const SizedBox.shrink();
+    }
+    final enabled = state.isActive && onSelectOutputRoute != null;
+    final selected = _selectedOutputRouteOption(options, state);
     if (options.length <= 2) {
       return IconButton(
         tooltip: visual.tooltip,
         onPressed: enabled
-            ? () => onSelectOutputRoute!(
-                _nextOutputRoute(options, state.outputRoute),
-              )
+            ? () => onSelectOutputRoute!(_nextOutputTarget(options, state))
             : null,
         icon: Icon(selected.icon),
       );
     }
-    return PopupMenuButton<VoiceCallOutputRoute>(
+    return PopupMenuButton<CallAudioOutputTarget>(
       tooltip: visual.tooltip,
       enabled: enabled,
       onSelected: onSelectOutputRoute,
       itemBuilder: (BuildContext context) {
-        return <PopupMenuEntry<VoiceCallOutputRoute>>[
+        return <PopupMenuEntry<CallAudioOutputTarget>>[
           for (final option in options)
-            _outputRouteMenuItem(option: option, current: state.outputRoute),
+            _outputRouteMenuItem(option: option, state: state),
         ];
       },
       icon: Icon(selected.icon),
+    );
+  }
+}
+
+class RainCallControlDock extends StatelessWidget {
+  const RainCallControlDock({
+    super.key,
+    this.dockKey = const ValueKey<String>('rain-call-control-dock'),
+    required this.state,
+    required this.onAccept,
+    required this.onReject,
+    required this.onHangUp,
+    required this.onRetry,
+    required this.onToggleMute,
+    this.onToggleDeafen,
+    this.onToggleCamera,
+    this.onSwitchCamera,
+    this.onSelectOutputRoute,
+    this.controlCapabilities,
+    this.outputRouteOptions,
+    this.trailingControls = const <Widget>[],
+  });
+
+  final Key dockKey;
+  final VoiceCallState state;
+  final VoidCallback onAccept;
+  final VoidCallback onReject;
+  final VoidCallback onHangUp;
+  final VoidCallback onRetry;
+  final VoidCallback onToggleMute;
+  final VoidCallback? onToggleDeafen;
+  final VoidCallback? onToggleCamera;
+  final VoidCallback? onSwitchCamera;
+  final ValueChanged<CallAudioOutputTarget>? onSelectOutputRoute;
+  final List<CallControlCapability>? controlCapabilities;
+  final List<VoiceCallOutputRouteOption>? outputRouteOptions;
+  final List<Widget> trailingControls;
+
+  @override
+  Widget build(BuildContext context) {
+    final scheme = Theme.of(context).colorScheme;
+    final controls = RainCallControls(
+      state: state,
+      onAccept: onAccept,
+      onReject: onReject,
+      onHangUp: onHangUp,
+      onRetry: onRetry,
+      onToggleMute: onToggleMute,
+      onToggleDeafen: onToggleDeafen,
+      onToggleCamera: onToggleCamera,
+      onSwitchCamera: onSwitchCamera,
+      onSelectOutputRoute: onSelectOutputRoute,
+      controlCapabilities: controlCapabilities,
+      outputRouteOptions: outputRouteOptions,
+      trailingControls: trailingControls,
+    );
+    return Container(
+      key: dockKey,
+      constraints: BoxConstraints(
+        maxWidth: state.isVideo ? 480 : 420,
+        minHeight: 56,
+        maxHeight: state.phase == VoiceCallPhase.incomingRinging ? 76 : 126,
+      ),
+      padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 7),
+      decoration: BoxDecoration(
+        color: scheme.surfaceContainerHighest.withValues(alpha: 0.66),
+        borderRadius: BorderRadius.circular(999),
+        border: Border.all(
+          color: scheme.outlineVariant.withValues(alpha: 0.30),
+        ),
+      ),
+      child:
+          state.phase == VoiceCallPhase.incomingRinging &&
+              trailingControls.isEmpty
+          ? controls
+          : controls,
     );
   }
 }
@@ -162,15 +406,16 @@ class _IncomingCallActions extends StatelessWidget {
   Widget build(BuildContext context) {
     return LayoutBuilder(
       builder: (BuildContext context, BoxConstraints constraints) {
-        final stackActions =
-            constraints.hasBoundedWidth && constraints.maxWidth < 340;
+        final width = constraints.hasBoundedWidth
+            ? constraints.maxWidth
+            : 320.0;
         final reject = _CallActionButton(
-          key: const ValueKey<String>('rain-call-reject-button'),
+          key: const ValueKey<String>('rain-call-decline-button'),
           semanticsLabel: 'Decline call',
           onPressed: onReject,
-          icon: Icons.call_end,
+          icon: Icons.phone_disabled,
           label: 'Decline',
-          filled: false,
+          tone: _CallActionTone.danger,
         );
         final accept = _CallActionButton(
           key: const ValueKey<String>('rain-call-accept-button'),
@@ -178,32 +423,38 @@ class _IncomingCallActions extends StatelessWidget {
           onPressed: onAccept,
           icon: Icons.call,
           label: 'Answer',
-          filled: true,
+          tone: _CallActionTone.success,
         );
 
-        if (stackActions) {
-          return Column(
-            mainAxisSize: MainAxisSize.min,
-            crossAxisAlignment: CrossAxisAlignment.stretch,
-            children: <Widget>[reject, const SizedBox(height: 8), accept],
-          );
-        }
-
-        if (!constraints.hasBoundedWidth) {
-          return Row(
-            mainAxisSize: MainAxisSize.min,
-            children: <Widget>[reject, const SizedBox(width: 10), accept],
-          );
-        }
-
-        return SizedBox(
-          width: constraints.maxWidth,
-          child: Row(
-            children: <Widget>[
-              Expanded(child: reject),
-              const SizedBox(width: 10),
-              Expanded(child: accept),
-            ],
+        return FocusTraversalGroup(
+          policy: OrderedTraversalPolicy(),
+          child: SizedBox(
+            width: width,
+            child: Row(
+              mainAxisSize: MainAxisSize.max,
+              children: <Widget>[
+                Expanded(
+                  child: SizedBox(
+                    key: const ValueKey<String>('rain-call-reject-button'),
+                    height: 58,
+                    child: FocusTraversalOrder(
+                      order: const NumericFocusOrder(1),
+                      child: reject,
+                    ),
+                  ),
+                ),
+                const SizedBox(width: 10),
+                Expanded(
+                  child: SizedBox(
+                    height: 58,
+                    child: FocusTraversalOrder(
+                      order: const NumericFocusOrder(2),
+                      child: accept,
+                    ),
+                  ),
+                ),
+              ],
+            ),
           ),
         );
       },
@@ -218,35 +469,46 @@ class _CallActionButton extends StatelessWidget {
     required this.onPressed,
     required this.icon,
     required this.label,
-    required this.filled,
+    required this.tone,
   });
 
   final String semanticsLabel;
   final VoidCallback onPressed;
   final IconData icon;
   final String label;
-  final bool filled;
+  final _CallActionTone tone;
 
   @override
   Widget build(BuildContext context) {
-    final child = filled
-        ? FilledButton.icon(
-            onPressed: onPressed,
-            icon: Icon(icon),
-            label: Text(label),
-          )
-        : OutlinedButton.icon(
-            onPressed: onPressed,
-            icon: Icon(icon),
-            label: Text(label),
-          );
+    final scheme = Theme.of(context).colorScheme;
+    final style = switch (tone) {
+      _CallActionTone.danger => FilledButton.styleFrom(
+        backgroundColor: scheme.errorContainer,
+        foregroundColor: scheme.onErrorContainer,
+      ),
+      _CallActionTone.success => FilledButton.styleFrom(
+        backgroundColor: RainColors.peerMint,
+        foregroundColor: Colors.black,
+      ),
+    };
+    final child = FilledButton.icon(
+      onPressed: onPressed,
+      style: style,
+      icon: Icon(icon),
+      label: FittedBox(
+        fit: BoxFit.scaleDown,
+        child: Text(label, maxLines: 1, softWrap: false),
+      ),
+    );
     return Semantics(
       button: true,
       label: semanticsLabel,
-      child: SizedBox(height: 52, child: child),
+      child: SizedBox(height: 58, child: child),
     );
   }
 }
+
+enum _CallActionTone { danger, success }
 
 class RainCallControlVisual {
   const RainCallControlVisual({
@@ -279,7 +541,7 @@ RainCallControlVisual rainVoiceCallControlVisual(
     ),
     CallControlCapability.deafen => RainCallControlVisual(
       tooltip: state.isDeafened ? 'Undeafen audio' : 'Deafen audio',
-      icon: state.isDeafened ? Icons.volume_off : Icons.volume_up,
+      icon: state.isDeafened ? Icons.hearing_disabled : Icons.hearing,
     ),
     CallControlCapability.outputRoute => RainCallControlVisual(
       tooltip: 'Choose audio output',
@@ -298,7 +560,7 @@ RainCallControlVisual rainVoiceCallTerminalActionVisual(VoiceCallState state) {
         : isIncoming
         ? 'Reject call'
         : 'Hang up',
-    icon: isFailed ? Icons.close : Icons.call_end,
+    icon: isFailed ? Icons.close : Icons.phone_disabled,
     danger: !isFailed,
   );
 }
@@ -403,34 +665,58 @@ class _RainCallTickerState extends State<RainCallTicker> {
 
 List<VoiceCallOutputRouteOption> rainVoiceCallOutputRouteOptions({
   bool hasBluetoothOutput = true,
+  AudioOutputCapabilityState? capabilities,
+  AdaptiveDeviceProfile? profile,
 }) {
+  if (capabilities != null && profile != null) {
+    return _adaptiveOutputRouteOptions(capabilities, profile);
+  }
   return <VoiceCallOutputRouteOption>[
     const VoiceCallOutputRouteOption(
-      route: VoiceCallOutputRoute.systemDefault,
+      target: CallAudioOutputTarget.systemDefault(),
       label: 'Default',
-      icon: Icons.volume_up,
+      icon: Icons.speaker,
     ),
     const VoiceCallOutputRouteOption(
-      route: VoiceCallOutputRoute.speaker,
+      target: CallAudioOutputTarget.androidSpeakerphone(),
       label: 'Speaker',
       icon: Icons.speaker_phone,
     ),
     if (hasBluetoothOutput)
       const VoiceCallOutputRouteOption(
-        route: VoiceCallOutputRoute.bluetooth,
+        target: CallAudioOutputTarget.bluetooth(),
         label: 'Bluetooth',
         icon: Icons.bluetooth_audio,
       ),
   ];
 }
 
-PopupMenuItem<VoiceCallOutputRoute> _outputRouteMenuItem({
+List<VoiceCallOutputRouteOption> _adaptiveOutputRouteOptions(
+  AudioOutputCapabilityState capabilities,
+  AdaptiveDeviceProfile profile,
+) {
+  final snapshot = AdaptiveMediaCapabilitySnapshot(
+    profile: profile,
+    videoInput: const VideoInputCapabilityState(devices: <RainMediaDevice>[]),
+    audioOutput: capabilities,
+  );
+  return <VoiceCallOutputRouteOption>[
+    for (final target in snapshot.outputTargets)
+      VoiceCallOutputRouteOption(
+        target: target.target,
+        label: target.label,
+        icon: _adaptiveOutputTargetIcon(target),
+      ),
+  ];
+}
+
+PopupMenuItem<CallAudioOutputTarget> _outputRouteMenuItem({
   required VoiceCallOutputRouteOption option,
-  required VoiceCallOutputRoute current,
+  required VoiceCallState state,
 }) {
-  final selected = option.route == current;
-  return PopupMenuItem<VoiceCallOutputRoute>(
-    value: option.route,
+  final selected = option.target.matches(state);
+  return PopupMenuItem<CallAudioOutputTarget>(
+    value: option.target,
     child: Row(
       children: <Widget>[
         Icon(selected ? Icons.check_circle : option.icon, size: 20),
@@ -444,30 +730,26 @@ PopupMenuItem<VoiceCallOutputRoute> _outputRouteMenuItem({
 List<VoiceCallOutputRouteOption> _effectiveOutputRouteOptions(
   List<VoiceCallOutputRouteOption>? options,
 ) {
-  final filtered = (options ?? rainVoiceCallOutputRouteOptions())
+  final source = options ?? rainVoiceCallOutputRouteOptions();
+  final filtered = source
       .where(
         (VoiceCallOutputRouteOption option) =>
-            !_containsOutputRoute(options, option.route, before: option),
+            !_containsOutputTarget(source, option.target, before: option),
       )
       .toList(growable: false);
-  return filtered.isEmpty
-      ? rainVoiceCallOutputRouteOptions(hasBluetoothOutput: false)
-      : filtered;
+  return filtered;
 }
 
-bool _containsOutputRoute(
-  List<VoiceCallOutputRouteOption>? options,
-  VoiceCallOutputRoute route, {
+bool _containsOutputTarget(
+  List<VoiceCallOutputRouteOption> options,
+  CallAudioOutputTarget target, {
   required VoiceCallOutputRouteOption before,
 }) {
-  if (options == null) {
-    return false;
-  }
   for (final option in options) {
     if (identical(option, before)) {
       return false;
     }
-    if (option.route == route) {
+    if (option.target.key == target.key) {
       return true;
     }
   }
@@ -476,35 +758,64 @@ bool _containsOutputRoute(
 
 VoiceCallOutputRouteOption _selectedOutputRouteOption(
   List<VoiceCallOutputRouteOption> options,
-  VoiceCallOutputRoute route,
+  VoiceCallState state,
 ) {
   for (final option in options) {
-    if (option.route == route) {
+    if (option.target.matches(state)) {
+      return option;
+    }
+  }
+  for (final option in options) {
+    if (option.route == state.outputRoute && !option.target.isDeviceBacked) {
       return option;
     }
   }
   return options.first;
 }
 
-VoiceCallOutputRoute _nextOutputRoute(
+CallAudioOutputTarget _nextOutputTarget(
   List<VoiceCallOutputRouteOption> options,
-  VoiceCallOutputRoute current,
+  VoiceCallState state,
 ) {
   final currentIndex = options.indexWhere(
-    (VoiceCallOutputRouteOption option) => option.route == current,
+    (VoiceCallOutputRouteOption option) => option.target.matches(state),
   );
   if (currentIndex < 0) {
-    return options.first.route;
+    return options.first.target;
   }
-  return options[(currentIndex + 1) % options.length].route;
+  return options[(currentIndex + 1) % options.length].target;
 }
 
 IconData _outputRouteIcon(VoiceCallOutputRoute route) {
   return switch (route) {
-    VoiceCallOutputRoute.systemDefault => Icons.volume_up,
+    VoiceCallOutputRoute.systemDefault => Icons.speaker,
     VoiceCallOutputRoute.speaker => Icons.speaker_phone,
     VoiceCallOutputRoute.bluetooth => Icons.bluetooth_audio,
   };
+}
+
+IconData _adaptiveOutputTargetIcon(AdaptiveAudioOutputTarget target) {
+  return switch (target.target.kind) {
+    CallAudioOutputTargetKind.systemDefault =>
+      target.label.toLowerCase().contains('phone')
+          ? Icons.phone_in_talk
+          : Icons.speaker,
+    CallAudioOutputTargetKind.androidSpeakerphone => Icons.speaker_phone,
+    CallAudioOutputTargetKind.bluetooth => Icons.bluetooth_audio,
+    CallAudioOutputTargetKind.wiredHeadset => Icons.headphones,
+    CallAudioOutputTargetKind.desktopDevice =>
+      target.device == null ? Icons.speaker : _deviceOutputIcon(target.device!),
+  };
+}
+
+IconData _deviceOutputIcon(RainMediaDevice device) {
+  if (device.isBluetoothAudioOutput) {
+    return Icons.bluetooth_audio;
+  }
+  if (device.isWiredAudioOutput) {
+    return Icons.headphones;
+  }
+  return Icons.speaker;
 }
 
 IconData rainVoiceCallIcon(VoiceCallState state) {
@@ -516,6 +827,7 @@ IconData rainVoiceCallIcon(VoiceCallState state) {
     VoiceCallPhase.connectingPeer ||
     VoiceCallPhase.connectingMedia ||
     VoiceCallPhase.ending ||
+    VoiceCallPhase.ended ||
     VoiceCallPhase.idle => Icons.call_outlined,
   };
 }
@@ -543,33 +855,8 @@ Color rainVoiceCallAccent(BuildContext context, VoiceCallState state) {
     VoiceCallPhase.connectingPeer ||
     VoiceCallPhase.connectingMedia ||
     VoiceCallPhase.ending ||
+    VoiceCallPhase.ended ||
     VoiceCallPhase.idle => scheme.primary,
-  };
-}
-
-Color rainVoiceCallHaloColor(BuildContext context, VoiceCallState state) {
-  final scheme = Theme.of(context).colorScheme;
-  return switch (state.phase) {
-    VoiceCallPhase.active => RainColors.peerMint,
-    VoiceCallPhase.incomingRinging ||
-    VoiceCallPhase.outgoingRinging ||
-    VoiceCallPhase.connectingPeer ||
-    VoiceCallPhase.connectingMedia => RainColors.mistCyan,
-    VoiceCallPhase.failed => scheme.error,
-    VoiceCallPhase.ending || VoiceCallPhase.idle => scheme.primary,
-  };
-}
-
-bool rainVoiceCallShowsSignalHalo(VoiceCallState state) {
-  return switch (state.phase) {
-    VoiceCallPhase.connectingPeer ||
-    VoiceCallPhase.connectingMedia ||
-    VoiceCallPhase.incomingRinging ||
-    VoiceCallPhase.outgoingRinging ||
-    VoiceCallPhase.active => true,
-    VoiceCallPhase.failed ||
-    VoiceCallPhase.ending ||
-    VoiceCallPhase.idle => false,
   };
 }
 
@@ -581,6 +868,7 @@ String rainVoiceCallTitle(VoiceCallState state, String displayName) {
     VoiceCallPhase.active => '${_capitalize(callKind)} with $displayName',
     VoiceCallPhase.failed => '${_capitalize(callKind)} failed',
     VoiceCallPhase.ending => 'Ending $callKind',
+    VoiceCallPhase.ended => 'Call ended',
     VoiceCallPhase.connectingPeer ||
     VoiceCallPhase.connectingMedia => 'Connecting $callKind',
     VoiceCallPhase.idle => _capitalize(callKind),
@@ -606,7 +894,10 @@ String rainVoiceCallDetail(VoiceCallState state, int nowMs) {
     if (state.isVideo && state.isRemoteCameraMuted) {
       labels.add('Peer camera off');
     }
-    if (state.outputRoute != VoiceCallOutputRoute.systemDefault) {
+    final outputLabel = state.outputRouteLabel?.trim();
+    if (outputLabel != null && outputLabel.isNotEmpty) {
+      labels.add(outputLabel);
+    } else if (state.outputRoute != VoiceCallOutputRoute.systemDefault) {
       labels.add(_outputRouteLabel(state.outputRoute));
     }
     final warning = state.outputRouteWarning?.trim();
@@ -628,6 +919,8 @@ String rainVoiceCallDetail(VoiceCallState state, int nowMs) {
       state.isVideo
           ? 'Closing camera and microphone.'
           : 'Closing microphone audio.',
+    VoiceCallPhase.ended =>
+      state.isVideo ? 'Video call ended.' : 'Voice call ended.',
     VoiceCallPhase.failed => rainVoiceCallFailureDetail(state),
     VoiceCallPhase.idle => '',
     VoiceCallPhase.active => 'Connected.',
@@ -658,7 +951,7 @@ String rainVoiceCallFailureDetail(VoiceCallState state) {
     VoiceCallFailureReason.cameraDenied => 'Camera permission required.',
     VoiceCallFailureReason.remoteCameraDenied =>
       'Peer camera permission required.',
-    VoiceCallFailureReason.peerBusy => 'Peer is busy.',
+    VoiceCallFailureReason.peerBusy => 'Peer is already in a call.',
     VoiceCallFailureReason.fileTransferActive =>
       'Finish the active file transfer first.',
     VoiceCallFailureReason.rejected => 'Call declined.',
@@ -671,6 +964,8 @@ String rainVoiceCallFailureDetail(VoiceCallState state) {
     VoiceCallFailureReason.mediaNoRemoteAudio ||
     VoiceCallFailureReason.mediaConnectionFailed =>
       'Call media could not connect. Try again.',
+    VoiceCallFailureReason.relayUnavailable =>
+      'Relay connection is unavailable. Check TURN configuration.',
     VoiceCallFailureReason.videoRendererFailed ||
     VoiceCallFailureReason.videoFirstFrameTimeout =>
       'Video could not connect. Try again.',
@@ -692,6 +987,7 @@ bool rainVoiceCallCanRetry(VoiceCallState state) {
     VoiceCallFailureReason.mediaConnectionFailed ||
     VoiceCallFailureReason.mediaIceTimeout ||
     VoiceCallFailureReason.mediaNoRemoteAudio ||
+    VoiceCallFailureReason.relayUnavailable ||
     VoiceCallFailureReason.videoRendererFailed ||
     VoiceCallFailureReason.videoFirstFrameTimeout => true,
     VoiceCallFailureReason.remoteMicrophoneDenied ||
@@ -738,7 +1034,7 @@ String rainSanitizeVoiceCallFailureDetail(String? detail) {
       normalized.contains('active voice call already exists') ||
       normalized.contains('activevoicepairs') ||
       normalized.contains('active voice pair')) {
-    return 'Peer is busy.';
+    return 'Peer is already in a call.';
   }
   if (normalized.contains('active file transfer')) {
     return 'Finish the active file transfer first.';

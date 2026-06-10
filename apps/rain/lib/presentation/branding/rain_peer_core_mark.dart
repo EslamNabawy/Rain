@@ -3,6 +3,7 @@ import 'dart:math' as math;
 import 'package:flutter/material.dart';
 import 'package:flutter_svg/flutter_svg.dart';
 
+import 'package:rain/presentation/performance/rain_performance.dart';
 import 'package:rain/presentation/theme/rain_theme.dart';
 
 import 'rain_brand_assets.dart';
@@ -79,9 +80,12 @@ class _RainPeerCoreAnimatedMarkState extends State<RainPeerCoreAnimatedMark>
       vsync: this,
       duration: RainMotion.ambientLoop,
     );
-    if (_shouldAnimate) {
-      _startMotion(fromStart: true);
-    }
+  }
+
+  @override
+  void didChangeDependencies() {
+    super.didChangeDependencies();
+    _syncMotion(fromStart: true);
   }
 
   @override
@@ -90,15 +94,9 @@ class _RainPeerCoreAnimatedMarkState extends State<RainPeerCoreAnimatedMark>
     final motionChanged =
         oldWidget.motion != widget.motion ||
         oldWidget.startupWave != widget.startupWave;
-    if (_shouldAnimate) {
-      _startMotion(
-        fromStart:
-            motionChanged || !oldWidget.animate || oldWidget.reducedMotion,
-      );
-    } else {
-      _introController.stop();
-      _meshController.stop();
-    }
+    _syncMotion(
+      fromStart: motionChanged || !oldWidget.animate || oldWidget.reducedMotion,
+    );
   }
 
   @override
@@ -110,7 +108,7 @@ class _RainPeerCoreAnimatedMarkState extends State<RainPeerCoreAnimatedMark>
 
   @override
   Widget build(BuildContext context) {
-    if (!_shouldAnimate) {
+    if (!_shouldAnimate(context)) {
       return RainPeerCoreMark(
         size: widget.size,
         semanticLabel: widget.semanticLabel,
@@ -165,7 +163,25 @@ class _RainPeerCoreAnimatedMarkState extends State<RainPeerCoreAnimatedMark>
     );
   }
 
-  bool get _shouldAnimate => widget.animate && !widget.reducedMotion;
+  bool _shouldAnimate(BuildContext context) {
+    return widget.animate &&
+        !widget.reducedMotion &&
+        MediaQuery.maybeOf(context)?.disableAnimations != true &&
+        !RainPerformanceScope.read(context).isLowPower;
+  }
+
+  void _syncMotion({required bool fromStart}) {
+    if (_shouldAnimate(context)) {
+      _startMotion(fromStart: fromStart);
+      return;
+    }
+    _introController.stop();
+    _meshController.stop();
+    if (fromStart) {
+      _introController.value = 0;
+      _meshController.value = 0;
+    }
+  }
 
   void _startMotion({required bool fromStart}) {
     if (widget.startupWave && (fromStart || !_introController.isAnimating)) {

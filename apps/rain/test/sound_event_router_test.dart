@@ -284,6 +284,78 @@ void main() {
       expect(effects.played.single.voiceCallActive, isFalse);
     });
 
+    test('maps connection request sounds to controlled effects', () async {
+      final effects = _RecordingSoundEffectsService();
+      final router = _router(effects);
+
+      await router.dispatch(
+        RainSoundEvent.connectionRequestInbound(requestId: 'in-1'),
+      );
+      await router.dispatch(
+        RainSoundEvent.connectionRequestOutboundAccepted(requestId: 'out-1'),
+      );
+      await router.dispatch(
+        RainSoundEvent.connectionRequestOutboundRejected(requestId: 'out-2'),
+      );
+      await router.dispatch(
+        RainSoundEvent.connectionRequestOutboundExpired(requestId: 'out-3'),
+      );
+
+      expect(effects.played.map((entry) => entry.effect), <RainSoundEffect>[
+        RainSoundEffect.receive,
+        RainSoundEffect.action,
+        RainSoundEffect.error,
+        RainSoundEffect.error,
+      ]);
+      expect(router.diagnostics.lastSuppressedReason, isNull);
+    });
+
+    test('repeated inbound request sound is compressed', () async {
+      final effects = _RecordingSoundEffectsService();
+      final base = DateTime.utc(2026, 5, 24, 12);
+      final router = _router(effects);
+
+      await router.dispatch(
+        RainSoundEvent.connectionRequestInbound(
+          requestId: 'in-1',
+          occurredAt: base,
+        ),
+      );
+      await router.dispatch(
+        RainSoundEvent.connectionRequestInbound(
+          requestId: 'in-2',
+          occurredAt: base.add(const Duration(milliseconds: 300)),
+        ),
+      );
+
+      expect(effects.played.map((entry) => entry.effect), <RainSoundEffect>[
+        RainSoundEffect.receive,
+      ]);
+      expect(
+        router.diagnostics.lastSuppressedReason,
+        'connectionRequestInboundWindow',
+      );
+    });
+
+    test('connection request sound off suppresses sound only', () async {
+      final effects = _RecordingSoundEffectsService();
+      final router = _router(
+        effects,
+        settingsLoader: () =>
+            const AppAudioSettings(connectionRequestSoundsEnabled: false),
+      );
+
+      await router.dispatch(
+        RainSoundEvent.connectionRequestInbound(requestId: 'in-1'),
+      );
+      await router.dispatch(RainSoundEvent.chatReceive(conversationId: 'bob'));
+
+      expect(effects.played.map((entry) => entry.effect), <RainSoundEffect>[
+        RainSoundEffect.receive,
+      ]);
+      expect(router.diagnostics.lastSuppressedReason, isNull);
+    });
+
     test('same error repeated rapidly plays one warning sound', () async {
       final effects = _RecordingSoundEffectsService();
       final base = DateTime.utc(2026, 5, 24, 12);

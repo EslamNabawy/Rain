@@ -13,6 +13,7 @@ enum VoiceCallPhase {
   connectingMedia,
   active,
   ending,
+  ended,
   failed,
 }
 
@@ -29,6 +30,7 @@ enum VoiceCallFailureReason {
   expired,
   ringingTimeout,
   mediaConnectionFailed,
+  relayUnavailable,
   mediaIceTimeout,
   mediaNoRemoteAudio,
   videoRendererFailed,
@@ -37,16 +39,113 @@ enum VoiceCallFailureReason {
 
 enum VoiceCallOutputRoute { systemDefault, speaker, bluetooth }
 
+enum CallEndInitiator { local, remote, system }
+
+final class CallEndSummary {
+  const CallEndSummary({
+    required this.peerId,
+    required this.peerLabel,
+    required this.mediaMode,
+    required this.duration,
+    required this.initiator,
+    required this.reason,
+    required this.endedAt,
+  });
+
+  final String peerId;
+  final String peerLabel;
+  final CallMediaMode mediaMode;
+  final Duration duration;
+  final CallEndInitiator initiator;
+  final String reason;
+  final DateTime endedAt;
+
+  bool get isVideo => mediaMode == CallMediaMode.video;
+}
+
+enum CallAudioOutputTargetKind {
+  systemDefault,
+  androidSpeakerphone,
+  bluetooth,
+  wiredHeadset,
+  desktopDevice,
+}
+
+final class CallAudioOutputTarget {
+  const CallAudioOutputTarget._({
+    required this.kind,
+    required this.route,
+    this.deviceId,
+  });
+
+  const CallAudioOutputTarget.systemDefault()
+    : this._(
+        kind: CallAudioOutputTargetKind.systemDefault,
+        route: VoiceCallOutputRoute.systemDefault,
+      );
+
+  const CallAudioOutputTarget.androidSpeakerphone()
+    : this._(
+        kind: CallAudioOutputTargetKind.androidSpeakerphone,
+        route: VoiceCallOutputRoute.speaker,
+      );
+
+  const CallAudioOutputTarget.bluetooth()
+    : this._(
+        kind: CallAudioOutputTargetKind.bluetooth,
+        route: VoiceCallOutputRoute.bluetooth,
+      );
+
+  const CallAudioOutputTarget.wiredHeadset()
+    : this._(
+        kind: CallAudioOutputTargetKind.wiredHeadset,
+        route: VoiceCallOutputRoute.systemDefault,
+      );
+
+  const CallAudioOutputTarget.desktopDevice(String deviceId)
+    : this._(
+        kind: CallAudioOutputTargetKind.desktopDevice,
+        route: VoiceCallOutputRoute.systemDefault,
+        deviceId: deviceId,
+      );
+
+  final CallAudioOutputTargetKind kind;
+  final VoiceCallOutputRoute route;
+  final String? deviceId;
+
+  bool get isDeviceBacked =>
+      kind == CallAudioOutputTargetKind.desktopDevice &&
+      deviceId != null &&
+      deviceId!.trim().isNotEmpty;
+
+  String get key {
+    final id = deviceId?.trim();
+    if (isDeviceBacked && id != null && id.isNotEmpty) {
+      return '${kind.name}:$id';
+    }
+    return kind.name;
+  }
+
+  bool matches(VoiceCallState state) {
+    if (isDeviceBacked) {
+      return state.outputRouteDeviceId == deviceId;
+    }
+    return state.outputRouteDeviceId == null && state.outputRoute == route;
+  }
+}
+
 final class VoiceCallOutputRouteOption {
   const VoiceCallOutputRouteOption({
-    required this.route,
+    required this.target,
     required this.label,
     required this.icon,
   });
 
-  final VoiceCallOutputRoute route;
+  final CallAudioOutputTarget target;
   final String label;
   final IconData icon;
+
+  VoiceCallOutputRoute get route => target.route;
 }
 
 enum CallControlCapability {
@@ -77,6 +176,8 @@ class VoiceCallState {
     this.mediaReconnecting = false,
     this.reconnectingSince,
     this.outputRoute = VoiceCallOutputRoute.systemDefault,
+    this.outputRouteDeviceId,
+    this.outputRouteLabel,
     this.outputRouteWarning,
     this.startedAt,
     this.updatedAt,
@@ -104,6 +205,8 @@ class VoiceCallState {
       mediaReconnecting = false,
       reconnectingSince = null,
       outputRoute = VoiceCallOutputRoute.systemDefault,
+      outputRouteDeviceId = null,
+      outputRouteLabel = null,
       outputRouteWarning = null,
       startedAt = null,
       updatedAt = null,
@@ -129,6 +232,8 @@ class VoiceCallState {
   final bool mediaReconnecting;
   final int? reconnectingSince;
   final VoiceCallOutputRoute outputRoute;
+  final String? outputRouteDeviceId;
+  final String? outputRouteLabel;
   final String? outputRouteWarning;
   final int? startedAt;
   final int? updatedAt;
@@ -196,6 +301,8 @@ class VoiceCallState {
     bool? mediaReconnecting,
     int? reconnectingSince,
     VoiceCallOutputRoute? outputRoute,
+    String? outputRouteDeviceId,
+    String? outputRouteLabel,
     String? outputRouteWarning,
     int? startedAt,
     int? updatedAt,
@@ -206,6 +313,7 @@ class VoiceCallState {
     bool clearError = false,
     bool clearFailureReason = false,
     bool clearOutputRouteWarning = false,
+    bool clearOutputRouteTarget = false,
     bool clearReconnectingSince = false,
   }) {
     final effectiveMediaReconnecting =
@@ -231,6 +339,12 @@ class VoiceCallState {
           ? null
           : reconnectingSince ?? this.reconnectingSince,
       outputRoute: outputRoute ?? this.outputRoute,
+      outputRouteDeviceId: clearOutputRouteTarget
+          ? outputRouteDeviceId
+          : outputRouteDeviceId ?? this.outputRouteDeviceId,
+      outputRouteLabel: clearOutputRouteTarget
+          ? outputRouteLabel
+          : outputRouteLabel ?? this.outputRouteLabel,
       outputRouteWarning: clearOutputRouteWarning
           ? null
           : outputRouteWarning ?? this.outputRouteWarning,

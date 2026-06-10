@@ -17,7 +17,9 @@ param(
   [string]$AndroidArtifactSet = 'all',
   [switch]$AllowPublicTurnForDemo,
   [switch]$UseDemoAndroidSigningKey,
-  [switch]$Clean
+  [switch]$Clean,
+  [string]$BuildName = '',
+  [string]$BuildNumber = ''
 )
 
 $ErrorActionPreference = 'Stop'
@@ -191,6 +193,12 @@ function New-DemoDartDefinesFile([string]$Path, [string]$RepoRoot) {
     $defines.RAIN_SIGNALING_ENCRYPTION_KEY = $script:DemoSignalingEncryptionKey
   }
 
+  if ($null -eq $defines.PSObject.Properties['RAIN_UPDATE_CHANNEL']) {
+    $defines | Add-Member -NotePropertyName 'RAIN_UPDATE_CHANNEL' -NotePropertyValue 'demo'
+  } else {
+    $defines.RAIN_UPDATE_CHANNEL = 'demo'
+  }
+
   $tmpDir = Get-ReleaseTempDir $RepoRoot
   $demoDefinesPath = Join-Path $tmpDir 'rain-openrelay-demo-defines.generated.json'
   $defines | ConvertTo-Json -Depth 20 | Set-Content -LiteralPath $demoDefinesPath -Encoding utf8
@@ -258,6 +266,29 @@ function Assert-ReleaseDartDefines([string]$Path, [switch]$AllowPublicTurnForDem
       $signalingEncryptionKey.Equals($script:DemoSignalingEncryptionKey, [System.StringComparison]::Ordinal)
     ) {
       throw "Production release builds must not use the demo signaling encryption key."
+    }
+  }
+
+  $updateChannel = Get-JsonPropertyValue $defines 'RAIN_UPDATE_CHANNEL'
+  if (-not [string]::IsNullOrWhiteSpace($updateChannel)) {
+    $normalizedUpdateChannel = $updateChannel.Trim().ToLowerInvariant()
+    if ($AllowPublicTurnForDemo) {
+      if ($normalizedUpdateChannel -ne 'demo') {
+        throw "Demo release builds must use RAIN_UPDATE_CHANNEL=demo."
+      }
+    } elseif ($normalizedUpdateChannel -ne 'stable') {
+      throw "Production release builds must use RAIN_UPDATE_CHANNEL=stable."
+    }
+  }
+
+  $heartbeatSecondsRaw = Get-JsonPropertyValue $defines 'RAIN_BACKGROUND_HEARTBEAT_SECONDS'
+  if (-not [string]::IsNullOrWhiteSpace($heartbeatSecondsRaw)) {
+    $heartbeatSeconds = 0
+    if (-not [int]::TryParse($heartbeatSecondsRaw.Trim(), [ref]$heartbeatSeconds)) {
+      throw "RAIN_BACKGROUND_HEARTBEAT_SECONDS must be an integer."
+    }
+    if ($heartbeatSeconds -le 0 -or $heartbeatSeconds -gt 10) {
+      throw "RAIN_BACKGROUND_HEARTBEAT_SECONDS must be between 1 and 10 for release builds."
     }
   }
 
@@ -401,34 +432,19 @@ function Assert-AndroidReleaseSigning() {
 }
 
 function Use-DemoAndroidSigningKey([string]$RepoRoot) {
-  $keytoolPath = Resolve-KeytoolPath
-  $jdkRoot = Split-Path (Split-Path $keytoolPath -Parent) -Parent
-  [System.Environment]::SetEnvironmentVariable('JAVA_HOME', $jdkRoot, 'Process')
-  $env:PATH = "$(Join-Path $jdkRoot 'bin');$env:PATH"
-
   $tmpDir = Get-ReleaseTempDir $RepoRoot
-  $keyPath = Join-Path $tmpDir 'rain-openrelay-demo-release.jks'
-  $password = 'rain-openrelay-demo'
-  $alias = 'rain-openrelay-demo'
+  $keyPath = Join-Path $tmpDir 'rain-demo-stable-release.jks'
+  $password = 'rain-demo-stable'
+  $alias = 'rain-demo-stable'
+  $publicDemoKeyBase64Path = Join-Path $RepoRoot 'apps\rain\android\demo\rain-demo-stable-release.jks.base64'
 
-  if (-not (Test-Path -LiteralPath $keyPath)) {
-    Write-Step "Creating demo Android signing key"
-    & $keytoolPath `
-      -genkeypair `
-      -noprompt `
-      -alias $alias `
-      -keyalg RSA `
-      -keysize 2048 `
-      -validity 10000 `
-      -keystore $keyPath `
-      -storepass $password `
-      -keypass $password `
-      -dname 'CN=Rain OpenRelay Demo,O=Rain,C=US' | Out-Host
-
-    if ($LASTEXITCODE -ne 0) {
-      throw "keytool failed to create demo Android signing key with exit code $LASTEXITCODE"
-    }
+  if (-not (Test-Path -LiteralPath $publicDemoKeyBase64Path)) {
+    throw "Stable public demo Android signing key is missing: $publicDemoKeyBase64Path. Refusing to create a throwaway key because it would break APK update installs."
   }
+
+  Write-Step "Using stable public demo Android signing key"
+  $base64 = (Get-Content -Raw -LiteralPath $publicDemoKeyBase64Path) -replace '\s', ''
+  [IO.File]::WriteAllBytes($keyPath, [Convert]::FromBase64String($base64))
 
   [System.Environment]::SetEnvironmentVariable('RAIN_RELEASE_STORE_FILE', $keyPath, 'Process')
   [System.Environment]::SetEnvironmentVariable('RAIN_RELEASE_STORE_PASSWORD', $password, 'Process')
@@ -440,6 +456,62 @@ function Invoke-FlutterBuild([string[]]$Arguments) {
   & flutter @Arguments | Out-Host
   if ($LASTEXITCODE -ne 0) {
     throw "flutter $($Arguments -join ' ') failed with exit code $LASTEXITCODE"
+  }
+}
+
+function Get-AppPubspecVersion([string]$FlutterProjectRoot) {
+  $pubspecPath = Join-Path $FlutterProjectRoot 'pubspec.yaml'
+  if (-not (Test-Path -LiteralPath $pubspecPath)) {
+    throw "App pubspec.yaml not found: $pubspecPath"
+  }
+
+  $pubspec = Get-Content -Raw -LiteralPath $pubspecPath
+  $match = [regex]::Match($pubspec, '(?m)^version:\s*(?<name>[0-9]+\.[0-9]+\.[0-9]+)\+(?<number>[0-9]+)\s*$')
+  if (-not $match.Success) {
+    throw "apps\rain\pubspec.yaml has no valid version: x.y.z+build"
+  }
+
+  return @{
+    Name = $match.Groups['name'].Value
+    Number = $match.Groups['number'].Value
+  }
+}
+
+function Resolve-ReleaseBuildStamp(
+  [string]$FlutterProjectRoot,
+  [string]$BuildName,
+  [string]$BuildNumber
+) {
+  $pubspecVersion = Get-AppPubspecVersion $FlutterProjectRoot
+  $resolvedBuildName = if ([string]::IsNullOrWhiteSpace($BuildName)) {
+    [string]$pubspecVersion.Name
+  } else {
+    $BuildName.Trim()
+  }
+  $resolvedBuildNumber = if ([string]::IsNullOrWhiteSpace($BuildNumber)) {
+    [string]$pubspecVersion.Number
+  } else {
+    $BuildNumber.Trim()
+  }
+
+  if ($resolvedBuildName -notmatch '^[0-9]+\.[0-9]+\.[0-9]+$') {
+    throw "Release build name must be x.y.z: $resolvedBuildName"
+  }
+
+  $parsedBuildNumber = 0
+  if (-not [int]::TryParse($resolvedBuildNumber, [ref]$parsedBuildNumber)) {
+    throw "Release build number must be a positive integer: $resolvedBuildNumber"
+  }
+  if ($parsedBuildNumber -le 0) {
+    throw "Release build number must be greater than zero: $resolvedBuildNumber"
+  }
+  if ($parsedBuildNumber -gt 2100000000) {
+    throw "Release build number is too large for Android versionCode: $resolvedBuildNumber"
+  }
+
+  return @{
+    Name = $resolvedBuildName
+    Number = $parsedBuildNumber
   }
 }
 
@@ -683,6 +755,8 @@ if ($UseDemoAndroidSigningKey -and -not $isOpenRelayDemoBuild) {
 $androidArtifactPrefix = if ($isOpenRelayDemoBuild) { 'Rain-Demo' } else { 'Rain-release' }
 $windowsPortableName = if ($isOpenRelayDemoBuild) { 'Rain-Demo-Windows-x64-Build' } else { 'Rain-windows-portable' }
 $dartDefineArgs = Get-DartDefineArgs $appsRoot $DartDefinesFile $repoRoot $isOpenRelayDemoBuild
+$buildStamp = Resolve-ReleaseBuildStamp -FlutterProjectRoot $appsRoot -BuildName $BuildName -BuildNumber $BuildNumber
+$buildStampArgs = @("--build-name=$($buildStamp.Name)", "--build-number=$($buildStamp.Number)")
 if ($Platform -in @('all', 'android')) {
   if ($UseDemoAndroidSigningKey) {
     Use-DemoAndroidSigningKey $repoRoot
@@ -693,6 +767,8 @@ if ($Platform -in @('all', 'android')) {
 Ensure-Command flutter
 Ensure-Command dart
 Ensure-Command git
+
+Write-Step "Using app package version $($buildStamp.Name)+$($buildStamp.Number)"
 
 Write-Step "Syncing app icons"
 & (Join-Path $repoRoot 'scripts\sync_app_icons.ps1') -RepoRoot $repoRoot | Out-Host
@@ -734,7 +810,7 @@ if ($Platform -in @('all', 'windows')) {
     Write-Step "Cleaning Flutter project state for Windows build"
     Clean-FlutterProject $appsRoot
   }
-  $flutterArgs = @('build', 'windows', '--release') + $dartDefineArgs
+  $flutterArgs = @('build', 'windows', '--release') + $buildStampArgs + $dartDefineArgs
   Invoke-InDir $appsRoot {
     Invoke-FlutterBuild $flutterArgs
   }
@@ -799,7 +875,7 @@ if ($Platform -in @('all', 'android')) {
   }
   $androidTargetPlatformArgs = @('--target-platform', 'android-arm,android-arm64')
   Write-Step "Building Android per-ABI release APKs: armeabi-v7a and arm64-v8a"
-  $splitFlutterArgs = @('build', 'apk', '--release', '--split-per-abi') + $androidTargetPlatformArgs + $dartDefineArgs
+  $splitFlutterArgs = @('build', 'apk', '--release', '--split-per-abi') + $androidTargetPlatformArgs + $buildStampArgs + $dartDefineArgs
   Invoke-InDir $appsRoot {
     Invoke-FlutterBuild $splitFlutterArgs
   }

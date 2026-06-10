@@ -6,6 +6,7 @@ import 'package:flutter_test/flutter_test.dart';
 import 'package:flutter_webrtc/flutter_webrtc.dart'
     show MediaStream, MediaStreamTrack, RTCSessionDescription;
 import 'package:protocol_brain/protocol_brain.dart';
+import 'package:rain/application/runtime/connection_attempt_coordinator.dart';
 import 'package:rain/application/runtime/rain_runtime_controller.dart';
 import 'package:rain/infrastructure/signaling/noop_signaling_adapter.dart';
 import 'package:rain_core/rain_core.dart';
@@ -137,6 +138,7 @@ void main() {
       networkRecoveryDebounce: Duration.zero,
     );
     addTearDown(runtime.dispose);
+    await adapter.setPresence('bob', true);
     await runtime.start();
 
     brain.emitPeerDisconnected('bob');
@@ -150,6 +152,10 @@ void main() {
     expect(failed?.state, FileTransferState.failed);
     expect(failed?.error, 'Connection lost. Transfer canceled.');
     expect(await tempFile.exists(), isFalse);
+    expect(
+      runtime.connectionCoordinatorSnapshotFor('bob').disconnectIntent,
+      PeerDisconnectIntent.remoteManual,
+    );
   });
 
   test('network recovery asks active peer manager to restart paths', () async {
@@ -379,8 +385,9 @@ class _NoopVoiceMediaConnection implements VoiceMediaConnection {
   Future<void> startLocalAudio() async {}
 
   @override
-  Future<VoiceSessionDescription> createOffer() async =>
-      const VoiceSessionDescription(sdp: 'offer', type: 'offer');
+  Future<VoiceSessionDescription> createOffer({
+    bool iceRestart = false,
+  }) async => const VoiceSessionDescription(sdp: 'offer', type: 'offer');
 
   @override
   Future<VoiceSessionDescription> acceptOffer(
@@ -403,6 +410,9 @@ class _NoopVoiceMediaConnection implements VoiceMediaConnection {
   Future<void> setAudioOutputRoute(VoiceMediaOutputRoute route) async {}
 
   @override
+  Future<void> selectAudioOutputDevice(String deviceId) async {}
+
+  @override
   Future<void> dispose() async {
     await _ice.close();
     await _tracks.close();
@@ -418,6 +428,8 @@ class _NoopCallMediaConnection implements CallMediaConnection {
       StreamController<CallRemoteMediaTrack>.broadcast();
   final StreamController<CallMediaState> _states =
       StreamController<CallMediaState>.broadcast();
+  final StreamController<MediaInterruptionEvent> _interruptions =
+      StreamController<MediaInterruptionEvent>.broadcast();
 
   @override
   Stream<CallIceCandidate> get onIceCandidate => _ice.stream;
@@ -427,6 +439,10 @@ class _NoopCallMediaConnection implements CallMediaConnection {
 
   @override
   Stream<CallMediaState> get onStateChanged => _states.stream;
+
+  @override
+  Stream<MediaInterruptionEvent> get onMediaInterruption =>
+      _interruptions.stream;
 
   @override
   CallMediaDiagnostics get diagnostics => const CallMediaDiagnostics();
@@ -443,6 +459,7 @@ class _NoopCallMediaConnection implements CallMediaConnection {
   @override
   Future<CallSessionDescription> createOffer({
     required CallMediaKind kind,
+    bool iceRestart = false,
   }) async => const CallSessionDescription(sdp: 'offer', type: 'offer');
 
   @override
@@ -473,9 +490,21 @@ class _NoopCallMediaConnection implements CallMediaConnection {
   Future<void> setAudioOutputRoute(CallMediaOutputRoute route) async {}
 
   @override
+  Future<void> selectAudioOutputDevice(String deviceId) async {}
+
+  @override
+  Future<void> refreshProcessingConfig() async {}
+
+  @override
+  Future<void> handleMediaInterruption(MediaInterruptionEvent event) async {
+    _interruptions.add(event);
+  }
+
+  @override
   Future<void> dispose() async {
     await _ice.close();
     await _tracks.close();
     await _states.close();
+    await _interruptions.close();
   }
 }

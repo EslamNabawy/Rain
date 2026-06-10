@@ -1,3 +1,4 @@
+import 'dart:convert';
 import 'dart:io';
 
 import 'package:drift/native.dart';
@@ -5,14 +6,17 @@ import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:flutter_webrtc/flutter_webrtc.dart';
+import 'package:package_info_plus/package_info_plus.dart';
 import 'package:protocol_brain/protocol_brain.dart';
 import 'package:rain/application/bootstrap/app_bootstrap.dart';
+import 'package:rain/application/runtime/connection_request_state.dart';
 import 'package:rain/application/runtime/rain_runtime_controller.dart';
 import 'package:rain/application/state/app_providers.dart';
 import 'package:rain/core/config/app_environment.dart';
 import 'package:rain/infrastructure/services/app_settings_store.dart';
 import 'package:rain/infrastructure/services/crash_diagnostics_service.dart';
 import 'package:rain/infrastructure/services/force_update_service.dart';
+import 'package:rain/infrastructure/services/network_status_service.dart';
 import 'package:rain/infrastructure/signaling/noop_signaling_adapter.dart';
 import 'package:rain/presentation/screens/settings_screen.dart';
 import 'package:rain_core/rain_core.dart';
@@ -45,12 +49,192 @@ void main() {
       findsOneWidget,
     );
     expect(find.text('Test microphone'), findsOneWidget);
+    expect(find.text('Clear voice'), findsOneWidget);
+    expect(
+      find.text('Clear voice reduces background noise during calls.'),
+      findsOneWidget,
+    );
     expect(find.text('Default call output'), findsOneWidget);
     expect(find.text('System default'), findsOneWidget);
     expect(find.text('Sound effects'), findsOneWidget);
     expect(find.text('100%'), findsOneWidget);
     expect(find.text('Call sounds'), findsOneWidget);
     expect(find.text('Reduce during calls'), findsOneWidget);
+  });
+
+  testWidgets('settings account deletion asks for password', (
+    WidgetTester tester,
+  ) async {
+    final runtimeController = _RecordingRuntimeController();
+    final harness = _SettingsHarness(
+      identity: const RainIdentity(
+        username: 'alice',
+        displayName: 'Alice',
+        createdAt: 1,
+        gender: RainGender.female,
+      ),
+      runtimeController: runtimeController,
+    );
+    addTearDown(harness.dispose);
+
+    await tester.pumpSettingsScreen(harness: harness);
+    await tester.tap(find.text('Delete account'));
+    await tester.pumpSettingsFrame();
+    await tester.tap(find.widgetWithText(FilledButton, 'Delete account'));
+    await tester.pumpSettingsFrame();
+
+    expect(find.text('Confirm password'), findsOneWidget);
+
+    await tester.enterText(find.byType(TextField), 'secret1');
+    await tester.tap(find.widgetWithText(FilledButton, 'Delete account'));
+    await tester.pumpSettingsFrame();
+
+    expect(runtimeController.deleteAccountPasswords, <String>['secret1']);
+    expect(find.text('Could not delete account'), findsOneWidget);
+    expect(find.textContaining('Wrong password'), findsOneWidget);
+  });
+
+  testWidgets(
+    'settings account deletion backend cleanup failure keeps settings open',
+    (WidgetTester tester) async {
+      final runtimeController = _RecordingRuntimeController(
+        deleteAccountError: const AccountDeletionException(
+          kind: AccountDeletionFailureKind.backendCleanupFailed,
+          message:
+              'Could not finish deleting backend account data. '
+              'Account deletion was not completed.',
+          destructiveActionStarted: false,
+        ),
+      );
+      final harness = _SettingsHarness(
+        identity: const RainIdentity(
+          username: 'alice',
+          displayName: 'Alice',
+          createdAt: 1,
+          gender: RainGender.female,
+        ),
+        runtimeController: runtimeController,
+      );
+      addTearDown(harness.dispose);
+
+      await tester.pumpSettingsScreen(harness: harness);
+      await tester.tap(find.text('Delete account'));
+      await tester.pumpSettingsFrame();
+      await tester.tap(find.widgetWithText(FilledButton, 'Delete account'));
+      await tester.pumpSettingsFrame();
+      await tester.enterText(find.byType(TextField), 'secret1');
+      await tester.tap(find.widgetWithText(FilledButton, 'Delete account'));
+      await tester.pumpSettingsFrame();
+
+      expect(runtimeController.deleteAccountPasswords, <String>['secret1']);
+      expect(find.text('Settings'), findsOneWidget);
+      expect(find.text('Could not delete account'), findsOneWidget);
+      expect(
+        find.textContaining('Account deletion was not completed'),
+        findsOneWidget,
+      );
+    },
+  );
+
+  testWidgets('settings screen shows version and update actions', (
+    WidgetTester tester,
+  ) async {
+    final harness = _SettingsHarness();
+    addTearDown(harness.dispose);
+
+    await tester.pumpSettingsScreen(harness: harness);
+    await tester.scrollUntilVisible(
+      find.text('About Rain'),
+      500,
+      scrollable: find.byType(Scrollable).first,
+    );
+    await tester.pumpSettingsFrame();
+
+    expect(find.text('About Rain'), findsOneWidget);
+    expect(find.text('Rain 1.0.0'), findsOneWidget);
+    expect(find.textContaining('Build 1'), findsOneWidget);
+    expect(find.text('Rain is up to date'), findsOneWidget);
+    expect(find.text('Check for updates'), findsOneWidget);
+    expect(find.text('Open release page'), findsOneWidget);
+  });
+
+  testWidgets('manual update check reports required update details', (
+    WidgetTester tester,
+  ) async {
+    final harness = _SettingsHarness(
+      manifestLoader: () async => jsonEncode(<String, Object?>{
+        'schema': 1,
+        'channels': <String, Object?>{
+          'stable': <String, Object?>{
+            'android': <String, Object?>{
+              'latestVersion': '1.0.1',
+              'latestBuild': 2,
+              'minimumVersion': '1.0.1',
+              'minimumBuild': 2,
+              'updateUrl': 'https://example.com/releases',
+            },
+          },
+        },
+      }),
+    );
+    addTearDown(harness.dispose);
+
+    await tester.pumpSettingsScreen(harness: harness);
+    await tester.scrollUntilVisible(
+      find.text('Check for updates'),
+      500,
+      scrollable: find.byType(Scrollable).first,
+    );
+    await tester.pumpSettingsFrame();
+    await tester.tap(find.text('Check for updates'));
+    await tester.pumpSettingsFrame();
+
+    expect(
+      find.text('Update required: Rain 1.0.1 build 2 is available.'),
+      findsOneWidget,
+    );
+  });
+
+  testWidgets('manual update check reports outdated remote policy', (
+    WidgetTester tester,
+  ) async {
+    final harness = _SettingsHarness(
+      packageVersion: '1.0.2',
+      packageBuildNumber: '1007',
+      manifestLoader: () async => jsonEncode(<String, Object?>{
+        'schema': 1,
+        'channels': <String, Object?>{
+          'stable': <String, Object?>{
+            'android': <String, Object?>{
+              'latestVersion': '1.0.1',
+              'latestBuild': 7,
+              'minimumVersion': '1.0.1',
+              'minimumBuild': 7,
+              'updateUrl': 'https://example.com/releases',
+            },
+          },
+        },
+      }),
+    );
+    addTearDown(harness.dispose);
+
+    await tester.pumpSettingsScreen(harness: harness);
+    await tester.scrollUntilVisible(
+      find.text('Check for updates'),
+      500,
+      scrollable: find.byType(Scrollable).first,
+    );
+    await tester.pumpSettingsFrame();
+
+    expect(find.text('Update policy outdated'), findsOneWidget);
+
+    await tester.tap(find.text('Check for updates'));
+    await tester.pumpSettingsFrame();
+
+    expect(
+      find.textContaining('Update policy is behind this app'),
+      findsOneWidget,
+    );
   });
 
   testWidgets('settings screen exposes debug sound diagnostics', (
@@ -61,7 +245,7 @@ void main() {
     addTearDown(harness.dispose);
 
     await tester.pumpSettingsScreen(harness: harness);
-    await tester.drag(find.byType(ListView), const Offset(0, -900));
+    await tester.drag(find.byType(ListView), const Offset(0, -1500));
     await tester.pump();
     await tester.pump(const Duration(milliseconds: 300));
 
@@ -266,6 +450,38 @@ void main() {
     );
   });
 
+  testWidgets('call processing toggles persist from settings', (
+    WidgetTester tester,
+  ) async {
+    _useTallView(tester);
+    final harness = _SettingsHarness();
+    addTearDown(harness.dispose);
+
+    await tester.pumpSettingsScreen(harness: harness);
+    await tester.tap(find.text('Clear voice'));
+    await tester.pump();
+    await tester.pump(const Duration(milliseconds: 300));
+
+    expect(await AppSettingsStore().loadClearVoiceEnabled(), isFalse);
+
+    await tester.drag(find.byType(ListView), const Offset(0, -500));
+    await tester.pumpSettingsFrame();
+
+    expect(find.text('Auto video optimize'), findsOneWidget);
+    expect(
+      find.text(
+        'Auto video optimize adjusts quality when the network is weak.',
+      ),
+      findsOneWidget,
+    );
+
+    await tester.tap(find.text('Auto video optimize'));
+    await tester.pump();
+    await tester.pump(const Duration(milliseconds: 300));
+
+    expect(await AppSettingsStore().loadAutoVideoOptimizeEnabled(), isFalse);
+  });
+
   testWidgets('sound effects toggle persists from settings', (
     WidgetTester tester,
   ) async {
@@ -294,6 +510,102 @@ void main() {
     await tester.pump(const Duration(milliseconds: 300));
 
     expect(await AppSettingsStore().loadCallSoundsEnabled(), isFalse);
+  });
+
+  testWidgets('connection request controls persist from settings', (
+    WidgetTester tester,
+  ) async {
+    _useTallView(tester);
+    final harness = _SettingsHarness(
+      connectionRequestState: _connectionRequestStateWithQuota(),
+    );
+    addTearDown(harness.dispose);
+
+    await tester.pumpSettingsScreen(harness: harness);
+    await tester.drag(find.byType(ListView), const Offset(0, -1200));
+    await tester.pumpSettingsFrame();
+
+    expect(find.text('Connection request notifications'), findsOneWidget);
+    expect(find.text('Connection request sound'), findsOneWidget);
+    expect(find.text('Show notifications when minimized'), findsOneWidget);
+    expect(find.text('Request quota'), findsOneWidget);
+    expect(
+      find.text('Spark mode uses best-effort request limits.'),
+      findsOneWidget,
+    );
+    expect(find.textContaining('Read-only from Firebase'), findsOneWidget);
+    expect(find.textContaining('extra credit'), findsNothing);
+
+    await tester.tap(find.text('Connection request notifications'));
+    await tester.pumpSettingsFrame();
+    await tester.tap(find.text('Connection request sound'));
+    await tester.pumpSettingsFrame();
+
+    expect(
+      await AppSettingsStore().loadConnectionRequestNotificationsEnabled(),
+      isFalse,
+    );
+    expect(
+      await AppSettingsStore().loadConnectionRequestSoundsEnabled(),
+      isFalse,
+    );
+  });
+
+  testWidgets('settings shows Spark best-effort note in rtdbOnly mode', (
+    WidgetTester tester,
+  ) async {
+    _useTallView(tester);
+    final harness = _SettingsHarness(
+      connectionRequestState: _connectionRequestStateWithQuota(),
+    );
+    addTearDown(harness.dispose);
+
+    await tester.pumpSettingsScreen(harness: harness);
+    await tester.drag(find.byType(ListView), const Offset(0, -1200));
+    await tester.pumpSettingsFrame();
+
+    expect(
+      find.text('Spark mode uses best-effort request limits.'),
+      findsOneWidget,
+    );
+    expect(find.textContaining('extra credit'), findsNothing);
+    expect(find.textContaining('unlimited entitlement'), findsNothing);
+  });
+
+  testWidgets('muted request sender unmute removes only that row', (
+    WidgetTester tester,
+  ) async {
+    _useTallView(tester);
+    await AppSettingsStore().setMutedConnectionRequestSenders(<String>{
+      'bob',
+      'cara',
+    });
+    final harness = _SettingsHarness(
+      connectionRequestState: _connectionRequestStateWithQuota(),
+    );
+    addTearDown(harness.dispose);
+
+    await tester.pumpSettingsScreen(harness: harness);
+    await tester.drag(find.byType(ListView), const Offset(0, -1400));
+    await tester.pumpSettingsFrame();
+
+    expect(find.text('@bob'), findsOneWidget);
+    expect(find.text('@cara'), findsOneWidget);
+
+    await tester.tap(
+      find.byKey(
+        const ValueKey<String>('unmute-connection-request-sender-bob'),
+      ),
+    );
+    await tester.pumpSettingsFrame();
+
+    expect(find.text('@bob'), findsNothing);
+    expect(find.text('@cara'), findsOneWidget);
+    expect(
+      (await AppSettingsStore().loadConnectionRequestSettings())
+          .mutedRequestSenders,
+      <String>{'cara'},
+    );
   });
 
   testWidgets('device refresh handles permission denied', (
@@ -344,15 +656,52 @@ void _useTallView(WidgetTester tester) {
   addTearDown(tester.view.resetDevicePixelRatio);
 }
 
+ConnectionRequestState _connectionRequestStateWithQuota() {
+  return ConnectionRequestState(
+    available: true,
+    incomingRequests: const <ConnectionRequestPayload>[],
+    outgoingRequests: const <ConnectionRequestPayload>[],
+    incomingSurfaces: const <ConnectionRequestSurfaceModel>[],
+    outgoingSurfaces: const <ConnectionRequestSurfaceModel>[],
+    quota: const ConnectionRequestQuotaSnapshot(
+      dailyLimit: 20,
+      usedToday: 15,
+      extraCreditsRemaining: 2,
+      perTargetRemainingToday: 1,
+      pendingOutboundCount: 2,
+      pendingInboundCount: 1,
+    ),
+    updatedAt: DateTime.utc(2026, 5, 28, 12),
+  );
+}
+
 extension _SettingsPump on WidgetTester {
   Future<void> pumpSettingsScreen({required _SettingsHarness harness}) async {
     await pumpWidget(
       ProviderScope(
         overrides: [
           appBootstrapProvider.overrideWithValue(harness.bootstrap),
+          networkStatusProvider.overrideWith(
+            (Ref ref) => Stream<NetworkStatusState>.value(
+              const NetworkStatusState.online(),
+            ),
+          ),
           platformBridgeProvider.overrideWithValue(harness.platformBridge),
-          identityProvider.overrideWith(_NoIdentityController.new),
-          runtimeControllerProvider.overrideWith(_NoRuntimeController.new),
+          identityProvider.overrideWith(
+            harness.identity == null
+                ? _NoIdentityController.new
+                : () => _StaticIdentityController(harness.identity!),
+          ),
+          runtimeControllerProvider.overrideWith(
+            harness.runtimeController == null
+                ? _NoRuntimeController.new
+                : () => harness.runtimeController!,
+          ),
+          connectionRequestProvider.overrideWith(
+            () => _FakeConnectionRequestController(
+              harness.connectionRequestState,
+            ),
+          ),
           friendsProvider.overrideWith(_NoFriendsController.new),
           crashDiagnosticsServiceProvider.overrideWithValue(
             harness.crashDiagnostics,
@@ -371,12 +720,22 @@ extension _SettingsPump on WidgetTester {
 }
 
 class _SettingsHarness {
-  _SettingsHarness({_FakePlatformBridge? platformBridge})
-    : platformBridge = platformBridge ?? _FakePlatformBridge(),
-      database = RainDatabase(NativeDatabase.memory()),
-      diagnosticsDirectory = Directory.systemTemp.createTempSync(
-        'rain_settings_test_',
-      ) {
+  _SettingsHarness({
+    _FakePlatformBridge? platformBridge,
+    ConnectionRequestState? connectionRequestState,
+    ReleaseManifestLoader? manifestLoader,
+    String packageVersion = '1.0.0',
+    String packageBuildNumber = '1',
+    this.identity,
+    this.runtimeController,
+  }) : platformBridge = platformBridge ?? _FakePlatformBridge(),
+       connectionRequestState =
+           connectionRequestState ?? const ConnectionRequestState.idle(),
+       database = RainDatabase(NativeDatabase.memory()),
+       diagnosticsDirectory = Directory.systemTemp.createTempSync(
+         'rain_settings_test_',
+       ) {
+    runtimeController?.database = database;
     crashDiagnostics = CrashDiagnosticsService(
       directoryProvider: () async => diagnosticsDirectory,
       appInfoProvider: () async => const CrashDiagnosticsAppInfo.unknown(),
@@ -390,11 +749,22 @@ class _SettingsHarness {
       forceUpdateService: ForceUpdateService(
         remoteConfig: null,
         updateUrl: 'https://example.com',
+        manifestLoader: manifestLoader,
+        packageInfoLoader: () async => PackageInfo(
+          appName: 'Rain',
+          packageName: 'com.rainapp.rain',
+          version: packageVersion,
+          buildNumber: packageBuildNumber,
+          buildSignature: '',
+        ),
       ),
     );
   }
 
   final _FakePlatformBridge platformBridge;
+  final ConnectionRequestState connectionRequestState;
+  final RainIdentity? identity;
+  final _RecordingRuntimeController? runtimeController;
   final RainDatabase database;
   final Directory diagnosticsDirectory;
   late final CrashDiagnosticsService crashDiagnostics;
@@ -482,9 +852,84 @@ class _NoIdentityController extends IdentityController {
   Future<RainIdentity?> build() async => null;
 }
 
+class _StaticIdentityController extends IdentityController {
+  _StaticIdentityController(this.identity);
+
+  final RainIdentity identity;
+
+  @override
+  Future<RainIdentity?> build() async => identity;
+}
+
 class _NoRuntimeController extends RuntimeController {
   @override
   Future<RainRuntimeController?> build() async => null;
+}
+
+class _RecordingRuntimeController extends RuntimeController {
+  _RecordingRuntimeController({
+    this.deleteAccountError = const AccountDeletionException(
+      kind: AccountDeletionFailureKind.reauthenticationFailed,
+      message: 'Wrong password. Account deletion was not started.',
+      destructiveActionStarted: false,
+    ),
+  });
+
+  late RainDatabase database;
+  final List<String> deleteAccountPasswords = <String>[];
+  final Object? deleteAccountError;
+
+  @override
+  Future<RainRuntimeController?> build() async {
+    final messageStore = MessageStore(database);
+    final offlineQueueStore = OfflineQueueStore(database);
+    return RainRuntimeController(
+      selfIdentity: const RainIdentity(
+        username: 'alice',
+        displayName: 'Alice',
+        createdAt: 1,
+        gender: RainGender.female,
+      ),
+      adapter: NoopSignalingAdapter(),
+      brain: null,
+      database: database,
+      friendStore: FriendStore(database),
+      messageStore: messageStore,
+      offlineQueueStore: offlineQueueStore,
+      messageDeliveryService: MessageDeliveryService(
+        messageStore: messageStore,
+        offlineQueueStore: offlineQueueStore,
+      ),
+      friendRequestRefreshInterval: Duration.zero,
+    );
+  }
+
+  @override
+  Future<void> deleteAccount({required String password}) async {
+    deleteAccountPasswords.add(password);
+    final error = deleteAccountError;
+    if (error != null) {
+      throw error;
+    }
+  }
+}
+
+class _FakeConnectionRequestController extends ConnectionRequestController {
+  _FakeConnectionRequestController(this.initialState);
+
+  final ConnectionRequestState initialState;
+
+  @override
+  ConnectionRequestState build() => initialState;
+
+  @override
+  Future<ConnectionRequestDecision> unmute(String peerId) async {
+    return ConnectionRequestDecision(
+      allowed: true,
+      userMessage: 'Unmuted connection requests from @$peerId.',
+      peerId: peerId,
+    );
+  }
 }
 
 class _NoFriendsController extends FriendsController {

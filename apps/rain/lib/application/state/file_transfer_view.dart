@@ -30,6 +30,10 @@ class FileTransferSpeedTracker {
   final Map<String, _TransferSpeedState> _states =
       <String, _TransferSpeedState>{};
 
+  void reset() {
+    _states.clear();
+  }
+
   List<FileTransferView> apply(List<FileTransferRecord> transfers) {
     final activeIds = <String>{};
     final views = <FileTransferView>[];

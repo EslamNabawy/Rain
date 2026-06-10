@@ -19,19 +19,46 @@ final class AppExitRegistration {
   }
 }
 
+/// Priority for exit handlers.
+///
+/// [critical] handlers run first and block window close until complete
+/// (up to the caller's budget).
+///
+/// [bestEffort] handlers run in the background after window destruction.
+enum AppExitPriority { critical, bestEffort }
+
+final class _PrioritizedHandler {
+  const _PrioritizedHandler(this.handler, this.priority);
+
+  final AppExitHandler handler;
+  final AppExitPriority priority;
+}
+
 final class AppExitCoordinator {
-  AppExitCoordinator({this.timeout = const Duration(seconds: 8)});
+  AppExitCoordinator({
+    this.timeout = const Duration(seconds: 8),
+    this.criticalTimeout = const Duration(seconds: 3),
+  });
 
   static final AppExitCoordinator instance = AppExitCoordinator();
 
+  /// Overall timeout for all handlers (used by best-effort phase).
   final Duration timeout;
-  final Set<AppExitHandler> _handlers = <AppExitHandler>{};
+
+  /// Timeout for critical handlers only.
+  final Duration criticalTimeout;
+
+  final List<_PrioritizedHandler> _handlers = <_PrioritizedHandler>[];
   Future<void>? _shutdownFuture;
 
-  AppExitRegistration register(AppExitHandler handler) {
-    _handlers.add(handler);
+  AppExitRegistration register(
+    AppExitHandler handler, {
+    AppExitPriority priority = AppExitPriority.bestEffort,
+  }) {
+    final entry = _PrioritizedHandler(handler, priority);
+    _handlers.add(entry);
     return AppExitRegistration(() {
-      _handlers.remove(handler);
+      _handlers.remove(entry);
     });
   }
 
@@ -45,16 +72,37 @@ final class AppExitCoordinator {
     return future;
   }
 
+  /// Runs only critical handlers with the critical timeout.
+  Future<void> shutdownCritical(AppExitReason reason) async {
+    final critical = _handlers
+        .where((h) => h.priority == AppExitPriority.critical)
+        .map((h) => h.handler)
+        .toList();
+    if (critical.isEmpty) {
+      return;
+    }
+    final futures = critical.map(
+      (h) => Future<void>(() => h(reason)).catchError((_) {}),
+    );
+    try {
+      await Future.wait(futures).timeout(criticalTimeout);
+    } on TimeoutException {
+      // Best-effort: critical phase exceeded budget, proceed anyway.
+    }
+  }
+
   Future<void> _runShutdown(AppExitReason reason) async {
-    final handlers = List<AppExitHandler>.of(_handlers);
+    final handlers = _handlers.map((h) => h.handler).toList();
     if (handlers.isEmpty) {
       return;
     }
-
-    final waitForHandlers = Future.wait<void>(<Future<void>>[
-      for (final handler in handlers)
-        Future<void>(() => handler(reason)).catchError((_) {}),
-    ]).then<void>((_) {});
-    await waitForHandlers.timeout(timeout, onTimeout: () {});
+    final futures = handlers.map(
+      (h) => Future<void>(() => h(reason)).catchError((_) {}),
+    );
+    try {
+      await Future.wait(futures).timeout(timeout);
+    } on TimeoutException {
+      // Best-effort: shutdown exceeded budget, proceed anyway.
+    }
   }
 }

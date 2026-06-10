@@ -1,0 +1,23 @@
+{
+  "conditions": [],
+  "parameters": {
+    "rain_release_manifest_v1": {
+      "defaultValue": {
+        "value": "{\"schema\":1,\"channels\":{\"stable\":{\"android\":{\"latestVersion\":\"1.0.8\",\"latestBuild\":9,\"minimumVersion\":\"1.0.8\",\"minimumBuild\":9,\"updateUrl\":\"https://github.com/EslamNabawy/Rain/releases\",\"notes\":\"Diagnostics export and update policy warning fixes.\",\"publishedAt\":1780704000000},\"windows\":{\"latestVersion\":\"1.0.8\",\"latestBuild\":9,\"minimumVersion\":\"1.0.8\",\"minimumBuild\":9,\"updateUrl\":\"https://github.com/EslamNabawy/Rain/releases\",\"notes\":\"Diagnostics export and update policy warning fixes.\",\"publishedAt\":1780704000000}},\"demo\":{\"android\":{\"latestVersion\":\"1.0.8\",\"latestBuild\":9,\"minimumVersion\":\"1.0.8\",\"minimumBuild\":9,\"updateUrl\":\"https://github.com/EslamNabawy/Rain/releases\",\"notes\":\"Diagnostics export and update policy warning fixes.\",\"publishedAt\":1780704000000},\"windows\":{\"latestVersion\":\"1.0.8\",\"latestBuild\":9,\"minimumVersion\":\"1.0.8\",\"minimumBuild\":9,\"updateUrl\":\"https://github.com/EslamNabawy/Rain/releases\",\"notes\":\"Diagnostics export and update policy warning fixes.\",\"publishedAt\":1780704000000}}}}"
+      },
+      "description": "Rain release manifest used by installed apps to show optional update prompts and required update gates."
+    },
+    "min_required_version": {
+      "defaultValue": {
+        "value": "1.0.8"
+      },
+      "description": "Legacy fallback minimum version for old Rain builds that do not support rain_release_manifest_v1."
+    },
+    "update_url": {
+      "defaultValue": {
+        "value": "https://github.com/EslamNabawy/Rain/releases"
+      },
+      "description": "Legacy fallback update URL for old Rain builds."
+    }
+  }
+}

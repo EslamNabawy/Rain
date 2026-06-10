@@ -8,6 +8,8 @@ import 'package:rain_core/rain_core.dart';
 import 'package:rain/core/config/app_environment.dart';
 import 'package:rain/infrastructure/firebase/firebase_options.dart';
 import 'package:rain/infrastructure/services/force_update_service.dart';
+import 'package:rain/infrastructure/services/rain_debug_log_service.dart';
+import 'package:rain/infrastructure/signaling/debug_signaling_adapter.dart';
 import 'package:rain/infrastructure/signaling/noop_signaling_adapter.dart';
 
 class AppBootstrapState {
@@ -27,6 +29,11 @@ class AppBootstrapState {
 }
 
 class AppBootstrapper {
+  AppBootstrapper({RainDebugLogService? debugLogService})
+    : _debugLogService = debugLogService;
+
+  final RainDebugLogService? _debugLogService;
+
   Future<AppBootstrapState> bootstrap(AppEnvironment environment) async {
     final effectiveEnvironment = kReleaseMode
         ? environment.sanitizedForRelease()
@@ -45,6 +52,12 @@ class AppBootstrapper {
           options: DefaultFirebaseOptions.currentPlatform,
         );
         remoteConfig = FirebaseRemoteConfig.instance;
+        await remoteConfig.setConfigSettings(
+          RemoteConfigSettings(
+            fetchTimeout: const Duration(seconds: 10),
+            minimumFetchInterval: const Duration(minutes: 1),
+          ),
+        );
         firebaseDatabase = FirebaseDatabase.instanceFor(
           app: Firebase.app(),
           databaseURL: effectiveEnvironment.firebaseDatabaseUrl,
@@ -54,7 +67,7 @@ class AppBootstrapper {
       final signalingCipher = SignalingCipher.fromKeyMaterial(
         effectiveEnvironment.signalingEncryptionKey,
       );
-      final adapter = effectiveEnvironment.shouldUseFallbackAdapter
+      final rawAdapter = effectiveEnvironment.shouldUseFallbackAdapter
           ? NoopSignalingAdapter()
           : switch (effectiveEnvironment.backend) {
               RainBackend.firebase => FirebaseSignalingAdapter(
@@ -63,6 +76,10 @@ class AppBootstrapper {
               ),
               RainBackend.noop => NoopSignalingAdapter(),
             };
+      final debugLogService = _debugLogService;
+      final adapter = debugLogService == null
+          ? rawAdapter
+          : wrapSignalingAdapterWithDebugLogging(rawAdapter, debugLogService);
 
       if (effectiveEnvironment.shouldSmokeAutoprovision) {
         await _seedSmokeIdentity(
@@ -80,6 +97,9 @@ class AppBootstrapper {
         forceUpdateService: ForceUpdateService(
           remoteConfig: remoteConfig,
           updateUrl: effectiveEnvironment.forceUpdateUrl,
+          updateChannel: AppUpdateChannel.parse(
+            effectiveEnvironment.updateChannel,
+          ),
         ),
       );
     } catch (_) {

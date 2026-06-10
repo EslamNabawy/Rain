@@ -70,6 +70,27 @@ void main() {
       ]);
       expect(restarted.single.speedBytesPerSecond, isNull);
     });
+
+    test('reset clears active samples after peer connection churn', () {
+      var now = DateTime.fromMillisecondsSinceEpoch(1000);
+      final tracker = FileTransferSpeedTracker(now: () => now);
+
+      tracker.apply(<FileTransferRecord>[
+        _transfer(bytesTransferred: 0, state: FileTransferState.sending),
+      ]);
+      now = now.add(const Duration(seconds: 1));
+      final beforeReset = tracker.apply(<FileTransferRecord>[
+        _transfer(bytesTransferred: 2048, state: FileTransferState.sending),
+      ]);
+      expect(beforeReset.single.speedBytesPerSecond, 2048);
+
+      tracker.reset();
+      now = now.add(const Duration(seconds: 1));
+      final afterReset = tracker.apply(<FileTransferRecord>[
+        _transfer(bytesTransferred: 4096, state: FileTransferState.sending),
+      ]);
+      expect(afterReset.single.speedBytesPerSecond, isNull);
+    });
   });
 
   group('ReceivedFileExportService', () {

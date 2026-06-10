@@ -1,3 +1,5 @@
+import 'dart:async';
+
 import 'package:flutter_test/flutter_test.dart';
 import 'package:protocol_brain/protocol_brain.dart';
 import 'package:protocol_brain/testing.dart';
@@ -368,6 +370,101 @@ void main() {
     },
   );
 
+  test(
+    'cleanup janitor removes missing room locks and claim retries',
+    () async {
+      final adapter = FakeVoiceSignalingAdapter();
+      addTearDown(adapter.dispose);
+
+      adapter.seedActivePairLockForTest(
+        const VoiceActivePairLock(
+          pairId: 'alice:bob',
+          callId: 'missing-call',
+          caller: 'alice',
+          callee: 'bob',
+          createdAt: 1000,
+          updatedAt: 1000,
+          expiresAt: 60000,
+        ),
+      );
+      adapter.seedActiveUserLockForTest(
+        const VoiceActiveUserLock(
+          username: 'alice',
+          callId: 'missing-call',
+          pairId: 'alice:bob',
+          caller: 'alice',
+          callee: 'bob',
+          createdAt: 1000,
+          updatedAt: 1000,
+          expiresAt: 60000,
+        ),
+      );
+
+      final summary = await adapter.cleanupStaleVoiceCallArtifacts(
+        username: 'alice',
+        now: 1300,
+      );
+      expect(summary.cleanedAny, isTrue);
+      expect(
+        summary.decisions.map((decision) => decision.action),
+        containsAll(<VoiceCallCleanupAction>[
+          VoiceCallCleanupAction.deleteMatchingUserLock,
+          VoiceCallCleanupAction.deleteMatchingPairLock,
+        ]),
+      );
+
+      final room = await adapter.createOutgoingCall(
+        callId: 'call-2',
+        caller: 'alice',
+        callee: 'bob',
+        createdAt: 1400,
+        expiresAt: 61400,
+      );
+      expect(room.callId, 'call-2');
+      expect(adapter.activePairLocks['alice:bob']?.callId, 'call-2');
+      expect(adapter.activeUserLocks['alice']?.callId, 'call-2');
+    },
+  );
+
+  test('cleanup janitor does not delete newer active locks', () async {
+    final adapter = FakeVoiceSignalingAdapter();
+    addTearDown(adapter.dispose);
+
+    await adapter.createOutgoingCall(
+      callId: 'call-1',
+      caller: 'alice',
+      callee: 'bob',
+      createdAt: 1000,
+      expiresAt: 60000,
+    );
+    await adapter.endCall(
+      callId: 'call-1',
+      username: 'alice',
+      status: VoiceCallSignalingStatus.ended,
+      endedAt: 1100,
+      reasonCode: 'hangup',
+      reason: 'Ended.',
+    );
+    await adapter.createOutgoingCall(
+      callId: 'call-2',
+      caller: 'alice',
+      callee: 'bob',
+      createdAt: 1200,
+      expiresAt: 61200,
+    );
+
+    final summary = await adapter.cleanupStaleVoiceCallArtifacts(
+      username: 'alice',
+      now: 1300,
+    );
+
+    expect(summary.cleanedAny, isFalse);
+    expect(adapter.rooms.keys, contains('call-2'));
+    expect(adapter.activePairLocks['alice:bob']?.callId, 'call-2');
+    expect(adapter.activeUserLocks['alice']?.callId, 'call-2');
+    expect(adapter.activeUserLocks['bob']?.callId, 'call-2');
+  });
+
   test('fake adapter stores video media mode and camera mute state', () async {
     final adapter = FakeVoiceSignalingAdapter();
     addTearDown(adapter.dispose);
@@ -503,6 +600,160 @@ void main() {
   );
 
   test(
+    'ICE candidate batcher flushes by size window and explicit flush',
+    () async {
+      final batches = <List<int>>[];
+      final batcher = IceCandidateBatcher<int>(
+        maxBatchSize: 3,
+        flushWindow: const Duration(milliseconds: 20),
+        onFlush: (List<int> candidates) async {
+          batches.add(candidates);
+        },
+      );
+      addTearDown(() => batcher.dispose());
+
+      await batcher.add(1);
+      await batcher.add(2);
+      expect(batches, isEmpty);
+
+      await batcher.add(3);
+      expect(batches, <List<int>>[
+        <int>[1, 2, 3],
+      ]);
+
+      await batcher.add(4);
+      await Future<void>.delayed(const Duration(milliseconds: 40));
+      expect(batches.last, <int>[4]);
+
+      await batcher.add(5);
+      await batcher.flush();
+      expect(batches.last, <int>[5]);
+    },
+  );
+
+  test('ICE candidate batcher serializes overlapping flushes', () async {
+    final started = <List<int>>[];
+    final completions = <Completer<void>>[];
+    final batcher = IceCandidateBatcher<int>(
+      maxBatchSize: 2,
+      flushWindow: const Duration(minutes: 1),
+      onFlush: (List<int> candidates) {
+        started.add(candidates);
+        final completer = Completer<void>();
+        completions.add(completer);
+        return completer.future;
+      },
+    );
+    addTearDown(() async {
+      for (final completer in completions) {
+        if (!completer.isCompleted) {
+          completer.complete();
+        }
+      }
+      await batcher.dispose();
+    });
+
+    await batcher.add(1);
+    final firstFlush = batcher.add(2);
+    await Future<void>.delayed(Duration.zero);
+    expect(started, <List<int>>[
+      <int>[1, 2],
+    ]);
+
+    await batcher.add(3);
+    final secondFlush = batcher.flush();
+    await Future<void>.delayed(Duration.zero);
+    expect(started, hasLength(1));
+
+    completions[0].complete();
+    await firstFlush;
+    await Future<void>.delayed(Duration.zero);
+    expect(started, <List<int>>[
+      <int>[1, 2],
+      <int>[3],
+    ]);
+
+    completions[1].complete();
+    await secondFlush;
+  });
+
+  test(
+    'ICE batch writes preserve room timestamp and cap candidates per role',
+    () async {
+      final adapter = FakeVoiceSignalingAdapter();
+      addTearDown(adapter.dispose);
+      await adapter.createOutgoingCall(
+        callId: 'call-1',
+        caller: 'alice',
+        callee: 'bob',
+        createdAt: 1000,
+        expiresAt: 3000,
+      );
+      await adapter.acceptCall(
+        callId: 'call-1',
+        callee: 'bob',
+        acceptedAt: 1100,
+      );
+      final updatedAtBeforeIce = (await adapter.fetchCall('call-1'))!.updatedAt;
+
+      final iceEvents = adapter
+          .watchIceCandidates(callId: 'call-1', role: VoiceCallRole.caller)
+          .take(2)
+          .toList();
+      final candidateIds = await adapter.writeIceCandidates(
+        callId: 'call-1',
+        username: 'alice',
+        role: VoiceCallRole.caller,
+        candidates: <VoiceSignalingEnvelope>[
+          _envelope(ciphertext: 'caller-ice-1'),
+          _envelope(ciphertext: 'caller-ice-2'),
+        ],
+        createdAt: 1200,
+      );
+
+      expect(candidateIds, <String>['ice-1', 'ice-2']);
+      expect(
+        (await adapter.fetchCall('call-1'))!.updatedAt,
+        updatedAtBeforeIce,
+      );
+      expect(
+        (await iceEvents).map((record) => record.envelope.ciphertext),
+        <String>['caller-ice-1', 'caller-ice-2'],
+      );
+
+      final remaining = maxIceCandidatesPerRole - candidateIds.length;
+      for (var written = 0; written < remaining;) {
+        final remainingInBudget = remaining - written;
+        final count = remainingInBudget > maxIceCandidateBatchSize
+            ? maxIceCandidateBatchSize
+            : remainingInBudget;
+        await adapter.writeIceCandidates(
+          callId: 'call-1',
+          username: 'alice',
+          role: VoiceCallRole.caller,
+          candidates: List<VoiceSignalingEnvelope>.generate(
+            count,
+            (int index) =>
+                _envelope(ciphertext: 'caller-ice-fill-${written + index}'),
+          ),
+          createdAt: 1300 + written,
+        );
+        written += count;
+      }
+      await expectLater(
+        adapter.writeIceCandidate(
+          callId: 'call-1',
+          username: 'alice',
+          role: VoiceCallRole.caller,
+          candidate: _envelope(ciphertext: 'caller-ice-over'),
+          createdAt: 1400,
+        ),
+        throwsA(isA<SignalingCostBudgetExceeded>()),
+      );
+    },
+  );
+
+  test(
     'fake adapter updates state and releases lock on terminal status',
     () async {
       final adapter = FakeVoiceSignalingAdapter();
@@ -580,6 +831,118 @@ void main() {
         ),
         throwsA(isA<VoiceSignalingException>()),
       );
+    },
+  );
+
+  test('fake adapter normalizes skewed room write timestamps', () async {
+    final adapter = FakeVoiceSignalingAdapter();
+    addTearDown(adapter.dispose);
+
+    await adapter.createOutgoingCall(
+      callId: 'call-1',
+      caller: 'alice',
+      callee: 'bob',
+      createdAt: 1000,
+      expiresAt: 3000,
+    );
+
+    await adapter.acceptCall(callId: 'call-1', callee: 'bob', acceptedAt: 900);
+    await adapter.writeVoiceOffer(
+      callId: 'call-1',
+      caller: 'alice',
+      offer: _envelope(ciphertext: 'offer'),
+      updatedAt: 800,
+    );
+    await adapter.writeVoiceAnswer(
+      callId: 'call-1',
+      callee: 'bob',
+      answer: _envelope(ciphertext: 'answer'),
+      updatedAt: 700,
+    );
+    await adapter.writeIceCandidate(
+      callId: 'call-1',
+      username: 'alice',
+      role: VoiceCallRole.caller,
+      candidate: _envelope(ciphertext: 'caller-ice'),
+      createdAt: 600,
+    );
+    await adapter.markConnected(
+      callId: 'call-1',
+      username: 'alice',
+      connectedAt: 500,
+    );
+    await adapter.setMuted(
+      callId: 'call-1',
+      username: 'bob',
+      muted: true,
+      updatedAt: 400,
+    );
+    await adapter.endCall(
+      callId: 'call-1',
+      username: 'bob',
+      status: VoiceCallSignalingStatus.ended,
+      endedAt: 300,
+      reasonCode: 'hangup',
+      reason: 'Ended.',
+    );
+
+    final room = await adapter.fetchCall('call-1');
+    expect(room?.acceptedAt, 1001);
+    expect(room?.updatedAt, greaterThanOrEqualTo(room!.createdAt));
+    expect(room.endedAt, greaterThanOrEqualTo(room.createdAt));
+    expect(() => room.toJson(), returnsNormally);
+  });
+
+  test(
+    'normalizes terminal updatedAt when device clock is behind createdAt',
+    () {
+      final room = _room(
+        caller: 'alice',
+        callee: 'bob',
+        status: VoiceCallSignalingStatus.connected,
+      );
+      final endedAt = room.createdAt - 1000;
+      final normalized = VoiceCallTimestampClock.nextRoomTimestamp(
+        requestedAt: endedAt,
+        roomCreatedAt: room.createdAt,
+        roomUpdatedAt: room.updatedAt,
+      );
+
+      expect(normalized, room.updatedAt + 1);
+    },
+  );
+
+  test(
+    'parses corrupt terminal room for cleanup without treating it as live',
+    () {
+      final corrupt = <Object?, Object?>{
+        'v': VoiceCallRoom.version,
+        'pairId': 'alice:bob',
+        'caller': 'alice',
+        'callee': 'bob',
+        'status': VoiceCallSignalingStatus.ended.name,
+        'mediaMode': CallMediaMode.audio.name,
+        'createdAt': 2000,
+        'updatedAt': 1000,
+        'expiresAt': 3000,
+        'endedAt': 1000,
+        'endedBy': 'alice',
+      };
+      VoiceCallRoom strictParse() {
+        return VoiceCallRoom.fromJson(callId: 'call-1', json: corrupt);
+      }
+
+      final repaired = VoiceCallRoom.tryParseForCleanup(
+        callId: 'call-1',
+        json: corrupt,
+        now: 2500,
+      );
+
+      expect(strictParse, throwsA(isA<FormatException>()));
+      expect(repaired, isNotNull);
+      expect(repaired!.status, VoiceCallSignalingStatus.ended);
+      expect(repaired.updatedAt, greaterThanOrEqualTo(repaired.createdAt));
+      expect(repaired.endedAt, greaterThanOrEqualTo(repaired.createdAt));
     },
   );
 }

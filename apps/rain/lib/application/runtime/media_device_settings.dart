@@ -1,3 +1,4 @@
+import 'package:flutter/services.dart';
 import 'package:flutter_webrtc/flutter_webrtc.dart';
 import 'package:protocol_brain/protocol_brain.dart';
 
@@ -31,6 +32,90 @@ enum RainMediaDeviceKind {
 }
 
 enum RainCameraFacing { front, rear, external, unknown }
+
+enum AdaptiveDevicePlatform {
+  android,
+  windows,
+  macos,
+  linux,
+  ios,
+  fuchsia,
+  unknown,
+}
+
+enum AdaptiveInteractionMode { touch, pointer }
+
+enum AdaptiveViewportClass { compact, medium, desktop }
+
+enum AdaptiveRefreshMode { pull, button }
+
+final class AdaptiveDeviceProfile {
+  const AdaptiveDeviceProfile({
+    required this.platform,
+    required this.interactionMode,
+    required this.viewportClass,
+    required this.refreshMode,
+    required this.lowPower,
+  });
+
+  factory AdaptiveDeviceProfile.resolve({
+    required TargetPlatform targetPlatform,
+    required double width,
+    required bool lowPower,
+  }) {
+    final platform = _adaptivePlatformFor(targetPlatform);
+    final desktop = _desktopPlatforms.contains(platform);
+    final viewportClass = width >= 1100
+        ? AdaptiveViewportClass.desktop
+        : width >= 720
+        ? AdaptiveViewportClass.medium
+        : AdaptiveViewportClass.compact;
+    return AdaptiveDeviceProfile(
+      platform: platform,
+      interactionMode: desktop
+          ? AdaptiveInteractionMode.pointer
+          : AdaptiveInteractionMode.touch,
+      viewportClass: viewportClass,
+      refreshMode: desktop
+          ? AdaptiveRefreshMode.button
+          : AdaptiveRefreshMode.pull,
+      lowPower: lowPower,
+    );
+  }
+
+  final AdaptiveDevicePlatform platform;
+  final AdaptiveInteractionMode interactionMode;
+  final AdaptiveViewportClass viewportClass;
+  final AdaptiveRefreshMode refreshMode;
+  final bool lowPower;
+
+  bool get isDesktop => _desktopPlatforms.contains(platform);
+
+  bool get isAndroid => platform == AdaptiveDevicePlatform.android;
+
+  bool get usesPointer => interactionMode == AdaptiveInteractionMode.pointer;
+
+  bool get usesPullRefresh => refreshMode == AdaptiveRefreshMode.pull;
+
+  bool get usesRefreshButton => refreshMode == AdaptiveRefreshMode.button;
+}
+
+const Set<AdaptiveDevicePlatform> _desktopPlatforms = <AdaptiveDevicePlatform>{
+  AdaptiveDevicePlatform.windows,
+  AdaptiveDevicePlatform.macos,
+  AdaptiveDevicePlatform.linux,
+};
+
+AdaptiveDevicePlatform _adaptivePlatformFor(TargetPlatform platform) {
+  return switch (platform) {
+    TargetPlatform.android => AdaptiveDevicePlatform.android,
+    TargetPlatform.windows => AdaptiveDevicePlatform.windows,
+    TargetPlatform.macOS => AdaptiveDevicePlatform.macos,
+    TargetPlatform.linux => AdaptiveDevicePlatform.linux,
+    TargetPlatform.iOS => AdaptiveDevicePlatform.ios,
+    TargetPlatform.fuchsia => AdaptiveDevicePlatform.fuchsia,
+  };
+}
 
 final class RainMediaDevice {
   const RainMediaDevice({
@@ -228,8 +313,7 @@ final class VideoInputCapabilityState {
       labelsAvailable &&
       devices.any((RainMediaDevice device) => device.isLikelyRearFacingCamera);
 
-  bool get supportsCameraSwitch =>
-      availableVideoInputCount > 1 && labelsAvailable;
+  bool get supportsCameraSwitch => availableVideoInputCount > 1;
 
   RainMediaDevice? get selectedDevice {
     final selected = selectedDeviceId;
@@ -273,6 +357,105 @@ final class AudioOutputCapabilityState {
 
   bool get hasWiredOutput =>
       devices.any((RainMediaDevice device) => device.isWiredAudioOutput);
+
+  int get availableOutputCount => devices.length;
+}
+
+final class AdaptiveAudioOutputTarget {
+  const AdaptiveAudioOutputTarget({
+    required this.target,
+    required this.label,
+    this.device,
+  });
+
+  final CallAudioOutputTarget target;
+  final String label;
+  final RainMediaDevice? device;
+}
+
+final class AdaptiveMediaCapabilitySnapshot {
+  const AdaptiveMediaCapabilitySnapshot({
+    required this.profile,
+    required this.videoInput,
+    required this.audioOutput,
+  });
+
+  final AdaptiveDeviceProfile profile;
+  final VideoInputCapabilityState videoInput;
+  final AudioOutputCapabilityState audioOutput;
+
+  bool get supportsCameraSwitch => videoInput.supportsCameraSwitch;
+
+  bool get hasBluetoothOutput => audioOutput.hasBluetoothOutput;
+
+  bool get hasWiredOutput => audioOutput.hasWiredOutput;
+
+  bool get shouldShowOutputSelector => outputTargets.length > 1;
+
+  bool get supportsAudioOutputSelection => shouldShowOutputSelector;
+
+  List<AdaptiveAudioOutputTarget> get outputTargets {
+    if (profile.isAndroid) {
+      final defaultLabel = audioOutput.hasWiredOutput
+          ? 'Wired headset'
+          : 'Phone audio';
+      final defaultTarget = audioOutput.hasWiredOutput
+          ? const CallAudioOutputTarget.wiredHeadset()
+          : const CallAudioOutputTarget.systemDefault();
+      return <AdaptiveAudioOutputTarget>[
+        AdaptiveAudioOutputTarget(target: defaultTarget, label: defaultLabel),
+        const AdaptiveAudioOutputTarget(
+          target: CallAudioOutputTarget.androidSpeakerphone(),
+          label: 'Speakerphone',
+        ),
+        if (audioOutput.hasBluetoothOutput)
+          const AdaptiveAudioOutputTarget(
+            target: CallAudioOutputTarget.bluetooth(),
+            label: 'Bluetooth',
+          ),
+      ];
+    }
+
+    if (profile.isDesktop) {
+      final outputs = audioOutput.devices
+          .where((RainMediaDevice device) => device.isAudioOutput)
+          .toList(growable: false);
+      if (outputs.length <= 1) {
+        return const <AdaptiveAudioOutputTarget>[];
+      }
+      return <AdaptiveAudioOutputTarget>[
+        const AdaptiveAudioOutputTarget(
+          target: CallAudioOutputTarget.systemDefault(),
+          label: 'System default',
+        ),
+        for (var index = 0; index < outputs.length; index += 1)
+          AdaptiveAudioOutputTarget(
+            target: CallAudioOutputTarget.desktopDevice(
+              outputs[index].deviceId,
+            ),
+            label: outputs[index].displayLabel(index),
+            device: outputs[index],
+          ),
+      ];
+    }
+
+    return const <AdaptiveAudioOutputTarget>[];
+  }
+
+  List<CallControlCapability> filterCallControls(
+    Iterable<CallControlCapability> controls,
+  ) {
+    final videoFiltered = videoInput.filterCallControls(controls);
+    if (supportsAudioOutputSelection) {
+      return videoFiltered;
+    }
+    return videoFiltered
+        .where(
+          (CallControlCapability capability) =>
+              capability != CallControlCapability.outputRoute,
+        )
+        .toList(growable: false);
+  }
 }
 
 final class StartupMediaPermissionWarmupResult {
@@ -541,6 +724,118 @@ class MediaDeviceSettings {
       kind: device.kind ?? '',
       groupId: device.groupId,
     );
+  }
+
+  /// Validates that the currently selected video input can be used.
+  ///
+  /// Returns a [VideoPreflightResult] indicating success or the specific
+  /// failure reason. This should be called before starting a video call
+  /// on desktop to provide clear error messages.
+  Future<VideoPreflightResult> validateVideoInputAsync() async {
+    final devices = await loadVideoInputDevices();
+    if (devices.isEmpty) {
+      return VideoPreflightResult.noCamera;
+    }
+
+    final storedDeviceId = await settingsStore.loadSelectedVideoInputDeviceId();
+    final selectedDeviceId =
+        storedDeviceId != null &&
+            devices.any((device) => device.deviceId == storedDeviceId)
+        ? storedDeviceId
+        : null;
+
+    // Clear stale selected device id.
+    if (storedDeviceId != null && selectedDeviceId == null) {
+      await settingsStore.setSelectedVideoInputDeviceId(null);
+    }
+
+    final effectiveDeviceId = selectedDeviceId ?? devices.first.deviceId;
+    final constraints = <String, dynamic>{
+      'audio': false,
+      'video': <String, dynamic>{
+        'deviceId': effectiveDeviceId,
+        'width': <String, dynamic>{'ideal': 640},
+        'height': <String, dynamic>{'ideal': 480},
+      },
+    };
+
+    MediaStream? stream;
+    try {
+      stream = await platformBridge.getUserMedia(constraints);
+      if (stream.getVideoTracks().isEmpty) {
+        return VideoPreflightResult.noCamera;
+      }
+      return VideoPreflightResult.success;
+    } on PlatformException catch (error) {
+      final message = error.message?.toLowerCase() ?? '';
+      final code = error.code.toLowerCase();
+      if (message.contains('permission') ||
+          message.contains('denied') ||
+          message.contains('notallowed') ||
+          code.contains('permission') ||
+          code.contains('denied')) {
+        return VideoPreflightResult.permissionDenied;
+      }
+      if (message.contains('busy') ||
+          message.contains('in use') ||
+          message.contains('already') ||
+          code.contains('busy')) {
+        return VideoPreflightResult.busy;
+      }
+      if (message.contains('constraint') ||
+          message.contains('could not satisfy') ||
+          code.contains('constraint')) {
+        return VideoPreflightResult.constraintFailed;
+      }
+      return VideoPreflightResult.captureFailed;
+    } catch (error) {
+      final message = error.toString().toLowerCase();
+      if (message.contains('permission') || message.contains('denied')) {
+        return VideoPreflightResult.permissionDenied;
+      }
+      if (message.contains('busy') || message.contains('in use')) {
+        return VideoPreflightResult.busy;
+      }
+      return VideoPreflightResult.captureFailed;
+    } finally {
+      if (stream != null) {
+        await _disposeMediaStream(stream);
+      }
+    }
+  }
+}
+
+/// Result of a video input preflight check.
+enum VideoPreflightResult {
+  success,
+  noCamera,
+  selectedCameraMissing,
+  permissionDenied,
+  busy,
+  constraintFailed,
+  captureFailed,
+  rendererFailed,
+}
+
+extension VideoPreflightResultExtension on VideoPreflightResult {
+  bool get isSuccess => this == VideoPreflightResult.success;
+
+  String get userMessage {
+    return switch (this) {
+      VideoPreflightResult.success => 'Camera ready.',
+      VideoPreflightResult.noCamera => 'No camera found on this device.',
+      VideoPreflightResult.selectedCameraMissing =>
+        'Selected camera is no longer available. Choose another camera.',
+      VideoPreflightResult.permissionDenied =>
+        'Camera permission denied. Allow camera access in settings.',
+      VideoPreflightResult.busy => 'Camera is in use by another application.',
+      VideoPreflightResult.constraintFailed =>
+        'Camera does not support the required video format.',
+      VideoPreflightResult.captureFailed =>
+        'Camera capture failed. Try again or choose another camera.',
+      VideoPreflightResult.rendererFailed =>
+        'Camera initialized but video renderer failed.',
+    };
   }
 }
 

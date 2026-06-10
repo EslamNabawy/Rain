@@ -1,12 +1,18 @@
 import 'dart:async';
+import 'dart:collection';
 import 'dart:convert';
 import 'dart:io';
 import 'dart:ui' as ui;
 
 import 'package:file_picker/file_picker.dart';
 import 'package:flutter/foundation.dart';
+import 'package:flutter/scheduler.dart';
+import 'package:flutter/services.dart';
+import 'package:flutter/widgets.dart';
 import 'package:package_info_plus/package_info_plus.dart';
 import 'package:path_provider/path_provider.dart';
+
+import 'diagnostics_sanitizer.dart';
 
 typedef CrashDiagnosticsDirectoryProvider = Future<Directory> Function();
 typedef CrashDiagnosticsClock = DateTime Function();
@@ -63,6 +69,7 @@ class CrashDiagnosticsRecord {
     required this.dartVersion,
     this.flutterLibrary,
     this.flutterContext,
+    this.context = const <String, Object?>{},
   });
 
   factory CrashDiagnosticsRecord.fromJson(Map<String, Object?> json) {
@@ -87,6 +94,7 @@ class CrashDiagnosticsRecord {
       dartVersion: (json['dartVersion'] ?? 'unknown').toString(),
       flutterLibrary: json['flutterLibrary']?.toString(),
       flutterContext: json['flutterContext']?.toString(),
+      context: CrashDiagnosticsService._stringMap(json['context']),
     );
   }
 
@@ -101,6 +109,7 @@ class CrashDiagnosticsRecord {
   final String dartVersion;
   final String? flutterLibrary;
   final String? flutterContext;
+  final Map<String, Object?> context;
 
   Map<String, Object?> toJson() => <String, Object?>{
     'recordedAt': recordedAt.toUtc().toIso8601String(),
@@ -114,19 +123,27 @@ class CrashDiagnosticsRecord {
     'dartVersion': dartVersion,
     if (flutterLibrary != null) 'flutterLibrary': flutterLibrary,
     if (flutterContext != null) 'flutterContext': flutterContext,
+    if (context.isNotEmpty) 'context': context,
   };
 }
 
 class CrashDiagnosticsExportResult {
-  const CrashDiagnosticsExportResult._({required this.saved, this.path});
+  const CrashDiagnosticsExportResult._({
+    required this.saved,
+    this.path,
+    this.platformManaged = false,
+  });
 
   const CrashDiagnosticsExportResult.saved(String path)
     : this._(saved: true, path: path);
+  const CrashDiagnosticsExportResult.savedPlatformManaged(String path)
+    : this._(saved: true, path: path, platformManaged: true);
   const CrashDiagnosticsExportResult.canceled()
     : this._(saved: false, path: null);
 
   final bool saved;
   final String? path;
+  final bool platformManaged;
 }
 
 class CrashDiagnosticsService {
@@ -135,21 +152,42 @@ class CrashDiagnosticsService {
     CrashDiagnosticsAppInfoProvider? appInfoProvider,
     CrashDiagnosticsClock? clock,
     CrashDiagnosticsSaveFile? saveFile,
+    Duration eventFlushInterval = const Duration(milliseconds: 750),
   }) : _directoryProvider = directoryProvider ?? _defaultDirectoryProvider,
        _appInfoProvider = appInfoProvider ?? _defaultAppInfoProvider,
        _clock = clock ?? DateTime.now,
-       _saveFile = saveFile ?? FilePicker.saveFile;
+       _saveFile = saveFile ?? _defaultSaveFile,
+       _eventFlushInterval = eventFlushInterval;
 
   static final CrashDiagnosticsService instance = CrashDiagnosticsService();
+  static const MethodChannel _filePickerChannel = MethodChannel(
+    'miguelruivo.flutter.plugins.filepicker',
+    StandardMethodCodec(),
+  );
+  static const int _maxEventLogBytes = 1024 * 1024;
+  static const int _maxEventLogLines = 1000;
+  static const int _maxBufferedEventRecords = 256;
 
   final CrashDiagnosticsDirectoryProvider _directoryProvider;
   final CrashDiagnosticsAppInfoProvider _appInfoProvider;
   final CrashDiagnosticsClock _clock;
   final CrashDiagnosticsSaveFile _saveFile;
+  final Duration _eventFlushInterval;
 
   Directory? _directory;
   CrashDiagnosticsAppInfo _appInfo = const CrashDiagnosticsAppInfo.unknown();
   Future<void>? _initializeFuture;
+  Timer? _eventFlushTimer;
+  Future<void>? _eventFlushFuture;
+  final List<String> _queuedEventLines = <String>[];
+  final LinkedHashMap<String, String> _coalescedEventLines =
+      LinkedHashMap<String, String>();
+  final Map<String, int> _coalescedEventCounts = <String, int>{};
+  Map<String, Object?>? _performanceProfile;
+  Map<String, Object?>? _updateProfile;
+  _RainFrameTimingStats? _frameTimingStats;
+  bool _frameTimingCaptureInstalled = false;
+  bool _lifecycleFlushInstalled = false;
 
   Future<void> initialize() {
     return _initializeFuture ??= _initialize();
@@ -170,6 +208,23 @@ class CrashDiagnosticsService {
           );
           return true;
         };
+    _installLifecycleFlush();
+  }
+
+  void configureRuntimeDiagnostics({
+    required Map<String, Object?> performanceProfile,
+    bool captureFrameTimings = false,
+  }) {
+    _performanceProfile = performanceProfile;
+    if (captureFrameTimings) {
+      _installFrameTimingCapture();
+    }
+  }
+
+  void configureUpdateDiagnostics({
+    required Map<String, Object?> updateProfile,
+  }) {
+    _updateProfile = updateProfile;
   }
 
   void recordFlutterError(FlutterErrorDetails details, {required bool fatal}) {
@@ -190,10 +245,14 @@ class CrashDiagnosticsService {
     required bool fatal,
     String? flutterLibrary,
     String? flutterContext,
+    Map<String, Object?> context = const <String, Object?>{},
   }) {
     final directory = _directory;
     if (directory == null) {
-      debugPrint('Rain diagnostics not initialized: $error');
+      debugPrint(
+        'Rain diagnostics not initialized: '
+        '${DiagnosticsSanitizer.sanitizeString(error.toString())}',
+      );
       return;
     }
 
@@ -201,27 +260,123 @@ class CrashDiagnosticsService {
       recordedAt: _clock(),
       source: source,
       fatal: fatal,
-      error: error.toString(),
-      stackTrace: (stackTrace ?? StackTrace.current).toString(),
+      error: DiagnosticsSanitizer.sanitizeString(
+        error.toString(),
+        key: 'error',
+      ),
+      stackTrace: DiagnosticsSanitizer.sanitizeString(
+        (stackTrace ?? StackTrace.current).toString(),
+        key: 'stackTrace',
+      ),
       appInfo: _appInfo,
       operatingSystem: Platform.operatingSystem,
       operatingSystemVersion: Platform.operatingSystemVersion,
       dartVersion: Platform.version,
-      flutterLibrary: flutterLibrary,
-      flutterContext: flutterContext,
+      flutterLibrary: flutterLibrary == null
+          ? null
+          : DiagnosticsSanitizer.sanitizeString(
+              flutterLibrary,
+              key: 'flutterLibrary',
+            ),
+      flutterContext: flutterContext == null
+          ? null
+          : DiagnosticsSanitizer.sanitizeString(
+              flutterContext,
+              key: 'flutterContext',
+            ),
+      context: DiagnosticsSanitizer.sanitizeMap(context),
     );
     final encoded = const JsonEncoder.withIndent('  ').convert(record.toJson());
 
     try {
       _lastCrashFile(directory).writeAsStringSync(encoded, flush: true);
-      _eventLogFile(directory).writeAsStringSync(
-        '${jsonEncode(record.toJson())}\n',
-        mode: FileMode.append,
-        flush: true,
-      );
+      _queueEventRecord(<String, Object?>{
+        'kind': 'error',
+        'record': record.toJson(),
+      });
     } on FileSystemException catch (fileError) {
-      debugPrint('Rain diagnostics write failed: $fileError');
+      debugPrint(
+        'Rain diagnostics write failed: '
+        '${DiagnosticsSanitizer.sanitizeString(fileError.toString())}',
+      );
     }
+  }
+
+  void recordEventSync({
+    required String category,
+    required String name,
+    String severity = 'info',
+    String? message,
+    Map<String, Object?> context = const <String, Object?>{},
+  }) {
+    if (_directory == null) {
+      return;
+    }
+    final normalizedCategory = category.trim();
+    final normalizedName = name.trim();
+    if (normalizedCategory.isEmpty || normalizedName.isEmpty) {
+      return;
+    }
+
+    _queueEventRecord(<String, Object?>{
+      'kind': 'app_event',
+      'recordedAt': _clock().toUtc().toIso8601String(),
+      'category': normalizedCategory,
+      'name': normalizedName,
+      'severity': severity.trim().isEmpty ? 'info' : severity.trim(),
+      if (message != null && message.trim().isNotEmpty)
+        'message': DiagnosticsSanitizer.sanitizeString(message, key: 'message'),
+      if (context.isNotEmpty)
+        'context': DiagnosticsSanitizer.sanitizeMap(context),
+    });
+  }
+
+  Future<void> flushEvents() {
+    _eventFlushTimer?.cancel();
+    _eventFlushTimer = null;
+    final directory = _directory;
+    if (directory == null) {
+      _queuedEventLines.clear();
+      _coalescedEventLines.clear();
+      _coalescedEventCounts.clear();
+      return _eventFlushFuture ?? Future<void>.value();
+    }
+    final eventLines = <String>[
+      ..._queuedEventLines,
+      ..._coalescedEventLines.values,
+    ];
+    _queuedEventLines.clear();
+    _coalescedEventLines.clear();
+    _coalescedEventCounts.clear();
+    if (eventLines.isEmpty) {
+      return _eventFlushFuture ?? Future<void>.value();
+    }
+
+    final previousFlush = _eventFlushFuture ?? Future<void>.value();
+    late final Future<void> trackedFlush;
+    trackedFlush = previousFlush
+        .then((_) async {
+          final file = _eventLogFile(directory);
+          try {
+            await file.writeAsString(
+              '${eventLines.join('\n')}\n',
+              mode: FileMode.append,
+            );
+            await _trimEventLog(file);
+          } on FileSystemException catch (fileError) {
+            debugPrint(
+              'Rain diagnostics event write failed: '
+              '${DiagnosticsSanitizer.sanitizeString(fileError.toString())}',
+            );
+          }
+        })
+        .whenComplete(() {
+          if (identical(_eventFlushFuture, trackedFlush)) {
+            _eventFlushFuture = null;
+          }
+        });
+    _eventFlushFuture = trackedFlush;
+    return trackedFlush;
   }
 
   Future<CrashDiagnosticsRecord?> loadLastCrash() async {
@@ -247,8 +402,10 @@ class CrashDiagnosticsService {
 
   Future<CrashDiagnosticsExportResult> exportDiagnostics() async {
     await initialize();
+    await flushEvents();
     final directory = _requireDirectory();
     final exportedAt = _clock().toUtc();
+    final recentEvents = await _readRecentEvents(directory, limit: 200);
     final payload = <String, Object?>{
       'exportedAt': exportedAt.toIso8601String(),
       'app': _appInfo.toJson(),
@@ -257,37 +414,126 @@ class CrashDiagnosticsService {
         'operatingSystemVersion': Platform.operatingSystemVersion,
         'dartVersion': Platform.version,
       },
+      if (_performanceProfile != null)
+        'performance': <String, Object?>{
+          ..._performanceProfile!,
+          if (_frameTimingStats != null)
+            'frameTimings': _frameTimingStats!.toJson(),
+        },
+      if (_updateProfile != null) 'update': _updateProfile,
       'lastCrash': (await loadLastCrash())?.toJson(),
-      'events': await _readRecentEvents(directory, limit: 200),
+      'callSummaries': _buildCallDiagnosticSummaries(recentEvents),
+      'firebaseCostCounters': _buildFirebaseCostCounters(recentEvents),
+      'failureTaxonomy': _buildFailureTaxonomySummary(recentEvents),
+      'debugEventSummary': _buildDebugEventSummary(recentEvents),
+      'networkTraceSummary': _buildNetworkTraceSummary(recentEvents),
+      'uiStateSummary': _buildUiStateSummary(recentEvents),
+      'events': recentEvents,
     };
-    final content = const JsonEncoder.withIndent('  ').convert(payload);
+    final sanitizedPayload = DiagnosticsSanitizer.sanitizeMap(payload);
+    sanitizedPayload['events'] = recentEvents
+        .map(DiagnosticsSanitizer.sanitizeMap)
+        .toList(growable: false);
+    final content = const JsonEncoder.withIndent(
+      '  ',
+    ).convert(sanitizedPayload);
     final bytes = Uint8List.fromList(utf8.encode(content));
     final fileName = _diagnosticsFileName(exportedAt);
 
-    final destinationPath = await _saveFile(
-      dialogTitle: 'Export Rain diagnostics',
-      fileName: fileName,
-      type: FileType.custom,
-      allowedExtensions: const <String>['json'],
-      bytes: bytes,
-      lockParentWindow: true,
-    );
+    final String? destinationPath;
+    try {
+      destinationPath = await _saveFile(
+        dialogTitle: 'Export Rain diagnostics',
+        fileName: fileName,
+        type: FileType.custom,
+        allowedExtensions: const <String>['json'],
+        bytes: bytes,
+        lockParentWindow: true,
+      );
+    } on FileSystemException catch (error) {
+      if (!_isPlatformManagedPickerPath(error.path)) {
+        rethrow;
+      }
+      final fallback = await _writeDiagnosticsExportFile(
+        directory: directory,
+        fileName: fileName,
+        bytes: bytes,
+      );
+      return CrashDiagnosticsExportResult.saved(fallback.path);
+    }
     if (destinationPath == null || destinationPath.isEmpty) {
       return const CrashDiagnosticsExportResult.canceled();
     }
 
-    final destination = File(destinationPath);
-    try {
-      if (!await destination.exists() || await destination.length() == 0) {
-        await destination.parent.create(recursive: true);
-        await destination.writeAsBytes(bytes, flush: true);
+    final destination = _fileFromPickerPath(destinationPath);
+    if (destination != null) {
+      try {
+        if (!await destination.exists() || await destination.length() == 0) {
+          await destination.parent.create(recursive: true);
+          await destination.writeAsBytes(bytes, flush: true);
+        }
+      } on FileSystemException {
+        throw StateError(
+          'Could not export diagnostics. Choose another location.',
+        );
       }
-    } on FileSystemException {
-      throw StateError(
-        'Could not export diagnostics. Choose another location.',
-      );
+    }
+    if (destination == null) {
+      return CrashDiagnosticsExportResult.savedPlatformManaged(destinationPath);
     }
     return CrashDiagnosticsExportResult.saved(destination.path);
+  }
+
+  Future<File> _writeDiagnosticsExportFile({
+    required Directory directory,
+    required String fileName,
+    required Uint8List bytes,
+  }) async {
+    final exportDirectory = Directory(_join(directory.path, 'exports'));
+    await exportDirectory.create(recursive: true);
+    final file = File(_join(exportDirectory.path, fileName));
+    await file.writeAsBytes(bytes, flush: true);
+    return file;
+  }
+
+  File? _fileFromPickerPath(String path) {
+    if (_isPlatformManagedPickerPath(path)) {
+      return null;
+    }
+    if (RegExp(r'^[a-zA-Z]:[\\/]').hasMatch(path)) {
+      return File(path);
+    }
+    final parsed = Uri.tryParse(path);
+    if (parsed != null && parsed.hasScheme) {
+      if (parsed.isScheme('file')) {
+        return File.fromUri(parsed);
+      }
+      return null;
+    }
+    return File(path);
+  }
+
+  static bool _isPlatformManagedPickerPath(String? path) {
+    if (path == null) {
+      return false;
+    }
+    final normalizedPath = path.replaceAll(r'\', '/').trim();
+    if (normalizedPath.isEmpty) {
+      return false;
+    }
+    if (RegExp(r'^[a-zA-Z]:/').hasMatch(normalizedPath)) {
+      return false;
+    }
+    final parsed = Uri.tryParse(normalizedPath);
+    if (parsed != null && parsed.hasScheme && !parsed.isScheme('file')) {
+      return true;
+    }
+    final androidHandlePath = normalizedPath.replaceFirst(
+      RegExp(r'^[\s/]+'),
+      '',
+    );
+    return androidHandlePath.startsWith('document/') ||
+        androidHandlePath.startsWith('tree/');
   }
 
   Future<void> _initialize() async {
@@ -338,8 +584,251 @@ class CrashDiagnosticsService {
     }
   }
 
+  Future<void> _trimEventLog(File file) async {
+    if (!await file.exists() || await file.length() <= _maxEventLogBytes) {
+      return;
+    }
+    final lines = await file.readAsLines();
+    final start = lines.length > _maxEventLogLines
+        ? lines.length - _maxEventLogLines
+        : 0;
+    final trimmed = lines.skip(start).join('\n');
+    await file.writeAsString(trimmed.isEmpty ? '' : '$trimmed\n');
+  }
+
+  void _queueEventRecord(Map<String, Object?> record) {
+    final sanitizedRecord = DiagnosticsSanitizer.sanitizeMap(record);
+    final coalesceKey = _eventCoalesceKey(sanitizedRecord);
+    if (coalesceKey == null) {
+      _queuedEventLines.add(jsonEncode(sanitizedRecord));
+    } else {
+      final count = (_coalescedEventCounts[coalesceKey] ?? 0) + 1;
+      _coalescedEventCounts[coalesceKey] = count;
+      _coalescedEventLines[coalesceKey] = jsonEncode(<String, Object?>{
+        ...sanitizedRecord,
+        'count': count,
+      });
+    }
+    _capBufferedEvents();
+    _scheduleEventFlush();
+  }
+
+  void _scheduleEventFlush() {
+    if (_eventFlushTimer?.isActive == true) {
+      return;
+    }
+    _eventFlushTimer = Timer(_eventFlushInterval, () {
+      _eventFlushTimer = null;
+      unawaited(flushEvents());
+    });
+  }
+
+  void _capBufferedEvents() {
+    while (_queuedEventLines.length + _coalescedEventLines.length >
+        _maxBufferedEventRecords) {
+      if (_queuedEventLines.isNotEmpty) {
+        _queuedEventLines.removeAt(0);
+        continue;
+      }
+      final firstKey = _coalescedEventLines.keys.first;
+      _coalescedEventLines.remove(firstKey);
+      _coalescedEventCounts.remove(firstKey);
+    }
+  }
+
+  String? _eventCoalesceKey(Map<String, Object?> record) {
+    if (record['kind'] != 'app_event') {
+      return null;
+    }
+    final category = record['category']?.toString() ?? '';
+    final name = record['name']?.toString() ?? '';
+    if (!_isNoisyEvent(category, name)) {
+      return null;
+    }
+    final context = _stringMap(record['context']);
+    if (_isConnectionRequestNoisyEvent(category, name)) {
+      final requestId = context['requestId']?.toString() ?? '';
+      final peerId = context['peerId']?.toString() ?? '';
+      final reasonCode = context['reasonCode']?.toString() ?? '';
+      final notificationResult =
+          context['notificationResult']?.toString() ?? '';
+      return '$category:$name:$requestId:$peerId:$reasonCode:$notificationResult';
+    }
+    if (category == 'ui_state') {
+      return '$category:$name:${context['provider'] ?? 'unknown'}';
+    }
+    if (category == 'network') {
+      return '$category:$name:${context['operation'] ?? context['kind'] ?? 'unknown'}';
+    }
+    if (category == 'webrtc') {
+      return '$category:$name:${context['scope'] ?? 'unknown'}:${context['state'] ?? context['phase'] ?? 'global'}';
+    }
+    if (_isVoiceLockEvent(category, name)) {
+      final peerId = context['peerId']?.toString() ?? '';
+      final callId = context['callId']?.toString() ?? '';
+      final pairId = context['pairId']?.toString() ?? '';
+      return '$category:$name:$peerId:$callId:$pairId';
+    }
+    final peerId = context['peerId']?.toString();
+    final callId = context['callId']?.toString();
+    final scope = callId?.isNotEmpty == true
+        ? callId
+        : peerId?.isNotEmpty == true
+        ? peerId
+        : 'global';
+    return '$category:$name:$scope';
+  }
+
+  bool _isVoiceLockEvent(String category, String name) {
+    if (category != 'call') {
+      return false;
+    }
+    return name == 'voice_lock_claim_started' ||
+        name == 'voice_lock_claim_blocked' ||
+        name == 'voice_lock_reclaim_started' ||
+        name == 'voice_lock_reclaim_completed' ||
+        name == 'voice_room_timestamp_repaired' ||
+        name == 'voice_terminal_cleanup_started' ||
+        name == 'voice_terminal_cleanup_completed' ||
+        name == 'voice_terminal_cleanup_failed';
+  }
+
+  bool _isNoisyEvent(String category, String name) {
+    if (category == 'connection') {
+      return name == 'session_changed' ||
+          name == 'peer_connected' ||
+          name == 'peer_disconnected' ||
+          name == 'network_available' ||
+          name == 'auto_recovery_started' ||
+          name == 'auto_recovery_failed';
+    }
+    if (category == 'call') {
+      return name == 'state_changed' ||
+          name == 'firebase_room_update' ||
+          name == 'firebase_frame_received' ||
+          name == 'firebase_frame_send_started' ||
+          name == 'firebase_frame_send_completed' ||
+          _isVoiceLockEvent(category, name) ||
+          name == 'video_renderer_state' ||
+          name == 'media_processing_config_refreshed';
+    }
+    if (category == 'connection_request') {
+      return _isConnectionRequestNoisyEvent(category, name);
+    }
+    if (category == 'ui_state') {
+      return name == 'provider_added' ||
+          name == 'provider_updated' ||
+          name == 'provider_disposed';
+    }
+    if (category == 'network') {
+      return name == 'operation_started' ||
+          name == 'operation_completed' ||
+          name == 'stream_subscribed' ||
+          name == 'stream_event' ||
+          name == 'stream_cancelled' ||
+          name == 'stream_completed';
+    }
+    if (category == 'webrtc') {
+      return name == 'peer_state_changed' ||
+          name == 'media_state_changed' ||
+          name == 'peer_connection_state' ||
+          name == 'ice_connection_state' ||
+          name == 'local_ice_candidate' ||
+          name == 'remote_ice_candidate_added' ||
+          name == 'data_channel_state' ||
+          name == 'data_channel_message_received' ||
+          name == 'remote_track_received';
+    }
+    return false;
+  }
+
+  bool _isConnectionRequestNoisyEvent(String category, String name) {
+    if (category != 'connection_request') {
+      return false;
+    }
+    return name == 'connection_request_notification_shown' ||
+        name == 'connection_request_notification_skipped' ||
+        name == 'connection_request_notification_dismissed';
+  }
+
+  void _installLifecycleFlush() {
+    if (_lifecycleFlushInstalled) {
+      return;
+    }
+    _lifecycleFlushInstalled = true;
+    WidgetsBinding.instance.addObserver(
+      _CrashDiagnosticsLifecycleObserver(flushEvents),
+    );
+  }
+
+  void _installFrameTimingCapture() {
+    if (_frameTimingCaptureInstalled) {
+      return;
+    }
+    _frameTimingCaptureInstalled = true;
+    _frameTimingStats = _RainFrameTimingStats();
+    SchedulerBinding.instance.addTimingsCallback((List<FrameTiming> timings) {
+      _frameTimingStats?.add(timings);
+    });
+  }
+
   static Future<Directory> _defaultDirectoryProvider() {
     return getApplicationSupportDirectory();
+  }
+
+  static Future<String?> _defaultSaveFile({
+    String? dialogTitle,
+    String? fileName,
+    String? initialDirectory,
+    FileType type = FileType.any,
+    List<String>? allowedExtensions,
+    Uint8List? bytes,
+    bool lockParentWindow = false,
+  }) {
+    if (Platform.isAndroid) {
+      final exportBytes = bytes;
+      if (exportBytes == null || exportBytes.isEmpty) {
+        throw ArgumentError(
+          'The "bytes" parameter is required on Android diagnostics export.',
+        );
+      }
+      return _saveAndroidFileWithBytes(
+        fileName: fileName,
+        initialDirectory: initialDirectory,
+        type: type,
+        allowedExtensions: allowedExtensions,
+        bytes: exportBytes,
+      );
+    }
+    return FilePicker.saveFile(
+      dialogTitle: dialogTitle,
+      fileName: fileName,
+      initialDirectory: initialDirectory,
+      type: type,
+      allowedExtensions: allowedExtensions,
+      bytes: bytes,
+      lockParentWindow: lockParentWindow,
+    );
+  }
+
+  static Future<String?> _saveAndroidFileWithBytes({
+    required String? fileName,
+    required String? initialDirectory,
+    required FileType type,
+    required List<String>? allowedExtensions,
+    required Uint8List bytes,
+  }) {
+    // file_picker 12.0.0-beta.3 omits `bytes` from its Android method-channel
+    // call, then tries to write the returned SAF `/document/...` handle with
+    // dart:io. Include the bytes in the native call so Android writes through
+    // ContentResolver.openOutputStream and Rain never opens the SAF handle.
+    return _filePickerChannel.invokeMethod<String>('save', <String, Object?>{
+      'fileName': fileName,
+      'fileType': type.name,
+      'initialDirectory': initialDirectory,
+      'allowedExtensions': allowedExtensions,
+      'bytes': bytes,
+    });
   }
 
   static Future<CrashDiagnosticsAppInfo> _defaultAppInfoProvider() async {
@@ -383,4 +872,490 @@ class CrashDiagnosticsService {
       (key, value) => MapEntry(key.toString(), value),
     );
   }
+
+  static List<Map<String, Object?>> _buildCallDiagnosticSummaries(
+    List<Map<String, Object?>> events,
+  ) {
+    final summaries = <String, _CallDiagnosticSummary>{};
+    _CallDiagnosticSummary summaryFor(String callId) {
+      return summaries.putIfAbsent(
+        callId,
+        () => _CallDiagnosticSummary(callId),
+      );
+    }
+
+    for (final event in events) {
+      final kind = event['kind']?.toString();
+      if (kind == 'error') {
+        final record = _stringMap(event['record']);
+        final voice = _decodeVoiceDiagnostics(record['error']);
+        final callId = voice['callId']?.toString();
+        if (callId == null || callId.isEmpty) {
+          continue;
+        }
+        summaryFor(callId).mergeVoiceDiagnostics(voice);
+        continue;
+      }
+      if (kind != 'app_event' || event['category'] != 'call') {
+        continue;
+      }
+      final context = _stringMap(event['context']);
+      final callId = context['callId']?.toString() ?? '';
+      if (callId.isEmpty) {
+        continue;
+      }
+      final summary = summaryFor(callId);
+      summary.mergeEvent(event['name']?.toString() ?? '', context);
+    }
+
+    return summaries.values.map((summary) => summary.toJson()).toList();
+  }
+
+  static Map<String, Object> _buildFirebaseCostCounters(
+    List<Map<String, Object?>> events,
+  ) {
+    var signalingReads = 0;
+    var signalingWrites = 0;
+    var presenceWrites = 0;
+    var iceCandidateWrites = 0;
+    var cleanupWrites = 0;
+
+    for (final event in events) {
+      if (event['kind'] != 'app_event') {
+        continue;
+      }
+      final category = event['category']?.toString() ?? '';
+      final name = event['name']?.toString() ?? '';
+      final context = _stringMap(event['context']);
+
+      if (category == 'call') {
+        if (name == 'firebase_room_update' ||
+            name == 'firebase_frame_received') {
+          signalingReads += 1;
+        }
+        if (name == 'firebase_frame_send_completed' ||
+            name == 'voice_lock_claim_started' ||
+            name == 'voice_terminal_write_before_session_hangup' ||
+            name == 'voice_terminal_write_durable') {
+          signalingWrites += 1;
+        }
+        if (name == 'ice_candidate_batch_flushed') {
+          final writtenCount = _intFrom(context['writtenCount']) ?? 0;
+          iceCandidateWrites += writtenCount;
+          signalingWrites += writtenCount;
+        }
+        if (name == 'voice_terminal_cleanup_completed' ||
+            name == 'voice_cleanup_already_completed') {
+          cleanupWrites += 1;
+          signalingWrites += 1;
+        }
+      }
+
+      if (name.contains('presence') && name.contains('write')) {
+        presenceWrites += 1;
+      }
+    }
+
+    return <String, Object>{
+      'signalingReads': signalingReads,
+      'signalingWrites': signalingWrites,
+      'presenceWrites': presenceWrites,
+      'iceCandidateWrites': iceCandidateWrites,
+      'cleanupWrites': cleanupWrites,
+      'source': 'diagnostic_event_estimate',
+    };
+  }
+
+  static Map<String, int> _buildFailureTaxonomySummary(
+    List<Map<String, Object?>> events,
+  ) {
+    final counts = <String, int>{};
+    for (final event in events) {
+      final context = _stringMap(event['context']);
+      final taxonomy =
+          context['failureTaxonomy']?.toString() ??
+          _decodeVoiceDiagnostics(
+            _stringMap(event['record'])['error'],
+          )['failureTaxonomy']?.toString();
+      if (taxonomy == null || taxonomy.isEmpty) {
+        continue;
+      }
+      counts[taxonomy] = (counts[taxonomy] ?? 0) + 1;
+    }
+    return counts;
+  }
+
+  static Map<String, Object?> _buildDebugEventSummary(
+    List<Map<String, Object?>> events,
+  ) {
+    final byCategory = <String, int>{};
+    final bySeverity = <String, int>{};
+    final bySource = <String, int>{};
+    var appEventCount = 0;
+    var errorCount = 0;
+    var fatalCount = 0;
+
+    for (final event in events) {
+      final kind = event['kind']?.toString();
+      if (kind == 'error') {
+        errorCount += 1;
+        final record = _stringMap(event['record']);
+        final source = record['source']?.toString() ?? 'unknown';
+        bySource[source] = (bySource[source] ?? 0) + 1;
+        if (record['fatal'] == true) {
+          fatalCount += 1;
+        }
+        continue;
+      }
+      if (kind != 'app_event') {
+        continue;
+      }
+      appEventCount += 1;
+      final category = event['category']?.toString() ?? 'unknown';
+      final severity = event['severity']?.toString() ?? 'info';
+      byCategory[category] = (byCategory[category] ?? 0) + 1;
+      bySeverity[severity] = (bySeverity[severity] ?? 0) + 1;
+      final context = _stringMap(event['context']);
+      final source =
+          context['source']?.toString() ??
+          context['operation']?.toString() ??
+          event['name']?.toString() ??
+          'unknown';
+      bySource[source] = (bySource[source] ?? 0) + 1;
+    }
+
+    return <String, Object?>{
+      'appEventCount': appEventCount,
+      'errorCount': errorCount,
+      'fatalCount': fatalCount,
+      'byCategory': _topCounts(byCategory, limit: 20),
+      'bySeverity': _topCounts(bySeverity, limit: 10),
+      'bySource': _topCounts(bySource, limit: 20),
+    };
+  }
+
+  static Map<String, Object?> _buildNetworkTraceSummary(
+    List<Map<String, Object?>> events,
+  ) {
+    final operationCounts = <String, int>{};
+    final operationFailures = <String, int>{};
+    final watchEventCounts = <String, int>{};
+    final slowest = <Map<String, Object?>>[];
+    var totalOperations = 0;
+    var totalFailures = 0;
+
+    for (final event in events) {
+      if (event['kind'] != 'app_event' || event['category'] != 'network') {
+        continue;
+      }
+      final name = event['name']?.toString() ?? '';
+      final context = _stringMap(event['context']);
+      final operation = context['operation']?.toString() ?? 'unknown';
+      if (name == 'operation_completed' || name == 'operation_failed') {
+        totalOperations += 1;
+        operationCounts[operation] = (operationCounts[operation] ?? 0) + 1;
+        final durationMs = _intFrom(context['durationMs']) ?? 0;
+        slowest.add(<String, Object?>{
+          'operation': operation,
+          'kind': context['kind']?.toString(),
+          'durationMs': durationMs,
+          'failed': name == 'operation_failed',
+        });
+      }
+      if (name == 'operation_failed' || name == 'stream_failed') {
+        totalFailures += 1;
+        operationFailures[operation] = (operationFailures[operation] ?? 0) + 1;
+      }
+      if (name == 'stream_event') {
+        watchEventCounts[operation] = (watchEventCounts[operation] ?? 0) + 1;
+      }
+    }
+
+    slowest.sort((left, right) {
+      final leftDuration = _intFrom(left['durationMs']) ?? 0;
+      final rightDuration = _intFrom(right['durationMs']) ?? 0;
+      return rightDuration.compareTo(leftDuration);
+    });
+
+    return <String, Object?>{
+      'totalOperations': totalOperations,
+      'totalFailures': totalFailures,
+      'operationCounts': _topCounts(operationCounts, limit: 20),
+      'operationFailures': _topCounts(operationFailures, limit: 20),
+      'watchEventCounts': _topCounts(watchEventCounts, limit: 20),
+      'slowestOperations': slowest.take(10).toList(growable: false),
+    };
+  }
+
+  static Map<String, Object?> _buildUiStateSummary(
+    List<Map<String, Object?>> events,
+  ) {
+    final providerEvents = <String, int>{};
+    final providerFailures = <String, int>{};
+    final transitions = <Map<String, Object?>>[];
+
+    for (final event in events) {
+      if (event['kind'] != 'app_event' || event['category'] != 'ui_state') {
+        continue;
+      }
+      final name = event['name']?.toString() ?? '';
+      final context = _stringMap(event['context']);
+      final provider = context['provider']?.toString() ?? 'unknown';
+      providerEvents[provider] = (providerEvents[provider] ?? 0) + 1;
+      if (name == 'provider_failed') {
+        providerFailures[provider] = (providerFailures[provider] ?? 0) + 1;
+      }
+      if (name == 'provider_updated') {
+        final previous = _stringMap(context['previous']);
+        final next = _stringMap(context['next']);
+        transitions.add(<String, Object?>{
+          'provider': provider,
+          'previousType': previous['type']?.toString(),
+          'nextType': next['type']?.toString(),
+          if (next['phase'] != null) 'phase': next['phase']?.toString(),
+          if (next['state'] != null) 'state': next['state']?.toString(),
+          if (next['peerId'] != null) 'peerId': next['peerId']?.toString(),
+          if (next['callId'] != null) 'callId': next['callId']?.toString(),
+        });
+      }
+    }
+
+    return <String, Object?>{
+      'providerFailureCount': providerFailures.values.fold<int>(
+        0,
+        (int sum, int count) => sum + count,
+      ),
+      'mostNoisyProviders': _topCounts(providerEvents, limit: 20),
+      'providerFailures': _topCounts(providerFailures, limit: 20),
+      'lastStateTransitions': transitions.length <= 20
+          ? transitions
+          : transitions.sublist(transitions.length - 20),
+    };
+  }
+
+  static Map<String, int> _topCounts(
+    Map<String, int> counts, {
+    required int limit,
+  }) {
+    final entries = counts.entries.toList(growable: false)
+      ..sort((left, right) {
+        final byCount = right.value.compareTo(left.value);
+        if (byCount != 0) {
+          return byCount;
+        }
+        return left.key.compareTo(right.key);
+      });
+    return Map<String, int>.fromEntries(entries.take(limit));
+  }
+
+  static Map<String, Object?> _decodeVoiceDiagnostics(Object? value) {
+    if (value is! String || value.trim().isEmpty) {
+      return const <String, Object?>{};
+    }
+    try {
+      final decoded = jsonDecode(value);
+      final json = _stringMap(decoded);
+      if (!json.containsKey('callId') || !json.containsKey('mediaMode')) {
+        return const <String, Object?>{};
+      }
+      return json;
+    } on FormatException {
+      return const <String, Object?>{};
+    }
+  }
+
+  static int? _intFrom(Object? value) {
+    if (value is num) {
+      return value.toInt();
+    }
+    if (value is String) {
+      return int.tryParse(value);
+    }
+    return null;
+  }
+}
+
+class _CallDiagnosticSummary {
+  _CallDiagnosticSummary(this.callId);
+
+  final String callId;
+  String? peerId;
+  String? mediaMode;
+  String? caller;
+  String? callee;
+  final List<String> roomStatusTimeline = <String>[];
+  int iceCandidateWriteCount = 0;
+  int iceCandidateReadCount = 0;
+  String? turnReadiness;
+  bool relayFallbackAttempted = false;
+  String? terminalWriteOutcome;
+  String? cleanupOutcome;
+  int? presenceAgeAtStartMs;
+  String? mediaFailureReason;
+  String? failureTaxonomy;
+
+  void mergeEvent(String name, Map<String, Object?> context) {
+    peerId ??= context['peerId']?.toString();
+    mediaMode ??= context['mediaMode']?.toString();
+    turnReadiness ??= context['turnReadiness']?.toString();
+    presenceAgeAtStartMs ??= CrashDiagnosticsService._intFrom(
+      context['presenceAgeMs'],
+    );
+    failureTaxonomy ??= context['failureTaxonomy']?.toString();
+    mediaFailureReason ??=
+        context['failureReason']?.toString() ??
+        context['reasonCode']?.toString();
+    final from = context['from']?.toString();
+    final to = context['to']?.toString();
+    if (from != null && from.isNotEmpty && to != null && to.isNotEmpty) {
+      caller ??= from;
+      callee ??= to;
+    }
+
+    if (name == 'firebase_room_update') {
+      final status = context['status']?.toString();
+      if (status != null &&
+          status.isNotEmpty &&
+          (roomStatusTimeline.isEmpty || roomStatusTimeline.last != status)) {
+        roomStatusTimeline.add(status);
+      }
+    }
+    if (name == 'ice_candidate_batch_flushed') {
+      iceCandidateWriteCount +=
+          CrashDiagnosticsService._intFrom(context['writtenCount']) ?? 0;
+    }
+    if (name == 'firebase_frame_received' &&
+        context['frameType']?.toString() == 'candidate') {
+      iceCandidateReadCount += 1;
+    }
+    if (name.contains('relay_fallback')) {
+      relayFallbackAttempted = true;
+    }
+    if (name == 'voice_terminal_write_durable') {
+      terminalWriteOutcome = 'durable';
+    } else if (name == 'voice_terminal_write_failed') {
+      terminalWriteOutcome = 'failed';
+    }
+    if (name == 'voice_terminal_cleanup_completed') {
+      cleanupOutcome = context['cleanupResult']?.toString() ?? 'completed';
+    } else if (name == 'voice_terminal_cleanup_failed') {
+      cleanupOutcome = 'failed';
+    } else if (name == 'voice_cleanup_already_completed') {
+      cleanupOutcome = 'alreadyCompleted';
+    }
+  }
+
+  void mergeVoiceDiagnostics(Map<String, Object?> diagnostics) {
+    peerId ??= diagnostics['peerId']?.toString();
+    mediaMode ??= diagnostics['mediaMode']?.toString();
+    caller ??= diagnostics['caller']?.toString();
+    callee ??= diagnostics['callee']?.toString();
+    turnReadiness ??= diagnostics['turnReadiness']?.toString();
+    terminalWriteOutcome ??= diagnostics['terminalWriteOutcome']?.toString();
+    cleanupOutcome ??= diagnostics['cleanupOutcome']?.toString();
+    presenceAgeAtStartMs ??= CrashDiagnosticsService._intFrom(
+      diagnostics['presenceAgeAtStartMs'],
+    );
+    mediaFailureReason ??= diagnostics['mediaFailureReason']?.toString();
+    failureTaxonomy ??= diagnostics['failureTaxonomy']?.toString();
+    iceCandidateWriteCount +=
+        CrashDiagnosticsService._intFrom(
+          diagnostics['iceCandidateWriteCount'],
+        ) ??
+        0;
+    iceCandidateReadCount +=
+        CrashDiagnosticsService._intFrom(
+          diagnostics['iceCandidateReadCount'],
+        ) ??
+        0;
+    relayFallbackAttempted =
+        relayFallbackAttempted || diagnostics['relayFallbackAttempted'] == true;
+    final timeline = diagnostics['roomStatusTimeline'];
+    if (timeline is Iterable) {
+      for (final status in timeline) {
+        final value = status.toString();
+        if (value.isNotEmpty &&
+            (roomStatusTimeline.isEmpty || roomStatusTimeline.last != value)) {
+          roomStatusTimeline.add(value);
+        }
+      }
+    }
+  }
+
+  Map<String, Object?> toJson() => <String, Object?>{
+    'callId': callId,
+    if (peerId != null) 'peerId': peerId,
+    if (mediaMode != null) 'mediaMode': mediaMode,
+    if (caller != null) 'caller': caller,
+    if (callee != null) 'callee': callee,
+    'roomStatusTimeline': List<String>.unmodifiable(roomStatusTimeline),
+    'iceCandidateWriteCount': iceCandidateWriteCount,
+    'iceCandidateReadCount': iceCandidateReadCount,
+    if (turnReadiness != null) 'turnReadiness': turnReadiness,
+    'relayFallbackAttempted': relayFallbackAttempted,
+    if (terminalWriteOutcome != null)
+      'terminalWriteOutcome': terminalWriteOutcome,
+    if (cleanupOutcome != null) 'cleanupOutcome': cleanupOutcome,
+    if (presenceAgeAtStartMs != null)
+      'presenceAgeAtStartMs': presenceAgeAtStartMs,
+    if (mediaFailureReason != null) 'mediaFailureReason': mediaFailureReason,
+    if (failureTaxonomy != null) 'failureTaxonomy': failureTaxonomy,
+  };
+}
+
+class _CrashDiagnosticsLifecycleObserver extends WidgetsBindingObserver {
+  _CrashDiagnosticsLifecycleObserver(this._flushEvents);
+
+  final Future<void> Function() _flushEvents;
+
+  @override
+  void didChangeAppLifecycleState(AppLifecycleState state) {
+    if (state == AppLifecycleState.inactive ||
+        state == AppLifecycleState.paused ||
+        state == AppLifecycleState.detached) {
+      unawaited(_flushEvents());
+    }
+  }
+}
+
+class _RainFrameTimingStats {
+  int frameCount = 0;
+  int droppedFrameCount = 0;
+  int totalBuildMicros = 0;
+  int totalRasterMicros = 0;
+  int worstBuildMicros = 0;
+  int worstRasterMicros = 0;
+
+  void add(List<FrameTiming> timings) {
+    for (final timing in timings) {
+      final buildMicros = timing.buildDuration.inMicroseconds;
+      final rasterMicros = timing.rasterDuration.inMicroseconds;
+      frameCount += 1;
+      totalBuildMicros += buildMicros;
+      totalRasterMicros += rasterMicros;
+      if (buildMicros > worstBuildMicros) {
+        worstBuildMicros = buildMicros;
+      }
+      if (rasterMicros > worstRasterMicros) {
+        worstRasterMicros = rasterMicros;
+      }
+      if (buildMicros > _frameBudgetMicros ||
+          rasterMicros > _frameBudgetMicros) {
+        droppedFrameCount += 1;
+      }
+    }
+  }
+
+  static const int _frameBudgetMicros = 16667;
+
+  Map<String, Object> toJson() => <String, Object>{
+    'frameCount': frameCount,
+    'droppedFrameCount': droppedFrameCount,
+    'averageBuildMicros': frameCount == 0 ? 0 : totalBuildMicros ~/ frameCount,
+    'averageRasterMicros': frameCount == 0
+        ? 0
+        : totalRasterMicros ~/ frameCount,
+    'worstBuildMicros': worstBuildMicros,
+    'worstRasterMicros': worstRasterMicros,
+  };
 }

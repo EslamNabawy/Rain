@@ -150,8 +150,8 @@ class _AppTextInputDialogState extends State<_AppTextInputDialog> {
         textInputAction: widget.textInputAction,
         textCapitalization: widget.textCapitalization,
         inputFormatters: widget.inputFormatters,
-        minLines: widget.minLines,
-        maxLines: widget.maxLines,
+        minLines: widget.obscureText ? null : widget.minLines,
+        maxLines: widget.obscureText ? 1 : widget.maxLines,
         maxLength: widget.maxLength,
         mouseCursor: SystemMouseCursors.text,
         onTap: () {

@@ -1,33 +1,51 @@
 import 'dart:async';
 
+import 'package:cloud_functions/cloud_functions.dart';
 import 'package:firebase_auth/firebase_auth.dart';
 import 'package:firebase_database/firebase_database.dart';
 import 'package:flutter_webrtc/flutter_webrtc.dart';
 
+import '../src/connection_request_adapter.dart';
+import '../src/connection_request_contract.dart';
+import '../src/signaling_cost_budget.dart';
+import '../src/voice_call_clock.dart';
+import '../src/voice_call_cleanup_janitor.dart';
 import '../src/voice_call_frame.dart';
+import '../src/voice_lock_reclaim_policy.dart';
 import '../src/voice_signaling_contract.dart';
 import 'signaling_adapter.dart';
 import 'signaling_cipher.dart';
 
 class FirebaseSignalingAdapter
-    implements SignalingAdapter, VoiceSignalingAdapter {
+    implements
+        SignalingAdapter,
+        VoiceSignalingAdapter,
+        ConnectionRequestAdapter {
   FirebaseSignalingAdapter({
     FirebaseAuth? auth,
     FirebaseDatabase? database,
+    FirebaseFunctions? functions,
+    ConnectionRequestAdapterDiagnosticsSink? connectionRequestDiagnosticsSink,
     SignalingCipher? signalingCipher,
     bool useEmulator = false,
   }) : _auth = auth ?? FirebaseAuth.instance,
        _database = database ?? FirebaseDatabase.instance,
+       _functions = functions ?? FirebaseFunctions.instance,
+       _connectionRequestDiagnosticsSink = connectionRequestDiagnosticsSink,
        _signalingCipher = signalingCipher ?? SignalingCipher.demo(),
        _useEmulator = useEmulator;
 
   final FirebaseAuth _auth;
   final FirebaseDatabase _database;
+  final FirebaseFunctions _functions;
+  final ConnectionRequestAdapterDiagnosticsSink?
+  _connectionRequestDiagnosticsSink;
   final SignalingCipher _signalingCipher;
   final bool _useEmulator;
   final String _sessionId = DateTime.now().microsecondsSinceEpoch.toRadixString(
     36,
   );
+  final int _sessionStartedAt = DateTime.now().millisecondsSinceEpoch;
   bool _emulatorsConfigured = false;
   String _emailFromUsername(String username) => '$username@rain.local';
 
@@ -64,6 +82,28 @@ class FirebaseSignalingAdapter
     return <String, Object?>{'userA': users[0], 'userB': users[1]};
   }
 
+  ({String sender, String receiver}) _roomCipherContext(
+    String roomId,
+    String purpose,
+  ) {
+    final users = _roomUsers(roomId);
+    return switch (purpose) {
+      SignalingCipher.offerPurpose || SignalingCipher.callerIcePurpose => (
+        sender: users[0],
+        receiver: users[1],
+      ),
+      SignalingCipher.answerPurpose || SignalingCipher.calleeIcePurpose => (
+        sender: users[1],
+        receiver: users[0],
+      ),
+      _ => throw ArgumentError.value(
+        purpose,
+        'purpose',
+        'Unknown signaling purpose',
+      ),
+    };
+  }
+
   Future<void> _configureEmulatorsIfNeeded() async {
     if (!_useEmulator || _emulatorsConfigured) return;
     try {
@@ -71,9 +111,11 @@ class FirebaseSignalingAdapter
       const String host = 'localhost';
       const int authPort = 9099; // Firebase Auth emulator default
       const int dbPort = 9000; // Firebase Realtime Database emulator default
+      const int functionsPort = 5001; // Firebase Functions emulator default
       // Configure auth and database emulators. These calls are idempotent.
       _auth.useAuthEmulator(host, authPort);
       _database.useDatabaseEmulator(host, dbPort);
+      _functions.useFunctionsEmulator(host, functionsPort);
     } catch (_) {
       // If emulators are not available, fall back gracefully.
     }
@@ -82,9 +124,8 @@ class FirebaseSignalingAdapter
 
   DatabaseReference get _root => _database.ref();
 
-  static const int _presenceTimeoutMs = 90 * 1000;
+  static const int _presenceTimeoutMs = 30 * 1000;
   static const int _roomTtlMs = 15 * 60 * 1000;
-  static const int _orphanVoiceLockGraceMs = 15000;
   static const int _searchLimit = 10;
 
   Map<String, Object?> _identityJson({
@@ -107,6 +148,7 @@ class FirebaseSignalingAdapter
     required String uid,
     required bool online,
     required int now,
+    String state = 'online',
   }) {
     return <String, Object?>{
       'uid': uid,
@@ -115,7 +157,26 @@ class FirebaseSignalingAdapter
       'lastSeen': now,
       'updatedAt': now,
       'sessionId': _sessionId,
+      'startedAt': _sessionStartedAt,
       'platform': 'flutter',
+      'state': state,
+    };
+  }
+
+  Map<String, Object?> _offlinePresenceJson({
+    required String uid,
+    required int now,
+  }) {
+    return <String, Object?>{
+      'uid': uid,
+      'online': false,
+      'lastHeartbeat': now,
+      'lastSeen': now,
+      'updatedAt': now,
+      'sessionId': _sessionId,
+      'startedAt': _sessionStartedAt,
+      'platform': 'flutter',
+      'state': 'offline',
     };
   }
 
@@ -161,6 +222,7 @@ class FirebaseSignalingAdapter
     final normalizedCaller = normalizeVoiceCallUsername(caller);
     final normalizedCallee = normalizeVoiceCallUsername(callee);
     await _ensureSignedInAsUsername(normalizedCaller);
+    await _assertVoiceCallCalleeOnline(normalizedCallee);
 
     final pairId = voiceCallPairId(normalizedCaller, normalizedCallee);
     final room = VoiceCallRoom(
@@ -212,11 +274,15 @@ class FirebaseSignalingAdapter
     final calleeLockRef = _root.child('activeVoiceUsers/$normalizedCallee');
     final lockRef = _root.child('activeVoicePairs/$pairId');
 
-    final claimedCallerLock = await _claimActiveVoiceUserLockWithReclaim(
-      lockRef: callerLockRef,
-      lock: callerUserLock,
-      caller: normalizedCaller,
-      createdAt: createdAt,
+    final claimedCallerLock = await _runVoiceCallCreateStep(
+      'activeVoiceUsers/$normalizedCaller claim',
+      () => _claimActiveVoiceUserLockWithReclaim(
+        lockRef: callerLockRef,
+        lock: callerUserLock,
+        caller: normalizedCaller,
+        callee: normalizedCallee,
+        createdAt: createdAt,
+      ),
     );
     if (!claimedCallerLock) {
       throw VoiceSignalingException(
@@ -227,11 +293,15 @@ class FirebaseSignalingAdapter
     var claimedCalleeLock = false;
     var claimedPairLock = false;
     try {
-      claimedCalleeLock = await _claimActiveVoiceUserLockWithReclaim(
-        lockRef: calleeLockRef,
-        lock: calleeUserLock,
-        caller: normalizedCaller,
-        createdAt: createdAt,
+      claimedCalleeLock = await _runVoiceCallCreateStep(
+        'activeVoiceUsers/$normalizedCallee claim',
+        () => _claimActiveVoiceUserLockWithReclaim(
+          lockRef: calleeLockRef,
+          lock: calleeUserLock,
+          caller: normalizedCaller,
+          callee: normalizedCallee,
+          createdAt: createdAt,
+        ),
       );
       if (!claimedCalleeLock) {
         throw VoiceSignalingException(
@@ -239,12 +309,15 @@ class FirebaseSignalingAdapter
         );
       }
 
-      claimedPairLock = await _claimActiveVoicePairLockWithReclaim(
-        lockRef: lockRef,
-        lock: lock,
-        caller: normalizedCaller,
-        callee: normalizedCallee,
-        createdAt: createdAt,
+      claimedPairLock = await _runVoiceCallCreateStep(
+        'activeVoicePairs/$pairId claim',
+        () => _claimActiveVoicePairLockWithReclaim(
+          lockRef: lockRef,
+          lock: lock,
+          caller: normalizedCaller,
+          callee: normalizedCallee,
+          createdAt: createdAt,
+        ),
       );
       if (!claimedPairLock) {
         throw VoiceSignalingException(
@@ -252,10 +325,14 @@ class FirebaseSignalingAdapter
         );
       }
 
-      await _root.update(<String, Object?>{
-        'voiceCalls/$normalizedCallId': room.toJson(),
-        'voiceCallInboxes/$normalizedCallee/$normalizedCallId': inbox.toJson(),
-      });
+      await _runVoiceCallCreateStep(
+        'voiceCalls/$normalizedCallId + voiceCallInboxes/$normalizedCallee/$normalizedCallId write',
+        () => _root.update(<String, Object?>{
+          'voiceCalls/$normalizedCallId': room.toJson(),
+          'voiceCallInboxes/$normalizedCallee/$normalizedCallId': inbox
+              .toJson(),
+        }),
+      );
     } catch (_) {
       if (claimedPairLock) {
         await _removeActiveVoicePairLockIfUnchanged(
@@ -278,6 +355,80 @@ class FirebaseSignalingAdapter
     return room;
   }
 
+  Future<T> _runVoiceCallCreateStep<T>(
+    String operation,
+    Future<T> Function() action,
+  ) async {
+    try {
+      return await action();
+    } on VoiceSignalingException {
+      rethrow;
+    } on FirebaseException catch (error) {
+      throw VoiceSignalingException(
+        _firebaseVoiceCreateErrorMessage(operation, error),
+      );
+    } catch (error) {
+      final text = error.toString();
+      if (_looksLikeFirebaseDatabaseError(text)) {
+        throw VoiceSignalingException(
+          'Firebase voice call create failed at $operation: '
+          '${_compactErrorText(text)}',
+        );
+      }
+      rethrow;
+    }
+  }
+
+  String _firebaseVoiceCreateErrorMessage(
+    String operation,
+    FirebaseException error,
+  ) {
+    final parts = <String>[
+      if (error.plugin.isNotEmpty) error.plugin,
+      if (error.code.isNotEmpty) error.code,
+      if ((error.message ?? '').trim().isNotEmpty) error.message!.trim(),
+    ];
+    final detail = parts.isEmpty
+        ? 'database error without message'
+        : parts.join(': ');
+    return 'Firebase voice call create failed at $operation: $detail';
+  }
+
+  bool _looksLikeFirebaseDatabaseError(String text) {
+    final normalized = text.toLowerCase();
+    return normalized.contains('firebase_database') ||
+        normalized.contains('firebase database error') ||
+        normalized.contains('permission denied') ||
+        normalized.contains('permission-denied');
+  }
+
+  String _compactErrorText(String text) {
+    final compact = text.replaceAll(RegExp(r'\s+'), ' ').trim();
+    return compact.isEmpty ? 'database error without message' : compact;
+  }
+
+  Future<void> _assertVoiceCallCalleeOnline(String callee) async {
+    final normalizedCallee = normalizeVoiceCallUsername(callee);
+    final BackendIdentity? identity;
+    try {
+      identity = await fetchIdentity(normalizedCallee);
+    } catch (_) {
+      throw VoiceSignalingException(
+        'Could not confirm @$normalizedCallee is online. Try again.',
+      );
+    }
+    if (identity == null) {
+      throw VoiceSignalingException(
+        'Could not confirm @$normalizedCallee is online. Try again.',
+      );
+    }
+    if (!identity.online) {
+      throw VoiceSignalingException(
+        '@$normalizedCallee is offline. Keep both apps open, then try again.',
+      );
+    }
+  }
+
   Future<bool> _claimActiveVoicePairLockWithReclaim({
     required DatabaseReference lockRef,
     required VoiceActivePairLock lock,
@@ -285,23 +436,23 @@ class FirebaseSignalingAdapter
     required String callee,
     required int createdAt,
   }) async {
-    var claimed = await _claimActiveVoicePairLock(
-      lockRef: lockRef,
-      lock: lock,
-      createdAt: createdAt,
-    );
-    if (!claimed &&
-        await _tryReclaimStaleActiveVoicePair(
-          lockRef: lockRef,
-          pairId: lock.pairId,
-          caller: caller,
-          callee: callee,
-          createdAt: createdAt,
-        )) {
-      claimed = await _claimActiveVoicePairLock(
+    var claimed = await _claimActiveVoicePairLock(lockRef: lockRef, lock: lock);
+    var reclaimed = false;
+    if (!claimed) {
+      reclaimed = await _tryReclaimStaleActiveVoicePair(
         lockRef: lockRef,
-        lock: lock,
+        pairId: lock.pairId,
+        caller: caller,
+        callee: callee,
         createdAt: createdAt,
+      );
+      if (reclaimed) {
+        claimed = await _claimActiveVoicePairLock(lockRef: lockRef, lock: lock);
+      }
+    }
+    if (!claimed && reclaimed) {
+      throw const VoiceSignalingException(
+        'Old call state was cleaned, but the voice pair lock could not be claimed. Try again.',
       );
     }
     return claimed;
@@ -311,17 +462,27 @@ class FirebaseSignalingAdapter
     required DatabaseReference lockRef,
     required VoiceActiveUserLock lock,
     required String caller,
+    required String callee,
     required int createdAt,
   }) async {
     var claimed = await _claimActiveVoiceUserLock(lockRef: lockRef, lock: lock);
-    if (!claimed &&
-        await _tryReclaimStaleActiveVoiceUser(
-          lockRef: lockRef,
-          username: lock.username,
-          caller: caller,
-          createdAt: createdAt,
-        )) {
-      claimed = await _claimActiveVoiceUserLock(lockRef: lockRef, lock: lock);
+    var reclaimed = false;
+    if (!claimed) {
+      reclaimed = await _tryReclaimStaleActiveVoiceUser(
+        lockRef: lockRef,
+        username: lock.username,
+        caller: caller,
+        callee: callee,
+        createdAt: createdAt,
+      );
+      if (reclaimed) {
+        claimed = await _claimActiveVoiceUserLock(lockRef: lockRef, lock: lock);
+      }
+    }
+    if (!claimed && reclaimed) {
+      throw const VoiceSignalingException(
+        'Old call state was cleaned, but the voice user lock could not be claimed. Try again.',
+      );
     }
     return claimed;
   }
@@ -329,22 +490,10 @@ class FirebaseSignalingAdapter
   Future<bool> _claimActiveVoicePairLock({
     required DatabaseReference lockRef,
     required VoiceActivePairLock lock,
-    required int createdAt,
   }) async {
-    final now = DateTime.now().millisecondsSinceEpoch;
     final transaction = await lockRef.runTransaction((Object? current) {
       if (current is Map) {
-        try {
-          final existing = VoiceActivePairLock.fromJson(
-            pairId: lock.pairId,
-            json: _asObjectMap(current),
-          );
-          if (existing.expiresAt > createdAt && existing.expiresAt > now) {
-            return Transaction.abort();
-          }
-        } catch (_) {
-          return Transaction.abort();
-        }
+        return Transaction.abort();
       }
       return Transaction.success(lock.toJson());
     }, applyLocally: false);
@@ -355,12 +504,13 @@ class FirebaseSignalingAdapter
     required DatabaseReference lockRef,
     required VoiceActiveUserLock lock,
   }) async {
-    try {
-      await lockRef.set(lock.toJson());
-      return true;
-    } catch (_) {
-      return false;
-    }
+    final transaction = await lockRef.runTransaction((Object? current) {
+      if (current is Map) {
+        return Transaction.abort();
+      }
+      return Transaction.success(lock.toJson());
+    }, applyLocally: false);
+    return transaction.committed;
   }
 
   Future<bool> _tryReclaimStaleActiveVoicePair({
@@ -385,21 +535,21 @@ class FirebaseSignalingAdapter
     } catch (_) {
       return false;
     }
-    if (!_lockMatchesVoicePair(existing, caller, callee)) {
-      return false;
-    }
 
     final now = DateTime.now().millisecondsSinceEpoch;
     final VoiceCallRoom? room;
     try {
       room = await fetchCall(existing.callId);
     } catch (_) {
-      if (!_shouldReclaimUnreadableActiveVoicePairLock(
+      final decision = VoiceLockReclaimPolicy.forPairLock(
         lock: existing,
+        room: null,
         caller: caller,
+        callee: callee,
         createdAt: createdAt,
         now: now,
-      )) {
+      );
+      if (!decision.shouldReclaimLock) {
         return false;
       }
       return _removeActiveVoicePairLockIfUnchanged(
@@ -407,13 +557,16 @@ class FirebaseSignalingAdapter
         lock: existing,
       );
     }
-    if (!_shouldReclaimActiveVoicePairLock(
+
+    final decision = VoiceLockReclaimPolicy.forPairLock(
       lock: existing,
       room: room,
       caller: caller,
+      callee: callee,
       createdAt: createdAt,
       now: now,
-    )) {
+    );
+    if (!decision.shouldReclaimLock) {
       return false;
     }
 
@@ -425,8 +578,7 @@ class FirebaseSignalingAdapter
       return false;
     }
 
-    if (room != null &&
-        _shouldDeleteReclaimedVoiceRoom(room, createdAt, now, caller: caller)) {
+    if (room != null && decision.shouldDeleteRoomArtifacts) {
       try {
         await _deleteVoiceCallRoomArtifacts(room);
       } catch (_) {
@@ -441,6 +593,7 @@ class FirebaseSignalingAdapter
     required DatabaseReference lockRef,
     required String username,
     required String caller,
+    required String callee,
     required int createdAt,
   }) async {
     final DataSnapshot snapshot;
@@ -469,12 +622,15 @@ class FirebaseSignalingAdapter
     try {
       room = await fetchCall(existing.callId);
     } catch (_) {
-      if (!_shouldReclaimUnreadableActiveVoiceUserLock(
+      final decision = VoiceLockReclaimPolicy.forUserLock(
         lock: existing,
+        room: null,
         caller: caller,
+        callee: callee,
         createdAt: createdAt,
         now: now,
-      )) {
+      );
+      if (!decision.shouldReclaimLock) {
         return false;
       }
       return _removeActiveVoiceUserLockIfUnchanged(
@@ -482,13 +638,16 @@ class FirebaseSignalingAdapter
         lock: existing,
       );
     }
-    if (!_shouldReclaimActiveVoiceUserLock(
+
+    final decision = VoiceLockReclaimPolicy.forUserLock(
       lock: existing,
       room: room,
       caller: caller,
+      callee: callee,
       createdAt: createdAt,
       now: now,
-    )) {
+    );
+    if (!decision.shouldReclaimLock) {
       return false;
     }
 
@@ -500,8 +659,7 @@ class FirebaseSignalingAdapter
       return false;
     }
 
-    if (room != null &&
-        _shouldDeleteReclaimedVoiceRoom(room, createdAt, now, caller: caller)) {
+    if (room != null && decision.shouldDeleteRoomArtifacts) {
       try {
         await _deleteVoiceCallRoomArtifacts(room);
       } catch (_) {
@@ -512,159 +670,139 @@ class FirebaseSignalingAdapter
     return true;
   }
 
-  bool _shouldReclaimUnreadableActiveVoicePairLock({
-    required VoiceActivePairLock lock,
-    required String caller,
-    required int createdAt,
-    required int now,
-  }) {
-    if (lock.expiresAt <= createdAt || lock.expiresAt <= now) {
-      return true;
-    }
-    if (lock.caller == normalizeVoiceCallUsername(caller)) {
-      return true;
-    }
-    return createdAt - lock.updatedAt >= _orphanVoiceLockGraceMs ||
-        now - lock.updatedAt >= _orphanVoiceLockGraceMs;
-  }
-
-  bool _shouldReclaimUnreadableActiveVoiceUserLock({
-    required VoiceActiveUserLock lock,
-    required String caller,
-    required int createdAt,
-    required int now,
-  }) {
-    if (lock.expiresAt <= createdAt || lock.expiresAt <= now) {
-      return true;
-    }
-    if (lock.caller == normalizeVoiceCallUsername(caller)) {
-      return true;
-    }
-    return createdAt - lock.updatedAt >= _orphanVoiceLockGraceMs ||
-        now - lock.updatedAt >= _orphanVoiceLockGraceMs;
-  }
-
-  bool _shouldReclaimActiveVoicePairLock({
-    required VoiceActivePairLock lock,
-    required VoiceCallRoom? room,
-    required String caller,
-    required int createdAt,
-    required int now,
-  }) {
-    if (lock.expiresAt <= createdAt || lock.expiresAt <= now) {
-      return true;
-    }
-    if (room == null) {
-      if (lock.caller == normalizeVoiceCallUsername(caller)) {
-        return true;
-      }
-      return createdAt - lock.updatedAt >= _orphanVoiceLockGraceMs ||
-          now - lock.updatedAt >= _orphanVoiceLockGraceMs;
-    }
-    if (!room.isTerminal &&
-        room.status != VoiceCallSignalingStatus.connected &&
-        lock.caller == normalizeVoiceCallUsername(caller)) {
-      return true;
-    }
-    if (room.isTerminal) {
-      return true;
-    }
-    return room.status != VoiceCallSignalingStatus.connected &&
-        (room.expiresAt <= createdAt || room.expiresAt <= now);
-  }
-
-  bool _shouldReclaimActiveVoiceUserLock({
-    required VoiceActiveUserLock lock,
-    required VoiceCallRoom? room,
-    required String caller,
-    required int createdAt,
-    required int now,
-  }) {
-    if (lock.expiresAt <= createdAt || lock.expiresAt <= now) {
-      return true;
-    }
-    if (room == null) {
-      if (lock.caller == normalizeVoiceCallUsername(caller)) {
-        return true;
-      }
-      return createdAt - lock.updatedAt >= _orphanVoiceLockGraceMs ||
-          now - lock.updatedAt >= _orphanVoiceLockGraceMs;
-    }
-    if (!room.isTerminal &&
-        room.status != VoiceCallSignalingStatus.connected &&
-        lock.caller == normalizeVoiceCallUsername(caller)) {
-      return true;
-    }
-    if (room.isTerminal) {
-      return true;
-    }
-    return room.status != VoiceCallSignalingStatus.connected &&
-        (room.expiresAt <= createdAt || room.expiresAt <= now);
-  }
-
-  bool _shouldDeleteReclaimedVoiceRoom(
-    VoiceCallRoom room,
-    int createdAt,
-    int now, {
-    required String caller,
-  }) {
-    if (room.isTerminal) {
-      return true;
-    }
-    if (room.status != VoiceCallSignalingStatus.connected &&
-        room.caller == normalizeVoiceCallUsername(caller)) {
-      return true;
-    }
-    return room.status != VoiceCallSignalingStatus.connected &&
-        (room.expiresAt <= createdAt || room.expiresAt <= now);
-  }
-
   Future<bool> _removeActiveVoicePairLockIfUnchanged({
     required DatabaseReference lockRef,
     required VoiceActivePairLock lock,
   }) async {
-    final transaction = await lockRef.runTransaction((Object? current) {
-      if (current is! Map) {
-        return Transaction.abort();
-      }
-      try {
-        final existing = VoiceActivePairLock.fromJson(
-          pairId: lock.pairId,
-          json: _asObjectMap(current),
-        );
-        if (_sameActiveVoicePairLock(existing, lock)) {
-          return Transaction.success(null);
+    try {
+      final transaction = await lockRef.runTransaction((Object? current) {
+        if (current is! Map) {
+          return Transaction.abort();
         }
-      } catch (_) {
+        try {
+          final existing = VoiceActivePairLock.fromJson(
+            pairId: lock.pairId,
+            json: _asObjectMap(current),
+          );
+          if (_sameActiveVoicePairLock(existing, lock)) {
+            return Transaction.success(null);
+          }
+        } catch (_) {
+          return Transaction.abort();
+        }
         return Transaction.abort();
+      }, applyLocally: false);
+      if (transaction.committed) {
+        return true;
       }
-      return Transaction.abort();
-    }, applyLocally: false);
-    return transaction.committed;
+    } catch (_) {
+      // Fall through to the direct compare-delete fallback. Some RTDB clients
+      // surface transaction security failures without exposing whether the
+      // server state was already stale. The fallback re-reads before deleting.
+    }
+    return _removeActiveVoicePairLockIfUnchangedDirect(
+      lockRef: lockRef,
+      lock: lock,
+    );
   }
 
   Future<bool> _removeActiveVoiceUserLockIfUnchanged({
     required DatabaseReference lockRef,
     required VoiceActiveUserLock lock,
   }) async {
-    final transaction = await lockRef.runTransaction((Object? current) {
-      if (current is! Map) {
-        return Transaction.abort();
-      }
-      try {
-        final existing = VoiceActiveUserLock.fromJson(
-          username: lock.username,
-          json: _asObjectMap(current),
-        );
-        if (_sameActiveVoiceUserLock(existing, lock)) {
-          return Transaction.success(null);
+    try {
+      final transaction = await lockRef.runTransaction((Object? current) {
+        if (current is! Map) {
+          return Transaction.abort();
         }
-      } catch (_) {
+        try {
+          final existing = VoiceActiveUserLock.fromJson(
+            username: lock.username,
+            json: _asObjectMap(current),
+          );
+          if (_sameActiveVoiceUserLock(existing, lock)) {
+            return Transaction.success(null);
+          }
+        } catch (_) {
+          return Transaction.abort();
+        }
         return Transaction.abort();
+      }, applyLocally: false);
+      if (transaction.committed) {
+        return true;
       }
-      return Transaction.abort();
-    }, applyLocally: false);
-    return transaction.committed;
+    } catch (_) {
+      // Fall through to the direct compare-delete fallback. The delete is still
+      // protected by security rules and by the local equality check below.
+    }
+    return _removeActiveVoiceUserLockIfUnchangedDirect(
+      lockRef: lockRef,
+      lock: lock,
+    );
+  }
+
+  Future<bool> _removeActiveVoicePairLockIfUnchangedDirect({
+    required DatabaseReference lockRef,
+    required VoiceActivePairLock lock,
+  }) async {
+    try {
+      final snapshot = await lockRef.get();
+      final value = snapshot.value;
+      if (value is! Map) {
+        return false;
+      }
+      final existing = VoiceActivePairLock.fromJson(
+        pairId: lock.pairId,
+        json: _asObjectMap(value),
+      );
+      if (!_sameActiveVoicePairLock(existing, lock)) {
+        return false;
+      }
+      await lockRef.remove();
+      final after = await lockRef.get();
+      if (after.value is! Map) {
+        return true;
+      }
+      final remaining = VoiceActivePairLock.fromJson(
+        pairId: lock.pairId,
+        json: _asObjectMap(after.value),
+      );
+      return !_sameActiveVoicePairLock(remaining, lock);
+    } catch (_) {
+      return false;
+    }
+  }
+
+  Future<bool> _removeActiveVoiceUserLockIfUnchangedDirect({
+    required DatabaseReference lockRef,
+    required VoiceActiveUserLock lock,
+  }) async {
+    try {
+      final snapshot = await lockRef.get();
+      final value = snapshot.value;
+      if (value is! Map) {
+        return false;
+      }
+      final existing = VoiceActiveUserLock.fromJson(
+        username: lock.username,
+        json: _asObjectMap(value),
+      );
+      if (!_sameActiveVoiceUserLock(existing, lock)) {
+        return false;
+      }
+      await lockRef.remove();
+      final after = await lockRef.get();
+      if (after.value is! Map) {
+        return true;
+      }
+      final remaining = VoiceActiveUserLock.fromJson(
+        username: lock.username,
+        json: _asObjectMap(after.value),
+      );
+      return !_sameActiveVoiceUserLock(remaining, lock);
+    } catch (_) {
+      return false;
+    }
   }
 
   Future<void> _deleteVoiceCallRoomArtifacts(VoiceCallRoom room) async {
@@ -720,17 +858,12 @@ class FirebaseSignalingAdapter
     );
   }
 
-  bool _lockMatchesVoicePair(
-    VoiceActivePairLock lock,
-    String caller,
-    String callee,
-  ) {
-    final normalizedCaller = normalizeVoiceCallUsername(caller);
-    final normalizedCallee = normalizeVoiceCallUsername(callee);
-    return lock.pairId == voiceCallPairId(normalizedCaller, normalizedCallee) &&
-        ((lock.caller == normalizedCaller && lock.callee == normalizedCallee) ||
-            (lock.caller == normalizedCallee &&
-                lock.callee == normalizedCaller));
+  int _safeVoiceRoomTimestamp(VoiceCallRoom room, int requestedAt) {
+    return VoiceCallTimestampClock.nextRoomTimestamp(
+      requestedAt: requestedAt,
+      roomCreatedAt: room.createdAt,
+      roomUpdatedAt: room.updatedAt,
+    );
   }
 
   bool _sameActiveVoicePairLock(
@@ -792,7 +925,16 @@ class FirebaseSignalingAdapter
     void emitEntry(DatabaseEvent event) {
       final key = event.snapshot.key;
       final value = event.snapshot.value;
-      if (key == null || key.isEmpty || value is! Map) {
+      if (key == null || key.isEmpty) {
+        return;
+      }
+      if (value is! Map) {
+        unawaited(
+          _removeCorruptVoiceCallInboxEntry(
+            username: normalizedUsername,
+            callId: key,
+          ),
+        );
         return;
       }
       try {
@@ -803,10 +945,13 @@ class FirebaseSignalingAdapter
         if (!controller.isClosed) {
           controller.add(entry);
         }
-      } catch (error, stackTrace) {
-        if (!controller.isClosed) {
-          controller.addError(error, stackTrace);
-        }
+      } catch (_) {
+        unawaited(
+          _removeCorruptVoiceCallInboxEntry(
+            username: normalizedUsername,
+            callId: key,
+          ),
+        );
       }
     }
 
@@ -826,6 +971,176 @@ class FirebaseSignalingAdapter
     return controller.stream;
   }
 
+  Future<void> _removeCorruptVoiceCallInboxEntry({
+    required String username,
+    required String callId,
+  }) async {
+    try {
+      await _root.child('voiceCallInboxes/$username/$callId').remove();
+    } catch (_) {
+      // A corrupt inbox item should never close the incoming-call stream. If
+      // cleanup fails, the scheduled cleanup path or a later watcher tick can
+      // retry without crashing the app.
+    }
+  }
+
+  @override
+  Future<VoiceCallCleanupSummary> cleanupStaleVoiceCallArtifacts({
+    required String username,
+    required int now,
+    int limit = maxCallCleanupItemsPerRun,
+  }) async {
+    await _configureEmulatorsIfNeeded();
+    final normalizedUsername = normalizeVoiceCallUsername(username);
+    await _ensureSignedInAsUsername(normalizedUsername);
+    final decisions = <VoiceCallCleanupDecision>[];
+    if (limit <= 0) {
+      return VoiceCallCleanupSummary(
+        username: normalizedUsername,
+        now: now,
+        decisions: decisions,
+      );
+    }
+
+    void addDecision(
+      VoiceCallCleanupAction action,
+      String callId,
+      String reason, {
+      String? path,
+    }) {
+      if (decisions.length >= limit) {
+        return;
+      }
+      decisions.add(
+        VoiceCallCleanupDecision(
+          action: action,
+          callId: callId,
+          reason: reason,
+          path: path,
+        ),
+      );
+    }
+
+    final userLockRef = _root.child('activeVoiceUsers/$normalizedUsername');
+    try {
+      final snapshot = await userLockRef.get();
+      final value = snapshot.value;
+      if (value is Map && decisions.length < limit) {
+        final lock = VoiceActiveUserLock.fromJson(
+          username: normalizedUsername,
+          json: _asObjectMap(value),
+        );
+        VoiceCallRoom? room;
+        try {
+          room = await fetchCall(lock.callId);
+        } catch (_) {
+          room = null;
+        }
+        if (room == null) {
+          final removed = await _removeActiveVoiceUserLockIfUnchanged(
+            lockRef: userLockRef,
+            lock: lock,
+          );
+          if (removed) {
+            addDecision(
+              VoiceCallCleanupAction.deleteMatchingUserLock,
+              lock.callId,
+              'missing room',
+              path: 'activeVoiceUsers/$normalizedUsername',
+            );
+          }
+          final pairLock = VoiceActivePairLock(
+            pairId: lock.pairId,
+            callId: lock.callId,
+            caller: lock.caller,
+            callee: lock.callee,
+            createdAt: lock.createdAt,
+            updatedAt: lock.updatedAt,
+            expiresAt: lock.expiresAt,
+          );
+          final pairRemoved = await _removeActiveVoicePairLockIfUnchanged(
+            lockRef: _root.child('activeVoicePairs/${lock.pairId}'),
+            lock: pairLock,
+          );
+          if (pairRemoved) {
+            addDecision(
+              VoiceCallCleanupAction.deleteMatchingPairLock,
+              lock.callId,
+              'missing room',
+              path: 'activeVoicePairs/${lock.pairId}',
+            );
+          }
+        } else if (room.isTerminal) {
+          await _deleteVoiceCallRoomArtifacts(room);
+          addDecision(
+            VoiceCallCleanupAction.deleteTerminalRoom,
+            room.callId,
+            'terminal room',
+            path: 'voiceCalls/${room.callId}',
+          );
+        } else if (room.status != VoiceCallSignalingStatus.connected &&
+            room.expiresAt <= now) {
+          await _deleteVoiceCallRoomArtifacts(room);
+          addDecision(
+            VoiceCallCleanupAction.deleteExpiredRoom,
+            room.callId,
+            'expired setup room',
+            path: 'voiceCalls/${room.callId}',
+          );
+        }
+      }
+    } catch (_) {
+      // Opportunistic cleanup must never block startup, resume, or call setup.
+    }
+
+    try {
+      final inboxSnapshot = await _root
+          .child('voiceCallInboxes/$normalizedUsername')
+          .limitToFirst(limit)
+          .get();
+      for (final child in inboxSnapshot.children) {
+        if (decisions.length >= limit) {
+          break;
+        }
+        final callId = child.key ?? '';
+        if (callId.isEmpty) {
+          continue;
+        }
+        try {
+          final entry = VoiceCallInboxEntry.fromJson(
+            callId: callId,
+            json: _asObjectMap(child.value),
+          );
+          if (entry.status.isTerminal || entry.expiresAt <= now) {
+            await child.ref.remove();
+            addDecision(
+              VoiceCallCleanupAction.deleteCorruptInbox,
+              callId,
+              entry.status.isTerminal ? 'terminal inbox' : 'expired inbox',
+              path: 'voiceCallInboxes/$normalizedUsername/$callId',
+            );
+          }
+        } catch (_) {
+          await child.ref.remove();
+          addDecision(
+            VoiceCallCleanupAction.deleteCorruptInbox,
+            callId,
+            'corrupt inbox',
+            path: 'voiceCallInboxes/$normalizedUsername/$callId',
+          );
+        }
+      }
+    } catch (_) {
+      // Inbox cleanup is best effort and must not close incoming-call streams.
+    }
+
+    return VoiceCallCleanupSummary(
+      username: normalizedUsername,
+      now: now,
+      decisions: List<VoiceCallCleanupDecision>.unmodifiable(decisions),
+    );
+  }
+
   @override
   Future<void> acceptCall({
     required String callId,
@@ -839,14 +1154,16 @@ class FirebaseSignalingAdapter
     _ensureVoiceStatus(room, const <VoiceCallSignalingStatus>{
       VoiceCallSignalingStatus.ringing,
     });
+    final safeAcceptedAt = _safeVoiceRoomTimestamp(room, acceptedAt);
     await _root.update(<String, Object?>{
       'voiceCalls/${room.callId}/status':
           VoiceCallSignalingStatus.accepted.name,
-      'voiceCalls/${room.callId}/acceptedAt': acceptedAt,
-      'voiceCalls/${room.callId}/updatedAt': acceptedAt,
+      'voiceCalls/${room.callId}/acceptedAt': safeAcceptedAt,
+      'voiceCalls/${room.callId}/updatedAt': safeAcceptedAt,
       'voiceCallInboxes/${room.callee}/${room.callId}/status':
           VoiceCallSignalingStatus.accepted.name,
-      'voiceCallInboxes/${room.callee}/${room.callId}/updatedAt': acceptedAt,
+      'voiceCallInboxes/${room.callee}/${room.callId}/updatedAt':
+          safeAcceptedAt,
     });
   }
 
@@ -865,14 +1182,16 @@ class FirebaseSignalingAdapter
       VoiceCallSignalingStatus.negotiating,
       VoiceCallSignalingStatus.connected,
     });
+    final safeConnectedAt = _safeVoiceRoomTimestamp(room, connectedAt);
     await _root.update(<String, Object?>{
       'voiceCalls/${room.callId}/status':
           VoiceCallSignalingStatus.connected.name,
-      'voiceCalls/${room.callId}/connectedAt': connectedAt,
-      'voiceCalls/${room.callId}/updatedAt': connectedAt,
+      'voiceCalls/${room.callId}/connectedAt': safeConnectedAt,
+      'voiceCalls/${room.callId}/updatedAt': safeConnectedAt,
       'voiceCallInboxes/${room.callee}/${room.callId}/status':
           VoiceCallSignalingStatus.connected.name,
-      'voiceCallInboxes/${room.callee}/${room.callId}/updatedAt': connectedAt,
+      'voiceCallInboxes/${room.callee}/${room.callId}/updatedAt':
+          safeConnectedAt,
     });
   }
 
@@ -898,17 +1217,38 @@ class FirebaseSignalingAdapter
       await _removeActiveVoiceLocksForRoomIfCurrent(room);
       return;
     }
+    final safeEndedAt = _safeVoiceRoomTimestamp(room, endedAt);
     await _root.update(<String, Object?>{
       'voiceCalls/${room.callId}/status': status.name,
-      'voiceCalls/${room.callId}/endedAt': endedAt,
+      'voiceCalls/${room.callId}/endedAt': safeEndedAt,
       'voiceCalls/${room.callId}/endedBy': normalizedUsername,
-      'voiceCalls/${room.callId}/updatedAt': endedAt,
+      'voiceCalls/${room.callId}/updatedAt': safeEndedAt,
       'voiceCalls/${room.callId}/reasonCode': reasonCode,
       'voiceCalls/${room.callId}/reason': reason,
-      'voiceCallInboxes/${room.callee}/${room.callId}/status': status.name,
-      'voiceCallInboxes/${room.callee}/${room.callId}/updatedAt': endedAt,
     });
+    await _updateVoiceInboxStatusIfPresent(room, status, safeEndedAt);
     await _removeActiveVoiceLocksForRoomIfCurrent(room);
+  }
+
+  Future<void> _updateVoiceInboxStatusIfPresent(
+    VoiceCallRoom room,
+    VoiceCallSignalingStatus status,
+    int updatedAt,
+  ) async {
+    try {
+      final ref = _root.child('voiceCallInboxes/${room.callee}/${room.callId}');
+      final snapshot = await ref.get();
+      if (!snapshot.exists || snapshot.value is! Map) {
+        return;
+      }
+      await ref.update(<String, Object?>{
+        'status': status.name,
+        'updatedAt': updatedAt,
+      });
+    } catch (_) {
+      // Inbox rows are only ringing pointers. The room terminal state above is
+      // the source of truth and must not be undone by a stale inbox cleanup race.
+    }
   }
 
   @override
@@ -923,9 +1263,10 @@ class FirebaseSignalingAdapter
     await _ensureSignedInAsUsername(normalizedUsername);
     _ensureVoiceParticipant(room, normalizedUsername);
     _ensureVoiceNonTerminal(room);
+    final safeUpdatedAt = _safeVoiceRoomTimestamp(room, updatedAt);
     await _root.update(<String, Object?>{
       'voiceCalls/${room.callId}/muted/$normalizedUsername': muted,
-      'voiceCalls/${room.callId}/updatedAt': updatedAt,
+      'voiceCalls/${room.callId}/updatedAt': safeUpdatedAt,
     });
   }
 
@@ -941,9 +1282,10 @@ class FirebaseSignalingAdapter
     await _ensureSignedInAsUsername(normalizedUsername);
     _ensureVoiceParticipant(room, normalizedUsername);
     _ensureVoiceNonTerminal(room);
+    final safeUpdatedAt = _safeVoiceRoomTimestamp(room, updatedAt);
     await _root.update(<String, Object?>{
       'voiceCalls/${room.callId}/cameraMuted/$normalizedUsername': cameraMuted,
-      'voiceCalls/${room.callId}/updatedAt': updatedAt,
+      'voiceCalls/${room.callId}/updatedAt': safeUpdatedAt,
     });
   }
 
@@ -963,6 +1305,11 @@ class FirebaseSignalingAdapter
     throw const SignalingSessionExpiredException(
       'Firebase sign-in required. Sign in again to continue chatting.',
     );
+  }
+
+  @override
+  Future<void> ensureSignedInAs(String username) {
+    return _ensureSignedInAsUsername(username);
   }
 
   @override
@@ -989,23 +1336,77 @@ class FirebaseSignalingAdapter
     }
     final uid = userCredential.user?.uid ?? '';
     final now = DateTime.now().millisecondsSinceEpoch;
+    var backendUserCreated = false;
 
-    await _root
-        .child('users/$normalizedUsername')
-        .set(
-          _identityJson(
-            username: normalizedUsername,
-            uid: uid,
-            displayName: normalizedUsername,
-            gender: null,
-            registeredAt: now,
-          ),
+    try {
+      await _root
+          .child('users/$normalizedUsername')
+          .set(
+            _identityJson(
+              username: normalizedUsername,
+              uid: uid,
+              displayName: normalizedUsername,
+              gender: null,
+              registeredAt: now,
+            ),
+          );
+      backendUserCreated = true;
+
+      await _root.child('userSearch/$normalizedUsername').set(true);
+      await setPresence(normalizedUsername, true);
+      await _auth.signInWithEmailAndPassword(email: email, password: password);
+    } catch (error) {
+      if (backendUserCreated) {
+        await _signOutAfterFailedRegistration();
+      } else {
+        await _rollbackNewlyCreatedAuthUser(userCredential.user);
+      }
+      if (_isPermissionDenied(error)) {
+        throw Exception(
+          'Username "$normalizedUsername" is already taken or locked. '
+          'Choose another unique username or sign in.',
         );
-
-    await _root.child('userSearch/$normalizedUsername').set(true);
-    await setPresence(normalizedUsername, true);
-    await _auth.signInWithEmailAndPassword(email: email, password: password);
+      }
+      rethrow;
+    }
     return uid;
+  }
+
+  Future<void> _rollbackNewlyCreatedAuthUser(User? user) async {
+    try {
+      final currentUser = _auth.currentUser;
+      if (user != null && currentUser?.uid == user.uid) {
+        await currentUser!.delete();
+      }
+    } catch (_) {
+      // Registration failed before local account state became valid. If Auth
+      // cleanup is rejected by Firebase, still clear the local session below.
+    }
+    try {
+      await _auth.signOut();
+    } catch (_) {
+      // Local sign-out is best effort during a failed registration rollback.
+    }
+  }
+
+  Future<void> _signOutAfterFailedRegistration() async {
+    try {
+      await _auth.signOut();
+    } catch (_) {
+      // If a secondary registration step failed after the durable user row was
+      // written, keep the backend/Auth account intact and only clear local auth.
+    }
+  }
+
+  bool _isPermissionDenied(Object error) {
+    if (error is FirebaseException) {
+      final code = error.code.toLowerCase();
+      final message = (error.message ?? '').toLowerCase();
+      return code.contains('permission') || message.contains('permission');
+    }
+    final text = error.toString().toLowerCase();
+    return text.contains('permission denied') ||
+        text.contains('permission-denied');
   }
 
   @override
@@ -1041,6 +1442,353 @@ class FirebaseSignalingAdapter
   }
 
   @override
+  Future<void> reauthenticate(String username, String password) async {
+    await _configureEmulatorsIfNeeded();
+    final normalizedUsername = _normalizedUsername(username);
+    try {
+      await _ensureSignedInAsUsername(normalizedUsername);
+      final user = _auth.currentUser;
+      if (user == null) {
+        throw const SignalingSessionExpiredException(
+          'Sign in again before deleting this account.',
+        );
+      }
+      final credential = EmailAuthProvider.credential(
+        email: _emailFromUsername(normalizedUsername),
+        password: password,
+      );
+      await user.reauthenticateWithCredential(credential);
+    } on FirebaseAuthException catch (error) {
+      throw AccountDeletionException(
+        kind: AccountDeletionFailureKind.reauthenticationFailed,
+        message: _accountDeletionAuthMessage(error),
+        destructiveActionStarted: false,
+        cause: error,
+      );
+    } on SignalingSessionExpiredException catch (error) {
+      throw AccountDeletionException(
+        kind: AccountDeletionFailureKind.sessionExpired,
+        message: error.message,
+        destructiveActionStarted: false,
+        cause: error,
+      );
+    }
+  }
+
+  @override
+  Future<void> deleteAccount(
+    String username, {
+    Future<void> Function()? beforeAuthDeletion,
+  }) async {
+    await _configureEmulatorsIfNeeded();
+    final normalizedUsername = _normalizedUsername(username);
+    await _ensureSignedInAsUsername(normalizedUsername);
+    final user = _auth.currentUser;
+    if (user == null) {
+      throw const AccountDeletionException(
+        kind: AccountDeletionFailureKind.sessionExpired,
+        message: 'Sign in again before deleting this account.',
+        destructiveActionStarted: false,
+      );
+    }
+
+    final now = DateTime.now().millisecondsSinceEpoch;
+    final deletionMetadata = await _loadAccountDeletionMetadata(
+      normalizedUsername,
+      fallbackRegisteredAt: now,
+    );
+    if (deletionMetadata.backendUid.isNotEmpty &&
+        deletionMetadata.backendUid != user.uid) {
+      throw const AccountDeletionException(
+        kind: AccountDeletionFailureKind.permissionDenied,
+        message:
+            'This signed-in Firebase user does not own the backend account row. '
+            'Log out, sign in as this Rain account, then retry deletion.',
+        destructiveActionStarted: false,
+      );
+    }
+    try {
+      await _runBestEffortAccountDeletionCleanup(
+        () => _removeAccountFromSearchBeforeTombstone(normalizedUsername),
+      );
+      await _tombstoneBackendIdentity(
+        username: normalizedUsername,
+        uid: user.uid,
+        registeredAt: deletionMetadata.registeredAt,
+        deletedAt: now,
+      );
+    } on Object catch (error) {
+      final permissionDenied = _isPermissionDenied(error);
+      throw AccountDeletionException(
+        kind: permissionDenied
+            ? AccountDeletionFailureKind.permissionDenied
+            : AccountDeletionFailureKind.backendCleanupFailed,
+        message: permissionDenied
+            ? _accountDeletionTombstonePermissionMessage(
+                backendUid: deletionMetadata.backendUid,
+              )
+            : 'Could not finish deleting backend account data. '
+                  'Account deletion was not completed.',
+        destructiveActionStarted: false,
+        cause: error,
+      );
+    }
+
+    await _cleanupAccountOwnedRealtimeData(
+      username: normalizedUsername,
+      deletedAt: now,
+    );
+
+    await beforeAuthDeletion?.call();
+
+    try {
+      await user.delete();
+    } on FirebaseAuthException catch (error) {
+      try {
+        await _auth.signOut();
+      } catch (_) {
+        // The account is already tombstoned. Local session cleanup happens in
+        // the app runtime even if Firebase Auth sign-out also fails here.
+      }
+      throw AccountDeletionException(
+        kind: AccountDeletionFailureKind.authDeletionFailed,
+        message:
+            'Backend account data was deleted, but Firebase Auth could not '
+            'delete the sign-in user. Sign in again to retry final cleanup.',
+        destructiveActionStarted: true,
+        cause: error,
+      );
+    }
+  }
+
+  String _accountDeletionAuthMessage(FirebaseAuthException error) {
+    return switch (error.code) {
+      'invalid-credential' ||
+      'wrong-password' => 'Wrong password. Account deletion was not started.',
+      'requires-recent-login' => 'Sign in again before deleting this account.',
+      'user-mismatch' || 'user-not-found' =>
+        'Sign in again as this Rain account before deleting it.',
+      'network-request-failed' =>
+        'Network connection failed. Account deletion was not started.',
+      'too-many-requests' =>
+        'Too many attempts. Wait a moment, then try again.',
+      _ => error.message ?? 'Could not verify the password.',
+    };
+  }
+
+  Future<({String backendUid, int registeredAt})> _loadAccountDeletionMetadata(
+    String username, {
+    required int fallbackRegisteredAt,
+  }) async {
+    try {
+      final userSnapshot = await _root.child('users/$username').get();
+      final userData = userSnapshot.value is Map<Object?, Object?>
+          ? userSnapshot.value! as Map<Object?, Object?>
+          : const <Object?, Object?>{};
+      return (
+        backendUid: (userData['uid'] as String?)?.trim() ?? '',
+        registeredAt:
+            (userData['registeredAt'] as num?)?.toInt() ?? fallbackRegisteredAt,
+      );
+    } on Object {
+      return (backendUid: '', registeredAt: fallbackRegisteredAt);
+    }
+  }
+
+  String _accountDeletionTombstonePermissionMessage({
+    required String backendUid,
+  }) {
+    if (backendUid.isEmpty) {
+      return 'Firebase rules rejected the required account delete marker. '
+          'The backend account row is missing its owner uid; deploy the current '
+          'Realtime Database rules, then retry deletion.';
+    }
+    return 'Firebase rules rejected the required account delete marker. '
+        'Deploy the current Realtime Database rules, then retry deletion.';
+  }
+
+  Future<void> _removeAccountFromSearchBeforeTombstone(String username) async {
+    await _root.child('userSearch/$username').remove();
+  }
+
+  Future<void> _tombstoneBackendIdentity({
+    required String username,
+    required String uid,
+    required int registeredAt,
+    required int deletedAt,
+  }) async {
+    await _root.child('users/$username').set(<String, Object?>{
+      'username': username,
+      'uid': uid,
+      'displayName': 'Deleted account',
+      'registeredAt': registeredAt,
+      'accountState': 'deleted',
+      'deletedAt': deletedAt,
+    });
+  }
+
+  Future<void> _cleanupAccountOwnedRealtimeData({
+    required String username,
+    required int deletedAt,
+  }) async {
+    await _runBestEffortAccountDeletionCleanup(
+      () => _endActiveVoiceCallForAccount(username, deletedAt),
+    );
+    await _runBestEffortAccountDeletionCleanup(
+      () => _cleanupConnectionRequestsForAccount(username),
+    );
+
+    await _runBestEffortAccountDeletionCleanup(
+      () => setPresence(username, false),
+    );
+
+    final friends = await _loadBestEffortAccountDeletionList(
+      () => loadAcceptedFriends(username),
+    );
+    final incomingRequests = await _loadBestEffortAccountDeletionList(
+      () => loadIncomingFriendRequests(username),
+    );
+    final outgoingRequests = await _loadBestEffortAccountDeletionList(
+      () => loadOutgoingFriendRequests(username),
+    );
+    final blockedUsers = await _loadBestEffortAccountDeletionList(
+      () => loadBlockedUsers(username),
+    );
+
+    final updates = <String, Object?>{};
+
+    for (final friend in friends) {
+      final normalizedFriend = _normalizedUsername(friend);
+      updates['friendships/$username/$normalizedFriend'] = null;
+      updates['friendships/$normalizedFriend/$username'] = null;
+      updates['friendRequests/$username/$normalizedFriend'] = null;
+      updates['friendRequests/$normalizedFriend/$username'] = null;
+      updates['outgoingFriendRequests/$username/$normalizedFriend'] = null;
+      updates['outgoingFriendRequests/$normalizedFriend/$username'] = null;
+    }
+    for (final from in incomingRequests) {
+      final normalizedFrom = _normalizedUsername(from);
+      updates['friendRequests/$username/$normalizedFrom'] = null;
+      updates['outgoingFriendRequests/$normalizedFrom/$username'] = null;
+    }
+    for (final to in outgoingRequests) {
+      final normalizedTo = _normalizedUsername(to);
+      updates['friendRequests/$normalizedTo/$username'] = null;
+      updates['outgoingFriendRequests/$username/$normalizedTo'] = null;
+    }
+    for (final blocked in blockedUsers) {
+      final normalizedBlocked = _normalizedUsername(blocked);
+      updates['blocks/$username/$normalizedBlocked'] = null;
+      updates['blockedBy/$normalizedBlocked/$username'] = null;
+    }
+
+    await _applyBestEffortAccountDeletionUpdates(updates);
+  }
+
+  Future<List<String>> _loadBestEffortAccountDeletionList(
+    Future<List<String>> Function() load,
+  ) async {
+    try {
+      return await load();
+    } on Object {
+      return const <String>[];
+    }
+  }
+
+  Future<void> _applyBestEffortAccountDeletionUpdates(
+    Map<String, Object?> updates,
+  ) async {
+    if (updates.isEmpty) {
+      return;
+    }
+    try {
+      await _root.update(updates);
+      return;
+    } on Object {
+      // Retry path-by-path below. Multi-location updates are all-or-nothing:
+      // one denied optional mirror must not block already-tombstoned account
+      // deletion from finishing.
+    }
+    for (final entry in updates.entries) {
+      await _runBestEffortAccountDeletionCleanup(() async {
+        final ref = _root.child(entry.key);
+        final value = entry.value;
+        if (value == null) {
+          await ref.remove();
+        } else {
+          await ref.set(value);
+        }
+      });
+    }
+  }
+
+  Future<void> _runBestEffortAccountDeletionCleanup(
+    Future<void> Function() cleanup,
+  ) async {
+    try {
+      await cleanup();
+    } on Object {
+      // The durable delete marker is users/{username}. Optional mirrors,
+      // presence, and active-call cleanup must not make a reauthenticated
+      // account delete look like a no-op.
+    }
+  }
+
+  Future<void> _endActiveVoiceCallForAccount(
+    String username,
+    int endedAt,
+  ) async {
+    try {
+      final snapshot = await _root.child('activeVoiceUsers/$username').get();
+      final value = snapshot.value;
+      if (value is! Map<Object?, Object?>) {
+        return;
+      }
+      final callId = value['callId'] as String?;
+      if (callId == null || callId.trim().isEmpty) {
+        return;
+      }
+      await endCall(
+        callId: callId.trim(),
+        username: username,
+        status: VoiceCallSignalingStatus.ended,
+        endedAt: endedAt,
+        reasonCode: 'account_deleted',
+        reason: 'Account deleted.',
+      );
+    } catch (_) {
+      // Voice cleanup is best effort during account deletion. The tombstone and
+      // local session clear are the account-lifecycle source of truth.
+    }
+  }
+
+  Future<void> _cleanupConnectionRequestsForAccount(String username) async {
+    final requestActions = <Future<ConnectionRequestDecision>>[];
+    try {
+      final incoming = await _root.child('connectionRequests/$username').get();
+      for (final child in incoming.children) {
+        final requestId = child.key;
+        if (requestId != null && requestId.isNotEmpty) {
+          requestActions.add(rejectConnectionRequest(requestId));
+        }
+      }
+      final outgoing = await _root
+          .child('connectionRequestOutboxes/$username')
+          .get();
+      for (final child in outgoing.children) {
+        final requestId = child.key;
+        if (requestId != null && requestId.isNotEmpty) {
+          requestActions.add(cancelConnectionRequest(requestId));
+        }
+      }
+      await Future.wait(requestActions);
+    } catch (_) {
+      // Function-backed connection request cleanup is not allowed to keep a
+      // reauthenticated destructive account deletion from reaching tombstone.
+    }
+  }
+
+  @override
   Future<BackendIdentity?> fetchIdentity(String username) async {
     await ensureAuthenticated();
     final snapshot = await _root.child('users/$username').get();
@@ -1048,6 +1796,9 @@ class FirebaseSignalingAdapter
       return null;
     }
     final value = snapshot.value! as Map<Object?, Object?>;
+    if (_isDeletedBackendAccount(value)) {
+      return null;
+    }
     final presenceSnapshot = await _root.child('presence/$username').get();
     final presence = presenceSnapshot.value is Map<Object?, Object?>
         ? presenceSnapshot.value! as Map<Object?, Object?>
@@ -1066,8 +1817,15 @@ class FirebaseSignalingAdapter
       lastSeen: (presence['lastSeen'] as num?)?.toInt() ?? 0,
       lastHeartbeat: lastHeartbeat,
       online: online,
+      presenceSessionId: presence['sessionId'] as String?,
+      presenceStartedAt: (presence['startedAt'] as num?)?.toInt(),
+      presenceState: presence['state'] as String?,
     );
     return identity;
+  }
+
+  bool _isDeletedBackendAccount(Map<Object?, Object?> value) {
+    return value['accountState'] == 'deleted' || value['deletedAt'] is num;
   }
 
   @override
@@ -1263,6 +2021,174 @@ class FirebaseSignalingAdapter
   }
 
   @override
+  Future<ConnectionRequestDecision> createConnectionRequest(
+    String peerId,
+  ) async {
+    final normalizedPeer = normalizeConnectionRequestUsername(peerId);
+    return _callConnectionRequestFunction(
+      'createConnectionRequest',
+      <String, Object?>{'peer': normalizedPeer},
+      fallbackPeerId: normalizedPeer,
+    );
+  }
+
+  @override
+  Future<ConnectionRequestDecision> cancelConnectionRequest(String requestId) {
+    return _callConnectionRequestFunction(
+      'cancelConnectionRequest',
+      <String, Object?>{'requestId': validateConnectionRequestId(requestId)},
+    );
+  }
+
+  @override
+  Future<ConnectionRequestDecision> acceptConnectionRequest(String requestId) {
+    return _callConnectionRequestFunction(
+      'acceptConnectionRequest',
+      <String, Object?>{'requestId': validateConnectionRequestId(requestId)},
+    );
+  }
+
+  @override
+  Future<ConnectionRequestDecision> rejectConnectionRequest(String requestId) {
+    return _callConnectionRequestFunction(
+      'rejectConnectionRequest',
+      <String, Object?>{'requestId': validateConnectionRequestId(requestId)},
+    );
+  }
+
+  @override
+  Future<ConnectionRequestDecision> markConnectionRequestSeen(
+    String requestId,
+  ) {
+    return _callConnectionRequestFunction(
+      'markConnectionRequestSeen',
+      <String, Object?>{'requestId': validateConnectionRequestId(requestId)},
+    );
+  }
+
+  @override
+  Future<ConnectionRequestDecision> muteConnectionRequestsFromPeer(
+    String peerId,
+  ) async {
+    final normalizedPeer = normalizeConnectionRequestUsername(peerId);
+    return _callConnectionRequestFunction(
+      'muteConnectionRequestsFromPeer',
+      <String, Object?>{'peer': normalizedPeer},
+      fallbackPeerId: normalizedPeer,
+    );
+  }
+
+  @override
+  Future<ConnectionRequestDecision> unmuteConnectionRequestsFromPeer(
+    String peerId,
+  ) async {
+    final normalizedPeer = normalizeConnectionRequestUsername(peerId);
+    return _callConnectionRequestFunction(
+      'unmuteConnectionRequestsFromPeer',
+      <String, Object?>{'peer': normalizedPeer},
+      fallbackPeerId: normalizedPeer,
+    );
+  }
+
+  @override
+  Future<ConnectionRequestQuotaSnapshot> fetchConnectionRequestQuota() async {
+    final decision = await _callConnectionRequestFunction(
+      'getConnectionRequestQuotaSummary',
+      const <String, Object?>{},
+    );
+    return decision.quota ??
+        const ConnectionRequestQuotaSnapshot(
+          dailyLimit: 0,
+          usedToday: 0,
+          extraCreditsRemaining: 0,
+          perTargetRemainingToday: 0,
+          pendingOutboundCount: 0,
+          pendingInboundCount: 0,
+          disabled: true,
+        );
+  }
+
+  @override
+  Stream<List<ConnectionRequestPayload>> watchIncomingConnectionRequests(
+    String username,
+  ) async* {
+    await _configureEmulatorsIfNeeded();
+    await ensureAuthenticated();
+    final normalizedUsername = normalizeConnectionRequestUsername(username);
+    yield* _watchConnectionRequestList(
+      path: 'connectionRequests/$normalizedUsername',
+    );
+  }
+
+  @override
+  Stream<List<ConnectionRequestPayload>> watchOutgoingConnectionRequests(
+    String username,
+  ) async* {
+    await _configureEmulatorsIfNeeded();
+    await ensureAuthenticated();
+    final normalizedUsername = normalizeConnectionRequestUsername(username);
+    yield* _watchConnectionRequestList(
+      path: 'connectionRequestOutboxes/$normalizedUsername',
+    );
+  }
+
+  Future<ConnectionRequestDecision> _callConnectionRequestFunction(
+    String functionName,
+    Map<String, Object?> data, {
+    String? fallbackPeerId,
+  }) async {
+    await _configureEmulatorsIfNeeded();
+    await ensureAuthenticated();
+    try {
+      final result = await _functions
+          .httpsCallable(functionName)
+          .call<Object?>(data);
+      return connectionRequestDecisionFromFunctionJson(
+        connectionRequestObjectMap(result.data),
+        fallbackPeerId: fallbackPeerId,
+      );
+    } on FirebaseFunctionsException catch (error) {
+      return backendRejectedConnectionRequestDecision(
+        peerId: fallbackPeerId,
+        error: error,
+        diagnostics: <String, Object?>{
+          'functionName': functionName,
+          'code': error.code,
+          if (error.message != null) 'message': error.message,
+          if (error.details != null) 'details': error.details.toString(),
+        },
+      );
+    } on Object catch (error) {
+      return backendRejectedConnectionRequestDecision(
+        peerId: fallbackPeerId,
+        error: error,
+        diagnostics: <String, Object?>{'functionName': functionName},
+      );
+    }
+  }
+
+  Stream<List<ConnectionRequestPayload>> _watchConnectionRequestList({
+    required String path,
+  }) {
+    return _root
+        .child(path)
+        .onValue
+        .map(
+          (DatabaseEvent event) => connectionRequestPayloadsFromSnapshotValue(
+            path: path,
+            value: event.snapshot.value,
+            diagnosticsSink: _emitConnectionRequestDiagnostic,
+          ),
+        );
+  }
+
+  void _emitConnectionRequestDiagnostic(
+    ConnectionRequestAdapterDiagnosticEvent event,
+  ) {
+    _connectionRequestDiagnosticsSink?.call(event);
+  }
+
+  @override
   Future<bool> isUsernameAvailable(String username) async {
     await ensureAuthenticated();
     final snapshot = await _root.child('users/$username').get();
@@ -1281,10 +2207,16 @@ class FirebaseSignalingAdapter
         .map((DatabaseEvent event) => event.snapshot.value)
         .where((Object? value) => value is Map<Object?, Object?>)
         .asyncMap((Object? value) async {
+          final context = _roomCipherContext(
+            roomId,
+            SignalingCipher.answerPurpose,
+          );
           final payload = await _signalingCipher.decryptPayload(
             roomId: roomId,
             purpose: SignalingCipher.answerPurpose,
             payload: value! as Map<Object?, Object?>,
+            sender: context.sender,
+            receiver: context.receiver,
           );
           return SDPPayload.fromJson(payload);
         });
@@ -1349,10 +2281,13 @@ class FirebaseSignalingAdapter
         .map((DatabaseEvent event) => event.snapshot.value)
         .where((Object? value) => value is Map<Object?, Object?>)
         .asyncMap((Object? value) async {
+          final context = _roomCipherContext(roomId, purpose);
           final payload = await _signalingCipher.decryptPayload(
             roomId: roomId,
             purpose: purpose,
             payload: value! as Map<Object?, Object?>,
+            sender: context.sender,
+            receiver: context.receiver,
           );
           return iceCandidateFromJson(payload);
         });
@@ -1366,10 +2301,16 @@ class FirebaseSignalingAdapter
         .map((DatabaseEvent event) => event.snapshot.value)
         .where((Object? value) => value is Map<Object?, Object?>)
         .asyncMap((Object? value) async {
+          final context = _roomCipherContext(
+            roomId,
+            SignalingCipher.offerPurpose,
+          );
           final payload = await _signalingCipher.decryptPayload(
             roomId: roomId,
             purpose: SignalingCipher.offerPurpose,
             payload: value! as Map<Object?, Object?>,
+            sender: context.sender,
+            receiver: context.receiver,
           );
           return SDPPayload.fromJson(payload);
         });
@@ -1380,25 +2321,42 @@ class FirebaseSignalingAdapter
     await _ensureSignedInAsUsername(username);
     final now = DateTime.now().millisecondsSinceEpoch;
     final uid = _auth.currentUser?.uid ?? '';
-    await _root
-        .child('presence/$username')
-        .update(_presenceJson(uid: uid, online: online, now: now));
+    final presenceRef = _root.child('presence/$username');
+    if (online) {
+      await _registerPresenceDisconnect(presenceRef, uid: uid);
+    }
+    await presenceRef.update(
+      _presenceJson(
+        uid: uid,
+        online: online,
+        now: now,
+        state: online ? 'online' : 'offline',
+      ),
+    );
   }
 
   @override
   Future<void> upsertIdentity(BackendIdentity identity) async {
     await _ensureSignedInAsUsername(identity.username);
-    await _root
-        .child('users/${identity.username}')
-        .update(
-          _identityJson(
-            username: identity.username,
-            uid: identity.uid,
-            displayName: identity.displayName,
-            gender: identity.gender,
-            registeredAt: identity.registeredAt,
-          ),
-        );
+    final userRef = _root.child('users/${identity.username}');
+    final existingSnapshot = await userRef.get();
+    if (existingSnapshot.value is Map<Object?, Object?> &&
+        _isDeletedBackendAccount(
+          existingSnapshot.value! as Map<Object?, Object?>,
+        )) {
+      throw const SignalingSessionExpiredException(
+        'This Rain account has been deleted.',
+      );
+    }
+    await userRef.update(
+      _identityJson(
+        username: identity.username,
+        uid: identity.uid,
+        displayName: identity.displayName,
+        gender: identity.gender,
+        registeredAt: identity.registeredAt,
+      ),
+    );
     await _root.child('userSearch/${identity.username}').set(true);
   }
 
@@ -1412,12 +2370,17 @@ class FirebaseSignalingAdapter
 
     bool? lastEmitted;
 
-    void emitPresence(bool online, int lastHeartbeat) {
+    void emitPresence(bool online, int lastHeartbeat, String? state) {
       expiryTimer?.cancel();
       expiryTimer = null;
       final now = DateTime.now().millisecondsSinceEpoch;
       final expiresIn = _presenceTimeoutMs - (now - lastHeartbeat);
-      final isActuallyOnline = online && expiresIn > 0;
+      final normalizedState = state?.trim().toLowerCase();
+      final stateAllowsOnline =
+          normalizedState == null ||
+          normalizedState.isEmpty ||
+          normalizedState == 'online';
+      final isActuallyOnline = online && stateAllowsOnline && expiresIn > 0;
       if (lastEmitted != isActuallyOnline && !controller.isClosed) {
         lastEmitted = isActuallyOnline;
         controller.add(isActuallyOnline);
@@ -1425,20 +2388,21 @@ class FirebaseSignalingAdapter
       if (isActuallyOnline) {
         expiryTimer = Timer(
           Duration(milliseconds: expiresIn),
-          () => emitPresence(online, lastHeartbeat),
+          () => emitPresence(online, lastHeartbeat, state),
         );
       }
     }
 
     presenceSub = presenceRef.onValue.listen((DatabaseEvent event) {
       if (event.snapshot.value is! Map<Object?, Object?>) {
-        emitPresence(false, 0);
+        emitPresence(false, 0, null);
         return;
       }
       final value = event.snapshot.value! as Map<Object?, Object?>;
       emitPresence(
         value['online'] as bool? ?? false,
         (value['lastHeartbeat'] as num?)?.toInt() ?? 0,
+        value['state'] as String?,
       );
     });
 
@@ -1468,16 +2432,17 @@ class FirebaseSignalingAdapter
       VoiceCallSignalingStatus.accepted,
       VoiceCallSignalingStatus.negotiating,
     });
+    final safeUpdatedAt = _safeVoiceRoomTimestamp(room, updatedAt);
     await _root.update(<String, Object?>{
       'voiceCalls/${room.callId}/status':
           VoiceCallSignalingStatus.negotiating.name,
       'voiceCalls/${room.callId}/offer': offer.toJson(
         maxCiphertextLength: VoiceSignalingEnvelope.maxSdpCiphertextLength,
       ),
-      'voiceCalls/${room.callId}/updatedAt': updatedAt,
+      'voiceCalls/${room.callId}/updatedAt': safeUpdatedAt,
       'voiceCallInboxes/${room.callee}/${room.callId}/status':
           VoiceCallSignalingStatus.negotiating.name,
-      'voiceCallInboxes/${room.callee}/${room.callId}/updatedAt': updatedAt,
+      'voiceCallInboxes/${room.callee}/${room.callId}/updatedAt': safeUpdatedAt,
     });
   }
 
@@ -1503,11 +2468,12 @@ class FirebaseSignalingAdapter
         'Cannot write voice answer before offer.',
       );
     }
+    final safeUpdatedAt = _safeVoiceRoomTimestamp(room, updatedAt);
     await _root.update(<String, Object?>{
       'voiceCalls/${room.callId}/answer': answer.toJson(
         maxCiphertextLength: VoiceSignalingEnvelope.maxSdpCiphertextLength,
       ),
-      'voiceCalls/${room.callId}/updatedAt': updatedAt,
+      'voiceCalls/${room.callId}/updatedAt': safeUpdatedAt,
     });
   }
 
@@ -1551,9 +2517,43 @@ class FirebaseSignalingAdapter
     required VoiceSignalingEnvelope candidate,
     required int createdAt,
   }) async {
-    candidate.validate(
-      maxCiphertextLength: VoiceSignalingEnvelope.maxIceCiphertextLength,
+    final candidateIds = await writeIceCandidates(
+      callId: callId,
+      username: username,
+      role: role,
+      candidates: <VoiceSignalingEnvelope>[candidate],
+      createdAt: createdAt,
     );
+    if (candidateIds.isEmpty) {
+      throw const SignalingCostBudgetExceeded(
+        'signaling_cost_budget_exceeded: ICE candidate budget exceeded.',
+      );
+    }
+    return candidateIds.single;
+  }
+
+  @override
+  Future<List<String>> writeIceCandidates({
+    required String callId,
+    required String username,
+    required VoiceCallRole role,
+    required List<VoiceSignalingEnvelope> candidates,
+    required int createdAt,
+  }) async {
+    if (candidates.isEmpty) {
+      return const <String>[];
+    }
+    if (candidates.length > maxIceCandidateBatchSize) {
+      throw SignalingCostBudgetExceeded(
+        'signaling_cost_budget_exceeded: ICE candidate batch size '
+        '${candidates.length} exceeds $maxIceCandidateBatchSize.',
+      );
+    }
+    for (final candidate in candidates) {
+      candidate.validate(
+        maxCiphertextLength: VoiceSignalingEnvelope.maxIceCiphertextLength,
+      );
+    }
     final room = await _requireVoiceCall(callId);
     final normalizedUsername = normalizeVoiceCallUsername(username);
     await _ensureSignedInAsUsername(normalizedUsername);
@@ -1563,23 +2563,32 @@ class FirebaseSignalingAdapter
       VoiceCallSignalingStatus.negotiating,
       VoiceCallSignalingStatus.connected,
     });
-    final candidateRef = _root
-        .child('voiceCalls/${room.callId}/${_voiceIcePath(role)}')
-        .push();
-    final candidateId = candidateRef.key;
-    if (candidateId == null || candidateId.isEmpty) {
-      throw const VoiceSignalingException(
-        'Failed to allocate voice ICE candidate key.',
+    final existingCount = await _iceCandidateCount(room.callId, role);
+    final available = maxIceCandidatesPerRole - existingCount;
+    if (available <= 0) {
+      throw SignalingCostBudgetExceeded(
+        'signaling_cost_budget_exceeded: ICE candidate budget exceeded for '
+        '${room.callId}/${role.name}; limit=$maxIceCandidatesPerRole.',
       );
     }
-    await _root.update(<String, Object?>{
-      'voiceCalls/${room.callId}/${_voiceIcePath(role)}/$candidateId': candidate
-          .toJson(
-            maxCiphertextLength: VoiceSignalingEnvelope.maxIceCiphertextLength,
-          ),
-      'voiceCalls/${room.callId}/updatedAt': createdAt,
-    });
-    return candidateId;
+    final accepted = candidates.take(available).toList(growable: false);
+    final candidatePath = 'voiceCalls/${room.callId}/${_voiceIcePath(role)}';
+    final updates = <String, Object?>{};
+    final candidateIds = <String>[];
+    for (final candidate in accepted) {
+      final candidateId = _root.child(candidatePath).push().key;
+      if (candidateId == null || candidateId.isEmpty) {
+        throw const VoiceSignalingException(
+          'Failed to allocate voice ICE candidate key.',
+        );
+      }
+      updates['$candidatePath/$candidateId'] = candidate.toJson(
+        maxCiphertextLength: VoiceSignalingEnvelope.maxIceCiphertextLength,
+      );
+      candidateIds.add(candidateId);
+    }
+    await _root.update(updates);
+    return List<String>.unmodifiable(candidateIds);
   }
 
   @override
@@ -1602,19 +2611,57 @@ class FirebaseSignalingAdapter
         );
   }
 
+  Future<int> _iceCandidateCount(String callId, VoiceCallRole role) async {
+    final snapshot = await _root
+        .child('voiceCalls/${callId.trim()}/${_voiceIcePath(role)}')
+        .limitToFirst(maxIceCandidatesPerRole)
+        .get();
+    if (!snapshot.exists) {
+      return 0;
+    }
+    var count = 0;
+    for (final _ in snapshot.children) {
+      count += 1;
+    }
+    if (count > 0) {
+      return count;
+    }
+    final value = snapshot.value;
+    if (value is Map) {
+      return value.length;
+    }
+    return 0;
+  }
+
   @override
   Future<void> sendHeartbeat(String username) async {
     await _ensureSignedInAsUsername(username);
     final now = DateTime.now().millisecondsSinceEpoch;
     final uid = _auth.currentUser?.uid ?? '';
-    await _root
-        .child('presence/$username')
-        .update(_presenceJson(uid: uid, online: true, now: now));
+    final presenceRef = _root.child('presence/$username');
+    await _registerPresenceDisconnect(presenceRef, uid: uid);
+    await presenceRef.update(_presenceJson(uid: uid, online: true, now: now));
+  }
+
+  Future<void> _registerPresenceDisconnect(
+    DatabaseReference presenceRef, {
+    required String uid,
+  }) async {
+    final now = DateTime.now().millisecondsSinceEpoch;
+    try {
+      await presenceRef.onDisconnect().update(
+        _offlinePresenceJson(uid: uid, now: now),
+      );
+    } catch (_) {
+      // Presence is best effort. Heartbeat expiry still makes stale peers
+      // offline if onDisconnect cannot be registered on this platform.
+    }
   }
 
   @override
   Future<void> writeAnswer(String roomId, SDPPayload answer) async {
-    await ensureAuthenticated();
+    final context = _roomCipherContext(roomId, SignalingCipher.answerPurpose);
+    await _ensureSignedInAsUsername(context.sender);
     final timestamp = answer.ts == 0
         ? DateTime.now().millisecondsSinceEpoch
         : answer.ts;
@@ -1622,13 +2669,12 @@ class FirebaseSignalingAdapter
       roomId: roomId,
       purpose: SignalingCipher.answerPurpose,
       timestamp: timestamp,
+      sender: context.sender,
+      receiver: context.receiver,
       payload: answer.toJson(),
     );
-    await _root.child('rooms/$roomId').update(<String, Object?>{
-      ..._roomParticipants(roomId),
-      ..._roomLifecycle(roomId: roomId, timestamp: timestamp),
-      'answer': encryptedAnswer,
-    });
+    await _root.child('rooms/$roomId/answer').set(encryptedAnswer);
+    await _refreshRoomLifecycleBestEffort(roomId, timestamp);
   }
 
   @override
@@ -1672,9 +2718,13 @@ class FirebaseSignalingAdapter
     IceRole role,
     RTCIceCandidate candidate,
   ) async {
-    await ensureAuthenticated();
     final timestamp = DateTime.now().millisecondsSinceEpoch;
     final path = role == IceRole.caller ? 'callerICE' : 'calleeICE';
+    final purpose = role == IceRole.caller
+        ? SignalingCipher.callerIcePurpose
+        : SignalingCipher.calleeIcePurpose;
+    final context = _roomCipherContext(roomId, purpose);
+    await _ensureSignedInAsUsername(context.sender);
     final candidateRef = _root.child('rooms/$roomId/$path').push();
     final candidateKey = candidateRef.key;
     if (candidateKey == null || candidateKey.isEmpty) {
@@ -1682,22 +2732,32 @@ class FirebaseSignalingAdapter
     }
     final encryptedCandidate = await _signalingCipher.encryptPayload(
       roomId: roomId,
-      purpose: role == IceRole.caller
-          ? SignalingCipher.callerIcePurpose
-          : SignalingCipher.calleeIcePurpose,
+      purpose: purpose,
       timestamp: timestamp,
+      sender: context.sender,
+      receiver: context.receiver,
       payload: iceCandidateToJson(candidate),
     );
-    await _root.child('rooms/$roomId').update(<String, Object?>{
-      ..._roomParticipants(roomId),
-      ..._roomLifecycle(roomId: roomId, timestamp: timestamp),
-      '$path/$candidateKey': encryptedCandidate,
-    });
+    await candidateRef.set(encryptedCandidate);
+    await _refreshRoomLifecycleBestEffort(roomId, timestamp);
+  }
+
+  Future<void> _refreshRoomLifecycleBestEffort(
+    String roomId,
+    int timestamp,
+  ) async {
+    try {
+      await _root.child('rooms/$roomId/updatedAt').set(timestamp);
+      await _root.child('rooms/$roomId/expiresAt').set(timestamp + _roomTtlMs);
+    } catch (_) {
+      // The signaling payload is authoritative; room TTL refresh is best effort.
+    }
   }
 
   @override
   Future<void> writeOffer(String roomId, SDPPayload offer) async {
-    await ensureAuthenticated();
+    final context = _roomCipherContext(roomId, SignalingCipher.offerPurpose);
+    await _ensureSignedInAsUsername(context.sender);
     final timestamp = offer.ts == 0
         ? DateTime.now().millisecondsSinceEpoch
         : offer.ts;
@@ -1705,6 +2765,8 @@ class FirebaseSignalingAdapter
       roomId: roomId,
       purpose: SignalingCipher.offerPurpose,
       timestamp: timestamp,
+      sender: context.sender,
+      receiver: context.receiver,
       payload: offer.toJson(),
     );
     await _root.child('rooms/$roomId').update(<String, Object?>{
@@ -1731,7 +2793,12 @@ class FirebaseSignalingAdapter
     if (value is! Map) {
       return null;
     }
-    return VoiceCallRoom.fromJson(callId: callId, json: _asObjectMap(value));
+    final json = _asObjectMap(value);
+    try {
+      return VoiceCallRoom.fromJson(callId: callId, json: json);
+    } on FormatException {
+      return VoiceCallRoom.tryParseForCleanup(callId: callId, json: json);
+    }
   }
 
   Future<VoiceCallRoom> _requireVoiceCall(String callId) async {
@@ -1817,11 +2884,14 @@ class FirebaseSignalingAdapter
       'operation-not-allowed' => Exception(
         'Enable Email/Password sign-in in Firebase Console > Authentication > Sign-in method.',
       ),
-      'invalid-credential' || 'wrong-password' => Exception(
+      'invalid-credential' => Exception(
+        'Username or password did not match an active Rain sign-in. If this account was deleted, it cannot be used again.',
+      ),
+      'wrong-password' => Exception(
         'Wrong password. Check the password and try again.',
       ),
       'user-not-found' => Exception(
-        'Unknown user. Check the unique username or create an account.',
+        'No active Rain sign-in exists for this username. It may have been deleted or never created.',
       ),
       'email-already-in-use' => Exception(
         'Username is already taken. Choose another unique username.',

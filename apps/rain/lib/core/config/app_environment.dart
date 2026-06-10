@@ -1,6 +1,8 @@
 import 'dart:convert';
 
 import 'package:flutter/foundation.dart';
+import 'package:protocol_brain/protocol_brain.dart'
+    show ConnectionRequestBackendMode;
 
 import 'runtime_environment.dart';
 
@@ -9,8 +11,10 @@ enum RainBackend { noop, firebase }
 class AppEnvironment {
   const AppEnvironment({
     required this.backend,
+    required this.connectionRequestBackendMode,
     required this.iceServers,
     required this.forceUpdateUrl,
+    required this.updateChannel,
     required this.backgroundHeartbeatSeconds,
     required this.allowPublicTurn,
     required this.smokeMode,
@@ -26,12 +30,15 @@ class AppEnvironment {
     required this.firebaseAuthDomain,
     required this.firebaseMeasurementId,
     required this.signalingEncryptionKey,
+    required this.signalingEncryptionKeyProvided,
     required this.turnBrokerUrl,
   });
 
   final RainBackend backend;
+  final ConnectionRequestBackendMode connectionRequestBackendMode;
   final List<Map<String, dynamic>> iceServers;
   final String forceUpdateUrl;
+  final String updateChannel;
   final int backgroundHeartbeatSeconds;
   final bool allowPublicTurn;
   final bool smokeMode;
@@ -47,6 +54,7 @@ class AppEnvironment {
   final String firebaseAuthDomain;
   final String firebaseMeasurementId;
   final String signalingEncryptionKey;
+  final bool signalingEncryptionKeyProvided;
   final String turnBrokerUrl;
 
   factory AppEnvironment.fromEnvironment({
@@ -126,20 +134,44 @@ class AppEnvironment {
                 .cast<Map<String, dynamic>>(),
           );
 
+    final compileTimeSignalingEncryptionKey = const String.fromEnvironment(
+      'RAIN_SIGNALING_ENCRYPTION_KEY',
+    );
+    final runtimeSignalingEncryptionKey =
+        environment['RAIN_SIGNALING_ENCRYPTION_KEY']?.trim();
+    final signalingEncryptionKeyProvided =
+        compileTimeSignalingEncryptionKey.isNotEmpty ||
+        (runtimeSignalingEncryptionKey != null &&
+            runtimeSignalingEncryptionKey.isNotEmpty);
+
     return AppEnvironment(
       backend: backend,
+      connectionRequestBackendMode: ConnectionRequestBackendMode.parse(
+        readString(
+          'CONNECTION_REQUEST_BACKEND_MODE',
+          compileTimeValue: const String.fromEnvironment(
+            'CONNECTION_REQUEST_BACKEND_MODE',
+          ),
+          defaultValue: 'rtdbOnly',
+        ),
+      ),
       iceServers: iceServers,
       forceUpdateUrl: readString(
         'RAIN_UPDATE_URL',
         compileTimeValue: const String.fromEnvironment('RAIN_UPDATE_URL'),
         defaultValue: 'https://github.com/EslamNabawy/Rain/releases',
       ),
+      updateChannel: readString(
+        'RAIN_UPDATE_CHANNEL',
+        compileTimeValue: const String.fromEnvironment('RAIN_UPDATE_CHANNEL'),
+        defaultValue: 'stable',
+      ).toLowerCase(),
       backgroundHeartbeatSeconds: readInt(
         'RAIN_BACKGROUND_HEARTBEAT_SECONDS',
         compileTimeValue: const String.fromEnvironment(
           'RAIN_BACKGROUND_HEARTBEAT_SECONDS',
         ),
-        defaultValue: 30,
+        defaultValue: 10,
       ),
       allowPublicTurn: readBool(
         'RAIN_ALLOW_PUBLIC_TURN',
@@ -208,11 +240,10 @@ class AppEnvironment {
       ),
       signalingEncryptionKey: readString(
         'RAIN_SIGNALING_ENCRYPTION_KEY',
-        compileTimeValue: const String.fromEnvironment(
-          'RAIN_SIGNALING_ENCRYPTION_KEY',
-        ),
+        compileTimeValue: compileTimeSignalingEncryptionKey,
         defaultValue: demoSignalingEncryptionKey,
       ),
+      signalingEncryptionKeyProvided: signalingEncryptionKeyProvided,
       turnBrokerUrl: readString(
         'RAIN_TURN_BROKER_URL',
         compileTimeValue: const String.fromEnvironment('RAIN_TURN_BROKER_URL'),
@@ -310,8 +341,10 @@ class AppEnvironment {
       }
       return AppEnvironment(
         backend: backend,
+        connectionRequestBackendMode: connectionRequestBackendMode,
         iceServers: releaseSafeIceServers,
         forceUpdateUrl: forceUpdateUrl,
+        updateChannel: updateChannel,
         backgroundHeartbeatSeconds: backgroundHeartbeatSeconds,
         allowPublicTurn: true,
         smokeMode: smokeMode,
@@ -327,6 +360,7 @@ class AppEnvironment {
         firebaseAuthDomain: firebaseAuthDomain,
         firebaseMeasurementId: firebaseMeasurementId,
         signalingEncryptionKey: signalingEncryptionKey,
+        signalingEncryptionKeyProvided: signalingEncryptionKeyProvided,
         turnBrokerUrl: turnBrokerUrl,
       );
     }
@@ -349,8 +383,10 @@ class AppEnvironment {
 
     return AppEnvironment(
       backend: backend,
+      connectionRequestBackendMode: connectionRequestBackendMode,
       iceServers: nextIceServers,
       forceUpdateUrl: forceUpdateUrl,
+      updateChannel: updateChannel,
       backgroundHeartbeatSeconds: backgroundHeartbeatSeconds,
       allowPublicTurn: false,
       smokeMode: smokeMode,
@@ -366,12 +402,29 @@ class AppEnvironment {
       firebaseAuthDomain: firebaseAuthDomain,
       firebaseMeasurementId: firebaseMeasurementId,
       signalingEncryptionKey: signalingEncryptionKey,
+      signalingEncryptionKeyProvided: signalingEncryptionKeyProvided,
       turnBrokerUrl: turnBrokerUrl,
     );
   }
 
   void validateForRelease() {
-    if (usesDemoSignalingEncryptionKey && !allowPublicTurn) {
+    if (updateChannel != 'stable' && updateChannel != 'demo') {
+      throw StateError(
+        'Release builds must use RAIN_UPDATE_CHANNEL=stable or demo.',
+      );
+    }
+    if (allowPublicTurn && updateChannel != 'demo') {
+      throw StateError(
+        'Demo release builds that allow public TURN must use RAIN_UPDATE_CHANNEL=demo.',
+      );
+    }
+    final isDemoRelease = updateChannel == 'demo' && allowPublicTurn;
+    if (!isDemoRelease && !signalingEncryptionKeyProvided) {
+      throw StateError(
+        'RAIN_SIGNALING_ENCRYPTION_KEY is required in production release builds.',
+      );
+    }
+    if (usesDemoSignalingEncryptionKey && !isDemoRelease) {
       throw StateError(
         'Production release builds must not use the demo signaling encryption key.',
       );
@@ -418,7 +471,7 @@ class AppEnvironment {
   }
 
   Duration get heartbeatInterval => Duration(
-    seconds: backgroundHeartbeatSeconds > 0 ? backgroundHeartbeatSeconds : 30,
+    seconds: backgroundHeartbeatSeconds > 0 ? backgroundHeartbeatSeconds : 10,
   );
 
   String get backendLabel => switch (backend) {

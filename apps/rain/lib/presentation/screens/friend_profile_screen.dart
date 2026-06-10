@@ -133,6 +133,12 @@ class FriendProfileScreen extends ConsumerWidget {
                 foregroundColor: Theme.of(context).colorScheme.error,
               ),
             ),
+            const SizedBox(height: 12),
+            OutlinedButton.icon(
+              onPressed: () => _allowConnectionPrompts(context, ref, friend),
+              icon: const Icon(Icons.notifications_active_outlined),
+              label: const Text('Allow connection prompts'),
+            ),
           ],
           if (friend.state == FriendState.pendingIncoming) ...<Widget>[
             FilledButton.icon(
@@ -322,6 +328,39 @@ class FriendProfileScreen extends ConsumerWidget {
           Navigator.of(context).pop();
         }
       }
+    }
+  }
+
+  Future<void> _allowConnectionPrompts(
+    BuildContext context,
+    WidgetRef ref,
+    FriendRecord friend,
+  ) async {
+    final messenger = ScaffoldMessenger.of(context);
+    final errorColor = Theme.of(context).colorScheme.error;
+    try {
+      final decision = await ref
+          .read(connectionRequestProvider.notifier)
+          .unmute(friend.username);
+      if (!context.mounted) {
+        return;
+      }
+      messenger.showSnackBar(
+        SnackBar(
+          content: Text(decision.userMessage),
+          backgroundColor: decision.allowed ? null : errorColor,
+        ),
+      );
+    } catch (error) {
+      if (!context.mounted) {
+        return;
+      }
+      messenger.showSnackBar(
+        SnackBar(
+          content: Text(_formatError(error)),
+          backgroundColor: errorColor,
+        ),
+      );
     }
   }
 

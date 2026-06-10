@@ -1,12 +1,45 @@
+import 'dart:convert';
+
 import 'package:shared_preferences/shared_preferences.dart';
 
+import 'package:protocol_brain/protocol_brain.dart';
+
 enum CallAudioOutputPreference { systemDefault, speaker, bluetooth }
+
+final class AppCallProcessingSettings {
+  const AppCallProcessingSettings({
+    this.clearVoiceEnabled = true,
+    this.autoVideoOptimizeEnabled = true,
+  });
+
+  final bool clearVoiceEnabled;
+  final bool autoVideoOptimizeEnabled;
+
+  CallMediaProcessingConfig toCallMediaProcessingConfig() {
+    return CallMediaProcessingConfig(
+      clearVoiceEnabled: clearVoiceEnabled,
+      autoVideoOptimizeEnabled: autoVideoOptimizeEnabled,
+    );
+  }
+
+  AppCallProcessingSettings copyWith({
+    bool? clearVoiceEnabled,
+    bool? autoVideoOptimizeEnabled,
+  }) {
+    return AppCallProcessingSettings(
+      clearVoiceEnabled: clearVoiceEnabled ?? this.clearVoiceEnabled,
+      autoVideoOptimizeEnabled:
+          autoVideoOptimizeEnabled ?? this.autoVideoOptimizeEnabled,
+    );
+  }
+}
 
 final class AppAudioSettings {
   const AppAudioSettings({
     this.soundEffectsEnabled = true,
     this.soundEffectsVolume = 1.0,
     this.callSoundsEnabled = true,
+    this.connectionRequestSoundsEnabled = true,
     this.reduceSoundsDuringCall = true,
     this.defaultOutputPreference = CallAudioOutputPreference.systemDefault,
   });
@@ -14,6 +47,7 @@ final class AppAudioSettings {
   final bool soundEffectsEnabled;
   final double soundEffectsVolume;
   final bool callSoundsEnabled;
+  final bool connectionRequestSoundsEnabled;
   final bool reduceSoundsDuringCall;
   final CallAudioOutputPreference defaultOutputPreference;
 
@@ -21,6 +55,7 @@ final class AppAudioSettings {
     bool? soundEffectsEnabled,
     double? soundEffectsVolume,
     bool? callSoundsEnabled,
+    bool? connectionRequestSoundsEnabled,
     bool? reduceSoundsDuringCall,
     CallAudioOutputPreference? defaultOutputPreference,
   }) {
@@ -30,10 +65,39 @@ final class AppAudioSettings {
           ? this.soundEffectsVolume
           : AppSettingsStore.normalizeSoundEffectsVolume(soundEffectsVolume),
       callSoundsEnabled: callSoundsEnabled ?? this.callSoundsEnabled,
+      connectionRequestSoundsEnabled:
+          connectionRequestSoundsEnabled ?? this.connectionRequestSoundsEnabled,
       reduceSoundsDuringCall:
           reduceSoundsDuringCall ?? this.reduceSoundsDuringCall,
       defaultOutputPreference:
           defaultOutputPreference ?? this.defaultOutputPreference,
+    );
+  }
+}
+
+final class AppConnectionRequestSettings {
+  const AppConnectionRequestSettings({
+    this.notificationsEnabled = true,
+    this.showNotificationsWhenMinimized = true,
+    this.mutedRequestSenders = const <String>{},
+  });
+
+  final bool notificationsEnabled;
+  final bool showNotificationsWhenMinimized;
+  final Set<String> mutedRequestSenders;
+
+  AppConnectionRequestSettings copyWith({
+    bool? notificationsEnabled,
+    bool? showNotificationsWhenMinimized,
+    Set<String>? mutedRequestSenders,
+  }) {
+    return AppConnectionRequestSettings(
+      notificationsEnabled: notificationsEnabled ?? this.notificationsEnabled,
+      showNotificationsWhenMinimized:
+          showNotificationsWhenMinimized ?? this.showNotificationsWhenMinimized,
+      mutedRequestSenders: Set<String>.unmodifiable(
+        mutedRequestSenders ?? this.mutedRequestSenders,
+      ),
     );
   }
 }
@@ -46,7 +110,13 @@ class AppSettingsStore {
   static const bool defaultSoundEffectsEnabled = true;
   static const double defaultSoundEffectsVolume = 1.0;
   static const bool defaultCallSoundsEnabled = true;
+  static const bool defaultConnectionRequestSoundsEnabled = true;
+  static const bool defaultConnectionRequestNotificationsEnabled = true;
+  static const bool defaultShowConnectionRequestNotificationsWhenMinimized =
+      true;
   static const bool defaultReduceSoundsDuringCall = true;
+  static const bool defaultClearVoiceEnabled = true;
+  static const bool defaultAutoVideoOptimizeEnabled = true;
   static const CallAudioOutputPreference defaultCallAudioOutputPreference =
       CallAudioOutputPreference.systemDefault;
 
@@ -63,9 +133,23 @@ class AppSettingsStore {
   static const String _soundEffectsEnabledKey = 'sound_effects_enabled';
   static const String _soundEffectsVolumeKey = 'sound_effects_volume';
   static const String _callSoundsEnabledKey = 'call_sounds_enabled';
+  static const String _connectionRequestSoundsEnabledKey =
+      'connection_request_sounds_enabled';
+  static const String _connectionRequestNotificationsEnabledKey =
+      'connection_request_notifications_enabled';
+  static const String _showConnectionRequestNotificationsWhenMinimizedKey =
+      'show_connection_request_notifications_when_minimized';
+  static const String _mutedConnectionRequestSendersKey =
+      'muted_connection_request_senders';
   static const String _reduceSoundsDuringCallKey = 'reduce_sounds_during_call';
   static const String _defaultCallAudioOutputPreferenceKey =
       'default_call_audio_output_preference';
+  static const String _callClearVoiceEnabledKey = 'call_clear_voice_enabled';
+  static const String _callVideoAutoOptimizeEnabledKey =
+      'call_video_auto_optimize_enabled';
+  static const String _dismissedOptionalUpdateKey =
+      'dismissed_optional_update_key';
+  static const String _deletedRainUsernamesKey = 'deleted_rain_usernames';
 
   final SharedPreferencesAsync _preferences;
 
@@ -142,11 +226,48 @@ class AppSettingsStore {
     await _preferences.setBool(_startupCameraWarmupCompletedKey, completed);
   }
 
+  Future<void> rememberDeletedRainUsername(String username) async {
+    final normalized = _normalizeUsername(username);
+    if (normalized.isEmpty) {
+      return;
+    }
+    final existing =
+        await _preferences.getStringList(_deletedRainUsernamesKey) ??
+        const <String>[];
+    final values = <String>[
+      normalized,
+      ...existing.map(_normalizeUsername).where((String value) {
+        return value.isNotEmpty && value != normalized;
+      }),
+    ];
+    await _preferences.setStringList(
+      _deletedRainUsernamesKey,
+      values.take(50).toList(growable: false),
+    );
+  }
+
+  Future<bool> wasRainUsernameDeletedOnThisDevice(String username) async {
+    final normalized = _normalizeUsername(username);
+    if (normalized.isEmpty) {
+      return false;
+    }
+    final existing =
+        await _preferences.getStringList(_deletedRainUsernamesKey) ??
+        const <String>[];
+    return existing.map(_normalizeUsername).contains(normalized);
+  }
+
+  String _normalizeUsername(String username) {
+    return username.trim().toLowerCase();
+  }
+
   Future<AppAudioSettings> loadAudioSettings() async {
     return AppAudioSettings(
       soundEffectsEnabled: await loadSoundEffectsEnabled(),
       soundEffectsVolume: await loadSoundEffectsVolume(),
       callSoundsEnabled: await loadCallSoundsEnabled(),
+      connectionRequestSoundsEnabled:
+          await loadConnectionRequestSoundsEnabled(),
       reduceSoundsDuringCall: await loadReduceSoundsDuringCall(),
       defaultOutputPreference: await loadDefaultCallAudioOutputPreference(),
     );
@@ -185,6 +306,114 @@ class AppSettingsStore {
     await _preferences.setBool(_callSoundsEnabledKey, enabled);
   }
 
+  Future<bool> loadConnectionRequestSoundsEnabled() async {
+    return await _preferences.getBool(_connectionRequestSoundsEnabledKey) ??
+        defaultConnectionRequestSoundsEnabled;
+  }
+
+  Future<void> setConnectionRequestSoundsEnabled(bool enabled) async {
+    await _preferences.setBool(_connectionRequestSoundsEnabledKey, enabled);
+  }
+
+  Future<AppConnectionRequestSettings> loadConnectionRequestSettings() async {
+    return AppConnectionRequestSettings(
+      notificationsEnabled: await loadConnectionRequestNotificationsEnabled(),
+      showNotificationsWhenMinimized:
+          await loadShowConnectionRequestNotificationsWhenMinimized(),
+      mutedRequestSenders: await loadMutedConnectionRequestSenders(),
+    );
+  }
+
+  Future<bool> loadConnectionRequestNotificationsEnabled() async {
+    return await _preferences.getBool(
+          _connectionRequestNotificationsEnabledKey,
+        ) ??
+        defaultConnectionRequestNotificationsEnabled;
+  }
+
+  Future<void> setConnectionRequestNotificationsEnabled(bool enabled) async {
+    await _preferences.setBool(
+      _connectionRequestNotificationsEnabledKey,
+      enabled,
+    );
+  }
+
+  Future<bool> loadShowConnectionRequestNotificationsWhenMinimized() async {
+    return await _preferences.getBool(
+          _showConnectionRequestNotificationsWhenMinimizedKey,
+        ) ??
+        defaultShowConnectionRequestNotificationsWhenMinimized;
+  }
+
+  Future<void> setShowConnectionRequestNotificationsWhenMinimized(
+    bool enabled,
+  ) async {
+    await _preferences.setBool(
+      _showConnectionRequestNotificationsWhenMinimizedKey,
+      enabled,
+    );
+  }
+
+  Future<Set<String>> loadMutedConnectionRequestSenders() async {
+    final raw = await _preferences.getString(_mutedConnectionRequestSendersKey);
+    if (raw == null || raw.trim().isEmpty) {
+      return const <String>{};
+    }
+    try {
+      final decoded = jsonDecode(raw);
+      if (decoded is! List) {
+        return const <String>{};
+      }
+      final normalized = <String>{};
+      for (final item in decoded) {
+        if (item is! String) {
+          continue;
+        }
+        try {
+          normalized.add(normalizeConnectionRequestUsername(item));
+        } on FormatException {
+          continue;
+        }
+      }
+      return Set<String>.unmodifiable(normalized);
+    } on FormatException {
+      return const <String>{};
+    }
+  }
+
+  Future<void> setMutedConnectionRequestSenders(Set<String> senders) async {
+    final normalized = <String>{};
+    for (final sender in senders) {
+      normalized.add(normalizeConnectionRequestUsername(sender));
+    }
+    if (normalized.isEmpty) {
+      await _preferences.remove(_mutedConnectionRequestSendersKey);
+      return;
+    }
+    final sorted = normalized.toList(growable: false)..sort();
+    await _preferences.setString(
+      _mutedConnectionRequestSendersKey,
+      jsonEncode(sorted),
+    );
+  }
+
+  Future<void> addMutedConnectionRequestSender(String sender) async {
+    final current = await loadMutedConnectionRequestSenders();
+    await setMutedConnectionRequestSenders(<String>{
+      ...current,
+      normalizeConnectionRequestUsername(sender),
+    });
+  }
+
+  Future<void> removeMutedConnectionRequestSender(String sender) async {
+    final normalized = normalizeConnectionRequestUsername(sender);
+    final current = await loadMutedConnectionRequestSenders();
+    await setMutedConnectionRequestSenders(<String>{
+      for (final item in current)
+        if (item != normalized) item,
+    });
+  }
+
   Future<bool> loadReduceSoundsDuringCall() async {
     return await _preferences.getBool(_reduceSoundsDuringCallKey) ??
         defaultReduceSoundsDuringCall;
@@ -217,5 +446,56 @@ class AppSettingsStore {
       _defaultCallAudioOutputPreferenceKey,
       preference.name,
     );
+  }
+
+  Future<AppCallProcessingSettings> loadCallProcessingSettings() async {
+    return AppCallProcessingSettings(
+      clearVoiceEnabled: await loadClearVoiceEnabled(),
+      autoVideoOptimizeEnabled: await loadAutoVideoOptimizeEnabled(),
+    );
+  }
+
+  Future<CallMediaProcessingConfig> loadCallMediaProcessingConfig() async {
+    return (await loadCallProcessingSettings()).toCallMediaProcessingConfig();
+  }
+
+  Future<bool> loadClearVoiceEnabled() async {
+    return await _preferences.getBool(_callClearVoiceEnabledKey) ??
+        defaultClearVoiceEnabled;
+  }
+
+  Future<void> setClearVoiceEnabled(bool enabled) async {
+    await _preferences.setBool(_callClearVoiceEnabledKey, enabled);
+  }
+
+  Future<bool> loadAutoVideoOptimizeEnabled() async {
+    return await _preferences.getBool(_callVideoAutoOptimizeEnabledKey) ??
+        defaultAutoVideoOptimizeEnabled;
+  }
+
+  Future<void> setAutoVideoOptimizeEnabled(bool enabled) async {
+    await _preferences.setBool(_callVideoAutoOptimizeEnabledKey, enabled);
+  }
+
+  Future<String?> loadDismissedOptionalUpdateKey() async {
+    final value = await _preferences.getString(_dismissedOptionalUpdateKey);
+    final normalized = value?.trim();
+    if (normalized == null || normalized.isEmpty) {
+      return null;
+    }
+    return normalized;
+  }
+
+  Future<void> setDismissedOptionalUpdateKey(String key) async {
+    final normalized = key.trim();
+    if (normalized.isEmpty) {
+      await _preferences.remove(_dismissedOptionalUpdateKey);
+      return;
+    }
+    await _preferences.setString(_dismissedOptionalUpdateKey, normalized);
+  }
+
+  Future<void> clearDismissedOptionalUpdateKey() async {
+    await _preferences.remove(_dismissedOptionalUpdateKey);
   }
 }

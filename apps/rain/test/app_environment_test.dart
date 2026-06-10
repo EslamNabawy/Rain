@@ -8,7 +8,17 @@ void main() {
     );
 
     expect(environment.backend, RainBackend.firebase);
+    expect(environment.updateChannel, 'stable');
     expect(environment.signalingEncryptionKey, demoSignalingEncryptionKey);
+    expect(environment.signalingEncryptionKeyProvided, isFalse);
+  });
+
+  test('runtime environment can configure update channel', () {
+    final environment = AppEnvironment.fromEnvironment(
+      runtimeEnvironment: const <String, String>{'RAIN_UPDATE_CHANNEL': 'demo'},
+    );
+
+    expect(environment.updateChannel, 'demo');
   });
 
   test('runtime environment can configure signaling encryption key', () {
@@ -23,6 +33,7 @@ void main() {
       environment.signalingEncryptionKey,
       'rain-project-owned-signaling-key-material',
     );
+    expect(environment.signalingEncryptionKeyProvided, isTrue);
   });
 
   test('unsupported backend values fall back to local demo mode', () {
@@ -57,7 +68,11 @@ void main() {
   });
 
   test('release validation rejects demo signaling encryption key', () {
-    final environment = AppEnvironment.fromEnvironment().sanitizedForRelease();
+    final environment = AppEnvironment.fromEnvironment(
+      runtimeEnvironment: const <String, String>{
+        'RAIN_SIGNALING_ENCRYPTION_KEY': demoSignalingEncryptionKey,
+      },
+    ).sanitizedForRelease();
 
     expect(environment.usesDemoSignalingEncryptionKey, isTrue);
     expect(
@@ -72,10 +87,27 @@ void main() {
     );
   });
 
-  test('local config can explicitly allow public OpenRelay', () {
+  test('release validation rejects missing production signaling key', () {
+    final environment = AppEnvironment.fromEnvironment().sanitizedForRelease();
+
+    expect(environment.signalingEncryptionKeyProvided, isFalse);
+    expect(
+      environment.validateForRelease,
+      throwsA(
+        isA<StateError>().having(
+          (StateError error) => error.toString(),
+          'message',
+          contains('RAIN_SIGNALING_ENCRYPTION_KEY is required'),
+        ),
+      ),
+    );
+  });
+
+  test('demo config can explicitly allow public OpenRelay', () {
     final environment = AppEnvironment.fromEnvironment(
       runtimeEnvironment: const <String, String>{
         'RAIN_ALLOW_PUBLIC_TURN': 'true',
+        'RAIN_UPDATE_CHANNEL': 'demo',
         'RAIN_SIGNALING_ENCRYPTION_KEY':
             'rain-project-owned-signaling-key-material',
       },
@@ -123,7 +155,10 @@ void main() {
 
   test('explicit demo mode permits bundled demo signaling key', () {
     final environment = AppEnvironment.fromEnvironment(
-      runtimeEnvironment: <String, String>{'RAIN_ALLOW_PUBLIC_TURN': 'true'},
+      runtimeEnvironment: <String, String>{
+        'RAIN_ALLOW_PUBLIC_TURN': 'true',
+        'RAIN_UPDATE_CHANNEL': 'demo',
+      },
     );
 
     expect(environment.usesDemoSignalingEncryptionKey, isTrue);
@@ -136,6 +171,7 @@ void main() {
       final environment = AppEnvironment.fromEnvironment(
         runtimeEnvironment: const <String, String>{
           'RAIN_ALLOW_PUBLIC_TURN': 'true',
+          'RAIN_UPDATE_CHANNEL': 'demo',
           'RAIN_SIGNALING_ENCRYPTION_KEY':
               'rain-project-owned-signaling-key-material',
         },

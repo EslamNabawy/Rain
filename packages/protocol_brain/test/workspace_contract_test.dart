@@ -24,7 +24,10 @@ void main() {
       rootPubspec,
       contains('analyze: dart run melos exec -- flutter analyze'),
     );
-    expect(rootPubspec, contains('test: dart run melos exec -- flutter test'));
+    expect(
+      rootPubspec,
+      contains('test: dart run melos exec --concurrency=1 -- flutter test'),
+    );
   });
 
   test('workspace members opt into pub workspace resolution', () {

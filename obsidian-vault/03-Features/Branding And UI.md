@@ -1,0 +1,34 @@
+# Branding And UI
+
+## Purpose
+
+Provide a premium minimal Rain identity across Android and Windows.
+
+## Direction
+
+- Dark ink surfaces.
+- Cyan/mint accents.
+- Peer Core mark.
+- Static status accents.
+- Restrained motion.
+- No childish raindrops.
+- No mascots.
+- No random glow blobs.
+- No animated ring effects.
+- No diagonal stroke overlays.
+
+## UI Requirements
+
+- Call UI must respect Android safe areas.
+- Controls must reflect real device capability.
+- Desktop needs mouse-friendly refresh and controls.
+- Mobile needs touch-friendly targets.
+- Low-power devices use reduced visual effects.
+- Android platform launch and normal window themes must use the dark `#061017` launch background so the native-to-Flutter splash handoff does not flash white.
+
+## Known Issues
+
+- Call UI has been reported confusing and overlapping.
+- Some visual polish remains inconsistent.
+
+Related: [[Frontend Architecture]], [[Voice Calls]], [[Video Calls]].

@@ -1,15 +1,16 @@
+import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_svg/flutter_svg.dart';
 import 'package:rain/application/runtime/media_device_settings.dart';
+import 'package:rain/application/runtime/runtime_interaction_guard.dart';
 import 'package:rain/application/runtime/video_call_renderers.dart';
 import 'package:rain/application/runtime/voice_call_state.dart';
 import 'package:rain/application/state/call_surface_providers.dart';
 import 'package:rain/presentation/branding/rain_peer_core_mark.dart';
-import 'package:rain/presentation/branding/rain_ripple_halo_surface.dart';
 import 'package:rain/presentation/widgets/calls/rain_call_controls.dart';
 
-const String _maleAvatarAsset = 'assets/gender avatar/man-avatar.svg';
-const String _femaleAvatarAsset = 'assets/gender avatar/woman-avatar.svg';
+const String _maleAvatarAsset = 'assets/gender_avatar/man-avatar.svg';
+const String _femaleAvatarAsset = 'assets/gender_avatar/woman-avatar.svg';
 const String _defaultMicrophoneMenuValue = '__rain_default_microphone__';
 
 class RainAvatar extends StatelessWidget {
@@ -32,6 +33,17 @@ class RainAvatar extends StatelessWidget {
     final initial = name.trim().isEmpty ? '?' : name.trim()[0].toUpperCase();
     final borderRadius = BorderRadius.circular(size * 0.34);
     final avatarAsset = _avatarAssetForGender(gender);
+
+    if (avatarAsset == null && gender != null && gender!.trim().isNotEmpty) {
+      // Gender was provided but not recognized — log for diagnostics.
+      // This helps identify backend gender values that don't match 'male'/'female'.
+      if (kDebugMode) {
+        debugPrint(
+          '[RainAvatar] Unrecognized gender "$gender" for user "$name", '
+          'falling back to initial. Expected "male" or "female".',
+        );
+      }
+    }
 
     return SizedBox.square(
       dimension: size,
@@ -578,15 +590,19 @@ class RainVoiceCallButton extends StatelessWidget {
     super.key,
     required this.peerId,
     required this.state,
+    this.isPeerOnline = true,
     required this.canStart,
     required this.hasActiveTransfer,
+    this.preflight,
     required this.onStart,
   });
 
   final String peerId;
   final VoiceCallState state;
+  final bool isPeerOnline;
   final bool canStart;
   final bool hasActiveTransfer;
+  final CallStartPreflightResult? preflight;
   final VoidCallback onStart;
 
   @override
@@ -596,7 +612,9 @@ class RainVoiceCallButton extends StatelessWidget {
       tooltip: _voiceCallButtonTooltip(
         peerId: peerId,
         state: state,
+        isPeerOnline: isPeerOnline,
         hasActiveTransfer: hasActiveTransfer,
+        preflight: preflight,
       ),
       onPressed: canStart ? onStart : null,
       icon: Icon(isCurrentCall ? Icons.call : Icons.call_outlined),
@@ -609,15 +627,19 @@ class RainVideoCallButton extends StatelessWidget {
     super.key,
     required this.peerId,
     required this.state,
+    this.isPeerOnline = true,
     required this.canStart,
     required this.hasActiveTransfer,
+    this.preflight,
     required this.onStart,
   });
 
   final String peerId;
   final VoiceCallState state;
+  final bool isPeerOnline;
   final bool canStart;
   final bool hasActiveTransfer;
+  final CallStartPreflightResult? preflight;
   final VoidCallback onStart;
 
   @override
@@ -628,7 +650,9 @@ class RainVideoCallButton extends StatelessWidget {
       tooltip: _videoCallButtonTooltip(
         peerId: peerId,
         state: state,
+        isPeerOnline: isPeerOnline,
         hasActiveTransfer: hasActiveTransfer,
+        preflight: preflight,
       ),
       onPressed: canStart ? onStart : null,
       icon: Icon(isCurrentVideoCall ? Icons.videocam : Icons.videocam_outlined),
@@ -1040,7 +1064,7 @@ class RainCallPanel extends StatelessWidget {
   final VoidCallback? onToggleDeafen;
   final VoidCallback? onToggleCamera;
   final VoidCallback? onSwitchCamera;
-  final ValueChanged<VoiceCallOutputRoute>? onSelectOutputRoute;
+  final ValueChanged<CallAudioOutputTarget>? onSelectOutputRoute;
   final List<VoiceCallOutputRouteOption>? outputRouteOptions;
 
   @override
@@ -1169,7 +1193,7 @@ class RainVoiceCallPanel extends StatelessWidget {
   final VoidCallback? onToggleDeafen;
   final VoidCallback? onToggleCamera;
   final VoidCallback? onSwitchCamera;
-  final ValueChanged<VoiceCallOutputRoute>? onSelectOutputRoute;
+  final ValueChanged<CallAudioOutputTarget>? onSelectOutputRoute;
   final List<VoiceCallOutputRouteOption>? outputRouteOptions;
 
   @override
@@ -1412,14 +1436,8 @@ class _RainDeviceMenuRow extends StatelessWidget {
   Widget build(BuildContext context) {
     final scheme = Theme.of(context).colorScheme;
     final subtitle = this.subtitle;
-    return RainRippleHaloSurface(
-      enabled: selected,
-      borderRadius: BorderRadius.circular(12),
-      color: warning ? scheme.error : scheme.primary,
-      origin: Alignment.centerLeft,
-      pulseKey: label,
-      pulseOnMount: selected,
-      minSize: const Size(48, 48),
+    return ConstrainedBox(
+      constraints: const BoxConstraints(minWidth: 48, minHeight: 48),
       child: Padding(
         padding: const EdgeInsets.symmetric(horizontal: 4, vertical: 6),
         child: Row(
@@ -1466,12 +1484,16 @@ class _RainDeviceMenuRow extends StatelessWidget {
 String _voiceCallButtonTooltip({
   required String peerId,
   required VoiceCallState state,
+  required bool isPeerOnline,
   required bool hasActiveTransfer,
+  CallStartPreflightResult? preflight,
 }) {
   return _callButtonTooltip(
     peerId: peerId,
     state: state,
+    isPeerOnline: isPeerOnline,
     hasActiveTransfer: hasActiveTransfer,
+    preflight: preflight,
     callLabel: 'voice call',
     currentCallLabel: 'Voice call',
   );
@@ -1480,12 +1502,16 @@ String _voiceCallButtonTooltip({
 String _videoCallButtonTooltip({
   required String peerId,
   required VoiceCallState state,
+  required bool isPeerOnline,
   required bool hasActiveTransfer,
+  CallStartPreflightResult? preflight,
 }) {
   return _callButtonTooltip(
     peerId: peerId,
     state: state,
+    isPeerOnline: isPeerOnline,
     hasActiveTransfer: hasActiveTransfer,
+    preflight: preflight,
     callLabel: 'video call',
     currentCallLabel: 'Video call',
   );
@@ -1494,10 +1520,15 @@ String _videoCallButtonTooltip({
 String _callButtonTooltip({
   required String peerId,
   required VoiceCallState state,
+  required bool isPeerOnline,
   required bool hasActiveTransfer,
+  CallStartPreflightResult? preflight,
   required String callLabel,
   required String currentCallLabel,
 }) {
+  if (preflight != null && !preflight.allowed) {
+    return preflight.userMessage ?? 'Call cannot start right now.';
+  }
   if (hasActiveTransfer) {
     return 'Finish the active file transfer first.';
   }
@@ -1510,6 +1541,9 @@ String _callButtonTooltip({
           : '$activeKind in progress';
     }
     return 'Finish the active call with @$activePeerId first.';
+  }
+  if (!isPeerOnline) {
+    return RuntimeInteractionGuard.peerOfflineMessage(peerId);
   }
   return 'Start $callLabel';
 }

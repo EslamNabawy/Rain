@@ -1,3 +1,4 @@
+import 'dart:convert';
 import 'dart:io';
 
 import 'package:flutter_test/flutter_test.dart';
@@ -7,6 +8,20 @@ String _repoFile(String relativePath) {
   return File.fromUri(
     workspaceRoot.uri.resolve(relativePath),
   ).readAsStringSync().replaceAll('\r\n', '\n');
+}
+
+({String version, int build}) _appPubspecVersion() {
+  final pubspec = _repoFile('apps/rain/pubspec.yaml');
+  final match = RegExp(
+    r'^version:\s*([0-9]+\.[0-9]+\.[0-9]+)\+([0-9]+)\s*$',
+    multiLine: true,
+  ).firstMatch(pubspec);
+  if (match == null) {
+    throw StateError(
+      'apps/rain/pubspec.yaml has no valid version: x.y.z+build',
+    );
+  }
+  return (version: match.group(1)!, build: int.parse(match.group(2)!));
 }
 
 Directory _workspaceRoot() {
@@ -30,8 +45,16 @@ void main() {
     final script = _repoFile('scripts/build_release.ps1');
 
     expect(script, contains('[string]\$DartDefinesFile'));
+    expect(script, contains('[string]\$BuildName'));
+    expect(script, contains('[string]\$BuildNumber'));
     expect(script, contains('[switch]\$AllowPublicTurnForDemo'));
     expect(script, contains('[switch]\$UseDemoAndroidSigningKey'));
+    expect(script, contains('--build-name='));
+    expect(script, contains('--build-number='));
+    expect(
+      script,
+      contains('apps\\rain\\pubspec.yaml has no valid version: x.y.z+build'),
+    );
     expect(
       script,
       contains(
@@ -53,6 +76,16 @@ void main() {
       contains(
         'Production release builds must not use the demo signaling encryption key.',
       ),
+    );
+    expect(
+      script,
+      contains(
+        'Production release builds must use RAIN_UPDATE_CHANNEL=stable.',
+      ),
+    );
+    expect(
+      script,
+      contains('Demo release builds must use RAIN_UPDATE_CHANNEL=demo.'),
     );
     expect(script, contains('Assert-ReleaseDartDefines -Path \$resolved'));
     expect(
@@ -87,6 +120,13 @@ void main() {
       ),
     );
     expect(script, contains('RAIN_ALLOW_PUBLIC_TURN'));
+    expect(script, contains('RAIN_BACKGROUND_HEARTBEAT_SECONDS'));
+    expect(
+      script,
+      contains(
+        'RAIN_BACKGROUND_HEARTBEAT_SECONDS must be between 1 and 10 for release builds.',
+      ),
+    );
     expect(
       script,
       contains(
@@ -130,10 +170,53 @@ void main() {
       ),
     );
     expect(script, contains('Resolve-KeytoolPath'));
+    expect(script, contains('rain-demo-stable-release.jks.base64'));
+    expect(script, contains('Using stable public demo Android signing key'));
+    expect(script, contains('Refusing to create a throwaway key'));
+    expect(script, isNot(contains('-genkeypair')));
     expect(script, contains('JAVA_HOME'));
     expect(script, contains('\$name is required for release signing.'));
     expect(script, contains('RAIN_RELEASE_STORE_FILE does not exist:'));
     expect(script, contains('\$LASTEXITCODE -ne 0'));
+  });
+
+  test('stable demo Android signing key is checked in', () {
+    final raw = _repoFile(
+      'apps/rain/android/demo/rain-demo-stable-release.jks.base64',
+    );
+    final decoded = base64Decode(raw.replaceAll(RegExp(r'\s+'), ''));
+
+    expect(decoded.length, greaterThan(1024));
+  });
+
+  test('Firebase Remote Config template publishes update manifest', () {
+    final firebaseJson = _repoFile('backend/firebase/firebase.json');
+    final template = _repoFile('backend/firebase/remoteconfig.template.json');
+    final appVersion = _appPubspecVersion();
+    final decodedTemplate = jsonDecode(template) as Map<String, dynamic>;
+    final parameters = decodedTemplate['parameters'] as Map<String, dynamic>;
+    final manifestParameter =
+        parameters['rain_release_manifest_v1'] as Map<String, dynamic>;
+    final manifest =
+        jsonDecode(
+              (manifestParameter['defaultValue']
+                      as Map<String, dynamic>)['value']
+                  as String,
+            )
+            as Map<String, dynamic>;
+    final demoAndroid =
+        (((manifest['channels'] as Map<String, dynamic>)['demo']
+                as Map<String, dynamic>)['android']
+            as Map<String, dynamic>);
+
+    expect(firebaseJson, contains('"remoteconfig"'));
+    expect(firebaseJson, contains('"template": "remoteconfig.template.json"'));
+    expect(parameters, contains('min_required_version'));
+    expect(parameters, contains('update_url'));
+    expect(demoAndroid['latestVersion'], appVersion.version);
+    expect(demoAndroid['latestBuild'], appVersion.build);
+    expect(demoAndroid['minimumVersion'], appVersion.version);
+    expect(demoAndroid['minimumBuild'], appVersion.build);
   });
 
   test('Android release signing is required and never debug-signed', () {
@@ -149,6 +232,29 @@ void main() {
     expect(gradle, contains('isReleaseBuild'));
     expect(gradle, isNot(contains('signingConfigs.getByName("debug")')));
     expect(gradle, isNot(contains('Signing with the debug keys')));
+  });
+
+  test('Android app module does not apply the Kotlin Gradle Plugin', () {
+    final appGradle = _repoFile('apps/rain/android/app/build.gradle.kts');
+    final settingsGradle = _repoFile('apps/rain/android/settings.gradle.kts');
+    final mainActivity = _repoFile(
+      'apps/rain/android/app/src/main/java/com/rainapp/rain/MainActivity.java',
+    );
+
+    expect(appGradle, isNot(contains('id("kotlin-android")')));
+    expect(appGradle, isNot(contains('org.jetbrains.kotlin.android')));
+    expect(appGradle, isNot(contains('kotlinOptions')));
+    expect(
+      settingsGradle,
+      contains(
+        'id("org.jetbrains.kotlin.android") version "2.2.20" apply false',
+      ),
+    );
+    expect(
+      mainActivity,
+      contains('class MainActivity extends FlutterActivity'),
+    );
+    expect(mainActivity, contains('"rain/file_export"'));
   });
 
   test('Android manifest keeps call permissions install-safe', () {
@@ -200,6 +306,54 @@ void main() {
       defines,
       contains('rain-demo-signaling-encryption-key-v1-change-me'),
     );
+  });
+
+  test('app release validation distinguishes missing and demo signaling keys', () {
+    final environment = _repoFile(
+      'apps/rain/lib/core/config/app_environment.dart',
+    );
+
+    expect(environment, contains('signalingEncryptionKeyProvided'));
+    expect(
+      environment,
+      contains(
+        'RAIN_SIGNALING_ENCRYPTION_KEY is required in production release builds.',
+      ),
+    );
+    expect(
+      environment,
+      contains(
+        'Production release builds must not use the demo signaling encryption key.',
+      ),
+    );
+    expect(
+      environment,
+      contains(
+        'Demo release builds that allow public TURN must use RAIN_UPDATE_CHANNEL=demo.',
+      ),
+    );
+  });
+
+  test('signaling security model documents encrypted context and limits', () {
+    final docs = _repoFile('docs/security/signaling-security-model.md');
+
+    expect(docs, contains('sender username'));
+    expect(docs, contains('receiver username'));
+    expect(docs, contains('DTLS-SRTP'));
+    expect(docs, contains('not full verified end-to-end encryption'));
+    expect(docs, contains('Firebase and authorized database readers'));
+  });
+
+  test('demo dart defines keep presence heartbeat safely below freshness', () {
+    final defines =
+        jsonDecode(_repoFile('apps/rain/tool/dart_defines.example.json'))
+            as Map<String, dynamic>;
+    final heartbeatSeconds = int.parse(
+      defines['RAIN_BACKGROUND_HEARTBEAT_SECONDS'] as String,
+    );
+
+    expect(heartbeatSeconds, greaterThan(0));
+    expect(heartbeatSeconds, lessThanOrEqualTo(10));
   });
 
   test('stable test pair script builds shared-key Windows and v7a APK', () {
@@ -469,6 +623,7 @@ void main() {
 
     expect(workflow, contains('publish_test_release'));
     expect(workflow, contains('Publish Direct Test Downloads'));
+    expect(workflow, contains('TEST ARTIFACT ONLY'));
     expect(workflow, contains('actions/download-artifact@v8'));
     expect(workflow, contains('gh release create'));
     expect(workflow, contains(r'--repo "${GITHUB_REPOSITORY}"'));
@@ -479,10 +634,94 @@ void main() {
     expect(workflow, contains('GITHUB_STEP_SUMMARY'));
     expect(workflow, contains('rain-test-'));
     expect(workflow, contains('Delete old Rain test releases'));
+    expect(workflow, contains('rain-release-metadata.json'));
     expect(docs, contains('publish_test_release'));
     expect(docs, contains('individual APK assets'));
     expect(docs, contains('Rain-Demo-Android-v7a.apk'));
     expect(docs, contains('Rain-Release-Android-v8-v9.apk'));
+  });
+
+  test('stable release workflow cannot publish before hard validation', () {
+    final workflow = _repoFile('.github/workflows/release.yml');
+
+    expect(workflow, isNot(contains("tags:\n      - 'v*'")));
+    expect(workflow, contains('remote_config_evidence_url'));
+    expect(
+      workflow,
+      contains('Release Rain requires an existing v* release tag'),
+    );
+    expect(workflow, contains('Workflow Lint'));
+    expect(workflow, contains('Workspace Analyze And Test'));
+    expect(workflow, contains('Firebase Backend'));
+    expect(workflow, contains('Firebase Emulator Integration'));
+    expect(workflow, contains('Validate Obsidian vault'));
+    expect(workflow, contains('Remote Config Evidence'));
+    expect(workflow, contains('Validation Gate'));
+    expect(
+      workflow,
+      contains(r'test "${{ needs.workflow-lint.result }}" = "success"'),
+    );
+    expect(
+      workflow,
+      contains(r'test "${{ needs.workspace-validation.result }}" = "success"'),
+    );
+    expect(
+      workflow,
+      contains(r'test "${{ needs.firebase-backend.result }}" = "success"'),
+    );
+    expect(
+      workflow,
+      contains(
+        r'test "${{ needs.firebase-emulator-tests.result }}" = "success"',
+      ),
+    );
+    expect(
+      workflow,
+      contains(
+        r'test "${{ needs.remote-config-evidence.result }}" = "success"',
+      ),
+    );
+    expect(
+      workflow,
+      contains(r"if: ${{ needs.validation-gate.result == 'success' }}"),
+    );
+    expect(workflow, contains('rain-release-metadata.json'));
+    expect(
+      workflow,
+      contains('artifacts/release-metadata/rain-release-metadata.json'),
+    );
+    expect(workflow, contains('Create GitHub Release'));
+  });
+
+  test('publish-capable workflows emit release metadata evidence', () {
+    final workflows = <String>[
+      _repoFile('.github/workflows/build-artifacts.yml'),
+      _repoFile('.github/workflows/fast-release.yml'),
+      _repoFile('.github/workflows/validated-release.yml'),
+      _repoFile('.github/workflows/release.yml'),
+    ];
+
+    for (final workflow in workflows) {
+      expect(workflow, contains('write_release_metadata.ps1'));
+      expect(workflow, contains('rain-release-metadata.json'));
+      expect(workflow, contains('ValidationWorkflow'));
+      expect(workflow, contains('ValidationRunUrl'));
+      expect(workflow, contains('ArtifactPurpose'));
+    }
+  });
+
+  test('production release workflows require Remote Config evidence', () {
+    final workflows = <String>[
+      _repoFile('.github/workflows/fast-release.yml'),
+      _repoFile('.github/workflows/validated-release.yml'),
+      _repoFile('.github/workflows/release.yml'),
+    ];
+
+    for (final workflow in workflows) {
+      expect(workflow, contains('remote_config_evidence_url'));
+      expect(workflow, contains('Remote Config'));
+      expect(workflow, contains('must be an https URL'));
+    }
   });
 
   test('release workflow verifies native voice runtimes before upload', () {

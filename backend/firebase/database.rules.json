@@ -5,7 +5,7 @@
     "users": {
       "$username": {
         ".read": "auth != null",
-        ".write": "auth != null && !root.child('security/blockedUids/' + auth.uid).exists() && ((!data.exists() && auth.token.email === $username + '@rain.local' && newData.child('uid').val() === auth.uid) || (data.exists() && data.child('uid').val() === auth.uid && newData.child('uid').val() === data.child('uid').val()))",
+        ".write": "auth != null && !root.child('security/blockedUids/' + auth.uid).exists() && auth.token.email === $username + '@rain.local' && ((!data.exists() && newData.child('uid').val() === auth.uid) || (data.exists() && ((data.child('uid').exists() && data.child('uid').val() === auth.uid && newData.child('uid').val() === data.child('uid').val()) || (!data.child('uid').exists() && newData.child('uid').val() === auth.uid))))",
         "username": {
           ".validate": "newData.isString() && newData.val() === $username"
         },
@@ -21,6 +21,12 @@
         "registeredAt": {
           ".validate": "newData.isNumber()"
         },
+        "accountState": {
+          ".validate": "newData.isString() && (newData.val() === 'active' || newData.val() === 'deleted')"
+        },
+        "deletedAt": {
+          ".validate": "newData.isNumber()"
+        },
         "$other": {
           ".validate": false
         }
@@ -29,8 +35,8 @@
     "presence": {
       "$username": {
         ".read": "auth != null",
-        ".write": "auth != null && !root.child('security/blockedUids/' + auth.uid).exists() && root.child('users/' + $username + '/uid').val() === auth.uid && newData.child('uid').val() === auth.uid",
-        ".validate": "!newData.exists() || (newData.hasChildren(['uid', 'online', 'lastHeartbeat', 'lastSeen', 'updatedAt', 'sessionId', 'platform']) && newData.child('uid').isString() && newData.child('online').isBoolean() && newData.child('lastHeartbeat').isNumber() && newData.child('lastSeen').isNumber() && newData.child('updatedAt').isNumber() && newData.child('sessionId').isString() && newData.child('sessionId').val().length > 0 && newData.child('sessionId').val().length <= 96 && newData.child('platform').isString() && newData.child('platform').val().length > 0 && newData.child('platform').val().length <= 32)",
+        ".write": "auth != null && !root.child('security/blockedUids/' + auth.uid).exists() && root.child('users/' + $username + '/uid').val() === auth.uid && newData.child('uid').val() === auth.uid && (!data.exists() || !data.child('startedAt').isNumber() || !newData.child('startedAt').isNumber() || newData.child('startedAt').val() >= data.child('startedAt').val() || newData.child('sessionId').val() === data.child('sessionId').val())",
+        ".validate": "!newData.exists() || (newData.hasChildren(['uid', 'online', 'lastHeartbeat', 'lastSeen', 'updatedAt', 'sessionId', 'platform']) && newData.child('uid').isString() && newData.child('online').isBoolean() && newData.child('lastHeartbeat').isNumber() && newData.child('lastSeen').isNumber() && newData.child('updatedAt').isNumber() && newData.child('sessionId').isString() && newData.child('sessionId').val().length > 0 && newData.child('sessionId').val().length <= 96 && (!newData.child('startedAt').exists() || newData.child('startedAt').isNumber()) && newData.child('platform').isString() && newData.child('platform').val().length > 0 && newData.child('platform').val().length <= 32 && (!newData.child('state').exists() || (newData.child('state').isString() && newData.child('state').val().length > 0 && newData.child('state').val().length <= 32)))",
         "uid": {
           ".validate": "newData.isString()"
         },
@@ -49,7 +55,13 @@
         "sessionId": {
           ".validate": "newData.isString()"
         },
+        "startedAt": {
+          ".validate": "newData.isNumber()"
+        },
         "platform": {
+          ".validate": "newData.isString()"
+        },
+        "state": {
           ".validate": "newData.isString()"
         },
         "$other": {
@@ -133,37 +145,45 @@
       }
     },
     "userSearch": {
+      ".read": "auth != null",
       "$username": {
         ".read": "auth != null",
-        ".write": "auth != null && !root.child('security/blockedUids/' + auth.uid).exists() && root.child('users/' + $username + '/uid').val() === auth.uid"
+        ".write": "auth != null && !root.child('security/blockedUids/' + auth.uid).exists() && root.child('users/' + $username + '/uid').val() === auth.uid && root.child('users/' + $username + '/accountState').val() !== 'deleted'"
       }
     },
     "rooms": {
       ".indexOn": ["expiresAt"],
       "$roomId": {
         ".read": "auth != null && (!data.exists() || root.child('users/' + data.child('userA').val() + '/uid').val() === auth.uid || root.child('users/' + data.child('userB').val() + '/uid').val() === auth.uid)",
-        ".write": "auth != null && !root.child('security/blockedUids/' + auth.uid).exists() && ((!data.exists() && !newData.exists()) || (!data.exists() && newData.exists() && newData.child('userA').val() < newData.child('userB').val() && newData.child('userA').val() + ':' + newData.child('userB').val() === $roomId && (root.child('users/' + newData.child('userA').val() + '/uid').val() === auth.uid || root.child('users/' + newData.child('userB').val() + '/uid').val() === auth.uid)) || (data.exists() && !newData.exists() && (root.child('users/' + data.child('userA').val() + '/uid').val() === auth.uid || root.child('users/' + data.child('userB').val() + '/uid').val() === auth.uid)) || (data.exists() && newData.exists() && newData.child('userA').val() === data.child('userA').val() && newData.child('userB').val() === data.child('userB').val() && data.child('userA').val() < data.child('userB').val() && data.child('userA').val() + ':' + data.child('userB').val() === $roomId && (root.child('users/' + data.child('userA').val() + '/uid').val() === auth.uid || root.child('users/' + data.child('userB').val() + '/uid').val() === auth.uid)))",
+        ".write": "auth != null && !root.child('security/blockedUids/' + auth.uid).exists() && ((!data.exists() && !newData.exists()) || (!data.exists() && newData.exists() && newData.hasChildren(['userA', 'userB', 'attemptId', 'createdAt', 'updatedAt', 'expiresAt', 'offer']) && newData.child('userA').val() < newData.child('userB').val() && newData.child('userA').val() + ':' + newData.child('userB').val() === $roomId && newData.child('attemptId').val() === $roomId + ':' + newData.child('createdAt').val() && root.child('users/' + newData.child('userA').val() + '/uid').val() === auth.uid && !newData.child('answer').exists() && !newData.child('callerICE').exists() && !newData.child('calleeICE').exists()) || (data.exists() && newData.exists() && newData.hasChildren(['userA', 'userB', 'attemptId', 'createdAt', 'updatedAt', 'expiresAt', 'offer']) && newData.child('userA').val() === data.child('userA').val() && newData.child('userB').val() === data.child('userB').val() && data.child('userA').val() < data.child('userB').val() && data.child('userA').val() + ':' + data.child('userB').val() === $roomId && newData.child('attemptId').val() === $roomId + ':' + newData.child('createdAt').val() && root.child('users/' + data.child('userA').val() + '/uid').val() === auth.uid && !newData.child('answer').exists() && !newData.child('callerICE').exists() && !newData.child('calleeICE').exists()) || (data.exists() && !newData.exists() && (root.child('users/' + data.child('userA').val() + '/uid').val() === auth.uid || root.child('users/' + data.child('userB').val() + '/uid').val() === auth.uid)))",
         ".validate": "!newData.exists() || (newData.hasChildren(['userA', 'userB', 'updatedAt', 'expiresAt']) && newData.child('userA').isString() && newData.child('userB').isString() && newData.child('userA').val() < newData.child('userB').val() && newData.child('userA').val() + ':' + newData.child('userB').val() === $roomId && newData.child('updatedAt').isNumber() && newData.child('expiresAt').isNumber() && (!newData.child('attemptId').exists() || newData.child('attemptId').isString()) && (!newData.child('createdAt').exists() || newData.child('createdAt').isNumber()))",
         "userA": {
+          ".write": "auth != null && !root.child('security/blockedUids/' + auth.uid).exists() && data.exists() && newData.val() === data.val() && (root.child('users/' + root.child('rooms/' + $roomId + '/userA').val() + '/uid').val() === auth.uid || root.child('users/' + root.child('rooms/' + $roomId + '/userB').val() + '/uid').val() === auth.uid)",
           ".validate": "newData.isString()"
         },
         "userB": {
+          ".write": "auth != null && !root.child('security/blockedUids/' + auth.uid).exists() && data.exists() && newData.val() === data.val() && (root.child('users/' + root.child('rooms/' + $roomId + '/userA').val() + '/uid').val() === auth.uid || root.child('users/' + root.child('rooms/' + $roomId + '/userB').val() + '/uid').val() === auth.uid)",
           ".validate": "newData.isString()"
         },
         "attemptId": {
+          ".write": "auth != null && !root.child('security/blockedUids/' + auth.uid).exists() && root.child('rooms/' + $roomId).exists() && data.exists() && newData.val() === data.val() && (root.child('users/' + root.child('rooms/' + $roomId + '/userA').val() + '/uid').val() === auth.uid || root.child('users/' + root.child('rooms/' + $roomId + '/userB').val() + '/uid').val() === auth.uid)",
           ".validate": "newData.isString()"
         },
         "createdAt": {
+          ".write": "auth != null && !root.child('security/blockedUids/' + auth.uid).exists() && root.child('rooms/' + $roomId).exists() && data.exists() && newData.val() === data.val() && (root.child('users/' + root.child('rooms/' + $roomId + '/userA').val() + '/uid').val() === auth.uid || root.child('users/' + root.child('rooms/' + $roomId + '/userB').val() + '/uid').val() === auth.uid)",
           ".validate": "newData.isNumber()"
         },
         "updatedAt": {
+          ".write": "auth != null && !root.child('security/blockedUids/' + auth.uid).exists() && root.child('rooms/' + $roomId).exists() && (root.child('users/' + root.child('rooms/' + $roomId + '/userA').val() + '/uid').val() === auth.uid || root.child('users/' + root.child('rooms/' + $roomId + '/userB').val() + '/uid').val() === auth.uid)",
           ".validate": "newData.isNumber()"
         },
         "expiresAt": {
+          ".write": "auth != null && !root.child('security/blockedUids/' + auth.uid).exists() && root.child('rooms/' + $roomId).exists() && (root.child('users/' + root.child('rooms/' + $roomId + '/userA').val() + '/uid').val() === auth.uid || root.child('users/' + root.child('rooms/' + $roomId + '/userB').val() + '/uid').val() === auth.uid)",
           ".validate": "newData.isNumber()"
         },
         "offer": {
-          ".validate": "!newData.exists() || (newData.hasChildren(['v', 'alg', 'ts', 'nonce', 'ciphertext', 'mac']) && newData.child('v').isNumber() && newData.child('v').val() === 1 && newData.child('alg').isString() && newData.child('alg').val() === 'A256GCM-HKDF-SHA256' && newData.child('ts').isNumber() && newData.child('nonce').isString() && newData.child('nonce').val().length > 0 && newData.child('nonce').val().length <= 96 && newData.child('ciphertext').isString() && newData.child('ciphertext').val().length > 0 && newData.child('ciphertext').val().length <= 262144 && newData.child('mac').isString() && newData.child('mac').val().length > 0 && newData.child('mac').val().length <= 96)",
+          ".write": "auth != null && !root.child('security/blockedUids/' + auth.uid).exists() && root.child('rooms/' + $roomId).exists() && root.child('users/' + root.child('rooms/' + $roomId + '/userA').val() + '/uid').val() === auth.uid",
+          ".validate": "!newData.exists() || (newData.hasChildren(['v', 'alg', 'ts', 'from', 'to', 'nonce', 'ciphertext', 'mac']) && newData.child('v').isNumber() && newData.child('v').val() === 1 && newData.child('alg').isString() && newData.child('alg').val() === 'A256GCM-HKDF-SHA256' && newData.child('ts').isNumber() && newData.child('from').isString() && newData.child('from').val() === newData.parent().child('userA').val() && newData.child('to').isString() && newData.child('to').val() === newData.parent().child('userB').val() && newData.child('nonce').isString() && newData.child('nonce').val().length > 0 && newData.child('nonce').val().length <= 96 && newData.child('ciphertext').isString() && newData.child('ciphertext').val().length > 0 && newData.child('ciphertext').val().length <= 262144 && newData.child('mac').isString() && newData.child('mac').val().length > 0 && newData.child('mac').val().length <= 96)",
           "v": {
             ".validate": "newData.isNumber() && newData.val() === 1"
           },
@@ -172,6 +192,12 @@
           },
           "ts": {
             ".validate": "newData.isNumber()"
+          },
+          "from": {
+            ".validate": "newData.isString()"
+          },
+          "to": {
+            ".validate": "newData.isString()"
           },
           "nonce": {
             ".validate": "newData.isString()"
@@ -187,7 +213,8 @@
           }
         },
         "answer": {
-          ".validate": "!newData.exists() || (newData.hasChildren(['v', 'alg', 'ts', 'nonce', 'ciphertext', 'mac']) && newData.child('v').isNumber() && newData.child('v').val() === 1 && newData.child('alg').isString() && newData.child('alg').val() === 'A256GCM-HKDF-SHA256' && newData.child('ts').isNumber() && newData.child('nonce').isString() && newData.child('nonce').val().length > 0 && newData.child('nonce').val().length <= 96 && newData.child('ciphertext').isString() && newData.child('ciphertext').val().length > 0 && newData.child('ciphertext').val().length <= 262144 && newData.child('mac').isString() && newData.child('mac').val().length > 0 && newData.child('mac').val().length <= 96)",
+          ".write": "auth != null && !root.child('security/blockedUids/' + auth.uid).exists() && root.child('rooms/' + $roomId).exists() && root.child('users/' + root.child('rooms/' + $roomId + '/userB').val() + '/uid').val() === auth.uid",
+          ".validate": "!newData.exists() || (newData.hasChildren(['v', 'alg', 'ts', 'from', 'to', 'nonce', 'ciphertext', 'mac']) && newData.child('v').isNumber() && newData.child('v').val() === 1 && newData.child('alg').isString() && newData.child('alg').val() === 'A256GCM-HKDF-SHA256' && newData.child('ts').isNumber() && newData.child('from').isString() && newData.child('from').val() === newData.parent().child('userB').val() && newData.child('to').isString() && newData.child('to').val() === newData.parent().child('userA').val() && newData.child('nonce').isString() && newData.child('nonce').val().length > 0 && newData.child('nonce').val().length <= 96 && newData.child('ciphertext').isString() && newData.child('ciphertext').val().length > 0 && newData.child('ciphertext').val().length <= 262144 && newData.child('mac').isString() && newData.child('mac').val().length > 0 && newData.child('mac').val().length <= 96)",
           "v": {
             ".validate": "newData.isNumber() && newData.val() === 1"
           },
@@ -196,6 +223,12 @@
           },
           "ts": {
             ".validate": "newData.isNumber()"
+          },
+          "from": {
+            ".validate": "newData.isString()"
+          },
+          "to": {
+            ".validate": "newData.isString()"
           },
           "nonce": {
             ".validate": "newData.isString()"
@@ -212,7 +245,8 @@
         },
         "callerICE": {
           "$candidateId": {
-            ".validate": "!newData.exists() || (newData.hasChildren(['v', 'alg', 'ts', 'nonce', 'ciphertext', 'mac']) && newData.child('v').isNumber() && newData.child('v').val() === 1 && newData.child('alg').isString() && newData.child('alg').val() === 'A256GCM-HKDF-SHA256' && newData.child('ts').isNumber() && newData.child('nonce').isString() && newData.child('nonce').val().length > 0 && newData.child('nonce').val().length <= 96 && newData.child('ciphertext').isString() && newData.child('ciphertext').val().length > 0 && newData.child('ciphertext').val().length <= 32768 && newData.child('mac').isString() && newData.child('mac').val().length > 0 && newData.child('mac').val().length <= 96)",
+            ".write": "auth != null && !root.child('security/blockedUids/' + auth.uid).exists() && root.child('rooms/' + $roomId).exists() && root.child('users/' + root.child('rooms/' + $roomId + '/userA').val() + '/uid').val() === auth.uid",
+            ".validate": "!newData.exists() || (newData.hasChildren(['v', 'alg', 'ts', 'from', 'to', 'nonce', 'ciphertext', 'mac']) && newData.child('v').isNumber() && newData.child('v').val() === 1 && newData.child('alg').isString() && newData.child('alg').val() === 'A256GCM-HKDF-SHA256' && newData.child('ts').isNumber() && newData.child('from').isString() && newData.child('from').val() === newData.parent().parent().child('userA').val() && newData.child('to').isString() && newData.child('to').val() === newData.parent().parent().child('userB').val() && newData.child('nonce').isString() && newData.child('nonce').val().length > 0 && newData.child('nonce').val().length <= 96 && newData.child('ciphertext').isString() && newData.child('ciphertext').val().length > 0 && newData.child('ciphertext').val().length <= 32768 && newData.child('mac').isString() && newData.child('mac').val().length > 0 && newData.child('mac').val().length <= 96)",
             "v": {
               ".validate": "newData.isNumber() && newData.val() === 1"
             },
@@ -221,6 +255,12 @@
             },
             "ts": {
               ".validate": "newData.isNumber()"
+            },
+            "from": {
+              ".validate": "newData.isString()"
+            },
+            "to": {
+              ".validate": "newData.isString()"
             },
             "nonce": {
               ".validate": "newData.isString()"
@@ -238,7 +278,8 @@
         },
         "calleeICE": {
           "$candidateId": {
-            ".validate": "!newData.exists() || (newData.hasChildren(['v', 'alg', 'ts', 'nonce', 'ciphertext', 'mac']) && newData.child('v').isNumber() && newData.child('v').val() === 1 && newData.child('alg').isString() && newData.child('alg').val() === 'A256GCM-HKDF-SHA256' && newData.child('ts').isNumber() && newData.child('nonce').isString() && newData.child('nonce').val().length > 0 && newData.child('nonce').val().length <= 96 && newData.child('ciphertext').isString() && newData.child('ciphertext').val().length > 0 && newData.child('ciphertext').val().length <= 32768 && newData.child('mac').isString() && newData.child('mac').val().length > 0 && newData.child('mac').val().length <= 96)",
+            ".write": "auth != null && !root.child('security/blockedUids/' + auth.uid).exists() && root.child('rooms/' + $roomId).exists() && root.child('users/' + root.child('rooms/' + $roomId + '/userB').val() + '/uid').val() === auth.uid",
+            ".validate": "!newData.exists() || (newData.hasChildren(['v', 'alg', 'ts', 'from', 'to', 'nonce', 'ciphertext', 'mac']) && newData.child('v').isNumber() && newData.child('v').val() === 1 && newData.child('alg').isString() && newData.child('alg').val() === 'A256GCM-HKDF-SHA256' && newData.child('ts').isNumber() && newData.child('from').isString() && newData.child('from').val() === newData.parent().parent().child('userB').val() && newData.child('to').isString() && newData.child('to').val() === newData.parent().parent().child('userA').val() && newData.child('nonce').isString() && newData.child('nonce').val().length > 0 && newData.child('nonce').val().length <= 96 && newData.child('ciphertext').isString() && newData.child('ciphertext').val().length > 0 && newData.child('ciphertext').val().length <= 32768 && newData.child('mac').isString() && newData.child('mac').val().length > 0 && newData.child('mac').val().length <= 96)",
             "v": {
               ".validate": "newData.isNumber() && newData.val() === 1"
             },
@@ -247,6 +288,12 @@
             },
             "ts": {
               ".validate": "newData.isNumber()"
+            },
+            "from": {
+              ".validate": "newData.isString()"
+            },
+            "to": {
+              ".validate": "newData.isString()"
             },
             "nonce": {
               ".validate": "newData.isString()"
@@ -271,7 +318,7 @@
       ".indexOn": ["expiresAt"],
       "$pairId": {
         ".read": "auth != null && (!data.exists() || root.child('users/' + data.child('caller').val() + '/uid').val() === auth.uid || root.child('users/' + data.child('callee').val() + '/uid').val() === auth.uid)",
-        ".write": "auth != null && !root.child('security/blockedUids/' + auth.uid).exists() && ((!data.exists() && newData.exists() && root.child('users/' + newData.child('caller').val() + '/uid').val() === auth.uid && root.child('friendships/' + newData.child('caller').val() + '/' + newData.child('callee').val()).exists() && root.child('friendships/' + newData.child('callee').val() + '/' + newData.child('caller').val()).exists() && !root.child('blocks/' + newData.child('caller').val() + '/' + newData.child('callee').val()).exists() && !root.child('blocks/' + newData.child('callee').val() + '/' + newData.child('caller').val()).exists()) || (data.exists() && data.child('expiresAt').val() <= now && newData.exists() && root.child('users/' + newData.child('caller').val() + '/uid').val() === auth.uid && root.child('friendships/' + newData.child('caller').val() + '/' + newData.child('callee').val()).exists() && root.child('friendships/' + newData.child('callee').val() + '/' + newData.child('caller').val()).exists() && !root.child('blocks/' + newData.child('caller').val() + '/' + newData.child('callee').val()).exists() && !root.child('blocks/' + newData.child('callee').val() + '/' + newData.child('caller').val()).exists()) || (data.exists() && !newData.exists() && (root.child('users/' + data.child('caller').val() + '/uid').val() === auth.uid || root.child('users/' + data.child('callee').val() + '/uid').val() === auth.uid)))",
+        ".write": "auth != null && !root.child('security/blockedUids/' + auth.uid).exists() && ((!data.exists() && newData.exists() && root.child('users/' + newData.child('caller').val() + '/uid').val() === auth.uid && root.child('presence/' + newData.child('callee').val() + '/online').val() === true && root.child('presence/' + newData.child('callee').val() + '/lastHeartbeat').isNumber() && now - root.child('presence/' + newData.child('callee').val() + '/lastHeartbeat').val() < 45000 && root.child('friendships/' + newData.child('caller').val() + '/' + newData.child('callee').val()).exists() && root.child('friendships/' + newData.child('callee').val() + '/' + newData.child('caller').val()).exists() && !root.child('blocks/' + newData.child('caller').val() + '/' + newData.child('callee').val()).exists() && !root.child('blocks/' + newData.child('callee').val() + '/' + newData.child('caller').val()).exists()) || (data.exists() && data.child('expiresAt').val() <= now && newData.exists() && root.child('users/' + newData.child('caller').val() + '/uid').val() === auth.uid && root.child('presence/' + newData.child('callee').val() + '/online').val() === true && root.child('presence/' + newData.child('callee').val() + '/lastHeartbeat').isNumber() && now - root.child('presence/' + newData.child('callee').val() + '/lastHeartbeat').val() < 45000 && root.child('friendships/' + newData.child('caller').val() + '/' + newData.child('callee').val()).exists() && root.child('friendships/' + newData.child('callee').val() + '/' + newData.child('caller').val()).exists() && !root.child('blocks/' + newData.child('caller').val() + '/' + newData.child('callee').val()).exists() && !root.child('blocks/' + newData.child('callee').val() + '/' + newData.child('caller').val()).exists()) || (data.exists() && !newData.exists() && (root.child('users/' + data.child('caller').val() + '/uid').val() === auth.uid || root.child('users/' + data.child('callee').val() + '/uid').val() === auth.uid) && ((!root.child('voiceCalls/' + data.child('callId').val()).exists() && (data.child('expiresAt').val() <= now || root.child('users/' + data.child('caller').val() + '/uid').val() === auth.uid)) || (root.child('voiceCalls/' + data.child('callId').val()).exists() && root.child('voiceCalls/' + data.child('callId').val() + '/pairId').val() === $pairId && root.child('voiceCalls/' + data.child('callId').val() + '/caller').val() === data.child('caller').val() && root.child('voiceCalls/' + data.child('callId').val() + '/callee').val() === data.child('callee').val() && (root.child('voiceCalls/' + data.child('callId').val() + '/status').val() === 'ended' || root.child('voiceCalls/' + data.child('callId').val() + '/status').val() === 'failed' || root.child('voiceCalls/' + data.child('callId').val() + '/status').val() === 'expired' || root.child('voiceCalls/' + data.child('callId').val() + '/expiresAt').val() <= now)))))",
         ".validate": "!newData.exists() || (newData.hasChildren(['callId', 'caller', 'callee', 'createdAt', 'updatedAt', 'expiresAt']) && newData.child('callId').isString() && newData.child('callId').val().length > 0 && newData.child('callId').val().length <= 128 && newData.child('caller').isString() && newData.child('callee').isString() && newData.child('caller').val() !== newData.child('callee').val() && ((newData.child('caller').val() < newData.child('callee').val() && newData.child('caller').val() + ':' + newData.child('callee').val() === $pairId) || (newData.child('callee').val() < newData.child('caller').val() && newData.child('callee').val() + ':' + newData.child('caller').val() === $pairId)) && newData.child('createdAt').isNumber() && newData.child('updatedAt').isNumber() && newData.child('expiresAt').isNumber() && newData.child('updatedAt').val() >= newData.child('createdAt').val() && newData.child('expiresAt').val() > newData.child('createdAt').val())",
         "callId": {
           ".validate": "newData.isString()"
@@ -300,7 +347,7 @@
       ".indexOn": ["expiresAt"],
       "$username": {
         ".read": "auth != null && (!data.exists() || root.child('users/' + $username + '/uid').val() === auth.uid || root.child('users/' + data.child('caller').val() + '/uid').val() === auth.uid || root.child('users/' + data.child('callee').val() + '/uid').val() === auth.uid)",
-        ".write": "auth != null && !root.child('security/blockedUids/' + auth.uid).exists() && ((!data.exists() && newData.exists() && (newData.child('caller').val() === $username || newData.child('callee').val() === $username) && root.child('users/' + newData.child('caller').val() + '/uid').val() === auth.uid && root.child('friendships/' + newData.child('caller').val() + '/' + newData.child('callee').val()).exists() && root.child('friendships/' + newData.child('callee').val() + '/' + newData.child('caller').val()).exists() && !root.child('blocks/' + newData.child('caller').val() + '/' + newData.child('callee').val()).exists() && !root.child('blocks/' + newData.child('callee').val() + '/' + newData.child('caller').val()).exists()) || (data.exists() && data.child('expiresAt').val() <= now && newData.exists() && (newData.child('caller').val() === $username || newData.child('callee').val() === $username) && root.child('users/' + newData.child('caller').val() + '/uid').val() === auth.uid && root.child('friendships/' + newData.child('caller').val() + '/' + newData.child('callee').val()).exists() && root.child('friendships/' + newData.child('callee').val() + '/' + newData.child('caller').val()).exists() && !root.child('blocks/' + newData.child('caller').val() + '/' + newData.child('callee').val()).exists() && !root.child('blocks/' + newData.child('callee').val() + '/' + newData.child('caller').val()).exists()) || (data.exists() && !newData.exists() && (root.child('users/' + data.child('caller').val() + '/uid').val() === auth.uid || root.child('users/' + data.child('callee').val() + '/uid').val() === auth.uid)))",
+        ".write": "auth != null && !root.child('security/blockedUids/' + auth.uid).exists() && ((!data.exists() && newData.exists() && (newData.child('caller').val() === $username || newData.child('callee').val() === $username) && root.child('users/' + newData.child('caller').val() + '/uid').val() === auth.uid && root.child('presence/' + newData.child('callee').val() + '/online').val() === true && root.child('presence/' + newData.child('callee').val() + '/lastHeartbeat').isNumber() && now - root.child('presence/' + newData.child('callee').val() + '/lastHeartbeat').val() < 45000 && root.child('friendships/' + newData.child('caller').val() + '/' + newData.child('callee').val()).exists() && root.child('friendships/' + newData.child('callee').val() + '/' + newData.child('caller').val()).exists() && !root.child('blocks/' + newData.child('caller').val() + '/' + newData.child('callee').val()).exists() && !root.child('blocks/' + newData.child('callee').val() + '/' + newData.child('caller').val()).exists()) || (data.exists() && data.child('expiresAt').val() <= now && newData.exists() && (newData.child('caller').val() === $username || newData.child('callee').val() === $username) && root.child('users/' + newData.child('caller').val() + '/uid').val() === auth.uid && root.child('presence/' + newData.child('callee').val() + '/online').val() === true && root.child('presence/' + newData.child('callee').val() + '/lastHeartbeat').isNumber() && now - root.child('presence/' + newData.child('callee').val() + '/lastHeartbeat').val() < 45000 && root.child('friendships/' + newData.child('caller').val() + '/' + newData.child('callee').val()).exists() && root.child('friendships/' + newData.child('callee').val() + '/' + newData.child('caller').val()).exists() && !root.child('blocks/' + newData.child('caller').val() + '/' + newData.child('callee').val()).exists() && !root.child('blocks/' + newData.child('callee').val() + '/' + newData.child('caller').val()).exists()) || (data.exists() && !newData.exists() && (root.child('users/' + data.child('caller').val() + '/uid').val() === auth.uid || root.child('users/' + data.child('callee').val() + '/uid').val() === auth.uid) && ((!root.child('voiceCalls/' + data.child('callId').val()).exists() && (root.child('users/' + data.child('caller').val() + '/uid').val() === auth.uid || (data.child('expiresAt').val() <= now && root.child('users/' + data.child('callee').val() + '/uid').val() === auth.uid))) || (root.child('voiceCalls/' + data.child('callId').val()).exists() && root.child('voiceCalls/' + data.child('callId').val() + '/pairId').val() === data.child('pairId').val() && root.child('voiceCalls/' + data.child('callId').val() + '/caller').val() === data.child('caller').val() && root.child('voiceCalls/' + data.child('callId').val() + '/callee').val() === data.child('callee').val() && (root.child('voiceCalls/' + data.child('callId').val() + '/status').val() === 'ended' || root.child('voiceCalls/' + data.child('callId').val() + '/status').val() === 'failed' || root.child('voiceCalls/' + data.child('callId').val() + '/status').val() === 'expired' || root.child('voiceCalls/' + data.child('callId').val() + '/expiresAt').val() <= now)))))",
         ".validate": "!newData.exists() || (newData.hasChildren(['callId', 'pairId', 'caller', 'callee', 'createdAt', 'updatedAt', 'expiresAt']) && newData.child('callId').isString() && newData.child('callId').val().length > 0 && newData.child('callId').val().length <= 128 && newData.child('pairId').isString() && newData.child('caller').isString() && newData.child('callee').isString() && newData.child('caller').val() !== newData.child('callee').val() && (newData.child('caller').val() === $username || newData.child('callee').val() === $username) && ((newData.child('caller').val() < newData.child('callee').val() && newData.child('caller').val() + ':' + newData.child('callee').val() === newData.child('pairId').val()) || (newData.child('callee').val() < newData.child('caller').val() && newData.child('callee').val() + ':' + newData.child('caller').val() === newData.child('pairId').val())) && newData.child('createdAt').isNumber() && newData.child('updatedAt').isNumber() && newData.child('expiresAt').isNumber() && newData.child('updatedAt').val() >= newData.child('createdAt').val() && newData.child('expiresAt').val() > newData.child('createdAt').val())",
         "callId": {
           ".validate": "newData.isString()"
@@ -333,8 +380,8 @@
         ".indexOn": ["expiresAt"],
         ".read": "auth != null && root.child('users/' + $username + '/uid').val() === auth.uid",
         "$callId": {
-          ".write": "auth != null && !root.child('security/blockedUids/' + auth.uid).exists() && (root.child('users/' + newData.child('from').val() + '/uid').val() === auth.uid || root.child('users/' + newData.child('to').val() + '/uid').val() === auth.uid || (data.exists() && (root.child('users/' + data.child('from').val() + '/uid').val() === auth.uid || root.child('users/' + data.child('to').val() + '/uid').val() === auth.uid))) && (!newData.exists() || (root.child('friendships/' + newData.child('from').val() + '/' + newData.child('to').val()).exists() && root.child('friendships/' + newData.child('to').val() + '/' + newData.child('from').val()).exists() && !root.child('blocks/' + newData.child('from').val() + '/' + newData.child('to').val()).exists() && !root.child('blocks/' + newData.child('to').val() + '/' + newData.child('from').val()).exists()))",
-          ".validate": "!newData.exists() || (newData.hasChildren(['from', 'to', 'pairId', 'status', 'createdAt', 'updatedAt', 'expiresAt']) && newData.child('from').isString() && newData.child('to').isString() && newData.child('to').val() === $username && newData.child('from').val() !== newData.child('to').val() && newData.child('pairId').isString() && ((newData.child('from').val() < newData.child('to').val() && newData.child('from').val() + ':' + newData.child('to').val() === newData.child('pairId').val()) || (newData.child('to').val() < newData.child('from').val() && newData.child('to').val() + ':' + newData.child('from').val() === newData.child('pairId').val())) && newData.child('status').isString() && (newData.child('status').val() === 'ringing' || newData.child('status').val() === 'accepted' || newData.child('status').val() === 'negotiating' || newData.child('status').val() === 'connected' || newData.child('status').val() === 'ended' || newData.child('status').val() === 'failed' || newData.child('status').val() === 'expired') && newData.child('createdAt').isNumber() && newData.child('updatedAt').isNumber() && newData.child('expiresAt').isNumber() && newData.child('updatedAt').val() >= newData.child('createdAt').val() && newData.child('expiresAt').val() > newData.child('createdAt').val())",
+          ".write": "auth != null && !root.child('security/blockedUids/' + auth.uid).exists() && ((data.exists() && !newData.exists() && (root.child('users/' + data.child('from').val() + '/uid').val() === auth.uid || root.child('users/' + data.child('to').val() + '/uid').val() === auth.uid)) || (newData.exists() && (root.child('users/' + newData.child('from').val() + '/uid').val() === auth.uid || root.child('users/' + newData.child('to').val() + '/uid').val() === auth.uid || (data.exists() && (root.child('users/' + data.child('from').val() + '/uid').val() === auth.uid || root.child('users/' + data.child('to').val() + '/uid').val() === auth.uid))) && ((data.exists() && newData.child('from').val() === data.child('from').val() && newData.child('to').val() === data.child('to').val() && newData.child('pairId').val() === data.child('pairId').val() && newData.child('createdAt').val() === data.child('createdAt').val() && newData.child('expiresAt').val() === data.child('expiresAt').val()) || (!data.exists() && newData.child('status').val() === 'ringing' && root.child('presence/' + newData.child('to').val() + '/online').val() === true && root.child('presence/' + newData.child('to').val() + '/lastHeartbeat').isNumber() && now - root.child('presence/' + newData.child('to').val() + '/lastHeartbeat').val() < 45000 && root.child('friendships/' + newData.child('from').val() + '/' + newData.child('to').val()).exists() && root.child('friendships/' + newData.child('to').val() + '/' + newData.child('from').val()).exists() && !root.child('blocks/' + newData.child('from').val() + '/' + newData.child('to').val()).exists() && !root.child('blocks/' + newData.child('to').val() + '/' + newData.child('from').val()).exists()))))",
+          ".validate": "!newData.exists() || (newData.hasChildren(['from', 'to', 'pairId', 'status', 'createdAt', 'updatedAt', 'expiresAt']) && (data.exists() || newData.child('status').val() === 'ringing') && newData.child('from').isString() && newData.child('to').isString() && newData.child('to').val() === $username && newData.child('from').val() !== newData.child('to').val() && newData.child('pairId').isString() && ((newData.child('from').val() < newData.child('to').val() && newData.child('from').val() + ':' + newData.child('to').val() === newData.child('pairId').val()) || (newData.child('to').val() < newData.child('from').val() && newData.child('to').val() + ':' + newData.child('from').val() === newData.child('pairId').val())) && newData.child('status').isString() && (newData.child('status').val() === 'ringing' || newData.child('status').val() === 'accepted' || newData.child('status').val() === 'negotiating' || newData.child('status').val() === 'connected' || newData.child('status').val() === 'ended' || newData.child('status').val() === 'failed' || newData.child('status').val() === 'expired') && newData.child('createdAt').isNumber() && newData.child('updatedAt').isNumber() && newData.child('expiresAt').isNumber() && newData.child('updatedAt').val() >= newData.child('createdAt').val() && newData.child('expiresAt').val() > newData.child('createdAt').val())",
           "from": {
             ".validate": "newData.isString()"
           },
@@ -365,29 +412,33 @@
     "voiceCalls": {
       ".indexOn": ["expiresAt"],
       "$callId": {
-        ".read": "auth != null && data.exists() && (root.child('users/' + data.child('caller').val() + '/uid').val() === auth.uid || root.child('users/' + data.child('callee').val() + '/uid').val() === auth.uid)",
-        ".write": "auth != null && !root.child('security/blockedUids/' + auth.uid).exists() && ((!data.exists() && newData.exists() && newData.child('status').val() === 'ringing' && root.child('users/' + newData.child('caller').val() + '/uid').val() === auth.uid && root.child('activeVoicePairs/' + newData.child('pairId').val() + '/callId').val() === $callId && root.child('activeVoiceUsers/' + newData.child('caller').val() + '/callId').val() === $callId && root.child('activeVoiceUsers/' + newData.child('callee').val() + '/callId').val() === $callId && root.child('friendships/' + newData.child('caller').val() + '/' + newData.child('callee').val()).exists() && root.child('friendships/' + newData.child('callee').val() + '/' + newData.child('caller').val()).exists() && !root.child('blocks/' + newData.child('caller').val() + '/' + newData.child('callee').val()).exists() && !root.child('blocks/' + newData.child('callee').val() + '/' + newData.child('caller').val()).exists()) || (data.exists() && !newData.exists() && (root.child('users/' + data.child('caller').val() + '/uid').val() === auth.uid || root.child('users/' + data.child('callee').val() + '/uid').val() === auth.uid)))",
+        ".read": "auth != null && (!data.exists() || root.child('users/' + data.child('caller').val() + '/uid').val() === auth.uid || root.child('users/' + data.child('callee').val() + '/uid').val() === auth.uid)",
+        ".write": "auth != null && !root.child('security/blockedUids/' + auth.uid).exists() && ((!data.exists() && newData.exists() && newData.child('status').val() === 'ringing' && root.child('users/' + newData.child('caller').val() + '/uid').val() === auth.uid && root.child('activeVoicePairs/' + newData.child('pairId').val() + '/callId').val() === $callId && root.child('activeVoiceUsers/' + newData.child('caller').val() + '/callId').val() === $callId && root.child('activeVoiceUsers/' + newData.child('callee').val() + '/callId').val() === $callId && newData.child('muted').hasChildren([newData.child('caller').val(), newData.child('callee').val()]) && newData.child('muted/' + newData.child('caller').val()).val() === false && newData.child('muted/' + newData.child('callee').val()).val() === false && (!newData.child('cameraMuted').exists() || (newData.child('cameraMuted').hasChildren([newData.child('caller').val(), newData.child('callee').val()]) && newData.child('cameraMuted/' + newData.child('caller').val()).val() === false && newData.child('cameraMuted/' + newData.child('callee').val()).val() === false)) && !newData.child('offer').exists() && !newData.child('answer').exists() && !newData.child('ice').exists() && !newData.child('acceptedAt').exists() && !newData.child('connectedAt').exists() && !newData.child('endedAt').exists() && !newData.child('endedBy').exists() && !newData.child('reasonCode').exists() && !newData.child('reason').exists() && root.child('presence/' + newData.child('callee').val() + '/online').val() === true && root.child('presence/' + newData.child('callee').val() + '/lastHeartbeat').isNumber() && now - root.child('presence/' + newData.child('callee').val() + '/lastHeartbeat').val() < 45000 && root.child('friendships/' + newData.child('caller').val() + '/' + newData.child('callee').val()).exists() && root.child('friendships/' + newData.child('callee').val() + '/' + newData.child('caller').val()).exists() && !root.child('blocks/' + newData.child('caller').val() + '/' + newData.child('callee').val()).exists() && !root.child('blocks/' + newData.child('callee').val() + '/' + newData.child('caller').val()).exists()) || (data.exists() && !newData.exists() && (root.child('users/' + data.child('caller').val() + '/uid').val() === auth.uid || root.child('users/' + data.child('callee').val() + '/uid').val() === auth.uid) && (data.child('status').val() === 'ended' || data.child('status').val() === 'failed' || data.child('status').val() === 'expired' || data.child('expiresAt').val() <= now)))",
         ".validate": "!newData.exists() || (newData.hasChildren(['v', 'pairId', 'caller', 'callee', 'status', 'createdAt', 'updatedAt', 'expiresAt']) && newData.child('v').isNumber() && newData.child('v').val() === 1 && newData.child('pairId').isString() && newData.child('caller').isString() && newData.child('callee').isString() && newData.child('caller').val() !== newData.child('callee').val() && ((newData.child('caller').val() < newData.child('callee').val() && newData.child('caller').val() + ':' + newData.child('callee').val() === newData.child('pairId').val()) || (newData.child('callee').val() < newData.child('caller').val() && newData.child('callee').val() + ':' + newData.child('caller').val() === newData.child('pairId').val())) && newData.child('status').isString() && (newData.child('status').val() === 'ringing' || newData.child('status').val() === 'accepted' || newData.child('status').val() === 'negotiating' || newData.child('status').val() === 'connected' || newData.child('status').val() === 'ended' || newData.child('status').val() === 'failed' || newData.child('status').val() === 'expired') && newData.child('createdAt').isNumber() && newData.child('updatedAt').isNumber() && newData.child('expiresAt').isNumber() && newData.child('updatedAt').val() >= newData.child('createdAt').val() && newData.child('expiresAt').val() > newData.child('createdAt').val())",
         "v": {
           ".validate": "newData.isNumber() && newData.val() === 1"
         },
         "pairId": {
+          ".write": "auth != null && data.exists() && newData.val() === data.val() && (root.child('users/' + root.child('voiceCalls/' + $callId + '/caller').val() + '/uid').val() === auth.uid || root.child('users/' + root.child('voiceCalls/' + $callId + '/callee').val() + '/uid').val() === auth.uid)",
           ".validate": "newData.isString()"
         },
         "caller": {
+          ".write": "auth != null && data.exists() && newData.val() === data.val() && (root.child('users/' + root.child('voiceCalls/' + $callId + '/caller').val() + '/uid').val() === auth.uid || root.child('users/' + root.child('voiceCalls/' + $callId + '/callee').val() + '/uid').val() === auth.uid)",
           ".validate": "newData.isString()"
         },
         "callee": {
+          ".write": "auth != null && data.exists() && newData.val() === data.val() && (root.child('users/' + root.child('voiceCalls/' + $callId + '/caller').val() + '/uid').val() === auth.uid || root.child('users/' + root.child('voiceCalls/' + $callId + '/callee').val() + '/uid').val() === auth.uid)",
           ".validate": "newData.isString()"
         },
         "status": {
-          ".write": "auth != null && root.child('voiceCalls/' + $callId).exists() && (root.child('users/' + root.child('voiceCalls/' + $callId + '/caller').val() + '/uid').val() === auth.uid || root.child('users/' + root.child('voiceCalls/' + $callId + '/callee').val() + '/uid').val() === auth.uid) && ((newData.val() === 'accepted' && root.child('voiceCalls/' + $callId + '/status').val() === 'ringing' && root.child('users/' + root.child('voiceCalls/' + $callId + '/callee').val() + '/uid').val() === auth.uid) || (newData.val() === 'negotiating' && (root.child('voiceCalls/' + $callId + '/status').val() === 'accepted' || root.child('voiceCalls/' + $callId + '/status').val() === 'negotiating') && root.child('users/' + root.child('voiceCalls/' + $callId + '/caller').val() + '/uid').val() === auth.uid) || (newData.val() === 'connected' && (root.child('voiceCalls/' + $callId + '/status').val() === 'accepted' || root.child('voiceCalls/' + $callId + '/status').val() === 'negotiating' || root.child('voiceCalls/' + $callId + '/status').val() === 'connected')) || ((newData.val() === 'ended' || newData.val() === 'failed' || newData.val() === 'expired') && root.child('voiceCalls/' + $callId + '/status').val() !== 'ended' && root.child('voiceCalls/' + $callId + '/status').val() !== 'failed' && root.child('voiceCalls/' + $callId + '/status').val() !== 'expired'))",
+          ".write": "auth != null && root.child('voiceCalls/' + $callId).exists() && (root.child('users/' + root.child('voiceCalls/' + $callId + '/caller').val() + '/uid').val() === auth.uid || root.child('users/' + root.child('voiceCalls/' + $callId + '/callee').val() + '/uid').val() === auth.uid) && ((newData.val() === 'accepted' && root.child('voiceCalls/' + $callId + '/status').val() === 'ringing' && root.child('users/' + root.child('voiceCalls/' + $callId + '/callee').val() + '/uid').val() === auth.uid) || (newData.val() === 'failed' && root.child('voiceCalls/' + $callId + '/status').val() === 'ringing' && root.child('users/' + root.child('voiceCalls/' + $callId + '/callee').val() + '/uid').val() === auth.uid) || (newData.val() === 'negotiating' && (root.child('voiceCalls/' + $callId + '/status').val() === 'accepted' || root.child('voiceCalls/' + $callId + '/status').val() === 'negotiating') && root.child('users/' + root.child('voiceCalls/' + $callId + '/caller').val() + '/uid').val() === auth.uid) || (newData.val() === 'connected' && (root.child('voiceCalls/' + $callId + '/status').val() === 'accepted' || root.child('voiceCalls/' + $callId + '/status').val() === 'negotiating' || root.child('voiceCalls/' + $callId + '/status').val() === 'connected')) || (newData.val() === 'ended' && root.child('voiceCalls/' + $callId + '/status').val() !== 'ended' && root.child('voiceCalls/' + $callId + '/status').val() !== 'failed' && root.child('voiceCalls/' + $callId + '/status').val() !== 'expired') || ((newData.val() === 'failed' || newData.val() === 'expired') && root.child('voiceCalls/' + $callId + '/status').val() !== 'ended' && root.child('voiceCalls/' + $callId + '/status').val() !== 'failed' && root.child('voiceCalls/' + $callId + '/status').val() !== 'expired'))",
           ".validate": "newData.isString() && (newData.val() === 'ringing' || newData.val() === 'accepted' || newData.val() === 'negotiating' || newData.val() === 'connected' || newData.val() === 'ended' || newData.val() === 'failed' || newData.val() === 'expired')"
         },
         "mediaMode": {
           ".validate": "newData.isString() && (newData.val() === 'audio' || newData.val() === 'video')"
         },
         "createdAt": {
+          ".write": "auth != null && data.exists() && newData.val() === data.val() && (root.child('users/' + root.child('voiceCalls/' + $callId + '/caller').val() + '/uid').val() === auth.uid || root.child('users/' + root.child('voiceCalls/' + $callId + '/callee').val() + '/uid').val() === auth.uid)",
           ".validate": "newData.isNumber()"
         },
         "updatedAt": {
@@ -395,6 +446,7 @@
           ".validate": "newData.isNumber()"
         },
         "expiresAt": {
+          ".write": "auth != null && data.exists() && newData.val() === data.val() && (root.child('users/' + root.child('voiceCalls/' + $callId + '/caller').val() + '/uid').val() === auth.uid || root.child('users/' + root.child('voiceCalls/' + $callId + '/callee').val() + '/uid').val() === auth.uid)",
           ".validate": "newData.isNumber()"
         },
         "acceptedAt": {
@@ -424,18 +476,18 @@
         "muted": {
           "$username": {
             ".write": "auth != null && root.child('voiceCalls/' + $callId).exists() && root.child('users/' + $username + '/uid').val() === auth.uid && ($username === root.child('voiceCalls/' + $callId + '/caller').val() || $username === root.child('voiceCalls/' + $callId + '/callee').val())",
-            ".validate": "newData.isBoolean()"
+            ".validate": "newData.isBoolean() && ($username === newData.parent().parent().child('caller').val() || $username === newData.parent().parent().child('callee').val())"
           }
         },
         "cameraMuted": {
           "$username": {
             ".write": "auth != null && root.child('voiceCalls/' + $callId).exists() && root.child('users/' + $username + '/uid').val() === auth.uid && ($username === root.child('voiceCalls/' + $callId + '/caller').val() || $username === root.child('voiceCalls/' + $callId + '/callee').val())",
-            ".validate": "newData.isBoolean()"
+            ".validate": "newData.isBoolean() && ($username === newData.parent().parent().child('caller').val() || $username === newData.parent().parent().child('callee').val())"
           }
         },
         "offer": {
           ".write": "auth != null && root.child('voiceCalls/' + $callId).exists() && root.child('users/' + root.child('voiceCalls/' + $callId + '/caller').val() + '/uid').val() === auth.uid && (root.child('voiceCalls/' + $callId + '/status').val() === 'accepted' || root.child('voiceCalls/' + $callId + '/status').val() === 'negotiating')",
-          ".validate": "!newData.exists() || (newData.hasChildren(['v', 'alg', 'ts', 'nonce', 'ciphertext', 'mac']) && newData.child('v').isNumber() && newData.child('v').val() === 1 && newData.child('alg').isString() && newData.child('alg').val() === 'A256GCM-HKDF-SHA256' && newData.child('ts').isNumber() && newData.child('nonce').isString() && newData.child('nonce').val().length > 0 && newData.child('nonce').val().length <= 96 && newData.child('ciphertext').isString() && newData.child('ciphertext').val().length > 0 && newData.child('ciphertext').val().length <= 262144 && newData.child('mac').isString() && newData.child('mac').val().length > 0 && newData.child('mac').val().length <= 96)",
+          ".validate": "!newData.exists() || (newData.hasChildren(['v', 'alg', 'ts', 'from', 'to', 'nonce', 'ciphertext', 'mac']) && newData.child('v').isNumber() && newData.child('v').val() === 1 && newData.child('alg').isString() && newData.child('alg').val() === 'A256GCM-HKDF-SHA256' && newData.child('ts').isNumber() && newData.child('from').isString() && newData.child('from').val() === newData.parent().child('caller').val() && newData.child('to').isString() && newData.child('to').val() === newData.parent().child('callee').val() && newData.child('nonce').isString() && newData.child('nonce').val().length > 0 && newData.child('nonce').val().length <= 96 && newData.child('ciphertext').isString() && newData.child('ciphertext').val().length > 0 && newData.child('ciphertext').val().length <= 262144 && newData.child('mac').isString() && newData.child('mac').val().length > 0 && newData.child('mac').val().length <= 96)",
           "v": {
             ".validate": "newData.isNumber() && newData.val() === 1"
           },
@@ -444,6 +496,12 @@
           },
           "ts": {
             ".validate": "newData.isNumber()"
+          },
+          "from": {
+            ".validate": "newData.isString()"
+          },
+          "to": {
+            ".validate": "newData.isString()"
           },
           "nonce": {
             ".validate": "newData.isString()"
@@ -460,7 +518,7 @@
         },
         "answer": {
           ".write": "auth != null && root.child('voiceCalls/' + $callId).exists() && root.child('users/' + root.child('voiceCalls/' + $callId + '/callee').val() + '/uid').val() === auth.uid && root.child('voiceCalls/' + $callId + '/status').val() === 'negotiating' && root.child('voiceCalls/' + $callId + '/offer').exists()",
-          ".validate": "!newData.exists() || (newData.hasChildren(['v', 'alg', 'ts', 'nonce', 'ciphertext', 'mac']) && newData.child('v').isNumber() && newData.child('v').val() === 1 && newData.child('alg').isString() && newData.child('alg').val() === 'A256GCM-HKDF-SHA256' && newData.child('ts').isNumber() && newData.child('nonce').isString() && newData.child('nonce').val().length > 0 && newData.child('nonce').val().length <= 96 && newData.child('ciphertext').isString() && newData.child('ciphertext').val().length > 0 && newData.child('ciphertext').val().length <= 262144 && newData.child('mac').isString() && newData.child('mac').val().length > 0 && newData.child('mac').val().length <= 96)",
+          ".validate": "!newData.exists() || (newData.hasChildren(['v', 'alg', 'ts', 'from', 'to', 'nonce', 'ciphertext', 'mac']) && newData.child('v').isNumber() && newData.child('v').val() === 1 && newData.child('alg').isString() && newData.child('alg').val() === 'A256GCM-HKDF-SHA256' && newData.child('ts').isNumber() && newData.child('from').isString() && newData.child('from').val() === newData.parent().child('callee').val() && newData.child('to').isString() && newData.child('to').val() === newData.parent().child('caller').val() && newData.child('nonce').isString() && newData.child('nonce').val().length > 0 && newData.child('nonce').val().length <= 96 && newData.child('ciphertext').isString() && newData.child('ciphertext').val().length > 0 && newData.child('ciphertext').val().length <= 262144 && newData.child('mac').isString() && newData.child('mac').val().length > 0 && newData.child('mac').val().length <= 96)",
           "v": {
             ".validate": "newData.isNumber() && newData.val() === 1"
           },
@@ -469,6 +527,12 @@
           },
           "ts": {
             ".validate": "newData.isNumber()"
+          },
+          "from": {
+            ".validate": "newData.isString()"
+          },
+          "to": {
+            ".validate": "newData.isString()"
           },
           "nonce": {
             ".validate": "newData.isString()"
@@ -487,7 +551,7 @@
           "caller": {
             "$candidateId": {
               ".write": "auth != null && root.child('voiceCalls/' + $callId).exists() && root.child('users/' + root.child('voiceCalls/' + $callId + '/caller').val() + '/uid').val() === auth.uid && (root.child('voiceCalls/' + $callId + '/status').val() === 'accepted' || root.child('voiceCalls/' + $callId + '/status').val() === 'negotiating' || root.child('voiceCalls/' + $callId + '/status').val() === 'connected')",
-              ".validate": "!newData.exists() || (newData.hasChildren(['v', 'alg', 'ts', 'nonce', 'ciphertext', 'mac']) && newData.child('v').isNumber() && newData.child('v').val() === 1 && newData.child('alg').isString() && newData.child('alg').val() === 'A256GCM-HKDF-SHA256' && newData.child('ts').isNumber() && newData.child('nonce').isString() && newData.child('nonce').val().length > 0 && newData.child('nonce').val().length <= 96 && newData.child('ciphertext').isString() && newData.child('ciphertext').val().length > 0 && newData.child('ciphertext').val().length <= 32768 && newData.child('mac').isString() && newData.child('mac').val().length > 0 && newData.child('mac').val().length <= 96)",
+              ".validate": "!newData.exists() || (newData.hasChildren(['v', 'alg', 'ts', 'from', 'to', 'nonce', 'ciphertext', 'mac']) && newData.child('v').isNumber() && newData.child('v').val() === 1 && newData.child('alg').isString() && newData.child('alg').val() === 'A256GCM-HKDF-SHA256' && newData.child('ts').isNumber() && newData.child('from').isString() && newData.child('from').val() === newData.parent().parent().parent().child('caller').val() && newData.child('to').isString() && newData.child('to').val() === newData.parent().parent().parent().child('callee').val() && newData.child('nonce').isString() && newData.child('nonce').val().length > 0 && newData.child('nonce').val().length <= 96 && newData.child('ciphertext').isString() && newData.child('ciphertext').val().length > 0 && newData.child('ciphertext').val().length <= 32768 && newData.child('mac').isString() && newData.child('mac').val().length > 0 && newData.child('mac').val().length <= 96)",
               "v": {
                 ".validate": "newData.isNumber() && newData.val() === 1"
               },
@@ -496,6 +560,12 @@
               },
               "ts": {
                 ".validate": "newData.isNumber()"
+              },
+              "from": {
+                ".validate": "newData.isString()"
+              },
+              "to": {
+                ".validate": "newData.isString()"
               },
               "nonce": {
                 ".validate": "newData.isString()"
@@ -514,7 +584,7 @@
           "callee": {
             "$candidateId": {
               ".write": "auth != null && root.child('voiceCalls/' + $callId).exists() && root.child('users/' + root.child('voiceCalls/' + $callId + '/callee').val() + '/uid').val() === auth.uid && (root.child('voiceCalls/' + $callId + '/status').val() === 'accepted' || root.child('voiceCalls/' + $callId + '/status').val() === 'negotiating' || root.child('voiceCalls/' + $callId + '/status').val() === 'connected')",
-              ".validate": "!newData.exists() || (newData.hasChildren(['v', 'alg', 'ts', 'nonce', 'ciphertext', 'mac']) && newData.child('v').isNumber() && newData.child('v').val() === 1 && newData.child('alg').isString() && newData.child('alg').val() === 'A256GCM-HKDF-SHA256' && newData.child('ts').isNumber() && newData.child('nonce').isString() && newData.child('nonce').val().length > 0 && newData.child('nonce').val().length <= 96 && newData.child('ciphertext').isString() && newData.child('ciphertext').val().length > 0 && newData.child('ciphertext').val().length <= 32768 && newData.child('mac').isString() && newData.child('mac').val().length > 0 && newData.child('mac').val().length <= 96)",
+              ".validate": "!newData.exists() || (newData.hasChildren(['v', 'alg', 'ts', 'from', 'to', 'nonce', 'ciphertext', 'mac']) && newData.child('v').isNumber() && newData.child('v').val() === 1 && newData.child('alg').isString() && newData.child('alg').val() === 'A256GCM-HKDF-SHA256' && newData.child('ts').isNumber() && newData.child('from').isString() && newData.child('from').val() === newData.parent().parent().parent().child('callee').val() && newData.child('to').isString() && newData.child('to').val() === newData.parent().parent().parent().child('caller').val() && newData.child('nonce').isString() && newData.child('nonce').val().length > 0 && newData.child('nonce').val().length <= 96 && newData.child('ciphertext').isString() && newData.child('ciphertext').val().length > 0 && newData.child('ciphertext').val().length <= 32768 && newData.child('mac').isString() && newData.child('mac').val().length > 0 && newData.child('mac').val().length <= 96)",
               "v": {
                 ".validate": "newData.isNumber() && newData.val() === 1"
               },
@@ -523,6 +593,12 @@
               },
               "ts": {
                 ".validate": "newData.isNumber()"
+              },
+              "from": {
+                ".validate": "newData.isString()"
+              },
+              "to": {
+                ".validate": "newData.isString()"
               },
               "nonce": {
                 ".validate": "newData.isString()"
@@ -543,6 +619,158 @@
           ".validate": false
         }
       }
+    },
+    "connectionRequests": {
+      "$username": {
+        ".indexOn": ["expiresAt", "status"],
+        ".read": "auth != null && root.child('users/' + $username + '/uid').val() === auth.uid",
+        ".write": false,
+        "$requestId": {
+          ".write": "auth != null && !root.child('security/blockedUids/' + auth.uid).exists() && ((!data.exists() && newData.exists() && root.child('users/' + newData.child('from').val() + '/uid').val() === auth.uid && newData.child('to').val() === $username && newData.child('from').val() !== newData.child('to').val() && root.child('friendships/' + newData.child('from').val() + '/' + newData.child('to').val()).exists() && root.child('friendships/' + newData.child('to').val() + '/' + newData.child('from').val()).exists() && !root.child('blocks/' + newData.child('from').val() + '/' + newData.child('to').val()).exists() && !root.child('blocks/' + newData.child('to').val() + '/' + newData.child('from').val()).exists() && (root.child('presence/' + newData.child('to').val() + '/online').val() !== true || !root.child('presence/' + newData.child('to').val() + '/lastHeartbeat').isNumber() || now - root.child('presence/' + newData.child('to').val() + '/lastHeartbeat').val() >= 45000) && newData.child('requestId').val() === $requestId && newData.child('pairKey').val() === newData.child('from').val() + ':' + newData.child('to').val() && newData.child('status').val() === 'pending' && root.child('connectionRequestPairLocks/' + newData.child('pairKey').val() + '/requestId').val() === $requestId) || (data.exists() && !newData.exists() && root.child('users/' + $username + '/uid').val() === auth.uid && (data.child('status').val() === 'accepted' || data.child('status').val() === 'rejected' || data.child('status').val() === 'canceled' || data.child('status').val() === 'expired' || data.child('status').val() === 'failed' || now >= data.child('expiresAt').val())) || (data.exists() && newData.exists() && data.child('status').val() !== 'accepted' && data.child('status').val() !== 'rejected' && data.child('status').val() !== 'canceled' && data.child('status').val() !== 'expired' && data.child('status').val() !== 'failed' && newData.child('requestId').val() === data.child('requestId').val() && newData.child('from').val() === data.child('from').val() && newData.child('to').val() === data.child('to').val() && newData.child('pairKey').val() === data.child('pairKey').val() && newData.child('createdAt').val() === data.child('createdAt').val() && newData.child('expiresAt').val() === data.child('expiresAt').val() && ((newData.child('status').val() === 'seen' && data.child('status').val() === 'pending' && root.child('users/' + data.child('to').val() + '/uid').val() === auth.uid) || (newData.child('status').val() === 'accepted' && now < data.child('expiresAt').val() && (data.child('status').val() === 'pending' || data.child('status').val() === 'seen') && root.child('users/' + data.child('to').val() + '/uid').val() === auth.uid && root.child('connectionRequestPairLocks/' + data.child('pairKey').val() + '/requestId').val() === $requestId) || (newData.child('status').val() === 'rejected' && (data.child('status').val() === 'pending' || data.child('status').val() === 'seen') && root.child('users/' + data.child('to').val() + '/uid').val() === auth.uid && root.child('connectionRequestPairLocks/' + data.child('pairKey').val() + '/requestId').val() === $requestId) || (newData.child('status').val() === 'canceled' && (data.child('status').val() === 'pending' || data.child('status').val() === 'seen') && root.child('users/' + data.child('from').val() + '/uid').val() === auth.uid && root.child('connectionRequestPairLocks/' + data.child('pairKey').val() + '/requestId').val() === $requestId) || (newData.child('status').val() === 'expired' && (data.child('status').val() === 'pending' || data.child('status').val() === 'seen') && now >= data.child('expiresAt').val() && (root.child('users/' + data.child('from').val() + '/uid').val() === auth.uid || root.child('users/' + data.child('to').val() + '/uid').val() === auth.uid)))))",
+          ".validate": "!newData.exists() || (newData.hasChildren(['v', 'requestId', 'from', 'to', 'pairKey', 'status', 'createdAt', 'updatedAt', 'expiresAt']) && newData.child('v').isNumber() && newData.child('v').val() === 1 && newData.child('requestId').isString() && newData.child('requestId').val() === $requestId && newData.child('from').isString() && newData.child('to').isString() && newData.child('to').val() === $username && newData.child('from').val() !== newData.child('to').val() && newData.child('pairKey').isString() && newData.child('pairKey').val() === newData.child('from').val() + ':' + newData.child('to').val() && newData.child('status').isString() && (newData.child('status').val() === 'pending' || newData.child('status').val() === 'seen' || newData.child('status').val() === 'accepted' || newData.child('status').val() === 'rejected' || newData.child('status').val() === 'canceled' || newData.child('status').val() === 'expired' || newData.child('status').val() === 'failed') && newData.child('createdAt').isNumber() && newData.child('updatedAt').isNumber() && newData.child('expiresAt').isNumber() && newData.child('createdAt').val() > 0 && newData.child('updatedAt').val() >= newData.child('createdAt').val() && newData.child('expiresAt').val() > newData.child('createdAt').val() && newData.child('expiresAt').val() - newData.child('createdAt').val() <= 45000 && (data.exists() || (newData.child('createdAt').val() <= now + 30000 && newData.child('updatedAt').val() <= now + 30000 && newData.child('expiresAt').val() > now && newData.child('expiresAt').val() <= now + 120000)) && (!newData.child('reasonCode').exists() || newData.child('reasonCode').isString()) && (!newData.child('seenAt').exists() || newData.child('seenAt').isNumber()) && (!newData.child('respondedAt').exists() || newData.child('respondedAt').isNumber()) && (!newData.child('senderPresenceAt').exists() || newData.child('senderPresenceAt').isNumber()) && (!newData.child('receiverPresenceAt').exists() || newData.child('receiverPresenceAt').isNumber()))",
+          "v": { ".validate": "newData.isNumber() && newData.val() === 1" },
+          "requestId": { ".validate": "newData.isString() && newData.val() === $requestId" },
+          "from": { ".validate": "newData.isString()" },
+          "to": { ".validate": "newData.isString() && newData.val() === $username" },
+          "pairKey": { ".validate": "newData.isString()" },
+          "status": { ".validate": "newData.isString()" },
+          "reasonCode": { ".validate": "newData.isString()" },
+          "createdAt": { ".validate": "newData.isNumber()" },
+          "updatedAt": { ".validate": "newData.isNumber()" },
+          "expiresAt": { ".validate": "newData.isNumber()" },
+          "seenAt": { ".validate": "newData.isNumber()" },
+          "respondedAt": { ".validate": "newData.isNumber()" },
+          "senderPresenceAt": { ".validate": "newData.isNumber()" },
+          "receiverPresenceAt": { ".validate": "newData.isNumber()" },
+          "$other": { ".validate": false }
+        }
+      }
+    },
+    "connectionRequestOutboxes": {
+      "$username": {
+        ".indexOn": ["expiresAt", "status"],
+        ".read": "auth != null && root.child('users/' + $username + '/uid').val() === auth.uid",
+        ".write": false,
+        "$requestId": {
+          ".write": "auth != null && !root.child('security/blockedUids/' + auth.uid).exists() && ((!data.exists() && newData.exists() && root.child('users/' + newData.child('from').val() + '/uid').val() === auth.uid && newData.child('from').val() === $username && newData.child('from').val() !== newData.child('to').val() && root.child('friendships/' + newData.child('from').val() + '/' + newData.child('to').val()).exists() && root.child('friendships/' + newData.child('to').val() + '/' + newData.child('from').val()).exists() && !root.child('blocks/' + newData.child('from').val() + '/' + newData.child('to').val()).exists() && !root.child('blocks/' + newData.child('to').val() + '/' + newData.child('from').val()).exists() && (root.child('presence/' + newData.child('to').val() + '/online').val() !== true || !root.child('presence/' + newData.child('to').val() + '/lastHeartbeat').isNumber() || now - root.child('presence/' + newData.child('to').val() + '/lastHeartbeat').val() >= 45000) && newData.child('requestId').val() === $requestId && newData.child('pairKey').val() === newData.child('from').val() + ':' + newData.child('to').val() && newData.child('status').val() === 'pending' && root.child('connectionRequestPairLocks/' + newData.child('pairKey').val() + '/requestId').val() === $requestId) || (data.exists() && !newData.exists() && root.child('users/' + $username + '/uid').val() === auth.uid && (data.child('status').val() === 'accepted' || data.child('status').val() === 'rejected' || data.child('status').val() === 'canceled' || data.child('status').val() === 'expired' || data.child('status').val() === 'failed' || now >= data.child('expiresAt').val())) || (data.exists() && newData.exists() && data.child('status').val() !== 'accepted' && data.child('status').val() !== 'rejected' && data.child('status').val() !== 'canceled' && data.child('status').val() !== 'expired' && data.child('status').val() !== 'failed' && newData.child('requestId').val() === data.child('requestId').val() && newData.child('from').val() === data.child('from').val() && newData.child('to').val() === data.child('to').val() && newData.child('pairKey').val() === data.child('pairKey').val() && newData.child('createdAt').val() === data.child('createdAt').val() && newData.child('expiresAt').val() === data.child('expiresAt').val() && ((newData.child('status').val() === 'seen' && data.child('status').val() === 'pending' && root.child('users/' + data.child('to').val() + '/uid').val() === auth.uid) || (newData.child('status').val() === 'accepted' && now < data.child('expiresAt').val() && (data.child('status').val() === 'pending' || data.child('status').val() === 'seen') && root.child('users/' + data.child('to').val() + '/uid').val() === auth.uid && root.child('connectionRequestPairLocks/' + data.child('pairKey').val() + '/requestId').val() === $requestId) || (newData.child('status').val() === 'rejected' && (data.child('status').val() === 'pending' || data.child('status').val() === 'seen') && root.child('users/' + data.child('to').val() + '/uid').val() === auth.uid && root.child('connectionRequestPairLocks/' + data.child('pairKey').val() + '/requestId').val() === $requestId) || (newData.child('status').val() === 'canceled' && (data.child('status').val() === 'pending' || data.child('status').val() === 'seen') && root.child('users/' + data.child('from').val() + '/uid').val() === auth.uid && root.child('connectionRequestPairLocks/' + data.child('pairKey').val() + '/requestId').val() === $requestId) || (newData.child('status').val() === 'expired' && (data.child('status').val() === 'pending' || data.child('status').val() === 'seen') && now >= data.child('expiresAt').val() && (root.child('users/' + data.child('from').val() + '/uid').val() === auth.uid || root.child('users/' + data.child('to').val() + '/uid').val() === auth.uid)))))",
+          ".validate": "!newData.exists() || (newData.hasChildren(['v', 'requestId', 'from', 'to', 'pairKey', 'status', 'createdAt', 'updatedAt', 'expiresAt']) && newData.child('v').isNumber() && newData.child('v').val() === 1 && newData.child('requestId').isString() && newData.child('requestId').val() === $requestId && newData.child('from').isString() && newData.child('from').val() === $username && newData.child('to').isString() && newData.child('from').val() !== newData.child('to').val() && newData.child('pairKey').isString() && newData.child('pairKey').val() === newData.child('from').val() + ':' + newData.child('to').val() && newData.child('status').isString() && (newData.child('status').val() === 'pending' || newData.child('status').val() === 'seen' || newData.child('status').val() === 'accepted' || newData.child('status').val() === 'rejected' || newData.child('status').val() === 'canceled' || newData.child('status').val() === 'expired' || newData.child('status').val() === 'failed') && newData.child('createdAt').isNumber() && newData.child('updatedAt').isNumber() && newData.child('expiresAt').isNumber() && newData.child('createdAt').val() > 0 && newData.child('updatedAt').val() >= newData.child('createdAt').val() && newData.child('expiresAt').val() > newData.child('createdAt').val() && newData.child('expiresAt').val() - newData.child('createdAt').val() <= 45000 && (data.exists() || (newData.child('createdAt').val() <= now + 30000 && newData.child('updatedAt').val() <= now + 30000 && newData.child('expiresAt').val() > now && newData.child('expiresAt').val() <= now + 120000)) && (!newData.child('reasonCode').exists() || newData.child('reasonCode').isString()) && (!newData.child('seenAt').exists() || newData.child('seenAt').isNumber()) && (!newData.child('respondedAt').exists() || newData.child('respondedAt').isNumber()) && (!newData.child('senderPresenceAt').exists() || newData.child('senderPresenceAt').isNumber()) && (!newData.child('receiverPresenceAt').exists() || newData.child('receiverPresenceAt').isNumber()))",
+          "v": { ".validate": "newData.isNumber() && newData.val() === 1" },
+          "requestId": { ".validate": "newData.isString() && newData.val() === $requestId" },
+          "from": { ".validate": "newData.isString() && newData.val() === $username" },
+          "to": { ".validate": "newData.isString()" },
+          "pairKey": { ".validate": "newData.isString()" },
+          "status": { ".validate": "newData.isString()" },
+          "reasonCode": { ".validate": "newData.isString()" },
+          "createdAt": { ".validate": "newData.isNumber()" },
+          "updatedAt": { ".validate": "newData.isNumber()" },
+          "expiresAt": { ".validate": "newData.isNumber()" },
+          "seenAt": { ".validate": "newData.isNumber()" },
+          "respondedAt": { ".validate": "newData.isNumber()" },
+          "senderPresenceAt": { ".validate": "newData.isNumber()" },
+          "receiverPresenceAt": { ".validate": "newData.isNumber()" },
+          "$other": { ".validate": false }
+        }
+      }
+    },
+    "connectionRequestQuotaSummaries": {
+      "$username": {
+        ".read": "auth != null && root.child('users/' + $username + '/uid').val() === auth.uid",
+        ".write": false
+      }
+    },
+    "connectionRequestUsage": {
+      "$username": {
+        ".read": "auth != null && root.child('users/' + $username + '/uid').val() === auth.uid",
+        ".write": false,
+        "$dayKey": {
+          ".write": "auth != null && !root.child('security/blockedUids/' + auth.uid).exists() && root.child('users/' + $username + '/uid').val() === auth.uid",
+          ".validate": "!newData.exists() || (newData.hasChildren(['used', 'updatedAt', 'serverAuthority', 'securityLevel']) && newData.child('used').isNumber() && newData.child('used').val() >= 0 && newData.child('used').val() <= 1000 && newData.child('updatedAt').isNumber() && newData.child('serverAuthority').isString() && newData.child('serverAuthority').val() === 'bestEffort' && newData.child('securityLevel').isString() && newData.child('securityLevel').val() === 'sparkRules')",
+          "used": { ".validate": "newData.isNumber() && newData.val() >= 0 && newData.val() <= 1000" },
+          "updatedAt": { ".validate": "newData.isNumber()" },
+          "serverAuthority": { ".validate": "newData.isString() && newData.val() === 'bestEffort'" },
+          "securityLevel": { ".validate": "newData.isString() && newData.val() === 'sparkRules'" },
+          "$other": { ".validate": false }
+        }
+      }
+    },
+    "connectionRequestTargetUsage": {
+      "$username": {
+        ".read": "auth != null && root.child('users/' + $username + '/uid').val() === auth.uid",
+        ".write": false,
+        "$target": {
+          ".write": false,
+          "$dayKey": {
+            ".write": "auth != null && !root.child('security/blockedUids/' + auth.uid).exists() && root.child('users/' + $username + '/uid').val() === auth.uid && $username !== $target",
+            ".validate": "!newData.exists() || (newData.hasChildren(['used', 'updatedAt', 'serverAuthority', 'securityLevel']) && newData.child('used').isNumber() && newData.child('used').val() >= 0 && newData.child('used').val() <= 1000 && newData.child('updatedAt').isNumber() && newData.child('serverAuthority').isString() && newData.child('serverAuthority').val() === 'bestEffort' && newData.child('securityLevel').isString() && newData.child('securityLevel').val() === 'sparkRules')",
+            "used": { ".validate": "newData.isNumber() && newData.val() >= 0 && newData.val() <= 1000" },
+            "updatedAt": { ".validate": "newData.isNumber()" },
+            "serverAuthority": { ".validate": "newData.isString() && newData.val() === 'bestEffort'" },
+            "securityLevel": { ".validate": "newData.isString() && newData.val() === 'sparkRules'" },
+            "$other": { ".validate": false }
+          }
+        }
+      }
+    },
+    "connectionRequestPairLocks": {
+      ".indexOn": ["expiresAt", "status"],
+      ".read": false,
+      ".write": false,
+      "$pairKey": {
+        ".read": "auth != null && !root.child('security/blockedUids/' + auth.uid).exists() && (!data.exists() || root.child('users/' + data.child('from').val() + '/uid').val() === auth.uid || root.child('users/' + data.child('to').val() + '/uid').val() === auth.uid || (data.child('pairKey').val() === $pairKey && data.child('requestId').isString() && (data.child('status').val() === 'accepted' || data.child('status').val() === 'rejected' || data.child('status').val() === 'canceled' || data.child('status').val() === 'expired' || data.child('status').val() === 'failed' || (data.child('expiresAt').isNumber() && now >= data.child('expiresAt').val()))))",
+        ".write": "auth != null && !root.child('security/blockedUids/' + auth.uid).exists() && ((!data.exists() && newData.exists() && root.child('users/' + newData.child('from').val() + '/uid').val() === auth.uid && newData.child('from').val() !== newData.child('to').val() && newData.child('pairKey').val() === $pairKey && newData.child('pairKey').val() === newData.child('from').val() + ':' + newData.child('to').val() && newData.child('status').val() === 'pending' && root.child('friendships/' + newData.child('from').val() + '/' + newData.child('to').val()).exists() && root.child('friendships/' + newData.child('to').val() + '/' + newData.child('from').val()).exists() && !root.child('blocks/' + newData.child('from').val() + '/' + newData.child('to').val()).exists() && !root.child('blocks/' + newData.child('to').val() + '/' + newData.child('from').val()).exists() && (root.child('presence/' + newData.child('to').val() + '/online').val() !== true || !root.child('presence/' + newData.child('to').val() + '/lastHeartbeat').isNumber() || now - root.child('presence/' + newData.child('to').val() + '/lastHeartbeat').val() >= 45000)) || (data.exists() && !newData.exists() && ((data.child('status').val() === 'pending' && root.child('users/' + data.child('from').val() + '/uid').val() === auth.uid) || ((data.child('status').val() === 'accepted' || data.child('status').val() === 'rejected' || data.child('status').val() === 'canceled' || data.child('status').val() === 'expired' || data.child('status').val() === 'failed' || now >= data.child('expiresAt').val()) && (root.child('users/' + data.child('from').val() + '/uid').val() === auth.uid || root.child('users/' + data.child('to').val() + '/uid').val() === auth.uid)) || (data.child('pairKey').val() === $pairKey && data.child('requestId').isString() && (data.child('status').val() === 'accepted' || data.child('status').val() === 'rejected' || data.child('status').val() === 'canceled' || data.child('status').val() === 'expired' || data.child('status').val() === 'failed' || (data.child('expiresAt').isNumber() && now >= data.child('expiresAt').val())) && (!data.child('from').isString() || !data.child('to').isString() || data.child('pairKey').val() !== data.child('from').val() + ':' + data.child('to').val())))) || (data.exists() && newData.exists() && data.child('requestId').val() === newData.child('requestId').val() && data.child('from').val() === newData.child('from').val() && data.child('to').val() === newData.child('to').val() && data.child('pairKey').val() === newData.child('pairKey').val() && data.child('createdAt').val() === newData.child('createdAt').val() && data.child('expiresAt').val() === newData.child('expiresAt').val() && data.child('status').val() !== 'accepted' && data.child('status').val() !== 'rejected' && data.child('status').val() !== 'canceled' && data.child('status').val() !== 'expired' && data.child('status').val() !== 'failed' && ((newData.child('status').val() === 'accepted' && now < data.child('expiresAt').val() && root.child('users/' + data.child('to').val() + '/uid').val() === auth.uid) || (newData.child('status').val() === 'rejected' && root.child('users/' + data.child('to').val() + '/uid').val() === auth.uid) || (newData.child('status').val() === 'canceled' && root.child('users/' + data.child('from').val() + '/uid').val() === auth.uid) || (newData.child('status').val() === 'expired' && now >= data.child('expiresAt').val() && (root.child('users/' + data.child('from').val() + '/uid').val() === auth.uid || root.child('users/' + data.child('to').val() + '/uid').val() === auth.uid)))))",
+        ".validate": "!newData.exists() || (newData.hasChildren(['requestId', 'from', 'to', 'pairKey', 'status', 'createdAt', 'updatedAt', 'expiresAt']) && newData.child('requestId').isString() && newData.child('requestId').val().length > 0 && newData.child('requestId').val().length <= 128 && newData.child('from').isString() && newData.child('to').isString() && newData.child('from').val() !== newData.child('to').val() && newData.child('pairKey').isString() && newData.child('pairKey').val() === $pairKey && newData.child('pairKey').val() === newData.child('from').val() + ':' + newData.child('to').val() && newData.child('status').isString() && (newData.child('status').val() === 'pending' || newData.child('status').val() === 'seen' || newData.child('status').val() === 'accepted' || newData.child('status').val() === 'rejected' || newData.child('status').val() === 'canceled' || newData.child('status').val() === 'expired' || newData.child('status').val() === 'failed') && newData.child('createdAt').isNumber() && newData.child('updatedAt').isNumber() && newData.child('expiresAt').isNumber() && newData.child('createdAt').val() > 0 && newData.child('updatedAt').val() >= newData.child('createdAt').val() && newData.child('expiresAt').val() > newData.child('createdAt').val() && newData.child('expiresAt').val() - newData.child('createdAt').val() <= 45000 && (data.exists() || (newData.child('createdAt').val() <= now + 30000 && newData.child('updatedAt').val() <= now + 30000 && newData.child('expiresAt').val() > now && newData.child('expiresAt').val() <= now + 120000)))",
+        "requestId": { ".validate": "newData.isString()" },
+        "from": { ".validate": "newData.isString()" },
+        "to": { ".validate": "newData.isString()" },
+        "pairKey": { ".validate": "newData.isString() && newData.val() === $pairKey" },
+        "status": { ".validate": "newData.isString()" },
+        "createdAt": { ".validate": "newData.isNumber()" },
+        "updatedAt": { ".validate": "newData.isNumber()" },
+        "expiresAt": { ".validate": "newData.isNumber()" },
+        "$other": { ".validate": false }
+      }
+    },
+    "connectionNotificationConfig": {
+      ".read": false,
+      ".write": false
+    },
+    "connectionNotificationEntitlements": {
+      ".read": false,
+      ".write": false
+    },
+    "connectionNotificationUsage": {
+      ".read": false,
+      ".write": false
+    },
+    "connectionNotificationTargetUsage": {
+      ".read": false,
+      ".write": false
+    },
+    "connectionNotificationMutes": {
+      "$receiver": {
+        ".read": "auth != null && root.child('users/' + $receiver + '/uid').val() === auth.uid",
+        ".write": false,
+        "$sender": {
+          ".write": "auth != null && !root.child('security/blockedUids/' + auth.uid).exists() && root.child('users/' + $receiver + '/uid').val() === auth.uid && $receiver !== $sender",
+          ".validate": "!newData.exists() || (newData.hasChildren(['muted', 'updatedAt']) && newData.child('muted').isBoolean() && newData.child('muted').val() === true && newData.child('updatedAt').isNumber())",
+          "muted": { ".validate": "newData.isBoolean() && newData.val() === true" },
+          "updatedAt": { ".validate": "newData.isNumber()" },
+          "$other": { ".validate": false }
+        }
+      }
+    },
+    "connectionNotificationAudit": {
+      ".read": false,
+      ".write": false
+    },
+    "connectionNotificationAuditSummary": {
+      ".read": false,
+      ".write": false
+    },
+    "connectionNotificationReservations": {
+      ".indexOn": ["expiresAt", "finalized"],
+      ".read": false,
+      ".write": false
     }
   }
 }

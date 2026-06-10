@@ -1,7 +1,6 @@
 import 'package:flutter/material.dart';
 import 'package:go_router/go_router.dart';
 
-import 'package:rain/presentation/branding/rain_ripple_halo_surface.dart';
 import 'package:rain/presentation/widgets/rain_backdrop.dart';
 
 class RainNavigationShell extends StatelessWidget {
@@ -148,21 +147,21 @@ class _BottomNavigation extends StatelessWidget {
       selectedIndex: selectedIndex,
       onDestinationSelected: onDestinationSelected,
       backgroundColor: scheme.surface.withValues(alpha: 0.94),
-      indicatorColor: scheme.primary.withValues(alpha: 0.18),
+      indicatorColor: Colors.transparent,
       destinations: <NavigationDestination>[
         NavigationDestination(
           icon: const Icon(Icons.chat_bubble_outline),
-          selectedIcon: _RainNavigationHaloIcon(icon: Icons.chat_bubble),
+          selectedIcon: const Icon(Icons.chat_bubble),
           label: 'Chats',
         ),
         NavigationDestination(
           icon: const Icon(Icons.person_search_outlined),
-          selectedIcon: _RainNavigationHaloIcon(icon: Icons.person_search),
+          selectedIcon: const Icon(Icons.person_search),
           label: 'Find',
         ),
         NavigationDestination(
           icon: const Icon(Icons.settings_outlined),
-          selectedIcon: _RainNavigationHaloIcon(icon: Icons.settings),
+          selectedIcon: const Icon(Icons.settings),
           label: 'Settings',
         ),
       ],
@@ -190,6 +189,7 @@ class _RailLayout extends StatelessWidget {
           child: NavigationRail(
             selectedIndex: selectedIndex,
             onDestinationSelected: onDestinationSelected,
+            useIndicator: false,
             labelType: NavigationRailLabelType.all,
             minWidth: 86,
             backgroundColor: Theme.of(
@@ -198,19 +198,17 @@ class _RailLayout extends StatelessWidget {
             destinations: <NavigationRailDestination>[
               NavigationRailDestination(
                 icon: const Icon(Icons.chat_bubble_outline),
-                selectedIcon: _RainNavigationHaloIcon(icon: Icons.chat_bubble),
+                selectedIcon: const Icon(Icons.chat_bubble),
                 label: const Text('Chats'),
               ),
               NavigationRailDestination(
                 icon: const Icon(Icons.person_search_outlined),
-                selectedIcon: _RainNavigationHaloIcon(
-                  icon: Icons.person_search,
-                ),
+                selectedIcon: const Icon(Icons.person_search),
                 label: const Text('Find'),
               ),
               NavigationRailDestination(
                 icon: const Icon(Icons.settings_outlined),
-                selectedIcon: _RainNavigationHaloIcon(icon: Icons.settings),
+                selectedIcon: const Icon(Icons.settings),
                 label: const Text('Settings'),
               ),
             ],
@@ -219,24 +217,6 @@ class _RailLayout extends StatelessWidget {
         const VerticalDivider(width: 1),
         Expanded(child: RepaintBoundary(child: child)),
       ],
-    );
-  }
-}
-
-class _RainNavigationHaloIcon extends StatelessWidget {
-  const _RainNavigationHaloIcon({required this.icon});
-
-  final IconData icon;
-
-  @override
-  Widget build(BuildContext context) {
-    return RainRippleHaloSurface(
-      enabled: true,
-      borderRadius: const BorderRadius.all(Radius.circular(18)),
-      pulseKey: icon,
-      pulseOnMount: true,
-      minSize: const Size.square(48),
-      child: Padding(padding: const EdgeInsets.all(8), child: Icon(icon)),
     );
   }
 }

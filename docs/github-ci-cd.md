@@ -1,15 +1,37 @@
 # Rain GitHub CI/CD
 
-Rain uses three GitHub Actions workflow layers:
+Rain uses these GitHub Actions workflow layers:
 
 - `CI`: runs workflow lint, dependency lock drift checks, analyze, tests,
   Firebase emulator integration tests, and debug/demo artifact checks on pushes
   and pull requests.
+- `Fast Release Apps`: manually publishes Android and/or Windows release-page
+  assets after confirming the exact target SHA has already passed `CI/CD`.
+  Android and Windows build in parallel, and each platform uploads as soon as it
+  finishes.
+- `Validated Release Apps`: manually validates the selected ref, builds Android
+  and Windows release artifacts only after validation succeeds, and uploads the
+  final assets to a GitHub release page.
 - `Build Rain Apps`: builds downloadable Windows and Android artifacts through
-  manual `workflow_dispatch`.
-- `Release Rain`: builds production artifacts and publishes a GitHub Release when a `v*` tag is pushed or the workflow is manually dispatched.
+  manual `workflow_dispatch`. Published `rain-test-*` pages are test artifacts
+  only, even when the build profile is `production`.
+- `Release Rain`: manually validates an existing tag/ref, requires Remote
+  Config deploy/readback evidence, builds production artifacts only after the
+  hard gate passes, and publishes a GitHub Release with
+  `rain-release-metadata.json`.
 
 ## Build Artifacts
+
+For Spark/free-tier connection request builds, deploy Realtime Database rules
+before triggering app artifacts. Do not deploy Cloud Functions for this gate.
+Deploy Remote Config only after the matching app artifacts are published when
+the policy is a required update; otherwise old clients can be blocked before a
+download exists.
+
+```powershell
+cd backend/firebase
+firebase deploy --project rain-8fb4b --only database --non-interactive
+```
 
 Use **Actions -> Build Rain Apps -> Run workflow**.
 
@@ -20,7 +42,65 @@ Inputs:
 - `publish_test_release`: when enabled, publishes direct APK/Windows download
   assets to a `rain-test-*` GitHub pre-release.
 
-Demo builds use `apps/rain/tool/dart_defines.example.json`, OpenRelay demo TURN, and a generated demo Android signing key. Demo artifacts are for testing only.
+`rain-test-*` releases are **test artifacts only**. They are useful for direct
+device installs and QA loops, but they are not production-trust releases. The
+published assets include `rain-release-metadata.json` with target ref, commit,
+version, update channel, build profile, artifact purpose, and validation run.
+
+Demo builds use `apps/rain/tool/dart_defines.example.json`, OpenRelay demo TURN,
+and the checked-in public demo Android signing key at
+`apps/rain/android/demo/rain-demo-stable-release.jks.base64`. Demo artifacts are
+for testing only. The demo key is intentionally not a production secret; it
+exists so new demo APKs can install over previous demo APKs during device
+testing. The build fails if that stable demo key is missing; it must not fall
+back to a generated throwaway key because Android would reject later APK updates
+with a signature mismatch.
+The workflow forces `CONNECTION_REQUEST_BACKEND_MODE=rtdbOnly` for demo builds
+so downloadable free-tier artifacts do not depend on callable Cloud Functions.
+The release script also passes Flutter `--build-name` and `--build-number`
+from `apps/rain/pubspec.yaml`, so APK/Windows metadata cannot drift from stale
+local Android build state.
+
+After every released build, update Firebase Remote Config key
+`rain_release_manifest_v1` from `docs/releases/rain_release_manifest_v1.example.json`.
+Old installed apps can only show optional or required update prompts after that
+remote manifest advertises a newer `latestVersion`/`latestBuild` for their
+channel and platform.
+Bump `apps/rain/pubspec.yaml` and both manifest files in the same commit before
+deploying Remote Config; otherwise old builds will correctly report that no
+newer app version exists.
+
+Free-tier release order:
+
+1. Run Dart/Melos validation.
+2. Run Firebase emulator tests.
+3. Deploy RTDB rules if rules changed.
+4. Push `dev`.
+5. Trigger the app artifact workflow.
+6. Verify Android APK and Windows artifacts.
+7. Deploy Remote Config and read it back after the matching artifacts exist.
+
+Cloud Functions mode is stronger but blocked until the Firebase project can use
+Blaze or until the same server-owned logic is moved to an external free backend
+such as Cloudflare Workers.
+
+Latest verified free-tier demo build:
+
+- Date: 2026-05-28.
+- Branch/SHA: `dev` at `5d98ade32eb74174530bcc50aa7b52f8680d606d`.
+- Workflow run:
+  `https://github.com/EslamNabawy/Rain/actions/runs/26594423504`.
+- Direct download pre-release:
+  `https://github.com/EslamNabawy/Rain/releases/tag/rain-test-66-1`.
+- Published assets:
+  - `Rain-Demo-Android-v7a.apk`
+  - `Rain-Demo-Android-v8-v9.apk`
+  - `Rain-Demo-Windows-x64.zip`
+- Build inputs: `platform=all`, `build_profile=demo`,
+  `publish_test_release=true`.
+- Backend mode proof: successful Android and Windows demo jobs forced
+  `CONNECTION_REQUEST_BACKEND_MODE=rtdbOnly` in `rain-defines.json` before
+  building artifacts.
 
 For fast phone installs, keep `publish_test_release` enabled. The workflow
 creates a pre-release with individual APK assets, so Android devices can open
@@ -31,6 +111,95 @@ the release page and download:
 
 The workflow summary also prints direct links to each generated asset. Old
 `rain-test-*` pre-releases are pruned automatically after the latest ten builds.
+
+## Fast Release Apps
+
+Use **Actions -> Fast Release Apps -> Run workflow** when the target commit has
+already passed `CI/CD` and you want the release-page apps faster.
+
+This workflow does not remove validation. It waits for the newest `CI/CD` run
+for the exact target SHA to complete successfully. If that SHA has no successful
+`CI/CD` run, the fast release stops before building.
+
+Inputs:
+
+- `target_ref`: branch, tag, or SHA to release. Default: `dev`.
+- `platform`: `all`, `android`, or `windows`.
+- `build_profile`: `demo` or `production`.
+- `prerelease`: marks the release page as a pre-release.
+- `release_tag`: optional tag. If blank, the workflow creates a `rain-fast-*`
+  tag for demo builds or a `rain-fast-release-*` tag for production builds.
+- `clean_build`: when enabled, deletes Flutter/Gradle project build state before
+  building. Keep it disabled for normal fast builds; enable it only when
+  investigating stale build state or native/dependency changes.
+- `ci_wait_minutes`: how long to wait for `CI/CD` success on the exact SHA.
+
+Fast release behavior:
+
+- Creates the GitHub release page once after the CI gate passes.
+- Production fast releases require `remote_config_evidence_url` proving Remote
+  Config deploy/readback before the release shell is created.
+- Uploads `rain-release-metadata.json` with the CI proof URL and target SHA.
+- Builds Android APKs and Windows portable zip in parallel.
+- Uploads Android APKs to the release page as soon as Android finishes; it does
+  not wait for Windows.
+- Uploads Windows zip as soon as Windows finishes.
+- Keeps direct phone-download APK names:
+  - `Rain-Demo-Android-v7a.apk` or `Rain-Release-Android-v7a.apk`
+  - `Rain-Demo-Android-v8-v9.apk` or `Rain-Release-Android-v8-v9.apk`
+  - `Rain-Demo-Windows-x64.zip` or `Rain-Release-Windows-x64.zip`
+
+Recommended fast testing flow:
+
+1. Push `dev`.
+2. Wait for `CI/CD` to pass on that commit.
+3. Run `Fast Release Apps` with `platform=android` for phone-only testing, or
+   `platform=all` when you also need Windows.
+4. Leave `clean_build=false` unless the artifact looks stale or native build
+   inputs changed.
+
+## Validated Release Apps
+
+Use **Actions -> Validated Release Apps -> Run workflow** when you want one
+workflow to test the selected ref, build the release apps, and publish the
+download files on a GitHub release page.
+
+Inputs:
+
+- `target_ref`: branch, tag, or SHA to validate. Default: `dev`.
+- `platform`: `all`, `android`, or `windows`.
+- `build_profile`: `demo` or `production`.
+- `publish_github_release`: uploads the built assets to a release page.
+- `prerelease`: marks the generated GitHub release as a pre-release.
+- `release_tag`: optional tag. If blank, the workflow creates a
+  `rain-validated-*` tag for demo builds or a `rain-release-*` tag for
+  production builds.
+- `remote_config_evidence_url`: required for production publishing; use the URL
+  for the Remote Config deploy/readback proof.
+
+Validation runs before any release artifact is built:
+
+- workflow lint
+- Dart formatting
+- workspace analyze
+- full workspace tests
+- Firebase JSON validation
+- Firebase Functions lint, audit, and tests
+- Firebase emulator integration tests
+- Obsidian vault validation
+- release evidence gate
+
+The workflow publishes clean direct-download assets:
+
+- `Rain-Demo-Android-v7a.apk` or `Rain-Release-Android-v7a.apk`
+- `Rain-Demo-Android-v8-v9.apk` or `Rain-Release-Android-v8-v9.apk`
+- `Rain-Demo-Windows-x64.zip` or `Rain-Release-Windows-x64.zip`
+- `rain-release-metadata.json`
+
+Demo builds use the Spark/free-tier `rtdbOnly` connection request backend by
+default. Production builds preserve the value in
+`RAIN_RELEASE_DART_DEFINES_JSON`; if it is missing, the workflow writes
+`CONNECTION_REQUEST_BACKEND_MODE=rtdbOnly` before building.
 
 Production builds require the secrets below.
 
@@ -48,13 +217,17 @@ Add these under **Repository Settings -> Secrets and variables -> Actions**:
 
 ## Release
 
-Push a tag like `v1.0.0`, or run **Actions -> Release Rain -> Run workflow** with an existing tag.
+Create the release tag first, then run **Actions -> Release Rain -> Run
+workflow** with that tag and a `remote_config_evidence_url`. Direct tag-push
+publishing is intentionally disabled so production releases cannot bypass the
+hard validation gate or update-policy evidence.
 
 The release workflow publishes:
 
 - Windows portable zip.
 - Android ARM v7 APK: `Rain-release-android-armeabi-v7a.apk`.
 - Android ARM v8/v9 APK: `Rain-release-android-arm64-v8a.apk`.
+- Release metadata: `rain-release-metadata.json`.
 
 The demo artifact workflow publishes:
 

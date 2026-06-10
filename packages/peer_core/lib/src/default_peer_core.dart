@@ -5,6 +5,7 @@ import 'dart:typed_data';
 import 'package:flutter_webrtc/flutter_webrtc.dart';
 import 'package:uuid/uuid.dart';
 
+import 'data_channel_backpressure.dart';
 import 'models.dart';
 import 'state_machine.dart';
 
@@ -16,9 +17,14 @@ const _chunkBufferTtl = Duration(minutes: 2);
 const _disconnectGraceDuration = Duration(seconds: 8);
 
 class DefaultPeerCore implements PeerCore {
-  DefaultPeerCore({Uuid? uuid}) : _uuid = uuid ?? const Uuid();
+  DefaultPeerCore({
+    Uuid? uuid,
+    DataChannelBackpressure backpressure = const DataChannelBackpressure(),
+  }) : _uuid = uuid ?? const Uuid(),
+       _backpressure = backpressure;
 
   final Uuid _uuid;
+  final DataChannelBackpressure _backpressure;
   final PeerStateMachine _stateMachine = PeerStateMachine();
   final StreamController<RTCIceCandidate> _iceController =
       StreamController<RTCIceCandidate>.broadcast();
@@ -38,6 +44,7 @@ class DefaultPeerCore implements PeerCore {
       StreamController<PeerState>.broadcast();
 
   final Map<String, RTCDataChannel> _channels = <String, RTCDataChannel>{};
+  final Map<String, Future<void>> _sendQueues = <String, Future<void>>{};
   final Set<String> _openChannels = <String>{};
   final Map<String, _ChunkAccumulator> _chunkBuffers =
       <String, _ChunkAccumulator>{};
@@ -82,6 +89,14 @@ class DefaultPeerCore implements PeerCore {
 
   @override
   Future<void> addIceCandidate(RTCIceCandidate candidate) async {
+    _emitDebugEvent(
+      'remote_ice_candidate_added',
+      context: <String, Object?>{
+        'candidateLength': candidate.candidate?.length ?? 0,
+        'hasSdpMid': candidate.sdpMid?.isNotEmpty == true,
+        'sdpMLineIndex': candidate.sdpMLineIndex,
+      },
+    );
     await _requirePeerConnection().addCandidate(candidate);
   }
 
@@ -159,6 +174,7 @@ class DefaultPeerCore implements PeerCore {
       _destroying = false;
     }
     _channels.clear();
+    _sendQueues.clear();
     _openChannels.clear();
     await _peerConnection?.close();
     _peerConnection = null;
@@ -242,7 +258,14 @@ class DefaultPeerCore implements PeerCore {
       throw StateError('Channel $channelId is not ready.');
     }
 
-    _sendChunkedIfNeeded(channel, data);
+    if (channelId == PeerChannels.file ||
+        (!_requiresChunking(data) &&
+            !_backpressure.isAboveHighWatermark(channel))) {
+      _sendChunkedIfNeeded(channel, data);
+      return;
+    }
+
+    _enqueueSend(channelId, channel, data);
   }
 
   @override
@@ -457,6 +480,13 @@ class DefaultPeerCore implements PeerCore {
       if (!_isCurrentPeer(connection, epoch)) {
         return;
       }
+      _emitDebugEvent(
+        'data_channel_state',
+        context: <String, Object?>{
+          'channelId': channelId,
+          'state': state.toString(),
+        },
+      );
       if (state == RTCDataChannelState.RTCDataChannelOpen) {
         _openChannels.add(channelId);
         _channelOpenController.add(channelId);
@@ -487,6 +517,16 @@ class DefaultPeerCore implements PeerCore {
       final payload = message.isBinary
           ? Uint8List.fromList(message.binary)
           : message.text;
+      _emitDebugEvent(
+        'data_channel_message_received',
+        context: <String, Object?>{
+          'channelId': channelId,
+          'isBinary': message.isBinary,
+          'byteLength': message.isBinary
+              ? message.binary.lengthInBytes
+              : utf8.encode(message.text).length,
+        },
+      );
       _emitIncomingMessage(channelId, payload);
     };
   }
@@ -580,6 +620,31 @@ class DefaultPeerCore implements PeerCore {
     }
   }
 
+  bool _requiresChunking(dynamic data) {
+    if (data is Uint8List) {
+      return data.lengthInBytes > _maxMessageBytes;
+    }
+    return utf8.encode(data.toString()).length > _maxMessageBytes;
+  }
+
+  void _enqueueSend(String channelId, RTCDataChannel channel, dynamic data) {
+    final previous = _sendQueues[channelId] ?? Future<void>.value();
+    late final Future<void> next;
+    next = previous
+        .catchError((Object _) {
+          // Keep the per-channel queue usable after a previous async send
+          // failed. The original failure is intentionally local to that send.
+        })
+        .then((_) => _sendChunkedIfNeededAsync(channelId, channel, data))
+        .whenComplete(() {
+          if (identical(_sendQueues[channelId], next)) {
+            _sendQueues.remove(channelId);
+          }
+        });
+    _sendQueues[channelId] = next;
+    unawaited(next.catchError((Object _) {}));
+  }
+
   void _sendChunkedIfNeeded(RTCDataChannel channel, dynamic data) {
     if (data is Uint8List) {
       if (data.lengthInBytes <= _maxMessageBytes) {
@@ -620,12 +685,114 @@ class DefaultPeerCore implements PeerCore {
     }
   }
 
+  Future<void> _sendChunkedIfNeededAsync(
+    String channelId,
+    RTCDataChannel channel,
+    dynamic data,
+  ) async {
+    _ensureChannelStillOpen(channelId, channel);
+    if (data is Uint8List) {
+      if (data.lengthInBytes <= _maxMessageBytes) {
+        await _sendWithBackpressure(
+          channelId,
+          channel,
+          RTCDataChannelMessage.fromBinary(data),
+        );
+        return;
+      }
+      await _sendChunkFramesAsync(channelId, channel, data, isBinary: true);
+      return;
+    }
+
+    final text = data.toString();
+    final bytes = Uint8List.fromList(utf8.encode(text));
+    if (bytes.lengthInBytes <= _maxMessageBytes) {
+      await _sendWithBackpressure(
+        channelId,
+        channel,
+        RTCDataChannelMessage(text),
+      );
+      return;
+    }
+    await _sendChunkFramesAsync(channelId, channel, bytes, isBinary: false);
+  }
+
+  Future<void> _sendChunkFramesAsync(
+    String channelId,
+    RTCDataChannel channel,
+    Uint8List payload, {
+    required bool isBinary,
+  }) async {
+    final total = (payload.length / _chunkPayloadBytes).ceil();
+    final chunkId = _uuid.v4();
+    for (var index = 0; index < total; index++) {
+      final start = index * _chunkPayloadBytes;
+      final end = (start + _chunkPayloadBytes).clamp(0, payload.length);
+      final frame = _ChunkFrame(
+        id: chunkId,
+        index: index,
+        total: total,
+        isBinary: isBinary,
+        payload: payload.sublist(start, end),
+      );
+      await _sendWithBackpressure(
+        channelId,
+        channel,
+        RTCDataChannelMessage(frame.toJson()),
+      );
+    }
+  }
+
+  Future<void> _sendWithBackpressure(
+    String channelId,
+    RTCDataChannel channel,
+    RTCDataChannelMessage message,
+  ) async {
+    _ensureChannelStillOpen(channelId, channel);
+    await _backpressure.waitForDrain(channel);
+    _ensureChannelStillOpen(channelId, channel);
+    await channel.send(message);
+  }
+
+  void _ensureChannelStillOpen(String channelId, RTCDataChannel channel) {
+    if (!identical(_channels[channelId], channel) ||
+        channel.state != RTCDataChannelState.RTCDataChannelOpen) {
+      throw StateError('Channel $channelId is not ready.');
+    }
+  }
+
   void _transition(PeerState next) {
     if (state == next) {
       return;
     }
+    final previous = state;
     _stateMachine.transition(next);
+    _emitDebugEvent(
+      'peer_state_changed',
+      context: <String, Object?>{'from': previous.name, 'to': next.name},
+    );
     _stateController.add(next);
+  }
+
+  void _emitDebugEvent(
+    String name, {
+    String severity = 'debug',
+    String? message,
+    Map<String, Object?> context = const <String, Object?>{},
+  }) {
+    _config?.debugEventSink?.call(
+      category: 'webrtc',
+      name: name,
+      severity: severity,
+      message: message,
+      context: <String, Object?>{
+        'scope': 'peer_core',
+        'peerState': state.name,
+        'localCandidateCount': _localCandidates.length,
+        'openChannelCount': _openChannels.length,
+        ...context,
+      },
+    );
   }
 
   bool get _requiredDataChannelsOpen {
@@ -658,6 +825,10 @@ class DefaultPeerCore implements PeerCore {
       if (!_isCurrentPeer(connection, epoch)) {
         return;
       }
+      _emitDebugEvent(
+        'remote_data_channel_received',
+        context: <String, Object?>{'channelId': channel.label},
+      );
       _attachChannel(
         channel.label ?? 'rain.remote',
         channel,
@@ -673,6 +844,13 @@ class DefaultPeerCore implements PeerCore {
       if (event.track.kind != 'audio') {
         return;
       }
+      _emitDebugEvent(
+        'remote_track_received',
+        context: <String, Object?>{
+          'kind': event.track.kind,
+          'streamCount': event.streams.length,
+        },
+      );
       _remoteTrackController.add(
         PeerRemoteTrack(
           track: event.track,
@@ -690,6 +868,15 @@ class DefaultPeerCore implements PeerCore {
         return;
       }
       _localCandidates.add(candidate);
+      _emitDebugEvent(
+        'local_ice_candidate',
+        context: <String, Object?>{
+          'candidateCount': _localCandidates.length,
+          'candidateLength': candidate.candidate?.length ?? 0,
+          'hasSdpMid': candidate.sdpMid?.isNotEmpty == true,
+          'sdpMLineIndex': candidate.sdpMLineIndex,
+        },
+      );
       _iceController.add(candidate);
     };
 
@@ -697,6 +884,10 @@ class DefaultPeerCore implements PeerCore {
       if (!_isCurrentPeer(connection, epoch)) {
         return;
       }
+      _emitDebugEvent(
+        'peer_connection_state',
+        context: <String, Object?>{'state': state.toString()},
+      );
       switch (state) {
         case RTCPeerConnectionState.RTCPeerConnectionStateConnected:
           _cancelPendingDisconnect();

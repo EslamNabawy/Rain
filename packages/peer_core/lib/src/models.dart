@@ -2,6 +2,7 @@ import 'dart:typed_data';
 
 import 'package:flutter_webrtc/flutter_webrtc.dart';
 
+import 'call/call_media_models.dart';
 import 'platform_bridge.dart';
 
 enum PeerState {
@@ -17,6 +18,38 @@ enum PeerState {
 
 enum PeerIceTransportPolicy { all, relayOnly }
 
+enum TurnReadiness {
+  available,
+  unavailableBrokerFailed,
+  unavailableNoRelayServer,
+  notRequiredForCurrentPolicy,
+}
+
+final class TurnReadinessResult {
+  const TurnReadinessResult({
+    required this.readiness,
+    required this.hasRelayServer,
+    this.error,
+  });
+
+  final TurnReadiness readiness;
+  final bool hasRelayServer;
+  final Object? error;
+
+  bool get canUseRelay => readiness == TurnReadiness.available;
+}
+
+final class TurnUnavailableException implements Exception {
+  const TurnUnavailableException(this.readiness);
+
+  final TurnReadinessResult readiness;
+
+  @override
+  String toString() {
+    return 'Relay connection is unavailable. Check TURN configuration.';
+  }
+}
+
 enum PeerAddressFamily { unknown, ipv4, ipv6, mixed }
 
 final class PeerChannels {
@@ -27,6 +60,15 @@ final class PeerChannels {
   const PeerChannels._();
 }
 
+typedef PeerDebugEventSink =
+    void Function({
+      required String category,
+      required String name,
+      String severity,
+      String? message,
+      Map<String, Object?> context,
+    });
+
 class PeerConfig {
   const PeerConfig({
     required this.iceServers,
@@ -36,6 +78,8 @@ class PeerConfig {
     this.iceTransportPolicy = PeerIceTransportPolicy.all,
     this.selectedAudioInputDeviceIdProvider,
     this.selectedVideoInputDeviceIdProvider,
+    this.callMediaProcessingConfigProvider,
+    this.debugEventSink,
   });
 
   final List<Map<String, dynamic>> iceServers;
@@ -45,6 +89,9 @@ class PeerConfig {
   final PeerIceTransportPolicy iceTransportPolicy;
   final Future<String?> Function()? selectedAudioInputDeviceIdProvider;
   final Future<String?> Function()? selectedVideoInputDeviceIdProvider;
+  final Future<CallMediaProcessingConfig> Function()?
+  callMediaProcessingConfigProvider;
+  final PeerDebugEventSink? debugEventSink;
 
   Map<String, dynamic> toRtcConfiguration() {
     return <String, dynamic>{
@@ -65,6 +112,9 @@ class PeerConfig {
     PeerIceTransportPolicy? iceTransportPolicy,
     Future<String?> Function()? selectedAudioInputDeviceIdProvider,
     Future<String?> Function()? selectedVideoInputDeviceIdProvider,
+    Future<CallMediaProcessingConfig> Function()?
+    callMediaProcessingConfigProvider,
+    PeerDebugEventSink? debugEventSink,
   }) {
     return PeerConfig(
       iceServers: iceServers ?? this.iceServers,
@@ -78,6 +128,10 @@ class PeerConfig {
       selectedVideoInputDeviceIdProvider:
           selectedVideoInputDeviceIdProvider ??
           this.selectedVideoInputDeviceIdProvider,
+      callMediaProcessingConfigProvider:
+          callMediaProcessingConfigProvider ??
+          this.callMediaProcessingConfigProvider,
+      debugEventSink: debugEventSink ?? this.debugEventSink,
     );
   }
 
@@ -89,6 +143,33 @@ class PeerConfig {
       return normalized.startsWith('turn:') || normalized.startsWith('turns:');
     });
   });
+
+  TurnReadinessResult turnReadiness({Object? brokerError}) {
+    final hasRelay = hasRelayServer;
+    if (hasRelay) {
+      return TurnReadinessResult(
+        readiness: TurnReadiness.available,
+        hasRelayServer: true,
+        error: brokerError,
+      );
+    }
+    if (iceTransportPolicy != PeerIceTransportPolicy.relayOnly) {
+      return TurnReadinessResult(
+        readiness: brokerError == null
+            ? TurnReadiness.notRequiredForCurrentPolicy
+            : TurnReadiness.unavailableBrokerFailed,
+        hasRelayServer: false,
+        error: brokerError,
+      );
+    }
+    return TurnReadinessResult(
+      readiness: brokerError == null
+          ? TurnReadiness.unavailableNoRelayServer
+          : TurnReadiness.unavailableBrokerFailed,
+      hasRelayServer: false,
+      error: brokerError,
+    );
+  }
 
   RTCDataChannelInit defaultChannelOptions() {
     final options = RTCDataChannelInit()..ordered = ordered;
@@ -564,11 +645,27 @@ abstract class PeerCore {
   Future<void> addIceCandidate(RTCIceCandidate candidate);
   List<RTCIceCandidate> getLocalCandidates();
 
+  /// Legacy connected-peer audio capture path.
+  ///
+  /// Production voice/video calls should use a dedicated media connection
+  /// (`DefaultVoiceMediaConnection` or `DefaultCallMediaConnection`) so call
+  /// media is isolated from chat/data-channel peer lifecycle.
   Future<void> startLocalAudio();
+
+  /// Stops audio captured through the legacy connected-peer media path.
   Future<void> stopLocalAudio();
   Future<void> setMicrophoneMuted({required bool muted});
+
+  /// Legacy connected-peer media renegotiation path.
+  ///
+  /// Kept for compatibility with old diagnostics/tests. App call flows must not
+  /// use this API because it couples call media to the chat/data peer.
   Future<RTCSessionDescription> createMediaOffer();
+
+  /// Applies a media offer on the legacy connected-peer media path.
   Future<RTCSessionDescription> applyMediaOffer(RTCSessionDescription offer);
+
+  /// Applies a media answer on the legacy connected-peer media path.
   Future<void> applyMediaAnswer(RTCSessionDescription answer);
 
   void send(String channelId, dynamic data);

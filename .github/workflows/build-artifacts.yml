@@ -35,12 +35,122 @@ concurrency:
 
 env:
   FLUTTER_VERSION: '3.44.0'
+  JAVA_VERSION: '21'
+  NODE_VERSION: '20'
   BUILD_PROFILE: ${{ github.event_name == 'workflow_dispatch' && inputs.build_profile || 'demo' }}
 
 jobs:
+  hard-release-gate:
+    name: Hard Release Gate
+    runs-on: ubuntu-latest
+    timeout-minutes: 150
+    steps:
+      - uses: actions/checkout@v5
+        with:
+          fetch-depth: 0
+
+      - uses: actions/setup-java@v5
+        with:
+          distribution: temurin
+          java-version: ${{ env.JAVA_VERSION }}
+
+      - uses: actions/setup-node@v6
+        with:
+          node-version: ${{ env.NODE_VERSION }}
+          cache: npm
+          cache-dependency-path: backend/firebase/functions/package-lock.json
+
+      - uses: subosito/flutter-action@v2
+        with:
+          flutter-version: ${{ env.FLUTTER_VERSION }}
+          channel: stable
+          cache: true
+
+      - name: Print toolchain versions
+        run: |
+          flutter doctor -v
+          flutter --version
+          dart --version
+          node --version
+          npm --version
+
+      - name: Restore workspace dependencies
+        run: dart pub get
+
+      - name: Fail on dependency lock drift
+        run: git diff --exit-code -- pubspec.lock
+
+      - name: Enforce Dart formatting
+        run: |
+          dart format --output=none --set-exit-if-changed \
+            apps/rain/lib \
+            apps/rain/test \
+            apps/rain/tool \
+            packages/peer_core/lib \
+            packages/peer_core/test \
+            packages/protocol_brain/lib \
+            packages/protocol_brain/test \
+            packages/rain_core/lib \
+            packages/rain_core/test
+
+      - name: Require generated code artifacts
+        run: |
+          test -s apps/rain/lib/application/state/app_state.freezed.dart
+          test -s packages/rain_core/lib/database/rain_database.g.dart
+
+      - name: Run workspace analyzer
+        run: dart run melos run analyze
+
+      - name: Run full workspace tests
+        run: dart run melos run test
+
+      - name: Run auth lifecycle scenario tests
+        run: |
+          echo "SCN-AUTH-001 cached identity restore after backend deletion"
+          echo "SCN-AUTH-002 login after account tombstone with surviving Auth"
+          echo "SCN-AUTH-003 delete account bad password"
+          echo "SCN-AUTH-004 delete account backend partial failure"
+          cd apps/rain
+          flutter test \
+            test/auth_identity_source_of_truth_test.dart \
+            test/runtime_startup_test.dart \
+            test/settings_screen_test.dart \
+            test/app_routes_test.dart \
+            --reporter expanded
+
+      - name: Validate Firebase JSON files
+        run: |
+          node -e "JSON.parse(require('fs').readFileSync('backend/firebase/firebase.json', 'utf8'))"
+          node -e "JSON.parse(require('fs').readFileSync('backend/firebase/database.rules.json', 'utf8'))"
+
+      - name: Install Firebase function dependencies
+        working-directory: backend/firebase/functions
+        run: npm ci --ignore-scripts --no-audit
+
+      - name: Lint Firebase functions
+        working-directory: backend/firebase/functions
+        run: npm run lint
+
+      - name: Audit Firebase functions dependencies
+        working-directory: backend/firebase/functions
+        run: npm run audit:moderate
+
+      - name: Run Firebase function tests
+        working-directory: backend/firebase/functions
+        run: npm test --if-present
+
+      - name: Run Firebase emulator integration tests
+        run: bash scripts/ci_run_firebase_emulators.sh
+
+      - name: Validate Obsidian vault
+        shell: pwsh
+        run: ./scripts/check_obsidian_vault.ps1
+
   build-windows:
     name: Build Windows
     runs-on: windows-2022
+    needs:
+      - hard-release-gate
     if: ${{ github.event_name != 'workflow_dispatch' || inputs.platform == 'all' || inputs.platform == 'windows' }}
     timeout-minutes: 60
     steps:
@@ -64,6 +174,13 @@ jobs:
             Set-Content -LiteralPath $definesPath -Value $env:RAIN_RELEASE_DART_DEFINES_JSON -Encoding utf8NoBOM
           } else {
             Copy-Item -LiteralPath 'apps\rain\tool\dart_defines.example.json' -Destination $definesPath -Force
+            $defines = Get-Content -Raw -LiteralPath $definesPath | ConvertFrom-Json -ErrorAction Stop
+            if ($null -eq $defines.PSObject.Properties['CONNECTION_REQUEST_BACKEND_MODE']) {
+              $defines | Add-Member -NotePropertyName 'CONNECTION_REQUEST_BACKEND_MODE' -NotePropertyValue 'rtdbOnly'
+            } else {
+              $defines.CONNECTION_REQUEST_BACKEND_MODE = 'rtdbOnly'
+            }
+            $defines | ConvertTo-Json -Depth 20 | Set-Content -LiteralPath $definesPath -Encoding utf8NoBOM
           }
           "RAIN_DART_DEFINES_FILE=$definesPath" | Out-File -FilePath $env:GITHUB_ENV -Encoding utf8 -Append
 
@@ -130,6 +247,8 @@ jobs:
   build-android:
     name: Build Android APKs
     runs-on: windows-2022
+    needs:
+      - hard-release-gate
     if: ${{ github.event_name != 'workflow_dispatch' || inputs.platform == 'all' || inputs.platform == 'android' }}
     timeout-minutes: 90
     steps:
@@ -177,6 +296,13 @@ jobs:
             "RAIN_RELEASE_KEY_PASSWORD=$env:RAIN_RELEASE_KEY_PASSWORD" | Out-File -FilePath $env:GITHUB_ENV -Encoding utf8 -Append
           } else {
             Copy-Item -LiteralPath 'apps\rain\tool\dart_defines.example.json' -Destination $definesPath -Force
+            $defines = Get-Content -Raw -LiteralPath $definesPath | ConvertFrom-Json -ErrorAction Stop
+            if ($null -eq $defines.PSObject.Properties['CONNECTION_REQUEST_BACKEND_MODE']) {
+              $defines | Add-Member -NotePropertyName 'CONNECTION_REQUEST_BACKEND_MODE' -NotePropertyValue 'rtdbOnly'
+            } else {
+              $defines.CONNECTION_REQUEST_BACKEND_MODE = 'rtdbOnly'
+            }
+            $defines | ConvertTo-Json -Depth 20 | Set-Content -LiteralPath $definesPath -Encoding utf8NoBOM
           }
           "RAIN_DART_DEFINES_FILE=$definesPath" | Out-File -FilePath $env:GITHUB_ENV -Encoding utf8 -Append
 
@@ -270,6 +396,8 @@ jobs:
     if: ${{ always() && github.event_name == 'workflow_dispatch' && inputs.publish_test_release == true }}
     timeout-minutes: 20
     steps:
+      - uses: actions/checkout@v5
+
       - name: Validate requested build jobs
         shell: bash
         run: |
@@ -345,6 +473,20 @@ jobs:
           printf 'Prepared direct release assets:\n'
           printf ' - %s\n' "${assets[@]}"
 
+      - name: Write release metadata
+        shell: pwsh
+        run: |
+          $channel = if ($env:BUILD_PROFILE -eq 'demo') { 'demo' } else { 'stable' }
+          ./scripts/write_release_metadata.ps1 `
+            -OutputPath release-assets/publish/rain-release-metadata.json `
+            -TargetRef '${{ github.ref_name }}' `
+            -TargetSha '${{ github.sha }}' `
+            -Channel $channel `
+            -BuildProfile $env:BUILD_PROFILE `
+            -ArtifactPurpose test-artifact `
+            -ValidationWorkflow 'Build Rain Apps' `
+            -ValidationRunUrl '${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}'
+
       - name: Publish GitHub pre-release
         shell: bash
         env:
@@ -362,7 +504,7 @@ jobs:
             --repo "${GITHUB_REPOSITORY}" \
             --target "${GITHUB_SHA}" \
             --title "${title}" \
-            --notes "Direct device downloads for Rain ${BUILD_PROFILE} build from ${GITHUB_SHA}. APK assets are uploaded individually so Android phones can download them without extracting an archive." \
+            --notes "TEST ARTIFACT ONLY. Direct device downloads for Rain ${BUILD_PROFILE} build from ${GITHUB_SHA}. Demo signing is not production trust. APK assets are uploaded individually so Android phones can download them without extracting an archive. See rain-release-metadata.json for validation evidence." \
             --prerelease
 
           {

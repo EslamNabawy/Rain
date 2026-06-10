@@ -1,10 +1,10 @@
 import 'dart:async';
-import 'dart:math' as math;
 
 import 'package:flutter_webrtc/flutter_webrtc.dart';
 
 import '../models.dart';
 import '../platform_bridge.dart';
+import 'audio_level_sampler.dart';
 import 'voice_media_models.dart';
 
 const Map<String, dynamic> _voiceSdpConstraints = <String, dynamic>{
@@ -23,13 +23,14 @@ abstract class VoiceMediaConnection {
   VoiceMediaDiagnostics get diagnostics;
 
   Future<void> startLocalAudio();
-  Future<VoiceSessionDescription> createOffer();
+  Future<VoiceSessionDescription> createOffer({bool iceRestart = false});
   Future<VoiceSessionDescription> acceptOffer(VoiceSessionDescription offer);
   Future<void> applyAnswer(VoiceSessionDescription answer);
   Future<void> addRemoteCandidate(VoiceIceCandidate candidate);
   Future<void> setMuted({required bool muted});
   Future<void> setDeafened({required bool deafened});
   Future<void> setAudioOutputRoute(VoiceMediaOutputRoute route);
+  Future<void> selectAudioOutputDevice(String deviceId);
   Future<void> dispose();
 }
 
@@ -37,11 +38,14 @@ class DefaultVoiceMediaConnection implements VoiceMediaConnection {
   DefaultVoiceMediaConnection({
     required PeerConfig config,
     Duration audioLevelSampleInterval = const Duration(milliseconds: 250),
+    Duration disconnectedFailureTimeout = const Duration(seconds: 12),
   }) : _config = config,
-       _audioLevelSampleInterval = audioLevelSampleInterval;
+       _audioLevelSampleInterval = audioLevelSampleInterval,
+       _disconnectedFailureTimeout = disconnectedFailureTimeout;
 
   final PeerConfig _config;
   final Duration _audioLevelSampleInterval;
+  final Duration _disconnectedFailureTimeout;
   final StreamController<VoiceIceCandidate> _iceController =
       StreamController<VoiceIceCandidate>.broadcast();
   final StreamController<VoiceRemoteAudioTrack> _remoteTrackController =
@@ -63,9 +67,10 @@ class DefaultVoiceMediaConnection implements VoiceMediaConnection {
   MediaStreamTrack? _localAudioTrack;
   Future<void>? _localAudioStartFuture;
   Future<void>? _mediaOperation;
-  final _VoiceAudioLevelStatsSampler _audioLevelStatsSampler =
-      _VoiceAudioLevelStatsSampler();
+  final VoiceAudioLevelStatsSampler _audioLevelStatsSampler =
+      VoiceAudioLevelStatsSampler();
   Timer? _audioLevelTimer;
+  Timer? _disconnectedFailureTimer;
   int _localCandidateCount = 0;
   int _remoteCandidateCount = 0;
   int _connectionEpoch = 0;
@@ -193,7 +198,7 @@ class DefaultVoiceMediaConnection implements VoiceMediaConnection {
   }
 
   @override
-  Future<VoiceSessionDescription> createOffer() async {
+  Future<VoiceSessionDescription> createOffer({bool iceRestart = false}) async {
     return _runMediaOperation<VoiceSessionDescription>(
       'create offer',
       () async {
@@ -201,7 +206,9 @@ class DefaultVoiceMediaConnection implements VoiceMediaConnection {
         final connection = await _ensurePeerConnection();
         final epoch = _connectionEpoch;
         _emitState(VoiceMediaPhase.creatingOffer);
-        final offer = await connection.createOffer(_voiceSdpConstraints);
+        final offer = await connection.createOffer(
+          _voiceSdpConstraintsFor(iceRestart: iceRestart),
+        );
         _ensureCurrentPeerConnection(connection, epoch, 'creating offer');
         await connection.setLocalDescription(offer);
         _ensureCurrentPeerConnection(connection, epoch, 'setting local offer');
@@ -209,6 +216,17 @@ class DefaultVoiceMediaConnection implements VoiceMediaConnection {
         return VoiceSessionDescription.fromRtc(offer);
       },
     );
+  }
+
+  Map<String, dynamic> _voiceSdpConstraintsFor({required bool iceRestart}) {
+    if (!iceRestart) {
+      return _voiceSdpConstraints;
+    }
+    return <String, dynamic>{
+      'mandatory': _voiceSdpConstraints['mandatory'],
+      'optional': _voiceSdpConstraints['optional'],
+      'iceRestart': true,
+    };
   }
 
   @override
@@ -257,6 +275,15 @@ class DefaultVoiceMediaConnection implements VoiceMediaConnection {
       throw StateError('Voice media peer connection has already been closed.');
     }
     _remoteCandidateCount += 1;
+    _emitDebugEvent(
+      'remote_ice_candidate_added',
+      context: <String, Object?>{
+        'scope': 'voice_media',
+        'remoteCandidateCount': _remoteCandidateCount,
+        'pendingRemoteCandidateCount': _pendingRemoteCandidates.length,
+        'candidateLength': candidate.candidate.length,
+      },
+    );
     if (!_remoteDescriptionSet) {
       _pendingRemoteCandidates.add(candidate);
       return;
@@ -315,6 +342,23 @@ class DefaultVoiceMediaConnection implements VoiceMediaConnection {
   }
 
   @override
+  Future<void> selectAudioOutputDevice(String deviceId) async {
+    _ensureNotDisposed();
+    final normalized = deviceId.trim();
+    if (normalized.isEmpty) {
+      throw ArgumentError.value(deviceId, 'deviceId', 'Must not be empty.');
+    }
+    try {
+      await _config.platform.selectAudioOutput(normalized);
+    } catch (error) {
+      _appendDiagnostic(_mediaStates, 'audioOutputDevice failed | $error');
+      _lastError = error.toString();
+      rethrow;
+    }
+    _appendDiagnostic(_mediaStates, 'audioOutputDevice');
+  }
+
+  @override
   Future<void> dispose() async {
     if (_disposed) {
       return;
@@ -324,6 +368,7 @@ class DefaultVoiceMediaConnection implements VoiceMediaConnection {
     _pendingRemoteCandidates.clear();
     _remoteDescriptionSet = false;
     _mediaOperation = null;
+    _cancelDisconnectedFailureTimer();
     _stopAudioLevelSampler();
     final stream = _localStream;
     _localStream = null;
@@ -377,6 +422,13 @@ class DefaultVoiceMediaConnection implements VoiceMediaConnection {
         return;
       }
       _localCandidateCount += 1;
+      _emitDebugEvent(
+        'local_ice_candidate',
+        context: <String, Object?>{
+          'candidateCount': _localCandidateCount,
+          'candidateLength': voiceCandidate.candidate.length,
+        },
+      );
       _iceController.add(voiceCandidate);
     };
     connection.onTrack = (RTCTrackEvent event) {
@@ -385,6 +437,14 @@ class DefaultVoiceMediaConnection implements VoiceMediaConnection {
         return;
       }
       _retainRemoteAudio(event.track, event.streams);
+      _emitDebugEvent(
+        'remote_track_received',
+        context: <String, Object?>{
+          'kind': event.track.kind,
+          'streamCount': event.streams.length,
+          'remoteAudioTrackCount': _remoteAudioTracks.length,
+        },
+      );
       _remoteTrackController.add(
         VoiceRemoteAudioTrack(
           track: event.track,
@@ -398,24 +458,34 @@ class DefaultVoiceMediaConnection implements VoiceMediaConnection {
         return;
       }
       _appendDiagnostic(_iceConnectionStates, state.toString());
+      _emitDebugEvent(
+        'ice_connection_state',
+        context: <String, Object?>{'state': state.toString()},
+      );
       switch (state) {
         case RTCIceConnectionState.RTCIceConnectionStateConnected:
         case RTCIceConnectionState.RTCIceConnectionStateCompleted:
+          _cancelDisconnectedFailureTimer();
           _emitState(VoiceMediaPhase.connected);
           break;
         case RTCIceConnectionState.RTCIceConnectionStateFailed:
+          _cancelDisconnectedFailureTimer();
           _emitState(VoiceMediaPhase.failed, detail: state.toString());
           break;
         case RTCIceConnectionState.RTCIceConnectionStateClosed:
+          _cancelDisconnectedFailureTimer();
           if (!_disposed) {
             _emitState(VoiceMediaPhase.failed, detail: state.toString());
           }
           break;
         case RTCIceConnectionState.RTCIceConnectionStateChecking:
-          _emitState(VoiceMediaPhase.connecting);
+          _emitConnectingUnlessReconnecting();
           break;
         case RTCIceConnectionState.RTCIceConnectionStateNew:
+          break;
         case RTCIceConnectionState.RTCIceConnectionStateDisconnected:
+          _beginDisconnectedRecovery(state.toString());
+          break;
         case RTCIceConnectionState.RTCIceConnectionStateCount:
           break;
       }
@@ -425,23 +495,32 @@ class DefaultVoiceMediaConnection implements VoiceMediaConnection {
         return;
       }
       _appendDiagnostic(_peerConnectionStates, state.toString());
+      _emitDebugEvent(
+        'peer_connection_state',
+        context: <String, Object?>{'state': state.toString()},
+      );
       switch (state) {
         case RTCPeerConnectionState.RTCPeerConnectionStateConnected:
+          _cancelDisconnectedFailureTimer();
           _emitState(VoiceMediaPhase.connected);
           break;
         case RTCPeerConnectionState.RTCPeerConnectionStateFailed:
+          _cancelDisconnectedFailureTimer();
           _emitState(VoiceMediaPhase.failed, detail: state.toString());
           break;
         case RTCPeerConnectionState.RTCPeerConnectionStateClosed:
+          _cancelDisconnectedFailureTimer();
           if (!_disposed) {
             _emitState(VoiceMediaPhase.failed, detail: state.toString());
           }
           break;
         case RTCPeerConnectionState.RTCPeerConnectionStateConnecting:
-          _emitState(VoiceMediaPhase.connecting);
+          _emitConnectingUnlessReconnecting();
           break;
         case RTCPeerConnectionState.RTCPeerConnectionStateNew:
+          break;
         case RTCPeerConnectionState.RTCPeerConnectionStateDisconnected:
+          _beginDisconnectedRecovery(state.toString());
           break;
       }
     };
@@ -493,6 +572,48 @@ class DefaultVoiceMediaConnection implements VoiceMediaConnection {
       }
       operationCompleter.complete();
     }
+  }
+
+  void _emitConnectingUnlessReconnecting() {
+    if (_lastPhase == VoiceMediaPhase.reconnecting) {
+      return;
+    }
+    _emitState(VoiceMediaPhase.connecting);
+  }
+
+  void _beginDisconnectedRecovery(String detail) {
+    if (_disposed ||
+        _lastPhase == VoiceMediaPhase.failed ||
+        _lastPhase == VoiceMediaPhase.disposed) {
+      return;
+    }
+    _emitState(VoiceMediaPhase.reconnecting, detail: detail);
+    _cancelDisconnectedFailureTimer();
+    if (_disconnectedFailureTimeout <= Duration.zero) {
+      _failDisconnectedRecovery(detail);
+      return;
+    }
+    _disconnectedFailureTimer = Timer(
+      _disconnectedFailureTimeout,
+      () => _failDisconnectedRecovery(detail),
+    );
+  }
+
+  void _failDisconnectedRecovery(String detail) {
+    if (_disposed ||
+        _lastPhase != VoiceMediaPhase.reconnecting ||
+        _controllersClosed) {
+      return;
+    }
+    _emitState(
+      VoiceMediaPhase.failed,
+      detail: 'Voice media reconnect timed out after $detail.',
+    );
+  }
+
+  void _cancelDisconnectedFailureTimer() {
+    _disconnectedFailureTimer?.cancel();
+    _disconnectedFailureTimer = null;
   }
 
   Future<void> _prepareVoiceAudio() async {
@@ -723,6 +844,11 @@ class DefaultVoiceMediaConnection implements VoiceMediaConnection {
       if (!_disposed && !_controllersClosed) {
         _appendDiagnostic(_mediaStates, 'audio level stats failed | $error');
         _lastError = error.toString();
+        _emitDebugEvent(
+          'audio_level_stats_failed',
+          severity: 'warning',
+          message: error.toString(),
+        );
         _emitAudioLevel(
           VoiceMediaAudioLevel.unavailable(
             updatedAt: DateTime.now().millisecondsSinceEpoch,
@@ -765,6 +891,12 @@ class DefaultVoiceMediaConnection implements VoiceMediaConnection {
     if (_controllersClosed) {
       return;
     }
+    _emitDebugEvent(
+      'media_state_changed',
+      severity: error == null ? 'debug' : 'error',
+      message: error?.toString(),
+      context: <String, Object?>{'phase': phase.name, 'detail': ?detail},
+    );
     _lastPhase = phase;
     _lastDetail = detail ?? _lastDetail;
     _lastError = error?.toString() ?? _lastError;
@@ -783,6 +915,31 @@ class DefaultVoiceMediaConnection implements VoiceMediaConnection {
         error: error,
         updatedAt: DateTime.now().millisecondsSinceEpoch,
       ),
+    );
+  }
+
+  void _emitDebugEvent(
+    String name, {
+    String severity = 'debug',
+    String? message,
+    Map<String, Object?> context = const <String, Object?>{},
+  }) {
+    _config.debugEventSink?.call(
+      category: 'webrtc',
+      name: name,
+      severity: severity,
+      message: message,
+      context: <String, Object?>{
+        'scope': 'voice_media',
+        'phase': _lastPhase.name,
+        'localCandidateCount': _localCandidateCount,
+        'remoteCandidateCount': _remoteCandidateCount,
+        'pendingRemoteCandidateCount': _pendingRemoteCandidates.length,
+        'remoteAudioTrackCount': _remoteAudioTracks.length,
+        'peerConnectionClosed': _peerConnectionClosed,
+        'disposed': _disposed,
+        ...context,
+      },
     );
   }
 
@@ -812,281 +969,4 @@ class DefaultVoiceMediaConnection implements VoiceMediaConnection {
       target.removeRange(0, target.length - maxDiagnostics);
     }
   }
-}
-
-enum _VoiceAudioLevelSide { local, remote, unknown }
-
-final class _VoiceAudioLevelStatsSampler {
-  final Map<String, _VoiceAudioEnergyPoint> _previousEnergy =
-      <String, _VoiceAudioEnergyPoint>{};
-
-  VoiceMediaAudioLevel sample(
-    Iterable<StatsReport> reports, {
-    required int updatedAt,
-  }) {
-    double? remoteLevel;
-    double? localLevel;
-    var source = VoiceMediaAudioLevelSource.unavailable;
-    final nextEnergy = <String, _VoiceAudioEnergyPoint>{};
-
-    for (final report in reports) {
-      if (!_isAudioReport(report)) {
-        continue;
-      }
-
-      final side = _audioReportSide(report);
-      final directLevel = _directAudioLevel(report.values);
-      if (directLevel != null) {
-        switch (side) {
-          case _VoiceAudioLevelSide.remote:
-            remoteLevel = _maxLevel(remoteLevel, directLevel);
-            source = VoiceMediaAudioLevelSource.audioLevel;
-            break;
-          case _VoiceAudioLevelSide.local:
-            localLevel = _maxLevel(localLevel, directLevel);
-            source = VoiceMediaAudioLevelSource.audioLevel;
-            break;
-          case _VoiceAudioLevelSide.unknown:
-            remoteLevel = _maxLevel(remoteLevel, directLevel);
-            source = VoiceMediaAudioLevelSource.audioLevel;
-            break;
-        }
-      }
-
-      final energy = _VoiceAudioEnergyPoint.fromStats(report.values);
-      if (energy == null) {
-        continue;
-      }
-      if (report.id.isNotEmpty) {
-        nextEnergy[report.id] = energy;
-      }
-      if (directLevel != null) {
-        continue;
-      }
-
-      final previous = _previousEnergy[report.id];
-      final energyLevel = previous == null
-          ? null
-          : _levelFromEnergyDelta(previous: previous, current: energy);
-      if (energyLevel == null) {
-        continue;
-      }
-
-      switch (side) {
-        case _VoiceAudioLevelSide.remote:
-          remoteLevel = _maxLevel(remoteLevel, energyLevel);
-          if (source == VoiceMediaAudioLevelSource.unavailable) {
-            source = VoiceMediaAudioLevelSource.totalAudioEnergy;
-          }
-          break;
-        case _VoiceAudioLevelSide.local:
-          localLevel = _maxLevel(localLevel, energyLevel);
-          if (source == VoiceMediaAudioLevelSource.unavailable) {
-            source = VoiceMediaAudioLevelSource.totalAudioEnergy;
-          }
-          break;
-        case _VoiceAudioLevelSide.unknown:
-          remoteLevel = _maxLevel(remoteLevel, energyLevel);
-          if (source == VoiceMediaAudioLevelSource.unavailable) {
-            source = VoiceMediaAudioLevelSource.totalAudioEnergy;
-          }
-          break;
-      }
-    }
-
-    _previousEnergy
-      ..clear()
-      ..addAll(nextEnergy);
-
-    if (remoteLevel == null && localLevel == null) {
-      return VoiceMediaAudioLevel.unavailable(updatedAt: updatedAt);
-    }
-
-    return VoiceMediaAudioLevel(
-      remoteLevel: remoteLevel ?? 0,
-      localLevel: localLevel ?? 0,
-      updatedAt: updatedAt,
-      source: source,
-    );
-  }
-
-  void reset() {
-    _previousEnergy.clear();
-  }
-}
-
-final class _VoiceAudioEnergyPoint {
-  const _VoiceAudioEnergyPoint({
-    required this.totalAudioEnergy,
-    required this.totalSamplesDuration,
-  });
-
-  final double totalAudioEnergy;
-  final double totalSamplesDuration;
-
-  static _VoiceAudioEnergyPoint? fromStats(Map<dynamic, dynamic> values) {
-    final energy = _doubleStat(values, const <String>['totalAudioEnergy']);
-    final duration = _doubleStat(values, const <String>[
-      'totalSamplesDuration',
-    ]);
-    if (energy == null ||
-        duration == null ||
-        !energy.isFinite ||
-        !duration.isFinite ||
-        energy < 0 ||
-        duration < 0) {
-      return null;
-    }
-    return _VoiceAudioEnergyPoint(
-      totalAudioEnergy: energy,
-      totalSamplesDuration: duration,
-    );
-  }
-}
-
-bool _isAudioReport(StatsReport report) {
-  final kind = _stringStat(report.values, const <String>[
-    'kind',
-    'mediaType',
-    'googTrackKind',
-  ]);
-  if (kind != null) {
-    return kind.toLowerCase() == 'audio';
-  }
-  return _hasAnyStat(report.values, const <String>[
-    'audioLevel',
-    'audioInputLevel',
-    'audioOutputLevel',
-    'totalAudioEnergy',
-    'totalSamplesDuration',
-  ]);
-}
-
-_VoiceAudioLevelSide _audioReportSide(StatsReport report) {
-  final type = report.type.toLowerCase().replaceAll('_', '-');
-  final remoteSource = _boolStat(report.values, const <String>['remoteSource']);
-  if (remoteSource == true ||
-      type.contains('inbound') ||
-      type.contains('receiver')) {
-    return _VoiceAudioLevelSide.remote;
-  }
-  if (remoteSource == false ||
-      type.contains('outbound') ||
-      type.contains('sender') ||
-      type == 'media-source') {
-    return _VoiceAudioLevelSide.local;
-  }
-  final id = report.id.toLowerCase();
-  if (id.contains('remote')) {
-    return _VoiceAudioLevelSide.remote;
-  }
-  if (id.contains('local')) {
-    return _VoiceAudioLevelSide.local;
-  }
-  return _VoiceAudioLevelSide.unknown;
-}
-
-double? _directAudioLevel(Map<dynamic, dynamic> values) {
-  final audioLevel = _doubleStat(values, const <String>['audioLevel']);
-  if (audioLevel != null) {
-    return _clampAudioLevel(audioLevel);
-  }
-  final legacyLevel = _doubleStat(values, const <String>[
-    'audioInputLevel',
-    'audioOutputLevel',
-  ]);
-  if (legacyLevel == null || !legacyLevel.isFinite || legacyLevel <= 0) {
-    return null;
-  }
-  return _clampAudioLevel(legacyLevel / 32768);
-}
-
-double? _levelFromEnergyDelta({
-  required _VoiceAudioEnergyPoint previous,
-  required _VoiceAudioEnergyPoint current,
-}) {
-  final energyDelta = current.totalAudioEnergy - previous.totalAudioEnergy;
-  final durationDelta =
-      current.totalSamplesDuration - previous.totalSamplesDuration;
-  if (energyDelta < 0 || durationDelta <= 0) {
-    return null;
-  }
-  return _clampAudioLevel(math.sqrt(energyDelta / durationDelta));
-}
-
-double _maxLevel(double? current, double next) {
-  if (current == null || next > current) {
-    return next;
-  }
-  return current;
-}
-
-double _clampAudioLevel(double value) {
-  if (value.isNaN || !value.isFinite || value <= 0) {
-    return 0;
-  }
-  if (value >= 1) {
-    return 1;
-  }
-  return value;
-}
-
-Object? _statValue(Map<dynamic, dynamic> values, Iterable<String> keys) {
-  for (final key in keys) {
-    if (values.containsKey(key)) {
-      return values[key];
-    }
-  }
-  final normalized = <String, Object?>{
-    for (final entry in values.entries)
-      entry.key.toString().toLowerCase(): entry.value,
-  };
-  for (final key in keys) {
-    final value = normalized[key.toLowerCase()];
-    if (value != null) {
-      return value;
-    }
-  }
-  return null;
-}
-
-bool _hasAnyStat(Map<dynamic, dynamic> values, Iterable<String> keys) {
-  return _statValue(values, keys) != null;
-}
-
-String? _stringStat(Map<dynamic, dynamic> values, Iterable<String> keys) {
-  final value = _statValue(values, keys);
-  if (value == null) {
-    return null;
-  }
-  final text = value.toString().trim();
-  return text.isEmpty ? null : text;
-}
-
-double? _doubleStat(Map<dynamic, dynamic> values, Iterable<String> keys) {
-  final value = _statValue(values, keys);
-  if (value is num) {
-    return value.toDouble();
-  }
-  if (value is String) {
-    return double.tryParse(value.trim());
-  }
-  return null;
-}
-
-bool? _boolStat(Map<dynamic, dynamic> values, Iterable<String> keys) {
-  final value = _statValue(values, keys);
-  if (value is bool) {
-    return value;
-  }
-  if (value is String) {
-    final normalized = value.trim().toLowerCase();
-    if (normalized == 'true') {
-      return true;
-    }
-    if (normalized == 'false') {
-      return false;
-    }
-  }
-  return null;
 }

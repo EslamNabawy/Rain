@@ -1,7 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
-import 'package:rain/presentation/branding/rain_ripple_halo_surface.dart';
 import 'package:rain/presentation/branding/rain_state_surfaces.dart';
+import 'package:rain/presentation/performance/rain_performance.dart';
 import 'package:rain/presentation/theme/rain_theme.dart';
 
 class AppSectionCard extends StatelessWidget {
@@ -22,45 +22,43 @@ class AppSectionCard extends StatelessWidget {
   Widget build(BuildContext context) {
     final scheme = Theme.of(context).colorScheme;
     final isDark = scheme.brightness == Brightness.dark;
+    final lowPower = RainPerformanceScope.of(context).isLowPower;
     final radius = BorderRadius.circular(18);
 
     return Padding(
       padding: margin ?? EdgeInsets.zero,
-      child: RainRippleHaloSurface(
-        borderRadius: radius,
-        child: DecoratedBox(
-          key: const ValueKey<String>('rain-section-card-surface'),
-          decoration: BoxDecoration(
-            color: scheme.surface.withValues(
-              alpha: isDark
-                  ? RainTextureTokens.panelFillAlphaDark
-                  : RainTextureTokens.panelFillAlphaLight,
-            ),
-            borderRadius: radius,
-            border: Border.all(
-              color:
-                  (isDark
-                          ? RainTextureTokens.cardBorderDark
-                          : RainTextureTokens.cardBorderLight)
-                      .withValues(
-                        alpha: isDark
-                            ? RainTextureTokens.panelBorderAlphaDark
-                            : RainTextureTokens.panelBorderAlphaLight,
-                      ),
-            ),
-            boxShadow: <BoxShadow>[
-              if (elevation > 0)
-                BoxShadow(
-                  blurRadius: 18 + elevation,
-                  offset: const Offset(0, 10),
-                  color: Colors.black.withValues(alpha: isDark ? 0.20 : 0.08),
-                ),
-            ],
+      child: DecoratedBox(
+        key: const ValueKey<String>('rain-section-card-surface'),
+        decoration: BoxDecoration(
+          color: scheme.surface.withValues(
+            alpha: isDark
+                ? RainTextureTokens.panelFillAlphaDark
+                : RainTextureTokens.panelFillAlphaLight,
           ),
-          child: Material(
-            color: Colors.transparent,
-            child: Padding(padding: padding, child: child),
+          borderRadius: radius,
+          border: Border.all(
+            color:
+                (isDark
+                        ? RainTextureTokens.cardBorderDark
+                        : RainTextureTokens.cardBorderLight)
+                    .withValues(
+                      alpha: isDark
+                          ? RainTextureTokens.panelBorderAlphaDark
+                          : RainTextureTokens.panelBorderAlphaLight,
+                    ),
           ),
+          boxShadow: <BoxShadow>[
+            if (elevation > 0 && !lowPower)
+              BoxShadow(
+                blurRadius: 18 + elevation,
+                offset: const Offset(0, 10),
+                color: Colors.black.withValues(alpha: isDark ? 0.20 : 0.08),
+              ),
+          ],
+        ),
+        child: Material(
+          color: Colors.transparent,
+          child: Padding(padding: padding, child: child),
         ),
       ),
     );
@@ -109,6 +107,7 @@ class AppPageFrame extends StatelessWidget {
   Widget build(BuildContext context) {
     final scheme = Theme.of(context).colorScheme;
     final isDark = scheme.brightness == Brightness.dark;
+    final lowPower = RainPerformanceScope.of(context).isLowPower;
 
     return LayoutBuilder(
       builder: (BuildContext context, BoxConstraints constraints) {
@@ -118,26 +117,25 @@ class AppPageFrame extends StatelessWidget {
         return SafeArea(
           child: Padding(
             padding: padding,
-            child: RainRippleHaloSurface(
-              borderRadius: BorderRadius.circular(isCompact ? 24 : 32),
-              child: Container(
-                key: const ValueKey<String>('rain-page-frame-surface'),
-                clipBehavior: Clip.antiAlias,
-                decoration: BoxDecoration(
-                  color: scheme.surface.withValues(
-                    alpha: isDark
-                        ? RainTextureTokens.panelFillAlphaDark
-                        : RainTextureTokens.panelFillAlphaLight,
-                  ),
-                  borderRadius: BorderRadius.circular(isCompact ? 24 : 32),
-                  border: Border.all(
-                    color:
-                        (isDark
-                                ? RainTextureTokens.cardBorderDark
-                                : RainTextureTokens.cardBorderLight)
-                            .withValues(alpha: isDark ? 0.56 : 0.78),
-                  ),
-                  boxShadow: <BoxShadow>[
+            child: Container(
+              key: const ValueKey<String>('rain-page-frame-surface'),
+              clipBehavior: Clip.antiAlias,
+              decoration: BoxDecoration(
+                color: scheme.surface.withValues(
+                  alpha: isDark
+                      ? RainTextureTokens.panelFillAlphaDark
+                      : RainTextureTokens.panelFillAlphaLight,
+                ),
+                borderRadius: BorderRadius.circular(isCompact ? 24 : 32),
+                border: Border.all(
+                  color:
+                      (isDark
+                              ? RainTextureTokens.cardBorderDark
+                              : RainTextureTokens.cardBorderLight)
+                          .withValues(alpha: isDark ? 0.56 : 0.78),
+                ),
+                boxShadow: <BoxShadow>[
+                  if (!lowPower)
                     BoxShadow(
                       blurRadius: isDark ? 32 : 18,
                       color: Colors.black.withValues(
@@ -145,35 +143,34 @@ class AppPageFrame extends StatelessWidget {
                       ),
                       offset: const Offset(0, 16),
                     ),
-                  ],
-                ),
-                child: Column(
-                  children: <Widget>[
-                    Padding(
-                      padding: EdgeInsets.fromLTRB(
-                        isCompact ? 18 : 24,
-                        isCompact ? 18 : 24,
-                        isCompact ? 18 : 24,
-                        14,
-                      ),
-                      child: Row(
-                        children: <Widget>[
-                          Icon(icon, color: scheme.primary),
-                          const SizedBox(width: 12),
-                          Expanded(
-                            child: Text(
-                              title,
-                              style: Theme.of(context).textTheme.headlineSmall,
-                            ),
-                          ),
-                          ...actions,
-                        ],
-                      ),
+                ],
+              ),
+              child: Column(
+                children: <Widget>[
+                  Padding(
+                    padding: EdgeInsets.fromLTRB(
+                      isCompact ? 18 : 24,
+                      isCompact ? 18 : 24,
+                      isCompact ? 18 : 24,
+                      14,
                     ),
-                    const Divider(height: 1),
-                    Expanded(child: child),
-                  ],
-                ),
+                    child: Row(
+                      children: <Widget>[
+                        Icon(icon, color: scheme.primary),
+                        const SizedBox(width: 12),
+                        Expanded(
+                          child: Text(
+                            title,
+                            style: Theme.of(context).textTheme.headlineSmall,
+                          ),
+                        ),
+                        ...actions,
+                      ],
+                    ),
+                  ),
+                  const Divider(height: 1),
+                  Expanded(child: child),
+                ],
               ),
             ),
           ),

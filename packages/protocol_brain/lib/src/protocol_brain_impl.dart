@@ -106,7 +106,7 @@ class ProtocolBrainImpl implements ProtocolBrain {
 
   @override
   Future<void> disconnect(String peerId) async {
-    final active = _sessions[peerId];
+    final active = _sessions.remove(peerId);
     active?.shouldReconnect = false;
     if (active != null) {
       _markPhase(
@@ -115,11 +115,10 @@ class ProtocolBrainImpl implements ProtocolBrain {
         'Disconnecting from peer.',
       );
     }
-    _sessions.remove(peerId);
     if (active != null) {
+      await active.dispose();
       await _deleteRoomSilently(active);
     }
-    await active?.dispose();
     _peerDisconnectedController.add(peerId);
   }
 
@@ -232,6 +231,8 @@ class ProtocolBrainImpl implements ProtocolBrain {
     String peerId,
     RTCSessionDescription offer,
   ) async {
+    // Legacy connected-session media support. App calls use dedicated media
+    // connections so chat/data peer lifecycle cannot dispose active call media.
     final active = _requireConnectedSession(peerId);
     _markPhase(
       active,
@@ -258,6 +259,8 @@ class ProtocolBrainImpl implements ProtocolBrain {
     String peerId,
     RTCSessionDescription answer,
   ) async {
+    // Legacy connected-session media support. App calls use dedicated media
+    // connections so chat/data peer lifecycle cannot dispose active call media.
     final active = _requireConnectedSession(peerId);
     _markPhase(
       active,
@@ -280,6 +283,8 @@ class ProtocolBrainImpl implements ProtocolBrain {
 
   @override
   Future<RTCSessionDescription> createMediaOffer(String peerId) async {
+    // Legacy connected-session media support. App calls use dedicated media
+    // connections so chat/data peer lifecycle cannot dispose active call media.
     final active = _requireConnectedSession(peerId);
     _markPhase(
       active,
@@ -342,6 +347,9 @@ class ProtocolBrainImpl implements ProtocolBrain {
     final config = peerConfigProvider == null
         ? peerConfig.copyWith(iceTransportPolicy: policy)
         : await peerConfigProvider!(policy);
+    _throwIfRelayRequiredButUnavailable(
+      config.copyWith(iceTransportPolicy: policy),
+    );
     return DefaultVoiceMediaConnection(
       config: config.copyWith(iceTransportPolicy: policy),
     );
@@ -354,6 +362,9 @@ class ProtocolBrainImpl implements ProtocolBrain {
     final config = peerConfigProvider == null
         ? peerConfig.copyWith(iceTransportPolicy: policy)
         : await peerConfigProvider!(policy);
+    _throwIfRelayRequiredButUnavailable(
+      config.copyWith(iceTransportPolicy: policy),
+    );
     return DefaultCallMediaConnection(
       config: config.copyWith(iceTransportPolicy: policy),
     );
@@ -421,15 +432,48 @@ class ProtocolBrainImpl implements ProtocolBrain {
       return;
     }
     active.bound = true;
+    final boundPeer = active.peer;
+    final boundGeneration = active.peerGeneration;
+    final boundRoomId = active.roomId;
 
     active.subscriptions.add(
       active.peer.onIceCandidate.listen((RTCIceCandidate candidate) async {
-        _markPhase(
-          active,
-          SessionPhase.exchangingIce,
-          'Sending local ICE candidate.',
-        );
-        await adapter.writeICE(active.roomId, localRole, candidate);
+        await active.runPeerOperation(() async {
+          if (!_canWriteLocalIce(
+            active,
+            boundPeer: boundPeer,
+            boundGeneration: boundGeneration,
+            boundRoomId: boundRoomId,
+          )) {
+            return;
+          }
+          _markPhase(
+            active,
+            SessionPhase.exchangingIce,
+            'Sending local ICE candidate.',
+          );
+          if (!_canWriteLocalIce(
+            active,
+            boundPeer: boundPeer,
+            boundGeneration: boundGeneration,
+            boundRoomId: boundRoomId,
+          )) {
+            return;
+          }
+          try {
+            await adapter.writeICE(active.roomId, localRole, candidate);
+          } catch (error) {
+            if (!_canWriteLocalIce(
+              active,
+              boundPeer: boundPeer,
+              boundGeneration: boundGeneration,
+              boundRoomId: boundRoomId,
+            )) {
+              return;
+            }
+            _handleLocalIceWriteError(active, error);
+          }
+        });
       }),
     );
 
@@ -528,6 +572,21 @@ class ProtocolBrainImpl implements ProtocolBrain {
     );
   }
 
+  bool _canWriteLocalIce(
+    _ActiveSession active, {
+    required PeerCore boundPeer,
+    required int boundGeneration,
+    required String boundRoomId,
+  }) {
+    return _sessions[active.peerId] == active &&
+        active.shouldReconnect &&
+        active.bound &&
+        active.roomId == boundRoomId &&
+        active.peerGeneration == boundGeneration &&
+        identical(active.peer, boundPeer) &&
+        active.snapshot.state != SessionState.failed;
+  }
+
   Future<void> _handlePeerClosed(_ActiveSession active) async {
     if (_sessions[active.peerId] != active || !active.shouldReconnect) {
       return;
@@ -563,7 +622,6 @@ class ProtocolBrainImpl implements ProtocolBrain {
       Future<void>.delayed(_routeRefreshDelay, () => _refreshRoute(active)),
     );
     _peerConnectedController.add(active.snapshot);
-    unawaited(adapter.deleteRoom(active.roomId));
     unawaited(
       connectionMemoryStore.write(
         ConnectionMemory(
@@ -1077,7 +1135,7 @@ class ProtocolBrainImpl implements ProtocolBrain {
   bool _isOfferOwner(String peerId) {
     return _normalizedPeerId(
           selfUsername,
-        ).compareTo(_normalizedPeerId(peerId)) <=
+        ).compareTo(_normalizedPeerId(peerId)) <
         0;
   }
 
@@ -1293,6 +1351,27 @@ class ProtocolBrainImpl implements ProtocolBrain {
     );
   }
 
+  void _handleLocalIceWriteError(_ActiveSession active, Object error) {
+    if (_sessions[active.peerId] != active) {
+      return;
+    }
+    active.stopReconnecting();
+    unawaited(_deleteRoomSilently(active));
+    unawaited(active.disposePeerBindings());
+    final updatedAt = DateTime.now().millisecondsSinceEpoch;
+    _updateSession(
+      active.peerId,
+      active.snapshot.copyWith(
+        state: SessionState.failed,
+        phase: SessionPhase.failed,
+        detail: 'Signaling failed while sending ICE candidate.',
+        updatedAt: updatedAt,
+        error: 'Peer signaling data could not be written: $error',
+        route: PeerConnectionRoute.unknown(updatedAt: updatedAt),
+      ),
+    );
+  }
+
   String _signalingFailureMessage(Object error) {
     if (error is SignalingEncryptionException) {
       return 'Encrypted signaling data could not be read. Make sure both devices use the same latest build and signaling encryption key, then clear stale Firebase rooms before retrying.';
@@ -1451,6 +1530,14 @@ class ProtocolBrainImpl implements ProtocolBrain {
       return config.hasRelayServer;
     } catch (_) {
       return false;
+    }
+  }
+
+  void _throwIfRelayRequiredButUnavailable(PeerConfig config) {
+    final readiness = config.turnReadiness();
+    if (config.iceTransportPolicy == PeerIceTransportPolicy.relayOnly &&
+        !readiness.canUseRelay) {
+      throw TurnUnavailableException(readiness);
     }
   }
 

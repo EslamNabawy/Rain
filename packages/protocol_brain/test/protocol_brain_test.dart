@@ -194,6 +194,60 @@ void main() {
     await brain.disconnect('bob');
   });
 
+  test(
+    'local ICE write failure marks session failed without escaping',
+    () async {
+      final adapter = _RecordingSignalingAdapter()
+        ..writeIceError = Exception('permission denied');
+      late _FakePeerCore peer;
+      final brain = ProtocolBrainImpl(
+        selfUsername: 'alice',
+        adapter: adapter,
+        peerConfig: _fakePeerConfig(),
+        peerFactory: () {
+          peer = _FakePeerCore();
+          return peer;
+        },
+        connectionMemoryStore: _MemoryConnectionStore(),
+      );
+
+      await brain.connect('bob');
+      peer.emitIceCandidate(RTCIceCandidate('candidate:1 1 udp', '0', 0));
+      await pumpEventQueue(times: 3);
+
+      final failed = brain.getSession('bob');
+      expect(failed?.state, SessionState.failed);
+      expect(failed?.phase, SessionPhase.failed);
+      expect(failed?.detail, 'Signaling failed while sending ICE candidate.');
+      expect(failed?.error, contains('permission denied'));
+      expect(adapter.deletedRooms, contains('alice:bob'));
+
+      await brain.disconnect('bob');
+    },
+  );
+
+  test('queued local ICE after disconnect does not write stale room', () async {
+    final adapter = _RecordingSignalingAdapter();
+    late _FakePeerCore peer;
+    final brain = ProtocolBrainImpl(
+      selfUsername: 'alice',
+      adapter: adapter,
+      peerConfig: _fakePeerConfig(),
+      peerFactory: () {
+        peer = _FakePeerCore();
+        return peer;
+      },
+      connectionMemoryStore: _MemoryConnectionStore(),
+    );
+
+    await brain.connect('bob');
+    peer.emitIceCandidate(RTCIceCandidate('candidate:1 1 udp', '0', 0));
+    await brain.disconnect('bob');
+    await pumpEventQueue(times: 4);
+
+    expect(adapter.writtenIce, isEmpty);
+  });
+
   test('session changes are emitted when peer becomes connected', () async {
     final adapter = _RecordingSignalingAdapter();
     late _FakePeerCore peer;
@@ -242,6 +296,41 @@ void main() {
     await subscription.cancel();
     await brain.disconnect('bob');
   });
+
+  test(
+    'connected session keeps signaling room alive for late local ICE',
+    () async {
+      final adapter = _RecordingSignalingAdapter()
+        ..denyIceWritesAfterRoomDelete = true;
+      late _FakePeerCore peer;
+      final brain = ProtocolBrainImpl(
+        selfUsername: 'alice',
+        adapter: adapter,
+        peerConfig: _fakePeerConfig(),
+        peerFactory: () {
+          peer = _FakePeerCore();
+          return peer;
+        },
+        connectionMemoryStore: _MemoryConnectionStore(),
+      );
+
+      await brain.connect('bob');
+      peer.emitConnected();
+      await pumpEventQueue(times: 3);
+
+      expect(brain.getSession('bob')?.state, SessionState.connected);
+      expect(adapter.roomExists('alice:bob'), isTrue);
+
+      peer.emitIceCandidate(RTCIceCandidate('candidate:late 1 udp', '0', 0));
+      await pumpEventQueue(times: 3);
+
+      expect(adapter.writtenIce, <String>['alice:bob:caller']);
+      expect(brain.getSession('bob')?.state, SessionState.connected);
+
+      await brain.disconnect('bob');
+      expect(adapter.roomExists('alice:bob'), isFalse);
+    },
+  );
 
   test('reconnect clears stale route until a new route is detected', () async {
     final adapter = _RecordingSignalingAdapter();
@@ -823,6 +912,36 @@ void main() {
       'uid': 'uid-1',
     });
   });
+
+  test('backend identity serializes optional presence session metadata', () {
+    const identity = BackendIdentity(
+      username: 'alice',
+      uid: 'uid-1',
+      displayName: 'Alice',
+      gender: null,
+      registeredAt: 1,
+      lastSeen: 2,
+      lastHeartbeat: 3,
+      online: true,
+      presenceSessionId: 'session-1',
+      presenceStartedAt: 4,
+      presenceState: 'online',
+    );
+
+    expect(identity.toFirebaseJson(), <String, Object?>{
+      'username': 'alice',
+      'displayName': 'Alice',
+      'gender': null,
+      'registeredAt': 1,
+      'lastSeen': 2,
+      'lastHeartbeat': 3,
+      'online': true,
+      'uid': 'uid-1',
+      'presenceSessionId': 'session-1',
+      'presenceStartedAt': 4,
+      'presenceState': 'online',
+    });
+  });
 }
 
 PeerConfig _fakePeerConfig() {
@@ -835,10 +954,14 @@ PeerConfig _fakePeerConfig() {
 class _RecordingSignalingAdapter implements SignalingAdapter {
   final List<String> writtenOffers = <String>[];
   final List<String> writtenAnswers = <String>[];
+  final List<String> writtenIce = <String>[];
   final List<String> deletedRooms = <String>[];
+  final Set<String> _existingRooms = <String>{};
   final List<SDPPayload> writtenOfferPayloads = <SDPPayload>[];
   final Map<String, SDPPayload> storedAnswers = <String, SDPPayload>{};
   Object? writeOfferError;
+  Object? writeIceError;
+  bool denyIceWritesAfterRoomDelete = false;
   final Map<String, StreamController<SDPPayload>> _offerControllers =
       <String, StreamController<SDPPayload>>{};
   final Map<String, StreamController<SDPPayload>> _answerControllers =
@@ -850,10 +973,24 @@ class _RecordingSignalingAdapter implements SignalingAdapter {
   Future<void> ensureAuthenticated() async {}
 
   @override
+  Future<void> ensureSignedInAs(String username) async {}
+
+  @override
   Future<String> currentUid() async => 'uid';
 
   @override
   Future<void> signOut() async {}
+
+  @override
+  Future<void> reauthenticate(String username, String password) async {}
+
+  @override
+  Future<void> deleteAccount(
+    String username, {
+    Future<void> Function()? beforeAuthDeletion,
+  }) async {
+    await beforeAuthDeletion?.call();
+  }
 
   @override
   Future<String> register(String username, String password) async => 'uid';
@@ -867,12 +1004,14 @@ class _RecordingSignalingAdapter implements SignalingAdapter {
     if (error != null) {
       throw error;
     }
+    _existingRooms.add(roomId);
     writtenOffers.add(roomId);
     writtenOfferPayloads.add(offer);
   }
 
   @override
   Future<void> writeAnswer(String roomId, SDPPayload answer) async {
+    _existingRooms.add(roomId);
     writtenAnswers.add(roomId);
     storedAnswers[roomId] = answer;
   }
@@ -882,7 +1021,16 @@ class _RecordingSignalingAdapter implements SignalingAdapter {
     String roomId,
     IceRole role,
     RTCIceCandidate candidate,
-  ) async {}
+  ) async {
+    final error = writeIceError;
+    if (error != null) {
+      throw error;
+    }
+    if (denyIceWritesAfterRoomDelete && !_existingRooms.contains(roomId)) {
+      throw Exception('room deleted');
+    }
+    writtenIce.add('$roomId:${role.name}');
+  }
 
   @override
   Stream<SDPPayload> onAnswer(String roomId) {
@@ -915,6 +1063,7 @@ class _RecordingSignalingAdapter implements SignalingAdapter {
   }
 
   void emitOffer(String roomId, SDPPayload offer) {
+    _existingRooms.add(roomId);
     _offerControllers
         .putIfAbsent(roomId, () => StreamController<SDPPayload>.broadcast())
         .add(offer);
@@ -1012,8 +1161,11 @@ class _RecordingSignalingAdapter implements SignalingAdapter {
   @override
   Future<void> deleteRoom(String roomId) async {
     deletedRooms.add(roomId);
+    _existingRooms.remove(roomId);
     storedAnswers.remove(roomId);
   }
+
+  bool roomExists(String roomId) => _existingRooms.contains(roomId);
 
   @override
   Future<void> dispose() async {
@@ -1211,6 +1363,10 @@ class _FakePeerCore implements PeerCore {
     _state = PeerState.connected;
     _stateController.add(_state);
     _connectedController.add(null);
+  }
+
+  void emitIceCandidate(RTCIceCandidate candidate) {
+    _iceController.add(candidate);
   }
 
   void emitDisconnected() {

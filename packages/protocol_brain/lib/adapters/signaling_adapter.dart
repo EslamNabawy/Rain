@@ -2,8 +2,14 @@ import 'package:flutter_webrtc/flutter_webrtc.dart';
 
 abstract class SignalingAdapter {
   Future<void> ensureAuthenticated();
+  Future<void> ensureSignedInAs(String username);
   Future<String> currentUid();
   Future<void> signOut();
+  Future<void> reauthenticate(String username, String password);
+  Future<void> deleteAccount(
+    String username, {
+    Future<void> Function()? beforeAuthDeletion,
+  });
 
   Future<String> register(String username, String password);
   Future<String> login(String username, String password);
@@ -54,6 +60,32 @@ class SignalingSessionExpiredException implements Exception {
   String toString() => message;
 }
 
+enum AccountDeletionFailureKind {
+  reauthenticationFailed,
+  backendCleanupFailed,
+  authDeletionFailed,
+  sessionExpired,
+  permissionDenied,
+  unknown,
+}
+
+class AccountDeletionException implements Exception {
+  const AccountDeletionException({
+    required this.kind,
+    required this.message,
+    required this.destructiveActionStarted,
+    this.cause,
+  });
+
+  final AccountDeletionFailureKind kind;
+  final String message;
+  final bool destructiveActionStarted;
+  final Object? cause;
+
+  @override
+  String toString() => message;
+}
+
 enum IceRole { caller, callee }
 
 class SDPPayload {
@@ -95,6 +127,9 @@ class BackendIdentity {
     required this.lastSeen,
     required this.lastHeartbeat,
     required this.online,
+    this.presenceSessionId,
+    this.presenceStartedAt,
+    this.presenceState,
   });
 
   final String username;
@@ -105,6 +140,9 @@ class BackendIdentity {
   final int lastSeen;
   final int lastHeartbeat;
   final bool online;
+  final String? presenceSessionId;
+  final int? presenceStartedAt;
+  final String? presenceState;
 
   Map<String, Object?> toFirebaseJson() {
     return <String, Object?>{
@@ -116,6 +154,9 @@ class BackendIdentity {
       'lastHeartbeat': lastHeartbeat,
       'online': online,
       'uid': uid,
+      if (presenceSessionId != null) 'presenceSessionId': presenceSessionId,
+      if (presenceStartedAt != null) 'presenceStartedAt': presenceStartedAt,
+      if (presenceState != null) 'presenceState': presenceState,
     };
   }
 }

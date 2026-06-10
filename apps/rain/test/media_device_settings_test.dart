@@ -1,3 +1,4 @@
+import 'package:flutter/foundation.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:flutter_webrtc/flutter_webrtc.dart';
 import 'package:protocol_brain/protocol_brain.dart';
@@ -192,6 +193,234 @@ void main() {
     },
   );
 
+  test('adaptive profile maps desktop to button refresh and pointer input', () {
+    final profile = AdaptiveDeviceProfile.resolve(
+      targetPlatform: TargetPlatform.windows,
+      width: 1280,
+      lowPower: false,
+    );
+
+    expect(profile.platform, AdaptiveDevicePlatform.windows);
+    expect(profile.interactionMode, AdaptiveInteractionMode.pointer);
+    expect(profile.viewportClass, AdaptiveViewportClass.desktop);
+    expect(profile.refreshMode, AdaptiveRefreshMode.button);
+    expect(profile.usesRefreshButton, isTrue);
+  });
+
+  test('adaptive profile maps Android compact to pull refresh', () {
+    final profile = AdaptiveDeviceProfile.resolve(
+      targetPlatform: TargetPlatform.android,
+      width: 390,
+      lowPower: true,
+    );
+
+    expect(profile.platform, AdaptiveDevicePlatform.android);
+    expect(profile.interactionMode, AdaptiveInteractionMode.touch);
+    expect(profile.viewportClass, AdaptiveViewportClass.compact);
+    expect(profile.refreshMode, AdaptiveRefreshMode.pull);
+    expect(profile.lowPower, isTrue);
+  });
+
+  test(
+    'adaptive media snapshot hides output control on single-output desktop',
+    () {
+      final snapshot = AdaptiveMediaCapabilitySnapshot(
+        profile: AdaptiveDeviceProfile.resolve(
+          targetPlatform: TargetPlatform.windows,
+          width: 1280,
+          lowPower: false,
+        ),
+        videoInput: const VideoInputCapabilityState(devices: []),
+        audioOutput: const AudioOutputCapabilityState(
+          devices: <RainMediaDevice>[
+            RainMediaDevice(
+              deviceId: 'speaker-1',
+              label: 'Laptop speaker',
+              kind: audioOutputDeviceKind,
+            ),
+          ],
+        ),
+      );
+
+      expect(snapshot.supportsAudioOutputSelection, isFalse);
+      expect(snapshot.shouldShowOutputSelector, isFalse);
+      expect(snapshot.outputTargets, isEmpty);
+      expect(
+        snapshot.filterCallControls(const <CallControlCapability>[
+          CallControlCapability.microphone,
+          CallControlCapability.outputRoute,
+          CallControlCapability.hangUp,
+        ]),
+        const <CallControlCapability>[
+          CallControlCapability.microphone,
+          CallControlCapability.hangUp,
+        ],
+      );
+    },
+  );
+
+  test('adaptive media snapshot exposes real desktop outputs only', () {
+    final snapshot = AdaptiveMediaCapabilitySnapshot(
+      profile: AdaptiveDeviceProfile.resolve(
+        targetPlatform: TargetPlatform.windows,
+        width: 1280,
+        lowPower: false,
+      ),
+      videoInput: const VideoInputCapabilityState(devices: []),
+      audioOutput: const AudioOutputCapabilityState(
+        devices: <RainMediaDevice>[
+          RainMediaDevice(
+            deviceId: 'realtek',
+            label: 'Realtek Speakers',
+            kind: audioOutputDeviceKind,
+          ),
+          RainMediaDevice(
+            deviceId: 'headset',
+            label: 'USB Headset',
+            kind: audioOutputDeviceKind,
+          ),
+        ],
+      ),
+    );
+
+    expect(snapshot.supportsAudioOutputSelection, isTrue);
+    expect(snapshot.shouldShowOutputSelector, isTrue);
+    expect(
+      snapshot.outputTargets.map(
+        (AdaptiveAudioOutputTarget target) => target.label,
+      ),
+      <String>['System default', 'Realtek Speakers', 'USB Headset'],
+    );
+    expect(
+      snapshot.outputTargets.map(
+        (AdaptiveAudioOutputTarget target) => target.target.kind,
+      ),
+      <CallAudioOutputTargetKind>[
+        CallAudioOutputTargetKind.systemDefault,
+        CallAudioOutputTargetKind.desktopDevice,
+        CallAudioOutputTargetKind.desktopDevice,
+      ],
+    );
+  });
+
+  test('adaptive media snapshot keeps Android speaker route available', () {
+    final snapshot = AdaptiveMediaCapabilitySnapshot(
+      profile: AdaptiveDeviceProfile.resolve(
+        targetPlatform: TargetPlatform.android,
+        width: 390,
+        lowPower: false,
+      ),
+      videoInput: const VideoInputCapabilityState(devices: []),
+      audioOutput: const AudioOutputCapabilityState(devices: []),
+    );
+
+    expect(snapshot.supportsAudioOutputSelection, isTrue);
+    expect(
+      snapshot.outputTargets.map(
+        (AdaptiveAudioOutputTarget target) => target.label,
+      ),
+      <String>['Phone audio', 'Speakerphone'],
+    );
+    expect(
+      snapshot.filterCallControls(const <CallControlCapability>[
+        CallControlCapability.microphone,
+        CallControlCapability.outputRoute,
+        CallControlCapability.hangUp,
+      ]),
+      const <CallControlCapability>[
+        CallControlCapability.microphone,
+        CallControlCapability.outputRoute,
+        CallControlCapability.hangUp,
+      ],
+    );
+  });
+
+  test(
+    'adaptive media snapshot exposes Android wired and bluetooth when present',
+    () {
+      final snapshot = AdaptiveMediaCapabilitySnapshot(
+        profile: AdaptiveDeviceProfile.resolve(
+          targetPlatform: TargetPlatform.android,
+          width: 390,
+          lowPower: false,
+        ),
+        videoInput: const VideoInputCapabilityState(devices: []),
+        audioOutput: const AudioOutputCapabilityState(
+          devices: <RainMediaDevice>[
+            RainMediaDevice(
+              deviceId: 'wired',
+              label: 'USB-C Wired Headset',
+              kind: audioOutputDeviceKind,
+            ),
+            RainMediaDevice(
+              deviceId: 'buds',
+              label: 'Galaxy Buds Bluetooth',
+              kind: audioOutputDeviceKind,
+            ),
+          ],
+        ),
+      );
+
+      expect(snapshot.supportsAudioOutputSelection, isTrue);
+      expect(
+        snapshot.outputTargets.map(
+          (AdaptiveAudioOutputTarget target) => target.label,
+        ),
+        <String>['Wired headset', 'Speakerphone', 'Bluetooth'],
+      );
+      expect(
+        snapshot.outputTargets.map(
+          (AdaptiveAudioOutputTarget target) => target.target.kind,
+        ),
+        <CallAudioOutputTargetKind>[
+          CallAudioOutputTargetKind.wiredHeadset,
+          CallAudioOutputTargetKind.androidSpeakerphone,
+          CallAudioOutputTargetKind.bluetooth,
+        ],
+      );
+    },
+  );
+
+  test('adaptive media snapshot hides unsupported route switching', () {
+    final snapshot = AdaptiveMediaCapabilitySnapshot(
+      profile: AdaptiveDeviceProfile.resolve(
+        targetPlatform: TargetPlatform.fuchsia,
+        width: 720,
+        lowPower: false,
+      ),
+      videoInput: const VideoInputCapabilityState(devices: []),
+      audioOutput: const AudioOutputCapabilityState(
+        devices: <RainMediaDevice>[
+          RainMediaDevice(
+            deviceId: 'output-1',
+            label: 'Output 1',
+            kind: audioOutputDeviceKind,
+          ),
+          RainMediaDevice(
+            deviceId: 'output-2',
+            label: 'Output 2',
+            kind: audioOutputDeviceKind,
+          ),
+        ],
+      ),
+    );
+
+    expect(snapshot.supportsAudioOutputSelection, isFalse);
+    expect(snapshot.shouldShowOutputSelector, isFalse);
+    expect(snapshot.outputTargets, isEmpty);
+    expect(
+      snapshot.filterCallControls(const <CallControlCapability>[
+        CallControlCapability.microphone,
+        CallControlCapability.outputRoute,
+        CallControlCapability.hangUp,
+      ]),
+      const <CallControlCapability>[
+        CallControlCapability.microphone,
+        CallControlCapability.hangUp,
+      ],
+    );
+  });
+
   test('selected microphone persists and resolves when available', () async {
     final platform = _FakePlatformBridge()
       ..devices = <MediaDeviceInfo>[
@@ -364,11 +593,23 @@ void main() {
       expect(state.availableVideoInputCount, 2);
       expect(state.devices.first.displayLabel(0), 'Camera 1');
       expect(state.labelsAvailable, isFalse);
-      expect(state.supportsCameraSwitch, isFalse);
+      expect(state.supportsCameraSwitch, isTrue);
       expect(state.likelyHasRearFacingCamera, isFalse);
       expect(
         state.devices.map((RainMediaDevice device) => device.cameraFacing),
         <RainCameraFacing>[RainCameraFacing.unknown, RainCameraFacing.unknown],
+      );
+      expect(
+        state.filterCallControls(const <CallControlCapability>[
+          CallControlCapability.camera,
+          CallControlCapability.switchCamera,
+          CallControlCapability.hangUp,
+        ]),
+        const <CallControlCapability>[
+          CallControlCapability.camera,
+          CallControlCapability.switchCamera,
+          CallControlCapability.hangUp,
+        ],
       );
     },
   );

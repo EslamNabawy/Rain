@@ -1,17 +1,22 @@
+import 'dart:async';
+
 import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
+import 'package:protocol_brain/protocol_brain.dart';
 import 'package:rain_core/rain_core.dart';
+import 'package:url_launcher/url_launcher_string.dart';
 
 import 'package:rain/application/audio/sound_event_router.dart';
+import 'package:rain/application/runtime/connection_request_state.dart';
 import 'package:rain/presentation/navigation/app_routes.dart';
 import 'package:rain/application/runtime/media_device_settings.dart';
 import 'package:rain/application/state/app_providers.dart';
 import 'package:rain/application/state/sound_event_providers.dart';
 import 'package:rain/infrastructure/services/crash_diagnostics_service.dart';
 import 'package:rain/infrastructure/services/app_settings_store.dart';
-import 'package:rain/presentation/branding/rain_ripple_halo_surface.dart';
+import 'package:rain/infrastructure/services/force_update_service.dart';
 import 'package:rain/presentation/branding/rain_state_surfaces.dart';
 import 'package:rain/presentation/screens/splash_screen.dart';
 import 'package:rain/presentation/widgets/app_components.dart';
@@ -27,6 +32,23 @@ String _formatSettingsError(Object error) {
     }
   }
   return raw;
+}
+
+String _manualUpdateCheckMessage(VersionCheckResult result) {
+  return switch (result.status) {
+    VersionCheckStatus.updateRequired =>
+      'Update required: Rain ${result.displayLatestVersion} build ${result.displayLatestBuild} is available.',
+    VersionCheckStatus.optionalUpdateAvailable =>
+      'Update available: Rain ${result.displayLatestVersion} build ${result.displayLatestBuild}.',
+    VersionCheckStatus.current =>
+      'Rain is up to date: ${result.currentVersion} build ${result.displayCurrentBuild}.',
+    VersionCheckStatus.remotePolicyOutdated =>
+      'Update policy is behind this app: installed Rain ${result.currentVersion} build ${result.displayCurrentBuild}, latest known ${result.displayLatestVersion} build ${result.displayLatestBuild}.',
+    VersionCheckStatus.checkUnavailable =>
+      result.failureReason ?? 'Could not verify update status. Try again.',
+    VersionCheckStatus.invalidConfig =>
+      result.failureReason ?? 'Remote update config is invalid.',
+  };
 }
 
 class SettingsScreen extends ConsumerStatefulWidget {
@@ -57,7 +79,16 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen> {
     final microphones = ref.watch(microphoneSelectionProvider);
     final cameras = ref.watch(videoInputCapabilityProvider);
     final audioSettings = ref.watch(voiceAudioSettingsProvider);
+    final callProcessingSettings = ref.watch(callProcessingSettingsProvider);
     final audioOutputCapabilities = ref.watch(audioOutputCapabilityProvider);
+    final updateStatus = ref.watch(forceUpdateProvider);
+    final connectionRequests = ref.watch(connectionRequestProvider);
+    final connectionRequestBackendMode = ref
+        .watch(appEnvironmentProvider)
+        .connectionRequestBackendMode;
+    final connectionRequestSettings = ref.watch(
+      connectionRequestSettingsProvider,
+    );
     final outputCapabilities =
         audioOutputCapabilities.value ??
         const AudioOutputCapabilityState(devices: []);
@@ -111,14 +142,32 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen> {
           const SizedBox(height: 24),
           const AppSectionTitle(title: 'Session'),
           AppSectionCard(
-            child: ListTile(
-              leading: Icon(
-                Icons.logout,
-                color: Theme.of(context).colorScheme.error,
-              ),
-              title: const Text('Log out'),
-              subtitle: const Text('Clear Rain session on this device'),
-              onTap: runtime == null ? null : () => _confirmLogOut(context),
+            child: Column(
+              children: <Widget>[
+                ListTile(
+                  leading: Icon(
+                    Icons.logout,
+                    color: Theme.of(context).colorScheme.error,
+                  ),
+                  title: const Text('Log out'),
+                  subtitle: const Text('Clear Rain session on this device'),
+                  onTap: runtime == null ? null : () => _confirmLogOut(context),
+                ),
+                const Divider(height: 1),
+                ListTile(
+                  leading: Icon(
+                    Icons.delete_forever,
+                    color: Theme.of(context).colorScheme.error,
+                  ),
+                  title: const Text('Delete account'),
+                  subtitle: const Text(
+                    'Delete backend account data and clear this device',
+                  ),
+                  onTap: runtime == null || identity == null
+                      ? null
+                      : () => _confirmDeleteAccount(context, identity),
+                ),
+              ],
             ),
           ),
           const SizedBox(height: 24),
@@ -162,6 +211,34 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen> {
                   onTest: _testingMicrophone
                       ? null
                       : () => _testMicrophone(context, ref),
+                ),
+                const Divider(height: 1),
+                callProcessingSettings.when(
+                  data: (settings) => _ClearVoiceTile(
+                    enabled: settings.clearVoiceEnabled,
+                    isBusy: false,
+                    onChanged: (bool enabled) =>
+                        _setClearVoiceEnabled(context, ref, enabled),
+                  ),
+                  error: (Object error, StackTrace stackTrace) => ListTile(
+                    leading: Icon(
+                      Icons.noise_control_off,
+                      color: Theme.of(context).colorScheme.error,
+                    ),
+                    title: const Text('Clear voice unavailable'),
+                    subtitle: Text(_formatSettingsError(error)),
+                    trailing: IconButton(
+                      tooltip: 'Retry clear voice',
+                      onPressed: () =>
+                          ref.invalidate(callProcessingSettingsProvider),
+                      icon: const Icon(Icons.refresh),
+                    ),
+                  ),
+                  loading: () => _ClearVoiceTile(
+                    enabled: true,
+                    isBusy: true,
+                    onChanged: (_) {},
+                  ),
                 ),
                 const Divider(height: 1),
                 audioSettings.when(
@@ -216,33 +293,65 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen> {
           const SizedBox(height: 24),
           const AppSectionTitle(title: 'Call Video'),
           AppSectionCard(
-            child: cameras.when(
-              data: (state) => RainCameraSelector(
-                state: state,
-                isBusy: false,
-                onRefresh: () => _refreshCameras(ref),
-                onSelected: (String? deviceId) =>
-                    _selectCamera(context, ref, deviceId),
-              ),
-              error: (Object error, StackTrace stackTrace) => ListTile(
-                leading: Icon(
-                  Icons.videocam_off,
-                  color: Theme.of(context).colorScheme.error,
+            child: Column(
+              children: <Widget>[
+                cameras.when(
+                  data: (state) => RainCameraSelector(
+                    state: state,
+                    isBusy: false,
+                    onRefresh: () => _refreshCameras(ref),
+                    onSelected: (String? deviceId) =>
+                        _selectCamera(context, ref, deviceId),
+                  ),
+                  error: (Object error, StackTrace stackTrace) => ListTile(
+                    leading: Icon(
+                      Icons.videocam_off,
+                      color: Theme.of(context).colorScheme.error,
+                    ),
+                    title: const Text('Cameras unavailable'),
+                    subtitle: Text(_formatSettingsError(error)),
+                    trailing: IconButton(
+                      tooltip: 'Refresh cameras',
+                      onPressed: () => _refreshCameras(ref),
+                      icon: const Icon(Icons.refresh),
+                    ),
+                  ),
+                  loading: () => RainCameraSelector(
+                    state: const VideoInputCapabilityState(devices: []),
+                    isBusy: true,
+                    onRefresh: () {},
+                    onSelected: (_) {},
+                  ),
                 ),
-                title: const Text('Cameras unavailable'),
-                subtitle: Text(_formatSettingsError(error)),
-                trailing: IconButton(
-                  tooltip: 'Refresh cameras',
-                  onPressed: () => _refreshCameras(ref),
-                  icon: const Icon(Icons.refresh),
+                const Divider(height: 1),
+                callProcessingSettings.when(
+                  data: (settings) => _AutoVideoOptimizeTile(
+                    enabled: settings.autoVideoOptimizeEnabled,
+                    isBusy: false,
+                    onChanged: (bool enabled) =>
+                        _setAutoVideoOptimizeEnabled(context, ref, enabled),
+                  ),
+                  error: (Object error, StackTrace stackTrace) => ListTile(
+                    leading: Icon(
+                      Icons.speed,
+                      color: Theme.of(context).colorScheme.error,
+                    ),
+                    title: const Text('Video optimization unavailable'),
+                    subtitle: Text(_formatSettingsError(error)),
+                    trailing: IconButton(
+                      tooltip: 'Retry video optimization',
+                      onPressed: () =>
+                          ref.invalidate(callProcessingSettingsProvider),
+                      icon: const Icon(Icons.refresh),
+                    ),
+                  ),
+                  loading: () => _AutoVideoOptimizeTile(
+                    enabled: true,
+                    isBusy: true,
+                    onChanged: (_) {},
+                  ),
                 ),
-              ),
-              loading: () => RainCameraSelector(
-                state: const VideoInputCapabilityState(devices: []),
-                isBusy: true,
-                onRefresh: () {},
-                onSelected: (_) {},
-              ),
+              ],
             ),
           ),
           const SizedBox(height: 24),
@@ -308,6 +417,30 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen> {
             ),
           ),
           const SizedBox(height: 24),
+          const AppSectionTitle(title: 'Connection Requests'),
+          _ConnectionRequestSettingsSection(
+            state: connectionRequests,
+            settings: connectionRequestSettings,
+            audioSettings: audioSettings,
+            backendMode: connectionRequestBackendMode,
+            onNotificationsEnabledChanged: (bool enabled) =>
+                _setConnectionRequestNotificationsEnabled(
+                  context,
+                  ref,
+                  enabled,
+                ),
+            onSoundEnabledChanged: (bool enabled) =>
+                _setConnectionRequestSoundsEnabled(context, ref, enabled),
+            onShowMinimizedChanged: (bool enabled) =>
+                _setShowConnectionRequestNotificationsWhenMinimized(
+                  context,
+                  ref,
+                  enabled,
+                ),
+            onUnmute: (String peerId) =>
+                _unmuteConnectionRequestSender(context, ref, peerId),
+          ),
+          const SizedBox(height: 24),
           const AppSectionTitle(title: 'Diagnostics'),
           AppSectionCard(
             child: Column(
@@ -355,6 +488,19 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen> {
                   ),
                 ],
               ],
+            ),
+          ),
+          const SizedBox(height: 24),
+          const AppSectionTitle(title: 'About Rain'),
+          AppSectionCard(
+            child: _AboutRainSection(
+              updateStatus: updateStatus,
+              onCheckForUpdates: () {
+                _checkForUpdates(context);
+              },
+              onOpenReleasePage: () {
+                _openReleasePage(context);
+              },
             ),
           ),
           const SizedBox(height: 24),
@@ -529,6 +675,61 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen> {
     );
   }
 
+  Future<void> _setConnectionRequestSoundsEnabled(
+    BuildContext context,
+    WidgetRef ref,
+    bool enabled,
+  ) {
+    return _runConnectionRequestSettingsAction(
+      context,
+      () => ref
+          .read(voiceAudioSettingsProvider.notifier)
+          .setConnectionRequestSoundsEnabled(enabled),
+    );
+  }
+
+  Future<void> _setConnectionRequestNotificationsEnabled(
+    BuildContext context,
+    WidgetRef ref,
+    bool enabled,
+  ) {
+    return _runConnectionRequestSettingsAction(
+      context,
+      () => ref
+          .read(connectionRequestSettingsProvider.notifier)
+          .setNotificationsEnabled(enabled),
+    );
+  }
+
+  Future<void> _setShowConnectionRequestNotificationsWhenMinimized(
+    BuildContext context,
+    WidgetRef ref,
+    bool enabled,
+  ) {
+    return _runConnectionRequestSettingsAction(
+      context,
+      () => ref
+          .read(connectionRequestSettingsProvider.notifier)
+          .setShowNotificationsWhenMinimized(enabled),
+    );
+  }
+
+  Future<void> _unmuteConnectionRequestSender(
+    BuildContext context,
+    WidgetRef ref,
+    String peerId,
+  ) {
+    return _runConnectionRequestSettingsAction(context, () async {
+      final state = ref.read(connectionRequestProvider);
+      if (state.available) {
+        await ref.read(connectionRequestProvider.notifier).unmute(peerId);
+      }
+      await ref
+          .read(connectionRequestSettingsProvider.notifier)
+          .removeMutedSender(peerId);
+    });
+  }
+
   Future<void> _setReduceSoundsDuringCall(
     BuildContext context,
     WidgetRef ref,
@@ -555,6 +756,38 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen> {
     );
   }
 
+  Future<void> _setClearVoiceEnabled(
+    BuildContext context,
+    WidgetRef ref,
+    bool enabled,
+  ) {
+    return _runCallProcessingSettingsAction(context, () async {
+      await ref
+          .read(callProcessingSettingsProvider.notifier)
+          .setClearVoiceEnabled(enabled);
+      await ref
+          .read(runtimeControllerProvider)
+          .value
+          ?.refreshCallMediaProcessingConfig();
+    });
+  }
+
+  Future<void> _setAutoVideoOptimizeEnabled(
+    BuildContext context,
+    WidgetRef ref,
+    bool enabled,
+  ) {
+    return _runCallProcessingSettingsAction(context, () async {
+      await ref
+          .read(callProcessingSettingsProvider.notifier)
+          .setAutoVideoOptimizeEnabled(enabled);
+      await ref
+          .read(runtimeControllerProvider)
+          .value
+          ?.refreshCallMediaProcessingConfig();
+    });
+  }
+
   Future<void> _runAudioSettingsAction(
     BuildContext context,
     Future<void> Function() action,
@@ -576,6 +809,116 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen> {
         ),
       );
     }
+  }
+
+  Future<void> _runConnectionRequestSettingsAction(
+    BuildContext context,
+    Future<void> Function() action,
+  ) async {
+    final messenger = ScaffoldMessenger.of(context);
+    final errorColor = Theme.of(context).colorScheme.error;
+    try {
+      await action();
+    } catch (error) {
+      if (!context.mounted) {
+        return;
+      }
+      messenger.showSnackBar(
+        SnackBar(
+          content: Text(
+            'Could not update connection request setting: ${_formatSettingsError(error)}',
+          ),
+          backgroundColor: errorColor,
+        ),
+      );
+    }
+  }
+
+  Future<void> _runCallProcessingSettingsAction(
+    BuildContext context,
+    Future<void> Function() action,
+  ) async {
+    final messenger = ScaffoldMessenger.of(context);
+    final errorColor = Theme.of(context).colorScheme.error;
+    try {
+      await action();
+    } catch (error) {
+      if (!context.mounted) {
+        return;
+      }
+      messenger.showSnackBar(
+        SnackBar(
+          content: Text(
+            'Could not update call processing: ${_formatSettingsError(error)}',
+          ),
+          backgroundColor: errorColor,
+        ),
+      );
+    }
+  }
+
+  Future<void> _checkForUpdates(BuildContext context) async {
+    final messenger = ScaffoldMessenger.of(context);
+    final errorColor = Theme.of(context).colorScheme.error;
+    final environment = ref.read(appEnvironmentProvider);
+    await ref.read(forceUpdateProvider.notifier).refresh();
+    final result = ref.read(forceUpdateProvider);
+    if (!context.mounted) {
+      return;
+    }
+    if (result.hasError) {
+      messenger.showSnackBar(
+        SnackBar(
+          content: Text(
+            'Could not check for updates: ${_formatSettingsError(result.error!)}',
+          ),
+          backgroundColor: errorColor,
+        ),
+      );
+      return;
+    }
+    final value = result.value;
+    if (value == null) {
+      messenger.showSnackBar(
+        SnackBar(
+          content: const Text(
+            'Update check did not return a result. Try again.',
+          ),
+          backgroundColor: errorColor,
+        ),
+      );
+      return;
+    }
+
+    final updateUrl = value.updateUrl.trim().isNotEmpty
+        ? value.updateUrl
+        : environment.forceUpdateUrl;
+    messenger.showSnackBar(
+      SnackBar(
+        content: Text(_manualUpdateCheckMessage(value)),
+        backgroundColor: switch (value.status) {
+          VersionCheckStatus.invalidConfig ||
+          VersionCheckStatus.remotePolicyOutdated ||
+          VersionCheckStatus.checkUnavailable => errorColor,
+          _ => null,
+        },
+        action: value.requiresUpdate || value.hasOptionalUpdate
+            ? SnackBarAction(
+                label: 'Open',
+                onPressed: () => unawaited(launchUrlString(updateUrl)),
+              )
+            : null,
+      ),
+    );
+  }
+
+  Future<void> _openReleasePage(BuildContext context) async {
+    final result = ref.read(forceUpdateProvider).value;
+    final fallback = ref.read(appEnvironmentProvider).forceUpdateUrl;
+    final url = result?.updateUrl.trim().isNotEmpty == true
+        ? result!.updateUrl
+        : fallback;
+    await launchUrlString(url);
   }
 
   Future<void> _confirmLogOut(BuildContext context) async {
@@ -613,6 +956,82 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen> {
         ),
       );
     }
+  }
+
+  Future<void> _confirmDeleteAccount(
+    BuildContext context,
+    RainIdentity identity,
+  ) async {
+    final errorColor = Theme.of(context).colorScheme.error;
+
+    final confirmed = await showAppConfirmDialog(
+      context: context,
+      title: 'Delete account',
+      message:
+          'This will delete @${identity.username}, remove account-owned Rain backend data, and clear this device. This cannot be undone.',
+      confirmLabel: 'Delete account',
+      confirmStyle: FilledButton.styleFrom(backgroundColor: errorColor),
+    );
+    if (confirmed != true || !context.mounted) {
+      return;
+    }
+
+    final password = await showAppTextInputDialog(
+      context: context,
+      title: 'Confirm password',
+      labelText: 'Password',
+      helperText: 'Required before account deletion starts',
+      confirmLabel: 'Delete account',
+      obscureText: true,
+      maxLength: 50,
+    );
+    if (password == null || password.isEmpty || !context.mounted) {
+      return;
+    }
+
+    try {
+      await ref
+          .read(runtimeControllerProvider.notifier)
+          .deleteAccount(password: password);
+      if (!context.mounted) {
+        return;
+      }
+      context.goNamed(AppRoutes.home);
+    } catch (error) {
+      if (!context.mounted) {
+        return;
+      }
+      await _showSettingsErrorDialog(
+        context: context,
+        title: 'Could not delete account',
+        message: _formatSettingsError(error),
+        errorColor: errorColor,
+      );
+    }
+  }
+
+  Future<void> _showSettingsErrorDialog({
+    required BuildContext context,
+    required String title,
+    required String message,
+    required Color errorColor,
+  }) {
+    return showDialog<void>(
+      context: context,
+      builder: (BuildContext context) {
+        return AlertDialog(
+          title: Text(title),
+          content: Text(message),
+          actions: <Widget>[
+            FilledButton(
+              style: FilledButton.styleFrom(backgroundColor: errorColor),
+              onPressed: () => Navigator.of(context).pop(),
+              child: const Text('OK'),
+            ),
+          ],
+        );
+      },
+    );
   }
 
   Future<void> _showEditGender(
@@ -685,8 +1104,11 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen> {
         return;
       }
       if (result.saved) {
+        final location = result.platformManaged
+            ? 'selected document'
+            : result.path;
         messenger.showSnackBar(
-          SnackBar(content: Text('Diagnostics exported to ${result.path}')),
+          SnackBar(content: Text('Diagnostics exported to $location')),
         );
       }
     } catch (error) {
@@ -710,6 +1132,333 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen> {
 }
 
 enum _ProfileAction { editDisplayName, editGender }
+
+class _ConnectionRequestSettingsSection extends StatelessWidget {
+  const _ConnectionRequestSettingsSection({
+    required this.state,
+    required this.settings,
+    required this.audioSettings,
+    required this.backendMode,
+    required this.onNotificationsEnabledChanged,
+    required this.onSoundEnabledChanged,
+    required this.onShowMinimizedChanged,
+    required this.onUnmute,
+  });
+
+  final ConnectionRequestState state;
+  final AsyncValue<AppConnectionRequestSettings> settings;
+  final AsyncValue<AppAudioSettings> audioSettings;
+  final ConnectionRequestBackendMode backendMode;
+  final ValueChanged<bool> onNotificationsEnabledChanged;
+  final ValueChanged<bool> onSoundEnabledChanged;
+  final ValueChanged<bool> onShowMinimizedChanged;
+  final ValueChanged<String> onUnmute;
+
+  @override
+  Widget build(BuildContext context) {
+    final requestSettings =
+        settings.value ?? const AppConnectionRequestSettings();
+    final soundSettings = audioSettings.value ?? const AppAudioSettings();
+    final isBusy = settings.isLoading || audioSettings.isLoading;
+    final Object? error = settings.hasError
+        ? settings.error
+        : audioSettings.hasError
+        ? audioSettings.error
+        : null;
+    final sparkMode = backendMode == ConnectionRequestBackendMode.rtdbOnly;
+    final pendingInbound = state.incomingSurfaces
+        .where((surface) => !surface.status.isTerminal)
+        .length;
+    final pendingOutbound = state.outgoingSurfaces
+        .where((surface) => !surface.status.isTerminal)
+        .length;
+    final status = state.available
+        ? '$pendingInbound inbound pending | $pendingOutbound outbound pending'
+        : 'Connection request service is unavailable.';
+    return AppSectionCard(
+      child: Column(
+        children: <Widget>[
+          ListTile(
+            leading: Icon(
+              error == null
+                  ? Icons.notifications_active_outlined
+                  : Icons.error_outline,
+              color: error == null ? null : Theme.of(context).colorScheme.error,
+            ),
+            title: const Text('Connection request prompts'),
+            subtitle: Text(
+              error == null ? status : _formatSettingsError(error),
+            ),
+          ),
+          const Divider(height: 1),
+          if (sparkMode) ...<Widget>[
+            const ListTile(
+              leading: Icon(Icons.bolt_outlined),
+              title: Text('Spark mode'),
+              subtitle: Text('Spark mode uses best-effort request limits.'),
+            ),
+            const Divider(height: 1),
+          ],
+          SwitchListTile(
+            secondary: const Icon(Icons.notifications_outlined),
+            title: const Text('Connection request notifications'),
+            subtitle: Text(
+              requestSettings.notificationsEnabled
+                  ? 'OS notifications are allowed.'
+                  : 'Only in-app prompts are shown.',
+            ),
+            value: requestSettings.notificationsEnabled,
+            onChanged: isBusy ? null : onNotificationsEnabledChanged,
+          ),
+          const Divider(height: 1),
+          SwitchListTile(
+            secondary: const Icon(Icons.water_drop_outlined),
+            title: const Text('Connection request sound'),
+            subtitle: Text(
+              soundSettings.connectionRequestSoundsEnabled ? 'On' : 'Off',
+            ),
+            value: soundSettings.connectionRequestSoundsEnabled,
+            onChanged: isBusy ? null : onSoundEnabledChanged,
+          ),
+          const Divider(height: 1),
+          SwitchListTile(
+            secondary: const Icon(Icons.web_asset_outlined),
+            title: const Text('Show notifications when minimized'),
+            subtitle: Text(
+              requestSettings.showNotificationsWhenMinimized
+                  ? 'Rain can notify while the window is hidden.'
+                  : 'Minimized windows use in-app prompts only.',
+            ),
+            value: requestSettings.showNotificationsWhenMinimized,
+            onChanged: isBusy || !requestSettings.notificationsEnabled
+                ? null
+                : onShowMinimizedChanged,
+          ),
+          const Divider(height: 1),
+          _ConnectionRequestQuotaTile(
+            quota: state.quota,
+            showServerEntitlements: !sparkMode,
+          ),
+          const Divider(height: 1),
+          _MutedConnectionRequestSendersTile(
+            senders: requestSettings.mutedRequestSenders,
+            isBusy: isBusy,
+            onUnmute: onUnmute,
+          ),
+        ],
+      ),
+    );
+  }
+}
+
+class _ConnectionRequestQuotaTile extends StatelessWidget {
+  const _ConnectionRequestQuotaTile({
+    required this.quota,
+    required this.showServerEntitlements,
+  });
+
+  final ConnectionRequestQuotaSnapshot? quota;
+  final bool showServerEntitlements;
+
+  @override
+  Widget build(BuildContext context) {
+    final quota = this.quota;
+    if (quota == null) {
+      return const ListTile(
+        leading: Icon(Icons.speed_outlined),
+        title: Text('Request quota'),
+        subtitle: Text('Quota summary unavailable. Pull latest state first.'),
+      );
+    }
+    final remaining = _remainingConnectionRequests(
+      quota,
+      includeExtraCredits: showServerEntitlements,
+    );
+    final details = <String>[
+      '$remaining request${remaining == 1 ? '' : 's'} left today',
+      '${quota.perTargetRemainingToday} per peer',
+      '${quota.pendingOutboundCount} outbound pending',
+      '${quota.pendingInboundCount} inbound pending',
+      if (showServerEntitlements && quota.extraCreditsRemaining > 0)
+        '${quota.extraCreditsRemaining} extra credit${quota.extraCreditsRemaining == 1 ? '' : 's'}',
+      if (showServerEntitlements && quota.unlimitedUntil != null)
+        'unlimited entitlement active',
+      if (quota.disabled) 'feature disabled',
+    ].join(' | ');
+    return ListTile(
+      leading: const Icon(Icons.speed_outlined),
+      title: const Text('Request quota'),
+      subtitle: Text('Read-only from Firebase. $details.'),
+    );
+  }
+}
+
+class _MutedConnectionRequestSendersTile extends StatelessWidget {
+  const _MutedConnectionRequestSendersTile({
+    required this.senders,
+    required this.isBusy,
+    required this.onUnmute,
+  });
+
+  final Set<String> senders;
+  final bool isBusy;
+  final ValueChanged<String> onUnmute;
+
+  @override
+  Widget build(BuildContext context) {
+    final sorted = senders.toList(growable: false)..sort();
+    if (sorted.isEmpty) {
+      return const ListTile(
+        leading: Icon(Icons.notifications_active_outlined),
+        title: Text('Muted request senders'),
+        subtitle: Text('No muted senders.'),
+      );
+    }
+    return Column(
+      children: <Widget>[
+        const ListTile(
+          leading: Icon(Icons.notifications_off_outlined),
+          title: Text('Muted request senders'),
+          subtitle: Text('Unmute only changes the selected sender row.'),
+        ),
+        for (final sender in sorted) ...<Widget>[
+          const Divider(height: 1),
+          ListTile(
+            key: ValueKey<String>('muted-connection-request-sender-$sender'),
+            leading: const Icon(Icons.person_off_outlined),
+            title: Text('@$sender'),
+            trailing: TextButton(
+              key: ValueKey<String>('unmute-connection-request-sender-$sender'),
+              onPressed: isBusy ? null : () => onUnmute(sender),
+              child: const Text('Unmute'),
+            ),
+          ),
+        ],
+      ],
+    );
+  }
+}
+
+int _remainingConnectionRequests(
+  ConnectionRequestQuotaSnapshot quota, {
+  required bool includeExtraCredits,
+}) {
+  final remaining =
+      quota.dailyLimit +
+      (includeExtraCredits ? quota.extraCreditsRemaining : 0) -
+      quota.usedToday;
+  return remaining < 0 ? 0 : remaining;
+}
+
+class _AboutRainSection extends StatelessWidget {
+  const _AboutRainSection({
+    required this.updateStatus,
+    required this.onCheckForUpdates,
+    required this.onOpenReleasePage,
+  });
+
+  final AsyncValue<VersionCheckResult> updateStatus;
+  final VoidCallback onCheckForUpdates;
+  final VoidCallback onOpenReleasePage;
+
+  @override
+  Widget build(BuildContext context) {
+    return updateStatus.when(
+      data: (result) => Column(
+        children: <Widget>[
+          ListTile(
+            leading: const Icon(Icons.info_outline),
+            title: Text('Rain ${result.currentVersion}'),
+            subtitle: Text(
+              'Build ${result.displayCurrentBuild} | ${result.platform} | ${result.channel.name}',
+            ),
+          ),
+          const Divider(height: 1),
+          ListTile(
+            leading: Icon(_updateStatusIcon(result.status)),
+            title: Text(_updateStatusLabel(result)),
+            subtitle: Text(_updateStatusDetail(result)),
+          ),
+          const Divider(height: 1),
+          OverflowBar(
+            alignment: MainAxisAlignment.end,
+            children: <Widget>[
+              TextButton.icon(
+                onPressed: onCheckForUpdates,
+                icon: const Icon(Icons.refresh),
+                label: const Text('Check for updates'),
+              ),
+              FilledButton.icon(
+                onPressed: onOpenReleasePage,
+                icon: const Icon(Icons.open_in_new),
+                label: const Text('Open release page'),
+              ),
+            ],
+          ),
+        ],
+      ),
+      error: (Object error, StackTrace stackTrace) => ListTile(
+        leading: Icon(
+          Icons.system_update_alt,
+          color: Theme.of(context).colorScheme.error,
+        ),
+        title: const Text('Update status unavailable'),
+        subtitle: Text(_formatSettingsError(error)),
+        trailing: IconButton(
+          tooltip: 'Check for updates',
+          onPressed: onCheckForUpdates,
+          icon: const Icon(Icons.refresh),
+        ),
+      ),
+      loading: () => const ListTile(
+        leading: SizedBox.square(
+          dimension: 22,
+          child: CircularProgressIndicator(strokeWidth: 2),
+        ),
+        title: Text('Checking app version'),
+      ),
+    );
+  }
+
+  IconData _updateStatusIcon(VersionCheckStatus status) {
+    return switch (status) {
+      VersionCheckStatus.current => Icons.verified_outlined,
+      VersionCheckStatus.optionalUpdateAvailable => Icons.system_update_alt,
+      VersionCheckStatus.updateRequired => Icons.warning_amber_outlined,
+      VersionCheckStatus.remotePolicyOutdated => Icons.sync_problem_outlined,
+      VersionCheckStatus.checkUnavailable => Icons.cloud_off_outlined,
+      VersionCheckStatus.invalidConfig => Icons.error_outline,
+    };
+  }
+
+  String _updateStatusLabel(VersionCheckResult result) {
+    return switch (result.status) {
+      VersionCheckStatus.current => 'Rain is up to date',
+      VersionCheckStatus.optionalUpdateAvailable => 'Update available',
+      VersionCheckStatus.updateRequired => 'Update required',
+      VersionCheckStatus.remotePolicyOutdated => 'Update policy outdated',
+      VersionCheckStatus.checkUnavailable => 'Update check unavailable',
+      VersionCheckStatus.invalidConfig => 'Update config invalid',
+    };
+  }
+
+  String _updateStatusDetail(VersionCheckResult result) {
+    return switch (result.status) {
+      VersionCheckStatus.current =>
+        'Latest known: ${result.displayLatestVersion}',
+      VersionCheckStatus.optionalUpdateAvailable =>
+        'Latest: ${result.displayLatestVersion} build ${result.displayLatestBuild}',
+      VersionCheckStatus.updateRequired =>
+        'Minimum: ${result.minVersion} build ${result.displayMinimumBuild}',
+      VersionCheckStatus.remotePolicyOutdated =>
+        'Installed: ${result.currentVersion} build ${result.displayCurrentBuild} | Latest known: ${result.displayLatestVersion} build ${result.displayLatestBuild}',
+      VersionCheckStatus.checkUnavailable =>
+        result.failureReason ?? 'Could not verify update status.',
+      VersionCheckStatus.invalidConfig =>
+        result.failureReason ?? 'Remote update config could not be parsed.',
+    };
+  }
+}
 
 class _MicrophoneTestTile extends StatelessWidget {
   const _MicrophoneTestTile({
@@ -748,6 +1497,56 @@ class _MicrophoneTestTile extends StatelessWidget {
   }
 }
 
+class _ClearVoiceTile extends StatelessWidget {
+  const _ClearVoiceTile({
+    required this.enabled,
+    required this.isBusy,
+    required this.onChanged,
+  });
+
+  final bool enabled;
+  final bool isBusy;
+  final ValueChanged<bool> onChanged;
+
+  @override
+  Widget build(BuildContext context) {
+    return SwitchListTile(
+      secondary: const Icon(Icons.noise_control_off),
+      title: const Text('Clear voice'),
+      subtitle: const Text(
+        'Clear voice reduces background noise during calls.',
+      ),
+      value: enabled,
+      onChanged: isBusy ? null : onChanged,
+    );
+  }
+}
+
+class _AutoVideoOptimizeTile extends StatelessWidget {
+  const _AutoVideoOptimizeTile({
+    required this.enabled,
+    required this.isBusy,
+    required this.onChanged,
+  });
+
+  final bool enabled;
+  final bool isBusy;
+  final ValueChanged<bool> onChanged;
+
+  @override
+  Widget build(BuildContext context) {
+    return SwitchListTile(
+      secondary: const Icon(Icons.speed),
+      title: const Text('Auto video optimize'),
+      subtitle: const Text(
+        'Auto video optimize adjusts quality when the network is weak.',
+      ),
+      value: enabled,
+      onChanged: isBusy ? null : onChanged,
+    );
+  }
+}
+
 class _VoiceAudioSettingsControls extends StatelessWidget {
   const _VoiceAudioSettingsControls({
     required this.settings,
@@ -773,7 +1572,14 @@ class _VoiceAudioSettingsControls extends StatelessWidget {
   Widget build(BuildContext context) {
     final enabled = !isBusy;
     final soundControlsEnabled = enabled && settings.soundEffectsEnabled;
-    final outputPreferences = _outputPreferencesFor(outputCapabilities);
+    final outputPreferences = _outputPreferencesFor(
+      outputCapabilities,
+      AdaptiveDeviceProfile.resolve(
+        targetPlatform: defaultTargetPlatform,
+        width: MediaQuery.sizeOf(context).width,
+        lowPower: false,
+      ),
+    );
     final effectiveOutputPreference = _effectiveOutputPreference(
       settings.defaultOutputPreference,
       outputPreferences,
@@ -873,14 +1679,8 @@ class _OutputPreferenceMenuRow extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final scheme = Theme.of(context).colorScheme;
-    return RainRippleHaloSurface(
-      enabled: selected,
-      borderRadius: BorderRadius.circular(12),
-      color: scheme.primary,
-      origin: Alignment.centerLeft,
-      pulseKey: preference.name,
-      pulseOnMount: selected,
-      minSize: const Size(48, 48),
+    return ConstrainedBox(
+      constraints: const BoxConstraints(minWidth: 48, minHeight: 48),
       child: Padding(
         padding: const EdgeInsets.symmetric(horizontal: 4, vertical: 6),
         child: Row(
@@ -923,7 +1723,14 @@ String _outputPreferenceLabel(CallAudioOutputPreference preference) {
 
 List<CallAudioOutputPreference> _outputPreferencesFor(
   AudioOutputCapabilityState capabilities,
+  AdaptiveDeviceProfile profile,
 ) {
+  if (profile.isDesktop) {
+    return <CallAudioOutputPreference>[
+      CallAudioOutputPreference.systemDefault,
+      if (capabilities.hasBluetoothOutput) CallAudioOutputPreference.bluetooth,
+    ];
+  }
   return <CallAudioOutputPreference>[
     CallAudioOutputPreference.systemDefault,
     CallAudioOutputPreference.speaker,

@@ -1,0 +1,24 @@
+{
+  "projectName": "rain",
+  "appiumUrl": "http://127.0.0.1:4723",
+  "platformName": "Android",
+  "automationName": "Flutter",
+  "deviceName": "Android Emulator",
+  "udid": "emulator-5554",
+  "androidPackage": "com.rainapp.rain",
+  "androidActivity": "",
+  "app": "build\\app\\outputs\\flutter-apk\\app-debug.apk",
+  "noReset": false,
+  "newCommandTimeout": 240,
+  "retryBackoffTime": 500,
+  "smoke": {
+    "timeoutMs": 180000,
+    "tap": {
+      "key": "qa.auth.mode.toggle"
+    },
+    "assert": {
+      "key": "qa.auth.mode.title"
+    },
+    "expectedText": "Create account"
+  }
+}

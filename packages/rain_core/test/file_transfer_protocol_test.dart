@@ -13,6 +13,11 @@ void main() {
         expect(fileTransferLowWatermarkBytes, 1024 * 1024);
         expect(fileTransferHighWatermarkBytes, 4 * 1024 * 1024);
         expect(
+          fileTransferBackpressurePollInterval,
+          const Duration(milliseconds: 25),
+        );
+        expect(fileTransferBackpressureTimeout, const Duration(seconds: 30));
+        expect(
           fileTransferLowWatermarkBytes,
           lessThan(fileTransferHighWatermarkBytes),
         );

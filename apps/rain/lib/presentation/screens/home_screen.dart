@@ -2,6 +2,7 @@ import 'dart:async';
 import 'dart:io';
 
 import 'package:file_picker/file_picker.dart';
+import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/rendering.dart' show ScrollCacheExtent;
 import 'package:flutter/services.dart';
@@ -12,9 +13,11 @@ import 'package:rain_core/rain_core.dart';
 
 import 'package:rain/presentation/navigation/app_routes.dart';
 import 'package:rain/application/audio/rain_sound_event.dart';
+import 'package:rain/application/runtime/connection_request_state.dart';
 import 'package:rain/application/runtime/media_device_settings.dart';
-import 'package:rain/application/runtime/video_call_renderers.dart';
 import 'package:rain/application/runtime/voice_call_state.dart';
+import 'package:rain/application/runtime/runtime_interaction_guard.dart';
+import 'package:rain/application/state/app_state.dart';
 import 'package:rain/application/state/app_providers.dart';
 import 'package:rain/application/state/connection_diagnostics.dart';
 import 'package:rain/application/state/file_transfer_view.dart';
@@ -22,15 +25,16 @@ import 'package:rain/application/runtime/rain_runtime_controller.dart';
 import 'package:rain/application/state/sound_event_providers.dart';
 import 'package:rain/infrastructure/services/app_settings_store.dart';
 import 'package:rain/presentation/branding/rain_peer_core_mark.dart';
-import 'package:rain/presentation/branding/rain_ripple_halo_surface.dart';
 import 'package:rain/presentation/branding/rain_state_surfaces.dart';
+import 'package:rain/presentation/performance/rain_performance.dart';
 import 'package:rain/presentation/theme/rain_theme.dart';
 import 'package:rain/presentation/widgets/app_components.dart';
 import 'package:rain/presentation/widgets/chat_composer.dart';
 import 'package:rain/presentation/widgets/app_dialogs.dart';
+import 'package:rain/presentation/widgets/connection_requests/connection_request_status_chip.dart';
+import 'package:rain/presentation/widgets/connection_requests/connection_request_tray.dart';
 import 'package:rain/presentation/widgets/calls/rain_call_controls.dart';
-import 'package:rain/presentation/widgets/calls/rain_call_manager_bar.dart';
-import 'package:rain/presentation/widgets/calls/rain_call_overlay.dart';
+import 'package:rain/presentation/widgets/calls/rain_call_suite.dart';
 import 'package:rain/presentation/widgets/rain_chat_widgets.dart';
 
 part '../widgets/home/shell_header.dart';
@@ -66,7 +70,7 @@ String _formatUiError(Object error) {
       normalized.contains('active voice call already exists') ||
       normalized.contains('activevoicepairs') ||
       normalized.contains('active voice pair')) {
-    return 'Peer is busy.';
+    return 'Peer is already in a call.';
   }
   if (normalized == 'rejected.' ||
       normalized.contains('call declined') ||
@@ -111,14 +115,16 @@ String _formatUiError(Object error) {
   return message;
 }
 
-VoiceCallOutputRoute _voiceCallOutputRouteForPreference(
+CallAudioOutputTarget _voiceCallOutputTargetForPreference(
   CallAudioOutputPreference preference,
 ) {
   return switch (preference) {
     CallAudioOutputPreference.systemDefault =>
-      VoiceCallOutputRoute.systemDefault,
-    CallAudioOutputPreference.speaker => VoiceCallOutputRoute.speaker,
-    CallAudioOutputPreference.bluetooth => VoiceCallOutputRoute.bluetooth,
+      const CallAudioOutputTarget.systemDefault(),
+    CallAudioOutputPreference.speaker =>
+      const CallAudioOutputTarget.androidSpeakerphone(),
+    CallAudioOutputPreference.bluetooth =>
+      const CallAudioOutputTarget.bluetooth(),
   };
 }
 
@@ -161,6 +167,15 @@ RainSoundEvent? rainVoiceCallLifecycleSoundEventFor(
       errorKey: _voiceCallFailureErrorKey(next),
     ),
     VoiceCallPhase.idle
+        when previous != null && previous.phase == VoiceCallPhase.failed =>
+      RainSoundEvent.callFailed(
+        callId: callId,
+        peerId: previous.peerId,
+        sessionEpoch: previous.sessionEpoch,
+        mediaMode: previous.mediaMode,
+        errorKey: _voiceCallFailureErrorKey(previous),
+      ),
+    VoiceCallPhase.idle
         when previous != null &&
             previous.phase != VoiceCallPhase.idle &&
             previous.phase != VoiceCallPhase.failed =>
@@ -170,6 +185,12 @@ RainSoundEvent? rainVoiceCallLifecycleSoundEventFor(
         sessionEpoch: previous.sessionEpoch,
         mediaMode: previous.mediaMode,
       ),
+    VoiceCallPhase.ended => RainSoundEvent.callEnded(
+      callId: callId,
+      peerId: next.peerId,
+      sessionEpoch: next.sessionEpoch,
+      mediaMode: next.mediaMode,
+    ),
     VoiceCallPhase.idle ||
     VoiceCallPhase.connectingPeer ||
     VoiceCallPhase.connectingMedia ||
@@ -227,6 +248,67 @@ RainSoundEvent rainUiActionSoundEvent() {
 
 RainSoundEvent rainUiWarningSoundEvent(String errorKey) {
   return RainSoundEvent.warning(errorKey: errorKey);
+}
+
+List<RainSoundEvent> rainConnectionRequestSoundEventsFor({
+  required ConnectionRequestState? previous,
+  required ConnectionRequestState next,
+}) {
+  final events = <RainSoundEvent>[];
+  final previousIncomingIds = <String>{
+    for (final surface in previous?.incomingSurfaces ?? const [])
+      if (!surface.status.isTerminal) surface.requestId,
+  };
+  for (final surface in next.incomingSurfaces) {
+    if (surface.status.isTerminal ||
+        previousIncomingIds.contains(surface.requestId)) {
+      continue;
+    }
+    events.add(
+      RainSoundEvent.connectionRequestInbound(
+        requestId: surface.requestId,
+        peerId: surface.peerId,
+      ),
+    );
+  }
+
+  if (previous == null) {
+    return events;
+  }
+  final previousOutboundById = <String, ConnectionRequestSurfaceModel>{
+    for (final surface in previous.outgoingSurfaces) surface.requestId: surface,
+  };
+  for (final surface in next.outgoingSurfaces) {
+    final previousSurface = previousOutboundById[surface.requestId];
+    if (previousSurface == null || previousSurface.status == surface.status) {
+      continue;
+    }
+    final event = switch (surface.status) {
+      ConnectionRequestStatus.accepted =>
+        RainSoundEvent.connectionRequestOutboundAccepted(
+          requestId: surface.requestId,
+          peerId: surface.peerId,
+        ),
+      ConnectionRequestStatus.rejected =>
+        RainSoundEvent.connectionRequestOutboundRejected(
+          requestId: surface.requestId,
+          peerId: surface.peerId,
+        ),
+      ConnectionRequestStatus.expired =>
+        RainSoundEvent.connectionRequestOutboundExpired(
+          requestId: surface.requestId,
+          peerId: surface.peerId,
+        ),
+      ConnectionRequestStatus.pending ||
+      ConnectionRequestStatus.seen ||
+      ConnectionRequestStatus.canceled ||
+      ConnectionRequestStatus.failed => null,
+    };
+    if (event != null) {
+      events.add(event);
+    }
+  }
+  return events;
 }
 
 String? _latestIncomingMessageIdForSound(List<StoredMessage> messages) {
@@ -481,6 +563,17 @@ String _mobileLinkDetail(
   ConnectionDiagnostics diagnostics,
   _ConnectionStatus status,
 ) {
+  if (status.statusKind == PeerConnectionUiStatusKind.dataLaneOnly ||
+      status.statusKind == PeerConnectionUiStatusKind.outOfSync ||
+      status.statusKind == PeerConnectionUiStatusKind.recovering ||
+      status.statusKind == PeerConnectionUiStatusKind.failed ||
+      status.statusKind == PeerConnectionUiStatusKind.manuallyDisconnected ||
+      status.statusKind == PeerConnectionUiStatusKind.offline) {
+    return diagnostics.lastError != null &&
+            diagnostics.lastError!.trim().isNotEmpty
+        ? diagnostics.lastError!.trim()
+        : status.detail;
+  }
   if (diagnostics.route.kind == PeerRouteKind.direct) {
     return 'Direct peer route${_routeAddressFamilySuffix(diagnostics.route)}';
   }
@@ -499,105 +592,150 @@ String _mobileLinkDetail(
 
 class _ConnectionStatus {
   const _ConnectionStatus({
+    required this.statusKind,
     required this.label,
     required this.icon,
     required this.color,
     required this.detail,
     this.isBusy = false,
     this.isConnected = false,
+    this.canSendData = false,
     this.canDisconnect = false,
+    this.usesDisconnectAction = false,
   });
 
+  final PeerConnectionUiStatusKind statusKind;
   final String label;
   final IconData icon;
   final Color color;
   final String detail;
   final bool isBusy;
   final bool isConnected;
+  final bool canSendData;
   final bool canDisconnect;
+  final bool usesDisconnectAction;
 }
 
 _ConnectionStatus _connectionStatusForDiagnostics(
   ConnectionDiagnostics diagnostics,
 ) {
-  switch (diagnostics.label) {
-    case 'Unavailable':
+  switch (diagnostics.statusKind) {
+    case PeerConnectionUiStatusKind.unavailable:
       return const _ConnectionStatus(
+        statusKind: PeerConnectionUiStatusKind.unavailable,
         label: 'Unavailable',
         icon: Icons.lock_outline,
         color: Color(0xFF52646D),
         detail: 'Only accepted friends can chat.',
       );
-    case 'Disconnecting':
-      return const _ConnectionStatus(
+    case PeerConnectionUiStatusKind.disconnecting:
+      return _ConnectionStatus(
+        statusKind: PeerConnectionUiStatusKind.disconnecting,
         label: 'Disconnecting',
         icon: Icons.link_off,
-        color: Color(0xFFFBBF24),
-        detail: 'Closing peer session.',
+        color: const Color(0xFFFBBF24),
+        detail: diagnostics.detail,
         isBusy: true,
-        canDisconnect: true,
+        canSendData: diagnostics.canSendData,
+        canDisconnect: diagnostics.canDisconnect,
+        usesDisconnectAction: diagnostics.canDisconnect,
       );
-    case 'Disconnected':
-      return const _ConnectionStatus(
+    case PeerConnectionUiStatusKind.manuallyDisconnected:
+      return _ConnectionStatus(
+        statusKind: PeerConnectionUiStatusKind.manuallyDisconnected,
         label: 'Disconnected',
         icon: Icons.link_off,
-        color: Color(0xFF52646D),
-        detail: 'Manual disconnect. Press Connect to open the peer lane again.',
+        color: const Color(0xFF52646D),
+        detail: diagnostics.detail,
       );
-    case 'Direct':
+    case PeerConnectionUiStatusKind.connected:
       return _ConnectionStatus(
-        label: 'Direct',
-        icon: Icons.hub_outlined,
-        color: const Color(0xFF2DD4A3),
+        statusKind: PeerConnectionUiStatusKind.connected,
+        label: diagnostics.label,
+        icon: diagnostics.route.kind == PeerRouteKind.relay
+            ? Icons.alt_route
+            : Icons.hub_outlined,
+        color: diagnostics.route.kind == PeerRouteKind.relay
+            ? const Color(0xFF7DD3FC)
+            : const Color(0xFF2DD4A3),
         detail: diagnostics.detail,
         isConnected: true,
+        canSendData: diagnostics.canSendData,
         canDisconnect: true,
+        usesDisconnectAction: true,
       );
-    case 'Relay':
+    case PeerConnectionUiStatusKind.dataLaneOnly:
       return _ConnectionStatus(
-        label: 'Relay',
-        icon: Icons.alt_route,
-        color: const Color(0xFF7DD3FC),
+        statusKind: PeerConnectionUiStatusKind.dataLaneOnly,
+        label: diagnostics.label,
+        icon: Icons.warning_amber_rounded,
+        color: const Color(0xFFFBBF24),
         detail: diagnostics.detail,
-        isConnected: true,
-        canDisconnect: true,
+        canSendData: diagnostics.canSendData,
+        canDisconnect: diagnostics.canDisconnect,
+        usesDisconnectAction: diagnostics.canDisconnect,
       );
-    case 'Recovering':
+    case PeerConnectionUiStatusKind.outOfSync:
       return _ConnectionStatus(
-        label: 'Recovering',
+        statusKind: PeerConnectionUiStatusKind.outOfSync,
+        label: diagnostics.label,
         icon: Icons.sync,
         color: const Color(0xFFFBBF24),
         detail: diagnostics.detail,
         isBusy: true,
-        canDisconnect: true,
+        canSendData: diagnostics.canSendData,
+        canDisconnect: diagnostics.canDisconnect,
+        usesDisconnectAction: diagnostics.canDisconnect,
       );
-    case 'Connecting':
+    case PeerConnectionUiStatusKind.recovering:
       return _ConnectionStatus(
-        label: 'Connecting',
+        statusKind: PeerConnectionUiStatusKind.recovering,
+        label: diagnostics.label,
+        icon: Icons.sync,
+        color: const Color(0xFFFBBF24),
+        detail: diagnostics.detail,
+        isBusy: true,
+        canSendData: diagnostics.canSendData,
+        canDisconnect: diagnostics.canDisconnect,
+        usesDisconnectAction: diagnostics.canDisconnect,
+      );
+    case PeerConnectionUiStatusKind.connecting:
+      return _ConnectionStatus(
+        statusKind: PeerConnectionUiStatusKind.connecting,
+        label: diagnostics.label,
         icon: Icons.sync,
         color: const Color(0xFFFBBF24),
         detail: diagnostics.detail,
         isBusy: diagnostics.isBusy,
         isConnected: diagnostics.isConnected,
+        canSendData: diagnostics.canSendData,
         canDisconnect: diagnostics.canDisconnect,
+        usesDisconnectAction: diagnostics.canDisconnect,
       );
-    case 'Failed':
+    case PeerConnectionUiStatusKind.failed:
       return _ConnectionStatus(
-        label: 'Failed',
+        statusKind: PeerConnectionUiStatusKind.failed,
+        label: diagnostics.label,
         icon: Icons.error_outline,
         color: const Color(0xFFFF6B6B),
         detail: diagnostics.detail,
+        canSendData: diagnostics.canSendData,
+        canDisconnect: diagnostics.canDisconnect,
+        usesDisconnectAction:
+            diagnostics.canDisconnect && diagnostics.canSendData,
       );
-    case 'Offline':
-      return const _ConnectionStatus(
+    case PeerConnectionUiStatusKind.offline:
+      return _ConnectionStatus(
+        statusKind: PeerConnectionUiStatusKind.offline,
         label: 'Offline',
         icon: Icons.cloud_off_outlined,
-        color: Color(0xFF52646D),
-        detail: 'Peer is offline. Keep both apps open.',
+        color: const Color(0xFF52646D),
+        detail: diagnostics.detail,
       );
-    default:
+    case PeerConnectionUiStatusKind.ready:
       return _ConnectionStatus(
-        label: 'Ready',
+        statusKind: PeerConnectionUiStatusKind.ready,
+        label: diagnostics.label,
         icon: Icons.wifi_tethering,
         color: const Color(0xFF7DD3FC),
         detail: diagnostics.detail,
@@ -612,6 +750,8 @@ class HomeScreen extends ConsumerStatefulWidget {
   ConsumerState<HomeScreen> createState() => _HomeScreenState();
 }
 
+enum DesktopChatLayoutMode { split, focused }
+
 class _HomeScreenState extends ConsumerState<HomeScreen> {
   static const double _compactBreakpoint = 860;
   static const double _fullscreenFriendsMinWidth = 220;
@@ -620,9 +760,13 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
   String? _selectedPeerId;
   String? _defaultOutputAppliedCallId;
   String? _lastVoiceCallLifecycleSoundKey;
+  final Set<String> _connectionRequestSoundKeys = <String>{};
+  CallSurfaceState? _lastActiveCallSurface;
   double _fullscreenFriendsPanelWidth = 280;
   bool _fullscreenFriendsPanelCollapsed = false;
   bool _fullscreenFriendsPanelForcedOpen = false;
+  DesktopChatLayoutMode _desktopChatLayoutMode = DesktopChatLayoutMode.split;
+  Future<void>? _refreshFriendsInFlight;
 
   @override
   Widget build(BuildContext context) {
@@ -631,27 +775,57 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
     final voiceCall = ref.watch(voiceCallProvider);
     final videoRenderers = ref.watch(videoCallRenderersProvider);
     final callSurface = ref.watch(callSurfaceProvider);
+    final callEndPresentation = ref.watch(callEndPresentationProvider);
+    final connectionRequests = ref.watch(connectionRequestProvider);
+    if (voiceCall.phase != VoiceCallPhase.idle && callSurface.isVisible) {
+      _lastActiveCallSurface = callSurface;
+    }
     final videoInputCapabilities = ref
         .watch(videoInputCapabilityProvider)
         .value;
     final audioOutputCapabilities = ref
         .watch(audioOutputCapabilityProvider)
         .value;
-    final callControlCapabilities =
-        (videoInputCapabilities ?? const VideoInputCapabilityState(devices: []))
-            .filterCallControls(voiceCall.controlCapabilities);
-    final outputRouteOptions = rainVoiceCallOutputRouteOptions(
-      hasBluetoothOutput: audioOutputCapabilities?.hasBluetoothOutput ?? false,
-    );
     ref.listen<VoiceCallState>(voiceCallProvider, _handleVoiceCallNavigation);
+    ref.listen<ConnectionRequestState>(
+      connectionRequestProvider,
+      _handleConnectionRequestSounds,
+    );
 
     return LayoutBuilder(
       builder: (BuildContext context, BoxConstraints constraints) {
         final isCompact = constraints.maxWidth < _compactBreakpoint;
         final scheme = Theme.of(context).colorScheme;
         final isDark = scheme.brightness == Brightness.dark;
+        final lowPower = RainPerformanceScope.of(context).isLowPower;
+        final adaptiveProfile = AdaptiveDeviceProfile.resolve(
+          targetPlatform: defaultTargetPlatform,
+          width: constraints.maxWidth,
+          lowPower: lowPower,
+        );
+        final adaptiveCapabilities = AdaptiveMediaCapabilitySnapshot(
+          profile: adaptiveProfile,
+          videoInput:
+              videoInputCapabilities ??
+              const VideoInputCapabilityState(devices: []),
+          audioOutput:
+              audioOutputCapabilities ??
+              const AudioOutputCapabilityState(devices: []),
+        );
+        final callControlCapabilities = adaptiveCapabilities.filterCallControls(
+          voiceCall.controlCapabilities,
+        );
+        final outputRouteOptions = rainVoiceCallOutputRouteOptions(
+          capabilities: adaptiveCapabilities.audioOutput,
+          profile: adaptiveProfile,
+        );
 
         final showShellHeader = !isCompact || _selectedPeerId == null;
+        final showInboundConnectionRequestTray =
+            _shouldShowInboundConnectionRequestTray(
+              connectionRequests,
+              callSurface,
+            );
 
         final shell = SafeArea(
           child: Padding(
@@ -668,11 +842,14 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
                   ),
                 ),
                 boxShadow: <BoxShadow>[
-                  BoxShadow(
-                    blurRadius: 36,
-                    color: Colors.black.withValues(alpha: isDark ? 0.20 : 0.08),
-                    offset: const Offset(0, 20),
-                  ),
+                  if (!lowPower)
+                    BoxShadow(
+                      blurRadius: 36,
+                      color: Colors.black.withValues(
+                        alpha: isDark ? 0.20 : 0.08,
+                      ),
+                      offset: const Offset(0, 20),
+                    ),
                 ],
               ),
               child: Column(
@@ -685,11 +862,7 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
                     child: _buildBodyWithCallSurface(
                       friends: friends,
                       isCompact: isCompact,
-                      voiceCall: voiceCall,
-                      videoRenderers: videoRenderers,
-                      callSurface: callSurface,
-                      callControlCapabilities: callControlCapabilities,
-                      outputRouteOptions: outputRouteOptions,
+                      adaptiveProfile: adaptiveProfile,
                     ),
                   ),
                 ],
@@ -700,40 +873,103 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
         final content = Stack(
           children: <Widget>[
             Positioned.fill(child: shell),
-            if (_shouldShowFullscreenCallWorkspace(callSurface, voiceCall))
-              Positioned.fill(
-                child: RainFullscreenCallWorkspace(
-                  state: voiceCall,
-                  displayName: _voiceCallDisplayName(friends, voiceCall),
-                  gender: _voiceCallGender(friends, voiceCall),
-                  videoRenderers: videoRenderers,
-                  primaryRole: callSurface.videoPrimaryRole,
-                  onToggleVideoPrimaryRole: () =>
-                      _toggleVideoPrimaryRole(voiceCall),
-                  onAccept: _acceptVoiceCall,
-                  onReject: _rejectVoiceCall,
-                  onHangUp: _hangUpVoiceCall,
-                  onRetry: () => _retryVoiceCall(voiceCall),
-                  onToggleMute: () => _toggleVoiceMute(voiceCall),
-                  onToggleDeafen: () => _toggleVoiceDeafen(voiceCall),
-                  onToggleCamera: () => _toggleVoiceCamera(voiceCall),
-                  onSwitchCamera: _switchVoiceCamera,
-                  onSelectOutputRoute: _selectVoiceOutputRoute,
-                  controlCapabilities: callControlCapabilities,
-                  outputRouteOptions: outputRouteOptions,
-                  onExitFullscreen: () =>
-                      ref.read(callSurfaceProvider.notifier).exitFullscreen(),
-                  friendsPanel: _FriendsListView(
-                    friends: friends,
-                    selectedPeerId: _selectedPeerId,
-                    onSelect: _handleFriendSelection,
-                    onRefresh: _refreshFriends,
+            Positioned.fill(
+              child: RainCallSuiteLayer(
+                state: voiceCall,
+                surface: callSurface,
+                endPresentation: callEndPresentation,
+                displayName: _voiceCallDisplayName(friends, voiceCall),
+                gender: _voiceCallGender(friends, voiceCall),
+                routeSummary: null,
+                videoRenderers: videoRenderers,
+                contentLeftInset: isCompact ? 0 : 321,
+                isDesktop: !isCompact,
+                lowPower: lowPower,
+                onAccept: _acceptVoiceCall,
+                onReject: _rejectVoiceCall,
+                onHangUp: _hangUpVoiceCall,
+                onRetry: () => _retryVoiceCall(voiceCall),
+                onToggleMute: () => _toggleVoiceMute(voiceCall),
+                onToggleDeafen: () => _toggleVoiceDeafen(voiceCall),
+                onToggleCamera: () => _toggleVoiceCamera(voiceCall),
+                onSwitchCamera: _switchVoiceCamera,
+                onSelectOutputRoute: _selectVoiceOutputRoute,
+                controlCapabilities: callControlCapabilities,
+                outputRouteOptions: outputRouteOptions,
+                onMinimize: () =>
+                    ref.read(callSurfaceProvider.notifier).minimize(),
+                onRestore: () => _toggleCallSurfacePanel(callSurface),
+                onFullscreen: () =>
+                    ref.read(callSurfaceProvider.notifier).enterFullscreen(),
+                onExitFullscreen: () =>
+                    ref.read(callSurfaceProvider.notifier).exitFullscreen(),
+                onToggleVideoPrimaryRole: () =>
+                    _toggleVideoPrimaryRole(voiceCall),
+                friendsPanel: _FriendsListView(
+                  friends: friends,
+                  selectedPeerId: _selectedPeerId,
+                  onSelect: _handleFriendSelection,
+                  onRefresh: _refreshFriends,
+                  adaptiveProfile: adaptiveProfile,
+                  desktopHeaderTitle: null,
+                ),
+                showFriendsPanel: !isCompact,
+                friendsPanelCollapsed: _fullscreenFriendsPanelIsCollapsed,
+                friendsPanelWidth: _fullscreenFriendsPanelWidth,
+                onToggleFriendsPanel: _toggleFullscreenFriendsPanel,
+                onResizeFriendsPanel: _resizeFullscreenFriendsPanel,
+                onMoveFloating:
+                    (
+                      Offset delta,
+                      Size viewportSize,
+                      EdgeInsets safePadding,
+                      Size panelSize,
+                    ) => ref
+                        .read(callSurfaceProvider.notifier)
+                        .moveFloatingPanel(
+                          delta: delta,
+                          viewportSize: viewportSize,
+                          safePadding: safePadding,
+                          panelSize: panelSize,
+                        ),
+                onClampFloating:
+                    (
+                      Size viewportSize,
+                      EdgeInsets safePadding,
+                      Size panelSize,
+                    ) => ref
+                        .read(callSurfaceProvider.notifier)
+                        .clampFloatingPanel(
+                          viewportSize: viewportSize,
+                          safePadding: safePadding,
+                          panelSize: panelSize,
+                        ),
+                onCloseEnded: _dismissEndedCallSummary,
+                onCallAgain: _callAgainFromSummary,
+              ),
+            ),
+            if (showInboundConnectionRequestTray)
+              Positioned(
+                top: 8,
+                left: isCompact ? 8 : null,
+                right: isCompact ? 8 : 24,
+                child: SafeArea(
+                  bottom: false,
+                  child: Align(
+                    alignment: isCompact
+                        ? Alignment.topCenter
+                        : Alignment.topRight,
+                    child: ConstrainedBox(
+                      constraints: BoxConstraints(
+                        maxWidth: isCompact ? double.infinity : 460,
+                      ),
+                      child: ConnectionRequestTray(
+                        surfaces: connectionRequests.incomingSurfaces,
+                        compact: isCompact,
+                        onAction: _handleInboundConnectionRequestAction,
+                      ),
+                    ),
                   ),
-                  showFriendsPanel: !isCompact,
-                  friendsPanelCollapsed: _fullscreenFriendsPanelIsCollapsed,
-                  friendsPanelWidth: _fullscreenFriendsPanelWidth,
-                  onToggleFriendsPanel: _toggleFullscreenFriendsPanel,
-                  onResizeFriendsPanel: _resizeFullscreenFriendsPanel,
                 ),
               ),
           ],
@@ -784,6 +1020,20 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
     return isCompact && _selectedPeerId != null;
   }
 
+  bool _shouldShowInboundConnectionRequestTray(
+    ConnectionRequestState requests,
+    CallSurfaceState callSurface,
+  ) {
+    if (callSurface.isVisible) {
+      return false;
+    }
+    return requests.incomingSurfaces.any(
+      (surface) =>
+          surface.direction == ConnectionRequestDirection.inbound &&
+          !surface.status.isTerminal,
+    );
+  }
+
   void _handleSystemBack(bool isCompact) {
     if (ref.read(callSurfaceProvider.notifier).handleBackIntent()) {
       return;
@@ -796,108 +1046,11 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
   Widget _buildBodyWithCallSurface({
     required AsyncValue<List<FriendRecord>> friends,
     required bool isCompact,
-    required VoiceCallState voiceCall,
-    required VideoCallRenderers? videoRenderers,
-    required CallSurfaceState callSurface,
-    required List<CallControlCapability> callControlCapabilities,
-    required List<VoiceCallOutputRouteOption> outputRouteOptions,
+    required AdaptiveDeviceProfile adaptiveProfile,
   }) {
-    final body = isCompact
-        ? _buildCompactBody(friends)
-        : _buildWideBody(friends);
-    return Stack(
-      children: <Widget>[
-        Positioned.fill(child: body),
-        if (callSurface.showsMediaSurface &&
-            !(callSurface.mode == CallSurfaceMode.fullscreen &&
-                voiceCall.isVideo) &&
-            voiceCall.phase != VoiceCallPhase.idle)
-          Positioned.fill(
-            left: isCompact ? 0 : 321,
-            child: RainCallOverlay(
-              state: voiceCall,
-              surface: callSurface,
-              displayName: _voiceCallDisplayName(friends, voiceCall),
-              gender: _voiceCallGender(friends, voiceCall),
-              videoRenderers: videoRenderers,
-              onAccept: _acceptVoiceCall,
-              onReject: _rejectVoiceCall,
-              onHangUp: _hangUpVoiceCall,
-              onRetry: () => _retryVoiceCall(voiceCall),
-              onToggleMute: () => _toggleVoiceMute(voiceCall),
-              onToggleDeafen: () => _toggleVoiceDeafen(voiceCall),
-              onToggleCamera: () => _toggleVoiceCamera(voiceCall),
-              onSwitchCamera: _switchVoiceCamera,
-              onSelectOutputRoute: _selectVoiceOutputRoute,
-              controlCapabilities: callControlCapabilities,
-              outputRouteOptions: outputRouteOptions,
-              onMinimize: () =>
-                  ref.read(callSurfaceProvider.notifier).minimize(),
-              onExpand: () => _toggleCallSurfacePanel(callSurface),
-              onToggleVideoPrimaryRole: () =>
-                  _toggleVideoPrimaryRole(voiceCall),
-              onFullscreen: () =>
-                  ref.read(callSurfaceProvider.notifier).enterFullscreen(),
-              onExitFullscreen: () =>
-                  ref.read(callSurfaceProvider.notifier).exitFullscreen(),
-              onMoveFloating:
-                  (
-                    Offset delta,
-                    Size viewportSize,
-                    EdgeInsets safePadding,
-                    Size panelSize,
-                  ) => ref
-                      .read(callSurfaceProvider.notifier)
-                      .moveFloatingPanel(
-                        delta: delta,
-                        viewportSize: viewportSize,
-                        safePadding: safePadding,
-                        panelSize: panelSize,
-                      ),
-              onClampFloating:
-                  (Size viewportSize, EdgeInsets safePadding, Size panelSize) =>
-                      ref
-                          .read(callSurfaceProvider.notifier)
-                          .clampFloatingPanel(
-                            viewportSize: viewportSize,
-                            safePadding: safePadding,
-                            panelSize: panelSize,
-                          ),
-            ),
-          ),
-        if (callSurface.showsManagerBar &&
-            voiceCall.phase != VoiceCallPhase.idle)
-          Positioned(
-            left: isCompact ? 0 : 321,
-            right: 0,
-            top: 0,
-            child: RainCallManagerBar(
-              state: voiceCall,
-              surface: callSurface,
-              displayName: _voiceCallDisplayName(friends, voiceCall),
-              gender: _voiceCallGender(friends, voiceCall),
-              onToggleMute: () => _toggleVoiceMute(voiceCall),
-              onToggleCamera: () => _toggleVoiceCamera(voiceCall),
-              onToggleDeafen: () => _toggleVoiceDeafen(voiceCall),
-              onRestore: () => _toggleCallSurfacePanel(callSurface),
-              onFullscreen: () =>
-                  ref.read(callSurfaceProvider.notifier).enterFullscreen(),
-              onHangUp: voiceCall.phase == VoiceCallPhase.incomingRinging
-                  ? _rejectVoiceCall
-                  : _hangUpVoiceCall,
-            ),
-          ),
-      ],
-    );
-  }
-
-  bool _shouldShowFullscreenCallWorkspace(
-    CallSurfaceState surface,
-    VoiceCallState voiceCall,
-  ) {
-    return surface.mode == CallSurfaceMode.fullscreen &&
-        voiceCall.phase != VoiceCallPhase.idle &&
-        voiceCall.isVideo;
+    return isCompact
+        ? _buildCompactBody(friends, adaptiveProfile)
+        : _buildWideBody(friends, adaptiveProfile);
   }
 
   bool get _fullscreenFriendsPanelIsCollapsed {
@@ -948,7 +1101,10 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
     ref.read(callSurfaceProvider.notifier).toggleVideoPrimaryRole(callId);
   }
 
-  Widget _buildCompactBody(AsyncValue<List<FriendRecord>> friends) {
+  Widget _buildCompactBody(
+    AsyncValue<List<FriendRecord>> friends,
+    AdaptiveDeviceProfile adaptiveProfile,
+  ) {
     if (_selectedPeerId != null) {
       return _ChatPanel(
         peerId: _selectedPeerId!,
@@ -962,20 +1118,35 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
       selectedPeerId: _selectedPeerId,
       onSelect: _handleFriendSelection,
       onRefresh: _refreshFriends,
+      adaptiveProfile: adaptiveProfile,
       compact: true,
     );
   }
 
-  Widget _buildWideBody(AsyncValue<List<FriendRecord>> friends) {
+  Widget _buildWideBody(
+    AsyncValue<List<FriendRecord>> friends,
+    AdaptiveDeviceProfile adaptiveProfile,
+  ) {
+    final focused =
+        _selectedPeerId != null &&
+        _desktopChatLayoutMode == DesktopChatLayoutMode.focused;
     return Row(
       children: <Widget>[
         SizedBox(
-          width: 320,
+          width: focused ? 64 : 320,
           child: _FriendsListView(
             friends: friends,
             selectedPeerId: _selectedPeerId,
             onSelect: _handleFriendSelection,
             onRefresh: _refreshFriends,
+            adaptiveProfile: adaptiveProfile,
+            desktopHeaderTitle: focused ? null : 'Friends',
+            displayMode: focused
+                ? FriendListDisplayMode.rail
+                : FriendListDisplayMode.full,
+            onExpandRail: () => setState(
+              () => _desktopChatLayoutMode = DesktopChatLayoutMode.split,
+            ),
           ),
         ),
         const VerticalDivider(width: 1),
@@ -986,7 +1157,15 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
                   title: 'Choose a friend',
                   message: 'Open a conversation to start chatting.',
                 )
-              : _ChatPanel(peerId: _selectedPeerId!),
+              : _ChatPanel(
+                  peerId: _selectedPeerId!,
+                  desktopFocused: focused,
+                  onToggleDesktopFocus: () => setState(
+                    () => _desktopChatLayoutMode = focused
+                        ? DesktopChatLayoutMode.split
+                        : DesktopChatLayoutMode.focused,
+                  ),
+                ),
         ),
       ],
     );
@@ -997,6 +1176,11 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
       _selectedPeerId = friend.username;
       _fullscreenFriendsPanelForcedOpen = false;
     });
+    unawaited(
+      ref
+          .read(connectionRequestProvider.notifier)
+          .cleanupForPeer(friend.username),
+    );
     await ref.read(messagesProvider(friend.username).notifier).markRead();
   }
 
@@ -1009,6 +1193,10 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
     }
 
     _handleVoiceCallSound(previous, next);
+    if (next.phase != VoiceCallPhase.idle) {
+      ref.read(callEndPresentationProvider.notifier).dismiss();
+    }
+    _maybeShowEndedCallSummary(previous, next);
     _maybeApplyDefaultVoiceOutput(next);
 
     if (next.phase != VoiceCallPhase.incomingRinging ||
@@ -1017,6 +1205,86 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
       return;
     }
     setState(() => _selectedPeerId = next.peerId);
+  }
+
+  void _maybeShowEndedCallSummary(
+    VoiceCallState? previous,
+    VoiceCallState next,
+  ) {
+    if (previous == null || previous.peerId == null) {
+      return;
+    }
+    // React to immediate "ended" phase (local hangup) instead of waiting
+    // for "idle" which is delayed by Firebase terminal write.
+    final isImmediateEnd =
+        next.phase == VoiceCallPhase.ended &&
+        previous.phase != VoiceCallPhase.idle &&
+        previous.phase != VoiceCallPhase.failed &&
+        previous.phase != VoiceCallPhase.ended;
+    // Also handle the final idle transition for remote-initiated endings.
+    final isIdleTransition =
+        next.phase == VoiceCallPhase.idle &&
+        previous.phase != VoiceCallPhase.idle &&
+        previous.phase != VoiceCallPhase.failed;
+    if (!isImmediateEnd && !isIdleTransition) {
+      return;
+    }
+    final now = DateTime.now();
+    final startedAt = previous.startedAt;
+    final duration = startedAt == null
+        ? Duration.zero
+        : Duration(
+            milliseconds: (now.millisecondsSinceEpoch - startedAt).clamp(
+              0,
+              86400000,
+            ),
+          );
+    final summary = CallEndSummary(
+      peerId: previous.peerId!,
+      peerLabel: _voiceCallDisplayName(ref.read(friendsProvider), previous),
+      mediaMode: previous.mediaMode,
+      duration: duration,
+      initiator: _callEndInitiator(previous),
+      reason: _callEndReason(previous),
+      endedAt: now,
+    );
+    ref
+        .read(callEndPresentationProvider.notifier)
+        .show(summary, previousSurface: _lastActiveCallSurface);
+  }
+
+  CallEndInitiator _callEndInitiator(VoiceCallState previous) {
+    final detail = previous.detail?.toLowerCase() ?? '';
+    if (detail.contains('peer ended') || detail.contains('remote ended')) {
+      return CallEndInitiator.remote;
+    }
+    if (detail.contains('network') ||
+        detail.contains('timed out') ||
+        detail.contains('failed')) {
+      return CallEndInitiator.system;
+    }
+    return CallEndInitiator.local;
+  }
+
+  String _callEndReason(VoiceCallState previous) {
+    final detail = previous.detail?.trim();
+    if (detail != null && detail.isNotEmpty) {
+      return detail;
+    }
+    return previous.isVideo ? 'Video call ended.' : 'Voice call ended.';
+  }
+
+  void _dismissEndedCallSummary() {
+    ref.read(callEndPresentationProvider.notifier).dismiss();
+  }
+
+  Future<void> _callAgainFromSummary(CallEndSummary summary) async {
+    _dismissEndedCallSummary();
+    if (summary.isVideo) {
+      await _startVideoCall(summary.peerId);
+    } else {
+      await _startVoiceCall(summary.peerId);
+    }
   }
 
   void _maybeApplyDefaultVoiceOutput(VoiceCallState call) {
@@ -1038,13 +1306,13 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
   Future<void> _applyDefaultVoiceOutput(String callId) async {
     try {
       final settings = await ref.read(voiceAudioSettingsProvider.future);
-      final route = _voiceCallOutputRouteForPreference(
+      final target = _voiceCallOutputTargetForPreference(
         settings.defaultOutputPreference,
       );
-      if (route == VoiceCallOutputRoute.systemDefault) {
+      if (target.kind == CallAudioOutputTargetKind.systemDefault) {
         return;
       }
-      if (!await _isVoiceOutputRouteAvailable(route)) {
+      if (!await _isVoiceOutputTargetAvailable(target)) {
         return;
       }
       if (!mounted) {
@@ -1054,7 +1322,9 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
       if (current.callId != callId || current.phase != VoiceCallPhase.active) {
         return;
       }
-      await ref.read(voiceCallProvider.notifier).setOutputRoute(route);
+      await ref
+          .read(voiceCallProvider.notifier)
+          .setOutputTarget(target, label: _outputTargetLabel(target));
     } catch (error) {
       if (mounted) {
         _showVoiceCallError(_formatUiError(error));
@@ -1075,7 +1345,88 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
     _dispatchSoundEvent(event);
   }
 
+  void _handleConnectionRequestSounds(
+    ConnectionRequestState? previous,
+    ConnectionRequestState next,
+  ) {
+    for (final event in rainConnectionRequestSoundEventsFor(
+      previous: previous,
+      next: next,
+    )) {
+      final requestId = event.connectionRequestId;
+      if (requestId == null) {
+        continue;
+      }
+      final soundKey = '${event.kind.name}:$requestId';
+      if (!_connectionRequestSoundKeys.add(soundKey)) {
+        continue;
+      }
+      _dispatchSoundEvent(event);
+    }
+  }
+
   Future<void> _refreshFriends() async {
+    final activeRefresh = _refreshFriendsInFlight;
+    if (activeRefresh != null) {
+      return activeRefresh;
+    }
+    final refresh = _runRefreshFriends();
+    _refreshFriendsInFlight = refresh;
+    try {
+      await refresh;
+    } finally {
+      if (identical(_refreshFriendsInFlight, refresh)) {
+        _refreshFriendsInFlight = null;
+      }
+    }
+  }
+
+  Future<void> _handleInboundConnectionRequestAction(
+    ConnectionRequestSurfaceModel surface,
+    ConnectionRequestActionModel action,
+  ) async {
+    try {
+      final decision = await ref
+          .read(connectionRequestProvider.notifier)
+          .perform(surface, action.kind);
+      if (!mounted) {
+        return;
+      }
+      if (!decision.allowed) {
+        _dispatchRainSoundEvent(
+          ref,
+          rainUiWarningSoundEvent('home.inbound_connection_request_denied'),
+        );
+        _showHomeSnack(decision.userMessage, error: true);
+        return;
+      }
+      _dispatchRainSoundEvent(ref, rainUiActionSoundEvent());
+      _showHomeSnack(decision.userMessage);
+    } catch (error) {
+      if (!mounted) {
+        return;
+      }
+      _dispatchRainSoundEvent(
+        ref,
+        rainUiWarningSoundEvent('home.inbound_connection_request_failed'),
+      );
+      _showHomeSnack(_formatUiError(error), error: true);
+    }
+  }
+
+  void _showHomeSnack(String message, {bool error = false}) {
+    if (!mounted || message.trim().isEmpty) {
+      return;
+    }
+    ScaffoldMessenger.of(context).showSnackBar(
+      SnackBar(
+        content: Text(message),
+        backgroundColor: error ? Theme.of(context).colorScheme.error : null,
+      ),
+    );
+  }
+
+  Future<void> _runRefreshFriends() async {
     final status = ref.read(networkStatusProvider).value;
     if (status != null && status.blocksNetworkActions) {
       if (mounted) {
@@ -1142,6 +1493,9 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
     try {
       await ref.read(voiceCallProvider.notifier).start(peerId);
     } catch (error) {
+      if (!mounted) {
+        return;
+      }
       _dispatchVoiceCommandFailureSound(error, before: before);
       _showVoiceCallError(_formatUiError(error));
     }
@@ -1152,6 +1506,9 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
     try {
       await ref.read(voiceCallProvider.notifier).startVideo(peerId);
     } catch (error) {
+      if (!mounted) {
+        return;
+      }
       _dispatchVoiceCommandFailureSound(error, before: before);
       _showVoiceCallError(_formatUiError(error));
     }
@@ -1163,6 +1520,9 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
       await _stopVoiceCallLoopsBeforeAccept();
       await ref.read(voiceCallProvider.notifier).accept();
     } catch (error) {
+      if (!mounted) {
+        return;
+      }
       _dispatchVoiceCommandFailureSound(error, before: before);
       _showVoiceCallError(_formatUiError(error));
     }
@@ -1173,6 +1533,9 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
     try {
       await ref.read(voiceCallProvider.notifier).reject();
     } catch (error) {
+      if (!mounted) {
+        return;
+      }
       _dispatchVoiceCommandFailureSound(error, before: before);
       _showVoiceCallError(_formatUiError(error));
     }
@@ -1183,6 +1546,9 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
     try {
       await ref.read(voiceCallProvider.notifier).hangUp();
     } catch (error) {
+      if (!mounted) {
+        return;
+      }
       _dispatchVoiceCommandFailureSound(error, before: before);
       _showVoiceCallError(_formatUiError(error));
     }
@@ -1192,10 +1558,16 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
     final nextMuted = !call.isMuted;
     try {
       await ref.read(voiceCallProvider.notifier).setMuted(nextMuted);
+      if (!mounted) {
+        return;
+      }
       _dispatchSoundEvent(
         nextMuted ? _callControlMuteEvent(call) : _callControlUnmuteEvent(call),
       );
     } catch (error) {
+      if (!mounted) {
+        return;
+      }
       _dispatchVoiceCommandFailureSound(error, before: call);
       _showVoiceCallError(_formatUiError(error));
     }
@@ -1205,12 +1577,18 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
     final nextDeafened = !call.isDeafened;
     try {
       await ref.read(voiceCallProvider.notifier).setDeafened(nextDeafened);
+      if (!mounted) {
+        return;
+      }
       _dispatchSoundEvent(
         nextDeafened
             ? _callControlDeafenEvent(call)
             : _callControlUndeafenEvent(call),
       );
     } catch (error) {
+      if (!mounted) {
+        return;
+      }
       _dispatchVoiceCommandFailureSound(error, before: call);
       _showVoiceCallError(_formatUiError(error));
     }
@@ -1220,12 +1598,18 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
     final nextMuted = !call.isCameraMuted;
     try {
       await ref.read(voiceCallProvider.notifier).setCameraMuted(nextMuted);
+      if (!mounted) {
+        return;
+      }
       _dispatchSoundEvent(
         nextMuted
             ? _callControlCameraMuteEvent(call)
             : _callControlCameraUnmuteEvent(call),
       );
     } catch (error) {
+      if (!mounted) {
+        return;
+      }
       _dispatchVoiceCommandFailureSound(error, before: call);
       _showVoiceCallError(_formatUiError(error));
     }
@@ -1235,30 +1619,74 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
     final before = ref.read(voiceCallProvider);
     try {
       await ref.read(voiceCallProvider.notifier).switchCamera();
-      _dispatchSoundEvent(_callControlRouteChangedEvent(before));
-    } catch (error) {
-      _dispatchVoiceCommandFailureSound(error, before: before);
-      _showVoiceCallError(_formatUiError(error));
-    }
-  }
-
-  Future<void> _selectVoiceOutputRoute(VoiceCallOutputRoute route) async {
-    final before = ref.read(voiceCallProvider);
-    try {
-      if (!await _isVoiceOutputRouteAvailable(route)) {
-        _showVoiceCallError('Bluetooth audio output is unavailable.');
+      if (!mounted) {
         return;
       }
-      await ref.read(voiceCallProvider.notifier).setOutputRoute(route);
       _dispatchSoundEvent(_callControlRouteChangedEvent(before));
     } catch (error) {
+      if (!mounted) {
+        return;
+      }
       _dispatchVoiceCommandFailureSound(error, before: before);
       _showVoiceCallError(_formatUiError(error));
     }
   }
 
-  Future<bool> _isVoiceOutputRouteAvailable(VoiceCallOutputRoute route) async {
-    if (route != VoiceCallOutputRoute.bluetooth) {
+  Future<void> _selectVoiceOutputRoute(CallAudioOutputTarget target) async {
+    final before = ref.read(voiceCallProvider);
+    try {
+      if (!await _isVoiceOutputTargetAvailable(target)) {
+        if (!mounted) {
+          return;
+        }
+        _showVoiceCallError(_outputTargetUnavailableMessage(target));
+        return;
+      }
+      if (!mounted) {
+        return;
+      }
+      await ref
+          .read(voiceCallProvider.notifier)
+          .setOutputTarget(target, label: _outputTargetLabel(target));
+      if (!mounted) {
+        return;
+      }
+      _dispatchSoundEvent(_callControlRouteChangedEvent(before));
+    } catch (error) {
+      if (!mounted) {
+        return;
+      }
+      _dispatchVoiceCommandFailureSound(error, before: before);
+      _showVoiceCallError(_formatUiError(error));
+    }
+  }
+
+  Future<bool> _isVoiceOutputTargetAvailable(
+    CallAudioOutputTarget target,
+  ) async {
+    if (target.isDeviceBacked) {
+      final deviceId = target.deviceId;
+      if (deviceId == null || deviceId.trim().isEmpty) {
+        return false;
+      }
+      final cached = ref.read(audioOutputCapabilityProvider).value;
+      if (cached != null) {
+        return cached.devices.any(
+          (RainMediaDevice device) => device.deviceId == deviceId,
+        );
+      }
+      try {
+        final capabilities = await ref
+            .read(audioOutputCapabilityProvider.notifier)
+            .reload();
+        return capabilities.devices.any(
+          (RainMediaDevice device) => device.deviceId == deviceId,
+        );
+      } catch (_) {
+        return false;
+      }
+    }
+    if (target.kind != CallAudioOutputTargetKind.bluetooth) {
       return true;
     }
     final cached = ref.read(audioOutputCapabilityProvider).value;
@@ -1275,7 +1703,47 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
     }
   }
 
+  String? _outputTargetLabel(CallAudioOutputTarget target) {
+    final options = rainVoiceCallOutputRouteOptions(
+      capabilities:
+          ref.read(audioOutputCapabilityProvider).value ??
+          const AudioOutputCapabilityState(devices: []),
+      profile: AdaptiveDeviceProfile.resolve(
+        targetPlatform: defaultTargetPlatform,
+        width: MediaQuery.sizeOf(context).width,
+        lowPower: RainPerformanceScope.read(context).isLowPower,
+      ),
+    );
+    for (final option in options) {
+      if (option.target.key == target.key) {
+        return option.label;
+      }
+    }
+    return switch (target.kind) {
+      CallAudioOutputTargetKind.systemDefault => null,
+      CallAudioOutputTargetKind.androidSpeakerphone => 'Speakerphone',
+      CallAudioOutputTargetKind.bluetooth => 'Bluetooth',
+      CallAudioOutputTargetKind.wiredHeadset => 'Wired headset',
+      CallAudioOutputTargetKind.desktopDevice => 'Audio device',
+    };
+  }
+
+  String _outputTargetUnavailableMessage(CallAudioOutputTarget target) {
+    return switch (target.kind) {
+      CallAudioOutputTargetKind.bluetooth =>
+        'Bluetooth audio output is unavailable.',
+      CallAudioOutputTargetKind.desktopDevice =>
+        'That audio output is unavailable.',
+      CallAudioOutputTargetKind.systemDefault ||
+      CallAudioOutputTargetKind.androidSpeakerphone ||
+      CallAudioOutputTargetKind.wiredHeadset => 'Audio output is unavailable.',
+    };
+  }
+
   Future<void> _stopVoiceCallLoopsBeforeAccept() async {
+    if (!mounted) {
+      return;
+    }
     try {
       await ref.read(soundEventRouterProvider).stopAllLoops();
     } catch (error) {
@@ -1284,6 +1752,9 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
   }
 
   void _dispatchSoundEvent(RainSoundEvent event) {
+    if (!mounted) {
+      return;
+    }
     _dispatchRainSoundEvent(ref, event);
   }
 
@@ -1291,6 +1762,9 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
     Object error, {
     VoiceCallState? before,
   }) {
+    if (!mounted) {
+      return;
+    }
     _dispatchVoiceCommandFailureSoundForRef(ref, error, before: before);
   }
 

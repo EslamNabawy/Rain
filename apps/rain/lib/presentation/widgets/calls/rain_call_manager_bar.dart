@@ -2,8 +2,9 @@ import 'package:flutter/material.dart';
 
 import 'package:rain/application/runtime/voice_call_state.dart';
 import 'package:rain/application/state/call_surface_providers.dart';
-import 'package:rain/presentation/branding/rain_ripple_halo_surface.dart';
+import 'package:rain/presentation/performance/rain_performance.dart';
 import 'package:rain/presentation/widgets/calls/rain_call_controls.dart';
+import 'package:rain/presentation/widgets/calls/rain_call_layout_contract.dart';
 import 'package:rain/presentation/widgets/rain_chat_widgets.dart';
 
 class RainCallManagerBar extends StatelessWidget {
@@ -34,84 +35,78 @@ class RainCallManagerBar extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    if (!surface.showsManagerBar || state.phase == VoiceCallPhase.idle) {
+    final contract = RainCallLayoutContract.fromSurface(
+      surface,
+      isDesktop: false,
+    );
+    if (!contract.showTopManagerBar || state.phase == VoiceCallPhase.idle) {
       return const SizedBox.shrink();
     }
 
     final scheme = Theme.of(context).colorScheme;
     final accent = rainVoiceCallAccent(context, state);
-    final haloColor = rainVoiceCallHaloColor(context, state);
+    final performance = RainPerformanceScope.of(context);
     return Material(
       color: Colors.transparent,
-      child: SafeArea(
-        bottom: false,
-        child: Padding(
-          padding: const EdgeInsets.fromLTRB(12, 10, 12, 0),
-          child: Center(
-            child: ConstrainedBox(
-              constraints: const BoxConstraints(maxWidth: 980),
-              child: RainRippleHaloSurface(
-                key: const ValueKey<String>('rain-call-manager-bar'),
-                enabled: rainVoiceCallShowsSignalHalo(state),
+      child: Padding(
+        padding: const EdgeInsets.symmetric(horizontal: 12),
+        child: Center(
+          child: ConstrainedBox(
+            constraints: const BoxConstraints(maxWidth: 980),
+            child: DecoratedBox(
+              key: const ValueKey<String>('rain-call-manager-bar'),
+              decoration: BoxDecoration(
+                color: scheme.surface.withValues(
+                  alpha: scheme.brightness == Brightness.dark ? 0.96 : 0.98,
+                ),
                 borderRadius: BorderRadius.circular(22),
-                color: haloColor,
-                pulseKey: '${state.callId}:${state.phase}:${surface.mode}',
-                pulseOnMount: rainVoiceCallShowsSignalHalo(state),
-                child: DecoratedBox(
-                  decoration: BoxDecoration(
-                    color: scheme.surface.withValues(
-                      alpha: scheme.brightness == Brightness.dark ? 0.96 : 0.98,
-                    ),
-                    borderRadius: BorderRadius.circular(22),
-                    border: Border.all(color: accent.withValues(alpha: 0.34)),
-                    boxShadow: <BoxShadow>[
-                      BoxShadow(
-                        blurRadius: 22,
-                        offset: const Offset(0, 10),
-                        color: Colors.black.withValues(
-                          alpha: scheme.brightness == Brightness.dark
-                              ? 0.34
-                              : 0.13,
-                        ),
+                border: Border.all(color: accent.withValues(alpha: 0.34)),
+                boxShadow: <BoxShadow>[
+                  if (performance.allowExpensiveCallEffects)
+                    BoxShadow(
+                      blurRadius: 22,
+                      offset: const Offset(0, 10),
+                      color: Colors.black.withValues(
+                        alpha: scheme.brightness == Brightness.dark
+                            ? 0.34
+                            : 0.13,
                       ),
-                    ],
-                  ),
-                  child: Padding(
-                    padding: const EdgeInsets.fromLTRB(12, 10, 10, 10),
-                    child: LayoutBuilder(
-                      builder:
-                          (BuildContext context, BoxConstraints constraints) {
-                            final compact = constraints.maxWidth < 560;
-                            return compact
-                                ? _CompactCallManagerContent(
-                                    state: state,
-                                    surface: surface,
-                                    displayName: displayName,
-                                    gender: gender,
-                                    accent: accent,
-                                    onToggleMute: onToggleMute,
-                                    onToggleCamera: onToggleCamera,
-                                    onToggleDeafen: onToggleDeafen,
-                                    onRestore: onRestore,
-                                    onFullscreen: onFullscreen,
-                                    onHangUp: onHangUp,
-                                  )
-                                : _WideCallManagerContent(
-                                    state: state,
-                                    surface: surface,
-                                    displayName: displayName,
-                                    gender: gender,
-                                    accent: accent,
-                                    onToggleMute: onToggleMute,
-                                    onToggleCamera: onToggleCamera,
-                                    onToggleDeafen: onToggleDeafen,
-                                    onRestore: onRestore,
-                                    onFullscreen: onFullscreen,
-                                    onHangUp: onHangUp,
-                                  );
-                          },
                     ),
-                  ),
+                ],
+              ),
+              child: Padding(
+                padding: const EdgeInsets.fromLTRB(12, 10, 10, 10),
+                child: LayoutBuilder(
+                  builder: (BuildContext context, BoxConstraints constraints) {
+                    final compact = constraints.maxWidth < 560;
+                    return compact
+                        ? _CompactCallManagerContent(
+                            state: state,
+                            surface: surface,
+                            displayName: displayName,
+                            gender: gender,
+                            accent: accent,
+                            onToggleMute: onToggleMute,
+                            onToggleCamera: onToggleCamera,
+                            onToggleDeafen: onToggleDeafen,
+                            onRestore: onRestore,
+                            onFullscreen: onFullscreen,
+                            onHangUp: onHangUp,
+                          )
+                        : _WideCallManagerContent(
+                            state: state,
+                            surface: surface,
+                            displayName: displayName,
+                            gender: gender,
+                            accent: accent,
+                            onToggleMute: onToggleMute,
+                            onToggleCamera: onToggleCamera,
+                            onToggleDeafen: onToggleDeafen,
+                            onRestore: onRestore,
+                            onFullscreen: onFullscreen,
+                            onHangUp: onHangUp,
+                          );
+                  },
                 ),
               ),
             ),
@@ -208,48 +203,40 @@ class _CompactCallManagerContent extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    return Column(
-      mainAxisSize: MainAxisSize.min,
-      crossAxisAlignment: CrossAxisAlignment.stretch,
+    return Row(
+      key: const ValueKey<String>('rain-call-manager-compact-row'),
       children: <Widget>[
-        Row(
-          children: <Widget>[
-            Expanded(
-              child: _CallIdentity(
-                state: state,
-                displayName: displayName,
-                gender: gender,
-                accent: accent,
-              ),
-            ),
-            _CallRestoreButton(surface: surface, onRestore: onRestore),
-            if (state.isVideo)
-              _CallFullscreenButton(
-                surface: surface,
-                onFullscreen: onFullscreen,
-                onRestore: onRestore,
-              ),
-            _HangUpButton(onHangUp: onHangUp, state: state),
-          ],
+        Expanded(
+          child: _CallIdentity(
+            state: state,
+            displayName: displayName,
+            gender: gender,
+            accent: accent,
+          ),
         ),
-        const SizedBox(height: 8),
-        Row(
-          children: <Widget>[
-            Expanded(
-              child: _CallStatusText(
-                state: state,
-                displayName: displayName,
-                maxLines: 1,
-              ),
-            ),
-            _CallPrimaryToggles(
-              state: state,
-              onToggleMute: onToggleMute,
-              onToggleCamera: onToggleCamera,
-              onToggleDeafen: onToggleDeafen,
-            ),
-          ],
+        _CallManagerIconButton(
+          visual: rainVoiceCallControlVisual(
+            state,
+            CallControlCapability.microphone,
+          ),
+          onPressed: state.isActive ? onToggleMute : null,
         ),
+        if (state.isVideo)
+          _CallManagerIconButton(
+            visual: rainVoiceCallControlVisual(
+              state,
+              CallControlCapability.camera,
+            ),
+            onPressed: state.isActive ? onToggleCamera : null,
+          ),
+        _CallRestoreButton(surface: surface, onRestore: onRestore),
+        if (state.isVideo)
+          _CallFullscreenButton(
+            surface: surface,
+            onFullscreen: onFullscreen,
+            onRestore: onRestore,
+          ),
+        _HangUpButton(onHangUp: onHangUp, state: state),
       ],
     );
   }
@@ -312,15 +299,10 @@ class _CallIdentity extends StatelessWidget {
 }
 
 class _CallStatusText extends StatelessWidget {
-  const _CallStatusText({
-    required this.state,
-    required this.displayName,
-    this.maxLines = 2,
-  });
+  const _CallStatusText({required this.state, required this.displayName});
 
   final VoiceCallState state;
   final String displayName;
-  final int maxLines;
 
   @override
   Widget build(BuildContext context) {
@@ -342,7 +324,7 @@ class _CallStatusText extends StatelessWidget {
             ),
             Text(
               rainVoiceCallDetail(state, now),
-              maxLines: maxLines,
+              maxLines: 2,
               overflow: TextOverflow.ellipsis,
               style: Theme.of(context).textTheme.labelMedium?.copyWith(
                 color: scheme.onSurface.withValues(alpha: 0.68),

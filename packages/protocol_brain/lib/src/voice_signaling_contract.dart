@@ -1,3 +1,5 @@
+import 'voice_call_clock.dart';
+import 'voice_call_cleanup_janitor.dart';
 import 'voice_call_frame.dart';
 
 enum VoiceCallRole { caller, callee }
@@ -101,9 +103,23 @@ abstract interface class VoiceSignalingAdapter {
     required int createdAt,
   });
 
+  Future<List<String>> writeIceCandidates({
+    required String callId,
+    required String username,
+    required VoiceCallRole role,
+    required List<VoiceSignalingEnvelope> candidates,
+    required int createdAt,
+  });
+
   Stream<VoiceCallIceCandidateRecord> watchIceCandidates({
     required String callId,
     required VoiceCallRole role,
+  });
+
+  Future<VoiceCallCleanupSummary> cleanupStaleVoiceCallArtifacts({
+    required String username,
+    required int now,
+    int limit = maxCallCleanupItemsPerRun,
   });
 
   Future<void> deleteCall(String callId);
@@ -116,6 +132,8 @@ final class VoiceSignalingEnvelope {
     required this.v,
     required this.alg,
     required this.ts,
+    this.sender,
+    this.receiver,
     required this.nonce,
     required this.ciphertext,
     required this.mac,
@@ -131,6 +149,8 @@ final class VoiceSignalingEnvelope {
   final int v;
   final String alg;
   final int ts;
+  final String? sender;
+  final String? receiver;
   final String nonce;
   final String ciphertext;
   final String mac;
@@ -141,6 +161,8 @@ final class VoiceSignalingEnvelope {
       'v': v,
       'alg': alg,
       'ts': ts,
+      if (sender != null) 'from': sender,
+      if (receiver != null) 'to': receiver,
       'nonce': nonce,
       'ciphertext': ciphertext,
       'mac': mac,
@@ -155,6 +177,8 @@ final class VoiceSignalingEnvelope {
       v: _requiredInt(json, 'v'),
       alg: _requiredString(json, 'alg', max: 64),
       ts: _requiredInt(json, 'ts'),
+      sender: _optionalString(json, 'from', max: _maxUsernameLength),
+      receiver: _optionalString(json, 'to', max: _maxUsernameLength),
       nonce: _requiredString(json, 'nonce', max: maxNonceLength),
       ciphertext: _requiredString(json, 'ciphertext', max: maxCiphertextLength),
       mac: _requiredString(json, 'mac', max: maxMacLength),
@@ -172,6 +196,12 @@ final class VoiceSignalingEnvelope {
     }
     if (ts <= 0) {
       throw const FormatException('Voice signaling envelope ts invalid.');
+    }
+    if (sender != null) {
+      _validateUsername(sender!);
+    }
+    if (receiver != null) {
+      _validateUsername(receiver!);
     }
     _validateRequiredString('nonce', nonce, max: maxNonceLength);
     _validateRequiredString('ciphertext', ciphertext, max: maxCiphertextLength);
@@ -552,6 +582,106 @@ final class VoiceCallRoom {
     return room;
   }
 
+  factory VoiceCallRoom.forCleanupFromJson({
+    required String callId,
+    required Map<Object?, Object?> json,
+  }) {
+    final createdAt = VoiceCallTimestampClock.nextInitialTimestamp(
+      _requiredInt(json, 'createdAt'),
+    );
+    final updatedAt = VoiceCallTimestampClock.nextRoomTimestamp(
+      requestedAt: _requiredInt(json, 'updatedAt'),
+      roomCreatedAt: createdAt,
+      roomUpdatedAt: createdAt,
+    );
+    final expiresAt = VoiceCallTimestampClock.nextExpiry(
+      createdAt: createdAt,
+      requestedExpiresAt: _requiredInt(json, 'expiresAt'),
+    );
+
+    final acceptedAt = _cleanupOptionalTimestamp(
+      json,
+      'acceptedAt',
+      createdAt: createdAt,
+      updatedAt: updatedAt,
+    );
+    final connectedAt = _cleanupOptionalTimestamp(
+      json,
+      'connectedAt',
+      createdAt: createdAt,
+      updatedAt: updatedAt,
+    );
+    final endedAt = _cleanupOptionalTimestamp(
+      json,
+      'endedAt',
+      createdAt: createdAt,
+      updatedAt: updatedAt,
+    );
+
+    final room = VoiceCallRoom(
+      v: _requiredInt(json, 'v'),
+      callId: callId,
+      pairId: _requiredString(
+        json,
+        'pairId',
+        max: (_maxUsernameLength * 2) + 1,
+      ),
+      caller: _requiredString(json, 'caller', max: _maxUsernameLength),
+      callee: _requiredString(json, 'callee', max: _maxUsernameLength),
+      status: voiceCallSignalingStatusFromName(
+        _requiredString(json, 'status', max: 32),
+      ),
+      mediaMode: _optionalCallMediaMode(json, 'mediaMode'),
+      createdAt: createdAt,
+      updatedAt: updatedAt,
+      expiresAt: expiresAt,
+      acceptedAt: acceptedAt,
+      connectedAt: connectedAt,
+      endedAt: endedAt,
+      endedBy: _optionalString(json, 'endedBy', max: _maxUsernameLength),
+      reasonCode: _optionalString(
+        json,
+        'reasonCode',
+        max: VoiceCallRoom.maxReasonCodeLength,
+      ),
+      reason: _optionalString(
+        json,
+        'reason',
+        max: VoiceCallRoom.maxReasonLength,
+      ),
+      muted: Map<String, bool>.unmodifiable(_optionalBoolMap(json, 'muted')),
+      cameraMuted: Map<String, bool>.unmodifiable(
+        _optionalBoolMap(json, 'cameraMuted'),
+      ),
+    );
+    room.validate();
+    return room;
+  }
+
+  static VoiceCallRoom? tryParseForCleanup({
+    required String callId,
+    required Map<Object?, Object?> json,
+    int? now,
+  }) {
+    try {
+      return VoiceCallRoom.fromJson(callId: callId, json: json);
+    } on FormatException {
+      try {
+        final repaired = VoiceCallRoom.forCleanupFromJson(
+          callId: callId,
+          json: json,
+        );
+        final timestamp = now ?? DateTime.now().millisecondsSinceEpoch;
+        if (!repaired.status.isTerminal && repaired.expiresAt > timestamp) {
+          return null;
+        }
+        return repaired;
+      } catch (_) {
+        return null;
+      }
+    }
+  }
+
   void validate() {
     if (v != version) {
       throw const FormatException('Voice call room version invalid.');
@@ -801,6 +931,26 @@ int? _optionalInt(Map<Object?, Object?> json, String key) {
     return value.toInt();
   }
   throw FormatException('Voice signaling $key must be an integer.');
+}
+
+int? _cleanupOptionalTimestamp(
+  Map<Object?, Object?> json,
+  String key, {
+  required int createdAt,
+  required int updatedAt,
+}) {
+  final value = _optionalInt(json, key);
+  if (value == null) {
+    return null;
+  }
+  if (value >= createdAt) {
+    return value;
+  }
+  return VoiceCallTimestampClock.nextRoomTimestamp(
+    requestedAt: value,
+    roomCreatedAt: createdAt,
+    roomUpdatedAt: updatedAt,
+  );
 }
 
 String? _optionalString(

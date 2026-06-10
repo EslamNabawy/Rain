@@ -1,31 +1,39 @@
-part of 'rain_runtime_controller.dart';
+import 'dart:async';
+
+import 'package:protocol_brain/protocol_brain.dart';
+import 'package:rain_core/rain_core.dart';
+
+import 'connection_attempt_coordinator.dart';
+import 'rain_runtime_controller.dart';
+import 'voice_call_state.dart';
 
 extension FriendRuntime on RainRuntimeController {
-  void _watchPresence(String username) {
-    if (_presenceSubscriptions.containsKey(username)) {
+  void watchPresence(String username) {
+    if (presenceSubscriptions.containsKey(username)) {
       return;
     }
 
-    _presenceSubscriptions[username] = adapter.watchPresence(username).listen((
+    presenceSubscriptions[username] = adapter.watchPresence(username).listen((
       bool isOnline,
     ) async {
-      if (_shutDown) {
+      if (runtimeShutDown) {
         return;
       }
       try {
-        await _localMutations.run(
+        cachePresenceStreamValue(username, isOnline);
+        await localMutations.run(
           () => friendStore.updatePresence(username, isOnline),
         );
-        if (!isOnline) {
-          unawaited(
-            _endVoiceCallForPeer(
-              username,
-              notifyPeer: false,
-              detail: 'Peer went offline. Call ended.',
-              failureReason: VoiceCallFailureReason.networkLost,
-              failureDetail: 'Network connection lost. Call ended.',
-            ),
+        if (isOnline) {
+          final friend = await localMutations.run(
+            () => friendStore.loadFriend(username),
           );
+          if (friend?.state == FriendState.friend &&
+              !mutableManualDisconnectedPeers.contains(username)) {
+            unawaited(_trackAcceptedPeer(username));
+          }
+        } else {
+          unawaited(_handlePeerPresenceExpired(username));
         }
       } catch (_) {
         // Ignore late presence callbacks during shutdown or store teardown.
@@ -33,51 +41,95 @@ extension FriendRuntime on RainRuntimeController {
     });
   }
 
+  Future<void> _handlePeerPresenceExpired(String username) async {
+    final peerId = normalizeUsername(username);
+    recordRuntimeEvent(
+      category: 'presence',
+      name: 'presence_session_expired',
+      severity: 'warning',
+      message: 'Peer presence expired.',
+      context: <String, Object?>{'peerId': peerId},
+    );
+    recoverableDisconnectedPeers.remove(peerId);
+    final call = voiceCallState;
+    final callMatchesPeer = call.peerId == peerId;
+    final isEstablishedCall =
+        call.phase == VoiceCallPhase.active ||
+        (call.phase == VoiceCallPhase.ending && call.startedAt != null);
+    if (callMatchesPeer && call.hasCall && !isEstablishedCall) {
+      await endVoiceCallForPeer(
+        peerId,
+        notifyPeer: false,
+        detail: 'Call could not connect. Try again.',
+        failureReason: VoiceCallFailureReason.mediaConnectionFailed,
+        failureDetail: 'Call could not connect. Try again.',
+      );
+    } else {
+      await endVoiceCallForPeer(
+        peerId,
+        notifyPeer: false,
+        detail: 'Peer closed Rain. Connection ended.',
+        failureReason: VoiceCallFailureReason.networkLost,
+        failureDetail: 'Peer closed Rain. Connection ended.',
+      );
+    }
+    unawaited(
+      failActiveTransfersForPeer(
+        peerId,
+        'Peer closed Rain. Transfer canceled.',
+      ),
+    );
+    try {
+      await disconnectBrainPeer(peerId, PeerDisconnectIntent.presenceExpired);
+      await unregisterPeerListener(peerId);
+    } catch (_) {
+      // Presence expiry cleanup is best effort; the peer is already stale.
+    }
+  }
+
   Future<void> _trackAcceptedPeer(String username) async {
-    final normalizedUsername = _normalizedUsername(username);
-    _watchPresence(normalizedUsername);
-    if (_manualDisconnectedPeers.contains(normalizedUsername)) {
+    final normalizedUsername = normalizeUsername(username);
+    watchPresence(normalizedUsername);
+    if (mutableManualDisconnectedPeers.contains(normalizedUsername)) {
       return;
     }
-    await _registerPeerListener(
+    await registerPeerListener(
       normalizedUsername,
       bestEffort: true,
       passive: true,
     );
   }
 
-  Future<void> _refreshPassivePeerListeners() async {
-    final friends = await _localMutations.run(friendStore.loadFriends);
-    await _reconcilePassivePeerListeners(friends);
+  Future<void> refreshPassivePeerListeners() async {
+    final friends = await localMutations.run(friendStore.loadFriends);
+    await reconcilePassivePeerListeners(friends);
   }
 
-  Future<void> _reconcilePassivePeerListeners(
-    List<FriendRecord> friends,
-  ) async {
-    final selectedPeerIds = _connectionCoordinator
+  Future<void> reconcilePassivePeerListeners(List<FriendRecord> friends) async {
+    final selectedPeerIds = connectionCoordinator
         .selectPassivePeerIds(
           friends,
-          manualDisconnectedPeers: _manualDisconnectedPeers,
+          manualDisconnectedPeers: mutableManualDisconnectedPeers,
         )
         .toSet();
 
-    for (final peerId in _passivePeerListeners.toList()) {
+    for (final peerId in passivePeerListeners.toList()) {
       if (selectedPeerIds.contains(peerId)) {
         continue;
       }
       if (_hasActiveSession(peerId)) {
-        _passivePeerListeners.remove(peerId);
+        passivePeerListeners.remove(peerId);
         continue;
       }
-      await _unregisterPeerListener(peerId);
+      await unregisterPeerListener(peerId);
     }
 
     for (final peerId in selectedPeerIds) {
       await _trackAcceptedPeer(peerId);
     }
 
-    _connectionCoordinator.updatePassiveListenerCount(
-      _passivePeerListeners.length,
+    connectionCoordinator.updatePassiveListenerCount(
+      passivePeerListeners.length,
     );
   }
 
@@ -88,26 +140,25 @@ extension FriendRuntime on RainRuntimeController {
         state == SessionState.reconnecting;
   }
 
-  Future<void> _registerPeerListener(
+  Future<void> registerPeerListener(
     String username, {
     required bool bestEffort,
     bool passive = false,
   }) async {
-    final normalizedUsername = _normalizedUsername(username);
-    if (brain == null ||
-        _registeredPeerListeners.contains(normalizedUsername)) {
-      if (passive && _registeredPeerListeners.contains(normalizedUsername)) {
-        _passivePeerListeners.add(normalizedUsername);
-        _connectionCoordinator.updatePassiveListenerCount(
-          _passivePeerListeners.length,
+    final normalizedUsername = normalizeUsername(username);
+    if (brain == null || registeredPeerListeners.contains(normalizedUsername)) {
+      if (passive && registeredPeerListeners.contains(normalizedUsername)) {
+        passivePeerListeners.add(normalizedUsername);
+        connectionCoordinator.updatePassiveListenerCount(
+          passivePeerListeners.length,
         );
       }
       return;
     }
     if (passive &&
-        !_connectionCoordinator.canRegisterPassivePeer(
+        !connectionCoordinator.canRegisterPassivePeer(
           normalizedUsername,
-          passivePeerIds: _passivePeerListeners,
+          passivePeerIds: passivePeerListeners,
         )) {
       return;
     }
@@ -116,11 +167,11 @@ extension FriendRuntime on RainRuntimeController {
         normalizedUsername,
         incomingOfferGuard: _authorizeIncomingOffer,
       );
-      _registeredPeerListeners.add(normalizedUsername);
+      registeredPeerListeners.add(normalizedUsername);
       if (passive) {
-        _passivePeerListeners.add(normalizedUsername);
-        _connectionCoordinator.updatePassiveListenerCount(
-          _passivePeerListeners.length,
+        passivePeerListeners.add(normalizedUsername);
+        connectionCoordinator.updatePassiveListenerCount(
+          passivePeerListeners.length,
         );
       }
     } catch (_) {
@@ -131,28 +182,28 @@ extension FriendRuntime on RainRuntimeController {
     }
   }
 
-  Future<void> _unregisterPeerListener(String username) async {
-    final normalizedUsername = _normalizedUsername(username);
-    _registeredPeerListeners.remove(normalizedUsername);
-    _passivePeerListeners.remove(normalizedUsername);
-    _connectionCoordinator.updatePassiveListenerCount(
-      _passivePeerListeners.length,
+  Future<void> unregisterPeerListener(String username) async {
+    final normalizedUsername = normalizeUsername(username);
+    registeredPeerListeners.remove(normalizedUsername);
+    passivePeerListeners.remove(normalizedUsername);
+    connectionCoordinator.updatePassiveListenerCount(
+      passivePeerListeners.length,
     );
     await brain?.unregisterPeer(normalizedUsername);
   }
 
   Future<IncomingOfferDecision> _authorizeIncomingOffer(String username) async {
-    final normalizedUsername = _normalizedUsername(username);
-    _connectionCoordinator.recordInboundOffer(normalizedUsername);
-    if (_shutDown || !_started) {
+    final normalizedUsername = normalizeUsername(username);
+    connectionCoordinator.recordInboundOffer(normalizedUsername);
+    if (runtimeShutDown || !runtimeStarted) {
       return const IncomingOfferDecision.deny('Rain is not running.');
     }
-    if (_manualDisconnectedPeers.contains(normalizedUsername)) {
+    if (mutableManualDisconnectedPeers.contains(normalizedUsername)) {
       return const IncomingOfferDecision.deny(
         'Manual disconnect is active. Press Connect to open the peer lane again.',
       );
     }
-    final friend = await _localMutations.run(
+    final friend = await localMutations.run(
       () => friendStore.loadFriend(normalizedUsername),
     );
     return switch (friend?.state) {
@@ -173,8 +224,8 @@ extension FriendRuntime on RainRuntimeController {
     };
   }
 
-  Future<void> _clearFriendRequests(String username) async {
-    final normalizedUsername = _normalizedUsername(username);
+  Future<void> clearFriendRequests(String username) async {
+    final normalizedUsername = normalizeUsername(username);
     await adapter.deleteFriendRequest(
       selfIdentity.username,
       normalizedUsername,
@@ -185,25 +236,25 @@ extension FriendRuntime on RainRuntimeController {
     );
   }
 
-  void _refreshRelationshipsSilently({String? onlyUsername}) {
-    if (_shutDown || !_started) {
+  void refreshRelationshipsSilently({String? onlyUsername}) {
+    if (runtimeShutDown || !runtimeStarted) {
       return;
     }
-    unawaited(_safeSyncRelationships(onlyUsername: onlyUsername));
+    unawaited(safeSyncRelationships(onlyUsername: onlyUsername));
   }
 
-  Future<void> _processIncomingFriendRequest(String from) async {
-    if (_shutDown) {
+  Future<void> processIncomingFriendRequest(String from) async {
+    if (runtimeShutDown) {
       return;
     }
-    final normalizedFrom = _normalizedUsername(from);
-    var existing = await _localMutations.run(() {
-      if (_shutDown) {
+    final normalizedFrom = normalizeUsername(from);
+    var existing = await localMutations.run(() {
+      if (runtimeShutDown) {
         return Future<FriendRecord?>.value();
       }
       return friendStore.loadFriend(normalizedFrom);
     });
-    if (_shutDown) {
+    if (runtimeShutDown) {
       return;
     }
     BackendIdentity? backendIdentity;
@@ -216,34 +267,34 @@ extension FriendRuntime on RainRuntimeController {
     final displayName = backendDisplayName.isNotEmpty
         ? backendDisplayName
         : (existing?.displayName ?? normalizedFrom);
-    final gender = _backendGender(backendIdentity?.gender) ?? existing?.gender;
-    if (_shutDown) {
+    final gender = backendGender(backendIdentity?.gender) ?? existing?.gender;
+    if (runtimeShutDown) {
       return;
     }
     if (existing?.state == FriendState.blockedByPeer) {
-      await _syncRelationships(onlyUsername: normalizedFrom);
-      existing = await _localMutations.run(
+      await syncRelationships(onlyUsername: normalizedFrom);
+      existing = await localMutations.run(
         () => friendStore.loadFriend(normalizedFrom),
       );
     }
     if (existing?.state == FriendState.blocked) {
       await adapter.blockUser(selfIdentity.username, normalizedFrom);
-      await _clearFriendRequests(normalizedFrom);
+      await clearFriendRequests(normalizedFrom);
       await adapter.deleteFriendship(selfIdentity.username, normalizedFrom);
-      await _stopTrackingPeer(normalizedFrom);
+      await stopTrackingPeer(normalizedFrom);
       return;
     }
     if (existing?.state == FriendState.blockedByPeer) {
-      await _clearFriendRequests(normalizedFrom);
+      await clearFriendRequests(normalizedFrom);
       await adapter.deleteFriendship(selfIdentity.username, normalizedFrom);
-      await _stopTrackingPeer(normalizedFrom);
+      await stopTrackingPeer(normalizedFrom);
       return;
     }
     if (existing?.state == FriendState.pendingOutgoing ||
         existing?.state == FriendState.friend) {
       await adapter.upsertFriendship(selfIdentity.username, normalizedFrom);
-      await _localMutations.run(() {
-        if (_shutDown) {
+      await localMutations.run(() {
+        if (runtimeShutDown) {
           return Future<void>.value();
         }
         return friendStore.markAccepted(
@@ -252,9 +303,10 @@ extension FriendRuntime on RainRuntimeController {
           gender: gender,
         );
       });
-    } else if (!_isBlockedState(existing?.state)) {
-      await _localMutations.run(() {
-        if (_shutDown) {
+      await _seedFriendPresenceFromBackend(normalizedFrom, backendIdentity);
+    } else if (!isBlockedState(existing?.state)) {
+      await localMutations.run(() {
+        if (runtimeShutDown) {
           return Future<void>.value();
         }
         return friendStore.upsertFriend(
@@ -265,24 +317,25 @@ extension FriendRuntime on RainRuntimeController {
           gender: gender,
         );
       });
+      await _seedFriendPresenceFromBackend(normalizedFrom, backendIdentity);
     }
     if (existing?.state == FriendState.pendingOutgoing ||
         existing?.state == FriendState.friend) {
-      await _refreshPassivePeerListeners();
+      await refreshPassivePeerListeners();
     } else {
-      _watchPresence(normalizedFrom);
+      watchPresence(normalizedFrom);
     }
   }
 
-  Future<void> _safeSyncRelationships({String? onlyUsername}) async {
+  Future<void> safeSyncRelationships({String? onlyUsername}) async {
     try {
-      await _syncRelationships(onlyUsername: onlyUsername);
+      await syncRelationships(onlyUsername: onlyUsername);
     } catch (_) {
       // Keep the app usable when backend polling or realtime temporarily fails.
     }
   }
 
-  Future<void> _waitForPeerConnection(
+  Future<void> waitForPeerConnection(
     String username, {
     required Duration timeout,
   }) async {
@@ -315,8 +368,8 @@ extension FriendRuntime on RainRuntimeController {
     );
   }
 
-  Future<void> _syncRelationships({String? onlyUsername}) async {
-    final existingFriends = await _localMutations.run(friendStore.loadFriends);
+  Future<void> syncRelationships({String? onlyUsername}) async {
+    final existingFriends = await localMutations.run(friendStore.loadFriends);
     final existingByUsername = <String, FriendRecord>{
       for (final friend in existingFriends) friend.username: friend,
     };
@@ -365,7 +418,7 @@ extension FriendRuntime on RainRuntimeController {
 
       final existing = existingByUsername[username];
       final locallyBlockedByMe = existing?.state == FriendState.blocked;
-      final unblocking = _unblockingPeers.contains(username);
+      final unblocking = unblockingPeers.contains(username);
       if (locallyBlockedByMe &&
           !blockedByMeSet.contains(username) &&
           !unblocking) {
@@ -378,20 +431,18 @@ extension FriendRuntime on RainRuntimeController {
 
       if (blockedByMeSet.contains(username) ||
           (locallyBlockedByMe && !unblocking)) {
-        await _clearFriendRequests(username);
+        await clearFriendRequests(username);
         await adapter.deleteFriendship(selfIdentity.username, username);
-        await _localMutations.run(() => friendStore.block(username));
-        await _stopTrackingPeer(username);
+        await localMutations.run(() => friendStore.block(username));
+        await stopTrackingPeer(username);
         continue;
       }
 
       if (blockedMeSet.contains(username)) {
-        await _clearFriendRequests(username);
+        await clearFriendRequests(username);
         await adapter.deleteFriendship(selfIdentity.username, username);
-        await _localMutations.run(
-          () => friendStore.markBlockedByPeer(username),
-        );
-        await _stopTrackingPeer(username);
+        await localMutations.run(() => friendStore.markBlockedByPeer(username));
+        await stopTrackingPeer(username);
         continue;
       }
 
@@ -404,11 +455,11 @@ extension FriendRuntime on RainRuntimeController {
           : null;
 
       if (nextState == null) {
-        if (existing != null && !_isBlockedState(existing.state)) {
-          await _localMutations.run(() => friendStore.reject(username));
-          await _stopTrackingPeer(username);
+        if (existing != null && !isBlockedState(existing.state)) {
+          await localMutations.run(() => friendStore.reject(username));
+          await stopTrackingPeer(username);
         } else if (existing?.state == FriendState.blockedByPeer) {
-          await _localMutations.run(() => friendStore.reject(username));
+          await localMutations.run(() => friendStore.reject(username));
         }
         continue;
       }
@@ -422,11 +473,10 @@ extension FriendRuntime on RainRuntimeController {
           backendDisplayName.isNotEmpty && backendDisplayName != username
           ? backendDisplayName
           : (existing?.displayName ?? fallbackDisplayName);
-      final gender =
-          _backendGender(backendIdentity?.gender) ?? existing?.gender;
+      final gender = backendGender(backendIdentity?.gender) ?? existing?.gender;
 
       if (nextState == FriendState.friend) {
-        await _localMutations.run(
+        await localMutations.run(
           () => friendStore.upsertFriend(
             username: username,
             displayName: displayName,
@@ -435,11 +485,12 @@ extension FriendRuntime on RainRuntimeController {
             gender: gender,
           ),
         );
-        _watchPresence(username);
+        await _seedFriendPresenceFromBackend(username, backendIdentity);
+        watchPresence(username);
         continue;
       }
 
-      await _localMutations.run(
+      await localMutations.run(
         () => friendStore.upsertFriend(
           username: username,
           displayName: displayName,
@@ -448,31 +499,67 @@ extension FriendRuntime on RainRuntimeController {
           gender: gender,
         ),
       );
-      _watchPresence(username);
+      await _seedFriendPresenceFromBackend(username, backendIdentity);
+      watchPresence(username);
     }
-    await _refreshPassivePeerListeners();
+    await refreshPassivePeerListeners();
+    await reconcileConnectionRequestsWithRelationships();
   }
 
-  Future<void> _stopTrackingPeer(String username) async {
-    final normalizedUsername = _normalizedUsername(username);
-    await _endVoiceCallForPeer(
+  Future<void> _seedFriendPresenceFromBackend(
+    String username,
+    BackendIdentity? backendIdentity,
+  ) async {
+    if (runtimeShutDown || backendIdentity == null) {
+      return;
+    }
+    final presence = resolveBackendPresence(backendIdentity);
+    cacheResolvedPeerPresence(username, presence);
+    if (presence.staleRawOnline) {
+      recordRuntimeEvent(
+        category: 'presence',
+        name: 'backend_presence_stale_resolved_offline',
+        severity: 'warning',
+        message: 'Backend presence heartbeat is stale.',
+        context: <String, Object?>{
+          'peerId': normalizeUsername(username),
+          ...presence.toDiagnostics(),
+        },
+      );
+    }
+    await localMutations.run(() {
+      if (runtimeShutDown) {
+        return Future<void>.value();
+      }
+      return friendStore.updatePresence(username, presence.online);
+    });
+  }
+
+  Future<void> stopTrackingPeer(String username) async {
+    final normalizedUsername = normalizeUsername(username);
+    await endVoiceCallForPeer(
       normalizedUsername,
       notifyPeer: true,
       detail: 'Call ended because the relationship changed.',
     );
-    await _failActiveTransfersForPeer(
+    await failActiveTransfersForPeer(
       normalizedUsername,
       'Transfer canceled because the peer link closed.',
     );
-    await _presenceSubscriptions.remove(normalizedUsername)?.cancel();
-    _manualDisconnectedPeers.remove(normalizedUsername);
-    _recoverableDisconnectedPeers.remove(normalizedUsername);
-    _connectionCoordinator.clearRetry(normalizedUsername);
+    await presenceSubscriptions.remove(normalizedUsername)?.cancel();
+    if (peerPresenceSnapshotCache.remove(normalizedUsername) != null) {
+      notifyPeerConnectivityChanged();
+    }
+    if (mutableManualDisconnectedPeers.remove(normalizedUsername)) {
+      notifyPeerConnectivityChanged();
+    }
+    recoverableDisconnectedPeers.remove(normalizedUsername);
+    connectionCoordinator.clearRetry(normalizedUsername);
     await brain?.disconnect(normalizedUsername);
-    await _unregisterPeerListener(normalizedUsername);
+    await unregisterPeerListener(normalizedUsername);
   }
 
-  bool _isBlockedState(FriendState? state) {
+  bool isBlockedState(FriendState? state) {
     return state == FriendState.blocked || state == FriendState.blockedByPeer;
   }
 }

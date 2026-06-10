@@ -4,7 +4,7 @@ import 'dart:typed_data';
 
 import 'package:file_picker/file_picker.dart';
 import 'package:flutter_test/flutter_test.dart';
-import 'package:rain/application/runtime/voice_call_diagnostics.dart';
+import 'package:rain/application/runtime/voice_call/voice_call_diagnostics.dart';
 import 'package:rain/infrastructure/services/crash_diagnostics_service.dart';
 
 void main() {
@@ -81,6 +81,16 @@ void main() {
       );
 
       await service.initialize();
+      service.recordEventSync(
+        category: 'call',
+        name: 'state_changed',
+        context: <String, Object?>{
+          'peerId': 'bob',
+          'callId': 'call-1',
+          'phase': 'connectingMedia',
+          'sdp': List<String>.filled(900, 'x').join(),
+        },
+      );
       service.recordErrorSync(
         ArgumentError('bad route'),
         StackTrace.fromString('stack-line-2'),
@@ -98,9 +108,299 @@ void main() {
       expect(decoded['exportedAt'], '2026-05-22T01:02:03.000Z');
       expect(decoded['lastCrash'], isA<Map<String, dynamic>>());
       expect(decoded['events'], isA<List<dynamic>>());
-      expect(decoded['events'] as List<dynamic>, isNotEmpty);
+      final events = decoded['events'] as List<dynamic>;
+      expect(events, isNotEmpty);
+      final appEvent = events.cast<Map<String, dynamic>>().firstWhere(
+        (event) => event['kind'] == 'app_event',
+      );
+      expect(appEvent['category'], 'call');
+      expect(appEvent['name'], 'state_changed');
+      expect(
+        ((appEvent['context'] as Map<String, dynamic>)['sdp'] as String).length,
+        lessThan(600),
+      );
     },
   );
+
+  test(
+    'diagnostics export recursively redacts private values and payloads',
+    () async {
+      final temp = await Directory.systemTemp.createTemp(
+        'rain-crash-diagnostics-privacy-test-',
+      );
+      addTearDown(() => temp.delete(recursive: true));
+      final exportPath = _join(temp.path, 'privacy-diagnostics.json');
+
+      final service = CrashDiagnosticsService(
+        directoryProvider: () async => temp,
+        clock: () => DateTime.utc(2026, 5, 22, 1, 2, 3),
+        saveFile:
+            ({
+              String? dialogTitle,
+              String? fileName,
+              String? initialDirectory,
+              FileType type = FileType.any,
+              List<String>? allowedExtensions,
+              Uint8List? bytes,
+              bool lockParentWindow = false,
+            }) async {
+              return exportPath;
+            },
+      );
+
+      await service.initialize();
+      service.recordEventSync(
+        category: 'call',
+        name: 'privacy_probe',
+        message: 'failed at /voiceCalls/raw-room-123 with token=raw-token-123',
+        context: <String, Object?>{
+          'peerId': 'raw-peer-bob',
+          'callId': 'raw-call-123',
+          'roomId': 'raw-room-123',
+          'username': 'bob@example.test',
+          'firebasePath': '/voiceCalls/raw-room-123/offer/sdp',
+          'fileName': 'private-report.pdf',
+          'localPath': r'C:\Users\eslam\private-report.pdf',
+          'messageText': 'meet me at the private location',
+          'token': 'raw-token-123',
+          'password': 'raw-password-123',
+          'nested': <String, Object?>{
+            'items': <Object?>[
+              <String, Object?>{
+                'sdp': 'v=0\r\na=ice-ufrag:raw-ufrag\r\na=fingerprint:raw',
+                'iceCandidate':
+                    'candidate:842163049 1 udp 1677729535 192.0.2.1 54400 typ host',
+              },
+            ],
+          },
+        },
+      );
+      service.recordErrorSync(
+        StateError(
+          'Firebase denied /activeVoicePairs/alice:bob '
+          'password=raw-password-123 fileName=private-report.pdf',
+        ),
+        StackTrace.fromString(
+          r'C:\Users\eslam\private-report.pdf:1 raw-token-123',
+        ),
+        source: 'privacy-test',
+        fatal: false,
+      );
+
+      final result = await service.exportDiagnostics();
+
+      expect(result.saved, isTrue);
+      final encoded = await File(exportPath).readAsString();
+      final decoded = jsonDecode(encoded) as Map<String, dynamic>;
+      final event = (decoded['events'] as List<dynamic>)
+          .cast<Map<String, dynamic>>()
+          .firstWhere((event) => event['name'] == 'privacy_probe');
+      final context = event['context'] as Map<String, dynamic>;
+
+      for (final raw in const <String>[
+        'raw-peer-bob',
+        'raw-call-123',
+        'raw-room-123',
+        'bob@example.test',
+        '/voiceCalls/raw-room-123',
+        'private-report.pdf',
+        r'C:\Users\eslam',
+        'meet me at the private location',
+        'raw-token-123',
+        'raw-password-123',
+        'raw-ufrag',
+        'candidate:842163049',
+        '192.0.2.1',
+        '/activeVoicePairs/alice:bob',
+      ]) {
+        expect(encoded, isNot(contains(raw)), reason: raw);
+      }
+      expect(context['peerId'], startsWith('[id:'));
+      expect(context['callId'], startsWith('[id:'));
+      expect(context['firebasePath'], startsWith('[firebase-path:'));
+      expect(context['fileName'], startsWith('[file:'));
+      expect(context['localPath'], startsWith('[path:'));
+      expect(context['messageText'], '[redacted]');
+      expect(encoded, contains('[redacted]'));
+      expect(encoded, contains('[redacted:sdp]'));
+      expect(encoded, contains('[redacted:ice-candidate]'));
+      expect(encoded, contains('privacy-test'));
+    },
+  );
+
+  test('app event recorder buffers events until async flush', () async {
+    final temp = await Directory.systemTemp.createTemp(
+      'rain-crash-diagnostics-buffer-test-',
+    );
+    addTearDown(() => temp.delete(recursive: true));
+
+    final service = CrashDiagnosticsService(
+      directoryProvider: () async => temp,
+      eventFlushInterval: const Duration(minutes: 1),
+    );
+
+    await service.initialize();
+    service.recordEventSync(category: 'connection', name: 'connect_requested');
+
+    final eventLog = File(
+      _join(_join(temp.path, 'rain_diagnostics'), 'events.jsonl'),
+    );
+    expect(eventLog.existsSync(), isFalse);
+
+    await service.flushEvents();
+
+    expect(eventLog.existsSync(), isTrue);
+    expect(await eventLog.readAsString(), contains('connect_requested'));
+  });
+
+  test('app event recorder coalesces noisy repeated events', () async {
+    final temp = await Directory.systemTemp.createTemp(
+      'rain-crash-diagnostics-coalesce-test-',
+    );
+    addTearDown(() => temp.delete(recursive: true));
+
+    final service = CrashDiagnosticsService(
+      directoryProvider: () async => temp,
+      eventFlushInterval: const Duration(minutes: 1),
+      clock: () => DateTime.utc(2026, 5, 22, 1, 2, 3),
+    );
+
+    await service.initialize();
+    for (var index = 0; index < 25; index += 1) {
+      service.recordEventSync(
+        category: 'connection',
+        name: 'session_changed',
+        context: <String, Object?>{'peerId': 'bob', 'index': index},
+      );
+    }
+    await service.flushEvents();
+
+    final eventLog = File(
+      _join(_join(temp.path, 'rain_diagnostics'), 'events.jsonl'),
+    );
+    final lines = await eventLog.readAsLines();
+    expect(lines, hasLength(1));
+    expect(lines.single, contains('"index":24'));
+  });
+
+  test(
+    'coalesces repeated voice lock events without losing newest context',
+    () async {
+      final temp = await Directory.systemTemp.createTemp(
+        'rain-crash-diagnostics-lock-coalesce-test-',
+      );
+      addTearDown(() => temp.delete(recursive: true));
+      final exportPath = _join(temp.path, 'lock-diagnostics.json');
+
+      final service = CrashDiagnosticsService(
+        directoryProvider: () async => temp,
+        eventFlushInterval: const Duration(minutes: 1),
+        saveFile:
+            ({
+              String? dialogTitle,
+              String? fileName,
+              String? initialDirectory,
+              FileType type = FileType.any,
+              List<String>? allowedExtensions,
+              Uint8List? bytes,
+              bool lockParentWindow = false,
+            }) async {
+              return exportPath;
+            },
+      );
+
+      await service.initialize();
+      service.recordEventSync(
+        category: 'call',
+        name: 'voice_lock_claim_blocked',
+        severity: 'warning',
+        context: const <String, Object?>{
+          'peerId': 'bob',
+          'callId': 'call-1',
+          'pairId': 'alice:bob',
+          'lockExpiresAt': 1,
+        },
+      );
+      service.recordEventSync(
+        category: 'call',
+        name: 'voice_lock_claim_blocked',
+        severity: 'warning',
+        context: const <String, Object?>{
+          'peerId': 'bob',
+          'callId': 'call-1',
+          'pairId': 'alice:bob',
+          'lockExpiresAt': 2,
+        },
+      );
+
+      await service.exportDiagnostics();
+
+      final decoded =
+          jsonDecode(await File(exportPath).readAsString())
+              as Map<String, dynamic>;
+      final events = decoded['events'] as List<dynamic>;
+      expect(events, hasLength(1));
+      final event = events.single as Map<String, dynamic>;
+      expect(event['name'], 'voice_lock_claim_blocked');
+      expect(event['count'], 2);
+      final context = event['context'] as Map<String, dynamic>;
+      expect(context['lockExpiresAt'], 2);
+      expect(context['pairId'], startsWith('[id:'));
+    },
+  );
+
+  test('app event log is bounded when exported', () async {
+    final temp = await Directory.systemTemp.createTemp(
+      'rain-crash-diagnostics-bound-test-',
+    );
+    addTearDown(() => temp.delete(recursive: true));
+    final exportPath = _join(temp.path, 'bounded-diagnostics.json');
+    var tick = 0;
+
+    final service = CrashDiagnosticsService(
+      directoryProvider: () async => temp,
+      clock: () => DateTime.utc(2026, 5, 22, 1, 2, tick++),
+      saveFile:
+          ({
+            String? dialogTitle,
+            String? fileName,
+            String? initialDirectory,
+            FileType type = FileType.any,
+            List<String>? allowedExtensions,
+            Uint8List? bytes,
+            bool lockParentWindow = false,
+          }) async {
+            return exportPath;
+          },
+    );
+
+    await service.initialize();
+    for (var index = 0; index < 220; index += 1) {
+      service.recordEventSync(
+        category: 'diagnostics',
+        name: 'unique_event',
+        context: <String, Object?>{
+          'index': index,
+          'payload': 'network-state-${List<String>.filled(120, 'x').join()}',
+        },
+      );
+    }
+
+    await service.exportDiagnostics();
+
+    final decoded =
+        jsonDecode(await File(exportPath).readAsString())
+            as Map<String, dynamic>;
+    final events = decoded['events'] as List<dynamic>;
+    expect(events, hasLength(200));
+    expect(jsonEncode(events), contains('unique_event'));
+    final firstEvent = events.first as Map<String, dynamic>;
+    final firstContext = firstEvent['context'] as Map<String, dynamic>;
+    final lastEvent = events.last as Map<String, dynamic>;
+    final lastContext = lastEvent['context'] as Map<String, dynamic>;
+    expect(firstContext['index'], 20);
+    expect(lastContext['index'], 219);
+  });
 
   test('voice call diagnostics include video counters', () {
     final diagnostics = VoiceCallDiagnostics(
@@ -109,10 +409,22 @@ void main() {
       peerId: 'bob',
       role: 'caller',
       mediaMode: 'video',
+      caller: 'alice',
+      callee: 'bob',
       failureCode: 'videoFirstFrameTimeout',
       userMessage: 'Video could not connect. Try again.',
       sanitizedUiError: 'Video could not connect. Try again.',
       nativeError: 'Remote video stream did not render.',
+      roomStatusTimeline: const <String>['ringing', 'negotiating', 'failed'],
+      iceCandidateWriteCount: 4,
+      iceCandidateReadCount: 3,
+      turnReadiness: 'available',
+      relayFallbackAttempted: true,
+      terminalWriteOutcome: 'durable',
+      cleanupOutcome: 'completed',
+      presenceAgeAtStartMs: 1200,
+      mediaFailureReason: 'videoFirstFrameTimeout',
+      failureTaxonomy: 'media_timeout',
       localAudioTrackCount: 1,
       remoteAudioTrackCount: 1,
       localVideoTrackCount: 1,
@@ -123,11 +435,38 @@ void main() {
       selectedCandidateRoute: 'direct host->srflx udp pair:pair-1',
       iceStates: const <String>['checking', 'connected'],
       cameraPermissionFailureDetail: 'Camera permission required.',
+      lockClaimResult: 'peerBusy',
+      lockPath: 'activeVoiceUsers/bob',
+      pairId: 'alice:bob',
+      callerUserLock: 'alice',
+      calleeUserLock: 'bob',
+      lockCallId: 'call-0',
+      lockExpiresAt: 1778911256590,
+      lockWasReclaimed: false,
+      terminalRoomWasCleaned: false,
+      corruptRoomWasRepaired: false,
+      timestampRepair: false,
     );
 
     final encoded = diagnostics.toJson();
 
     expect(encoded['mediaMode'], 'video');
+    expect(encoded['caller'], 'alice');
+    expect(encoded['callee'], 'bob');
+    expect(encoded['roomStatusTimeline'], const <String>[
+      'ringing',
+      'negotiating',
+      'failed',
+    ]);
+    expect(encoded['iceCandidateWriteCount'], 4);
+    expect(encoded['iceCandidateReadCount'], 3);
+    expect(encoded['turnReadiness'], 'available');
+    expect(encoded['relayFallbackAttempted'], isTrue);
+    expect(encoded['terminalWriteOutcome'], 'durable');
+    expect(encoded['cleanupOutcome'], 'completed');
+    expect(encoded['presenceAgeAtStartMs'], 1200);
+    expect(encoded['mediaFailureReason'], 'videoFirstFrameTimeout');
+    expect(encoded['failureTaxonomy'], 'media_timeout');
     expect(encoded['localAudioTrackCount'], 1);
     expect(encoded['remoteAudioTrackCount'], 1);
     expect(encoded['localVideoTrackCount'], 1);
@@ -138,6 +477,17 @@ void main() {
     expect(encoded['iceStateHistory'], const <String>['checking', 'connected']);
     expect(encoded['sanitizedUiError'], 'Video could not connect. Try again.');
     expect(encoded['cameraPermissionFailureDetail'], contains('Camera'));
+    expect(encoded['lockClaimResult'], 'peerBusy');
+    expect(encoded['lockPath'], 'activeVoiceUsers/bob');
+    expect(encoded['pairId'], 'alice:bob');
+    expect(encoded['callerUserLock'], 'alice');
+    expect(encoded['calleeUserLock'], 'bob');
+    expect(encoded['lockCallId'], 'call-0');
+    expect(encoded['lockExpiresAt'], 1778911256590);
+    expect(encoded['lockWasReclaimed'], isFalse);
+    expect(encoded['terminalRoomWasCleaned'], isFalse);
+    expect(encoded['corruptRoomWasRepaired'], isFalse);
+    expect(encoded['timestampRepair'], isFalse);
   });
 
   test('diagnostics export preserves full native voice call error', () async {
@@ -193,6 +543,128 @@ void main() {
     expect(encoded, contains('Video could not connect. Try again.'));
   });
 
+  test(
+    'diagnostics export includes call summaries and cost counters',
+    () async {
+      final temp = await Directory.systemTemp.createTemp(
+        'rain-crash-diagnostics-call-summary-test-',
+      );
+      addTearDown(() => temp.delete(recursive: true));
+      final exportPath = _join(temp.path, 'call-summary-diagnostics.json');
+
+      final service = CrashDiagnosticsService(
+        directoryProvider: () async => temp,
+        clock: () => DateTime.utc(2026, 5, 22, 1, 2, 3),
+        saveFile:
+            ({
+              String? dialogTitle,
+              String? fileName,
+              String? initialDirectory,
+              FileType type = FileType.any,
+              List<String>? allowedExtensions,
+              Uint8List? bytes,
+              bool lockParentWindow = false,
+            }) async {
+              return exportPath;
+            },
+      );
+
+      await service.initialize();
+      service.recordEventSync(
+        category: 'call',
+        name: 'firebase_room_update',
+        context: const <String, Object?>{
+          'callId': 'call-1',
+          'peerId': 'bob',
+          'mediaMode': 'video',
+          'status': 'negotiating',
+        },
+      );
+      service.recordEventSync(
+        category: 'call',
+        name: 'ice_candidate_batch_flushed',
+        context: const <String, Object?>{
+          'callId': 'call-1',
+          'peerId': 'bob',
+          'mediaMode': 'video',
+          'writtenCount': 2,
+        },
+      );
+      service.recordEventSync(
+        category: 'call',
+        name: 'firebase_frame_received',
+        context: const <String, Object?>{
+          'callId': 'call-1',
+          'peerId': 'bob',
+          'mediaMode': 'video',
+          'frameType': 'candidate',
+          'from': 'bob',
+          'to': 'alice',
+        },
+      );
+      service.recordEventSync(
+        category: 'call',
+        name: 'voice_terminal_write_durable',
+        context: const <String, Object?>{
+          'callId': 'call-1',
+          'peerId': 'bob',
+          'mediaMode': 'video',
+        },
+      );
+      service.recordErrorSync(
+        const VoiceCallDiagnostics(
+          callId: 'call-1',
+          sessionEpoch: 42,
+          peerId: 'bob',
+          role: 'caller',
+          mediaMode: 'video',
+          caller: 'alice',
+          callee: 'bob',
+          failureCode: 'iceTimeout',
+          userMessage: 'Call media could not connect. Try again.',
+          sanitizedUiError: 'Call media could not connect. Try again.',
+          nativeError: 'ICE timeout.',
+          mediaFailureReason: 'iceTimeout',
+          failureTaxonomy: 'ice_failed',
+        ),
+        StackTrace.fromString('voice-stack'),
+        source: 'voice-call-media',
+        fatal: false,
+      );
+
+      final result = await service.exportDiagnostics();
+
+      expect(result.saved, isTrue);
+      final decoded =
+          jsonDecode(await File(exportPath).readAsString())
+              as Map<String, dynamic>;
+      final summaries = decoded['callSummaries'] as List<dynamic>;
+      final summary = summaries.single as Map<String, dynamic>;
+      final costCounters =
+          decoded['firebaseCostCounters'] as Map<String, dynamic>;
+      final taxonomy = decoded['failureTaxonomy'] as Map<String, dynamic>;
+
+      expect(summary['callId'], startsWith('[id:'));
+      expect(summary['peerId'], startsWith('[id:'));
+      expect(summary['mediaMode'], 'video');
+      expect(summary['caller'], startsWith('[id:'));
+      expect(summary['callee'], startsWith('[id:'));
+      expect(jsonEncode(decoded), isNot(contains('"call-1"')));
+      expect(jsonEncode(decoded), isNot(contains('"bob"')));
+      expect(jsonEncode(decoded), isNot(contains('"alice"')));
+      expect(summary['roomStatusTimeline'], const <String>['negotiating']);
+      expect(summary['iceCandidateWriteCount'], 2);
+      expect(summary['iceCandidateReadCount'], 1);
+      expect(summary['terminalWriteOutcome'], 'durable');
+      expect(summary['mediaFailureReason'], 'iceTimeout');
+      expect(summary['failureTaxonomy'], 'ice_failed');
+      expect(costCounters['signalingReads'], 2);
+      expect(costCounters['signalingWrites'], greaterThanOrEqualTo(3));
+      expect(costCounters['iceCandidateWrites'], 2);
+      expect(taxonomy['ice_failed'], 1);
+    },
+  );
+
   test('export can be canceled without writing a file', () async {
     final temp = await Directory.systemTemp.createTemp(
       'rain-crash-diagnostics-cancel-test-',
@@ -221,6 +693,173 @@ void main() {
     expect(result.saved, isFalse);
     expect(result.path, isNull);
   });
+
+  test(
+    'export accepts platform-managed picker paths without filesystem writes',
+    () async {
+      final temp = await Directory.systemTemp.createTemp(
+        'rain-crash-diagnostics-content-uri-test-',
+      );
+      addTearDown(() => temp.delete(recursive: true));
+
+      const destinationUri =
+          'content://com.android.providers.downloads.documents/document/rain';
+      var pickerReceivedBytes = false;
+      final service = CrashDiagnosticsService(
+        directoryProvider: () async => temp,
+        saveFile:
+            ({
+              String? dialogTitle,
+              String? fileName,
+              String? initialDirectory,
+              FileType type = FileType.any,
+              List<String>? allowedExtensions,
+              Uint8List? bytes,
+              bool lockParentWindow = false,
+            }) async {
+              pickerReceivedBytes = bytes != null && bytes.isNotEmpty;
+              return destinationUri;
+            },
+      );
+
+      await service.initialize();
+      final result = await service.exportDiagnostics();
+
+      expect(pickerReceivedBytes, isTrue);
+      expect(result.saved, isTrue);
+      expect(result.platformManaged, isTrue);
+      expect(result.path, destinationUri);
+    },
+  );
+
+  test(
+    'export accepts Android document handles without filesystem writes',
+    () async {
+      final temp = await Directory.systemTemp.createTemp(
+        'rain-crash-diagnostics-document-handle-test-',
+      );
+      addTearDown(() => temp.delete(recursive: true));
+      final accidentalDocumentRoot = Directory('/document');
+      final documentRootExisted = accidentalDocumentRoot.existsSync();
+      addTearDown(() async {
+        if (!documentRootExisted && await accidentalDocumentRoot.exists()) {
+          await accidentalDocumentRoot.delete(recursive: true);
+        }
+      });
+
+      const destinationHandle = '/document/1282';
+      var pickerReceivedBytes = false;
+      final service = CrashDiagnosticsService(
+        directoryProvider: () async => temp,
+        saveFile:
+            ({
+              String? dialogTitle,
+              String? fileName,
+              String? initialDirectory,
+              FileType type = FileType.any,
+              List<String>? allowedExtensions,
+              Uint8List? bytes,
+              bool lockParentWindow = false,
+            }) async {
+              pickerReceivedBytes = bytes != null && bytes.isNotEmpty;
+              return destinationHandle;
+            },
+      );
+
+      await service.initialize();
+      final result = await service.exportDiagnostics();
+
+      expect(pickerReceivedBytes, isTrue);
+      expect(result.saved, isTrue);
+      expect(result.platformManaged, isTrue);
+      expect(result.path, destinationHandle);
+      expect(
+        File(destinationHandle).existsSync(),
+        isFalse,
+        reason:
+            'Android SAF document handles are not filesystem paths and must '
+            'not be opened through dart:io.',
+      );
+    },
+  );
+
+  test(
+    'export accepts Android document handles with embedded newline',
+    () async {
+      final temp = await Directory.systemTemp.createTemp(
+        'rain-crash-diagnostics-newline-document-handle-test-',
+      );
+      addTearDown(() => temp.delete(recursive: true));
+
+      const destinationHandle = '/\ndocument/11';
+      var pickerReceivedBytes = false;
+      final service = CrashDiagnosticsService(
+        directoryProvider: () async => temp,
+        saveFile:
+            ({
+              String? dialogTitle,
+              String? fileName,
+              String? initialDirectory,
+              FileType type = FileType.any,
+              List<String>? allowedExtensions,
+              Uint8List? bytes,
+              bool lockParentWindow = false,
+            }) async {
+              pickerReceivedBytes = bytes != null && bytes.isNotEmpty;
+              return destinationHandle;
+            },
+      );
+
+      await service.initialize();
+      final result = await service.exportDiagnostics();
+
+      expect(pickerReceivedBytes, isTrue);
+      expect(result.saved, isTrue);
+      expect(result.platformManaged, isTrue);
+      expect(result.path, destinationHandle);
+    },
+  );
+
+  test(
+    'export falls back when Android picker wrapper opens SAF handle as File',
+    () async {
+      final temp = await Directory.systemTemp.createTemp(
+        'rain-crash-diagnostics-document-fallback-test-',
+      );
+      addTearDown(() => temp.delete(recursive: true));
+
+      var pickerReceivedBytes = false;
+      final service = CrashDiagnosticsService(
+        directoryProvider: () async => temp,
+        saveFile:
+            ({
+              String? dialogTitle,
+              String? fileName,
+              String? initialDirectory,
+              FileType type = FileType.any,
+              List<String>? allowedExtensions,
+              Uint8List? bytes,
+              bool lockParentWindow = false,
+            }) async {
+              pickerReceivedBytes = bytes != null && bytes.isNotEmpty;
+              throw const FileSystemException(
+                'Cannot open file',
+                '/document/12',
+              );
+            },
+      );
+
+      await service.initialize();
+      final result = await service.exportDiagnostics();
+
+      expect(pickerReceivedBytes, isTrue);
+      expect(result.saved, isTrue);
+      expect(result.platformManaged, isFalse);
+      expect(result.path, isNot('/document/12'));
+      expect(result.path, isNotNull);
+      expect(File(result.path!).existsSync(), isTrue);
+    },
+  );
 }
 
 String _join(String parent, String child) {

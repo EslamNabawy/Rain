@@ -72,6 +72,28 @@ class FirebaseEmulatorSignalingAdapter
     return <String, Object?>{'userA': users[0], 'userB': users[1]};
   }
 
+  ({String sender, String receiver}) _roomCipherContext(
+    String roomId,
+    String purpose,
+  ) {
+    final users = _roomUsers(roomId);
+    return switch (purpose) {
+      SignalingCipher.offerPurpose || SignalingCipher.callerIcePurpose => (
+        sender: users[0],
+        receiver: users[1],
+      ),
+      SignalingCipher.answerPurpose || SignalingCipher.calleeIcePurpose => (
+        sender: users[1],
+        receiver: users[0],
+      ),
+      _ => throw ArgumentError.value(
+        purpose,
+        'purpose',
+        'Unknown signaling purpose',
+      ),
+    };
+  }
+
   Map<String, Object?> _roomLifecycle({
     required String roomId,
     required int timestamp,
@@ -97,6 +119,11 @@ class FirebaseEmulatorSignalingAdapter
   }
 
   @override
+  Future<void> ensureSignedInAs(String username) {
+    return _ensureSignedInAsUsername(_normalizedUsername(username));
+  }
+
+  @override
   Future<String> currentUid() async {
     await ensureAuthenticated();
     return _uid!;
@@ -107,6 +134,51 @@ class FirebaseEmulatorSignalingAdapter
     _idToken = null;
     _uid = null;
     _email = null;
+  }
+
+  @override
+  Future<void> reauthenticate(String username, String password) async {
+    final normalizedUsername = _normalizedUsername(username);
+    final response =
+        await _authRequest('accounts:signInWithPassword', <String, Object?>{
+          'email': _emailFromUsername(normalizedUsername),
+          'password': password,
+          'returnSecureToken': true,
+        });
+    _setAuth(response);
+    await _ensureSignedInAsUsername(normalizedUsername);
+  }
+
+  @override
+  Future<void> deleteAccount(
+    String username, {
+    Future<void> Function()? beforeAuthDeletion,
+  }) async {
+    final normalizedUsername = _normalizedUsername(username);
+    await _ensureSignedInAsUsername(normalizedUsername);
+    final now = DateTime.now().millisecondsSinceEpoch;
+    final identity = await _get(<String>['users', normalizedUsername]);
+    final registeredAt = identity is Map
+        ? (identity['registeredAt'] as num?)?.toInt() ?? now
+        : now;
+    await setPresence(normalizedUsername, false);
+    await _delete(<String>['userSearch', normalizedUsername]);
+    await _put(
+      <String>['users', normalizedUsername],
+      <String, Object?>{
+        'username': normalizedUsername,
+        'uid': _uid,
+        'displayName': 'Deleted account',
+        'registeredAt': registeredAt,
+        'accountState': 'deleted',
+        'deletedAt': now,
+      },
+    );
+    await beforeAuthDeletion?.call();
+    await _authRequest('accounts:delete', <String, Object?>{
+      'idToken': _idToken,
+    });
+    await signOut();
   }
 
   @override
@@ -174,7 +246,8 @@ class FirebaseEmulatorSignalingAdapter
 
   @override
   Future<void> writeOffer(String roomId, SDPPayload offer) async {
-    await ensureAuthenticated();
+    final context = _roomCipherContext(roomId, SignalingCipher.offerPurpose);
+    await _ensureSignedInAsUsername(context.sender);
     final timestamp = offer.ts == 0
         ? DateTime.now().millisecondsSinceEpoch
         : offer.ts;
@@ -182,6 +255,8 @@ class FirebaseEmulatorSignalingAdapter
       roomId: roomId,
       purpose: SignalingCipher.offerPurpose,
       timestamp: timestamp,
+      sender: context.sender,
+      receiver: context.receiver,
       payload: offer.toJson(),
     );
     await _patch(
@@ -200,7 +275,8 @@ class FirebaseEmulatorSignalingAdapter
 
   @override
   Future<void> writeAnswer(String roomId, SDPPayload answer) async {
-    await ensureAuthenticated();
+    final context = _roomCipherContext(roomId, SignalingCipher.answerPurpose);
+    await _ensureSignedInAsUsername(context.sender);
     final timestamp = answer.ts == 0
         ? DateTime.now().millisecondsSinceEpoch
         : answer.ts;
@@ -208,6 +284,8 @@ class FirebaseEmulatorSignalingAdapter
       roomId: roomId,
       purpose: SignalingCipher.answerPurpose,
       timestamp: timestamp,
+      sender: context.sender,
+      receiver: context.receiver,
       payload: answer.toJson(),
     );
     await _patch(
@@ -226,16 +304,19 @@ class FirebaseEmulatorSignalingAdapter
     IceRole role,
     RTCIceCandidate candidate,
   ) async {
-    await ensureAuthenticated();
     final timestamp = DateTime.now().millisecondsSinceEpoch;
     final path = role == IceRole.caller ? 'callerICE' : 'calleeICE';
     final purpose = role == IceRole.caller
         ? SignalingCipher.callerIcePurpose
         : SignalingCipher.calleeIcePurpose;
+    final context = _roomCipherContext(roomId, purpose);
+    await _ensureSignedInAsUsername(context.sender);
     final encryptedCandidate = await _signalingCipher.encryptPayload(
       roomId: roomId,
       purpose: purpose,
       timestamp: timestamp,
+      sender: context.sender,
+      receiver: context.receiver,
       payload: iceCandidateToJson(candidate),
     );
     final key = '${timestamp.toRadixString(36)}_${_pushCounter++}';
@@ -248,10 +329,16 @@ class FirebaseEmulatorSignalingAdapter
       read: () async {
         final value = await _get(<String>['rooms', roomId, 'offer']);
         if (value is! Map) return null;
+        final context = _roomCipherContext(
+          roomId,
+          SignalingCipher.offerPurpose,
+        );
         final payload = await _signalingCipher.decryptPayload(
           roomId: roomId,
           purpose: SignalingCipher.offerPurpose,
           payload: _asObjectMap(value),
+          sender: context.sender,
+          receiver: context.receiver,
         );
         return SDPPayload.fromJson(payload);
       },
@@ -264,10 +351,16 @@ class FirebaseEmulatorSignalingAdapter
       read: () async {
         final value = await _get(<String>['rooms', roomId, 'answer']);
         if (value is! Map) return null;
+        final context = _roomCipherContext(
+          roomId,
+          SignalingCipher.answerPurpose,
+        );
         final payload = await _signalingCipher.decryptPayload(
           roomId: roomId,
           purpose: SignalingCipher.answerPurpose,
           payload: _asObjectMap(value),
+          sender: context.sender,
+          receiver: context.receiver,
         );
         return SDPPayload.fromJson(payload);
       },
@@ -284,10 +377,13 @@ class FirebaseEmulatorSignalingAdapter
       <String>['rooms', roomId, path],
       parse: (Object? value, _) async {
         if (value is! Map) return null;
+        final context = _roomCipherContext(roomId, purpose);
         final payload = await _signalingCipher.decryptPayload(
           roomId: roomId,
           purpose: purpose,
           payload: _asObjectMap(value),
+          sender: context.sender,
+          receiver: context.receiver,
         );
         return iceCandidateFromJson(payload);
       },
@@ -307,7 +403,9 @@ class FirebaseEmulatorSignalingAdapter
         'lastSeen': now,
         'updatedAt': now,
         'sessionId': _sessionId,
+        'startedAt': now,
         'platform': 'flutter-test',
+        'state': online ? 'online' : 'offline',
       },
     );
   }
@@ -326,7 +424,21 @@ class FirebaseEmulatorSignalingAdapter
           _normalizedUsername(username),
         ]);
         if (value is! Map) return false;
-        return value['online'] == true;
+        final normalizedState = (value['state'] as String?)
+            ?.trim()
+            .toLowerCase();
+        final stateAllowsOnline =
+            normalizedState == null ||
+            normalizedState.isEmpty ||
+            normalizedState == 'online';
+        final lastHeartbeat = (value['lastHeartbeat'] as num?)?.toInt() ?? 0;
+        final ageMs = lastHeartbeat <= 0
+            ? null
+            : DateTime.now().millisecondsSinceEpoch - lastHeartbeat;
+        return value['online'] == true &&
+            stateAllowsOnline &&
+            ageMs != null &&
+            ageMs < 30000;
       },
     );
   }
@@ -342,6 +454,17 @@ class FirebaseEmulatorSignalingAdapter
   @override
   Future<void> upsertIdentity(BackendIdentity identity) async {
     await _ensureSignedInAsUsername(identity.username);
+    final existing = await _get(<String>[
+      'users',
+      _normalizedUsername(identity.username),
+    ]);
+    if (existing is Map &&
+        (existing['accountState'] == 'deleted' ||
+            existing['deletedAt'] is num)) {
+      throw const SignalingSessionExpiredException(
+        'This Rain account has been deleted.',
+      );
+    }
     await _patch(
       <String>['users', _normalizedUsername(identity.username)],
       {
@@ -364,6 +487,9 @@ class FirebaseEmulatorSignalingAdapter
     final normalizedUsername = _normalizedUsername(username);
     final identity = await _get(<String>['users', normalizedUsername]);
     if (identity is! Map) return null;
+    if (identity['accountState'] == 'deleted' || identity['deletedAt'] is num) {
+      return null;
+    }
     final presence = await _get(<String>['presence', normalizedUsername]);
     final presenceMap = presence is Map ? presence : const <Object?, Object?>{};
     return BackendIdentity(
@@ -375,6 +501,9 @@ class FirebaseEmulatorSignalingAdapter
       lastSeen: (presenceMap['lastSeen'] as num?)?.toInt() ?? 0,
       lastHeartbeat: (presenceMap['lastHeartbeat'] as num?)?.toInt() ?? 0,
       online: presenceMap['online'] == true,
+      presenceSessionId: presenceMap['sessionId'] as String?,
+      presenceStartedAt: (presenceMap['startedAt'] as num?)?.toInt(),
+      presenceState: presenceMap['state'] as String?,
     );
   }
 
@@ -576,6 +705,22 @@ class FirebaseEmulatorSignalingAdapter
     await _delete(<String>['rooms', roomId]);
   }
 
+  Future<Object?> getRawForTest(List<String> path) {
+    return _get(path);
+  }
+
+  Future<void> putRawForTest(List<String> path, Object? body) {
+    return _put(path, body);
+  }
+
+  Future<void> patchRawForTest(List<String> path, Map<String, Object?> body) {
+    return _patch(path, body);
+  }
+
+  Future<void> deleteRawForTest(List<String> path) {
+    return _delete(path);
+  }
+
   @override
   Future<VoiceCallRoom> createOutgoingCall({
     required String callId,
@@ -589,6 +734,7 @@ class FirebaseEmulatorSignalingAdapter
     final normalizedCaller = normalizeVoiceCallUsername(caller);
     final normalizedCallee = normalizeVoiceCallUsername(callee);
     await _ensureSignedInAsUsername(normalizedCaller);
+    await _assertVoiceCallCalleeOnline(normalizedCallee);
     final pairId = voiceCallPairId(normalizedCaller, normalizedCallee);
     for (final username in <String>[normalizedCaller, normalizedCallee]) {
       final existingUserLockValue = await _get(<String>[
@@ -679,6 +825,21 @@ class FirebaseEmulatorSignalingAdapter
     return room;
   }
 
+  Future<void> _assertVoiceCallCalleeOnline(String callee) async {
+    final normalizedCallee = normalizeVoiceCallUsername(callee);
+    final identity = await fetchIdentity(normalizedCallee);
+    if (identity == null) {
+      throw VoiceSignalingException(
+        'Could not confirm @$normalizedCallee is online. Try again.',
+      );
+    }
+    if (!identity.online) {
+      throw VoiceSignalingException(
+        '@$normalizedCallee is offline. Keep both apps open, then try again.',
+      );
+    }
+  }
+
   @override
   Future<VoiceCallRoom?> fetchCall(String callId) async {
     await ensureAuthenticated();
@@ -701,14 +862,23 @@ class FirebaseEmulatorSignalingAdapter
 
   @override
   Stream<VoiceCallInboxEntry> watchIncomingCalls(String username) {
+    final normalizedUsername = normalizeVoiceCallUsername(username);
     return _pollChildren<VoiceCallInboxEntry>(
-      <String>['voiceCallInboxes', normalizeVoiceCallUsername(username)],
+      <String>['voiceCallInboxes', normalizedUsername],
       parse: (Object? value, String key) async {
-        if (value is! Map) return null;
-        return VoiceCallInboxEntry.fromJson(
-          callId: key,
-          json: _asObjectMap(value),
-        );
+        if (value is! Map) {
+          await _delete(<String>['voiceCallInboxes', normalizedUsername, key]);
+          return null;
+        }
+        try {
+          return VoiceCallInboxEntry.fromJson(
+            callId: key,
+            json: _asObjectMap(value),
+          );
+        } catch (_) {
+          await _delete(<String>['voiceCallInboxes', normalizedUsername, key]);
+          return null;
+        }
       },
     );
   }
@@ -723,14 +893,16 @@ class FirebaseEmulatorSignalingAdapter
     final normalizedCallee = normalizeVoiceCallUsername(callee);
     await _ensureSignedInAsUsername(normalizedCallee);
     _ensureVoiceRole(room, normalizedCallee, VoiceCallRole.callee);
+    final safeAcceptedAt = _safeVoiceRoomTimestamp(room, acceptedAt);
     await _patch(<String>[], <String, Object?>{
       'voiceCalls/${room.callId}/status':
           VoiceCallSignalingStatus.accepted.name,
-      'voiceCalls/${room.callId}/acceptedAt': acceptedAt,
-      'voiceCalls/${room.callId}/updatedAt': acceptedAt,
+      'voiceCalls/${room.callId}/acceptedAt': safeAcceptedAt,
+      'voiceCalls/${room.callId}/updatedAt': safeAcceptedAt,
       'voiceCallInboxes/${room.callee}/${room.callId}/status':
           VoiceCallSignalingStatus.accepted.name,
-      'voiceCallInboxes/${room.callee}/${room.callId}/updatedAt': acceptedAt,
+      'voiceCallInboxes/${room.callee}/${room.callId}/updatedAt':
+          safeAcceptedAt,
     });
   }
 
@@ -744,14 +916,16 @@ class FirebaseEmulatorSignalingAdapter
     final normalizedUsername = normalizeVoiceCallUsername(username);
     await _ensureSignedInAsUsername(normalizedUsername);
     _ensureVoiceParticipant(room, normalizedUsername);
+    final safeConnectedAt = _safeVoiceRoomTimestamp(room, connectedAt);
     await _patch(<String>[], <String, Object?>{
       'voiceCalls/${room.callId}/status':
           VoiceCallSignalingStatus.connected.name,
-      'voiceCalls/${room.callId}/connectedAt': connectedAt,
-      'voiceCalls/${room.callId}/updatedAt': connectedAt,
+      'voiceCalls/${room.callId}/connectedAt': safeConnectedAt,
+      'voiceCalls/${room.callId}/updatedAt': safeConnectedAt,
       'voiceCallInboxes/${room.callee}/${room.callId}/status':
           VoiceCallSignalingStatus.connected.name,
-      'voiceCallInboxes/${room.callee}/${room.callId}/updatedAt': connectedAt,
+      'voiceCallInboxes/${room.callee}/${room.callId}/updatedAt':
+          safeConnectedAt,
     });
   }
 
@@ -772,17 +946,38 @@ class FirebaseEmulatorSignalingAdapter
       await _deleteActiveVoiceLocksForRoomIfCurrent(room);
       return;
     }
+    final safeEndedAt = _safeVoiceRoomTimestamp(room, endedAt);
     await _patch(<String>[], <String, Object?>{
       'voiceCalls/${room.callId}/status': status.name,
-      'voiceCalls/${room.callId}/endedAt': endedAt,
+      'voiceCalls/${room.callId}/endedAt': safeEndedAt,
       'voiceCalls/${room.callId}/endedBy': normalizedUsername,
-      'voiceCalls/${room.callId}/updatedAt': endedAt,
+      'voiceCalls/${room.callId}/updatedAt': safeEndedAt,
       'voiceCalls/${room.callId}/reasonCode': reasonCode,
       'voiceCalls/${room.callId}/reason': reason,
-      'voiceCallInboxes/${room.callee}/${room.callId}/status': status.name,
-      'voiceCallInboxes/${room.callee}/${room.callId}/updatedAt': endedAt,
     });
+    await _patchVoiceInboxStatusIfPresent(room, status, safeEndedAt);
     await _deleteActiveVoiceLocksForRoomIfCurrent(room);
+  }
+
+  Future<void> _patchVoiceInboxStatusIfPresent(
+    VoiceCallRoom room,
+    VoiceCallSignalingStatus status,
+    int updatedAt,
+  ) async {
+    try {
+      final path = <String>['voiceCallInboxes', room.callee, room.callId];
+      final value = await _get(path);
+      if (value is! Map) {
+        return;
+      }
+      await _patch(path, <String, Object?>{
+        'status': status.name,
+        'updatedAt': updatedAt,
+      });
+    } catch (_) {
+      // Inbox rows are only ringing pointers. The room terminal state above is
+      // the source of truth and must not be undone by a stale inbox cleanup race.
+    }
   }
 
   @override
@@ -796,9 +991,10 @@ class FirebaseEmulatorSignalingAdapter
     final normalizedUsername = normalizeVoiceCallUsername(username);
     await _ensureSignedInAsUsername(normalizedUsername);
     _ensureVoiceParticipant(room, normalizedUsername);
+    final safeUpdatedAt = _safeVoiceRoomTimestamp(room, updatedAt);
     await _patch(<String>[], <String, Object?>{
       'voiceCalls/${room.callId}/muted/$normalizedUsername': muted,
-      'voiceCalls/${room.callId}/updatedAt': updatedAt,
+      'voiceCalls/${room.callId}/updatedAt': safeUpdatedAt,
     });
   }
 
@@ -813,9 +1009,10 @@ class FirebaseEmulatorSignalingAdapter
     final normalizedUsername = normalizeVoiceCallUsername(username);
     await _ensureSignedInAsUsername(normalizedUsername);
     _ensureVoiceParticipant(room, normalizedUsername);
+    final safeUpdatedAt = _safeVoiceRoomTimestamp(room, updatedAt);
     await _patch(<String>[], <String, Object?>{
       'voiceCalls/${room.callId}/cameraMuted/$normalizedUsername': cameraMuted,
-      'voiceCalls/${room.callId}/updatedAt': updatedAt,
+      'voiceCalls/${room.callId}/updatedAt': safeUpdatedAt,
     });
   }
 
@@ -830,16 +1027,17 @@ class FirebaseEmulatorSignalingAdapter
     final normalizedCaller = normalizeVoiceCallUsername(caller);
     await _ensureSignedInAsUsername(normalizedCaller);
     _ensureVoiceRole(room, normalizedCaller, VoiceCallRole.caller);
+    final safeUpdatedAt = _safeVoiceRoomTimestamp(room, updatedAt);
     await _patch(<String>[], <String, Object?>{
       'voiceCalls/${room.callId}/status':
           VoiceCallSignalingStatus.negotiating.name,
       'voiceCalls/${room.callId}/offer': offer.toJson(
         maxCiphertextLength: VoiceSignalingEnvelope.maxSdpCiphertextLength,
       ),
-      'voiceCalls/${room.callId}/updatedAt': updatedAt,
+      'voiceCalls/${room.callId}/updatedAt': safeUpdatedAt,
       'voiceCallInboxes/${room.callee}/${room.callId}/status':
           VoiceCallSignalingStatus.negotiating.name,
-      'voiceCallInboxes/${room.callee}/${room.callId}/updatedAt': updatedAt,
+      'voiceCallInboxes/${room.callee}/${room.callId}/updatedAt': safeUpdatedAt,
     });
   }
 
@@ -854,11 +1052,12 @@ class FirebaseEmulatorSignalingAdapter
     final normalizedCallee = normalizeVoiceCallUsername(callee);
     await _ensureSignedInAsUsername(normalizedCallee);
     _ensureVoiceRole(room, normalizedCallee, VoiceCallRole.callee);
+    final safeUpdatedAt = _safeVoiceRoomTimestamp(room, updatedAt);
     await _patch(<String>[], <String, Object?>{
       'voiceCalls/${room.callId}/answer': answer.toJson(
         maxCiphertextLength: VoiceSignalingEnvelope.maxSdpCiphertextLength,
       ),
-      'voiceCalls/${room.callId}/updatedAt': updatedAt,
+      'voiceCalls/${room.callId}/updatedAt': safeUpdatedAt,
     });
   }
 
@@ -892,19 +1091,70 @@ class FirebaseEmulatorSignalingAdapter
     required VoiceSignalingEnvelope candidate,
     required int createdAt,
   }) async {
+    final candidateIds = await writeIceCandidates(
+      callId: callId,
+      username: username,
+      role: role,
+      candidates: <VoiceSignalingEnvelope>[candidate],
+      createdAt: createdAt,
+    );
+    if (candidateIds.isEmpty) {
+      throw const SignalingCostBudgetExceeded(
+        'signaling_cost_budget_exceeded: ICE candidate budget exceeded.',
+      );
+    }
+    return candidateIds.single;
+  }
+
+  @override
+  Future<List<String>> writeIceCandidates({
+    required String callId,
+    required String username,
+    required VoiceCallRole role,
+    required List<VoiceSignalingEnvelope> candidates,
+    required int createdAt,
+  }) async {
+    if (candidates.isEmpty) {
+      return const <String>[];
+    }
+    if (candidates.length > maxIceCandidateBatchSize) {
+      throw SignalingCostBudgetExceeded(
+        'signaling_cost_budget_exceeded: ICE candidate batch size '
+        '${candidates.length} exceeds $maxIceCandidateBatchSize.',
+      );
+    }
+    for (final candidate in candidates) {
+      candidate.validate(
+        maxCiphertextLength: VoiceSignalingEnvelope.maxIceCiphertextLength,
+      );
+    }
     final room = await _requireVoiceCall(callId);
     final normalizedUsername = normalizeVoiceCallUsername(username);
     await _ensureSignedInAsUsername(normalizedUsername);
     _ensureVoiceRole(room, normalizedUsername, role);
-    final candidateId = '${createdAt.toRadixString(36)}_${_pushCounter++}';
-    await _patch(<String>[], <String, Object?>{
-      'voiceCalls/${room.callId}/${_voiceIcePath(role)}/$candidateId': candidate
-          .toJson(
+    final safeCreatedAt = _safeVoiceRoomTimestamp(room, createdAt);
+    final existingCount = await _iceCandidateCount(room.callId, role);
+    final available = maxIceCandidatesPerRole - existingCount;
+    if (available <= 0) {
+      throw SignalingCostBudgetExceeded(
+        'signaling_cost_budget_exceeded: ICE candidate budget exceeded for '
+        '${room.callId}/${role.name}; limit=$maxIceCandidatesPerRole.',
+      );
+    }
+    final accepted = candidates.take(available).toList(growable: false);
+    final updates = <String, Object?>{};
+    final candidateIds = <String>[];
+    for (final candidate in accepted) {
+      final candidateId =
+          '${safeCreatedAt.toRadixString(36)}_${_pushCounter++}';
+      updates['voiceCalls/${room.callId}/${_voiceIcePath(role)}/$candidateId'] =
+          candidate.toJson(
             maxCiphertextLength: VoiceSignalingEnvelope.maxIceCiphertextLength,
-          ),
-      'voiceCalls/${room.callId}/updatedAt': createdAt,
-    });
-    return candidateId;
+          );
+      candidateIds.add(candidateId);
+    }
+    await _patch(<String>[], updates);
+    return List<String>.unmodifiable(candidateIds);
   }
 
   @override
@@ -929,6 +1179,31 @@ class FirebaseEmulatorSignalingAdapter
         );
       },
     );
+  }
+
+  @override
+  Future<VoiceCallCleanupSummary> cleanupStaleVoiceCallArtifacts({
+    required String username,
+    required int now,
+    int limit = maxCallCleanupItemsPerRun,
+  }) async {
+    return VoiceCallCleanupSummary(
+      username: normalizeVoiceCallUsername(username),
+      now: now,
+      decisions: const <VoiceCallCleanupDecision>[],
+    );
+  }
+
+  Future<int> _iceCandidateCount(String callId, VoiceCallRole role) async {
+    final value = await _get(<String>[
+      'voiceCalls',
+      callId.trim(),
+      ..._voiceIcePath(role).split('/'),
+    ]);
+    if (value is Map) {
+      return value.length;
+    }
+    return 0;
   }
 
   @override
@@ -962,7 +1237,12 @@ class FirebaseEmulatorSignalingAdapter
 
   VoiceCallRoom? _voiceCallRoomFromValue(String callId, Object? value) {
     if (value is! Map) return null;
-    return VoiceCallRoom.fromJson(callId: callId, json: _asObjectMap(value));
+    final json = _asObjectMap(value);
+    try {
+      return VoiceCallRoom.fromJson(callId: callId, json: json);
+    } on FormatException {
+      return VoiceCallRoom.tryParseForCleanup(callId: callId, json: json);
+    }
   }
 
   Future<bool> _reclaimActiveVoicePairLockIfStale({
@@ -984,7 +1264,7 @@ class FirebaseEmulatorSignalingAdapter
       await _delete(<String>['activeVoicePairs', pairId]);
       final room = await fetchCall(lock.callId);
       if (room != null && _shouldDeleteReclaimedVoiceRoom(room, createdAt)) {
-        await _deleteVoiceCallRoomArtifacts(room);
+        await _tryDeleteReclaimedVoiceRoomArtifacts(room);
       }
       return true;
     }
@@ -1006,7 +1286,7 @@ class FirebaseEmulatorSignalingAdapter
         room.status != VoiceCallSignalingStatus.connected &&
         lock.caller == normalizeVoiceCallUsername(caller)) {
       await _delete(<String>['activeVoicePairs', pairId]);
-      await _deleteVoiceCallRoomArtifacts(room);
+      await _tryDeleteReclaimedVoiceRoomArtifacts(room);
       return true;
     }
 
@@ -1018,7 +1298,7 @@ class FirebaseEmulatorSignalingAdapter
     }
 
     await _delete(<String>['activeVoicePairs', pairId]);
-    await _deleteVoiceCallRoomArtifacts(room);
+    await _tryDeleteReclaimedVoiceRoomArtifacts(room);
     return true;
   }
 
@@ -1041,7 +1321,7 @@ class FirebaseEmulatorSignalingAdapter
       await _delete(<String>['activeVoiceUsers', username]);
       final room = await fetchCall(lock.callId);
       if (room != null && _shouldDeleteReclaimedVoiceRoom(room, createdAt)) {
-        await _deleteVoiceCallRoomArtifacts(room);
+        await _tryDeleteReclaimedVoiceRoomArtifacts(room);
       }
       return true;
     }
@@ -1063,7 +1343,7 @@ class FirebaseEmulatorSignalingAdapter
         room.status != VoiceCallSignalingStatus.connected &&
         lock.caller == normalizeVoiceCallUsername(caller)) {
       await _delete(<String>['activeVoiceUsers', username]);
-      await _deleteVoiceCallRoomArtifacts(room);
+      await _tryDeleteReclaimedVoiceRoomArtifacts(room);
       return true;
     }
 
@@ -1075,7 +1355,7 @@ class FirebaseEmulatorSignalingAdapter
     }
 
     await _delete(<String>['activeVoiceUsers', username]);
-    await _deleteVoiceCallRoomArtifacts(room);
+    await _tryDeleteReclaimedVoiceRoomArtifacts(room);
     return true;
   }
 
@@ -1136,6 +1416,15 @@ class FirebaseEmulatorSignalingAdapter
     });
   }
 
+  Future<void> _tryDeleteReclaimedVoiceRoomArtifacts(VoiceCallRoom room) async {
+    try {
+      await _deleteVoiceCallRoomArtifacts(room);
+    } catch (_) {
+      // Stale lock reclaim is the user-visible fix. Terminal room and inbox
+      // artifact cleanup can be retried by normal cleanup paths.
+    }
+  }
+
   VoiceActiveUserLock _activeVoiceUserLockForRoom(
     VoiceCallRoom room,
     String username,
@@ -1149,6 +1438,14 @@ class FirebaseEmulatorSignalingAdapter
       createdAt: room.createdAt,
       updatedAt: room.createdAt,
       expiresAt: room.expiresAt,
+    );
+  }
+
+  int _safeVoiceRoomTimestamp(VoiceCallRoom room, int requestedAt) {
+    return VoiceCallTimestampClock.nextRoomTimestamp(
+      requestedAt: requestedAt,
+      roomCreatedAt: room.createdAt,
+      roomUpdatedAt: room.updatedAt,
     );
   }
 
@@ -1353,9 +1650,15 @@ class FirebaseEmulatorSignalingAdapter
     final text = await utf8.decodeStream(response);
     final decoded = text.isEmpty ? null : jsonDecode(text);
     if (response.statusCode >= 400) {
+      final requestBody = body == null ? '' : ' body=${jsonEncode(body)}';
+      final safeQueryParameters = Map<String, String>.from(uri.queryParameters);
+      if (safeQueryParameters.containsKey('auth')) {
+        safeQueryParameters['auth'] = '<redacted>';
+      }
+      final safeUri = uri.replace(queryParameters: safeQueryParameters);
       throw HttpException(
-        'HTTP ${response.statusCode} from $uri: ${decoded ?? text}',
-        uri: uri,
+        '$method HTTP ${response.statusCode} from $safeUri: ${decoded ?? text}$requestBody',
+        uri: safeUri,
       );
     }
     return decoded;

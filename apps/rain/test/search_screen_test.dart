@@ -23,9 +23,11 @@ void main() {
     final container = ProviderContainer(
       overrides: [
         appBootstrapProvider.overrideWithValue(_bootstrap(adapter, db)),
+        identityProvider.overrideWith(_SignedInIdentityController.new),
       ],
     );
     addTearDown(container.dispose);
+    await container.read(identityProvider.future);
 
     final notifier = container.read(userSearchProvider.notifier);
     final firstSearch = notifier.search('al');
@@ -71,9 +73,11 @@ void main() {
     final container = ProviderContainer(
       overrides: [
         appBootstrapProvider.overrideWithValue(_bootstrap(adapter, db)),
+        identityProvider.overrideWith(_SignedInIdentityController.new),
       ],
     );
     addTearDown(container.dispose);
+    await container.read(identityProvider.future);
 
     final notifier = container.read(userSearchProvider.notifier);
     await notifier.search('bo');
@@ -98,7 +102,7 @@ void main() {
       ProviderScope(
         overrides: [
           appBootstrapProvider.overrideWithValue(_bootstrap(adapter, db)),
-          identityProvider.overrideWith(_NoIdentityController.new),
+          identityProvider.overrideWith(_SignedInIdentityController.new),
         ],
         child: const MaterialApp(home: Scaffold(body: SearchScreen())),
       ),
@@ -133,7 +137,7 @@ void main() {
       ProviderScope(
         overrides: [
           appBootstrapProvider.overrideWithValue(_bootstrap(adapter, db)),
-          identityProvider.overrideWith(_NoIdentityController.new),
+          identityProvider.overrideWith(_SignedInIdentityController.new),
         ],
         child: const MaterialApp(home: Scaffold(body: SearchScreen())),
       ),
@@ -169,7 +173,7 @@ void main() {
       ProviderScope(
         overrides: [
           appBootstrapProvider.overrideWithValue(_bootstrap(adapter, db)),
-          identityProvider.overrideWith(_NoIdentityController.new),
+          identityProvider.overrideWith(_SignedInIdentityController.new),
         ],
         child: const MaterialApp(home: Scaffold(body: SearchScreen())),
       ),
@@ -244,7 +248,14 @@ class _CountingSearchAdapter extends NoopSignalingAdapter {
   }
 }
 
-class _NoIdentityController extends IdentityController {
+class _SignedInIdentityController extends IdentityController {
   @override
-  Future<RainIdentity?> build() async => null;
+  Future<RainIdentity?> build() async {
+    return const RainIdentity(
+      username: 'tester',
+      displayName: 'Tester',
+      createdAt: 1,
+      gender: RainGender.male,
+    );
+  }
 }

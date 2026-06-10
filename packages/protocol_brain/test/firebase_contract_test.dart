@@ -86,7 +86,36 @@ void main() {
       rules,
       contains("newData.child('uid').val() === data.child('uid').val()"),
     );
+    expect(rules, contains("auth.token.email === \$username + '@rain.local'"));
+    expect(
+      rules,
+      contains("!data.child('uid').exists()"),
+      reason:
+          'Legacy account rows without uid must be claimable only by the '
+          'matching Firebase Auth email so account deletion can tombstone them.',
+    );
   });
+
+  test(
+    'Firebase account deletion separates tombstone from optional cleanup',
+    () {
+      final adapter = _repoFile(
+        'packages/protocol_brain/lib/adapters/firebase_adapter.dart',
+      );
+
+      expect(adapter, contains(r"child('users/$username').set"));
+      expect(adapter, contains('_tombstoneBackendIdentity'));
+      expect(adapter, contains('_applyBestEffortAccountDeletionUpdates'));
+      expect(
+        adapter,
+        contains('Multi-location updates are all-or-nothing'),
+        reason:
+            'Optional relationship/request/block mirror cleanup must not share '
+            'one all-or-nothing RTDB write with the required account tombstone.',
+      );
+      expect(adapter, isNot(contains(r"'users/$username': <String, Object?>")));
+    },
+  );
 
   test('Firebase rooms require participant metadata and ownership checks', () {
     final rules = _repoFile('backend/firebase/database.rules.json');
@@ -114,10 +143,7 @@ void main() {
       rules,
       contains("newData.child('userA').val() < newData.child('userB').val()"),
     );
-    expect(
-      rules,
-      contains("newData.child('userA').val() === data.child('userA').val()"),
-    );
+    expect(rules, contains('data.exists() && newData.val() === data.val()'));
     expect(rules, contains('!data.exists() && !newData.exists()'));
     expect(adapter, contains("'userA':"));
     expect(adapter, contains("'userB':"));
@@ -130,7 +156,21 @@ void main() {
     );
 
     expect(rules, contains('A256GCM-HKDF-SHA256'));
-    expect(rules, contains("'nonce', 'ciphertext', 'mac'"));
+    expect(rules, contains("'from', 'to', 'nonce', 'ciphertext', 'mac'"));
+    expect(rules, contains("newData.child('from').isString()"));
+    expect(rules, contains("newData.child('to').isString()"));
+    expect(
+      rules,
+      contains(
+        "newData.child('from').val() === newData.parent().child('userA').val()",
+      ),
+    );
+    expect(
+      rules,
+      contains(
+        "newData.child('to').val() === newData.parent().child('userB').val()",
+      ),
+    );
     expect(rules, contains("newData.child('ciphertext').isString()"));
     expect(rules, contains("newData.child('mac').isString()"));
     expect(rules, isNot(contains("newData.hasChildren(['sdp', 'ts'])")));
@@ -147,10 +187,16 @@ void main() {
   });
 
   test('Firebase search uses bounded handle prefix lookups', () {
+    final rules = _repoFile('backend/firebase/database.rules.json');
     final adapter = _repoFile(
       'packages/protocol_brain/lib/adapters/firebase_adapter.dart',
     );
 
+    expect(
+      rules,
+      contains('''"userSearch": {
+      ".read": "auth != null"'''),
+    );
     expect(adapter, contains("child('userSearch')"));
     expect(adapter, contains('orderByKey()'));
     expect(adapter, contains('limitToFirst(_searchLimit)'));
@@ -170,6 +216,44 @@ void main() {
     expect(adapter, isNot(contains("child('users/\$username/online')")));
     expect(functions, contains('.ref("presence")'));
     expect(functions, isNot(contains('.ref("users")')));
+  });
+
+  test('Firebase presence is session-owned and app-close aware', () {
+    final rules = _repoFile('backend/firebase/database.rules.json');
+    final adapter = _repoFile(
+      'packages/protocol_brain/lib/adapters/firebase_adapter.dart',
+    );
+
+    expect(rules, contains('"sessionId"'));
+    expect(rules, contains('"startedAt"'));
+    expect(rules, contains('"state"'));
+    expect(
+      rules,
+      contains(
+        "newData.child('sessionId').val() === data.child('sessionId').val()",
+      ),
+      reason:
+          'An older app session must not be able to overwrite newer presence '
+          'unless it still owns the same session id.',
+    );
+    expect(
+      rules,
+      contains(
+        "newData.child('startedAt').val() >= data.child('startedAt').val()",
+      ),
+      reason:
+          'Session freshness must advance monotonically so old heartbeat '
+          'writes cannot revive a closed app.',
+    );
+    expect(rules, contains("newData.child('sessionId').val().length <= 96"));
+    expect(adapter, contains("'sessionId': _sessionId"));
+    expect(adapter, contains("'startedAt': _sessionStartedAt"));
+    expect(adapter, contains("'state': state"));
+    expect(adapter, contains("'state': 'offline'"));
+    expect(adapter, contains('presenceRef.onDisconnect().update'));
+    expect(adapter, contains('_offlinePresenceJson(uid: uid, now: now)'));
+    expect(adapter, contains('stateAllowsOnline'));
+    expect(adapter, contains("normalizedState == 'online'"));
   });
 
   test('Firebase rooms carry explicit lifecycle metadata', () {
@@ -223,6 +307,9 @@ void main() {
 
     expect(rules, contains('root.child(\'friendships/\''));
     expect(rules, contains('root.child(\'blocks/\''));
+    expect(rules, contains("root.child('presence/'"));
+    expect(rules, contains("'/lastHeartbeat').isNumber()"));
+    expect(rules, contains("< 45000"));
     expect(rules, contains('"activeVoicePairs"'));
     expect(rules, contains('"activeVoiceUsers"'));
     expect(rules, contains('"voiceCalls"'));
@@ -250,6 +337,64 @@ void main() {
         "root.child('friendships/' + newData.child('caller').val() + '/' + newData.child('callee').val()).exists()",
       ),
     );
+    expect(
+      rules,
+      contains(
+        "root.child('presence/' + newData.child('callee').val() + '/online').val() === true",
+      ),
+    );
+    expect(
+      rules,
+      contains(
+        "now - root.child('presence/' + newData.child('callee').val() + '/lastHeartbeat').val() < 45000",
+      ),
+    );
+    expect(
+      rules,
+      contains(
+        "root.child('presence/' + newData.child('to').val() + '/online').val() === true",
+      ),
+    );
+  });
+
+  test('Firebase incoming call watcher repairs corrupt inbox entries', () {
+    final adapter = _repoFile(
+      'packages/protocol_brain/lib/adapters/firebase_adapter.dart',
+    );
+
+    expect(adapter, contains('_removeCorruptVoiceCallInboxEntry'));
+    expect(adapter, contains(r'voiceCallInboxes/$username/$callId'));
+    expect(adapter, isNot(contains('controller.addError(error, stackTrace)')));
+  });
+
+  test('Firebase voice user locks reclaim stale state before retry', () {
+    final adapter = _repoFile(
+      'packages/protocol_brain/lib/adapters/firebase_adapter.dart',
+    );
+
+    expect(adapter, contains('Future<bool> _claimActiveVoiceUserLock'));
+    expect(adapter, contains('lockRef.runTransaction'));
+    expect(adapter, contains('if (current is Map)'));
+    expect(adapter, contains('Transaction.abort()'));
+    expect(adapter, contains('VoiceLockReclaimPolicy.forUserLock'));
+    expect(adapter, contains('_removeActiveVoiceUserLockIfUnchanged'));
+    expect(adapter, contains('Old call state was cleaned'));
+    expect(adapter, isNot(contains('await lockRef.set(lock.toJson())')));
+  });
+
+  test('Firebase cleanup removes corrupt terminal call locks by callId', () {
+    final adapter = _repoFile(
+      'packages/protocol_brain/lib/adapters/firebase_adapter.dart',
+    );
+    final functions = _repoFile('backend/firebase/functions/index.js');
+
+    expect(adapter, contains('VoiceCallRoom.tryParseForCleanup'));
+    expect(functions, contains('queueExpiredVoiceLock'));
+    expect(functions, contains("path: call.pairId ? `activeVoicePairs/"));
+    expect(functions, contains("path: call.caller ? `activeVoiceUsers/"));
+    expect(functions, contains("path: call.callee ? `activeVoiceUsers/"));
+    expect(functions, contains('voiceLockMatchesExpected'));
+    expect(functions, contains('current.callId !== expected.callId'));
   });
 
   test('Firebase voice signaling stores encrypted SDP and ICE envelopes', () {
@@ -263,7 +408,19 @@ void main() {
     expect(rules, contains('"ice"'));
     expect(rules, contains('"caller"'));
     expect(rules, contains('"callee"'));
-    expect(rules, contains("'nonce', 'ciphertext', 'mac'"));
+    expect(rules, contains("'from', 'to', 'nonce', 'ciphertext', 'mac'"));
+    expect(
+      rules,
+      contains(
+        "newData.child('from').val() === newData.parent().child('caller').val()",
+      ),
+    );
+    expect(
+      rules,
+      contains(
+        "newData.child('to').val() === newData.parent().child('callee').val()",
+      ),
+    );
     expect(
       rules,
       contains("newData.child('ciphertext').val().length <= 262144"),
@@ -278,6 +435,169 @@ void main() {
     expect(adapter, contains('VoiceSignalingEnvelope.fromJson'));
     expect(adapter, isNot(contains("'sdp':")));
     expect(adapter, isNot(contains("'candidate':")));
+  });
+
+  test('Firebase room ICE writes are guarded by explicit sender role', () {
+    final rules = _repoFile('backend/firebase/database.rules.json');
+    final adapter = _repoFile(
+      'packages/protocol_brain/lib/adapters/firebase_adapter.dart',
+    );
+
+    expect(
+      rules,
+      contains(r'''"callerICE": {
+          "$candidateId": {
+            ".write": "auth != null'''),
+      reason: 'callerICE candidates must not inherit broad room write access.',
+    );
+    expect(
+      rules,
+      contains(
+        "root.child('users/' + root.child('rooms/' + \$roomId + '/userA').val() + '/uid').val() === auth.uid",
+      ),
+      reason: 'callerICE writes must be limited to the canonical caller role.',
+    );
+    expect(
+      rules,
+      contains(r'''"calleeICE": {
+          "$candidateId": {
+            ".write": "auth != null'''),
+      reason: 'calleeICE candidates must not inherit broad room write access.',
+    );
+    expect(
+      rules,
+      contains(
+        "root.child('users/' + root.child('rooms/' + \$roomId + '/userB').val() + '/uid').val() === auth.uid",
+      ),
+      reason: 'calleeICE writes must be limited to the canonical callee role.',
+    );
+    expect(
+      adapter,
+      contains('await candidateRef.set(encryptedCandidate);'),
+      reason:
+          'ICE candidates must be written at the leaf path. Updating the room '
+          'parent re-enters the broad room write rule and is denied once ICE '
+          'branches exist.',
+    );
+    expect(
+      adapter,
+      contains("child('rooms/\$roomId/answer').set(encryptedAnswer)"),
+      reason:
+          'Answers also use leaf paths so existing caller ICE does not make '
+          'answer writes depend on the parent room update rule.',
+    );
+    expect(
+      adapter,
+      contains('_refreshRoomLifecycleBestEffort'),
+      reason:
+          'Lifecycle metadata refresh must not make answer or ICE writes fail.',
+    );
+  });
+
+  test('Firebase room role rules reject cross-role ICE writes', () {
+    final rules = _repoFile('backend/firebase/database.rules.json');
+    final callerIceRules = _rulesSlice(rules, '"callerICE"', '"calleeICE"');
+    final calleeIceRules = _rulesSlice(
+      rules,
+      '"calleeICE"',
+      '"activeVoicePairs"',
+    );
+
+    expect(
+      callerIceRules,
+      contains(
+        "root.child('users/' + root.child('rooms/' + \$roomId + '/userA').val() + '/uid').val() === auth.uid",
+      ),
+    );
+    expect(
+      callerIceRules,
+      isNot(
+        contains(
+          "root.child('users/' + root.child('rooms/' + \$roomId + '/userB').val() + '/uid').val() === auth.uid",
+        ),
+      ),
+      reason: 'Canonical callee must not be able to write callerICE.',
+    );
+    expect(
+      calleeIceRules,
+      contains(
+        "root.child('users/' + root.child('rooms/' + \$roomId + '/userB').val() + '/uid').val() === auth.uid",
+      ),
+    );
+    expect(
+      calleeIceRules,
+      isNot(
+        contains(
+          "root.child('users/' + root.child('rooms/' + \$roomId + '/userA').val() + '/uid').val() === auth.uid",
+        ),
+      ),
+      reason: 'Canonical caller must not be able to write calleeICE.',
+    );
+  });
+
+  test('Firebase room identity metadata is immutable after create', () {
+    final rules = _repoFile('backend/firebase/database.rules.json');
+    final roomRules = _rulesSlice(rules, '"rooms"', '"activeVoicePairs"');
+    final attemptIdRules = _rulesSlice(roomRules, '"attemptId"', '"createdAt"');
+    final createdAtRules = _rulesSlice(roomRules, '"createdAt"', '"updatedAt"');
+
+    expect(
+      rules,
+      contains(
+        '"userA": {\n          ".write": "auth != null && !root.child(\'security/blockedUids/\' + auth.uid).exists() && data.exists() && newData.val() === data.val()',
+      ),
+    );
+    expect(
+      rules,
+      contains(
+        '"userB": {\n          ".write": "auth != null && !root.child(\'security/blockedUids/\' + auth.uid).exists() && data.exists() && newData.val() === data.val()',
+      ),
+    );
+    expect(
+      rules,
+      contains(
+        "newData.child('attemptId').val() === \$roomId + ':' + newData.child('createdAt').val()",
+      ),
+      reason: 'New room attempts must bind attemptId to the createdAt reset.',
+    );
+    expect(
+      roomRules,
+      contains(
+        "data.exists() && newData.exists() && newData.hasChildren(['userA', 'userB', 'attemptId', 'createdAt', 'updatedAt', 'expiresAt', 'offer'])",
+      ),
+      reason: 'Existing-room resets must be full room replacements.',
+    );
+    expect(roomRules, contains("!newData.child('answer').exists()"));
+    expect(roomRules, contains("!newData.child('callerICE').exists()"));
+    expect(roomRules, contains("!newData.child('calleeICE').exists()"));
+    expect(
+      attemptIdRules,
+      contains('data.exists() && newData.val() === data.val()'),
+      reason: 'Isolated attemptId writes must be immutable.',
+    );
+    expect(
+      attemptIdRules,
+      isNot(
+        contains(
+          "newData.isString() && root.child('users/' + root.child('rooms/'",
+        ),
+      ),
+      reason: 'userA must not rewrite attemptId without clearing answer/ICE.',
+    );
+    expect(
+      createdAtRules,
+      contains('data.exists() && newData.val() === data.val()'),
+      reason: 'Isolated createdAt writes must be immutable.',
+    );
+    expect(
+      createdAtRules,
+      isNot(
+        contains(
+          "newData.isNumber() && root.child('users/' + root.child('rooms/'",
+        ),
+      ),
+      reason: 'userA must not rewrite createdAt without clearing answer/ICE.',
+    );
   });
 
   test('Firebase voice signaling validates video metadata fields', () {
@@ -320,12 +640,409 @@ void main() {
       ),
     );
     expect(rules, contains("newData.val() === 'accepted'"));
+    expect(
+      rules,
+      contains(
+        "newData.val() === 'failed' && root.child('voiceCalls/' + \$callId + '/status').val() === 'ringing' && root.child('users/' + root.child('voiceCalls/' + \$callId + '/callee').val() + '/uid').val() === auth.uid",
+      ),
+      reason: 'Callee must be able to reject or busy an incoming ringing call.',
+    );
     expect(rules, contains("newData.val() === 'negotiating'"));
     expect(rules, contains("newData.val() === 'connected'"));
+    expect(
+      rules,
+      contains(
+        "newData.val() === 'ended' && root.child('voiceCalls/' + \$callId + '/status').val() !== 'ended'",
+      ),
+    );
+    final voiceCallsRules = _rulesSlice(
+      rules,
+      '"voiceCalls"',
+      '"connectionRequests"',
+    );
+    final statusRules = _rulesSlice(
+      voiceCallsRules,
+      '"status": {',
+      '"mediaMode"',
+    );
+    expect(
+      statusRules,
+      isNot(contains('activeVoicePairs')),
+      reason:
+          'Terminal ended writes must not depend on active locks; stale lock '
+          'cleanup happens after the room reaches terminal state.',
+    );
     expect(adapter, contains('_ensureVoiceRole'));
     expect(adapter, contains('VoiceCallRole.caller'));
     expect(adapter, contains('VoiceCallRole.callee'));
   });
+
+  test('Firebase voice room participant fields are immutable after create', () {
+    final rules = _repoFile('backend/firebase/database.rules.json');
+    final voiceCallsRules = _rulesSlice(
+      rules,
+      '"voiceCalls"',
+      '"connectionRequests"',
+    );
+
+    for (final field in <String>[
+      'pairId',
+      'caller',
+      'callee',
+      'createdAt',
+      'expiresAt',
+    ]) {
+      expect(
+        voiceCallsRules,
+        contains(
+          '"$field": {\n          ".write": "auth != null && data.exists() && newData.val() === data.val()',
+        ),
+        reason: '$field must not be replaceable after call creation.',
+      );
+    }
+  });
+
+  test('Firebase voice room create rejects preseeded SDP and ICE branches', () {
+    final rules = _repoFile('backend/firebase/database.rules.json');
+    final voiceCallsRules = _rulesSlice(
+      rules,
+      '"voiceCalls"',
+      '"connectionRequests"',
+    );
+
+    expect(voiceCallsRules, contains("!newData.child('offer').exists()"));
+    expect(voiceCallsRules, contains("!newData.child('answer').exists()"));
+    expect(
+      voiceCallsRules,
+      contains("!newData.child('ice').exists()"),
+      reason: 'Create must not be able to preseed caller or callee ICE.',
+    );
+    for (final field in <String>[
+      'acceptedAt',
+      'connectedAt',
+      'endedAt',
+      'endedBy',
+      'reasonCode',
+      'reason',
+    ]) {
+      expect(
+        voiceCallsRules,
+        contains("!newData.child('$field').exists()"),
+        reason: '$field must not be accepted at call-room creation.',
+      );
+    }
+    expect(
+      voiceCallsRules,
+      contains(
+        "newData.child('muted').hasChildren([newData.child('caller').val(), newData.child('callee').val()])",
+      ),
+    );
+    expect(
+      voiceCallsRules,
+      contains(
+        "newData.child('muted/' + newData.child('caller').val()).val() === false",
+      ),
+    );
+    expect(
+      voiceCallsRules,
+      contains(
+        "newData.child('cameraMuted/' + newData.child('callee').val()).val() === false",
+      ),
+    );
+  });
+
+  test('Firebase voice inbox create is locked to ringing status', () {
+    final rules = _repoFile('backend/firebase/database.rules.json');
+    final inboxRules = _rulesSlice(rules, '"voiceCallInboxes"', '"voiceCalls"');
+
+    expect(
+      inboxRules,
+      contains("data.exists() || newData.child('status').val() === 'ringing'"),
+    );
+    expect(
+      inboxRules,
+      contains(
+        ".validate\": \"!newData.exists() || (newData.hasChildren(['from', 'to', 'pairId', 'status', 'createdAt', 'updatedAt', 'expiresAt']) && (data.exists() || newData.child('status').val() === 'ringing')",
+      ),
+      reason: 'Non-ringing statuses may only be written after inbox creation.',
+    );
+  });
+
+  test('Firebase voice inbox terminal updates do not require fresh presence', () {
+    final rules = _repoFile('backend/firebase/database.rules.json');
+    final inboxRules = _rulesSlice(rules, '"voiceCallInboxes"', '"voiceCalls"');
+    final inboxWrite = _rulesSlice(inboxRules, '".write"', '".validate"');
+
+    expect(
+      inboxWrite,
+      contains(
+        "data.exists() && newData.child('from').val() === data.child('from').val()",
+      ),
+      reason:
+          'Existing inbox rows must be updatable to terminal state even when '
+          'the callee has just gone stale or closed the app.',
+    );
+    expect(
+      inboxWrite,
+      contains(
+        "!data.exists() && newData.child('status').val() === 'ringing' && root.child('presence/'",
+      ),
+      reason: 'Fresh presence is still required for new ringing inbox rows.',
+    );
+    expect(
+      inboxWrite,
+      isNot(
+        contains(
+          "(data.exists() || newData.child('status').val() === 'ringing') && root.child('presence/'",
+        ),
+      ),
+      reason:
+          'Presence gates on all inbox updates recreate the permission-denied '
+          'cleanup failure seen in production diagnostics.',
+    );
+  });
+
+  test('Firebase voice terminal fields are writable by either participant', () {
+    final rules = _repoFile('backend/firebase/database.rules.json');
+    final voiceCallsRules = _rulesSlice(
+      rules,
+      '"voiceCalls"',
+      '"connectionRequests"',
+    );
+    const participantWrite =
+        "root.child('users/' + root.child('voiceCalls/' + \$callId + '/caller').val() + '/uid').val() === auth.uid || root.child('users/' + root.child('voiceCalls/' + \$callId + '/callee').val() + '/uid').val() === auth.uid";
+
+    for (final field in <String>[
+      '"status"',
+      '"updatedAt"',
+      '"endedAt"',
+      '"reasonCode"',
+      '"reason"',
+    ]) {
+      final fieldRules = _rulesSlice(voiceCallsRules, field, '"muted"');
+      expect(
+        fieldRules,
+        contains(participantWrite),
+        reason:
+            '$field must allow caller or callee terminal writes. A callee '
+            'hangup/reject can otherwise become RTDB permission denied.',
+      );
+    }
+
+    final endedByRules = _rulesSlice(
+      voiceCallsRules,
+      '"endedBy"',
+      '"reasonCode"',
+    );
+    expect(
+      endedByRules,
+      contains(
+        "newData.val() === root.child('voiceCalls/' + \$callId + '/caller').val() || newData.val() === root.child('voiceCalls/' + \$callId + '/callee').val()",
+      ),
+    );
+    expect(
+      endedByRules,
+      contains(
+        "root.child('users/' + newData.val() + '/uid').val() === auth.uid",
+      ),
+      reason:
+          'endedBy must be self-owned by whichever participant ended the call, '
+          'not hard-coded to the offer owner.',
+    );
+  });
+
+  test('Firebase voice inbox deletes use existing data only', () {
+    final rules = _repoFile('backend/firebase/database.rules.json');
+    final inboxRules = _rulesSlice(rules, '"voiceCallInboxes"', '"voiceCalls"');
+    final inboxWrite = _rulesSlice(inboxRules, '".write"', '".validate"');
+
+    expect(
+      inboxWrite,
+      contains('data.exists() && !newData.exists()'),
+      reason:
+          'Deleting terminal inbox artifacts must not require fields from '
+          'newData, because newData is null on deletes.',
+    );
+    expect(
+      inboxWrite,
+      contains(
+        "root.child('users/' + data.child('from').val() + '/uid').val() === auth.uid",
+      ),
+    );
+    expect(
+      inboxWrite,
+      contains(
+        "root.child('users/' + data.child('to').val() + '/uid').val() === auth.uid",
+      ),
+    );
+  });
+
+  test('Firebase voice room reads tolerate missing or cleaned rooms', () {
+    final rules = _repoFile('backend/firebase/database.rules.json');
+    final voiceCallsRules = _rulesSlice(
+      rules,
+      '"voiceCalls"',
+      '"connectionRequests"',
+    );
+
+    expect(
+      voiceCallsRules,
+      contains('".read": "auth != null && (!data.exists() ||'),
+      reason:
+          'watchCall must see a null room instead of receiving permission '
+          'denied when a call room is deleted during cleanup.',
+    );
+  });
+
+  test('Firebase active voice user locks cannot be deleted by stale calls', () {
+    final rules = _repoFile('backend/firebase/database.rules.json');
+    final activeVoiceUsersRules = _rulesSlice(
+      rules,
+      '"activeVoiceUsers"',
+      '"voiceCallInboxes"',
+    );
+
+    expect(
+      activeVoiceUsersRules,
+      contains(
+        "root.child('voiceCalls/' + data.child('callId').val() + '/pairId').val() === data.child('pairId').val()",
+      ),
+    );
+    expect(
+      activeVoiceUsersRules,
+      contains(
+        "root.child('voiceCalls/' + data.child('callId').val() + '/caller').val() === data.child('caller').val()",
+      ),
+    );
+    expect(
+      activeVoiceUsersRules,
+      contains(
+        "root.child('voiceCalls/' + data.child('callId').val() + '/callee').val() === data.child('callee').val()",
+      ),
+    );
+    expect(
+      activeVoiceUsersRules,
+      contains(
+        "root.child('voiceCalls/' + data.child('callId').val() + '/status').val() === 'ended'",
+      ),
+      reason: 'Newer non-terminal call locks must survive stale cleanup.',
+    );
+  });
+
+  test('Firebase voice lock cleanup is best-effort after terminal rooms', () {
+    final adapter = _repoFile(
+      'packages/protocol_brain/lib/adapters/firebase_adapter.dart',
+    );
+
+    expect(
+      adapter,
+      contains('Future<bool> _removeActiveVoicePairLockIfUnchanged'),
+    );
+    expect(
+      adapter,
+      contains('Future<bool> _removeActiveVoiceUserLockIfUnchanged'),
+    );
+    expect(
+      adapter,
+      contains('Future<bool> _removeActiveVoicePairLockIfUnchangedDirect'),
+      reason:
+          'A denied or aborted stale-lock transaction must fall back to a '
+          'server re-read plus compare-delete before giving up.',
+    );
+    expect(
+      adapter,
+      contains('Future<bool> _removeActiveVoiceUserLockIfUnchangedDirect'),
+      reason:
+          'A denied stale-lock transaction after terminal room write must not '
+          'turn a completed hangup into a user-visible signaling failure.',
+    );
+    final emulatorAdapter = _repoFile(
+      'apps/rain/test/utils/firebase_emulator_signaling_adapter.dart',
+    );
+    expect(
+      emulatorAdapter,
+      contains('Future<void> _tryDeleteReclaimedVoiceRoomArtifacts'),
+      reason:
+          'The emulator adapter must mirror production: stale-lock reclaim '
+          'cannot fail only because terminal room artifact cleanup was denied.',
+    );
+  });
+
+  test('Firebase voice lock transactions are server-authoritative', () {
+    final adapter = _repoFile(
+      'packages/protocol_brain/lib/adapters/firebase_adapter.dart',
+    );
+
+    expect(
+      RegExp(
+        r'runTransaction\([\s\S]*?applyLocally: false\)',
+      ).allMatches(adapter).length,
+      greaterThanOrEqualTo(4),
+      reason:
+          'Voice call lock claim and compare-delete transactions must not rely '
+          'on queued local RTDB transaction state surviving restart.',
+    );
+    expect(
+      adapter,
+      contains('final snapshot = await lockRef.get();'),
+      reason:
+          'Denied or aborted cleanup transactions must re-read before any '
+          'direct compare-delete fallback.',
+    );
+  });
+
+  test('Firebase active voice pair locks delete only safe stale rooms', () {
+    final rules = _repoFile('backend/firebase/database.rules.json');
+    final activeVoicePairsRules = _rulesSlice(
+      rules,
+      '"activeVoicePairs"',
+      '"activeVoiceUsers"',
+    );
+
+    expect(
+      activeVoicePairsRules,
+      contains(
+        "root.child('voiceCalls/' + data.child('callId').val() + '/pairId').val() === \$pairId",
+      ),
+      reason:
+          'Pair lock cleanup must verify the lock still points at the matching '
+          'room before a direct compare-delete fallback can remove it.',
+    );
+    expect(
+      activeVoicePairsRules,
+      contains(
+        "root.child('voiceCalls/' + data.child('callId').val() + '/status').val() === 'ended'",
+      ),
+    );
+    expect(
+      activeVoicePairsRules,
+      contains(
+        "root.child('voiceCalls/' + data.child('callId').val() + '/expiresAt').val() <= now",
+      ),
+    );
+  });
+
+  test(
+    'Firebase expired missing-room user locks can be deleted by either side',
+    () {
+      final rules = _repoFile('backend/firebase/database.rules.json');
+      final activeVoiceUsersRules = _rulesSlice(
+        rules,
+        '"activeVoiceUsers"',
+        '"voiceCallInboxes"',
+      );
+
+      expect(
+        activeVoiceUsersRules,
+        contains(
+          "!root.child('voiceCalls/' + data.child('callId').val()).exists() && (root.child('users/' + data.child('caller').val() + '/uid').val() === auth.uid || (data.child('expiresAt').val() <= now && root.child('users/' + data.child('callee').val() + '/uid').val() === auth.uid))",
+        ),
+        reason:
+            'Expired missing-room locks must be cleanupable by the callee too; '
+            'otherwise a reverse-direction retry can stay blocked forever.',
+      );
+    },
+  );
 
   test('Firebase backend does not depend on managed TURN provider secrets', () {
     final functions = _repoFile('backend/firebase/functions/index.js');
@@ -416,4 +1133,16 @@ void main() {
     expect(rules, contains(r'$from !== $to'));
     expect(rules, contains(r'$username !== $friend'));
   });
+}
+
+String _rulesSlice(String source, String startMarker, String endMarker) {
+  final start = source.indexOf(startMarker);
+  if (start < 0) {
+    throw StateError('Missing rules marker: $startMarker');
+  }
+  final end = source.indexOf(endMarker, start + startMarker.length);
+  if (end < 0) {
+    throw StateError('Missing rules marker: $endMarker');
+  }
+  return source.substring(start, end);
 }

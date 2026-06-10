@@ -1,11 +1,13 @@
 import 'dart:async';
 
+import '../signaling_cost_budget.dart';
+import '../voice_call_clock.dart';
+import '../voice_call_cleanup_janitor.dart';
 import '../voice_call_frame.dart';
+import '../voice_lock_reclaim_policy.dart';
 import '../voice_signaling_contract.dart';
 
 final class FakeVoiceSignalingAdapter implements VoiceSignalingAdapter {
-  static const int _orphanVoiceLockGraceMs = 15000;
-
   final Map<String, VoiceCallRoom> _rooms = <String, VoiceCallRoom>{};
   final Map<String, VoiceActivePairLock> _pairLocks =
       <String, VoiceActivePairLock>{};
@@ -85,6 +87,7 @@ final class FakeVoiceSignalingAdapter implements VoiceSignalingAdapter {
           existingLock,
           createdAt,
           caller: normalizedCaller,
+          callee: normalizedCallee,
         )) {
       throw VoiceSignalingException(
         'Active voice call already exists for pair $pairId.',
@@ -97,6 +100,7 @@ final class FakeVoiceSignalingAdapter implements VoiceSignalingAdapter {
             existingUserLock,
             createdAt,
             caller: normalizedCaller,
+            callee: normalizedCallee,
           )) {
         throw VoiceSignalingException(
           'Active voice call already exists for user $username.',
@@ -195,6 +199,101 @@ final class FakeVoiceSignalingAdapter implements VoiceSignalingAdapter {
   }
 
   @override
+  Future<VoiceCallCleanupSummary> cleanupStaleVoiceCallArtifacts({
+    required String username,
+    required int now,
+    int limit = maxCallCleanupItemsPerRun,
+  }) async {
+    _ensureOpen();
+    final normalizedUsername = normalizeVoiceCallUsername(username);
+    final decisions = <VoiceCallCleanupDecision>[];
+
+    void addDecision(
+      VoiceCallCleanupAction action,
+      String callId,
+      String reason, {
+      String? path,
+    }) {
+      if (decisions.length >= limit) {
+        return;
+      }
+      decisions.add(
+        VoiceCallCleanupDecision(
+          action: action,
+          callId: callId,
+          reason: reason,
+          path: path,
+        ),
+      );
+    }
+
+    final userLock = _userLocks[normalizedUsername];
+    if (userLock != null && decisions.length < limit) {
+      final room = _rooms[userLock.callId];
+      if (room == null) {
+        _userLocks.remove(normalizedUsername);
+        addDecision(
+          VoiceCallCleanupAction.deleteMatchingUserLock,
+          userLock.callId,
+          'missing room',
+          path: 'activeVoiceUsers/$normalizedUsername',
+        );
+        final pairLock = _pairLocks[userLock.pairId];
+        if (pairLock?.callId == userLock.callId && decisions.length < limit) {
+          _pairLocks.remove(userLock.pairId);
+          addDecision(
+            VoiceCallCleanupAction.deleteMatchingPairLock,
+            userLock.callId,
+            'missing room',
+            path: 'activeVoicePairs/${userLock.pairId}',
+          );
+        }
+      } else if (room.isTerminal) {
+        _removeCallArtifacts(room.callId);
+        addDecision(
+          VoiceCallCleanupAction.deleteTerminalRoom,
+          room.callId,
+          'terminal room',
+          path: 'voiceCalls/${room.callId}',
+        );
+      } else if (room.status != VoiceCallSignalingStatus.connected &&
+          room.expiresAt <= now) {
+        _removeCallArtifacts(room.callId);
+        addDecision(
+          VoiceCallCleanupAction.deleteExpiredRoom,
+          room.callId,
+          'expired setup room',
+          path: 'voiceCalls/${room.callId}',
+        );
+      }
+    }
+
+    final inbox = _inboxes[normalizedUsername];
+    if (inbox != null) {
+      for (final entry in List<VoiceCallInboxEntry>.of(inbox.values)) {
+        if (decisions.length >= limit) {
+          break;
+        }
+        if (entry.status.isTerminal || entry.expiresAt <= now) {
+          inbox.remove(entry.callId);
+          addDecision(
+            VoiceCallCleanupAction.deleteCorruptInbox,
+            entry.callId,
+            entry.status.isTerminal ? 'terminal inbox' : 'expired inbox',
+            path: 'voiceCallInboxes/$normalizedUsername/${entry.callId}',
+          );
+        }
+      }
+    }
+
+    return VoiceCallCleanupSummary(
+      username: normalizedUsername,
+      now: now,
+      decisions: List<VoiceCallCleanupDecision>.unmodifiable(decisions),
+    );
+  }
+
+  @override
   Future<void> acceptCall({
     required String callId,
     required String callee,
@@ -206,11 +305,12 @@ final class FakeVoiceSignalingAdapter implements VoiceSignalingAdapter {
       VoiceCallSignalingStatus.ringing,
     });
     _ensureRole(room, callee, VoiceCallRole.callee);
+    final safeAcceptedAt = _safeVoiceRoomTimestamp(room, acceptedAt);
     _putRoom(
       room.copyWith(
         status: VoiceCallSignalingStatus.accepted,
-        updatedAt: acceptedAt,
-        acceptedAt: acceptedAt,
+        updatedAt: safeAcceptedAt,
+        acceptedAt: safeAcceptedAt,
       ),
     );
   }
@@ -229,11 +329,12 @@ final class FakeVoiceSignalingAdapter implements VoiceSignalingAdapter {
       VoiceCallSignalingStatus.negotiating,
       VoiceCallSignalingStatus.connected,
     });
+    final safeConnectedAt = _safeVoiceRoomTimestamp(room, connectedAt);
     _putRoom(
       room.copyWith(
         status: VoiceCallSignalingStatus.connected,
-        updatedAt: connectedAt,
-        connectedAt: connectedAt,
+        updatedAt: safeConnectedAt,
+        connectedAt: safeConnectedAt,
       ),
     );
   }
@@ -260,11 +361,12 @@ final class FakeVoiceSignalingAdapter implements VoiceSignalingAdapter {
       return;
     }
     final normalizedUsername = normalizeVoiceCallUsername(username);
+    final safeEndedAt = _safeVoiceRoomTimestamp(room, endedAt);
     _putRoom(
       room.copyWith(
         status: status,
-        updatedAt: endedAt,
-        endedAt: endedAt,
+        updatedAt: safeEndedAt,
+        endedAt: safeEndedAt,
         endedBy: normalizedUsername,
         reasonCode: reasonCode,
         reason: reason,
@@ -285,9 +387,10 @@ final class FakeVoiceSignalingAdapter implements VoiceSignalingAdapter {
     _ensureParticipant(room, username);
     _ensureNonTerminal(room);
     final normalizedUsername = normalizeVoiceCallUsername(username);
+    final safeUpdatedAt = _safeVoiceRoomTimestamp(room, updatedAt);
     _putRoom(
       room.copyWith(
-        updatedAt: updatedAt,
+        updatedAt: safeUpdatedAt,
         muted: <String, bool>{...room.muted, normalizedUsername: muted},
       ),
     );
@@ -305,9 +408,10 @@ final class FakeVoiceSignalingAdapter implements VoiceSignalingAdapter {
     _ensureParticipant(room, username);
     _ensureNonTerminal(room);
     final normalizedUsername = normalizeVoiceCallUsername(username);
+    final safeUpdatedAt = _safeVoiceRoomTimestamp(room, updatedAt);
     _putRoom(
       room.copyWith(
-        updatedAt: updatedAt,
+        updatedAt: safeUpdatedAt,
         cameraMuted: <String, bool>{
           ...room.cameraMuted,
           normalizedUsername: cameraMuted,
@@ -333,10 +437,11 @@ final class FakeVoiceSignalingAdapter implements VoiceSignalingAdapter {
       VoiceCallSignalingStatus.accepted,
       VoiceCallSignalingStatus.negotiating,
     });
+    final safeUpdatedAt = _safeVoiceRoomTimestamp(room, updatedAt);
     _putRoom(
       room.copyWith(
         status: VoiceCallSignalingStatus.negotiating,
-        updatedAt: updatedAt,
+        updatedAt: safeUpdatedAt,
         offer: offer,
       ),
     );
@@ -364,10 +469,11 @@ final class FakeVoiceSignalingAdapter implements VoiceSignalingAdapter {
         'Cannot write voice answer before offer.',
       );
     }
+    final safeUpdatedAt = _safeVoiceRoomTimestamp(room, updatedAt);
     _putRoom(
       room.copyWith(
         status: VoiceCallSignalingStatus.negotiating,
-        updatedAt: updatedAt,
+        updatedAt: safeUpdatedAt,
         answer: answer,
       ),
     );
@@ -404,10 +510,44 @@ final class FakeVoiceSignalingAdapter implements VoiceSignalingAdapter {
     required VoiceSignalingEnvelope candidate,
     required int createdAt,
   }) async {
-    _ensureOpen();
-    candidate.validate(
-      maxCiphertextLength: VoiceSignalingEnvelope.maxIceCiphertextLength,
+    final candidateIds = await writeIceCandidates(
+      callId: callId,
+      username: username,
+      role: role,
+      candidates: <VoiceSignalingEnvelope>[candidate],
+      createdAt: createdAt,
     );
+    if (candidateIds.isEmpty) {
+      throw const SignalingCostBudgetExceeded(
+        'signaling_cost_budget_exceeded: ICE candidate budget exceeded.',
+      );
+    }
+    return candidateIds.single;
+  }
+
+  @override
+  Future<List<String>> writeIceCandidates({
+    required String callId,
+    required String username,
+    required VoiceCallRole role,
+    required List<VoiceSignalingEnvelope> candidates,
+    required int createdAt,
+  }) async {
+    _ensureOpen();
+    if (candidates.isEmpty) {
+      return const <String>[];
+    }
+    if (candidates.length > maxIceCandidateBatchSize) {
+      throw SignalingCostBudgetExceeded(
+        'signaling_cost_budget_exceeded: ICE candidate batch size '
+        '${candidates.length} exceeds $maxIceCandidateBatchSize.',
+      );
+    }
+    for (final candidate in candidates) {
+      candidate.validate(
+        maxCiphertextLength: VoiceSignalingEnvelope.maxIceCiphertextLength,
+      );
+    }
     final room = _requireRoom(callId);
     _ensureRole(room, username, role);
     _ensureStatus(room, const <VoiceCallSignalingStatus>{
@@ -415,21 +555,39 @@ final class FakeVoiceSignalingAdapter implements VoiceSignalingAdapter {
       VoiceCallSignalingStatus.negotiating,
       VoiceCallSignalingStatus.connected,
     });
-    final candidateId = 'ice-${++_nextIceId}';
-    final record = VoiceCallIceCandidateRecord(
-      callId: room.callId,
-      candidateId: candidateId,
-      role: role,
-      envelope: candidate,
-      createdAt: createdAt,
-    );
-    record.toJson();
+    final safeCreatedAt = _safeVoiceRoomTimestamp(room, createdAt);
     final key = _iceKey(room.callId, role);
+    final existingCount = _iceCandidates[key]?.length ?? 0;
+    final available = maxIceCandidatesPerRole - existingCount;
+    if (available <= 0) {
+      throw SignalingCostBudgetExceeded(
+        'signaling_cost_budget_exceeded: ICE candidate budget exceeded for '
+        '${room.callId}/${role.name}; limit=$maxIceCandidatesPerRole.',
+      );
+    }
+    final accepted = candidates.take(available).toList(growable: false);
+    final records = <VoiceCallIceCandidateRecord>[];
+    final candidateIds = <String>[];
+    for (final candidate in accepted) {
+      final candidateId = 'ice-${++_nextIceId}';
+      final record = VoiceCallIceCandidateRecord(
+        callId: room.callId,
+        candidateId: candidateId,
+        role: role,
+        envelope: candidate,
+        createdAt: safeCreatedAt,
+      );
+      record.toJson();
+      records.add(record);
+      candidateIds.add(candidateId);
+    }
     _iceCandidates
         .putIfAbsent(key, () => <VoiceCallIceCandidateRecord>[])
-        .add(record);
-    _iceController(key).add(record);
-    return candidateId;
+        .addAll(records);
+    for (final record in records) {
+      _iceController(key).add(record);
+    }
+    return List<String>.unmodifiable(candidateIds);
   }
 
   @override
@@ -499,44 +657,23 @@ final class FakeVoiceSignalingAdapter implements VoiceSignalingAdapter {
     VoiceActivePairLock lock,
     int createdAt, {
     required String caller,
+    required String callee,
   }) {
     final room = _rooms[lock.callId];
-    if (lock.expiresAt <= createdAt) {
-      if (room != null && _shouldDeleteReclaimedVoiceRoom(room, createdAt)) {
-        _removeCallArtifacts(lock.callId);
-      }
-      _pairLocks.remove(lock.pairId);
-      return true;
-    }
-
-    if (room == null) {
-      if (lock.caller == normalizeVoiceCallUsername(caller)) {
-        _pairLocks.remove(lock.pairId);
-        return true;
-      }
-      if (createdAt - lock.updatedAt < _orphanVoiceLockGraceMs) {
-        return false;
-      }
-      _pairLocks.remove(lock.pairId);
-      return true;
-    }
-
-    if (!room.isTerminal &&
-        room.status != VoiceCallSignalingStatus.connected &&
-        lock.caller == normalizeVoiceCallUsername(caller)) {
-      _removeCallArtifacts(room.callId);
-      _pairLocks.remove(lock.pairId);
-      return true;
-    }
-
-    final setupExpired =
-        room.status != VoiceCallSignalingStatus.connected &&
-        room.expiresAt <= createdAt;
-    if (!room.isTerminal && !setupExpired) {
+    final decision = VoiceLockReclaimPolicy.forPairLock(
+      lock: lock,
+      room: room,
+      caller: caller,
+      callee: callee,
+      createdAt: createdAt,
+      now: createdAt,
+    );
+    if (!decision.shouldReclaimLock) {
       return false;
     }
-
-    _removeCallArtifacts(room.callId);
+    if (room != null && decision.shouldDeleteRoomArtifacts) {
+      _removeCallArtifacts(room.callId);
+    }
     _pairLocks.remove(lock.pairId);
     return true;
   }
@@ -545,44 +682,23 @@ final class FakeVoiceSignalingAdapter implements VoiceSignalingAdapter {
     VoiceActiveUserLock lock,
     int createdAt, {
     required String caller,
+    required String callee,
   }) {
     final room = _rooms[lock.callId];
-    if (lock.expiresAt <= createdAt) {
-      if (room != null && _shouldDeleteReclaimedVoiceRoom(room, createdAt)) {
-        _removeCallArtifacts(lock.callId);
-      }
-      _userLocks.remove(lock.username);
-      return true;
-    }
-
-    if (room == null) {
-      if (lock.caller == normalizeVoiceCallUsername(caller)) {
-        _userLocks.remove(lock.username);
-        return true;
-      }
-      if (createdAt - lock.updatedAt < _orphanVoiceLockGraceMs) {
-        return false;
-      }
-      _userLocks.remove(lock.username);
-      return true;
-    }
-
-    if (!room.isTerminal &&
-        room.status != VoiceCallSignalingStatus.connected &&
-        lock.caller == normalizeVoiceCallUsername(caller)) {
-      _removeCallArtifacts(room.callId);
-      _userLocks.remove(lock.username);
-      return true;
-    }
-
-    final setupExpired =
-        room.status != VoiceCallSignalingStatus.connected &&
-        room.expiresAt <= createdAt;
-    if (!room.isTerminal && !setupExpired) {
+    final decision = VoiceLockReclaimPolicy.forUserLock(
+      lock: lock,
+      room: room,
+      caller: caller,
+      callee: callee,
+      createdAt: createdAt,
+      now: createdAt,
+    );
+    if (!decision.shouldReclaimLock) {
       return false;
     }
-
-    _removeCallArtifacts(room.callId);
+    if (room != null && decision.shouldDeleteRoomArtifacts) {
+      _removeCallArtifacts(room.callId);
+    }
     _userLocks.remove(lock.username);
     return true;
   }
@@ -596,14 +712,6 @@ final class FakeVoiceSignalingAdapter implements VoiceSignalingAdapter {
         _userLocks.remove(username);
       }
     }
-  }
-
-  bool _shouldDeleteReclaimedVoiceRoom(VoiceCallRoom room, int createdAt) {
-    if (room.isTerminal) {
-      return true;
-    }
-    return room.status != VoiceCallSignalingStatus.connected &&
-        room.expiresAt <= createdAt;
   }
 
   void _removeCallArtifacts(String callId) {
@@ -631,6 +739,14 @@ final class FakeVoiceSignalingAdapter implements VoiceSignalingAdapter {
       createdAt: room.createdAt,
       updatedAt: room.updatedAt,
       expiresAt: room.expiresAt,
+    );
+  }
+
+  int _safeVoiceRoomTimestamp(VoiceCallRoom room, int requestedAt) {
+    return VoiceCallTimestampClock.nextRoomTimestamp(
+      requestedAt: requestedAt,
+      roomCreatedAt: room.createdAt,
+      roomUpdatedAt: room.updatedAt,
     );
   }
 

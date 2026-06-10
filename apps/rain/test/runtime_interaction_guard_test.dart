@@ -38,15 +38,16 @@ void main() {
           callId: 'call-1',
           sessionEpoch: 1,
         ),
+        peerOnline: true,
       );
 
       expect(decision.allowed, isFalse);
-      expect(decision.reasonCode, RuntimeInteractionReasonCode.activeCall);
+      expect(decision.decision, CallStartPreflightDecision.activeCallExists);
       expect(decision.blockingPeerId, 'bob');
-      expect(decision.callId, 'call-1');
+      expect(decision.diagnostics['callId'], 'call-1');
       expect(
         decision.userMessage,
-        'You are already in a call with @bob. End it before calling @cara.',
+        'End the current call before starting another.',
       );
     });
 
@@ -60,9 +61,76 @@ void main() {
           callId: 'call-1',
           sessionEpoch: 1,
         ),
+        peerOnline: true,
       );
 
       expect(decision.allowed, isTrue);
+    });
+
+    test('offline peer blocks call start before media setup', () {
+      final decision = RuntimeInteractionGuard.canStartCall(
+        peerId: 'bob',
+        mediaMode: CallMediaMode.audio,
+        voiceCallState: const VoiceCallState.idle(),
+        peerOnline: false,
+      );
+
+      expect(decision.allowed, isFalse);
+      expect(decision.decision, CallStartPreflightDecision.peerOffline);
+      expect(
+        decision.userMessage,
+        '@bob is offline. Keep both apps open, then try again.',
+      );
+    });
+
+    test('unknown presence blocks call start before media setup', () {
+      final decision = RuntimeInteractionGuard.canStartCall(
+        peerId: 'bob',
+        mediaMode: CallMediaMode.video,
+        voiceCallState: const VoiceCallState.idle(),
+        peerOnline: null,
+      );
+
+      expect(decision.allowed, isFalse);
+      expect(decision.decision, CallStartPreflightDecision.presenceUnknown);
+      expect(
+        decision.userMessage,
+        'Could not confirm @bob is online. Try again.',
+      );
+    });
+
+    test('call start requires an explicit peerOnline decision', () {
+      final decision = RuntimeInteractionGuard.canStartCall(
+        peerId: 'bob',
+        mediaMode: CallMediaMode.audio,
+        voiceCallState: const VoiceCallState.idle(),
+        peerOnline: null,
+      );
+
+      expect(decision.allowed, isFalse);
+      expect(decision.decision, CallStartPreflightDecision.presenceUnknown);
+      expect(
+        decision.userMessage,
+        'Could not confirm @bob is online. Try again.',
+      );
+    });
+
+    test('local manual disconnect blocks call start when peer is online', () {
+      final decision = RuntimeInteractionGuard.canStartCall(
+        peerId: 'bob',
+        mediaMode: CallMediaMode.audio,
+        voiceCallState: const VoiceCallState.idle(),
+        peerOnline: true,
+        manualDisconnectedPeers: const <String>{'bob'},
+      );
+
+      expect(decision.allowed, isFalse);
+      expect(
+        decision.decision,
+        CallStartPreflightDecision.localManualDisconnect,
+      );
+      expect(decision.blockingPeerId, 'bob');
+      expect(decision.userMessage, contains('Press Connect'));
     });
 
     test('active transfer blocks starting and accepting calls globally', () {
@@ -71,6 +139,7 @@ void main() {
         peerId: 'cara',
         mediaMode: CallMediaMode.audio,
         voiceCallState: const VoiceCallState.idle(),
+        peerOnline: true,
         activeTransfer: transfer,
       );
       final incoming = RuntimeInteractionGuard.canAcceptCall(
@@ -88,11 +157,12 @@ void main() {
       expect(outgoing.allowed, isFalse);
       expect(incoming.allowed, isFalse);
       expect(
-        outgoing.reasonCode,
-        RuntimeInteractionReasonCode.activeFileTransfer,
+        outgoing.decision,
+        CallStartPreflightDecision.activeTransferExists,
       );
       expect(incoming.transferId, 'transfer-1');
       expect(outgoing.blockingPeerId, 'bob');
+      expect(outgoing.diagnostics['transferId'], 'transfer-1');
     });
 
     test('active call blocks file transfers for every peer', () {
@@ -110,6 +180,68 @@ void main() {
       expect(decision.reasonCode, RuntimeInteractionReasonCode.activeCall);
       expect(decision.blockingPeerId, 'bob');
       expect(decision.userMessage, 'Finish the call before sending files.');
+    });
+
+    test('failed terminal call does not block file transfers', () {
+      final decision = RuntimeInteractionGuard.canStartFileTransfer(
+        peerId: 'cara',
+        voiceCallState: const VoiceCallState(
+          phase: VoiceCallPhase.failed,
+          peerId: 'bob',
+          callId: 'call-1',
+          sessionEpoch: 1,
+          detail: 'Busy.',
+        ),
+      );
+
+      expect(decision.allowed, isTrue);
+    });
+
+    test('false busy cleanup becomes a retryable guard decision', () {
+      final decision = RuntimeInteractionGuard.staleCallCleanup(
+        peerId: 'bob',
+        callId: 'call-1',
+      );
+
+      expect(decision.allowed, isFalse);
+      expect(
+        decision.reasonCode,
+        RuntimeInteractionReasonCode.staleCallCleanup,
+      );
+      expect(decision.blockingPeerId, 'bob');
+      expect(decision.callId, 'call-1');
+      expect(decision.userMessage, 'Old call state was cleaned. Try again.');
+    });
+
+    test(
+      'call cleanup in progress blocks duplicate retry with explicit message',
+      () {
+        final decision = RuntimeInteractionGuard.callCleanupInProgress(
+          peerId: 'bob',
+          callId: 'call-1',
+        );
+
+        expect(decision.allowed, isFalse);
+        expect(
+          decision.reasonCode,
+          RuntimeInteractionReasonCode.callCleanupInProgress,
+        );
+        expect(decision.blockingPeerId, 'bob');
+        expect(decision.callId, 'call-1');
+        expect(
+          decision.userMessage,
+          'Call state is cleaning up. Try again in a moment.',
+        );
+      },
+    );
+
+    test('peer busy decision is peer-specific', () {
+      final decision = RuntimeInteractionGuard.peerBusy(peerId: 'bob');
+
+      expect(decision.allowed, isFalse);
+      expect(decision.reasonCode, RuntimeInteractionReasonCode.peerBusy);
+      expect(decision.userMessage, '@bob is already in a call.');
+      expect(decision.blockingPeerId, 'bob');
     });
   });
 }
