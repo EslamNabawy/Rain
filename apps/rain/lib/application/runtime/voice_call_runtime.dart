@@ -274,11 +274,13 @@ extension VoiceCallRuntime on RainRuntimeController {
     // Also treat any non-idle, non-failed state that has no live session
     // as stale — this catches cases where the session was disposed but
     // the state never transitioned (e.g., crash during call setup).
-    final hasLiveSession = voiceCallSession != null &&
+    final hasLiveSession =
+        voiceCallSession != null &&
         !voiceCallSession!.isDisposed &&
         voiceCallSession!.state.phase != VoiceCallSessionPhase.idle &&
         voiceCallSession!.state.phase != VoiceCallSessionPhase.failed;
-    final isStaleOrExpired = isExpired ||
+    final isStaleOrExpired =
+        isExpired ||
         (!hasLiveSession &&
             current.phase != VoiceCallPhase.idle &&
             current.phase != VoiceCallPhase.failed);
@@ -1193,6 +1195,8 @@ extension VoiceCallRuntime on RainRuntimeController {
     }
     final voiceAdapter = _requireVoiceSignalingAdapter();
 
+    // Dispose the old session first, but remember the new session's identity
+    // so isLiveVoiceCallSession doesn't reject events during the transition.
     await disposeCurrentVoiceCallSession();
     final media = switch (mediaMode) {
       CallMediaMode.audio => await _createAudioVoiceMediaConnection(
@@ -2784,7 +2788,14 @@ extension VoiceCallRuntime on RainRuntimeController {
   }
 
   bool _isLiveVoiceCallSession(VoiceCallSession session) {
-    if (runtimeShutDown || voiceCallSession != session) {
+    if (runtimeShutDown) {
+      return false;
+    }
+    // When voiceCallSession is null (e.g., during _createVoiceCallSession
+    // disposal of the old session), still allow state updates if the session
+    // matches the current call. This prevents state updates from being silently
+    // dropped during the brief transition window.
+    if (voiceCallSession != null && voiceCallSession != session) {
       return false;
     }
     final currentCallId = voiceCallState.callId;
