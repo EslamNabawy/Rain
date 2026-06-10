@@ -218,38 +218,89 @@ extension VoiceCallRuntime on RainRuntimeController {
         retryDecision: retryDecision,
         retrySnapshot: retrySnapshot,
       );
-      await _failVoiceCall(
-        error,
-        failureReason:
-            _voiceCallFailureReasonForRetryDecision(retryDecision) ??
-            _voiceCallFailureReasonForError(error) ??
-            _localAudioFailureReason(error),
-        detail:
-            _voiceCallFailureDetailForRetryDecision(retryDecision) ??
-            _voiceCallFailureDetailForError(error) ??
-            _localAudioFailureDetail(error),
-      );
+      try {
+        await _failVoiceCall(
+          error,
+          failureReason:
+              _voiceCallFailureReasonForRetryDecision(retryDecision) ??
+              _voiceCallFailureReasonForError(error) ??
+              _localAudioFailureReason(error),
+          detail:
+              _voiceCallFailureDetailForRetryDecision(retryDecision) ??
+              _voiceCallFailureDetailForError(error) ??
+              _localAudioFailureDetail(error),
+        );
+      } catch (failError) {
+        // _failVoiceCall must never leave state stuck. If it throws,
+        // force the state to failed directly.
+        recordRuntimeEvent(
+          category: 'call',
+          name: 'fail_voice_call_failed',
+          severity: 'error',
+          message: 'Force-failing call after _failVoiceCall error: $failError',
+          context: <String, Object?>{
+            'peerId': peerId,
+            'callId': callId,
+            'sessionEpoch': sessionEpoch,
+            'originalError': error.toString(),
+            'failError': failError.toString(),
+          },
+        );
+        _setVoiceCallState(
+          VoiceCallState(
+            phase: VoiceCallPhase.failed,
+            peerId: peerId,
+            callId: callId,
+            sessionEpoch: sessionEpoch,
+            mediaMode: mediaMode,
+            isOutgoing: true,
+            detail: 'Call could not start.',
+            error: error,
+            failureReason: VoiceCallFailureReason.signalingFailed,
+            updatedAt: DateTime.now().millisecondsSinceEpoch,
+          ),
+        );
+        try {
+          await disposeCurrentVoiceCallSession();
+        } catch (_) {}
+      }
       rethrow;
     }
   }
 
   Future<void> _clearExpiredVoiceCallStartBlock() async {
     final current = voiceCallState;
-    if (!await _isExpiredVoiceCallStartBlock(current)) {
+    final isExpired = await _isExpiredVoiceCallStartBlock(current);
+    // Also treat any non-idle, non-failed state that has no live session
+    // as stale — this catches cases where the session was disposed but
+    // the state never transitioned (e.g., crash during call setup).
+    final hasLiveSession = voiceCallSession != null &&
+        !voiceCallSession!.isDisposed &&
+        voiceCallSession!.state.phase != VoiceCallSessionPhase.idle &&
+        voiceCallSession!.state.phase != VoiceCallSessionPhase.failed;
+    final isStaleOrExpired = isExpired ||
+        (!hasLiveSession &&
+            current.phase != VoiceCallPhase.idle &&
+            current.phase != VoiceCallPhase.failed);
+    if (!isStaleOrExpired) {
       return;
     }
     recordRuntimeEvent(
       category: 'call',
-      name: 'expired_call_state_cleared_before_start',
+      name: 'stale_call_state_cleared_before_start',
       severity: 'warning',
-      message: 'Expired local call state was cleared before starting a call.',
-      context: _voiceCallEventContext(current),
+      message: 'Stale local call state was cleared before starting a call.',
+      context: <String, Object?>{
+        ..._voiceCallEventContext(current),
+        'isExpired': isExpired,
+        'hasLiveSession': hasLiveSession,
+      },
     );
-    await disposeCurrentVoiceCallSession();
-    if (voiceCallState.callId == current.callId &&
-        voiceCallState.sessionEpoch == current.sessionEpoch) {
-      _setVoiceCallState(const VoiceCallState.idle());
-    }
+    try {
+      await disposeCurrentVoiceCallSession();
+    } catch (_) {}
+    // Always reset to idle — the stale state must not block new calls.
+    _setVoiceCallState(const VoiceCallState.idle());
   }
 
   VoiceCallState _voiceCallStartPreflightState() {
@@ -902,14 +953,43 @@ extension VoiceCallRuntime on RainRuntimeController {
       return;
     }
 
-    final session = await _createVoiceCallSession(
-      peerId: peerId,
-      callId: frame.callId,
-      sessionEpoch: room.createdAt,
-      isOutgoing: false,
-      mediaMode: frame.mediaMode,
-    );
-    await session.handleFrame(frame);
+    try {
+      final session = await _createVoiceCallSession(
+        peerId: peerId,
+        callId: frame.callId,
+        sessionEpoch: room.createdAt,
+        isOutgoing: false,
+        mediaMode: frame.mediaMode,
+      );
+      await session.handleFrame(frame);
+    } catch (error) {
+      recordRuntimeEvent(
+        category: 'call',
+        name: 'incoming_invite_session_failed',
+        severity: 'error',
+        message: 'Failed to create session for incoming invite: $error',
+        context: <String, Object?>{
+          ..._voiceFrameEventContext(peerId, frame),
+          'error': error.toString(),
+        },
+      );
+      await _endVoiceCallInSignaling(
+        callId: frame.callId,
+        status: VoiceCallSignalingStatus.failed,
+        reason: 'Call setup failed.',
+        reasonCode: _voiceCallFailedReasonCode,
+        bestEffort: true,
+      );
+      try {
+        await _failVoiceCall(
+          error,
+          failureReason: VoiceCallFailureReason.signalingFailed,
+          detail: 'Could not accept incoming call.',
+        );
+      } catch (_) {
+        _setVoiceCallState(const VoiceCallState.idle());
+      }
+    }
   }
 
   Future<void> _handleVoiceInvite(String peerId, VoiceCallFrame frame) async {
@@ -974,14 +1054,44 @@ extension VoiceCallRuntime on RainRuntimeController {
       return;
     }
 
-    final session = await _createVoiceCallSession(
-      peerId: peerId,
-      callId: frame.callId,
-      sessionEpoch: frame.sessionEpoch,
-      isOutgoing: false,
-      mediaMode: frame.mediaMode,
-    );
-    await session.handleFrame(frame);
+    try {
+      final session = await _createVoiceCallSession(
+        peerId: peerId,
+        callId: frame.callId,
+        sessionEpoch: frame.sessionEpoch,
+        isOutgoing: false,
+        mediaMode: frame.mediaMode,
+      );
+      await session.handleFrame(frame);
+    } catch (error) {
+      recordRuntimeEvent(
+        category: 'call',
+        name: 'legacy_invite_session_failed',
+        severity: 'error',
+        message: 'Failed to create session for legacy invite: $error',
+        context: <String, Object?>{
+          ..._voiceFrameEventContext(peerId, frame),
+          'error': error.toString(),
+        },
+      );
+      await _sendVoiceFrame(
+        peerId,
+        VoiceCallFrameType.reject,
+        callId: frame.callId,
+        sessionEpoch: frame.sessionEpoch,
+        reason: 'Call setup failed.',
+        bestEffort: true,
+      );
+      try {
+        await _failVoiceCall(
+          error,
+          failureReason: VoiceCallFailureReason.signalingFailed,
+          detail: 'Could not accept incoming call.',
+        );
+      } catch (_) {
+        _setVoiceCallState(const VoiceCallState.idle());
+      }
+    }
   }
 
   Future<_IncomingVoiceInviteDisposition> _prepareIncomingVoiceInvite(
@@ -2611,15 +2721,30 @@ extension VoiceCallRuntime on RainRuntimeController {
       },
     );
     if (current.callId != null) {
-      await _endVoiceCallInSignaling(
-        callId: current.callId!,
-        status: VoiceCallSignalingStatus.failed,
-        reason: effectiveDetail,
-        reasonCode:
-            _voiceCallReasonCodeForFailure(effectiveFailureReason) ??
-            _voiceCallFailedReasonCode,
-        bestEffort: true,
-      );
+      try {
+        await _endVoiceCallInSignaling(
+          callId: current.callId!,
+          status: VoiceCallSignalingStatus.failed,
+          reason: effectiveDetail,
+          reasonCode:
+              _voiceCallReasonCodeForFailure(effectiveFailureReason) ??
+              _voiceCallFailedReasonCode,
+          bestEffort: true,
+        );
+      } catch (signalingError) {
+        // Signaling write must never prevent state transition to failed.
+        recordRuntimeEvent(
+          category: 'call',
+          name: 'end_voice_call_in_signaling_failed',
+          severity: 'warning',
+          message: 'Failed to write terminal signaling state: $signalingError',
+          context: <String, Object?>{
+            ..._voiceCallEventContext(current),
+            'callId': current.callId,
+            'signalingError': signalingError.toString(),
+          },
+        );
+      }
     }
     _setVoiceCallState(
       current.copyWith(
@@ -2642,7 +2767,20 @@ extension VoiceCallRuntime on RainRuntimeController {
         audioLevel: const VoiceAudioLevel.unavailable(),
       ),
     );
-    await disposeCurrentVoiceCallSession();
+    try {
+      await disposeCurrentVoiceCallSession();
+    } catch (disposeError) {
+      recordRuntimeEvent(
+        category: 'call',
+        name: 'dispose_voice_call_session_failed',
+        severity: 'warning',
+        message: 'Failed to dispose voice call session: $disposeError',
+        context: <String, Object?>{
+          ..._voiceCallEventContext(current),
+          'disposeError': disposeError.toString(),
+        },
+      );
+    }
   }
 
   bool _isLiveVoiceCallSession(VoiceCallSession session) {

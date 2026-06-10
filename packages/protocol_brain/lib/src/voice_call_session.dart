@@ -157,6 +157,8 @@ final class VoiceCallSession {
   bool get isOfferOwner =>
       _isOfferOwnerOverride ?? isVoiceCallOfferOwner(localPeerId, remotePeerId);
 
+  bool get isDisposed => _disposed;
+
   Stream<VoiceCallSessionState> get onStateChanged => _stateController.stream;
 
   Future<void> startOutgoing() {
