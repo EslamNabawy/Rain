@@ -1,3 +1,10 @@
+/// # voice_call_reconnect_coordinator_test.dart
+///
+/// Tests VoiceCallReconnectCoordinator which manages voice call reconnection state, including failing only matching live peer calls, marking reconnecting state, and clearing reconnect state through callbacks.
+///
+/// **Key types:** VoiceCallReconnectCoordinator, VoiceCallState
+///
+/// **Depends on:** package:rain/application/runtime/voice_call/voice_call_reconnect_coordinator.dart, package:rain/application/runtime/voice_call_state.dart
 import 'dart:async';
 
 import 'package:flutter_test/flutter_test.dart';

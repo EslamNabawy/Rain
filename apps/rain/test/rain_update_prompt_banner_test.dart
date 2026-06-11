@@ -1,3 +1,11 @@
+/// # rain_update_prompt_banner_test.dart
+///
+/// Widget tests for the update prompt banner. Verifies optional update display with version info, update action callback, and dismiss functionality.
+///
+/// **Key types:** RainUpdatePromptBanner, VersionCheckResult, VersionCheckStatus
+///
+/// **Depends on:** flutter_test, rain force_update_service, rain_update_prompt_banner
+
 import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:rain/infrastructure/services/force_update_service.dart';

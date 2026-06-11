@@ -1,3 +1,12 @@
+/// # voice_lock_reclaim_policy.dart — protocol_brain package
+///
+/// Policy engine for deciding whether stale voice call locks (pair locks and user locks) should be reclaimed. Evaluates lock ownership, expiry, and room state to produce keep-busy or reclaim decisions with reasons.
+///
+/// **Key types:** VoiceLockReclaimAction (enum), VoiceLockReclaimDecision, VoiceLockReclaimPolicy
+///
+/// **Package:** protocol_brain
+///
+/// **Depends on:** voice_signaling_contract (VoiceActivePairLock, VoiceActiveUserLock, VoiceCallRoom)
 import 'voice_signaling_contract.dart';
 
 enum VoiceLockReclaimAction {

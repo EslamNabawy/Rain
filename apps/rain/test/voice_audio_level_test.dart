@@ -1,3 +1,10 @@
+/// # voice_audio_level_test.dart
+///
+/// Tests VoiceAudioLevel mapping from media audio level samples, including availability checks, display level computation, clamping of invalid values, and unavailable sample handling.
+///
+/// **Key types:** VoiceAudioLevel, VoiceMediaAudioLevel, VoiceAudioLevelSource
+///
+/// **Depends on:** package:rain/application/runtime/voice_audio_level.dart, package:protocol_brain/protocol_brain.dart
 import 'package:flutter_test/flutter_test.dart';
 import 'package:protocol_brain/protocol_brain.dart';
 import 'package:rain/application/runtime/voice_audio_level.dart';

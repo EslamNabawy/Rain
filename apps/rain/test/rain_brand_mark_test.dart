@@ -1,3 +1,11 @@
+/// # rain_brand_mark_test.dart
+///
+/// Widget tests for RainPeerCoreMark and RainPeerCoreAnimatedMark rendering. Validates static asset display, reduced motion fallback, and orbital mesh animation transforms.
+///
+/// **Key types:** RainPeerCoreMark, RainPeerCoreAnimatedMark, RainPeerCoreMotion
+///
+/// **Depends on:** flutter_test, rain rain_peer_core_mark
+
 import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:rain/presentation/branding/rain_peer_core_mark.dart';

@@ -1,3 +1,14 @@
+/// # rain_sound_event.dart
+///
+/// Defines the [RainSoundEvent] model and [RainSoundEventKind] enum that
+/// represent discrete sound-worthy events in Rain (chat send/receive, call
+/// lifecycle, connection requests, mute/deafen controls). Each event carries
+/// contextual tokens (conversationId, peerId, callId) for routing.
+///
+/// **Key types:** [RainSoundEvent], [RainSoundEventKind]
+///
+/// **Depends on:** protocol_brain (CallMediaMode), audio system
+
 import 'package:protocol_brain/protocol_brain.dart' show CallMediaMode;
 
 enum RainSoundEventKind {

@@ -1,3 +1,15 @@
+/// # app_environment.dart
+///
+/// [AppEnvironment] holds all compile-time and runtime configuration for Rain:
+/// backend selection (noop vs Firebase), ICE servers, Firebase project
+/// credentials, TURN broker URL, update channel, smoke mode, and signaling
+/// encryption key. Supports environment-variable overrides and release-mode
+/// validation.
+///
+/// **Key types:** [AppEnvironment], [RainBackend]
+///
+/// **Depends on:** protocol_brain
+
 import 'dart:convert';
 
 import 'package:flutter/foundation.dart';

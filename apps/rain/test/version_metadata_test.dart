@@ -1,3 +1,10 @@
+/// # version_metadata_test.dart
+///
+/// Tests that the pubspec version has valid numeric build metadata, the release manifest example advertises the current build or newer, and the remote config template is consistent with the published version.
+///
+/// **Key types:** ForceUpdateService (indirectly via file reads)
+///
+/// **Depends on:** package:rain/infrastructure/services/force_update_service.dart, package:package_info_plus/package_info_plus.dart
 import 'dart:convert';
 import 'dart:io';
 

@@ -1,3 +1,10 @@
+/// # settings_screen_test.dart
+///
+/// Tests the settings screen widget, covering voice audio defaults, microphone selection, crash diagnostics toggles, and various platform bridge interactions for device enumeration.
+///
+/// **Key types:** _SettingsHarness, _FakePlatformBridge, _NoIdentityController, _StaticIdentityController, _NoRuntimeController, _RecordingRuntimeController, _FakeConnectionRequestController, _NoFriendsController, _SettingsPump
+///
+/// **Depends on:** package:rain/application/state/app_providers.dart, package:rain/presentation/screens/settings_screen.dart, package:rain_core/rain_core.dart
 import 'dart:convert';
 import 'dart:io';
 

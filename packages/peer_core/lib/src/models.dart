@@ -1,3 +1,11 @@
+/// # models.dart
+///
+/// Core domain models and configuration types for the peer_core package. Defines peer connection states, ICE transport policies, TURN readiness, channel constants, and the PeerConfig configuration class.
+///
+/// **Key types:** PeerState, PeerIceTransportPolicy, TurnReadiness, TurnReadinessResult, TurnUnavailableException, PeerAddressFamily, PeerChannels, PeerConfig, PeerDebugEventSink, PeerCore, PeerMessage, PeerRemoteTrack, PeerConnectionRoute, PeerRouteKind
+///
+/// **Depends on:** flutter_webrtc, call/call_media_models, platform_bridge
+
 import 'dart:typed_data';
 
 import 'package:flutter_webrtc/flutter_webrtc.dart';

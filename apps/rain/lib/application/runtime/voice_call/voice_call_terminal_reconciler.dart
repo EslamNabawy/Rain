@@ -1,3 +1,14 @@
+/// # voice_call_terminal_reconciler.dart
+///
+/// [VoiceCallTerminalReconciler] decides whether an incoming terminal session
+/// state should be applied or ignored (e.g. ignored after a terminal failure
+/// or after the room has already been cleaned up). Prevents stale state from
+/// overwriting terminal call conclusions.
+///
+/// **Key types:** [VoiceCallTerminalReconciler], [VoiceCallTerminalSessionDecision]
+///
+/// **Depends on:** protocol_brain, voice call state
+
 import 'package:protocol_brain/protocol_brain.dart';
 
 import '../voice_call_state.dart';

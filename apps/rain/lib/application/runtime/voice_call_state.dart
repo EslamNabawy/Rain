@@ -1,3 +1,14 @@
+/// # voice_call_state.dart
+///
+/// Defines the voice call state model and related enums: [VoiceCallPhase]
+/// (idle → connecting → ringing → active → ending → ended/failed),
+/// [VoiceCallFailureReason], [VoiceCallOutputRoute], [CallEndInitiator],
+/// [CallEndSummary], and [VoiceCallSessionPhase].
+///
+/// **Key types:** [VoiceCallPhase], [VoiceCallFailureReason], [VoiceCallOutputRoute], [CallEndInitiator], [CallEndSummary], [VoiceCallSessionPhase]
+///
+/// **Depends on:** protocol_brain (CallMediaMode)
+
 import 'package:flutter/widgets.dart' show IconData;
 import 'package:protocol_brain/protocol_brain.dart' show CallMediaMode;
 

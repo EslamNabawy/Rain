@@ -1,3 +1,10 @@
+/// # serialized_runtime_mutations_test.dart
+///
+/// Tests SerializedRuntimeMutations, ensuring that runtime mutations execute one at a time in submission order and that a failed mutation does not block subsequent mutations.
+///
+/// **Key types:** SerializedRuntimeMutations
+///
+/// **Depends on:** package:rain/application/runtime/serialized_runtime_mutations.dart
 import 'dart:async';
 
 import 'package:flutter_test/flutter_test.dart';

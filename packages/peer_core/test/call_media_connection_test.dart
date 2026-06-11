@@ -1,3 +1,11 @@
+/// # call_media_connection_test.dart
+///
+/// Unit tests for CallMediaConnection covering audio/video mode SDP constraints, offer/answer negotiation, ICE candidate exchange, media device selection, and media interruption handling.
+///
+/// **Key types:** _FakeCallPlatformBridge (test fakes)
+///
+/// **Depends on:** flutter_test, flutter_webrtc, peer_core
+
 import 'package:flutter_test/flutter_test.dart';
 import 'package:flutter_webrtc/flutter_webrtc.dart';
 import 'package:peer_core/peer_core.dart';

@@ -1,3 +1,13 @@
+/// # call_media_recovery_policy.dart
+///
+/// Defines [CallMediaRecoveryDecision] (wait, iceRestart, fullReoffer,
+/// terminalFailure) and the [CallMediaRecoveryPolicy] value object that holds
+/// the timeout budgets for each recovery phase when WebRTC media degrades.
+///
+/// **Key types:** [CallMediaRecoveryDecision], [CallMediaRecoveryPolicy]
+///
+/// **Depends on:** voice call media recovery
+
 enum CallMediaRecoveryDecision {
   wait,
   iceRestart,

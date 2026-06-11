@@ -1,3 +1,14 @@
+/// # voice_call_preflight_coordinator.dart
+///
+/// [VoiceCallPreflightCoordinator] validates that a voice call can start:
+/// checks peer connection availability, peer presence, and returns
+/// [VoiceCallStartPresenceSnapshot]. Extracted from VoiceCallRuntime for
+/// testability.
+///
+/// **Key types:** [VoiceCallPreflightCoordinator], [VoiceCallPeerPresence], [VoiceCallStartPresenceSnapshot]
+///
+/// **Depends on:** protocol_brain, runtime interaction guard, voice call state
+
 import 'package:protocol_brain/protocol_brain.dart';
 
 import '../runtime_interaction_guard.dart';

@@ -1,3 +1,11 @@
+/// # file_transfer_speed_export_test
+///
+/// Tests file transfer speed tracking with rolling windows and the received file export service for saving completed transfers.
+///
+/// **Key types:** FileTransferSpeedTracker, ReceivedFileExportService, FileTransferRecord.
+///
+/// **Depends on:** File transfer state, file picker save dialog, and local file system.
+
 import 'dart:io';
 import 'dart:typed_data';
 

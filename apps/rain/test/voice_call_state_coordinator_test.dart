@@ -1,3 +1,10 @@
+/// # voice_call_state_coordinator_test.dart
+///
+/// Tests VoiceCallStateCoordinator which maps protocol session phases to runtime phases, resolves failure reasons from error codes, and extracts diagnostic detail from session state.
+///
+/// **Key types:** VoiceCallStateCoordinator, VoiceCallSessionPhase, VoiceCallPhase, VoiceCallFailureReason, CallErrorClassifier
+///
+/// **Depends on:** package:rain/application/runtime/voice_call/voice_call_state_coordinator.dart, package:rain/application/runtime/call_error_classifier.dart, package:protocol_brain/protocol_brain.dart
 import 'package:flutter_test/flutter_test.dart';
 import 'package:protocol_brain/protocol_brain.dart';
 

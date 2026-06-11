@@ -1,3 +1,10 @@
+/// # search_screen_test.dart
+///
+/// Tests the user search screen logic, including stale result handling, rapid successive searches, and correct display of backend identity results in the search UI.
+///
+/// **Key types:** _DelayedSearchAdapter, _ImmediateSearchAdapter, _CountingSearchAdapter, _SignedInIdentityController
+///
+/// **Depends on:** package:protocol_brain/protocol_brain.dart, package:rain/application/state/app_providers.dart, package:rain/presentation/screens/search_screen.dart, package:rain_core/rain_core.dart
 import 'dart:async';
 
 import 'package:drift/native.dart';

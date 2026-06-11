@@ -1,3 +1,11 @@
+/// # rain_chat_widgets_test.dart
+///
+/// Comprehensive widget tests for chat UI components including RainLiveLinkBar, RainAvatar, message bubbles, file transfer widgets, and video call renderers. Covers rendering, interaction, and state display.
+///
+/// **Key types:** RainLiveLinkBar, RainAvatar, _FakeRendererFactory, _FakeRendererHandle, _FakeMediaStream
+///
+/// **Depends on:** flutter_test, flutter_svg, flutter_webrtc, rain rain_chat_widgets, rain_core
+
 import 'package:flutter/material.dart';
 import 'package:flutter_svg/flutter_svg.dart';
 import 'package:flutter_test/flutter_test.dart';

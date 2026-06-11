@@ -1,3 +1,11 @@
+/// # voice_media_models.dart
+///
+/// Data models for voice media sessions including audio level sources, output routes, connection phases, state tracking, diagnostics, session descriptions, and ICE candidates.
+///
+/// **Key types:** VoiceMediaAudioLevelSource, VoiceMediaOutputRoute, VoiceMediaPhase, VoiceMediaState, VoiceMediaDiagnostics, VoiceMediaAudioLevel, VoiceSessionDescription, VoiceIceCandidate, VoiceRemoteAudioTrack
+///
+/// **Depends on:** flutter_webrtc
+
 import 'package:flutter_webrtc/flutter_webrtc.dart';
 
 enum VoiceMediaAudioLevelSource { unavailable, audioLevel, totalAudioEnergy }

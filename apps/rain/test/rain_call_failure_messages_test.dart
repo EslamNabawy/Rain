@@ -1,3 +1,11 @@
+/// # rain_call_failure_messages_test.dart
+///
+/// Tests for voice/video call failure message sanitization and mapping. Covers WebRTC native errors, Firebase permission errors, network loss detection, and retryability logic.
+///
+/// **Key types:** rainSanitizeVoiceCallFailureDetail, rainVoiceCallFailureDetail, rainVoiceCallCanRetry, VoiceCallState, VoiceCallFailureReason
+///
+/// **Depends on:** flutter_test, rain voice_call_state, rain_call_controls
+
 import 'package:flutter_test/flutter_test.dart';
 import 'package:rain/application/runtime/voice_call_state.dart';
 import 'package:rain/presentation/widgets/calls/rain_call_controls.dart';

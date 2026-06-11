@@ -1,3 +1,13 @@
+/// # call_terminal_write_policy.dart
+///
+/// [CallTerminalWritePolicy] defines the retry budget for durable terminal
+/// room writes (ended/failed status) to Firebase. Uses exponential backoff
+/// with configurable max attempts and delay bounds.
+///
+/// **Key types:** [CallTerminalWritePolicy]
+///
+/// **Depends on:** voice call signaling
+
 final class CallTerminalWritePolicy {
   const CallTerminalWritePolicy({
     this.maxAttempts = 3,

@@ -1,3 +1,11 @@
+/// # backend_banner
+///
+/// A simple banner widget that displays a warning message when Rain is
+/// running against a fallback or non-production backend environment.
+///
+/// **Key types:** BackendBanner
+///
+/// **Depends on:** RainColors
 import 'package:flutter/material.dart';
 
 import 'package:rain/presentation/theme/rain_theme.dart';

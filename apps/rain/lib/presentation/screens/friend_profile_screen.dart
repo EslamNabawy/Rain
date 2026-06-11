@@ -1,3 +1,12 @@
+/// # friend_profile_screen
+///
+/// Friend profile display screen showing user info, online status, and
+/// relationship state. Provides actions for unfriend, block, unblock,
+/// accept/reject incoming requests, and cancel outgoing requests.
+///
+/// **Key types:** FriendProfileScreen, _InfoSection, _InfoTile
+///
+/// **Depends on:** friendsProvider, app_components, app_dialogs
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:rain_core/rain_core.dart';

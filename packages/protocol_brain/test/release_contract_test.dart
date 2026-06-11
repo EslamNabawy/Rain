@@ -1,3 +1,13 @@
+/// # release_contract_test.dart — protocol_brain package
+///
+/// Contract tests for the release build script verifying TURN release defines, build parameters, and version handling.
+///
+/// **Key types:** (no top-level types — test-only file)
+///
+/// **Package:** protocol_brain
+///
+/// **Depends on:** flutter_test, dart:convert, dart:io
+///
 import 'dart:convert';
 import 'dart:io';
 

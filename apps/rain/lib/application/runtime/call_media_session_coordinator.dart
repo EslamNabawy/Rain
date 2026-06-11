@@ -1,3 +1,14 @@
+/// # call_media_session_coordinator.dart
+///
+/// [CallMediaSessionCoordinator] manages the lifecycle of a WebRTC media
+/// session for voice and video calls. Wraps [CallMediaConnection] to provide
+/// unified audio/video track streams, ICE candidate forwarding, and renderer
+/// binding for local/remote video.
+///
+/// **Key types:** [CallMediaSessionCoordinator], [VideoVoiceMediaConnection]
+///
+/// **Depends on:** protocol_brain, video call renderers, voice call state
+
 import 'dart:async';
 
 import 'package:protocol_brain/protocol_brain.dart';
@@ -94,6 +105,11 @@ final class VideoVoiceMediaConnection implements VoiceMediaConnection {
   @override
   Future<void> setMuted({required bool muted}) {
     return _media.setMicrophoneMuted(muted: muted);
+  }
+
+  @override
+  Future<void> setCameraMuted({required bool muted}) {
+    return _media.setCameraMuted(muted: muted);
   }
 
   @override
@@ -269,6 +285,11 @@ final class CallVoiceMediaConnection implements VoiceMediaConnection {
   @override
   Future<void> setMuted({required bool muted}) {
     return _media.setMicrophoneMuted(muted: muted);
+  }
+
+  @override
+  Future<void> setCameraMuted({required bool muted}) {
+    return _media.setCameraMuted(muted: muted);
   }
 
   @override

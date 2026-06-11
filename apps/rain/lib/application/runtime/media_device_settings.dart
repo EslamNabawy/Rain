@@ -1,3 +1,14 @@
+/// # media_device_settings.dart
+///
+/// Defines media device enums and adaptive device/profile types used by Rain's
+/// settings and WebRTC layer: [RainMediaDeviceKind] (audio/video input/output),
+/// [RainCameraFacing], [AdaptiveDevicePlatform], [AdaptiveDeviceProfile], and
+/// related viewport/interaction mode enums.
+///
+/// **Key types:** [RainMediaDeviceKind], [RainCameraFacing], [AdaptiveDeviceProfile], [AdaptiveDevicePlatform], [AdaptiveInteractionMode], [AdaptiveViewportClass], [AdaptiveRefreshMode]
+///
+/// **Depends on:** flutter_webrtc, app settings store
+
 import 'package:flutter/services.dart';
 import 'package:flutter_webrtc/flutter_webrtc.dart';
 import 'package:protocol_brain/protocol_brain.dart';

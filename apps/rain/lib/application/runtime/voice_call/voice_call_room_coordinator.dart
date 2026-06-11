@@ -1,3 +1,14 @@
+/// # voice_call_room_coordinator.dart
+///
+/// [VoiceCallRoomCoordinator] tracks Firebase voice call room status
+/// transitions and resolves terminal room detail/reason messages. Stateless —
+/// receives maps via parameters so the runtime retains ownership of mutable
+/// state.
+///
+/// **Key types:** [VoiceCallRoomCoordinator]
+///
+/// **Depends on:** call error classifier, voice call state
+
 import 'package:protocol_brain/protocol_brain.dart';
 
 import '../call_error_classifier.dart';

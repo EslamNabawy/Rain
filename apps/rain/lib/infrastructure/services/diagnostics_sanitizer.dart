@@ -1,3 +1,14 @@
+/// # diagnostics_sanitizer.dart
+///
+/// [DiagnosticsSanitizer] redacts sensitive data from diagnostic output:
+/// passwords, tokens, API keys, SDP markers, ICE candidates, file paths,
+/// Firebase paths, and bearer tokens. Ensures crash logs never leak private
+/// content.
+///
+/// **Key types:** [DiagnosticsSanitizer]
+///
+/// **Depends on:** (none — pure utility)
+
 import 'dart:convert';
 
 final class DiagnosticsSanitizer {

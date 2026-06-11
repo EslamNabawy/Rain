@@ -1,3 +1,12 @@
+/// # rain_performance
+///
+/// Performance tier detection and propagation for the Rain app. Detects
+/// low-power devices (e.g., ARMv7 Android) and exposes performance profile
+/// via an InheritedWidget to disable animations and expensive effects.
+///
+/// **Key types:** RainPerformanceProfile, RainPerformanceScope, RainPerformanceTier
+///
+/// **Depends on:** dart:ffi, flutter/widgets
 import 'dart:ffi' as ffi;
 
 import 'package:flutter/foundation.dart';

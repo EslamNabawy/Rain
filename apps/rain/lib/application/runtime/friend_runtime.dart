@@ -1,3 +1,16 @@
+/// # friend_runtime.dart
+///
+/// [FriendRuntime] extension on [RainRuntimeController] watches peer presence
+/// streams, persists presence to the local friend store, triggers automatic
+/// reconnection for accepted friends when they come online, and handles
+/// presence-expired cleanup (ending active calls, disconnecting sessions).
+///
+/// **Key types:** (extension methods on RainRuntimeController)
+///
+/// **Part of:** friend_runtime.dart (extension)
+///
+/// **Depends on:** protocol_brain, rain_core, voice call state
+
 import 'dart:async';
 
 import 'package:protocol_brain/protocol_brain.dart';

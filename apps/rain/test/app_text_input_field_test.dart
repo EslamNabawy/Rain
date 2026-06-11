@@ -1,3 +1,12 @@
+/// # app_text_input_field_test.dart
+///
+/// Widget test for AppTextInputField verifying focus request and text input
+/// handling in the shared text input component.
+///
+/// **Key types:** (test file)
+///
+/// **Depends on:** flutter_test, presentation/widgets
+
 import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:rain/presentation/widgets/app_components.dart';

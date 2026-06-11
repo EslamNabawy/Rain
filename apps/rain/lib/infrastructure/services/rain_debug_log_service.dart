@@ -1,3 +1,14 @@
+/// # rain_debug_log_service.dart
+///
+/// [RainDebugLogService] defines the debug logging interface and provides
+/// [NoopRainDebugLogService] (disabled) and [CrashDiagnosticsDebugLogService]
+/// (writes to crash diagnostics). Supports structured events with severity,
+/// category, and sanitized context maps.
+///
+/// **Key types:** [RainDebugLogService], [NoopRainDebugLogService], [CrashDiagnosticsDebugLogService], [RainDebugSeverity]
+///
+/// **Depends on:** crash diagnostics service, diagnostics sanitizer
+
 import 'dart:async';
 
 import 'package:flutter_riverpod/flutter_riverpod.dart';

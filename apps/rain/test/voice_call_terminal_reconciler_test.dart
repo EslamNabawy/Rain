@@ -1,3 +1,10 @@
+/// # voice_call_terminal_reconciler_test.dart
+///
+/// Tests VoiceCallTerminalReconciler which decides whether incoming session state should be applied based on terminal room latch status, ensuring failed terminal state remains authoritative over session idle.
+///
+/// **Key types:** VoiceCallTerminalReconciler, VoiceCallState, VoiceCallSessionPhase
+///
+/// **Depends on:** package:rain/application/runtime/voice_call/voice_call_terminal_reconciler.dart, package:protocol_brain/protocol_brain.dart
 import 'package:flutter_test/flutter_test.dart';
 import 'package:protocol_brain/protocol_brain.dart';
 import 'package:rain/application/runtime/voice_call/voice_call_terminal_reconciler.dart';

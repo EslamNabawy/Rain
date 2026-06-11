@@ -1,3 +1,14 @@
+/// # video_call_renderers.dart
+///
+/// Abstract and concrete video renderer types for Rain's video calls.
+/// [VideoCallRendererHandle] wraps [RTCVideoRenderer] lifecycle
+/// (initialize, srcObject, textureId, buildView, dispose).
+/// [RtcVideoCallRendererFactory] creates renderer instances.
+///
+/// **Key types:** [VideoCallRendererHandle], [VideoCallRendererFactory], [RtcVideoCallRendererFactory], [RtcVideoCallRendererHandle]
+///
+/// **Depends on:** flutter_webrtc
+
 import 'dart:async';
 
 import 'package:flutter/widgets.dart';

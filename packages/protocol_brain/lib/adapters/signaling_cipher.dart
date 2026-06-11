@@ -1,17 +1,35 @@
+/// # signaling_cipher.dart — protocol_brain package
+///
+/// Encryption layer for signaling payloads using AES-256-GCM with HKDF-SHA256 key derivation. Encrypts and decrypts SDP offers, answers, and ICE candidates per room/purpose to ensure signaling confidentiality over Firebase RTDB.
+///
+/// **Key types:** SignalingCipher
+///
+/// **Package:** protocol_brain
+///
+/// **Depends on:** dart:convert, cryptography (AesGcm, Hkdf, Hmac, SecretKey), flutter_webrtc
 import 'dart:convert';
 
 import 'package:cryptography/cryptography.dart';
 
+const String _knownWeakKey =
+    'rain-demo-signaling-encryption-key-v1-change-me';
+
 class SignalingCipher {
   SignalingCipher.fromKeyMaterial(String keyMaterial)
-    : _rootKey = SecretKey(utf8.encode(keyMaterial.trim()));
-
-  factory SignalingCipher.demo() {
-    return SignalingCipher.fromKeyMaterial(demoKeyMaterial);
+    : _rootKey = SecretKey(utf8.encode(keyMaterial.trim())) {
+    if (keyMaterial.trim() == _knownWeakKey) {
+      throw ArgumentError(
+        'The demo signaling encryption key is not allowed in this build. '
+        'Provide a unique secret via --dart-define RAIN_SIGNALING_ENCRYPTION_KEY.',
+      );
+    }
+    if (keyMaterial.trim().length < 32) {
+      throw ArgumentError(
+        'Signaling encryption key must be at least 32 characters.',
+      );
+    }
   }
 
-  static const String demoKeyMaterial =
-      'rain-demo-signaling-encryption-key-v1-change-me';
   static const int envelopeVersion = 1;
   static const String algorithmName = 'A256GCM-HKDF-SHA256';
   static const String offerPurpose = 'offer';

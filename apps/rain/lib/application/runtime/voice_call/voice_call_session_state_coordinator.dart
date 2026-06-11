@@ -1,3 +1,14 @@
+/// # voice_call_session_state_coordinator.dart
+///
+/// [VoiceCallSessionStateCoordinator] coordinates voice-call session state
+/// projection and diagnostics without owning runtime fields. Manages session
+/// phase transitions, terminal write outcomes, and diagnostic recording for
+/// media and renderer state.
+///
+/// **Key types:** [VoiceCallSessionStateCoordinator]
+///
+/// **Depends on:** call media session coordinator, call retry policy, video call renderers, voice call state
+
 import 'dart:async';
 
 import 'package:protocol_brain/protocol_brain.dart';

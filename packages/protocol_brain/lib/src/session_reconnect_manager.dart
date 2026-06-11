@@ -1,3 +1,12 @@
+/// # session_reconnect_manager.dart — protocol_brain package
+///
+/// Manages automatic reconnection logic for active sessions, including exponential backoff, relay fallback, cached ICE reconnect, and disconnect scheduling. Abstracts reconnect operations behind a ReconnectSessionOps interface for testability.
+///
+/// **Key types:** SessionReconnectManager, SessionReconnectPeerConfigProvider (typedef), ReconnectSessionOps (interface)
+///
+/// **Package:** protocol_brain
+///
+/// **Depends on:** dart:async, peer_core, signaling_adapter, connection_memory, protocol_error_classifier, session_manager
 import 'dart:async';
 
 import 'package:peer_core/peer_core.dart';

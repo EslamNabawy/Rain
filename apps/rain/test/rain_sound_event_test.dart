@@ -1,3 +1,11 @@
+/// # rain_sound_event_test.dart
+///
+/// Tests for RainSoundEvent call lifecycle sound event factory methods. Validates ID normalization, error key formatting, required call ID enforcement, and media mode preservation.
+///
+/// **Key types:** RainSoundEvent, RainSoundEventKind, CallMediaMode
+///
+/// **Depends on:** flutter_test, protocol_brain, rain rain_sound_event
+
 import 'package:flutter_test/flutter_test.dart';
 import 'package:protocol_brain/protocol_brain.dart' show CallMediaMode;
 import 'package:rain/application/audio/rain_sound_event.dart';

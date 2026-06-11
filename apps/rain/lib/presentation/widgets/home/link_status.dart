@@ -1,3 +1,12 @@
+/// # link_status.dart
+///
+/// Mobile link status bar showing connection state, diagnostics, and
+/// connect/disconnect actions (part of home_screen).
+///
+/// **Key types:** _MobileLinkStatusBar
+///
+/// **Depends on:** home_screen (part of), application layer
+
 part of '../../screens/home_screen.dart';
 
 class _MobileLinkStatusBar extends StatelessWidget {

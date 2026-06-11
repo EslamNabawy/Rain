@@ -1,3 +1,11 @@
+/// # chat_composer_test
+///
+/// Tests the chat composer widget behavior including text submission, keyboard shortcuts, and attachment actions.
+///
+/// **Key types:** None (widget test file).
+///
+/// **Depends on:** ChatComposer widget, Flutter text input, and platform key event handling.
+
 import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';

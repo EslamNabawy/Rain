@@ -1,3 +1,15 @@
+/// # voice_call_frame_test.dart — rain_core package
+///
+/// Unit tests for the VoiceCallFrame model, verifying JSON
+/// encode/decode round-trips for invite, accept, reject, and ICE
+/// candidate frames, as well as media-mode and binary payload fields.
+///
+/// **Key types:** VoiceCallFrame, VoiceCallFrameType, CallMediaMode.
+///
+/// **Package:** rain_core
+///
+/// **Depends on:** flutter_test, dart:convert, rain_core (library under test).
+
 import 'dart:convert';
 
 import 'package:flutter_test/flutter_test.dart';

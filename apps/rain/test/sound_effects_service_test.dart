@@ -1,3 +1,10 @@
+/// # sound_effects_service_test.dart
+///
+/// Tests the sound effects service audio context configuration, verifying that audio focus is set to mix-with-others, players are configured for low-latency playback, and the service source never requests audio focus gain.
+///
+/// **Key types:** _PlayedSound, _FakeRainSoundPlayer
+///
+/// **Depends on:** package:rain/infrastructure/services/sound_effects_service.dart, package:audioplayers/audioplayers.dart
 import 'dart:io';
 
 import 'package:audioplayers/audioplayers.dart';

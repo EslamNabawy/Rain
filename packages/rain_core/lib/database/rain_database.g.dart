@@ -1,3 +1,13 @@
+/// # rain_database.g.dart — rain_core package
+///
+/// Generated Drift database code defining tables, data classes, and companions for messages, friends, file transfers, queued messages, sequence tracking, connection memory, and identity.
+///
+/// **Key types:** $MessagesTable, Message, MessagesCompanion, $FriendsTable, Friend, FriendsCompanion, $FileTransfersTable, FileTransfer, FileTransfersCompanion, $QueuedMessagesTable, QueuedMessage, QueuedMessagesCompanion, $MessageSeqTrackerTable, MessageSeqTracker, MessageSeqTrackerCompanion, $ConnectionMemoryTable, ConnectionMemoryTableData, ConnectionMemoryTableCompanion, $IdentityTableTable, IdentityTableData, IdentityTableCompanion
+///
+/// **Package:** rain_core
+///
+/// **Depends on:** drift/drift.dart, rain_database.dart
+///
 // GENERATED CODE - DO NOT MODIFY BY HAND
 
 part of 'rain_database.dart';

@@ -1,3 +1,10 @@
+/// # video_call_renderers_test.dart
+///
+/// Tests VideoCallRenderers lifecycle including one-time initialization of local/remote renderers, partial failure cleanup, and correct stream attachment to the appropriate renderer.
+///
+/// **Key types:** VideoCallRenderers, _FakeRendererFactory, _FakeRendererHandle, _FakeMediaStream
+///
+/// **Depends on:** package:rain/application/runtime/video_call_renderers.dart, package:flutter_webrtc/flutter_webrtc.dart
 import 'package:flutter_test/flutter_test.dart';
 import 'package:flutter/widgets.dart';
 import 'package:flutter_webrtc/flutter_webrtc.dart';

@@ -1,3 +1,12 @@
+/// # noop_signaling_adapter
+///
+/// In-memory no-op signaling adapter for local development and testing.
+/// Implements the full SignalingAdapter interface with local state for
+/// identities, friendships, blocks, and friend requests without any backend.
+///
+/// **Key types:** NoopSignalingAdapter
+///
+/// **Depends on:** SignalingAdapter interface, protocol_brain
 import 'dart:async';
 
 import 'package:flutter_webrtc/flutter_webrtc.dart';

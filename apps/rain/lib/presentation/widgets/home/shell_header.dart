@@ -1,3 +1,12 @@
+/// # shell_header.dart
+///
+/// Shell header widget displaying the user identity, display name, and
+/// handle in the home screen top bar (part of home_screen).
+///
+/// **Key types:** _ShellHeader
+///
+/// **Depends on:** home_screen (part of), presentation/widgets
+
 part of '../../screens/home_screen.dart';
 
 class _ShellHeader extends StatelessWidget {

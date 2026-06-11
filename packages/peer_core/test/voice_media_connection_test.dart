@@ -1,3 +1,11 @@
+/// # voice_media_connection_test.dart
+///
+/// Unit tests for VoiceMediaConnection covering local audio capture, SDP offer/answer flow, muting/deafening, audio output routing, and audio level sampling.
+///
+/// **Key types:** _FakeVoicePlatformBridge (test fakes)
+///
+/// **Depends on:** flutter_test, flutter_webrtc, peer_core
+
 import 'dart:async';
 
 import 'package:flutter_test/flutter_test.dart';

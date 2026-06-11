@@ -1,3 +1,13 @@
+/// # main.dart
+///
+/// Entry point for the Rain Flutter application. Initializes Firebase, crash
+/// diagnostics, performance profiling, and desktop shell before bootstrapping
+/// the app via [AppBootstrapper] and running the root [RainApp] widget.
+///
+/// **Key types:** [main], [runRainApp]
+///
+/// **Depends on:** application bootstrap, crash diagnostics, presentation layer
+
 import 'dart:async';
 
 import 'package:flutter/foundation.dart';

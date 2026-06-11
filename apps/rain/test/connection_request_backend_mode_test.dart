@@ -1,3 +1,11 @@
+/// # connection_request_backend_mode_test
+///
+/// Tests connection request backend mode selection between RTDB-only and Cloud Functions based on environment configuration.
+///
+/// **Key types:** ConnectionRequestBackendMode, AppEnvironment, FakeConnectionRequestAdapter.
+///
+/// **Depends on:** App environment configuration and runtime adapter selection.
+
 import 'package:flutter_test/flutter_test.dart';
 import 'package:protocol_brain/protocol_brain.dart';
 import 'package:rain/core/config/app_environment.dart';

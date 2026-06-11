@@ -1,3 +1,12 @@
+/// # connection_request_status_chip.dart
+///
+/// Status chip widget for a single connection request, showing title, status,
+/// feedback, and action buttons (accept/decline).
+///
+/// **Key types:** ConnectionRequestStatusChip, ConnectionRequestActionCallback
+///
+/// **Depends on:** protocol_brain, presentation/theme
+
 import 'package:flutter/material.dart';
 import 'package:protocol_brain/protocol_brain.dart';
 

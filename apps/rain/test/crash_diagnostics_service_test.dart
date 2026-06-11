@@ -1,3 +1,11 @@
+/// # crash_diagnostics_service_test
+///
+/// Tests crash diagnostics recording, event buffering, privacy redaction, event coalescing, and JSON export functionality.
+///
+/// **Key types:** CrashDiagnosticsService, VoiceCallDiagnostics, CrashDiagnosticsAppInfo.
+///
+/// **Depends on:** File system storage, file picker export, and voice call diagnostics.
+
 import 'dart:convert';
 import 'dart:io';
 import 'dart:typed_data';

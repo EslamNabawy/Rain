@@ -1,3 +1,13 @@
+/// # file_transfer_protocol.dart — rain_core package
+///
+/// Defines the file transfer protocol including frame types (offer, accept, reject, chunk, complete, received, cancel, fail), binary chunk packet encoding with magic bytes, and file name sanitization utilities.
+///
+/// **Key types:** FileTransferFrame, FileMessageContent, FileTransferChunkPacket
+///
+/// **Package:** rain_core
+///
+/// **Depends on:** dart:convert, dart:typed_data, package:collection
+///
 import 'dart:convert';
 import 'dart:typed_data';
 

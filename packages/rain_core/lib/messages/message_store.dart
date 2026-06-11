@@ -1,3 +1,13 @@
+/// # message_store.dart — rain_core package
+///
+/// Drift-backed message storage with conversation watching, paginated loading with cursor-based pagination, incoming/outgoing sequence tracking, duplicate/gap/late detection, and envelope composition.
+///
+/// **Key types:** IncomingMessageDisposition, StoredMessage, MessagePageCursor, IncomingMessageResult, MessageStore
+///
+/// **Package:** rain_core
+///
+/// **Depends on:** drift/drift.dart, package:uuid, rain_database.dart, message_envelope.dart
+///
 import 'package:drift/drift.dart';
 import 'package:uuid/uuid.dart';
 

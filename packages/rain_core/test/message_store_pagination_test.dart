@@ -1,3 +1,13 @@
+/// # message_store_pagination_test.dart — rain_core package
+///
+/// Tests for MessageStore cursor-based pagination ensuring correct page ordering, no duplicates across pages, and proper limit enforcement.
+///
+/// **Key types:** None (test file)
+///
+/// **Package:** rain_core
+///
+/// **Depends on:** drift/native.dart, flutter_test, rain_core
+///
 import 'package:drift/native.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:rain_core/rain_core.dart';

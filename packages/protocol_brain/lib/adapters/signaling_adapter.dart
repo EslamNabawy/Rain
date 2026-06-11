@@ -1,3 +1,12 @@
+/// # signaling_adapter.dart — protocol_brain package
+///
+/// Abstract interface defining the contract for signaling operations including authentication, SDP offer/answer exchange, ICE candidate relay, presence tracking, user identity, friend management, and room lifecycle. All signaling backends must implement this adapter.
+///
+/// **Key types:** SignalingAdapter, SignalingSessionExpiredException
+///
+/// **Package:** protocol_brain
+///
+/// **Depends on:** flutter_webrtc (SDPPayload, IceRole types)
 import 'package:flutter_webrtc/flutter_webrtc.dart';
 
 abstract class SignalingAdapter {

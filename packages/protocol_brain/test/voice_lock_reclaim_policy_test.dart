@@ -1,3 +1,13 @@
+/// # voice_lock_reclaim_policy_test.dart — protocol_brain package
+///
+/// Tests for VoiceLockReclaimPolicy verifying lock reclamation decisions for terminal rooms, missing rooms, and orphan-aged artifacts.
+///
+/// **Key types:** (no top-level types — test-only file)
+///
+/// **Package:** protocol_brain
+///
+/// **Depends on:** flutter_test, protocol_brain, voice_lock_reclaim_policy
+///
 import 'package:flutter_test/flutter_test.dart';
 import 'package:protocol_brain/protocol_brain.dart';
 import 'package:protocol_brain/src/voice_lock_reclaim_policy.dart';

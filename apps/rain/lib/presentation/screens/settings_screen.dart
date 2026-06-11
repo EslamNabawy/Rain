@@ -1,3 +1,12 @@
+/// # settings_screen
+///
+/// Comprehensive settings screen with profile editing, session management
+/// (logout/delete account), call audio/video device selection, appearance
+/// theme switching, connection request settings, diagnostics, and about section.
+///
+/// **Key types:** SettingsScreen, _SettingsScreenState, _ProfileAction
+///
+/// **Depends on:** app_providers, app_components, app_dialogs, force_update_service
 import 'dart:async';
 
 import 'package:flutter/foundation.dart';

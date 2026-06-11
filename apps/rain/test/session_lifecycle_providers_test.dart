@@ -1,3 +1,10 @@
+/// # session_lifecycle_providers_test.dart
+///
+/// Tests authenticated session lifecycle including session generation changes after explicit sign-out, identity updates within a session, and recent search reset at session boundaries.
+///
+/// **Key types:** _MutableIdentityController
+///
+/// **Depends on:** package:rain/application/state/app_providers.dart, package:rain_core/rain_core.dart
 import 'package:drift/native.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_test/flutter_test.dart';

@@ -1,3 +1,12 @@
+/// # app_routes_test.dart
+///
+/// Tests for app routing and shell readiness, verifying navigation is blocked
+/// until the runtime controller has fully started.
+///
+/// **Key types:** (test file)
+///
+/// **Depends on:** flutter_test, flutter_riverpod, presentation/navigation
+
 import 'dart:async';
 
 import 'package:drift/native.dart';

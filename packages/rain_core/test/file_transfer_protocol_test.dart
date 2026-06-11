@@ -1,3 +1,13 @@
+/// # file_transfer_protocol_test.dart — rain_core package
+///
+/// Tests for file transfer protocol including frame serialization round-trips, version/type validation, chunk packet binary encoding, file message content, and file name sanitization.
+///
+/// **Key types:** None (test file)
+///
+/// **Package:** rain_core
+///
+/// **Depends on:** flutter_test, rain_core
+///
 import 'dart:convert';
 import 'dart:typed_data';
 

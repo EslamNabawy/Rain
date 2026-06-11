@@ -1,3 +1,12 @@
+/// # connection_request_adapter.dart — protocol_brain package
+///
+/// Abstract interface for connection request operations including create, cancel, accept, reject, mark-seen, mute/unmute, quota checks, and watching incoming/outgoing requests. Also defines the diagnostic event types for adapter observability.
+///
+/// **Key types:** ConnectionRequestAdapter, ConnectionRequestAdapterDiagnosticsSink, ConnectionRequestAdapterDiagnosticEvent
+///
+/// **Package:** protocol_brain
+///
+/// **Depends on:** connection_request_contract (ConnectionRequestDecision, ConnectionRequestPayload, ConnectionRequestQuotaSnapshot)
 import 'connection_request_contract.dart';
 
 abstract interface class ConnectionRequestAdapter {

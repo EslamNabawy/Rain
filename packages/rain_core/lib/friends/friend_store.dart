@@ -1,3 +1,13 @@
+/// # friend_store.dart — rain_core package
+///
+/// Drift-backed store for friend records with CRUD operations, presence tracking, unread count management, block/unblock support, and gender persistence.
+///
+/// **Key types:** FriendState, FriendRecord, FriendStore
+///
+/// **Package:** rain_core
+///
+/// **Depends on:** drift/drift.dart, rain_database.dart, identity.dart
+///
 import 'package:drift/drift.dart';
 
 import '../database/rain_database.dart';

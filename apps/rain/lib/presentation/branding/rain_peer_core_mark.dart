@@ -1,3 +1,12 @@
+/// # rain_peer_core_mark
+///
+/// Animated and static Rain logo/brand mark widgets. Renders the peer-core
+/// identity mark with configurable motion (wave or orbital mesh), size-aware
+/// asset selection, and reduced-motion support for accessibility.
+///
+/// **Key types:** RainPeerCoreMark, RainPeerCoreAnimatedMark, RainPeerCoreMotion
+///
+/// **Depends on:** RainBrandAssets, RainPerformanceScope, RainTheme
 import 'dart:math' as math;
 
 import 'package:flutter/material.dart';

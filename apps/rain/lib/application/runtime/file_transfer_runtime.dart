@@ -1,3 +1,16 @@
+/// # file_transfer_runtime.dart
+///
+/// [FileTransferRuntime] extension on [RainRuntimeController] handles the
+/// file-transfer data-channel message loop: parses [FileTransferFrame] commands
+/// and binary chunks, manages per-peer transfer queues, verifies checksums, and
+/// writes received files to disk.
+///
+/// **Key types:** (extension methods on RainRuntimeController)
+///
+/// **Part of:** file_transfer_runtime.dart (extension)
+///
+/// **Depends on:** protocol_brain, rain_core, crypto
+
 import 'dart:async';
 import 'dart:io';
 import 'dart:typed_data';

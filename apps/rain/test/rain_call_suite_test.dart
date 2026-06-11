@@ -1,3 +1,11 @@
+/// # rain_call_suite_test.dart
+///
+/// Widget tests for the composite call suite widget. Verifies manager-only rendering, fullscreen video workspace ownership, ended call display, and manager bar visibility rules.
+///
+/// **Key types:** CallSurfaceState, CallSurfaceMode
+///
+/// **Depends on:** flutter_test, rain voice_call_state, rain_call_suite, rain_call_surface_providers
+
 import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:rain/application/runtime/voice_call_state.dart';

@@ -1,3 +1,14 @@
+/// # connection_attempt_coordinator.dart
+///
+/// [ConnectionAttemptCoordinator] manages outbound and inbound WebRTC
+/// connection attempts, including passive listener limits, retry gating with
+/// exponential backoff, network-recovery-triggered reconnects, and
+/// [PeerDisconnectIntent] tracking for analytics.
+///
+/// **Key types:** [ConnectionAttemptCoordinator], [ConnectionRetryGate], [ConnectionCoordinatorSnapshot], [PeerDisconnectIntent]
+///
+/// **Depends on:** protocol_brain, rain_core
+
 import 'dart:async';
 
 import 'package:protocol_brain/protocol_brain.dart';

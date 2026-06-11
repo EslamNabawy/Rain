@@ -1,3 +1,13 @@
+/// # connection_request_rtdb_adapter_test.dart — protocol_brain package
+///
+/// Tests for RtdbOnlyConnectionRequestAdapter covering empty state, quota summaries, payload parsing, and corrupt row handling.
+///
+/// **Key types:** _RtdbOnlyAdapterHarness
+///
+/// **Package:** protocol_brain
+///
+/// **Depends on:** flutter_test, protocol_brain
+///
 import 'dart:async';
 
 import 'package:flutter_test/flutter_test.dart';

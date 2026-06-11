@@ -1,3 +1,11 @@
+/// # peer_connectivity_provider_test.dart
+///
+/// Tests for peerConnectivityProvider that reports connected peer sessions with presence state. Covers session lifecycle, stale presence handling, and Riverpod provider integration.
+///
+/// **Key types:** peerConnectivityProvider, RainRuntimeController, RainIdentity, _TestSessionManager
+///
+/// **Depends on:** flutter_test, flutter_riverpod, protocol_brain, rain app_bootstrap, rain_core
+
 import 'dart:async';
 
 import 'package:drift/native.dart';

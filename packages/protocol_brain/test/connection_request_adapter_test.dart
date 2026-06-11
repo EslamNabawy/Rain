@@ -1,3 +1,13 @@
+/// # connection_request_adapter_test.dart — protocol_brain package
+///
+/// Tests for FakeConnectionRequestAdapter verifying that connection request status is correctly mirrored between inbox and outbox.
+///
+/// **Key types:** (no top-level types — test-only file)
+///
+/// **Package:** protocol_brain
+///
+/// **Depends on:** flutter_test, protocol_brain
+///
 import 'package:flutter_test/flutter_test.dart';
 import 'package:protocol_brain/protocol_brain.dart';
 

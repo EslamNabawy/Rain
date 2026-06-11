@@ -1,3 +1,11 @@
+/// # protocol_brain.dart
+///
+/// Public barrel export file for the protocol_brain package. Re-exports all peer_core types and protocol_brain adapters, connection management, session handling, signaling, and voice call coordination types.
+///
+/// **Key types:** Re-exports: PeerCore, PeerConfig, CallMediaConnection, VoiceMediaConnection, and ~30+ types from peer_core + protocol_brain
+///
+/// **Depends on:** peer_core, protocol_brain/src/*, protocol_brain/adapters/*
+
 export 'package:peer_core/peer_core.dart'
     show
         PeerAddressFamily,

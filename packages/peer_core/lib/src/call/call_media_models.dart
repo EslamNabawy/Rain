@@ -1,3 +1,11 @@
+/// # call_media_models.dart
+///
+/// Data models for call media sessions including media kind, video optimization profiles, processing config, phase tracking, failure reasons, and diagnostics. Defines the full call media state and exception types.
+///
+/// **Key types:** CallMediaKind, CallVideoOptimizationProfile, CallMediaProcessingConfig, CallMediaPhase, CallMediaFailureReason, CallMediaException, CallMediaState, CallMediaDiagnostics, CallRemoteMediaTrack, CallIceCandidate, CallSessionDescription, CallMediaOutputRoute
+///
+/// **Depends on:** flutter_webrtc, voice/voice_media_models
+
 import 'package:flutter_webrtc/flutter_webrtc.dart';
 
 import '../voice/voice_media_models.dart';

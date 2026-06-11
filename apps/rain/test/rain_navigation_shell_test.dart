@@ -1,3 +1,11 @@
+/// # rain_navigation_shell_test.dart
+///
+/// Widget tests for the adaptive navigation shell. Verifies compact NavigationBar on narrow screens, NavigationRail on wide screens, page switching, and lazy page building.
+///
+/// **Key types:** NavigationBar, NavigationRail, _TrackedPage
+///
+/// **Depends on:** flutter_test, go_router, rain rain_navigation_shell
+
 import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:go_router/go_router.dart';

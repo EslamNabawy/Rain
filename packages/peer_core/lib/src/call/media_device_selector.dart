@@ -1,3 +1,11 @@
+/// # media_device_selector.dart
+///
+/// Selects and validates media input devices (audio/video) against the platform's enumerated device list. Provides diagnostic logging and error recording for device selection failures.
+///
+/// **Key types:** MediaDeviceSelector
+///
+/// **Depends on:** flutter_webrtc, platform_bridge
+
 import 'package:flutter_webrtc/flutter_webrtc.dart';
 
 import '../platform_bridge.dart';

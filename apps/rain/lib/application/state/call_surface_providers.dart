@@ -1,3 +1,14 @@
+/// # call_surface_providers.dart
+///
+/// Riverpod providers for the call surface UI: [CallSurfaceState] (visibility,
+/// mode, floating offset, video primary role), [CallSurfaceController],
+/// [CallEndPresentationState], and derived providers that connect voice call
+/// state to the presentation layer.
+///
+/// **Key types:** [CallSurfaceState], [CallSurfaceController], [CallEndPresentationState], [CallEndPresentationController], [CallSurfaceMode], [VideoPrimaryRole]
+///
+/// **Depends on:** voice call state, runtime providers
+
 import 'dart:async';
 
 import 'package:flutter_riverpod/flutter_riverpod.dart';

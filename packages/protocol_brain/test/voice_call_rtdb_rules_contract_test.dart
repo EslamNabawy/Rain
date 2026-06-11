@@ -1,3 +1,13 @@
+/// # voice_call_rtdb_rules_contract_test.dart — protocol_brain package
+///
+/// Contract tests for voice call RTDB security rules ensuring proper access control for rooms, locks, ICE candidates, and inbox entries.
+///
+/// **Key types:** (no top-level types — test-only file)
+///
+/// **Package:** protocol_brain
+///
+/// **Depends on:** flutter_test, dart:convert, dart:io
+///
 import 'dart:convert';
 import 'dart:io';
 

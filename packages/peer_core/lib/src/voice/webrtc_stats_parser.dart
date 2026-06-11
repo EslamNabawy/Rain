@@ -1,7 +1,11 @@
-/// Low-level WebRTC stats-report parsing utilities.
+/// # webrtc_stats_parser.dart
 ///
-/// Provides case-insensitive key lookup and typed extraction from the
-/// `Map<dynamic, dynamic>` values that [StatsReport]s expose.
+/// Low-level WebRTC stats-report parsing utilities with case-insensitive key lookup. Provides typed extraction helpers (string, double, bool, int) from the Map values that StatsReports expose.
+///
+/// **Key types:** statValue, hasAnyStat, stringStat, doubleStat, boolStat, intStat (top-level functions)
+///
+/// **Depends on:** none (dart:core only)
+
 library;
 
 Object? statValue(Map<dynamic, dynamic> values, Iterable<String> keys) {

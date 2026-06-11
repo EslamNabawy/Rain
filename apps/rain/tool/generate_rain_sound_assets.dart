@@ -1,3 +1,10 @@
+/// # generate_rain_sound_assets.dart
+///
+/// A build tool that procedurally generates WAV sound effect assets (send, receive, call tones, etc.) using synthesized droplet and shimmer waveforms, writing them to the assets/sounds directory.
+///
+/// **Key types:** _SoundSpec, _Droplet, _Shimmer (private top-level constants and data structures)
+///
+/// **Depends on:** dart:io, dart:math, dart:typed_data
 import 'dart:io';
 import 'dart:math' as math;
 import 'dart:typed_data';

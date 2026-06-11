@@ -1,3 +1,11 @@
+/// # rain_state_surfaces_test.dart
+///
+/// Widget tests for Rain state surface components like RainMistStateCard. Validates title/message/action rendering, neutral chrome panel texture tokens, and border color theming.
+///
+/// **Key types:** RainMistStateCard, RainColors
+///
+/// **Depends on:** flutter_test, rain rain_state_surfaces, rain_theme, app_components
+
 import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:rain/presentation/branding/rain_state_surfaces.dart';

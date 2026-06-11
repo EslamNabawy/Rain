@@ -1,3 +1,11 @@
+/// # integration_two_users_end2end_test
+///
+/// Integration test for two-user end-to-end friend request and acceptance flow on Firebase emulator.
+///
+/// **Key types:** RainRuntimeController, FirebaseEmulatorSignalingAdapter, RainDatabase.
+///
+/// **Depends on:** Firebase emulator, runtime controller, friend store, and message delivery.
+
 import 'dart:io';
 
 import 'package:drift/drift.dart' show driftRuntimeOptions;

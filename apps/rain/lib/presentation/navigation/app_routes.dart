@@ -1,3 +1,12 @@
+/// # app_routes
+///
+/// GoRouter configuration defining the app's route tree with shell routing,
+/// protected route gating based on startup phase, and custom page transitions.
+/// Provides named route constants and navigation helper methods.
+///
+/// **Key types:** AppRoutes, AppShellReadiness, _RouterRefreshNotifier
+///
+/// **Depends on:** go_router, flutter_riverpod, app screens
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';

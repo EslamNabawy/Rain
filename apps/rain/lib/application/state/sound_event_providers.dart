@@ -1,3 +1,13 @@
+/// # sound_event_providers.dart
+///
+/// Riverpod provider for [SoundEventRouter]. Wires the router to the sound
+/// effects service, audio settings, and voice call state. Registers an
+/// app-exit handler to stop all sounds on shutdown.
+///
+/// **Key types:** (provider only)
+///
+/// **Depends on:** sound event router, core providers, runtime providers
+
 import 'dart:async';
 
 import 'package:flutter_riverpod/flutter_riverpod.dart';

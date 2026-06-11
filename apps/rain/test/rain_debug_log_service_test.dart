@@ -1,3 +1,11 @@
+/// # rain_debug_log_service_test.dart
+///
+/// Tests for the debug log service that records sanitized diagnostic events and errors. Validates recursive sanitization of sensitive data, event recording, error logging, and JSON export.
+///
+/// **Key types:** CrashDiagnosticsDebugLogService
+///
+/// **Depends on:** flutter_test, flutter_webrtc, protocol_brain, rain crash_diagnostics_service, rain_debug_log_service
+
 import 'dart:convert';
 import 'dart:io';
 import 'dart:typed_data';

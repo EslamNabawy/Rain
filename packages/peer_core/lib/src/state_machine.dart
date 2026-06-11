@@ -1,3 +1,11 @@
+/// # state_machine.dart
+///
+/// Finite state machine enforcing valid peer connection state transitions. Defines the full lifecycle from idle through ready, offering/answering, connecting, connected, reconnecting, and failed states.
+///
+/// **Key types:** PeerStateMachine
+///
+/// **Depends on:** models
+
 import 'models.dart';
 
 class PeerStateMachine {

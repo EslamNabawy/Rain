@@ -1,3 +1,12 @@
+/// # app_components
+///
+/// Shared reusable UI components for the Rain app including section cards,
+/// section titles, page frames, state message displays, text input fields
+/// with autofocus and validation, and a lowercase text formatter.
+///
+/// **Key types:** AppSectionCard, AppSectionTitle, AppPageFrame, AppStateMessage, AppTextInputField, AppLowerCaseTextFormatter
+///
+/// **Depends on:** RainTheme, RainPerformanceScope, rain_state_surfaces
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:rain/presentation/branding/rain_state_surfaces.dart';

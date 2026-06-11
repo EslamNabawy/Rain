@@ -1,3 +1,11 @@
+/// # architecture_layers_test
+///
+/// Validates that the Rain app source tree follows clean architecture layering rules.
+///
+/// **Key types:** None (pure test file).
+///
+/// **Depends on:** Enforces lib/application, lib/core, lib/infrastructure, lib/presentation boundaries.
+
 import 'dart:io';
 
 import 'package:flutter_test/flutter_test.dart';

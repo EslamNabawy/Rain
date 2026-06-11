@@ -1,3 +1,12 @@
+/// # android_splash_resources_test.dart
+///
+/// Tests verifying Android splash screen resources (styles.xml and drawable
+/// XML) use the correct dark splash background color.
+///
+/// **Key types:** (test file)
+///
+/// **Depends on:** flutter_test
+
 import 'dart:io';
 
 import 'package:flutter_test/flutter_test.dart';

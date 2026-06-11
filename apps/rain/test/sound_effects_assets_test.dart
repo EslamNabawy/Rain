@@ -1,3 +1,10 @@
+/// # sound_effects_assets_test.dart
+///
+/// Validates sound effect asset files exist, are unique, have correct WAV properties (sample rate, bit depth, duration, RMS), and that the asset map covers all RainSoundEffect enum values.
+///
+/// **Key types:** _SoundExpectation, _WaveInfo, RainSoundEffect
+///
+/// **Depends on:** package:rain/infrastructure/services/sound_effects_service.dart
 import 'dart:io';
 import 'dart:math' as math;
 import 'dart:typed_data';

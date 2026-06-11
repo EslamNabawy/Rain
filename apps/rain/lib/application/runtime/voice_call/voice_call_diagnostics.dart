@@ -1,3 +1,14 @@
+/// # voice_call_diagnostics.dart
+///
+/// [VoiceCallDiagnostics] is a comprehensive diagnostic snapshot captured at
+/// call end. Records call metadata, failure codes, media state timelines,
+/// ICE/candidate counts, lock diagnostics, TURN readiness, and camera
+/// permission details for offline analysis.
+///
+/// **Key types:** [VoiceCallDiagnostics]
+///
+/// **Depends on:** voice call signaling
+
 import 'dart:convert';
 
 class VoiceCallDiagnostics {

@@ -1,3 +1,13 @@
+/// # rain_backdrop
+///
+/// Animated backdrop widget with gradient backgrounds and custom-painted
+/// atmospheric effects (signal lines, waves, glow nodes). Supports multiple
+/// variants (shell, splash, call, settings) and low-power mode that disables
+/// expensive paint operations.
+///
+/// **Key types:** RainBackdrop, RainBackdropVariant, _RainBackdropStyle, _RainSignalMistPainter
+///
+/// **Depends on:** RainTheme, RainPerformanceScope
 import 'dart:math' as math;
 
 import 'package:flutter/material.dart';

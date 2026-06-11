@@ -1,3 +1,13 @@
+/// # fake_voice_signaling_adapter.dart — protocol_brain package
+///
+/// In-memory fake implementation of VoiceSignalingAdapter for testing voice call signaling flows without a real backend.
+///
+/// **Key types:** FakeVoiceSignalingAdapter
+///
+/// **Package:** protocol_brain
+///
+/// **Depends on:** signaling_cost_budget, voice_call_clock, voice_call_cleanup_janitor, voice_call_frame, voice_lock_reclaim_policy, voice_signaling_contract
+///
 import 'dart:async';
 
 import '../signaling_cost_budget.dart';

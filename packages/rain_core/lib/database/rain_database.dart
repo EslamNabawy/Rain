@@ -1,3 +1,17 @@
+/// # rain_database.dart — rain_core package
+///
+/// Defines the Drift (SQLite) database schema and RainDatabase class for
+/// local persistence. Contains table definitions for messages, friends,
+/// queued messages, file transfers, connection memory, identity, and
+/// message sequence tracking, along with migration logic.
+///
+/// **Key types:** Messages, Friends, QueuedMessages, FileTransfers,
+///   ConnectionMemoryTable, IdentityTable, MessageSeqTracker, RainDatabase.
+///
+/// **Package:** rain_core
+///
+/// **Depends on:** drift, drift_flutter, dart:async.
+
 import 'dart:async';
 
 import 'package:drift/drift.dart';

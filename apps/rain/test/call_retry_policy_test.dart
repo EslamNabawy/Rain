@@ -1,3 +1,11 @@
+/// # call_retry_policy_test
+///
+/// Tests call retry policy decisions including peer busy, stale state cleanup, offline peers, and signaling failures.
+///
+/// **Key types:** CallRetryPolicy, CallSignalingFailureSnapshot, CallRetryDecision.
+///
+/// **Depends on:** Call error classifier and signaling failure snapshots from protocol_brain.
+
 import 'package:flutter_test/flutter_test.dart';
 import 'package:rain/application/runtime/call_retry_policy.dart';
 

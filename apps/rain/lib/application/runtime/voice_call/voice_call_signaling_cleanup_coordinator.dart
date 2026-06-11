@@ -1,3 +1,14 @@
+/// # voice_call_signaling_cleanup_coordinator.dart
+///
+/// [VoiceCallSignalingCleanupCoordinator] manages the signaling cleanup
+/// lifecycle for voice calls: writes terminal room status to Firebase, handles
+/// ICE candidate write failures, coordinates peer-end notifications, and
+/// performs bounded cleanup of signaling resources.
+///
+/// **Key types:** [VoiceCallSignalingCleanupCoordinator]
+///
+/// **Depends on:** call retry policy, call terminal write policy, voice call state
+
 import 'dart:async';
 
 import 'package:protocol_brain/protocol_brain.dart';

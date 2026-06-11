@@ -1,3 +1,10 @@
+/// # voice_call_runtime_diagnostics_contract_test.dart
+///
+/// Contract tests verifying that late voice signaling frames are treated as diagnostics rather than crash errors, and that local hangup writes terminal room state before best-effort session frames.
+///
+/// **Key types:** (no top-level declarations — source-inspection tests)
+///
+/// **Depends on:** dart:io for source file reading and string analysis
 import 'dart:io';
 
 import 'package:flutter_test/flutter_test.dart';

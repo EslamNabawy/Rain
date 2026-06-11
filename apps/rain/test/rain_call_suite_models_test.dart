@@ -1,3 +1,11 @@
+/// # rain_call_suite_models_test.dart
+///
+/// Tests for call suite model mapping from voice call state to suite surface configuration. Validates incoming/outgoing/active/ended suite modes, stage kinds, control models, and capability filtering.
+///
+/// **Key types:** CallSuiteSurfaceMode, CallSuiteStageKind, CallSuiteControlModel, CallSuiteControlAction, VideoPrimaryRole, CallControlCapability
+///
+/// **Depends on:** flutter_test, rain voice_call_state, rain_call_suite_models, rain_call_surface_providers
+
 import 'package:flutter/widgets.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:rain/application/runtime/voice_call_state.dart';

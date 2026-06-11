@@ -1,3 +1,11 @@
+/// # voice_media_connection.dart
+///
+/// Abstract interface and default implementation for voice-only WebRTC media connections. Manages local audio capture, SDP negotiation, muting, deafening, audio output routing, and audio level monitoring.
+///
+/// **Key types:** VoiceMediaConnection, DefaultVoiceMediaConnection
+///
+/// **Depends on:** flutter_webrtc, models, platform_bridge, voice/audio_level_sampler, voice/voice_media_models
+
 import 'dart:async';
 
 import 'package:flutter_webrtc/flutter_webrtc.dart';
@@ -28,6 +36,7 @@ abstract class VoiceMediaConnection {
   Future<void> applyAnswer(VoiceSessionDescription answer);
   Future<void> addRemoteCandidate(VoiceIceCandidate candidate);
   Future<void> setMuted({required bool muted});
+  Future<void> setCameraMuted({required bool muted});
   Future<void> setDeafened({required bool deafened});
   Future<void> setAudioOutputRoute(VoiceMediaOutputRoute route);
   Future<void> selectAudioOutputDevice(String deviceId);
@@ -303,6 +312,12 @@ class DefaultVoiceMediaConnection implements VoiceMediaConnection {
     }
     _muted = muted;
     await _config.platform.setMicrophoneMuted(track, muted: muted);
+  }
+
+  @override
+  Future<void> setCameraMuted({required bool muted}) async {
+    _ensureNotDisposed();
+    _appendDiagnostic(_mediaStates, 'cameraMuted:$muted (voice only)');
   }
 
   @override

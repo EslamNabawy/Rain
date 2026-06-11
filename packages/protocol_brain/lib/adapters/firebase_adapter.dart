@@ -1,3 +1,12 @@
+/// # firebase_adapter.dart — protocol_brain package
+///
+/// Firebase concrete adapter that implements SignalingAdapter, VoiceSignalingAdapter, and ConnectionRequestAdapter using Firebase Auth, Realtime Database, and Cloud Functions. Handles signaling, presence, friend requests, user search, and connection requests through Firebase backend services.
+///
+/// **Key types:** FirebaseSignalingAdapter
+///
+/// **Package:** protocol_brain
+///
+/// **Depends on:** ../src/connection_request_adapter, ../src/connection_request_contract, ../src/signaling_cost_budget, ../src/voice_call_clock, ../src/voice_call_cleanup_janitor, ../src/voice_call_frame, ../src/voice_lock_reclaim_policy, ../src/voice_signaling_contract, signaling_adapter, signaling_cipher, firebase_auth, firebase_database, cloud_functions, flutter_webrtc
 import 'dart:async';
 
 import 'package:cloud_functions/cloud_functions.dart';
@@ -26,13 +35,13 @@ class FirebaseSignalingAdapter
     FirebaseDatabase? database,
     FirebaseFunctions? functions,
     ConnectionRequestAdapterDiagnosticsSink? connectionRequestDiagnosticsSink,
-    SignalingCipher? signalingCipher,
+    required SignalingCipher signalingCipher,
     bool useEmulator = false,
   }) : _auth = auth ?? FirebaseAuth.instance,
        _database = database ?? FirebaseDatabase.instance,
        _functions = functions ?? FirebaseFunctions.instance,
        _connectionRequestDiagnosticsSink = connectionRequestDiagnosticsSink,
-       _signalingCipher = signalingCipher ?? SignalingCipher.demo(),
+       _signalingCipher = signalingCipher,
        _useEmulator = useEmulator;
 
   final FirebaseAuth _auth;

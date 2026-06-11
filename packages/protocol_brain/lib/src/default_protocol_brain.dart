@@ -1,3 +1,12 @@
+/// # default_protocol_brain.dart — protocol_brain package
+///
+/// Factory function createDefaultProtocolBrain that wires up and returns a fully configured ProtocolBrainImpl instance given a username, signaling adapter, ICE servers, and optional platform/peer overrides. This is the primary entry point for consumers of the protocol_brain package.
+///
+/// **Key types:** createDefaultProtocolBrain (function)
+///
+/// **Package:** protocol_brain
+///
+/// **Depends on:** peer_core, signaling_adapter, connection_memory, protocol_brain_impl, session_manager
 import 'package:peer_core/peer_core.dart';
 
 import '../adapters/signaling_adapter.dart';

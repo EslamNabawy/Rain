@@ -1,3 +1,13 @@
+/// # input_validator.dart — rain_core package
+///
+/// Static validation and sanitization utilities for usernames, display names, messages, and search queries with regex-based rules, length limits, and input normalization.
+///
+/// **Key types:** InputValidator
+///
+/// **Package:** rain_core
+///
+/// **Depends on:** None (pure Dart)
+///
 class InputValidator {
   InputValidator._();
 

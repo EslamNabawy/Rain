@@ -1,3 +1,11 @@
+/// # rain_call_ended_surface_test.dart
+///
+/// Widget tests for the call ended surface that shows post-call summary. Verifies display of call details, end reason, duration, and close/call-again actions in both popup and fullscreen modes.
+///
+/// **Key types:** RainCallEndedSurface, CallEndSummary, CallEndInitiator, CallMediaMode
+///
+/// **Depends on:** flutter_test, rain voice_call_state, rain_call_ended_surface
+
 import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:rain/application/runtime/voice_call_state.dart';

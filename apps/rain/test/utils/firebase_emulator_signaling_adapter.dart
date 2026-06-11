@@ -1,3 +1,10 @@
+/// # firebase_emulator_signaling_adapter.dart
+///
+/// A test utility implementing SignalingAdapter and VoiceSignalingAdapter against a local Firebase emulator, providing registration, login, signaling, and voice room operations for integration tests.
+///
+/// **Key types:** FirebaseEmulatorSignalingAdapter
+///
+/// **Depends on:** package:protocol_brain/protocol_brain.dart, package:flutter_webrtc/flutter_webrtc.dart
 import 'dart:async';
 import 'dart:convert';
 import 'dart:io';
@@ -14,7 +21,9 @@ class FirebaseEmulatorSignalingAdapter
     this.databaseHost = '127.0.0.1',
     this.databasePort = 9000,
     SignalingCipher? signalingCipher,
-  }) : _signalingCipher = signalingCipher ?? SignalingCipher.demo();
+  }) : _signalingCipher = signalingCipher ?? SignalingCipher.fromKeyMaterial(
+          'test-key-not-for-production-use-0123456789',
+        );
 
   final String databaseNamespace;
   final String authHost;

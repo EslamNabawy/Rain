@@ -1,3 +1,12 @@
+/// # rain_update_prompt_banner.dart
+///
+/// Banner widget that prompts the user to update the app when a new version
+/// is available, with update and dismiss actions.
+///
+/// **Key types:** RainUpdatePromptBanner
+///
+/// **Depends on:** infrastructure/services/force_update_service
+
 import 'package:flutter/material.dart';
 
 import 'package:rain/infrastructure/services/force_update_service.dart';

@@ -1,3 +1,14 @@
+/// # force_update_service.dart
+///
+/// [ForceUpdateService] checks Firebase Remote Config for the current release
+/// manifest and compares it against the running app version. Determines
+/// whether an update is required, optional, or unavailable, and provides
+/// update URLs and channel info.
+///
+/// **Key types:** [ForceUpdateService], [AppUpdateChannel], [VersionCheckStatus], [AppVersionInfo], [ForceUpdateResult]
+///
+/// **Depends on:** firebase_remote_config, package_info_plus
+
 import 'dart:convert';
 
 import 'package:firebase_remote_config/firebase_remote_config.dart';

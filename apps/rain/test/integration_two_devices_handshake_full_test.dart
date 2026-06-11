@@ -1,3 +1,11 @@
+/// # integration_two_devices_handshake_full_test
+///
+/// Integration test for full two-device handshake flow over Firebase emulator, covering signaling and connection establishment.
+///
+/// **Key types:** TwoDeviceHarness.
+///
+/// **Depends on:** Firebase emulator, two-device test harness, and full signaling stack.
+
 import 'dart:io';
 
 import 'package:drift/drift.dart' show driftRuntimeOptions;

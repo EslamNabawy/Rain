@@ -1,3 +1,14 @@
+/// # search_providers.dart
+///
+/// [UserSearchController] manages the user search flow: debounced query
+/// execution via the signaling adapter, result deduplication, and
+/// session-generation-scoped state reset. Produces [UserSearchState] for the
+/// search UI.
+///
+/// **Key types:** [UserSearchController]
+///
+/// **Depends on:** protocol_brain, core providers, identity providers
+
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import 'package:rain/application/runtime/rain_runtime_controller.dart';

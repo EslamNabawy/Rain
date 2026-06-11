@@ -1,3 +1,13 @@
+/// # messaging_providers.dart
+///
+/// Riverpod providers for per-peer message lists. [MessagesController] watches
+/// the message store for conversation tail updates, supports loading older
+/// messages, and merges overlapping pages for efficient chat history display.
+///
+/// **Key types:** [MessagesController]
+///
+/// **Depends on:** rain_core, core providers, identity providers
+
 import 'dart:async';
 import 'dart:io';
 

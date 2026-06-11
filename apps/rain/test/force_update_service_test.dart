@@ -1,3 +1,11 @@
+/// # force_update_service_test
+///
+/// Tests force update checking including version comparison, manifest-based policy, build number precedence, and remote policy staleness detection.
+///
+/// **Key types:** ForceUpdateService, ForceUpdateConfig, ForceUpdateStatus, AppUpdateChannel.
+///
+/// **Depends on:** Package info, remote config, and update manifest loading.
+
 import 'package:flutter_test/flutter_test.dart';
 import 'package:package_info_plus/package_info_plus.dart';
 import 'package:rain/infrastructure/services/force_update_service.dart';

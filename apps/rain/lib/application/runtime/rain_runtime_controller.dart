@@ -1,3 +1,15 @@
+/// # rain_runtime_controller.dart
+///
+/// [RainRuntimeController] is the central runtime orchestrator for Rain. Owns
+/// all mutable runtime state: sessions, calls, file transfers, presence
+/// subscriptions, and connection requests. Exposes extension-based runtime
+/// modules (voice call, file transfer, friend, connection request) and
+/// coordinates shutdown via [AppExitCoordinator].
+///
+/// **Key types:** [RainRuntimeController], [FriendRequestResult], [RuntimeErrorRecorder], [RuntimeEventRecorder]
+///
+/// **Depends on:** protocol_brain, rain_core, all runtime extensions
+
 // ignore_for_file: unnecessary_getters_setters
 
 import 'dart:async';
@@ -248,7 +260,9 @@ class RainRuntimeController with WidgetsBindingObserver {
            (adapter is ConnectionRequestAdapter
                ? adapter as ConnectionRequestAdapter
                : null),
-       voiceSignalingCipher = voiceSignalingCipher ?? SignalingCipher.demo(),
+        voiceSignalingCipher = voiceSignalingCipher ?? SignalingCipher.fromKeyMaterial(
+          'test-key-not-for-production-use-0123456789',
+        ),
        _documentsDirectoryProvider =
            documentsDirectoryProvider ?? getApplicationDocumentsDirectory,
        _connectionCoordinator = ConnectionAttemptCoordinator(

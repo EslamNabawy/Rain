@@ -1,3 +1,11 @@
+/// # media_device_settings_test.dart
+///
+/// Tests for MediaDeviceSettings service that manages audio/video device selection and persistence. Covers device filtering by kind, label resolution, and shared preferences storage.
+///
+/// **Key types:** MediaDeviceSettings, _FakePlatformBridge, _FakeMediaStream, _FakeMediaTrack
+///
+/// **Depends on:** flutter_test, flutter_webrtc, protocol_brain, rain media_device_settings, app_settings_store
+
 import 'package:flutter/foundation.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:flutter_webrtc/flutter_webrtc.dart';

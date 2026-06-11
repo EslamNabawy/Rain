@@ -1,3 +1,11 @@
+/// # rain_call_manager_bar_test.dart
+///
+/// Widget tests for the floating call manager bar during active calls. Validates identity display, control buttons (mute, deafen, restore, hang up), safe area offsets, and visibility rules for different surface modes.
+///
+/// **Key types:** RainCallManagerBar, CallSurfaceState, CallSurfaceMode, topCallManagerBarOffset
+///
+/// **Depends on:** flutter_test, rain voice_call_state, rain_call_controls, rain_call_manager_bar, rain_call_overlay
+
 import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:rain/application/runtime/voice_call_state.dart';

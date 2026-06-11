@@ -1,3 +1,13 @@
+/// # message_delivery_service.dart — rain_core package
+///
+/// Orchestrates reliable message delivery with ACK tracking, automatic retransmission on timeout, gap detection and buffering for out-of-order incoming messages, and offline queue flushing.
+///
+/// **Key types:** MessageDeliveryService, _AckTracker, _BufferedEnvelope
+///
+/// **Package:** rain_core
+///
+/// **Depends on:** message_envelope.dart, message_store.dart, offline_queue.dart
+///
 import 'dart:async';
 import 'dart:convert';
 

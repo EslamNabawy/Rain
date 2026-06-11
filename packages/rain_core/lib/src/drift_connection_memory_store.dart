@@ -1,3 +1,13 @@
+/// # drift_connection_memory_store.dart — rain_core package
+///
+/// Drift-backed implementation of the ConnectionMemoryStore interface from protocol_brain, persisting ICE candidates, connection timestamps, and failure counts for peer connections.
+///
+/// **Key types:** DriftConnectionMemoryStore
+///
+/// **Package:** rain_core
+///
+/// **Depends on:** dart:convert, drift/drift.dart, protocol_brain, rain_database.dart
+///
 import 'dart:convert';
 
 import 'package:drift/drift.dart';

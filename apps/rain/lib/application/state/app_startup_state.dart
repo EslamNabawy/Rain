@@ -1,3 +1,14 @@
+/// # app_startup_state.dart
+///
+/// [AppStartupState] models Rain's startup sequence phases: checking for forced
+/// updates, validating the existing session, starting the runtime, handling
+/// account deletion, and transitioning to the ready state. Carries error
+/// context and failure source for UI error display.
+///
+/// **Key types:** [AppStartupState], [AppStartupPhase], [AppStartupFailureSource]
+///
+/// **Depends on:** protocol_brain, force update service, network status, core providers
+
 import 'package:flutter/foundation.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:protocol_brain/protocol_brain.dart';

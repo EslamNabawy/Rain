@@ -1,3 +1,12 @@
+/// # session_manager.dart — protocol_brain package
+///
+/// Defines the session management data model including Session, SessionMessage, SessionRemoteTrack, SessionSnapshot, SessionMetrics, and related enums (SessionState, SessionPhase, SessionChannel, ConnectionType). Provides the observable state for connected peers.
+///
+/// **Key types:** Session, SessionMessage, SessionRemoteTrack, SessionSnapshot, SessionMetrics, IncomingOfferGuard, IncomingOfferRejection, SessionState, SessionChannel, ConnectionType, SessionPhase
+///
+/// **Package:** protocol_brain
+///
+/// **Depends on:** flutter_webrtc, peer_core (CallMediaConnection, PeerConnectionRoute, PeerRemoteTrack, VoiceMediaConnection)
 import 'dart:async';
 import 'dart:typed_data';
 

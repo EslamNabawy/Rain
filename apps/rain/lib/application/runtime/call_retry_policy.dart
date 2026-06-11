@@ -1,3 +1,14 @@
+/// # call_retry_policy.dart
+///
+/// [CallRetryPolicy] classifies call signaling failures into retry decisions
+/// (proceed, peerBusy, peerOffline, cleanedStaleState, cleanupInProgress,
+/// signalingFailed). Produces user-facing messages and determines whether an
+/// immediate retry is safe.
+///
+/// **Key types:** [CallRetryPolicy], [CallRetryDecision], [CallRetryDecisionKind], [CallSignalingFailureSnapshot]
+///
+/// **Depends on:** protocol_brain, call error classification
+
 enum CallRetryDecisionKind {
   proceed,
   peerBusy,

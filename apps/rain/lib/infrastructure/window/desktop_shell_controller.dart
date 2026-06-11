@@ -1,3 +1,12 @@
+/// # desktop_shell_controller
+///
+/// Manages desktop window lifecycle for Rain on Windows, Linux, and macOS.
+/// Handles graceful shutdown with critical presence writes, bounded cleanup
+/// phases, and window destruction via the window_manager package.
+///
+/// **Key types:** DesktopShellController
+///
+/// **Depends on:** window_manager, AppExitCoordinator
 import 'dart:async';
 import 'dart:io';
 import 'dart:ui';

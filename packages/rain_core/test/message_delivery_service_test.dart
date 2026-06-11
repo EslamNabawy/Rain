@@ -1,3 +1,13 @@
+/// # message_delivery_service_test.dart — rain_core package
+///
+/// Tests for MessageDeliveryService including incoming envelope handling, ACK sending, gap buffering, out-of-order delivery, and queue flushing behavior.
+///
+/// **Key types:** None (test file)
+///
+/// **Package:** rain_core
+///
+/// **Depends on:** drift, drift/native.dart, flutter_test, rain_core
+///
 import 'dart:convert';
 
 import 'package:drift/drift.dart';

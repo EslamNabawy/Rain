@@ -1,3 +1,13 @@
+/// # signaling_cipher_test.dart — protocol_brain package
+///
+/// Tests for SignalingCipher verifying room-scoped encryption/decryption of signaling payloads and binding to room and purpose.
+///
+/// **Key types:** (no top-level types — test-only file)
+///
+/// **Package:** protocol_brain
+///
+/// **Depends on:** flutter_test, protocol_brain, dart:convert
+///
 import 'dart:convert';
 
 import 'package:flutter_test/flutter_test.dart';

@@ -1,3 +1,12 @@
+/// # connection_request_tray.dart
+///
+/// Tray that displays a scrollable list of incoming connection request prompts
+/// with accept/decline actions and overflow menu support.
+///
+/// **Key types:** ConnectionRequestTray
+///
+/// **Depends on:** protocol_brain, presentation/theme, connection_request_status_chip
+
 import 'package:flutter/material.dart';
 import 'package:protocol_brain/protocol_brain.dart';
 

@@ -1,3 +1,12 @@
+/// # app_dialogs
+///
+/// Common dialog builders for Rain including a confirmation dialog with
+/// customizable labels and styles, and a text input dialog with validation,
+/// autofocus, and configurable keyboard options.
+///
+/// **Key types:** showAppConfirmDialog, showAppTextInputDialog, _AppTextInputDialog
+///
+/// **Depends on:** flutter/material
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 

@@ -1,3 +1,12 @@
+/// # rain_call_overlay.dart
+///
+/// Full call overlay widget that composes the floating popup, fullscreen
+/// workspace, incoming call prompt, and friends panel during active calls.
+///
+/// **Key types:** RainCallOverlay, RainFullscreenCallWorkspace
+///
+/// **Depends on:** application/runtime, application/state, presentation/performance, presentation/theme, presentation/widgets
+
 import 'dart:math' as math;
 
 import 'package:flutter/material.dart';

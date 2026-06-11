@@ -1,3 +1,11 @@
+/// # call_error_classifier_test
+///
+/// Tests call error classification, normalization, and failure taxonomy mapping for voice/video call failures.
+///
+/// **Key types:** CallErrorClassifier, VoiceCallFailureReason, CallRetryDecision.
+///
+/// **Depends on:** protocol_brain signaling errors and native WebRTC media exceptions.
+
 import 'package:flutter_test/flutter_test.dart';
 import 'package:protocol_brain/protocol_brain.dart';
 import 'package:rain/application/runtime/call_error_classifier.dart';

@@ -1,3 +1,14 @@
+/// # voice_audio_level.dart
+///
+/// [VoiceAudioLevel] represents a snapshot of local and remote audio levels
+/// during a voice/video call, with a [VoiceAudioLevelSource] indicating
+/// whether the measurement came from audioLevel, totalAudioEnergy, or is
+/// unavailable. Converts from protocol_brain's [VoiceMediaAudioLevel].
+///
+/// **Key types:** [VoiceAudioLevel], [VoiceAudioLevelSource]
+///
+/// **Depends on:** protocol_brain (VoiceMediaAudioLevel)
+
 import 'package:protocol_brain/protocol_brain.dart'
     show VoiceMediaAudioLevel, VoiceMediaAudioLevelSource;
 

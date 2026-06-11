@@ -1,3 +1,14 @@
+/// # identity_providers.dart
+///
+/// Riverpod providers for user identity and session management:
+/// [IdentityController] loads/persists [RainIdentity] from the local database,
+/// [AuthenticatedSessionController] tracks the current authenticated session
+/// with generation-based invalidation.
+///
+/// **Key types:** [AuthenticatedSession], [AuthenticatedSessionController]
+///
+/// **Depends on:** protocol_brain, rain_core, core providers
+
 import 'dart:async';
 
 import 'package:flutter_riverpod/flutter_riverpod.dart';

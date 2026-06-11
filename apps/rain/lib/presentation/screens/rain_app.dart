@@ -1,3 +1,12 @@
+/// # rain_app
+///
+/// Root MaterialApp widget for Rain. Configures routing, theming (light/dark),
+/// and startup-phase-based surface navigation including standalone surfaces
+/// for signed-out and account-deletion states.
+///
+/// **Key types:** RainApp, _StandaloneSurfaceNavigator
+///
+/// **Depends on:** appRouterProvider, RainTheme, startup_surface
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 

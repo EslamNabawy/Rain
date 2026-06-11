@@ -1,3 +1,11 @@
+/// # network_status_service_test.dart
+///
+/// Tests for NetworkStatusService that monitors connectivity and backend reachability. Validates state mapping for offline, limited, and online conditions with startup grace periods.
+///
+/// **Key types:** NetworkStatusService, NetworkStatusState, NetworkStatusKind, _FakeConnectivityProbe, _FakeBackendProbe
+///
+/// **Depends on:** flutter_test, connectivity_plus, rain network_status_service
+
 import 'dart:async';
 
 import 'package:connectivity_plus/connectivity_plus.dart';

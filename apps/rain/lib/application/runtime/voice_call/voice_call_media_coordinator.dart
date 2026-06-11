@@ -1,3 +1,14 @@
+/// # voice_call_media_coordinator.dart
+///
+/// [VoiceCallMediaCoordinator] coordinates voice/video media lifecycle
+/// behavior without owning runtime state. Creates media connections, manages
+/// local/remote video renderers, handles camera permission checks, and
+/// provides bounded cleanup for media resources.
+///
+/// **Key types:** [VoiceCallMediaCoordinator]
+///
+/// **Depends on:** call media session coordinator, video call renderers, voice call state
+
 import 'dart:async';
 
 import 'package:flutter/widgets.dart';

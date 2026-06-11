@@ -1,3 +1,11 @@
+/// # connection_request_rtdb_adapter.dart
+///
+/// Firebase Realtime Database adapter for connection request signaling. Manages request creation, TTL-based expiration, terminal state retention, transactional updates, and mirror repair for P2P connection establishment.
+///
+/// **Key types:** RtdbOnlyConnectionRequestTransactionAction, ConnectionRequestRtdbAdapter (plus typedefs for RTDB operations)
+///
+/// **Depends on:** firebase_database, protocol_brain/src/connection_request_adapter, protocol_brain/src/connection_request_contract
+
 import 'dart:math';
 
 import 'package:firebase_database/firebase_database.dart';

@@ -1,3 +1,12 @@
+/// # rain_call_layout_contract.dart
+///
+/// Layout contract that describes how a call surface should be presented
+/// (minimized, fullscreen, or PiP) and which UI regions are visible.
+///
+/// **Key types:** RainCallSurfaceMode, RainVideoRole, RainCallLayoutContract
+///
+/// **Depends on:** application/state
+
 import 'package:rain/application/state/call_surface_providers.dart';
 
 enum RainCallSurfaceMode { minimized, fullscreen, pip }

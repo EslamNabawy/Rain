@@ -1,3 +1,14 @@
+/// # network_status_service.dart
+///
+/// [NetworkStatusService] monitors internet connectivity via connectivity_plus
+/// and Firebase Realtime Database reachability probes. Produces
+/// [NetworkStatusState] (checking/online/offline/limited) for UI and
+/// runtime gating.
+///
+/// **Key types:** [NetworkStatusService], [NetworkStatusState], [NetworkStatusKind]
+///
+/// **Depends on:** connectivity_plus, firebase_database
+
 import 'dart:async';
 
 import 'package:connectivity_plus/connectivity_plus.dart';

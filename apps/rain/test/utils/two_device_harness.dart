@@ -1,3 +1,10 @@
+/// # two_device_harness.dart
+///
+/// A test harness that sets up two virtual devices (Alice and Bob) with Firebase emulator signaling and linked peer cores, enabling end-to-end integration tests for calls, chat, and file transfers.
+///
+/// **Key types:** TwoDeviceHarness, _LinkedPeerPair, _LinkedPeerCore
+///
+/// **Depends on:** package:peer_core/peer_core.dart, package:protocol_brain/protocol_brain.dart, package:rain_core/rain_core.dart, firebase_emulator_signaling_adapter.dart
 import 'dart:async';
 
 import 'package:drift/native.dart';

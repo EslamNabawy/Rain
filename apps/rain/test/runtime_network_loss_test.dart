@@ -1,3 +1,10 @@
+/// # runtime_network_loss_test.dart
+///
+/// Tests runtime behavior when network connectivity is lost, verifying that active file transfers fail, temporary files are cleaned up, and voice/media connections are torn down correctly.
+///
+/// **Key types:** RainRuntimeController, FileTransferStore, FileTransferRecord, _DisconnectingSessionManager, _NoopVoiceMediaConnection, _NoopCallMediaConnection
+///
+/// **Depends on:** package:protocol_brain/protocol_brain.dart, package:rain/application/runtime/rain_runtime_controller.dart, package:rain_core/rain_core.dart
 import 'dart:async';
 import 'dart:io';
 
@@ -402,6 +409,9 @@ class _NoopVoiceMediaConnection implements VoiceMediaConnection {
 
   @override
   Future<void> setMuted({required bool muted}) async {}
+
+  @override
+  Future<void> setCameraMuted({required bool muted}) async {}
 
   @override
   Future<void> setDeafened({required bool deafened}) async {}

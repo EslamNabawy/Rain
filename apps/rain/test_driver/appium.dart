@@ -1,3 +1,10 @@
+/// # appium.dart
+///
+/// Appium test driver entry point that enables the Flutter driver extension and runs a minimal smoke-test app with sign-in/create-account toggle for external automation.
+///
+/// **Key types:** _RainAppiumSmokeApp, _RainAppiumSmokeAppState
+///
+/// **Depends on:** package:flutter/material.dart, package:flutter_driver/driver_extension.dart
 import 'package:flutter/material.dart';
 import 'package:flutter_driver/driver_extension.dart';
 

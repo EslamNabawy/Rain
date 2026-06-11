@@ -1,3 +1,13 @@
+/// # workspace_contract_test.dart — protocol_brain package
+///
+/// Contract tests verifying Melos 7 workspace configuration, package discovery, workspace resolution, and local defines in gitignore.
+///
+/// **Key types:** (no top-level types — test-only file)
+///
+/// **Package:** protocol_brain
+///
+/// **Depends on:** flutter_test, dart:io
+///
 import 'dart:io';
 
 import 'package:flutter_test/flutter_test.dart';

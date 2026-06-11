@@ -1,3 +1,11 @@
+/// # audio_level_sampler.dart
+///
+/// Samples audio levels from WebRTC StatsReports for both local and remote audio tracks. Uses direct audioLevel stats or derives levels from totalAudioEnergy deltas between samples.
+///
+/// **Key types:** VoiceAudioLevelStatsSampler
+///
+/// **Depends on:** flutter_webrtc, voice/voice_media_models, voice/webrtc_stats_parser
+
 import 'dart:math' as math;
 
 import 'package:flutter_webrtc/flutter_webrtc.dart';

@@ -1,3 +1,14 @@
+/// # call_start_preflight.dart
+///
+/// [CallStartPreflightResult] models the outcome of pre-call validation:
+/// checks peer online status, active calls, active file transfers, local
+/// manual disconnect state, and microphone/camera permissions before a call
+/// is allowed to start.
+///
+/// **Key types:** [CallStartPreflightResult], [CallStartPreflightDecision]
+///
+/// **Depends on:** protocol_brain (CallMediaMode), runtime interaction guard
+
 import 'package:protocol_brain/protocol_brain.dart' show CallMediaMode;
 
 enum CallStartPreflightDecision {

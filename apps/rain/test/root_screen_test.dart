@@ -1,3 +1,11 @@
+/// # root_screen_test.dart
+///
+/// Widget tests for the root application screen. Validates non-blocking behavior when update check is unavailable, splash surface during loading, and proper state transitions with Riverpod overrides.
+///
+/// **Key types:** RootScreen, RainDatabase
+///
+/// **Depends on:** flutter_test, flutter_riverpod, rain root_screen, app_bootstrap, force_update_service, rain_core
+
 import 'dart:async';
 
 import 'package:drift/native.dart';

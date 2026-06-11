@@ -1,3 +1,14 @@
+/// # app_settings_store.dart
+///
+/// [AppSettingsStore] persists and loads Rain app settings via
+/// SharedPreferences. Manages audio settings (sound effects, call sounds,
+/// output route), call processing settings (clear voice, video optimization),
+/// theme mode, recent searches, and device preferences.
+///
+/// **Key types:** [AppSettingsStore], [AppAudioSettings], [AppCallProcessingSettings], [CallAudioOutputPreference]
+///
+/// **Depends on:** shared_preferences, protocol_brain
+
 import 'dart:convert';
 
 import 'package:shared_preferences/shared_preferences.dart';

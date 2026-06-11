@@ -1,3 +1,11 @@
+/// # rain_splash_screen_test.dart
+///
+/// Widget tests for the Rain splash screen. Verifies animated orbital Peer Core mark rendering, reduced motion static fallback, and low power tier static mark path.
+///
+/// **Key types:** RainSplashScreen, RainPeerCoreAnimatedMark, RainPeerCoreMark, RainBackdrop, RainPerformanceScope
+///
+/// **Depends on:** flutter_test, rain splash_screen, rain_peer_core_mark, rain_performance, rain_backdrop
+
 import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:rain/presentation/branding/rain_peer_core_mark.dart';

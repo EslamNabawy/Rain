@@ -1,3 +1,12 @@
+/// # rain_call_workspace.dart
+///
+/// Fullscreen call workspace that arranges the call stage, controls, status
+/// strip, and an optional desktop side panel.
+///
+/// **Key types:** RainCallWorkspace
+///
+/// **Depends on:** application/runtime, presentation/performance, presentation/theme, presentation/widgets/calls
+
 import 'package:flutter/material.dart';
 
 import 'package:rain/application/runtime/voice_call_state.dart';

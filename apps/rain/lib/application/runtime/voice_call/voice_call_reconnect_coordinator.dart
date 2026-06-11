@@ -1,3 +1,14 @@
+/// # voice_call_reconnect_coordinator.dart
+///
+/// [VoiceCallReconnectCoordinator] coordinates voice-call media reconnect
+/// state transitions without owning runtime state. Handles marking a call as
+/// reconnecting, arming reconnect grace timers, and failing a peer call when
+/// reconnection expires.
+///
+/// **Key types:** [VoiceCallReconnectCoordinator]
+///
+/// **Depends on:** protocol_brain, voice call state
+
 import 'dart:async';
 
 import 'package:protocol_brain/protocol_brain.dart';

@@ -1,3 +1,10 @@
+/// # voice_call_runtime_media_path_test.dart
+///
+/// Contract tests verifying that voice call runtime uses dedicated media connections for app calls, avoids legacy SessionManager methods, and attaches Firebase watchers in the correct order after room creation.
+///
+/// **Key types:** (no top-level declarations — source-inspection tests)
+///
+/// **Depends on:** dart:io for source file reading and regex analysis
 import 'dart:io';
 
 import 'package:flutter_test/flutter_test.dart';

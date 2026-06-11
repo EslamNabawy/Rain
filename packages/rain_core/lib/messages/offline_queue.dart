@@ -1,3 +1,13 @@
+/// # offline_queue.dart — rain_core package
+///
+/// Drift-backed offline message queue with enqueue/dequeue operations, status tracking (queued/sending/sent/failed), in-flight recovery, and peer-scoped queue management.
+///
+/// **Key types:** QueuedMessageStatus, QueuedEnvelope, OfflineQueueStore
+///
+/// **Package:** rain_core
+///
+/// **Depends on:** drift/drift.dart, rain_database.dart, message_envelope.dart
+///
 import 'package:drift/drift.dart';
 
 import '../database/rain_database.dart';

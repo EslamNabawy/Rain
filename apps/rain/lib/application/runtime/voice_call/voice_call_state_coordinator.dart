@@ -1,3 +1,14 @@
+/// # voice_call_state_coordinator.dart
+///
+/// [VoiceCallStateCoordinator] owns the pure state-transition and mapping
+/// policy for voice calls. Stateless — the runtime owns mutable state while
+/// this coordinator owns decisions like phase mapping, expired start-block
+/// clearing, and failure-reason resolution.
+///
+/// **Key types:** [VoiceCallStateCoordinator]
+///
+/// **Depends on:** protocol_brain, call error classifier, voice audio level, voice call state
+
 import 'package:protocol_brain/protocol_brain.dart';
 
 import '../call_error_classifier.dart';

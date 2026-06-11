@@ -1,3 +1,12 @@
+/// # rain_call_ended_surface.dart
+///
+/// Post-call summary surface shown after a call ends, displaying duration,
+/// end reason, and actions to call again or close.
+///
+/// **Key types:** RainCallEndedSurface
+///
+/// **Depends on:** application/runtime, presentation/branding, presentation/widgets/calls
+
 import 'package:flutter/material.dart';
 
 import 'package:rain/application/runtime/voice_call_state.dart';

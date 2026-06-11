@@ -1,3 +1,14 @@
+/// # turn_credential_service.dart
+///
+/// [TurnCredentialService] manages TURN server credentials for WebRTC relay
+/// fallback. Fetches time-limited credentials from a TURN broker using Firebase
+/// ID tokens, caches them, and merges them with base ICE server configs.
+/// Tracks [TurnReadiness] for diagnostics.
+///
+/// **Key types:** [TurnCredentialService]
+///
+/// **Depends on:** firebase_auth, protocol_brain (TurnReadiness)
+
 import 'dart:async';
 import 'dart:convert';
 import 'dart:io';

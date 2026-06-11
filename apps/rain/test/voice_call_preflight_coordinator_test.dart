@@ -1,3 +1,10 @@
+/// # voice_call_preflight_coordinator_test.dart
+///
+/// Tests VoiceCallPreflightCoordinator which validates preconditions before starting a voice call, including peer connection availability, friend relationship checks, and presence snapshot resolution.
+///
+/// **Key types:** VoiceCallPreflightCoordinator
+///
+/// **Depends on:** package:rain/application/runtime/voice_call/voice_call_preflight_coordinator.dart, package:rain/application/runtime/voice_call_state.dart
 import 'package:flutter_test/flutter_test.dart';
 
 import 'package:rain/application/runtime/voice_call/voice_call_preflight_coordinator.dart';

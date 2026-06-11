@@ -1,3 +1,11 @@
+/// # call_media_connection.dart
+///
+/// Abstract interface and default implementation for managing call media (audio/video) over WebRTC. Provides SDP offer/answer negotiation, local media capture, remote track handling, microphone/camera mute, and media diagnostics.
+///
+/// **Key types:** CallMediaConnection, DefaultCallMediaConnection
+///
+/// **Depends on:** flutter_webrtc, models, call/call_media_models, call/media_device_selector, call/media_interruption, call/video_optimization_manager
+
 import 'dart:async';
 
 import 'package:flutter_webrtc/flutter_webrtc.dart';
@@ -505,14 +513,15 @@ class DefaultCallMediaConnection implements CallMediaConnection {
       return;
     }
     if (next.autoVideoOptimizeEnabled) {
+      final epoch = _connectionEpoch;
       await _videoOptimizationManager.startOptimization(
         connection: connection,
-        epoch: _connectionEpoch,
+        epoch: epoch,
         autoVideoOptimizeEnabled: next.autoVideoOptimizeEnabled,
         localVideoSender: _localVideoSender,
         localVideoTrack: _localVideoTrack,
         shouldIgnoreCallback: _shouldIgnorePeerCallback,
-        isEpochValid: () => _connectionEpoch == _connectionEpoch,
+        isEpochValid: () => _connectionEpoch == epoch,
       );
     } else {
       _videoOptimizationManager.stopOptimization();

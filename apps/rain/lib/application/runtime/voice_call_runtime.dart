@@ -1,3 +1,17 @@
+/// # voice_call_runtime.dart
+///
+/// [VoiceCallRuntime] extension on [RainRuntimeController] is the main
+/// voice/video call orchestrator. Manages the full call lifecycle: incoming
+/// invite handling, outgoing call initiation, media session creation, ICE
+/// candidate exchange, room signaling writes, terminal state reconciliation,
+/// and call teardown.
+///
+/// **Key types:** (extension methods on RainRuntimeController), [_IncomingVoiceInviteDisposition], [_TerminalRoomWriteResult]
+///
+/// **Part of:** voice_call_runtime.dart (extension)
+///
+/// **Depends on:** protocol_brain, rain_core, all voice_call coordinators
+
 import 'dart:async';
 
 import 'package:flutter/widgets.dart';

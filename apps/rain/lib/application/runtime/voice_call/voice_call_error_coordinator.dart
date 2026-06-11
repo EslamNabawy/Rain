@@ -1,3 +1,14 @@
+/// # voice_call_error_coordinator.dart
+///
+/// [VoiceCallErrorCoordinator] is a thin delegation layer over
+/// [CallErrorClassifier] for voice-call-specific error handling. Isolates
+/// error classification from runtime state management so it can be tested
+/// independently.
+///
+/// **Key types:** [VoiceCallErrorCoordinator]
+///
+/// **Depends on:** call error classifier, call retry policy, voice call state
+
 import '../call_error_classifier.dart';
 import '../call_retry_policy.dart';
 import '../voice_call_state.dart';

@@ -1,3 +1,12 @@
+/// # protocol_brain_impl.dart — protocol_brain package
+///
+/// Main implementation of the ProtocolBrain interface that orchestrates signaling, session lifecycle, peer management, ICE candidate handling, and error classification. Contains the core state machine for connecting, maintaining, and recovering peer sessions.
+///
+/// **Key types:** ProtocolBrainImpl
+///
+/// **Package:** protocol_brain
+///
+/// **Depends on:** flutter_webrtc, peer_core, signaling_adapter, signaling_cipher, connection_memory, session_manager, active_session (part), ice_candidate_policy (part), session_retry_policy (part)
 import 'dart:async';
 
 import 'package:flutter_webrtc/flutter_webrtc.dart';

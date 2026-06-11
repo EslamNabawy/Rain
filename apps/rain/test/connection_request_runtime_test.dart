@@ -1,3 +1,11 @@
+/// # connection_request_runtime_test
+///
+/// Tests the connection request runtime logic including confirmation gates, online peer rejection, duplicate detection, burst cooldowns, and adapter failure handling.
+///
+/// **Key types:** _ConnectionRequestHarness, _ConnectionRequestNoopSignalingAdapter, _TestSessionManager, RuntimeInteractionGuard.
+///
+/// **Depends on:** RainRuntimeController, connection request adapter, and session manager.
+
 import 'dart:async';
 
 import 'package:drift/native.dart';

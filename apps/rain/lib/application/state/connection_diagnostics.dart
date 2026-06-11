@@ -1,3 +1,14 @@
+/// # connection_diagnostics.dart
+///
+/// [ConnectionDiagnostics] aggregates peer connection status into a single
+/// UI-facing model: status kind (offline/ready/connecting/connected/etc.),
+/// retry attempt counts, room metadata, passive listener stats, and
+/// network-recovery counters for display in the connection diagnostics panel.
+///
+/// **Key types:** [ConnectionDiagnostics], [PeerConnectionUiStatusKind]
+///
+/// **Depends on:** protocol_brain, connection attempt coordinator, voice call state
+
 import 'package:protocol_brain/protocol_brain.dart';
 
 import '../runtime/connection_attempt_coordinator.dart';

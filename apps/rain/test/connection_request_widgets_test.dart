@@ -1,3 +1,11 @@
+/// # connection_request_widgets_test
+///
+/// Tests connection request UI widgets including outbound status chips and inbound request tray rendering and actions.
+///
+/// **Key types:** ConnectionRequestStatusChip, ConnectionRequestTray, ConnectionRequestSurfaceModel, ConnectionRequestActionModel.
+///
+/// **Depends on:** Connection request state models and Rain theme/styling.
+
 import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:protocol_brain/protocol_brain.dart';

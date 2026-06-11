@@ -1,3 +1,13 @@
+/// # protocol_brain_test.dart — protocol_brain package
+///
+/// Core ProtocolBrainImpl tests covering room ID determinism, SDP payload serialization, incoming offer rejection, and signaling flows.
+///
+/// **Key types:** _RecordingSignalingAdapter, _FakePeerCore, _MemoryConnectionStore
+///
+/// **Package:** protocol_brain
+///
+/// **Depends on:** flutter_test, flutter_webrtc, peer_core, protocol_brain
+///
 import 'dart:async';
 
 import 'package:flutter_webrtc/flutter_webrtc.dart';

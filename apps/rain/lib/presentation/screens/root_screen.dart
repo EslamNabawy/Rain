@@ -1,3 +1,12 @@
+/// # root_screen
+///
+/// Root screen router that switches between onboarding, home, and startup
+/// surfaces based on app startup phase. Overlays backend environment banners
+/// and optional update prompts on top of the main content.
+///
+/// **Key types:** RootScreen
+///
+/// **Depends on:** app_providers, onboarding_screen, home_screen, startup_surface
 import 'dart:async';
 
 import 'package:flutter/material.dart';

@@ -1,3 +1,12 @@
+/// # voice_call_clock.dart — protocol_brain package
+///
+/// Pure utility for monotonic timestamp generation in voice call signaling. Ensures timestamps are strictly increasing relative to room creation/update times, preventing ordering conflicts in Firebase RTDB.
+///
+/// **Key types:** VoiceCallTimestampClock
+///
+/// **Package:** protocol_brain
+///
+/// **Depends on:** None (standalone pure class)
 final class VoiceCallTimestampClock {
   const VoiceCallTimestampClock._();
 

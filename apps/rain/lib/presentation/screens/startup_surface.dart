@@ -1,3 +1,12 @@
+/// # startup_surface
+///
+/// Startup phase surface router that displays appropriate UI for each
+/// app startup state including splash, force update gate, session expired
+/// reset, and failure screens. Handles automatic session cleanup on expiry.
+///
+/// **Key types:** RainStartupSurface, RainSessionExpiredResetView, RainForceUpdateGate
+///
+/// **Depends on:** app_providers, splash_screen, force_update_service
 import 'dart:async';
 
 import 'package:flutter/material.dart';

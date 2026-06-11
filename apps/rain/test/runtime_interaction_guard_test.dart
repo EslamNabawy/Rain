@@ -1,3 +1,10 @@
+/// # runtime_interaction_guard_test.dart
+///
+/// Tests for RuntimeInteractionGuard, which decides whether automatic or interactive peer connections and call starts are allowed based on current call state and manual disconnect history.
+///
+/// **Key types:** RuntimeInteractionGuard, RuntimeInteractionReasonCode, CallStartPreflightDecision
+///
+/// **Depends on:** package:rain/application/runtime/runtime_interaction_guard.dart, package:rain/application/runtime/voice_call_state.dart, package:rain_core/rain_core.dart
 import 'package:flutter_test/flutter_test.dart';
 import 'package:rain/application/runtime/runtime_interaction_guard.dart';
 import 'package:rain/application/runtime/voice_call_state.dart';

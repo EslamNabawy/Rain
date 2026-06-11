@@ -1,3 +1,12 @@
+/// # protocol_error_classifier.dart — protocol_brain package
+///
+/// Stateless utility that classifies protocol-level errors into user-facing messages. Strips Dart exception prefixes and produces specialized messages for signaling encryption failures and connection setup errors.
+///
+/// **Key types:** ProtocolErrorClassifier
+///
+/// **Package:** protocol_brain
+///
+/// **Depends on:** peer_core, signaling_cipher (SignalingEncryptionException), session_manager (Session, SessionState, SessionPhase, PeerConnectionRoute)
 import 'package:peer_core/peer_core.dart';
 
 import '../adapters/signaling_cipher.dart';

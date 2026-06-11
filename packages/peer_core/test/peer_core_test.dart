@@ -1,3 +1,11 @@
+/// # peer_core_test.dart
+///
+/// Unit tests for PeerCore including state machine transitions, PeerConfig ICE server handling, data channel operations, message chunking/reassembly, and TURN readiness checks.
+///
+/// **Key types:** _FakePlatformBridge, _FakePeerCore (test fakes)
+///
+/// **Depends on:** flutter_test, flutter_webrtc, peer_core
+
 import 'dart:async';
 import 'dart:convert';
 import 'dart:typed_data';

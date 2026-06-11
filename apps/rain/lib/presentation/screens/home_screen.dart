@@ -1,3 +1,12 @@
+/// # home_screen
+///
+/// Main home screen of Rain with chat panel, friends list, call controls,
+/// sound event dispatch, and connection diagnostics. Orchestrates voice call
+/// lifecycle sounds, chat message sounds, and connection request notifications.
+///
+/// **Key types:** HomeScreen (with parts: shell_header, link_status, friends_list, chat_panel, file_transfer_bubble)
+///
+/// **Depends on:** app_providers, call widgets, chat widgets, sound events
 import 'dart:async';
 import 'dart:io';
 

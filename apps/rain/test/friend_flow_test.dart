@@ -1,3 +1,11 @@
+/// # friend_flow_test
+///
+/// Tests end-to-end friend lifecycle operations including sending requests, accepting, rejecting, presence sync, heartbeat failures, and app lifecycle handling.
+///
+/// **Key types:** RainRuntimeController, FriendStore, NoopSignalingAdapter, FailingHeartbeatNoopSignalingAdapter.
+///
+/// **Depends on:** Friend store, signaling adapter, message delivery, and app lifecycle events.
+
 import 'dart:async';
 import 'dart:io';
 import 'dart:typed_data';
@@ -8842,6 +8850,9 @@ class _TestVoiceMediaConnection implements VoiceMediaConnection {
   Future<void> setMuted({required bool muted}) async {
     owner.mutedPeers[peerId] = muted;
   }
+
+  @override
+  Future<void> setCameraMuted({required bool muted}) async {}
 
   @override
   Future<void> setDeafened({required bool deafened}) async {

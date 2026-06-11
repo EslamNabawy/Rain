@@ -1,3 +1,11 @@
+/// # connection_diagnostics_test
+///
+/// Tests connection diagnostics computation including route detection, manual disconnect handling, call status priority, and presence freshness.
+///
+/// **Key types:** ConnectionDiagnostics, PeerConnectionView, PeerConnectivitySnapshot, VoiceCallState.
+///
+/// **Depends on:** Session state, peer connectivity snapshots, and voice call state.
+
 import 'package:flutter_test/flutter_test.dart';
 import 'package:protocol_brain/protocol_brain.dart';
 import 'package:rain/application/runtime/voice_call_state.dart';

@@ -1,3 +1,10 @@
+/// # voice_call_room_coordinator_test.dart
+///
+/// Tests VoiceCallRoomCoordinator which records room signaling status transitions, returns previous status on subsequent transitions, and resolves terminal room detail messages for ended calls.
+///
+/// **Key types:** VoiceCallRoomCoordinator, VoiceCallSignalingStatus, VoiceCallRoom
+///
+/// **Depends on:** package:rain/application/runtime/voice_call/voice_call_room_coordinator.dart, package:protocol_brain/protocol_brain.dart
 import 'package:flutter_test/flutter_test.dart';
 import 'package:protocol_brain/protocol_brain.dart';
 

@@ -1,3 +1,14 @@
+/// # call_error_classifier.dart
+///
+/// [CallErrorClassifier] provides pure-function error classification for voice
+/// and video call failures. Maps raw error objects and normalized text to
+/// typed reason codes (busy, rejected, networkLost, signalingFailed, etc.) and
+/// user-facing messages, plus [CallSignalingFailureSnapshot] for retry policy.
+///
+/// **Key types:** [CallErrorClassifier], [CallSignalingFailureSnapshot]
+///
+/// **Depends on:** protocol_brain, call retry policy, voice call state
+
 import 'package:protocol_brain/protocol_brain.dart';
 
 import 'call_retry_policy.dart';

@@ -1,3 +1,14 @@
+/// # crash_diagnostics_service.dart
+///
+/// [CrashDiagnosticsService] captures and persists crash reports, zone errors,
+/// and Flutter frame timing data. Writes sanitized diagnostics to local files
+/// with configurable retention, and supports exporting crash logs via the
+/// system save dialog.
+///
+/// **Key types:** [CrashDiagnosticsService], [CrashDiagnosticsAppInfo]
+///
+/// **Depends on:** diagnostics sanitizer, path_provider, package_info_plus
+
 import 'dart:async';
 import 'dart:collection';
 import 'dart:convert';

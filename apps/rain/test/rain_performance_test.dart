@@ -1,3 +1,11 @@
+/// # rain_performance_test.dart
+///
+/// Tests for RainPerformanceProfile device capability detection. Validates tier selection based on ARM ABI, low power surface flags, animation restrictions, and explicit tier overrides.
+///
+/// **Key types:** RainPerformanceProfile, RainPerformanceTier
+///
+/// **Depends on:** flutter_test, rain rain_performance
+
 import 'package:flutter_test/flutter_test.dart';
 import 'package:rain/presentation/performance/rain_performance.dart';
 

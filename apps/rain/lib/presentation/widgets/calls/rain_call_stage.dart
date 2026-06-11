@@ -1,3 +1,12 @@
+/// # rain_call_stage.dart
+///
+/// Call stage that renders the primary video surface, local preview, voice-only
+/// fallback, and audio activity visualization during voice/video calls.
+///
+/// **Key types:** RainCallStage, RainCallStageLayout
+///
+/// **Depends on:** application/runtime, application/state, presentation/performance, presentation/branding
+
 import 'dart:math' as math;
 
 import 'package:flutter/material.dart';

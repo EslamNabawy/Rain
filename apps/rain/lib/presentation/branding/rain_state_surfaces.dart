@@ -1,3 +1,12 @@
+/// # rain_state_surfaces
+///
+/// Reusable state display widgets for empty, error, and loading states.
+/// Includes RainMistStateCard for centered message cards with severity levels
+/// and RainStreakSkeleton for placeholder loading animations.
+///
+/// **Key types:** RainMistStateCard, RainStreakSkeleton, RainStateSeverity
+///
+/// **Depends on:** RainTheme, RainColors
 import 'package:flutter/material.dart';
 
 import '../theme/rain_theme.dart';

@@ -1,3 +1,14 @@
+/// # runtime_providers.dart
+///
+/// Riverpod providers that depend on the authenticated session and runtime
+/// controller: account deletion progress, runtime instance, voice call state,
+/// connection request state, file transfer state, peer connectivity, and
+/// derived UI models. Wires the runtime to the presentation layer.
+///
+/// **Key types:** [AccountDeletionProgressController]
+///
+/// **Depends on:** rain_runtime_controller, core providers, identity providers
+
 import 'dart:async';
 
 import 'package:flutter/foundation.dart';

@@ -1,3 +1,12 @@
+/// # app_exit_coordinator_test.dart
+///
+/// Tests for AppExitCoordinator verifying shutdown handlers are called once,
+/// unregistered handlers are skipped, and concurrent shutdowns are safe.
+///
+/// **Key types:** (test file)
+///
+/// **Depends on:** flutter_test, application/runtime
+
 import 'dart:async';
 
 import 'package:flutter_test/flutter_test.dart';

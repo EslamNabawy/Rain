@@ -1,3 +1,10 @@
+/// # runtime_startup_test.dart
+///
+/// Tests the app startup and authentication boundary, covering bootstrap failures, expired sessions, auth adapter errors, account deletion flows, and presence adapter lifecycle during startup.
+///
+/// **Key types:** _FailingBootstrapper, _FailingAuthAdapter, _ExpiredSessionAdapter, _RecordingPresenceAdapter, _FailingSignOutAdapter, _FailingReauthAccountDeletionAdapter, _AuthBoundarySessionManager, _SignedInIdentityController
+///
+/// **Depends on:** package:rain/application/bootstrap/app_bootstrap.dart, package:rain/application/state/app_startup_state.dart, package:rain/main.dart, package:rain_core/rain_core.dart
 import 'dart:async';
 import 'dart:io';
 

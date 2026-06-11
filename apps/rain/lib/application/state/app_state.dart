@@ -1,3 +1,14 @@
+/// # app_state.dart
+///
+/// Core application state models: [ManualConnectionIntent],
+/// [PeerConnectionView] (per-peer session and UI intent),
+/// [ConnectionsState] (map of all peer connections), and [UserSearchState]
+/// (query, results, sending-to tracking). Uses Freezed for immutable data.
+///
+/// **Key types:** [ManualConnectionIntent], [PeerConnectionView], [ConnectionsState], [UserSearchState]
+///
+/// **Depends on:** protocol_brain, rain_core
+
 import 'package:freezed_annotation/freezed_annotation.dart';
 import 'package:protocol_brain/protocol_brain.dart';
 

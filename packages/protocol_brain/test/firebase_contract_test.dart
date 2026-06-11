@@ -1,3 +1,13 @@
+/// # firebase_contract_test.dart — protocol_brain package
+///
+/// Comprehensive Firebase contract tests covering password hash safety, friend request identity binding, and database rule correctness.
+///
+/// **Key types:** (no top-level types — test-only file)
+///
+/// **Package:** protocol_brain
+///
+/// **Depends on:** flutter_test, dart:io
+///
 import 'dart:io';
 
 import 'package:flutter_test/flutter_test.dart';

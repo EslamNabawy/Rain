@@ -1,3 +1,13 @@
+/// # received_file_export_service.dart
+///
+/// [ReceivedFileExportService] handles saving received file-transfer data to
+/// user-chosen locations. Uses FilePicker on desktop and a MethodChannel on
+/// Android. Returns [ReceivedFileExportResult] indicating success or cancel.
+///
+/// **Key types:** [ReceivedFileExportService], [ReceivedFileExportResult]
+///
+/// **Depends on:** file_picker, rain_core
+
 import 'dart:async';
 import 'dart:io';
 

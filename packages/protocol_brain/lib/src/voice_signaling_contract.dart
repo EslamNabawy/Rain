@@ -1,3 +1,12 @@
+/// # voice_signaling_contract.dart — protocol_brain package
+///
+/// Comprehensive contract for voice call signaling operations including call creation, acceptance, ICE exchange, hangup, mute, busy, timeout, and room management. Defines the VoiceSignalingAdapter interface and all associated data types for Firebase RTDB-based call signaling.
+///
+/// **Key types:** VoiceCallRole (enum), VoiceCallSignalingStatus (enum), VoiceSignalingAdapter (interface), VoiceCallRoom, VoiceCallInboxEntry, VoiceActivePairLock, VoiceActiveUserLock, VoiceCallActiveCallSnapshot, VoiceCallSessionMeta, VoiceCallSignalingState, VoiceCallRejectionReasonCode, VoiceCallAudioTimeoutPolicy, VoiceCallBusyConfig, ActiveCallAction
+///
+/// **Package:** protocol_brain
+///
+/// **Depends on:** voice_call_clock, voice_call_cleanup_janitor, voice_call_frame
 import 'voice_call_clock.dart';
 import 'voice_call_cleanup_janitor.dart';
 import 'voice_call_frame.dart';

@@ -1,3 +1,13 @@
+/// # connection_request_rtdb_rules_contract_test.dart — protocol_brain package
+///
+/// Contract tests verifying Spark-safe RTDB rules for connection requests including owner checks, friendship validation, and payload constraints.
+///
+/// **Key types:** (no top-level types — test-only file)
+///
+/// **Package:** protocol_brain
+///
+/// **Depends on:** flutter_test, dart:convert, dart:io
+///
 import 'dart:convert';
 import 'dart:io';
 

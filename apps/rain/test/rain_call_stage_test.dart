@@ -1,3 +1,11 @@
+/// # rain_call_stage_test.dart
+///
+/// Widget tests for the call stage that renders video layouts. Covers remote/local video primary roles, preview swapping, missing remote video waiting state, and placeholder rendering.
+///
+/// **Key types:** rainRemotePrimaryVideoKey, rainLocalPreviewVideoKey, _VideoStageHarness
+///
+/// **Depends on:** flutter_test, rain voice_call_state, rain_call_stage, rain_call_surface_providers
+
 import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:rain/application/runtime/voice_audio_level.dart';

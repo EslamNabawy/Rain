@@ -1,3 +1,11 @@
+/// # auth_identity_source_of_truth_test
+///
+/// Tests the identity source-of-truth logic that synchronizes local cached identity with backend Firebase identity.
+///
+/// **Key types:** _AuthValidationAdapter, BackendIdentity, RainIdentity.
+///
+/// **Depends on:** Firebase auth, RainDatabase identity storage, and signaling adapter layer.
+
 import 'package:drift/native.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_test/flutter_test.dart';

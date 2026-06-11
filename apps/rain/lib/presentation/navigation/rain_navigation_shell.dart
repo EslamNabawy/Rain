@@ -1,3 +1,12 @@
+/// # rain_navigation_shell
+///
+/// Adaptive navigation shell that switches between bottom navigation bar and
+/// navigation rail based on screen width. Wraps page content with the Rain
+/// backdrop and displays network status strips when connectivity issues occur.
+///
+/// **Key types:** RainNavigationShell, _BottomNavigation, _RailLayout, _NetworkStatusStrip
+///
+/// **Depends on:** RainBackdrop, app routes
 import 'package:flutter/material.dart';
 import 'package:go_router/go_router.dart';
 

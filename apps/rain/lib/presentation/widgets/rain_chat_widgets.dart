@@ -1,3 +1,15 @@
+/// # rain_chat_widgets.dart
+///
+/// Shared chat and call UI widgets used across the Rain app, including message
+/// bubbles, avatars, status chips, and voice/video call control surfaces.
+///
+/// **Key types:** RainAvatar, RainMiniStatusChip, RainLiveLinkBar,
+/// RainMessageDayDivider, RainMessageBubble, RainComposerCommandStrip,
+/// RainVoiceCallButton, RainVideoCallButton, RainVideoCallStage,
+/// RainCallPanel, RainVoiceCallPanel, RainMicrophoneSelector, RainCameraSelector
+///
+/// **Depends on:** application/runtime, application/state, presentation/theme, presentation/branding
+
 import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_svg/flutter_svg.dart';

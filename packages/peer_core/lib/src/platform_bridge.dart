@@ -1,3 +1,11 @@
+/// # platform_bridge.dart
+///
+/// Abstract platform bridge and its Flutter WebRTC implementation, isolating all flutter_webrtc calls behind testable interfaces. Also defines StorageBackend and a WebRTC MediaDeviceInfo extension for device classification.
+///
+/// **Key types:** PlatformBridge, FlutterWebRTCBridge, StorageBackend, MemoryStorageBackend, WebRtcMediaDeviceInfoX
+///
+/// **Depends on:** flutter_webrtc
+
 import 'package:flutter_webrtc/flutter_webrtc.dart' as webrtc;
 
 const String webRtcAudioInputDeviceKind = 'audioinput';

@@ -1,3 +1,14 @@
+/// # sound_effects_service.dart
+///
+/// [SoundEffectsService] manages audio playback for Rain's UI sound effects
+/// (send, receive, call lifecycle, mute/deafen) via the audioplayers package.
+/// Supports per-sound enable/disable, volume control, and audio context
+/// configuration for mixing with call audio.
+///
+/// **Key types:** [SoundEffectsService], [RainSoundEffect], [RainSoundPlayerFactory], [RainSoundSettingsLoader]
+///
+/// **Depends on:** audioplayers, app settings store
+
 import 'dart:async';
 
 import 'package:audioplayers/audioplayers.dart';

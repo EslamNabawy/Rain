@@ -1,3 +1,13 @@
+/// # identity.dart — rain_core package
+///
+/// Defines the user identity model with username validation, display name, gender, and a Drift-backed repository for loading and saving the local user identity.
+///
+/// **Key types:** RainGender, RainIdentity, IdentityRepository
+///
+/// **Package:** rain_core
+///
+/// **Depends on:** drift/drift.dart, rain_database.dart
+///
 import 'package:drift/drift.dart';
 
 import '../database/rain_database.dart';

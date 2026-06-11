@@ -1,3 +1,14 @@
+/// # rain_call_suite_models.dart
+///
+/// Data models for the call suite layer describing surface modes, stage kinds,
+/// control actions, dock density, and the full presentation state.
+///
+/// **Key types:** CallSuiteSurfaceMode, CallSuiteStageKind, CallSuiteControlAction,
+/// CallSuiteDockDensity, CallSuiteStageModel, CallSuiteControlModel,
+/// CallSuiteLayoutSpec, CallSuitePresentationState
+///
+/// **Depends on:** application/runtime, application/state, presentation/widgets/calls
+
 import 'package:flutter/material.dart';
 
 import 'package:rain/application/runtime/voice_call_state.dart';

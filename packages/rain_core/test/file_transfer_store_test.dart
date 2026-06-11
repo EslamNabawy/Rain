@@ -1,3 +1,13 @@
+/// # file_transfer_store_test.dart — rain_core package
+///
+/// Tests for FileTransferStore covering record upsert, state transitions, progress tracking, active transfer queries, and terminal state detection.
+///
+/// **Key types:** None (test file)
+///
+/// **Package:** rain_core
+///
+/// **Depends on:** drift/native.dart, flutter_test, rain_core
+///
 import 'package:drift/native.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:rain_core/rain_core.dart';

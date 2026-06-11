@@ -1,3 +1,13 @@
+/// # rain_core_test.dart — rain_core package
+///
+/// Core package tests covering username validation, display time skew handling, identity repository gender persistence, and friend store gender handling.
+///
+/// **Key types:** None (test file)
+///
+/// **Package:** rain_core
+///
+/// **Depends on:** flutter_test, drift/native.dart, rain_core
+///
 import 'package:flutter_test/flutter_test.dart';
 import 'package:drift/native.dart';
 import 'package:rain_core/rain_core.dart';

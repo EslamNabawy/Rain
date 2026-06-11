@@ -1,3 +1,11 @@
+/// # rain_theme_test.dart
+///
+/// Tests for Rain theme system including texture tokens, motion durations, and backdrop gradients. Validates light/dark theme separation, signal color tokens, and splash texture variants.
+///
+/// **Key types:** RainTextureTokens, RainMotion, RainColors, RainBackdrop, RainBackdropVariant
+///
+/// **Depends on:** flutter_test, rain rain_theme, rain_backdrop
+
 import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:rain/presentation/theme/rain_theme.dart';

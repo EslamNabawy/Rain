@@ -1,3 +1,12 @@
+/// # app_settings_store_test.dart
+///
+/// Tests for AppSettingsStore covering background service defaults, microphone
+/// and video input device persistence, and settings reset behavior.
+///
+/// **Key types:** (test file)
+///
+/// **Depends on:** flutter_test, infrastructure/services
+
 import 'package:flutter_test/flutter_test.dart';
 import 'package:rain/infrastructure/services/app_settings_store.dart';
 import 'package:shared_preferences_platform_interface/in_memory_shared_preferences_async.dart';

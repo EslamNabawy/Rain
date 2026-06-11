@@ -1,3 +1,12 @@
+/// # ice_candidate_batcher.dart — protocol_brain package
+///
+/// Generic batcher that collects ICE candidates and flushes them when either a maximum batch size or a time window is reached. Prevents overwhelming the signaling channel during ICE gathering by coalescing candidates.
+///
+/// **Key types:** IceCandidateBatcher<T>, IceCandidateBatchFlush<T>, IceCandidateBatchErrorHandler
+///
+/// **Package:** protocol_brain
+///
+/// **Depends on:** dart:async
 import 'dart:async';
 
 typedef IceCandidateBatchFlush<T> = Future<void> Function(List<T> candidates);

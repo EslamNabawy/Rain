@@ -1,3 +1,11 @@
+/// # connection_attempt_coordinator_test
+///
+/// Tests connection attempt coordination including network recovery debounce, retry backoff, passive listener selection, and offer tracking.
+///
+/// **Key types:** ConnectionAttemptCoordinator, FriendRecord, IncomingOfferRejection.
+///
+/// **Depends on:** Peer connection lifecycle, friend store, and network recovery scheduling.
+
 import 'package:flutter_test/flutter_test.dart';
 import 'package:protocol_brain/protocol_brain.dart';
 import 'package:rain/application/runtime/connection_attempt_coordinator.dart';

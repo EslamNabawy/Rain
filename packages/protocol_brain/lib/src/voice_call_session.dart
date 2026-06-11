@@ -1,3 +1,12 @@
+/// # voice_call_session.dart — protocol_brain package
+///
+/// High-level voice call session state machine managing the full call lifecycle from preflight through active, ending, and failed phases. Tracks media configuration, audio levels, mute state, timeouts, diagnostics, and generates signaling frames.
+///
+/// **Key types:** VoiceCallSessionPhase (enum), VoiceCallSessionTimeouts, VoiceCallSessionState, VoiceCallSession
+///
+/// **Package:** protocol_brain
+///
+/// **Depends on:** dart:async, peer_core, voice_call_frame
 import 'dart:async';
 
 import 'package:peer_core/peer_core.dart';
@@ -302,6 +311,7 @@ final class VoiceCallSession {
         _logInvalidEvent('camera mute in ${state.phase.name}');
         return;
       }
+      await media.setCameraMuted(muted: muted);
       await _send(
         VoiceCallFrameType.mute,
         cameraMuted: muted,

@@ -1,3 +1,13 @@
+/// # connection_request_firebase_contract_test.dart — protocol_brain package
+///
+/// Validates Firebase security rules for connection request inbox/outbox access, write permissions, and quota enforcement.
+///
+/// **Key types:** (no top-level types — test-only file)
+///
+/// **Package:** protocol_brain
+///
+/// **Depends on:** flutter_test, dart:convert, dart:io
+///
 import 'dart:convert';
 import 'dart:io';
 

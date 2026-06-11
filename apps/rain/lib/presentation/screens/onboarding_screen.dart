@@ -1,3 +1,12 @@
+/// # onboarding_screen
+///
+/// Authentication screen for user registration and login. Handles username,
+/// password, display name, and gender input with validation, autofill support,
+/// keyboard-aware scrolling, and animated brand header.
+///
+/// **Key types:** OnboardingScreen, _OnboardingScreenState, _AuthMode
+///
+/// **Depends on:** app_providers, app_components, RainTheme
 import 'dart:async';
 
 import 'package:flutter/material.dart';

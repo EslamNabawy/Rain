@@ -1,3 +1,14 @@
+/// # app_exit_coordinator.dart
+///
+/// [AppExitCoordinator] manages ordered shutdown handlers for Rain's window
+/// close / lifecycle detach / logout flows. Critical handlers (e.g. signaling
+/// teardown) run synchronously and block close; best-effort handlers run in
+/// the background after the window is destroyed.
+///
+/// **Key types:** [AppExitCoordinator], [AppExitReason], [AppExitPriority], [AppExitRegistration]
+///
+/// **Depends on:** application runtime lifecycle
+
 import 'dart:async';
 
 enum AppExitReason { windowClose, lifecycleDetached, providerDispose, logout }

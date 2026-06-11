@@ -1,3 +1,14 @@
+/// # file_transfer_view.dart
+///
+/// [FileTransferView] wraps a [FileTransferRecord] with computed transfer
+/// speed and ETA. [FileTransferSpeedTracker] maintains a rolling window of
+/// byte-progress samples to produce smoothed speed estimates and
+/// display-throttled updates.
+///
+/// **Key types:** [FileTransferView], [FileTransferSpeedTracker]
+///
+/// **Depends on:** rain_core (FileTransferRecord)
+
 import 'package:rain_core/rain_core.dart';
 
 class FileTransferView {

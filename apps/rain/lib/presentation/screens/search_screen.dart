@@ -1,3 +1,12 @@
+/// # search_screen
+///
+/// User search screen for finding and adding friends by handle. Features
+/// debounced search, recent search history, online status indicators, and
+/// friend request sending with loading states.
+///
+/// **Key types:** SearchScreen, _SearchHint, _SearchLoading, _SearchError, _SearchResults
+///
+/// **Depends on:** userSearchProvider, app_components, rain_state_surfaces
 import 'dart:async';
 
 import 'package:flutter/material.dart';

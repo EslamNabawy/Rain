@@ -1,3 +1,13 @@
+/// # live_smoke_peer_core.dart — protocol_brain package
+///
+/// Live smoke-test PeerCore implementation that simulates WebRTC peer connections with configurable delays for integration testing.
+///
+/// **Key types:** _LiveSmokePeerCore, createLiveSmokePeerCore
+///
+/// **Package:** protocol_brain
+///
+/// **Depends on:** flutter_webrtc, peer_core
+///
 import 'dart:async';
 
 import 'package:flutter_webrtc/flutter_webrtc.dart';

@@ -1,3 +1,14 @@
+/// # runtime_interaction_guard.dart
+///
+/// [RuntimeInteractionGuard] provides pre-action validation for user-initiated
+/// operations (start call, accept call, send file, disconnect). Returns
+/// [RuntimeInteractionDecision] with allow/deny status and typed reason codes
+/// such as activeCall, activeFileTransfer, peerBusy, peerOffline.
+///
+/// **Key types:** [RuntimeInteractionGuard], [RuntimeInteractionDecision], [RuntimeInteractionReasonCode]
+///
+/// **Depends on:** rain_core, call start preflight, voice call state
+
 import 'package:rain_core/rain_core.dart';
 
 import 'call_start_preflight.dart';

@@ -1,3 +1,11 @@
+/// # call_surface_providers_test
+///
+/// Tests the call surface state management including fullscreen, PiP, and manager-only display modes for voice and video calls.
+///
+/// **Key types:** _CallSurfaceHarness, _TestVoiceCallController, _SelectedChatController, CallSurfaceState.
+///
+/// **Depends on:** Voice call state, call surface providers, and Riverpod state management.
+
 import 'package:flutter/widgets.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_test/flutter_test.dart';

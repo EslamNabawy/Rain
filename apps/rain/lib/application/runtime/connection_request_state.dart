@@ -1,3 +1,13 @@
+/// # connection_request_state.dart
+///
+/// [ConnectionRequestState] holds the current snapshot of incoming and outgoing
+/// connection requests, their UI surface models, quota information, and the
+/// last user-visible message. Supports queries for pending requests by ID.
+///
+/// **Key types:** [ConnectionRequestState], [ConnectionRequestUserMessage]
+///
+/// **Depends on:** protocol_brain (ConnectionRequestPayload, ConnectionRequestSurfaceModel)
+
 import 'package:protocol_brain/protocol_brain.dart';
 
 final class ConnectionRequestUserMessage {

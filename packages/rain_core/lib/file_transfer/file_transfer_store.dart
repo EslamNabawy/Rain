@@ -1,3 +1,13 @@
+/// # file_transfer_store.dart — rain_core package
+///
+/// Drift-backed persistence layer for file transfer records with state management, progress tracking, peer-scoped queries, and atomic state transitions including conditional state updates.
+///
+/// **Key types:** FileTransferState, FileTransferDirection, FileTransferRecord, FileTransferStore
+///
+/// **Package:** rain_core
+///
+/// **Depends on:** drift/drift.dart, rain_database.dart
+///
 import 'package:drift/drift.dart';
 
 import '../database/rain_database.dart';

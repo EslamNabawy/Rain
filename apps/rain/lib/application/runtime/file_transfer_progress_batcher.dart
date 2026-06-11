@@ -1,3 +1,13 @@
+/// # file_transfer_progress_batcher.dart
+///
+/// [FileTransferProgressBatcher] coalesces rapid file-transfer progress updates
+/// into throttled writes. Flushes when a minimum byte delta or time interval is
+/// exceeded, reducing UI churn and database write pressure during large transfers.
+///
+/// **Key types:** [FileTransferProgressBatcher]
+///
+/// **Depends on:** file transfer runtime
+
 class FileTransferProgressBatcher {
   FileTransferProgressBatcher({
     required this.markProgress,

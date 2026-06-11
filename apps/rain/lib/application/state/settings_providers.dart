@@ -1,3 +1,14 @@
+/// # settings_providers.dart
+///
+/// Riverpod providers for app settings: [ThemeModeController] (dark/light/system),
+/// [RecentSearchesController], call processing settings (clear voice, video
+/// optimization), audio settings (sound effects, call sounds, output route),
+/// and device enumeration providers.
+///
+/// **Key types:** [ThemeModeController], [RecentSearchesController], [AppThemeMode]
+///
+/// **Depends on:** app settings store, core providers
+
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:protocol_brain/protocol_brain.dart';

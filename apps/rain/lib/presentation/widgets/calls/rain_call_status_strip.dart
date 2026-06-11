@@ -1,3 +1,12 @@
+/// # rain_call_status_strip.dart
+///
+/// Compact status strip displaying peer name, call status, duration, and
+/// connection quality during an active call.
+///
+/// **Key types:** RainCallStatusStrip
+///
+/// **Depends on:** flutter/material
+
 import 'package:flutter/material.dart';
 
 class RainCallStatusStrip extends StatelessWidget {
