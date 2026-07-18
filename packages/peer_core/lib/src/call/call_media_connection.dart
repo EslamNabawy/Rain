@@ -105,6 +105,11 @@ class DefaultCallMediaConnection implements CallMediaConnection {
   MediaStreamTrack? _localVideoTrack;
   Future<void>? _localMediaStartFuture;
   Future<void>? _mediaOperation;
+  // F-008: serializes trickle-ICE candidate application against in-flight
+  // negotiation so a candidate arriving mid-offer/answer cannot corrupt SDP.
+  // Unlike _runMediaOperation, this never drops or rejects a candidate; it
+  // chains behind the running negotiation and applies the candidate after.
+  Future<void>? _candidateLock;
   int _localCandidateCount = 0;
   int _remoteCandidateCount = 0;
   int _connectionEpoch = 0;
@@ -410,8 +415,23 @@ class DefaultCallMediaConnection implements CallMediaConnection {
     }
     final connection = await _ensurePeerConnection();
     final epoch = _connectionEpoch;
-    await connection.addCandidate(candidate.toRtc());
-    _ensureCurrentPeerConnection(connection, epoch, 'adding remote candidate');
+    // F-008: apply the candidate strictly after any in-flight negotiation.
+    // Chain onto _candidateLock so concurrent candidates and a running
+    // offer/answer never interleave on the peer connection.
+    final previous = _candidateLock ?? Future<void>.value();
+    final completer = Completer<void>();
+    _candidateLock = previous.whenComplete(() => completer.future);
+    try {
+      await connection.addCandidate(candidate.toRtc());
+      _ensureCurrentPeerConnection(
+        connection,
+        epoch,
+        'adding remote candidate',
+      );
+    } finally {
+      _candidateLock = null;
+      completer.complete();
+    }
   }
 
   @override

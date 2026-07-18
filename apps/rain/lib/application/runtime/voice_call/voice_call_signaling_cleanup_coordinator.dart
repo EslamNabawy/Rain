@@ -1567,6 +1567,7 @@ final class VoiceCallSignalingCleanupCoordinator {
     required void Function(StreamSubscription<VoiceCallSessionState>?)
     setSessionSubscription,
     required VoiceCallSignalingBoundedCleanup runBoundedCleanupStep,
+    required Future<void> Function() disposeVideoCallResources,
     required Future<void> Function(VoiceCallSession session)
     disposeVoiceCallSession,
   }) async {
@@ -1583,6 +1584,15 @@ final class VoiceCallSignalingCleanupCoordinator {
           subscription.cancel,
         );
       }
+      // A session may have been partially constructed (video renderers /
+      // media connection allocated) before assignment failed. Dispose those
+      // runtime-owned video resources even when no session object exists,
+      // otherwise native renderers and their subscription leak.
+      // See F-009: video resources leaked on session-construction error path.
+      await runBoundedCleanupStep(
+        'voice_call_video_resources_dispose',
+        disposeVideoCallResources,
+      );
       return;
     }
     await disposeVoiceCallSession(session);
