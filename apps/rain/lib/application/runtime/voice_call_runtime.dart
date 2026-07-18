@@ -1838,6 +1838,7 @@ extension VoiceCallRuntime on RainRuntimeController {
             voiceCallSessionSubscription = subscription;
           },
           runBoundedCleanupStep: _runBoundedVoiceCleanupStep,
+          disposeVideoCallResources: _disposeVideoCallResources,
           disposeVoiceCallSession: _disposeVoiceCallSession,
         );
   }
@@ -2707,6 +2708,27 @@ extension VoiceCallRuntime on RainRuntimeController {
     String? detail,
   }) async {
     final current = voiceCallState;
+    // Terminal-phase guard (F-006): once the call has settled into a terminal
+    // phase, do not let a racing signaling error churn the UI or trigger a
+    // second teardown. Two cases:
+    //  - If the call is `ended`, never regress to `failed` (prevents the
+    //    `ended` -> `failed` churn and the double-dispose that follows when
+    //    two paths dispose the same session).
+    //  - If the call is already `failed`, only a *more specific* failure
+    //    reason may overwrite the terminal record (e.g. a generic
+    //    `signalingFailed` racing a precise `peerBusy`). A same-or-less
+    //    specific failure must not re-run teardown.
+    if (current.phase == VoiceCallPhase.ended) {
+      return;
+    }
+    if (current.phase == VoiceCallPhase.failed) {
+      final incoming = failureReason ?? _voiceCallFailureReasonForError(error);
+      if (incoming == null ||
+          incoming == VoiceCallFailureReason.signalingFailed &&
+              current.failureReason != null) {
+        return;
+      }
+    }
     final effectiveFailureReason =
         failureReason ?? _voiceCallFailureReasonForError(error);
     final effectiveDetail =
