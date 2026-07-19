@@ -6,9 +6,10 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import 'application/bootstrap/app_bootstrap.dart';
 import 'core/config/app_environment.dart';
-import 'application/state/app_providers.dart';
+import 'application/state/core_providers.dart';
 import 'infrastructure/services/crash_diagnostics_service.dart';
 import 'infrastructure/services/rain_debug_log_service.dart';
+import 'package:rain_core/rain_core.dart';
 import 'infrastructure/window/desktop_shell_controller.dart';
 import 'presentation/performance/rain_performance.dart';
 import 'presentation/screens/rain_app.dart';
@@ -35,6 +36,7 @@ Future<void> main() async {
         diagnostics: diagnostics!,
         enabled: kDebugMode || environment.updateChannel == 'demo',
       );
+      RainDebugLog.service = debugLog;
       await DesktopShellController().initializeBeforeRunApp();
       await runRainApp(
         environment: environment,
@@ -95,6 +97,7 @@ class RainStartupApp extends StatefulWidget {
     required this.performanceProfile,
     this.crashDiagnosticsService,
     this.debugLogService,
+    this.keyStoreService,
     super.key,
   });
 
@@ -103,6 +106,7 @@ class RainStartupApp extends StatefulWidget {
   final RainPerformanceProfile performanceProfile;
   final CrashDiagnosticsService? crashDiagnosticsService;
   final RainDebugLogService? debugLogService;
+  final KeyStoreService? keyStoreService;
 
   @override
   State<RainStartupApp> createState() => _RainStartupAppState();
@@ -156,6 +160,10 @@ class _RainStartupAppState extends State<RainStartupApp> {
                 rainDebugLogServiceProvider.overrideWithValue(
                   widget.debugLogService!,
                 ),
+              if (widget.keyStoreService != null)
+                keyStoreServiceProvider.overrideWithValue(
+                  widget.keyStoreService!,
+                ),
             ],
             child: const RainApp(),
           );
@@ -175,7 +183,13 @@ class _RainStartupAppState extends State<RainStartupApp> {
       source: 'bootstrap',
       fatal: true,
     );
-    debugPrint('Rain bootstrap failed: $error');
+    RainDebugLog.error(
+      error,
+      stackTrace,
+      source: 'bootstrap',
+      fatal: true,
+      context: <String, Object?>{'message': 'Rain bootstrap failed'},
+    );
     if (stackTrace != null) {
       debugPrintStack(stackTrace: stackTrace);
     }

@@ -2673,6 +2673,17 @@ class $IdentityTableTable extends IdentityTable
     type: DriftSqlType.string,
     requiredDuringInsert: false,
   );
+  static const VerificationMeta _signingPublicKeyMeta = const VerificationMeta(
+    'signingPublicKey',
+  );
+  @override
+  late final GeneratedColumn<String> signingPublicKey = GeneratedColumn<String>(
+    'signing_public_key',
+    aliasedName,
+    true,
+    type: DriftSqlType.string,
+    requiredDuringInsert: false,
+  );
   @override
   List<GeneratedColumn> get $columns => [
     id,
@@ -2680,6 +2691,7 @@ class $IdentityTableTable extends IdentityTable
     displayName,
     createdAt,
     gender,
+    signingPublicKey,
   ];
   @override
   String get aliasedName => _alias ?? actualTableName;
@@ -2729,6 +2741,15 @@ class $IdentityTableTable extends IdentityTable
         gender.isAcceptableOrUnknown(data['gender']!, _genderMeta),
       );
     }
+    if (data.containsKey('signing_public_key')) {
+      context.handle(
+        _signingPublicKeyMeta,
+        signingPublicKey.isAcceptableOrUnknown(
+          data['signing_public_key']!,
+          _signingPublicKeyMeta,
+        ),
+      );
+    }
     return context;
   }
 
@@ -2758,6 +2779,10 @@ class $IdentityTableTable extends IdentityTable
         DriftSqlType.string,
         data['${effectivePrefix}gender'],
       ),
+      signingPublicKey: attachedDatabase.typeMapping.read(
+        DriftSqlType.string,
+        data['${effectivePrefix}signing_public_key'],
+      ),
     );
   }
 
@@ -2774,12 +2799,14 @@ class IdentityTableData extends DataClass
   final String displayName;
   final int createdAt;
   final String? gender;
+  final String? signingPublicKey;
   const IdentityTableData({
     required this.id,
     required this.username,
     required this.displayName,
     required this.createdAt,
     this.gender,
+    this.signingPublicKey,
   });
   @override
   Map<String, Expression> toColumns(bool nullToAbsent) {
@@ -2790,6 +2817,9 @@ class IdentityTableData extends DataClass
     map['created_at'] = Variable<int>(createdAt);
     if (!nullToAbsent || gender != null) {
       map['gender'] = Variable<String>(gender);
+    }
+    if (!nullToAbsent || signingPublicKey != null) {
+      map['signing_public_key'] = Variable<String>(signingPublicKey);
     }
     return map;
   }
@@ -2803,6 +2833,9 @@ class IdentityTableData extends DataClass
       gender: gender == null && nullToAbsent
           ? const Value.absent()
           : Value(gender),
+      signingPublicKey: signingPublicKey == null && nullToAbsent
+          ? const Value.absent()
+          : Value(signingPublicKey),
     );
   }
 
@@ -2817,6 +2850,7 @@ class IdentityTableData extends DataClass
       displayName: serializer.fromJson<String>(json['displayName']),
       createdAt: serializer.fromJson<int>(json['createdAt']),
       gender: serializer.fromJson<String?>(json['gender']),
+      signingPublicKey: serializer.fromJson<String?>(json['signingPublicKey']),
     );
   }
   @override
@@ -2828,6 +2862,7 @@ class IdentityTableData extends DataClass
       'displayName': serializer.toJson<String>(displayName),
       'createdAt': serializer.toJson<int>(createdAt),
       'gender': serializer.toJson<String?>(gender),
+      'signingPublicKey': serializer.toJson<String?>(signingPublicKey),
     };
   }
 
@@ -2837,12 +2872,16 @@ class IdentityTableData extends DataClass
     String? displayName,
     int? createdAt,
     Value<String?> gender = const Value.absent(),
+    Value<String?> signingPublicKey = const Value.absent(),
   }) => IdentityTableData(
     id: id ?? this.id,
     username: username ?? this.username,
     displayName: displayName ?? this.displayName,
     createdAt: createdAt ?? this.createdAt,
     gender: gender.present ? gender.value : this.gender,
+    signingPublicKey: signingPublicKey.present
+        ? signingPublicKey.value
+        : this.signingPublicKey,
   );
   IdentityTableData copyWithCompanion(IdentityTableCompanion data) {
     return IdentityTableData(
@@ -2853,6 +2892,9 @@ class IdentityTableData extends DataClass
           : this.displayName,
       createdAt: data.createdAt.present ? data.createdAt.value : this.createdAt,
       gender: data.gender.present ? data.gender.value : this.gender,
+      signingPublicKey: data.signingPublicKey.present
+          ? data.signingPublicKey.value
+          : this.signingPublicKey,
     );
   }
 
@@ -2863,13 +2905,21 @@ class IdentityTableData extends DataClass
           ..write('username: $username, ')
           ..write('displayName: $displayName, ')
           ..write('createdAt: $createdAt, ')
-          ..write('gender: $gender')
+          ..write('gender: $gender, ')
+          ..write('signingPublicKey: $signingPublicKey')
           ..write(')'))
         .toString();
   }
 
   @override
-  int get hashCode => Object.hash(id, username, displayName, createdAt, gender);
+  int get hashCode => Object.hash(
+    id,
+    username,
+    displayName,
+    createdAt,
+    gender,
+    signingPublicKey,
+  );
   @override
   bool operator ==(Object other) =>
       identical(this, other) ||
@@ -2878,7 +2928,8 @@ class IdentityTableData extends DataClass
           other.username == this.username &&
           other.displayName == this.displayName &&
           other.createdAt == this.createdAt &&
-          other.gender == this.gender);
+          other.gender == this.gender &&
+          other.signingPublicKey == this.signingPublicKey);
 }
 
 class IdentityTableCompanion extends UpdateCompanion<IdentityTableData> {
@@ -2887,12 +2938,14 @@ class IdentityTableCompanion extends UpdateCompanion<IdentityTableData> {
   final Value<String> displayName;
   final Value<int> createdAt;
   final Value<String?> gender;
+  final Value<String?> signingPublicKey;
   const IdentityTableCompanion({
     this.id = const Value.absent(),
     this.username = const Value.absent(),
     this.displayName = const Value.absent(),
     this.createdAt = const Value.absent(),
     this.gender = const Value.absent(),
+    this.signingPublicKey = const Value.absent(),
   });
   IdentityTableCompanion.insert({
     this.id = const Value.absent(),
@@ -2900,6 +2953,7 @@ class IdentityTableCompanion extends UpdateCompanion<IdentityTableData> {
     required String displayName,
     required int createdAt,
     this.gender = const Value.absent(),
+    this.signingPublicKey = const Value.absent(),
   }) : username = Value(username),
        displayName = Value(displayName),
        createdAt = Value(createdAt);
@@ -2909,6 +2963,7 @@ class IdentityTableCompanion extends UpdateCompanion<IdentityTableData> {
     Expression<String>? displayName,
     Expression<int>? createdAt,
     Expression<String>? gender,
+    Expression<String>? signingPublicKey,
   }) {
     return RawValuesInsertable({
       if (id != null) 'id': id,
@@ -2916,6 +2971,7 @@ class IdentityTableCompanion extends UpdateCompanion<IdentityTableData> {
       if (displayName != null) 'display_name': displayName,
       if (createdAt != null) 'created_at': createdAt,
       if (gender != null) 'gender': gender,
+      if (signingPublicKey != null) 'signing_public_key': signingPublicKey,
     });
   }
 
@@ -2925,6 +2981,7 @@ class IdentityTableCompanion extends UpdateCompanion<IdentityTableData> {
     Value<String>? displayName,
     Value<int>? createdAt,
     Value<String?>? gender,
+    Value<String?>? signingPublicKey,
   }) {
     return IdentityTableCompanion(
       id: id ?? this.id,
@@ -2932,6 +2989,7 @@ class IdentityTableCompanion extends UpdateCompanion<IdentityTableData> {
       displayName: displayName ?? this.displayName,
       createdAt: createdAt ?? this.createdAt,
       gender: gender ?? this.gender,
+      signingPublicKey: signingPublicKey ?? this.signingPublicKey,
     );
   }
 
@@ -2953,6 +3011,9 @@ class IdentityTableCompanion extends UpdateCompanion<IdentityTableData> {
     if (gender.present) {
       map['gender'] = Variable<String>(gender.value);
     }
+    if (signingPublicKey.present) {
+      map['signing_public_key'] = Variable<String>(signingPublicKey.value);
+    }
     return map;
   }
 
@@ -2963,7 +3024,8 @@ class IdentityTableCompanion extends UpdateCompanion<IdentityTableData> {
           ..write('username: $username, ')
           ..write('displayName: $displayName, ')
           ..write('createdAt: $createdAt, ')
-          ..write('gender: $gender')
+          ..write('gender: $gender, ')
+          ..write('signingPublicKey: $signingPublicKey')
           ..write(')'))
         .toString();
   }
@@ -4585,6 +4647,7 @@ typedef $$IdentityTableTableCreateCompanionBuilder =
       required String displayName,
       required int createdAt,
       Value<String?> gender,
+      Value<String?> signingPublicKey,
     });
 typedef $$IdentityTableTableUpdateCompanionBuilder =
     IdentityTableCompanion Function({
@@ -4593,6 +4656,7 @@ typedef $$IdentityTableTableUpdateCompanionBuilder =
       Value<String> displayName,
       Value<int> createdAt,
       Value<String?> gender,
+      Value<String?> signingPublicKey,
     });
 
 class $$IdentityTableTableFilterComposer
@@ -4626,6 +4690,11 @@ class $$IdentityTableTableFilterComposer
 
   ColumnFilters<String> get gender => $composableBuilder(
     column: $table.gender,
+    builder: (column) => ColumnFilters(column),
+  );
+
+  ColumnFilters<String> get signingPublicKey => $composableBuilder(
+    column: $table.signingPublicKey,
     builder: (column) => ColumnFilters(column),
   );
 }
@@ -4663,6 +4732,11 @@ class $$IdentityTableTableOrderingComposer
     column: $table.gender,
     builder: (column) => ColumnOrderings(column),
   );
+
+  ColumnOrderings<String> get signingPublicKey => $composableBuilder(
+    column: $table.signingPublicKey,
+    builder: (column) => ColumnOrderings(column),
+  );
 }
 
 class $$IdentityTableTableAnnotationComposer
@@ -4690,6 +4764,11 @@ class $$IdentityTableTableAnnotationComposer
 
   GeneratedColumn<String> get gender =>
       $composableBuilder(column: $table.gender, builder: (column) => column);
+
+  GeneratedColumn<String> get signingPublicKey => $composableBuilder(
+    column: $table.signingPublicKey,
+    builder: (column) => column,
+  );
 }
 
 class $$IdentityTableTableTableManager
@@ -4732,12 +4811,14 @@ class $$IdentityTableTableTableManager
                 Value<String> displayName = const Value.absent(),
                 Value<int> createdAt = const Value.absent(),
                 Value<String?> gender = const Value.absent(),
+                Value<String?> signingPublicKey = const Value.absent(),
               }) => IdentityTableCompanion(
                 id: id,
                 username: username,
                 displayName: displayName,
                 createdAt: createdAt,
                 gender: gender,
+                signingPublicKey: signingPublicKey,
               ),
           createCompanionCallback:
               ({
@@ -4746,12 +4827,14 @@ class $$IdentityTableTableTableManager
                 required String displayName,
                 required int createdAt,
                 Value<String?> gender = const Value.absent(),
+                Value<String?> signingPublicKey = const Value.absent(),
               }) => IdentityTableCompanion.insert(
                 id: id,
                 username: username,
                 displayName: displayName,
                 createdAt: createdAt,
                 gender: gender,
+                signingPublicKey: signingPublicKey,
               ),
           withReferenceMapper: (p0) => p0
               .map((e) => (e.readTable(table), BaseReferences(db, table, e)))

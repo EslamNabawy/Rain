@@ -119,6 +119,17 @@ jobs:
             packages/rain_core/lib \
             packages/rain_core/test
 
+      - name: Forbid raw debugPrint in lib/
+        # TASK-018: all app logging must go through RainDebugLog (sanitized).
+        # crash_diagnostics_service.dart is the lowest sanitizing layer and is
+        # intentionally excluded. Comment lines are ignored.
+        run: |
+          if grep -rnE "debugPrint\(" apps/rain/lib --exclude=crash_diagnostics_service.dart | grep -vE "//"; then
+            echo "Raw debugPrint( found in lib/ — route through RainDebugLog instead."
+            exit 1
+          fi
+          echo "no raw debugPrint in lib/"
+
       - name: Require generated code artifacts
         run: |
           test -s apps/rain/lib/application/state/app_state.freezed.dart

@@ -14,6 +14,7 @@ import 'package:rain/infrastructure/services/rain_debug_log_service.dart';
 import 'package:rain/infrastructure/services/received_file_export_service.dart';
 import 'package:rain/infrastructure/services/sound_effects_service.dart';
 import 'package:rain/infrastructure/services/turn_credential_service.dart';
+import 'package:rain/infrastructure/security/flutter_secure_storage_key_store_service.dart';
 
 final appBootstrapProvider = Provider<AppBootstrapState>(
   (_) => throw UnimplementedError('AppBootstrapState has not been overridden.'),
@@ -104,6 +105,17 @@ final crashDiagnosticsServiceProvider = Provider<CrashDiagnosticsService>(
 
 final rainDebugLogServiceProvider = Provider<RainDebugLogService>(
   (Ref ref) => const NoopRainDebugLogService(),
+);
+
+final keyStoreServiceProvider = Provider<KeyStoreService>(
+  (_) => FlutterSecureStorageKeyStoreService(),
+);
+
+final identityKeyRepositoryProvider = Provider<IdentityKeyRepository>(
+  (Ref ref) => IdentityKeyRepository(
+    ref.watch(databaseProvider),
+    ref.watch(keyStoreServiceProvider),
+  ),
 );
 
 final lastCrashDiagnosticsProvider = FutureProvider<CrashDiagnosticsRecord?>((

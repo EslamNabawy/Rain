@@ -1,10 +1,10 @@
 import 'dart:async';
 
 import 'package:audioplayers/audioplayers.dart';
-import 'package:flutter/foundation.dart';
 import 'package:flutter/services.dart';
 
 import 'app_settings_store.dart';
+import 'rain_debug_log_service.dart';
 
 enum RainSoundEffect {
   send,
@@ -172,7 +172,12 @@ class SoundEffectsService {
       settings = await Future<AppAudioSettings>.value(_settingsLoader());
     } catch (error) {
       _recordFailure('settingsUnavailable');
-      debugPrint('Rain sound effect skipped: $error');
+      RainDebugLog.event(
+        category: 'sound_effects',
+        name: 'effect_skipped',
+        severity: RainDebugSeverity.warning,
+        message: 'Rain sound effect skipped: $error',
+      );
       return;
     }
     if (!settings.soundEffectsEnabled) {
@@ -227,7 +232,12 @@ class SoundEffectsService {
         _players.remove(effect);
         await _disposeOneShotPlayer(player);
       }
-      debugPrint('Rain sound effect skipped: $error');
+      RainDebugLog.event(
+        category: 'sound_effects',
+        name: 'effect_skipped',
+        severity: RainDebugSeverity.warning,
+        message: 'Rain sound effect skipped: $error',
+      );
     }
   }
 
@@ -248,7 +258,12 @@ class SoundEffectsService {
       settings = await Future<AppAudioSettings>.value(_settingsLoader());
     } catch (error) {
       _recordFailure('settingsUnavailable');
-      debugPrint('Rain sound loop skipped: $error');
+      RainDebugLog.event(
+        category: 'sound_effects',
+        name: 'loop_skipped',
+        severity: RainDebugSeverity.warning,
+        message: 'Rain sound loop skipped: $error',
+      );
       return;
     }
     if (!settings.soundEffectsEnabled) {
@@ -298,7 +313,12 @@ class SoundEffectsService {
       _loopPlayers.remove(normalizedLoopId);
       _loopEffects.remove(normalizedLoopId);
       await _stopAndDisposeLoopPlayer(player);
-      debugPrint('Rain sound loop skipped: $error');
+      RainDebugLog.event(
+        category: 'sound_effects',
+        name: 'loop_skipped',
+        severity: RainDebugSeverity.warning,
+        message: 'Rain sound loop skipped: $error',
+      );
     }
   }
 
@@ -390,7 +410,12 @@ Future<void> _disposeOneShotPlayer(RainSoundPlayer player) async {
   try {
     await player.dispose();
   } catch (error) {
-    debugPrint('Rain sound player dispose ignored: $error');
+    RainDebugLog.event(
+      category: 'sound_effects',
+      name: 'player_dispose_ignored',
+      severity: RainDebugSeverity.warning,
+      message: 'Rain sound player dispose ignored: $error',
+    );
   }
 }
 
@@ -398,7 +423,12 @@ Future<void> _stopAndDisposeOneShotPlayer(RainSoundPlayer player) async {
   try {
     await player.stop();
   } catch (error) {
-    debugPrint('Rain sound player stop ignored: $error');
+    RainDebugLog.event(
+      category: 'sound_effects',
+      name: 'player_stop_ignored',
+      severity: RainDebugSeverity.warning,
+      message: 'Rain sound player stop ignored: $error',
+    );
   }
   await _disposeOneShotPlayer(player);
 }
@@ -407,12 +437,22 @@ Future<void> _stopAndDisposeLoopPlayer(RainSoundPlayer player) async {
   try {
     await player.stop();
   } catch (error) {
-    debugPrint('Rain sound loop stop ignored: $error');
+    RainDebugLog.event(
+      category: 'sound_effects',
+      name: 'loop_stop_ignored',
+      severity: RainDebugSeverity.warning,
+      message: 'Rain sound loop stop ignored: $error',
+    );
   }
   try {
     await player.dispose();
   } catch (error) {
-    debugPrint('Rain sound loop dispose ignored: $error');
+    RainDebugLog.event(
+      category: 'sound_effects',
+      name: 'loop_dispose_ignored',
+      severity: RainDebugSeverity.warning,
+      message: 'Rain sound loop dispose ignored: $error',
+    );
   }
 }
 

@@ -134,6 +134,15 @@ class IdentityController extends AsyncNotifier<RainIdentity?> {
     try {
       await adapter.register(username, password);
       authCreated = true;
+      // TASK-015: generate (or reuse) the identity keypair and publish the
+      // public key to RTDB under uid ownership. Must happen within the same
+      // try so a failure rolls back the Firebase session below.
+      final keyRepo = ref.read(identityKeyRepositoryProvider);
+      final publicKey = await keyRepo.ensureKeyPair();
+      await adapter.publishIdentitySigningKey(
+        username: username,
+        signingPublicKey: KeyEncoding.encodeBytes(publicKey.bytes),
+      );
       final now = DateTime.now().millisecondsSinceEpoch;
       await _saveBackendIdentity(
         RainIdentity(

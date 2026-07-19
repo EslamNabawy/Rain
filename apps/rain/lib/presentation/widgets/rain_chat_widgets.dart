@@ -6,6 +6,7 @@ import 'package:rain/application/runtime/runtime_interaction_guard.dart';
 import 'package:rain/application/runtime/video_call_renderers.dart';
 import 'package:rain/application/runtime/voice_call_state.dart';
 import 'package:rain/application/state/call_surface_providers.dart';
+import 'package:rain/infrastructure/services/rain_debug_log_service.dart';
 import 'package:rain/presentation/branding/rain_peer_core_mark.dart';
 import 'package:rain/presentation/widgets/calls/rain_call_controls.dart';
 
@@ -38,9 +39,12 @@ class RainAvatar extends StatelessWidget {
       // Gender was provided but not recognized — log for diagnostics.
       // This helps identify backend gender values that don't match 'male'/'female'.
       if (kDebugMode) {
-        debugPrint(
-          '[RainAvatar] Unrecognized gender "$gender" for user "$name", '
-          'falling back to initial. Expected "male" or "female".',
+        RainDebugLog.event(
+          category: 'avatar',
+          name: 'unrecognized_gender',
+          severity: RainDebugSeverity.debug,
+          message: '[RainAvatar] Unrecognized gender "$gender" for user "$name", '
+              'falling back to initial. Expected "male" or "female".',
         );
       }
     }

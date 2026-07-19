@@ -126,6 +126,22 @@ class DebugSignalingAdapter implements SignalingAdapter {
   }
 
   @override
+  Future<void> publishIdentitySigningKey({
+    required String username,
+    required String signingPublicKey,
+  }) {
+    return _traceFuture<void>(
+      operation: 'publishIdentitySigningKey',
+      kind: 'write',
+      context: <String, Object?>{'username': username},
+      action: () => _inner.publishIdentitySigningKey(
+        username: username,
+        signingPublicKey: signingPublicKey,
+      ),
+    );
+  }
+
+  @override
   Future<void> writeOffer(String roomId, SDPPayload offer) {
     return _traceFuture<void>(
       operation: 'writeOffer',

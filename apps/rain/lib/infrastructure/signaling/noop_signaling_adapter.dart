@@ -145,6 +145,12 @@ class NoopSignalingAdapter implements SignalingAdapter {
   }
 
   @override
+  Future<void> publishIdentitySigningKey({
+    required String username,
+    required String signingPublicKey,
+  }) async {}
+
+  @override
   Future<BackendIdentity?> fetchIdentity(String username) async {
     final normalizedUsername = _normalizedUsername(username);
     final identity = _identities[normalizedUsername];

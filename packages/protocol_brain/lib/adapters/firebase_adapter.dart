@@ -134,14 +134,33 @@ class FirebaseSignalingAdapter
     required String displayName,
     required String? gender,
     required int registeredAt,
+    String? signingPublicKey,
   }) {
-    return <String, Object?>{
+    final json = <String, Object?>{
       'uid': uid,
       'displayName': displayName,
       'gender': gender,
       'registeredAt': registeredAt,
       'username': username,
     };
+    if (signingPublicKey != null) {
+      json['signingPublicKey'] = signingPublicKey;
+    }
+    return json;
+  }
+
+  /// TASK-015.5: publishes the local identity's X25519 public key to
+  /// `users/$username/signingPublicKey`. RTDB rules enforce that only the
+  /// matching auth uid may write this node.
+  @override
+  Future<void> publishIdentitySigningKey({
+    required String username,
+    required String signingPublicKey,
+  }) async {
+    final normalized = _normalizedUsername(username);
+    await _root
+        .child('users/$normalized/signingPublicKey')
+        .set(signingPublicKey);
   }
 
   Map<String, Object?> _presenceJson({

@@ -248,6 +248,7 @@ ProviderContainer _container(
         (Ref ref) =>
             Stream<NetworkStatusState>.value(const NetworkStatusState.online()),
       ),
+      keyStoreServiceProvider.overrideWithValue(InMemoryKeyStoreService()),
     ],
   );
 }
@@ -286,6 +287,7 @@ final class _AuthValidationAdapter extends NoopSignalingAdapter {
   int ensureSignedInAsCalls = 0;
   int fetchIdentityCalls = 0;
   int registerCalls = 0;
+  int publishSigningKeyCalls = 0;
   int loginCalls = 0;
   int addToUserSearchCalls = 0;
   int setPresenceCalls = 0;
@@ -303,6 +305,14 @@ final class _AuthValidationAdapter extends NoopSignalingAdapter {
   Future<String> register(String username, String password) async {
     registerCalls += 1;
     return currentUidValue;
+  }
+
+  @override
+  Future<void> publishIdentitySigningKey({
+    required String username,
+    required String signingPublicKey,
+  }) async {
+    publishSigningKeyCalls += 1;
   }
 
   @override

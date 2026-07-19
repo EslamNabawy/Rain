@@ -1,10 +1,10 @@
 import 'dart:async';
 
-import 'package:flutter/foundation.dart';
 import 'package:flutter/services.dart';
 
 import 'package:rain/application/runtime/voice_call_state.dart';
 import 'package:rain/infrastructure/services/app_settings_store.dart';
+import 'package:rain/infrastructure/services/rain_debug_log_service.dart';
 import 'package:rain/infrastructure/services/sound_effects_service.dart';
 
 import 'rain_sound_event.dart';
@@ -459,11 +459,21 @@ final class SoundEventRouter {
       try {
         await stopAllLoops();
       } catch (cleanupError) {
-        debugPrint('Rain sound loop cleanup ignored: $cleanupError');
+        RainDebugLog.event(
+          category: 'sound_event_router',
+          name: 'loop_cleanup_ignored',
+          severity: RainDebugSeverity.warning,
+          message: 'Rain sound loop cleanup ignored: $cleanupError',
+        );
       }
     }
     _lastSuppressedReason = _sanitizedSoundFailureReason(error);
-    debugPrint('Rain sound event ignored: $_lastSuppressedReason');
+    RainDebugLog.event(
+      category: 'sound_event_router',
+      name: 'sound_event_ignored',
+      severity: RainDebugSeverity.debug,
+      message: 'Rain sound event ignored: $_lastSuppressedReason',
+    );
   }
 
   Future<void> _startIncomingLoop(RainSoundEvent event) async {

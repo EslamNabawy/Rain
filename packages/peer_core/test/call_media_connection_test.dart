@@ -435,6 +435,40 @@ void main() {
     await connection.dispose();
   });
 
+  test(
+    'TASK-007 concurrent mute/camera calls serialize without dropping',
+    () async {
+      // Rapid interleaved mute/camera/deafen calls must not race on the
+      // shared track state. _serializeMediaControl chains them so every call
+      // is applied (none dropped) and the final state is consistent.
+      final platform = _FakeCallPlatformBridge();
+      final connection = _connection(platform);
+
+      await connection.startLocalMedia(kind: CallMediaKind.video);
+
+      // Fire 5 interleaved control calls concurrently (no await between).
+      final futures = <Future<void>>[
+        connection.setMicrophoneMuted(muted: true),
+        connection.setCameraMuted(muted: true),
+        connection.setMicrophoneMuted(muted: false),
+        connection.setDeafened(deafened: true),
+        connection.setCameraMuted(muted: false),
+      ];
+      await Future.wait(futures);
+      await connection.dispose();
+
+      // Serialization must apply EVERY call (none dropped) and in submission
+      // order. The fake records mic-mute requests; the last value wins.
+      expect(
+        platform.microphoneMuteCalls,
+        <bool>[true, false],
+        reason: 'both mic-mute calls applied in order; none dropped by a race',
+      );
+      // Final mic state reflects the last requested value (unmuted).
+      expect(platform.videoStream.audioTrack!.enabled, isTrue);
+    },
+  );
+
   test('switch camera failure leaves active local media intact', () async {
     final platform = _FakeCallPlatformBridge()
       ..switchCameraError = StateError('camera switch unavailable');

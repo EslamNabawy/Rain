@@ -361,4 +361,4 @@ security audit.
 
 ## License
 
-No root repository license file is currently declared.
+Rain is released under the [MIT License](LICENSE).

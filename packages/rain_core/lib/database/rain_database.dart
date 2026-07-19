@@ -109,6 +109,9 @@ class IdentityTable extends Table {
   TextColumn get displayName => text()();
   IntColumn get createdAt => integer()();
   TextColumn get gender => text().nullable()();
+  // TASK-015: base64 X25519 public key for the local identity. Nullable so
+  // existing rows migrate cleanly; populated on first ensureKeyPair().
+  TextColumn get signingPublicKey => text().nullable()();
 }
 
 class MessageSeqTracker extends Table {
@@ -136,10 +139,28 @@ class RainDatabase extends _$RainDatabase {
   Future<void> _serializedWriteQueue = Future<void>.value();
 
   @override
-  int get schemaVersion => 6;
+  int get schemaVersion => 7;
 
   @override
   MigrationStrategy get migration => MigrationStrategy(
+    // TASK-008: validate database integrity at open time. Catches
+    // foreign-key corruption early instead of failing later on a mismatched
+    // query. `beforeOpen` receives OpeningDetails only; the database is
+    // reachable via `this` (this getter runs on the RainDatabase instance).
+    // NOTE: drift 2.33 does not export `validateDatabaseSchema`, so we run
+    // `PRAGMA foreign_key_check` (returns rows only when violations exist).
+    // A table-existence comparison against `allTables` was considered but is
+    // unreliable here because beforeOpen runs inside drift's open transaction
+    // and the generated table set does not 1:1 match sqlite_master names.
+    beforeOpen: (OpeningDetails details) async {
+      final fkViolations = await customSelect('PRAGMA foreign_key_check;').get();
+      if (fkViolations.isNotEmpty) {
+        throw StateError(
+          'Rain database has ${fkViolations.length} foreign-key violation(s). '
+          'The local database may be corrupt; clear app data to rebuild it.',
+        );
+      }
+    },
     onCreate: (Migrator m) async {
       await m.createAll();
     },
@@ -158,6 +179,13 @@ class RainDatabase extends _$RainDatabase {
       }
       if (from < 6) {
         await _createScalabilityIndexes();
+      }
+      // TASK-015: add the identity signing public key column (nullable).
+      // Guard on table existence: very old schemas (test fixtures / pre-identity
+      // installs) may not have identity_table yet; createAll/onCreate handles it
+      // for fresh DBs, and normal migrations reach this step with the table present.
+      if (from < 7 && await _hasTable('identity_table')) {
+        await m.addColumn(identityTable, identityTable.signingPublicKey);
       }
     },
   );

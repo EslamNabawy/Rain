@@ -132,6 +132,53 @@ final class CrashDiagnosticsDebugLogService implements RainDebugLogService {
   }
 }
 
+/// Module-level logging sink for code paths that do not have Riverpod/provider
+/// access (e.g. low-level services, error handlers). Mirrors the
+/// `RainDebugLogService` contract but without requiring dependency injection:
+/// callers use [RainDebugLog.event] / [RainDebugLog.error], and bootstrap wires
+/// the real [RainDebugLogService] via [service] (defaults to a noop).
+///
+/// TASK-018: replaces raw `debugPrint(` in `lib/` so logging is centralized and
+/// sanitized. CI fails if raw `debugPrint(` remains in `lib/`.
+final class RainDebugLog {
+  RainDebugLog._();
+
+  /// Active sink. Set by bootstrap (see `main.dart`). Null/never-set → noop.
+  static RainDebugLogService? service;
+
+  static void event({
+    required String category,
+    required String name,
+    RainDebugSeverity severity = RainDebugSeverity.info,
+    String? message,
+    Map<String, Object?> context = const <String, Object?>{},
+  }) {
+    service?.event(
+      category: category,
+      name: name,
+      severity: severity,
+      message: message,
+      context: context,
+    );
+  }
+
+  static void error(
+    Object error,
+    StackTrace? stackTrace, {
+    required String source,
+    bool fatal = false,
+    Map<String, Object?> context = const <String, Object?>{},
+  }) {
+    service?.error(
+      error,
+      stackTrace,
+      source: source,
+      fatal: fatal,
+      context: context,
+    );
+  }
+}
+
 final class RainDebugProviderObserver extends ProviderObserver {
   RainDebugProviderObserver(this._log);
 

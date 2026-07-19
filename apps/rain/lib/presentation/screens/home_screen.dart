@@ -13,6 +13,7 @@ import 'package:rain_core/rain_core.dart';
 
 import 'package:rain/presentation/navigation/app_routes.dart';
 import 'package:rain/application/audio/rain_sound_event.dart';
+import 'package:rain/infrastructure/services/rain_debug_log_service.dart';
 import 'package:rain/application/runtime/connection_request_state.dart';
 import 'package:rain/application/runtime/media_device_settings.dart';
 import 'package:rain/application/runtime/voice_call_state.dart';
@@ -1747,7 +1748,12 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
     try {
       await ref.read(soundEventRouterProvider).stopAllLoops();
     } catch (error) {
-      debugPrint('Rain call ringtone cleanup ignored before accept: $error');
+      RainDebugLog.event(
+        category: 'home_screen',
+        name: 'ringtone_cleanup_ignored',
+        severity: RainDebugSeverity.warning,
+        message: 'Rain call ringtone cleanup ignored before accept: $error',
+      );
     }
   }
 

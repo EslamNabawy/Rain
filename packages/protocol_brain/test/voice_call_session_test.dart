@@ -4,6 +4,42 @@ import 'package:flutter_test/flutter_test.dart';
 import 'package:protocol_brain/protocol_brain.dart';
 
 void main() {
+  // TASK-006: `failed` must be strictly terminal. A failed session was
+  // previously allowed to transition back to `idle` (VoiceCallSessionPhase
+  // .failed => next == VoiceCallSessionPhase.idle), which let a
+  // media-disposed session be resurrected. That edge is removed; a
+  // failed session must reject re-driving via startOutgoing().
+  test(
+    'failed session is terminal and rejects re-driving via startOutgoing',
+    () async {
+      final media = _FakeVoiceMediaConnection();
+      final sent = <VoiceCallFrame>[];
+      final session = _session(
+        media: media,
+        sent: sent,
+        // Simulate a signaling write failure so startOutgoing() lands in `failed`.
+        sendFrame: (_) {
+          throw StateError('firebase write denied');
+        },
+      );
+
+      await expectLater(session.startOutgoing(), throwsStateError);
+      expect(session.state.phase, VoiceCallSessionPhase.failed);
+      expect(media.disposeCalls, 1);
+
+      // Re-driving a terminal session must not resurrect it into a live
+      // phase (the removed `failed => idle` edge would have allowed this).
+      await session.startOutgoing();
+      await pumpEventQueue();
+
+      expect(
+        session.state.phase,
+        VoiceCallSessionPhase.failed,
+        reason: 'failed must stay terminal; no failed -> idle resurrection',
+      );
+    },
+  );
+
   test(
     'outgoing invite flow sends invite then canonical owner offer',
     () async {

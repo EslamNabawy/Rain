@@ -14,6 +14,12 @@ abstract class SignalingAdapter {
   Future<String> register(String username, String password);
   Future<String> login(String username, String password);
 
+  /// TASK-015.5: publishes the local identity's X25519 public key to RTDB.
+  Future<void> publishIdentitySigningKey({
+    required String username,
+    required String signingPublicKey,
+  });
+
   Future<void> writeOffer(String roomId, SDPPayload offer);
   Future<void> writeAnswer(String roomId, SDPPayload answer);
   Future<void> writeICE(String roomId, IceRole role, RTCIceCandidate candidate);

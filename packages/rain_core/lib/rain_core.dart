@@ -1,9 +1,12 @@
 export 'database/rain_database.dart';
+export 'database/database_key_service.dart';
 export 'file_transfer/file_transfer_protocol.dart';
 export 'file_transfer/file_transfer_store.dart';
 export 'friends/friend_request.dart';
 export 'friends/friend_store.dart';
 export 'identity/identity.dart';
+export 'identity/key_store_service.dart';
+export 'identity/identity_key_repository.dart';
 export 'messages/message_delivery_service.dart';
 export 'messages/message_envelope.dart';
 export 'messages/message_store.dart';

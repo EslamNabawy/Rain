@@ -999,6 +999,12 @@ class _RecordingSignalingAdapter implements SignalingAdapter {
   Future<String> login(String username, String password) async => 'uid';
 
   @override
+  Future<void> publishIdentitySigningKey({
+    required String username,
+    required String signingPublicKey,
+  }) async {}
+
+  @override
   Future<void> writeOffer(String roomId, SDPPayload offer) async {
     final error = writeOfferError;
     if (error != null) {

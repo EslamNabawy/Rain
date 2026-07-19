@@ -1131,7 +1131,10 @@ final class VoiceCallSession {
       VoiceCallSessionPhase.ending =>
         next == VoiceCallSessionPhase.idle ||
             next == VoiceCallSessionPhase.failed,
-      VoiceCallSessionPhase.failed => next == VoiceCallSessionPhase.idle,
+      // TASK-006: `failed` is strictly terminal. A failed session has
+      // already disposed its media; it must not transition back to `idle`.
+      // New calls construct a fresh VoiceCallSession instance instead.
+      _ => false,
     };
   }
 
