@@ -1,0 +1,28 @@
+# CODEOWNERS — Rain
+#
+# Protects the highest-risk areas from unreviewed merges.
+# Required reviews + CI (ci.yml, main-merge-gate.yml) must be green before
+# merge to dev/main. Branch protection is configured in GitHub repo settings
+# (see AGENTS.md / vault branch-protection note) — this file alone does not
+# enforce it.
+#
+# Owner handle should be updated to the actual review team if one exists.
+
+# Default owner for everything not matched below.
+*       @AbdogadXNabawy
+
+# Call runtime: terminal-phase FSM, media/lock/signaling coordinators.
+apps/rain/lib/application/runtime/        @AbdogadXNabawy
+
+# Signaling, sessions, retry, call contracts, Firebase adapter.
+packages/protocol_brain/                   @AbdogadXNabawy
+
+# Firebase rules, Remote Config templates, functions.
+backend/firebase/                         @AbdogadXNabawy
+
+# Storage schema, identity, key store.
+packages/rain_core/                        @AbdogadXNabawy
+
+# CI gates.
+.github/workflows/                         @AbdogadXNabawy
+CODEOWNERS                                @AbdogadXNabawy

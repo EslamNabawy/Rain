@@ -48,11 +48,11 @@
 || 001 | Per-pair X25519 E2E | P4 | 🟡 PARTIAL (crypto core) | ⏸ DEFERRED (adapter wiring) | **Crypto core DONE** (verifiable): `SignalingCipher.forPair(...)` + `encryptPayloadV2`/`decryptPayloadV2` + `isEncryptedEnvelopeV2` in `signaling_cipher.dart`. Per-pair HKDF binds `from`/`to`/`sessionId`/`room`/`purpose`/`v=2` + random 16-byte per-envelope salt. 4 unit tests prove: round-trip, per-pair isolation (different pairs → different ciphertext; cross-pair decrypt fails), random-salt diff, **v=1 root-key holder cannot decrypt v=2**. Analyze+protocol_brain test GREEN (+272). **Adapter wiring (TASK-1.3) + `v=1` fallback window (1.4) + `validateForRelease` (1.5) DEFERRED**: need Firebase emulator contract test (third-party-can't-decrypt) — unverifiable locally. |
 || 003 | App unit tests + split 9k | P4 | 🟡 PARTIAL (3.1 done) | ⏸ DEFERRED (3.2/3.3/3.4) | **3.1 DONE** (verifiable): `apps/rain/test/application/state/runtime_providers_test.dart` mirrors `runtime_providers.dart` pure providers via `ProviderContainer` + `appBootstrapProvider.overrideWithValue` (in-memory DB + NoopSignalingAdapter). Analyze+rain test GREEN. **3.2/3.3/3.4 DEFERRED**: coordinator unit tests (need TASK-004 extraction first), `friend_flow_test.dart` 9k split (large, parallel w/ 001), CI coverage gate 40% (needs `flutter test --coverage` parsing — unverifiable here). |
 || 004 | God-object split | P4 | 🟡 PARTIAL (4.1 golden) | ⏸ DEFERRED (4.2-4.8) | **4.1 golden DONE** (verifiable): `voice_call_state_coordinator_test.dart` now locks terminal-phase invariants — `canClearExpiredStartBlock` is false for `failed`/`idle`/`ending` (TASK-006/016 no-resurrection guarantee) and true for the 4 live phases. Analyze+rain test GREEN (+744). **4.2-4.8 DEFERRED**: actual extractions of `voice_call_runtime.dart` (3,106) / `firebase_adapter.dart` (2,912) / `rain_runtime_controller.dart` (2,573) into coordinators/adapters — HIGH-risk XL refactor needing the emulator/golden harness + Windows/Android verification, unverifiable locally. |
-| 017 | Rules fuzz finish | P5 | ☐ TODO | | ≥200 cases |
-| 016 | Crashlytics finish | P5 | ☐ TODO | | sanitized-only |
-| 017c | CODEOWNERS | P5 | ☐ TODO | | |
-| a11y | Accessibility pass | P5 | ☐ TODO | | resolves UNKNOWN |
-| docs | README/ADR/vault | P5 | ☐ TODO | | |
+|| 017 | Rules fuzz finish | P5 | ⏸ DEFERRED | | needs Firebase emulator (≥200 cases) — same constraint as 017* |
+|| 016 | Crashlytics finish | P5 | ⏸ DEFERRED | | sanitized-only routing needs emulator/demo-build proof — same as 016* |
+|| 017c | CODEOWNERS | P5 | ✅ DONE | | `CODEOWNERS` created at repo root covering runtime/protocol_brain/backend/firebase/rain_core/ci. Branch protection is a manual GitHub-setting step (documented inline). |
+|| a11y | Accessibility pass | P5 | ⏸ DEFERRED | | needs UI Semantics audit + widget-test assertions; cannot verify blind locally. Core screens Semantics status UNKNOWN until audited. |
+|| docs | README/ADR/vault | P5 | 🟡 PARTIAL | ⏸ DEFERRED (vault) | README privacy caveat made honest re: TASK-001 (per-pair cipher core done, adapter wiring pending) + TASK-002 (key bootstrap done, SQLCipher native open path pending). ADR-010/vault/CONTINUITY deferred per AGENTS (vault sync not required this session). |
 
 ---
 

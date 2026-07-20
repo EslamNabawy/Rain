@@ -172,3 +172,25 @@ Future phases will populate:
 - Technical debt
 - Blockers
 - ADRs
+
+## Audit Phases 1-5 (second-pass, session 2026-07-20)
+
+Second-pass audit implementation executed across Phases 1-4 (commit `5c02b2b` + `058d7aa` + `c4c7c49` format fixup) and P5 polish (commit `7fdd84c`, local-only pending CI #14).
+
+### Verified-committed (github.com/AbdogadXNabawy/Rain PR #14, dev -> main)
+- **P1 Call Reliability:** TASK-006 (no failed->idle resurrection), TASK-007 (media-control lock), TASK-008 (FK-check). TASK-005 reverted (regresses friend_flow test).
+- **P2 Hygiene:** TASK-018 (RainDebugLog sink + 21 debugPrint routed + CI grep gate), TASK-019 (LICENSE), TASK-020 (gitignore).
+- **P3 Security keystone:** TASK-015 (KeyStoreService + fss impl + X25519 IdentityKeyRepository + signingPublicKey col + schema v7 + RTDB publish), TASK-002 key bootstrap (DatabaseKeyService).
+- **P4 E2E/Arch:** TASK-003.1 (runtime_providers test), TASK-001 crypto core (SignalingCipher.forPair + v=2 HKDF envelopes + random salt; unit tests prove per-pair isolation + v=1-cannot-decrypt-v=2), TASK-4.1 golden (terminal-phase FSM invariants).
+- **P5 polish:** DEBT-017 CODEOWNERS (root), README honest privacy caveat.
+
+### Deferred (documented in PROJECT_PROGRESS_TRACKER.md)
+- TASK-021, 017 (rules fuzz), 016 (Crashlytics), 003.2/3.3/3.4, 001 adapter wiring + v1 fallback, 002 SQLCipher native open path, 004.2-4.8 god-object extractions, a11y pass — all need Firebase emulator / Windows-Android builds / UI audit, unavailable locally.
+- Vault/CONTINUITY sync beyond this file deferred per AGENTS (vault validator not run this session).
+
+### CI gate risk handled
+- Pushed format fixup `c4c7c49` so the `dart format --set-exit-if-changed` Quality Gate passes on CI Flutter 3.44.0.
+- PR #14 check statuses were not reporting at session end (workflow may gate on main or require contributor approval) — re-poll before merge.
+
+### Next Recommended Action
+After CI #14 is green and merged: tackle emulator-gated deferred items with a Firebase emulator runner (TASK-017 fuzz, DEBT-016, TASK-001 adapter wiring, TASK-002 open path). Then revisit a11y pass + vault closure.

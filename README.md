@@ -343,6 +343,14 @@ security audit.
 - Firebase rules enforce authenticated ownership, friendship, block checks, and
   call lock permissions.
 - SDP and ICE signaling payloads are encrypted before storage.
+- Per-pair end-to-end signaling confidentiality is implemented at the cipher
+  layer (`SignalingCipher.forPair`, `v=2` envelopes with per-pair HKDF binding
+  and a random per-envelope salt); the signaling adapter wiring that
+  transparently uses it for every payload is still being rolled out
+  (tracked in the audit progress docs).
+- Local database encryption-at-rest uses a generated, OS-backed key
+  (`DatabaseKeyService`); the SQLCipher native open path is pending final
+  dependency settlement (see audit progress docs).
 - WebRTC media and data channels use encrypted transports.
 - Production builds reject known demo signaling keys.
 - TURN reliability and metadata exposure depend on the configured TURN
