@@ -11,9 +11,8 @@ import 'package:rain_core/rain_core.dart';
 ///
 /// TASK-015 (keystone): safe home for the identity private key + DB key.
 final class FlutterSecureStorageKeyStoreService implements KeyStoreService {
-  FlutterSecureStorageKeyStoreService({
-    FlutterSecureStorage? storage,
-  }) : _storage = storage ?? const FlutterSecureStorage();
+  FlutterSecureStorageKeyStoreService({FlutterSecureStorage? storage})
+    : _storage = storage ?? const FlutterSecureStorage();
 
   final FlutterSecureStorage _storage;
 

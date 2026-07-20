@@ -43,7 +43,8 @@ class RainAvatar extends StatelessWidget {
           category: 'avatar',
           name: 'unrecognized_gender',
           severity: RainDebugSeverity.debug,
-          message: '[RainAvatar] Unrecognized gender "$gender" for user "$name", '
+          message:
+              '[RainAvatar] Unrecognized gender "$gender" for user "$name", '
               'falling back to initial. Expected "male" or "female".',
         );
       }

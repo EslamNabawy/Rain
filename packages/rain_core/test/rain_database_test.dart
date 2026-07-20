@@ -7,48 +7,50 @@ import 'package:path/path.dart' as p;
 import 'package:rain_core/database/rain_database.dart';
 
 void main() {
-  test('beforeOpen schema validation passes on a valid fresh database',
-      () async {
-    // TASK-008: the MigrationStrategy.beforeOpen hook must run (and not throw)
-    // when the on-disk schema is intact, and all core tables must be present.
-    final tempDir = Directory.systemTemp.createTempSync('rain_beforeopen_');
-    addTearDown(() {
-      if (tempDir.existsSync()) {
-        tempDir.deleteSync(recursive: true);
-      }
-    });
+  test(
+    'beforeOpen schema validation passes on a valid fresh database',
+    () async {
+      // TASK-008: the MigrationStrategy.beforeOpen hook must run (and not throw)
+      // when the on-disk schema is intact, and all core tables must be present.
+      final tempDir = Directory.systemTemp.createTempSync('rain_beforeopen_');
+      addTearDown(() {
+        if (tempDir.existsSync()) {
+          tempDir.deleteSync(recursive: true);
+        }
+      });
 
-    final database = RainDatabase(
-      NativeDatabase(
-        File(p.join(tempDir.path, 'rain.sqlite')),
-        setup: configureRainSqliteConnection,
-      ),
-    );
-    addTearDown(database.close);
-
-    // Opening triggers onCreate -> beforeOpen. If beforeOpen throws on a
-    // valid schema, this query (or close) surfaces the error.
-    final tables = await database.customSelect(
-      "SELECT name FROM sqlite_master WHERE type='table';",
-    ).get();
-    final tableNames = tables.map((row) => row.read<String>('name')).toSet();
-
-    for (final required in const <String>[
-      'messages',
-      'friends',
-      'identity_table',
-      'queued_messages',
-      'file_transfers',
-      'connection_memory_table',
-      'message_seq_tracker',
-    ]) {
-      expect(
-        tableNames,
-        contains(required),
-        reason: 'beforeOpen must confirm core table "$required" exists',
+      final database = RainDatabase(
+        NativeDatabase(
+          File(p.join(tempDir.path, 'rain.sqlite')),
+          setup: configureRainSqliteConnection,
+        ),
       );
-    }
-  });
+      addTearDown(database.close);
+
+      // Opening triggers onCreate -> beforeOpen. If beforeOpen throws on a
+      // valid schema, this query (or close) surfaces the error.
+      final tables = await database
+          .customSelect("SELECT name FROM sqlite_master WHERE type='table';")
+          .get();
+      final tableNames = tables.map((row) => row.read<String>('name')).toSet();
+
+      for (final required in const <String>[
+        'messages',
+        'friends',
+        'identity_table',
+        'queued_messages',
+        'file_transfers',
+        'connection_memory_table',
+        'message_seq_tracker',
+      ]) {
+        expect(
+          tableNames,
+          contains(required),
+          reason: 'beforeOpen must confirm core table "$required" exists',
+        );
+      }
+    },
+  );
 
   test('sqlite setup enables lock-tolerant local database pragmas', () async {
     final tempDir = Directory.systemTemp.createTempSync('rain_db_test_');

@@ -61,18 +61,18 @@ final class IdentityKeyRepository {
   Future<void> clear() async {
     await _store.delete(_storeId);
     await _database.serializedTransaction(() async {
-      await (_database.update(_database.identityTable)
-            ..where((IdentityTable table) => table.id.isBiggerThanValue(0)))
-          .write(const IdentityTableCompanion(
-        signingPublicKey: Value<String?>(null),
-      ));
+      await (_database.update(
+        _database.identityTable,
+      )..where((IdentityTable table) => table.id.isBiggerThanValue(0))).write(
+        const IdentityTableCompanion(signingPublicKey: Value<String?>(null)),
+      );
     });
   }
 
   Future<SimplePublicKey?> _readPublicKey() async {
-    final row = await (_database.select(_database.identityTable)
-          ..limit(1))
-        .getSingleOrNull();
+    final row = await (_database.select(
+      _database.identityTable,
+    )..limit(1)).getSingleOrNull();
     final encoded = row?.signingPublicKey;
     if (encoded == null || encoded.isEmpty) {
       return null;
@@ -89,11 +89,13 @@ final class IdentityKeyRepository {
 
   Future<void> _persistPublicKey(List<int> publicBytes) async {
     await _database.serializedTransaction(() async {
-      await (_database.update(_database.identityTable)
-            ..where((IdentityTable table) => table.id.isBiggerThanValue(0)))
-          .write(IdentityTableCompanion(
-        signingPublicKey: Value<String>(KeyEncoding.encodeBytes(publicBytes)),
-      ));
+      await (_database.update(
+        _database.identityTable,
+      )..where((IdentityTable table) => table.id.isBiggerThanValue(0))).write(
+        IdentityTableCompanion(
+          signingPublicKey: Value<String>(KeyEncoding.encodeBytes(publicBytes)),
+        ),
+      );
     });
   }
 }

@@ -153,7 +153,9 @@ class RainDatabase extends _$RainDatabase {
     // unreliable here because beforeOpen runs inside drift's open transaction
     // and the generated table set does not 1:1 match sqlite_master names.
     beforeOpen: (OpeningDetails details) async {
-      final fkViolations = await customSelect('PRAGMA foreign_key_check;').get();
+      final fkViolations = await customSelect(
+        'PRAGMA foreign_key_check;',
+      ).get();
       if (fkViolations.isNotEmpty) {
         throw StateError(
           'Rain database has ${fkViolations.length} foreign-key violation(s). '

@@ -19,7 +19,9 @@ RainDatabase _openTempDb(Directory dir) {
 }
 
 Future<void> _seedIdentity(RainDatabase db) async {
-  await db.into(db.identityTable).insert(
+  await db
+      .into(db.identityTable)
+      .insert(
         IdentityTableCompanion.insert(
           username: 'eslam',
           displayName: 'Eslam',
@@ -31,38 +33,40 @@ Future<void> _seedIdentity(RainDatabase db) async {
 
 void main() {
   group('TASK-015 IdentityKeyRepository', () {
-    test('generates an X25519 keypair once and persists the public key',
-        () async {
-      final dir = Directory.systemTemp.createTempSync('rain_keypair_');
-      addTearDown(() {
-        if (dir.existsSync()) dir.deleteSync(recursive: true);
-      });
-      final db = _openTempDb(dir);
-      addTearDown(db.close);
-      final store = InMemoryKeyStoreService();
-      final repo = IdentityKeyRepository(db, store);
+    test(
+      'generates an X25519 keypair once and persists the public key',
+      () async {
+        final dir = Directory.systemTemp.createTempSync('rain_keypair_');
+        addTearDown(() {
+          if (dir.existsSync()) dir.deleteSync(recursive: true);
+        });
+        final db = _openTempDb(dir);
+        addTearDown(db.close);
+        final store = InMemoryKeyStoreService();
+        final repo = IdentityKeyRepository(db, store);
 
-      await _seedIdentity(db);
+        await _seedIdentity(db);
 
-      final first = await repo.ensureKeyPair();
-      // X25519 public keys are 32 bytes.
-      expect(first.bytes.length, 32);
-      expect(first.type, KeyPairType.x25519);
+        final first = await repo.ensureKeyPair();
+        // X25519 public keys are 32 bytes.
+        expect(first.bytes.length, 32);
+        expect(first.type, KeyPairType.x25519);
 
-      // Private key is wrapped into the secure store.
-      final stored = await store.read(KeyStoreIds.identityPrivateKey);
-      expect(stored, isNotNull);
-      expect(store.read(KeyStoreIds.identityPrivateKey), isNotNull);
+        // Private key is wrapped into the secure store.
+        final stored = await store.read(KeyStoreIds.identityPrivateKey);
+        expect(stored, isNotNull);
+        expect(store.read(KeyStoreIds.identityPrivateKey), isNotNull);
 
-      // Public key persisted to the DB column.
-      final pub = await repo.getPublicKey();
-      expect(pub, isNotNull);
-      expect(pub!.bytes, first.bytes);
+        // Public key persisted to the DB column.
+        final pub = await repo.getPublicKey();
+        expect(pub, isNotNull);
+        expect(pub!.bytes, first.bytes);
 
-      // Second call is idempotent: same public key, no new private key written.
-      final again = await repo.ensureKeyPair();
-      expect(again.bytes, first.bytes);
-    });
+        // Second call is idempotent: same public key, no new private key written.
+        final again = await repo.ensureKeyPair();
+        expect(again.bytes, first.bytes);
+      },
+    );
 
     test('getPrivateKeyBytes returns the wrapped private key', () async {
       final dir = Directory.systemTemp.createTempSync('rain_keypair_2_');

@@ -33,7 +33,7 @@ abstract interface class KeyStoreService {
 /// In-memory [KeyStoreService] for tests and headless contexts.
 final class InMemoryKeyStoreService implements KeyStoreService {
   InMemoryKeyStoreService([Map<String, String>? initial])
-      : _store = <String, String>{...?initial};
+    : _store = <String, String>{...?initial};
 
   final Map<String, String> _store;
 

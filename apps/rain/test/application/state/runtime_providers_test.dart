@@ -49,18 +49,17 @@ void main() {
   });
 
   group('TASK-003 runtime_providers unit tests', () {
-    test('appEnvironmentProvider and databaseProvider resolve from bootstrap',
-        () async {
-      final database = RainDatabase(NativeDatabase.memory());
-      addTearDown(database.close);
-      final container = _container(database);
-      addTearDown(container.dispose);
+    test(
+      'appEnvironmentProvider and databaseProvider resolve from bootstrap',
+      () async {
+        final database = RainDatabase(NativeDatabase.memory());
+        addTearDown(database.close);
+        final container = _container(database);
+        addTearDown(container.dispose);
 
-      expect(
-        container.read(appEnvironmentProvider),
-        isA<AppEnvironment>(),
-      );
-      expect(container.read(databaseProvider), same(database));
-    });
+        expect(container.read(appEnvironmentProvider), isA<AppEnvironment>());
+        expect(container.read(databaseProvider), same(database));
+      },
+    );
   });
 }

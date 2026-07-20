@@ -5,19 +5,17 @@ import 'package:cryptography/cryptography.dart';
 
 class SignalingCipher {
   SignalingCipher.fromKeyMaterial(String keyMaterial)
-    : this._(
-        rootKey: SecretKey(utf8.encode(keyMaterial.trim())),
-      );
+    : this._(rootKey: SecretKey(utf8.encode(keyMaterial.trim())));
 
   SignalingCipher._({
     required SecretKey rootKey,
     String? pairFrom,
     String? pairTo,
     String? sessionId,
-  })  : _rootKey = rootKey,
-        _pairFrom = pairFrom,
-        _pairTo = pairTo,
-        _sessionId = sessionId;
+  }) : _rootKey = rootKey,
+       _pairFrom = pairFrom,
+       _pairTo = pairTo,
+       _sessionId = sessionId;
 
   /// TASK-001 (crypto core, additive): per-pair cipher.
   ///

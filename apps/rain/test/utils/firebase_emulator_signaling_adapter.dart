@@ -210,10 +210,10 @@ class FirebaseEmulatorSignalingAdapter
   Future<String> login(String username, String password) async {
     final response =
         await _authRequest('accounts:signInWithPassword', <String, Object?>{
-      'email': _emailFromUsername(username),
-      'password': password,
-      'returnSecureToken': true,
-    });
+          'email': _emailFromUsername(username),
+          'password': password,
+          'returnSecureToken': true,
+        });
     _setAuth(response);
     return _uid!;
   }
@@ -224,10 +224,11 @@ class FirebaseEmulatorSignalingAdapter
     required String signingPublicKey,
   }) async {
     final normalizedUsername = _normalizedUsername(username);
-    await _put(
-      <String>['users', normalizedUsername, 'signingPublicKey'],
-      signingPublicKey,
-    );
+    await _put(<String>[
+      'users',
+      normalizedUsername,
+      'signingPublicKey',
+    ], signingPublicKey);
   }
 
   void _setAuth(Map<String, Object?> response) {

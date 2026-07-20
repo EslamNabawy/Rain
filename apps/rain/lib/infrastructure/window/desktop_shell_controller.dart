@@ -86,7 +86,8 @@ class DesktopShellController with WindowListener {
                   category: 'desktop_shell',
                   name: 'critical_close_budget_exceeded',
                   severity: RainDebugSeverity.warning,
-                  message: '[DesktopShellController] Critical close budget '
+                  message:
+                      '[DesktopShellController] Critical close budget '
                       'exceeded after ${criticalStopwatch.elapsedMilliseconds}ms',
                 );
               }
@@ -98,7 +99,8 @@ class DesktopShellController with WindowListener {
           category: 'desktop_shell',
           name: 'critical_close_phase_error',
           severity: RainDebugSeverity.warning,
-          message: '[DesktopShellController] Critical close phase error: $error',
+          message:
+              '[DesktopShellController] Critical close phase error: $error',
         );
       }
     } finally {
@@ -108,7 +110,8 @@ class DesktopShellController with WindowListener {
           category: 'desktop_shell',
           name: 'critical_close_phase_completed',
           severity: RainDebugSeverity.debug,
-          message: '[DesktopShellController] Critical close phase completed in '
+          message:
+              '[DesktopShellController] Critical close phase completed in '
               '${criticalStopwatch.elapsedMilliseconds}ms '
               '(total: ${totalStopwatch.elapsedMilliseconds}ms)',
         );
@@ -133,7 +136,8 @@ class DesktopShellController with WindowListener {
           category: 'desktop_shell',
           name: 'best_effort_cleanup_completed',
           severity: RainDebugSeverity.debug,
-          message: '[DesktopShellController] Best-effort cleanup completed in '
+          message:
+              '[DesktopShellController] Best-effort cleanup completed in '
               '${cleanupStopwatch.elapsedMilliseconds}ms',
         );
       }
