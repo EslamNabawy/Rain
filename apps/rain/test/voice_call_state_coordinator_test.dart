@@ -96,5 +96,50 @@ void main() {
       expect(next.mediaReconnecting, isFalse);
       expect(next.updatedAt, 99);
     });
+
+    group('TASK-4.1 golden: terminal-phase invariants', () {
+      // Locks TASK-006 / TASK-016 guarantee: once a call reaches `failed`
+      // (or `idle`), it is NOT auto-resurrected by the expiry-clear path.
+      // Only an explicit user reset may move it out of `failed`.
+      test('failed is not auto-clearable via expired start-block path', () {
+        expect(
+          coordinator.canClearExpiredStartBlock(VoiceCallPhase.failed),
+          isFalse,
+        );
+      });
+
+      test('idle is not auto-clearable via expired start-block path', () {
+        expect(
+          coordinator.canClearExpiredStartBlock(VoiceCallPhase.idle),
+          isFalse,
+        );
+      });
+
+      test('ending is not auto-clearable via expired start-block path', () {
+        expect(
+          coordinator.canClearExpiredStartBlock(VoiceCallPhase.ending),
+          isFalse,
+        );
+      });
+
+      test('live phases remain clearable', () {
+        expect(
+          coordinator.canClearExpiredStartBlock(VoiceCallPhase.connectingMedia),
+          isTrue,
+        );
+        expect(
+          coordinator.canClearExpiredStartBlock(VoiceCallPhase.outgoingRinging),
+          isTrue,
+        );
+        expect(
+          coordinator.canClearExpiredStartBlock(VoiceCallPhase.incomingRinging),
+          isTrue,
+        );
+        expect(
+          coordinator.canClearExpiredStartBlock(VoiceCallPhase.active),
+          isTrue,
+        );
+      });
+    });
   });
 }
