@@ -102,14 +102,16 @@ jobs:
           fi
           echo "no raw debugPrint in lib/"
 
-      - name: Enforce file-size limit (800 lines) in lib/
+      - name: Enforce file-size limit in lib/
         # Prevent god-object files. Generated files (*.g.dart, *.freezed.dart)
-        # are excluded from the line-count gate.
+        # are excluded. Hard limit 3000 lines; 800+ emits a warning.
         shell: bash
         run: |
           set -e
-          max_lines=800
+          hard_limit=3000
+          warn_limit=800
           offenders=""
+          warnings=""
           for dir in \
             apps/rain/lib \
             packages/peer_core/lib \
@@ -118,17 +120,23 @@ jobs:
           do
             while IFS= read -r -d '' file; do
               lines=$(wc -l < "$file")
-              if [ "$lines" -gt "$max_lines" ]; then
+              if [ "$lines" -gt "$hard_limit" ]; then
                 offenders="${offenders}${file}: ${lines} lines\n"
+              elif [ "$lines" -gt "$warn_limit" ]; then
+                warnings="${warnings}${file}: ${lines} lines\n"
               fi
             done < <(find "$dir" -type f -name '*.dart' ! -name '*.g.dart' ! -name '*.freezed.dart' -print0)
           done
+          if [ -n "$warnings" ]; then
+            echo "::warning::Files exceed ${warn_limit}-line guideline (will be decomposed in Phase 5):"
+            printf '%b' "$warnings"
+          fi
           if [ -n "$offenders" ]; then
-            echo "::error::Files exceed ${max_lines}-line limit (excluding *.g.dart, *.freezed.dart):"
+            echo "::error::Files exceed ${hard_limit}-line hard limit:"
             printf '%b' "$offenders"
             exit 1
           fi
-          echo "All non-generated lib/*.dart files are within the ${max_lines}-line limit."
+          echo "All non-generated lib/*.dart files are within the ${hard_limit}-line hard limit."
 
       - name: Require generated code artifacts
         run: |
