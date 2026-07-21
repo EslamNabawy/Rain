@@ -7,10 +7,12 @@
 ---
 
 ## 1. Overall Progress
-- **Phase progress:** P1 DONE · P2 DONE (3/6: 018/019/020) · P3 IN PROGRESS (1/2: TASK-015 DONE; TASK-002 SQLCipher pending). TASK-021/017*/016* deferred (CI/emulator).
-- **Task progress:** 8 / 21 tasks DONE (TASK-006, 007, 008, 015, 018, 019, 020, + TASK-003.1 provider tests). TASK-005 reverted/blocked. TASK-016 verified-covered. TASK-002 key-bootstrap + TASK-003.1 done (partials). TASK-021/017*/016*/002-open/003-2-4 deferred.
-- **Debt closed:** 3 / 17 (DEBT-012 logging, DEBT-013 LICENSE, DEBT-014 root cleanup).
+- **Phase progress:** P1 DONE+ · P2 DONE · P3 IN PROGRESS · P4 PARTIAL · CI HARDENED · WORKSPACE TIDIED.
+- **Task progress:** 10 / 21 tasks DONE (TASK-006, 007, 008, 015, 018, 019, 020, + TASK-003.1, + NEW-001, + F-011). TASK-005 reverted/blocked. TASK-016 verified-covered. TASK-002 key-bootstrap + TASK-001 crypto core done (wiring deferred).
+- **Debt closed:** 4 / 17 (DEBT-012 logging, DEBT-013 LICENSE, DEBT-014 root cleanup, + brace-expansion npm vuln).
 - **Production Readiness FAILs:** 3 (Security ×2, Monitoring) — target 0 by end of P5.
+- **CI:** All gates green on `dev@3ae7314`. Validated release `rain-validated-5-1` published (3 artifacts).
+- **New fixes this session:** NEW-001 (interruption lock), F-011 (negotiation queue), CI Windows gate, CI file-size lint (3200 hard / 800 warn), CI coverage floor (soft), npm audit clean, workspace tidy (34→6 root .md), vault date refresh.
 
 ---
 
