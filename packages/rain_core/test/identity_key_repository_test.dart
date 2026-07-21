@@ -115,5 +115,90 @@ void main() {
       expect(await repo.getPublicKey(), isNull);
       expect(await store.read(KeyStoreIds.identityPrivateKey), isNull);
     });
+
+    // ---- TASK-001.3: ECDH per-pair key derivation (Phase 4 verifiable slice) ----
+
+    test('ECDH: two parties derive the same shared secret', () async {
+      // Alice and Bob each have their own identity repo + keypair.
+      final dirA = Directory.systemTemp.createTempSync('rain_ecdh_alice_');
+      final dirB = Directory.systemTemp.createTempSync('rain_ecdh_bob_');
+      addTearDown(() {
+        if (dirA.existsSync()) dirA.deleteSync(recursive: true);
+        if (dirB.existsSync()) dirB.deleteSync(recursive: true);
+      });
+      final dbA = _openTempDb(dirA);
+      final dbB = _openTempDb(dirB);
+      addTearDown(dbA.close);
+      addTearDown(dbB.close);
+
+      final aliceRepo = IdentityKeyRepository(dbA, InMemoryKeyStoreService());
+      final bobRepo = IdentityKeyRepository(dbB, InMemoryKeyStoreService());
+      await _seedIdentity(dbA);
+      await _seedIdentity(dbB);
+
+      final alicePublic = await aliceRepo.ensureKeyPair();
+      final bobPublic = await bobRepo.ensureKeyPair();
+
+      // Alice derives the shared secret using her private key + Bob's public.
+      final aliceShared = await aliceRepo.derivePairKeyMaterial(bobPublic);
+      // Bob derives the shared secret using his private key + Alice's public.
+      final bobShared = await bobRepo.derivePairKeyMaterial(alicePublic);
+
+      // ECDH guarantees both sides arrive at the same shared secret.
+      expect(aliceShared, bobShared);
+      expect(aliceShared, isNotEmpty);
+    });
+
+    test('ECDH: shared secret differs across different peers', () async {
+      final dirA = Directory.systemTemp.createTempSync('rain_ecdh_isol_a_');
+      final dirB = Directory.systemTemp.createTempSync('rain_ecdh_isol_b_');
+      final dirC = Directory.systemTemp.createTempSync('rain_ecdh_isol_c_');
+      addTearDown(() {
+        if (dirA.existsSync()) dirA.deleteSync(recursive: true);
+        if (dirB.existsSync()) dirB.deleteSync(recursive: true);
+        if (dirC.existsSync()) dirC.deleteSync(recursive: true);
+      });
+      final dbA = _openTempDb(dirA);
+      final dbB = _openTempDb(dirB);
+      final dbC = _openTempDb(dirC);
+      addTearDown(dbA.close);
+      addTearDown(dbB.close);
+      addTearDown(dbC.close);
+
+      final aliceRepo = IdentityKeyRepository(dbA, InMemoryKeyStoreService());
+      final bobRepo = IdentityKeyRepository(dbB, InMemoryKeyStoreService());
+      final carolRepo = IdentityKeyRepository(dbC, InMemoryKeyStoreService());
+      await _seedIdentity(dbA);
+      await _seedIdentity(dbB);
+      await _seedIdentity(dbC);
+
+      final bobPublic = await bobRepo.ensureKeyPair();
+      final carolPublic = await carolRepo.ensureKeyPair();
+
+      // Alice derives different shared secrets with Bob vs Carol.
+      final aliceWithBob = await aliceRepo.derivePairKeyMaterial(bobPublic);
+      final aliceWithCarol = await aliceRepo.derivePairKeyMaterial(carolPublic);
+
+      expect(aliceWithBob, isNot(aliceWithCarol));
+    });
+
+    test('ECDH: shared secret is stable across repeated derivations', () async {
+      final dir = Directory.systemTemp.createTempSync('rain_ecdh_stable_');
+      addTearDown(() {
+        if (dir.existsSync()) dir.deleteSync(recursive: true);
+      });
+      final db = _openTempDb(dir);
+      addTearDown(db.close);
+      final repo = IdentityKeyRepository(db, InMemoryKeyStoreService());
+      await _seedIdentity(db);
+
+      final peerKeyPair = await X25519().newKeyPair();
+      final peerPublic = await peerKeyPair.extractPublicKey();
+
+      final first = await repo.derivePairKeyMaterial(peerPublic);
+      final second = await repo.derivePairKeyMaterial(peerPublic);
+
+      expect(first, second);
+    });
   });
 }

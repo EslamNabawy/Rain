@@ -517,6 +517,7 @@ class FirebaseEmulatorSignalingAdapter
       presenceSessionId: presenceMap['sessionId'] as String?,
       presenceStartedAt: (presenceMap['startedAt'] as num?)?.toInt(),
       presenceState: presenceMap['state'] as String?,
+      signingPublicKey: identity['signingPublicKey'] as String?,
     );
   }
 

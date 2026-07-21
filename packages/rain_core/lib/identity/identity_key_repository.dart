@@ -69,6 +69,33 @@ final class IdentityKeyRepository {
     });
   }
 
+  /// TASK-001.3 (Phase 4 verifiable slice): ECDH per-pair key derivation.
+  ///
+  /// Derives a per-pair root key from the local X25519 private key and the
+  /// peer's X25519 public key via ECDH. This is the keystone that connects
+  /// TASK-015 (identity keypair) to TASK-001 (per-pair signaling cipher).
+  ///
+  /// The returned string is the base64-encoded raw shared secret. It is the
+  /// `pairKeyMaterial` consumed by `SignalingCipher.forPair()`.
+  ///
+  /// This is pure Dart (no emulator) and fully unit-testable.
+  Future<String> derivePairKeyMaterial(SimplePublicKey peerPublicKey) async {
+    // Ensure the local keypair exists before reading the private key.
+    final localPublic = await ensureKeyPair();
+    final privateBytes = await getPrivateKeyBytes();
+    final keyPair = SimpleKeyPairData(
+      privateBytes,
+      publicKey: localPublic,
+      type: KeyPairType.x25519,
+    );
+    final sharedSecret = await X25519().sharedSecretKey(
+      keyPair: keyPair,
+      remotePublicKey: peerPublicKey,
+    );
+    final sharedBytes = await sharedSecret.extractBytes();
+    return KeyEncoding.encodeBytes(sharedBytes);
+  }
+
   Future<SimplePublicKey?> _readPublicKey() async {
     final row = await (_database.select(
       _database.identityTable,

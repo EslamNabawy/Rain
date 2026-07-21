@@ -3,6 +3,15 @@ import 'dart:math';
 
 import 'package:cryptography/cryptography.dart';
 
+/// Resolves a per-pair [SignalingCipher] for a given peer.
+///
+/// F-015 (Phase 1 wiring): the adapter calls this to obtain a per-pair cipher
+/// keyed to the remote peer's X25519 public key (via ECDH). Returns `null` if
+/// no per-pair key can be derived (e.g. the peer hasn't published a signing
+/// key yet); callers fall back to the v=1 shared-key cipher in that case.
+typedef SignalingCipherResolver =
+    Future<SignalingCipher?> Function(String peerUsername);
+
 class SignalingCipher {
   SignalingCipher.fromKeyMaterial(String keyMaterial)
     : this._(rootKey: SecretKey(utf8.encode(keyMaterial.trim())));
@@ -12,10 +21,12 @@ class SignalingCipher {
     String? pairFrom,
     String? pairTo,
     String? sessionId,
+    bool isDemo = false,
   }) : _rootKey = rootKey,
        _pairFrom = pairFrom,
        _pairTo = pairTo,
-       _sessionId = sessionId;
+       _sessionId = sessionId,
+       _isDemo = isDemo;
 
   /// TASK-001 (crypto core, additive): per-pair cipher.
   ///
@@ -37,9 +48,38 @@ class SignalingCipher {
     );
   }
 
-  factory SignalingCipher.demo() {
-    return SignalingCipher.fromKeyMaterial(demoKeyMaterial);
+  /// F-015 (Phase 1 wiring): per-pair cipher from raw ECDH shared secret bytes.
+  ///
+  /// [IdentityKeyRepository.derivePairKeyMaterial] returns a base64-encoded
+  /// raw ECDH shared secret. This factory accepts the raw bytes directly so
+  /// the adapter doesn't need to re-encode. The bytes are used verbatim as
+  /// the HKDF root key material.
+  factory SignalingCipher.forPairRootKey({
+    required List<int> rootKeyBytes,
+    required String from,
+    required String to,
+    String? sessionId,
+  }) {
+    return SignalingCipher._(
+      rootKey: SecretKey(rootKeyBytes),
+      pairFrom: from,
+      pairTo: to,
+      sessionId: sessionId,
+    );
   }
+
+  factory SignalingCipher.demo() {
+    return SignalingCipher._(
+      rootKey: SecretKey(utf8.encode(demoKeyMaterial)),
+      isDemo: true,
+    );
+  }
+
+  /// F-015 / MED-5 (Phase 1): `true` when this cipher was created via
+  /// [SignalingCipher.demo()]. Release guards use this to block shipping
+  /// production builds that haven't wired per-pair E2E.
+  bool get isDemo => _isDemo;
+  final bool _isDemo;
 
   static const String demoKeyMaterial =
       'rain-demo-signaling-encryption-key-v1-change-me';
@@ -124,8 +164,24 @@ class SignalingCipher {
     String? sender,
     String? receiver,
   }) async {
-    if (!isEncryptedEnvelope(payload)) {
+    if (!isEncryptedEnvelope(payload) && !isEncryptedEnvelopeV2(payload)) {
       return payload;
+    }
+
+    // TASK-001.4 (Phase 4 verifiable slice): auto-route v=2 envelopes.
+    //
+    // When the adapter is eventually wired to use per-pair ciphers
+    // (TASK-001.3, deferred for emulator verification), older builds that
+    // only know v=1 must still be able to decrypt v=2 if they hold the
+    // correct per-pair key. Routing here keeps the adapter untouched.
+    if (isEncryptedEnvelopeV2(payload)) {
+      return decryptPayloadV2(
+        roomId: roomId,
+        purpose: purpose,
+        payload: payload,
+        sender: sender,
+        receiver: receiver,
+      );
     }
 
     try {

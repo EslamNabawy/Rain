@@ -276,4 +276,119 @@ void main() {
       );
     });
   });
+
+  // ---- TASK-001.4: v=1/v=2 decrypt fallback (Phase 4 verifiable slice) ----
+
+  group('TASK-001.4 decryptPayload auto-routes v=2 envelopes', () {
+    const pairKey = 'rain-test-pair-key-material-32-bytes!!';
+    final payload = <String, Object?>{
+      'sdp': <String, Object?>{'type': 'offer', 'sdp': 'v=0'},
+      'ts': 1778911256590,
+    };
+
+    test(
+      'decryptPayload decrypts a v=2 envelope when pair key matches',
+      () async {
+        final cipher = SignalingCipher.forPair(
+          pairKeyMaterial: pairKey,
+          from: 'alice',
+          to: 'bob',
+          sessionId: 's1',
+        );
+        final v2 = await cipher.encryptPayloadV2(
+          roomId: 'alice:bob',
+          purpose: SignalingCipher.offerPurpose,
+          timestamp: 1778911256590,
+          sender: 'alice',
+          receiver: 'bob',
+          payload: payload,
+        );
+
+        // decryptPayload (no V2 suffix) should auto-route to decryptPayloadV2.
+        final decrypted = await cipher.decryptPayload(
+          roomId: 'alice:bob',
+          purpose: SignalingCipher.offerPurpose,
+          payload: Map<Object?, Object?>.from(v2),
+          sender: 'alice',
+          receiver: 'bob',
+        );
+        final sdp = Map<Object?, Object?>.from(decrypted['sdp']! as Map);
+        expect(sdp['type'], 'offer');
+      },
+    );
+
+    test('decryptPayload rejects v=2 envelope without the pair key', () async {
+      final pairCipher = SignalingCipher.forPair(
+        pairKeyMaterial: pairKey,
+        from: 'alice',
+        to: 'bob',
+        sessionId: 's1',
+      );
+      final v2 = await pairCipher.encryptPayloadV2(
+        roomId: 'alice:bob',
+        purpose: SignalingCipher.offerPurpose,
+        timestamp: 1,
+        sender: 'alice',
+        receiver: 'bob',
+        payload: payload,
+      );
+
+      // A v=1 root-key cipher (no pair context) cannot derive the v=2 key.
+      final legacyCipher = SignalingCipher.fromKeyMaterial(
+        'rain-test-signaling-key-material-32-bytes',
+      );
+      await expectLater(
+        legacyCipher.decryptPayload(
+          roomId: 'alice:bob',
+          purpose: SignalingCipher.offerPurpose,
+          payload: Map<Object?, Object?>.from(v2),
+          sender: 'alice',
+          receiver: 'bob',
+        ),
+        throwsA(isA<SignalingEncryptionException>()),
+      );
+    });
+
+    test('decryptPayload still handles legacy v=1 envelopes', () async {
+      final cipher = SignalingCipher.fromKeyMaterial(
+        'rain-test-signaling-key-material-32-bytes',
+      );
+      final v1 = await cipher.encryptPayload(
+        roomId: 'alice:bob',
+        purpose: SignalingCipher.offerPurpose,
+        timestamp: 1,
+        sender: 'alice',
+        receiver: 'bob',
+        payload: payload,
+      );
+
+      final decrypted = await cipher.decryptPayload(
+        roomId: 'alice:bob',
+        purpose: SignalingCipher.offerPurpose,
+        payload: Map<Object?, Object?>.from(v1),
+        sender: 'alice',
+        receiver: 'bob',
+      );
+      final sdp = Map<Object?, Object?>.from(decrypted['sdp']! as Map);
+      expect(sdp['type'], 'offer');
+    });
+
+    test('decryptPayload passes through unencrypted plaintext', () async {
+      final cipher = SignalingCipher.fromKeyMaterial(
+        'rain-test-signaling-key-material-32-bytes',
+      );
+      final plaintext = <Object?, Object?>{
+        'sdp': <Object?, Object?>{'type': 'answer', 'sdp': 'v=0'},
+        'ts': 2,
+      };
+
+      final result = await cipher.decryptPayload(
+        roomId: 'alice:bob',
+        purpose: SignalingCipher.answerPurpose,
+        payload: plaintext,
+      );
+
+      expect(result, same(plaintext));
+    });
+  });
 }

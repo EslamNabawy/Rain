@@ -136,6 +136,10 @@ class BackendIdentity {
     this.presenceSessionId,
     this.presenceStartedAt,
     this.presenceState,
+    // TASK-001.3 (F-015): base64-encoded X25519 public key published by the
+    // peer at users/$username/signingPublicKey. Used to derive per-pair E2E
+    // signaling root keys via ECDH.
+    this.signingPublicKey,
   });
 
   final String username;
@@ -149,6 +153,7 @@ class BackendIdentity {
   final String? presenceSessionId;
   final int? presenceStartedAt;
   final String? presenceState;
+  final String? signingPublicKey;
 
   Map<String, Object?> toFirebaseJson() {
     return <String, Object?>{
@@ -163,6 +168,7 @@ class BackendIdentity {
       if (presenceSessionId != null) 'presenceSessionId': presenceSessionId,
       if (presenceStartedAt != null) 'presenceStartedAt': presenceStartedAt,
       if (presenceState != null) 'presenceState': presenceState,
+      if (signingPublicKey != null) 'signingPublicKey': signingPublicKey,
     };
   }
 }

@@ -27,12 +27,16 @@ class FirebaseSignalingAdapter
     FirebaseFunctions? functions,
     ConnectionRequestAdapterDiagnosticsSink? connectionRequestDiagnosticsSink,
     SignalingCipher? signalingCipher,
+    SignalingCipherResolver? pairCipherResolver,
+    String? localUsername,
     bool useEmulator = false,
   }) : _auth = auth ?? FirebaseAuth.instance,
        _database = database ?? FirebaseDatabase.instance,
        _functions = functions ?? FirebaseFunctions.instance,
        _connectionRequestDiagnosticsSink = connectionRequestDiagnosticsSink,
        _signalingCipher = signalingCipher ?? SignalingCipher.demo(),
+       _pairCipherResolver = pairCipherResolver,
+       _localUsername = localUsername,
        _useEmulator = useEmulator;
 
   final FirebaseAuth _auth;
@@ -41,7 +45,14 @@ class FirebaseSignalingAdapter
   final ConnectionRequestAdapterDiagnosticsSink?
   _connectionRequestDiagnosticsSink;
   final SignalingCipher _signalingCipher;
+  final SignalingCipherResolver? _pairCipherResolver;
+  final String? _localUsername;
   final bool _useEmulator;
+  // F-015 (Phase 1): per-pair cipher cache keyed by peer username. Avoids
+  // re-running ECDH on every signaling write; the root key is stable for the
+  // life of the friendship.
+  final Map<String, SignalingCipher> _pairCipherCache =
+      <String, SignalingCipher>{};
   final String _sessionId = DateTime.now().microsecondsSinceEpoch.toRadixString(
     36,
   );
@@ -102,6 +113,108 @@ class FirebaseSignalingAdapter
         'Unknown signaling purpose',
       ),
     };
+  }
+
+  /// F-015 (Phase 1): resolves the per-pair cipher for a room's remote peer.
+  ///
+  /// Given a room's sender/receiver context, determines which peer is "remote"
+  /// (i.e. not the local user) and asks the [SignalingCipherResolver] for a
+  /// per-pair cipher keyed via ECDH against that peer's X25519 public key.
+  ///
+  /// Returns `null` when:
+  /// - no resolver is wired (tests, fallback adapter), or
+  /// - the local username isn't known, or
+  /// - the peer hasn't published a signing key yet.
+  ///
+  /// In all fallback cases the caller uses the v=1 shared-key cipher.
+  Future<SignalingCipher?> _resolvePairCipher(
+    ({String sender, String receiver}) context,
+  ) async {
+    if (_pairCipherResolver == null || _localUsername == null) {
+      return null;
+    }
+    final normalizedLocal = _normalizedUsername(_localUsername);
+    final peer = context.sender == normalizedLocal
+        ? context.receiver
+        : context.sender;
+    final cached = _pairCipherCache[peer];
+    if (cached != null) {
+      return cached;
+    }
+    final resolved = await _pairCipherResolver(peer);
+    if (resolved != null) {
+      _pairCipherCache[peer] = resolved;
+    }
+    return resolved;
+  }
+
+  /// F-015 (Phase 1): encrypts a signaling payload using the best available
+  /// cipher. Uses v=2 per-pair encryption when a per-pair cipher is resolved,
+  /// falling back to v=1 shared-key encryption for backward compatibility.
+  Future<Map<String, Object?>> _encryptSignalingPayload({
+    required String roomId,
+    required String purpose,
+    required int timestamp,
+    required String sender,
+    required String receiver,
+    required Map<String, Object?> payload,
+  }) async {
+    final context = (sender: sender, receiver: receiver);
+    final pairCipher = await _resolvePairCipher(context);
+    if (pairCipher != null) {
+      return pairCipher.encryptPayloadV2(
+        roomId: roomId,
+        purpose: purpose,
+        timestamp: timestamp,
+        sender: sender,
+        receiver: receiver,
+        payload: payload,
+      );
+    }
+    return _signalingCipher.encryptPayload(
+      roomId: roomId,
+      purpose: purpose,
+      timestamp: timestamp,
+      sender: sender,
+      receiver: receiver,
+      payload: payload,
+    );
+  }
+
+  /// F-015 (Phase 1): decrypts a signaling payload, auto-routing v=2 envelopes
+  /// to the per-pair cipher and v=1 envelopes to the shared-key cipher.
+  Future<Map<Object?, Object?>> _decryptSignalingPayload({
+    required String roomId,
+    required String purpose,
+    required Map<Object?, Object?> payload,
+    required String sender,
+    required String receiver,
+  }) async {
+    // v=2 envelopes require the per-pair cipher for decryption.
+    if (SignalingCipher.isEncryptedEnvelopeV2(payload)) {
+      final context = (sender: sender, receiver: receiver);
+      final pairCipher = await _resolvePairCipher(context);
+      if (pairCipher != null) {
+        return pairCipher.decryptPayloadV2(
+          roomId: roomId,
+          purpose: purpose,
+          payload: payload,
+          sender: sender,
+          receiver: receiver,
+        );
+      }
+      // F-015 fallback: if we receive a v=2 envelope but can't resolve the
+      // per-pair cipher, fall through to the shared cipher's decryptPayload
+      // which will auto-route and fail gracefully (v=2 decryption without the
+      // pair key throws SignalingEncryptionException, which callers handle).
+    }
+    return _signalingCipher.decryptPayload(
+      roomId: roomId,
+      purpose: purpose,
+      payload: payload,
+      sender: sender,
+      receiver: receiver,
+    );
   }
 
   Future<void> _configureEmulatorsIfNeeded() async {
@@ -1827,7 +1940,7 @@ class FirebaseSignalingAdapter
       presence['online'] as bool? ?? false,
       lastHeartbeat,
     );
-    final identity = BackendIdentity(
+    return BackendIdentity(
       username: username,
       uid: value['uid'] as String? ?? '',
       displayName: value['displayName'] as String? ?? username,
@@ -1839,8 +1952,10 @@ class FirebaseSignalingAdapter
       presenceSessionId: presence['sessionId'] as String?,
       presenceStartedAt: (presence['startedAt'] as num?)?.toInt(),
       presenceState: presence['state'] as String?,
+      // TASK-001.3 (F-015): surface the peer's published X25519 public key so
+      // the runtime can derive a per-pair E2E root key via ECDH.
+      signingPublicKey: value['signingPublicKey'] as String?,
     );
-    return identity;
   }
 
   bool _isDeletedBackendAccount(Map<Object?, Object?> value) {
@@ -2230,7 +2345,7 @@ class FirebaseSignalingAdapter
             roomId,
             SignalingCipher.answerPurpose,
           );
-          final payload = await _signalingCipher.decryptPayload(
+          final payload = await _decryptSignalingPayload(
             roomId: roomId,
             purpose: SignalingCipher.answerPurpose,
             payload: value! as Map<Object?, Object?>,
@@ -2301,7 +2416,7 @@ class FirebaseSignalingAdapter
         .where((Object? value) => value is Map<Object?, Object?>)
         .asyncMap((Object? value) async {
           final context = _roomCipherContext(roomId, purpose);
-          final payload = await _signalingCipher.decryptPayload(
+          final payload = await _decryptSignalingPayload(
             roomId: roomId,
             purpose: purpose,
             payload: value! as Map<Object?, Object?>,
@@ -2324,7 +2439,7 @@ class FirebaseSignalingAdapter
             roomId,
             SignalingCipher.offerPurpose,
           );
-          final payload = await _signalingCipher.decryptPayload(
+          final payload = await _decryptSignalingPayload(
             roomId: roomId,
             purpose: SignalingCipher.offerPurpose,
             payload: value! as Map<Object?, Object?>,
@@ -2684,7 +2799,7 @@ class FirebaseSignalingAdapter
     final timestamp = answer.ts == 0
         ? DateTime.now().millisecondsSinceEpoch
         : answer.ts;
-    final encryptedAnswer = await _signalingCipher.encryptPayload(
+    final encryptedAnswer = await _encryptSignalingPayload(
       roomId: roomId,
       purpose: SignalingCipher.answerPurpose,
       timestamp: timestamp,
@@ -2749,7 +2864,7 @@ class FirebaseSignalingAdapter
     if (candidateKey == null || candidateKey.isEmpty) {
       throw Exception('Failed to allocate ICE candidate key');
     }
-    final encryptedCandidate = await _signalingCipher.encryptPayload(
+    final encryptedCandidate = await _encryptSignalingPayload(
       roomId: roomId,
       purpose: purpose,
       timestamp: timestamp,
@@ -2780,7 +2895,7 @@ class FirebaseSignalingAdapter
     final timestamp = offer.ts == 0
         ? DateTime.now().millisecondsSinceEpoch
         : offer.ts;
-    final encryptedOffer = await _signalingCipher.encryptPayload(
+    final encryptedOffer = await _encryptSignalingPayload(
       roomId: roomId,
       purpose: SignalingCipher.offerPurpose,
       timestamp: timestamp,
