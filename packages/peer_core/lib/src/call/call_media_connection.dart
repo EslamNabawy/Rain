@@ -573,47 +573,58 @@ class DefaultCallMediaConnection implements CallMediaConnection {
       return;
     }
     _recordMediaInterruption(event);
-    switch (event.type) {
-      case MediaInterruptionType.microphonePermissionRevoked:
-      case MediaInterruptionType.audioFocusLost:
-        _microphoneMuted = true;
-        final audioTrack = _localAudioTrack;
-        if (audioTrack != null) {
-          try {
-            await _config.platform.setMicrophoneMuted(audioTrack, muted: true);
-          } catch (error) {
-            _appendDiagnostic(
-              _mediaStates,
-              'microphone interruption failed | $error',
-            );
-            _lastError = error.toString();
-          }
-        }
-        break;
-      case MediaInterruptionType.audioFocusRestored:
-        _appendDiagnostic(_mediaStates, 'audioFocusRestored');
-        break;
-      case MediaInterruptionType.cameraPermissionRevoked:
-      case MediaInterruptionType.cameraDisconnected:
-        _cameraMuted = true;
-        final videoTrack = _localVideoTrack;
-        if (videoTrack != null) {
-          videoTrack.enabled = false;
-        }
-        _appendDiagnostic(
-          _mediaStates,
-          'localVideoDisabled:${event.type.name}',
-        );
-        break;
-      case MediaInterruptionType.routeChanged:
-      case MediaInterruptionType.appPaused:
-      case MediaInterruptionType.appResumed:
-        _appendDiagnostic(_mediaStates, event.type.name);
-        break;
-    }
+    // Emit the interruption notification before the serialized state mutation
+    // so listeners receive it regardless of lock-queue timing.
     if (!_interruptionController.isClosed) {
       _interruptionController.add(event);
     }
+    // NEW-001: Route state-mutating interruption handling through
+    // _serializeMediaControl so a user toggle (setMicrophoneMuted /
+    // setCameraMuted) and an OS interruption cannot race on
+    // _microphoneMuted / _cameraMuted and the underlying track state.
+    await _serializeMediaControl('handleMediaInterruption', () async {
+      switch (event.type) {
+        case MediaInterruptionType.microphonePermissionRevoked:
+        case MediaInterruptionType.audioFocusLost:
+          _microphoneMuted = true;
+          final audioTrack = _localAudioTrack;
+          if (audioTrack != null) {
+            try {
+              await _config.platform.setMicrophoneMuted(
+                audioTrack,
+                muted: true,
+              );
+            } catch (error) {
+              _appendDiagnostic(
+                _mediaStates,
+                'microphone interruption failed | $error',
+              );
+              _lastError = error.toString();
+            }
+          }
+          break;
+        case MediaInterruptionType.audioFocusRestored:
+          _appendDiagnostic(_mediaStates, 'audioFocusRestored');
+          break;
+        case MediaInterruptionType.cameraPermissionRevoked:
+        case MediaInterruptionType.cameraDisconnected:
+          _cameraMuted = true;
+          final videoTrack = _localVideoTrack;
+          if (videoTrack != null) {
+            videoTrack.enabled = false;
+          }
+          _appendDiagnostic(
+            _mediaStates,
+            'localVideoDisabled:${event.type.name}',
+          );
+          break;
+        case MediaInterruptionType.routeChanged:
+        case MediaInterruptionType.appPaused:
+        case MediaInterruptionType.appResumed:
+          _appendDiagnostic(_mediaStates, event.type.name);
+          break;
+      }
+    });
   }
 
   @override

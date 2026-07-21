@@ -151,6 +151,7 @@ final class VoiceCallSession {
   int? _pendingOfferMediaSeq;
   final Set<String> _receivedCandidateKeys = <String>{};
   bool _negotiatingMedia = false;
+  bool _pendingMediaRestart = false;
   bool _disposed = false;
   Future<void> _operationTail = Future<void>.value();
 
@@ -1002,7 +1003,12 @@ final class VoiceCallSession {
 
   Future<void> _runMediaNegotiation(Future<void> Function() action) async {
     if (_negotiatingMedia) {
-      _logInvalidEvent('media negotiation already running');
+      // F-011: Don't silently drop the second negotiation. Flag a pending
+      // restart so the finally block re-triggers an ICE restart offer after
+      // the in-flight negotiation completes. This prevents an incomplete SDP
+      // exchange that would leave the call hanging in connectingMedia.
+      _pendingMediaRestart = true;
+      _logInvalidEvent('media negotiation already running; queued restart');
       return;
     }
     _negotiatingMedia = true;
@@ -1010,6 +1016,14 @@ final class VoiceCallSession {
       await action();
     } finally {
       _negotiatingMedia = false;
+      if (_pendingMediaRestart && !_disposed) {
+        _pendingMediaRestart = false;
+        if (state.phase == VoiceCallSessionPhase.active ||
+            state.phase == VoiceCallSessionPhase.connectingMedia) {
+          _logInvalidEvent('re-triggering queued media restart');
+          unawaited(_enqueue(() => _createAndSendOffer(iceRestart: true)));
+        }
+      }
     }
   }
 

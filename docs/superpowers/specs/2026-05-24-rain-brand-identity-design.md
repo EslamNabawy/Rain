@@ -160,6 +160,27 @@ Accent rules:
 - Coral/error is failed or destructive.
 - Do not flood the UI with cyan or mint.
 
+## Ripple Halo States Option
+
+Remembered option: `B. Ripple Halo States`
+
+This is the recommended clean production fit for glow-like UI feedback. It keeps the premium signal/rain feeling without returning to broad decorative glow blobs.
+
+Allowed use:
+
+- a soft cyan or mint ripple halo behind the Peer Core logo on splash
+- a brief ripple halo behind connecting/ringing call status
+- a low-opacity halo edge on selected primary surfaces
+- event-bound ripple emission on connect/send/call state changes
+
+Rules:
+
+- Keep the halo local to the component, not the whole page.
+- Avoid decorative floating blobs or full-screen radial clouds.
+- Do not use glow in dense chat message areas.
+- Preserve text and icon contrast in dark and light mode.
+- Respect reduced motion; ripple halos must not pulse continuously.
+
 ## Typography
 
 Locked stack:

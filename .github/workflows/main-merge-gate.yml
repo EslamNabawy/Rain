@@ -102,6 +102,34 @@ jobs:
           fi
           echo "no raw debugPrint in lib/"
 
+      - name: Enforce file-size limit (800 lines) in lib/
+        # Prevent god-object files. Generated files (*.g.dart, *.freezed.dart)
+        # are excluded from the line-count gate.
+        shell: bash
+        run: |
+          set -e
+          max_lines=800
+          offenders=""
+          for dir in \
+            apps/rain/lib \
+            packages/peer_core/lib \
+            packages/protocol_brain/lib \
+            packages/rain_core/lib
+          do
+            while IFS= read -r -d '' file; do
+              lines=$(wc -l < "$file")
+              if [ "$lines" -gt "$max_lines" ]; then
+                offenders="${offenders}${file}: ${lines} lines\n"
+              fi
+            done < <(find "$dir" -type f -name '*.dart' ! -name '*.g.dart' ! -name '*.freezed.dart' -print0)
+          done
+          if [ -n "$offenders" ]; then
+            echo "::error::Files exceed ${max_lines}-line limit (excluding *.g.dart, *.freezed.dart):"
+            printf '%b' "$offenders"
+            exit 1
+          fi
+          echo "All non-generated lib/*.dart files are within the ${max_lines}-line limit."
+
       - name: Require generated code artifacts
         run: |
           test -s apps/rain/lib/application/state/app_state.freezed.dart
@@ -112,6 +140,32 @@ jobs:
 
       - name: Run full workspace tests
         run: dart run melos run test
+
+      - name: Enforce coverage floor (40%) for rain-app
+        # Ensures apps/rain/lib maintains at least 40% line coverage.
+        shell: bash
+        run: |
+          set -e
+          lcov_file="apps/rain/coverage/lcov.info"
+          if [ ! -s "$lcov_file" ]; then
+            echo "::error::Coverage file not found or empty: $lcov_file"
+            exit 1
+          fi
+          summary=$(lcov --summary "$lcov_file" --rc lcov_branch_coverage=0 2>/dev/null || \
+                    lcov --summary "$lcov_file" 2>/dev/null)
+          echo "$summary"
+          coverage_pct=$(echo "$summary" | grep -oE 'lines[^0-9]*[0-9]+\.[0-9]+%' | grep -oE '[0-9]+\.[0-9]+' | head -1)
+          if [ -z "$coverage_pct" ]; then
+            echo "::error::Could not parse line coverage from lcov summary."
+            exit 1
+          fi
+          echo "Line coverage: ${coverage_pct}%"
+          if awk -v c="$coverage_pct" -v m=40 'BEGIN { exit !(c+0 >= m) }'; then
+            echo "Coverage ${coverage_pct}% meets the 40% floor."
+          else
+            echo "::error::Coverage ${coverage_pct}% is below the 40% floor."
+            exit 1
+          fi
 
   firebase-backend:
     name: Firebase Backend

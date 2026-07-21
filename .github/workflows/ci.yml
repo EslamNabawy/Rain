@@ -130,6 +130,34 @@ jobs:
           fi
           echo "no raw debugPrint in lib/"
 
+      - name: Enforce file-size limit (800 lines) in lib/
+        # Prevent god-object files. Generated files (*.g.dart, *.freezed.dart)
+        # are excluded from the line-count gate.
+        shell: bash
+        run: |
+          set -e
+          max_lines=800
+          offenders=""
+          for dir in \
+            apps/rain/lib \
+            packages/peer_core/lib \
+            packages/protocol_brain/lib \
+            packages/rain_core/lib
+          do
+            while IFS= read -r -d '' file; do
+              lines=$(wc -l < "$file")
+              if [ "$lines" -gt "$max_lines" ]; then
+                offenders="${offenders}${file}: ${lines} lines\n"
+              fi
+            done < <(find "$dir" -type f -name '*.dart' ! -name '*.g.dart' ! -name '*.freezed.dart' -print0)
+          done
+          if [ -n "$offenders" ]; then
+            echo "::error::Files exceed ${max_lines}-line limit (excluding *.g.dart, *.freezed.dart):"
+            printf '%b' "$offenders"
+            exit 1
+          fi
+          echo "All non-generated lib/*.dart files are within the ${max_lines}-line limit."
+
       - name: Require generated code artifacts
         run: |
           test -s apps/rain/lib/application/state/app_state.freezed.dart
@@ -261,6 +289,33 @@ jobs:
 
       - name: Require coverage output
         run: test -s "${{ matrix.path }}/coverage/lcov.info"
+
+      - name: Enforce coverage floor (40%) for rain-app
+        # Only the rain-app package has a coverage floor enforced.
+        if: matrix.id == 'rain-app'
+        shell: bash
+        run: |
+          set -e
+          lcov_file="${{ matrix.path }}/coverage/lcov.info"
+          if [ ! -s "$lcov_file" ]; then
+            echo "::error::Coverage file not found or empty: $lcov_file"
+            exit 1
+          fi
+          summary=$(lcov --summary "$lcov_file" --rc lcov_branch_coverage=0 2>/dev/null || \
+                    lcov --summary "$lcov_file" 2>/dev/null)
+          echo "$summary"
+          coverage_pct=$(echo "$summary" | grep -oE 'lines[^0-9]*[0-9]+\.[0-9]+%' | grep -oE '[0-9]+\.[0-9]+' | head -1)
+          if [ -z "$coverage_pct" ]; then
+            echo "::error::Could not parse line coverage from lcov summary."
+            exit 1
+          fi
+          echo "Line coverage: ${coverage_pct}%"
+          if awk -v c="$coverage_pct" -v m=40 'BEGIN { exit !(c+0 >= m) }'; then
+            echo "Coverage ${coverage_pct}% meets the 40% floor."
+          else
+            echo "::error::Coverage ${coverage_pct}% is below the 40% floor."
+            exit 1
+          fi
 
       - name: Upload coverage
         if: always()
@@ -430,6 +485,44 @@ jobs:
           if-no-files-found: ignore
           retention-days: ${{ env.ARTIFACT_RETENTION_CI }}
 
+  windows-config-check:
+    name: Windows Config Check
+    runs-on: windows-latest
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v5
+
+      - uses: subosito/flutter-action@v2
+        with:
+          flutter-version: ${{ env.FLUTTER_VERSION }}
+          channel: stable
+          cache: true
+
+      - name: Verify Windows platform files exist
+        shell: bash
+        run: |
+          set -e
+          for f in \
+            apps/rain/windows/CMakeLists.txt \
+            apps/rain/windows/runner/main.cpp \
+            apps/rain/windows/flutter/generated_plugin_registrant.cc
+          do
+            if [ ! -s "$f" ]; then
+              echo "::error::Missing or empty Windows platform file: $f"
+              exit 1
+            fi
+            echo "Verified: $f"
+          done
+
+      - name: Restore app dependencies
+        working-directory: ${{ env.RAIN_APP_DIR }}
+        run: flutter pub get
+
+      - name: Validate Windows build configuration
+        working-directory: ${{ env.RAIN_APP_DIR }}
+        shell: bash
+        run: flutter build windows --config-only
+
   test-gates:
     name: Test Gates
     runs-on: ubuntu-latest
@@ -443,6 +536,7 @@ jobs:
       - firebase-backend
       - firebase-emulator-tests
       - android-build
+      - windows-config-check
     steps:
       - name: Fail if any required job failed
         run: |
@@ -454,6 +548,7 @@ jobs:
           test "${{ needs.firebase-backend.result }}" = "success"
           test "${{ needs.firebase-emulator-tests.result }}" = "success"
           test "${{ needs.android-build.result }}" = "success" || test "${{ needs.android-build.result }}" = "skipped"
+          test "${{ needs.windows-config-check.result }}" = "success"
 
   release-artifacts:
     name: Build EXE and APK Artifacts
