@@ -1,4 +1,5 @@
 import 'dart:async';
+import 'dart:convert';
 
 import 'package:drift/drift.dart';
 import 'package:drift_flutter/drift_flutter.dart';
@@ -338,6 +339,97 @@ QueryExecutor _openRainDatabase() {
     ),
   );
 }
+
+/// TASK-002 verifiable slice: open the DB with SQLCipher if available,
+/// falling back to plaintext when the native library does not support it.
+///
+/// The caller (e.g. `AppBootstrapper`) should prefer this over the plain
+/// constructor. Tests continue to use `RainDatabase(NativeDatabase.memory())`
+/// and are unaffected. The key is fetched via [keyService.ensureDatabaseKey];
+/// if that fails we fall back to plaintext so the app never bricks on a
+/// corrupted or missing keystore.
+///
+/// The encrypted open is **best-effort**: on platforms/builds without a
+/// SQLCipher-enabled `sqlite3` (e.g. `flutter test` on Windows), the
+/// `PRAGMA key` is a no-op / throws and we silently continue with the
+/// plaintext file. A subsequent launch on a SQLCipher-capable build will
+/// detect the plaintext file and trigger the plaintext→cipher migration
+/// (migration itself is still deferred — this slice only wires the key).
+Future<RainDatabase> openEncryptedRainDatabase(
+  dynamic // DatabaseKeyService to avoid import cycle in generated part
+  keyService, {
+  QueryExecutor? testExecutor,
+}) async {
+  if (testExecutor != null) return RainDatabase(testExecutor);
+  String? keyB64;
+  try {
+    // dynamic dispatch so rain_database.dart does not hard-depend on the
+    // service type at compile time (keeps generated part minimal).
+    keyB64 = await (keyService as dynamic).ensureDatabaseKey() as String?;
+  } catch (_) {
+    return RainDatabase();
+  }
+  if (keyB64 == null || keyB64.isEmpty) return RainDatabase();
+  List<int> keyBytes;
+  try {
+    // base64 is the on-disk encoding used by DatabaseKeyService
+    keyBytes = await (keyService as dynamic).getDatabaseKeyBytes() as List<int>;
+  } catch (_) {
+    // Fallback: decode the b64 string ourselves
+    try {
+      keyBytes = _decodeB64(keyB64);
+    } catch (_) {
+      return RainDatabase();
+    }
+  }
+  final hex = _bytesToHex(keyBytes);
+  return RainDatabase(
+    driftDatabase(
+      name: 'rain',
+      native: DriftNativeOptions(
+        shareAcrossIsolates: true,
+        setup: (CommonDatabase db) {
+          try {
+            // SQLCipher key in hex form: PRAGMA key = "x'hex'";
+            db.execute("PRAGMA key = \"x'$hex'\";");
+            // Probe that the pragma was understood — on non-SQLCipher
+            // builds this may throw or return no rows; we ignore either.
+            try {
+              db.select('PRAGMA cipher_version;').toList();
+            } catch (_) {}
+          } catch (_) {
+            // Not a SQLCipher build — continue with plaintext.
+          }
+          configureRainSqliteConnection(db);
+        },
+      ),
+    ),
+  );
+}
+
+List<int> _decodeB64(String b64) {
+  // Accept both standard and url-safe base64 (KeyEncoding uses standard).
+  try {
+    return _b64Decode(b64, true);
+  } catch (_) {
+    return _b64Decode(b64, false);
+  }
+}
+
+List<int> _b64Decode(String v, bool standard) {
+  var s = v.trim();
+  if (standard) {
+    // pad if needed
+    final rem = s.length % 4;
+    if (rem != 0) s = s.padRight(s.length + (4 - rem), '=');
+    return base64Decode(s);
+  } else {
+    return base64Url.decode(s);
+  }
+}
+
+String _bytesToHex(List<int> bytes) =>
+    bytes.map((b) => b.toRadixString(16).padLeft(2, '0')).join();
 
 void configureRainSqliteConnection(CommonDatabase db) {
   db.execute('PRAGMA busy_timeout = 5000;');

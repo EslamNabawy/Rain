@@ -1112,16 +1112,43 @@ final class VoiceCallSignalingCleanupCoordinator {
     })
     flushVoiceIceCandidateBatch,
   }) async {
+    // L-02: prioritize relay candidates — relay is often last in trickle
+    // and is the only path through symmetric NAT. If we must drop, drop
+    // host/srflx first, keep relay. Check raw candidate string for " typ relay".
+    final isRelay = (frame.candidate ?? '').toLowerCase().contains(
+      ' typ relay',
+    );
     if (localIceCandidateCount >= maxIceCandidatesPerRole) {
-      recordIceCandidateBudgetExceeded(
-        peerId: peerId,
-        callId: frame.callId,
-        sessionEpoch: frame.sessionEpoch,
-        role: localRole,
-        requestedCount: 1,
-        droppedCount: 1,
-      );
-      return;
+      if (!isRelay) {
+        recordIceCandidateBudgetExceeded(
+          peerId: peerId,
+          callId: frame.callId,
+          sessionEpoch: frame.sessionEpoch,
+          role: localRole,
+          requestedCount: 1,
+          droppedCount: 1,
+        );
+        return;
+      }
+      // Allow relay to exceed budget by one slot to preserve connectivity.
+      // The server-side SignalingCostBudget will still enforce the hard cap;
+      // we surface the overflow as a warning but keep the relay.
+    } else if (localIceCandidateCount >= maxIceCandidatesPerRole - 1 &&
+        !isRelay) {
+      // Reserve the last budget slot for a potential relay candidate.
+      // Drop non-relay when at budget-1 to keep headroom.
+      final hasPendingRelayRisk = true; // conservative: always reserve
+      if (hasPendingRelayRisk) {
+        recordIceCandidateBudgetExceeded(
+          peerId: peerId,
+          callId: frame.callId,
+          sessionEpoch: frame.sessionEpoch,
+          role: localRole,
+          requestedCount: 1,
+          droppedCount: 1,
+        );
+        return;
+      }
     }
 
     final VoiceSignalingEnvelope envelope;

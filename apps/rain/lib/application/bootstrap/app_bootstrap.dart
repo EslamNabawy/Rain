@@ -8,6 +8,7 @@ import 'package:rain_core/rain_core.dart';
 import 'package:rain/core/config/app_environment.dart';
 import 'package:rain/infrastructure/firebase/firebase_options.dart';
 import 'package:rain/infrastructure/services/force_update_service.dart';
+import 'package:rain/infrastructure/security/flutter_secure_storage_key_store_service.dart';
 import 'package:rain/infrastructure/services/rain_debug_log_service.dart';
 import 'package:rain/infrastructure/signaling/debug_signaling_adapter.dart';
 import 'package:rain/infrastructure/signaling/noop_signaling_adapter.dart';
@@ -42,7 +43,17 @@ class AppBootstrapper {
       effectiveEnvironment.validateForRelease();
     }
 
-    final database = RainDatabase();
+    // TASK-002 verifiable slice: try encrypted open, fallback to plaintext.
+    // The key is stored via FlutterSecureStorage; if the native SQLCipher
+    // library is not available the PRAGMA key is a no-op and we keep plaintext.
+    late final RainDatabase database;
+    try {
+      final keyStore = FlutterSecureStorageKeyStoreService();
+      final dbKeyService = DatabaseKeyService(keyStore);
+      database = await openEncryptedRainDatabase(dbKeyService);
+    } catch (_) {
+      database = RainDatabase();
+    }
     try {
       FirebaseRemoteConfig? remoteConfig;
       FirebaseDatabase? firebaseDatabase;
