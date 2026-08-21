@@ -34,14 +34,40 @@ class SignalingCipher {
   /// context via HKDF, with a random per-envelope salt (see `encryptPayloadV2`).
   /// Does NOT change the `v=1` shared-root path; the adapter wiring + `v=1`
   /// fallback window are deferred (need emulator verification).
+  ///
+  /// C-03 fix: `pairKeyMaterial` is the base64-encoded raw ECDH shared secret
+  /// from `IdentityKeyRepository.derivePairKeyMaterial`. We decode the base64
+  /// to raw bytes before using it as the HKDF root key, so `forPair` and
+  /// `forPairRootKey` derive the same key for the same secret (previously
+  /// `forPair` used `utf8.encode(base64String)` → 44 bytes vs 32 raw).
   factory SignalingCipher.forPair({
     required String pairKeyMaterial,
     required String from,
     required String to,
     String? sessionId,
   }) {
+    final trimmed = pairKeyMaterial.trim();
+    List<int> raw;
+    try {
+      raw = base64Decode(trimmed);
+    } catch (_) {
+      // Fallback: also accept base64Url (KeyEncoding uses standard base64,
+      // but be permissive). If neither decodes, treat as raw material
+      // to preserve backward compat with any test that passed a non-base64
+      // string (e.g. "pair-secret").
+      try {
+        raw = base64Url.decode(trimmed);
+      } catch (_) {
+        raw = utf8.encode(trimmed);
+      }
+    }
+    // If decoded bytes look like UTF-8 of base64 (should not happen), guard
+    // against empty.
+    if (raw.isEmpty) {
+      raw = utf8.encode(trimmed);
+    }
     return SignalingCipher._(
-      rootKey: SecretKey(utf8.encode(pairKeyMaterial.trim())),
+      rootKey: SecretKey(raw),
       pairFrom: from,
       pairTo: to,
       sessionId: sessionId,

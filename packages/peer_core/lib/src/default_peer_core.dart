@@ -642,7 +642,25 @@ class DefaultPeerCore implements PeerCore {
           }
         });
     _sendQueues[channelId] = next;
-    unawaited(next.catchError((Object _) {}));
+    unawaited(
+      next.catchError((Object error, StackTrace stackTrace) {
+        // C-02: do not swallow backpressure/timeout or channel errors — surface
+        // them so diagnostics and callers can observe silent data loss.
+        _emitDebugEvent(
+          'data_channel_backpressure_error',
+          severity: 'error',
+          message: error.toString(),
+          context: <String, Object?>{
+            'channelId': channelId,
+            'errorType': error.runtimeType.toString(),
+          },
+        );
+        // Propagate via PeerState if it is a terminal data-channel failure.
+        if (!_messageController.isClosed) {
+          _messageController.addError(error, stackTrace);
+        }
+      }),
+    );
   }
 
   void _sendChunkedIfNeeded(RTCDataChannel channel, dynamic data) {

@@ -174,9 +174,13 @@ class MessageDeliveryService {
         if (pending == null) {
           return;
         }
+        // C-04: do NOT advance lastSeq over a hole. Store with
+        // trackSequence:false so the missing seq can still be filled
+        // when it arrives late. The gap is visible but not permanently lost.
         await _messageStore.forceStoreIncomingEnvelope(
           pending.envelope,
           receivedAt: pending.receivedAt,
+          trackSequence: false,
         );
         if (onStored != null) {
           await onStored(pending.envelope);

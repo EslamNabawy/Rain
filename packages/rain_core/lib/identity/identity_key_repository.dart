@@ -96,6 +96,14 @@ final class IdentityKeyRepository {
     return KeyEncoding.encodeBytes(sharedBytes);
   }
 
+  /// C-03 helper: returns raw shared secret bytes so callers can use
+  /// `SignalingCipher.forPairRootKey` without a base64 round-trip. This
+  /// guarantees `forPair(b64)` and `forPairRootKey(raw)` interoperate.
+  Future<List<int>> derivePairKeyBytes(SimplePublicKey peerPublicKey) async {
+    final b64 = await derivePairKeyMaterial(peerPublicKey);
+    return KeyEncoding.decodeBytes(b64);
+  }
+
   Future<SimplePublicKey?> _readPublicKey() async {
     final row = await (_database.select(
       _database.identityTable,

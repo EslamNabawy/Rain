@@ -25,9 +25,9 @@ final class DataChannelBackpressure {
     if (!isAboveHighWatermark(channel)) {
       return;
     }
-    final deadline = DateTime.now().add(timeout);
+    final stopwatch = Stopwatch()..start();
     while ((channel.bufferedAmount ?? 0) > lowWatermarkBytes) {
-      if (DateTime.now().isAfter(deadline)) {
+      if (stopwatch.elapsed > timeout) {
         throw TimeoutException(
           'RTCDataChannel bufferedAmount did not drain below '
           '$lowWatermarkBytes bytes.',
