@@ -21,6 +21,6 @@
     "retry-request": "^8.0.2",
     "teeny-request": "^10.1.2",
     "uuid": "11.1.1",
-    "brace-expansion": "^2.1.2"
+    "brace-expansion": "^2.1.4"
   }
 }
