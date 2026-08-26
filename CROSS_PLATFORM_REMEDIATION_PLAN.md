@@ -96,7 +96,7 @@ Goal: eliminate main-isolate blocking and per-chunk storage/state churn in file 
 - Acceptance: existing large-receive + disk-failure tests pass unchanged; new test asserts flush count scales sub-linearly with chunk count (fake IOSink counter).
 - Validate: melos analyze + melos test.
 
-### A5. Narrow HomeScreen provider watches
+### A5. Narrow HomeScreen provider watches ⏸️ DEFERRED 2026-08-26 — consumer extraction caused shell body height collapse (320×0 probe: SizedBox/ListView height 0) and requires separate layout investigation. Reverted to HEAD; full suite green. Keep as follow-up: use `select` projections + minimal Consumer wrappers instead of wrapping Row.
 - Files: `apps/rain/lib/presentation/screens/home_screen.dart` (~L782–788 watches 7 broad providers).
 - Problem: any call-phase tick rebuilds header + rail + chat tree.
 - Steps:
@@ -105,12 +105,13 @@ Goal: eliminate main-isolate blocking and per-chunk storage/state churn in file 
   3. Do not change public provider APIs; projection-only refactor.
 - Acceptance: widget tests prove friend-list does not rebuild on call phase ticks (rebuild counter harness); visual behavior unchanged per existing widget tests.
 - Validate: melos analyze + melos test.
+- Status: DEFERRED — see CONTINUITY 2026-08-26 entry for probe details (Stack→Container→Column→Expanded height 0 via Consumer wrapper). Next attempt will use in-Row Consumer builders instead of wrapping Row, preserving original constraints.
 
 ---
 
 ## Phase B — Desktop Operating-System Citizenship (Windows First) [P0/P1]
 
-### B1. Single-instance guard [P0]
+### B1. Single-instance guard [P0] ✅ DONE 2026-08-26 (commit pending)
 - Files: `apps/rain/windows/runner/main.cpp`, optionally `win32_window.cpp`; new tiny method channel if focusing the existing window.
 - Problem: dual instances duplicate presence heartbeats, signaling subscriptions, notifications; SQLite survives mechanically, app state does not.
 - Steps:
@@ -346,3 +347,5 @@ Recommended session slicing (one slice per session/commit):
 | 2026-08-26 | T1 startup test harness key | 30c46cc | runtime_startup_test 24 passed; full melos test SUCCESS |
 | 2026-08-26 | A3 binary fan-out filter + data-event throttle | (slice 2) | data_event_throttle_test 1 passed; melos analyze SUCCESS |
 | 2026-08-26 | A4 flush policy in rain_core | (slice 2) | policy unit tests passed; friend_flow 130 incl. disk-failure; full melos test SUCCESS |
+| 2026-08-26 | A5 HomeScreen watch scoping | DEFERRED | Consumer extraction caused body height 0 (320×0 probe); reverted, full suite green. Next: in-Row Consumer + select |
+| 2026-08-26 | B1 single-instance mutex | pending | windows/runner/main.cpp CreateMutexW Local\Rain.SingleInstance |

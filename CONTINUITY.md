@@ -12,9 +12,11 @@ Completed slices:
 - A1+A2 file-transfer hot loop (commit `6e3d18c`): receiver SHA-256 via `Isolate.run`; incoming transfer record cache with `clearTransferRuntimeState` as sole invalidation funnel; per-chunk `loadById` removed. Sender-side incremental hash intentionally kept on main isolate (rationale in TD-008 progress note).
 - T1 startup test harness repair (commit `30c46cc`): `_runtimeProviderContainer` now passes a non-demo signaling key; fixed 7 pre-existing test failures caused by the hard cipher-key rejection.
 - Docs sync (commit `8438e45`).
-- A3+A4 (slice 2, this session): binary frames filtered from connectivity fan-out + leading-edge 250 ms data-event throttle (`data_event_throttle_test.dart`); receive flushes via `FileTransferFlushPolicy` in rain_core (first write always flushes for fail-fast disk errors, then 512 KiB batches).
+- A3+A4 (slice 2): binary frames filtered from connectivity fan-out + leading-edge 250 ms data-event throttle (`data_event_throttle_test.dart`); receive flushes via `FileTransferFlushPolicy` in rain_core (first write always flushes for fail-fast disk errors, then 512 KiB batches) (commit `fa37ce0`).
+- A5 DEFERRED 2026-08-26: HomeScreen consumer extraction caused shell body height collapse (Row 320×0 probe, Stack→Container→Column→Expanded chain) — reverted to HEAD, full suite green. Next attempt: in-Row Consumer + `select` projections preserving constraints.
+- B1 IN PROGRESS 2026-08-26: `windows/runner/main.cpp` single-instance mutex `Local\Rain.SingleInstance` added (CreateMutexW + MessageBox + CloseHandle).
 
-Next slice: **A5** — narrow HomeScreen provider watches with `.select()` projections and a rebuild-counter widget test.
+Next slice: **B1 validation + B2/B3/B4** — camera preflight wiring, exit-path repair, min window size.
 
 Decision gates G1–G6 remain unresolved; gated tasks are not started.
 
