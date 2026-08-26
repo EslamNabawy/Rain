@@ -5,6 +5,8 @@
 /// **Key types:** _FailingBootstrapper, _FailingAuthAdapter, _ExpiredSessionAdapter, _RecordingPresenceAdapter, _FailingSignOutAdapter, _FailingReauthAccountDeletionAdapter, _AuthBoundarySessionManager, _SignedInIdentityController
 ///
 /// **Depends on:** package:rain/application/bootstrap/app_bootstrap.dart, package:rain/application/state/app_startup_state.dart, package:rain/main.dart, package:rain_core/rain_core.dart
+library;
+
 import 'dart:async';
 import 'dart:io';
 
@@ -489,7 +491,11 @@ ProviderContainer _runtimeProviderContainer(
       appBootstrapProvider.overrideWithValue(
         AppBootstrapState(
           environment: AppEnvironment.fromEnvironment(
-            runtimeEnvironment: const <String, String>{'RAIN_BACKEND': 'noop'},
+            runtimeEnvironment: const <String, String>{
+              'RAIN_BACKEND': 'noop',
+              'RAIN_SIGNALING_ENCRYPTION_KEY':
+                  'rain-test-signaling-encryption-key-0123456789',
+            },
           ),
           database: db,
           adapter: adapter,
