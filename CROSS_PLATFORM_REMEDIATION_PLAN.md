@@ -69,7 +69,7 @@ Goal: eliminate main-isolate blocking and per-chunk storage/state churn in file 
 - Acceptance: chunk hot path performs zero store reads; progress still visible in DB after throttle tick; recovery after simulated restart mid-transfer works (existing recovery tests).
 - Validate: melos analyze + full melos test.
 
-### A3. Stop connectivity fan-out on binary frames
+### A3. Stop connectivity fan-out on binary frames ✅ DONE 2026-08-26
 - Files:
   - `packages/protocol_brain/lib/src/protocol_brain_impl.dart` (~L490–491, `onPeerMessage` carries binary chunks),
   - `apps/rain/lib/application/state/runtime_providers.dart` (~L368–393, `PeerConnectivityController._refresh` subscription),
@@ -82,7 +82,12 @@ Goal: eliminate main-isolate blocking and per-chunk storage/state churn in file 
 - Acceptance: transferring a multi-chunk file causes O(1) peer-snapshot rebuilds (test counts emissions); chat/control messages still trigger immediate refresh.
 - Validate: melos analyze + melos test; add emission-count regression test.
 
-### A4. Throttle receive sink flushes
+### A4. Throttle receive sink flushes ✅ DONE 2026-08-26
+
+### A3/A4 implementation notes (2026-08-26)
+- Provider subscription filters binary-only messages (`runtime_providers.dart`); runtime `_recordDataEvent` uses leading-edge 250 ms throttle + trailing flush so burst timestamps still reach the UI within one window. Timer cancelled in shutdown and dispose.
+- Flush policy lives in rain_core next to the protocol constants: `FileTransferFlushPolicy` + `fileTransferFlushThresholdBytes` (512 KiB). First write always flushes — this preserved the fail-fast semantics that `incoming disk write failure fails transfer` encodes (directory-as-tempPath surfaces at first flush); later writes batch; terminal close covers remainders.
+- New regression coverage: `data_event_throttle_test.dart` (emission counts: 6-chunk burst → 1 immediate + 1 trailing), policy unit tests (sub-linear scaling, threshold boundaries), plus existing large-receive/disk-failure suites unchanged.
 - Files: `apps/rain/lib/application/runtime/file_transfer_runtime.dart` (~L869–876).
 - Problem: `sink.add + await flush()` per 32 KiB chunk serializes disk round-trips.
 - Steps:
@@ -339,3 +344,5 @@ Recommended session slicing (one slice per session/commit):
 | 2026-08-26 | R1 lint sweep | 595a0fe | `melos analyze` SUCCESS all packages |
 | 2026-08-26 | A1+A2 isolate hash + record cache | 6e3d18c | friend_flow_test 127 passed incl. new regression; melos analyze + melos test SUCCESS |
 | 2026-08-26 | T1 startup test harness key | 30c46cc | runtime_startup_test 24 passed; full melos test SUCCESS |
+| 2026-08-26 | A3 binary fan-out filter + data-event throttle | (slice 2) | data_event_throttle_test 1 passed; melos analyze SUCCESS |
+| 2026-08-26 | A4 flush policy in rain_core | (slice 2) | policy unit tests passed; friend_flow 130 incl. disk-failure; full melos test SUCCESS |

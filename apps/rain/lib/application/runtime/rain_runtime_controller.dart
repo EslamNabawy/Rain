@@ -214,6 +214,10 @@ final class ResolvedBackendPresence {
 }
 
 class RainRuntimeController with WidgetsBindingObserver {
+  static const Duration _dataEventNotifyThrottleWindow = Duration(
+    milliseconds: 250,
+  );
+
   RainRuntimeController({
     required this.selfIdentity,
     this.sessionGeneration = 0,
@@ -320,6 +324,8 @@ class RainRuntimeController with WidgetsBindingObserver {
   final Map<String, FileTransferFrame> _pendingFileChunks =
       <String, FileTransferFrame>{};
   final Map<String, int> _receiveProgressOffsets = <String, int>{};
+  final Map<String, FileTransferFlushPolicy> _receiveFlushPolicies =
+      <String, FileTransferFlushPolicy>{};
   final Map<String, IOSink> _receiveFileSinks = <String, IOSink>{};
   final Map<String, String> _receiveFileSinkPaths = <String, String>{};
   final Map<String, Future<void>> _fileMessageQueues = <String, Future<void>>{};
@@ -377,6 +383,7 @@ class RainRuntimeController with WidgetsBindingObserver {
   Timer? _heartbeatTimer;
   Timer? _friendRequestRefreshTimer;
   Timer? _backgroundOfflineTimer;
+  Timer? _dataEventNotifyThrottleTimer;
   bool _presenceHeartbeatPaused = false;
   bool _started = false;
   bool _shutDown = false;
@@ -403,6 +410,8 @@ class RainRuntimeController with WidgetsBindingObserver {
       _presenceSubscriptions;
   Map<String, FileTransferFrame> get pendingFileChunks => _pendingFileChunks;
   Map<String, int> get receiveProgressOffsets => _receiveProgressOffsets;
+  Map<String, FileTransferFlushPolicy> get receiveFlushPolicies =>
+      _receiveFlushPolicies;
   Map<String, IOSink> get receiveFileSinks => _receiveFileSinks;
   Map<String, String> get receiveFileSinkPaths => _receiveFileSinkPaths;
   Map<String, Future<void>> get fileMessageQueues => _fileMessageQueues;
@@ -575,7 +584,20 @@ class RainRuntimeController with WidgetsBindingObserver {
       return;
     }
     _lastDataEventTimestamps[normalizedPeerId] = timestamp;
+    // Leading-edge throttle: data bursts (file chunks) would otherwise rebuild
+    // peer snapshots per 32 KiB chunk. First event notifies immediately; the
+    // trailing edge flushes the newest recorded timestamp once per window.
+    if (_dataEventNotifyThrottleTimer != null) {
+      return;
+    }
     _notifyPeerConnectivityChanged();
+    _dataEventNotifyThrottleTimer = Timer(
+      _dataEventNotifyThrottleWindow,
+      () {
+        _dataEventNotifyThrottleTimer = null;
+        _notifyPeerConnectivityChanged();
+      },
+    );
   }
 
   void _cacheResolvedPeerPresence(
@@ -1574,6 +1596,7 @@ class RainRuntimeController with WidgetsBindingObserver {
     _fileMessageQueues.clear();
     _outgoingFileSources.clear();
     _incomingTransferRecordCache.clear();
+    _receiveFlushPolicies.clear();
     await closeAllReceiveSinks(reason: 'network_lost');
   }
 
@@ -1902,6 +1925,8 @@ class RainRuntimeController with WidgetsBindingObserver {
     _friendRequestRefreshTimer = null;
     _backgroundOfflineTimer?.cancel();
     _backgroundOfflineTimer = null;
+    _dataEventNotifyThrottleTimer?.cancel();
+    _dataEventNotifyThrottleTimer = null;
     cancelVoiceCallReconnectGrace();
 
     final sessions = brain?.getSessions() ?? const <Session>[];
@@ -2490,6 +2515,8 @@ class RainRuntimeController with WidgetsBindingObserver {
 
       WidgetsBinding.instance.removeObserver(this);
       _backgroundOfflineTimer?.cancel();
+      _dataEventNotifyThrottleTimer?.cancel();
+      _dataEventNotifyThrottleTimer = null;
       cancelVoiceCallReconnectGrace();
       await disposeCurrentVoiceCallSession();
       _heartbeatTimer?.cancel();

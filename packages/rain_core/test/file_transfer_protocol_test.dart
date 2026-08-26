@@ -180,4 +180,31 @@ void main() {
       expect(sanitizeFileName('\u0000<>:"/\\|?*'), 'file');
     });
   });
+
+  group('FileTransferFlushPolicy', () {
+    test('flushes sub-linearly with chunk count at the default threshold', () {
+      final policy = FileTransferFlushPolicy();
+      var flushes = 0;
+      const chunks = 100;
+      for (var i = 0; i < chunks; i++) {
+        if (policy.registerWrite(fileTransferChunkBytes)) {
+          flushes += 1;
+        }
+      }
+      // First write always flushes (fail fast), then 99 * 32 KiB = 3168 KiB
+      // against a 512 KiB threshold crosses 6 times: 7 flushes total instead
+      // of 100 per-chunk flushes. The remainder is covered by terminal close.
+      expect(flushes, 7);
+    });
+
+    test('flushes the first write immediately, then thresholds', () {
+      final policy = FileTransferFlushPolicy(thresholdBytes: 10);
+      expect(policy.registerWrite(4), isTrue);
+      expect(policy.registerWrite(4), isFalse);
+      expect(policy.registerWrite(4), isFalse);
+      expect(policy.registerWrite(2), isTrue);
+      expect(policy.registerWrite(1), isFalse);
+      expect(policy.registerWrite(9), isTrue);
+    });
+  });
 }

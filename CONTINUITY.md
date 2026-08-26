@@ -11,8 +11,10 @@ Completed slices:
 - R1 lint sweep (commit `595a0fe`): 254 `library;` directives + 1 doc-comment fix; repaired pre-existing CI `--fatal-infos` breakage at HEAD `0a65568`.
 - A1+A2 file-transfer hot loop (commit `6e3d18c`): receiver SHA-256 via `Isolate.run`; incoming transfer record cache with `clearTransferRuntimeState` as sole invalidation funnel; per-chunk `loadById` removed. Sender-side incremental hash intentionally kept on main isolate (rationale in TD-008 progress note).
 - T1 startup test harness repair (commit `30c46cc`): `_runtimeProviderContainer` now passes a non-demo signaling key; fixed 7 pre-existing test failures caused by the hard cipher-key rejection.
+- Docs sync (commit `8438e45`).
+- A3+A4 (slice 2, this session): binary frames filtered from connectivity fan-out + leading-edge 250 ms data-event throttle (`data_event_throttle_test.dart`); receive flushes via `FileTransferFlushPolicy` in rain_core (first write always flushes for fail-fast disk errors, then 512 KiB batches).
 
-Next slice: **A3+A4** — filter binary frames out of the connectivity fan-out (`runtime_providers.dart` ~L368–393, `protocol_brain_impl.dart` ~L490) and throttle receive sink flushes (`file_transfer_runtime.dart` flush-per-chunk site).
+Next slice: **A5** — narrow HomeScreen provider watches with `.select()` projections and a rebuild-counter widget test.
 
 Decision gates G1–G6 remain unresolved; gated tasks are not started.
 
@@ -26,6 +28,9 @@ Decision gates G1–G6 remain unresolved; gated tasks are not started.
 | 2026-08-26 | `flutter test test\runtime_startup_test.dart` baseline check (stash verified) | pristine HEAD: same 7 failures → pre-existing |
 | 2026-08-26 | `dart run melos run analyze` (root) | SUCCESS — all 4 packages |
 | 2026-08-26 | `dart run melos run test` (root) | SUCCESS — all packages |
+| 2026-08-26 | `.\scripts\check_obsidian_vault.ps1` after docs sync | passed (198 files) |
+| 2026-08-26 | slice 2: `flutter test` friend_flow+network_loss+throttle focused runs | all passed (incl. disk-failure regression after first-write-flush fix) |
+| 2026-08-26 | slice 2: `dart run melos run analyze` + `melos run test` (root) | both SUCCESS |
 
 ## Notes / Blockers
 

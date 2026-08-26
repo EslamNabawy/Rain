@@ -375,7 +375,15 @@ class PeerConnectivityController
         brain.onSessionChanged.listen((_) => _refresh()),
         brain.onPeerConnected.listen((_) => _refresh()),
         brain.onPeerDisconnected.listen((_) => _refresh()),
-        brain.onPeerMessage.listen((_) => _refresh()),
+        // Binary-only messages are file-transfer chunk payloads; they would
+        // rebuild the full snapshot per 32 KiB chunk. Data-lane freshness for
+        // bursts is flushed by the runtime's throttled connectivity signal.
+        brain.onPeerMessage.listen((SessionMessage message) {
+          if (message.binary != null && message.text == null) {
+            return;
+          }
+          _refresh();
+        }),
       ]);
     }
   }

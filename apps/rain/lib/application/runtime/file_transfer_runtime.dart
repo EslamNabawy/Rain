@@ -893,7 +893,13 @@ extension FileTransferRuntime on RainRuntimeController {
   ) async {
     final sink = await _receiveSinkFor(transfer);
     sink.add(bytes);
-    await sink.flush();
+    final flushPolicy = receiveFlushPolicies.putIfAbsent(
+      transfer.id,
+      FileTransferFlushPolicy.new,
+    );
+    if (flushPolicy.registerWrite(bytes.lengthInBytes)) {
+      await sink.flush();
+    }
   }
 
   Future<IOSink> _receiveSinkFor(FileTransferRecord transfer) async {
@@ -973,6 +979,7 @@ extension FileTransferRuntime on RainRuntimeController {
     receiveProgressOffsets.remove(transferId);
     outgoingFileHashes.remove(transferId);
     incomingTransferRecordCache.remove(transferId);
+    receiveFlushPolicies.remove(transferId);
     fileProgressBatcher.clear(transferId);
   }
 
