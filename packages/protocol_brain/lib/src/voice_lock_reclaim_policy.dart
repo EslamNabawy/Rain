@@ -7,6 +7,8 @@
 /// **Package:** protocol_brain
 ///
 /// **Depends on:** voice_signaling_contract (VoiceActivePairLock, VoiceActiveUserLock, VoiceCallRoom)
+library;
+
 import 'voice_signaling_contract.dart';
 
 enum VoiceLockReclaimAction {

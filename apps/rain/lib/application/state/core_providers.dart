@@ -8,6 +8,7 @@
 /// **Key types:** (providers only — no new types)
 ///
 /// **Depends on:** app bootstrap, infrastructure services
+library;
 
 import 'dart:async';
 

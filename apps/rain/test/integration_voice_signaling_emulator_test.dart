@@ -5,6 +5,7 @@
 /// **Key types:** FirebaseEmulatorSignalingAdapter, VoiceCallSignalingStatus
 ///
 /// **Depends on:** flutter_test, protocol_brain, firebase_emulator_signaling_adapter
+library;
 
 import 'dart:io';
 

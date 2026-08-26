@@ -5,6 +5,7 @@
 /// **Key types:** ForceUpdateService, ForceUpdateConfig, ForceUpdateStatus, AppUpdateChannel.
 ///
 /// **Depends on:** Package info, remote config, and update manifest loading.
+library;
 
 import 'package:flutter_test/flutter_test.dart';
 import 'package:package_info_plus/package_info_plus.dart';

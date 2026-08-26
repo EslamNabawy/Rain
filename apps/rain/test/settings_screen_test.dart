@@ -5,6 +5,8 @@
 /// **Key types:** _SettingsHarness, _FakePlatformBridge, _NoIdentityController, _StaticIdentityController, _NoRuntimeController, _RecordingRuntimeController, _FakeConnectionRequestController, _NoFriendsController, _SettingsPump
 ///
 /// **Depends on:** package:rain/application/state/app_providers.dart, package:rain/presentation/screens/settings_screen.dart, package:rain_core/rain_core.dart
+library;
+
 import 'dart:convert';
 import 'dart:io';
 

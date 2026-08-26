@@ -8,6 +8,7 @@
 /// **Key types:** [AppBootstrapper], [AppBootstrapState]
 ///
 /// **Depends on:** Firebase, rain_core, protocol_brain, infrastructure services
+library;
 
 import 'package:firebase_core/firebase_core.dart';
 import 'package:firebase_database/firebase_database.dart';

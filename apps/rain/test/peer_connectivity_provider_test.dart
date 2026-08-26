@@ -5,6 +5,7 @@
 /// **Key types:** peerConnectivityProvider, RainRuntimeController, RainIdentity, _TestSessionManager
 ///
 /// **Depends on:** flutter_test, flutter_riverpod, protocol_brain, rain app_bootstrap, rain_core
+library;
 
 import 'dart:async';
 

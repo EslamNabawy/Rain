@@ -8,6 +8,7 @@
 /// **Key types:** (none — pure functions)
 ///
 /// **Depends on:** protocol_brain (ConnectionRequestPayload, ConnectionRequestDirection)
+library;
 
 import 'package:protocol_brain/protocol_brain.dart';
 

@@ -7,6 +7,8 @@
 /// **Package:** protocol_brain
 ///
 /// **Depends on:** dart:async, peer_core, voice_call_frame
+library;
+
 import 'dart:async';
 
 import 'package:peer_core/peer_core.dart';

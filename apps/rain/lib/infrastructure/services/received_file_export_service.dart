@@ -7,6 +7,7 @@
 /// **Key types:** [ReceivedFileExportService], [ReceivedFileExportResult]
 ///
 /// **Depends on:** file_picker, rain_core
+library;
 
 import 'dart:async';
 import 'dart:io';

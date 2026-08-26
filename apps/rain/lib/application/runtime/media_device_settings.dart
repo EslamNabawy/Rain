@@ -8,6 +8,7 @@
 /// **Key types:** [RainMediaDeviceKind], [RainCameraFacing], [AdaptiveDeviceProfile], [AdaptiveDevicePlatform], [AdaptiveInteractionMode], [AdaptiveViewportClass], [AdaptiveRefreshMode]
 ///
 /// **Depends on:** flutter_webrtc, app settings store
+library;
 
 import 'package:flutter/services.dart';
 import 'package:flutter_webrtc/flutter_webrtc.dart';

@@ -8,6 +8,7 @@
 /// **Key types:** [VoiceCallPreflightCoordinator], [VoiceCallPeerPresence], [VoiceCallStartPresenceSnapshot]
 ///
 /// **Depends on:** protocol_brain, runtime interaction guard, voice call state
+library;
 
 import 'package:protocol_brain/protocol_brain.dart';
 

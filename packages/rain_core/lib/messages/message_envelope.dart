@@ -8,6 +8,8 @@
 ///
 /// **Depends on:** dart:convert
 ///
+library;
+
 import 'dart:convert';
 
 enum MessageType { text, system, file }

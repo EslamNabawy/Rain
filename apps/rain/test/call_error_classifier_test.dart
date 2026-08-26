@@ -5,6 +5,7 @@
 /// **Key types:** CallErrorClassifier, VoiceCallFailureReason, CallRetryDecision.
 ///
 /// **Depends on:** protocol_brain signaling errors and native WebRTC media exceptions.
+library;
 
 import 'package:flutter_test/flutter_test.dart';
 import 'package:protocol_brain/protocol_brain.dart';

@@ -5,6 +5,7 @@
 /// **Key types:** NavigationBar, NavigationRail, _TrackedPage
 ///
 /// **Depends on:** flutter_test, go_router, rain rain_navigation_shell
+library;
 
 import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';

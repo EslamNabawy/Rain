@@ -5,6 +5,7 @@
 /// **Key types:** RainUpdatePromptBanner, VersionCheckResult, VersionCheckStatus
 ///
 /// **Depends on:** flutter_test, rain force_update_service, rain_update_prompt_banner
+library;
 
 import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';

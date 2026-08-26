@@ -7,6 +7,8 @@
 /// **Key types:** RainApp, _StandaloneSurfaceNavigator
 ///
 /// **Depends on:** appRouterProvider, RainTheme, startup_surface
+library;
+
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 

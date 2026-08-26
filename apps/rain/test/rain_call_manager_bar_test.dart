@@ -5,6 +5,7 @@
 /// **Key types:** RainCallManagerBar, CallSurfaceState, CallSurfaceMode, topCallManagerBarOffset
 ///
 /// **Depends on:** flutter_test, rain voice_call_state, rain_call_controls, rain_call_manager_bar, rain_call_overlay
+library;
 
 import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';

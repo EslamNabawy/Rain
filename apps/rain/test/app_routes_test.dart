@@ -6,6 +6,7 @@
 /// **Key types:** (test file)
 ///
 /// **Depends on:** flutter_test, flutter_riverpod, presentation/navigation
+library;
 
 import 'dart:async';
 

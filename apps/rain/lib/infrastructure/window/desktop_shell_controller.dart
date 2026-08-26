@@ -7,6 +7,8 @@
 /// **Key types:** DesktopShellController
 ///
 /// **Depends on:** window_manager, AppExitCoordinator
+library;
+
 import 'dart:async';
 import 'dart:io';
 import 'dart:ui';

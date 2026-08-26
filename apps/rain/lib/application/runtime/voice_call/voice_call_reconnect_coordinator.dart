@@ -8,6 +8,7 @@
 /// **Key types:** [VoiceCallReconnectCoordinator]
 ///
 /// **Depends on:** protocol_brain, voice call state
+library;
 
 import 'dart:async';
 

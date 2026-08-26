@@ -7,6 +7,8 @@
 /// **Key types:** SearchScreen, _SearchHint, _SearchLoading, _SearchError, _SearchResults
 ///
 /// **Depends on:** userSearchProvider, app_components, rain_state_surfaces
+library;
+
 import 'dart:async';
 
 import 'package:flutter/material.dart';

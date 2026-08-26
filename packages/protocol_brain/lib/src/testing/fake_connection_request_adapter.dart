@@ -7,6 +7,8 @@
 /// **Package:** protocol_brain
 ///
 /// **Depends on:** dart:async, connection_request_adapter, connection_request_contract
+library;
+
 import 'dart:async';
 
 import '../connection_request_adapter.dart';

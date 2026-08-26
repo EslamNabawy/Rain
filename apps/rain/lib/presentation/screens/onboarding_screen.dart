@@ -7,6 +7,8 @@
 /// **Key types:** OnboardingScreen, _OnboardingScreenState, _AuthMode
 ///
 /// **Depends on:** app_providers, app_components, RainTheme
+library;
+
 import 'dart:async';
 
 import 'package:flutter/material.dart';

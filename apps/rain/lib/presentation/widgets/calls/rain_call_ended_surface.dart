@@ -6,6 +6,7 @@
 /// **Key types:** RainCallEndedSurface
 ///
 /// **Depends on:** application/runtime, presentation/branding, presentation/widgets/calls
+library;
 
 import 'package:flutter/material.dart';
 

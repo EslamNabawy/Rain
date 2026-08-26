@@ -7,6 +7,8 @@
 /// **Key types:** RainMistStateCard, RainStreakSkeleton, RainStateSeverity
 ///
 /// **Depends on:** RainTheme, RainColors
+library;
+
 import 'package:flutter/material.dart';
 
 import '../theme/rain_theme.dart';

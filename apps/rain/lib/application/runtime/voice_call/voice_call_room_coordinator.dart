@@ -8,6 +8,7 @@
 /// **Key types:** [VoiceCallRoomCoordinator]
 ///
 /// **Depends on:** call error classifier, voice call state
+library;
 
 import 'package:protocol_brain/protocol_brain.dart';
 

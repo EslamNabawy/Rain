@@ -5,6 +5,7 @@
 /// **Key types:** CrashDiagnosticsService, VoiceCallDiagnostics, CrashDiagnosticsAppInfo.
 ///
 /// **Depends on:** File system storage, file picker export, and voice call diagnostics.
+library;
 
 import 'dart:convert';
 import 'dart:io';

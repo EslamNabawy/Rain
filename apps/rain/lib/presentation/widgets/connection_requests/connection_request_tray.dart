@@ -6,6 +6,7 @@
 /// **Key types:** ConnectionRequestTray
 ///
 /// **Depends on:** protocol_brain, presentation/theme, connection_request_status_chip
+library;
 
 import 'package:flutter/material.dart';
 import 'package:protocol_brain/protocol_brain.dart';

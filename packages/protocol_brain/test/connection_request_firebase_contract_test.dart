@@ -8,6 +8,8 @@
 ///
 /// **Depends on:** flutter_test, dart:convert, dart:io
 ///
+library;
+
 import 'dart:convert';
 import 'dart:io';
 

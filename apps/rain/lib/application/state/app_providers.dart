@@ -7,6 +7,7 @@
 /// **Key types:** (none — barrel export)
 ///
 /// **Depends on:** all application state providers
+library;
 
 export 'app_startup_state.dart';
 export 'call_surface_providers.dart';

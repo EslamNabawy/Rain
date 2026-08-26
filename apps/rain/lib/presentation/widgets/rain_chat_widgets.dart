@@ -9,6 +9,7 @@
 /// RainCallPanel, RainVoiceCallPanel, RainMicrophoneSelector, RainCameraSelector
 ///
 /// **Depends on:** application/runtime, application/state, presentation/theme, presentation/branding
+library;
 
 import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';

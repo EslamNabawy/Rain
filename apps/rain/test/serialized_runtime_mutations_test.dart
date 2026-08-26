@@ -5,6 +5,8 @@
 /// **Key types:** SerializedRuntimeMutations
 ///
 /// **Depends on:** package:rain/application/runtime/serialized_runtime_mutations.dart
+library;
+
 import 'dart:async';
 
 import 'package:flutter_test/flutter_test.dart';

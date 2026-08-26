@@ -5,6 +5,8 @@
 /// **Key types:** VoiceCallRoomCoordinator, VoiceCallSignalingStatus, VoiceCallRoom
 ///
 /// **Depends on:** package:rain/application/runtime/voice_call/voice_call_room_coordinator.dart, package:protocol_brain/protocol_brain.dart
+library;
+
 import 'package:flutter_test/flutter_test.dart';
 import 'package:protocol_brain/protocol_brain.dart';
 

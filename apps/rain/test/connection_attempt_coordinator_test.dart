@@ -5,6 +5,7 @@
 /// **Key types:** ConnectionAttemptCoordinator, FriendRecord, IncomingOfferRejection.
 ///
 /// **Depends on:** Peer connection lifecycle, friend store, and network recovery scheduling.
+library;
 
 import 'package:flutter_test/flutter_test.dart';
 import 'package:protocol_brain/protocol_brain.dart';

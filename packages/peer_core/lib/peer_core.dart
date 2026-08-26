@@ -5,6 +5,8 @@
 /// **Key types:** (barrel export file — see exported modules for types)
 ///
 /// **Depends on:** src/call/, src/voice/, src/data_channel_backpressure.dart, src/default_peer_core.dart, src/models.dart, src/platform_bridge.dart, src/state_machine.dart
+library;
+
 export 'src/call/call_media_connection.dart';
 export 'src/call/call_media_models.dart';
 export 'src/call/media_interruption.dart';

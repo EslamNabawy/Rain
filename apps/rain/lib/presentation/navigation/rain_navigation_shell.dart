@@ -7,6 +7,8 @@
 /// **Key types:** RainNavigationShell, _BottomNavigation, _RailLayout, _NetworkStatusStrip
 ///
 /// **Depends on:** RainBackdrop, app routes
+library;
+
 import 'package:flutter/material.dart';
 import 'package:go_router/go_router.dart';
 

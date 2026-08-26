@@ -5,6 +5,8 @@
 /// **Key types:** SoundEventRouter, RainSoundEvent, RainSoundEffect, _RecordingSoundEffectsService
 ///
 /// **Depends on:** package:rain/application/audio/rain_sound_event.dart, package:rain/application/audio/sound_event_router.dart, package:rain/application/runtime/voice_call_state.dart
+library;
+
 import 'package:flutter_test/flutter_test.dart';
 import 'package:flutter/services.dart';
 import 'package:rain/application/audio/rain_sound_event.dart';

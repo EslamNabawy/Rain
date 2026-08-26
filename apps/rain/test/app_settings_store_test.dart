@@ -6,6 +6,7 @@
 /// **Key types:** (test file)
 ///
 /// **Depends on:** flutter_test, infrastructure/services
+library;
 
 import 'package:flutter_test/flutter_test.dart';
 import 'package:rain/infrastructure/services/app_settings_store.dart';

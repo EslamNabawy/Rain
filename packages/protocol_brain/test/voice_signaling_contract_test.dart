@@ -8,6 +8,8 @@
 ///
 /// **Depends on:** flutter_test, protocol_brain, testing
 ///
+library;
+
 import 'dart:async';
 
 import 'package:flutter_test/flutter_test.dart';

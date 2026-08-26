@@ -8,6 +8,7 @@
 /// **Key types:** [CallRetryPolicy], [CallRetryDecision], [CallRetryDecisionKind], [CallSignalingFailureSnapshot]
 ///
 /// **Depends on:** protocol_brain, call error classification
+library;
 
 enum CallRetryDecisionKind {
   proceed,

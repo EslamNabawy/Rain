@@ -8,6 +8,7 @@
 /// **Key types:** [VoiceCallErrorCoordinator]
 ///
 /// **Depends on:** call error classifier, call retry policy, voice call state
+library;
 
 import '../call_error_classifier.dart';
 import '../call_retry_policy.dart';

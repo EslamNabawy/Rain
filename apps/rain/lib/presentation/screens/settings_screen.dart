@@ -7,6 +7,8 @@
 /// **Key types:** SettingsScreen, _SettingsScreenState, _ProfileAction
 ///
 /// **Depends on:** app_providers, app_components, app_dialogs, force_update_service
+library;
+
 import 'dart:async';
 
 import 'package:flutter/foundation.dart';

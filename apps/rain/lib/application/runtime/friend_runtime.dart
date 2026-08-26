@@ -10,6 +10,7 @@
 /// **Part of:** friend_runtime.dart (extension)
 ///
 /// **Depends on:** protocol_brain, rain_core, voice call state
+library;
 
 import 'dart:async';
 

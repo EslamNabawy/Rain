@@ -5,6 +5,7 @@
 /// **Key types:** RainLiveLinkBar, RainAvatar, _FakeRendererFactory, _FakeRendererHandle, _FakeMediaStream
 ///
 /// **Depends on:** flutter_test, flutter_svg, flutter_webrtc, rain rain_chat_widgets, rain_core
+library;
 
 import 'package:flutter/material.dart';
 import 'package:flutter_svg/flutter_svg.dart';

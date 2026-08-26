@@ -8,6 +8,7 @@
 /// **Key types:** [VoiceCallSessionStateCoordinator]
 ///
 /// **Depends on:** call media session coordinator, call retry policy, video call renderers, voice call state
+library;
 
 import 'dart:async';
 

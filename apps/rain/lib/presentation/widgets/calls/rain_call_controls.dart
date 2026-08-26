@@ -7,6 +7,7 @@
 /// RainCallTicker, _CallActionTone
 ///
 /// **Depends on:** application/runtime, presentation/theme
+library;
 
 import 'dart:async';
 

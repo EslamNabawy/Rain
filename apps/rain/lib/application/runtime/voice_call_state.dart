@@ -8,6 +8,7 @@
 /// **Key types:** [VoiceCallPhase], [VoiceCallFailureReason], [VoiceCallOutputRoute], [CallEndInitiator], [CallEndSummary], [VoiceCallSessionPhase]
 ///
 /// **Depends on:** protocol_brain (CallMediaMode)
+library;
 
 import 'package:flutter/widgets.dart' show IconData;
 import 'package:protocol_brain/protocol_brain.dart' show CallMediaMode;

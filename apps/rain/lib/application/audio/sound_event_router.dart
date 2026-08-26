@@ -8,6 +8,7 @@
 /// **Key types:** [SoundEventRouter], [VoiceCallStateReader]
 ///
 /// **Depends on:** audio settings store, voice call state, sound effects service
+library;
 
 import 'dart:async';
 

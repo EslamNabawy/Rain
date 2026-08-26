@@ -7,6 +7,8 @@
 /// **Package:** protocol_brain
 ///
 /// **Depends on:** flutter_webrtc (RTCIceCandidate)
+library;
+
 import 'package:flutter_webrtc/flutter_webrtc.dart';
 
 const maxCacheFailures = 3;

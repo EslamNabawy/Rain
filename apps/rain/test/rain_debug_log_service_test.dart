@@ -5,6 +5,7 @@
 /// **Key types:** CrashDiagnosticsDebugLogService
 ///
 /// **Depends on:** flutter_test, flutter_webrtc, protocol_brain, rain crash_diagnostics_service, rain_debug_log_service
+library;
 
 import 'dart:convert';
 import 'dart:io';

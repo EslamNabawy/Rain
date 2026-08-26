@@ -5,6 +5,8 @@
 /// **Key types:** _DelayedSearchAdapter, _ImmediateSearchAdapter, _CountingSearchAdapter, _SignedInIdentityController
 ///
 /// **Depends on:** package:protocol_brain/protocol_brain.dart, package:rain/application/state/app_providers.dart, package:rain/presentation/screens/search_screen.dart, package:rain_core/rain_core.dart
+library;
+
 import 'dart:async';
 
 import 'package:drift/native.dart';

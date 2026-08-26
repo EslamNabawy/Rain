@@ -5,6 +5,7 @@
 /// **Key types:** CallSurfaceState, CallSurfaceMode
 ///
 /// **Depends on:** flutter_test, rain voice_call_state, rain_call_suite, rain_call_surface_providers
+library;
 
 import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';

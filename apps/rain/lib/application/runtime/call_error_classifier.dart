@@ -8,6 +8,7 @@
 /// **Key types:** [CallErrorClassifier], [CallSignalingFailureSnapshot]
 ///
 /// **Depends on:** protocol_brain, call retry policy, voice call state
+library;
 
 import 'package:protocol_brain/protocol_brain.dart';
 

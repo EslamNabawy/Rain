@@ -8,6 +8,7 @@
 /// **Key types:** [RainDebugLogService], [NoopRainDebugLogService], [CrashDiagnosticsDebugLogService], [RainDebugSeverity]
 ///
 /// **Depends on:** crash diagnostics service, diagnostics sanitizer
+library;
 
 import 'dart:async';
 

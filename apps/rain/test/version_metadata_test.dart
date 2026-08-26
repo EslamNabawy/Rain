@@ -5,6 +5,8 @@
 /// **Key types:** ForceUpdateService (indirectly via file reads)
 ///
 /// **Depends on:** package:rain/infrastructure/services/force_update_service.dart, package:package_info_plus/package_info_plus.dart
+library;
+
 import 'dart:convert';
 import 'dart:io';
 

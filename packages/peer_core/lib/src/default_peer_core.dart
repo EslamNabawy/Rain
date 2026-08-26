@@ -5,6 +5,7 @@
 /// **Key types:** DefaultPeerCore, _ChunkAccumulator
 ///
 /// **Depends on:** flutter_webrtc, uuid, data_channel_backpressure, models, state_machine
+library;
 
 import 'dart:async';
 import 'dart:convert';

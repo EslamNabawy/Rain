@@ -7,6 +7,7 @@
 /// **Key types:** [CallTerminalWritePolicy]
 ///
 /// **Depends on:** voice call signaling
+library;
 
 final class CallTerminalWritePolicy {
   const CallTerminalWritePolicy({

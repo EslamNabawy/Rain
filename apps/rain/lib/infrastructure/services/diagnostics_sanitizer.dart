@@ -8,6 +8,7 @@
 /// **Key types:** [DiagnosticsSanitizer]
 ///
 /// **Depends on:** (none — pure utility)
+library;
 
 import 'dart:convert';
 

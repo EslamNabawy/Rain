@@ -5,6 +5,8 @@
 /// **Key types:** _MutableIdentityController
 ///
 /// **Depends on:** package:rain/application/state/app_providers.dart, package:rain_core/rain_core.dart
+library;
+
 import 'package:drift/native.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_test/flutter_test.dart';

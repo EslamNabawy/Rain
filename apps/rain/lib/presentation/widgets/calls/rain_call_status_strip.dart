@@ -6,6 +6,7 @@
 /// **Key types:** RainCallStatusStrip
 ///
 /// **Depends on:** flutter/material
+library;
 
 import 'package:flutter/material.dart';
 

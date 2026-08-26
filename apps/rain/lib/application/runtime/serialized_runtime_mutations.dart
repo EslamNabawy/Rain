@@ -7,6 +7,7 @@
 /// **Key types:** [SerializedRuntimeMutations]
 ///
 /// **Depends on:** runtime state management
+library;
 
 class SerializedRuntimeMutations {
   Future<void> _tail = Future<void>.value();

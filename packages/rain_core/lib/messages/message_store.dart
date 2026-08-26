@@ -8,6 +8,8 @@
 ///
 /// **Depends on:** drift/drift.dart, package:uuid, rain_database.dart, message_envelope.dart
 ///
+library;
+
 import 'package:drift/drift.dart';
 import 'package:uuid/uuid.dart';
 

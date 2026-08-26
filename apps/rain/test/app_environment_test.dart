@@ -6,6 +6,7 @@
 /// **Key types:** (test file)
 ///
 /// **Depends on:** flutter_test, core/config
+library;
 
 import 'package:flutter_test/flutter_test.dart';
 import 'package:rain/core/config/app_environment.dart';

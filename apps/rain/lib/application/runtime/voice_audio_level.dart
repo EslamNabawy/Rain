@@ -8,6 +8,7 @@
 /// **Key types:** [VoiceAudioLevel], [VoiceAudioLevelSource]
 ///
 /// **Depends on:** protocol_brain (VoiceMediaAudioLevel)
+library;
 
 import 'package:protocol_brain/protocol_brain.dart'
     show VoiceMediaAudioLevel, VoiceMediaAudioLevelSource;

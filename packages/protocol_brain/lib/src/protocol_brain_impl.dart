@@ -7,6 +7,8 @@
 /// **Package:** protocol_brain
 ///
 /// **Depends on:** flutter_webrtc, peer_core, signaling_adapter, signaling_cipher, connection_memory, session_manager, active_session (part), ice_candidate_policy (part), session_retry_policy (part)
+library;
+
 import 'dart:async';
 
 import 'package:flutter_webrtc/flutter_webrtc.dart';

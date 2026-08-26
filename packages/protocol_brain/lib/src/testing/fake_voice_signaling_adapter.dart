@@ -8,6 +8,8 @@
 ///
 /// **Depends on:** signaling_cost_budget, voice_call_clock, voice_call_cleanup_janitor, voice_call_frame, voice_lock_reclaim_policy, voice_signaling_contract
 ///
+library;
+
 import 'dart:async';
 
 import '../signaling_cost_budget.dart';

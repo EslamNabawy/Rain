@@ -5,6 +5,7 @@
 /// **Key types:** RtdbOnlyConnectionRequestTransactionAction, ConnectionRequestRtdbAdapter (plus typedefs for RTDB operations)
 ///
 /// **Depends on:** firebase_database, protocol_brain/src/connection_request_adapter, protocol_brain/src/connection_request_contract
+library;
 
 import 'dart:math';
 

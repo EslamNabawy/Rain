@@ -5,6 +5,8 @@
 /// **Key types:** _RainAppiumSmokeApp, _RainAppiumSmokeAppState
 ///
 /// **Depends on:** package:flutter/material.dart, package:flutter_driver/driver_extension.dart
+library;
+
 import 'package:flutter/material.dart';
 import 'package:flutter_driver/driver_extension.dart';
 

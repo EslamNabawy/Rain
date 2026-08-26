@@ -5,6 +5,7 @@
 /// **Key types:** VideoOptimizationManager
 ///
 /// **Depends on:** flutter_webrtc, call/call_media_models
+library;
 
 import 'dart:async';
 

@@ -5,6 +5,7 @@
 /// **Key types:** _AuthValidationAdapter, BackendIdentity, RainIdentity.
 ///
 /// **Depends on:** Firebase auth, RainDatabase identity storage, and signaling adapter layer.
+library;
 
 import 'package:drift/native.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';

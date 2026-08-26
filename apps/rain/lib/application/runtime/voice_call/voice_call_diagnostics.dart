@@ -8,6 +8,7 @@
 /// **Key types:** [VoiceCallDiagnostics]
 ///
 /// **Depends on:** voice call signaling
+library;
 
 import 'dart:convert';
 

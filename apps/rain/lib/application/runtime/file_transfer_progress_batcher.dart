@@ -7,6 +7,7 @@
 /// **Key types:** [FileTransferProgressBatcher]
 ///
 /// **Depends on:** file transfer runtime
+library;
 
 class FileTransferProgressBatcher {
   FileTransferProgressBatcher({

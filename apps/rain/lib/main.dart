@@ -7,6 +7,7 @@
 /// **Key types:** [main], [runRainApp]
 ///
 /// **Depends on:** application bootstrap, crash diagnostics, presentation layer
+library;
 
 import 'dart:async';
 

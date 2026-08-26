@@ -7,6 +7,8 @@
 /// **Package:** protocol_brain
 ///
 /// **Depends on:** peer_core, signaling_cipher (SignalingEncryptionException), session_manager (Session, SessionState, SessionPhase, PeerConnectionRoute)
+library;
+
 import 'package:peer_core/peer_core.dart';
 
 import '../adapters/signaling_cipher.dart';

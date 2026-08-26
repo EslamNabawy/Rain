@@ -6,6 +6,7 @@
 /// **Key types:** RainCallSurfaceMode, RainVideoRole, RainCallLayoutContract
 ///
 /// **Depends on:** application/state
+library;
 
 import 'package:rain/application/state/call_surface_providers.dart';
 

@@ -5,6 +5,7 @@
 /// **Key types:** RainRuntimeController, FirebaseEmulatorSignalingAdapter, RainDatabase.
 ///
 /// **Depends on:** Firebase emulator, runtime controller, friend store, and message delivery.
+library;
 
 import 'dart:io';
 

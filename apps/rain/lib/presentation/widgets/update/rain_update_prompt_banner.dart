@@ -6,6 +6,7 @@
 /// **Key types:** RainUpdatePromptBanner
 ///
 /// **Depends on:** infrastructure/services/force_update_service
+library;
 
 import 'package:flutter/material.dart';
 

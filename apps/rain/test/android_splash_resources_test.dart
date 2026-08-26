@@ -6,6 +6,7 @@
 /// **Key types:** (test file)
 ///
 /// **Depends on:** flutter_test
+library;
 
 import 'dart:io';
 

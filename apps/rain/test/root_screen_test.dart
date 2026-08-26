@@ -5,6 +5,7 @@
 /// **Key types:** RootScreen, RainDatabase
 ///
 /// **Depends on:** flutter_test, flutter_riverpod, rain root_screen, app_bootstrap, force_update_service, rain_core
+library;
 
 import 'dart:async';
 

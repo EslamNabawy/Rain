@@ -5,6 +5,7 @@
 /// **Key types:** _WorkspaceHarness
 ///
 /// **Depends on:** flutter_test, rain voice_call_state, rain_call_workspace, rain_call_stage, rain_call_controls
+library;
 
 import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';

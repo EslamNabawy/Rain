@@ -8,6 +8,8 @@
 ///
 /// **Depends on:** dart:convert, drift/drift.dart, protocol_brain, rain_database.dart
 ///
+library;
+
 import 'dart:convert';
 
 import 'package:drift/drift.dart';

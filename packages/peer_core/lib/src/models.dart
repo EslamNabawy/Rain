@@ -5,6 +5,7 @@
 /// **Key types:** PeerState, PeerIceTransportPolicy, TurnReadiness, TurnReadinessResult, TurnUnavailableException, PeerAddressFamily, PeerChannels, PeerConfig, PeerDebugEventSink, PeerCore, PeerMessage, PeerRemoteTrack, PeerConnectionRoute, PeerRouteKind
 ///
 /// **Depends on:** flutter_webrtc, call/call_media_models, platform_bridge
+library;
 
 import 'dart:typed_data';
 

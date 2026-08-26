@@ -7,6 +7,8 @@
 /// **Package:** protocol_brain
 ///
 /// **Depends on:** connection_request_contract (ConnectionRequestDecision, ConnectionRequestPayload, ConnectionRequestQuotaSnapshot)
+library;
+
 import 'connection_request_contract.dart';
 
 abstract interface class ConnectionRequestAdapter {

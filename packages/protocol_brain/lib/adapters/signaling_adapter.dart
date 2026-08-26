@@ -7,6 +7,8 @@
 /// **Package:** protocol_brain
 ///
 /// **Depends on:** flutter_webrtc (SDPPayload, IceRole types)
+library;
+
 import 'package:flutter_webrtc/flutter_webrtc.dart';
 
 abstract class SignalingAdapter {

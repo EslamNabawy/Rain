@@ -8,6 +8,7 @@
 /// **Key types:** [FileTransferView], [FileTransferSpeedTracker]
 ///
 /// **Depends on:** rain_core (FileTransferRecord)
+library;
 
 import 'package:rain_core/rain_core.dart';
 

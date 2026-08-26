@@ -5,6 +5,8 @@
 /// **Key types:** _SoundExpectation, _WaveInfo, RainSoundEffect
 ///
 /// **Depends on:** package:rain/infrastructure/services/sound_effects_service.dart
+library;
+
 import 'dart:io';
 import 'dart:math' as math;
 import 'dart:typed_data';

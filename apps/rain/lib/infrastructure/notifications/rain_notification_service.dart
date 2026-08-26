@@ -7,6 +7,7 @@
 /// **Key types:** [RainNotificationService], [RainNotificationResult], [RainNotificationResultKind], [RainNotificationPermissionStatus]
 ///
 /// **Depends on:** flutter_local_notifications, protocol_brain
+library;
 
 import 'dart:async';
 

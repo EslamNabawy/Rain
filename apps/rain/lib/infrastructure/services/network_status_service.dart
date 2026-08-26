@@ -8,6 +8,7 @@
 /// **Key types:** [NetworkStatusService], [NetworkStatusState], [NetworkStatusKind]
 ///
 /// **Depends on:** connectivity_plus, firebase_database
+library;
 
 import 'dart:async';
 

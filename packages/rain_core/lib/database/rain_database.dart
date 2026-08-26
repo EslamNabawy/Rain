@@ -11,6 +11,7 @@
 /// **Package:** rain_core
 ///
 /// **Depends on:** drift, drift_flutter, dart:async.
+library;
 
 import 'dart:async';
 

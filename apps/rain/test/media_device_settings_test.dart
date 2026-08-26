@@ -5,6 +5,7 @@
 /// **Key types:** MediaDeviceSettings, _FakePlatformBridge, _FakeMediaStream, _FakeMediaTrack
 ///
 /// **Depends on:** flutter_test, flutter_webrtc, protocol_brain, rain media_device_settings, app_settings_store
+library;
 
 import 'package:flutter/foundation.dart';
 import 'package:flutter_test/flutter_test.dart';

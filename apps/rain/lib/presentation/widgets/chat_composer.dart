@@ -7,6 +7,8 @@
 /// **Key types:** ChatComposer, _ChatComposerState
 ///
 /// **Depends on:** RainTheme
+library;
+
 import 'dart:async';
 
 import 'package:flutter/foundation.dart';

@@ -5,6 +5,7 @@
 /// **Key types:** CallSuiteSurfaceMode, CallSuiteStageKind, CallSuiteControlModel, CallSuiteControlAction, VideoPrimaryRole, CallControlCapability
 ///
 /// **Depends on:** flutter_test, rain voice_call_state, rain_call_suite_models, rain_call_surface_providers
+library;
 
 import 'package:flutter/widgets.dart';
 import 'package:flutter_test/flutter_test.dart';

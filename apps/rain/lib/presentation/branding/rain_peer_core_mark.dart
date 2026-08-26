@@ -7,6 +7,8 @@
 /// **Key types:** RainPeerCoreMark, RainPeerCoreAnimatedMark, RainPeerCoreMotion
 ///
 /// **Depends on:** RainBrandAssets, RainPerformanceScope, RainTheme
+library;
+
 import 'dart:math' as math;
 
 import 'package:flutter/material.dart';

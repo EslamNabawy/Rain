@@ -7,6 +7,8 @@
 /// **Package:** protocol_brain
 ///
 /// **Depends on:** peer_core, signaling_adapter, connection_memory, protocol_brain_impl, session_manager
+library;
+
 import 'package:peer_core/peer_core.dart';
 
 import '../adapters/signaling_adapter.dart';

@@ -5,6 +5,7 @@
 /// **Key types:** RainCallEndedSurface, CallEndSummary, CallEndInitiator, CallMediaMode
 ///
 /// **Depends on:** flutter_test, rain voice_call_state, rain_call_ended_surface
+library;
 
 import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';

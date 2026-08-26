@@ -5,6 +5,7 @@
 /// **Key types:** rainSanitizeVoiceCallFailureDetail, rainVoiceCallFailureDetail, rainVoiceCallCanRetry, VoiceCallState, VoiceCallFailureReason
 ///
 /// **Depends on:** flutter_test, rain voice_call_state, rain_call_controls
+library;
 
 import 'package:flutter_test/flutter_test.dart';
 import 'package:rain/application/runtime/voice_call_state.dart';

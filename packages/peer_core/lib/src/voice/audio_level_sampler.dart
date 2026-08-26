@@ -5,6 +5,7 @@
 /// **Key types:** VoiceAudioLevelStatsSampler
 ///
 /// **Depends on:** flutter_webrtc, voice/voice_media_models, voice/webrtc_stats_parser
+library;
 
 import 'dart:math' as math;
 

@@ -5,6 +5,7 @@
 /// **Key types:** RainTextureTokens, RainMotion, RainColors, RainBackdrop, RainBackdropVariant
 ///
 /// **Depends on:** flutter_test, rain rain_theme, rain_backdrop
+library;
 
 import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';

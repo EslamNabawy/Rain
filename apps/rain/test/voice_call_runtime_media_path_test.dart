@@ -5,6 +5,8 @@
 /// **Key types:** (no top-level declarations — source-inspection tests)
 ///
 /// **Depends on:** dart:io for source file reading and regex analysis
+library;
+
 import 'dart:io';
 
 import 'package:flutter_test/flutter_test.dart';

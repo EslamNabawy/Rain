@@ -6,5 +6,6 @@
 /// **Key types:** (none — top-level function)
 ///
 /// **Depends on:** (none)
+library;
 
 Map<String, String> currentProcessEnvironment() => const <String, String>{};

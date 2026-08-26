@@ -6,6 +6,7 @@
 /// **Key types:** RainCallWorkspace
 ///
 /// **Depends on:** application/runtime, presentation/performance, presentation/theme, presentation/widgets/calls
+library;
 
 import 'package:flutter/material.dart';
 

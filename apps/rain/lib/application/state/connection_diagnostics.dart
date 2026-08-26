@@ -8,6 +8,7 @@
 /// **Key types:** [ConnectionDiagnostics], [PeerConnectionUiStatusKind]
 ///
 /// **Depends on:** protocol_brain, connection attempt coordinator, voice call state
+library;
 
 import 'package:protocol_brain/protocol_brain.dart';
 

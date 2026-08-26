@@ -8,6 +8,7 @@
 /// **Key types:** [ManualConnectionIntent], [PeerConnectionView], [ConnectionsState], [UserSearchState]
 ///
 /// **Depends on:** protocol_brain, rain_core
+library;
 
 import 'package:freezed_annotation/freezed_annotation.dart';
 import 'package:protocol_brain/protocol_brain.dart';

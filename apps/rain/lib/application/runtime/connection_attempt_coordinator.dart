@@ -8,6 +8,7 @@
 /// **Key types:** [ConnectionAttemptCoordinator], [ConnectionRetryGate], [ConnectionCoordinatorSnapshot], [PeerDisconnectIntent]
 ///
 /// **Depends on:** protocol_brain, rain_core
+library;
 
 import 'dart:async';
 

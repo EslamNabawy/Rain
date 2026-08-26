@@ -6,6 +6,7 @@
 /// **Key types:** RainCallStage, RainCallStageLayout
 ///
 /// **Depends on:** application/runtime, application/state, presentation/performance, presentation/branding
+library;
 
 import 'dart:math' as math;
 

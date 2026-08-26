@@ -5,6 +5,8 @@
 /// **Key types:** RainRuntimeController, FileTransferStore, FileTransferRecord, _DisconnectingSessionManager, _NoopVoiceMediaConnection, _NoopCallMediaConnection
 ///
 /// **Depends on:** package:protocol_brain/protocol_brain.dart, package:rain/application/runtime/rain_runtime_controller.dart, package:rain_core/rain_core.dart
+library;
+
 import 'dart:async';
 import 'dart:io';
 

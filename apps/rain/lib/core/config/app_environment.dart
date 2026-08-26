@@ -9,6 +9,7 @@
 /// **Key types:** [AppEnvironment], [RainBackend]
 ///
 /// **Depends on:** protocol_brain
+library;
 
 import 'dart:convert';
 

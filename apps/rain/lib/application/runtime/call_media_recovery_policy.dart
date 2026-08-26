@@ -7,6 +7,7 @@
 /// **Key types:** [CallMediaRecoveryDecision], [CallMediaRecoveryPolicy]
 ///
 /// **Depends on:** voice call media recovery
+library;
 
 enum CallMediaRecoveryDecision {
   wait,

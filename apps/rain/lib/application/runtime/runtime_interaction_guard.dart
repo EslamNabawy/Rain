@@ -8,6 +8,7 @@
 /// **Key types:** [RuntimeInteractionGuard], [RuntimeInteractionDecision], [RuntimeInteractionReasonCode]
 ///
 /// **Depends on:** rain_core, call start preflight, voice call state
+library;
 
 import 'package:rain_core/rain_core.dart';
 

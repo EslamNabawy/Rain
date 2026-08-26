@@ -8,6 +8,8 @@
 ///
 /// **Depends on:** flutter_test, rain_core
 ///
+library;
+
 import 'dart:convert';
 import 'dart:typed_data';
 

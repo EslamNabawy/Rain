@@ -5,6 +5,7 @@
 /// **Key types:** FileTransferSpeedTracker, ReceivedFileExportService, FileTransferRecord.
 ///
 /// **Depends on:** File transfer state, file picker save dialog, and local file system.
+library;
 
 import 'dart:io';
 import 'dart:typed_data';

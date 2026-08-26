@@ -8,6 +8,7 @@
 /// **Key types:** [PeerConnectivitySnapshot]
 ///
 /// **Depends on:** protocol_brain
+library;
 
 import 'package:protocol_brain/protocol_brain.dart';
 

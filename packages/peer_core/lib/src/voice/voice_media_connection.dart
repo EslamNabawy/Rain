@@ -5,6 +5,7 @@
 /// **Key types:** VoiceMediaConnection, DefaultVoiceMediaConnection
 ///
 /// **Depends on:** flutter_webrtc, models, platform_bridge, voice/audio_level_sampler, voice/voice_media_models
+library;
 
 import 'dart:async';
 

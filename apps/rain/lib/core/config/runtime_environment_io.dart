@@ -8,6 +8,7 @@
 /// **Key types:** (none — top-level function)
 ///
 /// **Depends on:** dart:io
+library;
 
 import 'dart:convert';
 import 'dart:io';

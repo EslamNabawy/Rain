@@ -8,6 +8,7 @@
 /// **Key types:** [AppSettingsStore], [AppAudioSettings], [AppCallProcessingSettings], [CallAudioOutputPreference]
 ///
 /// **Depends on:** shared_preferences, protocol_brain
+library;
 
 import 'dart:convert';
 

@@ -5,6 +5,7 @@
 /// **Key types:** None (pure test file).
 ///
 /// **Depends on:** Enforces lib/application, lib/core, lib/infrastructure, lib/presentation boundaries.
+library;
 
 import 'dart:io';
 

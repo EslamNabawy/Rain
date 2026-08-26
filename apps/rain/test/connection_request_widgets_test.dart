@@ -5,6 +5,7 @@
 /// **Key types:** ConnectionRequestStatusChip, ConnectionRequestTray, ConnectionRequestSurfaceModel, ConnectionRequestActionModel.
 ///
 /// **Depends on:** Connection request state models and Rain theme/styling.
+library;
 
 import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';

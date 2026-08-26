@@ -5,6 +5,8 @@
 /// **Key types:** _PlayedSound, _FakeRainSoundPlayer
 ///
 /// **Depends on:** package:rain/infrastructure/services/sound_effects_service.dart, package:audioplayers/audioplayers.dart
+library;
+
 import 'dart:io';
 
 import 'package:audioplayers/audioplayers.dart';

@@ -6,6 +6,7 @@
 /// **Key types:** (test file)
 ///
 /// **Depends on:** flutter_test, application/runtime
+library;
 
 import 'dart:async';
 

@@ -7,6 +7,8 @@
 /// **Key types:** RainSplashScreen, RainStartupFailureScreen, RainAccountDeletionScreen
 ///
 /// **Depends on:** RainPeerCoreAnimatedMark, RainBackdrop, RainTheme
+library;
+
 import 'package:flutter/material.dart';
 
 import 'package:rain/presentation/branding/rain_peer_core_mark.dart';

@@ -8,6 +8,8 @@
 ///
 /// **Depends on:** flutter_test, drift/native.dart, rain_core
 ///
+library;
+
 import 'package:flutter_test/flutter_test.dart';
 import 'package:drift/native.dart';
 import 'package:rain_core/rain_core.dart';

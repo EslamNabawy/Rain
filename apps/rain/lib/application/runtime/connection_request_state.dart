@@ -7,6 +7,7 @@
 /// **Key types:** [ConnectionRequestState], [ConnectionRequestUserMessage]
 ///
 /// **Depends on:** protocol_brain (ConnectionRequestPayload, ConnectionRequestSurfaceModel)
+library;
 
 import 'package:protocol_brain/protocol_brain.dart';
 

@@ -7,6 +7,7 @@
 /// **Key types:** [BackgroundServices]
 ///
 /// **Depends on:** (none — placeholder)
+library;
 
 import 'dart:async';
 

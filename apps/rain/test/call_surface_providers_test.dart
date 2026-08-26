@@ -5,6 +5,7 @@
 /// **Key types:** _CallSurfaceHarness, _TestVoiceCallController, _SelectedChatController, CallSurfaceState.
 ///
 /// **Depends on:** Voice call state, call surface providers, and Riverpod state management.
+library;
 
 import 'package:flutter/widgets.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';

@@ -5,6 +5,7 @@
 /// **Key types:** CallMediaKind, CallVideoOptimizationProfile, CallMediaProcessingConfig, CallMediaPhase, CallMediaFailureReason, CallMediaException, CallMediaState, CallMediaDiagnostics, CallRemoteMediaTrack, CallIceCandidate, CallSessionDescription, CallMediaOutputRoute
 ///
 /// **Depends on:** flutter_webrtc, voice/voice_media_models
+library;
 
 import 'package:flutter_webrtc/flutter_webrtc.dart';
 

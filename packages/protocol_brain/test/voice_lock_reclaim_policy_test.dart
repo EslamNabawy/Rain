@@ -8,6 +8,8 @@
 ///
 /// **Depends on:** flutter_test, protocol_brain, voice_lock_reclaim_policy
 ///
+library;
+
 import 'package:flutter_test/flutter_test.dart';
 import 'package:protocol_brain/protocol_brain.dart';
 import 'package:protocol_brain/src/voice_lock_reclaim_policy.dart';

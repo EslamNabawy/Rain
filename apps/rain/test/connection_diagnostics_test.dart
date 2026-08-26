@@ -5,6 +5,7 @@
 /// **Key types:** ConnectionDiagnostics, PeerConnectionView, PeerConnectivitySnapshot, VoiceCallState.
 ///
 /// **Depends on:** Session state, peer connectivity snapshots, and voice call state.
+library;
 
 import 'package:flutter_test/flutter_test.dart';
 import 'package:protocol_brain/protocol_brain.dart';

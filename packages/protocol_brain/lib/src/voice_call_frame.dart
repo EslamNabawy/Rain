@@ -7,6 +7,8 @@
 /// **Package:** protocol_brain
 ///
 /// **Depends on:** dart:convert
+library;
+
 import 'dart:convert';
 
 enum VoiceCallFrameType {

@@ -5,6 +5,8 @@
 /// **Key types:** VoiceAudioLevel, VoiceMediaAudioLevel, VoiceAudioLevelSource
 ///
 /// **Depends on:** package:rain/application/runtime/voice_audio_level.dart, package:protocol_brain/protocol_brain.dart
+library;
+
 import 'package:flutter_test/flutter_test.dart';
 import 'package:protocol_brain/protocol_brain.dart';
 import 'package:rain/application/runtime/voice_audio_level.dart';

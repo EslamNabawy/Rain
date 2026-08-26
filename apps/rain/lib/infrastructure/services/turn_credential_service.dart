@@ -8,6 +8,7 @@
 /// **Key types:** [TurnCredentialService]
 ///
 /// **Depends on:** firebase_auth, protocol_brain (TurnReadiness)
+library;
 
 import 'dart:async';
 import 'dart:convert';

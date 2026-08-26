@@ -8,6 +8,8 @@
 ///
 /// **Depends on:** drift, drift/native.dart, flutter_test, rain_core
 ///
+library;
+
 import 'dart:convert';
 
 import 'package:drift/drift.dart';

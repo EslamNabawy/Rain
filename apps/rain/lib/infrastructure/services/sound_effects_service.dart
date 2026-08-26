@@ -8,6 +8,7 @@
 /// **Key types:** [SoundEffectsService], [RainSoundEffect], [RainSoundPlayerFactory], [RainSoundSettingsLoader]
 ///
 /// **Depends on:** audioplayers, app settings store
+library;
 
 import 'dart:async';
 

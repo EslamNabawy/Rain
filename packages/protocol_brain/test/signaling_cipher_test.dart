@@ -8,6 +8,8 @@
 ///
 /// **Depends on:** flutter_test, protocol_brain, dart:convert
 ///
+library;
+
 import 'dart:convert';
 
 import 'package:flutter_test/flutter_test.dart';

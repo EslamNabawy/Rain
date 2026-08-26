@@ -8,6 +8,7 @@
 /// **Key types:** [CallSurfaceState], [CallSurfaceController], [CallEndPresentationState], [CallEndPresentationController], [CallSurfaceMode], [VideoPrimaryRole]
 ///
 /// **Depends on:** voice call state, runtime providers
+library;
 
 import 'dart:async';
 

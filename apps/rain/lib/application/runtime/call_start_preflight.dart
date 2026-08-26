@@ -8,6 +8,7 @@
 /// **Key types:** [CallStartPreflightResult], [CallStartPreflightDecision]
 ///
 /// **Depends on:** protocol_brain (CallMediaMode), runtime interaction guard
+library;
 
 import 'package:protocol_brain/protocol_brain.dart' show CallMediaMode;
 

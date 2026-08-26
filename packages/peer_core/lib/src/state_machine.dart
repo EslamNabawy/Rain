@@ -5,6 +5,7 @@
 /// **Key types:** PeerStateMachine
 ///
 /// **Depends on:** models
+library;
 
 import 'models.dart';
 

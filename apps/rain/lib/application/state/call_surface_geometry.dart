@@ -7,6 +7,7 @@
 /// **Key types:** [CallSurfaceBounds]
 ///
 /// **Depends on:** presentation layer (Flutter widgets)
+library;
 
 import 'dart:math' as math;
 

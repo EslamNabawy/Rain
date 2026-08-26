@@ -5,6 +5,7 @@
 /// **Key types:** OnboardingScreen, RainPeerCoreMark
 ///
 /// **Depends on:** flutter_test, flutter_riverpod, rain onboarding_screen, rain_core
+library;
 
 import 'dart:async';
 

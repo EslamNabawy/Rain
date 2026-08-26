@@ -7,6 +7,8 @@
 /// **Key types:** FriendProfileScreen, _InfoSection, _InfoTile
 ///
 /// **Depends on:** friendsProvider, app_components, app_dialogs
+library;
+
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:rain_core/rain_core.dart';

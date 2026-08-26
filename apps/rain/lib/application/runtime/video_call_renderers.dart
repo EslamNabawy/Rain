@@ -8,6 +8,7 @@
 /// **Key types:** [VideoCallRendererHandle], [VideoCallRendererFactory], [RtcVideoCallRendererFactory], [RtcVideoCallRendererHandle]
 ///
 /// **Depends on:** flutter_webrtc
+library;
 
 import 'dart:async';
 

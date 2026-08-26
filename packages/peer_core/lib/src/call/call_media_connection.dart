@@ -5,6 +5,7 @@
 /// **Key types:** CallMediaConnection, DefaultCallMediaConnection
 ///
 /// **Depends on:** flutter_webrtc, models, call/call_media_models, call/media_device_selector, call/media_interruption, call/video_optimization_manager
+library;
 
 import 'dart:async';
 

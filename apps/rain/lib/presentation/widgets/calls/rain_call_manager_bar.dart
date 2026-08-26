@@ -6,6 +6,7 @@
 /// **Key types:** RainCallManagerBar
 ///
 /// **Depends on:** application/runtime, application/state, presentation/performance, presentation/widgets
+library;
 
 import 'package:flutter/material.dart';
 

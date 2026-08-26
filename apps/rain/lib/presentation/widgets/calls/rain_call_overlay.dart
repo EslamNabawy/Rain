@@ -6,6 +6,7 @@
 /// **Key types:** RainCallOverlay, RainFullscreenCallWorkspace
 ///
 /// **Depends on:** application/runtime, application/state, presentation/performance, presentation/theme, presentation/widgets
+library;
 
 import 'dart:math' as math;
 

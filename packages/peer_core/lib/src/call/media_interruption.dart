@@ -5,6 +5,7 @@
 /// **Key types:** MediaInterruptionType, MediaInterruptionEvent
 ///
 /// **Depends on:** none (dart:core only)
+library;
 
 enum MediaInterruptionType {
   audioFocusLost,

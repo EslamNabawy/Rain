@@ -8,6 +8,8 @@
 ///
 /// **Depends on:** drift/drift.dart, rain_database.dart
 ///
+library;
+
 import 'package:drift/drift.dart';
 
 import '../database/rain_database.dart';

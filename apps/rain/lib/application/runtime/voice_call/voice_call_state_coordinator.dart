@@ -8,6 +8,7 @@
 /// **Key types:** [VoiceCallStateCoordinator]
 ///
 /// **Depends on:** protocol_brain, call error classifier, voice audio level, voice call state
+library;
 
 import 'package:protocol_brain/protocol_brain.dart';
 

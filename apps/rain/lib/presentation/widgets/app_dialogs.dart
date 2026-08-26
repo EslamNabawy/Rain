@@ -7,6 +7,8 @@
 /// **Key types:** showAppConfirmDialog, showAppTextInputDialog, _AppTextInputDialog
 ///
 /// **Depends on:** flutter/material
+library;
+
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 

@@ -8,6 +8,7 @@
 /// **Key types:** [VoiceCallTerminalReconciler], [VoiceCallTerminalSessionDecision]
 ///
 /// **Depends on:** protocol_brain, voice call state
+library;
 
 import 'package:protocol_brain/protocol_brain.dart';
 

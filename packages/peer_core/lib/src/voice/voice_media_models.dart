@@ -5,6 +5,7 @@
 /// **Key types:** VoiceMediaAudioLevelSource, VoiceMediaOutputRoute, VoiceMediaPhase, VoiceMediaState, VoiceMediaDiagnostics, VoiceMediaAudioLevel, VoiceSessionDescription, VoiceIceCandidate, VoiceRemoteAudioTrack
 ///
 /// **Depends on:** flutter_webrtc
+library;
 
 import 'package:flutter_webrtc/flutter_webrtc.dart';
 

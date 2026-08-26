@@ -5,6 +5,7 @@
 /// **Key types:** RainPeerCoreMark, RainPeerCoreAnimatedMark, RainPeerCoreMotion
 ///
 /// **Depends on:** flutter_test, rain rain_peer_core_mark
+library;
 
 import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';

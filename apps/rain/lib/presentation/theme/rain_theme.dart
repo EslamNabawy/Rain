@@ -7,6 +7,8 @@
 /// **Key types:** RainColors, RainTheme, RainMotion, RainTextureTokens
 ///
 /// **Depends on:** google_fonts, flutter/material
+library;
+
 import 'package:flutter/material.dart';
 import 'package:google_fonts/google_fonts.dart';
 

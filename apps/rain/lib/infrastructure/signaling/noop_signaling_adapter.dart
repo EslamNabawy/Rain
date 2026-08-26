@@ -7,6 +7,8 @@
 /// **Key types:** NoopSignalingAdapter
 ///
 /// **Depends on:** SignalingAdapter interface, protocol_brain
+library;
+
 import 'dart:async';
 
 import 'package:flutter_webrtc/flutter_webrtc.dart';

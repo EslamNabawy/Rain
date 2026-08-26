@@ -11,6 +11,7 @@
 ///
 /// **Depends on:** database, file_transfer, friends, identity, messages,
 ///   voice_call sub-packages.
+library;
 
 export 'database/rain_database.dart';
 export 'file_transfer/file_transfer_protocol.dart';

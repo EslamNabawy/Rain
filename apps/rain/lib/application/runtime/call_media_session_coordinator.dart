@@ -8,6 +8,7 @@
 /// **Key types:** [CallMediaSessionCoordinator], [VideoVoiceMediaConnection]
 ///
 /// **Depends on:** protocol_brain, video call renderers, voice call state
+library;
 
 import 'dart:async';
 

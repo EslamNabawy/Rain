@@ -7,6 +7,8 @@
 /// **Key types:** RainStartupSurface, RainSessionExpiredResetView, RainForceUpdateGate
 ///
 /// **Depends on:** app_providers, splash_screen, force_update_service
+library;
+
 import 'dart:async';
 
 import 'package:flutter/material.dart';

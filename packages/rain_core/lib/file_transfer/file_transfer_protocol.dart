@@ -8,6 +8,8 @@
 ///
 /// **Depends on:** dart:convert, dart:typed_data, package:collection
 ///
+library;
+
 import 'dart:convert';
 import 'dart:typed_data';
 

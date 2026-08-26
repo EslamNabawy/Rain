@@ -8,6 +8,7 @@
 /// **Key types:** [UserSearchController]
 ///
 /// **Depends on:** protocol_brain, core providers, identity providers
+library;
 
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 

@@ -7,6 +7,8 @@
 /// **Key types:** DebugSignalingAdapter, DebugFullSignalingAdapter
 ///
 /// **Depends on:** SignalingAdapter interface, RainDebugLogService, protocol_brain
+library;
+
 import 'dart:async';
 
 import 'package:flutter_webrtc/flutter_webrtc.dart';

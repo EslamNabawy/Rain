@@ -5,6 +5,7 @@
 /// **Key types:** FileTransferProgressBatcher.
 ///
 /// **Depends on:** File transfer state tracking and async progress persistence.
+library;
 
 import 'package:flutter_test/flutter_test.dart';
 import 'package:rain/application/runtime/file_transfer_progress_batcher.dart';

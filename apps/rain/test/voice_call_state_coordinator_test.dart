@@ -5,6 +5,8 @@
 /// **Key types:** VoiceCallStateCoordinator, VoiceCallSessionPhase, VoiceCallPhase, VoiceCallFailureReason, CallErrorClassifier
 ///
 /// **Depends on:** package:rain/application/runtime/voice_call/voice_call_state_coordinator.dart, package:rain/application/runtime/call_error_classifier.dart, package:protocol_brain/protocol_brain.dart
+library;
+
 import 'package:flutter_test/flutter_test.dart';
 import 'package:protocol_brain/protocol_brain.dart';
 

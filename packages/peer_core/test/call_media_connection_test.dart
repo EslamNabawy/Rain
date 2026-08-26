@@ -5,6 +5,7 @@
 /// **Key types:** _FakeCallPlatformBridge (test fakes)
 ///
 /// **Depends on:** flutter_test, flutter_webrtc, peer_core
+library;
 
 import 'package:flutter_test/flutter_test.dart';
 import 'package:flutter_webrtc/flutter_webrtc.dart';

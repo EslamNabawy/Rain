@@ -8,6 +8,7 @@
 /// **Key types:** [ForceUpdateService], [AppUpdateChannel], [VersionCheckStatus], [AppVersionInfo], [ForceUpdateResult]
 ///
 /// **Depends on:** firebase_remote_config, package_info_plus
+library;
 
 import 'dart:convert';
 

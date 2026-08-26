@@ -7,6 +7,7 @@
 /// **Key types:** [MessagesController]
 ///
 /// **Depends on:** rain_core, core providers, identity providers
+library;
 
 import 'dart:async';
 import 'dart:io';

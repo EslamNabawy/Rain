@@ -7,6 +7,8 @@
 /// **Key types:** HomeScreen (with parts: shell_header, link_status, friends_list, chat_panel, file_transfer_bubble)
 ///
 /// **Depends on:** app_providers, call widgets, chat widgets, sound events
+library;
+
 import 'dart:async';
 import 'dart:io';
 

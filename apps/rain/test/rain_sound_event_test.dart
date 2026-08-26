@@ -5,6 +5,7 @@
 /// **Key types:** RainSoundEvent, RainSoundEventKind, CallMediaMode
 ///
 /// **Depends on:** flutter_test, protocol_brain, rain rain_sound_event
+library;
 
 import 'package:flutter_test/flutter_test.dart';
 import 'package:protocol_brain/protocol_brain.dart' show CallMediaMode;

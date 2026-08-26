@@ -6,6 +6,8 @@
 /// **Key types:** BackendBanner
 ///
 /// **Depends on:** RainColors
+library;
+
 import 'package:flutter/material.dart';
 
 import 'package:rain/presentation/theme/rain_theme.dart';

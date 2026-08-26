@@ -5,6 +5,8 @@
 /// **Key types:** VoiceCallPreflightCoordinator
 ///
 /// **Depends on:** package:rain/application/runtime/voice_call/voice_call_preflight_coordinator.dart, package:rain/application/runtime/voice_call_state.dart
+library;
+
 import 'package:flutter_test/flutter_test.dart';
 
 import 'package:rain/application/runtime/voice_call/voice_call_preflight_coordinator.dart';

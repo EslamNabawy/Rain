@@ -7,6 +7,8 @@
 /// **Package:** protocol_brain
 ///
 /// **Depends on:** voice_call_clock, voice_call_cleanup_janitor, voice_call_frame
+library;
+
 import 'voice_call_clock.dart';
 import 'voice_call_cleanup_janitor.dart';
 import 'voice_call_frame.dart';

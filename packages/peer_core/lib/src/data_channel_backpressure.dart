@@ -5,6 +5,7 @@
 /// **Key types:** DataChannelBackpressure
 ///
 /// **Depends on:** flutter_webrtc
+library;
 
 import 'dart:async';
 

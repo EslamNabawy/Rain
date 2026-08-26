@@ -7,6 +7,8 @@
 /// **Package:** protocol_brain
 ///
 /// **Depends on:** dart:convert, cryptography (AesGcm, Hkdf, Hmac, SecretKey), flutter_webrtc
+library;
+
 import 'dart:convert';
 
 import 'package:cryptography/cryptography.dart';

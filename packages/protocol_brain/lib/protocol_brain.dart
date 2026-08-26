@@ -5,6 +5,7 @@
 /// **Key types:** Re-exports: PeerCore, PeerConfig, CallMediaConnection, VoiceMediaConnection, and ~30+ types from peer_core + protocol_brain
 ///
 /// **Depends on:** peer_core, protocol_brain/src/*, protocol_brain/adapters/*
+library;
 
 export 'package:peer_core/peer_core.dart'
     show

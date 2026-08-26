@@ -5,6 +5,8 @@
 /// **Key types:** _SoundSpec, _Droplet, _Shimmer (private top-level constants and data structures)
 ///
 /// **Depends on:** dart:io, dart:math, dart:typed_data
+library;
+
 import 'dart:io';
 import 'dart:math' as math;
 import 'dart:typed_data';

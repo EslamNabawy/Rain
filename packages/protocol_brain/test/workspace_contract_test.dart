@@ -8,6 +8,8 @@
 ///
 /// **Depends on:** flutter_test, dart:io
 ///
+library;
+
 import 'dart:io';
 
 import 'package:flutter_test/flutter_test.dart';

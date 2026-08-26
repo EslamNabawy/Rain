@@ -5,6 +5,7 @@
 /// **Key types:** FirebaseEmulatorSignalingAdapter.
 ///
 /// **Depends on:** Firebase Auth/Realtime Database emulator and signaling adapter.
+library;
 
 import 'dart:io';
 

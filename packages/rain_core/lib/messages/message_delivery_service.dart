@@ -8,6 +8,8 @@
 ///
 /// **Depends on:** message_envelope.dart, message_store.dart, offline_queue.dart
 ///
+library;
+
 import 'dart:async';
 import 'dart:convert';
 

@@ -8,6 +8,7 @@
 /// **Key types:** [AppStartupState], [AppStartupPhase], [AppStartupFailureSource]
 ///
 /// **Depends on:** protocol_brain, force update service, network status, core providers
+library;
 
 import 'package:flutter/foundation.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';

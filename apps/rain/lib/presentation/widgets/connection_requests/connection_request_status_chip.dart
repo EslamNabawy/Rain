@@ -6,6 +6,7 @@
 /// **Key types:** ConnectionRequestStatusChip, ConnectionRequestActionCallback
 ///
 /// **Depends on:** protocol_brain, presentation/theme
+library;
 
 import 'package:flutter/material.dart';
 import 'package:protocol_brain/protocol_brain.dart';

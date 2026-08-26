@@ -10,6 +10,7 @@
 /// **Part of:** connection_request_runtime.dart (extension)
 ///
 /// **Depends on:** protocol_brain, rain_core, notifications
+library;
 
 import 'dart:async';
 

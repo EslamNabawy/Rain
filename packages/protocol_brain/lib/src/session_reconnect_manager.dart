@@ -7,6 +7,8 @@
 /// **Package:** protocol_brain
 ///
 /// **Depends on:** dart:async, peer_core, signaling_adapter, connection_memory, protocol_error_classifier, session_manager
+library;
+
 import 'dart:async';
 
 import 'package:peer_core/peer_core.dart';

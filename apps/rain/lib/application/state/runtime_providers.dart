@@ -8,6 +8,7 @@
 /// **Key types:** [AccountDeletionProgressController]
 ///
 /// **Depends on:** rain_runtime_controller, core providers, identity providers
+library;
 
 import 'dart:async';
 

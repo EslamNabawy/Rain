@@ -8,5 +8,7 @@
 ///
 /// **Depends on:** package:protocol_brain/protocol_brain.dart
 ///
+library;
+
 export 'package:protocol_brain/protocol_brain.dart'
     show CallMediaMode, VoiceCallFrame, VoiceCallFrameType;

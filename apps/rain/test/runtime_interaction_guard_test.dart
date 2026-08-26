@@ -5,6 +5,8 @@
 /// **Key types:** RuntimeInteractionGuard, RuntimeInteractionReasonCode, CallStartPreflightDecision
 ///
 /// **Depends on:** package:rain/application/runtime/runtime_interaction_guard.dart, package:rain/application/runtime/voice_call_state.dart, package:rain_core/rain_core.dart
+library;
+
 import 'package:flutter_test/flutter_test.dart';
 import 'package:rain/application/runtime/runtime_interaction_guard.dart';
 import 'package:rain/application/runtime/voice_call_state.dart';

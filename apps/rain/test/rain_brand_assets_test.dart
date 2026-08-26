@@ -5,6 +5,7 @@
 /// **Key types:** RainBrandAssets
 ///
 /// **Depends on:** flutter_test, rain rain_brand_assets
+library;
 
 import 'package:flutter/services.dart';
 import 'package:flutter_test/flutter_test.dart';

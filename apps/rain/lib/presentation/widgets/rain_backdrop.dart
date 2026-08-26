@@ -8,6 +8,8 @@
 /// **Key types:** RainBackdrop, RainBackdropVariant, _RainBackdropStyle, _RainSignalMistPainter
 ///
 /// **Depends on:** RainTheme, RainPerformanceScope
+library;
+
 import 'dart:math' as math;
 
 import 'package:flutter/material.dart';

@@ -5,6 +5,7 @@
 /// **Key types:** TwoDeviceHarness.
 ///
 /// **Depends on:** Firebase emulator, two-device test harness, and full signaling stack.
+library;
 
 import 'dart:io';
 

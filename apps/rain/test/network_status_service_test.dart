@@ -5,6 +5,7 @@
 /// **Key types:** NetworkStatusService, NetworkStatusState, NetworkStatusKind, _FakeConnectivityProbe, _FakeBackendProbe
 ///
 /// **Depends on:** flutter_test, connectivity_plus, rain network_status_service
+library;
 
 import 'dart:async';
 

@@ -5,6 +5,7 @@
 /// **Key types:** MediaDeviceSelector
 ///
 /// **Depends on:** flutter_webrtc, platform_bridge
+library;
 
 import 'package:flutter_webrtc/flutter_webrtc.dart';
 

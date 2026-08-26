@@ -5,6 +5,7 @@
 /// **Key types:** _FakePlatformBridge, _FakePeerCore (test fakes)
 ///
 /// **Depends on:** flutter_test, flutter_webrtc, peer_core
+library;
 
 import 'dart:async';
 import 'dart:convert';

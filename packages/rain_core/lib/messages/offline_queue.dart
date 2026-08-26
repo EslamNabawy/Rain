@@ -8,6 +8,8 @@
 ///
 /// **Depends on:** drift/drift.dart, rain_database.dart, message_envelope.dart
 ///
+library;
+
 import 'package:drift/drift.dart';
 
 import '../database/rain_database.dart';

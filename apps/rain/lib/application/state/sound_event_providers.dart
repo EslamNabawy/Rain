@@ -7,6 +7,7 @@
 /// **Key types:** (provider only)
 ///
 /// **Depends on:** sound event router, core providers, runtime providers
+library;
 
 import 'dart:async';
 

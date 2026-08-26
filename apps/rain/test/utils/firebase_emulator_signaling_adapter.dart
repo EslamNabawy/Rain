@@ -5,6 +5,8 @@
 /// **Key types:** FirebaseEmulatorSignalingAdapter
 ///
 /// **Depends on:** package:protocol_brain/protocol_brain.dart, package:flutter_webrtc/flutter_webrtc.dart
+library;
+
 import 'dart:async';
 import 'dart:convert';
 import 'dart:io';

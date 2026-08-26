@@ -5,6 +5,7 @@
 /// **Key types:** RainPerformanceProfile, RainPerformanceTier
 ///
 /// **Depends on:** flutter_test, rain rain_performance
+library;
 
 import 'package:flutter_test/flutter_test.dart';
 import 'package:rain/presentation/performance/rain_performance.dart';

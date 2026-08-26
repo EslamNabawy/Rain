@@ -8,6 +8,7 @@
 /// **Key types:** [AppExitCoordinator], [AppExitReason], [AppExitPriority], [AppExitRegistration]
 ///
 /// **Depends on:** application runtime lifecycle
+library;
 
 import 'dart:async';
 

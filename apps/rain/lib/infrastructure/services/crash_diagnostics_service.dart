@@ -8,6 +8,7 @@
 /// **Key types:** [CrashDiagnosticsService], [CrashDiagnosticsAppInfo]
 ///
 /// **Depends on:** diagnostics sanitizer, path_provider, package_info_plus
+library;
 
 import 'dart:async';
 import 'dart:collection';

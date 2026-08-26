@@ -5,6 +5,8 @@
 /// **Key types:** VoiceCallReconnectCoordinator, VoiceCallState
 ///
 /// **Depends on:** package:rain/application/runtime/voice_call/voice_call_reconnect_coordinator.dart, package:rain/application/runtime/voice_call_state.dart
+library;
+
 import 'dart:async';
 
 import 'package:flutter_test/flutter_test.dart';

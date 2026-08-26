@@ -8,6 +8,7 @@
 /// **Key types:** [AuthenticatedSession], [AuthenticatedSessionController]
 ///
 /// **Depends on:** protocol_brain, rain_core, core providers
+library;
 
 import 'dart:async';
 

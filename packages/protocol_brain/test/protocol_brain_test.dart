@@ -8,6 +8,8 @@
 ///
 /// **Depends on:** flutter_test, flutter_webrtc, peer_core, protocol_brain
 ///
+library;
+
 import 'dart:async';
 
 import 'package:flutter_webrtc/flutter_webrtc.dart';

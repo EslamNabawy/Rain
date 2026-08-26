@@ -5,6 +5,7 @@
 /// **Key types:** _WidgetTestSessionManager, _FakePlatformBridge, _RecordingSoundEffectsService.
 ///
 /// **Depends on:** HomeScreen, ChatPanel, RainRuntimeController, and message delivery service.
+library;
 
 import 'dart:async';
 

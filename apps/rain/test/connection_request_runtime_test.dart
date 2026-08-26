@@ -5,6 +5,7 @@
 /// **Key types:** _ConnectionRequestHarness, _ConnectionRequestNoopSignalingAdapter, _TestSessionManager, RuntimeInteractionGuard.
 ///
 /// **Depends on:** RainRuntimeController, connection request adapter, and session manager.
+library;
 
 import 'dart:async';
 

@@ -5,6 +5,7 @@
 /// **Key types:** ConnectionRequestBackendMode, AppEnvironment, FakeConnectionRequestAdapter.
 ///
 /// **Depends on:** App environment configuration and runtime adapter selection.
+library;
 
 import 'package:flutter_test/flutter_test.dart';
 import 'package:protocol_brain/protocol_brain.dart';

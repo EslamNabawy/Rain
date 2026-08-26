@@ -7,6 +7,8 @@
 /// **Package:** protocol_brain
 ///
 /// **Depends on:** flutter_webrtc, peer_core (CallMediaConnection, PeerConnectionRoute, PeerRemoteTrack, VoiceMediaConnection)
+library;
+
 import 'dart:async';
 import 'dart:typed_data';
 

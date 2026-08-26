@@ -8,6 +8,7 @@
 /// **Key types:** [RainSoundEvent], [RainSoundEventKind]
 ///
 /// **Depends on:** protocol_brain (CallMediaMode), audio system
+library;
 
 import 'package:protocol_brain/protocol_brain.dart' show CallMediaMode;
 

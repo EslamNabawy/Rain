@@ -5,6 +5,7 @@
 /// **Key types:** RainMistStateCard, RainColors
 ///
 /// **Depends on:** flutter_test, rain rain_state_surfaces, rain_theme, app_components
+library;
 
 import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';

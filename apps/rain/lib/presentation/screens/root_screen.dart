@@ -7,6 +7,8 @@
 /// **Key types:** RootScreen
 ///
 /// **Depends on:** app_providers, onboarding_screen, home_screen, startup_surface
+library;
+
 import 'dart:async';
 
 import 'package:flutter/material.dart';

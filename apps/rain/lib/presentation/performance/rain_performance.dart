@@ -7,6 +7,8 @@
 /// **Key types:** RainPerformanceProfile, RainPerformanceScope, RainPerformanceTier
 ///
 /// **Depends on:** dart:ffi, flutter/widgets
+library;
+
 import 'dart:ffi' as ffi;
 
 import 'package:flutter/foundation.dart';

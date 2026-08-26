@@ -7,5 +7,7 @@
 /// **Key types:** FirebaseSignalingAdapter (re-exported)
 ///
 /// **Depends on:** protocol_brain
+library;
+
 export 'package:protocol_brain/protocol_brain.dart'
     show FirebaseSignalingAdapter;

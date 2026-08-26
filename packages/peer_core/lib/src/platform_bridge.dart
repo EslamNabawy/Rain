@@ -5,6 +5,7 @@
 /// **Key types:** PlatformBridge, FlutterWebRTCBridge, StorageBackend, MemoryStorageBackend, WebRtcMediaDeviceInfoX
 ///
 /// **Depends on:** flutter_webrtc
+library;
 
 import 'package:flutter_webrtc/flutter_webrtc.dart' as webrtc;
 

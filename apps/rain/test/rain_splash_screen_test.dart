@@ -5,6 +5,7 @@
 /// **Key types:** RainSplashScreen, RainPeerCoreAnimatedMark, RainPeerCoreMark, RainBackdrop, RainPerformanceScope
 ///
 /// **Depends on:** flutter_test, rain splash_screen, rain_peer_core_mark, rain_performance, rain_backdrop
+library;
 
 import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';

@@ -7,4 +7,6 @@
 /// **Package:** protocol_brain
 ///
 /// **Depends on:** ../adapters/connection_request_rtdb_adapter
+library;
+
 export '../adapters/connection_request_rtdb_adapter.dart';

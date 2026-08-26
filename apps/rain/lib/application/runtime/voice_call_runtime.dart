@@ -11,6 +11,7 @@
 /// **Part of:** voice_call_runtime.dart (extension)
 ///
 /// **Depends on:** protocol_brain, rain_core, all voice_call coordinators
+library;
 
 import 'dart:async';
 

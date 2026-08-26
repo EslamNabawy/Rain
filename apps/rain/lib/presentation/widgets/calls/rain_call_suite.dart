@@ -6,6 +6,7 @@
 /// **Key types:** RainCallSuiteLayer
 ///
 /// **Depends on:** application/runtime, application/state, presentation/widgets/calls
+library;
 
 import 'package:flutter/material.dart';
 

@@ -9,6 +9,7 @@
 /// **Package:** rain_core
 ///
 /// **Depends on:** flutter_test, dart:convert, rain_core (library under test).
+library;
 
 import 'dart:convert';
 

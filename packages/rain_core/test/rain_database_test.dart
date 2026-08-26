@@ -8,6 +8,8 @@
 ///
 /// **Depends on:** drift, drift/native.dart, flutter_test, rain_database.dart
 ///
+library;
+
 import 'dart:io';
 
 import 'package:drift/drift.dart';
