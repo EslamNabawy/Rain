@@ -1,6 +1,6 @@
 # Recommended Next Actions
 
-Last updated: 2026-06-08
+Last updated: 2026-08-26
 
 ## Purpose
 
@@ -86,3 +86,5 @@ After every completed task:
 3. Update [[Improvement Backlog]] if a recurring pattern appears.
 4. Update this note with the next three most valuable actions.
 5. Update [[Project Memory]] only when durable project facts change.
+
+Cross-platform remediation progress 2026-08-26: [CROSS_PLATFORM_REMEDIATION_PLAN.md](../../CROSS_PLATFORM_REMEDIATION_PLAN.md) was created from the 2026-08-26 cross-platform audit, and the first execution slice landed. A1 moved receiver final SHA-256 into Isolate.run; A2 caches incoming transfer records across chunks with clearTransferRuntimeState as the single invalidation funnel, removing the per-chunk loadById hot-loop read; a loadById-count regression test locks the behavior. Two pre-existing HEAD blockers were repaired en route: 254 missing library; directives that failed the CI --fatal-infos analyzer gate (commit 595a0fe), and _runtimeProviderContainer omitting a non-demo signaling key so 7 account-deletion/logout tests failed the hard cipher check (commit 30c46cc). Workspace analyze and full Melos tests passed. Next recommended slice: A3+A4 - filter binary frames out of the connectivity fan-out and throttle receive sink flushes - followed by A5 narrow HomeScreen watches.

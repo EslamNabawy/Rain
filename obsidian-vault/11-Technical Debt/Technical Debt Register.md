@@ -1,6 +1,6 @@
 # Technical Debt Register
 
-Last updated: 2026-06-08
+Last updated: 2026-08-26
 
 ## Purpose
 
@@ -279,6 +279,7 @@ Source: [[2026-06-05 Senior Audit Remediation Plan]]
 - Roadmap Tasks: TASK-010, TASK-011.
 - Resolution Strategy: Stream incoming chunks to temp files, add high/low water marks, pause/resume sends, and test slow receivers and cancellation.
 - Progress Note 2026-06-05: Phase 7 local mitigation is implemented. Incoming chunks now use a persistent receive sink per active transfer and close it on complete, cancel, failure, network loss, and shutdown. Terminal cleanup deletes temp files for cancellation, hash mismatch, invalid chunks, and disk write failure. The outgoing send loop carries one partial chunk instead of growing/removing from a pending list. Backpressure constants for chunk size, high/low watermarks, poll interval, and timeout now live in the protocol contract, and the sender records privacy-safe wait/complete/timeout diagnostics. Focused large receive, cancel cleanup, hash mismatch cleanup, disk write failure, and scripted backpressure tests passed locally; real-network/device-scale proof remains follow-up evidence.
+- Progress Note 2026-08-26: Cross-platform remediation slice A1+A2 (from [CROSS_PLATFORM_REMEDIATION_PLAN.md](../../CROSS_PLATFORM_REMEDIATION_PLAN.md)) removed two main-thread hot-loop costs. Receiver final SHA-256 now runs in `Isolate.run` with streamed reads instead of hashing on the UI isolate. Incoming transfer records hydrate into a runtime cache on first chunk and reuse it through completion; `clearTransferRuntimeState` is the single invalidation funnel (terminal frames, reject, cancel, markTransferFailed, network-loss cleanup). A loadById-count regression test proves the chunk hot path performs exactly one store read. Sender-side incremental hashing stays on the main isolate by accepted design: per-event digest cost is micro-scale and the send loop yields every chunk via awaited sends/backpressure, so no freeze spike exists; revisit only if profiling disagrees. Workspace analyze and full Melos tests passed; real-network/device-scale transfer proof remains open.
 
 ## Security Debt
 
