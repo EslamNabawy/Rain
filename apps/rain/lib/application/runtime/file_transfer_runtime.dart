@@ -9,10 +9,13 @@
 ///
 /// **Part of:** file_transfer_runtime.dart (extension)
 ///
-/// **Depends on:** protocol_brain, rain_core, crypto
+/// **Depends on:** protocol_brain, rain_core, crypto, dart:isolate (final-hash
+/// offloading and incoming-transfer record caching live here)
+library;
 
 import 'dart:async';
 import 'dart:io';
+import 'dart:isolate';
 import 'dart:typed_data';
 
 import 'package:crypto/crypto.dart';
@@ -288,7 +291,7 @@ extension FileTransferRuntime on RainRuntimeController {
     FileTransferFrame frame,
     Uint8List bytes,
   ) async {
-    final transfer = await fileTransferStore.loadById(frame.transferId);
+    final transfer = await _loadIncomingTransferCached(frame.transferId);
     if (transfer == null ||
         transfer.peerId != peerId ||
         transfer.direction != FileTransferDirection.incoming ||
@@ -354,7 +357,7 @@ extension FileTransferRuntime on RainRuntimeController {
     String peerId,
     FileTransferFrame frame,
   ) async {
-    final transfer = await fileTransferStore.loadById(frame.transferId);
+    final transfer = await _loadIncomingTransferCached(frame.transferId);
     if (transfer == null ||
         transfer.peerId != peerId ||
         transfer.direction != FileTransferDirection.incoming ||
@@ -853,17 +856,35 @@ extension FileTransferRuntime on RainRuntimeController {
     throw StateError('File channel is congested. Try again.');
   }
 
-  Future<String> _sha256File(File file) async {
-    final output = _DigestSink();
-    final input = sha256.startChunkedConversion(output);
-    try {
-      await for (final chunk in file.openRead()) {
-        input.add(chunk);
+  Future<String> _sha256File(File file) {
+    final path = file.path;
+    return Isolate.run(() async {
+      final target = File(path);
+      final output = _DigestSink();
+      final input = sha256.startChunkedConversion(output);
+      try {
+        await for (final chunk in target.openRead()) {
+          input.add(chunk);
+        }
+      } finally {
+        input.close();
       }
-    } finally {
-      input.close();
+      return output.value.toString();
+    });
+  }
+
+  Future<FileTransferRecord?> _loadIncomingTransferCached(
+    String transferId,
+  ) async {
+    final cached = incomingTransferRecordCache[transferId];
+    if (cached != null) {
+      return cached;
     }
-    return output.value.toString();
+    final loaded = await fileTransferStore.loadById(transferId);
+    if (loaded != null && loaded.direction == FileTransferDirection.incoming) {
+      incomingTransferRecordCache[transferId] = loaded;
+    }
+    return loaded;
   }
 
   Future<void> _writeReceiveChunk(
@@ -951,6 +972,7 @@ extension FileTransferRuntime on RainRuntimeController {
   void clearTransferRuntimeState(String transferId) {
     receiveProgressOffsets.remove(transferId);
     outgoingFileHashes.remove(transferId);
+    incomingTransferRecordCache.remove(transferId);
     fileProgressBatcher.clear(transferId);
   }
 

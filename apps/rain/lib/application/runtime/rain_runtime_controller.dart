@@ -9,6 +9,7 @@
 /// **Key types:** [RainRuntimeController], [FriendRequestResult], [RuntimeErrorRecorder], [RuntimeEventRecorder]
 ///
 /// **Depends on:** protocol_brain, rain_core, all runtime extensions
+library;
 
 // ignore_for_file: unnecessary_getters_setters
 
@@ -326,6 +327,8 @@ class RainRuntimeController with WidgetsBindingObserver {
       <String, OutgoingFileSource>{};
   final Map<String, String> _outgoingFileHashes = <String, String>{};
   final Set<String> _canceledTransfers = <String>{};
+  final Map<String, FileTransferRecord> _incomingTransferRecordCache =
+      <String, FileTransferRecord>{};
   final StreamController<VoiceCallState> _voiceCallStateController =
       StreamController<VoiceCallState>.broadcast();
   final StreamController<void> _peerConnectivityChangeController =
@@ -407,6 +410,8 @@ class RainRuntimeController with WidgetsBindingObserver {
       _outgoingFileSources;
   Map<String, String> get outgoingFileHashes => _outgoingFileHashes;
   Set<String> get canceledTransfers => _canceledTransfers;
+  Map<String, FileTransferRecord> get incomingTransferRecordCache =>
+      _incomingTransferRecordCache;
   FileTransferProgressBatcher get fileProgressBatcher => _fileProgressBatcher;
   StreamController<VoiceCallState> get voiceCallStateController =>
       _voiceCallStateController;
@@ -1568,6 +1573,7 @@ class RainRuntimeController with WidgetsBindingObserver {
     _pendingFileChunks.clear();
     _fileMessageQueues.clear();
     _outgoingFileSources.clear();
+    _incomingTransferRecordCache.clear();
     await closeAllReceiveSinks(reason: 'network_lost');
   }
 
