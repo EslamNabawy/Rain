@@ -316,7 +316,7 @@ void main() {
     expect(defines, contains('RAIN_SIGNALING_ENCRYPTION_KEY'));
     expect(
       defines,
-      contains('rain-demo-signaling-encryption-key-v1-change-me'),
+      contains('rain-dev-signaling-key-0123456789-not-for-production-please-change-me'),
     );
   });
 

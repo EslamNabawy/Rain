@@ -19,7 +19,7 @@ void main() {
 
     expect(environment.backend, RainBackend.firebase);
     expect(environment.updateChannel, 'stable');
-    expect(environment.signalingEncryptionKey, demoSignalingEncryptionKey);
+    expect(environment.signalingEncryptionKey, devSignalingEncryptionKey);
     expect(environment.signalingEncryptionKeyProvided, isFalse);
   });
 
@@ -168,6 +168,7 @@ void main() {
       runtimeEnvironment: <String, String>{
         'RAIN_ALLOW_PUBLIC_TURN': 'true',
         'RAIN_UPDATE_CHANNEL': 'demo',
+        'RAIN_SIGNALING_ENCRYPTION_KEY': demoSignalingEncryptionKey,
       },
     );
 

@@ -254,7 +254,7 @@ class AppEnvironment {
       signalingEncryptionKey: readString(
         'RAIN_SIGNALING_ENCRYPTION_KEY',
         compileTimeValue: compileTimeSignalingEncryptionKey,
-        defaultValue: demoSignalingEncryptionKey,
+        defaultValue: devSignalingEncryptionKey,
       ),
       signalingEncryptionKeyProvided: signalingEncryptionKeyProvided,
       turnBrokerUrl: readString(
@@ -627,6 +627,9 @@ const releaseDefaultIceServers = <Map<String, dynamic>>[
 
 const demoSignalingEncryptionKey =
     'rain-demo-signaling-encryption-key-v1-change-me';
+
+const devSignalingEncryptionKey =
+    'rain-dev-signaling-key-0123456789-not-for-production-please-change-me';
 
 const defaultIceServers = <Map<String, dynamic>>[
   ...testedPublicStunIceServers,
