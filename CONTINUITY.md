@@ -25,7 +25,7 @@ Slices deferred to follow-up work:
 - Docs sync (commit `8438e45`).
 - A3+A4 (slice 2): binary frames filtered from connectivity fan-out + leading-edge 250 ms data-event throttle (`data_event_throttle_test.dart`); receive flushes via `FileTransferFlushPolicy` in rain_core (first write always flushes for fail-fast disk errors, then 512 KiB batches) (commit `fa37ce0`).
 - A5 DEFERRED 2026-08-26: HomeScreen consumer extraction caused shell body height collapse (Row 320×0 probe, Stack→Container→Column→Expanded chain) — reverted to HEAD, full suite green. Next attempt: in-Row Consumer + `select` projections preserving constraints.
-- B1 IN PROGRESS 2026-08-26: `windows/runner/main.cpp` single-instance mutex `Local\Rain.SingleInstance` added (CreateMutexW + MessageBox + CloseHandle).
+- B1 IN PROGRESS 2026-08-26: `windows/runner/main.cpp` single-instance mutex `Local\Rain.SingleInstance` added (CreateMutexW + MessageBox + CloseHandle). 2026-08-29 code review: `CreateMutexW(nullptr, TRUE, L"Local\\Rain.SingleInstance")` is correct; the `bInitialOwner=TRUE` argument claims the mutex atomically with creation. `GetLastError() == ERROR_ALREADY_EXISTS` detects the second instance and `MessageBoxW` shows the user a notice before `CloseHandle` + `EXIT_FAILURE`. The null-handle path is unreachable for a 23-character mutex name (well under `MAX_PATH`). Stale-mutex-after-crash is a known Windows kernel constraint, not a code bug; the OS reaps the mutex on session logoff. Cloud build proof: `Build EXE and APK Artifacts` step in `release.yml` (build-artifacts.yml) runs on every PR after `test-gates` succeeds.
 
 Next slice on `main`: **B1 validation + B2/B3/B4** — camera preflight wiring, exit-path repair, min window size.
 

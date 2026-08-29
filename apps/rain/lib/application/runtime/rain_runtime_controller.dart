@@ -22,6 +22,7 @@ import 'package:protocol_brain/protocol_brain.dart';
 import 'package:rain_core/rain_core.dart';
 
 import 'package:rain/infrastructure/notifications/rain_notification_service.dart';
+import 'package:rain/infrastructure/diagnostics/tracing/trace_context.dart';
 import 'connection_attempt_coordinator.dart';
 import 'app_exit_coordinator.dart';
 import 'call_media_recovery_policy.dart';
@@ -655,32 +656,36 @@ class RainRuntimeController with WidgetsBindingObserver {
     required String action,
     bool updateLocalPresence = true,
   }) async {
-    final normalizedUsername = _normalizedUsername(username);
-    final backendIdentity = await adapter.fetchIdentity(normalizedUsername);
-    if (backendIdentity == null) {
-      return null;
-    }
-    final presence = _resolveBackendPresence(backendIdentity);
-    _cacheResolvedPeerPresence(normalizedUsername, presence);
-    if (updateLocalPresence) {
-      await _localMutations.run(
-        () => friendStore.updatePresence(normalizedUsername, presence.online),
-      );
-    }
-    if (presence.staleRawOnline) {
-      _recordRuntimeEvent(
-        category: 'presence',
-        name: 'backend_presence_stale_resolved_offline',
-        severity: 'warning',
-        message: 'Backend presence heartbeat is stale.',
-        context: <String, Object?>{
-          'peerId': normalizedUsername,
-          'action': action,
-          ...presence.toDiagnostics(),
-        },
-      );
-    }
-    return presence;
+    final trace = TraceContext.create();
+    return TraceContext.runAsync(trace, () async {
+      final normalizedUsername = _normalizedUsername(username);
+      final backendIdentity = await adapter.fetchIdentity(normalizedUsername);
+      if (backendIdentity == null) {
+        return null;
+      }
+      final presence = _resolveBackendPresence(backendIdentity);
+      _cacheResolvedPeerPresence(normalizedUsername, presence);
+      if (updateLocalPresence) {
+        await _localMutations.run(
+          () => friendStore.updatePresence(normalizedUsername, presence.online),
+        );
+      }
+      if (presence.staleRawOnline) {
+        _recordRuntimeEvent(
+          category: 'presence',
+          name: 'backend_presence_stale_resolved_offline',
+          severity: 'warning',
+          message: 'Backend presence heartbeat is stale.',
+          context: <String, Object?>{
+            'peerId': normalizedUsername,
+            'action': action,
+            ...presence.toDiagnostics(),
+            ...trace.toContext(),
+          },
+        );
+      }
+      return presence;
+    });
   }
 
   Future<bool?> isPeerFreshlyOnline(
@@ -1047,86 +1052,95 @@ class RainRuntimeController with WidgetsBindingObserver {
     if (_shutDown || !_started || _presenceHeartbeatPaused) {
       return;
     }
-    try {
-      await adapter.sendHeartbeat(selfIdentity.username);
-      _recordRuntimeEvent(
-        category: 'presence',
-        name: 'heartbeat_sent',
-        context: <String, Object?>{'reason': reason},
-      );
-    } catch (error, stackTrace) {
-      _recordRuntimeEvent(
-        category: 'presence',
-        name: 'heartbeat_failed',
-        severity: 'warning',
-        message: error.toString(),
-        context: <String, Object?>{'reason': reason},
-      );
-      errorRecorder?.call(
-        error,
-        stackTrace,
-        source: 'presence-heartbeat',
-        fatal: false,
-      );
-    }
+    final trace = TraceContext.create();
+    return TraceContext.runAsync(trace, () async {
+      try {
+        await adapter.sendHeartbeat(selfIdentity.username);
+        _recordRuntimeEvent(
+          category: 'presence',
+          name: 'heartbeat_sent',
+          context: <String, Object?>{'reason': reason, ...trace.toContext()},
+        );
+      } catch (error, stackTrace) {
+        _recordRuntimeEvent(
+          category: 'presence',
+          name: 'heartbeat_failed',
+          severity: 'warning',
+          message: error.toString(),
+          context: <String, Object?>{'reason': reason, ...trace.toContext()},
+        );
+        errorRecorder?.call(
+          error,
+          stackTrace,
+          source: 'presence-heartbeat',
+          fatal: false,
+        );
+      }
+    });
   }
 
   Future<void> _setPresenceOnlineSafely(String reason) async {
     if (_shutDown || !_started || _presenceHeartbeatPaused) {
       return;
     }
-    try {
-      await adapter.setPresence(selfIdentity.username, true);
-      _recordRuntimeEvent(
-        category: 'presence',
-        name: 'presence_marked_online',
-        context: <String, Object?>{'reason': reason},
-      );
-    } catch (error, stackTrace) {
-      _recordRuntimeEvent(
-        category: 'presence',
-        name: 'presence_online_failed',
-        severity: 'warning',
-        message: error.toString(),
-        context: <String, Object?>{'reason': reason},
-      );
-      errorRecorder?.call(
-        error,
-        stackTrace,
-        source: 'presence-online',
-        fatal: false,
-      );
-      return;
-    }
-    await _sendHeartbeatSafely(reason: '$reason heartbeat');
+    final trace = TraceContext.create();
+    return TraceContext.runAsync(trace, () async {
+      try {
+        await adapter.setPresence(selfIdentity.username, true);
+        _recordRuntimeEvent(
+          category: 'presence',
+          name: 'presence_marked_online',
+          context: <String, Object?>{'reason': reason, ...trace.toContext()},
+        );
+      } catch (error, stackTrace) {
+        _recordRuntimeEvent(
+          category: 'presence',
+          name: 'presence_online_failed',
+          severity: 'warning',
+          message: error.toString(),
+          context: <String, Object?>{'reason': reason, ...trace.toContext()},
+        );
+        errorRecorder?.call(
+          error,
+          stackTrace,
+          source: 'presence-online',
+          fatal: false,
+        );
+        return;
+      }
+      await _sendHeartbeatSafely(reason: '$reason heartbeat');
+    });
   }
 
   Future<void> _setPresenceOfflineSafely(String reason) async {
     if (_shutDown || !_started) {
       return;
     }
-    try {
-      await adapter.setPresence(selfIdentity.username, false);
-      _recordRuntimeEvent(
-        category: 'presence',
-        name: 'presence_marked_offline',
-        context: <String, Object?>{'reason': reason},
-      );
-    } catch (error, stackTrace) {
-      _recordRuntimeEvent(
-        category: 'presence',
-        name: 'presence_offline_failed',
-        severity: 'warning',
-        message: error.toString(),
-        context: <String, Object?>{'reason': reason},
-      );
-      errorRecorder?.call(
-        error,
-        stackTrace,
-        source: 'presence-offline',
-        fatal: false,
-      );
-    }
+    final trace = TraceContext.create();
+    return TraceContext.runAsync(trace, () async {
+      try {
+        await adapter.setPresence(selfIdentity.username, false);
+        _recordRuntimeEvent(
+          category: 'presence',
+          name: 'presence_marked_offline',
+          context: <String, Object?>{'reason': reason, ...trace.toContext()},
+        );
+      } catch (error, stackTrace) {
+        _recordRuntimeEvent(
+          category: 'presence',
+          name: 'presence_offline_failed',
+          severity: 'warning',
+          message: error.toString(),
+          context: <String, Object?>{'reason': reason, ...trace.toContext()},
+        );
+        errorRecorder?.call(
+          error,
+          stackTrace,
+          source: 'presence-offline',
+          fatal: false,
+        );
+      }
+    });
   }
 
   Map<String, Object?> _sessionEventContext(Session session) {
