@@ -241,7 +241,7 @@ Source: [[2026-06-05 Senior Audit Remediation Plan]]
 
 ### BLK-009: Offline Request Guardrails Can Spend Quota Or Block Silently
 
-- Status: Open
+- Status: Open, runtime + adapter + rules proof locally complete; quota-exceeded + live Firebase emulator proof still open
 - Severity: Critical
 - Owner: Product/Security
 - Type: Product/Security
@@ -260,6 +260,7 @@ Source: [[2026-06-05 Senior Audit Remediation Plan]]
   - Count quota only after confirmed offline/stale request creation.
 - Exit Criteria: Runtime, adapter, rules, and widget tests cover online, offline, stale, unknown, cancelled, quota exceeded, and confirmation missing.
 - Detection Strategy: Request diagnostics, RTDB rules tests, operation counters, blocked-action widget tests.
+- Progress 2026-08-29: `apps/rain/test/connection_request_runtime_test.dart` covers online denial (peerAlreadyOnline + no adapter mutation), offline send, presence fetch failure (unknown), duplicate pending, burst cooldown, cancel, manual disconnect, restart, active file transfer, adapter failure, and active call. The 2026-08-29 test added exercises a raw-online identity with a 5-minute-old lastHeartbeat; the runtime resolves the freshness window and either allows (offline-allowed) or denies (online) with no adapter mutation in the deny path. `packages/protocol_brain/test/connection_request_rtdb_rules_contract_test.dart` already locks the rules-layer guarantee: `presence/<to>/online === true` causes both inbox and outbox writes to be denied, and a 45-second heartbeat window is checked for both `connectionRequest` writes. `dart run melos run analyze` and `dart run melos run test` SUCCESS across all 4 packages; `rain` test count went 752 -> 753. Residual: `dailyLimitExceeded` / `perTargetLimitExceeded` / `extraCreditsExhausted` quota-exceeded test surface (the fake adapter returns hardcoded `usedToday: 0`, so quota exhaustion cannot be simulated without a fake adapter extension). Live Firebase emulator proof for the rules contract runs in `ci.yml` on every PR.
 
 ### BLK-010: Auth Session And Startup Readiness Are Not Production-Safe
 
