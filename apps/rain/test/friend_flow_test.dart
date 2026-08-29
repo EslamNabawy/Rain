@@ -5330,111 +5330,114 @@ void main() {
       },
     );
 
-    test('chunk hot path reads the transfer record once, not per chunk', () async {
-      final adapter = NoopSignalingAdapter();
-      await adapter.register('bob', 'bobpw');
-      await adapter.upsertFriendship('alice', 'bob');
-      await db
-          .into(db.friends)
-          .insert(
-            FriendsCompanion.insert(
-              username: 'bob',
-              displayName: 'Bob',
-              state: 'friend',
-              addedAt: 0,
-            ),
-          );
-      final brain = TestSessionManager();
-      await brain.connect('bob');
-      brain.markConnected('bob');
-      final tempDir = Directory.systemTemp.createTempSync(
-        'rain_file_cache_test_',
-      );
-      final transferStore = CountingFileTransferStore(db);
-      final runtime = RainRuntimeController(
-        selfIdentity: alice,
-        adapter: adapter,
-        brain: brain,
-        database: db,
-        friendStore: FriendStore(db),
-        messageStore: MessageStore(db),
-        offlineQueueStore: OfflineQueueStore(db),
-        messageDeliveryService: MessageDeliveryService(
+    test(
+      'chunk hot path reads the transfer record once, not per chunk',
+      () async {
+        final adapter = NoopSignalingAdapter();
+        await adapter.register('bob', 'bobpw');
+        await adapter.upsertFriendship('alice', 'bob');
+        await db
+            .into(db.friends)
+            .insert(
+              FriendsCompanion.insert(
+                username: 'bob',
+                displayName: 'Bob',
+                state: 'friend',
+                addedAt: 0,
+              ),
+            );
+        final brain = TestSessionManager();
+        await brain.connect('bob');
+        brain.markConnected('bob');
+        final tempDir = Directory.systemTemp.createTempSync(
+          'rain_file_cache_test_',
+        );
+        final transferStore = CountingFileTransferStore(db);
+        final runtime = RainRuntimeController(
+          selfIdentity: alice,
+          adapter: adapter,
+          brain: brain,
+          database: db,
+          friendStore: FriendStore(db),
           messageStore: MessageStore(db),
           offlineQueueStore: OfflineQueueStore(db),
-        ),
-        fileTransferStore: transferStore,
-        documentsDirectoryProvider: () async => tempDir,
-      );
-
-      try {
-        await runtime.start();
-        final payload = Uint8List.fromList(<int>[1, 2, 3, 4, 5, 6, 7, 8]);
-        brain.emitFileMessage(
-          'bob',
-          FileTransferFrame.offer(
-            transferId: 'cache-transfer',
-            messageId: 'cache-message',
-            fileName: 'cache.bin',
-            fileSize: payload.lengthInBytes,
-            sentAt: DateTime.now().millisecondsSinceEpoch,
-            seq: 0,
-          ).encode(),
-        );
-        await _waitForTransferState(
-          db,
-          'cache-transfer',
-          FileTransferState.offered,
-        );
-        await runtime.acceptFileTransfer('cache-transfer');
-        await _waitForTransferState(
-          db,
-          'cache-transfer',
-          FileTransferState.receiving,
+          messageDeliveryService: MessageDeliveryService(
+            messageStore: MessageStore(db),
+            offlineQueueStore: OfflineQueueStore(db),
+          ),
+          fileTransferStore: transferStore,
+          documentsDirectoryProvider: () async => tempDir,
         );
 
-        transferStore.resetLoadByIdCount();
-        var offset = 0;
-        for (var index = 0; index < payload.lengthInBytes; index++) {
+        try {
+          await runtime.start();
+          final payload = Uint8List.fromList(<int>[1, 2, 3, 4, 5, 6, 7, 8]);
           brain.emitFileMessage(
             'bob',
-            FileTransferChunkPacket(
-              frame: FileTransferFrame.chunk(
-                transferId: 'cache-transfer',
-                index: index,
-                offset: offset,
-                byteCount: 1,
-              ),
-              payload: Uint8List.sublistView(payload, offset, offset + 1),
+            FileTransferFrame.offer(
+              transferId: 'cache-transfer',
+              messageId: 'cache-message',
+              fileName: 'cache.bin',
+              fileSize: payload.lengthInBytes,
+              sentAt: DateTime.now().millisecondsSinceEpoch,
+              seq: 0,
             ).encode(),
           );
-          offset += 1;
-        }
-        brain.emitFileMessage(
-          'bob',
-          FileTransferFrame.complete(
-            transferId: 'cache-transfer',
-            finalByteCount: payload.lengthInBytes,
-            sha256: sha256.convert(payload).toString(),
-          ).encode(),
-        );
+          await _waitForTransferState(
+            db,
+            'cache-transfer',
+            FileTransferState.offered,
+          );
+          await runtime.acceptFileTransfer('cache-transfer');
+          await _waitForTransferState(
+            db,
+            'cache-transfer',
+            FileTransferState.receiving,
+          );
 
-        await _waitForTransferState(
-          db,
-          'cache-transfer',
-          FileTransferState.completed,
-        );
-        expect(transferStore.loadByIdCount, 1);
-        final transfer = await transferStore.loadById('cache-transfer');
-        final receivedFile = File(transfer!.localPath!);
-        expect(await receivedFile.readAsBytes(), payload);
-      } finally {
-        await runtime.dispose();
-        if (tempDir.existsSync()) {
-          tempDir.deleteSync(recursive: true);
+          transferStore.resetLoadByIdCount();
+          var offset = 0;
+          for (var index = 0; index < payload.lengthInBytes; index++) {
+            brain.emitFileMessage(
+              'bob',
+              FileTransferChunkPacket(
+                frame: FileTransferFrame.chunk(
+                  transferId: 'cache-transfer',
+                  index: index,
+                  offset: offset,
+                  byteCount: 1,
+                ),
+                payload: Uint8List.sublistView(payload, offset, offset + 1),
+              ).encode(),
+            );
+            offset += 1;
+          }
+          brain.emitFileMessage(
+            'bob',
+            FileTransferFrame.complete(
+              transferId: 'cache-transfer',
+              finalByteCount: payload.lengthInBytes,
+              sha256: sha256.convert(payload).toString(),
+            ).encode(),
+          );
+
+          await _waitForTransferState(
+            db,
+            'cache-transfer',
+            FileTransferState.completed,
+          );
+          expect(transferStore.loadByIdCount, 1);
+          final transfer = await transferStore.loadById('cache-transfer');
+          final receivedFile = File(transfer!.localPath!);
+          expect(await receivedFile.readAsBytes(), payload);
+        } finally {
+          await runtime.dispose();
+          if (tempDir.existsSync()) {
+            tempDir.deleteSync(recursive: true);
+          }
         }
-      }
-    });
+      },
+    );
 
     test('large incoming file transfer reuses one receive sink', () async {
       final adapter = NoopSignalingAdapter();

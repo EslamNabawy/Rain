@@ -23,9 +23,11 @@ class FirebaseEmulatorSignalingAdapter
     this.databaseHost = '127.0.0.1',
     this.databasePort = 9000,
     SignalingCipher? signalingCipher,
-  }) : _signalingCipher = signalingCipher ?? SignalingCipher.fromKeyMaterial(
-          'test-key-not-for-production-use-0123456789',
-        );
+  }) : _signalingCipher =
+           signalingCipher ??
+           SignalingCipher.fromKeyMaterial(
+             'test-key-not-for-production-use-0123456789',
+           );
 
   final String databaseNamespace;
   final String authHost;

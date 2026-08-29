@@ -13,8 +13,7 @@ import 'dart:convert';
 
 import 'package:cryptography/cryptography.dart';
 
-const String _knownWeakKey =
-    'rain-demo-signaling-encryption-key-v1-change-me';
+const String _knownWeakKey = 'rain-demo-signaling-encryption-key-v1-change-me';
 
 class SignalingCipher {
   SignalingCipher.fromKeyMaterial(String keyMaterial)

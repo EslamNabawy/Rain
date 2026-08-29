@@ -165,6 +165,48 @@ void main() {
   );
 
   test(
+    'registration conflict on existing username rethrows without cache, search, or sign-out',
+    () async {
+      final database = RainDatabase(NativeDatabase.memory());
+      addTearDown(database.close);
+      final adapter = _AuthValidationAdapter(
+        currentUidValue: 'uid-alice',
+        backendIdentity: _backendAlice(uid: 'uid-existing'),
+        registerError: Exception('Username "alice" is already taken'),
+      );
+      final container = _container(database, adapter);
+      addTearDown(container.dispose);
+
+      await container.read(identityProvider.future);
+
+      await expectLater(
+        container
+            .read(identityProvider.notifier)
+            .register(
+              username: 'alice',
+              displayName: 'Alice',
+              password: 'secret1',
+              gender: RainGender.female,
+            ),
+        throwsA(
+          isA<Exception>().having(
+            (error) => error.toString(),
+            'message',
+            contains('already taken'),
+          ),
+        ),
+      );
+
+      expect(adapter.registerCalls, 1);
+      expect(adapter.addToUserSearchCalls, 0);
+      expect(adapter.upsertedIdentities, isEmpty);
+      expect(adapter.setPresenceCalls, 0);
+      expect(adapter.signOutCalls, 0);
+      expect(await IdentityRepository(database).loadIdentity(), isNull);
+    },
+  );
+
+  test(
     'login does not recreate a missing backend account after authentication',
     () async {
       final database = RainDatabase(NativeDatabase.memory());
@@ -285,12 +327,14 @@ final class _AuthValidationAdapter extends NoopSignalingAdapter {
     required this.backendIdentity,
     this.upsertError,
     this.loginError,
+    this.registerError,
   });
 
   final String currentUidValue;
   final BackendIdentity? backendIdentity;
   final Object? upsertError;
   final Object? loginError;
+  final Object? registerError;
   final List<BackendIdentity> upsertedIdentities = <BackendIdentity>[];
   int ensureSignedInAsCalls = 0;
   int fetchIdentityCalls = 0;
@@ -311,6 +355,10 @@ final class _AuthValidationAdapter extends NoopSignalingAdapter {
   @override
   Future<String> register(String username, String password) async {
     registerCalls += 1;
+    final error = registerError;
+    if (error != null) {
+      throw error;
+    }
     return currentUidValue;
   }
 

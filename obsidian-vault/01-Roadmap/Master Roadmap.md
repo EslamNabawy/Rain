@@ -41,6 +41,17 @@ This work is the active execution overlay created from the 2026-06-05 senior aud
 | Phase 9: Obsidian Vault Semantic Enforcement | P1 | Mitigated locally 2026-06-05 | Phase 0, [[Engineering System Flaw Remediation Plan]] | Vault checks semantic truth, not only links/files. | `scripts/check_obsidian_vault.ps1` now enforces operational owner/priority/evidence/review fields, closed-blocker evidence, and P0/P1 next-action coverage; vault validation passed locally. |
 | Phase 10: Device And Media Reality Proof | P0 | Scoped/blocked 2026-06-05 | Phases 1-4, [[Emulator Test Matrix]], [[Scenario Coverage Matrix]] | Voice/video reliability is proven across target device directions or explicitly scoped down. | Target matrix and opt-in real media capture proof exist; Android endpoint was not attached, so device/cross-peer evidence remains required before public release. |
 
+## Active Tracing Overlay
+
+Source: [[ADR-011]] and `docs/plans/2026-08-27-rain-tracing-implementation-guide.md`.
+
+| Phase | Priority | Status | Dependencies | Success Criteria | Definition Of Done |
+| --- | --- | --- | --- | --- | --- |
+| Phase 11: Trace Context Wiring (slice 1) | P2 | Complete locally 2026-08-29 | [[Diagnostics And Logging]], [[Diagnostics Sanitization]], [[Current Architecture]] | `IdentityController.register` and `RainRuntimeController._startCall` share one `traceId` for the entire flow; `AppNavigationObserver` records every GoRouter push/pop/replace with the active `traceId`; `ThrottledProviderObserver` replaces `RainDebugProviderObserver` in `RainStartupApp`. | All 4 Melos packages pass `dart run melos run analyze` and `dart run melos run test`. Obsidian vault records the slice in [[Project Memory]], [[Risk Register]] (R-023), [[Technical Debt Register]] (TD-024), and [[Recommended Next Actions]]. [[ADR-011]] documents the scope cut: no Drift persistence, no `/debug/traces` overlay, no heartbeat / presence / signaling-write traceId in this slice. |
+| Phase 12: Trace Context Coverage (slice 2) | P2 | Not started | Phase 11, [[Diagnostics And Logging]] | Heartbeat, presence watches, `createOutgoingCall`, `writeICE`, `writeVoiceOffer`, `writeVoiceAnswer`, and file transfer events carry `traceId` from the parent flow. | Each affected call site wraps in `TraceContext.runAsync` and tests assert `traceId` propagation end-to-end. Targeted tests added. |
+| Phase 13: Provider Throttle Hardening (slice 3) | P2 | Not started | Phase 11, [[Peer Chat]], [[Call State Machine]] | `ThrottledProviderObserver` uses structural `==`/`hashCode` on `PeerConnectivitySnapshot` and `ConnectionDiagnostics`; the hardcoded `_noisyProviders` set is replaced by a configurable per-provider policy. | Regression tests prove identity-equal updates are dropped and distinct values are not dropped across hash collisions. |
+| Phase 14: Drift Event Persistence And Debug Overlay (slice 4) | P3 | Not started | Phase 11, [[Database Architecture]] | `app_events` Drift table indexed on `(traceId, recordedAt)` with 7-day TTL; `/debug/traces` page lists traces with span waterfall; `DiagnosticsSheet` floating widget shows live tail filtered by `traceId`/`category`. | Drift migration and query tests pass; overlay is gated behind `kDebugMode` or `updateChannel == 'demo'`. Requires sanitizer regression samples for every new persisted field. |
+
 ## Active Auth/Startup Remediation Overlay
 
 Source: [ROOT_AUTH_STARTUP_REMEDIATION_ROADMAP.md](../../ROOT_AUTH_STARTUP_REMEDIATION_ROADMAP.md)

@@ -17,6 +17,7 @@ import 'dart:async';
 
 import 'package:flutter/widgets.dart';
 import 'package:protocol_brain/protocol_brain.dart';
+import 'package:rain/infrastructure/diagnostics/tracing/trace_context.dart';
 import 'package:rain_core/rain_core.dart';
 
 import 'call_error_classifier.dart';
@@ -102,185 +103,198 @@ extension VoiceCallRuntime on RainRuntimeController {
     required CallMediaMode mediaMode,
   }) async {
     final peerId = normalizeUsername(username);
-    recordRuntimeEvent(
-      category: 'call',
-      name: 'start_requested',
-      context: <String, Object?>{'peerId': peerId, 'mediaMode': mediaMode.name},
-    );
-    _assertVoiceCallCanStart();
-    final presence = await _fetchVoiceCallPeerPresence(
-      peerId,
-      mediaMode: mediaMode,
-    );
-    await _assertVoiceCallPeerIsFriend(peerId);
-    final activeTransfer = await _firstActiveTransfer();
-    await _clearExpiredVoiceCallStartBlock();
-
-    final decision = RuntimeInteractionGuard.canStartCall(
-      peerId: peerId,
-      mediaMode: mediaMode,
-      voiceCallState: _voiceCallStartPreflightState(),
-      peerOnline: presence.peerOnline,
-      activeTransfer: activeTransfer,
-      manualDisconnectedPeers: mutableManualDisconnectedPeers,
-      diagnostics: presence.diagnostics,
-    );
-    if (!decision.allowed) {
+    final trace = TraceContext.create();
+    return TraceContext.runAsync(trace, () async {
       recordRuntimeEvent(
         category: 'call',
-        name: 'start_blocked',
-        severity: 'warning',
-        message: decision.userMessage,
+        name: 'start_requested',
         context: <String, Object?>{
           'peerId': peerId,
           'mediaMode': mediaMode.name,
-          'reasonCode': decision.decision.name,
-          'blockingPeerId': decision.blockingPeerId,
-          ...decision.diagnostics,
+          ...trace.toContext(),
         },
       );
-    }
-    decision.throwIfDenied();
-    _requireVoiceSignalingAdapter();
-    final callId = _newVoiceCallId(peerId);
-    final sessionEpoch = DateTime.now().millisecondsSinceEpoch;
-    recordRuntimeEvent(
-      category: 'call',
-      name: 'created',
-      context: <String, Object?>{
-        'peerId': peerId,
-        'callId': callId,
-        'sessionEpoch': sessionEpoch,
-        'mediaMode': mediaMode.name,
-        'isOutgoing': true,
-      },
-    );
-    _setVoiceCallState(
-      VoiceCallState(
-        phase: VoiceCallPhase.connectingMedia,
-        peerId: peerId,
-        callId: callId,
-        sessionEpoch: sessionEpoch,
+      _assertVoiceCallCanStart();
+      final presence = await _fetchVoiceCallPeerPresence(
+        peerId,
         mediaMode: mediaMode,
-        isOutgoing: true,
-        updatedAt: sessionEpoch,
-        detail: _voiceCallPreflightDetail(mediaMode),
-      ),
-    );
+      );
+      await _assertVoiceCallPeerIsFriend(peerId);
+      final activeTransfer = await _firstActiveTransfer();
+      await _clearExpiredVoiceCallStartBlock();
 
-    try {
-      final session = await _createVoiceCallSession(
+      final decision = RuntimeInteractionGuard.canStartCall(
         peerId: peerId,
-        callId: callId,
-        sessionEpoch: sessionEpoch,
-        isOutgoing: true,
         mediaMode: mediaMode,
+        voiceCallState: _voiceCallStartPreflightState(),
+        peerOnline: presence.peerOnline,
+        activeTransfer: activeTransfer,
+        manualDisconnectedPeers: mutableManualDisconnectedPeers,
+        diagnostics: presence.diagnostics,
       );
-      await session.startOutgoing();
-      await _watchFirebaseVoiceCall(
-        session: session,
-        peerId: peerId,
-        isOutgoing: true,
-      );
-    } catch (error) {
-      if (error is TurnUnavailableException) {
+      if (!decision.allowed) {
         recordRuntimeEvent(
           category: 'call',
-          name: 'turn_unavailable_call_blocked',
-          severity: 'error',
-          message: _voiceCallRelayUnavailable,
+          name: 'start_blocked',
+          severity: 'warning',
+          message: decision.userMessage,
           context: <String, Object?>{
             'peerId': peerId,
-            'callId': callId,
-            'sessionEpoch': sessionEpoch,
             'mediaMode': mediaMode.name,
-            'readiness': error.readiness.readiness.name,
-            'hasRelayServer': error.readiness.hasRelayServer,
-            if (error.readiness.error != null)
-              'readinessError': error.readiness.error.toString(),
+            'reasonCode': decision.decision.name,
+            'blockingPeerId': decision.blockingPeerId,
+            ...decision.diagnostics,
+            ...trace.toContext(),
           },
         );
       }
-      final retrySnapshot = _voiceCallSignalingFailureSnapshotForError(
-        error,
-        peerId: peerId,
-      );
-      final retryDecision = retrySnapshot == null
-          ? null
-          : CallRetryPolicy.classifySignalingFailure(retrySnapshot);
+      decision.throwIfDenied();
+      _requireVoiceSignalingAdapter();
+      final callId = _newVoiceCallId(peerId);
+      final sessionEpoch = DateTime.now().millisecondsSinceEpoch;
       recordRuntimeEvent(
         category: 'call',
-        name: 'start_failed',
-        severity: 'error',
-        message: retryDecision?.userMessage ?? error.toString(),
+        name: 'created',
         context: <String, Object?>{
           'peerId': peerId,
           'callId': callId,
           'sessionEpoch': sessionEpoch,
           'mediaMode': mediaMode.name,
-          if (retryDecision != null)
-            'retryDecisionKind': retryDecision.kind.name,
-          if (retryDecision != null)
-            'canRetryImmediately': retryDecision.canRetryImmediately,
+          'isOutgoing': true,
+          ...trace.toContext(),
         },
       );
-      _recordVoiceCallStartFailureDiagnostics(
-        error: error,
-        peerId: peerId,
-        callId: callId,
-        sessionEpoch: sessionEpoch,
-        mediaMode: mediaMode,
-        retryDecision: retryDecision,
-        retrySnapshot: retrySnapshot,
+      _setVoiceCallState(
+        VoiceCallState(
+          phase: VoiceCallPhase.connectingMedia,
+          peerId: peerId,
+          callId: callId,
+          sessionEpoch: sessionEpoch,
+          mediaMode: mediaMode,
+          isOutgoing: true,
+          updatedAt: sessionEpoch,
+          detail: _voiceCallPreflightDetail(mediaMode),
+        ),
       );
+
       try {
-        await _failVoiceCall(
-          error,
-          failureReason:
-              _voiceCallFailureReasonForRetryDecision(retryDecision) ??
-              _voiceCallFailureReasonForError(error) ??
-              _localAudioFailureReason(error),
-          detail:
-              _voiceCallFailureDetailForRetryDecision(retryDecision) ??
-              _voiceCallFailureDetailForError(error) ??
-              _localAudioFailureDetail(error),
+        final session = await _createVoiceCallSession(
+          peerId: peerId,
+          callId: callId,
+          sessionEpoch: sessionEpoch,
+          isOutgoing: true,
+          mediaMode: mediaMode,
         );
-      } catch (failError) {
-        // _failVoiceCall must never leave state stuck. If it throws,
-        // force the state to failed directly.
+        await session.startOutgoing();
+        await _watchFirebaseVoiceCall(
+          session: session,
+          peerId: peerId,
+          isOutgoing: true,
+        );
+      } catch (error) {
+        if (error is TurnUnavailableException) {
+          recordRuntimeEvent(
+            category: 'call',
+            name: 'turn_unavailable_call_blocked',
+            severity: 'error',
+            message: _voiceCallRelayUnavailable,
+            context: <String, Object?>{
+              'peerId': peerId,
+              'callId': callId,
+              'sessionEpoch': sessionEpoch,
+              'mediaMode': mediaMode.name,
+              'readiness': error.readiness.readiness.name,
+              'hasRelayServer': error.readiness.hasRelayServer,
+              if (error.readiness.error != null)
+                'readinessError': error.readiness.error.toString(),
+              ...trace.toContext(),
+            },
+          );
+        }
+        final retrySnapshot = _voiceCallSignalingFailureSnapshotForError(
+          error,
+          peerId: peerId,
+        );
+        final retryDecision = retrySnapshot == null
+            ? null
+            : CallRetryPolicy.classifySignalingFailure(retrySnapshot);
         recordRuntimeEvent(
           category: 'call',
-          name: 'fail_voice_call_failed',
+          name: 'start_failed',
           severity: 'error',
-          message: 'Force-failing call after _failVoiceCall error: $failError',
+          message: retryDecision?.userMessage ?? error.toString(),
           context: <String, Object?>{
             'peerId': peerId,
             'callId': callId,
             'sessionEpoch': sessionEpoch,
-            'originalError': error.toString(),
-            'failError': failError.toString(),
+            'mediaMode': mediaMode.name,
+            if (retryDecision != null)
+              'retryDecisionKind': retryDecision.kind.name,
+            if (retryDecision != null)
+              'canRetryImmediately': retryDecision.canRetryImmediately,
+            ...trace.toContext(),
           },
         );
-        _setVoiceCallState(
-          VoiceCallState(
-            phase: VoiceCallPhase.failed,
-            peerId: peerId,
-            callId: callId,
-            sessionEpoch: sessionEpoch,
-            mediaMode: mediaMode,
-            isOutgoing: true,
-            detail: 'Call could not start.',
-            error: error,
-            failureReason: VoiceCallFailureReason.signalingFailed,
-            updatedAt: DateTime.now().millisecondsSinceEpoch,
-          ),
+        _recordVoiceCallStartFailureDiagnostics(
+          error: error,
+          peerId: peerId,
+          callId: callId,
+          sessionEpoch: sessionEpoch,
+          mediaMode: mediaMode,
+          retryDecision: retryDecision,
+          retrySnapshot: retrySnapshot,
         );
         try {
-          await disposeCurrentVoiceCallSession();
-        } catch (_) {}
+          await _failVoiceCall(
+            error,
+            failureReason:
+                _voiceCallFailureReasonForRetryDecision(retryDecision) ??
+                _voiceCallFailureReasonForError(error) ??
+                _localAudioFailureReason(error),
+            detail:
+                _voiceCallFailureDetailForRetryDecision(retryDecision) ??
+                _voiceCallFailureDetailForError(error) ??
+                _localAudioFailureDetail(error),
+          );
+        } catch (failError) {
+          // _failVoiceCall must never leave state stuck. If it throws,
+          // force the state to failed directly.
+          recordRuntimeEvent(
+            category: 'call',
+            name: 'fail_voice_call_failed',
+            severity: 'error',
+            message:
+                'Force-failing call after _failVoiceCall error: $failError',
+            context: <String, Object?>{
+              'peerId': peerId,
+              'callId': callId,
+              'sessionEpoch': sessionEpoch,
+              'originalError': error.toString(),
+              'failError': failError.toString(),
+              ...trace.toContext(),
+            },
+          );
+          _setVoiceCallState(
+            VoiceCallState(
+              phase: VoiceCallPhase.failed,
+              peerId: peerId,
+              callId: callId,
+              sessionEpoch: sessionEpoch,
+              mediaMode: mediaMode,
+              isOutgoing: true,
+              detail: 'Call could not start.',
+              error: error,
+              failureReason: VoiceCallFailureReason.signalingFailed,
+              updatedAt: DateTime.now().millisecondsSinceEpoch,
+            ),
+          );
+          try {
+            await disposeCurrentVoiceCallSession();
+          } catch (_) {}
+        }
+        rethrow;
       }
-      rethrow;
-    }
+    });
   }
 
   Future<void> _clearExpiredVoiceCallStartBlock() async {
