@@ -1,4 +1,4 @@
-﻿/// # throttled_provider_observer_test.dart
+/// # throttled_provider_observer_test.dart
 ///
 /// Locks the structural hashing behavior added in [[ADR-011]] Phase 13:
 /// `ThrottledProviderObserver.hashForDedupe` must produce equal hashes
@@ -77,43 +77,49 @@ void main() {
 
     test('changed ConnectionDiagnostics status hashes different', () {
       final a = _buildDiagnostics(status: PeerConnectionUiStatusKind.connected);
-      final b = _buildDiagnostics(status: PeerConnectionUiStatusKind.recovering);
+      final b = _buildDiagnostics(
+        status: PeerConnectionUiStatusKind.recovering,
+      );
       expect(
         ThrottledProviderObserver.hashForDedupe(a),
         isNot(equals(ThrottledProviderObserver.hashForDedupe(b))),
       );
     });
 
-    test('Map<String, PeerConnectivitySnapshot> with same content hashes equal',
-        () {
-      final m1 = <String, PeerConnectivitySnapshot>{
-        'alice': _buildSnapshot(peerId: 'alice', sessionId: 's1'),
-        'bob': _buildSnapshot(peerId: 'bob', sessionId: 's2'),
-      };
-      final m2 = <String, PeerConnectivitySnapshot>{
-        'alice': _buildSnapshot(peerId: 'alice', sessionId: 's1'),
-        'bob': _buildSnapshot(peerId: 'bob', sessionId: 's2'),
-      };
-      expect(
-        ThrottledProviderObserver.hashForDedupe(m1),
-        equals(ThrottledProviderObserver.hashForDedupe(m2)),
-      );
-    });
+    test(
+      'Map<String, PeerConnectivitySnapshot> with same content hashes equal',
+      () {
+        final m1 = <String, PeerConnectivitySnapshot>{
+          'alice': _buildSnapshot(peerId: 'alice', sessionId: 's1'),
+          'bob': _buildSnapshot(peerId: 'bob', sessionId: 's2'),
+        };
+        final m2 = <String, PeerConnectivitySnapshot>{
+          'alice': _buildSnapshot(peerId: 'alice', sessionId: 's1'),
+          'bob': _buildSnapshot(peerId: 'bob', sessionId: 's2'),
+        };
+        expect(
+          ThrottledProviderObserver.hashForDedupe(m1),
+          equals(ThrottledProviderObserver.hashForDedupe(m2)),
+        );
+      },
+    );
 
-    test('Map<String, PeerConnectivitySnapshot> with changed content hashes different',
-        () {
-      final m1 = <String, PeerConnectivitySnapshot>{
-        'alice': _buildSnapshot(peerId: 'alice', sessionId: 's1'),
-      };
-      final m2 = <String, PeerConnectivitySnapshot>{
-        'alice': _buildSnapshot(peerId: 'alice', sessionId: 's1'),
-        'bob': _buildSnapshot(peerId: 'bob', sessionId: 's2'),
-      };
-      expect(
-        ThrottledProviderObserver.hashForDedupe(m1),
-        isNot(equals(ThrottledProviderObserver.hashForDedupe(m2))),
-      );
-    });
+    test(
+      'Map<String, PeerConnectivitySnapshot> with changed content hashes different',
+      () {
+        final m1 = <String, PeerConnectivitySnapshot>{
+          'alice': _buildSnapshot(peerId: 'alice', sessionId: 's1'),
+        };
+        final m2 = <String, PeerConnectivitySnapshot>{
+          'alice': _buildSnapshot(peerId: 'alice', sessionId: 's1'),
+          'bob': _buildSnapshot(peerId: 'bob', sessionId: 's2'),
+        };
+        expect(
+          ThrottledProviderObserver.hashForDedupe(m1),
+          isNot(equals(ThrottledProviderObserver.hashForDedupe(m2))),
+        );
+      },
+    );
 
     test('Map with same peers but insertion order is independent', () {
       final m1 = <String, PeerConnectivitySnapshot>{
