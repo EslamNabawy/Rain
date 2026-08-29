@@ -18,6 +18,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'application/bootstrap/app_bootstrap.dart';
 import 'core/config/app_environment.dart';
 import 'application/state/app_providers.dart';
+import 'infrastructure/diagnostics/tracing/throttled_provider_observer.dart';
 import 'infrastructure/services/crash_diagnostics_service.dart';
 import 'infrastructure/services/rain_debug_log_service.dart';
 import 'infrastructure/window/desktop_shell_controller.dart';
@@ -155,7 +156,7 @@ class _RainStartupAppState extends State<RainStartupApp> {
             observers: widget.debugLogService == null
                 ? const <ProviderObserver>[]
                 : <ProviderObserver>[
-                    RainDebugProviderObserver(widget.debugLogService!),
+                    ThrottledProviderObserver(widget.debugLogService!),
                   ],
             overrides: [
               appBootstrapProvider.overrideWithValue(bootstrap),

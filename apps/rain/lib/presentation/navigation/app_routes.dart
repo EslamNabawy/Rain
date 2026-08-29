@@ -15,6 +15,7 @@ import 'package:go_router/go_router.dart';
 import 'package:rain_core/rain_core.dart';
 
 import 'package:rain/application/state/app_providers.dart';
+import 'package:rain/infrastructure/diagnostics/tracing/app_navigation_observer.dart';
 import 'package:rain/presentation/screens/friend_profile_screen.dart';
 import 'package:rain/presentation/screens/root_screen.dart';
 import 'package:rain/presentation/screens/search_screen.dart';
@@ -51,8 +52,12 @@ final appRouterProvider = Provider<GoRouter>((Ref ref) {
   final refreshListenable = _RouterRefreshNotifier(ref);
   ref.onDispose(refreshListenable.dispose);
 
+  final debugLog = ref.read(rainDebugLogServiceProvider);
+  final observers = <NavigatorObserver>[AppNavigationObserver(debugLog)];
+
   return GoRouter(
     refreshListenable: refreshListenable,
+    observers: observers,
     redirect: (BuildContext context, GoRouterState state) {
       final startup = ref.read(appStartupStateProvider);
       return appStartupRedirectForPath(startup, state.uri.path);

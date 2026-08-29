@@ -16,6 +16,10 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:protocol_brain/protocol_brain.dart';
 import 'package:rain_core/rain_core.dart';
 
+import 'package:rain/infrastructure/diagnostics/tracing/interaction_logger.dart';
+import 'package:rain/infrastructure/diagnostics/tracing/trace_context.dart';
+import 'package:rain/infrastructure/services/rain_debug_log_service.dart';
+
 import 'core_providers.dart';
 
 final identityRepositoryProvider = Provider(
@@ -141,31 +145,91 @@ class IdentityController extends AsyncNotifier<RainIdentity?> {
     required RainGender gender,
   }) async {
     assertNetworkReady(ref);
-    final adapter = ref.read(adapterProvider);
-    var authCreated = false;
-    try {
-      await adapter.register(username, password);
-      authCreated = true;
-      final now = DateTime.now().millisecondsSinceEpoch;
-      await _saveBackendIdentity(
-        RainIdentity(
-          username: username,
-          displayName: displayName,
-          createdAt: now,
-          gender: gender,
-        ),
+    final log = ref.read(rainDebugLogServiceProvider);
+    final trace = TraceContext.create();
+    return TraceContext.runAsync(trace, () async {
+      InteractionTrace.tap(
+        log,
+        'onboarding_submit_button',
+        context: <String, Object?>{
+          'username': username,
+          'displayNameLength': displayName.length,
+        },
       );
-    } catch (_) {
-      if (authCreated) {
-        try {
-          await adapter.signOut();
-        } catch (_) {
-          // A failed backend registration must not keep a local Firebase session
-          // that the app could mistake for a valid Rain identity.
+      log.event(
+        category: 'auth',
+        name: 'register_started',
+        severity: RainDebugSeverity.info,
+        context: <String, Object?>{
+          'username': username,
+          ...trace.toContext(),
+        },
+      );
+      final adapter = ref.read(adapterProvider);
+      var authCreated = false;
+      final sw = Stopwatch()..start();
+      try {
+        await adapter.register(username, password);
+        authCreated = true;
+        final now = DateTime.now().millisecondsSinceEpoch;
+        await _saveBackendIdentity(
+          RainIdentity(
+            username: username,
+            displayName: displayName,
+            createdAt: now,
+            gender: gender,
+          ),
+        );
+        sw.stop();
+        log.event(
+          category: 'auth',
+          name: 'register_success',
+          severity: RainDebugSeverity.info,
+          context: <String, Object?>{
+            'username': username,
+            'durationMs': sw.elapsedMilliseconds,
+            ...trace.toContext(),
+          },
+        );
+      } catch (error, stackTrace) {
+        sw.stop();
+        final isTaken = error.toString().contains('already taken') ||
+            error.toString().contains('already taken or locked');
+        log.error(
+          error,
+          stackTrace,
+          source: 'identity.register',
+          fatal: false,
+          context: <String, Object?>{
+            'username': username,
+            'taken': isTaken,
+            ...trace.toContext(),
+          },
+        );
+        log.event(
+          category: 'auth',
+          name: 'register_failed',
+          severity: RainDebugSeverity.warning,
+          message: error.toString(),
+          context: <String, Object?>{
+            'username': username,
+            'durationMs': sw.elapsedMilliseconds,
+            'taken': isTaken,
+            'authCreated': authCreated,
+            ...trace.toContext(),
+          },
+        );
+        if (authCreated) {
+          try {
+            await adapter.signOut();
+          } catch (_) {
+            // A failed backend registration must not keep a local Firebase session
+            // that the app could mistake for a valid Rain identity.
+          }
         }
+        rethrow;
       }
-      rethrow;
-    }
+    });
   }
 
   Future<void> login({
