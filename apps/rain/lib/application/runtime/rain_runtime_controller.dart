@@ -265,9 +265,11 @@ class RainRuntimeController with WidgetsBindingObserver {
            (adapter is ConnectionRequestAdapter
                ? adapter as ConnectionRequestAdapter
                : null),
-        voiceSignalingCipher = voiceSignalingCipher ?? SignalingCipher.fromKeyMaterial(
-          'test-key-not-for-production-use-0123456789',
-        ),
+       voiceSignalingCipher =
+           voiceSignalingCipher ??
+           SignalingCipher.fromKeyMaterial(
+             'test-key-not-for-production-use-0123456789',
+           ),
        _documentsDirectoryProvider =
            documentsDirectoryProvider ?? getApplicationDocumentsDirectory,
        _connectionCoordinator = ConnectionAttemptCoordinator(
@@ -591,13 +593,10 @@ class RainRuntimeController with WidgetsBindingObserver {
       return;
     }
     _notifyPeerConnectivityChanged();
-    _dataEventNotifyThrottleTimer = Timer(
-      _dataEventNotifyThrottleWindow,
-      () {
-        _dataEventNotifyThrottleTimer = null;
-        _notifyPeerConnectivityChanged();
-      },
-    );
+    _dataEventNotifyThrottleTimer = Timer(_dataEventNotifyThrottleWindow, () {
+      _dataEventNotifyThrottleTimer = null;
+      _notifyPeerConnectivityChanged();
+    });
   }
 
   void _cacheResolvedPeerPresence(
