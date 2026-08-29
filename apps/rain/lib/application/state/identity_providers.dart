@@ -160,10 +160,7 @@ class IdentityController extends AsyncNotifier<RainIdentity?> {
         category: 'auth',
         name: 'register_started',
         severity: RainDebugSeverity.info,
-        context: <String, Object?>{
-          'username': username,
-          ...trace.toContext(),
-        },
+        context: <String, Object?>{'username': username, ...trace.toContext()},
       );
       final adapter = ref.read(adapterProvider);
       var authCreated = false;
@@ -193,7 +190,8 @@ class IdentityController extends AsyncNotifier<RainIdentity?> {
         );
       } catch (error, stackTrace) {
         sw.stop();
-        final isTaken = error.toString().contains('already taken') ||
+        final isTaken =
+            error.toString().contains('already taken') ||
             error.toString().contains('already taken or locked');
         log.error(
           error,

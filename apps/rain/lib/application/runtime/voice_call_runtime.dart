@@ -263,7 +263,8 @@ extension VoiceCallRuntime on RainRuntimeController {
             category: 'call',
             name: 'fail_voice_call_failed',
             severity: 'error',
-            message: 'Force-failing call after _failVoiceCall error: $failError',
+            message:
+                'Force-failing call after _failVoiceCall error: $failError',
             context: <String, Object?>{
               'peerId': peerId,
               'callId': callId,

@@ -41,7 +41,11 @@ extension InteractionLogExtension on BuildContext {
 
 /// Global helper for imperative logging (e.g., in _OnboardingScreenState._submit)
 class InteractionTrace {
-  static void tap(RainDebugLogService log, String target, {Map<String, Object?> context = const {}}) {
+  static void tap(
+    RainDebugLogService log,
+    String target, {
+    Map<String, Object?> context = const {},
+  }) {
     final trace = TraceContext.current;
     log.event(
       category: 'interaction',
@@ -72,7 +76,12 @@ class InteractionTrace {
     );
   }
 
-  static void navigation(RainDebugLogService log, String from, String to, {String reason = 'push'}) {
+  static void navigation(
+    RainDebugLogService log,
+    String from,
+    String to, {
+    String reason = 'push',
+  }) {
     final trace = TraceContext.current;
     log.event(
       category: 'interaction',

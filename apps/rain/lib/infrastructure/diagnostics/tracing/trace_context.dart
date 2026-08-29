@@ -14,7 +14,9 @@ class TraceContext {
   static const _traceKey = #traceContext;
 
   static TraceContext create({String? parentTraceId}) {
-    final traceId = parentTraceId ?? 'tr_${_rand(8)}_${DateTime.now().millisecondsSinceEpoch.toRadixString(36)}';
+    final traceId =
+        parentTraceId ??
+        'tr_${_rand(8)}_${DateTime.now().millisecondsSinceEpoch.toRadixString(36)}';
     return TraceContext._(traceId, 'sp_${_rand(6)}', null);
   }
 
@@ -37,10 +39,10 @@ class TraceContext {
   }
 
   Map<String, Object?> toContext() => {
-        'traceId': traceId,
-        'spanId': spanId,
-        if (parentSpanId != null) 'parentSpanId': parentSpanId,
-      };
+    'traceId': traceId,
+    'spanId': spanId,
+    if (parentSpanId != null) 'parentSpanId': parentSpanId,
+  };
 }
 
 /// Helper to run any async op with trace, logging start/complete automatically.

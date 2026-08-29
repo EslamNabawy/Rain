@@ -18,8 +18,13 @@ final class ThrottledProviderObserver extends ProviderObserver {
   };
 
   @override
-  void didUpdateProvider(ProviderObserverContext context, Object? previousValue, Object? newValue) {
-    final key = context.provider.name ?? context.provider.runtimeType.toString();
+  void didUpdateProvider(
+    ProviderObserverContext context,
+    Object? previousValue,
+    Object? newValue,
+  ) {
+    final key =
+        context.provider.name ?? context.provider.runtimeType.toString();
     final hash = _hashValue(newValue);
 
     // Distinct check: if hash same as last, skip
@@ -67,20 +72,30 @@ final class ThrottledProviderObserver extends ProviderObserver {
       category: 'ui_state',
       name: 'provider_added',
       severity: RainDebugSeverity.debug,
-      context: {'provider': context.provider.name ?? context.provider.runtimeType.toString()},
+      context: {
+        'provider':
+            context.provider.name ?? context.provider.runtimeType.toString(),
+      },
     );
   }
 
   @override
   void didDisposeProvider(ProviderObserverContext context) {
-    _lastValueHash.remove(context.provider.name ?? context.provider.runtimeType.toString());
-    _lastEmit.remove(context.provider.name ?? context.provider.runtimeType.toString());
+    _lastValueHash.remove(
+      context.provider.name ?? context.provider.runtimeType.toString(),
+    );
+    _lastEmit.remove(
+      context.provider.name ?? context.provider.runtimeType.toString(),
+    );
     if (!log.enabled) return;
     log.event(
       category: 'ui_state',
       name: 'provider_disposed',
       severity: RainDebugSeverity.debug,
-      context: {'provider': context.provider.name ?? context.provider.runtimeType.toString()},
+      context: {
+        'provider':
+            context.provider.name ?? context.provider.runtimeType.toString(),
+      },
     );
   }
 }
