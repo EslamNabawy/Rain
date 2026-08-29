@@ -572,6 +572,7 @@ Source: [[2026-06-05 Senior Audit Remediation Plan]]
 - Related Systems: [[Diagnostics And Logging]], [[Presence And Direct Connect]], [[Call State Machine]], [[Peer Chat]], [[File Transfer]].
 - Resolution Strategy: Wrap `_sendHeartbeatSafely`, `_fetchPeerPresenceSnapshot`, the call signaling writes, and the file transfer chunk pipeline in `TraceContext.runAsync`. Add structural `==` and `hashCode` to `PeerConnectivitySnapshot` and `ConnectionDiagnostics`. Replace the hardcoded noisy-provider set with a configurable per-provider policy.
 - Roadmap Tasks: Phase 12, Phase 13 of [[Master Roadmap]] tracing overlay.
+- Progress Note 2026-08-29: `ThrottledProviderObserver.hashForDedupe` now produces structural hashes for `ConnectionDiagnostics`, `PeerConnectivitySnapshot`, and `Map<String, PeerConnectivitySnapshot>`. The dedupe path is testable via `@visibleForTesting`. 10 new tests in `apps/rain/test/throttled_provider_observer_test.dart` lock structural equality, content-equal updates, status-key changes, `peerId` changes, `manualDisconnected` changes, map canonicalization across insertion order, and `null` handling. `dart run melos run analyze` and `dart run melos run test` SUCCESS across all 4 packages; `rain` test count went 742 -> 752. Residual gap: traceId coverage (heartbeat, presence, signaling writes, file transfer, `createOutgoingCall`) still in Phase 12.
 
 ## Debt Burn-Down Plan
 
