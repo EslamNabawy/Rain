@@ -104,7 +104,8 @@ void main() {
         // presence.online = false. This exercises the stale-online path
         // (raw online, freshness says offline) covered at the rules layer
         // by connection_request_rtdb_rules_contract_test.dart.
-        final staleHeartbeat = DateTime.now().millisecondsSinceEpoch -
+        final staleHeartbeat =
+            DateTime.now().millisecondsSinceEpoch -
             const Duration(minutes: 5).inMilliseconds;
         await adapter.upsertIdentity(
           BackendIdentity(
