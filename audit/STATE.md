@@ -17,6 +17,7 @@ T1.11 f93c613 findings K (7 CI findings)
 T1.12 ccff652 findings L (6 DOC findings) + severity table; 65 findings total
 T2.1 3e5dc01 8 refactor targets
 T2.2 fdffe84 plan: 23 phase-4 cards, 9 owner actions
+T2.3 55713e2 vault spec: R-023..R-031, BLK-011..013, TD-023..028, ADR-011/012
 ## Blocked
 
 ## Decisions
@@ -27,6 +28,7 @@ T2.2 fdffe84 plan: 23 phase-4 cards, 9 owner actions
 - D5 Historical dart_defines.local.json values are treated as exposed; rotation is a manual owner action listed in the final report.
 
 ## Notes
+- TEST gap for T3.1: FirebaseSignalingAdapter cannot be faked without new dependencies (no fake for FirebaseAuth/FirebaseDatabase); see TEST-001. Planned fix: T4.06.
 
 
 
