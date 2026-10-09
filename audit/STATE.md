@@ -16,6 +16,7 @@ T1.10 212d609 findings J (5 TEST findings)
 T1.11 f93c613 findings K (7 CI findings)
 T1.12 ccff652 findings L (6 DOC findings) + severity table; 65 findings total
 T2.1 3e5dc01 8 refactor targets
+T2.2 fdffe84 plan: 23 phase-4 cards, 9 owner actions
 ## Blocked
 
 ## Decisions
