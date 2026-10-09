@@ -565,8 +565,9 @@ Exports of `backend/firebase/functions/index.js` and Spark compatibility (Spark 
 ```
 ls backend/firebase -> README.md database.rules.json firebase.json functions remoteconfig.template.json     (no rules-test)
 functions/test/ covers only the Cloud Functions logic (37 tests)
+packages/protocol_brain/test/voice_call_rtdb_rules_contract_test.dart (602 lines) and connection_request_rtdb_rules_contract_test.dart (410) only assert the rule expression text via jsonDecode + contains(...)
 ```
-- Why it matters: the rules are about 30 KB of single-line expressions that are the only access control for users, presence, rooms, voice calls and connection requests. SEC-001 (a client write that the rules reject) shows a code/rules drift that nothing detects. The CI emulator job runs the Flutter emulator tests, which are skipped locally ("Requires Firebase emulators", 20 skipped tests) and do not assert deny cases.
+- Why it matters: the rules are about 30 KB of single-line expressions that are the only access control for users, presence, rooms, voice calls and connection requests. SEC-001 (a client write that the rules reject) shows a code/rules drift that nothing detects. The existing `*_rules_contract_test.dart` files are static string checks: they never evaluate a rule against a request and none covers `users`, `presence`, `rooms` or `userSearch`. The CI emulator job runs the Flutter emulator tests, which are skipped locally ("Requires Firebase emulators", 20 skipped tests) and do not assert deny cases.
 - Fix: add `backend/firebase/rules-test/run.js` using `@firebase/rules-unit-testing` (dev dependency in `backend/firebase/rules-test/package.json`) with allow/deny cases per top-level node: register row, `signingPublicKey`, presence spoof, third-party room write, voice call transitions, lock reclaim, `userSearch` list; run in CI via `firebase emulators:exec --only database`.
 - Effort: L
 
@@ -681,4 +682,72 @@ abstract class SignalingAdapter  // 33 Future-returning members
 ```
 - Why it matters: each new adapter method needs edits in the real adapter, the debug decorator, the noop adapter and the fakes; the debug decorator is a forwarding copy of the interface, so drift (a method added to the interface and forgotten in the decorator) compiles only because the class is `implements`, not `extends`.
 - Fix: replace the hand-written logging decorator with a generic `LoggingSignalingAdapter extends ForwardingSignalingAdapter` or an `invoke(name, call)` helper; keep noop as the only explicit stub.
+- Effort: M
+
+## J. Tests
+
+Baseline (audit/00-inventory.md §4, not re-run): peer_core 76, protocol_brain 276, rain_core 61, apps/rain 744 passed + 20 skipped. Line coverage of loaded files: peer_core 73.1 %, protocol_brain 54.6 %, rain_core 43.7 % (66.0 % without `rain_database.g.dart`), apps/rain 68.8 % (lcov omits never-loaded files, so true figures are lower; none of the four reaches 80 %).
+
+Present and good (no finding): FSM terminal state (`voice_call_session_test.dart:7-31`, `failed` cannot be re-driven), v=2 per-pair crypto (`signaling_cipher_test.dart:129-250`, including "v=1 root-key holder cannot decrypt a v=2 envelope"), plaintext legacy decode (`:111`), ECDH agreement (`identity_key_repository_test.dart:121`), receiver hash mismatch removes the temp file (`friend_flow_test.dart:5458`), schema upgrade fixtures v2 and v5 (`rain_database_test.dart:87,176`).
+
+Skipped tests (20): 19 are the four emulator suites guarded by `runIntegrationTests` (`integration_account_deletion_emulator_test.dart:70,143`, `integration_two_devices_handshake_full_test.dart:34`, `integration_two_users_end2end_test.dart:116`, `integration_voice_signaling_emulator_test.dart:241,341,415,702,792,873`; reason "Requires Firebase emulators") plus group members; 1 is `friend_flow_test.dart:5031` ("Legacy control-channel voice path frozen until Firebase signaling."). The four emulator files are run by `scripts/ci_run_firebase_emulators.sh:78` (and `.ps1:111`) with `RUN_RAIN_INTEGRATION_TESTS=true`, called from the `firebase-emulator-tests` job in `ci.yml:~391-401`, so they do run in CI, not locally.
+
+Fakes in use: `FakeVoiceSignalingAdapter` (868 lines), `FakeConnectionRequestAdapter` (527), `_LiveSmokePeerCore` (166) in `packages/protocol_brain/lib/src/testing/`; `NoopSignalingAdapter` and `DebugSignalingAdapter` in the app; `FirebaseEmulatorSignalingAdapter` and `two_device_harness.dart` in `apps/rain/test/utils/`; per-file media/platform fakes inside `call_media_connection_test.dart`, `voice_media_connection_test.dart`, `peer_core_test.dart`, `friend_flow_test.dart`. No fake for `FirebaseAuth`/`FirebaseDatabase` and no mock package in any `dev_dependencies`.
+
+### TEST-001 `firebase_adapter.dart` has 0 of 1,277 lines covered by unit tests
+- Severity: P1 | Confidence: High
+- Location: `packages/protocol_brain/lib/adapters/firebase_adapter.dart` (3,046 lines at HEAD), `packages/protocol_brain/pubspec.yaml:24-27`
+- Evidence:
+```
+lcov (audit/00-inventory.md §4.1): firebase_adapter.dart 0 / 1,277
+protocol_brain dev_dependencies: flutter_lints, flutter_test only (no mockito / fake_firebase)
+constructor: FirebaseSignalingAdapter({FirebaseAuth? auth, FirebaseDatabase? database, FirebaseFunctions? functions, ...})
+```
+- Why it matters: registration rollback, presence, call locks and cleanup, v=1/v=2 cipher routing and every RTDB path live only in this file. The GIT-001 regression (sign-out before rollback) would have compiled-and-passed any unit run if the braces were fine. Only the CI emulator job could notice, and only for the flows it drives.
+- Fix: extract a thin `RealtimeDatabasePort` interface (get/set/update/remove/onDisconnect/listen) that `FirebaseSignalingAdapter` depends on, implement it over `FirebaseDatabase` and over an in-memory fake in `protocol_brain/test`, then add tests for registration rollback, `cleanupStaleVoiceCallArtifacts` (all decisions) and cipher routing. No new dependency needed.
+- Effort: L
+
+### TEST-002 Emulator suites do not exercise the app's register flow or any rules "deny" case
+- Severity: P2 | Confidence: Medium
+- Location: `apps/rain/test/utils/firebase_emulator_signaling_adapter.dart:222-231`, `apps/rain/test/integration_*_test.dart`
+- Evidence:
+```
+firebase_emulator_signaling_adapter.dart:222  Future<void> publishIdentitySigningKey(...) async { await _put(<String>['users', normalizedUsername, 'signingPublicKey', ...
+```
+- Why it matters: the test util re-implements the adapter with its own REST `_put` instead of using `FirebaseSignalingAdapter`, so a mismatch between the real adapter and rules such as SEC-001 passes. Tests only prove positive paths of the harness code.
+- Fix: run the emulator suites against the real `FirebaseSignalingAdapter` (it accepts `useEmulator: true`), and add deny cases (see BE-001).
+- Effort: M
+
+### TEST-003 A legacy skipped test never runs
+- Severity: P3 | Confidence: High
+- Location: `apps/rain/test/friend_flow_test.dart:5031-5032`
+- Evidence:
+```
+skip: 'Legacy control-channel voice path frozen until Firebase signaling.',
+```
+- Why it matters: the reason ("until Firebase signaling") no longer applies because Firebase signaling is the default; dead tests hide whether the path is still needed.
+- Fix: delete the test and the legacy path it covers, or re-enable it against `FakeVoiceSignalingAdapter`.
+- Effort: S
+
+### TEST-004 Known failure modes in this audit have no test
+- Severity: P2 | Confidence: High
+- Location: `packages/protocol_brain/test/voice_call_session_test.dart`, `packages/peer_core/test/peer_core_test.dart`, `apps/rain/test/friend_flow_test.dart`
+- Evidence:
+```
+Grep -i "glare|candidate before|onDisconnect|waitForDrain|destroy.*throw" in the test dirs -> no match for glare, candidate-before-accept, call-room onDisconnect, backpressure-while-closed, destroy() exception path
+```
+- Why it matters: SIG-001, SIG-002, SIG-003, RTC-001, RTC-002, APP-002 and APP-003 are all in code that currently passes its tests; without characterization tests they will regress after any refactor.
+- Fix: add one test per finding when fixing it (the plan lists the file and test name for each).
+- Effort: M
+
+### TEST-005 Coverage is below the 80 % project target in three of four packages
+- Severity: P3 | Confidence: Medium
+- Location: lcov summary in `audit/00-inventory.md §4.1`
+- Evidence:
+```
+peer_core 73.1 %   protocol_brain 54.6 %   rain_core 43.7 % (66.0 % excl. generated)   apps/rain 68.8 %
+home_screen.dart 23 %, chat_panel.dart 27 %, friend_profile_screen.dart 0 %, file_transfer_bubble.dart 0 %
+```
+- Why it matters: UI files with 0-27 % are where many of the 146 long functions live (QUAL-001); no gate stops further decline.
+- Fix: add a coverage floor in CI per package at the current value, raise by 2 points per phase; exclude `*.g.dart` from rain_core's number.
 - Effort: M
