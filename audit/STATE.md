@@ -21,6 +21,7 @@ T2.3 55713e2 vault spec: R-023..R-031, BLK-011..013, TD-023..028, ADR-011/012
 T3.1 b466768 firebase_adapter.dart restored to HEAD (WIP in audit/wip patch); analyze clean, format clean, protocol_brain 276 pass
 T3.2 0fda669 7 registers dated 2026-10-10; vault validator passes
 T3.3 30992ec ci.yml PR filter now main+dev
+T3.4 4943068 audit:moderate now 0 vulnerabilities (lockfile only); functions tests 37 pass
 ## Blocked
 
 ## Decisions
@@ -31,6 +32,7 @@ T3.3 30992ec ci.yml PR filter now main+dev
 - D5 Historical dart_defines.local.json values are treated as exposed; rotation is a manual owner action listed in the final report.
 
 ## Notes
+- T3.5 baseline (2026-10-10): ANALYZE clean (4 packages), FORMAT clean (283 files), tests peer_core 76, protocol_brain 276, rain_core 61, apps/rain 744 pass + 20 skip, functions 37 pass, VAULT pass, npm audit:moderate 0 vulnerabilities.
 - TEST gap for T3.1: FirebaseSignalingAdapter cannot be faked without new dependencies (no fake for FirebaseAuth/FirebaseDatabase); see TEST-001. Planned fix: T4.06.
 
 
