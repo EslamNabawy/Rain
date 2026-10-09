@@ -318,3 +318,106 @@ if (await tempFile.exists()) { await tempFile.delete(); }   // before each recei
 - Why it matters: any disconnect on a 100 MiB file restarts the transfer from byte 0, and the receiver accepts an offer without checking available disk space, so a full disk shows up only as a write failure mid-transfer (`'Could not write received file chunk.'`).
 - Fix: backlog; keep `.part` files with persisted offsets and add a `resume_from` field in the accept frame, check free space before accepting.
 - Effort: L
+
+## E. Security and crypto
+
+Rules trace, no finding (read from `backend/firebase/database.rules.json`, evaluated with a Node script, not an emulator):
+- Authenticity of rooms: `rooms/$roomId` create requires `root.child('users/' + newData.child('userA').val() + '/uid').val() === auth.uid` and `userA < userB` and `userA:userB === $roomId`; update and delete require `auth.uid` to equal `userA` or `userB`. Sub-nodes: `offer` writable only by `userA`'s uid, `answer` only by `userB`'s uid, `callerICE`/`calleeICE` likewise. A third user cannot write into the room of B and C. Same pattern for `voiceCalls/$callId` (`offer` requires the caller uid and status `accepted|negotiating`; `answer` requires the callee uid and status `negotiating`), `activeVoicePairs` and `activeVoiceUsers`.
+- Identity binding: `users/$username` `.write` requires `auth.token.email === $username + '@rain.local'` and either a new row with `uid === auth.uid` or an existing row whose `uid` already equals `auth.uid` (and cannot change). `userSearch/$username` and `presence/$username` require `root.child('users/' + $username + '/uid').val() === auth.uid`. Overwriting another user's row is not possible.
+- Validation: SDP and ICE fields have `v`, `alg === 'A256GCM-HKDF-SHA256'`, `from`/`to` bound to `userA`/`userB`, `nonce <= 96`, `ciphertext <= 262144` (SDP) and `mac <= 96`; 24 `length` checks in `rooms`, 28 in `voiceCalls`. `users/$username` has `$other: .validate false`.
+- Sanitizer (`apps/rain/lib/infrastructure/services/diagnostics_sanitizer.dart:10-60`) redacts SDP markers, `candidate:` lines, `password|token|secret|credential|api_key|authorization` assignments, bearer tokens, file paths, Firebase paths and emails; no raw logging of SDP/candidate/password found by Grep.
+- Remote Config (`backend/firebase/remoteconfig.template.json`) holds only `rain_release_manifest_v1`, `min_required_version`, `update_url`; no key can disable encryption.
+
+### SEC-001 New registrations write `users/<name>/signingPublicKey`, which the rules reject
+- Severity: P1 | Confidence: Medium
+- Location: `apps/rain/lib/application/state/identity_providers.dart:136-146`, `packages/protocol_brain/lib/adapters/firebase_adapter.dart:265-277` (HEAD), `backend/firebase/database.rules.json` (`users/$username/$other`)
+- Evidence:
+```
+identity_providers.dart:144  await adapter.publishIdentitySigningKey(username: username, signingPublicKey: ...)
+firebase_adapter.dart:274    await _root.child('users/$normalized/signingPublicKey').set(signingPublicKey);
+rules: users/$username children = username, uid, displayName, gender, registeredAt, accountState, deletedAt, $other{.validate:false}; "signingPublicKey" does not occur in the file; git log -S finds no commit that ever added it
+```
+- Why it matters: if the deployed rules equal the repo rules, every new sign-up creates the Firebase Auth account, then the key write is rejected with permission denied, the catch only calls `adapter.signOut()` (`identity_providers.dart:158-166`) and rethrows. The Auth user is never deleted (compare `_rollbackNewlyCreatedAuthUser` in the adapter's own `register`, which is not used here), so the username is permanently taken with no `users/` row. The adapter comment "RTDB rules enforce that only the matching auth uid may write this node" is not backed by any rule. There is no rules test (see BE-001) to catch this.
+- Fix: add `signingPublicKey` to `users/$username` rules (`.validate`: string, base64, length 44, writable only when `root.child('users/'+$username+'/uid').val() === auth.uid`, immutable once set unless an explicit rotate flag), add a rules test, and in `identity_providers.dart` roll back the Auth user (delete) when `publishIdentitySigningKey` fails.
+- Effort: M
+- Confirm by: emulator rules test writing `users/alice/signingPublicKey` as alice's uid.
+
+### SEC-002 Per-pair E2E signaling (v=2) is implemented but not wired; signaling uses one shared compile-time key
+- Severity: P2 | Confidence: High
+- Location: `apps/rain/lib/application/bootstrap/app_bootstrap.dart:78-86`, `apps/rain/lib/application/state/runtime_providers.dart:543-545`, `apps/rain/lib/core/config/app_environment.dart:137-146,241-246,615`, `packages/protocol_brain/lib/adapters/firebase_adapter.dart:29-38,130-150,153-170` (HEAD)
+- Evidence:
+```
+app_bootstrap.dart:78  final signalingCipher = SignalingCipher.fromKeyMaterial(effectiveEnvironment.signalingEncryptionKey);
+app_bootstrap.dart:83  FirebaseSignalingAdapter(database: firebaseDatabase!, signalingCipher: signalingCipher)   // no pairCipherResolver
+Grep "pairCipherResolver|SignalingCipherResolver" in apps/rain/lib -> 0 matches
+app_environment.dart:615  const demoSignalingEncryptionKey = 'rain-demo-signaling-encryption-key-v1-change-me';
+```
+- Why it matters: `FirebaseSignalingAdapter._resolvePairCipher` returns null without a resolver, so `_encryptSignalingPayload` always takes the v=1 path. v=1 derives keys from one root key supplied via `RAIN_SIGNALING_ENCRYPTION_KEY` (a `--dart-define`, compiled into every installed binary and identical for all users; `AppEnvironment.validateForRelease` only requires it to be non-demo, `:410-430`). Anyone with the app can decrypt any signaling envelope they can read, so v=1 gives no confidentiality against a database operator or backup reader and the "E2E" claim in the tracker is not true of the shipped path. Demo channel builds may ship the public demo key. Media itself is DTLS-SRTP and chat messages go over the P2P data channel, so exposure is limited to SDP/ICE (IP addresses, DTLS fingerprints) and their integrity; the rules in the trace above remain the real access control.
+- Fix: after SEC-001 is fixed, pass a `SignalingCipherResolver` built from `IdentityKeyRepository.derivePairKeyMaterial` and a peer-key lookup (`users/<peer>/signingPublicKey`) in `app_bootstrap.dart`; keep v=1 decode support for one release (decode-only), then drop v=1 encrypt. Document that v=1 is obfuscation, not confidentiality.
+- Effort: L
+
+### SEC-003 Local database is stored in plaintext; the DB key is generated but never used
+- Severity: P1 | Confidence: High
+- Location: `packages/rain_core/lib/database/rain_database.dart:358-405` (`openEncryptedRainDatabase`), `packages/rain_core/lib/database/database_key_service.dart:18-45`, `apps/rain/lib/application/bootstrap/app_bootstrap.dart:49-56`, `pubspec.lock:1287-1302`
+- Evidence:
+```
+rain_database.dart:394  db.execute("PRAGMA key = \"x'$hex'\";");   // unknown PRAGMA is ignored by stock SQLite; wrapped in try/catch
+rain_database.dart:401  // Not a SQLCipher build - continue with plaintext. (inner probe catch at :397-399 is empty)
+pubspec.lock  sqlite3 3.3.1 (default source), sqlite3_flutter_libs 0.6.0+eol
+```
+- Why it matters: message history, friends and file metadata sit unencrypted in the Drift file (Android app data dir, Windows user profile). A stock SQLite build silently ignores `PRAGMA key`, so nothing is encrypted yet the keystore holds a "DB key" that suggests otherwise. Latent data-loss: `DatabaseKeyService.ensureDatabaseKey` regenerates a new key when the keystore returns null (`:26-33`), and `openEncryptedRainDatabase` falls back to a fresh `RainDatabase()` on any error; once a real SQLCipher build is introduced, a keystore reset would orphan an encrypted file, and an existing plaintext file would fail to open with "file is not a database" because no migration exists.
+- Decision options:
+  - (a) `sqlite3` >= 3.x with the SQLCipher source selected through build hooks. Confirmed with Context7 (`/simolus3/sqlite3.dart`, `UPGRADING_TO_V3.md` and `sqlite3/doc/hook.md`): add `hooks: user_defines: sqlite3: source: sqlcipher` (or `sqlite3mc`) to the pubspec and drop `sqlite3_flutter_libs`/`sqlcipher_flutter_libs`. The lockfile already has sqlite3 3.3.1, so hooks are available. Cost: native build on Android/Windows must be verified (R7 forbids builds in this program), plus a one-time plaintext-to-cipher migration (`sqlcipher_export` or `ATTACH ... KEY`) and a version marker file.
+  - (b) Application-level AES-GCM on message bodies (`cryptography`, already a dependency) with the existing DB key. No native change, works with the current build, but metadata (peers, timestamps, file names) and search remain plaintext.
+  - (c) Keep plaintext and document it as an accepted risk, with OS disk encryption as the control.
+  - Recommendation: (a) as the target, shipped behind a verified migration; do (b) only if (a) cannot be built on Windows. Until then record (c) in the risk register and remove the misleading "encrypted open" wording. Decision recorded as ADR-012 in Phase 2.
+- Fix: implement the chosen option; in the interim make `openEncryptedRainDatabase` log an event `db_encryption_inactive` and never regenerate a key when a database file already exists.
+- Effort: L
+
+### SEC-004 Android auto-backup is not disabled
+- Severity: P2 | Confidence: High
+- Location: `apps/rain/android/app/src/main/AndroidManifest.xml:12-16`
+- Evidence:
+```
+<application android:label="Rain" android:name="${applicationName}" android:icon="@mipmap/ic_launcher">   # no allowBackup, dataExtractionRules or fullBackupContent
+```
+- Why it matters: `android:allowBackup` defaults to true, so the plaintext Drift database (SEC-003) can be uploaded to Google Drive backups and restored on another device without the keystore, leaving a database whose key is gone. `usesCleartextTraffic` is not set (default false for targetSdk >= 28) and only `MainActivity` is exported, both fine. Permissions: INTERNET, ACCESS_NETWORK_STATE, CHANGE_NETWORK_STATE, MODIFY_AUDIO_SETTINGS, RECORD_AUDIO, CAMERA, POST_NOTIFICATIONS; no FOREGROUND_SERVICE (see APP findings).
+- Fix: set `android:allowBackup="false"` and `android:dataExtractionRules` excluding the database and secure-storage files.
+- Effort: S
+
+### SEC-005 `ensureKeyPair` trusts the database public key without checking the private key
+- Severity: P2 | Confidence: Medium
+- Location: `packages/rain_core/lib/identity/identity_key_repository.dart:25-40`, `apps/rain/lib/infrastructure/security/flutter_secure_storage_key_store_service.dart:21-27`
+- Evidence:
+```
+final existing = await _readPublicKey();
+if (existing != null) { return existing; }       // private key in the keystore is never verified
+```
+- Why it matters: if the keystore entry is lost (Windows profile reset, Android backup restore, `flutter_secure_storage` major upgrade, or an uncaught non-`PlatformException`), `ensureKeyPair` still returns the old public key. The peer then derives ECDH with a key whose private half no longer exists, and `getPrivateKeyBytes` throws on every call, so per-pair encryption fails permanently with no regeneration path. The key store only maps `PlatformException` to `KeyStoreException` (`:21-27`), so other failures surface as raw exceptions. On Windows `flutter_secure_storage` uses a DPAPI-protected file (documented as non-TPM in the file header).
+- Fix: in `ensureKeyPair`, if the DB public key exists but `_store.read(_storeId)` is null, regenerate the pair and republish; wrap all `catch` types in `KeyStoreException`.
+- Effort: S
+
+### SEC-006 `userSearch` can be listed by any signed-in account and sign-up is open, without App Check
+- Severity: P2 | Confidence: Medium
+- Location: `backend/firebase/database.rules.json` (`userSearch.".read": "auth != null"`), `apps/rain/pubspec.yaml`, `backend/firebase/firebase.json`
+- Evidence:
+```
+userSearch: { ".read": "auth != null", "$username": { ".write": "... users/$username/uid === auth.uid ..." } }
+Grep -i "app_check|appcheck" in pubspecs, lib/ and firebase.json -> 0 matches
+```
+- Why it matters: anyone can create a Firebase Auth account (`<name>@rain.local` e-mail/password, API key is public) and download the full list of usernames and display names, and `users/<name>` rows (uid, gender, registeredAt) and `presence/<name>` (platform, online state) for any known username. Without App Check, scripts rather than the app can also create accounts and consume Spark RTDB quota. Chat content is not in RTDB, so this is a privacy and abuse issue, not a content leak.
+- Fix: restrict `userSearch` listing with `.indexOn` plus `orderByKey().startAt().limitToFirst(20)` constraints enforced by query-based rules (`query.limitToFirst <= 20`), add App Check (Play Integrity / debug provider; Windows has no provider, so enforce monitoring-only there), and treat per-IP sign-up throttling in the Auth console as an owner action.
+- Effort: M
+- Confirm by: emulator test reading `userSearch` as a fresh account.
+
+### SEC-007 Update URL from Remote Config is opened without a scheme or host check
+- Severity: P2 | Confidence: Medium
+- Location: `apps/rain/lib/infrastructure/services/force_update_service.dart:84,293-295,323`, `apps/rain/lib/presentation/screens/root_screen.dart:61`, `apps/rain/lib/presentation/screens/settings_screen.dart:908,921`, `apps/rain/lib/presentation/screens/startup_surface.dart:117`
+- Evidence:
+```
+force_update_service.dart:84  updateUrl: _optionalString(json['updateUrl']) ?? fallbackUpdateUrl,
+root_screen.dart:61  onUpdate: () => unawaited(launchUrlString(updateResult.updateUrl)),
+```
+- Why it matters: whoever can publish the Remote Config template (or tamper with a cached copy) can send every client to an arbitrary `http(s)` or custom-scheme URL from a trusted "Update required" screen. The force-update gate also blocks use of the app, so it is a phishing vector.
+- Fix: parse with `Uri.tryParse`, require `https` and an allow-listed host (`github.com`, `AbdogadXNabawy`/`EslamNabawy` release paths), else fall back to the compiled `RAIN_UPDATE_URL`.
+- Effort: S
