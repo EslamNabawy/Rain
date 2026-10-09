@@ -488,3 +488,60 @@ return GoRouter(refreshListenable: refreshListenable, ...);       // router.disp
 - Why it matters: `SessionManager` has no `dispose` method (`session_manager.dart` has none; the runtime tears sessions down in `_shutdown`), so a session change relies entirely on the runtime shutdown path; `GoRouter` holds listeners until process exit. Low impact today because both providers live for the process, but a second account switch in one process would reuse stale state.
 - Fix: add `SessionManager.dispose()` that closes all peers and register it with `ref.onDispose`; register `router.dispose`.
 - Effort: S
+
+## G. Storage
+
+Checked and found sound (no finding): all single-store writes in `message_store.dart`, `friend_store.dart`, `file_transfer_store.dart`, `offline_queue.dart` and `identity.dart` run inside `serializedTransaction` (`rain_database.dart:293-302`, busy/locked retry with backoff, `:305-330`); schema v6 adds explicit indexes `messages(peer_id, sent_at, seq, id)`, `friends(display_name)`, `queued_messages("to", status, seq, sent_at)` and `(status, "to")`, `file_transfers(peer_id, created_at)`, `(message_id)`, `(state, peer_id)` (`rain_database.dart:204-240`).
+
+### DB-001 Migration steps 3->4, 4->5 and 6->7 have no test; `from < 5` is unguarded
+- Severity: P2 | Confidence: High
+- Location: `packages/rain_core/lib/database/rain_database.dart:143,170-198`, `packages/rain_core/test/rain_database_test.dart:87,176`
+- Evidence:
+```
+rain_database.dart:143  int get schemaVersion => 7;
+rain_database.dart:180  if (from < 5) { await m.createTable(fileTransfers); }      // no _hasTable guard, unlike the other steps
+rain_database_test.dart:111 PRAGMA user_version = 2;   :190 PRAGMA user_version = 5;   // only these two legacy fixtures
+```
+- Why it matters: only "v2 skips existing column" and "v5 creates indexes" are exercised. The `signingPublicKey` column (v7, `:190-192`) is added to every existing install on first run of the new build and has no upgrade test; `m.createTable(fileTransfers)` throws "table already exists" if a previous run died after creating the table but before bumping `user_version`. A failing `onUpgrade` blocks startup (see DB-003).
+- Fix: add tests for upgrades 2->7, 4->5, 6->7 using `PRAGMA user_version` fixtures, and guard `createTable(fileTransfers)` with `!await _hasTable('file_transfers')`.
+- Effort: S
+
+### DB-002 Message, file-transfer and unread-counter writes are separate transactions
+- Severity: P2 | Confidence: High
+- Location: `apps/rain/lib/application/runtime/file_transfer_runtime.dart:262-288`, `:1058-1070`, `apps/rain/lib/application/runtime/serialized_runtime_mutations.dart:1-9`
+- Evidence:
+```
+await localMutations.run(() async {
+  if (!await messageStore.containsMessage(messageId)) {
+    await messageStore.forceStoreIncomingEnvelope(...);  await friendStore.incrementUnread(peerId);
+  }
+  await fileTransferStore.upsert(FileTransferRecord(...));
+});
+serialized_runtime_mutations.dart:5  final next = _tail.catchError((_) {}).then((_) => action());   // a Future FIFO, not a DB transaction
+```
+- Why it matters: `localMutations.run` only orders callbacks; each store call opens its own SQLite transaction. If the app is killed or `upsert` throws between them, the chat shows a file message with no `file_transfers` row (the bubble cannot accept or fail) and the unread counter was already incremented; on retry `containsMessage` is true, so unread is not double counted but the transfer row is still created, so only the first crash leaves an inconsistent state. The same pattern appears in `markTransferFailed` (`:1058-1070`): `markState(failed)` then `markMessageStatus(failed)`.
+- Fix: add `RainDatabase.serializedTransaction` wrappers in a single `FileTransferStore.recordIncomingOffer(...)` / `failTransfer(...)` method that touches all three tables in one transaction.
+- Effort: M
+
+### DB-003 A foreign-key check failure or failed upgrade blocks startup with no recovery
+- Severity: P2 | Confidence: Medium
+- Location: `packages/rain_core/lib/database/rain_database.dart:156-168`, `apps/rain/lib/application/bootstrap/app_bootstrap.dart:49-56`
+- Evidence:
+```
+beforeOpen: ... if (fkViolations.isNotEmpty) { throw StateError('Rain database has N foreign-key violation(s). ... clear app data to rebuild it.'); }
+app_bootstrap.dart:54  } catch (_) { database = RainDatabase(); }      // fallback hits the same beforeOpen and throws again
+```
+- Why it matters: any FK violation (for example a deleted message with a leftover transfer row after DB-002) throws on every launch; the only remedy shown is for the user to clear app data, which also loses the identity and chat history. The bootstrap fallback retries the same file, so it cannot recover.
+- Fix: on `StateError` from `beforeOpen`, quarantine the file (rename to `rain.corrupt-<ts>.sqlite`), create a fresh database, and surface a "history could not be restored" notice; repair violating rows with `DELETE` of orphans before failing.
+- Effort: M
+
+### DB-004 No pruning of terminal transfer rows, failed queue entries or connection memory
+- Severity: P3 | Confidence: Medium
+- Location: `packages/rain_core/lib/database/rain_database.dart` (tables), Grep `prune|retention|deleteOlder` in `packages/rain_core/lib` -> 0 matches
+- Evidence:
+```
+Only deletes: clearSessionData (:253-259), per-peer friend removal (friend_store.dart:122,163), offline_queue.dart:147, connection memory delete(peerId)
+```
+- Why it matters: `file_transfers` terminal rows (completed/failed/canceled), `queued_messages` with failed status and `message_seq_tracker` grow for the life of the install. At chat scale this is small, but nothing bounds it and diagnostics tables (if any) share the same file.
+- Fix: add `pruneTerminalTransfers(olderThan: 90 days)` and cap failed queue rows at start-up.
+- Effort: S
