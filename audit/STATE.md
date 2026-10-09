@@ -1,10 +1,11 @@
-﻿# Audit State
+# Audit State
 
 ## Done
 T0.1 cd7d51b branch audit/rain-hardening created, WIP patch preserved
 T1.1 5ac327b findings A (6 GIT findings)
 T1.2 59a5c83 findings B (7 ARCH findings)
 
+T1.3 a36e2e1 findings C (6 SIG findings)
 ## Blocked
 
 ## Decisions

@@ -262,3 +262,59 @@ BLOCKER-4 (TASK-005): "Watcher-before-startOutgoing" reorder REVERTED ... premis
 - Fix: none until reproduced; write the emulator test (see TEST findings) before changing order.
 - Effort: M
 - Confirm by: emulator test where the callee answers within 50 ms of room creation.
+
+## D. WebRTC and transfer
+
+Checked and found sound (no finding): `call_media_connection.dart` and `voice_media_connection.dart` close and dispose the peer connection, stop every local and remote track and dispose streams on every exit path, including a failed `getUserMedia` (`call_media_connection.dart:1010-1085`, `voice_media_connection.dart:163-200`, `:728-783`). File transfer streams from `File.openRead()` in 32 KiB chunks (`file_transfer_protocol.dart:8`, `file_transfer_runtime.dart:642-720`), never `readAsBytes`; max file is 100 MiB (`file_transfer_protocol.dart:7`, enforced by the receiver at `file_transfer_runtime.dart:208` and the sender at `rain_runtime_controller.dart:2125` and `chat_panel.dart:1178`); the receiver checks offsets, byte counts and size overflow (`:340-365`), verifies SHA-256 of the whole file (`:491-503`), and on mismatch or failure deletes the `.part` file (`markTransferFailed` -> `deleteTempFile`, `:1046-1160`). Platform branching is limited to `_windowsReleaseSafeIceServers` (`turn_credential_service.dart:276`).
+
+### RTC-001 `DefaultPeerCore.destroy()` can skip closing the peer connection and never calls `dispose()`
+- Severity: P2 | Confidence: Medium
+- Location: `packages/peer_core/lib/src/default_peer_core.dart:164-193`
+- Evidence:
+```
+try { await stopLocalAudio(); for (final channel in _channels.values.toList()) { await channel.close(); } } finally { _destroying = false; }
+...
+await _peerConnection?.close();      // reached only if the try block did not throw
+_peerConnection = null;              // no _peerConnection.dispose()
+```
+- Why it matters: if `stopLocalAudio()` or one `channel.close()` throws, the exception leaves `destroy()` before `_peerConnection.close()` and the state reset, so the native peer connection stays alive and `init()` (which calls `destroy()` when `_peerConnection != null`, `:198-200`) throws again. Even on the happy path only `close()` is called; `flutter_webrtc` requires `dispose()` to release the native object, which the call/voice classes do (`call_media_connection.dart:1077-1083`) but this one does not.
+- Fix: wrap each step in its own try/catch, always run `close()`, `dispose()` and the field resets in a `finally`, and rethrow the first error after cleanup.
+- Effort: S
+
+### RTC-002 Backpressure wait ignores channel close and polls
+- Severity: P2 | Confidence: Medium
+- Location: `packages/peer_core/lib/src/data_channel_backpressure.dart:28-40`
+- Evidence:
+```
+while ((channel.bufferedAmount ?? 0) > lowWatermarkBytes) {
+  if (stopwatch.elapsed > timeout) { throw TimeoutException(...); }
+  await Future<void>.delayed(pollInterval);   // 20 ms poll, 10 s timeout, no channel.state check
+```
+- Why it matters: if the channel closes or the peer disappears while the buffer is above the high watermark (1 MiB), `bufferedAmount` stays flat and the sender spins every 20 ms for 10 s before failing with a generic `TimeoutException`, so a dropped transfer takes 10 s to be noticed and the error is not a "channel closed" error. `bufferedAmountLowThreshold`/`onBufferedAmountLow` is not used.
+- Fix: break out with a `StateError('channel closed')` when `channel.state != RTCDataChannelOpen`, and prefer `channel.bufferedAmountLowThreshold = lowWatermarkBytes` with `onBufferedAmountLow` completing a `Completer`.
+- Effort: S
+
+### RTC-003 Default ICE configuration relays through a public shared TURN account
+- Severity: P2 | Confidence: High
+- Location: `apps/rain/lib/core/config/app_environment.dart:618-629`, `:127-134`
+- Evidence:
+```
+'turn:openrelay.metered.ca:80?transport=udp', ... 'turns:openrelay.metered.ca:443?transport=tcp'
+'username': 'openrelayproject', 'credential': 'openrelayproject'
+RAIN_ICE_SERVERS read via String.fromEnvironment (compile-time)
+```
+- Why it matters: when `RAIN_ICE_SERVERS` is empty the app uses a free public TURN service with a published shared credential. It has no SLA or quota guarantees for Rain, so calls behind symmetric NAT can silently fail, and relayed traffic goes through a third party (media stays DTLS-SRTP encrypted, but metadata and IPs are visible to it). Any value that is supplied through `RAIN_ICE_SERVERS` is compiled into the binary, so a private TURN username and credential would be extractable from the APK or EXE; the safer path (`turn_credential_service.dart` broker with short-lived credentials, TTL default 1200 s at `:200`) exists but depends on a broker URL.
+- Fix: make the broker the production source (fail visibly if absent in release), keep the public relay only for debug builds, and never place long-lived TURN credentials in `RAIN_ICE_SERVERS`.
+- Effort: M
+
+### RTC-004 No resume and no free-disk check for file transfers
+- Severity: P3 | Confidence: High
+- Location: `apps/rain/lib/application/runtime/file_transfer_runtime.dart:1046-1060`, `:1114-1119`
+- Evidence:
+```
+await deleteTempFile(transfer);   // markTransferFailed: partial data is discarded
+if (await tempFile.exists()) { await tempFile.delete(); }   // before each receive
+```
+- Why it matters: any disconnect on a 100 MiB file restarts the transfer from byte 0, and the receiver accepts an offer without checking available disk space, so a full disk shows up only as a write failure mid-transfer (`'Could not write received file chunk.'`).
+- Fix: backlog; keep `.part` files with persisted offsets and add a `resume_from` field in the accept frame, check free space before accepting.
+- Effort: L
