@@ -421,3 +421,70 @@ root_screen.dart:61  onUpdate: () => unawaited(launchUrlString(updateResult.upda
 - Why it matters: whoever can publish the Remote Config template (or tamper with a cached copy) can send every client to an arbitrary `http(s)` or custom-scheme URL from a trusted "Update required" screen. The force-update gate also blocks use of the app, so it is a phishing vector.
 - Fix: parse with `Uri.tryParse`, require `https` and an allow-listed host (`github.com`, `AbdogadXNabawy`/`EslamNabawy` release paths), else fall back to the compiled `RAIN_UPDATE_URL`.
 - Effort: S
+
+## F. App layer
+
+Checked and found sound (no finding): router redirect sends any non-ready startup state to `/` for protected paths (`apps/rain/lib/presentation/navigation/app_routes.dart:~118-127`, `appStartupRedirectForPath`); no deep-link intent filters exist in `AndroidManifest.xml`, so deep-link handling is out of scope. Stream-subscribing notifiers cancel on dispose (`runtime_providers.dart:120,335,714,743,908,1038`, `messaging_providers.dart:74,239`).
+
+### APP-001 Backgrounding marks the user offline mid-call and there is no Android foreground service
+- Severity: P1 | Confidence: Medium
+- Location: `apps/rain/lib/application/runtime/rain_runtime_controller.dart:2357-2366`, `apps/rain/lib/application/state/runtime_providers.dart:68-75`, `apps/rain/lib/infrastructure/services/app_settings_store.dart:163-169`, `apps/rain/android/app/src/main/AndroidManifest.xml:4-10`
+- Evidence:
+```
+rain_runtime_controller.dart:2360  case AppLifecycleState.hidden: case AppLifecycleState.paused:
+rain_runtime_controller.dart:2362    _presenceHeartbeatPaused = true;  ... _setPresenceOfflineSafely('app_${state.name}');   // no check for an active call or transfer
+runtime_providers.dart:71  await BackgroundServices.instance.stop(); return false;      // background service is forced off
+Grep "foregroundService|FOREGROUND_SERVICE" in android/ and lib/ -> 0 source matches
+```
+- Why it matters: when the Android app is backgrounded, or the Windows window is minimized (`hidden`), presence is set offline immediately even while a voice call or file transfer is active; the peer's UI then shows the user offline and presence-gated actions fail (call creation rules require `presence/<callee>/online === true`). On Android 11+ capturing the microphone in the background requires a foreground service of type `microphone`; none is declared, so an audio call is expected to lose mic input or be killed shortly after the user switches apps. Only video calls are explicitly ended on pause (`voice_call_media_coordinator.dart:297-335`).
+- Fix: skip `_setPresenceOfflineSafely` while `voiceCallState.hasCall` or an active file transfer exists; add a call-scoped Android foreground service (`FOREGROUND_SERVICE`, `FOREGROUND_SERVICE_MICROPHONE`, `foregroundServiceType="microphone"`) started in `startOutgoing`/`acceptIncoming` and stopped on end. Needs device verification (R7, owner action).
+- Effort: L
+- Confirm by: Android 13+ device, start an audio call, press Home for 60 s.
+
+### APP-002 Call-expiry check treats a network error as "not expired"
+- Severity: P2 | Confidence: Medium
+- Location: `apps/rain/lib/application/runtime/voice_call_runtime.dart:316-340` (`_isExpiredVoiceCallStartBlock`)
+- Evidence:
+```
+try { final room = await voiceAdapter.fetchCall(callId); ... return room.expiresAt <= now; } catch (_) { return false; }
+```
+- Why it matters: when `fetchCall` fails (offline, permission denied, timeout) the stale call state that blocks new calls is reported as still valid, so the user stays stuck in "busy" until the network recovers, with no log entry. The fallback branch right below uses the local epoch plus 2 minutes, which would have cleared it.
+- Fix: on error, fall through to the local `sessionEpoch + _voiceCallExpiry` check and record a runtime event.
+- Effort: S
+
+### APP-003 `failActiveTransfersForPeer` swallows a store read error and leaves transfers active
+- Severity: P2 | Confidence: Medium
+- Location: `apps/rain/lib/application/runtime/file_transfer_runtime.dart:1073-1088`
+- Evidence:
+```
+try { active = await fileTransferStore.loadActiveTransfers(peerId: peerId); } catch (_) { return; }
+...
+try { await markTransferFailed(transfer.id, reason); } catch (_) { /* best effort */ }
+```
+- Why it matters: this is the cleanup run on disconnect, friend removal and shutdown. If the DB read or a single `markTransferFailed` throws, the transfer rows stay in `receiving`/`offered`, and `hasActiveTransferForPeer` (`:200`, offer handler) then rejects every new file from that peer with "Finish the active file transfer first" until the app restarts or the rows are cleaned by hand. Nothing is recorded.
+- Fix: log through `recordRuntimeEvent` with severity warning and `errorRecorder`; on shutdown path, schedule a retry on next start (`loadActiveTransfers` -> mark failed) as part of runtime start.
+- Effort: S
+
+### APP-004 `brain!` is dereferenced after long awaits in the transfer loop
+- Severity: P3 | Confidence: Low
+- Location: `apps/rain/lib/application/runtime/file_transfer_runtime.dart:715,762,793,838,1019,1026,1040`
+- Evidence:
+```
+await for (final bytes in openRead()) { ... await _sendFileChunk(...) }   // seconds to minutes
+brain!.send(peerId, SessionChannel.file, FileTransferFrame.complete(...)) // :715
+```
+- Why it matters: `brain` is a mutable field that is nulled during logout/shutdown; a transfer in flight then fails with `Null check operator used on a null value`, which surfaces as an unclassified error instead of "Transfer canceled". The outer `try` records a generic failure, so impact is a misleading message, not a crash. Counts of `!` in the two large files are 27 (`voice_call_runtime.dart`) and 19 (`rain_runtime_controller.dart`); the ones checked right after a null test (`current.callId!` after `current.callId == null` guards) are safe.
+- Fix: read `final activeBrain = brain; if (activeBrain == null) throw StateError('Transfer canceled.')` once per chunk.
+- Effort: S
+
+### APP-005 `brainProvider` and `appRouterProvider` do not dispose what they create
+- Severity: P3 | Confidence: Low
+- Location: `apps/rain/lib/application/state/runtime_providers.dart:171-215`, `apps/rain/lib/presentation/navigation/app_routes.dart:39-43`
+- Evidence:
+```
+final brain = createDefaultProtocolBrain(...); return brain;      // no ref.onDispose
+return GoRouter(refreshListenable: refreshListenable, ...);       // router.dispose() never registered
+```
+- Why it matters: `SessionManager` has no `dispose` method (`session_manager.dart` has none; the runtime tears sessions down in `_shutdown`), so a session change relies entirely on the runtime shutdown path; `GoRouter` holds listeners until process exit. Low impact today because both providers live for the process, but a second account switch in one process would reuse stale state.
+- Fix: add `SessionManager.dispose()` that closes all peers and register it with `ref.onDispose`; register `router.dispose`.
+- Effort: S
