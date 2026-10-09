@@ -74,3 +74,92 @@ git ls-files integration_test test_driver -> 0 files; both dirs exist locally (e
 - Why it matters: empty dirs are not in git (harmless locally); two large root plan documents overlap `docs/audits/PROJECT_DEEP_ANALYSIS.md` and `FLAWS_AND_FIXES_TODO.md`, so there are several competing sources of truth for the same backlog.
 - Fix: move the two root plans into `docs/audits/` (or mark superseded) and link them from the vault; delete the empty local dirs.
 - Effort: S
+
+## B. Monorepo structure
+
+### ARCH-001 `rain_core` (storage) depends on `protocol_brain` (signaling) for two small types
+- Severity: P2 | Confidence: High
+- Location: `packages/rain_core/lib/src/drift_connection_memory_store.dart:4`, `packages/rain_core/lib/voice_call/voice_call_frame.dart:1`
+- Evidence:
+```
+voice_call_frame.dart:1  export 'package:protocol_brain/protocol_brain.dart' show CallMediaMode, VoiceCallFrame, VoiceCallFrameType;
+drift_connection_memory_store.dart:4  import 'package:protocol_brain/protocol_brain.dart';   // ConnectionMemoryStore, ConnectionMemory
+```
+- Why it matters: importing the whole `protocol_brain` barrel drags Firebase (auth, database, cloud_functions) into the storage package, so a pure-DB change recompiles and retests signaling and the graph `rain_core -> protocol_brain -> peer_core` cannot be reordered. rain_core only needs `ConnectionMemory`, `ConnectionMemoryStore`, `VoiceCallFrame`, `VoiceCallFrameType`, `CallMediaMode`.
+- Fix: extract these value types into a dependency-free package (e.g. `rain_models`) or into `rain_core`, and have `protocol_brain` depend on it; at minimum import `package:protocol_brain/src/...` narrowed `show` instead of the barrel.
+- Effort: M
+
+### ARCH-002 `protocol_brain` public barrel exports concrete Firebase adapters and a test fake
+- Severity: P2 | Confidence: High
+- Location: `packages/protocol_brain/lib/protocol_brain.dart:44`, `:51`, `:57`
+- Evidence:
+```
+44: export 'adapters/firebase_adapter.dart';
+51: export 'src/connection_request_rtdb_adapter.dart';
+57: export 'src/testing/fake_connection_request_adapter.dart';
+```
+- Why it matters: any importer of the barrel (including `rain_core`, see ARCH-001) gets production Firebase code and `FakeConnectionRequestAdapter` in its API; the fake can be instantiated in release code by mistake. `src/testing/` also holds `fake_voice_signaling_adapter.dart` and `live_smoke_peer_core.dart`, which are not exported, so the testing split is already inconsistent.
+- Fix: move fakes to `package:protocol_brain/testing.dart` (separate entry point); split `protocol_brain.dart` into an interface barrel and `protocol_brain_firebase.dart` for adapters.
+- Effort: M
+
+### ARCH-003 App imports the Firebase SDK in four places beyond bootstrap
+- Severity: P2 | Confidence: High
+- Location: `apps/rain/lib/application/bootstrap/app_bootstrap.dart:1-3`, `apps/rain/lib/infrastructure/services/force_update_service.dart:3`, `apps/rain/lib/infrastructure/services/network_status_service.dart:4`, `apps/rain/lib/infrastructure/services/turn_credential_service.dart:5`, `:165`
+- Evidence:
+```
+turn_credential_service.dart:165  final user = FirebaseAuth.instance.currentUser;
+network_status_service.dart:101   final FirebaseDatabase _database;
+```
+- Why it matters: `app_bootstrap.dart` and `firebase_options.dart` are legitimate composition-root uses. `force_update_service.dart` (Remote Config) and `network_status_service.dart` (injects `FirebaseDatabase`) are infrastructure services and acceptable. `turn_credential_service.dart:165` reads the `FirebaseAuth.instance` singleton directly instead of an injected auth/identity provider, so it cannot be tested without Firebase and bypasses the app's identity layer.
+- Fix: inject a `Future<String?> Function()` ID-token/uid getter into `TurnCredentialService` from `identity_providers.dart`.
+- Effort: S
+
+### ARCH-004 `cloud_functions` is a hard dependency of `protocol_brain` although Spark default is `rtdbOnly`
+- Severity: P2 | Confidence: High
+- Location: `packages/protocol_brain/pubspec.yaml:22`, `packages/protocol_brain/lib/adapters/firebase_adapter.dart:3`, `:27`, `:35`, `:44`, `:2284` (HEAD)
+- Evidence:
+```
+firebase_adapter.dart:35  _functions = functions ?? FirebaseFunctions.instance,
+firebase_adapter.dart:2284  } on FirebaseFunctionsException catch (error) {
+```
+- Why it matters: `FirebaseFunctions.instance` is eagerly created in the constructor even in `rtdbOnly` mode; the plugin adds binary size and a Blaze-only code path to a Spark app (constraint D4). It is not a runtime failure, but it blurs which features work on Spark.
+- Fix: make `functions` a lazy getter and move the callable path behind `ConnectionRequestBackendMode.cloudFunctions`; longer term, move callable code to a separate adapter file/package.
+- Effort: M
+
+### ARCH-005 Melos scripts cover only pub get, analyze and test
+- Severity: P3 | Confidence: High
+- Location: `pubspec.yaml:15-19`
+- Evidence:
+```
+scripts:
+  pub:get: dart run melos exec -- flutter pub get
+  analyze: dart run melos exec -- flutter analyze
+  test: dart run melos exec --concurrency=1 -- flutter test
+```
+- Why it matters: format check, coverage, build_runner (needed for `rain_database.g.dart`), functions tests and rules tests are run by hand or only in CI, so local and CI behavior drift.
+- Fix: add `format`, `format:check`, `coverage`, `build_runner`, `functions:test`, `rules:test` scripts.
+- Effort: S
+
+### ARCH-006 Beta and end-of-life dependencies in production
+- Severity: P2 | Confidence: High
+- Location: `apps/rain/pubspec.yaml:17` (`file_picker: ^12.0.0-beta.3`), `pubspec.lock:1287-1302` (`sqlite3` 3.3.1, `sqlite3_flutter_libs` 0.6.0+eol), `packages/rain_core/pubspec.yaml:22`
+- Evidence:
+```
+apps/rain/pubspec.yaml:17  file_picker: ^12.0.0-beta.3          (latest stable 13.1.0, audit/00-inventory.md §4.2)
+pubspec.lock  sqlite3_flutter_libs  version: "0.6.0+eol"
+```
+- Why it matters: a pre-release plugin handles every incoming/outgoing file selection; an `+eol` package ships the native SQLite binaries and blocks the SQLCipher route (see SEC finding on DB encryption). One major behind: `go_router` 17 vs 18, `flutter_secure_storage` 10 vs 11 (holds the key store), `flutter_local_notifications` 21 vs 22.
+- Fix: move `file_picker` to a stable 13.x after smoke-testing picking on Android and Windows; plan sqlite3 build-hooks migration with the DB encryption decision; defer other major bumps to the backlog.
+- Effort: M
+
+### ARCH-007 Lint set is only `flutter_lints`
+- Severity: P3 | Confidence: High
+- Location: `analysis_options.yaml:1-10`
+- Evidence:
+```
+include: package:flutter_lints/flutter.yaml
+errors: invalid_annotation_target: ignore
+```
+- Why it matters: 113 `catch (_)` and unawaited futures in call/transfer paths are not flagged; the codebase mixes swallowed errors with real handling.
+- Fix: add under `linter: rules:` `unawaited_futures`, `avoid_catches_without_on_clauses`, `only_throw_errors`, `cancel_subscriptions`, `close_sinks`, `avoid_print`, `prefer_final_locals`; introduce them gradually (enable, then baseline ignores).
+- Effort: M

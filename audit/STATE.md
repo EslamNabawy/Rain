@@ -2,6 +2,7 @@
 
 ## Done
 T0.1 cd7d51b branch audit/rain-hardening created, WIP patch preserved
+T1.1 5ac327b findings A (6 GIT findings)
 
 ## Blocked
 
@@ -13,4 +14,5 @@ T0.1 cd7d51b branch audit/rain-hardening created, WIP patch preserved
 - D5 Historical dart_defines.local.json values are treated as exposed; rotation is a manual owner action listed in the final report.
 
 ## Notes
+
 
