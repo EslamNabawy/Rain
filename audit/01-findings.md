@@ -854,3 +854,102 @@ app_environment.dart:421  final isDemoRelease = updateChannel == 'demo' && allow
 - Why it matters: positive: a release build cannot be signed with the debug key and refuses to run without the five `RAIN_RELEASE_*` secrets. Residual: the `demo` channel may ship with the public demo signaling key and OpenRelay credentials (SEC-002, RTC-003), and `remoteconfig.template.json` points both channels at the same `updateUrl`, so nothing separates a demo artifact from a stable one.
 - Fix: give the demo channel its own update URL and artifact name suffix; make `release.yml` refuse `RAIN_UPDATE_CHANNEL=demo` for tags without a `-demo` suffix.
 - Effort: S
+
+## L. Docs and process
+
+ADR check (`obsidian-vault/11-Decisions`, decision lines only):
+
+| ADR | Decision | Verdict |
+|---|---|---|
+| ADR-001 Firebase is signaling only | chat, files, media over WebRTC | matches code (file transfer streams over data channel, `file_transfer_runtime.dart:642`; chat over `SessionChannel`) |
+| ADR-002 Spark tier constraint | free-tier rules plus client-side repair | partly contradicted: client-side repair skips `connected` rooms and the peer's artifacts (SIG-003); scheduled cleanup is Blaze-only (`functions/index.js:11,55,93`) |
+| ADR-003 Obsidian vault as source of truth | vault is living truth | process rule; vault gate is time-based (CI-004) |
+| ADR-004 Call runtime uses coordinator architecture | `CallStartCoordinator`, `CallLeaseManager`, `CallMediaCoordinator`, `CallTerminalReconciler`, `CallDiagnosticsRecorder` | contradicted by names: Grep finds none of these classes; the code has `VoiceCallPreflightCoordinator`, `VoiceCallMediaCoordinator`, `VoiceCallTerminalReconciler`, etc. in `apps/rain/lib/application/runtime/voice_call/` and `VoiceCallRuntime` still holds 2,947 lines |
+| ADR-005 `CallLeaseManager` is the single lease authority | claim, conflict, stale repair, rollback, release | contradicted: no `CallLeaseManager` class (Grep); lock logic is `VoiceLockReclaimPolicy` in `firebase_adapter.dart:676,693` plus cleanup in `:1120` |
+| ADR-006 `PeerAvailabilityResolver` is the source of peer availability | one resolver | no class of that name (Grep); behavior lives in `peer_connectivity_provider` / `peerOnlineForAction` |
+| ADR-007 Bounded live tail plus pagination | message loading | matches code (`message_store.dart:82-121`, `_boundedPageSize`; `message_store_pagination_test.dart`) |
+| ADR-008 Streaming sinks and backpressure for files | persistent sinks, temp files | matches code (`file_transfer_runtime.dart:919,1114-1150`) |
+| ADR-009 Vault owns audit execution | vault checker | matches (`scripts/check_obsidian_vault.ps1`) |
+| ADR-010 Accept plaintext local Drift storage | Option 1 for current phase | matches code reality (SEC-003) but contradicts the tracker's TASK-002 "encrypted open" wiring and the `openEncryptedRainDatabase` comments |
+
+Tracker "DONE" claims checked against code: TASK-006 (failed is terminal, `voice_call_session.dart:1148-1150`, test `voice_call_session_test.dart:7-31`) true; TASK-007 (`call_media_connection.dart:113`, test `call_media_connection_test.dart:439`) true; TASK-008 (`rain_database.dart:147-168`) true; TASK-018 (raw `debugPrint` gate `ci.yml:122-128`; only `crash_diagnostics_service.dart` still calls it) true; TASK-019 (`LICENSE` present) true; TASK-020 (`.gitignore:23-24`) true; TASK-001.3/001.4 (`identity_key_repository.dart:82`, `signaling_cipher_test.dart:129-250`) true as stated (wiring deferred); 4.1 (`voice_call_state_coordinator_test.dart`) exists; TASK-015 is partly false (DOC-002).
+
+### DOC-001 ADR-004, ADR-005 and ADR-006 name classes that do not exist
+- Severity: P2 | Confidence: High
+- Location: `obsidian-vault/11-Decisions/ADR-004.md`, `ADR-005.md`, `ADR-006.md`
+- Evidence:
+```
+ADR-004: CallStartCoordinator, CallLeaseManager, CallMediaCoordinator, CallTerminalReconciler, CallDiagnosticsRecorder
+Grep CallStartCoordinator|CallLeaseManager|PeerAvailabilityResolver in apps/rain/lib packages/*/lib -> 0 files
+```
+- Why it matters: a reader following AGENTS.md ("review existing ADRs") searches for owners that were never built under those names, and the "single lease authority" statement hides that lock logic is spread over the adapter, a policy class and the runtime.
+- Fix: amend the ADRs with the real class names (`VoiceCallPreflightCoordinator`, `VoiceLockReclaimPolicy`, `peer_connectivity_provider`) or mark the decisions "planned"; part of the T2.3 vault spec.
+- Effort: S
+
+### DOC-002 The tracker marks TASK-015 DONE although the publish step cannot succeed against the rules
+- Severity: P2 | Confidence: Medium
+- Location: `PROJECT_PROGRESS_TRACKER.md:25,48`, `apps/rain/lib/application/state/identity_providers.dart:144`, `backend/firebase/database.rules.json`
+- Evidence:
+```
+tracker: "RTDB publishIdentitySigningKey on SignalingAdapter + wired into identity_providers.register ... Analyze+full test GREEN"
+rules: users/$username has no signingPublicKey child, $other .validate=false   (SEC-001)
+```
+- Why it matters: the keystone task that unblocks TASK-001 and TASK-002 is recorded as done on the strength of unit tests against fakes; the real path is untested (TEST-002). Risk R-014 mentions rule drift in general, but not this instance.
+- Fix: reopen TASK-015 as "rules + rollback pending" after SEC-001 is fixed; link the rules test.
+- Effort: S
+
+### DOC-003 The risk register has no entry for the main findings of this audit
+- Severity: P2 | Confidence: High
+- Location: `obsidian-vault/12-Risks/Risk Register.md:94-113` (R-001..R-020, plus R-021/R-022), `obsidian-vault/14-Blockers/BLOCKERS.md`
+- Evidence:
+```
+Grep -i "plaintext|blaze|e2e|encrypt|glare|foreground|firebase_adapter" in the register -> only SAR-005 (plaintext storage, ADR-010) and R-017 (Spark constraints, generic)
+```
+- Why it matters: not recorded as risks: shared compile-time signaling key and unwired v=2 (SEC-002), registration/rules mismatch (SEC-001), ghost call rooms on Spark (SIG-003), Android background mic and presence-offline-in-call (APP-001), time-based vault gate and failing audit gate in CI (CI-004, CI-005), build-breaking uncommitted WIP (GIT-001), historical secrets in git history (GIT-003). Register "Last updated: 2026-08-21" is already past the 45-day gate.
+- Fix: add risks R-023..R-030 per `audit/04-vault-updates.md`.
+- Effort: S
+
+### DOC-004 `backend/firebase/README.md` is stale
+- Severity: P3 | Confidence: High
+- Location: `backend/firebase/README.md` (Services To Enable; Data Layout notes)
+- Evidence:
+```
+"- Anonymous Authentication"                      (app requires <username>@rain.local e-mail/password: firebase_adapter.dart register(); anonymous users are signed out, ensureAuthenticated ~:1429)
+"Voice call nodes ... are removed by TTL cleanup" (cleanup is the Blaze scheduled function cleanupVoiceCalls; not available on Spark)
+```
+- Why it matters: following the README for a new Firebase project enables the wrong auth provider and leaves the owner believing call data is reclaimed.
+- Fix: list Email/Password, drop Anonymous, and state which cleanup exists on Spark (client-side, partial; SIG-003).
+- Effort: S
+
+### DOC-005 Duplicate numbered vault folder families
+- Severity: P3 | Confidence: High
+- Location: `obsidian-vault/` (`02-Architecture` 9 files and `03-Architecture` 15; `13-Blockers` 1 and `14-Blockers` 2; `11-Decisions` 10 and `14-Decisions` 0; `12-Tasks` 4 and `15-Tasks` 3; `AI-Memory` 1 and `19-AI Memory` 5)
+- Evidence:
+```
+AGENTS.md reads 03-Architecture/Current Architecture.md, AI-Memory/Project Memory.md, 14-Blockers/BLOCKERS.md and also names 02-Architecture
+```
+- Why it matters: a note can be updated in one copy and read in the other; the Phase 0 operating model points to both families.
+- Fix: merge into the numbering that AGENTS.md names, leave redirect stubs, and update `check_obsidian_vault.ps1` required paths in one commit (behavior change, schedule after Phase 4).
+- Effort: M
+
+### DOC-006 AGENTS.md names a different canonical copy than the one in use
+- Severity: P3 | Confidence: High
+- Location: `AGENTS.md` ("Repository Map": active copy `C:\Users\eslam\OneDrive\Desktop\GoodStuff\Rain`), `audit/STATE.md` decision D1
+- Evidence:
+```
+AGENTS.md: "The active maintained copy is expected to be C:\Users\eslam\OneDrive\Desktop\GoodStuff\Rain"
+this program: D1 Canonical copy is D:\Rain
+```
+- Why it matters: future sessions that honor AGENTS.md may edit the OneDrive copy and diverge from `D:\Rain` and the remote.
+- Fix: update the sentence in AGENTS.md to `D:\Rain` (owner confirms in the final report).
+- Effort: S
+
+## Severity counts
+
+| Severity | GIT | ARCH | SIG | RTC | SEC | APP | DB | BE | QUAL | TEST | CI | DOC | Total |
+|---|---|---|---|---|---|---|---|---|---|---|---|---|---|
+| P0 | 2 | 0 | 0 | 0 | 0 | 0 | 0 | 0 | 0 | 0 | 0 | 0 | 2 |
+| P1 | 1 | 0 | 1 | 0 | 2 | 1 | 0 | 2 | 0 | 1 | 2 | 0 | 10 |
+| P2 | 0 | 5 | 3 | 3 | 5 | 2 | 3 | 1 | 1 | 2 | 3 | 3 | 31 |
+| P3 | 3 | 2 | 2 | 1 | 0 | 2 | 1 | 1 | 3 | 2 | 2 | 3 | 22 |
+| Total | 6 | 7 | 6 | 4 | 7 | 5 | 4 | 4 | 4 | 5 | 7 | 6 | 65 |
