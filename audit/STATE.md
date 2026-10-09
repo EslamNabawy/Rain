@@ -22,7 +22,11 @@ T3.1 b466768 firebase_adapter.dart restored to HEAD (WIP in audit/wip patch); an
 T3.2 0fda669 7 registers dated 2026-10-10; vault validator passes
 T3.3 30992ec ci.yml PR filter now main+dev
 T3.4 4943068 audit:moderate now 0 vulnerabilities (lockfile only); functions tests 37 pass
+T3.5 7146e85 green baseline: analyze/format/tests/functions/vault pass
 ## Blocked
+T4.19 BLOCKED (SEC-006): depends on T4.01 (rules changes need RULES_TEST).
+T4.03 BLOCKED (SEC-001): depends on T4.01 (rules changes need RULES_TEST).
+T4.01 BLOCKED (BE-001): RULES_TEST cannot run on this machine. `npx --yes firebase-tools@13 emulators:exec --only database "node -e 1"` (run in backend/firebase) fails with: "Error: Could not spawn `java -version`. Please make sure Java is installed and on your system PATH." No Java found on PATH or in Android Studio/Program Files. Owner action: install a JDK (21) and re-run T4.01.
 
 ## Decisions
 - D1 Canonical copy is D:\Rain.

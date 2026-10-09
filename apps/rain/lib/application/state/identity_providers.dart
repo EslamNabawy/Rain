@@ -4,6 +4,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:protocol_brain/protocol_brain.dart';
 import 'package:rain_core/rain_core.dart';
 
+import '../../infrastructure/services/rain_debug_log_service.dart';
 import 'core_providers.dart';
 
 final identityRepositoryProvider = Provider(
@@ -135,14 +136,10 @@ class IdentityController extends AsyncNotifier<RainIdentity?> {
       await adapter.register(username, password);
       authCreated = true;
       // TASK-015: generate (or reuse) the identity keypair and publish the
-      // public key to RTDB under uid ownership. Must happen within the same
-      // try so a failure rolls back the Firebase session below.
-      final keyRepo = ref.read(identityKeyRepositoryProvider);
-      final publicKey = await keyRepo.ensureKeyPair();
-      await adapter.publishIdentitySigningKey(
-        username: username,
-        signingPublicKey: KeyEncoding.encodeBytes(publicKey.bytes),
-      );
+      // public key to RTDB under uid ownership. The key is not used by the
+      // shipped signaling path yet (v=1), so a failed publish must not abort
+      // registration; it is retried on the next login.
+      await _publishIdentitySigningKeyBestEffort(adapter, username);
       final now = DateTime.now().millisecondsSinceEpoch;
       await _saveBackendIdentity(
         RainIdentity(
@@ -162,6 +159,22 @@ class IdentityController extends AsyncNotifier<RainIdentity?> {
         }
       }
       rethrow;
+    }
+  }
+
+  Future<void> _publishIdentitySigningKeyBestEffort(
+    SignalingAdapter adapter,
+    String username,
+  ) async {
+    try {
+      final keyRepo = ref.read(identityKeyRepositoryProvider);
+      final publicKey = await keyRepo.ensureKeyPair();
+      await adapter.publishIdentitySigningKey(
+        username: username,
+        signingPublicKey: KeyEncoding.encodeBytes(publicKey.bytes),
+      );
+    } catch (error, stackTrace) {
+      RainDebugLog.error(error, stackTrace, source: 'identity-key-publish');
     }
   }
 
