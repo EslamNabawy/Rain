@@ -361,6 +361,7 @@ class RainRuntimeController with WidgetsBindingObserver {
   Timer? _friendRequestRefreshTimer;
   Timer? _backgroundOfflineTimer;
   bool _presenceHeartbeatPaused = false;
+  bool _appInBackground = false;
   bool _started = false;
   bool _shutDown = false;
   Future<void>? _shutdownFuture;
@@ -1059,6 +1060,48 @@ class RainRuntimeController with WidgetsBindingObserver {
       return;
     }
     await _sendHeartbeatSafely(reason: '$reason heartbeat');
+  }
+
+  /// Backgrounding normally marks the user offline. While a call or a file
+  /// transfer is active the peer must keep seeing the user online, so presence
+  /// and heartbeats stay up and this re-checks every heartbeat interval until
+  /// the activity ends.
+  Future<void> _pausePresenceUnlessBusy(String stateName) async {
+    _backgroundOfflineTimer?.cancel();
+    if (_shutDown || !_started || !_appInBackground) {
+      return;
+    }
+    if (await _hasActiveCallOrTransfer()) {
+      if (_shutDown || !_appInBackground) {
+        return;
+      }
+      _recordRuntimeEvent(
+        category: 'presence',
+        name: 'presence_offline_skipped_active_call',
+        context: <String, Object?>{'state': stateName},
+      );
+      _backgroundOfflineTimer = Timer(
+        heartbeatInterval,
+        () => unawaited(_pausePresenceUnlessBusy(stateName)),
+      );
+      return;
+    }
+    if (_shutDown || !_appInBackground) {
+      return;
+    }
+    _presenceHeartbeatPaused = true;
+    await _setPresenceOfflineSafely('app_$stateName');
+  }
+
+  Future<bool> _hasActiveCallOrTransfer() async {
+    if (_voiceCallState.hasCall) {
+      return true;
+    }
+    try {
+      return (await fileTransferStore.loadActiveTransfers()).isNotEmpty;
+    } catch (_) {
+      return false;
+    }
   }
 
   Future<void> _setPresenceOfflineSafely(String reason) async {
@@ -2345,6 +2388,7 @@ class RainRuntimeController with WidgetsBindingObserver {
 
     switch (state) {
       case AppLifecycleState.resumed:
+        _appInBackground = false;
         _presenceHeartbeatPaused = false;
         _backgroundOfflineTimer?.cancel();
         unawaited(cleanupStaleVoiceCallArtifacts('resume'));
@@ -2358,9 +2402,8 @@ class RainRuntimeController with WidgetsBindingObserver {
         break;
       case AppLifecycleState.hidden:
       case AppLifecycleState.paused:
-        _presenceHeartbeatPaused = true;
-        _backgroundOfflineTimer?.cancel();
-        unawaited(_setPresenceOfflineSafely('app_${state.name}'));
+        _appInBackground = true;
+        unawaited(_pausePresenceUnlessBusy(state.name));
         break;
       case AppLifecycleState.detached:
         _presenceHeartbeatPaused = true;
