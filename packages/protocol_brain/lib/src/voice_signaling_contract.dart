@@ -116,10 +116,13 @@ abstract interface class VoiceSignalingAdapter {
     required VoiceCallRole role,
   });
 
+  /// [liveCallId] is the call the local runtime is currently in; it is never
+  /// cleaned up.
   Future<VoiceCallCleanupSummary> cleanupStaleVoiceCallArtifacts({
     required String username,
     required int now,
     int limit = maxCallCleanupItemsPerRun,
+    String? liveCallId,
   });
 
   Future<void> deleteCall(String callId);

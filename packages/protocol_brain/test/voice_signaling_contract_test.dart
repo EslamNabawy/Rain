@@ -465,6 +465,55 @@ void main() {
     expect(adapter.activeUserLocks['bob']?.callId, 'call-2');
   });
 
+  test(
+    'cleanup janitor reclaims an expired connected room unless it is the live call',
+    () async {
+      Future<FakeVoiceSignalingAdapter> connectedCall() async {
+        final adapter = FakeVoiceSignalingAdapter();
+        await adapter.createOutgoingCall(
+          callId: 'call-1',
+          caller: 'alice',
+          callee: 'bob',
+          createdAt: 1000,
+          expiresAt: 2000,
+        );
+        await adapter.acceptCall(
+          callId: 'call-1',
+          callee: 'bob',
+          acceptedAt: 1100,
+        );
+        await adapter.markConnected(
+          callId: 'call-1',
+          username: 'alice',
+          connectedAt: 1200,
+        );
+        return adapter;
+      }
+
+      final live = await connectedCall();
+      addTearDown(live.dispose);
+      final liveSummary = await live.cleanupStaleVoiceCallArtifacts(
+        username: 'alice',
+        now: 3000,
+        liveCallId: 'call-1',
+      );
+      expect(liveSummary.cleanedAny, isFalse);
+      expect(live.rooms.keys, contains('call-1'));
+
+      final stale = await connectedCall();
+      addTearDown(stale.dispose);
+      final staleSummary = await stale.cleanupStaleVoiceCallArtifacts(
+        username: 'alice',
+        now: 3000,
+      );
+      expect(
+        staleSummary.decisions.map((decision) => decision.action),
+        contains(VoiceCallCleanupAction.deleteExpiredConnectedRoom),
+      );
+      expect(stale.rooms.keys, isNot(contains('call-1')));
+    },
+  );
+
   test('fake adapter stores video media mode and camera mute state', () async {
     final adapter = FakeVoiceSignalingAdapter();
     addTearDown(adapter.dispose);

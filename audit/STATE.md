@@ -23,6 +23,7 @@ T3.2 0fda669 7 registers dated 2026-10-10; vault validator passes
 T3.3 30992ec ci.yml PR filter now main+dev
 T3.4 4943068 audit:moderate now 0 vulnerabilities (lockfile only); functions tests 37 pass
 T3.5 7146e85 green baseline: analyze/format/tests/functions/vault pass
+T4.02 4f28f0a key publish is best-effort; analyze clean; auth_identity tests pass
 ## Blocked
 T4.19 BLOCKED (SEC-006): depends on T4.01 (rules changes need RULES_TEST).
 T4.03 BLOCKED (SEC-001): depends on T4.01 (rules changes need RULES_TEST).

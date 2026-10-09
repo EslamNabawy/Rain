@@ -2163,6 +2163,7 @@ extension VoiceCallRuntime on RainRuntimeController {
           username: selfIdentity.username,
           recordRuntimeEvent: recordRuntimeEvent,
           errorRecorder: errorRecorder,
+          liveCallId: voiceCallState.hasCall ? voiceCallState.callId : null,
         );
   }
 
