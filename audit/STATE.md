@@ -9,6 +9,7 @@ T1.3 a36e2e1 findings C (6 SIG findings)
 T1.4 97b3597 findings D (4 RTC findings)
 T1.5 83a76b5 findings E (7 SEC findings)
 T1.6 2751bf1 findings F (5 APP findings)
+T1.7 0f4ea59 findings G (4 DB findings)
 ## Blocked
 
 ## Decisions

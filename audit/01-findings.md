@@ -545,3 +545,65 @@ Only deletes: clearSessionData (:253-259), per-peer friend removal (friend_store
 - Why it matters: `file_transfers` terminal rows (completed/failed/canceled), `queued_messages` with failed status and `message_seq_tracker` grow for the life of the install. At chat scale this is small, but nothing bounds it and diagnostics tables (if any) share the same file.
 - Fix: add `pruneTerminalTransfers(olderThan: 90 days)` and cap failed queue rows at start-up.
 - Effort: S
+
+## H. Backend
+
+Exports of `backend/firebase/functions/index.js` and Spark compatibility (Spark cannot deploy any Cloud Function; scheduled ones also need Cloud Scheduler):
+
+| Export | Kind | Blaze needed | rtdbOnly replacement today |
+|---|---|---|---|
+| `cleanupPresence` (`index.js:11`, every 3 min) | onSchedule | yes | client freshness check `_isFreshPresence`, 30 s timeout (`firebase_adapter.dart:330`) + `onDisconnect` (`:2786`) |
+| `cleanupRooms` (`:55`, every 15 min) | onSchedule | yes | none (see SIG-003) |
+| `cleanupVoiceCalls` (`:93`, every 5 min) | onSchedule | yes | opportunistic own-lock cleanup only (see SIG-003) |
+| `cleanupConnectionRequests` (`connectionRequestCleanup.js:23`, every 10 min) | onSchedule | yes | none found |
+| `createConnectionRequest`, `cancel...`, `accept...`, `reject...`, `markConnectionRequestSeen`, `mute.../unmute...ConnectionRequestsFromPeer`, `getConnectionRequestQuotaSummary` (`:184-195`) | onCall | yes | guarded client transactions under RTDB rules (`connectionRequests*`, `connectionRequestPairLocks`), best-effort counters |
+
+### BE-001 No automated test exists for `database.rules.json`
+- Severity: P1 | Confidence: High
+- Location: `backend/firebase/` (no `rules-test/`), `backend/firebase/functions/test/connectionRequests.test.js`, `scripts/ci_run_firebase_emulators.sh`
+- Evidence:
+```
+ls backend/firebase -> README.md database.rules.json firebase.json functions remoteconfig.template.json     (no rules-test)
+functions/test/ covers only the Cloud Functions logic (37 tests)
+```
+- Why it matters: the rules are about 30 KB of single-line expressions that are the only access control for users, presence, rooms, voice calls and connection requests. SEC-001 (a client write that the rules reject) shows a code/rules drift that nothing detects. The CI emulator job runs the Flutter emulator tests, which are skipped locally ("Requires Firebase emulators", 20 skipped tests) and do not assert deny cases.
+- Fix: add `backend/firebase/rules-test/run.js` using `@firebase/rules-unit-testing` (dev dependency in `backend/firebase/rules-test/package.json`) with allow/deny cases per top-level node: register row, `signingPublicKey`, presence spoof, third-party room write, voice call transitions, lock reclaim, `userSearch` list; run in CI via `firebase emulators:exec --only database`.
+- Effort: L
+
+### BE-002 `npm run audit:moderate` fails, so the CI gate for Functions is red
+- Severity: P1 | Confidence: High
+- Location: `backend/firebase/functions/package.json` (`audit:moderate`), `.github/workflows/ci.yml:370`, `.github/workflows/main-merge-gate.yml:207`, `.github/workflows/build-artifacts.yml:136`
+- Evidence:
+```
+npm audit --omit=dev --audit-level=moderate
+proxy-addr 1.1.0 - 2.0.7 (critical, GHSA-jqcg-44mw-7w3h) ; qs 2.2.5 - 6.15.3 (moderate, GHSA-x5fp-wj9c-mxmx, GHSA-4mjr-xmp4-gh2g)
+4 vulnerabilities (1 moderate, 2 high, 1 critical) - "fix available via npm audit fix"
+```
+- Why it matters: three workflows run `npm run audit:moderate`, which exits non-zero today, so the Functions job (and anything that needs it) fails with no code change. The vulnerable packages are only reachable if Functions are deployed (Blaze), but the gate blocks releases regardless.
+- Fix: `npm audit fix` without `--force` (T3.4); the open dependabot branch overlaps.
+- Effort: S
+
+### BE-003 Spark limits are not modeled: 10-second presence heartbeat multiplies RTDB egress
+- Severity: P2 | Confidence: Low (INFERRED)
+- Location: `apps/rain/lib/application/runtime/rain_runtime_controller.dart:219` (`heartbeatInterval = Duration(seconds: 10)`), `packages/protocol_brain/lib/adapters/firebase_adapter.dart:240,2760-2770`, `backend/firebase/database.rules.json` (`presence`)
+- Evidence:
+```
+heartbeatInterval = const Duration(seconds: 10)     // one presence update write per online user per 10 s
+_presenceTimeoutMs = 30 * 1000
+```
+- Why it matters: INFERRED estimate: a user in the foreground writes 8,640 presence updates per day (about 250-300 bytes each), and every friend that listens to that node receives each one. With 10 listening friends that is roughly 26 MB/day of download per always-foreground user, against the Spark 10 GB/month download cap and 100 simultaneous connection cap (both Firebase Spark limits; not verified in this repo). Hitting the cap makes the database reject connections for all users until the cycle resets.
+- Fix: raise the heartbeat to 20 s with a 45-60 s freshness window, write only when `lastHeartbeat` is older than 15 s, and measure with the Firebase usage dashboard (owner action).
+- Effort: S
+- Confirm by: RTDB usage dashboard with 5 test accounts online for 24 h.
+
+### BE-004 Emulator configuration drift between app code, CI and `firebase.json`
+- Severity: P3 | Confidence: Medium
+- Location: `backend/firebase/firebase.json:2-8`, `packages/protocol_brain/lib/adapters/firebase_adapter.dart:~215-228` (HEAD, `_configureEmulatorsIfNeeded`), `scripts/ci_run_firebase_emulators.sh:7`
+- Evidence:
+```
+firebase.json emulators: auth 9099, database 9000   (no functions emulator)
+adapter: _functions.useFunctionsEmulator(host, 5001);   FIREBASE_TOOLS_VERSION default 15.18.0 (CI) vs firebase-tools@13 in this program's RULES_TEST command
+```
+- Why it matters: callable-function tests in emulator mode point at port 5001 where nothing listens; the audit program and CI use different firebase-tools majors, so rules-test results can differ.
+- Fix: add a `functions` emulator entry or drop the call in `rtdbOnly`; pin one `firebase-tools` version in a `backend/firebase/package.json` and use it in CI and the rules test.
+- Effort: S
