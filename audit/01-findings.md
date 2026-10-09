@@ -163,3 +163,102 @@ errors: invalid_annotation_target: ignore
 - Why it matters: 113 `catch (_)` and unawaited futures in call/transfer paths are not flagged; the codebase mixes swallowed errors with real handling.
 - Fix: add under `linter: rules:` `unawaited_futures`, `avoid_catches_without_on_clauses`, `only_throw_errors`, `cancel_subscriptions`, `close_sinks`, `avoid_print`, `prefer_final_locals`; introduce them gradually (enable, then baseline ignores).
 - Effort: M
+
+## C. Signaling and session logic
+
+Note: `firebase_adapter.dart` line numbers below are from `git show HEAD:...` (the working copy does not compile, GIT-001). The HEAD file is 3,046 lines.
+
+FSM (`packages/protocol_brain/lib/src/voice_call_session.dart:1105-1150`, `_isAllowedTransition`; same-state is always allowed):
+
+| From | Allowed next |
+|---|---|
+| idle | preflightingMic, incomingRinging, failed |
+| preflightingMic | outgoingRinging, connectingMedia, failed, ending |
+| outgoingRinging | creatingMedia, connectingMedia, failed, ending |
+| incomingRinging | preflightingMic, failed, ending, idle |
+| creatingMedia | connectingMedia, failed, ending |
+| connectingMedia | creatingMedia, active, failed, ending |
+| active | ending, failed |
+| ending | idle, failed |
+| failed | none (`_ => false`, strictly terminal, comment at :1148-1150) |
+
+Timeout constants: ringing 45 s (`voice_call_session.dart:~38`, fires `_fail` without notifying the peer), answer 15 s (notifies peer), media/ICE 20 s (notifies peer), cleanup 5 s; call room `expiresAt` = 2 min (`voice_call_runtime.dart:71`, `_voiceCallExpiry`); legacy room TTL 15 min (`firebase_adapter.dart:241`); presence freshness 30 s (`firebase_adapter.dart:240`).
+
+### SIG-001 Glare handled only by RTDB pair lock; local runtime has no tie-break and may answer "busy" to the winner
+- Severity: P2 | Confidence: Low
+- Location: `apps/rain/lib/application/runtime/voice_call/voice_call_preflight_coordinator.dart:185-188`, `apps/rain/lib/application/runtime/voice_call_runtime.dart:1098-1133`
+- Evidence:
+```
+preflight_coordinator.dart:185  bool canReplaceVoiceCallWithRetry(VoiceCallState current) {
+preflight_coordinator.dart:186    return !current.isOutgoing && current.phase == VoiceCallPhase.incomingRinging;
+voice_call_runtime.dart:1128  if (!_canReplaceVoiceCallWithRetry(current)) { return _IncomingVoiceInviteDisposition.busy; }
+```
+- Why it matters: A and B call each other within the same second. Each runtime is in `outgoingRinging` with `peerId == other`, so the incoming invite is not replaceable and each side answers `busy` (`voice_call_runtime.dart:1128-1130`). If both invites cross before either lock write is rejected, both sides show "Peer is busy" and neither call connects. Mitigation observed: `activeVoicePairs/<pairId>` admits a single creator (rules write branch `!data.exists() && newData.exists()`, `backend/firebase/database.rules.json` near line 346; test `packages/protocol_brain/test/voice_signaling_contract_test.dart:107`), so normally the second `startOutgoing` fails and that side becomes `failed`, which `_prepareIncomingVoiceInvite` (`voice_call_runtime.dart:1117-1121`) replaces and accepts. The race window is the loser's phase before its failure arrives. The only deterministic ordering in the code is `isVoiceCallOfferOwner` (`voice_call_session.dart:1223`, lexicographic peer id), used only to choose who creates the SDP offer, not to resolve crossed invites. Grep for `glare|tieBreak|polite` over `lib/` finds nothing.
+- Fix: in `_prepareIncomingVoiceInvite`, when `current.isOutgoing && current.peerId == normalizedPeerId` and the phase is `outgoingRinging` or `preflightingMic`, keep the call whose caller is the lower peer id (reuse `isVoiceCallOfferOwner`), hang up the other with a best-effort frame, and auto-accept the surviving invite. Add a runtime test with two crossed invites.
+- Effort: M
+- Confirm by: emulator test where both clients call `startCall` within 50 ms.
+
+### SIG-002 ICE candidates received before negotiation phases are dropped at the session layer
+- Severity: P2 | Confidence: Medium
+- Location: `packages/protocol_brain/lib/src/voice_call_session.dart:602-625` (`_handleRemoteCandidate`)
+- Evidence:
+```
+if (state.phase != creatingMedia && state.phase != connectingMedia && state.phase != active) {
+  _logInvalidEvent('candidate frame in ${state.phase.name}');
+  return;
+}
+```
+- Why it matters: candidate frames are exempt from the ordered-seq check (`:820-840`), so a candidate can be processed while the session is still `outgoingRinging` or `preflightingMic` (for example while the `accept` frame is queued). Such candidates are discarded, not buffered. Media-level buffering exists (`call_media_connection.dart:88,416-417`, `voice_media_connection.dart:57,287-288`) but only covers candidates that reach `media.addRemoteCandidate`. Trickle ICE tolerates some loss; if the dropped candidates were the only srflx/relay ones the call hits the 20 s ICE timeout.
+- Fix: keep a bounded session-level queue (for example 64) for candidates seen in `outgoingRinging`, `preflightingMic` or `incomingRinging`, flush it on entering `connectingMedia`, and drop it on `failed`/`idle`.
+- Effort: S
+- Confirm by: unit test feeding `candidate` before `accept` and asserting `media.addRemoteCandidate` runs after.
+
+### SIG-003 In `rtdbOnly` mode connected or abandoned call rooms are never deleted
+- Severity: P1 | Confidence: High
+- Location: `firebase_adapter.dart:1120-1260` (HEAD, `cleanupStaleVoiceCallArtifacts`, esp. `:1213`), `backend/firebase/functions/index.js:11,55,93`, `apps/rain/lib/application/runtime/rain_runtime_controller.dart:806,2350`
+- Evidence:
+```
+firebase_adapter.dart:1213  } else if (room.status != VoiceCallSignalingStatus.connected &&
+firebase_adapter.dart:1214      room.expiresAt <= now) {
+index.js:93  exports.cleanupVoiceCalls = onSchedule({ schedule: "every 5 minutes" ...   // needs Blaze
+Grep onDisconnect: only presence (firebase_adapter.dart:2786); none for voiceCalls/*, activeVoiceUsers/*, activeVoicePairs/*
+```
+- Why it matters: client cleanup runs only at startup/resume (`rain_runtime_controller.dart:806`, `:2350`), only inspects the signed-in user's own `activeVoiceUsers/<name>` lock (so a callee's view after the caller's app was killed is not covered) and explicitly skips rooms in `connected` state. After an app kill or crash mid-call, the room, both locks and the inbox entry stay in RTDB until a Blaze function removes them. On Spark that is never: `voiceCalls/*`, `voiceCallInboxes/*`, `activeVoiceUsers/*` and `activeVoicePairs/*` accumulate against the 1 GB storage quota. Locks can be overwritten once `expiresAt <= now` (rules `activeVoiceUsers` write branch 2), so calls are not permanently blocked, but data is never reclaimed.
+- Fix: (1) when a call starts, register `onDisconnect` handlers that mark the caller's `voiceCalls/<id>` as failed and remove the caller's locks, and cancel them on clean end; (2) in `cleanupStaleVoiceCallArtifacts` also treat `connected` rooms with `expiresAt <= now` as stale when the client is not in that call; (3) run the cleanup for the inbox when `watchIncomingVoiceCalls` starts.
+- Effort: M
+
+### SIG-004 On Blaze, `cleanupVoiceCalls` would delete live connected calls after the 2-minute room expiry
+- Severity: P2 | Confidence: Low
+- Location: `backend/firebase/functions/index.js:93-130`, `apps/rain/lib/application/runtime/voice_call_runtime.dart:71`
+- Evidence:
+```
+index.js:100  root.child("voiceCalls").orderByChild("expiresAt").endAt(now).get()   // no status filter
+voice_call_runtime.dart:71  static const Duration _voiceCallExpiry = Duration(minutes: 2);
+```
+- Why it matters: nothing found in `firebase_adapter.dart` extends `voiceCalls/<id>/expiresAt` after `markConnected` (`:1303-1326` updates only status, connectedAt, updatedAt). For a call longer than 2 minutes the room is expired; the scheduled function deletes it whatever its status, so hangup and mute frames sent afterwards fail and the peer only notices through media disconnect detection.
+- Fix: refresh `expiresAt` in a periodic heartbeat while `connected`, or make the function skip `status == 'connected'` rooms with a recent `updatedAt`.
+- Effort: S
+- Confirm by: Blaze/emulator test with a 3-minute connected call, inspecting `voiceCalls/<id>` after the function run.
+
+### SIG-005 Ringing timeout fails locally without notifying the peer
+- Severity: P3 | Confidence: High
+- Location: `packages/protocol_brain/lib/src/voice_call_session.dart:1155-1167`
+- Evidence:
+```
+_ringingTimer = Timer(timeouts.ringing, () { unawaited(_enqueue(() => _fail('Call timed out while ringing.', reasonCode: ringingTimeout))) });
+```
+- Why it matters: `_fail` is called with default `notifyPeer: false`, unlike the answer and media timeouts. The callee relies on its own 45 s timer (armed in `_handleInvite`, `:422-434`), so a late-delivered invite keeps ringing after the caller gave up.
+- Fix: pass `notifyPeer: true` (best-effort hangup) so the callee stops ringing immediately.
+- Effort: S
+
+### SIG-006 TASK-005 "watcher subscribed after startOutgoing" remains unverified
+- Severity: P3 | Confidence: Low
+- Location: `PROJECT_PROGRESS_TRACKER.md:65,84`
+- Evidence:
+```
+BLOCKER-4 (TASK-005): "Watcher-before-startOutgoing" reorder REVERTED ... premise is UNVERIFIED
+```
+- Why it matters: if a callee answers within about 50 ms the `accept`/`answer` could land before the caller's watcher listens, leaving the caller in `outgoingRinging` until the 45 s timeout. No test proves it.
+- Fix: none until reproduced; write the emulator test (see TEST findings) before changing order.
+- Effort: M
+- Confirm by: emulator test where the callee answers within 50 ms of room creation.
