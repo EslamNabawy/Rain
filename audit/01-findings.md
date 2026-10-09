@@ -607,3 +607,78 @@ adapter: _functions.useFunctionsEmulator(host, 5001);   FIREBASE_TOOLS_VERSION d
 - Why it matters: callable-function tests in emulator mode point at port 5001 where nothing listens; the audit program and CI use different firebase-tools majors, so rules-test results can differ.
 - Fix: add a `functions` emulator entry or drop the call in `rtdbOnly`; pin one `firebase-tools` version in a `backend/firebase/package.json` and use it in CI and the rules test.
 - Effort: S
+
+## I. Code quality
+
+Method: throwaway brace-matching script in the session scratchpad (not in the repo) over hand-written `lib/*.dart` (no `*.g.dart`/`*.freezed.dart`, no tests). Function bodies of 60 or more lines: 146 total (apps/rain 111, protocol_brain 28, peer_core 7, rain_core 0). "Line" is the line of the opening brace. Top 15:
+
+| Lines | Location | Function |
+|---|---|---|
+| 444 | `apps/rain/lib/presentation/screens/settings_screen.dart:69` | `build` |
+| 387 | `apps/rain/lib/presentation/screens/onboarding_screen.dart:216` | `build` |
+| 340 | `apps/rain/lib/application/runtime/voice_call/voice_call_signaling_cleanup_coordinator.dart:649` | `sendVoiceFrameObject` |
+| 310 | `apps/rain/lib/presentation/widgets/home/friends_list.dart:232` | `build` |
+| 303 | `apps/rain/lib/application/state/connection_diagnostics.dart:98` | `ConnectionDiagnostics.fromConnection` |
+| 268 | `apps/rain/lib/application/runtime/rain_runtime_controller.dart:708` | `start` |
+| 242 | `apps/rain/lib/application/runtime/rain_runtime_controller.dart:1210` | `connectPeer` |
+| 222 | `apps/rain/lib/presentation/screens/home_screen.dart:773` | `build` |
+| 214 | `apps/rain/lib/presentation/theme/rain_theme.dart:182` | `light` |
+| 213 | `apps/rain/lib/presentation/widgets/home/chat_panel.dart:324` | `_buildCommandHeader` |
+| 205 | `apps/rain/lib/presentation/screens/friend_profile_screen.dart:22` | `build` |
+| 191 | `apps/rain/lib/core/config/app_environment.dart:62` | `AppEnvironment.fromEnvironment` |
+| 187 | `apps/rain/lib/presentation/widgets/home/chat_panel.dart:56` | `build` |
+| 185 | `packages/protocol_brain/lib/adapters/connection_request_rtdb_adapter.dart:193` | `createConnectionRequest` |
+| 182 | `apps/rain/lib/application/runtime/voice_call_runtime.dart:88` | `_startCall` |
+
+Dead-code sampling was not executed beyond the analyzer: `flutter analyze` reports no `unused_element` or `unused_import` on HEAD (audit/00-inventory.md §4), and no per-symbol reference scan of the five largest files was run.
+
+### QUAL-001 146 functions exceed 60 lines; call and transfer control flow is concentrated in a few giants
+- Severity: P2 | Confidence: High
+- Location: see table; call/transfer hot spots `voice_call_signaling_cleanup_coordinator.dart:649` (340), `rain_runtime_controller.dart:708` (268) and `:1210` (242), `voice_call_runtime.dart:88` (182) and `:2335` (166), `file_transfer_runtime.dart:591` (152) and `:380` (149), `firebase_adapter.dart:1124` (151, HEAD) and `:351` (138)
+- Evidence:
+```
+node longfn.js (scratchpad) -> 340  apps/rain/lib/application/runtime/voice_call/voice_call_signaling_cleanup_coordinator.dart:649  sendVoiceFrameObject
+TOTAL >=60: 111 + 7 + 28 + 0
+```
+- Why it matters: state-machine code (start-up, connect, send frame, end call) in 150-340-line bodies is where the races in SIG-001..SIG-003 and the swallowed errors in APP-002/003 hide; each body mixes guards, logging, adapter calls and state mutation, so changing one branch cannot be tested without the whole runtime.
+- Fix: follow `audit/02-refactor-targets.md`: extract guard, side-effect and logging steps; cap new code at 60 lines per function.
+- Effort: XL
+
+### QUAL-002 Wire formats are built from raw maps and string literals in places
+- Severity: P3 | Confidence: Medium
+- Location: `packages/peer_core/lib/src/default_peer_core.dart:1078,1094,1133`, `packages/protocol_brain/lib/adapters/signaling_adapter.dart:106,118`
+- Evidence:
+```
+default_peer_core.dart:1078  'type': 'chunk',
+default_peer_core.dart:1094  if (decoded is! Map<String, dynamic> || decoded['type'] != 'chunk') {
+signaling_adapter.dart:106   'sdp': <String, Object?>{'type': sdp.type, 'sdp': sdp.sdp},
+```
+- Why it matters: the data-channel chunk envelope is parsed with untyped map access, so a peer sending `index`/`total` of the wrong type reaches `as int` casts. Voice frames already use an enum (`VoiceCallFrameType`) and `file_transfer_protocol.dart` constants, so the pattern is inconsistent rather than systemic.
+- Fix: introduce a `ChunkEnvelope.tryParse` value type with validation (type, bounds, `total <= 1024`) next to `_maxChunkFrames`, and reuse `VoiceCallFrame`-style enums for SDP type.
+- Effort: S
+
+### QUAL-003 Timeouts and sizes are scattered literals; two backpressure scales coexist
+- Severity: P3 | Confidence: High
+- Location: Grep `Duration\((seconds|milliseconds|minutes):` in `lib/` -> 121 matches; `packages/peer_core/lib/src/data_channel_backpressure.dart:6-9`, `packages/rain_core/lib/file_transfer/file_transfer_protocol.dart:7-10`, `packages/peer_core/lib/src/default_peer_core.dart:12-14,565`
+- Evidence:
+```
+data_channel_backpressure.dart  highWatermarkBytes = 1024 * 1024, lowWatermarkBytes = 256 * 1024, timeout = 10 s
+file_transfer_protocol.dart     fileTransferHighWatermarkBytes = 4 * 1024 * 1024, fileTransferLowWatermarkBytes = 1024 * 1024
+default_peer_core.dart:565      if (maybeChunk.total * _chunkPayloadBytes > 16 * 1024 * 1024) {
+```
+- Why it matters: a transfer layer waiting at 4 MiB sits above the transport layer's own 1 MiB limit, so which one throttles depends on call order; changing a timeout means grepping 121 sites.
+- Fix: one `RainTimeouts`/`TransferLimits` constants file per package, and let the transfer layer reuse `DataChannelBackpressure` instead of its own watermarks.
+- Effort: M
+
+### QUAL-004 Three full `SignalingAdapter` implementations duplicate 120+ method stubs
+- Severity: P3 | Confidence: Medium
+- Location: `apps/rain/lib/infrastructure/signaling/debug_signaling_adapter.dart` (1,280 lines, 66 `@override`), `apps/rain/lib/infrastructure/signaling/noop_signaling_adapter.dart` (468 lines, 38), `packages/protocol_brain/lib/src/testing/fake_voice_signaling_adapter.dart` (868 lines, 19)
+- Evidence:
+```
+class DebugSignalingAdapter implements SignalingAdapter   // wraps every method with logging
+class NoopSignalingAdapter implements SignalingAdapter
+abstract class SignalingAdapter  // 33 Future-returning members
+```
+- Why it matters: each new adapter method needs edits in the real adapter, the debug decorator, the noop adapter and the fakes; the debug decorator is a forwarding copy of the interface, so drift (a method added to the interface and forgotten in the decorator) compiles only because the class is `implements`, not `extends`.
+- Fix: replace the hand-written logging decorator with a generic `LoggingSignalingAdapter extends ForwardingSignalingAdapter` or an `invoke(name, call)` helper; keep noop as the only explicit stub.
+- Effort: M
