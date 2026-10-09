@@ -690,7 +690,7 @@ Baseline (audit/00-inventory.md §4, not re-run): peer_core 76, protocol_brain 2
 
 Present and good (no finding): FSM terminal state (`voice_call_session_test.dart:7-31`, `failed` cannot be re-driven), v=2 per-pair crypto (`signaling_cipher_test.dart:129-250`, including "v=1 root-key holder cannot decrypt a v=2 envelope"), plaintext legacy decode (`:111`), ECDH agreement (`identity_key_repository_test.dart:121`), receiver hash mismatch removes the temp file (`friend_flow_test.dart:5458`), schema upgrade fixtures v2 and v5 (`rain_database_test.dart:87,176`).
 
-Skipped tests (20): 19 are the four emulator suites guarded by `runIntegrationTests` (`integration_account_deletion_emulator_test.dart:70,143`, `integration_two_devices_handshake_full_test.dart:34`, `integration_two_users_end2end_test.dart:116`, `integration_voice_signaling_emulator_test.dart:241,341,415,702,792,873`; reason "Requires Firebase emulators") plus group members; 1 is `friend_flow_test.dart:5031` ("Legacy control-channel voice path frozen until Firebase signaling."). The four emulator files are run by `scripts/ci_run_firebase_emulators.sh:78` (and `.ps1:111`) with `RUN_RAIN_INTEGRATION_TESTS=true`, called from the `firebase-emulator-tests` job in `ci.yml:~391-401`, so they do run in CI, not locally.
+Skipped tests (20 reported by the runner, from 10 `skip:` sites): 9 sites are in the four emulator suites guarded by `runIntegrationTests` (`integration_account_deletion_emulator_test.dart:70,143`, `integration_two_devices_handshake_full_test.dart:34`, `integration_two_users_end2end_test.dart:116`, `integration_voice_signaling_emulator_test.dart:241,341,415,702,792,873`; reason "Requires Firebase emulators") (a skipped `group` counts each member test); 1 site is `friend_flow_test.dart:5031` ("Legacy control-channel voice path frozen until Firebase signaling."). The four emulator files are run by `scripts/ci_run_firebase_emulators.sh:78` (and `.ps1:111`) with `RUN_RAIN_INTEGRATION_TESTS=true`, called from the `firebase-emulator-tests` job in `ci.yml:~391-401`, so they do run in CI, not locally.
 
 Fakes in use: `FakeVoiceSignalingAdapter` (868 lines), `FakeConnectionRequestAdapter` (527), `_LiveSmokePeerCore` (166) in `packages/protocol_brain/lib/src/testing/`; `NoopSignalingAdapter` and `DebugSignalingAdapter` in the app; `FirebaseEmulatorSignalingAdapter` and `two_device_harness.dart` in `apps/rain/test/utils/`; per-file media/platform fakes inside `call_media_connection_test.dart`, `voice_media_connection_test.dart`, `peer_core_test.dart`, `friend_flow_test.dart`. No fake for `FirebaseAuth`/`FirebaseDatabase` and no mock package in any `dev_dependencies`.
 
@@ -751,3 +751,106 @@ home_screen.dart 23 %, chat_panel.dart 27 %, friend_profile_screen.dart 0 %, fil
 - Why it matters: UI files with 0-27 % are where many of the 146 long functions live (QUAL-001); no gate stops further decline.
 - Fix: add a coverage floor in CI per package at the current value, raise by 2 points per phase; exclude `*.g.dart` from rain_core's number.
 - Effort: M
+
+## K. CI/CD
+
+Workflow inventory (8): `ci.yml` "CI/CD", `main-merge-gate.yml`, `rain-ci-cd.yml` "Rain CI/CD", `documentation-vault.yml`, `build-artifacts.yml`, `fast-release.yml`, `validated-release.yml`, `release.yml`.
+
+What runs where (read from the workflow files; the `ci.yml` pull_request filter lists `main` and `develop`):
+
+| Check | push (any branch) | PR to `dev` | PR to `main` | Where |
+|---|---|---|---|---|
+| `flutter analyze --fatal-infos --fatal-warnings` | `ci.yml` static-analysis | none (CI-001) | `ci.yml`, `main-merge-gate.yml` (melos analyze), `rain-ci-cd.yml` | `ci.yml:239`, `main-merge-gate.yml:147`, `rain-ci-cd.yml:50` |
+| `dart format --set-exit-if-changed` | `ci.yml` quality-gate | none | `ci.yml` | `ci.yml:109-111` |
+| Flutter unit tests + coverage | `ci.yml` tests matrix | none | `ci.yml`, `main-merge-gate.yml`, `rain-ci-cd.yml` | `ci.yml:241-345`, `main-merge-gate.yml:150`, `rain-ci-cd.yml:51` |
+| Functions lint, `audit:moderate`, `npm test` | `ci.yml` firebase-backend | none | `ci.yml`, `main-merge-gate.yml` | `ci.yml:362-374`, `main-merge-gate.yml:199-211` |
+| Emulator integration tests | `ci.yml` firebase-emulator-tests | none | `ci.yml`, `main-merge-gate.yml` | `ci.yml:376-401`, `main-merge-gate.yml:213-238` |
+| RTDB rules tests | none | none | none | no such job exists (BE-001) |
+| Vault validator | `documentation-vault.yml` (vault paths, dev/main), `rain-ci-cd.yml` (push main/dev) | PR on vault paths | `rain-ci-cd.yml` | `documentation-vault.yml:29`, `rain-ci-cd.yml:52` |
+
+CI history (`gh run list --repo AbdogadXNabawy/Rain`, executed): on `dev` the latest push run of "CI/CD" (2026-08-27) succeeded; the "Rain CI/CD" run on the same commit was cancelled and a manual dispatch then succeeded; "Build Rain Apps" and "Validated Release Apps" dispatches on 2026-08-21 failed once and then passed. On `main`, of the last 10 runs one "CI/CD" run failed (2026-08-29, commit "fix(observability): structural hashing in ThrottledProviderObserver") and two "Rain CI/CD" runs were cancelled; later commits passed. There has been no run since 2026-09-03 (a dependabot job), so the time-based failures below have not yet appeared in Actions history.
+
+### CI-001 `ci.yml` pull_request filter targets `develop`, not `dev`
+- Severity: P2 | Confidence: High
+- Location: `.github/workflows/ci.yml:9-12`
+- Evidence:
+```
+pull_request:
+  branches:
+    - main
+    - develop
+```
+- Why it matters: the repository branch is `dev`. A PR into `dev` triggers no `pull_request` run of the main CI, so PR-scoped required checks never report. Branch pushes still trigger `ci.yml` (`push: branches: ['**']`), so same-repo PR heads are checked through the push event, but fork PRs and PR-scoped required checks are not. The orchestrator suggested P1; P2 is the evidenced level because of the push trigger.
+- Fix: replace `develop` with `dev` (T3.3); then limit `push` to `main`, `dev` and tags to stop duplicate runs.
+- Effort: S
+
+### CI-002 Three overlapping CI workflows and four release workflows
+- Severity: P2 | Confidence: High
+- Location: `.github/workflows/ci.yml` (12 jobs), `main-merge-gate.yml` (8 jobs), `rain-ci-cd.yml` (4 jobs); `build-artifacts.yml`, `fast-release.yml`, `validated-release.yml`, `release.yml`
+- Evidence:
+```
+PR to main runs: ci.yml (analyze, tests, firebase-backend, emulators, android-build, ...) AND main-merge-gate.yml (same list plus demo artifacts) AND rain-ci-cd.yml (test, build-windows, build-android)
+```
+- Why it matters: every PR to `main` builds Android and Windows up to three times, and the same check has different definitions (`ci.yml` runs analyze with `--fatal-infos --fatal-warnings`; `main-merge-gate.yml` and `rain-ci-cd.yml` run `melos run analyze` without them), so green in one workflow says nothing about another. Release logic is spread over four dispatch workflows with separate gates.
+- Fix: target set of one CI (`ci.yml`: quality, tests, backend, emulators, rules tests, vault; PR to `dev`/`main`, push `dev`/`main`/tags) and one release (`release.yml`, `needs` the CI result, environment-protected); delete the other five after folding in any unique job (demo artifacts).
+- Effort: L
+
+### CI-003 No action is pinned by commit SHA; artifact action majors are mixed
+- Severity: P2 | Confidence: High
+- Location: all `.github/workflows/*.yml`
+- Evidence:
+```
+actions/checkout@v5 x45, @v4 x1 | subosito/flutter-action@v2 x28 | actions/upload-artifact@v7 x21, @v4 x2 | actions/download-artifact@v8 x7, @v4 x1
+actions/setup-java@v5 x21 | actions/setup-node@v6 x9 | actions/setup-go@v6 x4 | actions/cache@v4 x2 | actions/dependency-review-action@v4 x1 | softprops/action-gh-release@v2 x3
+```
+- Why it matters: a moved tag in a third-party action (`subosito/flutter-action`, `softprops/action-gh-release`) would run with the release signing secrets and `contents: write` in the release workflows. `rain-ci-cd.yml` and `documentation-vault.yml` use `v4` artifact/checkout actions while the others use v7/v8.
+- Fix: pin third-party actions (at least `subosito/flutter-action` and `softprops/action-gh-release`) to full SHAs with a version comment, enable Dependabot for `github-actions`, and align artifact actions to one major.
+- Effort: S
+
+### CI-004 The vault gate fails on elapsed time alone and now blocks CI
+- Severity: P1 | Confidence: High
+- Location: `scripts/check_obsidian_vault.ps1:496-527` (`Assert-RecentLastUpdated`, `MaxAgeDays = 45`), `.github/workflows/rain-ci-cd.yml:52`, `.github/workflows/documentation-vault.yml:29`
+- Evidence:
+```
+if ($lastUpdated.Date -le $today -and ($today - $lastUpdated.Date).Days -gt $MaxAgeDays) { Add-SemanticError "... Last updated date is stale: ..." }
+register dates 2026-08-21, today 2026-10-10 -> 50 days > 45
+```
+- Why it matters: every push to `main`/`dev` runs `check_obsidian_vault.ps1` in `rain-ci-cd.yml`, and the vault workflow runs on vault-path changes. The job turns red 45 days after the last doc edit with no code change (it already did once, fixed by commit e65cd2a, and it is stale again as the Phase 0 inventory observed).
+- Fix: T3.2 refreshes the dates; durable fix: make staleness a warning (or compare against the file's last git commit date, not the wall clock) and move the 45-day rule to a weekly scheduled job that opens an issue.
+- Effort: S
+
+### CI-005 `npm run audit:moderate` is red in three workflows
+- Severity: P1 | Confidence: High
+- Location: `.github/workflows/ci.yml:370`, `main-merge-gate.yml:207`, `build-artifacts.yml:136`
+- Evidence:
+```
+see BE-002: npm audit --omit=dev --audit-level=moderate -> 4 vulnerabilities (1 moderate, 2 high, 1 critical)
+```
+- Why it matters: the Functions job, the required-checks job that depends on it and any release workflow that includes it fail on the next run with no code change; advisories are published continuously, so the gate will fail again later.
+- Fix: T3.4; add Dependabot `npm` updates for `backend/firebase/functions` and run `npm audit` on a weekly schedule instead of gating every release on it.
+- Effort: S
+
+### CI-006 Flutter pinned to 3.44.0 in CI, developers use 3.44.4; soft gates hide failures
+- Severity: P3 | Confidence: Medium
+- Location: `.github/workflows/ci.yml:23,306-310,540`, `.github/workflows/main-merge-gate.yml:155-157`
+- Evidence:
+```
+FLUTTER_VERSION: '3.44.0'        (local toolchain: Flutter 3.44.4, Dart 3.12.2)
+continue-on-error: true          # ci.yml:310, ci.yml:540, main-merge-gate.yml:157
+```
+- Why it matters: analyzer and formatter output can differ between patch versions (the usual cause of "passes locally, fails in CI"); `continue-on-error` hides regressions in the checks it wraps.
+- Fix: keep one version in a single shared file and set it to 3.44.4; remove `continue-on-error` once baselines are stable.
+- Effort: S
+
+### CI-007 Release signing is explicit; the demo channel can still ship the public demo key and relay
+- Severity: P3 | Confidence: Medium
+- Location: `apps/rain/android/app/build.gradle.kts:16-33,58-69`, `.github/workflows/release.yml:336-342,407-435`, `apps/rain/lib/core/config/app_environment.dart:410-440`
+- Evidence:
+```
+build.gradle.kts:23  "RAIN_RELEASE_STORE_FILE is required for release signing"      (no fallback to the debug key)
+release.yml:338  if ([string]::IsNullOrWhiteSpace($env:RAIN_RELEASE_DART_DEFINES_JSON)) { throw "RAIN_RELEASE_DART_DEFINES_JSON secret is required." }
+app_environment.dart:421  final isDemoRelease = updateChannel == 'demo' && allowPublicTurn;
+```
+- Why it matters: positive: a release build cannot be signed with the debug key and refuses to run without the five `RAIN_RELEASE_*` secrets. Residual: the `demo` channel may ship with the public demo signaling key and OpenRelay credentials (SEC-002, RTC-003), and `remoteconfig.template.json` points both channels at the same `updateUrl`, so nothing separates a demo artifact from a stable one.
+- Fix: give the demo channel its own update URL and artifact name suffix; make `release.yml` refuse `RAIN_UPDATE_CHANNEL=demo` for tags without a `-demo` suffix.
+- Effort: S
