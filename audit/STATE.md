@@ -20,6 +20,7 @@ T2.2 fdffe84 plan: 23 phase-4 cards, 9 owner actions
 T2.3 55713e2 vault spec: R-023..R-031, BLK-011..013, TD-023..028, ADR-011/012
 T3.1 b466768 firebase_adapter.dart restored to HEAD (WIP in audit/wip patch); analyze clean, format clean, protocol_brain 276 pass
 T3.2 0fda669 7 registers dated 2026-10-10; vault validator passes
+T3.3 30992ec ci.yml PR filter now main+dev
 ## Blocked
 
 ## Decisions
