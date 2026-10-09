@@ -294,8 +294,8 @@ while ((channel.bufferedAmount ?? 0) > lowWatermarkBytes) {
 - Fix: break out with a `StateError('channel closed')` when `channel.state != RTCDataChannelOpen`, and prefer `channel.bufferedAmountLowThreshold = lowWatermarkBytes` with `onBufferedAmountLow` completing a `Completer`.
 - Effort: S
 
-### RTC-003 Default ICE configuration relays through a public shared TURN account
-- Severity: P2 | Confidence: High
+### RTC-003 Default ICE configuration relays through a public shared TURN account (debug and demo builds)
+- Severity: P3 | Confidence: High
 - Location: `apps/rain/lib/core/config/app_environment.dart:618-629`, `:127-134`
 - Evidence:
 ```
@@ -303,7 +303,7 @@ while ((channel.bufferedAmount ?? 0) > lowWatermarkBytes) {
 'username': 'openrelayproject', 'credential': 'openrelayproject'
 RAIN_ICE_SERVERS read via String.fromEnvironment (compile-time)
 ```
-- Why it matters: when `RAIN_ICE_SERVERS` is empty the app uses a free public TURN service with a published shared credential. It has no SLA or quota guarantees for Rain, so calls behind symmetric NAT can silently fail, and relayed traffic goes through a third party (media stays DTLS-SRTP encrypted, but metadata and IPs are visible to it). Any value that is supplied through `RAIN_ICE_SERVERS` is compiled into the binary, so a private TURN username and credential would be extractable from the APK or EXE; the safer path (`turn_credential_service.dart` broker with short-lived credentials, TTL default 1200 s at `:200`) exists but depends on a broker URL.
+- Why it matters: when `RAIN_ICE_SERVERS` is empty the app uses a free public TURN service with a published shared credential. Mitigation observed: `AppEnvironment.validateForRelease` rejects it unless the build is the `demo` channel with `allowPublicTurn` (`app_environment.dart:410-440`, `usesPublicOpenRelay`), so the exposure is limited to debug and demo builds. It has no SLA or quota guarantees for Rain, so calls behind symmetric NAT can silently fail, and relayed traffic goes through a third party (media stays DTLS-SRTP encrypted, but metadata and IPs are visible to it). Any value that is supplied through `RAIN_ICE_SERVERS` is compiled into the binary, so a private TURN username and credential would be extractable from the APK or EXE; the safer path (`turn_credential_service.dart` broker with short-lived credentials, TTL default 1200 s at `:200`) exists but depends on a broker URL.
 - Fix: make the broker the production source (fail visibly if absent in release), keep the public relay only for debug builds, and never place long-lived TURN credentials in `RAIN_ICE_SERVERS`.
 - Effort: M
 
@@ -950,6 +950,6 @@ this program: D1 Canonical copy is D:\Rain
 |---|---|---|---|---|---|---|---|---|---|---|---|---|---|
 | P0 | 2 | 0 | 0 | 0 | 0 | 0 | 0 | 0 | 0 | 0 | 0 | 0 | 2 |
 | P1 | 1 | 0 | 1 | 0 | 2 | 1 | 0 | 2 | 0 | 1 | 2 | 0 | 10 |
-| P2 | 0 | 5 | 3 | 3 | 5 | 2 | 3 | 1 | 1 | 2 | 3 | 3 | 31 |
-| P3 | 3 | 2 | 2 | 1 | 0 | 2 | 1 | 1 | 3 | 2 | 2 | 3 | 22 |
+| P2 | 0 | 5 | 3 | 2 | 5 | 2 | 3 | 1 | 1 | 2 | 3 | 3 | 30 |
+| P3 | 3 | 2 | 2 | 2 | 0 | 2 | 1 | 1 | 3 | 2 | 2 | 3 | 23 |
 | Total | 6 | 7 | 6 | 4 | 7 | 5 | 4 | 4 | 4 | 5 | 7 | 6 | 65 |
