@@ -18,6 +18,7 @@ T1.12 ccff652 findings L (6 DOC findings) + severity table; 65 findings total
 T2.1 3e5dc01 8 refactor targets
 T2.2 fdffe84 plan: 23 phase-4 cards, 9 owner actions
 T2.3 55713e2 vault spec: R-023..R-031, BLK-011..013, TD-023..028, ADR-011/012
+T3.1 b466768 firebase_adapter.dart restored to HEAD (WIP in audit/wip patch); analyze clean, format clean, protocol_brain 276 pass
 ## Blocked
 
 ## Decisions

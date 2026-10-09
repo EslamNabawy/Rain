@@ -1,6 +1,6 @@
 # Technical Debt Register
 
-Last updated: 2026-08-21
+Last updated: 2026-10-10
 
 ## Purpose
 
