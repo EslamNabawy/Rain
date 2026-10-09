@@ -14,6 +14,7 @@ T1.8 f5129ea findings H (4 BE findings)
 T1.9 bddcc04 findings I (4 QUAL findings)
 T1.10 212d609 findings J (5 TEST findings)
 T1.11 f93c613 findings K (7 CI findings)
+T1.12 ccff652 findings L (6 DOC findings) + severity table; 65 findings total
 ## Blocked
 
 ## Decisions
