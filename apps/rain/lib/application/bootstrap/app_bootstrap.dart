@@ -5,6 +5,7 @@ import 'package:firebase_database/firebase_database.dart';
 import 'package:firebase_remote_config/firebase_remote_config.dart';
 import 'package:flutter/foundation.dart';
 import 'package:protocol_brain/protocol_brain.dart';
+import 'package:protocol_brain/protocol_brain_firebase.dart';
 import 'package:rain_core/rain_core.dart';
 
 import 'package:rain/core/config/app_environment.dart';

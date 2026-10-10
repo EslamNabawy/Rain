@@ -4,6 +4,7 @@ import 'package:flutter/foundation.dart';
 import 'package:flutter/widgets.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:protocol_brain/protocol_brain.dart';
+import 'package:protocol_brain/protocol_brain_firebase.dart';
 import 'package:rain_core/rain_core.dart';
 
 import 'package:rain/core/config/app_environment.dart';
