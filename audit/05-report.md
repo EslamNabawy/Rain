@@ -59,6 +59,11 @@ Not executed: platform builds (R7), emulator integration suites, Android and Win
 
 A single non-repeating failure in `runtime_startup_test.dart` appeared in one run after the merge and did not reproduce in three later runs.
 
+## Follow-up after the first report
+
+- SEC-002: per-pair v=2 encryption is wired for `rooms/*` signaling (commit `aeed593`; rules accept v=1 and v=2 with salt, 20 rules tests). Voice-call envelopes (separate v=1 contract) remain the open part.
+- CI: `ci.yml` now also runs the vault check (`f79786c`). First run on GitHub (run 38048394152, push) passed all jobs including rules tests, emulator integration, vault and Windows config check; Android build and release artifacts are skipped on non-main branches.
+
 ## Remaining backlog
 
 See `audit/03-plan.md` section Backlog. Highest value next: rules test harness and `signingPublicKey` rule (needs Java), wiring per-pair signaling encryption (SEC-002), database and auth ports for the Firebase adapter (TEST-001), foreground service for calls, workflow consolidation (CI-002), and the long-function refactors in `02-refactor-targets.md`.
