@@ -27,6 +27,9 @@
         "deletedAt": {
           ".validate": "newData.isNumber()"
         },
+        "signingPublicKey": {
+          ".validate": "newData.isString() && newData.val().matches(/^[A-Za-z0-9+\/]{43}=$/)"
+        },
         "$other": {
           ".validate": false
         }

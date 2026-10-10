@@ -124,10 +124,20 @@ async function main() {
     await assertFails(set(ref(as("ua", "alice"), "security/blockedUids/ub"), true));
   });
 
-  // SEC-001 baseline: documented in audit/01-findings.md. T4.03 flips this case.
+  // SEC-001: the app publishes its X25519 public key (32 bytes, base64 = 44 chars).
   await reset();
-  await check("signingPublicKey write is currently rejected by the rules (SEC-001)", async () => {
-    await assertFails(set(ref(as("ua", "alice"), "users/alice/signingPublicKey"), "A".repeat(44)));
+  const key = "A".repeat(43) + "=";
+  await check("owner can publish and rotate signingPublicKey", async () => {
+    await assertSucceeds(set(ref(as("ua", "alice"), "users/alice/signingPublicKey"), key));
+    await assertSucceeds(set(ref(as("ua", "alice"), "users/alice/signingPublicKey"), "B".repeat(43) + "="));
+  });
+  await check("another user cannot write signingPublicKey", async () => {
+    await assertFails(set(ref(as("ub", "bob"), "users/alice/signingPublicKey"), key));
+  });
+  await check("malformed signingPublicKey values are rejected", async () => {
+    await assertFails(set(ref(as("ua", "alice"), "users/alice/signingPublicKey"), "short"));
+    await assertFails(set(ref(as("ua", "alice"), "users/alice/signingPublicKey"), "!".repeat(43) + "="));
+    await assertFails(set(ref(as("ua", "alice"), "users/alice/signingPublicKey"), 5));
   });
 
   await env.cleanup();
