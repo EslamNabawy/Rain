@@ -16,6 +16,42 @@ import 'package:flutter_test/flutter_test.dart';
 import 'package:protocol_brain/protocol_brain.dart';
 
 void main() {
+  // TASK-006: `failed` must be strictly terminal. A failed session was
+  // previously allowed to transition back to `idle` (VoiceCallSessionPhase
+  // .failed => next == VoiceCallSessionPhase.idle), which let a
+  // media-disposed session be resurrected. That edge is removed; a
+  // failed session must reject re-driving via startOutgoing().
+  test(
+    'failed session is terminal and rejects re-driving via startOutgoing',
+    () async {
+      final media = _FakeVoiceMediaConnection();
+      final sent = <VoiceCallFrame>[];
+      final session = _session(
+        media: media,
+        sent: sent,
+        // Simulate a signaling write failure so startOutgoing() lands in `failed`.
+        sendFrame: (_) {
+          throw StateError('firebase write denied');
+        },
+      );
+
+      await expectLater(session.startOutgoing(), throwsStateError);
+      expect(session.state.phase, VoiceCallSessionPhase.failed);
+      expect(media.disposeCalls, 1);
+
+      // Re-driving a terminal session must not resurrect it into a live
+      // phase (the removed `failed => idle` edge would have allowed this).
+      await session.startOutgoing();
+      await pumpEventQueue();
+
+      expect(
+        session.state.phase,
+        VoiceCallSessionPhase.failed,
+        reason: 'failed must stay terminal; no failed -> idle resurrection',
+      );
+    },
+  );
+
   test(
     'outgoing invite flow sends invite then canonical owner offer',
     () async {
@@ -471,6 +507,57 @@ void main() {
     expect(session.state.phase, VoiceCallSessionPhase.failed);
     expect(session.state.detail, 'Peer is busy.');
     expect(media.disposeCalls, 1);
+  });
+
+  test('candidate received while ringing is applied after accept', () async {
+    final media = _FakeVoiceMediaConnection();
+    final sent = <VoiceCallFrame>[];
+    final session = _session(
+      media: media,
+      sent: sent,
+      localPeerId: 'bob',
+      remotePeerId: 'alice',
+    );
+
+    await session.handleFrame(
+      _frame(VoiceCallFrameType.invite, from: 'alice', to: 'bob', seq: 1),
+    );
+    await session.handleFrame(
+      _frame(
+        VoiceCallFrameType.candidate,
+        from: 'alice',
+        to: 'bob',
+        seq: 2,
+        candidate: 'candidate:early 1 udp 1 127.0.0.1 9 typ host',
+        sdpMid: '0',
+        sdpMLineIndex: 0,
+      ),
+    );
+    expect(media.remoteCandidates, isEmpty);
+
+    await session.acceptIncoming();
+
+    expect(media.remoteCandidates, hasLength(1));
+    expect(media.remoteCandidates.single.candidate, contains('early'));
+  });
+
+  test('ringing timeout tells the peer to stop ringing', () async {
+    final media = _FakeVoiceMediaConnection();
+    final sent = <VoiceCallFrame>[];
+    final session = _session(
+      media: media,
+      sent: sent,
+      timeouts: _timeouts(ringing: const Duration(milliseconds: 5)),
+    );
+
+    await session.startOutgoing();
+    await Future<void>.delayed(const Duration(milliseconds: 60));
+
+    expect(session.state.phase, VoiceCallSessionPhase.failed);
+    expect(
+      sent.map((VoiceCallFrame frame) => frame.type),
+      contains(VoiceCallFrameType.hangup),
+    );
   });
 
   test('ringing timeout fails and cleans up media', () async {

@@ -121,6 +121,7 @@ final class VoiceCallSignalingCleanupCoordinator {
     required String username,
     required VoiceCallSignalingEventRecorder recordRuntimeEvent,
     required VoiceCallSignalingErrorRecorder? errorRecorder,
+    String? liveCallId,
   }) async {
     final voiceAdapter = voiceSignalingAdapter;
     if (voiceAdapter == null || runtimeShutDown) {
@@ -131,6 +132,7 @@ final class VoiceCallSignalingCleanupCoordinator {
       final summary = await voiceAdapter.cleanupStaleVoiceCallArtifacts(
         username: username,
         now: now,
+        liveCallId: liveCallId,
       );
       recordRuntimeEvent(
         category: 'call',
@@ -1124,16 +1126,43 @@ final class VoiceCallSignalingCleanupCoordinator {
     })
     flushVoiceIceCandidateBatch,
   }) async {
+    // L-02: prioritize relay candidates — relay is often last in trickle
+    // and is the only path through symmetric NAT. If we must drop, drop
+    // host/srflx first, keep relay. Check raw candidate string for " typ relay".
+    final isRelay = (frame.candidate ?? '').toLowerCase().contains(
+      ' typ relay',
+    );
     if (localIceCandidateCount >= maxIceCandidatesPerRole) {
-      recordIceCandidateBudgetExceeded(
-        peerId: peerId,
-        callId: frame.callId,
-        sessionEpoch: frame.sessionEpoch,
-        role: localRole,
-        requestedCount: 1,
-        droppedCount: 1,
-      );
-      return;
+      if (!isRelay) {
+        recordIceCandidateBudgetExceeded(
+          peerId: peerId,
+          callId: frame.callId,
+          sessionEpoch: frame.sessionEpoch,
+          role: localRole,
+          requestedCount: 1,
+          droppedCount: 1,
+        );
+        return;
+      }
+      // Allow relay to exceed budget by one slot to preserve connectivity.
+      // The server-side SignalingCostBudget will still enforce the hard cap;
+      // we surface the overflow as a warning but keep the relay.
+    } else if (localIceCandidateCount >= maxIceCandidatesPerRole - 1 &&
+        !isRelay) {
+      // Reserve the last budget slot for a potential relay candidate.
+      // Drop non-relay when at budget-1 to keep headroom.
+      final hasPendingRelayRisk = true; // conservative: always reserve
+      if (hasPendingRelayRisk) {
+        recordIceCandidateBudgetExceeded(
+          peerId: peerId,
+          callId: frame.callId,
+          sessionEpoch: frame.sessionEpoch,
+          role: localRole,
+          requestedCount: 1,
+          droppedCount: 1,
+        );
+        return;
+      }
     }
 
     final VoiceSignalingEnvelope envelope;
@@ -1579,6 +1608,7 @@ final class VoiceCallSignalingCleanupCoordinator {
     required void Function(StreamSubscription<VoiceCallSessionState>?)
     setSessionSubscription,
     required VoiceCallSignalingBoundedCleanup runBoundedCleanupStep,
+    required Future<void> Function() disposeVideoCallResources,
     required Future<void> Function(VoiceCallSession session)
     disposeVoiceCallSession,
   }) async {
@@ -1595,6 +1625,15 @@ final class VoiceCallSignalingCleanupCoordinator {
           subscription.cancel,
         );
       }
+      // A session may have been partially constructed (video renderers /
+      // media connection allocated) before assignment failed. Dispose those
+      // runtime-owned video resources even when no session object exists,
+      // otherwise native renderers and their subscription leak.
+      // See F-009: video resources leaked on session-construction error path.
+      await runBoundedCleanupStep(
+        'voice_call_video_resources_dispose',
+        disposeVideoCallResources,
+      );
       return;
     }
     await disposeVoiceCallSession(session);

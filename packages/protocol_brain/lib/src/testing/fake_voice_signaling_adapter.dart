@@ -215,6 +215,7 @@ final class FakeVoiceSignalingAdapter implements VoiceSignalingAdapter {
     required String username,
     required int now,
     int limit = maxCallCleanupItemsPerRun,
+    String? liveCallId,
   }) async {
     _ensureOpen();
     final normalizedUsername = normalizeVoiceCallUsername(username);
@@ -260,23 +261,30 @@ final class FakeVoiceSignalingAdapter implements VoiceSignalingAdapter {
             path: 'activeVoicePairs/${userLock.pairId}',
           );
         }
-      } else if (room.isTerminal) {
-        _removeCallArtifacts(room.callId);
-        addDecision(
-          VoiceCallCleanupAction.deleteTerminalRoom,
-          room.callId,
-          'terminal room',
-          path: 'voiceCalls/${room.callId}',
+      } else {
+        final verdict = decideVoiceCallRoomCleanup(
+          room: room,
+          now: now,
+          liveCallId: liveCallId,
         );
-      } else if (room.status != VoiceCallSignalingStatus.connected &&
-          room.expiresAt <= now) {
-        _removeCallArtifacts(room.callId);
-        addDecision(
-          VoiceCallCleanupAction.deleteExpiredRoom,
-          room.callId,
-          'expired setup room',
-          path: 'voiceCalls/${room.callId}',
-        );
+        final action = switch (verdict) {
+          VoiceCallRoomCleanupVerdict.terminal =>
+            VoiceCallCleanupAction.deleteTerminalRoom,
+          VoiceCallRoomCleanupVerdict.expiredSetup =>
+            VoiceCallCleanupAction.deleteExpiredRoom,
+          VoiceCallRoomCleanupVerdict.expiredConnected =>
+            VoiceCallCleanupAction.deleteExpiredConnectedRoom,
+          _ => null,
+        };
+        if (action != null) {
+          _removeCallArtifacts(room.callId);
+          addDecision(action, room.callId, switch (verdict) {
+            VoiceCallRoomCleanupVerdict.terminal => 'terminal room',
+            VoiceCallRoomCleanupVerdict.expiredConnected =>
+              'expired connected room',
+            _ => 'expired setup room',
+          }, path: 'voiceCalls/${room.callId}');
+        }
       }
     }
 

@@ -20,6 +20,7 @@ import '../src/connection_request_adapter.dart';
 import '../src/connection_request_contract.dart';
 import '../src/signaling_cost_budget.dart';
 import '../src/voice_call_clock.dart';
+import '../src/registration_flow.dart';
 import '../src/voice_call_cleanup_janitor.dart';
 import '../src/voice_call_frame.dart';
 import '../src/voice_lock_reclaim_policy.dart';
@@ -38,21 +39,57 @@ class FirebaseSignalingAdapter
     FirebaseFunctions? functions,
     ConnectionRequestAdapterDiagnosticsSink? connectionRequestDiagnosticsSink,
     required SignalingCipher signalingCipher,
+    SignalingCipherResolver? pairCipherResolver,
+    String? localUsername,
     bool useEmulator = false,
   }) : _auth = auth ?? FirebaseAuth.instance,
        _database = database ?? FirebaseDatabase.instance,
-       _functions = functions ?? FirebaseFunctions.instance,
+       _functionsOverride = functions,
        _connectionRequestDiagnosticsSink = connectionRequestDiagnosticsSink,
        _signalingCipher = signalingCipher,
+       _pairCipherResolver = pairCipherResolver,
+       _localUsername = localUsername,
        _useEmulator = useEmulator;
 
   final FirebaseAuth _auth;
   final FirebaseDatabase _database;
-  final FirebaseFunctions _functions;
+  final FirebaseFunctions? _functionsOverride;
+  FirebaseFunctions? _functionsInstance;
+
+  /// Created on first use so `rtdbOnly` mode (the Spark default) never
+  /// touches the Cloud Functions plugin.
+  FirebaseFunctions get _functions =>
+      _functionsInstance ??= _functionsOverride ?? FirebaseFunctions.instance;
   final ConnectionRequestAdapterDiagnosticsSink?
   _connectionRequestDiagnosticsSink;
   final SignalingCipher _signalingCipher;
+  final SignalingCipherResolver? _pairCipherResolver;
+  final String? _localUsername;
   final bool _useEmulator;
+  // F-015 (Phase 1): per-pair cipher cache keyed by peer username. Avoids
+  // re-running ECDH on every signaling write; the root key is stable for the
+  // life of the friendship.
+  static const int _pairCipherTtlMs = 2 * 60 * 1000;
+  final Map<String, ({SignalingCipher cipher, int at})> _pairCipherCache =
+      <String, ({SignalingCipher cipher, int at})>{};
+
+  /// Username of the signed-in account (see [_effectiveLocalUsername]).
+  String? get signedInUsername => _effectiveLocalUsername;
+
+  /// The configured local username, or the one encoded in the signed-in
+  /// account's e-mail (`<username>@rain.local`).
+  String? get _effectiveLocalUsername {
+    final configured = _localUsername;
+    if (configured != null && configured.trim().isNotEmpty) {
+      return configured;
+    }
+    final email = _auth.currentUser?.email;
+    if (email != null && email.endsWith('@rain.local')) {
+      return email.substring(0, email.length - '@rain.local'.length);
+    }
+    return null;
+  }
+
   final String _sessionId = DateTime.now().microsecondsSinceEpoch.toRadixString(
     36,
   );
@@ -115,6 +152,112 @@ class FirebaseSignalingAdapter
     };
   }
 
+  /// F-015 (Phase 1): resolves the per-pair cipher for a room's remote peer.
+  ///
+  /// Given a room's sender/receiver context, determines which peer is "remote"
+  /// (i.e. not the local user) and asks the [SignalingCipherResolver] for a
+  /// per-pair cipher keyed via ECDH against that peer's X25519 public key.
+  ///
+  /// Returns `null` when:
+  /// - no resolver is wired (tests, fallback adapter), or
+  /// - the local username isn't known, or
+  /// - the peer hasn't published a signing key yet.
+  ///
+  /// In all fallback cases the caller uses the v=1 shared-key cipher.
+  Future<SignalingCipher?> _resolvePairCipher(
+    ({String sender, String receiver}) context,
+  ) async {
+    final localUsername = _effectiveLocalUsername;
+    if (_pairCipherResolver == null || localUsername == null) {
+      return null;
+    }
+    final normalizedLocal = _normalizedUsername(localUsername);
+    final peer = context.sender == normalizedLocal
+        ? context.receiver
+        : context.sender;
+    final now = DateTime.now().millisecondsSinceEpoch;
+    final cached = _pairCipherCache[peer];
+    if (cached != null && now - cached.at < _pairCipherTtlMs) {
+      return cached.cipher;
+    }
+    final resolved = await _pairCipherResolver(peer);
+    if (resolved != null) {
+      _pairCipherCache[peer] = (cipher: resolved, at: now);
+    } else {
+      _pairCipherCache.remove(peer);
+    }
+    return resolved;
+  }
+
+  /// F-015 (Phase 1): encrypts a signaling payload using the best available
+  /// cipher. Uses v=2 per-pair encryption when a per-pair cipher is resolved,
+  /// falling back to v=1 shared-key encryption for backward compatibility.
+  Future<Map<String, Object?>> _encryptSignalingPayload({
+    required String roomId,
+    required String purpose,
+    required int timestamp,
+    required String sender,
+    required String receiver,
+    required Map<String, Object?> payload,
+  }) async {
+    final context = (sender: sender, receiver: receiver);
+    final pairCipher = await _resolvePairCipher(context);
+    if (pairCipher != null) {
+      return pairCipher.encryptPayloadV2(
+        roomId: roomId,
+        purpose: purpose,
+        timestamp: timestamp,
+        sender: sender,
+        receiver: receiver,
+        payload: payload,
+      );
+    }
+    return _signalingCipher.encryptPayload(
+      roomId: roomId,
+      purpose: purpose,
+      timestamp: timestamp,
+      sender: sender,
+      receiver: receiver,
+      payload: payload,
+    );
+  }
+
+  /// F-015 (Phase 1): decrypts a signaling payload, auto-routing v=2 envelopes
+  /// to the per-pair cipher and v=1 envelopes to the shared-key cipher.
+  Future<Map<Object?, Object?>> _decryptSignalingPayload({
+    required String roomId,
+    required String purpose,
+    required Map<Object?, Object?> payload,
+    required String sender,
+    required String receiver,
+  }) async {
+    // v=2 envelopes require the per-pair cipher for decryption.
+    if (SignalingCipher.isEncryptedEnvelopeV2(payload)) {
+      final context = (sender: sender, receiver: receiver);
+      final pairCipher = await _resolvePairCipher(context);
+      if (pairCipher != null) {
+        return pairCipher.decryptPayloadV2(
+          roomId: roomId,
+          purpose: purpose,
+          payload: payload,
+          sender: sender,
+          receiver: receiver,
+        );
+      }
+      // F-015 fallback: if we receive a v=2 envelope but can't resolve the
+      // per-pair cipher, fall through to the shared cipher's decryptPayload
+      // which will auto-route and fail gracefully (v=2 decryption without the
+      // pair key throws SignalingEncryptionException, which callers handle).
+    }
+    return _signalingCipher.decryptPayload(
+      roomId: roomId,
+      purpose: purpose,
+      payload: payload,
+      sender: sender,
+      receiver: receiver,
+    );
+  }
+
   Future<void> _configureEmulatorsIfNeeded() async {
     if (!_useEmulator || _emulatorsConfigured) return;
     try {
@@ -145,14 +288,33 @@ class FirebaseSignalingAdapter
     required String displayName,
     required String? gender,
     required int registeredAt,
+    String? signingPublicKey,
   }) {
-    return <String, Object?>{
+    final json = <String, Object?>{
       'uid': uid,
       'displayName': displayName,
       'gender': gender,
       'registeredAt': registeredAt,
       'username': username,
     };
+    if (signingPublicKey != null) {
+      json['signingPublicKey'] = signingPublicKey;
+    }
+    return json;
+  }
+
+  /// TASK-015.5: publishes the local identity's X25519 public key to
+  /// `users/$username/signingPublicKey`. RTDB rules enforce that only the
+  /// matching auth uid may write this node.
+  @override
+  Future<void> publishIdentitySigningKey({
+    required String username,
+    required String signingPublicKey,
+  }) async {
+    final normalized = _normalizedUsername(username);
+    await _root
+        .child('users/$normalized/signingPublicKey')
+        .set(signingPublicKey);
   }
 
   Map<String, Object?> _presenceJson({
@@ -1000,6 +1162,7 @@ class FirebaseSignalingAdapter
     required String username,
     required int now,
     int limit = maxCallCleanupItemsPerRun,
+    String? liveCallId,
   }) async {
     await _configureEmulatorsIfNeeded();
     final normalizedUsername = normalizeVoiceCallUsername(username);
@@ -1081,23 +1244,30 @@ class FirebaseSignalingAdapter
               path: 'activeVoicePairs/${lock.pairId}',
             );
           }
-        } else if (room.isTerminal) {
-          await _deleteVoiceCallRoomArtifacts(room);
-          addDecision(
-            VoiceCallCleanupAction.deleteTerminalRoom,
-            room.callId,
-            'terminal room',
-            path: 'voiceCalls/${room.callId}',
+        } else {
+          final verdict = decideVoiceCallRoomCleanup(
+            room: room,
+            now: now,
+            liveCallId: liveCallId,
           );
-        } else if (room.status != VoiceCallSignalingStatus.connected &&
-            room.expiresAt <= now) {
-          await _deleteVoiceCallRoomArtifacts(room);
-          addDecision(
-            VoiceCallCleanupAction.deleteExpiredRoom,
-            room.callId,
-            'expired setup room',
-            path: 'voiceCalls/${room.callId}',
-          );
+          final action = switch (verdict) {
+            VoiceCallRoomCleanupVerdict.terminal =>
+              VoiceCallCleanupAction.deleteTerminalRoom,
+            VoiceCallRoomCleanupVerdict.expiredSetup =>
+              VoiceCallCleanupAction.deleteExpiredRoom,
+            VoiceCallRoomCleanupVerdict.expiredConnected =>
+              VoiceCallCleanupAction.deleteExpiredConnectedRoom,
+            _ => null,
+          };
+          if (action != null) {
+            await _deleteVoiceCallRoomArtifacts(room);
+            addDecision(action, room.callId, switch (verdict) {
+              VoiceCallRoomCleanupVerdict.terminal => 'terminal room',
+              VoiceCallRoomCleanupVerdict.expiredConnected =>
+                'expired connected room',
+              _ => 'expired setup room',
+            }, path: 'voiceCalls/${room.callId}');
+          }
         }
       }
     } catch (_) {
@@ -1347,65 +1517,40 @@ class FirebaseSignalingAdapter
     }
     final uid = userCredential.user?.uid ?? '';
     final now = DateTime.now().millisecondsSinceEpoch;
-    var backendUserCreated = false;
-
-    try {
-      await _root
-          .child('users/$normalizedUsername')
-          .set(
-            _identityJson(
-              username: normalizedUsername,
-              uid: uid,
-              displayName: normalizedUsername,
-              gender: null,
-              registeredAt: now,
+    await runRegistrationBackendSteps(
+      RegistrationSteps(
+        writeUserRow: () => _root
+            .child('users/$normalizedUsername')
+            .set(
+              _identityJson(
+                username: normalizedUsername,
+                uid: uid,
+                displayName: normalizedUsername,
+                gender: null,
+                registeredAt: now,
+              ),
             ),
-          );
-      backendUserCreated = true;
-
-      await _root.child('userSearch/$normalizedUsername').set(true);
-      await setPresence(normalizedUsername, true);
-      await _auth.signInWithEmailAndPassword(email: email, password: password);
-    } catch (error) {
-      if (backendUserCreated) {
-        await _signOutAfterFailedRegistration();
-      } else {
-        await _rollbackNewlyCreatedAuthUser(userCredential.user);
-      }
-      if (_isPermissionDenied(error)) {
-        throw Exception(
-          'Username "$normalizedUsername" is already taken or locked. '
-          'Choose another unique username or sign in.',
-        );
-      }
-      rethrow;
-    }
+        writeSearchEntry: () =>
+            _root.child('userSearch/$normalizedUsername').set(true),
+        setOnline: () => setPresence(normalizedUsername, true),
+        signIn: () =>
+            _auth.signInWithEmailAndPassword(email: email, password: password),
+        deleteNewAuthUser: () =>
+            _deleteNewlyCreatedAuthUser(userCredential.user),
+        signOutLocal: _auth.signOut,
+        isPermissionDenied: _isPermissionDenied,
+        takenMessage:
+            'Username "$normalizedUsername" is already taken or locked. '
+            'Choose another unique username or sign in.',
+      ),
+    );
     return uid;
   }
 
-  Future<void> _rollbackNewlyCreatedAuthUser(User? user) async {
-    try {
-      final currentUser = _auth.currentUser;
-      if (user != null && currentUser?.uid == user.uid) {
-        await currentUser!.delete();
-      }
-    } catch (_) {
-      // Registration failed before local account state became valid. If Auth
-      // cleanup is rejected by Firebase, still clear the local session below.
-    }
-    try {
-      await _auth.signOut();
-    } catch (_) {
-      // Local sign-out is best effort during a failed registration rollback.
-    }
-  }
-
-  Future<void> _signOutAfterFailedRegistration() async {
-    try {
-      await _auth.signOut();
-    } catch (_) {
-      // If a secondary registration step failed after the durable user row was
-      // written, keep the backend/Auth account intact and only clear local auth.
+  Future<void> _deleteNewlyCreatedAuthUser(User? user) async {
+    final currentUser = _auth.currentUser;
+    if (user != null && currentUser?.uid == user.uid) {
+      await currentUser!.delete();
     }
   }
 
@@ -1449,6 +1594,7 @@ class FirebaseSignalingAdapter
 
   @override
   Future<void> signOut() {
+    _pairCipherCache.clear();
     return _auth.signOut();
   }
 
@@ -1819,7 +1965,7 @@ class FirebaseSignalingAdapter
       presence['online'] as bool? ?? false,
       lastHeartbeat,
     );
-    final identity = BackendIdentity(
+    return BackendIdentity(
       username: username,
       uid: value['uid'] as String? ?? '',
       displayName: value['displayName'] as String? ?? username,
@@ -1831,8 +1977,10 @@ class FirebaseSignalingAdapter
       presenceSessionId: presence['sessionId'] as String?,
       presenceStartedAt: (presence['startedAt'] as num?)?.toInt(),
       presenceState: presence['state'] as String?,
+      // TASK-001.3 (F-015): surface the peer's published X25519 public key so
+      // the runtime can derive a per-pair E2E root key via ECDH.
+      signingPublicKey: value['signingPublicKey'] as String?,
     );
-    return identity;
   }
 
   bool _isDeletedBackendAccount(Map<Object?, Object?> value) {
@@ -2222,7 +2370,7 @@ class FirebaseSignalingAdapter
             roomId,
             SignalingCipher.answerPurpose,
           );
-          final payload = await _signalingCipher.decryptPayload(
+          final payload = await _decryptSignalingPayload(
             roomId: roomId,
             purpose: SignalingCipher.answerPurpose,
             payload: value! as Map<Object?, Object?>,
@@ -2293,7 +2441,7 @@ class FirebaseSignalingAdapter
         .where((Object? value) => value is Map<Object?, Object?>)
         .asyncMap((Object? value) async {
           final context = _roomCipherContext(roomId, purpose);
-          final payload = await _signalingCipher.decryptPayload(
+          final payload = await _decryptSignalingPayload(
             roomId: roomId,
             purpose: purpose,
             payload: value! as Map<Object?, Object?>,
@@ -2316,7 +2464,7 @@ class FirebaseSignalingAdapter
             roomId,
             SignalingCipher.offerPurpose,
           );
-          final payload = await _signalingCipher.decryptPayload(
+          final payload = await _decryptSignalingPayload(
             roomId: roomId,
             purpose: SignalingCipher.offerPurpose,
             payload: value! as Map<Object?, Object?>,
@@ -2676,7 +2824,7 @@ class FirebaseSignalingAdapter
     final timestamp = answer.ts == 0
         ? DateTime.now().millisecondsSinceEpoch
         : answer.ts;
-    final encryptedAnswer = await _signalingCipher.encryptPayload(
+    final encryptedAnswer = await _encryptSignalingPayload(
       roomId: roomId,
       purpose: SignalingCipher.answerPurpose,
       timestamp: timestamp,
@@ -2741,7 +2889,7 @@ class FirebaseSignalingAdapter
     if (candidateKey == null || candidateKey.isEmpty) {
       throw Exception('Failed to allocate ICE candidate key');
     }
-    final encryptedCandidate = await _signalingCipher.encryptPayload(
+    final encryptedCandidate = await _encryptSignalingPayload(
       roomId: roomId,
       purpose: purpose,
       timestamp: timestamp,
@@ -2772,7 +2920,7 @@ class FirebaseSignalingAdapter
     final timestamp = offer.ts == 0
         ? DateTime.now().millisecondsSinceEpoch
         : offer.ts;
-    final encryptedOffer = await _signalingCipher.encryptPayload(
+    final encryptedOffer = await _encryptSignalingPayload(
       roomId: roomId,
       purpose: SignalingCipher.offerPurpose,
       timestamp: timestamp,

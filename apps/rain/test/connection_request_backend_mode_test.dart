@@ -9,6 +9,7 @@ library;
 
 import 'package:flutter_test/flutter_test.dart';
 import 'package:protocol_brain/protocol_brain.dart';
+import 'package:protocol_brain/testing.dart';
 import 'package:rain/core/config/app_environment.dart';
 import 'package:rain/application/state/runtime_providers.dart';
 

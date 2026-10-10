@@ -14,6 +14,8 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:flutter_webrtc/flutter_webrtc.dart' show RTCSessionDescription;
 import 'package:protocol_brain/protocol_brain.dart';
+import 'package:protocol_brain/protocol_brain_firebase.dart'
+    show connectionRequestTtl;
 import 'package:rain/application/bootstrap/app_bootstrap.dart';
 import 'package:rain/application/runtime/rain_runtime_controller.dart';
 import 'package:rain/application/state/app_providers.dart';

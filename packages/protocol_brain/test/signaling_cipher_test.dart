@@ -137,4 +137,333 @@ void main() {
 
     expect(decrypted, same(legacy));
   });
+
+  group('TASK-001 per-pair v=2 crypto core', () {
+    const pairKey = 'rain-test-pair-key-material-32-bytes!!';
+    final payload = <String, Object?>{
+      'sdp': <String, Object?>{'type': 'offer', 'sdp': 'v=0'},
+      'ts': 1778911256590,
+    };
+
+    test('encrypts and decrypts with per-pair context', () async {
+      final cipher = SignalingCipher.forPair(
+        pairKeyMaterial: pairKey,
+        from: 'alice',
+        to: 'bob',
+        sessionId: 's1',
+      );
+      final encrypted = await cipher.encryptPayloadV2(
+        roomId: 'alice:bob',
+        purpose: SignalingCipher.offerPurpose,
+        timestamp: 1778911256590,
+        sender: 'alice',
+        receiver: 'bob',
+        payload: payload,
+      );
+
+      expect(encrypted['v'], SignalingCipher.envelopeVersionV2);
+      expect(encrypted['alg'], SignalingCipher.algorithmName);
+      expect(encrypted['from'], 'alice');
+      expect(encrypted['to'], 'bob');
+      expect(encrypted['salt'], isA<String>());
+      expect(jsonEncode(encrypted), isNot(contains('private-address')));
+
+      final decrypted = await cipher.decryptPayloadV2(
+        roomId: 'alice:bob',
+        purpose: SignalingCipher.offerPurpose,
+        payload: Map<Object?, Object?>.from(encrypted),
+        sender: 'alice',
+        receiver: 'bob',
+      );
+      final sdp = Map<Object?, Object?>.from(decrypted['sdp']! as Map);
+      expect(sdp['type'], 'offer');
+    });
+
+    test('different pairs derive different keys (isolation)', () async {
+      final aliceBob = SignalingCipher.forPair(
+        pairKeyMaterial: pairKey,
+        from: 'alice',
+        to: 'bob',
+        sessionId: 's1',
+      );
+      final aliceCarol = SignalingCipher.forPair(
+        pairKeyMaterial: pairKey,
+        from: 'alice',
+        to: 'carol',
+        sessionId: 's1',
+      );
+
+      final ab = await aliceBob.encryptPayloadV2(
+        roomId: 'alice:bob',
+        purpose: SignalingCipher.offerPurpose,
+        timestamp: 1,
+        sender: 'alice',
+        receiver: 'bob',
+        payload: payload,
+      );
+      final ac = await aliceCarol.encryptPayloadV2(
+        roomId: 'alice:carol',
+        purpose: SignalingCipher.offerPurpose,
+        timestamp: 1,
+        sender: 'alice',
+        receiver: 'carol',
+        payload: payload,
+      );
+
+      // Same pair key material, different pair context => unlinkable ciphertext.
+      expect(jsonEncode(ab), isNot(jsonEncode(ac)));
+
+      // Alice↔Bob cipher cannot decrypt Alice↔Carol envelope.
+      await expectLater(
+        aliceBob.decryptPayloadV2(
+          roomId: 'alice:carol',
+          purpose: SignalingCipher.offerPurpose,
+          payload: Map<Object?, Object?>.from(ac),
+          sender: 'alice',
+          receiver: 'carol',
+        ),
+        throwsA(isA<SignalingEncryptionException>()),
+      );
+    });
+
+    test('random per-envelope salt makes repeated encrypts differ', () async {
+      final cipher = SignalingCipher.forPair(
+        pairKeyMaterial: pairKey,
+        from: 'alice',
+        to: 'bob',
+        sessionId: 's1',
+      );
+
+      final first = await cipher.encryptPayloadV2(
+        roomId: 'alice:bob',
+        purpose: SignalingCipher.offerPurpose,
+        timestamp: 1,
+        sender: 'alice',
+        receiver: 'bob',
+        payload: payload,
+      );
+      final second = await cipher.encryptPayloadV2(
+        roomId: 'alice:bob',
+        purpose: SignalingCipher.offerPurpose,
+        timestamp: 1,
+        sender: 'alice',
+        receiver: 'bob',
+        payload: payload,
+      );
+
+      // Nonce + salt are random per envelope => ciphertexts differ.
+      expect(first['salt'], isNot(second['salt']));
+      expect(jsonEncode(first), isNot(jsonEncode(second)));
+    });
+
+    test('v=1 root-key holder cannot decrypt a v=2 envelope', () async {
+      final pairCipher = SignalingCipher.forPair(
+        pairKeyMaterial: pairKey,
+        from: 'alice',
+        to: 'bob',
+        sessionId: 's1',
+      );
+      final v2 = await pairCipher.encryptPayloadV2(
+        roomId: 'alice:bob',
+        purpose: SignalingCipher.offerPurpose,
+        timestamp: 1,
+        sender: 'alice',
+        receiver: 'bob',
+        payload: payload,
+      );
+
+      // The app-wide v=1 signaling cipher shares no per-pair key material.
+      final legacyCipher = SignalingCipher.fromKeyMaterial(
+        'rain-test-signaling-key-material-32-bytes',
+      );
+      await expectLater(
+        legacyCipher.decryptPayloadV2(
+          roomId: 'alice:bob',
+          purpose: SignalingCipher.offerPurpose,
+          payload: Map<Object?, Object?>.from(v2),
+          sender: 'alice',
+          receiver: 'bob',
+        ),
+        throwsA(isA<SignalingEncryptionException>()),
+      );
+    });
+  });
+
+  // ---- TASK-001.4: v=1/v=2 decrypt fallback (Phase 4 verifiable slice) ----
+
+  group('TASK-001.4 decryptPayload auto-routes v=2 envelopes', () {
+    const pairKey = 'rain-test-pair-key-material-32-bytes!!';
+    final payload = <String, Object?>{
+      'sdp': <String, Object?>{'type': 'offer', 'sdp': 'v=0'},
+      'ts': 1778911256590,
+    };
+
+    test(
+      'decryptPayload decrypts a v=2 envelope when pair key matches',
+      () async {
+        final cipher = SignalingCipher.forPair(
+          pairKeyMaterial: pairKey,
+          from: 'alice',
+          to: 'bob',
+          sessionId: 's1',
+        );
+        final v2 = await cipher.encryptPayloadV2(
+          roomId: 'alice:bob',
+          purpose: SignalingCipher.offerPurpose,
+          timestamp: 1778911256590,
+          sender: 'alice',
+          receiver: 'bob',
+          payload: payload,
+        );
+
+        // decryptPayload (no V2 suffix) should auto-route to decryptPayloadV2.
+        final decrypted = await cipher.decryptPayload(
+          roomId: 'alice:bob',
+          purpose: SignalingCipher.offerPurpose,
+          payload: Map<Object?, Object?>.from(v2),
+          sender: 'alice',
+          receiver: 'bob',
+        );
+        final sdp = Map<Object?, Object?>.from(decrypted['sdp']! as Map);
+        expect(sdp['type'], 'offer');
+      },
+    );
+
+    test('decryptPayload rejects v=2 envelope without the pair key', () async {
+      final pairCipher = SignalingCipher.forPair(
+        pairKeyMaterial: pairKey,
+        from: 'alice',
+        to: 'bob',
+        sessionId: 's1',
+      );
+      final v2 = await pairCipher.encryptPayloadV2(
+        roomId: 'alice:bob',
+        purpose: SignalingCipher.offerPurpose,
+        timestamp: 1,
+        sender: 'alice',
+        receiver: 'bob',
+        payload: payload,
+      );
+
+      // A v=1 root-key cipher (no pair context) cannot derive the v=2 key.
+      final legacyCipher = SignalingCipher.fromKeyMaterial(
+        'rain-test-signaling-key-material-32-bytes',
+      );
+      await expectLater(
+        legacyCipher.decryptPayload(
+          roomId: 'alice:bob',
+          purpose: SignalingCipher.offerPurpose,
+          payload: Map<Object?, Object?>.from(v2),
+          sender: 'alice',
+          receiver: 'bob',
+        ),
+        throwsA(isA<SignalingEncryptionException>()),
+      );
+    });
+
+    test('decryptPayload still handles legacy v=1 envelopes', () async {
+      final cipher = SignalingCipher.fromKeyMaterial(
+        'rain-test-signaling-key-material-32-bytes',
+      );
+      final v1 = await cipher.encryptPayload(
+        roomId: 'alice:bob',
+        purpose: SignalingCipher.offerPurpose,
+        timestamp: 1,
+        sender: 'alice',
+        receiver: 'bob',
+        payload: payload,
+      );
+
+      final decrypted = await cipher.decryptPayload(
+        roomId: 'alice:bob',
+        purpose: SignalingCipher.offerPurpose,
+        payload: Map<Object?, Object?>.from(v1),
+        sender: 'alice',
+        receiver: 'bob',
+      );
+      final sdp = Map<Object?, Object?>.from(decrypted['sdp']! as Map);
+      expect(sdp['type'], 'offer');
+    });
+
+    test('decryptPayload passes through unencrypted plaintext', () async {
+      final cipher = SignalingCipher.fromKeyMaterial(
+        'rain-test-signaling-key-material-32-bytes',
+      );
+      final plaintext = <Object?, Object?>{
+        'sdp': <Object?, Object?>{'type': 'answer', 'sdp': 'v=0'},
+        'ts': 2,
+      };
+
+      final result = await cipher.decryptPayload(
+        roomId: 'alice:bob',
+        purpose: SignalingCipher.answerPurpose,
+        payload: plaintext,
+      );
+
+      expect(result, same(plaintext));
+    });
+  });
+
+  group('buildPairCipherResolver', () {
+    final secret = List<int>.generate(32, (int i) => i + 1);
+
+    test(
+      'both sides derive the same cipher regardless of who is local',
+      () async {
+        final aliceResolver = buildPairCipherResolver(
+          localUsername: () => 'Alice',
+          deriveSharedSecret: (String peer) async => secret,
+        );
+        final bobResolver = buildPairCipherResolver(
+          localUsername: () => 'bob',
+          deriveSharedSecret: (String peer) async => secret,
+        );
+        final aliceCipher = (await aliceResolver('bob'))!;
+        final bobCipher = (await bobResolver('alice'))!;
+
+        final envelope = await aliceCipher.encryptPayloadV2(
+          roomId: 'alice:bob',
+          purpose: SignalingCipher.offerPurpose,
+          timestamp: 1,
+          sender: 'alice',
+          receiver: 'bob',
+          payload: <String, Object?>{'sdp': 'x'},
+        );
+        final decrypted = await bobCipher.decryptPayloadV2(
+          roomId: 'alice:bob',
+          purpose: SignalingCipher.offerPurpose,
+          payload: envelope,
+          sender: 'alice',
+          receiver: 'bob',
+        );
+
+        expect(envelope['v'], 2);
+        expect(decrypted['sdp'], 'x');
+      },
+    );
+
+    test('falls back to null when no key, no local user or an error', () async {
+      expect(
+        await buildPairCipherResolver(
+          localUsername: () => 'alice',
+          deriveSharedSecret: (String peer) async => null,
+        )('bob'),
+        isNull,
+      );
+      expect(
+        await buildPairCipherResolver(
+          localUsername: () => null,
+          deriveSharedSecret: (String peer) async => secret,
+        )('bob'),
+        isNull,
+      );
+      expect(
+        await buildPairCipherResolver(
+          localUsername: () => 'alice',
+          deriveSharedSecret: (String peer) async => throw StateError('x'),
+        )('bob'),
+        isNull,
+      );
+    });
+  });
 }

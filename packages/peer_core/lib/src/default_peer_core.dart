@@ -66,6 +66,7 @@ class DefaultPeerCore implements PeerCore {
   MediaStreamTrack? _localAudioTrack;
   PeerConfig? _config;
   Timer? _disconnectGraceTimer;
+  Timer? _chunkPruneTimer;
   bool _destroying = false;
   int _lifecycleEpoch = 0;
 
@@ -174,25 +175,45 @@ class DefaultPeerCore implements PeerCore {
     _destroying = true;
     _lifecycleEpoch += 1;
     _cancelPendingDisconnect();
+    _cancelChunkPruneTimer();
+    Object? firstError;
+    StackTrace? firstStack;
+    Future<void> guarded(Future<void> Function() step) async {
+      try {
+        await step();
+      } catch (error, stackTrace) {
+        firstError ??= error;
+        firstStack ??= stackTrace;
+      }
+    }
+
     try {
-      await stopLocalAudio();
+      await guarded(stopLocalAudio);
       for (final channel in _channels.values.toList()) {
-        await channel.close();
+        await guarded(channel.close);
       }
     } finally {
       _destroying = false;
     }
+    final connection = _peerConnection;
     _channels.clear();
     _sendQueues.clear();
     _openChannels.clear();
-    await _peerConnection?.close();
     _peerConnection = null;
     _localAudioTransceiver = null;
     _localAudioSender = null;
     _localCandidates.clear();
     _chunkBuffers.clear();
+    if (connection != null) {
+      await guarded(connection.close);
+      await guarded(connection.dispose);
+    }
     if (state != PeerState.idle) {
       _transition(PeerState.idle);
+    }
+    final error = firstError;
+    if (error != null) {
+      Error.throwWithStackTrace(error, firstStack ?? StackTrace.current);
     }
   }
 
@@ -546,6 +567,19 @@ class DefaultPeerCore implements PeerCore {
       if (maybeChunk != null) {
         final now = DateTime.now();
         _pruneStaleChunkBuffers(now);
+        // Bound total buffered chunk bytes to prevent memory bomb
+        // (_maxPendingChunkBuffers=64 * 12KB * 1024 frames = 768MB worst).
+        if (_chunkBuffers.length >= _maxPendingChunkBuffers) {
+          _emitDebugEvent(
+            'chunk_buffer_overflow',
+            severity: 'warning',
+            context: <String, Object?>{
+              'channelId': channelId,
+              'pendingBuffers': _chunkBuffers.length,
+              'chunkId': maybeChunk.id,
+            },
+          );
+        }
         final existing = _chunkBuffers[maybeChunk.id];
         if (existing != null && !existing.matches(maybeChunk)) {
           _chunkBuffers.remove(maybeChunk.id);
@@ -555,6 +589,11 @@ class DefaultPeerCore implements PeerCore {
             _chunkBuffers.length >= _maxPendingChunkBuffers) {
           return;
         }
+        // Cap total bytes per accumulator to ~16MB to avoid single-id bomb
+        if (maybeChunk.total * _chunkPayloadBytes > 16 * 1024 * 1024) {
+          return;
+        }
+        _ensureChunkPruneTimer();
         final accumulator =
             existing ??
             (_chunkBuffers[maybeChunk.id] = _ChunkAccumulator(
@@ -565,6 +604,7 @@ class DefaultPeerCore implements PeerCore {
         accumulator.add(maybeChunk.index, maybeChunk.payload);
         if (accumulator.isComplete) {
           _chunkBuffers.remove(maybeChunk.id);
+          if (_chunkBuffers.isEmpty) _cancelChunkPruneTimer();
           final assembled = accumulator.join();
           final Object data;
           try {
@@ -651,7 +691,25 @@ class DefaultPeerCore implements PeerCore {
           }
         });
     _sendQueues[channelId] = next;
-    unawaited(next.catchError((Object _) {}));
+    unawaited(
+      next.catchError((Object error, StackTrace stackTrace) {
+        // C-02: do not swallow backpressure/timeout or channel errors — surface
+        // them so diagnostics and callers can observe silent data loss.
+        _emitDebugEvent(
+          'data_channel_backpressure_error',
+          severity: 'error',
+          message: error.toString(),
+          context: <String, Object?>{
+            'channelId': channelId,
+            'errorType': error.runtimeType.toString(),
+          },
+        );
+        // Propagate via PeerState if it is a terminal data-channel failure.
+        if (!_messageController.isClosed) {
+          _messageController.addError(error, stackTrace);
+        }
+      }),
+    );
   }
 
   void _sendChunkedIfNeeded(RTCDataChannel channel, dynamic data) {
@@ -974,6 +1032,20 @@ class DefaultPeerCore implements PeerCore {
     _chunkBuffers.removeWhere((_, _ChunkAccumulator accumulator) {
       return now.difference(accumulator.createdAt) > _chunkBufferTtl;
     });
+    if (_chunkBuffers.isEmpty) _cancelChunkPruneTimer();
+  }
+
+  void _ensureChunkPruneTimer() {
+    if (_chunkPruneTimer != null || _chunkBuffers.isEmpty) return;
+    _chunkPruneTimer = Timer.periodic(const Duration(seconds: 30), (_) {
+      _pruneStaleChunkBuffers(DateTime.now());
+      if (_chunkBuffers.isEmpty) _cancelChunkPruneTimer();
+    });
+  }
+
+  void _cancelChunkPruneTimer() {
+    _chunkPruneTimer?.cancel();
+    _chunkPruneTimer = null;
   }
 }
 

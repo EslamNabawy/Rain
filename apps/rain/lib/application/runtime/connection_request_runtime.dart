@@ -15,6 +15,7 @@ library;
 import 'dart:async';
 
 import 'package:protocol_brain/protocol_brain.dart';
+import 'package:protocol_brain/protocol_brain_firebase.dart';
 import 'package:rain_core/rain_core.dart';
 
 import 'package:rain/infrastructure/notifications/rain_notification_service.dart';

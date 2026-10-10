@@ -1,0 +1,257 @@
+import 'dart:io';
+
+import 'package:cryptography/cryptography.dart';
+import 'package:drift/drift.dart' hide isNotNull, isNull;
+import 'package:drift/native.dart';
+import 'package:flutter_test/flutter_test.dart';
+import 'package:path/path.dart' as p;
+import 'package:rain_core/database/rain_database.dart';
+import 'package:rain_core/identity/identity_key_repository.dart';
+import 'package:rain_core/identity/key_store_service.dart';
+
+RainDatabase _openTempDb(Directory dir) {
+  return RainDatabase(
+    NativeDatabase(
+      File(p.join(dir.path, 'rain.sqlite')),
+      setup: configureRainSqliteConnection,
+    ),
+  );
+}
+
+Future<void> _seedIdentity(RainDatabase db) async {
+  await db
+      .into(db.identityTable)
+      .insert(
+        IdentityTableCompanion.insert(
+          username: 'eslam',
+          displayName: 'Eslam',
+          createdAt: 1,
+          gender: const Value<String?>(null),
+        ),
+      );
+}
+
+void main() {
+  group('TASK-015 IdentityKeyRepository', () {
+    test('regenerates the pair when the private key is missing', () async {
+      final dir = Directory.systemTemp.createTempSync('rain_keypair_lost_');
+      addTearDown(() {
+        if (dir.existsSync()) dir.deleteSync(recursive: true);
+      });
+      final db = _openTempDb(dir);
+      addTearDown(db.close);
+      final store = InMemoryKeyStoreService();
+      final repo = IdentityKeyRepository(db, store);
+      await _seedIdentity(db);
+
+      final first = await repo.ensureKeyPair();
+      await store.delete(KeyStoreIds.identityPrivateKey);
+
+      final second = await repo.ensureKeyPair();
+
+      expect(second.bytes, isNot(first.bytes));
+      expect(await store.read(KeyStoreIds.identityPrivateKey), isNotNull);
+      expect((await repo.getPublicKey())!.bytes, second.bytes);
+      expect(await repo.getPrivateKeyBytes(), hasLength(32));
+    });
+
+    test(
+      'generates an X25519 keypair once and persists the public key',
+      () async {
+        final dir = Directory.systemTemp.createTempSync('rain_keypair_');
+        addTearDown(() {
+          if (dir.existsSync()) dir.deleteSync(recursive: true);
+        });
+        final db = _openTempDb(dir);
+        addTearDown(db.close);
+        final store = InMemoryKeyStoreService();
+        final repo = IdentityKeyRepository(db, store);
+
+        await _seedIdentity(db);
+
+        final first = await repo.ensureKeyPair();
+        // X25519 public keys are 32 bytes.
+        expect(first.bytes.length, 32);
+        expect(first.type, KeyPairType.x25519);
+
+        // Private key is wrapped into the secure store.
+        final stored = await store.read(KeyStoreIds.identityPrivateKey);
+        expect(stored, isNotNull);
+        expect(store.read(KeyStoreIds.identityPrivateKey), isNotNull);
+
+        // Public key persisted to the DB column.
+        final pub = await repo.getPublicKey();
+        expect(pub, isNotNull);
+        expect(pub!.bytes, first.bytes);
+
+        // Second call is idempotent: same public key, no new private key written.
+        final again = await repo.ensureKeyPair();
+        expect(again.bytes, first.bytes);
+      },
+    );
+
+    test('getPrivateKeyBytes returns the wrapped private key', () async {
+      final dir = Directory.systemTemp.createTempSync('rain_keypair_2_');
+      addTearDown(() {
+        if (dir.existsSync()) dir.deleteSync(recursive: true);
+      });
+      final db = _openTempDb(dir);
+      addTearDown(db.close);
+      final store = InMemoryKeyStoreService();
+      final repo = IdentityKeyRepository(db, store);
+      await _seedIdentity(db);
+
+      await repo.ensureKeyPair();
+      final private = await repo.getPrivateKeyBytes();
+      expect(private.length, 32); // X25519 private key scalar.
+    });
+
+    test('getPublicKey returns null before any keypair exists', () async {
+      final dir = Directory.systemTemp.createTempSync('rain_keypair_3_');
+      addTearDown(() {
+        if (dir.existsSync()) dir.deleteSync(recursive: true);
+      });
+      final db = _openTempDb(dir);
+      addTearDown(db.close);
+      final repo = IdentityKeyRepository(db, InMemoryKeyStoreService());
+      await _seedIdentity(db);
+
+      expect(await repo.getPublicKey(), isNull);
+    });
+
+    test('clear removes keypair from store and DB column', () async {
+      final dir = Directory.systemTemp.createTempSync('rain_keypair_4_');
+      addTearDown(() {
+        if (dir.existsSync()) dir.deleteSync(recursive: true);
+      });
+      final db = _openTempDb(dir);
+      addTearDown(db.close);
+      final store = InMemoryKeyStoreService();
+      final repo = IdentityKeyRepository(db, store);
+      await _seedIdentity(db);
+
+      await repo.ensureKeyPair();
+      expect(await repo.getPublicKey(), isNotNull);
+
+      await repo.clear();
+      expect(await repo.getPublicKey(), isNull);
+      expect(await store.read(KeyStoreIds.identityPrivateKey), isNull);
+    });
+
+    test('encoded public key and shared secret from a published key', () async {
+      final dirA = Directory.systemTemp.createTempSync('rain_enc_alice_');
+      final dirB = Directory.systemTemp.createTempSync('rain_enc_bob_');
+      addTearDown(() {
+        if (dirA.existsSync()) dirA.deleteSync(recursive: true);
+        if (dirB.existsSync()) dirB.deleteSync(recursive: true);
+      });
+      final dbA = _openTempDb(dirA);
+      final dbB = _openTempDb(dirB);
+      addTearDown(dbA.close);
+      addTearDown(dbB.close);
+      final alice = IdentityKeyRepository(dbA, InMemoryKeyStoreService());
+      final bob = IdentityKeyRepository(dbB, InMemoryKeyStoreService());
+      await _seedIdentity(dbA);
+      await _seedIdentity(dbB);
+
+      expect(await alice.encodedPublicKey(), isNull);
+      await alice.ensureKeyPair();
+      await bob.ensureKeyPair();
+      final aliceKey = (await alice.encodedPublicKey())!;
+      final bobKey = (await bob.encodedPublicKey())!;
+
+      expect(aliceKey, hasLength(44));
+      expect(
+        await alice.deriveSharedSecretFromEncodedKey(bobKey),
+        await bob.deriveSharedSecretFromEncodedKey(aliceKey),
+      );
+      expect(await alice.deriveSharedSecretFromEncodedKey('not-a-key'), isNull);
+      expect(await alice.deriveSharedSecretFromEncodedKey('QQ=='), isNull);
+    });
+
+    // ---- TASK-001.3: ECDH per-pair key derivation (Phase 4 verifiable slice) ----
+
+    test('ECDH: two parties derive the same shared secret', () async {
+      // Alice and Bob each have their own identity repo + keypair.
+      final dirA = Directory.systemTemp.createTempSync('rain_ecdh_alice_');
+      final dirB = Directory.systemTemp.createTempSync('rain_ecdh_bob_');
+      addTearDown(() {
+        if (dirA.existsSync()) dirA.deleteSync(recursive: true);
+        if (dirB.existsSync()) dirB.deleteSync(recursive: true);
+      });
+      final dbA = _openTempDb(dirA);
+      final dbB = _openTempDb(dirB);
+      addTearDown(dbA.close);
+      addTearDown(dbB.close);
+
+      final aliceRepo = IdentityKeyRepository(dbA, InMemoryKeyStoreService());
+      final bobRepo = IdentityKeyRepository(dbB, InMemoryKeyStoreService());
+      await _seedIdentity(dbA);
+      await _seedIdentity(dbB);
+
+      final alicePublic = await aliceRepo.ensureKeyPair();
+      final bobPublic = await bobRepo.ensureKeyPair();
+
+      // Alice derives the shared secret using her private key + Bob's public.
+      final aliceShared = await aliceRepo.derivePairKeyMaterial(bobPublic);
+      // Bob derives the shared secret using his private key + Alice's public.
+      final bobShared = await bobRepo.derivePairKeyMaterial(alicePublic);
+
+      // ECDH guarantees both sides arrive at the same shared secret.
+      expect(aliceShared, bobShared);
+      expect(aliceShared, isNotEmpty);
+    });
+
+    test('ECDH: shared secret differs across different peers', () async {
+      final dirA = Directory.systemTemp.createTempSync('rain_ecdh_isol_a_');
+      final dirB = Directory.systemTemp.createTempSync('rain_ecdh_isol_b_');
+      final dirC = Directory.systemTemp.createTempSync('rain_ecdh_isol_c_');
+      addTearDown(() {
+        if (dirA.existsSync()) dirA.deleteSync(recursive: true);
+        if (dirB.existsSync()) dirB.deleteSync(recursive: true);
+        if (dirC.existsSync()) dirC.deleteSync(recursive: true);
+      });
+      final dbA = _openTempDb(dirA);
+      final dbB = _openTempDb(dirB);
+      final dbC = _openTempDb(dirC);
+      addTearDown(dbA.close);
+      addTearDown(dbB.close);
+      addTearDown(dbC.close);
+
+      final aliceRepo = IdentityKeyRepository(dbA, InMemoryKeyStoreService());
+      final bobRepo = IdentityKeyRepository(dbB, InMemoryKeyStoreService());
+      final carolRepo = IdentityKeyRepository(dbC, InMemoryKeyStoreService());
+      await _seedIdentity(dbA);
+      await _seedIdentity(dbB);
+      await _seedIdentity(dbC);
+
+      final bobPublic = await bobRepo.ensureKeyPair();
+      final carolPublic = await carolRepo.ensureKeyPair();
+
+      // Alice derives different shared secrets with Bob vs Carol.
+      final aliceWithBob = await aliceRepo.derivePairKeyMaterial(bobPublic);
+      final aliceWithCarol = await aliceRepo.derivePairKeyMaterial(carolPublic);
+
+      expect(aliceWithBob, isNot(aliceWithCarol));
+    });
+
+    test('ECDH: shared secret is stable across repeated derivations', () async {
+      final dir = Directory.systemTemp.createTempSync('rain_ecdh_stable_');
+      addTearDown(() {
+        if (dir.existsSync()) dir.deleteSync(recursive: true);
+      });
+      final db = _openTempDb(dir);
+      addTearDown(db.close);
+      final repo = IdentityKeyRepository(db, InMemoryKeyStoreService());
+      await _seedIdentity(db);
+
+      final peerKeyPair = await X25519().newKeyPair();
+      final peerPublic = await peerKeyPair.extractPublicKey();
+
+      final first = await repo.derivePairKeyMaterial(peerPublic);
+      final second = await repo.derivePairKeyMaterial(peerPublic);
+
+      expect(first, second);
+    });
+  });
+}

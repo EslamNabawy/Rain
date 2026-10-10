@@ -8297,11 +8297,13 @@ class RecordingVoiceSignalingAdapter extends RecordingNoopSignalingAdapter
     required String username,
     required int now,
     int limit = maxCallCleanupItemsPerRun,
+    String? liveCallId,
   }) {
     return _voice.cleanupStaleVoiceCallArtifacts(
       username: username,
       now: now,
       limit: limit,
+      liveCallId: liveCallId,
     );
   }
 

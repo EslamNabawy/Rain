@@ -207,6 +207,37 @@ void main() {
   );
 
   test(
+    'registration keeps the session when the signing key cannot be published',
+    () async {
+      final database = RainDatabase(NativeDatabase.memory());
+      addTearDown(database.close);
+      final adapter = _AuthValidationAdapter(
+        currentUidValue: 'uid-alice',
+        backendIdentity: null,
+        publishSigningKeyError: Exception('permission denied'),
+      );
+      final container = _container(database, adapter);
+      addTearDown(container.dispose);
+
+      await container.read(identityProvider.future);
+
+      await container
+          .read(identityProvider.notifier)
+          .register(
+            username: 'alice',
+            displayName: 'Alice',
+            password: 'secret1',
+            gender: RainGender.female,
+          );
+
+      expect(adapter.registerCalls, 1);
+      expect(adapter.publishSigningKeyCalls, 1);
+      expect(adapter.signOutCalls, 0);
+      expect(await IdentityRepository(database).loadIdentity(), isNotNull);
+    },
+  );
+
+  test(
     'login does not recreate a missing backend account after authentication',
     () async {
       final database = RainDatabase(NativeDatabase.memory());
@@ -299,6 +330,7 @@ ProviderContainer _container(
         (Ref ref) =>
             Stream<NetworkStatusState>.value(const NetworkStatusState.online()),
       ),
+      keyStoreServiceProvider.overrideWithValue(InMemoryKeyStoreService()),
     ],
   );
 }
@@ -328,6 +360,7 @@ final class _AuthValidationAdapter extends NoopSignalingAdapter {
     this.upsertError,
     this.loginError,
     this.registerError,
+    this.publishSigningKeyError,
   });
 
   final String currentUidValue;
@@ -335,10 +368,12 @@ final class _AuthValidationAdapter extends NoopSignalingAdapter {
   final Object? upsertError;
   final Object? loginError;
   final Object? registerError;
+  final Object? publishSigningKeyError;
   final List<BackendIdentity> upsertedIdentities = <BackendIdentity>[];
   int ensureSignedInAsCalls = 0;
   int fetchIdentityCalls = 0;
   int registerCalls = 0;
+  int publishSigningKeyCalls = 0;
   int loginCalls = 0;
   int addToUserSearchCalls = 0;
   int setPresenceCalls = 0;
@@ -360,6 +395,18 @@ final class _AuthValidationAdapter extends NoopSignalingAdapter {
       throw error;
     }
     return currentUidValue;
+  }
+
+  @override
+  Future<void> publishIdentitySigningKey({
+    required String username,
+    required String signingPublicKey,
+  }) async {
+    publishSigningKeyCalls += 1;
+    final error = publishSigningKeyError;
+    if (error != null) {
+      throw error;
+    }
   }
 
   @override

@@ -12,6 +12,7 @@ library;
 
 import 'dart:async';
 
+import 'package:firebase_auth/firebase_auth.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:protocol_brain/protocol_brain.dart';
 import 'package:rain_core/rain_core.dart';
@@ -26,6 +27,7 @@ import 'package:rain/infrastructure/services/rain_debug_log_service.dart';
 import 'package:rain/infrastructure/services/received_file_export_service.dart';
 import 'package:rain/infrastructure/services/sound_effects_service.dart';
 import 'package:rain/infrastructure/services/turn_credential_service.dart';
+import 'package:rain/infrastructure/security/flutter_secure_storage_key_store_service.dart';
 
 final appBootstrapProvider = Provider<AppBootstrapState>(
   (_) => throw UnimplementedError('AppBootstrapState has not been overridden.'),
@@ -118,6 +120,17 @@ final rainDebugLogServiceProvider = Provider<RainDebugLogService>(
   (Ref ref) => const NoopRainDebugLogService(),
 );
 
+final keyStoreServiceProvider = Provider<KeyStoreService>(
+  (_) => FlutterSecureStorageKeyStoreService(),
+);
+
+final identityKeyRepositoryProvider = Provider<IdentityKeyRepository>(
+  (Ref ref) => IdentityKeyRepository(
+    ref.watch(databaseProvider),
+    ref.watch(keyStoreServiceProvider),
+  ),
+);
+
 final lastCrashDiagnosticsProvider = FutureProvider<CrashDiagnosticsRecord?>((
   Ref ref,
 ) {
@@ -135,6 +148,7 @@ final turnCredentialServiceProvider = Provider<TurnCredentialService>((
   final service = TurnCredentialService(
     baseIceServers: environment.iceServers,
     brokerUrl: environment.turnBrokerUrl,
+    idTokenProvider: _firebaseIdToken,
   );
   ref.onDispose(service.dispose);
   return service;
@@ -220,4 +234,14 @@ class OptionalUpdateDismissalController extends AsyncNotifier<String?> {
     state = const AsyncValue.data(null);
     await ref.read(appSettingsStoreProvider).clearDismissedOptionalUpdateKey();
   }
+}
+
+/// Composition-root token source for the TURN broker (Firebase ID token of the
+/// signed-in user, or null when signed out).
+Future<String?> _firebaseIdToken() async {
+  final user = FirebaseAuth.instance.currentUser;
+  if (user == null) {
+    return null;
+  }
+  return user.getIdToken(false);
 }

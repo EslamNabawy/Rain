@@ -19,6 +19,58 @@ import 'package:path/path.dart' as p;
 import 'package:rain_core/database/rain_database.dart';
 
 void main() {
+  test('stock sqlite reports database encryption inactive', () async {
+    final database = RainDatabase(NativeDatabase.memory());
+    addTearDown(database.close);
+
+    expect(await database.encryptionState(), DatabaseEncryptionState.inactive);
+  });
+
+  test(
+    'beforeOpen schema validation passes on a valid fresh database',
+    () async {
+      // TASK-008: the MigrationStrategy.beforeOpen hook must run (and not throw)
+      // when the on-disk schema is intact, and all core tables must be present.
+      final tempDir = Directory.systemTemp.createTempSync('rain_beforeopen_');
+      addTearDown(() {
+        if (tempDir.existsSync()) {
+          tempDir.deleteSync(recursive: true);
+        }
+      });
+
+      final database = RainDatabase(
+        NativeDatabase(
+          File(p.join(tempDir.path, 'rain.sqlite')),
+          setup: configureRainSqliteConnection,
+        ),
+      );
+      addTearDown(database.close);
+
+      // Opening triggers onCreate -> beforeOpen. If beforeOpen throws on a
+      // valid schema, this query (or close) surfaces the error.
+      final tables = await database
+          .customSelect("SELECT name FROM sqlite_master WHERE type='table';")
+          .get();
+      final tableNames = tables.map((row) => row.read<String>('name')).toSet();
+
+      for (final required in const <String>[
+        'messages',
+        'friends',
+        'identity_table',
+        'queued_messages',
+        'file_transfers',
+        'connection_memory_table',
+        'message_seq_tracker',
+      ]) {
+        expect(
+          tableNames,
+          contains(required),
+          reason: 'beforeOpen must confirm core table "$required" exists',
+        );
+      }
+    },
+  );
+
   test('sqlite setup enables lock-tolerant local database pragmas', () async {
     final tempDir = Directory.systemTemp.createTempSync('rain_db_test_');
     addTearDown(() {
@@ -95,7 +147,7 @@ void main() {
     );
     expect(
       await database.customSelect('PRAGMA user_version;').getSingle(),
-      isA<QueryRow>().having((row) => row.data.values.single, 'version', 6),
+      isA<QueryRow>().having((row) => row.data.values.single, 'version', 7),
     );
   });
 
@@ -179,8 +231,125 @@ void main() {
     );
     expect(
       await database.customSelect('PRAGMA user_version;').getSingle(),
-      isA<QueryRow>().having((row) => row.data.values.single, 'version', 6),
+      isA<QueryRow>().having((row) => row.data.values.single, 'version', 7),
     );
+  });
+
+  Future<RainDatabase> openLegacy(
+    int version,
+    Future<void> Function(NativeDatabase legacy) seed,
+  ) async {
+    final tempDir = Directory.systemTemp.createTempSync('rain_db_upgrade_');
+    addTearDown(() {
+      if (tempDir.existsSync()) {
+        tempDir.deleteSync(recursive: true);
+      }
+    });
+    final file = File(p.join(tempDir.path, 'rain.sqlite'));
+    final legacy = NativeDatabase(file);
+    await legacy.ensureOpen(_LegacyVersionExecutor(version));
+    await seed(legacy);
+    await legacy.runCustom('PRAGMA user_version = $version;');
+    await legacy.close();
+    final database = RainDatabase(
+      NativeDatabase(file, setup: configureRainSqliteConnection),
+    );
+    addTearDown(database.close);
+    return database;
+  }
+
+  test('migration from v6 adds the identity signingPublicKey column', () async {
+    final database = await openLegacy(6, (NativeDatabase legacy) async {
+      await legacy.runCustom(
+        'CREATE TABLE identity_table ('
+        'id INTEGER PRIMARY KEY AUTOINCREMENT, '
+        'username TEXT NOT NULL, '
+        'display_name TEXT NOT NULL, '
+        'created_at INTEGER NOT NULL, '
+        'gender TEXT NULL'
+        ');',
+      );
+      await legacy.runCustom(
+        "INSERT INTO identity_table (username, display_name, created_at) "
+        "VALUES ('alice', 'Alice', 1);",
+      );
+    });
+
+    final columns = await database
+        .customSelect('PRAGMA table_info(identity_table);')
+        .get();
+    expect(
+      columns.map((row) => row.data['name']),
+      contains('signing_public_key'),
+    );
+    final rows = await database.select(database.identityTable).get();
+    expect(rows.single.username, 'alice');
+    expect(rows.single.signingPublicKey == null, isTrue);
+  });
+
+  test('migration from v4 creates file_transfers', () async {
+    final database = await openLegacy(4, (NativeDatabase legacy) async {});
+
+    expect(
+      await database.customSelect('PRAGMA table_info(file_transfers);').get(),
+      isNotEmpty,
+    );
+  });
+
+  test(
+    'migration from v4 tolerates an existing file_transfers table',
+    () async {
+      final database = await openLegacy(4, _createLegacyV5Schema);
+
+      expect(
+        await database.customSelect('PRAGMA table_info(file_transfers);').get(),
+        isNotEmpty,
+      );
+      expect(
+        await database.customSelect('PRAGMA user_version;').getSingle(),
+        isA<QueryRow>().having((row) => row.data.values.single, 'version', 7),
+      );
+    },
+  );
+
+  test('nested serializedTransaction joins the outer transaction', () async {
+    final database = RainDatabase(NativeDatabase.memory());
+    addTearDown(database.close);
+
+    Future<void> insertFriend(String name) {
+      return database.serializedTransaction(() async {
+        await database
+            .into(database.friends)
+            .insert(
+              FriendsCompanion.insert(
+                username: name,
+                displayName: name,
+                state: 'friend',
+                addedAt: 1,
+              ),
+            );
+      });
+    }
+
+    await database
+        .serializedTransaction(() async {
+          await insertFriend('alice');
+          await insertFriend('bob');
+        })
+        .timeout(const Duration(seconds: 5));
+    expect(await database.select(database.friends).get(), hasLength(2));
+
+    await expectLater(
+      database.serializedTransaction(() async {
+        await insertFriend('carol');
+        throw StateError('abort');
+      }),
+      throwsStateError,
+    );
+    final names = (await database.select(database.friends).get()).map(
+      (row) => row.username,
+    );
+    expect(names, isNot(contains('carol')));
   });
 
   test('serializedWrite retries busy snapshot transactions', () async {
@@ -298,6 +467,21 @@ class _LegacyExecutor extends QueryExecutorUser {
 class _LegacyV5Executor extends QueryExecutorUser {
   @override
   int get schemaVersion => 5;
+
+  @override
+  Future<void> beforeOpen(
+    QueryExecutor executor,
+    OpeningDetails details,
+  ) async {}
+}
+
+class _LegacyVersionExecutor extends QueryExecutorUser {
+  _LegacyVersionExecutor(this._version);
+
+  final int _version;
+
+  @override
+  int get schemaVersion => _version;
 
   @override
   Future<void> beforeOpen(

@@ -444,7 +444,7 @@ static const Color errorCoral = Color(0xFFFF6B6B);
 
 Keep existing colors until all references are migrated.
 
-- [x] **Step 2: Replace glow blobs with mist/signal painter**
+- [x] **Step 2: Replace default glow blobs with mist/signal painter**
 
 In `rain_backdrop.dart`, replace `_RainAtmosphere` and `_GlowBlob` with a `CustomPaint` painter that draws restrained diagonal lines and faint wave arcs:
 
@@ -466,7 +466,9 @@ class _RainAtmosphere extends StatelessWidget {
 }
 ```
 
-Use `RainColors.mistCyan` at low opacity and avoid radial glow blobs.
+Use `RainColors.mistCyan` at low opacity and avoid large decorative radial glow blobs as the default treatment.
+
+Keep the remembered `Signal Glow` option available as a component-level variant for visual QA. If chosen later, implement it as a restrained halo behind splash/status/selected-primary surfaces only. Do not apply it to dense chat areas or the full-page backdrop.
 
 - [x] **Step 3: Update backdrop test**
 

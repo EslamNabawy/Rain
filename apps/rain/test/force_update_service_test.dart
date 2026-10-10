@@ -320,6 +320,44 @@ void main() {
       expect(second.updateUrl, 'https://example.com/releases');
     },
   );
+
+  group('trustedUpdateUrl', () {
+    const fallback = 'https://github.com/AbdogadXNabawy/Rain/releases';
+
+    test('accepts the release host and the fallback host', () {
+      expect(
+        trustedUpdateUrl(
+          'https://github.com/EslamNabawy/Rain/releases/tag/v1.0.9',
+          fallback: fallback,
+        ),
+        'https://github.com/EslamNabawy/Rain/releases/tag/v1.0.9',
+      );
+      expect(
+        trustedUpdateUrl(
+          'https://example.com/releases',
+          fallback: 'https://example.com/update',
+        ),
+        'https://example.com/releases',
+      );
+    });
+
+    test('rejects non-https, foreign hosts, other repositories and blanks', () {
+      for (final candidate in <String>[
+        'http://github.com/AbdogadXNabawy/Rain/releases',
+        'https://evil.example/Rain/releases',
+        'https://github.com/someone-else/Rain/releases',
+        'file:///C:/Windows/System32/calc.exe',
+        'rain://update',
+        '   ',
+      ]) {
+        expect(
+          trustedUpdateUrl(candidate, fallback: fallback),
+          fallback,
+          reason: candidate,
+        );
+      }
+    });
+  });
 }
 
 PackageInfo _packageInfo({

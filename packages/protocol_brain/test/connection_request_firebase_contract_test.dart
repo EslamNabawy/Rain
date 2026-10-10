@@ -16,6 +16,15 @@ import 'dart:io';
 import 'package:flutter_test/flutter_test.dart';
 
 void main() {
+  test('FirebaseFunctions is only created lazily by the callable path', () {
+    final source = File(
+      'lib/adapters/firebase_adapter.dart',
+    ).readAsStringSync();
+
+    expect('FirebaseFunctions.instance'.allMatches(source), hasLength(1));
+    expect(source, contains('_functionsInstance ??= _functionsOverride'));
+  });
+
   group('connection request Firebase security boundaries', () {
     late Map<String, Object?> rules;
 

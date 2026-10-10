@@ -1,0 +1,468 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!--
+  Rain audit + fix orchestrator. Written for Claude Sonnet running in Claude Code on Windows.
+  Paste audit/prompts/KICKOFF.md into a new session; it tells the model to read this file.
+  The model executes tasks in order, writes state to audit/STATE.md, and commits after every task.
+-->
+<orchestrator version="1">
+
+<role>
+You are the executor for the Rain audit and hardening program. Execute the tasks below in order.
+Do not redesign the plan. Do not ask questions unless a task says STOP. Every task has exact
+steps, a verify block and a commit block: do them literally. Be terse in chat. Put details in files.
+</role>
+
+<!-- ============================================================ -->
+<facts>
+  <!-- Verified in Phase 0 (audit/00-inventory.md). Treat as true; do not re-verify. -->
+  <repo path="D:\Rain" remote="origin = https://github.com/AbdogadXNabawy/Rain.git" base_branch="dev"/>
+  <shell>PowerShell 5.1. No bash. Chain with ';'. Never use '&amp;&amp;'.</shell>
+  <toolchain>
+    Flutter is NOT on PATH. Prefix every Flutter/Dart command with:
+    $env:Path = "C:\flutter\bin;$env:Path";
+    Flutter 3.44.4, Dart 3.12.2, Node 24. Firebase CLI not installed (use npx, see TOOLS).
+  </toolchain>
+  <packages>
+    apps/rain (app), packages/peer_core, packages/protocol_brain, packages/rain_core.
+    Dependency graph: rain -> {peer_core, protocol_brain, rain_core}; rain_core -> protocol_brain; protocol_brain -> peer_core.
+  </packages>
+  <baseline>
+    HEAD (dev 601647c): analyze clean, format clean, tests: peer_core 76, protocol_brain 276, rain_core 61, apps/rain 744 pass + 20 skip.
+    Working tree: packages/protocol_brain/lib/adapters/firebase_adapter.dart has an UNCOMMITTED edit that
+    does not compile (missing braces at ~line 1510; 186 analyzer issues) and regresses registration rollback.
+  </baseline>
+  <git>main and dev diverged: merge-base 4798605; main +25 commits, dev +17; 51 files changed on both sides.</git>
+  <constraints>
+    Firebase Spark (free) tier only. Never propose Blaze-only features. Scheduled Cloud Functions in
+    backend/firebase/functions/index.js (cleanupPresence, cleanupRooms, cleanupVoiceCalls) need Blaze.
+    App default backend mode is rtdbOnly (packages/protocol_brain/lib/src/connection_request_backend_mode.dart).
+  </constraints>
+  <project_rules>AGENTS.md at repo root is binding. Its vault rules are handled in Phase 6.</project_rules>
+</facts>
+
+<!-- ============================================================ -->
+<hard_rules>
+  <rule id="R1">Never touch D:\old project\Rain or C:\Users\eslam\OneDrive\Desktop\GoodStuff\Rain.</rule>
+  <rule id="R2">Work only on branch audit/rain-hardening (created in T0.1). Never commit to main or dev. Never force-push. Never rewrite history. Never run git reset --hard, git clean, git stash.</rule>
+  <rule id="R3">Phases 1-2 are read-only for source code: only files under audit/ may be created or changed.</rule>
+  <rule id="R4">Every finding cites path:line or command output. If not observed, write "INFERRED".</rule>
+  <rule id="R5">Never print, copy or commit secret values (keys, passwords, tokens, TURN credentials). Refer to them by key name only.</rule>
+  <rule id="R6">Never install global tools. Never add runtime dependencies unless the task names the exact package.</rule>
+  <rule id="R7">Do not run platform builds (flutter build ...). Do not deploy anything to Firebase.</rule>
+  <rule id="R8">Do not edit generated files (*.g.dart, *.freezed.dart) by hand. Regenerate with build_runner only when a task says so.</rule>
+  <rule id="R9">If a verify step fails: fix and re-run up to 3 times. Still failing: revert only your own changes for that task (git checkout -- the files you edited in this task), record it in audit/STATE.md under "Blocked", and continue with the next task.</rule>
+  <rule id="R10">STOP means: write the reason in audit/STATE.md, commit, push, then end the session with a 3-line summary.</rule>
+</hard_rules>
+
+<!-- ============================================================ -->
+<tools>
+  <cmd id="ENV">$env:Path = "C:\flutter\bin;$env:Path"; Set-Location D:\Rain</cmd>
+  <cmd id="ANALYZE">foreach($p in 'apps/rain','packages/peer_core','packages/protocol_brain','packages/rain_core'){ Push-Location $p; flutter analyze --no-pub; "EXIT $p $LASTEXITCODE"; Pop-Location }</cmd>
+  <cmd id="FORMAT">dart format --set-exit-if-changed --output=none apps packages; "EXIT format $LASTEXITCODE"</cmd>
+  <cmd id="FORMAT_FIX">dart format apps packages</cmd>
+  <cmd id="TEST_PKG">Push-Location {pkg}; flutter test --no-pub; "EXIT {pkg} $LASTEXITCODE"; Pop-Location</cmd>
+  <cmd id="TEST_ALL">foreach($p in 'packages/peer_core','packages/protocol_brain','packages/rain_core','apps/rain'){ Push-Location $p; flutter test --no-pub -r failures-only; "EXIT $p $LASTEXITCODE"; Pop-Location }</cmd>
+  <cmd id="TEST_COV">Push-Location {pkg}; flutter test --no-pub --coverage -r failures-only; "EXIT {pkg} $LASTEXITCODE"; Pop-Location</cmd>
+  <cmd id="FN_TEST">Push-Location backend/firebase/functions; npm test; "EXIT functions $LASTEXITCODE"; Pop-Location</cmd>
+  <cmd id="VAULT">.\scripts\check_obsidian_vault.ps1; "EXIT vault $LASTEXITCODE"</cmd>
+  <cmd id="RULES_TEST">Push-Location backend/firebase; npx --yes firebase-tools@13 emulators:exec --only database "node rules-test/run.js"; "EXIT rules $LASTEXITCODE"; Pop-Location</cmd>
+  <note>TEST_ALL takes about 3 minutes. Run it in the background when allowed and do other read-only work meanwhile. Use -r failures-only to save tokens.</note>
+  <note>Read files with Grep (pattern + -n + small -C) or Read with offset/limit. Never read a file over 400 lines in full; read the region you need.</note>
+</tools>
+
+<!-- ============================================================ -->
+<commit_protocol>
+  <step>git add only the files this task changed (list them explicitly; never "git add -A" or ".").</step>
+  <step>Message format: "&lt;type&gt;(&lt;scope&gt;): &lt;summary&gt;" then a blank line, then "Task: &lt;task id&gt;" and, for fixes, "Finding: &lt;finding ids&gt;". Types: feat, fix, refactor, test, docs, chore, ci, perf.</step>
+  <step>Use a here-string: git commit -F - with content piped, or git commit -m "&lt;subject&gt;" -m "&lt;body&gt;".</step>
+  <step>Never use --no-verify. If a hook fails, fix the cause.</step>
+  <step>Push after every phase (not every task): git push -u origin audit/rain-hardening. On network failure retry 4 times waiting 2, 4, 8, 16 seconds.</step>
+  <step>After committing, append one line to audit/STATE.md "Done" list: "&lt;task id&gt; &lt;short sha&gt; &lt;one-line result&gt;" and include STATE.md in the NEXT commit (do not amend).</step>
+</commit_protocol>
+
+<!-- ============================================================ -->
+<resume_protocol>
+  <step>At session start run ENV, then: git status --short --branch; Get-Content audit/STATE.md.</step>
+  <step>If on another branch and audit/rain-hardening exists: git switch audit/rain-hardening.</step>
+  <step>Continue from the first task not listed under "Done" or "Blocked" in audit/STATE.md.</step>
+  <step>Do not re-run finished tasks. Do not re-read files already summarized in audit/*.md.</step>
+</resume_protocol>
+
+<!-- ============================================================ -->
+<finding_format>
+### {ID} {Title}
+- Severity: {P0|P1|P2|P3} | Confidence: {High|Medium|Low}
+- Location: `path:line`[, `path:line`]
+- Evidence: one code line or command output, max 5 lines, in a fenced block
+- Why it matters: {input or state} -> {wrong result}
+- Fix: {specific change: function, file, behavior}
+- Effort: {S|M|L|XL}
+<!-- IDs: GIT-, ARCH-, SIG-, RTC-, SEC-, APP-, DB-, BE-, QUAL-, TEST-, CI-, DOC-. Number per prefix from 001.
+     Severity: P0 security hole/data loss/crash on main path/secret exposure/broken build.
+               P1 feature-breaking logic bug/race/leak in calls or transfers/missing auth check/failing CI.
+               P2 missing error handling/weak tests/boundary violation/significant duplication.
+               P3 style/naming/small cleanup/docs.
+     Low confidence is allowed: add "Confirm by: ..." line. Never drop a suspicion silently. -->
+</finding_format>
+
+<!-- ============================================================ -->
+<phase id="0" name="Setup">
+
+<task id="T0.1" name="Create work branch and preserve the uncommitted edit">
+  <steps>
+    <s>ENV. Confirm `git status --short` shows exactly: " M packages/protocol_brain/lib/adapters/firebase_adapter.dart" plus untracked audit/. If anything else is modified: STOP.</s>
+    <s>git switch -c audit/rain-hardening   (the uncommitted edit stays in the working tree)</s>
+    <s>New-Item -ItemType Directory -Force audit/wip | Out-Null; git diff -- packages/protocol_brain/lib/adapters/firebase_adapter.dart | Out-File -Encoding utf8 audit/wip/firebase_adapter-uncommitted.patch</s>
+    <s>Create audit/STATE.md with sections: "# Audit State", "## Done", "## Blocked", "## Decisions", "## Notes".</s>
+    <s>Under Decisions write the 5 defaults from the DEFAULTS block below.</s>
+  </steps>
+  <verify>Get-Item audit/wip/firebase_adapter-uncommitted.patch shows size &gt; 0. git branch --show-current prints audit/rain-hardening.</verify>
+  <commit files="audit/00-inventory.md audit/prompts/rain-orchestrator.xml audit/prompts/KICKOFF.md audit/wip/firebase_adapter-uncommitted.patch audit/STATE.md">chore(audit): add phase 0 inventory, orchestrator and preserved WIP patch</commit>
+  <defaults>
+    D1 Canonical copy is D:\Rain.
+    D2 The uncommitted firebase_adapter.dart edit is preserved as audit/wip/firebase_adapter-uncommitted.patch; HEAD logic is the baseline (restored in T3.1).
+    D3 Work branch audit/rain-hardening is cut from dev. main/dev reconciliation happens in Phase 5 on branch integration/main-dev.
+    D4 The Firebase project stays on Spark; Cloud Functions are optional, non-Spark extras.
+    D5 Historical dart_defines.local.json values are treated as exposed; rotation is a manual owner action listed in the final report.
+  </defaults>
+</task>
+
+</phase>
+
+<!-- ============================================================ -->
+<phase id="1" name="Findings (read-only)">
+<intro>
+  Write audit/01-findings.md. Create it in T1.1 with a "# Findings" header and one "## {Dimension}" section per task.
+  Each task appends its section and commits. Max 8 findings per dimension; keep only real, evidenced ones.
+  Inspect the listed locations first; follow references only if needed.
+</intro>
+
+<task id="T1.1" name="A. Repo health and git" prefix="GIT">
+  <inputs>audit/00-inventory.md sections 3.1-3.3 (already gathered; do not re-run those commands).</inputs>
+  <checks>
+    <c>Uncommitted firebase_adapter.dart edit: write as P0 (build break) using audit/00-inventory.md §3.2 evidence and firebase_adapter.dart:1469-1519.</c>
+    <c>main/dev divergence: one P1 finding listing the 51 overlap files grouped by package.</c>
+    <c>dart_defines.local.json in history (commits 0d8147c, 6ff832b): P0 secret exposure, key names only.</c>
+    <c>Tracked google-services.json and firebase_options.dart: decide P2 or P3 after T1.5 checks RTDB rules and API key restriction (write "see SEC-xxx").</c>
+    <c>Unmerged dependabot branch origin/dependabot/npm_and_yarn/backend/firebase/functions/multi-0fc86330f8.</c>
+    <c>Root-level stray empty dirs integration_test/ and test_driver/; RAIN_DEEP_ANALYSIS_AND_PLAN.md and RAIN_ENGINEERING_OVERHAUL_PLAN.md overlap with docs/audits/*.</c>
+  </checks>
+  <commit files="audit/01-findings.md audit/STATE.md">docs(audit): findings A repo health and git</commit>
+</task>
+
+<task id="T1.2" name="B. Monorepo structure" prefix="ARCH">
+  <checks>
+    <c>rain_core imports protocol_brain: Grep "package:protocol_brain" in packages/rain_core/lib; report what is used and whether it belongs in a shared model package.</c>
+    <c>packages/protocol_brain/lib/protocol_brain.dart re-exports peer_core, firebase_adapter.dart and src/testing/fake_connection_request_adapter.dart (test fake in public API).</c>
+    <c>App imports Firebase SDK directly: app_bootstrap.dart:1-3, force_update_service.dart:3, network_status_service.dart:4, turn_credential_service.dart:5. Judge which are acceptable (bootstrap) vs leaks.</c>
+    <c>protocol_brain depends on cloud_functions (firebase_adapter.dart:3, :2255) though Spark default is rtdbOnly.</c>
+    <c>melos scripts in root pubspec.yaml: only pub:get, analyze, test; missing format, coverage, build_runner, rules-test.</c>
+    <c>Outdated deps from audit/00-inventory.md §4.2: file_picker 12.0.0-beta.3 in production; go_router, flutter_secure_storage, flutter_local_notifications one major behind; sqlite3 capped at 3.5.2.</c>
+    <c>analysis_options.yaml uses only flutter_lints; propose exact extra lints (unawaited_futures, avoid_catches_without_on_clauses, only_throw_errors, cancel_subscriptions, close_sinks).</c>
+  </checks>
+  <commit files="audit/01-findings.md audit/STATE.md">docs(audit): findings B monorepo structure</commit>
+</task>
+
+<task id="T1.3" name="C. Signaling and session logic" prefix="SIG">
+  <locations>
+    packages/protocol_brain/lib/src/voice_call_session.dart (state machine),
+    packages/protocol_brain/lib/src/session_manager.dart,
+    packages/protocol_brain/lib/src/protocol_brain_impl.dart,
+    packages/protocol_brain/lib/src/voice_signaling_contract.dart,
+    packages/protocol_brain/lib/src/ice_candidate_batcher.dart,
+    packages/protocol_brain/lib/src/voice_call_cleanup_janitor.dart,
+    packages/protocol_brain/lib/adapters/firebase_adapter.dart (read via `git show HEAD:packages/protocol_brain/lib/adapters/firebase_adapter.dart`; the working copy does not compile),
+    apps/rain/lib/application/runtime/voice_call/voice_call_signaling_cleanup_coordinator.dart
+  </locations>
+  <checks>
+    <c>List every state and allowed transition of the voice call FSM; flag transitions out of terminal states and missing transitions (write the table into the finding evidence, max 15 rows).</c>
+    <c>Glare: both peers call each other at once. Find the tie-break rule (Grep "glare|tieBreak|compareTo|polite"). If none: P1.</c>
+    <c>ICE candidates arriving before remote description: find the queue/buffer. If candidates are dropped: P1.</c>
+    <c>Duplicate or out-of-order signaling frames: find sequence/idempotency checks (Grep "seq|sequence|nonce|dedup|processed").</c>
+    <c>Timeouts: ringing, connecting, ICE. Record each constant and where it fires.</c>
+    <c>RTDB cleanup after a call and after app kill: which paths are removed client-side, and which rely on Blaze scheduled functions (functions/index.js:11,55,93). In rtdbOnly mode, anything relying on those functions is never cleaned: P1.</c>
+    <c>onDisconnect usage for presence and call rooms (Grep "onDisconnect").</c>
+    <c>TASK-005 blocked item in PROJECT_PROGRESS_TRACKER.md: watcher subscribed after startOutgoing. Write a Low-confidence finding with "Confirm by: emulator test where callee answers within 50 ms".</c>
+  </checks>
+  <commit files="audit/01-findings.md audit/STATE.md">docs(audit): findings C signaling and session logic</commit>
+</task>
+
+<task id="T1.4" name="D. WebRTC and transfer" prefix="RTC">
+  <locations>
+    packages/peer_core/lib/src/default_peer_core.dart,
+    packages/peer_core/lib/src/call/call_media_connection.dart,
+    packages/peer_core/lib/src/voice/voice_media_connection.dart,
+    packages/peer_core/lib/src/data_channel_backpressure.dart,
+    apps/rain/lib/application/runtime/file_transfer_runtime.dart,
+    apps/rain/lib/infrastructure/services/turn_credential_service.dart
+  </locations>
+  <checks>
+    <c>Disposal: for every createPeerConnection / getUserMedia / RTCVideoRenderer, find the matching close/dispose/stop on every exit path (success, error, remote hangup). Missing on any path: P1.</c>
+    <c>Backpressure: bufferedAmount threshold and bufferedAmountLowThreshold use; what happens when the channel closes while waiting.</c>
+    <c>Chunk size constant, max file size, whether whole files are loaded into memory (Grep "readAsBytes" in file_transfer_runtime.dart).</c>
+    <c>Integrity: hash algorithm and where the receiver verifies it; behavior on mismatch (file kept or deleted?).</c>
+    <c>Resume/retry/cancel: what the receiver does with partial files after cancel or disconnect.</c>
+    <c>STUN/TURN: where ICE servers come from (RAIN_ICE_SERVERS define, turn_credential_service.dart); default if empty; relay-only option.</c>
+    <c>Windows vs Android branches (Grep "Platform.isWindows|Platform.isAndroid" in peer_core and runtime).</c>
+  </checks>
+  <commit files="audit/01-findings.md audit/STATE.md">docs(audit): findings D WebRTC and transfer</commit>
+</task>
+
+<task id="T1.5" name="E. Security and crypto" prefix="SEC">
+  <locations>
+    packages/protocol_brain/lib/adapters/signaling_cipher.dart,
+    packages/rain_core/lib (Grep "IdentityKeyRepository|DatabaseKeyService|KeyStoreService"),
+    apps/rain/lib (Grep "FlutterSecureStorageKeyStoreService"),
+    backend/firebase/database.rules.json,
+    apps/rain/android/app/src/main/AndroidManifest.xml,
+    apps/rain/lib/infrastructure/services/rain_debug_log_service.dart,
+    apps/rain/lib/infrastructure/services/crash_diagnostics_service.dart
+  </locations>
+  <checks>
+    <c>E2E status: confirm SignalingCipher.forPair / encryptPayloadV2 are NOT called from firebase_adapter.dart (Grep "forPair|encryptPayloadV2" across lib/). Record which key encrypts signaling today (v=1 root key: where does it come from, is it shared by all users?).</c>
+    <c>Authenticity: can user A write into a room or call node between B and C? Trace the RTDB rule for the voice call / room / signaling paths and quote the .write expression. If writes are not limited to the two participants' auth.uid: P0.</c>
+    <c>Identity binding: username -> uid mapping in rules (users/$username). Can someone overwrite another user's users/ row, userSearch entry, presence, or signingPublicKey? Quote the rule.</c>
+    <c>Validation: .validate size limits on message/SDP/candidate fields; missing limits = abuse vector on Spark quota (P2).</c>
+    <c>Key storage: where the X25519 private key is stored, on Windows which backend flutter_secure_storage uses, behavior if keystore read fails (new key silently? = identity loss).</c>
+    <c>Local DB encryption: DatabaseKeyService exists but DB opens plaintext. Write the finding and add a "Decision options" sub-list: (a) sqlite3 package with SQLCipher build via hooks/native assets (sqlite3 >= 3.x supports `SQLCipher` source selection; confirm in package docs with Context7), (b) encrypted columns for message bodies using cryptography AES-GCM with the existing DB key, (c) keep plaintext and document. Recommend one with reason.</c>
+    <c>Logs: Grep the sanitizer for which fields it redacts; Grep lib/ for logging of sdp, candidate, password, token, message text.</c>
+    <c>Android manifest: exported components, permissions, usesCleartextTraffic, allowBackup.</c>
+    <c>Remote Config: list keys in backend/firebase/remoteconfig.template.json and flag any that can disable security (e.g. encryption off, force insecure update URL).</c>
+  </checks>
+  <commit files="audit/01-findings.md audit/STATE.md">docs(audit): findings E security and crypto</commit>
+</task>
+
+<task id="T1.6" name="F. App layer" prefix="APP">
+  <locations>
+    apps/rain/lib/application/state/runtime_providers.dart, core_providers.dart, identity_providers.dart,
+    apps/rain/lib/application/runtime/voice_call_runtime.dart, rain_runtime_controller.dart,
+    apps/rain/lib (Grep "GoRouter|redirect:"), apps/rain/lib/main.dart
+  </locations>
+  <checks>
+    <c>Providers that do I/O or subscribe to streams without autoDispose or ref.onDispose (Grep "StreamProvider|FutureProvider|Provider(" and check for onDispose).</c>
+    <c>go_router redirect: unauthenticated user reaching home/chat routes; deep link handling.</c>
+    <c>Lifecycle: AppLifecycleState handling during an active call; Android foreground service for calls present? (Grep "foregroundService|FOREGROUND_SERVICE").</c>
+    <c>Null-safety: count `!` in voice_call_runtime.dart and rain_runtime_controller.dart; report the risky ones on async results.</c>
+    <c>Swallowed errors: 113 `catch (_)` in lib/. Classify the top 10 in call/transfer paths: which hide real failures from the UI.</c>
+  </checks>
+  <commit files="audit/01-findings.md audit/STATE.md">docs(audit): findings F app layer</commit>
+</task>
+
+<task id="T1.7" name="G. Storage" prefix="DB">
+  <locations>packages/rain_core/lib/database/rain_database.dart, packages/rain_core/lib/messages/*, packages/rain_core/test/rain_database_test.dart</locations>
+  <checks>
+    <c>schemaVersion and every migration step; which steps have tests (Grep "from: |schemaVersion" in tests).</c>
+    <c>Multi-step writes not wrapped in transaction().</c>
+    <c>Indices on message lookup columns (peer, createdAt, status).</c>
+    <c>Unbounded growth: any pruning of messages, transfers, diagnostics tables.</c>
+  </checks>
+  <commit files="audit/01-findings.md audit/STATE.md">docs(audit): findings G storage</commit>
+</task>
+
+<task id="T1.8" name="H. Backend" prefix="BE">
+  <locations>backend/firebase/database.rules.json, backend/firebase/functions/*.js, backend/firebase/README.md</locations>
+  <checks>
+    <c>No RTDB rules tests exist (only functions/test/connectionRequests.test.js): P1 finding.</c>
+    <c>Blaze-only functions: list each export of index.js and mark Spark-incompatible ones; say which client-side or rules-based replacement exists for rtdbOnly mode.</c>
+    <c>npm audit: proxy-addr critical, qs moderate (audit/00-inventory.md §4).</c>
+    <c>Spark abuse vectors: unauthenticated reads, list queries without .indexOn / limits, writes without size limits.</c>
+  </checks>
+  <commit files="audit/01-findings.md audit/STATE.md">docs(audit): findings H backend</commit>
+</task>
+
+<task id="T1.9" name="I. Code quality" prefix="QUAL">
+  <steps>
+    <s>Long functions: write and run a throwaway script in the session scratchpad (NOT in the repo) that scans hand-written lib/*.dart for method/function bodies over 60 lines by brace matching; record top 15 with path:line and length.</s>
+    <s>Use the 52 files over 400 lines from audit/00-inventory.md §2.2.</s>
+  </steps>
+  <checks>
+    <c>Stringly-typed protocol messages (Grep "\['type'\]|'type':" in protocol_brain and peer_core).</c>
+    <c>Magic numbers for timeouts and sizes (Grep "Duration(seconds:|Duration(milliseconds:|1024 \*" in lib/).</c>
+    <c>Duplicate logic between debug_signaling_adapter.dart, noop_signaling_adapter.dart and fake adapters.</c>
+    <c>Dead code: public symbols with no references (sample the 5 largest files).</c>
+  </checks>
+  <commit files="audit/01-findings.md audit/STATE.md">docs(audit): findings I code quality</commit>
+</task>
+
+<task id="T1.10" name="J. Tests" prefix="TEST">
+  <inputs>audit/00-inventory.md §4 and §4.1 (do not re-run coverage).</inputs>
+  <checks>
+    <c>firebase_adapter.dart 0/1277 lines covered: P1.</c>
+    <c>20 skipped app tests (reasons: "Requires Firebase emulators", "Legacy control-channel voice path frozen..."): list files; are the emulator tests run anywhere in CI? (Grep workflows for the test file names).</c>
+    <c>Untested critical paths: migrations, signaling_cipher v1/v2 interop, transfer hash mismatch, FSM terminal states. Check test files exist for each.</c>
+    <c>Fakes: list fakes for Firebase and WebRTC; note gaps.</c>
+  </checks>
+  <commit files="audit/01-findings.md audit/STATE.md">docs(audit): findings J tests</commit>
+</task>
+
+<task id="T1.11" name="K. CI/CD" prefix="CI">
+  <inputs>audit/00-inventory.md §6.</inputs>
+  <checks>
+    <c>ci.yml:12 PR branch filter "develop" (branch is dev): PRs to dev get no pull_request run: P1.</c>
+    <c>Three overlapping CI workflows (ci.yml, main-merge-gate.yml, rain-ci-cd.yml) and four release workflows: propose the target set (1 CI, 1 release) in the fix.</c>
+    <c>No action pinned by SHA. List each action@tag.</c>
+    <c>rain-ci-cd.yml uses upload/download-artifact@v4, others v7/v8.</c>
+    <c>Vault gate fails on time alone: scripts/check_obsidian_vault.ps1:504 MaxAgeDays=45, :526-527. CI goes red with no code change: P1.</c>
+    <c>Which jobs run analyze, format, tests, rules tests, functions tests on PR to dev and to main. Make a table.</c>
+    <c>Release signing: secrets RAIN_RELEASE_* usage; is a demo/debug key ever used for a production profile?</c>
+    <c>If gh CLI is available: gh run list --branch dev --limit 10 and --branch main --limit 10 to record failing workflows. If not available, write "not executed".</c>
+  </checks>
+  <commit files="audit/01-findings.md audit/STATE.md">docs(audit): findings K CI/CD</commit>
+</task>
+
+<task id="T1.12" name="L. Docs and process" prefix="DOC">
+  <checks>
+    <c>Read ADR-001..ADR-010 titles and decision lines only (obsidian-vault/11-Decisions). For each, one line: matches code / contradicted (cite path:line).</c>
+    <c>PROJECT_PROGRESS_TRACKER.md: for each task marked DONE (006, 007, 008, 015, 018, 019, 020, 003.1, 001.3, 001.4, 4.1), verify the cited code exists. Wrong claim = DOC finding P2.</c>
+    <c>Risk Register (obsidian-vault/12-Risks/Risk Register.md): risks that are closed in code or missing (E2E not wired, Blaze dependency, build-breaking WIP).</c>
+    <c>Duplicate vault folders (02/03-Architecture, 13/14-Blockers, 11/14-Decisions, 12/15-Tasks, AI-Memory/19-AI Memory).</c>
+  </checks>
+  <final_step>Append "## Severity counts" table: rows P0..P3, columns per prefix plus Total. Counts must match the findings above.</final_step>
+  <commit files="audit/01-findings.md audit/STATE.md">docs(audit): findings L docs and process + severity table</commit>
+  <after>Push the branch. Phase 1 done.</after>
+</task>
+</phase>
+
+<!-- ============================================================ -->
+<phase id="2" name="Plan (read-only)">
+
+<task id="T2.1" name="Refactor targets">
+  <output>audit/02-refactor-targets.md</output>
+  <steps>
+    <s>One section per target, max 8 targets. Mandatory candidates: voice_call_runtime.dart (2,947 lines), firebase_adapter.dart (2,831), rain_runtime_controller.dart (2,423), connection_request_rtdb_adapter.dart (2,183), chat_panel.dart + home_screen.dart, protocol_brain public barrel, CI workflow set.</s>
+    <s>Each section exactly: Current shape (files, lines, responsibilities) / Target shape (new files and their single responsibility) / Migration steps (numbered, each step leaves tests green) / Safety net (characterization tests to write first) / Risk (H/M/L + why) / Linked findings.</s>
+  </steps>
+  <commit files="audit/02-refactor-targets.md audit/STATE.md">docs(audit): refactor targets</commit>
+</task>
+
+<task id="T2.2" name="Phased fix plan">
+  <output>audit/03-plan.md</output>
+  <steps>
+    <s>Copy the phase skeleton from Phase 3, 4, 5 below. Fill phase 4 with task cards for every P0 and P1 finding not already covered by Phase 3, and for P2 findings with effort S or M. P3 findings go into one "Backlog" list.</s>
+    <s>Task card format (exactly):
+      #### {Task id e.g. T4.07} {Title}
+      - Findings: {ids}
+      - Files: {paths}
+      - Steps: {numbered, concrete edits}
+      - Tests: {test file and test name to add or change}
+      - Verify: {tool ids from TOOLS, e.g. ANALYZE, TEST_PKG(packages/protocol_brain)}
+      - Commit: {conventional commit subject}
+      - Effort: {S|M|L}
+      - Depends on: {task ids or none}</s>
+    <s>Order Phase 4 cards: P0 first, then P1 by dependency, then P2. Max 25 cards; merge findings that touch the same function.</s>
+    <s>Any card that needs a human (secret rotation, Firebase console, GitHub settings, device testing) goes to a final "Owner actions" list, not into Phase 4.</s>
+  </steps>
+  <commit files="audit/03-plan.md audit/STATE.md">docs(audit): phased fix plan</commit>
+</task>
+
+<task id="T2.3" name="Vault update spec">
+  <output>audit/04-vault-updates.md</output>
+  <steps>
+    <s>For each vault file to change, write: path, section, exact text to add or replace (fenced). Cover: Risk Register (new/closed risks), BLOCKERS.md, Technical Debt Register, ADR-011 "Spark-only backend: Cloud Functions are optional" and ADR-012 "Local DB encryption approach" (decision from SEC finding), Recommended Next Actions, Project Memory facts, and refreshed "Last updated" dates.</s>
+    <s>Do not edit obsidian-vault yet.</s>
+  </steps>
+  <commit files="audit/04-vault-updates.md audit/STATE.md">docs(audit): vault update spec</commit>
+  <after>Push the branch. Phase 2 done.</after>
+</task>
+</phase>
+
+<!-- ============================================================ -->
+<phase id="3" name="Restore green baseline (code changes allowed from here)">
+<task_rule>For each task: edit, then FORMAT_FIX on touched files, then the listed verify, then commit. One task = one commit.</task_rule>
+
+<task id="T3.1" name="Restore compiling firebase_adapter.dart registration logic">
+  <steps>
+    <s>git checkout HEAD -- packages/protocol_brain/lib/adapters/firebase_adapter.dart   (the WIP is preserved in audit/wip/firebase_adapter-uncommitted.patch since T0.1)</s>
+    <s>Add a test in packages/protocol_brain/test (new file firebase_adapter_register_test.dart) ONLY if the adapter accepts injected FirebaseAuth/FirebaseDatabase; check the constructor (firebase_adapter.dart:27-44). If it cannot be faked without new dependencies, skip the test and note "TEST gap: see TEST-xxx" in STATE.md.</s>
+  </steps>
+  <verify>ANALYZE; FORMAT; TEST_PKG(packages/protocol_brain)</verify>
+  <commit>fix(protocol_brain): restore registration rollback; drop build-breaking WIP edit</commit>
+</task>
+
+<task id="T3.2" name="Unblock time-based vault gate">
+  <steps>
+    <s>Update only the "Last updated" line to today's date in the 7 files listed by VAULT output. No other edits.</s>
+  </steps>
+  <verify>VAULT</verify>
+  <commit>docs(vault): refresh stale Last updated dates</commit>
+</task>
+
+<task id="T3.3" name="Fix CI PR branch filter">
+  <steps><s>.github/workflows/ci.yml:12 change "develop" to "dev".</s></steps>
+  <verify>Get-Content .github/workflows/ci.yml -TotalCount 16</verify>
+  <commit>ci: run PR checks for dev instead of nonexistent develop</commit>
+</task>
+
+<task id="T3.4" name="Fix npm audit in functions">
+  <steps><s>Push-Location backend/firebase/functions; npm audit fix (no --force); Pop-Location. If it needs --force: do not run it; record in Blocked.</s></steps>
+  <verify>FN_TEST; npm audit (expect 0 critical)</verify>
+  <commit>fix(deps): npm audit fix for proxy-addr and qs in functions</commit>
+</task>
+
+<task id="T3.5" name="Full baseline check">
+  <verify>ANALYZE; FORMAT; TEST_ALL; FN_TEST. Record results in STATE.md Notes.</verify>
+  <commit files="audit/STATE.md">chore(audit): record green baseline</commit>
+  <after>Push the branch.</after>
+</task>
+</phase>
+
+<!-- ============================================================ -->
+<phase id="4" name="Execute the fix plan">
+<loop>
+  For each task card in audit/03-plan.md Phase 4, in order:
+  1. Skip if listed in STATE.md Done/Blocked.
+  2. Check "Depends on" are Done; if a dependency is Blocked, mark this card Blocked too.
+  3. Write the test from "Tests" first. Run it. It must fail (or, for refactors, pass as characterization).
+  4. Make the edits from "Steps". Keep diffs minimal. Follow the style of the surrounding file.
+  5. FORMAT_FIX on touched files, then the card's Verify, then ANALYZE for the touched package.
+  6. Commit with the card's subject and body "Task: {id}\nFinding: {ids}".
+  7. Every 5 cards: TEST_ALL, push the branch.
+</loop>
+<limits>
+  Security-rule changes (database.rules.json) must come with a rules test in backend/firebase/rules-test/ run via RULES_TEST. If RULES_TEST cannot run (npx blocked, no Java): mark the card Blocked with the exact error.
+  Never change the signaling wire format without keeping decode support for the old format (v=1) in the same commit.
+  Refactor cards: move code without behavior change in one commit, then improve in a second commit.
+</limits>
+<after>TEST_ALL; FN_TEST; push. Phase 4 done.</after>
+</phase>
+
+<!-- ============================================================ -->
+<phase id="5" name="Reconcile main and dev">
+<task id="T5.1" name="Integration branch">
+  <steps>
+    <s>git fetch origin main dev; git switch -c integration/main-dev audit/rain-hardening</s>
+    <s>git merge --no-ff origin/main</s>
+    <s>Conflict policy, per file:
+      - Security, crypto, call/session logic, data_channel_backpressure, rain_database, file_transfer_runtime: take the dev/audit side, then re-apply main's non-behavioral additions (doc headers, traceId logging, ThrottledProviderObserver hooks) by hand.
+      - Doc-header-only conflicts: take the audit side and add main's header comment.
+      - Workflows: take the audit side.
+      - Vault and CONTINUITY.md: keep both sides' entries, newest first.
+      - package-lock.json / pubspec.lock: take audit side, then re-run npm install / flutter pub get and commit the result.
+      - rain_database.g.dart: never hand-merge; take audit side, then run `dart run build_runner build --delete-conflicting-outputs` in packages/rain_core.</s>
+    <s>After resolving: ANALYZE; FORMAT; TEST_ALL; FN_TEST. Fix failures (R9 applies per file).</s>
+  </steps>
+  <stop_if>More than 10 test failures remain after 3 fix rounds: STOP and list them.</stop_if>
+  <commit>chore(merge): reconcile origin/main into audit hardening branch</commit>
+  <after>git push -u origin integration/main-dev. Do not merge into main or dev.</after>
+</task>
+</phase>
+
+<!-- ============================================================ -->
+<phase id="6" name="Vault sync and report">
+<task id="T6.1" name="Apply vault updates">
+  <steps><s>On audit/rain-hardening (git switch audit/rain-hardening): apply audit/04-vault-updates.md exactly, updated with the actual outcomes from STATE.md (Done/Blocked). Update CONTINUITY.md with a dated entry of what changed.</s></steps>
+  <verify>VAULT</verify>
+  <commit>docs(vault): sync audit outcomes, ADR-011, ADR-012, risks and next actions</commit>
+</task>
+
+<task id="T6.2" name="Final report">
+  <output>audit/05-report.md</output>
+  <steps>
+    <s>Sections: Results (tasks done with commit SHAs), Blocked (with exact errors), Owner actions (secret rotation for historical dart_defines.local.json keys, API key restrictions, GitHub branch protection, device tests on Android and Windows, decision to merge integration/main-dev), Before/after tool results table, Remaining backlog.</s>
+  </steps>
+  <commit files="audit/05-report.md audit/STATE.md">docs(audit): final report</commit>
+  <after>Push both branches. If `gh` is available, open DRAFT PRs: audit/rain-hardening -> dev, integration/main-dev -> main, body = audit/05-report.md. Never merge. End with a 5-line summary.</after>
+</task>
+</phase>
+
+</orchestrator>

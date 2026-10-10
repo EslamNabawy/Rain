@@ -162,6 +162,9 @@ final class VoiceCallSession {
   int? _pendingOfferMediaSeq;
   final Set<String> _receivedCandidateKeys = <String>{};
   bool _negotiatingMedia = false;
+  bool _pendingMediaRestart = false;
+  static const int _maxEarlyCandidates = 64;
+  final List<VoiceCallFrame> _earlyCandidates = <VoiceCallFrame>[];
   bool _disposed = false;
   Future<void> _operationTail = Future<void>.value();
 
@@ -247,6 +250,7 @@ final class VoiceCallSession {
       )) {
         return;
       }
+      await _flushEarlyCandidates();
       try {
         await _send(VoiceCallFrameType.accept);
         if (isOfferOwner) {
@@ -465,6 +469,7 @@ final class VoiceCallSession {
     )) {
       return;
     }
+    await _flushEarlyCandidates();
     if (isOfferOwner) {
       await _createAndSendOffer();
     } else {
@@ -617,12 +622,31 @@ final class VoiceCallSession {
     if (candidate == null || sdpMid == null || sdpMLineIndex == null) {
       return;
     }
+    if (state.phase == VoiceCallSessionPhase.outgoingRinging ||
+        state.phase == VoiceCallSessionPhase.preflightingMic ||
+        state.phase == VoiceCallSessionPhase.incomingRinging) {
+      // Candidates can overtake the accept frame; keep them for the media
+      // connection instead of dropping them.
+      if (_earlyCandidates.length >= _maxEarlyCandidates) {
+        _earlyCandidates.removeAt(0);
+      }
+      _earlyCandidates.add(frame);
+      return;
+    }
     if (state.phase != VoiceCallSessionPhase.creatingMedia &&
         state.phase != VoiceCallSessionPhase.connectingMedia &&
         state.phase != VoiceCallSessionPhase.active) {
       _logInvalidEvent('candidate frame in ${state.phase.name}');
       return;
     }
+    await _applyRemoteCandidate(candidate, sdpMid, sdpMLineIndex);
+  }
+
+  Future<void> _applyRemoteCandidate(
+    String candidate,
+    String sdpMid,
+    int sdpMLineIndex,
+  ) async {
     try {
       await media.addRemoteCandidate(
         VoiceIceCandidate(
@@ -634,6 +658,20 @@ final class VoiceCallSession {
     } catch (error) {
       await _sendFailedHangup(error);
       await _fail('Voice call media could not connect.', error: error);
+    }
+  }
+
+  Future<void> _flushEarlyCandidates() async {
+    final queued = List<VoiceCallFrame>.of(_earlyCandidates);
+    _earlyCandidates.clear();
+    for (final frame in queued) {
+      final candidate = frame.candidate;
+      final sdpMid = frame.sdpMid;
+      final sdpMLineIndex = frame.sdpMLineIndex;
+      if (candidate == null || sdpMid == null || sdpMLineIndex == null) {
+        continue;
+      }
+      await _applyRemoteCandidate(candidate, sdpMid, sdpMLineIndex);
     }
   }
 
@@ -1005,6 +1043,7 @@ final class VoiceCallSession {
   }
 
   Future<void> _disposeMedia() async {
+    _earlyCandidates.clear();
     try {
       await media.dispose().timeout(timeouts.cleanup, onTimeout: () {});
     } catch (error) {
@@ -1014,7 +1053,12 @@ final class VoiceCallSession {
 
   Future<void> _runMediaNegotiation(Future<void> Function() action) async {
     if (_negotiatingMedia) {
-      _logInvalidEvent('media negotiation already running');
+      // F-011: Don't silently drop the second negotiation. Flag a pending
+      // restart so the finally block re-triggers an ICE restart offer after
+      // the in-flight negotiation completes. This prevents an incomplete SDP
+      // exchange that would leave the call hanging in connectingMedia.
+      _pendingMediaRestart = true;
+      _logInvalidEvent('media negotiation already running; queued restart');
       return;
     }
     _negotiatingMedia = true;
@@ -1022,6 +1066,14 @@ final class VoiceCallSession {
       await action();
     } finally {
       _negotiatingMedia = false;
+      if (_pendingMediaRestart && !_disposed) {
+        _pendingMediaRestart = false;
+        if (state.phase == VoiceCallSessionPhase.active ||
+            state.phase == VoiceCallSessionPhase.connectingMedia) {
+          _logInvalidEvent('re-triggering queued media restart');
+          unawaited(_enqueue(() => _createAndSendOffer(iceRestart: true)));
+        }
+      }
     }
   }
 
@@ -1143,7 +1195,10 @@ final class VoiceCallSession {
       VoiceCallSessionPhase.ending =>
         next == VoiceCallSessionPhase.idle ||
             next == VoiceCallSessionPhase.failed,
-      VoiceCallSessionPhase.failed => next == VoiceCallSessionPhase.idle,
+      // TASK-006: `failed` is strictly terminal. A failed session has
+      // already disposed its media; it must not transition back to `idle`.
+      // New calls construct a fresh VoiceCallSession instance instead.
+      _ => false,
     };
   }
 
@@ -1154,6 +1209,7 @@ final class VoiceCallSession {
         _enqueue(
           () => _fail(
             'Call timed out while ringing.',
+            notifyPeer: true,
             reasonCode: _voiceCallRingingTimeoutReasonCode,
           ),
         ),

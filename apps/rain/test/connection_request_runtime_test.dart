@@ -13,6 +13,7 @@ import 'package:drift/native.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:flutter_webrtc/flutter_webrtc.dart' show RTCSessionDescription;
 import 'package:protocol_brain/protocol_brain.dart';
+import 'package:protocol_brain/testing.dart';
 import 'package:rain/application/runtime/rain_runtime_controller.dart';
 import 'package:rain/application/runtime/runtime_interaction_guard.dart';
 import 'package:rain/application/runtime/voice_call_state.dart';

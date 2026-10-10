@@ -114,6 +114,15 @@ class DefaultCallMediaConnection implements CallMediaConnection {
   MediaStreamTrack? _localVideoTrack;
   Future<void>? _localMediaStartFuture;
   Future<void>? _mediaOperation;
+  // F-008: serializes trickle-ICE candidate application against in-flight
+  // negotiation so a candidate arriving mid-offer/answer cannot corrupt SDP.
+  // Unlike _runMediaOperation, this never drops or rejects a candidate; it
+  // chains behind the running negotiation and applies the candidate after.
+  Future<void>? _candidateLock;
+  // TASK-007: serialize local media-control mutations (mute/camera/deafen)
+  // so a rapid sequence of these calls cannot race on the shared track state
+  // or interleave platform calls. Chain-style (never rejects) like _candidateLock.
+  Future<void>? _mediaControlLock;
   int _localCandidateCount = 0;
   int _remoteCandidateCount = 0;
   int _connectionEpoch = 0;
@@ -419,31 +428,67 @@ class DefaultCallMediaConnection implements CallMediaConnection {
     }
     final connection = await _ensurePeerConnection();
     final epoch = _connectionEpoch;
-    await connection.addCandidate(candidate.toRtc());
-    _ensureCurrentPeerConnection(connection, epoch, 'adding remote candidate');
+    // F-008: apply the candidate strictly after any in-flight negotiation.
+    // Chain onto _candidateLock so concurrent candidates and a running
+    // offer/answer never interleave on the peer connection.
+    final previous = _candidateLock ?? Future<void>.value();
+    final completer = Completer<void>();
+    _candidateLock = previous.whenComplete(() => completer.future);
+    try {
+      await connection.addCandidate(candidate.toRtc());
+      _ensureCurrentPeerConnection(
+        connection,
+        epoch,
+        'adding remote candidate',
+      );
+    } finally {
+      _candidateLock = null;
+      completer.complete();
+    }
   }
 
   @override
   Future<void> setMicrophoneMuted({required bool muted}) async {
-    _ensureNotDisposed();
-    final track = _localAudioTrack;
-    if (track == null) {
-      throw StateError('Local audio has not been started.');
+    await _serializeMediaControl('setMicrophoneMuted', () async {
+      _ensureNotDisposed();
+      final track = _localAudioTrack;
+      if (track == null) {
+        throw StateError('Local audio has not been started.');
+      }
+      _microphoneMuted = muted;
+      await _config.platform.setMicrophoneMuted(track, muted: muted);
+    });
+  }
+
+  Future<void> _serializeMediaControl(
+    String operationName,
+    Future<void> Function() operation,
+  ) async {
+    final previous = _mediaControlLock ?? Future<void>.value();
+    final completer = Completer<void>();
+    _mediaControlLock = previous.whenComplete(() => completer.future);
+    try {
+      await operation();
+    } finally {
+      if (_mediaControlLock == completer.future) {
+        _mediaControlLock = null;
+      }
+      completer.complete();
     }
-    _microphoneMuted = muted;
-    await _config.platform.setMicrophoneMuted(track, muted: muted);
   }
 
   @override
   Future<void> setCameraMuted({required bool muted}) async {
-    _ensureNotDisposed();
-    final track = _localVideoTrack;
-    if (track == null) {
-      throw StateError('Local video has not been started.');
-    }
-    _cameraMuted = muted;
-    track.enabled = !muted;
-    _appendDiagnostic(_mediaStates, 'cameraMuted:$muted');
+    await _serializeMediaControl('setCameraMuted', () async {
+      _ensureNotDisposed();
+      final track = _localVideoTrack;
+      if (track == null) {
+        throw StateError('Local video has not been started.');
+      }
+      _cameraMuted = muted;
+      track.enabled = !muted;
+      _appendDiagnostic(_mediaStates, 'cameraMuted:$muted');
+    });
   }
 
   @override
@@ -459,12 +504,14 @@ class DefaultCallMediaConnection implements CallMediaConnection {
 
   @override
   Future<void> setDeafened({required bool deafened}) async {
-    _ensureNotDisposed();
-    _deafened = deafened;
-    for (final track in _remoteAudioTracks) {
-      track.enabled = !deafened;
-    }
-    _appendDiagnostic(_mediaStates, 'deafened:$deafened');
+    await _serializeMediaControl('setDeafened', () async {
+      _ensureNotDisposed();
+      _deafened = deafened;
+      for (final track in _remoteAudioTracks) {
+        track.enabled = !deafened;
+      }
+      _appendDiagnostic(_mediaStates, 'deafened:$deafened');
+    });
   }
 
   @override
@@ -536,47 +583,58 @@ class DefaultCallMediaConnection implements CallMediaConnection {
       return;
     }
     _recordMediaInterruption(event);
-    switch (event.type) {
-      case MediaInterruptionType.microphonePermissionRevoked:
-      case MediaInterruptionType.audioFocusLost:
-        _microphoneMuted = true;
-        final audioTrack = _localAudioTrack;
-        if (audioTrack != null) {
-          try {
-            await _config.platform.setMicrophoneMuted(audioTrack, muted: true);
-          } catch (error) {
-            _appendDiagnostic(
-              _mediaStates,
-              'microphone interruption failed | $error',
-            );
-            _lastError = error.toString();
-          }
-        }
-        break;
-      case MediaInterruptionType.audioFocusRestored:
-        _appendDiagnostic(_mediaStates, 'audioFocusRestored');
-        break;
-      case MediaInterruptionType.cameraPermissionRevoked:
-      case MediaInterruptionType.cameraDisconnected:
-        _cameraMuted = true;
-        final videoTrack = _localVideoTrack;
-        if (videoTrack != null) {
-          videoTrack.enabled = false;
-        }
-        _appendDiagnostic(
-          _mediaStates,
-          'localVideoDisabled:${event.type.name}',
-        );
-        break;
-      case MediaInterruptionType.routeChanged:
-      case MediaInterruptionType.appPaused:
-      case MediaInterruptionType.appResumed:
-        _appendDiagnostic(_mediaStates, event.type.name);
-        break;
-    }
+    // Emit the interruption notification before the serialized state mutation
+    // so listeners receive it regardless of lock-queue timing.
     if (!_interruptionController.isClosed) {
       _interruptionController.add(event);
     }
+    // NEW-001: Route state-mutating interruption handling through
+    // _serializeMediaControl so a user toggle (setMicrophoneMuted /
+    // setCameraMuted) and an OS interruption cannot race on
+    // _microphoneMuted / _cameraMuted and the underlying track state.
+    await _serializeMediaControl('handleMediaInterruption', () async {
+      switch (event.type) {
+        case MediaInterruptionType.microphonePermissionRevoked:
+        case MediaInterruptionType.audioFocusLost:
+          _microphoneMuted = true;
+          final audioTrack = _localAudioTrack;
+          if (audioTrack != null) {
+            try {
+              await _config.platform.setMicrophoneMuted(
+                audioTrack,
+                muted: true,
+              );
+            } catch (error) {
+              _appendDiagnostic(
+                _mediaStates,
+                'microphone interruption failed | $error',
+              );
+              _lastError = error.toString();
+            }
+          }
+          break;
+        case MediaInterruptionType.audioFocusRestored:
+          _appendDiagnostic(_mediaStates, 'audioFocusRestored');
+          break;
+        case MediaInterruptionType.cameraPermissionRevoked:
+        case MediaInterruptionType.cameraDisconnected:
+          _cameraMuted = true;
+          final videoTrack = _localVideoTrack;
+          if (videoTrack != null) {
+            videoTrack.enabled = false;
+          }
+          _appendDiagnostic(
+            _mediaStates,
+            'localVideoDisabled:${event.type.name}',
+          );
+          break;
+        case MediaInterruptionType.routeChanged:
+        case MediaInterruptionType.appPaused:
+        case MediaInterruptionType.appResumed:
+          _appendDiagnostic(_mediaStates, event.type.name);
+          break;
+      }
+    });
   }
 
   @override

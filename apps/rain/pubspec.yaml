@@ -33,6 +33,7 @@ dependencies:
   rain_core:
     path: ../../packages/rain_core
   shared_preferences: ^2.5.5
+  flutter_secure_storage: ^10.3.1
   url_launcher: ^6.3.2
   window_manager: ^0.5.1
   freezed_annotation: ^3.1.0

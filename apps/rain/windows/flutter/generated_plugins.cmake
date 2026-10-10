@@ -9,6 +9,7 @@ list(APPEND FLUTTER_PLUGIN_LIST
   firebase_core
   firebase_database
   firebase_remote_config
+  flutter_secure_storage_windows
   flutter_webrtc
   screen_retriever_windows
   url_launcher_windows

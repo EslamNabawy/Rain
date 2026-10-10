@@ -5,7 +5,6 @@
 ![Rain Peer Core preview](apps/rain/assets/branding/generated/peer_core_preview_sheet.png)
 
 [![CI](https://github.com/EslamNabawy/Rain/actions/workflows/ci.yml/badge.svg)](https://github.com/EslamNabawy/Rain/actions/workflows/ci.yml)
-[![Main merge gate](https://github.com/EslamNabawy/Rain/actions/workflows/main-merge-gate.yml/badge.svg)](https://github.com/EslamNabawy/Rain/actions/workflows/main-merge-gate.yml)
 [![Build apps](https://github.com/EslamNabawy/Rain/actions/workflows/build-artifacts.yml/badge.svg)](https://github.com/EslamNabawy/Rain/actions/workflows/build-artifacts.yml)
 
 ---
@@ -350,7 +349,8 @@ Rain is designed to minimize what Firebase carries. Key boundaries:
 - **Firebase rules** enforce authenticated ownership, friendship checks, block enforcement, and call lock permissions.
 - **SDP and ICE signaling payloads** are encrypted before storage.
 - **WebRTC media and data channels** use encrypted transports (DTLS-SRTP).
-- **Production builds** reject known demo signaling keys.
+- **Production builds** reject known demo signaling keys. Signaling encryption is currently `v=1` with one shared build-time key (not end-to-end); the per-pair `v=2` cipher exists but is not wired into the adapter yet.
+- **Local storage** (Drift/SQLite) is not encrypted at rest; see ADR-010 and the audit notes.
 - **TURN metadata exposure** depends on the configured TURN infrastructure.
 
 > This README is not a security audit. A formal third-party audit is not yet in scope.
@@ -369,4 +369,4 @@ Rain is designed to minimize what Firebase carries. Key boundaries:
 
 ## License
 
-No root repository license file is currently declared.
+Rain is released under the [MIT License](LICENSE).

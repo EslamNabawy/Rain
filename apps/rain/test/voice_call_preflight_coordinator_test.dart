@@ -16,6 +16,60 @@ void main() {
   group('VoiceCallPreflightCoordinator', () {
     const coordinator = VoiceCallPreflightCoordinator.instance;
 
+    group('decideCrossedInvite', () {
+      VoiceCallState outgoing(VoiceCallPhase phase, {String peer = 'bob'}) {
+        return VoiceCallState(
+          phase: phase,
+          peerId: peer,
+          callId: 'call-local',
+          sessionEpoch: 1,
+          isOutgoing: true,
+          updatedAt: 1,
+        );
+      }
+
+      test('lower username keeps its outgoing call', () {
+        expect(
+          coordinator.decideCrossedInvite(
+            current: outgoing(VoiceCallPhase.outgoingRinging),
+            localUsername: 'alice',
+            remotePeerId: 'bob',
+          ),
+          CrossedInviteDecision.keepLocal,
+        );
+      });
+
+      test('higher username yields to the crossed invite', () {
+        expect(
+          coordinator.decideCrossedInvite(
+            current: outgoing(VoiceCallPhase.connectingPeer, peer: 'alice'),
+            localUsername: 'bob',
+            remotePeerId: 'alice',
+          ),
+          CrossedInviteDecision.acceptRemote,
+        );
+      });
+
+      test('connected calls and other peers are not crossed invites', () {
+        expect(
+          coordinator.decideCrossedInvite(
+            current: outgoing(VoiceCallPhase.active),
+            localUsername: 'alice',
+            remotePeerId: 'bob',
+          ),
+          CrossedInviteDecision.notCrossed,
+        );
+        expect(
+          coordinator.decideCrossedInvite(
+            current: outgoing(VoiceCallPhase.outgoingRinging, peer: 'carol'),
+            localUsername: 'alice',
+            remotePeerId: 'bob',
+          ),
+          CrossedInviteDecision.notCrossed,
+        );
+      });
+    });
+
     test('throws when peer connection is unavailable', () {
       expect(
         () =>

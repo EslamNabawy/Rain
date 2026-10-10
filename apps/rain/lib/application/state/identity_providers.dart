@@ -168,6 +168,9 @@ class IdentityController extends AsyncNotifier<RainIdentity?> {
       try {
         await adapter.register(username, password);
         authCreated = true;
+        // TASK-015: the identity key is not used by the shipped signaling path
+        // yet (v=1), so a failed publish must not abort registration.
+        await _publishIdentitySigningKeyBestEffort(adapter, username);
         final now = DateTime.now().millisecondsSinceEpoch;
         await _saveBackendIdentity(
           RainIdentity(
@@ -230,6 +233,22 @@ class IdentityController extends AsyncNotifier<RainIdentity?> {
     });
   }
 
+  Future<void> _publishIdentitySigningKeyBestEffort(
+    SignalingAdapter adapter,
+    String username,
+  ) async {
+    try {
+      final keyRepo = ref.read(identityKeyRepositoryProvider);
+      final publicKey = await keyRepo.ensureKeyPair();
+      await adapter.publishIdentitySigningKey(
+        username: username,
+        signingPublicKey: KeyEncoding.encodeBytes(publicKey.bytes),
+      );
+    } catch (error, stackTrace) {
+      RainDebugLog.error(error, stackTrace, source: 'identity-key-publish');
+    }
+  }
+
   Future<void> login({
     required String username,
     required String password,
@@ -275,6 +294,8 @@ class IdentityController extends AsyncNotifier<RainIdentity?> {
             : RainGender.values.byName(existing.gender!),
       ),
     );
+    // Re-publish the identity key (covers failed or lost publishes).
+    await _publishIdentitySigningKeyBestEffort(adapter, username);
   }
 
   Future<void> updateDisplayName(String displayName) async {

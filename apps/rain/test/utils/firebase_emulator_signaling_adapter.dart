@@ -231,6 +231,19 @@ class FirebaseEmulatorSignalingAdapter
     return _uid!;
   }
 
+  @override
+  Future<void> publishIdentitySigningKey({
+    required String username,
+    required String signingPublicKey,
+  }) async {
+    final normalizedUsername = _normalizedUsername(username);
+    await _put(<String>[
+      'users',
+      normalizedUsername,
+      'signingPublicKey',
+    ], signingPublicKey);
+  }
+
   void _setAuth(Map<String, Object?> response) {
     _idToken = response['idToken'] as String?;
     _uid = response['localId'] as String?;
@@ -517,6 +530,7 @@ class FirebaseEmulatorSignalingAdapter
       presenceSessionId: presenceMap['sessionId'] as String?,
       presenceStartedAt: (presenceMap['startedAt'] as num?)?.toInt(),
       presenceState: presenceMap['state'] as String?,
+      signingPublicKey: identity['signingPublicKey'] as String?,
     );
   }
 
@@ -1199,6 +1213,7 @@ class FirebaseEmulatorSignalingAdapter
     required String username,
     required int now,
     int limit = maxCallCleanupItemsPerRun,
+    String? liveCallId,
   }) async {
     return VoiceCallCleanupSummary(
       username: normalizeVoiceCallUsername(username),

@@ -48,15 +48,19 @@ extension FileTransferRuntime on RainRuntimeController {
 
     final binary = message.binary;
     if (binary != null) {
-      if (pendingFileChunks.containsKey(peerId)) {
-        await _handleFileChunkBytes(peerId, binary);
-        return;
-      }
+      // Prefer the modern atomic packet path (magic + header + payload) so a
+      // legacy pending header cannot hijack a valid packet. See C-01.
       final packet = FileTransferChunkPacket.tryParse(binary);
       if (packet != null) {
         await _handleFileChunkPacket(peerId, packet.frame, packet.payload);
         return;
       }
+      if (pendingFileChunks.containsKey(peerId)) {
+        await _handleFileChunkBytes(peerId, binary);
+        return;
+      }
+      // No pending header and not a packet — treat as legacy raw payload if
+      // a pending header exists for another reason, otherwise drop.
       await _handleFileChunkBytes(peerId, binary);
     }
   }
@@ -104,11 +108,40 @@ extension FileTransferRuntime on RainRuntimeController {
         );
         break;
       case FileTransferFrame.chunkType:
+        // Legacy split-header path: header (text) + next binary = payload.
+        // Guard against overwrite — if a header is already pending for this
+        // peer, the previous chunk's payload never arrived. Fail that transfer
+        // instead of silently overwriting (C-01).
+        final existingPending = pendingFileChunks[peerId];
+        if (existingPending != null &&
+            existingPending.transferId != frame.transferId) {
+          await markTransferFailed(
+            existingPending.transferId,
+            'Received file chunk header out of order.',
+          );
+          sendFileControlIfConnected(
+            peerId,
+            FileTransferFrame.fail(
+              existingPending.transferId,
+              'Received file chunk header out of order.',
+            ),
+          );
+        } else if (existingPending != null) {
+          // Same transferId overwrite → previous header lost.
+          await markTransferFailed(
+            existingPending.transferId,
+            'Received file chunk header out of order.',
+          );
+        }
         pendingFileChunks[peerId] = frame;
         break;
       case FileTransferFrame.completeType:
-        final pendingFrame = pendingFileChunks.remove(peerId);
-        if (pendingFrame?.transferId == frame.transferId) {
+        // If a legacy chunk header is still pending for this transfer, the
+        // final payload never arrived — fail before handling complete.
+        final pendingFrame = pendingFileChunks[peerId];
+        if (pendingFrame != null &&
+            pendingFrame.transferId == frame.transferId) {
+          pendingFileChunks.remove(peerId);
           await markTransferFailed(
             frame.transferId,
             'Received file chunk payload was missing.',
@@ -121,6 +154,10 @@ extension FileTransferRuntime on RainRuntimeController {
             ),
           );
           return;
+        }
+        // Clear any unrelated pending header for this peer before completing.
+        if (pendingFrame != null) {
+          pendingFileChunks.remove(peerId);
         }
         await _handleFileComplete(peerId, frame);
         break;
@@ -239,31 +276,35 @@ extension FileTransferRuntime on RainRuntimeController {
     );
     final now = DateTime.now().millisecondsSinceEpoch;
 
-    await localMutations.run(() async {
-      if (!await messageStore.containsMessage(messageId)) {
-        await messageStore.forceStoreIncomingEnvelope(
-          envelope,
-          receivedAt: receivedAt,
-          trackSequence: false,
+    // One database transaction: a crash must not leave a file message without
+    // its transfer row (or the unread counter without the message).
+    await localMutations.run(
+      () => database.serializedTransaction(() async {
+        if (!await messageStore.containsMessage(messageId)) {
+          await messageStore.forceStoreIncomingEnvelope(
+            envelope,
+            receivedAt: receivedAt,
+            trackSequence: false,
+          );
+          await friendStore.incrementUnread(peerId);
+        }
+        await fileTransferStore.upsert(
+          FileTransferRecord(
+            id: frame.transferId,
+            peerId: peerId,
+            messageId: messageId,
+            direction: FileTransferDirection.incoming,
+            fileName: safeName,
+            fileSize: fileSize,
+            mimeType: frame.mimeType,
+            bytesTransferred: 0,
+            state: FileTransferState.offered,
+            createdAt: now,
+            updatedAt: now,
+          ),
         );
-        await friendStore.incrementUnread(peerId);
-      }
-      await fileTransferStore.upsert(
-        FileTransferRecord(
-          id: frame.transferId,
-          peerId: peerId,
-          messageId: messageId,
-          direction: FileTransferDirection.incoming,
-          fileName: safeName,
-          fileSize: fileSize,
-          mimeType: frame.mimeType,
-          bytesTransferred: 0,
-          state: FileTransferState.offered,
-          createdAt: now,
-          updatedAt: now,
-        ),
-      );
-    });
+      }),
+    );
   }
 
   Future<void> _handleFileAccept(String peerId, String transferId) async {
@@ -759,11 +800,13 @@ extension FileTransferRuntime on RainRuntimeController {
     required String transferId,
     required int nextByteCount,
   }) async {
+    // C-06: use monotonic Stopwatch, not DateTime, so NTP/clock jumps
+    // and suspend/resume do not cause spurious timeout or hang.
+    final stopwatch = Stopwatch()..start();
     final startedAt = DateTime.now();
-    final deadline = startedAt.add(fileTransferBufferTimeout);
     var waiting = false;
     var samples = 0;
-    while (DateTime.now().isBefore(deadline)) {
+    while (stopwatch.elapsed < fileTransferBufferTimeout) {
       if (connectedSession(peerId) == null) {
         throw StateError('Peer disconnected.');
       }
@@ -808,7 +851,7 @@ extension FileTransferRuntime on RainRuntimeController {
         );
       }
       await Future<void>.delayed(fileTransferBufferPollInterval);
-      while (DateTime.now().isBefore(deadline)) {
+      while (stopwatch.elapsed < fileTransferBufferTimeout) {
         if (connectedSession(peerId) == null) {
           throw StateError('Peer disconnected.');
         }
@@ -1020,8 +1063,9 @@ extension FileTransferRuntime on RainRuntimeController {
       throw StateError('Connect first.');
     }
     await brain!.openChannel(peerId, SessionChannel.file);
-    final deadline = DateTime.now().add(const Duration(seconds: 5));
-    while (DateTime.now().isBefore(deadline)) {
+    final sw = Stopwatch()..start();
+    const openTimeout = Duration(seconds: 5);
+    while (sw.elapsed < openTimeout) {
       if (connectedSession(peerId) == null) {
         throw StateError('Connect first.');
       }
@@ -1057,36 +1101,74 @@ extension FileTransferRuntime on RainRuntimeController {
     canceledTransfers.add(transferId);
     clearTransferRuntimeState(transferId);
     await deleteTempFile(transfer);
-    await localMutations.run(() async {
-      await fileTransferStore.markState(
-        transferId,
-        FileTransferState.failed,
-        error: reason,
-      );
-      if (transfer.direction == FileTransferDirection.outgoing) {
-        await messageStore.markMessageStatus(
-          transfer.messageId,
-          MessageStatus.failed,
+    await localMutations.run(
+      () => database.serializedTransaction(() async {
+        await fileTransferStore.markState(
+          transferId,
+          FileTransferState.failed,
+          error: reason,
         );
-      }
-    });
+        if (transfer.direction == FileTransferDirection.outgoing) {
+          await messageStore.markMessageStatus(
+            transfer.messageId,
+            MessageStatus.failed,
+          );
+        }
+      }),
+    );
   }
 
   Future<void> failActiveTransfersForPeer(String peerId, String reason) async {
     List<FileTransferRecord> active;
     try {
       active = await fileTransferStore.loadActiveTransfers(peerId: peerId);
-    } catch (_) {
+    } catch (error, stackTrace) {
+      _recordTransferCleanupFailure(
+        error,
+        stackTrace,
+        peerId: peerId,
+        name: 'fail_active_transfers_load_failed',
+      );
       return;
     }
     for (final transfer in active) {
       try {
         await markTransferFailed(transfer.id, reason);
-      } catch (_) {
-        // Transfer cleanup is best effort during shutdown and relationship churn.
+      } catch (error, stackTrace) {
+        // Cleanup stays best effort, but a stuck row blocks new transfers from
+        // this peer, so the failure must be visible.
+        _recordTransferCleanupFailure(
+          error,
+          stackTrace,
+          peerId: peerId,
+          transferId: transfer.id,
+          name: 'fail_active_transfer_failed',
+        );
       }
     }
     pendingFileChunks.remove(peerId);
+  }
+
+  void _recordTransferCleanupFailure(
+    Object error,
+    StackTrace stackTrace, {
+    required String peerId,
+    required String name,
+    String? transferId,
+  }) {
+    recordRuntimeEvent(
+      category: 'file_transfer',
+      name: name,
+      severity: 'warning',
+      message: _formatTransferError(error),
+      context: <String, Object?>{'peerId': peerId, 'transferId': ?transferId},
+    );
+    errorRecorder?.call(
+      error,
+      stackTrace,
+      source: 'file-transfer-cleanup',
+      fatal: false,
+    );
   }
 
   Future<ReceivePaths> prepareReceivePaths(FileTransferRecord transfer) async {

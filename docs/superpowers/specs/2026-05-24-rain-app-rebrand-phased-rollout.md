@@ -121,6 +121,7 @@ Requirements:
 - Remove splash loading bar.
 - Replace current water/drop fallback with Peer Core.
 - Replace glow-blob backdrop feel with restrained mist/signal traces.
+- Preserve `Signal Glow` as an alternate component-level UI option for splash/status QA, not as the default page backdrop.
 - Keep compact Android and Windows layout behavior unchanged.
 
 ### Phase 3: Empty, Loading, And Error States

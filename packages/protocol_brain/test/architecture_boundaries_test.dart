@@ -15,6 +15,18 @@ import 'dart:io';
 import 'package:flutter_test/flutter_test.dart';
 
 void main() {
+  test('main barrel does not export firebase adapters or test fakes', () {
+    final barrel = File('lib/protocol_brain.dart').readAsStringSync();
+
+    expect(barrel, isNot(contains('firebase_adapter.dart')));
+    expect(barrel, isNot(contains('connection_request_rtdb_adapter.dart')));
+    expect(barrel, isNot(contains('src/testing/')));
+    expect(
+      File('lib/protocol_brain_firebase.dart').readAsStringSync(),
+      contains('firebase_adapter.dart'),
+    );
+  });
+
   test('apps and rain_core do not import peer_core directly', () {
     final workspaceRoot = Directory.current.parent.parent;
     final appLib = Directory.fromUri(

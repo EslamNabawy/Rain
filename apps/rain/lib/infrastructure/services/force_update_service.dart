@@ -423,9 +423,7 @@ class ForceUpdateService {
       minimumBuild: policy.minimumBuild,
       latestVersion: policy.latestVersion,
       latestBuild: policy.latestBuild,
-      updateUrl: policy.updateUrl.trim().isEmpty
-          ? updateUrl
-          : policy.updateUrl.trim(),
+      updateUrl: trustedUpdateUrl(policy.updateUrl, fallback: updateUrl),
       platform: appVersion.platform,
       channel: appVersion.channel,
       notes: policy.notes,
@@ -543,4 +541,32 @@ int? _optionalInt(Object? value) {
     return null;
   }
   return int.tryParse(text);
+}
+
+/// Remote Config can change the URL behind the "update required" screen, so
+/// only `https` URLs on the release host (GitHub releases of the Rain
+/// repositories) or on the host of the build's own `fallback` are opened.
+String trustedUpdateUrl(String candidate, {required String fallback}) {
+  final trimmed = candidate.trim();
+  if (trimmed.isEmpty) {
+    return fallback;
+  }
+  final uri = Uri.tryParse(trimmed);
+  if (uri == null || uri.scheme != 'https' || uri.host.isEmpty) {
+    return fallback;
+  }
+  final host = uri.host.toLowerCase();
+  final fallbackHost = Uri.tryParse(fallback)?.host.toLowerCase() ?? '';
+  if (host != 'github.com' && fallbackHost.isNotEmpty && host == fallbackHost) {
+    return trimmed;
+  }
+  final path = uri.path.toLowerCase();
+  const releasePaths = <String>['/abdogadxnabawy/rain', '/eslamnabawy/rain'];
+  if (host == 'github.com' &&
+      releasePaths.any(
+        (String prefix) => path == prefix || path.startsWith('$prefix/'),
+      )) {
+    return trimmed;
+  }
+  return fallback;
 }

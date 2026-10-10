@@ -22,6 +22,32 @@ String _repoFile(String relativePath) {
 }
 
 void main() {
+  test('third-party actions are pinned to a full commit SHA', () {
+    final workflowsDir = Directory.fromUri(
+      Directory.current.parent.parent.uri.resolve('.github/workflows/'),
+    );
+    final thirdParty = RegExp(r'uses:\s+((?!actions/)[\w.-]+/[\w./-]+)@(\S+)');
+    final unpinned = <String>[];
+    for (final file in workflowsDir.listSync().whereType<File>()) {
+      if (!file.path.endsWith('.yml')) {
+        continue;
+      }
+      for (final match in thirdParty.allMatches(file.readAsStringSync())) {
+        if (!RegExp(r'^[0-9a-f]{40}$').hasMatch(match.group(2)!)) {
+          unpinned.add('${file.uri.pathSegments.last}: ${match.group(0)}');
+        }
+      }
+    }
+
+    expect(unpinned, isEmpty);
+    expect(
+      File.fromUri(
+        Directory.current.parent.parent.uri.resolve('.github/dependabot.yml'),
+      ).existsSync(),
+      isTrue,
+    );
+  });
+
   test('CI workflow uses direct Flutter analyze and test commands', () {
     final workflow = _repoFile('.github/workflows/ci.yml');
 

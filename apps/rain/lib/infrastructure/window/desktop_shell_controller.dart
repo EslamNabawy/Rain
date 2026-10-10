@@ -17,6 +17,7 @@ import 'package:flutter/foundation.dart';
 import 'package:window_manager/window_manager.dart';
 
 import 'package:rain/application/runtime/app_exit_coordinator.dart';
+import 'package:rain/infrastructure/services/rain_debug_log_service.dart';
 
 class DesktopShellController with WindowListener {
   static const Duration _closeStepTimeout = Duration(seconds: 2);
@@ -92,26 +93,38 @@ class DesktopShellController with WindowListener {
             _criticalCloseBudget,
             onTimeout: () {
               if (kDebugMode) {
-                debugPrint(
-                  '[DesktopShellController] Critical close budget '
-                  'exceeded after ${criticalStopwatch.elapsedMilliseconds}ms',
+                RainDebugLog.event(
+                  category: 'desktop_shell',
+                  name: 'critical_close_budget_exceeded',
+                  severity: RainDebugSeverity.warning,
+                  message:
+                      '[DesktopShellController] Critical close budget '
+                      'exceeded after ${criticalStopwatch.elapsedMilliseconds}ms',
                 );
               }
             },
           );
     } catch (error) {
       if (kDebugMode) {
-        debugPrint(
-          '[DesktopShellController] Critical close phase error: $error',
+        RainDebugLog.event(
+          category: 'desktop_shell',
+          name: 'critical_close_phase_error',
+          severity: RainDebugSeverity.warning,
+          message:
+              '[DesktopShellController] Critical close phase error: $error',
         );
       }
     } finally {
       criticalStopwatch.stop();
       if (kDebugMode) {
-        debugPrint(
-          '[DesktopShellController] Critical close phase completed in '
-          '${criticalStopwatch.elapsedMilliseconds}ms '
-          '(total: ${totalStopwatch.elapsedMilliseconds}ms)',
+        RainDebugLog.event(
+          category: 'desktop_shell',
+          name: 'critical_close_phase_completed',
+          severity: RainDebugSeverity.debug,
+          message:
+              '[DesktopShellController] Critical close phase completed in '
+              '${criticalStopwatch.elapsedMilliseconds}ms '
+              '(total: ${totalStopwatch.elapsedMilliseconds}ms)',
         );
       }
     }
@@ -130,9 +143,13 @@ class DesktopShellController with WindowListener {
     } finally {
       cleanupStopwatch.stop();
       if (kDebugMode) {
-        debugPrint(
-          '[DesktopShellController] Best-effort cleanup completed in '
-          '${cleanupStopwatch.elapsedMilliseconds}ms',
+        RainDebugLog.event(
+          category: 'desktop_shell',
+          name: 'best_effort_cleanup_completed',
+          severity: RainDebugSeverity.debug,
+          message:
+              '[DesktopShellController] Best-effort cleanup completed in '
+              '${cleanupStopwatch.elapsedMilliseconds}ms',
         );
       }
     }
