@@ -5,7 +5,6 @@
 ![Rain Peer Core preview](apps/rain/assets/branding/generated/peer_core_preview_sheet.png)
 
 [![CI](https://github.com/EslamNabawy/Rain/actions/workflows/ci.yml/badge.svg)](https://github.com/EslamNabawy/Rain/actions/workflows/ci.yml)
-[![Main merge gate](https://github.com/EslamNabawy/Rain/actions/workflows/main-merge-gate.yml/badge.svg)](https://github.com/EslamNabawy/Rain/actions/workflows/main-merge-gate.yml)
 [![Build apps](https://github.com/EslamNabawy/Rain/actions/workflows/build-artifacts.yml/badge.svg)](https://github.com/EslamNabawy/Rain/actions/workflows/build-artifacts.yml)
 
 ---
