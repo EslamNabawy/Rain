@@ -3,6 +3,7 @@
 ## Done
 
 - T0.1 6f548b9 worktree D:\Rain-uiux on ui/level-up and state file
+- T0.2 3eee2be baseline: analyze clean, 764 tests pass, 20 skipped
 
 ## Blocked
 
