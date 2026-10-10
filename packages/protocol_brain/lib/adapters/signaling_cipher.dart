@@ -23,6 +23,41 @@ import 'package:cryptography/cryptography.dart';
 typedef SignalingCipherResolver =
     Future<SignalingCipher?> Function(String peerUsername);
 
+/// Builds the resolver the signaling adapter uses for per-pair (`v=2`)
+/// encryption.
+///
+/// [deriveSharedSecret] returns the raw ECDH shared secret with the given peer
+/// (or null when the peer has not published a key or the local key is
+/// unavailable). The key context is the sorted, normalized username pair so both
+/// sides derive the same key. Any failure resolves to null, which makes the
+/// adapter fall back to the `v=1` shared-key cipher.
+SignalingCipherResolver buildPairCipherResolver({
+  required String? Function() localUsername,
+  required Future<List<int>?> Function(String peerUsername) deriveSharedSecret,
+}) {
+  return (String peerUsername) async {
+    final local = localUsername()?.trim().toLowerCase();
+    final peer = peerUsername.trim().toLowerCase();
+    if (local == null || local.isEmpty || peer.isEmpty || local == peer) {
+      return null;
+    }
+    try {
+      final secret = await deriveSharedSecret(peer);
+      if (secret == null || secret.isEmpty) {
+        return null;
+      }
+      final ordered = <String>[local, peer]..sort();
+      return SignalingCipher.forPairRootKey(
+        rootKeyBytes: secret,
+        from: ordered.first,
+        to: ordered.last,
+      );
+    } catch (_) {
+      return null;
+    }
+  };
+}
+
 class SignalingCipher {
   SignalingCipher.fromKeyMaterial(String keyMaterial)
     : this._(rootKey: SecretKey(utf8.encode(keyMaterial.trim())));

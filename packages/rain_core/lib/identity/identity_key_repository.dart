@@ -106,6 +106,27 @@ final class IdentityKeyRepository {
     return KeyEncoding.decodeBytes(b64);
   }
 
+  /// ECDH shared secret (raw bytes) with a peer whose public key is given in
+  /// the published base64 form, or null when the key is malformed.
+  Future<List<int>?> deriveSharedSecretFromEncodedKey(String encodedKey) async {
+    final List<int> bytes;
+    try {
+      bytes = KeyEncoding.decodeBytes(encodedKey.trim());
+    } on FormatException {
+      return null;
+    }
+    if (bytes.length != 32) {
+      return null;
+    }
+    return derivePairKeyBytes(SimplePublicKey(bytes, type: KeyPairType.x25519));
+  }
+
+  /// The local public key in the published base64 form, or null if none exists.
+  Future<String?> encodedPublicKey() async {
+    final key = await _readPublicKey();
+    return key == null ? null : KeyEncoding.encodeBytes(key.bytes);
+  }
+
   Future<SimplePublicKey?> _readPublicKey() async {
     final row = await (_database.select(
       _database.identityTable,

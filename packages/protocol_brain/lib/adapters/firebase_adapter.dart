@@ -69,8 +69,27 @@ class FirebaseSignalingAdapter
   // F-015 (Phase 1): per-pair cipher cache keyed by peer username. Avoids
   // re-running ECDH on every signaling write; the root key is stable for the
   // life of the friendship.
-  final Map<String, SignalingCipher> _pairCipherCache =
-      <String, SignalingCipher>{};
+  static const int _pairCipherTtlMs = 2 * 60 * 1000;
+  final Map<String, ({SignalingCipher cipher, int at})> _pairCipherCache =
+      <String, ({SignalingCipher cipher, int at})>{};
+
+  /// Username of the signed-in account (see [_effectiveLocalUsername]).
+  String? get signedInUsername => _effectiveLocalUsername;
+
+  /// The configured local username, or the one encoded in the signed-in
+  /// account's e-mail (`<username>@rain.local`).
+  String? get _effectiveLocalUsername {
+    final configured = _localUsername;
+    if (configured != null && configured.trim().isNotEmpty) {
+      return configured;
+    }
+    final email = _auth.currentUser?.email;
+    if (email != null && email.endsWith('@rain.local')) {
+      return email.substring(0, email.length - '@rain.local'.length);
+    }
+    return null;
+  }
+
   final String _sessionId = DateTime.now().microsecondsSinceEpoch.toRadixString(
     36,
   );
@@ -148,20 +167,24 @@ class FirebaseSignalingAdapter
   Future<SignalingCipher?> _resolvePairCipher(
     ({String sender, String receiver}) context,
   ) async {
-    if (_pairCipherResolver == null || _localUsername == null) {
+    final localUsername = _effectiveLocalUsername;
+    if (_pairCipherResolver == null || localUsername == null) {
       return null;
     }
-    final normalizedLocal = _normalizedUsername(_localUsername);
+    final normalizedLocal = _normalizedUsername(localUsername);
     final peer = context.sender == normalizedLocal
         ? context.receiver
         : context.sender;
+    final now = DateTime.now().millisecondsSinceEpoch;
     final cached = _pairCipherCache[peer];
-    if (cached != null) {
-      return cached;
+    if (cached != null && now - cached.at < _pairCipherTtlMs) {
+      return cached.cipher;
     }
     final resolved = await _pairCipherResolver(peer);
     if (resolved != null) {
-      _pairCipherCache[peer] = resolved;
+      _pairCipherCache[peer] = (cipher: resolved, at: now);
+    } else {
+      _pairCipherCache.remove(peer);
     }
     return resolved;
   }
@@ -1571,6 +1594,7 @@ class FirebaseSignalingAdapter
 
   @override
   Future<void> signOut() {
+    _pairCipherCache.clear();
     return _auth.signOut();
   }
 
