@@ -34,7 +34,9 @@ T4.10 ad79d19 crossed invites: lower username keeps call; decision unit-tested (
 T4.11 71138df early candidate queue + notifyPeer on ringing timeout; protocol_brain 291 pass
 T4.12 e1e4cb9 APP-003 test added; APP-002 fallback implemented without runtime-level test (private helper)
 T4.13 696e78e 3 upgrade tests added; createTable is already idempotent so no guard needed
+T4.14 03078d6 serializedWrite is re-entrant; offer+unread+transfer and failTransfer in one transaction; all apps/rain tests pass
 ## Blocked
+T4.15 SKIPPED (DB-003): premise invalid - no table declares a foreign key, so the beforeOpen foreign_key_check can never fail. DB-003 downgraded to P3 in audit/01-findings.md; quarantine-on-open-failure moved to backlog.
 T4.19 BLOCKED (SEC-006): depends on T4.01 (rules changes need RULES_TEST).
 T4.03 BLOCKED (SEC-001): depends on T4.01 (rules changes need RULES_TEST).
 T4.01 BLOCKED (BE-001): RULES_TEST cannot run on this machine. `npx --yes firebase-tools@13 emulators:exec --only database "node -e 1"` (run in backend/firebase) fails with: "Error: Could not spawn `java -version`. Please make sure Java is installed and on your system PATH." No Java found on PATH or in Android Studio/Program Files. Owner action: install a JDK (21) and re-run T4.01.
