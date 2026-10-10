@@ -39,10 +39,10 @@ Related: [[Debt Categories]], [[Debt Prioritization]], [[Architecture Debt]], [[
 
 | Metric | Value |
 | --- | --- |
-| Total debt items | 22 |
+| Total debt items | 28 |
 | P0 items | 10 |
-| P1 items | 11 |
-| P2 items | 1 |
+| P1 items | 15 |
+| P2 items | 3 |
 | P3 items | 0 |
 | Critical launch-path items | 7 |
 | Current debt risk score | 72/100 |
@@ -552,6 +552,108 @@ Source: [[2026-06-05 Senior Audit Remediation Plan]]
 - Progress Note 2026-06-07: Account deletion now has an explicit `deletingAccount` startup phase after password verification. The app shows a full-screen blocking deletion overlay, hides navigation, and keeps the current protected route mounted so recoverable backend failures can restore Settings and show the modal. Route/provider tests lock this behavior.
 - Progress Note 2026-06-07: Account deletion no longer invokes runtime shutdown before backend/Auth deletion. Required tombstone failure now restores the existing runtime/session and keeps local identity, preventing failed delete from presenting as logout. Optional account cleanup is decoupled from the required tombstone write and retried path-by-path best-effort after multi-location cleanup failure. Runtime provider delete preflight now keeps startup ready while password verification is pending, preventing wrong-password failures from briefly replacing Settings with Splash and losing the error dialog.
 - Progress Note 2026-06-07 live rules follow-up: the deployed `users/{username}` rule was updated and read back from `rain-8fb4b-default-rtdb` so legacy rows missing `uid` can be tombstoned only by the matching Firebase Auth email/current uid. This reduces the remaining startup/delete UX debt from a known backend rules denial to a user Android retry/device evidence item.
+
+### TD-025: Firebase Adapter Is One Untested 3,000-Line Class
+
+- Category: Architecture
+- Status: Open
+- Priority: P1
+- Owner: Engineering
+- Title: `FirebaseSignalingAdapter` combines auth, presence, voice calls, locks, cleanup, legacy rooms, social graph and callables.
+- Description: 3,046 lines at HEAD, 0 of 1,277 lines covered by unit tests, no fake for `FirebaseAuth`/`FirebaseDatabase`.
+- Cause: Adapter grew with each feature and was only tested through emulator suites run in CI.
+- Risk: Regressions such as the registration rollback ordering are invisible until CI emulator runs.
+- Cost to Fix: L, about 5 days for ports plus tests; XL for the full split.
+- Cost to Ignore: Every backend change stays high risk.
+- Files Affected: `packages/protocol_brain/lib/adapters/firebase_adapter.dart`
+- Related Systems: [[Firebase Architecture]], [[Emulator Coverage]]
+- Roadmap Tasks: T4.06 in `audit/03-plan.md`
+- Resolution Strategy: Introduce database and auth ports, then split by responsibility (`audit/02-refactor-targets.md` target 2).
+
+### TD-026: Call Runtime Is An Extension On The Controller
+
+- Category: Architecture
+- Status: Open
+- Priority: P1
+- Owner: Engineering
+- Title: `VoiceCallRuntime` is an extension of `RainRuntimeController` with about 120 methods and 150-340-line functions.
+- Description: Voice, file, friend and connection-request logic are extensions sharing one 2,423-line controller.
+- Cause: Incremental extraction into coordinators left orchestration in the extension.
+- Risk: Races and swallowed errors hide in long functions (SIG-001..003, APP-002, APP-003).
+- Cost to Fix: XL
+- Cost to Ignore: Call bugs keep costing multi-file regressions.
+- Files Affected: `apps/rain/lib/application/runtime/voice_call_runtime.dart`, `rain_runtime_controller.dart`, `voice_call/*`
+- Related Systems: [[VoiceCallRuntime Refactor]]
+- Roadmap Tasks: `audit/02-refactor-targets.md` targets 1 and 3
+- Resolution Strategy: Characterization tests first, then extract frame IO, end, invite and media factory coordinators.
+
+### TD-027: Local Database Key Is Generated But Never Used
+
+- Category: Security
+- Status: Open
+- Priority: P1
+- Owner: Security/Engineering
+- Title: `openEncryptedRainDatabase` executes `PRAGMA key` on a stock SQLite build, which ignores it.
+- Description: The DB stays plaintext, a 32-byte key sits unused in the keystore, and `sqlite3_flutter_libs` is end-of-life.
+- Cause: SQLCipher open path and migration were deferred (TASK-002).
+- Risk: Misleading wiring; latent data loss if a SQLCipher build is introduced without a migration.
+- Cost to Fix: L
+- Cost to Ignore: Plaintext chat history on disk (accepted in [[ADR-010]], refined in [[ADR-013]]).
+- Files Affected: `packages/rain_core/lib/database/rain_database.dart`, `database_key_service.dart`, `apps/rain/lib/application/bootstrap/app_bootstrap.dart`
+- Related Systems: [[Security Roadmap]], [[Privacy Review]]
+- Roadmap Tasks: TASK-002, T4.07
+- Resolution Strategy: Report state honestly now (T4.07); implement option (a) of ADR-013 after the owner decision.
+
+### TD-028: Eight Overlapping GitHub Workflows
+
+- Category: DevOps
+- Status: Open
+- Priority: P2
+- Owner: Engineering
+- Title: Three CI workflows and four release workflows with different gates and no SHA pinning.
+- Description: Same checks defined three times; `ci.yml` had a `develop` branch filter; vault and audit gates fail on time.
+- Cause: Gates were added per incident.
+- Risk: Green in one workflow says nothing about another; supply-chain exposure through tag-pinned actions.
+- Cost to Fix: L
+- Cost to Ignore: Wasted runner minutes and unclear release safety.
+- Files Affected: `.github/workflows/*.yml`
+- Related Systems: [[Release Gates]]
+- Roadmap Tasks: T3.3, T4.23, `audit/02-refactor-targets.md` target 7
+- Resolution Strategy: One CI and one release workflow, pinned actions, Dependabot.
+
+### TD-029: Beta And End-Of-Life Dependencies, Historical Secrets
+
+- Category: DevOps
+- Status: Open
+- Priority: P2
+- Owner: Engineering/Owner
+- Title: `file_picker 12.0.0-beta.3` in production, `sqlite3_flutter_libs 0.6.0+eol`, `dart_defines.local.json` in history.
+- Description: Pre-release plugin handles file selection; EOL native libs; historical config file recoverable from git.
+- Cause: Fast iteration without dependency policy.
+- Risk: Unpatched bugs; credential exposure.
+- Cost to Fix: M
+- Cost to Ignore: Security patches missed.
+- Files Affected: `apps/rain/pubspec.yaml`, `pubspec.lock`, `apps/rain/tool/dart_defines.local.json` (history)
+- Related Systems: [[Security Roadmap]]
+- Roadmap Tasks: ARCH-006, GIT-003 in `audit/01-findings.md`
+- Resolution Strategy: Move to stable `file_picker` after device smoke; owner rotates exposed values.
+
+### TD-030: Ghost Call Rooms On Spark
+
+- Category: Operational
+- Status: Open
+- Priority: P1
+- Owner: Engineering
+- Title: Connected or abandoned `voiceCalls` rooms are never deleted without Blaze scheduled functions.
+- Description: Client cleanup runs at start/resume for the user's own lock and skips `connected` rooms; no `onDisconnect` for call nodes.
+- Cause: Cleanup was designed around Cloud Functions.
+- Risk: RTDB growth against Spark quotas.
+- Cost to Fix: M
+- Cost to Ignore: Quota exhaustion over time.
+- Files Affected: `packages/protocol_brain/lib/adapters/firebase_adapter.dart`, `packages/protocol_brain/lib/src/voice_call_cleanup_janitor.dart`, `backend/firebase/functions/index.js`
+- Related Systems: [[Rules Strategy]], [[Firebase Architecture]]
+- Roadmap Tasks: T4.04
+- Resolution Strategy: Pure cleanup planner and client reclaim (T4.04); `onDisconnect` and liveness heartbeat later.
 
 ## Debt Burn-Down Plan
 

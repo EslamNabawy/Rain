@@ -39,6 +39,10 @@ Provide the vault-level repository discovery map. This note is linked to [[Curre
 
 These folders may contain useful build outputs but are not treated as primary architecture source.
 
+## Audit Program Files
+
+The `audit/` directory at the repository root holds the 2026-10 hardening audit: `00-inventory.md`, `01-findings.md`, `02-refactor-targets.md`, `03-plan.md`, `04-vault-updates.md`, `05-report.md`, `STATE.md` and the preserved work-in-progress patch under `audit/wip/`. Related notes: [[Risk Register]], [[Technical Debt Register]], [[BLOCKERS]].
+
 ## Semantic Validation Contract
 
 `scripts/check_obsidian_vault.ps1` is the local preflight for vault structure and operational truth. It validates required files, unique note titles, wiki-links, inbound/outbound links, and the semantic registers below.
