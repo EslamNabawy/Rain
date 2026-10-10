@@ -35,13 +35,13 @@ T4.11 71138df early candidate queue + notifyPeer on ringing timeout; protocol_br
 T4.12 e1e4cb9 APP-003 test added; APP-002 fallback implemented without runtime-level test (private helper)
 T4.13 696e78e 3 upgrade tests added; createTable is already idempotent so no guard needed
 T4.14 03078d6 serializedWrite is re-entrant; offer+unread+transfer and failTransfer in one transaction; all apps/rain tests pass
- ef1c897 
 T4.16 ccb88dd allowBackup=false + extraction rules; Android build not run (R7)
 T4.17 6ff2037 ensureKeyPair verifies private key; login re-publishes key best-effort
 T4.18 fda079f trustedUpdateUrl allow-list (https + github Rain repos or build host)
 T4.20 c8186f8 service no longer imports firebase_auth; 2 broker tests
 T4.21 4feaa3f protocol_brain_firebase.dart + testing.dart; boundary test; all packages green
 T4.22 95778ab lazy FirebaseFunctions; source-contract test (adapter cannot be constructed in unit tests)
+T4.23 b9e5348 flutter-action and gh-release pinned by SHA; v4 artifact/checkout aligned; dependabot.yml added
 ## Blocked
 T4.15 SKIPPED (DB-003): premise invalid - no table declares a foreign key, so the beforeOpen foreign_key_check can never fail. DB-003 downgraded to P3 in audit/01-findings.md; quarantine-on-open-failure moved to backlog.
 T4.19 BLOCKED (SEC-006): depends on T4.01 (rules changes need RULES_TEST).
@@ -56,6 +56,7 @@ T4.01 BLOCKED (BE-001): RULES_TEST cannot run on this machine. `npx --yes fireba
 - D5 Historical dart_defines.local.json values are treated as exposed; rotation is a manual owner action listed in the final report.
 
 ## Notes
+- Phase 4 end (2026-10-10): ANALYZE clean, FORMAT clean, tests peer_core 80, protocol_brain 294, rain_core 67, apps/rain 760 pass + 20 skip, functions 37, vault pass. Blocked: T4.01/T4.03/T4.19 (no Java). Skipped: T4.15 (premise invalid). Reduced: T4.06. A stray empty-subject commit (ef1c897) exists from a mistaken helper call; history is not rewritten (R2).
 - T3.5 baseline (2026-10-10): ANALYZE clean (4 packages), FORMAT clean (283 files), tests peer_core 76, protocol_brain 276, rain_core 61, apps/rain 744 pass + 20 skip, functions 37 pass, VAULT pass, npm audit:moderate 0 vulnerabilities.
 - TEST gap for T3.1: FirebaseSignalingAdapter cannot be faked without new dependencies (no fake for FirebaseAuth/FirebaseDatabase); see TEST-001. Planned fix: T4.06.
 
