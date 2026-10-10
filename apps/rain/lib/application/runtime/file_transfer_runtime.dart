@@ -1074,17 +1074,53 @@ extension FileTransferRuntime on RainRuntimeController {
     List<FileTransferRecord> active;
     try {
       active = await fileTransferStore.loadActiveTransfers(peerId: peerId);
-    } catch (_) {
+    } catch (error, stackTrace) {
+      _recordTransferCleanupFailure(
+        error,
+        stackTrace,
+        peerId: peerId,
+        name: 'fail_active_transfers_load_failed',
+      );
       return;
     }
     for (final transfer in active) {
       try {
         await markTransferFailed(transfer.id, reason);
-      } catch (_) {
-        // Transfer cleanup is best effort during shutdown and relationship churn.
+      } catch (error, stackTrace) {
+        // Cleanup stays best effort, but a stuck row blocks new transfers from
+        // this peer, so the failure must be visible.
+        _recordTransferCleanupFailure(
+          error,
+          stackTrace,
+          peerId: peerId,
+          transferId: transfer.id,
+          name: 'fail_active_transfer_failed',
+        );
       }
     }
     pendingFileChunks.remove(peerId);
+  }
+
+  void _recordTransferCleanupFailure(
+    Object error,
+    StackTrace stackTrace, {
+    required String peerId,
+    required String name,
+    String? transferId,
+  }) {
+    recordRuntimeEvent(
+      category: 'file_transfer',
+      name: name,
+      severity: 'warning',
+      message: _formatTransferError(error),
+      context: <String, Object?>{'peerId': peerId, 'transferId': ?transferId},
+    );
+    errorRecorder?.call(
+      error,
+      stackTrace,
+      source: 'file-transfer-cleanup',
+      fatal: false,
+    );
   }
 
   Future<ReceivePaths> prepareReceivePaths(FileTransferRecord transfer) async {

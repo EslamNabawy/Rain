@@ -330,8 +330,16 @@ extension VoiceCallRuntime on RainRuntimeController {
           return true;
         }
         return room.expiresAt <= now;
-      } catch (_) {
-        return false;
+      } catch (error) {
+        // A failed lookup must not keep a stale call blocking new calls; fall
+        // back to the local expiry check below.
+        recordRuntimeEvent(
+          category: 'call',
+          name: 'expired_start_block_lookup_failed',
+          severity: 'warning',
+          message: error.toString(),
+          context: <String, Object?>{'callId': callId},
+        );
       }
     }
     final sessionEpoch = state.sessionEpoch;
