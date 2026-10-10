@@ -1,0 +1,12 @@
+{
+  "name": "rain-rules-test",
+  "private": true,
+  "description": "Unit tests for backend/firebase/database.rules.json (run with the database emulator)",
+  "scripts": {
+    "test": "node run.js"
+  },
+  "devDependencies": {
+    "@firebase/rules-unit-testing": "6.0.0",
+    "firebase": "^13.0.0"
+  }
+}
