@@ -1,6 +1,6 @@
-# Project Memory
+﻿# Project Memory
 
-Last updated: 2026-08-29
+Last updated: 2026-10-10
 
 ## Purpose
 
@@ -284,14 +284,6 @@ Latest evidence lock: [ROOT_CAUSE_ANALYSIS.md](../../ROOT_CAUSE_ANALYSIS.md) cor
 
 2026-06-06 direct-connect ICE diagnostics update: `rain-diagnostics-2026-06-06T034623-022529Z.json` showed nonfatal `signaling.writeICE` permission denied shortly before a reconnect that stayed in `waitingForOffer`. The checked-in RTDB rules intentionally bind `callerICE` to canonical `userA` and `calleeICE` to canonical `userB`; loosening those buckets to either participant would weaken role integrity. The implemented mitigation is lifecycle ordering: disconnect disposes/cancels peer bindings before deleting the room, and local ICE callbacks must match the active session, peer generation, room id, peer instance, binding state, and non-failed state before writing Firebase. Diagnostics now include sanitized ICE path templates in debug events and `lastCrash.context`. Validation passed: focused protocol ICE, debug-log, and crash-diagnostics tests; `dart pub get`; `dart run melos run analyze`; full `dart run melos run test`; vault validation; and `Build Rain Apps` run 27052313608 for SHA `ff4e10b7b89533a4bdbdac5cb3d412795a9e6a82`. Follow-up from `rain-diagnostics-2026-06-06T170224-576454Z.json`: a direct data lane can reach connected before all local trickle ICE has arrived, so deleting the active data-peer room at connected is too early. Rain now keeps the active data-peer signaling room alive until disconnect/failure/session cleanup, and a regression test proves late connected-session ICE writes the canonical bucket without failing the session.
 
-2026-08-29 trace-context wiring (PR1+PR3 of `docs/plans/2026-08-27-rain-tracing-implementation-guide.md`, scope-cut to `register` and `_startCall` per [[ADR-011]]): the four tracing scaffolds (`TraceContext`, `InteractionTrace`, `AppNavigationObserver`, `ThrottledProviderObserver`) now live under `apps/rain/lib/infrastructure/diagnostics/tracing/`. `IdentityController.register` and `RainRuntimeController._startCall` (covers voice and video) wrap their body in `TraceContext.runAsync`, so every `auth/*` and `call/*` event inside shares one `traceId`. `AppNavigationObserver` is registered on the `GoRouter` `observers` list and emits `interaction/navigation` events with the active `traceId` when one exists. `RainStartupApp` swaps `RainDebugProviderObserver` for `ThrottledProviderObserver`. The `voice_call_tracing_patch.dart` file is intentionally not imported; its `VoiceFailureTaxonomy` enum would compete with the 2026-06-08 `CallErrorClassifier`, and the design's SDP fix predates the `VoiceCallStateCoordinator` work that owns call state. Heartbeat, presence, signaling writes, and file transfer are still uncorrelated (TD-024). Workspace validation: `dart pub get` succeeded, `dart run melos run analyze` reported "No issues found!" for all 4 packages (`peer_core`, `protocol_brain`, `rain_core`, `rain`), and `dart run melos run test` reported SUCCESS for all 4 packages: `peer_core` 75 tests, `protocol_brain` 267, `rain` 742 (was 741, +1 from the registration-conflict test added in `c1e4820`), `rain_core` 51. Total 1135 tests passed, 0 failed. Cloud CI on PR #19: 40 SUCCESS, 0 FAILURE, `mergeable: MERGEABLE`, `mergeStateStatus: CLEAN` after merging 4 Dependabot PRs (#15 body-parser, #16 brace-expansion+google-gax, #17 brace-expansion, #18 websocket-driver) and applying `npm audit fix` for transitive `@grpc/grpc-js` 1.14.3->1.14.4 and `protobufjs` 7.5.8->7.6.6. PR #19 squash-merged to `main` as commit `da55e3b` on 2026-08-29 11:58:25Z. `scripts/check_obsidian_vault.ps1` passed 199 markdown files. Follow-up work tracked in [[Master Roadmap]] Phases 12-14.
-
-2026-08-29 tracing Phase 13 (provider throttle hardening): `ThrottledProviderObserver.hashForDedupe` is a `@visibleForTesting` static helper that produces structural hashes for `ConnectionDiagnostics`, `PeerConnectivitySnapshot`, and `Map<String, PeerConnectivitySnapshot>`, then falls back to `Object.hashCode` for other value types. Map hashing canonicalizes by sorted keys. 10 new tests in `apps/rain/test/throttled_provider_observer_test.dart` lock structural equality for both value types, the map canonicalization across insertion order, status-key changes, `peerId` changes, `manualDisconnected` changes, and `null` handling. `dart run melos run analyze` and `dart run melos run test` SUCCESS across all 4 packages; `rain` test count went 742 -> 752. [[Risk Register|R-023]] status moved from Open to Mitigating.
-
-2026-08-29 tracing Phase 12 (traceId coverage, partial): `RainRuntimeController._sendHeartbeatSafely`, `_setPresenceOnlineSafely`, `_setPresenceOfflineSafely`, and `_fetchPeerPresenceSnapshot` now wrap their body in `TraceContext.runAsync`. The `presence/*` and `connection/*` runtime events emitted inside these wrappers carry the same `traceId` for the originating user action. `dart run melos run analyze` and `dart run melos run test` SUCCESS across all 4 packages; 1145 tests pass, 0 failed. The new code relies on existing integration coverage in `friend_flow_test.dart` for end-to-end behavior; the controller itself is too large to add a `RainRuntimeControllerTest` without significant constructor setup. Residual gap: traceId in data-peer signaling writes (`brain!.connect` / `brain!.send`), voice signaling writes (`writeICE` / `writeVoiceOffer` / `writeVoiceAnswer` in `protocol_brain`), and file transfer chunk pipeline. The upstream `_startCall` traceId already covers the voice-signaling flow at the call boundary, so per-write traceIds are lower-priority.
-
-2026-08-29 BLK-009 partial close: `apps/rain/test/connection_request_runtime_test.dart` now has 14 tests covering online denial (peerAlreadyOnline + no adapter mutation), offline send, presence fetch failure (unknown), duplicate pending, burst cooldown, cancel, manual disconnect, restart, active file transfer, adapter failure, active call, and a new raw-online-with-stale-heartbeat test that exercises the freshness window at the runtime layer. `packages/protocol_brain/test/connection_request_rtdb_rules_contract_test.dart` already locks the rules-layer guarantee: both inbox and outbox writes are denied when `presence/<to>/online === true`, and a 45-second heartbeat window is checked. `dart run melos run analyze` and `dart run melos run test` SUCCESS; `rain` 752 -> 753. The fake adapter's `fetchConnectionRequestQuota` returns hardcoded `usedToday: 0`, so `dailyLimitExceeded` / `perTargetLimitExceeded` / `extraCreditsExhausted` require a fake adapter extension to simulate. The live Firebase emulator proof runs in `ci.yml` on every PR via `scripts/ci_run_firebase_emulators.sh`.
-
 ## Technical Debt
 
 Primary debt items:
@@ -307,6 +299,8 @@ Primary debt items:
 - Call UI has had multiple iterations; it needs one stable presentation source of truth.
 
 Source of truth: [[Technical Debt Register]].
+
+- Audit 2026-10-10 added TD-025..TD-030 (see [[Technical Debt Register]]).
 
 ## Risks
 
@@ -326,6 +320,8 @@ Current top risks:
 - Release workflows can publish artifacts if gates are weak or bypassed.
 
 Source of truth: [[Risk Register]] and [[BLOCKERS]].
+
+- Audit 2026-10-10 added R-024..R-032 (see [[Risk Register]]).
 
 ## Roadmap Memory
 
@@ -459,6 +455,8 @@ Multi-issue stability investigation update 2026-06-04:
 - Recommended next implementation order: authoritative peer/call capability snapshot, immediate local call-ended presentation before cleanup waits, shutdown critical-vs-best-effort split with timing diagnostics, desktop video preflight, Android startup theme alignment, and gender-avatar data-path proof.
 - Phase E splash remediation 2026-06-04: Android `LaunchTheme` and `NormalTheme` in both `values` and `values-night` now use `@drawable/launch_background`; the default and v21 launch drawables remain dark `#061017`. `apps/rain/test/android_splash_resources_test.dart` locks the platform theme/drawable contract and passed locally with `flutter test test/android_splash_resources_test.dart --reporter expanded` from `apps/rain`.
 
+- Spark-only: Cloud Functions in `backend/firebase/functions` are optional and not deployed in free-tier builds ([[ADR-012]]). Scheduled cleanups (`cleanupPresence`, `cleanupRooms`, `cleanupVoiceCalls`, `cleanupConnectionRequests`) need Blaze.
+- Canonical working copy for the audit program is `D:\Rain` (decision D1, 2026-10-09); AGENTS.md still names the OneDrive path until the owner confirms.
 2026-08-26 cross-platform remediation start: [CROSS_PLATFORM_REMEDIATION_PLAN.md](../../CROSS_PLATFORM_REMEDIATION_PLAN.md) now orchestrates the audited cross-platform fixes. Slice A1+A2 moved receiver file-hash verification into `Isolate.run` and introduced an incoming-transfer record cache whose single invalidation funnel is `clearTransferRuntimeState`; any future code path that mutates incoming transfer state outside that funnel must also invalidate the cache or the chunk hot loop will act on stale state. Sender-side incremental hashing intentionally remains on the main isolate (micro-scale per-event cost, loop yields every chunk). Two pre-existing HEAD defects were found and fixed during the slice: 254 files had doc headers without `library;` directives failing CI `--fatal-infos`, and `_runtimeProviderContainer` in `runtime_startup_test.dart` omitted a non-demo `RAIN_SIGNALING_ENCRYPTION_KEY`, so the hard cipher-key rejection broke 7 account-deletion/logout tests. Any session running tests locally must not assume environment variables fix the cipher check; test environments must pass explicit keys.
 
 ## Known Pitfalls
@@ -482,6 +480,15 @@ Multi-issue stability investigation update 2026-06-04:
 - Obsidian links must remain valid; run the vault checker after documentation changes.
 - Isolated app tests that touch Drift/SQLite must run from `apps/rain` or through `scripts/run_rain_app_test.ps1`; root-level `flutter test apps\rain\test\...` can fail to resolve SQLite native assets on Windows.
 - The vault has completed the governance checks needed for senior audit Phase 9: canonical source notes are documented, uncontrolled duplicate titles fail validation, and operational register semantics are checked by `scripts/check_obsidian_vault.ps1`. Remaining governance hardening is generated metric reconciliation and release-artifact evidence automation.
+
+- Signaling today is v=1: one shared compile-time `RAIN_SIGNALING_ENCRYPTION_KEY` for all users. The per-pair v=2 cipher exists but the app passes no `pairCipherResolver`/`localUsername`; do not describe signaling as end-to-end encrypted ([[ADR-013]], R-024).
+- `users/$username` rules have `$other: .validate false`; any new child (for example `signingPublicKey`) needs a rule and a rules test in the same change.
+- `PRAGMA key` is ignored by stock SQLite: the local database is plaintext although a DB key exists in the keystore ([[ADR-010]], [[ADR-013]]).
+- `voiceCalls/<id>/expiresAt` is immutable under the rules; a liveness heartbeat must use `updatedAt`.
+- `localMutations.run` is a FIFO future queue, not a DB transaction; `serializedTransaction` must never be nested (it deadlocks the write queue).
+- The vault gate fails when any register is older than 45 days; refresh `Last updated` or run the validator before pushing.
+- Android has no call foreground service and backgrounding marks presence offline; closed-app and background-call reliability remain out of scope until that exists.
+- `dart_defines.local.json` values are in git history (commits 0d8147c, 6ff832b); treat them as exposed.
 
 ## Quick Start For Future AI Sessions
 

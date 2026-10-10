@@ -39,14 +39,14 @@ Related: [[Debt Categories]], [[Debt Prioritization]], [[Architecture Debt]], [[
 
 | Metric | Value |
 | --- | --- |
-| Total debt items | 23 |
+| Total debt items | 29 |
 | P0 items | 10 |
-| P1 items | 11 |
-| P2 items | 2 |
+| P1 items | 15 |
+| P2 items | 4 |
 | P3 items | 0 |
 | Critical launch-path items | 7 |
 | Current debt risk score | 72/100 |
-| Target debt risk before public release | 30 or lower |
+| Target debt risk before public release | 30/100 or lower |
 
 ## Category Distribution
 
@@ -56,7 +56,7 @@ Related: [[Debt Categories]], [[Debt Prioritization]], [[Architecture Debt]], [[
 | Scalability | 3 | High | [[Scalability Debt]] |
 | Security | 4 | Highest | [[Security Debt]] |
 | Performance | 2 | High | [[Performance Debt]] |
-| Testing | 3 | High | [[Testing Debt]] |
+| Testing | 2 | High | [[Testing Debt]] |
 | DevOps | 2 | High | [[DevOps Debt]] |
 | UX | 3 | Medium | [[UX Debt]] |
 
@@ -121,7 +121,7 @@ Source: [[2026-06-05 Senior Audit Remediation Plan]]
 - Resolution Strategy: Extract call start, lease, media, terminal, and diagnostics ownership behind coordinator contracts, then add characterization and regression tests.
 - Progress Note 2026-06-05: First Phase 3 decomposition slice is complete. `CallErrorClassifier` now owns call failure reason/message/taxonomy/retry classification, and `call_media_session_coordinator.dart` owns app-side audio/video media adapters plus media diagnostics mapping. `VoiceCallRuntime` still owns command orchestration, room reconciliation, lock coordination, state mutation, and terminal cleanup, so TD-001 remains open until those seams are extracted and validated.
 - Progress Note 2026-06-06: Combined Phase 3 slice reduced runtime/state ambiguity but does not close TD-001. Added `VoiceCallTerminalReconciler` for terminal-session-state policy, added renderer target classification in `call_media_session_coordinator.dart`, and moved peer UI truth into `ConnectionDiagnostics`/`peerConnectionDiagnosticsProvider`. Command orchestration, Firebase room reconciliation, lock/lease coordination, and most terminal cleanup remain in `VoiceCallRuntime`.
-- Progress Note 2026-06-08: Phase 2a extracted `VoiceCallRoomCoordinator` (164 lines, 20 tests). Room status tracking, terminal room detail/reason resolution, reason code mapping, and terminal write error detection moved to coordinator. voice_call_runtime.dart reduced 4751ΓåÆ4689 lines.
+- Progress Note 2026-06-08: Phase 2a extracted `VoiceCallRoomCoordinator` (164 lines, 20 tests). Room status tracking, terminal room detail/reason resolution, reason code mapping, and terminal write error detection moved to coordinator. voice_call_runtime.dart reduced 4751â†’4689 lines.
 - Progress Note 2026-06-08: Phase 3 added `voice_call_rtdb_rules_contract_test.dart` (37 tests) validating all voice call RTDB rules paths. TD-009 rule coverage gaps now have static test validation. TD-011 malformed write protection validated through existing emulator tests.
 - Progress Note 2026-06-08: Phase 3a grouped `VoiceCallRoomCoordinator`, `VoiceCallErrorCoordinator`, `VoiceCallDiagnostics`, `VoiceCallTerminalReconciler`, and new `VoiceCallStateCoordinator` under `apps/rain/lib/application/runtime/voice_call/`. `VoiceCallStateCoordinator` owns pure call-state mapping/reset policy and focused coordinator tests plus full Melos analyze/test passed. `VoiceCallRuntime` is now 4,480 lines, but command orchestration, Firebase room reconciliation, lock coordination, media/session orchestration, and most cleanup remain.
 - Progress Note 2026-06-08: Phase 3b extracted `VoiceCallPreflightCoordinator` and `VoiceCallReconnectCoordinator` under `apps/rain/lib/application/runtime/voice_call/`. Preflight now owns call-start availability/friend/presence guards and stale retry replacement; reconnect now owns peer failure/reconnecting state, session reconnect markers, and reconnect grace timers. `voice_call_runtime.dart` is now 4,189 lines, but command orchestration, Firebase room reconciliation, lock coordination, media/session orchestration, terminal cleanup, and full start conflict policy remain.
@@ -279,8 +279,6 @@ Source: [[2026-06-05 Senior Audit Remediation Plan]]
 - Roadmap Tasks: TASK-010, TASK-011.
 - Resolution Strategy: Stream incoming chunks to temp files, add high/low water marks, pause/resume sends, and test slow receivers and cancellation.
 - Progress Note 2026-06-05: Phase 7 local mitigation is implemented. Incoming chunks now use a persistent receive sink per active transfer and close it on complete, cancel, failure, network loss, and shutdown. Terminal cleanup deletes temp files for cancellation, hash mismatch, invalid chunks, and disk write failure. The outgoing send loop carries one partial chunk instead of growing/removing from a pending list. Backpressure constants for chunk size, high/low watermarks, poll interval, and timeout now live in the protocol contract, and the sender records privacy-safe wait/complete/timeout diagnostics. Focused large receive, cancel cleanup, hash mismatch cleanup, disk write failure, and scripted backpressure tests passed locally; real-network/device-scale proof remains follow-up evidence.
-- Progress Note 2026-08-26: Cross-platform remediation slice A1+A2 (from [CROSS_PLATFORM_REMEDIATION_PLAN.md](../../CROSS_PLATFORM_REMEDIATION_PLAN.md)) removed two main-thread hot-loop costs. Receiver final SHA-256 now runs in `Isolate.run` with streamed reads instead of hashing on the UI isolate. Incoming transfer records hydrate into a runtime cache on first chunk and reuse it through completion; `clearTransferRuntimeState` is the single invalidation funnel (terminal frames, reject, cancel, markTransferFailed, network-loss cleanup). A loadById-count regression test proves the chunk hot path performs exactly one store read. Sender-side incremental hashing stays on the main isolate by accepted design: per-event digest cost is micro-scale and the send loop yields every chunk via awaited sends/backpressure, so no freeze spike exists; revisit only if profiling disagrees. Workspace analyze and full Melos tests passed; real-network/device-scale transfer proof remains open.
-- Progress Note 2026-08-26b: Cross-platform slice A3+A4 removed the remaining transfer hot-loop costs. Binary-only data-channel frames no longer rebuild peer connectivity snapshots per 32 KiB chunk: `PeerConnectivityController` filters binary messages and the runtime's data-event notification uses a leading-edge 250 ms throttle with a trailing flush, so burst timestamps still reach the UI within one window. Receive sinks now flush via `FileTransferFlushPolicy` (rain_core): first write always flushes to fail fast on unwritable destinations, later writes batch per 512 KiB (`fileTransferFlushThresholdBytes`), terminal closes flush remainders. Regression coverage: loadById-count test, emission-count throttle test (`data_event_throttle_test.dart`), and policy unit tests. Workspace analyze plus full Melos tests passed; real-network/device-scale transfer proof remains open.
 
 ## Security Debt
 
@@ -574,6 +572,108 @@ Source: [[2026-06-05 Senior Audit Remediation Plan]]
 - Roadmap Tasks: Phase 12, Phase 13 of [[Master Roadmap]] tracing overlay.
 - Progress Note 2026-08-29: `ThrottledProviderObserver.hashForDedupe` now produces structural hashes for `ConnectionDiagnostics`, `PeerConnectivitySnapshot`, and `Map<String, PeerConnectivitySnapshot>`. The dedupe path is testable via `@visibleForTesting`. 10 new tests in `apps/rain/test/throttled_provider_observer_test.dart` lock structural equality, content-equal updates, status-key changes, `peerId` changes, `manualDisconnected` changes, map canonicalization across insertion order, and `null` handling. `dart run melos run analyze` and `dart run melos run test` SUCCESS across all 4 packages; `rain` test count went 742 -> 752.
 - Progress Note 2026-08-29: Phase 12 (traceId coverage) partially merged. `RainRuntimeController._sendHeartbeatSafely`, `_setPresenceOnlineSafely`, `_setPresenceOfflineSafely`, and `_fetchPeerPresenceSnapshot` now wrap their body in `TraceContext.runAsync` and propagate the `traceId` to the `presence/*` and `connection/*` runtime events they emit. `RainRuntimeController` (1,200+ line file) is too large to add a `RainRuntimeControllerTest` without significant `RainRuntimeController` constructor setup, so the change relies on existing integration coverage in `friend_flow_test.dart`. `dart run melos run analyze` and `dart run melos run test` SUCCESS; no regression (1145 tests pass). Residual gap: traceId in `brain!.connect` / `brain!.send` data-peer signaling writes, voice signaling writes (`writeVoiceOffer` / `writeVoiceAnswer` / `writeICE`), and file transfer chunk pipeline. The upstream `_startCall` traceId already covers the voice-signaling flow at the call boundary, so per-write traceIds are deferred.
+
+### TD-025: Firebase Adapter Is One Untested 3,000-Line Class
+
+- Category: Architecture
+- Status: Open
+- Priority: P1
+- Owner: Engineering
+- Title: `FirebaseSignalingAdapter` combines auth, presence, voice calls, locks, cleanup, legacy rooms, social graph and callables.
+- Description: 3,046 lines at HEAD, 0 of 1,277 lines covered by unit tests, no fake for `FirebaseAuth`/`FirebaseDatabase`.
+- Cause: Adapter grew with each feature and was only tested through emulator suites run in CI.
+- Risk: Regressions such as the registration rollback ordering are invisible until CI emulator runs.
+- Cost to Fix: L, about 5 days for ports plus tests; XL for the full split.
+- Cost to Ignore: Every backend change stays high risk.
+- Files Affected: `packages/protocol_brain/lib/adapters/firebase_adapter.dart`
+- Related Systems: [[Firebase Architecture]], [[Emulator Coverage]]
+- Roadmap Tasks: T4.06 in `audit/03-plan.md`
+- Resolution Strategy: Introduce database and auth ports, then split by responsibility (`audit/02-refactor-targets.md` target 2).
+
+### TD-026: Call Runtime Is An Extension On The Controller
+
+- Category: Architecture
+- Status: Open
+- Priority: P1
+- Owner: Engineering
+- Title: `VoiceCallRuntime` is an extension of `RainRuntimeController` with about 120 methods and 150-340-line functions.
+- Description: Voice, file, friend and connection-request logic are extensions sharing one 2,423-line controller.
+- Cause: Incremental extraction into coordinators left orchestration in the extension.
+- Risk: Races and swallowed errors hide in long functions (SIG-001..003, APP-002, APP-003).
+- Cost to Fix: XL
+- Cost to Ignore: Call bugs keep costing multi-file regressions.
+- Files Affected: `apps/rain/lib/application/runtime/voice_call_runtime.dart`, `rain_runtime_controller.dart`, `voice_call/*`
+- Related Systems: [[VoiceCallRuntime Refactor]]
+- Roadmap Tasks: `audit/02-refactor-targets.md` targets 1 and 3
+- Resolution Strategy: Characterization tests first, then extract frame IO, end, invite and media factory coordinators.
+
+### TD-027: Local Database Key Is Generated But Never Used
+
+- Category: Security
+- Status: Open
+- Priority: P1
+- Owner: Security/Engineering
+- Title: `openEncryptedRainDatabase` executes `PRAGMA key` on a stock SQLite build, which ignores it.
+- Description: The DB stays plaintext, a 32-byte key sits unused in the keystore, and `sqlite3_flutter_libs` is end-of-life.
+- Cause: SQLCipher open path and migration were deferred (TASK-002).
+- Risk: Misleading wiring; latent data loss if a SQLCipher build is introduced without a migration.
+- Cost to Fix: L
+- Cost to Ignore: Plaintext chat history on disk (accepted in [[ADR-010]], refined in [[ADR-013]]).
+- Files Affected: `packages/rain_core/lib/database/rain_database.dart`, `database_key_service.dart`, `apps/rain/lib/application/bootstrap/app_bootstrap.dart`
+- Related Systems: [[Security Roadmap]], [[Privacy Review]]
+- Roadmap Tasks: TASK-002, T4.07
+- Resolution Strategy: Report state honestly now (T4.07); implement option (a) of ADR-013 after the owner decision.
+
+### TD-028: Eight Overlapping GitHub Workflows
+
+- Category: DevOps
+- Status: Open
+- Priority: P2
+- Owner: Engineering
+- Title: Three CI workflows and four release workflows with different gates and no SHA pinning.
+- Description: Same checks defined three times; `ci.yml` had a `develop` branch filter; vault and audit gates fail on time.
+- Cause: Gates were added per incident.
+- Risk: Green in one workflow says nothing about another; supply-chain exposure through tag-pinned actions.
+- Cost to Fix: L
+- Cost to Ignore: Wasted runner minutes and unclear release safety.
+- Files Affected: `.github/workflows/*.yml`
+- Related Systems: [[Release Gates]]
+- Roadmap Tasks: T3.3, T4.23, `audit/02-refactor-targets.md` target 7
+- Resolution Strategy: One CI and one release workflow, pinned actions, Dependabot.
+
+### TD-029: Beta And End-Of-Life Dependencies, Historical Secrets
+
+- Category: DevOps
+- Status: Open
+- Priority: P2
+- Owner: Engineering/Owner
+- Title: `file_picker 12.0.0-beta.3` in production, `sqlite3_flutter_libs 0.6.0+eol`, `dart_defines.local.json` in history.
+- Description: Pre-release plugin handles file selection; EOL native libs; historical config file recoverable from git.
+- Cause: Fast iteration without dependency policy.
+- Risk: Unpatched bugs; credential exposure.
+- Cost to Fix: M
+- Cost to Ignore: Security patches missed.
+- Files Affected: `apps/rain/pubspec.yaml`, `pubspec.lock`, `apps/rain/tool/dart_defines.local.json` (history)
+- Related Systems: [[Security Roadmap]]
+- Roadmap Tasks: ARCH-006, GIT-003 in `audit/01-findings.md`
+- Resolution Strategy: Move to stable `file_picker` after device smoke; owner rotates exposed values.
+
+### TD-030: Ghost Call Rooms On Spark
+
+- Category: Operational
+- Status: Open
+- Priority: P1
+- Owner: Engineering
+- Title: Connected or abandoned `voiceCalls` rooms are never deleted without Blaze scheduled functions.
+- Description: Client cleanup runs at start/resume for the user's own lock and skips `connected` rooms; no `onDisconnect` for call nodes.
+- Cause: Cleanup was designed around Cloud Functions.
+- Risk: RTDB growth against Spark quotas.
+- Cost to Fix: M
+- Cost to Ignore: Quota exhaustion over time.
+- Files Affected: `packages/protocol_brain/lib/adapters/firebase_adapter.dart`, `packages/protocol_brain/lib/src/voice_call_cleanup_janitor.dart`, `backend/firebase/functions/index.js`
+- Related Systems: [[Rules Strategy]], [[Firebase Architecture]]
+- Roadmap Tasks: T4.04
+- Resolution Strategy: Pure cleanup planner and client reclaim (T4.04); `onDisconnect` and liveness heartbeat later.
 
 ## Debt Burn-Down Plan
 
