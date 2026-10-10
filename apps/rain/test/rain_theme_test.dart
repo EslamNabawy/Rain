@@ -17,6 +17,43 @@ void main() {
     expect(RainMotion.fullscreenTransition, greaterThan(RainMotion.quick));
   });
 
+  test('spacing and radius tokens are strictly increasing', () {
+    const space = <double>[
+      RainSpace.xxs,
+      RainSpace.xs,
+      RainSpace.sm,
+      RainSpace.md,
+      RainSpace.lg,
+      RainSpace.xl,
+      RainSpace.xxl,
+    ];
+    const radius = <double>[
+      RainRadius.sm,
+      RainRadius.md,
+      RainRadius.lg,
+      RainRadius.xl,
+      RainRadius.xxl,
+      RainRadius.pill,
+    ];
+    for (final scale in <List<double>>[space, radius]) {
+      for (var i = 1; i < scale.length; i++) {
+        expect(scale[i], greaterThan(scale[i - 1]));
+      }
+    }
+    expect(RainMotion.pressScale, lessThan(RainMotion.quick));
+    expect(RainMotion.splashCaptionDelay, greaterThan(RainMotion.slow));
+  });
+
+  testWidgets('dark theme has a floating snackbar theme like light', (
+    WidgetTester tester,
+  ) async {
+    final dark = RainTheme.dark().snackBarTheme;
+    final light = RainTheme.light().snackBarTheme;
+    expect(dark.behavior, SnackBarBehavior.floating);
+    expect(dark.backgroundColor, RainColors.surfaceRaisedDark);
+    expect(dark.behavior, light.behavior);
+  });
+
   testWidgets(
     'RainBackdrop follows light theme surface instead of dark command gradient',
     (WidgetTester tester) async {

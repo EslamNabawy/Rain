@@ -1,6 +1,10 @@
 import 'package:flutter/material.dart';
 import 'package:google_fonts/google_fonts.dart';
 
+import 'rain_tokens.dart';
+
+export 'rain_tokens.dart';
+
 class RainColors {
   static const Color primary = Color(0xFF46C6D6);
   static const Color primarySoft = Color(0xFF1C6D78);
@@ -70,6 +74,18 @@ class RainMotion {
   static const Duration callSurface = Duration(milliseconds: 190);
   static const Duration callSurfaceReverse = Duration(milliseconds: 125);
   static const Duration fullscreenTransition = Duration(milliseconds: 220);
+
+  static const Curve enter = Curves.easeOutCubic;
+  static const Curve exit = Curves.easeInCubic;
+  static const Curve emphasized = Cubic(0.2, 0, 0, 1);
+
+  static const Duration loadingRevealDelay = Duration(milliseconds: 180);
+  static const Duration splashCaptionDelay = Duration(milliseconds: 600);
+  static const Duration skeletonPulse = Duration(milliseconds: 1400);
+  static const Duration messageEnter = Duration(milliseconds: 180);
+  static const Duration progressTween = Duration(milliseconds: 240);
+  static const Duration connectingPulse = Duration(milliseconds: 1800);
+  static const Duration pressScale = Duration(milliseconds: 90);
 }
 
 class RainTheme {
@@ -174,6 +190,14 @@ class RainTheme {
         ),
         labelStyle: const TextStyle(fontFamily: 'Space Grotesk'),
         hintStyle: const TextStyle(color: Color(0xFF7FA2AD)),
+      ),
+      snackBarTheme: SnackBarThemeData(
+        backgroundColor: RainColors.surfaceRaisedDark,
+        contentTextStyle: const TextStyle(color: Colors.white),
+        behavior: SnackBarBehavior.floating,
+        shape: RoundedRectangleBorder(
+          borderRadius: BorderRadius.circular(RainRadius.md),
+        ),
       ),
       pageTransitionsTheme: _pageTransitionsTheme(),
     );
