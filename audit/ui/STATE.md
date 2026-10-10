@@ -2,6 +2,8 @@
 
 ## Done
 
+- T0.1 6f548b9 worktree D:\Rain-uiux on ui/level-up and state file
+
 ## Blocked
 
 ## Handoff to hardening
@@ -18,3 +20,4 @@
 
 - T0.1: worktree cut from origin/audit/rain-hardening @ 02e02f2, which already tracks both orchestrator prompts (copies identical to D:\Rain, so the copy step was a no-op). Upstream tracking of ui/level-up was unset so a bare `git push` can never target audit/rain-hardening.
 - T0.1: `flutter pub get` resolved packages and left pubspec.lock unchanged; it warns "Building with plugins requires symlink support" (Windows Developer Mode off). Only matters for platform builds, which this program does not run.
+- Baseline (T0.2, 2026-10-11, base 02e02f2): apps/rain analyze no issues; format 0 changed of 295; apps/rain tests +764 passed, 20 skipped, 0 failed; line limit no file over 3200.
