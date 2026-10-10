@@ -1,0 +1,669 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!--
+  Rain UI/UX level-up orchestrator. Written for Claude Sonnet running in Claude Code on Windows.
+  Paste audit/prompts/KICKOFF-UIUX.md into a NEW session; it tells the model to read this file.
+  The model executes tasks in order, writes state to audit/ui/STATE.md, and commits after every task.
+
+  Scope: overall visual polish, sound effects, and every loading / splash / progress state in apps/rain.
+  This program runs NEXT TO the audit/rain-hardening program. It works in its own git worktree
+  (D:\Rain-uiux) on its own branch (ui/level-up) and never edits files the hardening program owns.
+  Written 2026-10-10 against audit/rain-hardening @ 466ae8a.
+-->
+<orchestrator version="1" program="rain-uiux">
+
+<role>
+You are the executor for the Rain UI/UX level-up program. Execute the tasks below in order.
+Do not redesign the plan. Do not ask questions unless a task says STOP. Every task has exact
+steps, a verify block and a commit block: do them literally. Be terse in chat. Put details in files.
+When a step says "find" or "check", do it with Grep/Read first; never guess an API or a file shape.
+</role>
+
+<!-- ============================================================ -->
+<facts>
+  <!-- Verified on 2026-10-10 by reading the code. Treat as true; do not re-verify unless a step says so. -->
+  <repo path="D:\Rain" remote="origin = https://github.com/AbdogadXNabawy/Rain.git"/>
+  <worktree path="D:\Rain-uiux" branch="ui/level-up" cut_from="origin/audit/rain-hardening"/>
+  <shell>PowerShell 5.1. No bash. Chain with ';'. Never use '&amp;&amp;'.</shell>
+  <toolchain>
+    Flutter is NOT on PATH. Prefix every Flutter/Dart command with:
+    $env:Path = "C:\flutter\bin;$env:Path";
+    Flutter 3.44.4, Dart 3.12.2, Node 24. JDK 21 installed (only the hardening program needs it).
+  </toolchain>
+  <app>
+    apps/rain: Flutter app for Android and Windows. Riverpod 3, go_router 17, Material 3, audioplayers ^6.6.0,
+    google_fonts ^8.1.0, flutter_svg. Presentation code lives in apps/rain/lib/presentation (about 19,300 lines).
+  </app>
+  <theme>
+    apps/rain/lib/presentation/theme/rain_theme.dart (501 lines): RainColors, RainTextureTokens, RainMotion
+    (quick 110, standard 150, slow 220, page 130, splashIntro 520, ambientLoop 4200 ms), RainTheme.dark()/light(),
+    custom fade+slide page transition. Fonts: Inter (body) + Space Grotesk (titles/labels) via google_fonts,
+    fetched at RUNTIME from Google's servers (no bundled font files, no allowRuntimeFetching=false anywhere).
+    Dark theme has no snackBarTheme (only light theme defines one, rain_theme.dart:386).
+    No spacing or radius tokens: 79 BorderRadius.circular literals and 89 Color(0x..) literals in presentation/.
+  </theme>
+  <motion>
+    Reduced motion is computed ad hoc: MediaQuery.disableAnimations || RainPerformanceScope.of(context).isLowPower
+    (splash_screen.dart:119-120 and others). RainPerformanceProfile (presentation/performance/rain_performance.dart)
+    marks armv7 Android as lowPower; allowContinuousCallAnimation / allowExpensiveCallEffects gate call effects.
+    0 AnimatedSwitcher, 0 Hero, 0 HapticFeedback, 2 AnimationController in presentation/.
+  </motion>
+  <loading_states>
+    Startup: main.dart RainStartupApp shows a bare MaterialApp(home: RainSplashScreen()) with no theme while
+    bootstrap runs, then BootstrapFailureApp (ThemeData.dark(), not RainTheme) on error, then RainApp
+    (presentation/screens/rain_app.dart) whose builder shows RainStartupSurface (screens/startup_surface.dart)
+    for AppStartupPhase {checkingUpdate, validatingSession, startingRuntime, deletingAccount, updateRequired,
+    sessionExpired, failed} (enum in application/state/app_startup_state.dart:12).
+    Every loading phase renders the same RainSplashScreen ("Rain" / "Private peer link"): no phase caption,
+    and because the splash is re-mounted in up to 3 different MaterialApps, the 520 ms scale intro and the
+    orbital mark animation (branding/rain_peer_core_mark.dart) restart at each hand-off. No cross-fade into
+    onboarding/home. RainStartupFailureScreen shows raw error.toString() and has no retry. Force-update gate
+    is a plain Card. Account deletion is a bare CircularProgressIndicator.
+    Android native splash: res/drawable(-v21)/launch_background.xml is a flat #061017 rectangle, no mark;
+    no values-v31 splash-screen styles. test/android_splash_resources_test.dart pins the colour.
+    Skeleton: RainStreakSkeleton (branding/rain_state_surfaces.dart:113) is static grey bars; used at
+    chat_panel.dart ~908, friends_list.dart ~99, search_screen.dart ~305, settings_screen.dart ~1868.
+    15 ad-hoc CircularProgressIndicator + 1 LinearProgressIndicator (file_transfer_bubble.dart ~105, value jumps,
+    no tween). Two empty/error state widgets: AppStateMessage (widgets/app_components.dart:183, 12 uses) and
+    RainMistStateCard (branding/rain_state_surfaces.dart:7, 2 uses).
+    Five copies of the same "make error readable" helper: home_screen.dart:48, friend_profile_screen.dart:388,
+    onboarding_screen.dart:197, search_screen.dart:28, settings_screen.dart:26 (_formatSettingsError).
+    Raw error.toString() still reaches the UI at search_screen.dart:242 and chat_panel.dart ~883-897.
+  </loading_states>
+  <sound>
+    assets/sounds: 15 deterministic WAVs (mono 44.1 kHz 16-bit) generated by apps/rain/tool/generate_rain_sound_assets.dart
+    (404 lines); README in assets/sounds/README.md; asset contract test test/sound_effects_assets_test.dart
+    (duration windows, loop RMS, one unique file per RainSoundEffect).
+    Playback: infrastructure/services/sound_effects_service.dart (RainSoundEffect enum, asset map, RainSoundPlayer
+    interface, AudioplayersRainSoundPlayer, lazily created players = first-play latency, no preload, loops stop
+    abruptly). Policy: application/audio/sound_event_router.dart (throttle windows lines 13-33, effect mapping
+    _effectFor at ~629). Events: application/audio/rain_sound_event.dart (RainSoundEventKind).
+    Provider: application/state/sound_event_providers.dart. Dispatch sites: pure diff functions + dispatch in
+    presentation/screens/home_screen.dart (~140-460) and onboarding_screen.dart (~669-695).
+    Shared cues today: camera on/off, route change and "request accepted" all play action.wav; inbound connection
+    request plays receive.wav (same as a chat message); rejected/expired play error.wav. File transfers have no
+    sound at all. Settings: AppAudioSettings (infrastructure/services/app_settings_store.dart:37) with
+    soundEffectsEnabled, soundEffectsVolume, callSoundsEnabled, connectionRequestSoundsEnabled,
+    reduceSoundsDuringCall; the volume Slider is in settings_screen.dart _VoiceAudioSettingsControls (~1550-1630)
+    and plays no preview.
+  </sound>
+  <files_over_limit>
+    CI (.github/workflows/ci.yml ~133) fails any lib/ file over 3200 lines and warns over 800. Presentation files
+    already over 800: chat_panel.dart 1914, settings_screen.dart 1909, home_screen.dart 1788,
+    rain_chat_widgets.dart 1554, rain_call_overlay.dart 1521, rain_call_controls.dart 1099. Put new widgets in NEW
+    files; never grow these by more than ~40 lines per task.
+  </files_over_limit>
+  <hardening_program>
+    audit/prompts/rain-orchestrator.xml runs in D:\Rain on branch audit/rain-hardening (Phase 4 cards done,
+    follow-ups SEC-002/CI-002 ongoing). Its backlog owns refactor target 5 (split chat_panel.dart and
+    home_screen.dart into separate files; audit/02-refactor-targets.md §5) and all runtime, signaling, crypto,
+    rules, CI and package work. integration/main-dev is its main-merge branch.
+  </hardening_program>
+  <project_rules>AGENTS.md is binding; .ai/impeccable.md is the UI rulebook (match the existing design system, no
+  decorative UI that does not help comprehension, no cards in cards, text must fit on phone and desktop).</project_rules>
+</facts>
+
+<!-- ============================================================ -->
+<ownership>
+  <!-- The no-overlap contract with the hardening program. Check every edit against it. -->
+  <may_edit>
+    apps/rain/lib/presentation/** ;
+    apps/rain/lib/application/audio/** ;
+    apps/rain/lib/application/state/sound_event_providers.dart ;
+    apps/rain/lib/infrastructure/services/sound_effects_service.dart ;
+    apps/rain/lib/infrastructure/services/app_settings_store.dart (only to add the haptics setting in T3.9) ;
+    apps/rain/lib/main.dart (only the RainStartupApp and BootstrapFailureApp widget bodies, T2.2/T2.3) ;
+    apps/rain/tool/generate_rain_sound_assets.dart ; apps/rain/assets/sounds/** ; apps/rain/assets/google_fonts/** (new) ;
+    apps/rain/pubspec.yaml (only the flutter: assets list) ;
+    apps/rain/android/app/src/main/res/** (splash resources only) ;
+    apps/rain/test/** (new test files, and existing presentation/audio tests) ;
+    audit/ui/** ; audit/prompts/rain-uiux-orchestrator.xml ; audit/prompts/KICKOFF-UIUX.md ;
+    obsidian-vault/03-Features/UI UX Level-Up.md (new) ; CONTINUITY.md (append one dated entry, T5.3 only).
+  </may_edit>
+  <must_not_edit>
+    packages/** ; backend/** ; .github/** ; scripts/** ; apps/rain/lib/application/runtime/** ;
+    apps/rain/lib/application/state/** except sound_event_providers.dart and NEW files ;
+    apps/rain/lib/infrastructure/** except the two services above ; apps/rain/lib/core/** ;
+    AndroidManifest.xml ; windows/** ; audit/STATE.md and audit/0*.md (hardening files) ;
+    any obsidian-vault file other than the new note.
+  </must_not_edit>
+  <rule>chat_panel.dart and home_screen.dart: small in-place edits only. Do not move code out of them, do not split
+  them, do not reorder their members. That refactor belongs to the hardening program.</rule>
+  <rule>If a task cannot be done without touching a must_not_edit path: do the part that fits, record the rest in
+  audit/ui/STATE.md under "Handoff to hardening" with the exact change needed, and continue.</rule>
+</ownership>
+
+<!-- ============================================================ -->
+<hard_rules>
+  <rule id="U1">Never touch D:\old project\Rain or C:\Users\eslam\OneDrive\Desktop\GoodStuff\Rain.</rule>
+  <rule id="U2">Work only in D:\Rain-uiux on branch ui/level-up. Never edit, switch branches in, stage in, or run
+    build/test commands in D:\Rain (the hardening checkout). The only commands allowed in D:\Rain are the
+    "git worktree add" and "git fetch" in T0.1.</rule>
+  <rule id="U3">Never commit to main, dev, audit/rain-hardening or integration/main-dev. Never force-push. Never rewrite
+    history. Never run git reset --hard, git clean, git stash, git rebase.</rule>
+  <rule id="U4">Respect the ownership block above for every edit.</rule>
+  <rule id="U5">No new runtime or dev dependencies. Use Flutter built-ins (AnimatedSwitcher, TweenAnimationBuilder,
+    AnimationController, HapticFeedback, SystemSound) and packages already in pubspec.yaml. No shimmer, lottie,
+    flutter_animate, rive or similar.</rule>
+  <rule id="U6">Every animation must have a reduced-motion path: when RainMotionPolicy (T1.3) says reduced, render the
+    end state with Duration.zero and run no repeating ticker. Continuous call animations also require
+    RainPerformanceProfile.allowContinuousCallAnimation.</rule>
+  <rule id="U7">Every new user-visible string is plain, short and calm; never show raw exception text, stack traces,
+    Firebase codes or paths. Use rainUserFacingError (T1.4).</rule>
+  <rule id="U8">Interactive widgets added or touched get a stable ValueKey('qa.feature.action') and a Semantics label or
+    tooltip (AGENTS.md QA rule).</rule>
+  <rule id="U9">Sound assets are only ever produced by tool/generate_rain_sound_assets.dart. Never download, copy or
+    hand-edit audio. One-shot sounds stay under 1 s; loops start and end near zero amplitude.</rule>
+  <rule id="U10">Do not run platform builds (flutter build ...). Device checks go to the Owner actions list.</rule>
+  <rule id="U11">If a verify step fails: fix and re-run up to 3 times. Still failing: revert only your own changes for that
+    task (git checkout -- the files you edited in this task; Remove-Item files you created in this task), record it
+    in audit/ui/STATE.md under "Blocked" with the exact error, and continue with the next task.</rule>
+  <rule id="U12">STOP means: write the reason in audit/ui/STATE.md, commit, push, then end the session with a 3-line summary.</rule>
+  <rule id="U13">Never print, copy or commit secret values. Never commit files under apps/rain/build, .dart_tool or test/ui_snapshots/goldens.</rule>
+</hard_rules>
+
+<!-- ============================================================ -->
+<tools>
+  <cmd id="ENV">$env:Path = "C:\flutter\bin;$env:Path"; Set-Location D:\Rain-uiux</cmd>
+  <cmd id="ANALYZE_APP">Push-Location apps/rain; flutter analyze --no-pub; "EXIT analyze $LASTEXITCODE"; Pop-Location</cmd>
+  <cmd id="ANALYZE">foreach($p in 'apps/rain','packages/peer_core','packages/protocol_brain','packages/rain_core'){ Push-Location $p; flutter analyze --no-pub; "EXIT $p $LASTEXITCODE"; Pop-Location }</cmd>
+  <cmd id="FORMAT">dart format --set-exit-if-changed --output=none apps packages; "EXIT format $LASTEXITCODE"</cmd>
+  <cmd id="FORMAT_FIX">dart format {files}</cmd>
+  <cmd id="TEST_ONE">Push-Location apps/rain; flutter test --no-pub {test_file}; "EXIT test $LASTEXITCODE"; Pop-Location</cmd>
+  <cmd id="TEST_APP">Push-Location apps/rain; flutter test --no-pub -r failures-only; "EXIT apps/rain $LASTEXITCODE"; Pop-Location</cmd>
+  <cmd id="TEST_ALL">foreach($p in 'packages/peer_core','packages/protocol_brain','packages/rain_core','apps/rain'){ Push-Location $p; flutter test --no-pub -r failures-only; "EXIT $p $LASTEXITCODE"; Pop-Location }</cmd>
+  <cmd id="LINE_LIMIT">Get-ChildItem apps/rain/lib -Recurse -Filter *.dart | Where-Object { $_.Name -notmatch '\.(g|freezed)\.dart$' } | ForEach-Object { $n=(Get-Content $_.FullName | Measure-Object -Line).Lines; if($n -gt 3200){ "OVER $n $($_.FullName)" } }; "EXIT linelimit done"</cmd>
+  <cmd id="SNAPSHOTS">Push-Location apps/rain; flutter test --no-pub --update-goldens --dart-define=RAIN_UI_SNAPSHOTS=true test/ui_snapshots/ui_snapshots_test.dart; "EXIT snapshots $LASTEXITCODE"; Pop-Location</cmd>
+  <cmd id="SOUNDGEN">Push-Location apps/rain; dart run tool/generate_rain_sound_assets.dart; "EXIT soundgen $LASTEXITCODE"; Pop-Location</cmd>
+  <cmd id="VAULT">.\scripts\check_obsidian_vault.ps1; "EXIT vault $LASTEXITCODE"</cmd>
+  <note>TEST_APP takes about 2 minutes, TEST_ALL about 3. Use TEST_ONE while iterating; run TEST_APP before every commit that touches lib/.</note>
+  <note>Read files with Grep (pattern + -n + small -C) or Read with offset/limit. Never read a file over 400 lines in full.</note>
+  <note>Use Context7 to confirm any Flutter, audioplayers or google_fonts API before using it.</note>
+</tools>
+
+<!-- ============================================================ -->
+<commit_protocol>
+  <step>git add only the files this task changed (list them explicitly; never "git add -A" or ".").</step>
+  <step>Message format: "&lt;type&gt;(&lt;scope&gt;): &lt;summary&gt;" then a blank line, then "Task: &lt;task id&gt;". Types: feat, fix, refactor, test, docs, chore, perf, style. Scopes: ui, theme, splash, loading, sound, haptics, a11y, audit.</step>
+  <step>git commit -m "&lt;subject&gt;" -m "Task: &lt;id&gt;". Never use --no-verify. If a hook fails, fix the cause.</step>
+  <step>Push after every phase: git push -u origin ui/level-up. On network failure retry 4 times waiting 2, 4, 8, 16 seconds.</step>
+  <step>After committing, append one line to audit/ui/STATE.md "Done": "&lt;task id&gt; &lt;short sha&gt; &lt;one-line result&gt;" and include STATE.md in the NEXT commit (do not amend).</step>
+</commit_protocol>
+
+<!-- ============================================================ -->
+<resume_protocol>
+  <step>At session start run ENV, then: git status --short --branch; Get-Content audit/ui/STATE.md.</step>
+  <step>If D:\Rain-uiux does not exist: start at T0.1. If it exists and the branch is not ui/level-up: STOP.</step>
+  <step>Continue from the first task not listed under "Done" or "Blocked" in audit/ui/STATE.md.</step>
+  <step>Do not re-run finished tasks. Do not re-read files already summarized in audit/ui/*.md.</step>
+</resume_protocol>
+
+<!-- ============================================================ -->
+<sync_protocol>
+  <!-- Keep up with the hardening program without colliding with it. Run at the START of every phase from Phase 1 on. -->
+  <step>git fetch origin audit/rain-hardening</step>
+  <step>git log --oneline HEAD..origin/audit/rain-hardening. If empty: done.</step>
+  <step>Otherwise: git merge --no-ff origin/audit/rain-hardening -m "chore(merge): sync audit/rain-hardening into ui/level-up".
+    Conflict policy: for any path outside may_edit take theirs (git checkout --theirs -- path); for presentation
+    and audio files keep both behaviours by hand. Then ANALYZE_APP; TEST_APP. If more than 5 tests fail after
+    3 fix rounds: STOP and list them.</step>
+  <step>If origin/audit/rain-hardening has been deleted or merged into dev: fetch dev and apply the same steps with origin/dev.</step>
+</sync_protocol>
+
+<!-- ============================================================ -->
+<phase id="0" name="Setup, baseline and inventory (no lib/ changes)">
+
+<task id="T0.1" name="Create the worktree, branch and state file">
+  <steps>
+    <s>$env:Path = "C:\flutter\bin;$env:Path"; Set-Location D:\Rain; git fetch origin audit/rain-hardening</s>
+    <s>If D:\Rain-uiux exists already: STOP ("worktree path taken").</s>
+    <s>git worktree add -b ui/level-up D:\Rain-uiux origin/audit/rain-hardening</s>
+    <s>ENV; flutter pub get   (workspace resolution; must not change pubspec.lock; if it does, record in Notes and commit the lock change separately as chore(deps))</s>
+    <s>New-Item -ItemType Directory -Force audit/ui, audit/ui/shots, audit/prompts | Out-Null</s>
+    <s>Copy-Item D:\Rain\audit\prompts\rain-uiux-orchestrator.xml, D:\Rain\audit\prompts\KICKOFF-UIUX.md audit/prompts/   (leave the originals in D:\Rain untouched; they are untracked there)</s>
+    <s>Create audit/ui/STATE.md with sections: "# UI/UX State", "## Done", "## Blocked", "## Handoff to hardening", "## Decisions", "## Notes".</s>
+    <s>Under Decisions write the defaults from the DEFAULTS block below.</s>
+  </steps>
+  <verify>git branch --show-current prints ui/level-up; git worktree list shows D:/Rain-uiux; Test-Path audit/ui/STATE.md is True.</verify>
+  <commit files="audit/prompts/rain-uiux-orchestrator.xml audit/prompts/KICKOFF-UIUX.md audit/ui/STATE.md">chore(audit): add UI/UX level-up orchestrator and state file</commit>
+  <defaults>
+    U-D1 Work happens in worktree D:\Rain-uiux on ui/level-up, cut from origin/audit/rain-hardening; the hardening checkout D:\Rain is never touched.
+    U-D2 Direction: keep Rain's existing dark "signal mist" identity (cyan/mint on deep ink, Space Grotesk + Inter). Level up consistency, motion, feedback and sound; no rebrand, no new palette.
+    U-D3 Motion budget: UI transitions 110-240 ms, ease-out in and ease-in out; nothing loops forever except the splash mark, skeleton pulse and call-connecting pulse, all off under reduced motion or low-power tier.
+    U-D4 Sound direction: stay in the existing "water droplet" family from the generator; every distinct meaning gets a distinct cue; nothing louder than the current incoming ringtone.
+    U-D5 chat_panel.dart and home_screen.dart get in-place edits only; their split stays with the hardening program.
+  </defaults>
+</task>
+
+<task id="T0.2" name="Baseline in the worktree">
+  <verify>ANALYZE_APP; FORMAT; TEST_APP; LINE_LIMIT. Record pass/skip counts and analyzer result in STATE.md Notes as "Baseline".</verify>
+  <stop_if>Analyze or tests are red on the untouched branch: STOP (the base is broken; this program does not fix hardening work).</stop_if>
+  <commit files="audit/ui/STATE.md">chore(audit): record UI program baseline</commit>
+</task>
+
+<task id="T0.3" name="UI inventory (read-only)">
+  <output>audit/ui/00-ui-inventory.md</output>
+  <steps>
+    <s>Copy the facts from &lt;loading_states&gt;, &lt;sound&gt; and &lt;theme&gt; above into sections 1-3 as bullet lists (do not re-derive them).</s>
+    <s>Section 4 "Every loading, progress, empty and error state": Grep apps/rain/lib/presentation for
+      "CircularProgressIndicator|LinearProgressIndicator|RainStreakSkeleton|AppStateMessage\(|RainMistStateCard\(|loading: \(\)|error: \(Object"
+      and write one table row per hit: path:line | what the user is waiting for | current visual | target (task id from this plan).</s>
+    <s>Section 5 "Icon buttons without tooltip": Grep "IconButton(" with -A8 and list the ones with no "tooltip:" inside the constructor.</s>
+    <s>Section 6 "Hard-coded styling hot spots": counts per file of "BorderRadius.circular(", "Color(0x", "TextStyle(" for files in presentation/ (top 10 only).</s>
+    <s>Section 7 "Sound triggers": table RainSoundEventKind | dispatch site path:line | effect file | throttle rule (from sound_event_router.dart:13-33).</s>
+  </steps>
+  <commit files="audit/ui/00-ui-inventory.md audit/ui/STATE.md">docs(audit): UI, loading-state and sound inventory</commit>
+</task>
+
+<task id="T0.4" name="Visual snapshot harness and before shots">
+  <steps>
+    <s>Create apps/rain/test/ui_snapshots/ui_snapshots_test.dart. Top of file:
+      const bool _enabled = bool.fromEnvironment('RAIN_UI_SNAPSHOTS'); every testWidgets uses skip: !_enabled, so normal
+      CI runs skip it.</s>
+    <s>Each case pumps a widget inside MaterialApp(theme: RainTheme.light(), darkTheme: RainTheme.dark(), themeMode: ...) at two
+      surface sizes via tester.view.physicalSize / devicePixelRatio = 1: phone 390x844 and desktop 1280x800, both themes, with
+      MediaQueryData(disableAnimations: true) so frames are stable. Compare with matchesGoldenFile('goldens/&lt;name&gt;_&lt;theme&gt;_&lt;size&gt;.png').</s>
+    <s>Cases (only self-contained widgets; copy provider overrides from the matching existing test when one is needed:
+      settings_screen_test.dart, onboarding_screen_test.dart, rain_call_stage_test.dart):
+      splash (RainSplashScreen), startup_failure (RainStartupFailureScreen(error: StateError('x'))), force_update
+      (RainForceUpdateGate with a ForceUpdateResult built as in test/force_update_service_test.dart), account_deletion
+      (RainAccountDeletionScreen), state_card (RainMistStateCard neutral/warning/error), app_state_message (AppStateMessage),
+      skeleton (RainStreakSkeleton rows: 5), bubbles (RainMessageBubble outgoing+incoming, sending+failed with onRetry),
+      file_transfer (FileTransferBubble in sending 40 %, completed, failed — build records as in an existing test or
+      skip the case if no constructor helper exists), call_ended (RainCallEndedSurface as in rain_call_ended_surface_test.dart),
+      onboarding (OnboardingScreen as in onboarding_screen_test.dart).</s>
+    <s>If fonts render as boxes in tests that is expected until T1.1; do not work around it here.</s>
+    <s>Run SNAPSHOTS. Copy apps/rain/test/ui_snapshots/goldens/*.png to audit/ui/shots/before/. Then Remove-Item -Recurse apps/rain/test/ui_snapshots/goldens.</s>
+    <s>Add one line "test/ui_snapshots/goldens/" to apps/rain/.gitignore only if that file exists; otherwise skip (never edit the root .gitignore).</s>
+  </steps>
+  <verify>TEST_ONE(test/ui_snapshots/ui_snapshots_test.dart) without the define: all cases reported as skipped, exit 0. audit/ui/shots/before has at least 20 PNGs.</verify>
+  <commit files="apps/rain/test/ui_snapshots/ui_snapshots_test.dart audit/ui/shots/before audit/ui/STATE.md">test(ui): opt-in visual snapshot harness and before shots</commit>
+  <after>Push the branch. Phase 0 done.</after>
+</task>
+</phase>
+
+<!-- ============================================================ -->
+<phase id="1" name="Foundations: offline fonts, tokens, motion policy, shared feedback widgets">
+<task_rule>Run sync_protocol first. For each task: write or extend the test, edit, FORMAT_FIX on touched files, verify, commit. One task = one commit.</task_rule>
+
+<task id="T1.1" name="Bundle Inter and Space Grotesk; stop runtime font fetching">
+  <why>Rain is a private P2P app: today every launch asks fonts.googleapis.com for fonts (privacy leak, and offline first launch shows a fallback font then swaps). Bundling fixes both.</why>
+  <steps>
+    <s>Use Context7 on google_fonts to confirm how bundled fonts are matched (asset folder, required file names per family and weight, and variable-font support in google_fonts 8.x).</s>
+    <s>Obtain the exact TTF files google_fonts expects for Inter weights 400/500/600/700 and Space Grotesk 500/600/700 from the official Google Fonts sources (github.com/google/fonts, OFL licensed), plus each family's OFL.txt. Put them under apps/rain/assets/google_fonts/ with the names the package requires.</s>
+    <s>apps/rain/pubspec.yaml: add "- assets/google_fonts/" to flutter: assets. Nothing else in pubspec changes.</s>
+    <s>rain_theme.dart: first line of RainTheme._textTheme sets GoogleFonts.config.allowRuntimeFetching = false.</s>
+    <s>New test test/rain_fonts_bundled_test.dart: for each expected file name, File('assets/google_fonts/...').existsSync() is true, and OFL.txt files exist.</s>
+  </steps>
+  <fallback>If the exact static files cannot be obtained or google_fonts cannot match them: revert this task (U11), record "T1.1 Blocked: &lt;reason&gt;" and continue; runtime fetching stays as today. Do not substitute other fonts.</fallback>
+  <verify>TEST_ONE(test/rain_fonts_bundled_test.dart); TEST_ONE(test/rain_theme_test.dart); ANALYZE_APP; TEST_APP</verify>
+  <commit>feat(theme): bundle Inter and Space Grotesk and disable runtime font fetching</commit>
+</task>
+
+<task id="T1.2" name="Spacing, radius, elevation and motion tokens">
+  <steps>
+    <s>New file apps/rain/lib/presentation/theme/rain_tokens.dart, exported from rain_theme.dart (export 'rain_tokens.dart';):
+      RainSpace (xxs 2, xs 4, sm 8, md 12, lg 16, xl 24, xxl 32), RainRadius (sm 12, md 16, lg 18, xl 22, xxl 28, pill 999 — values taken from the most common literals in the T0.3 hot-spot table),
+      RainShadows.panel(isDark) and RainShadows.raised(isDark) (copy the BoxShadow used in RainMistStateCard).</s>
+    <s>Extend RainMotion in rain_theme.dart with: enter = Curves.easeOutCubic, exit = Curves.easeInCubic, emphasized = Cubic(0.2, 0, 0, 1);
+      loadingRevealDelay 180 ms, splashCaptionDelay 600 ms, skeletonPulse 1400 ms, messageEnter 180 ms, progressTween 240 ms, connectingPulse 1800 ms, pressScale 90 ms. Do not change existing values.</s>
+    <s>Add snackBarTheme to RainTheme.dark() mirroring the light one with dark colours (surfaceRaisedDark background, white text, floating, radius RainRadius.md).</s>
+    <s>Do NOT sweep existing literals project-wide. Later tasks use tokens in the code they touch.</s>
+    <s>Extend test/rain_theme_test.dart: token ordering (xs &lt; sm &lt; ...), dark theme has a floating snackBarTheme.</s>
+  </steps>
+  <verify>TEST_ONE(test/rain_theme_test.dart); ANALYZE_APP</verify>
+  <commit>feat(theme): add spacing, radius, shadow and motion tokens; dark snackbar theme</commit>
+</task>
+
+<task id="T1.3" name="One reduced-motion policy">
+  <steps>
+    <s>New file presentation/performance/rain_motion_policy.dart: class RainMotionPolicy { final bool reduced; final bool allowContinuous; static RainMotionPolicy of(BuildContext) }
+      where reduced = MediaQuery.maybeOf(context)?.disableAnimations == true || RainPerformanceScope.of(context).isLowPower, and allowContinuous = !reduced.
+      Add Duration d(Duration normal) => reduced ? Duration.zero : normal.</s>
+    <s>Replace the ad-hoc computation in splash_screen.dart (_SplashBody, ~119-120) and in every other place found by Grep "disableAnimations" in presentation/ with RainMotionPolicy.of(context). Behaviour must not change.</s>
+    <s>New test test/rain_motion_policy_test.dart: disableAnimations true → reduced; low_power override → reduced; default → not reduced.</s>
+  </steps>
+  <verify>TEST_ONE(test/rain_motion_policy_test.dart); TEST_ONE(test/rain_splash_screen_test.dart); ANALYZE_APP</verify>
+  <commit>refactor(ui): single reduced-motion policy for presentation</commit>
+</task>
+
+<task id="T1.4" name="One user-facing error formatter">
+  <steps>
+    <s>Read the five helpers (home_screen.dart:48, friend_profile_screen.dart:388, onboarding_screen.dart:197, search_screen.dart:28, settings_screen.dart:26). Write down in STATE.md Notes the union of their rules (prefix stripping, mappings).</s>
+    <s>New file presentation/feedback/rain_error_text.dart: String rainUserFacingError(Object? error, {String fallback = 'Something went wrong. Try again.'}) implementing that union, plus: never return text containing "Exception:", "Error:", "firebase", "#", file paths, stack frames, or longer than 140 characters (fall back instead).</s>
+    <s>Make the five helpers delegate to it (keep their names if other code in the same file calls them; delete them only where every caller is updated). Replace raw error.toString() at search_screen.dart:242 and the chat_panel.dart "Could not load messages" message (~883-897).</s>
+    <s>New test test/rain_error_text_test.dart: one case per original rule, plus the never-return rules above.</s>
+  </steps>
+  <verify>TEST_ONE(test/rain_error_text_test.dart); ANALYZE_APP; TEST_APP</verify>
+  <commit>refactor(ui): one user-facing error formatter for all screens</commit>
+</task>
+
+<task id="T1.5" name="One empty/error state visual">
+  <steps>
+    <s>Make AppStateMessage (widgets/app_components.dart:183) render through RainMistStateCard (same title/message/icon/iconColor API; map iconColor to severity when it equals colorScheme.error). Keep the public constructor unchanged so its 12 call sites need no edit.</s>
+    <s>Add an optional action parameter to AppStateMessage, forwarded to RainMistStateCard.action.</s>
+    <s>RainMistStateCard: use RainRadius/RainSpace/RainShadows tokens; fade+scale in once on first build (0.98→1, RainMotion.standard, policy-aware).</s>
+    <s>Extend test/rain_state_surfaces_test.dart: AppStateMessage builds a RainMistStateCard; reduced motion has no pending animation after one pump.</s>
+  </steps>
+  <verify>TEST_ONE(test/rain_state_surfaces_test.dart); ANALYZE_APP; TEST_APP</verify>
+  <commit>refactor(ui): render AppStateMessage with the Rain mist state card</commit>
+</task>
+
+<task id="T1.6" name="Shared busy indicator and delayed reveal">
+  <steps>
+    <s>New file presentation/widgets/feedback/rain_busy_indicator.dart: RainBusyIndicator({double size = 16, Color? color, String? semanticsLabel}) — a CircularProgressIndicator with strokeWidth size/8, colour default colorScheme.primary, wrapped in Semantics(label: semanticsLabel ?? 'Loading'); under reduced motion shows a static 3/4 ring (value: 0.75).</s>
+    <s>Same folder rain_delayed_reveal.dart: RainDelayedReveal({required Widget child, Duration delay = RainMotion.loadingRevealDelay}) shows SizedBox.shrink until the delay passes, then fades the child in (RainMotion.standard). Cancels its Timer in dispose.</s>
+    <s>Replace every ad-hoc CircularProgressIndicator listed in T0.3 section 4 with RainBusyIndicator, keeping each site's size and colour. Exclude splash_screen.dart (handled in T2.4).</s>
+    <s>New test test/rain_feedback_widgets_test.dart: busy indicator semantics label; reveal shows nothing at 100 ms and the child at 200 ms; no pending timers after dispose.</s>
+  </steps>
+  <verify>TEST_ONE(test/rain_feedback_widgets_test.dart); ANALYZE_APP; TEST_APP; LINE_LIMIT</verify>
+  <commit>feat(loading): shared busy indicator and delayed reveal</commit>
+  <after>Push the branch. Phase 1 done.</after>
+</task>
+</phase>
+
+<!-- ============================================================ -->
+<phase id="2" name="Loading screens and startup">
+<task_rule>Run sync_protocol first. Same per-task rule as Phase 1.</task_rule>
+
+<task id="T2.1" name="Seamless splash mark across hand-offs">
+  <steps>
+    <s>branding/rain_peer_core_mark.dart, _RainPeerCoreAnimatedMarkState: start the controller at value = (DateTime.now().millisecondsSinceEpoch % loopMs) / loopMs before repeat(), so a re-mounted mark continues the same phase instead of restarting.</s>
+    <s>splash_screen.dart: the 0.92→1 intro scale plays once per process (static bool _introPlayed in the file; set after first build).</s>
+    <s>Tests in test/rain_splash_screen_test.dart: second mount of RainSplashScreen starts at scale 1; mark controller value after mount is not 0 when the clock is mid-loop (inject a clock parameter, default DateTime.now, @visibleForTesting).</s>
+  </steps>
+  <verify>TEST_ONE(test/rain_splash_screen_test.dart); TEST_ONE(test/rain_brand_mark_test.dart); ANALYZE_APP</verify>
+  <commit>feat(splash): keep the splash mark continuous across startup hand-offs</commit>
+</task>
+
+<task id="T2.2" name="Phase captions and cross-fade into the app">
+  <steps>
+    <s>RainSplashScreen gets an optional caption (String?). Below the subtitle, show it after RainMotion.splashCaptionDelay with an AnimatedSwitcher (fade, RainMotion.standard) so quick phases never flash text. Caption style: bodySmall, onSurface 0.6, with a 3-dot RainBusyIndicator-free animated ellipsis disabled under reduced motion.</s>
+    <s>startup_surface.dart RainStartupSurface: checkingUpdate → 'Checking for updates', validatingSession → 'Restoring your session', startingRuntime → 'Starting secure link', sessionExpired view → 'Signing you out safely', signedOut/ready → no caption.</s>
+    <s>rain_app.dart builder: wrap the returned surface in AnimatedSwitcher (duration RainMotionPolicy.d(RainMotion.slow), switchInCurve RainMotion.enter, switchOutCurve RainMotion.exit, fade only) keyed by ValueKey of a surface kind ('startup' | 'standalone' | 'shell' | 'deleting'). Phase changes inside 'startup' must NOT change the key (the splash stays mounted; only the caption switches).</s>
+    <s>main.dart: the bootstrap MaterialApp uses theme: RainTheme.dark() and RainSplashScreen(caption: null). No other main.dart edits.</s>
+    <s>Tests: new test/rain_startup_transitions_test.dart — caption appears only after 600 ms; switching startingRuntime→ready produces an AnimatedSwitcher transition; reduced motion switches in one frame. Keep root_screen_test.dart and runtime_startup_test.dart green.</s>
+  </steps>
+  <verify>TEST_ONE(test/rain_startup_transitions_test.dart); TEST_ONE(test/root_screen_test.dart); TEST_ONE(test/runtime_startup_test.dart); ANALYZE_APP; TEST_APP</verify>
+  <commit>feat(splash): phase captions and a cross-fade from startup into the app</commit>
+</task>
+
+<task id="T2.3" name="Startup failure screen that helps">
+  <steps>
+    <s>RainStartupFailureScreen: title 'Rain could not start', message rainUserFacingError(error), primary 'Try again' (only when an onRetry callback is given), secondary 'Copy details' copying the sanitized text plus app version (Clipboard.setData; show a snackbar 'Details copied'). Brand mark static (reduced) above the text. Keys qa.startup.retry and qa.startup.copy.</s>
+    <s>main.dart: BootstrapFailureApp gets onRetry; _RainStartupAppState passes () =&gt; setState(() { _bootstrapFuture = widget.bootstrapper.bootstrap(widget.environment); }). BootstrapFailureApp theme becomes RainTheme.dark().</s>
+    <s>AppStartupPhase.failed inside RainStartupSurface: Grep app_startup_state.dart and app_providers.dart for an existing retry/restart method. If one exists, wire it as onRetry. If none: no retry button there; record "Handoff to hardening: expose a startup retry on appStartupStateProvider" in STATE.md.</s>
+    <s>Tests in test/rain_splash_screen_test.dart: raw exception text is not shown; retry button calls the callback; copy writes to the clipboard (mock SystemChannels.platform).</s>
+  </steps>
+  <verify>TEST_ONE(test/rain_splash_screen_test.dart); ANALYZE_APP; TEST_APP</verify>
+  <commit>feat(splash): friendly startup failure screen with retry and copy details</commit>
+</task>
+
+<task id="T2.4" name="Force update, account deletion and session expiry surfaces">
+  <steps>
+    <s>RainForceUpdateGate: replace the Card with RainMistStateCard-style panel (severity warning, icon Icons.system_update_alt), body 'This version of Rain can no longer connect.', two small chips "Installed X" and "Required Y", FilledButton 'Get the update' (key qa.update.open). Keep the launchUrlString call unchanged.</s>
+    <s>RainAccountDeletionScreen: RainPeerCoreAnimatedMark (size 72, wave motion, policy-aware) instead of the bare spinner; title 'Deleting your account'; message unchanged; Semantics label kept.</s>
+    <s>Tests: update existing assertions that depend on old text in force_update/startup tests; add one test per surface for the new keys and semantics.</s>
+  </steps>
+  <verify>ANALYZE_APP; TEST_APP</verify>
+  <commit>feat(splash): restyle update, deletion and session-expiry surfaces</commit>
+</task>
+
+<task id="T2.5" name="Android native splash matches the Flutter splash">
+  <steps>
+    <s>Copy apps/rain/assets/branding/generated/peer_core_mark_192.png to apps/rain/android/app/src/main/res/drawable-nodpi/rain_splash_mark.png.</s>
+    <s>drawable/launch_background.xml and drawable-v21/launch_background.xml: keep the #061017 solid item and add a second item with android:gravity="center" and a bitmap of @drawable/rain_splash_mark.</s>
+    <s>Create res/values-v31/styles.xml and res/values-night-v31/styles.xml: same LaunchTheme/NormalTheme as values/styles.xml plus android:windowSplashScreenBackground #061017 and android:windowSplashScreenAnimatedIcon @drawable/rain_splash_mark (LaunchTheme only).</s>
+    <s>Extend test/android_splash_resources_test.dart: v31 files exist and use #061017; launch_background references rain_splash_mark; the PNG exists.</s>
+    <s>No build (U10). Add to Owner actions: "Cold-start on Android 11 and Android 13: native splash shows the mark centred on #061017 and hands off to the Flutter splash without a flash".</s>
+  </steps>
+  <verify>TEST_ONE(test/android_splash_resources_test.dart)</verify>
+  <commit>feat(splash): Android native splash shows the Rain mark on the app background</commit>
+</task>
+
+<task id="T2.6" name="Living skeletons with real shapes">
+  <steps>
+    <s>branding/rain_state_surfaces.dart: RainStreakSkeleton gains variant (RainSkeletonVariant.lines | messages | friends; default lines keeps today's output). messages = alternating left/right rounded bubbles of varied widths; friends = 40 px circle + two lines per row.</s>
+    <s>Add a pulse: one AnimationController per skeleton (RainMotion.skeletonPulse, repeat reverse) animating the fill alpha 0.08↔0.16. Under RainMotionPolicy.reduced: no controller, fixed alpha 0.12. Respect TickerMode.</s>
+    <s>Apply: chat_panel.dart loading (~908) → messages, rows 6; friends_list.dart (~99) → friends, rows 4; search_screen.dart (~305) → friends, rows 4; settings_screen.dart (~1868) → lines. Wrap each in RainDelayedReveal.</s>
+    <s>Extend test/rain_state_surfaces_test.dart: variant keys exist; reduced motion leaves no scheduled frame after pump(); default variant output unchanged (row keys rain_streak_skeleton_row_N still present).</s>
+  </steps>
+  <verify>TEST_ONE(test/rain_state_surfaces_test.dart); ANALYZE_APP; TEST_APP; LINE_LIMIT</verify>
+  <commit>feat(loading): pulsing skeletons shaped like messages and friend rows</commit>
+</task>
+
+<task id="T2.7" name="Smooth progress for transfers and inline busy states">
+  <steps>
+    <s>widgets/home/file_transfer_bubble.dart: wrap the LinearProgressIndicator value in TweenAnimationBuilder&lt;double&gt; (RainMotion.progressTween, policy-aware) so progress glides; indeterminate (value null) while offered/accepted with label 'Waiting for <!-- -->peer'; on transition to completed show an AnimatedSwitcher swap of the status icon to a check (RainMotion.standard); failed shows the error colour and rainUserFacingError text.</s>
+    <s>chat_composer.dart: the send button keeps the same width while busy (no layout jump) and uses RainBusyIndicator.</s>
+    <s>Tests: new test/file_transfer_bubble_test.dart (the file has 0 % coverage today): sending 40 % shows a determinate bar; offered shows indeterminate + waiting label; completed shows the check icon key; reduced motion has no running animation. Extend test/chat_composer_test.dart for the stable width.</s>
+  </steps>
+  <verify>TEST_ONE(test/file_transfer_bubble_test.dart); TEST_ONE(test/chat_composer_test.dart); ANALYZE_APP; TEST_APP</verify>
+  <commit>feat(loading): smooth file transfer progress and stable busy buttons</commit>
+</task>
+
+<task id="T2.8" name="Call connecting and reconnecting visuals">
+  <steps>
+    <s>New file widgets/calls/rain_connecting_pulse.dart: RainConnectingPulse({required Widget child, required bool active, Color? color}) draws 2 expanding, fading rings behind child (RainMotion.connectingPulse). Runs only when active &amp;&amp;-equivalent: active and RainMotionPolicy.allowContinuous and RainPerformanceScope.of(context).allowContinuousCallAnimation; otherwise renders a single static ring.</s>
+    <s>Find where the peer avatar/identity is drawn for VoiceCallPhase connectingPeer, outgoingRinging, connectingMedia and reconnecting (Grep in widgets/calls/rain_call_stage.dart and rain_call_controls.dart around the phase labels at ~867-917) and wrap that avatar in RainConnectingPulse; reconnecting uses RainColors.warning.</s>
+    <s>Check widgets/calls/rain_call_layout_contract.dart constraints: the pulse must not change the avatar's layout size (paint outside with a Stack + OverflowBox or CustomPaint).</s>
+    <s>Extend test/rain_call_stage_test.dart: pulse active in connecting phases, inactive when connected, static under low_power.</s>
+  </steps>
+  <verify>TEST_ONE(test/rain_call_stage_test.dart); TEST_ONE(test/rain_call_suite_test.dart); ANALYZE_APP; TEST_APP</verify>
+  <commit>feat(calls): animated connecting and reconnecting state around the peer</commit>
+  <after>Push the branch. Phase 2 done.</after>
+</task>
+</phase>
+
+<!-- ============================================================ -->
+<phase id="3" name="Sound design and haptics">
+<task_rule>Run sync_protocol first. Same per-task rule. Never edit WAV files directly (U9).</task_rule>
+
+<task id="T3.1" name="Sound map (read-only)">
+  <output>audit/ui/02-sound-map.md</output>
+  <steps>
+    <s>Table: RainSoundEventKind | effect | file | duration ms | peak | RMS | volume scale | throttle/suppression rule. Read durations from sound_effects_assets_test.dart; compute peak and RMS with a throwaway Dart script in the session scratchpad (NOT in the repo) that reads each WAV.</s>
+    <s>List the shared cues (from &lt;sound&gt; facts) and the missing ones (file transfer complete/failed) and say which task fixes each.</s>
+  </steps>
+  <commit files="audit/ui/02-sound-map.md audit/ui/STATE.md">docs(audit): sound map with loudness and throttle rules</commit>
+</task>
+
+<task id="T3.2" name="New distinct cues in the generator">
+  <steps>
+    <s>tool/generate_rain_sound_assets.dart: add specs, all in the existing droplet vocabulary (_Droplet/_Shimmer), mono 44.1 kHz:
+      camera_on.wav (≈130 ms, two rising droplets 880→1320 Hz), camera_off.wav (≈130 ms, falling 1320→880 Hz),
+      route_change.wav (≈90 ms, single soft 1040 Hz tick),
+      request_inbound.wav (≈420 ms, gentle two-note 660 then 990 Hz, distinct from receive.wav),
+      request_accepted.wav (≈300 ms, three rising droplets 660/880/1100 Hz),
+      transfer_complete.wav (≈260 ms, two bright droplets 990/1480 Hz with light shimmer).
+      targetPeak for each ≤ the current send.wav peak (9000) except request_inbound (≤ 9600).</s>
+    <s>Do not change existing specs in this task. Run SOUNDGEN; git status must show only the six new WAVs as new and the 15 old WAVs unchanged (if old files changed byte-for-byte, the generator is not deterministic: STOP).</s>
+    <s>Update assets/sounds/README.md "Current sound direction" with one line per new file.</s>
+  </steps>
+  <verify>SOUNDGEN; git status --short apps/rain/assets/sounds</verify>
+  <commit files="apps/rain/tool/generate_rain_sound_assets.dart apps/rain/assets/sounds/README.md apps/rain/assets/sounds/camera_on.wav apps/rain/assets/sounds/camera_off.wav apps/rain/assets/sounds/route_change.wav apps/rain/assets/sounds/request_inbound.wav apps/rain/assets/sounds/request_accepted.wav apps/rain/assets/sounds/transfer_complete.wav">feat(sound): generate distinct cues for camera, route, requests and transfers</commit>
+</task>
+
+<task id="T3.3" name="Map the new cues and add transfer events">
+  <steps>
+    <s>sound_effects_service.dart: add RainSoundEffect cameraOn, cameraOff, routeChange, requestInbound, requestAccepted, transferComplete and their asset paths.</s>
+    <s>rain_sound_event.dart: add RainSoundEventKind fileTransferCompleted and fileTransferFailed with factories (transferId required, normalized like requestId; peerId optional).</s>
+    <s>sound_event_router.dart _effectFor: cameraMute→cameraOff, cameraUnmute→cameraOn, routeChanged→routeChange, connectionRequestInbound→requestInbound, outboundAccepted→requestAccepted, fileTransferCompleted→transferComplete, fileTransferFailed→error.
+      Policy: transfer sounds dedupe per transferId for 10 minutes, at most one transfer sound per 1500 ms, suppressed by reduceSoundsDuringCall while a call is active and during ringing; gated by soundEffectsEnabled.</s>
+    <s>Tests: sound_effects_assets_test.dart gets duration windows for the six files (±15 ms around the measured value) and keeps the unique-file assertion; sound_event_router_test.dart gets mapping + dedupe + throttle + in-call suppression cases; rain_sound_event_test.dart gets factory validation.</s>
+  </steps>
+  <verify>TEST_ONE(test/sound_effects_assets_test.dart); TEST_ONE(test/sound_event_router_test.dart); TEST_ONE(test/rain_sound_event_test.dart); ANALYZE_APP</verify>
+  <commit>feat(sound): distinct cues for camera, route, requests and transfer events</commit>
+</task>
+
+<task id="T3.4" name="Play transfer sounds for the open conversation">
+  <steps>
+    <s>New file presentation/widgets/home/file_transfer_sound_events.dart with a pure function
+      List&lt;RainSoundEvent&gt; rainFileTransferSoundEventsFor({List&lt;FileTransferRecord&gt;? previous, required List&lt;FileTransferRecord&gt; next})
+      returning completed/failed events only for records whose state changed into completed/failed between previous and next (never on first load where previous is null). Follow the shape of rainChatReceiveSoundEventFor in home_screen.dart (~225-240).</s>
+    <s>chat_panel.dart: next to the existing ref.listen on messages (~144), add ref.listen on fileTransfersProvider(peerId) that dispatches those events through soundEventRouterProvider (same unawaited pattern as home_screen.dart:325). Max ~15 added lines in chat_panel.dart.</s>
+    <s>Scope note in STATE.md Decisions: transfer sounds play for the open conversation only; app-wide transfer sounds need a runtime event and are a hardening handoff.</s>
+    <s>Test test/file_transfer_sound_events_test.dart: first load → none; sending→completed → one completed; receiving→failed → one failed; unchanged list → none.</s>
+  </steps>
+  <verify>TEST_ONE(test/file_transfer_sound_events_test.dart); ANALYZE_APP; TEST_APP</verify>
+  <commit>feat(sound): play a cue when a transfer in the open chat completes or fails</commit>
+</task>
+
+<task id="T3.5" name="Warm up sounds to remove first-play delay">
+  <steps>
+    <s>Context7: confirm audioplayers 6.x AudioPlayer.setSource(AssetSource) preloads without playing on Android and Windows.</s>
+    <s>RainSoundPlayer interface: add Future&lt;void&gt; preload(String assetPath). AudioplayersRainSoundPlayer implements it with setSource. Update every fake player in tests (Grep "implements RainSoundPlayer" in test/).</s>
+    <s>SoundEffectsService.warmUp(Set&lt;RainSoundEffect&gt; effects): creates the one-shot player for each effect (same id scheme as play), configures it, preloads; errors are caught and recorded in diagnostics like play failures; safe to call twice.</s>
+    <s>sound_event_providers.dart: after creating the router, schedule unawaited(effects.warmUp({send, receive, action, error})) once.</s>
+    <s>Tests in sound_effects_service_test.dart: warmUp preloads each asset once; a later play reuses the same player; warmUp failure does not throw.</s>
+  </steps>
+  <verify>TEST_ONE(test/sound_effects_service_test.dart); ANALYZE_APP; TEST_APP</verify>
+  <commit>perf(sound): preload frequent cues to remove first-play latency</commit>
+</task>
+
+<task id="T3.6" name="Fade loops out instead of cutting">
+  <steps>
+    <s>RainSoundPlayer: add Future&lt;void&gt; setVolume(double v) (audioplayers setVolume). SoundEffectsService stopLoop/stopAllLoops: ramp the loop's volume to 0 in 4 steps over 120 ms, then stop and dispose. stopAll (app exit) stays immediate.</s>
+    <s>Tests with fakeAsync in sound_effects_service_test.dart: volumes recorded in descending order then stop; stopAll is immediate.</s>
+  </steps>
+  <verify>TEST_ONE(test/sound_effects_service_test.dart); TEST_ONE(test/sound_event_router_test.dart); ANALYZE_APP</verify>
+  <commit>feat(sound): fade ringing loops out instead of cutting them</commit>
+</task>
+
+<task id="T3.7" name="Hear the volume while setting it">
+  <steps>
+    <s>settings_screen.dart _VoiceAudioSettingsControls (~1550-1630): the sound-effects Slider gets onChangeEnd that plays RainSoundEffect.action at the new volume (through a new callback onPreviewSound wired from the screen state to soundEventRouterProvider / effects service). Add a small TextButton 'Play test sound' (key qa.settings.sound_test) next to the slider, disabled when sound effects are off.</s>
+    <s>Keep settings_screen.dart growth under 40 lines; put the button widget in a new file presentation/widgets/settings/sound_preview_button.dart if needed.</s>
+    <s>Extend test/settings_screen_test.dart: releasing the slider calls the preview callback once; the button is disabled when sound effects are off.</s>
+  </steps>
+  <verify>TEST_ONE(test/settings_screen_test.dart); ANALYZE_APP; TEST_APP</verify>
+  <commit>feat(sound): preview the sound volume in settings</commit>
+</task>
+
+<task id="T3.8" name="Loudness consistency check">
+  <steps>
+    <s>Using the T3.1 numbers, add to sound_effects_assets_test.dart a test that groups one-shots (chat: send/receive; ui: action/route_change/camera_on/camera_off/mute/unmute/deafen/undeafen; state: call_connected/call_ended/request_accepted/transfer_complete; alert: error/call_failed/request_inbound/call_incoming/call_outgoing) and asserts RMS within each group stays within 3 dB of the group median.</s>
+    <s>If a file fails: adjust only that spec's targetPeak in the generator, run SOUNDGEN, and confirm only that file changed. Record every adjusted file in STATE.md Notes.</s>
+  </steps>
+  <verify>SOUNDGEN; TEST_ONE(test/sound_effects_assets_test.dart)</verify>
+  <commit>test(sound): keep cue loudness consistent within each group</commit>
+</task>
+
+<task id="T3.9" name="Haptic feedback on Android">
+  <steps>
+    <s>app_settings_store.dart: add a bool setting hapticFeedbackEnabled (default true) with getter/setter following the pattern of an existing bool setting in that file, plus a provider in a NEW file application/state/feedback_settings_providers.dart.</s>
+    <s>New file presentation/feedback/rain_haptics.dart: RainHaptics.selection / light / medium (HapticFeedback.selectionClick / lightImpact / mediumImpact), no-op unless Platform.isAndroid and the setting is on.</s>
+    <s>Wire: chat send (chat_composer.dart send tap → light), call accept/decline/hang-up and mute/camera toggles (rain_call_controls.dart → medium for accept/decline/hang-up, selection for toggles), Switch toggles in settings (selection). Settings gets a 'Haptic feedback' switch (Android only) next to the sound switches (key qa.settings.haptics).</s>
+    <s>Tests: new test/rain_haptics_test.dart mocking SystemChannels.platform: calls HapticFeedback when enabled on Android (debugDefaultTargetPlatformOverride), not when disabled or on Windows; app_settings_store_test.dart round-trips the setting.</s>
+  </steps>
+  <verify>TEST_ONE(test/rain_haptics_test.dart); TEST_ONE(test/app_settings_store_test.dart); ANALYZE_APP; TEST_APP</verify>
+  <commit>feat(haptics): optional haptic feedback for send, calls and toggles on Android</commit>
+  <after>Push the branch. Phase 3 done. Add to Owner actions: "Listen to every cue in audit/ui/02-sound-map.md on phone speaker, headphones and a Windows laptop; flag any that is harsh, too quiet or confusable".</after>
+</task>
+</phase>
+
+<!-- ============================================================ -->
+<phase id="4" name="Polish and micro-interactions">
+<task_rule>Run sync_protocol first. Same per-task rule.</task_rule>
+
+<task id="T4.1" name="Messages arrive with a gentle entrance">
+  <steps>
+    <s>New file presentation/widgets/home/rain_message_entrance.dart: RainMessageEntrance({required Widget child, required bool animate, required bool isOutgoing}) fades in and slides 8 px from its side over RainMotion.messageEnter; renders child directly when !animate or reduced.</s>
+    <s>chat_panel.dart _buildMessages (~758-880): keep a Set of message ids present at first successful load (a field on _ChatPanelState); wrap each bubble in RainMessageEntrance with animate = id not in that set and not already animated. In-place edit only, under ~30 lines.</s>
+    <s>Test test/rain_message_entrance_test.dart: animate=false renders immediately; animate=true has opacity &lt; 1 at 50 ms and 1 at 200 ms; reduced motion renders immediately.</s>
+  </steps>
+  <verify>TEST_ONE(test/rain_message_entrance_test.dart); TEST_ONE(test/chat_panel_connectivity_test.dart); ANALYZE_APP; TEST_APP</verify>
+  <commit>feat(ui): new messages fade and slide in</commit>
+</task>
+
+<task id="T4.2" name="Press, hover and focus feedback">
+  <steps>
+    <s>New file presentation/widgets/feedback/rain_pressable.dart: RainPressable({required Widget child, VoidCallback? onTap, String? semanticLabel}) — scale 0.97 on press (RainMotion.pressScale), hover overlay on desktop (MouseRegion), visible focus ring (2 px primary, RainRadius.md) on keyboard focus (FocusableActionDetectors, Enter/Space activate).</s>
+    <s>Apply to RainVoiceCallButton and RainVideoCallButton (rain_chat_widgets.dart:593, :630) and friend rows in friends_list.dart. Do not change their public constructors.</s>
+    <s>Theme (rain_theme.dart, both themes): focusColor and an overlayColor for Filled/Outlined/Text buttons that shows on hover and focus.</s>
+    <s>Test test/rain_pressable_test.dart: tap fires once; Enter fires when focused; scale &lt; 1 while pressed; reduced motion no scale animation.</s>
+  </steps>
+  <verify>TEST_ONE(test/rain_pressable_test.dart); TEST_ONE(test/rain_chat_widgets_test.dart); ANALYZE_APP; TEST_APP</verify>
+  <commit>feat(ui): press, hover and keyboard focus feedback</commit>
+</task>
+
+<task id="T4.3" name="Tooltips and semantics for every icon control">
+  <steps>
+    <s>For each IconButton listed in T0.3 section 5: add a short tooltip (verb first: 'Attach file', 'Start voice call').</s>
+    <s>Call controls (rain_call_controls.dart): Semantics with state, e.g. label 'Microphone', value 'On'/'Off', toggled true/false.</s>
+    <s>Test: extend rain_call_suite_test.dart to check the microphone control's semantics; add a test that pumps HomeScreen-free widgets from T0.3 section 5 and finds no IconButton with a null tooltip (where they are constructible in isolation).</s>
+  </steps>
+  <verify>ANALYZE_APP; TEST_APP</verify>
+  <commit>feat(a11y): tooltips and stateful semantics for icon controls</commit>
+</task>
+
+<task id="T4.4" name="Empty states that say what to do next">
+  <steps>
+    <s>Rewrite copy (title + one sentence + optional action) for: friends list empty (friends_list.dart), chat with no messages (chat_panel.dart, find the empty branch near _buildMessages ~775), search idle and no results (search_screen.dart), connection request tray empty (widgets/connection_requests/connection_request_tray.dart). Pattern: what this place is, then the one action ('Find people by username' → opens search where a callback already exists).</s>
+    <s>Use AppStateMessage/RainMistStateCard only (T1.5). No new illustrations; a static RainPeerCoreMark (size 40) is allowed as the icon.</s>
+    <s>Update any test asserting the old strings; add one assertion per new empty state.</s>
+  </steps>
+  <verify>ANALYZE_APP; TEST_APP</verify>
+  <commit>feat(ui): clearer empty states with a next step</commit>
+</task>
+
+<task id="T4.5" name="Consistent snackbars outside the home screen">
+  <steps>
+    <s>New file presentation/feedback/rain_snack.dart: showRainSnack(BuildContext, String message, {RainStateSeverity severity = neutral, SnackBarAction? action}) using the theme snackBarTheme, a leading severity icon, and duration 4 s (error 6 s).</s>
+    <s>Replace showSnackBar calls in settings_screen.dart, search_screen.dart, onboarding_screen.dart and friend_profile_screen.dart only. Leave home_screen.dart and chat_panel.dart calls as they are (they inherit the theme from T1.2).</s>
+    <s>Test test/rain_snack_test.dart: severity icon and duration.</s>
+  </steps>
+  <verify>TEST_ONE(test/rain_snack_test.dart); ANALYZE_APP; TEST_APP</verify>
+  <commit>refactor(ui): one snackbar helper for settings, search, onboarding and profile</commit>
+</task>
+
+<task id="T4.6" name="Large text, narrow screens and contrast">
+  <steps>
+    <s>New test test/ui_resilience_test.dart: pump splash, startup failure, force update, onboarding, settings, message bubbles, file transfer bubble and call ended surface at 360x740 with TextScaler.linear(1.3) in both themes; expect tester.takeException() is null (no overflow).</s>
+    <s>Fix every overflow found with Flexible/Wrap/ellipsis; never shrink fonts below 12.</s>
+    <s>Same file: compute contrast ratios (Color.computeLuminance) for body and muted text on surfaceDark, surfaceLight, backgroundDark: body ≥ 4.5, muted (the 0.6-0.72 alpha text used in splash and state cards) ≥ 4.5 for text under 18 px. Adjust only the alpha constants that fail and list them in STATE.md Notes.</s>
+  </steps>
+  <verify>TEST_ONE(test/ui_resilience_test.dart); ANALYZE_APP; TEST_APP</verify>
+  <commit>fix(a11y): no overflow at 130 % text and readable muted text contrast</commit>
+  <after>Push the branch. Phase 4 done.</after>
+</task>
+</phase>
+
+<!-- ============================================================ -->
+<phase id="5" name="Verify, document and hand off">
+
+<task id="T5.1" name="After shots and comparison">
+  <steps>
+    <s>Run SNAPSHOTS. Copy goldens to audit/ui/shots/after/. Remove-Item -Recurse apps/rain/test/ui_snapshots/goldens.</s>
+    <s>Write audit/ui/03-before-after.md: one row per snapshot name with relative links to before and after PNGs and a one-line change note.</s>
+  </steps>
+  <commit files="audit/ui/shots/after audit/ui/03-before-after.md audit/ui/STATE.md">docs(audit): UI before and after snapshots</commit>
+</task>
+
+<task id="T5.2" name="Full validation">
+  <steps><s>Run sync_protocol once more.</s></steps>
+  <verify>ANALYZE; FORMAT; TEST_ALL; LINE_LIMIT. Record counts in STATE.md Notes next to the Baseline line.</verify>
+  <stop_if>Anything red after 3 fix rounds: STOP and list the failures.</stop_if>
+  <commit files="audit/ui/STATE.md">chore(audit): record UI program validation</commit>
+</task>
+
+<task id="T5.3" name="Vault note and continuity entry">
+  <steps>
+    <s>Create obsidian-vault/03-Features/UI UX Level-Up.md. Copy front-matter and heading conventions from another note in that folder (and DOCUMENTATION_RULES.md). Sections: Design direction (U-D2..U-D4), Tokens and motion policy, Loading and startup states, Sound map summary (link audit/ui/02-sound-map.md), Haptics, Accessibility rules, Open items (Blocked + Handoff to hardening from STATE.md), Last updated.</s>
+    <s>Append one dated entry to the top of CONTINUITY.md's log section: what changed, branch ui/level-up, validation results, open items.</s>
+  </steps>
+  <verify>VAULT</verify>
+  <commit>docs(vault): UI/UX level-up feature note and continuity entry</commit>
+</task>
+
+<task id="T5.4" name="Final report and draft PR">
+  <output>audit/ui/04-report.md</output>
+  <steps>
+    <s>Sections: Results (task, sha, one line), Blocked (exact errors), Handoff to hardening, Owner actions (from STATE.md plus: run the app on Android and Windows and walk startup → onboarding → chat → call → settings; check reduced motion via Android "Remove animations" and Windows "Show animations" off; listen review of all cues; native splash cold-start check; merge decision), Before/after validation table, Remaining ideas (not done, one line each).</s>
+    <s>Push. If gh is available: open a DRAFT PR ui/level-up → audit/rain-hardening if that branch still exists unmerged, otherwise → dev. Title "UI/UX level-up: loading states, sound, motion and polish"; body = audit/ui/04-report.md. Never merge.</s>
+  </steps>
+  <commit files="audit/ui/04-report.md audit/ui/STATE.md">docs(audit): UI/UX level-up final report</commit>
+  <after>End with a 5-line summary: tasks done, blocked, handoffs, PR link or "no gh", top owner action.</after>
+</task>
+</phase>
+
+</orchestrator>
