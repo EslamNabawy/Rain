@@ -33,7 +33,7 @@ class FirebaseSignalingAdapter
     bool useEmulator = false,
   }) : _auth = auth ?? FirebaseAuth.instance,
        _database = database ?? FirebaseDatabase.instance,
-       _functions = functions ?? FirebaseFunctions.instance,
+       _functionsOverride = functions,
        _connectionRequestDiagnosticsSink = connectionRequestDiagnosticsSink,
        _signalingCipher = signalingCipher ?? SignalingCipher.demo(),
        _pairCipherResolver = pairCipherResolver,
@@ -42,7 +42,13 @@ class FirebaseSignalingAdapter
 
   final FirebaseAuth _auth;
   final FirebaseDatabase _database;
-  final FirebaseFunctions _functions;
+  final FirebaseFunctions? _functionsOverride;
+  FirebaseFunctions? _functionsInstance;
+
+  /// Created on first use so `rtdbOnly` mode (the Spark default) never
+  /// touches the Cloud Functions plugin.
+  FirebaseFunctions get _functions =>
+      _functionsInstance ??= _functionsOverride ?? FirebaseFunctions.instance;
   final ConnectionRequestAdapterDiagnosticsSink?
   _connectionRequestDiagnosticsSink;
   final SignalingCipher _signalingCipher;
