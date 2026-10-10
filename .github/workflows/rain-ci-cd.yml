@@ -41,7 +41,7 @@ jobs:
         with:
           distribution: temurin
           java-version: ${{ env.JAVA_VERSION }}
-      - uses: subosito/flutter-action@v2
+      - uses: subosito/flutter-action@1a449444c387b1966244ae4d4f8c696479add0b2 # v2
         with:
           flutter-version: ${{ env.FLUTTER_VERSION }}
           channel: stable
@@ -59,7 +59,7 @@ jobs:
     timeout-minutes: 45
     steps:
       - uses: actions/checkout@v5
-      - uses: subosito/flutter-action@v2
+      - uses: subosito/flutter-action@1a449444c387b1966244ae4d4f8c696479add0b2 # v2
         with:
           flutter-version: ${{ env.FLUTTER_VERSION }}
           channel: stable
@@ -69,7 +69,7 @@ jobs:
           $defines = Join-Path $env:RUNNER_TEMP 'defines.json'
           Copy-Item apps/rain/tool/dart_defines.example.json $defines -Force
           ./scripts/build_release.ps1 -Platform windows -OutputDir artifacts -DartDefinesFile $defines -AllowPublicTurnForDemo -Clean
-      - uses: actions/upload-artifact@v4
+      - uses: actions/upload-artifact@v7
         with:
           name: Rain-Windows-x64
           path: artifacts/Rain-Demo-Windows-x64-Build
@@ -87,7 +87,7 @@ jobs:
         with:
           distribution: temurin
           java-version: ${{ env.JAVA_VERSION }}
-      - uses: subosito/flutter-action@v2
+      - uses: subosito/flutter-action@1a449444c387b1966244ae4d4f8c696479add0b2 # v2
         with:
           flutter-version: ${{ env.FLUTTER_VERSION }}
           channel: stable
@@ -97,7 +97,7 @@ jobs:
           $defines = Join-Path $env:RUNNER_TEMP 'defines.json'
           Copy-Item apps/rain/tool/dart_defines.example.json $defines -Force
           ./scripts/build_release.ps1 -Platform android -OutputDir artifacts -DartDefinesFile $defines -AndroidArtifactSet mobile -AllowPublicTurnForDemo -UseDemoAndroidSigningKey -Clean
-      - uses: actions/upload-artifact@v4
+      - uses: actions/upload-artifact@v7
         with:
           name: Rain-Android-Builds
           path: |
@@ -113,7 +113,7 @@ jobs:
     if: github.ref == 'refs/heads/main' && github.event_name == 'push'
     steps:
       - uses: actions/checkout@v5
-      - uses: actions/download-artifact@v4
+      - uses: actions/download-artifact@v8
         with:
           path: release-assets
       - name: Create GitHub Release

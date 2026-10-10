@@ -41,6 +41,7 @@ T4.17 6ff2037 ensureKeyPair verifies private key; login re-publishes key best-ef
 T4.18 fda079f trustedUpdateUrl allow-list (https + github Rain repos or build host)
 T4.20 c8186f8 service no longer imports firebase_auth; 2 broker tests
 T4.21 4feaa3f protocol_brain_firebase.dart + testing.dart; boundary test; all packages green
+T4.22 95778ab lazy FirebaseFunctions; source-contract test (adapter cannot be constructed in unit tests)
 ## Blocked
 T4.15 SKIPPED (DB-003): premise invalid - no table declares a foreign key, so the beforeOpen foreign_key_check can never fail. DB-003 downgraded to P3 in audit/01-findings.md; quarantine-on-open-failure moved to backlog.
 T4.19 BLOCKED (SEC-006): depends on T4.01 (rules changes need RULES_TEST).
