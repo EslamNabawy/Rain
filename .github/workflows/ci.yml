@@ -3,13 +3,13 @@ name: CI/CD
 on:
   push:
     branches:
-      '**'
+      - '**'
     tags:
-      'v*.*.*'
+      - 'v*.*.*'
   pull_request:
     branches:
-      main
-      dev
+      - main
+      - dev
   workflow_dispatch:
 
 permissions:
@@ -37,9 +37,9 @@ jobs:
       contents: read
       pull-requests: write
     steps:
-      uses: actions/checkout@v7
+      - uses: actions/checkout@v7
 
-      name: Review dependency changes
+      - name: Review dependency changes
         uses: actions/dependency-review-action@v5
         with:
           fail-on-severity: high
@@ -50,47 +50,47 @@ jobs:
     runs-on: ubuntu-latest
     timeout-minutes: 10
     steps:
-      uses: actions/checkout@v7
+      - uses: actions/checkout@v7
 
-      uses: actions/setup-go@v7
+      - uses: actions/setup-go@v7
         with:
           go-version: stable
           cache: false
 
-      name: Install actionlint
+      - name: Install actionlint
         run: go install github.com/rhysd/actionlint/cmd/actionlint@v1.7.8
 
-      name: Lint GitHub Actions workflows
+      - name: Lint GitHub Actions workflows
         run: |
-          "$(go env GOPATH)/bin/actionlint"color
+          "$(go env GOPATH)/bin/actionlint" -color
 
   quality-gate:
     name: Quality Gate
     runs-on: ubuntu-latest
     timeout-minutes: 45
     steps:
-      uses: actions/checkout@v7
+      - uses: actions/checkout@v7
         with:
           fetch-depth: 0
 
-      uses: actions/setup-java@v6
+      - uses: actions/setup-java@v6
         with:
           distribution: temurin
           java-version: ${{ env.JAVA_VERSION }}
 
-      uses: subosito/flutter-action@1a449444c387b1966244ae4d4f8c696479add0b2 # v2
+      - uses: subosito/flutter-action@1a449444c387b1966244ae4d4f8c696479add0b2 # v2
         with:
           flutter-version: ${{ env.FLUTTER_VERSION }}
           channel: stable
           cache: true
 
-      name: Print toolchain versions
+      - name: Print toolchain versions
         run: |
-          flutter doctorv
-          flutter-version
-          dart-version
+          flutter doctor -v
+          flutter --version
+          dart --version
 
-      name: Restore Dart and Flutter dependencies
+      - name: Restore Dart and Flutter dependencies
         run: |
           dart pub get
           for package in \
@@ -102,13 +102,13 @@ jobs:
             (cd "$package" && flutter pub get)
           done
 
-      name: Fail on dependency lock drift
+      - name: Fail on dependency lock drift
         run: |
-          git diff-exit-code- pubspec.lock
+          git diff --exit-code -- pubspec.lock
 
-      name: Enforce Dart formatting
+      - name: Enforce Dart formatting
         run: |
-          dart format-output=none-set-exit-if-changed \
+          dart format --output=none --set-exit-if-changed \
             apps/rain/lib \
             apps/rain/test \
             apps/rain/tool \
@@ -119,24 +119,24 @@ jobs:
             packages/rain_core/lib \
             packages/rain_core/test
 
-      name: Forbid raw debugPrint in lib/
+      - name: Forbid raw debugPrint in lib/
         # TASK-018: all app logging must go through RainDebugLog (sanitized).
         # crash_diagnostics_service.dart is the lowest sanitizing layer and is
         # intentionally excluded. Comment lines are ignored.
         run: |
-          if greprnE "debugPrint\(" apps/rain/lib-exclude=crash_diagnostics_service.dart | grepvE "//"; then
+          if grep -rnE "debugPrint\(" apps/rain/lib --exclude=crash_diagnostics_service.dart | grep -vE "//"; then
             echo "Raw debugPrint( found in lib/  -  route through RainDebugLog instead."
             exit 1
           fi
           echo "no raw debugPrint in lib/"
 
-      name: Enforce file-size limit in lib/
+      - name: Enforce file-size limit in lib/
         # Prevent god-object files. Generated files (*.g.dart, *.freezed.dart)
         # are excluded from the line-count gate. The hard limit is 3000 lines
         # (blocks new god-objects); 800+ lines emit a warning to track debt.
         shell: bash
         run: |
-          sete
+          set -e
           hard_limit=3200
           warn_limit=800
           offenders=""
@@ -147,51 +147,51 @@ jobs:
             packages/protocol_brain/lib \
             packages/rain_core/lib
           do
-            while IFS= readrd '' file; do
-              lines=$(wcl < "$file")
-              if [ "$lines"gt "$hard_limit" ]; then
+            while IFS= read -r -d '' file; do
+              lines=$(wc -l < "$file")
+              if [ "$lines" -gt "$hard_limit" ]; then
                 offenders="${offenders}${file}: ${lines} lines\n"
-              elif [ "$lines"gt "$warn_limit" ]; then
+              elif [ "$lines" -gt "$warn_limit" ]; then
                 warnings="${warnings}${file}: ${lines} lines\n"
               fi
-            done < <(find "$dir"type fname '*.dart' !name '*.g.dart' !name '*.freezed.dart'print0)
+            done < <(find "$dir" -type f -name '*.dart' ! -name '*.g.dart' ! -name '*.freezed.dart' -print0)
           done
-          if [n "$warnings" ]; then
+          if [ -n "$warnings" ]; then
             echo "::warning::Files exceed ${warn_limit}-line guideline (will be decomposed in Phase 5):"
             printf '%b' "$warnings"
           fi
-          if [n "$offenders" ]; then
+          if [ -n "$offenders" ]; then
             echo "::error::Files exceed ${hard_limit}-line hard limit:"
             printf '%b' "$offenders"
             exit 1
           fi
           echo "All non-generated lib/*.dart files are within the ${hard_limit}-line hard limit."
 
-      name: Require generated code artifacts
+      - name: Require generated code artifacts
         run: |
-          tests apps/rain/lib/application/state/app_state.freezed.dart
-          tests packages/rain_core/lib/database/rain_database.g.dart
+          test -s apps/rain/lib/application/state/app_state.freezed.dart
+          test -s packages/rain_core/lib/database/rain_database.g.dart
 
-      name: Verify release guard fails closed
+      - name: Verify release guard fails closed
         shell: pwsh
         run: |
           $ErrorActionPreference = 'Continue'
           $PSNativeCommandUseErrorActionPreference = $false
           $logPath = Join-Path $env:RUNNER_TEMP 'release-guard.log'
-          $output = & pwshNoProfileFile scripts/build_release.ps1Platform androidOutputDir (Join-Path $env:RUNNER_TEMP 'release-guard-output') 2>&1
+          $output = & pwsh -NoProfile -File scripts/build_release.ps1 -Platform android -OutputDir (Join-Path $env:RUNNER_TEMP 'release-guard-output') 2>&1
           $exitCode = $LASTEXITCODE
           $text = $output | Out-String
-          $text | Set-ContentLiteralPath $logPath
-          if ($exitCodeeq 0) {
+          $text | Set-Content -LiteralPath $logPath
+          if ($exitCode -eq 0) {
             throw 'Release build unexpectedly succeeded without release dart defines and signing inputs.'
           }
-          if ($textnotmatch 'Release builds requireDartDefinesFile') {
+          if ($text -notmatch 'Release builds require -DartDefinesFile') {
             Write-Host $text
             throw 'Release guard failed, but not with the expected missing dart defines message.'
           }
           exit 0
 
-      name: Upload release guard diagnostics
+      - name: Upload release guard diagnostics
         if: failure()
         uses: actions/upload-artifact@v7
         with:
@@ -208,35 +208,35 @@ jobs:
       fail-fast: false
       matrix:
         include:
-          id: rain-app
+          - id: rain-app
             path: apps/rain
-          id: peer-core
+          - id: peer-core
             path: packages/peer_core
-          id: protocol-brain
+          - id: protocol-brain
             path: packages/protocol_brain
-          id: rain-core
+          - id: rain-core
             path: packages/rain_core
     steps:
-      uses: actions/checkout@v7
+      - uses: actions/checkout@v7
 
-      uses: actions/setup-java@v6
+      - uses: actions/setup-java@v6
         with:
           distribution: temurin
           java-version: ${{ env.JAVA_VERSION }}
 
-      uses: subosito/flutter-action@1a449444c387b1966244ae4d4f8c696479add0b2 # v2
+      - uses: subosito/flutter-action@1a449444c387b1966244ae4d4f8c696479add0b2 # v2
         with:
           flutter-version: ${{ env.FLUTTER_VERSION }}
           channel: stable
           cache: true
 
-      name: Restore dependencies
+      - name: Restore dependencies
         working-directory: ${{ matrix.path }}
         run: flutter pub get
 
-      name: Run analyzer with warnings and infos as failures
+      - name: Run analyzer with warnings and infos as failures
         working-directory: ${{ matrix.path }}
-        run: flutter analyze-fatal-infos-fatal-warnings
+        run: flutter analyze --fatal-infos --fatal-warnings
 
   tests:
     name: Test (${{ matrix.id }})
@@ -246,60 +246,60 @@ jobs:
       fail-fast: false
       matrix:
         include:
-          id: rain-app
+          - id: rain-app
             path: apps/rain
-          id: peer-core
+          - id: peer-core
             path: packages/peer_core
-          id: protocol-brain
+          - id: protocol-brain
             path: packages/protocol_brain
-          id: rain-core
+          - id: rain-core
             path: packages/rain_core
     steps:
-      uses: actions/checkout@v7
+      - uses: actions/checkout@v7
 
-      uses: actions/setup-java@v6
+      - uses: actions/setup-java@v6
         with:
           distribution: temurin
           java-version: ${{ env.JAVA_VERSION }}
 
-      uses: subosito/flutter-action@1a449444c387b1966244ae4d4f8c696479add0b2 # v2
+      - uses: subosito/flutter-action@1a449444c387b1966244ae4d4f8c696479add0b2 # v2
         with:
           flutter-version: ${{ env.FLUTTER_VERSION }}
           channel: stable
           cache: true
 
-      name: Restore dependencies
+      - name: Restore dependencies
         working-directory: ${{ matrix.path }}
         run: flutter pub get
 
-      name: Run randomized tests with coverage
+      - name: Run randomized tests with coverage
         working-directory: ${{ matrix.path }}
         shell: bash
         run: |
-          seto pipefail
+          set -o pipefail
 
           for attempt in 1 2 3; do
-            rmf coverage/lcov.info
-            if flutter test-coverage-test-randomize-ordering-seed=random-reporter expanded 2>&1 | tee test-output.log; then
+            rm -f coverage/lcov.info
+            if flutter test --coverage --test-randomize-ordering-seed=random --reporter expanded 2>&1 | tee test-output.log; then
               exit 0
             fi
 
             status=$?
-            if ! grepEq 'Building native assets failed|download.*libsqlite3|Connection closed before full header' test-output.log; then
+            if ! grep -Eq 'Building native assets failed|download.*libsqlite3|Connection closed before full header' test-output.log; then
               exit "$status"
             fi
 
-            if [ "$attempt"eq 3 ]; then
+            if [ "$attempt" -eq 3 ]; then
               exit "$status"
             fi
 
             sleep "$((attempt * 10))"
           done
 
-      name: Require coverage output
-        run: tests "${{ matrix.path }}/coverage/lcov.info"
+      - name: Require coverage output
+        run: test -s "${{ matrix.path }}/coverage/lcov.info"
 
-      name: Enforce coverage floor (40%) for rain-app
+      - name: Enforce coverage floor (40%) for rain-app
         # Only the rain-app package has a coverage floor enforced.
         # Uses dart's built-in coverage parsing  -  lcov is not pre-installed
         # on ubuntu-latest. Falls back to a simple grep on lcov.info if
@@ -309,28 +309,28 @@ jobs:
         shell: bash
         continue-on-error: true
         run: |
-          sete
+          set -e
           lcov_file="${{ matrix.path }}/coverage/lcov.info"
-          if [ !s "$lcov_file" ]; then
+          if [ ! -s "$lcov_file" ]; then
             echo "::warning::Coverage file not found or empty: $lcov_file"
             exit 0
           fi
           # Parse coverage from lcov.info directly (no lcov binary needed)
-          covered=$(grepc '^DA:' "$lcov_file" 2>/dev/null || echo 0)
-          hit=$(grep '^DA:' "$lcov_file" | awkF, '{if ($2 > 0) c++} END {print c+0}' 2>/dev/null || echo 0)
-          if [ "$covered"eq 0 ]; then
+          covered=$(grep -c '^DA:' "$lcov_file" 2>/dev/null || echo 0)
+          hit=$(grep '^DA:' "$lcov_file" | awk -F, '{if ($2 > 0) c++} END {print c+0}' 2>/dev/null || echo 0)
+          if [ "$covered" -eq 0 ]; then
             echo "::warning::No DA: lines found in lcov.info, skipping coverage check."
             exit 0
           fi
-          coverage_pct=$(awkv h="$hit"v t="$covered" 'BEGIN { printf "%.1f", (h/t)*100 }')
+          coverage_pct=$(awk -v h="$hit" -v t="$covered" 'BEGIN { printf "%.1f", (h/t)*100 }')
           echo "Line coverage: ${coverage_pct}% (${hit}/${covered} lines covered)"
-          if awkv c="$coverage_pct"v m=40 'BEGIN { exit !(c+0 >= m) }'; then
+          if awk -v c="$coverage_pct" -v m=40 'BEGIN { exit !(c+0 >= m) }'; then
             echo "Coverage ${coverage_pct}% meets the 40% floor."
           else
             echo "::warning::Coverage ${coverage_pct}% is below the 40% floor (soft gate  -  Phase 6 will enforce)."
           fi
 
-      name: Upload coverage
+      - name: Upload coverage
         if: always()
         uses: actions/upload-artifact@v7
         with:
@@ -344,73 +344,73 @@ jobs:
     runs-on: ubuntu-latest
     timeout-minutes: 15
     steps:
-      uses: actions/checkout@v7
+      - uses: actions/checkout@v7
 
-      uses: actions/setup-node@v7
+      - uses: actions/setup-node@v7
         with:
           node-version: ${{ env.NODE_VERSION }}
           cache: npm
           cache-dependency-path: backend/firebase/functions/package-lock.json
 
-      name: Validate Firebase JSON files
+      - name: Validate Firebase JSON files
         run: |
-          nodee "JSON.parse(require('fs').readFileSync('backend/firebase/firebase.json', 'utf8'))"
-          nodee "JSON.parse(require('fs').readFileSync('backend/firebase/database.rules.json', 'utf8'))"
+          node -e "JSON.parse(require('fs').readFileSync('backend/firebase/firebase.json', 'utf8'))"
+          node -e "JSON.parse(require('fs').readFileSync('backend/firebase/database.rules.json', 'utf8'))"
 
-      name: Install Firebase function dependencies
+      - name: Install Firebase function dependencies
         working-directory: backend/firebase/functions
-        run: npm ci-ignore-scripts-no-audit
+        run: npm ci --ignore-scripts --no-audit
 
-      name: Lint Firebase functions
+      - name: Lint Firebase functions
         working-directory: backend/firebase/functions
         run: npm run lint
 
-      name: Audit Firebase functions dependencies
+      - name: Audit Firebase functions dependencies
         working-directory: backend/firebase/functions
         run: npm run audit:moderate
 
-      name: Run Firebase function tests if present
+      - name: Run Firebase function tests if present
         working-directory: backend/firebase/functions
-        run: npm test-if-present
+        run: npm test --if-present
 
-      uses: actions/setup-java@v6
+      - uses: actions/setup-java@v6
         with:
           distribution: temurin
           java-version: ${{ env.JAVA_VERSION }}
 
-      name: Install RTDB rules test dependencies
+      - name: Install RTDB rules test dependencies
         working-directory: backend/firebase/rules-test
-        run: npm ci-ignore-scripts-no-audit-no-fund
+        run: npm ci --ignore-scripts --no-audit --no-fund
 
-      name: Run RTDB rules tests
+      - name: Run RTDB rules tests
         working-directory: backend/firebase
-        run: npx-yes firebase-tools@15.18.0 emulators:exec-only database "node rules-test/run.js"
+        run: npx --yes firebase-tools@15.18.0 emulators:exec --only database "node rules-test/run.js"
 
   firebase-emulator-tests:
     name: Firebase Emulator Integration
     runs-on: ubuntu-latest
     timeout-minutes: 35
     steps:
-      uses: actions/checkout@v7
+      - uses: actions/checkout@v7
 
-      uses: actions/setup-java@v6
+      - uses: actions/setup-java@v6
         with:
           distribution: temurin
           java-version: ${{ env.JAVA_VERSION }}
 
-      uses: actions/setup-node@v7
+      - uses: actions/setup-node@v7
         with:
           node-version: ${{ env.NODE_VERSION }}
           cache: npm
           cache-dependency-path: backend/firebase/functions/package-lock.json
 
-      uses: subosito/flutter-action@1a449444c387b1966244ae4d4f8c696479add0b2 # v2
+      - uses: subosito/flutter-action@1a449444c387b1966244ae4d4f8c696479add0b2 # v2
         with:
           flutter-version: ${{ env.FLUTTER_VERSION }}
           channel: stable
           cache: true
 
-      name: Run Firebase emulator integration tests
+      - name: Run Firebase emulator integration tests
         run: bash scripts/ci_run_firebase_emulators.sh
 
   android-build:
@@ -419,72 +419,72 @@ jobs:
     timeout-minutes: 60
     if: ${{ github.event_name == 'workflow_dispatch' || github.ref == 'refs/heads/main' || startsWith(github.ref, 'refs/tags/v') }}
     env:
-      GRADLE_OPTS: "-Dorg.gradle.jvmargs=-Xmx4gDorg.gradle.daemon=falseXX:MaxMetaspaceSize=1gXX:ReservedCodeCacheSize=256mXX:+HeapDumpOnOutOfMemoryError"
+      GRADLE_OPTS: "-Dorg.gradle.jvmargs=-Xmx4g -Dorg.gradle.daemon=false -XX:MaxMetaspaceSize=1g -XX:ReservedCodeCacheSize=256m -XX:+HeapDumpOnOutOfMemoryError"
     steps:
-      uses: actions/checkout@v7
+      - uses: actions/checkout@v7
 
-      uses: actions/setup-java@v6
+      - uses: actions/setup-java@v6
         with:
           distribution: temurin
           java-version: ${{ env.JAVA_VERSION }}
           cache: gradle
 
-      uses: subosito/flutter-action@1a449444c387b1966244ae4d4f8c696479add0b2 # v2
+      - uses: subosito/flutter-action@1a449444c387b1966244ae4d4f8c696479add0b2 # v2
         with:
           flutter-version: ${{ env.FLUTTER_VERSION }}
           channel: stable
           cache: true
 
-      name: Flutter doctor
-        run: flutter doctorv
+      - name: Flutter doctor
+        run: flutter doctor -v
 
-      name: Restore app dependencies
+      - name: Restore app dependencies
         working-directory: ${{ env.RAIN_APP_DIR }}
         run: flutter pub get
 
-      name: Verify Dart defines file exists
-        run: testf "${GITHUB_WORKSPACE}/${RAIN_DART_DEFINES_FILE}"
+      - name: Verify Dart defines file exists
+        run: test -f "${GITHUB_WORKSPACE}/${RAIN_DART_DEFINES_FILE}"
 
-      name: Build debug ARMv7 and ARM64 APKs
+      - name: Build debug ARMv7 and ARM64 APKs
         working-directory: ${{ env.RAIN_APP_DIR }}
-        run: flutter build apk-debug-split-per-abi-target-platform android-arm,android-arm64-dart-define-from-file="${GITHUB_WORKSPACE}/${RAIN_DART_DEFINES_FILE}"
+        run: flutter build apk --debug --split-per-abi --target-platform android-arm,android-arm64 --dart-define-from-file="${GITHUB_WORKSPACE}/${RAIN_DART_DEFINES_FILE}"
 
-      name: Verify debug APK ABI split
+      - name: Verify debug APK ABI split
         working-directory: ${{ env.RAIN_APP_DIR }}
         run: |
-          unzipl build/app/outputs/flutter-apk/app-armeabi-v7a-debug.apk > "$RUNNER_TEMP/rain-debug-v7a-apk-entries.txt"
-          grepq 'lib/armeabi-v7a/' "$RUNNER_TEMP/rain-debug-v7a-apk-entries.txt"
-          grepq 'lib/armeabi-v7a/libjingle_peerconnection_so.so' "$RUNNER_TEMP/rain-debug-v7a-apk-entries.txt"
-          if grepq 'lib/arm64-v8a/' "$RUNNER_TEMP/rain-debug-v7a-apk-entries.txt"; then
+          unzip -l build/app/outputs/flutter-apk/app-armeabi-v7a-debug.apk > "$RUNNER_TEMP/rain-debug-v7a-apk-entries.txt"
+          grep -q 'lib/armeabi-v7a/' "$RUNNER_TEMP/rain-debug-v7a-apk-entries.txt"
+          grep -q 'lib/armeabi-v7a/libjingle_peerconnection_so.so' "$RUNNER_TEMP/rain-debug-v7a-apk-entries.txt"
+          if grep -q 'lib/arm64-v8a/' "$RUNNER_TEMP/rain-debug-v7a-apk-entries.txt"; then
             echo "Debug ARMv7 APK must not contain arm64-v8a native libraries."
             exit 1
           fi
-          if grepq 'lib/x86/' "$RUNNER_TEMP/rain-debug-v7a-apk-entries.txt"; then
+          if grep -q 'lib/x86/' "$RUNNER_TEMP/rain-debug-v7a-apk-entries.txt"; then
             echo "Debug ARMv7 APK must not contain x86 native libraries."
             exit 1
           fi
-          if grepq 'lib/x86_64/' "$RUNNER_TEMP/rain-debug-v7a-apk-entries.txt"; then
+          if grep -q 'lib/x86_64/' "$RUNNER_TEMP/rain-debug-v7a-apk-entries.txt"; then
             echo "Debug ARMv7 APK must not contain x86_64 native libraries."
             exit 1
           fi
 
-          unzipl build/app/outputs/flutter-apk/app-arm64-v8a-debug.apk > "$RUNNER_TEMP/rain-debug-apk-entries.txt"
-          grepq 'lib/arm64-v8a/' "$RUNNER_TEMP/rain-debug-apk-entries.txt"
-          grepq 'lib/arm64-v8a/libjingle_peerconnection_so.so' "$RUNNER_TEMP/rain-debug-apk-entries.txt"
-          if grepq 'lib/armeabi-v7a/' "$RUNNER_TEMP/rain-debug-apk-entries.txt"; then
+          unzip -l build/app/outputs/flutter-apk/app-arm64-v8a-debug.apk > "$RUNNER_TEMP/rain-debug-apk-entries.txt"
+          grep -q 'lib/arm64-v8a/' "$RUNNER_TEMP/rain-debug-apk-entries.txt"
+          grep -q 'lib/arm64-v8a/libjingle_peerconnection_so.so' "$RUNNER_TEMP/rain-debug-apk-entries.txt"
+          if grep -q 'lib/armeabi-v7a/' "$RUNNER_TEMP/rain-debug-apk-entries.txt"; then
             echo "Debug APK must not contain armeabi-v7a native libraries."
             exit 1
           fi
-          if grepq 'lib/x86/' "$RUNNER_TEMP/rain-debug-apk-entries.txt"; then
+          if grep -q 'lib/x86/' "$RUNNER_TEMP/rain-debug-apk-entries.txt"; then
             echo "Debug APK must not contain x86 native libraries."
             exit 1
           fi
-          if grepq 'lib/x86_64/' "$RUNNER_TEMP/rain-debug-apk-entries.txt"; then
+          if grep -q 'lib/x86_64/' "$RUNNER_TEMP/rain-debug-apk-entries.txt"; then
             echo "Debug APK must not contain x86_64 native libraries."
             exit 1
           fi
 
-      name: Upload debug ARM64 APK
+      - name: Upload debug ARM64 APK
         uses: actions/upload-artifact@v7
         with:
           name: rain-debug-arm64-apk
@@ -492,7 +492,7 @@ jobs:
           if-no-files-found: error
           retention-days: ${{ env.ARTIFACT_RETENTION_CI }}
 
-      name: Upload debug ARMv7 APK
+      - name: Upload debug ARMv7 APK
         uses: actions/upload-artifact@v7
         with:
           name: rain-debug-armeabi-v7a-apk
@@ -500,7 +500,7 @@ jobs:
           if-no-files-found: error
           retention-days: ${{ env.ARTIFACT_RETENTION_CI }}
 
-      name: Upload Android failure diagnostics
+      - name: Upload Android failure diagnostics
         if: failure()
         uses: actions/upload-artifact@v7
         with:
@@ -516,51 +516,51 @@ jobs:
     runs-on: windows-latest
     timeout-minutes: 20
     steps:
-      uses: actions/checkout@v7
+      - uses: actions/checkout@v7
 
-      uses: subosito/flutter-action@1a449444c387b1966244ae4d4f8c696479add0b2 # v2
+      - uses: subosito/flutter-action@1a449444c387b1966244ae4d4f8c696479add0b2 # v2
         with:
           flutter-version: ${{ env.FLUTTER_VERSION }}
           channel: stable
           cache: true
 
-      name: Verify Windows platform files exist
+      - name: Verify Windows platform files exist
         shell: bash
         run: |
-          sete
+          set -e
           for f in \
             apps/rain/windows/CMakeLists.txt \
             apps/rain/windows/runner/main.cpp \
             apps/rain/windows/flutter/generated_plugin_registrant.cc
           do
-            if [ !s "$f" ]; then
+            if [ ! -s "$f" ]; then
               echo "::error::Missing or empty Windows platform file: $f"
               exit 1
             fi
             echo "Verified: $f"
           done
 
-      name: Restore app dependencies
+      - name: Restore app dependencies
         working-directory: ${{ env.RAIN_APP_DIR }}
         run: flutter pub get
 
-      name: Validate Windows build configuration
+      - name: Validate Windows build configuration
         # config-only can fail on GitHub runners due to flutter_webrtc CMake
         # symlink extraction quirks (not a real code issue). Platform-file
         # existence is the hard gate above; this is best-effort.
         working-directory: ${{ env.RAIN_APP_DIR }}
         shell: bash
         continue-on-error: true
-        run: flutter build windows-config-only
+        run: flutter build windows --config-only
 
   vault:
     name: Obsidian Vault
     runs-on: windows-latest
     timeout-minutes: 10
     steps:
-      uses: actions/checkout@v7
+      - uses: actions/checkout@v7
 
-      name: Validate required notes, wiki links and register semantics
+      - name: Validate required notes, wiki links and register semantics
         shell: pwsh
         run: ./scripts/check_obsidian_vault.ps1
 
@@ -569,18 +569,18 @@ jobs:
     runs-on: ubuntu-latest
     if: always()
     needs:
-      dependency-review
-      workflow-lint
-      quality-gate
-      static-analysis
-      tests
-      firebase-backend
-      firebase-emulator-tests
-      vault
-      android-build
-      windows-config-check
+      - dependency-review
+      - workflow-lint
+      - quality-gate
+      - static-analysis
+      - tests
+      - firebase-backend
+      - firebase-emulator-tests
+      - vault
+      - android-build
+      - windows-config-check
     steps:
-      name: Fail if any required job failed
+      - name: Fail if any required job failed
         run: |
           test "${{ needs.dependency-review.result }}" = "success" || test "${{ needs.dependency-review.result }}" = "skipped"
           test "${{ needs.workflow-lint.result }}" = "success"
@@ -599,46 +599,46 @@ jobs:
     timeout-minutes: 120
     if: ${{ always() && needs.test-gates.result == 'success' && (github.event_name == 'workflow_dispatch' || startsWith(github.ref, 'refs/tags/v')) }}
     needs:
-      test-gates
+      - test-gates
     env:
-      GRADLE_OPTS: "-Dorg.gradle.jvmargs=-Xmx4gDorg.gradle.daemon=falseXX:MaxMetaspaceSize=1gXX:ReservedCodeCacheSize=256mXX:+HeapDumpOnOutOfMemoryError"
+      GRADLE_OPTS: "-Dorg.gradle.jvmargs=-Xmx4g -Dorg.gradle.daemon=false -XX:MaxMetaspaceSize=1g -XX:ReservedCodeCacheSize=256m -XX:+HeapDumpOnOutOfMemoryError"
     steps:
-      uses: actions/checkout@v7
+      - uses: actions/checkout@v7
 
-      uses: actions/setup-java@v6
+      - uses: actions/setup-java@v6
         with:
           distribution: temurin
           java-version: ${{ env.JAVA_VERSION }}
           cache: gradle
 
-      uses: subosito/flutter-action@1a449444c387b1966244ae4d4f8c696479add0b2 # v2
+      - uses: subosito/flutter-action@1a449444c387b1966244ae4d4f8c696479add0b2 # v2
         with:
           flutter-version: ${{ env.FLUTTER_VERSION }}
           channel: stable
           cache: true
 
-      name: Flutter doctor
-        run: flutter doctorv
+      - name: Flutter doctor
+        run: flutter doctor -v
 
-      name: Verify Dart defines file exists
+      - name: Verify Dart defines file exists
         shell: pwsh
         run: |
-          if (-not (Test-PathLiteralPath $env:RAIN_DART_DEFINES_FILE)) {
+          if (-not (Test-Path -LiteralPath $env:RAIN_DART_DEFINES_FILE)) {
             throw "Dart defines file not found: $env:RAIN_DART_DEFINES_FILE"
           }
 
-      name: Build Windows EXE and Android ARMv7/ARM64 APKs
+      - name: Build Windows EXE and Android ARMv7/ARM64 APKs
         shell: pwsh
         run: |
-          pwshNoProfileFile scripts\build_release.ps1 `
-           Platform all `
-           OutputDir artifacts `
-           DartDefinesFile $env:RAIN_DART_DEFINES_FILE `
-           AllowPublicTurnForDemo `
-           UseDemoAndroidSigningKey `
-           Clean
+          pwsh -NoProfile -File scripts\build_release.ps1 `
+            -Platform all `
+            -OutputDir artifacts `
+            -DartDefinesFile $env:RAIN_DART_DEFINES_FILE `
+            -AllowPublicTurnForDemo `
+            -UseDemoAndroidSigningKey `
+            -Clean
 
-      name: Verify expected artifact set
+      - name: Verify expected artifact set
         shell: pwsh
         run: |
           $expected = @(
@@ -654,37 +654,37 @@ jobs:
           )
           foreach ($artifact in $expected) {
             $path = $artifact.Path
-            if (-not (Test-PathLiteralPath $path)) {
+            if (-not (Test-Path -LiteralPath $path)) {
               throw "Missing expected artifact for $($artifact.Label): $path"
             }
             Write-Host "Verified $($artifact.Label): $path"
           }
-          $nestedArchives = Get-ChildItemLiteralPath 'artifacts\Rain-Demo-Windows-x64-Build'RecurseFile |
-            Where-Object { $_.Extensionin @('.zip', '.rar', '.7z') }
+          $nestedArchives = Get-ChildItem -LiteralPath 'artifacts\Rain-Demo-Windows-x64-Build' -Recurse -File |
+            Where-Object { $_.Extension -in @('.zip', '.rar', '.7z') }
           if ($nestedArchives) {
-            $archiveList = ($nestedArchives | ForEach-Object { $_.FullName })join "`n"
+            $archiveList = ($nestedArchives | ForEach-Object { $_.FullName }) -join "`n"
             throw "Windows portable upload folder must not contain nested archives:`n$archiveList"
           }
-          Add-TypeAssemblyName System.IO.CompressionErrorAction SilentlyContinue
-          Add-TypeAssemblyName System.IO.Compression.FileSystemErrorAction SilentlyContinue
+          Add-Type -AssemblyName System.IO.Compression -ErrorAction SilentlyContinue
+          Add-Type -AssemblyName System.IO.Compression.FileSystem -ErrorAction SilentlyContinue
           function Assert-ApkEntry([string]$Path, [string]$Entry) {
             $archive = [System.IO.Compression.ZipFile]::OpenRead($Path)
             try {
               $entryNames = @($archive.Entries | ForEach-Object { $_.FullName })
-              if ($entryNamesnotcontains $Entry) {
-                throw "APK is missing required native runtime entry: $Path> $Entry"
+              if ($entryNames -notcontains $Entry) {
+                throw "APK is missing required native runtime entry: $Path -> $Entry"
               }
             } finally {
               $archive.Dispose()
             }
-            Write-Host "Verified APK native runtime entry: $Path> $Entry"
+            Write-Host "Verified APK native runtime entry: $Path -> $Entry"
           }
           Assert-ApkEntry 'artifacts\Rain-Demo-Android-ARM-v7a-Build.apk' 'lib/armeabi-v7a/libsqlite3.so'
           Assert-ApkEntry 'artifacts\Rain-Demo-Android-ARM-v7a-Build.apk' 'lib/armeabi-v7a/libjingle_peerconnection_so.so'
           Assert-ApkEntry 'artifacts\Rain-Demo-Android-ARM-v8-v9-Build.apk' 'lib/arm64-v8a/libsqlite3.so'
           Assert-ApkEntry 'artifacts\Rain-Demo-Android-ARM-v8-v9-Build.apk' 'lib/arm64-v8a/libjingle_peerconnection_so.so'
 
-      name: Upload Windows portable EXE bundle
+      - name: Upload Windows portable EXE bundle
         uses: actions/upload-artifact@v7
         with:
           name: Rain-Demo-Windows-x64-Build
@@ -692,7 +692,7 @@ jobs:
           if-no-files-found: error
           retention-days: ${{ env.ARTIFACT_RETENTION_RELEASE }}
 
-      name: Upload Android ARMv7 and ARM64 APKs
+      - name: Upload Android ARMv7 and ARM64 APKs
         uses: actions/upload-artifact@v7
         with:
           name: Rain-Demo-Android-Builds
@@ -707,10 +707,10 @@ jobs:
     runs-on: ubuntu-latest
     if: always()
     needs:
-      test-gates
-      release-artifacts
+      - test-gates
+      - release-artifacts
     steps:
-      name: Fail if any required job failed
+      - name: Fail if any required job failed
         run: |
           echo "ref: ${{ github.ref }}"
           echo "sha: ${{ github.sha }}"
