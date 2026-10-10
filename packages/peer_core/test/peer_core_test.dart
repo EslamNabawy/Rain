@@ -329,6 +329,30 @@ void main() {
     await disconnectedSubscription.cancel();
   });
 
+  test(
+    'destroy closes and disposes the peer connection when a channel close throws',
+    () async {
+      final platform = _FakePlatformBridge();
+      final peer = DefaultPeerCore();
+      await peer.init(
+        PeerConfig(
+          iceServers: const <Map<String, dynamic>>[],
+          platform: platform,
+        ),
+      );
+      await peer.createOffer();
+      platform.channel(PeerChannels.chat).closeError = StateError(
+        'close failed',
+      );
+
+      await expectLater(peer.destroy(), throwsStateError);
+
+      expect(platform.connection.closeCalls, 1);
+      expect(platform.connection.disposeCalls, 1);
+      expect(peer.state, PeerState.idle);
+    },
+  );
+
   test('default peer chunks large binary payloads on file channel', () async {
     final platform = _FakePlatformBridge();
     final peer = DefaultPeerCore();
@@ -1223,8 +1247,18 @@ class _FakeRtcPeerConnection extends Fake implements RTCPeerConnection {
     return statsReports;
   }
 
+  int closeCalls = 0;
+  int disposeCalls = 0;
+
   @override
-  Future<void> close() async {}
+  Future<void> close() async {
+    closeCalls += 1;
+  }
+
+  @override
+  Future<void> dispose() async {
+    disposeCalls += 1;
+  }
 }
 
 class _FakeRtpSender extends Fake implements RTCRtpSender {
@@ -1323,8 +1357,14 @@ class _FakeRtcDataChannel extends Fake implements RTCDataChannel {
     sentMessages.add(message);
   }
 
+  Object? closeError;
+
   @override
   Future<void> close() async {
+    final error = closeError;
+    if (error != null) {
+      throw error;
+    }
     _state = RTCDataChannelState.RTCDataChannelClosed;
     onDataChannelState?.call(_state!);
   }

@@ -109,6 +109,7 @@ final class VoiceCallSignalingCleanupCoordinator {
     required String username,
     required VoiceCallSignalingEventRecorder recordRuntimeEvent,
     required VoiceCallSignalingErrorRecorder? errorRecorder,
+    String? liveCallId,
   }) async {
     final voiceAdapter = voiceSignalingAdapter;
     if (voiceAdapter == null || runtimeShutDown) {
@@ -119,6 +120,7 @@ final class VoiceCallSignalingCleanupCoordinator {
       final summary = await voiceAdapter.cleanupStaleVoiceCallArtifacts(
         username: username,
         now: now,
+        liveCallId: liveCallId,
       );
       recordRuntimeEvent(
         category: 'call',

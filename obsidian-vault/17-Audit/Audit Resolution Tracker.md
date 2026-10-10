@@ -1,6 +1,6 @@
 # Audit Resolution Tracker
 
-Last updated: 2026-08-21
+Last updated: 2026-10-10
 
 ## Purpose
 
@@ -69,6 +69,14 @@ Source: [ROOT_AUTH_STARTUP_REMEDIATION_ROADMAP.md](../../ROOT_AUTH_STARTUP_REMED
 | Phase 5 | Navigation readiness. | [x] Complete | `AppStartupState.canRenderProtectedRoutes` and `usesRoutedAppShell` define protected readiness; unresolved protected paths redirect to `/`; settings/search/friend pages are wrapped in `_ProtectedRouteGate`; signed-out auth uses a standalone Navigator/Overlay and never inserts `RainNavigationShell`; tests cover protected routes while runtime is loading and signed out. | Completed; see Phase 6. |
 | Phase 6 | State lifecycle hardening. | [x] Complete | `AuthenticatedSession.sessionGeneration` scopes runtime ownership; `RainRuntimeController` reuse requires matching username and generation; runtime/brain/request/call/connection/message/file/search/recent providers reset on session end or user switch. Tests cover generation changes, recent/search reset, signed-out message streams, startup routes, and full Melos validation. | Completed; see account deletion. |
 | Root Phase 05 | Account deletion workflow. | [x] Complete locally | Settings delete-account confirmation/password UI, signaling reauth/delete contract, Firebase cleanup/tombstone/Auth-delete-last path, runtime/provider destructive-session handling, no-recreate login/upsert/search guards, and targeted tests are implemented. `dart run melos run analyze` and `dart run melos run test` passed on 2026-06-04. | Add auth/startup/account-deletion regressions to the hard release gate and add Firebase emulator/device cleanup proof if required. |
+
+## 2026-10 Hardening Audit
+
+Source: `audit/01-findings.md` (65 findings), plan `audit/03-plan.md`, outcomes `audit/STATE.md` and `audit/05-report.md`, branch `audit/rain-hardening`.
+
+- Fixed: GIT-001 (build-breaking WIP restored), CI-001, CI-003, CI-004, CI-005/BE-002, SEC-001 (app side), SEC-004, SEC-005, SEC-007, SIG-001, SIG-002, SIG-003, SIG-005, RTC-001, RTC-002, APP-001, APP-002, APP-003, DB-002, DB-001 (tests), ARCH-002, ARCH-003, ARCH-004, TEST-001 (registration rollback flow; ports deferred), SEC-003 (state reporting only).
+- Blocked: BE-001 rules tests, SEC-001 rules change, SEC-006 (no Java for the Firebase database emulator on the audit machine).
+- Open owner actions: GIT-003 secret rotation, SEC-003 encryption decision (ADR-013), device tests (APP-001), branch protection after CI consolidation.
 
 ## Status Legend
 

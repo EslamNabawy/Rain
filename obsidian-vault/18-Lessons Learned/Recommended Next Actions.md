@@ -1,6 +1,6 @@
 # Recommended Next Actions
 
-Last updated: 2026-08-21
+Last updated: 2026-10-10
 
 ## Purpose
 
@@ -53,6 +53,8 @@ Senior audit Phase 8 progress 2026-06-05: release gate unification is locally mi
 Senior audit Phase 9 progress 2026-06-05: Obsidian semantic enforcement is locally mitigated. `scripts/check_obsidian_vault.ps1` now validates operational register schemas across [[Audit Resolution Tracker]], [[Technical Debt Register]], [[Risk Register]], [[BLOCKERS]], [[Project Metrics]], [[Recommended Next Actions]], and [[Repository Map]]. The validator fails missing owner/priority/evidence/review fields, unsupported active-risk/debt status values, closed blockers without evidence, evidence-ledger gaps, and P0/P1 items without a next-action-equivalent field.
 
 Senior audit Phase 10 progress 2026-06-05: device/media proof is now scoped and executable, but not passed. `apps/rain/integration_test/device_media_reality_proof_test.dart` uses the real `FlutterWebRTCBridge` and `DefaultCallMediaConnection` to require microphone and camera tracks when run with `--dart-define=RAIN_DEVICE_MEDIA_PROOF=true`. Android QA tooling is installed and `QA_Medium_API_36_1` exists, but no Android device/emulator was attached (`flutter devices` showed Windows/web only, `adb devices` was empty). Existing saved Rain Appium artifacts timed out in WebDriver and cover only auth toggle smoke, not calls or media. Phase 10 remains release-blocking until the target device matrix is actually run or the launch scope is explicitly reduced.
+
+Audit hardening 2026-10-10 (branch `audit/rain-hardening`, files `audit/01-findings.md`..`audit/05-report.md`): 65 findings (2 P0, 10 P1). Next in order: (1) owner confirms deployed RTDB rules and rotates the secrets in git history; (2) merge `audit/rain-hardening` and `integration/main-dev` after device checks on Android and Windows; (3) rules test harness and `signingPublicKey` rule (T4.01, T4.03); (4) database/auth ports for the Firebase adapter (T4.06); (5) decide [[ADR-013]]; (6) consolidate CI workflows. Source of truth for status is `audit/STATE.md`.
 
 ## Top Recommended Actions
 

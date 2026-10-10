@@ -12,6 +12,7 @@ import 'runtime_interaction_guard.dart';
 import 'video_call_renderers.dart';
 import 'voice_audio_level.dart';
 import 'voice_call/voice_call_error_coordinator.dart';
+import 'voice_call/voice_call_frame_crypto.dart';
 import 'voice_call/voice_call_media_coordinator.dart';
 import 'voice_call/voice_call_preflight_coordinator.dart';
 import 'voice_call/voice_call_reconnect_coordinator.dart';
@@ -330,8 +331,16 @@ extension VoiceCallRuntime on RainRuntimeController {
           return true;
         }
         return room.expiresAt <= now;
-      } catch (_) {
-        return false;
+      } catch (error) {
+        // A failed lookup must not keep a stale call blocking new calls; fall
+        // back to the local expiry check below.
+        recordRuntimeEvent(
+          category: 'call',
+          name: 'expired_start_block_lookup_failed',
+          severity: 'warning',
+          message: error.toString(),
+          context: <String, Object?>{'callId': callId},
+        );
       }
     }
     final sessionEpoch = state.sessionEpoch;
@@ -1125,6 +1134,38 @@ extension VoiceCallRuntime on RainRuntimeController {
       return _IncomingVoiceInviteDisposition.busy;
     }
 
+    switch (VoiceCallPreflightCoordinator.instance.decideCrossedInvite(
+      current: current,
+      localUsername: selfIdentity.username,
+      remotePeerId: normalizedPeerId,
+    )) {
+      case CrossedInviteDecision.keepLocal:
+        recordRuntimeEvent(
+          category: 'call',
+          name: 'crossed_invite_kept_local',
+          context: <String, Object?>{
+            'peerId': normalizedPeerId,
+            'localCallId': current.callId,
+            'remoteCallId': frame.callId,
+          },
+        );
+        return _IncomingVoiceInviteDisposition.ignore;
+      case CrossedInviteDecision.acceptRemote:
+        recordRuntimeEvent(
+          category: 'call',
+          name: 'crossed_invite_yielded',
+          context: <String, Object?>{
+            'peerId': normalizedPeerId,
+            'localCallId': current.callId,
+            'remoteCallId': frame.callId,
+          },
+        );
+        await _replaceStaleVoiceCallForRetry(current);
+        return _IncomingVoiceInviteDisposition.accept;
+      case CrossedInviteDecision.notCrossed:
+        break;
+    }
+
     if (!_canReplaceVoiceCallWithRetry(current)) {
       return _IncomingVoiceInviteDisposition.busy;
     }
@@ -1427,7 +1468,7 @@ extension VoiceCallRuntime on RainRuntimeController {
           envelope: envelope,
           purpose: purpose,
           isLiveVoiceCallSession: _isLiveVoiceCallSession,
-          decryptVoiceFrame: _decryptVoiceFrame,
+          decryptVoiceFrame: decryptVoiceFrame,
           recordRuntimeEvent: recordRuntimeEvent,
           frameEventContext: _voiceFrameEventContext,
           recordLateVoiceFrame: _recordLateVoiceFrame,
@@ -1463,7 +1504,7 @@ extension VoiceCallRuntime on RainRuntimeController {
       shouldRetryTransientCreateFailure:
           _shouldRetryTransientVoiceCreateFailure,
       recordRoomStatusTransition: _recordVoiceRoomStatusTransition,
-      encryptVoiceFrame: _encryptVoiceFrame,
+      encryptVoiceFrame: encryptVoiceFrame,
       queueVoiceIceCandidate: _queueVoiceIceCandidate,
     );
   }
@@ -1510,7 +1551,7 @@ extension VoiceCallRuntime on RainRuntimeController {
         voiceLocalIceCandidateCount = count;
       },
       recordIceCandidateBudgetExceeded: _recordIceCandidateBudgetExceeded,
-      encryptVoiceFrame: _encryptVoiceFrame,
+      encryptVoiceFrame: encryptVoiceFrame,
       voiceIcePurpose: _voiceIcePurpose,
       recordVoiceIceCandidateWriteFailed: _recordVoiceIceCandidateWriteFailed,
       batcher: voiceIceCandidateBatcher,
@@ -1937,44 +1978,6 @@ extension VoiceCallRuntime on RainRuntimeController {
     }
   }
 
-  Future<VoiceSignalingEnvelope> _encryptVoiceFrame(
-    VoiceCallFrame frame, {
-    required String purpose,
-    required int maxCiphertextLength,
-  }) async {
-    final encrypted = await voiceSignalingCipher.encryptPayload(
-      roomId: frame.callId,
-      purpose: purpose,
-      timestamp: frame.sentAt,
-      sender: frame.from,
-      receiver: frame.to,
-      payload: frame.toJson(),
-    );
-    return VoiceSignalingEnvelope.fromJson(
-      Map<Object?, Object?>.from(encrypted),
-      maxCiphertextLength: maxCiphertextLength,
-    );
-  }
-
-  Future<VoiceCallFrame> _decryptVoiceFrame({
-    required String callId,
-    required VoiceSignalingEnvelope envelope,
-    required String purpose,
-  }) async {
-    final decrypted = await voiceSignalingCipher.decryptPayload(
-      roomId: callId,
-      purpose: purpose,
-      payload: envelope.toJson(
-        maxCiphertextLength:
-            purpose == SignalingCipher.offerPurpose ||
-                purpose == SignalingCipher.answerPurpose
-            ? VoiceSignalingEnvelope.maxSdpCiphertextLength
-            : VoiceSignalingEnvelope.maxIceCiphertextLength,
-      ),
-    );
-    return VoiceCallFrame.fromJson(Map<String, Object?>.from(decrypted));
-  }
-
   VoiceCallRole _localVoiceCallRole() {
     return voiceCallState.isOutgoing
         ? VoiceCallRole.caller
@@ -2163,6 +2166,7 @@ extension VoiceCallRuntime on RainRuntimeController {
           username: selfIdentity.username,
           recordRuntimeEvent: recordRuntimeEvent,
           errorRecorder: errorRecorder,
+          liveCallId: voiceCallState.hasCall ? voiceCallState.callId : null,
         );
   }
 

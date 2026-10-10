@@ -194,8 +194,10 @@ void main() {
 
     expect(
       rules,
-      contains('''"userSearch": {
-      ".read": "auth != null"'''),
+      contains(
+        '''"userSearch": {
+      ".read": "auth != null && query.orderByKey == true && query.limitToFirst <= 20"''',
+      ),
     );
     expect(adapter, contains("child('userSearch')"));
     expect(adapter, contains('orderByKey()'));

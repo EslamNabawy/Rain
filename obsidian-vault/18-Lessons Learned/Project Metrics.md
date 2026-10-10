@@ -1,6 +1,6 @@
 # Project Metrics
 
-Last updated: 2026-08-21
+Last updated: 2026-10-10
 
 ## Purpose
 
@@ -157,6 +157,17 @@ Related: [[Project Home]], [[Production Readiness]], [[Launch Readiness]], [[Ris
 | 2026-06-05 | `dev` | `05e08dd8c160219d5e77467787555286d6fe3788` | Phase 10 focused runtime guard validation | `flutter test test\voice_call_runtime_media_path_test.dart --reporter expanded` from `apps\rain` | Passed | Existing guard still passed after adding the opt-in media proof file. |
 | 2026-06-05 | `dev` | `05e08dd8c160219d5e77467787555286d6fe3788` | Phase 10 workspace analyzer validation | `dart run melos run analyze` | Passed | Workspace analyzer passed for `rain`, `peer_core`, `protocol_brain`, and `rain_core`. |
 | 2026-06-05 | `dev` | `05e08dd8c160219d5e77467787555286d6fe3788` | Phase 10 workspace test validation | `dart run melos run test` | Passed | Full Melos test suite passed across all workspace packages after adding the opt-in media proof hook and vault sync. |
+
+## Hardening Audit 2026-10 Evidence
+
+| Date | Branch | Base Commit | Scope | Command | Result | Evidence |
+| --- | --- | --- | --- | --- | --- | --- |
+| 2026-10-10 | `audit/rain-hardening` | `601647c` | Workspace analyzer after Phase 4 | `flutter analyze --no-pub` in each package | Passed | peer_core, protocol_brain, rain_core and rain reported no issues. |
+| 2026-10-10 | `audit/rain-hardening` | `601647c` | Formatting | `dart format --set-exit-if-changed --output=none apps packages` | Passed | 291 files, 0 changed. |
+| 2026-10-10 | `audit/rain-hardening` | `601647c` | Package tests | `flutter test --no-pub` in each package | Passed | peer_core 80, protocol_brain 294, rain_core 67, rain 760 passed with 20 skipped emulator or legacy tests. |
+| 2026-10-10 | `audit/rain-hardening` | `601647c` | Functions tests and audit | `npm test`; `npm run audit:moderate` in backend/firebase/functions | Passed | 37 tests passed and no vulnerabilities reported. |
+| 2026-10-10 | `audit/rain-hardening` | `601647c` | RTDB rules emulator tests | `npx firebase-tools@13 emulators:exec --only database` | Blocked | Java is not installed: "Could not spawn java -version". |
+| 2026-10-10 | `integration/main-dev` | `95cbb07` | main merged into audit branch | analyze, format, package tests, functions tests | Passed | peer_core 80, protocol_brain 294, rain_core 69, rain 774 passed with 20 skipped; one non-repeating failure in runtime_startup_test did not reproduce. |
 
 ## Learning Metrics
 

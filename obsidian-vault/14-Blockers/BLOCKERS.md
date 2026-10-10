@@ -1,6 +1,6 @@
 # BLOCKERS
 
-Last updated: 2026-08-21
+Last updated: 2026-10-10
 
 ## Purpose
 
@@ -290,6 +290,65 @@ Source: [[2026-06-05 Senior Audit Remediation Plan]]
 - Progress 2026-06-04 release-gate integration: Hard release workflows now run explicit `SCN-AUTH-001` through `SCN-AUTH-004` app tests and Obsidian vault validation. Firebase emulator integration includes account tombstone cleanup plus surviving-Auth no-recreate proof through `integration_account_deletion_emulator_test.dart`. Local emulator integration passed, and `Build Rain Apps` run 26957834309 passed on pushed `dev` SHA `883886a2e81ee370e3641ddcefce8d62942a3566`, publishing `rain-test-108-1`.
 - Exit Criteria: Logout always clears local identity, deleted backend account cannot be recreated from local cache, protected app shell never renders before readiness, session-scoped providers do not leak across account cycles, account deletion cannot reopen into a deleted identity, and all paths are covered by tests plus release-gate evidence.
 - Detection Strategy: Auth/session widget and runtime tests, diagnostics for session validation failures, and release gate checks for protected-route startup behavior.
+
+### BLK-011: Registration Publishes A Field The Repo Rules Reject
+
+- Status: Open
+- Severity: High
+- Owner: Security/Engineering
+- Type: Security/Reliability
+- Related Risks: R-025, R-024
+- Related Roadmap Tasks: TASK-015, TASK-001
+- Related Debt: TD-025
+- Related Architecture: [[Rules Strategy]], [[Authentication]]
+- Impact: If deployed rules equal repo rules, a new sign-up creates the Auth user and then fails on `users/<name>/signingPublicKey`; the username stays taken.
+- Workaround Strategy: T4.02 makes the key publish non-fatal; the owner confirms the deployed rules.
+- Parallel Progress Path: Rules test harness (T4.01) and the rest of Phase 4 proceed independently.
+- Resolution Plan:
+  - Make the publish best-effort (T4.02).
+  - Add the immutable `signingPublicKey` rule and tests (T4.03).
+  - Re-publish the key on login when missing (T4.17).
+- Exit Criteria: Rules test proves the owner can write the key once and nobody else can; the real register flow passes against the emulator.
+- Detection Strategy: `RULES_TEST`, emulator register flow.
+
+### BLK-012: CI Gates Fail Without Code Changes
+
+- Status: Mitigating
+- Severity: High
+- Owner: Engineering
+- Type: Operational
+- Related Risks: R-028
+- Related Roadmap Tasks: Release gate work
+- Related Debt: TD-028
+- Related Architecture: [[Release Gates]]
+- Impact: Vault freshness (45 days), npm advisories and the `develop` branch filter turn CI red or skip PR checks with no source change.
+- Workaround Strategy: Refresh dates (T3.2), `npm audit fix` (T3.4), fix the filter (T3.3).
+- Parallel Progress Path: Code fixes continue locally.
+- Resolution Plan:
+  - Make the vault staleness check git-date based or non-blocking.
+  - Add Dependabot for npm and Actions.
+  - Consolidate to one CI and one release workflow.
+- Exit Criteria: A week of CI runs with no red run caused only by elapsed time or new advisories.
+- Detection Strategy: Scheduled weekly CI run.
+
+### BLK-013: Secrets In Git History Need Owner Rotation
+
+- Status: Open
+- Severity: High
+- Owner: Owner
+- Type: Security
+- Related Risks: R-029
+- Related Roadmap Tasks: GIT-003 owner action in audit/03-plan.md
+- Related Debt: TD-029
+- Related Architecture: [[Security Roadmap]]
+- Impact: `dart_defines.local.json` values (TURN credentials, Supabase anon key) are recoverable from commits 0d8147c and 6ff832b.
+- Workaround Strategy: Treat the values as exposed; do not rewrite history.
+- Parallel Progress Path: All engineering work continues.
+- Resolution Plan:
+  - Rotate or revoke the credentials if still live.
+  - Run a secret scan over history before each release.
+- Exit Criteria: Owner confirms rotation or that the values are already dead.
+- Detection Strategy: Secret scan in CI.
 
 ## Blocker Review Cadence
 

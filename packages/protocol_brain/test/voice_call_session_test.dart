@@ -497,6 +497,57 @@ void main() {
     expect(media.disposeCalls, 1);
   });
 
+  test('candidate received while ringing is applied after accept', () async {
+    final media = _FakeVoiceMediaConnection();
+    final sent = <VoiceCallFrame>[];
+    final session = _session(
+      media: media,
+      sent: sent,
+      localPeerId: 'bob',
+      remotePeerId: 'alice',
+    );
+
+    await session.handleFrame(
+      _frame(VoiceCallFrameType.invite, from: 'alice', to: 'bob', seq: 1),
+    );
+    await session.handleFrame(
+      _frame(
+        VoiceCallFrameType.candidate,
+        from: 'alice',
+        to: 'bob',
+        seq: 2,
+        candidate: 'candidate:early 1 udp 1 127.0.0.1 9 typ host',
+        sdpMid: '0',
+        sdpMLineIndex: 0,
+      ),
+    );
+    expect(media.remoteCandidates, isEmpty);
+
+    await session.acceptIncoming();
+
+    expect(media.remoteCandidates, hasLength(1));
+    expect(media.remoteCandidates.single.candidate, contains('early'));
+  });
+
+  test('ringing timeout tells the peer to stop ringing', () async {
+    final media = _FakeVoiceMediaConnection();
+    final sent = <VoiceCallFrame>[];
+    final session = _session(
+      media: media,
+      sent: sent,
+      timeouts: _timeouts(ringing: const Duration(milliseconds: 5)),
+    );
+
+    await session.startOutgoing();
+    await Future<void>.delayed(const Duration(milliseconds: 60));
+
+    expect(session.state.phase, VoiceCallSessionPhase.failed);
+    expect(
+      sent.map((VoiceCallFrame frame) => frame.type),
+      contains(VoiceCallFrameType.hangup),
+    );
+  });
+
   test('ringing timeout fails and cleans up media', () async {
     final media = _FakeVoiceMediaConnection();
     final sent = <VoiceCallFrame>[];

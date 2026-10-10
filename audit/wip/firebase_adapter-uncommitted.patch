@@ -1,0 +1,65 @@
+﻿diff --git a/packages/protocol_brain/lib/adapters/firebase_adapter.dart b/packages/protocol_brain/lib/adapters/firebase_adapter.dart
+index cc2c75c..6df9b14 100644
+--- a/packages/protocol_brain/lib/adapters/firebase_adapter.dart
++++ b/packages/protocol_brain/lib/adapters/firebase_adapter.dart
+@@ -1467,9 +1467,9 @@ class FirebaseSignalingAdapter
+       throw _normalizeFirebaseAuthException(error);
+     }
+     final uid = userCredential.user?.uid ?? '';
+-    final now = DateTime.now().millisecondsSinceEpoch;
+-    var backendUserCreated = false;
++    await _auth.signInWithEmailAndPassword(email: email, password: password);
+ 
++    final now = DateTime.now().millisecondsSinceEpoch;
+     try {
+       await _root
+           .child('users/$normalizedUsername')
+@@ -1482,23 +1482,13 @@ class FirebaseSignalingAdapter
+               registeredAt: now,
+             ),
+           );
+-      backendUserCreated = true;
+ 
+       await _root.child('userSearch/$normalizedUsername').set(true);
+       await setPresence(normalizedUsername, true);
+-      await _auth.signInWithEmailAndPassword(email: email, password: password);
+     } catch (error) {
+-      if (backendUserCreated) {
+-        await _signOutAfterFailedRegistration();
+-      } else {
+-        await _rollbackNewlyCreatedAuthUser(userCredential.user);
+-      }
+-      if (_isPermissionDenied(error)) {
+-        throw Exception(
+-          'Username "$normalizedUsername" is already taken or locked. '
+-          'Choose another unique username or sign in.',
+-        );
+-      }
++      // Clean up auth user if database write failed
++      await _auth.signOut();
++      await _rollbackNewlyCreatedAuthUser(userCredential.user);
+       rethrow;
+     }
+     return uid;
+@@ -1517,20 +1507,7 @@ class FirebaseSignalingAdapter
+     try {
+       await _auth.signOut();
+     } catch (_) {
+-      // Local sign-out is best effort during a failed registration rollback.
+-    }
+-  }
+-
+-  Future<void> _signOutAfterFailedRegistration() async {
+-    try {
+-      await _auth.signOut();
+-    } catch (_) {
+-      // If a secondary registration step failed after the durable user row was
+-      // written, keep the backend/Auth account intact and only clear local auth.
+-    }
+-  }
+-
+-  bool _isPermissionDenied(Object error) {
++      bool _isPermissionDenied(Object error) {
+     if (error is FirebaseException) {
+       final code = error.code.toLowerCase();
+       final message = (error.message ?? '').toLowerCase();

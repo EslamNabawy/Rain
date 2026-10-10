@@ -3,6 +3,8 @@ import 'package:protocol_brain/protocol_brain.dart';
 import '../runtime_interaction_guard.dart';
 import '../voice_call_state.dart';
 
+enum CrossedInviteDecision { notCrossed, keepLocal, acceptRemote }
+
 typedef VoiceCallPreflightEventRecorder =
     void Function({
       required String category,
@@ -180,6 +182,27 @@ final class VoiceCallPreflightCoordinator {
       peerOnline: true,
       diagnostics: presence.diagnostics,
     );
+  }
+
+  /// Both peers called each other at the same time. The caller with the
+  /// lexicographically lower username keeps its call; the other side yields and
+  /// accepts the incoming invite, so exactly one call survives.
+  CrossedInviteDecision decideCrossedInvite({
+    required VoiceCallState current,
+    required String localUsername,
+    required String remotePeerId,
+  }) {
+    final crossed =
+        current.isOutgoing &&
+        current.peerId == remotePeerId &&
+        (current.phase == VoiceCallPhase.connectingPeer ||
+            current.phase == VoiceCallPhase.outgoingRinging);
+    if (!crossed) {
+      return CrossedInviteDecision.notCrossed;
+    }
+    return isVoiceCallOfferOwner(localUsername, remotePeerId)
+        ? CrossedInviteDecision.keepLocal
+        : CrossedInviteDecision.acceptRemote;
   }
 
   bool canReplaceVoiceCallWithRetry(VoiceCallState current) {

@@ -1,6 +1,6 @@
 # Project Memory
 
-Last updated: 2026-06-09
+Last updated: 2026-10-10
 
 ## Purpose
 
@@ -300,6 +300,8 @@ Primary debt items:
 
 Source of truth: [[Technical Debt Register]].
 
+- Audit 2026-10-10 added TD-025..TD-030 (see [[Technical Debt Register]]).
+
 ## Risks
 
 Current top risks:
@@ -318,6 +320,8 @@ Current top risks:
 - Release workflows can publish artifacts if gates are weak or bypassed.
 
 Source of truth: [[Risk Register]] and [[BLOCKERS]].
+
+- Audit 2026-10-10 added R-024..R-032 (see [[Risk Register]]).
 
 ## Roadmap Memory
 
@@ -451,6 +455,9 @@ Multi-issue stability investigation update 2026-06-04:
 - Recommended next implementation order: authoritative peer/call capability snapshot, immediate local call-ended presentation before cleanup waits, shutdown critical-vs-best-effort split with timing diagnostics, desktop video preflight, Android startup theme alignment, and gender-avatar data-path proof.
 - Phase E splash remediation 2026-06-04: Android `LaunchTheme` and `NormalTheme` in both `values` and `values-night` now use `@drawable/launch_background`; the default and v21 launch drawables remain dark `#061017`. `apps/rain/test/android_splash_resources_test.dart` locks the platform theme/drawable contract and passed locally with `flutter test test/android_splash_resources_test.dart --reporter expanded` from `apps/rain`.
 
+- Spark-only: Cloud Functions in `backend/firebase/functions` are optional and not deployed in free-tier builds ([[ADR-012]]). Scheduled cleanups (`cleanupPresence`, `cleanupRooms`, `cleanupVoiceCalls`, `cleanupConnectionRequests`) need Blaze.
+- Canonical working copy for the audit program is `D:\Rain` (decision D1, 2026-10-09); AGENTS.md still names the OneDrive path until the owner confirms.
+
 ## Known Pitfalls
 
 - Creating duplicate Project Memory notes splits context. This file is the primary memory note.
@@ -472,6 +479,15 @@ Multi-issue stability investigation update 2026-06-04:
 - Obsidian links must remain valid; run the vault checker after documentation changes.
 - Isolated app tests that touch Drift/SQLite must run from `apps/rain` or through `scripts/run_rain_app_test.ps1`; root-level `flutter test apps\rain\test\...` can fail to resolve SQLite native assets on Windows.
 - The vault has completed the governance checks needed for senior audit Phase 9: canonical source notes are documented, uncontrolled duplicate titles fail validation, and operational register semantics are checked by `scripts/check_obsidian_vault.ps1`. Remaining governance hardening is generated metric reconciliation and release-artifact evidence automation.
+
+- Signaling today is v=1: one shared compile-time `RAIN_SIGNALING_ENCRYPTION_KEY` for all users. The per-pair v=2 cipher exists but the app passes no `pairCipherResolver`/`localUsername`; do not describe signaling as end-to-end encrypted ([[ADR-013]], R-024).
+- `users/$username` rules have `$other: .validate false`; any new child (for example `signingPublicKey`) needs a rule and a rules test in the same change.
+- `PRAGMA key` is ignored by stock SQLite: the local database is plaintext although a DB key exists in the keystore ([[ADR-010]], [[ADR-013]]).
+- `voiceCalls/<id>/expiresAt` is immutable under the rules; a liveness heartbeat must use `updatedAt`.
+- `localMutations.run` is a FIFO future queue, not a DB transaction; `serializedTransaction` must never be nested (it deadlocks the write queue).
+- The vault gate fails when any register is older than 45 days; refresh `Last updated` or run the validator before pushing.
+- Android has no call foreground service and backgrounding marks presence offline; closed-app and background-call reliability remain out of scope until that exists.
+- `dart_defines.local.json` values are in git history (commits 0d8147c, 6ff832b); treat them as exposed.
 
 ## Quick Start For Future AI Sessions
 

@@ -33,6 +33,28 @@ Future<void> _seedIdentity(RainDatabase db) async {
 
 void main() {
   group('TASK-015 IdentityKeyRepository', () {
+    test('regenerates the pair when the private key is missing', () async {
+      final dir = Directory.systemTemp.createTempSync('rain_keypair_lost_');
+      addTearDown(() {
+        if (dir.existsSync()) dir.deleteSync(recursive: true);
+      });
+      final db = _openTempDb(dir);
+      addTearDown(db.close);
+      final store = InMemoryKeyStoreService();
+      final repo = IdentityKeyRepository(db, store);
+      await _seedIdentity(db);
+
+      final first = await repo.ensureKeyPair();
+      await store.delete(KeyStoreIds.identityPrivateKey);
+
+      final second = await repo.ensureKeyPair();
+
+      expect(second.bytes, isNot(first.bytes));
+      expect(await store.read(KeyStoreIds.identityPrivateKey), isNotNull);
+      expect((await repo.getPublicKey())!.bytes, second.bytes);
+      expect(await repo.getPrivateKeyBytes(), hasLength(32));
+    });
+
     test(
       'generates an X25519 keypair once and persists the public key',
       () async {
@@ -114,6 +136,37 @@ void main() {
       await repo.clear();
       expect(await repo.getPublicKey(), isNull);
       expect(await store.read(KeyStoreIds.identityPrivateKey), isNull);
+    });
+
+    test('encoded public key and shared secret from a published key', () async {
+      final dirA = Directory.systemTemp.createTempSync('rain_enc_alice_');
+      final dirB = Directory.systemTemp.createTempSync('rain_enc_bob_');
+      addTearDown(() {
+        if (dirA.existsSync()) dirA.deleteSync(recursive: true);
+        if (dirB.existsSync()) dirB.deleteSync(recursive: true);
+      });
+      final dbA = _openTempDb(dirA);
+      final dbB = _openTempDb(dirB);
+      addTearDown(dbA.close);
+      addTearDown(dbB.close);
+      final alice = IdentityKeyRepository(dbA, InMemoryKeyStoreService());
+      final bob = IdentityKeyRepository(dbB, InMemoryKeyStoreService());
+      await _seedIdentity(dbA);
+      await _seedIdentity(dbB);
+
+      expect(await alice.encodedPublicKey(), isNull);
+      await alice.ensureKeyPair();
+      await bob.ensureKeyPair();
+      final aliceKey = (await alice.encodedPublicKey())!;
+      final bobKey = (await bob.encodedPublicKey())!;
+
+      expect(aliceKey, hasLength(44));
+      expect(
+        await alice.deriveSharedSecretFromEncodedKey(bobKey),
+        await bob.deriveSharedSecretFromEncodedKey(aliceKey),
+      );
+      expect(await alice.deriveSharedSecretFromEncodedKey('not-a-key'), isNull);
+      expect(await alice.deriveSharedSecretFromEncodedKey('QQ=='), isNull);
     });
 
     // ---- TASK-001.3: ECDH per-pair key derivation (Phase 4 verifiable slice) ----

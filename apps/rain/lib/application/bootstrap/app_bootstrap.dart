@@ -1,14 +1,18 @@
+import 'dart:async';
+
 import 'package:firebase_core/firebase_core.dart';
 import 'package:firebase_database/firebase_database.dart';
 import 'package:firebase_remote_config/firebase_remote_config.dart';
 import 'package:flutter/foundation.dart';
 import 'package:protocol_brain/protocol_brain.dart';
+import 'package:protocol_brain/protocol_brain_firebase.dart';
 import 'package:rain_core/rain_core.dart';
 
 import 'package:rain/core/config/app_environment.dart';
 import 'package:rain/infrastructure/firebase/firebase_options.dart';
 import 'package:rain/infrastructure/services/force_update_service.dart';
 import 'package:rain/infrastructure/security/flutter_secure_storage_key_store_service.dart';
+import 'package:rain/infrastructure/security/pair_cipher_resolver.dart';
 import 'package:rain/infrastructure/services/rain_debug_log_service.dart';
 import 'package:rain/infrastructure/signaling/debug_signaling_adapter.dart';
 import 'package:rain/infrastructure/signaling/noop_signaling_adapter.dart';
@@ -43,9 +47,9 @@ class AppBootstrapper {
       effectiveEnvironment.validateForRelease();
     }
 
-    // TASK-002 verifiable slice: try encrypted open, fallback to plaintext.
-    // The key is stored via FlutterSecureStorage; if the native SQLCipher
-    // library is not available the PRAGMA key is a no-op and we keep plaintext.
+    // TASK-002 key bootstrap only: the DB key is created in the keystore, but
+    // stock SQLite ignores PRAGMA key, so the file stays plaintext (ADR-010).
+    // The state is reported below instead of being assumed.
     late final RainDatabase database;
     try {
       final keyStore = FlutterSecureStorageKeyStoreService();
@@ -54,6 +58,7 @@ class AppBootstrapper {
     } catch (_) {
       database = RainDatabase();
     }
+    unawaited(_reportDatabaseEncryptionState(database));
     try {
       FirebaseRemoteConfig? remoteConfig;
       FirebaseDatabase? firebaseDatabase;
@@ -78,13 +83,23 @@ class AppBootstrapper {
       final signalingCipher = SignalingCipher.fromKeyMaterial(
         effectiveEnvironment.signalingEncryptionKey,
       );
+      FirebaseSignalingAdapter? firebaseAdapter;
       final rawAdapter = effectiveEnvironment.shouldUseFallbackAdapter
           ? NoopSignalingAdapter()
           : switch (effectiveEnvironment.backend) {
-              RainBackend.firebase => FirebaseSignalingAdapter(
-                database: firebaseDatabase!,
-                signalingCipher: signalingCipher,
-              ),
+              RainBackend.firebase =>
+                firebaseAdapter = FirebaseSignalingAdapter(
+                  database: firebaseDatabase!,
+                  signalingCipher: signalingCipher,
+                  pairCipherResolver: buildAppPairCipherResolver(
+                    adapter: firebaseAdapter!,
+                    identityKeys: IdentityKeyRepository(
+                      database,
+                      FlutterSecureStorageKeyStoreService(),
+                    ),
+                    localUsername: () => firebaseAdapter?.signedInUsername,
+                  ),
+                ),
               RainBackend.noop => NoopSignalingAdapter(),
             };
       final debugLogService = _debugLogService;
@@ -165,4 +180,19 @@ Future<void> _seedSmokeIdentity({
     ),
   );
   await adapter.setPresence(username, true);
+}
+
+Future<void> _reportDatabaseEncryptionState(RainDatabase database) async {
+  try {
+    final state = await database.encryptionState();
+    if (state == DatabaseEncryptionState.inactive) {
+      RainDebugLog.event(
+        category: 'security',
+        name: 'db_encryption_inactive',
+        severity: RainDebugSeverity.info,
+      );
+    }
+  } catch (_) {
+    // Reporting must never block startup.
+  }
 }

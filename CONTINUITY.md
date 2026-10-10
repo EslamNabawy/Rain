@@ -4,6 +4,14 @@ This file must survive across future AI sessions.
 
 Every future session must read this file before starting non-trivial work.
 
+## Hardening Audit 2026-10-10
+
+- Work copy `D:Rain`, branch `audit/rain-hardening` (from `dev` `601647c`); `integration/main-dev` holds `origin/main` merged in. Nothing was merged into `main` or `dev`.
+- Artifacts: `audit/00-inventory.md`, `01-findings.md` (65 findings), `02-refactor-targets.md`, `03-plan.md`, `04-vault-updates.md`, `05-report.md`, `STATE.md`.
+- Changed: restored compiling `firebase_adapter.dart` (WIP kept in `audit/wip/`), CI branch filter and action pinning, npm audit fixes, registration publish is best-effort, client reclaim of expired connected call rooms, presence stays online during calls and transfers, glare tie-break, early ICE candidate queue, `DefaultPeerCore.destroy`, backpressure on closed channels, atomic incoming file offers (re-entrant `serializedWrite`), Android backup disabled, identity key repair, update URL allow-list, barrel split.
+- Validation: analyze, format, all package tests, functions tests and the vault checker passed. RTDB rules emulator tests could not run (no Java): cards T4.01, T4.03 and T4.19 are blocked.
+- Next: owner actions in `audit/05-report.md` (rotate exposed secrets, install JDK 21 and finish the rules tests, decide ADR-013, device checks), then merge decision for `integration/main-dev`.
+
 ## Current Goal
 
 Full phased remediation: Phase 0 (evidence lock) → Phase 9 (documentation/blocker closure). Currently executing Phase 9: final documentation and blocker closure.

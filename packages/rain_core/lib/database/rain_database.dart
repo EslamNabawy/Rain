@@ -232,6 +232,24 @@ class RainDatabase extends _$RainDatabase {
     }
   }
 
+  /// Whether this connection is backed by a SQLCipher build.
+  ///
+  /// Stock SQLite ignores `PRAGMA key` and returns no rows for
+  /// `PRAGMA cipher_version`, so the local database is plaintext (ADR-010).
+  Future<DatabaseEncryptionState> encryptionState() async {
+    try {
+      final rows = await customSelect('PRAGMA cipher_version;').get();
+      final hasVersion = rows.any(
+        (row) => row.data.values.any((v) => v is String && v.isNotEmpty),
+      );
+      return hasVersion
+          ? DatabaseEncryptionState.active
+          : DatabaseEncryptionState.inactive;
+    } catch (_) {
+      return DatabaseEncryptionState.inactive;
+    }
+  }
+
   Future<bool> _hasTable(String tableName) async {
     final rows = await customSelect(
       'SELECT name FROM sqlite_master WHERE type = ? AND name = ?;',
@@ -260,6 +278,8 @@ class RainDatabase extends _$RainDatabase {
     });
   }
 
+  static final Object _serializedWriteZoneKey = Object();
+
   Future<T> serializedWrite<T>(
     Future<T> Function() action, {
     int maxAttempts = 6,
@@ -273,14 +293,23 @@ class RainDatabase extends _$RainDatabase {
       );
     }
 
+    if (Zone.current[_serializedWriteZoneKey] == true) {
+      // Already inside a serialized write: join it. Queueing behind the outer
+      // write would wait for the very action that is awaiting this call.
+      return action();
+    }
+
     final completer = Completer<T>();
     final previous = _serializedWriteQueue;
     _serializedWriteQueue = previous.catchError((_) {}).then((_) async {
       try {
-        final value = await _retryBusyWrite(
-          action,
-          maxAttempts: maxAttempts,
-          baseDelay: baseDelay,
+        final value = await runZoned(
+          () => _retryBusyWrite(
+            action,
+            maxAttempts: maxAttempts,
+            baseDelay: baseDelay,
+          ),
+          zoneValues: <Object, Object>{_serializedWriteZoneKey: true},
         );
         completer.complete(value);
       } catch (error, stackTrace) {
@@ -355,6 +384,9 @@ QueryExecutor _openRainDatabase() {
 /// plaintext file. A subsequent launch on a SQLCipher-capable build will
 /// detect the plaintext file and trigger the plaintext→cipher migration
 /// (migration itself is still deferred — this slice only wires the key).
+/// Whether the local database file is encrypted at rest.
+enum DatabaseEncryptionState { active, inactive }
+
 Future<RainDatabase> openEncryptedRainDatabase(
   dynamic // DatabaseKeyService to avoid import cycle in generated part
   keyService, {

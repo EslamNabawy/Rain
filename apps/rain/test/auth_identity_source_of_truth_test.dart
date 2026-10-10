@@ -156,6 +156,37 @@ void main() {
   );
 
   test(
+    'registration keeps the session when the signing key cannot be published',
+    () async {
+      final database = RainDatabase(NativeDatabase.memory());
+      addTearDown(database.close);
+      final adapter = _AuthValidationAdapter(
+        currentUidValue: 'uid-alice',
+        backendIdentity: null,
+        publishSigningKeyError: Exception('permission denied'),
+      );
+      final container = _container(database, adapter);
+      addTearDown(container.dispose);
+
+      await container.read(identityProvider.future);
+
+      await container
+          .read(identityProvider.notifier)
+          .register(
+            username: 'alice',
+            displayName: 'Alice',
+            password: 'secret1',
+            gender: RainGender.female,
+          );
+
+      expect(adapter.registerCalls, 1);
+      expect(adapter.publishSigningKeyCalls, 1);
+      expect(adapter.signOutCalls, 0);
+      expect(await IdentityRepository(database).loadIdentity(), isNotNull);
+    },
+  );
+
+  test(
     'login does not recreate a missing backend account after authentication',
     () async {
       final database = RainDatabase(NativeDatabase.memory());
@@ -277,12 +308,14 @@ final class _AuthValidationAdapter extends NoopSignalingAdapter {
     required this.backendIdentity,
     this.upsertError,
     this.loginError,
+    this.publishSigningKeyError,
   });
 
   final String currentUidValue;
   final BackendIdentity? backendIdentity;
   final Object? upsertError;
   final Object? loginError;
+  final Object? publishSigningKeyError;
   final List<BackendIdentity> upsertedIdentities = <BackendIdentity>[];
   int ensureSignedInAsCalls = 0;
   int fetchIdentityCalls = 0;
@@ -313,6 +346,10 @@ final class _AuthValidationAdapter extends NoopSignalingAdapter {
     required String signingPublicKey,
   }) async {
     publishSigningKeyCalls += 1;
+    final error = publishSigningKeyError;
+    if (error != null) {
+      throw error;
+    }
   }
 
   @override

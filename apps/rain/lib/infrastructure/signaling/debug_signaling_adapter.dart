@@ -1005,6 +1005,7 @@ class DebugFullSignalingAdapter extends DebugSignalingAdapter
     required String username,
     required int now,
     int limit = maxCallCleanupItemsPerRun,
+    String? liveCallId,
   }) {
     return _traceFuture<VoiceCallCleanupSummary>(
       operation: 'cleanupStaleVoiceCallArtifacts',
@@ -1018,6 +1019,7 @@ class DebugFullSignalingAdapter extends DebugSignalingAdapter
         username: username,
         now: now,
         limit: limit,
+        liveCallId: liveCallId,
       ),
       resultContext: (VoiceCallCleanupSummary summary) => summary.toJson(),
     );

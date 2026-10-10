@@ -24,7 +24,9 @@ final class IdentityKeyRepository {
   /// Returns the public key, generating + persisting the keypair on first run.
   Future<SimplePublicKey> ensureKeyPair() async {
     final existing = await _readPublicKey();
-    if (existing != null) {
+    // A stored public key is only usable while the matching private key is
+    // still in the key store (a profile reset or restore can drop it).
+    if (existing != null && await _store.read(_storeId) != null) {
       return existing;
     }
 
@@ -102,6 +104,27 @@ final class IdentityKeyRepository {
   Future<List<int>> derivePairKeyBytes(SimplePublicKey peerPublicKey) async {
     final b64 = await derivePairKeyMaterial(peerPublicKey);
     return KeyEncoding.decodeBytes(b64);
+  }
+
+  /// ECDH shared secret (raw bytes) with a peer whose public key is given in
+  /// the published base64 form, or null when the key is malformed.
+  Future<List<int>?> deriveSharedSecretFromEncodedKey(String encodedKey) async {
+    final List<int> bytes;
+    try {
+      bytes = KeyEncoding.decodeBytes(encodedKey.trim());
+    } on FormatException {
+      return null;
+    }
+    if (bytes.length != 32) {
+      return null;
+    }
+    return derivePairKeyBytes(SimplePublicKey(bytes, type: KeyPairType.x25519));
+  }
+
+  /// The local public key in the published base64 form, or null if none exists.
+  Future<String?> encodedPublicKey() async {
+    final key = await _readPublicKey();
+    return key == null ? null : KeyEncoding.encodeBytes(key.bytes);
   }
 
   Future<SimplePublicKey?> _readPublicKey() async {

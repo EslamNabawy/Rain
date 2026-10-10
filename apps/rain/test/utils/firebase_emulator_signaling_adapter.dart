@@ -1200,6 +1200,7 @@ class FirebaseEmulatorSignalingAdapter
     required String username,
     required int now,
     int limit = maxCallCleanupItemsPerRun,
+    String? liveCallId,
   }) async {
     return VoiceCallCleanupSummary(
       username: normalizeVoiceCallUsername(username),

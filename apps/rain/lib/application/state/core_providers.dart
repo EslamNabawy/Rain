@@ -1,5 +1,6 @@
 import 'dart:async';
 
+import 'package:firebase_auth/firebase_auth.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:protocol_brain/protocol_brain.dart';
 import 'package:rain_core/rain_core.dart';
@@ -135,6 +136,7 @@ final turnCredentialServiceProvider = Provider<TurnCredentialService>((
   final service = TurnCredentialService(
     baseIceServers: environment.iceServers,
     brokerUrl: environment.turnBrokerUrl,
+    idTokenProvider: _firebaseIdToken,
   );
   ref.onDispose(service.dispose);
   return service;
@@ -220,4 +222,14 @@ class OptionalUpdateDismissalController extends AsyncNotifier<String?> {
     state = const AsyncValue.data(null);
     await ref.read(appSettingsStoreProvider).clearDismissedOptionalUpdateKey();
   }
+}
+
+/// Composition-root token source for the TURN broker (Firebase ID token of the
+/// signed-in user, or null when signed out).
+Future<String?> _firebaseIdToken() async {
+  final user = FirebaseAuth.instance.currentUser;
+  if (user == null) {
+    return null;
+  }
+  return user.getIdToken(false);
 }

@@ -9,6 +9,7 @@ import '../src/connection_request_adapter.dart';
 import '../src/connection_request_contract.dart';
 import '../src/signaling_cost_budget.dart';
 import '../src/voice_call_clock.dart';
+import '../src/registration_flow.dart';
 import '../src/voice_call_cleanup_janitor.dart';
 import '../src/voice_call_frame.dart';
 import '../src/voice_lock_reclaim_policy.dart';
@@ -32,7 +33,7 @@ class FirebaseSignalingAdapter
     bool useEmulator = false,
   }) : _auth = auth ?? FirebaseAuth.instance,
        _database = database ?? FirebaseDatabase.instance,
-       _functions = functions ?? FirebaseFunctions.instance,
+       _functionsOverride = functions,
        _connectionRequestDiagnosticsSink = connectionRequestDiagnosticsSink,
        _signalingCipher = signalingCipher ?? SignalingCipher.demo(),
        _pairCipherResolver = pairCipherResolver,
@@ -41,7 +42,13 @@ class FirebaseSignalingAdapter
 
   final FirebaseAuth _auth;
   final FirebaseDatabase _database;
-  final FirebaseFunctions _functions;
+  final FirebaseFunctions? _functionsOverride;
+  FirebaseFunctions? _functionsInstance;
+
+  /// Created on first use so `rtdbOnly` mode (the Spark default) never
+  /// touches the Cloud Functions plugin.
+  FirebaseFunctions get _functions =>
+      _functionsInstance ??= _functionsOverride ?? FirebaseFunctions.instance;
   final ConnectionRequestAdapterDiagnosticsSink?
   _connectionRequestDiagnosticsSink;
   final SignalingCipher _signalingCipher;
@@ -51,8 +58,27 @@ class FirebaseSignalingAdapter
   // F-015 (Phase 1): per-pair cipher cache keyed by peer username. Avoids
   // re-running ECDH on every signaling write; the root key is stable for the
   // life of the friendship.
-  final Map<String, SignalingCipher> _pairCipherCache =
-      <String, SignalingCipher>{};
+  static const int _pairCipherTtlMs = 2 * 60 * 1000;
+  final Map<String, ({SignalingCipher cipher, int at})> _pairCipherCache =
+      <String, ({SignalingCipher cipher, int at})>{};
+
+  /// Username of the signed-in account (see [_effectiveLocalUsername]).
+  String? get signedInUsername => _effectiveLocalUsername;
+
+  /// The configured local username, or the one encoded in the signed-in
+  /// account's e-mail (`<username>@rain.local`).
+  String? get _effectiveLocalUsername {
+    final configured = _localUsername;
+    if (configured != null && configured.trim().isNotEmpty) {
+      return configured;
+    }
+    final email = _auth.currentUser?.email;
+    if (email != null && email.endsWith('@rain.local')) {
+      return email.substring(0, email.length - '@rain.local'.length);
+    }
+    return null;
+  }
+
   final String _sessionId = DateTime.now().microsecondsSinceEpoch.toRadixString(
     36,
   );
@@ -130,20 +156,24 @@ class FirebaseSignalingAdapter
   Future<SignalingCipher?> _resolvePairCipher(
     ({String sender, String receiver}) context,
   ) async {
-    if (_pairCipherResolver == null || _localUsername == null) {
+    final localUsername = _effectiveLocalUsername;
+    if (_pairCipherResolver == null || localUsername == null) {
       return null;
     }
-    final normalizedLocal = _normalizedUsername(_localUsername);
+    final normalizedLocal = _normalizedUsername(localUsername);
     final peer = context.sender == normalizedLocal
         ? context.receiver
         : context.sender;
+    final now = DateTime.now().millisecondsSinceEpoch;
     final cached = _pairCipherCache[peer];
-    if (cached != null) {
-      return cached;
+    if (cached != null && now - cached.at < _pairCipherTtlMs) {
+      return cached.cipher;
     }
     final resolved = await _pairCipherResolver(peer);
     if (resolved != null) {
-      _pairCipherCache[peer] = resolved;
+      _pairCipherCache[peer] = (cipher: resolved, at: now);
+    } else {
+      _pairCipherCache.remove(peer);
     }
     return resolved;
   }
@@ -1121,6 +1151,7 @@ class FirebaseSignalingAdapter
     required String username,
     required int now,
     int limit = maxCallCleanupItemsPerRun,
+    String? liveCallId,
   }) async {
     await _configureEmulatorsIfNeeded();
     final normalizedUsername = normalizeVoiceCallUsername(username);
@@ -1202,23 +1233,30 @@ class FirebaseSignalingAdapter
               path: 'activeVoicePairs/${lock.pairId}',
             );
           }
-        } else if (room.isTerminal) {
-          await _deleteVoiceCallRoomArtifacts(room);
-          addDecision(
-            VoiceCallCleanupAction.deleteTerminalRoom,
-            room.callId,
-            'terminal room',
-            path: 'voiceCalls/${room.callId}',
+        } else {
+          final verdict = decideVoiceCallRoomCleanup(
+            room: room,
+            now: now,
+            liveCallId: liveCallId,
           );
-        } else if (room.status != VoiceCallSignalingStatus.connected &&
-            room.expiresAt <= now) {
-          await _deleteVoiceCallRoomArtifacts(room);
-          addDecision(
-            VoiceCallCleanupAction.deleteExpiredRoom,
-            room.callId,
-            'expired setup room',
-            path: 'voiceCalls/${room.callId}',
-          );
+          final action = switch (verdict) {
+            VoiceCallRoomCleanupVerdict.terminal =>
+              VoiceCallCleanupAction.deleteTerminalRoom,
+            VoiceCallRoomCleanupVerdict.expiredSetup =>
+              VoiceCallCleanupAction.deleteExpiredRoom,
+            VoiceCallRoomCleanupVerdict.expiredConnected =>
+              VoiceCallCleanupAction.deleteExpiredConnectedRoom,
+            _ => null,
+          };
+          if (action != null) {
+            await _deleteVoiceCallRoomArtifacts(room);
+            addDecision(action, room.callId, switch (verdict) {
+              VoiceCallRoomCleanupVerdict.terminal => 'terminal room',
+              VoiceCallRoomCleanupVerdict.expiredConnected =>
+                'expired connected room',
+              _ => 'expired setup room',
+            }, path: 'voiceCalls/${room.callId}');
+          }
         }
       }
     } catch (_) {
@@ -1468,65 +1506,40 @@ class FirebaseSignalingAdapter
     }
     final uid = userCredential.user?.uid ?? '';
     final now = DateTime.now().millisecondsSinceEpoch;
-    var backendUserCreated = false;
-
-    try {
-      await _root
-          .child('users/$normalizedUsername')
-          .set(
-            _identityJson(
-              username: normalizedUsername,
-              uid: uid,
-              displayName: normalizedUsername,
-              gender: null,
-              registeredAt: now,
+    await runRegistrationBackendSteps(
+      RegistrationSteps(
+        writeUserRow: () => _root
+            .child('users/$normalizedUsername')
+            .set(
+              _identityJson(
+                username: normalizedUsername,
+                uid: uid,
+                displayName: normalizedUsername,
+                gender: null,
+                registeredAt: now,
+              ),
             ),
-          );
-      backendUserCreated = true;
-
-      await _root.child('userSearch/$normalizedUsername').set(true);
-      await setPresence(normalizedUsername, true);
-      await _auth.signInWithEmailAndPassword(email: email, password: password);
-    } catch (error) {
-      if (backendUserCreated) {
-        await _signOutAfterFailedRegistration();
-      } else {
-        await _rollbackNewlyCreatedAuthUser(userCredential.user);
-      }
-      if (_isPermissionDenied(error)) {
-        throw Exception(
-          'Username "$normalizedUsername" is already taken or locked. '
-          'Choose another unique username or sign in.',
-        );
-      }
-      rethrow;
-    }
+        writeSearchEntry: () =>
+            _root.child('userSearch/$normalizedUsername').set(true),
+        setOnline: () => setPresence(normalizedUsername, true),
+        signIn: () =>
+            _auth.signInWithEmailAndPassword(email: email, password: password),
+        deleteNewAuthUser: () =>
+            _deleteNewlyCreatedAuthUser(userCredential.user),
+        signOutLocal: _auth.signOut,
+        isPermissionDenied: _isPermissionDenied,
+        takenMessage:
+            'Username "$normalizedUsername" is already taken or locked. '
+            'Choose another unique username or sign in.',
+      ),
+    );
     return uid;
   }
 
-  Future<void> _rollbackNewlyCreatedAuthUser(User? user) async {
-    try {
-      final currentUser = _auth.currentUser;
-      if (user != null && currentUser?.uid == user.uid) {
-        await currentUser!.delete();
-      }
-    } catch (_) {
-      // Registration failed before local account state became valid. If Auth
-      // cleanup is rejected by Firebase, still clear the local session below.
-    }
-    try {
-      await _auth.signOut();
-    } catch (_) {
-      // Local sign-out is best effort during a failed registration rollback.
-    }
-  }
-
-  Future<void> _signOutAfterFailedRegistration() async {
-    try {
-      await _auth.signOut();
-    } catch (_) {
-      // If a secondary registration step failed after the durable user row was
-      // written, keep the backend/Auth account intact and only clear local auth.
+  Future<void> _deleteNewlyCreatedAuthUser(User? user) async {
+    final currentUser = _auth.currentUser;
+    if (user != null && currentUser?.uid == user.uid) {
+      await currentUser!.delete();
     }
   }
 
@@ -1570,6 +1583,7 @@ class FirebaseSignalingAdapter
 
   @override
   Future<void> signOut() {
+    _pairCipherCache.clear();
     return _auth.signOut();
   }
 

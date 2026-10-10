@@ -260,31 +260,35 @@ extension FileTransferRuntime on RainRuntimeController {
     );
     final now = DateTime.now().millisecondsSinceEpoch;
 
-    await localMutations.run(() async {
-      if (!await messageStore.containsMessage(messageId)) {
-        await messageStore.forceStoreIncomingEnvelope(
-          envelope,
-          receivedAt: receivedAt,
-          trackSequence: false,
+    // One database transaction: a crash must not leave a file message without
+    // its transfer row (or the unread counter without the message).
+    await localMutations.run(
+      () => database.serializedTransaction(() async {
+        if (!await messageStore.containsMessage(messageId)) {
+          await messageStore.forceStoreIncomingEnvelope(
+            envelope,
+            receivedAt: receivedAt,
+            trackSequence: false,
+          );
+          await friendStore.incrementUnread(peerId);
+        }
+        await fileTransferStore.upsert(
+          FileTransferRecord(
+            id: frame.transferId,
+            peerId: peerId,
+            messageId: messageId,
+            direction: FileTransferDirection.incoming,
+            fileName: safeName,
+            fileSize: fileSize,
+            mimeType: frame.mimeType,
+            bytesTransferred: 0,
+            state: FileTransferState.offered,
+            createdAt: now,
+            updatedAt: now,
+          ),
         );
-        await friendStore.incrementUnread(peerId);
-      }
-      await fileTransferStore.upsert(
-        FileTransferRecord(
-          id: frame.transferId,
-          peerId: peerId,
-          messageId: messageId,
-          direction: FileTransferDirection.incoming,
-          fileName: safeName,
-          fileSize: fileSize,
-          mimeType: frame.mimeType,
-          bytesTransferred: 0,
-          state: FileTransferState.offered,
-          createdAt: now,
-          updatedAt: now,
-        ),
-      );
-    });
+      }),
+    );
   }
 
   Future<void> _handleFileAccept(String peerId, String transferId) async {
@@ -1055,36 +1059,74 @@ extension FileTransferRuntime on RainRuntimeController {
     canceledTransfers.add(transferId);
     clearTransferRuntimeState(transferId);
     await deleteTempFile(transfer);
-    await localMutations.run(() async {
-      await fileTransferStore.markState(
-        transferId,
-        FileTransferState.failed,
-        error: reason,
-      );
-      if (transfer.direction == FileTransferDirection.outgoing) {
-        await messageStore.markMessageStatus(
-          transfer.messageId,
-          MessageStatus.failed,
+    await localMutations.run(
+      () => database.serializedTransaction(() async {
+        await fileTransferStore.markState(
+          transferId,
+          FileTransferState.failed,
+          error: reason,
         );
-      }
-    });
+        if (transfer.direction == FileTransferDirection.outgoing) {
+          await messageStore.markMessageStatus(
+            transfer.messageId,
+            MessageStatus.failed,
+          );
+        }
+      }),
+    );
   }
 
   Future<void> failActiveTransfersForPeer(String peerId, String reason) async {
     List<FileTransferRecord> active;
     try {
       active = await fileTransferStore.loadActiveTransfers(peerId: peerId);
-    } catch (_) {
+    } catch (error, stackTrace) {
+      _recordTransferCleanupFailure(
+        error,
+        stackTrace,
+        peerId: peerId,
+        name: 'fail_active_transfers_load_failed',
+      );
       return;
     }
     for (final transfer in active) {
       try {
         await markTransferFailed(transfer.id, reason);
-      } catch (_) {
-        // Transfer cleanup is best effort during shutdown and relationship churn.
+      } catch (error, stackTrace) {
+        // Cleanup stays best effort, but a stuck row blocks new transfers from
+        // this peer, so the failure must be visible.
+        _recordTransferCleanupFailure(
+          error,
+          stackTrace,
+          peerId: peerId,
+          transferId: transfer.id,
+          name: 'fail_active_transfer_failed',
+        );
       }
     }
     pendingFileChunks.remove(peerId);
+  }
+
+  void _recordTransferCleanupFailure(
+    Object error,
+    StackTrace stackTrace, {
+    required String peerId,
+    required String name,
+    String? transferId,
+  }) {
+    recordRuntimeEvent(
+      category: 'file_transfer',
+      name: name,
+      severity: 'warning',
+      message: _formatTransferError(error),
+      context: <String, Object?>{'peerId': peerId, 'transferId': ?transferId},
+    );
+    errorRecorder?.call(
+      error,
+      stackTrace,
+      source: 'file-transfer-cleanup',
+      fatal: false,
+    );
   }
 
   Future<ReceivePaths> prepareReceivePaths(FileTransferRecord transfer) async {

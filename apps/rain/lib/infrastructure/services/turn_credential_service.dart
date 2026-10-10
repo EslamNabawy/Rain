@@ -2,7 +2,6 @@ import 'dart:async';
 import 'dart:convert';
 import 'dart:io';
 
-import 'package:firebase_auth/firebase_auth.dart';
 import 'package:flutter/foundation.dart';
 import 'package:protocol_brain/protocol_brain.dart'
     show PeerIceTransportPolicy, TurnReadiness, TurnReadinessResult;
@@ -11,14 +10,14 @@ class TurnCredentialService {
   TurnCredentialService({
     required List<Map<String, dynamic>> baseIceServers,
     required String brokerUrl,
-    Future<String?> Function()? idTokenProvider,
+    required Future<String?> Function() idTokenProvider,
     HttpClient? httpClient,
     DateTime Function()? now,
   }) : _baseIceServers = _windowsReleaseSafeIceServers(
          _cloneIceServers(baseIceServers),
        ),
        _brokerUrl = brokerUrl.trim(),
-       _idTokenProvider = idTokenProvider ?? _defaultFirebaseIdTokenProvider,
+       _idTokenProvider = idTokenProvider,
        _httpClient = httpClient ?? HttpClient(),
        _now = now ?? DateTime.now;
 
@@ -159,14 +158,6 @@ class TurnCredentialService {
   void dispose() {
     _httpClient.close(force: true);
   }
-}
-
-Future<String?> _defaultFirebaseIdTokenProvider() async {
-  final user = FirebaseAuth.instance.currentUser;
-  if (user == null) {
-    return null;
-  }
-  return user.getIdToken(false);
 }
 
 class _TurnCredentialCache {

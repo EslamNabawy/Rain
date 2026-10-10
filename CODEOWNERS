@@ -1,7 +1,7 @@
 # CODEOWNERS — Rain
 #
 # Protects the highest-risk areas from unreviewed merges.
-# Required reviews + CI (ci.yml, main-merge-gate.yml) must be green before
+# Required reviews + CI (ci.yml) must be green before
 # merge to dev/main. Branch protection is configured in GitHub repo settings
 # (see AGENTS.md / vault branch-protection note) — this file alone does not
 # enforce it.
