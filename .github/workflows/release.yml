@@ -96,7 +96,7 @@ jobs:
           ref: ${{ needs.resolve-target.outputs.target_sha }}
           fetch-depth: 0
 
-      - uses: actions/setup-java@v5
+      - uses: actions/setup-java@v6
         with:
           distribution: temurin
           java-version: '21'
@@ -207,7 +207,7 @@ jobs:
         with:
           ref: ${{ needs.resolve-target.outputs.target_sha }}
 
-      - uses: actions/setup-java@v5
+      - uses: actions/setup-java@v6
         with:
           distribution: temurin
           java-version: '21'
@@ -391,7 +391,7 @@ jobs:
         with:
           ref: ${{ needs.resolve-target.outputs.target_sha }}
 
-      - uses: actions/setup-java@v5
+      - uses: actions/setup-java@v6
         with:
           distribution: temurin
           java-version: '21'
