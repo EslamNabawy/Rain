@@ -24,7 +24,9 @@ final class IdentityKeyRepository {
   /// Returns the public key, generating + persisting the keypair on first run.
   Future<SimplePublicKey> ensureKeyPair() async {
     final existing = await _readPublicKey();
-    if (existing != null) {
+    // A stored public key is only usable while the matching private key is
+    // still in the key store (a profile reset or restore can drop it).
+    if (existing != null && await _store.read(_storeId) != null) {
       return existing;
     }
 

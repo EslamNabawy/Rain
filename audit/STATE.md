@@ -36,6 +36,7 @@ T4.12 e1e4cb9 APP-003 test added; APP-002 fallback implemented without runtime-l
 T4.13 696e78e 3 upgrade tests added; createTable is already idempotent so no guard needed
 T4.14 03078d6 serializedWrite is re-entrant; offer+unread+transfer and failTransfer in one transaction; all apps/rain tests pass
  ef1c897 
+T4.16 ccb88dd allowBackup=false + extraction rules; Android build not run (R7)
 ## Blocked
 T4.15 SKIPPED (DB-003): premise invalid - no table declares a foreign key, so the beforeOpen foreign_key_check can never fail. DB-003 downgraded to P3 in audit/01-findings.md; quarantine-on-open-failure moved to backlog.
 T4.19 BLOCKED (SEC-006): depends on T4.01 (rules changes need RULES_TEST).

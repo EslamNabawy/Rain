@@ -223,6 +223,8 @@ class IdentityController extends AsyncNotifier<RainIdentity?> {
             : RainGender.values.byName(existing.gender!),
       ),
     );
+    // Re-publish the identity key (covers failed or lost publishes).
+    await _publishIdentitySigningKeyBestEffort(adapter, username);
   }
 
   Future<void> updateDisplayName(String displayName) async {

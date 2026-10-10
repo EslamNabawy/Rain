@@ -33,6 +33,28 @@ Future<void> _seedIdentity(RainDatabase db) async {
 
 void main() {
   group('TASK-015 IdentityKeyRepository', () {
+    test('regenerates the pair when the private key is missing', () async {
+      final dir = Directory.systemTemp.createTempSync('rain_keypair_lost_');
+      addTearDown(() {
+        if (dir.existsSync()) dir.deleteSync(recursive: true);
+      });
+      final db = _openTempDb(dir);
+      addTearDown(db.close);
+      final store = InMemoryKeyStoreService();
+      final repo = IdentityKeyRepository(db, store);
+      await _seedIdentity(db);
+
+      final first = await repo.ensureKeyPair();
+      await store.delete(KeyStoreIds.identityPrivateKey);
+
+      final second = await repo.ensureKeyPair();
+
+      expect(second.bytes, isNot(first.bytes));
+      expect(await store.read(KeyStoreIds.identityPrivateKey), isNotNull);
+      expect((await repo.getPublicKey())!.bytes, second.bytes);
+      expect(await repo.getPrivateKeyBytes(), hasLength(32));
+    });
+
     test(
       'generates an X25519 keypair once and persists the public key',
       () async {

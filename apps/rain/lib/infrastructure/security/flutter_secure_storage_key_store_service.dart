@@ -1,4 +1,3 @@
-import 'package:flutter/services.dart';
 import 'package:flutter_secure_storage/flutter_secure_storage.dart';
 import 'package:rain_core/rain_core.dart';
 
@@ -20,7 +19,7 @@ final class FlutterSecureStorageKeyStoreService implements KeyStoreService {
   Future<String?> read(String keyId) async {
     try {
       return await _storage.read(key: keyId);
-    } on PlatformException catch (e) {
+    } catch (e) {
       throw KeyStoreException('Failed to read key "$keyId".', e);
     }
   }
@@ -29,7 +28,7 @@ final class FlutterSecureStorageKeyStoreService implements KeyStoreService {
   Future<void> write(String keyId, String value) async {
     try {
       await _storage.write(key: keyId, value: value);
-    } on PlatformException catch (e) {
+    } catch (e) {
       throw KeyStoreException('Failed to write key "$keyId".', e);
     }
   }
@@ -38,7 +37,7 @@ final class FlutterSecureStorageKeyStoreService implements KeyStoreService {
   Future<void> delete(String keyId) async {
     try {
       await _storage.delete(key: keyId);
-    } on PlatformException catch (e) {
+    } catch (e) {
       throw KeyStoreException('Failed to delete key "$keyId".', e);
     }
   }
