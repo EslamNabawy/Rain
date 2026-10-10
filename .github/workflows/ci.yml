@@ -373,6 +373,19 @@ jobs:
         working-directory: backend/firebase/functions
         run: npm test --if-present
 
+      - uses: actions/setup-java@v5
+        with:
+          distribution: temurin
+          java-version: ${{ env.JAVA_VERSION }}
+
+      - name: Install RTDB rules test dependencies
+        working-directory: backend/firebase/rules-test
+        run: npm ci --ignore-scripts --no-audit --no-fund
+
+      - name: Run RTDB rules tests
+        working-directory: backend/firebase
+        run: npx --yes firebase-tools@15.18.0 emulators:exec --only database "node rules-test/run.js"
+
   firebase-emulator-tests:
     name: Firebase Emulator Integration
     runs-on: ubuntu-latest
