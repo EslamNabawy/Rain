@@ -148,7 +148,7 @@
       }
     },
     "userSearch": {
-      ".read": "auth != null",
+      ".read": "auth != null && query.orderByKey == true && query.limitToFirst <= 20",
       "$username": {
         ".read": "auth != null",
         ".write": "auth != null && !root.child('security/blockedUids/' + auth.uid).exists() && root.child('users/' + $username + '/uid').val() === auth.uid && root.child('users/' + $username + '/accountState').val() !== 'deleted'"

@@ -7,7 +7,7 @@ const {
   assertSucceeds,
   assertFails,
 } = require("@firebase/rules-unit-testing");
-const { ref, get, set, update } = require("firebase/database");
+const { ref, get, set, update, query, orderByKey, startAt, endAt, limitToFirst } = require("firebase/database");
 
 const rules = fs.readFileSync(path.join(__dirname, "..", "database.rules.json"), "utf8");
 const [host, port] = (process.env.FIREBASE_DATABASE_EMULATOR_HOST || "127.0.0.1:9000").split(":");
@@ -86,6 +86,16 @@ async function main() {
   await check("userSearch entry can only be written by the owner", async () => {
     await assertSucceeds(set(ref(as("ua", "alice"), "userSearch/alice"), true));
     await assertFails(set(ref(as("ub", "bob"), "userSearch/alice"), true));
+  });
+
+  await check("userSearch allows only bounded ordered queries", async () => {
+    const db = as("ub", "bob");
+    await assertSucceeds(
+      get(query(ref(db, "userSearch"), orderByKey(), startAt("al"), endAt("al"), limitToFirst(10))),
+    );
+    await assertFails(get(ref(db, "userSearch")));
+    await assertFails(get(query(ref(db, "userSearch"), orderByKey(), limitToFirst(50))));
+    await assertSucceeds(get(ref(db, "userSearch/alice")));
   });
 
   await check("presence cannot be written for another user", async () => {
