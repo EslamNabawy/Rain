@@ -82,13 +82,26 @@ class AppBootstrapper {
       final signalingCipher = SignalingCipher.fromKeyMaterial(
         effectiveEnvironment.signalingEncryptionKey,
       );
+      FirebaseSignalingAdapter? firebaseAdapter;
       final rawAdapter = effectiveEnvironment.shouldUseFallbackAdapter
           ? NoopSignalingAdapter()
           : switch (effectiveEnvironment.backend) {
-              RainBackend.firebase => FirebaseSignalingAdapter(
-                database: firebaseDatabase!,
-                signalingCipher: signalingCipher,
-              ),
+              RainBackend.firebase =>
+                firebaseAdapter = FirebaseSignalingAdapter(
+                  database: firebaseDatabase!,
+                  signalingCipher: signalingCipher,
+                  pairCipherResolver: buildPairCipherResolver(
+                    localUsername: () => firebaseAdapter?.signedInUsername,
+                    deriveSharedSecret: (String peer) => _deriveSharedSecret(
+                      adapter: firebaseAdapter!,
+                      identityKeys: IdentityKeyRepository(
+                        database,
+                        FlutterSecureStorageKeyStoreService(),
+                      ),
+                      peer: peer,
+                    ),
+                  ),
+                ),
               RainBackend.noop => NoopSignalingAdapter(),
             };
       final debugLogService = _debugLogService;
@@ -184,4 +197,34 @@ Future<void> _reportDatabaseEncryptionState(RainDatabase database) async {
   } catch (_) {
     // Reporting must never block startup.
   }
+}
+
+/// Raw ECDH secret with [peer], or null when per-pair encryption cannot be used
+/// for this pair yet (the signaling adapter then falls back to `v=1`).
+///
+/// Both sides must be able to decrypt, so `v=2` is only used when the peer
+/// published a key AND this device's own key is the one published for this
+/// account.
+Future<List<int>?> _deriveSharedSecret({
+  required FirebaseSignalingAdapter adapter,
+  required IdentityKeyRepository identityKeys,
+  required String peer,
+}) async {
+  final local = adapter.signedInUsername;
+  if (local == null) {
+    return null;
+  }
+  final localKey = await identityKeys.encodedPublicKey();
+  if (localKey == null) {
+    return null;
+  }
+  final published = (await adapter.fetchIdentity(local))?.signingPublicKey;
+  if (published != localKey) {
+    return null;
+  }
+  final peerKey = (await adapter.fetchIdentity(peer))?.signingPublicKey;
+  if (peerKey == null || peerKey.isEmpty) {
+    return null;
+  }
+  return identityKeys.deriveSharedSecretFromEncodedKey(peerKey);
 }

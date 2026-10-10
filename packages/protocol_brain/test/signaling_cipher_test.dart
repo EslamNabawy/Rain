@@ -391,4 +391,67 @@ void main() {
       expect(result, same(plaintext));
     });
   });
+
+  group('buildPairCipherResolver', () {
+    final secret = List<int>.generate(32, (int i) => i + 1);
+
+    test(
+      'both sides derive the same cipher regardless of who is local',
+      () async {
+        final aliceResolver = buildPairCipherResolver(
+          localUsername: () => 'Alice',
+          deriveSharedSecret: (String peer) async => secret,
+        );
+        final bobResolver = buildPairCipherResolver(
+          localUsername: () => 'bob',
+          deriveSharedSecret: (String peer) async => secret,
+        );
+        final aliceCipher = (await aliceResolver('bob'))!;
+        final bobCipher = (await bobResolver('alice'))!;
+
+        final envelope = await aliceCipher.encryptPayloadV2(
+          roomId: 'alice:bob',
+          purpose: SignalingCipher.offerPurpose,
+          timestamp: 1,
+          sender: 'alice',
+          receiver: 'bob',
+          payload: <String, Object?>{'sdp': 'x'},
+        );
+        final decrypted = await bobCipher.decryptPayloadV2(
+          roomId: 'alice:bob',
+          purpose: SignalingCipher.offerPurpose,
+          payload: envelope,
+          sender: 'alice',
+          receiver: 'bob',
+        );
+
+        expect(envelope['v'], 2);
+        expect(decrypted['sdp'], 'x');
+      },
+    );
+
+    test('falls back to null when no key, no local user or an error', () async {
+      expect(
+        await buildPairCipherResolver(
+          localUsername: () => 'alice',
+          deriveSharedSecret: (String peer) async => null,
+        )('bob'),
+        isNull,
+      );
+      expect(
+        await buildPairCipherResolver(
+          localUsername: () => null,
+          deriveSharedSecret: (String peer) async => secret,
+        )('bob'),
+        isNull,
+      );
+      expect(
+        await buildPairCipherResolver(
+          localUsername: () => 'alice',
+          deriveSharedSecret: (String peer) async => throw StateError('x'),
+        )('bob'),
+        isNull,
+      );
+    });
+  });
 }

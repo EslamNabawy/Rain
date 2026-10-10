@@ -186,9 +186,9 @@
         },
         "offer": {
           ".write": "auth != null && !root.child('security/blockedUids/' + auth.uid).exists() && root.child('rooms/' + $roomId).exists() && root.child('users/' + root.child('rooms/' + $roomId + '/userA').val() + '/uid').val() === auth.uid",
-          ".validate": "!newData.exists() || (newData.hasChildren(['v', 'alg', 'ts', 'from', 'to', 'nonce', 'ciphertext', 'mac']) && newData.child('v').isNumber() && newData.child('v').val() === 1 && newData.child('alg').isString() && newData.child('alg').val() === 'A256GCM-HKDF-SHA256' && newData.child('ts').isNumber() && newData.child('from').isString() && newData.child('from').val() === newData.parent().child('userA').val() && newData.child('to').isString() && newData.child('to').val() === newData.parent().child('userB').val() && newData.child('nonce').isString() && newData.child('nonce').val().length > 0 && newData.child('nonce').val().length <= 96 && newData.child('ciphertext').isString() && newData.child('ciphertext').val().length > 0 && newData.child('ciphertext').val().length <= 262144 && newData.child('mac').isString() && newData.child('mac').val().length > 0 && newData.child('mac').val().length <= 96)",
+          ".validate": "!newData.exists() || (newData.hasChildren(['v', 'alg', 'ts', 'from', 'to', 'nonce', 'ciphertext', 'mac']) && newData.child('v').isNumber() && (newData.child('v').val() === 1 || (newData.child('v').val() === 2 && newData.child('salt').isString())) && newData.child('alg').isString() && newData.child('alg').val() === 'A256GCM-HKDF-SHA256' && newData.child('ts').isNumber() && newData.child('from').isString() && newData.child('from').val() === newData.parent().child('userA').val() && newData.child('to').isString() && newData.child('to').val() === newData.parent().child('userB').val() && newData.child('nonce').isString() && newData.child('nonce').val().length > 0 && newData.child('nonce').val().length <= 96 && newData.child('ciphertext').isString() && newData.child('ciphertext').val().length > 0 && newData.child('ciphertext').val().length <= 262144 && newData.child('mac').isString() && newData.child('mac').val().length > 0 && newData.child('mac').val().length <= 96 && (!newData.child('salt').exists() || (newData.child('salt').isString() && newData.child('salt').val().length > 0 && newData.child('salt').val().length <= 64)))",
           "v": {
-            ".validate": "newData.isNumber() && newData.val() === 1"
+            ".validate": "newData.isNumber() && (newData.val() === 1 || newData.val() === 2)"
           },
           "alg": {
             ".validate": "newData.isString() && newData.val() === 'A256GCM-HKDF-SHA256'"
@@ -209,6 +209,9 @@
             ".validate": "newData.isString()"
           },
           "mac": {
+            ".validate": "newData.isString()"
+          },
+          "salt": {
             ".validate": "newData.isString()"
           },
           "$other": {
@@ -217,9 +220,9 @@
         },
         "answer": {
           ".write": "auth != null && !root.child('security/blockedUids/' + auth.uid).exists() && root.child('rooms/' + $roomId).exists() && root.child('users/' + root.child('rooms/' + $roomId + '/userB').val() + '/uid').val() === auth.uid",
-          ".validate": "!newData.exists() || (newData.hasChildren(['v', 'alg', 'ts', 'from', 'to', 'nonce', 'ciphertext', 'mac']) && newData.child('v').isNumber() && newData.child('v').val() === 1 && newData.child('alg').isString() && newData.child('alg').val() === 'A256GCM-HKDF-SHA256' && newData.child('ts').isNumber() && newData.child('from').isString() && newData.child('from').val() === newData.parent().child('userB').val() && newData.child('to').isString() && newData.child('to').val() === newData.parent().child('userA').val() && newData.child('nonce').isString() && newData.child('nonce').val().length > 0 && newData.child('nonce').val().length <= 96 && newData.child('ciphertext').isString() && newData.child('ciphertext').val().length > 0 && newData.child('ciphertext').val().length <= 262144 && newData.child('mac').isString() && newData.child('mac').val().length > 0 && newData.child('mac').val().length <= 96)",
+          ".validate": "!newData.exists() || (newData.hasChildren(['v', 'alg', 'ts', 'from', 'to', 'nonce', 'ciphertext', 'mac']) && newData.child('v').isNumber() && (newData.child('v').val() === 1 || (newData.child('v').val() === 2 && newData.child('salt').isString())) && newData.child('alg').isString() && newData.child('alg').val() === 'A256GCM-HKDF-SHA256' && newData.child('ts').isNumber() && newData.child('from').isString() && newData.child('from').val() === newData.parent().child('userB').val() && newData.child('to').isString() && newData.child('to').val() === newData.parent().child('userA').val() && newData.child('nonce').isString() && newData.child('nonce').val().length > 0 && newData.child('nonce').val().length <= 96 && newData.child('ciphertext').isString() && newData.child('ciphertext').val().length > 0 && newData.child('ciphertext').val().length <= 262144 && newData.child('mac').isString() && newData.child('mac').val().length > 0 && newData.child('mac').val().length <= 96 && (!newData.child('salt').exists() || (newData.child('salt').isString() && newData.child('salt').val().length > 0 && newData.child('salt').val().length <= 64)))",
           "v": {
-            ".validate": "newData.isNumber() && newData.val() === 1"
+            ".validate": "newData.isNumber() && (newData.val() === 1 || newData.val() === 2)"
           },
           "alg": {
             ".validate": "newData.isString() && newData.val() === 'A256GCM-HKDF-SHA256'"
@@ -240,6 +243,9 @@
             ".validate": "newData.isString()"
           },
           "mac": {
+            ".validate": "newData.isString()"
+          },
+          "salt": {
             ".validate": "newData.isString()"
           },
           "$other": {
@@ -249,9 +255,9 @@
         "callerICE": {
           "$candidateId": {
             ".write": "auth != null && !root.child('security/blockedUids/' + auth.uid).exists() && root.child('rooms/' + $roomId).exists() && root.child('users/' + root.child('rooms/' + $roomId + '/userA').val() + '/uid').val() === auth.uid",
-            ".validate": "!newData.exists() || (newData.hasChildren(['v', 'alg', 'ts', 'from', 'to', 'nonce', 'ciphertext', 'mac']) && newData.child('v').isNumber() && newData.child('v').val() === 1 && newData.child('alg').isString() && newData.child('alg').val() === 'A256GCM-HKDF-SHA256' && newData.child('ts').isNumber() && newData.child('from').isString() && newData.child('from').val() === newData.parent().parent().child('userA').val() && newData.child('to').isString() && newData.child('to').val() === newData.parent().parent().child('userB').val() && newData.child('nonce').isString() && newData.child('nonce').val().length > 0 && newData.child('nonce').val().length <= 96 && newData.child('ciphertext').isString() && newData.child('ciphertext').val().length > 0 && newData.child('ciphertext').val().length <= 32768 && newData.child('mac').isString() && newData.child('mac').val().length > 0 && newData.child('mac').val().length <= 96)",
+            ".validate": "!newData.exists() || (newData.hasChildren(['v', 'alg', 'ts', 'from', 'to', 'nonce', 'ciphertext', 'mac']) && newData.child('v').isNumber() && (newData.child('v').val() === 1 || (newData.child('v').val() === 2 && newData.child('salt').isString())) && newData.child('alg').isString() && newData.child('alg').val() === 'A256GCM-HKDF-SHA256' && newData.child('ts').isNumber() && newData.child('from').isString() && newData.child('from').val() === newData.parent().parent().child('userA').val() && newData.child('to').isString() && newData.child('to').val() === newData.parent().parent().child('userB').val() && newData.child('nonce').isString() && newData.child('nonce').val().length > 0 && newData.child('nonce').val().length <= 96 && newData.child('ciphertext').isString() && newData.child('ciphertext').val().length > 0 && newData.child('ciphertext').val().length <= 32768 && newData.child('mac').isString() && newData.child('mac').val().length > 0 && newData.child('mac').val().length <= 96 && (!newData.child('salt').exists() || (newData.child('salt').isString() && newData.child('salt').val().length > 0 && newData.child('salt').val().length <= 64)))",
             "v": {
-              ".validate": "newData.isNumber() && newData.val() === 1"
+              ".validate": "newData.isNumber() && (newData.val() === 1 || newData.val() === 2)"
             },
             "alg": {
               ".validate": "newData.isString() && newData.val() === 'A256GCM-HKDF-SHA256'"
@@ -272,6 +278,9 @@
               ".validate": "newData.isString()"
             },
             "mac": {
+              ".validate": "newData.isString()"
+            },
+            "salt": {
               ".validate": "newData.isString()"
             },
             "$other": {
@@ -282,9 +291,9 @@
         "calleeICE": {
           "$candidateId": {
             ".write": "auth != null && !root.child('security/blockedUids/' + auth.uid).exists() && root.child('rooms/' + $roomId).exists() && root.child('users/' + root.child('rooms/' + $roomId + '/userB').val() + '/uid').val() === auth.uid",
-            ".validate": "!newData.exists() || (newData.hasChildren(['v', 'alg', 'ts', 'from', 'to', 'nonce', 'ciphertext', 'mac']) && newData.child('v').isNumber() && newData.child('v').val() === 1 && newData.child('alg').isString() && newData.child('alg').val() === 'A256GCM-HKDF-SHA256' && newData.child('ts').isNumber() && newData.child('from').isString() && newData.child('from').val() === newData.parent().parent().child('userB').val() && newData.child('to').isString() && newData.child('to').val() === newData.parent().parent().child('userA').val() && newData.child('nonce').isString() && newData.child('nonce').val().length > 0 && newData.child('nonce').val().length <= 96 && newData.child('ciphertext').isString() && newData.child('ciphertext').val().length > 0 && newData.child('ciphertext').val().length <= 32768 && newData.child('mac').isString() && newData.child('mac').val().length > 0 && newData.child('mac').val().length <= 96)",
+            ".validate": "!newData.exists() || (newData.hasChildren(['v', 'alg', 'ts', 'from', 'to', 'nonce', 'ciphertext', 'mac']) && newData.child('v').isNumber() && (newData.child('v').val() === 1 || (newData.child('v').val() === 2 && newData.child('salt').isString())) && newData.child('alg').isString() && newData.child('alg').val() === 'A256GCM-HKDF-SHA256' && newData.child('ts').isNumber() && newData.child('from').isString() && newData.child('from').val() === newData.parent().parent().child('userB').val() && newData.child('to').isString() && newData.child('to').val() === newData.parent().parent().child('userA').val() && newData.child('nonce').isString() && newData.child('nonce').val().length > 0 && newData.child('nonce').val().length <= 96 && newData.child('ciphertext').isString() && newData.child('ciphertext').val().length > 0 && newData.child('ciphertext').val().length <= 32768 && newData.child('mac').isString() && newData.child('mac').val().length > 0 && newData.child('mac').val().length <= 96 && (!newData.child('salt').exists() || (newData.child('salt').isString() && newData.child('salt').val().length > 0 && newData.child('salt').val().length <= 64)))",
             "v": {
-              ".validate": "newData.isNumber() && newData.val() === 1"
+              ".validate": "newData.isNumber() && (newData.val() === 1 || newData.val() === 2)"
             },
             "alg": {
               ".validate": "newData.isString() && newData.val() === 'A256GCM-HKDF-SHA256'"
@@ -305,6 +314,9 @@
               ".validate": "newData.isString()"
             },
             "mac": {
+              ".validate": "newData.isString()"
+            },
+            "salt": {
               ".validate": "newData.isString()"
             },
             "$other": {

@@ -127,6 +127,16 @@ async function main() {
     await assertSucceeds(set(ref(as("ub", "bob"), "rooms/alice:bob/answer"), envelope("bob", "alice")));
   });
 
+  await check("room offers accept v=1 and v=2 (with salt) envelopes only", async () => {
+    const offer = ref(as("ua", "alice"), "rooms/alice:bob/offer");
+    const v2 = { ...envelope("alice", "bob"), v: 2, salt: "AAAAAAAAAAAAAAAAAAAAAA==" };
+    await assertSucceeds(set(offer, v2));
+    await assertSucceeds(set(offer, envelope("alice", "bob")));
+    await assertFails(set(offer, { ...envelope("alice", "bob"), v: 2 }));
+    await assertFails(set(offer, { ...envelope("alice", "bob"), v: 3, salt: "AAAA" }));
+    await assertFails(set(offer, { ...v2, salt: "A".repeat(65) }));
+  });
+
   await check("clients cannot write connectionRequests directly", async () => {
     await assertFails(set(ref(as("ua", "alice"), "connectionRequests/bob/r1"), { from: "alice" }));
   });

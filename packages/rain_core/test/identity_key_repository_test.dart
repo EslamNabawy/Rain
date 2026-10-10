@@ -138,6 +138,37 @@ void main() {
       expect(await store.read(KeyStoreIds.identityPrivateKey), isNull);
     });
 
+    test('encoded public key and shared secret from a published key', () async {
+      final dirA = Directory.systemTemp.createTempSync('rain_enc_alice_');
+      final dirB = Directory.systemTemp.createTempSync('rain_enc_bob_');
+      addTearDown(() {
+        if (dirA.existsSync()) dirA.deleteSync(recursive: true);
+        if (dirB.existsSync()) dirB.deleteSync(recursive: true);
+      });
+      final dbA = _openTempDb(dirA);
+      final dbB = _openTempDb(dirB);
+      addTearDown(dbA.close);
+      addTearDown(dbB.close);
+      final alice = IdentityKeyRepository(dbA, InMemoryKeyStoreService());
+      final bob = IdentityKeyRepository(dbB, InMemoryKeyStoreService());
+      await _seedIdentity(dbA);
+      await _seedIdentity(dbB);
+
+      expect(await alice.encodedPublicKey(), isNull);
+      await alice.ensureKeyPair();
+      await bob.ensureKeyPair();
+      final aliceKey = (await alice.encodedPublicKey())!;
+      final bobKey = (await bob.encodedPublicKey())!;
+
+      expect(aliceKey, hasLength(44));
+      expect(
+        await alice.deriveSharedSecretFromEncodedKey(bobKey),
+        await bob.deriveSharedSecretFromEncodedKey(aliceKey),
+      );
+      expect(await alice.deriveSharedSecretFromEncodedKey('not-a-key'), isNull);
+      expect(await alice.deriveSharedSecretFromEncodedKey('QQ=='), isNull);
+    });
+
     // ---- TASK-001.3: ECDH per-pair key derivation (Phase 4 verifiable slice) ----
 
     test('ECDH: two parties derive the same shared secret', () async {
