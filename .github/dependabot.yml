@@ -4,11 +4,27 @@ updates:
     directory: /
     schedule:
       interval: weekly
+    groups:
+      github-actions-minor:
+        update-types:
+          - minor
+          - patch
+      github-actions-major:
+        update-types:
+          - major
   - package-ecosystem: npm
     directory: /backend/firebase/functions
     schedule:
       interval: weekly
+    groups:
+      firebase-functions-deps:
+        patterns:
+          - "*"
   - package-ecosystem: pub
     directory: /
     schedule:
       interval: weekly
+    groups:
+      pub-coordinated:
+        patterns:
+          - "*"

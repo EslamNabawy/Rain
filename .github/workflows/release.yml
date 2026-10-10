@@ -117,7 +117,14 @@ jobs:
         run: dart pub get
 
       - name: Fail on dependency lock drift
-        run: git diff --exit-code -- pubspec.lock
+        run: |
+          if ! git diff --exit-code -- pubspec.lock; then
+            echo "::error::pubspec.lock drifted after dart/flutter pub get."
+            echo "Regenerate and commit the lockfile:"
+            echo "  dart pub get"
+            echo "  for p in apps/rain packages/peer_core packages/protocol_brain packages/rain_core; do (cd \$p && flutter pub get); done"
+            exit 1
+          fi
 
       - name: Enforce Dart formatting
         run: |
