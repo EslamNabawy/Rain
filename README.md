@@ -288,6 +288,24 @@ The same workflow supports production artifact builds when the required secrets 
 
 ---
 
+## Validated Releases
+
+For a full validation + build + publish pipeline in one step, use the validated release workflow. It runs workflow lint, workspace analyze/tests (including auth lifecycle scenarios), Firebase backend and emulator checks, Obsidian vault validation, then builds and publishes a GitHub pre-release:
+
+```powershell
+gh workflow run validated-release.yml `
+  --ref dev `
+  -f target_ref=dev `
+  -f platform=all `
+  -f build_profile=demo `
+  -f publish_github_release=true `
+  -f prerelease=true
+```
+
+Published pre-releases live on the [Releases page](https://github.com/EslamNabawy/Rain/releases) under `rain-validated-*` tags with the same Windows and Android artifacts plus `rain-release-metadata.json`.
+
+---
+
 ## Production Release
 
 Production Android builds require these GitHub Actions secrets:
@@ -347,9 +365,9 @@ Rain is designed to minimize what Firebase carries. Key boundaries:
 
 - **Chat messages and file bytes** travel over WebRTC, not Firebase rooms.
 - **Firebase rules** enforce authenticated ownership, friendship checks, block enforcement, and call lock permissions.
-- **SDP and ICE signaling payloads** are encrypted before storage.
+- **SDP and ICE signaling payloads** are encrypted before storage. Per-pair `v=2` encryption (X25519 ECDH → A256GCM with per-envelope salt) is wired for both data-room and voice-call signaling when both peers have published a `signingPublicKey`; a `v=1` shared-key envelope remains decode-compatible for older peers.
 - **WebRTC media and data channels** use encrypted transports (DTLS-SRTP).
-- **Production builds** reject known demo signaling keys. Signaling encryption is currently `v=1` with one shared build-time key (not end-to-end); the per-pair `v=2` cipher exists but is not wired into the adapter yet.
+- **Production builds** reject known demo signaling keys. Firebase rules remain the real access control; `v=2` protects payload confidentiality but does not replace ownership/friendship/lock checks, and there is no user-facing key-verification UI yet.
 - **Local storage** (Drift/SQLite) is not encrypted at rest; see ADR-010 and the audit notes.
 - **TURN metadata exposure** depends on the configured TURN infrastructure.
 
