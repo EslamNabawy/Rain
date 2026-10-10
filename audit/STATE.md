@@ -27,6 +27,7 @@ T4.02 4f28f0a key publish is best-effort; analyze clean; auth_identity tests pas
 T4.04 18d275e pure cleanup planner + liveCallId guard; protocol_brain 285 pass; apps/rain analyze clean
 T4.05 253d8cb presence stays online during call/transfer when backgrounded; 5 new tests
 T4.06 9155f4b reduced scope: registration rollback ordering unit-tested (4 tests); full DB/auth ports deferred to backlog
+T4.07 13fdff2 encryptionState() + db_encryption_inactive event; open path unchanged
 ## Blocked
 T4.19 BLOCKED (SEC-006): depends on T4.01 (rules changes need RULES_TEST).
 T4.03 BLOCKED (SEC-001): depends on T4.01 (rules changes need RULES_TEST).

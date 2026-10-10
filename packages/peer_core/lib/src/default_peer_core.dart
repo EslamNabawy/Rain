@@ -167,25 +167,44 @@ class DefaultPeerCore implements PeerCore {
     _lifecycleEpoch += 1;
     _cancelPendingDisconnect();
     _cancelChunkPruneTimer();
+    Object? firstError;
+    StackTrace? firstStack;
+    Future<void> guarded(Future<void> Function() step) async {
+      try {
+        await step();
+      } catch (error, stackTrace) {
+        firstError ??= error;
+        firstStack ??= stackTrace;
+      }
+    }
+
     try {
-      await stopLocalAudio();
+      await guarded(stopLocalAudio);
       for (final channel in _channels.values.toList()) {
-        await channel.close();
+        await guarded(channel.close);
       }
     } finally {
       _destroying = false;
     }
+    final connection = _peerConnection;
     _channels.clear();
     _sendQueues.clear();
     _openChannels.clear();
-    await _peerConnection?.close();
     _peerConnection = null;
     _localAudioTransceiver = null;
     _localAudioSender = null;
     _localCandidates.clear();
     _chunkBuffers.clear();
+    if (connection != null) {
+      await guarded(connection.close);
+      await guarded(connection.dispose);
+    }
     if (state != PeerState.idle) {
       _transition(PeerState.idle);
+    }
+    final error = firstError;
+    if (error != null) {
+      Error.throwWithStackTrace(error, firstStack ?? StackTrace.current);
     }
   }
 
