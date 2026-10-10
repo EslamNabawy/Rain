@@ -75,9 +75,9 @@ void main() {
       '.github/workflows/build-artifacts.yml',
     );
     final releaseWorkflow = _repoFile('.github/workflows/release.yml');
-    expect(ciWorkflow, contains('actions/setup-node@v6'));
-    expect(ciWorkflow, contains('actions/setup-java@v5'));
-    expect(ciWorkflow, contains('actions/setup-go@v6'));
+    expect(ciWorkflow, contains('actions/setup-node@v7'));
+    expect(ciWorkflow, contains('actions/setup-java@v6'));
+    expect(ciWorkflow, contains('actions/setup-go@v7'));
     expect(ciWorkflow, contains('actions/upload-artifact@v7'));
     expect(ciWorkflow, contains('runs-on: windows-2022'));
     expect(ciWorkflow, contains("JAVA_VERSION: '21'"));

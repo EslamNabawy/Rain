@@ -154,7 +154,9 @@ void main() {
               FileType type = FileType.any,
               List<String>? allowedExtensions,
               Uint8List? bytes,
-              bool lockParentWindow = false,
+              WindowsOptions windowsOptions = const WindowsOptions(),
+              LinuxOptions linuxOptions = const LinuxOptions(),
+              WebOptions webOptions = const WebOptions(),
             }) async => destination.path,
       );
 
@@ -180,7 +182,9 @@ Future<String?> _neverPick({
   FileType type = FileType.any,
   List<String>? allowedExtensions,
   Uint8List? bytes,
-  bool lockParentWindow = false,
+  WindowsOptions windowsOptions = const WindowsOptions(),
+  LinuxOptions linuxOptions = const LinuxOptions(),
+  WebOptions webOptions = const WebOptions(),
 }) async {
   fail('Save picker should not open for invalid transfers.');
 }

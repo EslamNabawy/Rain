@@ -1173,18 +1173,12 @@ class _ChatPanelState extends ConsumerState<_ChatPanel> {
 
     setState(() => _isPickingFile = true);
     try {
-      final result = await FilePicker.pickFiles(
-        allowMultiple: false,
-        withData: false,
-        withReadStream: true,
-      );
-      final picked = result == null || result.files.isEmpty
-          ? null
-          : result.files.first;
+      final picked = await FilePicker.pickFile();
       if (picked == null) {
         return;
       }
-      if (picked.size > maxFileTransferBytes) {
+      final fileSize = await picked.length() ?? 0;
+      if (fileSize > maxFileTransferBytes) {
         throw StateError(
           'Files are limited to ${formatFileTransferSize(maxFileTransferBytes)}.',
         );
@@ -1195,17 +1189,13 @@ class _ChatPanelState extends ConsumerState<_ChatPanel> {
           .read(messagesProvider(widget.peerId).notifier)
           .sendFile(
             fileName: picked.name,
-            fileSize: picked.size,
+            fileSize: fileSize,
             localPath: localPath,
             openRead: () {
               if (file != null) {
                 return file.openRead();
               }
-              final stream = picked.readStream;
-              if (stream == null) {
-                throw StateError('Could not read the selected file.');
-              }
-              return stream;
+              return picked.readAsByteStream();
             },
           );
       _dispatchSoundEvent(rainChatSendSoundEventFor(widget.peerId));

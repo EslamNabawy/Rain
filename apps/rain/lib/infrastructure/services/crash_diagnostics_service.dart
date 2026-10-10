@@ -796,7 +796,7 @@ class CrashDiagnosticsService {
     List<String>? allowedExtensions,
     Uint8List? bytes,
     bool lockParentWindow = false,
-  }) {
+  }) async {
     if (Platform.isAndroid) {
       final exportBytes = bytes;
       if (exportBytes == null || exportBytes.isEmpty) {
@@ -812,15 +812,20 @@ class CrashDiagnosticsService {
         bytes: exportBytes,
       );
     }
-    return FilePicker.saveFile(
+    final uri = await FilePicker.saveFile(
       dialogTitle: dialogTitle,
-      fileName: fileName,
+      fileName: fileName ?? 'file',
       initialDirectory: initialDirectory,
       type: type,
       allowedExtensions: allowedExtensions,
-      bytes: bytes,
-      lockParentWindow: lockParentWindow,
+      bytes: bytes ?? Uint8List(0),
+      windowsOptions: WindowsOptions(lockParentWindow: lockParentWindow),
+      linuxOptions: LinuxOptions(lockParentWindow: lockParentWindow),
     );
+    if (uri == null) {
+      return null;
+    }
+    return uri.scheme == 'file' ? uri.toFilePath() : uri.toString();
   }
 
   static Future<String?> _saveAndroidFileWithBytes({
