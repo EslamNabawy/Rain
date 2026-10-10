@@ -278,6 +278,8 @@ class RainDatabase extends _$RainDatabase {
     });
   }
 
+  static final Object _serializedWriteZoneKey = Object();
+
   Future<T> serializedWrite<T>(
     Future<T> Function() action, {
     int maxAttempts = 6,
@@ -291,14 +293,23 @@ class RainDatabase extends _$RainDatabase {
       );
     }
 
+    if (Zone.current[_serializedWriteZoneKey] == true) {
+      // Already inside a serialized write: join it. Queueing behind the outer
+      // write would wait for the very action that is awaiting this call.
+      return action();
+    }
+
     final completer = Completer<T>();
     final previous = _serializedWriteQueue;
     _serializedWriteQueue = previous.catchError((_) {}).then((_) async {
       try {
-        final value = await _retryBusyWrite(
-          action,
-          maxAttempts: maxAttempts,
-          baseDelay: baseDelay,
+        final value = await runZoned(
+          () => _retryBusyWrite(
+            action,
+            maxAttempts: maxAttempts,
+            baseDelay: baseDelay,
+          ),
+          zoneValues: <Object, Object>{_serializedWriteZoneKey: true},
         );
         completer.complete(value);
       } catch (error, stackTrace) {

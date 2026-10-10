@@ -300,6 +300,46 @@ void main() {
     },
   );
 
+  test('nested serializedTransaction joins the outer transaction', () async {
+    final database = RainDatabase(NativeDatabase.memory());
+    addTearDown(database.close);
+
+    Future<void> insertFriend(String name) {
+      return database.serializedTransaction(() async {
+        await database
+            .into(database.friends)
+            .insert(
+              FriendsCompanion.insert(
+                username: name,
+                displayName: name,
+                state: 'friend',
+                addedAt: 1,
+              ),
+            );
+      });
+    }
+
+    await database
+        .serializedTransaction(() async {
+          await insertFriend('alice');
+          await insertFriend('bob');
+        })
+        .timeout(const Duration(seconds: 5));
+    expect(await database.select(database.friends).get(), hasLength(2));
+
+    await expectLater(
+      database.serializedTransaction(() async {
+        await insertFriend('carol');
+        throw StateError('abort');
+      }),
+      throwsStateError,
+    );
+    final names = (await database.select(database.friends).get()).map(
+      (row) => row.username,
+    );
+    expect(names, isNot(contains('carol')));
+  });
+
   test('serializedWrite retries busy snapshot transactions', () async {
     final database = RainDatabase(NativeDatabase.memory());
     addTearDown(database.close);

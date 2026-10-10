@@ -33,6 +33,7 @@ T4.09 deaef93 waitForDrain throws StateError on closed channel; peer_core 80 pas
 T4.10 ad79d19 crossed invites: lower username keeps call; decision unit-tested (runtime-level glare test not added)
 T4.11 71138df early candidate queue + notifyPeer on ringing timeout; protocol_brain 291 pass
 T4.12 e1e4cb9 APP-003 test added; APP-002 fallback implemented without runtime-level test (private helper)
+T4.13 696e78e 3 upgrade tests added; createTable is already idempotent so no guard needed
 ## Blocked
 T4.19 BLOCKED (SEC-006): depends on T4.01 (rules changes need RULES_TEST).
 T4.03 BLOCKED (SEC-001): depends on T4.01 (rules changes need RULES_TEST).
