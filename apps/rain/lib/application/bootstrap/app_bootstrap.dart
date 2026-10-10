@@ -1,3 +1,5 @@
+import 'dart:async';
+
 import 'package:firebase_core/firebase_core.dart';
 import 'package:firebase_database/firebase_database.dart';
 import 'package:firebase_remote_config/firebase_remote_config.dart';
@@ -43,9 +45,9 @@ class AppBootstrapper {
       effectiveEnvironment.validateForRelease();
     }
 
-    // TASK-002 verifiable slice: try encrypted open, fallback to plaintext.
-    // The key is stored via FlutterSecureStorage; if the native SQLCipher
-    // library is not available the PRAGMA key is a no-op and we keep plaintext.
+    // TASK-002 key bootstrap only: the DB key is created in the keystore, but
+    // stock SQLite ignores PRAGMA key, so the file stays plaintext (ADR-010).
+    // The state is reported below instead of being assumed.
     late final RainDatabase database;
     try {
       final keyStore = FlutterSecureStorageKeyStoreService();
@@ -54,6 +56,7 @@ class AppBootstrapper {
     } catch (_) {
       database = RainDatabase();
     }
+    unawaited(_reportDatabaseEncryptionState(database));
     try {
       FirebaseRemoteConfig? remoteConfig;
       FirebaseDatabase? firebaseDatabase;
@@ -165,4 +168,19 @@ Future<void> _seedSmokeIdentity({
     ),
   );
   await adapter.setPresence(username, true);
+}
+
+Future<void> _reportDatabaseEncryptionState(RainDatabase database) async {
+  try {
+    final state = await database.encryptionState();
+    if (state == DatabaseEncryptionState.inactive) {
+      RainDebugLog.event(
+        category: 'security',
+        name: 'db_encryption_inactive',
+        severity: RainDebugSeverity.info,
+      );
+    }
+  } catch (_) {
+    // Reporting must never block startup.
+  }
 }

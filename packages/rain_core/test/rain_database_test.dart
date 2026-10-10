@@ -337,4 +337,14 @@ class _LegacyV5Executor extends QueryExecutorUser {
     QueryExecutor executor,
     OpeningDetails details,
   ) async {}
+
+  test('stock sqlite reports database encryption inactive', () async {
+    final database = RainDatabase(NativeDatabase.memory());
+    addTearDown(database.close);
+
+    expect(
+      await database.encryptionState(),
+      DatabaseEncryptionState.inactive,
+    );
+  });
 }
