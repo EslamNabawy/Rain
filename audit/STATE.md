@@ -28,6 +28,7 @@ T4.04 18d275e pure cleanup planner + liveCallId guard; protocol_brain 285 pass; 
 T4.05 253d8cb presence stays online during call/transfer when backgrounded; 5 new tests
 T4.06 9155f4b reduced scope: registration rollback ordering unit-tested (4 tests); full DB/auth ports deferred to backlog
 T4.07 13fdff2 encryptionState() + db_encryption_inactive event; open path unchanged
+T4.08 4a7ed16 destroy robust to close errors; peer_core 77 pass
 ## Blocked
 T4.19 BLOCKED (SEC-006): depends on T4.01 (rules changes need RULES_TEST).
 T4.03 BLOCKED (SEC-001): depends on T4.01 (rules changes need RULES_TEST).
