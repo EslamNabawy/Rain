@@ -39,6 +39,13 @@ Content unique to `main` (never on `dev` before this merge) is summarized below.
 
 - 2026-08-26/29: `dart run melos run analyze` and `dart run melos run test` SUCCESS on main-line branches; friend_flow 127 passed / 10 skipped post-slice; rain suite 741 -> 752 after tracing tests; vault checker passed (198 files).
 - Cloud CI proof for the original tracing branch was not run at write time; PR #20 (traceId coverage for heartbeat/presence) later merged to `main` with CI.
+
+### Public open-source posture (2026-10-10)
+
+- GitHub repository is public (`EslamNabawy/Rain`). README updated with Contributing, security-reporting, and demo-build honesty sections; root `SECURITY.md` added (private vulnerability reporting only).
+- All committed content and git history are world-readable. Open owner actions: rotate/revoke Supabase anon key + TURN credentials from GIT-003 history (commits 0d8147c/6ff832b) if still live; triage Dependabot 1 high + 1 low; review personal machine paths in AGENTS/CONTINUITY.
+- Demo keystore `apps/rain/android/demo/rain-demo-stable-release.jks.base64` is intentionally public and signs demo-channel artifacts only.
+
 ## Current Goal
 
 Full phased remediation: Phase 0 (evidence lock) â†’ Phase 9 (documentation/blocker closure). Currently executing Phase 9: final documentation and blocker closure.

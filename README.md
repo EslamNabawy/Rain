@@ -373,6 +373,15 @@ Rain is designed to minimize what Firebase carries. Key boundaries:
 
 > This README is not a security audit. A formal third-party audit is not yet in scope.
 
+### Reporting Security Issues
+
+Rain is public open source. **Do not file security issues in public GitHub issues.** Use [GitHub private vulnerability reporting](https://github.com/EslamNabawy/Rain/security/advisories/new) so maintainers can investigate before disclosure. See [SECURITY.md](SECURITY.md).
+
+### Public-Repo Build Honesty
+
+- Demo-channel Android artifacts are signed with the committed demo keystore (`apps/rain/android/demo/rain-demo-stable-release.jks.base64`). Anyone can produce a signature-valid **demo** APK; demo signatures are not a trust anchor. Production signing keys stay in GitHub Actions secrets and are never committed.
+- Demo builds intentionally use public infrastructure (Google STUN, OpenRelay TURN, the public demo signaling key). That is acceptable only for demo channel builds; production builds reject the demo key.
+
 ---
 
 ## Development Guidelines
@@ -382,6 +391,18 @@ Rain is designed to minimize what Firebase carries. Key boundaries:
 - Keep **call UI surfaces** driven by one shared call-control model.
 - Keep **media connection teardown** separate from chat/data teardown.
 - Keep **docs, Firebase rules, fake adapters, and tests** aligned whenever the signaling schema changes.
+
+---
+
+## Contributing
+
+Rain is a public open-source project. Contributions are welcome.
+
+- Open issues and pull requests against [`dev`](https://github.com/EslamNabawy/Rain/tree/dev); `main` only advances through reviewed merges.
+- Before opening a PR: `dart pub get`, `dart run melos run analyze`, `dart run melos run test`. Documentation-only changes should also pass `.\scripts\check_obsidian_vault.ps1`.
+- Connection, call, media, Firebase, or release changes additionally need manual device validation (see Validation Policy).
+- Keep changes focused. Preserve the Firebase Spark/free-tier constraint, the Firebase/noop backend boundary, and the package ownership rules above.
+- Never commit secrets, credentials, real keystore material, or `apps/rain/tool/dart_defines.local.json`.
 
 ---
 
