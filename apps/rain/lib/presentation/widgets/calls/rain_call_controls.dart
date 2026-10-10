@@ -1,3 +1,14 @@
+/// # rain_call_controls.dart
+///
+/// Voice and video call control dock with accept/reject/hang-up/retry actions,
+/// plus mute, camera, deafen, and audio output route toggles.
+///
+/// **Key types:** RainCallControls, RainCallControlDock, RainCallControlVisual,
+/// RainCallTicker, _CallActionTone
+///
+/// **Depends on:** application/runtime, presentation/theme
+library;
+
 import 'dart:async';
 
 import 'package:flutter/material.dart';

@@ -1,3 +1,12 @@
+/// # data_channel_backpressure.dart
+///
+/// Provides flow-control for WebRTC RTCDataChannel to prevent unbounded buffer growth. Polls bufferedAmount against configurable high/low watermarks and waits for drain with a timeout.
+///
+/// **Key types:** DataChannelBackpressure
+///
+/// **Depends on:** flutter_webrtc
+library;
+
 import 'dart:async';
 
 import 'package:flutter_webrtc/flutter_webrtc.dart';

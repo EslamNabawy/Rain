@@ -1,3 +1,15 @@
+/// # sound_event_router.dart
+///
+/// [SoundEventRouter] receives [RainSoundEvent] instances and maps them to
+/// actual audio playback via [SoundEffectsService]. Applies per-kind debounce
+/// windows, rolling-rate limits, and conversation-level receive throttling to
+/// prevent sound spam during active calls or rapid messaging.
+///
+/// **Key types:** [SoundEventRouter], [VoiceCallStateReader]
+///
+/// **Depends on:** audio settings store, voice call state, sound effects service
+library;
+
 import 'dart:async';
 
 import 'package:flutter/services.dart';

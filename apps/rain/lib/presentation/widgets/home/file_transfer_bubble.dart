@@ -1,3 +1,12 @@
+/// # file_transfer_bubble.dart
+///
+/// Chat bubble for file transfers showing progress, file metadata, and
+/// accept/reject/cancel/open/save actions (part of home_screen).
+///
+/// **Key types:** _FileTransferBubble
+///
+/// **Depends on:** home_screen (part of), protocol_brain
+
 part of '../../screens/home_screen.dart';
 
 class _FileTransferBubble extends StatelessWidget {

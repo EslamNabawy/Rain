@@ -1,3 +1,12 @@
+/// # onboarding_screen_test.dart
+///
+/// Widget tests for the onboarding/authentication screen. Verifies username input lowercasing, brand rendering, keyboard avoidance, and auth surface layout.
+///
+/// **Key types:** OnboardingScreen, RainPeerCoreMark
+///
+/// **Depends on:** flutter_test, flutter_riverpod, rain onboarding_screen, rain_core
+library;
+
 import 'dart:async';
 
 import 'package:flutter/material.dart';

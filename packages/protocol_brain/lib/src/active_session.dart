@@ -1,3 +1,12 @@
+/// # active_session.dart — protocol_brain package
+///
+/// Internal active session state holder used by ProtocolBrainImpl to track a live peer connection, including ICE subscriptions, retry state, reconnection flags, peer lifecycle, and operation queueing. Part of protocol_brain_impl.dart.
+///
+/// **Key types:** _ActiveSession
+///
+/// **Package:** protocol_brain
+///
+/// **Depends on:** protocol_brain_impl.dart (part), dart:async, flutter_webrtc, peer_core (via Session)
 part of 'protocol_brain_impl.dart';
 
 class _ActiveSession {

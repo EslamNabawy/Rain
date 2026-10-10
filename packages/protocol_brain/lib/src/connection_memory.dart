@@ -1,3 +1,14 @@
+/// # connection_memory.dart — protocol_brain package
+///
+/// Defines the ConnectionMemory data class that stores cached peer connection metadata (ICE candidates, fingerprint, failure count) along with an abstract ConnectionMemoryStore interface for persistence. Used to accelerate reconnections.
+///
+/// **Key types:** ConnectionMemory, ConnectionMemoryStore
+///
+/// **Package:** protocol_brain
+///
+/// **Depends on:** flutter_webrtc (RTCIceCandidate)
+library;
+
 import 'package:flutter_webrtc/flutter_webrtc.dart';
 
 const maxCacheFailures = 3;

@@ -1,3 +1,12 @@
+/// # connection_request_contract.dart — protocol_brain package
+///
+/// Core connection request types and contracts including status enum, reason codes, direction, action kinds, decision payloads, inbox snapshots, quota structures, and helper validation functions. Serves as the shared vocabulary between UI, adapters, and backend.
+///
+/// **Key types:** ConnectionRequestStatus, ConnectionRequestReasonCode, ConnectionRequestDirection, ConnectionRequestActionKind, ConnectionRequestDecision, ConnectionRequestPayload, ConnectionRequestInboxSnapshot, ConnectionRequestQuotaSnapshot, ConnectionRequestTargetState, ConnectionRequestQueueState, ConnectionRequestUserState, ConnectionRequestQuotaDelta
+///
+/// **Package:** protocol_brain
+///
+/// **Depends on:** None (standalone, pure data types and functions)
 enum ConnectionRequestStatus {
   pending,
   seen,

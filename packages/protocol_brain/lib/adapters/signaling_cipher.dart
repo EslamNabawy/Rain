@@ -1,3 +1,14 @@
+/// # signaling_cipher.dart — protocol_brain package
+///
+/// Encryption layer for signaling payloads using AES-256-GCM with HKDF-SHA256 key derivation. Encrypts and decrypts SDP offers, answers, and ICE candidates per room/purpose to ensure signaling confidentiality over Firebase RTDB.
+///
+/// **Key types:** SignalingCipher
+///
+/// **Package:** protocol_brain
+///
+/// **Depends on:** dart:convert, cryptography (AesGcm, Hkdf, Hmac, SecretKey), flutter_webrtc
+library;
+
 import 'dart:convert';
 import 'dart:math';
 

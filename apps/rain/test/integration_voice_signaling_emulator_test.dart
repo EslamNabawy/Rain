@@ -1,3 +1,12 @@
+/// # integration_voice_signaling_emulator_test.dart
+///
+/// Integration test for voice call signaling through the Firebase emulator. Validates the full signaling lifecycle including user registration, friend requests, call creation, acceptance, ICE exchange, and hangup.
+///
+/// **Key types:** FirebaseEmulatorSignalingAdapter, VoiceCallSignalingStatus
+///
+/// **Depends on:** flutter_test, protocol_brain, firebase_emulator_signaling_adapter
+library;
+
 import 'dart:io';
 
 import 'package:flutter_test/flutter_test.dart';

@@ -1,3 +1,12 @@
+/// # chat_panel_connectivity_test
+///
+/// Tests chat panel behavior when sending messages over stale presence data with an accepted-friend connection.
+///
+/// **Key types:** _WidgetTestSessionManager, _FakePlatformBridge, _RecordingSoundEffectsService.
+///
+/// **Depends on:** HomeScreen, ChatPanel, RainRuntimeController, and message delivery service.
+library;
+
 import 'dart:async';
 
 import 'package:drift/native.dart';

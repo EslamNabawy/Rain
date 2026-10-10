@@ -1,3 +1,17 @@
+/// # connection_request_runtime.dart
+///
+/// [ConnectionRequestRuntime] extension on [RainRuntimeController] manages the
+/// inbound/outbound connection-request stream lifecycle: watches Firebase for
+/// new requests, enforces burst limits and cooldowns, updates
+/// [ConnectionRequestState], and triggers notifications.
+///
+/// **Key types:** (extension methods on RainRuntimeController)
+///
+/// **Part of:** connection_request_runtime.dart (extension)
+///
+/// **Depends on:** protocol_brain, rain_core, notifications
+library;
+
 import 'dart:async';
 
 import 'package:protocol_brain/protocol_brain.dart';

@@ -1,3 +1,12 @@
+/// # default_peer_core.dart
+///
+/// Default implementation of the PeerCore interface managing a full WebRTC peer connection lifecycle. Handles signaling, data channels with chunked message reassembly, ICE candidate exchange, and state machine transitions.
+///
+/// **Key types:** DefaultPeerCore, _ChunkAccumulator
+///
+/// **Depends on:** flutter_webrtc, uuid, data_channel_backpressure, models, state_machine
+library;
+
 import 'dart:async';
 import 'dart:convert';
 import 'dart:typed_data';

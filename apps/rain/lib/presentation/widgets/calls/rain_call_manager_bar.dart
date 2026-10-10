@@ -1,3 +1,13 @@
+/// # rain_call_manager_bar.dart
+///
+/// Compact top bar shown during active calls with peer identity, call status,
+/// and quick-access mute/camera/hang-up controls.
+///
+/// **Key types:** RainCallManagerBar
+///
+/// **Depends on:** application/runtime, application/state, presentation/performance, presentation/widgets
+library;
+
 import 'package:flutter/material.dart';
 
 import 'package:rain/application/runtime/voice_call_state.dart';

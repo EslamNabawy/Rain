@@ -1,3 +1,16 @@
+/// # rain_runtime_controller.dart
+///
+/// [RainRuntimeController] is the central runtime orchestrator for Rain. Owns
+/// all mutable runtime state: sessions, calls, file transfers, presence
+/// subscriptions, and connection requests. Exposes extension-based runtime
+/// modules (voice call, file transfer, friend, connection request) and
+/// coordinates shutdown via [AppExitCoordinator].
+///
+/// **Key types:** [RainRuntimeController], [FriendRequestResult], [RuntimeErrorRecorder], [RuntimeEventRecorder]
+///
+/// **Depends on:** protocol_brain, rain_core, all runtime extensions
+library;
+
 // ignore_for_file: unnecessary_getters_setters
 
 import 'dart:async';
@@ -9,6 +22,7 @@ import 'package:protocol_brain/protocol_brain.dart';
 import 'package:rain_core/rain_core.dart';
 
 import 'package:rain/infrastructure/notifications/rain_notification_service.dart';
+import 'package:rain/infrastructure/diagnostics/tracing/trace_context.dart';
 import 'connection_attempt_coordinator.dart';
 import 'app_exit_coordinator.dart';
 import 'call_media_recovery_policy.dart';
@@ -201,6 +215,10 @@ final class ResolvedBackendPresence {
 }
 
 class RainRuntimeController with WidgetsBindingObserver {
+  static const Duration _dataEventNotifyThrottleWindow = Duration(
+    milliseconds: 250,
+  );
+
   RainRuntimeController({
     required this.selfIdentity,
     this.sessionGeneration = 0,
@@ -249,7 +267,11 @@ class RainRuntimeController with WidgetsBindingObserver {
            (adapter is ConnectionRequestAdapter
                ? adapter as ConnectionRequestAdapter
                : null),
-       voiceSignalingCipher = voiceSignalingCipher ?? SignalingCipher.demo(),
+       voiceSignalingCipher =
+           voiceSignalingCipher ??
+           SignalingCipher.fromKeyMaterial(
+             'test-key-not-for-production-use-0123456789',
+           ),
        _documentsDirectoryProvider =
            documentsDirectoryProvider ?? getApplicationDocumentsDirectory,
        _connectionCoordinator = ConnectionAttemptCoordinator(
@@ -309,6 +331,8 @@ class RainRuntimeController with WidgetsBindingObserver {
   final Map<String, FileTransferFrame> _pendingFileChunks =
       <String, FileTransferFrame>{};
   final Map<String, int> _receiveProgressOffsets = <String, int>{};
+  final Map<String, FileTransferFlushPolicy> _receiveFlushPolicies =
+      <String, FileTransferFlushPolicy>{};
   final Map<String, IOSink> _receiveFileSinks = <String, IOSink>{};
   final Map<String, String> _receiveFileSinkPaths = <String, String>{};
   final Map<String, Future<void>> _fileMessageQueues = <String, Future<void>>{};
@@ -316,6 +340,8 @@ class RainRuntimeController with WidgetsBindingObserver {
       <String, OutgoingFileSource>{};
   final Map<String, String> _outgoingFileHashes = <String, String>{};
   final Set<String> _canceledTransfers = <String>{};
+  final Map<String, FileTransferRecord> _incomingTransferRecordCache =
+      <String, FileTransferRecord>{};
   final StreamController<VoiceCallState> _voiceCallStateController =
       StreamController<VoiceCallState>.broadcast();
   final StreamController<void> _peerConnectivityChangeController =
@@ -364,6 +390,7 @@ class RainRuntimeController with WidgetsBindingObserver {
   Timer? _heartbeatTimer;
   Timer? _friendRequestRefreshTimer;
   Timer? _backgroundOfflineTimer;
+  Timer? _dataEventNotifyThrottleTimer;
   bool _presenceHeartbeatPaused = false;
   bool _appInBackground = false;
   bool _started = false;
@@ -391,6 +418,8 @@ class RainRuntimeController with WidgetsBindingObserver {
       _presenceSubscriptions;
   Map<String, FileTransferFrame> get pendingFileChunks => _pendingFileChunks;
   Map<String, int> get receiveProgressOffsets => _receiveProgressOffsets;
+  Map<String, FileTransferFlushPolicy> get receiveFlushPolicies =>
+      _receiveFlushPolicies;
   Map<String, IOSink> get receiveFileSinks => _receiveFileSinks;
   Map<String, String> get receiveFileSinkPaths => _receiveFileSinkPaths;
   Map<String, Future<void>> get fileMessageQueues => _fileMessageQueues;
@@ -398,6 +427,8 @@ class RainRuntimeController with WidgetsBindingObserver {
       _outgoingFileSources;
   Map<String, String> get outgoingFileHashes => _outgoingFileHashes;
   Set<String> get canceledTransfers => _canceledTransfers;
+  Map<String, FileTransferRecord> get incomingTransferRecordCache =>
+      _incomingTransferRecordCache;
   FileTransferProgressBatcher get fileProgressBatcher => _fileProgressBatcher;
   StreamController<VoiceCallState> get voiceCallStateController =>
       _voiceCallStateController;
@@ -561,7 +592,17 @@ class RainRuntimeController with WidgetsBindingObserver {
       return;
     }
     _lastDataEventTimestamps[normalizedPeerId] = timestamp;
+    // Leading-edge throttle: data bursts (file chunks) would otherwise rebuild
+    // peer snapshots per 32 KiB chunk. First event notifies immediately; the
+    // trailing edge flushes the newest recorded timestamp once per window.
+    if (_dataEventNotifyThrottleTimer != null) {
+      return;
+    }
     _notifyPeerConnectivityChanged();
+    _dataEventNotifyThrottleTimer = Timer(_dataEventNotifyThrottleWindow, () {
+      _dataEventNotifyThrottleTimer = null;
+      _notifyPeerConnectivityChanged();
+    });
   }
 
   void _cacheResolvedPeerPresence(
@@ -620,32 +661,36 @@ class RainRuntimeController with WidgetsBindingObserver {
     required String action,
     bool updateLocalPresence = true,
   }) async {
-    final normalizedUsername = _normalizedUsername(username);
-    final backendIdentity = await adapter.fetchIdentity(normalizedUsername);
-    if (backendIdentity == null) {
-      return null;
-    }
-    final presence = _resolveBackendPresence(backendIdentity);
-    _cacheResolvedPeerPresence(normalizedUsername, presence);
-    if (updateLocalPresence) {
-      await _localMutations.run(
-        () => friendStore.updatePresence(normalizedUsername, presence.online),
-      );
-    }
-    if (presence.staleRawOnline) {
-      _recordRuntimeEvent(
-        category: 'presence',
-        name: 'backend_presence_stale_resolved_offline',
-        severity: 'warning',
-        message: 'Backend presence heartbeat is stale.',
-        context: <String, Object?>{
-          'peerId': normalizedUsername,
-          'action': action,
-          ...presence.toDiagnostics(),
-        },
-      );
-    }
-    return presence;
+    final trace = TraceContext.create();
+    return TraceContext.runAsync(trace, () async {
+      final normalizedUsername = _normalizedUsername(username);
+      final backendIdentity = await adapter.fetchIdentity(normalizedUsername);
+      if (backendIdentity == null) {
+        return null;
+      }
+      final presence = _resolveBackendPresence(backendIdentity);
+      _cacheResolvedPeerPresence(normalizedUsername, presence);
+      if (updateLocalPresence) {
+        await _localMutations.run(
+          () => friendStore.updatePresence(normalizedUsername, presence.online),
+        );
+      }
+      if (presence.staleRawOnline) {
+        _recordRuntimeEvent(
+          category: 'presence',
+          name: 'backend_presence_stale_resolved_offline',
+          severity: 'warning',
+          message: 'Backend presence heartbeat is stale.',
+          context: <String, Object?>{
+            'peerId': normalizedUsername,
+            'action': action,
+            ...presence.toDiagnostics(),
+            ...trace.toContext(),
+          },
+        );
+      }
+      return presence;
+    });
   }
 
   Future<bool?> isPeerFreshlyOnline(
@@ -1012,58 +1057,64 @@ class RainRuntimeController with WidgetsBindingObserver {
     if (_shutDown || !_started || _presenceHeartbeatPaused) {
       return;
     }
-    try {
-      await adapter.sendHeartbeat(selfIdentity.username);
-      _recordRuntimeEvent(
-        category: 'presence',
-        name: 'heartbeat_sent',
-        context: <String, Object?>{'reason': reason},
-      );
-    } catch (error, stackTrace) {
-      _recordRuntimeEvent(
-        category: 'presence',
-        name: 'heartbeat_failed',
-        severity: 'warning',
-        message: error.toString(),
-        context: <String, Object?>{'reason': reason},
-      );
-      errorRecorder?.call(
-        error,
-        stackTrace,
-        source: 'presence-heartbeat',
-        fatal: false,
-      );
-    }
+    final trace = TraceContext.create();
+    return TraceContext.runAsync(trace, () async {
+      try {
+        await adapter.sendHeartbeat(selfIdentity.username);
+        _recordRuntimeEvent(
+          category: 'presence',
+          name: 'heartbeat_sent',
+          context: <String, Object?>{'reason': reason, ...trace.toContext()},
+        );
+      } catch (error, stackTrace) {
+        _recordRuntimeEvent(
+          category: 'presence',
+          name: 'heartbeat_failed',
+          severity: 'warning',
+          message: error.toString(),
+          context: <String, Object?>{'reason': reason, ...trace.toContext()},
+        );
+        errorRecorder?.call(
+          error,
+          stackTrace,
+          source: 'presence-heartbeat',
+          fatal: false,
+        );
+      }
+    });
   }
 
   Future<void> _setPresenceOnlineSafely(String reason) async {
     if (_shutDown || !_started || _presenceHeartbeatPaused) {
       return;
     }
-    try {
-      await adapter.setPresence(selfIdentity.username, true);
-      _recordRuntimeEvent(
-        category: 'presence',
-        name: 'presence_marked_online',
-        context: <String, Object?>{'reason': reason},
-      );
-    } catch (error, stackTrace) {
-      _recordRuntimeEvent(
-        category: 'presence',
-        name: 'presence_online_failed',
-        severity: 'warning',
-        message: error.toString(),
-        context: <String, Object?>{'reason': reason},
-      );
-      errorRecorder?.call(
-        error,
-        stackTrace,
-        source: 'presence-online',
-        fatal: false,
-      );
-      return;
-    }
-    await _sendHeartbeatSafely(reason: '$reason heartbeat');
+    final trace = TraceContext.create();
+    return TraceContext.runAsync(trace, () async {
+      try {
+        await adapter.setPresence(selfIdentity.username, true);
+        _recordRuntimeEvent(
+          category: 'presence',
+          name: 'presence_marked_online',
+          context: <String, Object?>{'reason': reason, ...trace.toContext()},
+        );
+      } catch (error, stackTrace) {
+        _recordRuntimeEvent(
+          category: 'presence',
+          name: 'presence_online_failed',
+          severity: 'warning',
+          message: error.toString(),
+          context: <String, Object?>{'reason': reason, ...trace.toContext()},
+        );
+        errorRecorder?.call(
+          error,
+          stackTrace,
+          source: 'presence-online',
+          fatal: false,
+        );
+        return;
+      }
+      await _sendHeartbeatSafely(reason: '$reason heartbeat');
+    });
   }
 
   /// Backgrounding normally marks the user offline. While a call or a file
@@ -1112,28 +1163,31 @@ class RainRuntimeController with WidgetsBindingObserver {
     if (_shutDown || !_started) {
       return;
     }
-    try {
-      await adapter.setPresence(selfIdentity.username, false);
-      _recordRuntimeEvent(
-        category: 'presence',
-        name: 'presence_marked_offline',
-        context: <String, Object?>{'reason': reason},
-      );
-    } catch (error, stackTrace) {
-      _recordRuntimeEvent(
-        category: 'presence',
-        name: 'presence_offline_failed',
-        severity: 'warning',
-        message: error.toString(),
-        context: <String, Object?>{'reason': reason},
-      );
-      errorRecorder?.call(
-        error,
-        stackTrace,
-        source: 'presence-offline',
-        fatal: false,
-      );
-    }
+    final trace = TraceContext.create();
+    return TraceContext.runAsync(trace, () async {
+      try {
+        await adapter.setPresence(selfIdentity.username, false);
+        _recordRuntimeEvent(
+          category: 'presence',
+          name: 'presence_marked_offline',
+          context: <String, Object?>{'reason': reason, ...trace.toContext()},
+        );
+      } catch (error, stackTrace) {
+        _recordRuntimeEvent(
+          category: 'presence',
+          name: 'presence_offline_failed',
+          severity: 'warning',
+          message: error.toString(),
+          context: <String, Object?>{'reason': reason, ...trace.toContext()},
+        );
+        errorRecorder?.call(
+          error,
+          stackTrace,
+          source: 'presence-offline',
+          fatal: false,
+        );
+      }
+    });
   }
 
   Map<String, Object?> _sessionEventContext(Session session) {
@@ -1601,6 +1655,8 @@ class RainRuntimeController with WidgetsBindingObserver {
     _pendingFileChunks.clear();
     _fileMessageQueues.clear();
     _outgoingFileSources.clear();
+    _incomingTransferRecordCache.clear();
+    _receiveFlushPolicies.clear();
     await closeAllReceiveSinks(reason: 'network_lost');
   }
 
@@ -1929,6 +1985,8 @@ class RainRuntimeController with WidgetsBindingObserver {
     _friendRequestRefreshTimer = null;
     _backgroundOfflineTimer?.cancel();
     _backgroundOfflineTimer = null;
+    _dataEventNotifyThrottleTimer?.cancel();
+    _dataEventNotifyThrottleTimer = null;
     cancelVoiceCallReconnectGrace();
 
     final sessions = brain?.getSessions() ?? const <Session>[];
@@ -2517,6 +2575,8 @@ class RainRuntimeController with WidgetsBindingObserver {
 
       WidgetsBinding.instance.removeObserver(this);
       _backgroundOfflineTimer?.cancel();
+      _dataEventNotifyThrottleTimer?.cancel();
+      _dataEventNotifyThrottleTimer = null;
       cancelVoiceCallReconnectGrace();
       await disposeCurrentVoiceCallSession();
       _heartbeatTimer?.cancel();

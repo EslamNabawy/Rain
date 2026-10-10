@@ -1,3 +1,14 @@
+/// # rain_notification_service.dart
+///
+/// [RainNotificationService] manages local push notifications for incoming
+/// calls and connection requests. Handles permission requests, notification
+/// display, dismiss tracking, and result reporting via [RainNotificationResult].
+///
+/// **Key types:** [RainNotificationService], [RainNotificationResult], [RainNotificationResultKind], [RainNotificationPermissionStatus]
+///
+/// **Depends on:** flutter_local_notifications, protocol_brain
+library;
+
 import 'dart:async';
 
 import 'package:flutter/foundation.dart';

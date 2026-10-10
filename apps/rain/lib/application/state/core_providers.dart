@@ -1,3 +1,15 @@
+/// # core_providers.dart
+///
+/// Root-level Riverpod providers wired from [AppBootstrapState]: environment,
+/// database, signaling adapter, force update service, network status, crash
+/// diagnostics, debug log, settings store, sound effects, TURN credentials,
+/// and file export service.
+///
+/// **Key types:** (providers only — no new types)
+///
+/// **Depends on:** app bootstrap, infrastructure services
+library;
+
 import 'dart:async';
 
 import 'package:firebase_auth/firebase_auth.dart';

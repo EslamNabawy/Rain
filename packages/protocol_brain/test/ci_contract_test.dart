@@ -1,3 +1,15 @@
+/// # ci_contract_test.dart — protocol_brain package
+///
+/// Contract tests ensuring CI workflows use direct Flutter commands, avoid deprecated action runtimes, and enforce correct action versions.
+///
+/// **Key types:** (no top-level types — test-only file)
+///
+/// **Package:** protocol_brain
+///
+/// **Depends on:** flutter_test, dart:io
+///
+library;
+
 import 'dart:io';
 
 import 'package:flutter_test/flutter_test.dart';

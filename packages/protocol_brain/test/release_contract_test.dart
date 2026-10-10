@@ -1,3 +1,15 @@
+/// # release_contract_test.dart — protocol_brain package
+///
+/// Contract tests for the release build script verifying TURN release defines, build parameters, and version handling.
+///
+/// **Key types:** (no top-level types — test-only file)
+///
+/// **Package:** protocol_brain
+///
+/// **Depends on:** flutter_test, dart:convert, dart:io
+///
+library;
+
 import 'dart:convert';
 import 'dart:io';
 
@@ -304,7 +316,9 @@ void main() {
     expect(defines, contains('RAIN_SIGNALING_ENCRYPTION_KEY'));
     expect(
       defines,
-      contains('rain-demo-signaling-encryption-key-v1-change-me'),
+      contains(
+        'rain-dev-signaling-key-0123456789-not-for-production-please-change-me',
+      ),
     );
   });
 

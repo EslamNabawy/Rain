@@ -1,3 +1,12 @@
+/// # rain_brand_assets
+///
+/// Static asset path constants for Rain branding elements including app icons,
+/// logo marks at various sizes, and layered SVG components for the animated
+/// peer-core mark (waves, rings, nodes, links).
+///
+/// **Key types:** RainBrandAssets
+///
+/// **Depends on:** Flutter asset system
 class RainBrandAssets {
   const RainBrandAssets._();
 

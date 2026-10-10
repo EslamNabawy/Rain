@@ -1,4 +1,4 @@
-# Project Memory
+﻿# Project Memory
 
 Last updated: 2026-10-10
 
@@ -457,6 +457,7 @@ Multi-issue stability investigation update 2026-06-04:
 
 - Spark-only: Cloud Functions in `backend/firebase/functions` are optional and not deployed in free-tier builds ([[ADR-012]]). Scheduled cleanups (`cleanupPresence`, `cleanupRooms`, `cleanupVoiceCalls`, `cleanupConnectionRequests`) need Blaze.
 - Canonical working copy for the audit program is `D:\Rain` (decision D1, 2026-10-09); AGENTS.md still names the OneDrive path until the owner confirms.
+2026-08-26 cross-platform remediation start: [CROSS_PLATFORM_REMEDIATION_PLAN.md](../../CROSS_PLATFORM_REMEDIATION_PLAN.md) now orchestrates the audited cross-platform fixes. Slice A1+A2 moved receiver file-hash verification into `Isolate.run` and introduced an incoming-transfer record cache whose single invalidation funnel is `clearTransferRuntimeState`; any future code path that mutates incoming transfer state outside that funnel must also invalidate the cache or the chunk hot loop will act on stale state. Sender-side incremental hashing intentionally remains on the main isolate (micro-scale per-event cost, loop yields every chunk). Two pre-existing HEAD defects were found and fixed during the slice: 254 files had doc headers without `library;` directives failing CI `--fatal-infos`, and `_runtimeProviderContainer` in `runtime_startup_test.dart` omitted a non-demo `RAIN_SIGNALING_ENCRYPTION_KEY`, so the hard cipher-key rejection broke 7 account-deletion/logout tests. Any session running tests locally must not assume environment variables fix the cipher check; test environments must pass explicit keys.
 
 ## Known Pitfalls
 
