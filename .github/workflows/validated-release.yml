@@ -71,7 +71,7 @@ jobs:
       target_sha: ${{ steps.resolve.outputs.target_sha }}
       short_sha: ${{ steps.resolve.outputs.short_sha }}
     steps:
-      - uses: actions/checkout@v5
+      - uses: actions/checkout@v7
         with:
           ref: ${{ inputs.target_ref }}
           fetch-depth: 0
@@ -95,7 +95,7 @@ jobs:
       - resolve-target
     timeout-minutes: 10
     steps:
-      - uses: actions/checkout@v5
+      - uses: actions/checkout@v7
         with:
           ref: ${{ needs.resolve-target.outputs.target_ref }}
 
@@ -117,7 +117,7 @@ jobs:
       - resolve-target
     timeout-minutes: 90
     steps:
-      - uses: actions/checkout@v5
+      - uses: actions/checkout@v7
         with:
           ref: ${{ needs.resolve-target.outputs.target_ref }}
           fetch-depth: 0
@@ -190,7 +190,7 @@ jobs:
       - resolve-target
     timeout-minutes: 20
     steps:
-      - uses: actions/checkout@v5
+      - uses: actions/checkout@v7
         with:
           ref: ${{ needs.resolve-target.outputs.target_ref }}
 
@@ -228,7 +228,7 @@ jobs:
       - resolve-target
     timeout-minutes: 40
     steps:
-      - uses: actions/checkout@v5
+      - uses: actions/checkout@v7
         with:
           ref: ${{ needs.resolve-target.outputs.target_ref }}
 
@@ -320,7 +320,7 @@ jobs:
     if: ${{ needs.validation-gate.result == 'success' && (inputs.platform == 'all' || inputs.platform == 'windows') }}
     timeout-minutes: 75
     steps:
-      - uses: actions/checkout@v5
+      - uses: actions/checkout@v7
         with:
           ref: ${{ needs.resolve-target.outputs.target_ref }}
 
@@ -428,7 +428,7 @@ jobs:
     if: ${{ needs.validation-gate.result == 'success' && (inputs.platform == 'all' || inputs.platform == 'android') }}
     timeout-minutes: 100
     steps:
-      - uses: actions/checkout@v5
+      - uses: actions/checkout@v7
         with:
           ref: ${{ needs.resolve-target.outputs.target_ref }}
 
@@ -582,7 +582,7 @@ jobs:
       - build-android
     timeout-minutes: 25
     steps:
-      - uses: actions/checkout@v5
+      - uses: actions/checkout@v7
         with:
           ref: ${{ needs.resolve-target.outputs.target_sha }}
 

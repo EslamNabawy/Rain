@@ -37,7 +37,7 @@ jobs:
       short_sha: ${{ steps.resolve.outputs.short_sha }}
       release_tag: ${{ steps.resolve.outputs.release_tag }}
     steps:
-      - uses: actions/checkout@v5
+      - uses: actions/checkout@v7
         with:
           ref: ${{ inputs.tag_name }}
           fetch-depth: 0
@@ -69,7 +69,7 @@ jobs:
       - resolve-target
     timeout-minutes: 10
     steps:
-      - uses: actions/checkout@v5
+      - uses: actions/checkout@v7
         with:
           ref: ${{ needs.resolve-target.outputs.target_sha }}
 
@@ -91,7 +91,7 @@ jobs:
       - resolve-target
     timeout-minutes: 90
     steps:
-      - uses: actions/checkout@v5
+      - uses: actions/checkout@v7
         with:
           ref: ${{ needs.resolve-target.outputs.target_sha }}
           fetch-depth: 0
@@ -164,7 +164,7 @@ jobs:
       - resolve-target
     timeout-minutes: 20
     steps:
-      - uses: actions/checkout@v5
+      - uses: actions/checkout@v7
         with:
           ref: ${{ needs.resolve-target.outputs.target_sha }}
 
@@ -203,7 +203,7 @@ jobs:
       - resolve-target
     timeout-minutes: 40
     steps:
-      - uses: actions/checkout@v5
+      - uses: actions/checkout@v7
         with:
           ref: ${{ needs.resolve-target.outputs.target_sha }}
 
@@ -286,7 +286,7 @@ jobs:
     if: ${{ needs.validation-gate.result == 'success' }}
     timeout-minutes: 10
     steps:
-      - uses: actions/checkout@v5
+      - uses: actions/checkout@v7
         with:
           ref: ${{ needs.resolve-target.outputs.target_sha }}
 
@@ -321,7 +321,7 @@ jobs:
     if: ${{ needs.validation-gate.result == 'success' }}
     timeout-minutes: 75
     steps:
-      - uses: actions/checkout@v5
+      - uses: actions/checkout@v7
         with:
           ref: ${{ needs.resolve-target.outputs.target_sha }}
 
@@ -387,7 +387,7 @@ jobs:
     if: ${{ needs.validation-gate.result == 'success' }}
     timeout-minutes: 100
     steps:
-      - uses: actions/checkout@v5
+      - uses: actions/checkout@v7
         with:
           ref: ${{ needs.resolve-target.outputs.target_sha }}
 
