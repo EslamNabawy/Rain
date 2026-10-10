@@ -523,15 +523,15 @@ serialized_runtime_mutations.dart:5  final next = _tail.catchError((_) {}).then(
 - Fix: add `RainDatabase.serializedTransaction` wrappers in a single `FileTransferStore.recordIncomingOffer(...)` / `failTransfer(...)` method that touches all three tables in one transaction.
 - Effort: M
 
-### DB-003 A foreign-key check failure or failed upgrade blocks startup with no recovery
-- Severity: P2 | Confidence: Medium
+### DB-003 A failed database open or upgrade blocks startup with no recovery (the foreign-key check is dead code)
+- Severity: P3 | Confidence: Medium
 - Location: `packages/rain_core/lib/database/rain_database.dart:156-168`, `apps/rain/lib/application/bootstrap/app_bootstrap.dart:49-56`
 - Evidence:
 ```
 beforeOpen: ... if (fkViolations.isNotEmpty) { throw StateError('Rain database has N foreign-key violation(s). ... clear app data to rebuild it.'); }
 app_bootstrap.dart:54  } catch (_) { database = RainDatabase(); }      // fallback hits the same beforeOpen and throws again
 ```
-- Why it matters: any FK violation (for example a deleted message with a leftover transfer row after DB-002) throws on every launch; the only remedy shown is for the user to clear app data, which also loses the identity and chat history. The bootstrap fallback retries the same file, so it cannot recover.
+- Why it matters: correction found while executing T4.15: no table in `rain_database.dart` declares a `references` constraint (Grep `references` -> 0 matches), so `PRAGMA foreign_key_check` can never return rows and the `StateError` is unreachable today; the real startup blockers are a failing `onUpgrade` or a corrupt file (SqliteException), which the bootstrap fallback `RainDatabase()` retries on the same file. Original text: any FK violation (for example a deleted message with a leftover transfer row after DB-002) throws on every launch; the only remedy shown is for the user to clear app data, which also loses the identity and chat history. The bootstrap fallback retries the same file, so it cannot recover.
 - Fix: on `StateError` from `beforeOpen`, quarantine the file (rename to `rain.corrupt-<ts>.sqlite`), create a fresh database, and surface a "history could not be restored" notice; repair violating rows with `DELETE` of orphans before failing.
 - Effort: M
 
@@ -950,6 +950,6 @@ this program: D1 Canonical copy is D:\Rain
 |---|---|---|---|---|---|---|---|---|---|---|---|---|---|
 | P0 | 2 | 0 | 0 | 0 | 0 | 0 | 0 | 0 | 0 | 0 | 0 | 0 | 2 |
 | P1 | 1 | 0 | 1 | 0 | 2 | 1 | 0 | 2 | 0 | 1 | 2 | 0 | 10 |
-| P2 | 0 | 5 | 3 | 2 | 5 | 2 | 3 | 1 | 1 | 2 | 3 | 3 | 30 |
-| P3 | 3 | 2 | 2 | 2 | 0 | 2 | 1 | 1 | 3 | 2 | 2 | 3 | 23 |
+| P2 | 0 | 5 | 3 | 2 | 5 | 2 | 2 | 1 | 1 | 2 | 3 | 3 | 29 |
+| P3 | 3 | 2 | 2 | 2 | 0 | 2 | 2 | 1 | 3 | 2 | 2 | 3 | 24 |
 | Total | 6 | 7 | 6 | 4 | 7 | 5 | 4 | 4 | 4 | 5 | 7 | 6 | 65 |
