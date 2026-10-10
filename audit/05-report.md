@@ -20,11 +20,10 @@ Fixed in code: GIT-001, CI-001, CI-003, CI-004, CI-005/BE-002, SEC-001 (app side
 
 ## Blocked and skipped
 
+T4.01, T4.03 and T4.19 were blocked until JDK 21 was installed (`Could not spawn java -version`). After the owner asked for it, JDK 21 was installed and the cards were completed: 19 rules tests pass (T4.01 `ecfafeb`, T4.03 `e86e8ad`, T4.19 `69ade05`). T4.03 allows key rotation instead of making the key immutable.
+
 | Card | Reason |
 |---|---|
-| T4.01 RTDB rules test harness (BE-001) | Blocked. `npx --yes firebase-tools@13 emulators:exec --only database "node -e 1"` in `backend/firebase` fails: `Error: Could not spawn `java -version`. Please make sure Java is installed and on your system PATH.` No Java on this machine. |
-| T4.03 `signingPublicKey` rule (SEC-001 rules part) | Blocked by T4.01 (rule changes require RULES_TEST). |
-| T4.19 `userSearch` query limits (SEC-006) | Blocked by T4.01. |
 | T4.15 corrupt-database recovery (DB-003) | Skipped: the premise was wrong; no foreign keys exist. |
 | T4.06 database and auth ports | Reduced to extracting and testing the registration rollback flow; ports for the whole adapter remain in the backlog. |
 
@@ -33,7 +32,7 @@ Not executed: platform builds (R7), emulator integration suites, Android and Win
 ## Owner actions
 
 1. Rotate or revoke the TURN credentials and Supabase anon key from `apps/rain/tool/dart_defines.local.json` history (commits 0d8147c, 6ff832b) if still live (GIT-003).
-2. Install JDK 21, then run T4.01, T4.03 and T4.19 (rules tests and the `signingPublicKey` and `userSearch` rule changes). Until the rule exists, registration still tries to write `users/<name>/signingPublicKey`; the app now ignores a rejection, but confirm that the deployed rules equal `backend/firebase/database.rules.json` (SEC-001 was assessed from the repo copy).
+2. Deploy the updated `backend/firebase/database.rules.json` (new `signingPublicKey` rule and bounded `userSearch` queries) after confirming what is deployed today; SEC-001 was assessed from the repo copy and the emulator tests confirm the repo rules reject the key write. The CI step uses firebase-tools 15.18.0, which was not run locally.
 3. Restrict the Firebase API key, decide on App Check and sign-up throttling (GIT-004, SEC-006).
 4. Decide the local database encryption option in `obsidian-vault/11-Decisions/ADR-013.md` (recommended: SQLCipher through the `sqlite3` build hook with a verified migration); test on Android and Windows.
 5. Device tests: audio call survives Home for 60 s on Android 13+ and a minimized window on Windows; decide on a call foreground service (APP-001 part 2); crossed invites within 50 ms; an app kill mid-call (SIG-003); file picking before bumping `file_picker` (ARCH-006).
