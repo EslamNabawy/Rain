@@ -1,3 +1,15 @@
+/// # voice_call_session_test.dart — protocol_brain package
+///
+/// Tests for voice call session lifecycle covering outgoing invite flow, video call media modes, frame sequencing, and state transitions.
+///
+/// **Key types:** _FakeVoiceMediaConnection
+///
+/// **Package:** protocol_brain
+///
+/// **Depends on:** flutter_test, protocol_brain
+///
+library;
+
 import 'dart:async';
 
 import 'package:flutter_test/flutter_test.dart';
@@ -1242,6 +1254,9 @@ final class _FakeVoiceMediaConnection implements VoiceMediaConnection {
 
   @override
   Future<void> setMuted({required bool muted}) async {}
+
+  @override
+  Future<void> setCameraMuted({required bool muted}) async {}
 
   @override
   Future<void> setDeafened({required bool deafened}) async {

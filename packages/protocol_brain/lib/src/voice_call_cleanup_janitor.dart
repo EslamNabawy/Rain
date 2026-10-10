@@ -1,3 +1,15 @@
+/// # voice_call_cleanup_janitor.dart — protocol_brain package
+///
+/// Decision engine for cleaning up stale and corrupt voice call artifacts in Firebase RTDB. Defines cleanup actions (delete room, lock, inbox entry) and produces structured decisions with reasons for auditing and debugging.
+///
+/// **Key types:** VoiceCallCleanupAction (enum), VoiceCallCleanupDecision, VoiceCallCleanupSummary
+///
+/// **Package:** protocol_brain
+///
+/// **Depends on:** None (standalone types and constants, maxCallCleanupItemsPerRun)
+
+library;
+
 import 'voice_signaling_contract.dart';
 
 const int maxCallCleanupItemsPerRun = 25;

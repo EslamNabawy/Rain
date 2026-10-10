@@ -1,3 +1,12 @@
+/// # video_optimization_manager.dart
+///
+/// Monitors WebRTC connection stats and dynamically adjusts video encoding parameters (bitrate, framerate, resolution) based on network pressure. Supports excellent/good/fair/poor optimization profiles.
+///
+/// **Key types:** VideoOptimizationManager
+///
+/// **Depends on:** flutter_webrtc, call/call_media_models
+library;
+
 import 'dart:async';
 
 import 'package:flutter_webrtc/flutter_webrtc.dart';

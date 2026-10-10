@@ -1,3 +1,12 @@
+/// # integration_account_deletion_emulator_test
+///
+/// Integration tests for account deletion via Firebase emulator, verifying tombstone creation and search index removal.
+///
+/// **Key types:** FirebaseEmulatorSignalingAdapter.
+///
+/// **Depends on:** Firebase Auth/Realtime Database emulator and signaling adapter.
+library;
+
 import 'dart:io';
 
 import 'package:flutter_test/flutter_test.dart';

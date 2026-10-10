@@ -1,3 +1,12 @@
+/// # chat_panel.dart
+///
+/// Chat panel widget (part of home_screen) that renders the message list,
+/// composer input, file picker, and connection status for a selected peer.
+///
+/// **Key types:** _ChatPanel, _ChatPanelState
+///
+/// **Depends on:** home_screen (part of), flutter_riverpod, application layer
+
 part of '../../screens/home_screen.dart';
 
 class _ChatPanel extends ConsumerStatefulWidget {

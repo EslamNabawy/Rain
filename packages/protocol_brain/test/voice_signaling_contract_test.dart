@@ -1,3 +1,15 @@
+/// # voice_signaling_contract_test.dart — protocol_brain package
+///
+/// Contract tests for voice signaling utilities including participant normalization, canonical pair roles, and encrypted envelope size validation.
+///
+/// **Key types:** (no top-level types — test-only file)
+///
+/// **Package:** protocol_brain
+///
+/// **Depends on:** flutter_test, protocol_brain, testing
+///
+library;
+
 import 'dart:async';
 
 import 'package:flutter_test/flutter_test.dart';

@@ -1,3 +1,12 @@
+/// # ice_candidate_policy.dart — protocol_brain package
+///
+/// Shared peer configuration provider and room ID canonicalization logic used by ProtocolBrainImpl. Defines PeerConfigProvider typedef, normalizes peer IDs, generates deterministic room IDs, and provides route-refresh delay constants.
+///
+/// **Key types:** PeerConfigProvider (typedef), roomId(), _normalizedPeerId()
+///
+/// **Package:** protocol_brain
+///
+/// **Depends on:** protocol_brain_impl.dart (part), peer_core
 part of 'protocol_brain_impl.dart';
 
 typedef PeerConfigProvider =

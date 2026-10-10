@@ -1,3 +1,12 @@
+/// # file_transfer_progress_batcher_test
+///
+/// Tests file transfer progress batching that throttles fast writes and ensures final byte count is flushed.
+///
+/// **Key types:** FileTransferProgressBatcher.
+///
+/// **Depends on:** File transfer state tracking and async progress persistence.
+library;
+
 import 'package:flutter_test/flutter_test.dart';
 import 'package:rain/application/runtime/file_transfer_progress_batcher.dart';
 

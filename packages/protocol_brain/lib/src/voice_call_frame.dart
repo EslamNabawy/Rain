@@ -1,3 +1,14 @@
+/// # voice_call_frame.dart — protocol_brain package
+///
+/// WebRTC call signaling frame types including invite, accept, reject, busy, offer, answer, ICE candidate, hangup, and mute operations. Defines frame serialization/deserialization, validation, and factory methods for each frame type.
+///
+/// **Key types:** VoiceCallFrameType (enum), CallMediaMode (enum), VoiceCallFrame
+///
+/// **Package:** protocol_brain
+///
+/// **Depends on:** dart:convert
+library;
+
 import 'dart:convert';
 
 enum VoiceCallFrameType {

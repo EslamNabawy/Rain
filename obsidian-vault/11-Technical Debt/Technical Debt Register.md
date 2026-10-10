@@ -1,4 +1,4 @@
-# Technical Debt Register
+﻿# Technical Debt Register
 
 Last updated: 2026-10-10
 
@@ -39,14 +39,14 @@ Related: [[Debt Categories]], [[Debt Prioritization]], [[Architecture Debt]], [[
 
 | Metric | Value |
 | --- | --- |
-| Total debt items | 22 |
+| Total debt items | 23 |
 | P0 items | 10 |
 | P1 items | 11 |
-| P2 items | 1 |
+| P2 items | 2 |
 | P3 items | 0 |
 | Critical launch-path items | 7 |
 | Current debt risk score | 72/100 |
-| Target debt risk before public release | 30/100 or lower |
+| Target debt risk before public release | 30 or lower |
 
 ## Category Distribution
 
@@ -56,7 +56,7 @@ Related: [[Debt Categories]], [[Debt Prioritization]], [[Architecture Debt]], [[
 | Scalability | 3 | High | [[Scalability Debt]] |
 | Security | 4 | Highest | [[Security Debt]] |
 | Performance | 2 | High | [[Performance Debt]] |
-| Testing | 2 | High | [[Testing Debt]] |
+| Testing | 3 | High | [[Testing Debt]] |
 | DevOps | 2 | High | [[DevOps Debt]] |
 | UX | 3 | Medium | [[UX Debt]] |
 
@@ -121,7 +121,7 @@ Source: [[2026-06-05 Senior Audit Remediation Plan]]
 - Resolution Strategy: Extract call start, lease, media, terminal, and diagnostics ownership behind coordinator contracts, then add characterization and regression tests.
 - Progress Note 2026-06-05: First Phase 3 decomposition slice is complete. `CallErrorClassifier` now owns call failure reason/message/taxonomy/retry classification, and `call_media_session_coordinator.dart` owns app-side audio/video media adapters plus media diagnostics mapping. `VoiceCallRuntime` still owns command orchestration, room reconciliation, lock coordination, state mutation, and terminal cleanup, so TD-001 remains open until those seams are extracted and validated.
 - Progress Note 2026-06-06: Combined Phase 3 slice reduced runtime/state ambiguity but does not close TD-001. Added `VoiceCallTerminalReconciler` for terminal-session-state policy, added renderer target classification in `call_media_session_coordinator.dart`, and moved peer UI truth into `ConnectionDiagnostics`/`peerConnectionDiagnosticsProvider`. Command orchestration, Firebase room reconciliation, lock/lease coordination, and most terminal cleanup remain in `VoiceCallRuntime`.
-- Progress Note 2026-06-08: Phase 2a extracted `VoiceCallRoomCoordinator` (164 lines, 20 tests). Room status tracking, terminal room detail/reason resolution, reason code mapping, and terminal write error detection moved to coordinator. voice_call_runtime.dart reduced 4751→4689 lines.
+- Progress Note 2026-06-08: Phase 2a extracted `VoiceCallRoomCoordinator` (164 lines, 20 tests). Room status tracking, terminal room detail/reason resolution, reason code mapping, and terminal write error detection moved to coordinator. voice_call_runtime.dart reduced 4751ΓåÆ4689 lines.
 - Progress Note 2026-06-08: Phase 3 added `voice_call_rtdb_rules_contract_test.dart` (37 tests) validating all voice call RTDB rules paths. TD-009 rule coverage gaps now have static test validation. TD-011 malformed write protection validated through existing emulator tests.
 - Progress Note 2026-06-08: Phase 3a grouped `VoiceCallRoomCoordinator`, `VoiceCallErrorCoordinator`, `VoiceCallDiagnostics`, `VoiceCallTerminalReconciler`, and new `VoiceCallStateCoordinator` under `apps/rain/lib/application/runtime/voice_call/`. `VoiceCallStateCoordinator` owns pure call-state mapping/reset policy and focused coordinator tests plus full Melos analyze/test passed. `VoiceCallRuntime` is now 4,480 lines, but command orchestration, Firebase room reconciliation, lock coordination, media/session orchestration, and most cleanup remain.
 - Progress Note 2026-06-08: Phase 3b extracted `VoiceCallPreflightCoordinator` and `VoiceCallReconnectCoordinator` under `apps/rain/lib/application/runtime/voice_call/`. Preflight now owns call-start availability/friend/presence guards and stale retry replacement; reconnect now owns peer failure/reconnecting state, session reconnect markers, and reconnect grace timers. `voice_call_runtime.dart` is now 4,189 lines, but command orchestration, Firebase room reconciliation, lock coordination, media/session orchestration, terminal cleanup, and full start conflict policy remain.
@@ -279,6 +279,8 @@ Source: [[2026-06-05 Senior Audit Remediation Plan]]
 - Roadmap Tasks: TASK-010, TASK-011.
 - Resolution Strategy: Stream incoming chunks to temp files, add high/low water marks, pause/resume sends, and test slow receivers and cancellation.
 - Progress Note 2026-06-05: Phase 7 local mitigation is implemented. Incoming chunks now use a persistent receive sink per active transfer and close it on complete, cancel, failure, network loss, and shutdown. Terminal cleanup deletes temp files for cancellation, hash mismatch, invalid chunks, and disk write failure. The outgoing send loop carries one partial chunk instead of growing/removing from a pending list. Backpressure constants for chunk size, high/low watermarks, poll interval, and timeout now live in the protocol contract, and the sender records privacy-safe wait/complete/timeout diagnostics. Focused large receive, cancel cleanup, hash mismatch cleanup, disk write failure, and scripted backpressure tests passed locally; real-network/device-scale proof remains follow-up evidence.
+- Progress Note 2026-08-26: Cross-platform remediation slice A1+A2 (from [CROSS_PLATFORM_REMEDIATION_PLAN.md](../../CROSS_PLATFORM_REMEDIATION_PLAN.md)) removed two main-thread hot-loop costs. Receiver final SHA-256 now runs in `Isolate.run` with streamed reads instead of hashing on the UI isolate. Incoming transfer records hydrate into a runtime cache on first chunk and reuse it through completion; `clearTransferRuntimeState` is the single invalidation funnel (terminal frames, reject, cancel, markTransferFailed, network-loss cleanup). A loadById-count regression test proves the chunk hot path performs exactly one store read. Sender-side incremental hashing stays on the main isolate by accepted design: per-event digest cost is micro-scale and the send loop yields every chunk via awaited sends/backpressure, so no freeze spike exists; revisit only if profiling disagrees. Workspace analyze and full Melos tests passed; real-network/device-scale transfer proof remains open.
+- Progress Note 2026-08-26b: Cross-platform slice A3+A4 removed the remaining transfer hot-loop costs. Binary-only data-channel frames no longer rebuild peer connectivity snapshots per 32 KiB chunk: `PeerConnectivityController` filters binary messages and the runtime's data-event notification uses a leading-edge 250 ms throttle with a trailing flush, so burst timestamps still reach the UI within one window. Receive sinks now flush via `FileTransferFlushPolicy` (rain_core): first write always flushes to fail fast on unwritable destinations, later writes batch per 512 KiB (`fileTransferFlushThresholdBytes`), terminal closes flush remainders. Regression coverage: loadById-count test, emission-count throttle test (`data_event_throttle_test.dart`), and policy unit tests. Workspace analyze plus full Melos tests passed; real-network/device-scale transfer proof remains open.
 
 ## Security Debt
 
@@ -552,6 +554,26 @@ Source: [[2026-06-05 Senior Audit Remediation Plan]]
 - Progress Note 2026-06-07: Account deletion now has an explicit `deletingAccount` startup phase after password verification. The app shows a full-screen blocking deletion overlay, hides navigation, and keeps the current protected route mounted so recoverable backend failures can restore Settings and show the modal. Route/provider tests lock this behavior.
 - Progress Note 2026-06-07: Account deletion no longer invokes runtime shutdown before backend/Auth deletion. Required tombstone failure now restores the existing runtime/session and keeps local identity, preventing failed delete from presenting as logout. Optional account cleanup is decoupled from the required tombstone write and retried path-by-path best-effort after multi-location cleanup failure. Runtime provider delete preflight now keeps startup ready while password verification is pending, preventing wrong-password failures from briefly replacing Settings with Splash and losing the error dialog.
 - Progress Note 2026-06-07 live rules follow-up: the deployed `users/{username}` rule was updated and read back from `rain-8fb4b-default-rtdb` so legacy rows missing `uid` can be tombstoned only by the matching Firebase Auth email/current uid. This reduces the remaining startup/delete UX debt from a known backend rules denial to a user Android retry/device evidence item.
+- Progress Note 2026-08-29: Added `registration conflict on existing username rethrows without cache, search, or sign-out` to `apps/rain/test/auth_identity_source_of_truth_test.dart`. The contract is now locked locally: when `adapter.register` throws `already taken`, the runtime must not call `addToUserSearch`, `upsertIdentity`, `setPresence`, or `signOut`, and Drift identity must stay empty. Combined with the existing post-user-row secondary-failure test, all three registration conflict cases listed in [[Recommended Next Actions]] #6 are now covered without live Firebase probes.
+
+### TD-024: TraceId Coverage Gaps And Throttle Hash-Collision Risk
+
+- Category: Testing
+- Status: Open
+- Priority: P2
+- Owner: Engineering
+- Title: Tracing system covers only register and call-start flows; provider throttling uses non-structural hashing.
+- Description: The 2026-08-29 trace-context wiring ([[ADR-011]]) adds `traceId` only to `IdentityController.register` and `RainRuntimeController._startCall`. Heartbeat, `createOutgoingCall`, `writeICE`, `writeVoiceOffer`, `writeVoiceAnswer`, presence watches, and the rest of the runtime are not wrapped. `ThrottledProviderObserver` deduplicates using `Object.hashCode` and a hardcoded `_noisyProviders` set keyed on `ProviderObserver.provider.runtimeType.toString()`; `PeerConnectivitySnapshot` and `ConnectionDiagnostics` do not override `==`/`hashCode`, so identity-equal updates still emit and `hashCode` collisions across distinct values would silently drop legitimate updates.
+- Cause: 2026-08-29 slice was scoped to PR1+PR3 of the 2026-08-27 design without Drift persistence, debug overlay, or full Track B wiring.
+- Risk: Heartbeat, presence, and WebRTC flows remain uncorrelated in exports. Hash collisions in the throttling observer can hide legitimate provider state changes. The runtimeType key in `_noisyProviders` is brittle against Riverpod internals.
+- Cost to Fix: M, about 3-5 days for traceId coverage plus structural equality.
+- Cost to Ignore: Cross-flow queries by `traceId` only span register and call-start. The throttling observer may silently drop or double-emit updates.
+- Files Affected: `apps/rain/lib/application/runtime/rain_runtime_controller.dart`, `apps/rain/lib/application/runtime/voice_call_runtime.dart`, `apps/rain/lib/infrastructure/services/rain_debug_log_service.dart`, `apps/rain/lib/infrastructure/diagnostics/tracing/throttled_provider_observer.dart`, `apps/rain/lib/application/state/connection_diagnostics.dart`, `apps/rain/lib/application/state/peer_connectivity_snapshot.dart`.
+- Related Systems: [[Diagnostics And Logging]], [[Presence And Direct Connect]], [[Call State Machine]], [[Peer Chat]], [[File Transfer]].
+- Resolution Strategy: Wrap `_sendHeartbeatSafely`, `_fetchPeerPresenceSnapshot`, the call signaling writes, and the file transfer chunk pipeline in `TraceContext.runAsync`. Add structural `==` and `hashCode` to `PeerConnectivitySnapshot` and `ConnectionDiagnostics`. Replace the hardcoded noisy-provider set with a configurable per-provider policy.
+- Roadmap Tasks: Phase 12, Phase 13 of [[Master Roadmap]] tracing overlay.
+- Progress Note 2026-08-29: `ThrottledProviderObserver.hashForDedupe` now produces structural hashes for `ConnectionDiagnostics`, `PeerConnectivitySnapshot`, and `Map<String, PeerConnectivitySnapshot>`. The dedupe path is testable via `@visibleForTesting`. 10 new tests in `apps/rain/test/throttled_provider_observer_test.dart` lock structural equality, content-equal updates, status-key changes, `peerId` changes, `manualDisconnected` changes, map canonicalization across insertion order, and `null` handling. `dart run melos run analyze` and `dart run melos run test` SUCCESS across all 4 packages; `rain` test count went 742 -> 752.
+- Progress Note 2026-08-29: Phase 12 (traceId coverage) partially merged. `RainRuntimeController._sendHeartbeatSafely`, `_setPresenceOnlineSafely`, `_setPresenceOfflineSafely`, and `_fetchPeerPresenceSnapshot` now wrap their body in `TraceContext.runAsync` and propagate the `traceId` to the `presence/*` and `connection/*` runtime events they emit. `RainRuntimeController` (1,200+ line file) is too large to add a `RainRuntimeControllerTest` without significant `RainRuntimeController` constructor setup, so the change relies on existing integration coverage in `friend_flow_test.dart`. `dart run melos run analyze` and `dart run melos run test` SUCCESS; no regression (1145 tests pass). Residual gap: traceId in `brain!.connect` / `brain!.send` data-peer signaling writes, voice signaling writes (`writeVoiceOffer` / `writeVoiceAnswer` / `writeICE`), and file transfer chunk pipeline. The upstream `_startCall` traceId already covers the voice-signaling flow at the call boundary, so per-write traceIds are deferred.
 
 ## Debt Burn-Down Plan
 

@@ -1,3 +1,15 @@
+/// # peer_connectivity_snapshot.dart
+///
+/// [PeerConnectivitySnapshot] is the authoritative snapshot of a peer's
+/// connectivity state, combining data-session state, presence freshness, manual
+/// disconnect intent, and connection route into a single source of truth for
+/// UI gating decisions.
+///
+/// **Key types:** [PeerConnectivitySnapshot]
+///
+/// **Depends on:** protocol_brain
+library;
+
 import 'package:protocol_brain/protocol_brain.dart';
 
 /// Authoritative snapshot of a peer's connectivity state.

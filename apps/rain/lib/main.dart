@@ -1,3 +1,14 @@
+/// # main.dart
+///
+/// Entry point for the Rain Flutter application. Initializes Firebase, crash
+/// diagnostics, performance profiling, and desktop shell before bootstrapping
+/// the app via [AppBootstrapper] and running the root [RainApp] widget.
+///
+/// **Key types:** [main], [runRainApp]
+///
+/// **Depends on:** application bootstrap, crash diagnostics, presentation layer
+library;
+
 import 'dart:async';
 
 import 'package:flutter/foundation.dart';
@@ -7,6 +18,8 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'application/bootstrap/app_bootstrap.dart';
 import 'core/config/app_environment.dart';
 import 'application/state/core_providers.dart';
+import 'application/state/app_providers.dart';
+import 'infrastructure/diagnostics/tracing/throttled_provider_observer.dart';
 import 'infrastructure/services/crash_diagnostics_service.dart';
 import 'infrastructure/services/rain_debug_log_service.dart';
 import 'package:rain_core/rain_core.dart';
@@ -148,7 +161,7 @@ class _RainStartupAppState extends State<RainStartupApp> {
             observers: widget.debugLogService == null
                 ? const <ProviderObserver>[]
                 : <ProviderObserver>[
-                    RainDebugProviderObserver(widget.debugLogService!),
+                    ThrottledProviderObserver(widget.debugLogService!),
                   ],
             overrides: [
               appBootstrapProvider.overrideWithValue(bootstrap),

@@ -1,3 +1,14 @@
+/// # debug_signaling_adapter
+///
+/// Debug logging wrapper for signaling adapters. Intercepts all signaling
+/// operations (auth, SDP exchange, ICE candidates, presence, friend requests)
+/// and logs them through RainDebugLogService with timing and error context.
+///
+/// **Key types:** DebugSignalingAdapter, DebugFullSignalingAdapter
+///
+/// **Depends on:** SignalingAdapter interface, RainDebugLogService, protocol_brain
+library;
+
 import 'dart:async';
 
 import 'package:flutter_webrtc/flutter_webrtc.dart';

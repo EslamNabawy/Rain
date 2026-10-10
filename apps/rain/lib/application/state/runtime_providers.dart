@@ -1,3 +1,15 @@
+/// # runtime_providers.dart
+///
+/// Riverpod providers that depend on the authenticated session and runtime
+/// controller: account deletion progress, runtime instance, voice call state,
+/// connection request state, file transfer state, peer connectivity, and
+/// derived UI models. Wires the runtime to the presentation layer.
+///
+/// **Key types:** [AccountDeletionProgressController]
+///
+/// **Depends on:** rain_runtime_controller, core providers, identity providers
+library;
+
 import 'dart:async';
 
 import 'package:flutter/foundation.dart';
@@ -364,7 +376,15 @@ class PeerConnectivityController
         brain.onSessionChanged.listen((_) => _refresh()),
         brain.onPeerConnected.listen((_) => _refresh()),
         brain.onPeerDisconnected.listen((_) => _refresh()),
-        brain.onPeerMessage.listen((_) => _refresh()),
+        // Binary-only messages are file-transfer chunk payloads; they would
+        // rebuild the full snapshot per 32 KiB chunk. Data-lane freshness for
+        // bursts is flushed by the runtime's throttled connectivity signal.
+        brain.onPeerMessage.listen((SessionMessage message) {
+          if (message.binary != null && message.text == null) {
+            return;
+          }
+          _refresh();
+        }),
       ]);
     }
   }

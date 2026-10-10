@@ -1,3 +1,12 @@
+/// # media_interruption.dart
+///
+/// Defines media interruption types and events for handling audio focus loss, permission revocation, camera disconnection, and app lifecycle changes during calls.
+///
+/// **Key types:** MediaInterruptionType, MediaInterruptionEvent
+///
+/// **Depends on:** none (dart:core only)
+library;
+
 enum MediaInterruptionType {
   audioFocusLost,
   audioFocusRestored,

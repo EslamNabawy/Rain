@@ -1,3 +1,15 @@
+/// # message_envelope.dart — rain_core package
+///
+/// Defines the wire-format message envelope with JSON serialization, message type and status enums, and clock-skew-aware display time resolution.
+///
+/// **Key types:** MessageType, MessageStatus, MessageEnvelope
+///
+/// **Package:** rain_core
+///
+/// **Depends on:** dart:convert
+///
+library;
+
 import 'dart:convert';
 
 enum MessageType { text, system, file }

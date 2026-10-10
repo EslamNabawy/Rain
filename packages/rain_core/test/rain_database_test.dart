@@ -1,3 +1,15 @@
+/// # rain_database_test.dart — rain_core package
+///
+/// Tests for RainDatabase SQLite configuration including busy timeout, WAL journal mode, foreign keys, and migration idempotency for the friends online column.
+///
+/// **Key types:** None (test file)
+///
+/// **Package:** rain_core
+///
+/// **Depends on:** drift, drift/native.dart, flutter_test, rain_database.dart
+///
+library;
+
 import 'dart:io';
 
 import 'package:drift/drift.dart';
