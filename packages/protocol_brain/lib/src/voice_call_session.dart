@@ -152,6 +152,8 @@ final class VoiceCallSession {
   final Set<String> _receivedCandidateKeys = <String>{};
   bool _negotiatingMedia = false;
   bool _pendingMediaRestart = false;
+  static const int _maxEarlyCandidates = 64;
+  final List<VoiceCallFrame> _earlyCandidates = <VoiceCallFrame>[];
   bool _disposed = false;
   Future<void> _operationTail = Future<void>.value();
 
@@ -237,6 +239,7 @@ final class VoiceCallSession {
       )) {
         return;
       }
+      await _flushEarlyCandidates();
       try {
         await _send(VoiceCallFrameType.accept);
         if (isOfferOwner) {
@@ -454,6 +457,7 @@ final class VoiceCallSession {
     )) {
       return;
     }
+    await _flushEarlyCandidates();
     if (isOfferOwner) {
       await _createAndSendOffer();
     } else {
@@ -606,12 +610,31 @@ final class VoiceCallSession {
     if (candidate == null || sdpMid == null || sdpMLineIndex == null) {
       return;
     }
+    if (state.phase == VoiceCallSessionPhase.outgoingRinging ||
+        state.phase == VoiceCallSessionPhase.preflightingMic ||
+        state.phase == VoiceCallSessionPhase.incomingRinging) {
+      // Candidates can overtake the accept frame; keep them for the media
+      // connection instead of dropping them.
+      if (_earlyCandidates.length >= _maxEarlyCandidates) {
+        _earlyCandidates.removeAt(0);
+      }
+      _earlyCandidates.add(frame);
+      return;
+    }
     if (state.phase != VoiceCallSessionPhase.creatingMedia &&
         state.phase != VoiceCallSessionPhase.connectingMedia &&
         state.phase != VoiceCallSessionPhase.active) {
       _logInvalidEvent('candidate frame in ${state.phase.name}');
       return;
     }
+    await _applyRemoteCandidate(candidate, sdpMid, sdpMLineIndex);
+  }
+
+  Future<void> _applyRemoteCandidate(
+    String candidate,
+    String sdpMid,
+    int sdpMLineIndex,
+  ) async {
     try {
       await media.addRemoteCandidate(
         VoiceIceCandidate(
@@ -623,6 +646,20 @@ final class VoiceCallSession {
     } catch (error) {
       await _sendFailedHangup(error);
       await _fail('Voice call media could not connect.', error: error);
+    }
+  }
+
+  Future<void> _flushEarlyCandidates() async {
+    final queued = List<VoiceCallFrame>.of(_earlyCandidates);
+    _earlyCandidates.clear();
+    for (final frame in queued) {
+      final candidate = frame.candidate;
+      final sdpMid = frame.sdpMid;
+      final sdpMLineIndex = frame.sdpMLineIndex;
+      if (candidate == null || sdpMid == null || sdpMLineIndex == null) {
+        continue;
+      }
+      await _applyRemoteCandidate(candidate, sdpMid, sdpMLineIndex);
     }
   }
 
@@ -994,6 +1031,7 @@ final class VoiceCallSession {
   }
 
   Future<void> _disposeMedia() async {
+    _earlyCandidates.clear();
     try {
       await media.dispose().timeout(timeouts.cleanup, onTimeout: () {});
     } catch (error) {
@@ -1159,6 +1197,7 @@ final class VoiceCallSession {
         _enqueue(
           () => _fail(
             'Call timed out while ringing.',
+            notifyPeer: true,
             reasonCode: _voiceCallRingingTimeoutReasonCode,
           ),
         ),
