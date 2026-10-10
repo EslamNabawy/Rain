@@ -50,6 +50,7 @@ T4.19 69ade05 userSearch read limited to orderByKey + limitToFirst<=20; 19 rules
 SEC-002 aeed593 v=2 wired for rooms/* signaling (resolver, rules v1|v2+salt, 20 rules tests); voice-call envelopes remain v=1
 CI-002 f79786c ci.yml now covers format, analyze, unit tests, functions, rules tests, emulator tests, vault, builds
 CI-002b 63703cd redundant PR CI workflows removed; auto-prerelease on push to main (rain-ci-N) no longer happens
+SEC-002b dbb6342 voice envelopes v=2 (contract, rules, runtime, app resolver) with v=1 fallback; 21 rules tests; all package tests pass
 ## Blocked
 T4.15 SKIPPED (DB-003): premise invalid - no table declares a foreign key, so the beforeOpen foreign_key_check can never fail. DB-003 downgraded to P3 in audit/01-findings.md; quarantine-on-open-failure moved to backlog.
 
