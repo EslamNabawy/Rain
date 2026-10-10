@@ -31,6 +31,7 @@ T4.07 13fdff2 encryptionState() + db_encryption_inactive event; open path unchan
 T4.08 4a7ed16 destroy robust to close errors; peer_core 77 pass
 T4.09 deaef93 waitForDrain throws StateError on closed channel; peer_core 80 pass
 T4.10 ad79d19 crossed invites: lower username keeps call; decision unit-tested (runtime-level glare test not added)
+T4.11 71138df early candidate queue + notifyPeer on ringing timeout; protocol_brain 291 pass
 ## Blocked
 T4.19 BLOCKED (SEC-006): depends on T4.01 (rules changes need RULES_TEST).
 T4.03 BLOCKED (SEC-001): depends on T4.01 (rules changes need RULES_TEST).
