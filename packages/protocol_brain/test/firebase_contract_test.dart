@@ -1,15 +1,3 @@
-/// # firebase_contract_test.dart — protocol_brain package
-///
-/// Comprehensive Firebase contract tests covering password hash safety, friend request identity binding, and database rule correctness.
-///
-/// **Key types:** (no top-level types — test-only file)
-///
-/// **Package:** protocol_brain
-///
-/// **Depends on:** flutter_test, dart:io
-///
-library;
-
 import 'dart:io';
 
 import 'package:flutter_test/flutter_test.dart';
@@ -206,8 +194,10 @@ void main() {
 
     expect(
       rules,
-      contains('''"userSearch": {
-      ".read": "auth != null"'''),
+      contains(
+        '''"userSearch": {
+      ".read": "auth != null && query.orderByKey == true && query.limitToFirst <= 20"''',
+      ),
     );
     expect(adapter, contains("child('userSearch')"));
     expect(adapter, contains('orderByKey()'));

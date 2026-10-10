@@ -46,11 +46,9 @@ T5.1 95cbb07 integration/main-dev: origin/main merged (38 conflicts resolved); a
 T6.1 ebcca4e vault synced (R-024..R-032, BLK-011..013, TD-025..030, ADR-012/013, CONTINUITY); validator passes
 T4.01 ecfafeb 16 rules cases pass on firebase-tools 13 + JDK 21; CI step added (firebase-tools 15.18.0 not run locally); confirms SEC-001
 T4.03 e86e8ad rule added (base64 44 chars, rotation allowed, owner-only via parent write); 18 rules cases pass
+T4.19 69ade05 userSearch read limited to orderByKey + limitToFirst<=20; 19 rules cases pass
 ## Blocked
 T4.15 SKIPPED (DB-003): premise invalid - no table declares a foreign key, so the beforeOpen foreign_key_check can never fail. DB-003 downgraded to P3 in audit/01-findings.md; quarantine-on-open-failure moved to backlog.
-T4.19 BLOCKED (SEC-006): depends on T4.01 (rules changes need RULES_TEST).
-T4.03 BLOCKED (SEC-001): depends on T4.01 (rules changes need RULES_TEST).
-T4.01 BLOCKED (BE-001): RULES_TEST cannot run on this machine. `npx --yes firebase-tools@13 emulators:exec --only database "node -e 1"` (run in backend/firebase) fails with: "Error: Could not spawn `java -version`. Please make sure Java is installed and on your system PATH." No Java found on PATH or in Android Studio/Program Files. Owner action: install a JDK (21) and re-run T4.01.
 
 ## Decisions
 - D1 Canonical copy is D:\Rain.
@@ -60,6 +58,7 @@ T4.01 BLOCKED (BE-001): RULES_TEST cannot run on this machine. `npx --yes fireba
 - D5 Historical dart_defines.local.json values are treated as exposed; rotation is a manual owner action listed in the final report.
 
 ## Notes
+- 2026-10-10 follow-up: JDK 21 installed (winget Microsoft.OpenJDK.21) at the owner's request; T4.01 (ecfafeb), T4.03 (e86e8ad) and T4.19 (69ade05) completed; RTDB rules tests 19/19 pass on firebase-tools 13. Note: T4.03 allows key rotation (not immutable) because a lost key is regenerated (T4.17).
 - Phase 4 end (2026-10-10): ANALYZE clean, FORMAT clean, tests peer_core 80, protocol_brain 294, rain_core 67, apps/rain 760 pass + 20 skip, functions 37, vault pass. Blocked: T4.01/T4.03/T4.19 (no Java). Skipped: T4.15 (premise invalid). Reduced: T4.06. A stray empty-subject commit (ef1c897) exists from a mistaken helper call; history is not rewritten (R2).
 - T3.5 baseline (2026-10-10): ANALYZE clean (4 packages), FORMAT clean (283 files), tests peer_core 76, protocol_brain 276, rain_core 61, apps/rain 744 pass + 20 skip, functions 37 pass, VAULT pass, npm audit:moderate 0 vulnerabilities.
 - TEST gap for T3.1: FirebaseSignalingAdapter cannot be faked without new dependencies (no fake for FirebaseAuth/FirebaseDatabase); see TEST-001. Planned fix: T4.06.
