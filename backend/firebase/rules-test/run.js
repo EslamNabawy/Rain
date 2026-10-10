@@ -137,6 +137,28 @@ async function main() {
     await assertFails(set(offer, { ...v2, salt: "A".repeat(65) }));
   });
 
+  await check("voice call offers accept v=1 and v=2 (with salt) envelopes only", async () => {
+    await env.withSecurityRulesDisabled(async (ctx) => {
+      await set(ref(ctx.database(), "voiceCalls/c1"), {
+        v: 1,
+        pairId: "alice:bob",
+        caller: "alice",
+        callee: "bob",
+        status: "accepted",
+        createdAt: 1,
+        updatedAt: 1,
+        expiresAt: 999999999999999,
+        mediaMode: "audio",
+        muted: { alice: false, bob: false },
+      });
+    });
+    const offer = ref(as("ua", "alice"), "voiceCalls/c1/offer");
+    await assertSucceeds(set(offer, envelope("alice", "bob")));
+    await assertSucceeds(set(offer, { ...envelope("alice", "bob"), v: 2, salt: "AAAAAAAAAAAAAAAAAAAAAA==" }));
+    await assertFails(set(offer, { ...envelope("alice", "bob"), v: 2 }));
+    await assertFails(set(offer, { ...envelope("alice", "bob"), v: 3, salt: "AAAA" }));
+  });
+
   await check("clients cannot write connectionRequests directly", async () => {
     await assertFails(set(ref(as("ua", "alice"), "connectionRequests/bob/r1"), { from: "alice" }));
   });

@@ -26,6 +26,7 @@ import 'package:rain/application/runtime/connection_request_state.dart';
 import 'package:rain/application/runtime/video_call_renderers.dart';
 import 'package:rain/application/runtime/voice_call_state.dart';
 import 'package:rain/infrastructure/notifications/rain_notification_service.dart';
+import 'package:rain/infrastructure/security/pair_cipher_resolver.dart';
 import 'package:rain/infrastructure/services/app_settings_store.dart';
 import 'package:rain/infrastructure/services/background_services.dart';
 import 'package:rain/infrastructure/services/network_status_service.dart';
@@ -563,6 +564,11 @@ class RuntimeController extends AsyncNotifier<RainRuntimeController?> {
       adapter: ref.watch(adapterProvider),
       voiceSignalingCipher: SignalingCipher.fromKeyMaterial(
         environment.signalingEncryptionKey,
+      ),
+      voicePairCipherResolver: buildAppPairCipherResolver(
+        adapter: ref.watch(adapterProvider),
+        identityKeys: ref.watch(identityKeyRepositoryProvider),
+        localUsername: () => session.identity.username,
       ),
       connectionRequestNotificationService: ref.watch(
         rainNotificationServiceProvider,

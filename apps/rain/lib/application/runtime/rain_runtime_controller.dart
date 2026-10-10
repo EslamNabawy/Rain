@@ -232,6 +232,7 @@ class RainRuntimeController with WidgetsBindingObserver {
     FileTransferStore? fileTransferStore,
     VoiceSignalingAdapter? voiceSignalingAdapter,
     SignalingCipher? voiceSignalingCipher,
+    this.voicePairCipherResolver,
     ConnectionRequestAdapter? connectionRequestAdapter,
     this.connectionRequestNotificationService,
     this.heartbeatInterval = const Duration(seconds: 10),
@@ -298,6 +299,9 @@ class RainRuntimeController with WidgetsBindingObserver {
   final ConnectionRequestAdapter? connectionRequestAdapter;
   final RainNotificationService? connectionRequestNotificationService;
   final SignalingCipher voiceSignalingCipher;
+
+  /// Resolves the per-pair (`v=2`) cipher for a peer; null keeps `v=1`.
+  final SignalingCipherResolver? voicePairCipherResolver;
   final Duration heartbeatInterval;
   final Duration friendRequestRefreshInterval;
   final int maxPassivePeerListeners;

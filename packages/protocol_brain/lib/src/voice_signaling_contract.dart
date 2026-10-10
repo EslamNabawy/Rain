@@ -151,9 +151,13 @@ final class VoiceSignalingEnvelope {
     required this.nonce,
     required this.ciphertext,
     required this.mac,
+    this.salt,
   });
 
+  /// `1`: app-wide shared key. `2`: per-pair key (carries a per-envelope `salt`).
   static const int version = 1;
+  static const int versionPerPair = 2;
+  static const int maxSaltLength = 64;
   static const String algorithmName = 'A256GCM-HKDF-SHA256';
   static const int maxNonceLength = 96;
   static const int maxMacLength = 96;
@@ -168,6 +172,7 @@ final class VoiceSignalingEnvelope {
   final String nonce;
   final String ciphertext;
   final String mac;
+  final String? salt;
 
   Map<String, Object?> toJson({required int maxCiphertextLength}) {
     validate(maxCiphertextLength: maxCiphertextLength);
@@ -177,6 +182,7 @@ final class VoiceSignalingEnvelope {
       'ts': ts,
       if (sender != null) 'from': sender,
       if (receiver != null) 'to': receiver,
+      if (salt != null) 'salt': salt,
       'nonce': nonce,
       'ciphertext': ciphertext,
       'mac': mac,
@@ -196,14 +202,18 @@ final class VoiceSignalingEnvelope {
       nonce: _requiredString(json, 'nonce', max: maxNonceLength),
       ciphertext: _requiredString(json, 'ciphertext', max: maxCiphertextLength),
       mac: _requiredString(json, 'mac', max: maxMacLength),
+      salt: _optionalString(json, 'salt', max: maxSaltLength),
     );
     envelope.validate(maxCiphertextLength: maxCiphertextLength);
     return envelope;
   }
 
   void validate({required int maxCiphertextLength}) {
-    if (v != version) {
+    if (v != version && v != versionPerPair) {
       throw const FormatException('Voice signaling envelope version invalid.');
+    }
+    if (v == versionPerPair && (salt == null || salt!.isEmpty)) {
+      throw const FormatException('Voice signaling envelope salt missing.');
     }
     if (alg != algorithmName) {
       throw const FormatException('Voice signaling envelope alg invalid.');
