@@ -1125,6 +1125,38 @@ extension VoiceCallRuntime on RainRuntimeController {
       return _IncomingVoiceInviteDisposition.busy;
     }
 
+    switch (VoiceCallPreflightCoordinator.instance.decideCrossedInvite(
+      current: current,
+      localUsername: selfIdentity.username,
+      remotePeerId: normalizedPeerId,
+    )) {
+      case CrossedInviteDecision.keepLocal:
+        recordRuntimeEvent(
+          category: 'call',
+          name: 'crossed_invite_kept_local',
+          context: <String, Object?>{
+            'peerId': normalizedPeerId,
+            'localCallId': current.callId,
+            'remoteCallId': frame.callId,
+          },
+        );
+        return _IncomingVoiceInviteDisposition.ignore;
+      case CrossedInviteDecision.acceptRemote:
+        recordRuntimeEvent(
+          category: 'call',
+          name: 'crossed_invite_yielded',
+          context: <String, Object?>{
+            'peerId': normalizedPeerId,
+            'localCallId': current.callId,
+            'remoteCallId': frame.callId,
+          },
+        );
+        await _replaceStaleVoiceCallForRetry(current);
+        return _IncomingVoiceInviteDisposition.accept;
+      case CrossedInviteDecision.notCrossed:
+        break;
+    }
+
     if (!_canReplaceVoiceCallWithRetry(current)) {
       return _IncomingVoiceInviteDisposition.busy;
     }
