@@ -7,6 +7,13 @@ import 'package:path/path.dart' as p;
 import 'package:rain_core/database/rain_database.dart';
 
 void main() {
+  test('stock sqlite reports database encryption inactive', () async {
+    final database = RainDatabase(NativeDatabase.memory());
+    addTearDown(database.close);
+
+    expect(await database.encryptionState(), DatabaseEncryptionState.inactive);
+  });
+
   test(
     'beforeOpen schema validation passes on a valid fresh database',
     () async {
@@ -337,14 +344,4 @@ class _LegacyV5Executor extends QueryExecutorUser {
     QueryExecutor executor,
     OpeningDetails details,
   ) async {}
-
-  test('stock sqlite reports database encryption inactive', () async {
-    final database = RainDatabase(NativeDatabase.memory());
-    addTearDown(database.close);
-
-    expect(
-      await database.encryptionState(),
-      DatabaseEncryptionState.inactive,
-    );
-  });
 }
