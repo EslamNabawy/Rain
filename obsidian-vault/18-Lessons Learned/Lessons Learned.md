@@ -704,6 +704,22 @@ No task is fully complete until the lesson check is done or explicitly marked "n
 - Owner: Engineering
 - Status: Open
 
+### LESSON-20261010-042: Bulk Workflow Rewrites Need Structural Validation
+
+- Date: 2026-10-10
+- Related task: Coordinated dependency upgrade follow-up (actionlint fix).
+- Related system: [[Build Process]]
+- Related risk/debt: R-018, TD-023
+- What was learned: A bulk line rewrite of `.github/workflows/ci.yml` to strip a UTF-8 BOM and normalize encoding silently destroyed GitHub Actions step list markers (`- uses:` became `uses:`). GitHub rejected the workflow with zero-duration "workflow file issue" runs and no job logs. Separately, three mojibake em-dash sequences (`U+00E2 U+20AC U+201D`) in bash scripts tripped actionlint shellcheck SC1111.
+- What caused delays: The first fix commit (`aa4b1c1`) looked successful locally because the file still "looked" like YAML, but the missing `- ` step markers made it invalid. Only CI duration of 0s and a Python yaml parse error revealed the structural break.
+- What failed: Writing entire workflows with `WriteAllLines` after char-level replaces without re-validating YAML structure and step markers. First replace pattern also used wrong codepoint (`U+0022` instead of `U+201D`), so the mojibake survived the first fix attempt.
+- What succeeded: Restoring the last known-good commit (`git checkout a8d6fd2 -- .github/workflows/ci.yml`), applying a targeted replace of only the three bad sequences, verifying with `python -c "import yaml; yaml.safe_load(...)"`, confirming diff was exactly 3 lines, then pushing.
+- What should change: Never bulk-rewrite workflow files. Fix encoding/mojibake with minimal in-place edits; always parse-validate YAML and assert step markers before commit; prefer restoring known-good + surgical patch over rewrite.
+- Pattern: Workflow YAML edits require structural validation (YAML parse + step marker presence), not just visual inspection.
+- Follow-up improvement: Add a local pre-commit or CI guard that parses all `.github/workflows/*.yml` with a real YAML parser before push if actionlint is not run locally.
+- Owner: DevOps/Engineering
+- Status: Open
+
 ## Review Cadence
 
 - Review lessons at the end of every completed task.
