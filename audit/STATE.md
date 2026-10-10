@@ -38,6 +38,7 @@ T4.14 03078d6 serializedWrite is re-entrant; offer+unread+transfer and failTrans
  ef1c897 
 T4.16 ccb88dd allowBackup=false + extraction rules; Android build not run (R7)
 T4.17 6ff2037 ensureKeyPair verifies private key; login re-publishes key best-effort
+T4.18 fda079f trustedUpdateUrl allow-list (https + github Rain repos or build host)
 ## Blocked
 T4.15 SKIPPED (DB-003): premise invalid - no table declares a foreign key, so the beforeOpen foreign_key_check can never fail. DB-003 downgraded to P3 in audit/01-findings.md; quarantine-on-open-failure moved to backlog.
 T4.19 BLOCKED (SEC-006): depends on T4.01 (rules changes need RULES_TEST).
