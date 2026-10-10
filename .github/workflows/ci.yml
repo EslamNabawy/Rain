@@ -553,6 +553,17 @@ jobs:
         continue-on-error: true
         run: flutter build windows --config-only
 
+  vault:
+    name: Obsidian Vault
+    runs-on: windows-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v5
+
+      - name: Validate required notes, wiki links and register semantics
+        shell: pwsh
+        run: ./scripts/check_obsidian_vault.ps1
+
   test-gates:
     name: Test Gates
     runs-on: ubuntu-latest
@@ -565,6 +576,7 @@ jobs:
       - tests
       - firebase-backend
       - firebase-emulator-tests
+      - vault
       - android-build
       - windows-config-check
     steps:
@@ -577,6 +589,7 @@ jobs:
           test "${{ needs.tests.result }}" = "success"
           test "${{ needs.firebase-backend.result }}" = "success"
           test "${{ needs.firebase-emulator-tests.result }}" = "success"
+          test "${{ needs.vault.result }}" = "success"
           test "${{ needs.android-build.result }}" = "success" || test "${{ needs.android-build.result }}" = "skipped"
           test "${{ needs.windows-config-check.result }}" = "success"
 
