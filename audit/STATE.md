@@ -42,6 +42,8 @@ T4.20 c8186f8 service no longer imports firebase_auth; 2 broker tests
 T4.21 4feaa3f protocol_brain_firebase.dart + testing.dart; boundary test; all packages green
 T4.22 95778ab lazy FirebaseFunctions; source-contract test (adapter cannot be constructed in unit tests)
 T4.23 b9e5348 flutter-action and gh-release pinned by SHA; v4 artifact/checkout aligned; dependabot.yml added
+T5.1 95cbb07 integration/main-dev: origin/main merged (38 conflicts resolved); analyze/format clean; tests peer_core 80, protocol_brain 294, rain_core 69, apps/rain 774 pass + 20 skip, functions 37, vault pass; pushed, not merged into main/dev
+T6.1 ebcca4e vault synced (R-024..R-032, BLK-011..013, TD-025..030, ADR-012/013, CONTINUITY); validator passes
 ## Blocked
 T4.15 SKIPPED (DB-003): premise invalid - no table declares a foreign key, so the beforeOpen foreign_key_check can never fail. DB-003 downgraded to P3 in audit/01-findings.md; quarantine-on-open-failure moved to backlog.
 T4.19 BLOCKED (SEC-006): depends on T4.01 (rules changes need RULES_TEST).
