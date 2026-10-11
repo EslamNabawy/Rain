@@ -1,6 +1,6 @@
 # Lessons Learned
 
-Last updated: 2026-06-08
+Last updated: 2026-10-11
 
 ## Purpose
 
@@ -717,6 +717,22 @@ No task is fully complete until the lesson check is done or explicitly marked "n
 - What should change: Never bulk-rewrite workflow files. Fix encoding/mojibake with minimal in-place edits; always parse-validate YAML and assert step markers before commit; prefer restoring known-good + surgical patch over rewrite.
 - Pattern: Workflow YAML edits require structural validation (YAML parse + step marker presence), not just visual inspection.
 - Follow-up improvement: Add a local pre-commit or CI guard that parses all `.github/workflows/*.yml` with a real YAML parser before push if actionlint is not run locally.
+- Owner: DevOps/Engineering
+- Status: Open
+
+### LESSON-20261011-043: win32 6.3.0 Removed Native DLL — Verify Lists Must Track Package Changelogs
+
+- Date: 2026-10-11
+- Related task: Validated Release Apps demo run after dependency upgrades.
+- Related system: [[Build Process]]
+- Related risk/debt: Dependency upgrade side effect (win32 6.2.0 -> 6.4.0).
+- What was learned: `win32` 6.3.0 (2026-05-22) removed the build hook and the `win32_windows_x64.dll` native wrapper. Bindings now pre-resolve `GetLastError()` in pure Dart. CI and four release workflows still hard-required that DLL in their artifact verify lists, so Windows builds produced a correct bundle then failed verification with `Missing Windows runtime entry before upload: ...win32_windows_x64.dll`.
+- What caused delays: Root-cause hunt through job logs and pub cache CHANGELOG; build itself succeeded.
+- What failed: Hard-coded native DLL lists in five workflows not updated when transitive native packages change packaging model.
+- What succeeded: Identified the CHANGELOG entry, removed the single line from `ci.yml`, `validated-release.yml`, `fast-release.yml`, `build-artifacts.yml`, `tested-build-artifacts.yml`; restored no-BOM UTF-8 after a Set-Content BOM injection; push `8a52489`.
+- What should change: After any transitive dependency bump, check package changelogs for native asset/hook changes; keep verify lists driven by the runtime manifest when possible instead of hard-coded DLL names.
+- Pattern: Artifact verify lists go stale when dependencies change native packaging; CHANGELOG of native packages is required reading on upgrade.
+- Follow-up improvement: Derive Windows runtime verify list from `NativeAssetsManifest.json` + core Flutter DLLs so packages can drop/add natives without workflow edits.
 - Owner: DevOps/Engineering
 - Status: Open
 
