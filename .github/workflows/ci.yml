@@ -653,7 +653,6 @@ jobs:
             @{ Label = 'Windows WebRTC plugin DLL'; Path = 'artifacts\Rain-Demo-Windows-x64-Build\flutter_webrtc_plugin.dll' },
             @{ Label = 'Windows WebRTC runtime DLL'; Path = 'artifacts\Rain-Demo-Windows-x64-Build\libwebrtc.dll' },
             @{ Label = 'Windows SQLite runtime DLL'; Path = 'artifacts\Rain-Demo-Windows-x64-Build\sqlite3.dll' },
-            @{ Label = 'Windows win32 native asset DLL'; Path = 'artifacts\Rain-Demo-Windows-x64-Build\win32_windows_x64.dll' },
             @{ Label = 'Windows Flutter data directory'; Path = 'artifacts\Rain-Demo-Windows-x64-Build\data' },
             @{ Label = 'Android ARM v7 APK (armeabi-v7a)'; Path = 'artifacts\Rain-Demo-Android-ARM-v7a-Build.apk' },
             @{ Label = 'Android ARM v8/v9 APK (arm64-v8a)'; Path = 'artifacts\Rain-Demo-Android-ARM-v8-v9-Build.apk' }
