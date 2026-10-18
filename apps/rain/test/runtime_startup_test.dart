@@ -540,7 +540,7 @@ void main() {
     await tester.pump();
     await tester.pump();
 
-    expect(find.textContaining('Rain could not start.'), findsOneWidget);
+    expect(find.textContaining('Rain could not start'), findsOneWidget);
     expect(find.textContaining('release config missing'), findsOneWidget);
   });
 

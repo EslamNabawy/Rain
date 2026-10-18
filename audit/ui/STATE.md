@@ -13,10 +13,13 @@
 - T1.5 a935f25 mist card uses tokens and fades in once
 - T1.6 17f6cf5 RainBusyIndicator replaces 14 spinners; RainDelayedReveal
 - T2.1 db3320a orbital loop resumes by wall clock; intro scale once per process
+- T2.2 2c0971a captions after 600 ms; AnimatedSwitcher by surface kind; bootstrap splash themed
 
 ## Blocked
 
 ## Handoff to hardening
+
+- Expose a startup retry on appStartupStateProvider (T2.3): no retry/restart method exists, so the in-app AppStartupPhase.failed screen has no Try again button; only the bootstrap failure (main.dart) retries.
 
 ## Decisions
 
@@ -34,3 +37,4 @@
 - Baseline (T0.2, 2026-10-11, base 02e02f2): apps/rain analyze no issues; format 0 changed of 295; apps/rain tests +764 passed, 20 skipped, 0 failed; line limit no file over 3200.
 - T1.1: google/fonts only ships variable Inter[opsz,wght] and SpaceGrotesk[wght]. Static weights were instanced from those official files with fontTools (Inter opsz=14; Inter 400/500/600/700, Space Grotesk 500/600/700), named per google_fonts 8.1.0 lookup (Family-Weight.ttf). OFL kept as Inter-OFL.txt / SpaceGrotesk-OFL.txt.
 - T1.4: union of the five helpers = strip 'Exception: '/'Bad state: '/'StateError: ' prefixes; home_screen call/transfer/network phrase mappings; onboarding firebase_database permission-denied account message. All now live in presentation/feedback/rain_error_text.dart; settings now shows 'Microphone permission required.' for mic permission errors (was raw text).
+- sound_event_router_test 'five sends in 200 ms' is wall-clock flaky under full-suite load (passes alone); not touched by this program.

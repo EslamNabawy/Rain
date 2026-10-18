@@ -78,4 +78,19 @@ void main() {
       'Try later.',
     );
   });
+
+  test('callContext false skips voice-call phrases', () {
+    expect(
+      rainUserFacingError('operation timed out', callContext: false),
+      'operation timed out',
+    );
+    expect(
+      rainUserFacingError('firebase unreachable', callContext: false),
+      rainDefaultErrorText,
+    );
+    expect(
+      rainUserFacingError('Active file transfer', callContext: false),
+      'Finish the active file transfer first.',
+    );
+  });
 }

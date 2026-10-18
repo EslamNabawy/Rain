@@ -18,9 +18,14 @@ final RegExp _unsafeText = RegExp(
 /// Known runtime phrases map to friendly copy. Anything else is shown only
 /// when it already reads like a plain sentence; raw exception text, Firebase
 /// codes, paths, stack frames and long text fall back to [fallback].
+///
+/// [callContext] enables the voice-call phrase mappings (busy, declined,
+/// timeouts, signaling, media). Turn it off outside call flows so a generic
+/// failure is never reported as a call problem.
 String rainUserFacingError(
   Object? error, {
   String fallback = rainDefaultErrorText,
+  bool callContext = true,
 }) {
   if (error == null) {
     return fallback;
@@ -33,7 +38,7 @@ String rainUserFacingError(
       break;
     }
   }
-  final mapped = _friendlyMessageFor(message.toLowerCase());
+  final mapped = _friendlyMessageFor(message.toLowerCase(), callContext);
   final result = mapped ?? message;
   if (result.isEmpty ||
       result.length > _maxErrorLength ||
@@ -43,7 +48,7 @@ String rainUserFacingError(
   return result;
 }
 
-String? _friendlyMessageFor(String normalized) {
+String? _friendlyMessageFor(String normalized, bool callContext) {
   if ((normalized.contains('firebase_database') ||
           normalized.contains('firebase database error')) &&
       normalized.contains('permission denied')) {
@@ -61,6 +66,9 @@ String? _friendlyMessageFor(String normalized) {
   if (normalized.contains('microphone') &&
       (normalized.contains('permission') || normalized.contains('denied'))) {
     return 'Microphone permission required.';
+  }
+  if (!callContext) {
+    return null;
   }
   if (normalized.contains('peer is busy') ||
       normalized == 'busy.' ||

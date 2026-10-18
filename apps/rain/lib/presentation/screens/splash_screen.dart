@@ -1,8 +1,11 @@
 import 'dart:async';
 
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
+import 'package:package_info_plus/package_info_plus.dart';
 
 import 'package:rain/presentation/branding/rain_peer_core_mark.dart';
+import 'package:rain/presentation/feedback/rain_error_text.dart';
 import 'package:rain/presentation/performance/rain_motion_policy.dart';
 import 'package:rain/presentation/theme/rain_theme.dart';
 import 'package:rain/presentation/widgets/rain_backdrop.dart';
@@ -33,19 +36,92 @@ class RainSplashScreen extends StatelessWidget {
 }
 
 class RainStartupFailureScreen extends StatelessWidget {
-  const RainStartupFailureScreen({required this.error, super.key});
+  const RainStartupFailureScreen({
+    required this.error,
+    this.onRetry,
+    @visibleForTesting this.versionLoader = _loadAppVersion,
+    super.key,
+  });
 
   final Object error;
 
+  /// Shows the 'Try again' button when set.
+  final VoidCallback? onRetry;
+  final Future<String?> Function() versionLoader;
+
+  Future<void> _copyDetails(BuildContext context) async {
+    final message = rainUserFacingError(error, callContext: false);
+    String? version;
+    try {
+      version = await versionLoader();
+    } catch (_) {
+      version = null;
+    }
+    await Clipboard.setData(
+      ClipboardData(
+        text: version == null ? message : '$message\nRain $version',
+      ),
+    );
+    if (context.mounted) {
+      ScaffoldMessenger.of(
+        context,
+      ).showSnackBar(const SnackBar(content: Text('Details copied')));
+    }
+  }
+
   @override
   Widget build(BuildContext context) {
+    final retry = onRetry;
     return _SplashScaffold(
-      child: _SplashBody(
-        title: 'Rain could not start.',
-        subtitle: error.toString(),
+      child: Column(
+        mainAxisSize: MainAxisSize.min,
+        children: <Widget>[
+          const RainPeerCoreMark(size: 88),
+          const SizedBox(height: 22),
+          const Text(
+            'Rain could not start',
+            textAlign: TextAlign.center,
+            style: TextStyle(
+              color: Colors.white,
+              fontSize: 26,
+              fontWeight: FontWeight.w900,
+              letterSpacing: 0,
+            ),
+          ),
+          const SizedBox(height: 8),
+          Text(
+            rainUserFacingError(error, callContext: false),
+            textAlign: TextAlign.center,
+            style: TextStyle(
+              color: Colors.white.withValues(alpha: 0.72),
+              fontSize: 14,
+              height: 1.45,
+              letterSpacing: 0,
+            ),
+          ),
+          const SizedBox(height: 24),
+          if (retry != null) ...<Widget>[
+            FilledButton(
+              key: const ValueKey<String>('qa.startup.retry'),
+              onPressed: retry,
+              child: const Text('Try again'),
+            ),
+            const SizedBox(height: 8),
+          ],
+          TextButton(
+            key: const ValueKey<String>('qa.startup.copy'),
+            onPressed: () => _copyDetails(context),
+            child: const Text('Copy details'),
+          ),
+        ],
       ),
     );
   }
+}
+
+Future<String?> _loadAppVersion() async {
+  final info = await PackageInfo.fromPlatform();
+  return '${info.version} (${info.buildNumber})';
 }
 
 class RainAccountDeletionScreen extends StatelessWidget {

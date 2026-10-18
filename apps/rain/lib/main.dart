@@ -133,7 +133,14 @@ class _RainStartupAppState extends State<RainStartupApp> {
           if (snapshot.hasError) {
             final error = snapshot.error!;
             _logBootstrapError(error, snapshot.stackTrace);
-            return BootstrapFailureApp(error: error);
+            return BootstrapFailureApp(
+              error: error,
+              onRetry: () => setState(() {
+                _bootstrapFuture = widget.bootstrapper.bootstrap(
+                  widget.environment,
+                );
+              }),
+            );
           }
 
           final bootstrap = snapshot.data;
@@ -200,17 +207,18 @@ class _RainStartupAppState extends State<RainStartupApp> {
 
 @visibleForTesting
 class BootstrapFailureApp extends StatelessWidget {
-  const BootstrapFailureApp({required this.error, super.key});
+  const BootstrapFailureApp({required this.error, this.onRetry, super.key});
 
   final Object error;
+  final VoidCallback? onRetry;
 
   @override
   Widget build(BuildContext context) {
     return MaterialApp(
       title: 'Rain',
       debugShowCheckedModeBanner: false,
-      theme: ThemeData.dark(useMaterial3: true),
-      home: RainStartupFailureScreen(error: error),
+      theme: RainTheme.dark(),
+      home: RainStartupFailureScreen(error: error, onRetry: onRetry),
     );
   }
 }

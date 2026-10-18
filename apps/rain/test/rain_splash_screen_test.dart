@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:rain/presentation/branding/rain_peer_core_mark.dart';
 import 'package:rain/presentation/performance/rain_performance.dart';
@@ -101,5 +102,68 @@ void main() {
     );
     expect(intro.duration, Duration.zero);
     await tester.pumpWidget(const SizedBox.shrink());
+  });
+
+  testWidgets('startup failure hides raw exception text', (tester) async {
+    await tester.pumpWidget(
+      MaterialApp(
+        home: RainStartupFailureScreen(
+          error: StateError('SocketException: lookup firebase #12'),
+        ),
+      ),
+    );
+    expect(find.text('Rain could not start'), findsOneWidget);
+    expect(find.textContaining('SocketException'), findsNothing);
+    expect(find.text('Something went wrong. Try again.'), findsOneWidget);
+    expect(
+      find.byKey(const ValueKey<String>('qa.startup.retry')),
+      findsNothing,
+    );
+  });
+
+  testWidgets('startup failure retry button calls the callback', (
+    tester,
+  ) async {
+    var retries = 0;
+    await tester.pumpWidget(
+      MaterialApp(
+        home: RainStartupFailureScreen(error: 'boom', onRetry: () => retries++),
+      ),
+    );
+    await tester.tap(find.byKey(const ValueKey<String>('qa.startup.retry')));
+    expect(retries, 1);
+  });
+
+  testWidgets('startup failure copies sanitized details', (tester) async {
+    String? copied;
+    tester.binding.defaultBinaryMessenger.setMockMethodCallHandler(
+      SystemChannels.platform,
+      (MethodCall call) async {
+        if (call.method == 'Clipboard.setData') {
+          copied = (call.arguments as Map<Object?, Object?>)['text'] as String?;
+        }
+        return null;
+      },
+    );
+    addTearDown(
+      () => tester.binding.defaultBinaryMessenger.setMockMethodCallHandler(
+        SystemChannels.platform,
+        null,
+      ),
+    );
+    await tester.pumpWidget(
+      MaterialApp(
+        home: RainStartupFailureScreen(
+          error: Exception('Bad state: low disk space'),
+          versionLoader: () async => '9.9.9 (1)',
+        ),
+      ),
+    );
+    await tester.tap(find.byKey(const ValueKey<String>('qa.startup.copy')));
+    await tester.pump();
+    await tester.pump();
+    expect(copied, contains('Rain 9.9.9 (1)'));
+    expect(copied, isNot(contains('Exception')));
+    expect(find.text('Details copied'), findsOneWidget);
   });
 }
