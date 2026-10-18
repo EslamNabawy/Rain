@@ -419,6 +419,7 @@ class RainTheme {
   }
 
   static TextTheme _textTheme(TextTheme base) {
+    GoogleFonts.config.allowRuntimeFetching = false;
     final inter = GoogleFonts.interTextTheme(base);
     return inter.copyWith(
       displayLarge: GoogleFonts.spaceGrotesk(
