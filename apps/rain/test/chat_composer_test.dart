@@ -125,4 +125,32 @@ void main() {
     expect(attachCount, 1);
     expect(sendCount, 0);
   });
+
+  testWidgets('send button keeps its size while sending', (
+    WidgetTester tester,
+  ) async {
+    final controller = TextEditingController(text: 'hi');
+    addTearDown(controller.dispose);
+
+    Future<Size> pumpSize({required bool isSending}) async {
+      await tester.pumpWidget(
+        MaterialApp(
+          home: Scaffold(
+            body: ChatComposer(
+              controller: controller,
+              enabled: true,
+              isSending: isSending,
+              maxLength: 4000,
+              onSend: () {},
+            ),
+          ),
+        ),
+      );
+      return tester.getSize(find.byType(FilledButton).last);
+    }
+
+    final idle = await pumpSize(isSending: false);
+    final busy = await pumpSize(isSending: true);
+    expect(busy, idle);
+  });
 }

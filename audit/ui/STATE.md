@@ -17,6 +17,7 @@
 - T2.3 4fde30e failure screen sanitized, bootstrap retry, copy details; in-app retry handed off
 - T2.4 a0c54dd force update panel with chips; deletion shows brand mark
 - T2.5 1a15bf3 native splash bitmap + v31 styles (no build run)
+- T2.6 22f5997 skeleton variants + pulse + delayed reveal at 4 sites
 
 ## Blocked
 
