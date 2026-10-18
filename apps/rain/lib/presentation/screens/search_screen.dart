@@ -14,6 +14,7 @@ import 'package:rain/presentation/widgets/app_components.dart';
 import 'package:rain/presentation/widgets/rain_chat_widgets.dart';
 import 'package:rain/presentation/feedback/rain_error_text.dart';
 import 'package:rain/presentation/widgets/feedback/rain_busy_indicator.dart';
+import 'package:rain/presentation/widgets/feedback/rain_delayed_reveal.dart';
 
 class SearchScreen extends ConsumerStatefulWidget {
   const SearchScreen({super.key});
@@ -295,7 +296,14 @@ class _SearchLoading extends StatelessWidget {
     return ListView(
       physics: const AlwaysScrollableScrollPhysics(),
       padding: const EdgeInsets.fromLTRB(16, 120, 16, 24),
-      children: const <Widget>[RainStreakSkeleton(rows: 4)],
+      children: const <Widget>[
+        RainDelayedReveal(
+          child: RainStreakSkeleton(
+            rows: 4,
+            variant: RainSkeletonVariant.friends,
+          ),
+        ),
+      ],
     );
   }
 }

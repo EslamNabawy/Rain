@@ -16,6 +16,7 @@
 - T2.2 2c0971a captions after 600 ms; AnimatedSwitcher by surface kind; bootstrap splash themed
 - T2.3 4fde30e failure screen sanitized, bootstrap retry, copy details; in-app retry handed off
 - T2.4 a0c54dd force update panel with chips; deletion shows brand mark
+- T2.5 1a15bf3 native splash bitmap + v31 styles (no build run)
 
 ## Blocked
 
@@ -41,3 +42,4 @@
 - T1.4: union of the five helpers = strip 'Exception: '/'Bad state: '/'StateError: ' prefixes; home_screen call/transfer/network phrase mappings; onboarding firebase_database permission-denied account message. All now live in presentation/feedback/rain_error_text.dart; settings now shows 'Microphone permission required.' for mic permission errors (was raw text).
 - sound_event_router_test 'five sends in 200 ms' is wall-clock flaky under full-suite load (passes alone); not touched by this program.
 - Owner action (T2.5): cold-start on Android 11 and Android 13: native splash shows the mark centred on #061017 and hands off to the Flutter splash without a flash. Android 12+ masks the animated icon to a circle, so check the 192 px mark is not clipped.
+- friend_flow_test 'remote video renderer attach failure' failed once under full-suite load, passed alone and on rerun (timing flake, untouched code).

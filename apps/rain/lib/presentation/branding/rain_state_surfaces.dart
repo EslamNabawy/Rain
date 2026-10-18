@@ -122,41 +122,172 @@ class RainMistStateCard extends StatelessWidget {
   }
 }
 
-class RainStreakSkeleton extends StatelessWidget {
-  const RainStreakSkeleton({super.key, this.rows = 3});
+enum RainSkeletonVariant { lines, messages, friends }
+
+/// Placeholder rows shown while content loads. Pulses softly unless motion is
+/// reduced, in which case it renders a fixed fill and owns no ticker.
+class RainStreakSkeleton extends StatefulWidget {
+  const RainStreakSkeleton({
+    super.key,
+    this.rows = 3,
+    this.variant = RainSkeletonVariant.lines,
+  });
 
   final int rows;
+  final RainSkeletonVariant variant;
+
+  @override
+  State<RainStreakSkeleton> createState() => _RainStreakSkeletonState();
+}
+
+class _RainStreakSkeletonState extends State<RainStreakSkeleton>
+    with SingleTickerProviderStateMixin {
+  static const double _restAlpha = 0.12;
+
+  AnimationController? _controller;
+
+  @override
+  void didChangeDependencies() {
+    super.didChangeDependencies();
+    if (RainMotionPolicy.of(context).reduced) {
+      _controller?.dispose();
+      _controller = null;
+    } else {
+      _controller ??= AnimationController(
+        vsync: this,
+        duration: RainMotion.skeletonPulse,
+      )..repeat(reverse: true);
+    }
+  }
+
+  @override
+  void dispose() {
+    _controller?.dispose();
+    super.dispose();
+  }
 
   @override
   Widget build(BuildContext context) {
     final scheme = Theme.of(context).colorScheme;
-    final rowCount = rows < 0 ? 0 : rows;
     final baseColor = scheme.brightness == Brightness.dark
         ? RainColors.mistCyan
         : RainColors.primaryLight;
+    final controller = _controller;
+    if (controller == null) {
+      return _content(baseColor.withValues(alpha: _restAlpha));
+    }
+    return AnimatedBuilder(
+      animation: controller,
+      builder: (BuildContext context, Widget? _) {
+        return _content(
+          baseColor.withValues(alpha: 0.08 + 0.08 * controller.value),
+        );
+      },
+    );
+  }
 
+  Widget _content(Color fill) {
+    final rowCount = widget.rows < 0 ? 0 : widget.rows;
     return Column(
       mainAxisSize: MainAxisSize.min,
       children: List<Widget>.generate(rowCount, (int index) {
-        final width = switch (index % 3) {
-          0 => 0.72,
-          1 => 0.96,
-          _ => 0.48,
+        return switch (widget.variant) {
+          RainSkeletonVariant.lines => _lineRow(index, fill),
+          RainSkeletonVariant.messages => _messageRow(index, fill),
+          RainSkeletonVariant.friends => _friendRow(index, fill),
         };
-        return FractionallySizedBox(
+      }),
+    );
+  }
+
+  Widget _bar(Color fill, double height, {Key? key}) {
+    return Container(
+      key: key,
+      height: height,
+      decoration: BoxDecoration(
+        color: fill,
+        borderRadius: BorderRadius.circular(RainRadius.pill),
+      ),
+    );
+  }
+
+  Widget _lineRow(int index, Color fill) {
+    final width = switch (index % 3) {
+      0 => 0.72,
+      1 => 0.96,
+      _ => 0.48,
+    };
+    return FractionallySizedBox(
+      widthFactor: width,
+      alignment: Alignment.centerLeft,
+      child: Container(
+        key: ValueKey<String>('rain_streak_skeleton_row_$index'),
+        height: 12,
+        margin: const EdgeInsets.symmetric(vertical: 5),
+        decoration: BoxDecoration(
+          color: fill,
+          borderRadius: BorderRadius.circular(RainRadius.pill),
+        ),
+      ),
+    );
+  }
+
+  Widget _messageRow(int index, Color fill) {
+    final outgoing = index.isOdd;
+    final width = switch (index % 3) {
+      0 => 0.62,
+      1 => 0.46,
+      _ => 0.74,
+    };
+    return Padding(
+      padding: const EdgeInsets.symmetric(vertical: RainSpace.xs + 2),
+      child: Align(
+        alignment: outgoing ? Alignment.centerRight : Alignment.centerLeft,
+        child: FractionallySizedBox(
           widthFactor: width,
-          alignment: Alignment.centerLeft,
           child: Container(
-            key: ValueKey<String>('rain_streak_skeleton_row_$index'),
-            height: 12,
-            margin: const EdgeInsets.symmetric(vertical: 5),
+            key: ValueKey<String>('rain_skeleton_message_$index'),
+            height: 40,
             decoration: BoxDecoration(
-              color: baseColor.withValues(alpha: 0.12),
-              borderRadius: BorderRadius.circular(999),
+              color: fill,
+              borderRadius: BorderRadius.circular(RainRadius.md),
             ),
           ),
-        );
-      }),
+        ),
+      ),
+    );
+  }
+
+  Widget _friendRow(int index, Color fill) {
+    return Padding(
+      padding: const EdgeInsets.symmetric(vertical: RainSpace.sm),
+      child: Row(
+        key: ValueKey<String>('rain_skeleton_friend_$index'),
+        children: <Widget>[
+          Container(
+            width: 40,
+            height: 40,
+            decoration: BoxDecoration(color: fill, shape: BoxShape.circle),
+          ),
+          const SizedBox(width: RainSpace.md),
+          Expanded(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: <Widget>[
+                FractionallySizedBox(
+                  widthFactor: index.isEven ? 0.55 : 0.4,
+                  child: _bar(fill, 12),
+                ),
+                const SizedBox(height: RainSpace.sm),
+                FractionallySizedBox(
+                  widthFactor: index.isEven ? 0.8 : 0.65,
+                  child: _bar(fill, 10),
+                ),
+              ],
+            ),
+          ),
+        ],
+      ),
     );
   }
 }

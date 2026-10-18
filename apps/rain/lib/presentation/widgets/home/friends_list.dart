@@ -96,7 +96,12 @@ class _FriendsListView extends StatelessWidget {
       loading: () => const Center(
         child: Padding(
           padding: EdgeInsets.all(24),
-          child: RainStreakSkeleton(rows: 4),
+          child: RainDelayedReveal(
+            child: RainStreakSkeleton(
+              rows: 4,
+              variant: RainSkeletonVariant.friends,
+            ),
+          ),
         ),
       ),
     );

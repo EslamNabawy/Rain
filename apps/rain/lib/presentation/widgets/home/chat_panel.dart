@@ -905,7 +905,14 @@ class _ChatPanelState extends ConsumerState<_ChatPanel> {
             horizontalPadding,
             24,
           ),
-          children: const <Widget>[RainStreakSkeleton(rows: 5)],
+          children: const <Widget>[
+            RainDelayedReveal(
+              child: RainStreakSkeleton(
+                rows: 6,
+                variant: RainSkeletonVariant.messages,
+              ),
+            ),
+          ],
         ),
       ),
     );
