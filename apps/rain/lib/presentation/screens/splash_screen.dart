@@ -5,6 +5,12 @@ import 'package:rain/presentation/performance/rain_motion_policy.dart';
 import 'package:rain/presentation/theme/rain_theme.dart';
 import 'package:rain/presentation/widgets/rain_backdrop.dart';
 
+bool _splashIntroPlayed = false;
+
+/// Test hook: forgets that the splash intro scale already played.
+@visibleForTesting
+void debugResetSplashIntro() => _splashIntroPlayed = false;
+
 class RainSplashScreen extends StatelessWidget {
   const RainSplashScreen({super.key});
 
@@ -108,21 +114,40 @@ class _DeletionProgressBody extends StatelessWidget {
   }
 }
 
-class _SplashBody extends StatelessWidget {
+class _SplashBody extends StatefulWidget {
   const _SplashBody({required this.title, required this.subtitle});
 
   final String title;
   final String subtitle;
 
   @override
+  State<_SplashBody> createState() => _SplashBodyState();
+}
+
+class _SplashBodyState extends State<_SplashBody> {
+  // The intro scale plays once per process so later hand-offs between the
+  // startup apps do not pulse the splash again.
+  late final bool _playIntro;
+
+  @override
+  void initState() {
+    super.initState();
+    _playIntro = !_splashIntroPlayed;
+    _splashIntroPlayed = true;
+  }
+
+  @override
   Widget build(BuildContext context) {
+    final title = widget.title;
+    final subtitle = widget.subtitle;
     final reducedMotion = RainMotionPolicy.of(context).reduced;
+    final animateIntro = _playIntro && !reducedMotion;
     return TweenAnimationBuilder<double>(
       tween: Tween<double>(begin: 0.92, end: 1),
-      duration: reducedMotion ? Duration.zero : RainMotion.splashIntro,
+      duration: animateIntro ? RainMotion.splashIntro : Duration.zero,
       curve: Curves.easeOutCubic,
       builder: (context, scale, child) {
-        return Transform.scale(scale: reducedMotion ? 1 : scale, child: child);
+        return Transform.scale(scale: animateIntro ? scale : 1, child: child);
       },
       child: Column(
         mainAxisSize: MainAxisSize.min,

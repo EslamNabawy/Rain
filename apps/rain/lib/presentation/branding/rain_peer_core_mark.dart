@@ -50,6 +50,7 @@ class RainPeerCoreAnimatedMark extends StatefulWidget {
     this.motion = RainPeerCoreMotion.wave,
     this.startupWave = true,
     this.semanticLabel = 'Rain',
+    @visibleForTesting this.clock = DateTime.now,
   });
 
   final double size;
@@ -58,6 +59,10 @@ class RainPeerCoreAnimatedMark extends StatefulWidget {
   final RainPeerCoreMotion motion;
   final bool startupWave;
   final String semanticLabel;
+
+  /// Wall clock used to resume the orbital loop mid-phase when the mark is
+  /// re-mounted, so startup hand-offs do not restart the rotation.
+  final DateTime Function() clock;
 
   @override
   State<RainPeerCoreAnimatedMark> createState() =>
@@ -191,7 +196,7 @@ class _RainPeerCoreAnimatedMarkState extends State<RainPeerCoreAnimatedMark>
     if (widget.motion == RainPeerCoreMotion.orbitalMesh) {
       if (!_meshController.isAnimating) {
         if (fromStart) {
-          _meshController.value = 0;
+          _meshController.value = _loopPhaseNow();
         }
         _meshController.repeat();
       }
@@ -201,6 +206,11 @@ class _RainPeerCoreAnimatedMarkState extends State<RainPeerCoreAnimatedMark>
         _meshController.value = 0;
       }
     }
+  }
+
+  double _loopPhaseNow() {
+    final loopMs = RainMotion.ambientLoop.inMilliseconds;
+    return (widget.clock().millisecondsSinceEpoch % loopMs) / loopMs;
   }
 
   double _delayedIntroProgress(double delay) {

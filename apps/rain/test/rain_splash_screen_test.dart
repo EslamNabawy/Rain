@@ -3,6 +3,7 @@ import 'package:flutter_test/flutter_test.dart';
 import 'package:rain/presentation/branding/rain_peer_core_mark.dart';
 import 'package:rain/presentation/performance/rain_performance.dart';
 import 'package:rain/presentation/screens/splash_screen.dart';
+import 'package:rain/presentation/theme/rain_theme.dart';
 import 'package:rain/presentation/widgets/rain_backdrop.dart';
 
 void main() {
@@ -80,6 +81,25 @@ void main() {
     expect(find.text('Private peer link'), findsOneWidget);
     expect(tester.takeException(), isNull);
 
+    await tester.pumpWidget(const SizedBox.shrink());
+  });
+
+  testWidgets('RainSplashScreen intro scale plays once per process', (
+    WidgetTester tester,
+  ) async {
+    debugResetSplashIntro();
+    await tester.pumpWidget(const MaterialApp(home: RainSplashScreen()));
+    var intro = tester.widget<TweenAnimationBuilder<double>>(
+      find.byType(TweenAnimationBuilder<double>),
+    );
+    expect(intro.duration, RainMotion.splashIntro);
+
+    await tester.pumpWidget(const SizedBox.shrink());
+    await tester.pumpWidget(const MaterialApp(home: RainSplashScreen()));
+    intro = tester.widget<TweenAnimationBuilder<double>>(
+      find.byType(TweenAnimationBuilder<double>),
+    );
+    expect(intro.duration, Duration.zero);
     await tester.pumpWidget(const SizedBox.shrink());
   });
 }

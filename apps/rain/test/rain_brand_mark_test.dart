@@ -52,4 +52,29 @@ void main() {
 
     await tester.pumpWidget(const SizedBox.shrink());
   });
+
+  testWidgets('RainPeerCoreAnimatedMark resumes the orbital loop mid-phase', (
+    tester,
+  ) async {
+    await tester.pumpWidget(
+      MaterialApp(
+        home: RainPeerCoreAnimatedMark(
+          size: 112,
+          motion: RainPeerCoreMotion.orbitalMesh,
+          clock: () => DateTime.fromMillisecondsSinceEpoch(2100),
+        ),
+      ),
+    );
+
+    final storage = tester
+        .widget<Transform>(
+          find.byKey(const ValueKey<String>('rain_peer_core_orbital_mesh')),
+        )
+        .transform
+        .storage;
+    // Half a loop is a 180 degree turn: cos(pi) is -1, not the 1 of phase 0.
+    expect(storage[0], closeTo(-1, 0.01));
+
+    await tester.pumpWidget(const SizedBox.shrink());
+  });
 }

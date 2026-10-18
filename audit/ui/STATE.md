@@ -11,6 +11,7 @@
 - T1.1 eccc14a bundled Inter + Space Grotesk, runtime fetching off
 - T1.4 fc14e34 rainUserFacingError replaces five helpers
 - T1.5 a935f25 mist card uses tokens and fades in once
+- T1.6 17f6cf5 RainBusyIndicator replaces 14 spinners; RainDelayedReveal
 
 ## Blocked
 
