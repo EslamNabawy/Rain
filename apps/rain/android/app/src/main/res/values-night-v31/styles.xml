@@ -1,0 +1,12 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <!-- Android 12+ system splash: Rain mark centred on the app background. -->
+    <style name="LaunchTheme" parent="@android:style/Theme.Black.NoTitleBar">
+        <item name="android:windowBackground">@drawable/launch_background</item>
+        <item name="android:windowSplashScreenBackground">#061017</item>
+        <item name="android:windowSplashScreenAnimatedIcon">@drawable/rain_splash_mark</item>
+    </style>
+    <style name="NormalTheme" parent="@android:style/Theme.Black.NoTitleBar">
+        <item name="android:windowBackground">@drawable/launch_background</item>
+    </style>
+</resources>

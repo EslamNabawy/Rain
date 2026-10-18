@@ -15,6 +15,7 @@
 - T2.1 db3320a orbital loop resumes by wall clock; intro scale once per process
 - T2.2 2c0971a captions after 600 ms; AnimatedSwitcher by surface kind; bootstrap splash themed
 - T2.3 4fde30e failure screen sanitized, bootstrap retry, copy details; in-app retry handed off
+- T2.4 a0c54dd force update panel with chips; deletion shows brand mark
 
 ## Blocked
 
@@ -39,3 +40,4 @@
 - T1.1: google/fonts only ships variable Inter[opsz,wght] and SpaceGrotesk[wght]. Static weights were instanced from those official files with fontTools (Inter opsz=14; Inter 400/500/600/700, Space Grotesk 500/600/700), named per google_fonts 8.1.0 lookup (Family-Weight.ttf). OFL kept as Inter-OFL.txt / SpaceGrotesk-OFL.txt.
 - T1.4: union of the five helpers = strip 'Exception: '/'Bad state: '/'StateError: ' prefixes; home_screen call/transfer/network phrase mappings; onboarding firebase_database permission-denied account message. All now live in presentation/feedback/rain_error_text.dart; settings now shows 'Microphone permission required.' for mic permission errors (was raw text).
 - sound_event_router_test 'five sends in 200 ms' is wall-clock flaky under full-suite load (passes alone); not touched by this program.
+- Owner action (T2.5): cold-start on Android 11 and Android 13: native splash shows the mark centred on #061017 and hands off to the Flutter splash without a flash. Android 12+ masks the animated icon to a circle, so check the 192 px mark is not clipped.

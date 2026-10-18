@@ -33,7 +33,43 @@ void main() {
     for (final path in drawableFiles) {
       final xml = File(path).readAsStringSync();
       expect(xml, contains('android:color="#061017"'), reason: path);
+      expect(xml, contains('@drawable/rain_splash_mark'), reason: path);
     }
+  });
+
+  test('Android 12 splash styles use the Rain mark on the app background', () {
+    for (final path in <String>[
+      'android/app/src/main/res/values-v31/styles.xml',
+      'android/app/src/main/res/values-night-v31/styles.xml',
+    ]) {
+      final xml = File(path).readAsStringSync();
+      expect(
+        xml,
+        contains('name="android:windowSplashScreenBackground">#061017<'),
+        reason: path,
+      );
+      expect(
+        xml,
+        contains(
+          'name="android:windowSplashScreenAnimatedIcon">@drawable/rain_splash_mark<',
+        ),
+        reason: path,
+      );
+      expect(
+        _styleWindowBackground(xml, 'NormalTheme'),
+        '@drawable/launch_background',
+        reason: path,
+      );
+    }
+  });
+
+  test('Rain splash mark bitmap exists', () {
+    expect(
+      File(
+        'android/app/src/main/res/drawable-nodpi/rain_splash_mark.png',
+      ).existsSync(),
+      isTrue,
+    );
   });
 }
 

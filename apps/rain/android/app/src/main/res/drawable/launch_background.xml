@@ -5,4 +5,9 @@
             <solid android:color="#061017" />
         </shape>
     </item>
+    <item>
+        <bitmap
+            android:gravity="center"
+            android:src="@drawable/rain_splash_mark" />
+    </item>
 </layer-list>
