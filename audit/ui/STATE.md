@@ -10,6 +10,7 @@
 - T1.3 0a14c69 single RainMotionPolicy for presentation
 - T1.1 eccc14a bundled Inter + Space Grotesk, runtime fetching off
 - T1.4 fc14e34 rainUserFacingError replaces five helpers
+- T1.5 a935f25 mist card uses tokens and fades in once
 
 ## Blocked
 

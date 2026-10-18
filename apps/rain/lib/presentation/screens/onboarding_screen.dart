@@ -12,6 +12,7 @@ import 'package:rain/presentation/branding/rain_peer_core_mark.dart';
 import 'package:rain/presentation/theme/rain_theme.dart';
 import 'package:rain/presentation/widgets/app_components.dart';
 import 'package:rain/presentation/feedback/rain_error_text.dart';
+import 'package:rain/presentation/widgets/feedback/rain_busy_indicator.dart';
 
 enum _AuthMode { register, login }
 
@@ -522,8 +523,8 @@ class _OnboardingScreenState extends ConsumerState<OnboardingScreen>
                                         ? SizedBox(
                                             width: 16,
                                             height: 16,
-                                            child: CircularProgressIndicator(
-                                              strokeWidth: 2,
+                                            child: RainBusyIndicator(
+                                              size: 16,
                                               color: scheme.onPrimary,
                                             ),
                                           )

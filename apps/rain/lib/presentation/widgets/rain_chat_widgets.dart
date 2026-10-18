@@ -9,6 +9,7 @@ import 'package:rain/application/state/call_surface_providers.dart';
 import 'package:rain/infrastructure/services/rain_debug_log_service.dart';
 import 'package:rain/presentation/branding/rain_peer_core_mark.dart';
 import 'package:rain/presentation/widgets/calls/rain_call_controls.dart';
+import 'package:rain/presentation/widgets/feedback/rain_busy_indicator.dart';
 
 const String _maleAvatarAsset = 'assets/gender_avatar/man-avatar.svg';
 const String _femaleAvatarAsset = 'assets/gender_avatar/woman-avatar.svg';
@@ -230,10 +231,7 @@ class RainLiveLinkBar extends StatelessWidget {
                         if (isBusy)
                           SizedBox.square(
                             dimension: 14,
-                            child: CircularProgressIndicator(
-                              strokeWidth: 2,
-                              color: color,
-                            ),
+                            child: RainBusyIndicator(size: 14, color: color),
                           )
                         else
                           Icon(icon, size: 15, color: color),
@@ -526,10 +524,7 @@ class RainComposerCommandStrip extends StatelessWidget {
                   child: isBusy
                       ? SizedBox.square(
                           dimension: 14,
-                          child: CircularProgressIndicator(
-                            strokeWidth: 2,
-                            color: color,
-                          ),
+                          child: RainBusyIndicator(size: 14, color: color),
                         )
                       : Icon(icon, color: color, size: 16),
                 ),
@@ -1256,7 +1251,7 @@ class RainMicrophoneSelector extends StatelessWidget {
             icon: isBusy
                 ? const SizedBox.square(
                     dimension: 18,
-                    child: CircularProgressIndicator(strokeWidth: 2),
+                    child: RainBusyIndicator(size: 18),
                   )
                 : const Icon(Icons.refresh),
           ),
@@ -1368,7 +1363,7 @@ class RainCameraSelector extends StatelessWidget {
             icon: isBusy
                 ? const SizedBox.square(
                     dimension: 18,
-                    child: CircularProgressIndicator(strokeWidth: 2),
+                    child: RainBusyIndicator(size: 18),
                   )
                 : const Icon(Icons.refresh),
           ),

@@ -188,7 +188,7 @@ class _DesktopFriendsRefreshHeaderState
                   ? const SizedBox(
                       width: 18,
                       height: 18,
-                      child: CircularProgressIndicator(strokeWidth: 2),
+                      child: RainBusyIndicator(size: 18),
                     )
                   : const Icon(Icons.refresh),
             ),

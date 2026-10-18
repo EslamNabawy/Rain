@@ -23,6 +23,7 @@ import 'package:rain/presentation/widgets/app_components.dart';
 import 'package:rain/presentation/widgets/app_dialogs.dart';
 import 'package:rain/presentation/widgets/rain_chat_widgets.dart';
 import 'package:rain/presentation/feedback/rain_error_text.dart';
+import 'package:rain/presentation/widgets/feedback/rain_busy_indicator.dart';
 
 String _formatSettingsError(Object error) => rainUserFacingError(error);
 
@@ -450,7 +451,7 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen> {
                   loading: () => const ListTile(
                     leading: SizedBox.square(
                       dimension: 22,
-                      child: CircularProgressIndicator(strokeWidth: 2),
+                      child: RainBusyIndicator(size: 22),
                     ),
                     title: Text('Checking diagnostics'),
                   ),
@@ -464,7 +465,7 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen> {
                   trailing: _exportingDiagnostics
                       ? const SizedBox.square(
                           dimension: 22,
-                          child: CircularProgressIndicator(strokeWidth: 2),
+                          child: RainBusyIndicator(size: 22),
                         )
                       : null,
                   onTap: _exportingDiagnostics
@@ -1405,7 +1406,7 @@ class _AboutRainSection extends StatelessWidget {
       loading: () => const ListTile(
         leading: SizedBox.square(
           dimension: 22,
-          child: CircularProgressIndicator(strokeWidth: 2),
+          child: RainBusyIndicator(size: 22),
         ),
         title: Text('Checking app version'),
       ),
@@ -1481,7 +1482,7 @@ class _MicrophoneTestTile extends StatelessWidget {
         icon: isTesting
             ? const SizedBox.square(
                 dimension: 18,
-                child: CircularProgressIndicator(strokeWidth: 2),
+                child: RainBusyIndicator(size: 18),
               )
             : const Icon(Icons.play_arrow),
       ),

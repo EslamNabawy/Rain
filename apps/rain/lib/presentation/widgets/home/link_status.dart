@@ -167,10 +167,7 @@ class _MobileLinkGlyph extends StatelessWidget {
           child: status.isBusy
               ? SizedBox.square(
                   dimension: 16,
-                  child: CircularProgressIndicator(
-                    strokeWidth: 2.2,
-                    color: status.color,
-                  ),
+                  child: RainBusyIndicator(size: 16, color: status.color),
                 )
               : Icon(status.icon, size: 18, color: status.color),
         ),

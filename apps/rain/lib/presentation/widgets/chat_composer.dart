@@ -5,6 +5,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 
 import 'package:rain/presentation/theme/rain_theme.dart';
+import 'package:rain/presentation/widgets/feedback/rain_busy_indicator.dart';
 
 class ChatComposer extends StatefulWidget {
   const ChatComposer({
@@ -150,8 +151,8 @@ class _ChatComposerState extends State<ChatComposer> {
                     ? SizedBox(
                         width: 18,
                         height: 18,
-                        child: CircularProgressIndicator(
-                          strokeWidth: 2,
+                        child: RainBusyIndicator(
+                          size: 18,
                           color: scheme.primary,
                         ),
                       )
@@ -222,8 +223,8 @@ class _ChatComposerState extends State<ChatComposer> {
                   ? SizedBox(
                       width: 18,
                       height: 18,
-                      child: CircularProgressIndicator(
-                        strokeWidth: 2,
+                      child: RainBusyIndicator(
+                        size: 18,
                         color: scheme.onPrimary,
                       ),
                     )
