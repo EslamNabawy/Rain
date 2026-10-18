@@ -3,6 +3,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import 'package:rain/application/state/app_providers.dart';
 import 'package:rain/presentation/navigation/app_routes.dart';
+import 'package:rain/presentation/performance/rain_motion_policy.dart';
 import 'package:rain/presentation/screens/root_screen.dart';
 import 'package:rain/presentation/screens/startup_surface.dart';
 import 'package:rain/presentation/theme/rain_theme.dart';
@@ -24,26 +25,54 @@ class RainApp extends ConsumerWidget {
       darkTheme: RainTheme.dark(),
       routerConfig: router,
       builder: (BuildContext context, Widget? child) {
-        if (!startup.usesRoutedAppShell) {
-          if (startup.phase == AppStartupPhase.signedOut) {
-            return _StandaloneSurfaceNavigator(child: const RootScreen());
-          }
-          return RainStartupSurface(state: startup);
-        }
-        if (startup.phase == AppStartupPhase.deletingAccount) {
-          return Stack(
-            fit: StackFit.expand,
-            children: <Widget>[
-              child ?? const SizedBox.shrink(),
-              const ModalBarrier(color: Colors.transparent, dismissible: false),
-              RainStartupSurface(state: startup),
-            ],
-          );
-        }
-        return child ?? const SizedBox.shrink();
+        final (String kind, Widget surface) = _surfaceFor(startup, child);
+        return AnimatedSwitcher(
+          duration: RainMotionPolicy.of(context).d(RainMotion.slow),
+          switchInCurve: RainMotion.enter,
+          switchOutCurve: RainMotion.exit,
+          layoutBuilder: (Widget? current, List<Widget> previous) {
+            return Stack(
+              fit: StackFit.expand,
+              children: <Widget>[...previous, ?current],
+            );
+          },
+          transitionBuilder: (Widget child, Animation<double> animation) =>
+              FadeTransition(opacity: animation, child: child),
+          child: KeyedSubtree(key: ValueKey<String>(kind), child: surface),
+        );
       },
     );
   }
+}
+
+/// Picks the surface and its switcher key. Phase changes inside 'startup' keep
+/// the key so the splash stays mounted and only its caption changes. Account
+/// deletion overlays the routed shell, so it shares the 'shell' key: the router
+/// navigator holds a GlobalKey and must not be mounted twice during a fade.
+(String, Widget) _surfaceFor(AppStartupState startup, Widget? child) {
+  if (!startup.usesRoutedAppShell) {
+    if (startup.phase == AppStartupPhase.signedOut) {
+      return (
+        'standalone',
+        _StandaloneSurfaceNavigator(child: const RootScreen()),
+      );
+    }
+    return ('startup', RainStartupSurface(state: startup));
+  }
+  if (startup.phase == AppStartupPhase.deletingAccount) {
+    return (
+      'shell',
+      Stack(
+        fit: StackFit.expand,
+        children: <Widget>[
+          child ?? const SizedBox.shrink(),
+          const ModalBarrier(color: Colors.transparent, dismissible: false),
+          RainStartupSurface(state: startup),
+        ],
+      ),
+    );
+  }
+  return ('shell', child ?? const SizedBox.shrink());
 }
 
 class _StandaloneSurfaceNavigator extends StatelessWidget {

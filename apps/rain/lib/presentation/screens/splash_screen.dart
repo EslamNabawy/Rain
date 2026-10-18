@@ -1,3 +1,5 @@
+import 'dart:async';
+
 import 'package:flutter/material.dart';
 
 import 'package:rain/presentation/branding/rain_peer_core_mark.dart';
@@ -12,12 +14,20 @@ bool _splashIntroPlayed = false;
 void debugResetSplashIntro() => _splashIntroPlayed = false;
 
 class RainSplashScreen extends StatelessWidget {
-  const RainSplashScreen({super.key});
+  const RainSplashScreen({super.key, this.caption});
+
+  /// Short phase label shown under the subtitle after
+  /// [RainMotion.splashCaptionDelay], so quick phases never flash text.
+  final String? caption;
 
   @override
   Widget build(BuildContext context) {
-    return const _SplashScaffold(
-      child: _SplashBody(title: 'Rain', subtitle: 'Private peer link'),
+    return _SplashScaffold(
+      child: _SplashBody(
+        title: 'Rain',
+        subtitle: 'Private peer link',
+        caption: caption,
+      ),
     );
   }
 }
@@ -115,10 +125,15 @@ class _DeletionProgressBody extends StatelessWidget {
 }
 
 class _SplashBody extends StatefulWidget {
-  const _SplashBody({required this.title, required this.subtitle});
+  const _SplashBody({
+    required this.title,
+    required this.subtitle,
+    this.caption,
+  });
 
   final String title;
   final String subtitle;
+  final String? caption;
 
   @override
   State<_SplashBody> createState() => _SplashBodyState();
@@ -128,12 +143,25 @@ class _SplashBodyState extends State<_SplashBody> {
   // The intro scale plays once per process so later hand-offs between the
   // startup apps do not pulse the splash again.
   late final bool _playIntro;
+  Timer? _captionTimer;
+  bool _captionReady = false;
 
   @override
   void initState() {
     super.initState();
     _playIntro = !_splashIntroPlayed;
     _splashIntroPlayed = true;
+    _captionTimer = Timer(RainMotion.splashCaptionDelay, () {
+      if (mounted) {
+        setState(() => _captionReady = true);
+      }
+    });
+  }
+
+  @override
+  void dispose() {
+    _captionTimer?.cancel();
+    super.dispose();
   }
 
   @override
@@ -180,7 +208,87 @@ class _SplashBodyState extends State<_SplashBody> {
               letterSpacing: 0,
             ),
           ),
+          SizedBox(
+            height: 36,
+            child: Align(
+              alignment: Alignment.bottomCenter,
+              child: AnimatedSwitcher(
+                duration: RainMotionPolicy.of(context).d(RainMotion.standard),
+                child: _captionReady && widget.caption != null
+                    ? _SplashCaption(
+                        key: ValueKey<String>(widget.caption!),
+                        text: widget.caption!,
+                      )
+                    : const SizedBox.shrink(
+                        key: ValueKey<String>('rain-splash-no-caption'),
+                      ),
+              ),
+            ),
+          ),
         ],
+      ),
+    );
+  }
+}
+
+class _SplashCaption extends StatefulWidget {
+  const _SplashCaption({super.key, required this.text});
+
+  final String text;
+
+  @override
+  State<_SplashCaption> createState() => _SplashCaptionState();
+}
+
+class _SplashCaptionState extends State<_SplashCaption> {
+  Timer? _timer;
+  int _dots = 3;
+
+  @override
+  void didChangeDependencies() {
+    super.didChangeDependencies();
+    _timer?.cancel();
+    _timer = null;
+    if (RainMotionPolicy.read(context).reduced) {
+      _dots = 3;
+      return;
+    }
+    _timer = Timer.periodic(const Duration(milliseconds: 450), (_) {
+      if (mounted) {
+        setState(() => _dots = _dots % 3 + 1);
+      }
+    });
+  }
+
+  @override
+  void dispose() {
+    _timer?.cancel();
+    super.dispose();
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final style = Theme.of(
+      context,
+    ).textTheme.bodySmall?.copyWith(color: Colors.white.withValues(alpha: 0.6));
+    return Semantics(
+      label: widget.text,
+      child: ExcludeSemantics(
+        child: Text.rich(
+          TextSpan(
+            style: style,
+            children: <InlineSpan>[
+              TextSpan(text: widget.text),
+              TextSpan(text: '.' * _dots),
+              TextSpan(
+                text: '.' * (3 - _dots),
+                style: const TextStyle(color: Colors.transparent),
+              ),
+            ],
+          ),
+          key: const ValueKey<String>('rain-splash-caption'),
+          textAlign: TextAlign.center,
+        ),
       ),
     );
   }

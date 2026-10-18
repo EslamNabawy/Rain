@@ -18,9 +18,15 @@ class RainStartupSurface extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     return switch (state.phase) {
-      AppStartupPhase.checkingUpdate ||
-      AppStartupPhase.validatingSession ||
-      AppStartupPhase.startingRuntime => const RainSplashScreen(),
+      AppStartupPhase.checkingUpdate => const RainSplashScreen(
+        caption: 'Checking for updates',
+      ),
+      AppStartupPhase.validatingSession => const RainSplashScreen(
+        caption: 'Restoring your session',
+      ),
+      AppStartupPhase.startingRuntime => const RainSplashScreen(
+        caption: 'Starting secure link',
+      ),
       AppStartupPhase.deletingAccount => const RainAccountDeletionScreen(),
       AppStartupPhase.updateRequired => RainForceUpdateGate(
         result: state.updateResult,
@@ -74,7 +80,7 @@ class _RainSessionExpiredResetViewState
 
   @override
   Widget build(BuildContext context) {
-    return const RainSplashScreen();
+    return const RainSplashScreen(caption: 'Signing you out safely');
   }
 }
 

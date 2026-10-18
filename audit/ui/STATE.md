@@ -12,6 +12,7 @@
 - T1.4 fc14e34 rainUserFacingError replaces five helpers
 - T1.5 a935f25 mist card uses tokens and fades in once
 - T1.6 17f6cf5 RainBusyIndicator replaces 14 spinners; RainDelayedReveal
+- T2.1 db3320a orbital loop resumes by wall clock; intro scale once per process
 
 ## Blocked
 

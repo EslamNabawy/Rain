@@ -14,6 +14,7 @@ import 'infrastructure/window/desktop_shell_controller.dart';
 import 'presentation/performance/rain_performance.dart';
 import 'presentation/screens/rain_app.dart';
 import 'presentation/screens/splash_screen.dart';
+import 'presentation/theme/rain_theme.dart';
 
 Future<void> main() async {
   CrashDiagnosticsService? diagnostics;
@@ -137,10 +138,11 @@ class _RainStartupAppState extends State<RainStartupApp> {
 
           final bootstrap = snapshot.data;
           if (bootstrap == null) {
-            return const MaterialApp(
+            return MaterialApp(
               title: 'Rain',
               debugShowCheckedModeBanner: false,
-              home: RainSplashScreen(),
+              theme: RainTheme.dark(),
+              home: const RainSplashScreen(),
             );
           }
 
