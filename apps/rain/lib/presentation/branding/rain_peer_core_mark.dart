@@ -3,7 +3,7 @@ import 'dart:math' as math;
 import 'package:flutter/material.dart';
 import 'package:flutter_svg/flutter_svg.dart';
 
-import 'package:rain/presentation/performance/rain_performance.dart';
+import 'package:rain/presentation/performance/rain_motion_policy.dart';
 import 'package:rain/presentation/theme/rain_theme.dart';
 
 import 'rain_brand_assets.dart';
@@ -166,8 +166,7 @@ class _RainPeerCoreAnimatedMarkState extends State<RainPeerCoreAnimatedMark>
   bool _shouldAnimate(BuildContext context) {
     return widget.animate &&
         !widget.reducedMotion &&
-        MediaQuery.maybeOf(context)?.disableAnimations != true &&
-        !RainPerformanceScope.read(context).isLowPower;
+        !RainMotionPolicy.read(context).reduced;
   }
 
   void _syncMotion({required bool fromStart}) {

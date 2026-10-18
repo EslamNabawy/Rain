@@ -1,7 +1,7 @@
 import 'package:flutter/material.dart';
 
 import 'package:rain/presentation/branding/rain_peer_core_mark.dart';
-import 'package:rain/presentation/performance/rain_performance.dart';
+import 'package:rain/presentation/performance/rain_motion_policy.dart';
 import 'package:rain/presentation/theme/rain_theme.dart';
 import 'package:rain/presentation/widgets/rain_backdrop.dart';
 
@@ -116,8 +116,7 @@ class _SplashBody extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final lowPower = RainPerformanceScope.of(context).isLowPower;
-    final reducedMotion = MediaQuery.of(context).disableAnimations || lowPower;
+    final reducedMotion = RainMotionPolicy.of(context).reduced;
     return TweenAnimationBuilder<double>(
       tween: Tween<double>(begin: 0.92, end: 1),
       duration: reducedMotion ? Duration.zero : RainMotion.splashIntro,

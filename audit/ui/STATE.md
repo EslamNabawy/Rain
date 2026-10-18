@@ -1,10 +1,12 @@
-# UI/UX State
+﻿# UI/UX State
 
 ## Done
 
 - T0.1 6f548b9 worktree D:\Rain-uiux on ui/level-up and state file
 - T0.2 3eee2be baseline: analyze clean, 764 tests pass, 20 skipped
 - T0.3 b6b3fd9 audit/ui/00-ui-inventory.md
+- T0.4 ccfe777 opt-in snapshot harness and before shots
+- T1.2 6be6cfe spacing/radius/shadow/motion tokens, dark snackbar theme
 
 ## Blocked
 
@@ -24,3 +26,4 @@
 - T0.1: `flutter pub get` resolved packages and left pubspec.lock unchanged; it warns "Building with plugins requires symlink support" (Windows Developer Mode off). Only matters for platform builds, which this program does not run.
 - T0.4: snapshot harness has 10 cases x 2 themes x 2 sizes = 40 PNGs in shots/before. The file_transfer case was skipped: `_FileTransferBubble` is library-private (part of chat_panel) with no public constructor helper. google_fonts fetch errors are dropped inside a guarded zone in the harness; text renders in the fallback font until T1.1. Before shots are therefore NOT in Inter/Space Grotesk.
 - Baseline (T0.2, 2026-10-11, base 02e02f2): apps/rain analyze no issues; format 0 changed of 295; apps/rain tests +764 passed, 20 skipped, 0 failed; line limit no file over 3200.
+

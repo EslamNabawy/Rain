@@ -6,7 +6,7 @@ import 'package:rain/application/runtime/video_call_renderers.dart';
 import 'package:rain/application/runtime/voice_call_state.dart';
 import 'package:rain/application/state/call_surface_providers.dart';
 import 'package:rain/presentation/branding/rain_peer_core_mark.dart';
-import 'package:rain/presentation/performance/rain_performance.dart';
+import 'package:rain/presentation/performance/rain_motion_policy.dart';
 import 'package:rain/presentation/widgets/calls/rain_call_controls.dart';
 
 const rainRemotePrimaryVideoKey = Key('rain-remote-primary-video');
@@ -498,10 +498,7 @@ class _RainCallAudioActivity extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final performance = RainPerformanceScope.read(context);
-    final staticOnly =
-        MediaQuery.disableAnimationsOf(context) ||
-        !performance.allowContinuousCallAnimation;
+    final staticOnly = RainMotionPolicy.read(context).reduced;
     return SizedBox(
       key: rainCallAudioEmitterKey,
       width: 102,
