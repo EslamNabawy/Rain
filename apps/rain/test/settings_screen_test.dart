@@ -622,7 +622,7 @@ void main() {
     await tester.pumpSettingsFrame();
 
     expect(find.text('Microphones unavailable'), findsOneWidget);
-    expect(find.text('Microphone permission denied'), findsOneWidget);
+    expect(find.text('Microphone permission required.'), findsOneWidget);
     expect(tester.takeException(), isNull);
   });
 

@@ -37,6 +37,7 @@ import 'package:rain/presentation/widgets/connection_requests/connection_request
 import 'package:rain/presentation/widgets/calls/rain_call_controls.dart';
 import 'package:rain/presentation/widgets/calls/rain_call_suite.dart';
 import 'package:rain/presentation/widgets/rain_chat_widgets.dart';
+import 'package:rain/presentation/feedback/rain_error_text.dart';
 
 part '../widgets/home/shell_header.dart';
 part '../widgets/home/link_status.dart';
@@ -44,77 +45,7 @@ part '../widgets/home/friends_list.dart';
 part '../widgets/home/chat_panel.dart';
 part '../widgets/home/file_transfer_bubble.dart';
 
-String _formatUiError(Object error) {
-  final raw = error.toString().trim();
-  const prefixes = <String>['Exception: ', 'Bad state: ', 'StateError: '];
-  var message = raw;
-  for (final prefix in prefixes) {
-    if (raw.startsWith(prefix)) {
-      message = raw.substring(prefix.length).trim();
-      break;
-    }
-  }
-  final normalized = message.toLowerCase();
-  if (normalized.contains('active file transfer')) {
-    return 'Finish the active file transfer first.';
-  }
-  if (normalized.contains('finish the call before') ||
-      normalized == 'finish the call first.') {
-    return 'Finish the call before sending files.';
-  }
-  if (normalized.contains('microphone') &&
-      (normalized.contains('permission') || normalized.contains('denied'))) {
-    return 'Microphone permission required.';
-  }
-  if (normalized.contains('peer is busy') ||
-      normalized == 'busy.' ||
-      normalized.contains('active voice call already exists') ||
-      normalized.contains('activevoicepairs') ||
-      normalized.contains('active voice pair')) {
-    return 'Peer is already in a call.';
-  }
-  if (normalized == 'rejected.' ||
-      normalized.contains('call declined') ||
-      normalized.contains('call rejected')) {
-    return 'Call declined.';
-  }
-  if (normalized.contains('network connection lost') ||
-      normalized.contains('network lost') ||
-      normalized.contains('internet connection') ||
-      normalized.contains('network is unavailable') ||
-      normalized.contains('network unavailable')) {
-    return 'Network connection lost. Call ended.';
-  }
-  if (normalized.contains('timed out') ||
-      normalized.contains('voice call expired') ||
-      normalized.contains('call room expired')) {
-    return 'Call timed out.';
-  }
-  if (normalized.contains('voice signaling') ||
-      normalized.contains('firebase') ||
-      normalized.contains('unknown voice call') ||
-      normalized.contains('voice call already exists') ||
-      normalized.contains('already ended') ||
-      normalized.contains('permission-denied') ||
-      normalized.contains('database')) {
-    return 'Call setup failed. Try again.';
-  }
-  if (normalized.contains('ice timeout')) {
-    return 'Call media could not connect. Try again.';
-  }
-  if (normalized.contains('no remote audio')) {
-    return 'Call media could not connect. Try again.';
-  }
-  if (normalized.contains('rtcrtptransceiver') ||
-      normalized.contains('setdirection') ||
-      normalized.contains('setremotedescription') ||
-      normalized.contains('peerconnectionsetremotedescription') ||
-      normalized.contains('m-line') ||
-      normalized.contains('peer connection changed while')) {
-    return 'Call media could not connect. Try again.';
-  }
-  return message;
-}
+String _formatUiError(Object error) => rainUserFacingError(error);
 
 CallAudioOutputTarget _voiceCallOutputTargetForPreference(
   CallAudioOutputPreference preference,

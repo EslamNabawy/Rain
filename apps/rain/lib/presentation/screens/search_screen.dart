@@ -12,6 +12,7 @@ import 'package:rain/application/runtime/rain_runtime_controller.dart';
 import 'package:rain/presentation/branding/rain_state_surfaces.dart';
 import 'package:rain/presentation/widgets/app_components.dart';
 import 'package:rain/presentation/widgets/rain_chat_widgets.dart';
+import 'package:rain/presentation/feedback/rain_error_text.dart';
 
 class SearchScreen extends ConsumerStatefulWidget {
   const SearchScreen({super.key});
@@ -24,16 +25,7 @@ class _SearchScreenState extends ConsumerState<SearchScreen> {
   final TextEditingController _controller = TextEditingController();
   Timer? _debounce;
 
-  String _formatError(Object error) {
-    final raw = error.toString().trim();
-    const prefixes = <String>['Exception: ', 'Bad state: ', 'StateError: '];
-    for (final prefix in prefixes) {
-      if (raw.startsWith(prefix)) {
-        return raw.substring(prefix.length).trim();
-      }
-    }
-    return raw;
-  }
+  String _formatError(Object error) => rainUserFacingError(error);
 
   @override
   void dispose() {
@@ -239,7 +231,7 @@ class _SearchScreenState extends ConsumerState<SearchScreen> {
                             )
                           : const _SearchLoading(),
                       error: (Object error, StackTrace stackTrace) =>
-                          _SearchError(message: error.toString()),
+                          _SearchError(message: rainUserFacingError(error)),
                       loading: () => const _SearchLoading(),
                     ),
             ),

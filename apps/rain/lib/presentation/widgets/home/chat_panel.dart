@@ -892,7 +892,7 @@ class _ChatPanelState extends ConsumerState<_ChatPanel> {
             AppStateMessage(
               icon: Icons.error_outline,
               title: 'Could not load messages',
-              message: error.toString(),
+              message: rainUserFacingError(error),
               iconColor: Theme.of(context).colorScheme.error,
             ),
           ],

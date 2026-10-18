@@ -7,6 +7,7 @@ import 'package:rain/presentation/theme/rain_theme.dart';
 import 'package:rain/presentation/widgets/app_components.dart';
 import 'package:rain/presentation/widgets/app_dialogs.dart';
 import 'package:rain/presentation/widgets/rain_chat_widgets.dart';
+import 'package:rain/presentation/feedback/rain_error_text.dart';
 
 class FriendProfileScreen extends ConsumerWidget {
   const FriendProfileScreen({
@@ -384,16 +385,7 @@ class FriendProfileScreen extends ConsumerWidget {
     }
   }
 
-  String _formatError(Object error) {
-    final raw = error.toString().trim();
-    const prefixes = <String>['Exception: ', 'Bad state: ', 'StateError: '];
-    for (final prefix in prefixes) {
-      if (raw.startsWith(prefix)) {
-        return raw.substring(prefix.length).trim();
-      }
-    }
-    return raw;
-  }
+  String _formatError(Object error) => rainUserFacingError(error);
 }
 
 class _InfoSection extends StatelessWidget {

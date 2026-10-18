@@ -22,17 +22,9 @@ import 'package:rain/presentation/screens/splash_screen.dart';
 import 'package:rain/presentation/widgets/app_components.dart';
 import 'package:rain/presentation/widgets/app_dialogs.dart';
 import 'package:rain/presentation/widgets/rain_chat_widgets.dart';
+import 'package:rain/presentation/feedback/rain_error_text.dart';
 
-String _formatSettingsError(Object error) {
-  final raw = error.toString().trim();
-  const prefixes = <String>['Exception: ', 'Bad state: ', 'StateError: '];
-  for (final prefix in prefixes) {
-    if (raw.startsWith(prefix)) {
-      return raw.substring(prefix.length).trim();
-    }
-  }
-  return raw;
-}
+String _formatSettingsError(Object error) => rainUserFacingError(error);
 
 String _manualUpdateCheckMessage(VersionCheckResult result) {
   return switch (result.status) {

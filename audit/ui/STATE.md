@@ -1,4 +1,4 @@
-﻿# UI/UX State
+# UI/UX State
 
 ## Done
 
@@ -7,6 +7,8 @@
 - T0.3 b6b3fd9 audit/ui/00-ui-inventory.md
 - T0.4 ccfe777 opt-in snapshot harness and before shots
 - T1.2 6be6cfe spacing/radius/shadow/motion tokens, dark snackbar theme
+- T1.3 0a14c69 single RainMotionPolicy for presentation
+- T1.1 eccc14a bundled Inter + Space Grotesk, runtime fetching off
 
 ## Blocked
 
@@ -26,4 +28,5 @@
 - T0.1: `flutter pub get` resolved packages and left pubspec.lock unchanged; it warns "Building with plugins requires symlink support" (Windows Developer Mode off). Only matters for platform builds, which this program does not run.
 - T0.4: snapshot harness has 10 cases x 2 themes x 2 sizes = 40 PNGs in shots/before. The file_transfer case was skipped: `_FileTransferBubble` is library-private (part of chat_panel) with no public constructor helper. google_fonts fetch errors are dropped inside a guarded zone in the harness; text renders in the fallback font until T1.1. Before shots are therefore NOT in Inter/Space Grotesk.
 - Baseline (T0.2, 2026-10-11, base 02e02f2): apps/rain analyze no issues; format 0 changed of 295; apps/rain tests +764 passed, 20 skipped, 0 failed; line limit no file over 3200.
-
+- T1.1: google/fonts only ships variable Inter[opsz,wght] and SpaceGrotesk[wght]. Static weights were instanced from those official files with fontTools (Inter opsz=14; Inter 400/500/600/700, Space Grotesk 500/600/700), named per google_fonts 8.1.0 lookup (Family-Weight.ttf). OFL kept as Inter-OFL.txt / SpaceGrotesk-OFL.txt.
+- T1.4: union of the five helpers = strip 'Exception: '/'Bad state: '/'StateError: ' prefixes; home_screen call/transfer/network phrase mappings; onboarding firebase_database permission-denied account message. All now live in presentation/feedback/rain_error_text.dart; settings now shows 'Microphone permission required.' for mic permission errors (was raw text).
