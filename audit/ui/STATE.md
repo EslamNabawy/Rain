@@ -14,6 +14,7 @@
 - T1.6 17f6cf5 RainBusyIndicator replaces 14 spinners; RainDelayedReveal
 - T2.1 db3320a orbital loop resumes by wall clock; intro scale once per process
 - T2.2 2c0971a captions after 600 ms; AnimatedSwitcher by surface kind; bootstrap splash themed
+- T2.3 4fde30e failure screen sanitized, bootstrap retry, copy details; in-app retry handed off
 
 ## Blocked
 

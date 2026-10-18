@@ -6,6 +6,7 @@ import 'package:url_launcher/url_launcher_string.dart';
 
 import 'package:rain/application/state/app_providers.dart';
 import 'package:rain/infrastructure/services/force_update_service.dart';
+import 'package:rain/presentation/branding/rain_state_surfaces.dart';
 import 'package:rain/presentation/theme/rain_theme.dart';
 import 'package:rain/presentation/widgets/rain_backdrop.dart';
 import 'splash_screen.dart';
@@ -97,37 +98,58 @@ class RainForceUpdateGate extends StatelessWidget {
     }
 
     return _StartupScaffold(
-      child: ConstrainedBox(
-        constraints: const BoxConstraints(maxWidth: 520),
-        child: Card(
-          elevation: 18,
-          shape: RoundedRectangleBorder(
-            borderRadius: BorderRadius.circular(28),
-          ),
-          child: Padding(
-            padding: const EdgeInsets.all(32),
-            child: Column(
-              mainAxisSize: MainAxisSize.min,
-              crossAxisAlignment: CrossAxisAlignment.start,
+      child: RainMistStateCard(
+        key: const ValueKey<String>('qa.update.card'),
+        severity: RainStateSeverity.warning,
+        icon: Icons.system_update_alt,
+        maxWidth: 520,
+        title: 'Update required',
+        message: 'This version of Rain can no longer connect.',
+        action: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: <Widget>[
+            Wrap(
+              alignment: WrapAlignment.center,
+              spacing: RainSpace.sm,
+              runSpacing: RainSpace.sm,
               children: <Widget>[
-                Text(
-                  'Update required',
-                  style: Theme.of(context).textTheme.headlineMedium,
-                ),
-                const SizedBox(height: 12),
-                Text(
-                  'Rain ${updateResult.currentVersion} can no longer connect. Install at least ${updateResult.minVersion} to continue.',
-                ),
-                const SizedBox(height: 24),
-                FilledButton.icon(
-                  onPressed: () => launchUrlString(updateResult.updateUrl),
-                  icon: const Icon(Icons.system_update_alt),
-                  label: const Text('Open update page'),
-                ),
+                _VersionChip(label: 'Installed ${updateResult.currentVersion}'),
+                _VersionChip(label: 'Required ${updateResult.minVersion}'),
               ],
             ),
-          ),
+            const SizedBox(height: RainSpace.lg),
+            FilledButton.icon(
+              key: const ValueKey<String>('qa.update.open'),
+              onPressed: () => launchUrlString(updateResult.updateUrl),
+              icon: const Icon(Icons.open_in_new),
+              label: const Text('Get the update'),
+            ),
+          ],
         ),
+      ),
+    );
+  }
+}
+
+class _VersionChip extends StatelessWidget {
+  const _VersionChip({required this.label});
+
+  final String label;
+
+  @override
+  Widget build(BuildContext context) {
+    final scheme = Theme.of(context).colorScheme;
+    return DecoratedBox(
+      decoration: BoxDecoration(
+        color: scheme.onSurface.withValues(alpha: 0.08),
+        borderRadius: BorderRadius.circular(RainRadius.pill),
+      ),
+      child: Padding(
+        padding: const EdgeInsets.symmetric(
+          horizontal: RainSpace.md,
+          vertical: RainSpace.xs,
+        ),
+        child: Text(label, style: Theme.of(context).textTheme.labelMedium),
       ),
     );
   }

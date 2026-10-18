@@ -167,14 +167,14 @@ class _DeletionProgressBody extends StatelessWidget {
       child: Column(
         mainAxisSize: MainAxisSize.min,
         children: <Widget>[
-          const SizedBox(
-            width: 48,
-            height: 48,
-            child: CircularProgressIndicator(strokeWidth: 4),
+          const RainPeerCoreAnimatedMark(
+            key: ValueKey<String>('rain-deletion-peer-core-mark'),
+            size: 72,
+            semanticLabel: 'Deleting account',
           ),
           const SizedBox(height: 24),
           const Text(
-            'Deleting account',
+            'Deleting your account',
             textAlign: TextAlign.center,
             style: TextStyle(
               color: Colors.white,
