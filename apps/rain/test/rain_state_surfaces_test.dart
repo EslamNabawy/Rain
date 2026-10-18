@@ -100,4 +100,50 @@ void main() {
       );
     }
   });
+
+  testWidgets('AppStateMessage renders through RainMistStateCard with action', (
+    WidgetTester tester,
+  ) async {
+    await tester.pumpWidget(
+      MaterialApp(
+        home: AppStateMessage(
+          icon: Icons.inbox_outlined,
+          title: 'Nothing here',
+          message: 'Try again later.',
+          action: TextButton(onPressed: () {}, child: const Text('Retry')),
+        ),
+      ),
+    );
+
+    expect(find.byType(RainMistStateCard), findsOneWidget);
+    expect(find.text('Retry'), findsOneWidget);
+  });
+
+  testWidgets('RainMistStateCard fades in and settles', (
+    WidgetTester tester,
+  ) async {
+    await tester.pumpWidget(
+      const MaterialApp(
+        home: RainMistStateCard(title: 'Hello', message: 'World'),
+      ),
+    );
+    expect(tester.hasRunningAnimations, isTrue);
+    await tester.pumpAndSettle();
+    expect(tester.hasRunningAnimations, isFalse);
+  });
+
+  testWidgets('RainMistStateCard has no pending animation when reduced', (
+    WidgetTester tester,
+  ) async {
+    await tester.pumpWidget(
+      const MediaQuery(
+        data: MediaQueryData(disableAnimations: true),
+        child: MaterialApp(
+          home: RainMistStateCard(title: 'Hello', message: 'World'),
+        ),
+      ),
+    );
+    await tester.pump();
+    expect(tester.hasRunningAnimations, isFalse);
+  });
 }

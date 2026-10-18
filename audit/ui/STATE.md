@@ -9,6 +9,7 @@
 - T1.2 6be6cfe spacing/radius/shadow/motion tokens, dark snackbar theme
 - T1.3 0a14c69 single RainMotionPolicy for presentation
 - T1.1 eccc14a bundled Inter + Space Grotesk, runtime fetching off
+- T1.4 fc14e34 rainUserFacingError replaces five helpers
 
 ## Blocked
 

@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 
+import '../performance/rain_motion_policy.dart';
 import '../theme/rain_theme.dart';
 
 enum RainStateSeverity { neutral, warning, error }
@@ -44,7 +45,7 @@ class RainMistStateCard extends StatelessWidget {
             alpha: RainTextureTokens.panelBorderAlphaLight,
           );
 
-    return Center(
+    final card = Center(
       child: ConstrainedBox(
         constraints: BoxConstraints(maxWidth: maxWidth),
         child: DecoratedBox(
@@ -54,22 +55,20 @@ class RainMistStateCard extends StatelessWidget {
                   ? RainTextureTokens.panelFillAlphaDark
                   : RainTextureTokens.panelFillAlphaLight,
             ),
-            borderRadius: BorderRadius.circular(compact ? 18 : 22),
+            borderRadius: BorderRadius.circular(
+              compact ? RainRadius.lg : RainRadius.xl,
+            ),
             border: Border.all(
               color: severity == RainStateSeverity.neutral
                   ? neutralBorder
                   : accent.withValues(alpha: 0.28),
             ),
-            boxShadow: <BoxShadow>[
-              BoxShadow(
-                blurRadius: compact ? 18 : 28,
-                offset: Offset(0, compact ? 10 : 16),
-                color: Colors.black.withValues(alpha: isDark ? 0.18 : 0.08),
-              ),
-            ],
+            boxShadow: compact
+                ? RainShadows.panel(isDark)
+                : RainShadows.raised(isDark),
           ),
           child: Padding(
-            padding: EdgeInsets.all(compact ? 16 : 22),
+            padding: EdgeInsets.all(compact ? RainSpace.lg : 22),
             child: Column(
               mainAxisSize: MainAxisSize.min,
               children: <Widget>[
@@ -79,7 +78,7 @@ class RainMistStateCard extends StatelessWidget {
                     color: accent,
                     size: iconSize ?? (compact ? 28 : 40),
                   ),
-                  const SizedBox(height: 12),
+                  const SizedBox(height: RainSpace.md),
                 ],
                 Text(
                   title,
@@ -89,7 +88,7 @@ class RainMistStateCard extends StatelessWidget {
                   ),
                   textAlign: TextAlign.center,
                 ),
-                const SizedBox(height: 8),
+                const SizedBox(height: RainSpace.sm),
                 Text(
                   message,
                   style: textTheme.bodyMedium?.copyWith(
@@ -98,7 +97,7 @@ class RainMistStateCard extends StatelessWidget {
                   textAlign: TextAlign.center,
                 ),
                 if (action != null) ...<Widget>[
-                  const SizedBox(height: 16),
+                  const SizedBox(height: RainSpace.lg),
                   action!,
                 ],
               ],
@@ -106,6 +105,19 @@ class RainMistStateCard extends StatelessWidget {
           ),
         ),
       ),
+    );
+
+    return TweenAnimationBuilder<double>(
+      tween: Tween<double>(begin: 0, end: 1),
+      duration: RainMotionPolicy.of(context).d(RainMotion.standard),
+      curve: RainMotion.enter,
+      child: card,
+      builder: (BuildContext context, double value, Widget? child) {
+        return Opacity(
+          opacity: value,
+          child: Transform.scale(scale: 0.98 + 0.02 * value, child: child),
+        );
+      },
     );
   }
 }
