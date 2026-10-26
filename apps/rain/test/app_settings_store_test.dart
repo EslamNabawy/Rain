@@ -134,6 +134,18 @@ void main() {
     expect((await store.loadAudioSettings()).soundEffectsEnabled, isFalse);
   });
 
+  test('haptic feedback defaults on and persists locally', () async {
+    final store = AppSettingsStore();
+
+    expect(await store.loadHapticFeedbackEnabled(), isTrue);
+
+    await store.setHapticFeedbackEnabled(false);
+    expect(await store.loadHapticFeedbackEnabled(), isFalse);
+
+    await store.setHapticFeedbackEnabled(true);
+    expect(await store.loadHapticFeedbackEnabled(), isTrue);
+  });
+
   test('call sounds toggle persists locally', () async {
     final store = AppSettingsStore();
 

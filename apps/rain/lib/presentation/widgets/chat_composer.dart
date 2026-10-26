@@ -15,6 +15,7 @@ import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 
+import 'package:rain/presentation/feedback/rain_haptics.dart';
 import 'package:rain/presentation/theme/rain_theme.dart';
 import 'package:rain/presentation/widgets/feedback/rain_busy_indicator.dart';
 
@@ -128,6 +129,7 @@ class _ChatComposerState extends State<ChatComposer> {
       return;
     }
 
+    RainHaptics.light(context);
     await Future<void>.sync(widget.onSend);
     if (mounted && widget.enabled) {
       _focusNode.requestFocus();

@@ -28,6 +28,7 @@
 - T3.5 049f602 RainSoundPlayer.preload + SoundEffectsService.warmUp(send/receive/action/error) from the router provider
 - T3.6 7c99b01 loops fade to 0 in 4 steps over 120 ms; stopAll stays immediate
 - T3.7 4cd5b12 slider release + compact play button preview the action cue at the saved volume
+- T3.8 8c787b8 per-group loudness test (chat/ui/state/alert within 3 dB of median); no spec changes needed
 
 ## Blocked
 
@@ -55,10 +56,12 @@
 - T1.1: google/fonts only ships variable Inter[opsz,wght] and SpaceGrotesk[wght]. Static weights were instanced from those official files with fontTools (Inter opsz=14; Inter 400/500/600/700, Space Grotesk 500/600/700), named per google_fonts 8.1.0 lookup (Family-Weight.ttf). OFL kept as Inter-OFL.txt / SpaceGrotesk-OFL.txt.
 - T1.4: union of the five helpers = strip 'Exception: '/'Bad state: '/'StateError: ' prefixes; home_screen call/transfer/network phrase mappings; onboarding firebase_database permission-denied account message. All now live in presentation/feedback/rain_error_text.dart; settings now shows 'Microphone permission required.' for mic permission errors (was raw text).
 - sound_event_router_test 'five sends in 200 ms' is wall-clock flaky under full-suite load (passes alone); not touched by this program.
+- Owner action (T3.9): listen to every cue in audit/ui/02-sound-map.md on phone speaker, headphones and a Windows laptop; flag any that is harsh, too quiet or confusable. Feel haptics on an Android phone (send, answer/decline/hang-up, mute/camera, settings switches) and confirm the Haptic feedback switch turns them off.
 - Owner action (T2.5): cold-start on Android 11 and Android 13: native splash shows the mark centred on #061017 and hands off to the Flutter splash without a flash. Android 12+ masks the animated icon to a circle, so check the 192 px mark is not clipped.
 - T2.8: VoiceCallPhase has no reconnecting value; reconnecting = phase active + VoiceCallState.mediaReconnecting. Full suite +821 ~30 passed. FORMAT reports 3 pre-existing unformatted files outside this program's scope (integration_two_devices_handshake_full_test.dart, integration_two_users_end2end_test.dart, integration_voice_signaling_emulator_test.dart; last touched by 6ff832b); left as is.
 - Phase 3 sync: local Flutter is now 3.47.8 (CI pins 3.44.0). `flutter pub get` bumps matcher 0.12.20, meta 1.19.0, test 1.31.1 and `--enforce-lockfile` fails. The committed pubspec.lock stays at dev's version; never stage the local drift.
 - Phase 3: unstaged edits to apps/rain, peer_core, protocol_brain and rain_core analysis_options.yaml (analyzer excludes) appeared at 14:11 from outside this program. They are outside may_edit: not staged, not reverted.
 - T3.6: fake_async is not a direct dev dependency and U5 forbids adding one, so the fade tests use real time (about 120 ms each). Public stopAllLoops() keeps its signature because three test fakes override it; stopAll uses a private no-fade path.
 - T3.7: a full-width 'Play test sound' TextButton row pushed 'Call sounds' off the 800x1000 test view. The preview is now a compact IconButton (tooltip 'Play test sound', key qa.settings.sound_test) in the volume tile's trailing slot. The preview plays the action cue through SoundEffectsService directly (not the router), after the pending volume save, so it is audible during calls too. settings_screen.dart grew by 30 net lines.
+- T3.9: RainHaptics treats a still-loading setting as off. The first tap after launch may skip a haptic, but it never vibrates against a saved "off". Without a ProviderScope (isolated widget tests) it falls back to the default (on). Wired: composer send (light); call accept/decline/hang-up (medium); mic/camera dock toggles (selection); settings runner helpers (selection). Overflow-menu toggles in the call dock have no haptic.
 - friend_flow_test 'remote video renderer attach failure' failed once under full-suite load, passed alone and on rerun (timing flake, untouched code).

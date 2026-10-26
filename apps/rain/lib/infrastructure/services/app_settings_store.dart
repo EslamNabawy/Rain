@@ -129,6 +129,7 @@ class AppSettingsStore {
   static const bool defaultReduceSoundsDuringCall = true;
   static const bool defaultClearVoiceEnabled = true;
   static const bool defaultAutoVideoOptimizeEnabled = true;
+  static const bool defaultHapticFeedbackEnabled = true;
   static const CallAudioOutputPreference defaultCallAudioOutputPreference =
       CallAudioOutputPreference.systemDefault;
 
@@ -159,6 +160,7 @@ class AppSettingsStore {
   static const String _callClearVoiceEnabledKey = 'call_clear_voice_enabled';
   static const String _callVideoAutoOptimizeEnabledKey =
       'call_video_auto_optimize_enabled';
+  static const String _hapticFeedbackEnabledKey = 'haptic_feedback_enabled';
   static const String _dismissedOptionalUpdateKey =
       'dismissed_optional_update_key';
   static const String _deletedRainUsernamesKey = 'deleted_rain_usernames';
@@ -487,6 +489,15 @@ class AppSettingsStore {
 
   Future<void> setAutoVideoOptimizeEnabled(bool enabled) async {
     await _preferences.setBool(_callVideoAutoOptimizeEnabledKey, enabled);
+  }
+
+  Future<bool> loadHapticFeedbackEnabled() async {
+    return await _preferences.getBool(_hapticFeedbackEnabledKey) ??
+        defaultHapticFeedbackEnabled;
+  }
+
+  Future<void> setHapticFeedbackEnabled(bool enabled) async {
+    await _preferences.setBool(_hapticFeedbackEnabledKey, enabled);
   }
 
   Future<String?> loadDismissedOptionalUpdateKey() async {

@@ -37,6 +37,8 @@ import 'package:rain/presentation/feedback/rain_error_text.dart';
 import 'package:rain/presentation/widgets/feedback/rain_busy_indicator.dart';
 import 'package:rain/presentation/widgets/feedback/rain_delayed_reveal.dart';
 import 'package:rain/presentation/widgets/settings/sound_preview_button.dart';
+import 'package:rain/presentation/widgets/settings/haptic_feedback_tile.dart';
+import 'package:rain/presentation/feedback/rain_haptics.dart';
 import 'package:rain/infrastructure/services/sound_effects_service.dart';
 
 String _formatSettingsError(Object error) => rainUserFacingError(error);
@@ -301,6 +303,7 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen> {
                     onOutputPreferenceChanged: (_) {},
                   ),
                 ),
+                const HapticFeedbackTile(),
               ],
             ),
           ),
@@ -815,6 +818,7 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen> {
     BuildContext context,
     Future<void> Function() action,
   ) async {
+    RainHaptics.selection(context);
     final messenger = ScaffoldMessenger.of(context);
     final errorColor = Theme.of(context).colorScheme.error;
     try {
@@ -838,6 +842,7 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen> {
     BuildContext context,
     Future<void> Function() action,
   ) async {
+    RainHaptics.selection(context);
     final messenger = ScaffoldMessenger.of(context);
     final errorColor = Theme.of(context).colorScheme.error;
     try {
@@ -861,6 +866,7 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen> {
     BuildContext context,
     Future<void> Function() action,
   ) async {
+    RainHaptics.selection(context);
     final messenger = ScaffoldMessenger.of(context);
     final errorColor = Theme.of(context).colorScheme.error;
     try {
