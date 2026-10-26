@@ -513,13 +513,11 @@ Local build/test scripts:
 
 CI/CD workflows:
 
-- `ci.yml` - main CI/CD checks: dependency review, workflow lint, quality gate, static analysis, tests, Firebase backend/emulator tests, Android build, release artifacts, required checks.
+- `ci.yml` - the single test pipeline (PRs into dev/main, pushes to dev/main, `v*` tags, manual): dependency review, workflow lint, quality gate, static analysis, tests, Firebase backend/emulator tests, vault, Android debug build, demo release artifacts with `SHA256SUMS` (main/tag/manual), tag-only GitHub Release, required checks.
 - `main-merge-gate.yml` - PR/main merge validation with workspace, Firebase, Android debug ABI, Windows demo, Android demo artifacts.
 - `build-artifacts.yml` - workflow-dispatch build for Rain apps with hard release gate, Windows build, Android build, and optional direct test release.
-- `fast-release.yml` - workflow-dispatch fast release artifacts with target/platform/profile inputs.
 - `validated-release.yml` - workflow-dispatch validated release with workflow lint, workspace validation, Firebase backend/emulator tests, build jobs, and publish.
 - `release.yml` - release build/publish workflow for tags or dispatch.
-- `documentation-vault.yml` - Obsidian vault validation workflow.
 
 Related: [[CI-CD Roadmap]], [[Release Gates]], [[Coverage Dashboard]].
 
