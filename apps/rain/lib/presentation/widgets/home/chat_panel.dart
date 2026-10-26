@@ -154,6 +154,19 @@ class _ChatPanelState extends ConsumerState<_ChatPanel> {
       messagesProvider(widget.peerId),
       _handleMessageSound,
     );
+    ref.listen<AsyncValue<List<FileTransferRecord>>>(
+      fileTransfersProvider(widget.peerId),
+      (previous, next) {
+        final nextTransfers = next.value;
+        if (nextTransfers == null) {
+          return;
+        }
+        rainFileTransferSoundEventsFor(
+          previous: previous?.value,
+          next: nextTransfers,
+        ).forEach(_dispatchSoundEvent);
+      },
+    );
 
     return LayoutBuilder(
       builder: (BuildContext context, BoxConstraints constraints) {

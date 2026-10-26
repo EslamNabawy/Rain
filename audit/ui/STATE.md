@@ -23,11 +23,13 @@
 - sync b6a5169 merged origin/dev (hardening already merged there); 1 header conflict in splash_screen.dart; 835 tests pass
 - T3.1 86a4395 audit/ui/02-sound-map.md with measured peak/RMS
 - T3.2 38f8c3e six new generated cues; 15 old WAVs byte-identical after SOUNDGEN (README line added in the next commit)
+- T3.3 6353662 new effects + transfer events mapped, dedupe/throttle/in-call suppression; asset budget adjusted (U-D6)
 
 ## Blocked
 
 ## Handoff to hardening
 
+- App-wide file transfer sounds (T3.4): emit a runtime event when any transfer reaches completed/failed so the router can play a cue when that chat is not open. Today only the open conversation plays transfer cues.
 - Expose a startup retry on appStartupStateProvider (T2.3): no retry/restart method exists, so the in-app AppStartupPhase.failed screen has no Try again button; only the bootstrap failure (main.dart) retries.
 
 ## Decisions
@@ -37,6 +39,7 @@
 - U-D3 Motion budget: UI transitions 110-240 ms, ease-out in and ease-in out; nothing loops forever except the splash mark, skeleton pulse and call-connecting pulse, all off under reduced motion or low-power tier.
 - U-D4 Sound direction: stay in the existing "water droplet" family from the generator; every distinct meaning gets a distinct cue; nothing louder than the current incoming ringtone.
 - U-D6 (T3.3) The existing asset contract caps non-call one-shots at 260 ms and all sounds at 500 KB. request_accepted.wav was shortened to 260 ms. request_inbound.wav stays 420 ms as an alert cue, exempt like call_* cues. The total budget is 620 KB (+~115 KB for the six new cues). route_change targetPeak went 8000 to 8200 to clear the 8000 peak floor.
+- U-D7 (T3.4) Transfer sounds play for the open conversation only (chat_panel listens to fileTransfersProvider(peerId)). App-wide transfer sounds need a runtime event and are a hardening handoff.
 - U-D5 chat_panel.dart and home_screen.dart get in-place edits only; their split stays with the hardening program.
 
 ## Notes

@@ -52,6 +52,7 @@ import 'package:rain/presentation/performance/rain_motion_policy.dart';
 import 'package:rain/presentation/widgets/feedback/rain_busy_indicator.dart';
 import 'package:rain/presentation/feedback/rain_error_text.dart';
 import 'package:rain/presentation/widgets/feedback/rain_delayed_reveal.dart';
+import 'package:rain/presentation/widgets/home/file_transfer_sound_events.dart';
 
 part '../widgets/home/shell_header.dart';
 part '../widgets/home/link_status.dart';
