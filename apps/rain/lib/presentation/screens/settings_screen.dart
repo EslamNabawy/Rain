@@ -34,6 +34,7 @@ import 'package:rain/presentation/widgets/app_components.dart';
 import 'package:rain/presentation/widgets/app_dialogs.dart';
 import 'package:rain/presentation/widgets/rain_chat_widgets.dart';
 import 'package:rain/presentation/feedback/rain_error_text.dart';
+import 'package:rain/presentation/feedback/rain_snack.dart';
 import 'package:rain/presentation/widgets/feedback/rain_busy_indicator.dart';
 import 'package:rain/presentation/widgets/feedback/rain_delayed_reveal.dart';
 import 'package:rain/presentation/widgets/settings/sound_preview_button.dart';
@@ -566,7 +567,6 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen> {
     String? deviceId,
   ) async {
     final messenger = ScaffoldMessenger.of(context);
-    final errorColor = Theme.of(context).colorScheme.error;
     try {
       await ref
           .read(microphoneSelectionProvider.notifier)
@@ -575,13 +575,10 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen> {
       if (!context.mounted) {
         return;
       }
-      messenger.showSnackBar(
-        SnackBar(
-          content: Text(
-            'Could not update microphone: ${_formatSettingsError(error)}',
-          ),
-          backgroundColor: errorColor,
-        ),
+      showRainSnack(
+        messenger,
+        'Could not update microphone: ${_formatSettingsError(error)}',
+        severity: RainStateSeverity.error,
       );
     }
   }
@@ -592,7 +589,6 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen> {
     String? deviceId,
   ) async {
     final messenger = ScaffoldMessenger.of(context);
-    final errorColor = Theme.of(context).colorScheme.error;
     try {
       await ref
           .read(videoInputCapabilityProvider.notifier)
@@ -601,20 +597,16 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen> {
       if (!context.mounted) {
         return;
       }
-      messenger.showSnackBar(
-        SnackBar(
-          content: Text(
-            'Could not update camera: ${_formatSettingsError(error)}',
-          ),
-          backgroundColor: errorColor,
-        ),
+      showRainSnack(
+        messenger,
+        'Could not update camera: ${_formatSettingsError(error)}',
+        severity: RainStateSeverity.error,
       );
     }
   }
 
   Future<void> _testMicrophone(BuildContext context, WidgetRef ref) async {
     final messenger = ScaffoldMessenger.of(context);
-    final errorColor = Theme.of(context).colorScheme.error;
     setState(() {
       _testingMicrophone = true;
       _microphoneTestFailed = false;
@@ -631,9 +623,7 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen> {
         _microphoneTestFailed = false;
         _microphoneTestMessage = 'Microphone is available.';
       });
-      messenger.showSnackBar(
-        const SnackBar(content: Text('Microphone is available.')),
-      );
+      showRainSnack(messenger, 'Microphone is available.');
     } catch (error) {
       if (!mounted) {
         return;
@@ -643,9 +633,7 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen> {
         _microphoneTestFailed = true;
         _microphoneTestMessage = message;
       });
-      messenger.showSnackBar(
-        SnackBar(content: Text(message), backgroundColor: errorColor),
-      );
+      showRainSnack(messenger, message, severity: RainStateSeverity.error);
     } finally {
       if (mounted) {
         setState(() => _testingMicrophone = false);
@@ -820,20 +808,16 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen> {
   ) async {
     RainHaptics.selection(context);
     final messenger = ScaffoldMessenger.of(context);
-    final errorColor = Theme.of(context).colorScheme.error;
     try {
       await action();
     } catch (error) {
       if (!context.mounted) {
         return;
       }
-      messenger.showSnackBar(
-        SnackBar(
-          content: Text(
-            'Could not update audio setting: ${_formatSettingsError(error)}',
-          ),
-          backgroundColor: errorColor,
-        ),
+      showRainSnack(
+        messenger,
+        'Could not update audio setting: ${_formatSettingsError(error)}',
+        severity: RainStateSeverity.error,
       );
     }
   }
@@ -844,20 +828,16 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen> {
   ) async {
     RainHaptics.selection(context);
     final messenger = ScaffoldMessenger.of(context);
-    final errorColor = Theme.of(context).colorScheme.error;
     try {
       await action();
     } catch (error) {
       if (!context.mounted) {
         return;
       }
-      messenger.showSnackBar(
-        SnackBar(
-          content: Text(
-            'Could not update connection request setting: ${_formatSettingsError(error)}',
-          ),
-          backgroundColor: errorColor,
-        ),
+      showRainSnack(
+        messenger,
+        'Could not update connection request setting: ${_formatSettingsError(error)}',
+        severity: RainStateSeverity.error,
       );
     }
   }
@@ -868,27 +848,22 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen> {
   ) async {
     RainHaptics.selection(context);
     final messenger = ScaffoldMessenger.of(context);
-    final errorColor = Theme.of(context).colorScheme.error;
     try {
       await action();
     } catch (error) {
       if (!context.mounted) {
         return;
       }
-      messenger.showSnackBar(
-        SnackBar(
-          content: Text(
-            'Could not update call processing: ${_formatSettingsError(error)}',
-          ),
-          backgroundColor: errorColor,
-        ),
+      showRainSnack(
+        messenger,
+        'Could not update call processing: ${_formatSettingsError(error)}',
+        severity: RainStateSeverity.error,
       );
     }
   }
 
   Future<void> _checkForUpdates(BuildContext context) async {
     final messenger = ScaffoldMessenger.of(context);
-    final errorColor = Theme.of(context).colorScheme.error;
     final environment = ref.read(appEnvironmentProvider);
     await ref.read(forceUpdateProvider.notifier).refresh();
     final result = ref.read(forceUpdateProvider);
@@ -896,25 +871,19 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen> {
       return;
     }
     if (result.hasError) {
-      messenger.showSnackBar(
-        SnackBar(
-          content: Text(
-            'Could not check for updates: ${_formatSettingsError(result.error!)}',
-          ),
-          backgroundColor: errorColor,
-        ),
+      showRainSnack(
+        messenger,
+        'Could not check for updates: ${_formatSettingsError(result.error!)}',
+        severity: RainStateSeverity.error,
       );
       return;
     }
     final value = result.value;
     if (value == null) {
-      messenger.showSnackBar(
-        SnackBar(
-          content: const Text(
-            'Update check did not return a result. Try again.',
-          ),
-          backgroundColor: errorColor,
-        ),
+      showRainSnack(
+        messenger,
+        'Update check did not return a result. Try again.',
+        severity: RainStateSeverity.error,
       );
       return;
     }
@@ -922,22 +891,21 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen> {
     final updateUrl = value.updateUrl.trim().isNotEmpty
         ? value.updateUrl
         : environment.forceUpdateUrl;
-    messenger.showSnackBar(
-      SnackBar(
-        content: Text(_manualUpdateCheckMessage(value)),
-        backgroundColor: switch (value.status) {
-          VersionCheckStatus.invalidConfig ||
-          VersionCheckStatus.remotePolicyOutdated ||
-          VersionCheckStatus.checkUnavailable => errorColor,
-          _ => null,
-        },
-        action: value.requiresUpdate || value.hasOptionalUpdate
-            ? SnackBarAction(
-                label: 'Open',
-                onPressed: () => unawaited(launchUrlString(updateUrl)),
-              )
-            : null,
-      ),
+    showRainSnack(
+      messenger,
+      _manualUpdateCheckMessage(value),
+      severity: switch (value.status) {
+        VersionCheckStatus.invalidConfig ||
+        VersionCheckStatus.remotePolicyOutdated ||
+        VersionCheckStatus.checkUnavailable => RainStateSeverity.error,
+        _ => RainStateSeverity.neutral,
+      },
+      action: value.requiresUpdate || value.hasOptionalUpdate
+          ? SnackBarAction(
+              label: 'Open',
+              onPressed: () => unawaited(launchUrlString(updateUrl)),
+            )
+          : null,
     );
   }
 
@@ -952,7 +920,6 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen> {
 
   Future<void> _confirmLogOut(BuildContext context) async {
     final messenger = ScaffoldMessenger.of(context);
-    final errorColor = Theme.of(context).colorScheme.error;
 
     final shouldLogOut = await showAppConfirmDialog(
       context: context,
@@ -978,11 +945,10 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen> {
         return;
       }
       setState(() => _loggingOut = false);
-      messenger.showSnackBar(
-        SnackBar(
-          content: Text('Could not log out: ${_formatSettingsError(error)}'),
-          backgroundColor: errorColor,
-        ),
+      showRainSnack(
+        messenger,
+        'Could not log out: ${_formatSettingsError(error)}',
+        severity: RainStateSeverity.error,
       );
     }
   }
@@ -1123,7 +1089,6 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen> {
 
   Future<void> _exportDiagnostics(BuildContext context) async {
     final messenger = ScaffoldMessenger.of(context);
-    final errorColor = Theme.of(context).colorScheme.error;
     setState(() => _exportingDiagnostics = true);
     try {
       final result = await ref
@@ -1136,21 +1101,16 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen> {
         final location = result.platformManaged
             ? 'selected document'
             : result.path;
-        messenger.showSnackBar(
-          SnackBar(content: Text('Diagnostics exported to $location')),
-        );
+        showRainSnack(messenger, 'Diagnostics exported to $location');
       }
     } catch (error) {
       if (!context.mounted) {
         return;
       }
-      messenger.showSnackBar(
-        SnackBar(
-          content: Text(
-            'Could not export diagnostics: ${_formatSettingsError(error)}',
-          ),
-          backgroundColor: errorColor,
-        ),
+      showRainSnack(
+        messenger,
+        'Could not export diagnostics: ${_formatSettingsError(error)}',
+        severity: RainStateSeverity.error,
       );
     } finally {
       if (mounted) {

@@ -24,6 +24,7 @@ import 'package:rain/presentation/branding/rain_state_surfaces.dart';
 import 'package:rain/presentation/widgets/app_components.dart';
 import 'package:rain/presentation/widgets/rain_chat_widgets.dart';
 import 'package:rain/presentation/feedback/rain_error_text.dart';
+import 'package:rain/presentation/feedback/rain_snack.dart';
 import 'package:rain/presentation/widgets/feedback/rain_busy_indicator.dart';
 import 'package:rain/presentation/widgets/feedback/rain_delayed_reveal.dart';
 
@@ -64,22 +65,18 @@ class _SearchScreenState extends ConsumerState<SearchScreen> {
 
   Future<void> _sendHandleRequest(String? currentUsername) async {
     final messenger = ScaffoldMessenger.of(context);
-    final errorColor = Theme.of(context).colorScheme.error;
     final username = _normalizedHandleText();
     final error = InputValidator.usernameError(username);
 
     if (error != null) {
-      messenger.showSnackBar(
-        SnackBar(content: Text(error), backgroundColor: errorColor),
-      );
+      showRainSnack(messenger, error, severity: RainStateSeverity.error);
       return;
     }
     if (currentUsername != null && username == currentUsername) {
-      messenger.showSnackBar(
-        SnackBar(
-          content: const Text('You cannot add yourself.'),
-          backgroundColor: errorColor,
-        ),
+      showRainSnack(
+        messenger,
+        'You cannot add yourself.',
+        severity: RainStateSeverity.error,
       );
       return;
     }
@@ -91,22 +88,21 @@ class _SearchScreenState extends ConsumerState<SearchScreen> {
       if (!mounted) {
         return;
       }
-      messenger.showSnackBar(
-        SnackBar(
-          content: Text(
-            result == FriendRequestResult.acceptedExisting
-                ? '@$username was waiting. Friend request accepted.'
-                : 'Friend request sent to @$username',
-          ),
-        ),
+      showRainSnack(
+        messenger,
+        result == FriendRequestResult.acceptedExisting
+            ? '@$username was waiting. Friend request accepted.'
+            : 'Friend request sent to @$username',
       );
       unawaited(ref.read(userSearchProvider.notifier).search(username));
     } catch (e) {
       if (!mounted) {
         return;
       }
-      messenger.showSnackBar(
-        SnackBar(content: Text(_formatError(e)), backgroundColor: errorColor),
+      showRainSnack(
+        messenger,
+        _formatError(e),
+        severity: RainStateSeverity.error,
       );
     }
   }
@@ -216,27 +212,21 @@ class _SearchScreenState extends ConsumerState<SearchScreen> {
                                       .read(userSearchProvider.notifier)
                                       .sendFriendRequest(username);
                                   if (context.mounted) {
-                                    ScaffoldMessenger.of(context).showSnackBar(
-                                      SnackBar(
-                                        content: Text(
-                                          result ==
-                                                  FriendRequestResult
-                                                      .acceptedExisting
-                                              ? '@$username was already waiting for you. The friend request was accepted.'
-                                              : 'Friend request sent to @$username',
-                                        ),
-                                      ),
+                                    showRainSnack(
+                                      ScaffoldMessenger.of(context),
+                                      result ==
+                                              FriendRequestResult
+                                                  .acceptedExisting
+                                          ? '@$username was already waiting for you. The friend request was accepted.'
+                                          : 'Friend request sent to @$username',
                                     );
                                   }
                                 } catch (e) {
                                   if (context.mounted) {
-                                    ScaffoldMessenger.of(context).showSnackBar(
-                                      SnackBar(
-                                        content: Text(_formatError(e)),
-                                        backgroundColor: Theme.of(
-                                          context,
-                                        ).colorScheme.error,
-                                      ),
+                                    showRainSnack(
+                                      ScaffoldMessenger.of(context),
+                                      _formatError(e),
+                                      severity: RainStateSeverity.error,
                                     );
                                   }
                                 }
