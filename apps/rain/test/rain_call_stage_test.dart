@@ -3,7 +3,9 @@ import 'package:flutter_test/flutter_test.dart';
 import 'package:rain/application/runtime/voice_audio_level.dart';
 import 'package:rain/application/runtime/voice_call_state.dart';
 import 'package:rain/application/state/call_surface_providers.dart';
+import 'package:rain/presentation/performance/rain_performance.dart';
 import 'package:rain/presentation/widgets/calls/rain_call_stage.dart';
+import 'package:rain/presentation/widgets/calls/rain_connecting_pulse.dart';
 
 void main() {
   testWidgets('video call renders remote as primary and local as preview', (
@@ -106,6 +108,91 @@ void main() {
     expect(find.byKey(rainCallAudioEmitterMarkKey), findsOneWidget);
     expect(find.byKey(const Key('rain-detached-equalizer-bars')), findsNothing);
   });
+
+  for (final phase in <VoiceCallPhase>[
+    VoiceCallPhase.connectingPeer,
+    VoiceCallPhase.outgoingRinging,
+    VoiceCallPhase.connectingMedia,
+  ]) {
+    testWidgets('connecting pulse animates during ${phase.name}', (
+      WidgetTester tester,
+    ) async {
+      await _pumpVoiceStage(tester, _callState(phase: phase));
+
+      expect(find.byKey(rainConnectingPulseAnimatedKey), findsOneWidget);
+      expect(tester.hasRunningAnimations, isTrue);
+    });
+  }
+
+  testWidgets('connecting pulse animates while media reconnects', (
+    WidgetTester tester,
+  ) async {
+    await _pumpVoiceStage(tester, _callState(mediaReconnecting: true));
+
+    expect(find.byKey(rainConnectingPulseAnimatedKey), findsOneWidget);
+  });
+
+  testWidgets('connecting pulse is gone once the call is connected', (
+    WidgetTester tester,
+  ) async {
+    await _pumpVoiceStage(tester, _callState());
+
+    expect(find.byKey(rainConnectingPulseAnimatedKey), findsNothing);
+    expect(find.byKey(rainConnectingPulseStaticKey), findsNothing);
+  });
+
+  testWidgets('connecting pulse is static on the low-power tier', (
+    WidgetTester tester,
+  ) async {
+    await _pumpVoiceStage(
+      tester,
+      _callState(phase: VoiceCallPhase.connectingPeer),
+      profile: const RainPerformanceProfile(
+        tier: RainPerformanceTier.lowPower,
+        reason: 'test',
+        abiName: 'armeabi-v7a',
+      ),
+    );
+
+    expect(find.byKey(rainConnectingPulseStaticKey), findsOneWidget);
+    expect(find.byKey(rainConnectingPulseAnimatedKey), findsNothing);
+    expect(tester.hasRunningAnimations, isFalse);
+  });
+
+  testWidgets('connecting pulse keeps the glyph layout size', (
+    WidgetTester tester,
+  ) async {
+    await _pumpVoiceStage(
+      tester,
+      _callState(phase: VoiceCallPhase.connectingPeer),
+    );
+
+    expect(
+      tester.getSize(find.byType(RainConnectingPulse)),
+      const Size.square(116),
+    );
+  });
+}
+
+Future<void> _pumpVoiceStage(
+  WidgetTester tester,
+  VoiceCallState state, {
+  RainPerformanceProfile profile = const RainPerformanceProfile(
+    tier: RainPerformanceTier.standard,
+    reason: 'test',
+    abiName: 'x86_64',
+  ),
+}) async {
+  await tester.pumpWidget(
+    RainPerformanceScope(
+      profile: profile,
+      child: MaterialApp(
+        home: Scaffold(
+          body: RainCallStage(state: state, accent: Colors.teal),
+        ),
+      ),
+    ),
+  );
 }
 
 Future<void> _pumpVideoCallStage(
@@ -158,13 +245,16 @@ class _VideoStageHarnessState extends State<_VideoStageHarness> {
 }
 
 VoiceCallState _callState({
-  required CallMediaMode mediaMode,
+  CallMediaMode mediaMode = CallMediaMode.audio,
+  VoiceCallPhase phase = VoiceCallPhase.active,
+  bool mediaReconnecting = false,
   bool hasRemoteVideo = false,
   bool hasLocalVideo = false,
   VoiceAudioLevel audioLevel = const VoiceAudioLevel.unavailable(),
 }) {
   return VoiceCallState(
-    phase: VoiceCallPhase.active,
+    phase: phase,
+    mediaReconnecting: mediaReconnecting,
     peerId: 'bob',
     callId: 'call-1',
     mediaMode: mediaMode,

@@ -18,6 +18,7 @@
 - T2.4 a0c54dd force update panel with chips; deletion shows brand mark
 - T2.5 1a15bf3 native splash bitmap + v31 styles (no build run)
 - T2.6 22f5997 skeleton variants + pulse + delayed reveal at 4 sites
+- T2.7 8e21284 transfer bubble progress tween/waiting/check; tests added; send button already fixed-size
 
 ## Blocked
 
