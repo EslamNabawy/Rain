@@ -205,6 +205,72 @@ final List<_SoundSpec> _assetSpecs = <_SoundSpec>[
     shimmer: const _Shimmer(amplitude: 0.0014, frequency: 1320),
   ),
   _SoundSpec(
+    name: 'camera_on.wav',
+    durationMs: 130,
+    targetPeak: 8600,
+    droplets: const <_Droplet>[
+      _Droplet(startMs: 0, lengthMs: 70, frequency: 880, amplitude: 0.28),
+      _Droplet(startMs: 46, lengthMs: 70, frequency: 1320, amplitude: 0.20),
+    ],
+    shimmer: const _Shimmer(amplitude: 0.0020, frequency: 2640),
+  ),
+  _SoundSpec(
+    name: 'camera_off.wav',
+    durationMs: 130,
+    targetPeak: 8400,
+    droplets: const <_Droplet>[
+      _Droplet(startMs: 0, lengthMs: 70, frequency: 1320, amplitude: 0.24),
+      _Droplet(
+        startMs: 46,
+        lengthMs: 74,
+        frequency: 880,
+        amplitude: 0.24,
+        sweep: -0.16,
+      ),
+    ],
+    shimmer: const _Shimmer(amplitude: 0.0016, frequency: 2200),
+  ),
+  _SoundSpec(
+    name: 'route_change.wav',
+    durationMs: 90,
+    targetPeak: 8000,
+    droplets: const <_Droplet>[
+      _Droplet(startMs: 0, lengthMs: 70, frequency: 1040, amplitude: 0.26),
+    ],
+    shimmer: const _Shimmer(amplitude: 0.0012, frequency: 2080),
+  ),
+  _SoundSpec(
+    name: 'request_inbound.wav',
+    durationMs: 420,
+    targetPeak: 9400,
+    droplets: const <_Droplet>[
+      _Droplet(startMs: 0, lengthMs: 200, frequency: 660, amplitude: 0.30),
+      _Droplet(startMs: 180, lengthMs: 220, frequency: 990, amplitude: 0.26),
+    ],
+    shimmer: const _Shimmer(amplitude: 0.0020, frequency: 1980),
+  ),
+  _SoundSpec(
+    name: 'request_accepted.wav',
+    durationMs: 300,
+    targetPeak: 9000,
+    droplets: const <_Droplet>[
+      _Droplet(startMs: 0, lengthMs: 110, frequency: 660, amplitude: 0.26),
+      _Droplet(startMs: 80, lengthMs: 110, frequency: 880, amplitude: 0.22),
+      _Droplet(startMs: 160, lengthMs: 130, frequency: 1100, amplitude: 0.18),
+    ],
+    shimmer: const _Shimmer(amplitude: 0.0022, frequency: 2200),
+  ),
+  _SoundSpec(
+    name: 'transfer_complete.wav',
+    durationMs: 260,
+    targetPeak: 9000,
+    droplets: const <_Droplet>[
+      _Droplet(startMs: 0, lengthMs: 120, frequency: 990, amplitude: 0.26),
+      _Droplet(startMs: 90, lengthMs: 150, frequency: 1480, amplitude: 0.20),
+    ],
+    shimmer: const _Shimmer(amplitude: 0.0034, frequency: 2960),
+  ),
+  _SoundSpec(
     name: 'call_incoming_loop.wav',
     durationMs: 1600,
     targetPeak: 9200,

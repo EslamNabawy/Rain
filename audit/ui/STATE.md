@@ -20,6 +20,8 @@
 - T2.6 22f5997 skeleton variants + pulse + delayed reveal at 4 sites
 - T2.7 8e21284 transfer bubble progress tween/waiting/check; tests added; send button already fixed-size
 - T2.8 6960842 RainConnectingPulse around the call status glyph; warning colour while media reconnects
+- sync b6a5169 merged origin/dev (hardening already merged there); 1 header conflict in splash_screen.dart; 835 tests pass
+- T3.1 86a4395 audit/ui/02-sound-map.md with measured peak/RMS
 
 ## Blocked
 
@@ -46,4 +48,6 @@
 - sound_event_router_test 'five sends in 200 ms' is wall-clock flaky under full-suite load (passes alone); not touched by this program.
 - Owner action (T2.5): cold-start on Android 11 and Android 13: native splash shows the mark centred on #061017 and hands off to the Flutter splash without a flash. Android 12+ masks the animated icon to a circle, so check the 192 px mark is not clipped.
 - T2.8: VoiceCallPhase has no reconnecting value; reconnecting = phase active + VoiceCallState.mediaReconnecting. Full suite +821 ~30 passed. FORMAT reports 3 pre-existing unformatted files outside this program's scope (integration_two_devices_handshake_full_test.dart, integration_two_users_end2end_test.dart, integration_voice_signaling_emulator_test.dart; last touched by 6ff832b); left as is.
+- Phase 3 sync: local Flutter is now 3.47.8 (CI pins 3.44.0). `flutter pub get` bumps matcher 0.12.20, meta 1.19.0, test 1.31.1 and `--enforce-lockfile` fails. The committed pubspec.lock stays at dev's version; never stage the local drift.
+- Phase 3: unstaged edits to apps/rain, peer_core, protocol_brain and rain_core analysis_options.yaml (analyzer excludes) appeared at 14:11 from outside this program. They are outside may_edit: not staged, not reverted.
 - friend_flow_test 'remote video renderer attach failure' failed once under full-suite load, passed alone and on rerun (timing flake, untouched code).
