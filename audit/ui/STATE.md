@@ -22,6 +22,7 @@
 - T2.8 6960842 RainConnectingPulse around the call status glyph; warning colour while media reconnects
 - sync b6a5169 merged origin/dev (hardening already merged there); 1 header conflict in splash_screen.dart; 835 tests pass
 - T3.1 86a4395 audit/ui/02-sound-map.md with measured peak/RMS
+- T3.2 38f8c3e six new generated cues; 15 old WAVs byte-identical after SOUNDGEN (README line added in the next commit)
 
 ## Blocked
 

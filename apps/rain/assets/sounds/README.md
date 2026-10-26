@@ -22,6 +22,12 @@ Current sound direction:
 - `call_connected.wav` and `call_ended.wav`: short state-change cues.
 - `call_failed.wav`: low failed-call splash, clearly negative without sounding like a system alarm.
 - `mute.wav`, `unmute.wav`, `deafen.wav`, `undeafen.wav`: quiet control toggles for in-call use.
+- `camera_on.wav`: two rising droplets (880 then 1320 Hz) for turning the camera on.
+- `camera_off.wav`: the same pair falling (1320 then 880 Hz) for turning the camera off.
+- `route_change.wav`: single soft 1040 Hz tick when the audio output route changes.
+- `request_inbound.wav`: gentle two-note 660/990 Hz cue for an inbound connection request, distinct from `receive.wav`.
+- `request_accepted.wav`: three rising droplets (660/880/1100 Hz) when someone accepts your request.
+- `transfer_complete.wav`: two bright droplets (990/1480 Hz) with light shimmer when a file transfer finishes.
 
 Asset rules:
 
