@@ -43,7 +43,9 @@ void main() {
     for (final path in drawableFiles) {
       final xml = File(path).readAsStringSync();
       expect(xml, contains('android:color="#061017"'), reason: path);
-      expect(xml, contains('@drawable/rain_splash_mark'), reason: path);
+      // Pre-31 launch backgrounds stay a plain colour: the release contract
+      // (protocol_brain release_contract_test) forbids any bitmap here.
+      expect(xml, isNot(contains('<bitmap')), reason: path);
     }
   });
 
