@@ -35,6 +35,7 @@
 - T4.3 debe917 dock mic/camera/deafen announce On/Off + toggled; manager-bar tooltips already present
 - T4.4 757c615 friends/chat/search empty states rewritten; friends empty offers Find people by username
 - T4.5 f5adb86 showRainSnack (severity icon, 4 s / 6 s error) replaces 22 snackbars
+- T4.6 394c191 resilience + contrast test; no overflow, no alpha changes needed
 
 ## Blocked
 
@@ -75,4 +76,5 @@
 - T4.4: the connection request tray stays hidden when empty (it is an overlay of live requests; an empty card there would be decorative noise per .ai/impeccable.md). The friends empty state gets a 'Find people by username' button (qa.friends.find) using the existing AppRoutes.openSearch. The first longer search-idle copy pushed recent-search chips off the 800x600 test view, so the copy was shortened to 'Search by Rain username, then tap Add.'
 - T4.5: showRainSnack takes a ScaffoldMessengerState, not a BuildContext as the plan wrote. Every converted site already captured `messenger` before an await, and a context-based helper would reintroduce use-after-async-gap. onboarding_screen.dart has no showSnackBar calls. 22 sites converted in settings/search/friend_profile; 11 now-unused errorColor locals removed.
 - T4.6: no overflow at 360x740 with 130 % text in either theme for splash (with caption), startup failure, force update, onboarding, message bubbles, file transfer bubble (offered/sending/completed/failed with a long filename) and call ended. No layout fixes were needed. Settings is not in this test: it needs the full provider harness from settings_screen_test. Contrast: onSurface on light surfaces at alpha 0.6 would be 4.30, but no muted text uses that pairing. State cards use 0.66 (light minimum 5.10) and the always-dark splash caption is white@0.6 (minimum 5.4). No alpha constants changed.
+- T5.1: 40 after shots. Pre-existing (not regressions, unchanged by this program): button labels use the literal fontFamily 'Space Grotesk', which google_fonts never registers, so labels likely fall back to the platform font on devices; backdrop surfaces follow platform brightness, not themeMode. Both are listed as remaining ideas.
 - friend_flow_test 'remote video renderer attach failure' failed once under full-suite load, passed alone and on rerun (timing flake, untouched code).
