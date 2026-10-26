@@ -33,17 +33,16 @@ import 'package:rain/presentation/screens/splash_screen.dart';
 import 'package:rain/presentation/widgets/app_components.dart';
 import 'package:rain/presentation/widgets/app_dialogs.dart';
 import 'package:rain/presentation/widgets/rain_chat_widgets.dart';
+import 'package:rain/presentation/feedback/rain_error_text.dart';
+import 'package:rain/presentation/feedback/rain_snack.dart';
+import 'package:rain/presentation/widgets/feedback/rain_busy_indicator.dart';
+import 'package:rain/presentation/widgets/feedback/rain_delayed_reveal.dart';
+import 'package:rain/presentation/widgets/settings/sound_preview_button.dart';
+import 'package:rain/presentation/widgets/settings/haptic_feedback_tile.dart';
+import 'package:rain/presentation/feedback/rain_haptics.dart';
+import 'package:rain/infrastructure/services/sound_effects_service.dart';
 
-String _formatSettingsError(Object error) {
-  final raw = error.toString().trim();
-  const prefixes = <String>['Exception: ', 'Bad state: ', 'StateError: '];
-  for (final prefix in prefixes) {
-    if (raw.startsWith(prefix)) {
-      return raw.substring(prefix.length).trim();
-    }
-  }
-  return raw;
-}
+String _formatSettingsError(Object error) => rainUserFacingError(error);
 
 String _manualUpdateCheckMessage(VersionCheckResult result) {
   return switch (result.status) {
@@ -75,6 +74,7 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen> {
   bool _testingMicrophone = false;
   bool _microphoneTestFailed = false;
   String? _microphoneTestMessage;
+  Future<void>? _volumeSave;
 
   @override
   Widget build(BuildContext context) {
@@ -260,7 +260,12 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen> {
                     onSoundEffectsEnabledChanged: (bool enabled) =>
                         _setSoundEffectsEnabled(context, ref, enabled),
                     onSoundEffectsVolumeChanged: (double volume) =>
-                        _setSoundEffectsVolume(context, ref, volume),
+                        _volumeSave = _setSoundEffectsVolume(
+                          context,
+                          ref,
+                          volume,
+                        ),
+                    onPreviewSound: () => unawaited(_previewSoundEffect()),
                     onCallSoundsEnabledChanged: (bool enabled) =>
                         _setCallSoundsEnabled(context, ref, enabled),
                     onReduceSoundsDuringCallChanged: (bool enabled) =>
@@ -293,11 +298,13 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen> {
                     isBusy: true,
                     onSoundEffectsEnabledChanged: (_) {},
                     onSoundEffectsVolumeChanged: (_) {},
+                    onPreviewSound: () {},
                     onCallSoundsEnabledChanged: (_) {},
                     onReduceSoundsDuringCallChanged: (_) {},
                     onOutputPreferenceChanged: (_) {},
                   ),
                 ),
+                const HapticFeedbackTile(),
               ],
             ),
           ),
@@ -469,7 +476,7 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen> {
                   loading: () => const ListTile(
                     leading: SizedBox.square(
                       dimension: 22,
-                      child: CircularProgressIndicator(strokeWidth: 2),
+                      child: RainBusyIndicator(size: 22),
                     ),
                     title: Text('Checking diagnostics'),
                   ),
@@ -483,7 +490,7 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen> {
                   trailing: _exportingDiagnostics
                       ? const SizedBox.square(
                           dimension: 22,
-                          child: CircularProgressIndicator(strokeWidth: 2),
+                          child: RainBusyIndicator(size: 22),
                         )
                       : null,
                   onTap: _exportingDiagnostics
@@ -560,7 +567,6 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen> {
     String? deviceId,
   ) async {
     final messenger = ScaffoldMessenger.of(context);
-    final errorColor = Theme.of(context).colorScheme.error;
     try {
       await ref
           .read(microphoneSelectionProvider.notifier)
@@ -569,13 +575,10 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen> {
       if (!context.mounted) {
         return;
       }
-      messenger.showSnackBar(
-        SnackBar(
-          content: Text(
-            'Could not update microphone: ${_formatSettingsError(error)}',
-          ),
-          backgroundColor: errorColor,
-        ),
+      showRainSnack(
+        messenger,
+        'Could not update microphone: ${_formatSettingsError(error)}',
+        severity: RainStateSeverity.error,
       );
     }
   }
@@ -586,7 +589,6 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen> {
     String? deviceId,
   ) async {
     final messenger = ScaffoldMessenger.of(context);
-    final errorColor = Theme.of(context).colorScheme.error;
     try {
       await ref
           .read(videoInputCapabilityProvider.notifier)
@@ -595,20 +597,16 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen> {
       if (!context.mounted) {
         return;
       }
-      messenger.showSnackBar(
-        SnackBar(
-          content: Text(
-            'Could not update camera: ${_formatSettingsError(error)}',
-          ),
-          backgroundColor: errorColor,
-        ),
+      showRainSnack(
+        messenger,
+        'Could not update camera: ${_formatSettingsError(error)}',
+        severity: RainStateSeverity.error,
       );
     }
   }
 
   Future<void> _testMicrophone(BuildContext context, WidgetRef ref) async {
     final messenger = ScaffoldMessenger.of(context);
-    final errorColor = Theme.of(context).colorScheme.error;
     setState(() {
       _testingMicrophone = true;
       _microphoneTestFailed = false;
@@ -625,9 +623,7 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen> {
         _microphoneTestFailed = false;
         _microphoneTestMessage = 'Microphone is available.';
       });
-      messenger.showSnackBar(
-        const SnackBar(content: Text('Microphone is available.')),
-      );
+      showRainSnack(messenger, 'Microphone is available.');
     } catch (error) {
       if (!mounted) {
         return;
@@ -637,9 +633,7 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen> {
         _microphoneTestFailed = true;
         _microphoneTestMessage = message;
       });
-      messenger.showSnackBar(
-        SnackBar(content: Text(message), backgroundColor: errorColor),
-      );
+      showRainSnack(messenger, message, severity: RainStateSeverity.error);
     } finally {
       if (mounted) {
         setState(() => _testingMicrophone = false);
@@ -671,6 +665,15 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen> {
           .read(voiceAudioSettingsProvider.notifier)
           .setSoundEffectsVolume(volume),
     );
+  }
+
+  /// Plays the UI cue after the latest volume save so it uses the new level.
+  Future<void> _previewSoundEffect() async {
+    await _volumeSave;
+    if (!mounted) {
+      return;
+    }
+    await ref.read(soundEffectsProvider).play(RainSoundEffect.action);
   }
 
   Future<void> _setCallSoundsEnabled(
@@ -803,21 +806,18 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen> {
     BuildContext context,
     Future<void> Function() action,
   ) async {
+    RainHaptics.selection(context);
     final messenger = ScaffoldMessenger.of(context);
-    final errorColor = Theme.of(context).colorScheme.error;
     try {
       await action();
     } catch (error) {
       if (!context.mounted) {
         return;
       }
-      messenger.showSnackBar(
-        SnackBar(
-          content: Text(
-            'Could not update audio setting: ${_formatSettingsError(error)}',
-          ),
-          backgroundColor: errorColor,
-        ),
+      showRainSnack(
+        messenger,
+        'Could not update audio setting: ${_formatSettingsError(error)}',
+        severity: RainStateSeverity.error,
       );
     }
   }
@@ -826,21 +826,18 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen> {
     BuildContext context,
     Future<void> Function() action,
   ) async {
+    RainHaptics.selection(context);
     final messenger = ScaffoldMessenger.of(context);
-    final errorColor = Theme.of(context).colorScheme.error;
     try {
       await action();
     } catch (error) {
       if (!context.mounted) {
         return;
       }
-      messenger.showSnackBar(
-        SnackBar(
-          content: Text(
-            'Could not update connection request setting: ${_formatSettingsError(error)}',
-          ),
-          backgroundColor: errorColor,
-        ),
+      showRainSnack(
+        messenger,
+        'Could not update connection request setting: ${_formatSettingsError(error)}',
+        severity: RainStateSeverity.error,
       );
     }
   }
@@ -849,28 +846,24 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen> {
     BuildContext context,
     Future<void> Function() action,
   ) async {
+    RainHaptics.selection(context);
     final messenger = ScaffoldMessenger.of(context);
-    final errorColor = Theme.of(context).colorScheme.error;
     try {
       await action();
     } catch (error) {
       if (!context.mounted) {
         return;
       }
-      messenger.showSnackBar(
-        SnackBar(
-          content: Text(
-            'Could not update call processing: ${_formatSettingsError(error)}',
-          ),
-          backgroundColor: errorColor,
-        ),
+      showRainSnack(
+        messenger,
+        'Could not update call processing: ${_formatSettingsError(error)}',
+        severity: RainStateSeverity.error,
       );
     }
   }
 
   Future<void> _checkForUpdates(BuildContext context) async {
     final messenger = ScaffoldMessenger.of(context);
-    final errorColor = Theme.of(context).colorScheme.error;
     final environment = ref.read(appEnvironmentProvider);
     await ref.read(forceUpdateProvider.notifier).refresh();
     final result = ref.read(forceUpdateProvider);
@@ -878,25 +871,19 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen> {
       return;
     }
     if (result.hasError) {
-      messenger.showSnackBar(
-        SnackBar(
-          content: Text(
-            'Could not check for updates: ${_formatSettingsError(result.error!)}',
-          ),
-          backgroundColor: errorColor,
-        ),
+      showRainSnack(
+        messenger,
+        'Could not check for updates: ${_formatSettingsError(result.error!)}',
+        severity: RainStateSeverity.error,
       );
       return;
     }
     final value = result.value;
     if (value == null) {
-      messenger.showSnackBar(
-        SnackBar(
-          content: const Text(
-            'Update check did not return a result. Try again.',
-          ),
-          backgroundColor: errorColor,
-        ),
+      showRainSnack(
+        messenger,
+        'Update check did not return a result. Try again.',
+        severity: RainStateSeverity.error,
       );
       return;
     }
@@ -904,22 +891,21 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen> {
     final updateUrl = value.updateUrl.trim().isNotEmpty
         ? value.updateUrl
         : environment.forceUpdateUrl;
-    messenger.showSnackBar(
-      SnackBar(
-        content: Text(_manualUpdateCheckMessage(value)),
-        backgroundColor: switch (value.status) {
-          VersionCheckStatus.invalidConfig ||
-          VersionCheckStatus.remotePolicyOutdated ||
-          VersionCheckStatus.checkUnavailable => errorColor,
-          _ => null,
-        },
-        action: value.requiresUpdate || value.hasOptionalUpdate
-            ? SnackBarAction(
-                label: 'Open',
-                onPressed: () => unawaited(launchUrlString(updateUrl)),
-              )
-            : null,
-      ),
+    showRainSnack(
+      messenger,
+      _manualUpdateCheckMessage(value),
+      severity: switch (value.status) {
+        VersionCheckStatus.invalidConfig ||
+        VersionCheckStatus.remotePolicyOutdated ||
+        VersionCheckStatus.checkUnavailable => RainStateSeverity.error,
+        _ => RainStateSeverity.neutral,
+      },
+      action: value.requiresUpdate || value.hasOptionalUpdate
+          ? SnackBarAction(
+              label: 'Open',
+              onPressed: () => unawaited(launchUrlString(updateUrl)),
+            )
+          : null,
     );
   }
 
@@ -934,7 +920,6 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen> {
 
   Future<void> _confirmLogOut(BuildContext context) async {
     final messenger = ScaffoldMessenger.of(context);
-    final errorColor = Theme.of(context).colorScheme.error;
 
     final shouldLogOut = await showAppConfirmDialog(
       context: context,
@@ -960,11 +945,10 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen> {
         return;
       }
       setState(() => _loggingOut = false);
-      messenger.showSnackBar(
-        SnackBar(
-          content: Text('Could not log out: ${_formatSettingsError(error)}'),
-          backgroundColor: errorColor,
-        ),
+      showRainSnack(
+        messenger,
+        'Could not log out: ${_formatSettingsError(error)}',
+        severity: RainStateSeverity.error,
       );
     }
   }
@@ -1105,7 +1089,6 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen> {
 
   Future<void> _exportDiagnostics(BuildContext context) async {
     final messenger = ScaffoldMessenger.of(context);
-    final errorColor = Theme.of(context).colorScheme.error;
     setState(() => _exportingDiagnostics = true);
     try {
       final result = await ref
@@ -1118,21 +1101,16 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen> {
         final location = result.platformManaged
             ? 'selected document'
             : result.path;
-        messenger.showSnackBar(
-          SnackBar(content: Text('Diagnostics exported to $location')),
-        );
+        showRainSnack(messenger, 'Diagnostics exported to $location');
       }
     } catch (error) {
       if (!context.mounted) {
         return;
       }
-      messenger.showSnackBar(
-        SnackBar(
-          content: Text(
-            'Could not export diagnostics: ${_formatSettingsError(error)}',
-          ),
-          backgroundColor: errorColor,
-        ),
+      showRainSnack(
+        messenger,
+        'Could not export diagnostics: ${_formatSettingsError(error)}',
+        severity: RainStateSeverity.error,
       );
     } finally {
       if (mounted) {
@@ -1424,7 +1402,7 @@ class _AboutRainSection extends StatelessWidget {
       loading: () => const ListTile(
         leading: SizedBox.square(
           dimension: 22,
-          child: CircularProgressIndicator(strokeWidth: 2),
+          child: RainBusyIndicator(size: 22),
         ),
         title: Text('Checking app version'),
       ),
@@ -1500,7 +1478,7 @@ class _MicrophoneTestTile extends StatelessWidget {
         icon: isTesting
             ? const SizedBox.square(
                 dimension: 18,
-                child: CircularProgressIndicator(strokeWidth: 2),
+                child: RainBusyIndicator(size: 18),
               )
             : const Icon(Icons.play_arrow),
       ),
@@ -1565,6 +1543,7 @@ class _VoiceAudioSettingsControls extends StatelessWidget {
     required this.isBusy,
     required this.onSoundEffectsEnabledChanged,
     required this.onSoundEffectsVolumeChanged,
+    required this.onPreviewSound,
     required this.onCallSoundsEnabledChanged,
     required this.onReduceSoundsDuringCallChanged,
     required this.onOutputPreferenceChanged,
@@ -1575,6 +1554,7 @@ class _VoiceAudioSettingsControls extends StatelessWidget {
   final bool isBusy;
   final ValueChanged<bool> onSoundEffectsEnabledChanged;
   final ValueChanged<double> onSoundEffectsVolumeChanged;
+  final VoidCallback onPreviewSound;
   final ValueChanged<bool> onCallSoundsEnabledChanged;
   final ValueChanged<bool> onReduceSoundsDuringCallChanged;
   final ValueChanged<CallAudioOutputPreference> onOutputPreferenceChanged;
@@ -1645,13 +1625,23 @@ class _VoiceAudioSettingsControls extends StatelessWidget {
             onChanged: soundControlsEnabled
                 ? onSoundEffectsVolumeChanged
                 : null,
+            onChangeEnd: soundControlsEnabled ? (_) => onPreviewSound() : null,
           ),
-          trailing: SizedBox(
-            width: 48,
-            child: Text(
-              _volumeLabel(settings.soundEffectsVolume),
-              textAlign: TextAlign.end,
-            ),
+          trailing: Row(
+            mainAxisSize: MainAxisSize.min,
+            children: <Widget>[
+              SizedBox(
+                width: 48,
+                child: Text(
+                  _volumeLabel(settings.soundEffectsVolume),
+                  textAlign: TextAlign.end,
+                ),
+              ),
+              SoundPreviewButton(
+                enabled: soundControlsEnabled,
+                onPressed: onPreviewSound,
+              ),
+            ],
           ),
           enabled: soundControlsEnabled,
         ),
@@ -1876,7 +1866,7 @@ class _BlockedUsersList extends ConsumerWidget {
       ),
       loading: () => const AppSectionCard(
         padding: EdgeInsets.all(18),
-        child: RainStreakSkeleton(rows: 2),
+        child: RainDelayedReveal(child: RainStreakSkeleton(rows: 2)),
       ),
     );
   }

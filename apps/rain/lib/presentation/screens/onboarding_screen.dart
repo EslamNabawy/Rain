@@ -22,6 +22,8 @@ import 'package:rain/application/state/sound_event_providers.dart';
 import 'package:rain/presentation/branding/rain_peer_core_mark.dart';
 import 'package:rain/presentation/theme/rain_theme.dart';
 import 'package:rain/presentation/widgets/app_components.dart';
+import 'package:rain/presentation/feedback/rain_error_text.dart';
+import 'package:rain/presentation/widgets/feedback/rain_busy_indicator.dart';
 
 enum _AuthMode { register, login }
 
@@ -204,24 +206,7 @@ class _OnboardingScreenState extends ConsumerState<OnboardingScreen>
     }
   }
 
-  String _formatError(Object error) {
-    final raw = error.toString().trim();
-    final normalized = raw.toLowerCase();
-    if ((normalized.contains('firebase_database') ||
-            normalized.contains('firebase database error')) &&
-        normalized.contains('permission denied')) {
-      return 'Rain could not create that account data. The username may '
-          'already be taken or locked. Try signing in or choose another '
-          'username.';
-    }
-    const prefixes = <String>['Exception: ', 'Bad state: '];
-    for (final prefix in prefixes) {
-      if (raw.startsWith(prefix)) {
-        return raw.substring(prefix.length).trim();
-      }
-    }
-    return raw;
-  }
+  String _formatError(Object error) => rainUserFacingError(error);
 
   @override
   Widget build(BuildContext context) {
@@ -549,8 +534,8 @@ class _OnboardingScreenState extends ConsumerState<OnboardingScreen>
                                         ? SizedBox(
                                             width: 16,
                                             height: 16,
-                                            child: CircularProgressIndicator(
-                                              strokeWidth: 2,
+                                            child: RainBusyIndicator(
+                                              size: 16,
                                               color: scheme.onPrimary,
                                             ),
                                           )

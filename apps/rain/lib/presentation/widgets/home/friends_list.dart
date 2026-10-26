@@ -66,8 +66,14 @@ class _FriendsListView extends StatelessWidget {
                     icon: Icons.group_outlined,
                     title: 'No friends yet',
                     message:
-                        'Find a friend to start chatting and testing the peer connection flow.',
+                        'Your friends list holds the people you chat and call with directly.',
                     iconSize: compact ? 46 : 52,
+                    action: FilledButton.tonalIcon(
+                      key: const ValueKey<String>('qa.friends.find'),
+                      onPressed: () => AppRoutes.openSearch(context),
+                      icon: const Icon(Icons.person_search_outlined),
+                      label: const Text('Find people by username'),
+                    ),
                   ),
               ],
             ),
@@ -84,12 +90,14 @@ class _FriendsListView extends StatelessWidget {
               final friend = items[index];
               return RepaintBoundary(
                 key: ValueKey<String>('friend-tile-${friend.username}'),
-                child: _FriendTile(
-                  friend: friend,
-                  selected: friend.username == selectedPeerId,
-                  compact: mode == FriendListDisplayMode.compact,
-                  rail: rail,
-                  onTap: () => onSelect(friend),
+                child: RainPressable(
+                  child: _FriendTile(
+                    friend: friend,
+                    selected: friend.username == selectedPeerId,
+                    compact: mode == FriendListDisplayMode.compact,
+                    rail: rail,
+                    onTap: () => onSelect(friend),
+                  ),
                 ),
               );
             },
@@ -105,7 +113,12 @@ class _FriendsListView extends StatelessWidget {
       loading: () => const Center(
         child: Padding(
           padding: EdgeInsets.all(24),
-          child: RainStreakSkeleton(rows: 4),
+          child: RainDelayedReveal(
+            child: RainStreakSkeleton(
+              rows: 4,
+              variant: RainSkeletonVariant.friends,
+            ),
+          ),
         ),
       ),
     );
@@ -197,7 +210,7 @@ class _DesktopFriendsRefreshHeaderState
                   ? const SizedBox(
                       width: 18,
                       height: 18,
-                      child: CircularProgressIndicator(strokeWidth: 2),
+                      child: RainBusyIndicator(size: 18),
                     )
                   : const Icon(Icons.refresh),
             ),

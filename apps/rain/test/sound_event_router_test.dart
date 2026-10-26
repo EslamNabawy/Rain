@@ -311,8 +311,8 @@ void main() {
       );
 
       expect(effects.played.map((entry) => entry.effect), <RainSoundEffect>[
-        RainSoundEffect.receive,
-        RainSoundEffect.action,
+        RainSoundEffect.requestInbound,
+        RainSoundEffect.requestAccepted,
         RainSoundEffect.error,
         RainSoundEffect.error,
       ]);
@@ -338,7 +338,7 @@ void main() {
       );
 
       expect(effects.played.map((entry) => entry.effect), <RainSoundEffect>[
-        RainSoundEffect.receive,
+        RainSoundEffect.requestInbound,
       ]);
       expect(
         router.diagnostics.lastSuppressedReason,
@@ -474,12 +474,131 @@ void main() {
       );
 
       expect(effects.played.map((entry) => entry.effect), <RainSoundEffect>[
-        RainSoundEffect.action,
-        RainSoundEffect.action,
-        RainSoundEffect.action,
+        RainSoundEffect.cameraOff,
+        RainSoundEffect.cameraOn,
+        RainSoundEffect.routeChange,
       ]);
       expect(effects.played.every((entry) => entry.voiceCallActive), isTrue);
       expect(effects.played.every((entry) => entry.allowDuringCall), isTrue);
+    });
+
+    test('maps file transfer events to transfer cues', () async {
+      final effects = _RecordingSoundEffectsService();
+      final base = DateTime.utc(2026, 5, 24, 12);
+      final router = _router(effects);
+
+      await router.dispatch(
+        RainSoundEvent.fileTransferCompleted(
+          transferId: 't-1',
+          occurredAt: base,
+        ),
+      );
+      await router.dispatch(
+        RainSoundEvent.fileTransferFailed(
+          transferId: 't-2',
+          occurredAt: base.add(const Duration(seconds: 2)),
+        ),
+      );
+
+      expect(effects.played.map((entry) => entry.effect), <RainSoundEffect>[
+        RainSoundEffect.transferComplete,
+        RainSoundEffect.error,
+      ]);
+      expect(effects.played.every((entry) => !entry.allowDuringCall), isTrue);
+    });
+
+    test('same transfer plays its cue only once', () async {
+      final effects = _RecordingSoundEffectsService();
+      final base = DateTime.utc(2026, 5, 24, 12);
+      final router = _router(effects);
+
+      await router.dispatch(
+        RainSoundEvent.fileTransferCompleted(
+          transferId: 't-1',
+          occurredAt: base,
+        ),
+      );
+      await router.dispatch(
+        RainSoundEvent.fileTransferFailed(
+          transferId: 't-1',
+          occurredAt: base.add(const Duration(minutes: 5)),
+        ),
+      );
+
+      expect(effects.played, hasLength(1));
+      expect(router.diagnostics.lastSuppressedReason, 'duplicateFileTransfer');
+    });
+
+    test('transfer cues are spaced at least 1500 ms apart', () async {
+      final effects = _RecordingSoundEffectsService();
+      final base = DateTime.utc(2026, 5, 24, 12);
+      final router = _router(effects);
+
+      for (final offsetMs in <int>[0, 600, 1600]) {
+        await router.dispatch(
+          RainSoundEvent.fileTransferCompleted(
+            transferId: 't-$offsetMs',
+            occurredAt: base.add(Duration(milliseconds: offsetMs)),
+          ),
+        );
+      }
+
+      expect(effects.played, hasLength(2));
+    });
+
+    test(
+      'active call with reduction and ringing suppress transfer cues',
+      () async {
+        final activeEffects = _RecordingSoundEffectsService();
+        final activeRouter = _router(
+          activeEffects,
+          callState: const VoiceCallState(
+            phase: VoiceCallPhase.active,
+            callId: 'call-1',
+            peerId: 'bob',
+          ),
+        );
+        final ringingEffects = _RecordingSoundEffectsService();
+        final ringingRouter = _router(
+          ringingEffects,
+          settingsLoader: () =>
+              const AppAudioSettings(reduceSoundsDuringCall: false),
+          callState: const VoiceCallState(
+            phase: VoiceCallPhase.incomingRinging,
+            callId: 'call-2',
+            peerId: 'bob',
+          ),
+        );
+
+        await activeRouter.dispatch(
+          RainSoundEvent.fileTransferCompleted(transferId: 't-1'),
+        );
+        await ringingRouter.dispatch(
+          RainSoundEvent.fileTransferFailed(transferId: 't-2'),
+        );
+
+        expect(activeEffects.played, isEmpty);
+        expect(ringingEffects.played, isEmpty);
+        expect(
+          activeRouter.diagnostics.lastSuppressedReason,
+          'callSuppressesFileTransfer',
+        );
+      },
+    );
+
+    test('transfer cues respect the sound effects switch', () async {
+      final effects = _RecordingSoundEffectsService();
+      final router = _router(
+        effects,
+        settingsLoader: () =>
+            const AppAudioSettings(soundEffectsEnabled: false),
+      );
+
+      await router.dispatch(
+        RainSoundEvent.fileTransferCompleted(transferId: 't-1'),
+      );
+
+      expect(effects.played, isEmpty);
     });
 
     test('incoming call starts one ringtone loop for the call id', () async {

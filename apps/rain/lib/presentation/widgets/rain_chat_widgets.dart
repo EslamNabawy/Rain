@@ -22,6 +22,8 @@ import 'package:rain/application/state/call_surface_providers.dart';
 import 'package:rain/infrastructure/services/rain_debug_log_service.dart';
 import 'package:rain/presentation/branding/rain_peer_core_mark.dart';
 import 'package:rain/presentation/widgets/calls/rain_call_controls.dart';
+import 'package:rain/presentation/widgets/feedback/rain_busy_indicator.dart';
+import 'package:rain/presentation/widgets/feedback/rain_pressable.dart';
 
 const String _maleAvatarAsset = 'assets/gender_avatar/man-avatar.svg';
 const String _femaleAvatarAsset = 'assets/gender_avatar/woman-avatar.svg';
@@ -243,10 +245,7 @@ class RainLiveLinkBar extends StatelessWidget {
                         if (isBusy)
                           SizedBox.square(
                             dimension: 14,
-                            child: CircularProgressIndicator(
-                              strokeWidth: 2,
-                              color: color,
-                            ),
+                            child: RainBusyIndicator(size: 14, color: color),
                           )
                         else
                           Icon(icon, size: 15, color: color),
@@ -539,10 +538,7 @@ class RainComposerCommandStrip extends StatelessWidget {
                   child: isBusy
                       ? SizedBox.square(
                           dimension: 14,
-                          child: CircularProgressIndicator(
-                            strokeWidth: 2,
-                            color: color,
-                          ),
+                          child: RainBusyIndicator(size: 14, color: color),
                         )
                       : Icon(icon, color: color, size: 16),
                 ),
@@ -626,16 +622,19 @@ class RainVoiceCallButton extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final isCurrentCall = state.peerId == peerId && state.hasCall;
-    return IconButton(
-      tooltip: _voiceCallButtonTooltip(
-        peerId: peerId,
-        state: state,
-        isPeerOnline: isPeerOnline,
-        hasActiveTransfer: hasActiveTransfer,
-        preflight: preflight,
+    return RainPressable(
+      child: IconButton(
+        key: const ValueKey<String>('qa.chat.voice_call'),
+        tooltip: _voiceCallButtonTooltip(
+          peerId: peerId,
+          state: state,
+          isPeerOnline: isPeerOnline,
+          hasActiveTransfer: hasActiveTransfer,
+          preflight: preflight,
+        ),
+        onPressed: canStart ? onStart : null,
+        icon: Icon(isCurrentCall ? Icons.call : Icons.call_outlined),
       ),
-      onPressed: canStart ? onStart : null,
-      icon: Icon(isCurrentCall ? Icons.call : Icons.call_outlined),
     );
   }
 }
@@ -664,16 +663,21 @@ class RainVideoCallButton extends StatelessWidget {
   Widget build(BuildContext context) {
     final isCurrentVideoCall =
         state.peerId == peerId && state.hasCall && state.isVideo;
-    return IconButton(
-      tooltip: _videoCallButtonTooltip(
-        peerId: peerId,
-        state: state,
-        isPeerOnline: isPeerOnline,
-        hasActiveTransfer: hasActiveTransfer,
-        preflight: preflight,
+    return RainPressable(
+      child: IconButton(
+        key: const ValueKey<String>('qa.chat.video_call'),
+        tooltip: _videoCallButtonTooltip(
+          peerId: peerId,
+          state: state,
+          isPeerOnline: isPeerOnline,
+          hasActiveTransfer: hasActiveTransfer,
+          preflight: preflight,
+        ),
+        onPressed: canStart ? onStart : null,
+        icon: Icon(
+          isCurrentVideoCall ? Icons.videocam : Icons.videocam_outlined,
+        ),
       ),
-      onPressed: canStart ? onStart : null,
-      icon: Icon(isCurrentVideoCall ? Icons.videocam : Icons.videocam_outlined),
     );
   }
 }
@@ -1269,7 +1273,7 @@ class RainMicrophoneSelector extends StatelessWidget {
             icon: isBusy
                 ? const SizedBox.square(
                     dimension: 18,
-                    child: CircularProgressIndicator(strokeWidth: 2),
+                    child: RainBusyIndicator(size: 18),
                   )
                 : const Icon(Icons.refresh),
           ),
@@ -1381,7 +1385,7 @@ class RainCameraSelector extends StatelessWidget {
             icon: isBusy
                 ? const SizedBox.square(
                     dimension: 18,
-                    child: CircularProgressIndicator(strokeWidth: 2),
+                    child: RainBusyIndicator(size: 18),
                   )
                 : const Icon(Icons.refresh),
           ),

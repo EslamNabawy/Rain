@@ -138,6 +138,11 @@ void main() {
     await tester.pump(const Duration(milliseconds: 300));
 
     expect(find.text('Data lane only'), findsOneWidget);
+    expect(find.text('No messages yet'), findsOneWidget);
+    expect(
+      find.textContaining('Messages here travel straight between your devices'),
+      findsOneWidget,
+    );
 
     await tester.enterText(find.byType(TextField), 'stale presence send');
     await tester.pump();
@@ -153,6 +158,55 @@ void main() {
     expect(sentPayloads, isNotEmpty);
     messageDeliveryService.dispose();
   });
+
+  testWidgets('empty friends list offers to find people by username', (
+    WidgetTester tester,
+  ) async {
+    await tester.binding.setSurfaceSize(const Size(1200, 800));
+    addTearDown(() => tester.binding.setSurfaceSize(null));
+    final database = RainDatabase(NativeDatabase.memory());
+    final container = ProviderContainer(
+      overrides: [
+        appBootstrapProvider.overrideWithValue(_bootstrap(database)),
+        networkStatusProvider.overrideWith(
+          (Ref ref) => Stream<NetworkStatusState>.value(
+            const NetworkStatusState.online(),
+          ),
+        ),
+        platformBridgeProvider.overrideWithValue(_FakePlatformBridge()),
+        identityProvider.overrideWith(_SignedInIdentityController.new),
+        runtimeControllerProvider.overrideWith(_NoRuntimeController.new),
+        friendsProvider.overrideWith(
+          () => _StaticFriendsController(const <FriendRecord>[]),
+        ),
+      ],
+    );
+    addTearDown(() async {
+      container.dispose();
+      await database.close();
+    });
+
+    await tester.pumpWidget(
+      UncontrolledProviderScope(
+        container: container,
+        child: const MaterialApp(home: Scaffold(body: HomeScreen())),
+      ),
+    );
+    await tester.pump();
+    await tester.pump(const Duration(milliseconds: 300));
+
+    expect(find.text('No friends yet'), findsOneWidget);
+    expect(
+      find.byKey(const ValueKey<String>('qa.friends.find')),
+      findsOneWidget,
+    );
+    expect(find.text('Find people by username'), findsOneWidget);
+  });
+}
+
+final class _NoRuntimeController extends RuntimeController {
+  @override
+  Future<RainRuntimeController?> build() async => null;
 }
 
 AppBootstrapState _bootstrap(RainDatabase database) {

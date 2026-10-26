@@ -23,6 +23,10 @@ import 'package:rain/application/runtime/rain_runtime_controller.dart';
 import 'package:rain/presentation/branding/rain_state_surfaces.dart';
 import 'package:rain/presentation/widgets/app_components.dart';
 import 'package:rain/presentation/widgets/rain_chat_widgets.dart';
+import 'package:rain/presentation/feedback/rain_error_text.dart';
+import 'package:rain/presentation/feedback/rain_snack.dart';
+import 'package:rain/presentation/widgets/feedback/rain_busy_indicator.dart';
+import 'package:rain/presentation/widgets/feedback/rain_delayed_reveal.dart';
 
 class SearchScreen extends ConsumerStatefulWidget {
   const SearchScreen({super.key});
@@ -35,16 +39,7 @@ class _SearchScreenState extends ConsumerState<SearchScreen> {
   final TextEditingController _controller = TextEditingController();
   Timer? _debounce;
 
-  String _formatError(Object error) {
-    final raw = error.toString().trim();
-    const prefixes = <String>['Exception: ', 'Bad state: ', 'StateError: '];
-    for (final prefix in prefixes) {
-      if (raw.startsWith(prefix)) {
-        return raw.substring(prefix.length).trim();
-      }
-    }
-    return raw;
-  }
+  String _formatError(Object error) => rainUserFacingError(error);
 
   @override
   void dispose() {
@@ -70,22 +65,18 @@ class _SearchScreenState extends ConsumerState<SearchScreen> {
 
   Future<void> _sendHandleRequest(String? currentUsername) async {
     final messenger = ScaffoldMessenger.of(context);
-    final errorColor = Theme.of(context).colorScheme.error;
     final username = _normalizedHandleText();
     final error = InputValidator.usernameError(username);
 
     if (error != null) {
-      messenger.showSnackBar(
-        SnackBar(content: Text(error), backgroundColor: errorColor),
-      );
+      showRainSnack(messenger, error, severity: RainStateSeverity.error);
       return;
     }
     if (currentUsername != null && username == currentUsername) {
-      messenger.showSnackBar(
-        SnackBar(
-          content: const Text('You cannot add yourself.'),
-          backgroundColor: errorColor,
-        ),
+      showRainSnack(
+        messenger,
+        'You cannot add yourself.',
+        severity: RainStateSeverity.error,
       );
       return;
     }
@@ -97,22 +88,21 @@ class _SearchScreenState extends ConsumerState<SearchScreen> {
       if (!mounted) {
         return;
       }
-      messenger.showSnackBar(
-        SnackBar(
-          content: Text(
-            result == FriendRequestResult.acceptedExisting
-                ? '@$username was waiting. Friend request accepted.'
-                : 'Friend request sent to @$username',
-          ),
-        ),
+      showRainSnack(
+        messenger,
+        result == FriendRequestResult.acceptedExisting
+            ? '@$username was waiting. Friend request accepted.'
+            : 'Friend request sent to @$username',
       );
       unawaited(ref.read(userSearchProvider.notifier).search(username));
     } catch (e) {
       if (!mounted) {
         return;
       }
-      messenger.showSnackBar(
-        SnackBar(content: Text(_formatError(e)), backgroundColor: errorColor),
+      showRainSnack(
+        messenger,
+        _formatError(e),
+        severity: RainStateSeverity.error,
       );
     }
   }
@@ -222,27 +212,21 @@ class _SearchScreenState extends ConsumerState<SearchScreen> {
                                       .read(userSearchProvider.notifier)
                                       .sendFriendRequest(username);
                                   if (context.mounted) {
-                                    ScaffoldMessenger.of(context).showSnackBar(
-                                      SnackBar(
-                                        content: Text(
-                                          result ==
-                                                  FriendRequestResult
-                                                      .acceptedExisting
-                                              ? '@$username was already waiting for you. The friend request was accepted.'
-                                              : 'Friend request sent to @$username',
-                                        ),
-                                      ),
+                                    showRainSnack(
+                                      ScaffoldMessenger.of(context),
+                                      result ==
+                                              FriendRequestResult
+                                                  .acceptedExisting
+                                          ? '@$username was already waiting for you. The friend request was accepted.'
+                                          : 'Friend request sent to @$username',
                                     );
                                   }
                                 } catch (e) {
                                   if (context.mounted) {
-                                    ScaffoldMessenger.of(context).showSnackBar(
-                                      SnackBar(
-                                        content: Text(_formatError(e)),
-                                        backgroundColor: Theme.of(
-                                          context,
-                                        ).colorScheme.error,
-                                      ),
+                                    showRainSnack(
+                                      ScaffoldMessenger.of(context),
+                                      _formatError(e),
+                                      severity: RainStateSeverity.error,
                                     );
                                   }
                                 }
@@ -250,7 +234,7 @@ class _SearchScreenState extends ConsumerState<SearchScreen> {
                             )
                           : const _SearchLoading(),
                       error: (Object error, StackTrace stackTrace) =>
-                          _SearchError(message: error.toString()),
+                          _SearchError(message: rainUserFacingError(error)),
                       loading: () => const _SearchLoading(),
                     ),
             ),
@@ -275,8 +259,8 @@ class _SearchHint extends StatelessWidget {
       children: <Widget>[
         const AppStateMessage(
           icon: Icons.search,
-          title: 'Find friend',
-          message: 'Type a handle to search, then tap Add.',
+          title: 'Find a friend',
+          message: 'Search by Rain username, then tap Add.',
         ),
         if (recentSearches.isNotEmpty) ...<Widget>[
           const SizedBox(height: 24),
@@ -313,7 +297,14 @@ class _SearchLoading extends StatelessWidget {
     return ListView(
       physics: const AlwaysScrollableScrollPhysics(),
       padding: const EdgeInsets.fromLTRB(16, 120, 16, 24),
-      children: const <Widget>[RainStreakSkeleton(rows: 4)],
+      children: const <Widget>[
+        RainDelayedReveal(
+          child: RainStreakSkeleton(
+            rows: 4,
+            variant: RainSkeletonVariant.friends,
+          ),
+        ),
+      ],
     );
   }
 }
@@ -362,8 +353,9 @@ class _SearchResults extends StatelessWidget {
         children: const <Widget>[
           AppStateMessage(
             icon: Icons.person_off_outlined,
-            title: 'No users found',
-            message: 'Try a different search term.',
+            title: 'No one with that username',
+            message:
+                'Check the spelling, or ask your friend for their exact Rain username.',
           ),
         ],
       );
@@ -436,7 +428,7 @@ class _SearchResults extends StatelessWidget {
                     icon: isSending
                         ? const SizedBox.square(
                             dimension: 18,
-                            child: CircularProgressIndicator(strokeWidth: 2),
+                            child: RainBusyIndicator(size: 18),
                           )
                         : const Icon(Icons.person_add_alt_1),
                   ),

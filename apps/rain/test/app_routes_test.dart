@@ -395,7 +395,7 @@ void main() {
     await tester.pump();
     await tester.pump(const Duration(milliseconds: 50));
 
-    expect(find.text('Rain could not start.'), findsOneWidget);
+    expect(find.text('Rain could not start'), findsOneWidget);
     expect(find.byType(RainNavigationShell), findsNothing);
     expect(find.byType(NavigationBar), findsNothing);
     expect(find.byType(NavigationRail), findsNothing);

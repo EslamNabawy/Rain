@@ -12,6 +12,10 @@ library;
 import 'package:flutter/material.dart';
 import 'package:google_fonts/google_fonts.dart';
 
+import 'rain_tokens.dart';
+
+export 'rain_tokens.dart';
+
 class RainColors {
   static const Color primary = Color(0xFF46C6D6);
   static const Color primarySoft = Color(0xFF1C6D78);
@@ -81,6 +85,18 @@ class RainMotion {
   static const Duration callSurface = Duration(milliseconds: 190);
   static const Duration callSurfaceReverse = Duration(milliseconds: 125);
   static const Duration fullscreenTransition = Duration(milliseconds: 220);
+
+  static const Curve enter = Curves.easeOutCubic;
+  static const Curve exit = Curves.easeInCubic;
+  static const Curve emphasized = Cubic(0.2, 0, 0, 1);
+
+  static const Duration loadingRevealDelay = Duration(milliseconds: 180);
+  static const Duration splashCaptionDelay = Duration(milliseconds: 600);
+  static const Duration skeletonPulse = Duration(milliseconds: 1400);
+  static const Duration messageEnter = Duration(milliseconds: 180);
+  static const Duration progressTween = Duration(milliseconds: 240);
+  static const Duration connectingPulse = Duration(milliseconds: 1800);
+  static const Duration pressScale = Duration(milliseconds: 90);
 }
 
 class RainTheme {
@@ -104,7 +120,7 @@ class RainTheme {
       useMaterial3: true,
     );
 
-    return base.copyWith(
+    final theme = base.copyWith(
       textTheme: _textTheme(base.textTheme),
       cardTheme: CardThemeData(
         color: RainColors.surfaceDark,
@@ -186,8 +202,17 @@ class RainTheme {
         labelStyle: const TextStyle(fontFamily: 'Space Grotesk'),
         hintStyle: const TextStyle(color: Color(0xFF7FA2AD)),
       ),
+      snackBarTheme: SnackBarThemeData(
+        backgroundColor: RainColors.surfaceRaisedDark,
+        contentTextStyle: const TextStyle(color: Colors.white),
+        behavior: SnackBarBehavior.floating,
+        shape: RoundedRectangleBorder(
+          borderRadius: BorderRadius.circular(RainRadius.md),
+        ),
+      ),
       pageTransitionsTheme: _pageTransitionsTheme(),
     );
+    return _withInteractionStates(theme);
   }
 
   static ThemeData light() {
@@ -238,7 +263,7 @@ class RainTheme {
       useMaterial3: true,
     );
 
-    return base.copyWith(
+    final theme = base.copyWith(
       textTheme: _textTheme(base.textTheme),
       cardTheme: CardThemeData(
         color: RainColors.surfaceLight,
@@ -403,9 +428,34 @@ class RainTheme {
       progressIndicatorTheme: const ProgressIndicatorThemeData(color: primary),
       pageTransitionsTheme: _pageTransitionsTheme(),
     );
+    return _withInteractionStates(theme);
+  }
+
+  /// Hover, focus and press overlays for Filled/Outlined/Text buttons, tinted
+  /// with each button's own foreground colour, plus a primary focus colour.
+  static ThemeData _withInteractionStates(ThemeData theme) {
+    final scheme = theme.colorScheme;
+    ButtonStyle? withOverlay(ButtonStyle? style, Color fallback) {
+      final base = style?.foregroundColor?.resolve(<WidgetState>{}) ?? fallback;
+      return style?.copyWith(overlayColor: _InteractionOverlay(base));
+    }
+
+    return theme.copyWith(
+      focusColor: scheme.primary.withValues(alpha: 0.14),
+      filledButtonTheme: FilledButtonThemeData(
+        style: withOverlay(theme.filledButtonTheme.style, scheme.onPrimary),
+      ),
+      outlinedButtonTheme: OutlinedButtonThemeData(
+        style: withOverlay(theme.outlinedButtonTheme.style, scheme.primary),
+      ),
+      textButtonTheme: TextButtonThemeData(
+        style: withOverlay(theme.textButtonTheme.style, scheme.primary),
+      ),
+    );
   }
 
   static TextTheme _textTheme(TextTheme base) {
+    GoogleFonts.config.allowRuntimeFetching = false;
     final inter = GoogleFonts.interTextTheme(base);
     return inter.copyWith(
       displayLarge: GoogleFonts.spaceGrotesk(
@@ -509,4 +559,34 @@ class _RainPageTransitionsBuilder extends PageTransitionsBuilder {
       child: SlideTransition(position: slide, child: child),
     );
   }
+}
+
+/// Hover 8 %, focus 14 %, pressed 16 % of [base]. Value-equal so rebuilding
+/// RainTheme yields an equal ThemeData and MaterialApp does not re-animate it.
+@immutable
+class _InteractionOverlay implements WidgetStateProperty<Color?> {
+  const _InteractionOverlay(this.base);
+
+  final Color base;
+
+  @override
+  Color? resolve(Set<WidgetState> states) {
+    if (states.contains(WidgetState.pressed)) {
+      return base.withValues(alpha: 0.16);
+    }
+    if (states.contains(WidgetState.focused)) {
+      return base.withValues(alpha: 0.14);
+    }
+    if (states.contains(WidgetState.hovered)) {
+      return base.withValues(alpha: 0.08);
+    }
+    return null;
+  }
+
+  @override
+  bool operator ==(Object other) =>
+      other is _InteractionOverlay && other.base == base;
+
+  @override
+  int get hashCode => base.hashCode;
 }

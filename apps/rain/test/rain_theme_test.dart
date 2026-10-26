@@ -26,6 +26,43 @@ void main() {
     expect(RainMotion.fullscreenTransition, greaterThan(RainMotion.quick));
   });
 
+  test('spacing and radius tokens are strictly increasing', () {
+    const space = <double>[
+      RainSpace.xxs,
+      RainSpace.xs,
+      RainSpace.sm,
+      RainSpace.md,
+      RainSpace.lg,
+      RainSpace.xl,
+      RainSpace.xxl,
+    ];
+    const radius = <double>[
+      RainRadius.sm,
+      RainRadius.md,
+      RainRadius.lg,
+      RainRadius.xl,
+      RainRadius.xxl,
+      RainRadius.pill,
+    ];
+    for (final scale in <List<double>>[space, radius]) {
+      for (var i = 1; i < scale.length; i++) {
+        expect(scale[i], greaterThan(scale[i - 1]));
+      }
+    }
+    expect(RainMotion.pressScale, lessThan(RainMotion.quick));
+    expect(RainMotion.splashCaptionDelay, greaterThan(RainMotion.slow));
+  });
+
+  testWidgets('dark theme has a floating snackbar theme like light', (
+    WidgetTester tester,
+  ) async {
+    final dark = RainTheme.dark().snackBarTheme;
+    final light = RainTheme.light().snackBarTheme;
+    expect(dark.behavior, SnackBarBehavior.floating);
+    expect(dark.backgroundColor, RainColors.surfaceRaisedDark);
+    expect(dark.behavior, light.behavior);
+  });
+
   testWidgets(
     'RainBackdrop follows light theme surface instead of dark command gradient',
     (WidgetTester tester) async {
@@ -95,5 +132,34 @@ void main() {
     expect(gradient.colors, contains(const Color(0xFF092934)));
     expect(gradient.colors, isNot(contains(RainColors.backgroundMid)));
     expect(find.byType(CustomPaint), findsWidgets);
+  });
+
+  test(
+    'rebuilt button themes are equal so MaterialApp does not re-animate',
+    () {
+      for (final build in <ThemeData Function()>[
+        RainTheme.dark,
+        RainTheme.light,
+      ]) {
+        final a = build();
+        final b = build();
+        expect(a.filledButtonTheme, b.filledButtonTheme);
+        expect(a.outlinedButtonTheme, b.outlinedButtonTheme);
+        expect(a.textButtonTheme, b.textButtonTheme);
+        expect(a.focusColor, b.focusColor);
+      }
+    },
+  );
+
+  test('buttons show hover, focus and press overlays', () {
+    for (final theme in <ThemeData>[RainTheme.dark(), RainTheme.light()]) {
+      final overlay = theme.textButtonTheme.style!.overlayColor!;
+      expect(overlay.resolve(<WidgetState>{WidgetState.hovered}), isNotNull);
+      expect(overlay.resolve(<WidgetState>{WidgetState.focused}), isNotNull);
+      expect(overlay.resolve(<WidgetState>{WidgetState.pressed}), isNotNull);
+      expect(overlay.resolve(<WidgetState>{}), isNull);
+      expect(theme.filledButtonTheme.style!.overlayColor, isNotNull);
+      expect(theme.outlinedButtonTheme.style!.overlayColor, isNotNull);
+    }
   });
 }

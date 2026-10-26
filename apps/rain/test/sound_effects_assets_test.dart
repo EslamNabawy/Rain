@@ -29,6 +29,16 @@ void main() {
     'sounds/send.wav': _SoundExpectation(minMs: 140, maxMs: 175),
     'sounds/undeafen.wav': _SoundExpectation(minMs: 120, maxMs: 140),
     'sounds/unmute.wav': _SoundExpectation(minMs: 110, maxMs: 130),
+    'sounds/camera_on.wav': _SoundExpectation(minMs: 115, maxMs: 145),
+    'sounds/camera_off.wav': _SoundExpectation(minMs: 115, maxMs: 145),
+    'sounds/route_change.wav': _SoundExpectation(minMs: 75, maxMs: 105),
+    'sounds/request_inbound.wav': _SoundExpectation(
+      minMs: 405,
+      maxMs: 435,
+      maxBytes: 40000,
+    ),
+    'sounds/request_accepted.wav': _SoundExpectation(minMs: 245, maxMs: 260),
+    'sounds/transfer_complete.wav': _SoundExpectation(minMs: 245, maxMs: 275),
   };
 
   const loopSounds = <String, _SoundExpectation>{
@@ -94,7 +104,9 @@ void main() {
       expect(info.peak, greaterThan(entry.value.minPeak));
       expect(info.peak, lessThan(30000));
       expect(info.rms, greaterThan(entry.value.minRms));
-      if (!entry.key.contains('/call_')) {
+      // Alert cues (calls, inbound requests) may run longer than UI feedback.
+      if (!entry.key.contains('/call_') &&
+          !entry.key.endsWith('/request_inbound.wav')) {
         expect(info.durationMs, lessThanOrEqualTo(260));
       }
     });
@@ -119,6 +131,56 @@ void main() {
     });
   }
 
+  test('one-shot loudness stays within 3 dB of its group median', () {
+    const groups = <String, List<String>>{
+      'chat': <String>['send', 'receive'],
+      'ui': <String>[
+        'action',
+        'route_change',
+        'camera_on',
+        'camera_off',
+        'mute',
+        'unmute',
+        'deafen',
+        'undeafen',
+      ],
+      'state': <String>[
+        'call_connected',
+        'call_ended',
+        'request_accepted',
+        'transfer_complete',
+      ],
+      'alert': <String>[
+        'error',
+        'call_failed',
+        'request_inbound',
+        'call_incoming',
+        'call_outgoing',
+      ],
+    };
+
+    for (final group in groups.entries) {
+      final levels = <String, double>{
+        for (final name in group.value)
+          name: _rmsDb(_readWaveInfo('assets/sounds/$name.wav').rms),
+      };
+      final sorted = levels.values.toList()..sort();
+      final mid = sorted.length ~/ 2;
+      final median = sorted.length.isOdd
+          ? sorted[mid]
+          : (sorted[mid - 1] + sorted[mid]) / 2;
+      for (final level in levels.entries) {
+        expect(
+          (level.value - median).abs(),
+          lessThanOrEqualTo(3.0),
+          reason:
+              '${level.key}.wav is ${level.value.toStringAsFixed(1)} dBFS, '
+              '${group.key} median ${median.toStringAsFixed(1)} dBFS',
+        );
+      }
+    }
+  });
+
   test('total sound asset size stays modest for APK impact', () {
     final assetPaths = <String>{
       ...rainSoundEffectAssetPaths.values,
@@ -130,9 +192,13 @@ void main() {
           total + _soundFile('assets/$assetPath').lengthSync(),
     );
 
-    expect(totalBytes, lessThanOrEqualTo(500000));
+    // 500 KB for the original 15 files plus ~115 KB for the six distinct
+    // camera, route, request and transfer cues (UI/UX program T3.2/T3.3).
+    expect(totalBytes, lessThanOrEqualTo(620000));
   });
 }
+
+double _rmsDb(double rms) => 20 * math.log(rms / 32768) / math.ln10;
 
 class _SoundExpectation {
   const _SoundExpectation({
