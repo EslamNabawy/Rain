@@ -76,6 +76,44 @@ void main() {
     expect(fakes.single.played.single.assetPath, 'sounds/send.wav');
   });
 
+  test('warmUp preloads each asset once and play reuses the player', () async {
+    final fakes = <_FakeRainSoundPlayer>[];
+    final service = SoundEffectsService(
+      playerFactory: (String _) {
+        final fake = _FakeRainSoundPlayer();
+        fakes.add(fake);
+        return fake;
+      },
+    );
+
+    await service.warmUp(const <RainSoundEffect>{
+      RainSoundEffect.send,
+      RainSoundEffect.receive,
+    });
+    await service.warmUp(const <RainSoundEffect>{RainSoundEffect.send});
+    await service.play(RainSoundEffect.send);
+
+    expect(fakes, hasLength(2));
+    expect(fakes.expand((fake) => fake.preloaded), <String>[
+      'sounds/send.wav',
+      'sounds/receive.wav',
+    ]);
+    expect(fakes.first.configuredMode, PlayerMode.lowLatency);
+    expect(fakes.first.played.single.assetPath, 'sounds/send.wav');
+  });
+
+  test('warmUp failure is recorded and does not throw', () async {
+    final service = SoundEffectsService(
+      playerFactory: (String _) =>
+          _FakeRainSoundPlayer(preloadError: StateError('decode failed')),
+    );
+
+    await service.warmUp(const <RainSoundEffect>{RainSoundEffect.send});
+
+    expect(service.diagnostics.lastFailureReason, 'preloadFailed');
+    expect(service.diagnostics.disabled, isFalse);
+  });
+
   test('missing plugin disables SFX without crashing', () async {
     var created = 0;
     final service = SoundEffectsService(
@@ -551,11 +589,17 @@ class _PlayedSound {
 }
 
 class _FakeRainSoundPlayer implements RainSoundPlayer {
-  _FakeRainSoundPlayer({this.throwOnConfigure = false, this.playError});
+  _FakeRainSoundPlayer({
+    this.throwOnConfigure = false,
+    this.playError,
+    this.preloadError,
+  });
 
   final bool throwOnConfigure;
   final Object? playError;
+  final Object? preloadError;
   final List<_PlayedSound> played = <_PlayedSound>[];
+  final List<String> preloaded = <String>[];
   PlayerMode? configuredMode;
   AudioContext? configuredContext;
   ReleaseMode? releaseMode;
@@ -586,6 +630,15 @@ class _FakeRainSoundPlayer implements RainSoundPlayer {
       throw error;
     }
     played.add(_PlayedSound(assetPath: assetPath, volume: volume));
+  }
+
+  @override
+  Future<void> preload(String assetPath) async {
+    final error = preloadError;
+    if (error != null) {
+      throw error;
+    }
+    preloaded.add(assetPath);
   }
 
   @override

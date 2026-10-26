@@ -24,6 +24,7 @@
 - T3.1 86a4395 audit/ui/02-sound-map.md with measured peak/RMS
 - T3.2 38f8c3e six new generated cues; 15 old WAVs byte-identical after SOUNDGEN (README line added in the next commit)
 - T3.3 6353662 new effects + transfer events mapped, dedupe/throttle/in-call suppression; asset budget adjusted (U-D6)
+- T3.4 75df9b7 open-chat transfer completed/failed cues via pure diff + ref.listen
 
 ## Blocked
 

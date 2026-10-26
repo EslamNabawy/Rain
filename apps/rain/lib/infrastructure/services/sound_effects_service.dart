@@ -95,6 +95,9 @@ abstract interface class RainSoundPlayer {
 
   Future<void> playAsset(String assetPath, {required double volume});
 
+  /// Loads [assetPath] into the player without playing it.
+  Future<void> preload(String assetPath);
+
   Future<void> setReleaseMode(ReleaseMode mode);
 
   Future<void> stop();
@@ -124,6 +127,11 @@ class AudioplayersRainSoundPlayer implements RainSoundPlayer {
   @override
   Future<void> playAsset(String assetPath, {required double volume}) {
     return _player.play(AssetSource(assetPath), volume: volume);
+  }
+
+  @override
+  Future<void> preload(String assetPath) {
+    return _player.setSource(AssetSource(assetPath));
   }
 
   @override
@@ -169,6 +177,7 @@ class SoundEffectsService {
   final Map<String, RainSoundEffect> _loopEffects = <String, RainSoundEffect>{};
   final Map<RainSoundEffect, DateTime> _lastPlayedAt =
       <RainSoundEffect, DateTime>{};
+  final Set<RainSoundEffect> _warmedUp = <RainSoundEffect>{};
   bool _disabled = false;
   String? _disabledReason;
   String? _lastFailureReason;
@@ -262,6 +271,47 @@ class SoundEffectsService {
         severity: RainDebugSeverity.warning,
         message: 'Rain sound effect skipped: $error',
       );
+    }
+  }
+
+  /// Creates and preloads the one-shot player for each effect so the first
+  /// [play] has no load delay. Safe to call more than once; never throws.
+  Future<void> warmUp(Set<RainSoundEffect> effects) async {
+    for (final effect in effects) {
+      if (_disabled) {
+        return;
+      }
+      if (_warmedUp.contains(effect)) {
+        continue;
+      }
+      RainSoundPlayer? player;
+      try {
+        player = _players.putIfAbsent(
+          effect,
+          () => _playerFactory('rain-sfx-${effect.name}'),
+        );
+        await player.configure(
+          mode: PlayerMode.lowLatency,
+          context: _effectAudioContext,
+        );
+        await player.preload(_assetFor(effect));
+        _warmedUp.add(effect);
+      } on MissingPluginException {
+        _disable('pluginUnavailable');
+        return;
+      } catch (error) {
+        _recordFailure('preloadFailed');
+        if (player != null && identical(_players[effect], player)) {
+          _players.remove(effect);
+          await _disposeOneShotPlayer(player);
+        }
+        RainDebugLog.event(
+          category: 'sound_effects',
+          name: 'preload_skipped',
+          severity: RainDebugSeverity.warning,
+          message: 'Rain sound preload skipped: $error',
+        );
+      }
     }
   }
 
@@ -370,6 +420,7 @@ class SoundEffectsService {
     await stopAllLoops();
     final players = _players.values.toList(growable: false);
     _players.clear();
+    _warmedUp.clear();
     _lastPlayedAt.clear();
     await Future.wait(players.map(_stopAndDisposeOneShotPlayer));
   }
