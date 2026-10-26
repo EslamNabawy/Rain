@@ -1,3 +1,14 @@
+/// # splash_screen
+///
+/// Splash and startup failure screens for Rain. Displays the animated
+/// peer-core mark with configurable motion, plus dedicated screens for
+/// startup errors and account deletion progress.
+///
+/// **Key types:** RainSplashScreen, RainStartupFailureScreen, RainAccountDeletionScreen
+///
+/// **Depends on:** RainPeerCoreAnimatedMark, RainBackdrop, RainTheme
+library;
+
 import 'dart:async';
 
 import 'package:flutter/material.dart';

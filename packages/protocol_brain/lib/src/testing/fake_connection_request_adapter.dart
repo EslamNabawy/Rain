@@ -1,3 +1,14 @@
+/// # fake_connection_request_adapter.dart — protocol_brain package
+///
+/// Test double for ConnectionRequestAdapter that simulates incoming/outgoing connection request mutations in memory. Supports injecting failures for mutation operations and provides test inspection helpers for seeded data.
+///
+/// **Key types:** FakeConnectionRequestAdapter
+///
+/// **Package:** protocol_brain
+///
+/// **Depends on:** dart:async, connection_request_adapter, connection_request_contract
+library;
+
 import 'dart:async';
 
 import '../connection_request_adapter.dart';

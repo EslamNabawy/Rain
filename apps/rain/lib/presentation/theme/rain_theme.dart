@@ -1,3 +1,14 @@
+/// # rain_theme
+///
+/// Rain design system theme configuration with dark and light color schemes,
+/// custom text themes using Space Grotesk and Inter fonts, motion duration
+/// constants, texture tokens, and a custom page transition builder.
+///
+/// **Key types:** RainColors, RainTheme, RainMotion, RainTextureTokens
+///
+/// **Depends on:** google_fonts, flutter/material
+library;
+
 import 'package:flutter/material.dart';
 import 'package:google_fonts/google_fonts.dart';
 

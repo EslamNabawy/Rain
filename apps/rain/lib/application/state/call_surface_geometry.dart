@@ -1,3 +1,14 @@
+/// # call_surface_geometry.dart
+///
+/// [CallSurfaceBounds] and helper functions for computing call widget layout:
+/// viewport-safe positioning, centered offset, clamped drag bounds, and
+/// picture-in-picture sizing for the floating call panel.
+///
+/// **Key types:** [CallSurfaceBounds]
+///
+/// **Depends on:** presentation layer (Flutter widgets)
+library;
+
 import 'dart:math' as math;
 
 import 'package:flutter/widgets.dart';

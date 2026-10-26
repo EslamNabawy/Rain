@@ -1,3 +1,12 @@
+/// # friends_list.dart
+///
+/// Friends list view with full, compact, and rail display modes, pull-to-refresh,
+/// and adaptive layout support (part of home_screen).
+///
+/// **Key types:** FriendListDisplayMode, _FriendsListView
+///
+/// **Depends on:** home_screen (part of), flutter_riverpod, protocol_brain
+
 part of '../../screens/home_screen.dart';
 
 enum FriendListDisplayMode { full, compact, rail }

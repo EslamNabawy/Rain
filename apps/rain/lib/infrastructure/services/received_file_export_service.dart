@@ -1,3 +1,14 @@
+/// # received_file_export_service.dart
+///
+/// [ReceivedFileExportService] handles saving received file-transfer data to
+/// user-chosen locations. Uses FilePicker on desktop and a MethodChannel on
+/// Android. Returns [ReceivedFileExportResult] indicating success or cancel.
+///
+/// **Key types:** [ReceivedFileExportService], [ReceivedFileExportResult]
+///
+/// **Depends on:** file_picker, rain_core
+library;
+
 import 'dart:async';
 import 'dart:io';
 
@@ -24,12 +35,14 @@ class ReceivedFileExportService {
       FileType type,
       List<String>? allowedExtensions,
       Uint8List? bytes,
-      bool lockParentWindow,
+      WindowsOptions windowsOptions,
+      LinuxOptions linuxOptions,
+      WebOptions webOptions,
     })?
     saveFilePicker,
   }) : _androidChannel =
            androidChannel ?? const MethodChannel('rain/file_export'),
-       _saveFilePicker = saveFilePicker ?? FilePicker.saveFile;
+       _saveFilePicker = saveFilePicker ?? _defaultSaveFilePicker;
 
   final MethodChannel _androidChannel;
   final Future<String?> Function({
@@ -39,9 +52,39 @@ class ReceivedFileExportService {
     FileType type,
     List<String>? allowedExtensions,
     Uint8List? bytes,
-    bool lockParentWindow,
+    WindowsOptions windowsOptions,
+    LinuxOptions linuxOptions,
+    WebOptions webOptions,
   })
   _saveFilePicker;
+
+  static Future<String?> _defaultSaveFilePicker({
+    String? dialogTitle,
+    String? fileName,
+    String? initialDirectory,
+    FileType type = FileType.any,
+    List<String>? allowedExtensions,
+    Uint8List? bytes,
+    WindowsOptions windowsOptions = const WindowsOptions(),
+    LinuxOptions linuxOptions = const LinuxOptions(),
+    WebOptions webOptions = const WebOptions(),
+  }) async {
+    final uri = await FilePicker.saveFile(
+      dialogTitle: dialogTitle,
+      fileName: fileName ?? 'file',
+      initialDirectory: initialDirectory,
+      type: type,
+      allowedExtensions: allowedExtensions,
+      bytes: bytes ?? Uint8List(0),
+      windowsOptions: windowsOptions,
+      linuxOptions: linuxOptions,
+      webOptions: webOptions,
+    );
+    if (uri == null) {
+      return null;
+    }
+    return uri.scheme == 'file' ? uri.toFilePath() : uri.toString();
+  }
 
   Future<ReceivedFileExportResult> saveReceivedFile(
     FileTransferRecord transfer,
@@ -98,7 +141,8 @@ class ReceivedFileExportService {
       dialogTitle: 'Save received file',
       fileName: fileName,
       type: FileType.any,
-      lockParentWindow: true,
+      windowsOptions: const WindowsOptions(lockParentWindow: true),
+      linuxOptions: const LinuxOptions(lockParentWindow: true),
     );
     if (destinationPath == null || destinationPath.isEmpty) {
       return const ReceivedFileExportResult.canceled();

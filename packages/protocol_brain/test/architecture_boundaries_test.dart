@@ -1,3 +1,15 @@
+/// # architecture_boundaries_test.dart — protocol_brain package
+///
+/// Verifies that apps and rain_core do not directly import peer_core, and that peer_core stays isolated from higher layers and backends.
+///
+/// **Key types:** (no top-level types — test-only file)
+///
+/// **Package:** protocol_brain
+///
+/// **Depends on:** flutter_test, dart:io
+///
+library;
+
 import 'dart:io';
 
 import 'package:flutter_test/flutter_test.dart';

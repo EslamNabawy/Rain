@@ -1,3 +1,15 @@
+/// # ci_contract_test.dart — protocol_brain package
+///
+/// Contract tests ensuring CI workflows use direct Flutter commands, avoid deprecated action runtimes, and enforce correct action versions.
+///
+/// **Key types:** (no top-level types — test-only file)
+///
+/// **Package:** protocol_brain
+///
+/// **Depends on:** flutter_test, dart:io
+///
+library;
+
 import 'dart:io';
 
 import 'package:flutter_test/flutter_test.dart';
@@ -63,9 +75,9 @@ void main() {
       '.github/workflows/build-artifacts.yml',
     );
     final releaseWorkflow = _repoFile('.github/workflows/release.yml');
-    expect(ciWorkflow, contains('actions/setup-node@v6'));
-    expect(ciWorkflow, contains('actions/setup-java@v5'));
-    expect(ciWorkflow, contains('actions/setup-go@v6'));
+    expect(ciWorkflow, contains('actions/setup-node@v7'));
+    expect(ciWorkflow, contains('actions/setup-java@v6'));
+    expect(ciWorkflow, contains('actions/setup-go@v7'));
     expect(ciWorkflow, contains('actions/upload-artifact@v7'));
     expect(ciWorkflow, contains('runs-on: windows-2022'));
     expect(ciWorkflow, contains("JAVA_VERSION: '21'"));

@@ -1,3 +1,18 @@
+/// # rain_core.dart — rain_core package
+///
+/// Library barrel file that re-exports all public APIs from the rain_core
+/// sub-packages: database, file transfer, friends, identity, messages,
+/// voice call, and internal source utilities.
+///
+/// **Key types:** Messages, Friends, QueuedMessages, FileTransfers,
+///   VoiceCallFrame, RainDatabase (re-exported from sub-modules).
+///
+/// **Package:** rain_core
+///
+/// **Depends on:** database, file_transfer, friends, identity, messages,
+///   voice_call sub-packages.
+library;
+
 export 'database/rain_database.dart';
 export 'database/database_key_service.dart';
 export 'file_transfer/file_transfer_protocol.dart';

@@ -1,3 +1,15 @@
+/// # file_transfer_protocol.dart — rain_core package
+///
+/// Defines the file transfer protocol including frame types (offer, accept, reject, chunk, complete, received, cancel, fail), binary chunk packet encoding with magic bytes, and file name sanitization utilities.
+///
+/// **Key types:** FileTransferFrame, FileMessageContent, FileTransferChunkPacket
+///
+/// **Package:** rain_core
+///
+/// **Depends on:** dart:convert, dart:typed_data, package:collection
+///
+library;
+
 import 'dart:convert';
 import 'dart:typed_data';
 
@@ -12,6 +24,41 @@ const Duration fileTransferBackpressurePollInterval = Duration(
   milliseconds: 25,
 );
 const Duration fileTransferBackpressureTimeout = Duration(seconds: 30);
+
+/// Received bytes buffered in the receive IOSink before an explicit flush.
+/// Terminal paths always close (and therefore flush) the sink, so this only
+/// bounds mid-transfer durability latency, not final durability.
+const int fileTransferFlushThresholdBytes = 512 * 1024;
+
+/// Accumulates received byte counts and reports when the sink should flush.
+/// The first write always flushes so bad destinations (unwritable paths,
+/// full disks) surface immediately after accept; later writes batch until
+/// [thresholdBytes] keeps per-chunk `IOSink.flush` calls sub-linear.
+class FileTransferFlushPolicy {
+  FileTransferFlushPolicy({
+    this.thresholdBytes = fileTransferFlushThresholdBytes,
+  });
+
+  final int thresholdBytes;
+
+  int _pendingBytes = 0;
+  bool _hasWritten = false;
+
+  /// Records [byteCount] written to the sink. Returns true when the caller
+  /// must flush now: always on the first write, then on threshold crossings.
+  bool registerWrite(int byteCount) {
+    if (!_hasWritten) {
+      _hasWritten = true;
+      return true;
+    }
+    _pendingBytes += byteCount;
+    if (_pendingBytes < thresholdBytes) {
+      return false;
+    }
+    _pendingBytes = 0;
+    return true;
+  }
+}
 
 const List<int> _fileChunkPacketMagic = <int>[
   0x52,

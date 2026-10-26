@@ -37,7 +37,7 @@ jobs:
       short_sha: ${{ steps.resolve.outputs.short_sha }}
       release_tag: ${{ steps.resolve.outputs.release_tag }}
     steps:
-      - uses: actions/checkout@v5
+      - uses: actions/checkout@v7
         with:
           ref: ${{ inputs.tag_name }}
           fetch-depth: 0
@@ -69,11 +69,11 @@ jobs:
       - resolve-target
     timeout-minutes: 10
     steps:
-      - uses: actions/checkout@v5
+      - uses: actions/checkout@v7
         with:
           ref: ${{ needs.resolve-target.outputs.target_sha }}
 
-      - uses: actions/setup-go@v6
+      - uses: actions/setup-go@v7
         with:
           go-version: stable
           cache: false
@@ -91,12 +91,12 @@ jobs:
       - resolve-target
     timeout-minutes: 90
     steps:
-      - uses: actions/checkout@v5
+      - uses: actions/checkout@v7
         with:
           ref: ${{ needs.resolve-target.outputs.target_sha }}
           fetch-depth: 0
 
-      - uses: actions/setup-java@v5
+      - uses: actions/setup-java@v6
         with:
           distribution: temurin
           java-version: '21'
@@ -117,7 +117,14 @@ jobs:
         run: dart pub get
 
       - name: Fail on dependency lock drift
-        run: git diff --exit-code -- pubspec.lock
+        run: |
+          if ! git diff --exit-code -- pubspec.lock; then
+            echo "::error::pubspec.lock drifted after dart/flutter pub get."
+            echo "Regenerate and commit the lockfile:"
+            echo "  dart pub get"
+            echo "  for p in apps/rain packages/peer_core packages/protocol_brain packages/rain_core; do (cd \$p && flutter pub get); done"
+            exit 1
+          fi
 
       - name: Enforce Dart formatting
         run: |
@@ -164,11 +171,11 @@ jobs:
       - resolve-target
     timeout-minutes: 20
     steps:
-      - uses: actions/checkout@v5
+      - uses: actions/checkout@v7
         with:
           ref: ${{ needs.resolve-target.outputs.target_sha }}
 
-      - uses: actions/setup-node@v6
+      - uses: actions/setup-node@v7
         with:
           node-version: ${{ env.NODE_VERSION }}
           cache: npm
@@ -203,16 +210,16 @@ jobs:
       - resolve-target
     timeout-minutes: 40
     steps:
-      - uses: actions/checkout@v5
+      - uses: actions/checkout@v7
         with:
           ref: ${{ needs.resolve-target.outputs.target_sha }}
 
-      - uses: actions/setup-java@v5
+      - uses: actions/setup-java@v6
         with:
           distribution: temurin
           java-version: '21'
 
-      - uses: actions/setup-node@v6
+      - uses: actions/setup-node@v7
         with:
           node-version: ${{ env.NODE_VERSION }}
           cache: npm
@@ -286,7 +293,7 @@ jobs:
     if: ${{ needs.validation-gate.result == 'success' }}
     timeout-minutes: 10
     steps:
-      - uses: actions/checkout@v5
+      - uses: actions/checkout@v7
         with:
           ref: ${{ needs.resolve-target.outputs.target_sha }}
 
@@ -321,7 +328,7 @@ jobs:
     if: ${{ needs.validation-gate.result == 'success' }}
     timeout-minutes: 75
     steps:
-      - uses: actions/checkout@v5
+      - uses: actions/checkout@v7
         with:
           ref: ${{ needs.resolve-target.outputs.target_sha }}
 
@@ -387,11 +394,11 @@ jobs:
     if: ${{ needs.validation-gate.result == 'success' }}
     timeout-minutes: 100
     steps:
-      - uses: actions/checkout@v5
+      - uses: actions/checkout@v7
         with:
           ref: ${{ needs.resolve-target.outputs.target_sha }}
 
-      - uses: actions/setup-java@v5
+      - uses: actions/setup-java@v6
         with:
           distribution: temurin
           java-version: '21'
@@ -514,7 +521,7 @@ jobs:
           path: artifacts/release-metadata
 
       - name: Publish release
-        uses: softprops/action-gh-release@3bb12739c298aeb8a4eeaf626c5b8d85266b0e65 # v2
+        uses: softprops/action-gh-release@efb35369e0ad2afab669f228072c1b0d510eae64 # v3.0.3
         with:
           tag_name: ${{ needs.resolve-target.outputs.release_tag }}
           files: |

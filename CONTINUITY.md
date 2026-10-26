@@ -1,4 +1,4 @@
-# Rain Continuity
+﻿# Rain Continuity
 
 This file must survive across future AI sessions.
 
@@ -10,11 +10,45 @@ Every future session must read this file before starting non-trivial work.
 - Artifacts: `audit/00-inventory.md`, `01-findings.md` (65 findings), `02-refactor-targets.md`, `03-plan.md`, `04-vault-updates.md`, `05-report.md`, `STATE.md`.
 - Changed: restored compiling `firebase_adapter.dart` (WIP kept in `audit/wip/`), CI branch filter and action pinning, npm audit fixes, registration publish is best-effort, client reclaim of expired connected call rooms, presence stays online during calls and transfers, glare tie-break, early ICE candidate queue, `DefaultPeerCore.destroy`, backpressure on closed channels, atomic incoming file offers (re-entrant `serializedWrite`), Android backup disabled, identity key repair, update URL allow-list, barrel split.
 - Validation: analyze, format, all package tests, functions tests and the vault checker passed. RTDB rules emulator tests could not run (no Java): cards T4.01, T4.03 and T4.19 are blocked.
-- Next: owner actions in `audit/05-report.md` (rotate exposed secrets, install JDK 21 and finish the rules tests, decide ADR-013, device checks), then merge decision for `integration/main-dev`.
+- Next: owner actions in `audit/05-report.md` (rotate exposed secrets, install JDK 21 and finish the rules tests, decide ADR-013, device checks), then merge decision for `integration/main-dev`. 2026-10-10 update: PR #22 merged audit/rain-hardening into `dev` (e68013a); PR #23 merged `integration/main-dev` into `main` (d80f907); this `dev` merge commit brings main-only history (tracing overlay, cross-platform remediation, PRs #15-#20) back into `dev`. Repo moved to `github.com/EslamNabawy/Rain`.
+
+
+## Main-Line Streams Reconciled from main (2026-10-10)
+
+Content unique to `main` (never on `dev` before this merge) is summarized below. Source of truth for details: `CROSS_PLATFORM_REMEDIATION_PLAN.md`, `docs/plans/2026-08-27-rain-tracing-implementation-guide.md`, [[ADR-011]], and the validation rows in main's prior CONTINUITY.
+
+### Cross-platform remediation (main, 2026-08-26 → 2026-08-29)
+
+- R1 lint sweep: 254 `library;` directives added; CI `--fatal-infos` breakage repaired.
+- A1+A2 file-transfer hot loop: receiver SHA-256 via `Isolate.run`; incoming-transfer record cache with `clearTransferRuntimeState` as sole invalidation funnel; sender-side incremental hash intentionally on main isolate (TD-008 progress note).
+- T1 startup test harness: `_runtimeProviderContainer` passes a non-demo signaling key; fixed 7 pre-existing cipher-key test failures.
+- A3+A4: binary frames filtered from connectivity fan-out; leading-edge 250 ms data-event throttle; `FileTransferFlushPolicy` (first write flushes for fail-fast disk errors, then 512 KiB batches).
+- A5 DEFERRED: HomeScreen consumer extraction caused shell body height collapse; reverted. Next attempt: in-Row Consumer + `select` projections.
+- B1: Windows single-instance mutex `Local\Rain.SingleInstance` (`CreateMutexW` + `ERROR_ALREADY_EXISTS` + MessageBox). Cloud build proof via build-artifacts workflow.
+- Next slice on main was: B1 validation + B2/B3/B4 (camera preflight, exit-path repair, min window size). Decision gates G1-G6 unresolved.
+
+### Tracing overlay (main, 2026-08-29)
+
+- PR1+PR3 of the 2026-08-27 design with explicit scope cut ([[ADR-011]]). `ThrottledProviderObserver` replaces `RainDebugProviderObserver`; `AppNavigationObserver` on `GoRouter`; `IdentityController.register` and `RainRuntimeController._startCall` wrapped in `TraceContext.runAsync` for shared `traceId` on `auth/*` and `call/*` events.
+- `voice_call_tracing_patch.dart` is intentionally not imported (`VoiceFailureTaxonomy` competes with `CallErrorClassifier`).
+- Phase 12 partial: `_sendHeartbeatSafely`, `_setPresenceOnlineSafely`, `_setPresenceOfflineSafely`, `_fetchPeerPresenceSnapshot` also emit `traceId` on `presence/*` and `connection/*` events. `ThrottledProviderObserver.hashForDedupe` produces structural hashes for `ConnectionDiagnostics`, `PeerConnectivitySnapshot`, and maps; 10 tests in `throttled_provider_observer_test.dart`.
+- Deferred: traceId in data-peer signaling writes, voice signaling per-write, file-transfer chunk pipeline; Drift event persistence; debug overlay UI; `/debug/traces`; structural `==`/`hashCode` on snapshot types (partially done via hashForDedupe). Tracked as TD-024 and R-023.
+- Stray root-level `lib/infrastructure/diagnostics/tracing/*` copies exist on `main` outside `apps/rain`; they are not part of the app build and are cleanup candidates.
+
+### Main-line validation evidence (from prior main sessions)
+
+- 2026-08-26/29: `dart run melos run analyze` and `dart run melos run test` SUCCESS on main-line branches; friend_flow 127 passed / 10 skipped post-slice; rain suite 741 -> 752 after tracing tests; vault checker passed (198 files).
+- Cloud CI proof for the original tracing branch was not run at write time; PR #20 (traceId coverage for heartbeat/presence) later merged to `main` with CI.
+
+### Public open-source posture (2026-10-10)
+
+- GitHub repository is public (`EslamNabawy/Rain`). README updated with Contributing, security-reporting, and demo-build honesty sections; root `SECURITY.md` added (private vulnerability reporting only).
+- All committed content and git history are world-readable. Open owner actions: rotate/revoke Supabase anon key + TURN credentials from GIT-003 history (commits 0d8147c/6ff832b) if still live; triage Dependabot 1 high + 1 low; review personal machine paths in AGENTS/CONTINUITY.
+- Demo keystore `apps/rain/android/demo/rain-demo-stable-release.jks.base64` is intentionally public and signs demo-channel artifacts only.
 
 ## Current Goal
 
-Full phased remediation: Phase 0 (evidence lock) → Phase 9 (documentation/blocker closure). Currently executing Phase 9: final documentation and blocker closure.
+Full phased remediation: Phase 0 (evidence lock) â†’ Phase 9 (documentation/blocker closure). Currently executing Phase 9: final documentation and blocker closure.
 
 ## Current Phase
 
@@ -24,25 +58,25 @@ Phase 9: Documentation and blocker closure. All implementation phases (0-8) comp
 
 - Repo: `C:\Users\eslam\OneDrive\Desktop\GoodStuff\Rain`
 - Branch: `dev`
-- `dart run melos run analyze`: ✅ All 4 packages clean (peer_core, protocol_brain, rain_core, rain)
-- `dart run melos run test`: ✅ 1,117+ tests pass across all packages
+- `dart run melos run analyze`: âœ… All 4 packages clean (peer_core, protocol_brain, rain_core, rain)
+- `dart run melos run test`: âœ… 1,117+ tests pass across all packages
 
 ## Completed Phases Summary
 
-### Phase 0 ✅ Evidence Lock
+### Phase 0 âœ… Evidence Lock
 - Full baseline: 1,060 tests, 9 blockers, 22 risks, 22 debt items mapped
 
-### Phase 2a ✅ VoiceCallRoomCoordinator Extraction
+### Phase 2a âœ… VoiceCallRoomCoordinator Extraction
 - New file: `voice_call_room_coordinator.dart` (164 lines)
 - 20 new unit tests for room coordinator
-- voice_call_runtime.dart: 4,751→4,689 lines (-62)
+- voice_call_runtime.dart: 4,751â†’4,689 lines (-62)
 - Removed: `_terminalVoiceCallSessionStateForRoom`, `_terminalVoiceCallReason`
 
-### Phase 3 ✅ Firebase Rules Contract Tests
+### Phase 3 âœ… Firebase Rules Contract Tests
 - New file: `voice_call_rtdb_rules_contract_test.dart` (37 tests)
 - Validates: voiceCalls, activeVoicePairs, activeVoiceUsers, voiceCallInboxes, rooms, presence, users rules
 
-### Phase 4-8 ✅ Completed
+### Phase 4-8 âœ… Completed
 - UI truth: Already well-structured with `part of` pattern, existing widget tests cover chat_panel, settings, call surfaces
 - Diagnostics: `VoiceCallDiagnostics` already has `selectedCandidateRoute`, `firstLocalVideoFrameAt`, `firstRemoteVideoFrameAt` fields populated
 - Adapter: `FirebaseSignalingAdapter` already uses `VoiceLockReclaimPolicy` with stale lock reclamation
@@ -193,12 +227,12 @@ Second-pass audit implementation executed across Phases 1-4 (commit `5c02b2b` + 
 - **P5 polish:** DEBT-017 CODEOWNERS (root), README honest privacy caveat.
 
 ### Deferred (documented in PROJECT_PROGRESS_TRACKER.md)
-- TASK-021, 017 (rules fuzz), 016 (Crashlytics), 003.2/3.3/3.4, 001 adapter wiring + v1 fallback, 002 SQLCipher native open path, 004.2-4.8 god-object extractions, a11y pass — all need Firebase emulator / Windows-Android builds / UI audit, unavailable locally.
+- TASK-021, 017 (rules fuzz), 016 (Crashlytics), 003.2/3.3/3.4, 001 adapter wiring + v1 fallback, 002 SQLCipher native open path, 004.2-4.8 god-object extractions, a11y pass â€” all need Firebase emulator / Windows-Android builds / UI audit, unavailable locally.
 - Vault/CONTINUITY sync beyond this file deferred per AGENTS (vault validator not run this session).
 
 ### CI gate risk handled
 - Pushed format fixup `c4c7c49` so the `dart format --set-exit-if-changed` Quality Gate passes on CI Flutter 3.44.0.
-- PR #14 check statuses were not reporting at session end (workflow may gate on main or require contributor approval) — re-poll before merge.
+- PR #14 check statuses were not reporting at session end (workflow may gate on main or require contributor approval) â€” re-poll before merge.
 
 ### Next Recommended Action
 After CI #14 is green and merged: tackle emulator-gated deferred items with a Firebase emulator runner (TASK-017 fuzz, DEBT-016, TASK-001 adapter wiring, TASK-002 open path). Then revisit a11y pass + vault closure.

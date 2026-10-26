@@ -1,3 +1,15 @@
+/// # connection_request_messages.dart
+///
+/// Builds user-facing models for connection request UI: titles, subtitles,
+/// action labels, feedback messages, and denial reasons. Translates
+/// [ConnectionRequestPayload] + direction into [ConnectionRequestSurfaceModel]
+/// and [ConnectionRequestFeedbackModel].
+///
+/// **Key types:** (none — pure functions)
+///
+/// **Depends on:** protocol_brain (ConnectionRequestPayload, ConnectionRequestDirection)
+library;
+
 import 'package:protocol_brain/protocol_brain.dart';
 
 ConnectionRequestSurfaceModel buildConnectionRequestSurfaceModel({

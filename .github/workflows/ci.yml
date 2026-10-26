@@ -37,10 +37,10 @@ jobs:
       contents: read
       pull-requests: write
     steps:
-      - uses: actions/checkout@v5
+      - uses: actions/checkout@v7
 
       - name: Review dependency changes
-        uses: actions/dependency-review-action@v4
+        uses: actions/dependency-review-action@v5
         with:
           fail-on-severity: high
           comment-summary-in-pr: always
@@ -50,9 +50,9 @@ jobs:
     runs-on: ubuntu-latest
     timeout-minutes: 10
     steps:
-      - uses: actions/checkout@v5
+      - uses: actions/checkout@v7
 
-      - uses: actions/setup-go@v6
+      - uses: actions/setup-go@v7
         with:
           go-version: stable
           cache: false
@@ -69,11 +69,11 @@ jobs:
     runs-on: ubuntu-latest
     timeout-minutes: 45
     steps:
-      - uses: actions/checkout@v5
+      - uses: actions/checkout@v7
         with:
           fetch-depth: 0
 
-      - uses: actions/setup-java@v5
+      - uses: actions/setup-java@v6
         with:
           distribution: temurin
           java-version: ${{ env.JAVA_VERSION }}
@@ -104,7 +104,13 @@ jobs:
 
       - name: Fail on dependency lock drift
         run: |
-          git diff --exit-code -- pubspec.lock
+          if ! git diff --exit-code -- pubspec.lock; then
+            echo "::error::pubspec.lock drifted after dart/flutter pub get."
+            echo "Regenerate and commit the lockfile:"
+            echo "  dart pub get"
+            echo "  for p in apps/rain packages/peer_core packages/protocol_brain packages/rain_core; do (cd \$p && flutter pub get); done"
+            exit 1
+          fi
 
       - name: Enforce Dart formatting
         run: |
@@ -125,7 +131,7 @@ jobs:
         # intentionally excluded. Comment lines are ignored.
         run: |
           if grep -rnE "debugPrint\(" apps/rain/lib --exclude=crash_diagnostics_service.dart | grep -vE "//"; then
-            echo "Raw debugPrint( found in lib/ — route through RainDebugLog instead."
+            echo "Raw debugPrint( found in lib/  -  route through RainDebugLog instead."
             exit 1
           fi
           echo "no raw debugPrint in lib/"
@@ -217,9 +223,9 @@ jobs:
           - id: rain-core
             path: packages/rain_core
     steps:
-      - uses: actions/checkout@v5
+      - uses: actions/checkout@v7
 
-      - uses: actions/setup-java@v5
+      - uses: actions/setup-java@v6
         with:
           distribution: temurin
           java-version: ${{ env.JAVA_VERSION }}
@@ -255,9 +261,9 @@ jobs:
           - id: rain-core
             path: packages/rain_core
     steps:
-      - uses: actions/checkout@v5
+      - uses: actions/checkout@v7
 
-      - uses: actions/setup-java@v5
+      - uses: actions/setup-java@v6
         with:
           distribution: temurin
           java-version: ${{ env.JAVA_VERSION }}
@@ -301,7 +307,7 @@ jobs:
 
       - name: Enforce coverage floor (40%) for rain-app
         # Only the rain-app package has a coverage floor enforced.
-        # Uses dart's built-in coverage parsing — lcov is not pre-installed
+        # Uses dart's built-in coverage parsing  -  lcov is not pre-installed
         # on ubuntu-latest. Falls back to a simple grep on lcov.info if
         # the dart tool is unavailable. This is a soft gate (continue-on-error)
         # until Phase 6 establishes a stable coverage baseline.
@@ -327,7 +333,7 @@ jobs:
           if awk -v c="$coverage_pct" -v m=40 'BEGIN { exit !(c+0 >= m) }'; then
             echo "Coverage ${coverage_pct}% meets the 40% floor."
           else
-            echo "::warning::Coverage ${coverage_pct}% is below the 40% floor (soft gate — Phase 6 will enforce)."
+            echo "::warning::Coverage ${coverage_pct}% is below the 40% floor (soft gate  -  Phase 6 will enforce)."
           fi
 
       - name: Upload coverage
@@ -344,9 +350,9 @@ jobs:
     runs-on: ubuntu-latest
     timeout-minutes: 15
     steps:
-      - uses: actions/checkout@v5
+      - uses: actions/checkout@v7
 
-      - uses: actions/setup-node@v6
+      - uses: actions/setup-node@v7
         with:
           node-version: ${{ env.NODE_VERSION }}
           cache: npm
@@ -373,7 +379,7 @@ jobs:
         working-directory: backend/firebase/functions
         run: npm test --if-present
 
-      - uses: actions/setup-java@v5
+      - uses: actions/setup-java@v6
         with:
           distribution: temurin
           java-version: ${{ env.JAVA_VERSION }}
@@ -391,14 +397,14 @@ jobs:
     runs-on: ubuntu-latest
     timeout-minutes: 35
     steps:
-      - uses: actions/checkout@v5
+      - uses: actions/checkout@v7
 
-      - uses: actions/setup-java@v5
+      - uses: actions/setup-java@v6
         with:
           distribution: temurin
           java-version: ${{ env.JAVA_VERSION }}
 
-      - uses: actions/setup-node@v6
+      - uses: actions/setup-node@v7
         with:
           node-version: ${{ env.NODE_VERSION }}
           cache: npm
@@ -421,9 +427,9 @@ jobs:
     env:
       GRADLE_OPTS: "-Dorg.gradle.jvmargs=-Xmx4g -Dorg.gradle.daemon=false -XX:MaxMetaspaceSize=1g -XX:ReservedCodeCacheSize=256m -XX:+HeapDumpOnOutOfMemoryError"
     steps:
-      - uses: actions/checkout@v5
+      - uses: actions/checkout@v7
 
-      - uses: actions/setup-java@v5
+      - uses: actions/setup-java@v6
         with:
           distribution: temurin
           java-version: ${{ env.JAVA_VERSION }}
@@ -516,7 +522,7 @@ jobs:
     runs-on: windows-latest
     timeout-minutes: 20
     steps:
-      - uses: actions/checkout@v5
+      - uses: actions/checkout@v7
 
       - uses: subosito/flutter-action@1a449444c387b1966244ae4d4f8c696479add0b2 # v2
         with:
@@ -558,7 +564,7 @@ jobs:
     runs-on: windows-latest
     timeout-minutes: 10
     steps:
-      - uses: actions/checkout@v5
+      - uses: actions/checkout@v7
 
       - name: Validate required notes, wiki links and register semantics
         shell: pwsh
@@ -603,9 +609,9 @@ jobs:
     env:
       GRADLE_OPTS: "-Dorg.gradle.jvmargs=-Xmx4g -Dorg.gradle.daemon=false -XX:MaxMetaspaceSize=1g -XX:ReservedCodeCacheSize=256m -XX:+HeapDumpOnOutOfMemoryError"
     steps:
-      - uses: actions/checkout@v5
+      - uses: actions/checkout@v7
 
-      - uses: actions/setup-java@v5
+      - uses: actions/setup-java@v6
         with:
           distribution: temurin
           java-version: ${{ env.JAVA_VERSION }}
@@ -647,7 +653,6 @@ jobs:
             @{ Label = 'Windows WebRTC plugin DLL'; Path = 'artifacts\Rain-Demo-Windows-x64-Build\flutter_webrtc_plugin.dll' },
             @{ Label = 'Windows WebRTC runtime DLL'; Path = 'artifacts\Rain-Demo-Windows-x64-Build\libwebrtc.dll' },
             @{ Label = 'Windows SQLite runtime DLL'; Path = 'artifacts\Rain-Demo-Windows-x64-Build\sqlite3.dll' },
-            @{ Label = 'Windows win32 native asset DLL'; Path = 'artifacts\Rain-Demo-Windows-x64-Build\win32_windows_x64.dll' },
             @{ Label = 'Windows Flutter data directory'; Path = 'artifacts\Rain-Demo-Windows-x64-Build\data' },
             @{ Label = 'Android ARM v7 APK (armeabi-v7a)'; Path = 'artifacts\Rain-Demo-Android-ARM-v7a-Build.apk' },
             @{ Label = 'Android ARM v8/v9 APK (arm64-v8a)'; Path = 'artifacts\Rain-Demo-Android-ARM-v8-v9-Build.apk' }

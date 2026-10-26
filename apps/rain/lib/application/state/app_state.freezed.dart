@@ -1,3 +1,15 @@
+/// # app_state.freezed.dart
+///
+/// Generated Freezed code for [PeerConnectionView], [ConnectionsState], and
+/// [UserSearchState]. Provides immutable data classes with copyWith,
+/// equality, hashCode, and toString. Do not edit manually.
+///
+/// **Key types:** [PeerConnectionView], [ConnectionsState], [UserSearchState] (generated)
+///
+/// **Part of:** app_state.dart
+///
+/// **Depends on:** app_state.dart, freezed_annotation
+
 // GENERATED CODE - DO NOT MODIFY BY HAND
 // coverage:ignore-file
 // ignore_for_file: type=lint

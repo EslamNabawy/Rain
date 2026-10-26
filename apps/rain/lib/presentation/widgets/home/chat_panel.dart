@@ -1,3 +1,12 @@
+/// # chat_panel.dart
+///
+/// Chat panel widget (part of home_screen) that renders the message list,
+/// composer input, file picker, and connection status for a selected peer.
+///
+/// **Key types:** _ChatPanel, _ChatPanelState
+///
+/// **Depends on:** home_screen (part of), flutter_riverpod, application layer
+
 part of '../../screens/home_screen.dart';
 
 class _ChatPanel extends ConsumerStatefulWidget {
@@ -1171,18 +1180,12 @@ class _ChatPanelState extends ConsumerState<_ChatPanel> {
 
     setState(() => _isPickingFile = true);
     try {
-      final result = await FilePicker.pickFiles(
-        allowMultiple: false,
-        withData: false,
-        withReadStream: true,
-      );
-      final picked = result == null || result.files.isEmpty
-          ? null
-          : result.files.first;
+      final picked = await FilePicker.pickFile();
       if (picked == null) {
         return;
       }
-      if (picked.size > maxFileTransferBytes) {
+      final fileSize = await picked.length() ?? 0;
+      if (fileSize > maxFileTransferBytes) {
         throw StateError(
           'Files are limited to ${formatFileTransferSize(maxFileTransferBytes)}.',
         );
@@ -1193,17 +1196,13 @@ class _ChatPanelState extends ConsumerState<_ChatPanel> {
           .read(messagesProvider(widget.peerId).notifier)
           .sendFile(
             fileName: picked.name,
-            fileSize: picked.size,
+            fileSize: fileSize,
             localPath: localPath,
             openRead: () {
               if (file != null) {
                 return file.openRead();
               }
-              final stream = picked.readStream;
-              if (stream == null) {
-                throw StateError('Could not read the selected file.');
-              }
-              return stream;
+              return picked.readAsByteStream();
             },
           );
       _dispatchSoundEvent(rainChatSendSoundEventFor(widget.peerId));

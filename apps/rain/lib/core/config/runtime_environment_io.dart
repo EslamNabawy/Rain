@@ -1,3 +1,15 @@
+/// # runtime_environment_io.dart
+///
+/// IO implementation of [currentProcessEnvironment]. Reads JSON config files
+/// from ancestor directories (dart_defines.local.json) and merges them with
+/// [Platform.environment], with file values taking precedence over process
+/// environment.
+///
+/// **Key types:** (none — top-level function)
+///
+/// **Depends on:** dart:io
+library;
+
 import 'dart:convert';
 import 'dart:io';
 

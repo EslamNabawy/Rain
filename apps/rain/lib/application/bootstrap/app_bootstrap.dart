@@ -1,3 +1,15 @@
+/// # app_bootstrap.dart
+///
+/// [AppBootstrapper] orchestrates Rain's startup sequence: initializes Firebase
+/// (Realtime Database, Remote Config), opens the local Drift database, selects
+/// the signaling adapter, and wires up the [ForceUpdateService]. Produces an
+/// [AppBootstrapState] consumed by Riverpod providers.
+///
+/// **Key types:** [AppBootstrapper], [AppBootstrapState]
+///
+/// **Depends on:** Firebase, rain_core, protocol_brain, infrastructure services
+library;
+
 import 'dart:async';
 
 import 'package:firebase_core/firebase_core.dart';

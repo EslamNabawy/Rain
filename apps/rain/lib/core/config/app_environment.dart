@@ -1,3 +1,16 @@
+/// # app_environment.dart
+///
+/// [AppEnvironment] holds all compile-time and runtime configuration for Rain:
+/// backend selection (noop vs Firebase), ICE servers, Firebase project
+/// credentials, TURN broker URL, update channel, smoke mode, and signaling
+/// encryption key. Supports environment-variable overrides and release-mode
+/// validation.
+///
+/// **Key types:** [AppEnvironment], [RainBackend]
+///
+/// **Depends on:** protocol_brain
+library;
+
 import 'dart:convert';
 
 import 'package:flutter/foundation.dart';
@@ -241,7 +254,7 @@ class AppEnvironment {
       signalingEncryptionKey: readString(
         'RAIN_SIGNALING_ENCRYPTION_KEY',
         compileTimeValue: compileTimeSignalingEncryptionKey,
-        defaultValue: demoSignalingEncryptionKey,
+        defaultValue: devSignalingEncryptionKey,
       ),
       signalingEncryptionKeyProvided: signalingEncryptionKeyProvided,
       turnBrokerUrl: readString(
@@ -614,6 +627,9 @@ const releaseDefaultIceServers = <Map<String, dynamic>>[
 
 const demoSignalingEncryptionKey =
     'rain-demo-signaling-encryption-key-v1-change-me';
+
+const devSignalingEncryptionKey =
+    'rain-dev-signaling-key-0123456789-not-for-production-please-change-me';
 
 const defaultIceServers = <Map<String, dynamic>>[
   ...testedPublicStunIceServers,

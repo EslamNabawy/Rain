@@ -1,3 +1,14 @@
+/// # chat_composer
+///
+/// Chat message input widget with send button, optional file attachment
+/// button, character limit indicator, keyboard shortcut support (Enter to send
+/// on desktop), and animated focus border transitions.
+///
+/// **Key types:** ChatComposer, _ChatComposerState
+///
+/// **Depends on:** RainTheme
+library;
+
 import 'dart:async';
 
 import 'package:flutter/foundation.dart';

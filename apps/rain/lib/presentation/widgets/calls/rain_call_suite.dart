@@ -1,3 +1,13 @@
+/// # rain_call_suite.dart
+///
+/// High-level call suite layer that orchestrates the full call experience by
+/// composing the overlay, ended surface, manager bar, and workspace widgets.
+///
+/// **Key types:** RainCallSuiteLayer
+///
+/// **Depends on:** application/runtime, application/state, presentation/widgets/calls
+library;
+
 import 'package:flutter/material.dart';
 
 import 'package:rain/application/runtime/video_call_renderers.dart';
