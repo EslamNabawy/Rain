@@ -133,4 +133,33 @@ void main() {
     expect(gradient.colors, isNot(contains(RainColors.backgroundMid)));
     expect(find.byType(CustomPaint), findsWidgets);
   });
+
+  test(
+    'rebuilt button themes are equal so MaterialApp does not re-animate',
+    () {
+      for (final build in <ThemeData Function()>[
+        RainTheme.dark,
+        RainTheme.light,
+      ]) {
+        final a = build();
+        final b = build();
+        expect(a.filledButtonTheme, b.filledButtonTheme);
+        expect(a.outlinedButtonTheme, b.outlinedButtonTheme);
+        expect(a.textButtonTheme, b.textButtonTheme);
+        expect(a.focusColor, b.focusColor);
+      }
+    },
+  );
+
+  test('buttons show hover, focus and press overlays', () {
+    for (final theme in <ThemeData>[RainTheme.dark(), RainTheme.light()]) {
+      final overlay = theme.textButtonTheme.style!.overlayColor!;
+      expect(overlay.resolve(<WidgetState>{WidgetState.hovered}), isNotNull);
+      expect(overlay.resolve(<WidgetState>{WidgetState.focused}), isNotNull);
+      expect(overlay.resolve(<WidgetState>{WidgetState.pressed}), isNotNull);
+      expect(overlay.resolve(<WidgetState>{}), isNull);
+      expect(theme.filledButtonTheme.style!.overlayColor, isNotNull);
+      expect(theme.outlinedButtonTheme.style!.overlayColor, isNotNull);
+    }
+  });
 }

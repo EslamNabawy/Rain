@@ -120,7 +120,7 @@ class RainTheme {
       useMaterial3: true,
     );
 
-    return base.copyWith(
+    final theme = base.copyWith(
       textTheme: _textTheme(base.textTheme),
       cardTheme: CardThemeData(
         color: RainColors.surfaceDark,
@@ -212,6 +212,7 @@ class RainTheme {
       ),
       pageTransitionsTheme: _pageTransitionsTheme(),
     );
+    return _withInteractionStates(theme);
   }
 
   static ThemeData light() {
@@ -262,7 +263,7 @@ class RainTheme {
       useMaterial3: true,
     );
 
-    return base.copyWith(
+    final theme = base.copyWith(
       textTheme: _textTheme(base.textTheme),
       cardTheme: CardThemeData(
         color: RainColors.surfaceLight,
@@ -427,6 +428,30 @@ class RainTheme {
       progressIndicatorTheme: const ProgressIndicatorThemeData(color: primary),
       pageTransitionsTheme: _pageTransitionsTheme(),
     );
+    return _withInteractionStates(theme);
+  }
+
+  /// Hover, focus and press overlays for Filled/Outlined/Text buttons, tinted
+  /// with each button's own foreground colour, plus a primary focus colour.
+  static ThemeData _withInteractionStates(ThemeData theme) {
+    final scheme = theme.colorScheme;
+    ButtonStyle? withOverlay(ButtonStyle? style, Color fallback) {
+      final base = style?.foregroundColor?.resolve(<WidgetState>{}) ?? fallback;
+      return style?.copyWith(overlayColor: _InteractionOverlay(base));
+    }
+
+    return theme.copyWith(
+      focusColor: scheme.primary.withValues(alpha: 0.14),
+      filledButtonTheme: FilledButtonThemeData(
+        style: withOverlay(theme.filledButtonTheme.style, scheme.onPrimary),
+      ),
+      outlinedButtonTheme: OutlinedButtonThemeData(
+        style: withOverlay(theme.outlinedButtonTheme.style, scheme.primary),
+      ),
+      textButtonTheme: TextButtonThemeData(
+        style: withOverlay(theme.textButtonTheme.style, scheme.primary),
+      ),
+    );
   }
 
   static TextTheme _textTheme(TextTheme base) {
@@ -534,4 +559,34 @@ class _RainPageTransitionsBuilder extends PageTransitionsBuilder {
       child: SlideTransition(position: slide, child: child),
     );
   }
+}
+
+/// Hover 8 %, focus 14 %, pressed 16 % of [base]. Value-equal so rebuilding
+/// RainTheme yields an equal ThemeData and MaterialApp does not re-animate it.
+@immutable
+class _InteractionOverlay implements WidgetStateProperty<Color?> {
+  const _InteractionOverlay(this.base);
+
+  final Color base;
+
+  @override
+  Color? resolve(Set<WidgetState> states) {
+    if (states.contains(WidgetState.pressed)) {
+      return base.withValues(alpha: 0.16);
+    }
+    if (states.contains(WidgetState.focused)) {
+      return base.withValues(alpha: 0.14);
+    }
+    if (states.contains(WidgetState.hovered)) {
+      return base.withValues(alpha: 0.08);
+    }
+    return null;
+  }
+
+  @override
+  bool operator ==(Object other) =>
+      other is _InteractionOverlay && other.base == base;
+
+  @override
+  int get hashCode => base.hashCode;
 }

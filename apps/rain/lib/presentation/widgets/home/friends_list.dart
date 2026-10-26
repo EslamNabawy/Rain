@@ -84,12 +84,14 @@ class _FriendsListView extends StatelessWidget {
               final friend = items[index];
               return RepaintBoundary(
                 key: ValueKey<String>('friend-tile-${friend.username}'),
-                child: _FriendTile(
-                  friend: friend,
-                  selected: friend.username == selectedPeerId,
-                  compact: mode == FriendListDisplayMode.compact,
-                  rail: rail,
-                  onTap: () => onSelect(friend),
+                child: RainPressable(
+                  child: _FriendTile(
+                    friend: friend,
+                    selected: friend.username == selectedPeerId,
+                    compact: mode == FriendListDisplayMode.compact,
+                    rail: rail,
+                    onTap: () => onSelect(friend),
+                  ),
                 ),
               );
             },

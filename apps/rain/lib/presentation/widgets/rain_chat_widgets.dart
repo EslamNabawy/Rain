@@ -23,6 +23,7 @@ import 'package:rain/infrastructure/services/rain_debug_log_service.dart';
 import 'package:rain/presentation/branding/rain_peer_core_mark.dart';
 import 'package:rain/presentation/widgets/calls/rain_call_controls.dart';
 import 'package:rain/presentation/widgets/feedback/rain_busy_indicator.dart';
+import 'package:rain/presentation/widgets/feedback/rain_pressable.dart';
 
 const String _maleAvatarAsset = 'assets/gender_avatar/man-avatar.svg';
 const String _femaleAvatarAsset = 'assets/gender_avatar/woman-avatar.svg';
@@ -621,16 +622,19 @@ class RainVoiceCallButton extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final isCurrentCall = state.peerId == peerId && state.hasCall;
-    return IconButton(
-      tooltip: _voiceCallButtonTooltip(
-        peerId: peerId,
-        state: state,
-        isPeerOnline: isPeerOnline,
-        hasActiveTransfer: hasActiveTransfer,
-        preflight: preflight,
+    return RainPressable(
+      child: IconButton(
+        key: const ValueKey<String>('qa.chat.voice_call'),
+        tooltip: _voiceCallButtonTooltip(
+          peerId: peerId,
+          state: state,
+          isPeerOnline: isPeerOnline,
+          hasActiveTransfer: hasActiveTransfer,
+          preflight: preflight,
+        ),
+        onPressed: canStart ? onStart : null,
+        icon: Icon(isCurrentCall ? Icons.call : Icons.call_outlined),
       ),
-      onPressed: canStart ? onStart : null,
-      icon: Icon(isCurrentCall ? Icons.call : Icons.call_outlined),
     );
   }
 }
@@ -659,16 +663,21 @@ class RainVideoCallButton extends StatelessWidget {
   Widget build(BuildContext context) {
     final isCurrentVideoCall =
         state.peerId == peerId && state.hasCall && state.isVideo;
-    return IconButton(
-      tooltip: _videoCallButtonTooltip(
-        peerId: peerId,
-        state: state,
-        isPeerOnline: isPeerOnline,
-        hasActiveTransfer: hasActiveTransfer,
-        preflight: preflight,
+    return RainPressable(
+      child: IconButton(
+        key: const ValueKey<String>('qa.chat.video_call'),
+        tooltip: _videoCallButtonTooltip(
+          peerId: peerId,
+          state: state,
+          isPeerOnline: isPeerOnline,
+          hasActiveTransfer: hasActiveTransfer,
+          preflight: preflight,
+        ),
+        onPressed: canStart ? onStart : null,
+        icon: Icon(
+          isCurrentVideoCall ? Icons.videocam : Icons.videocam_outlined,
+        ),
       ),
-      onPressed: canStart ? onStart : null,
-      icon: Icon(isCurrentVideoCall ? Icons.videocam : Icons.videocam_outlined),
     );
   }
 }
