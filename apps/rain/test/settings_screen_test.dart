@@ -27,7 +27,9 @@ import 'package:rain/infrastructure/services/crash_diagnostics_service.dart';
 import 'package:rain/infrastructure/services/force_update_service.dart';
 import 'package:rain/infrastructure/services/network_status_service.dart';
 import 'package:rain/infrastructure/signaling/noop_signaling_adapter.dart';
+import 'package:rain/infrastructure/services/sound_effects_service.dart';
 import 'package:rain/presentation/screens/settings_screen.dart';
+import 'package:rain/presentation/widgets/settings/sound_preview_button.dart';
 import 'package:rain_core/rain_core.dart';
 import 'package:shared_preferences_platform_interface/in_memory_shared_preferences_async.dart';
 import 'package:shared_preferences_platform_interface/shared_preferences_async_platform_interface.dart';
@@ -506,6 +508,43 @@ void main() {
     expect(await AppSettingsStore().loadSoundEffectsEnabled(), isFalse);
   });
 
+  testWidgets('releasing the volume slider plays one preview sound', (
+    WidgetTester tester,
+  ) async {
+    _useTallView(tester);
+    final harness = _SettingsHarness();
+    addTearDown(harness.dispose);
+
+    await tester.pumpSettingsScreen(harness: harness);
+    await tester.drag(find.byType(Slider), const Offset(-60, 0));
+    await tester.pumpSettingsFrame();
+
+    expect(harness.soundEffects.played, <RainSoundEffect>[
+      RainSoundEffect.action,
+    ]);
+  });
+
+  testWidgets('test sound button plays and is disabled when sounds are off', (
+    WidgetTester tester,
+  ) async {
+    _useTallView(tester);
+    final harness = _SettingsHarness();
+    addTearDown(harness.dispose);
+
+    await tester.pumpSettingsScreen(harness: harness);
+    await tester.tap(find.byKey(soundPreviewButtonKey));
+    await tester.pumpSettingsFrame();
+
+    expect(harness.soundEffects.played, hasLength(1));
+
+    await tester.tap(find.text('Sound effects'));
+    await tester.pumpSettingsFrame();
+
+    final button = tester.widget<IconButton>(find.byKey(soundPreviewButtonKey));
+    expect(button.onPressed, isNull);
+    expect(button.tooltip, 'Play test sound');
+  });
+
   testWidgets('call sounds toggle persists from settings', (
     WidgetTester tester,
   ) async {
@@ -715,6 +754,7 @@ extension _SettingsPump on WidgetTester {
           crashDiagnosticsServiceProvider.overrideWithValue(
             harness.crashDiagnostics,
           ),
+          soundEffectsProvider.overrideWithValue(harness.soundEffects),
         ],
         child: const MaterialApp(home: Scaffold(body: SettingsScreen())),
       ),
@@ -725,6 +765,20 @@ extension _SettingsPump on WidgetTester {
   Future<void> pumpSettingsFrame() async {
     await pump();
     await pump(const Duration(milliseconds: 300));
+  }
+}
+
+class _RecordingPreviewEffects extends SoundEffectsService {
+  final List<RainSoundEffect> played = <RainSoundEffect>[];
+
+  @override
+  Future<void> play(
+    RainSoundEffect effect, {
+    bool voiceCallActive = false,
+    bool allowDuringCall = false,
+    double volumeScale = 1.0,
+  }) async {
+    played.add(effect);
   }
 }
 
@@ -745,6 +799,7 @@ class _SettingsHarness {
          'rain_settings_test_',
        ) {
     runtimeController?.database = database;
+    soundEffects = _RecordingPreviewEffects();
     crashDiagnostics = CrashDiagnosticsService(
       directoryProvider: () async => diagnosticsDirectory,
       appInfoProvider: () async => const CrashDiagnosticsAppInfo.unknown(),
@@ -777,6 +832,7 @@ class _SettingsHarness {
   final RainDatabase database;
   final Directory diagnosticsDirectory;
   late final CrashDiagnosticsService crashDiagnostics;
+  late final _RecordingPreviewEffects soundEffects;
   late final AppBootstrapState bootstrap;
 
   Future<void> dispose() async {

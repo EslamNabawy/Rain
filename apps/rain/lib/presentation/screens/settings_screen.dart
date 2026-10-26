@@ -36,6 +36,8 @@ import 'package:rain/presentation/widgets/rain_chat_widgets.dart';
 import 'package:rain/presentation/feedback/rain_error_text.dart';
 import 'package:rain/presentation/widgets/feedback/rain_busy_indicator.dart';
 import 'package:rain/presentation/widgets/feedback/rain_delayed_reveal.dart';
+import 'package:rain/presentation/widgets/settings/sound_preview_button.dart';
+import 'package:rain/infrastructure/services/sound_effects_service.dart';
 
 String _formatSettingsError(Object error) => rainUserFacingError(error);
 
@@ -69,6 +71,7 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen> {
   bool _testingMicrophone = false;
   bool _microphoneTestFailed = false;
   String? _microphoneTestMessage;
+  Future<void>? _volumeSave;
 
   @override
   Widget build(BuildContext context) {
@@ -254,7 +257,12 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen> {
                     onSoundEffectsEnabledChanged: (bool enabled) =>
                         _setSoundEffectsEnabled(context, ref, enabled),
                     onSoundEffectsVolumeChanged: (double volume) =>
-                        _setSoundEffectsVolume(context, ref, volume),
+                        _volumeSave = _setSoundEffectsVolume(
+                          context,
+                          ref,
+                          volume,
+                        ),
+                    onPreviewSound: () => unawaited(_previewSoundEffect()),
                     onCallSoundsEnabledChanged: (bool enabled) =>
                         _setCallSoundsEnabled(context, ref, enabled),
                     onReduceSoundsDuringCallChanged: (bool enabled) =>
@@ -287,6 +295,7 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen> {
                     isBusy: true,
                     onSoundEffectsEnabledChanged: (_) {},
                     onSoundEffectsVolumeChanged: (_) {},
+                    onPreviewSound: () {},
                     onCallSoundsEnabledChanged: (_) {},
                     onReduceSoundsDuringCallChanged: (_) {},
                     onOutputPreferenceChanged: (_) {},
@@ -665,6 +674,15 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen> {
           .read(voiceAudioSettingsProvider.notifier)
           .setSoundEffectsVolume(volume),
     );
+  }
+
+  /// Plays the UI cue after the latest volume save so it uses the new level.
+  Future<void> _previewSoundEffect() async {
+    await _volumeSave;
+    if (!mounted) {
+      return;
+    }
+    await ref.read(soundEffectsProvider).play(RainSoundEffect.action);
   }
 
   Future<void> _setCallSoundsEnabled(
@@ -1559,6 +1577,7 @@ class _VoiceAudioSettingsControls extends StatelessWidget {
     required this.isBusy,
     required this.onSoundEffectsEnabledChanged,
     required this.onSoundEffectsVolumeChanged,
+    required this.onPreviewSound,
     required this.onCallSoundsEnabledChanged,
     required this.onReduceSoundsDuringCallChanged,
     required this.onOutputPreferenceChanged,
@@ -1569,6 +1588,7 @@ class _VoiceAudioSettingsControls extends StatelessWidget {
   final bool isBusy;
   final ValueChanged<bool> onSoundEffectsEnabledChanged;
   final ValueChanged<double> onSoundEffectsVolumeChanged;
+  final VoidCallback onPreviewSound;
   final ValueChanged<bool> onCallSoundsEnabledChanged;
   final ValueChanged<bool> onReduceSoundsDuringCallChanged;
   final ValueChanged<CallAudioOutputPreference> onOutputPreferenceChanged;
@@ -1639,13 +1659,23 @@ class _VoiceAudioSettingsControls extends StatelessWidget {
             onChanged: soundControlsEnabled
                 ? onSoundEffectsVolumeChanged
                 : null,
+            onChangeEnd: soundControlsEnabled ? (_) => onPreviewSound() : null,
           ),
-          trailing: SizedBox(
-            width: 48,
-            child: Text(
-              _volumeLabel(settings.soundEffectsVolume),
-              textAlign: TextAlign.end,
-            ),
+          trailing: Row(
+            mainAxisSize: MainAxisSize.min,
+            children: <Widget>[
+              SizedBox(
+                width: 48,
+                child: Text(
+                  _volumeLabel(settings.soundEffectsVolume),
+                  textAlign: TextAlign.end,
+                ),
+              ),
+              SoundPreviewButton(
+                enabled: soundControlsEnabled,
+                onPressed: onPreviewSound,
+              ),
+            ],
           ),
           enabled: soundControlsEnabled,
         ),

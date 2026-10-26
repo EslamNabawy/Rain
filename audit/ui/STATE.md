@@ -26,6 +26,7 @@
 - T3.3 6353662 new effects + transfer events mapped, dedupe/throttle/in-call suppression; asset budget adjusted (U-D6)
 - T3.4 75df9b7 open-chat transfer completed/failed cues via pure diff + ref.listen
 - T3.5 049f602 RainSoundPlayer.preload + SoundEffectsService.warmUp(send/receive/action/error) from the router provider
+- T3.6 7c99b01 loops fade to 0 in 4 steps over 120 ms; stopAll stays immediate
 
 ## Blocked
 
@@ -58,4 +59,5 @@
 - Phase 3 sync: local Flutter is now 3.47.8 (CI pins 3.44.0). `flutter pub get` bumps matcher 0.12.20, meta 1.19.0, test 1.31.1 and `--enforce-lockfile` fails. The committed pubspec.lock stays at dev's version; never stage the local drift.
 - Phase 3: unstaged edits to apps/rain, peer_core, protocol_brain and rain_core analysis_options.yaml (analyzer excludes) appeared at 14:11 from outside this program. They are outside may_edit: not staged, not reverted.
 - T3.6: fake_async is not a direct dev dependency and U5 forbids adding one, so the fade tests use real time (about 120 ms each). Public stopAllLoops() keeps its signature because three test fakes override it; stopAll uses a private no-fade path.
+- T3.7: a full-width 'Play test sound' TextButton row pushed 'Call sounds' off the 800x1000 test view. The preview is now a compact IconButton (tooltip 'Play test sound', key qa.settings.sound_test) in the volume tile's trailing slot. The preview plays the action cue through SoundEffectsService directly (not the router), after the pending volume save, so it is audible during calls too. settings_screen.dart grew by 30 net lines.
 - friend_flow_test 'remote video renderer attach failure' failed once under full-suite load, passed alone and on rerun (timing flake, untouched code).
