@@ -429,6 +429,58 @@ void main() {
     expect(fakes.single.disposed, isTrue);
   });
 
+  test('stopLoop fades the loop to silence before stopping', () async {
+    final fakes = <_FakeRainSoundPlayer>[];
+    final service = SoundEffectsService(
+      playerFactory: (String _) {
+        final fake = _FakeRainSoundPlayer();
+        fakes.add(fake);
+        return fake;
+      },
+    );
+
+    await service.startLoop(
+      RainSoundEffect.callIncoming,
+      loopId: 'incoming',
+      volume: 0.4,
+    );
+    final stopwatch = Stopwatch()..start();
+    await service.stopLoop('incoming');
+    stopwatch.stop();
+
+    final volumes = fakes.single.volumes;
+    expect(volumes, hasLength(4));
+    for (var i = 1; i < volumes.length; i += 1) {
+      expect(volumes[i], lessThan(volumes[i - 1]));
+    }
+    expect(volumes.first, lessThan(0.4));
+    expect(volumes.last, 0);
+    expect(stopwatch.elapsedMilliseconds, greaterThanOrEqualTo(80));
+    expect(fakes.single.stopped, isTrue);
+    expect(fakes.single.disposed, isTrue);
+  });
+
+  test('stopAll cuts loops immediately without a fade', () async {
+    final fakes = <_FakeRainSoundPlayer>[];
+    final service = SoundEffectsService(
+      playerFactory: (String _) {
+        final fake = _FakeRainSoundPlayer();
+        fakes.add(fake);
+        return fake;
+      },
+    );
+
+    await service.startLoop(
+      RainSoundEffect.callIncoming,
+      loopId: 'incoming',
+      volume: 0.4,
+    );
+    await service.stopAll();
+
+    expect(fakes.single.volumes, isEmpty);
+    expect(fakes.single.stopped, isTrue);
+  });
+
   test('disabled sound settings stop active loops', () async {
     var settings = const AppAudioSettings();
     final fakes = <_FakeRainSoundPlayer>[];
@@ -600,6 +652,7 @@ class _FakeRainSoundPlayer implements RainSoundPlayer {
   final Object? preloadError;
   final List<_PlayedSound> played = <_PlayedSound>[];
   final List<String> preloaded = <String>[];
+  final List<double> volumes = <double>[];
   PlayerMode? configuredMode;
   AudioContext? configuredContext;
   ReleaseMode? releaseMode;
@@ -639,6 +692,11 @@ class _FakeRainSoundPlayer implements RainSoundPlayer {
       throw error;
     }
     preloaded.add(assetPath);
+  }
+
+  @override
+  Future<void> setVolume(double volume) async {
+    volumes.add(volume);
   }
 
   @override

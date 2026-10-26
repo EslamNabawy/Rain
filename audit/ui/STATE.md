@@ -25,6 +25,7 @@
 - T3.2 38f8c3e six new generated cues; 15 old WAVs byte-identical after SOUNDGEN (README line added in the next commit)
 - T3.3 6353662 new effects + transfer events mapped, dedupe/throttle/in-call suppression; asset budget adjusted (U-D6)
 - T3.4 75df9b7 open-chat transfer completed/failed cues via pure diff + ref.listen
+- T3.5 049f602 RainSoundPlayer.preload + SoundEffectsService.warmUp(send/receive/action/error) from the router provider
 
 ## Blocked
 
@@ -56,4 +57,5 @@
 - T2.8: VoiceCallPhase has no reconnecting value; reconnecting = phase active + VoiceCallState.mediaReconnecting. Full suite +821 ~30 passed. FORMAT reports 3 pre-existing unformatted files outside this program's scope (integration_two_devices_handshake_full_test.dart, integration_two_users_end2end_test.dart, integration_voice_signaling_emulator_test.dart; last touched by 6ff832b); left as is.
 - Phase 3 sync: local Flutter is now 3.47.8 (CI pins 3.44.0). `flutter pub get` bumps matcher 0.12.20, meta 1.19.0, test 1.31.1 and `--enforce-lockfile` fails. The committed pubspec.lock stays at dev's version; never stage the local drift.
 - Phase 3: unstaged edits to apps/rain, peer_core, protocol_brain and rain_core analysis_options.yaml (analyzer excludes) appeared at 14:11 from outside this program. They are outside may_edit: not staged, not reverted.
+- T3.6: fake_async is not a direct dev dependency and U5 forbids adding one, so the fade tests use real time (about 120 ms each). Public stopAllLoops() keeps its signature because three test fakes override it; stopAll uses a private no-fade path.
 - friend_flow_test 'remote video renderer attach failure' failed once under full-suite load, passed alone and on rerun (timing flake, untouched code).
