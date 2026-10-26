@@ -4,6 +4,13 @@ This file must survive across future AI sessions.
 
 Every future session must read this file before starting non-trivial work.
 
+## UI/UX Level-Up 2026-10-27
+
+- Branch `ui/level-up` (worktree `D:\Rain-uiux`), synced with `dev` at `0772b2a`. Nothing merged into `main` or `dev`. Program: `audit/prompts/rain-uiux-orchestrator.xml`; state and evidence: `audit/ui/STATE.md`; note: [[UI UX Level-Up]].
+- Changed: bundled fonts with runtime fetch off; spacing/radius/motion tokens and a single `RainMotionPolicy`; `rainUserFacingError`; shared busy/skeleton/state-card widgets; continuous splash with captions and cross-fade; startup failure retry; Android 12+ native splash mark; transfer progress and call connecting pulse. Sound: six new generated cues, transfer cues for the open chat, preload, loop fade-out, volume preview, loudness test. Also Android haptics behind a setting, message entrance, press/focus feedback, stateful call-control semantics, empty-state copy, `showRainSnack`, and a resilience/contrast test.
+- Validation 2026-10-27 (local Flutter 3.47.8): analyze clean in all 4 packages. Tests: apps/rain +889 / 30 skipped; protocol_brain, peer_core and rain_core pass. Vault check passed. FORMAT flags 3 dev integration tests (formatter-version drift; dev shows the same diff). The T2.5 launch-background bitmap broke the protocol_brain release contract and was removed.
+- Open: hardening handoffs in `audit/ui/STATE.md` (startup retry provider, app-wide transfer event, optional pre-31 splash contract change); the button font family literal `'Space Grotesk'`; owner device checks (Android cold start, cue listening, haptics, reduced motion).
+
 ## Hardening Audit 2026-10-10
 
 - Work copy `D:Rain`, branch `audit/rain-hardening` (from `dev` `601647c`); `integration/main-dev` holds `origin/main` merged in. Nothing was merged into `main` or `dev`.
