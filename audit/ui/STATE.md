@@ -29,6 +29,7 @@
 - T3.6 7c99b01 loops fade to 0 in 4 steps over 120 ms; stopAll stays immediate
 - T3.7 4cd5b12 slider release + compact play button preview the action cue at the saved volume
 - T3.8 8c787b8 per-group loudness test (chat/ui/state/alert within 3 dB of median); no spec changes needed
+- T3.9 798cc17 Android-only haptics behind a new setting; settings switch qa.settings.haptics
 
 ## Blocked
 
