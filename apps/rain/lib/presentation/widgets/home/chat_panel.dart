@@ -814,7 +814,8 @@ class _ChatPanelState extends ConsumerState<_ChatPanel> {
                 AppStateMessage(
                   icon: Icons.water_drop_outlined,
                   title: 'No messages yet',
-                  message: 'Start the first message when the link is ready.',
+                  message:
+                      'Messages here travel straight between your devices. Say hi below once the link is ready.',
                 ),
               ],
             );

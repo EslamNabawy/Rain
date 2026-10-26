@@ -269,8 +269,8 @@ class _SearchHint extends StatelessWidget {
       children: <Widget>[
         const AppStateMessage(
           icon: Icons.search,
-          title: 'Find friend',
-          message: 'Type a handle to search, then tap Add.',
+          title: 'Find a friend',
+          message: 'Search by Rain username, then tap Add.',
         ),
         if (recentSearches.isNotEmpty) ...<Widget>[
           const SizedBox(height: 24),
@@ -363,8 +363,9 @@ class _SearchResults extends StatelessWidget {
         children: const <Widget>[
           AppStateMessage(
             icon: Icons.person_off_outlined,
-            title: 'No users found',
-            message: 'Try a different search term.',
+            title: 'No one with that username',
+            message:
+                'Check the spelling, or ask your friend for their exact Rain username.',
           ),
         ],
       );

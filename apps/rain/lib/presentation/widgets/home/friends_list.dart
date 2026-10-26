@@ -66,8 +66,14 @@ class _FriendsListView extends StatelessWidget {
                     icon: Icons.group_outlined,
                     title: 'No friends yet',
                     message:
-                        'Find a friend to start chatting and testing the peer connection flow.',
+                        'Your friends list holds the people you chat and call with directly.',
                     iconSize: compact ? 46 : 52,
+                    action: FilledButton.tonalIcon(
+                      key: const ValueKey<String>('qa.friends.find'),
+                      onPressed: () => AppRoutes.openSearch(context),
+                      icon: const Icon(Icons.person_search_outlined),
+                      label: const Text('Find people by username'),
+                    ),
                   ),
               ],
             ),
