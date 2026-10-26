@@ -36,6 +36,9 @@
 - T4.4 757c615 friends/chat/search empty states rewritten; friends empty offers Find people by username
 - T4.5 f5adb86 showRainSnack (severity icon, 4 s / 6 s error) replaces 22 snackbars
 - T4.6 394c191 resilience + contrast test; no overflow, no alpha changes needed
+- T5.1 11ed518 40 after shots and 03-before-after.md
+- T5.2 044abe7 full validation recorded; fix 3b0224f keeps pre-31 launch background bitmap-free
+- T5.3 c384b2a vault note UI UX Level-Up, Feature Index link, CONTINUITY entry; vault check passed
 
 ## Blocked
 
