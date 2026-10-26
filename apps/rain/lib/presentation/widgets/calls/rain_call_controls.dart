@@ -124,33 +124,52 @@ class RainCallControls extends StatelessWidget {
     final scheme = Theme.of(context).colorScheme;
     final visual = rainVoiceCallControlVisual(state, capability);
     final control = switch (capability) {
-      CallControlCapability.microphone => IconButton(
-        tooltip: visual.tooltip,
-        onPressed: state.isActive
-            ? RainHaptics.wrap(context, onToggleMute, RainHapticKind.selection)
-            : null,
-        icon: Icon(visual.icon),
+      CallControlCapability.microphone => _ToggleSemantics(
+        label: 'Microphone',
+        on: !state.isMuted,
+        child: IconButton(
+          key: const ValueKey<String>('qa.call.microphone'),
+          tooltip: visual.tooltip,
+          onPressed: state.isActive
+              ? RainHaptics.wrap(
+                  context,
+                  onToggleMute,
+                  RainHapticKind.selection,
+                )
+              : null,
+          icon: Icon(visual.icon),
+        ),
       ),
-      CallControlCapability.camera => IconButton(
-        tooltip: visual.tooltip,
-        onPressed: state.isActive
-            ? RainHaptics.wrap(
-                context,
-                onToggleCamera,
-                RainHapticKind.selection,
-              )
-            : null,
-        icon: Icon(visual.icon),
+      CallControlCapability.camera => _ToggleSemantics(
+        label: 'Camera',
+        on: !state.isCameraMuted,
+        child: IconButton(
+          key: const ValueKey<String>('qa.call.camera'),
+          tooltip: visual.tooltip,
+          onPressed: state.isActive
+              ? RainHaptics.wrap(
+                  context,
+                  onToggleCamera,
+                  RainHapticKind.selection,
+                )
+              : null,
+          icon: Icon(visual.icon),
+        ),
       ),
       CallControlCapability.switchCamera => IconButton(
         tooltip: visual.tooltip,
         onPressed: state.isActive ? onSwitchCamera : null,
         icon: Icon(visual.icon),
       ),
-      CallControlCapability.deafen => IconButton(
-        tooltip: visual.tooltip,
-        onPressed: state.isActive ? onToggleDeafen : null,
-        icon: Icon(visual.icon),
+      CallControlCapability.deafen => _ToggleSemantics(
+        label: 'Call audio',
+        on: !state.isDeafened,
+        child: IconButton(
+          key: const ValueKey<String>('qa.call.deafen'),
+          tooltip: visual.tooltip,
+          onPressed: state.isActive ? onToggleDeafen : null,
+          icon: Icon(visual.icon),
+        ),
       ),
       CallControlCapability.outputRoute => _buildOutputRouteControl(
         visual: visual,
@@ -336,6 +355,30 @@ class RainCallControls extends StatelessWidget {
         ];
       },
       icon: Icon(selected.icon),
+    );
+  }
+}
+
+/// Announces a call toggle as "<label>, On/Off" with its toggled state.
+class _ToggleSemantics extends StatelessWidget {
+  const _ToggleSemantics({
+    required this.label,
+    required this.on,
+    required this.child,
+  });
+
+  final String label;
+  final bool on;
+  final Widget child;
+
+  @override
+  Widget build(BuildContext context) {
+    return Semantics(
+      container: true,
+      label: label,
+      value: on ? 'On' : 'Off',
+      toggled: on,
+      child: child,
     );
   }
 }

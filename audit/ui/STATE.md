@@ -31,6 +31,7 @@
 - T3.8 8c787b8 per-group loudness test (chat/ui/state/alert within 3 dB of median); no spec changes needed
 - T3.9 798cc17 Android-only haptics behind a new setting; settings switch qa.settings.haptics
 - T4.1 0070701 RainMessageEntrance: ids from first load stay still, later ids fade+slide in once
+- T4.2 ac578c1 RainPressable press scale on call buttons + friend rows; button hover/focus/press overlays in both themes
 
 ## Blocked
 
@@ -67,4 +68,5 @@
 - T3.7: a full-width 'Play test sound' TextButton row pushed 'Call sounds' off the 800x1000 test view. The preview is now a compact IconButton (tooltip 'Play test sound', key qa.settings.sound_test) in the volume tile's trailing slot. The preview plays the action cue through SoundEffectsService directly (not the router), after the pending volume save, so it is audible during calls too. settings_screen.dart grew by 30 net lines.
 - T3.9: RainHaptics treats a still-loading setting as off. The first tap after launch may skip a haptic, but it never vibrates against a saved "off". Without a ProviderScope (isolated widget tests) it falls back to the default (on). Wired: composer send (light); call accept/decline/hang-up (medium); mic/camera dock toggles (selection); settings runner helpers (selection). Overflow-menu toggles in the call dock have no haptic.
 - T4.2: the first overlay used WidgetStateProperty.resolveWith closures, so each RainTheme.dark() call produced unequal button themes. MaterialApp's AnimatedTheme then re-lerped on every rebuild (caught by file_transfer_bubble_test's reduced-motion check). The overlay is now a value-equal _InteractionOverlay. Whole ThemeData equality across calls was not established (some other subtheme differs); only the button themes and focusColor are pinned by test. RainPressable wraps already-interactive children (call buttons, friend rows) for press scale only; the full focus/hover/activate path applies when onTap is given.
+- T4.3: the seven inventory hits were _CallManagerIconButton call sites, which already forward visual.tooltip to IconButton, so no tooltip change was needed. Dock mic/camera/deafen controls now announce label + On/Off + toggled, with keys qa.call.microphone/camera/deafen. containsSemantics is deprecated on local Flutter 3.47 and isSemantics may not exist on CI 3.44, so the test reads node.value and Semantics.properties.toggled. friend_flow_test 'cancel incoming file transfer' failed once under full-suite load and passed alone (same flake family).
 - friend_flow_test 'remote video renderer attach failure' failed once under full-suite load, passed alone and on rerun (timing flake, untouched code).
