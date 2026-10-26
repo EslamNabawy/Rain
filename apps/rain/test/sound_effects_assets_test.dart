@@ -131,6 +131,56 @@ void main() {
     });
   }
 
+  test('one-shot loudness stays within 3 dB of its group median', () {
+    const groups = <String, List<String>>{
+      'chat': <String>['send', 'receive'],
+      'ui': <String>[
+        'action',
+        'route_change',
+        'camera_on',
+        'camera_off',
+        'mute',
+        'unmute',
+        'deafen',
+        'undeafen',
+      ],
+      'state': <String>[
+        'call_connected',
+        'call_ended',
+        'request_accepted',
+        'transfer_complete',
+      ],
+      'alert': <String>[
+        'error',
+        'call_failed',
+        'request_inbound',
+        'call_incoming',
+        'call_outgoing',
+      ],
+    };
+
+    for (final group in groups.entries) {
+      final levels = <String, double>{
+        for (final name in group.value)
+          name: _rmsDb(_readWaveInfo('assets/sounds/$name.wav').rms),
+      };
+      final sorted = levels.values.toList()..sort();
+      final mid = sorted.length ~/ 2;
+      final median = sorted.length.isOdd
+          ? sorted[mid]
+          : (sorted[mid - 1] + sorted[mid]) / 2;
+      for (final level in levels.entries) {
+        expect(
+          (level.value - median).abs(),
+          lessThanOrEqualTo(3.0),
+          reason:
+              '${level.key}.wav is ${level.value.toStringAsFixed(1)} dBFS, '
+              '${group.key} median ${median.toStringAsFixed(1)} dBFS',
+        );
+      }
+    }
+  });
+
   test('total sound asset size stays modest for APK impact', () {
     final assetPaths = <String>{
       ...rainSoundEffectAssetPaths.values,
@@ -147,6 +197,8 @@ void main() {
     expect(totalBytes, lessThanOrEqualTo(620000));
   });
 }
+
+double _rmsDb(double rms) => 20 * math.log(rms / 32768) / math.ln10;
 
 class _SoundExpectation {
   const _SoundExpectation({

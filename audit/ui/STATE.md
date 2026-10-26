@@ -27,6 +27,7 @@
 - T3.4 75df9b7 open-chat transfer completed/failed cues via pure diff + ref.listen
 - T3.5 049f602 RainSoundPlayer.preload + SoundEffectsService.warmUp(send/receive/action/error) from the router provider
 - T3.6 7c99b01 loops fade to 0 in 4 steps over 120 ms; stopAll stays immediate
+- T3.7 4cd5b12 slider release + compact play button preview the action cue at the saved volume
 
 ## Blocked
 
