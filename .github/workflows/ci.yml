@@ -1,11 +1,14 @@
 name: CI/CD
 
 on:
+  # Feature branches are covered by their pull_request run; pushing them too
+  # would run every check twice.
   push:
     branches:
-      - '**'
+      - dev
+      - main
     tags:
-      - 'v*.*.*'
+      - 'v*'
   pull_request:
     branches:
       - main
@@ -603,7 +606,9 @@ jobs:
     name: Build EXE and APK Artifacts
     runs-on: windows-2022
     timeout-minutes: 120
-    if: ${{ always() && needs.test-gates.result == 'success' && (github.event_name == 'workflow_dispatch' || startsWith(github.ref, 'refs/tags/v')) }}
+    # Demo-signed artifacts only. Production-signed builds stay in
+    # validated-release.yml, which also requires Remote Config evidence.
+    if: ${{ always() && needs.test-gates.result == 'success' && (github.event_name == 'workflow_dispatch' || (github.event_name == 'push' && github.ref == 'refs/heads/main') || startsWith(github.ref, 'refs/tags/v')) }}
     needs:
       - test-gates
     env:
@@ -689,6 +694,24 @@ jobs:
           Assert-ApkEntry 'artifacts\Rain-Demo-Android-ARM-v8-v9-Build.apk' 'lib/arm64-v8a/libsqlite3.so'
           Assert-ApkEntry 'artifacts\Rain-Demo-Android-ARM-v8-v9-Build.apk' 'lib/arm64-v8a/libjingle_peerconnection_so.so'
 
+      - name: Write SHA256SUMS
+        # sha256sum-compatible lines ("<hash>  <path>") so `sha256sum -c` works.
+        shell: pwsh
+        run: |
+          $root = (Resolve-Path 'artifacts').Path
+          $files = @(
+            Get-Item 'artifacts\Rain-Demo-Android-ARM-v7a-Build.apk'
+            Get-Item 'artifacts\Rain-Demo-Android-ARM-v8-v9-Build.apk'
+            Get-ChildItem -LiteralPath 'artifacts\Rain-Demo-Windows-x64-Build' -Recurse -File | Sort-Object FullName
+          )
+          $lines = foreach ($file in $files) {
+            $hash = (Get-FileHash -Algorithm SHA256 -LiteralPath $file.FullName).Hash.ToLowerInvariant()
+            $relative = $file.FullName.Substring($root.Length + 1).Replace('\', '/')
+            "$hash  $relative"
+          }
+          [IO.File]::WriteAllText((Join-Path $root 'SHA256SUMS'), ($lines -join "`n") + "`n")
+          Get-Content 'artifacts\SHA256SUMS' | Select-Object -First 3
+
       - name: Upload Windows portable EXE bundle
         uses: actions/upload-artifact@v7
         with:
@@ -707,6 +730,64 @@ jobs:
           if-no-files-found: error
           retention-days: ${{ env.ARTIFACT_RETENTION_RELEASE }}
 
+      - name: Upload SHA256SUMS
+        uses: actions/upload-artifact@v7
+        with:
+          name: Rain-Demo-SHA256SUMS
+          path: artifacts/SHA256SUMS
+          if-no-files-found: error
+          retention-days: ${{ env.ARTIFACT_RETENTION_RELEASE }}
+
+  publish-release:
+    name: Publish Tag Release
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    if: ${{ startsWith(github.ref, 'refs/tags/v') && needs.release-artifacts.result == 'success' }}
+    needs:
+      - release-artifacts
+    # Only this job may write: it creates the GitHub Release for the tag.
+    permissions:
+      contents: write
+    steps:
+      - name: Download Android APKs
+        uses: actions/download-artifact@v8
+        with:
+          name: Rain-Demo-Android-Builds
+          path: release-assets
+
+      - name: Download Windows portable bundle
+        uses: actions/download-artifact@v8
+        with:
+          name: Rain-Demo-Windows-x64-Build
+          path: release-assets/Rain-Demo-Windows-x64-Build
+
+      - name: Download SHA256SUMS
+        uses: actions/download-artifact@v8
+        with:
+          name: Rain-Demo-SHA256SUMS
+          path: release-assets
+
+      - name: Verify checksums
+        working-directory: release-assets
+        run: sha256sum -c SHA256SUMS
+
+      - name: Create GitHub Release
+        env:
+          GH_TOKEN: ${{ github.token }}
+          TAG: ${{ github.ref_name }}
+        run: |
+          set -euo pipefail
+          (cd release-assets && zip -qr Rain-Demo-Windows-x64-Build.zip Rain-Demo-Windows-x64-Build)
+          gh release create "$TAG" \
+            --repo "$GITHUB_REPOSITORY" \
+            --title "Rain $TAG (demo build)" \
+            --notes "Demo-signed build from CI run $GITHUB_SERVER_URL/$GITHUB_REPOSITORY/actions/runs/$GITHUB_RUN_ID. Production-signed builds come from validated-release.yml. Verify downloads with SHA256SUMS (Windows hashes cover the files inside the zip)." \
+            --verify-tag \
+            release-assets/Rain-Demo-Android-ARM-v7a-Build.apk \
+            release-assets/Rain-Demo-Android-ARM-v8-v9-Build.apk \
+            release-assets/Rain-Demo-Windows-x64-Build.zip \
+            release-assets/SHA256SUMS
+
   required-checks:
     name: Required Checks
     runs-on: ubuntu-latest
@@ -714,6 +795,7 @@ jobs:
     needs:
       - test-gates
       - release-artifacts
+      - publish-release
     steps:
       - name: Fail if any required job failed
         run: |
@@ -721,5 +803,7 @@ jobs:
           echo "sha: ${{ github.sha }}"
           echo "test-gates: ${{ needs.test-gates.result }}"
           echo "release-artifacts: ${{ needs.release-artifacts.result }}"
+          echo "publish-release: ${{ needs.publish-release.result }}"
           test "${{ needs.test-gates.result }}" = "success"
           test "${{ needs.release-artifacts.result }}" = "success" || test "${{ needs.release-artifacts.result }}" = "skipped"
+          test "${{ needs.publish-release.result }}" = "success" || test "${{ needs.publish-release.result }}" = "skipped"

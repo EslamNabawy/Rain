@@ -4,6 +4,12 @@ This file must survive across future AI sessions.
 
 Every future session must read this file before starting non-trivial work.
 
+## CI Release Pipeline 2026-10-27
+
+- Branch `ci/release-pipeline` from `dev` @ a12afa3. `ci.yml` is the single test pipeline: push triggers are limited to `dev`, `main` and `v*` tags (pull requests cover feature branches; this ended the double runs). Demo-signed APKs, the Windows folder and a new `Rain-Demo-SHA256SUMS` artifact now also build on push to `main`. A new tag-only `Publish Tag Release` job (the only `contents: write` job) verifies `sha256sum -c` and creates the GitHub Release. Production signing stays in `validated-release.yml` (Remote Config evidence gate).
+- Removed `documentation-vault.yml`, `fast-release.yml` and `tested-build-artifacts.yml`; kept `build-artifacts.yml` and `release.yml`. `release_contract_test.dart` drops the two `fast-release.yml` entries and pins the new CI publish rules. Branch protection is still not configured (owner decision).
+- Validation: see the PR for this branch (CI run, manual artifact run).
+
 ## UI/UX Level-Up 2026-10-27
 
 - Branch `ui/level-up` (worktree `D:\Rain-uiux`), synced with `dev` at `0772b2a`. Nothing merged into `main` or `dev`. Program: `audit/prompts/rain-uiux-orchestrator.xml`; state and evidence: `audit/ui/STATE.md`; note: [[UI UX Level-Up]].
