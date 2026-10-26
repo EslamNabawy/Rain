@@ -32,6 +32,12 @@ enum RainSoundEffect {
   unmute,
   deafen,
   undeafen,
+  cameraOn,
+  cameraOff,
+  routeChange,
+  requestInbound,
+  requestAccepted,
+  transferComplete,
 }
 
 typedef RainSoundPlayerFactory = RainSoundPlayer Function(String playerId);
@@ -67,6 +73,12 @@ const Map<RainSoundEffect, String> rainSoundEffectAssetPaths =
       RainSoundEffect.unmute: 'sounds/unmute.wav',
       RainSoundEffect.deafen: 'sounds/deafen.wav',
       RainSoundEffect.undeafen: 'sounds/undeafen.wav',
+      RainSoundEffect.cameraOn: 'sounds/camera_on.wav',
+      RainSoundEffect.cameraOff: 'sounds/camera_off.wav',
+      RainSoundEffect.routeChange: 'sounds/route_change.wav',
+      RainSoundEffect.requestInbound: 'sounds/request_inbound.wav',
+      RainSoundEffect.requestAccepted: 'sounds/request_accepted.wav',
+      RainSoundEffect.transferComplete: 'sounds/transfer_complete.wav',
     };
 
 const Map<RainSoundEffect, String> rainSoundEffectLoopAssetPaths =
@@ -500,6 +512,12 @@ double _volumeFor(
     RainSoundEffect.unmute => 0.28,
     RainSoundEffect.deafen => 0.26,
     RainSoundEffect.undeafen => 0.28,
+    RainSoundEffect.cameraOn => 0.28,
+    RainSoundEffect.cameraOff => 0.26,
+    RainSoundEffect.routeChange => 0.24,
+    RainSoundEffect.requestInbound => 0.34,
+    RainSoundEffect.requestAccepted => 0.32,
+    RainSoundEffect.transferComplete => 0.30,
   };
   if (!voiceCallActive ||
       (!_isCriticalCallEffect(effect) && !allowDuringCall)) {
@@ -523,6 +541,12 @@ Duration _throttleFor(RainSoundEffect effect) {
     RainSoundEffect.unmute => const Duration(milliseconds: 140),
     RainSoundEffect.deafen => const Duration(milliseconds: 140),
     RainSoundEffect.undeafen => const Duration(milliseconds: 140),
+    RainSoundEffect.cameraOn => const Duration(milliseconds: 140),
+    RainSoundEffect.cameraOff => const Duration(milliseconds: 140),
+    RainSoundEffect.routeChange => const Duration(milliseconds: 140),
+    RainSoundEffect.requestInbound => const Duration(milliseconds: 520),
+    RainSoundEffect.requestAccepted => const Duration(milliseconds: 260),
+    RainSoundEffect.transferComplete => const Duration(milliseconds: 260),
   };
 }
 
@@ -548,10 +572,16 @@ bool _isCriticalCallEffect(RainSoundEffect effect) {
     RainSoundEffect.unmute ||
     RainSoundEffect.deafen ||
     RainSoundEffect.undeafen ||
+    RainSoundEffect.cameraOn ||
+    RainSoundEffect.cameraOff ||
+    RainSoundEffect.routeChange ||
     RainSoundEffect.error => true,
     RainSoundEffect.send ||
     RainSoundEffect.receive ||
-    RainSoundEffect.action => false,
+    RainSoundEffect.action ||
+    RainSoundEffect.requestInbound ||
+    RainSoundEffect.requestAccepted ||
+    RainSoundEffect.transferComplete => false,
   };
 }
 
@@ -565,10 +595,16 @@ bool _isCallSoundEffect(RainSoundEffect effect) {
     RainSoundEffect.mute ||
     RainSoundEffect.unmute ||
     RainSoundEffect.deafen ||
-    RainSoundEffect.undeafen => true,
+    RainSoundEffect.undeafen ||
+    RainSoundEffect.cameraOn ||
+    RainSoundEffect.cameraOff ||
+    RainSoundEffect.routeChange => true,
     RainSoundEffect.send ||
     RainSoundEffect.receive ||
     RainSoundEffect.action ||
-    RainSoundEffect.error => false,
+    RainSoundEffect.error ||
+    RainSoundEffect.requestInbound ||
+    RainSoundEffect.requestAccepted ||
+    RainSoundEffect.transferComplete => false,
   };
 }

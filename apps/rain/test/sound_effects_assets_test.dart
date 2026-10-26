@@ -29,6 +29,16 @@ void main() {
     'sounds/send.wav': _SoundExpectation(minMs: 140, maxMs: 175),
     'sounds/undeafen.wav': _SoundExpectation(minMs: 120, maxMs: 140),
     'sounds/unmute.wav': _SoundExpectation(minMs: 110, maxMs: 130),
+    'sounds/camera_on.wav': _SoundExpectation(minMs: 115, maxMs: 145),
+    'sounds/camera_off.wav': _SoundExpectation(minMs: 115, maxMs: 145),
+    'sounds/route_change.wav': _SoundExpectation(minMs: 75, maxMs: 105),
+    'sounds/request_inbound.wav': _SoundExpectation(
+      minMs: 405,
+      maxMs: 435,
+      maxBytes: 40000,
+    ),
+    'sounds/request_accepted.wav': _SoundExpectation(minMs: 245, maxMs: 260),
+    'sounds/transfer_complete.wav': _SoundExpectation(minMs: 245, maxMs: 275),
   };
 
   const loopSounds = <String, _SoundExpectation>{
@@ -94,7 +104,9 @@ void main() {
       expect(info.peak, greaterThan(entry.value.minPeak));
       expect(info.peak, lessThan(30000));
       expect(info.rms, greaterThan(entry.value.minRms));
-      if (!entry.key.contains('/call_')) {
+      // Alert cues (calls, inbound requests) may run longer than UI feedback.
+      if (!entry.key.contains('/call_') &&
+          !entry.key.endsWith('/request_inbound.wav')) {
         expect(info.durationMs, lessThanOrEqualTo(260));
       }
     });
@@ -130,7 +142,9 @@ void main() {
           total + _soundFile('assets/$assetPath').lengthSync(),
     );
 
-    expect(totalBytes, lessThanOrEqualTo(500000));
+    // 500 KB for the original 15 files plus ~115 KB for the six distinct
+    // camera, route, request and transfer cues (UI/UX program T3.2/T3.3).
+    expect(totalBytes, lessThanOrEqualTo(620000));
   });
 }
 

@@ -33,6 +33,8 @@ enum RainSoundEventKind {
   connectionRequestOutboundAccepted,
   connectionRequestOutboundRejected,
   connectionRequestOutboundExpired,
+  fileTransferCompleted,
+  fileTransferFailed,
 }
 
 final class RainSoundEvent {
@@ -42,6 +44,7 @@ final class RainSoundEvent {
     String? peerId,
     String? callId,
     String? connectionRequestId,
+    String? transferId,
     this.sessionEpoch,
     this.mediaMode = CallMediaMode.audio,
     String? errorKey,
@@ -50,6 +53,7 @@ final class RainSoundEvent {
        peerId = _normalizeOptionalToken(peerId),
        callId = _normalizeOptionalToken(callId),
        connectionRequestId = _normalizeOptionalToken(connectionRequestId),
+       transferId = _normalizeOptionalToken(transferId),
        errorKey = _normalizeErrorKey(errorKey);
 
   factory RainSoundEvent.chatSend({
@@ -347,6 +351,46 @@ final class RainSoundEvent {
     );
   }
 
+  factory RainSoundEvent.fileTransferCompleted({
+    required String transferId,
+    String? peerId,
+    DateTime? occurredAt,
+  }) {
+    return RainSoundEvent._fileTransfer(
+      kind: RainSoundEventKind.fileTransferCompleted,
+      transferId: transferId,
+      peerId: peerId,
+      occurredAt: occurredAt,
+    );
+  }
+
+  factory RainSoundEvent.fileTransferFailed({
+    required String transferId,
+    String? peerId,
+    DateTime? occurredAt,
+  }) {
+    return RainSoundEvent._fileTransfer(
+      kind: RainSoundEventKind.fileTransferFailed,
+      transferId: transferId,
+      peerId: peerId,
+      occurredAt: occurredAt,
+    );
+  }
+
+  factory RainSoundEvent._fileTransfer({
+    required RainSoundEventKind kind,
+    required String transferId,
+    String? peerId,
+    DateTime? occurredAt,
+  }) {
+    return RainSoundEvent._(
+      kind: kind,
+      transferId: _requireTransferId(transferId),
+      peerId: peerId,
+      occurredAt: occurredAt,
+    );
+  }
+
   factory RainSoundEvent._callLifecycle({
     required RainSoundEventKind kind,
     required String callId,
@@ -404,6 +448,7 @@ final class RainSoundEvent {
   final String? peerId;
   final String? callId;
   final String? connectionRequestId;
+  final String? transferId;
   final int? sessionEpoch;
   final CallMediaMode mediaMode;
   final String? errorKey;
@@ -430,7 +475,9 @@ final class RainSoundEvent {
       RainSoundEventKind.connectionRequestInbound ||
       RainSoundEventKind.connectionRequestOutboundAccepted ||
       RainSoundEventKind.connectionRequestOutboundRejected ||
-      RainSoundEventKind.connectionRequestOutboundExpired => false,
+      RainSoundEventKind.connectionRequestOutboundExpired ||
+      RainSoundEventKind.fileTransferCompleted ||
+      RainSoundEventKind.fileTransferFailed => false,
     };
   }
 
@@ -455,7 +502,9 @@ final class RainSoundEvent {
       RainSoundEventKind.connectionRequestInbound ||
       RainSoundEventKind.connectionRequestOutboundAccepted ||
       RainSoundEventKind.connectionRequestOutboundRejected ||
-      RainSoundEventKind.connectionRequestOutboundExpired => false,
+      RainSoundEventKind.connectionRequestOutboundExpired ||
+      RainSoundEventKind.fileTransferCompleted ||
+      RainSoundEventKind.fileTransferFailed => false,
     };
   }
 
@@ -480,9 +529,15 @@ final class RainSoundEvent {
       RainSoundEventKind.callControlUndeafen ||
       RainSoundEventKind.callControlCameraMute ||
       RainSoundEventKind.callControlCameraUnmute ||
-      RainSoundEventKind.callRouteChanged => false,
+      RainSoundEventKind.callRouteChanged ||
+      RainSoundEventKind.fileTransferCompleted ||
+      RainSoundEventKind.fileTransferFailed => false,
     };
   }
+
+  bool get isFileTransferEvent =>
+      kind == RainSoundEventKind.fileTransferCompleted ||
+      kind == RainSoundEventKind.fileTransferFailed;
 }
 
 String? _normalizeOptionalToken(String? value) {
@@ -520,6 +575,18 @@ String _requireConnectionRequestId(String value) {
       value,
       'requestId',
       'Connection request sound event requires requestId.',
+    );
+  }
+  return normalized;
+}
+
+String _requireTransferId(String value) {
+  final normalized = _normalizeOptionalToken(value);
+  if (normalized == null) {
+    throw ArgumentError.value(
+      value,
+      'transferId',
+      'File transfer sound event requires transferId.',
     );
   }
   return normalized;

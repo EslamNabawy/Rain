@@ -38,6 +38,8 @@ const int _maxConnectionRequestSoundsPerRollingWindow = 3;
 const Duration _connectionRequestTerminalWindow = Duration(milliseconds: 500);
 const Duration _callLifecycleDedupeWindow = Duration(minutes: 10);
 const Duration _callFailureWindow = Duration(milliseconds: 1200);
+const Duration _fileTransferDedupeWindow = Duration(minutes: 10);
+const Duration _fileTransferWindow = Duration(milliseconds: 1500);
 const double _sendBurstTrailingVolumeScale = 0.62;
 const String _incomingCallLoopId = 'rain-call-incoming';
 const String _outgoingCallLoopId = 'rain-call-outgoing';
@@ -67,6 +69,8 @@ final class SoundEventRouter {
   final List<DateTime> _recentWarningPlays = <DateTime>[];
   final List<DateTime> _recentConnectionRequestPlays = <DateTime>[];
   final Map<String, DateTime> _playedCallLifecycleByKey = <String, DateTime>{};
+  final Map<String, DateTime> _playedTransferById = <String, DateTime>{};
+  DateTime? _lastTransferSoundAt;
   Timer? _pendingSendBurstTick;
   DateTime? _lastSendBurstSuppressedAt;
   DateTime? _lastDispatchedAt;
@@ -206,6 +210,11 @@ final class SoundEventRouter {
             event.kind == RainSoundEventKind.uiAction)) {
       return 'activeCallReduction';
     }
+    if (event.isFileTransferEvent &&
+        (call.isRinging ||
+            (settings.reduceSoundsDuringCall && call.isActive))) {
+      return 'callSuppressesFileTransfer';
+    }
     return null;
   }
 
@@ -265,7 +274,28 @@ final class SoundEventRouter {
         _callFailureWindow,
         'callFailureWindow',
       ),
+      RainSoundEventKind.fileTransferCompleted ||
+      RainSoundEventKind.fileTransferFailed => _fileTransferSuppressionReason(
+        event,
+        now,
+      ),
     };
+  }
+
+  String? _fileTransferSuppressionReason(RainSoundEvent event, DateTime now) {
+    final transferId = event.transferId;
+    if (transferId == null) {
+      return 'missingTransferId';
+    }
+    _pruneMapOlderThan(_playedTransferById, now, _fileTransferDedupeWindow);
+    if (_playedTransferById.containsKey(transferId)) {
+      return 'duplicateFileTransfer';
+    }
+    final last = _lastTransferSoundAt;
+    if (last != null && now.difference(last) < _fileTransferWindow) {
+      return 'fileTransferWindow';
+    }
+    return null;
   }
 
   String? _kindCooldownSuppressionReason(
@@ -381,6 +411,14 @@ final class SoundEventRouter {
         break;
       case RainSoundEventKind.connectionRequestInbound:
         _recentConnectionRequestPlays.add(now);
+        break;
+      case RainSoundEventKind.fileTransferCompleted:
+      case RainSoundEventKind.fileTransferFailed:
+        final transferId = event.transferId;
+        if (transferId != null) {
+          _playedTransferById[transferId] = now;
+        }
+        _lastTransferSoundAt = now;
         break;
       case RainSoundEventKind.chatSend:
       case RainSoundEventKind.uiAction:
@@ -609,7 +647,9 @@ bool _isTerminalCallLifecycle(RainSoundEventKind kind) {
     RainSoundEventKind.connectionRequestInbound ||
     RainSoundEventKind.connectionRequestOutboundAccepted ||
     RainSoundEventKind.connectionRequestOutboundRejected ||
-    RainSoundEventKind.connectionRequestOutboundExpired => false,
+    RainSoundEventKind.connectionRequestOutboundExpired ||
+    RainSoundEventKind.fileTransferCompleted ||
+    RainSoundEventKind.fileTransferFailed => false,
   };
 }
 
@@ -634,7 +674,9 @@ bool _shouldDedupeCallLifecycle(RainSoundEventKind kind) {
     RainSoundEventKind.connectionRequestInbound ||
     RainSoundEventKind.connectionRequestOutboundAccepted ||
     RainSoundEventKind.connectionRequestOutboundRejected ||
-    RainSoundEventKind.connectionRequestOutboundExpired => false,
+    RainSoundEventKind.connectionRequestOutboundExpired ||
+    RainSoundEventKind.fileTransferCompleted ||
+    RainSoundEventKind.fileTransferFailed => false,
   };
 }
 
@@ -653,15 +695,19 @@ RainSoundEffect _effectFor(RainSoundEvent event) {
     RainSoundEventKind.callControlUnmute => RainSoundEffect.unmute,
     RainSoundEventKind.callControlDeafen => RainSoundEffect.deafen,
     RainSoundEventKind.callControlUndeafen => RainSoundEffect.undeafen,
-    RainSoundEventKind.callControlCameraMute ||
-    RainSoundEventKind.callControlCameraUnmute ||
-    RainSoundEventKind.callRouteChanged => RainSoundEffect.action,
-    RainSoundEventKind.connectionRequestInbound => RainSoundEffect.receive,
+    RainSoundEventKind.callControlCameraMute => RainSoundEffect.cameraOff,
+    RainSoundEventKind.callControlCameraUnmute => RainSoundEffect.cameraOn,
+    RainSoundEventKind.callRouteChanged => RainSoundEffect.routeChange,
+    RainSoundEventKind.connectionRequestInbound =>
+      RainSoundEffect.requestInbound,
     RainSoundEventKind.connectionRequestOutboundAccepted =>
-      RainSoundEffect.action,
+      RainSoundEffect.requestAccepted,
     RainSoundEventKind.connectionRequestOutboundRejected ||
     RainSoundEventKind.connectionRequestOutboundExpired =>
       RainSoundEffect.error,
+    RainSoundEventKind.fileTransferCompleted =>
+      RainSoundEffect.transferComplete,
+    RainSoundEventKind.fileTransferFailed => RainSoundEffect.error,
   };
 }
 

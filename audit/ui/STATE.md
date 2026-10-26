@@ -36,6 +36,7 @@
 - U-D2 Direction: keep Rain's existing dark "signal mist" identity (cyan/mint on deep ink, Space Grotesk + Inter). Level up consistency, motion, feedback and sound; no rebrand, no new palette.
 - U-D3 Motion budget: UI transitions 110-240 ms, ease-out in and ease-in out; nothing loops forever except the splash mark, skeleton pulse and call-connecting pulse, all off under reduced motion or low-power tier.
 - U-D4 Sound direction: stay in the existing "water droplet" family from the generator; every distinct meaning gets a distinct cue; nothing louder than the current incoming ringtone.
+- U-D6 (T3.3) The existing asset contract caps non-call one-shots at 260 ms and all sounds at 500 KB. request_accepted.wav was shortened to 260 ms. request_inbound.wav stays 420 ms as an alert cue, exempt like call_* cues. The total budget is 620 KB (+~115 KB for the six new cues). route_change targetPeak went 8000 to 8200 to clear the 8000 peak floor.
 - U-D5 chat_panel.dart and home_screen.dart get in-place edits only; their split stays with the hardening program.
 
 ## Notes

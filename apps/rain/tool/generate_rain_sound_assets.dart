@@ -233,7 +233,7 @@ final List<_SoundSpec> _assetSpecs = <_SoundSpec>[
   _SoundSpec(
     name: 'route_change.wav',
     durationMs: 90,
-    targetPeak: 8000,
+    targetPeak: 8200,
     droplets: const <_Droplet>[
       _Droplet(startMs: 0, lengthMs: 70, frequency: 1040, amplitude: 0.26),
     ],
@@ -251,12 +251,12 @@ final List<_SoundSpec> _assetSpecs = <_SoundSpec>[
   ),
   _SoundSpec(
     name: 'request_accepted.wav',
-    durationMs: 300,
+    durationMs: 260,
     targetPeak: 9000,
     droplets: const <_Droplet>[
-      _Droplet(startMs: 0, lengthMs: 110, frequency: 660, amplitude: 0.26),
-      _Droplet(startMs: 80, lengthMs: 110, frequency: 880, amplitude: 0.22),
-      _Droplet(startMs: 160, lengthMs: 130, frequency: 1100, amplitude: 0.18),
+      _Droplet(startMs: 0, lengthMs: 100, frequency: 660, amplitude: 0.26),
+      _Droplet(startMs: 70, lengthMs: 100, frequency: 880, amplitude: 0.22),
+      _Droplet(startMs: 140, lengthMs: 110, frequency: 1100, amplitude: 0.18),
     ],
     shimmer: const _Shimmer(amplitude: 0.0022, frequency: 2200),
   ),
