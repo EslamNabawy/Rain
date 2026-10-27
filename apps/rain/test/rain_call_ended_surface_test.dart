@@ -7,7 +7,7 @@
 /// **Depends on:** flutter_test, rain voice_call_state, rain_call_ended_surface
 library;
 
-import 'package:flutter/material.dart';
+import 'package:material_ui/material_ui.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:rain/application/runtime/voice_call_state.dart';
 import 'package:rain/presentation/widgets/calls/rain_call_ended_surface.dart';

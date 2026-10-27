@@ -8,7 +8,7 @@
 /// **Depends on:** protocol_brain, presentation/theme, connection_request_status_chip
 library;
 
-import 'package:flutter/material.dart';
+import 'package:material_ui/material_ui.dart';
 import 'package:protocol_brain/protocol_brain.dart';
 
 import 'package:rain/presentation/theme/rain_theme.dart';

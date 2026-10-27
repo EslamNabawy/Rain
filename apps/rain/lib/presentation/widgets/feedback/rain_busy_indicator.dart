@@ -1,4 +1,4 @@
-import 'package:flutter/material.dart';
+import 'package:material_ui/material_ui.dart';
 import 'package:rain/presentation/performance/rain_motion_policy.dart';
 
 /// Small progress ring used for inline busy states (buttons, list tiles,

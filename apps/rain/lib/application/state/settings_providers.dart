@@ -10,7 +10,7 @@
 /// **Depends on:** app settings store, core providers
 library;
 
-import 'package:flutter/material.dart';
+import 'package:material_ui/material_ui.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:protocol_brain/protocol_brain.dart';
 

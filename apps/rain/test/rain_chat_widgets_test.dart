@@ -7,7 +7,7 @@
 /// **Depends on:** flutter_test, flutter_svg, flutter_webrtc, rain rain_chat_widgets, rain_core
 library;
 
-import 'package:flutter/material.dart';
+import 'package:material_ui/material_ui.dart';
 import 'package:flutter_svg/flutter_svg.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:rain/application/runtime/media_device_settings.dart';
