@@ -290,3 +290,4 @@ After CI #14 is green and merged: tackle emulator-gated deferred items with a Fi
 - Main CI run `40594609598` passed the workspace gates but failed Android Build at `:firebase_auth:compileDebugKotlin`: Firebase Auth metadata `2.4.0` was compiled against a newer Kotlin compiler than the Android Kotlin Gradle plugin `2.2.20`.
 - Branch `fix/android-kotlin-2.4` updates `apps/rain/android/settings.gradle.kts` to Kotlin Gradle plugin `2.4.21`.
 - Branch cleanup and final APK verification remain blocked until the repair branch is merged and its complete CI plus Android artifact workflow pass.
+- Main CI run `40597466487` on merge `7a4e9af` passed the required gates and Android Build. Artifact run `40598575213` reached Hard Release Gate but exposed a stale release contract assertion for Kotlin `2.2.20`; the assertion is being updated to `2.4.21` before retrying artifact publication.
