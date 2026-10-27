@@ -813,7 +813,7 @@ void main() {
   test('Rain core uses bundled SQLite native library packaging', () {
     final pubspec = _repoFile('packages/rain_core/pubspec.yaml');
 
-    expect(pubspec, contains('drift_flutter: ^0.3.0'));
+    expect(pubspec, contains('drift_flutter: ^0.3.1'));
     expect(pubspec, contains('sqlite3: ^3.3.1'));
     expect(pubspec, isNot(contains('sqlite3_flutter_libs:')));
   });
