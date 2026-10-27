@@ -563,3 +563,5 @@ Highest-risk items:
 - Firebase rules expansion.
 - Adapter/emulator contracts.
 - Call surface unification.
+
+Dependency migration progress 2026-10-28: the Flutter 3.47.8 toolchain gate is green on PR #53, and the coordinated Melos 8 / Freezed 4 / build_runner 2.17 / drift_dev 2.35 migration is locally validated on branch `deps/melos-8`. The dependency PR remains subject to GitHub CI review before merge.
