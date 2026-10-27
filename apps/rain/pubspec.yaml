@@ -23,7 +23,7 @@ dependencies:
   flutter_riverpod: ^3.4.3
   flutter_webrtc: ^1.6.2+hotfix.4
   google_fonts: ^8.1.0
-  open_filex: ^4.7.0
+  open_filex: ^5.0.0
   package_info_plus: ^10.2.2
   path_provider: ^2.1.6
   peer_core:
