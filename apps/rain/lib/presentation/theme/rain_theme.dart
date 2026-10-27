@@ -151,19 +151,13 @@ class RainTheme {
           shape: RoundedRectangleBorder(
             borderRadius: BorderRadius.circular(18),
           ),
-          textStyle: const TextStyle(
-            fontFamily: 'Space Grotesk',
-            fontWeight: FontWeight.w600,
-          ),
+          textStyle: _grotesk(FontWeight.w600),
         ),
       ),
       textButtonTheme: TextButtonThemeData(
         style: TextButton.styleFrom(
           foregroundColor: RainColors.primary,
-          textStyle: const TextStyle(
-            fontFamily: 'Space Grotesk',
-            fontWeight: FontWeight.w500,
-          ),
+          textStyle: _grotesk(FontWeight.w500),
         ),
       ),
       outlinedButtonTheme: OutlinedButtonThemeData(
@@ -174,10 +168,7 @@ class RainTheme {
           shape: RoundedRectangleBorder(
             borderRadius: BorderRadius.circular(18),
           ),
-          textStyle: const TextStyle(
-            fontFamily: 'Space Grotesk',
-            fontWeight: FontWeight.w500,
-          ),
+          textStyle: _grotesk(FontWeight.w500),
         ),
       ),
       popupMenuTheme: PopupMenuThemeData(
@@ -199,7 +190,7 @@ class RainTheme {
           borderRadius: BorderRadius.circular(18),
           borderSide: const BorderSide(color: RainColors.primary, width: 1.4),
         ),
-        labelStyle: const TextStyle(fontFamily: 'Space Grotesk'),
+        labelStyle: _grotesk(FontWeight.w500),
         hintStyle: const TextStyle(color: Color(0xFF7FA2AD)),
       ),
       snackBarTheme: SnackBarThemeData(
@@ -303,19 +294,13 @@ class RainTheme {
           shape: RoundedRectangleBorder(
             borderRadius: BorderRadius.circular(16),
           ),
-          textStyle: const TextStyle(
-            fontFamily: 'Space Grotesk',
-            fontWeight: FontWeight.w600,
-          ),
+          textStyle: _grotesk(FontWeight.w600),
         ),
       ),
       textButtonTheme: TextButtonThemeData(
         style: TextButton.styleFrom(
           foregroundColor: primary,
-          textStyle: const TextStyle(
-            fontFamily: 'Space Grotesk',
-            fontWeight: FontWeight.w500,
-          ),
+          textStyle: _grotesk(FontWeight.w500),
         ),
       ),
       outlinedButtonTheme: OutlinedButtonThemeData(
@@ -327,10 +312,7 @@ class RainTheme {
           shape: RoundedRectangleBorder(
             borderRadius: BorderRadius.circular(16),
           ),
-          textStyle: const TextStyle(
-            fontFamily: 'Space Grotesk',
-            fontWeight: FontWeight.w500,
-          ),
+          textStyle: _grotesk(FontWeight.w500),
         ),
       ),
       popupMenuTheme: PopupMenuThemeData(
@@ -356,10 +338,7 @@ class RainTheme {
           borderRadius: BorderRadius.circular(18),
           borderSide: const BorderSide(color: primary, width: 1.5),
         ),
-        labelStyle: const TextStyle(
-          fontFamily: 'Space Grotesk',
-          color: RainColors.inkMutedLight,
-        ),
+        labelStyle: _grotesk(FontWeight.w500, color: RainColors.inkMutedLight),
         hintStyle: const TextStyle(color: RainColors.inkMutedLight),
       ),
       iconButtonTheme: IconButtonThemeData(
@@ -374,11 +353,7 @@ class RainTheme {
         indicatorColor: primaryContainer,
         surfaceTintColor: Colors.transparent,
         labelTextStyle: WidgetStateProperty.all(
-          const TextStyle(
-            fontFamily: 'Space Grotesk',
-            fontWeight: FontWeight.w700,
-            color: RainColors.inkLight,
-          ),
+          _grotesk(FontWeight.w700, color: RainColors.inkLight),
         ),
         iconTheme: WidgetStateProperty.resolveWith((Set<WidgetState> states) {
           return IconThemeData(
@@ -395,14 +370,9 @@ class RainTheme {
         unselectedIconTheme: const IconThemeData(
           color: RainColors.inkMutedLight,
         ),
-        selectedLabelTextStyle: const TextStyle(
-          fontFamily: 'Space Grotesk',
-          fontWeight: FontWeight.w700,
-          color: primary,
-        ),
-        unselectedLabelTextStyle: const TextStyle(
-          fontFamily: 'Space Grotesk',
-          fontWeight: FontWeight.w600,
+        selectedLabelTextStyle: _grotesk(FontWeight.w700, color: primary),
+        unselectedLabelTextStyle: _grotesk(
+          FontWeight.w600,
           color: RainColors.inkMutedLight,
         ),
       ),
@@ -452,6 +422,14 @@ class RainTheme {
         style: withOverlay(theme.textButtonTheme.style, scheme.primary),
       ),
     );
+  }
+
+  /// Space Grotesk through google_fonts, which registers each bundled weight as
+  /// `SpaceGrotesk_<weight>`; a literal 'Space Grotesk' family never resolves.
+  /// Only w500, w600 and w700 are bundled under assets/google_fonts.
+  static TextStyle _grotesk(FontWeight weight, {Color? color}) {
+    GoogleFonts.config.allowRuntimeFetching = false;
+    return GoogleFonts.spaceGrotesk(fontWeight: weight, color: color);
   }
 
   static TextTheme _textTheme(TextTheme base) {

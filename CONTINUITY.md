@@ -4,6 +4,12 @@ This file must survive across future AI sessions.
 
 Every future session must read this file before starting non-trivial work.
 
+## Follow-ups 2026-10-27
+
+- PR #42 merged `dev` into `main` with a merge commit (`dbb2e38`); `main` now carries PR #40 (UI/UX level-up) and PR #41 (CI release pipeline).
+- Dependabot PR #39 fails every CI job at `pub get`: freezed 4.0.3 needs Dart SDK >=3.13.0, newer than CI's Flutter 3.44.0. It also carries the go_router 18, google_fonts 9, melos 8 and open_filex 5 majors. Recommendation: close it, apply minor/patch bumps in a separate PR, then migrate majors one at a time.
+- Branch `fix/button-font-family`: Space Grotesk theme styles (buttons, input labels, navigation labels) now use `GoogleFonts.spaceGrotesk` via `RainTheme._grotesk` instead of the unregistered literal `'Space Grotesk'`. Bundled weights are 500/600/700 only. Theme rebuild equality still holds (TextStyle is value-equal).
+
 ## CI Release Pipeline 2026-10-27
 
 - Branch `ci/release-pipeline` from `dev` @ a12afa3. `ci.yml` is the single test pipeline: push triggers are limited to `dev`, `main` and `v*` tags (pull requests cover feature branches; this ended the double runs). Demo-signed APKs, the Windows folder and a new `Rain-Demo-SHA256SUMS` artifact now also build on push to `main`. A new tag-only `Publish Tag Release` job (the only `contents: write` job) verifies `sha256sum -c` and creates the GitHub Release. Production signing stays in `validated-release.yml` (Remote Config evidence gate).
