@@ -32,6 +32,13 @@ Every future session must read this file before starting non-trivial work.
 - build_runner 2.17.1 and drift_dev 2.35.2 were dropped from this pass: they need build 5 / analyzer >=13, which freezed 3 forbids.
 - `pubspec.lock` was resolved with local Flutter 3.47.8, then the SDK-pinned `matcher`, `meta`, `test_api` and `vector_math` blocks were restored to the 3.44.0 values. CI's lock-drift check is the authority on whether this matches 3.44.0 exactly.
 
+## Dependency Migration B 2026-10-28
+
+- Branch `deps/melos-8` coordinates Melos 8.9.0, Freezed 4.0.3, build_runner 2.17.1, and drift_dev 2.35.2 on top of `ci/flutter-3.47.8`; obsolete Dependabot ignores for build_runner/drift_dev were removed.
+- Flutter 3.47.8 regenerated the root lockfile and all four package `flutter pub get` commands succeeded. Melos 8's existing `exec` scripts remain compatible.
+- The stale `Melos 7` label in `packages/protocol_brain/test/workspace_contract_test.dart` was updated to Melos 8; the contract test passes.
+- Validation on 2026-10-28: all four package analyses passed; peer_core, protocol_brain, rain_core, and Rain app tests passed. Rain app result: 890 passed, 30 skipped, exit code 0. Vault validation is the remaining documentation gate before opening the PR.
+
 ## UI/UX Level-Up 2026-10-27
 
 - Branch `ui/level-up` (worktree `D:\Rain-uiux`), synced with `dev` at `0772b2a`. Nothing merged into `main` or `dev`. Program: `audit/prompts/rain-uiux-orchestrator.xml`; state and evidence: `audit/ui/STATE.md`; note: [[UI UX Level-Up]].

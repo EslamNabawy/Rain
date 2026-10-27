@@ -1,6 +1,6 @@
 # Recommended Next Actions
 
-Last updated: 2026-10-10
+Last updated: 2026-10-28
 
 ## Purpose
 
@@ -9,6 +9,8 @@ This note continuously converts current project state, risks, debt, lessons, and
 Related: [[Project Metrics]], [[Improvement Backlog]], [[Optimization Opportunities]], [[Critical Path]], [[Recommended Next Actions]], [[Project Memory]].
 
 ## Current Recommendation Summary
+
+Dependency Migration B 2026-10-28: `deps/melos-8` combines the analyzer-coupled Freezed 4, build_runner 2.17, drift_dev 2.35, and Melos 8 upgrades after the CI Flutter 3.47.8 migration. The root lockfile resolves to Melos 8.9.0, Freezed 4.0.3, build_runner 2.17.1, and drift_dev 2.35.2. All four analyses and test suites passed locally; Rain app evidence is 890 passed, 30 skipped, exit code 0. Next action: review/CI of the dependency PR, followed by the isolated google_fonts 9 migration.
 
 Dependency upgrade progress 2026-10-10: coordinated upgrade commit `0dc495d` closed all open Dependabot PRs (#24-#35) and fixed every Dependabot alert (grpc-js override + Actions bumps + firebase-admin/functions + file_picker 13 with full API migration). Melos analyze and melos test are green; full GitHub CI is green on main/dev after the mojibake fix (`5d16c78`). Dependabot groups (`d7710f7`) produced #36 (actions majors, merged `c6dc2c9`) and #37 (pub mega-bump with freezed/go_router/google_fonts/melos majors, closed — needs separate migrations). Validated Release Apps demo run failed Windows verify on removed `win32_windows_x64.dll` (win32 6.3.0 dropped native hook); verify lists cleaned in `8a52489` — re-dispatch release after CI green. Remaining follow-ups: (1) enable private vulnerability reporting in GitHub Settings (UI only); (2) rotate GIT-003 leaked Supabase/TURN/Firebase secrets; (3) Android smoke for file_picker 13 — blocked on this machine (no Android SDK/adb); (4) plan freezed 4 / go_router 18 / google_fonts 9 / melos 8 migrations as isolated PRs after a minor-only pub bump pass.
 
