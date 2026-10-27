@@ -284,3 +284,9 @@ Second-pass audit implementation executed across Phases 1-4 (commit `5c02b2b` + 
 
 ### Next Recommended Action
 After CI #14 is green and merged: tackle emulator-gated deferred items with a Firebase emulator runner (TASK-017 fuzz, DEBT-016, TASK-001 adapter wiring, TASK-002 open path). Then revisit a11y pass + vault closure.
+
+## Android artifact CI repair 2026-10-28
+
+- Main CI run `40594609598` passed the workspace gates but failed Android Build at `:firebase_auth:compileDebugKotlin`: Firebase Auth metadata `2.4.0` was compiled against a newer Kotlin compiler than the Android Kotlin Gradle plugin `2.2.20`.
+- Branch `fix/android-kotlin-2.4` updates `apps/rain/android/settings.gradle.kts` to Kotlin Gradle plugin `2.4.21`.
+- Branch cleanup and final APK verification remain blocked until the repair branch is merged and its complete CI plus Android artifact workflow pass.
