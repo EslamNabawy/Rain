@@ -1,4 +1,4 @@
-﻿# Rain Continuity
+# Rain Continuity
 
 This file must survive across future AI sessions.
 
@@ -22,7 +22,8 @@ Every future session must read this file before starting non-trivial work.
 - Merged into `dev`: #43 font fix (`736c9a6`), #45 pub minor bumps (`6bd89b4`), #47 publish-release fix. Promoted to `main` by #46 (`dfd936a`) and #48 (`eb978f8`).
 - Tag `v0.7.3` (on `dfd936a`) built every artifact but `Publish Tag Release` was skipped: its `if:` lacked a status function, so the implicit `success()` failed on the skipped dependency-review job. #47 added `always()` and a contract-test pin. `v0.7.3` stays as a tag with no Release.
 - Tag `v0.7.4` on `eb978f8`: run https://github.com/EslamNabawy/Rain/actions/runs/40496389327 passed and published https://github.com/EslamNabawy/Rain/releases/tag/v0.7.4 with `Rain-Demo-Android-ARM-v7a-Build.apk` (33,374,006 B), `Rain-Demo-Android-ARM-v8-v9-Build.apk` (41,063,886 B), `Rain-Demo-Windows-x64-Build.zip` (29,218,181 B), `SHA256SUMS`. Assets downloaded; `sha256sum -c` passed 77/77. Demo-signed only; production signing remains `validated-release.yml`.
-- Dependabot #44 (new pub-coordinated group with majors) closed like #39. Dependabot will keep regrouping majors until an ignore rule for semver-major pub updates is added to `.github/dependabot.yml` (not done).
+- Dependabot #44 (new pub-coordinated group with majors) closed like #39. Branch `chore/analyzer-excludes` replaces the group with `pub-minor` (minor/patch only); each major now arrives as its own PR. build_runner >=2.17 and drift_dev >=2.35 are ignored until the freezed 4 migration.
+- The recurring local edits to the four `analysis_options.yaml` files came from local Flutter 3.47.8: `flutter pub get` adds `analyzer: exclude:` blocks (build/** plus platform folders in apps/rain). The same branch commits that exact output, so later runs change nothing; Flutter 3.44 in CI ignores it.
 - Remote branches: only `main` and `dev`. Local worktree `D:\Rain\.claude\worktrees\hopeful-kepler-83abd4` (`ci/release-pipeline`) left in place: it belongs to another session.
 
 ## Pub Minor Bumps 2026-10-27
