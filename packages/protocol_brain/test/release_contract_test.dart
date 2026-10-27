@@ -715,6 +715,14 @@ void main() {
     expect(workflow, contains('sha256sum -c SHA256SUMS'));
     expect(workflow, contains("startsWith(github.ref, 'refs/tags/v')"));
     expect(workflow, contains('needs.publish-release.result'));
+    // Without always(), a skipped upstream job silently skips the release.
+    expect(
+      workflow,
+      contains(
+        "if: \${{ always() && startsWith(github.ref, 'refs/tags/v') && "
+        "needs.release-artifacts.result == 'success' }}",
+      ),
+    );
     // Only the publish job may write; the workflow default stays read-only.
     expect(workflow, contains('permissions:\n  contents: read'));
     expect(

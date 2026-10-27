@@ -742,7 +742,9 @@ jobs:
     name: Publish Tag Release
     runs-on: ubuntu-latest
     timeout-minutes: 15
-    if: ${{ startsWith(github.ref, 'refs/tags/v') && needs.release-artifacts.result == 'success' }}
+    # always(): skipped jobs upstream (e.g. dependency-review on tags) would
+    # otherwise skip this job through the implicit success() check.
+    if: ${{ always() && startsWith(github.ref, 'refs/tags/v') && needs.release-artifacts.result == 'success' }}
     needs:
       - release-artifacts
     # Only this job may write: it creates the GitHub Release for the tag.
