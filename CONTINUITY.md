@@ -17,6 +17,14 @@ Every future session must read this file before starting non-trivial work.
 - Security review (security-reviewer agent): no CRITICAL/HIGH. Fixed in 7d551fd: publish-release refuses tags not on main (compare API), `download-artifact` pinned to 9000827 (v8.0.2), required-checks echoes env refs. Open owner decision: a tag ruleset restricting `v*` creation to maintainers.
 - Validation 2026-10-27: manual `CI/CD` run https://github.com/EslamNabawy/Rain/actions/runs/40411155577 on bfd24f8 passed every job (Test Gates, Build EXE and APK Artifacts, Required Checks success; Publish Tag Release skipped as expected without a tag). Artifacts (60-day retention, expire 2026-12-25): `Rain-Demo-Android-Builds` 40.9 MB zip (`Rain-Demo-Android-ARM-v7a-Build.apk` 33,393,058 B, sha256 91e7743a…; `Rain-Demo-Android-ARM-v8-v9-Build.apk` 40,853,562 B, sha256 5d48021b…), `Rain-Demo-Windows-x64-Build` 29.5 MB zip, `Rain-Demo-SHA256SUMS` (77 entries). All three downloaded with `gh run download` and `sha256sum -c SHA256SUMS` passed for all 77 files. Local: protocol_brain tests 300 pass, vault check passed. The tag-release path is not exercised yet (needs a `v*` tag on main).
 
+## Release v0.7.4 2026-10-27
+
+- Merged into `dev`: #43 font fix (`736c9a6`), #45 pub minor bumps (`6bd89b4`), #47 publish-release fix. Promoted to `main` by #46 (`dfd936a`) and #48 (`eb978f8`).
+- Tag `v0.7.3` (on `dfd936a`) built every artifact but `Publish Tag Release` was skipped: its `if:` lacked a status function, so the implicit `success()` failed on the skipped dependency-review job. #47 added `always()` and a contract-test pin. `v0.7.3` stays as a tag with no Release.
+- Tag `v0.7.4` on `eb978f8`: run https://github.com/EslamNabawy/Rain/actions/runs/40496389327 passed and published https://github.com/EslamNabawy/Rain/releases/tag/v0.7.4 with `Rain-Demo-Android-ARM-v7a-Build.apk` (33,374,006 B), `Rain-Demo-Android-ARM-v8-v9-Build.apk` (41,063,886 B), `Rain-Demo-Windows-x64-Build.zip` (29,218,181 B), `SHA256SUMS`. Assets downloaded; `sha256sum -c` passed 77/77. Demo-signed only; production signing remains `validated-release.yml`.
+- Dependabot #44 (new pub-coordinated group with majors) closed like #39. Dependabot will keep regrouping majors until an ignore rule for semver-major pub updates is added to `.github/dependabot.yml` (not done).
+- Remote branches: only `main` and `dev`. Local worktree `D:\Rain\.claude\worktrees\hopeful-kepler-83abd4` (`ci/release-pipeline`) left in place: it belongs to another session.
+
 ## Pub Minor Bumps 2026-10-27
 
 - Dependabot PR #39 closed (freezed 4.0.3 needs Dart >=3.13.0; CI pins Flutter 3.44.0). Branch `chore/pub-minor-bumps` from `dev` applies only its minor/patch bumps; see [[Recommended Next Actions]] for the list and the majors left.
