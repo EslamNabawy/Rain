@@ -11,6 +11,12 @@ Every future session must read this file before starting non-trivial work.
 - Security review (security-reviewer agent): no CRITICAL/HIGH. Fixed in 7d551fd: publish-release refuses tags not on main (compare API), `download-artifact` pinned to 9000827 (v8.0.2), required-checks echoes env refs. Open owner decision: a tag ruleset restricting `v*` creation to maintainers.
 - Validation 2026-10-27: manual `CI/CD` run https://github.com/EslamNabawy/Rain/actions/runs/40411155577 on bfd24f8 passed every job (Test Gates, Build EXE and APK Artifacts, Required Checks success; Publish Tag Release skipped as expected without a tag). Artifacts (60-day retention, expire 2026-12-25): `Rain-Demo-Android-Builds` 40.9 MB zip (`Rain-Demo-Android-ARM-v7a-Build.apk` 33,393,058 B, sha256 91e7743a…; `Rain-Demo-Android-ARM-v8-v9-Build.apk` 40,853,562 B, sha256 5d48021b…), `Rain-Demo-Windows-x64-Build` 29.5 MB zip, `Rain-Demo-SHA256SUMS` (77 entries). All three downloaded with `gh run download` and `sha256sum -c SHA256SUMS` passed for all 77 files. Local: protocol_brain tests 300 pass, vault check passed. The tag-release path is not exercised yet (needs a `v*` tag on main).
 
+## Pub Minor Bumps 2026-10-27
+
+- Dependabot PR #39 closed (freezed 4.0.3 needs Dart >=3.13.0; CI pins Flutter 3.44.0). Branch `chore/pub-minor-bumps` from `dev` applies only its minor/patch bumps; see [[Recommended Next Actions]] for the list and the majors left.
+- build_runner 2.17.1 and drift_dev 2.35.2 were dropped from this pass: they need build 5 / analyzer >=13, which freezed 3 forbids.
+- `pubspec.lock` was resolved with local Flutter 3.47.8, then the SDK-pinned `matcher`, `meta`, `test_api` and `vector_math` blocks were restored to the 3.44.0 values. CI's lock-drift check is the authority on whether this matches 3.44.0 exactly.
+
 ## UI/UX Level-Up 2026-10-27
 
 - Branch `ui/level-up` (worktree `D:\Rain-uiux`), synced with `dev` at `0772b2a`. Nothing merged into `main` or `dev`. Program: `audit/prompts/rain-uiux-orchestrator.xml`; state and evidence: `audit/ui/STATE.md`; note: [[UI UX Level-Up]].
